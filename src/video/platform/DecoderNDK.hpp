@@ -18,7 +18,7 @@ public:
 
     bool open(const std::string& path) override;
     void startDecoding() override;
-    void stopDecoding() override;
+    bool stopDecoding() override;
     bool consumeFrame(Frame& outFrame) override;
     bool skipFrame() override;
     void seekTo(double seconds) override;
@@ -32,7 +32,7 @@ public:
     void setSurface(ANativeWindow* window);
 
 private:
-    void decodeLoop();
+    void decodeLoop(uint64_t gen);
     void closeInternal();
     bool findVideoTrack();
     void updateOutputFormat();
@@ -51,9 +51,14 @@ private:
     double           m_duration = 0.0;
     bool             m_useSurface = false;
 
-    std::atomic<bool> m_decoding{false};
-    std::atomic<bool> m_finished{false};
-    std::thread       m_thread;
+    std::atomic<bool>     m_decoding{false};
+    std::atomic<bool>     m_finished{false};
+    std::atomic<uint64_t> m_generation{0};
+    // Set to true when decode thread starts, false when it exits.
+    // Used to ensure closeInternal() doesn't destroy the codec while
+    // a detached thread is still accessing it.
+    std::atomic<bool>     m_threadRunning{false};
+    std::thread           m_thread;
 };
 
 } // namespace paimon

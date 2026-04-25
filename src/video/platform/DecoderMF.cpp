@@ -471,16 +471,19 @@ void DecoderMF::startDecoding() {
     if (m_decoding.load(std::memory_order_relaxed)) return;
     m_decoding.store(true, std::memory_order_relaxed);
     m_finished.store(false, std::memory_order_relaxed);
-    m_thread = std::thread(&DecoderMF::decodeLoop, this);
+    uint64_t gen = ++m_generation;
+    m_thread = std::thread([this, gen]() { decodeLoop(gen); });
 }
 
-void DecoderMF::stopDecoding() {
+bool DecoderMF::stopDecoding() {
     bool wasDecoding = m_decoding.exchange(false, std::memory_order_acq_rel);
     if (!wasDecoding) {
         // Was not decoding — but thread might still be joinable from a previous run
         if (m_thread.joinable()) paimon::timedJoin(m_thread, std::chrono::seconds(3));
-        return;
+        return true;  // was already stopped; no active decode race to worry about
     }
+
+    ++m_generation;  // invalidate current decode thread's generation
 
     // Flush cancels any pending synchronous ReadSample() call on the decode thread,
     // allowing it to observe m_decoding == false and exit the loop.
@@ -495,18 +498,23 @@ void DecoderMF::stopDecoding() {
         }
     }
 
-    if (m_thread.joinable()) paimon::timedJoin(m_thread, std::chrono::seconds(3));
+    bool joined = true;
+    if (m_thread.joinable()) joined = paimon::timedJoin(m_thread, std::chrono::seconds(3));
+    return joined;
 }
 
-void DecoderMF::decodeLoop() {
+void DecoderMF::decodeLoop(uint64_t gen) {
     // Initialize COM for this thread — required for Media Foundation
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
     // Raise decode thread priority to reduce ReadSample latency
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
+    m_threadRunning.store(true, std::memory_order_release);
+
     int frameCount = 0;
-    while (m_decoding.load(std::memory_order_relaxed)) {
+    while (m_decoding.load(std::memory_order_relaxed) &&
+           gen == m_generation.load(std::memory_order_relaxed)) {
         if (m_ring.isFull()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
@@ -651,6 +659,7 @@ void DecoderMF::decodeLoop() {
         }
     }
 
+    m_threadRunning.store(false, std::memory_order_release);
     CoUninitialize();
 }
 
@@ -804,6 +813,19 @@ double DecoderMF::peekNextPTS() const {
 // ─────────────────────────────────────────────────────────────
 void DecoderMF::closeInternal() {
     stopDecoding();
+
+    // If the decode thread was detached (timedJoin timed out), wait for it to
+    // actually finish before releasing COM/D3D resources it may still be using.
+    if (m_threadRunning.load(std::memory_order_acquire)) {
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+        while (m_threadRunning.load(std::memory_order_acquire) &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (m_threadRunning.load(std::memory_order_acquire)) {
+            geode::log::warn("DecoderMF: thread still running during destruction after 500 ms wait");
+        }
+    }
 
     // Release D3D11 resources. Each decoder owns its own device, context and
     // DXGI manager. We hold the global mutex while releasing the device to

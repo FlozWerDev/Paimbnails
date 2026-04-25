@@ -79,7 +79,11 @@ public:
 
     virtual bool open(const std::string& path) = 0;
     virtual void startDecoding() = 0;
-    virtual void stopDecoding() = 0;
+    // Stop the decode thread.  Returns true if the thread was successfully
+    // joined before the timeout, false if it was detached.  Callers must
+    // not call seekTo() when false is returned because the decode thread
+    // may still be accessing decoder state.
+    virtual bool stopDecoding() = 0;
     virtual bool consumeFrame(Frame& outFrame) = 0;
     virtual void seekTo(double seconds) = 0;
     virtual double getDuration() const = 0;

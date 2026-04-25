@@ -48,12 +48,16 @@ public:
         if (m_decoding.load(std::memory_order_relaxed)) return;
         m_decoding.store(true, std::memory_order_relaxed);
         m_finished.store(false, std::memory_order_relaxed);
-        m_thread = std::thread(&DecoderPLM::decodeLoop, this);
+        uint64_t gen = ++m_generation;
+        m_thread = std::thread([this, gen]() { decodeLoop(gen); });
     }
 
-    void stopDecoding() override {
-        m_decoding.store(false, std::memory_order_relaxed);
-        if (m_thread.joinable()) paimon::timedJoin(m_thread, std::chrono::seconds(3));
+    bool stopDecoding() override {
+        bool wasDecoding = m_decoding.exchange(false, std::memory_order_acq_rel);
+        if (wasDecoding) ++m_generation;  // invalidate old thread's generation
+        bool joined = true;
+        if (m_thread.joinable()) joined = paimon::timedJoin(m_thread, std::chrono::seconds(3));
+        return joined;
     }
 
     bool consumeFrame(Frame& outFrame) override {
@@ -86,7 +90,6 @@ public:
         if (!m_plm) return;
         bool wasDecoding = m_decoding.load(std::memory_order_relaxed);
         stopDecoding();
-
         // Drain ring buffer
         while (m_ring.nextRead()) m_ring.commitRead();
 
@@ -109,10 +112,11 @@ public:
     }
 
 private:
-    void decodeLoop() {
+    void decodeLoop(uint64_t gen) {
         plm_set_video_decode_callback(m_plm, nullptr, nullptr);
 
-        while (m_decoding.load(std::memory_order_relaxed)) {
+        while (m_decoding.load(std::memory_order_relaxed) &&
+               gen == m_generation.load(std::memory_order_relaxed)) {
             // Wait if ring buffer is full
             if (m_ring.isFull()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -176,6 +180,7 @@ private:
     double              m_duration = 0.0;
     std::atomic<bool>   m_decoding{false};
     std::atomic<bool>   m_finished{false};
+    std::atomic<uint64_t> m_generation{0};
     std::thread         m_thread;
 };
 

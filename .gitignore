@@ -1,0 +1,29 @@
+# Ignore everything
+*
+
+# Keep this file
+!.gitignore
+
+# Keep Logo.png
+!Logo.png
+
+# Keep all .md files
+!*.md
+
+# Keep mod.json
+!mod.json
+
+# Keep CMakeLists.txt
+!CMakeLists.txt
+
+# Keep src/ and all its contents
+!src/
+!src/**
+
+# Keep resources/ and all its contents
+!resources/
+!resources/**
+
+# Keep .github/ and all its contents
+!.github/
+!.github/**

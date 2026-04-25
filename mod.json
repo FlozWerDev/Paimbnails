@@ -1,0 +1,597 @@
+{
+  "geode": "5.6.1",
+  "gd": {
+    "win": "2.2081",
+    "android": "2.2081",
+    "mac": "2.2081",
+    "ios": "2.2081"
+  },
+  "version": "v1.0.0-alpha.1",
+  "id": "flozwer.paimbnails2",
+  "name": "Paimbnails",
+  "developer": "FlozWer",
+  "description": "Thumbnails, capture, visual effects, audio, emotes, profiles, and custom backgrounds for Geometry Dash.",
+  "tags": ["interface", "online", "enhancement", "performance"],
+  "links": {
+    "community": "https://discord.gg/5N5vpSfZwY",
+    "source": "https://github.com/FlozWerDev/Paimbnails"
+  },
+
+  "resources": {
+    "sprites": ["resources/*.png"],
+    "files": ["resources/shaders/*.glsl"]
+  },
+  "settings": {
+    "general-title": {
+      "name": "General",
+      "description": "General mod settings",
+      "type": "title"
+    },
+    "language": {
+      "type": "string",
+      "name": "Language / Idioma",
+      "description": "Select language / Seleccionar idioma",
+      "default": "english",
+      "one-of": ["spanish", "english"]
+    },
+    "dynamic-song": {
+      "type": "bool",
+      "name": "Dynamic Song",
+      "description": "Plays the level song at a random position when viewing a level.",
+      "default": true
+    },
+    "dynamic-song-stream-preview": {
+      "type": "bool",
+      "name": "Stream Undownloaded Songs",
+      "description": "Streams a preview of undownloaded songs that loops until you download the full song locally.",
+      "default": true
+    },
+    "level-thumbs-title": {
+      "name": "Level Thumbnails",
+      "description": "Settings for level list thumbnails",
+      "type": "title"
+    },
+    "level-thumb-width": {
+      "type": "float",
+      "name": "Thumbnail Size",
+      "description": "Width of the thumbnail area.",
+      "default": 0.5,
+      "min": 0.2,
+      "max": 0.95
+    },
+    "levelcell-background-type": {
+      "type": "string",
+      "name": "Background Style",
+      "description": "Gradient or Blurred Thumbnail.",
+      "default": "thumbnail",
+      "one-of": ["gradient", "thumbnail"]
+    },
+    "levelcell-background-blur": {
+      "type": "float",
+      "name": "Background Blur",
+      "description": "Blur intensity for thumbnail background.",
+      "default": 3.0,
+      "min": 0.0,
+      "max": 10.0
+    },
+    "levelcell-background-darkness": {
+      "type": "float",
+      "name": "Background Darkness",
+      "description": "Darkness overlay (0 = clear, 1 = black).",
+      "default": 0.2,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "levelcell-show-separator": {
+      "type": "bool",
+      "name": "Show Separator Line",
+      "description": "Shows the line separating thumbnail and info.",
+      "default": true
+    },
+    "levelcell-show-view-button": {
+      "type": "bool",
+      "name": "Show View Button",
+      "description": "Shows the 'View' button.",
+      "default": true
+    },
+    "compact-list-mode": {
+      "type": "bool",
+      "name": "Compact Mode (Lists)",
+      "description": "Makes level cells shorter and more compact in list views. Fits more levels on screen at once.",
+      "default": false
+    },
+    "transparent-list-mode": {
+      "type": "bool",
+      "name": "Transparent Lists",
+      "description": "Makes list cell backgrounds transparent for a cleaner look.",
+      "default": false
+    },
+    "levelcell-gallery-autocycle": {
+      "type": "bool",
+      "name": "Auto-Cycle Gallery (Lists/Cells)",
+      "description": "Automatically rotates level thumbnails in list cells when a level has 2 or more photos.",
+      "default": true
+    },
+    "levelcell-gallery-transition": {
+      "type": "string",
+      "name": "Gallery Transition",
+      "description": "Transition style when cycling between thumbnails.",
+      "default": "crossfade",
+      "one-of": [
+        "crossfade",
+        "slide-left",
+        "slide-right",
+        "slide-up",
+        "slide-down",
+        "zoom-in",
+        "zoom-out",
+        "flip-horizontal",
+        "flip-vertical",
+        "rotate-cw",
+        "rotate-ccw",
+        "cube",
+        "dissolve",
+        "swipe",
+        "bounce",
+        "elastic-slide",
+        "directional-elastic",
+        "random"
+      ]
+    },
+    "levelcell-gallery-transition-duration": {
+      "type": "float",
+      "name": "Transition Duration",
+      "description": "Duration of the gallery transition in seconds.",
+      "default": 0.6,
+      "min": 0.2,
+      "max": 2.0
+    },
+    "popup-gallery-transition": {
+      "type": "string",
+      "name": "Popup Gallery Transition",
+      "description": "Transition style when navigating between thumbnails in the popup gallery view.",
+      "default": "directional-elastic",
+      "one-of": [
+        "crossfade",
+        "slide-left",
+        "slide-right",
+        "elastic-slide",
+        "directional-elastic",
+        "zoom-in",
+        "zoom-out",
+        "bounce",
+        "flip-horizontal",
+        "flip-vertical",
+        "dissolve"
+      ]
+    },
+    "popup-gallery-transition-duration": {
+      "type": "float",
+      "name": "Popup Transition Duration",
+      "description": "Duration of the popup gallery transition in seconds.",
+      "default": 0.45,
+      "min": 0.15,
+      "max": 1.5
+    },
+    "levelinfo-bg-transition": {
+      "type": "string",
+      "name": "Background Transition",
+      "description": "Transition style when the level info background thumbnail changes (auto-cycle or manual navigation).",
+      "default": "crossfade",
+      "one-of": [
+        "crossfade",
+        "slide-left",
+        "slide-right",
+        "elastic-slide",
+        "directional-elastic",
+        "zoom-in",
+        "zoom-out",
+        "bounce",
+        "flip-horizontal",
+        "flip-vertical",
+        "dissolve"
+      ]
+    },
+    "levelinfo-bg-transition-duration": {
+      "type": "float",
+      "name": "Background Transition Duration",
+      "description": "Duration of the background transition in seconds.",
+      "default": 0.5,
+      "min": 0.15,
+      "max": 1.5
+    },
+    "level-effects-title": {
+      "name": "Level Visual Effects",
+      "description": "Animations and effects",
+      "type": "title"
+    },
+    "levelcell-hover-effects": {
+      "type": "bool",
+      "name": "Hover Animation",
+      "description": "Animate on hover.",
+      "default": true
+    },
+    "levelcell-anim-type": {
+      "type": "string",
+      "name": "Animation Type",
+      "description": "Style of hover animation.",
+      "default": "zoom-slide",
+      "one-of": [
+        "none",
+        "zoom-slide",
+        "zoom",
+        "slide",
+        "bounce",
+        "rotate",
+        "rotate-content",
+        "shake",
+        "pulse",
+        "swing"
+      ]
+    },
+    "levelcell-anim-speed": {
+      "type": "float",
+      "name": "Animation Speed",
+      "description": "Speed of animation.",
+      "default": 1.0,
+      "min": 0.1,
+      "max": 5.0
+    },
+    "levelcell-anim-effect": {
+      "type": "string",
+      "name": "Color Effect",
+      "description": "Color filter during animation.",
+      "default": "none",
+      "one-of": [
+        "none",
+        "brightness",
+        "darken",
+        "sepia",
+        "red",
+        "blue",
+        "gold",
+        "fade",
+        "grayscale",
+        "blur",
+        "invert",
+        "glitch",
+        "sharpen",
+        "edge-detection",
+        "vignette",
+        "pixelate",
+        "posterize",
+        "chromatic",
+        "scanlines",
+        "solarize",
+        "rainbow"
+      ]
+    },
+    "levelcell-effect-on-gradient": {
+      "type": "bool",
+      "name": "Apply Effect to Background",
+      "description": "Apply color effect to background gradient.",
+      "default": false
+    },
+    "levelcell-mythic-particles": {
+      "type": "bool",
+      "name": "Mythic Particles",
+      "description": "Particles for Mythic levels.",
+      "default": true
+    },
+    "levelcell-animated-gradient": {
+      "type": "bool",
+      "name": "Animated Gradient",
+      "description": "Animate background colors.",
+      "default": true
+    },
+    "levelinfo-title": {
+      "name": "Level Info Screen",
+      "description": "Settings for the level info screen",
+      "type": "title"
+    },
+    "levelinfo-background-style": {
+      "type": "string",
+      "name": "Background Style",
+      "description": "Primary visual style of the background.",
+      "default": "blur",
+      "one-of": [
+        "normal",
+        "pixel",
+        "blur",
+        "paimonblur",
+        "grayscale",
+        "sepia",
+        "vignette",
+        "scanlines",
+        "bloom",
+        "chromatic",
+        "radial-blur",
+        "glitch",
+        "posterize",
+        "rain",
+        "matrix",
+        "neon-pulse",
+        "wave-distortion",
+        "crt"
+      ]
+    },
+    "levelinfo-extra-styles": {
+      "type": "string",
+      "name": "Extra Effects",
+      "description": "Additional effects (comma-separated, max 4). Applied on top of the primary style via multi-pass.",
+      "default": ""
+    },
+    "levelinfo-effect-intensity": {
+      "type": "int",
+      "name": "Effect Intensity",
+      "description": "Intensity of the background effect.",
+      "default": 4,
+      "min": 1,
+      "max": 10
+    },
+    "levelinfo-bg-darkness": {
+      "type": "int",
+      "name": "Background Darkness",
+      "description": "Darkness overlay on the thumbnail background. 0 = clear, 50 = full black.",
+      "default": 27,
+      "min": 0,
+      "max": 50
+    },
+    "profile-music-title": {
+      "name": "Profile Music",
+      "description": "Music that plays when viewing profiles",
+      "type": "title"
+    },
+    "profile-music-enabled": {
+      "type": "bool",
+      "name": "Enable Profile Music",
+      "description": "Play custom music when viewing profiles.",
+      "default": true
+    },
+    "profile-music-crossfade": {
+      "type": "bool",
+      "name": "Crossfade Transition",
+      "description": "Smooth fade between background music and profile music instead of cutting abruptly.",
+      "default": true
+    },
+    "profile-music-fade-duration": {
+      "type": "float",
+      "name": "Fade Duration (seconds)",
+      "description": "Duration of the crossfade transition in seconds.",
+      "default": 0.3,
+      "min": 0.1,
+      "max": 3.0
+    },
+    "button-editor-title": {
+      "name": "Interface",
+      "description": "UI Customization",
+      "type": "title"
+    },
+    "profile-img-zlayer": {
+      "type": "int",
+      "name": "Profile Image Z-Layer",
+      "description": "Z-order of the profile image behind the popup. Lower = further back. Adjust until the image shows correctly behind panels.",
+      "default": -1,
+      "min": -10,
+      "max": 10
+    },
+    "dynamic-popup-title": {
+      "name": "Dynamic Popup",
+      "description": "Custom entry & exit animations for all Paimbnails popups",
+      "type": "title"
+    },
+    "dynamic-popup-enabled": {
+      "type": "bool",
+      "name": "Enable Dynamic Popup",
+      "description": "Replace the default elastic animation with a smooth, physics-inspired one on every Paimbnails popup.",
+      "default": true
+    },
+    "dynamic-popup-style": {
+      "type": "string",
+      "name": "Animation Style",
+      "description": "PaimonUI = expands from button. Slide Up/Down = directional. Zoom Fade = quick scale. Elastic = bouncy overshoot. Bounce = drop-bounce. Flip/Fold = 3D-ish axis reveal. Pop Rotate = scale + spin.",
+      "default": "paimonUI",
+      "one-of": [
+        "paimonUI",
+        "slide-up",
+        "slide-down",
+        "zoom-fade",
+        "elastic",
+        "bounce",
+        "flip",
+        "fold",
+        "pop-rotate"
+      ]
+    },
+    "dynamic-popup-speed": {
+      "type": "float",
+      "name": "Animation Speed",
+      "description": "Multiplier for animation duration. Higher = faster.",
+      "default": 1.0,
+      "min": 0.3,
+      "max": 3.0
+    },
+    "foryou-title": {
+      "name": "Para Ti (For You)",
+      "description": "Personalized level recommendations",
+      "type": "title"
+    },
+    "enable-for-you": {
+      "name": "Enable For You",
+      "description": "Enable 'Para Ti' recommendations. When disabled, the tab shows 'Próximamente'.",
+      "type": "bool",
+      "default": false
+    },
+    "for-you-min-levels": {
+      "name": "Minimum Levels",
+      "description": "Minimum number of levels played before recommendations activate.",
+      "type": "int",
+      "default": 5,
+      "min": 1,
+      "max": 50
+    },
+    "for-you-use-tags": {
+      "name": "Use Level Tags",
+      "description": "Use Level Tags mod data to improve recommendations (requires kampwski.level_tags).",
+      "type": "bool",
+      "default": true
+    },
+    "capture-title": {
+      "name": "Capture Settings",
+      "description": "In-game thumbnail capture",
+      "type": "title"
+    },
+    "enable-thumbnail-taking": {
+      "name": "Enable Capture Button",
+      "description": "Show capture button in pause menu.",
+      "type": "bool",
+      "default": true
+    },
+    "capture-resolution": {
+      "type": "string",
+      "name": "Capture Resolution",
+      "description": "Resolution for Render mode.",
+      "default": "1080p",
+      "one-of": ["1080p", "1440p", "4k"]
+    },
+    "keybinds-title": {
+      "name": "Keybinds",
+      "description": "Configure keyboard shortcuts",
+      "type": "title"
+    },
+    "settings-panel-keybind": {
+      "type": "keybind",
+      "name": "Open Settings Panel",
+      "description": "Press this key to open or close the Paimon settings panel.",
+      "default": "Ctrl+P",
+      "allow-in-text-inputs": false
+    },
+    "capture-keybind": {
+      "type": "keybind",
+      "name": "Capture Thumbnail",
+      "description": "Press this key during gameplay to capture a thumbnail",
+      "default": "T",
+      "category": "gameplay",
+      "allow-in-text-inputs": false
+    },
+    "performance-title": {
+      "name": "Performance & Optimization",
+      "description": "Settings for improving performance and resource usage",
+      "type": "title"
+    },
+    "gif-ram-cache": {
+      "type": "bool",
+      "name": "Cache GIFs in RAM",
+      "description": "Keep processed GIFs in RAM for faster loading. Warning: High RAM usage.",
+      "default": true
+    },
+    "thumbnail-concurrent-downloads": {
+      "type": "int",
+      "name": "Download Speed (Threads)",
+      "description": "Max simultaneous downloads (12-20 recommended).",
+      "default": 20,
+      "min": 1,
+      "max": 40
+    },
+    "disable-video-chunks": {
+      "type": "bool",
+      "name": "Disable Video Chunking",
+      "description": "Bypass segmented chunk loading and load the entire video file into memory at once. Reduces playback latency at the cost of higher initial memory usage.",
+      "default": true
+    },
+
+    "maintenance-title": {
+      "name": "Maintenance & Moderator",
+      "description": "Repair tools and moderator code",
+      "type": "title"
+    },
+    "maintenance-cleanup": {
+      "type": "button",
+      "name": "Run Mod Cleanup",
+      "description": "Clean temporary/cache files and run a health check.",
+      "buttons": {
+        "run": "Run Cleanup"
+      }
+    },
+    "maintenance-refresh-mod-code": {
+      "type": "button",
+      "name": "Fetch Mod Code",
+      "description": "Verify mod/admin status and fetch a fresh moderator code.",
+      "buttons": {
+        "run": "Fetch Code"
+      }
+    },
+    "maintenance-copy-mod-code": {
+      "type": "button",
+      "name": "Copy Mod Code",
+      "description": "Copy your current moderator code to the clipboard.",
+      "buttons": {
+        "run": "Copy"
+      }
+    },
+    "test-category": {
+      "name": "Test / Debug",
+      "description": "Developer options",
+      "type": "title"
+    },
+    "enable-disk-cache": {
+      "type": "bool",
+      "name": "Enable Disk Cache",
+      "description": "Save downloaded thumbnails to disk so they persist between navigations. Avoids re-downloading thumbnails every time.",
+      "default": true
+    },
+    "clear-cache-on-exit": {
+      "type": "bool",
+      "name": "Clear Cache on Exit",
+      "description": "Delete downloaded thumbnails when the game closes. Next session will re-download them. Keeps storage clean for other users.",
+      "default": true
+    },
+    "enable-debug-logs": {
+      "type": "bool",
+      "name": "Enable Debug Logs",
+      "description": "Show all mod logs. When disabled, no logs are emitted.",
+      "default": false
+    },
+    "custom-cursor-title": {
+      "name": "Custom Cursor",
+      "description": "Replace the OS cursor with a custom image inside Geometry Dash.",
+      "type": "title"
+    },
+    "custom-cursor-enable": {
+      "type": "bool",
+      "name": "Enable Custom Cursor",
+      "description": "Replaces the OS cursor with a custom image. Add images via the Paimon Settings panel (Pet & More > Custom Cursor).",
+      "default": false
+    },
+    "custom-cursor-scale": {
+      "type": "float",
+      "name": "Cursor Scale",
+      "description": "Size of the custom cursor sprite.",
+      "default": 0.3,
+      "min": 0.1,
+      "max": 3.0
+    },
+    "custom-cursor-trail": {
+      "type": "bool",
+      "name": "Enable Cursor Trail",
+      "description": "Shows a glowing motion trail behind the custom cursor.",
+      "default": false
+    },
+    "custom-cursor-hide-in-gameplay": {
+      "type": "bool",
+      "name": "Hide Cursor During Gameplay",
+      "description": "Hides the custom cursor while playing a level, respecting the game's native 'Show Cursor' setting.",
+      "default": true
+    }
+  },
+  "dependencies": {
+    "geode.node-ids": {
+      "version": ">=v1.23.0",
+      "required": true
+    },
+    "prevter.imageplus": {
+      "version": ">=v1.1.0",
+      "required": true
+    }
+  }
+}

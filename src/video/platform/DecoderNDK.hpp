@@ -35,6 +35,7 @@ private:
     void decodeLoop();
     void closeInternal();
     bool findVideoTrack();
+    void updateOutputFormat();
 
     AMediaExtractor* m_extractor = nullptr;
     AMediaCodec*     m_codec     = nullptr;
@@ -44,6 +45,9 @@ private:
     VideoRingBuffer  m_ring;
     int              m_width  = 0;
     int              m_height = 0;
+    int              m_outputStride = 0;
+    int              m_outputSliceHeight = 0;
+    int              m_outputColorFormat = 0;
     double           m_duration = 0.0;
     bool             m_useSurface = false;
 

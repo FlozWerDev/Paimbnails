@@ -253,8 +253,10 @@ void ProfileMusicManager::getProfileMusicConfig(int accountID, ConfigCallback ca
     std::string endpoint = fmt::format("/api/profile-music/{}", accountID);
     log::info("[ProfileMusic] Fetching config from: {}", endpoint);
 
-    HttpClient::get().get(endpoint, [this, accountID, callback](bool success, std::string const& response) {
-        Loader::get()->queueInMainThread([this, accountID, callback, success, response]() {
+    auto token = m_lifetimeToken;
+    HttpClient::get().get(endpoint, [this, token, accountID, callback](bool success, std::string const& response) {
+        Loader::get()->queueInMainThread([this, token, accountID, callback, success, response]() {
+            if (!token->load(std::memory_order_acquire)) return;
             if (!success) {
                 log::error("[ProfileMusic] Failed to fetch config for account {}: {}", accountID, response);
                 callback(false, ProfileMusicConfig{});
@@ -300,8 +302,9 @@ void ProfileMusicManager::getProfileMusicConfig(int accountID, ConfigCallback ca
 }
 
 void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& username, const ProfileMusicConfig& config, UploadCallback callback) {
+    auto token = m_lifetimeToken;
     // Primero descargar la cancion completa localmente
-    downloadSongForPreview(config.songID, [this, accountID, username, config, callback](bool success, std::string const& localPath) {
+    downloadSongForPreview(config.songID, [this, token, accountID, username, config, callback](bool success, std::string const& localPath) {
         if (!success || localPath.empty()) {
             Loader::get()->queueInMainThread([callback]() {
                 callback(false, "Could not download song. Press the Download button first.");
@@ -310,8 +313,8 @@ void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& u
         }
 
         // Extraer el fragmento de audio en un thread separado
-        std::thread([this, localPath, accountID, username, config, callback]() {
-            if (paimon::isRuntimeShuttingDown()) {
+        std::thread([this, token, localPath, accountID, username, config, callback]() {
+            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                 return;
             }
 
@@ -319,8 +322,8 @@ void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& u
             auto fragmentData = extractAudioFragment(localPath, config.startMs, config.endMs);
 
             if (fragmentData.empty()) {
-                Loader::get()->queueInMainThread([callback]() {
-                    if (paimon::isRuntimeShuttingDown()) {
+                Loader::get()->queueInMainThread([token, callback]() {
+                    if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                         return;
                     }
 
@@ -366,22 +369,22 @@ void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& u
 
             std::string jsonData = payload.dump();
 
-            if (paimon::isRuntimeShuttingDown()) {
+            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                 return;
             }
 
-            Loader::get()->queueInMainThread([this, jsonData, accountID, config, callback]() {
-                if (paimon::isRuntimeShuttingDown()) {
+            Loader::get()->queueInMainThread([this, token, jsonData, accountID, config, callback]() {
+                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                     return;
                 }
 
-                HttpClient::get().postWithAuth("/api/profile-music/upload", jsonData, [this, accountID, config, callback](bool success, std::string const& response) {
-                    if (paimon::isRuntimeShuttingDown()) {
+                HttpClient::get().postWithAuth("/api/profile-music/upload", jsonData, [this, token, accountID, config, callback](bool success, std::string const& response) {
+                    if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                         return;
                     }
 
-                    Loader::get()->queueInMainThread([this, accountID, config, callback, success, response]() {
-                        if (paimon::isRuntimeShuttingDown()) {
+                    Loader::get()->queueInMainThread([this, token, accountID, config, callback, success, response]() {
+                        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                             return;
                         }
 
@@ -1314,26 +1317,27 @@ void ProfileMusicManager::downloadSongForPreview(int songID, DownloadCallback ca
 }
 
 void ProfileMusicManager::getWaveformPeaks(int songID, WaveformCallback callback) {
-    downloadSongForPreview(songID, [this, callback](bool success, std::string const& path) {
+    auto token = m_lifetimeToken;
+    downloadSongForPreview(songID, [this, token, callback](bool success, std::string const& path) {
         if (!success || path.empty()) {
             callback(false, {}, 0);
             return;
         }
 
-        std::thread([this, path, callback]() {
-            if (paimon::isRuntimeShuttingDown()) {
+        std::thread([this, token, path, callback]() {
+            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                 return;
             }
 
             int durationMs = 0;
             auto peaks = analyzeWaveform(path, 200, durationMs);
 
-            if (paimon::isRuntimeShuttingDown()) {
+            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                 return;
             }
 
-            Loader::get()->queueInMainThread([callback, peaks, durationMs]() {
-                if (paimon::isRuntimeShuttingDown()) {
+            Loader::get()->queueInMainThread([token, callback, peaks, durationMs]() {
+                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                     return;
                 }
 

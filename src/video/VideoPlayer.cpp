@@ -241,6 +241,13 @@ bool VideoPlayer::uploadFrame(const IVideoDecoder::Frame& frame) {
 void VideoPlayer::update(float dt) {
     if (!m_playing || !m_decoder) return;
 
+    // Only process once per director frame.  Multiple surviving
+    // VideoBackgroundUpdateNodes can call us during a layer transition,
+    // and running the logic more than once per frame desyncs the decoder.
+    auto currentFrame = cocos2d::CCDirector::sharedDirector()->getTotalFrames();
+    if (currentFrame == m_lastUpdateFrame) return;
+    m_lastUpdateFrame = currentFrame;
+
     m_playbackTime += static_cast<double>(dt);
     m_timeSinceLastUpload += static_cast<double>(dt);
 

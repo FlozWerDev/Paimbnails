@@ -176,6 +176,9 @@ public:
     // Check if a shared video player already exists for the given path.
     bool hasSharedVideo(std::string const& path) const;
 
+    // Check if a shared video player exists and is safe to reuse immediately.
+    bool canReuseSharedVideo(std::string const& path) const;
+
     // Get total estimated RAM used by all shared video players (bytes).
     size_t getTotalVideoRAMBytes() const;
 

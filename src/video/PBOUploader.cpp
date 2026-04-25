@@ -308,10 +308,8 @@ bool PBOUploader::init(int rgbaSize) {
     m_rgbaSize = rgbaSize;
 
 #if defined(GEODE_IS_ANDROID)
-    if (!pglMapBufferRange || !pglUnmapBuffer) {
-        geode::log::warn("PBOUploader: glMapBufferRange/glUnmapBuffer unavailable on this device — disabling PBO");
-        return false;
-    }
+    geode::log::warn("PBOUploader: disabled on Android; using direct texture upload");
+    return false;
 #endif
 
     GLuint pboRGBA[kPBOCount];

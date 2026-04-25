@@ -1906,8 +1906,12 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
     Ref<LocalThumbnailViewPopup> safeRef = this;
     int levelID = m_levelID;
 
-    auto notifyResult = [safeRef](bool ok, std::filesystem::path const& savePath) {
-        safeRef->m_isDownloading = false;
+    WeakRef<LocalThumbnailViewPopup> weakRef = this;
+
+    auto notifyResult = [weakRef](bool ok, std::filesystem::path const& savePath) {
+        auto popup = weakRef.lock();
+        if (!popup) return;
+        popup->m_isDownloading = false;
         if (ok) {
             log::info("Image saved successfully to {}", geode::utils::string::pathToString(savePath));
             PaimonNotify::create(Localization::get().getString("level.saved").c_str(), NotificationIcon::Success)->show();
@@ -1917,7 +1921,7 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
         }
     };
 
-    auto doSave = [safeRef, levelID, notifyResult](std::filesystem::path savePath) {
+    auto doSave = [safeRef, weakRef, levelID, notifyResult](std::filesystem::path savePath) {
         log::debug("Save path chosen: {}", geode::utils::string::pathToString(savePath));
 
         // 1) findAnyThumbnail incluye .rgb, .png, .webp en thumb y cache; 2) fallback getCachePath (.png/.gif)
@@ -1944,7 +1948,7 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
             std::filesystem::path srcFs(srcPath);
             bool isRgb = (srcFs.extension() == ".rgb");
 
-            std::thread([safeRef, srcPath, savePath, isRgb, fromCache, notifyResult]() {
+            std::thread([weakRef, srcPath, savePath, isRgb, fromCache, notifyResult]() {
                 bool ok = false;
                 if (isRgb) {
                     std::vector<uint8_t> rgbData;
@@ -1953,8 +1957,9 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                         auto rgba = ImageConverter::rgbToRgba(rgbData, width, height);
                         ok = ImageConverter::saveRGBAToPNG(rgba.data(), width, height, savePath);
                     }
-                    Loader::get()->queueInMainThread([safeRef, ok, savePath, notifyResult]() {
-                        if (!safeRef->getParent()) return;
+                    Loader::get()->queueInMainThread([weakRef, ok, savePath, notifyResult]() {
+                        auto popup = weakRef.lock();
+                        if (!popup || !popup->getParent()) return;
                         notifyResult(ok, savePath);
                     });
                     return;
@@ -1967,14 +1972,16 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                     std::error_code ec;
                     std::filesystem::copy(srcP, destPath, std::filesystem::copy_options::overwrite_existing, ec);
                     ok = !ec;
-                    Loader::get()->queueInMainThread([safeRef, ok, destPath, notifyResult]() {
-                        if (!safeRef->getParent()) return;
+                    Loader::get()->queueInMainThread([weakRef, ok, destPath, notifyResult]() {
+                        auto popup = weakRef.lock();
+                        if (!popup || !popup->getParent()) return;
                         notifyResult(ok, destPath);
                     });
                     return;
                 }
-                Loader::get()->queueInMainThread([safeRef, savePath, notifyResult]() {
-                    if (!safeRef->getParent()) return;
+                Loader::get()->queueInMainThread([weakRef, savePath, notifyResult]() {
+                    auto popup = weakRef.lock();
+                    if (!popup || !popup->getParent()) return;
                     notifyResult(false, savePath);
                 });
             }).detach();
@@ -2008,9 +2015,11 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                 size_t dataSize = static_cast<size_t>(w) * h * 4;
                 std::shared_ptr<uint8_t> buffer(new uint8_t[dataSize], std::default_delete<uint8_t[]>());
                 std::memcpy(buffer.get(), data.get(), dataSize);
-                std::thread([safeRef, buffer, w, h, savePath, notifyResult]() {
+                std::thread([weakRef, buffer, w, h, savePath, notifyResult]() {
                     bool ok = ImageConverter::saveRGBAToPNG(buffer.get(), static_cast<uint32_t>(w), static_cast<uint32_t>(h), savePath);
-                    Loader::get()->queueInMainThread([safeRef, ok, savePath, notifyResult]() {
+                    Loader::get()->queueInMainThread([weakRef, ok, savePath, notifyResult]() {
+                        auto popup = weakRef.lock();
+                        if (!popup || !popup->getParent()) return;
                         notifyResult(ok, savePath);
                     });
                 }).detach();

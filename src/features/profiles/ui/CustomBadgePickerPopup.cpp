@@ -129,11 +129,13 @@ bool CustomBadgePickerPopup::init(int accountID, std::string const& currentBadge
         buildEmoteGrid(service.getStaticEmotes());
     } else {
         m_statusLabel->setString("Loading...");
-        service.fetchAllEmotes([this](bool) {
-            Loader::get()->queueInMainThread([this]() {
-                if (!this->getParent()) return;
-                m_statusLabel->setString("");
-                buildEmoteGrid(EmoteService::get().getStaticEmotes());
+        WeakRef<CustomBadgePickerPopup> safeRef = this;
+        service.fetchAllEmotes([safeRef](bool) {
+            Loader::get()->queueInMainThread([safeRef]() {
+                auto self = safeRef.lock();
+                if (!self || !self->getParent()) return;
+                self->m_statusLabel->setString("");
+                self->buildEmoteGrid(EmoteService::get().getStaticEmotes());
             });
         });
     }

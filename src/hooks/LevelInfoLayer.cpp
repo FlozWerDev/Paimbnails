@@ -999,7 +999,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         WeakRef<PaimonLevelInfoLayer> safeRef = this;
         videoSprite->setOnFirstVisibleFrame([safeRef, levelID, requestToken](VideoThumbnailSprite* readySprite) {
             auto selfRef = safeRef.lock();
-            auto* self = static_cast<PaimonLevelInfoLayer*>(selfRef.data());
+            auto* self = static_cast<PaimonLevelInfoLayer*>(selfRef);
             if (!self) {
                 return;
             }

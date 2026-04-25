@@ -69,8 +69,10 @@ private:
 
     std::unique_ptr<IVideoDecoder> m_decoder;
 
-    // Single RGBA texture — uploaded via PBO for async GPU transfer
-    geode::Ref<cocos2d::CCTexture2D> m_texture;
+    // Single RGBA texture — uploaded via PBO for async GPU transfer.
+    // Raw pointer: we do manual retain/release because the texture must outlive
+    // any CCSprites that reference it during shared-video teardown.
+    cocos2d::CCTexture2D* m_texture = nullptr;
     uint8_t* m_rgbaBuffer = nullptr;
 
     // PBO-based async GPU uploader (RGBA mode)
@@ -96,6 +98,11 @@ private:
     double m_originalInterval = 1.0 / 60.0;
     double m_timeSinceLastUpload = 0.0;
     uint64_t m_frameCounter = 0;
+
+    // Guard against multiple update() calls in the same frame (can happen when
+    // several scene-graph nodes share the same player and more than one survives
+    // a layer transition).
+    unsigned int m_lastUpdateFrame = 0;
 
     std::function<void()> m_onFinished;
 };

@@ -166,8 +166,8 @@ void PaimonSupportLayer::cycleThumbnail(float dt) {
                 if (paimon::isRuntimeShuttingDown()) return;
 
                 auto selfRef = safeSelf.lock();
-                auto* self = static_cast<PaimonSupportLayer*>(selfRef.data());
-                if (!self || !self->getParent()) return;
+                auto* self = static_cast<PaimonSupportLayer*>(selfRef);
+                if (!self) return;
                 self->m_loadingThumb = false;
             });
             return;
@@ -181,8 +181,8 @@ void PaimonSupportLayer::cycleThumbnail(float dt) {
                 if (paimon::isRuntimeShuttingDown()) return;
 
                 auto selfRef = safeSelf.lock();
-                auto* self = static_cast<PaimonSupportLayer*>(selfRef.data());
-                if (!self || !self->getParent()) return;
+                auto* self = static_cast<PaimonSupportLayer*>(selfRef);
+                if (!self) return;
                 self->m_loadingThumb = false;
             });
             return;
@@ -198,12 +198,8 @@ void PaimonSupportLayer::cycleThumbnail(float dt) {
             if (paimon::isRuntimeShuttingDown()) return;
 
             auto selfRef = safeSelf.lock();
-            auto* self = static_cast<PaimonSupportLayer*>(selfRef.data());
+            auto* self = static_cast<PaimonSupportLayer*>(selfRef);
             if (!self) return;
-            if (!self->getParent()) {
-                self->m_loadingThumb = false;
-                return;
-            }
             auto image = new CCImage();
             if (image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
                 auto tex = new CCTexture2D();

@@ -251,7 +251,9 @@ private:
     };
 
     ProfileMusicManager();
-    ~ProfileMusicManager() = default;
+    ~ProfileMusicManager() {
+        m_lifetimeToken->store(false, std::memory_order_release);
+    }
 
     ProfileMusicManager(const ProfileMusicManager&) = delete;
     ProfileMusicManager& operator=(const ProfileMusicManager&) = delete;

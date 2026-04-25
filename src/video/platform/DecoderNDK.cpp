@@ -10,6 +10,33 @@
 
 namespace paimon {
 
+static constexpr int kColorFormatYUV420SemiPlanar = 21;
+static constexpr int kColorFormatYUV420Flexible = 0x7F420888;
+static constexpr int kColorFormatQCOMYUV420SemiPlanar = 0x7FA30C00;
+
+static int getFormatInt32(AMediaFormat* fmt, const char* key, int fallback) {
+    int32_t value = fallback;
+    if (fmt) AMediaFormat_getInt32(fmt, key, &value);
+    return static_cast<int>(value);
+}
+
+static bool isSemiPlanarFormat(int colorFormat) {
+    return colorFormat == kColorFormatYUV420SemiPlanar ||
+           colorFormat == kColorFormatYUV420Flexible ||
+           colorFormat == kColorFormatQCOMYUV420SemiPlanar ||
+           colorFormat == 0;
+}
+
+void DecoderNDK::updateOutputFormat() {
+    if (!m_codec) return;
+    AMediaFormat* fmt = AMediaCodec_getOutputFormat(m_codec);
+    if (!fmt) return;
+    m_outputStride = std::max(1, getFormatInt32(fmt, "stride", m_width));
+    m_outputSliceHeight = std::max(m_height, getFormatInt32(fmt, "slice-height", m_height));
+    m_outputColorFormat = getFormatInt32(fmt, "color-format", m_outputColorFormat);
+    AMediaFormat_delete(fmt);
+}
+
 // ─────────────────────────────────────────────────────────────
 // Open
 // ─────────────────────────────────────────────────────────────
@@ -77,6 +104,7 @@ bool DecoderNDK::open(const std::string& path) {
     }
 
     AMediaExtractor_selectTrack(m_extractor, m_trackIdx);
+    updateOutputFormat();
 
     if (!m_ring.init(m_width, m_height)) {
         closeInternal();
@@ -185,24 +213,54 @@ void DecoderNDK::decodeLoop() {
                 if (slot && outBuf) {
                     // Android MediaCodec output is typically NV12 or YV12
                     // We detect stride from info and copy accordingly
-                    int ySize = m_width * m_height;
+                    int stride = std::max(m_width, m_outputStride);
+                    int sliceHeight = std::max(m_height, m_outputSliceHeight);
                     int uvH = (m_height + 1) / 2;
                     int uvW = (m_width + 1) / 2;
+                    bool semiPlanar = isSemiPlanarFormat(m_outputColorFormat);
+                    size_t yPlaneBytes = static_cast<size_t>(stride) * sliceHeight;
+                    size_t minYBytes = static_cast<size_t>(stride) * m_height;
+                    size_t neededSemi = yPlaneBytes + static_cast<size_t>(stride) * uvH;
+                    size_t neededPlanar = yPlaneBytes + static_cast<size_t>(std::max(uvW, stride / 2)) * uvH * 2;
+                    if (outSize < minYBytes) {
+                        AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
+                        continue;
+                    }
+                    if (semiPlanar && outSize < neededSemi && outSize >= neededPlanar) {
+                        semiPlanar = false;
+                    }
 
                     // Assume NV12 (most common from HW decoder)
                     // Y plane
                     for (int r = 0; r < m_height; ++r) {
                         std::memcpy(slot->planeY + r * slot->strideY,
-                                    outBuf + r * m_width,
-                                    std::min(slot->strideY, m_width));
+                                    outBuf + static_cast<size_t>(r) * stride,
+                                    m_width);
                     }
-                    // NV12 UV interleaved → planar Cb/Cr
-                    uint8_t* uvStart = outBuf + ySize;
-                    for (int r = 0; r < uvH; ++r) {
-                        for (int c = 0; c < uvW; ++c) {
-                            slot->planeCb[r * slot->strideCb + c] = uvStart[r * m_width + c * 2];
-                            slot->planeCr[r * slot->strideCr + c] = uvStart[r * m_width + c * 2 + 1];
+                    if (semiPlanar && outSize >= neededSemi) {
+                        uint8_t* uvStart = outBuf + yPlaneBytes;
+                        for (int r = 0; r < uvH; ++r) {
+                            for (int c = 0; c < uvW; ++c) {
+                                size_t idx = static_cast<size_t>(r) * stride + c * 2;
+                                slot->planeCb[r * slot->strideCb + c] = uvStart[idx];
+                                slot->planeCr[r * slot->strideCr + c] = uvStart[idx + 1];
+                            }
                         }
+                    } else if (outSize >= neededPlanar) {
+                        int uvStride = std::max(uvW, stride / 2);
+                        uint8_t* uStart = outBuf + yPlaneBytes;
+                        uint8_t* vStart = uStart + static_cast<size_t>(uvStride) * uvH;
+                        for (int r = 0; r < uvH; ++r) {
+                            std::memcpy(slot->planeCb + r * slot->strideCb,
+                                        uStart + static_cast<size_t>(r) * uvStride,
+                                        uvW);
+                            std::memcpy(slot->planeCr + r * slot->strideCr,
+                                        vStart + static_cast<size_t>(r) * uvStride,
+                                        uvW);
+                        }
+                    } else {
+                        AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
+                        continue;
                     }
 
                     slot->pts = static_cast<double>(info.presentationTimeUs) / 1000000.0;
@@ -212,7 +270,7 @@ void DecoderNDK::decodeLoop() {
                 AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
             }
         } else if (outputIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
-            // Format changed — could re-query, but we keep going
+            updateOutputFormat();
         }
         // AMEDIACODEC_INFO_TRY_AGAIN_LATER: just loop
     }

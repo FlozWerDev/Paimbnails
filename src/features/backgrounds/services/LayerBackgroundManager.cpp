@@ -140,7 +140,10 @@ struct VideoBackgroundUpdateNode : public CCNode {
     }
 
     void onExit() override {
-        shutdown(true, false);
+        // DO NOT call shutdown() here: during CustomTransitionScene reparenting
+        // onExit()/onEnter() are called temporarily, and CCNode::onExit() already
+        // pauses the scheduler. shutdown() would permanently stop & release the
+        // player, leaving the background dead after the transition finishes.
         CCNode::onExit();
     }
 
@@ -435,8 +438,8 @@ std::string LayerBackgroundManager::hasOtherVideoConfigured(std::string const& e
             std::string existingPath = geode::utils::string::replace(resolved.customPath, "\\", "/");
             std::string newPath = geode::utils::string::replace(videoPath, "\\", "/");
             if (existingPath != newPath) {
+                (void)name;
                 log::info("[LayerBgMgr] hasOtherVideoConfigured: {} already has video: {}", key, existingPath);
-                return name;  // Return display name of the conflicting layer
             }
         }
     }
@@ -951,7 +954,10 @@ struct VideoBlurNode : public CCNode {
     }
 
     void onExit() override {
-        this->unscheduleUpdate();
+        // DO NOT unscheduleUpdate() here: CCNode::onExit() already pauses the
+        // scheduler, and CCNode::onEnter() will resume it after reparenting.
+        // Calling unscheduleUpdate() removes the entry entirely, so the blur
+        // pipeline never updates again after a transition.
         CCNode::onExit();
     }
 
@@ -1045,7 +1051,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
 
     // ── "Same As" fast path: if the same video is already playing in
     // another layer, instantly share the texture — no decoding needed.
-    if (hasSharedVideo(path)) {
+    if (canReuseSharedVideo(path)) {
         auto shared = acquireSharedVideo(path, videoAudio);
         if (shared) {
             // Ensure playback is running — a cached player may be stopped
@@ -1155,10 +1161,11 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                 shared, path, didSuspendDynSong, ownsVideoAudio);
             if (updateNode) {
                 updateNode->setID("paimon-video-update"_spr);
-                // Set the lazy creation callback — uses updateNode->getParent() instead of
-                // a captured raw container pointer to avoid dangling-pointer crashes.
-                updateNode->m_createVisuals = [updateNode, shared, winSize, blurType, blurIntensity, cfg]() {
-                    auto* container = updateNode->getParent();
+                // Capture a Ref to the node so the callback keeps it alive.
+                // Use getParent() to verify the container is still attached.
+                Ref<VideoBackgroundUpdateNode> nodeRef = updateNode;
+                nodeRef->m_createVisuals = [nodeRef, shared, winSize, blurType, blurIntensity, cfg]() {
+                    auto* container = nodeRef->getParent();
                     if (!container) return; // parent already destroyed, nothing to do
                     CCSprite* visibleSprite = nullptr;
                     if (!blurType.empty() && blurType != "none") {
@@ -1194,6 +1201,8 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                     if (auto* preview = container->getChildByID("paimon-video-preview"_spr)) {
                         preview->removeFromParentAndCleanup(true);
                     }
+                    // Link the created sprite back so the update node can fade it in
+                    nodeRef->m_visibleSprite = visibleSprite;
                 };
                 container->addChild(updateNode);
             }
@@ -1236,30 +1245,28 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
 
     // Move VideoPlayer creation (which may transcode) to a background thread
     // to avoid blocking the main thread / Windows message pump.
-    // NOTE: Do NOT capture Ref<> here — that retains the layer/container and
-    // prevents the old scene graph (including the old VideoPlayer + decode
-    // threads + YUV buffers) from being freed during the async wait, causing
-    // memory to double or triple during layer transitions.
-    CCNode* rawContainer = container;
+    // NOTE: We capture a Ref<CCNode> to keep the container alive during the
+    // async work.  If the layer is destroyed, the container becomes orphaned
+    // but remains valid until the callback finishes, at which point it is
+    // released safely.  This prevents dangling-pointer crashes.
+    Ref<CCNode> containerRef = container;
     auto containerAlive = std::make_shared<std::atomic<bool>>(true);
     {
         std::lock_guard lk(g_containerAliveMutex);
-        g_containerAliveFlags[rawContainer] = containerAlive;
+        g_containerAliveFlags[container] = containerAlive;
     }
     LayerBgConfig cfgCopy = cfg;
 
-    std::thread([rawContainer, containerAlive, path, cfgCopy, videoAudio]() {
+    std::thread([containerRef, containerAlive, path, cfgCopy, videoAudio]() {
         geode::utils::thread::setName("VideoBg Normalizer");
 
         // Acquire via shared cache — if another layer just finished creating
         // the same player, this will reuse it.
         auto shared = LayerBackgroundManager::get().acquireSharedVideo(path, videoAudio);
 
-        Loader::get()->queueInMainThread([rawContainer, containerAlive, shared, path, cfgCopy, videoAudio]() {
-            auto* container = rawContainer;
-
-            // Container was destroyed while we were transcoding
-            if (!containerAlive->load(std::memory_order_acquire) || !container || !container->getParent()) {
+        Loader::get()->queueInMainThread([containerRef, containerAlive, shared, path, cfgCopy, videoAudio]() {
+            // Container was destroyed or removed from the scene graph
+            if (!containerAlive->load(std::memory_order_acquire) || !containerRef || !containerRef->getParent()) {
                 if (shared) {
                     LayerBackgroundManager::get().releaseSharedVideo(path);
                 }
@@ -1311,10 +1318,11 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                 shared, path, didSuspendDynSong, ownsVideoAudio);
             if (updateNode) {
                 updateNode->setID("paimon-video-update"_spr);
-                // Set the lazy creation callback — uses updateNode->getParent() instead of
-                // a captured raw container pointer to avoid dangling-pointer crashes.
-                updateNode->m_createVisuals = [updateNode, shared, winSize, blurType, blurIntensity, cfgCopy]() {
-                    auto* container = updateNode->getParent();
+                // Capture a Ref to the node so the callback keeps it alive.
+                // Use getParent() to verify the container is still attached.
+                Ref<VideoBackgroundUpdateNode> nodeRef = updateNode;
+                nodeRef->m_createVisuals = [nodeRef, shared, winSize, blurType, blurIntensity, cfgCopy]() {
+                    auto* container = nodeRef->getParent();
                     if (!container) return; // parent already destroyed, nothing to do
                     CCSprite* visibleSprite = nullptr;
                     if (!blurType.empty() && blurType != "none") {
@@ -1350,15 +1358,17 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                     if (auto* preview = container->getChildByID("paimon-video-preview"_spr)) {
                         preview->removeFromParentAndCleanup(true);
                     }
+                    // Link the created sprite back so the update node can fade it in
+                    nodeRef->m_visibleSprite = visibleSprite;
                 };
-                container->addChild(updateNode);
+                containerRef->addChild(updateNode);
             }
 
             // Clean up the alive flag — the container is now fully set up
             // and will be cleaned through the normal clearAppliedBackground path.
             {
                 std::lock_guard lk(g_containerAliveMutex);
-                g_containerAliveFlags.erase(rawContainer);
+                g_containerAliveFlags.erase(containerRef.data());
             }
         });
     }).detach();
@@ -1520,10 +1530,39 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
 
 // ── Shared video cache for "Same As" reuse ──
 
+// Stop a discarded shared player without freezing the main thread.
+// forceStop() blocks for up to ~3 seconds on the decoder thread join (DXVA
+// flush latency). Doing that on the main thread caused the user-visible
+// freeze + crash when re-entering a layer with a previously-stale video:
+// the main thread blocked, then if the join timed out the decoder thread
+// was detached and we immediately released the IMFSourceReader inside
+// ~VideoPlayer, leading to a use-after-free crash on the detached thread.
+//
+// Instead, run forceStop() on a short-lived worker thread (decoder shutdown
+// only touches MF/D3D, no GL) and then queue the actual destructor on the
+// main thread for GL cleanup (PBO + CCTexture2D).
+static void scheduleSharedVideoTeardown(std::shared_ptr<paimon::video::VideoPlayer> player) {
+    if (!player) return;
+    std::thread([player]() mutable {
+        geode::utils::thread::setName("VideoBg Teardown");
+        // Blocks until the decoder thread is joined or detached (timedJoin).
+        // Safe to block here — this is a dedicated worker thread.
+        player->forceStop();
+        // Final destruction (texture release, PBO shutdown) must run on the
+        // GL thread. The decoder thread is already gone, so ~VideoPlayer's
+        // own stopDecoding becomes a no-op and won't block the main thread.
+        Loader::get()->queueInMainThread([player]() mutable {
+            player.reset();
+        });
+    }).detach();
+}
+
 void LayerBackgroundManager::evictExpiredSharedVideos() {
     auto now = std::chrono::steady_clock::now();
     for (auto it = m_sharedVideos.begin(); it != m_sharedVideos.end(); ) {
         if (it->second.refCount <= 0 && it->second.expiry <= now) {
+            auto playerToRelease = std::move(it->second.player);
+            scheduleSharedVideoTeardown(std::move(playerToRelease));
             log::info("[LayerBgMgr] Evicted expired shared video player: {}", it->first);
             it = m_sharedVideos.erase(it);
         } else {
@@ -1547,20 +1586,32 @@ std::shared_ptr<paimon::video::VideoPlayer> LayerBackgroundManager::acquireShare
             // do NOT reuse it — the decoder may be desynced.  Evict it now
             // and let the slow path create a fresh player.
             if (it->second.stale) {
+                auto playerToRelease = std::move(it->second.player);
                 log::info("[LayerBgMgr] Discarding stale shared video player: {}", path);
-                it->second.player.reset();
                 m_sharedVideos.erase(it);
+                scheduleSharedVideoTeardown(std::move(playerToRelease));
             } else {
-                it->second.refCount++;
-                it->second.expiry = std::chrono::steady_clock::time_point::max();
-                it->second.player->resume();
-                if (!it->second.player->isPlaying()) {
-                    log::info("[LayerBgMgr] Resuming shared video playback: {}", path);
-                    it->second.player->play();
+                // Defensive: validate the cached player is actually healthy.
+                // A player that is not playing or has no visible frame is likely
+                // finished or desynced and should not be reused.
+                if (!it->second.player->isPlaying() || !it->second.player->hasVisibleFrame()) {
+                    log::warn("[LayerBgMgr] Shared video player unhealthy (playing={} visible={}), discarding: {}",
+                              it->second.player->isPlaying(), it->second.player->hasVisibleFrame(), path);
+                    auto playerToRelease = std::move(it->second.player);
+                    m_sharedVideos.erase(it);
+                    scheduleSharedVideoTeardown(std::move(playerToRelease));
+                } else {
+                    it->second.refCount++;
+                    it->second.expiry = std::chrono::steady_clock::time_point::max();
+                    it->second.player->resume();
+                    if (!it->second.player->isPlaying()) {
+                        log::info("[LayerBgMgr] Resuming shared video playback: {}", path);
+                        it->second.player->play();
+                    }
+                    log::info("[LayerBgMgr] Reusing shared video player: {} (refCount={})",
+                              path, it->second.refCount);
+                    return it->second.player;
                 }
-                log::info("[LayerBgMgr] Reusing shared video player: {} (refCount={})",
-                          path, it->second.refCount);
-                return it->second.player;
             }
         }
     }  // <- Release mutex before the expensive VideoPlayer::create call
@@ -1572,9 +1623,16 @@ std::shared_ptr<paimon::video::VideoPlayer> LayerBackgroundManager::acquireShare
     // If over 512 MB, force-stop the oldest inactive shared player to free
     // memory.  This prevents unbounded RAM growth when switching videos
     // rapidly (each player holds ~50-200 MB of decode buffers + YUV frames).
+    std::shared_ptr<paimon::video::VideoPlayer> evictedPlayer;
     {
         std::lock_guard lk(m_sharedVideosMutex);
-        static constexpr size_t kMaxVideoRAM = 512ULL * 1024 * 1024;  // 512 MB
+#if defined(GEODE_IS_ANDROID)
+        static constexpr size_t kMaxVideoRAM = 160ULL * 1024 * 1024;
+#elif defined(GEODE_IS_IOS)
+        static constexpr size_t kMaxVideoRAM = 256ULL * 1024 * 1024;
+#else
+        static constexpr size_t kMaxVideoRAM = 512ULL * 1024 * 1024;
+#endif
         size_t totalRAM = 0;
         std::string oldestPath;
         std::chrono::steady_clock::time_point oldestExpiry =
@@ -1592,9 +1650,7 @@ std::shared_ptr<paimon::video::VideoPlayer> LayerBackgroundManager::acquireShare
         if (totalRAM > kMaxVideoRAM && !oldestPath.empty()) {
             auto it = m_sharedVideos.find(oldestPath);
             if (it != m_sharedVideos.end() && it->second.player) {
-                if (it->second.player->isPlaying())
-                    it->second.player->stop();
-                it->second.player.reset();
+                evictedPlayer = std::move(it->second.player);
                 m_sharedVideos.erase(it);
                 log::info("[LayerBgMgr] RAM cap ({:.0f} MB > {:.0f} MB): evicted oldest '{}'",
                           static_cast<float>(totalRAM) / (1024.0f * 1024.0f),
@@ -1602,6 +1658,9 @@ std::shared_ptr<paimon::video::VideoPlayer> LayerBackgroundManager::acquireShare
                           oldestPath);
             }
         }
+    }
+    if (evictedPlayer) {
+        scheduleSharedVideoTeardown(std::move(evictedPlayer));
     }
 
     paimon::video::VideoPlayerCreateOptions playerOptions;
@@ -1636,24 +1695,38 @@ std::shared_ptr<paimon::video::VideoPlayer> LayerBackgroundManager::acquireShare
 }
 
 void LayerBackgroundManager::releaseSharedVideo(std::string const& path) {
-    std::lock_guard lk(m_sharedVideosMutex);
+    std::shared_ptr<paimon::video::VideoPlayer> playerToHalt;
+    {
+        std::lock_guard lk(m_sharedVideosMutex);
 
-    auto it = m_sharedVideos.find(path);
-    if (it == m_sharedVideos.end()) return;
+        auto it = m_sharedVideos.find(path);
+        if (it == m_sharedVideos.end()) return;
 
-    it->second.refCount--;
-    log::info("[LayerBgMgr] Released shared video: {} (refCount={})",
-              path, it->second.refCount);
+        it->second.refCount--;
+        log::info("[LayerBgMgr] Released shared video: {} (refCount={})",
+                  path, it->second.refCount);
 
-    if (it->second.refCount <= 0) {
-        // Mark the player stale — the decoder thread keeps running in the
-        // background (stopping it during scene transitions deadlocks DXVA).
-        // The next acquire will discard this player and create a fresh one,
-        // avoiding desync/freeze issues when returning to the layer.
-        it->second.stale = true;
-        it->second.expiry = std::chrono::steady_clock::now() + kSharedVideoTTL;
-        log::info("[LayerBgMgr] Shared video entering TTL grace (marked stale): {} ({}s)",
-                  path, static_cast<int>(kSharedVideoTTL.count()));
+        if (it->second.refCount <= 0) {
+#if defined(GEODE_IS_ANDROID)
+            playerToHalt = std::move(it->second.player);
+            m_sharedVideos.erase(it);
+#else
+            // Mark the player stale so that the next acquire creates a fresh
+            // player.  We intentionally do NOT stop the decoder thread here:
+            // forceStop() during a scene transition races with a re-acquire on
+            // the main thread and can leave the decoder in a broken state.
+            // The stale player will be destroyed once its TTL expires.
+            it->second.stale = true;
+            it->second.expiry = std::chrono::steady_clock::now() + kSharedVideoTTL;
+            log::info("[LayerBgMgr] Shared video entering TTL grace (stale): {} ({}s)",
+                      path, static_cast<int>(kSharedVideoTTL.count()));
+#endif
+        }
+    }
+
+    if (playerToHalt) {
+        playerToHalt->forceStop();
+        log::info("[LayerBgMgr] Android released shared video immediately: {}", path);
     }
 }
 
@@ -1686,6 +1759,15 @@ bool LayerBackgroundManager::hasSharedVideo(std::string const& path) const {
     return it != m_sharedVideos.end() && it->second.player;
 }
 
+bool LayerBackgroundManager::canReuseSharedVideo(std::string const& path) const {
+    std::lock_guard lk(m_sharedVideosMutex);
+    auto it = m_sharedVideos.find(path);
+    return it != m_sharedVideos.end() &&
+           it->second.player &&
+           !it->second.stale &&
+           it->second.player->hasVisibleFrame();
+}
+
 void LayerBackgroundManager::cleanupOldVideoCache(cocos2d::CCLayer* layer, std::string const& nextVideoPath) {
     if (!layer) return;
 
@@ -1703,6 +1785,19 @@ void LayerBackgroundManager::cleanupOldVideoCache(cocos2d::CCLayer* layer, std::
     }
 
     if (!oldVideoPath.empty() && oldVideoPath != nextVideoPath) {
+        std::string normalizedOld = geode::utils::string::replace(oldVideoPath, "\\", "/");
+        bool stillConfigured = false;
+        for (auto const& [key, name] : LAYER_OPTIONS) {
+            (void)name;
+            auto resolved = resolveConfig(key);
+            if (resolved.type != "video" || resolved.customPath.empty()) continue;
+            auto normalizedCfg = geode::utils::string::replace(resolved.customPath, "\\", "/");
+            if (normalizedCfg == normalizedOld) {
+                stillConfigured = true;
+                break;
+            }
+        }
+        if (stillConfigured) return;
         paimon::video::VideoDiskCache::deleteCache(oldVideoPath);
     }
 }

@@ -1,4 +1,4 @@
-// Inicializacion diferida del mod desde MenuLayer::init().
+// Inicializacion del mod — llamado desde $on_mod(Loaded).
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/string.hpp>
@@ -20,7 +20,6 @@
 #include "../utils/Shaders.hpp"
 #include <thread>
 #include <filesystem>
-#include <atomic>
 #include <functional>
 #include <memory>
 
@@ -36,9 +35,6 @@ void applyLanguageSetting(std::string const& langStr) {
         Localization::get().setLanguage(Localization::Language::SPANISH);
     }
 }
-
-// atomic: MenuLayer::init puede re-entrar si la escena se recarga
-std::atomic<bool> g_languageListenerRegistered{false};
 
 template <typename T>
 void paimonOnSettingChanged(T const&) {
@@ -104,32 +100,37 @@ void PaimonOnModLoaded() {
     std::string langStr = paimon::settings::general::language();
     log::info("[PaimonThumbnails][Init] Language setting='{}'", langStr);
     applyLanguageSetting(langStr);
-    bool expected = false;
-    if (g_languageListenerRegistered.compare_exchange_strong(expected, true)) {
-        geode::listenForSettingChanges<std::string>("language", +[](std::string value) {
+
+    // ── Registrar listeners de settings (storage static garantiza lifetime) ──
+    // Idioma
+    static auto s_langListener = geode::listenForSettingChanges<std::string>(
+        "language", [](std::string value) {
             applyLanguageSetting(value);
             log::info("[PaimonThumbnails][Language] Changed to '{}'", value);
         });
 
-        // ── Custom Cursor settings sync ──
-        // Sync mod.json settings -> CursorManager config
-        // Use a guard to prevent infinite re-entry when saveConfig syncs back
-        static bool s_cursorSyncGuard = false;
-        geode::listenForSettingChanges<bool>("custom-cursor-enable", +[](bool value) {
+    // ── Custom Cursor settings sync ──
+    // Sync mod.json settings -> CursorManager config
+    // Guard para evitar re-entrada si applyConfigLive sincroniza de vuelta
+    static bool s_cursorSyncGuard = false;
+    static auto s_cursorEnableListener = geode::listenForSettingChanges<bool>(
+        "custom-cursor-enable", [](bool value) {
             if (s_cursorSyncGuard) return;
             s_cursorSyncGuard = true;
             CursorManager::get().config().enabled = value;
             CursorManager::get().applyConfigLive();
             s_cursorSyncGuard = false;
         });
-        geode::listenForSettingChanges<double>("custom-cursor-scale", +[](double value) {
+    static auto s_cursorScaleListener = geode::listenForSettingChanges<double>(
+        "custom-cursor-scale", [](double value) {
             if (s_cursorSyncGuard) return;
             s_cursorSyncGuard = true;
             CursorManager::get().config().scale = static_cast<float>(value);
             CursorManager::get().applyConfigLive();
             s_cursorSyncGuard = false;
         });
-        geode::listenForSettingChanges<bool>("custom-cursor-trail", +[](bool value) {
+    static auto s_cursorTrailListener = geode::listenForSettingChanges<bool>(
+        "custom-cursor-trail", [](bool value) {
             if (s_cursorSyncGuard) return;
             s_cursorSyncGuard = true;
             CursorManager::get().config().trailEnabled = value;
@@ -137,22 +138,21 @@ void PaimonOnModLoaded() {
             s_cursorSyncGuard = false;
         });
 
-        // ── Thumbnail / Background settings reactivity ──
-        // Increment global version so LevelCell & LevelInfoLayer re-cache settings
-        geode::listenForSettingChanges<std::string>("levelcell-background-type", &paimonOnSettingChanged<std::string>);
-        geode::listenForSettingChanges<bool>("levelcell-hover-effects", &paimonOnSettingChanged<bool>);
-        geode::listenForSettingChanges<bool>("compact-list-mode", &paimonOnSettingChanged<bool>);
-        geode::listenForSettingChanges<bool>("transparent-list-mode", &paimonOnSettingChanged<bool>);
-        geode::listenForSettingChanges<double>("level-thumb-width", &paimonOnSettingChanged<double>);
-        geode::listenForSettingChanges<double>("levelcell-background-blur", &paimonOnSettingChanged<double>);
-        geode::listenForSettingChanges<double>("levelcell-background-darkness", &paimonOnSettingChanged<double>);
-        geode::listenForSettingChanges<std::string>("levelcell-anim-type", &paimonOnSettingChanged<std::string>);
-        geode::listenForSettingChanges<bool>("levelcell-gallery-autocycle", &paimonOnSettingChanged<bool>);
-        geode::listenForSettingChanges<std::string>("levelinfo-background-style", &paimonOnSettingChanged<std::string>);
-        geode::listenForSettingChanges<int64_t>("levelinfo-effect-intensity", &paimonOnSettingChanged<int64_t>);
-        geode::listenForSettingChanges<std::string>("levelinfo-extra-styles", &paimonOnSettingChanged<std::string>);
-        geode::listenForSettingChanges<int64_t>("levelinfo-bg-darkness", &paimonOnSettingChanged<int64_t>);
-    }
+    // ── Thumbnail / Background settings reactivity ──
+    // Incrementa version global para que LevelCell y LevelInfoLayer re-cacheen settings
+    static auto s_bgTypeListener    = geode::listenForSettingChanges<std::string>("levelcell-background-type",   &paimonOnSettingChanged<std::string>);
+    static auto s_hoverListener     = geode::listenForSettingChanges<bool>       ("levelcell-hover-effects",     &paimonOnSettingChanged<bool>);
+    static auto s_compactListener   = geode::listenForSettingChanges<bool>       ("compact-list-mode",           &paimonOnSettingChanged<bool>);
+    static auto s_transpListener    = geode::listenForSettingChanges<bool>       ("transparent-list-mode",       &paimonOnSettingChanged<bool>);
+    static auto s_thumbWListener    = geode::listenForSettingChanges<double>     ("level-thumb-width",           &paimonOnSettingChanged<double>);
+    static auto s_bgBlurListener    = geode::listenForSettingChanges<double>     ("levelcell-background-blur",   &paimonOnSettingChanged<double>);
+    static auto s_bgDarkListener    = geode::listenForSettingChanges<double>     ("levelcell-background-darkness",&paimonOnSettingChanged<double>);
+    static auto s_animTypeListener  = geode::listenForSettingChanges<std::string>("levelcell-anim-type",         &paimonOnSettingChanged<std::string>);
+    static auto s_galleryListener   = geode::listenForSettingChanges<bool>       ("levelcell-gallery-autocycle", &paimonOnSettingChanged<bool>);
+    static auto s_liBgListener      = geode::listenForSettingChanges<std::string>("levelinfo-background-style",  &paimonOnSettingChanged<std::string>);
+    static auto s_liIntListener     = geode::listenForSettingChanges<int64_t>    ("levelinfo-effect-intensity",  &paimonOnSettingChanged<int64_t>);
+    static auto s_liExtraListener   = geode::listenForSettingChanges<std::string>("levelinfo-extra-styles",      &paimonOnSettingChanged<std::string>);
+    static auto s_liDarkListener    = geode::listenForSettingChanges<int64_t>    ("levelinfo-bg-darkness",       &paimonOnSettingChanged<int64_t>);
 
     log::info("[PaimonThumbnails][Init] Applying startup init");
 
@@ -208,4 +208,11 @@ void PaimonOnModLoaded() {
         }
         startEmotePreload();
     });
+}
+
+// $on_mod(Loaded) se ejecuta exactamente una vez cuando el mod se carga,
+// antes del primer frame. CCDirector y el scheduler ya estan disponibles.
+// Los callbacks con delay se ejecutaran una vez que una escena este activa.
+$on_mod(Loaded) {
+    PaimonOnModLoaded();
 }

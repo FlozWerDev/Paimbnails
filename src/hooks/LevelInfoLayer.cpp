@@ -44,7 +44,6 @@
 #include "../blur/BlurSystem.hpp"
 #include "../utils/MainThreadDelay.hpp"
 #include "../features/audio/services/PaimonAudio.hpp"
-#include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
 
 using namespace geode::prelude;
@@ -180,14 +179,17 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     void applyThumbnailBackground(CCTexture2D* tex, int32_t levelID) {
         if (!tex) return;
 
-        // Guardar textura actual para que InfoLayer pueda consultarla al abrirse
-        paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID = levelID;
-        paimon::ThumbnailBackgroundChangedEvent::s_lastTexture = tex;
+        // Actualizar cache global para que InfoLayer/LevelLeaderboard puedan
+        // consultar la textura activa al abrirse sin esperar el proximo evento.
+        paimon::ThumbnailBgCache::lastLevelID = levelID;
+        paimon::ThumbnailBgCache::lastTexture = tex;
 
         // Notificar a CustomSongWidget e InfoLayer para sincronizar fondos
-        auto subCount = paimon::EventBus::get().subscriberCount<paimon::ThumbnailBackgroundChangedEvent>();
-        log::info("[LevelInfoLayer] publishing ThumbnailBackgroundChangedEvent levelID={} tex={} subscribers={}", levelID, (void*)tex, subCount);
-        paimon::EventBus::get().publish(paimon::ThumbnailBackgroundChangedEvent{levelID, tex});
+        log::info("[LevelInfoLayer] publishing ThumbnailBackgroundChangedEvent levelID={} tex={}", levelID, (void*)tex);
+        paimon::ThumbnailBackgroundChangedEvent ev;
+        ev.levelID = levelID;
+        ev.texture = tex;
+        ev.post();
 
         // BlurSystem is synchronous — no progressive job to cancel
 

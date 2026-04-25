@@ -24,9 +24,6 @@
 
 using namespace geode::prelude;
 
-// declarada en main.cpp — inicializacion diferida del mod
-extern void PaimonOnModLoaded();
-
 // declarada en PetHook.cpp — registra el ticker del pet con el scheduler
 extern void initPetTicker();
 
@@ -103,12 +100,10 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         }
         log::info("[MenuLayer] init");
 
-        // Inicializa mod una sola vez
-        static bool s_paimonLoaded = false;
-        if (!s_paimonLoaded) {
-            s_paimonLoaded = true;
-            log::info("[PaimonThumbnails] Invoking delayed Mod Loaded initialization from MenuLayer");
-            PaimonOnModLoaded();
+        // Inicializa managers visuales una sola vez
+        static bool s_visualsLoaded = false;
+        if (!s_visualsLoaded) {
+            s_visualsLoaded = true;
             PetManager::get().init();
             initPetTicker();
             CursorManager::get().init();

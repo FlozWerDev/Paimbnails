@@ -4,7 +4,6 @@
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include "../../../utils/AudioInterop.hpp"
-#include "../../../framework/EventBus.hpp"
 #include "../../../framework/ModEvents.hpp"
 
 using namespace geode::prelude;
@@ -24,9 +23,11 @@ namespace {
     }
 
     void publishOwnerChange(MainAudioOwner prev, MainAudioOwner cur, uint32_t token) {
-        paimon::EventBus::get().publish(paimon::AudioOwnerChangedEvent{
-            ownerToString(prev), ownerToString(cur), static_cast<int>(token)
-        });
+        paimon::AudioOwnerChangedEvent ev;
+        ev.previous = ownerToString(prev);
+        ev.current  = ownerToString(cur);
+        ev.sessionToken = static_cast<int>(token);
+        ev.post();
     }
 }
 

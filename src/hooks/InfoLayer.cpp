@@ -16,7 +16,6 @@
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../features/profiles/services/ProfileImageService.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
-#include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
 #include <algorithm>
 
@@ -34,7 +33,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         Ref<CCClippingNode> m_bgClip = nullptr;
         bool m_hasCaveEffect = false;
         int m_levelID = 0;
-        paimon::SubscriptionHandle m_bgEventHandle = 0;
+        geode::EventListener<paimon::ThumbnailBackgroundChangedEvent> m_bgListener;
     };
 
     $override
@@ -86,9 +85,9 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             int levelID = level->m_levelID.value();
             m_fields->m_levelID = levelID;
 
-            if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID &&
-                paimon::ThumbnailBackgroundChangedEvent::s_lastTexture) {
-                applyBlurredBackground(paimon::ThumbnailBackgroundChangedEvent::s_lastTexture);
+            if (paimon::ThumbnailBgCache::lastLevelID == levelID &&
+                paimon::ThumbnailBgCache::lastTexture) {
+                applyBlurredBackground(paimon::ThumbnailBgCache::lastTexture);
             } else {
                 std::string fileName = fmt::format("{}.png", levelID);
                 Ref<InfoLayer> safeRef = this;
@@ -102,15 +101,14 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             }
 
             WeakRef<PaimonInfoLayer> weakSelf = this;
-            m_fields->m_bgEventHandle = paimon::EventBus::get().subscribe<paimon::ThumbnailBackgroundChangedEvent>(
-                [weakSelf](paimon::ThumbnailBackgroundChangedEvent const& e) {
+            m_fields->m_bgListener.bind([weakSelf](paimon::ThumbnailBackgroundChangedEvent* e) {
                     auto ref = weakSelf.lock();
                     auto* self = static_cast<PaimonInfoLayer*>(ref.data());
                     if (!self) return;
                     if (!self->getParent()) return;
-                    if (self->m_fields->m_levelID <= 0 || self->m_fields->m_levelID != e.levelID) return;
-                    if (!e.texture) return;
-                    self->applyBlurredBackground(e.texture);
+                    if (self->m_fields->m_levelID <= 0 || self->m_fields->m_levelID != e->levelID) return;
+                    if (!e->texture) return;
+                    self->applyBlurredBackground(e->texture);
                 });
         }
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "PermissionPolicy.hpp"
-#include "EventBus.hpp"
 #include "ModEvents.hpp"
 #include <string>
 #include <vector>
@@ -94,9 +93,11 @@ public:
             auto result = hook(ctx);
             if (result.action == HookAction::Deny) {
                 // Publicar evento de denegacion.
-                EventBus::get().publish(PermissionDeniedEvent{
-                    "", ctx.action, result.reason
-                });
+                PermissionDeniedEvent ev;
+                ev.featureName = "";
+                ev.action = ctx.action;
+                ev.reason = result.reason;
+                ev.post();
                 return result;
             }
             if (result.action == HookAction::Modify) {

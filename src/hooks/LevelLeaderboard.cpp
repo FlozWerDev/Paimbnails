@@ -7,7 +7,6 @@
 #include "../blur/BlurSystem.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
-#include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
 
 using namespace geode::prelude;
@@ -20,7 +19,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
     struct Fields {
         Ref<CCClippingNode> m_bgClip = nullptr;
         int m_levelID = 0;
-        paimon::SubscriptionHandle m_bgEventHandle = 0;
+        geode::EventListener<paimon::ThumbnailBackgroundChangedEvent> m_bgListener;
     };
 
     $override
@@ -32,9 +31,9 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         m_fields->m_levelID = levelID;
 
         // Usa thumbnail activo de LevelInfoLayer si esta disponible
-        if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID &&
-            paimon::ThumbnailBackgroundChangedEvent::s_lastTexture) {
-            applyBlurredBackground(paimon::ThumbnailBackgroundChangedEvent::s_lastTexture);
+        if (paimon::ThumbnailBgCache::lastLevelID == levelID &&
+            paimon::ThumbnailBgCache::lastTexture) {
+            applyBlurredBackground(paimon::ThumbnailBgCache::lastTexture);
         } else {
             WeakRef<PaimonLevelLeaderboard> safeRef = this;
             ThumbnailLoader::get().requestLoad(
@@ -53,15 +52,13 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
 
         // Se suscribe a eventos de cambio de thumbnail
         WeakRef<PaimonLevelLeaderboard> weakSelf = this;
-        m_fields->m_bgEventHandle = paimon::EventBus::get().subscribe<paimon::ThumbnailBackgroundChangedEvent>(
-            [weakSelf](paimon::ThumbnailBackgroundChangedEvent const& e) {
+        m_fields->m_bgListener.bind([weakSelf](paimon::ThumbnailBackgroundChangedEvent* e) {
                 auto ref = weakSelf.lock();
                 auto* self = static_cast<PaimonLevelLeaderboard*>(ref.data());
                 if (!self || !self->getParent()) return;
-                if (self->m_fields->m_levelID != e.levelID || !e.texture) return;
-                self->applyBlurredBackground(e.texture);
-            }
-        );
+                if (self->m_fields->m_levelID != e->levelID || !e->texture) return;
+                self->applyBlurredBackground(e->texture);
+            });
 
         // Estiliza la lista del leaderboard
         if (m_list) {
@@ -156,10 +153,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
 
     $override
     void keyBackClicked() {
-        if (m_fields->m_bgEventHandle != 0) {
-            paimon::EventBus::get().unsubscribe(m_fields->m_bgEventHandle);
-            m_fields->m_bgEventHandle = 0;
-        }
         LevelLeaderboard::keyBackClicked();
     }
 };

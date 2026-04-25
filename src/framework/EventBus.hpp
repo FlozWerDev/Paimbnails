@@ -1,5 +1,10 @@
 #pragma once
 
+// DEPRECADO: Los eventos del mod ahora heredan geode::Event y se publican
+// con event.post(). Las suscripciones usan geode::EventListener<T>.
+// EventBus.hpp se conserva solo por compatibilidad con código interno
+// que aún no ha sido migrado. No usar en código nuevo.
+
 #include <functional>
 #include <string>
 #include <vector>

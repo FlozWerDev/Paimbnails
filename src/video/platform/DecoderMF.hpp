@@ -24,7 +24,7 @@ public:
 
     bool open(const std::string& path) override;
     void startDecoding() override;
-    void stopDecoding() override;
+    bool stopDecoding() override;
     bool consumeFrame(Frame& outFrame) override;
     bool skipFrame() override;
     void seekTo(double seconds) override;
@@ -35,7 +35,7 @@ public:
     double peekNextPTS() const override;
 
 private:
-    void decodeLoop();
+    void decodeLoop(uint64_t gen);
     void closeInternal();
     bool setupD3D11();
     bool setupReader(const std::string& path);
@@ -67,6 +67,11 @@ private:
 
     std::atomic<bool>  m_decoding{false};
     std::atomic<bool>  m_finished{false};
+    std::atomic<uint64_t> m_generation{0};
+    // Set to true when the decode thread starts, false when it exits.
+    // Used to ensure closeInternal() doesn't destroy COM/D3D resources while
+    // a detached thread is still accessing them.
+    std::atomic<bool>  m_threadRunning{false};
     std::thread        m_thread;
 };
 

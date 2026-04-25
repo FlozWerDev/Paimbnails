@@ -8,7 +8,6 @@
 #include "../utils/SpriteHelper.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/thumbnails/services/ThumbnailCache.hpp"
-#include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
 
 #ifndef M_PI
@@ -28,7 +27,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         int                 m_levelID  = 0;
         bool                m_bgSwapped = false;
         bool                m_retryScheduled = false;
-        paimon::SubscriptionHandle m_bgEventHandle = 0;
+        geode::EventListener<paimon::ThumbnailBackgroundChangedEvent> m_bgListener;
     };
 
     LevelInfoLayer* findLevelInfoLayer() {
@@ -278,36 +277,33 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             isRobtopSong, isMusicLibrary);
 
         // Suscribe a evento de cambio de thumbnail
-        if (m_fields->m_bgEventHandle == 0) {
-            WeakRef<PaimonCustomSongWidget> weakSelf = this;
-            m_fields->m_bgEventHandle = paimon::EventBus::get().subscribe<paimon::ThumbnailBackgroundChangedEvent>(
-                [weakSelf](paimon::ThumbnailBackgroundChangedEvent const& e) {
-                    log::info("[PaimonCSW] event received: levelID={} tex={}", e.levelID, (void*)e.texture);
-                    auto ref = weakSelf.lock();
-                    auto* w = static_cast<PaimonCustomSongWidget*>(ref.data());
-                    if (!w) { log::warn("[PaimonCSW] event: weakRef dead"); return; }
-                    if (!w->getParent()) { log::warn("[PaimonCSW] event: no parent"); return; }
-                    if (!e.texture || e.levelID <= 0) { log::warn("[PaimonCSW] event: bad payload"); return; }
+        WeakRef<PaimonCustomSongWidget> weakSelf = this;
+        m_fields->m_bgListener.bind([weakSelf](paimon::ThumbnailBackgroundChangedEvent* e) {
+                log::info("[PaimonCSW] event received: levelID={} tex={}", e->levelID, (void*)e->texture.data());
+                auto ref = weakSelf.lock();
+                auto* w = static_cast<PaimonCustomSongWidget*>(ref.data());
+                if (!w) { log::warn("[PaimonCSW] event: weakRef dead"); return; }
+                if (!w->getParent()) { log::warn("[PaimonCSW] event: no parent"); return; }
+                if (!e->texture || e->levelID <= 0) { log::warn("[PaimonCSW] event: bad payload"); return; }
 
-                    // Resuelve levelID desde evento si es necesario
-                    if (w->m_fields->m_levelID <= 0) {
-                        auto* level = w->findLevel();
-                        if (level && level->m_levelID.value() == e.levelID) {
-                            w->m_fields->m_levelID = e.levelID;
-                            log::info("[PaimonCSW] late levelID resolve from event: {}", e.levelID);
-                        } else {
-                            log::warn("[PaimonCSW] event: cannot resolve levelID");
-                            return;
-                        }
+                // Resuelve levelID desde evento si es necesario
+                if (w->m_fields->m_levelID <= 0) {
+                    auto* level = w->findLevel();
+                    if (level && level->m_levelID.value() == e->levelID) {
+                        w->m_fields->m_levelID = e->levelID;
+                        log::info("[PaimonCSW] late levelID resolve from event: {}", e->levelID);
+                    } else {
+                        log::warn("[PaimonCSW] event: cannot resolve levelID");
+                        return;
                     }
+                }
 
-                    if (w->m_fields->m_levelID != e.levelID) return;
+                if (w->m_fields->m_levelID != e->levelID) return;
 
-                    log::info("[PaimonCSW] bg sync event for levelID={}, applying blur...", e.levelID);
-                    w->applyBlurredThumbnail(e.texture);
-                });
-            log::info("[PaimonCSW] subscribed to ThumbnailBackgroundChangedEvent, handle={}", m_fields->m_bgEventHandle);
-        }
+                log::info("[PaimonCSW] bg sync event for levelID={}, applying blur...", e->levelID);
+                w->applyBlurredThumbnail(e->texture);
+            });
+        log::info("[PaimonCSW] subscribed to ThumbnailBackgroundChangedEvent");
 
         return true;
     }
@@ -340,11 +336,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
     $override
     void onExit() {
-        // Limpia suscripcion en onExit
-        if (m_fields->m_bgEventHandle != 0) {
-            paimon::EventBus::get().unsubscribe(m_fields->m_bgEventHandle);
-            m_fields->m_bgEventHandle = 0;
-        }
+        // La suscripción se cancela automáticamente al destruirse m_bgListener
         CustomSongWidget::onExit();
     }
 

@@ -1,7 +1,6 @@
 #include "../framework/FeatureRegistry.hpp"
 #include "../framework/PermissionPolicy.hpp"
 #include "../framework/HookInterceptor.hpp"
-#include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
 #include "../utils/AudioInterop.hpp"
 #include <Geode/Geode.hpp>
@@ -91,9 +90,12 @@ static void registerDefaultHooks() {
 
     // ── Post-upload: publicar evento ────────────────────────────────
     hooks.addPostHook("upload", [](HookContext const& ctx, bool success) {
-        EventBus::get().publish(UploadCompletedEvent{
-            ctx.levelID, ctx.format, ctx.username, success, {}
-        });
+        UploadCompletedEvent ev;
+        ev.levelID = ctx.levelID;
+        ev.format = ctx.format;
+        ev.username = ctx.username;
+        ev.success = success;
+        ev.post();
     });
 
     // ── Pre-security: rate-limit basico por sesion ──────────────────

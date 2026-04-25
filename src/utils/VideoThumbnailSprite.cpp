@@ -754,53 +754,74 @@ void VideoThumbnailSprite::returnPlayerToCache(std::string const& cacheKey, std:
         return;
     }
 
-    std::lock_guard lock(s_playerCacheMutex);
-    
-    // Don't cache if shutting down
-    if (s_asyncShutdown) {
-        player->stop();
-        return;
-    }
-    
-    // Check if already cached
-    for (auto& cached : s_playerCache) {
-        if (cached.cacheKey == cacheKey) {
-            // Already have this one, just update
-            cached.player = std::move(player);
-            cached.lastUsed = std::chrono::steady_clock::now();
-            return;
-        }
-    }
-    
-    // Pause the player before caching (keeps decoded frames in memory)
+    // Pause BEFORE taking the lock.  stopDecoding() joins the decode thread,
+    // which may take tens of milliseconds (GPU readback, codec flush, etc.).
+    // Holding s_playerCacheMutex during that wait would starve any concurrent
+    // getCachedPlayer() call and block the main thread unnecessarily.
     player->pause();
-    
-    CachedPlayer cached;
-    cached.player = std::move(player);
-    cached.cacheKey = cacheKey;
-    cached.lastUsed = std::chrono::steady_clock::now();
-    s_playerCache.push_back(std::move(cached));
-    
-    // Evict oldest if at capacity
-    while (s_playerCache.size() > static_cast<size_t>(MAX_CACHED_PLAYERS)) {
-        auto& oldest = s_playerCache.front();
-        if (oldest.player) {
-            oldest.player->stop();
+
+    // Collect players that need to be stopped outside the lock so we don't
+    // block while holding s_playerCacheMutex.
+    std::vector<std::unique_ptr<paimon::video::VideoPlayer>> toStop;
+
+    {
+        std::lock_guard lock(s_playerCacheMutex);
+
+        if (s_asyncShutdown) {
+            toStop.push_back(std::move(player));
+        } else {
+            // Check if this cacheKey is already in the cache — update in place.
+            bool foundExisting = false;
+            for (auto& cached : s_playerCache) {
+                if (cached.cacheKey == cacheKey) {
+                    if (cached.player) toStop.push_back(std::move(cached.player));
+                    cached.player = std::move(player);
+                    cached.lastUsed = std::chrono::steady_clock::now();
+                    foundExisting = true;
+                    break;
+                }
+            }
+
+            if (!foundExisting) {
+                CachedPlayer cached;
+                cached.player = std::move(player);
+                cached.cacheKey = cacheKey;
+                cached.lastUsed = std::chrono::steady_clock::now();
+                s_playerCache.push_back(std::move(cached));
+
+                // Collect oldest players to evict (without stopping them yet).
+                while (s_playerCache.size() > static_cast<size_t>(MAX_CACHED_PLAYERS)) {
+                    if (s_playerCache.front().player) {
+                        toStop.push_back(std::move(s_playerCache.front().player));
+                    }
+                    s_playerCache.pop_front();
+                    log::debug("[VideoThumbSprite] Evicted oldest cached player");
+                }
+            }
         }
-        s_playerCache.pop_front();
-        log::debug("[VideoThumbSprite] Evicted oldest cached player");
+
+        log::debug("[VideoThumbSprite] Cached player for: {} (cache size={})", cacheKey, s_playerCache.size());
     }
-    
-    log::debug("[VideoThumbSprite] Cached player for: {} (cache size={})", cacheKey, s_playerCache.size());
+
+    // Stop evicted players OUTSIDE the lock to avoid blocking while holding mutex.
+    for (auto& p : toStop) {
+        if (p) p->stop();
+    }
 }
 
 void VideoThumbnailSprite::clearPlayerCache() {
-    std::lock_guard lock(s_playerCacheMutex);
-    for (auto& cached : s_playerCache) {
+    // Move all cached players out while holding the lock, then stop them
+    // outside the lock so we don't block getCachedPlayer() callers.
+    std::deque<CachedPlayer> toStop;
+    {
+        std::lock_guard lock(s_playerCacheMutex);
+        toStop = std::move(s_playerCache);
+        s_playerCache.clear();
+    }
+    for (auto& cached : toStop) {
         if (cached.player) {
             cached.player->stop();
         }
     }
-    s_playerCache.clear();
     log::debug("[VideoThumbSprite] Cleared player cache");
 }

@@ -340,8 +340,13 @@ void VideoPlayer::stop() {
     m_pendingUpload = false;
     m_timeSinceLastUpload = 0.0;
     if (m_decoder) {
-        m_decoder->stopDecoding();
-        m_decoder->seekTo(0.0);
+        bool joined = m_decoder->stopDecoding();
+        // Only seek back to the start when the decode thread was fully stopped.
+        // If the thread was detached (timedJoin timed out), calling seekTo()
+        // would race with the still-running thread accessing m_reader / m_codec.
+        if (joined) {
+            m_decoder->seekTo(0.0);
+        }
     }
     m_playbackTime = 0.0;
     cocos2d::CCDirector::sharedDirector()->setAnimationInterval(m_originalInterval);

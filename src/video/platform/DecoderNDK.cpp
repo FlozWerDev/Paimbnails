@@ -150,21 +150,30 @@ void DecoderNDK::startDecoding() {
     if (m_decoding.load(std::memory_order_relaxed)) return;
     m_decoding.store(true, std::memory_order_relaxed);
     m_finished.store(false, std::memory_order_relaxed);
-    m_thread = std::thread(&DecoderNDK::decodeLoop, this);
+    uint64_t gen = ++m_generation;
+    m_thread = std::thread([this, gen]() { decodeLoop(gen); });
 }
 
-void DecoderNDK::stopDecoding() {
-    m_decoding.store(false, std::memory_order_relaxed);
-    if (m_thread.joinable()) paimon::timedJoin(m_thread, std::chrono::seconds(3));
+bool DecoderNDK::stopDecoding() {
+    bool wasDecoding = m_decoding.exchange(false, std::memory_order_acq_rel);
+    if (wasDecoding) ++m_generation;  // invalidate old thread's generation
+    bool joined = true;
+    if (m_thread.joinable()) joined = paimon::timedJoin(m_thread, std::chrono::seconds(3));
+    return joined;
 }
 
-void DecoderNDK::decodeLoop() {
+void DecoderNDK::decodeLoop(uint64_t gen) {
+    m_threadRunning.store(true, std::memory_order_release);
+
     bool inputDone = false;
 
-    while (m_decoding.load(std::memory_order_relaxed)) {
+    while (m_decoding.load(std::memory_order_relaxed) &&
+           gen == m_generation.load(std::memory_order_relaxed)) {
         // ── Feed input ──
         if (!inputDone) {
-            ssize_t inputIdx = AMediaCodec_dequeueInputBuffer(m_codec, 10000);
+            // Use a short timeout (1 ms) so the thread checks m_decoding
+            // and the generation counter frequently and exits promptly on stop.
+            ssize_t inputIdx = AMediaCodec_dequeueInputBuffer(m_codec, 1000);
             if (inputIdx >= 0) {
                 size_t bufSize = 0;
                 uint8_t* inputBuf = AMediaCodec_getInputBuffer(m_codec, inputIdx, &bufSize);
@@ -192,7 +201,9 @@ void DecoderNDK::decodeLoop() {
         }
 
         AMediaCodecBufferInfo info;
-        ssize_t outputIdx = AMediaCodec_dequeueOutputBuffer(m_codec, &info, 10000);
+        // Use a short timeout (1 ms) so the thread checks m_decoding
+        // and the generation counter frequently and exits promptly on stop.
+        ssize_t outputIdx = AMediaCodec_dequeueOutputBuffer(m_codec, &info, 1000);
 
         if (outputIdx >= 0) {
             if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
@@ -274,6 +285,8 @@ void DecoderNDK::decodeLoop() {
         }
         // AMEDIACODEC_INFO_TRY_AGAIN_LATER: just loop
     }
+
+    m_threadRunning.store(false, std::memory_order_release);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -345,6 +358,21 @@ void DecoderNDK::setSurface(ANativeWindow* window) {
 // ─────────────────────────────────────────────────────────────
 void DecoderNDK::closeInternal() {
     stopDecoding();
+
+    // If the decode thread was detached (timedJoin timed out), wait for it to
+    // actually finish before releasing the codec and extractor it may still be
+    // accessing.  With 1 ms dequeue timeouts the thread exits within ~2 ms, so
+    // this busy-wait is very short in practice.
+    if (m_threadRunning.load(std::memory_order_acquire)) {
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+        while (m_threadRunning.load(std::memory_order_acquire) &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (m_threadRunning.load(std::memory_order_acquire)) {
+            geode::log::warn("DecoderNDK: thread still running during destruction after 200 ms wait");
+        }
+    }
 
     if (m_codec) {
         AMediaCodec_stop(m_codec);

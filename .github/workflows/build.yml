@@ -66,7 +66,9 @@ jobs:
       - name: Prepare .geode for installer
         run: |
           $file = Get-ChildItem -Path build -Filter "*.geode" | Select-Object -First 1
-          Copy-Item $file.FullName -Destination "build\flozwer.paimbnails2.geode" -Force
+          if ($file.Name -ne "flozwer.paimbnails2.geode") {
+            Copy-Item $file.FullName -Destination "build\flozwer.paimbnails2.geode" -Force
+          }
 
       - name: Install NSIS
         run: |
@@ -101,7 +103,9 @@ jobs:
       - name: Prepare .geode for DMG
         run: |
           for f in build/*.geode; do
-            cp "$f" build/flozwer.paimbnails2.geode
+            if [ "$(basename "$f")" != "flozwer.paimbnails2.geode" ]; then
+              cp "$f" build/flozwer.paimbnails2.geode
+            fi
             break
           done
 

@@ -42,6 +42,7 @@
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/PaimonLoadingOverlay.hpp"
 #include "../utils/PaimonDrawNode.hpp"
+#include "../utils/BetaUploadWarning.hpp"
 #include <Geode/binding/FLAlertLayer.hpp>
 #include "../features/moderation/services/ModeratorCache.hpp"
 #include "../features/profiles/services/ProfileThumbs.hpp"
@@ -1791,17 +1792,19 @@ class $modify(PaimonProfilePage, ProfilePage) {
             videoSpinner->show(this, 100);
             Ref<PaimonLoadingOverlay> loading = videoSpinner;
 
-            ThumbnailAPI::get().uploadProfileVideo(accountID, videoData, username, [this, accountID, videoData, loading](bool success, std::string const& msg) {
-                if (loading) loading->dismiss();
+            paimon::showBetaUploadWarningIfNeeded([this, accountID, videoData = std::move(videoData), username, loading]() mutable {
+                ThumbnailAPI::get().uploadProfileVideo(accountID, videoData, username, [this, accountID, videoData, loading](bool success, std::string const& msg) {
+                    if (loading) loading->dismiss();
 
-                if (success) {
-                    PaimonNotify::create("Profile video uploaded!", NotificationIcon::Success)->show();
-                    saveProfileImgToDisk(accountID, videoData);
-                    ProfileImageService::get().rememberProfileImgGifKey(accountID, fmt::format("profileimg_video_{}", accountID));
-                    this->ensureAnimatedProfileImg(accountID);
-                } else {
-                    PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
-                }
+                    if (success) {
+                        PaimonNotify::create("Profile video uploaded!", NotificationIcon::Success)->show();
+                        saveProfileImgToDisk(accountID, videoData);
+                        ProfileImageService::get().rememberProfileImgGifKey(accountID, fmt::format("profileimg_video_{}", accountID));
+                        this->ensureAnimatedProfileImg(accountID);
+                    } else {
+                        PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
+                    }
+                });
             });
             return;
         }
@@ -1828,46 +1831,48 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
             Ref<ProfilePage> imgGifSafeRef = this;
 
-            ThumbnailAPI::get().uploadProfileImgGIF(accountID, imgData, username, [imgGifSafeRef, accountID, imgData, loading](bool success, std::string const& msg) {
-                if (loading) loading->dismiss();
+            paimon::showBetaUploadWarningIfNeeded([imgGifSafeRef, accountID, imgData = std::move(imgData), username, loading]() mutable {
+                ThumbnailAPI::get().uploadProfileImgGIF(accountID, imgData, username, [imgGifSafeRef, accountID, imgData, loading](bool success, std::string const& msg) {
+                    if (loading) loading->dismiss();
 
-                if (success) {
-                    PaimonNotify::create("Profile image uploaded!", NotificationIcon::Success)->show();
+                    if (success) {
+                        PaimonNotify::create("Profile image uploaded!", NotificationIcon::Success)->show();
 
-                    saveProfileImgToDisk(accountID, imgData);
-                    ProfileImageService::get().rememberProfileImgGifKey(accountID, getProfileImgGifCacheKey(accountID));
-                    auto* page = static_cast<PaimonProfilePage*>(imgGifSafeRef.data());
-                    if (page && page->ensureAnimatedProfileImg(accountID)) {
-                        return;
-                    }
+                        saveProfileImgToDisk(accountID, imgData);
+                        ProfileImageService::get().rememberProfileImgGifKey(accountID, getProfileImgGifCacheKey(accountID));
+                        auto* page = static_cast<PaimonProfilePage*>(imgGifSafeRef.data());
+                        if (page && page->ensureAnimatedProfileImg(accountID)) {
+                            return;
+                        }
 
-                    if (imgp::formats::isGif(imgData.data(), imgData.size())) {
-                        auto decResult = imgp::decode::gif(imgData.data(), imgData.size());
-                        if (decResult.isOk()) {
-                            auto& decVal = decResult.unwrap();
-                            if (auto* anim = std::get_if<imgp::DecodedAnimation>(&decVal)) {
-                                if (!anim->frames.empty() && anim->width > 0 && anim->height > 0) {
-                                    auto* tex = new CCTexture2D();
-                                    if (tex->initWithData(
-                                        anim->frames[0].data.get(),
-                                        kCCTexture2DPixelFormat_RGBA8888,
-                                        anim->width,
-                                        anim->height,
-                                        CCSize(static_cast<float>(anim->width), static_cast<float>(anim->height))
-                                    )) {
-                                        tex->autorelease();
-                                        cacheProfileImgTexture(accountID, tex);
-                                        static_cast<PaimonProfilePage*>(imgGifSafeRef.data())->displayProfileImg(accountID, tex);
-                                    } else {
-                                        tex->release();
+                        if (imgp::formats::isGif(imgData.data(), imgData.size())) {
+                            auto decResult = imgp::decode::gif(imgData.data(), imgData.size());
+                            if (decResult.isOk()) {
+                                auto& decVal = decResult.unwrap();
+                                if (auto* anim = std::get_if<imgp::DecodedAnimation>(&decVal)) {
+                                    if (!anim->frames.empty() && anim->width > 0 && anim->height > 0) {
+                                        auto* tex = new CCTexture2D();
+                                        if (tex->initWithData(
+                                            anim->frames[0].data.get(),
+                                            kCCTexture2DPixelFormat_RGBA8888,
+                                            anim->width,
+                                            anim->height,
+                                            CCSize(static_cast<float>(anim->width), static_cast<float>(anim->height))
+                                        )) {
+                                            tex->autorelease();
+                                            cacheProfileImgTexture(accountID, tex);
+                                            static_cast<PaimonProfilePage*>(imgGifSafeRef.data())->displayProfileImg(accountID, tex);
+                                        } else {
+                                            tex->release();
+                                        }
                                     }
                                 }
                             }
                         }
+                    } else {
+                        PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
                     }
-                } else {
-                    PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
-                }
+                });
             });
             return;
         }

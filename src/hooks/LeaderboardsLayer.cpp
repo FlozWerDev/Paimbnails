@@ -16,6 +16,7 @@
 #include "../features/profiles/services/ProfileThumbs.hpp"
 #include "../utils/FileDialog.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../utils/BetaUploadWarning.hpp"
 #include "../features/community/ui/CommunityHubLayer.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
@@ -111,8 +112,11 @@ protected:
     }
 
     void onUpload(CCObject*) {
-        if (m_callback) m_callback();
+        auto cb = std::move(m_callback);
         this->onClose(nullptr);
+        paimon::showBetaUploadWarningIfNeeded([cb]() {
+            if (cb) cb();
+        });
     }
 
 public:
@@ -309,12 +313,14 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
         PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
 
-        ThumbnailAPI::get().uploadProfileGIF(accountID, data, username, [](bool success, std::string const& msg) {
-            if (success) {
-                PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
-            } else {
-                PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
-            }
+        paimon::showBetaUploadWarningIfNeeded([accountID, data = std::move(data), username]() mutable {
+            ThumbnailAPI::get().uploadProfileGIF(accountID, data, username, [](bool success, std::string const& msg) {
+                if (success) {
+                    PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                } else {
+                    PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
+                }
+            });
         });
     }
 

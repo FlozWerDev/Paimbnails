@@ -33,6 +33,7 @@
 #include "../utils/Localization.hpp"
 #include "../utils/ImageConverter.hpp"
 #include "../utils/HttpClient.hpp"
+#include "../utils/BetaUploadWarning.hpp"
 #include "../features/foryou/services/ForYouTracker.hpp"
 
 #include "../layers/ButtonEditOverlay.hpp"
@@ -1476,26 +1477,28 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         
         WeakRef<PaimonLevelInfoLayer> self = this;
 
-        // Single upload — server handles mod check + exists check + routing (live vs pending)
-        PaimonNotify::show(Localization::get().getString("capture.uploading").c_str(), geode::NotificationIcon::Info);
-        ThumbnailAPI::get().uploadThumbnail(levelID, pngData, username, [self, levelID, username](bool success, std::string const& msg) {
-            auto layer = self.lock();
-            if (!layer) return;
+        paimon::showBetaUploadWarningIfNeeded([self, levelID, pngData = std::move(pngData), username]() mutable {
+            // Single upload — server handles mod check + exists check + routing (live vs pending)
+            PaimonNotify::show(Localization::get().getString("capture.uploading").c_str(), geode::NotificationIcon::Info);
+            ThumbnailAPI::get().uploadThumbnail(levelID, pngData, username, [self, levelID, username](bool success, std::string const& msg) {
+                auto layer = self.lock();
+                if (!layer) return;
 
-            if (success) {
-                bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
-                if (isPending) {
-                    PendingQueue::get().addOrBump(levelID, PendingCategory::Verify, username, {}, false);
-                    PaimonNotify::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success)->show();
+                if (success) {
+                    bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
+                    if (isPending) {
+                        PendingQueue::get().addOrBump(levelID, PendingCategory::Verify, username, {}, false);
+                        PaimonNotify::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success)->show();
+                    } else {
+                        PendingQueue::get().removeForLevel(levelID);
+                        PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                        ThumbnailLoader::get().invalidateLevel(levelID);
+                        layer->refreshGalleryData(levelID, true);
+                    }
                 } else {
-                    PendingQueue::get().removeForLevel(levelID);
-                    PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
-                    ThumbnailLoader::get().invalidateLevel(levelID);
-                    layer->refreshGalleryData(levelID, true);
+                    PaimonNotify::create(Localization::get().getString("capture.upload_error") + msg, NotificationIcon::Error)->show();
                 }
-            } else {
-                PaimonNotify::create(Localization::get().getString("capture.upload_error") + msg, NotificationIcon::Error)->show();
-            }
+            });
         });
     }
 

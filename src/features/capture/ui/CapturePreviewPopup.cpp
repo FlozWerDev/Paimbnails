@@ -1,6 +1,7 @@
 #include "CapturePreviewPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
+#include "../../../utils/BetaUploadWarning.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
 #include <asp/time.hpp>
 #include "CaptureLayerEditorPopup.hpp"
@@ -848,8 +849,16 @@ void CapturePreviewPopup::onAcceptBtn(CCObject* sender) {
         }
     }
 
-    if (m_callback) m_callback(true, m_levelID, m_buffer, m_width, m_height, "", "");
+    auto cb = std::move(m_callback);
+    auto lid = m_levelID;
+    auto buf = m_buffer;
+    auto w = m_width;
+    auto h = m_height;
     this->onClose(nullptr);
+
+    paimon::showBetaUploadWarningIfNeeded([cb, lid, buf, w, h]() {
+        if (cb) cb(true, lid, buf, w, h, "", "");
+    });
 }
 
 void CapturePreviewPopup::onLayerEditorBtn(CCObject* sender) {

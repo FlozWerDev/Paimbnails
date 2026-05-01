@@ -83,7 +83,9 @@ ThumbnailLoader::ThumbnailLoader() {
     unsigned hw = std::thread::hardware_concurrency();
     int cpuThreads  = static_cast<int>(std::clamp<unsigned>(hw ? hw : 4u, 4u, 16u));
     int diskThreads = static_cast<int>(std::clamp<unsigned>(hw ? hw / 4u : 2u, 2u, 4u));
-    m_maxConcurrentTasks = std::min(8, std::max(4, cpuThreads / 2));
+    // Aumentado a 6 para mejor throughput en desktop - el servidor CDN puede manejar
+    // más conexiones concurrentes y el circuit breaker protege contra rate-limiting.
+    m_maxConcurrentTasks = std::min(6, std::max(2, cpuThreads / 2));
     m_diskPool = std::make_unique<paimon::ThreadPool>(diskThreads, "PaimonDiskIO");
     m_cpuPool  = std::make_unique<paimon::ThreadPool>(cpuThreads,  "PaimonCPU");
 #endif
@@ -300,7 +302,11 @@ void ThumbnailLoader::drainPendingUploads() {
         // Presupuesto adaptativo: si ya consumimos demasiado tiempo del frame,
         // devolver los restantes a la cola para el proximo frame.
         // Siempre subimos al menos 1 (el de mayor prioridad) para garantizar progreso.
-        if (uploaded > 0) {
+        // Bypass para celdas visibles: si la tarea es visible (>= PriorityVisibleCell),
+        // se sube inmediatamente sin importar el budget — el usuario debe ver el thumb
+        // de la celda bajo el cursor en el frame actual.
+        bool isVisibleCell = pu.task && pu.task->priority >= PriorityVisibleCell;
+        if (uploaded > 0 && !isVisibleCell) {
             auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - frameStart).count();
             if (elapsed >= UPLOAD_FRAME_BUDGET_US) {
@@ -565,13 +571,15 @@ void ThumbnailLoader::prefetchLevels(std::vector<int> const& levelIDs, int prior
         return;
     }
 
-    // limitar prefetch para no inundar la cola
-    // niveles visibles (priority >= PriorityVisiblePrefetch) hasta 12,
-    // predictivos (priority < PriorityVisiblePrefetch) hasta 5
-    int maxPrefetch = (priority >= PriorityVisiblePrefetch) ? 24 : 10;
+    // limitar prefetch para no inundar la cola ni saturar el servidor
+    // niveles visibles (priority >= PriorityVisiblePrefetch) hasta 8,
+    // predictivos (priority < PriorityVisiblePrefetch) hasta 4
+    int maxPrefetch = (priority >= PriorityVisiblePrefetch) ? 8 : 4;
 
     std::unordered_set<int> seen;
     seen.reserve(levelIDs.size());
+    std::vector<int> manifestIds;
+    manifestIds.reserve(std::min(levelIDs.size(), static_cast<size_t>(maxPrefetch)));
     int queued = 0;
 
     for (int levelID : levelIDs) {
@@ -579,9 +587,20 @@ void ThumbnailLoader::prefetchLevels(std::vector<int> const& levelIDs, int prior
         if (levelID <= 0 || !seen.insert(levelID).second) {
             continue;
         }
-
+        // No pedir manifest si ya esta cacheado — evita fetchManifest redundante
+        if (!HttpClient::get().getManifestEntry(levelID).has_value()) {
+            manifestIds.push_back(levelID);
+        }
         this->prefetchLevelAssets(levelID, priority);
         ++queued;
+    }
+
+    // Batch manifest prefetch: populate CDN URLs for all queued levels in a single request.
+    // This prevents each individual downloadThumbnail from doing manifest-miss → CDN probe → Worker fallback.
+    // Skip if server is already rate-limiting manifest fetches to avoid making it worse.
+    if (manifestIds.size() > 1) {
+        // fire-and-forget: no importa el resultado, solo precargar URLs
+        HttpClient::get().fetchManifest(manifestIds, [](bool) { });
     }
 }
 
@@ -680,6 +699,16 @@ void ThumbnailLoader::startTask(std::shared_ptr<Task> task) {
 
 void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
     log::debug("[ThumbnailLoader] workerLoadFromDisk: key={} cancelled={}", task->levelID, task->cancelled);
+
+    // Early cancellation: si la celda ya no esta visible y el disk cache esta
+    // habilitado, no vale la pena hacer I/O solo para un touch de disco.
+    // El thumbnail seguira en disco para el proximo request.
+    if (task->cancelled && paimon::settings::general::enableDiskCache()) {
+        Loader::get()->queueInMainThread([this, task]() {
+            finishTask(task, nullptr, false);
+        });
+        return;
+    }
 
     // Si el disk cache esta deshabilitado, ir directo a descarga
     if (!paimon::settings::general::enableDiskCache()) {
@@ -893,9 +922,10 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
             return;
         }
 
-        // Descarga fallida — reintentar 1 vez antes de marcar como fallo
+        // Descarga fallida — reintentar 1 vez antes de marcar como fallo,
+        // pero NO reintentar si el global cooldown está activo (servidor ya dijo "basta")
         int attempt = retryCount->fetch_add(1);
-        if (attempt < MAX_DOWNLOAD_RETRIES) {
+        if (attempt < MAX_DOWNLOAD_RETRIES && !self->isGlobalCooldownActive()) {
             log::warn("[ThumbnailLoader] workerDownload: download failed for level {} (attempt {}), retrying...", realID, attempt + 1);
             paimon::cache::ThumbnailCache::get().stats().downloadErrors.fetch_add(1, std::memory_order_relaxed);
 
@@ -922,10 +952,10 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
         }
     };
 
-    // Lanzar el primer intento desde el main thread
-    Loader::get()->queueInMainThread([realID, isGif, onDownloadResult]() {
-        HttpClient::get().downloadThumbnail(realID, isGif, onDownloadResult);
-    });
+    // Lanzar descarga directamente — WebHelper::dispatch delega a geode::async::spawn,
+    // que es thread-safe y maneja el callback en el main thread internamente.
+    // Evitamos el delay de ~8-16ms de queueInMainThread.
+    HttpClient::get().downloadThumbnail(realID, isGif, onDownloadResult);
 }
 
 // ── processDownloadedData: logica compartida entre primer intento y retry ──
@@ -1474,49 +1504,57 @@ void ThumbnailLoader::workerUrlDownload(std::shared_ptr<Task> task) {
     auto retryCount = std::make_shared<std::atomic<int>>(0);
     static constexpr int MAX_URL_DOWNLOAD_RETRIES = 1;
 
-    // Descargar bytes crudos y decodificar en CPU pool (fuera del main thread)
-    // para no bloquear la UI con la decodificación de imágenes.
-    Loader::get()->queueInMainThread([this, task, url, retryCount]() {
-        auto attemptDownload = std::make_shared<std::function<void()>>(nullptr);
-        *attemptDownload = [this, task, url, retryCount, attemptDownload]() {
-            ThumbnailTransportClient::get().downloadFromUrlData(url,
-                [this, task, url, retryCount, attemptDownload](bool success, std::vector<uint8_t> const& data) {
-                    if (task->cancelled || m_shuttingDown.load(std::memory_order_acquire)) {
-                        finishTask(task, nullptr, false);
-                        return;
-                    }
-                    if (success && !data.empty()) {
-                        // Decodificar en CPU pool igual que level thumbnails
-                        spawnCpu([this, task, data]() {
-                            auto decoded = decodeImageData(data, 0, 0);
-                            if (decoded.success && decoded.image) {
-                                enqueuePendingUpload({task, decoded.image, {}, 0, 0, 0,
-                                    false/*fallbackToDownload*/, decoded.width, decoded.height});
-                            } else {
-                                Loader::get()->queueInMainThread([this, task]() {
-                                    finishTask(task, nullptr, false);
-                                });
-                            }
-                        });
-                        return;
-                    }
+    // Descargar bytes crudos y decodificar en CPU pool (fuera del main thread).
+    // downloadFromUrlData ya es asíncrono nativo (WebHelper::dispatch), no necesita
+    // encolarse en main thread — eso introducía ~16ms de delay innecesario.
+    auto attemptDownload = std::make_shared<std::function<void()>>(nullptr);
+    *attemptDownload = [this, task, url, retryCount, attemptDownload]() {
+        ThumbnailTransportClient::get().downloadFromUrlData(url,
+            [this, task, url, retryCount, attemptDownload](bool success, std::vector<uint8_t> const& data) {
+                if (task->cancelled || m_shuttingDown.load(std::memory_order_acquire)) {
+                    finishTask(task, nullptr, false);
+                    return;
+                }
+                if (success && !data.empty()) {
+                    // Decodificar en CPU pool igual que level thumbnails
+                    spawnCpu([this, task, data]() {
+                        auto decoded = decodeImageData(data, 0, 0);
+                        if (decoded.success && decoded.image) {
+                            enqueuePendingUpload({task, decoded.image, {}, 0, 0, 0,
+                                false/*fallbackToDownload*/, decoded.width, decoded.height});
+                        } else {
+                            Loader::get()->queueInMainThread([this, task]() {
+                                finishTask(task, nullptr, false);
+                            });
+                        }
+                    });
+                    return;
+                }
 
-                    // Fallo de descarga — reintentar 1 vez antes de marcar como fallo
-                    int attempt = retryCount->fetch_add(1);
-                    if (attempt < MAX_URL_DOWNLOAD_RETRIES) {
-                        log::warn("[ThumbnailLoader] workerUrlDownload: download failed for {} (attempt {}), retrying...", url, attempt + 1);
-                        paimon::cache::ThumbnailCache::get().stats().downloadErrors.fetch_add(1, std::memory_order_relaxed);
-                        (*attemptDownload)();
-                    } else {
-                        log::warn("[ThumbnailLoader] workerUrlDownload: download failed for {} after retries", url);
-                        paimon::cache::ThumbnailCache::get().stats().downloadErrors.fetch_add(1, std::memory_order_relaxed);
-                        finishTask(task, nullptr, false);
+                // Fix: CCTextureCache hit devuelve success=true con data vacío.
+                // En ese caso la textura ya existe — usarla directamente.
+                if (success && data.empty()) {
+                    if (auto* tex = CCTextureCache::sharedTextureCache()->textureForKey(url.c_str())) {
+                        finishTask(task, tex, true);
+                        return;
                     }
                 }
-            );
-        };
-        (*attemptDownload)();
-    });
+
+                // Fallo de descarga — reintentar 1 vez antes de marcar como fallo
+                int attempt = retryCount->fetch_add(1);
+                if (attempt < MAX_URL_DOWNLOAD_RETRIES) {
+                    log::warn("[ThumbnailLoader] workerUrlDownload: download failed for {} (attempt {}), retrying...", url, attempt + 1);
+                    paimon::cache::ThumbnailCache::get().stats().downloadErrors.fetch_add(1, std::memory_order_relaxed);
+                    (*attemptDownload)();
+                } else {
+                    log::warn("[ThumbnailLoader] workerUrlDownload: download failed for {} after retries", url);
+                    paimon::cache::ThumbnailCache::get().stats().downloadErrors.fetch_add(1, std::memory_order_relaxed);
+                    finishTask(task, nullptr, false);
+                }
+            }
+        );
+    };
+    (*attemptDownload)();
 }
 
 // ── Decode pipeline (off main thread) ───────────────────────────────

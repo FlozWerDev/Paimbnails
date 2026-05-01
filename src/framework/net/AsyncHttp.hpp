@@ -37,6 +37,7 @@ namespace AsyncHttp {
     ) {
         auto response = co_await web::WebRequest()
             .timeout(timeout)
+            .acceptEncoding("gzip, deflate")
             .get(url);
 
         if (!response.ok()) {
@@ -57,6 +58,7 @@ namespace AsyncHttp {
     ) {
         auto response = co_await web::WebRequest()
             .timeout(timeout)
+            .acceptEncoding("gzip, deflate")
             .header("Content-Type", "application/json")
             .bodyString(body)
             .post(url);
@@ -80,6 +82,7 @@ namespace AsyncHttp {
     ) {
         auto req = web::WebRequest()
             .timeout(timeout)
+            .acceptEncoding("gzip, deflate")
             .header("Content-Type", "application/json")
             .bodyString(body);
 
@@ -106,6 +109,7 @@ namespace AsyncHttp {
     ) {
         auto response = co_await web::WebRequest()
             .timeout(timeout)
+            .acceptEncoding("gzip, deflate")
             .get(url);
 
         if (!response.ok()) {

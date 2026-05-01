@@ -15,11 +15,7 @@ static bool isTransparentMode() {
 class $modify(PaimonGJListLayer, GJListLayer) {
     void visit() {
         if (isTransparentMode()) {
-            // Color por defecto de GD
-            if (this->getColor() == ccColor3B{191, 114, 62}) {
-                this->setColor({0, 0, 0});
-                this->setOpacity(50);
-            }
+            this->setOpacity(0);
         }
         GJListLayer::visit();
     }
@@ -37,7 +33,7 @@ static void applyTransparentCellBg(CCNode* self) {
     } else if (color == ccColor3B{194, 114, 62}) {
         bg->setColor({80, 80, 80});
     }
-    bg->setOpacity(50);
+    bg->setOpacity(0);
 }
 
 class $modify(PaimonTransparentLevelCell, LevelCell) {

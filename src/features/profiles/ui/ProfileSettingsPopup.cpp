@@ -17,7 +17,7 @@ ProfileSettingsPopup* ProfileSettingsPopup::create(int accountID) {
 }
 
 bool ProfileSettingsPopup::init(int accountID) {
-    if (!Popup::init(420.f, 220.f)) return false;
+    if (!Popup::init(340.f, 180.f)) return false;
 
     m_accountID = accountID;
 
@@ -32,11 +32,11 @@ bool ProfileSettingsPopup::init(int accountID) {
     m_mainLayer->addChild(menu);
 
     // Grid 2x2 para 4 botones
-    float colSpacing = 90.f;
-    float rowSpacing = 55.f;
-    float topRowY = cy + 10.f;
-    float botRowY = cy - rowSpacing + 10.f;
-    float labelOffsetY = -28.f;
+    float colSpacing = 70.f;
+    float rowSpacing = 45.f;
+    float topRowY = cy + 8.f;
+    float botRowY = cy - rowSpacing + 8.f;
+    float labelOffsetY = -24.f;
 
     // Boton de musica
     {
@@ -44,7 +44,7 @@ bool ProfileSettingsPopup::init(int accountID) {
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_playMusicBtn_001.png");
         if (!spr) spr = CCSprite::create();
         float maxDim = std::max(spr->getContentWidth(), spr->getContentHeight());
-        if (maxDim > 0) spr->setScale(40.f / maxDim);
+        if (maxDim > 0) spr->setScale(32.f / maxDim);
 
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileSettingsPopup::onConfigureMusic));
         btn->setPosition({cx - colSpacing, topRowY});
@@ -52,7 +52,7 @@ bool ProfileSettingsPopup::init(int accountID) {
         menu->addChild(btn);
 
         auto label = CCLabelBMFont::create(Localization::get().getString("profilesettings.music_label").c_str(), "bigFont.fnt");
-        label->setScale(0.35f);
+        label->setScale(0.30f);
         label->setPosition({cx - colSpacing, topRowY + labelOffsetY});
         m_mainLayer->addChild(label);
     }
@@ -63,15 +63,15 @@ bool ProfileSettingsPopup::init(int accountID) {
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_collectible_goldKey_001.png");
         if (!spr) spr = CCSprite::create();
         float maxDim = std::max(spr->getContentWidth(), spr->getContentHeight());
-        if (maxDim > 0) spr->setScale(40.f / maxDim);
+        if (maxDim > 0) spr->setScale(32.f / maxDim);
 
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileSettingsPopup::onConfigureBadge));
         btn->setPosition({cx + colSpacing, topRowY});
         btn->setID("badge-button"_spr);
         menu->addChild(btn);
 
-        auto label = CCLabelBMFont::create("Badge", "bigFont.fnt");
-        label->setScale(0.35f);
+        auto label = CCLabelBMFont::create(Localization::get().getString("profilesettings.badge_label").c_str(), "bigFont.fnt");
+        label->setScale(0.30f);
         label->setPosition({cx + colSpacing, topRowY + labelOffsetY});
         m_mainLayer->addChild(label);
     }
@@ -82,7 +82,7 @@ bool ProfileSettingsPopup::init(int accountID) {
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_editBtn_001.png");
         if (!spr) spr = CCSprite::create();
         float maxDim = std::max(spr->getContentWidth(), spr->getContentHeight());
-        if (maxDim > 0) spr->setScale(40.f / maxDim);
+        if (maxDim > 0) spr->setScale(32.f / maxDim);
 
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileSettingsPopup::onAddProfileImg));
         btn->setPosition({cx - colSpacing, botRowY});
@@ -90,26 +90,28 @@ bool ProfileSettingsPopup::init(int accountID) {
         menu->addChild(btn);
 
         auto label = CCLabelBMFont::create(Localization::get().getString("profilesettings.image_label").c_str(), "bigFont.fnt");
-        label->setScale(0.35f);
+        label->setScale(0.30f);
         label->setPosition({cx - colSpacing, botRowY + labelOffsetY});
         m_mainLayer->addChild(label);
     }
 
-    // Boton de Comment BG
+    // Boton de Comment BG (deshabilitado - saldra en 1.0.1)
     {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_colorBtn_001.png");
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_paintBtn_001.png");
         if (!spr) spr = CCSprite::create();
         float maxDim = std::max(spr->getContentWidth(), spr->getContentHeight());
-        if (maxDim > 0) spr->setScale(40.f / maxDim);
+        if (maxDim > 0) spr->setScale(32.f / maxDim);
+        spr->setColor({120, 120, 120});
 
-        auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileSettingsPopup::onConfigureCommentBg));
+        auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileSettingsPopup::onConfigureCommentBgSoon));
         btn->setPosition({cx + colSpacing, botRowY});
         btn->setID("commentbg-button"_spr);
         menu->addChild(btn);
 
-        auto label = CCLabelBMFont::create("Comment", "bigFont.fnt");
-        label->setScale(0.35f);
+        auto label = CCLabelBMFont::create(Localization::get().getString("profilesettings.comment_label").c_str(), "bigFont.fnt");
+        label->setScale(0.30f);
+        label->setColor({120, 120, 120});
         label->setPosition({cx + colSpacing, botRowY + labelOffsetY});
         m_mainLayer->addChild(label);
     }
@@ -119,10 +121,10 @@ bool ProfileSettingsPopup::init(int accountID) {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
         if (!spr) spr = CCSprite::create();
         float maxDim = std::max(spr->getContentWidth(), spr->getContentHeight());
-        if (maxDim > 0) spr->setScale(24.f / maxDim);
+        if (maxDim > 0) spr->setScale(20.f / maxDim);
 
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileSettingsPopup::onInfo));
-        btn->setPosition({content.width - 20.f, content.height - 20.f});
+        btn->setPosition({content.width - 16.f, content.height - 16.f});
         btn->setID("info-button"_spr);
         menu->addChild(btn);
     }
@@ -155,6 +157,14 @@ void ProfileSettingsPopup::onConfigureCommentBg(CCObject*) {
     auto cb = m_onCommentBgCallback;
     this->onClose(nullptr);
     if (cb) cb();
+}
+
+void ProfileSettingsPopup::onConfigureCommentBgSoon(CCObject*) {
+    FLAlertLayer::create(
+        Localization::get().getString("profilesettings.comment_soon_title").c_str(),
+        Localization::get().getString("profilesettings.comment_soon_body"),
+        Localization::get().getString("profilesettings.info_ok").c_str()
+    )->show();
 }
 
 void ProfileSettingsPopup::onInfo(CCObject*) {

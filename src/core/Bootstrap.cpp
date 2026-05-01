@@ -13,12 +13,16 @@
 #include "../features/emotes/services/EmoteService.hpp"
 #include "../features/emotes/services/EmoteCache.hpp"
 #include "../features/progressbar/services/ProgressBarManager.hpp"
+#include "../features/updates/services/UpdateChecker.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "QualityConfig.hpp"
 #include "Settings.hpp"
 #include "../video/VideoNormalizer.hpp"
 #include "../utils/Shaders.hpp"
+#include "../blur/BlurSystem.hpp"
+#include "../features/thumbnails/services/ThumbnailCache.hpp"
 #include <thread>
+#include <chrono>
 #include <filesystem>
 #include <atomic>
 #include <functional>
@@ -55,28 +59,45 @@ void PaimonOnModLoaded() {
     // ── Startup cache cleanup safety net ──────────────────────────────
     // Si clear-cache-on-exit esta activo y el juego crasheo en la sesion anterior
     // sin pasar por $on_game(Exiting), los caches de disco podrian haber quedado.
-    // Limpiamos ahora para garantizar que no se acumule almacenamiento.
-    if (paimon::settings::general::clearCacheOnExit()) {
-        cleanupDiskCache("startup-safety");
-        auto saveDir = Mod::get()->getSaveDir();
-        std::error_code ec;
-        std::filesystem::remove(saveDir / "manifest_cache.json", ec);
-        Mod::get()->setSavedValue("thumbnail-disk-cache", matjson::Value::object());
-    }
+    // Se ejecuta en background para NO bloquear el main thread durante el arranque
+    // (la limpieza recursiva del arbol de cache puede tardar cientos de ms).
+    bool const clearCacheAtStartup = paimon::settings::general::clearCacheOnExit();
 
     // ── Cleanup: remove orphaned video cache files (>7 days) ────────
     paimon::video::VideoNormalizer::cleanupOrphanedCache();
 
-    // migra los settings legacy al formato unificado per-layer
-    LayerBackgroundManager::get().migrateFromLegacy();
-    // migra la musica per-layer a global (solo corre una vez)
-    LayerBackgroundManager::get().migrateToGlobalMusic();
+    // ── Paralelizar migraciones, limpiezas y cargas de configuración ──
+    // Estas operaciones son independientes y pueden ejecutarse en paralelo
+    std::thread migrationThread([clearCacheAtStartup]() {
+        geode::utils::thread::setName("PaimonMigrations");
+        if (paimon::isRuntimeShuttingDown()) return;
 
-    // carga la configuracion de transiciones personalizables
-    TransitionManager::get().loadConfig();
+        // Limpieza diferida del cache (antes corria en el main thread)
+        if (clearCacheAtStartup) {
+            cleanupDiskCache("startup-safety");
+            auto saveDir = Mod::get()->getSaveDir();
+            std::error_code ec;
+            std::filesystem::remove(saveDir / "manifest_cache.json", ec);
+            // setSavedValue toca estructuras de Geode: lo movemos al main thread.
+            geode::Loader::get()->queueInMainThread([]() {
+                if (paimon::isRuntimeShuttingDown()) return;
+                Mod::get()->setSavedValue("thumbnail-disk-cache", matjson::Value::object());
+            });
+        }
 
-    // carga la configuracion de la barra de progreso personalizada
-    ProgressBarManager::get().loadConfig();
+        if (paimon::isRuntimeShuttingDown()) return;
+        LayerBackgroundManager::get().migrateFromLegacy();
+        LayerBackgroundManager::get().migrateToGlobalMusic();
+    });
+    migrationThread.detach();
+
+    std::thread configThread([]() {
+        geode::utils::thread::setName("PaimonConfigLoad");
+        if (paimon::isRuntimeShuttingDown()) return;
+        TransitionManager::get().loadConfig();
+        ProgressBarManager::get().loadConfig();
+    });
+    configThread.detach();
 
     log::info("[PaimonThumbnails] Queueing main level thumbnails...");
 
@@ -84,20 +105,59 @@ void PaimonOnModLoaded() {
     std::vector<int> mainLevels;
     for (int i = 1; i <= 22; i++) mainLevels.push_back(i);
 
-    paimon::scheduleMainThreadDelay(0.75f, [mainLevels = std::move(mainLevels)]() mutable {
+    // Optimización: iniciar manifest fetch antes y con prefetch paralelo
+    paimon::scheduleMainThreadDelay(0.5f, [mainLevels = std::move(mainLevels)]() mutable {
         if (paimon::isRuntimeShuttingDown()) return;
+        
+        // Iniciar manifest fetch inmediatamente
         HttpClient::get().fetchManifest(mainLevels, [](bool success) {
             if (paimon::isRuntimeShuttingDown()) return;
-            log::info("[PaimonThumbnails] Manifest fetch {}, starting sequential prefetch", success ? "succeeded" : "failed (will use Worker fallback)");
+            log::info("[PaimonThumbnails] Manifest fetch {}, starting parallel prefetch", success ? "succeeded" : "failed (will use Worker fallback)");
+        });
 
-            auto prefetchNext = std::make_shared<std::function<void(int)>>();
-            *prefetchNext = [prefetchNext](int levelID) {
-                if (levelID > 22 || paimon::isRuntimeShuttingDown()) return;
-                ThumbnailLoader::get().requestLoad(levelID, fmt::format("{}.png", levelID), [prefetchNext, levelID](cocos2d::CCTexture2D*, bool) {
-                    (*prefetchNext)(levelID + 1);
-                }, ThumbnailLoader::PriorityBootstrap);
-            };
-            (*prefetchNext)(1);
+        // Prefetch paralelo en batches espaciados para no saturar la red.
+        // IMPORTANTE: este callback corre en el main thread (cocos2d scheduler),
+        // por eso NO usamos std::this_thread::sleep_for entre batches —
+        // bloquearia el render del menu. En su lugar, encadenamos batches
+        // mediante scheduleMainThreadDelay para mantener el frame pacing fluido.
+        constexpr int PARALLEL_PREFETCH_BATCH = 4;
+        constexpr float BATCH_INTERVAL_SEC = 0.05f; // antes era sleep_for(50ms) bloqueante
+        for (int batchStart = 1, batchIndex = 0; batchStart <= 22;
+             batchStart += PARALLEL_PREFETCH_BATCH, ++batchIndex) {
+            int batchEnd = std::min(batchStart + PARALLEL_PREFETCH_BATCH, 23);
+            float batchDelay = BATCH_INTERVAL_SEC * static_cast<float>(batchIndex);
+            paimon::scheduleMainThreadDelay(batchDelay, [batchStart, batchEnd]() {
+                if (paimon::isRuntimeShuttingDown()) return;
+                for (int levelID = batchStart; levelID < batchEnd; ++levelID) {
+                    ThumbnailLoader::get().requestLoad(
+                        levelID, fmt::format("{}.png", levelID), nullptr,
+                        ThumbnailLoader::PriorityBootstrap);
+                }
+            });
+        }
+
+        // Pre-cálculo de blur: una vez que los thumbnails estén en cache,
+        // pre-calcular el blur para que esté listo cuando el usuario abra LevelInfoLayer.
+        // Esto elimina el delay de la primera carga del blur.
+        paimon::scheduleMainThreadDelay(2.0f, []() {
+            if (paimon::isRuntimeShuttingDown()) return;
+            auto win = CCDirector::sharedDirector()->getWinSize();
+            int intensity = Mod::get()->getSettingValue<int64_t>("levelinfo-effect-intensity");
+            
+            // Pre-calcular blur para los primeros 10 niveles (los más comunes)
+            for (int levelID = 1; levelID <= 10; levelID++) {
+                if (paimon::isRuntimeShuttingDown()) break;
+                
+                auto tex = paimon::cache::ThumbnailCache::get().getFromRam(levelID, false);
+                if (!tex.has_value() || !tex.value()) continue;
+                
+                // Pre-calcular con ambos estilos de blur
+                BlurSystem::getInstance()->buildPaimonBlurAsync(
+                    tex.value(), win, static_cast<float>(intensity), [](CCSprite*) {});
+                BlurSystem::getInstance()->buildGaussianBlurAsync(
+                    tex.value(), win, static_cast<float>(intensity), [](CCSprite*) {});
+            }
+            log::info("[PaimonThumbnails] Pre-calculated blur for main levels");
         });
     });
 
@@ -174,38 +234,47 @@ void PaimonOnModLoaded() {
 
     log::info("[PaimonThumbnails][Init] Startup init complete");
 
-    // ── Shader pre-warm: compila shaders de LevelInfoLayer durante idle del menu ──
-    paimon::scheduleMainThreadDelay(1.0f, []() {
+    // ── Lazy initialization: cargar servicios no críticos de forma diferida ──
+    // Los emotes y shaders solo se cargan cuando el usuario los necesita,
+    // reduciendo el tiempo de carga inicial del mod.
+
+    // Emote catalog: carga diferida con delay más largo para no competir con thumbnails
+    paimon::scheduleMainThreadDelay(3.0f, []() {
+        if (paimon::isRuntimeShuttingDown()) return;
+        
+        // Cargar catálogo desde disco primero (rápido)
+        paimon::emotes::EmoteService::get().loadCatalogFromDisk();
+        
+        auto& svc = paimon::emotes::EmoteService::get();
+        log::info("[PaimonEmotes] Catalog loaded: {} emotes ({} GIFs, {} stickers)",
+                  svc.getAllEmotes().size(), svc.getGifEmotes().size(), svc.getStaticEmotes().size());
+
+        // Fetch en background (incremental si ya hay datos cacheados)
+        paimon::emotes::EmoteService::get().fetchAllEmotes([](bool success) {
+            if (paimon::isRuntimeShuttingDown()) return;
+            log::info("[PaimonEmotes] Catalog fetch {}", success ? "succeeded" : "failed (using cached)");
+            
+            // Preload solo después del fetch, con otro delay
+            paimon::scheduleMainThreadDelay(1.5f, []() {
+                if (paimon::isRuntimeShuttingDown()) return;
+                paimon::emotes::EmoteCache::get().preloadAllToDisk([](size_t downloaded, size_t skipped, size_t total) {
+                    log::info("[PaimonEmotes] Emote sync complete: {} new, {} cached, {} total",
+                              downloaded, skipped, total);
+                });
+            });
+        });
+    });
+
+    // Shader pre-warm: cargar después de que los thumbnails estén listos
+    paimon::scheduleMainThreadDelay(2.5f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         Shaders::prewarmLevelInfoShaders();
     });
 
-    // ── Emote catalog: load from disk + incremental fetch + preload confirmation ──
-    paimon::emotes::EmoteService::get().loadCatalogFromDisk();
-
-    auto startEmotePreload = []() {
+    // ── UpdateChecker: consulta GitHub Releases para detectar nuevas versiones.
+    // Se hace con un pequeño delay para no competir con la carga inicial.
+    paimon::scheduleMainThreadDelay(1.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
-        auto& svc = paimon::emotes::EmoteService::get();
-        log::info("[PaimonEmotes] Catalog ready: {} emotes ({} GIFs, {} stickers)",
-                  svc.getAllEmotes().size(), svc.getGifEmotes().size(), svc.getStaticEmotes().size());
-
-        paimon::scheduleMainThreadDelay(2.0f, []() {
-            if (paimon::isRuntimeShuttingDown()) return;
-            paimon::emotes::EmoteCache::get().preloadAllToDisk([](size_t downloaded, size_t skipped, size_t total) {
-                log::info("[PaimonEmotes] Emote sync complete: {} new, {} cached, {} total",
-                          downloaded, skipped, total);
-            });
-        });
-    };
-
-    // Always attempt fetch (incremental via timelast if catalog is cached, full otherwise)
-    paimon::emotes::EmoteService::get().fetchAllEmotes([startEmotePreload](bool success) {
-        if (paimon::isRuntimeShuttingDown()) return;
-        if (success) {
-            log::info("[PaimonEmotes] Catalog fetch/update succeeded");
-        } else {
-            log::info("[PaimonEmotes] Catalog fetch failed, using cached data if available");
-        }
-        startEmotePreload();
+        paimon::updates::UpdateChecker::get().checkAsync();
     });
 }

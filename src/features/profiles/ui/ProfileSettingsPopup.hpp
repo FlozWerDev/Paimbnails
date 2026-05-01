@@ -16,6 +16,7 @@ protected:
     void onAddProfileImg(cocos2d::CCObject*);
     void onConfigureBadge(cocos2d::CCObject*);
     void onConfigureCommentBg(cocos2d::CCObject*);
+    void onConfigureCommentBgSoon(cocos2d::CCObject*);
     void onInfo(cocos2d::CCObject*);
 
 public:

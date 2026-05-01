@@ -374,7 +374,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                             }
 
                                             // Single upload: servidor maneja mod check
-                                            PaimonNotify::create(Localization::get().getString("capture.uploading"), NotificationIcon::Info)->show();
+                                            PaimonNotify::show(Localization::get().getString("capture.uploading"), geode::NotificationIcon::Info);
                                             ThumbnailAPI::get().uploadThumbnail(levelIDAccepted, pngData, username, [levelIDAccepted, username](bool success, std::string const& msg){
                                                 if (success) {
                                                     bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
@@ -708,7 +708,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                         }
 
                         // Single upload: servidor maneja routing
-                        PaimonNotify::create(Localization::get().getString("capture.uploading"), NotificationIcon::Info)->show();
+                        PaimonNotify::show(Localization::get().getString("capture.uploading"), geode::NotificationIcon::Info);
                         ThumbnailAPI::get().uploadThumbnail(levelIDAccepted, pngData, username, [levelIDAccepted, username](bool success, std::string const& msg){
                             if (success) {
                                 bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);

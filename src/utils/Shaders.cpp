@@ -75,13 +75,13 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
     // Blurring at full resolution (1920x1080) wastes GPU cycles.
     // Scale down to at most 640px on the longest side — blur is a low-freq
     // operation so the result is visually identical, but much faster.
-    constexpr float kMaxBlurDim = 640.f;
+    constexpr float kMaxBlurDim = 1024.f;
     CCSize blurSize = targetSize;
     float downFactor = 1.f;
     if (blurSize.width > kMaxBlurDim || blurSize.height > kMaxBlurDim) {
         downFactor = kMaxBlurDim / std::max(blurSize.width, blurSize.height);
-        blurSize.width  = std::max(4.f, std::floor(blurSize.width  * downFactor));
-        blurSize.height = std::max(4.f, std::floor(blurSize.height * downFactor));
+        blurSize.width  = std::max(4.f, std::round(blurSize.width  * downFactor));
+        blurSize.height = std::max(4.f, std::round(blurSize.height * downFactor));
     }
 
     float scaleX = blurSize.width / texture->getContentSize().width;
@@ -115,7 +115,7 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
 
     // Boost radius slightly to compensate for the smaller blur buffer
     float radius = useDirectRadius ? intensity : intensityToBlurRadius(intensity);
-    if (downFactor < 1.f) radius *= 1.f / downFactor * 0.35f;
+    if (downFactor < 1.f) radius *= 1.f / downFactor * 0.6f;
 
     // Pass 1: horizontal + vertical
     applyBlurPass(srcSprite, rtA, blurH, blurSize, radius);
@@ -185,7 +185,6 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
     srcSprite->setScale(scale);
     srcSprite->setAnchorPoint({0.5f, 0.5f});
     srcSprite->setPosition(targetSize * 0.5f);
-    srcSprite->setFlipY(true);
 
     auto blurDown = getOrCreateShader("paimonblur-down"_spr, vertexShaderCell, fragmentShaderPaimonBlurDown);
     auto blurUp   = getOrCreateShader("paimonblur-up"_spr,   vertexShaderCell, fragmentShaderPaimonBlurUp);
@@ -193,7 +192,7 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
         return srcSprite;
     }
 
-    int passes = std::clamp(static_cast<int>(intensity * 0.5f), 2, 5);
+    int passes = std::clamp(static_cast<int>(intensity * 0.8f), 3, 7);
 
     struct MipLevel {
         CCRenderTexture* rt;
@@ -207,8 +206,8 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
 
     for (int i = 0; i < passes; ++i) {
         CCSize nextSize = {
-            std::max(currentSize.width * 0.5f, 2.f),
-            std::max(currentSize.height * 0.5f, 2.f)
+            std::max(currentSize.width * 0.7f, 32.f),
+            std::max(currentSize.height * 0.7f, 32.f)
         };
 
         auto rt = CCRenderTexture::create(
@@ -250,7 +249,6 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
         mips.push_back({rt, nextSize});
 
         currentSprite = CCSprite::createWithTexture(rt->getSprite()->getTexture());
-        currentSprite->setFlipY(true);
         currentSprite->setAnchorPoint({0.5f, 0.5f});
         currentSize = nextSize;
     }
@@ -287,13 +285,11 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
         rt->getSprite()->getTexture()->setTexParameters(&linearParams);
 
         currentSprite = CCSprite::createWithTexture(rt->getSprite()->getTexture());
-        currentSprite->setFlipY(true);
         currentSprite->setAnchorPoint({0.5f, 0.5f});
         currentSize = upSize;
     }
 
     auto finalSprite = currentSprite;
-    finalSprite->setFlipY(true);
     finalSprite->getTexture()->setTexParameters(&linearParams);
     return finalSprite;
 }
@@ -633,7 +629,7 @@ void ProgressiveBlurJob::tickPaimonBlur() {
         }
 
         // Pasadas ajustadas para evitar blur excesivo y artefactos cuadrados
-        m_totalPasses = std::clamp(static_cast<int>(m_intensity * 0.5f), 2, 5);
+        m_totalPasses = std::clamp(static_cast<int>(m_intensity * 0.8f), 3, 7);
         m_currentPass = 0;
         m_mips.clear();
         m_mips.reserve(m_totalPasses);
@@ -652,17 +648,17 @@ void ProgressiveBlurJob::tickPaimonBlur() {
 
     if (m_phase == Phase::Downsample) {
         // Ejecutar N pasadas de downsample, o múltiples si la resolución es pequeña.
-        // Desktop: 6 ops/tick => el blur se completa en 1-2 frames. Mobile: 2 ops/tick.
+        // Desktop: 10 ops/tick => el blur se completa en 1 frame. Mobile: 3 ops/tick.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-        constexpr int kOpsBudget = 2;
+        constexpr int kOpsBudget = 3;
 #else
-        constexpr int kOpsBudget = 6;
+        constexpr int kOpsBudget = 10;
 #endif
         int opsThisTick = 0;
         while (m_currentPass < m_totalPasses && opsThisTick < kOpsBudget) {
             CCSize nextSize = {
-                std::max(m_currentSize.width * 0.5f, 2.f),
-                std::max(m_currentSize.height * 0.5f, 2.f)
+                std::max(m_currentSize.width * 0.7f, 32.f),
+                std::max(m_currentSize.height * 0.7f, 32.f)
             };
 
             auto rt = CCRenderTexture::create(

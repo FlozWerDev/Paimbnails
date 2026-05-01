@@ -90,6 +90,47 @@ void ProfilePicCustomizer::save() {
     }
     root["decorations"] = decoArray;
 
+    // Font
+    root["profileFont"] = m_config.profileFont;
+
+    // Icon Mode
+    root["onlyIconMode"] = m_config.onlyIconMode;
+    matjson::Value iconObj;
+    iconObj["iconId"] = m_config.iconConfig.iconId;
+    iconObj["iconType"] = m_config.iconConfig.iconType;
+    iconObj["color1R"] = static_cast<int>(m_config.iconConfig.color1.r);
+    iconObj["color1G"] = static_cast<int>(m_config.iconConfig.color1.g);
+    iconObj["color1B"] = static_cast<int>(m_config.iconConfig.color1.b);
+    iconObj["color2R"] = static_cast<int>(m_config.iconConfig.color2.r);
+    iconObj["color2G"] = static_cast<int>(m_config.iconConfig.color2.g);
+    iconObj["color2B"] = static_cast<int>(m_config.iconConfig.color2.b);
+    iconObj["glowEnabled"] = m_config.iconConfig.glowEnabled;
+    iconObj["glowColorR"] = static_cast<int>(m_config.iconConfig.glowColor.r);
+    iconObj["glowColorG"] = static_cast<int>(m_config.iconConfig.glowColor.g);
+    iconObj["glowColorB"] = static_cast<int>(m_config.iconConfig.glowColor.b);
+    iconObj["colorSource"] = static_cast<int>(m_config.iconConfig.colorSource);
+    iconObj["glowColorSource"] = static_cast<int>(m_config.iconConfig.glowColorSource);
+    iconObj["scale"] = m_config.iconConfig.scale;
+    iconObj["animationType"] = m_config.iconConfig.animationType;
+    iconObj["animationSpeed"] = m_config.iconConfig.animationSpeed;
+    iconObj["animationAmount"] = m_config.iconConfig.animationAmount;
+    iconObj["iconImageEnabled"] = m_config.iconConfig.iconImageEnabled;
+    iconObj["iconImagePath"] = m_config.iconConfig.iconImagePath;
+    iconObj["iconImageScale"] = m_config.iconConfig.iconImageScale;
+    root["iconConfig"] = iconObj;
+
+    // Custom Icons
+    matjson::Value customIconsArray = matjson::Value::array();
+    for (auto const& ci : m_config.customIcons) {
+        matjson::Value ciObj;
+        ciObj["spriteName"] = ci.spriteName;
+        ciObj["path"] = ci.path;
+        ciObj["isModAsset"] = ci.isModAsset;
+        customIconsArray.push(std::move(ciObj));
+    }
+    root["customIcons"] = customIconsArray;
+    root["selectedCustomIconIndex"] = m_config.selectedCustomIconIndex;
+
     auto res = file::writeStringSafe(savePath, root.dump());
     if (!res) {
         log::error("[ProfilePicCustomizer] Failed to save config: {}", res.unwrapErr());
@@ -160,6 +201,54 @@ void ProfilePicCustomizer::load() {
         }
         } // if (decoArr.isOk())
     }
+
+    // Font
+    if (root.contains("profileFont")) m_config.profileFont = root["profileFont"].asString().unwrapOr("goldFont.fnt");
+
+    // Icon Mode
+    if (root.contains("onlyIconMode")) m_config.onlyIconMode = root["onlyIconMode"].asBool().unwrapOr(false);
+    if (root.contains("iconConfig")) {
+        auto& ic = root["iconConfig"];
+        if (ic.contains("iconId")) m_config.iconConfig.iconId = ic["iconId"].asInt().unwrapOr(0);
+        if (ic.contains("iconType")) m_config.iconConfig.iconType = ic["iconType"].asInt().unwrapOr(0);
+        if (ic.contains("color1R")) m_config.iconConfig.color1.r = ic["color1R"].asInt().unwrapOr(255);
+        if (ic.contains("color1G")) m_config.iconConfig.color1.g = ic["color1G"].asInt().unwrapOr(255);
+        if (ic.contains("color1B")) m_config.iconConfig.color1.b = ic["color1B"].asInt().unwrapOr(255);
+        if (ic.contains("color2R")) m_config.iconConfig.color2.r = ic["color2R"].asInt().unwrapOr(255);
+        if (ic.contains("color2G")) m_config.iconConfig.color2.g = ic["color2G"].asInt().unwrapOr(255);
+        if (ic.contains("color2B")) m_config.iconConfig.color2.b = ic["color2B"].asInt().unwrapOr(255);
+        if (ic.contains("glowEnabled")) m_config.iconConfig.glowEnabled = ic["glowEnabled"].asBool().unwrapOr(false);
+        if (ic.contains("glowColorR")) m_config.iconConfig.glowColor.r = ic["glowColorR"].asInt().unwrapOr(255);
+        if (ic.contains("glowColorG")) m_config.iconConfig.glowColor.g = ic["glowColorG"].asInt().unwrapOr(255);
+        if (ic.contains("glowColorB")) m_config.iconConfig.glowColor.b = ic["glowColorB"].asInt().unwrapOr(0);
+        if (ic.contains("colorSource")) m_config.iconConfig.colorSource = static_cast<IconColorSource>(ic["colorSource"].asInt().unwrapOr(0));
+        if (ic.contains("glowColorSource")) m_config.iconConfig.glowColorSource = static_cast<IconColorSource>(ic["glowColorSource"].asInt().unwrapOr(0));
+        if (ic.contains("scale")) m_config.iconConfig.scale = ic["scale"].asDouble().unwrapOr(1.0);
+        if (ic.contains("animationType")) m_config.iconConfig.animationType = ic["animationType"].asInt().unwrapOr(0);
+        if (ic.contains("animationSpeed")) m_config.iconConfig.animationSpeed = ic["animationSpeed"].asDouble().unwrapOr(1.0);
+        if (ic.contains("animationAmount")) m_config.iconConfig.animationAmount = ic["animationAmount"].asDouble().unwrapOr(1.0);
+        if (ic.contains("iconImageEnabled")) m_config.iconConfig.iconImageEnabled = ic["iconImageEnabled"].asBool().unwrapOr(false);
+        if (ic.contains("iconImagePath")) m_config.iconConfig.iconImagePath = ic["iconImagePath"].asString().unwrapOr("");
+        if (ic.contains("iconImageScale")) m_config.iconConfig.iconImageScale = ic["iconImageScale"].asDouble().unwrapOr(1.0);
+    }
+
+    // Custom Icons
+    if (root.contains("customIcons") && root["customIcons"].isArray()) {
+        m_config.customIcons.clear();
+        auto ciArr = root["customIcons"].asArray();
+        if (ciArr.isOk()) {
+            for (auto& ci : ciArr.unwrap()) {
+                PicCustomIcon customIcon;
+                customIcon.spriteName = ci["spriteName"].asString().unwrapOr("");
+                customIcon.path = ci["path"].asString().unwrapOr("");
+                customIcon.isModAsset = ci["isModAsset"].asBool().unwrapOr(false);
+                if (!customIcon.spriteName.empty()) {
+                    m_config.customIcons.push_back(customIcon);
+                }
+            }
+        }
+    }
+    if (root.contains("selectedCustomIconIndex")) m_config.selectedCustomIconIndex = root["selectedCustomIconIndex"].asInt().unwrapOr(-1);
 
     log::info("[ProfilePicCustomizer] Config loaded ({} decorations)", m_config.decorations.size());
 }
@@ -297,6 +386,8 @@ std::vector<DecorationCategory> ProfilePicCustomizer::getDecorationCategories() 
         {"star_small03_001", "Small 3"},
         {"GJ_bigStar_001", "Big Star"},
         {"GJ_sStar_001", "Star"},
+        {"GJ_fullStar_001", "Full Star"},
+        {"GJ_emptyStar_001", "Empty Star"},
     });
 
     pushCat("gems", "Gems", {
@@ -304,6 +395,15 @@ std::vector<DecorationCategory> ProfilePicCustomizer::getDecorationCategories() 
         {"diamond_small02_001", "Diamond 2"},
         {"currencyDiamondIcon_001", "Gem"},
         {"currencyOrbIcon_001", "Orb"},
+        {"currencyMoonIcon_001", "Moon"},
+        {"secretCoin_01_001", "Secret Coin"},
+        {"secretCoin_b_01_001", "Blue Coin"},
+        {"usercoin_01_001", "User Coin"},
+        {"usercoin_unverified_001", "Unverified"},
+        {"usercoin_shadow_001", "Shadow"},
+        {"key_01_001", "Key"},
+        {"key_2_01_001", "Key 2"},
+        {"key_3_01_001", "Key 3"},
     });
 
     pushCat("icons", "Icons", {
@@ -314,10 +414,31 @@ std::vector<DecorationCategory> ProfilePicCustomizer::getDecorationCategories() 
         {"GJ_sFeaturedIcon_001", "Featured"},
         {"GJ_sHallOfFameIcon_001", "Hall of Fame"},
         {"GJ_lock_001", "Lock"},
+        {"GJ_lock_open_001", "Unlock"},
         {"GJ_completesIcon_001", "Complete"},
         {"GJ_infoIcon_001", "Info"},
         {"GJ_playBtn2_001", "Play"},
         {"GJ_pauseBtn_001", "Pause"},
+        {"GJ_likesIcon_001", "Likes"},
+        {"GJ_downloadsIcon_001", "Downloads"},
+        {"GJ_commentsIcon_001", "Comments"},
+        {"GJ_check_001", "Check"},
+        {"GJ_x_001", "X"},
+        {"GJ_plus_001", "Plus"},
+        {"GJ_profileButton_001", "Profile"},
+        {"GJ_leaderboardsBtn_001", "Leaderboard"},
+        {"GJ_creatorBtn_001", "Creator"},
+        {"GJ_searchBtn_001", "Search"},
+        {"GJ_menuBtn_001", "Menu"},
+        {"GJ_garageBtn_001", "Garage"},
+        {"GJ_optionsBtn_001", "Settings"},
+        {"GJ_storeBtn_001", "Store"},
+        {"GJ_achievements_001", "Achievements"},
+        {"GJ_statsBtn_001", "Stats"},
+        {"GJ_dailyBtn_001", "Daily"},
+        {"GJ_weeklyBtn_001", "Weekly"},
+        {"GJ_rateStarBtn_001", "Rate Star"},
+        {"GJ_rateDemonBtn_001", "Rate Demon"},
     });
 
     pushCat("difficulty", "Difficulty", {
@@ -327,12 +448,33 @@ std::vector<DecorationCategory> ProfilePicCustomizer::getDecorationCategories() 
         {"diffIcon_04_btn_001", "Harder"},
         {"diffIcon_05_btn_001", "Insane"},
         {"diffIcon_06_btn_001", "Demon"},
+        {"diffIcon_07_btn_001", "Easy Demon"},
+        {"diffIcon_08_btn_001", "Medium Demon"},
+        {"diffIcon_09_btn_001", "Hard Demon"},
+        {"diffIcon_10_btn_001", "Insane Demon"},
+        {"diffIcon_11_btn_001", "Extreme Demon"},
+        {"diffIcon_auto_btn_001", "Auto"},
+        {"diffIcon_demon_btn_001", "Demon"},
+        {"diffIcon_na_btn_001", "N/A"},
+        {"diffIcon_01_btn2_001", "Easy 2"},
+        {"diffIcon_02_btn2_001", "Normal 2"},
+        {"diffIcon_03_btn2_001", "Hard 2"},
+        {"diffIcon_04_btn2_001", "Harder 2"},
+        {"diffIcon_05_btn2_001", "Insane 2"},
+        {"diffIcon_06_btn2_001", "Demon 2"},
+        {"diffIcon_07_btn2_001", "Easy D2"},
+        {"diffIcon_08_btn2_001", "Medium D2"},
+        {"diffIcon_09_btn2_001", "Hard D2"},
+        {"diffIcon_10_btn2_001", "Insane D2"},
+        {"diffIcon_11_btn2_001", "Extreme D2"},
     });
 
     pushCat("badges", "Badges", {
         {"modBadge_01_001", "Mod"},
         {"modBadge_02_001", "Elder Mod"},
         {"modBadge_03_001", "Leaderboard"},
+        {"modBadge_04_001", "Bot"},
+        {"modBadge_05_001", "Dev"},
     });
 
     pushCat("effects", "Effects", {
@@ -340,20 +482,63 @@ std::vector<DecorationCategory> ProfilePicCustomizer::getDecorationCategories() 
         {"particle_02_001", "Particle Square"},
         {"particle_03_001", "Particle Triangle"},
         {"fireEffect_01_001", "Fire"},
+        {"fireEffect_02_001", "Fire 2"},
+        {"fireEffect_03_001", "Fire 3"},
+        {"deatheffect_01_001", "Death 1"},
+        {"deatheffect_02_001", "Death 2"},
+        {"deatheffect_03_001", "Death 3"},
+        {"deatheffect_04_001", "Death 4"},
+        {"deatheffect_05_001", "Death 5"},
+        {"deatheffect_06_001", "Death 6"},
+        {"deatheffect_07_001", "Death 7"},
+        {"deatheffect_08_001", "Death 8"},
+        {"deatheffect_09_001", "Death 9"},
+        {"deatheffect_10_001", "Death 10"},
+        {"deatheffect_11_001", "Death 11"},
+        {"deatheffect_12_001", "Death 12"},
+        {"deatheffect_13_001", "Death 13"},
+        {"deatheffect_14_001", "Death 14"},
+        {"deatheffect_15_001", "Death 15"},
+        {"deatheffect_16_001", "Death 16"},
+        {"deatheffect_17_001", "Death 17"},
+        {"deatheffect_18_001", "Death 18"},
+        {"deatheffect_19_001", "Death 19"},
+        {"deatheffect_20_001", "Death 20"},
+        {"portalEffect_01_001", "Portal"},
+        {"portalEffect_02_001", "Portal 2"},
     });
 
     pushCat("arrows", "Arrows", {
         {"GJ_arrow_01_001", "Right"},
         {"GJ_arrow_02_001", "Left"},
         {"GJ_arrow_03_001", "Up"},
+        {"GJ_arrow_04_001", "Down"},
         {"edit_eRotateBtn_001", "Rotate"},
         {"edit_eScaleBtn_001", "Scale"},
+        {"edit_eMoveBtn_001", "Move"},
+        {"edit_eCopyBtn_001", "Copy"},
+        {"edit_ePasteBtn_001", "Paste"},
+        {"edit_eUndoBtn_001", "Undo"},
+        {"edit_eRedoBtn_001", "Redo"},
+        {"edit_eDeleteBtn_001", "Delete"},
+        {"edit_eLinkBtn_001", "Link"},
+        {"edit_eUnlinkBtn_001", "Unlink"},
+        {"edit_eOrderUpBtn_001", "Order Up"},
+        {"edit_eOrderDownBtn_001", "Order Down"},
+        {"edit_eGroupBtn_001", "Group"},
+        {"edit_eUngroupBtn_001", "Ungroup"},
     });
 
     pushCat("social", "Social", {
         {"GJ_heart_01", "Heart"},
         {"gj_heartOn_001", "Heart On"},
+        {"GJ_heartOff_001", "Heart Off"},
         {"GJ_deleteIcon_001", "Delete"},
+        {"GJ_likeBtn_001", "Like"},
+        {"GJ_dislikeBtn_001", "Dislike"},
+        {"GJ_reportBtn_001", "Report"},
+        {"GJ_messageBtn_001", "Message"},
+        {"GJ_friendRequestBtn_001", "Friend"},
     });
 
     return cats;
@@ -361,22 +546,10 @@ std::vector<DecorationCategory> ProfilePicCustomizer::getDecorationCategories() 
 
 std::vector<std::pair<std::string, cocos2d::ccColor3B>> ProfilePicCustomizer::getColorPalette() {
     return {
-        {"White",   {255, 255, 255}},
-        {"Black",   {30, 30, 30}},
-        {"Red",     {255, 70, 70}},
-        {"Orange",  {255, 150, 0}},
-        {"Yellow",  {255, 220, 50}},
-        {"Lime",    {170, 255, 80}},
-        {"Green",   {50, 230, 100}},
-        {"Cyan",    {0, 220, 220}},
-        {"Blue",    {60, 120, 255}},
-        {"Purple",  {160, 70, 255}},
-        {"Pink",    {255, 100, 200}},
-        {"Gold",    {255, 215, 0}},
-        {"Silver",  {200, 200, 210}},
-        {"Crimson", {180, 30, 60}},
-        {"Teal",    {0, 160, 160}},
-        {"Coral",   {255, 127, 100}},
+        {"White", {255, 255, 255}},
+        {"Black", {30, 30, 30}},
+        {"Red",   {255, 70, 70}},
+        {"Blue",  {60, 120, 255}},
     };
 }
 
@@ -503,4 +676,40 @@ std::vector<ProfilePicPreset> ProfilePicCustomizer::getPresets() {
     }
 
     return presets;
+}
+
+std::vector<std::pair<int, std::string>> ProfilePicCustomizer::getAvailableGameIcons() {
+    return {
+        {0, "Cube"},
+        {1, "Ship"},
+        {2, "Ball"},
+        {3, "UFO"},
+        {4, "Wave"},
+        {5, "Robot"},
+        {6, "Spider"},
+        {7, "Swing"},
+        {8, "Jetpack"},
+        {9, "Explosion"},
+        {10, "Cube Green"},
+        {11, "Ship Purple"},
+        {12, "Ball Blue"},
+        {13, "UFO Orange"},
+        {14, "Wave Pink"},
+        {15, "Robot Red"},
+        {16, "Spider Cyan"},
+        {17, "Swing Yellow"},
+        {18, "Jetpack Gray"},
+        {19, "Explosion White"},
+    };
+}
+
+std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getAvailableFonts() {
+    return {
+        {"goldFont.fnt", "Gold"},
+        {"bigFont.fnt", "Big"},
+        {"chatFont.fnt", "Chat"},
+        {"GJSHFont_002.png", "Square"},
+        {"GJSHFont_003.png", "Square Bold"},
+        {"GJSHFont_001.png", "Square Light"},
+    };
 }

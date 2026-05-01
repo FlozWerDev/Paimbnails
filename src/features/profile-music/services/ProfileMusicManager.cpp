@@ -722,7 +722,7 @@ void ProfileMusicManager::getWaveformPeaksForFile(std::string const& filePath, W
 void ProfileMusicManager::downloadMusicFragment(int accountID, DownloadCallback callback) {
     // El servidor purga Cloudflare al subir/borrar, asi que no hace falta romper
     // el cache con un query param distinto en cada request.
-    std::string url = fmt::format("{}/profile-music/{}", HttpClient::get().getServerURL(), accountID);
+    std::string url = fmt::format("{}/api/profile-music/{}/audio", HttpClient::get().getServerURL(), accountID);
 
     log::info("[ProfileMusic] Downloading music from: {}", url);
 

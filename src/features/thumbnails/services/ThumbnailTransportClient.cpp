@@ -202,6 +202,10 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
     log::debug("[ThumbTransport] getThumbnails: fetching levelId={} forceRefresh={}", levelId, forceRefresh);
 
     HttpClient::get().getThumbnails(levelId, [this, levelId, requestGeneration](bool success, std::string const& response) {
+        log::info("[ThumbTransport] getThumbnails response: levelId={}, success={}, response_size={}", levelId, success, response.size());
+        if (success && response.size() < 1000) {
+            log::debug("[ThumbTransport] getThumbnails response body: {}", response);
+        }
         std::vector<ThumbnailInfo> thumbnails;
         std::vector<ThumbnailListCallback> callbacks;
         std::string revisionToken;
@@ -438,8 +442,23 @@ void ThumbnailTransportClient::getThumbnail(int levelId, DownloadCallback callba
 void ThumbnailTransportClient::downloadFromUrl(std::string const& url, DownloadCallback callback) {
     log::debug("[ThumbTransport] downloadFromUrl: {}", url);
     HttpClient::get().downloadFromUrl(url, [callback, url](bool success, std::vector<uint8_t> const& data, int, int) {
-        if (success) { log::debug("[ThumbTransport] downloadFromUrl callback: OK bytes={}", data.size()); callback(success, bytesToTexture(data)); }
-        else         { log::warn("[ThumbTransport] downloadFromUrl callback: FAILED url={}", url); callback(false, nullptr); }
+        if (success && !data.empty()) {
+            log::debug("[ThumbTransport] downloadFromUrl callback: OK bytes={}", data.size());
+            callback(success, bytesToTexture(data));
+        } else if (success && data.empty()) {
+            // CCTextureCache hit: la textura ya existe en Cocos2d cache
+            auto* tex = CCTextureCache::sharedTextureCache()->textureForKey(url.c_str());
+            if (tex) {
+                log::debug("[ThumbTransport] downloadFromUrl callback: CCTextureCache hit url={}", url);
+                callback(true, tex);
+            } else {
+                log::warn("[ThumbTransport] downloadFromUrl callback: empty data but no cache tex url={}", url);
+                callback(false, nullptr);
+            }
+        } else {
+            log::warn("[ThumbTransport] downloadFromUrl callback: FAILED url={}", url);
+            callback(false, nullptr);
+        }
     });
 }
 

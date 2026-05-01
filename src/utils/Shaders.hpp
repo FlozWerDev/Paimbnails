@@ -937,7 +937,7 @@ void main() {
 // Dual Kawase downsample: center(×4) + 4 diagonal half-pixel(×1) = ÷8
 constexpr auto fragmentShaderPaimonBlurDown = R"(
 #ifdef GL_ES
-precision mediump float;
+precision highp float;
 #endif
 varying vec4 v_fragmentColor;
 varying vec2 v_texCoord;
@@ -956,7 +956,7 @@ void main() {
 // Dual Kawase upsample: 4 cardinal(×2) + 4 diagonal(×1) = ÷12
 constexpr auto fragmentShaderPaimonBlurUp = R"(
 #ifdef GL_ES
-precision mediump float;
+precision highp float;
 #endif
 varying vec4 v_fragmentColor;
 varying vec2 v_texCoord;

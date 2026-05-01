@@ -9,6 +9,7 @@
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../utils/PaimonNotification.hpp"
+#include "../managers/ThumbnailAPI.hpp"
 #include <unordered_set>
 #include <vector>
 
@@ -135,7 +136,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         addRefreshButton();
 
         this->schedule(schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells), 1.0f);
-        this->scheduleOnce(schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells), 0.0f);
+        this->prefetchVisibleLevelCells(0.0f);
 
         return true;
     }
@@ -346,6 +347,15 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         ThumbnailLoader::get().prefetchLevels(levelIDs, ThumbnailLoader::PriorityVisiblePrefetch);
         if (!predictiveIDs.empty()) {
             ThumbnailLoader::get().prefetchLevels(predictiveIDs, ThumbnailLoader::PriorityPredictivePrefetch);
+        }
+
+        // Precarga URL base del thumbnail para que LevelInfoLayer tenga RAM cache hit
+        // instantáneo al abrirse, sin esperar la descarga desde la red.
+        for (int levelID : levelIDs) {
+            std::string url = ThumbnailAPI::get().getThumbnailURL(levelID);
+            if (!url.empty()) {
+                ThumbnailLoader::get().requestUrlLoad(url, [](cocos2d::CCTexture2D*, bool){}, ThumbnailLoader::PriorityVisiblePrefetch);
+            }
         }
     }
 

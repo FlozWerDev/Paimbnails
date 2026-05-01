@@ -38,7 +38,7 @@ public:
     static constexpr int PriorityBootstrap = 1;
     static constexpr int PriorityPredictivePrefetch = 2;
     static constexpr int PriorityVisiblePrefetch = 3;
-    static constexpr int PriorityHero = 5;
+    static constexpr int PriorityHero = 15;
     static constexpr int PriorityVisibleCell = 10;
 
     static ThumbnailLoader& get();
@@ -137,7 +137,11 @@ private:
     std::atomic<int> m_activeTaskCount{0};
     std::atomic<int> m_activeUrlTaskCount{0};
     int m_maxConcurrentTasks = 8;
-    int m_maxConcurrentUrlTasks = 6;
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    int m_maxConcurrentUrlTasks = 4;
+#else
+    int m_maxConcurrentUrlTasks = 8;
+#endif
     mutable std::recursive_mutex m_queueMutex;
 
     // cache gifs (tracking which levels have GIF data)

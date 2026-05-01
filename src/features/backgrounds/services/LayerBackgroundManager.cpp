@@ -9,6 +9,7 @@
 #include "../../dynamic-songs/services/DynamicSongManager.hpp"
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
+#include "../../../utils/PaimonNotification.hpp"
 #include <random>
 #include <filesystem>
 #include <fstream>
@@ -432,6 +433,14 @@ LayerBgConfig LayerBackgroundManager::resolveConfig(std::string const& layerKey)
 std::string LayerBackgroundManager::hasOtherVideoConfigured(std::string const& excludeLayerKey, std::string const& videoPath) const {
     for (auto& [key, name] : LAYER_OPTIONS) {
         if (key == excludeLayerKey) continue;
+
+        // Check if this layer has "same as" pointing to excludeLayerKey
+        // If so, it will automatically use the new video via resolveConfig, so it's not a conflict
+        auto cfg = getConfig(key);
+        if (cfg.type == excludeLayerKey) {
+            continue; // This layer references the layer we're modifying, so no conflict
+        }
+
         auto resolved = resolveConfig(key);
         if (resolved.type == "video" && !resolved.customPath.empty()) {
             // Compare resolved video paths (same video is OK, different video is blocked)
@@ -440,6 +449,7 @@ std::string LayerBackgroundManager::hasOtherVideoConfigured(std::string const& e
             if (existingPath != newPath) {
                 (void)name;
                 log::info("[LayerBgMgr] hasOtherVideoConfigured: {} already has video: {}", key, existingPath);
+                return key;
             }
         }
     }
@@ -1031,6 +1041,21 @@ struct VideoBlurNode : public CCNode {
 void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& path, LayerBgConfig const& cfg) {
     log::info("[LayerBgMgr] applyVideoBg: path={} dark={}", path, cfg.darkMode);
     bool videoAudio = paimon::settings::video::audioEnabled();
+
+    // ── Single-video limit: only one video background may be active at a time ──
+    {
+        std::lock_guard lk(m_sharedVideosMutex);
+        for (const auto& [existingPath, entry] : m_sharedVideos) {
+            if (entry.refCount > 0 && existingPath != path) {
+                log::warn("[LayerBgMgr] applyVideoBg: blocked — another video is already active: {} (refCount={})",
+                          existingPath, entry.refCount);
+                PaimonNotify::show(
+                    "Only one video background can be active at a time.",
+                    geode::NotificationIcon::Warning, 3.0f);
+                return;
+            }
+        }
+    }
 
     // ── Clean up old video's disk cache when switching to a different video ──
     cleanupOldVideoCache(layer, path);
@@ -1661,6 +1686,21 @@ std::shared_ptr<paimon::video::VideoPlayer> LayerBackgroundManager::acquireShare
     }
     if (evictedPlayer) {
         scheduleSharedVideoTeardown(std::move(evictedPlayer));
+    }
+
+    // ── Single-video limit: block creating a new player if another is already active ──
+    {
+        std::lock_guard lk(m_sharedVideosMutex);
+        for (const auto& [existingPath, entry] : m_sharedVideos) {
+            if (entry.refCount > 0 && existingPath != path) {
+                log::warn("[LayerBgMgr] acquireSharedVideo: blocked — another video is already active: {} (refCount={})",
+                          existingPath, entry.refCount);
+                PaimonNotify::show(
+                    "Only one video background can be active at a time.",
+                    geode::NotificationIcon::Warning, 3.0f);
+                return nullptr;
+            }
+        }
     }
 
     paimon::video::VideoPlayerCreateOptions playerOptions;

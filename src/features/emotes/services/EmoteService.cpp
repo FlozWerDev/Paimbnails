@@ -95,6 +95,7 @@ void EmoteService::fetchPage(int page, int limit, std::string const& timelast,
 
     auto req = web::WebRequest();
     req.timeout(std::chrono::seconds(15));
+    req.acceptEncoding("gzip, deflate");
     req.header("Accept", "application/json");
 
     WebHelper::dispatch(std::move(req), "GET", url, [this, page, limit, timelast, &accumulator, callback = std::move(callback)](web::WebResponse res) mutable {

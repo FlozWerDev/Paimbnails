@@ -3,6 +3,7 @@
 #include <Geode/ui/TextInput.hpp>
 #include <Geode/binding/Slider.hpp>
 #include "../services/ProfilePicCustomizer.hpp"
+#include "ProfilePicIconsDetailPopup.hpp"
 
 class ProfilePicEditorPopup : public geode::Popup {
 protected:
@@ -74,16 +75,13 @@ protected:
     void onTabBtn(cocos2d::CCObject* sender);
     void rebuildCurrentTab();
 
-    // Tab de borde
-    cocos2d::CCNode* createFrameTab();
+    // Tab de forma (incluye borde)
+    cocos2d::CCNode* createShapeTab();
     void onFrameToggle(cocos2d::CCObject* sender);
     void onThicknessChanged(cocos2d::CCObject* sender);
     void onFrameOpacityChanged(cocos2d::CCObject* sender);
     void onBorderColorSelect(cocos2d::CCObject* sender);
     void onPickCustomBorderColor(cocos2d::CCObject* sender);
-
-    // Tab de forma
-    cocos2d::CCNode* createShapeTab();
     void onScaleXChanged(cocos2d::CCObject* sender);
     void onScaleYChanged(cocos2d::CCObject* sender);
     void onSizeChanged(cocos2d::CCObject* sender);
@@ -112,7 +110,7 @@ protected:
     void onDecoPickColor(cocos2d::CCObject* sender);
     void onClearAllDecos(cocos2d::CCObject* sender);
 
-    // Tab de ajustes
+    // Tab de ajustes de imagen
     cocos2d::CCNode* createAdjustTab();
     void onImgZoomChanged(cocos2d::CCObject* sender);
     void onImgRotationChanged(cocos2d::CCObject* sender);
@@ -120,10 +118,40 @@ protected:
     void onImgOffsetYChanged(cocos2d::CCObject* sender);
     void onResetAdjust(cocos2d::CCObject* sender);
 
-    // Barra de herramientas
+    // Tab de icono (modo icono + configuracion de iconos)
+    cocos2d::CCNode* createIconTab();
+    void onOnlyIconToggle(cocos2d::CCObject* sender);
+    void onIconTypeSelect(cocos2d::CCObject* sender);
+    void onGameIconSelect(cocos2d::CCObject* sender);
+    void onOpenIconsDetail(cocos2d::CCObject* sender);
+    void onCustomIconSelect(cocos2d::CCObject* sender);
+    void onAddCustomIcon(cocos2d::CCObject* sender);
+    void onRemoveCustomIcon(cocos2d::CCObject* sender);
+    void onIconColor1Select(cocos2d::CCObject* sender);
+    void onIconColor2Select(cocos2d::CCObject* sender);
+    void onIconColor1SourceSelect(cocos2d::CCObject* sender);
+    void onIconColor2SourceSelect(cocos2d::CCObject* sender);
+    void onPickIconColor1(cocos2d::CCObject* sender);
+    void onPickIconColor2(cocos2d::CCObject* sender);
+    void onIconGlowToggle(cocos2d::CCObject* sender);
+    void onIconGlowColorSelect(cocos2d::CCObject* sender);
+    void onIconGlowColorSourceSelect(cocos2d::CCObject* sender);
+    void onPickIconGlowColor(cocos2d::CCObject* sender);
+    void onIconScaleChanged(cocos2d::CCObject* sender);
+    void onAnimationTypeSelect(cocos2d::CCObject* sender);
+    void onAnimationSpeedChanged(cocos2d::CCObject* sender);
+    void onAnimationAmountChanged(cocos2d::CCObject* sender);
+    void onIconImageToggle(cocos2d::CCObject* sender);
+
+    // Tab de estilo (fuente + presets)
+    cocos2d::CCNode* createStyleTab();
+    void onFontSelect(cocos2d::CCObject* sender);
     void onPreset(cocos2d::CCObject* sender);
     void onRandomize(cocos2d::CCObject* sender);
     void onResetAll(cocos2d::CCObject* sender);
+
+    // Helper tabs (kept for internal use)
+    cocos2d::CCNode* createFrameTab();
 
     // Preview
     void rebuildPreview();

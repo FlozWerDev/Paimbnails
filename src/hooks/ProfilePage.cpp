@@ -41,6 +41,8 @@
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/PaimonLoadingOverlay.hpp"
+#include "../utils/PaimonDrawNode.hpp"
+#include <Geode/binding/FLAlertLayer.hpp>
 #include "../features/moderation/services/ModeratorCache.hpp"
 #include "../features/profiles/services/ProfileThumbs.hpp"
 #include "../utils/SpriteHelper.hpp"
@@ -51,10 +53,12 @@
 #include "../features/emotes/services/EmoteService.hpp"
 #include "../features/emotes/services/EmoteCache.hpp"
 #include "../features/profiles/ui/ProfileSettingsPopup.hpp"
+#include "../features/forum/services/ForumApi.hpp"
 #include "../features/profiles/ui/CommentBgSettingsPopup.hpp"
 #include "../features/profiles/ui/CustomBadgePickerPopup.hpp"
 #include "../features/profiles/services/CustomBadgeService.hpp"
 #include "../features/foryou/services/ForYouTracker.hpp"
+#include "../features/profiles/ui/ProfileViewsPopup.hpp"
 
 using namespace geode::prelude;
 
@@ -203,7 +207,7 @@ static CCTexture2D* loadProfileImgFromDisk(int accountID) {
     // skip MP4 video files (handled by ensureAnimatedProfileImg)
     // ftyp box can start at different offsets — search first 12 bytes
     if (data.size() > 12) {
-        for (size_t i = 0; i + 3 < 12 && i + 3 < data.size(); ++i) {
+        for (size_t i = 0; i + 3 < data.size() && i < 12; ++i) {
             if (data[i]=='f' && data[i+1]=='t' && data[i+2]=='y' && data[i+3]=='p') {
                 return nullptr;
             }
@@ -257,6 +261,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
         bool m_pausedForTemporaryExit = false;
         bool m_audioCleanedUp = false;
         CCLabelBMFont* m_thumbCountLabel = nullptr;
+        int64_t m_statusLastSeen = 0;
+        bool m_statusOnline = false;
     };
 
     bool canShowModerationControls() {
@@ -396,6 +402,21 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
+        // 5. Mantener status dot al final del username-menu (a la derecha del nombre)
+        if (auto* usernameMenu = this->getChildByIDRecursive("username-menu")) {
+            if (auto* dot = usernameMenu->getChildByID("paimon-user-status-dot"_spr)) {
+                if (dot->getParent() && usernameMenu->getChildren()->lastObject() != dot) {
+                    dot->retain();
+                    dot->removeFromParent();
+                    usernameMenu->addChild(dot);
+                    dot->release();
+                    if (auto menuNode = typeinfo_cast<CCMenu*>(usernameMenu)) {
+                        menuNode->updateLayout();
+                    }
+                }
+            }
+        }
+
         if (needsLayout) {
             leftMenu->updateLayout();
         }
@@ -448,6 +469,79 @@ class $modify(PaimonProfilePage, ProfilePage) {
             menuNode->addChild(btn);
             menuNode->updateLayout();
         }
+    }
+
+    void addUserStatusIndicator(bool online, int64_t lastSeen) {
+        m_fields->m_statusOnline = online;
+        m_fields->m_statusLastSeen = lastSeen;
+
+        auto menu = this->getChildByIDRecursive("username-menu");
+        if (!menu) return;
+
+        // Evita duplicados
+        if (menu->getChildByID("paimon-user-status-dot"_spr)) return;
+
+        // Circulo dibujado con PaimonDrawNode
+        float dotRadius = 5.0f;
+        auto* dotNode = PaimonDrawNode::create();
+        if (!dotNode) return;
+
+        ccColor4F fillColor;
+        if (online) {
+            fillColor = ccc4f(0.0f, 1.0f, 0.0f, 1.0f); // Verde intenso
+        } else {
+            fillColor = ccc4f(0.5f, 0.5f, 0.5f, 1.0f); // Gris
+        }
+        dotNode->drawDot({dotRadius, dotRadius}, dotRadius, fillColor);
+        dotNode->setContentSize({dotRadius * 2, dotRadius * 2});
+        dotNode->setAnchorPoint({0.5f, 0.5f});
+        dotNode->setID("paimon-user-status-dot"_spr);
+
+        if (auto menuNode = typeinfo_cast<CCMenu*>(menu)) {
+            auto dotBtn = CCMenuItemSpriteExtra::create(dotNode, this, menu_selector(PaimonProfilePage::onUserStatusDotClicked));
+            dotBtn->setID("paimon-user-status-dot"_spr);
+            menuNode->addChild(dotBtn);
+            menuNode->updateLayout();
+        }
+    }
+
+    void onUserStatusDotClicked(CCObject* sender) {
+        if (this->m_ownProfile) {
+            // Own profile: show profile views popup
+            if (auto popup = ProfileViewsPopup::create(this->m_accountID)) {
+                popup->show();
+            }
+            return;
+        }
+
+        std::string message;
+        if (m_fields->m_statusOnline) {
+            message = "This user is currently online.";
+        } else if (m_fields->m_statusLastSeen > 0) {
+            message = "Last seen: " + paimon::forum::formatAbsoluteTime(m_fields->m_statusLastSeen);
+        } else {
+            message = "This user is currently offline.\n(No last seen data available)";
+        }
+        FLAlertLayer::create("User Status", message.c_str(), "OK")->show();
+    }
+
+    void fetchAndShowUserStatus(int accountID) {
+        Ref<ProfilePage> self = this;
+        // Instant presence: send heartbeat first so the server marks us online,
+        // then fetch the viewed user's status.
+        paimon::forum::ForumApi::get().sendHeartbeat([self, accountID](paimon::forum::Result<bool> hbResult) {
+            paimon::forum::ForumApi::get().getUserStatus(accountID,
+                [self, accountID](paimon::forum::Result<paimon::forum::UserStatus> result) {
+                    Loader::get()->queueInMainThread([self, accountID, result]() {
+                        if (!self || !self->getParent()) return;
+                        auto* page = static_cast<PaimonProfilePage*>(self.data());
+                        if (page->m_accountID != accountID) return;
+                        if (!result.ok) return;
+
+                        page->addUserStatusIndicator(result.data.online, result.data.lastSeen);
+                    });
+                });
+        });
     }
 
     void addCustomBadgeToProfile(std::string const& emoteName) {
@@ -730,14 +824,25 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void displayProfileImgVideo(std::string const& videoKey) {
-        auto video = VideoThumbnailSprite::createFromCache(videoKey);
-        if (!video) return;
-
         auto f = m_fields.self();
+
+        // Clean up previous video if exists
         if (f->m_profileImgClip) {
+            // Stop any playing video before removing
+            CCClippingNode* clip = f->m_profileImgClip;
+            if (clip) {
+                for (auto* child : CCArrayExt<CCNode*>(clip->getChildren())) {
+                    if (auto* videoSprite = geode::cast::typeinfo_cast<VideoThumbnailSprite*>(child)) {
+                        videoSprite->stop();
+                    }
+                }
+            }
             f->m_profileImgClip->removeFromParent();
             f->m_profileImgClip = nullptr;
         }
+
+        auto video = VideoThumbnailSprite::createFromCache(videoKey);
+        if (!video) return;
 
         auto layer = this->m_mainLayer;
         if (!layer) return;
@@ -786,10 +891,18 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     bool ensureAnimatedProfileImg(int accountID) {
         auto gifKey = getProfileImgGifCacheKey(accountID);
+        auto videoKey = fmt::format("profileimg_video_{}", accountID);
 
-        // check for cached video first
-        if (!gifKey.empty() && VideoThumbnailSprite::isCached(gifKey)) {
-            displayProfileImgVideo(gifKey);
+        // check for cached video first (use correct video key)
+        if (VideoThumbnailSprite::isCached(videoKey)) {
+            displayProfileImgVideo(videoKey);
+            return true;
+        }
+
+        // also check legacy video key
+        auto legacyVideoKey = fmt::format("profile_video_{}", accountID);
+        if (VideoThumbnailSprite::isCached(legacyVideoKey)) {
+            displayProfileImgVideo(legacyVideoKey);
             return true;
         }
 
@@ -804,7 +917,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         // check if disk cache is MP4 (ftyp box can be at different offsets)
         bool isMp4 = false;
         if (bytes->size() > 12) {
-            for (size_t i = 0; i + 3 < 12 && i + 3 < bytes->size(); ++i) {
+            for (size_t i = 0; i + 3 < bytes->size() && i < 12; ++i) {
                 if ((*bytes)[i]=='f' && (*bytes)[i+1]=='t' && (*bytes)[i+2]=='y' && (*bytes)[i+3]=='p') {
                     isMp4 = true;
                     break;
@@ -845,8 +958,19 @@ class $modify(PaimonProfilePage, ProfilePage) {
         f->m_hasProfileBackdrop = false;
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
 
-        // limpiar anteriores
-        if (f->m_profileImgClip) { f->m_profileImgClip->removeFromParent(); f->m_profileImgClip = nullptr; }
+        // limpiar anteriores - stop video first to prevent stale playback
+        if (f->m_profileImgClip) {
+            CCClippingNode* clip = f->m_profileImgClip;
+            if (clip) {
+                for (auto* child : CCArrayExt<CCNode*>(clip->getChildren())) {
+                    if (auto* videoSprite = geode::cast::typeinfo_cast<VideoThumbnailSprite*>(child)) {
+                        videoSprite->stop();
+                    }
+                }
+            }
+            f->m_profileImgClip->removeFromParent();
+            f->m_profileImgClip = nullptr;
+        }
         if (f->m_profileImgBorder) { f->m_profileImgBorder->removeFromParent(); f->m_profileImgBorder = nullptr; }
 
         bool queuedAnimated = ensureAnimatedProfileImg(accountID);
@@ -1352,6 +1476,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (auto* usernameMenu = this->getChildByIDRecursive("username-menu")) {
             while (auto* old = usernameMenu->getChildByID("paimon-custom-badge"_spr))
                 old->removeFromParent();
+            while (auto* old = usernameMenu->getChildByID("paimon-user-status-dot"_spr))
+                old->removeFromParent();
+        }
+
+        // User status indicator (online/offline dot)
+        if (this->m_accountID > 0) {
+            fetchAndShowUserStatus(this->m_accountID);
         }
 
         // Badge de moderador/admin
@@ -1586,6 +1717,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
             // Schedule verificacion de integridad cada 0.5s
             this->schedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity), 0.5f);
 
+            // Registrar vista de perfil (solo perfiles ajenos)
+            if (!ownProfile && accountID > 0) {
+                paimon::forum::ForumApi::get().recordProfileView(accountID, [](paimon::forum::Result<bool>) {
+                    // silent
+                });
+            }
+
         return true;
     }
 
@@ -1615,7 +1753,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void onAddProfileImg(CCObject*) {
         WeakRef<PaimonProfilePage> self = this;
-        pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> result) {
+        pt::pickMedia([self](geode::Result<std::optional<std::filesystem::path>> result) {
             auto page = self.lock();
             if (!page) return;
             auto pathOpt = std::move(result).unwrapOr(std::nullopt);
@@ -1628,9 +1766,49 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void processProfileImg(std::filesystem::path path) {
+        // Check if it's a video file first
+        std::string ext = geode::utils::string::pathToString(path.extension());
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        bool isVideo = (ext == ".mp4" || ext == ".mov" || ext == ".m4v");
+
+        if (isVideo) {
+            // Video: read and upload
+            auto videoData = ImageLoadHelper::readBinaryFile(path, 50); // 50MB limit for videos
+            if (videoData.empty()) {
+                PaimonNotify::create(Localization::get().getString("profile.video_open_error").c_str(), NotificationIcon::Error)->show();
+                return;
+            }
+
+            int accountID = this->m_accountID;
+            auto* accountManager = GJAccountManager::get();
+            if (!accountManager) {
+                PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
+                return;
+            }
+            std::string username = accountManager->m_username;
+
+            auto videoSpinner = PaimonLoadingOverlay::create("Uploading video...", 30.f);
+            videoSpinner->show(this, 100);
+            Ref<PaimonLoadingOverlay> loading = videoSpinner;
+
+            ThumbnailAPI::get().uploadProfileVideo(accountID, videoData, username, [this, accountID, videoData, loading](bool success, std::string const& msg) {
+                if (loading) loading->dismiss();
+
+                if (success) {
+                    PaimonNotify::create("Profile video uploaded!", NotificationIcon::Success)->show();
+                    saveProfileImgToDisk(accountID, videoData);
+                    ProfileImageService::get().rememberProfileImgGifKey(accountID, fmt::format("profileimg_video_{}", accountID));
+                    this->ensureAnimatedProfileImg(accountID);
+                } else {
+                    PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
+                }
+            });
+            return;
+        }
+
         if (ImageLoadHelper::isGIF(path)) {
             // GIF: subir directamente
-            auto imgData = ImageLoadHelper::readBinaryFile(path, 10);
+            auto imgData = ImageLoadHelper::readBinaryFile(path, 25);
             if (imgData.empty()) {
                 PaimonNotify::create(Localization::get().getString("profile.image_open_error").c_str(), NotificationIcon::Error)->show();
                 return;
@@ -1695,7 +1873,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
 
         // Imagen estatica: usar helper pa cargar y convertir
-        auto loaded = ImageLoadHelper::loadStaticImage(path, 10);
+        auto loaded = ImageLoadHelper::loadStaticImage(path, 25);
         if (!loaded.success) {
             std::string errKey = loaded.error;
             // Traduce error si es key de localizacion

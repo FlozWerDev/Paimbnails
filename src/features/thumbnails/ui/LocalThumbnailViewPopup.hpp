@@ -133,6 +133,7 @@ protected:
     void onDownloadBtn(CCObject*);
     void onDeleteReportedThumb(CCObject*);
     void onAcceptThumbBtn(CCObject*);
+    void onRejectThumbBtn(CCObject*);
     void onReportBtn(CCObject*);
     void onDeleteThumbnail(CCObject*);
     void onDeleteLocalThumb(CCObject*);

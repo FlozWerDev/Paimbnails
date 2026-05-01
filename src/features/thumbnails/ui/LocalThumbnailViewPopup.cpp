@@ -641,6 +641,24 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     int  verificationCategory = paimon::SessionState::consumeInt(vctx.verificationCategory);
     m_verificationCategory = verificationCategory;
 
+    // ── NEW: If not opened from verification queue, check if user is mod and
+    // there are pending thumbnails for this level in the local queue ──
+    if (verificationCategory < 0) {
+        std::string modCode = geode::Mod::get()->getSavedValue<std::string>("mod-code", "");
+        if (!modCode.empty()) {
+            auto pendingItems = PendingQueue::get().list(PendingCategory::Verify);
+            for (auto const& item : pendingItems) {
+                if (item.levelID == m_levelID && item.status == PendingStatus::Open && !item.suggestions.empty()) {
+                    log::info("[ThumbnailViewPopup] Found pending thumbnail for level {} in local queue ({} suggestion(s))", m_levelID, item.suggestions.size());
+                    m_verificationCategory = 0; // Verify
+                    m_suggestions = item.suggestions;
+                    verificationCategory = 0;
+                    break;
+                }
+            }
+        }
+    }
+
     if (verificationCategory < 0 && m_invalidationListenerId == 0) {
         WeakRef<LocalThumbnailViewPopup> self = this;
         m_invalidationListenerId = ThumbnailLoader::get().addInvalidationListener([self](int invalidLevelID) {
@@ -785,7 +803,13 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
             // sincronamente desde cache durante setup(), cuando getParent() aun es null.
             if (!popup || popup->m_isExiting || !popup->m_mainLayer) return;
 
-            if (!success || thumbs.empty()) return;
+            log::info("[ThumbnailViewPopup] getThumbnails callback: levelID={}, success={}, count={}", 
+                popup->m_levelID, success, thumbs.size());
+            
+            if (!success || thumbs.empty()) {
+                log::warn("[ThumbnailViewPopup] getThumbnails failed or empty for level {}", popup->m_levelID);
+                return;
+            }
 
             popup->m_thumbnails = thumbs;
             popup->m_currentIndex = 0;
@@ -812,6 +836,14 @@ void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category
     Ref<LocalThumbnailViewPopup> safeRef = this;
 
     if (category == PendingCategory::Verify) {
+        // If suggestions are populated (e.g., from local pending queue with filename),
+        // use loadCurrentSuggestion which uses the actual filename URL
+        if (!m_suggestions.empty()) {
+            m_currentIndex = 0;
+            loadCurrentSuggestion();
+            return;
+        }
+
         ThumbnailAPI::get().downloadSuggestion(m_levelID, [safeRef, maxWidth, maxHeight, content, openedFromReport](bool success, CCTexture2D* tex) {
             if (!safeRef->getParent() || !safeRef->m_mainLayer) {
                 log::warn("[ThumbnailViewPopup] Popup destruido antes de cargar suggestion");
@@ -1354,6 +1386,11 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         auto acceptSpr = ButtonSprite::create(Localization::get().getString("level.accept_button").c_str(), 80, true, "bigFont.fnt", "GJ_button_01.png", 30.f, 0.5f);
         acceptSpr->setScale(0.6f);
         centerBtn = CCMenuItemSpriteExtra::create(acceptSpr, this, menu_selector(LocalThumbnailViewPopup::onAcceptThumbBtn));
+
+        auto rejectSpr = ButtonSprite::create(Localization::get().getString("level.reject_button").c_str(), 80, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.5f);
+        rejectSpr->setScale(0.6f);
+        auto rejectBtn = CCMenuItemSpriteExtra::create(rejectSpr, this, menu_selector(LocalThumbnailViewPopup::onRejectThumbBtn));
+        if (rejectBtn) buttonMenu->addChild(rejectBtn);
     } else if (openedFromReport) {
         auto delSpr = ButtonSprite::create(Localization::get().getString("level.delete_button").c_str(), 90, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.5f);
         delSpr->setScale(0.6f);
@@ -1779,6 +1816,7 @@ void LocalThumbnailViewPopup::onYouTubeBtn(CCObject*) {
 
     auto req = geode::utils::web::WebRequest();
     req.timeout(std::chrono::seconds(10));
+    req.acceptEncoding("gzip, deflate");
     req.header("Accept", "application/json");
 
     WeakRef<LocalThumbnailViewPopup> self = this;
@@ -2199,6 +2237,45 @@ void LocalThumbnailViewPopup::onAcceptThumbBtn(CCObject*) {
 
     log::warn("[ThumbnailViewPopup] Server upload disabled - thumbnail saved locally only");
     PaimonNotify::create(Localization::get().getString("level.saved_local_server_disabled").c_str(), NotificationIcon::Info)->show();
+}
+
+void LocalThumbnailViewPopup::onRejectThumbBtn(CCObject*) {
+    log::info("Rechazar thumbnail presionado en ThumbnailViewPopup para levelID={}", m_levelID);
+
+    if (m_verificationCategory < 0) {
+        PaimonNotify::create(Localization::get().getString("level.reject_error").c_str(), NotificationIcon::Error)->show();
+        return;
+    }
+
+    std::string username;
+    auto* gm = GameManager::get();
+    if (gm) {
+        username = gm->m_playerName;
+    } else {
+        log::warn("[ThumbnailViewPopup] GameManager::get() es null");
+    }
+
+    PaimonNotify::create(Localization::get().getString("level.rejecting").c_str(), NotificationIcon::Info)->show();
+
+    ThumbnailAPI::get().rejectQueueItem(
+        m_levelID,
+        static_cast<PendingCategory>(m_verificationCategory),
+        username,
+        "Rechazado desde vista de miniatura",
+        [levelID = m_levelID, category = m_verificationCategory](bool success, std::string const& message) {
+            if (success) {
+                PendingQueue::get().reject(levelID, static_cast<PendingCategory>(category));
+                PaimonNotify::create(Localization::get().getString("level.rejected").c_str(), NotificationIcon::Warning)->show();
+                log::info("[ThumbnailViewPopup] Miniatura rechazada para nivel {}", levelID);
+
+                ThumbnailTransportClient::get().invalidateGalleryMetadata(levelID);
+                ThumbnailLoader::get().invalidateLevel(levelID);
+            } else {
+                PaimonNotify::create(Localization::get().getString("level.reject_error") + message, NotificationIcon::Error)->show();
+                log::error("[ThumbnailViewPopup] Error rechazando miniatura: {}", message);
+            }
+        }
+    );
 }
 
 void LocalThumbnailViewPopup::onReportBtn(CCObject*) {

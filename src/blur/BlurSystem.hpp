@@ -103,12 +103,13 @@ private:
     };
 
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    static constexpr std::size_t MAX_BLUR_CACHE_ENTRIES = 32;
+    static constexpr std::size_t MAX_BLUR_CACHE_ENTRIES = 48;
 #else
     // Desktop: usuario puede tener 20-40 celdas visibles + info layer + pause
-    // layer con blur simultaneamente. 128 entradas cubren re-entries sin
-    // recalcular blur. Cada entry es un CCTexture2D ~100-400KB, total ~25-50MB.
-    static constexpr std::size_t MAX_BLUR_CACHE_ENTRIES = 128;
+    // layer con blur simultaneamente. 192 entradas cubren re-entries sin
+    // recalcular blur, incluyendo los blur pre-calculados en startup.
+    // Cada entry es un CCTexture2D ~100-400KB, total ~40-80MB.
+    static constexpr std::size_t MAX_BLUR_CACHE_ENTRIES = 192;
 #endif
 
     std::list<BlurKey> m_blurLru;

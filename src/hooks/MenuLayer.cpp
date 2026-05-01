@@ -8,6 +8,7 @@
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/moderation/ui/VerificationCenterLayer.hpp"
 #include "../layers/PaiConfigLayer.hpp"
+#include "../layers/PaimonHubLayer.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/DominantColors.hpp"
@@ -16,8 +17,10 @@
 #include "../core/Settings.hpp"
 #include "../features/profiles/services/ProfilePicCustomizer.hpp"
 #include "../features/profiles/services/ProfilePicRenderer.hpp"
+#include "../features/updates/services/UpdateChecker.hpp"
 #include "../utils/Shaders.hpp"
 #include "../video/VideoPlayer.hpp"
+#include "../features/forum/services/ForumApi.hpp"
 #include <random>
 #include <filesystem>
 #include <string>
@@ -115,6 +118,12 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             initCursorTicker();
         }
 
+        // Heartbeat: ping inmediato al iniciar + cada 60s para mantener estado online
+        paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool> result) {
+            log::debug("[Heartbeat] Initial heartbeat sent: {}", result.ok && result.data);
+        });
+        this->schedule(schedule_selector(PaimonMenuLayer::tickHeartbeat), 60.f);
+
         // Limpia contexto de lista al volver al menu
         paimon::SessionState::get().currentListID = 0;
 
@@ -126,35 +135,60 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             this->scheduleOnce(schedule_selector(PaimonMenuLayer::openVerificationQueue), 0.6f);
         }
 
-        // Agrega boton de config en menu inferior
-        if (auto bottomMenu = this->getChildByID("bottom-menu")) {
-            auto btnSpr = CircleButtonSprite::createWithSpriteFrameName("GJ_paintBtn_001.png", 1.0f, CircleBaseColor::Green, CircleBaseSize::Medium);
-            if (!btnSpr) return false;
-            auto btn = CCMenuItemSpriteExtra::create(btnSpr, this, menu_selector(PaimonMenuLayer::onBackgroundConfig));
-            btn->setID("background-config-btn"_spr);
-            bottomMenu->addChild(btn);
-            bottomMenu->updateLayout();
-        } else {
-            // Fallback: menu propio con RowLayout
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
-            auto menu = CCMenu::create();
-            menu->setContentSize({winSize.width, 40.f});
-            menu->setAnchorPoint({0.f, 0.f});
-            menu->ignoreAnchorPointForPosition(false);
-            menu->setPosition({0.f, 8.f});
-            menu->setLayout(RowLayout::create()
-                ->setAxisAlignment(AxisAlignment::Start)
-                ->setGap(8.f));
-            menu->setID("paimon-fallback-bottom-menu"_spr);
+        // Agrega boton del logo del mod en menu inferior (abre PaimonHubLayer)
+        // Verificar si ya existe para evitar duplicados
+        if (!this->getChildByID("paimon-hub-btn"_spr) && !this->getChildByID("paimon-fallback-bottom-menu"_spr)) {
+            if (auto bottomMenu = this->getChildByID("bottom-menu")) {
+                auto logoSpr = CCSprite::create("Logo.png"_spr);
+                if (!logoSpr || logoSpr->isUsingFallback()) {
+                    logoSpr = CCSprite::create("paim_Paimon.png"_spr);
+                }
+                if (logoSpr) {
+                    auto bgBtn = CCScale9Sprite::create("GJ_button_01.png");
+                    bgBtn->setContentSize({44.f, 44.f});
+                    auto sz = logoSpr->getContentSize();
+                    float targetH = 46.f;
+                    logoSpr->setScale(sz.height > 0 ? targetH / sz.height : 0.36f);
+                    logoSpr->setPosition(bgBtn->getContentSize() / 2);
+                    bgBtn->addChild(logoSpr);
+                    auto btn = CCMenuItemSpriteExtra::create(bgBtn, this, menu_selector(PaimonMenuLayer::onPaimonHub));
+                    btn->setID("paimon-hub-btn"_spr);
+                    bottomMenu->addChild(btn);
+                    bottomMenu->updateLayout();
+                }
+            } else {
+                // Fallback: menu propio con RowLayout
+                auto winSize = CCDirector::sharedDirector()->getWinSize();
+                auto menu = CCMenu::create();
+                menu->setContentSize({winSize.width, 40.f});
+                menu->setAnchorPoint({0.f, 0.f});
+                menu->ignoreAnchorPointForPosition(false);
+                menu->setPosition({0.f, 8.f});
+                menu->setLayout(RowLayout::create()
+                    ->setAxisAlignment(AxisAlignment::Start)
+                    ->setGap(8.f));
+                menu->setID("paimon-fallback-bottom-menu"_spr);
 
-            auto btnSpr = CircleButtonSprite::createWithSpriteFrameName("GJ_paintBtn_001.png", 1.0f, CircleBaseColor::Green, CircleBaseSize::Medium);
-            if (!btnSpr) return false;
-            auto btn = CCMenuItemSpriteExtra::create(btnSpr, this, menu_selector(PaimonMenuLayer::onBackgroundConfig));
-            btn->setID("background-config-btn"_spr);
-            menu->addChild(btn);
-            menu->updateLayout();
+                auto logoSpr = CCSprite::create("Logo.png"_spr);
+                if (!logoSpr || logoSpr->isUsingFallback()) {
+                    logoSpr = CCSprite::create("paim_Paimon.png"_spr);
+                }
+                if (logoSpr) {
+                    auto bgBtn = CCScale9Sprite::create("GJ_button_01.png");
+                    bgBtn->setContentSize({44.f, 44.f});
+                    auto sz = logoSpr->getContentSize();
+                    float targetH = 46.f;
+                    logoSpr->setScale(sz.height > 0 ? targetH / sz.height : 0.36f);
+                    logoSpr->setPosition(bgBtn->getContentSize() / 2);
+                    bgBtn->addChild(logoSpr);
+                    auto btn = CCMenuItemSpriteExtra::create(bgBtn, this, menu_selector(PaimonMenuLayer::onPaimonHub));
+                    btn->setID("paimon-hub-btn"_spr);
+                    menu->addChild(btn);
+                    menu->updateLayout();
+                }
 
-            this->addChild(menu);
+                this->addChild(menu);
+            }
         }
 
         this->updateBackground();
@@ -225,6 +259,51 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             ProfilePicCustomizer::get().setDirty(false);
             this->updateProfileButton();
         }
+
+        // Refresca el badge de actualizacion en el boton del Hub
+        this->applyUpdateBadge();
+    }
+
+    // Coloca/quita un punto rojo encima del boton paimon-hub-btn segun el
+    // estado del UpdateChecker. Idempotente.
+    void applyUpdateBadge() {
+        auto btn = this->getChildByIDRecursive("paimon-hub-btn"_spr);
+        if (!btn) return;
+
+        bool hasUpdate = paimon::updates::UpdateChecker::get().hasUpdate();
+        auto existing = btn->getChildByID("paimon-hub-update-badge"_spr);
+
+        if (hasUpdate && !existing) {
+            // Punto rojo en la esquina superior derecha del boton
+            auto badge = CCSprite::create("GJ_completesIcon_001.png");
+            CCNode* badgeNode = nullptr;
+            if (badge && !badge->isUsingFallback()) {
+                badge->setColor({255, 60, 60});
+                badgeNode = badge;
+            }
+            if (!badgeNode) {
+                auto layer = CCLayerColor::create(ccc4(255, 60, 60, 255));
+                layer->setContentSize({10.f, 10.f});
+                layer->ignoreAnchorPointForPosition(false);
+                layer->setAnchorPoint({0.5f, 0.5f});
+                badgeNode = layer;
+            } else {
+                badge->setScale(0.45f);
+            }
+            badgeNode->setID("paimon-hub-update-badge"_spr);
+            auto sz = btn->getContentSize();
+            badgeNode->setPosition({sz.width - 4.f, sz.height - 4.f});
+            btn->addChild(badgeNode, 100);
+
+            // Pulso visual
+            badgeNode->runAction(CCRepeatForever::create(CCSequence::create(
+                CCScaleTo::create(0.4f, 0.55f),
+                CCScaleTo::create(0.4f, 0.45f),
+                nullptr
+            )));
+        } else if (!hasUpdate && existing) {
+            existing->removeFromParent();
+        }
     }
 
     void openVerificationQueue(float dt) {
@@ -234,8 +313,22 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         }
     }
 
+    void tickHeartbeat(float dt) {
+        paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool> result) {
+            // Silencioso: solo log en debug
+            if (!result.ok || !result.data) {
+                log::debug("[Heartbeat] Forum server heartbeat failed or offline");
+            }
+        });
+    }
+
     void onBackgroundConfig(CCObject*) {
         TransitionManager::get().pushScene(PaiConfigLayer::scene());
+    }
+
+    void onPaimonHub(CCObject*) {
+        auto scene = PaimonHubLayer::scene();
+        CCDirector::sharedDirector()->replaceScene(scene);
     }
 
     void onPaimonClick(CCObject* sender) {
@@ -576,8 +669,33 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     }
 
     void updateProfileButton() {
-        auto type = Mod::get()->getSavedValue<std::string>("profile-bg-type", "none");
+        auto profileMenu = this->getChildByID("profile-menu");
+        if (!profileMenu) {
+            profileMenu = this->getChildByIDRecursive("profile-menu");
+        }
+        if (!profileMenu) return;
 
+        auto profileButton = typeinfo_cast<CCMenuItemSpriteExtra*>(profileMenu->getChildByID("profile-button"));
+        if (!profileButton) return;
+
+        float const targetSize = 48.0f;
+
+        // Lee config personalizada
+        auto picCfg = ProfilePicCustomizer::get().getConfig();
+        std::string shapeName = picCfg.stencilSprite;
+        if (shapeName.empty()) shapeName = "circle";
+
+        // --- Only Icon Mode: render game icon even without custom image ---
+        if (picCfg.onlyIconMode) {
+            auto container = paimon::profile_pic::composeProfilePicture(nullptr, targetSize, picCfg);
+            if (container) {
+                profileButton->setNormalImage(container);
+            }
+            return;
+        }
+
+        // --- Normal mode: requires custom image ---
+        auto type = Mod::get()->getSavedValue<std::string>("profile-bg-type", "none");
         if (type != "custom") return;
 
         auto path = Mod::get()->getSavedValue<std::string>("profile-bg-path", "");
@@ -587,25 +705,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         if (!std::filesystem::exists(path, fsEc) || fsEc) {
              return;
         }
-
-        auto profileMenu = this->getChildByID("profile-menu");
-        if (!profileMenu) {
-            profileMenu = this->getChildByIDRecursive("profile-menu");
-        }
-        
-        if (!profileMenu) return;
-
-        auto profileButton = typeinfo_cast<CCMenuItemSpriteExtra*>(profileMenu->getChildByID("profile-button"));
-        if (!profileButton) {
-             return;
-        }
-        
-        float const targetSize = 48.0f;
-
-        // Lee config personalizada
-        auto picCfg = ProfilePicCustomizer::get().getConfig();
-        std::string shapeName = picCfg.stencilSprite;
-        if (shapeName.empty()) shapeName = "circle";
 
         if (path.ends_with(".gif") || path.ends_with(".GIF")) {
              // Ref<> para evitar leak en callback GIF

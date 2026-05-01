@@ -226,7 +226,8 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
                   + "&accountID=" + std::to_string(accountID);
     }
 
-    HttpClient::get().get(endpoint, [callback, category](bool success, std::string const& response) {
+    HttpClient::get().get(endpoint, [callback, category, endpoint](bool success, std::string const& response) {
+        log::info("[ModService] syncVerificationQueue: server response - success={}, response={}", success, response.substr(0, 500));
         if (!success) { callback(true, PendingQueue::get().list(category)); return; }
 
         auto jsonRes = matjson::parse(response);
@@ -241,6 +242,7 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
         if (!itemsRes) { callback(true, PendingQueue::get().list(category)); return; }
 
         std::vector<PendingItem> items;
+        log::info("[ModService] syncVerificationQueue: parsing {} items from server", itemsRes.unwrap().size());
         for (auto const& item : itemsRes.unwrap()) {
             PendingItem it{};
 
@@ -250,11 +252,28 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
             else if (item["levelId"].isNumber())
                 it.levelID = item["levelId"].asInt().unwrapOr(0);
             if (it.levelID == 0) {
-                if (item["accountID"].isString())
-                    it.levelID = geode::utils::numFromString<int>(item["accountID"].asString().unwrapOr("0")).unwrapOr(0);
-                else if (item["accountID"].isNumber())
-                    it.levelID = item["accountID"].asInt().unwrapOr(0);
+                // Try multiple field names for account ID
+                static const char* accountIdFields[] = {"accountID", "accountId", "account_id", "userID", "userId", "user_id"};
+                for (const char* fieldName : accountIdFields) {
+                    if (item.contains(fieldName)) {
+                        if (item[fieldName].isString()) {
+                            auto parsed = geode::utils::numFromString<int>(item[fieldName].asString().unwrapOr("0"));
+                            if (parsed.isOk() && parsed.unwrap() != 0) {
+                                it.levelID = parsed.unwrap();
+                                break;
+                            }
+                        } else if (item[fieldName].isNumber()) {
+                            int val = item[fieldName].asInt().unwrapOr(0);
+                            if (val != 0) {
+                                it.levelID = val;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
+            
+            log::debug("[ModService] Parsed item: levelID={}, category={}", it.levelID, static_cast<int>(category));
 
             it.category = category;
 
@@ -291,7 +310,13 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
                 }
             } else if (it.category == PendingCategory::Verify) {
                 Suggestion s;
-                s.filename    = fmt::format("suggestions/{}.webp", it.levelID);
+                // Use server-provided filename if available (e.g., pending_thumbnails/ for captured uploads)
+                std::string serverFilename = item["filename"].asString().unwrapOr("");
+                if (!serverFilename.empty()) {
+                    s.filename = serverFilename;
+                } else {
+                    s.filename = fmt::format("suggestions/{}.webp", it.levelID);
+                }
                 s.submittedBy = it.submittedBy;
                 s.timestamp   = it.timestamp;
                 it.suggestions.push_back(s);
@@ -322,8 +347,13 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
                 }
             }
 
-            if (it.levelID != 0) items.push_back(std::move(it));
+            if (it.levelID != 0) {
+                items.push_back(std::move(it));
+            } else {
+                log::warn("[ModService] Filtered out item with invalid levelID=0, category={}", static_cast<int>(category));
+            }
         }
+        log::info("[ModService] syncVerificationQueue: returning {} items (filtered from server response)", items.size());
         callback(true, items);
     });
 }

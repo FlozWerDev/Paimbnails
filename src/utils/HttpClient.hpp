@@ -33,6 +33,10 @@ public:
 
     std::string getServerURL() const { return m_serverURL; }
     void setServerURL(std::string const& url);
+
+    std::string getForumServerURL() const { return m_forumServerURL; }
+    void setForumServerURL(std::string const& url);
+
     static std::string encodeQueryParam(std::string const& value);
 
     // mod code
@@ -204,6 +208,7 @@ private:
     HttpClient& operator=(HttpClient const&) = delete;
 
     std::string m_serverURL;
+    std::string m_forumServerURL;
     std::string m_apiKey;
     std::string m_modCode;
     
@@ -222,6 +227,17 @@ private:
     static constexpr int64_t MANIFEST_ENTRY_TTL = 48 * 60 * 60; // 48 hours in seconds
     std::shared_ptr<std::atomic<bool>> m_callbackGate;
 
+    // ── Manifest fetch circuit breaker ────────────────────────────────
+    // Coalesces concurrent fetchManifest calls into a single request,
+    // and backs off on 429 to avoid hammering the server.
+    bool m_manifestFetchInFlight = false;
+    std::vector<std::function<void(bool)>> m_manifestPendingCallbacks;
+    std::mutex m_manifestFetchMutex;
+    std::chrono::steady_clock::time_point m_manifestCooldownUntil{};
+    static constexpr int MANIFEST_COOLDOWN_SECONDS = 30; // min backoff if server doesn't send retryAfter
+    bool isManifestCooldownActive() const;
+    void setManifestCooldown(int retryAfterSeconds);
+
     // Check if Worker quota is exhausted (auto-recovers after EXHAUSTED_RECOVERY_SECONDS)
     bool isWorkerExhausted();
     // Mark Worker as exhausted (called on HTTP 429 or CF quota errors)
@@ -232,6 +248,12 @@ private:
     std::unordered_map<int, std::vector<DownloadCallback>> m_inflightDownloads;
     std::mutex m_inflightMutex;
     void resolveInflight(int levelId, bool success, std::vector<uint8_t> const& data);
+
+    // in-flight moderator check dedup — coalesce concurrent checkModeratorAccount calls
+    // for the same username into a single network request
+    std::unordered_map<std::string, std::vector<ModeratorCallback>> m_inflightModChecks;
+    std::mutex m_inflightModMutex;
+    void resolveModCheckInflight(std::string const& key, bool isMod, bool isAdmin);
 
     // request async
     void performRequest(

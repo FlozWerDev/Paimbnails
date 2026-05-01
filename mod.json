@@ -18,7 +18,7 @@
   },
 
   "resources": {
-    "sprites": ["resources/*.png"],
+    "sprites": ["resources/*.png", "Logo.png"],
     "files": ["resources/shaders/*.glsl"]
   },
   "settings": {
@@ -446,18 +446,6 @@
       "description": "Show capture button in pause menu.",
       "type": "bool",
       "default": true
-    },
-    "capture-resolution": {
-      "type": "string",
-      "name": "Capture Resolution",
-      "description": "Resolution for Render mode.",
-      "default": "1080p",
-      "one-of": ["1080p", "1440p", "4k"]
-    },
-    "keybinds-title": {
-      "name": "Keybinds",
-      "description": "Configure keyboard shortcuts",
-      "type": "title"
     },
     "settings-panel-keybind": {
       "type": "keybind",

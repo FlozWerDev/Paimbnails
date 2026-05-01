@@ -146,6 +146,7 @@ private:
             {"profile.not_verified", "No verificado"},
             {"profile.not_verified_msg", "No estas en la lista de moderadores aprobados."},
             {"profile.image_open_error", "No se pudo abrir imagen"},
+            {"profile.video_open_error", "No se pudo abrir video"},
             {"profile.texture_error", "No se pudo crear textura"},
             {"profile.saved", "Miniatura de perfil guardada"},
             {"profile.no_image_selected", "No se selecciono imagen"},
@@ -573,9 +574,13 @@ private:
             // ProfileSettingsPopup
             {"profilesettings.title", "Ajustes de Perfil"},
             {"profilesettings.music_label", "Musica"},
-            {"profilesettings.image_label", "Imagen"},
+            {"profilesettings.badge_label", "Insignia"},
+            {"profilesettings.image_label", "Fondo Perfil"},
+            {"profilesettings.comment_label", "Comentario"},
             {"profilesettings.info_title", "Ajustes de Perfil"},
-            {"profilesettings.info_body", "<cj>Musica</c>: Configura la cancion que suena cuando visitan tu perfil.\n\n<cg>Imagen</c>: Sube una foto de perfil personalizada que otros veran en tu pagina."},
+            {"profilesettings.info_body", "<cj>Musica</c>: Cancion de perfil.\n<cg>Fondo Perfil</c>: Imagen o video personalizado.\n<cy>Insignia</c>: Personaliza tu insignia de perfil.\n<cr>Comentario</c>: Fondo de tus comentarios."},
+            {"profilesettings.comment_soon_title", "Proximamente"},
+            {"profilesettings.comment_soon_body", "La personalizacion de comentarios estara disponible en la version <cy>1.0.1</c>."},
             {"profilesettings.info_ok", "OK"},
 
             // PauseLayer video
@@ -589,7 +594,52 @@ private:
             {"pause.render_read_error", "Failed to read rendered image"},
 
             // ProfilePage
-            {"profile.cant_rate_own", "No puedes calificar tu propio perfil!"}
+            {"profile.cant_rate_own", "No puedes calificar tu propio perfil!"},
+
+            // PaimonHubLayer
+            {"pai.hub.title", "Paimbnails"},
+            {"pai.hub.tab.home", "Inicio"},
+            {"pai.hub.tab.news", "Noticias"},
+            {"pai.hub.tab.forum", "Foro"},
+            {"pai.hub.welcome", "Bienvenido a Paimbnails!"},
+            {"pai.hub.description", "Personaliza tu experiencia en Geometry Dash"},
+            {"pai.hub.btn.config", "Configuracion"},
+            {"pai.hub.btn.profiles", "Perfiles"},
+            {"pai.hub.btn.backgrounds", "Fondos"},
+            {"pai.hub.btn.extras", "Extras"},
+            {"pai.hub.btn.support", "Soporte"},
+            {"pai.hub.news.title", "Ultimas Noticias"},
+            {"pai.hub.news.refresh", "Actualizar"},
+            {"pai.hub.news.refreshed", "Noticias actualizadas!"},
+            {"pai.hub.news.item1.title", "Bienvenido a Paimbnails!"},
+            {"pai.hub.news.item1.desc", "Explora nuestro nuevo hub con secciones de noticias y foro."},
+            {"pai.hub.news.item2.title", "Version 1.0.1 Lanzada"},
+            {"pai.hub.news.item2.desc", "Nuevas funciones y correcciones de errores ya disponibles."},
+            {"pai.hub.news.item3.title", "Perfiles Personalizados"},
+            {"pai.hub.news.item3.desc", "Crea y comparte tus fotos de perfil personalizadas."},
+            {"pai.hub.forum.title", "Foro Comunitario"},
+            {"pai.hub.forum.create", "+ Nuevo Post"},
+            {"pai.hub.forum.tags", "Etiquetas:"},
+            {"pai.hub.forum.no_posts", "No hay posts aun. Se el primero en crear uno!"},
+            {"pai.hub.forum.create_post", "Crear Nuevo Post"},
+            {"pai.hub.forum.title_placeholder", "Titulo"},
+            {"pai.hub.forum.desc_placeholder", "Descripcion"},
+            {"pai.hub.forum.tag_placeholder", "Etiqueta"},
+            {"pai.hub.forum.post", "Publicar"},
+            {"pai.hub.forum.create_tag", "Crear Etiqueta Personalizada"},
+            {"pai.hub.forum.new_tag", "Nombre de etiqueta"},
+            // Update system
+            {"pai.hub.btn.update", "Buscar actualizacion"},
+            {"pai.hub.version", "Version: {}"},
+            {"pai.update.title", "Descargando actualizacion"},
+            {"pai.update.checking", "Buscando actualizaciones..."},
+            {"pai.update.starting", "Iniciando..."},
+            {"pai.update.cancel", "Cancelar"},
+            {"pai.update.restart", "Reiniciar"},
+            {"pai.update.close", "Cerrar"},
+            {"pai.update.done", "Actualizacion instalada. Reinicia para aplicar."},
+            {"pai.update.failed", "Error"},
+            {"pai.update.uptodate", "Ya tienes la ultima version!"}
         };
 
         // English translations
@@ -683,6 +733,7 @@ private:
             {"profile.not_verified", "Not Verified"},
             {"profile.not_verified_msg", "You are not on the approved moderators list."},
             {"profile.image_open_error", "Could not open image"},
+            {"profile.video_open_error", "Could not open video"},
             {"profile.texture_error", "Could not create texture"},
             {"profile.saved", "Profile thumbnail saved"},
             {"profile.no_image_selected", "No image selected"},
@@ -1112,9 +1163,13 @@ private:
             // ProfileSettingsPopup
             {"profilesettings.title", "Profile Settings"},
             {"profilesettings.music_label", "Music"},
-            {"profilesettings.image_label", "Image"},
+            {"profilesettings.badge_label", "Badge"},
+            {"profilesettings.image_label", "Profile Background"},
+            {"profilesettings.comment_label", "Comment"},
             {"profilesettings.info_title", "Profile Settings"},
-            {"profilesettings.info_body", "<cj>Music</c>: Configure the song that plays when people visit your profile.\n\n<cg>Image</c>: Upload a custom profile picture that others will see on your page."},
+            {"profilesettings.info_body", "<cj>Music</c>: Profile song.\n<cg>Profile Background</c>: Custom image or video.\n<cy>Badge</c>: Customize your profile badge.\n<cr>Comment</c>: Your comment background."},
+            {"profilesettings.comment_soon_title", "Coming Soon"},
+            {"profilesettings.comment_soon_body", "Comment background customization will be available in version <cy>1.0.1</c>."},
             {"profilesettings.info_ok", "OK"},
 
             // PauseLayer video
@@ -1128,7 +1183,52 @@ private:
             {"pause.render_read_error", "Failed to read rendered image"},
 
             // ProfilePage
-            {"profile.cant_rate_own", "You can't rate your own profile!"}
+            {"profile.cant_rate_own", "You can't rate your own profile!"},
+
+            // PaimonHubLayer
+            {"pai.hub.title", "Paimbnails"},
+            {"pai.hub.tab.home", "Home"},
+            {"pai.hub.tab.news", "News"},
+            {"pai.hub.tab.forum", "Forum"},
+            {"pai.hub.welcome", "Welcome to Paimbnails!"},
+            {"pai.hub.description", "Customize your Geometry Dash experience"},
+            {"pai.hub.btn.config", "Settings"},
+            {"pai.hub.btn.profiles", "Profiles"},
+            {"pai.hub.btn.backgrounds", "Backgrounds"},
+            {"pai.hub.btn.extras", "Extras"},
+            {"pai.hub.btn.support", "Support"},
+            {"pai.hub.news.title", "Latest News"},
+            {"pai.hub.news.refresh", "Refresh"},
+            {"pai.hub.news.refreshed", "News refreshed!"},
+            {"pai.hub.news.item1.title", "Welcome to Paimbnails!"},
+            {"pai.hub.news.item1.desc", "Check out our new hub with news and forum sections."},
+            {"pai.hub.news.item2.title", "Version 1.0.1 Released"},
+            {"pai.hub.news.item2.desc", "New features and bug fixes are now available."},
+            {"pai.hub.news.item3.title", "Custom Profiles"},
+            {"pai.hub.news.item3.desc", "Create and share your custom profile pictures."},
+            {"pai.hub.forum.title", "Community Forum"},
+            {"pai.hub.forum.create", "+ New Post"},
+            {"pai.hub.forum.tags", "Tags:"},
+            {"pai.hub.forum.no_posts", "No posts yet. Be the first to create one!"},
+            {"pai.hub.forum.create_post", "Create New Post"},
+            {"pai.hub.forum.title_placeholder", "Title"},
+            {"pai.hub.forum.desc_placeholder", "Description"},
+            {"pai.hub.forum.tag_placeholder", "Tag"},
+            {"pai.hub.forum.post", "Post"},
+            {"pai.hub.forum.create_tag", "Create Custom Tag"},
+            {"pai.hub.forum.new_tag", "Tag name"},
+            // Update system
+            {"pai.hub.btn.update", "Check for update"},
+            {"pai.hub.version", "Version: {}"},
+            {"pai.update.title", "Downloading update"},
+            {"pai.update.checking", "Checking for updates..."},
+            {"pai.update.starting", "Starting..."},
+            {"pai.update.cancel", "Cancel"},
+            {"pai.update.restart", "Restart"},
+            {"pai.update.close", "Close"},
+            {"pai.update.done", "Update installed. Restart to apply."},
+            {"pai.update.failed", "Error"},
+            {"pai.update.uptodate", "You're up to date!"}
         };
     }
 

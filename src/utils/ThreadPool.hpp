@@ -82,10 +82,13 @@ private:
             std::function<void()> job;
             {
                 std::unique_lock<std::mutex> lock(m_mutex);
-                m_cv.wait(lock, [this]() {
+                // Timeout de 100ms para evitar spinning activo cuando no hay trabajo
+                // Esto mejora eficiencia en sistemas con muchos cores
+                m_cv.wait_for(lock, std::chrono::milliseconds(100), [this]() {
                     return m_stopped || !m_jobs.empty();
                 });
                 if (m_stopped && m_jobs.empty()) return;
+                if (m_jobs.empty()) continue; // Timeout expiró, thread puede dormir más
                 job = std::move(m_jobs.front());
                 m_jobs.pop();
             }

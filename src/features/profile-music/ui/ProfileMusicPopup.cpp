@@ -25,10 +25,10 @@ ProfileMusicPopup* ProfileMusicPopup::create(int accountID) {
 
 void ProfileMusicPopup::addSeparatorLine(float y) {
     auto sep = PaimonDrawNode::create();
-    float sepWidth = m_mainLayer->getContentSize().width - 44.f;
+    float sepWidth = m_mainLayer->getContentSize().width - 30.f;
     cocos2d::ccColor4F sepColor = {1.f, 1.f, 1.f, 0.09f};
     sep->drawSegment(ccp(0, 0), ccp(sepWidth, 0), 0.5f, sepColor);
-    sep->setPosition({22.f, y});
+    sep->setPosition({15.f, y});
     m_mainLayer->addChild(sep);
 }
 
@@ -67,7 +67,7 @@ cocos2d::CCNode* ProfileMusicPopup::createHandleVisual(float height, cocos2d::cc
 }
 
 bool ProfileMusicPopup::init(int accountID) {
-    if (!Popup::init(460.f, 320.f)) return false;
+    if (!Popup::init(400.f, 260.f)) return false;
 
     m_accountID = accountID;
 
@@ -93,57 +93,57 @@ bool ProfileMusicPopup::init(int accountID) {
 }
 
 void ProfileMusicPopup::createSongIdInput() {
-    auto winSize = m_mainLayer->getContentSize(); // {460, 320}
+    auto winSize = m_mainLayer->getContentSize(); // {400, 260}
 
     // Label
-    auto idLabel = CCLabelBMFont::create("Newgrounds Song ID:", "bigFont.fnt");
-    idLabel->setScale(0.38f);
+    auto idLabel = CCLabelBMFont::create("Song ID:", "bigFont.fnt");
+    idLabel->setScale(0.35f);
     idLabel->setAnchorPoint({0.f, 0.5f});
-    idLabel->setPosition({18.f, winSize.height - 52.f});
+    idLabel->setPosition({15.f, winSize.height - 38.f});
     m_mainLayer->addChild(idLabel);
 
     // Input field
-    m_songIdInput = TextInput::create(130.f, "Enter ID...");
-    m_songIdInput->setPosition({248.f, winSize.height - 52.f});
+    m_songIdInput = TextInput::create(100.f, "ID...");
+    m_songIdInput->setPosition({115.f, winSize.height - 38.f});
     m_songIdInput->setCommonFilter(geode::CommonFilter::Uint);
     m_songIdInput->setMaxCharCount(10);
     m_songIdInput->setID("song-id-input"_spr);
     m_mainLayer->addChild(m_songIdInput, 11);
 
     // Load button
-    auto loadSpr = ButtonSprite::create("Load", 62, true, "bigFont.fnt", "GJ_button_01.png", 26.f, 0.65f);
+    auto loadSpr = ButtonSprite::create("Load", 50, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.6f);
     auto loadBtn = CCMenuItemSpriteExtra::create(loadSpr, this, menu_selector(ProfileMusicPopup::onLoadSong));
-    loadBtn->setPosition({348.f, winSize.height - 52.f});
+    loadBtn->setPosition({225.f, winSize.height - 38.f});
     loadBtn->setID("load-song-btn"_spr);
     m_mainMenu->addChild(loadBtn);
 
     // Custom File button (only visible for authorized users)
     if (ProfileMusicManager::get().canUploadCustomMusic()) {
-        auto customSpr = ButtonSprite::create("File", 48, true, "bigFont.fnt", "GJ_button_04.png", 22.f, 0.60f);
+        auto customSpr = ButtonSprite::create("File", 40, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.55f);
         auto customBtn = CCMenuItemSpriteExtra::create(customSpr, this, menu_selector(ProfileMusicPopup::onLoadCustomFile));
-        customBtn->setPosition({415.f, winSize.height - 52.f});
+        customBtn->setPosition({275.f, winSize.height - 38.f});
         customBtn->setID("custom-file-btn"_spr);
         m_mainMenu->addChild(customBtn);
     }
 
     // Song info label
     m_songInfoLabel = CCLabelBMFont::create("No song loaded", "goldFont.fnt");
-    m_songInfoLabel->setScale(0.38f);
+    m_songInfoLabel->setScale(0.32f);
     m_songInfoLabel->setColor({160, 170, 185});
-    m_songInfoLabel->setPosition({winSize.width / 2.f, winSize.height - 76.f});
+    m_songInfoLabel->setPosition({winSize.width / 2.f, winSize.height - 56.f});
     m_mainLayer->addChild(m_songInfoLabel);
 
     // Separator below song-info row
-    addSeparatorLine(winSize.height - 90.f);
+    addSeparatorLine(winSize.height - 66.f);
 }
 
 void ProfileMusicPopup::createWaveformDisplay() {
-    auto winSize = m_mainLayer->getContentSize(); // {460, 320}
+    auto winSize = m_mainLayer->getContentSize(); // {400, 260}
 
-    m_waveformWidth  = 380.f;
-    m_waveformHeight = 60.f;
+    m_waveformWidth  = 320.f;
+    m_waveformHeight = 50.f;
     m_waveformX = (winSize.width - m_waveformWidth) / 2.f;
-    m_waveformY = winSize.height - 162.f; // bottom edge of waveform
+    m_waveformY = winSize.height - 120.f; // bottom edge of waveform
 
     // Background panel with rounded corners
     const float bgPad = 6.f;
@@ -186,58 +186,57 @@ void ProfileMusicPopup::createWaveformDisplay() {
     m_waveformContainer->addChild(placeholderLabel, 0);
 
     // Selection time — small badge-like panel behind the label
-    float badgeW = 200.f, badgeH = 22.f;
+    float badgeW = 160.f, badgeH = 18.f;
     auto selBg = paimon::SpriteHelper::createColorPanel(
-        badgeW, badgeH, {30, 65, 90}, 110, 5.f
+        badgeW, badgeH, {30, 65, 90}, 110, 4.f
     );
-    selBg->setPosition({winSize.width / 2.f - badgeW / 2.f, m_waveformY - 19.f - badgeH / 2.f});
+    selBg->setPosition({winSize.width / 2.f - badgeW / 2.f, m_waveformY - 14.f - badgeH / 2.f});
     m_mainLayer->addChild(selBg, 0);
 
-    m_selectionLabel = CCLabelBMFont::create("0:00 - 0:20  (20 sec)", "bigFont.fnt");
-    m_selectionLabel->setScale(0.38f);
-    m_selectionLabel->setPosition({winSize.width / 2.f, m_waveformY - 19.f});
+    m_selectionLabel = CCLabelBMFont::create("0:00 - 0:20", "bigFont.fnt");
+    m_selectionLabel->setScale(0.32f);
+    m_selectionLabel->setPosition({winSize.width / 2.f, m_waveformY - 14.f});
     m_mainLayer->addChild(m_selectionLabel, 1);
 
     // Duration label (smaller, below selection label)
-    m_durationLabel = CCLabelBMFont::create("Duration: --:--", "bigFont.fnt");
-    m_durationLabel->setScale(0.29f);
+    m_durationLabel = CCLabelBMFont::create("Duration: --:-- ", "bigFont.fnt");
+    m_durationLabel->setScale(0.26f);
     m_durationLabel->setColor({155, 170, 185});
-    m_durationLabel->setPosition({winSize.width / 2.f, m_waveformY - 35.f});
+    m_durationLabel->setPosition({winSize.width / 2.f, m_waveformY - 28.f});
     m_mainLayer->addChild(m_durationLabel, 1);
 
     // Separator between waveform area and buttons
     addSeparatorLine(m_waveformY - 48.f);
-
     updateSelectionLabel();
 }
 
 void ProfileMusicPopup::createControlButtons() {
-    auto winSize = m_mainLayer->getContentSize(); // {460, 320}
+    auto winSize = m_mainLayer->getContentSize(); // {400, 260}
 
     // --- Row 1: playback controls ---
-    const float row1Y     = 90.f;
-    const float labelYOff = 18.f;   // offset below button centre for text label
+    const float row1Y     = 65.f;
+    const float labelYOff = 14.f;   // offset below button centre for text label
 
     float cx = winSize.width / 2.f;
 
     // Play
-    float playX = cx - 95.f;
+    float playX = cx - 70.f;
     {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_playBtn2_001.png");
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_playMusicBtn_001.png");
         if (spr) {
-            spr->setScale(0.52f);
+            spr->setScale(0.45f);
             auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileMusicPopup::onPlayPreview));
             btn->setPosition({playX, row1Y});
             m_mainMenu->addChild(btn);
         } else {
-            auto fb = ButtonSprite::create("Play", 58, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.55f);
+            auto fb = ButtonSprite::create("Play", 50, true, "bigFont.fnt", "GJ_button_01.png", 20.f, 0.5f);
             auto btn = CCMenuItemSpriteExtra::create(fb, this, menu_selector(ProfileMusicPopup::onPlayPreview));
             btn->setPosition({playX, row1Y});
             m_mainMenu->addChild(btn);
         }
         auto lbl = CCLabelBMFont::create("Preview", "bigFont.fnt");
-        lbl->setScale(0.30f);
+        lbl->setScale(0.26f);
         lbl->setOpacity(170);
         lbl->setPosition({playX, row1Y - labelYOff});
         m_mainLayer->addChild(lbl);
@@ -249,57 +248,57 @@ void ProfileMusicPopup::createControlButtons() {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_stopMusicBtn_001.png");
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_deleteBtn_001.png");
         if (spr) {
-            spr->setScale(0.52f);
+            spr->setScale(0.45f);
             auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileMusicPopup::onStopPreview));
             btn->setPosition({stopX, row1Y});
             m_mainMenu->addChild(btn);
         } else {
-            auto fb = ButtonSprite::create("Stop", 58, true, "bigFont.fnt", "GJ_button_06.png", 24.f, 0.55f);
+            auto fb = ButtonSprite::create("Stop", 50, true, "bigFont.fnt", "GJ_button_06.png", 20.f, 0.5f);
             auto btn = CCMenuItemSpriteExtra::create(fb, this, menu_selector(ProfileMusicPopup::onStopPreview));
             btn->setPosition({stopX, row1Y});
             m_mainMenu->addChild(btn);
         }
         auto lbl = CCLabelBMFont::create("Stop", "bigFont.fnt");
-        lbl->setScale(0.30f);
+        lbl->setScale(0.26f);
         lbl->setOpacity(170);
         lbl->setPosition({stopX, row1Y - labelYOff});
         m_mainLayer->addChild(lbl);
     }
 
     // Download
-    float dlX = cx + 95.f;
+    float dlX = cx + 70.f;
     {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_downloadBtn_001.png");
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_downloadsIcon_001.png");
         if (spr) {
-            spr->setScale(0.55f);
+            spr->setScale(0.48f);
             auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileMusicPopup::onDownloadSong));
             btn->setPosition({dlX, row1Y});
             m_mainMenu->addChild(btn);
         } else {
-            auto fb = ButtonSprite::create("DL", 58, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.55f);
+            auto fb = ButtonSprite::create("DL", 50, true, "bigFont.fnt", "GJ_button_01.png", 20.f, 0.5f);
             auto btn = CCMenuItemSpriteExtra::create(fb, this, menu_selector(ProfileMusicPopup::onDownloadSong));
             btn->setPosition({dlX, row1Y});
             m_mainMenu->addChild(btn);
         }
-        auto lbl = CCLabelBMFont::create("Download", "bigFont.fnt");
-        lbl->setScale(0.30f);
+        auto lbl = CCLabelBMFont::create("DL", "bigFont.fnt");
+        lbl->setScale(0.26f);
         lbl->setOpacity(170);
         lbl->setPosition({dlX, row1Y - labelYOff});
         m_mainLayer->addChild(lbl);
     }
 
     // --- Row 2: save / delete ---
-    const float row2Y = 40.f;
+    const float row2Y = 28.f;
 
-    auto saveSpr = ButtonSprite::create("Save", 82, true, "bigFont.fnt", "GJ_button_01.png", 30.f, 0.68f);
+    auto saveSpr = ButtonSprite::create("Save", 70, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.6f);
     auto saveBtn = CCMenuItemSpriteExtra::create(saveSpr, this, menu_selector(ProfileMusicPopup::onSave));
-    saveBtn->setPosition({cx - 58.f, row2Y});
+    saveBtn->setPosition({cx - 45.f, row2Y});
     m_mainMenu->addChild(saveBtn);
 
-    auto deleteSpr = ButtonSprite::create("Delete", 82, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.68f);
+    auto deleteSpr = ButtonSprite::create("Delete", 70, true, "bigFont.fnt", "GJ_button_06.png", 24.f, 0.6f);
     auto deleteBtn = CCMenuItemSpriteExtra::create(deleteSpr, this, menu_selector(ProfileMusicPopup::onDelete));
-    deleteBtn->setPosition({cx + 58.f, row2Y});
+    deleteBtn->setPosition({cx + 45.f, row2Y});
     m_mainMenu->addChild(deleteBtn);
 }
 

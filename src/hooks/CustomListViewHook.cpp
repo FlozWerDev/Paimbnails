@@ -31,9 +31,21 @@ class $modify(PaimonCustomListView, CustomListView) {
                                    float width, float height, int count, BoomListType type,
                                    float cellHeight) {
         // When compact mode is enabled and the list is a Level type,
-        // use Level4 which renders compact cells natively.
-        if (type == BoomListType::Level && getCachedCompactMode()) {
-            type = BoomListType::Level4;
+        // use Level4 which renders compact cells natively, and halve any
+        // explicit cellHeight so the table rows match the compact layout.
+        bool isLevelType = type == BoomListType::Level ||
+                           type == BoomListType::Level2 ||
+                           type == BoomListType::Level3 ||
+                           type == BoomListType::Level4;
+        if (isLevelType && getCachedCompactMode()) {
+            if (type == BoomListType::Level) {
+                type = BoomListType::Level4;
+            }
+            // Halve explicit cellHeight (used for "My Levels" / created lists
+            // which pass cellHeight=90 directly, overriding getCellHeight).
+            if (cellHeight > 0.f && cellHeight <= 200.f) {
+                cellHeight *= 0.5f;
+            }
         }
         return CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
     }

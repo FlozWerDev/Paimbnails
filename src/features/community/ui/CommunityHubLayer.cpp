@@ -75,7 +75,9 @@ namespace {
 
         int existingModBadge = target->m_modBadge;
 
-        target->m_userName = source->m_userName;
+        if (!static_cast<std::string>(source->m_userName).empty()) {
+            target->m_userName = source->m_userName;
+        }
         target->m_userID = source->m_userID;
         target->m_accountID = source->m_accountID;
         target->m_stars = source->m_stars;
@@ -288,6 +290,16 @@ CCScene* CommunityHubLayer::scene() {
 
 CommunityHubLayer::~CommunityHubLayer() {
     log::info("[CommunityHub] destroyed");
+    this->unscheduleUpdate();
+    this->unschedule(schedule_selector(CommunityHubLayer::onRetryTimer));
+    this->unschedule(schedule_selector(CommunityHubLayer::onDeferredModeratorsRebuild));
+    hideLoading();
+    for (auto& entry : m_thumbnailEntries) {
+        if (entry.levelId > 0) {
+            ThumbnailLoader::get().cancelLoad(entry.levelId);
+        }
+    }
+    clearList();
     clearPendingNativeModeratorRequests();
     removeCaveEffect();
 }
@@ -735,6 +747,7 @@ void CommunityHubLayer::loadModerators(int attempt) {
                 for (auto const& [accID, username] : accountIDsToFetch) {
                     auto req = web::WebRequest();
                     req.timeout(std::chrono::seconds(10));
+                    req.acceptEncoding("gzip, deflate");
                     req.header("Content-Type", "application/x-www-form-urlencoded");
                     req.bodyString(
                         "targetAccountID=" + std::to_string(accID)
@@ -819,12 +832,10 @@ void CommunityHubLayer::loadModerators(int attempt) {
                             }
 
                             int remaining = pendingCount->fetch_sub(1, std::memory_order_acq_rel) - 1;
-                            if (applied || remaining <= 0) {
-                                if (remaining <= 0) {
-                                    s_cachedModScores = lyr->m_modScores;
-                                    s_modCacheTimestamp = std::time(nullptr);
-                                    s_modCacheValid = true;
-                                }
+                            if (remaining <= 0) {
+                                s_cachedModScores = lyr->m_modScores;
+                                s_modCacheTimestamp = std::time(nullptr);
+                                s_modCacheValid = true;
                                 lyr->requestModeratorsListRebuild();
                             }
                         });
@@ -1668,13 +1679,13 @@ void CommunityHubLayer::addInfoButton(Tab tab) {
         auto infoBtn = CCMenuItemSpriteExtra::create(
             fallback, this, menu_selector(CommunityHubLayer::onInfoButton));
         infoBtn->setTag(static_cast<int>(tab));
-        infoBtn->setPosition({22.f, 13.f});
+        infoBtn->setPosition({22.f, 23.f});
         infoMenu->addChild(infoBtn);
     } else {
         auto infoBtn = CCMenuItemSpriteExtra::create(
             infoSpr, this, menu_selector(CommunityHubLayer::onInfoButton));
         infoBtn->setTag(static_cast<int>(tab));
-        infoBtn->setPosition({22.f, 13.f});
+        infoBtn->setPosition({22.f, 23.f});
         infoMenu->addChild(infoBtn);
     }
 

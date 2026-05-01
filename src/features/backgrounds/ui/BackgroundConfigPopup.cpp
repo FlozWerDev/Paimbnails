@@ -510,10 +510,23 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
     btnMenu->setPosition({0, 0});
     node->addChild(btnMenu, 10);
 
-    // ── selector de layer (fila de botones arriba) ──
+    // ── selector de layer: RowLayout con auto-wrap para que los 8 botones
+    // entren dentro del popup (antes "Browser/Search/etc" salian fuera del marco)
     float selY = cy + 55;
-    float selSpacing = 95.f;
-    float selStartX = cx - selSpacing * 1.5f;
+
+    auto selMenu = CCMenu::create();
+    selMenu->setContentSize({size.width - 40.f, 50.f});
+    selMenu->setAnchorPoint({0.5f, 0.5f});
+    selMenu->setPosition({cx, selY});
+    selMenu->setLayout(
+        RowLayout::create()
+            ->setGap(4.f)
+            ->setGrowCrossAxis(true)
+            ->setCrossAxisOverflow(false)
+            ->setAutoScale(false)
+            ->setAxisAlignment(AxisAlignment::Center)
+    );
+    node->addChild(selMenu, 11);
 
     for (int i = 0; i < (int)LayerBackgroundManager::LAYER_OPTIONS.size(); i++) {
         auto& [key, name] = LayerBackgroundManager::LAYER_OPTIONS[i];
@@ -529,10 +542,10 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
         spr->setScale(0.45f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(BackgroundConfigPopup::onLayerSelect));
         btn->setTag(i);
-        btn->setPosition({selStartX + selSpacing * i, selY});
-        btnMenu->addChild(btn);
+        selMenu->addChild(btn);
         m_layerSelectBtns.push_back(btn);
     }
+    selMenu->updateLayout();
 
     // ── botones de accion ──
     float actionY = cy + 10;

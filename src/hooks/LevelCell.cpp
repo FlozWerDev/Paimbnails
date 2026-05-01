@@ -241,6 +241,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         PaimonAnimEffect m_cachedAnimEffect = PaimonAnimEffect::None;
         bool m_cachedHoverEnabled = true;
         bool m_cachedCompactMode = false;
+        bool m_compactLayoutApplied = false;
         bool m_cachedTransparentMode = false;
         bool m_cachedEffectOnGradient = false;
         PaimonBgType m_cachedBgType = PaimonBgType::Gradient;
@@ -3081,10 +3082,9 @@ class $modify(PaimonLevelCell, LevelCell) {
 
                 // Check if compact mode changed — requires full cell reload + list relayout
                 bool newCompact = Mod::get()->getSettingValue<bool>("compact-list-mode");
-                // Don't apply compact mode to timed levels (daily/weekly/event) or editor levels
+                // Don't apply compact mode to timed levels (daily/weekly/event)
                 if (m_level) {
                     if (m_level->m_dailyID > 0) newCompact = false;
-                    if (m_level->m_levelType == GJLevelType::Editor) newCompact = false;
                 }
                 if (newCompact != fields->m_cachedCompactMode) {
                     m_compactView = newCompact;
@@ -3239,25 +3239,18 @@ class $modify(PaimonLevelCell, LevelCell) {
         cacheSettings();
         if (!fields->m_cachedTransparentMode) return;
 
-        // Make the cell's own background layer transparent
+        // Make the cell's own background layer transparent (CCLayerColor invisible)
         if (auto bg = m_backgroundLayer) {
-            auto bgColor = bg->getColor();
-            if (fields->m_lastBgColor != bgColor) {
-                fields->m_lastBgColor = bgColor;
-                // GD default cell colors: {161,88,44} (even) or {194,114,62} (odd)
-                // Replace with transparent black
-                bg->setColor({0, 0, 0});
-                bg->setOpacity(50);
-            }
+            bg->setColor({0, 0, 0});
+            bg->setOpacity(0);
         }
     }
 
     void applyCompactViewFromSetting() {
         bool compact = Mod::get()->getSettingValue<bool>("compact-list-mode");
-        // Don't apply compact mode to timed levels (daily/weekly/event) or editor levels
+        // Don't apply compact mode to timed levels (daily/weekly/event)
         if (m_level) {
             if (m_level->m_dailyID > 0) compact = false;
-            if (m_level->m_levelType == GJLevelType::Editor) compact = false;
         }
         m_compactView = compact;
     }
@@ -3268,6 +3261,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (auto fields = m_fields.self()) {
             fields->m_isBeingDestroyed = false;
             fields->m_cachedCompactMode = m_compactView;
+            fields->m_compactLayoutApplied = false;
         }
         applyCompactLayoutAdjustments();
         applyTransparentMode();
@@ -3281,6 +3275,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (auto fields = m_fields.self()) {
             fields->m_isBeingDestroyed = false;
             fields->m_cachedCompactMode = m_compactView;
+            fields->m_compactLayoutApplied = false;
         }
         applyTransparentMode();
         log::debug("[LevelCell] loadFromLevel levelID={} compact={}", level ? level->m_levelID.value() : 0, m_compactView);

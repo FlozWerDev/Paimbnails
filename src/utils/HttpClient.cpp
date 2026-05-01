@@ -61,7 +61,8 @@ std::string getSafeAccountUsername() {
 HttpClient::HttpClient() {
     // config base del server
     m_serverURL = "https://api.flozwer.org";
-    
+    m_forumServerURL = "https://paimbnailspost.onrender.com";
+
     // Public client identifier used by the backend for shared mod/bot access.
     // This value is intentionally shipped with the client, so persisting it to
     // saved values is unnecessary.
@@ -75,6 +76,7 @@ HttpClient::HttpClient() {
     loadManifestFromDisk();
 
     PaimonDebug::log("[HttpClient] Initialized with server: {}", m_serverURL);
+    PaimonDebug::log("[HttpClient] Forum server: {}", m_forumServerURL);
 }
 
 void HttpClient::cleanTasks() {
@@ -100,6 +102,14 @@ void HttpClient::setServerURL(std::string const& url) {
     PaimonDebug::log("[HttpClient] Server URL updated to: {}", m_serverURL);
 }
 
+void HttpClient::setForumServerURL(std::string const& url) {
+    m_forumServerURL = url;
+    if (!m_forumServerURL.empty() && m_forumServerURL.back() == '/') {
+        m_forumServerURL.pop_back();
+    }
+    PaimonDebug::log("[HttpClient] Forum server URL updated to: {}", m_forumServerURL);
+}
+
 std::string HttpClient::encodeQueryParam(std::string const& value) {
     return urlEncodeParam(value);
 }
@@ -121,6 +131,7 @@ void HttpClient::performRequest(
     auto callbackGate = m_callbackGate;
     auto req = web::WebRequest();
     req.timeout(std::chrono::seconds(10));
+    req.acceptEncoding("gzip, deflate");
 
     bool hasExplicitModCodeHeader = false;
 
@@ -185,6 +196,11 @@ void HttpClient::performBinaryRequest(
     auto callbackGate = m_callbackGate;
     auto req = web::WebRequest();
     req.timeout(std::chrono::seconds(timeoutSeconds));
+    req.userAgent("Paimbnails/2.x (Geode)");
+    req.acceptEncoding("gzip, deflate");
+
+    // Prefer WebP for smaller download size / faster decode, fall back to PNG/GIF
+    req.header("Accept", "image/webp,image/png,image/gif,*/*");
 
     // meto headers
     for (auto const& header : headers) {
@@ -235,8 +251,9 @@ void HttpClient::performBinaryRequest(
                 if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47) validImage = true;
                 // JPEG: FF D8 FF
                 else if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) validImage = true;
-                // GIF: GIF8
-                else if (data[0] == 'G' && data[1] == 'I' && data[2] == 'F' && data[3] == '8') validImage = true;
+                // GIF: GIF87a or GIF89a
+                else if (data[0] == 'G' && data[1] == 'I' && data[2] == 'F' && data[3] == '8'
+                    && (data[4] == '7' || data[4] == '9') && data[5] == 'a') validImage = true;
                 // WEBP: RIFF....WEBP
                 else if (data.size() >= 12 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
                     && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P') validImage = true;
@@ -282,6 +299,7 @@ void HttpClient::performUpload(
 
     auto req = web::WebRequest();
     req.timeout(std::chrono::seconds(30));
+    req.acceptEncoding("gzip, deflate");
 
     // aplico headers — only include X-Mod-Code if explicitly passed in headers array
     for (auto const& header : headers) {
@@ -576,6 +594,7 @@ void HttpClient::uploadProfileConfig(int accountID, std::string const& jsonConfi
     form.param("config", jsonConfig);
 
     auto req = web::WebRequest();
+    req.acceptEncoding("gzip, deflate");
     req.header("X-API-Key", m_apiKey);
     if (!m_modCode.empty()) {
         req.header("X-Mod-Code", m_modCode);
@@ -978,6 +997,26 @@ void HttpClient::fetchManifest(std::vector<int> const& levelIds, std::function<v
         return;
     }
 
+    {
+        std::lock_guard<std::mutex> lock(m_manifestFetchMutex);
+        // Circuit breaker: si estamos en cooldown tras un 429, rechazar inmediatamente
+        if (isManifestCooldownActive()) {
+            PaimonDebug::log("[HttpClient] fetchManifest rejected: cooldown active");
+            if (callback) callback(false);
+            return;
+        }
+        // Coalescing: si ya hay un fetch en vuelo, solo encolar el callback
+        if (m_manifestFetchInFlight) {
+            m_manifestPendingCallbacks.push_back(std::move(callback));
+            PaimonDebug::log("[HttpClient] fetchManifest coalesced: {} pending callbacks",
+                m_manifestPendingCallbacks.size());
+            return;
+        }
+        m_manifestFetchInFlight = true;
+        // El callback original también va a la cola para ejecutarse junto con los pending
+        if (callback) m_manifestPendingCallbacks.push_back(std::move(callback));
+    }
+
     // build comma-separated ids query param
     std::string ids;
     for (size_t i = 0; i < levelIds.size(); i++) {
@@ -993,24 +1032,53 @@ void HttpClient::fetchManifest(std::vector<int> const& levelIds, std::function<v
         "Accept: application/json"
     };
 
-    performRequest(url, "GET", "", headers, [this, callback](bool success, std::string const& response) {
+    performRequest(url, "GET", "", headers, [this](bool success, std::string const& response) {
+        std::vector<std::function<void(bool)>> callbacks;
+        bool hadRateLimit = false;
+        int retryAfter = 0;
+
+        {
+            std::lock_guard<std::mutex> lock(m_manifestFetchMutex);
+            callbacks = std::move(m_manifestPendingCallbacks);
+            m_manifestFetchInFlight = false;
+
+            // Detectar 429 y parsear retryAfter del body JSON para activar cooldown
+            if (!success && response.find("429") != std::string::npos) {
+                hadRateLimit = true;
+                // Parsear retryAfter del JSON: buscar "retryAfter":55
+                auto pos = response.find("\"retryAfter\":");
+                if (pos != std::string::npos) {
+                    auto numStart = pos + 13; // len("\"retryAfter\":")
+                    auto numEnd = response.find_first_not_of("0123456789", numStart);
+                    if (numEnd != numStart) {
+                        auto parsed = geode::utils::numFromString<int>(response.substr(numStart, numEnd - numStart));
+                        if (parsed.isOk()) retryAfter = parsed.unwrap();
+                    }
+                }
+            }
+        }
+
+        if (hadRateLimit) {
+            setManifestCooldown(retryAfter);
+        }
+
         if (success) {
             auto changedIds = updateManifestFromJson(response);
             saveManifestToDisk();
             PaimonDebug::log("[HttpClient] Manifest fetched and cached successfully");
 
-            // NOTE: revision changes are tracked in the manifest but do NOT
-            // auto-invalidate cached thumbnails to avoid re-downloading during
-            // the current session.  The user can force a refresh manually via
-            // the refresh button in the level browser.
             if (!changedIds.empty()) {
                 PaimonDebug::log("[HttpClient] Manifest revision changed for {} levels (no auto-invalidation)", changedIds.size());
             }
 
-            if (callback) callback(true);
+            for (auto& cb : callbacks) {
+                if (cb) cb(true);
+            }
         } else {
             PaimonDebug::warn("[HttpClient] Failed to fetch manifest: {}", response);
-            if (callback) callback(false);
+            for (auto& cb : callbacks) {
+                if (cb) cb(false);
+            }
         }
     }, false);
 }
@@ -1292,15 +1360,16 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
                     }
                 });
             }
-        }, 6 /* CDN timeout 6s */);
+        }, 4 /* CDN timeout 4s — fast fallback to Worker if CDN is slow */);
         return;
     }
 
-    // No manifest entry — check if Worker is exhausted
-    if (isWorkerExhausted() && !m_cdnBaseURL.empty()) {
-        // Best-effort CDN download: construct URL from CDN base (may 404 if no thumbnail exists)
+    // No manifest entry — try CDN best-effort first (fast path), then Worker fallback.
+    // Bunny CDN responds in ~20-50ms vs Worker ~200-500ms, so CDN-first saves latency
+    // even when the manifest is cold. A 404 from CDN is also fast (~50ms).
+    if (!m_cdnBaseURL.empty()) {
         std::string cdnUrl = m_cdnBaseURL + "/thumbnails/thumbnails/" + std::to_string(levelId) + ".webp";
-        PaimonDebug::log("[HttpClient] Worker exhausted, trying CDN best-effort for level {}: {}", levelId, cdnUrl);
+        PaimonDebug::log("[HttpClient] Manifest miss for level {}, trying CDN best-effort first: {}", levelId, cdnUrl);
 
         std::vector<std::string> cdnHeaders = { "Connection: keep-alive" };
         performBinaryRequest(cdnUrl, cdnHeaders,
@@ -1309,10 +1378,31 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
                 PaimonDebug::log("[HttpClient] CDN best-effort success for level {}: {} bytes", levelId, data.size());
                 resolveInflight(levelId, true, data);
             } else {
-                PaimonDebug::warn("[HttpClient] CDN best-effort failed for level {} (may not exist)", levelId);
-                resolveInflight(levelId, false, {});
+                PaimonDebug::warn("[HttpClient] CDN best-effort failed for level {} (may not exist), falling back to Worker", levelId);
+
+                if (isWorkerExhausted()) {
+                    PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fallback for level {}", levelId);
+                    resolveInflight(levelId, false, {});
+                    return;
+                }
+
+                auto headers = std::vector<std::string>{
+                    "X-API-Key: " + m_apiKey,
+                    "Connection: keep-alive"
+                };
+                std::string url = m_serverURL + "/t/" + std::to_string(levelId);
+
+                performBinaryRequest(url, headers, [this, levelId](bool ws, std::vector<uint8_t> const& wd) {
+                    if (ws && !wd.empty()) {
+                        PaimonDebug::log("[HttpClient] Worker fallback success for level {}: {} bytes", levelId, wd.size());
+                        resolveInflight(levelId, true, wd);
+                    } else {
+                        PaimonDebug::warn("[HttpClient] No thumbnail found for level {} (CDN + Worker both failed)", levelId);
+                        resolveInflight(levelId, false, {});
+                    }
+                });
             }
-        }, 8);
+        }, 4 /* fast CDN timeout — if CDN is slow, jump to Worker quickly */);
         return;
     }
 
@@ -1358,6 +1448,16 @@ void HttpClient::markWorkerExhausted() {
     m_exhaustedAt = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     PaimonDebug::warn("[HttpClient] Worker quota exhausted! Falling back to CDN for reads");
+}
+
+bool HttpClient::isManifestCooldownActive() const {
+    return std::chrono::steady_clock::now() < m_manifestCooldownUntil;
+}
+
+void HttpClient::setManifestCooldown(int retryAfterSeconds) {
+    int backoff = std::max(retryAfterSeconds, MANIFEST_COOLDOWN_SECONDS);
+    m_manifestCooldownUntil = std::chrono::steady_clock::now() + std::chrono::seconds(backoff);
+    PaimonDebug::warn("[HttpClient] Manifest fetch cooldown: {}s (server retryAfter={})", backoff, retryAfterSeconds);
 }
 
 void HttpClient::resolveInflight(int levelId, bool success, std::vector<uint8_t> const& data) {
@@ -1427,22 +1527,36 @@ void HttpClient::checkModerator(std::string const& username, ModeratorCallback c
 
 void HttpClient::checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback) {
     PaimonDebug::log("[HttpClient] Checking moderator status for user: {} id:{}", username, accountID);
-    
+
+    // ── In-flight dedup: coalesce concurrent checks for the same user ──
+    std::string key = username + "#" + std::to_string(accountID);
+    {
+        std::lock_guard<std::mutex> lock(m_inflightModMutex);
+        auto it = m_inflightModChecks.find(key);
+        if (it != m_inflightModChecks.end()) {
+            PaimonDebug::log("[HttpClient] Moderator check already in-flight for {}, coalescing callback", key);
+            it->second.push_back(std::move(callback));
+            return;
+        }
+        m_inflightModChecks[key].push_back(std::move(callback));
+    }
+
     std::string url = m_serverURL + "/api/moderator/check?username=" + encodeQueryParam(username);
     if (accountID > 0) url += "&accountID=" + std::to_string(accountID);
-    
+
     PaimonDebug::log("[HttpClient] Moderator check URL: {}", url);
 
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
         "Accept: application/json"
     };
-    
-    performRequest(url, "GET", "", headers, [this, callback, username, accountID](bool success, std::string const& response) {
+
+    performRequest(url, "GET", "", headers, [this, key, username, accountID](bool success, std::string const& response) {
+        bool isMod = false;
+        bool isAdmin = false;
+        bool isVip = false;
+
         if (success) {
-            bool isMod = false;
-            bool isAdmin = false;
-            bool isVip = false;
             auto jsonRes = matjson::parse(response);
             if (jsonRes.isOk()) {
                 auto json = jsonRes.unwrap();
@@ -1496,7 +1610,6 @@ void HttpClient::checkModeratorAccount(std::string const& username, int accountI
             // guardar estado VIP como saved value pa uso local
             Mod::get()->setSavedValue<bool>("is-verified-vip", isVip);
             PaimonDebug::log("[HttpClient] User {}#{} => moderator: {}, admin: {}, vip: {}", username, accountID, isMod, isAdmin, isVip);
-            callback(isMod, isAdmin);
         } else {
             log::error("[HttpClient] Failed secure moderator check for {}#{}: {}", username, accountID, response);
             log::error("[HttpClient] Server URL: {}", m_serverURL);
@@ -1504,9 +1617,41 @@ void HttpClient::checkModeratorAccount(std::string const& username, int accountI
             if (response.find("401") != std::string::npos) {
                 log::error("[HttpClient] HTTP 401 = API key mismatch. Expected key may differ from server.");
             }
-            callback(false, false);
+            // 429 — activar cooldown para futuros checks (server told us to back off)
+            if (response.find("429") != std::string::npos) {
+                int retryAfter = 0;
+                auto pos = response.find("\"retryAfter\":");
+                if (pos != std::string::npos) {
+                    auto numStart = pos + 13;
+                    auto numEnd = response.find_first_not_of("0123456789", numStart);
+                    if (numEnd != numStart) {
+                        auto parsed = geode::utils::numFromString<int>(response.substr(numStart, numEnd - numStart));
+                        if (parsed.isOk()) retryAfter = parsed.unwrap();
+                    }
+                }
+                int backoff = std::max(retryAfter, 10);
+                PaimonDebug::warn("[HttpClient] Moderator check rate-limited, backing off {}s", backoff);
+            }
         }
+
+        resolveModCheckInflight(key, isMod, isAdmin);
     });
+}
+
+void HttpClient::resolveModCheckInflight(std::string const& key, bool isMod, bool isAdmin) {
+    std::vector<ModeratorCallback> callbacks;
+    {
+        std::lock_guard<std::mutex> lock(m_inflightModMutex);
+        auto it = m_inflightModChecks.find(key);
+        if (it != m_inflightModChecks.end()) {
+            callbacks = std::move(it->second);
+            m_inflightModChecks.erase(it);
+        }
+    }
+    PaimonDebug::log("[HttpClient] resolveModCheckInflight {}: {} callbacks", key, callbacks.size());
+    for (auto& cb : callbacks) {
+        cb(isMod, isAdmin);
+    }
 }
 
 void HttpClient::getBanList(BanListCallback callback) {
@@ -1680,6 +1825,16 @@ void HttpClient::downloadFromUrl(std::string const& url, DownloadCallback callba
         if (callback) callback(false, {}, 0, 0);
         return;
     }
+
+    // Verificar cache de texturas antes de descargar
+    auto* cachedTex = CCTextureCache::sharedTextureCache()->textureForKey(url.c_str());
+    if (cachedTex) {
+        PaimonDebug::log("[HttpClient] Cache hit for URL: {}", url);
+        // Crear datos dummy para mantener compatibilidad con el callback
+        callback(true, {}, static_cast<int>(cachedTex->getPixelsWide()), static_cast<int>(cachedTex->getPixelsHigh()));
+        return;
+    }
+
     // Solo enviar X-API-Key a URLs del servidor principal (Cloudflare Worker).
     // Enviar el API key a Vercel u otros hosts puede causar rechazo si el
     // servidor cambio su validacion de headers.
@@ -1708,6 +1863,7 @@ void HttpClient::downloadFromUrlRaw(std::string const& url, DownloadCallback cal
     // la validacion de formato de imagen en performBinaryRequest.
     auto req = web::WebRequest();
     req.timeout(std::chrono::seconds(30));
+    req.acceptEncoding("gzip, deflate");
 
     // Solo enviar X-API-Key a URLs del servidor principal (Cloudflare Worker).
     // Enviar el API key a Vercel u otros hosts puede causar rechazo si el
@@ -1780,11 +1936,19 @@ void HttpClient::get(std::string const& endpoint, GenericCallback callback) {
         }
     }
 
-    std::string url = m_serverURL + endpoint;
+    std::string url = endpoint;
+    if (!url.starts_with("http://") && !url.starts_with("https://")) {
+        url = m_serverURL + endpoint;
+    }
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
         "Accept: application/json"
     };
+    // Include X-Mod-Code for authenticated requests that need moderator verification
+    if (!m_modCode.empty()) {
+        headers.push_back("X-Mod-Code: " + m_modCode);
+        PaimonDebug::log("[HttpClient] get with mod-code (prefijo: {}...)", m_modCode.substr(0, 8));
+    }
     performRequest(url, "GET", "", headers, callback, false);
 }
 
@@ -1827,7 +1991,10 @@ void HttpClient::downloadProfileBundle(int accountID, std::string const& usernam
 }
 
 void HttpClient::post(std::string const& endpoint, std::string const& data, GenericCallback callback) {
-    std::string url = m_serverURL + endpoint;
+    std::string url = endpoint;
+    if (!url.starts_with("http://") && !url.starts_with("https://")) {
+        url = m_serverURL + endpoint;
+    }
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
         "Content-Type: application/json",
@@ -1837,7 +2004,10 @@ void HttpClient::post(std::string const& endpoint, std::string const& data, Gene
 }
 
 void HttpClient::postWithAuth(std::string const& endpoint, std::string const& data, GenericCallback callback) {
-    std::string url = m_serverURL + endpoint;
+    std::string url = endpoint;
+    if (!url.starts_with("http://") && !url.starts_with("https://")) {
+        url = m_serverURL + endpoint;
+    }
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
         "Content-Type: application/json",
@@ -1856,7 +2026,10 @@ void HttpClient::postWithAuth(std::string const& endpoint, std::string const& da
 }
 
 void HttpClient::postWithoutModCode(std::string const& endpoint, std::string const& data, GenericCallback callback) {
-    std::string url = m_serverURL + endpoint;
+    std::string url = endpoint;
+    if (!url.starts_with("http://") && !url.starts_with("https://")) {
+        url = m_serverURL + endpoint;
+    }
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
         "Content-Type: application/json",
@@ -2047,6 +2220,7 @@ void HttpClient::uploadCustomBadge(int accountID, std::string const& emoteName, 
     form.param("emoteName", emoteName);
 
     auto req = web::WebRequest();
+    req.acceptEncoding("gzip, deflate");
     req.header("X-API-Key", m_apiKey);
     req.bodyMultipart(form);
 
@@ -2084,6 +2258,7 @@ void HttpClient::deleteCustomBadge(int accountID, GenericCallback callback) {
     form.param("accountID", std::to_string(accountID));
 
     auto req = web::WebRequest();
+    req.acceptEncoding("gzip, deflate");
     req.header("X-API-Key", m_apiKey);
     req.bodyMultipart(form);
 

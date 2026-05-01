@@ -731,7 +731,19 @@ void PaiConfigLayer::rebuildProfilePreview() {
     if (shapeName.empty()) shapeName = "circle";
 
     std::error_code ecExists;
-    if (type != "custom" || path.empty() || !std::filesystem::exists(path, ecExists)) {
+    bool hasImage = (type == "custom" && !path.empty() && std::filesystem::exists(path, ecExists));
+
+    // Only Icon Mode: render icon even without custom image
+    if (!hasImage && picCfg.onlyIconMode) {
+        auto container = paimon::profile_pic::composeProfilePicture(nullptr, thumbSize, picCfg);
+        if (container) {
+            container->setPosition({midX, midY});
+            m_profilePreview->addChild(container);
+        }
+        return;
+    }
+
+    if (!hasImage) {
         // No image — show placeholder
         auto placeholder = CCLayerColor::create({60, 60, 60, 200});
         placeholder->setContentSize({thumbSize, thumbSize});

@@ -111,6 +111,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         float m_cycleTimer = 0.0f;
         int m_galleryToken = 0;
         int m_bgRequestToken = 0;
+        int m_lazyLoadIndex = 1; // siguiente thumbnail a cargar en background
+        bool m_lazyLoadScheduled = false;
         int m_invalidationListenerId = 0;
         bool m_audioDeactivated = false;
         Ref<VideoThumbnailSprite> m_videoSprite = nullptr;
@@ -1475,7 +1477,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         WeakRef<PaimonLevelInfoLayer> self = this;
 
         // Single upload — server handles mod check + exists check + routing (live vs pending)
-        PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+        PaimonNotify::show(Localization::get().getString("capture.uploading").c_str(), geode::NotificationIcon::Info);
         ThumbnailAPI::get().uploadThumbnail(levelID, pngData, username, [self, levelID, username](bool success, std::string const& msg) {
             auto layer = self.lock();
             if (!layer) return;
@@ -1608,6 +1610,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
             self->m_fields->m_thumbnails.clear();
             if (success) self->m_fields->m_thumbnails = thumbs;
+            // Reset lazy load state for new gallery
+            self->m_fields->m_lazyLoadIndex = 1;
+            self->m_fields->m_lazyLoadScheduled = false;
             log::info("[LevelInfoLayer] refreshGalleryData callback: levelID={} success={} thumbCount={}", levelID, success, thumbs.size());
             if (self->m_fields->m_thumbnails.empty()) {
                 ThumbnailAPI::ThumbnailInfo mainThumb;
@@ -1842,22 +1847,10 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 log::info("[LevelInfoLayer] loadThumbnail callback: index={} OK", index);
                 int32_t levelID = self->m_level ? self->m_level->m_levelID.value() : 0;
                 self->applyThumbnailBackground(tex, levelID);
-                // Prefetch adjacent thumbnails for instant navigation
-                int total = static_cast<int>(self->m_fields->m_thumbnails.size());
-                if (total > 1) {
-                    auto prefetchAt = [&thumbs = self->m_fields->m_thumbnails, total](int i) {
-                        i = ((i % total) + total) % total;
-                        auto& t = thumbs[i];
-                        if (t.isVideo()) return; // no prefetchar videos
-                        std::string purl = t.url;
-                        if (!t.id.empty()) {
-                            auto sep = (purl.find('?') == std::string::npos) ? "?" : "&";
-                            purl += fmt::format("{}_pv={}", sep, t.id);
-                        }
-                        ThumbnailLoader::get().requestUrlLoad(purl, [](CCTexture2D*, bool) {}, 0);
-                    };
-                    prefetchAt(index + 1);
-                    prefetchAt(index - 1);
+                // Iniciar carga lazy de thumbnails restantes (uno por uno en background)
+                if (index == 0 && self->m_fields->m_thumbnails.size() > 1) {
+                    self->m_fields->m_lazyLoadIndex = 1;
+                    self->loadNextThumbnailInBackground(0.0f);
                 }
             } else {
                 // URL download failed — try local cache fallback before giving up
@@ -1903,6 +1896,45 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 }
             }
         });
+    }
+
+    // Carga thumbnails restantes en background, uno por uno
+    void loadNextThumbnailInBackground(float /*dt*/) {
+        auto total = static_cast<int>(m_fields->m_thumbnails.size());
+        if (total <= 1) return;
+        if (m_fields->m_lazyLoadIndex >= total) return;
+        if (m_fields->m_lazyLoadScheduled) return;
+
+        int index = m_fields->m_lazyLoadIndex;
+        auto& thumb = m_fields->m_thumbnails[index];
+        if (thumb.isVideo()) {
+            // Skip videos in lazy load, move to next
+            m_fields->m_lazyLoadIndex++;
+            return;
+        }
+
+        m_fields->m_lazyLoadScheduled = true;
+        std::string purl = thumb.url;
+        if (!thumb.id.empty()) {
+            auto sep = (purl.find('?') == std::string::npos) ? "?" : "&";
+            purl += fmt::format("{}_pv={}", sep, thumb.id);
+        }
+
+        Ref<LevelInfoLayer> safeRef = this;
+        ThumbnailLoader::get().requestUrlLoad(purl, [safeRef, index](CCTexture2D* tex, bool success) {
+            auto* self = static_cast<PaimonLevelInfoLayer*>(safeRef.data());
+            if (!self) return;
+            self->m_fields->m_lazyLoadScheduled = false;
+            if (success) {
+                log::info("[LevelInfoLayer] lazyLoad: index={} loaded", index);
+            }
+            // Always move to next, regardless of success/failure
+            self->m_fields->m_lazyLoadIndex++;
+            // Schedule next load with small delay to avoid flooding
+            if (self->m_fields->m_lazyLoadIndex < static_cast<int>(self->m_fields->m_thumbnails.size())) {
+                self->scheduleOnce(schedule_selector(PaimonLevelInfoLayer::loadNextThumbnailInBackground), 0.1f);
+            }
+        }, 0); // Low priority for background loading
     }
 };
 

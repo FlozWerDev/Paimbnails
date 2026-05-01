@@ -109,6 +109,8 @@ void VideoThumbnailSprite::pumpAsyncQueues() {
 
     for (auto& [requestKey, url] : downloadsToStart) {
         auto req = web::WebRequest();
+        req.acceptEncoding("gzip, deflate");
+        req.timeout(std::chrono::seconds(60));
         WebHelper::dispatch(std::move(req), "GET", url, [requestKey](web::WebResponse res) mutable {
             handleDownloadResponse(std::move(requestKey), std::move(res));
         });
@@ -334,6 +336,21 @@ VideoThumbnailSprite* VideoThumbnailSprite::createFromCache(std::string const& c
         path = getCachedPathLocked(cacheKey);
     }
     if (path.empty()) return nullptr;
+
+    // Clear any cached player for this key to avoid stale state
+    {
+        std::lock_guard lock(s_playerCacheMutex);
+        for (auto it = s_playerCache.begin(); it != s_playerCache.end(); ++it) {
+            if (it->cacheKey == path) {
+                if (it->player) {
+                    it->player->stop();
+                }
+                s_playerCache.erase(it);
+                break;
+            }
+        }
+    }
+
     auto* sprite = create(path);
     if (sprite) sprite->m_cacheKey = cacheKey;
     return sprite;
@@ -379,6 +396,23 @@ VideoThumbnailSprite* VideoThumbnailSprite::create(std::string const& filePath) 
 }
 
 VideoThumbnailSprite* VideoThumbnailSprite::createFromData(std::vector<uint8_t> const& data, std::string const& cacheKey) {
+    if (data.size() < 12) {
+        log::warn("[VideoThumbSprite] Data too small to be a valid video: {} bytes", data.size());
+        return nullptr;
+    }
+
+    bool isMp4 = false;
+    for (size_t i = 0; i + 3 < data.size() && i < 12; ++i) {
+        if (data[i] == 'f' && data[i+1] == 't' && data[i+2] == 'y' && data[i+3] == 'p') {
+            isMp4 = true;
+            break;
+        }
+    }
+    if (!isMp4) {
+        log::warn("[VideoThumbSprite] Data does not contain valid MP4 ftyp box");
+        return nullptr;
+    }
+
     std::string tempPath;
     {
         std::lock_guard lock(s_cacheMutex);
@@ -517,11 +551,12 @@ bool VideoThumbnailSprite::initWithPlayer(std::unique_ptr<paimon::video::VideoPl
 VideoThumbnailSprite::~VideoThumbnailSprite() {
     this->unscheduleUpdate();
     if (m_player) {
+        // Always stop before caching to prevent stale playback
+        m_player->stop();
         // Return player to cache instead of destroying it (avoids re-decoding)
         if (!m_cacheKey.empty() && m_firstFrame) {
             returnPlayerToCache(m_cacheKey, std::move(m_player));
         } else {
-            m_player->stop();
             m_player.reset();
         }
     }

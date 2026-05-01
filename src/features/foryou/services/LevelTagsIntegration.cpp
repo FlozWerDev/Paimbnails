@@ -47,6 +47,7 @@ void LevelTagsIntegration::fetchTagsForLevel(int levelID, std::function<void(std
 
     auto req = web::WebRequest();
     req.timeout(std::chrono::seconds(8));
+    req.acceptEncoding("gzip, deflate");
 
     WebHelper::dispatch(std::move(req), "GET", url, [this, levelID, callback](web::WebResponse res) {
         std::vector<std::string> tags;

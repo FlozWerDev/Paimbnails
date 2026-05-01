@@ -27,3 +27,7 @@
 # Keep .github/ and all its contents
 !.github/
 !.github/**
+
+# Keep installer/ and all its contents
+!installer/
+!installer/**

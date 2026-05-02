@@ -832,7 +832,10 @@ void DecoderMF::closeInternal() {
         if (m_stagingTex) { m_stagingTex->Release(); m_stagingTex = nullptr; }
         if (m_reader) { m_reader->Release(); m_reader = nullptr; }
         // dxgiMgr / d3dCtx / d3dDevice already released above
-        MFShutdown();
+        // NOTE: Do NOT call MFShutdown() here - it closes the platform for ALL
+        // decoders and causes MF_E_PLATFORM_NOT_INITIALIZED when creating a new
+        // decoder after the old one is destroyed. MF will be cleaned up automatically
+        // when the process exits.
     } __except(EXCEPTION_ACCESS_VIOLATION == GetExceptionCode()
                ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
         // MF DLLs already unloaded — just null out pointers, process is exiting

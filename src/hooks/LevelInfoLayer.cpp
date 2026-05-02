@@ -1300,18 +1300,27 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             // This makes the background appear almost instantly on revisit.
             if (!skipBgRefresh) {
                 auto& cache = paimon::cache::ThumbnailCache::get();
-                std::string mainUrl = ThumbnailAPI::get().getThumbnailURL(level->m_levelID.value());
+                int currentLevelID = level->m_levelID.value();
+                auto levelRamTex = cache.getFromRam(currentLevelID, false);
+                if (!levelRamTex.has_value()) {
+                    levelRamTex = cache.getFromRam(currentLevelID, true);
+                }
+                if (levelRamTex.has_value() && levelRamTex.value()) {
+                    log::info("[LevelInfoLayer] init: instant level RAM cache hit for levelID={}", currentLevelID);
+                    this->applyThumbnailBackground(levelRamTex.value(), currentLevelID);
+                }
+
+                std::string mainUrl = ThumbnailAPI::get().getThumbnailURL(currentLevelID);
                 auto ramTex = cache.getUrlFromRam(mainUrl);
-                if (ramTex.has_value() && ramTex.value()) {
-                    log::info("[LevelInfoLayer] init: instant RAM cache hit for main thumbnail levelID={}", level->m_levelID.value());
-                    this->applyThumbnailBackground(ramTex.value(), level->m_levelID.value());
+                if (!m_fields->m_pixelBg && ramTex.has_value() && ramTex.value()) {
+                    log::info("[LevelInfoLayer] init: instant RAM cache hit for main thumbnail levelID={}", currentLevelID);
+                    this->applyThumbnailBackground(ramTex.value(), currentLevelID);
                     // Background is already applied — refreshGalleryData will still
                     // call loadThumbnail(0) but it'll be a cache hit (fast re-apply).
-                } else {
+                } else if (!m_fields->m_pixelBg) {
                     // Paralelizar: disparar descarga del thumbnail base antes de que
                     // getThumbnails responda. Si la galeria tarda, el fondo aparece
                     // tan pronto como el download termine.
-                    int currentLevelID = level->m_levelID.value();
                     Ref<LevelInfoLayer> safeRef = this;
                     ThumbnailLoader::get().requestUrlLoad(mainUrl, [safeRef, currentLevelID](CCTexture2D* tex, bool success) {
                         auto* self = static_cast<PaimonLevelInfoLayer*>(safeRef.data());
@@ -1898,7 +1907,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     }
                 }
             }
-        });
+        }, ThumbnailLoader::PriorityHero);
     }
 
     // Carga thumbnails restantes en background, uno por uno

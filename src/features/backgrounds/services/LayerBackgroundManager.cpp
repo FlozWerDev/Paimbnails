@@ -979,6 +979,25 @@ struct VideoBlurNode : public CCNode {
         uint64_t fc = m_player->getFrameCounter();
         if (fc == m_lastFrameCounter) return;
         m_lastFrameCounter = fc;
+
+        // Update source sprite texture from player each frame — the player may have
+        // seeked or looped, so we need the current frame texture, not the stale one
+        // captured during init.
+        auto* currentTex = m_player->getCurrentFrameTexture();
+        if (currentTex) {
+            if (m_isPaimon) {
+                if (m_pSpr0) {
+                    m_pSpr0->setTexture(currentTex);
+                    fitSprite(m_pSpr0, m_halfSize, true);
+                }
+            } else {
+                if (m_srcSprite) {
+                    m_srcSprite->setTexture(currentTex);
+                    fitSprite(m_srcSprite, m_halfSize, true);
+                }
+            }
+        }
+
         if (m_isPaimon) renderPaimon();
         else            renderGaussian();
     }
@@ -1186,11 +1205,13 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                 shared, path, didSuspendDynSong, ownsVideoAudio);
             if (updateNode) {
                 updateNode->setID("paimon-video-update"_spr);
-                // Capture a Ref to the node so the callback keeps it alive.
-                // Use getParent() to verify the container is still attached.
-                Ref<VideoBackgroundUpdateNode> nodeRef = updateNode;
-                nodeRef->m_createVisuals = [nodeRef, shared, winSize, blurType, blurIntensity, cfg]() {
-                    auto* container = nodeRef->getParent();
+                // Use raw pointer capture — m_createVisuals is only invoked from
+                // this node's update(), so 'self' is always valid. A Ref<> here
+                // would create a circular reference: node owns lambda → lambda
+                // owns Ref → Ref keeps node alive → destructor re-enters itself.
+                auto* self = updateNode;
+                self->m_createVisuals = [self, shared, winSize, blurType, blurIntensity, cfg]() {
+                    auto* container = self->getParent();
                     if (!container) return; // parent already destroyed, nothing to do
                     CCSprite* visibleSprite = nullptr;
                     if (!blurType.empty() && blurType != "none") {
@@ -1227,7 +1248,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                         preview->removeFromParentAndCleanup(true);
                     }
                     // Link the created sprite back so the update node can fade it in
-                    nodeRef->m_visibleSprite = visibleSprite;
+                    self->m_visibleSprite = visibleSprite;
                 };
                 container->addChild(updateNode);
             }
@@ -1343,11 +1364,13 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                 shared, path, didSuspendDynSong, ownsVideoAudio);
             if (updateNode) {
                 updateNode->setID("paimon-video-update"_spr);
-                // Capture a Ref to the node so the callback keeps it alive.
-                // Use getParent() to verify the container is still attached.
-                Ref<VideoBackgroundUpdateNode> nodeRef = updateNode;
-                nodeRef->m_createVisuals = [nodeRef, shared, winSize, blurType, blurIntensity, cfgCopy]() {
-                    auto* container = nodeRef->getParent();
+                // Use raw pointer capture — m_createVisuals is only invoked from
+                // this node's update(), so 'self' is always valid. A Ref<> here
+                // would create a circular reference: node owns lambda → lambda
+                // owns Ref → Ref keeps node alive → destructor re-enters itself.
+                auto* self = updateNode;
+                self->m_createVisuals = [self, shared, winSize, blurType, blurIntensity, cfgCopy]() {
+                    auto* container = self->getParent();
                     if (!container) return; // parent already destroyed, nothing to do
                     CCSprite* visibleSprite = nullptr;
                     if (!blurType.empty() && blurType != "none") {
@@ -1384,7 +1407,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                         preview->removeFromParentAndCleanup(true);
                     }
                     // Link the created sprite back so the update node can fade it in
-                    nodeRef->m_visibleSprite = visibleSprite;
+                    self->m_visibleSprite = visibleSprite;
                 };
                 containerRef->addChild(updateNode);
             }
@@ -1785,8 +1808,15 @@ void LayerBackgroundManager::releaseAllSharedVideos() {
     }
     // Detener players fuera del lock para no bloquear el main thread
     // ni causar deadlock si forceStop() espera un thread de decoding.
+    // Add exception handling to prevent crashes during app shutdown
     for (auto& player : playersToRelease) {
-        if (player) player->forceStop();
+        if (player) {
+            try {
+                player->forceStop();
+            } catch (...) {
+                // Ignore exceptions during shutdown to prevent crashes
+            }
+        }
     }
     if (count > 0) {
         log::info("[LayerBgMgr] Released all {} shared video players during shutdown", count);

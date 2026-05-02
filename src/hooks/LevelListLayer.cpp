@@ -118,7 +118,60 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
     struct Fields {
         // IDs con manifest ya solicitado
         std::unordered_set<int> m_manifestFetchedIds;
+        Ref<CCSprite> m_compactButton = nullptr;
     };
+
+    void setCompactButtonColor() {
+        if (!m_fields->m_compactButton) return;
+
+        auto color = Mod::get()->getSettingValue<bool>("compact-list-mode")
+            ? ccc3(255, 255, 255)
+            : ccc3(125, 125, 125);
+        m_fields->m_compactButton->setColor(color);
+    }
+
+    void onCompactListToggle(CCObject*) {
+        bool enabled = !Mod::get()->getSettingValue<bool>("compact-list-mode");
+        Mod::get()->setSettingValue<bool>("compact-list-mode", enabled);
+        LevelCellSettingsPopup::s_settingsVersion++;
+        setCompactButtonColor();
+
+        if (m_searchObject) {
+            loadPage(m_searchObject);
+        }
+    }
+
+    void addCompactToggleButton() {
+        if (m_searchObject && m_searchObject->m_searchType == SearchType::MyLevels) {
+            return;
+        }
+
+        auto* infoMenu = typeinfo_cast<CCMenu*>(getChildByID("info-menu"));
+        if (!infoMenu) return;
+
+        auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_smallModeIcon_001.png");
+        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_filterBtn_001.png");
+        if (!spr) return;
+
+        m_fields->m_compactButton = spr;
+        auto btn = CCMenuItemSpriteExtra::create(
+            spr,
+            this,
+            menu_selector(ContextTrackingBrowser::onCompactListToggle)
+        );
+        btn->setID("paimon-compact-list-toggle"_spr);
+
+        if (infoMenu->getLayout()) {
+            btn->setLayoutOptions(AxisLayoutOptions::create()->setRelativeScale(0.95f));
+            infoMenu->addChild(btn);
+            infoMenu->updateLayout();
+        } else {
+            btn->setPosition({0.f, 0.f});
+            infoMenu->addChild(btn);
+        }
+
+        setCompactButtonColor();
+    }
 
     $override
     bool init(GJSearchObject* p0) {
@@ -132,6 +185,9 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         // Boton de settings
         addSettingsGearButton();
 
+        // Toggle rapido de compact list, inspirado en Compact Lists.
+        addCompactToggleButton();
+
         // Boton de refrescar thumbnails
         addRefreshButton();
 
@@ -139,6 +195,18 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         this->prefetchVisibleLevelCells(0.0f);
 
         return true;
+    }
+
+    $override
+    void onEnter() {
+        LevelBrowserLayer::onEnter();
+        setCompactButtonColor();
+    }
+
+    $override
+    void setupLevelBrowser(CCArray* array) {
+        LevelBrowserLayer::setupLevelBrowser(array);
+        setCompactButtonColor();
     }
 
     $override

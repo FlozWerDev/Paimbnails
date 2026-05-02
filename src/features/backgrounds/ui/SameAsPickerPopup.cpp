@@ -17,7 +17,7 @@ SameAsPickerPopup* SameAsPickerPopup::create(std::string const& currentKey, geod
 }
 
 bool SameAsPickerPopup::init(std::string const& currentKey, geode::CopyableFunction<void(std::string const&)> onPick) {
-    if (!Popup::init(220.f, 230.f)) return false;
+    if (!Popup::init(240.f, 275.f)) return false;
 
     m_selectedLayerKey = currentKey;
     m_onPick = std::move(onPick);
@@ -39,13 +39,13 @@ bool SameAsPickerPopup::init(std::string const& currentKey, geode::CopyableFunct
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu, 10);
 
-    float startY = content.height - 55.f;
-    float spacing = 34.f;
+    float startY = content.height - 60.f;
+    float spacing = 26.f;
 
     for (int i = 0; i < (int)options.size(); i++) {
         auto& opt = options[i];
         auto spr = ButtonSprite::create(opt.label.c_str(), "bigFont.fnt", "GJ_button_01.png", .7f);
-        spr->setScale(0.6f);
+        spr->setScale(0.52f);
 
         auto btn = CCMenuItemExt::createSpriteExtra(spr, [this, optKey = opt.key](CCMenuItemSpriteExtra*) {
             if (m_onPick) m_onPick(optKey);

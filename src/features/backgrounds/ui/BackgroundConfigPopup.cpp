@@ -144,35 +144,49 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
     node->addChild(btnMenu);
 
     // botones fuente
-    createBtn("Custom Image", {centerX - 90, centerY + 40}, menu_selector(BackgroundConfigPopup::onCustomImage), btnMenu);
-    createBtn("Random Levels", {centerX + 90, centerY + 40}, menu_selector(BackgroundConfigPopup::onDownloadedThumbnails), btnMenu);
+    auto createSmallBtn = [&](char const* text, CCPoint pos, SEL_MenuHandler handler) {
+        auto spr = ButtonSprite::create(text);
+        spr->setScale(0.50f);
+        auto btn = CCMenuItemSpriteExtra::create(spr, this, handler);
+        btn->setPosition(pos);
+        btnMenu->addChild(btn);
+        return btn;
+    };
 
-    {
-        auto iBtn = PaimonInfo::createInfoBtn("Source Buttons",
-            "<cy>Custom Image</c>: open a file picker to select a local\nimage (PNG/JPG/GIF/WEBP) as the menu background.\n\n"
-            "<cy>Random Levels</c>: uses a random downloaded thumbnail\nfrom your cache as the background. Changes each restart.\n\n"
-            "<cy>Set ID</c>: type a level ID below and use its thumbnail\nas the menu background.", this, 0.3f);
-        if (iBtn) {
-            iBtn->setPosition({centerX + 180.f, centerY + 40});
-            btnMenu->addChild(iBtn);
-        }
-    }
+    float row1Y = centerY + 42.f;
+    float row2Y = centerY + 8.f;
+    float colL  = centerX - 85.f;
+    float colR  = centerX + 85.f;
 
+    createSmallBtn("Custom Image",  {colL, row1Y}, menu_selector(BackgroundConfigPopup::onCustomImage));
+    createSmallBtn("Custom Video",  {colR, row1Y}, menu_selector(BackgroundConfigPopup::onCustomVideo));
+    createSmallBtn("Random Levels", {colL, row2Y}, menu_selector(BackgroundConfigPopup::onDownloadedThumbnails));
+    createSmallBtn("Set ID",        {colR, row2Y}, menu_selector(BackgroundConfigPopup::onSetID));
 
-
-    // entrada id
-    auto inputBg = paimon::SpriteHelper::createDarkPanel(100, 30, 100);
-    inputBg->setPosition({centerX - 40 - 50, centerY - 10 - 15});
+    // entrada id (centrada debajo de Set ID)
+    float inputY = centerY - 17.f;
+    auto inputBg = paimon::SpriteHelper::createDarkPanel(110, 30, 100);
+    inputBg->setPosition({colR - 55.f, inputY - 15.f});
     node->addChild(inputBg);
 
-    m_idInput = TextInput::create(90, "Level ID");
-    m_idInput->setPosition({centerX - 40, centerY - 10});
+    m_idInput = TextInput::create(100, "Level ID");
+    m_idInput->setPosition({colR, inputY});
     m_idInput->setCommonFilter(geode::CommonFilter::Uint);
     m_idInput->setMaxCharCount(10);
     m_idInput->setScale(0.8f);
     node->addChild(m_idInput);
-    
-    createBtn("Set ID", {centerX + 50, centerY - 10}, menu_selector(BackgroundConfigPopup::onSetID), btnMenu);
+
+    {
+        auto iBtn = PaimonInfo::createInfoBtn("Source Buttons",
+            "<cy>Custom Image</c>: pick an image (PNG/JPG/GIF/WEBP).\n"
+            "<cy>Custom Video</c>: pick a video file (MP4/WebM).\n"
+            "<cy>Random Levels</c>: random cached thumbnail.\n"
+            "<cy>Set ID</c>: use a level thumbnail by ID.", this, 0.28f);
+        if (iBtn) {
+            iBtn->setPosition({centerX + 175.f, row1Y + 2.f});
+            btnMenu->addChild(iBtn);
+        }
+    }
 
     // seccion opciones
     float optionsY = centerY - 70;
@@ -191,11 +205,10 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
 
     {
         auto iBtn = PaimonInfo::createInfoBtn("Dark Mode",
-            "Adds a dark overlay to the menu background.\n"
-            "Useful if the custom image or thumbnail is too bright.\n"
-            "Combine with <cy>Intensity</c> slider to adjust.", this, 0.3f);
+            "Adds a dark overlay on the background.\n"
+            "Use <cy>Intensity</c> to adjust.", this, 0.28f);
         if (iBtn) {
-            iBtn->setPosition({centerX - 100 + 55.f, optionsY + 25});
+            iBtn->setPosition({centerX - 100 + 55.f, optionsY + 25.f});
             btnMenu->addChild(iBtn);
         }
     }
@@ -214,11 +227,10 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
 
     {
         auto iBtn = PaimonInfo::createInfoBtn("Adaptive Colors",
-            "Extracts dominant colors from the background image\n"
-            "and applies them to menu UI elements.\n"
-            "Creates a cohesive color theme that matches your background.", this, 0.3f);
+            "Extracts colors from the background\n"
+            "and applies them to the UI.", this, 0.28f);
         if (iBtn) {
-            iBtn->setPosition({centerX + 70.f, optionsY + 25});
+            iBtn->setPosition({centerX + 78.f, optionsY + 25.f});
             btnMenu->addChild(iBtn);
         }
     }
@@ -237,12 +249,10 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
 
     {
         auto iBtn = PaimonInfo::createInfoBtn("Intensity",
-            "Controls the strength of the Dark Mode overlay.\n"
-            "<cy>0</c> = no darkening.\n"
-            "<cy>1</c> = maximum darkness.\n"
-            "Only visible when Dark Mode is enabled.", this, 0.3f);
+            "Dark Mode strength.\n"
+            "<cy>0</c> = off, <cy>1</c> = max.", this, 0.28f);
         if (iBtn) {
-            iBtn->setPosition({centerX + 100 + 40.f, optionsY + 25});
+            iBtn->setPosition({centerX + 100 + 46.f, optionsY + 25.f});
             btnMenu->addChild(iBtn);
         }
     }
@@ -317,6 +327,28 @@ void BackgroundConfigPopup::onCustomImage(CCObject*) {
         Mod::get()->setSavedValue<std::string>("bg-custom-path", pathStr);
         paimon::requestDeferredModSave();
         PaimonNotify::create("Custom Menu Image Set", NotificationIcon::Success)->show();
+    });
+}
+
+void BackgroundConfigPopup::onCustomVideo(CCObject*) {
+    WeakRef<BackgroundConfigPopup> self = this;
+    pt::pickVideo([self](geode::Result<std::optional<std::filesystem::path>> result) {
+        auto popup = self.lock();
+        if (!popup) return;
+        auto pathOpt = std::move(result).unwrapOr(std::nullopt);
+        if (!pathOpt || pathOpt->empty()) return;
+
+        auto pathStr = geode::utils::string::pathToString(*pathOpt);
+        std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
+
+        LayerBgConfig cfg = LayerBackgroundManager::get().getConfig("menu");
+        cfg.type = "video";
+        cfg.customPath = pathStr;
+        LayerBackgroundManager::get().saveConfig("menu", cfg);
+        Mod::get()->setSavedValue<std::string>("bg-type", "video");
+        Mod::get()->setSavedValue<std::string>("bg-custom-path", pathStr);
+        paimon::requestDeferredModSave();
+        PaimonNotify::create("Custom Menu Video Set", NotificationIcon::Success)->show();
     });
 }
 
@@ -549,19 +581,21 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
 
     // ── botones de accion ──
     float actionY = cy + 10;
-    createBtn("Custom Image", {cx - 90, actionY}, menu_selector(BackgroundConfigPopup::onLayerCustomImage), btnMenu);
-    createBtn("Random", {cx + 10, actionY}, menu_selector(BackgroundConfigPopup::onLayerRandom), btnMenu);
-    createBtn("Same as...", {cx + 100, actionY}, menu_selector(BackgroundConfigPopup::onLayerSameAs), btnMenu);
+    createBtn("Custom Image", {cx - 130, actionY}, menu_selector(BackgroundConfigPopup::onLayerCustomImage), btnMenu);
+    createBtn("Custom Video", {cx - 45, actionY}, menu_selector(BackgroundConfigPopup::onLayerCustomVideo), btnMenu);
+    createBtn("Random", {cx + 40, actionY}, menu_selector(BackgroundConfigPopup::onLayerRandom), btnMenu);
+    createBtn("Same as...", {cx + 120, actionY}, menu_selector(BackgroundConfigPopup::onLayerSameAs), btnMenu);
 
     {
         auto iBtn = PaimonInfo::createInfoBtn("Layer Backgrounds",
-            "<cy>Custom Image</c>: local PNG/JPG/GIF.\n"
-            "<cy>Random</c>: random cached thumbnail.\n"
+            "<cy>Custom Image</c>: local image.\n"
+            "<cy>Custom Video</c>: local video.\n"
+            "<cy>Random</c>: cached thumbnail.\n"
             "<cy>Same as...</c>: copy from another layer.\n"
-            "<cy>Set ID</c>: use a level's thumbnail.\n"
-            "<cy>Default</c>: original GD background.", this, 0.3f);
+            "<cy>Set ID</c>: level thumbnail.\n"
+            "<cy>Default</c>: original background.", this, 0.28f);
         if (iBtn) {
-            iBtn->setPosition({cx + 180.f, actionY});
+            iBtn->setPosition({cx + 168.f, actionY + 1.f});
             btnMenu->addChild(iBtn);
         }
     }
@@ -597,9 +631,8 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
 
     {
         auto iBtn = PaimonInfo::createInfoBtn("Dark Mode",
-            "Adds a dark overlay on top of the layer background.\n"
-            "Useful when the image is too bright.\n"
-            "Use the <cy>Intensity</c> slider to control how dark it gets.", this, 0.3f);
+            "Adds a dark overlay on the layer background.\n"
+            "Use <cy>Intensity</c> to adjust.", this, 0.28f);
         if (iBtn) {
             iBtn->setPosition({cx - 80 + 50.f, optY + 20});
             btnMenu->addChild(iBtn);
@@ -675,6 +708,26 @@ void BackgroundConfigPopup::onLayerCustomImage(CCObject*) {
         cfg.customPath = pathStr;
         LayerBackgroundManager::get().saveConfig(layerKey, cfg);
         PaimonNotify::create("Background set for layer!", NotificationIcon::Success)->show();
+    });
+}
+
+void BackgroundConfigPopup::onLayerCustomVideo(CCObject*) {
+    WeakRef<BackgroundConfigPopup> self = this;
+    std::string layerKey = m_selectedLayerKey;
+    pt::pickVideo([self, layerKey](geode::Result<std::optional<std::filesystem::path>> result) {
+        auto popup = self.lock();
+        if (!popup) return;
+        auto pathOpt = std::move(result).unwrapOr(std::nullopt);
+        if (!pathOpt || pathOpt->empty()) return;
+
+        auto pathStr = geode::utils::string::pathToString(*pathOpt);
+        std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
+
+        LayerBgConfig cfg = LayerBackgroundManager::get().getConfig(layerKey);
+        cfg.type = "video";
+        cfg.customPath = pathStr;
+        LayerBackgroundManager::get().saveConfig(layerKey, cfg);
+        PaimonNotify::create("Video background set for layer!", NotificationIcon::Success)->show();
     });
 }
 

@@ -106,7 +106,7 @@ void PaimonOnModLoaded() {
     for (int i = 1; i <= 22; i++) mainLevels.push_back(i);
 
     // Optimización: iniciar manifest fetch antes y con prefetch paralelo
-    paimon::scheduleMainThreadDelay(0.5f, [mainLevels = std::move(mainLevels)]() mutable {
+    paimon::scheduleMainThreadDelay(5.0f, [mainLevels = std::move(mainLevels)]() mutable {
         if (paimon::isRuntimeShuttingDown()) return;
         
         // Iniciar manifest fetch inmediatamente
@@ -120,8 +120,8 @@ void PaimonOnModLoaded() {
         // por eso NO usamos std::this_thread::sleep_for entre batches —
         // bloquearia el render del menu. En su lugar, encadenamos batches
         // mediante scheduleMainThreadDelay para mantener el frame pacing fluido.
-        constexpr int PARALLEL_PREFETCH_BATCH = 4;
-        constexpr float BATCH_INTERVAL_SEC = 0.05f; // antes era sleep_for(50ms) bloqueante
+        constexpr int PARALLEL_PREFETCH_BATCH = 2;
+        constexpr float BATCH_INTERVAL_SEC = 0.20f;
         for (int batchStart = 1, batchIndex = 0; batchStart <= 22;
              batchStart += PARALLEL_PREFETCH_BATCH, ++batchIndex) {
             int batchEnd = std::min(batchStart + PARALLEL_PREFETCH_BATCH, 23);
@@ -136,29 +136,7 @@ void PaimonOnModLoaded() {
             });
         }
 
-        // Pre-cálculo de blur: una vez que los thumbnails estén en cache,
-        // pre-calcular el blur para que esté listo cuando el usuario abra LevelInfoLayer.
-        // Esto elimina el delay de la primera carga del blur.
-        paimon::scheduleMainThreadDelay(2.0f, []() {
-            if (paimon::isRuntimeShuttingDown()) return;
-            auto win = CCDirector::sharedDirector()->getWinSize();
-            int intensity = Mod::get()->getSettingValue<int64_t>("levelinfo-effect-intensity");
-            
-            // Pre-calcular blur para los primeros 10 niveles (los más comunes)
-            for (int levelID = 1; levelID <= 10; levelID++) {
-                if (paimon::isRuntimeShuttingDown()) break;
-                
-                auto tex = paimon::cache::ThumbnailCache::get().getFromRam(levelID, false);
-                if (!tex.has_value() || !tex.value()) continue;
-                
-                // Pre-calcular con ambos estilos de blur
-                BlurSystem::getInstance()->buildPaimonBlurAsync(
-                    tex.value(), win, static_cast<float>(intensity), [](CCSprite*) {});
-                BlurSystem::getInstance()->buildGaussianBlurAsync(
-                    tex.value(), win, static_cast<float>(intensity), [](CCSprite*) {});
-            }
-            log::info("[PaimonThumbnails] Pre-calculated blur for main levels");
-        });
+        log::info("[PaimonThumbnails] Startup blur prewarm skipped; blur will build on demand");
     });
 
     std::string langStr = paimon::settings::general::language();
@@ -239,7 +217,7 @@ void PaimonOnModLoaded() {
     // reduciendo el tiempo de carga inicial del mod.
 
     // Emote catalog: carga diferida con delay más largo para no competir con thumbnails
-    paimon::scheduleMainThreadDelay(3.0f, []() {
+    paimon::scheduleMainThreadDelay(12.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         
         // Cargar catálogo desde disco primero (rápido)
@@ -254,26 +232,19 @@ void PaimonOnModLoaded() {
             if (paimon::isRuntimeShuttingDown()) return;
             log::info("[PaimonEmotes] Catalog fetch {}", success ? "succeeded" : "failed (using cached)");
             
-            // Preload solo después del fetch, con otro delay
-            paimon::scheduleMainThreadDelay(1.5f, []() {
-                if (paimon::isRuntimeShuttingDown()) return;
-                paimon::emotes::EmoteCache::get().preloadAllToDisk([](size_t downloaded, size_t skipped, size_t total) {
-                    log::info("[PaimonEmotes] Emote sync complete: {} new, {} cached, {} total",
-                              downloaded, skipped, total);
-                });
-            });
+            log::info("[PaimonEmotes] Emote disk preload skipped at startup; assets load on demand");
         });
     });
 
     // Shader pre-warm: cargar después de que los thumbnails estén listos
-    paimon::scheduleMainThreadDelay(2.5f, []() {
+    paimon::scheduleMainThreadDelay(10.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         Shaders::prewarmLevelInfoShaders();
     });
 
     // ── UpdateChecker: consulta GitHub Releases para detectar nuevas versiones.
     // Se hace con un pequeño delay para no competir con la carga inicial.
-    paimon::scheduleMainThreadDelay(1.0f, []() {
+    paimon::scheduleMainThreadDelay(8.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         paimon::updates::UpdateChecker::get().checkAsync();
     });

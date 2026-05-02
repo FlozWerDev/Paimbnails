@@ -34,24 +34,43 @@ std::unique_ptr<VideoPlayer> VideoPlayer::create(const std::string& videoPath, c
 }
 
 VideoPlayer::~VideoPlayer() {
+    // Stop decoder first to prevent further callbacks
     if (m_decoder) {
         m_decoder->stopDecoding();
         m_decoder.reset();
     }
+    
     // Restore FPS — director may be nullptr during app shutdown
     auto* director = cocos2d::CCDirector::sharedDirector();
     if (director) {
         director->setAnimationInterval(m_originalInterval);
     }
+    
+    // Clean up working frame buffers
     VideoFrame::freeAligned(m_workingFrame.planeY);
     VideoFrame::freeAligned(m_workingFrame.planeCb);
     VideoFrame::freeAligned(m_workingFrame.planeCr);
+    m_workingFrame.planeY = nullptr;
+    m_workingFrame.planeCb = nullptr;
+    m_workingFrame.planeCr = nullptr;
+    
+    // Clean up RGBA buffer
     delete[] m_rgbaBuffer;
     m_rgbaBuffer = nullptr;
-    m_pboUploader.shutdown();
+    
+    // Shut down PBO uploader before texture cleanup
+    try {
+        m_pboUploader.shutdown();
+    } catch (...) {
+        // Ignore shutdown errors during app termination
+    }
+    
     // Release the texture we retained in initTexture()
     if (m_texture) {
-        m_texture->release();
+        // Check if GL context is still valid before releasing
+        if (director && director->getOpenGLView()) {
+            m_texture->release();
+        }
         m_texture = nullptr;
     }
 }
@@ -325,14 +344,37 @@ void VideoPlayer::pause() {
 
 void VideoPlayer::resume() {
     if (!m_decoder) return;
-    double nextPTS = m_decoder->peekNextPTS();
-    if (nextPTS < DBL_MAX) {
-        m_playbackTime = nextPTS;
-    } else {
+    
+    // If the decoder has finished (end of stream), seek back to start
+    // so the video can play again from the beginning
+    if (m_decoder->isFinished() || m_decoder->peekNextPTS() >= DBL_MAX) {
+        m_decoder->seekTo(0.0);
         m_playbackTime = 0.0;
+        // Clear the visible frame flag so we don't show stale content
+        // while the decoder restarts and produces new frames
+        m_hasVisibleFrame = false;
+        // Clear PBO fences to avoid stale data causing display issues
+        if (m_pboUploader.isInitialized()) {
+            m_pboUploader.clearFences();
+        }
+    } else {
+        double nextPTS = m_decoder->peekNextPTS();
+        if (nextPTS < DBL_MAX) {
+            m_playbackTime = nextPTS;
+        } else {
+            m_playbackTime = 0.0;
+        }
     }
+    
     m_pendingUpload = false;
     m_timeSinceLastUpload = 0.0;
+    
+    // Always restart the decoder to ensure it's running
+    // This fixes issues when reusing a player that was stopped/finished
+    if (!m_playing) {
+        m_playing = true;
+        m_decoder->startDecoding();
+    }
 }
 
 void VideoPlayer::stop() {

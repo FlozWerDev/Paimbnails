@@ -7,7 +7,7 @@
 #include <vector>
 #include <string>
 
-class CreatePostPopup : public geode::Popup, public FLAlertLayerProtocol {
+class CreatePostPopup : public geode::Popup, public FLAlertLayerProtocol, public TextInputDelegate {
 protected:
     geode::TextInput* m_titleInput = nullptr;
     geode::TextInput* m_descInput = nullptr;
@@ -29,6 +29,8 @@ protected:
     void onSubmit(cocos2d::CCObject*);
     void updateCooldownLabel();
     void FLAlert_Click(FLAlertLayer*, bool);
+    void textChanged(CCTextInputNode*) override {}
+    void enterPressed(CCTextInputNode* node) override;
 
 public:
     static CreatePostPopup* create(

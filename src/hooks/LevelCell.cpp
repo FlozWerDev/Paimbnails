@@ -1,6 +1,8 @@
 #include <Geode/modify/LevelCell.hpp>
 #include <Geode/binding/BoomListView.hpp>
 #include <Geode/binding/DailyLevelNode.hpp>
+#include <Geode/binding/LevelBrowserLayer.hpp>
+#include <Geode/binding/LevelListLayer.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -30,9 +32,15 @@
 #include "../video/VideoPlayer.hpp"
 #include "../utils/VideoThumbnailSprite.hpp"
 #include "../utils/HttpClient.hpp"
+#include "LevelCellContext.hpp"
 
 using namespace geode::prelude;
 using namespace Shaders;
+
+namespace paimon::hooks {
+    bool g_suppressLevelCellEnhancements = false;
+    bool g_forceCompactLevelCells = false;
+}
 
 // Enums para settings cached
 enum class PaimonAnimType : uint8_t {
@@ -2129,6 +2137,8 @@ class $modify(PaimonLevelCell, LevelCell) {
 
     $override void onExit() {
         log::debug("[LevelCell] onExit: levelID={}", m_level ? m_level->m_levelID.value() : 0);
+        bool realtimePreviewCell = isInsideRealtimeSearchPreviewContext();
+
         // Detiene animaciones (evita logica pesada en destructor)
         this->unscheduleUpdate();
         this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
@@ -2170,7 +2180,11 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
         }
 
-        if (m_level) {
+        if (realtimePreviewCell && m_backgroundLayer) {
+            cleanPaimonNodes(m_backgroundLayer);
+        }
+
+        if (m_level && !realtimePreviewCell) {
             ThumbnailLoader::get().cancelLoad(m_level->m_levelID.value());
             ThumbnailLoader::get().cancelLoad(m_level->m_levelID.value(), true);
         }
@@ -2312,7 +2326,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_cachedAnimSpeed = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-anim-speed"));
         fields->m_cachedAnimEffect = parseAnimEffect(Mod::get()->getSettingValue<std::string>("levelcell-anim-effect"));
         fields->m_cachedHoverEnabled = Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
-        fields->m_cachedCompactMode = Mod::get()->getSettingValue<bool>("compact-list-mode");
+        fields->m_cachedCompactMode = shouldUseCompactForLevel(m_level);
         fields->m_cachedTransparentMode = Mod::get()->getSettingValue<bool>("transparent-list-mode");
         fields->m_cachedEffectOnGradient = Mod::get()->getSettingValue<bool>("levelcell-effect-on-gradient");
         fields->m_cachedBgType = parseBgType(Mod::get()->getSettingValue<std::string>("levelcell-background-type"));
@@ -3081,11 +3095,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                 fields->m_settingsCached = false;
 
                 // Check if compact mode changed — requires full cell reload + list relayout
-                bool newCompact = Mod::get()->getSettingValue<bool>("compact-list-mode");
-                // Don't apply compact mode to timed levels (daily/weekly/event)
-                if (m_level) {
-                    if (m_level->m_dailyID > 0) newCompact = false;
-                }
+                bool newCompact = shouldUseCompactForLevel(m_level);
                 if (newCompact != fields->m_cachedCompactMode) {
                     m_compactView = newCompact;
                     fields->m_cachedCompactMode = newCompact;
@@ -3246,22 +3256,91 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
     }
 
-    void applyCompactViewFromSetting() {
-        bool compact = Mod::get()->getSettingValue<bool>("compact-list-mode");
-        // Don't apply compact mode to timed levels (daily/weekly/event)
-        if (m_level) {
-            if (m_level->m_dailyID > 0) compact = false;
+    bool isInCompactExcludedContext() {
+        CCNode* parent = this->getParent();
+        for (int depth = 0; parent && depth < 16; ++depth, parent = parent->getParent()) {
+            if (typeinfo_cast<LevelListLayer*>(parent)) {
+                return true;
+            }
         }
-        m_compactView = compact;
+        // Check LevelBrowserLayer separately — but only if NOT inside a LevelListLayer
+        parent = this->getParent();
+        for (int depth = 0; parent && depth < 16; ++depth, parent = parent->getParent()) {
+            if (auto browser = typeinfo_cast<LevelBrowserLayer*>(parent)) {
+                return browser->m_searchObject &&
+                       browser->m_searchObject->m_searchType == SearchType::MyLevels;
+            }
+        }
+        return false;
+    }
+
+    bool isInsideLevelListLayerContext() {
+        CCNode* parent = this->getParent();
+        for (int depth = 0; parent && depth < 16; ++depth, parent = parent->getParent()) {
+            if (typeinfo_cast<LevelListLayer*>(parent)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool isInsideRealtimeSearchPreviewContext() {
+        if (paimon::hooks::g_forceCompactLevelCells) {
+            return true;
+        }
+
+        CCNode* parent = this->getParent();
+        for (int depth = 0; parent && depth < 16; ++depth, parent = parent->getParent()) {
+            auto id = parent->getID();
+            if (id == "paimon-realtime-results-list"_spr ||
+                id == "paimon-realtime-results-scroll"_spr ||
+                id == "paimon-realtime-search-preview-container"_spr ||
+                id == "paimon-realtime-search-preview"_spr) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool shouldUseCompactForLevel(GJGameLevel* level) {
+        bool compact = Mod::get()->getSettingValue<bool>("compact-list-mode");
+        if (isInsideRealtimeSearchPreviewContext()) {
+            return true;
+        }
+        if (isInCompactExcludedContext()) {
+            return false;
+        }
+        // Don't apply compact mode to timed levels (daily/weekly/event).
+        if (level && level->m_dailyID > 0) {
+            compact = false;
+        }
+        return compact;
+    }
+
+    void resetCompactLayoutState() {
+        this->setUserFlag("compact-adjusted"_spr, false);
+        if (auto fields = m_fields.self()) {
+            fields->m_compactLayoutApplied = false;
+        }
+    }
+
+    void applyCompactViewFromSetting(GJGameLevel* level = nullptr) {
+        m_compactView = shouldUseCompactForLevel(level ? level : m_level);
     }
 
     $override void loadCustomLevelCell() {
         applyCompactViewFromSetting();
+        resetCompactLayoutState();
         LevelCell::loadCustomLevelCell();
         if (auto fields = m_fields.self()) {
             fields->m_isBeingDestroyed = false;
             fields->m_cachedCompactMode = m_compactView;
-            fields->m_compactLayoutApplied = false;
+        }
+        if (paimon::hooks::g_suppressLevelCellEnhancements) {
+            return;
+        }
+        if (isInsideLevelListLayerContext()) {
+            return;
         }
         applyCompactLayoutAdjustments();
         applyTransparentMode();
@@ -3270,12 +3349,18 @@ class $modify(PaimonLevelCell, LevelCell) {
     }
 
     $override void loadFromLevel(GJGameLevel* level) {
-        applyCompactViewFromSetting();
+        applyCompactViewFromSetting(level);
+        resetCompactLayoutState();
         LevelCell::loadFromLevel(level);
         if (auto fields = m_fields.self()) {
             fields->m_isBeingDestroyed = false;
             fields->m_cachedCompactMode = m_compactView;
-            fields->m_compactLayoutApplied = false;
+        }
+        if (paimon::hooks::g_suppressLevelCellEnhancements) {
+            return;
+        }
+        if (isInsideLevelListLayerContext()) {
+            return;
         }
         applyTransparentMode();
         log::debug("[LevelCell] loadFromLevel levelID={} compact={}", level ? level->m_levelID.value() : 0, m_compactView);

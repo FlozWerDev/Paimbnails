@@ -27,6 +27,11 @@
 
 using namespace geode::prelude;
 
+namespace {
+    bool s_paimonLoaded = false;
+    bool s_paimonLoadScheduled = false;
+}
+
 // declarada en main.cpp — inicializacion diferida del mod
 extern void PaimonOnModLoaded();
 
@@ -106,16 +111,10 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         }
         log::info("[MenuLayer] init");
 
-        // Inicializa mod una sola vez
-        static bool s_paimonLoaded = false;
-        if (!s_paimonLoaded) {
-            s_paimonLoaded = true;
-            log::info("[PaimonThumbnails] Invoking delayed Mod Loaded initialization from MenuLayer");
-            PaimonOnModLoaded();
-            PetManager::get().init();
-            initPetTicker();
-            CursorManager::get().init();
-            initCursorTicker();
+        // Inicializa el mod despues de dejar que el menu pinte su primer frame.
+        if (!s_paimonLoaded && !s_paimonLoadScheduled) {
+            s_paimonLoadScheduled = true;
+            this->scheduleOnce(schedule_selector(PaimonMenuLayer::deferredPaimonInit), 0.35f);
         }
 
         // Heartbeat: ping inmediato al iniciar + cada 60s para mantener estado online
@@ -311,6 +310,17 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         if (scene) {
             TransitionManager::get().pushScene(scene);
         }
+    }
+
+    void deferredPaimonInit(float) {
+        if (s_paimonLoaded) return;
+        s_paimonLoaded = true;
+        log::info("[PaimonThumbnails] Invoking delayed Mod Loaded initialization from MenuLayer");
+        PaimonOnModLoaded();
+        PetManager::get().init();
+        initPetTicker();
+        CursorManager::get().init();
+        initCursorTicker();
     }
 
     void tickHeartbeat(float dt) {

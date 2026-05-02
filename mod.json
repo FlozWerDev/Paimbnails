@@ -27,6 +27,20 @@
       "description": "General mod settings",
       "type": "title"
     },
+    "level-search-enter": {
+      "type": "keybind",
+      "name": "Quick Search Key",
+      "description": "Press this key in the level search to trigger a search. Configure any key you want.",
+      "default": "Enter",
+      "category": "universal",
+      "allow-in-text-inputs": true
+    },
+    "realtime-search-preview": {
+      "type": "bool",
+      "name": "Realtime Search Preview",
+      "description": "Shows a preview of search results as you type in the level search.",
+      "default": false
+    },
     "language": {
       "type": "string",
       "name": "Language / Idioma",

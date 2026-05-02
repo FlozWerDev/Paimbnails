@@ -41,6 +41,7 @@ bool CreatePostPopup::init(
     m_titleInput = TextInput::create(420.f, "Post title...", "chatFont.fnt");
     m_titleInput->setCommonFilter(CommonFilter::Any);
     m_titleInput->setMaxCharCount(80);
+    m_titleInput->setDelegate(this);
     m_titleInput->setPosition({cx, contentSize.height - 56.f});
     m_titleInput->setScale(0.85f);
     m_mainLayer->addChild(m_titleInput);
@@ -56,6 +57,7 @@ bool CreatePostPopup::init(
     m_descInput = TextInput::create(420.f, "Description...", "chatFont.fnt");
     m_descInput->setCommonFilter(CommonFilter::Any);
     m_descInput->setMaxCharCount(500);
+    m_descInput->setDelegate(this);
     m_descInput->setPosition({cx, contentSize.height - 100.f});
     m_descInput->setScale(0.85f);
     m_mainLayer->addChild(m_descInput);
@@ -166,11 +168,32 @@ void CreatePostPopup::onAddCustomTag(CCObject*) {
     m_newTagInput = TextInput::create(170.f, "Tag name", "chatFont.fnt");
     m_newTagInput->setCommonFilter(CommonFilter::Any);
     m_newTagInput->setMaxCharCount(20);
+    m_newTagInput->setDelegate(this);
     m_newTagInput->setPosition({cx, contentSize.height / 2.f + 10.f});
     m_newTagInput->setScale(0.8f);
     alert->addChild(m_newTagInput);
 
     alert->show();
+}
+
+void CreatePostPopup::enterPressed(CCTextInputNode* node) {
+    if (m_titleInput && node == m_titleInput->getInputNode()) {
+        if (m_descInput && m_descInput->getString().empty()) {
+            m_descInput->focus();
+            return;
+        }
+        onSubmit(nullptr);
+        return;
+    }
+
+    if (m_descInput && node == m_descInput->getInputNode()) {
+        onSubmit(nullptr);
+        return;
+    }
+
+    if (m_newTagInput && node == m_newTagInput->getInputNode()) {
+        FLAlert_Click(nullptr, true);
+    }
 }
 
 void CreatePostPopup::FLAlert_Click(FLAlertLayer* alert, bool isAdd) {

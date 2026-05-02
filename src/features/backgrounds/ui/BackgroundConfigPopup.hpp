@@ -34,6 +34,7 @@ protected:
 
     // acciones menu
     void onCustomImage(cocos2d::CCObject* sender);
+    void onCustomVideo(cocos2d::CCObject* sender);
     void onDownloadedThumbnails(cocos2d::CCObject* sender);
     void onSetID(cocos2d::CCObject* sender);
     void onApply(cocos2d::CCObject* sender);
@@ -55,6 +56,7 @@ protected:
     // layer bg actions
     void onLayerSelect(cocos2d::CCObject* sender);
     void onLayerCustomImage(cocos2d::CCObject* sender);
+    void onLayerCustomVideo(cocos2d::CCObject* sender);
     void onLayerRandom(cocos2d::CCObject* sender);
     void onLayerSameAs(cocos2d::CCObject* sender);
     void onLayerDefault(cocos2d::CCObject* sender);

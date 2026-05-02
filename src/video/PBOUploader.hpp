@@ -80,6 +80,9 @@ public:
 
     bool isInitialized() const { return m_initialized; }
 
+    // Clear all pending fences — needed when restarting video after seek
+    void clearFences() { deleteAllFences(); }
+
 private:
     // Check if a slot's fence is signaled (non-blocking).  Returns true if safe to use.
     bool isSlotReady(int idx);

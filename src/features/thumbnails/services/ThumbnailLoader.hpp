@@ -132,7 +132,7 @@ private:
 
     // manejo de cola — int key para level tasks, string key para url tasks
     std::unordered_map<int, std::shared_ptr<Task>> m_tasks; // id -> tarea (pendiente y corriendo)
-    std::unordered_map<std::string, std::shared_ptr<Task>> m_urlTasks; // url -> tarea gallery
+    std::unordered_map<std::string, std::shared_ptr<Task>> m_urlTasks; // normalized URL cache key -> gallery task
     std::multimap<int, int, std::greater<int>> m_priorityQueue; // prioridad (desc) -> levelID
     std::atomic<int> m_activeTaskCount{0};
     std::atomic<int> m_activeUrlTaskCount{0};
@@ -240,8 +240,10 @@ private:
     // blur de alta intensidad sin perdida de detalle.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr int RAM_CACHE_MAX_DIM = 256;  // smaller on mobile to save RAM
+    static constexpr int URL_CACHE_MAX_DIM = 512;
 #else
     static constexpr int RAM_CACHE_MAX_DIM = 1024;
+    static constexpr int URL_CACHE_MAX_DIM = 1280;
 #endif
     void enqueuePendingUpload(PendingUpload upload);
     void drainPendingUploads();

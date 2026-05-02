@@ -1,6 +1,9 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CustomListView.hpp>
+#include <Geode/binding/LevelBrowserLayer.hpp>
+#include <Geode/binding/LevelListLayer.hpp>
 #include "../features/thumbnails/ui/LevelCellSettingsPopup.hpp"
+#include "LevelCellContext.hpp"
 
 using namespace geode::prelude;
 
@@ -12,6 +15,8 @@ static constexpr float COMPACT_LEVEL_CELL_HEIGHT = 45.f;
 // getCellHeight call (hot path during scrolling/layout, called many times/frame).
 static bool s_cachedCompactMode = false;
 static int s_cachedCompactVersion = -1;
+static bool s_suppressCompactHeight = false;
+static bool s_inLevelListLayer = false;
 
 static bool getCachedCompactMode() {
     int ver = LevelCellSettingsPopup::s_settingsVersion;
@@ -20,6 +25,25 @@ static bool getCachedCompactMode() {
         s_cachedCompactMode = Mod::get()->getSettingValue<bool>("compact-list-mode");
     }
     return s_cachedCompactMode;
+}
+
+static bool shouldCompactForDelegate(TableViewCellDelegate* delegate) {
+    if (!delegate) return true;
+
+    // Use typeid name check instead of typeinfo_cast because other mods may
+    // modify LevelListLayer, changing its RTTI type info and breaking the cast
+    std::string_view className(typeid(*delegate).name());
+    if (className.find("LevelListLayer") != std::string_view::npos) {
+        return false;
+    }
+
+    if (auto browser = typeinfo_cast<LevelBrowserLayer*>(delegate)) {
+        if (browser->m_searchObject && browser->m_searchObject->m_searchType == SearchType::MyLevels) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 class $modify(PaimonCustomListView, CustomListView) {
@@ -37,17 +61,38 @@ class $modify(PaimonCustomListView, CustomListView) {
                            type == BoomListType::Level2 ||
                            type == BoomListType::Level3 ||
                            type == BoomListType::Level4;
-        if (isLevelType && getCachedCompactMode()) {
+        
+        // LevelListLayer should NEVER use compact mode - check this first
+        // Use local variable instead of modifying global state
+        bool forceCompact = paimon::hooks::g_forceCompactLevelCells;
+        bool isLevelList = !shouldCompactForDelegate(delegate);
+        if (isLevelList) {
+            // Force compact mode off for LevelListLayer regardless of settings
+            forceCompact = false;
+        }
+        
+        bool compactEnabled = isLevelType && (getCachedCompactMode() || forceCompact);
+        bool compactAllowed = compactEnabled && shouldCompactForDelegate(delegate);
+
+        if (compactAllowed) {
             if (type == BoomListType::Level) {
                 type = BoomListType::Level4;
             }
             // Halve explicit cellHeight (used for "My Levels" / created lists
             // which pass cellHeight=90 directly, overriding getCellHeight).
-            if (cellHeight > 0.f && cellHeight <= 200.f) {
+            if (type != BoomListType::Level4 && cellHeight > 0.f && cellHeight <= 200.f) {
                 cellHeight *= 0.5f;
             }
         }
-        return CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
+
+        bool oldSuppress = s_suppressCompactHeight;
+        bool oldInLevelList = s_inLevelListLayer;
+        s_suppressCompactHeight = compactEnabled && !compactAllowed;
+        s_inLevelListLayer = isLevelList;
+        auto* ret = CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
+        s_suppressCompactHeight = oldSuppress;
+        s_inLevelListLayer = oldInLevelList;
+        return ret;
     }
 
     // Also hook getCellHeight as a fallback for lists that are already created
@@ -61,7 +106,17 @@ class $modify(PaimonCustomListView, CustomListView) {
                            type == BoomListType::Level3 ||
                            type == BoomListType::Level4;
 
-        if (isLevelType && getCachedCompactMode()) {
+        // Check if compact mode should be suppressed for this context
+        // LevelListLayer should NEVER use compact mode
+        if (s_suppressCompactHeight) {
+            // For LevelListLayer, ensure we return at least the normal height
+            if (s_inLevelListLayer && isLevelType && original < NORMAL_LEVEL_CELL_HEIGHT) {
+                return NORMAL_LEVEL_CELL_HEIGHT;
+            }
+            return original;
+        }
+
+        if (isLevelType && (getCachedCompactMode() || paimon::hooks::g_forceCompactLevelCells)) {
             // Level4 is already compact (create() swaps Level→Level4).
             // Don't halve it again or cells become ~22px (unusable).
             if (type == BoomListType::Level4) {
@@ -72,6 +127,11 @@ class $modify(PaimonCustomListView, CustomListView) {
                 return original * 0.5f;
             }
             return COMPACT_LEVEL_CELL_HEIGHT;
+        }
+
+        // For LevelListLayer in normal mode, ensure we return at least the normal height
+        if (s_inLevelListLayer && isLevelType && original < NORMAL_LEVEL_CELL_HEIGHT) {
+            return NORMAL_LEVEL_CELL_HEIGHT;
         }
 
         return original;

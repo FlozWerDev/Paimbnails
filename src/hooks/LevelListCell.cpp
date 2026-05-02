@@ -5,6 +5,13 @@
 
 using namespace geode::prelude;
 
+namespace {
+    // Disabled while stabilizing search/list scene transitions. Level list cells
+    // are destroyed aggressively by GD's browser layer, and the async carousel
+    // can leave actions/callbacks alive during CCNode teardown.
+    constexpr bool kEnableLevelListCarousel = false;
+}
+
 class $modify(PaimonLevelListCell, LevelListCell) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPost("LevelListCell::loadFromList", geode::Priority::Late);
@@ -17,6 +24,30 @@ class $modify(PaimonLevelListCell, LevelListCell) {
     };
 
     // init hook removido por errores de compilacion
+
+    void clearPaimonListThumbnailNodes() {
+        if (m_fields->m_carousel) {
+            m_fields->m_carousel->stopAllActions();
+            if (m_fields->m_carousel->getParent()) {
+                m_fields->m_carousel->removeFromParentAndCleanup(true);
+            }
+            m_fields->m_carousel = nullptr;
+        }
+
+        if (m_fields->m_listThumbnail) {
+            m_fields->m_listThumbnail->stopAllActions();
+            if (m_fields->m_listThumbnail->getParent()) {
+                m_fields->m_listThumbnail->removeFromParentAndCleanup(true);
+            }
+            m_fields->m_listThumbnail = nullptr;
+        }
+    }
+
+    $override
+    void onExit() {
+        clearPaimonListThumbnailNodes();
+        LevelListCell::onExit();
+    }
 
     
     $override
@@ -31,16 +62,9 @@ class $modify(PaimonLevelListCell, LevelListCell) {
         m_fields->m_currentListID = list->m_listID;
         log::debug("PaimonLevelListCell: loadFromList called for list ID: {}", list->m_listID);
 
-        // Quita carousel anterior si existe
-        if (m_fields->m_carousel) {
-            m_fields->m_carousel->removeFromParent();
-            m_fields->m_carousel = nullptr;
-        }
-        
-        // Quita thumbnail anterior si existe
-        if (m_fields->m_listThumbnail) {
-            m_fields->m_listThumbnail->removeFromParent();
-            m_fields->m_listThumbnail = nullptr;
+        clearPaimonListThumbnailNodes();
+        if (!kEnableLevelListCarousel) {
+            return;
         }
 
         // Obtiene IDs de niveles

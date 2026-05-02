@@ -67,6 +67,7 @@ class $modify(PaimonMyLevelsCell, LevelCell) {
     }
 
     void loadCustomLevelCell() {
+        this->setUserFlag("paimon-mylevels-laid-out"_spr, false);
         LevelCell::loadCustomLevelCell();
         if (isInsideMyLevels(this)) {
             applyMyLevelsLayout(this);
@@ -74,6 +75,7 @@ class $modify(PaimonMyLevelsCell, LevelCell) {
     }
 
     void loadFromLevel(GJGameLevel* level) {
+        this->setUserFlag("paimon-mylevels-laid-out"_spr, false);
         LevelCell::loadFromLevel(level);
         if (isInsideMyLevels(this)) {
             applyMyLevelsLayout(this);

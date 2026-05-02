@@ -1109,7 +1109,7 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
                 cache.markFailed("url_" + task->urlCacheKey);
             }
             if (shouldNotify) callbacks = task->callbacks;
-            m_urlTasks.erase(task->url);
+            m_urlTasks.erase(task->urlCacheKey);
 
             m_activeUrlTaskCount.fetch_sub(1, std::memory_order_relaxed);
 
@@ -1419,10 +1419,15 @@ void ThumbnailLoader::requestUrlLoad(std::string const& url, LoadCallback callba
         return;
     }
 
-    // 3. tarea existente (deduplicacion por URL completa, no por cache key)
-    auto taskIt = m_urlTasks.find(url);
+    // 3. tarea existente (deduplicacion por key normalizada).
+    // LevelInfoLayer puede pedir primero /thumb.png y luego /thumb.png?_pv=id;
+    // ambas deben compartir el mismo download/decode si apuntan al mismo asset.
+    auto taskIt = m_urlTasks.find(cacheKey);
     if (taskIt != m_urlTasks.end()) {
         if (callback) taskIt->second->callbacks.push_back(callback);
+        if (priority > taskIt->second->priority) {
+            taskIt->second->priority = priority;
+        }
         return;
     }
 
@@ -1435,7 +1440,7 @@ void ThumbnailLoader::requestUrlLoad(std::string const& url, LoadCallback callba
     task->isUrlTask = true;
     if (callback) task->callbacks.push_back(callback);
 
-    m_urlTasks[url] = task;
+    m_urlTasks[cacheKey] = task;
 
     // arranco directamente con pool separado de URLs (no compite con level tasks)
     if (m_activeUrlTaskCount < m_maxConcurrentUrlTasks) {
@@ -1457,12 +1462,19 @@ void ThumbnailLoader::requestUrlLoad(std::string const& url, LoadCallback callba
 void ThumbnailLoader::processUrlQueue() {
     // must be called with m_queueMutex held
     if (m_shuttingDown.load(std::memory_order_acquire)) return;
-    for (auto& [url, task] : m_urlTasks) {
-        if (m_activeUrlTaskCount >= m_maxConcurrentUrlTasks) break;
-        if (task->running || task->cancelled) continue;
-        task->running = true;
+    while (m_activeUrlTaskCount < m_maxConcurrentUrlTasks) {
+        std::shared_ptr<Task> bestTask = nullptr;
+        for (auto& [_, task] : m_urlTasks) {
+            if (!task || task->running || task->cancelled) continue;
+            if (!bestTask || task->priority > bestTask->priority) {
+                bestTask = task;
+            }
+        }
+        if (!bestTask) break;
+
+        bestTask->running = true;
         m_activeUrlTaskCount.fetch_add(1, std::memory_order_relaxed);
-        spawnDisk([this, task]() {
+        spawnDisk([this, task = bestTask]() {
             if (m_shuttingDown.load(std::memory_order_acquire)) {
                 Loader::get()->queueInMainThread([this, task]() {
                     finishTask(task, nullptr, false);
@@ -1486,7 +1498,7 @@ bool ThumbnailLoader::isUrlLoaded(std::string const& url) const {
 
 void ThumbnailLoader::cancelUrlLoad(std::string const& url) {
     std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
-    auto it = m_urlTasks.find(url);
+    auto it = m_urlTasks.find(normalizeUrlKey(url));
     if (it != m_urlTasks.end()) {
         it->second->cancelled = true;
     }
@@ -1518,7 +1530,7 @@ void ThumbnailLoader::workerUrlDownload(std::shared_ptr<Task> task) {
                 if (success && !data.empty()) {
                     // Decodificar en CPU pool igual que level thumbnails
                     spawnCpu([this, task, data]() {
-                        auto decoded = decodeImageData(data, 0, 0);
+                        auto decoded = decodeImageData(data, 0, URL_CACHE_MAX_DIM);
                         if (decoded.success && decoded.image) {
                             enqueuePendingUpload({task, decoded.image, {}, 0, 0, 0,
                                 false/*fallbackToDownload*/, decoded.width, decoded.height});

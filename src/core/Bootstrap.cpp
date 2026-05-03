@@ -34,11 +34,7 @@ using namespace geode::prelude;
 
 namespace {
 void applyLanguageSetting(std::string const& langStr) {
-    if (langStr == "english") {
-        Localization::get().setLanguage(Localization::Language::ENGLISH);
-    } else {
-        Localization::get().setLanguage(Localization::Language::SPANISH);
-    }
+    Localization::get().setLanguage(Localization::languageFromId(langStr), false);
 }
 
 // atomic: MenuLayer::init puede re-entrar si la escena se recarga
@@ -88,6 +84,7 @@ void PaimonOnModLoaded() {
         if (paimon::isRuntimeShuttingDown()) return;
         LayerBackgroundManager::get().migrateFromLegacy();
         LayerBackgroundManager::get().migrateToGlobalMusic();
+        LayerBackgroundManager::get().migrateExternalAssetsToManagedStorage();
     });
     migrationThread.detach();
 

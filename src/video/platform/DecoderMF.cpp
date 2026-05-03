@@ -61,13 +61,30 @@ bool DecoderMF::setupD3D11() {
 
     HRESULT hr = D3D11CreateDevice(
         nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-        0x4,  // D3D11_CREATE_DEVICE_MULTITHREADED
+        D3D11_CREATE_DEVICE_VIDEO_SUPPORT,  // required for DXVA; implies multithread
         levels, 2, D3D11_SDK_VERSION,
         &m_d3dDevice, &outLevel, &m_d3dCtx);
 
     if (FAILED(hr) || !m_d3dDevice) {
         geode::log::warn("DecoderMF: D3D11CreateDevice failed (hr={:08X})", static_cast<unsigned>(hr));
         return false;
+    }
+
+    // Enable driver-level multithread protection.
+    // AMD drivers (atidxx64.dll) can crash with null-deref if concurrent
+    // D3D11 calls race internally (e.g. DXVA decode vs CopySubresourceRegion).
+    // ID3D11Multithread::SetMultithreadProtected(TRUE) serialises all driver
+    // calls and prevents the internal state corruption that causes the crash.
+    {
+        ID3D10Multithread* mt = nullptr;
+        hr = m_d3dCtx->QueryInterface(__uuidof(ID3D10Multithread), reinterpret_cast<void**>(&mt));
+        if (SUCCEEDED(hr) && mt) {
+            mt->SetMultithreadProtected(TRUE);
+            mt->Release();
+            geode::log::info("DecoderMF: D3D11 multithread protection enabled");
+        } else {
+            geode::log::warn("DecoderMF: failed to enable D3D11 multithread protection");
+        }
     }
 
     hr = MFCreateDXGIDeviceManager(&m_resetToken, &m_dxgiMgr);
@@ -442,25 +459,34 @@ bool DecoderMF::copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresourc
             srcDesc.Width, srcDesc.Height, static_cast<int>(srcDesc.Format));
     }
 
-    // Copy from GPU decode texture to CPU-accessible staging texture
-    m_d3dCtx->CopySubresourceRegion(m_stagingTex, 0, 0, 0, 0, srcTexture, subresource, nullptr);
+    // All D3D11 context calls must be serialised — the DXVA decode engine
+    // inside msmpeg2vdec.dll submits GPU work on this same context concurrently.
+    // Without the lock AMD drivers (atidxx64.dll) can null-deref internally.
+    // NOTE: ID3D11Multithread provides driver-level protection, but we add an
+    // application-level lock as belt-and-suspenders for drivers that ignore the flag.
+    {
+        std::lock_guard<std::mutex> ctxLk(m_d3dCtxMutex);
 
-    // Map staging texture for CPU read
-    D3D11_MAPPED_SUBRESOURCE mapped = {};
-    HRESULT hr = m_d3dCtx->Map(m_stagingTex, 0, D3D11_MAP_READ, 0, &mapped);
-    if (FAILED(hr)) {
-        geode::log::warn("DecoderMF: failed to map staging texture");
-        return false;
+        // Copy from GPU decode texture to CPU-accessible staging texture
+        m_d3dCtx->CopySubresourceRegion(m_stagingTex, 0, 0, 0, 0, srcTexture, subresource, nullptr);
+
+        // Map staging texture for CPU read
+        D3D11_MAPPED_SUBRESOURCE mapped = {};
+        HRESULT hr = m_d3dCtx->Map(m_stagingTex, 0, D3D11_MAP_READ, 0, &mapped);
+        if (FAILED(hr)) {
+            geode::log::warn("DecoderMF: failed to map staging texture (hr={:08X})", static_cast<unsigned>(hr));
+            return false;
+        }
+
+        // NV12 layout: Y plane first, then interleaved CbCr plane
+        BYTE* scanline0 = static_cast<BYTE*>(mapped.pData);
+        LONG lStride = static_cast<LONG>(mapped.RowPitch);
+
+        // Use the existing 2D copy function (handles NV12 deinterleaving)
+        copyPlanesToSlot2D(scanline0, lStride, slot);
+
+        m_d3dCtx->Unmap(m_stagingTex, 0);
     }
-
-    // NV12 layout: Y plane first, then interleaved CbCr plane
-    BYTE* scanline0 = static_cast<BYTE*>(mapped.pData);
-    LONG lStride = static_cast<LONG>(mapped.RowPitch);
-
-    // Use the existing 2D copy function (handles NV12 deinterleaving)
-    copyPlanesToSlot2D(scanline0, lStride, slot);
-
-    m_d3dCtx->Unmap(m_stagingTex, 0);
     return true;
 }
 
@@ -478,7 +504,11 @@ void DecoderMF::stopDecoding() {
     bool wasDecoding = m_decoding.exchange(false, std::memory_order_acq_rel);
     if (!wasDecoding) {
         // Was not decoding — but thread might still be joinable from a previous run
-        if (m_thread.joinable()) paimon::timedJoin(m_thread, std::chrono::seconds(3));
+        if (m_thread.joinable()) {
+            if (!paimon::timedJoin(m_thread, std::chrono::seconds(3))) {
+                m_decodeThreadDetached.store(true, std::memory_order_release);
+            }
+        }
         return;
     }
 
@@ -495,7 +525,11 @@ void DecoderMF::stopDecoding() {
         }
     }
 
-    if (m_thread.joinable()) paimon::timedJoin(m_thread, std::chrono::seconds(3));
+    if (m_thread.joinable()) {
+        if (!paimon::timedJoin(m_thread, std::chrono::seconds(3))) {
+            m_decodeThreadDetached.store(true, std::memory_order_release);
+        }
+    }
 }
 
 void DecoderMF::decodeLoop() {
@@ -663,10 +697,14 @@ bool DecoderMF::fallbackToSoftwareDecode(const std::string& path) {
     m_dxvaEnabled = false;
     m_dxvaReadbackFailures = 0;
 
-    // Release staging texture (no longer needed)
-    if (m_stagingTex) {
-        m_stagingTex->Release();
-        m_stagingTex = nullptr;
+    // Release staging texture (no longer needed) — lock to prevent racing with
+    // concurrent copyPlanesFromD3D11 calls still running on the decode thread.
+    {
+        std::lock_guard<std::mutex> ctxLk(m_d3dCtxMutex);
+        if (m_stagingTex) {
+            m_stagingTex->Release();
+            m_stagingTex = nullptr;
+        }
     }
     m_stagingFormat = DXGI_FORMAT_UNKNOWN;
     m_stagingWidth = 0;
@@ -804,6 +842,31 @@ double DecoderMF::peekNextPTS() const {
 // ─────────────────────────────────────────────────────────────
 void DecoderMF::closeInternal() {
     stopDecoding();
+
+    // If the decode thread was detached due to a timedJoin timeout, it may
+    // still be executing ReadSample() or DXVA readback and holding references
+    // to m_reader and the D3D objects.  Calling Release() on those objects
+    // while the thread is running would be a use-after-free / COM violation.
+    // Instead, null out the pointers without calling Release() and let the OS
+    // clean up the underlying resources when the process exits.
+    if (m_decodeThreadDetached.load(std::memory_order_acquire)) {
+        geode::log::warn("[DecoderMF] closeInternal: decode thread was detached; "
+                         "skipping COM/D3D Release() to avoid UAF. Resources will "
+                         "be reclaimed by the OS on process exit.");
+        std::lock_guard lk(g_d3d11Mutex);
+        m_dxgiMgr    = nullptr;
+        m_d3dCtx     = nullptr;
+        m_d3dDevice  = nullptr;
+        m_stagingTex = nullptr;
+        m_reader     = nullptr;
+        m_dxvaEnabled = false;
+        m_dxvaReadbackFailures = 0;
+        m_stagingFormat = DXGI_FORMAT_UNKNOWN;
+        m_stagingWidth  = 0;
+        m_stagingHeight = 0;
+        m_videoPath.clear();
+        return;
+    }
 
     // Release D3D11 resources. Each decoder owns its own device, context and
     // DXGI manager. We hold the global mutex while releasing the device to

@@ -21,7 +21,7 @@ VideoSettingsPopup* VideoSettingsPopup::create() {
 }
 
 bool VideoSettingsPopup::init() {
-    if (!Popup::init(340.f, 220.f)) return false;
+    if (!Popup::init(340.f, 260.f)) return false;
 
     this->setTitle("Video Settings");
 
@@ -56,6 +56,12 @@ bool VideoSettingsPopup::init() {
         if (diff < minDiff) { minDiff = diff; m_blurIntensityIndex = i; }
     }
 
+    int currentRotation = paimon::settings::video::videoRotation();
+    m_rotationIndex = 0;
+    for (int i = 0; i < (int)ROTATION_OPTIONS.size(); i++) {
+        if (ROTATION_OPTIONS[i] == currentRotation) { m_rotationIndex = i; break; }
+    }
+
     // ── Shared menu ────────────────────────────────────────────────────
     auto menu = CCMenu::create();
     menu->setPosition({0, 0});
@@ -87,8 +93,8 @@ bool VideoSettingsPopup::init() {
     float leftCX  = cx - colSpacing / 2.f;
     float rightCX = cx + colSpacing / 2.f;
 
-    const float rowSpacing = 34.f;
-    float topY = content.height - 48.f;
+    const float rowSpacing = 30.f;
+    float topY = content.height - 46.f;
 
     // layout constants per column
     auto colLayout = [&](float colCX) {
@@ -215,10 +221,25 @@ bool VideoSettingsPopup::init() {
         }
         updateBlurIntensityLabel();
         updateBlurIntensityVisibility();
+
+        // Rotation
+        float rotationY = blurIntY - rowSpacing;
+        auto rotTitle = CCLabelBMFont::create("Rotation:", "bigFont.fnt");
+        rotTitle->setScale(0.30f);
+        rotTitle->setPosition({titleX, rotationY});
+        m_mainLayer->addChild(rotTitle, 1);
+        makeArrowL(prevX, rotationY, menu_selector(VideoSettingsPopup::onRotationPrev));
+        m_rotationLabel = CCLabelBMFont::create("0", "bigFont.fnt");
+        m_rotationLabel->setScale(0.38f);
+        m_rotationLabel->setColor({100, 255, 200});
+        m_rotationLabel->setPosition({valX, rotationY});
+        m_mainLayer->addChild(m_rotationLabel, 1);
+        makeArrowR(nextX, rotationY, menu_selector(VideoSettingsPopup::onRotationNext));
+        updateRotationLabel();
     }
 
-    // ── BOTTOM ROW: Cache ──────────────────────────────────────────────
-    float cacheY = topY - rowSpacing * 3.f - 14.f;
+    // ── BOTTOM ROW: Cache ──────────────────────────────────────────────────────
+    float cacheY = topY - rowSpacing * 3.f - 14.f - 28.f;
 
     auto ramBtnSpr = ButtonSprite::create("Clear RAM", 0.32f);
     auto ramBtn = CCMenuItemSpriteExtra::create(ramBtnSpr, this, menu_selector(VideoSettingsPopup::onClearRAM));
@@ -244,7 +265,7 @@ bool VideoSettingsPopup::init() {
     infoLabel->setScale(0.48f);
     infoLabel->setColor({140, 140, 140});
     infoLabel->setAlignment(kCCTextAlignmentCenter);
-    infoLabel->setPosition({cx, cacheY - 20.f});
+    infoLabel->setPosition({cx, cacheY - 24.f});
     m_mainLayer->addChild(infoLabel, 1);
 
     paimon::markDynamicPopup(this);
@@ -367,6 +388,37 @@ void VideoSettingsPopup::onBlurIntensityNext(CCObject*) {
 void VideoSettingsPopup::updateBlurIntensityLabel() {
     if (!m_blurIntensityLabel) return;
     m_blurIntensityLabel->setString(BLUR_INTENSITY_NAMES[m_blurIntensityIndex]);
+}
+
+// ── Rotation ──────────────────────────────────────────────────────────────
+
+void VideoSettingsPopup::onRotationPrev(CCObject*) {
+    if (--m_rotationIndex < 0) m_rotationIndex = (int)ROTATION_OPTIONS.size() - 1;
+    int newRot = ROTATION_OPTIONS[m_rotationIndex];
+    Mod::get()->setSavedValue("video-rotation", newRot);
+    paimon::requestDeferredModSave();
+    updateRotationLabel();
+    // Apply rotation to existing video backgrounds immediately
+    LayerBackgroundManager::get().broadcastRotationUpdate(newRot);
+}
+
+void VideoSettingsPopup::onRotationNext(CCObject*) {
+    if (++m_rotationIndex >= (int)ROTATION_OPTIONS.size()) m_rotationIndex = 0;
+    int newRot = ROTATION_OPTIONS[m_rotationIndex];
+    Mod::get()->setSavedValue("video-rotation", newRot);
+    paimon::requestDeferredModSave();
+    updateRotationLabel();
+    LayerBackgroundManager::get().broadcastRotationUpdate(newRot);
+}
+
+void VideoSettingsPopup::updateRotationLabel() {
+    if (!m_rotationLabel) return;
+    m_rotationLabel->setString(fmt::format("{}°", ROTATION_OPTIONS[m_rotationIndex]).c_str());
+    if (m_rotationIndex == 0) {
+        m_rotationLabel->setColor({100, 255, 200});
+    } else {
+        m_rotationLabel->setColor({255, 200, 100});
+    }
 }
 
 // ── Clear RAM ────────────────────────────────────────────────────────────

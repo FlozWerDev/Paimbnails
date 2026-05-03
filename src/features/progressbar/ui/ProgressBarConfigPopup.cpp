@@ -6,6 +6,7 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/FileDialog.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include <Geode/utils/string.hpp>
 
 #include <Geode/binding/ButtonSprite.hpp>
@@ -912,28 +913,48 @@ void ProgressBarConfigPopup::onUseBgTextureToggled(CCObject*) {
     applyAndSave();
 }
 void ProgressBarConfigPopup::onPickFillTexture(CCObject*) {
-    pt::pickImage([this](geode::Result<std::optional<std::filesystem::path>> res) {
+    WeakRef<ProgressBarConfigPopup> self = this;
+    pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> res) {
         auto opt = std::move(res).unwrapOr(std::nullopt);
         if (!opt || opt->empty()) return;
+        auto popup = self.lock();
+        if (!popup) return;
+
+        auto imported = paimon::assets::importToBucket(*opt, "progressbar_fill", paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import fill image", NotificationIcon::Error)->show();
+            return;
+        }
+
         auto& c = ProgressBarManager::get().config();
-        c.fillTexturePath = geode::utils::string::pathToString(*opt);
+        c.fillTexturePath = paimon::assets::normalizePathString(imported.path);
         c.useFillTexture = true;
-        if (m_useFillTexToggle) m_useFillTexToggle->toggle(true);
-        refreshFxTab();
-        applyAndSave();
+        if (popup->m_useFillTexToggle) popup->m_useFillTexToggle->toggle(true);
+        static_cast<ProgressBarConfigPopup*>(popup.data())->refreshFxTab();
+        static_cast<ProgressBarConfigPopup*>(popup.data())->applyAndSave();
         PaimonNotify::create("Fill image set", NotificationIcon::Success)->show();
     });
 }
 void ProgressBarConfigPopup::onPickBgTexture(CCObject*) {
-    pt::pickImage([this](geode::Result<std::optional<std::filesystem::path>> res) {
+    WeakRef<ProgressBarConfigPopup> self = this;
+    pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> res) {
         auto opt = std::move(res).unwrapOr(std::nullopt);
         if (!opt || opt->empty()) return;
+        auto popup = self.lock();
+        if (!popup) return;
+
+        auto imported = paimon::assets::importToBucket(*opt, "progressbar_bg", paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import background image", NotificationIcon::Error)->show();
+            return;
+        }
+
         auto& c = ProgressBarManager::get().config();
-        c.bgTexturePath = geode::utils::string::pathToString(*opt);
+        c.bgTexturePath = paimon::assets::normalizePathString(imported.path);
         c.useBgTexture = true;
-        if (m_useBgTexToggle) m_useBgTexToggle->toggle(true);
-        refreshFxTab();
-        applyAndSave();
+        if (popup->m_useBgTexToggle) popup->m_useBgTexToggle->toggle(true);
+        static_cast<ProgressBarConfigPopup*>(popup.data())->refreshFxTab();
+        static_cast<ProgressBarConfigPopup*>(popup.data())->applyAndSave();
         PaimonNotify::create("Bg image set", NotificationIcon::Success)->show();
     });
 }

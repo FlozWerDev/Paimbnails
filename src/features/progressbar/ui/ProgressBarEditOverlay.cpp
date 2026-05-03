@@ -2,6 +2,7 @@
 #include "../services/ProgressBarManager.hpp"
 #include "../../fonts/ui/FontPickerPopup.hpp"
 #include "../../fonts/FontTag.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/FileDialog.hpp"
 
@@ -498,8 +499,14 @@ void ProgressBarEditOverlay::onAddImage(CCObject*) {
         auto opt = std::move(result).unwrapOr(std::nullopt);
         if (!opt || opt->empty()) return;
 
+        auto imported = paimon::assets::importToBucket(*opt, "progressbar_decorations", paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            return;
+        }
+
         BarDecoration d;
-        d.path = geode::utils::string::pathToString(*opt);
+        d.path = paimon::assets::normalizePathString(imported.path);
         auto winSize = CCDirector::sharedDirector()->getWinSize();
         d.posX = winSize.width / 2.f;
         d.posY = winSize.height / 2.f;

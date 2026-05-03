@@ -1,5 +1,6 @@
 #include "TransitionManager.hpp"
 #include "../ui/CustomTransitionScene.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include <Geode/utils/file.hpp>
 #include <Geode/loader/Log.hpp>
 #include <matjson.hpp>
@@ -592,6 +593,47 @@ static TransitionConfig parseConfig(matjson::Value const& obj) {
     return cfg;
 }
 
+static bool migrateConfigImages(TransitionConfig& cfg) {
+    bool changed = false;
+
+    if (!cfg.imagePath.empty()) {
+        auto imported = paimon::assets::importStoredPath(cfg.imagePath, "transitions", paimon::assets::Kind::Image);
+        if (imported.success && !imported.path.empty()) {
+            auto normalized = paimon::assets::normalizePathString(imported.path);
+            if (normalized != cfg.imagePath) {
+                cfg.imagePath = normalized;
+                changed = true;
+            }
+        }
+    }
+
+    for (auto& img : cfg.imageList) {
+        if (img.empty()) continue;
+        auto imported = paimon::assets::importStoredPath(img, "transitions", paimon::assets::Kind::Image);
+        if (imported.success && !imported.path.empty()) {
+            auto normalized = paimon::assets::normalizePathString(imported.path);
+            if (normalized != img) {
+                img = normalized;
+                changed = true;
+            }
+        }
+    }
+
+    for (auto& cmd : cfg.commands) {
+        if (cmd.imagePath.empty()) continue;
+        auto imported = paimon::assets::importStoredPath(cmd.imagePath, "transitions", paimon::assets::Kind::Image);
+        if (imported.success && !imported.path.empty()) {
+            auto normalized = paimon::assets::normalizePathString(imported.path);
+            if (normalized != cmd.imagePath) {
+                cmd.imagePath = normalized;
+                changed = true;
+            }
+        }
+    }
+
+    return changed;
+}
+
 static matjson::Value commandToJson(TransitionCommand const& cmd) {
     matjson::Value obj = matjson::makeObject({});
     obj.set("action",   TransitionManager::actionToString(cmd.action));
@@ -699,16 +741,29 @@ void TransitionManager::loadConfig() {
         if (!m_globalConfig.commands.empty()) m_globalConfig.type = TransitionType::Custom;
     }
 
+    bool migratedImages = migrateConfigImages(m_globalConfig);
+    if (m_hasLevelEntryConfig) {
+        migratedImages = migrateConfigImages(m_levelEntryConfig) || migratedImages;
+    }
+
     sanitizeConfig(m_globalConfig);
     if (m_hasLevelEntryConfig) {
         sanitizeConfig(m_levelEntryConfig);
     }
 
     m_loaded = true;
+    if (migratedImages) {
+        saveConfig();
+    }
     log::info("[TransitionManager] Config loaded (enabled={}, hasLevelEntry={})", m_enabled, m_hasLevelEntryConfig);
 }
 
 void TransitionManager::saveConfig() {
+    migrateConfigImages(m_globalConfig);
+    if (m_hasLevelEntryConfig) {
+        migrateConfigImages(m_levelEntryConfig);
+    }
+
     matjson::Value root = matjson::makeObject({});
     root.set("enabled", m_enabled);
     root.set("global", configToJson(m_globalConfig));
@@ -730,9 +785,16 @@ TransitionConfig TransitionManager::getLevelEntryConfig() const {
     return m_hasLevelEntryConfig ? m_levelEntryConfig : m_globalConfig;
 }
 
+void TransitionManager::setGlobalConfig(TransitionConfig const& cfg) {
+    log::info("[TransitionManager] setGlobalConfig: type={} dur={}", typeToString(cfg.type), cfg.duration);
+    m_globalConfig = cfg;
+    migrateConfigImages(m_globalConfig);
+}
+
 void TransitionManager::setLevelEntryConfig(TransitionConfig const& cfg) {
     log::info("[TransitionManager] setLevelEntryConfig: type={} dur={}", typeToString(cfg.type), cfg.duration);
     m_levelEntryConfig = cfg;
+    migrateConfigImages(m_levelEntryConfig);
     m_hasLevelEntryConfig = true;
 }
 
@@ -981,6 +1043,7 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
     if (cfg.type == TransitionType::None) return dest;
 
     TransitionConfig safeCfg = cfg;
+    migrateConfigImages(safeCfg);
     sanitizeConfig(safeCfg);
 
     // ── Random: pick a random non-special type ──
@@ -1238,4 +1301,3 @@ std::vector<TransitionCommand> TransitionManager::parseScriptFile(std::string co
     }
     return commands;
 }
-

@@ -716,10 +716,10 @@ class $modify(PaimonMenuLayer, MenuLayer) {
              return;
         }
 
-        if (path.ends_with(".gif") || path.ends_with(".GIF")) {
-             // Ref<> para evitar leak en callback GIF
-             Ref<MenuLayer> safeThis = this;
-             AnimatedGIFSprite::pinGIF(path);
+        if (ImageLoadHelper::isAnimatedImage(std::filesystem::path(path))) {
+              // Ref<> para evitar leak en callback GIF
+              Ref<MenuLayer> safeThis = this;
+              AnimatedGIFSprite::pinGIF(path);
              // Capturar profileButton con Ref<> para evitar use-after-free
              // si el nodo se destruye antes de que el callback async ejecute
              Ref<CCMenuItemSpriteExtra> safeProfileBtn = profileButton;
@@ -732,7 +732,10 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 }
             });
         } else {
-            auto sprite = CCSprite::create(path.c_str());
+            auto loaded = ImageLoadHelper::loadStaticImage(std::filesystem::path(path), 16);
+            if (!loaded.success || !loaded.texture) return;
+            auto sprite = CCSprite::createWithTexture(loaded.texture);
+            loaded.texture->release();
             if (!sprite) return;
 
             auto container = buildProfileClipContainer(sprite, shapeName, targetSize, picCfg);

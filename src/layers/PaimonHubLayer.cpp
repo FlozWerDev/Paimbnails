@@ -2,7 +2,16 @@
 #include "PaiConfigLayer.hpp"
 #include "PaimonSupportLayer.hpp"
 #include "../features/profiles/ui/ProfilePicEditorPopup.hpp"
+#include "../features/profiles/ui/ProfileSettingsPopup.hpp"
 #include "../features/backgrounds/ui/BackgroundConfigPopup.hpp"
+#include "../features/transitions/ui/TransitionConfigPopup.hpp"
+#include "../features/cursor/ui/CursorConfigPopup.hpp"
+#include "../features/pet/ui/PetConfigPopup.hpp"
+#include "../features/profile-music/ui/ProfileMusicPopup.hpp"
+#include "../features/progressbar/ui/ProgressBarConfigPopup.hpp"
+#include "../features/settings-panel/services/SettingsPanelManager.hpp"
+#include "../features/settings-panel/ui/SettingsCategoryBuilder.hpp"
+#include "../features/settings-panel/ui/SettingsControls.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../features/forum/services/ForumApi.hpp"
 #include "../features/forum/ui/CreatePostPopup.hpp"
@@ -12,9 +21,12 @@
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/PaimonLoadingOverlay.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../utils/InfoButton.hpp"
 #include "../utils/Localization.hpp"
+#include <Geode/loader/SettingV3.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
+#include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/binding/SimplePlayer.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/ui/TextInput.hpp>
@@ -29,6 +41,99 @@ std::string tr(char const* key, char const* fallback = "") {
         return fallback;
     }
     return value;
+}
+
+struct HubCategoryMeta {
+    std::string title;
+    std::string shortDesc;
+    std::string infoTitle;
+    std::string infoBody;
+    ccColor3B color;
+    std::string sprite;
+};
+
+struct HubActionMeta {
+    std::string title;
+    std::string detail;
+    std::string infoTitle;
+    std::string infoBody;
+    std::string sprite;
+    std::function<void(PaimonHubLayer*)> onPress;
+};
+
+std::vector<HubCategoryMeta> getHubCategories() {
+    return {
+        {"General", "Idioma, mantenimiento y base.", "General", "Incluye idioma, mantenimiento, soporte y ajustes base del mod.", {120, 255, 120}, "GJ_button_01.png"},
+        {"Miniaturas", "Layout, galeria y captura.", "Miniaturas", "Configura thumbnails, galeria, hover y captura de miniaturas.", {100, 200, 255}, "GJ_button_02.png"},
+        {"Nivel", "Level Info e interfaz.", "Nivel", "Reune la pantalla de nivel, interfaz, popups y barra de progreso.", {180, 220, 255}, "GJ_button_03.png"},
+        {"Audio", "Perfil y musica global.", "Audio", "Controles para musica de perfil y musica por capas del mod.", {255, 170, 220}, "GJ_button_04.png"},
+        {"Fondos", "Capas visuales y transiciones.", "Fondos", "Accesos a fondos por capa, transiciones y editor visual principal.", {180, 255, 140}, "GJ_button_05.png"},
+        {"Extras", "Mascota, cursor y mas.", "Extras", "Agrupa mascota, cursor, perfil y rendimiento.", {255, 120, 120}, "GJ_button_06.png"},
+    };
+}
+
+std::vector<HubActionMeta> getHubActions(int categoryIndex) {
+    switch (categoryIndex) {
+        case 0:
+            return {
+                {"Panel General", "Abre todos los ajustes base.", "Panel General", "Muestra la categoria General del panel grande de ajustes.", "GJ_button_01.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(0); }},
+                {"Mantenimiento", "Limpieza, cache y utilidades.", "Mantenimiento", "Acceso rapido a mantenimiento y cache del mod.", "GJ_button_06.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(0); }},
+                {"Soporte", "Ayuda y enlaces del proyecto.", "Soporte", "Abre la pantalla de soporte de Paimbnails.", "GJ_button_04.png", [](PaimonHubLayer* self) { self->onOpenSupport(nullptr); }},
+                {"Actualizar", "Buscar nuevas versiones.", "Actualizar", "Comprueba si hay updates nuevas del mod.", "GJ_button_02.png", [](PaimonHubLayer* self) { self->onCheckUpdate(nullptr); }},
+            };
+        case 1:
+            return {
+                {"Layout Thumb", "Tamano, blur y galeria.", "Layout Thumb", "Ajustes de thumbnails, blur, galeria y lista compacta.", "GJ_button_02.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(1); }},
+                {"Efectos", "Hover, color y extras.", "Efectos", "Configura hover effects, color, gradiente y extras visuales de listas.", "GJ_button_03.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(1); }},
+                {"Captura", "Boton y resolucion.", "Captura", "Abre la seccion de captura de miniaturas y sus ajustes.", "GJ_button_04.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(1); }},
+                {"Fondos Rapidos", "Editor rapido visual.", "Fondos Rapidos", "Abre el popup rapido de fondos personalizados.", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenBackgrounds(nullptr); }},
+            };
+        case 2:
+            return {
+                {"Level Info", "Fondo, intensidad y song.", "Level Info", "Configura la pantalla de informacion del nivel.", "GJ_button_01.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(2); }},
+                {"Interfaz", "Popups y UI extra.", "Interfaz", "Ajustes de popups dinamicos, capas y comportamiento de interfaz.", "GJ_button_03.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(2); }},
+                {"Barra Progreso", "Editor completo del progress bar.", "Barra Progreso", "Abre el popup completo de la barra de progreso.", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = ProgressBarConfigPopup::create()) popup->show(); }},
+                {"Config Full", "Escena completa de ajustes.", "Config Full", "Abre la escena full-screen de configuracion clasica.", "GJ_button_06.png", [](PaimonHubLayer* self) { self->onOpenConfig(nullptr); }},
+            };
+        case 3:
+            return {
+                {"Panel Audio", "Musica de perfil y capas.", "Panel Audio", "Abre la categoria Audio del panel grande.", "GJ_button_04.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(3); }},
+                {"Musica Perfil", "Configura tu fragmento musical.", "Musica Perfil", "Abre el popup de musica de perfil para tu cuenta.", "GJ_button_02.png", [](PaimonHubLayer*) {
+                    auto* acc = GJAccountManager::sharedState();
+                    int accountID = acc ? acc->m_accountID : 0;
+                    if (accountID > 0) {
+                        if (auto popup = ProfileMusicPopup::create(accountID)) popup->show();
+                    } else {
+                        PaimonNotify::create("Necesitas iniciar sesion para configurar musica de perfil.", NotificationIcon::Warning)->show();
+                    }
+                }},
+                {"Capas Musicales", "Musica por pantalla.", "Capas Musicales", "Configura musica global por capa del mod.", "GJ_button_05.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(3); }},
+                {"Perfil Completo", "Popup completo del perfil.", "Perfil Completo", "Abre ajustes extra del perfil actual.", "GJ_button_03.png", [](PaimonHubLayer*) {
+                    auto* acc = GJAccountManager::sharedState();
+                    int accountID = acc ? acc->m_accountID : 0;
+                    if (accountID > 0) {
+                        if (auto popup = ProfileSettingsPopup::create(accountID)) popup->show();
+                    } else {
+                        PaimonNotify::create("Necesitas iniciar sesion para abrir ajustes de perfil.", NotificationIcon::Warning)->show();
+                    }
+                }},
+            };
+        case 4:
+            return {
+                {"Panel Fondos", "Categoria visual completa.", "Panel Fondos", "Abre la categoria de fondos y transiciones del panel grande.", "GJ_button_05.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(4); }},
+                {"Editor Fondos", "Popup rapido de fondos.", "Editor Fondos", "Abre el editor rapido para imagen, video o random.", "GJ_button_03.png", [](PaimonHubLayer* self) { self->onOpenBackgrounds(nullptr); }},
+                {"Transiciones", "Popup avanzado de transitions.", "Transiciones", "Abre el editor completo de transiciones personalizadas.", "GJ_button_04.png", [](PaimonHubLayer*) { if (auto popup = TransitionConfigPopup::create()) popup->show(); }},
+                {"Escena Full", "Configuracion full-screen.", "Escena Full", "Abre la escena completa tradicional del mod.", "GJ_button_01.png", [](PaimonHubLayer* self) { self->onOpenConfig(nullptr); }},
+            };
+        case 5:
+        default:
+            return {
+                {"Mascota", "Popup completo de pet.", "Mascota", "Abre el configurador avanzado de la mascota.", "GJ_button_03.png", [](PaimonHubLayer*) { if (auto popup = PetConfigPopup::create()) popup->show(); }},
+                {"Cursor", "Cursor personalizado full.", "Cursor", "Abre el popup de cursor con galeria y ajustes.", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = CursorConfigPopup::create()) popup->show(); }},
+                {"Perfil", "Editor visual de perfil.", "Perfil", "Abre el editor principal de foto de perfil y decoraciones.", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenProfiles(nullptr); }},
+                {"Rendimiento", "Descargas, cache y score cells.", "Rendimiento", "Abre el grupo de extras y rendimiento del panel grande.", "GJ_button_06.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(5); }},
+            };
+    }
 }
 }
 
@@ -84,6 +189,12 @@ bool PaimonHubLayer::init() {
     auto backBtn = CCMenuItemSpriteExtra::create(backSpr, this, menu_selector(PaimonHubLayer::onBack));
     backBtn->setPosition({25, top - 20});
     m_mainMenu->addChild(backBtn);
+
+    auto helpSpr = ButtonSprite::create("?", "goldFont.fnt", "GJ_button_04.png", .72f);
+    helpSpr->setScale(0.44f);
+    auto helpBtn = CCMenuItemSpriteExtra::create(helpSpr, this, menu_selector(PaimonHubLayer::onOpenHelp));
+    helpBtn->setPosition({winSize.width - 24.f, top - 20.f});
+    m_mainMenu->addChild(helpBtn);
 
     float tabY = top - 50.f;
     std::vector<std::string> tabNames = {
@@ -173,6 +284,10 @@ void PaimonHubLayer::keyBackClicked() {
 
 void PaimonHubLayer::onTabSwitch(CCObject* sender) {
     int idx = static_cast<CCNode*>(sender)->getTag();
+    if (idx >= 100 && idx < 106) {
+        switchHomeCategory(idx - 100);
+        return;
+    }
     switchTab(idx);
 }
 
@@ -247,61 +362,60 @@ void PaimonHubLayer::buildHomeTab() {
     descLbl->setPosition({cx, headerTop - 48.f});
     m_homeTab->addChild(descLbl, 1);
 
-    // ── botones en columna usando ColumnLayout (estilo PaiConfigLayer) ──
-    struct HomeBtn {
-        char const* key;
-        char const* fallback;
-        char const* sprite;
-        SEL_MenuHandler handler;
-    };
-    // "Extras" se removio porque iba al mismo PaiConfigLayer que "Settings"
-    std::vector<HomeBtn> homeBtns = {
-        {"pai.hub.btn.config",      "Settings",       "GJ_button_01.png", menu_selector(PaimonHubLayer::onOpenConfig)},
-        {"pai.hub.btn.profiles",    "Profiles",       "GJ_button_02.png", menu_selector(PaimonHubLayer::onOpenProfiles)},
-        {"pai.hub.btn.backgrounds", "Backgrounds",    "GJ_button_03.png", menu_selector(PaimonHubLayer::onOpenBackgrounds)},
-        {"pai.hub.btn.support",     "Support",        "GJ_button_06.png", menu_selector(PaimonHubLayer::onOpenSupport)},
-    };
+    auto categories = getHubCategories();
+    float categoryY = headerTop - 78.f;
 
-    float btnAreaTop = headerTop - 65.f;
-    float btnAreaH   = btnAreaTop - (contentBot + 10.f);
+    m_homeCategoryMenu = CCMenu::create();
+    m_homeCategoryMenu->setPosition({0.f, 0.f});
+    m_homeMenu->addChild(m_homeCategoryMenu);
 
-    auto btnMenu = CCMenu::create();
-    btnMenu->setID("home-buttons"_spr);
-    btnMenu->setContentSize({200.f, btnAreaH});
-    btnMenu->setAnchorPoint({0.5f, 0.5f});
-    btnMenu->setPosition({cx, btnAreaTop - btnAreaH / 2.f});
-    btnMenu->setLayout(
-        ColumnLayout::create()
-            ->setGap(4.f)
-            ->setAxisReverse(true)
-            ->setAutoScale(false)
-            ->setAxisAlignment(AxisAlignment::Center)
-            ->setCrossAxisLineAlignment(AxisAlignment::Center)
-    );
-    m_homeMenu->addChild(btnMenu);
+    m_homeCategorySelectorY = categoryY;
 
-    for (auto const& b : homeBtns) {
-        auto spr = ButtonSprite::create(
-            tr(b.key, b.fallback).c_str(),
-            "goldFont.fnt", b.sprite, .8f
-        );
-        spr->setScale(0.5f);
-        auto btn = CCMenuItemSpriteExtra::create(spr, this, b.handler);
-        btnMenu->addChild(btn);
+    auto leftSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+    if (leftSpr) {
+        leftSpr->setScale(0.72f);
+        auto leftBtn = CCMenuItemSpriteExtra::create(leftSpr, this, menu_selector(PaimonHubLayer::onPrevHomeCategory));
+        leftBtn->setPosition({cx - 78.f, categoryY + 1.f});
+        m_homeCategoryMenu->addChild(leftBtn);
     }
 
-    // ── Boton de actualizacion (debajo de los otros) ────────────────────────────
-    {
-        auto spr = ButtonSprite::create(
-            tr("pai.hub.btn.update", "Check for update").c_str(),
-            "goldFont.fnt", "GJ_button_01.png", .8f
-        );
-        spr->setScale(0.5f);
-        m_updateBtn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(PaimonHubLayer::onCheckUpdate));
-        btnMenu->addChild(m_updateBtn);
+    m_homeCategoryInfoBtn = PaimonInfo::createInfoBtn(categories[0].infoTitle, categories[0].infoBody, this, 0.40f);
+    if (m_homeCategoryInfoBtn) {
+        m_homeCategoryInfoBtn->setPosition({cx + 58.f, categoryY + 2.f});
+        m_homeCategoryMenu->addChild(m_homeCategoryInfoBtn);
     }
 
-    btnMenu->updateLayout();
+    auto rightSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+    if (rightSpr) {
+        rightSpr->setFlipX(true);
+        rightSpr->setScale(0.72f);
+        auto rightBtn = CCMenuItemSpriteExtra::create(rightSpr, this, menu_selector(PaimonHubLayer::onNextHomeCategory));
+        rightBtn->setPosition({cx + 78.f, categoryY + 1.f});
+        m_homeCategoryMenu->addChild(rightBtn);
+    }
+
+    m_homeCategoryTitle = CCLabelBMFont::create(categories[0].title.c_str(), "goldFont.fnt");
+    m_homeCategoryTitle->setScale(0.42f);
+    m_homeCategoryTitle->setColor(categories[0].color);
+    m_homeCategoryTitle->setPosition({cx, categoryY + 1.f});
+    m_homeTab->addChild(m_homeCategoryTitle, 2);
+
+    m_homeCategoryDesc = CCLabelBMFont::create(categories[0].shortDesc.c_str(), "bigFont.fnt");
+    m_homeCategoryDesc->setScale(0.18f);
+    m_homeCategoryDesc->setColor({175, 175, 175});
+    m_homeCategoryDesc->setPosition({cx, categoryY - 20.f});
+    m_homeTab->addChild(m_homeCategoryDesc, 2);
+
+    m_homeActionsAnchor = CCNode::create();
+    m_homeTab->addChild(m_homeActionsAnchor, 2);
+
+    m_homeActionsMenu = CCMenu::create();
+    m_homeActionsMenu->setPosition({0.f, 0.f});
+    m_homeMenu->addChild(m_homeActionsMenu, 3);
+
+    m_homeSettingsScroll = nullptr;
+
+    switchHomeCategory(0);
 
     // ── Etiqueta de version actual (debajo de todo) ────────────────────────────────
     {
@@ -313,14 +427,222 @@ void PaimonHubLayer::buildHomeTab() {
         m_versionLabel = CCLabelBMFont::create(verText.c_str(), "bigFont.fnt");
         m_versionLabel->setScale(0.3f);
         m_versionLabel->setColor({180, 180, 180});
-        // Posicion: debajo del menu, centrado
-        float verY = btnAreaTop - btnAreaH - 18.f;
+        float verY = contentBot - 14.f;
         m_versionLabel->setPosition({cx, verY});
         m_homeTab->addChild(m_versionLabel, 2);
     }
 
     // Pintar el boton de update si corresponde
     this->refreshUpdateButton();
+}
+
+void PaimonHubLayer::switchHomeCategory(int idx) {
+    auto categories = getHubCategories();
+    if (idx < 0 || idx >= static_cast<int>(categories.size())) return;
+    m_homeSelectedCategory = idx;
+
+    refreshHomeCategorySelector();
+
+    if (m_homeCategoryTitle) m_homeCategoryTitle->setString(categories[idx].title.c_str());
+    if (m_homeCategoryDesc) m_homeCategoryDesc->setString(categories[idx].shortDesc.c_str());
+    rebuildHomeCategoryCards();
+    rebuildHomeCategorySettings();
+}
+
+void PaimonHubLayer::refreshHomeCategorySelector() {
+    auto categories = getHubCategories();
+    if (m_homeSelectedCategory < 0 || m_homeSelectedCategory >= static_cast<int>(categories.size())) return;
+
+    auto const& cat = categories[m_homeSelectedCategory];
+    if (m_homeCategoryTitle) {
+        m_homeCategoryTitle->setString(cat.title.c_str());
+        m_homeCategoryTitle->setColor(cat.color);
+        m_homeCategoryTitle->setPosition({CCDirector::sharedDirector()->getWinSize().width / 2.f, m_homeCategorySelectorY + 1.f});
+    }
+
+    if (m_homeCategoryInfoBtn) {
+        auto data = CCString::createWithFormat("%s\n---\n%s", cat.infoTitle.c_str(), cat.infoBody.c_str());
+        m_homeCategoryInfoBtn->setUserObject(data);
+        m_homeCategoryInfoBtn->setPosition({CCDirector::sharedDirector()->getWinSize().width / 2.f + 58.f, m_homeCategorySelectorY + 2.f});
+    }
+}
+
+void PaimonHubLayer::onPrevHomeCategory(CCObject*) {
+    auto categories = getHubCategories();
+    if (categories.empty()) return;
+    int next = (m_homeSelectedCategory - 1 + static_cast<int>(categories.size())) % static_cast<int>(categories.size());
+    switchHomeCategory(next);
+}
+
+void PaimonHubLayer::onNextHomeCategory(CCObject*) {
+    auto categories = getHubCategories();
+    if (categories.empty()) return;
+    int next = (m_homeSelectedCategory + 1) % static_cast<int>(categories.size());
+    switchHomeCategory(next);
+}
+
+void PaimonHubLayer::onOpenHelp(CCObject*) {
+    std::string layoutKeybind = "Ctrl+Q";
+    if (auto* mod = Mod::get(); mod && mod->hasSetting("main-menu-layout-keybind")) {
+        if (auto setting = cast::typeinfo_pointer_cast<KeybindSettingV3>(mod->getSetting("main-menu-layout-keybind"))) {
+            auto value = setting->getValue();
+            if (!value.empty()) {
+                layoutKeybind = value.front().toString();
+            }
+        }
+    }
+
+    auto body = fmt::format(
+        "<cg>Atajos y controles</c>\n\n"
+        "<cy>{}</c> abre o guarda el editor del layout del menu principal.\n"
+        "Ese atajo es configurable en Geode.\n\n"
+        "Dentro del editor de layout:\n"
+        "- Arrastra un boton para moverlo\n"
+        "- Grip verde = tamano\n"
+        "- Azul +/- = transparencia\n"
+        "- Roja X = ocultar o mostrar\n"
+        "- <cy>Esc</c> cancela\n\n"
+        "En este Hub:\n"
+        "- Usa las flechas para cambiar de categoria\n"
+        "- Pulsa los botones inferiores para abrir acciones rapidas",
+        layoutKeybind
+    );
+
+    FLAlertLayer::create("Ayuda", body.c_str(), "OK")->show();
+}
+
+void PaimonHubLayer::rebuildHomeCategoryCards() {
+    if (!m_homeActionsMenu || !m_homeActionsAnchor) return;
+    m_homeActionsMenu->removeAllChildren();
+    m_homeActionsAnchor->removeAllChildren();
+
+    auto actions = getHubActions(m_homeSelectedCategory);
+    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    float cx = winSize.width / 2.f;
+    float baseY = winSize.height - 253.f;
+    float spacing = 136.f;
+    float totalSpan = spacing * static_cast<float>(actions.empty() ? 0 : actions.size() - 1);
+    float startX = cx - totalSpan / 2.f;
+
+    for (size_t i = 0; i < actions.size(); ++i) {
+        auto const& action = actions[i];
+        float x = startX + static_cast<float>(i) * spacing;
+        float y = baseY;
+
+        auto btnSpr = ButtonSprite::create(action.title.c_str(), "goldFont.fnt", action.sprite.c_str(), .75f);
+        btnSpr->setScale(0.38f);
+        auto btn = CCMenuItemExt::createSpriteExtra(btnSpr, [this, action](CCMenuItemSpriteExtra*) {
+            action.onPress(this);
+        });
+        btn->setPosition({x, y + 4.f});
+        btn->setOpacity(0);
+        m_homeActionsMenu->addChild(btn);
+
+        auto infoBtn = PaimonInfo::createInfoBtn(action.infoTitle, action.infoBody, this, 0.38f);
+        if (infoBtn) {
+            infoBtn->setPosition({x + 44.f, y + 5.f});
+            infoBtn->setOpacity(0);
+            m_homeActionsMenu->addChild(infoBtn);
+            infoBtn->runAction(CCSequence::create(
+                CCDelayTime::create(0.03f * static_cast<float>(i)),
+                CCFadeTo::create(0.16f, 255),
+                nullptr
+            ));
+        }
+
+        btn->runAction(CCSequence::create(
+            CCDelayTime::create(0.03f * static_cast<float>(i)),
+            CCSpawn::create(
+                CCFadeTo::create(0.16f, 255),
+                CCEaseBackOut::create(CCMoveTo::create(0.2f, {x, y})),
+                nullptr
+            ),
+            nullptr
+        ));
+    }
+}
+
+void PaimonHubLayer::rebuildHomeCategorySettings() {
+    if (!m_homeSettingsScroll) return;
+
+    auto* content = m_homeSettingsScroll->m_contentLayer;
+    if (!content) return;
+    content->removeAllChildren();
+
+    auto const& groups = paimon::settings_ui::getAllGroups();
+    if (m_homeSelectedCategory < 0 || m_homeSelectedCategory >= static_cast<int>(groups.size())) return;
+
+    auto const& group = groups[m_homeSelectedCategory];
+    float width = m_homeSettingsScroll->getContentSize().width;
+    std::vector<CCNode*> rows;
+
+    for (auto const& sub : group.subcategories) {
+        auto subContainer = CCNode::create();
+        subContainer->setAnchorPoint({0.f, 0.f});
+        sub.buildContent(subContainer, width);
+
+        float subH = 0.f;
+        if (auto children = subContainer->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                subH += child->getContentSize().height;
+            }
+        }
+        subContainer->setContentSize({width, subH});
+
+        float yPos = subH;
+        if (auto children = subContainer->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                yPos -= child->getContentSize().height;
+                child->setPosition({0.f, yPos});
+            }
+        }
+
+        auto header = paimon::settings_ui::createCollapsibleHeader(
+            sub.name.c_str(), width, subContainer, false,
+            [this]() {
+                if (!m_homeSettingsScroll || !m_homeSettingsScroll->m_contentLayer) return;
+                auto* layer = m_homeSettingsScroll->m_contentLayer;
+                auto children = layer->getChildren();
+                if (!children) return;
+
+                float totalH = 0.f;
+                for (auto* node : CCArrayExt<CCNode*>(children)) {
+                    if (node->isVisible()) totalH += node->getContentSize().height;
+                }
+
+                float contentH = std::max(totalH, m_homeSettingsScroll->getContentSize().height);
+                layer->setContentSize({m_homeSettingsScroll->getContentSize().width, contentH});
+                float currentY = contentH;
+                for (auto* node : CCArrayExt<CCNode*>(children)) {
+                    if (!node->isVisible()) continue;
+                    float h = node->getContentSize().height;
+                    currentY -= h;
+                    node->setPosition({0.f, currentY});
+                }
+            }
+        );
+
+        rows.push_back(header);
+        rows.push_back(subContainer);
+    }
+
+    float totalH = 0.f;
+    for (auto* row : rows) {
+        if (row->isVisible()) totalH += row->getContentSize().height;
+    }
+
+    float contentH = std::max(totalH, m_homeSettingsScroll->getContentSize().height);
+    content->setContentSize({width, contentH});
+    float currentY = contentH;
+    for (auto* row : rows) {
+        content->addChild(row);
+        if (!row->isVisible()) continue;
+        float h = row->getContentSize().height;
+        currentY -= h;
+        row->setPosition({0.f, currentY});
+    }
+
+    m_homeSettingsScroll->moveToTop();
 }
 
 void PaimonHubLayer::buildNewsTab() {
@@ -758,10 +1080,6 @@ void PaimonHubLayer::onBack(CCObject*) {
 
 void PaimonHubLayer::update(float dt) {
     CCLayer::update(dt);
-    // Refresca el color del boton de update si cambio el estado async
-    if (m_currentTab == 0 && m_updateBtn) {
-        this->refreshUpdateButton();
-    }
 }
 
 void PaimonHubLayer::onCheckUpdate(CCObject*) {
@@ -811,21 +1129,7 @@ void PaimonHubLayer::onCheckUpdate(CCObject*) {
 }
 
 void PaimonHubLayer::refreshUpdateButton() {
-    if (!m_updateBtn) return;
-
-    auto& checker = paimon::updates::UpdateChecker::get();
-    bool hasUpdate = checker.hasUpdate();
-
-    auto spr = typeinfo_cast<ButtonSprite*>(m_updateBtn->getNormalImage());
-    if (!spr) return;
-
-    if (hasUpdate) {
-        // Celeste cuando hay actualizacion
-        spr->setColor({100, 200, 255}); // cyan claro
-    } else {
-        // Blanco por defecto
-        spr->setColor({255, 255, 255});
-    }
+    // El acceso a actualizaciones ahora vive dentro de las tarjetas dinamicas del hub.
 }
 
 void PaimonHubLayer::onRefreshNews(CCObject*) {

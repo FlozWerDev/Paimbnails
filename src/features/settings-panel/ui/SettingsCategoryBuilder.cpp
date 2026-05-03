@@ -69,7 +69,7 @@ void buildGeneral(CCNode* c, float w) {
 
     c->addChild(createDropdownRow("Language",
         gset<std::string>("language"),
-        {"english", "spanish"},
+        {"english", "spanish", "portuguese", "french", "german", "russian", "japanese"},
         [](std::string const& v){ sset<std::string>("language", v); },
         w));
 
@@ -467,7 +467,6 @@ void buildPet(CCNode* c, float w) {
     auto& cfg = PetManager::get().config();
 
     auto save = [](){
-        PetManager::get().saveConfig();
         PetManager::get().applyConfigLive();
     };
 

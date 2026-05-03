@@ -38,6 +38,7 @@
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../profiles/ui/RatePopup.hpp"
 #include "ReportInputPopup.hpp"
+#include "ThumbnailOrderPopup.hpp"
 #include "ThumbnailSettingsPopup.hpp"
 #include <algorithm>
 
@@ -48,6 +49,71 @@ namespace {
 constexpr float kThumbnailRefreshCooldown = 5.f;
 constexpr GLubyte kRefreshBtnEnabledOpacity = 255;
 constexpr GLubyte kRefreshBtnDisabledOpacity = 105;
+
+ButtonSprite* createOrderTextButton(char const* text, char const* bg, float scale = 0.5f, int width = 70) {
+    auto spr = ButtonSprite::create(text, width, true, "bigFont.fnt", bg, 26.f, scale);
+    return spr;
+}
+}
+
+void LocalThumbnailViewPopup::updateOrderUiState() {
+    bool canUseOrderTools = m_isAdmin && m_verificationCategory < 0 && !m_viewingLocal && m_thumbnails.size() > 1;
+    if (m_orderEditBtn) {
+        m_orderEditBtn->setVisible(canUseOrderTools);
+        m_orderEditBtn->setEnabled(canUseOrderTools);
+        m_orderEditBtn->setOpacity(canUseOrderTools ? 255 : 105);
+    }
+}
+
+void LocalThumbnailViewPopup::replaceRemoteThumbnails(std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs, std::string const& preferredId) {
+    m_viewingLocal = false;
+    m_thumbnails = thumbs;
+
+    if (m_thumbnails.empty()) {
+        m_currentIndex = 0;
+        if (m_leftArrow) m_leftArrow->setVisible(false);
+        if (m_rightArrow) m_rightArrow->setVisible(false);
+        if (m_counterLabel) m_counterLabel->setVisible(false);
+        updateOrderUiState();
+        return;
+    }
+
+    int newIndex = 0;
+    if (!preferredId.empty()) {
+        auto it = std::find_if(m_thumbnails.begin(), m_thumbnails.end(), [&preferredId](ThumbnailAPI::ThumbnailInfo const& thumb) {
+            return thumb.id == preferredId;
+        });
+        if (it != m_thumbnails.end()) {
+            newIndex = static_cast<int>(std::distance(m_thumbnails.begin(), it));
+        }
+    }
+
+    if (newIndex >= static_cast<int>(m_thumbnails.size())) {
+        newIndex = static_cast<int>(m_thumbnails.size()) - 1;
+    }
+    if (newIndex < 0) newIndex = 0;
+    m_currentIndex = newIndex;
+
+    if (m_leftArrow) m_leftArrow->setVisible(m_thumbnails.size() > 1);
+    if (m_rightArrow) m_rightArrow->setVisible(m_thumbnails.size() > 1);
+    if (m_counterLabel) {
+        m_counterLabel->setVisible(m_thumbnails.size() > 1);
+        m_counterLabel->setString(fmt::format("{}/{}", m_currentIndex + 1, m_thumbnails.size()).c_str());
+    }
+
+    updateOrderUiState();
+}
+
+void LocalThumbnailViewPopup::ensureOrderControls(float /*contentWidth*/) {
+    if (!m_isAdmin || !m_settingsMenu || m_verificationCategory >= 0 || m_orderEditBtn) return;
+
+    auto orderSpr = createOrderTextButton("Order", "GJ_button_03.png", 0.38f, 58);
+    if (orderSpr) {
+        m_orderEditBtn = CCMenuItemSpriteExtra::create(orderSpr, this, menu_selector(LocalThumbnailViewPopup::onOrderEdit));
+        m_orderEditBtn->setPosition({56.f, 46.f});
+        m_orderEditBtn->setID("thumbnail-order-edit-btn"_spr);
+        m_settingsMenu->addChild(m_orderEditBtn);
+    }
 }
 
 void LocalThumbnailViewPopup::updateRefreshButtonState() {
@@ -254,6 +320,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
         m_counterLabel->setVisible(m_thumbnails.size() > 1);
         m_counterLabel->setString(fmt::format("{}/{}", index + 1, m_thumbnails.size()).c_str());
     }
+    updateOrderUiState();
 
     std::string username = "Unknown";
     if (auto gm = GameManager::get()) username = gm->m_playerName;
@@ -286,7 +353,8 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     // Si el thumbnail es video, descargar y reproducir con VideoThumbnailSprite
     if (thumb.isVideo() && !thumb.url.empty()) {
         log::info("[ThumbnailViewPopup] loadThumbnailAt: video detected for index={}", index);
-        std::string cacheKey = fmt::format("popup_video_{}_{}", m_levelID, index);
+        std::string videoToken = thumb.id.empty() ? thumb.url : thumb.id;
+        std::string cacheKey = fmt::format("popup_video_{}_{}", m_levelID, std::hash<std::string>{}(videoToken));
         VideoThumbnailSprite::createAsync(thumb.url, cacheKey, [self, requestToken, index](VideoThumbnailSprite* videoSprite) {
             if (!self->isUiAlive()) return;
             if (requestToken != self->m_galleryRequestToken) return;
@@ -512,10 +580,12 @@ void LocalThumbnailViewPopup::onExit() {
     m_ratingMenu = nullptr;
     m_buttonMenu = nullptr;
     m_settingsMenu = nullptr;
+    m_refreshBtn = nullptr;
     m_ratingLabel = nullptr;
     m_counterLabel = nullptr;
     m_leftArrow = nullptr;
     m_rightArrow = nullptr;
+    m_orderEditBtn = nullptr;
 
     // Stop video playback before clearing
     if (m_thumbnailSprite) {
@@ -674,19 +744,7 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
                 auto popup = self.lock();
                 if (!popup || !popup->isUiAlive() || !ok || thumbs.empty()) return;
 
-                popup->m_thumbnails = thumbs;
-                int newIndex = 0;
-                if (!currentId.empty()) {
-                    auto it = std::find_if(
-                        popup->m_thumbnails.begin(),
-                        popup->m_thumbnails.end(),
-                        [&currentId](ThumbnailAPI::ThumbnailInfo const& t) { return t.id == currentId; }
-                    );
-                    if (it != popup->m_thumbnails.end()) {
-                        newIndex = static_cast<int>(std::distance(popup->m_thumbnails.begin(), it));
-                    }
-                }
-                popup->m_currentIndex = newIndex;
+                popup->replaceRemoteThumbnails(thumbs, currentId);
                 popup->loadThumbnailAt(popup->m_currentIndex);
                 popup->setupRating();
             });
@@ -807,18 +865,11 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
                 popup->m_levelID, success, thumbs.size());
             
             if (!success || thumbs.empty()) {
-                log::warn("[ThumbnailViewPopup] getThumbnails failed or empty for level {}", popup->m_levelID);
-                return;
-            }
+            log::warn("[ThumbnailViewPopup] getThumbnails failed or empty for level {}", popup->m_levelID);
+            return;
+        }
 
-            popup->m_thumbnails = thumbs;
-            popup->m_currentIndex = 0;
-            if (popup->m_leftArrow) popup->m_leftArrow->setVisible(popup->m_thumbnails.size() > 1);
-            if (popup->m_rightArrow) popup->m_rightArrow->setVisible(popup->m_thumbnails.size() > 1);
-            if (popup->m_counterLabel) {
-                popup->m_counterLabel->setVisible(popup->m_thumbnails.size() > 1);
-                popup->m_counterLabel->setString(fmt::format("{}/{}", popup->m_currentIndex + 1, popup->m_thumbnails.size()).c_str());
-            }
+            popup->replaceRemoteThumbnails(thumbs);
             popup->loadThumbnailAt(popup->m_currentIndex);
             popup->setupRating();
         });
@@ -1232,6 +1283,7 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         m_settingsMenu = nullptr;
     }
     m_refreshBtn = nullptr;
+    m_orderEditBtn = nullptr;
     if (!m_suggestions.empty()) {
         if (m_leftArrow) {
             m_leftArrow->removeFromParent();
@@ -1431,13 +1483,16 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     auto gm = GameManager::get();
     if (gm) {
         auto username = gm->m_playerName;
+        float contentWidth = content.width;
         int accountID = 0;
         if (auto* am = GJAccountManager::get()) accountID = am->m_accountID;
 
         WeakRef<LocalThumbnailViewPopup> self = this;
-        ThumbnailAPI::get().checkModeratorAccount(username, accountID, [self](bool isMod, bool isAdmin) {
+        ThumbnailAPI::get().checkModeratorAccount(username, accountID, [self, contentWidth](bool isMod, bool isAdmin) {
             auto popup = self.lock();
             if (!popup) return;
+
+            popup->m_isAdmin = isAdmin;
 
             if (isMod || isAdmin) {
                 auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_deleteServerBtn_001.png");
@@ -1457,6 +1512,11 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
                         popup->m_buttonMenu->updateLayout();
                     }
                 }
+            }
+
+            if (isAdmin && popup->m_settingsMenu && popup->m_verificationCategory < 0) {
+                popup->ensureOrderControls(contentWidth);
+                popup->updateOrderUiState();
             }
         });
     }
@@ -1506,6 +1566,8 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         }
     }
 
+    ensureOrderControls(content.width);
+
     // Ensure gallery arrows remain visible when there are multiple thumbnails
     if (m_suggestions.empty() && m_thumbnails.size() > 1) {
         if (m_leftArrow) m_leftArrow->setVisible(true);
@@ -1515,6 +1577,8 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
             m_counterLabel->setString(fmt::format("{}/{}", m_currentIndex + 1, m_thumbnails.size()).c_str());
         }
     }
+
+    updateOrderUiState();
 }
 
 void LocalThumbnailViewPopup::clearGalleryDisplay() {
@@ -1889,6 +1953,7 @@ void LocalThumbnailViewPopup::onRefreshBtn(CCObject*) {
     if (m_leftArrow) m_leftArrow->setVisible(false);
     if (m_rightArrow) m_rightArrow->setVisible(false);
     if (m_counterLabel) m_counterLabel->setVisible(false);
+    updateOrderUiState();
 
     // 3. Mostrar spinner de carga
     auto content = m_mainLayer->getContentSize();
@@ -1918,14 +1983,7 @@ void LocalThumbnailViewPopup::onRefreshBtn(CCObject*) {
         popup->updateRefreshButtonState();
 
         if (success && !thumbs.empty()) {
-            popup->m_thumbnails = thumbs;
-            popup->m_currentIndex = 0;
-            if (popup->m_leftArrow) popup->m_leftArrow->setVisible(popup->m_thumbnails.size() > 1);
-            if (popup->m_rightArrow) popup->m_rightArrow->setVisible(popup->m_thumbnails.size() > 1);
-            if (popup->m_counterLabel) {
-                popup->m_counterLabel->setVisible(popup->m_thumbnails.size() > 1);
-                popup->m_counterLabel->setString(fmt::format("{}/{}", 1, popup->m_thumbnails.size()).c_str());
-            }
+            popup->replaceRemoteThumbnails(thumbs);
             popup->loadThumbnailAt(0);
             popup->setupRating();
             PaimonNotify::show("Miniaturas actualizadas", geode::NotificationIcon::Success);
@@ -1935,6 +1993,35 @@ void LocalThumbnailViewPopup::onRefreshBtn(CCObject*) {
             PaimonNotify::show("No se encontraron miniaturas en la galeria", geode::NotificationIcon::Info);
         }
     });
+}
+
+void LocalThumbnailViewPopup::onOrderEdit(CCObject*) {
+    if (!m_isAdmin || m_verificationCategory >= 0 || m_viewingLocal || m_thumbnails.size() < 2) return;
+
+    std::string selectedId;
+    if (m_currentIndex >= 0 && m_currentIndex < static_cast<int>(m_thumbnails.size())) {
+        selectedId = m_thumbnails[m_currentIndex].id;
+    }
+
+    auto orderPopup = ThumbnailOrderPopup::create(m_levelID, m_thumbnails, selectedId);
+    if (!orderPopup) {
+        PaimonNotify::show("No se pudo abrir el editor de orden", geode::NotificationIcon::Error);
+        return;
+    }
+
+    WeakRef<LocalThumbnailViewPopup> self = this;
+    orderPopup->setOnSaved([self](std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs, std::string const& selectedThumbId) {
+        auto popup = self.lock();
+        if (!popup || !popup->isUiAlive()) return;
+
+        popup->replaceRemoteThumbnails(thumbs, selectedThumbId);
+
+        if (!popup->m_thumbnails.empty()) {
+            popup->loadThumbnailAt(popup->m_currentIndex);
+            popup->setupRating();
+        }
+    });
+    orderPopup->show();
 }
 
 void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
@@ -2151,16 +2238,15 @@ void LocalThumbnailViewPopup::onDeleteReportedThumb(CCObject*) {
                         if (!popup || !popup->isUiAlive()) return;
                         if (!ok || thumbs.empty()) {
                             popup->m_thumbnails.clear();
+                            popup->m_currentIndex = 0;
                             popup->showNoThumbnail(popup->m_mainLayer->getContentSize());
                             if (popup->m_leftArrow) popup->m_leftArrow->setVisible(false);
                             if (popup->m_rightArrow) popup->m_rightArrow->setVisible(false);
                             if (popup->m_counterLabel) popup->m_counterLabel->setVisible(false);
+                            popup->updateOrderUiState();
                             return;
                         }
-                        popup->m_thumbnails = thumbs;
-                        if (popup->m_currentIndex >= static_cast<int>(thumbs.size()))
-                            popup->m_currentIndex = static_cast<int>(thumbs.size()) - 1;
-                        if (popup->m_currentIndex < 0) popup->m_currentIndex = 0;
+                        popup->replaceRemoteThumbnails(thumbs);
                         popup->loadThumbnailAt(popup->m_currentIndex);
                     });
                 }
@@ -2421,17 +2507,15 @@ void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
                                     if (!popup || !popup->isUiAlive()) return;
                                     if (!ok || thumbs.empty()) {
                                         popup->m_thumbnails.clear();
+                                        popup->m_currentIndex = 0;
                                         popup->showNoThumbnail(popup->m_mainLayer->getContentSize());
                                         if (popup->m_leftArrow) popup->m_leftArrow->setVisible(false);
                                         if (popup->m_rightArrow) popup->m_rightArrow->setVisible(false);
                                         if (popup->m_counterLabel) popup->m_counterLabel->setVisible(false);
+                                        popup->updateOrderUiState();
                                         return;
                                     }
-                                    popup->m_thumbnails = thumbs;
-                                    if (popup->m_currentIndex >= static_cast<int>(popup->m_thumbnails.size())) {
-                                        popup->m_currentIndex = static_cast<int>(popup->m_thumbnails.size()) - 1;
-                                    }
-                                    if (popup->m_currentIndex < 0) popup->m_currentIndex = 0;
+                                    popup->replaceRemoteThumbnails(thumbs);
                                     popup->loadThumbnailAt(popup->m_currentIndex);
                                 });
                             } else {

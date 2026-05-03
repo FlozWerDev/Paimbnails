@@ -1,6 +1,10 @@
 #include "CustomTransitionScene.hpp"
+#include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include <Geode/Geode.hpp>
 #include <exception>
+#include <filesystem>
 
 using namespace cocos2d;
 using namespace geode::prelude;
@@ -265,15 +269,31 @@ void CustomTransitionScene::beginCommand(TransitionCommand const& cmd) {
 
     // Image: create a sprite overlay
     if (cmd.action == CommandAction::Image) {
+        if (auto* existing = this->getChildByTag(8888)) {
+            existing->removeFromParent();
+        }
+
         if (!cmd.imagePath.empty()) {
-            auto tex = CCTextureCache::sharedTextureCache()->addImage(cmd.imagePath.c_str(), false);
-            if (tex) {
-                auto spr = CCSprite::createWithTexture(tex);
+            auto fsPath = paimon::assets::normalizePath(std::filesystem::path(cmd.imagePath));
+            std::error_code ec;
+            if (!std::filesystem::exists(fsPath, ec) || ec) {
+                log::warn("[CustomTransitionScene] Image overlay not found: {}", cmd.imagePath);
+                return;
+            }
+
+            auto* spr = ImageLoadHelper::loadAnimatedOrStatic(fsPath, 16,
+                [](std::string const& path) -> CCSprite* {
+                    return AnimatedGIFSprite::create(path);
+                });
+
+            if (spr) {
                 auto winSize = CCDirector::sharedDirector()->getWinSize();
                 spr->setPosition({winSize.width / 2, winSize.height / 2});
                 spr->setOpacity(0);
                 spr->setTag(8888);
                 this->addChild(spr, 10);
+            } else {
+                log::warn("[CustomTransitionScene] Failed to load image overlay: {}", cmd.imagePath);
             }
         }
         return;

@@ -10,9 +10,9 @@
 using namespace cocos2d;
 using namespace geode::prelude;
 
-PaimonMultiSettingsPanel* PaimonMultiSettingsPanel::create(CCSprite* blurBg) {
+PaimonMultiSettingsPanel* PaimonMultiSettingsPanel::create(CCSprite* blurBg, int initialCategory) {
     auto ret = new PaimonMultiSettingsPanel();
-    if (ret && ret->init(blurBg)) {
+    if (ret && ret->init(blurBg, initialCategory)) {
         ret->autorelease();
         return ret;
     }
@@ -20,7 +20,7 @@ PaimonMultiSettingsPanel* PaimonMultiSettingsPanel::create(CCSprite* blurBg) {
     return nullptr;
 }
 
-bool PaimonMultiSettingsPanel::init(CCSprite* blurBg) {
+bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
     if (!CCLayer::init()) return false;
 
     this->setID("paimon-multisettings-panel"_spr);
@@ -58,8 +58,13 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg) {
     buildSidebar();
     buildContentArea();
 
-    // 6. seleccionar primera categoria
-    selectCategory(0);
+    // 6. seleccionar categoria inicial
+    auto const& groups = paimon::settings_ui::getAllGroups();
+    int clampedCategory = initialCategory;
+    if (clampedCategory < 0 || clampedCategory >= static_cast<int>(groups.size())) {
+        clampedCategory = 0;
+    }
+    selectCategory(clampedCategory);
 
     // 7. touch handling
     // Usar getTargetPrio() para participar en el force priority system de GD.
@@ -329,6 +334,10 @@ void PaimonMultiSettingsPanel::relayoutContent() {
 
 void PaimonMultiSettingsPanel::relayoutScrollContent() {
     relayoutContent();
+}
+
+void PaimonMultiSettingsPanel::setSelectedCategory(int index) {
+    selectCategory(index);
 }
 
 void PaimonMultiSettingsPanel::updateSidebarAccent() {

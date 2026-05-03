@@ -504,6 +504,27 @@ void ThumbnailTransportClient::deleteThumbnail(int levelId, std::string const& t
         });
 }
 
+void ThumbnailTransportClient::reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds,
+                                                 ActionCallback callback) {
+    if (!m_serverEnabled) { callback(false, "servidor desactivado"); return; }
+    if (levelId <= 0 || thumbnailIds.size() < 2) { callback(false, "datos invalidos para reordenar"); return; }
+
+    log::info("[ThumbTransport] reorderThumbnails: levelId={} count={}", levelId, thumbnailIds.size());
+
+    HttpClient::get().reorderThumbnails(levelId, thumbnailIds,
+        [callback, levelId](bool success, std::string const& response) {
+            if (success) {
+                log::info("[ThumbTransport] reorderThumbnails callback: OK levelId={}", levelId);
+                ThumbnailLoader::get().invalidateLevel(levelId);
+                ThumbnailTransportClient::get().invalidateGalleryMetadata(levelId);
+                callback(true, response);
+            } else {
+                log::warn("[ThumbTransport] reorderThumbnails callback: FAILED levelId={} resp={}", levelId, response);
+                callback(false, response);
+            }
+        });
+}
+
 // ── ratings ─────────────────────────────────────────────────────────
 
 void ThumbnailTransportClient::getRating(int levelId, std::string const& username,

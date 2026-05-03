@@ -147,7 +147,7 @@ public:
 
     // ── Configuracion global (aplica a TODO) ──
     TransitionConfig getGlobalConfig() const { return m_globalConfig; }
-    void setGlobalConfig(TransitionConfig const& cfg) { m_globalConfig = cfg; }
+    void setGlobalConfig(TransitionConfig const& cfg);
 
     // ── Configuracion de entrada a nivel (opcional) ──
     TransitionConfig getLevelEntryConfig() const;

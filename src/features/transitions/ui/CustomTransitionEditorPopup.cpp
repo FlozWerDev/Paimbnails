@@ -2,8 +2,10 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "CustomTransitionScene.hpp"
+#include "../services/TransitionManager.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/FileDialog.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include "../../../layers/PaimonInfoPopup.hpp"
 #include <exception>
 
@@ -920,8 +922,14 @@ void CustomTransitionEditorPopup::onSelectImage(CCObject*) {
         if (!pathOpt) return;
         auto popup = self.lock();
         if (!popup) return;
+        auto imported = paimon::assets::importToBucket(*pathOpt, "transitions", paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            popup->m_statusLabel->setString("Failed to import image");
+            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            return;
+        }
         if (popup->m_selectedIdx >= 0 && popup->m_selectedIdx < static_cast<int>(popup->m_commands.size())) {
-            popup->m_commands[popup->m_selectedIdx].imagePath = pathOpt->string();
+            popup->m_commands[popup->m_selectedIdx].imagePath = paimon::assets::normalizePathString(imported.path);
             popup->m_statusLabel->setString("Image set!");
             popup->updateEditorPanel();
         }

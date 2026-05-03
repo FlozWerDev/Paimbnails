@@ -51,7 +51,7 @@ namespace {
     }
 
     static std::string tr(std::string const& es, std::string const& en) {
-        return Localization::get().getLanguage() == Localization::Language::SPANISH ? es : en;
+        return Localization::get().getLanguage() == Localization::Language::ENGLISH ? en : es;
     }
 
     static std::string toLower(std::string s) {

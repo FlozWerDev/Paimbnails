@@ -54,6 +54,8 @@ public:
     // borrar miniatura (mod)
     void deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username, int accountID,
                          ActionCallback callback);
+    // reordenar miniaturas (admin)
+    void reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, ActionCallback callback);
     // votos
     void getRating(int levelId, std::string const& username,
                    std::string const& thumbnailId,

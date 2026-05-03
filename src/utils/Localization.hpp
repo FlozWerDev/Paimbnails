@@ -1,13 +1,19 @@
 #pragma once
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include <Geode/Geode.hpp>
 
 class Localization {
 public:
     enum class Language {
         SPANISH,
-        ENGLISH
+        ENGLISH,
+        PORTUGUESE,
+        FRENCH,
+        GERMAN,
+        RUSSIAN,
+        JAPANESE
     };
 
     static Localization& get() {
@@ -15,18 +21,77 @@ public:
         return instance;
     }
 
-    void setLanguage(Language lang) {
+    static std::vector<Language> getAvailableLanguages() {
+        return {
+            Language::SPANISH,
+            Language::ENGLISH,
+            Language::PORTUGUESE,
+            Language::FRENCH,
+            Language::GERMAN,
+            Language::RUSSIAN,
+            Language::JAPANESE,
+        };
+    }
+
+    static std::string languageToId(Language lang) {
+        switch (lang) {
+            case Language::SPANISH: return "spanish";
+            case Language::ENGLISH: return "english";
+            case Language::PORTUGUESE: return "portuguese";
+            case Language::FRENCH: return "french";
+            case Language::GERMAN: return "german";
+            case Language::RUSSIAN: return "russian";
+            case Language::JAPANESE: return "japanese";
+        }
+        return "english";
+    }
+
+    static Language languageFromId(std::string const& id) {
+        if (id == "spanish") return Language::SPANISH;
+        if (id == "portuguese") return Language::PORTUGUESE;
+        if (id == "french") return Language::FRENCH;
+        if (id == "german") return Language::GERMAN;
+        if (id == "russian") return Language::RUSSIAN;
+        if (id == "japanese") return Language::JAPANESE;
+        return Language::ENGLISH;
+    }
+
+    static std::string languageDisplayName(Language lang) {
+        switch (lang) {
+            case Language::SPANISH: return "Espanol";
+            case Language::ENGLISH: return "English";
+            case Language::PORTUGUESE: return "Portugues";
+            case Language::FRENCH: return "Francais";
+            case Language::GERMAN: return "Deutsch";
+            case Language::RUSSIAN: return "Russkiy";
+            case Language::JAPANESE: return "Nihongo";
+        }
+        return "English";
+    }
+
+    void setLanguage(Language lang, bool persist = true) {
         m_currentLanguage = lang;
-        // Save as string to match mod.json
-        geode::Mod::get()->setSavedValue("language", std::string(lang == Language::SPANISH ? "spanish" : "english"));
+        if (!persist) return;
+
+        auto id = languageToId(lang);
+        geode::Mod::get()->setSavedValue("language", id);
+        geode::Mod::get()->setSettingValue<std::string>("language", id);
     }
 
     Language getLanguage() const {
         return m_currentLanguage;
     }
 
+    std::string getCurrentLanguageId() const {
+        return languageToId(m_currentLanguage);
+    }
+
+    std::string getCurrentLanguageDisplayName() const {
+        return languageDisplayName(m_currentLanguage);
+    }
+
     std::string getString(std::string const& key) const {
-        auto& translations = (m_currentLanguage == Language::SPANISH) ? m_spanish : m_english;
+        auto const& translations = translationsFor(m_currentLanguage);
         auto it = translations.find(key);
         if (it != translations.end()) {
             return it->second;
@@ -39,19 +104,34 @@ public:
     }
 
     void loadFromSettings() {
-        // Read as string to match mod.json
-        std::string langStr = geode::Mod::get()->getSavedValue<std::string>("language", "english");
-        if (langStr == "spanish") {
-            m_currentLanguage = Language::SPANISH;
-        } else {
-            m_currentLanguage = Language::ENGLISH;
+        std::string langStr = geode::Mod::get()->getSavedValue<std::string>("language", "");
+        if (langStr.empty()) {
+            langStr = geode::Mod::get()->getSettingValue<std::string>("language");
         }
+        if (langStr.empty()) {
+            langStr = "english";
+        }
+
+        m_currentLanguage = languageFromId(langStr);
     }
 
 private:
     Localization() {
         loadFromSettings();
         initTranslations();
+    }
+
+    std::unordered_map<std::string, std::string> const& translationsFor(Language lang) const {
+        switch (lang) {
+            case Language::SPANISH: return m_spanish;
+            case Language::ENGLISH: return m_english;
+            case Language::PORTUGUESE: return m_portuguese;
+            case Language::FRENCH: return m_french;
+            case Language::GERMAN: return m_german;
+            case Language::RUSSIAN: return m_russian;
+            case Language::JAPANESE: return m_japanese;
+        }
+        return m_english;
     }
 
     void initTranslations() {
@@ -267,6 +347,69 @@ private:
             {"edit.reset", "Reiniciar"},
             {"edit.scale", "Escala:"},
             {"edit.opacity", "Opacidad:"},
+            {"menu_layout.title", "Editor de Menu Principal"},
+            {"menu_layout.save", "Guardar"},
+            {"menu_layout.cancel", "Cancelar"},
+            {"menu_layout.save_preset", "Guardar Slot"},
+            {"menu_layout.load_preset", "Cargar Slot"},
+            {"menu_layout.reset_selected", "Reset Boton"},
+            {"menu_layout.reset_all", "Reset Todo"},
+            {"menu_layout.layers_title", "Capas"},
+            {"menu_layout.layer", "Capa"},
+            {"menu_layout.layer_up", "Subir"},
+            {"menu_layout.layer_down", "Bajar"},
+            {"menu_layout.edit_selected", "Editar"},
+            {"menu_layout.link_selected", "Link"},
+            {"menu_layout.unlink_selected", "Unlink"},
+            {"menu_layout.hide_selected", "Ocultar"},
+            {"menu_layout.delete_selected", "Borrar"},
+            {"menu_layout.scale_down", "Tam -"},
+            {"menu_layout.scale_up", "Tam +"},
+            {"menu_layout.hint", "Arrastra para mover. Grip verde = escala fija. Boton Escala = modo libre. Azul +/- = opacidad. Tam +/- = agrandador rapido. Roja X = ocultar/mostrar. Esc cancela."},
+            {"menu_layout.none_selected", "Toca un boton del menu principal para editarlo"},
+            {"menu_layout.status", "Boton: {}  X:{:.0f} Y:{:.0f}  Escala:{:.2f}x  Opacidad:{:.0f}%"},
+            {"menu_layout.saved", "Layout del menu guardado"},
+            {"menu_layout.context_popup_hint", "Ajusta opacidad, color y fuente del elemento seleccionado."},
+            {"menu_layout.context_font", "Fuente"},
+            {"menu_layout.context_pick_font", "Elegir"},
+            {"menu_layout.presets_title_save", "Guardar Preset"},
+            {"menu_layout.presets_title_load", "Cargar Preset"},
+            {"menu_layout.presets_hint_save", "Elige un slot para guardar el layout actual."},
+            {"menu_layout.presets_hint_load", "Elige un slot para cargar todo el layout."},
+            {"menu_layout.presets_page", "Pagina {}/{}"},
+            {"menu_layout.presets_slot", "Slot {}"},
+            {"menu_layout.presets_empty", "Vacio"},
+            {"menu_layout.presets_items", "{} elementos"},
+            {"menu_layout.presets_empty_slot", "Ese slot esta vacio"},
+            {"menu_layout.preset_saved", "Preset guardado en slot {}"},
+            {"menu_layout.preset_loaded", "Preset cargado desde slot {}"},
+            {"menu_layout.preset_overwrite_title", "Sobrescribir Preset"},
+            {"menu_layout.preset_overwrite_body", "El slot <cy>{}</c> ya tiene un preset. Sobrescribirlo?"},
+            {"menu_layout.preset_overwrite_confirm", "Sobrescribir"},
+            {"menu_layout.preset_load_title", "Cargar Preset"},
+            {"menu_layout.preset_load_body", "Cargar el preset del slot <cy>{}</c>? Esto reemplazara el layout actual del editor."},
+            {"menu_layout.preset_load_confirm", "Cargar"},
+            {"menu_layout.reset_done", "Botones restaurados a su layout base"},
+            {"menu_layout.reset_saved", "Layout guardado borrado y botones restaurados"},
+            {"menu_layout.draw_add_rect", "Rect"},
+            {"menu_layout.draw_add_round", "Curvo"},
+            {"menu_layout.draw_add_circle", "Circulo"},
+            {"menu_layout.draw_edit_shape", "Editar Draw"},
+            {"menu_layout.draw_shape_label", "Paimon Draw"},
+            {"menu_layout.draw_shape_popup_title", "Editar Paimon Draw"},
+            {"menu_layout.draw_shape_popup_hint", "Ajusta forma, color, tamano y opacidad. Se guarda en el layout y en los slots."},
+            {"menu_layout.draw_shape_kind", "Forma"},
+            {"menu_layout.draw_shape_kind_rect", "Rectangulo"},
+            {"menu_layout.draw_shape_kind_round", "Curvo"},
+            {"menu_layout.draw_shape_kind_circle", "Circulo"},
+            {"menu_layout.draw_shape_cycle", "Cambiar"},
+            {"menu_layout.draw_shape_color", "Color"},
+            {"menu_layout.draw_shape_pick_color", "Elegir"},
+            {"menu_layout.draw_shape_width", "Ancho"},
+            {"menu_layout.draw_shape_height", "Alto"},
+            {"menu_layout.draw_shape_radius", "Radio"},
+            {"menu_layout.draw_shape_opacity", "Opacidad"},
+            {"menu_layout.draw_shape_radius_disabled", "N/A"},
 
             // ForYou
             {"foryou.title", "Para Ti"},
@@ -604,6 +747,7 @@ private:
             {"pai.hub.welcome", "Bienvenido a Paimbnails!"},
             {"pai.hub.description", "Personaliza tu experiencia en Geometry Dash"},
             {"pai.hub.btn.config", "Configuracion"},
+            {"pai.hub.btn.language", "Idioma"},
             {"pai.hub.btn.profiles", "Perfiles"},
             {"pai.hub.btn.backgrounds", "Fondos"},
             {"pai.hub.btn.extras", "Extras"},
@@ -856,6 +1000,69 @@ private:
             {"edit.reset", "Reset"},
             {"edit.scale", "Scale:"},
             {"edit.opacity", "Opacity:"},
+            {"menu_layout.title", "Main Menu Layout Editor"},
+            {"menu_layout.save", "Save"},
+            {"menu_layout.cancel", "Cancel"},
+            {"menu_layout.save_preset", "Save Slot"},
+            {"menu_layout.load_preset", "Load Slot"},
+            {"menu_layout.reset_selected", "Reset Button"},
+            {"menu_layout.reset_all", "Reset All"},
+            {"menu_layout.layers_title", "Layers"},
+            {"menu_layout.layer", "Layer"},
+            {"menu_layout.layer_up", "Raise"},
+            {"menu_layout.layer_down", "Lower"},
+            {"menu_layout.edit_selected", "Edit"},
+            {"menu_layout.link_selected", "Link"},
+            {"menu_layout.unlink_selected", "Unlink"},
+            {"menu_layout.hide_selected", "Hide"},
+            {"menu_layout.delete_selected", "Delete"},
+            {"menu_layout.scale_down", "Size -"},
+            {"menu_layout.scale_up", "Size +"},
+            {"menu_layout.hint", "Drag to move. Green grip = locked scale. Scale button = free mode. Blue +/- = opacity. Size +/- = quick grow. Red X = hide/show. Esc cancels."},
+            {"menu_layout.none_selected", "Tap any main menu button to edit it"},
+            {"menu_layout.status", "Button: {}  X:{:.0f} Y:{:.0f}  Scale:{:.2f}x  Opacity:{:.0f}%"},
+            {"menu_layout.saved", "Main menu layout saved"},
+            {"menu_layout.context_popup_hint", "Adjust opacity, color, and font for the selected item."},
+            {"menu_layout.context_font", "Font"},
+            {"menu_layout.context_pick_font", "Pick"},
+            {"menu_layout.presets_title_save", "Save Preset"},
+            {"menu_layout.presets_title_load", "Load Preset"},
+            {"menu_layout.presets_hint_save", "Pick a slot to save the current layout."},
+            {"menu_layout.presets_hint_load", "Pick a slot to load the full layout."},
+            {"menu_layout.presets_page", "Page {}/{}"},
+            {"menu_layout.presets_slot", "Slot {}"},
+            {"menu_layout.presets_empty", "Empty"},
+            {"menu_layout.presets_items", "{} items"},
+            {"menu_layout.presets_empty_slot", "That slot is empty"},
+            {"menu_layout.preset_saved", "Preset saved to slot {}"},
+            {"menu_layout.preset_loaded", "Preset loaded from slot {}"},
+            {"menu_layout.preset_overwrite_title", "Overwrite Preset"},
+            {"menu_layout.preset_overwrite_body", "Slot <cy>{}</c> already has a preset. Overwrite it?"},
+            {"menu_layout.preset_overwrite_confirm", "Overwrite"},
+            {"menu_layout.preset_load_title", "Load Preset"},
+            {"menu_layout.preset_load_body", "Load the preset from slot <cy>{}</c>? This will replace the editor's current layout."},
+            {"menu_layout.preset_load_confirm", "Load"},
+            {"menu_layout.reset_done", "Buttons restored to their base layout"},
+            {"menu_layout.reset_saved", "Saved layout cleared and buttons restored"},
+            {"menu_layout.draw_add_rect", "Rect"},
+            {"menu_layout.draw_add_round", "Round"},
+            {"menu_layout.draw_add_circle", "Circle"},
+            {"menu_layout.draw_edit_shape", "Edit Draw"},
+            {"menu_layout.draw_shape_label", "Paimon Draw"},
+            {"menu_layout.draw_shape_popup_title", "Edit Paimon Draw"},
+            {"menu_layout.draw_shape_popup_hint", "Adjust shape, color, size, and opacity. It is saved in the layout and preset slots."},
+            {"menu_layout.draw_shape_kind", "Shape"},
+            {"menu_layout.draw_shape_kind_rect", "Rectangle"},
+            {"menu_layout.draw_shape_kind_round", "Rounded"},
+            {"menu_layout.draw_shape_kind_circle", "Circle"},
+            {"menu_layout.draw_shape_cycle", "Cycle"},
+            {"menu_layout.draw_shape_color", "Color"},
+            {"menu_layout.draw_shape_pick_color", "Pick"},
+            {"menu_layout.draw_shape_width", "Width"},
+            {"menu_layout.draw_shape_height", "Height"},
+            {"menu_layout.draw_shape_radius", "Radius"},
+            {"menu_layout.draw_shape_opacity", "Opacity"},
+            {"menu_layout.draw_shape_radius_disabled", "N/A"},
 
             // ForYou
             {"foryou.title", "For You"},
@@ -1193,6 +1400,7 @@ private:
             {"pai.hub.welcome", "Welcome to Paimbnails!"},
             {"pai.hub.description", "Customize your Geometry Dash experience"},
             {"pai.hub.btn.config", "Settings"},
+            {"pai.hub.btn.language", "Language"},
             {"pai.hub.btn.profiles", "Profiles"},
             {"pai.hub.btn.backgrounds", "Backgrounds"},
             {"pai.hub.btn.extras", "Extras"},
@@ -1230,10 +1438,84 @@ private:
             {"pai.update.failed", "Error"},
             {"pai.update.uptodate", "You're up to date!"}
         };
+
+        m_portuguese = {
+            {"pai.hub.tab.home", "Inicio"},
+            {"pai.hub.tab.news", "Noticias"},
+            {"pai.hub.tab.forum", "Forum"},
+            {"pai.hub.welcome", "Bem-vindo ao Paimbnails!"},
+            {"pai.hub.description", "Personalize sua experiencia no Geometry Dash"},
+            {"pai.hub.btn.config", "Configuracoes"},
+            {"pai.hub.btn.language", "Idioma"},
+            {"pai.hub.btn.profiles", "Perfis"},
+            {"pai.hub.btn.backgrounds", "Fundos"},
+            {"pai.hub.btn.support", "Suporte"},
+            {"pai.hub.btn.update", "Verificar atualizacao"},
+        };
+
+        m_french = {
+            {"pai.hub.tab.home", "Accueil"},
+            {"pai.hub.tab.news", "Actualites"},
+            {"pai.hub.tab.forum", "Forum"},
+            {"pai.hub.welcome", "Bienvenue sur Paimbnails!"},
+            {"pai.hub.description", "Personnalisez votre experience Geometry Dash"},
+            {"pai.hub.btn.config", "Parametres"},
+            {"pai.hub.btn.language", "Langue"},
+            {"pai.hub.btn.profiles", "Profils"},
+            {"pai.hub.btn.backgrounds", "Fonds"},
+            {"pai.hub.btn.support", "Support"},
+            {"pai.hub.btn.update", "Verifier les mises a jour"},
+        };
+
+        m_german = {
+            {"pai.hub.tab.home", "Start"},
+            {"pai.hub.tab.news", "News"},
+            {"pai.hub.tab.forum", "Forum"},
+            {"pai.hub.welcome", "Willkommen bei Paimbnails!"},
+            {"pai.hub.description", "Passe dein Geometry Dash Erlebnis an"},
+            {"pai.hub.btn.config", "Einstellungen"},
+            {"pai.hub.btn.language", "Sprache"},
+            {"pai.hub.btn.profiles", "Profile"},
+            {"pai.hub.btn.backgrounds", "Hintergrunde"},
+            {"pai.hub.btn.support", "Support"},
+            {"pai.hub.btn.update", "Nach Updates suchen"},
+        };
+
+        m_russian = {
+            {"pai.hub.tab.home", "Главная"},
+            {"pai.hub.tab.news", "Новости"},
+            {"pai.hub.tab.forum", "Форум"},
+            {"pai.hub.welcome", "Добро пожаловать в Paimbnails!"},
+            {"pai.hub.description", "Настройте свой опыт Geometry Dash"},
+            {"pai.hub.btn.config", "Настройки"},
+            {"pai.hub.btn.language", "Язык"},
+            {"pai.hub.btn.profiles", "Профили"},
+            {"pai.hub.btn.backgrounds", "Фоны"},
+            {"pai.hub.btn.support", "Поддержка"},
+            {"pai.hub.btn.update", "Проверить обновления"},
+        };
+
+        m_japanese = {
+            {"pai.hub.tab.home", "ホーム"},
+            {"pai.hub.tab.news", "ニュース"},
+            {"pai.hub.tab.forum", "フォーラム"},
+            {"pai.hub.welcome", "Paimbnailsへようこそ!"},
+            {"pai.hub.description", "Geometry Dash をもっと自分好みに"},
+            {"pai.hub.btn.config", "設定"},
+            {"pai.hub.btn.language", "言語"},
+            {"pai.hub.btn.profiles", "プロフィール"},
+            {"pai.hub.btn.backgrounds", "背景"},
+            {"pai.hub.btn.support", "サポート"},
+            {"pai.hub.btn.update", "アップデートを確認"},
+        };
     }
 
     Language m_currentLanguage = Language::SPANISH;
     std::unordered_map<std::string, std::string> m_spanish;
     std::unordered_map<std::string, std::string> m_english;
+    std::unordered_map<std::string, std::string> m_portuguese;
+    std::unordered_map<std::string, std::string> m_french;
+    std::unordered_map<std::string, std::string> m_german;
+    std::unordered_map<std::string, std::string> m_russian;
+    std::unordered_map<std::string, std::string> m_japanese;
 };
-

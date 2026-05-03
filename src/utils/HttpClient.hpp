@@ -59,6 +59,9 @@ public:
     // lista thumbs
     void getThumbnails(int levelId, GenericCallback callback);
 
+    // reordenar thumbs (solo admin)
+    void reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, GenericCallback callback);
+
     // info thumb
     void getThumbnailInfo(int levelId, GenericCallback callback);
 

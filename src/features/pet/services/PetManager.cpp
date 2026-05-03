@@ -6,12 +6,11 @@
 #include <fstream>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <ctime>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
-
-#if defined(GEODE_IS_WINDOWS)
-#include <windows.h>
-#endif
+#include <unordered_set>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -46,15 +45,16 @@ void ensurePetNodeIsFrontmost(CCScene* scene, CCNode* petNode) {
 
 bool layerNameMatchesNode(CCNode* node, std::string const& layerName) {
     if (!node) return false;
-
-    std::string className = typeid(*node).name();
-    if (className.rfind("class ", 0) == 0) {
-        className = className.substr(6);
-    }
-
-    std::string const nodeID = node->getID();
-    return className.find(layerName) != std::string::npos ||
-           (!nodeID.empty() && nodeID.find(layerName) != std::string::npos);
+    // Check node ID first (reliable)
+    std::string nodeID(node->getID());
+    if (!nodeID.empty() && 
+        nodeID.find(layerName) != std::string::npos) return true;
+    // Use Geode's getClassName which returns demangled names
+    auto className = geode::cocos::getObjectName(node);
+    // Exact match preferred
+    if (className == layerName) return true;
+    // Substring match as fallback
+    return className.find(layerName) != std::string::npos;
 }
 
 bool allNonGameplayLayersSelected(std::set<std::string> const& selectedLayers) {
@@ -69,18 +69,21 @@ bool allNonGameplayLayersSelected(std::set<std::string> const& selectedLayers) {
 
 bool sceneMatchesAnyLayer(CCScene* scene, std::vector<std::string> const& layerOptions) {
     if (!scene) return false;
-    auto children = scene->getChildren();
-    if (!children) return false;
-
-    for (auto* child : CCArrayExt<CCNode*>(children)) {
+    for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
         if (!child) continue;
         for (auto const& layerName : layerOptions) {
-            if (layerNameMatchesNode(child, layerName)) {
-                return true;
+            if (layerNameMatchesNode(child, layerName)) return true;
+        }
+        // Check one level deeper (transition scenes wrap the actual layer)
+        if (auto* grandChildren = child->getChildren()) {
+            for (auto* gc : CCArrayExt<CCNode*>(grandChildren)) {
+                if (!gc) continue;
+                for (auto const& layerName : layerOptions) {
+                    if (layerNameMatchesNode(gc, layerName)) return true;
+                }
             }
         }
     }
-
     return false;
 }
 }
@@ -367,18 +370,9 @@ bool PetManager::shouldShowOnCurrentScene() const {
 
     if (m_config.visibleLayers.empty()) return false;
 
-    auto children = scene->getChildren();
-    if (!children) return false;
-
-    for (auto* child : CCArrayExt<CCNode*>(children)) {
-        if (!child) continue;
-        for (auto const& layer : m_config.visibleLayers) {
-            if (layerNameMatchesNode(child, layer)) {
-                return true;
-            }
-        }
-    }
-    return false;
+    // Convert set to vector for sceneMatchesAnyLayer
+    std::vector<std::string> visibleLayersVec(m_config.visibleLayers.begin(), m_config.visibleLayers.end());
+    return sceneMatchesAnyLayer(scene, visibleLayersVec);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -436,12 +430,25 @@ void PetManager::removeFromGallery(std::string const& filename) {
         std::filesystem::remove(path, rmEc);
     }
 
+    purgeCachedImage(filename);
+
     // si es la imagen actual, deseleccionar
     if (m_config.selectedImage == filename) {
         m_config.selectedImage = "";
-        saveConfig();
-        reloadSprite();
     }
+
+    auto clearStateImage = [&](std::string& image) {
+        if (image == filename) {
+            image.clear();
+        }
+    };
+    clearStateImage(m_config.idleImage);
+    clearStateImage(m_config.walkImage);
+    clearStateImage(m_config.sleepImage);
+    clearStateImage(m_config.reactImage);
+
+    saveConfig();
+    reloadSprite();
 }
 
 void PetManager::removeAllFromGallery() {
@@ -452,14 +459,17 @@ void PetManager::removeAllFromGallery() {
         if (std::filesystem::exists(path, rmAllEc)) {
             std::filesystem::remove(path, rmAllEc);
         }
+        purgeCachedImage(img);
     }
 
     // deseleccionar imagen actual
-    if (!m_config.selectedImage.empty()) {
-        m_config.selectedImage = "";
-        saveConfig();
-        reloadSprite();
-    }
+    m_config.selectedImage.clear();
+    m_config.idleImage.clear();
+    m_config.walkImage.clear();
+    m_config.sleepImage.clear();
+    m_config.reactImage.clear();
+    saveConfig();
+    reloadSprite();
 }
 
 int PetManager::cleanupInvalidImages() {
@@ -541,6 +551,8 @@ CCTexture2D* PetManager::loadGalleryThumb(std::string const& filename) const {
 // ════════════════════════════════════════════════════════════
 
 void PetManager::init() {
+    // Inicializar semilla aleatoria para partículas
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
     log::info("[PetManager] init");
     loadConfig();
 }
@@ -552,17 +564,114 @@ void PetManager::setImage(std::string const& galleryFilename) {
     reloadSprite();
 }
 
-void PetManager::createPetSprite() {
-    if (m_config.selectedImage.empty()) return;
+std::string PetManager::resolveImageFileForState(PetIconState state) const {
+    std::vector<std::string> candidates;
+    if (auto stateImage = getIconStateImage(state); !stateImage.empty()) {
+        candidates.push_back(stateImage);
+    }
+    if (!m_config.selectedImage.empty()) {
+        candidates.push_back(m_config.selectedImage);
+    }
+    if (!m_config.idleImage.empty()) {
+        candidates.push_back(m_config.idleImage);
+    }
+    if (!m_config.walkImage.empty()) {
+        candidates.push_back(m_config.walkImage);
+    }
+    if (!m_config.sleepImage.empty()) {
+        candidates.push_back(m_config.sleepImage);
+    }
+    if (!m_config.reactImage.empty()) {
+        candidates.push_back(m_config.reactImage);
+    }
 
-    auto path = galleryDir() / m_config.selectedImage;
+    std::unordered_set<std::string> seen;
+    for (auto const& imageFile : candidates) {
+        if (imageFile.empty() || !seen.insert(imageFile).second) {
+            continue;
+        }
+
+        auto path = galleryDir() / imageFile;
+        std::error_code ec;
+        if (std::filesystem::exists(path, ec) && !ec) {
+            return imageFile;
+        }
+    }
+
+    return "";
+}
+
+std::string PetManager::resolveCurrentImageFile() const {
+    return resolveImageFileForState(m_iconState);
+}
+
+void PetManager::purgeCachedImage(std::string const& filename) {
+    if (filename.empty()) return;
+    m_staticTextureCache.erase(filename);
+    AnimatedGIFSprite::remove(geode::utils::string::pathToString(galleryDir() / filename));
+}
+
+CCSprite* PetManager::createSpriteForImage(std::string const& imageFile) {
+    if (imageFile.empty()) return nullptr;
+
+    auto path = galleryDir() / imageFile;
     std::error_code ec;
-    if (!std::filesystem::exists(path, ec) || ec) return;
+    if (!std::filesystem::exists(path, ec) || ec) return nullptr;
 
-    m_petSprite = ImageLoadHelper::loadAnimatedOrStatic(path, 10,
-        [](std::string const& p) -> CCSprite* {
-            return AnimatedGIFSprite::create(p);
-        });
+    if (ImageLoadHelper::isAnimatedImage(path)) {
+        auto pathStr = geode::utils::string::pathToString(path);
+        if (auto* cached = AnimatedGIFSprite::createFromCache(pathStr)) {
+            return cached;
+        }
+        return AnimatedGIFSprite::create(pathStr);
+    }
+
+    auto it = m_staticTextureCache.find(imageFile);
+    if (it == m_staticTextureCache.end() || !it->second) {
+        auto img = ImageLoadHelper::loadStaticImage(path);
+        if (!img.success || !img.texture) {
+            return nullptr;
+        }
+        it = m_staticTextureCache.emplace(imageFile, geode::Ref<CCTexture2D>::adopt(img.texture)).first;
+    }
+
+    if (!it->second) return nullptr;
+    return CCSprite::createWithTexture(it->second.data());
+}
+
+bool PetManager::switchSpriteToImage(std::string const& imageFile) {
+    if (!m_petNode || imageFile.empty()) return false;
+    if (m_activeImageFile == imageFile && m_petSprite && m_petSprite->getParent() == m_petNode) {
+        return true;
+    }
+
+    auto* sprite = createSpriteForImage(imageFile);
+    if (!sprite) {
+        return false;
+    }
+
+    auto prevPos = m_petSprite ? m_petSprite->getPosition() : m_currentPos;
+    float prevRotation = m_petSprite ? m_petSprite->getRotation() : 0.f;
+
+    if (m_petSprite && m_petSprite->getParent() == m_petNode) {
+        m_petSprite->removeFromParent();
+    }
+
+    m_petSprite = sprite;
+    m_activeImageFile = imageFile;
+    m_petSprite->setScale(m_config.scale);
+    m_petSprite->setOpacity(static_cast<GLubyte>(m_config.opacity));
+    m_petSprite->setFlipX(!m_facingRight);
+    m_petSprite->setRotation(prevRotation);
+    m_petSprite->setPosition(prevPos);
+    m_petNode->addChild(m_petSprite, 10);
+    return true;
+}
+
+void PetManager::createPetSprite() {
+    auto imageFile = resolveCurrentImageFile();
+    if (imageFile.empty()) return;
+    (void)switchSpriteToImage(imageFile);
 }
 
 void PetManager::reloadSprite() {
@@ -571,8 +680,10 @@ void PetManager::reloadSprite() {
         m_petSprite->removeFromParent();
         m_petSprite = nullptr;
     }
-    if (m_trail && m_petNode) {
-        m_trail->removeFromParent();
+    if (m_trail) {
+        if (m_trail->getParent()) {
+            m_trail->removeFromParent();
+        }
         m_trail = nullptr;
     }
     if (m_shadowSprite && m_petNode) {
@@ -593,23 +704,9 @@ void PetManager::reloadSprite() {
         m_sleepZzz->removeFromParent();
         m_sleepZzz = nullptr;
     }
+    m_activeImageFile.clear();
 
-    if (!m_config.enabled || m_config.selectedImage.empty()) return;
-    if (!m_petNode) return;
-
-    createPetSprite();
-    if (m_petSprite) {
-        m_petSprite->setScale(m_config.scale);
-        m_petSprite->setOpacity(static_cast<GLubyte>(m_config.opacity));
-        m_petNode->addChild(m_petSprite, 10);
-
-        updateTrail();
-        createShadow();
-        createParticleNode();
-        createSpeechBubbleNode();
-    }
-
-    // reset icon state
+    // Rebuild from a neutral state so state-specific overrides are resolved fresh.
     m_iconState = PetIconState::Default;
     m_sleeping = false;
     m_idleDuration = 0.f;
@@ -617,11 +714,31 @@ void PetManager::reloadSprite() {
     m_clickReactionTimer = 0.f;
     m_speechTimer = 0.f;
     m_speechIdleAccum = 0.f;
+
+    if (!m_config.enabled) return;
+    if (!m_petNode) return;
+
+    createPetSprite();
+    if (m_petSprite) {
+        m_petSprite->setScale(m_config.scale);
+        m_petSprite->setOpacity(static_cast<GLubyte>(m_config.opacity));
+
+        updateTrail();
+        createShadow();
+        createParticleNode();
+        createSpeechBubbleNode();
+    }
 }
 
 void PetManager::attachToScene(CCScene* scene) {
     log::debug("[PetManager] attachToScene: enabled={}", m_config.enabled);
     if (!scene) return;
+
+    // If already attached to this exact scene, just refresh visibility
+    if (m_petNode && m_petNode->getParent() == scene) {
+        refreshVisibility();
+        return;
+    }
 
     // remove from old scene
     detachFromScene();
@@ -632,6 +749,7 @@ void PetManager::attachToScene(CCScene* scene) {
     m_petNode->setID("paimon-pet-host"_spr);
     m_petNode->setZOrder(99999); // always on top
     scene->addChild(m_petNode);
+    m_petNode->setVisible(shouldShowOnCurrentScene());
 
     // init position to center
     auto winSize = CCDirector::sharedDirector()->getWinSize();
@@ -643,26 +761,43 @@ void PetManager::attachToScene(CCScene* scene) {
 }
 
 void PetManager::detachFromScene() {
+    // Null out trail first (it may be a child of petNode or the scene)
+    // Use safe access pattern: only call removeFromParent if the pointer
+    // is still valid (has a living parent).
+    if (m_trail) {
+        if (m_trail->getParent()) {
+            m_trail->removeFromParent();
+        }
+        m_trail = nullptr;
+    }
+
     if (m_petNode) {
         m_petNode->removeFromParent();
         m_petNode = nullptr;
         m_petSprite = nullptr;
-        m_trail = nullptr;
         m_shadowSprite = nullptr;
         m_particleNode = nullptr;
         m_speechNode = nullptr;
         m_speechLabel = nullptr;
         m_speechBg = nullptr;
         m_sleepZzz = nullptr;
+        m_activeImageFile.clear();
     }
     m_sleeping = false;
     m_reactionTimer = 0.f;
     m_clickReactionTimer = 0.f;
     m_speechTimer = 0.f;
+    m_pendingClicks.clear();
+}
+
+void PetManager::refreshVisibility() {
+    if (!m_petNode) return;
+    m_petNode->setVisible(m_config.enabled && shouldShowOnCurrentScene());
 }
 
 void PetManager::releaseSharedResources() {
     whiteTrailTexture() = nullptr;
+    m_staticTextureCache.clear();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -686,6 +821,13 @@ void PetManager::update(float dt) {
         return;
     }
 
+    // visibility control based on current scene
+    bool shouldShow = shouldShowOnCurrentScene();
+    if (m_petNode->isVisible() != shouldShow) {
+        m_petNode->setVisible(shouldShow);
+    }
+    if (!shouldShow) return;
+
     // ensure pet is always on top
     if (auto* scene = m_petNode->getParentByType<CCScene>()) {
         ensurePetNodeIsFrontmost(scene, m_petNode);
@@ -696,19 +838,15 @@ void PetManager::update(float dt) {
     m_targetPos.x = mousePos.x + m_config.offsetX;
     m_targetPos.y = mousePos.y + m_config.offsetY;
 
-    // ── click detection (mouse button polling) ──
-    if (m_config.enableClickInteraction && m_petSprite) {
-#if defined(GEODE_IS_WINDOWS)
-        bool mouseDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-#else
-        // macOS / mobile: click detection not supported via polling
-        bool mouseDown = false;
-#endif
-        if (mouseDown && !m_mouseWasDown) {
-            // mouse just pressed — check if click is near pet
-            triggerClickReaction(m_targetPos);
+    if (m_config.enableClickInteraction && !m_pendingClicks.empty()) {
+        auto clicks = std::move(m_pendingClicks);
+        m_pendingClicks.clear();
+        for (auto const& clickPos : clicks) {
+            triggerClickReaction(clickPos);
+            if (m_clickReactionTimer > 0.f) {
+                break;
+            }
         }
-        m_mouseWasDown = mouseDown;
     }
 
     // ── smooth interpolation (lerp with sensitivity) ──
@@ -851,6 +989,8 @@ void PetManager::update(float dt) {
 
     // ── trail ──
     if (m_trail) {
+        // Trail is a child of m_petNode, same as the sprite,
+        // so use the same local-space position
         m_trail->setPosition(finalPos);
     }
 
@@ -884,19 +1024,42 @@ void PetManager::update(float dt) {
 }
 
 void PetManager::applyConfigLive() {
+    saveConfig();
+
+    if (!m_petNode) return;
+
+    auto imageFile = resolveCurrentImageFile();
+    if (!imageFile.empty()) {
+        (void)switchSpriteToImage(imageFile);
+    }
+
     if (!m_petSprite) return;
 
     m_petSprite->setScale(m_config.scale);
     m_petSprite->setOpacity(static_cast<GLubyte>(m_config.opacity));
 
     updateTrail();
-    saveConfig();
+    updateShadow();
+    if (m_particleNode) {
+        m_particleNode->setVisible(m_config.showParticles);
+        // Limpiar partículas existentes para que el cambio de tipo se aplique inmediatamente
+        m_particleNode->removeAllChildren();
+        m_particleAccum = 0.f;
+    }
+    if (m_speechLabel) {
+        m_speechLabel->setScale(m_config.speechBubbleScale);
+    }
+    if (m_sleepZzz) {
+        m_sleepZzz->setVisible(m_sleeping && m_config.enableSleep);
+    }
 }
 
 void PetManager::updateTrail() {
-    // remove old trail
-    if (m_trail && m_petNode) {
-        m_trail->removeFromParent();
+    // remove old trail safely
+    if (m_trail) {
+        if (m_trail->getParent()) {
+            m_trail->removeFromParent();
+        }
         m_trail = nullptr;
     }
 
@@ -911,7 +1074,7 @@ void PetManager::updateTrail() {
         memset(pixels, 255, sizeof(pixels)); // all white, full alpha
         auto* newTex = new CCTexture2D();
         if (newTex->initWithData(pixels, kCCTexture2DPixelFormat_RGBA8888, sz, sz, CCSizeMake(sz, sz))) {
-            trailTex = newTex;
+            trailTex = geode::Ref<CCTexture2D>::adopt(newTex);
         } else {
             newTex->release();
         }
@@ -931,7 +1094,9 @@ void PetManager::updateTrail() {
         m_trail->setOpacity(static_cast<GLubyte>(m_config.opacity * 0.4f));
         ccBlendFunc blend = {GL_SRC_ALPHA, GL_ONE};
         m_trail->setBlendFunc(blend);
-        m_petNode->addChild(m_trail, 5);
+        // Add trail as child of petNode so it is cleaned up together
+        // and we avoid dangling pointer issues during scene transitions
+        m_petNode->addChild(m_trail, -1);
     } else {
         // trail was created but has no valid texture — don't add to scene
         m_trail = nullptr;
@@ -954,12 +1119,16 @@ std::string PetManager::getIconStateImage(PetIconState state) const {
 }
 
 void PetManager::setIconStateImage(PetIconState state, std::string const& galleryFilename) {
+    auto oldFile = getIconStateImage(state);
     switch (state) {
         case PetIconState::Idle:   m_config.idleImage  = galleryFilename; break;
         case PetIconState::Walk:   m_config.walkImage  = galleryFilename; break;
         case PetIconState::Sleep:  m_config.sleepImage = galleryFilename; break;
         case PetIconState::React:  m_config.reactImage = galleryFilename; break;
         default: break;
+    }
+    if (!oldFile.empty() && oldFile != galleryFilename) {
+        purgeCachedImage(oldFile);
     }
     saveConfig();
     // refresh if currently in this state
@@ -972,38 +1141,17 @@ void PetManager::switchToIconState(PetIconState state) {
 }
 
 void PetManager::updateIconState() {
-    if (!m_petSprite || !m_petNode) return;
+    if (!m_petNode) return;
 
-    std::string imageFile = getIconStateImage(m_iconState);
-    if (imageFile.empty()) imageFile = m_config.selectedImage;
-    if (imageFile.empty()) return;
-
-    auto path = galleryDir() / imageFile;
-    std::error_code ec;
-    if (!std::filesystem::exists(path, ec) || ec) {
-        // fallback to default selectedImage if state image missing
-        if (m_iconState != PetIconState::Default && !m_config.selectedImage.empty()) {
-            path = galleryDir() / m_config.selectedImage;
-            if (!std::filesystem::exists(path, ec) || ec) return;
-        } else return;
+    auto imageFile = resolveCurrentImageFile();
+    if (imageFile.empty()) {
+        return;
     }
 
-    // remove old sprite
-    if (m_petSprite) {
-        m_petSprite->removeFromParent();
-        m_petSprite = nullptr;
-    }
-
-    m_petSprite = ImageLoadHelper::loadAnimatedOrStatic(path, 10,
-        [](std::string const& p) -> CCSprite* {
-            return AnimatedGIFSprite::create(p);
-        });
-
-    if (m_petSprite) {
+    if (switchSpriteToImage(imageFile)) {
         m_petSprite->setScale(m_config.scale);
         m_petSprite->setOpacity(static_cast<GLubyte>(m_config.opacity));
         m_petSprite->setFlipX(!m_facingRight);
-        m_petNode->addChild(m_petSprite, 10);
     }
 }
 
@@ -1414,8 +1562,11 @@ void PetManager::updateSleepZzz(float dt) {
     // gentle fade in/out
     float alpha = 128 + 60 * std::sin(m_sleepZzzTimer * 1.5f);
     // set opacity on the child label (CCNode doesn't have setOpacity)
-    if (auto* label = typeinfo_cast<CCRGBAProtocol*>(m_sleepZzz->getChildren()->objectAtIndex(0))) {
-        label->setOpacity(static_cast<GLubyte>(alpha));
+    auto* zzzChildren = m_sleepZzz->getChildren();
+    if (zzzChildren && zzzChildren->count() > 0) {
+        if (auto* label = typeinfo_cast<CCRGBAProtocol*>(zzzChildren->objectAtIndex(0))) {
+            label->setOpacity(static_cast<GLubyte>(alpha));
+        }
     }
 }
 
@@ -1458,13 +1609,23 @@ void PetManager::triggerReaction(std::string const& eventType) {
     }
 }
 
+void PetManager::registerClick(cocos2d::CCPoint clickPos) {
+    if (!m_config.enabled || !m_config.enableClickInteraction) {
+        return;
+    }
+    if (m_pendingClicks.size() >= 8) {
+        m_pendingClicks.erase(m_pendingClicks.begin());
+    }
+    m_pendingClicks.push_back(clickPos);
+}
+
 void PetManager::updateReaction(float dt) {
     if (m_reactionTimer <= 0.f) return;
 
     m_reactionTimer -= dt;
     if (m_reactionTimer <= 0.f) {
         m_reactionTimer = 0.f;
-        // restore normal icon state
+        m_iconState = m_sleeping ? PetIconState::Sleep : (m_walking ? PetIconState::Walk : PetIconState::Idle);
         updateIconState();
     }
 }
@@ -1517,11 +1678,3 @@ void PetManager::updateClickReaction(float dt) {
 
 void PetManager::updateIdleAnimation(float dt) {}
 void PetManager::updateWalkAnimation(float dt) {}
-
-
-
-
-
-
-
-

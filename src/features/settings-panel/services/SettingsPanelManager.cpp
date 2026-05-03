@@ -7,9 +7,18 @@
 
 using namespace cocos2d;
 
-void SettingsPanelManager::toggle() {
+void SettingsPanelManager::toggle(int initialCategory) {
     if (m_panel) {
         close();
+        return;
+    }
+
+    open(initialCategory);
+}
+
+void SettingsPanelManager::open(int initialCategory) {
+    if (m_panel) {
+        showCategory(initialCategory);
         return;
     }
 
@@ -36,10 +45,19 @@ void SettingsPanelManager::toggle() {
     // aplicar blur usando el sistema existente de shaders
     CCSprite* blurredBg = BlurSystem::getInstance()->createBlurredSprite(capturedTex, winSize, 7.0f);
 
-    m_panel = PaimonMultiSettingsPanel::create(blurredBg);
+    m_panel = PaimonMultiSettingsPanel::create(blurredBg, initialCategory);
     if (!m_panel) return;
 
     scene->addChild(m_panel, 10000);
+}
+
+void SettingsPanelManager::showCategory(int initialCategory) {
+    if (!m_panel) {
+        open(initialCategory);
+        return;
+    }
+
+    m_panel->setSelectedCategory(initialCategory);
 }
 
 void SettingsPanelManager::close() {

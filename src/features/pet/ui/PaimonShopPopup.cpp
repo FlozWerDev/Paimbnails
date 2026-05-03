@@ -6,6 +6,8 @@
 #include "../../moderation/services/ModeratorUtils.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/InfoButton.hpp"
+#include "../../../utils/ImageConverter.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <fstream>
@@ -293,17 +295,36 @@ void PaimonShopPopup::onUploadPet(CCObject*) {
         auto ext = geode::utils::string::pathToString(filepath.extension());
         for (auto& c : ext) c = (char)std::tolower(c);
         std::string format = "png";
-        if (ext == ".gif") format = "gif";
-        else if (ext == ".jpg" || ext == ".jpeg") format = "png"; // will be sent as png
-
-        // read file
-        std::ifstream f(filepath, std::ios::binary);
-        if (!f) {
-            PaimonNotify::create("Failed to read file", NotificationIcon::Error)->show();
-            return;
+        if (ImageLoadHelper::isAnimatedImage(filepath)) {
+            format = "gif";
         }
-        std::vector<uint8_t> data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-        f.close();
+
+        std::vector<uint8_t> data;
+        if (format == "gif") {
+            std::ifstream f(filepath, std::ios::binary);
+            if (!f) {
+                PaimonNotify::create("Failed to read file", NotificationIcon::Error)->show();
+                return;
+            }
+            data.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+            f.close();
+        } else {
+            auto loaded = ImageLoadHelper::loadStaticImage(filepath, 16);
+            if (!loaded.success || !loaded.texture || !loaded.buffer || loaded.width <= 0 || loaded.height <= 0) {
+                PaimonNotify::create("Failed to convert image to PNG", NotificationIcon::Error)->show();
+                return;
+            }
+
+            if (!ImageConverter::rgbaToPngBuffer(loaded.buffer.get(),
+                    static_cast<uint32_t>(loaded.width),
+                    static_cast<uint32_t>(loaded.height),
+                    data)) {
+                loaded.texture->release();
+                PaimonNotify::create("Failed to convert image to PNG", NotificationIcon::Error)->show();
+                return;
+            }
+            loaded.texture->release();
+        }
 
         if (data.empty()) {
             PaimonNotify::create("Empty file", NotificationIcon::Error)->show();

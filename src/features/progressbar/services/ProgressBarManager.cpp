@@ -1,6 +1,7 @@
 #include "ProgressBarManager.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/PlayLayer.hpp>
@@ -187,6 +188,29 @@ void ProgressBarManager::loadConfig() {
             d.rotation = static_cast<float>(item["rotation"].asDouble().unwrapOr(0.0));
             if (!d.path.empty()) m_config.decorations.push_back(std::move(d));
         }
+    }
+
+    bool migrated = false;
+    auto migratePath = [&](std::string& path, std::string const& bucket) {
+        if (path.empty()) return;
+        auto imported = paimon::assets::importStoredPath(path, bucket, paimon::assets::Kind::Image);
+        if (imported.success && !imported.path.empty()) {
+            auto normalized = paimon::assets::normalizePathString(imported.path);
+            if (normalized != path) {
+                path = normalized;
+                migrated = true;
+            }
+        }
+    };
+
+    migratePath(m_config.fillTexturePath, "progressbar_fill");
+    migratePath(m_config.bgTexturePath, "progressbar_bg");
+    for (auto& decoration : m_config.decorations) {
+        migratePath(decoration.path, "progressbar_decorations");
+    }
+
+    if (migrated) {
+        saveConfig();
     }
 
     log::info("[ProgressBar] Config loaded");

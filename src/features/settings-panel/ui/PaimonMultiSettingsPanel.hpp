@@ -51,7 +51,7 @@ protected:
     static constexpr float CONTENT_W = PANEL_W - SIDEBAR_W;
     static constexpr float CONTENT_H = PANEL_H - TITLE_BAR_H;
 
-    bool init(cocos2d::CCSprite* blurBg);
+    bool init(cocos2d::CCSprite* blurBg, int initialCategory);
 
     void buildTitleBar();
     void buildSidebar();
@@ -82,8 +82,9 @@ protected:
     void onExit() override;
 
 public:
-    static PaimonMultiSettingsPanel* create(cocos2d::CCSprite* blurBg);
+    static PaimonMultiSettingsPanel* create(cocos2d::CCSprite* blurBg, int initialCategory = 0);
     void animateClose();
     void onCloseFinished();
     void relayoutScrollContent();
+    void setSelectedCategory(int index);
 };

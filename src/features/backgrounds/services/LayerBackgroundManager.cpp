@@ -2,6 +2,7 @@
 #include "../../thumbnails/services/LocalThumbs.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include "../../../managers/ThumbnailAPI.hpp"
 #include "../../../video/VideoPlayer.hpp"
 #include "../../../video/VideoDiskCache.hpp"
@@ -533,6 +534,69 @@ void LayerBackgroundManager::migrateFromLegacy() {
     migrateToGlobalMusic();
 }
 
+void LayerBackgroundManager::migrateExternalAssetsToManagedStorage() {
+    if (Mod::get()->getSavedValue<bool>("layerbg-assets-migrated-v1", false)) return;
+
+    bool changed = false;
+
+    auto migrateBgConfig = [&](std::string const& key, std::string const& bucket, paimon::assets::Kind kind) {
+        auto cfg = getConfig(key);
+        if ((cfg.type != "custom" && cfg.type != "video") || cfg.customPath.empty()) {
+            return;
+        }
+
+        auto imported = paimon::assets::importStoredPath(cfg.customPath, bucket, kind);
+        if (imported.success && imported.changed && !imported.path.empty()) {
+            cfg.customPath = paimon::assets::normalizePathString(imported.path);
+            saveConfig(key, cfg);
+            changed = true;
+        }
+    };
+
+    migrateBgConfig("menu", "background_menu", paimon::assets::Kind::Media);
+    for (auto const& [key, _] : LAYER_OPTIONS) {
+        migrateBgConfig(key, "background_" + key, paimon::assets::Kind::Media);
+    }
+
+    std::string legacyMenuPath = Mod::get()->getSavedValue<std::string>("bg-custom-path", "");
+    std::string legacyMenuType = Mod::get()->getSavedValue<std::string>("bg-type", "default");
+    if (!legacyMenuPath.empty() && (legacyMenuType == "custom" || legacyMenuType == "video")) {
+        auto imported = paimon::assets::importStoredPath(
+            legacyMenuPath,
+            "background_menu",
+            legacyMenuType == "video" ? paimon::assets::Kind::Video : paimon::assets::Kind::Image
+        );
+        if (imported.success && imported.changed && !imported.path.empty()) {
+            Mod::get()->setSavedValue("bg-custom-path", paimon::assets::normalizePathString(imported.path));
+            changed = true;
+        }
+    }
+
+    std::string profileType = Mod::get()->getSavedValue<std::string>("profile-bg-type", "none");
+    std::string profilePath = Mod::get()->getSavedValue<std::string>("profile-bg-path", "");
+    if (profileType == "custom" && !profilePath.empty()) {
+        auto imported = paimon::assets::importStoredPath(profilePath, "profile_picture", paimon::assets::Kind::Image);
+        if (imported.success && imported.changed && !imported.path.empty()) {
+            auto normalized = paimon::assets::normalizePathString(imported.path);
+            Mod::get()->setSavedValue("profile-bg-path", normalized);
+            auto profileCfg = getConfig("profile");
+            if (profileCfg.type == "custom" && profileCfg.customPath == profilePath) {
+                profileCfg.customPath = normalized;
+                saveConfig("profile", profileCfg);
+            }
+            changed = true;
+        }
+    }
+
+    Mod::get()->setSavedValue("layerbg-assets-migrated-v1", true);
+    if (changed) {
+        (void)Mod::get()->saveData();
+        log::info("[LayerBackgroundManager] Migrated external local assets to managed storage");
+    } else {
+        (void)Mod::get()->saveData();
+    }
+}
+
 void LayerBackgroundManager::migrateToGlobalMusic() {
     if (Mod::get()->getSavedValue<bool>("layermusic-migrated-global", false)) return;
 
@@ -600,25 +664,18 @@ CCTexture2D* LayerBackgroundManager::loadTextureForConfig(LayerBgConfig const& c
     log::debug("[LayerBgMgr] loadTextureForConfig: type={} id={}", cfg.type, cfg.levelId);
     if (cfg.type == "custom" && !cfg.customPath.empty()) {
         std::error_code ec;
-        if (std::filesystem::exists(cfg.customPath, ec)) {
+        auto normalizedPath = paimon::assets::normalizePath(std::filesystem::path(cfg.customPath));
+        if (std::filesystem::exists(normalizedPath, ec)) {
             // no GIF aqui — GIF se maneja aparte
-            auto ext = geode::utils::string::pathToString(std::filesystem::path(cfg.customPath).extension());
+            auto ext = geode::utils::string::pathToString(normalizedPath.extension());
             for (auto& c : ext) c = (char)std::tolower(c);
             if (ext == ".gif") return nullptr; // senal para usar applyGifBg
 
-            // Intentar cache primero; si no hay, cargar
-            auto* cached = CCTextureCache::sharedTextureCache()->textureForKey(cfg.customPath.c_str());
-            if (cached) return cached;
-
-            auto* tex = CCTextureCache::sharedTextureCache()->addImage(cfg.customPath.c_str(), false);
-            if (!tex) {
-                auto stb = ImageLoadHelper::loadWithSTB(std::filesystem::path(cfg.customPath));
-                if (stb.success && stb.texture) {
-                    stb.texture->autorelease();
-                    return stb.texture;
-                }
+            auto img = ImageLoadHelper::loadStaticImage(normalizedPath, 32);
+            if (img.success && img.texture) {
+                img.texture->autorelease();
+                return img.texture;
             }
-            return tex;
         }
     } else if (cfg.type == "id" && cfg.levelId > 0) {
         return LocalThumbs::get().loadTexture(cfg.levelId);
@@ -1057,6 +1114,30 @@ struct VideoBlurNode : public CCNode {
 };
 
 // ── aplicar fondo video ──
+// ── Helper: apply saved video rotation to a sprite ────────────────────────
+// Must be called AFTER the sprite's scale and position are already set for
+// normal (0°) orientation.  For 90°/270° the scale is bumped so the rotated
+// video still covers the full screen.
+static void applyVideoRotation(CCNode* sprite, CCSize const& winSize) {
+    if (!sprite) return;
+    int rot = paimon::settings::video::videoRotation();
+    if (rot == 0) return;
+    sprite->setRotation(static_cast<float>(rot));
+    // For 90° and 270°, the sprite's natural width maps to the screen height
+    // (and vice versa), so we must scale up further to ensure full coverage.
+    if (rot == 90 || rot == 270) {
+        float cw = sprite->getContentWidth();
+        float ch = sprite->getContentHeight();
+        if (cw > 0 && ch > 0) {
+            float scX = winSize.width / cw;
+            float scY = winSize.height / ch;
+            float scXr = winSize.width / ch;
+            float scYr = winSize.height / cw;
+            sprite->setScale(std::max({scX, scY, scXr, scYr}));
+        }
+    }
+}
+
 void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& path, LayerBgConfig const& cfg) {
     log::info("[LayerBgMgr] applyVideoBg: path={} dark={}", path, cfg.darkMode);
     bool videoAudio = paimon::settings::video::audioEnabled();
@@ -1136,6 +1217,8 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                 }
 
                 if (visibleSprite) {
+                    // Apply user's saved video rotation
+                    applyVideoRotation(visibleSprite, winSize);
                     if (cfg.darkMode) {
                         GLubyte alpha = static_cast<GLubyte>(cfg.darkIntensity * 200.f);
                         auto overlay = CCLayerColor::create({0, 0, 0, alpha});
@@ -1249,6 +1332,8 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                     }
                     // Link the created sprite back so the update node can fade it in
                     self->m_visibleSprite = visibleSprite;
+                    // Apply user's saved video rotation
+                    applyVideoRotation(visibleSprite, winSize);
                 };
                 container->addChild(updateNode);
             }
@@ -1279,6 +1364,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                     previewSprite->setAnchorPoint({0.5f, 0.5f});
                     previewSprite->setVisible(true);
                     previewSprite->setID("paimon-video-preview"_spr);
+                    applyVideoRotation(previewSprite, winSize);
                     container->addChild(previewSprite);
                     log::info("[LayerBgMgr] Showing video preview frame while decoder loads: {}x{}",
                               previewW, previewH);
@@ -1408,6 +1494,8 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                     }
                     // Link the created sprite back so the update node can fade it in
                     self->m_visibleSprite = visibleSprite;
+                    // Apply user's saved video rotation
+                    applyVideoRotation(visibleSprite, winSize);
                 };
                 containerRef->addChild(updateNode);
             }
@@ -1894,4 +1982,58 @@ void LayerBackgroundManager::broadcastFPSUpdate(int newFPS) {
             log::info("[LayerBgMgr] broadcastFPSUpdate: {} fps → {} (cache invalidated)", newFPS, path);
         }
     }
+}
+
+void LayerBackgroundManager::broadcastRotationUpdate(int newRotationDegrees) {
+    // Find all active video containers in the current scene and apply rotation
+    // to the video sprite (first visual child of the container), not the container
+    // itself, since the container also holds the dark overlay and update node.
+    auto* scene = CCDirector::sharedDirector()->getRunningScene();
+    if (!scene) return;
+
+    auto winSize = CCDirector::sharedDirector()->getWinSize();
+
+    // Walk all layers in the scene looking for our container
+    for (auto* sceneChild : CCArrayExt<CCNode*>(scene->getChildren())) {
+        auto* container = sceneChild->getChildByID("paimon-layerbg-container"_spr);
+        if (!container) {
+            // Also check if the sceneChild IS the container (e.g. during transitions)
+            for (auto* layerChild : CCArrayExt<CCNode*>(sceneChild->getChildren())) {
+                container = layerChild->getChildByID("paimon-layerbg-container"_spr);
+                if (container) break;
+            }
+        }
+        if (!container) continue;
+
+        // Apply rotation to the first visual child (sprite or blur node)
+        for (auto* child : CCArrayExt<CCNode*>(container->getChildren())) {
+            // Skip the update node and dark overlay
+            if (child->getID() == "paimon-video-update"_spr) continue;
+            if (typeinfo_cast<CCLayerColor*>(child)) continue;
+            if (child->getID() == "paimon-video-preview"_spr) continue;
+
+            child->setRotation(static_cast<float>(newRotationDegrees));
+
+            // For 90° and 270°, we need to scale up to cover the screen
+            // because the video's width now maps to screen height and vice versa
+            auto cw = child->getContentWidth();
+            auto ch = child->getContentHeight();
+            if (cw > 0 && ch > 0) {
+                if (newRotationDegrees == 90 || newRotationDegrees == 270) {
+                    float scX = winSize.width / cw;
+                    float scY = winSize.height / ch;
+                    float scXr = winSize.width / ch;
+                    float scYr = winSize.height / cw;
+                    child->setScale(std::max({scX, scY, scXr, scYr}));
+                } else {
+                    float scX = winSize.width / cw;
+                    float scY = winSize.height / ch;
+                    child->setScale(std::max(scX, scY));
+                }
+            }
+            break; // only the first visual child
+        }
+    }
+
+    log::info("[LayerBgMgr] broadcastRotationUpdate: {}°", newRotationDegrees);
 }

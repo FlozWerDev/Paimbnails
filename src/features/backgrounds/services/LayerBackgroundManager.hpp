@@ -108,6 +108,10 @@ public:
     // al nuevo formato unificado layerbg-*. Solo la primera vez.
     void migrateFromLegacy();
 
+    // Importa rutas externas antiguas al saveDir del mod para evitar
+    // errores de archivo faltante y unifica assets locales.
+    void migrateExternalAssetsToManagedStorage();
+
     // Migra saved values de music per-layer al formato global.
     void migrateToGlobalMusic();
 
@@ -186,6 +190,10 @@ public:
     // Call this whenever the video-fps-limit setting changes.
     void broadcastFPSUpdate(int newFPS);
 
+    // Instantly rotate all active video background containers.
+    // Call this whenever the video-rotation setting changes.
+    void broadcastRotationUpdate(int newRotationDegrees);
+
     // Delete the disk cache for the layer's current video background if
     // it differs from nextVideoPath.  Call before clearAppliedBackground
     // so the old video path is still accessible.
@@ -212,4 +220,3 @@ public:
     static void saveVideoBgPreview(std::string const& videoPath,
                                    paimon::video::VideoPlayer const* player);
 };
-

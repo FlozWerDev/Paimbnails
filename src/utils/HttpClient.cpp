@@ -1521,6 +1521,37 @@ void HttpClient::checkThumbnailExists(int levelId, CheckCallback callback) {
     }, false);
 }
 
+void HttpClient::reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, GenericCallback callback) {
+    PaimonDebug::log("[HttpClient] Reordering thumbnails for level {} ({} ids)", levelId, thumbnailIds.size());
+
+    if (levelId <= 0 || thumbnailIds.size() < 2) {
+        callback(false, "Invalid thumbnail reorder payload");
+        return;
+    }
+
+    std::string username = getSafeAccountUsername();
+    int accountID = getSafeAccountID();
+    if (username.empty() || accountID <= 0) {
+        callback(false, "Debes estar logueado para reordenar miniaturas.");
+        return;
+    }
+
+    matjson::Value idArray = matjson::Value::array();
+    for (auto const& thumbnailId : thumbnailIds) {
+        idArray.push(thumbnailId);
+    }
+
+    matjson::Value json = matjson::makeObject({
+        {"levelId", levelId},
+        {"username", username},
+        {"accountID", accountID},
+        {"thumbnailIds", idArray}
+    });
+
+    std::string endpoint = "/api/thumbnails/reorder/" + std::to_string(levelId);
+    postWithAuth(endpoint, json.dump(), std::move(callback));
+}
+
 void HttpClient::checkModerator(std::string const& username, ModeratorCallback callback) {
     checkModeratorAccount(username, 0, callback);
 }

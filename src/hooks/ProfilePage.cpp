@@ -482,8 +482,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
         // Evita duplicados
         if (menu->getChildByID("paimon-user-status-dot"_spr)) return;
 
-        // Circulo dibujado con PaimonDrawNode
-        float dotRadius = 5.0f;
+        // Circulo 20% mas pequeno, en la misma fila del nombre/badges.
+        constexpr float dotRadius = 4.0f;
         auto* dotNode = PaimonDrawNode::create();
         if (!dotNode) return;
 
@@ -493,10 +493,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
         } else {
             fillColor = ccc4f(0.5f, 0.5f, 0.5f, 1.0f); // Gris
         }
-        dotNode->drawDot({dotRadius, dotRadius}, dotRadius, fillColor);
+        dotNode->drawSolidCircle({dotRadius, dotRadius}, dotRadius, fillColor);
         dotNode->setContentSize({dotRadius * 2, dotRadius * 2});
         dotNode->setAnchorPoint({0.5f, 0.5f});
-        dotNode->setID("paimon-user-status-dot"_spr);
+        dotNode->ignoreAnchorPointForPosition(false);
 
         if (auto menuNode = typeinfo_cast<CCMenu*>(menu)) {
             auto dotBtn = CCMenuItemSpriteExtra::create(dotNode, this, menu_selector(PaimonProfilePage::onUserStatusDotClicked));

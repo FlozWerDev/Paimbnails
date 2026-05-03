@@ -139,6 +139,10 @@ namespace video {
     inline float videoBlurIntensity() {
         return geode::Mod::get()->getSavedValue<float>("video-blur-intensity", 0.5f);
     }
+    // Video rotation in degrees: 0, 90, 180, 270
+    inline int videoRotation() {
+        return geode::Mod::get()->getSavedValue<int>("video-rotation", 0);
+    }
     // Max video chunk memory budget in MB (0 = unlimited)
     // 4K video requires ~180MB per player (RGBA + YUV + ring buffer),
     // so 512MB allows 2-3 concurrent 4K players.

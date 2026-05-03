@@ -65,6 +65,10 @@ void ThumbnailAPI::deleteThumbnail(int levelId, std::string const& thumbnailId, 
     log::info("[ThumbnailAPI] deleteThumbnail: levelId={} thumbId={} user={}", levelId, thumbnailId, username);
     ThumbnailTransportClient::get().deleteThumbnail(levelId, thumbnailId, username, accountID, std::move(callback));
 }
+void ThumbnailAPI::reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, ActionCallback callback) {
+    log::info("[ThumbnailAPI] reorderThumbnails: levelId={} count={}", levelId, thumbnailIds.size());
+    ThumbnailTransportClient::get().reorderThumbnails(levelId, thumbnailIds, std::move(callback));
+}
 void ThumbnailAPI::getRating(int levelId, std::string const& username, std::string const& thumbnailId, geode::CopyableFunction<void(bool success, float average, int count, int userVote)> callback) {
     ThumbnailTransportClient::get().getRating(levelId, username, thumbnailId, std::move(callback));
 }
@@ -187,4 +191,3 @@ void ThumbnailAPI::uploadProfileConfig(int accountID, ProfileConfig const& confi
 void ThumbnailAPI::downloadProfileConfig(int accountID, geode::CopyableFunction<void(bool success, ProfileConfig const& config)> callback) {
     ProfileImageService::get().downloadProfileConfig(accountID, std::move(callback));
 }
-

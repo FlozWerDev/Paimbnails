@@ -933,16 +933,50 @@ void PetConfigPopup::applyLive() {
     auto& pet = PetManager::get();
     pet.applyConfigLive();
 
-    // attach/detach based on enabled
     auto scene = CCDirector::sharedDirector()->getRunningScene();
-    if (pet.config().enabled) {
-        if (!pet.isAttached() && scene) {
-            pet.attachToScene(scene);
-        }
+    if (pet.config().enabled && scene) {
+        // attachToScene is idempotent: if already on this scene
+        // it refreshes visibility; otherwise it reattaches.
+        pet.attachToScene(scene);
     } else {
         pet.detachFromScene();
     }
 
+}
+
+void PetConfigPopup::refreshIconStateLabels() {
+    static const char* stateNames[] = {"Idle", "Walk", "Sleep", "React"};
+    static const PetIconState stateEnums[] = {
+        PetIconState::Idle,
+        PetIconState::Walk,
+        PetIconState::Sleep,
+        PetIconState::React,
+    };
+
+    if (!m_advancedScroll || !m_advancedScroll->m_contentLayer) return;
+
+    auto* sc = m_advancedScroll->m_contentLayer;
+    for (int i = 0; i < 4; ++i) {
+        CCLabelBMFont* lbl = nullptr;
+        if (auto* direct = sc->getChildByTag(600 + i)) {
+            lbl = typeinfo_cast<CCLabelBMFont*>(direct);
+        }
+        if (!lbl) {
+            for (auto* child : CCArrayExt<CCNode*>(sc->getChildren())) {
+                if (!child) continue;
+                if (auto* nested = child->getChildByTag(600 + i)) {
+                    lbl = typeinfo_cast<CCLabelBMFont*>(nested);
+                    if (lbl) break;
+                }
+            }
+        }
+        if (!lbl) continue;
+
+        std::string currentImg = PetManager::get().getIconStateImage(stateEnums[i]);
+        std::string displayText = fmt::format("{}: {}", stateNames[i],
+            currentImg.empty() ? "(default)" : currentImg);
+        lbl->setString(displayText.c_str());
+    }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1519,7 +1553,15 @@ void PetConfigPopup::onParticleColorPicked(CCObject*) {
 
         // update color preview
         if (auto* sc = m_advancedScroll ? m_advancedScroll->m_contentLayer : nullptr) {
-            if (auto* preview = sc->getChildByID("particle-color-preview"_spr)) {
+            auto* preview = sc->getChildByID("particle-color-preview"_spr);
+            if (!preview) {
+                for (auto* child : CCArrayExt<CCNode*>(sc->getChildren())) {
+                    if (!child) continue;
+                    preview = child->getChildByID("particle-color-preview"_spr);
+                    if (preview) break;
+                }
+            }
+            if (preview) {
                 if (auto* layerColor = typeinfo_cast<CCLayerColor*>(preview)) {
                     layerColor->setColor(cfg.particleColor);
                 }
@@ -1572,6 +1614,8 @@ void PetConfigPopup::onSetIconStateImage(CCObject* sender) {
         if (!filename.empty()) {
             PetManager::get().setIconStateImage(state, filename);
             PaimonNotify::create("Icon state image set!", NotificationIcon::Success)->show();
+            static_cast<PetConfigPopup*>(popup.data())->refreshIconStateLabels();
+            static_cast<PetConfigPopup*>(popup.data())->refreshGallery();
         } else {
             PaimonNotify::create("Failed to add image", NotificationIcon::Error)->show();
         }

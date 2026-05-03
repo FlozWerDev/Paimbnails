@@ -3339,10 +3339,9 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (paimon::hooks::g_suppressLevelCellEnhancements) {
             return;
         }
-        if (isInsideLevelListLayerContext()) {
-            return;
+        if (!isInsideLevelListLayerContext()) {
+            applyCompactLayoutAdjustments();
         }
-        applyCompactLayoutAdjustments();
         applyTransparentMode();
         log::debug("[LevelCell] loadCustomLevelCell levelID={} compact={}", m_level ? m_level->m_levelID.value() : 0, m_compactView);
         tryLoadThumbnail();
@@ -3357,9 +3356,6 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_cachedCompactMode = m_compactView;
         }
         if (paimon::hooks::g_suppressLevelCellEnhancements) {
-            return;
-        }
-        if (isInsideLevelListLayerContext()) {
             return;
         }
         applyTransparentMode();

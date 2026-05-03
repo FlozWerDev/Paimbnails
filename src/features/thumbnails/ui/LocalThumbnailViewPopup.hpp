@@ -44,6 +44,7 @@ public:
 protected:
     int32_t m_levelID = 0;
     bool m_canAcceptUpload = false;
+    bool m_isAdmin = false;
     geode::Ref<CCTexture2D> m_thumbnailTexture = nullptr;
     cocos2d::CCNode* m_clippingNode = nullptr;
     CCNode* m_thumbnailSprite = nullptr;
@@ -92,6 +93,8 @@ protected:
     CCMenuItemSpriteExtra* m_refreshBtn = nullptr;
     CCLabelBMFont* m_counterLabel = nullptr;
     NavDirection m_navDirection = NavDirection::None;
+
+    CCMenuItemSpriteExtra* m_orderEditBtn = nullptr;
 
     // video playback
     cocos2d::CCMenu* m_playBtnMenu = nullptr;
@@ -142,6 +145,10 @@ protected:
     void updateRefreshButtonState();
     void startRefreshCooldown();
     void onPlayVideo(CCObject*);
+    void updateOrderUiState();
+    void replaceRemoteThumbnails(std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs, std::string const& preferredId = "");
+    void ensureOrderControls(float contentWidth);
+    void onOrderEdit(CCObject*);
     void updatePlayButton();
 
     // declarada aqui, implementada en LevelInfoLayer.cpp (necesita PaimonLevelInfoLayer)
@@ -175,4 +182,3 @@ public:
 
 // funcion exportada, usada desde VerificationCenterLayer y otros
 CCNode* createThumbnailViewPopup(int32_t levelID, bool canAcceptUpload, std::vector<Suggestion> const& suggestions);
-

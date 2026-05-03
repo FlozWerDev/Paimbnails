@@ -205,6 +205,7 @@ protected:
 public:
     void applyLive();
     void refreshVisibleLayerControls();
+    void refreshIconStateLabels();
 
     static PetConfigPopup* create();
 };

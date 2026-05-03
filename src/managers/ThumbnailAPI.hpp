@@ -251,6 +251,7 @@ public:
      * @param callback Callback with success status
      */
     void deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username, int accountID, ActionCallback callback);
+    void reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, ActionCallback callback);
     
     // configuracion
     void setServerEnabled(bool enabled);

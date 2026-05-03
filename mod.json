@@ -41,12 +41,24 @@
       "description": "Shows a preview of search results as you type in the level search.",
       "default": false
     },
+    "realtime-search-debounce-ms": {
+      "type": "int",
+      "name": "Realtime Search Delay (ms)",
+      "description": "Wait time before searching while you type. Lower values feel faster but can trigger rate limits.",
+      "default": 350,
+      "min": 100,
+      "max": 1000,
+      "enable-if": "realtime-search-preview",
+      "control": {
+        "slider": true
+      }
+    },
     "language": {
       "type": "string",
       "name": "Language / Idioma",
       "description": "Select language / Seleccionar idioma",
       "default": "english",
-      "one-of": ["spanish", "english"]
+      "one-of": ["spanish", "english", "portuguese", "french", "german", "russian", "japanese"]
     },
     "dynamic-song": {
       "type": "bool",
@@ -381,6 +393,63 @@
       "description": "UI Customization",
       "type": "title"
     },
+    "main-menu-layout-keybind": {
+      "type": "keybind",
+      "name": "Main Menu Layout Editor",
+      "description": "Open or save the main menu button layout editor.",
+      "default": "Ctrl+Q",
+      "category": "universal",
+      "allow-in-text-inputs": false
+    },
+    "main-menu-layout-grid-snap": {
+      "type": "bool",
+      "name": "Main Menu Grid Snap",
+      "description": "Snap main menu buttons to the editor grid while dragging.",
+      "default": true
+    },
+    "main-menu-layout-grid-size": {
+      "type": "int",
+      "name": "Main Menu Grid Size",
+      "description": "Grid size used by the main menu layout editor.",
+      "default": 10,
+      "min": 4,
+      "max": 40,
+      "enable-if": "main-menu-layout-grid-snap",
+      "control": {
+        "slider": true
+      }
+    },
+    "main-menu-layout-snap-distance": {
+      "type": "int",
+      "name": "Main Menu Snap Distance",
+      "description": "Snap distance in pixels for the main menu layout editor.",
+      "default": 10,
+      "min": 2,
+      "max": 32,
+      "control": {
+        "slider": true
+      }
+    },
+    "main-menu-layout-show-guides": {
+      "type": "bool",
+      "name": "Main Menu Layout Guides",
+      "description": "Show alignment guides while editing the main menu layout.",
+      "default": true
+    },
+    "main-menu-layout-snap-to-edges": {
+      "type": "bool",
+      "name": "Main Menu Edge Snap",
+      "description": "Snap main menu buttons to screen edges and matching button edges.",
+      "default": true
+    },
+    "main-menu-layout-reset": {
+      "type": "button",
+      "name": "Reset Main Menu Layout",
+      "description": "Delete the saved custom layout and restore the base menu button positions.",
+      "buttons": {
+        "run": "Reset Layout"
+      }
+    },
     "profile-img-zlayer": {
       "type": "int",
       "name": "Profile Image Z-Layer",
@@ -546,7 +615,7 @@
       "type": "bool",
       "name": "Clear Cache on Exit",
       "description": "Delete downloaded thumbnails when the game closes. Next session will re-download them. Keeps storage clean for other users.",
-      "default": true
+      "default": false
     },
     "enable-debug-logs": {
       "type": "bool",

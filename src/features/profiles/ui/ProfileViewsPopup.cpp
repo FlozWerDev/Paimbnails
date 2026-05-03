@@ -6,12 +6,44 @@
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/InfoButton.hpp"
 #include <Geode/binding/GameManager.hpp>
+#include <algorithm>
+#include <unordered_map>
 #include <ctime>
 #include <iomanip>
 #include <sstream>
 
 using namespace geode::prelude;
 using paimon::forum::ProfileView;
+
+static std::vector<ProfileView> dedupeViewsByLatest(std::vector<ProfileView> const& views) {
+    std::unordered_map<std::string, ProfileView> latestByUser;
+    latestByUser.reserve(views.size());
+
+    for (auto const& view : views) {
+        std::string key;
+        if (view.viewerAccountID > 0) {
+            key = fmt::format("id:{}", view.viewerAccountID);
+        } else {
+            key = fmt::format("name:{}", view.viewerUsername);
+        }
+
+        auto it = latestByUser.find(key);
+        if (it == latestByUser.end() || view.viewedAt >= it->second.viewedAt) {
+            latestByUser[key] = view;
+        }
+    }
+
+    std::vector<ProfileView> uniqueViews;
+    uniqueViews.reserve(latestByUser.size());
+    for (auto const& [_, view] : latestByUser) {
+        uniqueViews.push_back(view);
+    }
+
+    std::sort(uniqueViews.begin(), uniqueViews.end(), [](ProfileView const& a, ProfileView const& b) {
+        return a.viewedAt > b.viewedAt;
+    });
+    return uniqueViews;
+}
 
 ProfileViewsPopup* ProfileViewsPopup::create(int accountID) {
     auto ret = new ProfileViewsPopup();
@@ -103,14 +135,15 @@ void ProfileViewsPopup::loadViews() {
 }
 
 void ProfileViewsPopup::buildViewsList(const std::vector<ProfileView>& views) {
+    auto uniqueViews = dedupeViewsByLatest(views);
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
     if (m_countLabel) {
-        if (views.empty()) {
+        if (uniqueViews.empty()) {
             m_countLabel->setString("No views yet");
         } else {
-            m_countLabel->setString(fmt::format("{} view{}", views.size(), views.size() == 1 ? "" : "s").c_str());
+            m_countLabel->setString(fmt::format("{} view{}", uniqueViews.size(), uniqueViews.size() == 1 ? "" : "s").c_str());
         }
     }
 
@@ -120,7 +153,7 @@ void ProfileViewsPopup::buildViewsList(const std::vector<ProfileView>& views) {
     float scrollY = 10.f;
 
     std::vector<CCNode*> cells;
-    for (auto const& v : views) {
+    for (auto const& v : uniqueViews) {
         auto cell = createViewCell(v.viewerUsername, v.viewedAt, scrollW);
         if (cell) cells.push_back(cell);
     }

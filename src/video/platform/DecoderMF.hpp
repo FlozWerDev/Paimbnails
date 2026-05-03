@@ -56,6 +56,7 @@ private:
     bool               m_dxvaEnabled = false;
     int                m_dxvaReadbackFailures = 0;
     UINT               m_resetToken = 0;
+    std::mutex         m_d3dCtxMutex;  // serialises context ops vs DXVA decode (AMD fix)
 
     VideoRingBuffer    m_ring;
     std::string        m_videoPath;
@@ -67,6 +68,11 @@ private:
 
     std::atomic<bool>  m_decoding{false};
     std::atomic<bool>  m_finished{false};
+    /// Set to true if timedJoin() detached the decode thread due to a timeout.
+    /// When this flag is set, closeInternal() must NOT call Release() on any
+    /// COM/D3D object the thread may still be accessing — null out pointers
+    /// instead and let the OS reclaim them at process exit.
+    std::atomic<bool>  m_decodeThreadDetached{false};
     std::thread        m_thread;
 };
 

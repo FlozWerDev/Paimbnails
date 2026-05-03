@@ -1426,8 +1426,12 @@ void ProfilePicEditorPopup::rebuildPreview() {
             if (gif) imageNode = gif;
         }
         if (!imageNode) {
-            auto* sprite = CCSprite::create(bgPath.c_str());
-            if (sprite) imageNode = sprite;
+            auto loaded = ImageLoadHelper::loadStaticImage(std::filesystem::path(bgPath), 16);
+            if (loaded.success && loaded.texture) {
+                auto* sprite = CCSprite::createWithTexture(loaded.texture);
+                loaded.texture->release();
+                if (sprite) imageNode = sprite;
+            }
         }
     }
 

@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <set>
+#include <unordered_map>
 #include <functional>
 
 // ────────────────────────────────────────────────────────────
@@ -201,6 +202,7 @@ public:
     void update(float dt);
     void attachToScene(cocos2d::CCScene* scene);
     void detachFromScene();
+    void refreshVisibility();
     void releaseSharedResources();
 
     // config
@@ -238,6 +240,7 @@ public:
     // game event reactions
     void triggerReaction(std::string const& eventType);  // "level_complete", "death", "practice_exit"
     void triggerClickReaction(cocos2d::CCPoint clickPos);
+    void registerClick(cocos2d::CCPoint clickPos);
 
     // speech bubbles
     void showSpeechBubble(std::string const& message);
@@ -299,10 +302,17 @@ private:
     float m_particleAccum = 0.f;    // accumulator for particle emission
 
     // click detection state
-    bool  m_mouseWasDown = false;   // tracks previous frame mouse state for click detection
+    std::unordered_map<std::string, geode::Ref<cocos2d::CCTexture2D>> m_staticTextureCache;
+    std::string m_activeImageFile;
+    std::vector<cocos2d::CCPoint> m_pendingClicks;
 
     // helpers
     std::filesystem::path configPath() const;
+    std::string resolveImageFileForState(PetIconState state) const;
+    std::string resolveCurrentImageFile() const;
+    void purgeCachedImage(std::string const& filename);
+    cocos2d::CCSprite* createSpriteForImage(std::string const& imageFile);
+    bool switchSpriteToImage(std::string const& imageFile);
     void createPetSprite();
     void createShadow();
     void updateShadow();
@@ -320,4 +330,3 @@ private:
     void updateWalkAnimation(float dt);
     void updateTrail();
 };
-

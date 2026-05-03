@@ -10,6 +10,7 @@
 #include "../services/LayerBackgroundManager.hpp"
 #include "../../transitions/services/TransitionManager.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -314,8 +315,12 @@ void BackgroundConfigPopup::onCustomImage(CCObject*) {
         auto pathOpt = std::move(result).unwrapOr(std::nullopt);
         if (!pathOpt || pathOpt->empty()) return;
 
-        auto pathStr = geode::utils::string::pathToString(*pathOpt);
-        std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
+        auto imported = paimon::assets::importToBucket(*pathOpt, "background_menu", paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            return;
+        }
+        auto pathStr = paimon::assets::normalizePathString(imported.path);
 
         // Escribir en formato unificado
         LayerBgConfig cfg = LayerBackgroundManager::get().getConfig("menu");
@@ -338,8 +343,12 @@ void BackgroundConfigPopup::onCustomVideo(CCObject*) {
         auto pathOpt = std::move(result).unwrapOr(std::nullopt);
         if (!pathOpt || pathOpt->empty()) return;
 
-        auto pathStr = geode::utils::string::pathToString(*pathOpt);
-        std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
+        auto imported = paimon::assets::importToBucket(*pathOpt, "background_menu", paimon::assets::Kind::Video);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import video", NotificationIcon::Error)->show();
+            return;
+        }
+        auto pathStr = paimon::assets::normalizePathString(imported.path);
 
         LayerBgConfig cfg = LayerBackgroundManager::get().getConfig("menu");
         cfg.type = "video";
@@ -502,8 +511,12 @@ void BackgroundConfigPopup::onProfileCustomImage(CCObject*) {
         auto pathOpt = std::move(result).unwrapOr(std::nullopt);
         if (!pathOpt || pathOpt->empty()) return;
 
-        auto pathStr = geode::utils::string::pathToString(*pathOpt);
-        std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
+        auto imported = paimon::assets::importToBucket(*pathOpt, "profile_picture", paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            return;
+        }
+        auto pathStr = paimon::assets::normalizePathString(imported.path);
 
         Mod::get()->setSavedValue<std::string>("profile-bg-type", "custom");
         Mod::get()->setSavedValue<std::string>("profile-bg-path", pathStr);
@@ -700,8 +713,12 @@ void BackgroundConfigPopup::onLayerCustomImage(CCObject*) {
         auto pathOpt = std::move(result).unwrapOr(std::nullopt);
         if (!pathOpt || pathOpt->empty()) return;
 
-        auto pathStr = geode::utils::string::pathToString(*pathOpt);
-        std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
+        auto imported = paimon::assets::importToBucket(*pathOpt, "background_" + layerKey, paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            return;
+        }
+        auto pathStr = paimon::assets::normalizePathString(imported.path);
 
         LayerBgConfig cfg = LayerBackgroundManager::get().getConfig(layerKey);
         cfg.type = "custom";
@@ -720,8 +737,12 @@ void BackgroundConfigPopup::onLayerCustomVideo(CCObject*) {
         auto pathOpt = std::move(result).unwrapOr(std::nullopt);
         if (!pathOpt || pathOpt->empty()) return;
 
-        auto pathStr = geode::utils::string::pathToString(*pathOpt);
-        std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
+        auto imported = paimon::assets::importToBucket(*pathOpt, "background_" + layerKey, paimon::assets::Kind::Video);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import video", NotificationIcon::Error)->show();
+            return;
+        }
+        auto pathStr = paimon::assets::normalizePathString(imported.path);
 
         LayerBgConfig cfg = LayerBackgroundManager::get().getConfig(layerKey);
         cfg.type = "video";
@@ -788,4 +809,3 @@ void BackgroundConfigPopup::onLayerDarkIntensity(CCObject*) {
     cfg.darkIntensity = m_layerDarkSlider->getValue();
     LayerBackgroundManager::get().saveConfig(m_selectedLayerKey, cfg);
 }
-

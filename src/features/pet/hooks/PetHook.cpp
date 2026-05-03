@@ -53,14 +53,14 @@ public:
         auto scene = CCDirector::sharedDirector()->getRunningScene();
         if (!scene) return;
 
-        if (!pet.shouldShowOnCurrentScene()) {
-            if (pet.isAttached()) pet.detachFromScene();
-            return;
-        }
-
-        if (!pet.isAttached()) {
-            pet.attachToScene(scene);
-        }
+        // Always keep the pet attached to the current scene.
+        // If the scene changed (parent lost), reattach.
+        // Visibility is handled inside update() and attachToScene() via
+        // shouldShowOnCurrentScene(), so we never need to detach just
+        // because the pet shouldn't be visible on a particular layer.
+        // attachToScene is idempotent: if already on this scene it just
+        // refreshes visibility; if the scene changed it reattaches.
+        pet.attachToScene(scene);
     }
 };
 
@@ -110,7 +110,13 @@ class $modify(PetPlayLayerHook, PlayLayer) {
 class $modify(PetPlayerObjectHook, PlayerObject) {
     void playerDestroyed(bool p0) {
         PlayerObject::playerDestroyed(p0);
-        PetManager::get().triggerReaction("death");
+        auto* pl = PlayLayer::get();
+        if (!pl) return;
+
+        // Trigger once per death sequence using the primary player in dual mode.
+        if (this == pl->m_player1) {
+            PetManager::get().triggerReaction("death");
+        }
     }
 };
 

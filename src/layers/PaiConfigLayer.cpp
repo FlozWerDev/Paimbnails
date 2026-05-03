@@ -22,6 +22,7 @@
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/ImageLoadHelper.hpp"
+#include "../utils/LocalAssetStore.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../core/QualityConfig.hpp"
 #include "../video/VideoPlayer.hpp"
@@ -786,9 +787,13 @@ void PaiConfigLayer::rebuildProfilePreview() {
     }
 
     if (!imageNode) {
-        auto sprite = CCSprite::create(path.c_str());
-        if (sprite) {
-            imageNode = sprite;
+        auto loaded = ImageLoadHelper::loadStaticImage(std::filesystem::path(path), 16);
+        if (loaded.success && loaded.texture) {
+            auto sprite = CCSprite::createWithTexture(loaded.texture);
+            loaded.texture->release();
+            if (sprite) {
+                imageNode = sprite;
+            }
         }
     }
 
@@ -1025,10 +1030,10 @@ void PaiConfigLayer::rebuildBgPreview() {
         }
 
         // Static image
-        CCTextureCache::sharedTextureCache()->removeTextureForKey(cfg.customPath.c_str());
-        auto* tex = CCTextureCache::sharedTextureCache()->addImage(cfg.customPath.c_str(), false);
-        if (tex) {
-            addTextureToPreview(tex);
+        auto loaded = ImageLoadHelper::loadStaticImage(std::filesystem::path(cfg.customPath), 24);
+        if (loaded.success && loaded.texture) {
+            addTextureToPreview(loaded.texture);
+            loaded.texture->release();
             addDarkOverlay();
         } else {
             showPlaceholder(tr("pai.config.preview.load_error", "Load\nerror").c_str(), {255, 100, 100});
@@ -1224,10 +1229,10 @@ void PaiConfigLayer::rebuildBgPreview() {
                 });
                 return;
             }
-            CCTextureCache::sharedTextureCache()->removeTextureForKey(resolvedCfg.customPath.c_str());
-            auto* resolvedTex = CCTextureCache::sharedTextureCache()->addImage(resolvedCfg.customPath.c_str(), false);
-            if (resolvedTex) {
-                addTextureToPreview(resolvedTex);
+            auto loaded = ImageLoadHelper::loadStaticImage(std::filesystem::path(resolvedCfg.customPath), 24);
+            if (loaded.success && loaded.texture) {
+                addTextureToPreview(loaded.texture);
+                loaded.texture->release();
                 addDarkOverlay();
                 return;
             }
@@ -1296,8 +1301,12 @@ void PaiConfigLayer::onBgCustomImage(CCObject*) {
         auto pathOpt = std::move(result).unwrapOr(std::nullopt);
         if (!pathOpt || pathOpt->empty()) return;
 
-        auto pathStr = geode::utils::string::replace(
-            geode::utils::string::pathToString(*pathOpt), "\\", "/");
+        auto imported = paimon::assets::importToBucket(*pathOpt, "background_" + key, paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            return;
+        }
+        auto pathStr = paimon::assets::normalizePathString(imported.path);
         auto cfg = LayerBackgroundManager::get().getConfig(key);
         cfg.type = "custom"; cfg.customPath = pathStr;
         LayerBackgroundManager::get().saveConfig(key, cfg);
@@ -1315,8 +1324,12 @@ void PaiConfigLayer::onBgVideo(CCObject*) {
         auto pathOpt = std::move(result).unwrapOr(std::nullopt);
         if (!pathOpt || pathOpt->empty()) return;
 
-        auto pathStr = geode::utils::string::replace(
-            geode::utils::string::pathToString(*pathOpt), "\\", "/");
+        auto imported = paimon::assets::importToBucket(*pathOpt, "background_" + key, paimon::assets::Kind::Video);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import video", NotificationIcon::Error)->show();
+            return;
+        }
+        auto pathStr = paimon::assets::normalizePathString(imported.path);
 
         // Check if another layer already has a different video configured
         auto conflictLayer = LayerBackgroundManager::get().hasOtherVideoConfigured(key, pathStr);
@@ -1449,8 +1462,12 @@ void PaiConfigLayer::onProfileImage(CCObject*) {
         auto pathOpt = std::move(result).unwrapOr(std::nullopt);
         if (!pathOpt || pathOpt->empty()) return;
 
-        auto pathStr = geode::utils::string::replace(
-            geode::utils::string::pathToString(*pathOpt), "\\", "/");
+        auto imported = paimon::assets::importToBucket(*pathOpt, "profile_picture", paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            return;
+        }
+        auto pathStr = paimon::assets::normalizePathString(imported.path);
         Mod::get()->setSavedValue<std::string>("profile-bg-type", "custom");
         Mod::get()->setSavedValue<std::string>("profile-bg-path", pathStr);
         (void)Mod::get()->saveData();

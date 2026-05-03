@@ -11,10 +11,22 @@
 
 namespace paimon {
 
-/// Attempt to join a thread within a timeout. If the thread doesn't finish
-/// in time, it is detached instead so the caller never blocks indefinitely.
-/// Returns true if the thread was joined, false if it was detached.
-inline bool timedJoin(std::thread& t, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+/// Attempt to join a thread within a timeout.
+///
+/// If the thread finishes within the timeout, it is joined and this returns
+/// true. If the timeout expires, the thread is detached and this returns
+/// false. In either case, the caller is unblocked.
+///
+/// IMPORTANT — if this returns false (thread detached):
+///   The detached thread may still be running and accessing shared resources.
+///   The caller MUST NOT release any resource that the detached thread could
+///   still be using. Prefer nulling out pointers and letting the OS reclaim
+///   resources on process exit rather than calling destructors / Release().
+///
+/// @param cancelFlag  Optional. If provided, it is set to true before
+///   detaching so the thread can observe the cancellation signal and stop
+///   early. The thread must check this flag periodically.
+inline bool timedJoin(std::thread& t, std::chrono::milliseconds timeout = std::chrono::seconds(3), std::atomic<bool>* cancelFlag = nullptr) {
     if (!t.joinable()) return true;
 
     // During DLL_PROCESS_DETACH (game exit), thread creation and
@@ -33,6 +45,7 @@ inline bool timedJoin(std::thread& t, std::chrono::milliseconds timeout = std::c
             return true;
         }
         geode::log::warn("[TimedJoin] Thread did not finish in {}ms (result={}), detaching", timeout.count(), result);
+        if (cancelFlag) cancelFlag->store(true, std::memory_order_release);
         if (t.joinable()) t.detach();
         return false;
 #else
@@ -47,6 +60,7 @@ inline bool timedJoin(std::thread& t, std::chrono::milliseconds timeout = std::c
 
         if (future.wait_for(timeout) == std::future_status::timeout) {
             geode::log::warn("[TimedJoin] Thread did not finish in {}ms, detaching", timeout.count());
+            if (cancelFlag) cancelFlag->store(true, std::memory_order_release);
             if (t.joinable()) t.detach();
             // helper may be stuck in t.join() — detach to avoid blocking here
             if (helper.joinable()) helper.detach();
@@ -60,6 +74,7 @@ inline bool timedJoin(std::thread& t, std::chrono::milliseconds timeout = std::c
         // DLL_PROCESS_DETACH or similar teardown — thread primitives
         // are unavailable. Best we can do is detach and move on.
         geode::log::warn("[TimedJoin] system_error during join (process teardown?): {}, detaching", e.what());
+        if (cancelFlag) cancelFlag->store(true, std::memory_order_release);
         if (t.joinable()) t.detach();
         return false;
     }

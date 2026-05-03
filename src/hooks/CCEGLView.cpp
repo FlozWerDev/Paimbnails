@@ -1,6 +1,7 @@
 #include <Geode/modify/CCEGLView.hpp>
 #include <Geode/loader/Log.hpp>
 #include "../features/capture/services/FramebufferCapture.hpp"
+#include "../features/pet/services/PetManager.hpp"
 #include "../blur/BlurSystem.hpp"
 
 using namespace geode::prelude;
@@ -28,5 +29,17 @@ class $modify(CaptureView, CCEGLView) {
         // Invalida FBOs de blur al redimensionar
         BlurSystem::getInstance()->onWindowResized(
             static_cast<int>(w), static_cast<int>(h));
+    }
+
+    void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {
+        CCEGLView::handleTouchesBegin(num, ids, xs, ys, timestamp);
+
+        if (!PetManager::get().config().enableClickInteraction) {
+            return;
+        }
+
+        for (int i = 0; i < num; ++i) {
+            PetManager::get().registerClick({xs[i], ys[i]});
+        }
     }
 };

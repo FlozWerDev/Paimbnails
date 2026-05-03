@@ -4,6 +4,8 @@
 #include <Geode/cocos/draw_nodes/CCDrawNode.h>
 #include <Geode/cocos/textures/CCTexture2D.h>
 #include <Geode/utils/cocos.hpp>
+#include <cmath>
+#include <vector>
 
 using cocos2d::CCDrawNode;
 using cocos2d::CCTexture2D;
@@ -51,6 +53,21 @@ public:
         }
         CC_SAFE_DELETE(node);
         return nullptr;
+    }
+
+    void drawSolidCircle(cocos2d::CCPoint center, float radius, cocos2d::ccColor4F const& fillColor, unsigned int segments = 48) {
+        if (segments < 3 || radius <= 0.f) return;
+
+        constexpr float kPi = 3.14159265358979323846f;
+        std::vector<cocos2d::CCPoint> verts;
+        verts.reserve(segments);
+
+        for (unsigned int i = 0; i < segments; ++i) {
+            float angle = 2.f * kPi * static_cast<float>(i) / static_cast<float>(segments);
+            verts.emplace_back(center.x + radius * cosf(angle), center.y + radius * sinf(angle));
+        }
+
+        this->drawPolygon(verts.data(), static_cast<unsigned int>(verts.size()), fillColor, 0.f, cocos2d::ccc4f(0.f, 0.f, 0.f, 0.f));
     }
 
     void draw() override {

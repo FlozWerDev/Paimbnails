@@ -1,5 +1,6 @@
 #pragma once
 #include <Geode/Geode.hpp>
+#include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include "../features/forum/services/ForumApi.hpp"
 #include "../utils/PaimonLoadingOverlay.hpp"
 
@@ -17,6 +18,16 @@ protected:
     cocos2d::CCMenu* m_homeMenu = nullptr;
     cocos2d::CCMenu* m_newsMenu = nullptr;
     cocos2d::CCMenu* m_forumMenu = nullptr;
+    cocos2d::CCMenu* m_homeCategoryMenu = nullptr;
+    cocos2d::CCMenu* m_homeActionsMenu = nullptr;
+    cocos2d::CCNode* m_homeActionsAnchor = nullptr;
+    geode::ScrollLayer* m_homeSettingsScroll = nullptr;
+    cocos2d::CCLabelBMFont* m_homeCategoryTitle = nullptr;
+    cocos2d::CCLabelBMFont* m_homeCategoryDesc = nullptr;
+    CCMenuItemSpriteExtra* m_homeCategoryInfoBtn = nullptr;
+    std::vector<CCMenuItemSpriteExtra*> m_homeCategoryBtns;
+    int m_homeSelectedCategory = 0;
+    float m_homeCategorySelectorY = 0.f;
 
     int m_currentTab = 0;
     std::vector<CCMenuItemSpriteExtra*> m_tabBtns;
@@ -71,7 +82,15 @@ protected:
     void buildHomeTab();
     void buildNewsTab();
     void buildForumTab();
+    void refreshHomeCategorySelector();
+    void switchHomeCategory(int idx);
+    void rebuildHomeCategoryCards();
+    void rebuildHomeCategorySettings();
+    void onPrevHomeCategory(cocos2d::CCObject*);
+    void onNextHomeCategory(cocos2d::CCObject*);
+    void onOpenHelp(cocos2d::CCObject*);
 
+public:
     void onOpenConfig(cocos2d::CCObject*);
     void onOpenProfiles(cocos2d::CCObject*);
     void onOpenBackgrounds(cocos2d::CCObject*);
@@ -80,9 +99,10 @@ protected:
     void onCheckUpdate(cocos2d::CCObject*);
     void onBack(cocos2d::CCObject*);
 
+protected:
+
     // Refresca el color/etiqueta del boton de update segun el estado actual
     void refreshUpdateButton();
-    CCMenuItemSpriteExtra* m_updateBtn = nullptr;
     cocos2d::CCLabelBMFont* m_versionLabel = nullptr;
 
     void onRefreshNews(cocos2d::CCObject*);

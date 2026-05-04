@@ -95,7 +95,7 @@ bool ProfileSettingsPopup::init(int accountID) {
         m_mainLayer->addChild(label);
     }
 
-    // Boton de Comment BG (deshabilitado - saldra en 1.0.1)
+    // Boton de Comment BG (deshabilitado - saldra en 1.1.0)
     {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_colorBtn_001.png");
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_paintBtn_001.png");

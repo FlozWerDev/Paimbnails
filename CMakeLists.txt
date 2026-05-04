@@ -11,7 +11,7 @@ endif()
 
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
-project(Paimbnails VERSION 1.0.0)
+project(Paimbnails VERSION 1.0.1)
 
 # ─────────────────────────────────────────────────────────────
 # CPM

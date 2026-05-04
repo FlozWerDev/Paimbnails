@@ -486,7 +486,7 @@ private:
             {"community.tab_thumbnails", "Top Miniaturas"},
             {"community.tab_compat_mods", "Mods Compat."},
             {"community.compat_mods_title", "Mods Compatibles"},
-            {"community.compat_mods_version", "Disponible para la version 1.0.1"},
+            {"community.compat_mods_version", "Disponible para la version 1.1.0"},
             {"community.compat_mods_desc", "Lista de mods compatibles con Paimbnails"},
             {"community.compat_mods_soon", "Mas mods proximamente..."},
             // CommunityHub info buttons
@@ -497,7 +497,7 @@ private:
             {"community.info_thumbs_title", "Top Miniaturas"},
             {"community.info_thumbs_body", "Las miniaturas mejor valoradas por la comunidad.\nPuedes votar las miniaturas desde la pantalla de nivel."},
             {"community.info_compat_title", "Mods Compatibles"},
-            {"community.info_compat_body", "Mods de Geometry Dash compatibles con Paimbnails.\nDisponible a partir de la version <cy>1.0.1</c>."},
+            {"community.info_compat_body", "Mods de Geometry Dash compatibles con Paimbnails.\nDisponible a partir de la version <cy>1.1.0</c>."},
             {"community.loading", "Cargando..."},
             {"community.error", "Error al cargar datos"},
             {"community.no_data", "Sin datos disponibles"},
@@ -723,7 +723,7 @@ private:
             {"profilesettings.info_title", "Ajustes de Perfil"},
             {"profilesettings.info_body", "<cj>Musica</c>: Cancion de perfil.\n<cg>Fondo Perfil</c>: Imagen o video personalizado.\n<cy>Insignia</c>: Personaliza tu insignia de perfil.\n<cr>Comentario</c>: Fondo de tus comentarios."},
             {"profilesettings.comment_soon_title", "Proximamente"},
-            {"profilesettings.comment_soon_body", "La personalizacion de comentarios estara disponible en la version <cy>1.0.1</c>."},
+            {"profilesettings.comment_soon_body", "La personalizacion de comentarios estara disponible en la version <cy>1.1.0</c>."},
             {"profilesettings.info_ok", "OK"},
 
             // PauseLayer video
@@ -757,7 +757,7 @@ private:
             {"pai.hub.news.refreshed", "Noticias actualizadas!"},
             {"pai.hub.news.item1.title", "Bienvenido a Paimbnails!"},
             {"pai.hub.news.item1.desc", "Explora nuestro nuevo hub con secciones de noticias y foro."},
-            {"pai.hub.news.item2.title", "Version 1.0.1 Lanzada"},
+            {"pai.hub.news.item2.title", "Version 1.1.0 Lanzada"},
             {"pai.hub.news.item2.desc", "Nuevas funciones y correcciones de errores ya disponibles."},
             {"pai.hub.news.item3.title", "Perfiles Personalizados"},
             {"pai.hub.news.item3.desc", "Crea y comparte tus fotos de perfil personalizadas."},
@@ -1139,7 +1139,7 @@ private:
             {"community.tab_thumbnails", "Top Thumbnails"},
             {"community.tab_compat_mods", "Compat. Mods"},
             {"community.compat_mods_title", "Compatible Mods"},
-            {"community.compat_mods_version", "Available for version 1.0.1"},
+            {"community.compat_mods_version", "Available for version 1.1.0"},
             {"community.compat_mods_desc", "List of mods compatible with Paimbnails"},
             {"community.compat_mods_soon", "More mods coming soon..."},
             // CommunityHub info buttons
@@ -1150,7 +1150,7 @@ private:
             {"community.info_thumbs_title", "Top Thumbnails"},
             {"community.info_thumbs_body", "The highest-rated thumbnails by the community.\nYou can vote on thumbnails from the level info screen."},
             {"community.info_compat_title", "Compatible Mods"},
-            {"community.info_compat_body", "Geometry Dash mods compatible with Paimbnails.\nAvailable starting from version <cy>1.0.1</c>."},
+            {"community.info_compat_body", "Geometry Dash mods compatible with Paimbnails.\nAvailable starting from version <cy>1.1.0</c>."},
             {"community.loading", "Loading..."},
             {"community.error", "Failed to load data"},
             {"community.no_data", "No data available"},
@@ -1376,7 +1376,7 @@ private:
             {"profilesettings.info_title", "Profile Settings"},
             {"profilesettings.info_body", "<cj>Music</c>: Profile song.\n<cg>Profile Background</c>: Custom image or video.\n<cy>Badge</c>: Customize your profile badge.\n<cr>Comment</c>: Your comment background."},
             {"profilesettings.comment_soon_title", "Coming Soon"},
-            {"profilesettings.comment_soon_body", "Comment background customization will be available in version <cy>1.0.1</c>."},
+            {"profilesettings.comment_soon_body", "Comment background customization will be available in version <cy>1.1.0</c>."},
             {"profilesettings.info_ok", "OK"},
 
             // PauseLayer video
@@ -1410,7 +1410,7 @@ private:
             {"pai.hub.news.refreshed", "News refreshed!"},
             {"pai.hub.news.item1.title", "Welcome to Paimbnails!"},
             {"pai.hub.news.item1.desc", "Check out our new hub with news and forum sections."},
-            {"pai.hub.news.item2.title", "Version 1.0.1 Released"},
+            {"pai.hub.news.item2.title", "Version 1.1.0 Released"},
             {"pai.hub.news.item2.desc", "New features and bug fixes are now available."},
             {"pai.hub.news.item3.title", "Custom Profiles"},
             {"pai.hub.news.item3.desc", "Create and share your custom profile pictures."},

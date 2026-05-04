@@ -1,6 +1,6 @@
-# v1.0.0-alpha.1
+# v1.0.1
 
-Initial alpha release of Paimbnails 2.
+Release notes for Paimbnails 2 v1.0.1.
 
 **Thumbnails**
 - Thumbnail previews in level cells (LevelBrowserLayer, LevelSearchLayer)

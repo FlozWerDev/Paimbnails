@@ -678,7 +678,7 @@ void PaimonHubLayer::buildNewsTab() {
     std::vector<std::pair<std::string, std::string>> newsItems = {
         {tr("pai.hub.news.item1.title", "Welcome to Paimon Hub!"),
          tr("pai.hub.news.item1.desc", "Check out our new hub with news and forum sections.")},
-        {tr("pai.hub.news.item2.title", "Version 1.0.1 Released"),
+        {tr("pai.hub.news.item2.title", "Version 1.1.0 Released"),
          tr("pai.hub.news.item2.desc", "New features and bug fixes are now available.")},
         {tr("pai.hub.news.item3.title", "Custom Profiles"),
          tr("pai.hub.news.item3.desc", "Create and share your custom profile pictures.")},

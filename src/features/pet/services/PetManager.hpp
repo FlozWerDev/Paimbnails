@@ -249,6 +249,7 @@ public:
 
 private:
     PetManager() = default;
+    ~PetManager();
 
     PetConfig m_config;
 

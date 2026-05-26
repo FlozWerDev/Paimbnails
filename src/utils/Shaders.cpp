@@ -1,4 +1,5 @@
 #include "Shaders.hpp"
+#include "GLSLLoader.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/loader/Log.hpp>
 #include <algorithm>
@@ -8,6 +9,12 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 namespace Shaders {
+
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Fase 5 completada: todos los shaders procedurales migrados a
+// resources/shaders/*.glsl. Los literales inline fueron eliminados.
+// GLSLLoader carga desde disco con fail-fast (nullptr si falta el archivo).
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 CCGLProgram* getOrCreateShader(char const* key, char const* vertexSrc, char const* fragmentSrc) {
     auto shaderCache = CCShaderCache::sharedShaderCache();
@@ -39,16 +46,21 @@ void applyBlurPass(CCSprite* input, CCRenderTexture* output, CCGLProgram* progra
 
     program->use();
     program->setUniformsForBuiltins();
-    program->setUniformLocationWith2f(
-        program->getUniformLocationForName("u_screenSize"),
-        size.width, size.height
-    );
-    program->setUniformLocationWith1f(
-        program->getUniformLocationForName("u_radius"),
-        radius
-    );
+    GLint locScreen = program->getUniformLocationForName("u_screenSize");
+    if (locScreen != -1) {
+        program->setUniformLocationWith2f(locScreen, size.width, size.height);
+    }
+    GLint locRadius = program->getUniformLocationForName("u_radius");
+    if (locRadius != -1) {
+        program->setUniformLocationWith1f(locRadius, radius);
+    }
 
-    output->begin();
+    // IMPORTANT: CCRenderTexture::begin() no limpia el FBO. Cuando la textura
+    // fuente tiene pixeles con alpha < 1 (thumbnails custom, imagenes con
+    // transparencia) el alpha blending mezcla contra la memoria no inicializada
+    // del FBO â€” algunos drivers devuelven blanco, otros garbage. Esto producia
+    // celdas blancas aleatorias en LevelCells con thumbnails con transparencia.
+    output->beginWithClear(0.f, 0.f, 0.f, 0.f);
     input->visit();
     output->end();
 }
@@ -71,9 +83,9 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     texture->setTexParameters(&params);
 
-    // ── Optimization: downscale before blurring ──
+    // â”€â”€ Optimization: downscale before blurring â”€â”€
     // Blurring at full resolution (1920x1080) wastes GPU cycles.
-    // Scale down to at most 640px on the longest side — blur is a low-freq
+    // Scale down to at most 640px on the longest side â€” blur is a low-freq
     // operation so the result is visually identical, but much faster.
     constexpr float kMaxBlurDim = 1024.f;
     CCSize blurSize = targetSize;
@@ -93,8 +105,8 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
     srcSprite->setPosition(blurSize * 0.5f);
     srcSprite->setFlipY(true);
 
-    auto blurH = getOrCreateShader("blur-h-v2"_spr, vertexShaderCell, fragmentShaderHorizontal);
-    auto blurV = getOrCreateShader("blur-v-v2"_spr, vertexShaderCell, fragmentShaderVertical);
+    auto blurH = paimon::shaders::getBlurHorizontalShader();
+    auto blurV = paimon::shaders::getBlurVerticalShader();
 
     if (!blurH || !blurV) {
         srcSprite->setScale(std::max(targetSize.width / texture->getContentSize().width,
@@ -128,7 +140,10 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
 
     applyBlurPass(midSprite, rtB, blurV, blurSize, radius);
 
-    if (!useDirectRadius) {
+    // For low intensity (< 4.0), a single H+V pass is visually sufficient
+    // and cuts GPU work by 50%. High intensity benefits from the second pass
+    // to avoid visible banding / square artifacts.
+    if (!useDirectRadius && intensity >= 4.0f) {
         // Pass 2: second H+V pass for smoother blur
         auto mid2 = CCSprite::createWithTexture(rtB->getSprite()->getTexture());
         mid2->setFlipY(true);
@@ -155,16 +170,192 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
     return finalSprite;
 }
 
+CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, float intensity) {
+    // ── FIX (popup blur "un poco mas grande") ──
+    // Misma estructura que createBlurredSprite generico, PERO sin el clamp
+    // kMaxBlurDim=1024. Para popups necesitamos que el FBO final tenga
+    // EXACTAMENTE las dimensiones de winSize (= targetSize), asi el sprite
+    // final cubre la pantalla 1:1 sin necesidad de reescalado en
+    // buildBlurNode (que es lo que producia el "se ve mas grande").
+    //
+    // El costo perf es minimo: el blur es un H+V (o 2 pares H+V para
+    // intensidad alta) en FBOs de winSize. En winSize tipico ~569x320
+    // o ~1280x720 esto es perfectamente manejable. Solo se notaria en
+    // 4K (3840x2160), pero la mayoria de gente juega a 1080p o 1440p.
+    if (!texture) return nullptr;
+    if (targetSize.width <= 0.f || targetSize.height <= 0.f ||
+        targetSize.width > 4096.f || targetSize.height > 4096.f) return nullptr;
+
+    auto srcSprite = CCSprite::createWithTexture(texture);
+    if (!srcSprite) return nullptr;
+
+    ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
+    texture->setTexParameters(&params);
+
+    // SIN clamp: blurSize == targetSize (== winSize del popup).
+    CCSize blurSize = targetSize;
+
+    // Stretch source sprite a blurSize via setScaleX/Y independientes
+    // (modo "stretch", no "cover" — evita recortar bordes).
+    {
+        float texW = std::max(1.0f, srcSprite->getContentSize().width);
+        float texH = std::max(1.0f, srcSprite->getContentSize().height);
+        srcSprite->setScaleX(blurSize.width / texW);
+        srcSprite->setScaleY(blurSize.height / texH);
+    }
+    srcSprite->setAnchorPoint({0.5f, 0.5f});
+    srcSprite->setPosition(blurSize * 0.5f);
+    srcSprite->setFlipY(true);
+
+    auto blurH = paimon::shaders::getBlurHorizontalShader();
+    auto blurV = paimon::shaders::getBlurVerticalShader();
+    if (!blurH || !blurV) {
+        srcSprite->setPosition(targetSize * 0.5f);
+        return srcSprite;
+    }
+
+    auto rtA = CCRenderTexture::create(static_cast<int>(blurSize.width), static_cast<int>(blurSize.height));
+    auto rtB = CCRenderTexture::create(static_cast<int>(blurSize.width), static_cast<int>(blurSize.height));
+    if (!rtA || !rtB) {
+        srcSprite->setPosition(targetSize * 0.5f);
+        return srcSprite;
+    }
+
+    rtA->getSprite()->getTexture()->setTexParameters(&params);
+    rtB->getSprite()->getTexture()->setTexParameters(&params);
+
+    float radius = intensityToBlurRadius(std::clamp(intensity, 1.0f, 10.0f));
+    radius = std::min(radius, 0.55f);
+
+    applyBlurPass(srcSprite, rtA, blurH, blurSize, radius);
+
+    auto mid1 = CCSprite::createWithTexture(rtA->getSprite()->getTexture());
+    if (!mid1) return nullptr;
+    {
+        float texW = std::max(1.0f, mid1->getContentSize().width);
+        float texH = std::max(1.0f, mid1->getContentSize().height);
+        mid1->setScaleX(blurSize.width / texW);
+        mid1->setScaleY(blurSize.height / texH);
+    }
+    mid1->setFlipY(true);
+    mid1->setAnchorPoint({0.5f, 0.5f});
+    mid1->setPosition(blurSize * 0.5f);
+    mid1->getTexture()->setTexParameters(&params);
+    applyBlurPass(mid1, rtB, blurV, blurSize, radius);
+
+    if (intensity >= 4.0f) {
+        glFlush();
+
+        auto mid2 = CCSprite::createWithTexture(rtB->getSprite()->getTexture());
+        if (!mid2) return nullptr;
+        {
+            float texW = std::max(1.0f, mid2->getContentSize().width);
+            float texH = std::max(1.0f, mid2->getContentSize().height);
+            mid2->setScaleX(blurSize.width / texW);
+            mid2->setScaleY(blurSize.height / texH);
+        }
+        mid2->setFlipY(true);
+        mid2->setAnchorPoint({0.5f, 0.5f});
+        mid2->setPosition(blurSize * 0.5f);
+        mid2->getTexture()->setTexParameters(&params);
+        applyBlurPass(mid2, rtA, blurH, blurSize, radius * 0.8f);
+
+        auto mid3 = CCSprite::createWithTexture(rtA->getSprite()->getTexture());
+        if (!mid3) return nullptr;
+        {
+            float texW = std::max(1.0f, mid3->getContentSize().width);
+            float texH = std::max(1.0f, mid3->getContentSize().height);
+            mid3->setScaleX(blurSize.width / texW);
+            mid3->setScaleY(blurSize.height / texH);
+        }
+        mid3->setFlipY(true);
+        mid3->setAnchorPoint({0.5f, 0.5f});
+        mid3->setPosition(blurSize * 0.5f);
+        mid3->getTexture()->setTexParameters(&params);
+        applyBlurPass(mid3, rtB, blurV, blurSize, radius * 0.8f);
+    }
+
+    auto finalSprite = CCSprite::createWithTexture(rtB->getSprite()->getTexture());
+    if (!finalSprite) return nullptr;
+    finalSprite->setAnchorPoint({0.5f, 0.5f});
+    finalSprite->setFlipY(true);
+    finalSprite->getTexture()->setTexParameters(&params);
+    return finalSprite;
+}
+
+CCSprite* createPopupPaimonBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, float intensity) {
+    // ── FIX (popup blur "un poco mas grande" + thumbnail en esquina) ──
+    // Para popups necesitamos un sprite final con dimensiones EXACTAS de
+    // winSize. Forzamos siempre el upsample-blit a un FBO de targetSize,
+    // independientemente del contentSize del base. Esto garantiza que el
+    // sprite final tenga contentSize == targetSize y que cubra todo el
+    // popup correctamente cuando lo usa buildBlurNode.
+    //
+    // Antes habia un short-circuit que retornaba `base` directo cuando
+    // baseSize ~= targetSize. Pero ese path producia inconsistencias de
+    // contentSize (puntos logicos vs pixeles fisicos en FBOs con
+    // m_fInternalScaleX) y orientacion (flipY). El blit a FBO normaliza
+    // todo: el sprite final SIEMPRE tiene contentSize == targetSize y
+    // SIEMPRE tiene flipY=true.
+    auto* base = createPaimonBlurSprite(texture, targetSize, intensity);
+    if (!base) return nullptr;
+
+    auto baseSize = base->getContentSize();
+
+    // Upsample a FBO de targetSize — un solo pass de bilinear filtering
+    auto rt = CCRenderTexture::create(
+        static_cast<int>(std::round(targetSize.width)),
+        static_cast<int>(std::round(targetSize.height)));
+    if (!rt) {
+        // Fallback: si CCRenderTexture::create falla, devolvemos base con
+        // setFlipY aplicado (al menos buildBlurNode podra escalarlo).
+        base->setFlipY(true);
+        return base;
+    }
+
+    ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
+    rt->getSprite()->getTexture()->setTexParameters(&params);
+
+    // Posicionamos el sprite base centrado, escalado a targetSize.
+    // base NO tiene setFlipY (createPaimonBlurSprite no lo aplica) — al
+    // renderizarlo a un FBO sale Y-invertido. El finalSprite con setFlipY(true)
+    // compensa la inversion del FBO, dando orientacion correcta.
+    base->setAnchorPoint({0.5f, 0.5f});
+    base->setPosition(targetSize * 0.5f);
+    {
+        float bw = std::max(1.0f, baseSize.width);
+        float bh = std::max(1.0f, baseSize.height);
+        base->setScaleX(targetSize.width / bw);
+        base->setScaleY(targetSize.height / bh);
+    }
+
+    rt->beginWithClear(0.f, 0.f, 0.f, 0.f);
+    base->visit();
+    rt->end();
+
+    auto finalSprite = CCSprite::createWithTexture(rt->getSprite()->getTexture());
+    if (!finalSprite) {
+        base->setFlipY(true);
+        return base;
+    }
+    finalSprite->setAnchorPoint({0.5f, 0.5f});
+    finalSprite->setFlipY(true);  // FBO invierte Y, asi que necesitamos flipY
+    // Forzar contentSize a targetSize explicitamente (defensivo)
+    finalSprite->setContentSize(targetSize);
+    finalSprite->getTexture()->setTexParameters(&params);
+    return finalSprite;
+}
+
 CCGLProgram* getBlurCellShader() {
-    return getOrCreateShader("paimon_cell_blur", vertexShaderCell, fragmentShaderBlurCell);
+    return paimon::shaders::getBlurCellShader();
 }
 
 CCGLProgram* getBlurSinglePassShader() {
-    return getOrCreateShader("blur-single"_spr, vertexShaderCell, fragmentShaderBlurSinglePass);
+    return paimon::shaders::getBlurSinglePassShader();
 }
 
 CCGLProgram* getPaimonBlurShader() {
-    return getOrCreateShader("paimonblur-rt"_spr, vertexShaderCell, fragmentShaderPaimonBlurRT);
+    return paimon::shaders::getKawaseRealtimeShader();
 }
 
 CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize, float intensity) {
@@ -179,16 +370,36 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
     ccTexParams linearParams{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     texture->setTexParameters(&linearParams);
 
-    float scaleX = targetSize.width / texture->getContentSize().width;
-    float scaleY = targetSize.height / texture->getContentSize().height;
+    // -- Optimization: downscale before blurring --
+    // Blurring at full resolution wastes GPU cycles. Scale down to at most
+    // 1024px on the longest side — blur is a low-freq operation so the result
+    // is visually identical but much faster (matching createBlurredSprite).
+    constexpr float kMaxBlurDim = 1024.f;
+    CCSize blurSize = targetSize;
+    float downFactor = 1.f;
+    if (blurSize.width > kMaxBlurDim || blurSize.height > kMaxBlurDim) {
+        downFactor = kMaxBlurDim / std::max(blurSize.width, blurSize.height);
+        blurSize.width  = std::max(8.f, std::round(blurSize.width  * downFactor));
+        blurSize.height = std::max(8.f, std::round(blurSize.height * downFactor));
+    } else {
+        blurSize.width  = std::round(blurSize.width);
+        blurSize.height = std::round(blurSize.height);
+    }
+
+    float scaleX = blurSize.width / texture->getContentSize().width;
+    float scaleY = blurSize.height / texture->getContentSize().height;
     float scale = std::max(scaleX, scaleY);
     srcSprite->setScale(scale);
     srcSprite->setAnchorPoint({0.5f, 0.5f});
-    srcSprite->setPosition(targetSize * 0.5f);
+    srcSprite->setPosition(blurSize * 0.5f);
 
-    auto blurDown = getOrCreateShader("paimonblur-down"_spr, vertexShaderCell, fragmentShaderPaimonBlurDown);
-    auto blurUp   = getOrCreateShader("paimonblur-up"_spr,   vertexShaderCell, fragmentShaderPaimonBlurUp);
+    auto blurDown = paimon::shaders::getKawaseDownShader();
+    auto blurUp   = paimon::shaders::getKawaseUpShader();
     if (!blurDown || !blurUp) {
+        srcSprite->setScale(std::max(
+            targetSize.width / texture->getContentSize().width,
+            targetSize.height / texture->getContentSize().height));
+        srcSprite->setPosition(targetSize * 0.5f);
         return srcSprite;
     }
 
@@ -201,13 +412,13 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
     std::vector<MipLevel> mips;
     mips.reserve(passes);
 
-    CCSize currentSize = targetSize;
+    CCSize currentSize = blurSize;
     CCSprite* currentSprite = srcSprite;
 
     for (int i = 0; i < passes; ++i) {
         CCSize nextSize = {
-            std::max(currentSize.width * 0.7f, 32.f),
-            std::max(currentSize.height * 0.7f, 32.f)
+            std::max(std::round(currentSize.width * 0.7f), 32.f),
+            std::max(std::round(currentSize.height * 0.7f), 32.f)
         };
 
         auto rt = CCRenderTexture::create(
@@ -241,7 +452,10 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
             currentSprite->setScale(std::max(sx, sy));
         }
 
-        rt->begin();
+        // beginWithClear: sin esto, el blending del blur shader contra el FBO
+        // no inicializado produce celdas blancas en LevelCells con thumbnails
+        // que tienen alpha translucido.
+        rt->beginWithClear(0.f, 0.f, 0.f, 0.f);
         currentSprite->visit();
         rt->end();
 
@@ -256,7 +470,7 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
     if (mips.empty()) return srcSprite;
 
     for (int i = static_cast<int>(mips.size()) - 1; i >= 0; --i) {
-        CCSize upSize = (i > 0) ? mips[i - 1].size : targetSize;
+        CCSize upSize = (i > 0) ? mips[i - 1].size : blurSize;
 
         auto rt = CCRenderTexture::create(
             static_cast<int>(upSize.width),
@@ -278,7 +492,7 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
         currentSprite->setScale(std::max(sx, sy));
         currentSprite->setPosition(upSize * 0.5f);
 
-        rt->begin();
+        rt->beginWithClear(0.f, 0.f, 0.f, 0.f);
         currentSprite->visit();
         rt->end();
 
@@ -296,16 +510,85 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
 
 CCGLProgram* getBgShaderProgram(std::string const& shaderName) {
     if (shaderName.empty() || shaderName == "none") return nullptr;
-    CCGLProgram* p = nullptr;
-    if (shaderName == "grayscale") p = getOrCreateShader("layerbg-gray"_spr, vertexShaderCell, fragmentShaderGrayscale);
-    else if (shaderName == "sepia") p = getOrCreateShader("layerbg-sepia"_spr, vertexShaderCell, fragmentShaderSepia);
-    else if (shaderName == "vignette") p = getOrCreateShader("layerbg-vignette"_spr, vertexShaderCell, fragmentShaderVignette);
-    else if (shaderName == "bloom") p = getOrCreateShader("layerbg-bloom"_spr, vertexShaderCell, fragmentShaderBloom);
-    else if (shaderName == "chromatic") p = getOrCreateShader("layerbg-chromatic"_spr, vertexShaderCell, fragmentShaderChromatic);
-    else if (shaderName == "pixelate") p = getOrCreateShader("layerbg-pixelate"_spr, vertexShaderCell, fragmentShaderPixelate);
-    else if (shaderName == "posterize") p = getOrCreateShader("layerbg-posterize"_spr, vertexShaderCell, fragmentShaderPosterize);
-    else if (shaderName == "scanlines") p = getOrCreateShader("layerbg-scanlines"_spr, vertexShaderCell, fragmentShaderScanlines);
-    return p;
+    // Static shaders (no u_time animation)
+    if (shaderName == "grayscale") return paimon::shaders::loadShader("layerbg-gray"_spr, "cell_vertex.glsl", "grayscale.glsl", nullptr, nullptr);
+    if (shaderName == "sepia") return paimon::shaders::loadShader("layerbg-sepia"_spr, "cell_vertex.glsl", "sepia.glsl", nullptr, nullptr);
+    if (shaderName == "vignette") return paimon::shaders::loadShader("layerbg-vignette"_spr, "cell_vertex.glsl", "vignette.glsl", nullptr, nullptr);
+    if (shaderName == "bloom") return paimon::shaders::loadShader("layerbg-bloom"_spr, "cell_vertex.glsl", "bloom.glsl", nullptr, nullptr);
+    if (shaderName == "chromatic") return paimon::shaders::loadShader("layerbg-chromatic"_spr, "cell_vertex.glsl", "chromatic.glsl", nullptr, nullptr);
+    if (shaderName == "pixelate") return paimon::shaders::loadShader("layerbg-pixelate"_spr, "cell_vertex.glsl", "pixelate.glsl", nullptr, nullptr);
+    if (shaderName == "posterize") return paimon::shaders::loadShader("layerbg-posterize"_spr, "cell_vertex.glsl", "posterize.glsl", nullptr, nullptr);
+    if (shaderName == "scanlines") return paimon::shaders::loadShader("layerbg-scanlines"_spr, "cell_vertex.glsl", "scanlines.glsl", nullptr, nullptr);
+    // Dynamic/animated shaders (use u_time + u_cursor like LevelInfoLayer)
+    if (shaderName == "rain") return paimon::shaders::loadShader("layerbg-rain-dyn"_spr, "cell_vertex.glsl", "rain_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "matrix") return paimon::shaders::loadShader("layerbg-matrix-dyn"_spr, "cell_vertex.glsl", "matrix_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "neon-pulse") return paimon::shaders::loadShader("layerbg-neon-pulse-dyn"_spr, "cell_vertex.glsl", "neon_pulse_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "wave-distortion") return paimon::shaders::loadShader("layerbg-wave-dyn"_spr, "cell_vertex.glsl", "wave_distortion_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "crt") return paimon::shaders::loadShader("layerbg-crt-dyn"_spr, "cell_vertex.glsl", "crt_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "glitch") return paimon::shaders::loadShader("layerbg-glitch-dyn"_spr, "cell_vertex.glsl", "glitch_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "radial-blur") return paimon::shaders::loadShader("layerbg-radial-dyn"_spr, "cell_vertex.glsl", "radial_blur_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "shockwave") return paimon::shaders::loadShader("layerbg-shockwave-dyn"_spr, "cell_vertex.glsl", "shockwave_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "vortex") return paimon::shaders::loadShader("layerbg-vortex-dyn"_spr, "cell_vertex.glsl", "vortex_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "magnetic") return paimon::shaders::loadShader("layerbg-magnetic-dyn"_spr, "cell_vertex.glsl", "magnetic_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "spotlight") return paimon::shaders::loadShader("layerbg-spotlight-dyn"_spr, "cell_vertex.glsl", "spotlight_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "ripple") return paimon::shaders::loadShader("layerbg-ripple-dyn"_spr, "cell_vertex.glsl", "ripple_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "plasma-cursor") return paimon::shaders::loadShader("layerbg-plasma-cursor-dyn"_spr, "cell_vertex.glsl", "plasma_cursor_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "freeze") return paimon::shaders::loadShader("layerbg-freeze-dyn"_spr, "cell_vertex.glsl", "freeze_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "pixelate-cursor") return paimon::shaders::loadShader("layerbg-pixelate-cursor-dyn"_spr, "cell_vertex.glsl", "pixelate_cursor_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "kaleidoscope") return paimon::shaders::loadShader("layerbg-kaleidoscope-dyn"_spr, "cell_vertex.glsl", "kaleidoscope_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "sonar") return paimon::shaders::loadShader("layerbg-sonar-dyn"_spr, "cell_vertex.glsl", "sonar_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "electric-arc") return paimon::shaders::loadShader("layerbg-electric-arc-dyn"_spr, "cell_vertex.glsl", "electric_arc_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "prism-split") return paimon::shaders::loadShader("layerbg-prism-split-dyn"_spr, "cell_vertex.glsl", "prism_split_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "gravity-well") return paimon::shaders::loadShader("layerbg-gravity-well-dyn"_spr, "cell_vertex.glsl", "gravity_well_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "shatter") return paimon::shaders::loadShader("layerbg-shatter-dyn"_spr, "cell_vertex.glsl", "shatter_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "heat-haze") return paimon::shaders::loadShader("layerbg-heat-haze-dyn"_spr, "cell_vertex.glsl", "heat_haze_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "liquify") return paimon::shaders::loadShader("layerbg-liquify-dyn"_spr, "cell_vertex.glsl", "liquify_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "ink-spread") return paimon::shaders::loadShader("layerbg-ink-spread-dyn"_spr, "cell_vertex.glsl", "ink_spread_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "hologram") return paimon::shaders::loadShader("layerbg-hologram-dyn"_spr, "cell_vertex.glsl", "hologram_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "time-warp") return paimon::shaders::loadShader("layerbg-time-warp-dyn"_spr, "cell_vertex.glsl", "time_warp_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "underwater") return paimon::shaders::loadShader("layerbg-underwater-dyn"_spr, "cell_vertex.glsl", "underwater_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "neon-trail") return paimon::shaders::loadShader("layerbg-neon-trail-dyn"_spr, "cell_vertex.glsl", "neon_trail_dynamic.glsl", nullptr, nullptr);
+    return nullptr;
+}
+
+CCGLProgram* getProceduralBgShaderProgram(std::string const& shaderName) {
+    // All procedural backgrounds migrated to .glsl files with inline fallback
+    if (shaderName == "aurora") return paimon::shaders::loadShader("layerbg-proc-aurora"_spr, "cell_vertex.glsl", "aurora_bg.glsl", nullptr, nullptr);
+    if (shaderName == "nebula") return paimon::shaders::loadShader("layerbg-proc-nebula"_spr, "cell_vertex.glsl", "nebula_bg.glsl", nullptr, nullptr);
+    if (shaderName == "plasma") return paimon::shaders::loadShader("layerbg-proc-plasma"_spr, "cell_vertex.glsl", "plasma_bg.glsl", nullptr, nullptr);
+    if (shaderName == "grid") return paimon::shaders::loadShader("layerbg-proc-grid"_spr, "cell_vertex.glsl", "grid_bg.glsl", nullptr, nullptr);
+    if (shaderName == "spiral") return paimon::shaders::loadShader("layerbg-proc-spiral"_spr, "cell_vertex.glsl", "spiral_bg.glsl", nullptr, nullptr);
+    if (shaderName == "warp") return paimon::shaders::loadShader("layerbg-proc-warp"_spr, "cell_vertex.glsl", "warp_bg.glsl", nullptr, nullptr);
+    if (shaderName == "lava") return paimon::shaders::loadShader("layerbg-proc-lava"_spr, "cell_vertex.glsl", "lava_bg.glsl", nullptr, nullptr);
+    if (shaderName == "clouds") return paimon::shaders::loadShader("layerbg-proc-clouds"_spr, "cell_vertex.glsl", "clouds_bg.glsl", nullptr, nullptr);
+    if (shaderName == "rings") return paimon::shaders::loadShader("layerbg-proc-rings"_spr, "cell_vertex.glsl", "rings_bg.glsl", nullptr, nullptr);
+    if (shaderName == "waves") return paimon::shaders::loadShader("layerbg-proc-waves"_spr, "cell_vertex.glsl", "waves_bg.glsl", nullptr, nullptr);
+    if (shaderName == "hex") return paimon::shaders::loadShader("layerbg-proc-hex"_spr, "cell_vertex.glsl", "hex_bg.glsl", nullptr, nullptr);
+    if (shaderName == "fireflies") return paimon::shaders::loadShader("layerbg-proc-fireflies"_spr, "cell_vertex.glsl", "fireflies_bg.glsl", nullptr, nullptr);
+    if (shaderName == "ripple") return paimon::shaders::loadShader("layerbg-proc-ripple"_spr, "cell_vertex.glsl", "ripple_bg.glsl", nullptr, nullptr);
+    if (shaderName == "starfield") return paimon::shaders::loadShader("layerbg-proc-starfield"_spr, "cell_vertex.glsl", "starfield_bg.glsl", nullptr, nullptr);
+    if (shaderName == "tunnel") return paimon::shaders::loadShader("layerbg-proc-tunnel"_spr, "cell_vertex.glsl", "tunnel_bg.glsl", nullptr, nullptr);
+    if (shaderName == "checker") return paimon::shaders::loadShader("layerbg-proc-checker"_spr, "cell_vertex.glsl", "checker_bg.glsl", nullptr, nullptr);
+    if (shaderName == "digital-rain") return paimon::shaders::loadShader("layerbg-proc-digital-rain"_spr, "cell_vertex.glsl", "digital_rain_bg.glsl", nullptr, nullptr);
+    if (shaderName == "horizon") return paimon::shaders::loadShader("layerbg-proc-horizon"_spr, "cell_vertex.glsl", "horizon_bg.glsl", nullptr, nullptr);
+    if (shaderName == "fractal") return paimon::shaders::loadShader("layerbg-proc-fractal"_spr, "cell_vertex.glsl", "fractal_bg.glsl", nullptr, nullptr);
+    if (shaderName == "gradient-flow") return paimon::shaders::loadShader("layerbg-proc-gradient-flow"_spr, "cell_vertex.glsl", "gradient_flow_bg.glsl", nullptr, nullptr);
+    if (shaderName == "bubbles") return paimon::shaders::loadShader("layerbg-proc-bubbles"_spr, "cell_vertex.glsl", "bubbles_bg.glsl", nullptr, nullptr);
+    if (shaderName == "lightning") return paimon::shaders::loadShader("layerbg-proc-lightning"_spr, "cell_vertex.glsl", "lightning_bg.glsl", nullptr, nullptr);
+    if (shaderName == "moire") return paimon::shaders::loadShader("layerbg-proc-moire"_spr, "cell_vertex.glsl", "moire_bg.glsl", nullptr, nullptr);
+    if (shaderName == "crystal") return paimon::shaders::loadShader("layerbg-proc-crystal"_spr, "cell_vertex.glsl", "crystal_bg.glsl", nullptr, nullptr);
+    if (shaderName == "embers") return paimon::shaders::loadShader("layerbg-proc-embers"_spr, "cell_vertex.glsl", "embers_bg.glsl", nullptr, nullptr);
+    if (shaderName == "prism") return paimon::shaders::loadShader("layerbg-proc-prism"_spr, "cell_vertex.glsl", "prism_bg.glsl", nullptr, nullptr);
+    if (shaderName == "soft-noise") return paimon::shaders::loadShader("layerbg-proc-soft-noise"_spr, "cell_vertex.glsl", "soft_noise_bg.glsl", nullptr, nullptr);
+    if (shaderName == "pulse") return paimon::shaders::loadShader("layerbg-proc-pulse"_spr, "cell_vertex.glsl", "pulse_bg.glsl", nullptr, nullptr);
+    if (shaderName == "topo") return paimon::shaders::loadShader("layerbg-proc-topo"_spr, "cell_vertex.glsl", "topo_bg.glsl", nullptr, nullptr);
+    if (shaderName == "bloom-field") return paimon::shaders::loadShader("layerbg-proc-bloom-field"_spr, "cell_vertex.glsl", "bloom_field_bg.glsl", nullptr, nullptr);
+    if (shaderName == "synthwave") return paimon::shaders::loadShader("layerbg-proc-synthwave"_spr, "cell_vertex.glsl", "synthwave_bg.glsl", nullptr, nullptr);
+    if (shaderName == "neon-city") return paimon::shaders::loadShader("layerbg-proc-neon-city"_spr, "cell_vertex.glsl", "neon_city_bg.glsl", nullptr, nullptr);
+    if (shaderName == "vortex") return paimon::shaders::loadShader("layerbg-proc-vortex"_spr, "cell_vertex.glsl", "vortex_bg.glsl", nullptr, nullptr);
+    if (shaderName == "ocean") return paimon::shaders::loadShader("layerbg-proc-ocean"_spr, "cell_vertex.glsl", "ocean_bg.glsl", nullptr, nullptr);
+    if (shaderName == "galaxy") return paimon::shaders::loadShader("layerbg-proc-galaxy"_spr, "cell_vertex.glsl", "galaxy_bg.glsl", nullptr, nullptr);
+    return nullptr;
 }
 
 void prewarmLevelInfoShaders() {
@@ -315,38 +598,49 @@ void prewarmLevelInfoShaders() {
 
     geode::log::info("[Shaders] Pre-warming LevelInfoLayer shaders...");
 
-    // 14 shaders de kShaderTable en LevelInfoLayer.cpp
-    getOrCreateShader("grayscale"_spr,       vertexShaderCell, fragmentShaderGrayscale);
-    getOrCreateShader("sepia"_spr,           vertexShaderCell, fragmentShaderSepia);
-    getOrCreateShader("vignette"_spr,        vertexShaderCell, fragmentShaderVignette);
-    getOrCreateShader("scanlines"_spr,       vertexShaderCell, fragmentShaderScanlines);
-    getOrCreateShader("bloom"_spr,           vertexShaderCell, fragmentShaderBloom);
-    getOrCreateShader("chromatic-v2"_spr,    vertexShaderCell, fragmentShaderChromatic);
-    getOrCreateShader("radial-blur-v2"_spr,  vertexShaderCell, fragmentShaderRadialBlur);
-    getOrCreateShader("glitch-v2"_spr,       vertexShaderCell, fragmentShaderGlitch);
-    getOrCreateShader("posterize"_spr,       vertexShaderCell, fragmentShaderPosterize);
-    getOrCreateShader("rain"_spr,            vertexShaderCell, fragmentShaderRain);
-    getOrCreateShader("matrix"_spr,          vertexShaderCell, fragmentShaderMatrix);
-    getOrCreateShader("neon-pulse"_spr,      vertexShaderCell, fragmentShaderNeonPulse);
-    getOrCreateShader("wave-distortion"_spr, vertexShaderCell, fragmentShaderWaveDistortion);
-    getOrCreateShader("crt"_spr,             vertexShaderCell, fragmentShaderCRT);
+    // 14 shaders de kShaderTable â€” migrated to .glsl with inline fallback
+    paimon::shaders::loadShader("grayscale"_spr, "cell_vertex.glsl", "grayscale.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("sepia"_spr, "cell_vertex.glsl", "sepia.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("vignette"_spr, "cell_vertex.glsl", "vignette.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("scanlines"_spr, "cell_vertex.glsl", "scanlines.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("bloom"_spr, "cell_vertex.glsl", "bloom.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("chromatic-v2"_spr, "cell_vertex.glsl", "chromatic.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("radial-blur-v2"_spr, "cell_vertex.glsl", "radial_blur.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("glitch-v2"_spr, "cell_vertex.glsl", "glitch.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("posterize"_spr, "cell_vertex.glsl", "posterize.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("rain"_spr, "cell_vertex.glsl", "rain.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("matrix"_spr, "cell_vertex.glsl", "matrix.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("neon-pulse"_spr, "cell_vertex.glsl", "neon_pulse.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("wave-distortion"_spr, "cell_vertex.glsl", "wave_distortion.glsl", nullptr, nullptr);
+    paimon::shaders::loadShader("crt"_spr, "cell_vertex.glsl", "crt.glsl", nullptr, nullptr);
 
-    // Pixelate (para estilo "pixel" con GIFs)
-    getOrCreateShader("pixelate"_spr,        vertexShaderCell, fragmentShaderPixelate);
+    // Pixelate
+    paimon::shaders::loadShader("pixelate"_spr, "cell_vertex.glsl", "pixelate.glsl", nullptr, nullptr);
 
-    // Blur shaders (para estilos "blur" y "paimonblur")
-    getOrCreateShader("blur-h-v2"_spr,  vertexShaderCell, fragmentShaderHorizontal);
-    getOrCreateShader("blur-v-v2"_spr,    vertexShaderCell, fragmentShaderVertical);
-    getOrCreateShader("blur-single"_spr,      vertexShaderCell, fragmentShaderBlurSinglePass);
-    getOrCreateShader("paimonblur-down"_spr,  vertexShaderCell, fragmentShaderPaimonBlurDown);
-    getOrCreateShader("paimonblur-up"_spr,    vertexShaderCell, fragmentShaderPaimonBlurUp);
-    getOrCreateShader("paimonblur-rt"_spr,    vertexShaderCell, fragmentShaderPaimonBlurRT);
+    // Blur shaders â€” already fully migrated (no inline fallback)
+    paimon::shaders::getBlurHorizontalShader();
+    paimon::shaders::getBlurVerticalShader();
+    paimon::shaders::getBlurSinglePassShader();
+    paimon::shaders::getKawaseDownShader();
+    paimon::shaders::getKawaseUpShader();
+    paimon::shaders::getKawaseRealtimeShader();
+    paimon::shaders::getBlurCellShader();
+    paimon::shaders::getBlurFastShader();
 
-    geode::log::info("[Shaders] Pre-warm complete (21 shaders compiled)");
+    // YUV shader for video
+    paimon::shaders::getYUVShader();
+
+    // YUV→RGBA blit shader for video resolve
+    paimon::shaders::getYUVBlitShader();
+
+    // DominantColors GPU downsample shader
+    paimon::shaders::getDominantColorsDownsampleShader();
+
+    geode::log::info("[Shaders] Pre-warm complete (24 shaders compiled)");
 }
 
 // ============================================================================
-// ProgressiveBlurJob — motor de blur multi-frame
+// ProgressiveBlurJob â€” motor de blur multi-frame
 // ============================================================================
 
 ProgressiveBlurJob::~ProgressiveBlurJob() {
@@ -354,8 +648,8 @@ ProgressiveBlurJob::~ProgressiveBlurJob() {
 }
 
 CCSprite* ProgressiveBlurJob::capSourceTexture(CCTexture2D* texture, CCSize const& targetSize) {
-    // Si la textura fuente es más grande que targetSize, pre-renderizar a targetSize
-    // para normalizar el costo de blur independiente de la resolución original.
+    // Si la textura fuente es mÃ¡s grande que targetSize, pre-renderizar a targetSize
+    // para normalizar el costo de blur independiente de la resoluciÃ³n original.
     float texW = texture->getContentSize().width;
     float texH = texture->getContentSize().height;
 
@@ -390,7 +684,7 @@ CCSprite* ProgressiveBlurJob::capSourceTexture(CCTexture2D* texture, CCSize cons
         static_cast<int>(targetSize.height));
     if (!rt) return srcSprite; // fallback
 
-    rt->begin();
+    rt->beginWithClear(0.f, 0.f, 0.f, 0.f);
     srcSprite->visit();
     rt->end();
 
@@ -471,15 +765,23 @@ void ProgressiveBlurJob::start() {
     if (m_started || m_cancelled || m_done) return;
     m_started = true;
     retain(); // prevent dealloc while scheduled
-    CCDirector::sharedDirector()->getScheduler()->scheduleSelector(
+    CCDirector::get()->getScheduler()->scheduleSelector(
         schedule_selector(ProgressiveBlurJob::tick), this, 0.0f, false);
+
+    // Fast mode: correr la primera tick sincronica elimina ~16ms de latencia.
+    // Solo para jobs single-shot (priority blur). Para batch (list cells) se
+    // deja desactivado para que el trabajo se reparta entre frames y no
+    // genere un spike cuando N celdas encolan blur en el mismo frame.
+    if (m_fastMode && !m_cancelled && !m_done) {
+        tick(0.0f);
+    }
 }
 
 void ProgressiveBlurJob::cancel() {
     if (m_cancelled) return;
     m_cancelled = true;
     if (m_started && !m_done) {
-        CCDirector::sharedDirector()->getScheduler()->unscheduleSelector(
+        CCDirector::get()->getScheduler()->unscheduleSelector(
             schedule_selector(ProgressiveBlurJob::tick), this);
         release(); // balance the retain from start()
     }
@@ -494,7 +796,7 @@ void ProgressiveBlurJob::cancel() {
 
 void ProgressiveBlurJob::finish(CCSprite* result) {
     m_done = true;
-    CCDirector::sharedDirector()->getScheduler()->unscheduleSelector(
+    CCDirector::get()->getScheduler()->unscheduleSelector(
         schedule_selector(ProgressiveBlurJob::tick), this);
 
     if (m_onComplete) {
@@ -530,8 +832,8 @@ void ProgressiveBlurJob::tickGaussian() {
     ccTexParams linearParams{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
 
     if (m_phase == Phase::Setup) {
-        m_blurH = getOrCreateShader("blur-h-v2"_spr, vertexShaderCell, fragmentShaderHorizontal);
-        m_blurV = getOrCreateShader("blur-v-v2"_spr, vertexShaderCell, fragmentShaderVertical);
+        m_blurH = paimon::shaders::getBlurHorizontalShader();
+        m_blurV = paimon::shaders::getBlurVerticalShader();
         if (!m_blurH || !m_blurV) {
             // Fallback: devolver sprite sin blur
             auto fallback = capSourceTexture(m_sourceTexture, m_targetSize);
@@ -556,7 +858,7 @@ void ProgressiveBlurJob::tickGaussian() {
 
         m_radius = intensityToBlurRadius(m_intensity);
         m_phase = Phase::GaussianH1;
-        return; // yield — setup done, blur starts next frame
+        if (!m_fastMode) return; 
     }
 
     if (m_phase == Phase::GaussianH1) {
@@ -576,7 +878,17 @@ void ProgressiveBlurJob::tickGaussian() {
     if (m_phase == Phase::GaussianV1) {
         applyBlurPass(m_currentSprite, m_rtB, m_blurV, m_targetSize, m_radius);
 
-        // Siempre hacer doble-pasada para mayor calidad
+        // Low intensity (< 4.0): single H+V pass is visually sufficient.
+        // Skip the second pair to halve GPU work and reduce frame latency.
+        if (m_intensity < 4.0f) {
+            auto finalSprite = CCSprite::createWithTexture(m_rtB->getSprite()->getTexture());
+            finalSprite->setAnchorPoint({0.5f, 0.5f});
+            finalSprite->setFlipY(true);
+            finalSprite->getTexture()->setTexParameters(&linearParams);
+            finish(finalSprite);
+            return;
+        }
+
         auto mid2 = CCSprite::createWithTexture(m_rtB->getSprite()->getTexture());
         mid2->setFlipY(true);
         mid2->setAnchorPoint({0.5f, 0.5f});
@@ -609,8 +921,8 @@ void ProgressiveBlurJob::tickGaussian() {
         finalSprite->setAnchorPoint({0.5f, 0.5f});
         finalSprite->setFlipY(true);
         finalSprite->getTexture()->setTexParameters(&linearParams);
-
         finish(finalSprite);
+        return;
     }
 }
 
@@ -620,8 +932,8 @@ void ProgressiveBlurJob::tickPaimonBlur() {
     ccTexParams linearParams{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
 
     if (m_phase == Phase::Setup) {
-        m_blurDown = getOrCreateShader("paimonblur-down"_spr, vertexShaderCell, fragmentShaderPaimonBlurDown);
-        m_blurUp = getOrCreateShader("paimonblur-up"_spr, vertexShaderCell, fragmentShaderPaimonBlurUp);
+        m_blurDown = paimon::shaders::getKawaseDownShader();
+        m_blurUp = paimon::shaders::getKawaseUpShader();
         if (!m_blurDown || !m_blurUp) {
             auto fallback = capSourceTexture(m_sourceTexture, m_targetSize);
             finish(fallback);
@@ -629,7 +941,7 @@ void ProgressiveBlurJob::tickPaimonBlur() {
         }
 
         // Pasadas ajustadas para evitar blur excesivo y artefactos cuadrados
-        m_totalPasses = std::clamp(static_cast<int>(m_intensity * 0.8f), 3, 7);
+        m_totalPasses = std::clamp(static_cast<int>(m_intensity * 0.55f), 3, 5);
         m_currentPass = 0;
         m_mips.clear();
         m_mips.reserve(m_totalPasses);
@@ -640,25 +952,29 @@ void ProgressiveBlurJob::tickPaimonBlur() {
             return;
         }
         m_sourceTexture->setTexParameters(&linearParams);
-        m_currentSize = m_targetSize;
+        m_currentSize = CCSize{std::round(m_targetSize.width), std::round(m_targetSize.height)};
 
         m_phase = Phase::Downsample;
-        return; // yield
+        if (!m_fastMode) return; // yield — en modo batched setup consume todo el tick
+        // fast mode: Continuar al siguiente phase en el mismo tick
     }
 
     if (m_phase == Phase::Downsample) {
-        // Ejecutar N pasadas de downsample, o múltiples si la resolución es pequeña.
-        // Desktop: 10 ops/tick => el blur se completa en 1 frame. Mobile: 3 ops/tick.
+        // Ejecutar N pasadas de downsample. Budget adaptativo:
+        // - Fast mode (priority single-shot): 3/2 ops → blur termina rapido.
+        // - Batch mode (list cells): 1 op/tick → distribuye carga entre frames
+        //   para evitar spikes. A 360 FPS cada frame es ~2.78ms; un FBO pass
+        //   cuesta ~0.3-0.6ms. Con 1 op/tick tenemos ~2.2ms libres para el juego.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-        constexpr int kOpsBudget = 3;
+        const int kOpsBudget = m_fastMode ? 2 : 1;
 #else
-        constexpr int kOpsBudget = 10;
+        const int kOpsBudget = m_fastMode ? 3 : 1;
 #endif
         int opsThisTick = 0;
         while (m_currentPass < m_totalPasses && opsThisTick < kOpsBudget) {
             CCSize nextSize = {
-                std::max(m_currentSize.width * 0.7f, 32.f),
-                std::max(m_currentSize.height * 0.7f, 32.f)
+                std::max(std::round(m_currentSize.width * 0.7f), 32.f),
+                std::max(std::round(m_currentSize.height * 0.7f), 32.f)
             };
 
             auto rt = CCRenderTexture::create(
@@ -690,7 +1006,7 @@ void ProgressiveBlurJob::tickPaimonBlur() {
                 m_currentSprite->setPosition(nextSize * 0.5f);
             }
 
-            rt->begin();
+            rt->beginWithClear(0.f, 0.f, 0.f, 0.f);
             m_currentSprite->visit();
             rt->end();
 
@@ -706,25 +1022,35 @@ void ProgressiveBlurJob::tickPaimonBlur() {
             m_currentPass++;
             opsThisTick++;
 
-            // Si la resolución es muy pequeña, agrupar más pasadas en este tick
-            if (nextSize.width <= 64.f && nextSize.height <= 64.f) {
-                opsThisTick = 0; // reset — pasadas pequeñas son gratis
-            }
+            // NOTA: Eliminado el "ops gratis" para pasadas pequeñas.
+            // A 360 FPS, incluso pasadas de 128x128 consumen ~0.1-0.2ms por el
+            // state change del driver (bind FBO, shader, viewport). Acumular
+            // varias en un frame causa micro-stutter visible a alta frecuencia.
         }
 
         if (m_currentPass >= m_totalPasses || m_mips.empty()) {
-            // Pasar a upsample
+            // Pasar a upsample.
             m_currentPass = static_cast<int>(m_mips.size()) - 1;
             m_phase = Phase::Upsample;
+            // Solo encadenar al upsample en fast mode; en batch mode cedemos
+            // el tick para no acumular ~20 FBO passes en un frame cuando
+            // varios jobs corren en paralelo.
+            if (!m_fastMode) return;
+        } else {
+            return;
         }
-        return;
     }
 
     if (m_phase == Phase::Upsample) {
-        // Ejecutar 1-2 pasadas de upsample por tick
+        // Ejecutar pasadas de upsample por tick. Budget adaptativo.
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+        const int kUpOpsBudget = m_fastMode ? 2 : 1;
+#else
+        const int kUpOpsBudget = m_fastMode ? 3 : 1;
+#endif
         int opsThisTick = 0;
-        while (m_currentPass >= 0 && opsThisTick < 2) {
-            CCSize upSize = (m_currentPass > 0) ? m_mips[m_currentPass - 1].size : m_targetSize;
+        while (m_currentPass >= 0 && opsThisTick < kUpOpsBudget) {
+            CCSize upSize = (m_currentPass > 0) ? m_mips[m_currentPass - 1].size : CCSize{std::round(m_targetSize.width), std::round(m_targetSize.height)};
 
             auto rt = CCRenderTexture::create(
                 static_cast<int>(upSize.width),
@@ -744,7 +1070,7 @@ void ProgressiveBlurJob::tickPaimonBlur() {
             m_currentSprite->setScale(std::max(ssx, ssy));
             m_currentSprite->setPosition(upSize * 0.5f);
 
-            rt->begin();
+            rt->beginWithClear(0.f, 0.f, 0.f, 0.f);
             m_currentSprite->visit();
             rt->end();
 
@@ -759,10 +1085,7 @@ void ProgressiveBlurJob::tickPaimonBlur() {
             m_currentPass--;
             opsThisTick++;
 
-            // Pasadas pequeñas se agrupan
-            if (upSize.width <= 64.f && upSize.height <= 64.f) {
-                opsThisTick = 0;
-            }
+            // NOTA: Eliminado agrupamiento de pasadas pequeñas para 360fps.
         }
 
         if (m_currentPass < 0) {
@@ -775,5 +1098,4 @@ void ProgressiveBlurJob::tickPaimonBlur() {
 }
 
 } // namespace Shaders
-
 

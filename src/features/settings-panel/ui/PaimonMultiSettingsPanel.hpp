@@ -12,15 +12,15 @@ protected:
 
     // panel principal (se arrastra entero)
     cocos2d::CCNode* m_panelContainer = nullptr;
-    cocos2d::CCDrawNode* m_panelBg = nullptr;
-    cocos2d::CCDrawNode* m_titleBarBg = nullptr;
+    cocos2d::CCNodeRGBA* m_panelBg = nullptr;
+    cocos2d::CCNodeRGBA* m_titleBarBg = nullptr;
     cocos2d::CCLabelBMFont* m_titleLabel = nullptr;
 
     // sidebar
     cocos2d::CCMenu* m_sidebarMenu = nullptr;
-    cocos2d::CCDrawNode* m_sidebarBg = nullptr;
+    cocos2d::CCNodeRGBA* m_sidebarBg = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_sidebarButtons;
-    cocos2d::CCDrawNode* m_sidebarAccent = nullptr;
+    cocos2d::CCNodeRGBA* m_sidebarAccent = nullptr;
     int m_selectedCategory = 0;
 
     // content area

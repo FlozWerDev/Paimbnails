@@ -5,12 +5,14 @@
 #include <vector>
 #include <string>
 #include "CapturePreviewPopup.hpp"
+#include "../services/CaptureVisibilityState.hpp"
 
 class CaptureLayerEditorPopup : public geode::Popup {
 public:
     static CaptureLayerEditorPopup* create(CapturePreviewPopup* previewPopup);
 
     static void restoreAllLayers();
+    static void discardTrackedLayers();
 
 protected:
     bool init() override;
@@ -45,7 +47,7 @@ private:
     std::vector<LayerEntry> m_layers;
 
     // Instance-level original visibilities (was static, now per-popup)
-    std::vector<std::pair<geode::WeakRef<cocos2d::CCNode>, bool>> m_originalVisibilities;
+    std::vector<paimon::capture::VisibilityRecord> m_originalVisibilities;
 
     void populateLayers();
     void buildList();

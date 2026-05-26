@@ -1,10 +1,11 @@
 #include "ImageConverter.hpp"
 #include <Geode/Geode.hpp>
-#include <prevter.imageplus/include/events.hpp>
+
 #include <Geode/utils/file.hpp>
+#include <cstring>
 #include <filesystem>
 
-// stb_image_write como fallback si ImagePlus no esta disponible
+// stb_image_write para encodificado nativo (PNG, BMP, TGA, JPG)
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STBIW_WINDOWS_UTF8
 #include "stb_image_write.h"
@@ -28,21 +29,30 @@ std::vector<uint8_t> ImageConverter::rgbToRgba(std::vector<uint8_t> const& rgbDa
 }
 
 void ImageConverter::rgbToRgbaFast(uint8_t const* rgb, uint8_t* rgbaOut, size_t pixelCount) {
-    // Step 1: Fill all alpha channels at once (compiler vectorizes this)
+    if (pixelCount == 0) return;
+
+    // Un solo loop con store de 32 bits por pixel:
+    //  - evita la doble pasada sobre el buffer (alpha fill + interleave)
+    //    que el codigo anterior hacia y que dominaba el cache thrashing
+    //    para imagenes grandes (~8MB por cada pasada en 1920x1080).
+    //  - clang auto-vectoriza este patron a SSE2 con pshufb-like shuffles
+    //    en x64, manteniendo el fast path sin intrinsics explicitos
+    //    (evita requerir ssse3 globalmente en el project).
+    //  - la escritura secuencial en bloques de 4 bytes es cache-friendly
+    //    y coincide con el layout que espera CCTexture2D::initWithData.
     for (size_t i = 0; i < pixelCount; ++i) {
-        rgbaOut[i * 4 + 3] = 255;
-    }
-    
-    // Step 2: Interleave RGB values (also auto-vectorized by compiler)
-    for (size_t i = 0; i < pixelCount; ++i) {
-        rgbaOut[i * 4 + 0] = rgb[i * 3 + 0];
-        rgbaOut[i * 4 + 1] = rgb[i * 3 + 1];
-        rgbaOut[i * 4 + 2] = rgb[i * 3 + 2];
+        uint32_t pixel =
+            static_cast<uint32_t>(rgb[i * 3 + 0]) |
+            (static_cast<uint32_t>(rgb[i * 3 + 1]) << 8) |
+            (static_cast<uint32_t>(rgb[i * 3 + 2]) << 16) |
+            (0xFFu << 24);
+        std::memcpy(rgbaOut + i * 4, &pixel, sizeof(pixel));
     }
 }
 
 void ImageConverter::rgbaToRgbFast(uint8_t const* rgba, uint8_t* rgbOut, size_t pixelCount) {
-    // Drop alpha channel — auto-vectorized by compiler
+    // Drop alpha channel — auto-vectorized by compiler en los casos comunes.
+    // Mantener un solo loop con escrituras secuenciales para no forzar otra pasada.
     for (size_t i = 0; i < pixelCount; ++i) {
         rgbOut[i * 3 + 0] = rgba[i * 4 + 0];
         rgbOut[i * 3 + 1] = rgba[i * 4 + 1];
@@ -53,16 +63,7 @@ void ImageConverter::rgbaToRgbFast(uint8_t const* rgba, uint8_t* rgbOut, size_t 
 bool ImageConverter::rgbaToPngBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData) {
     if (!rgba || width == 0 || height == 0) return false;
 
-    // ImagePlus encode primero
-    if (imgp::isAvailable()) {
-        auto result = imgp::encode::png(rgba, width, height, true);
-        if (result.isOk()) {
-            outPngData = std::move(result.unwrap());
-            return true;
-        }
-    }
-
-    // fallback: stb_image_write
+    // stb_image_write directo — sin IPC ni dependencias externas
     outPngData.clear();
     outPngData.reserve(static_cast<size_t>(width) * height);
     int ok = stbi_write_png_to_func(stbiWriteToVector, &outPngData,
@@ -88,45 +89,24 @@ bool ImageConverter::saveRGBAToPNG(const uint8_t* rgba, uint32_t width, uint32_t
 bool ImageConverter::rgbaToWebpBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData, float quality) {
     if (!rgba || width == 0 || height == 0) return false;
 
-    if (imgp::isAvailable()) {
-        auto result = imgp::encode::webp(rgba, width, height, true, quality);
-        if (result.isOk()) {
-            outData = std::move(result.unwrap());
-            return true;
-        }
-    }
-
-    log::warn("[ImageConverter] WebP encode not available (ImagePlus required)");
+    // WebP encoding requiere ImagePlus (opcional) — no disponible nativamente
+    log::warn("[ImageConverter] WebP encode not available (requires ImagePlus mod)");
     return false;
 }
 
 bool ImageConverter::rgbaToJxlBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData, float quality) {
     if (!rgba || width == 0 || height == 0) return false;
 
-    if (imgp::isAvailable()) {
-        auto result = imgp::encode::jpegxl(rgba, width, height, true, quality);
-        if (result.isOk()) {
-            outData = std::move(result.unwrap());
-            return true;
-        }
-    }
-
-    log::warn("[ImageConverter] JPEG XL encode not available (ImagePlus required)");
+    // JPEG XL encoding requiere ImagePlus (opcional) — no disponible nativamente
+    log::warn("[ImageConverter] JPEG XL encode not available (requires ImagePlus mod)");
     return false;
 }
 
 bool ImageConverter::rgbaToQoiBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData) {
     if (!rgba || width == 0 || height == 0) return false;
 
-    if (imgp::isAvailable()) {
-        auto result = imgp::encode::qoi(rgba, width, height, true);
-        if (result.isOk()) {
-            outData = std::move(result.unwrap());
-            return true;
-        }
-    }
-
-    log::warn("[ImageConverter] QOI encode not available (ImagePlus required)");
+    // QOI encoding requiere ImagePlus (opcional) — no disponible nativamente
+    log::warn("[ImageConverter] QOI encode not available (requires ImagePlus mod)");
     return false;
 }
 

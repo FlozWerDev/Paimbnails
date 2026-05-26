@@ -11,6 +11,7 @@
 #include "../../../utils/TimedJoin.hpp"
 #include <unordered_set>
 #include <future>
+#include <thread>
 #include "../../../core/QualityConfig.hpp"
 #include "../../../utils/ImageConverter.hpp"
 
@@ -76,12 +77,14 @@ void LocalThumbs::initCache() {
 }
 
 LocalThumbs& LocalThumbs::get() {
-    static LocalThumbs inst;
+    // RuntimeLifecycle::shutdown() handles this explicitly. Keep the instance
+    // alive to avoid destruction races if initCache was never awaited.
+    static auto* inst = new LocalThumbs();
     static std::once_flag loadFlag;
     std::call_once(loadFlag, [&]() {
-        inst.loadMappings();
+        inst->loadMappings();
     });
-    return inst;
+    return *inst;
 }
 
 std::string LocalThumbs::dir() const {
@@ -170,9 +173,24 @@ int LocalThumbs::getThumbCount(int32_t levelID) const {
 }
 
 std::optional<std::string> LocalThumbs::findAnyThumbnail(int32_t levelID) const {
+    // Hit rapido: cache de lookup persistente durante la sesion.
+    {
+        std::lock_guard<std::mutex> lock(m_lookupMutex);
+        auto it = m_lookupCache.find(levelID);
+        if (it != m_lookupCache.end()) {
+            return it->second.path;
+        }
+    }
+
+    auto store = [this, levelID](std::optional<std::string> value) -> std::optional<std::string> {
+        std::lock_guard<std::mutex> lock(m_lookupMutex);
+        m_lookupCache[levelID] = LookupEntry{value};
+        return value;
+    };
+
     // 1. buscar rgb primero (mayor prioridad pa capturas locales)
     auto rgbPath = getThumbPath(levelID);
-    if (rgbPath) return rgbPath;
+    if (rgbPath) return store(rgbPath);
 
     // Si el cache de rgb esta inicializado y no tiene este level,
     // es muy probable que tampoco haya formatos estandar en el mismo dir.
@@ -193,7 +211,7 @@ std::optional<std::string> LocalThumbs::findAnyThumbnail(int32_t levelID) const 
         auto thumbDir = std::filesystem::path(dir());
         for (auto const& ext : exts) {
             auto p = thumbDir / (std::to_string(levelID) + ext);
-            if (std::filesystem::exists(p, ecFind)) return geode::utils::string::pathToString(p);
+            if (std::filesystem::exists(p, ecFind)) return store(geode::utils::string::pathToString(p));
         }
     }
 
@@ -201,10 +219,19 @@ std::optional<std::string> LocalThumbs::findAnyThumbnail(int32_t levelID) const 
     auto qualityCacheDir = paimon::quality::cacheDir();
     for (auto const& ext : exts) {
         auto p = qualityCacheDir / (std::to_string(levelID) + ext);
-        if (std::filesystem::exists(p, ecFind)) return geode::utils::string::pathToString(p);
+        if (std::filesystem::exists(p, ecFind)) return store(geode::utils::string::pathToString(p));
     }
 
-    return std::nullopt;
+    return store(std::nullopt);
+}
+
+void LocalThumbs::invalidateLookup(int32_t levelID) {
+    std::lock_guard<std::mutex> lock(m_lookupMutex);
+    if (levelID == 0) {
+        m_lookupCache.clear();
+    } else {
+        m_lookupCache.erase(levelID);
+    }
 }
 
 LocalThumbs::LoadResult LocalThumbs::loadAsRGBA(int32_t levelID) const {
@@ -436,6 +463,7 @@ bool LocalThumbs::saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, 
         std::lock_guard<std::mutex> lock(m_mutex);
         m_availableLevels.insert(levelID);
     }
+    invalidateLookup(levelID);
     return true;
 }
 
@@ -520,7 +548,7 @@ void LocalThumbs::shutdown() {
     log::info("[LocalThumbs] shutdown");
     m_shuttingDown.store(true, std::memory_order_release);
     if (m_initFuture.valid()) {
-        paimon::timedWait(m_initFuture, std::chrono::seconds(3));
+        (void)paimon::timedWait(m_initFuture, std::chrono::seconds(3));
     }
 }
 
@@ -586,6 +614,7 @@ bool LocalThumbs::removeThumb(int32_t levelID, int index) {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_availableLevels.erase(levelID);
     }
+    invalidateLookup(levelID);
 
     log::info("[LocalThumbs] removeThumb: borrado indice {} de nivel {} (quedan {})", index, levelID, std::max(0, count - 1));
     return true;

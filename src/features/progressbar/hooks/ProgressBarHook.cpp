@@ -34,24 +34,32 @@ public:
     }
 
     void update(float) override {
-        auto* pl = PlayLayer::get();
-        if (!pl) return;
-        ProgressBarManager::get().applyToPlayLayer(pl);
+        // PlayLayer::get() returns nullptr when not in gameplay; nothing
+        // to do in that case (we leave the bar untouched).
+        if (auto* pl = PlayLayer::get()) {
+            ProgressBarManager::get().applyToPlayLayer(pl);
+        }
     }
 };
 
-static geode::Ref<ProgressBarTicker> s_progressBarTicker = nullptr;
+namespace {
+geode::Ref<ProgressBarTicker> s_progressBarTicker = nullptr;
 
-static void ensureProgressBarTicker() {
+void ensureProgressBarTicker() {
     if (s_progressBarTicker) return;
     s_progressBarTicker = ProgressBarTicker::create();
-    if (!s_progressBarTicker) return;
-    CCDirector::sharedDirector()->getScheduler()->scheduleUpdateForTarget(
-        s_progressBarTicker.data(), 0, false
-    );
+    if (!s_progressBarTicker) {
+        log::error("[ProgressBar] Failed to create ticker");
+        return;
+    }
+    auto* dir = CCDirector::sharedDirector();
+    if (!dir) return;
+    auto* sch = dir->getScheduler();
+    if (!sch) return;
+    sch->scheduleUpdateForTarget(s_progressBarTicker.data(), 0, false);
 }
 
-static void shutdownProgressBarTicker() {
+void shutdownProgressBarTicker() {
     if (!s_progressBarTicker) return;
     if (auto* dir = CCDirector::sharedDirector()) {
         if (auto* sch = dir->getScheduler()) {
@@ -60,6 +68,7 @@ static void shutdownProgressBarTicker() {
     }
     (void)s_progressBarTicker.take();
 }
+} // namespace
 
 $on_game(Exiting) {
     shutdownProgressBarTicker();
@@ -68,8 +77,8 @@ $on_game(Exiting) {
 // ─────────────────────────────────────────────────────────────
 // Drag overlay: a full-screen touch-receiving CCLayer that
 // allows the user to grab the progress bar and drag it around.
-// Added to the PauseLayer when free-drag is active so that it
-// only intercepts touches while the menu is open.
+// Added to the PauseLayer when free-drag is active so it only
+// intercepts touches while the menu is open.
 // ─────────────────────────────────────────────────────────────
 
 class ProgressBarDragLayer : public CCLayer {
@@ -101,23 +110,22 @@ public:
         auto* pl = PlayLayer::get();
         if (!pl) return false;
 
-        // Find the bar and test if the touch intersects its AABB.
         CCNode* bar = pl->getChildByIDRecursive("progress-bar");
-        if (!bar) return false;
+        if (!bar || !bar->getParent()) return false;
 
         auto worldPos = touch->getLocation();
 
-        // Build an AABB for the bar in world space. Use getBoundingBox
-        // and convert to world coordinates.
+        // Build an AABB for the bar in world space, with a 10px
+        // forgiveness margin so it's easier to grab.
         auto bb = bar->boundingBox();
-        auto parent = bar->getParent();
-        if (!parent) return false;
+        auto* parent = bar->getParent();
         CCPoint bl = parent->convertToWorldSpace(ccp(bb.getMinX(), bb.getMinY()));
         CCPoint tr = parent->convertToWorldSpace(ccp(bb.getMaxX(), bb.getMaxY()));
-        float minX = std::min(bl.x, tr.x) - 10.f;
-        float maxX = std::max(bl.x, tr.x) + 10.f;
-        float minY = std::min(bl.y, tr.y) - 10.f;
-        float maxY = std::max(bl.y, tr.y) + 10.f;
+        const float kPad = 10.f;
+        float minX = std::min(bl.x, tr.x) - kPad;
+        float maxX = std::max(bl.x, tr.x) + kPad;
+        float minY = std::min(bl.y, tr.y) - kPad;
+        float maxY = std::max(bl.y, tr.y) + kPad;
         if (worldPos.x < minX || worldPos.x > maxX) return false;
         if (worldPos.y < minY || worldPos.y > maxY) return false;
 
@@ -139,17 +147,15 @@ public:
 };
 
 // ─────────────────────────────────────────────────────────────
-// PlayLayer hook: install / remove ticker node.
+// PlayLayer hook: install ticker, invalidate baseline per level.
 // ─────────────────────────────────────────────────────────────
 
 class $modify(PaimonProgressBarPlayLayer, PlayLayer) {
     $override
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
-        // Make sure the global ticker exists — it keeps ticking while
-        // paused so popup edits apply instantly.
         ensureProgressBarTicker();
-        // Fresh level → re-sample vanilla baseline if user re-enables.
+        // Fresh level → re-sample vanilla baseline if the user re-enables.
         ProgressBarManager::get().invalidateBaseline();
         return true;
     }
@@ -157,15 +163,16 @@ class $modify(PaimonProgressBarPlayLayer, PlayLayer) {
     $override
     void onQuit() {
         // Baseline & custom texture hosts from this level are no longer valid.
-        ProgressBarManager::get().invalidateBaseline();
-        ProgressBarManager::get().releaseCustomTextures();
+        auto& mgr = ProgressBarManager::get();
+        mgr.invalidateBaseline();
+        mgr.releaseCustomTextures();
         PlayLayer::onQuit();
     }
 };
 
 // ─────────────────────────────────────────────────────────────
-// PauseLayer hook: adds a "config" button to the pause menu and
-// attaches the drag overlay when free-drag is enabled.
+// PauseLayer hook: adds a config button to the pause menu and
+// attaches the drag overlay when free-drag is active.
 // ─────────────────────────────────────────────────────────────
 
 class $modify(PaimonProgressBarPauseLayer, PauseLayer) {
@@ -177,7 +184,10 @@ class $modify(PaimonProgressBarPauseLayer, PauseLayer) {
     void customSetup() {
         PauseLayer::customSetup();
         this->addProgressBarConfigButton();
+        this->maybeAttachDragOverlay();
+    }
 
+    void maybeAttachDragOverlay() {
         if (!ProgressBarManager::get().isFreeDragActive()) return;
         if (this->getChildByID("paimon-progressbar-drag-layer"_spr)) return;
 
@@ -195,21 +205,26 @@ class $modify(PaimonProgressBarPauseLayer, PauseLayer) {
 
         auto winSize = CCDirector::sharedDirector()->getWinSize();
 
-        // Find a suitable menu (prefer geode.node-ids "left-button-menu").
+        // Find a suitable menu (prefer geode.node-ids "left-button-menu"
+        // / "right-button-menu", fall back to side-detection heuristic).
         auto pickMenu = [&](char const* id, bool leftSide) -> CCMenu* {
             if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID(id))) return byId;
             CCMenu* best = nullptr;
-            float bestScore = 0.f;
-            for (auto* obj : CCArrayExt<CCNode*>(this->getChildren())) {
-                auto menu = typeinfo_cast<CCMenu*>(obj);
-                if (!menu) continue;
-                float x = menu->getPositionX();
-                bool sideMatch = leftSide ? (x < winSize.width * 0.5f) : (x > winSize.width * 0.5f);
-                if (!sideMatch) continue;
-                float score = menu->getChildrenCount();
-                if (!best || score > bestScore) {
-                    best = menu;
-                    bestScore = score;
+            float bestScore = -1.f;
+            if (auto* children = this->getChildren()) {
+                for (auto* obj : CCArrayExt<CCNode*>(children)) {
+                    auto menu = typeinfo_cast<CCMenu*>(obj);
+                    if (!menu) continue;
+                    float x = menu->getPositionX();
+                    bool sideMatch = leftSide
+                        ? (x < winSize.width * 0.5f)
+                        : (x > winSize.width * 0.5f);
+                    if (!sideMatch) continue;
+                    float score = static_cast<float>(menu->getChildrenCount());
+                    if (!best || score > bestScore) {
+                        best = menu;
+                        bestScore = score;
+                    }
                 }
             }
             return best;
@@ -217,18 +232,25 @@ class $modify(PaimonProgressBarPauseLayer, PauseLayer) {
 
         auto* menu = pickMenu("left-button-menu", true);
         if (!menu) menu = pickMenu("right-button-menu", false);
-        if (!menu) return;
+        if (!menu) {
+            log::warn("[ProgressBar] No suitable menu found in PauseLayer");
+            return;
+        }
 
-        // Build icon. Try a few GD sprite frames that resemble a bar /
-        // settings icon; fall back to the generic button background.
+        // Icon: try a few GD frames that resemble a bar/settings icon;
+        // fall back to a generic button background.
         CCSprite* iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_percentagesBtn_001.png");
         if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
         if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_button_01.png");
-        if (!iconSprite) return;
+        if (!iconSprite) {
+            log::warn("[ProgressBar] No fallback icon available for config button");
+            return;
+        }
 
-        float target = 30.f;
-        float cur = std::max(iconSprite->getContentSize().width, iconSprite->getContentSize().height);
-        if (cur > 0.f) iconSprite->setScale(target / cur);
+        const float kTargetSize = 30.f;
+        float cur = std::max(iconSprite->getContentSize().width,
+                             iconSprite->getContentSize().height);
+        if (cur > 0.f) iconSprite->setScale(kTargetSize / cur);
 
         auto btn = CCMenuItemSpriteExtra::create(
             iconSprite, this,

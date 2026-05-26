@@ -22,26 +22,27 @@ class MainMenuLayoutEditor : public cocos2d::CCLayer {
         BottomRight,
     };
 
-    static MainMenuLayoutEditor* create(MenuLayer* layer);
+    static MainMenuLayoutEditor* create(cocos2d::CCNode* root);
     static MainMenuLayoutEditor* getActive();
     static bool isActive();
-    static void open(MenuLayer* layer);
-    static void toggle(MenuLayer* layer);
+    static void open(cocos2d::CCNode* root);
+    static void toggle(cocos2d::CCNode* root);
 
     void saveAndClose();
     void cancelAndClose();
-    MenuLayer* getTargetLayer() const;
+    cocos2d::CCNode* getTargetRoot() const;
 
     ~MainMenuLayoutEditor() override;
 
 protected:
-    bool init(MenuLayer* layer);
+    bool init(cocos2d::CCNode* root);
     void registerWithTouchDispatcher() override;
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchCancelled(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void keyBackClicked() override;
+    void keyDown(cocos2d::enumKeyCodes key, double p1) override;
     void update(float dt) override;
 
 private:
@@ -64,6 +65,9 @@ private:
         float scale = 1.f;
         float scaleX = 1.f;
         float scaleY = 1.f;
+        std::vector<cocos2d::CCPoint> followerWorldPositions;
+        std::vector<float> followerScaleX;
+        std::vector<float> followerScaleY;
     };
 
     void collectButtons();
@@ -154,12 +158,13 @@ private:
     void onScaleDownSelected(cocos2d::CCObject*);
     void onScaleUpSelected(cocos2d::CCObject*);
     void onToggleResizeMode(cocos2d::CCObject*);
+    void onToggleLockShapes(cocos2d::CCObject*);
     void onToolbarPrev(cocos2d::CCObject*);
     void onToolbarNext(cocos2d::CCObject*);
     void refreshResizeModeButton();
     void updateToolbarPage();
 
-    geode::WeakRef<MenuLayer> m_layer;
+    geode::WeakRef<cocos2d::CCNode> m_layer;
     std::vector<ButtonState> m_buttons;
     std::vector<geode::Ref<cocos2d::CCMenu>> m_disabledMenus;
     std::vector<DrawShapeLayout> m_shapeLayouts;
@@ -174,6 +179,7 @@ private:
     cocos2d::CCMenu* m_rightMenu = nullptr;
     CCMenuItemSpriteExtra* m_undoButton = nullptr;
     CCMenuItemSpriteExtra* m_redoButton = nullptr;
+    CCMenuItemSpriteExtra* m_lockShapesBtn = nullptr;
     cocos2d::CCSprite* m_rightToggleArrow = nullptr;
     cocos2d::CCLabelBMFont* m_layerValueLabel = nullptr;
     cocos2d::CCLabelBMFont* m_selectionCountLabel = nullptr;
@@ -204,9 +210,12 @@ private:
     std::string m_linkArmedGroup;
     std::string m_linkSourceKey;
     bool m_freeResizeMode = false;
+    bool m_lockShapes = false;
     bool m_topPanelHidden = false;
     bool m_rightPanelHidden = false;
     bool m_isApplyingHistory = false;
+    bool m_nudgePendingCommit = false;
+    float m_nudgeCommitTimer = 0.f;
     float m_rightPanelWidth = 92.f;
     float m_rightPanelShownX = 0.f;
     float m_rightPanelHiddenX = 0.f;

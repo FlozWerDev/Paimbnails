@@ -21,7 +21,7 @@ namespace paimon::video {
 // ════════════════════════════════════════════════════════════
 
 struct LayerBgConfig {
-    std::string type = "default";   // "default", "custom", "random", "menu", "id", "video"
+    std::string type = "default";   // "default", "custom", "random", "menu", "id", "video", "shader"
     std::string customPath;         // ruta imagen/GIF/video
     int levelId = 0;                // para tipo "id"
     bool darkMode = false;
@@ -66,6 +66,9 @@ public:
     // Retorna true si se aplico un fondo custom (para que el hook oculte UI extra).
     bool applyBackground(cocos2d::CCLayer* layer, std::string const& layerKey);
 
+    // Quita el tinte azul del fondo vanilla cuando no hay un fondo custom activo.
+    void applyVanillaBackgroundTintFix(cocos2d::CCLayer* layer);
+
     // Consulta rapida: ¿este layer tiene un fondo custom configurado? (no aplica nada)
     bool hasCustomBackground(std::string const& layerKey) const;
 
@@ -80,8 +83,15 @@ public:
     LayerBgConfig resolveConfig(std::string const& layerKey) const;
 
     // Verifica si hay otro layer con un video configurado (diferente path).
-    // Retorna el nombre del layer que tiene el video, o empty string si no hay.
-    std::string hasOtherVideoConfigured(std::string const& excludeLayerKey, std::string const& videoPath) const;
+    // DEPRECATED: multi-video is now supported. This method always returns
+    // an empty string. Kept temporarily as a stub so older call sites
+    // (and external mods) compile during the transition; new code should
+    // not rely on it.
+    std::string hasOtherVideoConfigured(std::string const& excludeLayerKey, std::string const& videoPath) const {
+        (void)excludeLayerKey;
+        (void)videoPath;
+        return {};
+    }
 
     // ── Music per-layer (legacy, kept for migration) ──
     LayerMusicConfig getMusicConfig(std::string const& layerKey) const;
@@ -118,6 +128,9 @@ public:
     // Apply a video background to a layer (public so MenuLayer can call it directly)
     void applyVideoBg(cocos2d::CCLayer* layer, std::string const& path, LayerBgConfig const& cfg);
 
+    // Apply a procedural GPU-only shader background.
+    void applyProceduralShaderBg(cocos2d::CCLayer* layer, LayerBgConfig const& cfg);
+
     // Remove the currently applied layer background and stop any active video/audio.
     void clearAppliedBackground(cocos2d::CCLayer* layer, bool suppressAudioResume = false);
 
@@ -135,11 +148,17 @@ private:
     // lets subsequent layers share the already-loaded VideoPlayer's texture
     // instead of creating a redundant decoder pipeline.
     // How long to keep a shared video player's shared_ptr alive after its
-    // last reference is released.  The player itself is stopped immediately
-    // (releasing decode threads + YUV buffers), but the shared_ptr is kept
-    // briefly so that a quick re-acquire can restart playback via disk cache
-    // instead of re-creating the player from scratch.
-    static constexpr auto kSharedVideoTTL = std::chrono::seconds(3);
+    // last reference is released.  Within this grace period the decoder is
+    // PAUSED (no CPU/RAM pressure from running the worker thread) but the
+    // GPU textures + ring buffer + audio state are kept warm so a quick
+    // re-acquire (e.g. closing then re-opening a profile) can resume
+    // instantly without reinitialising the whole pipeline.
+    //
+    // 1500 ms is a deliberate trade-off: long enough to absorb normal layer
+    // transitions (which finish in ~300-800 ms) but short enough that an
+    // idle background video doesn't keep ~30-50 MB of RAM hostage when the
+    // user has clearly moved on.
+    static constexpr auto kSharedVideoTTL = std::chrono::milliseconds(1500);
 
     struct SharedVideoEntry {
         std::shared_ptr<paimon::video::VideoPlayer> player;
@@ -152,9 +171,38 @@ private:
         // TTL expiry for eviction when refCount reaches 0.
         std::chrono::steady_clock::time_point expiry =
             std::chrono::steady_clock::time_point::max();
+        // Last time this entry was acquired or had its refCount touched.
+        // Used by the LRU eviction policy that enforces
+        // settings::video::maxConcurrentVideos().
+        std::chrono::steady_clock::time_point lastUsed =
+            std::chrono::steady_clock::now();
     };
     std::unordered_map<std::string, SharedVideoEntry> m_sharedVideos;
+    std::unordered_map<std::string, int> m_pendingSharedVideoCreates;
     mutable std::mutex m_sharedVideosMutex;  // Protects m_sharedVideos across threads, including const lookups
+
+    // ── Multi-video budget helpers (private) ───────────────────────────────
+    // Number of currently-active (refCount > 0, non-stale) video entries.
+    // m_sharedVideosMutex must be held by the caller.
+    int activeVideoCount_locked() const;
+
+    // Compute the per-video target FPS for the given active count.
+    // Returns settings::video::fpsLimit() when the adaptive scaler is
+    // disabled or count <= 1; otherwise returns
+    // clamp(fpsLimit / count, minVideoFPS, fpsLimit).
+    int adaptiveFPSForCount(int activeCount) const;
+
+    // Re-apply adaptiveFPSForCount() to every active player. Caller must hold
+    // m_sharedVideosMutex (this only iterates and calls setTargetFPS, which
+    // only touches the player's own atomics).
+    void rebalanceAdaptiveFPS_locked();
+
+    // Evict least-recently-used inactive (refCount <= 0) entries until the
+    // total active+inactive entry count is < maxConcurrentVideos. Caller must
+    // hold m_sharedVideosMutex. Players are moved out and returned to the
+    // caller so they can be torn down outside the lock.
+    std::vector<std::shared_ptr<paimon::video::VideoPlayer>>
+        evictLRUForBudget_locked(std::string const& reservedPath, int maxConcurrent);
 
 public:
     // Get or create a shared video player for the given path.
@@ -176,6 +224,31 @@ public:
     // otherwise the static singleton destructor runs during atexit
     // after MF is already torn down, causing msmpeg2vdec.dll crashes.
     void releaseAllSharedVideos();
+
+    // Force-release and evict a shared video player for the given path,
+    // bypassing the TTL grace period.  Call this when a layer's config is
+    // changed away from a particular video so its decoder/RAM is freed
+    // eagerly instead of waiting for the TTL.
+    void forceReleaseSharedVideoByPath(std::string const& path);
+
+    // Force-evict all stale shared video entries immediately, bypassing TTL.
+    // Useful when switching to "default" to ensure no leftover players block
+    // new video acquisitions.
+    void forceEvictAllStaleVideos();
+
+    // Stop the video audio of every active video background WITHOUT
+    // destroying the players or removing the visuals.  Used when entering
+    // a layer that needs the audio channel for its own music (e.g.
+    // LevelInfoLayer's dynamic song): without this, a video bg that was
+    // applied to MenuLayer or CreatorLayer will keep playing through the
+    // layer transition and starve the level music until the old scene
+    // tears down (a 200–500 ms window during which playSong's video-audio
+    // gate causes the level to be silent forever, since playSong does
+    // not retry).  Safe to call multiple times — each call clears the
+    // global videoAudioInteropState flag and stops the FMOD bg channel
+    // synchronously so dynamic-song / level music can grab it on the
+    // very next frame.
+    void releaseAllVideoAudio();
 
     // Check if a shared video player already exists for the given path.
     bool hasSharedVideo(std::string const& path) const;

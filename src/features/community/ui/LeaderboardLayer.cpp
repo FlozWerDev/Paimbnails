@@ -22,6 +22,7 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include "../../../utils/Shaders.hpp"
+#include "../../../utils/GLSLLoader.hpp"
 #include "../../../blur/BlurSystem.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
@@ -145,7 +146,7 @@ bool LeaderboardLayer::init() {
     if (!CCLayer::init()) return false;
     log::info("[PaimonLeaderboard] init");
     
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // fondo base oscuro
     auto bg = CCLayerColor::create(ccc4(12, 10, 20, 255));
@@ -517,7 +518,7 @@ void LeaderboardLayer::createList(std::string type) {
 
     this->removeChildByTag(LIST_CONTAINER_TAG);
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     auto container = CCNode::create();
     container->setTag(LIST_CONTAINER_TAG);
@@ -913,7 +914,7 @@ void LeaderboardLayer::createForYouList() {
 
     this->removeChildByTag(LIST_CONTAINER_TAG);
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     auto container = CCNode::create();
     container->setTag(LIST_CONTAINER_TAG);
@@ -1347,15 +1348,23 @@ void LeaderboardLayer::updateAudioReactive(float dt) {
 void LeaderboardLayer::update(float dt) {
     m_blurTime += dt;
     
-    // forzar BG del menu silenciado CADA FRAME — ningun thread puede restaurarlo
+    // Perf: throttle ensureBgSilenced to every 30 frames instead of every frame
     if (!m_leavingForGood) {
-        ensureBgSilenced();
+        if (++m_bgSilenceCounter >= 30) {
+            m_bgSilenceCounter = 0;
+            ensureBgSilenced();
+        }
     }
     
+    // Perf: cache typeinfo_cast result — sprite type never changes after creation
     if (m_bgSprite) {
-        if (auto paimonSprite = typeinfo_cast<LeaderboardPaimonSprite*>(m_bgSprite)) {
+        if (!m_bgSpriteCastCached) {
+            m_bgSpriteCastCached = true;
+            m_cachedPaimonSprite = typeinfo_cast<LeaderboardPaimonSprite*>(m_bgSprite);
+        }
+        if (m_cachedPaimonSprite) {
              float intensity = 0.75f + std::sin(m_blurTime * 1.0f) * 0.75f;
-             paimonSprite->m_intensity = intensity;
+             static_cast<LeaderboardPaimonSprite*>(m_cachedPaimonSprite)->m_intensity = intensity;
         }
     }
     
@@ -1378,7 +1387,7 @@ void LeaderboardLayer::applyBackground(CCTexture2D* texture) {
 
     log::info("[LeaderboardLayer] Applying background texture: {}", texture);
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     
     // nuevo sprite blur
     // blur +40%
@@ -1389,9 +1398,9 @@ void LeaderboardLayer::applyBackground(CCTexture2D* texture) {
         newSprite->setZOrder(-5); // = m_bgSprite
         newSprite->setOpacity(0);
         
-        // shader atmosfera — prefer .glsl-based from BlurSystem
+        // shader atmosfera — solo GLSL (inline eliminado)
         auto shader = BlurSystem::getInstance()->getRealtimeBlurShader();
-        if (!shader) shader = getOrCreateShader("paimon_atmosphere", vertexShaderCell, fragmentShaderAtmosphere);
+        if (!shader) shader = paimon::shaders::getBlurSinglePassShader();
         if (shader) {
             newSprite->setShaderProgram(shader);
             newSprite->m_intensity = 0.0f; // comenzar en 0
@@ -1674,7 +1683,7 @@ void LeaderboardLayer::spawnThemeParticle(float dt) {
     // limitar cantidad
     if (m_particleContainer->getChildrenCount() > 25) return;
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // elegir color aleatorio entre los dos tematicos
     float t = (rand() % 100) / 100.f;

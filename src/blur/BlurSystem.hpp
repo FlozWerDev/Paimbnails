@@ -6,6 +6,7 @@
 #include "../utils/Shaders.hpp"
 #include <functional>
 #include <list>
+#include <string>
 #include <unordered_map>
 #include <vector>
 #include <cstdint>
@@ -52,6 +53,25 @@ public:
         cocos2d::CCTexture2D* source,
         cocos2d::CCSize const& targetSize,
         float intensity,
+        std::string cacheKey,
+        std::function<void(cocos2d::CCSprite*)> onReady
+    );
+
+    void buildPaimonBlurAsync(
+        cocos2d::CCTexture2D* source,
+        cocos2d::CCSize const& targetSize,
+        float intensity,
+        std::function<void(cocos2d::CCSprite*)> onReady
+    );
+
+    /// Variante de alta prioridad: bypass del limite de concurrencia y arranca
+    /// inmediatamente. Usar para overlays single-shot como LevelInfoLayer donde
+    /// el blur del fondo DEBE aparecer lo antes posible.
+    void buildPaimonBlurPriority(
+        cocos2d::CCTexture2D* source,
+        cocos2d::CCSize const& targetSize,
+        float intensity,
+        std::string cacheKey,
         std::function<void(cocos2d::CCSprite*)> onReady
     );
 
@@ -62,11 +82,32 @@ public:
         cocos2d::CCTexture2D* source,
         cocos2d::CCSize const& targetSize,
         float intensity,
+        std::string cacheKey,
+        std::function<void(cocos2d::CCSprite*)> onReady
+    );
+
+    void buildGaussianBlurAsync(
+        cocos2d::CCTexture2D* source,
+        cocos2d::CCSize const& targetSize,
+        float intensity,
+        std::function<void(cocos2d::CCSprite*)> onReady
+    );
+
+    /// Variante de alta prioridad: bypass del limite de concurrencia. Ver
+    /// buildPaimonBlurPriority.
+    void buildGaussianBlurPriority(
+        cocos2d::CCTexture2D* source,
+        cocos2d::CCSize const& targetSize,
+        float intensity,
+        std::string cacheKey,
         std::function<void(cocos2d::CCSprite*)> onReady
     );
 
     /// Forzar limpieza del cache (shutdown / memory pressure)
     void clearBlurCache();
+
+    /// Limpiar cache en disco y RAM. Seguro de llamar desde UI.
+    void clearDiskCache();
 
     /// Called on window resize — no-op (Shaders recalculates per-frame)
     void onWindowResized(int /*w*/, int /*h*/) {}
@@ -74,22 +115,27 @@ public:
     /// Called on shutdown — no-op (shader cache lives in CCShaderCache)
     void destroy() { clearBlurCache(); }
 
-private:
-    BlurSystem() = default;
-
+public:
     struct BlurKey {
-        std::uintptr_t texId;
+        std::string sourceKey;
         int w;
         int h;
         int intensityBucket;
         bool operator==(BlurKey const& o) const {
-            return texId == o.texId && w == o.w && h == o.h && intensityBucket == o.intensityBucket;
+            return sourceKey == o.sourceKey && w == o.w && h == o.h && intensityBucket == o.intensityBucket;
         }
     };
 
+    enum class BlurFlavor : uint8_t { Paimon, Gaussian };
+
+    static BlurKey makeBlurKey(cocos2d::CCTexture2D* source, cocos2d::CCSize const& targetSize, float intensity, std::string const& cacheKey = {});
+
+private:
+    BlurSystem() = default;
+
     struct BlurKeyHash {
         std::size_t operator()(BlurKey const& k) const noexcept {
-            std::size_t h = std::hash<std::uintptr_t>{}(k.texId);
+            std::size_t h = std::hash<std::string>{}(k.sourceKey);
             h = h * 31 + std::hash<int>{}(k.w);
             h = h * 31 + std::hash<int>{}(k.h);
             h = h * 31 + std::hash<int>{}(k.intensityBucket);
@@ -118,8 +164,35 @@ private:
     // Jobs en vuelo por key — consolidan callbacks duplicados.
     std::unordered_map<BlurKey, std::vector<std::function<void(cocos2d::CCSprite*)>>, BlurKeyHash> m_inFlight;
 
-    static BlurKey makeBlurKey(cocos2d::CCTexture2D* source, cocos2d::CCSize const& targetSize, float intensity);
+    // Limite global de blur jobs activos en paralelo. Cuando scroll rapido
+    // hace visibles N celdas a la vez, evita saturar la GPU con N × 10 FBO
+    // passes simultaneos (stutter visible). Los jobs adicionales esperan
+    // en la cola y se despachan a medida que los activos terminan.
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    static constexpr std::size_t MAX_CONCURRENT_BLUR_JOBS = 1;
+#else
+    // Desktop @ 360fps: cada blur job consume FBO passes que compiten con
+    // el render del juego. Limitar a 2 jobs concurrentes reduce stutter GPU.
+    static constexpr std::size_t MAX_CONCURRENT_BLUR_JOBS = 3;
+#endif
+    std::size_t m_activeJobCount = 0;
+
+    struct QueuedJob {
+        BlurKey key;
+        geode::Ref<cocos2d::CCTexture2D> source;
+        cocos2d::CCSize targetSize;
+        float intensity;
+        BlurFlavor flavor;
+        bool fastMode = false;
+    };
+    std::list<QueuedJob> m_pendingJobs;
+
     cocos2d::CCTexture2D* lookupBlur(BlurKey const& k);
     void insertBlur(BlurKey const& k, cocos2d::CCTexture2D* tex);
     static cocos2d::CCSprite* spriteFromCachedTexture(cocos2d::CCTexture2D* tex);
+
+    void dispatchJob(QueuedJob const& job);
+    void onJobCompleted(BlurKey const& key, cocos2d::CCSprite* result);
+    void drainPendingJobs();
+    bool tryDispatchFromDisk(BlurKey const& key, BlurFlavor flavor, QueuedJob const& fallbackJob);
 };

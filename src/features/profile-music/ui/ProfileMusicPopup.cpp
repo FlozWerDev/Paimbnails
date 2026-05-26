@@ -1,4 +1,5 @@
 #include "ProfileMusicPopup.hpp"
+#include "SongSearchPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/Localization.hpp"
@@ -8,10 +9,20 @@
 #include "../../../utils/FileDialog.hpp"
 #include "../../../framework/PermissionPolicy.hpp"
 #include <Geode/binding/FLAlertLayer.hpp>
+#include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
+#include <Geode/binding/MusicDownloadManager.hpp>
+#include <Geode/binding/SongInfoObject.hpp>
+#include <cmath>
 
 using namespace geode::prelude;
+
+namespace {
+    inline std::string tr(std::string const& key) {
+        return Localization::get().getString(key);
+    }
+}
 
 ProfileMusicPopup* ProfileMusicPopup::create(int accountID) {
     auto ret = new ProfileMusicPopup();
@@ -71,7 +82,7 @@ bool ProfileMusicPopup::init(int accountID) {
 
     m_accountID = accountID;
 
-    this->setTitle("Profile Music");
+    this->setTitle(tr("music.popup_title").c_str());
 
     m_mainMenu = CCMenu::create();
     m_mainMenu->setID("main-menu"_spr);
@@ -95,46 +106,97 @@ bool ProfileMusicPopup::init(int accountID) {
 void ProfileMusicPopup::createSongIdInput() {
     auto winSize = m_mainLayer->getContentSize(); // {400, 260}
 
-    // Label
-    auto idLabel = CCLabelBMFont::create("Song ID:", "bigFont.fnt");
-    idLabel->setScale(0.35f);
-    idLabel->setAnchorPoint({0.f, 0.5f});
-    idLabel->setPosition({15.f, winSize.height - 38.f});
-    m_mainLayer->addChild(idLabel);
+    // ─── Fila superior con RowLayout (Geode) ────────────────────────────
+    // En lugar de posicionar cada elemento manualmente, agrupamos label +
+    // input + botones (LOAD, search, FILE opcional) dentro de un CCMenu y
+    // dejamos que RowLayout reparta el espacio uniformemente. Esto evita
+    // colisiones entre items y simplifica el caso "FILE oculto" (sin VIP).
+    //
+    // CCMenu acepta hijos no-CCMenuItem (label, TextInput); sólo despacha
+    // touches a sus CCMenuItemSpriteExtra. La fila se centra horizontalmente
+    // en el popup para mantener equilibrio visual con o sin botón FILE.
+    const float rowY        = winSize.height - 38.f;       // y = 222
+    const bool  hasCustomBtn = ProfileMusicManager::get().canUploadCustomMusic();
 
-    // Input field
-    m_songIdInput = TextInput::create(100.f, "ID...");
-    m_songIdInput->setPosition({115.f, winSize.height - 38.f});
+    auto inputRow = CCMenu::create();
+    inputRow->setID("input-row"_spr);
+    inputRow->setContentSize({winSize.width - 24.f, 32.f});
+    // Posición = centro del row (no esquina inferior izquierda) para que
+    // RowLayout reparta los items alrededor de winSize.width / 2.
+    inputRow->ignoreAnchorPointForPosition(false);
+    inputRow->setAnchorPoint({0.5f, 0.5f});
+    inputRow->setPosition({winSize.width / 2.f, rowY});
+
+    // ── Label "ID:"
+    auto idLabel = CCLabelBMFont::create(tr("music.song_id_label").c_str(), "bigFont.fnt");
+    idLabel->setScale(0.45f);
+    idLabel->setID("id-label"_spr);
+    inputRow->addChild(idLabel);
+
+    // ── Input (TextInput funciona dentro de CCMenu como hijo regular)
+    m_songIdInput = TextInput::create(85.f, tr("music.short_id").c_str());
     m_songIdInput->setCommonFilter(geode::CommonFilter::Uint);
     m_songIdInput->setMaxCharCount(10);
     m_songIdInput->setID("song-id-input"_spr);
-    m_mainLayer->addChild(m_songIdInput, 11);
+    inputRow->addChild(m_songIdInput);
 
-    // Load button
-    auto loadSpr = ButtonSprite::create("Load", 50, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.6f);
-    auto loadBtn = CCMenuItemSpriteExtra::create(loadSpr, this, menu_selector(ProfileMusicPopup::onLoadSong));
-    loadBtn->setPosition({225.f, winSize.height - 38.f});
+    // ── Load
+    auto loadSpr = ButtonSprite::create(tr("music.load_song").c_str(), 50, true,
+        "bigFont.fnt", "GJ_button_01.png", 22.f, 0.55f);
+    auto loadBtn = CCMenuItemSpriteExtra::create(loadSpr, this,
+        menu_selector(ProfileMusicPopup::onLoadSong));
     loadBtn->setID("load-song-btn"_spr);
-    m_mainMenu->addChild(loadBtn);
+    inputRow->addChild(loadBtn);
 
-    // Custom File button (only visible for authorized users)
-    if (ProfileMusicManager::get().canUploadCustomMusic()) {
-        auto customSpr = ButtonSprite::create("File", 40, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.55f);
-        auto customBtn = CCMenuItemSpriteExtra::create(customSpr, this, menu_selector(ProfileMusicPopup::onLoadCustomFile));
-        customBtn->setPosition({275.f, winSize.height - 38.f});
+    // ── Search (lupa) — fallback a botón con texto si la frame no existe
+    CCMenuItemSpriteExtra* searchBtn = nullptr;
+    auto searchSpr = paimon::SpriteHelper::safeCreateWithFrameName("gj_findBtn_001.png");
+    if (!searchSpr) searchSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_searchBtn_001.png");
+    if (searchSpr) {
+        searchSpr->setScale(0.55f);
+        searchBtn = CCMenuItemSpriteExtra::create(searchSpr, this,
+            menu_selector(ProfileMusicPopup::onSearchSong));
+    } else {
+        auto fbSpr = ButtonSprite::create(tr("music.search.button").c_str(), 40, true,
+            "bigFont.fnt", "GJ_button_05.png", 18.f, 0.50f);
+        searchBtn = CCMenuItemSpriteExtra::create(fbSpr, this,
+            menu_selector(ProfileMusicPopup::onSearchSong));
+    }
+    searchBtn->setID("search-song-btn"_spr);
+    inputRow->addChild(searchBtn);
+
+    // ── FILE — sólo VIP/Mod/Whitelist. Si no se añade, RowLayout cierra
+    //    automáticamente el espacio y la fila queda igualmente equilibrada.
+    if (hasCustomBtn) {
+        auto customSpr = ButtonSprite::create(tr("music.file").c_str(), 40, true,
+            "bigFont.fnt", "GJ_button_04.png", 18.f, 0.55f);
+        auto customBtn = CCMenuItemSpriteExtra::create(customSpr, this,
+            menu_selector(ProfileMusicPopup::onLoadCustomFile));
         customBtn->setID("custom-file-btn"_spr);
-        m_mainMenu->addChild(customBtn);
+        inputRow->addChild(customBtn);
     }
 
-    // Song info label
-    m_songInfoLabel = CCLabelBMFont::create("No song loaded", "goldFont.fnt");
-    m_songInfoLabel->setScale(0.32f);
+    inputRow->setLayout(
+        RowLayout::create()
+            ->setGap(7.f)
+            ->setAxisAlignment(AxisAlignment::Center)
+            ->setCrossAxisAlignment(AxisAlignment::Center)
+            ->setAutoScale(false)
+    );
+    inputRow->updateLayout();
+
+    m_mainLayer->addChild(inputRow, 10);
+
+    // ── Song info label — centrado bajo la fila de inputs.
+    m_songInfoLabel = CCLabelBMFont::create(tr("music.no_song_loaded_short").c_str(), "goldFont.fnt");
+    m_songInfoLabel->setScale(0.34f);
     m_songInfoLabel->setColor({160, 170, 185});
-    m_songInfoLabel->setPosition({winSize.width / 2.f, winSize.height - 56.f});
+    m_songInfoLabel->setPosition({winSize.width / 2.f, winSize.height - 56.f}); // y=204
     m_mainLayer->addChild(m_songInfoLabel);
 
-    // Separator below song-info row
-    addSeparatorLine(winSize.height - 66.f);
+    // No añadimos separador debajo del song-info: el panel oscuro del
+    // waveform (z=0, opaco a 155/255) ya actúa como divisor visual y un
+    // separador a y=194 quedaba oculto bajo el panel (que cubre y=134..196).
 }
 
 void ProfileMusicPopup::createWaveformDisplay() {
@@ -177,32 +239,40 @@ void ProfileMusicPopup::createWaveformDisplay() {
     m_endHandle->setVisible(false);
     m_waveformContainer->addChild(m_endHandle, 3);
 
+    // Cursor móvil de reproducción — invisible hasta que el usuario pulse
+    // play. Se construye on-demand en buildPlaybackCursor() para evitar
+    // dibujarlo cuando aún no hay waveform cargado.
+
     // Placeholder text
-    auto placeholderLabel = CCLabelBMFont::create("Enter song ID and press Load", "chatFont.fnt");
+    auto placeholderLabel = CCLabelBMFont::create(tr("music.placeholder").c_str(), "chatFont.fnt");
     placeholderLabel->setScale(0.72f);
     placeholderLabel->setOpacity(120);
     placeholderLabel->setPosition({m_waveformWidth / 2.f, m_waveformHeight / 2.f});
     placeholderLabel->setTag(999);
     m_waveformContainer->addChild(placeholderLabel, 0);
 
-    // Selection time — small badge-like panel behind the label
+    // Selection time — small badge-like panel behind the label.
+    // El badge se desplaza 2px más abajo respecto a la versión previa para
+    // dejar un margen visible (≈3 px) entre su borde superior y el panel
+    // oscuro del waveform (cuyo borde inferior cae en m_waveformY-bgPad).
+    // Antes había 1 px de solape y se notaba como una línea fea.
     float badgeW = 160.f, badgeH = 18.f;
     auto selBg = paimon::SpriteHelper::createColorPanel(
         badgeW, badgeH, {30, 65, 90}, 110, 4.f
     );
-    selBg->setPosition({winSize.width / 2.f - badgeW / 2.f, m_waveformY - 14.f - badgeH / 2.f});
+    selBg->setPosition({winSize.width / 2.f - badgeW / 2.f, m_waveformY - 16.f - badgeH / 2.f});
     m_mainLayer->addChild(selBg, 0);
 
     m_selectionLabel = CCLabelBMFont::create("0:00 - 0:20", "bigFont.fnt");
     m_selectionLabel->setScale(0.32f);
-    m_selectionLabel->setPosition({winSize.width / 2.f, m_waveformY - 14.f});
+    m_selectionLabel->setPosition({winSize.width / 2.f, m_waveformY - 16.f});
     m_mainLayer->addChild(m_selectionLabel, 1);
 
     // Duration label (smaller, below selection label)
-    m_durationLabel = CCLabelBMFont::create("Duration: --:-- ", "bigFont.fnt");
+    m_durationLabel = CCLabelBMFont::create(tr("music.duration_unknown").c_str(), "bigFont.fnt");
     m_durationLabel->setScale(0.26f);
     m_durationLabel->setColor({155, 170, 185});
-    m_durationLabel->setPosition({winSize.width / 2.f, m_waveformY - 28.f});
+    m_durationLabel->setPosition({winSize.width / 2.f, m_waveformY - 30.f});
     m_mainLayer->addChild(m_durationLabel, 1);
 
     // Separator between waveform area and buttons
@@ -213,111 +283,157 @@ void ProfileMusicPopup::createWaveformDisplay() {
 void ProfileMusicPopup::createControlButtons() {
     auto winSize = m_mainLayer->getContentSize(); // {400, 260}
 
-    // --- Row 1: playback controls ---
+    // ─── Fila 1: Preview / Stop / DL (iconos con label debajo) ────────
+    // Usamos un CCMenu con RowLayout para distribuir los 3 iconos con un
+    // gap fijo y centrarlos en el popup. Las labels ("Preview", "Stop",
+    // "DL") se posicionan después de updateLayout() leyendo la posición
+    // real de cada botón, así no necesitamos hardcodear offsets.
     const float row1Y     = 65.f;
-    const float labelYOff = 14.f;   // offset below button centre for text label
+    const float labelYOff = 14.f;
 
-    float cx = winSize.width / 2.f;
+    auto playbackMenu = CCMenu::create();
+    playbackMenu->setID("playback-menu"_spr);
+    playbackMenu->setContentSize({240.f, 38.f});
+    playbackMenu->ignoreAnchorPointForPosition(false);
+    playbackMenu->setAnchorPoint({0.5f, 0.5f});
+    playbackMenu->setPosition({winSize.width / 2.f, row1Y});
 
-    // Play
-    float playX = cx - 70.f;
-    {
-        auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_playBtn2_001.png");
-        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_playMusicBtn_001.png");
+    // Helper local para construir botones icono con fallback a ButtonSprite
+    auto makeIconBtn = [this](const char* primaryFrame, const char* fallbackFrame,
+                              const char* fallbackLabelKey, SEL_MenuHandler selector,
+                              float iconScale) -> CCMenuItemSpriteExtra* {
+        auto spr = paimon::SpriteHelper::safeCreateWithFrameName(primaryFrame);
+        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName(fallbackFrame);
         if (spr) {
-            spr->setScale(0.45f);
-            auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileMusicPopup::onPlayPreview));
-            btn->setPosition({playX, row1Y});
-            m_mainMenu->addChild(btn);
-        } else {
-            auto fb = ButtonSprite::create("Play", 50, true, "bigFont.fnt", "GJ_button_01.png", 20.f, 0.5f);
-            auto btn = CCMenuItemSpriteExtra::create(fb, this, menu_selector(ProfileMusicPopup::onPlayPreview));
-            btn->setPosition({playX, row1Y});
-            m_mainMenu->addChild(btn);
+            spr->setScale(iconScale);
+            return CCMenuItemSpriteExtra::create(spr, this, selector);
         }
-        auto lbl = CCLabelBMFont::create("Preview", "bigFont.fnt");
+        auto fb = ButtonSprite::create(tr(fallbackLabelKey).c_str(), 50, true,
+            "bigFont.fnt", "GJ_button_01.png", 20.f, 0.5f);
+        return CCMenuItemSpriteExtra::create(fb, this, selector);
+    };
+
+    auto playBtn = makeIconBtn("GJ_playBtn2_001.png", "GJ_playMusicBtn_001.png",
+        "music.play_preview", menu_selector(ProfileMusicPopup::onPlayPreview), 0.45f);
+    playBtn->setID("play-btn"_spr);
+    playbackMenu->addChild(playBtn);
+
+    auto stopBtn = makeIconBtn("GJ_stopMusicBtn_001.png", "GJ_deleteBtn_001.png",
+        "music.stop_preview", menu_selector(ProfileMusicPopup::onStopPreview), 0.45f);
+    stopBtn->setID("stop-btn"_spr);
+    playbackMenu->addChild(stopBtn);
+
+    auto dlBtn = makeIconBtn("GJ_downloadBtn_001.png", "GJ_downloadsIcon_001.png",
+        "music.dl_short", menu_selector(ProfileMusicPopup::onDownloadSong), 0.48f);
+    dlBtn->setID("dl-btn"_spr);
+    playbackMenu->addChild(dlBtn);
+
+    playbackMenu->setLayout(
+        RowLayout::create()
+            ->setGap(40.f)
+            ->setAxisAlignment(AxisAlignment::Center)
+            ->setCrossAxisAlignment(AxisAlignment::Center)
+            ->setAutoScale(false)
+    );
+    playbackMenu->updateLayout();
+    m_mainLayer->addChild(playbackMenu, 10);
+
+    // Labels debajo: leemos la posición de cada botón ya colocada por el
+    // layout y la convertimos al espacio del m_mainLayer para que el texto
+    // quede centrado bajo el icono correspondiente.
+    auto addBtnLabel = [this, &playbackMenu, row1Y, labelYOff](
+            CCMenuItemSpriteExtra* btn, std::string const& text) {
+        if (!btn) return;
+        float worldX = playbackMenu->getPositionX()
+                       + (btn->getPositionX() - playbackMenu->getContentSize().width * 0.5f);
+        auto lbl = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
         lbl->setScale(0.26f);
         lbl->setOpacity(170);
-        lbl->setPosition({playX, row1Y - labelYOff});
+        lbl->setPosition({worldX, row1Y - labelYOff});
         m_mainLayer->addChild(lbl);
-    }
+    };
+    addBtnLabel(playBtn, tr("music.preview"));
+    addBtnLabel(stopBtn, tr("music.stop"));
+    addBtnLabel(dlBtn,   tr("music.dl_short"));
 
-    // Stop
-    float stopX = cx;
-    {
-        auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_stopMusicBtn_001.png");
-        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_deleteBtn_001.png");
-        if (spr) {
-            spr->setScale(0.45f);
-            auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileMusicPopup::onStopPreview));
-            btn->setPosition({stopX, row1Y});
-            m_mainMenu->addChild(btn);
-        } else {
-            auto fb = ButtonSprite::create("Stop", 50, true, "bigFont.fnt", "GJ_button_06.png", 20.f, 0.5f);
-            auto btn = CCMenuItemSpriteExtra::create(fb, this, menu_selector(ProfileMusicPopup::onStopPreview));
-            btn->setPosition({stopX, row1Y});
-            m_mainMenu->addChild(btn);
-        }
-        auto lbl = CCLabelBMFont::create("Stop", "bigFont.fnt");
-        lbl->setScale(0.26f);
-        lbl->setOpacity(170);
-        lbl->setPosition({stopX, row1Y - labelYOff});
-        m_mainLayer->addChild(lbl);
-    }
-
-    // Download
-    float dlX = cx + 70.f;
-    {
-        auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_downloadBtn_001.png");
-        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_downloadsIcon_001.png");
-        if (spr) {
-            spr->setScale(0.48f);
-            auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileMusicPopup::onDownloadSong));
-            btn->setPosition({dlX, row1Y});
-            m_mainMenu->addChild(btn);
-        } else {
-            auto fb = ButtonSprite::create("DL", 50, true, "bigFont.fnt", "GJ_button_01.png", 20.f, 0.5f);
-            auto btn = CCMenuItemSpriteExtra::create(fb, this, menu_selector(ProfileMusicPopup::onDownloadSong));
-            btn->setPosition({dlX, row1Y});
-            m_mainMenu->addChild(btn);
-        }
-        auto lbl = CCLabelBMFont::create("DL", "bigFont.fnt");
-        lbl->setScale(0.26f);
-        lbl->setOpacity(170);
-        lbl->setPosition({dlX, row1Y - labelYOff});
-        m_mainLayer->addChild(lbl);
-    }
-
-    // --- Row 2: save / delete ---
+    // ─── Fila 2: Save / Delete ───────────────────────────────────────
     const float row2Y = 28.f;
 
-    auto saveSpr = ButtonSprite::create("Save", 70, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.6f);
-    auto saveBtn = CCMenuItemSpriteExtra::create(saveSpr, this, menu_selector(ProfileMusicPopup::onSave));
-    saveBtn->setPosition({cx - 45.f, row2Y});
-    m_mainMenu->addChild(saveBtn);
+    auto actionsMenu = CCMenu::create();
+    actionsMenu->setID("actions-menu"_spr);
+    actionsMenu->setContentSize({200.f, 32.f});
+    actionsMenu->ignoreAnchorPointForPosition(false);
+    actionsMenu->setAnchorPoint({0.5f, 0.5f});
+    actionsMenu->setPosition({winSize.width / 2.f, row2Y});
 
-    auto deleteSpr = ButtonSprite::create("Delete", 70, true, "bigFont.fnt", "GJ_button_06.png", 24.f, 0.6f);
-    auto deleteBtn = CCMenuItemSpriteExtra::create(deleteSpr, this, menu_selector(ProfileMusicPopup::onDelete));
-    deleteBtn->setPosition({cx + 45.f, row2Y});
-    m_mainMenu->addChild(deleteBtn);
+    auto saveSpr = ButtonSprite::create(tr("music.save").c_str(), 70, true,
+        "bigFont.fnt", "GJ_button_01.png", 24.f, 0.6f);
+    auto saveBtn = CCMenuItemSpriteExtra::create(saveSpr, this,
+        menu_selector(ProfileMusicPopup::onSave));
+    saveBtn->setID("save-btn"_spr);
+    actionsMenu->addChild(saveBtn);
+
+    auto deleteSpr = ButtonSprite::create(tr("music.delete").c_str(), 70, true,
+        "bigFont.fnt", "GJ_button_06.png", 24.f, 0.6f);
+    auto deleteBtn = CCMenuItemSpriteExtra::create(deleteSpr, this,
+        menu_selector(ProfileMusicPopup::onDelete));
+    deleteBtn->setID("delete-btn"_spr);
+    actionsMenu->addChild(deleteBtn);
+
+    actionsMenu->setLayout(
+        RowLayout::create()
+            ->setGap(20.f)
+            ->setAxisAlignment(AxisAlignment::Center)
+            ->setCrossAxisAlignment(AxisAlignment::Center)
+            ->setAutoScale(false)
+    );
+    actionsMenu->updateLayout();
+    m_mainLayer->addChild(actionsMenu, 10);
 }
 
+
+void ProfileMusicPopup::onSearchSong(CCObject*) {
+    // Detener cualquier preview activo del popup actual antes de abrir el
+    // SongSearchPopup (la fila tiene su propio botón play que usa el canal
+    // BG y no debe pelearse con un preview ya iniciado).
+    if (m_isPreviewPlaying) {
+        ProfileMusicManager::get().stopPreview();
+        m_isPreviewPlaying = false;
+        unschedulePlaybackTracking();
+    }
+
+    WeakRef<ProfileMusicPopup> self = this;
+    auto popup = SongSearchPopup::create([self](int songID) {
+        auto popup = self.lock();
+        if (!popup || songID <= 0) return;
+
+        // Reflejar el ID elegido en el input y disparar el flujo normal de
+        // carga (busca info en Newgrounds, descarga, analiza waveform).
+        if (popup->m_songIdInput) {
+            popup->m_songIdInput->setString(std::to_string(songID));
+        }
+        popup->onLoadSong(nullptr);
+    });
+    if (popup) {
+        popup->show();
+    }
+}
 
 void ProfileMusicPopup::onLoadSong(CCObject*) {
     std::string idStr = m_songIdInput->getString();
     if (idStr.empty()) {
-        showError("Please enter a song ID");
+        showError(tr("music.enter_song_id"));
         return;
     }
 
     auto parsed = geode::utils::numFromString<int>(idStr);
     if (!parsed.isOk()) {
-        showError("Invalid song ID");
+        showError(tr("music.invalid_song_id"));
         return;
     }
     m_songID = parsed.unwrap();
     if (m_songID <= 0) {
-        showError("Invalid song ID");
+        showError(tr("music.invalid_song_id"));
         return;
     }
 
@@ -335,7 +451,7 @@ void ProfileMusicPopup::onLoadSong(CCObject*) {
 
         if (!success) {
             popup->hideLoading();
-            popup->showError("Could not load song info. Make sure the ID is valid.");
+            popup->showError(tr("music.load_error"));
             return;
         }
 
@@ -353,7 +469,7 @@ void ProfileMusicPopup::onLoadSong(CCObject*) {
 
         int mins = popup->m_songDurationMs / 60000;
         int secs = (popup->m_songDurationMs % 60000) / 1000;
-        popup->m_durationLabel->setString(fmt::format("Duration: {}:{:02d}", mins, secs).c_str());
+        popup->m_durationLabel->setString(fmt::format(fmt::runtime(tr("music.duration_fmt")), mins, secs).c_str());
 
         // Ajustar seleccion si excede la duracion
         if (popup->m_endMs > popup->m_songDurationMs) {
@@ -368,7 +484,7 @@ void ProfileMusicPopup::onLoadSong(CCObject*) {
 
 void ProfileMusicPopup::onLoadCustomFile(CCObject*) {
     if (!ProfileMusicManager::get().canUploadCustomMusic()) {
-        showError("You don't have permission to upload custom music.\nRequires Moderator, VIP, or Whitelist rank.");
+        showError(tr("music.no_custom_perm"));
         return;
     }
 
@@ -397,7 +513,7 @@ void ProfileMusicPopup::onLoadCustomFile(CCObject*) {
 
             if (!success) {
                 popup->hideLoading();
-                popup->showError("Could not read audio file. Make sure it's a valid audio file.");
+                popup->showError(tr("music.read_audio_error"));
                 popup->m_isCustomFile = false;
                 popup->m_customFilePath.clear();
                 return;
@@ -417,7 +533,7 @@ void ProfileMusicPopup::onLoadCustomFile(CCObject*) {
 
             int mins = popup->m_songDurationMs / 60000;
             int secs = (popup->m_songDurationMs % 60000) / 1000;
-            popup->m_durationLabel->setString(fmt::format("Duration: {}:{:02d}", mins, secs).c_str());
+            popup->m_durationLabel->setString(fmt::format(fmt::runtime(tr("music.duration_fmt")), mins, secs).c_str());
 
             // Adjust selection if it exceeds duration
             if (popup->m_endMs > popup->m_songDurationMs) {
@@ -436,7 +552,7 @@ void ProfileMusicPopup::onLoadCustomFile(CCObject*) {
                 popup->hideLoading();
 
                 if (!success) {
-                    popup->showError("Could not analyze audio file");
+                    popup->showError(tr("music.analyze_audio_error"));
                     return;
                 }
 
@@ -446,7 +562,7 @@ void ProfileMusicPopup::onLoadCustomFile(CCObject*) {
                     popup->m_songDurationMs = durationMs;
                     int mins = popup->m_songDurationMs / 60000;
                     int secs = (popup->m_songDurationMs % 60000) / 1000;
-                    popup->m_durationLabel->setString(fmt::format("Duration: {}:{:02d}", mins, secs).c_str());
+                    popup->m_durationLabel->setString(fmt::format(fmt::runtime(tr("music.duration_fmt")), mins, secs).c_str());
 
                     popup->m_startMs = 0;
                     popup->m_endMs = std::min(popup->m_songDurationMs, MAX_FRAGMENT_MS);
@@ -486,7 +602,7 @@ void ProfileMusicPopup::loadWaveform() {
 
         if (!success || path.empty()) {
             popup->hideLoading();
-            popup->showError("Could not download song");
+            popup->showError(tr("music.download_failed"));
             return;
         }
 
@@ -501,7 +617,7 @@ void ProfileMusicPopup::loadWaveform() {
             popup->hideLoading();
 
             if (!success) {
-                popup->showError("Could not analyze song");
+                popup->showError(tr("music.analyze_song_error"));
                 return;
             }
 
@@ -514,7 +630,7 @@ void ProfileMusicPopup::loadWaveform() {
                 // Update duration label
                 int mins = popup->m_songDurationMs / 60000;
                 int secs = (popup->m_songDurationMs % 60000) / 1000;
-                popup->m_durationLabel->setString(fmt::format("Duration: {}:{:02d}", mins, secs).c_str());
+                popup->m_durationLabel->setString(fmt::format(fmt::runtime(tr("music.duration_fmt")), mins, secs).c_str());
 
                 // Set default selection to first 20 seconds (or less if song is shorter)
                 popup->m_startMs = 0;
@@ -576,8 +692,11 @@ void ProfileMusicPopup::renderWaveform() {
         const float centerY      = m_waveformHeight / 2.f;
         const float gap          = (barWidth > 2.f) ? 0.7f : 0.f;
 
-        // Muted gray for unselected region
-        cocos2d::ccColor4F grayColor = {0.35f, 0.38f, 0.42f, 0.70f};
+        // Estilo song-preview: barras grises oscuras, baja opacidad — son el
+        // "fondo" sobre el que se dibujan las barras seleccionadas naranja.
+        // Aumentamos contraste vs versión anterior (era 0.35,0.38,0.42,0.70):
+        // ahora 0.22,0.25,0.30,0.55 → más oscuras → la naranja resalta más.
+        cocos2d::ccColor4F grayColor = {0.22f, 0.26f, 0.30f, 0.62f};
 
         for (int i = 0; i < numBars; ++i) {
             // Range-based max sampling: take the loudest peak in this bar's time slice
@@ -645,8 +764,24 @@ void ProfileMusicPopup::drawSelectionBars() {
     float selStartX = msToPosition(m_startMs);
     float selEndX   = msToPosition(m_endMs);
 
-    // Bright orange for selected bars
-    cocos2d::ccColor4F orangeColor = {1.0f, 0.55f, 0.08f, 0.93f};
+    // Strip de tinte naranja muy sutil bajo toda la zona seleccionada — da
+    // una "pista" visual del rango activo incluso en zonas donde las barras
+    // son cortas/inexistentes.
+    {
+        cocos2d::ccColor4F selectionTint = {1.f, 0.55f, 0.10f, 0.10f};
+        cocos2d::CCPoint stripRect[4] = {
+            ccp(selStartX, 1.f),
+            ccp(selEndX,   1.f),
+            ccp(selEndX,   m_waveformHeight - 1.f),
+            ccp(selStartX, m_waveformHeight - 1.f),
+        };
+        orangeDraw->drawPolygon(stripRect, 4, selectionTint, 0.f, selectionTint);
+    }
+
+    // Glow exterior (más ancho, alpha bajo) + Core brillante (estrecho).
+    // Estilo song-preview: la zona seleccionada vibra en naranja `ffad31`.
+    cocos2d::ccColor4F orangeGlow = {1.f, 0.65f, 0.18f, 0.45f};  // halo
+    cocos2d::ccColor4F orangeCore = {1.f, 0.68f, 0.20f, 1.00f};  // brillo central
 
     for (int i = 0; i < numBars; ++i) {
         float barStartX  = static_cast<float>(i) * barWidth;
@@ -672,13 +807,24 @@ void ProfileMusicPopup::drawSelectionBars() {
         float displayVal = std::pow(peakVal, 0.55f);
         float barH       = std::max(2.f, displayVal * maxBarHeight);
 
+        // ── Glow exterior (mismo rect, alpha bajo, ligeramente más ancho)
+        const float glowExtra = 0.6f;
+        cocos2d::CCPoint glowRect[4] = {
+            ccp(barStartX + gap / 2.f - glowExtra,            centerY - barH / 2.f - glowExtra),
+            ccp(barStartX + barWidth - gap / 2.f + glowExtra, centerY - barH / 2.f - glowExtra),
+            ccp(barStartX + barWidth - gap / 2.f + glowExtra, centerY + barH / 2.f + glowExtra),
+            ccp(barStartX + gap / 2.f - glowExtra,            centerY + barH / 2.f + glowExtra),
+        };
+        orangeDraw->drawPolygon(glowRect, 4, orangeGlow, 0.f, orangeGlow);
+
+        // ── Core brillante (rect normal)
         cocos2d::CCPoint rect[4] = {
             ccp(barStartX + gap / 2.f,            centerY - barH / 2.f),
             ccp(barStartX + barWidth - gap / 2.f, centerY - barH / 2.f),
             ccp(barStartX + barWidth - gap / 2.f, centerY + barH / 2.f),
             ccp(barStartX + gap / 2.f,            centerY + barH / 2.f)
         };
-        orangeDraw->drawPolygon(rect, 4, orangeColor, 0.f, orangeColor);
+        orangeDraw->drawPolygon(rect, 4, orangeCore, 0.f, orangeCore);
     }
 
     // z=1: above gray bars (z=0), below tick marks (z=2) and handles (z=3)
@@ -714,7 +860,7 @@ void ProfileMusicPopup::updateSelectionLabel() {
     int endSecs      = m_endMs / 1000;
     int durationSecs = (m_endMs - m_startMs) / 1000;
 
-    std::string text = fmt::format("{}:{:02d} - {}:{:02d} ({} sec)",
+    std::string text = fmt::format(fmt::runtime(tr("music.selection_fmt")),
         startSecs / 60, startSecs % 60,
         endSecs / 60, endSecs % 60,
         durationSecs);
@@ -913,32 +1059,50 @@ void ProfileMusicPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
 void ProfileMusicPopup::onPlayPreview(CCObject*) {
     if (m_isCustomFile) {
         if (m_customFilePath.empty()) {
-            showError("No custom file loaded");
+            showError(tr("music.custom_no_file"));
             return;
         }
         ProfileMusicManager::get().playPreview(m_customFilePath, m_startMs, m_endMs);
     } else {
         if (m_previewPath.empty() || m_songID <= 0) {
-            showError("Load a song first");
+            showError(tr("music.song_required_first"));
             return;
         }
         ProfileMusicManager::get().playPreview(m_previewPath, m_startMs, m_endMs);
     }
+
+    // Cursor móvil: marcar como reproduciendo, construir si falta, y
+    // arrancar el schedule que actualiza la posición cada frame (~60Hz).
+    m_isPreviewPlaying = true;
+    if (!m_playbackCursor) {
+        buildPlaybackCursor();
+    }
+    if (m_playbackCursor) {
+        m_playbackCursor->setVisible(true);
+    }
+    schedulePlaybackTracking();
 }
 
 void ProfileMusicPopup::onStopPreview(CCObject*) {
     ProfileMusicManager::get().stopPreview();
+
+    // Cursor móvil: detener tracking y ocultar.
+    m_isPreviewPlaying = false;
+    unschedulePlaybackTracking();
+    if (m_playbackCursor) {
+        m_playbackCursor->setVisible(false);
+    }
 }
 
 void ProfileMusicPopup::onDownloadSong(CCObject*) {
     if (m_isCustomFile) {
         // Custom files are already local, no download needed
-        PaimonNotify::create("Custom file is already local", NotificationIcon::Info)->show();
+        PaimonNotify::create(tr("music.song_already_local").c_str(), NotificationIcon::Info)->show();
         return;
     }
 
     if (m_songID <= 0) {
-        showError("Load a song first");
+        showError(tr("music.song_required_first"));
         return;
     }
 
@@ -953,9 +1117,9 @@ void ProfileMusicPopup::onDownloadSong(CCObject*) {
 
         if (success) {
             popup->m_previewPath = path;
-            PaimonNotify::create("Song downloaded! You can now preview.", NotificationIcon::Success)->show();
+            PaimonNotify::create(tr("music.song_dl_success").c_str(), NotificationIcon::Success)->show();
         } else {
-            popup->showError("Failed to download song");
+            popup->showError(tr("music.download_error"));
         }
     });
 }
@@ -964,24 +1128,24 @@ void ProfileMusicPopup::onSave(CCObject*) {
     if (m_isCustomFile) {
         // Custom file upload
         if (m_customFilePath.empty()) {
-            showError("No custom file loaded");
+            showError(tr("music.custom_no_file"));
             return;
         }
     } else {
         // Newgrounds song upload
         if (m_songID <= 0) {
-            showError("Please load a song first");
+            showError(tr("music.song_required_first"));
             return;
         }
     }
 
     if (m_endMs - m_startMs > MAX_FRAGMENT_MS) {
-        showError("Fragment must be 20 seconds or less");
+        showError(tr("music.fragment_max"));
         return;
     }
 
     if (m_endMs - m_startMs < MIN_FRAGMENT_MS) {
-        showError("Fragment must be at least 5 seconds");
+        showError(tr("music.fragment_min"));
         return;
     }
 
@@ -999,7 +1163,7 @@ void ProfileMusicPopup::onSave(CCObject*) {
 
     auto* accountManager = GJAccountManager::get();
     if (!accountManager) {
-        PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
+        PaimonNotify::create(tr("music.account_unavailable").c_str(), NotificationIcon::Error)->show();
         return;
     }
     std::string username = accountManager->m_username;
@@ -1014,10 +1178,10 @@ void ProfileMusicPopup::onSave(CCObject*) {
             popup->hideLoading();
 
             if (success) {
-                PaimonNotify::create("Custom profile music saved!", NotificationIcon::Success)->show();
+                PaimonNotify::create(tr("music.custom_song_uploaded").c_str(), NotificationIcon::Success)->show();
                 popup->onClose(nullptr);
             } else {
-                popup->showError(fmt::format("Failed to save: {}", msg));
+                popup->showError(fmt::format(fmt::runtime(tr("music.upload_failed_fmt")), msg));
             }
         });
     } else {
@@ -1028,10 +1192,10 @@ void ProfileMusicPopup::onSave(CCObject*) {
             popup->hideLoading();
 
             if (success) {
-                PaimonNotify::create("Profile music saved!", NotificationIcon::Success)->show();
+                PaimonNotify::create(tr("music.song_uploaded").c_str(), NotificationIcon::Success)->show();
                 popup->onClose(nullptr);
             } else {
-                popup->showError(fmt::format("Failed to save: {}", msg));
+                popup->showError(fmt::format(fmt::runtime(tr("music.upload_failed_fmt")), msg));
             }
         });
     }
@@ -1042,10 +1206,10 @@ void ProfileMusicPopup::onDelete(CCObject*) {
 
     // Create a simple confirmation
     geode::createQuickPopup(
-        "Delete Music",
-        "Are you sure you want to remove your profile music?",
-        "Cancel",
-        "Delete",
+        tr("music.delete_title").c_str(),
+        tr("music.delete_message"),
+        tr("music.delete_cancel").c_str(),
+        tr("music.delete_btn").c_str(),
         [self](auto, bool confirmed) {
             auto popup = self.lock();
             if (!popup) return;
@@ -1056,7 +1220,7 @@ void ProfileMusicPopup::onDelete(CCObject*) {
                 auto* accountManager = GJAccountManager::get();
                 if (!accountManager) {
                     popup->hideLoading();
-                    PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
+                    PaimonNotify::create(tr("music.account_unavailable").c_str(), NotificationIcon::Error)->show();
                     return;
                 }
                 std::string username = accountManager->m_username;
@@ -1068,10 +1232,10 @@ void ProfileMusicPopup::onDelete(CCObject*) {
                     popup->hideLoading();
 
                     if (success) {
-                        PaimonNotify::create("Profile music deleted!", NotificationIcon::Success)->show();
+                        PaimonNotify::create(tr("music.deleted_ok").c_str(), NotificationIcon::Success)->show();
                         popup->onClose(nullptr);
                     } else {
-                        popup->showError(fmt::format("Failed to delete: {}", msg));
+                        popup->showError(fmt::format(fmt::runtime(tr("music.delete_failed")), msg));
                     }
                 });
             }
@@ -1080,6 +1244,10 @@ void ProfileMusicPopup::onDelete(CCObject*) {
 }
 
 void ProfileMusicPopup::onClose(CCObject* sender) {
+    // Limpiar tracking del cursor para evitar callbacks tras destrucción
+    unschedulePlaybackTracking();
+    m_isPreviewPlaying = false;
+
     ProfileMusicManager::get().stopPreview();
     Popup::onClose(sender);
 }
@@ -1118,7 +1286,7 @@ void ProfileMusicPopup::loadExistingConfig() {
 void ProfileMusicPopup::showLoading() {
     if (m_loadingSpinner) return;
 
-    m_loadingSpinner = PaimonLoadingOverlay::create("Loading...", 30.f);
+    m_loadingSpinner = PaimonLoadingOverlay::create(tr("music.loading_default").c_str(), 30.f);
     m_loadingSpinner->show(m_mainLayer, 100);
 }
 
@@ -1130,5 +1298,140 @@ void ProfileMusicPopup::hideLoading() {
 }
 
 void ProfileMusicPopup::showError(std::string const& message) {
-    FLAlertLayer::create(nullptr, "Error", message, "OK", nullptr)->show();
+    FLAlertLayer::create(nullptr, tr("music.error_title").c_str(), message, tr("music.ok").c_str(), nullptr)->show();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cursor móvil de reproducción (estilo matcool/song-preview)
+// ─────────────────────────────────────────────────────────────────────────────
+
+void ProfileMusicPopup::buildPlaybackCursor() {
+    if (!m_waveformContainer || m_playbackCursor) return;
+
+    // Container fino (4 px de ancho) que se mueve por el waveform.
+    auto cursor = CCNode::create();
+    cursor->setContentSize({4.f, m_waveformHeight});
+    cursor->setAnchorPoint({0.5f, 0.f});
+
+    auto draw = PaimonDrawNode::create();
+
+    // Glow exterior (más ancho, alpha bajo, sirve de "halo")
+    cocos2d::ccColor4F glow = {1.f, 1.f, 1.f, 0.35f};
+    draw->drawSegment(
+        ccp(2.f, 0.f),
+        ccp(2.f, m_waveformHeight),
+        3.5f, glow);
+
+    // Línea central blanca brillante
+    cocos2d::ccColor4F core = {1.f, 1.f, 1.f, 0.95f};
+    draw->drawSegment(
+        ccp(2.f, 0.f),
+        ccp(2.f, m_waveformHeight),
+        1.2f, core);
+
+    // Cabezas del cursor: pequeño rombo arriba y abajo para hacerlo más
+    // visible sobre las barras del waveform.
+    cocos2d::ccColor4F head = {1.f, 1.f, 1.f, 0.95f};
+    cocos2d::CCPoint topDiamond[4] = {
+        ccp(2.f, m_waveformHeight + 4.f),
+        ccp(6.f, m_waveformHeight),
+        ccp(2.f, m_waveformHeight - 4.f),
+        ccp(-2.f, m_waveformHeight),
+    };
+    draw->drawPolygon(topDiamond, 4, head, 0.f, head);
+
+    cocos2d::CCPoint botDiamond[4] = {
+        ccp(2.f, -4.f),
+        ccp(6.f, 0.f),
+        ccp(2.f, 4.f),
+        ccp(-2.f, 0.f),
+    };
+    draw->drawPolygon(botDiamond, 4, head, 0.f, head);
+
+    cursor->addChild(draw);
+    cursor->setVisible(false);
+
+    // z=4: por encima de los handles (z=3) — el cursor tiene la mayor
+    // prioridad visual durante la reproducción.
+    m_waveformContainer->addChild(cursor, 4);
+    m_playbackCursor = cursor;
+}
+
+void ProfileMusicPopup::schedulePlaybackTracking() {
+    if (m_cursorScheduled) return;
+    // ~30 Hz es suficientemente fluido y barato. El cursor se mueve sobre
+    // 320 px durante 5-20 s, así que >30 fps no aporta detalle visible.
+    this->schedule(schedule_selector(ProfileMusicPopup::updatePlaybackCursor), 1.f / 30.f);
+    m_cursorScheduled = true;
+}
+
+void ProfileMusicPopup::unschedulePlaybackTracking() {
+    if (!m_cursorScheduled) return;
+    this->unschedule(schedule_selector(ProfileMusicPopup::updatePlaybackCursor));
+    m_cursorScheduled = false;
+}
+
+void ProfileMusicPopup::updatePlaybackCursorPosition() {
+    if (!m_playbackCursor || m_songDurationMs <= 0) return;
+
+    auto* engine = FMODAudioEngine::sharedEngine();
+    if (!engine) {
+        m_playbackCursor->setVisible(false);
+        return;
+    }
+
+    // Cuando el preview termina o se pausa desde fuera, ocultamos el cursor
+    // para no mostrar una posición congelada mentirosa.
+    if (!engine->isMusicPlaying(0) || !ProfileMusicManager::get().isPlaying()) {
+        m_playbackCursor->setVisible(false);
+        return;
+    }
+
+    // getMusicTimeMS(0) devuelve el tiempo absoluto en el archivo de audio,
+    // que es exactamente lo que msToPosition() espera. El cursor cae fuera
+    // del rango del fragmento si el motor está reproduciendo otra cosa
+    // (improbable, pero defensivo).
+    int currentMs = static_cast<int>(engine->getMusicTimeMS(0));
+    if (currentMs < 0) currentMs = 0;
+    if (currentMs > m_songDurationMs) currentMs = m_songDurationMs;
+
+    float x = msToPosition(currentMs);
+    if (x < 0.f) x = 0.f;
+    if (x > m_waveformWidth) x = m_waveformWidth;
+
+    m_playbackCursor->setVisible(true);
+    m_playbackCursor->setPositionX(x);
+    m_playbackCursor->setPositionY(0.f);
+}
+
+void ProfileMusicPopup::updatePlaybackCursor(float dt) {
+    // Animación de respiración del cursor: en lugar de cambiar la opacidad
+    // (CCNode no la soporta directamente), animamos un ligero scale del
+    // cursor para que parezca "pulsante" sin requerir CCNodeRGBA.
+    m_cursorPulse += dt * 6.f;
+    if (m_cursorPulse > 6.2831853f) m_cursorPulse -= 6.2831853f;
+    if (m_playbackCursor) {
+        // 0.92 .. 1.08 scale range — pulso sutil
+        float pulse = 1.f + 0.08f * std::sin(m_cursorPulse);
+        m_playbackCursor->setScaleX(pulse);
+    }
+
+    if (!m_isPreviewPlaying) {
+        unschedulePlaybackTracking();
+        if (m_playbackCursor) m_playbackCursor->setVisible(false);
+        return;
+    }
+
+    // Si el motor reporta que ya no hay música, autodetenemos el tracking
+    // para evitar cursor "fantasma". Esto cubre el caso de que el preview
+    // fue parado por otra fuente (cambio de escena, otro popup, etc).
+    auto* engine = FMODAudioEngine::sharedEngine();
+    if (!engine || !engine->isMusicPlaying(0) || !ProfileMusicManager::get().isPlaying()) {
+        m_isPreviewPlaying = false;
+        unschedulePlaybackTracking();
+        if (m_playbackCursor) m_playbackCursor->setVisible(false);
+        return;
+    }
+
+    updatePlaybackCursorPosition();
 }

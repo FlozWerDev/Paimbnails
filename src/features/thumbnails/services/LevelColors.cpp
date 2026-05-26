@@ -2,6 +2,7 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/PaimonFormat.hpp"
 #include "../../../utils/DominantColors.hpp"
+#include "../../../utils/DominantColorsGPU.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../core/QualityConfig.hpp"
 #include <Geode/loader/Mod.hpp>
@@ -13,7 +14,12 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-LevelColors& LevelColors::get() { static LevelColors lc; return lc; }
+LevelColors& LevelColors::get() {
+    // RuntimeLifecycle flushes pending writes explicitly on exit. Keep the
+    // singleton alive to avoid destructor-order issues during shutdown.
+    static auto* lc = new LevelColors();
+    return *lc;
+}
 
 LevelColors::~LevelColors() {
     if (paimon::isRuntimeShuttingDown()) return;
@@ -122,7 +128,21 @@ void LevelColors::extractFromImage(int32_t levelID, cocos2d::CCImage* image) {
     
     if (!imgData || w <= 0 || h <= 0) return;
     
-    // convertir rgba->rgb24 si necesario.
+    // GPU path: use DominantColorsGPU for hardware-accelerated extraction
+    if (DominantColorsGPU::isAvailable()) {
+        std::pair<DCColor, DCColor> pair;
+        if (hasAlpha) {
+            pair = DominantColorsGPU::extractFromRGBA(imgData, w, h);
+        } else {
+            pair = DominantColorsGPU::extractFromRGB(imgData, w, h);
+        }
+        cocos2d::ccColor3B colorA{pair.first.r, pair.first.g, pair.first.b};
+        cocos2d::ccColor3B colorB{pair.second.r, pair.second.g, pair.second.b};
+        this->set(levelID, colorA, colorB);
+        return;
+    }
+    
+    // CPU fallback: convertir rgba->rgb24 si necesario.
     std::vector<uint8_t> rgb24;
     const uint8_t* rgbPtr = nullptr;
     
@@ -145,7 +165,21 @@ void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, in
     if (!imgData || w <= 0 || h <= 0) return;
     log::debug("[LevelColors] extractFromRawData: levelID={} {}x{} alpha={}", levelID, w, h, hasAlpha);
     
-    // convertir rgba->rgb24 si necesario.
+    // GPU path: use DominantColorsGPU for hardware-accelerated extraction
+    if (DominantColorsGPU::isAvailable()) {
+        std::pair<DCColor, DCColor> pair;
+        if (hasAlpha) {
+            pair = DominantColorsGPU::extractFromRGBA(imgData, w, h);
+        } else {
+            pair = DominantColorsGPU::extractFromRGB(imgData, w, h);
+        }
+        cocos2d::ccColor3B colorA{pair.first.r, pair.first.g, pair.first.b};
+        cocos2d::ccColor3B colorB{pair.second.r, pair.second.g, pair.second.b};
+        this->set(levelID, colorA, colorB);
+        return;
+    }
+    
+    // CPU fallback: convertir rgba->rgb24 si necesario.
     std::vector<uint8_t> rgb24;
     const uint8_t* rgbPtr = nullptr;
     
@@ -243,4 +277,3 @@ void LevelColors::extractColorsFromCache() {
     // fuerzo escritura si quedaron cambios pendientes del batch
     flushIfDirty();
 }
-

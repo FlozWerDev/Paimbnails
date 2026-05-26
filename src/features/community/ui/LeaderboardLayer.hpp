@@ -81,6 +81,10 @@ protected:
     cocos2d::CCSprite* m_bgSprite = nullptr;
     cocos2d::CCLayerColor* m_bgOverlay = nullptr;
     float m_blurTime = 0.f;
+    // Perf: cached typeinfo_cast and throttle counter
+    int m_bgSilenceCounter = 0;
+    bool m_bgSpriteCastCached = false;
+    cocos2d::CCSprite* m_cachedPaimonSprite = nullptr; // actually LeaderboardPaimonSprite*
     BackTarget m_backTarget = BackTarget::CreatorLayer;
 
     // flags de carga (spinner hasta que ambos esten listos)

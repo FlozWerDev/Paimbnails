@@ -815,7 +815,7 @@ std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(Transitio
     float half = dur * 0.5f;
     float third = dur * 0.33f;
     float quarter = dur * 0.25f;
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     float w = winSize.width;
     float h = winSize.height;
     float cx = w / 2.f;
@@ -1075,7 +1075,7 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
             commands = parseScriptFile(safeCfg.scriptPath);
         sanitizeCommands(commands);
 
-        auto fromScene = CCDirector::sharedDirector()->getRunningScene();
+        auto fromScene = CCDirector::get()->getRunningScene();
         if (fromScene && dest && !commands.empty()) {
             auto* transScene = CustomTransitionScene::create(fromScene, dest, commands, false);
             if (transScene) return transScene;
@@ -1112,7 +1112,7 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
         }
         auto commands = buildPreviewCommands(safeCfg.type, safeCfg.duration);
         sanitizeCommands(commands);
-        auto fromScene = CCDirector::sharedDirector()->getRunningScene();
+        auto fromScene = CCDirector::get()->getRunningScene();
         if (fromScene && dest && !commands.empty()) {
             auto* transScene = CustomTransitionScene::create(fromScene, dest, commands, false);
             if (transScene) return transScene;
@@ -1140,9 +1140,9 @@ void TransitionManager::replaceScene(CCScene* dest) {
     if (m_enabled) {
         if (!m_loaded) loadConfig();
         auto* trans = createTransition(m_globalConfig, dest);
-        CCDirector::sharedDirector()->replaceScene(trans ? trans : dest);
+        CCDirector::get()->replaceScene(trans ? trans : dest);
     } else {
-        CCDirector::sharedDirector()->replaceScene(dest);
+        CCDirector::get()->replaceScene(dest);
     }
 }
 
@@ -1152,9 +1152,9 @@ void TransitionManager::pushScene(CCScene* dest) {
     if (m_enabled) {
         if (!m_loaded) loadConfig();
         auto* trans = createTransition(m_globalConfig, dest);
-        CCDirector::sharedDirector()->pushScene(trans ? trans : dest);
+        CCDirector::get()->pushScene(trans ? trans : dest);
     } else {
-        CCDirector::sharedDirector()->pushScene(dest);
+        CCDirector::get()->pushScene(dest);
     }
 }
 

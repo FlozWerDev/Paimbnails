@@ -1,7 +1,7 @@
 #include "SettingsPanelManager.hpp"
 #include "../ui/PaimonMultiSettingsPanel.hpp"
 #include "../../../utils/Shaders.hpp"
-#include "../../../blur/BlurSystem.hpp"
+#include "../../../blur/PopupBlurService.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -27,23 +27,44 @@ void SettingsPanelManager::open(int initialCategory) {
     if (!scene) return;
 
     auto winSize = director->getWinSize();
-    int w = static_cast<int>(winSize.width);
-    int h = static_cast<int>(winSize.height);
-    if (w <= 0 || h <= 0) return;
 
-    // capturar escena actual a textura
-    auto rt = CCRenderTexture::create(w, h, kCCTexture2DPixelFormat_RGBA8888);
-    if (!rt) return;
+    // 1. Obtener la configuracion de blur central
+    auto cfg = paimon::popupblur::getConfig();
 
-    rt->begin();
-    scene->visit();
-    rt->end();
+    CCSprite* blurredBg = nullptr;
 
-    auto capturedTex = rt->getSprite()->getTexture();
-    if (!capturedTex) return;
+    // Solo si el blur esta habilitado capturamos y generamos el sprite
+    if (cfg.enabled) {
+        CCSize captureSize = CCSizeZero;
+        auto* tex = paimon::popupblur::captureSceneTexture(nullptr, captureSize);
+        if (tex && captureSize.width > 0.f && captureSize.height > 0.f) {
+            float effectiveIntensity = cfg.intensity;
+            if (cfg.style == "paimonblur") {
+                effectiveIntensity = std::min(10.0f, cfg.intensity * 1.15f + 0.35f);
+            }
 
-    // aplicar blur usando el sistema existente de shaders
-    CCSprite* blurredBg = BlurSystem::getInstance()->createBlurredSprite(capturedTex, winSize, 7.0f);
+            // Intentar reusar del cache central para ahorrar GPU
+            blurredBg = paimon::popupblur::reuseBlurForSnapshot(tex, cfg.style, effectiveIntensity, cfg.darkness);
+            if (!blurredBg) {
+                if (cfg.style == "paimonblur") {
+                    blurredBg = Shaders::createPopupPaimonBlurredSprite(tex, captureSize, effectiveIntensity);
+                } else {
+                    blurredBg = Shaders::createPopupBlurredSprite(tex, captureSize, effectiveIntensity);
+                }
+
+                if (blurredBg) {
+                    paimon::popupblur::storeBlurForSnapshot(tex, blurredBg, cfg.style, effectiveIntensity, cfg.darkness);
+                }
+            }
+
+            // Normalizar a winSize
+            if (blurredBg) {
+                if (auto* normalized = paimon::popupblur::normalizeBlurSpriteToWinSize(blurredBg, winSize)) {
+                    blurredBg = normalized;
+                }
+            }
+        }
+    }
 
     m_panel = PaimonMultiSettingsPanel::create(blurredBg, initialCategory);
     if (!m_panel) return;

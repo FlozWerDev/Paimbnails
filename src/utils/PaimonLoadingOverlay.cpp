@@ -130,7 +130,7 @@ void PaimonLoadingOverlay::showAt(CCNode* parent, CCPoint const& position, CCSiz
 void PaimonLoadingOverlay::show(CCNode* parent, int zOrder) {
     if (!parent) return;
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     auto localOrigin = parent->convertToNodeSpace(CCPointZero);
     showAt(parent, localOrigin, winSize, zOrder);
 }
@@ -140,7 +140,7 @@ void PaimonLoadingOverlay::showLocal(CCNode* parent, int zOrder) {
 
     auto size = parent->getContentSize();
     if (size.width <= 0.f || size.height <= 0.f) {
-        size = CCDirector::sharedDirector()->getWinSize();
+        size = CCDirector::get()->getWinSize();
     }
     showAt(parent, CCPointZero, size, zOrder);
 }

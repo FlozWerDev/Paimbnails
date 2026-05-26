@@ -23,7 +23,7 @@ int VideoDiskCache::deleteAllCaches() {
 
     if (!std::filesystem::exists(dir, ec) || ec) {
         geode::log::info("[VideoDiskCache] Audio cache directory does not exist: {}",
-                         dir.string());
+                         geode::utils::string::pathToString(dir));
         return 0;
     }
 
@@ -35,7 +35,7 @@ int VideoDiskCache::deleteAllCaches() {
         std::filesystem::remove(entry.path(), ec);
         if (ec) {
             geode::log::warn("[VideoDiskCache] Failed to remove {}: {}",
-                             entry.path().string(), ec.message());
+                             geode::utils::string::pathToString(entry.path()), ec.message());
             ++failed;
             ec.clear();
         } else {
@@ -44,7 +44,7 @@ int VideoDiskCache::deleteAllCaches() {
     }
 
     geode::log::info("[VideoDiskCache] deleteAllCaches: removed={} failed={} dir={}",
-                     removed, failed, dir.string());
+                     removed, failed, geode::utils::string::pathToString(dir));
     return removed;
 }
 

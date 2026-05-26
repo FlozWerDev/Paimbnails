@@ -1,5 +1,8 @@
 #include "ThumbnailCache.hpp"
+#include "ThumbnailTransportClient.hpp"
+#include "ThumbnailLoader.hpp"
 #include "../../../core/QualityConfig.hpp"
+#include "../../../core/MainLevels.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/Debug.hpp"
@@ -11,6 +14,7 @@
 #include <algorithm>
 #include <ranges>
 #include <atomic>
+#include <cctype>
 
 using namespace geode::prelude;
 
@@ -60,19 +64,33 @@ int64_t ThumbnailCache::nowEpoch() {
 
 std::optional<geode::Ref<cocos2d::CCTexture2D>> ThumbnailCache::getFromRam(int levelID, bool isGif) {
     auto key = makeRamKey(levelID, isGif);
-    // Shared lock for read — allows concurrent lookups without serialization
-    std::shared_lock slock(m_ramMutex);
-    auto it = m_ramCache.find(key);
-    if (it == m_ramCache.end()) return std::nullopt;
-    auto tex = it->second.texture;
-    slock.unlock();
-    // Brief exclusive lock only for the timestamp touch (non-critical)
-    // Re-find the key since the iterator may have been invalidated
-    { std::unique_lock ulock(m_ramMutex); 
-      auto it2 = m_ramCache.find(key);
-      if (it2 != m_ramCache.end()) it2->second.lastAccess = std::chrono::steady_clock::now();
+    
+    {
+        // Shared lock for read — allows concurrent lookups without serialization.
+        // lastAccess es atomic, asi que se puede tocar sin escalar a unique_lock.
+        std::shared_lock slock(m_ramMutex);
+        auto it = m_ramCache.find(key);
+        if (it != m_ramCache.end()) {
+            it->second.touchAccess(std::chrono::steady_clock::now());
+            return it->second.texture;
+        }
+    } // slock se libera automáticamente aquí
+    
+    // Puente de caché (Cache-bridging): buscar textura en caché de URLs como fallback
+    if (!isGif) {
+        std::string defaultUrl = ThumbnailTransportClient::get().getThumbnailURL(levelID);
+        if (!defaultUrl.empty()) {
+            std::string cacheKey = ThumbnailLoader::normalizeUrlKey(defaultUrl);
+            auto urlTex = getUrlFromRam(cacheKey);
+            if (urlTex.has_value()) {
+                // Poblar caché principal para agilizar futuros accesos
+                addToRam(levelID, isGif, urlTex.value().data());
+                return urlTex.value();
+            }
+        }
     }
-    return tex;
+    
+    return std::nullopt;
 }
 
 void ThumbnailCache::addToRam(int levelID, bool isGif, cocos2d::CCTexture2D* texture, int version, int origW, int origH) {
@@ -141,38 +159,74 @@ void ThumbnailCache::evictRamLocked() {
             : maxBytes / 2;
     }
 
-    // evict by oldest lastAccess (like level-thumbs-mod)
-    while ((m_ramCache.size() > maxEntries || m_ramBytes > effectiveMaxBytes) && !m_ramCache.empty()) {
-        auto oldest = std::ranges::min_element(m_ramCache, [](auto const& a, auto const& b) {
-            return a.second.lastAccess < b.second.lastAccess;
-        });
-        if (oldest == m_ramCache.end()) break;
-        if (m_ramBytes >= oldest->second.byteSize) m_ramBytes -= oldest->second.byteSize;
+    // Eviction LRU: evitar el bucle O(k·n) que hacia min_element por cada
+    // eviction. Recolectamos candidatos y usamos partial_sort para ordenar
+    // solo los primeros k por lastAccess (mas viejos primero) y borramos.
+    if (m_ramCache.size() <= maxEntries && m_ramBytes <= effectiveMaxBytes) return;
+
+    struct EvictCandidate { std::string key; int64_t accessUs; size_t bytes; };
+    std::vector<EvictCandidate> candidates;
+    candidates.reserve(m_ramCache.size());
+    for (auto const& [k, e] : m_ramCache) {
+        candidates.push_back({k, e.lastAccessUs.load(std::memory_order_relaxed), e.byteSize});
+    }
+    // Estimar cuantas entradas hay que evictar. Usamos partial_sort para
+    // ordenar solo lo necesario en O(n log k) en vez de O(n log n).
+    size_t toEvictCount = std::max<size_t>(
+        m_ramCache.size() > maxEntries ? m_ramCache.size() - maxEntries : 0,
+        1
+    );
+    // Limite de seguridad por si los bytes piden mucho mas que entries
+    toEvictCount = std::min(toEvictCount + 8, candidates.size());
+
+    if (toEvictCount < candidates.size()) {
+        std::partial_sort(candidates.begin(), candidates.begin() + toEvictCount, candidates.end(),
+            [](EvictCandidate const& a, EvictCandidate const& b) {
+                return a.accessUs < b.accessUs;
+            });
+    } else {
+        std::sort(candidates.begin(), candidates.end(),
+            [](EvictCandidate const& a, EvictCandidate const& b) {
+                return a.accessUs < b.accessUs;
+            });
+    }
+
+    for (auto const& c : candidates) {
+        if (m_ramCache.size() <= maxEntries && m_ramBytes <= effectiveMaxBytes) break;
+        auto it = m_ramCache.find(c.key);
+        if (it == m_ramCache.end()) continue;
+        if (m_ramBytes >= it->second.byteSize) m_ramBytes -= it->second.byteSize;
         else m_ramBytes = 0;
         m_stats.ramEvictions.fetch_add(1, std::memory_order_relaxed);
-        m_ramCache.erase(oldest);
+        m_ramCache.erase(it);
     }
 }
 
 void ThumbnailCache::purgeUnusedTextures() {
     auto now = std::chrono::steady_clock::now();
-    if (m_lastPurge != std::chrono::steady_clock::time_point::min() &&
-        now - m_lastPurge < PURGE_INTERVAL) {
+    int64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+        now.time_since_epoch()).count();
+    int64_t lastUs = m_lastPurgeUs.load(std::memory_order_relaxed);
+    constexpr int64_t intervalUs = 2'000'000; // 2s
+    if (lastUs != 0 && nowUs - lastUs < intervalUs) {
         return;
     }
-    m_lastPurge = now;
+    if (!m_lastPurgeUs.compare_exchange_strong(lastUs, nowUs,
+                                                std::memory_order_relaxed)) {
+        // otro hilo ya gano la carrera; no hacer purge duplicado
+        return;
+    }
 
     // purge level RAM: scan with shared lock, erase with exclusive lock
     {
         std::vector<std::string> toPurge;
-        size_t purgeBytes = 0;
         {
             std::shared_lock slock(m_ramMutex);
+            toPurge.reserve(m_ramCache.size() / 4);
             for (auto const& [key, entry] : m_ramCache) {
                 if (now - entry.addedAt < PURGE_GRACE_PERIOD) continue;
                 if (entry.texture && entry.texture->retainCount() <= 1) {
                     toPurge.push_back(key);
-                    purgeBytes += entry.byteSize;
                 }
             }
         }
@@ -197,14 +251,13 @@ void ThumbnailCache::purgeUnusedTextures() {
     // purge URL RAM: same pattern
     {
         std::vector<std::string> toPurge;
-        size_t purgeBytes = 0;
         {
             std::shared_lock slock(m_urlMutex);
+            toPurge.reserve(m_urlRamCache.size() / 4);
             for (auto const& [key, entry] : m_urlRamCache) {
                 if (now - entry.addedAt < PURGE_GRACE_PERIOD) continue;
                 if (entry.texture && entry.texture->retainCount() <= 1) {
                     toPurge.push_back(key);
-                    purgeBytes += entry.byteSize;
                 }
             }
         }
@@ -239,19 +292,13 @@ size_t ThumbnailCache::ramEntryCount() const {
 // ── RAM Cache: URL Gallery ──────────────────────────────────────────
 
 std::optional<geode::Ref<cocos2d::CCTexture2D>> ThumbnailCache::getUrlFromRam(std::string const& url) {
-    // Shared lock for read — allows concurrent lookups without serialization
+    // Shared lock for read — allows concurrent lookups without serialization.
+    // lastAccess es atomic, asi que se puede tocar sin escalar a unique_lock.
     std::shared_lock slock(m_urlMutex);
     auto it = m_urlRamCache.find(url);
     if (it == m_urlRamCache.end()) return std::nullopt;
-    auto tex = it->second.texture;
-    slock.unlock();
-    // Brief exclusive lock only for the timestamp touch (non-critical)
-    // Re-find the key since the iterator may have been invalidated
-    { std::unique_lock ulock(m_urlMutex); 
-      auto it2 = m_urlRamCache.find(url);
-      if (it2 != m_urlRamCache.end()) it2->second.lastAccess = std::chrono::steady_clock::now();
-    }
-    return tex;
+    it->second.touchAccess(std::chrono::steady_clock::now());
+    return it->second.texture;
 }
 
 void ThumbnailCache::addUrlToRam(std::string const& url, cocos2d::CCTexture2D* texture) {
@@ -283,16 +330,40 @@ void ThumbnailCache::removeUrlFromRam(std::string const& url) {
 }
 
 void ThumbnailCache::evictUrlRamLocked() {
-    while ((m_urlRamCache.size() > URL_CACHE_MAX_ENTRIES || m_urlBytes > URL_CACHE_MAX_BYTES)
-           && !m_urlRamCache.empty()) {
-        auto oldest = std::ranges::min_element(m_urlRamCache, [](auto const& a, auto const& b) {
-            return a.second.lastAccess < b.second.lastAccess;
-        });
-        if (oldest == m_urlRamCache.end()) break;
-        if (m_urlBytes >= oldest->second.byteSize) m_urlBytes -= oldest->second.byteSize;
+    if (m_urlRamCache.size() <= URL_CACHE_MAX_ENTRIES && m_urlBytes <= URL_CACHE_MAX_BYTES) return;
+
+    struct EvictCandidate { std::string key; int64_t accessUs; size_t bytes; };
+    std::vector<EvictCandidate> candidates;
+    candidates.reserve(m_urlRamCache.size());
+    for (auto const& [k, e] : m_urlRamCache) {
+        candidates.push_back({k, e.lastAccessUs.load(std::memory_order_relaxed), e.byteSize});
+    }
+    size_t toEvictCount = std::max<size_t>(
+        m_urlRamCache.size() > URL_CACHE_MAX_ENTRIES ? m_urlRamCache.size() - URL_CACHE_MAX_ENTRIES : 0,
+        1
+    );
+    toEvictCount = std::min(toEvictCount + 8, candidates.size());
+
+    if (toEvictCount < candidates.size()) {
+        std::partial_sort(candidates.begin(), candidates.begin() + toEvictCount, candidates.end(),
+            [](EvictCandidate const& a, EvictCandidate const& b) {
+                return a.accessUs < b.accessUs;
+            });
+    } else {
+        std::sort(candidates.begin(), candidates.end(),
+            [](EvictCandidate const& a, EvictCandidate const& b) {
+                return a.accessUs < b.accessUs;
+            });
+    }
+
+    for (auto const& c : candidates) {
+        if (m_urlRamCache.size() <= URL_CACHE_MAX_ENTRIES && m_urlBytes <= URL_CACHE_MAX_BYTES) break;
+        auto it = m_urlRamCache.find(c.key);
+        if (it == m_urlRamCache.end()) continue;
+        if (m_urlBytes >= it->second.byteSize) m_urlBytes -= it->second.byteSize;
         else m_urlBytes = 0;
         m_stats.ramEvictions.fetch_add(1, std::memory_order_relaxed);
-        m_urlRamCache.erase(oldest);
+        m_urlRamCache.erase(it);
     }
 }
 
@@ -304,6 +375,55 @@ size_t ThumbnailCache::urlRamBytes() const {
 size_t ThumbnailCache::urlRamEntryCount() const {
     std::shared_lock lock(m_urlMutex);
     return m_urlRamCache.size();
+}
+
+void ThumbnailCache::clearUrlsForLevel(int levelID) {
+    if (levelID <= 0) return;
+    // Buscamos URLs cuyo path contenga el levelID seguido de un separador
+    // tipico ('.', '_', '/'). Esto cubre patrones como:
+    //   - /t/12345.png
+    //   - /t/12345_2.png
+    //   - /api/thumbnails/12345/list
+    // Sin matchear falsos positivos como /12345abc.png o /12345000.png.
+    std::string idStr = std::to_string(levelID);
+    std::string n1 = "/" + idStr + ".";
+    std::string n2 = "/" + idStr + "_";
+    std::string n3 = "/" + idStr + "/";
+    std::string n4 = "=" + idStr + "&";   // parametros tipo ?levelId=12345&...
+    std::string n5 = "=" + idStr;          // al final del query string
+
+    std::unique_lock lock(m_urlMutex);
+    size_t freed = 0;
+    size_t removedCount = 0;
+    for (auto it = m_urlRamCache.begin(); it != m_urlRamCache.end();) {
+        bool matches =
+            it->first.find(n1) != std::string::npos ||
+            it->first.find(n2) != std::string::npos ||
+            it->first.find(n3) != std::string::npos ||
+            it->first.find(n4) != std::string::npos ||
+            // Para n5 verificamos que termine exactamente con el patron
+            // (evita match parcial con "=12345000" cuando buscamos "=12345").
+            (it->first.size() >= n5.size() &&
+             it->first.compare(it->first.size() - n5.size(), n5.size(), n5) == 0 &&
+             // siguiente char debe ser fin de string o no-digito
+             (it->first.size() == n5.size() ||
+              !std::isdigit(static_cast<unsigned char>(it->first[n5.size()]))));
+
+        if (matches) {
+            freed += it->second.byteSize;
+            ++removedCount;
+            it = m_urlRamCache.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (m_urlBytes >= freed) m_urlBytes -= freed;
+    else m_urlBytes = 0;
+
+    if (removedCount > 0) {
+        log::debug("[ThumbnailCache] clearUrlsForLevel({}): {} URLs removed, {} bytes freed",
+                   levelID, removedCount, freed);
+    }
 }
 
 // ── Disk Index (delegates to DiskManifest) ──────────────────────────
@@ -434,7 +554,12 @@ void ThumbnailCache::saveDiskIndex(bool allowDuringShutdown) {
 
 // auto-persist on DataSaved hook
 $on_mod(DataSaved) {
-    ThumbnailCache::get().saveDiskIndex();
+    // allowDuringShutdown=true: DataSaved se dispara incluso durante el
+    // shutdown de Geode. Sin este flag, saveDiskIndex retornaria temprano
+    // y perderiamos las entradas pendientes de flush (debounced 10s tras
+    // cada descarga exitosa). Pasarlo en true garantiza que el manifest
+    // siempre se persista al cerrar el juego.
+    ThumbnailCache::get().saveDiskIndex(true);
 }
 
 // ── Failed Cache ────────────────────────────────────────────────────
@@ -459,14 +584,29 @@ bool ThumbnailCache::isFailed(std::string const& key) const {
 }
 
 void ThumbnailCache::markFailed(std::string const& key) {
-    std::lock_guard lock(m_failedMutex);
-    auto it = m_failedCache.find(key);
-    if (it != m_failedCache.end()) {
-        // incrementar paso de backoff (hasta el maximo)
-        it->second.retryStep = std::min(it->second.retryStep + 1, FAILED_BACKOFF_MAX_STEP);
-        it->second.timestamp = std::chrono::steady_clock::now();
-    } else {
-        m_failedCache[key] = {std::chrono::steady_clock::now(), 0};
+    bool shouldMarkNotFound = false;
+    {
+        std::lock_guard lock(m_failedMutex);
+        auto it = m_failedCache.find(key);
+        if (it != m_failedCache.end()) {
+            // Incrementar paso de backoff. Tras el SEGUNDO fallo (retryStep=1),
+            // promovemos a notFound permanente: el usuario reporto que retries
+            // infinitos consumian demasiados requests al servidor. Ahora tras
+            // 2 fallos paramos hasta que el usuario presione "actualizar"
+            // (que llama a invalidateLevel, el cual limpia ambas tablas).
+            it->second.retryStep = std::min(it->second.retryStep + 1, FAILED_BACKOFF_MAX_STEP);
+            it->second.timestamp = std::chrono::steady_clock::now();
+            if (it->second.retryStep >= 1) {
+                shouldMarkNotFound = true;
+            }
+        } else {
+            // Primer fallo
+            m_failedCache[key] = {std::chrono::steady_clock::now(), 0};
+        }
+    }
+    // markNotFound toma su propio mutex; evitar nested locks.
+    if (shouldMarkNotFound) {
+        markNotFound(key);
     }
 }
 
@@ -565,17 +705,17 @@ void ThumbnailCache::clearRam() {
 }
 
 void ThumbnailCache::clearDisk() {
-    std::error_code ec;
     auto dir = paimon::quality::cacheDir();
-    std::filesystem::remove_all(dir, ec);
-    if (ec) {
-        log::error("[ThumbnailCache] error clearing disk cache: {}", ec.message());
-    }
+    // Preservar miniaturas de main levels (1-22) y la carpeta gifs/.
+    auto [preserved, removed] = paimon::clearCachePreservingMainLevels(dir, {"gifs"});
+    log::info("[ThumbnailCache] clearDisk: preserved {} entries, removed {}",
+        preserved, removed);
     {
         std::lock_guard<std::recursive_mutex> lock(m_manifest.mutex);
-        m_manifest.clear();
+        m_manifest.clearPreservingMainLevels();
     }
-    // recreate dir
+    // recreate dir si por algun caso quedo vacio
+    std::error_code ec;
     std::filesystem::create_directories(dir, ec);
 }
 

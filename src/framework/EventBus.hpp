@@ -99,21 +99,24 @@ public:
         m_handleToType.erase(it);
     }
 
+    void beginShutdown() {
+        std::lock_guard lock(m_mutex);
+        m_shuttingDown = true;
+    }
+
     template <typename Event>
     void publish(Event const& event) {
+        if (m_shuttingDown) return;
         std::shared_ptr<ISubscriberList> kept;
         SubscriberList<Event>* list = nullptr;
         {
             std::lock_guard lock(m_mutex);
+            if (m_shuttingDown) return;
             auto it = m_subscribers.find(std::type_index(typeid(Event)));
             if (it == m_subscribers.end()) return;
-            // Copiar shared_ptr para mantener vivo el subscriber list
-            // después de soltar el lock (evita use-after-free si otro hilo
-            // borra la entrada del mapa entre unlock y dispatch).
             kept = it->second;
             list = static_cast<SubscriberList<Event>*>(kept.get());
         }
-        // Dispatch fuera del lock para evitar deadlock si un handler publica.
         list->dispatch(event);
     }
 
@@ -145,6 +148,7 @@ private:
     }
 
     std::mutex m_mutex;
+    bool m_shuttingDown = false;
     SubscriptionHandle m_nextGlobalHandle = 0;
     std::unordered_map<std::type_index, std::shared_ptr<ISubscriberList>> m_subscribers;
     std::unordered_map<SubscriptionHandle, std::type_index> m_handleToType;

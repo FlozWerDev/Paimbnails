@@ -342,6 +342,21 @@ bool GIFDecoder::parseFrame(uint8_t const*& ptr, uint8_t const* end, RawFrame& f
     frame.height = ptr[6] | (ptr[7] << 8);
     uint8_t flags = ptr[8];
     ptr += 9;
+
+    // Reject malformed/malicious GIFs that declare absurd frame dimensions.
+    // Without this clamp, frame.pixels.resize(width * height * 4) below would
+    // attempt to allocate gigabytes (e.g. 65535x65535 = 17 GB) and crash with
+    // std::bad_alloc.
+    constexpr int kMaxFrameDim = 4096;
+    if (frame.width <= 0 || frame.height <= 0 ||
+        frame.width > kMaxFrameDim || frame.height > kMaxFrameDim) {
+        return false;
+    }
+    // Catch overflow in width*height*4 even when both are within bounds.
+    if (static_cast<int64_t>(frame.width) * frame.height >
+        static_cast<int64_t>(kMaxFrameDim) * kMaxFrameDim) {
+        return false;
+    }
     
     bool hasLocalColorTable = (flags & 0x80) != 0;
     int localColorTableSize = hasLocalColorTable ? (1 << ((flags & 0x07) + 1)) : 0;

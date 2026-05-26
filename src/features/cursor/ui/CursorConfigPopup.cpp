@@ -124,6 +124,7 @@ void CursorConfigPopup::createTabButtons() {
     spr1->setScale(0.5f);
     auto tab1 = CCMenuItemSpriteExtra::create(spr1, this, menu_selector(CursorConfigPopup::onTabSwitch));
     tab1->setTag(0);
+    tab1->setID("cursor-gallery-tab-btn"_spr);
     tab1->setPosition({cx - 60.f, topY});
     menu->addChild(tab1);
     m_tabs.push_back(tab1);
@@ -132,6 +133,7 @@ void CursorConfigPopup::createTabButtons() {
     spr2->setScale(0.5f);
     auto tab2 = CCMenuItemSpriteExtra::create(spr2, this, menu_selector(CursorConfigPopup::onTabSwitch));
     tab2->setTag(1);
+    tab2->setID("cursor-settings-tab-btn"_spr);
     tab2->setPosition({cx + 60.f, topY});
     menu->addChild(tab2);
     m_tabs.push_back(tab2);
@@ -234,6 +236,17 @@ void CursorConfigPopup::buildGalleryTab() {
     delAllBtn->setPosition({cx + 60.f, 25.f});
     m_galleryMenu->addChild(delAllBtn);
 
+    m_emptyGalleryLabel = CCLabelBMFont::create(
+        "No images added yet\nSystem cursor stays visible until\nyou assign at least one image.",
+        "bigFont.fnt"
+    );
+    if (m_emptyGalleryLabel) {
+        m_emptyGalleryLabel->setScale(0.3f);
+        m_emptyGalleryLabel->setOpacity(170);
+        m_emptyGalleryLabel->setPosition({cx, content.height - 190.f});
+        m_galleryTab->addChild(m_emptyGalleryLabel, 2);
+    }
+
     refreshGallery();
 }
 
@@ -255,6 +268,10 @@ void CursorConfigPopup::refreshGallery() {
     auto images = cm.getGalleryImages();
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
+
+    if (m_emptyGalleryLabel) {
+        m_emptyGalleryLabel->setVisible(images.empty());
+    }
 
     float startX = 35.f;
     float startY = content.height - 155.f;
@@ -539,7 +556,7 @@ void CursorConfigPopup::buildSettingsTab() {
     auto content = m_mainLayer->getContentSize();
     float scrollW = content.width - 16.f;
     float scrollH = content.height - 52.f;
-    float totalH = 520.f;
+    float totalH = 600.f;
 
     m_scrollLayer = ScrollLayer::create({scrollW, scrollH});
     m_scrollLayer->setPosition({8.f, 8.f});
@@ -620,14 +637,14 @@ void CursorConfigPopup::buildSettingsTab() {
     // ── General ──
     addTitle("General",
         "<cy>Enable Cursor</c>: turns the custom cursor <cg>ON</c> or <cr>OFF</c>.\n"
-        "When enabled, the OS cursor is hidden and replaced with your custom image.\n"
+        "The OS cursor is only hidden when at least one custom image can actually be rendered.\n"
         "<cy>Scale</c>: size of the cursor sprite (0.10 = tiny, 3.0 = huge).\n"
         "<cy>Opacity</c>: transparency of the cursor (0 = invisible, 255 = fully opaque).");
     y -= 18.f;
 
     addToggle("Enable Cursor", m_enableToggle, cfg.enabled,
         menu_selector(CursorConfigPopup::onEnableToggled),
-        "Turns the custom cursor <cg>ON</c> or <cr>OFF</c>.\nThe OS cursor will be hidden when active.");
+        "Turns the custom cursor <cg>ON</c> or <cr>OFF</c>.\nThe OS cursor stays visible until an idle or move image is assigned.");
     y -= 22.f;
 
     addSlider(m_scaleSlider, m_scaleLabel, cfg.scale, CURSOR_SCALE_MIN, CURSOR_SCALE_MAX,
@@ -636,6 +653,22 @@ void CursorConfigPopup::buildSettingsTab() {
 
     addSlider(m_opacitySlider, m_opacityLabel, static_cast<float>(cfg.opacity), 0.f, 255.f,
         menu_selector(CursorConfigPopup::onOpacityChanged), "{:.0f}");
+    y -= 24.f;
+
+    // ── Follow Delay ──
+    addTitle("Follow Delay",
+        "Makes the cursor follow your mouse with a smooth delay.\n"
+        "<cy>Enable Follow Delay</c>: turns the delay effect <cg>ON</c> or <cr>OFF</c>.\n"
+        "<cy>Delay Amount</c>: how slow the cursor follows (0 = instant, 1 = very slow).");
+    y -= 18.f;
+
+    addToggle("Enable Follow Delay", m_followDelayToggle, cfg.followDelayEnabled,
+        menu_selector(CursorConfigPopup::onFollowDelayToggled),
+        "Adds a smooth delay to cursor movement.\nThe cursor will lerp towards the actual mouse position.");
+    y -= 22.f;
+
+    addSlider(m_followDelaySlider, m_followDelayLabel, cfg.followDelay, 0.f, 1.f,
+        menu_selector(CursorConfigPopup::onFollowDelayChanged), "{:.2f}");
     y -= 24.f;
 
     // ── Trail ──
@@ -752,7 +785,7 @@ void CursorConfigPopup::applyLive() {
     auto& cm = CursorManager::get();
     cm.applyConfigLive();
 
-    auto scene = CCDirector::sharedDirector()->getRunningScene();
+    auto scene = CCDirector::get()->getRunningScene();
     if (cm.config().enabled) {
         if (!cm.isAttached() && scene) {
             cm.attachToScene(scene);
@@ -789,8 +822,30 @@ void CursorConfigPopup::onOpacityChanged(CCObject*) {
 // ════════════════════════════════════════════════════════════
 
 void CursorConfigPopup::onEnableToggled(CCObject*) {
-    CursorManager::get().config().enabled = !m_enableToggle->isToggled();
+    auto& cfg = CursorManager::get().config();
+    cfg.enabled = !m_enableToggle->isToggled();
     applyLive();
+
+    if (cfg.enabled && cfg.idleImage.empty() && cfg.moveImage.empty()) {
+        PaimonNotify::create(
+            "Pick an idle or move image first. The system cursor will stay visible until then.",
+            NotificationIcon::Info
+        )->show();
+    }
+}
+
+void CursorConfigPopup::onFollowDelayToggled(CCObject*) {
+    auto& cfg = CursorManager::get().config();
+    cfg.followDelayEnabled = !m_followDelayToggle->isToggled();
+    CursorManager::get().saveConfig();
+}
+
+void CursorConfigPopup::onFollowDelayChanged(CCObject*) {
+    if (!m_followDelaySlider) return;
+    auto& cfg = CursorManager::get().config();
+    cfg.followDelay = readSlider(m_followDelaySlider, 0.f, 1.f);
+    if (m_followDelayLabel) m_followDelayLabel->setString(fmt::format("{:.2f}", cfg.followDelay).c_str());
+    CursorManager::get().saveConfig();
 }
 
 void CursorConfigPopup::onTrailToggled(CCObject*) {

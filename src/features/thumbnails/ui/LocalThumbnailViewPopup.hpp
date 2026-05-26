@@ -68,8 +68,11 @@ protected:
     cocos2d::CCMenu* m_buttonMenu = nullptr;
     cocos2d::CCMenu* m_settingsMenu = nullptr;
     cocos2d::CCLabelBMFont* m_ratingLabel = nullptr;
+    float m_ratingAverage = 0.f;
+    int m_ratingCount = 0;
     int m_userVote = 0;
     int m_initialUserVote = 0;
+    bool m_hasRatingData = false;
     bool m_isVoting = false;
 
     // galeria
@@ -77,6 +80,7 @@ protected:
     bool m_isDownloading = false;
     bool m_refreshCooldownActive = false;
     int m_galleryRequestToken = 0;
+    int m_ratingRequestToken = 0;
     int m_invalidationListenerId = 0;
     geode::async::TaskHolder<geode::utils::web::WebResponse> m_ytRequestHolder;
 
@@ -117,6 +121,8 @@ protected:
 
     void onExit() override;
     void setupRating();
+    void refreshRating();
+    void applyRatingLabel();
     void onRate(CCObject*);
 
     bool init(float width, float height);
@@ -156,7 +162,7 @@ protected:
 
     void onRecenter(CCObject*);
 
-    // FLAlertLayerProtocol — handles Copy ID button in onInfo popup
+    // FLAlertLayerProtocol â€” handles Copy ID button in onInfo popup
     void FLAlert_Clicked(FLAlertLayer* alert, bool btn2) override;
 
     static float clamp(float value, float min, float max);

@@ -33,6 +33,10 @@ public:
     int getHeight() const override;
     bool isFinished() const override;
     double peekNextPTS() const override;
+    double peekSecondPTS() const override;
+    const Frame* peekFrame() override;
+    void releaseFrame() override;
+    bool isTerminal() const override { return m_decodeThreadDetached.load(std::memory_order_acquire); }
 
 private:
     void decodeLoop();
@@ -56,6 +60,11 @@ private:
     bool               m_dxvaEnabled = false;
     int                m_dxvaReadbackFailures = 0;
     UINT               m_resetToken = 0;
+    /// True when m_d3dDevice / m_d3dCtx point to the process-wide shared
+    /// device (created via acquireSharedD3D11()).  In that case we MUST
+    /// NOT call Release() on those pointers in closeInternal() — only
+    /// drop our ref via releaseSharedD3D11().
+    bool               m_sharedD3D = false;
     std::mutex         m_d3dCtxMutex;  // serialises context ops vs DXVA decode (AMD fix)
 
     VideoRingBuffer    m_ring;

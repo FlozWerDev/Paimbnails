@@ -13,9 +13,12 @@
 #include "../../../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../../../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../../../features/profile-music/services/ProfileMusicManager.hpp"
+#include "../../../features/discord-presence/ui/DiscordConfigPopup.hpp"
+#include "../../../features/discord-presence/services/DiscordPresenceManager.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 
 #include <Geode/Geode.hpp>
+#include <Geode/loader/SettingV3.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 
 using namespace cocos2d;
@@ -101,31 +104,31 @@ void buildLevelThumbnails(CCNode* c, float w) {
         w));
 
     c->addChild(createDropdownRow("Background Style",
-        gset<std::string>("levelcell-background-type"),
+        gsaved<std::string>("levelcell-background-type", "thumbnail"),
         {"gradient", "thumbnail"},
-        [](std::string const& v){ sset<std::string>("levelcell-background-type", v); },
+        [](std::string const& v){ ssaved<std::string>("levelcell-background-type", v); },
         w));
 
     c->addChild(createSliderRow("Background Blur",
-        static_cast<float>(gset<double>("levelcell-background-blur")),
+        static_cast<float>(gsaved<double>("levelcell-background-blur", 3.0)),
         0.0f, 10.0f,
-        [](float v){ sset<double>("levelcell-background-blur", static_cast<double>(v)); },
+        [](float v){ ssaved<double>("levelcell-background-blur", static_cast<double>(v)); },
         w));
 
     c->addChild(createSliderRow("Darkness",
-        static_cast<float>(gset<double>("levelcell-background-darkness")),
+        static_cast<float>(gsaved<double>("levelcell-background-darkness", 0.2)),
         0.0f, 1.0f,
-        [](float v){ sset<double>("levelcell-background-darkness", static_cast<double>(v)); },
+        [](float v){ ssaved<double>("levelcell-background-darkness", static_cast<double>(v)); },
         w));
 
     c->addChild(createToggleRow("Show Separator",
-        gset<bool>("levelcell-show-separator"),
-        [](bool v){ sset<bool>("levelcell-show-separator", v); },
+        gsaved<bool>("levelcell-show-separator", true),
+        [](bool v){ ssaved<bool>("levelcell-show-separator", v); },
         w));
 
     c->addChild(createToggleRow("Show View Button",
-        gset<bool>("levelcell-show-view-button"),
-        [](bool v){ sset<bool>("levelcell-show-view-button", v); },
+        gsaved<bool>("levelcell-show-view-button", true),
+        [](bool v){ ssaved<bool>("levelcell-show-view-button", v); },
         w));
 
     c->addChild(createToggleRow("Compact List Mode",
@@ -133,25 +136,30 @@ void buildLevelThumbnails(CCNode* c, float w) {
         [](bool v){ sset<bool>("compact-list-mode", v); },
         w));
 
+    c->addChild(createToggleRow("Show Compact Toggle",
+        gsaved<bool>("compact-list-show-toggle", true),
+        [](bool v){ ssaved<bool>("compact-list-show-toggle", v); },
+        w));
+
     c->addChild(createSectionHeader("Gallery", w));
 
     c->addChild(createToggleRow("Auto-Cycle",
-        gset<bool>("levelcell-gallery-autocycle"),
-        [](bool v){ sset<bool>("levelcell-gallery-autocycle", v); },
+        gsaved<bool>("levelcell-gallery-autocycle", true),
+        [](bool v){ ssaved<bool>("levelcell-gallery-autocycle", v); },
         w));
 
     c->addChild(createDropdownRow("Transition",
-        gset<std::string>("levelcell-gallery-transition"),
+        gsaved<std::string>("levelcell-gallery-transition", "crossfade"),
         {"crossfade","slide-left","slide-right","slide-up","slide-down",
          "zoom-in","zoom-out","flip-horizontal","flip-vertical",
          "rotate-cw","rotate-ccw","cube","dissolve","swipe","bounce","random"},
-        [](std::string const& v){ sset<std::string>("levelcell-gallery-transition", v); },
+        [](std::string const& v){ ssaved<std::string>("levelcell-gallery-transition", v); },
         w));
 
     c->addChild(createSliderRow("Transition Duration",
-        static_cast<float>(gset<double>("levelcell-gallery-transition-duration")),
+        static_cast<float>(gsaved<double>("levelcell-gallery-transition-duration", 0.6)),
         0.2f, 2.0f,
-        [](float v){ sset<double>("levelcell-gallery-transition-duration", static_cast<double>(v)); },
+        [](float v){ ssaved<double>("levelcell-gallery-transition-duration", static_cast<double>(v)); },
         w));
 }
 
@@ -168,40 +176,40 @@ void buildVisualEffects(CCNode* c, float w) {
         w));
 
     c->addChild(createDropdownRow("Animation Type",
-        gset<std::string>("levelcell-anim-type"),
+        gsaved<std::string>("levelcell-anim-type", "zoom-slide"),
         {"none","zoom-slide","zoom","slide","bounce","rotate","rotate-content","shake","pulse","swing"},
-        [](std::string const& v){ sset<std::string>("levelcell-anim-type", v); },
+        [](std::string const& v){ ssaved<std::string>("levelcell-anim-type", v); },
         w));
 
     c->addChild(createSliderRow("Animation Speed",
-        static_cast<float>(gset<double>("levelcell-anim-speed")),
+        static_cast<float>(gsaved<double>("levelcell-anim-speed", 1.0)),
         0.1f, 5.0f,
-        [](float v){ sset<double>("levelcell-anim-speed", static_cast<double>(v)); },
+        [](float v){ ssaved<double>("levelcell-anim-speed", static_cast<double>(v)); },
         w));
 
     c->addChild(createDropdownRow("Color Effect",
-        gset<std::string>("levelcell-anim-effect"),
+        gsaved<std::string>("levelcell-anim-effect", "none"),
         {"none","brightness","darken","sepia","red","blue","gold","fade","grayscale","blur",
          "invert","glitch","sharpen","edge-detection","vignette","pixelate","posterize",
          "chromatic","scanlines","solarize","rainbow"},
-        [](std::string const& v){ sset<std::string>("levelcell-anim-effect", v); },
+        [](std::string const& v){ ssaved<std::string>("levelcell-anim-effect", v); },
         w));
 
     c->addChild(createToggleRow("Effect on Background",
-        gset<bool>("levelcell-effect-on-gradient"),
-        [](bool v){ sset<bool>("levelcell-effect-on-gradient", v); },
+        gsaved<bool>("levelcell-effect-on-gradient", false),
+        [](bool v){ ssaved<bool>("levelcell-effect-on-gradient", v); },
         w));
 
     c->addChild(createSectionHeader("Cell Extras", w));
 
     c->addChild(createToggleRow("Mythic Particles",
-        gset<bool>("levelcell-mythic-particles"),
-        [](bool v){ sset<bool>("levelcell-mythic-particles", v); },
+        gsaved<bool>("levelcell-mythic-particles", true),
+        [](bool v){ ssaved<bool>("levelcell-mythic-particles", v); },
         w));
 
     c->addChild(createToggleRow("Animated Gradient",
-        gset<bool>("levelcell-animated-gradient"),
-        [](bool v){ sset<bool>("levelcell-animated-gradient", v); },
+        gsaved<bool>("levelcell-animated-gradient", true),
+        [](bool v){ ssaved<bool>("levelcell-animated-gradient", v); },
         w));
 }
 
@@ -214,22 +222,27 @@ void buildLevelInfo(CCNode* c, float w) {
 
     c->addChild(createDropdownRow("Background Style",
         gset<std::string>("levelinfo-background-style"),
-        {"normal","pixel","blur","grayscale","sepia","vignette","scanlines","bloom",
+        {"normal","pixel","blur","paimonblur","grayscale","sepia","vignette","scanlines","bloom",
          "chromatic","radial-blur","glitch","posterize","rain","matrix","neon-pulse",
-         "wave-distortion","crt"},
+         "wave-distortion","crt","shockwave","vortex","magnetic","spotlight",
+         "ripple","plasma-cursor","freeze","pixelate-cursor",
+         "kaleidoscope","sonar","electric-arc","prism-split",
+         "gravity-well","shatter","heat-haze","liquify",
+         "ink-spread","hologram","time-warp","underwater","neon-trail",
+         "synthwave","neon-city","ocean","galaxy"},
         [](std::string const& v){ sset<std::string>("levelinfo-background-style", v); },
         w));
 
     c->addChild(createIntSliderRow("Effect Intensity",
-        static_cast<int>(gset<int64_t>("levelinfo-effect-intensity")),
+        gsaved<int>("levelinfo-effect-intensity", 4),
         1, 10,
-        [](int v){ sset<int64_t>("levelinfo-effect-intensity", static_cast<int64_t>(v)); },
+        [](int v){ ssaved<int>("levelinfo-effect-intensity", v); },
         w));
 
     c->addChild(createIntSliderRow("Background Darkness",
-        static_cast<int>(gset<int64_t>("levelinfo-bg-darkness")),
+        gsaved<int>("levelinfo-bg-darkness", 27),
         0, 50,
-        [](int v){ sset<int64_t>("levelinfo-bg-darkness", static_cast<int64_t>(v)); },
+        [](int v){ ssaved<int>("levelinfo-bg-darkness", v); },
         w));
 
     c->addChild(createSectionHeader("Dynamic Song", w));
@@ -253,14 +266,14 @@ void buildProfileMusic(CCNode* c, float w) {
         w));
 
     c->addChild(createToggleRow("Crossfade",
-        gset<bool>("profile-music-crossfade"),
-        [](bool v){ sset<bool>("profile-music-crossfade", v); },
+        gsaved<bool>("profile-music-crossfade", true),
+        [](bool v){ ssaved<bool>("profile-music-crossfade", v); },
         w));
 
     c->addChild(createSliderRow("Fade Duration",
-        static_cast<float>(gset<double>("profile-music-fade-duration")),
+        static_cast<float>(gsaved<double>("profile-music-fade-duration", 0.3)),
         0.1f, 3.0f,
-        [](float v){ sset<double>("profile-music-fade-duration", static_cast<double>(v)); },
+        [](float v){ ssaved<double>("profile-music-fade-duration", static_cast<double>(v)); },
         w));
 }
 
@@ -297,8 +310,8 @@ void buildPerformance(CCNode* c, float w) {
     c->addChild(createSectionHeader("Cache & Downloads", w));
 
     c->addChild(createToggleRow("GIF RAM Cache",
-        gset<bool>("gif-ram-cache"),
-        [](bool v){ sset<bool>("gif-ram-cache", v); },
+        gsaved<bool>("gif-ram-cache", true),
+        [](bool v){ ssaved<bool>("gif-ram-cache", v); },
         w));
 
     c->addChild(createIntSliderRow("Concurrent Downloads",
@@ -316,9 +329,9 @@ void buildInterface(CCNode* c, float w) {
     c->addChild(createSectionHeader("Profile Image", w));
 
     c->addChild(createIntSliderRow("Profile Image Z-Layer",
-        static_cast<int>(gset<int64_t>("profile-img-zlayer")),
+        gsaved<int>("profile-img-zlayer", 1),
         -10, 10,
-        [](int v){ sset<int64_t>("profile-img-zlayer", static_cast<int64_t>(v)); },
+        [](int v){ ssaved<int>("profile-img-zlayer", v); },
         w));
 
     c->addChild(createSectionHeader("Popup Animations", w));
@@ -329,15 +342,57 @@ void buildInterface(CCNode* c, float w) {
         w));
 
     c->addChild(createDropdownRow("Popup Style",
-        gset<std::string>("dynamic-popup-style"),
-        {"paimonUI","slide-up","slide-down","zoom-fade","elastic","bounce","flip","fold","pop-rotate"},
-        [](std::string const& v){ sset<std::string>("dynamic-popup-style", v); },
+        gsaved<std::string>("dynamic-popup-style", "paimonUI"),
+        {"paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic", "bounce", "slide-up", "slide-down", "slide-left", "slide-right", "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop", "glitch-shake", "card-turn", "fly-spin"},
+        [](std::string const& v){ ssaved<std::string>("dynamic-popup-style", v); },
         w));
 
     c->addChild(createSliderRow("Popup Speed",
-        static_cast<float>(gset<double>("dynamic-popup-speed")),
+        static_cast<float>(gsaved<double>("dynamic-popup-speed", 1.0)),
         0.3f, 3.0f,
-        [](float v){ sset<double>("dynamic-popup-speed", static_cast<double>(v)); },
+        [](float v){ ssaved<double>("dynamic-popup-speed", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createToggleRow("Dynamic Popup Exit",
+        gset<bool>("dynamic-exit-enabled"),
+        [](bool v){ sset<bool>("dynamic-exit-enabled", v); },
+        w));
+
+    c->addChild(createSliderRow("Exit Speed",
+        static_cast<float>(gsaved<double>("dynamic-exit-speed", 1.0)),
+        0.3f, 3.0f,
+        [](float v){ ssaved<double>("dynamic-exit-speed", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createSectionHeader("Popup Blur", w));
+
+    c->addChild(createToggleRow("Enable Popup Blur",
+        gset<bool>("popup-blur-enabled"),
+        [](bool v){ sset<bool>("popup-blur-enabled", v); },
+        w));
+
+    c->addChild(createDropdownRow("Blur Style",
+        gsaved<std::string>("popup-blur-style", "paimonblur"),
+        {"paimonblur", "gaussian"},
+        [](std::string const& v){ ssaved<std::string>("popup-blur-style", v); },
+        w));
+
+    c->addChild(createSliderRow("Blur Intensity",
+        static_cast<float>(gsaved<double>("popup-blur-intensity", 4.0)),
+        0.5f, 10.0f,
+        [](float v){ ssaved<double>("popup-blur-intensity", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createSliderRow("Blur Darkness",
+        static_cast<float>(gsaved<double>("popup-blur-darkness", 0.28)),
+        0.0f, 1.0f,
+        [](float v){ ssaved<double>("popup-blur-darkness", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createSliderRow("Blur Fade Duration",
+        static_cast<float>(gsaved<double>("popup-blur-fade-duration", 0.18)),
+        0.0f, 0.6f,
+        [](float v){ ssaved<double>("popup-blur-fade-duration", static_cast<double>(v)); },
         w));
 }
 
@@ -661,10 +716,6 @@ void buildScoreCells(CCNode* c, float w) {
         w));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CATEGORIA 12: Global Music
-// ─────────────────────────────────────────────────────────────────────────────
-
 void buildGlobalMusic(CCNode* c, float w) {
     c->addChild(createSectionHeader("Global Layer Music", w));
 
@@ -754,10 +805,34 @@ void buildMaintenance(CCNode* c, float w) {
         w));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CATEGORIA: Discord Rich Presence
+// ─────────────────────────────────────────────────────────────────────────────
+
+void buildDiscord(CCNode* c, float w) {
+    c->addChild(createSectionHeader("Rich Presence", w));
+
+    c->addChild(createToggleRow("Enable Rich Presence",
+        gset<bool>("discord-rpc-enabled"),
+        [](bool v){
+            sset<bool>("discord-rpc-enabled", v);
+            paimon::discord::DiscordPresenceManager::get().refreshSoon();
+        },
+        w));
+
+    c->addChild(createSectionHeader("Configuration", w));
+
+    c->addChild(createLinkRow("Open Discord Config",
+        [](){
+            if (auto popup = paimon::discord::DiscordConfigPopup::create()) popup->show();
+        },
+        w));
+}
+
 } // anonymous namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
-// getAllGroups — 6 grupos con subcategorias colapsables
+// getAllGroups — grupos con subcategorias colapsables
 // ─────────────────────────────────────────────────────────────────────────────
 
 namespace paimon::settings_ui {
@@ -791,6 +866,9 @@ std::vector<SettingsGroup> const& getAllGroups() {
             { "scorecells",  "Score Cells",   buildScoreCells  },
             { "performance", "Performance",   buildPerformance },
         }},
+        { "discord", "Discord", {
+            { "discord", "Rich Presence", buildDiscord },
+        }},
     };
     return s_groups;
 }
@@ -812,6 +890,7 @@ std::vector<SettingsCategory> const& getAllCategories() {
         { "cursor",        "Custom Cursor", "", buildCursor         },
         { "scorecells",    "Score Cells",   "", buildScoreCells     },
         { "globalmusic",   "Music Layers",  "", buildGlobalMusic    },
+        { "discord",       "Discord RPC",   "", buildDiscord        },
         { "maintenance",   "Maintenance",   "", buildMaintenance    },
     };
     return s_categories;

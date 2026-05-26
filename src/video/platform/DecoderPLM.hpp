@@ -45,6 +45,7 @@ public:
     }
 
     void startDecoding() override {
+        if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
         if (m_decoding.load(std::memory_order_relaxed)) return;
         m_decoding.store(true, std::memory_order_relaxed);
         m_finished.store(false, std::memory_order_relaxed);
@@ -53,7 +54,10 @@ public:
 
     void stopDecoding() override {
         m_decoding.store(false, std::memory_order_relaxed);
-        if (m_thread.joinable()) paimon::timedJoin(m_thread, std::chrono::seconds(3));
+        m_ring.wakeAll();  // unblock any waiter immediately
+        if (m_thread.joinable() && !paimon::timedJoin(m_thread, std::chrono::seconds(3))) {
+            m_decodeThreadDetached.store(true, std::memory_order_release);
+        }
     }
 
     bool consumeFrame(Frame& outFrame) override {
@@ -86,6 +90,7 @@ public:
         if (!m_plm) return;
         bool wasDecoding = m_decoding.load(std::memory_order_relaxed);
         stopDecoding();
+        if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
 
         // Drain ring buffer
         while (m_ring.nextRead()) m_ring.commitRead();
@@ -108,14 +113,34 @@ public:
         return m_ring.peekNextPTS();
     }
 
+    double peekSecondPTS() const override {
+        return m_ring.peekSecondPTS();
+    }
+
+    const Frame* peekFrame() override {
+        return m_ring.peekRead();
+    }
+
+    void releaseFrame() override {
+        // Only commit if a slot is still held.  commitRead is idempotent-safe
+        // to re-entry thanks to the ring's ready-flag gating, but we guard
+        // anyway so releaseFrame() on an empty ring doesn't advance read idx.
+        if (m_ring.peekRead()) m_ring.commitRead();
+    }
+
+    bool isTerminal() const override {
+        return m_decodeThreadDetached.load(std::memory_order_acquire);
+    }
+
 private:
     void decodeLoop() {
         plm_set_video_decode_callback(m_plm, nullptr, nullptr);
 
         while (m_decoding.load(std::memory_order_relaxed)) {
-            // Wait if ring buffer is full
+            // Wait if ring buffer is full — block on cv up to 50 ms then
+            // re-check m_decoding so shutdown is responsive.
             if (m_ring.isFull()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                m_ring.waitForWritable(50, &m_decoding);
                 continue;
             }
 
@@ -127,7 +152,7 @@ private:
 
             auto* slot = m_ring.nextWrite();
             if (!slot) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                m_ring.waitForWritable(50, &m_decoding);
                 continue;
             }
 
@@ -165,6 +190,10 @@ private:
 
     void closeInternal() {
         stopDecoding();
+        if (m_decodeThreadDetached.load(std::memory_order_acquire)) {
+            m_plm = nullptr;
+            return;
+        }
         if (m_plm) {
             plm_destroy(m_plm);
             m_plm = nullptr;
@@ -176,6 +205,7 @@ private:
     double              m_duration = 0.0;
     std::atomic<bool>   m_decoding{false};
     std::atomic<bool>   m_finished{false};
+    std::atomic<bool>   m_decodeThreadDetached{false};
     std::thread         m_thread;
 };
 

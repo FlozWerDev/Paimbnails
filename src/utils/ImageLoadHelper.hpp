@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Geode/Geode.hpp>
-#include <prevter.imageplus/include/events.hpp>
+#include "FormatDetect.hpp"
 #include <Geode/utils/file.hpp>
 #include <filesystem>
 #include <fstream>
@@ -92,40 +92,12 @@ namespace ImageLoadHelper {
     }
 
     /**
-     * Fallback con stb_image desde memoria: decodifica JPEG, PNG, BMP, TGA, PSD, GIF, HDR, PIC.
+     * Decodifica imagen desde memoria con stb_image: JPEG, PNG, BMP, TGA, PSD, GIF, HDR, PIC.
      * Soporta mas formatos y perfiles de color que CCImage de cocos2d-x.
-     * Intenta ImagePlus primero (PNG, WebP, GIF, QOI, JPEG XL), luego stb_image como fallback.
+     * Zero-dependency — no requiere ImagePlus.
      */
     inline LoadedImage loadWithSTBFromMemory(uint8_t const* fileData, size_t fileSize, bool copyBuffer = true) {
         LoadedImage result;
-
-        // === ImagePlus primero ===
-        if (imgp::isAvailable()) {
-            auto decResult = imgp::tryDecode(fileData, fileSize);
-            if (decResult.isOk()) {
-                auto& decoded = decResult.unwrap();
-                if (auto* img = std::get_if<imgp::DecodedImage>(&decoded)) {
-                    if (*img && img->width > 0 && img->height > 0
-                        && img->width <= kMaxImageDim && img->height <= kMaxImageDim) {
-                        result = createFromRGBA(img->data.get(), img->width, img->height, copyBuffer);
-                        if (result.success) {
-                            geode::log::info("[ImageLoadHelper] Loaded via ImagePlus (memory): {}x{}", img->width, img->height);
-                            return result;
-                        }
-                    }
-                }
-                if (auto* anim = std::get_if<imgp::DecodedAnimation>(&decoded)) {
-                    if (!anim->frames.empty() && anim->width > 0 && anim->height > 0
-                        && anim->width <= kMaxImageDim && anim->height <= kMaxImageDim) {
-                        result = createFromRGBA(anim->frames[0].data.get(), anim->width, anim->height, copyBuffer);
-                        if (result.success) {
-                            geode::log::info("[ImageLoadHelper] Loaded via ImagePlus animation first frame (memory): {}x{}", anim->width, anim->height);
-                            return result;
-                        }
-                    }
-                }
-            }
-        }
 
         // === Fallback: stb_image (BMP, TGA, PSD, HDR, JPEG especiales) ===
         int w = 0, h = 0, channels = 0;
@@ -153,9 +125,9 @@ namespace ImageLoadHelper {
     }
 
     /**
-     * Fallback con stb_image: decodifica JPEG, PNG, BMP, TGA, PSD, GIF, HDR, PIC.
+     * Decodifica imagen desde archivo con stb_image: JPEG, PNG, BMP, TGA, PSD, GIF, HDR, PIC.
      * Soporta mas formatos y perfiles de color que CCImage de cocos2d-x.
-     * Intenta ImagePlus primero, luego stb_image como fallback.
+     * Zero-dependency — no requiere ImagePlus.
      */
     inline LoadedImage loadWithSTB(std::filesystem::path const& path) {
         LoadedImage result;
@@ -173,7 +145,7 @@ namespace ImageLoadHelper {
             return result;
         }
 
-        // delegar a loadWithSTBFromMemory que ya tiene ImagePlus + stb fallback
+        // delegar a loadWithSTBFromMemory que ya tiene stb + CCImage fallback
         return loadWithSTBFromMemory(fileData.data(), fileData.size());
     }
 
@@ -182,9 +154,9 @@ namespace ImageLoadHelper {
      * devuelve textura + buffer RGBA listo pa CapturePreviewPopup.
      *
      * Intenta en orden:
-     * 1. ImagePlus (PNG, WebP, GIF first frame, QOI, JPEG XL)
+     * 1. stb_image (PNG, JPEG, BMP, TGA, PSD, GIF first frame, HDR)
      * 2. CCImage::initWithImageData (PNG, JPEG estandar)
-     * 3. stb_image fallback (soporta BMP, TGA, PSD, JPEG CMYK, etc)
+     * Zero-dependency — no requiere ImagePlus.
      *
      * @param path ruta al archivo
      * @param maxSizeMB tamano maximo en MB (0 = sin limite)
@@ -216,27 +188,13 @@ namespace ImageLoadHelper {
             return result;
         }
 
-        // === Intento 1: ImagePlus (PNG, WebP, GIF, QOI, JPEG XL) ===
-        if (imgp::isAvailable()) {
-            auto decResult = imgp::tryDecode(fileData.data(), fileData.size());
-            if (decResult.isOk()) {
-                auto& decoded = decResult.unwrap();
-                if (auto* img = std::get_if<imgp::DecodedImage>(&decoded)) {
-                    if (*img && img->width > 0 && img->height > 0) {
-                        auto loaded = createFromRGBA(img->data.get(), img->width, img->height);
-                        if (loaded.success) return loaded;
-                    }
-                }
-                if (auto* anim = std::get_if<imgp::DecodedAnimation>(&decoded)) {
-                    if (!anim->frames.empty() && anim->width > 0 && anim->height > 0) {
-                        auto loaded = createFromRGBA(anim->frames[0].data.get(), anim->width, anim->height);
-                        if (loaded.success) return loaded;
-                    }
-                }
-            }
+        // === Intento 1: stb_image (PNG, JPEG, BMP, TGA, PSD, GIF frame, HDR) ===
+        {
+            auto stbResult = loadWithSTBFromMemory(fileData.data(), fileData.size());
+            if (stbResult.success) return stbResult;
         }
 
-        // === Intento 2: CCImage::initWithImageData (PNG, JPEG estandar) ===
+        // === Intento 2: CCImage fallback (PNG, JPEG estandar) ===
         {
             CCImage img;
             if (img.initWithImageData(const_cast<uint8_t*>(fileData.data()), fileData.size())) {
@@ -261,11 +219,7 @@ namespace ImageLoadHelper {
             }
         }
 
-        // === Intento 3: stb_image desde memoria (BMP, TGA, PSD, JPEG especiales, etc) ===
-        {
-            auto stbResult = loadWithSTBFromMemory(fileData.data(), fileData.size());
-            if (stbResult.success) return stbResult;
-        }
+        // stb_image ya se intento en Intento 1, no reintentar
 
         result.error = "image_open_error";
         return result;
@@ -304,8 +258,7 @@ namespace ImageLoadHelper {
                 file.read(buf, sizeof(buf));
                 auto n = static_cast<size_t>(file.gcount());
                 if (n >= 6) {
-                    if (imgp::formats::isGif(buf, n)) return true;
-                    if (imgp::formats::isAPng(buf, n)) return true;
+                    if (paimon::format::isGif(reinterpret_cast<uint8_t const*>(buf), n)) return true;
                 }
             }
         }

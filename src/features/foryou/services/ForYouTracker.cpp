@@ -1,4 +1,5 @@
 #include "ForYouTracker.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <fstream>
@@ -441,12 +442,10 @@ LevelRecord ForYouTracker::jsonToLevelRecord(matjson::Value const& val) const {
     rec.isFavoriteLevel = val["isFavoriteLevel"].asBool().unwrapOr(false);
     rec.isFavoriteCreator = val["isFavoriteCreator"].asBool().unwrapOr(false);
     rec.lastPlayed = static_cast<int64_t>(val["lastPlayed"].asInt().unwrapOr(0));
-    if (val.contains("tags") && val["tags"].isArray()) {
-        for (auto const& tag : val["tags"].asArray().unwrap()) {
-            auto s = tag.asString().unwrapOr("");
-            if (!s.empty()) rec.tags.push_back(s);
-        }
-    }
+    paimon::json::forEachInArray(val["tags"], [&](matjson::Value const& tag) {
+        auto s = tag.asString().unwrapOr("");
+        if (!s.empty()) rec.tags.push_back(s);
+    });
     return rec;
 }
 
@@ -491,18 +490,14 @@ void ForYouTracker::load() {
     }
 
     // v2: load favorite sets
-    if (root.contains("favoriteCreators") && root["favoriteCreators"].isArray()) {
-        for (auto const& v : root["favoriteCreators"].asArray().unwrap()) {
-            auto id = v.asInt().unwrapOr(0);
-            if (id > 0) m_profile.favoriteCreators.insert(id);
-        }
-    }
-    if (root.contains("favoriteLevels") && root["favoriteLevels"].isArray()) {
-        for (auto const& v : root["favoriteLevels"].asArray().unwrap()) {
-            auto id = v.asInt().unwrapOr(0);
-            if (id > 0) m_profile.favoriteLevels.insert(id);
-        }
-    }
+    paimon::json::forEachInArray(root["favoriteCreators"], [&](matjson::Value const& v) {
+        auto id = v.asInt().unwrapOr(0);
+        if (id > 0) m_profile.favoriteCreators.insert(id);
+    });
+    paimon::json::forEachInArray(root["favoriteLevels"], [&](matjson::Value const& v) {
+        auto id = v.asInt().unwrapOr(0);
+        if (id > 0) m_profile.favoriteLevels.insert(id);
+    });
 
     // v2: load seeded flag
     m_preferencesSeeded = root.contains("preferencesSeeded") &&

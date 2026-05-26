@@ -141,7 +141,7 @@ public:
      * @param levelId Level ID
      * @param callback Callback with success status and texture
      */
-    void downloadThumbnail(int levelId, DownloadCallback callback);
+    void downloadThumbnail(int levelId, DownloadCallback callback, bool isGif = false);
     
     /**
      * verificar si existe miniatura en servidor

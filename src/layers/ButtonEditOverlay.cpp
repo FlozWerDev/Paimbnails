@@ -1,10 +1,10 @@
 #include "ButtonEditOverlay.hpp"
 #include "../core/UIConstants.hpp"
-#include "../utils/PaimonButtonHighlighter.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/PaimonDrawNode.hpp"
 #include "../managers/ButtonLayoutManager.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/cocos/label_nodes/CCLabelBMFont.h>
 #include "../utils/Localization.hpp"
 #include <Geode/loader/Log.hpp>
 #include <cocos-ext.h>
@@ -14,10 +14,24 @@ using namespace geode::prelude;
 using namespace cocos2d::extension;
 namespace E = paimon::ui::constants::editor;
 
+namespace {
+GLubyte opacityOf(cocos2d::CCNode* n) {
+    if (!n) return 255;
+    if (auto* m = typeinfo_cast<cocos2d::CCMenuItem*>(n)) return m->getOpacity();
+    if (auto* l = typeinfo_cast<cocos2d::CCLabelBMFont*>(n)) return l->getOpacity();
+    return 255;
+}
+void setOpacityFor(cocos2d::CCNode* n, GLubyte o) {
+    if (!n) return;
+    if (auto* m = typeinfo_cast<cocos2d::CCMenuItem*>(n)) m->setOpacity(o);
+    else if (auto* l = typeinfo_cast<cocos2d::CCLabelBMFont*>(n)) l->setOpacity(o);
+}
+} // namespace
+
 ButtonEditOverlay* ButtonEditOverlay::create(std::string const& sceneKey, CCMenu* menu,
-                                             std::vector<CCMenu*> const& extraMenus) {
+    std::vector<CCMenu*> const& extraMenus, CCNode* labelScanRoot) {
     auto ret = new ButtonEditOverlay();
-    if (ret && ret->init(sceneKey, menu, extraMenus)) {
+    if (ret && ret->init(sceneKey, menu, extraMenus, labelScanRoot)) {
         ret->autorelease();
         return ret;
     }
@@ -25,52 +39,138 @@ ButtonEditOverlay* ButtonEditOverlay::create(std::string const& sceneKey, CCMenu
     return nullptr;
 }
 
+std::vector<ButtonEditEntry>* ButtonEditOverlay::activeEntries() {
+    return m_facet == ButtonEditFacet::Buttons ? &m_buttonEntries : &m_labelEntries;
+}
+
+std::vector<ButtonEditEntry> const* ButtonEditOverlay::activeEntries() const {
+    return m_facet == ButtonEditFacet::Buttons ? &m_buttonEntries : &m_labelEntries;
+}
+
+void ButtonEditOverlay::collectButtonEntries() {
+    m_buttonEntries.clear();
+
+    auto collectFromMenu = [this](CCMenu* menu) {
+        if (!menu) return;
+        auto children = menu->getChildren();
+        if (!children) return;
+
+        int idx = 0;
+        for (auto* child : CCArrayExt<CCObject*>(children)) {
+            auto item = typeinfo_cast<CCMenuItem*>(child);
+            if (!item) {
+                ++idx;
+                continue;
+            }
+
+            std::string layoutId = ButtonLayoutManager::resolveButtonID(item, menu, idx);
+            ++idx;
+            std::string highlightKey = fmt::format("{}_{}", reinterpret_cast<uintptr_t>(menu), layoutId);
+
+            ButtonEditEntry e;
+            e.node = item;
+            e.layoutId = layoutId;
+            e.highlightKey = highlightKey;
+            e.originalPos = item->getPosition();
+            e.originalScale = item->getScale();
+            e.originalOpacity = item->getOpacity() / 255.0f;
+            e.originalZOrder = item->getZOrder();
+
+            m_buttonEntries.push_back(std::move(e));
+        }
+    };
+
+    collectFromMenu(m_targetMenu);
+    for (auto& em : m_extraMenus) {
+        collectFromMenu(em);
+    }
+
+    log::debug("[ButtonEditOverlay] {} entradas de boton", m_buttonEntries.size());
+}
+
+void ButtonEditOverlay::collectLabelEntries() {
+    m_labelEntries.clear();
+    if (!m_labelScanRoot) {
+        return;
+    }
+
+    auto labels = ButtonLayoutManager::collectEditableLabels(m_labelScanRoot);
+    int idx = 0;
+    for (auto* lbl : labels) {
+        if (!lbl) continue;
+        std::string layoutId = ButtonLayoutManager::resolveLabelID(lbl, idx++);
+        std::string highlightKey = fmt::format("lab_{}_{}", reinterpret_cast<uintptr_t>(lbl), layoutId);
+
+        ButtonEditEntry e;
+        e.node = lbl;
+        e.layoutId = layoutId;
+        e.highlightKey = highlightKey;
+        e.originalPos = lbl->getPosition();
+        e.originalScale = lbl->getScale();
+        e.originalOpacity = lbl->getOpacity() / 255.0f;
+        e.originalZOrder = lbl->getZOrder();
+
+        m_labelEntries.push_back(std::move(e));
+    }
+
+    log::debug("[ButtonEditOverlay] {} entradas de etiqueta", m_labelEntries.size());
+}
+
 bool ButtonEditOverlay::init(std::string const& sceneKey, CCMenu* menu,
-                             std::vector<CCMenu*> const& extraMenus) {
+    std::vector<CCMenu*> const& extraMenus, CCNode* labelScanRoot) {
     if (!CCLayer::init()) return false;
 
     m_sceneKey = sceneKey;
     m_targetMenu = menu;
-    m_selectedButton = nullptr;
+    m_labelScanRoot = labelScanRoot;
+    m_selectedEntry = nullptr;
 
-    // Retener extra menus
     for (auto* em : extraMenus) {
         if (em) m_extraMenus.emplace_back(em);
     }
 
-    m_draggedButton = nullptr;
+    m_draggedEntry = nullptr;
 
-    // cachear winsize para evitar multiples llamadas
-    const auto winSize = CCDirector::sharedDirector()->getWinSize();
-    
+    const auto winSize = CCDirector::get()->getWinSize();
+
     m_darkBG = CCLayerColor::create(ccc4(0, 0, 0, E::OVERLAY_ALPHA));
     m_darkBG->setContentSize(winSize);
     m_darkBG->setZOrder(-1);
     this->addChild(m_darkBG);
-    
-    collectEditableButtons();
-    
-    for (auto& btn : m_editableButtons) {
-        if (btn.item && btn.item->getParent()) {
-            btn.item->setZOrder(1000);
+
+    collectButtonEntries();
+    collectLabelEntries();
+
+    auto bumpZ = [](std::vector<ButtonEditEntry>& v) {
+        for (auto& e : v) {
+            if (e.node && e.node->getParent()) {
+                e.node->setZOrder(1000);
+            }
         }
-    }
-    
+    };
+    bumpZ(m_buttonEntries);
+    bumpZ(m_labelEntries);
+
     createControls();
     showControls(false);
+    updateFacetUI();
 
-    // Desactivar todos los CCMenus en la escena que NO sean nuestros menus editables
-    if (auto scene = CCDirector::sharedDirector()->getRunningScene()) {
+    if (auto scene = CCDirector::get()->getRunningScene()) {
         disableOtherMenus(scene);
     }
-    
-    m_selectionHighlight = paimon::SpriteHelper::createColorPanel(10, 10, ccColor3B{100, 255, 100}, 150, 3.f);
+
+    // m_selectionHighlight es un CCDrawNode dinámico: se redibuja con
+    // `drawPolygon` cada vez que cambia la selección, así que tiene que
+    // ser CCDrawNode (NineSlice no tiene API de drawing). Usamos
+    // createRoundedRect directo, que es la primitiva legacy explícita
+    // para este caso.
+    cocos2d::ccColor4F selFill{
+        100.f / 255.f, 255.f / 255.f, 100.f / 255.f, 150.f / 255.f
+    };
+    m_selectionHighlight = paimon::SpriteHelper::createRoundedRect(10, 10, 3.f, selFill);
     m_selectionHighlight->setVisible(false);
     m_selectionHighlight->setZOrder(E::Z_SELECTION_HL);
-    
-    if (m_targetMenu && m_targetMenu->getParent()) {
-        m_targetMenu->getParent()->addChild(m_selectionHighlight, E::Z_SELECTION_HL);
-    }
+    this->addChild(m_selectionHighlight, E::Z_SELECTION_HL);
 
     createAllHighlights();
     createSnapGuides();
@@ -79,16 +179,25 @@ bool ButtonEditOverlay::init(std::string const& sceneKey, CCMenu* menu,
     this->setTouchMode(kCCTouchesOneByOne);
     this->setTouchPriority(E::TOUCH_PRIORITY);
     this->scheduleUpdate();
-    
+
     return true;
 }
 
 ButtonEditOverlay::~ButtonEditOverlay() {
-    // Re-habilitar menus desactivados (Ref mantiene los punteros validos)
     for (auto& menuRef : m_disabledMenus) {
         if (menuRef && menuRef->getParent()) menuRef->setEnabled(true);
     }
     m_disabledMenus.clear();
+
+    auto restoreZ = [](std::vector<ButtonEditEntry>& v) {
+        for (auto& e : v) {
+            if (e.node && e.node->getParent()) {
+                e.node->setZOrder(e.originalZOrder);
+            }
+        }
+    };
+    restoreZ(m_buttonEntries);
+    restoreZ(m_labelEntries);
 
     if (m_selectionHighlight && m_selectionHighlight->getParent()) {
         m_selectionHighlight->removeFromParent();
@@ -96,45 +205,7 @@ ButtonEditOverlay::~ButtonEditOverlay() {
     clearAllHighlights();
     m_targetMenu = nullptr;
     m_extraMenus.clear();
-}
-
-void ButtonEditOverlay::collectEditableButtons() {
-    m_editableButtons.clear();
-
-    // Helper lambda para recoger botones de un menu
-    auto collectFromMenu = [this](CCMenu* menu) {
-        if (!menu) return;
-        auto children = menu->getChildren();
-        if (!children) return;
-
-        for (auto* child : CCArrayExt<CCObject*>(children)) {
-            auto item = typeinfo_cast<CCMenuItem*>(child);
-            if (!item) continue;
-
-            auto buttonID = item->getID();
-            if (buttonID.empty()) continue;
-
-            EditableButton editable;
-            editable.item = item;
-            editable.buttonID = std::string(buttonID);
-            editable.originalPos = item->getPosition();
-            editable.originalScale = item->getScale();
-            editable.originalOpacity = item->getOpacity() / 255.0f;
-            editable.highlightKey = fmt::format("{}_{}", reinterpret_cast<uintptr_t>(menu), editable.buttonID);
-
-            m_editableButtons.push_back(std::move(editable));
-        }
-    };
-
-    // Recoger del menu principal
-    collectFromMenu(m_targetMenu);
-
-    // Recoger de menus extra
-    for (auto& em : m_extraMenus) {
-        collectFromMenu(em);
-    }
-
-    log::debug("[ButtonEditOverlay] Collected {} editable buttons", m_editableButtons.size());
+    m_labelScanRoot = nullptr;
 }
 
 void ButtonEditOverlay::disableOtherMenus(CCNode* root) {
@@ -146,66 +217,128 @@ void ButtonEditOverlay::disableOtherMenus(CCNode* root) {
         auto node = typeinfo_cast<CCNode*>(obj);
         if (!node) continue;
 
-        // Si es un CCMenu, verificar si es uno de los nuestros
         if (auto menu = typeinfo_cast<CCMenu*>(node)) {
-            // No desactivar nuestros menus editables ni el menu de controles
-            bool isOurs = (menu == m_targetMenu || menu == m_controlsMenu);
+            bool isOurs = (menu == m_targetMenu || menu == m_controlsMenu || menu == m_facetMenu);
             for (auto& em : m_extraMenus) {
                 if (menu == em) isOurs = true;
             }
             if (!isOurs && menu->isEnabled()) {
                 menu->setEnabled(false);
-                m_disabledMenus.push_back(geode::Ref<CCMenu>(menu));
+                m_disabledMenus.emplace_back(menu);
             }
         }
 
-        // Recursivamente buscar en hijos
         disableOtherMenus(node);
     }
 }
 
+void ButtonEditOverlay::setFacet(ButtonEditFacet facet) {
+    if (m_facet == facet) return;
+    m_facet = facet;
+    selectEntry(nullptr);
+    clearAllHighlights();
+    updateFacetUI();
+    createAllHighlights();
+}
+
+void ButtonEditOverlay::updateFacetUI() {
+    auto& loc = Localization::get();
+    std::string facetName = m_facet == ButtonEditFacet::Buttons
+        ? loc.getString("edit.facet_buttons")
+        : loc.getString("edit.facet_labels");
+    if (m_facetBannerLabel) {
+        m_facetBannerLabel->setString(
+            fmt::format(fmt::runtime(loc.getString("edit.showing_banner")), facetName).c_str());
+    }
+    if (m_instructionLabel) {
+        m_instructionLabel->setString(
+            (m_facet == ButtonEditFacet::Buttons ? loc.getString("edit.instruction_buttons")
+                                                 : loc.getString("edit.instruction_labels"))
+                .c_str());
+    }
+    if (m_tabButtons) {
+        m_tabButtons->setColor(m_facet == ButtonEditFacet::Buttons ? ccWHITE : ccColor3B{160, 160, 160});
+    }
+    if (m_tabLabels) {
+        m_tabLabels->setColor(m_facet == ButtonEditFacet::Labels ? ccWHITE : ccColor3B{160, 160, 160});
+    }
+}
+
+void ButtonEditOverlay::onFacetTab(CCObject* sender) {
+    auto tag = sender ? sender->getTag() : 0;
+    setFacet(tag == 1 ? ButtonEditFacet::Labels : ButtonEditFacet::Buttons);
+}
+
 void ButtonEditOverlay::createControls() {
-    const auto winSize = CCDirector::sharedDirector()->getWinSize();
+    const auto winSize = CCDirector::get()->getWinSize();
+    auto& loc = Localization::get();
 
     m_controlsMenu = CCMenu::create();
-    m_controlsMenu->setPosition(CCPointZero);  // usar constante de cocos2d
+    m_controlsMenu->setPosition(CCPointZero);
     m_controlsMenu->setZOrder(E::Z_CONTROLS_MENU);
     this->addChild(m_controlsMenu);
 
-    // panel de controles en la parte inferior
+    const float bannerY = winSize.height - 22.f;
+    m_facetBannerLabel = CCLabelBMFont::create(
+        fmt::format(
+            fmt::runtime(loc.getString("edit.showing_banner")),
+            loc.getString("edit.facet_buttons"))
+            .c_str(),
+        "bigFont.fnt");
+    m_facetBannerLabel->setScale(0.45f);
+    m_facetBannerLabel->setPosition({winSize.width / 2.f, bannerY});
+    this->addChild(m_facetBannerLabel);
+
+    m_facetMenu = CCMenu::create();
+    m_facetMenu->setPosition({winSize.width / 2.f, winSize.height - 50.f});
+    this->addChild(m_facetMenu, E::Z_CONTROLS_MENU + 2);
+
+    auto tabBtnA = ButtonSprite::create(loc.getString("edit.facet_buttons").c_str(), 100, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.55f);
+    m_tabButtons = CCMenuItemSpriteExtra::create(tabBtnA, this, menu_selector(ButtonEditOverlay::onFacetTab));
+    m_tabButtons->setTag(0);
+    m_tabButtons->setPosition({-55.f, 0.f});
+    m_facetMenu->addChild(m_tabButtons);
+
+    auto tabBtnB = ButtonSprite::create(loc.getString("edit.facet_labels").c_str(), 100, true, "bigFont.fnt", "GJ_button_04.png", 24.f, 0.55f);
+    m_tabLabels = CCMenuItemSpriteExtra::create(tabBtnB, this, menu_selector(ButtonEditOverlay::onFacetTab));
+    m_tabLabels->setTag(1);
+    m_tabLabels->setPosition({55.f, 0.f});
+    m_facetMenu->addChild(m_tabLabels);
+
+    m_instructionLabel = CCLabelBMFont::create(loc.getString("edit.instruction_buttons").c_str(), "chatFont.fnt");
+    m_instructionLabel->setScale(0.55f);
+    m_instructionLabel->setPosition({winSize.width / 2.f, winSize.height - 78.f});
+    m_instructionLabel->setColor({220, 220, 220});
+    this->addChild(m_instructionLabel);
+
     const float panelHeight = E::CONTROLS_PANEL_H;
     const float panelY = panelHeight / 2.f + 10.f;
     const float centerX = winSize.width / 2.f;
 
-    // fondo panel
     auto panelBg = paimon::SpriteHelper::createDarkPanel(winSize.width - 20.f, panelHeight, 200);
     panelBg->setPosition({centerX - (winSize.width - 20.f) / 2.f, panelY - panelHeight / 2.f});
     this->addChild(panelBg, -1);
 
-    // titulo panel
     const float titleY = panelY + panelHeight / 2.f - 15.f;
-    auto titleLabel = CCLabelBMFont::create(Localization::get().getString("edit.buttons_title").c_str(), "bigFont.fnt");
-    titleLabel->setScale(0.55f);
-    titleLabel->setPosition({centerX, titleY});
-    this->addChild(titleLabel);
+    m_panelTitleLabel = CCLabelBMFont::create(loc.getString("edit.panel_title").c_str(), "bigFont.fnt");
+    m_panelTitleLabel->setScale(0.55f);
+    m_panelTitleLabel->setPosition({centerX, titleY});
+    this->addChild(m_panelTitleLabel);
 
-    // sliders + botones
     const float contentStartY = panelY + 10.f;
-    const float row1Y = contentStartY;          // fila de scale
-    const float row2Y = contentStartY - 35.f;   // fila de opacity
+    const float row1Y = contentStartY;
+    const float row2Y = contentStartY - 35.f;
 
-    // posiciones para los elementos de sliders
     const float labelX = 30.f;
     const float sliderX = centerX - 60.f;
     const float valueX = sliderX + 130.f;
 
-    // --- escala ---
-    auto scaleText = CCLabelBMFont::create(Localization::get().getString("edit.scale").c_str(), "goldFont.fnt");
+    auto scaleText = CCLabelBMFont::create(loc.getString("edit.scale").c_str(), "goldFont.fnt");
     scaleText->setScale(0.5f);
     scaleText->setAnchorPoint({0.f, 0.5f});
     scaleText->setPosition({labelX, row1Y});
     this->addChild(scaleText);
-    
+
     m_scaleSlider = Slider::create(this, menu_selector(ButtonEditOverlay::onScaleChanged));
     m_scaleSlider->setPosition({sliderX, row1Y});
     m_scaleSlider->setScale(0.8f);
@@ -218,8 +351,7 @@ void ButtonEditOverlay::createControls() {
     m_scaleLabel->setPosition({valueX, row1Y});
     this->addChild(m_scaleLabel);
 
-    // --- opacidad ---
-    auto opacityText = CCLabelBMFont::create(Localization::get().getString("edit.opacity").c_str(), "goldFont.fnt");
+    auto opacityText = CCLabelBMFont::create(loc.getString("edit.opacity").c_str(), "goldFont.fnt");
     opacityText->setScale(0.5f);
     opacityText->setAnchorPoint({0.f, 0.5f});
     opacityText->setPosition({labelX, row2Y});
@@ -237,26 +369,18 @@ void ButtonEditOverlay::createControls() {
     m_opacityLabel->setPosition({valueX, row2Y});
     this->addChild(m_opacityLabel);
 
-    // botones accion
     const float btnX = winSize.width - 70.f;
     const float btnCenterY = panelY - 5.f;
 
-    auto acceptSpr = ButtonSprite::create(Localization::get().getString("edit.accept").c_str(), 80, true, "bigFont.fnt", "GJ_button_01.png", 28.f, 0.6f);
+    auto acceptSpr = ButtonSprite::create(loc.getString("edit.accept").c_str(), 80, true, "bigFont.fnt", "GJ_button_01.png", 28.f, 0.6f);
     auto acceptBtn = CCMenuItemSpriteExtra::create(acceptSpr, this, menu_selector(ButtonEditOverlay::onAccept));
     acceptBtn->setPosition({btnX, btnCenterY + 20.f});
     m_controlsMenu->addChild(acceptBtn);
 
-    auto resetSpr = ButtonSprite::create(Localization::get().getString("edit.reset").c_str(), 80, true, "bigFont.fnt", "GJ_button_06.png", 28.f, 0.6f);
+    auto resetSpr = ButtonSprite::create(loc.getString("edit.reset").c_str(), 80, true, "bigFont.fnt", "GJ_button_06.png", 28.f, 0.6f);
     auto resetBtn = CCMenuItemSpriteExtra::create(resetSpr, this, menu_selector(ButtonEditOverlay::onReset));
     resetBtn->setPosition({btnX, btnCenterY - 20.f});
     m_controlsMenu->addChild(resetBtn);
-
-    // instruccion arriba
-    auto instrLabel = CCLabelBMFont::create("Drag buttons to move them", "chatFont.fnt");
-    instrLabel->setScale(0.6f);
-    instrLabel->setPosition({centerX, winSize.height - 20.f});
-    instrLabel->setColor({220, 220, 220});
-    this->addChild(instrLabel);
 }
 
 void ButtonEditOverlay::showControls(bool show) {
@@ -267,113 +391,177 @@ void ButtonEditOverlay::showControls(bool show) {
 }
 
 void ButtonEditOverlay::update(float) {
-    // menu invalido, cierro
     if (!m_targetMenu || !m_targetMenu->getParent()) {
-        log::warn("[ButtonEditOverlay] Target menu no longer valid; closing editor to avoid crash");
+        log::warn("[ButtonEditOverlay] Target menu invalido; cerrando editor");
         m_isClosing = true;
-        // desactivo controles
         if (m_controlsMenu) m_controlsMenu->setTouchEnabled(false);
+        if (m_facetMenu) m_facetMenu->setTouchEnabled(false);
         this->setTouchEnabled(false);
-        // elimino el resaltado de seleccion si todavia esta adjunto
         if (m_selectionHighlight && m_selectionHighlight->getParent()) {
             m_selectionHighlight->removeFromParent();
         }
         clearAllHighlights();
-        // elimino superposicion
         this->unscheduleUpdate();
         this->removeFromParent();
         return;
     }
 
-    // mantengo todos los resaltados por boton sincronizados con sus elementos
     updateAllHighlights();
 }
 
-void ButtonEditOverlay::selectButton(EditableButton* btn) {
-    m_selectedButton = btn;
-    
-    if (!btn) {
+void ButtonEditOverlay::selectEntry(ButtonEditEntry* entry) {
+    m_selectedEntry = entry;
+
+    if (!entry) {
         showControls(false);
-        m_selectionHighlight->setVisible(false);
+        if (m_selectionHighlight) m_selectionHighlight->setVisible(false);
         return;
     }
 
     showControls(true);
-    
-    // establezco valores del deslizador desde el estado actual del boton
-    float currentScale = btn->item->getScale();
-    float currentOpacity = btn->item->getOpacity() / 255.0f;
-    
-    // mapeo escala [SCALE_MIN, SCALE_MAX] a deslizador [0, 1]
+
+    if (!entry->node) return;
+
+    float currentScale = entry->node->getScale();
+    float currentOpacity = opacityOf(entry->node) / 255.0f;
+
     float scaleNorm = (currentScale - E::SCALE_MIN) / (E::SCALE_MAX - E::SCALE_MIN);
     m_scaleSlider->setValue(std::max(0.f, std::min(1.f, scaleNorm)));
-    
     m_opacitySlider->setValue(currentOpacity);
-    
+
     updateSliderLabels();
     updateSelectionHighlight();
     updateAllHighlights();
 }
 
 void ButtonEditOverlay::updateSelectionHighlight() {
-    if (!m_selectedButton || !m_selectionHighlight) return;
-    
-    auto item = m_selectedButton->item;
-    if (!item || !item->getParent()) return;
+    if (!m_selectedEntry || !m_selectionHighlight) return;
 
-    auto contentSize = item->getContentSize();
-    float scale = item->getScale();
+    auto* node = m_selectedEntry->node;
+    if (!node || !node->getParent()) return;
+
+    auto contentSize = node->getContentSize();
+    float scale = node->getScale();
     float w = contentSize.width * scale + 10.f;
     float h = contentSize.height * scale + 10.f;
 
     ccColor4F fill = {E::SELECTION_R, E::SELECTION_G, E::SELECTION_B, E::SELECTION_A};
     drawRoundedRect(m_selectionHighlight, w, h, fill);
-    
-    auto worldPos = item->getParent()->convertToWorldSpace(item->getPosition());
-    m_selectionHighlight->setPosition({worldPos.x - w/2, worldPos.y - h/2});
+
+    auto worldCenter = node->getParent()->convertToWorldSpace(node->getPosition());
+    auto worldBL = ccp(worldCenter.x - w / 2, worldCenter.y - h / 2);
+    m_selectionHighlight->setPosition(this->convertToNodeSpace(worldBL));
     m_selectionHighlight->setVisible(true);
 }
 
 void ButtonEditOverlay::updateSliderLabels() {
-    if (!m_selectedButton) return;
-    
-    float scale = m_selectedButton->item->getScale();
-    float opacity = m_selectedButton->item->getOpacity() / 255.0f * 100.0f;
-    
+    if (!m_selectedEntry || !m_selectedEntry->node) return;
+
+    float scale = m_selectedEntry->node->getScale();
+    float opacity = opacityOf(m_selectedEntry->node) / 255.0f * 100.0f;
+
     m_scaleLabel->setString(fmt::format("{:.2f}x", scale).c_str());
     m_opacityLabel->setString(fmt::format("{:.0f}%", opacity).c_str());
 }
 
-EditableButton* ButtonEditOverlay::findButtonAtPoint(CCPoint worldPos) {
-    for (auto& btn : m_editableButtons) {
-        if (!btn.item) continue;
-        
-        auto parent = btn.item->getParent();
+ButtonEditEntry* ButtonEditOverlay::findEntryAtPoint(CCPoint worldPos) {
+    ButtonEditEntry* bestEntry = nullptr;
+    int bestLayer = -999;
+    int bestZOrder = -999999;
+    float bestArea = FLT_MAX;
+
+    for (auto& btn : *activeEntries()) {
+        if (!btn.node) continue;
+
+        auto parent = btn.node->getParent();
         if (!parent) continue;
-        
+
         auto localPos = parent->convertToNodeSpace(worldPos);
-        auto bbox = btn.item->boundingBox();
-        
+        auto bbox = btn.node->boundingBox();
+
         if (bbox.containsPoint(localPos)) {
-            return &btn;
+            // Determine selection layer (1 for label, 0 for button, -1 for background)
+            int layer = 0;
+            if (typeinfo_cast<cocos2d::CCLabelBMFont*>(btn.node) || typeinfo_cast<cocos2d::CCLabelTTF*>(btn.node)) {
+                layer = 1;
+            } else {
+                std::string lowerKey = btn.layoutId;
+                std::transform(lowerKey.begin(), lowerKey.end(), lowerKey.begin(), ::tolower);
+                
+                if (lowerKey.find("label") != std::string::npos ||
+                    lowerKey.find("lbl") != std::string::npos ||
+                    lowerKey.find("text") != std::string::npos ||
+                    lowerKey.find("txt") != std::string::npos ||
+                    lowerKey.find("title") != std::string::npos ||
+                    lowerKey.find("desc") != std::string::npos ||
+                    lowerKey.find("name") != std::string::npos ||
+                    lowerKey.find("tit") != std::string::npos) {
+                    layer = 1;
+                } else if (lowerKey.find("bg") != std::string::npos ||
+                           lowerKey.find("background") != std::string::npos ||
+                           lowerKey.find("back") != std::string::npos ||
+                           lowerKey.find("card") != std::string::npos ||
+                           lowerKey.find("fondo") != std::string::npos ||
+                           lowerKey.find("overlay") != std::string::npos ||
+                           lowerKey.find("logo") != std::string::npos ||
+                           lowerKey.find("banner") != std::string::npos ||
+                           lowerKey.find("art") != std::string::npos ||
+                           lowerKey.find("decor") != std::string::npos ||
+                           lowerKey.find("frame") != std::string::npos ||
+                           lowerKey.find("panel") != std::string::npos ||
+                           lowerKey.find("shadow") != std::string::npos ||
+                           lowerKey.find("shape") != std::string::npos ||
+                           lowerKey.find("border") != std::string::npos ||
+                           lowerKey.find("rect") != std::string::npos ||
+                           lowerKey.find("circle") != std::string::npos ||
+                           lowerKey.find("container") != std::string::npos ||
+                           lowerKey.find("box") != std::string::npos) {
+                    layer = -1;
+                } else {
+                    auto size = btn.node->getContentSize();
+                    if (size.width > 180.f && size.height > 120.f) {
+                        layer = -1;
+                    }
+                }
+            }
+
+            int zOrder = btn.originalZOrder;
+            float area = bbox.size.width * bbox.size.height;
+
+            bool isBetter = false;
+            if (!bestEntry) {
+                isBetter = true;
+            } else if (layer > bestLayer) {
+                isBetter = true;
+            } else if (layer == bestLayer) {
+                if (zOrder > bestZOrder) {
+                    isBetter = true;
+                } else if (zOrder == bestZOrder) {
+                    if (area < bestArea) {
+                        isBetter = true;
+                    }
+                }
+            }
+
+            if (isBetter) {
+                bestEntry = &btn;
+                bestLayer = layer;
+                bestZOrder = zOrder;
+                bestArea = area;
+            }
         }
     }
-    return nullptr;
+    return bestEntry;
 }
 
-// Helper: verifica si el toque cae sobre el area de un Slider (thumb + groove).
-// Los Sliders de GD manejan sus propios toques via registerWithTouchDispatcher;
-// si nosotros tragamos el toque aqui, nunca les llega.
 bool ButtonEditOverlay::isTouchOnSlider(CCTouch* touch) {
     auto checkSlider = [&](Slider* slider) -> bool {
         if (!slider || !slider->isVisible() || !slider->getParent()) return false;
-        // Usar el bounding box del slider completo (groove + thumb)
         auto sliderWorldPos = slider->getParent()->convertToWorldSpace(slider->getPosition());
-        // El Slider de GD tiene un ancho/alto basado en su escala y contenido
         auto cs = slider->getContentSize();
         float sc = slider->getScale();
         float w = cs.width * sc;
-        float h = std::max(cs.height * sc, 30.f); // minimo 30px de area tactil vertical
+        float h = std::max(cs.height * sc, 30.f);
         CCRect sliderRect(sliderWorldPos.x - w / 2.f, sliderWorldPos.y - h / 2.f, w, h);
         return sliderRect.containsPoint(touch->getLocation());
     };
@@ -384,66 +572,60 @@ bool ButtonEditOverlay::isTouchOnSlider(CCTouch* touch) {
 }
 
 bool ButtonEditOverlay::ccTouchBegan(CCTouch* touch, CCEvent* event) {
-    // Si el toque cae sobre un slider, no tragarlo — dejar que el Slider lo maneje
     if (isTouchOnSlider(touch)) {
         return false;
     }
 
     auto touchPos = touch->getLocation();
-    auto foundBtn = findButtonAtPoint(touchPos);
-    
-    if (foundBtn) {
-        m_draggedButton = foundBtn;
+    auto found = findEntryAtPoint(touchPos);
+
+    if (found) {
+        m_draggedEntry = found;
         m_dragStartPos = touchPos;
-        m_originalButtonPos = foundBtn->item->getPosition();
-        
-        // selecciono
-        selectButton(foundBtn);
-        
+        m_originalNodePos = found->node->getPosition();
+
+        selectEntry(found);
+
         return true;
     }
-    
-    // no toco btn, deselecciono
-    selectButton(nullptr);
+
+    selectEntry(nullptr);
     return true;
 }
 
 void ButtonEditOverlay::ccTouchMoved(CCTouch* touch, CCEvent* event) {
-    if (!m_draggedButton || !m_draggedButton->item) return;
+    if (!m_draggedEntry || !m_draggedEntry->node) return;
 
     const auto touchPos = touch->getLocation();
     const auto delta = ccpSub(touchPos, m_dragStartPos);
-    auto newPos = ccpAdd(m_originalButtonPos, delta);
-    
-    // snap
+    auto newPos = ccpAdd(m_originalNodePos, delta);
+
     newPos = applySnap(newPos);
 
-    m_draggedButton->item->setPosition(newPos);
+    m_draggedEntry->node->setPosition(newPos);
     updateSelectionHighlight();
     updateAllHighlights();
 }
 
 void ButtonEditOverlay::ccTouchEnded(CCTouch* touch, CCEvent* event) {
-    m_draggedButton = nullptr;
+    m_draggedEntry = nullptr;
     hideSnapGuides();
 }
 
 void ButtonEditOverlay::ccTouchCancelled(CCTouch* touch, CCEvent* event) {
-    m_draggedButton = nullptr;
+    m_draggedEntry = nullptr;
     hideSnapGuides();
 }
 
 void ButtonEditOverlay::onScaleChanged(CCObject*) {
-    if (!m_selectedButton || !m_selectedButton->item) return;
+    if (!m_selectedEntry || !m_selectedEntry->node) return;
 
     const float sliderValue = m_scaleSlider->getValue();
-    const float scale = E::SCALE_MIN + sliderValue * (E::SCALE_MAX - E::SCALE_MIN); // map [0,1] a [SCALE_MIN, SCALE_MAX]
+    const float scale = E::SCALE_MIN + sliderValue * (E::SCALE_MAX - E::SCALE_MIN);
 
-    m_selectedButton->item->setScale(scale);
+    m_selectedEntry->node->setScale(scale);
 
-    // importante: actualizar m_basescale para que el hover no resetee la escala
-    // cachear el cast si es ccmenuitemspriteextra
-    if (auto menuItem = typeinfo_cast<CCMenuItemSpriteExtra*>(m_selectedButton->item)) {
+    if (auto menuItem = typeinfo_cast<CCMenuItemSpriteExtra*>(m_selectedEntry->node)) {
         menuItem->m_baseScale = scale;
     }
 
@@ -452,21 +634,32 @@ void ButtonEditOverlay::onScaleChanged(CCObject*) {
 }
 
 void ButtonEditOverlay::onOpacityChanged(CCObject*) {
-    if (!m_selectedButton || !m_selectedButton->item) return;
-    
+    if (!m_selectedEntry || !m_selectedEntry->node) return;
+
     float opacity = m_opacitySlider->getValue();
-    m_selectedButton->item->setOpacity(static_cast<GLubyte>(opacity * 255));
+    setOpacityFor(m_selectedEntry->node, static_cast<GLubyte>(opacity * 255));
     updateSliderLabels();
 }
 
-void ButtonEditOverlay::onAccept(CCObject*) {
-    if (m_isClosing) {
-        // ya se esta cerrando; ignorar accion
-        return;
+namespace {
+void saveEntryLayout(std::string const& sceneKey, ButtonEditEntry const& e) {
+    if (!e.node || e.layoutId.empty()) return;
+    ButtonLayout layout;
+    layout.position = e.node->getPosition();
+    layout.scale = e.node->getScale();
+    layout.opacity = opacityOf(e.node) / 255.0f;
+    ButtonLayoutManager::get().setLayout(sceneKey, e.layoutId, layout);
+    if (auto menuItem = typeinfo_cast<CCMenuItemSpriteExtra*>(e.node)) {
+        menuItem->m_baseScale = layout.scale;
     }
-    // si el contexto se ha ido (navegacion a otra parte), cierro de forma segura
+}
+} // namespace
+
+void ButtonEditOverlay::onAccept(CCObject*) {
+    if (m_isClosing) return;
+
     if (!m_targetMenu || !m_targetMenu->getParent()) {
-        log::warn("[ButtonEditOverlay] Accept pressed after leaving page; closing without saving");
+        log::warn("[ButtonEditOverlay] Aceptar sin contexto; cerrando sin guardar");
         if (m_selectionHighlight && m_selectionHighlight->getParent()) {
             m_selectionHighlight->removeFromParent();
         }
@@ -476,59 +669,28 @@ void ButtonEditOverlay::onAccept(CCObject*) {
         return;
     }
 
-    // Helper: guardar layouts de un menu
-    auto saveMenuButtons = [this](CCMenu* menu) {
-        if (!menu) return;
-        auto children = menu->getChildren();
-        if (!children) return;
-        for (auto obj : CCArrayExt<CCObject*>(children)) {
-            auto item = typeinfo_cast<CCMenuItem*>(obj);
-            if (!item) continue;
-            std::string id = item->getID();
-            if (id.empty()) continue;
-
-            ButtonLayout layout;
-            layout.position = item->getPosition();
-            layout.scale = item->getScale();
-            layout.opacity = item->getOpacity() / 255.0f;
-
-            ButtonLayoutManager::get().setLayout(m_sceneKey, id, layout);
-
-            if (auto spriteExtra = typeinfo_cast<CCMenuItemSpriteExtra*>(item)) {
-                spriteExtra->m_baseScale = layout.scale;
-            }
-
-            log::info("[ButtonEditOverlay] Saved button '{}': pos({}, {}), scale={}, opacity={}",
-                id, layout.position.x, layout.position.y, layout.scale, layout.opacity);
-        }
-    };
-
-    // Guardar de todos los menus
-    saveMenuButtons(m_targetMenu);
-    for (auto& em : m_extraMenus) {
-        saveMenuButtons(em);
+    for (auto const& e : m_buttonEntries) {
+        saveEntryLayout(m_sceneKey, e);
     }
-    
-    // elimino resaltado de seleccion
+    for (auto const& e : m_labelEntries) {
+        saveEntryLayout(m_sceneKey, e);
+    }
+
     if (m_selectionHighlight && m_selectionHighlight->getParent()) {
         m_selectionHighlight->removeFromParent();
     }
     clearAllHighlights();
 
-    // elimino superposicion
     m_isClosing = true;
     this->unscheduleUpdate();
     this->removeFromParent();
 }
 
 void ButtonEditOverlay::onReset(CCObject*) {
-    if (m_isClosing) {
-        return;
-    }
-    // si el contexto se ha ido, solo limpio disenos guardados y cierro
+    if (m_isClosing) return;
+
     if (!m_targetMenu || !m_targetMenu->getParent()) {
         ButtonLayoutManager::get().resetScene(m_sceneKey);
-        ButtonLayoutManager::get().save();
         if (m_selectionHighlight && m_selectionHighlight->getParent()) {
             m_selectionHighlight->removeFromParent();
         }
@@ -538,37 +700,35 @@ void ButtonEditOverlay::onReset(CCObject*) {
         return;
     }
 
-    // restauro botones por defecto persistentes cuando esten disponibles, sino a originales capturados
-    for (auto& btn : m_editableButtons) {
-        if (!btn.item || btn.buttonID.empty()) continue;
-        if (!btn.item->getParent()) continue;
+    auto restoreOne = [this](ButtonEditEntry& btn) {
+        if (!btn.node || btn.layoutId.empty()) return;
+        if (!btn.node->getParent()) return;
 
-        auto def = ButtonLayoutManager::get().getDefaultLayout(m_sceneKey, btn.buttonID);
+        auto def = ButtonLayoutManager::get().getDefaultLayout(m_sceneKey, btn.layoutId);
         float newScale;
         if (def) {
-            btn.item->setPosition(def->position);
-            btn.item->setScale(def->scale);
-            btn.item->setOpacity(static_cast<GLubyte>(def->opacity * 255));
+            btn.node->setPosition(def->position);
+            btn.node->setScale(def->scale);
+            setOpacityFor(btn.node, static_cast<GLubyte>(def->opacity * 255));
             newScale = def->scale;
         } else {
-            btn.item->setPosition(btn.originalPos);
-            btn.item->setScale(btn.originalScale);
-            btn.item->setOpacity(static_cast<GLubyte>(btn.originalOpacity * 255));
+            btn.node->setPosition(btn.originalPos);
+            btn.node->setScale(btn.originalScale);
+            setOpacityFor(btn.node, static_cast<GLubyte>(btn.originalOpacity * 255));
             newScale = btn.originalScale;
         }
 
-        // importante: actualizar m_basescale para que el hover no resetee la escala
-        if (auto spriteExtra = typeinfo_cast<CCMenuItemSpriteExtra*>(btn.item)) {
-            spriteExtra->m_baseScale = newScale;
+        if (auto menuItem = typeinfo_cast<CCMenuItemSpriteExtra*>(btn.node)) {
+            menuItem->m_baseScale = newScale;
         }
-    }
+    };
 
-    // limpio disenos guardados para esta escena y persisto
+    for (auto& e : m_buttonEntries) restoreOne(e);
+    for (auto& e : m_labelEntries) restoreOne(e);
+
     ButtonLayoutManager::get().resetScene(m_sceneKey);
-    ButtonLayoutManager::get().save();
 
-    // deselecciono
-    selectButton(nullptr);
+    selectEntry(nullptr);
     updateAllHighlights();
 }
 
@@ -576,17 +736,20 @@ void ButtonEditOverlay::createAllHighlights() {
     clearAllHighlights();
     if (!m_targetMenu || !m_targetMenu->getParent()) return;
 
-    auto parent = m_targetMenu->getParent();
-    // reservar espacio en el mapa para evitar rehashing
-    m_buttonHighlights.reserve(m_editableButtons.size());
+    m_buttonHighlights.reserve(activeEntries()->size());
 
-    for (auto& btn : m_editableButtons) {
-        if (!btn.item || btn.highlightKey.empty()) continue;
-        auto spr = paimon::SpriteHelper::createColorPanel(10, 10, ccColor3B{80, 180, 255}, 120, 3.f);
+    for (auto& btn : *activeEntries()) {
+        if (!btn.node || btn.highlightKey.empty()) continue;
+        // Mismo razonamiento que m_selectionHighlight: estos highlights
+        // se redibujan dinámicamente con drawPolygon → CCDrawNode legacy.
+        cocos2d::ccColor4F hlFill{
+            80.f / 255.f, 180.f / 255.f, 255.f / 255.f, 120.f / 255.f
+        };
+        auto spr = paimon::SpriteHelper::createRoundedRect(10, 10, 3.f, hlFill);
         if (!spr) continue;
 
         spr->setZOrder(E::Z_BUTTON_HL);
-        parent->addChild(spr, E::Z_BUTTON_HL);
+        this->addChild(spr, E::Z_BUTTON_HL);
         m_buttonHighlights[btn.highlightKey] = spr;
     }
     updateAllHighlights();
@@ -594,27 +757,28 @@ void ButtonEditOverlay::createAllHighlights() {
 
 void ButtonEditOverlay::updateAllHighlights() {
     if (!m_targetMenu) return;
-    for (auto& btn : m_editableButtons) {
-        if (!btn.item || btn.highlightKey.empty()) continue;
+    for (auto& btn : *activeEntries()) {
+        if (!btn.node || btn.highlightKey.empty()) continue;
         auto it = m_buttonHighlights.find(btn.highlightKey);
         if (it == m_buttonHighlights.end()) continue;
-        auto node = it->second;
-        if (!node) continue;
+        auto hl = it->second;
+        if (!hl) continue;
 
-        auto contentSize = btn.item->getContentSize();
-        float scale = btn.item->getScale();
+        auto contentSize = btn.node->getContentSize();
+        float scale = btn.node->getScale();
         float w = contentSize.width * scale + 10.f;
         float h = contentSize.height * scale + 10.f;
 
         ccColor4F fill = {E::BUTTON_HL_R, E::BUTTON_HL_G, E::BUTTON_HL_B, E::BUTTON_HL_A};
-        drawRoundedRect(node, w, h, fill);
+        drawRoundedRect(hl, w, h, fill);
 
-        if (auto parent = btn.item->getParent()) {
-            auto worldPos = parent->convertToWorldSpace(btn.item->getPosition());
-            node->setPosition({worldPos.x - w/2, worldPos.y - h/2});
-            node->setVisible(true);
+        if (auto parent = btn.node->getParent()) {
+            auto worldCenter = parent->convertToWorldSpace(btn.node->getPosition());
+            auto worldBL = ccp(worldCenter.x - w / 2, worldCenter.y - h / 2);
+            hl->setPosition(this->convertToNodeSpace(worldBL));
+            hl->setVisible(true);
         } else {
-            node->setVisible(false);
+            hl->setVisible(false);
         }
     }
 }
@@ -650,17 +814,14 @@ void ButtonEditOverlay::drawRoundedRect(CCDrawNode* node, float w, float h, ccCo
     node->setContentSize({w, h});
 }
 
-// snap guides
 void ButtonEditOverlay::createSnapGuides() {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
-    // guia x
     m_snapGuideX = PaimonDrawNode::create();
     m_snapGuideX->setZOrder(2000);
     m_snapGuideX->setVisible(false);
     this->addChild(m_snapGuideX);
 
-    // guia y
     m_snapGuideY = PaimonDrawNode::create();
     m_snapGuideY->setZOrder(2000);
     m_snapGuideY->setVisible(false);
@@ -668,9 +829,8 @@ void ButtonEditOverlay::createSnapGuides() {
 }
 
 void ButtonEditOverlay::updateSnapGuides(bool showX, bool showY, float snapX, float snapY) {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
-    // linea x
     if (m_snapGuideX) {
         m_snapGuideX->clear();
         if (showX) {
@@ -678,15 +838,13 @@ void ButtonEditOverlay::updateSnapGuides(bool showX, bool showY, float snapX, fl
                 ccp(snapX, 0),
                 ccp(snapX, winSize.height),
                 1.0f,
-                ccc4f(E::SNAP_GUIDE_R, E::SNAP_GUIDE_G, E::SNAP_GUIDE_B, E::SNAP_GUIDE_A)
-            );
+                ccc4f(E::SNAP_GUIDE_R, E::SNAP_GUIDE_G, E::SNAP_GUIDE_B, E::SNAP_GUIDE_A));
             m_snapGuideX->setVisible(true);
         } else {
             m_snapGuideX->setVisible(false);
         }
     }
 
-    // linea y
     if (m_snapGuideY) {
         m_snapGuideY->clear();
         if (showY) {
@@ -694,8 +852,7 @@ void ButtonEditOverlay::updateSnapGuides(bool showX, bool showY, float snapX, fl
                 ccp(0, snapY),
                 ccp(winSize.width, snapY),
                 1.0f,
-                ccc4f(E::SNAP_GUIDE_R, E::SNAP_GUIDE_G, E::SNAP_GUIDE_B, E::SNAP_GUIDE_A)
-            );
+                ccc4f(E::SNAP_GUIDE_R, E::SNAP_GUIDE_G, E::SNAP_GUIDE_B, E::SNAP_GUIDE_A));
             m_snapGuideY->setVisible(true);
         } else {
             m_snapGuideY->setVisible(false);
@@ -711,12 +868,11 @@ void ButtonEditOverlay::hideSnapGuides() {
 }
 
 CCPoint ButtonEditOverlay::applySnap(CCPoint pos) {
-    if (!m_draggedButton || !m_draggedButton->item) return pos;
+    if (!m_draggedEntry || !m_draggedEntry->node) return pos;
 
-    auto* dragParent = m_draggedButton->item->getParent();
+    auto* dragParent = m_draggedEntry->node->getParent();
     if (!dragParent) return pos;
 
-    // convertir posicion propuesta a coordenadas mundo para comparacion uniforme
     CCPoint posWorld = dragParent->convertToWorldSpace(pos);
 
     float bestSnapX = posWorld.x;
@@ -726,16 +882,14 @@ CCPoint ButtonEditOverlay::applySnap(CCPoint pos) {
     bool foundSnapX = false;
     bool foundSnapY = false;
 
-    // buscar otros para alinear (en coordenadas mundo)
-    for (auto& btn : m_editableButtons) {
-        if (&btn == m_draggedButton || !btn.item) continue;
+    for (auto& btn : *activeEntries()) {
+        if (&btn == m_draggedEntry || !btn.node) continue;
 
-        auto* btnParent = btn.item->getParent();
+        auto* btnParent = btn.node->getParent();
         if (!btnParent) continue;
 
-        CCPoint otherWorld = btnParent->convertToWorldSpace(btn.item->getPosition());
+        CCPoint otherWorld = btnParent->convertToWorldSpace(btn.node->getPosition());
 
-        // alineacion x
         float distX = std::abs(posWorld.x - otherWorld.x);
         if (distX < m_snapThreshold && distX < minDistX) {
             minDistX = distX;
@@ -743,7 +897,6 @@ CCPoint ButtonEditOverlay::applySnap(CCPoint pos) {
             foundSnapX = true;
         }
 
-        // alineacion y
         float distY = std::abs(posWorld.y - otherWorld.y);
         if (distY < m_snapThreshold && distY < minDistY) {
             minDistY = distY;
@@ -752,13 +905,11 @@ CCPoint ButtonEditOverlay::applySnap(CCPoint pos) {
         }
     }
 
-    // convertir posicion snap de vuelta a espacio local del padre
     CCPoint resultWorld = posWorld;
     if (foundSnapX) resultWorld.x = bestSnapX;
     if (foundSnapY) resultWorld.y = bestSnapY;
     CCPoint result = dragParent->convertToNodeSpace(resultWorld);
 
-    // guias usan coordenadas mundo directamente
     updateSnapGuides(foundSnapX, foundSnapY, bestSnapX, bestSnapY);
 
     m_snappedX = foundSnapX;

@@ -2,7 +2,9 @@
 #include <Geode/modify/LevelListLayer.hpp>
 #include <Geode/modify/LevelBrowserLayer.hpp>
 #include <Geode/binding/LevelCell.hpp>
+#include "LevelCellContext.hpp"
 #include "../framework/state/SessionState.hpp"
+#include "../features/thumbnails/services/CompactListRefresh.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/thumbnails/ui/LevelCellSettingsPopup.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
@@ -105,7 +107,14 @@ class $modify(PaimonLevelListLayer, LevelListLayer) {
             paimon::SessionState::get().currentListID = 0;
         }
 
-        return LevelListLayer::init(list);
+        bool oldSuppressCompactContext = paimon::hooks::g_suppressCompactLevelCellsInContext;
+        paimon::hooks::g_suppressCompactLevelCellsInContext = true;
+        bool ok = LevelListLayer::init(list);
+        paimon::hooks::g_suppressCompactLevelCellsInContext = oldSuppressCompactContext;
+        if (ok) {
+            LayerBackgroundManager::get().applyVanillaBackgroundTintFix(this);
+        }
+        return ok;
     }
 };
 
@@ -135,13 +144,18 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         Mod::get()->setSettingValue<bool>("compact-list-mode", enabled);
         LevelCellSettingsPopup::s_settingsVersion++;
         setCompactButtonColor();
-
-        if (m_searchObject) {
-            loadPage(m_searchObject);
-        }
+        paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
     }
 
     void addCompactToggleButton() {
+        if (!Mod::get()->getSettingValue<bool>("compact-list-show-toggle")) {
+            return;
+        }
+
+        if (!m_searchObject || m_searchObject->m_searchMode != 0) {
+            return;
+        }
+
         if (m_searchObject && m_searchObject->m_searchType == SearchType::MyLevels) {
             return;
         }
@@ -205,8 +219,29 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
 
     $override
     void setupLevelBrowser(CCArray* array) {
+        // Suprimir compact mode si:
+        //   1) Es MyLevels (uploaded levels del usuario)
+        //   2) Es un LevelListLayer (vista de niveles dentro de una lista)
+        // Como LevelListLayer hereda de LevelBrowserLayer, esta funcion tambien
+        // se invoca para ese caso, por lo que cubrimos ambos contextos aqui.
+        bool isLevelList = typeinfo_cast<LevelListLayer*>(this) != nullptr;
+        bool suppressCompactForThisBrowser =
+            isLevelList ||
+            (m_searchObject && m_searchObject->m_searchType == SearchType::MyLevels);
+
+        bool oldSuppressCompactContext = paimon::hooks::g_suppressCompactLevelCellsInContext;
+        if (suppressCompactForThisBrowser) {
+            paimon::hooks::g_suppressCompactLevelCellsInContext = true;
+        }
+
         LevelBrowserLayer::setupLevelBrowser(array);
+
+        paimon::hooks::g_suppressCompactLevelCellsInContext = oldSuppressCompactContext;
         setCompactButtonColor();
+
+        if (auto* existing = getChildByIDRecursive("paimon-compact-list-toggle"_spr)) {
+            existing->setVisible(Mod::get()->getSettingValue<bool>("compact-list-show-toggle"));
+        }
     }
 
     $override

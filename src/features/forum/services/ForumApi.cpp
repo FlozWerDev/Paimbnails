@@ -38,7 +38,8 @@ static int extractHttpStatus(std::string const& resp) {
         size_t space = resp.find(' ', 5);
         if (space != std::string::npos) {
             auto codeStr = resp.substr(5, space - 5);
-            try { return std::stoi(codeStr); } catch (...) {}
+            auto result = geode::utils::numFromString<int>(codeStr);
+            if (result.isOk()) return result.unwrap();
         }
     }
     return 0;

@@ -32,6 +32,12 @@ public:
                             std::string const& username, UploadCallback callback);
     void downloadProfile(int accountID, std::string const& username, DownloadCallback callback);
 
+    // Decodifica bytes ya descargados de un banner (banner del scorecell) y emite
+    // texture/sprite siguiendo la misma logica que downloadProfile (MP4 / GIF / static).
+    // Util para flujos batch donde el bytes vienen de /api/profilebackground/batch.
+    static void processProfileBackgroundBytes(int accountID,
+        std::vector<uint8_t> const& data, DownloadCallback callback);
+
     // batch check: pregunta al servidor cuales cuentas tienen perfil + sus configs
     using BatchCheckCallback = geode::CopyableFunction<void(
         bool success,

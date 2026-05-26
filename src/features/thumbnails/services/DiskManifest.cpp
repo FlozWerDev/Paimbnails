@@ -274,6 +274,30 @@ void DiskManifest::clear() {
     m_dirty = true;
 }
 
+void DiskManifest::clearPreservingMainLevels() {
+    // proteger main levels (1-22) — equivalente a la regla de computePrune.
+    int kept = 0;
+    int removed = 0;
+    for (auto it = m_entries.begin(); it != m_entries.end();) {
+        int realID = it->second.levelID > 0 ? it->second.levelID : 0;
+        if (realID >= 1 && realID <= 22) {
+            ++kept;
+            ++it;
+            continue;
+        }
+        if (!it->second.sourceUrl.empty()) {
+            m_urlToKey.erase(it->second.sourceUrl);
+        }
+        it = m_entries.erase(it);
+        ++removed;
+    }
+    if (removed > 0 || kept > 0) {
+        log::info("[DiskManifest] clearPreservingMainLevels: kept {} main-level entries, removed {} others",
+            kept, removed);
+    }
+    m_dirty = true;
+}
+
 void DiskManifest::touchAccess(int levelID, bool isGif) {
     auto it = m_entries.find(makeKey(levelID, isGif));
     if (it != m_entries.end()) {

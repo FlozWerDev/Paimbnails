@@ -2,17 +2,28 @@
 #include "ThumbnailLoader.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/MainThreadDelay.hpp"
+#include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../video/VideoNormalizer.hpp"
 #include "../../../framework/HookInterceptor.hpp"
-#include <prevter.imageplus/include/events.hpp>
+#include "../../../utils/FormatDetect.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
+#include <optional>
 
 using namespace geode::prelude;
 
 namespace {
 
 using TransportThumbnailInfo = ThumbnailTransportClient::ThumbnailInfo;
+
+std::string buildRatingCacheKey(int levelId, std::string const& username, std::string const& thumbnailId) {
+    return fmt::format("{}|{}|{}", levelId, username, thumbnailId);
+}
+
+std::string buildRatingRequestKey(std::string const& cacheKey, uint64_t generation) {
+    return fmt::format("{}#{}", cacheKey, generation);
+}
 
 std::string buildThumbnailRevisionToken(std::vector<TransportThumbnailInfo> const& thumbnails) {
     if (thumbnails.empty()) {
@@ -101,8 +112,7 @@ bool parseThumbnailResponse(std::string const& response, std::vector<TransportTh
 // ── helpers ─────────────────────────────────────────────────────────
 
 bool ThumbnailTransportClient::isGIFData(std::vector<uint8_t> const& data) {
-    return data.size() >= 6 && (imgp::formats::isGif(data.data(), data.size())
-        || imgp::formats::isAPng(data.data(), data.size()));
+    return data.size() >= 6 && paimon::format::isGif(data.data(), data.size());
 }
 
 cocos2d::CCTexture2D* ThumbnailTransportClient::bytesToTexture(std::vector<uint8_t> const& data) {
@@ -164,7 +174,6 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
     }
 
     std::vector<ThumbnailInfo> cachedThumbnails;
-    uint64_t requestGeneration = 0;
     bool joinedInFlight = false;
     bool hasCachedEntry = false;
 
@@ -179,13 +188,13 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
             }
         }
 
-        if (hasCachedEntry) {
-            requestGeneration = m_galleryGenerations[levelId];
-        } else {
+        if (!hasCachedEntry) {
             auto& callbacks = m_galleryInFlight[levelId];
             joinedInFlight = !callbacks.empty();
             callbacks.push_back(std::move(callback));
-            requestGeneration = m_galleryGenerations[levelId];
+            // Asegura que la entrada exista para que el flush capture la
+            // generación actual (0 si nunca se ha invalidado).
+            (void)m_galleryGenerations[levelId];
         }
     }
 
@@ -199,73 +208,193 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
         return;
     }
 
-    log::debug("[ThumbTransport] getThumbnails: fetching levelId={} forceRefresh={}", levelId, forceRefresh);
+    log::debug("[ThumbTransport] getThumbnails: queued levelId={} forceRefresh={}", levelId, forceRefresh);
 
-    HttpClient::get().getThumbnails(levelId, [this, levelId, requestGeneration](bool success, std::string const& response) {
-        log::info("[ThumbTransport] getThumbnails response: levelId={}, success={}, response_size={}", levelId, success, response.size());
-        if (success && response.size() < 1000) {
-            log::debug("[ThumbTransport] getThumbnails response body: {}", response);
+    // En lugar de disparar inmediatamente HttpClient::getThumbnails para 1 id,
+    // encolamos en m_batchListPending y dejamos que scheduleBatchListFlush()
+    // agrupe todos los ids pendientes en un único POST /api/thumbnails/list-batch.
+    // Esto coalesce todas las peticiones que ocurren en la misma ventana de
+    // ~50ms (típicamente: la inicialización de un LevelListLayer con N celdas).
+    {
+        std::lock_guard<std::mutex> lock(m_batchListMutex);
+        m_batchListPending.push_back(levelId);
+    }
+    scheduleBatchListFlush();
+}
+
+void ThumbnailTransportClient::scheduleBatchListFlush() {
+    bool expected = false;
+    if (!m_batchListFlushScheduled.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+        return; // ya agendado
+    }
+    if (paimon::isRuntimeShuttingDown()) {
+        m_batchListFlushScheduled.store(false, std::memory_order_release);
+        return;
+    }
+    float delay = static_cast<float>(BATCH_LIST_FLUSH_DELAY_MS) / 1000.f;
+    paimon::scheduleMainThreadDelay(delay, [this]() {
+        if (paimon::isRuntimeShuttingDown()) {
+            m_batchListFlushScheduled.store(false, std::memory_order_release);
+            return;
         }
-        std::vector<ThumbnailInfo> thumbnails;
-        std::vector<ThumbnailListCallback> callbacks;
-        std::string revisionToken;
-        bool callbackSuccess = false;
-        bool servedCachedFallback = false;
-        bool generationChanged = false;
-
-        if (success) {
-            success = parseThumbnailResponse(response, thumbnails);
-            if (success) {
-                revisionToken = buildThumbnailRevisionToken(thumbnails);
-            }
-        }
-
-        {
-            std::lock_guard<std::mutex> lock(m_galleryMutex);
-
-            auto inFlightIt = m_galleryInFlight.find(levelId);
-            if (inFlightIt != m_galleryInFlight.end()) {
-                callbacks = std::move(inFlightIt->second);
-                m_galleryInFlight.erase(inFlightIt);
-            }
-
-            auto currentGeneration = m_galleryGenerations[levelId];
-            if (currentGeneration == requestGeneration && success) {
-                GalleryMetadataEntry entry;
-                entry.thumbnails = thumbnails;
-                entry.revisionToken = revisionToken;
-                entry.fetchedAt = std::chrono::steady_clock::now();
-                m_galleryCache[levelId] = std::move(entry);
-                callbackSuccess = true;
-            } else if (currentGeneration == requestGeneration) {
-                auto cacheIt = m_galleryCache.find(levelId);
-                if (cacheIt != m_galleryCache.end()) {
-                    thumbnails = cacheIt->second.thumbnails;
-                    revisionToken = cacheIt->second.revisionToken;
-                    callbackSuccess = true;
-                    servedCachedFallback = true;
-                }
-            } else {
-                generationChanged = true;
-            }
-        }
-
-        if (callbackSuccess) {
-            ThumbnailLoader::get().updateRemoteRevision(levelId, revisionToken);
-        } else {
-            log::debug("[ThumbTransport] getThumbnails callback: failed levelId={} generationChanged={}", levelId, generationChanged);
-        }
-
-        if (servedCachedFallback) {
-            log::debug("[ThumbTransport] getThumbnails callback: using cached fallback levelId={} count={}", levelId, thumbnails.size());
-        } else if (callbackSuccess) {
-            log::debug("[ThumbTransport] getThumbnails callback: fresh levelId={} count={}", levelId, thumbnails.size());
-        }
-
-        for (auto& queued : callbacks) {
-            if (queued) queued(callbackSuccess, thumbnails);
-        }
+        flushBatchList();
     });
+}
+
+void ThumbnailTransportClient::flushBatchList() {
+    std::vector<int> ids;
+    bool moreLeft = false;
+    {
+        std::lock_guard<std::mutex> lock(m_batchListMutex);
+        if (m_batchListPending.empty()) {
+            m_batchListFlushScheduled.store(false, std::memory_order_release);
+            return;
+        }
+        // Dedup preservando orden de inserción.
+        std::unordered_map<int, char> seen;
+        seen.reserve(m_batchListPending.size());
+        for (int id : m_batchListPending) {
+            if (id <= 0) continue;
+            if (seen.emplace(id, 1).second) {
+                ids.push_back(id);
+                if (ids.size() >= BATCH_LIST_MAX_IDS) break;
+            }
+        }
+        // Cualquier id que no entró en este flush queda para el próximo.
+        if (ids.size() >= BATCH_LIST_MAX_IDS && m_batchListPending.size() > BATCH_LIST_MAX_IDS) {
+            std::vector<int> remaining;
+            remaining.reserve(m_batchListPending.size());
+            for (int id : m_batchListPending) {
+                if (seen.find(id) == seen.end()) remaining.push_back(id);
+            }
+            m_batchListPending = std::move(remaining);
+            moreLeft = !m_batchListPending.empty();
+        } else {
+            m_batchListPending.clear();
+        }
+    }
+
+    if (ids.empty()) {
+        m_batchListFlushScheduled.store(false, std::memory_order_release);
+        return;
+    }
+
+    // Capturamos las generaciones actuales para detectar invalidaciones que
+    // ocurran entre la salida de la request y su respuesta.
+    std::unordered_map<int, uint64_t> generations;
+    {
+        std::lock_guard<std::mutex> lock(m_galleryMutex);
+        for (int id : ids) {
+            generations[id] = m_galleryGenerations[id];
+        }
+    }
+
+    log::info("[ThumbTransport] flushBatchList: dispatching {} ids in single request", ids.size());
+
+    HttpClient::get().getThumbnailsBatch(ids,
+        [this, ids, generations = std::move(generations)]
+        (bool success, std::unordered_map<int, std::string> const& itemsJson) {
+            for (int levelId : ids) {
+                std::vector<ThumbnailListCallback> callbacks;
+                std::vector<ThumbnailInfo> thumbnails;
+                std::string revisionToken;
+                bool callbackSuccess = false;
+                bool servedCachedFallback = false;
+                bool generationChanged = false;
+
+                std::string responseJson;
+                bool haveResponse = false;
+                if (success) {
+                    auto it = itemsJson.find(levelId);
+                    if (it != itemsJson.end()) {
+                        responseJson = it->second;
+                        haveResponse = true;
+                    }
+                }
+
+                bool parseOk = false;
+                if (haveResponse) {
+                    parseOk = parseThumbnailResponse(responseJson, thumbnails);
+                    if (parseOk) {
+                        revisionToken = buildThumbnailRevisionToken(thumbnails);
+                    }
+                }
+
+                uint64_t requestGeneration = 0;
+                auto genIt = generations.find(levelId);
+                if (genIt != generations.end()) requestGeneration = genIt->second;
+
+                {
+                    std::lock_guard<std::mutex> lock(m_galleryMutex);
+
+                    auto inFlightIt = m_galleryInFlight.find(levelId);
+                    if (inFlightIt != m_galleryInFlight.end()) {
+                        callbacks = std::move(inFlightIt->second);
+                        m_galleryInFlight.erase(inFlightIt);
+                    }
+
+                    auto currentGeneration = m_galleryGenerations[levelId];
+                    if (currentGeneration == requestGeneration && parseOk) {
+                        GalleryMetadataEntry entry;
+                        entry.thumbnails = thumbnails;
+                        entry.revisionToken = revisionToken;
+                        entry.fetchedAt = std::chrono::steady_clock::now();
+                        m_galleryCache[levelId] = std::move(entry);
+                        callbackSuccess = true;
+                    } else if (currentGeneration == requestGeneration) {
+                        auto cacheIt = m_galleryCache.find(levelId);
+                        if (cacheIt != m_galleryCache.end()) {
+                            thumbnails = cacheIt->second.thumbnails;
+                            revisionToken = cacheIt->second.revisionToken;
+                            callbackSuccess = true;
+                            servedCachedFallback = true;
+                        }
+                    } else {
+                        generationChanged = true;
+                    }
+                }
+
+                if (callbackSuccess) {
+                    ThumbnailLoader::get().updateRemoteRevision(levelId, revisionToken);
+                } else {
+                    log::debug("[ThumbTransport] flushBatchList: callback failed levelId={} generationChanged={}",
+                        levelId, generationChanged);
+                }
+
+                if (servedCachedFallback) {
+                    log::debug("[ThumbTransport] flushBatchList: cached fallback levelId={} count={}",
+                        levelId, thumbnails.size());
+                } else if (callbackSuccess) {
+                    log::debug("[ThumbTransport] flushBatchList: fresh levelId={} count={}",
+                        levelId, thumbnails.size());
+                }
+
+                for (auto& queued : callbacks) {
+                    if (queued) queued(callbackSuccess, thumbnails);
+                }
+            }
+
+            // Si quedaron ids fuera del cap, agendar otro pase.
+            bool needsAnother = false;
+            {
+                std::lock_guard<std::mutex> lock(m_batchListMutex);
+                needsAnother = !m_batchListPending.empty();
+            }
+            m_batchListFlushScheduled.store(false, std::memory_order_release);
+            if (needsAnother) {
+                scheduleBatchListFlush();
+            }
+        });
+
+    if (moreLeft) {
+        // Si esta función ya extrajo el cap pero quedó más en cola y por
+        // alguna razón el callback de arriba no dispara (ej. fallo síncrono),
+        // re-agendar de forma defensiva. compare_exchange en
+        // scheduleBatchListFlush lo deduplica.
+        m_batchListFlushScheduled.store(false, std::memory_order_release);
+        scheduleBatchListFlush();
+    }
 }
 
 void ThumbnailTransportClient::invalidateGalleryMetadata(int levelId) {
@@ -415,11 +544,11 @@ void ThumbnailTransportClient::uploadVideo(int levelId, std::vector<uint8_t> con
 
 // ── downloads ───────────────────────────────────────────────────────
 
-void ThumbnailTransportClient::downloadThumbnail(int levelId, DownloadCallback callback) {
+void ThumbnailTransportClient::downloadThumbnail(int levelId, DownloadCallback callback, bool isGif) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }
-    log::info("[ThumbTransport] downloadThumbnail: levelId={}", levelId);
+    log::info("[ThumbTransport] downloadThumbnail: levelId={} isGif={}", levelId, isGif);
 
-    HttpClient::get().downloadThumbnail(levelId,
+    HttpClient::get().downloadThumbnail(levelId, isGif,
         [callback, levelId](bool success, std::vector<uint8_t> const& data, int, int) {
             if (!success || data.empty()) { log::warn("[ThumbTransport] downloadThumbnail callback: FAILED levelId={}", levelId); callback(false, nullptr); return; }
             log::info("[ThumbTransport] downloadThumbnail callback: OK levelId={} bytes={}", levelId, data.size());
@@ -446,15 +575,18 @@ void ThumbnailTransportClient::downloadFromUrl(std::string const& url, DownloadC
             log::debug("[ThumbTransport] downloadFromUrl callback: OK bytes={}", data.size());
             callback(success, bytesToTexture(data));
         } else if (success && data.empty()) {
-            // CCTextureCache hit: la textura ya existe en Cocos2d cache
-            auto* tex = CCTextureCache::sharedTextureCache()->textureForKey(url.c_str());
-            if (tex) {
-                log::debug("[ThumbTransport] downloadFromUrl callback: CCTextureCache hit url={}", url);
-                callback(true, tex);
-            } else {
-                log::warn("[ThumbTransport] downloadFromUrl callback: empty data but no cache tex url={}", url);
-                callback(false, nullptr);
-            }
+            // CCTextureCache hit: la textura ya existe en Cocos2d cache.
+            // CCTextureCache solo se puede tocar desde el main thread.
+            Loader::get()->queueInMainThread([callback, url]() {
+                auto* tex = CCTextureCache::sharedTextureCache()->textureForKey(url.c_str());
+                if (tex) {
+                    log::debug("[ThumbTransport] downloadFromUrl callback: CCTextureCache hit url={}", url);
+                    callback(true, tex);
+                } else {
+                    log::warn("[ThumbTransport] downloadFromUrl callback: empty data but no cache tex url={}", url);
+                    callback(false, nullptr);
+                }
+            });
         } else {
             log::warn("[ThumbTransport] downloadFromUrl callback: FAILED url={}", url);
             callback(false, nullptr);
@@ -529,28 +661,130 @@ void ThumbnailTransportClient::reorderThumbnails(int levelId, std::vector<std::s
 
 void ThumbnailTransportClient::getRating(int levelId, std::string const& username,
                                          std::string const& thumbnailId,
-                                         geode::CopyableFunction<void(bool, float, int, int)> callback) {
+                                         RatingCallback callback) {
     if (!m_serverEnabled) { callback(false, 0, 0, 0); return; }
     log::debug("[ThumbTransport] getRating: levelId={} thumbId={}", levelId, thumbnailId);
 
+    auto cacheKey = buildRatingCacheKey(levelId, username, thumbnailId);
+    uint64_t requestGeneration = 0;
+    std::optional<RatingCacheEntry> cachedEntry;
+    std::string requestKey;
+    {
+        std::lock_guard<std::mutex> lock(m_ratingMutex);
+
+        auto cacheIt = m_ratingCache.find(cacheKey);
+        if (cacheIt != m_ratingCache.end()) {
+            auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - cacheIt->second.fetchedAt);
+            if (age.count() <= RATING_CACHE_TTL_SECONDS) {
+                cachedEntry = cacheIt->second;
+            } else {
+                m_ratingCache.erase(cacheIt);
+            }
+        }
+
+        if (cachedEntry.has_value()) {
+            requestGeneration = m_ratingGenerations[cacheKey];
+        } else {
+            requestGeneration = m_ratingGenerations[cacheKey];
+            requestKey = buildRatingRequestKey(cacheKey, requestGeneration);
+            auto& callbacks = m_ratingInFlight[requestKey];
+            if (!callbacks.empty()) {
+                callbacks.push_back(std::move(callback));
+                return;
+            }
+            callbacks.push_back(std::move(callback));
+        }
+    }
+
+    if (cachedEntry.has_value()) {
+        callback(true, cachedEntry->average, cachedEntry->count, cachedEntry->userVote);
+        return;
+    }
+
     HttpClient::get().getRating(levelId, username, thumbnailId,
-        [callback](bool success, std::string const& response) {
-            if (!success) { callback(false, 0, 0, 0); return; }
-            auto jsonRes = matjson::parse(response);
-            if (!jsonRes.isOk()) { callback(false, 0, 0, 0); return; }
-            auto json = jsonRes.unwrap();
-            float average = (float)json["average"].asDouble().unwrapOr(0.0);
-            int count     = (int)json["count"].asInt().unwrapOr(0);
-            int userVote  = (int)json["userVote"].asInt().unwrapOr(0);
-            callback(true, average, count, userVote);
+        [this, cacheKey, requestKey, requestGeneration](bool success, std::string const& response) {
+            std::vector<RatingCallback> callbacks;
+            RatingCacheEntry parsedEntry;
+            bool parsedSuccess = false;
+
+            if (success) {
+                auto jsonRes = matjson::parse(response);
+                if (jsonRes.isOk()) {
+                    auto json = jsonRes.unwrap();
+                    parsedEntry.average = static_cast<float>(json["average"].asDouble().unwrapOr(0.0));
+                    parsedEntry.count = static_cast<int>(json["count"].asInt().unwrapOr(0));
+                    parsedEntry.userVote = static_cast<int>(json["userVote"].asInt().unwrapOr(0));
+                    parsedEntry.fetchedAt = std::chrono::steady_clock::now();
+                    parsedSuccess = true;
+                }
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(m_ratingMutex);
+                auto inflightIt = m_ratingInFlight.find(requestKey);
+                if (inflightIt != m_ratingInFlight.end()) {
+                    callbacks = std::move(inflightIt->second);
+                    m_ratingInFlight.erase(inflightIt);
+                }
+                if (parsedSuccess && m_ratingGenerations[cacheKey] == requestGeneration) {
+                    m_ratingCache[cacheKey] = parsedEntry;
+                }
+            }
+
+            for (auto& queued : callbacks) {
+                if (queued) queued(parsedSuccess, parsedEntry.average, parsedEntry.count, parsedEntry.userVote);
+            }
         });
+}
+
+void ThumbnailTransportClient::invalidateRatingCache(int levelId, std::string const& thumbnailId) {
+    std::lock_guard<std::mutex> lock(m_ratingMutex);
+
+    for (auto it = m_ratingCache.begin(); it != m_ratingCache.end();) {
+        std::string prefix = fmt::format("{}|", levelId);
+        if (!it->first.starts_with(prefix)) {
+            ++it;
+            continue;
+        }
+
+        if (!thumbnailId.empty()) {
+            std::string suffix = fmt::format("|{}", thumbnailId);
+            if (!it->first.ends_with(suffix)) {
+                ++it;
+                continue;
+            }
+        }
+
+        it = m_ratingCache.erase(it);
+    }
+    for (auto& [key, generation] : m_ratingGenerations) {
+        std::string prefix = fmt::format("{}|", levelId);
+        if (!key.starts_with(prefix)) {
+            continue;
+        }
+
+        if (!thumbnailId.empty()) {
+            std::string suffix = fmt::format("|{}", thumbnailId);
+            if (!key.ends_with(suffix)) {
+                continue;
+            }
+        }
+
+        ++generation;
+    }
 }
 
 void ThumbnailTransportClient::submitVote(int levelId, int stars, std::string const& username,
                                           std::string const& thumbnailId, ActionCallback callback) {
     if (!m_serverEnabled) { callback(false, "Server disabled"); return; }
     log::info("[ThumbTransport] submitVote: levelId={} stars={} thumbId={}", levelId, stars, thumbnailId);
-    HttpClient::get().submitVote(levelId, stars, username, thumbnailId, callback);
+    HttpClient::get().submitVote(levelId, stars, username, thumbnailId,
+        [this, callback, levelId, thumbnailId](bool success, std::string const& response) {
+            if (success) {
+                invalidateRatingCache(levelId, thumbnailId);
+            }
+            callback(success, response);
+        });
 }
 
 // ── top lists ───────────────────────────────────────────────────────

@@ -32,7 +32,7 @@
 #include <Geode/binding/ButtonSprite.hpp>
 
 // declarada en ProfilePage.cpp
-extern void clearProfileImgCache();
+#include "../features/profiles/services/ProfileImageCache.hpp"
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/Slider.hpp>
 #include <filesystem>
@@ -44,15 +44,64 @@ namespace S = paimon::ui::constants::shared;
 
 // Available shaders for backgrounds
 static std::vector<std::pair<std::string, std::string>> BG_SHADERS = {
-    {"none",       "pai.config.shader.none"},
-    {"grayscale",  "pai.config.shader.grayscale"},
-    {"sepia",      "pai.config.shader.sepia"},
-    {"vignette",   "pai.config.shader.vignette"},
-    {"bloom",      "pai.config.shader.bloom"},
-    {"chromatic",  "pai.config.shader.chromatic"},
-    {"pixelate",   "pai.config.shader.pixelate"},
-    {"posterize",  "pai.config.shader.posterize"},
-    {"scanlines",  "pai.config.shader.scanlines"},
+    {"none",             "pai.config.shader.none"},
+    {"grayscale",        "pai.config.shader.grayscale"},
+    {"sepia",            "pai.config.shader.sepia"},
+    {"vignette",         "pai.config.shader.vignette"},
+    {"bloom",            "pai.config.shader.bloom"},
+    {"chromatic",        "pai.config.shader.chromatic"},
+    {"pixelate",         "pai.config.shader.pixelate"},
+    {"posterize",        "pai.config.shader.posterize"},
+    {"scanlines",        "pai.config.shader.scanlines"},
+    {"rain",             "Rain"},
+    {"matrix",           "Matrix"},
+    {"neon-pulse",       "Neon Pulse"},
+    {"wave-distortion",  "Wave Distortion"},
+    {"crt",              "CRT"},
+    {"glitch",           "Glitch"},
+    {"radial-blur",      "Radial Blur"},
+    {"shockwave",        "Shockwave"},
+    {"vortex",           "Vortex"},
+    {"magnetic",         "Magnetic"},
+    {"spotlight",        "Spotlight"},
+    {"ripple",           "Ripple"},
+    {"plasma-cursor",    "Plasma Cursor"},
+    {"freeze",           "Freeze"},
+    {"pixelate-cursor",  "Pixelate Cursor"},
+};
+
+static std::vector<std::pair<std::string, std::string>> PROCEDURAL_BG_SHADERS = {
+    {"aurora", "pai.config.shaderbg.aurora"},
+    {"nebula", "pai.config.shaderbg.nebula"},
+    {"plasma", "pai.config.shaderbg.plasma"},
+    {"grid",   "pai.config.shaderbg.grid"},
+    {"sunburst", "pai.config.shaderbg.sunburst"},
+    {"spiral", "pai.config.shaderbg.spiral"},
+    {"warp", "pai.config.shaderbg.warp"},
+    {"lava", "pai.config.shaderbg.lava"},
+    {"clouds", "pai.config.shaderbg.clouds"},
+    {"rings", "pai.config.shaderbg.rings"},
+    {"waves", "pai.config.shaderbg.waves"},
+    {"hex", "pai.config.shaderbg.hex"},
+    {"fireflies", "pai.config.shaderbg.fireflies"},
+    {"ripple", "pai.config.shaderbg.ripple"},
+    {"starfield", "pai.config.shaderbg.starfield"},
+    {"tunnel", "pai.config.shaderbg.tunnel"},
+    {"checker", "pai.config.shaderbg.checker"},
+    {"digital-rain", "pai.config.shaderbg.digital_rain"},
+    {"horizon", "pai.config.shaderbg.horizon"},
+    {"fractal", "pai.config.shaderbg.fractal"},
+    {"gradient-flow", "pai.config.shaderbg.gradient_flow"},
+    {"bubbles", "pai.config.shaderbg.bubbles"},
+    {"lightning", "pai.config.shaderbg.lightning"},
+    {"moire", "pai.config.shaderbg.moire"},
+    {"crystal", "pai.config.shaderbg.crystal"},
+    {"embers", "pai.config.shaderbg.embers"},
+    {"prism", "pai.config.shaderbg.prism"},
+    {"soft-noise", "pai.config.shaderbg.soft_noise"},
+    {"pulse", "pai.config.shaderbg.pulse"},
+    {"topo", "pai.config.shaderbg.topo"},
+    {"bloom-field", "pai.config.shaderbg.bloom_field"},
 };
 
 namespace {
@@ -91,7 +140,7 @@ bool PaiConfigLayer::init() {
     this->setKeypadEnabled(true);
     this->setTouchEnabled(true);
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     float cx = winSize.width / 2;
     float top = winSize.height;
 
@@ -206,7 +255,7 @@ bool PaiConfigLayer::init() {
 // ═══════════════════════════════════════════════════════════
 
 void PaiConfigLayer::buildBackgroundTab() {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     float cx = winSize.width / 2;
     float contentTop = winSize.height - C::CONTENT_TOP_OFFSET;
     float contentBot = C::CONTENT_BOT;
@@ -318,6 +367,7 @@ void PaiConfigLayer::buildBackgroundTab() {
     };
     mkRowBtn(tr("pai.config.background.custom_image", "Custom Image").c_str(), menu_selector(PaiConfigLayer::onBgCustomImage));
     mkRowBtn(tr("pai.config.background.video", "Video").c_str(), menu_selector(PaiConfigLayer::onBgVideo));
+    mkRowBtn(tr("pai.config.background.shader_bg", "Shader BG").c_str(), menu_selector(PaiConfigLayer::onBgShader));
     mkRowBtn("Vid. Settings", menu_selector(PaiConfigLayer::onVideoSettings), 0.30f);
     mkRowBtn(tr("pai.config.background.random", "Random").c_str(), menu_selector(PaiConfigLayer::onBgRandom));
     mkRowBtn(tr("pai.config.background.same_as", "Same as...").c_str(), menu_selector(PaiConfigLayer::onBgSameAs));
@@ -396,6 +446,23 @@ void PaiConfigLayer::buildBackgroundTab() {
     nextBtn->setPosition({rightX + 330, row3});
     m_bgMenu->addChild(nextBtn);
 
+    // Shader intensity slider (below shader name)
+    float row3b = row3 - 18.f;
+    auto intTitle2 = CCLabelBMFont::create("Intensity:", "bigFont.fnt");
+    intTitle2->setScale(0.15f);
+    intTitle2->setPosition({rightX + 185, row3b});
+    m_bgTab->addChild(intTitle2, 1);
+
+    m_shaderIntensitySlider = Slider::create(this, menu_selector(PaiConfigLayer::onShaderIntensitySlider), 0.35f);
+    m_shaderIntensitySlider->setPosition({rightX + 275, row3b});
+    m_bgTab->addChild(m_shaderIntensitySlider, 1);
+
+    m_shaderIntensityLabel = CCLabelBMFont::create("50%", "bigFont.fnt");
+    m_shaderIntensityLabel->setScale(0.16f);
+    m_shaderIntensityLabel->setColor({255, 200, 100});
+    m_shaderIntensityLabel->setPosition({rightX + 335, row3b});
+    m_bgTab->addChild(m_shaderIntensityLabel, 1);
+
     // ── Preview area (bottom-right) ──
     float previewH = contentH - ctrlPanelH - C::PREVIEW_GAP;
     float previewY = contentBot + previewH / 2 + 2;
@@ -448,7 +515,7 @@ void PaiConfigLayer::buildBackgroundTab() {
 // ═══════════════════════════════════════════════════════════
 
 void PaiConfigLayer::buildProfileTab() {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     float cx = winSize.width / 2;
     float contentMid = (winSize.height - C::CONTENT_TOP_OFFSET + C::CONTENT_BOT) / 2;
 
@@ -544,7 +611,7 @@ void PaiConfigLayer::buildProfileTab() {
 // ═══════════════════════════════════════════════════════════
 
 void PaiConfigLayer::buildExtrasTab() {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     float cx = winSize.width / 2;
     float contentMid = (winSize.height - C::CONTENT_TOP_OFFSET + C::CONTENT_BOT) / 2;
     float gap = C::EXTRAS_BTN_GAP;
@@ -760,7 +827,8 @@ void PaiConfigLayer::rebuildProfilePreview() {
         return;
     }
 
-    // Load image — soportar GIF/APNG animado ademas de imagenes estaticas
+    // Load image — AnimatedGIFSprite only supports GIF. APNG falls back to a
+    // static decode through ImagePlus in the branch below.
     // deteccion por contenido (magic bytes) en vez de extension
     bool isAnimated = false;
     {
@@ -768,13 +836,8 @@ void PaiConfigLayer::rebuildProfilePreview() {
         if (probe) {
             char hdr[32]{};
             probe.read(hdr, sizeof(hdr));
-            auto fmt = imgp::guessFormat(hdr, static_cast<size_t>(probe.gcount()));
-            isAnimated = (fmt == imgp::ImageFormat::Gif);
-            // APNG tambien es animado
-            if (!isAnimated && fmt == imgp::ImageFormat::Png) {
-                auto fileData = ImageLoadHelper::readBinaryFile(path, 10);
-                if (!fileData.empty()) isAnimated = imgp::formats::isAPng(fileData.data(), fileData.size());
-            }
+            auto fmt = paimon::format::detect(reinterpret_cast<uint8_t const*>(hdr), static_cast<size_t>(probe.gcount()));
+            isAnimated = (fmt == paimon::format::ImageFormat::GIF);
         }
     }
     CCNode* imageNode = nullptr;
@@ -820,7 +883,7 @@ void PaiConfigLayer::rebuildProfilePreview() {
 void PaiConfigLayer::keyBackClicked() { onBack(nullptr); }
 
 void PaiConfigLayer::onBack(CCObject*) {
-    CCDirector::sharedDirector()->popSceneWithTransition(0.3f, PopTransition::kPopTransitionFade);
+    CCDirector::get()->popSceneWithTransition(0.3f, PopTransition::kPopTransitionFade);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -872,28 +935,39 @@ void PaiConfigLayer::refreshForCurrentLayer() {
     if (m_adaptiveLabel) m_adaptiveLabel->setVisible(isMenu);
 
     // Update shader selector
+    auto& shaderList = bgCfg.type == "shader" ? PROCEDURAL_BG_SHADERS : BG_SHADERS;
     m_shaderIndex = 0;
-    for (int i = 0; i < (int)BG_SHADERS.size(); i++) {
-        if (BG_SHADERS[i].first == bgCfg.shader) { m_shaderIndex = i; break; }
+    for (int i = 0; i < (int)shaderList.size(); i++) {
+        if (shaderList[i].first == bgCfg.shader) { m_shaderIndex = i; break; }
     }
     updateShaderLabel();
 
+    // Update shader intensity slider
+    float savedIntensity = Mod::get()->getSavedValue<float>("layerbg-shader-intensity", 0.5f);
+    m_shaderIntensityIndex = std::clamp(static_cast<int>(savedIntensity * 10.f) - 1, 0, 9);
+    if (m_shaderIntensitySlider) m_shaderIntensitySlider->setValue(savedIntensity);
+    updateShaderIntensityLabel();
+
     // Update status label
-    if (m_bgStatusLabel) {
-        std::string status = tr("pai.config.status.default", "Default");
-        if (bgCfg.type == "custom") status = tr("pai.config.status.custom_image", "Custom Image");
-        else if (bgCfg.type == "video") status = tr("pai.config.status.video", "Video");
-        else if (bgCfg.type == "random") status = tr("pai.config.status.random", "Random");
-        else if (bgCfg.type == "id") status = tr("pai.config.status.level_id", "Level ID: ") + std::to_string(bgCfg.levelId);
-        else if (bgCfg.type == "menu") status = tr("pai.config.status.same_as_menu", "Same as Menu");
-        if (bgCfg.shader != "none" && !bgCfg.shader.empty()) {
-            // Find display name
-            for (auto& [k, v] : BG_SHADERS) {
-                if (k == bgCfg.shader) { status += " + " + tr(v.c_str(), v.c_str()); break; }
+        if (m_bgStatusLabel) {
+            std::string status = tr("pai.config.status.default", "Default");
+            if (bgCfg.type == "custom") status = tr("pai.config.status.custom_image", "Custom Image");
+            else if (bgCfg.type == "video") status = tr("pai.config.status.video", "Video");
+            else if (bgCfg.type == "shader") status = tr("pai.config.status.shader_bg", "Shader Background");
+            else if (bgCfg.type == "random") status = tr("pai.config.status.random", "Random");
+            else if (bgCfg.type == "id") status = tr("pai.config.status.level_id", "Level ID: ") + std::to_string(bgCfg.levelId);
+            else if (bgCfg.type == "menu") status = tr("pai.config.status.same_as_menu", "Same as Menu");
+            if (bgCfg.shader != "none" && !bgCfg.shader.empty()) {
+                // Find display name
+                for (auto& [k, v] : BG_SHADERS) {
+                    if (k == bgCfg.shader) { status += " + " + tr(v.c_str(), v.c_str()); break; }
+                }
+                for (auto& [k, v] : PROCEDURAL_BG_SHADERS) {
+                    if (k == bgCfg.shader) { status += " + " + tr(v.c_str(), v.c_str()); break; }
+                }
             }
+            m_bgStatusLabel->setString(status.c_str());
         }
-        m_bgStatusLabel->setString(status.c_str());
-    }
 
     // Update preview
     rebuildBgPreview();
@@ -970,6 +1044,30 @@ void PaiConfigLayer::rebuildBgPreview() {
     // ══════════════════════════════════════
     if (cfg.type == "default") {
         showPlaceholder(tr("pai.config.preview.default_bg", "Default GD\nBackground").c_str());
+        return;
+    }
+
+    if (cfg.type == "shader") {
+        auto bg = CCLayerColor::create({18, 18, 28, 255});
+        bg->setContentSize({pw, ph});
+        m_bgPreview->addChild(bg, 0);
+
+        auto shaderName = cfg.shader;
+        std::string label = tr("pai.config.status.shader_bg", "Shader Background");
+        for (auto& [k, v] : PROCEDURAL_BG_SHADERS) {
+            if (k == shaderName) {
+                label += "\n" + tr(v.c_str(), v.c_str());
+                break;
+            }
+        }
+
+        auto lbl = CCLabelBMFont::create(label.c_str(), "bigFont.fnt");
+        lbl->setScale(0.18f);
+        lbl->setAlignment(kCCTextAlignmentCenter);
+        lbl->setColor({120, 220, 255});
+        lbl->setPosition({midX, midY});
+        m_bgPreview->addChild(lbl, 1);
+        addDarkOverlay();
         return;
     }
 
@@ -1331,16 +1429,8 @@ void PaiConfigLayer::onBgVideo(CCObject*) {
         }
         auto pathStr = paimon::assets::normalizePathString(imported.path);
 
-        // Check if another layer already has a different video configured
-        auto conflictLayer = LayerBackgroundManager::get().hasOtherVideoConfigured(key, pathStr);
-        if (!conflictLayer.empty()) {
-            FLAlertLayer::create(
-                "Video Limit Reached",
-                fmt::format("Only one video background is supported at a time.\n\"{}\" already has a different video configured.", conflictLayer).c_str(),
-                "OK"
-            )->show();
-            return;
-        }
+        // Multiple concurrent video backgrounds are supported; no need to
+        // check whether another layer already has a different video.
 
         auto cfg = LayerBackgroundManager::get().getConfig(key);
         cfg.type = "video"; cfg.customPath = pathStr;
@@ -1360,6 +1450,18 @@ void PaiConfigLayer::onBgRandom(CCObject*) {
     cfg.type = "random";
     LayerBackgroundManager::get().saveConfig(m_selectedKey, cfg);
     PaimonNotify::create(tr("pai.config.notify.random_set", "Random background set!"), NotificationIcon::Success)->show();
+    refreshForCurrentLayer();
+}
+
+void PaiConfigLayer::onBgShader(CCObject*) {
+    auto cfg = LayerBackgroundManager::get().getConfig(m_selectedKey);
+    cfg.type = "shader";
+    if (cfg.shader == "none" || cfg.shader == "grayscale" || cfg.shader == "sepia" || cfg.shader == "vignette" ||
+        cfg.shader == "bloom" || cfg.shader == "chromatic" || cfg.shader == "pixelate" || cfg.shader == "posterize" || cfg.shader == "scanlines") {
+        cfg.shader = PROCEDURAL_BG_SHADERS.front().first;
+    }
+    LayerBackgroundManager::get().saveConfig(m_selectedKey, cfg);
+    PaimonNotify::create(tr("pai.config.notify.shader_bg_set", "Shader background set!"), NotificationIcon::Success)->show();
     refreshForCurrentLayer();
 }
 
@@ -1424,20 +1526,22 @@ void PaiConfigLayer::onAdaptiveColors(CCObject* sender) {
 }
 
 void PaiConfigLayer::onShaderPrev(CCObject*) {
-    m_shaderIndex--;
-    if (m_shaderIndex < 0) m_shaderIndex = (int)BG_SHADERS.size() - 1;
     auto cfg = LayerBackgroundManager::get().getConfig(m_selectedKey);
-    cfg.shader = BG_SHADERS[m_shaderIndex].first;
+    auto& shaderList = cfg.type == "shader" ? PROCEDURAL_BG_SHADERS : BG_SHADERS;
+    m_shaderIndex--;
+    if (m_shaderIndex < 0) m_shaderIndex = (int)shaderList.size() - 1;
+    cfg.shader = shaderList[m_shaderIndex].first;
     LayerBackgroundManager::get().saveConfig(m_selectedKey, cfg);
     updateShaderLabel();
     refreshForCurrentLayer();
 }
 
 void PaiConfigLayer::onShaderNext(CCObject*) {
-    m_shaderIndex++;
-    if (m_shaderIndex >= (int)BG_SHADERS.size()) m_shaderIndex = 0;
     auto cfg = LayerBackgroundManager::get().getConfig(m_selectedKey);
-    cfg.shader = BG_SHADERS[m_shaderIndex].first;
+    auto& shaderList = cfg.type == "shader" ? PROCEDURAL_BG_SHADERS : BG_SHADERS;
+    m_shaderIndex++;
+    if (m_shaderIndex >= (int)shaderList.size()) m_shaderIndex = 0;
+    cfg.shader = shaderList[m_shaderIndex].first;
     LayerBackgroundManager::get().saveConfig(m_selectedKey, cfg);
     updateShaderLabel();
     refreshForCurrentLayer();
@@ -1445,11 +1549,33 @@ void PaiConfigLayer::onShaderNext(CCObject*) {
 
 void PaiConfigLayer::updateShaderLabel() {
     if (!m_shaderLabel) return;
-    if (m_shaderIndex >= 0 && m_shaderIndex < (int)BG_SHADERS.size()) {
-        auto const& shaderLabelKey = BG_SHADERS[m_shaderIndex].second;
+    auto cfg = LayerBackgroundManager::get().getConfig(m_selectedKey);
+    auto& shaderList = cfg.type == "shader" ? PROCEDURAL_BG_SHADERS : BG_SHADERS;
+    if (m_shaderIndex >= 0 && m_shaderIndex < (int)shaderList.size()) {
+        auto const& shaderLabelKey = shaderList[m_shaderIndex].second;
         m_shaderLabel->setString(tr(shaderLabelKey.c_str(), shaderLabelKey.c_str()).c_str());
-        m_shaderLabel->setColor(m_shaderIndex == 0 ? ccColor3B{180, 180, 180} : ccColor3B{100, 255, 100});
+        bool isNone = cfg.type != "shader" && m_shaderIndex == 0;
+        m_shaderLabel->setColor(isNone ? ccColor3B{180, 180, 180} : ccColor3B{100, 255, 100});
     }
+}
+
+void PaiConfigLayer::onShaderIntensitySlider(CCObject*) {
+    if (!m_shaderIntensitySlider) return;
+    float intensity = m_shaderIntensitySlider->getValue(); // 0.0 to 1.0
+    // Clamp to 0.1 – 1.0 range (10% – 100%)
+    intensity = std::max(0.1f, intensity);
+    Mod::get()->setSavedValue<float>("layerbg-shader-intensity", intensity);
+    m_shaderIntensityIndex = std::clamp(static_cast<int>(intensity * 10.f) - 1, 0, 9);
+    updateShaderIntensityLabel();
+}
+
+void PaiConfigLayer::updateShaderIntensityLabel() {
+    if (!m_shaderIntensityLabel) return;
+    float intensity = Mod::get()->getSavedValue<float>("layerbg-shader-intensity", 0.5f);
+    int percent = static_cast<int>(intensity * 100.f);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d%%", percent);
+    m_shaderIntensityLabel->setString(buf);
 }
 
 // Profile actions

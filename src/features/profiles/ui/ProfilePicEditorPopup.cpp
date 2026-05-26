@@ -9,6 +9,7 @@
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../services/ProfilePicRenderer.hpp"
 #include "../services/ProfileImageService.hpp"
+#include "../services/ProfileImageCache.hpp"
 #include "../services/ProfileThumbs.hpp"
 #include <Geode/ui/ColorPickPopup.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -1412,12 +1413,8 @@ void ProfilePicEditorPopup::rebuildPreview() {
             if (probe) {
                 char hdr[32]{};
                 probe.read(hdr, sizeof(hdr));
-                auto fmt = imgp::guessFormat(hdr, static_cast<size_t>(probe.gcount()));
-                isAnimated = (fmt == imgp::ImageFormat::Gif);
-                if (!isAnimated && fmt == imgp::ImageFormat::Png) {
-                    auto fileData = ImageLoadHelper::readBinaryFile(bgPath, 10);
-                    if (!fileData.empty()) isAnimated = imgp::formats::isAPng(fileData.data(), fileData.size());
-                }
+                auto fmt = paimon::format::detect(reinterpret_cast<uint8_t const*>(hdr), static_cast<size_t>(probe.gcount()));
+                isAnimated = (fmt == paimon::format::ImageFormat::GIF);
             }
         }
 
@@ -1449,7 +1446,6 @@ void ProfilePicEditorPopup::rebuildPreview() {
             // 2) Cache RAM del ProfilePage
             CCTexture2D* tex = nullptr;
             if (!imageNode) {
-                extern CCTexture2D* getProfileImgCachedTexture(int accountID);
                 m_previewTexture = getProfileImgCachedTexture(myID);
                 tex = m_previewTexture;
             }
@@ -1466,8 +1462,7 @@ void ProfilePicEditorPopup::rebuildPreview() {
                             file.seekg(0, std::ios::beg);
                             std::vector<uint8_t> data(static_cast<size_t>(size));
                             if (file.read(reinterpret_cast<char*>(data.data()), size)) {
-                                bool isAnim = imgp::formats::isGif(data.data(), data.size())
-                                           || imgp::formats::isAPng(data.data(), data.size());
+                                bool isAnim = paimon::format::isGif(data.data(), data.size());
                                 bool isVideo = false;
                                 if (data.size() > 12) {
                                     for (size_t i = 0; i + 3 < data.size() && i < 12; ++i) {

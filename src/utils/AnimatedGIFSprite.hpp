@@ -2,13 +2,15 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/function.hpp>
-#include <prevter.imageplus/include/events.hpp>
+#include "FormatDetect.hpp"
+#include "GIFDecoder.hpp"
 #include <vector>
 #include <string>
 #include <utility>
 #include <list>
 #include <deque>
 #include <mutex>
+#include <shared_mutex>
 #include <thread>
 #include <condition_variable>
 #include <set>
@@ -54,7 +56,7 @@ protected:
     static std::list<std::string> s_lruList;
     static std::unordered_map<std::string, std::list<std::string>::iterator> s_lruMap; // LRU O(1)
     static std::unordered_set<std::string> s_pinnedGIFs;
-    static std::mutex s_cacheMutex; // protege s_gifCache, s_lruList, s_pinnedGIFs, s_currentCacheSize
+    static std::shared_mutex s_cacheMutex; // protects s_gifCache, s_lruList, s_pinnedGIFs, s_currentCacheSize
     
     static size_t s_currentCacheSize; // Bytes
     static size_t getMaxCacheMem();
@@ -101,6 +103,14 @@ public:
     cocos2d::CCSize m_texSize = {0, 0};
     cocos2d::CCSize m_screenSize = {0, 0};
 
+    // Perf: cached shader uniform locations to avoid string lookups every draw()
+    GLint m_locIntensity = -2; // -2 = not yet cached
+    GLint m_locTime = -2;
+    GLint m_locBrightness = -2;
+    GLint m_locTexSize = -2;
+    GLint m_locScreenSize = -2;
+    cocos2d::CCGLProgram* m_cachedShaderProgram = nullptr;
+
     static void clearCache();
     static void remove(std::string const& filename);
     static bool isCached(std::string const& filename);
@@ -132,7 +142,9 @@ public:
 private:
     static constexpr auto MAX_DISK_CACHE_AGE = std::chrono::hours(24 * 21);
 
-    // Worker queue
+    // Worker pool: reemplaza el unico std::thread por un ThreadPool de
+    // 2-3 hilos (desktop) / 1 hilo (mobile) para decodificar multiples
+    // GIFs en paralelo cuando varias celdas los piden a la vez.
     struct GIFTask {
         std::string path;
         std::vector<uint8_t> data;
@@ -144,7 +156,7 @@ private:
     static std::deque<GIFTask> s_taskQueue;
     static std::mutex s_queueMutex;
     static std::condition_variable s_queueCV;
-    static std::thread s_workerThread;
+    static std::vector<std::thread> s_workerThreads;
     static std::atomic<bool> s_workerRunning;
     static std::atomic<bool> s_shutdownMode;
     static std::mutex s_workerLifecycleMutex;

@@ -54,18 +54,27 @@ class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
         if (PaimonButtonHighlighter::isRegisteredButton(this)) {
             // Safety guard for Paimbnails-owned buttons that may lack a target/selector
             // (can happen if the button is recycled or created programmatically).
-            // Non-Paimbnails buttons always call the original to preserve vanilla behavior.
+            // Aunque falte el target, SIEMPRE llamamos al original para no
+            // truncar la cadena de hooks de otros mods. CCMenuItem::activate()
+            // vanilla tolera selectors nulos sin crashear.
             if ((!this->m_pListener || !this->m_pfnSelector) && this->m_nScriptTapHandler == 0) {
-                log::warn("[MenuItemScaleFix] Skipping activate() on Paimbnails button without target/selector");
+                log::warn("[MenuItemScaleFix] Paimbnails button without target/selector — passing through to original");
+                CCMenuItemSpriteExtra::activate();
                 return;
             }
 
+            // El callback del boton puede cerrar o reconstruir el popup actual.
+            // Retener el item evita usar memoria liberada al restaurar la escala.
+            bool restoreScale = m_fields->m_scaleCaptured;
+            float originalScale = m_fields->m_originalScale;
+            this->retain();
             CCMenuItemSpriteExtra::activate();
 
-            if (m_fields->m_scaleCaptured) {
+            if (restoreScale) {
                 this->stopAllActions();
-                this->setScale(m_fields->m_originalScale);
+                this->setScale(originalScale);
             }
+            this->release();
         } else {
             // Non-Paimbnails button: no modification, just call the original.
             CCMenuItemSpriteExtra::activate();

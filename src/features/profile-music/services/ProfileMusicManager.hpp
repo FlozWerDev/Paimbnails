@@ -27,6 +27,19 @@ public:
         std::string artistName;   // Nombre del artista
         std::string updatedAt;    // Timestamp de ultima actualizacion (del servidor, para cache validation)
         bool isCustom = false;    // Si es una cancion custom subida por archivo
+
+        // Cuando es true, ProfileMusicManager ignora songID/isCustom y usa
+        // el audio del video del fondo del perfil como fuente.  El path del
+        // video cacheado se resuelve al momento de reproducir, por lo que no
+        // hay que serializar nada extra al servidor.  Este flag NO viaja por
+        // la red de musica: se inyecta desde la ProfileConfig (campo
+        // useVideoAudio) en ProfilePage / AudioContextCoordinator.
+        bool useVideoAudio = false;
+        // Path del .mp4 cacheado del fondo del perfil.  Se resuelve via
+        // VideoThumbnailSprite::getCachedPathForKey("profileimg_video_<id>")
+        // antes de llamar a playProfileMusic.  Si esta vacio cuando
+        // useVideoAudio==true, el manager intentara resolverlo solo.
+        std::string videoAudioPath;
     };
 
     // Callbacks — Geode v5: CopyableFunction
@@ -37,8 +50,10 @@ public:
     using SongInfoCallback = geode::CopyableFunction<void(bool success, std::string const& name, std::string const& artist, int durationMs)>;
 
     static ProfileMusicManager& get() {
-        static ProfileMusicManager instance;
-        return instance;
+        // RuntimeLifecycle::forceStop() handles shutdown explicitly. Keep the
+        // singleton alive to avoid atexit races with detached workers.
+        static auto* instance = new ProfileMusicManager();
+        return *instance;
     }
 
     // === CONFIGURACIoN ===
@@ -331,6 +346,5 @@ private:
                                     float freqFrom, float freqTo, float volFrom, float volTo, bool applying,
                                     uint32_t generation);
 };
-
 
 

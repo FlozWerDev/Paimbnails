@@ -946,7 +946,7 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
         return;
     }
 
-    auto director = CCDirector::sharedDirector();
+    auto director = CCDirector::get();
     auto winSize = director->getWinSize();
 
     // Build temp destination scene
@@ -986,7 +986,7 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
             ms->addChild(MenuLayer::create());
             bool w = TransitionManager::get().isEnabled();
             TransitionManager::get().setEnabled(false);
-            CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.3f, ms));
+            CCDirector::get()->replaceScene(CCTransitionFade::create(0.3f, ms));
             TransitionManager::get().setEnabled(w);
         }
     };
@@ -1184,7 +1184,7 @@ void CustomTransitionEditorPopup::showPresetPicker() {
 void CustomTransitionEditorPopup::loadPreset(int presetId) {
     m_commands.clear();
 
-    auto ws = cocos2d::CCDirector::sharedDirector()->getWinSize();
+    auto ws = cocos2d::CCDirector::get()->getWinSize();
     float w = ws.width;
     float h = ws.height;
     float cx = w / 2.f;

@@ -174,9 +174,24 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         log::info("[DailyLevelNode] requesting thumbnail: levelID={}", levelID);
         Ref<DailyLevelNode> self = this;
         ThumbnailLoader::get().requestLoad(levelID, fileName, [self, levelID](CCTexture2D* tex, bool success) {
-            auto* fields = static_cast<PaimonDailyLevelNode*>(self.data())->m_fields.self();
-            // Verifica si el nodo sigue activo
-            if (!self->getParent() || !fields->m_paimonClipper) {
+            auto* node = static_cast<PaimonDailyLevelNode*>(self.data());
+            if (!node) return;
+            auto* fields = node->m_fields.self();
+            // Verificar que el clipper sigue vivo. NO chequeamos getParent()
+            // porque el callback puede llegar ANTES de que DailyLevelNode
+            // sea agregado al arbol por su parent (init → addChild es una
+            // secuencia: el callback de un RAM cache hit puede ejecutarse en
+            // el siguiente frame justo cuando el padre todavia no llamo
+            // addChild). Si el clipper esta vivo (Ref<> lo mantiene),
+            // aplicamos el sprite — cuando el nodo entre al arbol, el
+            // sprite ya estara ahi.
+            if (!fields || !fields->m_paimonClipper) {
+                log::debug("[DailyLevelNode] callback levelID={}: clipper destroyed, skipping", levelID);
+                return;
+            }
+            // Verificar que el levelID no cambio (DailyLevelNode reciclado)
+            if (fields->m_levelID != levelID) {
+                log::debug("[DailyLevelNode] callback levelID={}: level changed to {}, skipping", levelID, fields->m_levelID);
                 return;
             }
 

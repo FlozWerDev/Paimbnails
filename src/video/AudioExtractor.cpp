@@ -10,8 +10,16 @@
 #include <mfreadwrite.h>
 #include <codecapi.h>
 #include <objbase.h>
+#include <mutex>
 
 namespace paimon::video {
+
+// Mutex global para serializar extracciones de audio concurrentes.
+// Evita corrupción de archivos WAV y race conditions en MFShutdown.
+static std::mutex& getAudioExtractorMutex() {
+    static std::mutex mtx;
+    return mtx;
+}
 
 // ─────────────────────────────────────────────────────────────
 // Cache directory for extracted WAV files
@@ -68,6 +76,8 @@ struct WavHeader {
 // Extract audio using MF Source Reader → transcode to PCM WAV
 // ─────────────────────────────────────────────────────────────
 std::string extractAudioToWav(const std::string& videoPath) {
+    std::lock_guard<std::mutex> lock(getAudioExtractorMutex());
+
     if (videoPath.empty()) return {};
 
     auto wavPath = makeWavPath(videoPath);

@@ -105,7 +105,7 @@ class $modify(BadgeCommentCell, CommentCell) {
     }
 
     struct Fields {
-        Ref<CCDrawNode> m_commentBgPanel = nullptr;
+        Ref<CCNode> m_commentBgPanel = nullptr;
         Ref<CCClippingNode> m_commentBgClip = nullptr;
         Ref<CCLayerColor> m_commentBgDarkOverlay = nullptr;
         int m_commentBgToken = 0;
@@ -611,12 +611,22 @@ class $modify(BadgeCommentCell, CommentCell) {
     $override
     void loadFromComment(GJComment* comment) {
         clearCommentProfileBackground();
+        // Invalidar la cache de "bgs-hidden" porque la celda fue reciclada con
+        // un comentario nuevo y los nodos hijos pueden haber cambiado.
+        // Esto hace que styleInfoLayerBgs/tickStyleBgs vuelva a procesar la
+        // celda en el siguiente tick (lo que es necesario para que los nuevos
+        // nodos vanilla queden ocultos), pero sin reprocesar las celdas que ya
+        // fueron procesadas y no se reciclaron.
+        this->setUserObject("paimon-comment-bgs-hidden"_spr, nullptr);
         CommentCell::loadFromComment(comment);
         
         if (!comment) return;
 
         installDarkCommentPanel();
-        scheduleCommentPanelRefresh(m_fields->m_commentBgToken, 3);
+        // Reducido de 3 a 1 retry — cada retry hace recursion completa por
+        // toda la celda. Con muchas celdas visibles esto causa stuttering
+        // notable y degradacion de FPS al scrollear comentarios.
+        scheduleCommentPanelRefresh(m_fields->m_commentBgToken, 1);
 
         // ── Font tag + emote rendering in all comments ──
         {
@@ -865,8 +875,10 @@ class $modify(BadgeCommentCell, CommentCell) {
                 auto* lines = bitmapFont->m_lines;
                 if (lines && lines->count() > 0) {
                     auto* firstLine = static_cast<CCLabelBMFont*>(lines->objectAtIndex(0));
-                    if (firstLine && firstLine->getChildren() && firstLine->getChildren()->count() > 0) {
-                        textColor = static_cast<CCSprite*>(firstLine->getChildren()->objectAtIndex(0))->getColor();
+                    if (firstLine) {
+                        if (auto* firstChild = firstLine->getChildByType<CCSprite>(0)) {
+                            textColor = firstChild->getColor();
+                        }
                     }
                 }
             }

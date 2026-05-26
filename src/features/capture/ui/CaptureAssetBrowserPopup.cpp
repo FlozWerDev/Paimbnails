@@ -1,4 +1,5 @@
 #include "CaptureAssetBrowserPopup.hpp"
+#include "../services/CaptureVisibilityState.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -26,11 +27,9 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Lightweight static backup: which objectIDs were modified + which raw ptrs were originally hidden.
-// These are only valid while PlayLayer is alive (cleared on onQuit via restoreAllAssets).
+// Shared original visibility snapshot for the current gameplay capture session.
 // Heap-allocated and intentionally leaked to avoid destruction-order crashes at DLL unload.
-static auto& s_modifiedObjectIDs = *new std::unordered_set<int>();
-static auto& s_originallyHidden  = *new std::unordered_set<GameObject*>();
+static auto& s_originalAssetVisibilities = *new std::vector<paimon::capture::VisibilityRecord>();
 
 // ─── helpers ──────────────────────────────────────────────────────
 
@@ -173,19 +172,15 @@ CaptureAssetBrowserPopup* CaptureAssetBrowserPopup::create(CapturePreviewPopup* 
 }
 
 void CaptureAssetBrowserPopup::restoreAllAssets() {
-    auto* pl = PlayLayer::get();
-    if (pl && pl->m_objects && !s_modifiedObjectIDs.empty()) {
-        for (auto* obj : CCArrayExt<GameObject*>(pl->m_objects)) {
-            if (!obj) continue;
-            if (s_modifiedObjectIDs.count(obj->m_objectID)) {
-                // Restore: visible unless it was originally hidden
-                obj->setVisible(s_originallyHidden.count(obj) == 0);
-            }
-        }
+    if (PlayLayer::get() && !s_originalAssetVisibilities.empty()) {
+        paimon::capture::restoreVisibility(s_originalAssetVisibilities);
     }
-    s_modifiedObjectIDs.clear();
-    s_originallyHidden.clear();
+    s_originalAssetVisibilities.clear();
     log::info("[AssetBrowser] All assets restored to original visibility");
+}
+
+void CaptureAssetBrowserPopup::discardTrackedAssets() {
+    s_originalAssetVisibilities.clear();
 }
 
 // ─── init ─────────────────────────────────────────────────────────
@@ -325,7 +320,7 @@ void CaptureAssetBrowserPopup::scanViewportObjects() {
 
     // Scan ALL level objects (no viewport filter — captures everything in the level)
     std::unordered_map<int, int> idToGroupIdx; // objectID -> index in m_groups
-    bool needRecordOriginals = s_modifiedObjectIDs.empty();
+    bool needRecordOriginals = s_originalAssetVisibilities.empty();
 
     if (!pl->m_objects) return;
 
@@ -345,6 +340,7 @@ void CaptureAssetBrowserPopup::scanViewportObjects() {
             // Grab one representative frame for the preview sprite (retained)
             group.representativeFrame = obj->displayFrame();
             if (group.representativeFrame) group.representativeFrame->retain();
+            (void)paimon::capture::tryGetRecordedVisibility(s_originalAssetVisibilities, obj, group.originalVisible);
             idToGroupIdx[oid] = static_cast<int>(m_groups.size());
             m_groups.push_back(std::move(group));
         } else {
@@ -352,10 +348,7 @@ void CaptureAssetBrowserPopup::scanViewportObjects() {
         }
 
         if (needRecordOriginals) {
-            s_modifiedObjectIDs.insert(oid);
-            if (!obj->isVisible()) {
-                s_originallyHidden.insert(obj);
-            }
+            paimon::capture::snapshotVisibility(s_originalAssetVisibilities, obj);
         }
     }
 
@@ -636,18 +629,16 @@ void CaptureAssetBrowserPopup::updateMiniPreview() {
     this->setVisible(false);
 
     auto* scene = director->getRunningScene();
-    std::vector<std::pair<CCNode*, bool>> hiddenOverlays;
+    std::vector<paimon::capture::VisibilityRecord> hiddenOverlays;
     if (scene) {
         for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
             if (!child || !child->isVisible() || child == pl) continue;
             if (typeinfo_cast<FLAlertLayer*>(child)) {
-                hiddenOverlays.push_back({child, true});
-                child->setVisible(false);
+                paimon::capture::hideTemporarily(hiddenOverlays, child);
             } else {
                 std::string cls = typeid(*child).name();
                 if (cls.find("PauseLayer") != std::string::npos) {
-                    hiddenOverlays.push_back({child, true});
-                    child->setVisible(false);
+                    paimon::capture::hideTemporarily(hiddenOverlays, child);
                 }
             }
         }
@@ -671,7 +662,7 @@ void CaptureAssetBrowserPopup::updateMiniPreview() {
     kmGLPopMatrix();
     rt->end();
 
-    for (auto& [node, _] : hiddenOverlays) node->setVisible(true);
+    paimon::capture::restoreVisibility(hiddenOverlays);
     this->setVisible(selfWasVisible);
 
     auto* rtSprite = rt->getSprite();
@@ -749,9 +740,18 @@ void CaptureAssetBrowserPopup::onToggleCategory(CCObject* sender) {
     bool newVisible = toggler->isToggled();
     setCategoryVisible(catIdx, newVisible);
 
-    // Rebuild to update all visual states
-    buildList();
-    updateMiniPreview();
+    // Defer the UI rebuild. The toggler that fired this callback lives
+    // inside m_listRoot, so calling buildList() inline destroys the
+    // CCMenuItemToggler while the touch dispatcher is still unwinding
+    // the activate. That corrupts the dispatcher state and makes the
+    // next taps misbehave (first click hides everything, next shows
+    // them back, third stops responding).
+    Ref<CaptureAssetBrowserPopup> self = this;
+    Loader::get()->queueInMainThread([self]() {
+        if (!self || !self->getParent()) return;
+        self->buildList();
+        self->updateMiniPreview();
+    });
 }
 
 void CaptureAssetBrowserPopup::onDoneBtn(CCObject* sender) {
@@ -763,20 +763,7 @@ void CaptureAssetBrowserPopup::onDoneBtn(CCObject* sender) {
 }
 
 void CaptureAssetBrowserPopup::onRestoreAllBtn(CCObject* sender) {
-    // Restore visibility by iterating m_objects for each modified objectID
-    auto* pl = PlayLayer::get();
-    if (pl && pl->m_objects) {
-        for (auto* obj : CCArrayExt<GameObject*>(pl->m_objects)) {
-            if (!obj) continue;
-            // Check if this objectID belongs to any of our groups
-            for (auto& group : m_groups) {
-                if (obj->m_objectID == group.objectID) {
-                    obj->setVisible(s_originallyHidden.count(obj) == 0);
-                    break;
-                }
-            }
-        }
-    }
+    paimon::capture::restoreVisibility(s_originalAssetVisibilities);
 
     for (auto& group : m_groups) {
         group.visible = group.originalVisible;

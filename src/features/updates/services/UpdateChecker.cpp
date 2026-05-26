@@ -1,5 +1,6 @@
 #include "UpdateChecker.hpp"
 #include "../../../utils/WebHelper.hpp"
+#include "../../../core/Settings.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -11,6 +12,11 @@
 #include <filesystem>
 #include <algorithm>
 #include <cctype>
+#include <system_error>
+
+#ifdef GEODE_IS_WINDOWS
+#include <windows.h>
+#endif
 
 using namespace geode::prelude;
 
@@ -21,6 +27,24 @@ namespace {
 constexpr auto kReleasesApiUrl =
     "https://api.github.com/repos/FlozWerDev/Paimbnails/releases/latest";
 constexpr auto kAssetName = "flozwer.paimbnails2.geode";
+
+std::filesystem::path getStagedUpdatePath() {
+    auto dir = Mod::get()->getSaveDir() / "updates";
+    auto filename = Mod::get()->getPackagePath().filename();
+    if (filename.empty()) {
+        filename = kAssetName;
+    }
+    return dir / filename;
+}
+
+std::string escapePowerShellLiteral(std::string value) {
+    size_t pos = 0;
+    while ((pos = value.find('\'', pos)) != std::string::npos) {
+        value.replace(pos, 1, "''");
+        pos += 2;
+    }
+    return value;
+}
 
 // Limpia un string de version: quita prefijos 'v'/'V' y espacios.
 std::string sanitizeVersion(std::string v) {
@@ -172,6 +196,14 @@ void UpdateChecker::onCheckResponse(web::WebResponse& res) {
 
     if (cmp > 0) {
         m_state.store(State::UpdateAvailable);
+        // Auto-update silencioso: si el usuario lo tiene activado, arranca la
+        // descarga aqui mismo (main thread via queueInMainThread). El staged
+        // .geode se aplica al cerrar el juego desde RuntimeLifecycle.
+        if (paimon::settings::general::autoUpdate()) {
+            Loader::get()->queueInMainThread([]() {
+                UpdateChecker::get().autoDownloadIfNeeded();
+            });
+        }
     } else {
         m_state.store(State::UpToDate);
     }
@@ -187,6 +219,7 @@ void UpdateChecker::downloadUpdate(
     }
 
     m_downloadCancelled.store(false);
+    m_pendingUpdatePath.clear();
 
     // Captura el progreso. El callback de onProgress lo invoca el worker thread
     // de la libreria HTTP, asi que despachamos al main thread antes de tocar UI.
@@ -231,31 +264,244 @@ void UpdateChecker::downloadUpdate(
                 return;
             }
 
-            // Destino: reemplaza el .geode actual del mod.
-            std::filesystem::path dest = Mod::get()->getPackagePath();
+            // Nunca sobrescribas el .geode activo en caliente: Geode puede seguir
+            // leyendo el paquete actual para metadata/recursos y eso termina
+            // corrompiendo el estado del loader. Descargamos a staging y el
+            // reemplazo real ocurre desde un helper tras cerrar el juego.
+            std::filesystem::path stagedPath = getStagedUpdatePath();
+            std::filesystem::path tempPath = stagedPath;
+            tempPath += ".download";
             std::error_code ec;
 
-            // Backup (best-effort) por si el rename falla en Windows.
-            auto backup = dest;
-            backup += ".old";
-            std::filesystem::remove(backup, ec);
-            std::filesystem::rename(dest, backup, ec);
-
-            std::ofstream out(dest, std::ios::binary | std::ios::trunc);
-            if (!out) {
-                // restaurar backup si no se pudo abrir destino
-                std::filesystem::rename(backup, dest, ec);
-                fail("cannot open dest file");
+            std::filesystem::create_directories(stagedPath.parent_path(), ec);
+            if (ec) {
+                fail(fmt::format("cannot create update dir: {}", ec.message()));
                 return;
             }
+
+            std::filesystem::remove(tempPath, ec);
+
+            std::ofstream out(tempPath, std::ios::binary | std::ios::trunc);
+            if (!out) {
+                fail("cannot open staged file");
+                return;
+            }
+
             out.write(reinterpret_cast<char const*>(bytes.data()), bytes.size());
             out.close();
 
-            // borra backup si la escritura tuvo exito
-            std::filesystem::remove(backup, ec);
+            if (!out) {
+                std::filesystem::remove(tempPath, ec);
+                fail("cannot write staged file");
+                return;
+            }
+
+            if (m_downloadCancelled.load()) {
+                std::filesystem::remove(tempPath, ec);
+                fail("cancelled");
+                return;
+            }
+
+            std::filesystem::remove(stagedPath, ec);
+            ec.clear();
+            std::filesystem::rename(tempPath, stagedPath, ec);
+            if (ec) {
+                std::filesystem::remove(tempPath, ec);
+                fail(fmt::format("cannot finalize staged update: {}", ec.message()));
+                return;
+            }
+
+            m_pendingUpdatePath = stagedPath;
+            log::info("[UpdateChecker] Update staged at {}", m_pendingUpdatePath);
 
             if (doneShared && *doneShared) {
-                (*doneShared)(true, geode::utils::string::pathToString(dest));
+                (*doneShared)(true, geode::utils::string::pathToString(stagedPath));
+            }
+        }
+    );
+}
+
+bool UpdateChecker::hasPendingInstall() const {
+    if (m_pendingUpdatePath.empty()) return false;
+    std::error_code ec;
+    return std::filesystem::exists(m_pendingUpdatePath, ec) && !ec;
+}
+
+namespace {
+
+#ifdef GEODE_IS_WINDOWS
+// Lanza el helper PowerShell que espera al PID actual del juego, hace el
+// swap atomico del .geode y opcionalmente reinicia.
+// - relaunch=true  → reinicia Geometry Dash al terminar (modo manual "Restart")
+// - relaunch=false → termina silenciosamente (modo auto-update al cerrar)
+bool spawnUpdaterHelper(std::filesystem::path const& pendingUpdatePath, bool relaunch) {
+    wchar_t exePath[MAX_PATH] = {};
+    auto exeLen = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    if (!(exeLen > 0 && exeLen < MAX_PATH)) {
+        log::warn("[UpdateChecker] GetModuleFileNameW failed while staging swap");
+        return false;
+    }
+
+    std::filesystem::path currentPackage = Mod::get()->getPackagePath();
+    std::filesystem::path backupPackage = currentPackage;
+    backupPackage += ".old";
+    std::filesystem::path scriptPath =
+        Mod::get()->getSaveDir() / "updates" /
+        (relaunch ? "apply-pending-update.ps1" : "apply-pending-update-silent.ps1");
+    std::error_code ec;
+    std::filesystem::create_directories(scriptPath.parent_path(), ec);
+    if (ec) {
+        log::warn("[UpdateChecker] Failed to create updater script dir: {}", ec.message());
+        return false;
+    }
+
+    auto exeString = geode::utils::string::pathToString(std::filesystem::path(exePath));
+    auto workingDirString = geode::utils::string::pathToString(std::filesystem::path(exePath).parent_path());
+    auto sourceString = geode::utils::string::pathToString(pendingUpdatePath);
+    auto destString = geode::utils::string::pathToString(currentPackage);
+    auto backupString = geode::utils::string::pathToString(backupPackage);
+
+    // Segmento de relanzamiento opcional: cuando el usuario activa Restart
+    // reabrimos el juego; cuando es auto-update, el helper se va silencioso.
+    std::string relaunchSegment = relaunch
+        ? "Start-Process -FilePath $exe -WorkingDirectory $workingDir\n"
+        : "";
+    std::string relaunchOnFailure = relaunch
+        ? "Start-Process -FilePath $exe -WorkingDirectory $workingDir\n"
+        : "";
+
+    auto scriptBody = fmt::format(
+        R"ps($pidToWait = {0}
+$source = '{1}'
+$dest = '{2}'
+$backup = '{3}'
+$exe = '{4}'
+$workingDir = '{5}'
+
+for ($i = 0; $i -lt 200; $i++) {{
+    if (-not (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue)) {{ break }}
+    Start-Sleep -Milliseconds 250
+}}
+
+for ($i = 0; $i -lt 40; $i++) {{
+    try {{
+        if (Test-Path -LiteralPath $backup) {{ Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue }}
+        if (Test-Path -LiteralPath $dest) {{ Move-Item -LiteralPath $dest -Destination $backup -Force }}
+        Move-Item -LiteralPath $source -Destination $dest -Force
+        if (Test-Path -LiteralPath $backup) {{ Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue }}
+        {6}exit 0
+    }} catch {{
+        Start-Sleep -Milliseconds 250
+    }}
+}}
+
+{7}exit 1
+)ps",
+        GetCurrentProcessId(),
+        escapePowerShellLiteral(sourceString),
+        escapePowerShellLiteral(destString),
+        escapePowerShellLiteral(backupString),
+        escapePowerShellLiteral(exeString),
+        escapePowerShellLiteral(workingDirString),
+        relaunchSegment,
+        relaunchOnFailure
+    );
+
+    std::ofstream scriptFile(scriptPath, std::ios::binary | std::ios::trunc);
+    if (!scriptFile) {
+        log::warn("[UpdateChecker] Failed to open updater script file");
+        return false;
+    }
+    scriptFile << scriptBody;
+    scriptFile.close();
+    if (!scriptFile) {
+        log::warn("[UpdateChecker] Failed to write updater script file");
+        return false;
+    }
+
+    std::wstring commandLine =
+        L"powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" +
+        scriptPath.wstring() +
+        L"\"";
+    std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
+    mutableCommand.push_back(L'\0');
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+
+    if (!CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        log::warn("[UpdateChecker] Failed to launch updater helper: {}", static_cast<unsigned long>(GetLastError()));
+        return false;
+    }
+
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    log::info("[UpdateChecker] Spawned updater helper {} (relaunch={})",
+        geode::utils::string::pathToString(scriptPath), relaunch);
+    return true;
+}
+#endif
+
+} // namespace
+
+bool UpdateChecker::restartToApplyPendingUpdate() const {
+    if (!this->hasPendingInstall()) {
+        return false;
+    }
+
+#ifdef GEODE_IS_WINDOWS
+    return spawnUpdaterHelper(m_pendingUpdatePath, /*relaunch=*/true);
+#else
+    return false;
+#endif
+}
+
+bool UpdateChecker::applyPendingUpdateInPlace() const {
+    if (!this->hasPendingInstall()) {
+        return false;
+    }
+
+#ifdef GEODE_IS_WINDOWS
+    return spawnUpdaterHelper(m_pendingUpdatePath, /*relaunch=*/false);
+#else
+    return false;
+#endif
+}
+
+void UpdateChecker::autoDownloadIfNeeded() {
+    if (m_state.load() != State::UpdateAvailable) return;
+    if (m_downloadUrl.empty()) return;
+    if (this->hasPendingInstall()) return;
+
+    bool expected = false;
+    if (!m_autoDownloadStarted.compare_exchange_strong(expected, true)) {
+        return;
+    }
+
+    log::info("[UpdateChecker] Auto-update triggered: downloading {} silently", m_remoteVersion);
+
+    this->downloadUpdate(
+        // onProgress: log cada vez que completamos un multiplo del 25% para
+        // no ensuciar el log con cientos de entradas.
+        [](uint64_t received, uint64_t total) {
+            if (total == 0) return;
+            static std::atomic<int> lastBucket{-1};
+            int bucket = static_cast<int>((received * 4) / total);
+            int expectedBucket = lastBucket.load();
+            while (bucket > expectedBucket) {
+                if (lastBucket.compare_exchange_strong(expectedBucket, bucket)) {
+                    log::info("[UpdateChecker] Auto-update progress: {}%",
+                              (bucket * 25));
+                    break;
+                }
+            }
+        },
+        [](bool ok, std::string detail) {
+            if (ok) {
+                log::info("[UpdateChecker] Auto-update downloaded and staged. Will apply on exit.");
+            } else {
+                log::warn("[UpdateChecker] Auto-update failed: {}", detail);
             }
         }
     );

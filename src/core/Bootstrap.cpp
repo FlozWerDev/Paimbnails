@@ -13,14 +13,21 @@
 #include "../features/emotes/services/EmoteService.hpp"
 #include "../features/emotes/services/EmoteCache.hpp"
 #include "../features/progressbar/services/ProgressBarManager.hpp"
+#include "../features/custom-slider/services/CustomSliderManager.hpp"
 #include "../features/updates/services/UpdateChecker.hpp"
 #include "RuntimeLifecycle.hpp"
+#include "StartupIncompatibilityCheck.hpp"
 #include "QualityConfig.hpp"
+#include "MainLevels.hpp"
 #include "Settings.hpp"
+#include "../features/paidraw/PaiDrawManager.hpp"
 #include "../video/VideoNormalizer.hpp"
 #include "../utils/Shaders.hpp"
+#include "../utils/GLSLLoader.hpp"
 #include "../blur/BlurSystem.hpp"
+#include "../blur/BlurDiskCache.hpp"
 #include "../features/thumbnails/services/ThumbnailCache.hpp"
+#include "../utils/ThreadTracker.hpp"
 #include <thread>
 #include <chrono>
 #include <filesystem>
@@ -49,22 +56,35 @@ void paimonOnSettingChanged(T const&) {
 void PaimonOnModLoaded() {
     log::info("[PaimonThumbnails][Init] Loaded event start");
 
-    // ── Framework: registra features, permisos y hooks ──────────────
+    PaimonCheckStartupIncompatibilities();
+
+    // â”€â”€ Framework: registra features, permisos y hooks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     paimon::initFramework();
 
-    // ── Startup cache cleanup safety net ──────────────────────────────
+    // â”€â”€ PaiDraw â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    paidraw::PaiDrawManager::get().init();
+
+    // â”€â”€ Blur disk cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Inicializa cache persistente de texturas blur pre-calculadas. El init
+    // es async (lee el indice en I/O pool) — no bloquea el main thread.
+    // En la segunda entrada al juego con cache poblado, los callbacks de
+    // requestLoad no necesitan correr blur GPU; levantan la textura blur
+    // desde disco directamente.
+    paimon::blur::BlurDiskCache::get().init();
+
+    // â”€â”€ Startup cache cleanup safety net â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Si clear-cache-on-exit esta activo y el juego crasheo en la sesion anterior
     // sin pasar por $on_game(Exiting), los caches de disco podrian haber quedado.
     // Se ejecuta en background para NO bloquear el main thread durante el arranque
     // (la limpieza recursiva del arbol de cache puede tardar cientos de ms).
     bool const clearCacheAtStartup = paimon::settings::general::clearCacheOnExit();
 
-    // ── Cleanup: remove orphaned video cache files (>7 days) ────────
+    // ── Cleanup: remove orphaned video cache files (>7 days) ────
     paimon::video::VideoNormalizer::cleanupOrphanedCache();
 
     // ── Paralelizar migraciones, limpiezas y cargas de configuración ──
     // Estas operaciones son independientes y pueden ejecutarse en paralelo
-    std::thread migrationThread([clearCacheAtStartup]() {
+    paimon::ThreadTracker::get().spawn([clearCacheAtStartup]() {
         geode::utils::thread::setName("PaimonMigrations");
         if (paimon::isRuntimeShuttingDown()) return;
 
@@ -86,55 +106,54 @@ void PaimonOnModLoaded() {
         LayerBackgroundManager::get().migrateToGlobalMusic();
         LayerBackgroundManager::get().migrateExternalAssetsToManagedStorage();
     });
-    migrationThread.detach();
 
-    std::thread configThread([]() {
+    paimon::ThreadTracker::get().spawn([]() {
         geode::utils::thread::setName("PaimonConfigLoad");
         if (paimon::isRuntimeShuttingDown()) return;
         TransitionManager::get().loadConfig();
         ProgressBarManager::get().loadConfig();
+        paimon::slider::CustomSliderManager::get().loadConfig();
     });
-    configThread.detach();
 
     log::info("[PaimonThumbnails] Queueing main level thumbnails...");
 
     // Batch fetch manifest for main levels first, then prefetch
     std::vector<int> mainLevels;
-    for (int i = 1; i <= 22; i++) mainLevels.push_back(i);
+    for (int i = paimon::kMainLevelMinID; i <= paimon::kMainLevelMaxID; i++) {
+        mainLevels.push_back(i);
+    }
 
-    // Optimización: iniciar manifest fetch antes y con prefetch paralelo
-    paimon::scheduleMainThreadDelay(5.0f, [mainLevels = std::move(mainLevels)]() mutable {
-        if (paimon::isRuntimeShuttingDown()) return;
-        
-        // Iniciar manifest fetch inmediatamente
+    // Estilo globed2 (PreloadManager): los assets principales se cargan lo
+    // antes posible. Si LoadingLayer ya disparo el prefetch (caso normal),
+    // tryClaimMainLevelsPrefetch() devolvera false y aqui solo logueamos.
+    // En arranques sin LoadingLayer (reload de texturas, etc.) este es el
+    // fallback que asegura que las miniaturas main se carguen.
+    if (paimon::tryClaimMainLevelsPrefetch()) {
+        // Manifest fetch inmediato — no bloquea nada.
         HttpClient::get().fetchManifest(mainLevels, [](bool success) {
             if (paimon::isRuntimeShuttingDown()) return;
-            log::info("[PaimonThumbnails] Manifest fetch {}, starting parallel prefetch", success ? "succeeded" : "failed (will use Worker fallback)");
+            log::info("[PaimonThumbnails] (Bootstrap) Manifest fetch {}",
+                success ? "succeeded" : "failed (will use Worker fallback)");
         });
 
-        // Prefetch paralelo en batches espaciados para no saturar la red.
-        // IMPORTANTE: este callback corre en el main thread (cocos2d scheduler),
-        // por eso NO usamos std::this_thread::sleep_for entre batches —
-        // bloquearia el render del menu. En su lugar, encadenamos batches
-        // mediante scheduleMainThreadDelay para mantener el frame pacing fluido.
-        constexpr int PARALLEL_PREFETCH_BATCH = 2;
-        constexpr float BATCH_INTERVAL_SEC = 0.20f;
-        for (int batchStart = 1, batchIndex = 0; batchStart <= 22;
-             batchStart += PARALLEL_PREFETCH_BATCH, ++batchIndex) {
-            int batchEnd = std::min(batchStart + PARALLEL_PREFETCH_BATCH, 23);
-            float batchDelay = BATCH_INTERVAL_SEC * static_cast<float>(batchIndex);
-            paimon::scheduleMainThreadDelay(batchDelay, [batchStart, batchEnd]() {
-                if (paimon::isRuntimeShuttingDown()) return;
-                for (int levelID = batchStart; levelID < batchEnd; ++levelID) {
-                    ThumbnailLoader::get().requestLoad(
-                        levelID, fmt::format("{}.png", levelID), nullptr,
-                        ThumbnailLoader::PriorityBootstrap);
-                }
-            });
-        }
+        // Encolar todos en el siguiente frame para no contender con el
+        // primer render del menu.
+        paimon::scheduleMainThreadDelay(0.0f, []() {
+            if (paimon::isRuntimeShuttingDown()) return;
 
-        log::info("[PaimonThumbnails] Startup blur prewarm skipped; blur will build on demand");
-    });
+            auto& loader = ThumbnailLoader::get();
+            for (int levelID = paimon::kMainLevelMinID;
+                 levelID <= paimon::kMainLevelMaxID; ++levelID) {
+                loader.requestLoad(
+                    levelID, fmt::format("{}.png", levelID), nullptr,
+                    ThumbnailLoader::PriorityBootstrap);
+            }
+            log::info("[PaimonThumbnails] (Bootstrap) {} main level thumbnails enqueued",
+                paimon::kMainLevelMaxID - paimon::kMainLevelMinID + 1);
+        });
+    } else {
+        log::info("[PaimonThumbnails] Main level prefetch already kicked off by LoadingLayer");
+    }
 
     std::string langStr = paimon::settings::general::language();
     log::info("[PaimonThumbnails][Init] Language setting='{}'", langStr);
@@ -146,33 +165,32 @@ void PaimonOnModLoaded() {
             log::info("[PaimonThumbnails][Language] Changed to '{}'", value);
         });
 
-        // ── Custom Cursor settings sync ──
+        // â”€â”€ Custom Cursor settings sync â”€â”€
         // Sync mod.json settings -> CursorManager config
         // Use a guard to prevent infinite re-entry when saveConfig syncs back
-        static bool s_cursorSyncGuard = false;
+        // Usamos atomic<bool> para seguridad thread-safe (listenForSettingChanges
+        // puede ser llamado desde cualquier thread en Geode).
+        static std::atomic<bool> s_cursorSyncGuard{false};
         geode::listenForSettingChanges<bool>("custom-cursor-enable", +[](bool value) {
-            if (s_cursorSyncGuard) return;
-            s_cursorSyncGuard = true;
+            if (s_cursorSyncGuard.exchange(true, std::memory_order_acq_rel)) return;
             CursorManager::get().config().enabled = value;
             CursorManager::get().applyConfigLive();
-            s_cursorSyncGuard = false;
+            s_cursorSyncGuard.store(false, std::memory_order_release);
         });
         geode::listenForSettingChanges<double>("custom-cursor-scale", +[](double value) {
-            if (s_cursorSyncGuard) return;
-            s_cursorSyncGuard = true;
+            if (s_cursorSyncGuard.exchange(true, std::memory_order_acq_rel)) return;
             CursorManager::get().config().scale = static_cast<float>(value);
             CursorManager::get().applyConfigLive();
-            s_cursorSyncGuard = false;
+            s_cursorSyncGuard.store(false, std::memory_order_release);
         });
         geode::listenForSettingChanges<bool>("custom-cursor-trail", +[](bool value) {
-            if (s_cursorSyncGuard) return;
-            s_cursorSyncGuard = true;
+            if (s_cursorSyncGuard.exchange(true, std::memory_order_acq_rel)) return;
             CursorManager::get().config().trailEnabled = value;
             CursorManager::get().applyConfigLive();
-            s_cursorSyncGuard = false;
+            s_cursorSyncGuard.store(false, std::memory_order_release);
         });
 
-        // ── Thumbnail / Background settings reactivity ──
+        // â”€â”€ Thumbnail / Background settings reactivity â”€â”€
         // Increment global version so LevelCell & LevelInfoLayer re-cache settings
         geode::listenForSettingChanges<std::string>("levelcell-background-type", &paimonOnSettingChanged<std::string>);
         geode::listenForSettingChanges<bool>("levelcell-hover-effects", &paimonOnSettingChanged<bool>);
@@ -192,32 +210,33 @@ void PaimonOnModLoaded() {
     log::info("[PaimonThumbnails][Init] Applying startup init");
 
     log::info("[PaimonThumbnails][Init] Scheduling color extraction thread");
-    // hilo de I/O de disco + procesamiento CPU — no migrable a WebTask (no es peticion web).
+    // hilo de I/O de disco + procesamiento CPU â€” no migrable a WebTask (no es peticion web).
     // el delay y la extraccion se ejecutan en background para no bloquear el main thread.
     paimon::scheduleMainThreadDelay(0.5f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
-        std::thread([]() {
+        paimon::ThreadTracker::get().spawn([]() {
             geode::utils::thread::setName("PaimonThumbnails ColorExtract");
             if (paimon::isRuntimeShuttingDown()) return;
             LevelColors::get().extractColorsFromCache();
+            if (paimon::isRuntimeShuttingDown()) return;
             geode::Loader::get()->queueInMainThread([]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 log::info("[PaimonThumbnails][Init] Color extraction finished");
             });
-        }).detach();
+        });
     });
 
     log::info("[PaimonThumbnails][Init] Startup init complete");
 
-    // ── Lazy initialization: cargar servicios no críticos de forma diferida ──
+    // â”€â”€ Lazy initialization: cargar servicios no crÃ­ticos de forma diferida â”€â”€
     // Los emotes y shaders solo se cargan cuando el usuario los necesita,
     // reduciendo el tiempo de carga inicial del mod.
 
-    // Emote catalog: carga diferida con delay más largo para no competir con thumbnails
+    // Emote catalog: carga diferida con delay mÃ¡s largo para no competir con thumbnails
     paimon::scheduleMainThreadDelay(12.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         
-        // Cargar catálogo desde disco primero (rápido)
+        // Cargar catÃ¡logo desde disco primero (rÃ¡pido)
         paimon::emotes::EmoteService::get().loadCatalogFromDisk();
         
         auto& svc = paimon::emotes::EmoteService::get();
@@ -233,14 +252,20 @@ void PaimonOnModLoaded() {
         });
     });
 
-    // Shader pre-warm: cargar después de que los thumbnails estén listos
+    // Shader pre-warm: cargar despuÃ©s de que los thumbnails estÃ©n listos
     paimon::scheduleMainThreadDelay(10.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         Shaders::prewarmLevelInfoShaders();
+
+        // Fase 0 de migracion a .glsl: verifica que los archivos .glsl
+        // instalados en resources/shaders se pueden leer correctamente.
+        // Si falla, el log indica la ruta esperada para debug. Las fases
+        // 1-4 iran migrando cada shader inline a su equivalente .glsl.
+        paimon::shaders::preloadBlurShaders();
     });
 
-    // ── UpdateChecker: consulta GitHub Releases para detectar nuevas versiones.
-    // Se hace con un pequeño delay para no competir con la carga inicial.
+    // â”€â”€ UpdateChecker: consulta GitHub Releases para detectar nuevas versiones.
+    // Se hace con un pequeÃ±o delay para no competir con la carga inicial.
     paimon::scheduleMainThreadDelay(8.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         paimon::updates::UpdateChecker::get().checkAsync();

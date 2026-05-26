@@ -18,29 +18,22 @@
 #include <Geode/binding/SimplePlayer.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/PlayLayer.hpp>
-#include <Geode/cocos/platform/CCGL.h>
 #include "../../../utils/PaimonButtonHighlighter.hpp"
 #include "../../../utils/SpriteHelper.hpp"
-#include "../../../utils/PlayerToggleHelper.hpp"
-#include "../../../utils/RenderTexture.hpp"
 #include "../../../utils/ImageConverter.hpp"
+#include "../../../utils/ThreadTracker.hpp"
 #include "../../../managers/ThumbnailAPI.hpp"
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <filesystem>
 #include <chrono>
 #include <iomanip>
 #include <sstream>
-#include <future>
-#include <mutex>
 #include <algorithm>
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
 namespace {
-std::mutex s_downloadWorkerMutex;
-std::vector<std::future<void>> s_downloadWorkers;
-
 CCSize getSpriteLogicalSize(CCSprite* sprite) {
     if (!sprite) return {0.f, 0.f};
     auto size = sprite->getContentSize();
@@ -66,21 +59,6 @@ float computePreviewScale(CCSprite* sprite, float viewWidth, float viewHeight, b
     float scale = fillMode ? std::max(scaleX, scaleY) : std::min(scaleX, scaleY);
     if (scale <= 0.f) return 1.f;
     return std::clamp(scale, 0.01f, 64.0f);
-}
-
-void spawnDownloadWorker(std::function<void()> job) {
-    std::lock_guard<std::mutex> lock(s_downloadWorkerMutex);
-    auto it = s_downloadWorkers.begin();
-    while (it != s_downloadWorkers.end()) {
-        if (!it->valid() || it->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            it = s_downloadWorkers.erase(it);
-        } else {
-            ++it;
-        }
-    }
-    s_downloadWorkers.emplace_back(std::async(std::launch::async, [job = std::move(job)]() mutable {
-        job();
-    }));
 }
 }
 
@@ -615,7 +593,9 @@ void CapturePreviewPopup::onTogglePlayer1Btn(CCObject* sender) {
     if (!sender) return;
     m_isPlayer1Hidden = !m_isPlayer1Hidden;
     updatePlayerBtnVisual(m_p1Btn, m_isPlayer1Hidden);
-    if (m_recaptureCallback) {
+    if (PlayLayer::get()) {
+        recapture();
+    } else if (m_recaptureCallback) {
         m_recaptureCallback(m_isPlayer1Hidden, m_isPlayer2Hidden, this);
     } else {
         liveRecapture(true);
@@ -626,7 +606,9 @@ void CapturePreviewPopup::onTogglePlayer2Btn(CCObject* sender) {
     if (!sender) return;
     m_isPlayer2Hidden = !m_isPlayer2Hidden;
     updatePlayerBtnVisual(m_p2Btn, m_isPlayer2Hidden);
-    if (m_recaptureCallback) {
+    if (PlayLayer::get()) {
+        recapture();
+    } else if (m_recaptureCallback) {
         m_recaptureCallback(m_isPlayer1Hidden, m_isPlayer2Hidden, this);
     } else {
         liveRecapture(true);
@@ -654,6 +636,7 @@ void CapturePreviewPopup::onClose(CCObject* sender) {
     m_recapturePending = false;
     this->unschedule(schedule_selector(CapturePreviewPopup::onRecaptureTimeout));
     CaptureLayerEditorPopup::restoreAllLayers();
+    CaptureAssetBrowserPopup::restoreAllAssets();
 
     // Cancel any pending recapture to avoid callbacks targeting a destroyed popup
     FramebufferCapture::cancelPending();
@@ -697,8 +680,10 @@ void CapturePreviewPopup::recapture() {
     FramebufferCapture::requestCapture(m_levelID,
         [safeRef](bool success, CCTexture2D* texture,
                std::shared_ptr<uint8_t> rgbaData, int width, int height) {
+            Ref<CCTexture2D> texRef = texture;
             Loader::get()->queueInMainThread(
-                [safeRef, success, texture, rgbaData, width, height]() {
+                [safeRef, success, texRef, rgbaData, width, height]() {
+                    CCTexture2D* texture = texRef.data();
                     safeRef->m_recapturePending = false;
                     safeRef->unschedule(schedule_selector(CapturePreviewPopup::onRecaptureTimeout));
                     if (!safeRef->getParent()) return;
@@ -711,7 +696,11 @@ void CapturePreviewPopup::recapture() {
                     }
                     safeRef->setVisible(true);
                 });
-        });
+        },
+        nullptr,
+        m_isPlayer1Hidden,
+        m_isPlayer2Hidden
+    );
 }
 
 void CapturePreviewPopup::onRecaptureTimeout(float) {
@@ -724,110 +713,12 @@ void CapturePreviewPopup::onRecaptureTimeout(float) {
 
 void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
     auto* pl = PlayLayer::get();
-    if (!pl) return;
-
-    // Use the same custom RenderTexture as captureScreenshot in PlayLayer
-    // It properly adjusts m_fScaleX/Y, m_obScreenSize and design resolution,
-    // which ensures ShaderLayer FBOs resolve correctly.
-    auto* view = CCEGLView::sharedOpenGLView();
-    if (!view) return;
-    auto screenSize = view->getFrameSize();
-    int screenW = static_cast<int>(screenSize.width);
-    int screenH = static_cast<int>(screenSize.height);
-    if (screenW <= 0 || screenH <= 0) return;
-
-    // Respect configured capture resolution (same logic as FramebufferCapture)
-    std::string res = geode::Mod::get()->getSettingValue<std::string>("capture-resolution");
-    int targetW = 1920;
-    if (res == "4k")         targetW = 3840;
-    else if (res == "1440p") targetW = 2560;
-
-    double aspect = static_cast<double>(screenW) / static_cast<double>(screenH);
-    int w = targetW;
-    int h = std::max(1, static_cast<int>(std::round(w / aspect)));
-
-    // Hide UI layer
-    bool uiWasVisible = false;
-    if (pl->m_uiLayer && pl->m_uiLayer->isVisible()) {
-        uiWasVisible = true;
-        pl->m_uiLayer->setVisible(false);
+    if (pl) {
+        recapture();
+        return;
     }
 
-    PlayerVisState p1State, p2State;
-    if (m_isPlayer1Hidden) {
-        paimTogglePlayer(pl->m_player1, p1State, true);
-    }
-    if (m_isPlayer2Hidden) {
-        paimTogglePlayer(pl->m_player2, p2State, true);
-    }
-
-    // The custom RenderTexture adjusts CCEGLView scale factors,
-    // design resolution and viewport — making ShaderLayer render
-    // correctly into our FBO.
-    ::RenderTexture rt(w, h);
-    rt.begin();
-    pl->visit();
-    rt.end();
-    auto data = rt.getData();
-
-    // Restore state
-    if (m_isPlayer1Hidden) {
-        paimTogglePlayer(pl->m_player1, p1State, false);
-    }
-    if (m_isPlayer2Hidden) {
-        paimTogglePlayer(pl->m_player2, p2State, false);
-    }
-    if (uiWasVisible && pl->m_uiLayer) {
-        pl->m_uiLayer->setVisible(true);
-    }
-
-    if (!data) return;
-
-    // Vertical flip (glReadPixels reads bottom-to-top)
-    int rowSize = w * 4;
-    std::vector<uint8_t> tempRow(rowSize);
-    uint8_t* buf = data.get();
-    for (int y = 0; y < h / 2; ++y) {
-        uint8_t* topRow = buf + y * rowSize;
-        uint8_t* bottomRow = buf + (h - y - 1) * rowSize;
-        std::memcpy(tempRow.data(), topRow, rowSize);
-        std::memcpy(topRow, bottomRow, rowSize);
-        std::memcpy(bottomRow, tempRow.data(), rowSize);
-    }
-
-    if (updateBuffer) {
-        size_t dataSize = static_cast<size_t>(w) * h * 4;
-        std::shared_ptr<uint8_t> buffer(new uint8_t[dataSize], std::default_delete<uint8_t[]>());
-        memcpy(buffer.get(), data.get(), dataSize);
-
-        auto* tex = new CCTexture2D();
-        if (!tex->initWithData(buffer.get(), kCCTexture2DPixelFormat_RGBA8888,
-                               w, h, CCSize(static_cast<float>(w), static_cast<float>(h)))) {
-            tex->release();
-            return;
-        }
-        tex->setAntiAliasTexParameters();
-        tex->autorelease();
-        updateContent(tex, buffer, w, h);
-    } else {
-        // Fast path: create texture from data directly for visual-only update
-        auto* tex = new CCTexture2D();
-        if (!tex->initWithData(data.get(), kCCTexture2DPixelFormat_RGBA8888,
-                               w, h, CCSize(static_cast<float>(w), static_cast<float>(h)))) {
-            tex->release();
-            return;
-        }
-        tex->setAntiAliasTexParameters();
-
-        if (m_previewSprite) {
-            m_previewSprite->setTexture(tex);
-            m_previewSprite->setTextureRect(CCRect(0, 0,
-                static_cast<float>(w), static_cast<float>(h)));
-            m_previewSprite->setFlipY(false);
-            updatePreviewScale();
-        }
-        tex->release();
-    }
+    if (!updateBuffer) return;
 }
 
 void CapturePreviewPopup::onAcceptBtn(CCObject* sender) {
@@ -1095,7 +986,7 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     int levelID = m_levelID;
 
     // ImageConverter::saveRGBAToPNG (imageplus + stb fallback) + std::ofstream(path) = Unicode-safe en Windows
-    spawnDownloadWorker([bufCopy, w, h, filePath, levelID]() {
+    paimon::ThreadTracker::get().spawn([bufCopy, w, h, filePath, levelID]() {
         if (ImageConverter::saveRGBAToPNG(bufCopy.get(), w, h, filePath)) {
             geode::Loader::get()->queueInMainThread([filePath, levelID]() {
                 PaimonNotify::create(Localization::get().getString("preview.downloaded").c_str(),

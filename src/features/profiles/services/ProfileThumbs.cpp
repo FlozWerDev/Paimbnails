@@ -5,6 +5,8 @@
 #include "../../../core/QualityConfig.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
+#include "../../../utils/HttpClient.hpp"
+#include "ProfileImageService.hpp"
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
 #include <filesystem>
@@ -16,8 +18,9 @@
 #include <future>
 
 #include "../../../utils/Shaders.hpp"
+#include "../../../utils/GLSLLoader.hpp"
 #include "../../../blur/BlurSystem.hpp"
-#include <prevter.imageplus/include/events.hpp>
+#include "../../../utils/stb_image.h"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -246,22 +249,20 @@ CCTexture2D* ProfileThumbs::loadTexture(int accountID) {
         std::vector<uint8_t> fileData((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         in.close();
 
-        auto res = imgp::tryDecode(fileData.data(), fileData.size());
-        if (res.isOk()) {
-            auto& decoded = res.unwrap();
-            if (auto* img = std::get_if<imgp::DecodedImage>(&decoded)) {
-                if (img->width > 0 && img->height > 0 && img->width <= 4096 && img->height <= 4096) {
+        int w = 0, h = 0, ch = 0;
+        unsigned char* px = stbi_load_from_memory(fileData.data(), static_cast<int>(fileData.size()), &w, &h, &ch, 4);
+        if (px && w > 0 && h > 0 && w <= 4096 && h <= 4096) {
                 auto* tex = new CCTexture2D();
-                if (tex->initWithData(img->data.get(), kCCTexture2DPixelFormat_RGBA8888,
-                        img->width, img->height, { (float)img->width, (float)img->height })) {
+                if (tex->initWithData(px, kCCTexture2DPixelFormat_RGBA8888,
+                        w, h, { (float)w, (float)h })) {
                     tex->autorelease();
-                    log::info("[ProfileThumbs] Loaded WebP/PNG thumbnail for account {}", accountID);
+                    stbi_image_free(px);
+                    log::info("[ProfileThumbs] Loaded thumbnail for account {} (stb_image)", accountID);
                     return tex;
                 }
                 tex->release();
-                }
-            }
         }
+        if (px) stbi_image_free(px);
         log::warn("[ProfileThumbs] Failed to decode new-format file for account {}", accountID);
         return nullptr;
     }
@@ -318,22 +319,17 @@ bool ProfileThumbs::loadRGB(int accountID, std::vector<uint8_t>& out, int& w, in
         if (in) {
             std::vector<uint8_t> fileData((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
             in.close();
-            auto res = imgp::tryDecode(fileData.data(), fileData.size());
-            if (res.isOk()) {
-                if (auto* img = std::get_if<imgp::DecodedImage>(&res.unwrap())) {
-                    if (img->width > 0 && img->height > 0 && img->width <= 4096 && img->height <= 4096) {
-                    w = img->width; h = img->height;
-                    // Convierte RGBA a RGB
-                    out.resize(w * h * 3);
-                    for (int i = 0; i < w * h; ++i) {
-                        out[i * 3 + 0] = img->data[i * 4 + 0];
-                        out[i * 3 + 1] = img->data[i * 4 + 1];
-                        out[i * 3 + 2] = img->data[i * 4 + 2];
-                    }
-                    return true;
-                    }
-                }
+            int sw = 0, sh = 0, sch = 0;
+            unsigned char* px = stbi_load_from_memory(fileData.data(), static_cast<int>(fileData.size()), &sw, &sh, &sch, 4);
+            if (px && sw > 0 && sh > 0 && sw <= 4096 && sh <= 4096) {
+                w = sw; h = sh;
+                // Convierte RGBA a RGB
+                out.resize(static_cast<size_t>(sw) * sh * 3);
+                ImageConverter::rgbaToRgbFast(px, out.data(), static_cast<size_t>(sw) * sh);
+                stbi_image_free(px);
+                return true;
             }
+            if (px) stbi_image_free(px);
         }
     }
     // Fallback a .rgb
@@ -635,11 +631,18 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
 
     // tipo de fondo final que se va a usar
     std::string bgType = config.backgroundType;
-    
-    // fuerzo modo thumbnail si hay textura/GIF y:
-    // 1. estamos en modo banner (onlyBackground=true)
-    // 2. o config viene en "gradient" por defecto
-    if ((onlyBackground || bgType == "gradient") && (texture || !config.gifKey.empty())) {
+
+    // "icon-gradient" se trata como un degradado normal pero NO debe ser
+    // pisado por el modo "thumbnail" aunque exista textura/gif: el usuario
+    // pidio explicitamente un degradado basado en sus iconos y eso manda.
+    // Si no hay textura/gif podemos cargar el flujo de gradiente igual que
+    // antes.
+    if (bgType == "icon-gradient") {
+        bgType = "gradient";
+    } else if ((onlyBackground || bgType == "gradient") && (texture || !config.gifKey.empty())) {
+        // fuerzo modo thumbnail si hay textura/GIF y:
+        // 1. estamos en modo banner (onlyBackground=true)
+        // 2. o config viene en "gradient" por defecto
         bgType = "thumbnail";
     }
 
@@ -661,7 +664,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
                 
                 // Shader de blur rapido
                 auto shader = BlurSystem::getInstance()->getRealtimeBlurShader();
-                if (!shader) shader = getOrCreateShader("fast-blur", vertexShaderCell, fragmentShaderFastBlur);
+                if (!shader) shader = paimon::shaders::getBlurFastShader();
                 if (shader) {
                     bgSprite->setShaderProgram(shader);
                 }
@@ -903,8 +906,10 @@ void ProfileThumbs::processQueue() {
     // si no hay nada en la cola principal, nada que hacer
     if (m_downloadQueue.empty()) return;
 
-    // dreno hasta 100 IDs de la cola para el batch (limite del servidor)
-    static constexpr int MAX_BATCH_SIZE = 100;
+    // dreno hasta 16 IDs de la cola para el batch (limite del servidor por
+    // budget de subrequests del Worker Free). El servidor descarta lo que
+    // venga arriba, asi que mandar mas seria desperdicio de bandwidth.
+    static constexpr int MAX_BATCH_SIZE = 16;
     std::vector<int> batchIDs;
     while (!m_downloadQueue.empty() && static_cast<int>(batchIDs.size()) < MAX_BATCH_SIZE) {
         batchIDs.push_back(m_downloadQueue.front());
@@ -978,13 +983,158 @@ void ProfileThumbs::processQueue() {
 }
 
 void ProfileThumbs::processBinaryQueue() {
+    // Si solo queda 1 en la cola y ya hay descargas activas, dejamos el flujo individual.
+    // En cuanto haya >=2 items, aprovechamos /api/profilebackground/batch para ahorrar requests.
+    if (m_binaryQueue.empty() || m_activeDownloads >= MAX_CONCURRENT_DOWNLOADS) return;
+
+    if (m_binaryQueue.size() >= 2) {
+        // ── Batch path ───────────────────────────────────────────
+        // Drenamos hasta 40 IDs (cap del server). Solo 1 batch en vuelo a la vez,
+        // contabilizado como "1 active download" para no bloquear la cola.
+        static constexpr size_t BATCH_CAP = 40;
+        std::vector<int> batchIDs;
+        std::vector<std::string> batchUsernames;
+        size_t take = std::min<size_t>(m_binaryQueue.size(), BATCH_CAP);
+        batchIDs.reserve(take);
+        batchUsernames.reserve(take);
+        for (size_t i = 0; i < take; ++i) {
+            int id = m_binaryQueue.front();
+            m_binaryQueue.pop_front();
+            batchIDs.push_back(id);
+            std::string uname;
+            auto uit = m_usernameMap.find(id);
+            if (uit != m_usernameMap.end()) {
+                uname = uit->second;
+                m_usernameMap.erase(uit);
+            }
+            batchUsernames.push_back(std::move(uname));
+        }
+
+        m_activeDownloads++;
+        log::info("[ProfileThumbs] batch background download: {} ids", batchIDs.size());
+
+        // Snapshot de configs vino-en-batch (los iremos consumiendo por id).
+        std::unordered_map<int, ProfileConfig> snappedConfigs;
+        for (int id : batchIDs) {
+            auto it = m_batchConfigs.find(id);
+            if (it != m_batchConfigs.end()) {
+                snappedConfigs.emplace(id, it->second);
+                m_batchConfigs.erase(it);
+            }
+        }
+
+        HttpClient::get().downloadProfileBackgroundsBatch(batchIDs,
+            [this, batchIDs, snappedConfigs = std::move(snappedConfigs)]
+            (bool success, std::unordered_map<int, HttpClient::BatchItem> const& items) {
+                if (ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) {
+                    m_activeDownloads = std::max(0, m_activeDownloads - 1);
+                    return;
+                }
+
+                // Para cada ID del batch original, dispatch de imagen + finalizar callback.
+                // Los que fallaron vuelven al fallback individual.
+                std::vector<int> fallbackIds;
+                fallbackIds.reserve(4);
+
+                for (int accountID : batchIDs) {
+                    auto itItem = items.find(accountID);
+                    bool itemOk = (itItem != items.end()) && itItem->second.ok && !itItem->second.data.empty();
+
+                    if (!success || !itemOk) {
+                        // Servidor no devolvio bytes: requeue para fallback individual.
+                        fallbackIds.push_back(accountID);
+                        continue;
+                    }
+
+                    ProfileConfig cfg;
+                    bool hasCfg = false;
+                    auto cit = snappedConfigs.find(accountID);
+                    if (cit != snappedConfigs.end()) {
+                        cfg = cit->second;
+                        hasCfg = true;
+                    }
+
+                    // Decode bytes (puede ser GIF/MP4/static — el helper lo maneja).
+                    ProfileImageService::processProfileBackgroundBytes(accountID, itItem->second.data,
+                        [this, accountID, cfg, hasCfg](bool decodeOk, CCTexture2D* texture) {
+                            if (ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) return;
+
+                            Ref<CCTexture2D> texRef = texture;
+
+                            auto finalize = [this, accountID, decodeOk, texRef]
+                                (bool configSuccess, ProfileConfig const& finalConfig) {
+                                if (decodeOk && texRef) {
+                                    this->cacheProfile(accountID, texRef, finalConfig.colorA,
+                                        finalConfig.colorB, finalConfig.widthFactor);
+                                }
+                                if (configSuccess) {
+                                    this->cacheProfileConfig(accountID, finalConfig);
+                                }
+                                if (!decodeOk && !configSuccess) {
+                                    markNoProfile(accountID);
+                                }
+                                auto it = m_pendingCallbacks.find(accountID);
+                                if (it != m_pendingCallbacks.end()) {
+                                    for (auto const& cb : it->second) {
+                                        if (cb) cb(decodeOk, texRef);
+                                    }
+                                    m_pendingCallbacks.erase(it);
+                                }
+                            };
+
+                            if (hasCfg) {
+                                finalize(true, cfg);
+                            } else {
+                                ThumbnailAPI::get().downloadProfileConfig(accountID,
+                                    [finalize](bool cs, ProfileConfig const& dlc) {
+                                        finalize(cs, dlc);
+                                    });
+                            }
+                        });
+                }
+
+                // El batch contó como 1 download — ya termino para el accounting de la cola.
+                m_activeDownloads = std::max(0, m_activeDownloads - 1);
+
+                // Re-queue de los que fallaron, para fallback individual.
+                if (!fallbackIds.empty()) {
+                    Loader::get()->queueInMainThread([this, fallbackIds]() {
+                        if (ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) return;
+                        for (int id : fallbackIds) {
+                            m_binaryQueue.push_back(id);
+                        }
+                        // Re-disparamos uno por uno por la ruta legacy (profileImg).
+                        // Para evitar loops infinitos si tambien falla el individual,
+                        // procesamos como en el path antiguo de a uno.
+                        processBinaryQueueIndividual();
+                    });
+                }
+
+                // Si quedan IDs en la cola principal o secundaria, seguimos.
+                if (!ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) {
+                    Loader::get()->queueInMainThread([this]() {
+                        if (ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) return;
+                        if (!m_binaryQueue.empty()) processBinaryQueue();
+                        if (!m_downloadQueue.empty()) processQueue();
+                    });
+                }
+            });
+
+        return; // batch en vuelo, salimos
+    }
+
+    // ── Single path (1 elemento) ────────────────────────────────
+    processBinaryQueueIndividual();
+}
+
+void ProfileThumbs::processBinaryQueueIndividual() {
     while (m_activeDownloads < MAX_CONCURRENT_DOWNLOADS && !m_binaryQueue.empty()) {
         m_activeDownloads++;
 
         int accountID = m_binaryQueue.front();
         m_binaryQueue.pop_front();
 
-        log::debug("[ProfileThumbs] Binary download: AccountID {}", accountID);
+        log::debug("[ProfileThumbs] Binary download (individual): AccountID {}", accountID);
 
         std::string username;
         if (m_usernameMap.find(accountID) != m_usernameMap.end()) {

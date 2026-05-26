@@ -26,6 +26,7 @@
 #include "../features/thumbnails/services/ThumbnailTransportClient.hpp"
 #include "../features/audio/services/AudioContextCoordinator.hpp"
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
+#include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/VideoThumbnailSprite.hpp"
 #include "../features/profiles/ui/RatePopup.hpp"
@@ -42,6 +43,7 @@
 #include "../framework/state/SessionState.hpp"
 
 #include "../utils/Shaders.hpp"
+#include "../utils/GLSLLoader.hpp"
 #include "../blur/BlurSystem.hpp"
 #include "../utils/MainThreadDelay.hpp"
 #include "../features/audio/services/PaimonAudio.hpp"
@@ -60,21 +62,141 @@ static constexpr int kExtraDarknessZOrder = -3; // oscuridad extra separada del 
 static constexpr int kEffectsZOrder   = -2;
 static constexpr int kOverlayZOrder   = -1;
 
+static std::string makeLevelInfoBlurCacheKey(int levelID, int thumbnailIndex, std::string const& bgStyle, int intensity, cocos2d::CCSize const& targetSize) {
+    return fmt::format(
+        "levelinfo:{}:{}:{}:{}:{}x{}",
+        levelID,
+        thumbnailIndex,
+        bgStyle,
+        intensity,
+        static_cast<int>(std::round(targetSize.width)),
+        static_cast<int>(std::round(targetSize.height))
+    );
+}
+
 class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     CCMenu* findLeftSideMenu() {
         if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID("left-side-menu"))) {
             return byId;
         }
+        // Fallback robusto: buscar un CCMenu en la mitad izquierda que
+        // contenga al menos un boton conocido del LevelInfoLayer. Sin
+        // esa validacion, otros mods (BetterInfo, etc.) podrian dejar
+        // sus propios menus en esa zona y los reclamariamos por error.
+        static char const* const kKnownButtonIDs[] = {
+            "like-button", "info-button", "rate-button",
+            "high-object-button", "leaderboard-button", nullptr
+        };
         if (auto children = this->getChildren()) {
+            CCMenu* candidate = nullptr;
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 auto* menu = typeinfo_cast<CCMenu*>(child);
                 if (!menu) continue;
-                if (menu->getPositionX() < this->getContentSize().width * 0.5f) {
+                if (menu->getPositionX() >= this->getContentSize().width * 0.5f) continue;
+
+                bool hasKnown = false;
+                for (auto const* const* p = kKnownButtonIDs; *p != nullptr; ++p) {
+                    if (menu->getChildByID(*p)) { hasKnown = true; break; }
+                }
+                if (hasKnown) {
                     return menu;
                 }
+                if (!candidate) candidate = menu;
+            }
+            // Solo devolver candidate sin botones conocidos si tiene
+            // al menos varios hijos (heuristica: el menu de GD suele
+            // ser el de mas botones).
+            if (candidate && candidate->getChildrenCount() >= 3) {
+                return candidate;
             }
         }
         return nullptr;
+    }
+
+    std::vector<CCMenu*> collectEditableMenus() {
+        std::vector<CCMenu*> menus;
+
+        auto pushUnique = [&menus](CCMenu* menu) {
+            if (!menu) return;
+            if (std::find(menus.begin(), menus.end(), menu) != menus.end()) return;
+            menus.push_back(menu);
+        };
+
+        pushUnique(findLeftSideMenu());
+        pushUnique(typeinfo_cast<CCMenu*>(this->getChildByID("gallery-menu"_spr)));
+
+        return menus;
+    }
+
+    void applyLayoutsToEditableMenus() {
+        for (auto* menu : collectEditableMenus()) {
+            ButtonLayoutManager::get().applyLayoutToMenu("LevelInfoLayer", menu);
+        }
+        ButtonLayoutManager::get().captureLabelDefaultsIfAbsent("LevelInfoLayer", this);
+        ButtonLayoutManager::get().applyLayoutsToLabels("LevelInfoLayer", this);
+    }
+
+    void createUtilityButtons(CCMenu* leftMenu) {
+        if (!leftMenu) return;
+
+        if (!m_fields->m_editModeBtn) {
+            CCSprite* editIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
+            if (!editIcon) editIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn02_001.png");
+            if (!editIcon) editIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
+
+            if (editIcon) {
+                editIcon->setScale(0.8f);
+                auto editSprite = CircleButtonSprite::create(
+                    editIcon,
+                    CircleBaseColor::Green,
+                    CircleBaseSize::Medium
+                );
+                if (editSprite) {
+                    auto btn = CCMenuItemSpriteExtra::create(
+                        editSprite,
+                        this,
+                        menu_selector(PaimonLevelInfoLayer::onToggleEditMode)
+                    );
+                    if (btn) {
+                        btn->setID("levelinfo-layout-editor-button"_spr);
+                        PaimonButtonHighlighter::registerButton(btn);
+                        leftMenu->addChild(btn);
+                        m_fields->m_editModeBtn = btn;
+                    }
+                }
+            }
+        }
+
+        if (!m_fields->m_uploadLocalBtn) {
+            CCSprite* uploadIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_downloadBtn_001.png");
+            if (!uploadIcon) uploadIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_downloadsIcon_001.png");
+            if (!uploadIcon) uploadIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
+
+            if (uploadIcon) {
+                uploadIcon->setRotation(180.f);
+                uploadIcon->setScale(0.8f);
+                auto uploadSprite = CircleButtonSprite::create(
+                    uploadIcon,
+                    CircleBaseColor::Green,
+                    CircleBaseSize::Medium
+                );
+                if (uploadSprite) {
+                    auto btn = CCMenuItemSpriteExtra::create(
+                        uploadSprite,
+                        this,
+                        menu_selector(PaimonLevelInfoLayer::onUploadLocalThumbnail)
+                    );
+                    if (btn) {
+                        btn->setID("levelinfo-upload-local-button"_spr);
+                        PaimonButtonHighlighter::registerButton(btn);
+                        leftMenu->addChild(btn);
+                        m_fields->m_uploadLocalBtn = btn;
+                    }
+                }
+            }
+        }
+
+        leftMenu->updateLayout();
     }
 
     static void onModify(auto& self) {
@@ -137,11 +259,26 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         bool m_cachedAutoCycle = false;
         int m_loadedSettingsVersion = 0; // invalidacion por listenForSettingChanges
         // m_activeBlurJob removed — replaced by BlurSystem (synchronous FBO-based Dual Kawase)
+        // Dynamic Shaders — cursor/touch tracking
+        bool m_dynamicShaders = false;
+        float m_cursorX = 0.5f; // normalized 0..1 (smoothed/delayed)
+        float m_cursorY = 0.5f; // normalized 0..1 (smoothed/delayed)
+        float m_targetCursorX = 0.5f; // raw target position
+        float m_targetCursorY = 0.5f; // raw target position
+        float m_dynamicShadersDelay = 0.0f; // 0..2 seconds
+        bool m_touchActive = false; // proteccion contra multiples toques en movil
+        float m_clickState = 0.0f; // animado: lerp hacia m_targetClickState
+        float m_targetClickState = 0.0f; // 1.0 cuando se presiona, 0.0 al soltar
+        // Perf: cached uniform locations for updateShaderTime (avoid string lookups per frame)
+        CCGLProgram* m_cachedMainShader = nullptr;
+        GLint m_mainLocTime = -2;
+        GLint m_mainLocCursor = -2;
+        GLint m_mainLocClick = -2;
     };
 
     int readDarknessSetting() const {
         return std::clamp(
-            static_cast<int>(Mod::get()->getSettingValue<int64_t>("levelinfo-bg-darkness")),
+            static_cast<int>(Mod::get()->getSavedValue<int>("levelinfo-bg-darkness", 27)),
             0,
             50
         );
@@ -216,32 +353,79 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
         // Tabla de mapeo estilo -> shader/flags
         struct ShaderEntry {
-            char const* name; char const* key; char const* frag;
+            char const* name; char const* key; char const* glslFile;
             bool boosted; bool screenSize; bool time;
+            bool dynamicOnly; // solo disponible en modo dynamic shaders
         };
         static ShaderEntry const kShaderTable[] = {
-            {"grayscale",       "grayscale"_spr,       fragmentShaderGrayscale,       false, false, false},
-            {"sepia",           "sepia"_spr,           fragmentShaderSepia,           false, false, false},
-            {"vignette",        "vignette"_spr,        fragmentShaderVignette,        false, false, false},
-            {"scanlines",       "scanlines"_spr,       fragmentShaderScanlines,       false, true,  false},
-            {"bloom",           "bloom"_spr,           fragmentShaderBloom,            true, true,  false},
-            {"chromatic",       "chromatic-v2"_spr,    fragmentShaderChromatic,        true, false, true},
-            {"radial-blur",     "radial-blur-v2"_spr,  fragmentShaderRadialBlur,       true, false, true},
-            {"glitch",          "glitch-v2"_spr,       fragmentShaderGlitch,           true, false, true},
-            {"posterize",       "posterize"_spr,       fragmentShaderPosterize,       false, false, false},
-            {"rain",            "rain"_spr,            fragmentShaderRain,             true, false, true},
-            {"matrix",          "matrix"_spr,          fragmentShaderMatrix,           true, false, true},
-            {"neon-pulse",      "neon-pulse"_spr,      fragmentShaderNeonPulse,        true, false, true},
-            {"wave-distortion", "wave-distortion"_spr, fragmentShaderWaveDistortion,   true, false, true},
-            {"crt",             "crt"_spr,             fragmentShaderCRT,              true, false, true},
+            {"grayscale",       "grayscale"_spr,       "grayscale.glsl",       false, false, false, false},
+            {"sepia",           "sepia"_spr,           "sepia.glsl",           false, false, false, false},
+            {"vignette",        "vignette"_spr,        "vignette.glsl",        false, false, false, false},
+            {"scanlines",       "scanlines"_spr,       "scanlines.glsl",       false, true,  false, false},
+            {"bloom",           "bloom"_spr,           "bloom.glsl",            true, true,  false, false},
+            {"chromatic",       "chromatic-v2"_spr,    "chromatic.glsl",        true, false, true,  false},
+            {"radial-blur",     "radial-blur-v2"_spr,  "radial_blur.glsl",     true, false, true,  false},
+            {"glitch",          "glitch-v2"_spr,       "glitch.glsl",           true, false, true,  false},
+            {"posterize",       "posterize"_spr,       "posterize.glsl",       false, false, false, false},
+            {"rain",            "rain"_spr,            "rain.glsl",             true, false, true,  false},
+            {"matrix",          "matrix"_spr,          "matrix.glsl",           true, false, true,  false},
+            {"neon-pulse",      "neon-pulse"_spr,      "neon_pulse.glsl",       true, false, true,  false},
+            {"wave-distortion", "wave-distortion"_spr, "wave_distortion.glsl",  true, false, true,  false},
+            {"crt",             "crt"_spr,             "crt.glsl",              true, false, true,  false},
+            // Dynamic-only shaders (solo disponibles con Dynamic Shaders ON)
+            {"shockwave",       "shockwave-dyn"_spr,   "shockwave_dynamic.glsl",       true, false, true, true},
+            {"vortex",          "vortex-dyn"_spr,      "vortex_dynamic.glsl",          true, false, true, true},
+            {"magnetic",        "magnetic-dyn"_spr,    "magnetic_dynamic.glsl",         true, false, true, true},
+            {"spotlight",       "spotlight-dyn"_spr,   "spotlight_dynamic.glsl",        true, false, true, true},
+            {"ripple",          "ripple-dyn"_spr,      "ripple_dynamic.glsl",           true, false, true, true},
+            {"plasma-cursor",   "plasma-cursor-dyn"_spr, "plasma_cursor_dynamic.glsl",  true, false, true, true},
+            {"freeze",          "freeze-dyn"_spr,      "freeze_dynamic.glsl",           true, false, true, true},
+            {"pixelate-cursor", "pixelate-cursor-dyn"_spr, "pixelate_cursor_dynamic.glsl", true, false, true, true},
+            {"kaleidoscope",    "kaleidoscope-dyn"_spr,    "kaleidoscope_dynamic.glsl",    true, false, true, true},
+            {"sonar",           "sonar-dyn"_spr,           "sonar_dynamic.glsl",           true, false, true, true},
+            {"electric-arc",    "electric-arc-dyn"_spr,    "electric_arc_dynamic.glsl",    true, false, true, true},
+            {"prism-split",     "prism-split-dyn"_spr,     "prism_split_dynamic.glsl",     true, false, true, true},
+            {"gravity-well",    "gravity-well-dyn"_spr,    "gravity_well_dynamic.glsl",    true, false, true, true},
+            {"shatter",         "shatter-dyn"_spr,         "shatter_dynamic.glsl",         true, false, true, true},
+            {"heat-haze",       "heat-haze-dyn"_spr,       "heat_haze_dynamic.glsl",       true, false, true, true},
+            {"liquify",         "liquify-dyn"_spr,         "liquify_dynamic.glsl",         true, false, true, true},
+            {"ink-spread",      "ink-spread-dyn"_spr,      "ink_spread_dynamic.glsl",      true, false, true, true},
+            {"hologram",        "hologram-dyn"_spr,        "hologram_dynamic.glsl",        true, false, true, true},
+            {"time-warp",       "time-warp-dyn"_spr,       "time_warp_dynamic.glsl",       true, false, true, true},
+            {"underwater",      "underwater-dyn"_spr,      "underwater_dynamic.glsl",      true, false, true, true},
+            {"neon-trail",      "neon-trail-dyn"_spr,      "neon_trail_dynamic.glsl",      true, false, true, true},
         };
 
         // Busca shader por nombre
         auto lookupShader = [&](std::string const& style) -> std::tuple<CCGLProgram*, float, bool, bool> {
+            // Dynamic shaders: si esta habilitado y el shader soporta cursor, usar variante _dynamic
+            bool useDynamic = m_fields->m_dynamicShaders;
             for (auto& e : kShaderTable) {
                 if (style == e.name) {
+                    // Skip dynamic-only shaders when dynamic mode is off
+                    if (e.dynamicOnly && !useDynamic) {
+                        return {nullptr, 0.f, false, false};
+                    }
                     float v = e.boosted ? (intensity / 10.0f) * 2.25f : intensity / 10.0f;
-                    return {getOrCreateShader(e.key, vertexShaderCell, e.frag), v, e.screenSize, e.time};
+                    // Dynamic-only shaders: cargar directamente su archivo (ya es _dynamic.glsl)
+                    if (e.dynamicOnly) {
+                        return {paimon::shaders::loadShader(e.key, "cell_vertex.glsl", e.glslFile, nullptr, nullptr), v, e.screenSize, e.time};
+                    }
+                    // Solo los shaders animados (time=true) tienen variante dynamic
+                    if (useDynamic && e.time) {
+                        // Construir nombre de archivo dynamic: "chromatic.glsl" -> "chromatic_dynamic.glsl"
+                        std::string dynFile = std::string(e.glslFile);
+                        auto dotPos = dynFile.rfind('.');
+                        if (dotPos != std::string::npos) {
+                            dynFile.insert(dotPos, "_dynamic");
+                        }
+                        std::string dynKey = std::string(e.key) + "-dyn";
+                        auto* shader = paimon::shaders::loadShader(dynKey.c_str(), "cell_vertex.glsl", dynFile.c_str(), nullptr, nullptr);
+                        if (shader) {
+                            return {shader, v, e.screenSize, e.time};
+                        }
+                    }
+                    return {paimon::shaders::loadShader(e.key, "cell_vertex.glsl", e.glslFile, nullptr, nullptr), v, e.screenSize, e.time};
                 }
             }
             return {nullptr, 0.f, false, false};
@@ -265,7 +449,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
             else if (bgStyle == "pixel") {
                 if (isGIF) {
-                     auto shader = getOrCreateShader("pixelate"_spr, vertexShaderCell, fragmentShaderPixelate);
+                     auto shader = paimon::shaders::loadShader("pixelate"_spr, "cell_vertex.glsl", "pixelate.glsl", nullptr, nullptr);
                      if (shader) {
                          sprite->setShaderProgram(shader);
                          shader->use();
@@ -402,6 +586,17 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                             ags->m_time = 0.0f;
                         } else {
                             shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_time"), 0.0f);
+                            // Dynamic shaders: set initial cursor position and click state
+                            if (m_fields->m_dynamicShaders) {
+                                GLint cursorLoc = shader->getUniformLocationForName("u_cursor");
+                                if (cursorLoc >= 0) {
+                                    shader->setUniformLocationWith2f(cursorLoc, m_fields->m_cursorX, m_fields->m_cursorY);
+                                }
+                                GLint clickLoc = shader->getUniformLocationForName("u_click");
+                                if (clickLoc >= 0) {
+                                    shader->setUniformLocationWith1f(clickLoc, 0.0f);
+                                }
+                            }
                         }
                         m_fields->m_animatedShader = true;
                         m_fields->m_shaderTime = 0.0f;
@@ -413,10 +608,18 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         auto refreshShaderSchedule = [this, bgStyle]() {
             this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
             this->unschedule(schedule_selector(PaimonLevelInfoLayer::updatePaimonAudio));
+            this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateCursorFromMouse));
 
             if (m_fields->m_animatedShader && m_fields->m_pixelBg) {
                 this->schedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
             }
+
+            // Dynamic shaders: schedule mouse tracking en desktop
+#ifdef GEODE_IS_WINDOWS
+            if (m_fields->m_dynamicShaders && m_fields->m_animatedShader && m_fields->m_pixelBg) {
+                this->schedule(schedule_selector(PaimonLevelInfoLayer::updateCursorFromMouse));
+            }
+#endif
 
             // PaimonAudio: activate audio-reactive darkness when paimonblur is active
             if (bgStyle == "paimonblur" && m_fields->m_pixelBg) {
@@ -489,8 +692,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
             // Apply configurable background transition
             {
-                std::string bgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-bg-transition");
-                float dur = Mod::get()->getSettingValue<float>("levelinfo-bg-transition-duration");
+                std::string bgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-bg-transition", "crossfade");
+                float dur = Mod::get()->getSavedValue<float>("levelinfo-bg-transition-duration", 0.5f);
                 auto win = CCDirector::sharedDirector()->getWinSize();
                 float screenW = win.width;
                 bool goLeft = (m_fields->m_bgNavDirection == Fields::BgNavDir::Left);
@@ -509,7 +712,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                                 CCEaseBackIn::create(CCMoveTo::create(dur * 0.6f, {oldTargetX, targetPos.y})),
                                 CCFadeTo::create(dur * 0.5f, 0),
                                 nullptr),
-                            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                            CCRemoveSelf::create(),
                             nullptr));
                         float startX = goLeft ? (targetPos.x - screenW) : (targetPos.x + screenW);
                         preparedSprite->setPosition({startX, targetPos.y});
@@ -523,7 +726,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                                 CCEaseBackIn::create(CCMoveTo::create(dur * 0.7f, {targetPos.x - screenW, targetPos.y})),
                                 CCFadeTo::create(dur * 0.6f, 0),
                                 nullptr),
-                            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                            CCRemoveSelf::create(),
                             nullptr));
                         preparedSprite->setPosition({targetPos.x + screenW, targetPos.y});
                         preparedSprite->setOpacity(255);
@@ -533,7 +736,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     } else if (bgStyle == "slide-left") {
                         oldPtr->runAction(CCSequence::create(
                             CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x - screenW, targetPos.y}), 2.0f),
-                            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                            CCRemoveSelf::create(),
                             nullptr));
                         preparedSprite->setPosition({targetPos.x + screenW, targetPos.y});
                         preparedSprite->setOpacity(255);
@@ -542,7 +745,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     } else if (bgStyle == "slide-right") {
                         oldPtr->runAction(CCSequence::create(
                             CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x + screenW, targetPos.y}), 2.0f),
-                            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                            CCRemoveSelf::create(),
                             nullptr));
                         preparedSprite->setPosition({targetPos.x - screenW, targetPos.y});
                         preparedSprite->setOpacity(255);
@@ -558,7 +761,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                             nullptr));
                         oldPtr->runAction(CCSequence::create(
                             CCFadeTo::create(dur * 0.5f, 0),
-                            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                            CCRemoveSelf::create(),
                             nullptr));
 
                     } else if (bgStyle == "zoom-out") {
@@ -571,7 +774,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                             nullptr));
                         oldPtr->runAction(CCSequence::create(
                             CCFadeTo::create(dur * 0.5f, 0),
-                            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                            CCRemoveSelf::create(),
                             nullptr));
 
                     } else if (bgStyle == "bounce") {
@@ -583,7 +786,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                         float exitX = goRight ? (targetPos.x - screenW) : (targetPos.x + screenW);
                         oldPtr->runAction(CCSequence::create(
                             CCEaseIn::create(CCMoveTo::create(dur * 0.6f, {exitX, targetPos.y}), 2.0f),
-                            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                            CCRemoveSelf::create(),
                             nullptr));
 
                     } else if (bgStyle == "flip-horizontal") {
@@ -596,7 +799,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                         oldPtr->runAction(CCSequence::create(
                             CCEaseIn::create(CCScaleTo::create(dur * 0.4f, 0.01f, sy), 2.0f),
                             CCFadeTo::create(dur * 0.3f, 0),
-                            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                            CCRemoveSelf::create(),
                             nullptr));
 
                     } else if (bgStyle == "flip-vertical") {
@@ -609,8 +812,90 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                         oldPtr->runAction(CCSequence::create(
                             CCEaseIn::create(CCScaleTo::create(dur * 0.4f, sx, 0.01f), 2.0f),
                             CCFadeTo::create(dur * 0.3f, 0),
-                            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                            CCRemoveSelf::create(),
                             nullptr));
+
+                    } else if (bgStyle == "wave-slide") {
+                        bool slideFromRight = goRight || (!goLeft);
+                        float startX = slideFromRight ? (targetPos.x + screenW) : (targetPos.x - screenW);
+                        float startRot = slideFromRight ? 12.f : -12.f;
+                        
+                        preparedSprite->setPosition({startX, targetPos.y});
+                        preparedSprite->setScaleX(sx * 0.8f);
+                        preparedSprite->setScaleY(sy * 0.8f);
+                        preparedSprite->setRotation(startRot);
+                        preparedSprite->setOpacity(0);
+                        
+                        preparedSprite->runAction(CCSpawn::create(
+                            CCEaseElasticOut::create(CCMoveTo::create(dur * 1.2f, targetPos), 0.45f),
+                            CCEaseBackOut::create(CCRotateTo::create(dur * 1.0f, 0.f)),
+                            CCEaseOut::create(CCScaleTo::create(dur * 0.8f, sx, sy), 2.0f),
+                            CCFadeTo::create(dur * 0.6f, 255),
+                            nullptr
+                        ));
+                        
+                        float oldTargetX = slideFromRight ? (targetPos.x - screenW) : (targetPos.x + screenW);
+                        float oldTargetRot = slideFromRight ? -12.f : 12.f;
+                        oldPtr->runAction(CCSequence::create(
+                            CCSpawn::create(
+                                CCEaseIn::create(CCMoveTo::create(dur * 0.8f, {oldTargetX, targetPos.y}), 2.0f),
+                                CCEaseIn::create(CCRotateTo::create(dur * 0.8f, oldTargetRot), 2.0f),
+                                CCEaseIn::create(CCScaleTo::create(dur * 0.8f, sx * 0.8f, sy * 0.8f), 2.0f),
+                                CCFadeTo::create(dur * 0.6f, 0),
+                                nullptr
+                            ),
+                            CCRemoveSelf::create(),
+                            nullptr
+                        ));
+
+                    } else if (bgStyle == "card-flip") {
+                        preparedSprite->setScaleX(0.01f);
+                        preparedSprite->setOpacity(0);
+                        
+                        preparedSprite->runAction(CCSequence::create(
+                            CCDelayTime::create(dur * 0.35f),
+                            CCSpawn::create(
+                                CCEaseElasticOut::create(CCScaleTo::create(dur * 0.85f, sx, sy), 0.5f),
+                                CCFadeTo::create(dur * 0.4f, 255),
+                                nullptr
+                            ),
+                            nullptr
+                        ));
+                        
+                        oldPtr->runAction(CCSequence::create(
+                            CCSpawn::create(
+                                CCEaseIn::create(CCScaleTo::create(dur * 0.45f, 0.01f, sy), 2.0f),
+                                CCFadeTo::create(dur * 0.4f, 0),
+                                nullptr
+                            ),
+                            CCRemoveSelf::create(),
+                            nullptr
+                        ));
+
+                    } else if (bgStyle == "spin-zoom") {
+                        bool slideFromRight = goRight || (!goLeft);
+                        preparedSprite->setScaleX(0.01f);
+                        preparedSprite->setScaleY(0.01f);
+                        preparedSprite->setRotation(slideFromRight ? -180.f : 180.f);
+                        preparedSprite->setOpacity(0);
+                        
+                        preparedSprite->runAction(CCSpawn::create(
+                            CCEaseElasticOut::create(CCScaleTo::create(dur * 1.2f, sx, sy), 0.4f),
+                            CCEaseElasticOut::create(CCRotateTo::create(dur * 1.2f, 0.f), 0.4f),
+                            CCFadeTo::create(dur * 0.6f, 255),
+                            nullptr
+                        ));
+                        
+                        oldPtr->runAction(CCSequence::create(
+                            CCSpawn::create(
+                                CCEaseIn::create(CCScaleTo::create(dur * 0.7f, 0.01f, 0.01f), 2.0f),
+                                CCEaseIn::create(CCRotateBy::create(dur * 0.7f, slideFromRight ? 180.f : -180.f), 2.0f),
+                                CCFadeTo::create(dur * 0.6f, 0),
+                                nullptr
+                            ),
+                            CCRemoveSelf::create(),
+                            nullptr
+                        ));
 
                     } else if (bgStyle == "dissolve") {
                         preparedSprite->setScaleX(sx * 0.8f);
@@ -625,7 +910,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                                 CCEaseIn::create(CCScaleTo::create(dur * 0.7f, sx * 1.15f, sy * 1.15f), 2.0f),
                                 CCFadeTo::create(dur * 0.6f, 0),
                                 nullptr),
-                            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                            CCRemoveSelf::create(),
                             nullptr));
 
                     } else {
@@ -639,7 +924,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                             nullptr));
                         oldPtr->runAction(CCSequence::create(
                             CCFadeTo::create(dur * 0.85f, 0),
-                            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                            CCRemoveSelf::create(),
                             nullptr));
                     }
                 } else {
@@ -703,6 +988,14 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 Ref<CCSprite> finalSpriteRef = finalSprite; // Evita autorelease
                 int blurToken = m_fields->m_bgRequestToken;
                 bool usePaimon = (bgStyle == "paimonblur");
+                int levelIDForBlur = m_level ? m_level->m_levelID.value() : 0;
+                auto blurCacheKey = makeLevelInfoBlurCacheKey(
+                    levelIDForBlur,
+                    m_fields->m_currentThumbnailIndex,
+                    bgStyle,
+                    intensity,
+                    win
+                );
 
                 auto onBlurReady = [selfRef, installBackgroundSprite, finalSpriteRef, win, blurToken, texRef](CCSprite* blurredSprite) {
                     auto* layer = static_cast<PaimonLevelInfoLayer*>(selfRef.data());
@@ -723,11 +1016,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 };
 
                 if (usePaimon) {
-                    BlurSystem::getInstance()->buildPaimonBlurAsync(
-                        tex, win, static_cast<float>(intensity), onBlurReady);
+                    BlurSystem::getInstance()->buildPaimonBlurPriority(
+                        tex, win, static_cast<float>(intensity), blurCacheKey, onBlurReady);
                 } else {
-                    BlurSystem::getInstance()->buildGaussianBlurAsync(
-                        tex, win, static_cast<float>(intensity), onBlurReady);
+                    BlurSystem::getInstance()->buildGaussianBlurPriority(
+                        tex, win, static_cast<float>(intensity), blurCacheKey, onBlurReady);
                 }
             } else {
                 installBackgroundSprite(finalSprite, false);
@@ -820,7 +1113,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
         // Recrea overlay de oscuridad si fue destruido
         if (!m_fields->m_pixelOverlay || !m_fields->m_pixelOverlay->getParent()) {
-            auto win = cocos2d::CCDirector::sharedDirector()->getWinSize();
+            auto win = cocos2d::CCDirector::get()->getWinSize();
             auto overlay = cocos2d::CCLayerColor::create({0, 0, 0, 0});
             overlay->setAnchorPoint({0, 0});
             overlay->setPosition({0, 0});
@@ -851,11 +1144,17 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         uint64_t currentVersion = paimon::settings::internal::g_settingsVersion.load(std::memory_order_relaxed);
         if (m_fields->m_loadedSettingsVersion < static_cast<int>(currentVersion)) {
             m_fields->m_loadedSettingsVersion = static_cast<int>(currentVersion);
-            m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
+            // Leer override (savedValue) primero — no tiene validacion one-of
+            m_fields->m_cachedBgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-background-style-override", "");
+            if (m_fields->m_cachedBgStyle.empty()) {
+                m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
+            }
             m_fields->m_cachedEffectIntensity = std::clamp(
-                static_cast<int>(Mod::get()->getSettingValue<int64_t>("levelinfo-effect-intensity")), 1, 10);
-            m_fields->m_cachedExtraStyles = Mod::get()->getSettingValue<std::string>("levelinfo-extra-styles");
-            m_fields->m_cachedAutoCycle = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
+                static_cast<int>(Mod::get()->getSavedValue<int>("levelinfo-effect-intensity", 4)), 1, 10);
+            m_fields->m_cachedExtraStyles = Mod::get()->getSavedValue<std::string>("levelinfo-extra-styles", "");
+            m_fields->m_cachedAutoCycle = Mod::get()->getSavedValue<bool>("levelcell-gallery-autocycle", true);
+            m_fields->m_dynamicShaders = Mod::get()->getSavedValue<bool>("levelinfo-dynamic-shaders", false);
+            m_fields->m_dynamicShadersDelay = Mod::get()->getSavedValue<float>("levelinfo-dynamic-shaders-delay", 0.0f);
         }
         applyDarknessSetting(readDarknessSetting());
     }
@@ -864,7 +1163,40 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         if (!m_fields->m_animatedShader) return;
         m_fields->m_shaderTime += dt;
 
-        // Actualiza u_time en sprite principal
+        // Dynamic shaders: smooth cursor interpolation (delay)
+        if (m_fields->m_dynamicShaders) {
+            float delay = m_fields->m_dynamicShadersDelay;
+            if (delay <= 0.001f) {
+                // Sin delay: seguimiento instantaneo
+                m_fields->m_cursorX = m_fields->m_targetCursorX;
+                m_fields->m_cursorY = m_fields->m_targetCursorY;
+            } else {
+                // Lerp exponencial: factor = 1 - e^(-dt/delay)
+                // A mayor delay, mas lento el seguimiento
+                float speed = dt / delay;
+                float t = std::min(speed * 3.0f, 1.0f); // cap para evitar overshoot
+                m_fields->m_cursorX += (m_fields->m_targetCursorX - m_fields->m_cursorX) * t;
+                m_fields->m_cursorY += (m_fields->m_targetCursorY - m_fields->m_cursorY) * t;
+            }
+
+            // Click animado con lerp asimetrico:
+            // expansion (press) un poco mas lenta que la contraccion (release)
+            // para dar sensacion de "carga" y luego "snap" suave de regreso.
+            // Usamos un lerp exponencial frame-rate independiente:
+            //   t = 1 - exp(-dt / tau)
+            float tauPress   = 0.18f; // segundos para llegar al ~63% al apretar
+            float tauRelease = 0.12f; // mas rapido al soltar
+            float diff = m_fields->m_targetClickState - m_fields->m_clickState;
+            float tau = (diff > 0.0f) ? tauPress : tauRelease;
+            float ct = 1.0f - std::exp(-dt / std::max(tau, 0.001f));
+            m_fields->m_clickState += diff * ct;
+            // Snap final si esta muy cerca para evitar coletazos numericos
+            if (std::fabs(diff) < 0.001f) {
+                m_fields->m_clickState = m_fields->m_targetClickState;
+            }
+        }
+
+        // Actualiza u_time y u_cursor en sprite principal
         if (m_fields->m_pixelBg) {
             auto sprite = typeinfo_cast<CCSprite*>(static_cast<CCNode*>(m_fields->m_pixelBg));
             if (sprite) {
@@ -874,16 +1206,30 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     auto shader = sprite->getShaderProgram();
                     if (shader) {
                         shader->use();
-                        GLint loc = shader->getUniformLocationForName("u_time");
-                        if (loc >= 0) {
-                            shader->setUniformLocationWith1f(loc, m_fields->m_shaderTime);
+                        // Perf: cache uniform locations per shader program
+                        if (shader != m_fields->m_cachedMainShader) {
+                            m_fields->m_cachedMainShader = shader;
+                            m_fields->m_mainLocTime = shader->getUniformLocationForName("u_time");
+                            m_fields->m_mainLocCursor = shader->getUniformLocationForName("u_cursor");
+                            m_fields->m_mainLocClick = shader->getUniformLocationForName("u_click");
+                        }
+                        if (m_fields->m_mainLocTime >= 0) {
+                            shader->setUniformLocationWith1f(m_fields->m_mainLocTime, m_fields->m_shaderTime);
+                        }
+                        if (m_fields->m_dynamicShaders) {
+                            if (m_fields->m_mainLocCursor >= 0) {
+                                shader->setUniformLocationWith2f(m_fields->m_mainLocCursor, m_fields->m_cursorX, 1.0f - m_fields->m_cursorY);
+                            }
+                            if (m_fields->m_mainLocClick >= 0) {
+                                shader->setUniformLocationWith1f(m_fields->m_mainLocClick, m_fields->m_clickState);
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Actualiza u_time en sprites extra
+        // Actualiza u_time y u_cursor en sprites extra
         for (auto& extra : m_fields->m_extraBgSprites) {
             if (!extra) continue;
             auto shader = extra->getShaderProgram();
@@ -892,6 +1238,16 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             GLint loc = shader->getUniformLocationForName("u_time");
             if (loc >= 0) {
                 shader->setUniformLocationWith1f(loc, m_fields->m_shaderTime);
+            }
+            if (m_fields->m_dynamicShaders) {
+                GLint cursorLoc = shader->getUniformLocationForName("u_cursor");
+                if (cursorLoc >= 0) {
+                    shader->setUniformLocationWith2f(cursorLoc, m_fields->m_cursorX, 1.0f - m_fields->m_cursorY);
+                }
+                GLint clickLoc = shader->getUniformLocationForName("u_click");
+                if (clickLoc >= 0) {
+                    shader->setUniformLocationWith1f(clickLoc, m_fields->m_clickState);
+                }
             }
         }
     }
@@ -914,6 +1270,55 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         if (overlay && overlay->getParent()) {
             overlay->setOpacity(dynAlpha);
         }
+    }
+
+    // ── Dynamic Shaders: cursor/touch tracking ──
+    // En desktop: updateCursorFromMouse captura la posicion del mouse cada frame.
+    // En movil: ccTouchBegan/Moved captura el ultimo tap (proteccion multitouch).
+    bool ccTouchBegan(CCTouch* touch, CCEvent* event) {
+        if (!m_fields->m_dynamicShaders) return false;
+        if (m_fields->m_touchActive) return false; // proteccion multitouch
+        m_fields->m_touchActive = true;
+        m_fields->m_targetClickState = 1.0f;
+
+        auto win = CCDirector::sharedDirector()->getWinSize();
+        auto loc = touch->getLocation();
+        m_fields->m_targetCursorX = std::clamp(loc.x / win.width, 0.0f, 1.0f);
+        m_fields->m_targetCursorY = std::clamp(loc.y / win.height, 0.0f, 1.0f);
+        return false; // no consumir — dejar que botones y menus reciban el toque
+    }
+
+    void ccTouchMoved(CCTouch* touch, CCEvent* event) {
+        if (!m_fields->m_dynamicShaders) return;
+        auto win = CCDirector::sharedDirector()->getWinSize();
+        auto loc = touch->getLocation();
+        m_fields->m_targetCursorX = std::clamp(loc.x / win.width, 0.0f, 1.0f);
+        m_fields->m_targetCursorY = std::clamp(loc.y / win.height, 0.0f, 1.0f);
+    }
+
+    void ccTouchEnded(CCTouch* touch, CCEvent* event) {
+        if (!m_fields->m_dynamicShaders) return;
+        m_fields->m_touchActive = false;
+        m_fields->m_targetClickState = 0.0f;
+    }
+
+    void ccTouchCancelled(CCTouch* touch, CCEvent* event) {
+        if (!m_fields->m_dynamicShaders) return;
+        m_fields->m_touchActive = false;
+        m_fields->m_targetClickState = 0.0f;
+    }
+
+    // Desktop: actualizar cursor con la posicion del mouse cada frame
+    void updateCursorFromMouse(float dt) {
+#ifdef GEODE_IS_WINDOWS
+        auto win = CCDirector::sharedDirector()->getWinSize();
+        auto mousePos = geode::cocos::getMousePos();
+        // getMousePos() devuelve coordenadas GL (0,0 = bottom-left)
+        m_fields->m_targetCursorX = std::clamp(mousePos.x / win.width, 0.0f, 1.0f);
+        m_fields->m_targetCursorY = std::clamp(mousePos.y / win.height, 0.0f, 1.0f);
+        // Detectar click del mouse (boton izquierdo)
+        m_fields->m_targetClickState = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) ? 1.0f : 0.0f;
+#endif
     }
 
     void stopVideoBackgroundSprite() {
@@ -1027,6 +1432,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::updatePaimonAudio));
+        this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateCursorFromMouse));
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::refreshDarknessOverlay));
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::forcePlayDynamic));
 
@@ -1104,12 +1510,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             menu_selector(PaimonLevelInfoLayer::onSetDailyWeekly)
         );
         btn->setID("set-daily-weekly-button"_spr);
+        PaimonButtonHighlighter::registerButton(btn);
 
         auto leftMenu = findLeftSideMenu();
         if (leftMenu) {
             leftMenu->addChild(btn);
             leftMenu->updateLayout();
-            ButtonLayoutManager::get().applyLayoutToMenu("LevelInfoLayer", leftMenu);
+            applyLayoutsToEditableMenus();
         }
     }
 
@@ -1130,6 +1537,47 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         }
 
         if (!LevelInfoLayer::init(level, challenge)) return false;
+
+        // ─────────────────────────────────────────────────────────────
+        // Daily/Weekly fix: cuando llegamos aqui desde DailyLevelPage
+        // (challenge==true o level->m_dailyID > 0), el GJGameLevel que
+        // recibimos suele traer solo un subset de campos (nombre, likes,
+        // creador) porque el servidor devuelve data parcial para el
+        // endpoint de daily/weekly.
+        //
+        // Vanilla delega en el auto-download de LevelInfoLayer, pero por
+        // el timing de los mods (nuestro hook corre AfterPost de node-ids
+        // + otros mods de LevelInfoLayer), a veces el download no se
+        // dispara o se pierde el callback levelDownloadFinished, dejando
+        // la UI con solo nombre+likes visibles.
+        //
+        // Solucion: forzar el re-download si detectamos datos parciales.
+        // El server responde con el mismo levelID y repuebla todos los
+        // campos (descripcion, dificultad, coins, song, etc.).
+        // downloadLevel() es idempotente — si ya esta completo, el
+        // endpoint devuelve los mismos datos sin penalty.
+        // ─────────────────────────────────────────────────────────────
+        if (level) {
+            bool isDailyOrWeekly = (level->m_dailyID.value() > 0) || challenge;
+            bool hasPartialData = level->m_levelDesc.empty()
+                               || level->m_levelString.empty()
+                               || level->m_creatorName.empty();
+            if (isDailyOrWeekly && hasPartialData) {
+                log::info("[LevelInfoLayer] daily/weekly partial data detected (levelID={}), forcing re-download", level->m_levelID.value());
+                // Ref<> mantiene vivo el layer durante el callback del server.
+                // Geode queueInMainThread garantiza que corra fuera del stack
+                // de init (evita reentrancy con otros hooks de LevelInfoLayer).
+                Ref<LevelInfoLayer> safeRef = this;
+                Loader::get()->queueInMainThread([safeRef]() {
+                    if (!safeRef || !safeRef->getParent()) return;
+                    // this->downloadLevel() usa m_level y m_challenge internamente
+                    // y re-llama setupLevelInfo al recibir levelDownloadFinished.
+                    safeRef->downloadLevel();
+                });
+            }
+        }
+
+        LayerBackgroundManager::get().applyVanillaBackgroundTintFix(this);
 
         // El fondo nativo se oculta en installBackgroundSprite cuando el
         // thumbnail esta listo, asi niveles sin thumbnail conservan el fondo.
@@ -1170,11 +1618,23 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
 
             // Cachear settings una sola vez para evitar lookups repetidos
-            m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
+            m_fields->m_cachedBgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-background-style-override", "");
+            if (m_fields->m_cachedBgStyle.empty()) {
+                m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
+            }
             m_fields->m_cachedEffectIntensity = std::clamp(
-                static_cast<int>(Mod::get()->getSettingValue<int64_t>("levelinfo-effect-intensity")), 1, 10);
-            m_fields->m_cachedExtraStyles = Mod::get()->getSettingValue<std::string>("levelinfo-extra-styles");
-            m_fields->m_cachedAutoCycle = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
+                static_cast<int>(Mod::get()->getSavedValue<int>("levelinfo-effect-intensity", 4)), 1, 10);
+            m_fields->m_cachedExtraStyles = Mod::get()->getSavedValue<std::string>("levelinfo-extra-styles", "");
+            m_fields->m_cachedAutoCycle = Mod::get()->getSavedValue<bool>("levelcell-gallery-autocycle", true);
+            m_fields->m_dynamicShaders = Mod::get()->getSavedValue<bool>("levelinfo-dynamic-shaders", false);
+            m_fields->m_dynamicShadersDelay = Mod::get()->getSavedValue<float>("levelinfo-dynamic-shaders-delay", 0.0f);
+
+            // Habilitar touch para dynamic shaders (cursor tracking)
+            if (m_fields->m_dynamicShaders) {
+                this->setTouchEnabled(true);
+                this->setTouchMode(kCCTouchesOneByOne);
+                this->setTouchPriority(-1); // alta prioridad para capturar posicion sin bloquear
+            }
 
             // Activar dynamic song durante la transicion de entrada.
             // scheduleOnce funciona desde init() porque GD ya añadio el nodo al arbol.
@@ -1249,7 +1709,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 return true;
             }
 
-            // ref menu pa buttoneditoverlay
+            // ref menu principal pa buttoneditoverlay
             m_fields->m_extraMenu = static_cast<CCMenu*>(leftMenu);
             
             // sprite icono btn (con fallbacks)
@@ -1280,7 +1740,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 this,
                 menu_selector(PaimonLevelInfoLayer::onThumbnailButton)
             );
-            PaimonButtonHighlighter::registerButton(button);
             
             if (!button) {
                 log::error("Failed to create menu button");
@@ -1288,6 +1747,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
             
             button->setID("thumbnail-view-button"_spr);
+            PaimonButtonHighlighter::registerButton(button);
             m_fields->m_thumbnailButton = button;
 
             // thumbs galeria (URLs versionadas via list endpoint)
@@ -1346,14 +1806,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             defaultLayout.opacity = 1.0f;
             ButtonLayoutManager::get().setDefaultLayoutIfAbsent("LevelInfoLayer", "thumbnail-view-button", defaultLayout);
 
-            // load layout guardado
-            auto savedLayout = ButtonLayoutManager::get().getLayout("LevelInfoLayer", "thumbnail-view-button");
-            if (savedLayout) {
-                button->setPosition(savedLayout->position);
-                button->setScale(savedLayout->scale);
-                button->setOpacity(static_cast<GLubyte>(savedLayout->opacity * 255));
-            }
-
             // admin? -> btn daily/weekly
             // Verificacion local primero: si el mod code esta guardado y el usuario
             // esta marcado como admin, mostrar el boton inmediatamente sin esperar al server.
@@ -1390,8 +1842,10 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 paimon::SessionState::get().verification.verificationCategory = verificationQueueCategory;
             }
 
-            // apply layouts to left menu to restore any vanilla button customizations
-            ButtonLayoutManager::get().applyLayoutToMenu("LevelInfoLayer", leftMenu);
+            // apply layouts to all tracked menus so custom IDs stay consistent
+            applyLayoutsToEditableMenus();
+
+            // Favorite buttons removed
 
         return true;
     }
@@ -1430,8 +1884,14 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     void onToggleEditMode(CCObject*) {
         if (!m_fields->m_extraMenu) return;
 
+        auto extraMenus = collectEditableMenus();
+        extraMenus.erase(
+            std::remove(extraMenus.begin(), extraMenus.end(), static_cast<CCMenu*>(m_fields->m_extraMenu)),
+            extraMenus.end()
+        );
+
         // overlay edicion
-        auto overlay = ButtonEditOverlay::create("LevelInfoLayer", m_fields->m_extraMenu);
+        auto overlay = ButtonEditOverlay::create("LevelInfoLayer", m_fields->m_extraMenu, extraMenus, this);
         if (auto scene = CCDirector::sharedDirector()->getRunningScene()) {
             scene->addChild(overlay, 1000);
         }
@@ -1584,6 +2044,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             auto prevBtn = CCMenuItemSpriteExtra::create(
                 prevSpr, this, menu_selector(PaimonLevelInfoLayer::onPrevBtn)
             );
+            prevBtn->setID("gallery-prev-btn"_spr);
+            PaimonButtonHighlighter::registerButton(prevBtn);
             prevBtn->setPosition({win.width / 2.f - 62.f, arrowY});
             prevBtn->setOpacity(180);
             menu->addChild(prevBtn);
@@ -1598,6 +2060,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             auto nextBtn = CCMenuItemSpriteExtra::create(
                 nextSpr, this, menu_selector(PaimonLevelInfoLayer::onNextBtn)
             );
+            nextBtn->setID("gallery-next-btn"_spr);
+            PaimonButtonHighlighter::registerButton(nextBtn);
             nextBtn->setPosition({win.width / 2.f + 62.f, arrowY});
             nextBtn->setOpacity(180);
             menu->addChild(nextBtn);
@@ -1605,6 +2069,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         }
 
         this->addChild(menu, 100);
+        applyLayoutsToEditableMenus();
 
         bool showNav = m_fields->m_thumbnails.size() > 1;
         if (m_fields->m_prevBtn) m_fields->m_prevBtn->setVisible(showNav);
@@ -1667,6 +2132,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     void setupFavoriteButtons() {
         if (!m_level || m_level->m_levelID <= 0) return;
 
+        if (auto old = this->getChildByID("fav-menu"_spr)) {
+            old->removeFromParent();
+        }
+        m_fields->m_favCreatorBtn = nullptr;
+        m_fields->m_favLevelBtn = nullptr;
+
         auto win = CCDirector::sharedDirector()->getWinSize();
 
         // reuse gallery-menu or create a dedicated fav-menu
@@ -1690,6 +2161,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     heartSpr, this, menu_selector(PaimonLevelInfoLayer::onFavCreator)
                 );
                 btn->setID("fav-creator-btn"_spr);
+                PaimonButtonHighlighter::registerButton(btn);
                 btn->setPosition({win.width - 30.f, win.height - 60.f});
                 favMenu->addChild(btn);
                 m_fields->m_favCreatorBtn = btn;
@@ -1708,6 +2180,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     starSpr, this, menu_selector(PaimonLevelInfoLayer::onFavLevel)
                 );
                 btn->setID("fav-level-btn"_spr);
+                PaimonButtonHighlighter::registerButton(btn);
                 btn->setPosition({win.width - 30.f, win.height - 90.f});
                 favMenu->addChild(btn);
                 m_fields->m_favLevelBtn = btn;
@@ -1715,6 +2188,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         }
 
         this->addChild(favMenu, 101);
+        applyLayoutsToEditableMenus();
     }
 
     void updateFavoriteButtonStates() {
@@ -1991,11 +2465,16 @@ void LocalThumbnailViewPopup::onSettings(CCObject*) {
         // re-aplicar con las nuevas settings
         if (texRef) {
             // Refrescar cached settings antes de re-aplicar
-            paimon->m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
+            paimon->m_fields->m_cachedBgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-background-style-override", "");
+            if (paimon->m_fields->m_cachedBgStyle.empty()) {
+                paimon->m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
+            }
             paimon->m_fields->m_cachedEffectIntensity = std::clamp(
-                static_cast<int>(Mod::get()->getSettingValue<int64_t>("levelinfo-effect-intensity")), 1, 10);
-            paimon->m_fields->m_cachedExtraStyles = Mod::get()->getSettingValue<std::string>("levelinfo-extra-styles");
-            paimon->m_fields->m_cachedAutoCycle = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
+                static_cast<int>(Mod::get()->getSavedValue<int>("levelinfo-effect-intensity", 4)), 1, 10);
+            paimon->m_fields->m_cachedExtraStyles = Mod::get()->getSavedValue<std::string>("levelinfo-extra-styles", "");
+            paimon->m_fields->m_cachedAutoCycle = Mod::get()->getSavedValue<bool>("levelcell-gallery-autocycle", true);
+            paimon->m_fields->m_dynamicShaders = Mod::get()->getSavedValue<bool>("levelinfo-dynamic-shaders", false);
+            paimon->m_fields->m_dynamicShadersDelay = Mod::get()->getSavedValue<float>("levelinfo-dynamic-shaders-delay", 0.0f);
             paimon->applyThumbnailBackground(texRef, levelID);
         }
     });

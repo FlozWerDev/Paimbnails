@@ -36,6 +36,8 @@
 #include "../../../utils/WebHelper.hpp"
 #include "../../../utils/UIBorderHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
+#include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../utils/ThreadTracker.hpp"
 #include "../../profiles/ui/RatePopup.hpp"
 #include "ReportInputPopup.hpp"
 #include "ThumbnailOrderPopup.hpp"
@@ -49,11 +51,6 @@ namespace {
 constexpr float kThumbnailRefreshCooldown = 5.f;
 constexpr GLubyte kRefreshBtnEnabledOpacity = 255;
 constexpr GLubyte kRefreshBtnDisabledOpacity = 105;
-
-ButtonSprite* createOrderTextButton(char const* text, char const* bg, float scale = 0.5f, int width = 70) {
-    auto spr = ButtonSprite::create(text, width, true, "bigFont.fnt", bg, 26.f, scale);
-    return spr;
-}
 }
 
 void LocalThumbnailViewPopup::updateOrderUiState() {
@@ -105,14 +102,19 @@ void LocalThumbnailViewPopup::replaceRemoteThumbnails(std::vector<ThumbnailAPI::
 }
 
 void LocalThumbnailViewPopup::ensureOrderControls(float /*contentWidth*/) {
-    if (!m_isAdmin || !m_settingsMenu || m_verificationCategory >= 0 || m_orderEditBtn) return;
+    if (!m_isAdmin || !m_buttonMenu || m_verificationCategory >= 0 || m_orderEditBtn) return;
 
-    auto orderSpr = createOrderTextButton("Order", "GJ_button_03.png", 0.38f, 58);
+    // Use the same ButtonSprite style as the Report button so they match in size,
+    // but with the blue (GJ_button_03.png) background to distinguish it.
+    auto orderSpr = ButtonSprite::create("Order", 80, true, "bigFont.fnt", "GJ_button_03.png", 30.f, 0.5f);
+    orderSpr->setScale(0.6f);
     if (orderSpr) {
         m_orderEditBtn = CCMenuItemSpriteExtra::create(orderSpr, this, menu_selector(LocalThumbnailViewPopup::onOrderEdit));
-        m_orderEditBtn->setPosition({56.f, 46.f});
         m_orderEditBtn->setID("thumbnail-order-edit-btn"_spr);
-        m_settingsMenu->addChild(m_orderEditBtn);
+
+        // Use z=-1 so Order sorts before Report (z=0) in the RowLayout.
+        m_buttonMenu->addChild(m_orderEditBtn, -1);
+        m_buttonMenu->updateLayout();
     }
 }
 
@@ -299,6 +301,78 @@ void LocalThumbnailViewPopup::FLAlert_Clicked(FLAlertLayer* alert, bool btn2) {
     }
 }
 
+void LocalThumbnailViewPopup::applyRatingLabel() {
+    if (!m_ratingLabel) return;
+
+    if (!m_hasRatingData) {
+        m_ratingLabel->setString("...");
+        m_ratingLabel->setColor({255, 255, 255});
+        return;
+    }
+
+    m_ratingLabel->setString(fmt::format("{:.1f} ({})", m_ratingAverage, m_ratingCount).c_str());
+    if (m_ratingCount == 0) {
+        m_ratingLabel->setColor({255, 100, 100});
+    } else {
+        m_ratingLabel->setColor({255, 255, 255});
+    }
+}
+
+void LocalThumbnailViewPopup::refreshRating() {
+    std::string thumbnailId;
+    if (m_currentIndex >= 0 && m_currentIndex < static_cast<int>(m_thumbnails.size())) {
+        thumbnailId = m_thumbnails[m_currentIndex].id;
+    }
+
+    if (thumbnailId.empty()) {
+        m_hasRatingData = false;
+        m_ratingAverage = 0.f;
+        m_ratingCount = 0;
+        m_userVote = 0;
+        m_initialUserVote = 0;
+        applyRatingLabel();
+        return;
+    }
+
+    m_hasRatingData = false;
+    applyRatingLabel();
+
+    std::string username = "Unknown";
+    if (auto gm = GameManager::get()) username = gm->m_playerName;
+
+    WeakRef<LocalThumbnailViewPopup> self = this;
+    int requestToken = ++m_ratingRequestToken;
+    ThumbnailAPI::get().getRating(m_levelID, username, thumbnailId, [self, requestToken, thumbnailId](bool success, float average, int count, int userVote) {
+        auto popup = self.lock();
+        if (!popup) return;
+        if (requestToken != popup->m_ratingRequestToken) return;
+
+        std::string currentThumbId;
+        if (popup->m_currentIndex >= 0 && popup->m_currentIndex < static_cast<int>(popup->m_thumbnails.size())) {
+            currentThumbId = popup->m_thumbnails[popup->m_currentIndex].id;
+        }
+        if (currentThumbId != thumbnailId) return;
+
+        if (!success) {
+            log::warn("[ThumbnailViewPopup] Failed to get rating for level {}", popup->m_levelID);
+            popup->m_hasRatingData = false;
+            popup->m_ratingAverage = 0.f;
+            popup->m_ratingCount = 0;
+            popup->m_userVote = 0;
+            popup->m_initialUserVote = 0;
+            popup->applyRatingLabel();
+            return;
+        }
+
+        popup->m_hasRatingData = true;
+        popup->m_ratingAverage = average;
+        popup->m_ratingCount = count;
+        popup->m_userVote = userVote;
+        popup->m_initialUserVote = userVote;
+        popup->applyRatingLabel();
+    });
+}
+
 void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     if (index < 0 || index >= static_cast<int>(m_thumbnails.size())) return;
 
@@ -322,33 +396,9 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     }
     updateOrderUiState();
 
-    std::string username = "Unknown";
-    if (auto gm = GameManager::get()) username = gm->m_playerName;
+    refreshRating();
 
-    // update rating ui
     Ref<LocalThumbnailViewPopup> self = this;
-    std::string requestedThumbId = thumb.id;
-    ThumbnailAPI::get().getRating(m_levelID, username, requestedThumbId, [self, requestToken, requestedThumbId](bool success, float average, int count, int userVote) {
-        if (!self->isUiAlive()) return;
-        if (requestToken != self->m_galleryRequestToken) return;
-
-        std::string currentThumbId = "";
-        if (self->m_currentIndex >= 0 && self->m_currentIndex < static_cast<int>(self->m_thumbnails.size())) {
-            currentThumbId = self->m_thumbnails[self->m_currentIndex].id;
-        }
-        if (currentThumbId != requestedThumbId) return;
-
-        if (success && self->m_ratingLabel) {
-            self->m_ratingLabel->setString(fmt::format("{:.1f} ({})", average, count).c_str());
-            if (count == 0) {
-                self->m_ratingLabel->setColor({255, 100, 100});
-            } else {
-                self->m_ratingLabel->setColor({255, 255, 255});
-            }
-            self->m_userVote = userVote;
-            self->m_initialUserVote = userVote;
-        }
-    });
 
     // Si el thumbnail es video, descargar y reproducir con VideoThumbnailSprite
     if (thumb.isVideo() && !thumb.url.empty()) {
@@ -569,6 +619,7 @@ void LocalThumbnailViewPopup::onExit() {
     }
     m_isExiting = true;
     ++m_galleryRequestToken;
+    ++m_ratingRequestToken;
     if (m_invalidationListenerId != 0) {
         ThumbnailLoader::get().removeInvalidationListener(m_invalidationListenerId);
         m_invalidationListenerId = 0;
@@ -638,43 +689,7 @@ void LocalThumbnailViewPopup::setupRating() {
     m_ratingLabel->setPosition({8.f, 3.f});
     ratingContainer->addChild(m_ratingLabel);
 
-    std::string username = "Unknown";
-    if (auto gm = GameManager::get()) username = gm->m_playerName;
-
-    std::string thumbnailId = "";
-    if (m_currentIndex >= 0 && m_currentIndex < static_cast<int>(m_thumbnails.size())) {
-        thumbnailId = m_thumbnails[m_currentIndex].id;
-    }
-
-    WeakRef<LocalThumbnailViewPopup> self = this;
-    int requestToken = m_galleryRequestToken;
-    ThumbnailAPI::get().getRating(m_levelID, username, thumbnailId, [self, requestToken, thumbnailId](bool success, float average, int count, int userVote) {
-        auto popup = self.lock();
-        if (!popup) return;
-        if (requestToken != popup->m_galleryRequestToken) return;
-
-        std::string currentThumbId = "";
-        if (popup->m_currentIndex >= 0 && popup->m_currentIndex < static_cast<int>(popup->m_thumbnails.size())) {
-            currentThumbId = popup->m_thumbnails[popup->m_currentIndex].id;
-        }
-        if (currentThumbId != thumbnailId) return;
-
-        if (success) {
-            log::info("[ThumbnailViewPopup] Rating found for level {}: {:.1f} ({})", popup->m_levelID, average, count);
-            if (popup->m_ratingLabel) {
-                popup->m_ratingLabel->setString(fmt::format("{:.1f} ({})", average, count).c_str());
-                if (count == 0) {
-                    popup->m_ratingLabel->setColor({255, 100, 100});
-                } else {
-                    popup->m_ratingLabel->setColor({255, 255, 255});
-                }
-            }
-            popup->m_userVote = userVote;
-            popup->m_initialUserVote = userVote;
-        } else {
-            log::warn("[ThumbnailViewPopup] Failed to get rating for level {}", popup->m_levelID);
-        }
-    });
+    applyRatingLabel();
 }
 
 void LocalThumbnailViewPopup::onRate(CCObject* sender) {
@@ -687,7 +702,7 @@ void LocalThumbnailViewPopup::onRate(CCObject* sender) {
     popup->m_onRateCallback = [self]() {
         auto view = self.lock();
         if (!view) return;
-        view->setupRating();
+        view->refreshRating();
     };
     popup->show();
 }
@@ -711,8 +726,8 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     int  verificationCategory = paimon::SessionState::consumeInt(vctx.verificationCategory);
     m_verificationCategory = verificationCategory;
 
-    // ── NEW: If not opened from verification queue, check if user is mod and
-    // there are pending thumbnails for this level in the local queue ──
+    // â”€â”€ NEW: If not opened from verification queue, check if user is mod and
+    // there are pending thumbnails for this level in the local queue â”€â”€
     if (verificationCategory < 0) {
         std::string modCode = geode::Mod::get()->getSavedValue<std::string>("mod-code", "");
         if (!modCode.empty()) {
@@ -902,10 +917,10 @@ void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category
             }
 
             if (success && tex) {
-                log::info("[ThumbnailViewPopup] ✓ Suggestion cargada");
+                log::info("[ThumbnailViewPopup] âœ“ Suggestion cargada");
                 safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
             } else {
-                log::warn("[ThumbnailViewPopup] ✗ No se pudo cargar suggestion");
+                log::warn("[ThumbnailViewPopup] âœ— No se pudo cargar suggestion");
                 safeRef->showNoThumbnail(content);
             }
         });
@@ -917,10 +932,10 @@ void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category
             }
 
             if (success && tex) {
-                log::info("[ThumbnailViewPopup] ✓ Update cargada");
+                log::info("[ThumbnailViewPopup] âœ“ Update cargada");
                 safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
             } else {
-                log::warn("[ThumbnailViewPopup] ✗ No se pudo cargar update");
+                log::warn("[ThumbnailViewPopup] âœ— No se pudo cargar update");
                 safeRef->showNoThumbnail(content);
             }
         });
@@ -932,10 +947,10 @@ void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category
             }
 
             if (success && tex) {
-                log::info("[ThumbnailViewPopup] ✓ Reported cargada");
+                log::info("[ThumbnailViewPopup] âœ“ Reported cargada");
                 safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
             } else {
-                log::warn("[ThumbnailViewPopup] ✗ No se pudo cargar reported");
+                log::warn("[ThumbnailViewPopup] âœ— No se pudo cargar reported");
                 safeRef->showNoThumbnail(content);
             }
         });
@@ -974,14 +989,14 @@ void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float m
         log::warn("[ThumbnailViewPopup] LocalThumbs fallo al cargar textura indice {}", m_localCurrentIndex);
     }
 
-    // fallback: buscar cualquier thumbnail local (png/jpg only — skip MP4,
+    // fallback: buscar cualquier thumbnail local (png/jpg only â€” skip MP4,
     // videos are handled by the gallery API via loadThumbnailAt to avoid
     // showing a buggy flash that gets overwritten by the API callback)
     auto localPath = LocalThumbs::get().findAnyThumbnail(m_levelID);
     if (localPath) {
         auto lowerPath = geode::utils::string::toLower(*localPath);
         if (lowerPath.ends_with(".mp4")) {
-            log::info("[ThumbnailViewPopup] LocalThumbs es MP4, skipping — gallery API will handle it");
+            log::info("[ThumbnailViewPopup] LocalThumbs es MP4, skipping â€” gallery API will handle it");
         } else {
             log::info("[ThumbnailViewPopup] Fuente 1: LocalThumbs ENCONTRADO (fallback)");
             auto tex = LocalThumbs::get().loadTexture(m_levelID);
@@ -998,7 +1013,7 @@ void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float m
 
     m_viewingLocal = false;
 
-    // Fuente 1.5: URL-based RAM cache — LevelCell stores thumbnails here via requestUrlLoad.
+    // Fuente 1.5: URL-based RAM cache â€” LevelCell stores thumbnails here via requestUrlLoad.
     // The level-based RAM cache (tryLoadFromCache) may miss them since LevelCell uses URL keys.
     {
         auto& cache = paimon::cache::ThumbnailCache::get();
@@ -1024,7 +1039,7 @@ bool LocalThumbnailViewPopup::tryLoadFromCache(float maxWidth, float maxHeight, 
         ramTex = paimon::cache::ThumbnailCache::get().getFromRam(m_levelID, true);
     }
     if (ramTex.has_value() && ramTex.value()) {
-        log::info("[ThumbnailViewPopup] ✓ RAM cache hit directo para nivel {}", m_levelID);
+        log::info("[ThumbnailViewPopup] âœ“ RAM cache hit directo para nivel {}", m_levelID);
         this->displayThumbnail(ramTex.value(), maxWidth, maxHeight, content, openedFromReport);
         return true;
     }
@@ -1046,11 +1061,11 @@ void LocalThumbnailViewPopup::loadFromThumbnailLoader(float maxWidth, float maxH
         }
 
         if (tex) {
-            log::info("[ThumbnailViewPopup] ✓ Textura recibida ({}x{})",
+            log::info("[ThumbnailViewPopup] âœ“ Textura recibida ({}x{})",
                 tex->getPixelsWide(), tex->getPixelsHigh());
             safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
         } else {
-            log::warn("[ThumbnailViewPopup] ✗ ThumbnailLoader fallo, intentando descarga directa del servidor");
+            log::warn("[ThumbnailViewPopup] âœ— ThumbnailLoader fallo, intentando descarga directa del servidor");
             safeRef->tryDirectServerDownload(maxWidth, maxHeight, content, openedFromReport);
         }
     }, 10, false, ThumbnailLoader::Quality::High);
@@ -1068,12 +1083,12 @@ void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxH
         }
 
         if (success && !data.empty()) {
-            log::info("[ThumbnailViewPopup] ✓ Datos descargados del servidor ({} bytes)", data.size());
+            log::info("[ThumbnailViewPopup] âœ“ Datos descargados del servidor ({} bytes)", data.size());
 
             // Detectar si los datos son MP4 (ftyp box at offset 4)
             bool isMp4 = data.size() >= 8 && data[4] == 'f' && data[5] == 't' && data[6] == 'y' && data[7] == 'p';
             if (isMp4) {
-                log::info("[ThumbnailViewPopup] ✓ Datos detectados como MP4, usando VideoThumbnailSprite");
+                log::info("[ThumbnailViewPopup] âœ“ Datos detectados como MP4, usando VideoThumbnailSprite");
                 std::string cacheKey = fmt::format("direct_video_{}", safeRef->m_levelID);
                 auto* videoSprite = VideoThumbnailSprite::createFromData(
                     std::vector<uint8_t>(data.begin(), data.end()), cacheKey);
@@ -1082,13 +1097,13 @@ void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxH
                     safeRef->displayVideoThumbnail(videoSprite, maxWidth, maxHeight, content);
                     return;
                 }
-                log::warn("[ThumbnailViewPopup] ✗ VideoThumbnailSprite fallo para MP4");
+                log::warn("[ThumbnailViewPopup] âœ— VideoThumbnailSprite fallo para MP4");
             } else {
                 auto image = new CCImage();
                 if (image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
                     auto tex = new CCTexture2D();
                     if (tex->initWithImage(image)) {
-                        log::info("[ThumbnailViewPopup] ✓ Textura creada desde servidor ({}x{})",
+                        log::info("[ThumbnailViewPopup] âœ“ Textura creada desde servidor ({}x{})",
                             tex->getPixelsWide(), tex->getPixelsHigh());
                         safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
                         tex->release();
@@ -1098,10 +1113,10 @@ void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxH
                     tex->release();
                 }
                 image->release();
-                log::error("[ThumbnailViewPopup] ✗ Error creando textura desde datos del servidor");
+                log::error("[ThumbnailViewPopup] âœ— Error creando textura desde datos del servidor");
             }
         } else {
-            log::warn("[ThumbnailViewPopup] ✗ Descarga del servidor fallo");
+            log::warn("[ThumbnailViewPopup] âœ— Descarga del servidor fallo");
         }
 
         log::info("[ThumbnailViewPopup] === TODAS LAS FUENTES FALLARON ===");
@@ -1120,7 +1135,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
 
     clearGalleryDisplay();
 
-    // Keep video invisible until first frame is decoded — the 1x1 placeholder
+    // Keep video invisible until first frame is decoded â€” the 1x1 placeholder
     // texture stretched to video dimensions causes glitchy rendering artifacts
     m_videoPlaying = false;
     videoSprite->setVisible(false);
@@ -1148,7 +1163,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
     m_thumbnailTexture = nullptr;
     resetZoomGestureState();
 
-    // Play muted to start decoding — first frame callback will pause and apply scale
+    // Play muted to start decoding â€” first frame callback will pause and apply scale
     videoSprite->play();
 
     // --- First frame callback: calculate scale from actual contentSize, make visible, pause ---
@@ -1163,7 +1178,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
 
         safeRef->m_thumbnailTexture = readySprite->getTexture();
 
-        // Calculate scale the same way displayThumbnail does — using getContentWidth/Height
+        // Calculate scale the same way displayThumbnail does â€” using getContentWidth/Height
         // (in points), not raw pixel dimensions. This matches how CCSprite renders.
         float cw = readySprite->getContentWidth();
         float ch = readySprite->getContentHeight();
@@ -1183,7 +1198,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
         readySprite->setVisible(true);
         readySprite->setOpacity(255);
 
-        // First frame decoded — pause video so play button overlay works
+        // First frame decoded â€” pause video so play button overlay works
         if (!safeRef->m_videoPlaying) {
             readySprite->pause();
         }
@@ -1222,7 +1237,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
         playIcon->setOpacity(200);
         btnSprite = playIcon;
     } else {
-        auto btnSpr = ButtonSprite::create("▶", 32, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.7f);
+        auto btnSpr = ButtonSprite::create("â–¶", 32, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.7f);
         btnSpr->setScale(0.8f);
         btnSpr->setOpacity(200);
         btnSprite = btnSpr;
@@ -1380,7 +1395,7 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     // Apply the configured gallery transition (directional-elastic, crossfade, etc.)
     applyPopupTransition(sprite, oldSprite, maxWidth);
 
-    log::info("[ThumbnailViewPopup] ✓ Thumbnail agregado a mainLayer");
+    log::info("[ThumbnailViewPopup] âœ“ Thumbnail agregado a mainLayer");
     log::info("[ThumbnailViewPopup] Posicion: ({},{}), Scale: {}, Tamano final: {}x{}",
         centerX, centerY, scale, sprite->getContentWidth() * scale, sprite->getContentHeight() * scale);
     log::info("[ThumbnailViewPopup] Parent: {}, Visible: {}, Opacity: {}, Z-Order: {}",
@@ -1514,7 +1529,7 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
                 }
             }
 
-            if (isAdmin && popup->m_settingsMenu && popup->m_verificationCategory < 0) {
+            if (isAdmin && popup->m_buttonMenu && popup->m_verificationCategory < 0) {
                 popup->ensureOrderControls(contentWidth);
                 popup->updateOrderUiState();
             }
@@ -1594,7 +1609,7 @@ void LocalThumbnailViewPopup::clearGalleryDisplay() {
     }
     m_thumbnailTexture = nullptr;
 
-    // keep m_clippingNode alive — only clear children (sprites) inside it
+    // keep m_clippingNode alive â€” only clear children (sprites) inside it
     if (m_clippingNode) {
         m_clippingNode->removeAllChildren();
         // re-add the semi-transparent background inside the clip
@@ -1624,19 +1639,34 @@ void LocalThumbnailViewPopup::clearGalleryDisplay() {
 void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldNode, float maxWidth) {
     if (!newNode) return;
 
-    // These are always CCSprite* in practice — cast for opacity access
+    // These are always CCSprite* in practice â€” cast for opacity access
     auto* newSpr = static_cast<CCSprite*>(newNode);
 
-    // First load (no old sprite): just show immediately, no fancy transition
+    // First load (no old sprite): run a beautiful transition!
     if (!oldNode || !oldNode->getParent()) {
-        newSpr->setOpacity(255);
         if (oldNode) oldNode->removeFromParent();
+        
+        std::string style = Mod::get()->getSavedValue<std::string>("popup-gallery-transition", "directional-elastic");
+        float dur = Mod::get()->getSavedValue<float>("popup-gallery-transition-duration", 0.45f);
+        
+        newSpr->setOpacity(0);
+        float sx = newNode->getScaleX();
+        float sy = newNode->getScaleY();
+        newNode->setScaleX(sx * 0.92f);
+        newNode->setScaleY(sy * 0.92f);
+        
+        newNode->runAction(CCSpawn::create(
+            CCEaseBackOut::create(CCScaleTo::create(dur * 1.2f, sx, sy)),
+            CCFadeTo::create(dur, 255),
+            nullptr
+        ));
+        
         m_navDirection = NavDirection::None;
         return;
     }
 
-    std::string style = Mod::get()->getSettingValue<std::string>("popup-gallery-transition");
-    float dur = Mod::get()->getSettingValue<float>("popup-gallery-transition-duration");
+    std::string style = Mod::get()->getSavedValue<std::string>("popup-gallery-transition", "directional-elastic");
+    float dur = Mod::get()->getSavedValue<float>("popup-gallery-transition-duration", 0.45f);
 
     CCPoint targetPos = newNode->getPosition();
     float sx = newNode->getScaleX();
@@ -1649,7 +1679,7 @@ void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldN
     bool slideFromRight = goRight || (!goLeft);
 
     if (style == "directional-elastic") {
-        // Directional elastic: slow start, then fast — like an elastic snap
+        // Directional elastic: slow start, then fast â€” like an elastic snap
         // in the direction of navigation.  The new image starts offscreen
         // on the side we're navigating toward, and snaps into place.
         {
@@ -1768,6 +1798,86 @@ void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldN
             CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)),
             nullptr));
 
+    } else if (style == "wave-slide") {
+        float startX = slideFromRight ? (targetPos.x + maxWidth) : (targetPos.x - maxWidth);
+        float startRot = slideFromRight ? 12.f : -12.f;
+        
+        newNode->setPosition({startX, targetPos.y});
+        newNode->setScaleX(sx * 0.8f);
+        newNode->setScaleY(sy * 0.8f);
+        newNode->setRotation(startRot);
+        newSpr->setOpacity(0);
+        
+        newNode->runAction(CCSpawn::create(
+            CCEaseElasticOut::create(CCMoveTo::create(dur * 1.2f, targetPos), 0.45f),
+            CCEaseBackOut::create(CCRotateTo::create(dur * 1.0f, 0.f)),
+            CCEaseOut::create(CCScaleTo::create(dur * 0.8f, sx, sy), 2.0f),
+            CCFadeTo::create(dur * 0.6f, 255),
+            nullptr
+        ));
+        
+        float oldTargetX = slideFromRight ? (targetPos.x - maxWidth) : (targetPos.x + maxWidth);
+        float oldTargetRot = slideFromRight ? -12.f : 12.f;
+        oldNode->runAction(CCSequence::create(
+            CCSpawn::create(
+                CCEaseIn::create(CCMoveTo::create(dur * 0.8f, {oldTargetX, targetPos.y}), 2.0f),
+                CCEaseIn::create(CCRotateTo::create(dur * 0.8f, oldTargetRot), 2.0f),
+                CCEaseIn::create(CCScaleTo::create(dur * 0.8f, sx * 0.8f, sy * 0.8f), 2.0f),
+                CCFadeTo::create(dur * 0.6f, 0),
+                nullptr
+            ),
+            CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)),
+            nullptr
+        ));
+
+    } else if (style == "card-flip") {
+        newNode->setScaleX(0.01f);
+        newSpr->setOpacity(0);
+        
+        newNode->runAction(CCSequence::create(
+            CCDelayTime::create(dur * 0.35f),
+            CCSpawn::create(
+                CCEaseElasticOut::create(CCScaleTo::create(dur * 0.85f, sx, sy), 0.5f),
+                CCFadeTo::create(dur * 0.4f, 255),
+                nullptr
+            ),
+            nullptr
+        ));
+        
+        oldNode->runAction(CCSequence::create(
+            CCSpawn::create(
+                CCEaseIn::create(CCScaleTo::create(dur * 0.45f, 0.01f, sy), 2.0f),
+                CCFadeTo::create(dur * 0.4f, 0),
+                nullptr
+            ),
+            CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)),
+            nullptr
+        ));
+
+    } else if (style == "spin-zoom") {
+        newNode->setScaleX(0.01f);
+        newNode->setScaleY(0.01f);
+        newNode->setRotation(slideFromRight ? -180.f : 180.f);
+        newSpr->setOpacity(0);
+        
+        newNode->runAction(CCSpawn::create(
+            CCEaseElasticOut::create(CCScaleTo::create(dur * 1.2f, sx, sy), 0.4f),
+            CCEaseElasticOut::create(CCRotateTo::create(dur * 1.2f, 0.f), 0.4f),
+            CCFadeTo::create(dur * 0.6f, 255),
+            nullptr
+        ));
+        
+        oldNode->runAction(CCSequence::create(
+            CCSpawn::create(
+                CCEaseIn::create(CCScaleTo::create(dur * 0.7f, 0.01f, 0.01f), 2.0f),
+                CCEaseIn::create(CCRotateBy::create(dur * 0.7f, slideFromRight ? 180.f : -180.f), 2.0f),
+                CCFadeTo::create(dur * 0.6f, 0),
+                nullptr
+            ),
+            CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)),
+            nullptr
+        ));
+
     } else if (style == "dissolve") {
         // Pixelated dissolve: scale down old + scale up new with opacity
         newNode->setScaleX(sx * 0.8f);
@@ -1875,8 +1985,21 @@ void LocalThumbnailViewPopup::updatePlayButton() {
 }
 
 void LocalThumbnailViewPopup::onYouTubeBtn(CCObject*) {
-    // Query the /api/ytlinks endpoint for a linked YouTube video
-    std::string url = fmt::format("https://paimbnails-emote.vercel.app/api/ytlinks?id={}", m_levelID);
+    // Query the /api/ytlinks endpoint for a linked YouTube video.
+    // The base URL is shared with PaiDraw / EmoteService (same Render host),
+    // and is overridable at runtime via the `paimon-emote-server-url` saved
+    // value so users can point at a private server in development.
+    std::string serverUrl;
+    if (auto* mod = Mod::get()) {
+        serverUrl = mod->getSavedValue<std::string>("paimon-emote-server-url", "");
+    }
+    if (serverUrl.empty()) {
+        serverUrl = "https://paimbnailsbot.onrender.com";
+    }
+    while (!serverUrl.empty() && serverUrl.back() == '/') {
+        serverUrl.pop_back();
+    }
+    std::string url = fmt::format("{}/api/ytlinks?id={}", serverUrl, m_levelID);
 
     auto req = geode::utils::web::WebRequest();
     req.timeout(std::chrono::seconds(10));
@@ -2073,7 +2196,8 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
             std::filesystem::path srcFs(srcPath);
             bool isRgb = (srcFs.extension() == ".rgb");
 
-            std::thread([weakRef, srcPath, savePath, isRgb, fromCache, notifyResult]() {
+            paimon::ThreadTracker::get().spawn([weakRef, srcPath, savePath, isRgb, fromCache, notifyResult]() {
+                if (paimon::isRuntimeShuttingDown()) return;
                 bool ok = false;
                 if (isRgb) {
                     std::vector<uint8_t> rgbData;
@@ -2082,7 +2206,9 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                         auto rgba = ImageConverter::rgbToRgba(rgbData, width, height);
                         ok = ImageConverter::saveRGBAToPNG(rgba.data(), width, height, savePath);
                     }
+                    if (paimon::isRuntimeShuttingDown()) return;
                     Loader::get()->queueInMainThread([weakRef, ok, savePath, notifyResult]() {
+                        if (paimon::isRuntimeShuttingDown()) return;
                         auto popup = weakRef.lock();
                         if (!popup || !popup->getParent()) return;
                         notifyResult(ok, savePath);
@@ -2097,19 +2223,23 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                     std::error_code ec;
                     std::filesystem::copy(srcP, destPath, std::filesystem::copy_options::overwrite_existing, ec);
                     ok = !ec;
+                    if (paimon::isRuntimeShuttingDown()) return;
                     Loader::get()->queueInMainThread([weakRef, ok, destPath, notifyResult]() {
+                        if (paimon::isRuntimeShuttingDown()) return;
                         auto popup = weakRef.lock();
                         if (!popup || !popup->getParent()) return;
                         notifyResult(ok, destPath);
                     });
                     return;
                 }
+                if (paimon::isRuntimeShuttingDown()) return;
                 Loader::get()->queueInMainThread([weakRef, savePath, notifyResult]() {
+                    if (paimon::isRuntimeShuttingDown()) return;
                     auto popup = weakRef.lock();
                     if (!popup || !popup->getParent()) return;
                     notifyResult(false, savePath);
                 });
-            }).detach();
+            });
             return;
         }
 
@@ -2140,14 +2270,17 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                 size_t dataSize = static_cast<size_t>(w) * h * 4;
                 std::shared_ptr<uint8_t> buffer(new uint8_t[dataSize], std::default_delete<uint8_t[]>());
                 std::memcpy(buffer.get(), data.get(), dataSize);
-                std::thread([weakRef, buffer, w, h, savePath, notifyResult]() {
+                paimon::ThreadTracker::get().spawn([weakRef, buffer, w, h, savePath, notifyResult]() {
+                    if (paimon::isRuntimeShuttingDown()) return;
                     bool ok = ImageConverter::saveRGBAToPNG(buffer.get(), static_cast<uint32_t>(w), static_cast<uint32_t>(h), savePath);
+                    if (paimon::isRuntimeShuttingDown()) return;
                     Loader::get()->queueInMainThread([weakRef, ok, savePath, notifyResult]() {
+                        if (paimon::isRuntimeShuttingDown()) return;
                         auto popup = weakRef.lock();
                         if (!popup || !popup->getParent()) return;
                         notifyResult(ok, savePath);
                     });
-                }).detach();
+                });
                 return;
             }
         }
@@ -2166,7 +2299,7 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                 return;
             }
         }
-        // Diálogo cancelado, error o no soportado: guardar en carpeta del mod
+        // DiÃ¡logo cancelado, error o no soportado: guardar en carpeta del mod
         auto saveDir = Mod::get()->getSaveDir() / "saved_thumbnails";
         std::error_code ec;
         if (!std::filesystem::exists(saveDir, ec)) {

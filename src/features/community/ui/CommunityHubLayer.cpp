@@ -31,7 +31,16 @@
 using namespace geode::prelude;
 
 namespace {
-    WeakRef<CommunityHubLayer> s_activeCommunityHubLayer;
+    // Intentionally heap-allocated to avoid atexit destructor crash:
+    // ~WeakRef() touches Geode's WeakRefPool singleton (via isManaged() /
+    // WeakRefPool::forget), which may already be destroyed when this DLL's
+    // CRT static destructors run during game::exit / game::restart. Leaking
+    // the WeakRef on process exit is harmless and matches the pattern used
+    // for getCachedModScores() below.
+    inline WeakRef<CommunityHubLayer>& s_activeCommunityHubLayer() {
+        static auto* s_ptr = new WeakRef<CommunityHubLayer>();
+        return *s_ptr;
+    }
 
     // Session cache for moderators tab (persists until game closes or TTL expires)
     struct CachedModEntry {
@@ -40,7 +49,11 @@ namespace {
         int accountID = 0;
     };
     static std::vector<CachedModEntry> s_cachedModEntries;
-    static Ref<CCArray> s_cachedModScores;
+    // Intentionally heap-allocated to avoid atexit destructor crash (Ref<> releasing CCObject after CCPoolManager is gone)
+    static Ref<CCArray>& getCachedModScores() {
+        static auto* s_ptr = new Ref<CCArray>();
+        return *s_ptr;
+    }
     static std::time_t s_modCacheTimestamp = 0;
     static bool s_modCacheValid = false;
     static constexpr std::time_t k_modCacheTTL = 900; // 15 minutes
@@ -238,7 +251,7 @@ class $modify(PaimonCommunityHubGameLevelManager, GameLevelManager) {
     void onGetUsersCompleted(gd::string response, gd::string tag) {
         GameLevelManager::onGetUsersCompleted(response, tag);
 
-        auto layerRef = s_activeCommunityHubLayer.lock();
+        auto layerRef = s_activeCommunityHubLayer().lock();
         auto* layer = static_cast<CommunityHubLayer*>(layerRef.data());
         if (!layer || layer->m_isExiting || layer->m_currentTab != CommunityHubLayer::Tab::Moderators) {
             return;
@@ -256,7 +269,7 @@ class $modify(PaimonCommunityHubGameLevelManager, GameLevelManager) {
         }
 
         Loader::get()->queueInMainThread([username, accountID = lookup.accountID, nativeScore = lookup.score]() {
-            auto layerRef2 = s_activeCommunityHubLayer.lock();
+            auto layerRef2 = s_activeCommunityHubLayer().lock();
             auto* layer2 = static_cast<CommunityHubLayer*>(layerRef2.data());
             if (!layer2 || layer2->m_isExiting || layer2->m_currentTab != CommunityHubLayer::Tab::Moderators) {
                 return;
@@ -308,7 +321,7 @@ bool CommunityHubLayer::init() {
     if (!CCLayer::init()) return false;
     log::info("[CommunityHub] init");
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // fondo
     if (!LayerBackgroundManager::get().applyBackground(this, "community_hub")) {
@@ -510,7 +523,7 @@ void CommunityHubLayer::onBack(CCObject*) {
     this->unscheduleUpdate();
     removeCaveEffect();
     clearPendingNativeModeratorRequests();
-    CCDirector::sharedDirector()->popSceneWithTransition(0.5f, PopTransition::kPopTransitionFade);
+    CCDirector::get()->popSceneWithTransition(0.5f, PopTransition::kPopTransitionFade);
 }
 
 void CommunityHubLayer::keyBackClicked() {
@@ -623,7 +636,7 @@ void CommunityHubLayer::onRetryTimer(float) {
 
 void CommunityHubLayer::loadModerators(int attempt) {
     // Use session cache on first attempt if still fresh
-    if (attempt == 0 && s_modCacheValid && s_cachedModScores && s_cachedModScores->count() > 0) {
+    if (attempt == 0 && s_modCacheValid && getCachedModScores() && getCachedModScores()->count() > 0) {
         std::time_t now = std::time(nullptr);
         if (now - s_modCacheTimestamp < k_modCacheTTL) {
             log::info("[CommunityHub] Moderators: instant load from cache");
@@ -635,7 +648,7 @@ void CommunityHubLayer::loadModerators(int attempt) {
                 e.accountID = ce.accountID;
                 m_modEntries.push_back(e);
             }
-            m_modScores = s_cachedModScores;
+            m_modScores = getCachedModScores();
             m_moderatorsRebuildQueued = false;
             m_requestedModeratorProfiles.clear();
             clearPendingNativeModeratorRequests();
@@ -734,7 +747,7 @@ void CommunityHubLayer::loadModerators(int attempt) {
                     ce.accountID = e.accountID;
                     s_cachedModEntries.push_back(ce);
                 }
-                s_cachedModScores = layer->m_modScores;
+                getCachedModScores() = layer->m_modScores;
                 s_modCacheTimestamp = std::time(nullptr);
                 s_modCacheValid = true;
             }
@@ -833,7 +846,7 @@ void CommunityHubLayer::loadModerators(int attempt) {
 
                             int remaining = pendingCount->fetch_sub(1, std::memory_order_acq_rel) - 1;
                             if (remaining <= 0) {
-                                s_cachedModScores = lyr->m_modScores;
+                                getCachedModScores() = lyr->m_modScores;
                                 s_modCacheTimestamp = std::time(nullptr);
                                 s_modCacheValid = true;
                                 lyr->requestModeratorsListRebuild();
@@ -872,7 +885,7 @@ void CommunityHubLayer::requestNativeModeratorLookup(std::string const& username
         return;
     }
 
-    s_activeCommunityHubLayer = this;
+    s_activeCommunityHubLayer() = this;
     m_activeNativeModeratorSearchUsername = username;
     glm->getUsers(searchObj);
 }
@@ -966,10 +979,10 @@ void CommunityHubLayer::clearPendingNativeModeratorRequests() {
         glm->m_userInfoDelegate = nullptr;
     }
 
-    auto activeLayerRef = s_activeCommunityHubLayer.lock();
+    auto activeLayerRef = s_activeCommunityHubLayer().lock();
     auto* activeLayer = static_cast<CommunityHubLayer*>(activeLayerRef.data());
     if (activeLayer == this) {
-        s_activeCommunityHubLayer = WeakRef<CommunityHubLayer>();
+        s_activeCommunityHubLayer() = WeakRef<CommunityHubLayer>();
     }
 }
 
@@ -1053,7 +1066,7 @@ void CommunityHubLayer::buildModeratorsList() {
     m_isLoadingTab = false;
     for (auto tab : m_tabs) tab->setEnabled(true);
     clearList();
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     auto& loc = Localization::get();
 
     if (!m_modScores || m_modScores->count() == 0) {
@@ -1376,7 +1389,7 @@ void CommunityHubLayer::buildCreatorsList() {
     m_isLoadingTab = false;
     for (auto tab : m_tabs) tab->setEnabled(true);
     clearList();
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     auto& loc = Localization::get();
 
     m_listContainer = CCNode::create();
@@ -1524,7 +1537,7 @@ void CommunityHubLayer::buildThumbnailsList() {
     m_isLoadingTab = false;
     for (auto tab : m_tabs) tab->setEnabled(true);
     clearList();
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     auto& loc = Localization::get();
 
     m_listContainer = CCNode::create();
@@ -1664,7 +1677,7 @@ void CommunityHubLayer::buildThumbnailsList() {
 void CommunityHubLayer::addInfoButton(Tab tab) {
     if (!m_listContainer) return;
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     auto infoMenu = CCMenu::create();
     infoMenu->setPosition(0, 0);
     infoMenu->setZOrder(30);
@@ -1736,7 +1749,7 @@ void CommunityHubLayer::buildCompatibleModsList() {
     for (auto tab : m_tabs) tab->setEnabled(true);
     clearList();
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     auto& loc = Localization::get();
 
     m_listContainer = CCNode::create();

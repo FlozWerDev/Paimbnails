@@ -14,6 +14,7 @@ public:
     static CaptureAssetBrowserPopup* create(CapturePreviewPopup* previewPopup);
 
     static void restoreAllAssets();
+    static void discardTrackedAssets();
 
     struct AssetGroup {
         int objectID = 0;

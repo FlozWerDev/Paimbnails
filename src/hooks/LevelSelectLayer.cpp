@@ -7,24 +7,59 @@
 #include <Geode/binding/BoomScrollLayer.hpp>
 #include <Geode/binding/GJGroundLayer.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
+#include <Geode/binding/GJBaseGameLayer.hpp>
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/audio/services/AudioContextCoordinator.hpp"
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
+#include "../features/menu-loop/services/MenuLoopManager.hpp"
+#include "../features/menu-loop/services/MenuLoopControl.hpp"
+#include "../features/menu-loop/ui/NowPlayingCard.hpp"
 #include "../utils/AudioInterop.hpp"
 #include "../utils/Shaders.hpp"
 #include "../blur/BlurSystem.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../framework/EventBus.hpp"
+#include "../framework/ModEvents.hpp"
+#include "../framework/compat/SceneLocators.hpp"
 #include <functional>
 
 using namespace geode::prelude;
 using namespace Shaders;
 
-// Evita que GameManager pise canciones dinamicas o de perfil
+namespace {
+    inline void restoreMenuLoopPositionIfNeeded() {
+        auto& sm = paimon::menuloop::MenuLoopManager::get();
+        if (sm.isOriginalMenuLoop() || sm.isOverride()) return;
+
+        auto* colon = sm.getColonMenuLoopStartTime();
+        if ((colon && colon->getSettingValue<bool>("enable")) || !sm.getShouldRestoreMenuLoopPoint()) {
+            sm.setPauseSongPositionTracking(false);
+            return;
+        }
+
+        auto* fmod = FMODAudioEngine::get();
+        if (fmod && !sm.getPauseSongPositionTracking()) {
+            auto oldTrack = fmod->getActiveMusic(0);
+            if (oldTrack == sm.getCurrentSong()) {
+                sm.setPauseSongPositionTracking(false);
+                return;
+            }
+        }
+
+        sm.restoreLastMenuLoopPosition();
+        sm.setShouldRestoreMenuLoopPoint(false);
+        sm.setPauseSongPositionTracking(false);
+    }
+}
+
+// Evita que GameManager pise canciones dinamicas o de perfil.
+// Usamos Priority::Late en vez de Last para no bloquear a otros mods que
+// quieran observar/decidir DESPUES de nosotros (con Priority::VeryLate o
+// Last). Esto mantiene la coordinacion cooperativa sin pisar a otros.
 class $modify(PaimonGameManager, GameManager) {
     static void onModify(auto& self) {
-        // Otros hooks primero, bloqueamos al final si hace falta
-        (void)self.setHookPriorityPre("GameManager::fadeInMenuMusic", geode::Priority::Last);
+        (void)self.setHookPriorityPre("GameManager::fadeInMenuMusic", geode::Priority::Late);
     }
 
     $override
@@ -32,23 +67,97 @@ class $modify(PaimonGameManager, GameManager) {
         bool passthrough = Mod::get()->getSavedValue<bool>("music-hook-passthrough", false);
         if (passthrough) {
             GameManager::fadeInMenuMusic();
+            restoreMenuLoopPositionIfNeeded();
             return;
         }
+
         auto* dsm = DynamicSongManager::get();
-        if (paimon::isDynamicSongInteropActive() && dsm->isInValidLayer()) return;
-        if (dsm->hasSuspendedPlayback()) return;
+
+        // Notificar a otros mods que estamos pisando audio para que puedan
+        // reaccionar (ej: un mod de musica externo puede pausarse).
+        auto notifyBlocked = [](char const* reason) {
+            paimon::EventBus::get().publish(paimon::AudioOwnerChangedEvent{
+                "menu", reason, 0
+            });
+        };
+
+        if (paimon::isDynamicSongInteropActive() && dsm->isInValidLayer()) {
+            notifyBlocked("paimon-dynamic");
+            return;
+        }
+        if (dsm->hasSuspendedPlayback()) {
+            notifyBlocked("paimon-dynamic-suspended");
+            return;
+        }
         if (paimon::isDynamicSongInteropActive() && !dsm->isActive()) paimon::setDynamicSongInteropActive(false);
-        if (paimon::isProfileMusicInteropActive()) return;
-        if (paimon::isVideoAudioInteropActive()) return;
+        if (paimon::isProfileMusicInteropActive()) {
+            notifyBlocked("paimon-profile-music");
+            return;
+        }
+        if (paimon::isVideoAudioInteropActive()) {
+            notifyBlocked("paimon-video-audio");
+            return;
+        }
         GameManager::fadeInMenuMusic();
+        restoreMenuLoopPositionIfNeeded();
     }
 };
 
-// Evita que GD reinicie musica en transiciones
+// Evita que GD reinicie musica en transiciones.
+// TambiÃ©n maneja transiciones de mÃºsica (guardar/restaurar posiciÃ³n).
+// Priority::Late (no Last) — ver comentario arriba.
 class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
     static void onModify(auto& self) {
-        // Mismo esquema que fadeInMenuMusic
-        (void)self.setHookPriorityPre("FMODAudioEngine::playMusic", geode::Priority::Last);
+        (void)self.setHookPriorityPre("FMODAudioEngine::playMusic", geode::Priority::Late);
+    }
+
+    $override
+    void update(float dt) {
+        FMODAudioEngine::update(dt);
+
+        // Perf: Menu loop position tracking and constant shuffle are already
+        // handled by PaimonMenuLoopFMODHook.
+        auto* engine = FMODAudioEngine::sharedEngine();
+        if (!engine) return;
+        auto* ch = engine->getActiveMusicChannel(0);
+        if (!ch) return;
+        // â”€â”€ Menu Loop position tracking + constant shuffle â”€â”€
+        auto& sm = paimon::menuloop::MenuLoopManager::get();
+        if (!GJBaseGameLayer::get() && !sm.isOriginalMenuLoop() && !paimon::menuloop::isVanillaMenuLoopDisabled()) {
+            unsigned int position = 0;
+            if (ch->getPosition(&position, FMOD_TIMEUNIT_MS) == FMOD_OK) {
+                if (!sm.getPauseSongPositionTracking()) {
+                    sm.setLastMenuLoopPosition(position);
+                }
+            }
+
+            // Constant shuffle: switch song when near end
+            if (sm.getConstantShuffleMode() && !sm.isOverride() && sm.getSongsSize() >= 2) {
+                bool isPlaying = true;
+                FMOD::Sound* sound = nullptr;
+                unsigned int length = 0;
+                ch->getCurrentSound(&sound);
+                ch->isPlaying(&isPlaying);
+                if (sound && isPlaying) {
+                    sound->getLength(&length, FMOD_TIMEUNIT_MS);
+                    if (length > 0 && (length - 100) < position) {
+                        paimon::menuloop::MenuLoopControl::constantShuffleModeNewSong();
+                        if (auto* menuLayer = GameManager::get()->m_menuLayer) {
+                            paimon::menuloop::NowPlayingCard::showForCurrentSong(menuLayer);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    $override
+    void stopAllMusic(bool p0) {
+        // Pausar tracking de posiciÃ³n del MenuLoopManager
+        if (!GJBaseGameLayer::get()) {
+            paimon::menuloop::MenuLoopManager::get().setPauseSongPositionTracking(true);
+        }
+        FMODAudioEngine::stopAllMusic(p0);
     }
 
     $override
@@ -63,7 +172,8 @@ class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
         bool isMenuTrack = !menuTrack.empty() && requestedPath == menuTrack;
 
         if (!DynamicSongManager::s_selfPlayMusic) {
-            // Bloquea menu music si video tiene audio activo
+            auto* dsm = DynamicSongManager::get();
+
             if (paimon::isVideoAudioInteropActive() && isMenuTrack) {
                 return;
             }
@@ -78,11 +188,9 @@ class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
                 return;
             }
 
-            auto* dsm = DynamicSongManager::get();
             if (paimon::isDynamicSongInteropActive() && dsm->isInValidLayer()) {
-                return; // Bloquea todo intento externo
+                return;
             }
-            // bloquear menu music mientras dynamic song esta suspendida
             if (dsm->hasSuspendedPlayback() && isMenuTrack) {
                 return;
             }
@@ -110,6 +218,9 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         int m_verifyFrameCounter = 0;  // verificar musica cada ~1s
         bool m_meteringEnabled = false;
         bool m_audioCleanedUp = false;
+        // Perf: cache dynamic-song setting and throttle metering
+        bool m_cachedDynamicSong = false;
+        int m_meteringFrameCounter = 0;
     };
 
     $override
@@ -125,68 +236,54 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         // bg del nivel
         this->updateThumbnailBackground(levelID);
         
-        // quitar el fondo que GD pone
+        // quitar el fondo que GD pone (respetando nodos de otros mods)
         if (m_backgroundSprite) {
             m_backgroundSprite->setVisible(false);
         }
         if (m_groundLayer) {
             m_groundLayer->setVisible(false);
         }
-        CCArray* children = this->getChildren();
-        if (children) {
-            for (auto* node : CCArrayExt<CCNode*>(children)) {
-                if (!node) continue;
-                if (node->getZOrder() < -1) {
-                    node->setVisible(false);
-                }
-                if (typeinfo_cast<GJGroundLayer*>(node)) {
-                    node->setVisible(false);
-                }
-            }
-        }
+        // Delegamos a LevelSelectLocator para respetar nodos de otros mods
+        // (texture-loader, happy textures, imageplus, etc.).
+        paimon::compat::LevelSelectLocator::hideVanillaBackground(this);
 
         // ocultar los dots del BoomScrollLayer y reemplazar con slider
         if (m_scrollLayer) {
             m_scrollLayer->togglePageIndicators(false);
 
             // ocultar page-buttons originales (flechas izquierda/derecha)
-            // buscar por ID directo o por CCMenu con flechas
+            // SOLO por ID conocido — antes usabamos heuristica
+            // (posY<50 && childCount<=2) que ocultaba menus arbitrarios de
+            // otros mods (BetterInfo, More Icons, BackgroundLight, etc.)
+            // que sucedian a tener pocos hijos en la zona inferior.
+            // node-ids estandariza estos IDs en LevelSelectLayer.
+            static constexpr char const* kArrowMenuIDs[] = {
+                "page-buttons", "prev-page-menu", "next-page-menu",
+                "prev-next-menu", "arrow-menu", " arrows-menu",
+                "prev-btn", "next-btn", "prev-arrow", "next-arrow"
+            };
+            auto isArrowMenuID = [](std::string const& id) {
+                for (auto* candidate : kArrowMenuIDs) {
+                    if (id == candidate) return true;
+                }
+                return false;
+            };
+
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
                 if (!child) continue;
-                std::string id = child->getID();
-                if (id == "page-buttons" || id == "prev-page-menu" || id == "next-page-menu" ||
-                    id == "prev-next-menu" || id == "arrow-menu" || id == " arrows-menu") {
+                if (isArrowMenuID(child->getID())) {
                     child->setVisible(false);
-                    continue;
-                }
-                // ocultar cualquier CCMenu en la parte baja con 1-2 botones (probables flechas)
-                if (auto* menu = typeinfo_cast<CCMenu*>(child)) {
-                    int itemCount = menu->getChildren() ? menu->getChildren()->count() : 0;
-                    float posY = menu->getPositionY();
-                    // flechas tipicamente estan en Y < 50 y tienen 1-2 items
-                    if (itemCount <= 2 && posY < 50.f && posY > 0.f) {
-                        menu->setVisible(false);
-                    }
                 }
             }
-            // busqueda recursiva por todos los hijos por si el menu esta anidado
+            // busqueda recursiva por todos los hijos por si el menu esta anidado.
+            // Igualmente: solo escondemos lo que tenga un ID reconocible.
             std::function<void(CCNode*)> hideArrowMenus = [&](CCNode* node) {
                 if (!node) return;
                 for (auto* child : CCArrayExt<CCNode*>(node->getChildren())) {
                     if (!child) continue;
-                    // buscar por ID
-                    std::string cid = child->getID();
-                    if (cid == "page-buttons" || cid == "prev-btn" || cid == "next-btn" ||
-                        cid == "prev-arrow" || cid == "next-arrow") {
+                    if (isArrowMenuID(child->getID())) {
                         child->setVisible(false);
                         continue;
-                    }
-                    if (auto* menu = typeinfo_cast<CCMenu*>(child)) {
-                        int itemCount = menu->getChildren() ? menu->getChildren()->count() : 0;
-                        float posY = menu->getPositionY();
-                        if (itemCount <= 2 && posY < 50.f && posY > 0.f) {
-                            menu->setVisible(false);
-                        }
                     }
                     hideArrowMenus(child);
                 }
@@ -251,31 +348,43 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             }
         }
 
-        // estilo del levels-list: bordes oscuros + 1px mas alto arriba y abajo
+        // estilo del levels-list: bordes oscuros + 1px mas alto arriba y abajo.
+        //
+        // Compat: solo tocamos el primer CCScale9Sprite vanilla que matchee
+        // la geometria esperada y que NO tenga un ID custom asignado por otro
+        // mod. Si otro mod ya asigno un ID al fondo (sea por su cuenta o via
+        // node-ids), respetamos su decision y no lo modificamos. Esto evita
+        // teñir nodos de mods como BetterInfo o themes alternativos.
         {
-            // buscar el nodo de la lista de niveles (CCScale9Sprite o similar)
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
                 if (!child) continue;
-                auto name = std::string(child->getID());
-                // buscar por ID o por tipo CCScale9Sprite que sea el fondo de la lista
-                if (auto* s9 = typeinfo_cast<cocos2d::extension::CCScale9Sprite*>(child)) {
-                    auto size = s9->getContentSize();
-                    auto pos = s9->getPosition();
-                    // el fondo de la lista de niveles esta en la zona central
-                    if (size.width > win.width * 0.5f && pos.y > win.height * 0.2f && pos.y < win.height * 0.8f) {
-                        // 1px mas alto arriba y abajo
-                        s9->setContentSize({size.width, size.height + 2.f});
-                        s9->setPosition({pos.x, pos.y - 1.f});
-                        // bordes oscuros
-                        s9->setColor({30, 30, 30});
-                        s9->setOpacity(200);
-                    }
-                }
+                auto* s9 = typeinfo_cast<cocos2d::extension::CCScale9Sprite*>(child);
+                if (!s9) continue;
+                // Si tiene un ID, asumimos que es un nodo "marcado" (por
+                // node-ids o por otro mod) — no lo retocamos.
+                if (!std::string(s9->getID()).empty()) continue;
+
+                auto size = s9->getContentSize();
+                auto pos  = s9->getPosition();
+                if (size.width <= win.width * 0.5f) continue;
+                if (pos.y <= win.height * 0.2f || pos.y >= win.height * 0.8f) continue;
+
+                // 1px mas alto arriba y abajo
+                s9->setContentSize({size.width, size.height + 2.f});
+                s9->setPosition({pos.x, pos.y - 1.f});
+                // bordes oscuros + marcamos para no reentrar en re-init
+                s9->setColor({30, 30, 30});
+                s9->setOpacity(200);
+                s9->setID("paimon-levels-list-bg"_spr);
+                break; // solo el primer match
             }
         }
         
         this->scheduleOnce(schedule_selector(PaimonLevelSelectLayer::forcePlayMusic), 0.0f);
         this->schedule(schedule_selector(PaimonLevelSelectLayer::checkPageLoop));
+
+        // Perf: cache dynamic-song setting once at init
+        m_fields->m_cachedDynamicSong = Mod::get()->getSettingValue<bool>("dynamic-song");
         
         return true;
     }
@@ -393,11 +502,14 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             this->syncLevelSelectSong();
         }
 
-        // logica del efecto “pulso” con la musica
-        if (m_fields->m_bgSprite && Mod::get()->getSettingValue<bool>("dynamic-song")) {
+        // logica del efecto â€œpulsoâ€ con la musica
+        if (m_fields->m_bgSprite && m_fields->m_cachedDynamicSong) {
+             // Perf: throttle FMOD metering to every 3 frames
+             if (++m_fields->m_meteringFrameCounter < 3) return;
+             m_fields->m_meteringFrameCounter = 0;
              // master channel group pa leer picos
-             auto engine = FMODAudioEngine::sharedEngine();
-             if (engine->m_system) {
+              auto engine = FMODAudioEngine::sharedEngine();
+              if (engine && engine->m_system) {
                  FMOD::ChannelGroup* masterGroup = nullptr;
                  engine->m_system->getMasterChannelGroup(&masterGroup);
                  
@@ -425,14 +537,14 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                          if (peak > m_fields->m_smoothedPeak) {
                              m_fields->m_smoothedPeak = peak;
                          } else {
-                             m_fields->m_smoothedPeak -= dt * 1.5f; // velocidad de “decay”
+                             m_fields->m_smoothedPeak -= dt * 1.5f; // velocidad de â€œdecayâ€
                              if (m_fields->m_smoothedPeak < 0.f) m_fields->m_smoothedPeak = 0.f;
                          }
                          
                          // bajar sensibilidad un 30%
                          float val = m_fields->m_smoothedPeak * 0.7f;
 
-                         // brillo: 80 base → 255 en pico
+                         // brillo: 80 base â†’ 255 en pico
                          float brightnessVal = 80.f + (val * 175.f);
                          if (brightnessVal > 255.f) brightnessVal = 255.f;
                          GLubyte cVal = static_cast<GLubyte>(brightnessVal);
@@ -462,6 +574,15 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
              return;
         }
 
+        // Fast path: si el thumbnail ya esta en RAM (precargado al iniciar
+        // el mod), aplicarlo INMEDIATAMENTE en el mismo frame. Sin esto,
+        // el callback de requestLoad se encola y tarda 1-2 frames en
+        // resolver, causando un flash negro al abrir LevelSelectLayer.
+        if (auto* cached = ThumbnailLoader::get().tryGetCachedTexture(levelID, false)) {
+            this->applyBackground(cached, levelID);
+            return;
+        }
+
         std::string fileName = fmt::format("{}.png", levelID);
 
         Ref<LevelSelectLayer> self = this;
@@ -469,6 +590,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         ThumbnailLoader::get().requestLoad(levelID, fileName, [self, levelID](CCTexture2D* tex, bool success) {
             // si cambio de pagina mientras cargaba, ignorar
             auto* layer = static_cast<PaimonLevelSelectLayer*>(self.data());
+            if (!layer || !layer->getParent()) return;
             if (layer->m_fields->m_currentLevelID == levelID) {
                 if (success && tex) {
                     layer->applyBackground(tex, levelID);

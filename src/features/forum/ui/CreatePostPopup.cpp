@@ -1,6 +1,7 @@
 #include "CreatePostPopup.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/ui/TextInput.hpp>
@@ -26,6 +27,23 @@ bool CreatePostPopup::init(
     m_onCreated = std::move(onCreated);
 
     this->setTitle("Create New Post");
+
+    // Replace the brown vanilla background with the dark forum chrome.
+    if (m_bgSprite) m_bgSprite->setVisible(false);
+    {
+        auto popupSize = m_mainLayer->getContentSize();
+        auto darkBg = paimon::SpriteHelper::createRoundedRect(
+            popupSize.width, popupSize.height, 8.f,
+            {10/255.f, 10/255.f, 18/255.f, 245/255.f},
+            {130/255.f, 180/255.f, 255/255.f, 130/255.f},
+            1.4f
+        );
+        if (darkBg) {
+            darkBg->setPosition({0.f, 0.f});
+            darkBg->setZOrder(-1);
+            m_mainLayer->addChild(darkBg);
+        }
+    }
 
     auto contentSize = m_mainLayer->getContentSize();
     float cx = contentSize.width / 2.f;

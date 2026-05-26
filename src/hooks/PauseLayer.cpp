@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <sstream>
 
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/capture/ui/CapturePreviewPopup.hpp"
@@ -30,9 +31,31 @@
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../utils/PaimonNotification.hpp"
 
+#include "../utils/ActivePauseLayer.hpp"
+
 #include "../utils/SpriteHelper.hpp"
 
 using namespace geode::prelude;
+
+namespace {
+// #region agent log
+// PERF: cuerpo gateado tras PAIMON_DEBUG_AGENT347 (igual que en PlayLayer.cpp).
+// Por defecto no-op para evitar abrir/cerrar el log file en cada captura.
+void agentLog347Pause(char const* loc, char const* msg, char const* hid, std::string const& data) {
+#ifdef PAIMON_DEBUG_AGENT347
+    std::ofstream f("debug-347aef.log", std::ios::app);
+    if (!f) return;
+    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    f << "{\"sessionId\":\"347aef\",\"hypothesisId\":\"" << hid
+      << "\",\"location\":\"" << loc << "\",\"message\":\"" << msg
+      << "\",\"data\":" << data << ",\"timestamp\":" << ts << "}\n";
+#else
+    (void)loc; (void)msg; (void)hid; (void)data;
+#endif
+}
+// #endregion
+} // namespace
 
 static std::vector<uint8_t> convertRGBAtoRGB(const uint8_t* rgba, int w, int h) {
     const size_t pixelCount = static_cast<size_t>(w) * h;
@@ -74,13 +97,15 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     $override
     void customSetup() {
         PauseLayer::customSetup();
+        paimon::setActivePauseLayer(this);
+
+        // Aseguramos que la flag de zoom-hidden esta limpia al crear un
+        // nuevo PauseLayer. Sin esto, si una sesion anterior dejo la flag
+        // en true (ej. crash, scene change abrupto), el nuevo PauseLayer
+        // nunca se renderizaria.
+        paimon::setPauseZoomHidden(false);
 
         log::info("[PauseLayer] customSetup");
-
-        if (!Mod::get()->getSettingValue<bool>("enable-thumbnail-taking")) {
-            log::debug("Thumbnail taking disabled in settings");
-            return;
-        }
 
         auto playLayer = PlayLayer::get();
         if (!playLayer) {
@@ -102,7 +127,21 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID(id))) {
                 return byId;
             }
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            // Fallback: buscar un CCMenu en el lado correcto, pero
+            // validando que contenga botones conocidos del PauseLayer.
+            // Sin esa validacion, otros mods con menus en la misma zona
+            // (BetterEdit, Globed, etc.) podrian ser elegidos por
+            // accidente.
+            auto winSize = CCDirector::get()->getWinSize();
+            // IDs de botones que esperamos en cada lado del PauseLayer.
+            static char const* const kRightSideKnownIDs[] = {
+                "resume-button", "practice-button", "quit-button", nullptr
+            };
+            static char const* const kLeftSideKnownIDs[] = {
+                "options-button", "restart-button", nullptr
+            };
+            char const* const* knownIDs = rightSide ? kRightSideKnownIDs : kLeftSideKnownIDs;
+
             CCMenu* best = nullptr;
             float bestScore = 0.f;
             for (auto* node : CCArrayExt<CCNode*>(this->getChildren())) {
@@ -111,11 +150,30 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 float x = menu->getPositionX();
                 bool sideMatch = rightSide ? (x > winSize.width * 0.5f) : (x < winSize.width * 0.5f);
                 if (!sideMatch) continue;
-                float score = menu->getChildrenCount();
+
+                // Score por presencia de botones conocidos. Un menu
+                // con 2+ botones conocidos casi seguro es el correcto
+                // y nos protegemos de menus de otros mods que sólo
+                // contengan sus propios botones.
+                float score = 0.f;
+                for (auto const* const* p = knownIDs; *p != nullptr; ++p) {
+                    if (menu->getChildByID(*p)) score += 10.f;
+                }
+                // Tie-break por cantidad de hijos (los menus de GD
+                // suelen tener mas botones que los de mods).
+                score += static_cast<float>(menu->getChildrenCount()) * 0.1f;
+
                 if (!best || score > bestScore) {
                     best = menu;
                     bestScore = score;
                 }
+            }
+            // Si el "mejor" menu encontrado no contiene NINGUN boton
+            // conocido, mejor no devolver nada para evitar añadir
+            // nuestro boton a un menu de otro mod.
+            if (best && bestScore < 5.f) {
+                log::warn("PauseLayer fallback menu found but contains no known buttons; skipping to avoid foreign-mod menu pollution");
+                return nullptr;
             }
             return best;
         };
@@ -123,6 +181,11 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         auto rightMenu = findButtonMenu("right-button-menu", true);
         if (!rightMenu) {
             log::error("Right button menu not found in PauseLayer (including fallback)");
+            return;
+        }
+
+        if (!Mod::get()->getSettingValue<bool>("enable-thumbnail-taking")) {
+            log::debug("Thumbnail taking disabled in settings");
             return;
         }
 
@@ -218,10 +281,37 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             log::info("Thumbnail capture + extra buttons added successfully");
     }
 
+    // ── NOTA: el override de visit() NO se hace aqui ───────────────────
+    //
+    // PauseLayer no expone visit() en su modify binding (solo lo expone
+    // CCNode), por lo que `$override void visit()` dentro de este $modify
+    // no hookea nada — el primer intento fallo silenciosamente.
+    //
+    // El skip-de-render durante zoom esta implementado via $modify(CCNode)
+    // en PlayLayer.cpp (PaimonPauseZoomVisitFilter), que hookea CCNode::visit
+    // y filtra por puntero al activePauseLayer cuando paimon::isPauseZoomHidden
+    // esta en true. El hook se aplica a TODOS los nodos pero el check es
+    // O(1) (comparacion de punteros), asi que el costo es despreciable.
+
     void onScreenshot(CCObject*) {
         log::info("[PauseLayer] Capture button pressed; hiding pause menu");
         if (m_fields->m_captureInProgress) {
             log::warn("[PauseLayer] Capture already in progress, ignoring duplicate request");
+            return;
+        }
+
+        // Mutua exclusión con el camino B (capture-keybind del PlayLayer):
+        // si una captura por keybind está en curso, no iniciamos otra desde
+        // el botón del PauseLayer. Sin esta guarda, ambos caminos podrían
+        // pisarse el `s_request` de FramebufferCapture y dejar uno de los
+        // dos callbacks huérfano, con flags `gCaptureInProgress`/
+        // `paimon::isCaptureInProgress` colgados como true para siempre.
+        if (paimon::isCaptureInProgress()) {
+            log::warn("[PauseLayer] Captura por keybind ya en curso, ignorando boton");
+            PaimonNotify::create(
+                Localization::get().getString("pause.capture_busy").c_str(),
+                NotificationIcon::Warning
+            )->show();
             return;
         }
 
@@ -233,7 +323,23 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         }
 
         // Oculta menu de pausa temporalmente
+        bool const visBefore = this->isVisible();
         this->setVisible(false);
+        // Setea flag global para que el PauseZoomManager::update() ticker NO
+        // restaure la visibilidad del PauseLayer durante el periodo entre
+        // setVisible(false) y la captura efectiva en swapBuffers (~0.05s).
+        // Sin esto, si el zoom esta en 1.0 y autoShow esta on, el ticker
+        // restaurara visibilidad y el PauseLayer aparecera en la captura.
+        paimon::setCaptureInProgress(true);
+        // #region agent log
+        {
+            std::ostringstream d;
+            d << "{\"visBefore\":" << (visBefore ? "true" : "false")
+              << ",\"visAfter\":" << (this->isVisible() ? "true" : "false")
+              << ",\"selfPtr\":" << reinterpret_cast<uintptr_t>(this) << "}";
+            agentLog347Pause("PauseLayer.cpp:onScreenshot", "hide_before_capture", "F", d.str());
+        }
+        // #endregion
         m_fields->m_captureInProgress = true;
 
         // Muestra circulo de carga
@@ -242,7 +348,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         this->scheduleOnce(schedule_selector(PaimonPauseLayer::captureSafetyRestore), 8.0f);
 
         // Programa captura y restaura menu
-        auto scheduler = CCDirector::sharedDirector()->getScheduler();
+        auto scheduler = CCDirector::get()->getScheduler();
         scheduler->scheduleSelector(
             schedule_selector(PaimonPauseLayer::performCaptureAndRestore),
             this,
@@ -254,7 +360,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     }
 
     void showLoadingOverlay() {
-        auto scene = CCDirector::sharedDirector()->getRunningScene();
+        auto scene = CCDirector::get()->getRunningScene();
         if (!scene) return;
         if (auto existing = scene->getChildByID("paimon-loading-overlay"_spr)) {
             existing->removeFromParentAndCleanup(true);
@@ -265,14 +371,14 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     }
 
     void reShowOverlay(float dt) {
-        auto scene = CCDirector::sharedDirector()->getRunningScene();
+        auto scene = CCDirector::get()->getRunningScene();
         if (!scene) return;
         auto overlay = scene->getChildByID("paimon-loading-overlay"_spr);
         if (overlay) overlay->setVisible(true);
     }
 
     void removeLoadingOverlay() {
-        auto scheduler = CCDirector::sharedDirector()->getScheduler();
+        auto scheduler = CCDirector::get()->getScheduler();
         scheduler->unscheduleSelector(
             schedule_selector(PaimonPauseLayer::reShowOverlay), this
         );
@@ -280,7 +386,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             schedule_selector(PaimonPauseLayer::captureSafetyRestore), this
         );
 
-        auto scene = CCDirector::sharedDirector()->getRunningScene();
+        auto scene = CCDirector::get()->getRunningScene();
         if (!scene) return;
         if (auto overlay = typeinfo_cast<PaimonLoadingOverlay*>(scene->getChildByID("paimon-loading-overlay"_spr))) {
             overlay->dismiss();
@@ -289,8 +395,16 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
     void captureSafetyRestore(float) {
         if (!m_fields->m_captureInProgress) return;
+        // Si ya no estamos en la escena no tocamos nada — un onExit() posterior
+        // o el destructor se encargara de limpiar.
+        if (!this->getParent()) {
+            m_fields->m_captureInProgress = false;
+            paimon::setCaptureInProgress(false);
+            return;
+        }
         log::warn("[PauseLayer] Capture watchdog restored UI state");
         m_fields->m_captureInProgress = false;
+        paimon::setCaptureInProgress(false);
         removeLoadingOverlay();
         this->setVisible(true);
         PaimonNotify::create(Localization::get().getString("pause.capture_error").c_str(), NotificationIcon::Warning)->show();
@@ -298,9 +412,28 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
     void performCaptureAndRestore(float dt) {
         log::info("[PauseLayer] Performing capture");
-        CCDirector::sharedDirector()->getScheduler()->unscheduleSelector(
+        // #region agent log
+        {
+            std::ostringstream d;
+            d << "{\"pauseVisible\":" << (this->isVisible() ? "true" : "false")
+              << ",\"hasParent\":" << (this->getParent() ? "true" : "false")
+              << ",\"selfPtr\":" << reinterpret_cast<uintptr_t>(this) << "}";
+            agentLog347Pause("PauseLayer.cpp:performCaptureAndRestore", "capture_start", "F", d.str());
+        }
+        // #endregion
+        CCDirector::get()->getScheduler()->unscheduleSelector(
             schedule_selector(PaimonPauseLayer::performCaptureAndRestore), this
         );
+
+        // Guarda esencial: si este PauseLayer ya no esta en la escena
+        // (ej: usuario hizo restart mientras esperaba los 0.05s),
+        // no tocamos nada.
+        if (!this->getParent()) {
+            log::warn("[PauseLayer] performCaptureAndRestore called on orphaned PauseLayer");
+            m_fields->m_captureInProgress = false;
+            paimon::setCaptureInProgress(false);
+            return;
+        }
 
             auto* pl = PlayLayer::get();
             if (!pl || !pl->m_level) {
@@ -308,37 +441,68 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 PaimonNotify::create(Localization::get().getString("pause.capture_error").c_str(), NotificationIcon::Error)->show();
                 removeLoadingOverlay();
                 this->setVisible(true);
+                m_fields->m_captureInProgress = false;
+                paimon::setCaptureInProgress(false);
+                return;
+            }
+
+            // Validaciones pre-captura (High Graphics, LDM, muerte)
+            auto validation = FramebufferCapture::validateCaptureConditions();
+            if (!validation.canCapture) {
+                log::info("[PauseLayer] Captura rechazada: {}", validation.reason);
+                PaimonNotify::create(validation.reason.c_str(), NotificationIcon::Warning)->show();
+                removeLoadingOverlay();
+                this->setVisible(true);
+                m_fields->m_captureInProgress = false;
+                paimon::setCaptureInProgress(false);
                 return;
             }
 
             int levelID = pl->m_level->m_levelID;
 
             // Oculta overlay para captura limpia
-            auto scene = CCDirector::sharedDirector()->getRunningScene();
+            auto scene = CCDirector::get()->getRunningScene();
             if (scene) {
                 auto overlay = scene->getChildByID("paimon-loading-overlay"_spr);
                 if (overlay) overlay->setVisible(false);
             }
 
             // Muestra overlay en siguiente frame
-            CCDirector::sharedDirector()->getScheduler()->scheduleSelector(
+            CCDirector::get()->getScheduler()->scheduleSelector(
                 schedule_selector(PaimonPauseLayer::reShowOverlay),
                 this, 0.0f, 0, 0.0f, false
             );
 
-            // Ref<> para seguridad de memoria
-            Ref<PauseLayer> safeRef = this;
+            // WeakRef en vez de Ref: si el PauseLayer se destruye (ej.
+            // restart/quit mientras la captura esta en proceso) no queremos
+            // revivirlo ni ejecutar callbacks sobre memoria huérfana.
+            geode::WeakRef<PauseLayer> weakRef = this;
 
             // Usa FramebufferCapture
-            FramebufferCapture::requestCapture(levelID, [safeRef, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbData, int width, int height) {
-                Loader::get()->queueInMainThread([safeRef, success, texture, rgbData, width, height, levelID]() {
-                    auto* self = static_cast<PaimonPauseLayer*>(safeRef.data());
+            FramebufferCapture::requestCapture(levelID, [weakRef, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbData, int width, int height) {
+                // Retiene textura con Ref<> para que sobreviva hasta que
+                // el lambda encolado se ejecute en el siguiente frame.
+                Ref<CCTexture2D> texRef = texture;
+                Loader::get()->queueInMainThread([weakRef, success, texRef, rgbData, width, height, levelID]() {
+                    CCTexture2D* texture = texRef.data();
+                    auto locked = weakRef.lock();
+                    if (!locked) {
+                        log::debug("[PauseLayer] Capture callback skipped: PauseLayer was destroyed");
+                        // Aun asi limpiamos el flag global porque la captura ya termino
+                        paimon::setCaptureInProgress(false);
+                        return;
+                    }
+                    auto* self = static_cast<PaimonPauseLayer*>(locked.data());
+                    // Doble check: aunque el objeto exista, puede haber perdido
+                    // su parent si un onExit() ya corrió.
                     if (!self->getParent()) {
                         self->m_fields->m_captureInProgress = false;
+                        paimon::setCaptureInProgress(false);
                         return;
                     }
                     self->removeLoadingOverlay();
                     self->m_fields->m_captureInProgress = false;
+                    paimon::setCaptureInProgress(false);
 
                     if (success && texture && rgbData) {
                         log::info("[PauseLayer] Capture successful: {}x{}", width, height);
@@ -424,7 +588,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                     }
 
                     // Restaura menu de pausa
-                    safeRef->setVisible(true);
+                    self->setVisible(true);
                     log::info("[PauseLayer] Pause menu restored after capture");
                 });
             });
@@ -433,12 +597,34 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
     $override
     void onExit() {
+        // Red de seguridad: cubre las rutas que NO pasan por onResume()
+        // (Esc/keyBackClicked, quit, restart, scene transitions). Sin esto,
+        // el ticker del PauseZoomManager podria seguir tocando este nodo
+        // mientras se destruye.
+        paimon::notifyPauseClosing();
+        paimon::clearActivePauseLayer(this);
+        // Limpia el flag global de captura por si quedo seteado (ej. si el
+        // usuario hizo quit/restart mientras una captura estaba pendiente).
+        paimon::setCaptureInProgress(false);
+        // Limpia el flag de zoom-hidden tambien — sin esto, si la pausa se
+        // cierra abruptamente con zoom activo, la flag queda en true y el
+        // siguiente PauseLayer no se renderiza nunca.
+        paimon::setPauseZoomHidden(false);
         m_fields->m_captureInProgress = false;
         m_fields->m_fileDialogOpen = false;
-        auto scheduler = CCDirector::sharedDirector()->getScheduler();
-        scheduler->unscheduleSelector(
-            schedule_selector(PaimonPauseLayer::performCaptureAndRestore), this
-        );
+
+        // Cancela cualquier captura pendiente para que callbacks async no
+        // toquen este PauseLayer despues de que pierda su parent.
+        FramebufferCapture::cancelPending();
+
+        // Limpia TODOS los selectors programados en este PauseLayer para
+        // evitar use-after-free si el scheduler los ejecuta despues de
+        // que onExit() termine pero antes de que el destructor corra.
+        if (auto* director = CCDirector::get()) {
+            if (auto* scheduler = director->getScheduler()) {
+                scheduler->unscheduleAllForTarget(this);
+            }
+        }
         removeLoadingOverlay();
         PauseLayer::onExit();
     }
@@ -472,6 +658,14 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             std::vector<uint8_t> mp4Data(fileSize);
             videoFile.read(reinterpret_cast<char*>(mp4Data.data()), fileSize);
             videoFile.close();
+
+            // Validar magic bytes de MP4 (ftyp al offset 4)
+            if (mp4Data.size() < 8 ||
+                !(mp4Data[4] == 'f' && mp4Data[5] == 't' && mp4Data[6] == 'y' && mp4Data[7] == 'p')) {
+                log::error("[PauseLayer] Selected file is not a valid MP4/MOV");
+                PaimonNotify::create(Localization::get().getString("pause.video_invalid").c_str(), NotificationIcon::Error)->show();
+                return;
+            }
 
             log::info("[PauseLayer] Video file read ({} bytes)", fileSize);
 
@@ -567,6 +761,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 // Lee datos RGBA
                 auto renderedImage = renderTex->newCCImage(false);
                 if (!renderedImage) {
+                    texture->release();
                     PaimonNotify::create(Localization::get().getString("pause.render_read_error").c_str(), NotificationIcon::Error)->show();
                     return;
                 }
@@ -865,5 +1060,59 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             } else {
                 pt::pickImage(pickerCb);
             }
+    }
+
+    void onResume(CCObject* sender) {
+        // Red de seguridad: si PlayLayer::get() es nulo, llamar a PauseLayer::onResume
+        // causará un crash por acceso a memoria (EXCEPTION_ACCESS_VIOLATION) en PlayLayer::resume
+        // ya que intenta acceder a campos de un PlayLayer inexistente.
+        if (!PlayLayer::get()) {
+            log::warn("[PauseLayer] onResume called but PlayLayer::get() is null. Preventing crash.");
+            this->removeFromParentAndCleanup(true);
+            return;
+        }
+
+        // Notifica al PauseZoomManager INMEDIATAMENTE cuando el usuario
+        // presiona Resume, no al final de la animacion de cierre. Sin esto,
+        // el ticker del manager sigue ejecutandose mientras el PauseLayer
+        // anima su salida y llama setPauseMenuVisible(true)/showLayer() cada
+        // frame, lo que reinicia la animacion de entrada y produce el
+        // sintoma de "menu pegado" al despausar rapido. Si la transicion
+        // queda en estado inconsistente, el destructor del PauseLayer ejecuta
+        // acciones encoladas sobre memoria liberada y el juego crashea.
+        paimon::notifyPauseClosing();
+        PauseLayer::onResume(sender);
+    }
+
+    void onRestart(CCObject* sender) {
+        if (!PlayLayer::get()) {
+            log::warn("[PauseLayer] onRestart called but PlayLayer::get() is null. Preventing crash.");
+            return;
+        }
+        PauseLayer::onRestart(sender);
+    }
+
+    void onRestartFull(CCObject* sender) {
+        if (!PlayLayer::get()) {
+            log::warn("[PauseLayer] onRestartFull called but PlayLayer::get() is null. Preventing crash.");
+            return;
+        }
+        PauseLayer::onRestartFull(sender);
+    }
+
+    void onNormalMode(CCObject* sender) {
+        if (!PlayLayer::get()) {
+            log::warn("[PauseLayer] onNormalMode called but PlayLayer::get() is null. Preventing crash.");
+            return;
+        }
+        PauseLayer::onNormalMode(sender);
+    }
+
+    void onPracticeMode(CCObject* sender) {
+        if (!PlayLayer::get()) {
+            log::warn("[PauseLayer] onPracticeMode called but PlayLayer::get() is null. Preventing crash.");
+            return;
+        }
+        PauseLayer::onPracticeMode(sender);
     }
 };

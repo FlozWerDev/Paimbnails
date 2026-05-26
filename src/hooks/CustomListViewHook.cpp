@@ -3,6 +3,7 @@
 #include <Geode/binding/LevelBrowserLayer.hpp>
 #include <Geode/binding/LevelListLayer.hpp>
 #include "../features/thumbnails/ui/LevelCellSettingsPopup.hpp"
+#include "../framework/compat/ModCompat.hpp"
 #include "LevelCellContext.hpp"
 
 using namespace geode::prelude;
@@ -15,8 +16,6 @@ static constexpr float COMPACT_LEVEL_CELL_HEIGHT = 45.f;
 // getCellHeight call (hot path during scrolling/layout, called many times/frame).
 static bool s_cachedCompactMode = false;
 static int s_cachedCompactVersion = -1;
-static bool s_suppressCompactHeight = false;
-static bool s_inLevelListLayer = false;
 
 static bool getCachedCompactMode() {
     int ver = LevelCellSettingsPopup::s_settingsVersion;
@@ -27,72 +26,51 @@ static bool getCachedCompactMode() {
     return s_cachedCompactMode;
 }
 
-static bool shouldCompactForDelegate(TableViewCellDelegate* delegate) {
-    if (!delegate) return true;
-
-    // Use typeid name check instead of typeinfo_cast because other mods may
-    // modify LevelListLayer, changing its RTTI type info and breaking the cast
-    std::string_view className(typeid(*delegate).name());
-    if (className.find("LevelListLayer") != std::string_view::npos) {
-        return false;
-    }
-
-    if (auto browser = typeinfo_cast<LevelBrowserLayer*>(delegate)) {
-        if (browser->m_searchObject && browser->m_searchObject->m_searchType == SearchType::MyLevels) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 class $modify(PaimonCustomListView, CustomListView) {
     // CompactLists-inspired: use Level4 type for compact mode.
     // GD natively renders Level4 as a compact cell (half height) with
     // m_compactView=true. This is the same approach Cvolton/compactlists-geode
     // uses — swap the BoomListType at create time so GD handles the layout.
+    //
+    // IMPORTANT: We swap Level→Level4 for ALL contexts (incluyendo My Levels y
+    // LevelListLayer) cuando compact mode esta activo. Esto coincide con el
+    // comportamiento de Cvolton's CompactLists. Los enhancements de Paimbnails
+    // (thumbnails, gradients, etc.) se siguen excluyendo via short-circuit en
+    // el LevelCell hook para mantener la apariencia vanilla en esos contextos.
     static CustomListView* create(cocos2d::CCArray* entries, TableViewCellDelegate* delegate,
                                    float width, float height, int count, BoomListType type,
                                    float cellHeight) {
-        // When compact mode is enabled and the list is a Level type,
-        // use Level4 which renders compact cells natively, and halve any
-        // explicit cellHeight so the table rows match the compact layout.
         bool isLevelType = type == BoomListType::Level ||
                            type == BoomListType::Level2 ||
                            type == BoomListType::Level3 ||
                            type == BoomListType::Level4;
-        
-        // LevelListLayer should NEVER use compact mode - check this first
-        // Use local variable instead of modifying global state
-        bool forceCompact = paimon::hooks::g_forceCompactLevelCells;
-        bool isLevelList = !shouldCompactForDelegate(delegate);
-        if (isLevelList) {
-            // Force compact mode off for LevelListLayer regardless of settings
-            forceCompact = false;
-        }
-        
-        bool compactEnabled = isLevelType && (getCachedCompactMode() || forceCompact);
-        bool compactAllowed = compactEnabled && shouldCompactForDelegate(delegate);
 
-        if (compactAllowed) {
-            if (type == BoomListType::Level) {
-                type = BoomListType::Level4;
-            }
-            // Halve explicit cellHeight (used for "My Levels" / created lists
-            // which pass cellHeight=90 directly, overriding getCellHeight).
-            if (type != BoomListType::Level4 && cellHeight > 0.f && cellHeight <= 200.f) {
+        bool forceCompact = paimon::hooks::g_forceCompactLevelCells;
+
+        // Compatibilidad con Cvolton/CompactLists: si su mod esta
+        // cargado, ya hace este mismo swap. Aplicarlo dos veces termina
+        // halveando el cellHeight dos veces (45->22) y rompe los items.
+        // Cedemos y dejamos que su mod maneje el modo compacto.
+        if (paimon::compat::ModCompat::isCompactListsLoaded()) {
+            return CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
+        }
+
+        // Convertir Level -> Level4 si compact mode esta activo (Cvolton pattern).
+        // No excluimos MyLevels ni LevelListLayer del swap. El flag de suppress
+        // (g_suppressCompactLevelCellsInContext) NO bloquea el swap aqui; ese
+        // flag solo se usa para skip de enhancements del mod en el LevelCell hook.
+        bool compactEnabled = isLevelType && (getCachedCompactMode() || forceCompact);
+
+        if (compactEnabled && type == BoomListType::Level) {
+            type = BoomListType::Level4;
+            // Para listas que pasan cellHeight explicito (ej. My Levels pasa 90),
+            // halvear el cellHeight para que coincida con el layout compact.
+            if (cellHeight > 0.f && cellHeight <= 200.f) {
                 cellHeight *= 0.5f;
             }
         }
 
-        bool oldSuppress = s_suppressCompactHeight;
-        bool oldInLevelList = s_inLevelListLayer;
-        s_suppressCompactHeight = compactEnabled && !compactAllowed;
-        s_inLevelListLayer = isLevelList;
-        auto* ret = CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
-        s_suppressCompactHeight = oldSuppress;
-        s_inLevelListLayer = oldInLevelList;
-        return ret;
+        return CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
     }
 
     // Also hook getCellHeight as a fallback for lists that are already created
@@ -100,23 +78,27 @@ class $modify(PaimonCustomListView, CustomListView) {
     static float getCellHeight(BoomListType type) {
         float original = CustomListView::getCellHeight(type);
 
+        // Si CompactLists esta cargado, ceder y no halvear nada.
+        if (paimon::compat::ModCompat::isCompactListsLoaded()) {
+            return original;
+        }
+
+        bool compactEnabled = getCachedCompactMode() || paimon::hooks::g_forceCompactLevelCells;
+        bool contextSuppressCompact = paimon::hooks::g_suppressCompactLevelCellsInContext;
+
         // Only override for Level-type cells
         bool isLevelType = type == BoomListType::Level ||
                            type == BoomListType::Level2 ||
                            type == BoomListType::Level3 ||
                            type == BoomListType::Level4;
 
-        // Check if compact mode should be suppressed for this context
-        // LevelListLayer should NEVER use compact mode
-        if (s_suppressCompactHeight) {
-            // For LevelListLayer, ensure we return at least the normal height
-            if (s_inLevelListLayer && isLevelType && original < NORMAL_LEVEL_CELL_HEIGHT) {
-                return NORMAL_LEVEL_CELL_HEIGHT;
-            }
+        // Si el contexto explicitamente suprime compact mode (forzado externo),
+        // respetar el cellHeight natural de GD.
+        if (contextSuppressCompact) {
             return original;
         }
 
-        if (isLevelType && (getCachedCompactMode() || paimon::hooks::g_forceCompactLevelCells)) {
+        if (isLevelType && compactEnabled) {
             // Level4 is already compact (create() swaps Level→Level4).
             // Don't halve it again or cells become ~22px (unusable).
             if (type == BoomListType::Level4) {
@@ -127,11 +109,6 @@ class $modify(PaimonCustomListView, CustomListView) {
                 return original * 0.5f;
             }
             return COMPACT_LEVEL_CELL_HEIGHT;
-        }
-
-        // For LevelListLayer in normal mode, ensure we return at least the normal height
-        if (s_inLevelListLayer && isLevelType && original < NORMAL_LEVEL_CELL_HEIGHT) {
-            return NORMAL_LEVEL_CELL_HEIGHT;
         }
 
         return original;

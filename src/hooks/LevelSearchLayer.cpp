@@ -64,7 +64,7 @@ namespace {
 
     float getRealtimeSearchDelay() {
         auto delayMs = std::clamp(
-            Mod::get()->getSettingValue<int>("realtime-search-debounce-ms"),
+            Mod::get()->getSavedValue<int>("realtime-search-debounce-ms", 350),
             kRealtimeSearchMinDelayMs,
             kRealtimeSearchMaxDelayMs
         );
@@ -225,11 +225,8 @@ namespace {
     }
 
     int parseIntSafe(std::string const& value, int fallback = 0) {
-        try {
-            return std::stoi(value);
-        } catch (...) {
-            return fallback;
-        }
+        auto result = geode::utils::numFromString<int>(value);
+        return result.isOk() ? result.unwrap() : fallback;
     }
 
     CCRect unionRect(CCRect const& a, CCRect const& b) {
@@ -2501,9 +2498,13 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
                     }
                 }
                 
-                if (auto preview = RealtimeSearchBrowserPreview::create(this)) {
-                    this->addChild(preview, 30);
-                    log::debug("[LevelSearchLayer] Recreated realtime preview in onEnter()");
+                if (searchType == 0) {
+                    if (auto preview = RealtimeSearchBrowserPreview::create(this)) {
+                        this->addChild(preview, 30);
+                        log::debug("[LevelSearchLayer] Recreated realtime preview in onEnter()");
+                    }
+                } else {
+                    log::debug("[LevelSearchLayer] Skipped realtime preview recreate in list search tab");
                 }
             }
         }

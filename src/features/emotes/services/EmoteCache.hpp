@@ -7,8 +7,13 @@
 #include <unordered_map>
 #include <list>
 #include <mutex>
+#include <condition_variable>
+#include <thread>
+#include <deque>
+#include <vector>
 #include <filesystem>
 #include <chrono>
+#include <atomic>
 
 namespace paimon::emotes {
 
@@ -44,10 +49,22 @@ public:
     // The callback should be treated as a main-thread completion callback.
     using PreloadCallback = geode::CopyableFunction<void(size_t downloaded, size_t skipped, size_t total)>;
 
+    // Per-step progress callback, fired each time an emote either finishes
+    // downloading or is skipped (because it was already cached). Useful for
+    // driving an X/Y label in the LoadingLayer (estilo Globed).
+    // Args: (completed = downloaded + skipped, total = catalog size).
+    // Always dispatched on the main thread.
+    using PreloadProgressCallback = geode::CopyableFunction<void(size_t completed, size_t total)>;
+
     // Preload all emote images to disk in background (progressive, async).
     // Only downloads emotes not already cached on disk.
     // Completion callback is intended to run on the main thread.
-    void preloadAllToDisk(PreloadCallback callback = nullptr);
+    //
+    // If `progressCallback` is set, it is invoked once per emote (downloaded
+    // OR skipped) with the running totals so the UI can update a progress
+    // label without polling.
+    void preloadAllToDisk(PreloadCallback callback = nullptr,
+                          PreloadProgressCallback progressCallback = nullptr);
 
     // Cancel any in-progress preload.
     void cancelPreload();
@@ -59,6 +76,9 @@ public:
 private:
     EmoteCache() = default;
     ~EmoteCache() {
+        // Stop the decode workers cleanly so the threads don't outlive us.
+        shutdownDecodeWorker();
+
         // Detach textures without calling release() to avoid crash
         // when CCPoolManager is already dead during static destruction.
         std::lock_guard lock(m_ramMutex);
@@ -105,6 +125,35 @@ private:
     // Background preload state
     std::atomic<bool> m_preloading{false};
     std::atomic<bool> m_preloadCancel{false};
+
+    // ── Decode worker pool ─────────────────────────────
+    // Static-emote PNG/JPEG decoding is expensive (stbi_load_from_memory)
+    // and used to run on the main thread, which made the picker stutter
+    // when many cells loaded their disk-cached bytes at once. We now
+    // dispatch decode work to a small pool and only return to the main
+    // thread to upload the pixels to a GL texture (mandatory).
+    struct DecodeTask {
+        EmoteInfo info;
+        std::vector<uint8_t> data;       // raw file bytes
+        TextureCallback callback;
+    };
+
+    void initDecodeWorker();
+    void shutdownDecodeWorker();
+    void enqueueDecode(DecodeTask task);
+    static void decodeWorkerLoop(EmoteCache* self);
+    void finalizeStaticDecodeOnMainThread(EmoteInfo info,
+                                          std::vector<uint8_t> rgba,
+                                          int width, int height,
+                                          size_t originalByteSize,
+                                          TextureCallback callback);
+
+    std::deque<DecodeTask> m_decodeQueue;
+    std::mutex m_decodeMutex;
+    std::condition_variable m_decodeCV;
+    std::vector<std::thread> m_decodeWorkers;
+    std::atomic<bool> m_decodeRunning{false};
+    std::atomic<bool> m_decodeShutdown{false};
 };
 
 } // namespace paimon::emotes

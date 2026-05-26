@@ -19,46 +19,46 @@ namespace internal {
 
 namespace thumbnails {
     inline std::string backgroundType() {
-        return geode::Mod::get()->getSettingValue<std::string>("levelcell-background-type");
+        return geode::Mod::get()->getSavedValue<std::string>("levelcell-background-type", "thumbnail");
     }
     inline double backgroundBlur() {
-        return geode::Mod::get()->getSettingValue<double>("levelcell-background-blur");
+        return geode::Mod::get()->getSavedValue<double>("levelcell-background-blur", 3.0);
     }
     inline double backgroundDarkness() {
-        return geode::Mod::get()->getSettingValue<double>("levelcell-background-darkness");
+        return geode::Mod::get()->getSavedValue<double>("levelcell-background-darkness", 0.2);
     }
     inline bool showSeparator() {
-        return geode::Mod::get()->getSettingValue<bool>("levelcell-show-separator");
+        return geode::Mod::get()->getSavedValue<bool>("levelcell-show-separator", true);
     }
     inline bool showViewButton() {
-        return geode::Mod::get()->getSettingValue<bool>("levelcell-show-view-button");
+        return geode::Mod::get()->getSavedValue<bool>("levelcell-show-view-button", true);
     }
     inline bool hoverEffects() {
         return geode::Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
     }
     inline std::string animType() {
-        return geode::Mod::get()->getSettingValue<std::string>("levelcell-anim-type");
+        return geode::Mod::get()->getSavedValue<std::string>("levelcell-anim-type", "zoom-slide");
     }
     inline double animSpeed() {
-        return geode::Mod::get()->getSettingValue<double>("levelcell-anim-speed");
+        return geode::Mod::get()->getSavedValue<double>("levelcell-anim-speed", 1.0);
     }
     inline std::string animEffect() {
-        return geode::Mod::get()->getSettingValue<std::string>("levelcell-anim-effect");
+        return geode::Mod::get()->getSavedValue<std::string>("levelcell-anim-effect", "none");
     }
     inline bool animatedGradient() {
-        return geode::Mod::get()->getSettingValue<bool>("levelcell-animated-gradient");
+        return geode::Mod::get()->getSavedValue<bool>("levelcell-animated-gradient", true);
     }
     inline bool mythicParticles() {
-        return geode::Mod::get()->getSettingValue<bool>("levelcell-mythic-particles");
+        return geode::Mod::get()->getSavedValue<bool>("levelcell-mythic-particles", true);
     }
     inline bool effectOnGradient() {
-        return geode::Mod::get()->getSettingValue<bool>("levelcell-effect-on-gradient");
+        return geode::Mod::get()->getSavedValue<bool>("levelcell-effect-on-gradient", false);
     }
     inline bool compactListMode() {
         return geode::Mod::get()->getSettingValue<bool>("compact-list-mode");
     }
     inline bool transparentListMode() {
-        return geode::Mod::get()->getSettingValue<bool>("transparent-list-mode");
+        return geode::Mod::get()->getSavedValue<bool>("transparent-list-mode", false);
     }
     inline double thumbWidth() {
         return geode::Mod::get()->getSettingValue<double>("level-thumb-width");
@@ -70,7 +70,7 @@ namespace thumbnails {
         return geode::Mod::get()->getSettingValue<bool>("enable-thumbnail-taking");
     }
     inline bool gifRamCache() {
-        return geode::Mod::get()->getSettingValue<bool>("gif-ram-cache");
+        return geode::Mod::get()->getSavedValue<bool>("gif-ram-cache", true);
     }
 } // namespace thumbnails
 
@@ -81,13 +81,13 @@ namespace levelinfo {
         return geode::Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
     }
     inline int64_t effectIntensity() {
-        return geode::Mod::get()->getSettingValue<int64_t>("levelinfo-effect-intensity");
+        return geode::Mod::get()->getSavedValue<int>("levelinfo-effect-intensity", 4);
     }
     inline int64_t bgDarkness() {
-        return geode::Mod::get()->getSettingValue<int64_t>("levelinfo-bg-darkness");
+        return geode::Mod::get()->getSavedValue<int>("levelinfo-bg-darkness", 27);
     }
     inline std::string extraStyles() {
-        return geode::Mod::get()->getSettingValue<std::string>("levelinfo-extra-styles");
+        return geode::Mod::get()->getSavedValue<std::string>("levelinfo-extra-styles", "");
     }
     inline bool dynamicSong() {
         return geode::Mod::get()->getSettingValue<bool>("dynamic-song");
@@ -115,7 +115,39 @@ namespace backgrounds {
     inline bool bgAdaptiveColors() {
         return geode::Mod::get()->getSavedValue<bool>("bg-adaptive-colors", false);
     }
+    inline bool transparentBackgroundMode() {
+        return geode::Mod::get()->getSettingValue<bool>("transparent-background-mode");
+    }
 } // namespace backgrounds
+
+// ── Popup Blur ──────────────────────────────────────────────────────────
+
+namespace popupblur {
+    inline bool enabled() {
+        return geode::Mod::get()->getSettingValue<bool>("popup-blur-enabled");
+    }
+    inline std::string style() {
+        return geode::Mod::get()->getSavedValue<std::string>("popup-blur-style", "paimonblur");
+    }
+    inline double intensity() {
+        return geode::Mod::get()->getSavedValue<double>("popup-blur-intensity", 4.0);
+    }
+    inline double darkness() {
+        return geode::Mod::get()->getSavedValue<double>("popup-blur-darkness", 0.28);
+    }
+    inline double padding() {
+        return geode::Mod::get()->getSavedValue<double>("popup-blur-padding", 4.0);
+    }
+    inline double cornerRadius() {
+        return geode::Mod::get()->getSavedValue<double>("popup-blur-corner-radius", 8.0);
+    }
+    inline double fadeDuration() {
+        return geode::Mod::get()->getSavedValue<double>("popup-blur-fade-duration", 0.3);
+    }
+    inline bool showPlaceholder() {
+        return geode::Mod::get()->getSavedValue<bool>("popup-blur-show-placeholder", true);
+    }
+} // namespace popupblur
 
 // ── Video ───────────────────────────────────────────────────────────────
 
@@ -153,6 +185,32 @@ namespace video {
         return geode::Mod::get()->getSavedValue<int>("video-max-chunk-memory-mb", 512);
 #endif
     }
+
+    // Maximum number of video backgrounds that may decode simultaneously.
+    // Once this many are active, acquiring a new one evicts the least-recently
+    // used inactive entry. Mobile defaults to a smaller number to limit
+    // CPU/GPU/RAM pressure; desktop can handle more.
+    inline int maxConcurrentVideos() {
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+        return geode::Mod::get()->getSavedValue<int>("video-max-concurrent", 2);
+#else
+        return geode::Mod::get()->getSavedValue<int>("video-max-concurrent", 4);
+#endif
+    }
+
+    // When true, the manager automatically lowers each video's target FPS as
+    // more videos become active so the total frame-budget stays bounded.
+    // Effective FPS = clamp(fpsLimit() / activeCount, minVideoFPS(), fpsLimit()).
+    inline bool adaptiveFPS() {
+        return geode::Mod::get()->getSavedValue<bool>("video-adaptive-fps", true);
+    }
+
+    // Minimum FPS to which the adaptive scaler is allowed to drop a video.
+    // Below this rate playback feels choppy, so the manager prefers eviction.
+    inline int minVideoFPS() {
+        return geode::Mod::get()->getSavedValue<int>("video-min-fps", 12);
+    }
+
     // Max video file size in bytes (2 GB)
     static constexpr size_t kMaxVideoFileSize = 2ULL * 1024 * 1024 * 1024;
 } // namespace video
@@ -173,7 +231,7 @@ namespace profiles {
         return geode::Mod::get()->getSavedValue<float>("profile-thumb-width", 0.6f);
     }
     inline int64_t profileImgZLayer() {
-        return geode::Mod::get()->getSettingValue<int64_t>("profile-img-zlayer");
+        return geode::Mod::get()->getSavedValue<int>("profile-img-zlayer", 1);
     }
     inline std::string profileBgType() {
         return geode::Mod::get()->getSavedValue<std::string>("profile-bg-type", "none");
@@ -218,7 +276,55 @@ namespace general {
     inline bool enableDiskCache() {
         return geode::Mod::get()->getSettingValue<bool>("enable-disk-cache");
     }
+    inline bool autoUpdate() {
+        return geode::Mod::get()->getSettingValue<bool>("auto-update");
+    }
 } // namespace general
+
+namespace discord_rpc {
+    inline bool enabled() {
+        return geode::Mod::get()->getSettingValue<bool>("discord-rpc-enabled");
+    }
+    inline bool privateMode() {
+        return geode::Mod::get()->getSavedValue<bool>("discord-rpc-private-mode", false);
+    }
+    inline bool idleWhenUnfocused() {
+        return geode::Mod::get()->getSavedValue<bool>("discord-rpc-idle-when-unfocused", true);
+    }
+    inline bool showProgress() {
+        return geode::Mod::get()->getSavedValue<bool>("discord-rpc-show-progress", true);
+    }
+    inline bool includePaimbnailsFeatures() {
+        return geode::Mod::get()->getSavedValue<bool>("discord-rpc-include-paimbnails-features", true);
+    }
+    inline std::string largeText() {
+        return geode::Mod::get()->getSavedValue<std::string>("discord-rpc-large-text", "");
+    }
+    inline std::string largeImageKey() {
+        return geode::Mod::get()->getSavedValue<std::string>("discord-rpc-large-image-key", "");
+    }
+    inline std::string smallImageKey() {
+        return geode::Mod::get()->getSavedValue<std::string>("discord-rpc-small-image-key", "");
+    }
+    inline std::string activityType() {
+        return geode::Mod::get()->getSavedValue<std::string>("discord-rpc-activity-type", "Playing");
+    }
+    inline bool showTimestamp() {
+        return geode::Mod::get()->getSavedValue<bool>("discord-rpc-show-timestamp", true);
+    }
+    inline bool overrideDetails() {
+        return geode::Mod::get()->getSavedValue<bool>("discord-rpc-override-details", false);
+    }
+    inline std::string customDetails() {
+        return geode::Mod::get()->getSavedValue<std::string>("discord-rpc-custom-details", "");
+    }
+    inline bool overrideState() {
+        return geode::Mod::get()->getSavedValue<bool>("discord-rpc-override-state", false);
+    }
+    inline std::string customState() {
+        return geode::Mod::get()->getSavedValue<std::string>("discord-rpc-custom-state", "");
+    }
+} // namespace discord_rpc
 
 // ── Cursor ──────────────────────────────────────────────────────────────
 
@@ -235,11 +341,11 @@ namespace quality {
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     inline size_t ramCacheEntries() { return 25; }
     // RAM LRU byte cap
-    inline size_t ramCacheBytes()   { return 80ull * 1024 * 1024; }
+    inline size_t ramCacheBytes()   { return 100ull * 1024 * 1024; }
 #else
-    inline size_t ramCacheEntries() { return 50; }
-    // RAM LRU byte cap
-    inline size_t ramCacheBytes()   { return 120ull * 1024 * 1024; }
+    inline size_t ramCacheEntries() { return 40; }
+    // RAM LRU byte cap — 200MB for 1920px textures (~8MB each at 1080p)
+    inline size_t ramCacheBytes()   { return 200ull * 1024 * 1024; }
 #endif
     // disk cache byte quota
     inline size_t diskCacheBytes()  { return 512ull * 1024 * 1024; }

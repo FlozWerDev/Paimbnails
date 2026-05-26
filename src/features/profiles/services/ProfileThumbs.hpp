@@ -27,6 +27,25 @@ struct ProfileConfig {
     bool hasConfig = false;
     std::string gifKey = ""; // gifKey anadido para referencia en cache local
 
+    // Gradient effects (solo aplican cuando backgroundType == "icon-gradient"
+    // o "gradient"). Los visitantes leen estos campos del config para
+    // reproducir la misma animacion que el dueno del perfil eligio.
+    //   gradientEffect: "none" | "rotate" | "pulse" | "shift" | "slide"
+    //   gradientSpeed : multiplicador de velocidad (0.1 - 5.0). 1.0 = base.
+    std::string gradientEffect = "none";
+    float gradientSpeed = 1.0f;
+
+    // Cuando el dueno del perfil eligio "Audio Video" en el picker de fondo,
+    // este flag indica que la musica del perfil que escucha cualquier visitante
+    // sale del audio del propio video del fondo (extraido a WAV una vez en el
+    // cliente y reproducido en el canal principal).  Cuando este flag esta
+    // activo, ProfileMusicManager IGNORA cualquier songID/isCustom configurado
+    // y resuelve el audio desde el video cacheado del fondo del perfil.
+    //
+    // El flag se sube al servidor junto con el resto de la config para que los
+    // visitantes lo respeten sin necesidad de un endpoint adicional.
+    bool useVideoAudio = false;
+
     // Comment cell background settings
     std::string commentBgType = "none"; // "none", "thumbnail", "banner", "solid"
     std::string commentBgThumbnailId = ""; // level ID for thumbnail source
@@ -124,6 +143,7 @@ private:
     std::string makePath(int accountID) const;
     void processQueue();
     void processBinaryQueue(); // Descarga binarios tras verificacion batch
+    void processBinaryQueueIndividual(); // Fallback individual cuando batch falla o solo hay 1 elemento
     
     std::unordered_map<int, ProfileCacheEntry> m_profileCache;
     // Estructura LRU para cache

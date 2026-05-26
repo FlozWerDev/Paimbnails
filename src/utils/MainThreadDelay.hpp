@@ -9,13 +9,13 @@ namespace paimon {
 
 inline void scheduleMainThreadDelay(float delay, geode::CopyableFunction<void()> callback) {
     if (!callback) return;
-    auto* sched = cocos2d::CCDirector::sharedDirector()->getScheduler();
+    auto* sched = cocos2d::CCDirector::get()->getScheduler();
     if (!sched) return;
 
     struct Task final : cocos2d::CCObject {
         geode::CopyableFunction<void()> fn;
         void fire(float) {
-            if (auto* s = cocos2d::CCDirector::sharedDirector()->getScheduler())
+            if (auto* s = cocos2d::CCDirector::get()->getScheduler())
                 s->unscheduleSelector(schedule_selector(Task::fire), this);
             if (auto cb = std::move(fn)) cb();
             this->release();

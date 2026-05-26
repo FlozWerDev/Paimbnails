@@ -34,6 +34,8 @@ public:
     std::string getServerURL() const { return m_serverURL; }
     void setServerURL(std::string const& url);
 
+    std::string getCDNBaseURL() const { return m_cdnBaseURL; }
+
     std::string getForumServerURL() const { return m_forumServerURL; }
     void setForumServerURL(std::string const& url);
 
@@ -58,6 +60,12 @@ public:
 
     // lista thumbs
     void getThumbnails(int levelId, GenericCallback callback);
+
+    // lista thumbs (galería) para muchos niveles en una sola request
+    // Devuelve mapa id → JSON-array-string (o vacío si fallo). El parsing se
+    // hace en la capa de transporte para reusar parseThumbnailResponse.
+    using BatchListCallback = geode::CopyableFunction<void(bool success, std::unordered_map<int, std::string> const& itemsJson)>;
+    void getThumbnailsBatch(std::vector<int> const& levelIds, BatchListCallback callback);
 
     // reordenar thumbs (solo admin)
     void reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, GenericCallback callback);
@@ -116,9 +124,29 @@ public:
     // descarga thumb (respeta setting priority)
     void downloadThumbnail(int levelId, DownloadCallback callback);
     void downloadThumbnail(int levelId, bool isGif, DownloadCallback callback);
+
+    // ── Batch downloads ──────────────────────────────────────────
+    // Resultado de un batch download: id → bytes (vacio si fallo).
+    struct BatchItem {
+        bool ok = false;
+        std::string format;          // "webp" / "png" / "gif" / "mp4" / "jpg"
+        std::vector<uint8_t> data;   // contenido binario (decodificado de base64)
+    };
+    using BatchDownloadCallback = geode::CopyableFunction<void(bool success, std::unordered_map<int, BatchItem> const& items)>;
+
+    // Descarga thumbnails de niveles en una sola request (cap 40 ids).
+    void downloadThumbnailsBatch(std::vector<int> const& levelIds, BatchDownloadCallback callback);
+    // Descarga banners de perfil en una sola request (cap 40 accountIDs).
+    void downloadProfileBackgroundsBatch(std::vector<int> const& accountIDs, BatchDownloadCallback callback);
+    // Descarga imagenes de perfil (avatares) en una sola request (cap 40 accountIDs).
+    void downloadProfileImgsBatch(std::vector<int> const& accountIDs, BatchDownloadCallback callback);
     
     // existe thumb?
     void checkThumbnailExists(int levelId, CheckCallback callback);
+
+    // thumbnail confirmado como inexistente en servidor (CDN + Worker fallaron)
+    bool isThumbnailNotFound(int levelId) const;
+    void clearThumbnailNotFound(int levelId);
     
     // es mod?
     void checkModerator(std::string const& username, ModeratorCallback callback);
@@ -184,14 +212,56 @@ public:
         int64_t cachedAt = 0;       // epoch seconds when this entry was cached
     };
 
+    // ── Batch init: single request at startup combining moderator + manifest + featured ──
+    struct InitResult {
+        bool isModerator = false;
+        bool isAdmin = false;
+        bool isVip = false;
+        std::string newModCode;
+        bool gdVerificationFailed = false;
+        std::string dailyJson;
+        std::string weeklyJson;
+        std::string cdnBaseUrl;
+        // manifest entries are applied directly to m_manifestCache
+    };
+    using InitCallback = geode::CopyableFunction<void(bool success, InitResult const& result)>;
+    void fetchInit(std::string const& username, int accountID, std::vector<int> const& levelIds, InitCallback callback);
+
+    // ── Batch ratings: get ratings for multiple levels in one request ──
+    struct BatchRatingEntry {
+        float average = 0.f;
+        int count = 0;
+        int userVote = 0;
+    };
+    using BatchRatingsCallback = geode::CopyableFunction<void(bool success, std::unordered_map<int, BatchRatingEntry> const& ratings)>;
+    void fetchBatchRatings(std::vector<int> const& levelIds, std::string const& username,
+        std::unordered_map<int, std::string> const& thumbnailIds, BatchRatingsCallback callback);
+
+    // ── Discovery: combines top-creators + top-thumbnails + latest-uploads + featured ──
+    using DiscoveryCallback = geode::CopyableFunction<void(bool success, std::string const& json)>;
+    void fetchDiscovery(int creatorsLimit, int thumbnailsLimit, int uploadsLimit, DiscoveryCallback callback);
+
+    // ── Queue summary: all queue categories counts + preview items in one request (moderators) ──
+    using QueueSummaryCallback = geode::CopyableFunction<void(bool success, std::string const& json)>;
+    void fetchQueueSummary(std::string const& username, int accountID, int previewCount, QueueSummaryCallback callback);
+
+    // ── Batch profile bundle: fetch bundles for multiple accounts in one request ──
+    using BatchBundleCallback = geode::CopyableFunction<void(bool success, std::string const& json)>;
+    void fetchBatchProfileBundle(std::vector<std::pair<int, std::string>> const& accounts, BatchBundleCallback callback);
+
     // CDN Pull Zone base URL — public, no auth needed (e.g. "https://Paimbnails.b-cdn.net")
     std::string m_cdnBaseURL;
 
     // Worker exhaustion tracking — when CF Worker quota (100k/day) is hit,
-    // fallback to CDN Pull Zone for all read requests
+    // fallback to CDN Pull Zone for all read requests.
+    // Solo se marca exhausted tras 3+ fallos 503/429 consecutivos para evitar
+    // que un cold-start transitorio del Worker deshabilite el sistema.
+    // Se auto-resetea: tras 30s, o cuando una request tenga exito.
     std::atomic<bool> m_workerExhausted{false};
-    int64_t m_exhaustedAt = 0;
-    static constexpr int64_t EXHAUSTED_RECOVERY_SECONDS = 3600; // retry Worker after 1h
+    std::atomic<int64_t> m_exhaustedAt{0};
+    std::atomic<int> m_consecutiveWorkerFailures{0};
+    static constexpr int64_t EXHAUSTED_RECOVERY_SECONDS = 30; // retry Worker after 30s
+    static constexpr int EXHAUSTION_THRESHOLD = 3; // fallos consecutivos antes de marcar exhausted
 
     void fetchManifest(std::vector<int> const& levelIds, std::function<void(bool)> callback);
     std::optional<ManifestEntry> getManifestEntry(int levelId);
@@ -221,6 +291,7 @@ private:
         time_t timestamp;
     };
     std::map<int, ExistsCacheEntry> m_existsCache;
+    mutable std::mutex m_existsCacheMutex;
     static constexpr int EXISTS_CACHE_DURATION = 30; // 30 sec
 
     // manifest cache — CDN URLs indexed by levelId
@@ -251,6 +322,16 @@ private:
     std::unordered_map<int, std::vector<DownloadCallback>> m_inflightDownloads;
     std::mutex m_inflightMutex;
     void resolveInflight(int levelId, bool success, std::vector<uint8_t> const& data);
+
+    // Thumbnails que el servidor confirmo que NO existen (CDN + Worker both failed).
+    // Se usa en ThumbnailLoader para evitar reintentos infinitos cada 2s.
+    // TTL corto (5 min) porque NO podemos distinguir 404 real de error de red
+    // transitorio aqui. Para 404s reales, ThumbnailCache::markNotFound() es
+    // persistente por sesion. Esto es solo el primer nivel de debouncing.
+    mutable std::unordered_map<int, std::chrono::steady_clock::time_point> m_notFoundCache;
+    mutable std::mutex m_notFoundMutex;
+    static constexpr int NOT_FOUND_TTL_SECONDS = 5 * 60; // 5 min — recovery rapido si fue error transitorio
+    void markThumbnailNotFound(int levelId) const;
 
     // in-flight moderator check dedup — coalesce concurrent checkModeratorAccount calls
     // for the same username into a single network request

@@ -1,60 +1,77 @@
 #pragma once
 
-#include <Geode/DefaultInclude.hpp>
-#include <string>
+#include <Geode/Geode.hpp>
+#include <cocos2d.h>
 #include <unordered_map>
-
-// gestiona posiciones, escala, y opacidad personalizadas para botones del mod por escena e id.
-// posiciones se guardan y cargan desde archivo texto en directorio guardado mod.
+#include <string>
 
 struct ButtonLayout {
-    cocos2d::CCPoint position;
+    cocos2d::CCPoint position = cocos2d::CCPointZero;
     float scale = 1.0f;
-    float opacity = 1.0f; // 0.0 a 1.0
+    float opacity = 1.0f;
 };
 
 class ButtonLayoutManager {
 public:
     static ButtonLayoutManager& get();
 
-    // cargar disenos guardados desde archivo
     void load();
-    // guardar disenos actuales a archivo
     void save();
-    // cargar/guardar disenos default desde/a archivo
     void loadDefaults();
     void saveDefaults();
 
-    // obtener diseno guardado para boton; retorna nullopt si no personalizado
     std::optional<ButtonLayout> getLayout(std::string const& sceneKey, std::string const& buttonID) const;
-
-    // establecer diseno personalizado para boton
-    void setLayout(std::string const& sceneKey, std::string const& buttonID, const ButtonLayout& layout);
-
-    // eliminar diseno personalizado para boton (revertir a default)
+    void setLayout(std::string const& sceneKey, std::string const& buttonID, ButtonLayout const& layout);
     void removeLayout(std::string const& sceneKey, std::string const& buttonID);
-
-    // verificar si escena+boton tiene diseno personalizado
     bool hasCustomLayout(std::string const& sceneKey, std::string const& buttonID) const;
-
-    // resetear todos disenos para escena especifica
     void resetScene(std::string const& sceneKey);
+    void resetAll();
 
-    // aplica disenos guardados a todos los items de un menu
     void applyLayoutToMenu(std::string const& sceneKey, cocos2d::CCMenu* menu);
 
-    // api defaults: posiciones base persistentes independientes de ediciones usuario
     std::optional<ButtonLayout> getDefaultLayout(std::string const& sceneKey, std::string const& buttonID) const;
-    // establecer default solo si ausente; evita sobreescribir una vez capturado
-    void setDefaultLayoutIfAbsent(std::string const& sceneKey, std::string const& buttonID, const ButtonLayout& layout);
-    // sobreescribir default para boton (usado para migraciones/ajustes)
-    void setDefaultLayout(std::string const& sceneKey, std::string const& buttonID, const ButtonLayout& layout);
+    void setDefaultLayoutIfAbsent(std::string const& sceneKey, std::string const& buttonID, ButtonLayout const& layout);
+    void setDefaultLayout(std::string const& sceneKey, std::string const& buttonID, ButtonLayout const& layout);
+
+    void captureSceneDefaults(std::string const& sceneKey, cocos2d::CCMenu* menu);
+    void applyLayoutRecursively(std::string const& sceneKey, cocos2d::CCNode* root);
+    void captureSceneDefaultsRecursively(std::string const& sceneKey, cocos2d::CCNode* root);
+
+    /// Etiquetas BMFont fuera de CCMenuItem (mismo orden que collectEditableLabels).
+    static std::vector<cocos2d::CCLabelBMFont*> collectEditableLabels(cocos2d::CCNode* root);
+    static std::string resolveLabelID(cocos2d::CCLabelBMFont* label, int index);
+    void applyLayoutsToLabels(std::string const& sceneKey, cocos2d::CCNode* root);
+    void captureLabelDefaultsIfAbsent(std::string const& sceneKey, cocos2d::CCNode* root);
+
+    static std::string resolveButtonID(cocos2d::CCMenuItem* item, cocos2d::CCMenu* menu, int menuIndexHint = -1);
+    static std::string buildSceneKeyForLayer(cocos2d::CCLayer* layer);
+
+    /// Devuelve true si el ID de boton es "volatil" (basado en indice raw).
+    /// Estos IDs no se persisten a disco para evitar que mods que
+    /// añadan/quiten botones invaliden el layout guardado.
+    static bool isVolatileButtonID(std::string const& id);
 
 private:
-    ButtonLayoutManager() = default;
+    ButtonLayoutManager();
+    ~ButtonLayoutManager();
+    ButtonLayoutManager(ButtonLayoutManager const&) = delete;
+    ButtonLayoutManager& operator=(ButtonLayoutManager const&) = delete;
+
+    struct ButtonInfo {
+        std::string buttonID;
+        std::string buttonLabel;
+        std::string buttonAsset;
+    };
+
+    static ButtonInfo extractButtonInfo(cocos2d::CCMenuItem* item, cocos2d::CCMenu* menu);
+    static std::string generateButtonID(ButtonInfo const& info, cocos2d::CCMenu* menu, int menuIndexHint);
+
+    void migrateLegacyLayoutFilesIfNeeded();
+    void migrateLegacyDefaultsFilesIfNeeded();
+    void saveScene(std::string const& sceneKey);
+    void saveDefaultsScene(std::string const& sceneKey);
+
     bool m_loaded = false;
-    // mapa: sceneKey -> (buttonID -> ButtonLayout)
     std::unordered_map<std::string, std::unordered_map<std::string, ButtonLayout>> m_layouts;
     std::unordered_map<std::string, std::unordered_map<std::string, ButtonLayout>> m_defaults;
 };
-

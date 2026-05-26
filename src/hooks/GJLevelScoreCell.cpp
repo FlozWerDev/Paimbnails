@@ -126,6 +126,10 @@ public:
 
         if (!m_cell || !m_cell->getParent()) return;
 
+        // Perf: throttle hover detection to every 2 frames
+        static int s_frameSkip = 0;
+        if (++s_frameSkip % 2 != 0) return;
+
         auto& d = m_data;
 
         // Hit-test del mouse contra la celda

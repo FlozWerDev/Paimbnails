@@ -1,5 +1,6 @@
 #include "FramebufferCapture.hpp"
 #include "../../../core/Settings.hpp"
+#include "../../../utils/PlayerToggleHelper.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/cocos/platform/CCGL.h>
@@ -8,15 +9,22 @@
 #include <Geode/cocos/kazmath/include/kazmath/mat4.h>
 #include <Geode/binding/ShaderLayer.hpp>
 #include <Geode/binding/PlayLayer.hpp>
+#include <Geode/binding/PauseLayer.hpp>
 #include <Geode/binding/PlayerObject.hpp>
 #include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/binding/GJBaseGameLayer.hpp>
+#include <Geode/binding/GameManager.hpp>
+#include <Geode/binding/GameObject.hpp>
+#include <Geode/binding/CheckpointObject.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <array>
 #include <algorithm>
 #include <unordered_set>
 #include <cmath>
 #include <cstring>
+#include <chrono>
+#include <fstream>
+#include <sstream>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -24,6 +32,59 @@ using namespace cocos2d;
 // Forward declarations for scaling helpers (defined at bottom of file)
 static std::shared_ptr<uint8_t> bilinearDownscale(
     uint8_t const* src, int srcW, int srcH, int dstW, int dstH);
+
+namespace {
+    // #region agent log
+    // PERF: cuerpo gateado tras PAIMON_DEBUG_AGENT347 (igual que PlayLayer/PauseLayer).
+    void agentLog347Capture(char const* loc, char const* msg, char const* hid, std::string const& data) {
+#ifdef PAIMON_DEBUG_AGENT347
+        std::ofstream f("debug-347aef.log", std::ios::app);
+        if (!f) return;
+        auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        f << "{\"sessionId\":\"347aef\",\"hypothesisId\":\"" << hid
+          << "\",\"location\":\"" << loc << "\",\"message\":\"" << msg
+          << "\",\"data\":" << data << ",\"timestamp\":" << ts << "}\n";
+#else
+        (void)loc; (void)msg; (void)hid; (void)data;
+#endif
+    }
+    // #endregion
+
+    class ScopedPlayerCaptureVisibility {
+    public:
+        ScopedPlayerCaptureVisibility(bool hidePlayer1, bool hidePlayer2)
+          : m_hidePlayer1(hidePlayer1), m_hidePlayer2(hidePlayer2) {
+            auto* playLayer = PlayLayer::get();
+            if (!playLayer) return;
+
+            if (m_hidePlayer1 && playLayer->m_player1) {
+                paimTogglePlayer(playLayer->m_player1, m_player1State, true);
+            }
+            if (m_hidePlayer2 && playLayer->m_player2) {
+                paimTogglePlayer(playLayer->m_player2, m_player2State, true);
+            }
+        }
+
+        ~ScopedPlayerCaptureVisibility() {
+            auto* playLayer = PlayLayer::get();
+            if (!playLayer) return;
+
+            if (m_hidePlayer1 && playLayer->m_player1) {
+                paimTogglePlayer(playLayer->m_player1, m_player1State, false);
+            }
+            if (m_hidePlayer2 && playLayer->m_player2) {
+                paimTogglePlayer(playLayer->m_player2, m_player2State, false);
+            }
+        }
+
+    private:
+        bool m_hidePlayer1 = false;
+        bool m_hidePlayer2 = false;
+        PlayerVisState m_player1State;
+        PlayerVisState m_player2State;
+    };
+}
 
 // respaldo: algunos headers gl no exponen gl_read_framebuffer
 #ifndef GL_READ_FRAMEBUFFER
@@ -62,6 +123,44 @@ int FramebufferCapture::getMaxTextureSize() {
         log::info("[FramebufferCapture] GPU GL_MAX_TEXTURE_SIZE = {}", s_maxTextureSize);
     }
     return s_maxTextureSize;
+}
+
+// ─────────────────────────────────────────────────────────────
+// validateCaptureConditions — pre-capture checks
+//
+// Verifica condiciones necesarias para una captura de calidad:
+//   • High Graphics (contentScaleFactor >= 4)
+//   • No Performance Mode / LDM
+//   • Jugador no muerto (noclip detection)
+// ─────────────────────────────────────────────────────────────
+CaptureValidation FramebufferCapture::validateCaptureConditions() {
+    CaptureValidation result;
+
+    // Check High Graphics quality
+    if (CCDirector::sharedDirector()->getContentScaleFactor() < 4.0f) {
+        result.canCapture = false;
+        result.reason = "Thumbnails require High Graphics quality. Enable it in GD settings.";
+        return result;
+    }
+
+    // Check Performance Mode (LDM)
+    if (GameManager::sharedState()->m_performanceMode) {
+        result.canCapture = false;
+        result.reason = "Thumbnails cannot be taken with Low Detail Mode enabled. Disable it in GD settings.";
+        return result;
+    }
+
+    // Check player death state
+    auto* playLayer = PlayLayer::get();
+    if (playLayer) {
+        if (playLayer->m_player1 && playLayer->m_player1->m_isDead) {
+            result.canCapture = false;
+            result.reason = "Cannot capture while the player is dead. Wait until respawn.";
+            return result;
+        }
+    }
+
+    return result;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -145,31 +244,61 @@ static CaptureQualitySettings getQualitySettings() {
 void FramebufferCapture::requestCapture(
     int levelID,
     geode::CopyableFunction<void(bool, CCTexture2D*, std::shared_ptr<uint8_t>, int, int)> callback,
-    CCNode* nodeToCapture
+    CCNode* nodeToCapture,
+    bool hidePlayer1,
+    bool hidePlayer2
 ) {
     log::info("[FramebufferCapture] Capture requested for level {}", levelID);
 
     if (s_request.active) {
         log::warn("[FramebufferCapture] A capture is already pending – replacing it");
+        // El callback antiguo nunca llegará a ejecutarse porque s_request lo
+        // sobreescribimos abajo. Si el caller original asumía que SIEMPRE
+        // recibiría su callback (para limpiar flags como gCaptureInProgress),
+        // se quedaría colgado para siempre. Llamamos su callback con
+        // success=false para que pueda hacer cleanup. Esto es seguro: los
+        // callbacks bien implementados están construidos con WeakRef y
+        // verifican null/parent en queueInMainThread, así que llamar success
+        // false aquí (en el thread que llamó requestCapture) solo enqueue una
+        // limpieza diferida a main thread.
+        if (s_request.callback) {
+            auto oldCallback = std::move(s_request.callback);
+            oldCallback(false, nullptr, nullptr, 0, 0);
+        }
     }
 
     s_request.levelID       = levelID;
     s_request.callback      = std::move(callback);
     s_request.nodeToCapture = nodeToCapture;
+    s_request.hidePlayer1   = hidePlayer1;
+    s_request.hidePlayer2   = hidePlayer2;
     s_request.active        = true;
 }
 
 void FramebufferCapture::cancelPending() {
     if (s_request.active) {
         log::info("[FramebufferCapture] Pending capture cancelled");
+        // Notificar al callback con success=false para que pueda limpiar
+        // flags propios (gCaptureInProgress, paimon::isCaptureInProgress,
+        // música pausada). Sin esto, una cancelación deja flags colgados.
+        if (s_request.callback) {
+            auto oldCallback = std::move(s_request.callback);
+            oldCallback(false, nullptr, nullptr, 0, 0);
+        }
     }
     // siempre liberar el callback para soltar cualquier Ref<> capturado
-    // (la lambda puede sobrevivir despues de ejecutar si solo se puso active=false)
     s_request.active   = false;
     s_request.callback = nullptr;
     s_request.nodeToCapture = nullptr;
-    // limpiar deferred callbacks pendientes para evitar que se ejecuten
-    // despues de cancelar (los nodos referenciados pueden ya no existir)
+    s_request.hidePlayer1 = false;
+    s_request.hidePlayer2 = false;
+    // liberar texturas de deferred callbacks pendientes antes de limpiar
+    for (auto& d : s_deferredCallbacks) {
+        if (d.texture) {
+            d.texture->release();
+            d.texture = nullptr;
+        }
+    }
     s_deferredCallbacks.clear();
 }
 
@@ -249,6 +378,12 @@ static std::vector<std::pair<CCNode*, bool>> hideNonVanillaUI() {
     hideNode(pl->m_uiLayer);
     hideNode(pl->m_attemptLabel);
     hideNode(pl->m_percentageLabel);
+    hideNode(pl->m_progressBar);
+    hideNode(pl->m_debugDrawNode);
+    if (pl->m_debugDrawNode && pl->m_debugDrawNode->getParent()) {
+        hideNode(pl->m_debugDrawNode->getParent());
+    }
+    hideNode(pl->m_infoLabel);
 
     // 2. set de punteros vanilla que NO debemos tocar
     std::unordered_set<CCNode*> vanillaKeep;
@@ -367,7 +502,14 @@ static std::vector<std::pair<CCNode*, bool>> hideNonVanillaUI() {
             std::string nid = child->getID();
             bool hide = false;
 
-            if (typeinfo_cast<FLAlertLayer*>(child))        hide = true;
+            // Deteccion robusta de PauseLayer:
+            //   1. typeinfo_cast<PauseLayer*> es el chequeo mas confiable, ya
+            //      que funciona aunque otros mods cambien el id o el typeid
+            //      mangled difiera por plataforma.
+            //   2. typeinfo_cast<FLAlertLayer*> para popups/alertas.
+            //   3. Patrones de id como fallback (cubre nodos custom de mods).
+            if (typeinfo_cast<PauseLayer*>(child))          hide = true;
+            else if (typeinfo_cast<FLAlertLayer*>(child))   hide = true;
             else if (nid.find("pause") != std::string::npos ||
                      nid.find("Pause") != std::string::npos) hide = true;
             else if (strstr(cls, "PauseLayer"))              hide = true;
@@ -382,8 +524,95 @@ static std::vector<std::pair<CCNode*, bool>> hideNonVanillaUI() {
         }
     }
 
+    int pauseLayersInScene = 0;
+    int pauseLayersVisible = 0;
+    if (scene) {
+        for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
+            if (!child) continue;
+            auto cls = typeid(*child).name();
+            if (typeinfo_cast<PauseLayer*>(child) || strstr(cls, "PauseLayer")) {
+                pauseLayersInScene++;
+                if (child->isVisible()) pauseLayersVisible++;
+            }
+        }
+    }
+    // #region agent log
+    {
+        std::ostringstream d;
+        d << "{\"hiddenCount\":" << hidden.size()
+          << ",\"pauseLayersInScene\":" << pauseLayersInScene
+          << ",\"pauseLayersVisible\":" << pauseLayersVisible << "}";
+        agentLog347Capture("FramebufferCapture.cpp:hideNonVanillaUI", "ui_hidden_snapshot", "F", d.str());
+    }
+    // #endregion
+
     log::info("[FramebufferCapture] hideNonVanillaUI: hidden {} nodes", hidden.size());
     return hidden;
+}
+
+// ─────────────────────────────────────────────────────────────
+// hidePracticeCheckpoints — oculta checkpoints de practice mode
+//
+// Los checkpoints son GameObjects que deben ocultarse con sus
+// propiedades internas (m_isDisabled2, m_isInvisible, opacity)
+// para que no aparezcan en batch nodes.
+// ─────────────────────────────────────────────────────────────
+struct HiddenGameObject {
+    GameObject* obj;
+    bool disabled2;
+    bool invisible;
+    bool visible;
+    bool hide;
+    uint8_t opacity;
+};
+
+static std::vector<HiddenGameObject> hidePracticeAndEffectObjects() {
+    std::vector<HiddenGameObject> hidden;
+
+    auto* pl = PlayLayer::get();
+    if (!pl) return hidden;
+
+    // Oculta checkpoints de practice mode
+    if (pl->m_isPracticeMode && pl->m_checkpointArray) {
+        for (auto* cp : CCArrayExt<CheckpointObject*>(pl->m_checkpointArray)) {
+            if (!cp) continue;
+            auto* obj = cp->m_physicalCheckpointObject;
+            if (!obj) continue;
+
+            hidden.push_back({
+                obj,
+                obj->m_isDisabled2,
+                obj->m_isInvisible,
+                obj->isVisible(),
+                obj->m_isHide,
+                obj->getOpacity()
+            });
+
+            obj->m_isDisabled2 = true;
+            obj->m_isInvisible = true;
+            obj->setOpacity(0);
+            obj->setVisible(false);
+            obj->m_isHide = true;
+        }
+    }
+
+    // Oculta ExplodeItemNodes (particulas de explosion del jugador)
+    // ExplodeItemNode hereda de CCNode — se oculta via hideNonVanillaUI
+    // ya que tiene z-order alto. No necesita tratamiento especial aqui.
+
+    return hidden;
+}
+
+static void restoreHiddenGameObjects(std::vector<HiddenGameObject>& hidden) {
+    for (auto& h : hidden) {
+        if (!h.obj) continue;
+        h.obj->m_isDisabled2 = h.disabled2;
+        h.obj->m_isInvisible = h.invisible;
+        h.obj->setVisible(h.visible);
+        h.obj->m_isHide = h.hide;
+        h.obj->setOpacity(h.opacity);
+    }
+    hidden.clear();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -409,20 +638,11 @@ void FramebufferCapture::executeIfPending() {
         return;
     }
 
+    ScopedPlayerCaptureVisibility playerVisibilityScope(s_request.hidePlayer1, s_request.hidePlayer2);
+
     // ── configuracion ────────────────────────────────────────
     auto quality = getQualitySettings();
     int targetW  = quality.targetWidth;
-
-    // asegura ancho minimo render (1080p)
-    int renderWidth = std::max(1920, targetW);
-
-    // aplica supersampling
-    int supersampleWidth = renderWidth * quality.supersampleFactor;
-    int clampedSuperW    = std::max(1920, std::min(15360, supersampleWidth));
-
-    // limita a maximo gpu temprano
-    int maxTex = getMaxTextureSize();
-    clampedSuperW = std::min(clampedSuperW, maxTex);
 
     // obtiene viewport
     auto* director = CCDirector::sharedDirector();
@@ -433,7 +653,34 @@ void FramebufferCapture::executeIfPending() {
         vpH = static_cast<int>(frameSize.height);
     }
 
-    // ── elige estrategia segun shaders activos ──────
+    // ── Capturas generales (levelID == 0, desde CaptureOverlay): ──
+    // Renderizar a la resolución real del viewport sin supersampling.
+    // Esto evita el freeze de varios segundos causado por crear FBOs
+    // enormes (1920px+) y llamar glReadPixels en buffers masivos
+    // solo para una captura de pantalla que no necesita alta resolución.
+    int clampedSuperW;
+    if (s_request.levelID == 0) {
+        // Usa la resolución real de la ventana para capturas generales
+        clampedSuperW = (vpW > 0) ? vpW : std::max(1280, targetW);
+        log::info("[FramebufferCapture] General screenshot (levelID=0) – "
+                  "using viewport resolution: {}px", clampedSuperW);
+    } else {
+        // Capturas de nivel: usa la resolución configurada con supersampling
+        int renderWidth = std::max(1920, targetW);
+        int supersampleWidth = renderWidth * quality.supersampleFactor;
+        clampedSuperW = std::max(1920, std::min(15360, supersampleWidth));
+    }
+
+    // limita a maximo gpu
+    int maxTex = getMaxTextureSize();
+    clampedSuperW = std::min(clampedSuperW, maxTex);
+
+    // ── elige estrategia segun shaders activos ──────────────
+    // Cuando ShaderLayer esta activo, su FBO interno captura el
+    // renderizado y lo compone en pantalla. No podemos redirigir
+    // eso a nuestro CCRenderTexture, asi que leemos el back-buffer
+    // directamente (doCaptureDirectWithScale).
+    // Sin shaders, usamos rerender a resolucion nativa.
     bool shadersActive = hasActiveShaders();
 
     if (shadersActive) {
@@ -442,7 +689,7 @@ void FramebufferCapture::executeIfPending() {
         doCaptureDirectWithScale(clampedSuperW, vpW, vpH, quality);
     } else {
         log::info("[FramebufferCapture] No shaders – using rerender capture: "
-                  "Target={}px (SS={}px), Viewport={}x{}", renderWidth, clampedSuperW, vpW, vpH);
+                  "Target={}px, Viewport={}x{}", clampedSuperW, vpW, vpH);
         doCaptureRerender(clampedSuperW, vpW, vpH, quality);
     }
 
@@ -457,21 +704,27 @@ void FramebufferCapture::processDeferredCallbacks() {
 
     log::debug("[FramebufferCapture] Processing {} deferred callbacks", s_deferredCallbacks.size());
 
-    for (auto& d : s_deferredCallbacks) {
+    // Mueve callbacks a vector local para evitar problemas si un callback
+    // dispara otra captura (re-entrancia).
+    auto callbacks = std::move(s_deferredCallbacks);
+    s_deferredCallbacks.clear();
+
+    for (auto& d : callbacks) {
         if (d.callback) {
-            // validacion de textura sin excepciones — verificar puntero directamente
+            // Validacion de textura — verificar puntero directamente
             if (d.texture && d.texture->getPixelsWide() == 0) {
                 d.texture = nullptr;
                 d.success = false;
             }
             d.callback(d.success, d.texture, d.rgbaData, d.width, d.height);
         }
+        // Release nuestra referencia (la del createTextureFromRGBA retain).
+        // Los receptores que necesiten la textura mas alla de este frame
+        // deben usar Ref<CCTexture2D> para retenerla.
         if (d.texture) {
             d.texture->release();
         }
     }
-
-    s_deferredCallbacks.clear();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -547,21 +800,55 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
             return;
         }
 
-        auto* scene = director->getRunningScene();
+        // ── guarda estado GL antes de manipular el back-buffer ──
+        GLStateGuard glGuard;
 
-        // ── oculta todo lo que no sea gameplay vanilla ────────────
+        // ── guarda estado del playLayer antes del re-render ──
+        //      scene->visit() puede disparar updateCamera y modificar
+        //      pos/scale del playLayer; este guard RAII restaura todo
+        //      al salir del scope, incluso si hay fallos.
+        auto* playLayer = PlayLayer::get();
+        struct PlayLayerStateGuard {
+            CCNode* pl;
+            CCPoint pos;
+            float scaleX, scaleY;
+            CCPoint anchor;
+            bool hadLayer;
+            PlayLayerStateGuard(CCNode* p) : pl(p), hadLayer(p != nullptr) {
+                if (!pl) return;
+                pos    = pl->getPosition();
+                scaleX = pl->getScaleX();
+                scaleY = pl->getScaleY();
+                anchor = pl->getAnchorPoint();
+            }
+            ~PlayLayerStateGuard() {
+                if (!hadLayer) return;
+                if (!pl || !pl->getParent()) return;
+                pl->setPosition(pos);
+                pl->setScaleX(scaleX);
+                pl->setScaleY(scaleY);
+                pl->setAnchorPoint(anchor);
+            }
+        };
+        PlayLayerStateGuard plGuard(playLayer);
+
+        // ── oculta UI para captura limpia ─────────────────────
         auto hiddenNodes = hideNonVanillaUI();
+        auto hiddenGameObjects = hidePracticeAndEffectObjects();
 
         log::info("[FramebufferCapture] Direct capture: hidden {} UI overlay nodes", hiddenNodes.size());
 
-        // ── fuerza re-render de la escena al back-buffer ─────────
-        // Esto asegura que los pixeles que leemos NO tengan UI,
-        // independientemente del estado del back-buffer previo.
-        if (scene) {
+        // ── re-render de la escena al back-buffer sin UI ──────
+        if (auto* scene = director->getRunningScene()) {
             glClearColor(0, 0, 0, 1);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
             scene->visit();
         }
+
+        // ── restaura nodos ocultos ──────────────────────────
+        for (auto& pair : hiddenNodes) pair.first->setVisible(pair.second);
+        restoreHiddenGameObjects(hiddenGameObjects);
+        // NOTA: plGuard se destruye aqui y restaura pos/scale/anchor
 
         // ── reune valores tamano para diagnostico ──
         auto* glView = director->getOpenGLView();
@@ -600,6 +887,7 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
         if (glWidth <= 0 || glHeight <= 0) {
             log::error("[FramebufferCapture] All size queries returned invalid");
             for (auto& pair : hiddenNodes) pair.first->setVisible(pair.second);
+            restoreHiddenGameObjects(hiddenGameObjects);
             if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
             return;
         }
@@ -611,6 +899,7 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
         if (static_cast<size_t>(glWidth) * static_cast<size_t>(glHeight) > kMaxPixels) {
             log::error("[FramebufferCapture] Pixel buffer size overflow: {}x{}", glWidth, glHeight);
             for (auto& pair : hiddenNodes) pair.first->setVisible(pair.second);
+            restoreHiddenGameObjects(hiddenGameObjects);
             if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
             return;
         }
@@ -684,21 +973,15 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
 
         if (!hasContent) {
             log::warn("[FramebufferCapture] All direct capture attempts failed – falling back to rerender");
-            // restaura nodos ocultos antes de fallback
             for (auto& pair : hiddenNodes) pair.first->setVisible(pair.second);
+            restoreHiddenGameObjects(hiddenGameObjects);
             doCaptureRerender(targetWidth, viewportW, viewportH, quality);
             return;
         }
 
         // ── restaura nodos ocultos tras lectura pixeles ──────────
         for (auto& pair : hiddenNodes) pair.first->setVisible(pair.second);
-
-        // NOTE: Auto-crop of black borders was removed.
-        // Black border cropping is now only available via the manual
-        // "Crop Borders" button in CapturePreviewPopup / CaptureEditPopup.
-        // This ensures captures always return the full unmodified frame.
-
-        // ── voltea (opengl origen abajo-izq -> arriba-izq) ──────
+        restoreHiddenGameObjects(hiddenGameObjects);
         flipVertical(pixels, glWidth, glHeight, 4);
 
         // ── escala abajo a ancho objetivo ────────────────────────
@@ -747,17 +1030,17 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
 // doCaptureRerender
 //
 // re-renderiza escena en ccrendertexture separado a
-// resolucion objetivo. shaderlayer queda habilitado
-// asi escena se renderiza tal cual; evita bug captura negra
-// donde contenido iba a fbo interno shaderlayer
-// pero no se dibujaba en nuestro target.
+// resolucion objetivo (solo para niveles SIN shaders activos).
 //
-// mejoras sobre enfoque ingenuo:
-//   • captureguard fija isCapturing()+captureSize asi
-//     shaderlayerhook redimensiona fbo interno.
-//   • glstateguard guarda/restaura viewport, fbo y mezcla.
-//   • chequeo limite gpu via gl_max_texture_size.
-//   • glfinish() antes de leer asegura renderizado listo.
+// mejoras:
+//   - maneja aspect ratio no-16:9: recalcula camara y ground
+//     para evitar bordes negros o distorsion.
+//   - oculta practice checkpoints con propiedades de GameObject.
+//   - captureguard fija isCapturing()+captureSize asi
+//     hooks externos pueden redimensionar sus FBOs.
+//   - glstateguard guarda/restaura viewport, fbo y mezcla.
+//   - chequeo limite gpu via gl_max_texture_size.
+//   - glfinish() antes de leer asegura renderizado listo.
 // ─────────────────────────────────────────────────────────────
 void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int viewportH, CaptureQualitySettings const& quality) {
     auto* director = CCDirector::sharedDirector();
@@ -804,18 +1087,41 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
         // ── oculta todo lo que no sea gameplay vanilla ──────────
         auto hiddenNodes = hideNonVanillaUI();
 
+        // ── oculta practice checkpoints y efectos ──────────────
+        auto hiddenGameObjects = hidePracticeAndEffectObjects();
+
         // ── guarda estado gl (restaurado auto al salir ambito) ──
         GLStateGuard glGuard;
 
         // ── crea textura render ────────────────────────────
-        auto* rt = CCRenderTexture::create(renderW, renderH, kCCTexture2DPixelFormat_RGBA8888);
+        auto* rt = CCRenderTexture::create(renderW, renderH, kCCTexture2DPixelFormat_RGBA8888, GL_DEPTH24_STENCIL8);
+        if (rt) {
+            rt->begin();
+            GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+            rt->end();
+            if (fboStatus != GL_FRAMEBUFFER_COMPLETE) {
+                log::warn("[FramebufferCapture] FBO incomplete at {}x{} (status=0x{:X})", renderW, renderH, fboStatus);
+                rt = nullptr;
+            }
+        }
+
         if (!rt) {
-            log::warn("[FramebufferCapture] FBO at {}x{} failed – trying half resolution", renderW, renderH);
+            log::warn("[FramebufferCapture] FBO at {}x{} failed or incomplete – trying half resolution", renderW, renderH);
             renderW = std::max(1, renderW / 2);
             renderH = std::max(1, renderH / 2);
-            rt = CCRenderTexture::create(renderW, renderH, kCCTexture2DPixelFormat_RGBA8888);
+            rt = CCRenderTexture::create(renderW, renderH, kCCTexture2DPixelFormat_RGBA8888, GL_DEPTH24_STENCIL8);
+            if (rt) {
+                rt->begin();
+                GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+                rt->end();
+                if (fboStatus != GL_FRAMEBUFFER_COMPLETE) {
+                    log::error("[FramebufferCapture] Fallback FBO incomplete (status=0x{:X})", fboStatus);
+                    rt = nullptr;
+                }
+            }
             if (!rt) {
                 for (auto& pair : hiddenNodes) pair.first->setVisible(pair.second);
+                restoreHiddenGameObjects(hiddenGameObjects);
                 if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
                 return;
             }
@@ -823,13 +1129,51 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
         }
 
         // ── activa flag captura tras saber dimensiones finales ──
-        // shaderlayerhook lee esto para redimensionar fbo interno.
         CaptureGuard capGuard(renderW, renderH);
 
+        // ── manejo aspect ratio: recalcula camara si no es 16:9 ──
+        constexpr double kTargetAspect = 16.0 / 9.0;
+        bool aspectMismatch = std::abs(aspect - kTargetAspect) > 0.01;
+        bool needsCameraUpdate = false;
+        auto* playLayer = PlayLayer::get();
+
+        // Guarda estado del playLayer antes de modificarlo durante la captura.
+        // El snapshot se restaura automaticamente al salir del scope (RAII)
+        // para que el zoom/pause-layer no quede corrupto tras la captura.
+        struct PlayLayerStateGuard {
+            CCNode* pl;
+            CCPoint pos;
+            float scaleX, scaleY;
+            CCPoint anchor;
+            bool hadLayer;
+            PlayLayerStateGuard(CCNode* p) : pl(p), hadLayer(p != nullptr) {
+                if (!pl) return;
+                pos    = pl->getPosition();
+                scaleX = pl->getScaleX();
+                scaleY = pl->getScaleY();
+                anchor = pl->getAnchorPoint();
+            }
+            ~PlayLayerStateGuard() {
+                if (!hadLayer) return;
+                if (!pl || !pl->getParent()) return;
+                pl->setPosition(pos);
+                pl->setScaleX(scaleX);
+                pl->setScaleY(scaleY);
+                pl->setAnchorPoint(anchor);
+            }
+        };
+        PlayLayerStateGuard plGuard(playLayer);
+
+        if (aspectMismatch && playLayer) {
+            needsCameraUpdate = true;
+            playLayer->m_calculateTargetHeightOffset = true;
+            playLayer->m_updateGroundShadows = true;
+            log::info("[FramebufferCapture] Aspect mismatch ({:.3f} vs {:.3f}), recalculating camera",
+                      aspect, kTargetAspect);
+        }
+
         // ── renderiza ───────────────────────────────────────────
-        rt->begin();
-        glClearColor(0, 0, 0, 1);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        rt->beginWithClear(0.f, 0.f, 0.f, 1.f, 0.f, 0);
 
         kmGLPushMatrix();
 
@@ -845,13 +1189,27 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
             kmGLMultMatrix(&scaleMat);
         }
 
+        // Actualiza camara si hay mismatch de aspect ratio
+        if (needsCameraUpdate) {
+            playLayer->updateCamera(0.f);
+            playLayer->preUpdateVisibility(0.f);
+        }
+
         scene->visit();
 
         kmGLPopMatrix();
         rt->end();
 
+        // ── restaura estado de camara si fue modificado ─────────
+        if (needsCameraUpdate && playLayer) {
+            playLayer->m_updateGroundShadows = true;
+            playLayer->m_calculateTargetHeightOffset = true;
+        }
+        // NOTA: playLayerStateGuard se destruye aqui y restaura pos/scale/anchor
+
         // ── restaura nodos ocultos ─────────────────────────────
         for (auto& pair : hiddenNodes) pair.first->setVisible(pair.second);
+        restoreHiddenGameObjects(hiddenGameObjects);
 
         // ── sincroniza gpu antes leer pixeles ────────────────
         glFinish();
@@ -922,7 +1280,16 @@ void FramebufferCapture::doCaptureNode(CCNode* node) {
             return;
         }
 
-        auto* rt = CCRenderTexture::create(width, height);
+        auto* rt = CCRenderTexture::create(width, height, kCCTexture2DPixelFormat_RGBA8888, GL_DEPTH24_STENCIL8);
+        if (rt) {
+            rt->begin();
+            GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+            rt->end();
+            if (fboStatus != GL_FRAMEBUFFER_COMPLETE) {
+                log::error("[FramebufferCapture] Node FBO incomplete (status=0x{:X})", fboStatus);
+                rt = nullptr;
+            }
+        }
         if (!rt) {
             log::error("[FramebufferCapture] Failed to create CCRenderTexture for node");
             if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
@@ -935,9 +1302,7 @@ void FramebufferCapture::doCaptureNode(CCNode* node) {
         node->setPosition(ccp(width / 2.0f, height / 2.0f));
         node->setAnchorPoint(ccp(0.5f, 0.5f));
 
-        rt->begin();
-        glClearColor(0, 0, 0, 1);
-        glClear(GL_COLOR_BUFFER_BIT);
+        rt->beginWithClear(0.f, 0.f, 0.f, 1.f, 0.f, 0);
         node->visit();
         rt->end();
 

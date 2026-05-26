@@ -12,7 +12,7 @@ class EmoteAutocomplete : public cocos2d::CCNode {
     CCTextInputNode* m_inputNode = nullptr;
     geode::CopyableFunction<void(std::string const&)> m_setTextFn;
     cocos2d::CCMenu* m_menu = nullptr;
-    cocos2d::extension::CCScale9Sprite* m_bg = nullptr;
+    cocos2d::CCNodeRGBA* m_bg = nullptr;
     std::string m_lastText;
     size_t m_colonPos = std::string::npos;
 

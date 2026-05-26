@@ -21,6 +21,7 @@ protected:
     cocos2d::CCLayerColor*  m_moveSlotBg      = nullptr;
     cocos2d::CCLabelBMFont* m_idleLabel       = nullptr;
     cocos2d::CCLabelBMFont* m_moveLabel       = nullptr;
+    cocos2d::CCLabelBMFont* m_emptyGalleryLabel = nullptr;
 
     // Settings scroll
     geode::ScrollLayer*     m_scrollLayer     = nullptr;
@@ -31,10 +32,13 @@ protected:
     cocos2d::CCLabelBMFont* m_scaleLabel      = nullptr;
     Slider*                 m_opacitySlider   = nullptr;
     cocos2d::CCLabelBMFont* m_opacityLabel    = nullptr;
+    Slider*                 m_followDelaySlider = nullptr;
+    cocos2d::CCLabelBMFont* m_followDelayLabel  = nullptr;
 
     // Toggles
     CCMenuItemToggler* m_enableToggle     = nullptr;
     CCMenuItemToggler* m_trailToggle      = nullptr;
+    CCMenuItemToggler* m_followDelayToggle = nullptr;
 
     // Trail preset picker
     cocos2d::CCLabelBMFont* m_presetLabel = nullptr;
@@ -67,6 +71,8 @@ protected:
     void onTrailToggled(cocos2d::CCObject*);
     void onScaleChanged(cocos2d::CCObject*);
     void onOpacityChanged(cocos2d::CCObject*);
+    void onFollowDelayToggled(cocos2d::CCObject*);
+    void onFollowDelayChanged(cocos2d::CCObject*);
     void onPresetPrev(cocos2d::CCObject*);
     void onPresetNext(cocos2d::CCObject*);
     void onEditTrail(cocos2d::CCObject*);

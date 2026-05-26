@@ -47,7 +47,7 @@ bool CustomTransitionScene::initWithScenes(
     m_destScene = destScene;
     m_destScene->retain();
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // ── Container for origin scene ──
     // Position at {0,0} with default layer behavior so children keep their
@@ -62,8 +62,7 @@ bool CustomTransitionScene::initWithScenes(
         CCArray* children = fromScene->getChildren();
         if (children && children->count() > 0) {
             auto copy = CCArray::createWithCapacity(children->count());
-            for (unsigned i = 0; i < children->count(); ++i) {
-                auto* obj = children->objectAtIndex(i);
+            for (auto* obj : CCArrayExt<CCNode*>(children)) {
                 if (obj) copy->addObject(obj);
             }
             for (auto* node : CCArrayExt<CCNode*>(copy)) {
@@ -109,8 +108,7 @@ bool CustomTransitionScene::initWithScenes(
         CCArray* children = destScene->getChildren();
         if (children && children->count() > 0) {
             auto copy = CCArray::createWithCapacity(children->count());
-            for (unsigned i = 0; i < children->count(); ++i) {
-                auto* obj = children->objectAtIndex(i);
+            for (auto* obj : CCArrayExt<CCNode*>(children)) {
                 if (obj) copy->addObject(obj);
             }
             for (auto* node : CCArrayExt<CCNode*>(copy)) {
@@ -287,7 +285,7 @@ void CustomTransitionScene::beginCommand(TransitionCommand const& cmd) {
                 });
 
             if (spr) {
-                auto winSize = CCDirector::sharedDirector()->getWinSize();
+                auto winSize = CCDirector::get()->getWinSize();
                 spr->setPosition({winSize.width / 2, winSize.height / 2});
                 spr->setOpacity(0);
                 spr->setTag(8888);
@@ -383,7 +381,7 @@ void CustomTransitionScene::updateCommand(TransitionCommand const& cmd, float pr
         float amp = cmd.intensity * (1.f - t); // shake decays over time
         float offX = (static_cast<float>(rand() % 200) / 100.f - 1.f) * amp;
         float offY = (static_cast<float>(rand() % 200) / 100.f - 1.f) * amp;
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
         target->setPosition({winSize.width / 2 + offX, winSize.height / 2 + offY});
         return;
     }
@@ -431,7 +429,7 @@ void CustomTransitionScene::finishCurrentCommand() {
     if (cmd.action == CommandAction::Shake) {
         auto* target = getTarget(cmd.target);
         if (target) {
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            auto winSize = CCDirector::get()->getWinSize();
             target->setPosition({winSize.width / 2, winSize.height / 2});
         }
     }
@@ -454,8 +452,7 @@ void CustomTransitionScene::finishTransition() {
         CCArray* children = m_toContainer->getChildren();
         if (children && children->count() > 0) {
             auto copy = CCArray::createWithCapacity(children->count());
-            for (unsigned i = 0; i < children->count(); ++i) {
-                auto* obj = children->objectAtIndex(i);
+            for (auto* obj : CCArrayExt<CCNode*>(children)) {
                 if (obj) copy->addObject(obj);
             }
             for (auto* node : CCArrayExt<CCNode*>(copy)) {
@@ -502,7 +499,7 @@ void CustomTransitionScene::finishTransition() {
 
 void CustomTransitionScene::onTransitionFinished(float) {
     if (!m_destScene) return;
-    CCDirector::sharedDirector()->replaceScene(m_destScene);
+    CCDirector::get()->replaceScene(m_destScene);
 }
 
 CCLayerColor* CustomTransitionScene::getTarget(std::string const& targetName) {

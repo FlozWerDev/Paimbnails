@@ -97,6 +97,15 @@ PetManager& PetManager::get() {
     return inst;
 }
 
+PetManager::~PetManager() {
+    detachFromScene();
+    (void)whiteTrailTexture().take();
+    for (auto& [_, tex] : m_staticTextureCache) {
+        (void)tex.take();
+    }
+    m_staticTextureCache.clear();
+}
+
 // ════════════════════════════════════════════════════════════
 // paths
 // ════════════════════════════════════════════════════════════
@@ -357,7 +366,7 @@ void PetManager::saveConfig() {
 // ════════════════════════════════════════════════════════════
 
 bool PetManager::shouldShowOnCurrentScene() const {
-    auto scene = CCDirector::sharedDirector()->getRunningScene();
+    auto scene = CCDirector::get()->getRunningScene();
     if (!scene) return false;
 
     if (sceneMatchesAnyLayer(scene, PET_GAMEPLAY_LAYER_OPTIONS)) {
@@ -752,7 +761,7 @@ void PetManager::attachToScene(CCScene* scene) {
     m_petNode->setVisible(shouldShowOnCurrentScene());
 
     // init position to center
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     m_currentPos = ccp(winSize.width / 2.f, winSize.height / 2.f);
     m_targetPos = m_currentPos;
     m_velocity = ccp(0, 0);
@@ -796,7 +805,11 @@ void PetManager::refreshVisibility() {
 }
 
 void PetManager::releaseSharedResources() {
-    whiteTrailTexture() = nullptr;
+    detachFromScene();
+    (void)whiteTrailTexture().take();
+    for (auto& [_, tex] : m_staticTextureCache) {
+        (void)tex.take();
+    }
     m_staticTextureCache.clear();
 }
 

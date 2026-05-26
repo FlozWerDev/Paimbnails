@@ -139,21 +139,29 @@ CCNode* createSliderRow(const char* label, float initialValue,
     float range = maxVal - minVal;
     float normalized = (range > 0.f) ? (initialValue - minVal) / range : 0.f;
 
-    auto slider = Slider::create(cb, menu_selector(SliderCallback::onChanged), 0.6f);
+    auto slider = Slider::create(cb, menu_selector(SliderCallback::onChanged), 0.55f);
     slider->setValue(normalized);
-    slider->ignoreAnchorPointForPosition(false);
-    slider->setAnchorPoint({0.5f, 0.5f});
-    slider->setPosition({500.f, 105.f});
-    slider->setScale(0.55f);
     slider->setTouchEnabled(true);
     if (slider->m_touchLogic) {
         slider->m_touchLogic->setTouchPriority(childTouchPrio());
     }
-    row->addChild(slider);
+
+    // Slider es un CCLayer que ignora su anchor y dibuja sus children con
+    // offsets internos. Para posicionarlo correctamente en una row hay que
+    // envolverlo en un CCNode del tamano visible (m_width/m_height * scale)
+    // y centrarlo dentro de ese wrapper. Mismo patron que ColorPickPopup de
+    // Geode.
+    auto sliderWrapper = cocos2d::CCNode::create();
+    sliderWrapper->setContentSize(CCSize{slider->m_width * 0.55f, slider->m_height * 0.55f});
+    sliderWrapper->setAnchorPoint({0.f, 0.5f});
+    sliderWrapper->setPosition({115.f, ROW_HEIGHT / 2.f});
+    sliderWrapper->addChildAtPosition(slider, Anchor::Center, ccp(0, 0));
+    row->addChild(sliderWrapper);
     cb->m_slider = slider;
 
     auto valLabel = makeValueLabel(fmt::format("{:.2f}", initialValue).c_str());
-    valLabel->setPosition({width - 42.f, ROW_HEIGHT / 2.f});
+    valLabel->setAnchorPoint({0.f, 0.5f});
+    valLabel->setPosition({235.f, ROW_HEIGHT / 2.f});
     row->addChild(valLabel);
     cb->m_valueLabel = valLabel;
 
@@ -217,21 +225,24 @@ CCNode* createIntSliderRow(const char* label, int initialValue,
     float range = static_cast<float>(maxVal - minVal);
     float normalized = (range > 0.f) ? static_cast<float>(initialValue - minVal) / range : 0.f;
 
-    auto slider = Slider::create(cb, menu_selector(IntSliderCallback::onChanged), 0.6f);
+    auto slider = Slider::create(cb, menu_selector(IntSliderCallback::onChanged), 0.55f);
     slider->setValue(normalized);
-    slider->ignoreAnchorPointForPosition(false);
-    slider->setAnchorPoint({0.5f, 0.5f});
-    slider->setPosition({500.f, 105.f});
-    slider->setScale(0.55f);
     slider->setTouchEnabled(true);
     if (slider->m_touchLogic) {
         slider->m_touchLogic->setTouchPriority(childTouchPrio());
     }
-    row->addChild(slider);
+
+    auto sliderWrapper = cocos2d::CCNode::create();
+    sliderWrapper->setContentSize(CCSize{slider->m_width * 0.55f, slider->m_height * 0.55f});
+    sliderWrapper->setAnchorPoint({0.f, 0.5f});
+    sliderWrapper->setPosition({115.f, ROW_HEIGHT / 2.f});
+    sliderWrapper->addChildAtPosition(slider, Anchor::Center, ccp(0, 0));
+    row->addChild(sliderWrapper);
     cb->m_slider = slider;
 
     auto valLabel = makeValueLabel(fmt::format("{}", initialValue).c_str());
-    valLabel->setPosition({width - 42.f, ROW_HEIGHT / 2.f});
+    valLabel->setAnchorPoint({0.f, 0.5f});
+    valLabel->setPosition({235.f, ROW_HEIGHT / 2.f});
     row->addChild(valLabel);
     cb->m_valueLabel = valLabel;
 
@@ -433,6 +444,57 @@ CCNode* createLinkRow(const char* label, std::function<void()> onOpen,
         sep->setPosition({8.f, 0.f});
         row->addChild(sep);
     }
+
+    return row;
+}
+
+// ── Text Input Row ─────────────────────────────────────────────────────
+
+CCNode* createTextInputRow(const char* label, std::string const& initialValue,
+                           const char* placeholder, int maxChars,
+                           std::function<void(std::string const&)> onChange,
+                           float width) {
+    auto row = CCNode::create();
+    row->setContentSize({width, ROW_HEIGHT});
+    row->setAnchorPoint({0.f, 0.f});
+
+    auto lbl = makeLabel(label);
+    lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
+    row->addChild(lbl);
+
+    // El input ocupa la mitad derecha del row.
+    float inputW = std::max(width * 0.55f, 140.f);
+    auto input = geode::TextInput::create(inputW, placeholder ? placeholder : "", "chatFont.fnt");
+    input->setCommonFilter(geode::CommonFilter::Any);
+    if (maxChars > 0) input->setMaxCharCount(maxChars);
+    input->setString(initialValue);
+    input->setPosition({width - inputW / 2.f - 10.f, ROW_HEIGHT / 2.f});
+    input->setScale(0.75f);
+    input->setCallback(std::move(onChange));
+    row->addChild(input);
+
+    auto sep = paimon::SpriteHelper::createRoundedRect(width - 16.f, 1.f, 0.f, {1.f, 1.f, 1.f, 0.06f});
+    if (sep) {
+        sep->setPosition({8.f, 0.f});
+        row->addChild(sep);
+    }
+
+    return row;
+}
+
+// ── Hint Row ───────────────────────────────────────────────────────────
+
+CCNode* createHintRow(const char* text, float width) {
+    auto row = CCNode::create();
+    row->setContentSize({width, 20.f});
+    row->setAnchorPoint({0.f, 0.f});
+
+    auto lbl = CCLabelBMFont::create(text ? text : "", "chatFont.fnt");
+    lbl->setScale(0.42f);
+    lbl->setColor({170, 180, 195});
+    lbl->setAnchorPoint({0.f, 0.5f});
+    lbl->setPosition({LABEL_X + 4.f, 10.f});
+    row->addChild(lbl);
 
     return row;
 }

@@ -99,7 +99,7 @@ private:
     float getFadeDurationSec() const;
     void playOnMainChannel(const std::string& songPath, float startVolume);
     void loadMenuTrack(float startVolume);
-    void applyRandomSeek();
+    void applyRandomSeek(FMOD::Channel* existingCh = nullptr);
 
     void fadeVolume(float from, float to, float durationSec, PostFadeAction action);
     void cancelFade();

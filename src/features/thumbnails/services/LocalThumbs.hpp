@@ -72,6 +72,9 @@ public:
     void saveMappings();
     void shutdown();
 
+    // invalida el cache de lookup (llamar tras saveRGB / removeThumb / etc)
+    void invalidateLookup(int32_t levelID);
+
 private:
     LocalThumbs(); // privado
     std::string dir() const;
@@ -84,6 +87,16 @@ private:
     std::atomic<bool> m_cacheInitialized{false};
     std::atomic<bool> m_shuttingDown{false};
     mutable std::future<void> m_initFuture;
+
+    // Cache de findAnyThumbnail: evita multiples std::filesystem::exists por
+    // scroll. La entrada es valida durante toda la sesion hasta que se
+    // invalida explicitamente.
+    struct LookupEntry {
+        std::optional<std::string> path; // nullopt si no existe ningun thumb
+    };
+    mutable std::unordered_map<int32_t, LookupEntry> m_lookupCache;
+    mutable std::mutex m_lookupMutex;
+
     void initCache();
     void migrateLegacyFile(int32_t levelID, std::filesystem::path const& legacyPath);
     int nextIndex(int32_t levelID) const; // siguiente indice disponible (sin lock)

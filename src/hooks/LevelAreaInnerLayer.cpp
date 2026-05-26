@@ -136,6 +136,42 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
 
         log::info("[LevelAreaInnerLayer] Adding thumbnail for level {}", levelID);
 
+        // Helper para construir y montar el sprite — reusable entre fast-path
+        // (RAM cache hit, sincronico) y slow-path (requestLoad async).
+        auto applyThumbnail = [doorNode, levelID](
+            CCNode* layer, CCTexture2D* tex, std::unordered_map<int, Ref<CCSprite>>& thumbsMap
+        ) {
+            if (!tex || !doorNode) return;
+            // Si la celda ya tiene un thumbnail (porque llegaron RAM hit y
+            // requestLoad casi al mismo tiempo), no duplicar.
+            if (thumbsMap.find(levelID) != thumbsMap.end()) return;
+
+            auto thumbSprite = CCSprite::createWithTexture(tex);
+            if (!thumbSprite) return;
+
+            auto doorSize = doorNode->getContentSize();
+            float scale = std::min(
+                (doorSize.width * 0.8f) / thumbSprite->getContentWidth(),
+                (doorSize.height * 0.8f) / thumbSprite->getContentHeight()
+            );
+            thumbSprite->setScale(scale);
+            thumbSprite->setPosition(doorSize / 2);
+            thumbSprite->setZOrder(-1);
+            thumbSprite->setOpacity(180);
+            doorNode->addChild(thumbSprite);
+
+            thumbsMap[levelID] = thumbSprite;
+        };
+
+        // Fast path sincronico: si esta en RAM (precargado al iniciar el mod),
+        // aplicar en el mismo frame sin pasar por la cola.
+        if (auto* cached = ThumbnailLoader::get().tryGetCachedTexture(levelID, false)) {
+            applyThumbnail(this, cached, fields->m_doorThumbnails);
+            log::debug("[LevelAreaInnerLayer] Thumbnail RAM-hit for level {} (sync)", levelID);
+            return;
+        }
+
+        // Slow path: cargar async desde disco/red.
         WeakRef<PaimonLevelAreaInnerLayer> self = this;
         Ref<CCNode> doorRef = doorNode;
         std::string fileName = fmt::format("{}.png", levelID);
@@ -148,6 +184,11 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
 
                 auto layerFields = layer->m_fields.self();
                 if (!layerFields) return;
+
+                if (layerFields->m_doorThumbnails.find(levelID) !=
+                    layerFields->m_doorThumbnails.end()) {
+                    return;
+                }
 
                 auto thumbSprite = CCSprite::createWithTexture(tex);
                 if (!thumbSprite) return;
@@ -165,9 +206,9 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
                 doorRef->addChild(thumbSprite);
 
                 layerFields->m_doorThumbnails[levelID] = thumbSprite;
-                log::info("[LevelAreaInnerLayer] Thumbnail added for level {}", levelID);
+                log::info("[LevelAreaInnerLayer] Thumbnail added for level {} (async)", levelID);
             },
-            1, false
+            ThumbnailLoader::PriorityHero, false
         );
     }
 
@@ -187,52 +228,54 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
         (void)self.setHookPriorityPost("FLAlertLayer::show", geode::Priority::VeryLate);
     }
 
+    struct Fields {
+        // ID del nivel-torre capturado al mostrar el FLAlertLayer.
+        // Antes infereiamos esto por el string del titulo (lo que rompia con
+        // mods de localizacion). Ahora leemos LevelAreaInnerLayer::m_levelID
+        // directamente.
+        int m_capturedLevelID = -1;
+    };
+
     $override
 
     void show() {
         FLAlertLayer::show();
-        
+
         // Filtra para no afectar otros popups del juego
         auto* scene = CCDirector::sharedDirector()->getRunningScene();
         if (!scene) return;
-        bool inLevelArea = false;
+        LevelAreaInnerLayer* lai = nullptr;
         if (auto* children = scene->getChildren()) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
-                if (typeinfo_cast<LevelAreaInnerLayer*>(child)) {
-                    inLevelArea = true;
+                if (auto* l = typeinfo_cast<LevelAreaInnerLayer*>(child)) {
+                    lai = l;
                     break;
                 }
             }
         }
-        if (!inLevelArea) return;
+        if (!lai) return;
+
+        // Tower secret levels: 5001 (The Tower), 5002 (The Sewers),
+        // 5003 (The Cellar), 5004 (The Secret Hollow).
+        // Constantes de GD; estables entre versiones del juego.
+        int levelID = lai->m_levelID;
+        if (levelID < 5001 || levelID > 5004) return;
+
+        m_fields->m_capturedLevelID = levelID;
 
         this->getScheduler()->scheduleSelector(schedule_selector(InfoBtnHookFLAlertLayer::checkAndAddButton), this, 0.0f, 0, 0.0f, false);
     }
-    
+
     void checkAndAddButton(float) {
         // No agrega boton en popup propio
         if (this->getID() == "simple-thumbnail-popup"_spr) return;
-        
-        int foundLevelID = 0;
-        
+
+        int foundLevelID = m_fields->m_capturedLevelID;
+        if (foundLevelID < 5001 || foundLevelID > 5004) return;
+
         CCNode* container = this->m_mainLayer ? this->m_mainLayer : this;
-        if (container) {
-            auto children = container->getChildren();
-            if (children) {
-                 for (auto* child : CCArrayExt<CCNode*>(children)) {
-                      if (auto label = typeinfo_cast<CCLabelBMFont*>(child)) {
-                           std::string txt = label->getString();
-                           if (txt == "The Tower") foundLevelID = 5001;
-                           else if (txt == "The Sewers") foundLevelID = 5002;
-                           else if (txt == "The Cellar") foundLevelID = 5003;
-                           else if (txt == "The Secret Hollow") foundLevelID = 5004;
-                           
-                           if (foundLevelID > 0) break;
-                      }
-                 }
-            }
-        }
-        
+        if (!container) return;
+
         if (foundLevelID > 0) {
             auto winSize = CCDirector::sharedDirector()->getWinSize();
             

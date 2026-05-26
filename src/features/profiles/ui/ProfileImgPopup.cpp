@@ -1,6 +1,7 @@
 #include "ProfileImgPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Shaders.hpp"
+#include "../../../utils/GLSLLoader.hpp"
 #include "../../../blur/BlurSystem.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
 
@@ -85,32 +86,23 @@ bool ProfileImgPopup::init(int accountID, CCTexture2D* texture) {
     if (effect != "none" && effect != "blur") {
         CCGLProgram* shader = nullptr;
         if (effect == "grayscale") {
-            shader = Shaders::getOrCreateShader("profileimg_grayscale"_spr,
-                Shaders::vertexShaderCell, Shaders::fragmentShaderGrayscaleCell);
+            shader = paimon::shaders::loadShader("profileimg_grayscale"_spr, "cell_vertex.glsl", "grayscale_cell.glsl", nullptr, nullptr);
         } else if (effect == "sepia") {
-            shader = Shaders::getOrCreateShader("profileimg_sepia"_spr,
-                Shaders::vertexShaderCell, Shaders::fragmentShaderSepiaCell);
+            shader = paimon::shaders::loadShader("profileimg_sepia"_spr, "cell_vertex.glsl", "sepia_cell.glsl", nullptr, nullptr);
         } else if (effect == "vignette") {
-            shader = Shaders::getOrCreateShader("profileimg_vignette"_spr,
-                Shaders::vertexShaderCell, Shaders::fragmentShaderVignetteCell);
+            shader = paimon::shaders::loadShader("profileimg_vignette"_spr, "cell_vertex.glsl", "vignette_cell.glsl", nullptr, nullptr);
         } else if (effect == "pixelate") {
-            shader = Shaders::getOrCreateShader("profileimg_pixelate"_spr,
-                Shaders::vertexShaderCell, Shaders::fragmentShaderPixelateCell);
+            shader = paimon::shaders::loadShader("profileimg_pixelate"_spr, "cell_vertex.glsl", "pixelate_cell.glsl", nullptr, nullptr);
         } else if (effect == "posterize") {
-            shader = Shaders::getOrCreateShader("profileimg_posterize"_spr,
-                Shaders::vertexShaderCell, Shaders::fragmentShaderPosterizeCell);
+            shader = paimon::shaders::loadShader("profileimg_posterize"_spr, "cell_vertex.glsl", "posterize_cell.glsl", nullptr, nullptr);
         } else if (effect == "chromatic") {
-            shader = Shaders::getOrCreateShader("profileimg_chromatic"_spr,
-                Shaders::vertexShaderCell, Shaders::fragmentShaderChromaticCell);
+            shader = paimon::shaders::loadShader("profileimg_chromatic"_spr, "cell_vertex.glsl", "chromatic_cell.glsl", nullptr, nullptr);
         } else if (effect == "scanlines") {
-            shader = Shaders::getOrCreateShader("profileimg_scanlines"_spr,
-                Shaders::vertexShaderCell, Shaders::fragmentShaderScanlinesCell);
+            shader = paimon::shaders::loadShader("profileimg_scanlines"_spr, "cell_vertex.glsl", "scanlines_cell.glsl", nullptr, nullptr);
         } else if (effect == "invert") {
-            shader = Shaders::getOrCreateShader("profileimg_invert"_spr,
-                Shaders::vertexShaderCell, Shaders::fragmentShaderInvertCell);
+            shader = paimon::shaders::loadShader("profileimg_invert"_spr, "cell_vertex.glsl", "invert_cell.glsl", nullptr, nullptr);
         } else if (effect == "solarize") {
-            shader = Shaders::getOrCreateShader("profileimg_solarize"_spr,
-                Shaders::vertexShaderCell, Shaders::fragmentShaderSolarizeCell);
+            shader = paimon::shaders::loadShader("profileimg_solarize"_spr, "cell_vertex.glsl", "solarize_cell.glsl", nullptr, nullptr);
         }
 
         if (shader) {

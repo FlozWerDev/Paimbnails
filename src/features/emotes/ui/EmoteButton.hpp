@@ -9,6 +9,8 @@ struct EmoteInputContext {
     geode::CopyableFunction<std::string()> getText;
     geode::CopyableFunction<void(std::string const&)> setText;
     int charLimit = 140;
+    EmotePickerPopup::LayoutSize pickerSize = EmotePickerPopup::LayoutSize::Normal;
+    bool centerPicker = false;
 };
 
 /// Circular emote button (CircleButtonSprite) with a random emote sprite inside.

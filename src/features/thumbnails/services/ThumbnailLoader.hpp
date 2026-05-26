@@ -11,10 +11,11 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <atomic>
 #include <chrono>
 #include <functional>
-#include <prevter.imageplus/include/events.hpp>
+#include "../../../utils/FormatDetect.hpp"
 #include "../../../core/QualityConfig.hpp"
 #include "../../../utils/ThreadPool.hpp"
 #include "CacheModels.hpp"
@@ -68,6 +69,13 @@ public:
     bool isPending(int levelID, bool isGif = false) const;
     bool isFailed(int levelID, bool isGif = false) const;
     bool isNotFound(int levelID, bool isGif = false) const;
+
+    // Fast path sincronico para hero thumbnails: si la textura ya esta en
+    // RAM, la devuelve inmediatamente. Si no, devuelve nullptr y el caller
+    // debe hacer requestLoad normal. NO toca disk LRU ni encola callbacks
+    // — es 100% lectura del RAM cache (zero overhead).
+    cocos2d::CCTexture2D* tryGetCachedTexture(int levelID, bool isGif = false);
+
     void clearCache();
     void clearFailedCache();
     void invalidateLevel(int levelID, bool isGif = false);
@@ -144,8 +152,11 @@ private:
 #endif
     mutable std::recursive_mutex m_queueMutex;
 
-    // cache gifs (tracking which levels have GIF data)
+    // cache gifs (tracking which levels have GIF data) — shared_mutex para evitar
+    // contender con m_queueMutex en hot path (LevelCell::hasGIFData lo consulta
+    // 4 veces durante scroll). Lectura concurrente sin bloqueo entre cells.
     std::unordered_set<int> m_gifLevels;
+    mutable std::shared_mutex m_gifLevelsMutex;
 
     // remote revision tokens por level (thumbnailId o fallback)
     std::unordered_map<int, std::string> m_remoteRevisions;
@@ -190,10 +201,24 @@ private:
     std::vector<PendingCallback> m_pendingCallbacks;
     std::mutex m_pendingMutex;
     std::atomic<bool> m_drainScheduled{false};
+    // microsegundos desde steady_clock epoch del momento en que m_drainScheduled
+    // se puso true. Si pasaron >100ms y nadie limpio el flag (queueInMainThread
+    // no llego a ejecutar — shutdown intermedio, scheduler pausado, etc.) se
+    // considera stale y enqueuePendingCallback puede re-armar el drain.
+    std::atomic<int64_t> m_drainScheduledAtUs{0};
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    static constexpr int MAX_CALLBACKS_PER_FRAME = 24;
+    static constexpr int MAX_CALLBACKS_PER_FRAME = 3;
 #else
-    static constexpr int MAX_CALLBACKS_PER_FRAME = 128;
+    // Desktop @ 360fps: cada frame es ~2.78ms. Un callback de LevelCell dispara
+    // cleanPaimonNodes + setupClippingAndSeparator + setupGradient (~0.3-0.6ms).
+    // Con 4 callbacks = ~1.2-2.4ms, dejando ~0.4-1.6ms para render + game logic.
+    // A 60fps esto seria ~24 callbacks/frame equivalentes; a 360fps necesitamos
+    // mucho menos por frame pero mas frames por segundo para la misma tasa neta.
+    // Aumentado a 4 para reducir latencia de batching en listas de 10+ celdas
+    // y evitar que la ultima celda se quede esperando demasiados frames.
+    // El rate-limiting mejorado en LevelCell (que ahora NUNCA bloquea la primera
+    // aplicacion) garantiza que el trabajo extra no se acumule.
+    static constexpr int MAX_CALLBACKS_PER_FRAME = 4;
 #endif
     void enqueuePendingCallback(LoadCallback cb, cocos2d::CCTexture2D* tex, bool success, int levelID = 0);
     void drainPendingCallbacks();
@@ -223,27 +248,26 @@ private:
     // demasiado tiempo del frame. Asi en PCs rapidos subimos mas,
     // y en moviles lentos subimos menos — sin bajar FPS.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    static constexpr int MAX_UPLOADS_PER_FRAME = 6;          // tope absoluto de seguridad
-    static constexpr int64_t UPLOAD_FRAME_BUDGET_US = 3000;   // 3ms max por frame en movil
+    static constexpr int MAX_UPLOADS_PER_FRAME = 3;          // tope absoluto de seguridad
+    static constexpr int64_t UPLOAD_FRAME_BUDGET_US = 1500;   // 1.5ms max por frame en movil (360fps ~2.78ms total)
 #else
-    // Desktop: presupuesto agresivo — en GPUs modernas el upload de texturas
-    // pequeñas/medianas cuesta <0.5ms cada una; dejamos que se llene hasta
-    // ~12ms del frame (~72% de un frame a 60Hz). drainPendingUploads se
-    // yielda antes de pasar el budget, asi no rompe FPS aunque se llene.
-    static constexpr int MAX_UPLOADS_PER_FRAME = 32;          // tope absoluto de seguridad
-    static constexpr int64_t UPLOAD_FRAME_BUDGET_US = 12000;  // 12ms max por frame en desktop
+    // Desktop @ 360fps: frame budget = ~2778us. Dejar headroom para game logic
+    // y render. A 60fps equivalente seria ~16 uploads/frame; a 360fps limitamos
+    // a 4 uploads por frame para no consumir mas de ~1.5ms del budget.
+    static constexpr int MAX_UPLOADS_PER_FRAME = 4;           // tope absoluto de seguridad
+    static constexpr int64_t UPLOAD_FRAME_BUDGET_US = 1500;  // 1.5ms max por frame en desktop
 #endif
     // Maximum dimension for RAM-cached thumbnails. Images larger than this
     // are downsampled before GPU upload to reduce RAM usage and upload time.
-    // LevelCell displays thumbnails at ~90-180px, asi que no tiene sentido
-    // guardar 2048x2048 en RAM. Desktop usa 1024 para tener headroom para
-    // blur de alta intensidad sin perdida de detalle.
+    // LevelCell displays thumbnails at ~90-180px, but LevelInfoLayer popup shows
+    // them much larger. Previous value of 1024 caused 1080p captures to appear
+    // at ~720p (1024x576). Use 1920 to preserve full 1080p resolution.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    static constexpr int RAM_CACHE_MAX_DIM = 256;  // smaller on mobile to save RAM
+    static constexpr int RAM_CACHE_MAX_DIM = 512;   // larger on mobile for better popup quality
     static constexpr int URL_CACHE_MAX_DIM = 512;
 #else
-    static constexpr int RAM_CACHE_MAX_DIM = 1024;
-    static constexpr int URL_CACHE_MAX_DIM = 1280;
+    static constexpr int RAM_CACHE_MAX_DIM = 1920;   // preserve 1080p from capturer
+    static constexpr int URL_CACHE_MAX_DIM = 1920;
 #endif
     void enqueuePendingUpload(PendingUpload upload);
     void drainPendingUploads();
@@ -263,6 +287,25 @@ private:
     void workerDownload(std::shared_ptr<Task> task);
     void processDownloadedData(std::shared_ptr<Task> task, std::vector<uint8_t> data, int realID);
     void workerUrlDownload(std::shared_ptr<Task> task);
+
+    // ── Batch download coalescing ────────────────────────────────────
+    // Cuando varias tasks entran a workerDownload casi al mismo tiempo
+    // (scroll de un LevelList con 10-30 celdas visibles), las acumulamos en
+    // un buffer y disparamos una sola request /api/thumbnails/batch en lugar
+    // de N requests /t/{id}. Esto reduce 30 round-trips a 1.
+    struct BatchPending {
+        std::shared_ptr<Task> task;
+        std::shared_ptr<std::atomic<int>> retryCount;
+    };
+    std::vector<BatchPending> m_batchPendingDownloads;
+    std::mutex m_batchPendingMutex;
+    std::atomic<bool> m_batchFlushScheduled{false};
+    static constexpr int BATCH_FLUSH_THRESHOLD = 40;   // cap del server
+    static constexpr int BATCH_FLUSH_DELAY_MS = 50;    // ventana de coalescing
+    void scheduleBatchFlush();
+    void flushBatchDownloads();
+    void enqueueBatchDownload(std::shared_ptr<Task> task, std::shared_ptr<std::atomic<int>> retryCount);
+
     void processUrlQueue();
     void spawnDisk(std::function<void()> job);  // encola en pool de I/O de disco (2 threads)
     void spawnCpu(std::function<void()> job);   // encola en pool de CPU (decode, 4/2 threads)
@@ -270,6 +313,11 @@ private:
 
     // decode helper: decodifica a CCImage fuera del main thread
     struct DecodeResult {
+        // Preferido: pixels RGBA listos para subir via initWithData (mode 2 en PendingUpload).
+        // Evita la copia intermedia que hace CCImage::initWithImageData(kFmtRawData, ..., true).
+        std::vector<uint8_t> pixels;
+        // Fallback: solo se usa cuando stb_image no pudo decodificar y caemos al
+        // CCImage::initWithImageData nativo con el archivo PNG/JPG crudo.
         cocos2d::CCImage* image = nullptr;  // owned by caller, must be deleted if not used
         int width = 0;
         int height = 0;

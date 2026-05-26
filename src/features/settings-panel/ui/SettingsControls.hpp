@@ -71,6 +71,22 @@ cocos2d::CCNode* createLinkRow(
     float width
 );
 
+// Text input (single-line string)
+cocos2d::CCNode* createTextInputRow(
+    const char* label,
+    std::string const& initialValue,
+    const char* placeholder,
+    int maxChars,
+    std::function<void(std::string const&)> onChange,
+    float width
+);
+
+// Hint / helper text row (small gray label, no control)
+cocos2d::CCNode* createHintRow(
+    const char* text,
+    float width
+);
+
 // Section header
 cocos2d::CCNode* createSectionHeader(const char* title, float width);
 

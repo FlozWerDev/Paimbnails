@@ -4,6 +4,7 @@
 #include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
 #include "../utils/AudioInterop.hpp"
+#include "../utils/ExtendedKeybind.hpp"
 #include <Geode/Geode.hpp>
 
 using namespace geode::prelude;
@@ -14,23 +15,23 @@ namespace paimon {
 static void registerAllFeatures() {
     auto& reg = FeatureRegistry::get();
 
-    reg.registerFeature({"thumbnails",     "2.3.5", {},              PermissionTier::Viewer});
-    reg.registerFeature({"emotes",         "2.3.5", {},              PermissionTier::Viewer});
-    reg.registerFeature({"backgrounds",    "2.3.5", {},              PermissionTier::Viewer});
-    reg.registerFeature({"badges",         "2.3.5", {},              PermissionTier::Viewer});
-    reg.registerFeature({"audio",          "2.3.5", {},              PermissionTier::Viewer});
-    reg.registerFeature({"capture",        "2.3.5", {"thumbnails"},  PermissionTier::Contributor});
-    reg.registerFeature({"community",      "2.3.5", {},              PermissionTier::User});
-    reg.registerFeature({"dynamic-songs",  "2.3.5", {"audio"},       PermissionTier::Viewer});
-    reg.registerFeature({"moderation",     "2.3.5", {"thumbnails"},  PermissionTier::Moderator});
-    reg.registerFeature({"pet",            "2.3.5", {},              PermissionTier::Viewer});
-    reg.registerFeature({"custom-cursor",  "2.3.5", {},              PermissionTier::Viewer});
-    reg.registerFeature({"profile-music",  "2.3.5", {"audio"},       PermissionTier::User});
-    reg.registerFeature({"profiles",       "2.3.5", {},              PermissionTier::Viewer});
-    reg.registerFeature({"settings-panel", "2.3.5", {},              PermissionTier::Viewer});
-    reg.registerFeature({"transitions",    "2.3.5", {},              PermissionTier::Viewer});
-    reg.registerFeature({"visuals",        "2.3.5", {},              PermissionTier::Viewer});
-    reg.registerFeature({"progressbar",    "2.3.5", {},              PermissionTier::Viewer});
+    reg.registerFeature({"thumbnails",     "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"emotes",         "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"backgrounds",    "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"badges",         "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"audio",          "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"capture",        "1.0.4", {"thumbnails"},  PermissionTier::Contributor});
+    reg.registerFeature({"community",      "1.0.4", {},              PermissionTier::User});
+    reg.registerFeature({"dynamic-songs",  "1.0.4", {"audio"},       PermissionTier::Viewer});
+    reg.registerFeature({"moderation",     "1.0.4", {"thumbnails"},  PermissionTier::Moderator});
+    reg.registerFeature({"pet",            "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"custom-cursor",  "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"profile-music",  "1.0.4", {"audio"},       PermissionTier::User});
+    reg.registerFeature({"profiles",       "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"settings-panel", "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"transitions",    "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"visuals",        "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"progressbar",    "1.0.4", {},              PermissionTier::Viewer});
 
     log::info("[PaimonFramework] Registered {} features", reg.featureCount());
 }
@@ -132,6 +133,12 @@ void initFramework() {
     registerAllFeatures();
     registerDefaultHooks();
     registerDynamicSongHooks();
+
+    // Sistema de keybinds extendidos (mouse + scroll). Registra listeners
+    // globales para detectar clicks y scroll y dispatchar a los settings
+    // del mod. Vease src/utils/ExtendedKeybind.{hpp,cpp}.
+    paimon::keybinds::initExtendedKeybindSystem();
+
     log::info("[PaimonFramework] Framework initialized");
 }
 

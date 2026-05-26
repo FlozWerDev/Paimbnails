@@ -21,6 +21,9 @@ using namespace cocos2d;
 class $modify(PaimonCustomSongWidget, CustomSongWidget) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityAfterPost("CustomSongWidget::init", "geode.node-ids");
+        // Ejecutar despues de compact-pause-menu para restaurar el tamano original.
+        // Priority::Last (3000) corre el ultimo en la cadena post-original.
+        (void)self.setHookPriorityPost("CustomSongWidget::updateSongInfo", geode::Priority::Last);
     }
 
     struct Fields {
@@ -29,6 +32,8 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         bool                m_bgSwapped = false;
         bool                m_retryScheduled = false;
         paimon::SubscriptionHandle m_bgEventHandle = 0;
+        CCSize              m_originalBgSize = {0, 0};  // guardado para resistir compact-pause-menu
+        CCPoint             m_originalBgPos  = {0, 0};
     };
 
     LevelInfoLayer* findLevelInfoLayer() {
@@ -95,6 +100,10 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         }
 
         bgNode->setVisible(false);
+
+        // Guarda dimensiones originales para que compact-pause-menu no las encoja
+        m_fields->m_originalBgSize = bgSz;
+        m_fields->m_originalBgPos  = bgPos;
 
         auto clip = buildClipper(bgSz);
         clip->setAnchorPoint(bgAnchor);
@@ -349,22 +358,68 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
     }
 
     $override
-    void songStateChanged() {
-        // Guard: evita crash si m_customSongCell esta corrupto
-        if (!m_songInfoObject || !this->getParent() || m_isMusicLibrary) {
+    void updateSongInfo() {
+        // SIEMPRE llamar al original primero. GD's CustomSongWidget::init() invoca
+        // updateSongInfo() internamente DURANTE init(), momento en el que this->getParent()
+        // todavia es nullptr. Si gateamos esta llamada por getParent()/m_isMusicLibrary,
+        // los labels m_songLabel/m_artistLabel nunca se popularan ni se escalaran al
+        // tamano del bg, dejando los placeholders "Song Title"/"Artist Name" a escala 1.0
+        // (lo que se ve en MusicBrowser y en celdas del editor).
+        // El original de GD maneja correctamente m_songInfoObject=null y parent=null.
+        //
+        // ANTI-CRASH: durante LevelEditorLayer::onStopPlaytest, FMOD puede notificar
+        // a un MusicDownloadManager que aun tiene este widget en su lista de
+        // delegates, pero el widget puede estar a medio destruir (vtable
+        // corrupto = 0xFFFF... ). Hacemos checks de sanidad sobre punteros internos
+        // antes de delegar al original. Si vemos un widget en mal estado, abortamos
+        // toda la lambda silenciosamente: GD vanilla puede tolerarlo porque el
+        // widget moribundo se reciclara igual.
+        // Estos miembros son raw pointers que GD setea en init() y que vivirian
+        // hasta el destructor — si alguno parece basura (LSB todos 1), el this
+        // probablemente fue liberado.
+        auto looksDeadPtr = [](void* p) -> bool {
+            uintptr_t v = reinterpret_cast<uintptr_t>(p);
+            // 0xFFFF... y 0xCDCD/0xDDDD (debug allocator garbage) son hint de freed
+            return v == 0 || v == static_cast<uintptr_t>(-1) ||
+                   (v & 0xFFFF000000000000ull) == 0xFFFF000000000000ull;
+        };
+        if (looksDeadPtr(this) ||
+            looksDeadPtr(m_errorLabel) ||
+            looksDeadPtr(m_buttonMenu)) {
+            // El widget esta muerto/corrupto. No delegamos al original ni
+            // tocamos campos: cualquier access podria crashear.
             return;
         }
 
-        CustomSongWidget::songStateChanged();
-    }
-
-    $override
-    void updateSongInfo() {
         CustomSongWidget::updateSongInfo();
 
+        // A partir de aqui, codigo NUESTRO. Aplicamos los gates aqui.
         if (!shouldManageBlur()) return;
+        if (!m_songInfoObject || !this->getParent()) return;
 
         ensureClipper();
+
+        // Restaura tamano/posicion original si compact-pause-menu lo encogio
+        if (m_fields->m_clipper && m_fields->m_originalBgSize.width > 0) {
+            auto curSz = m_fields->m_clipper->getContentSize();
+            if (curSz.width != m_fields->m_originalBgSize.width ||
+                curSz.height != m_fields->m_originalBgSize.height) {
+                m_fields->m_clipper->setContentSize(m_fields->m_originalBgSize);
+                m_fields->m_clipper->setPosition(m_fields->m_originalBgPos);
+                // Re-posiciona el blur sprite si existe
+                if (auto* blurSpr = m_fields->m_clipper->getChildByID("paimon-song-blur"_spr)) {
+                    blurSpr->setPosition(m_fields->m_originalBgSize / 2);
+                    float sx = m_fields->m_originalBgSize.width / blurSpr->getContentSize().width;
+                    float sy = m_fields->m_originalBgSize.height / blurSpr->getContentSize().height;
+                    blurSpr->setScale(std::max(sx, sy));
+                }
+                if (auto* fallback = m_fields->m_clipper->getChildByID("paimon-song-dark-fallback"_spr)) {
+                    fallback->setContentSize(m_fields->m_originalBgSize);
+                    fallback->setScaleX(1.f);
+                    fallback->setScaleY(1.f);
+                }
+            }
+        }
 
         // Oculta bg si fue re-creado
         if (m_fields->m_bgSwapped) {

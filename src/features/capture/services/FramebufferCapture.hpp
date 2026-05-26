@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <utility>
+#include <string>
 
 namespace cocos2d {
     class CCTexture2D;
@@ -19,11 +20,18 @@ struct CaptureQualitySettings {
     bool highQualityFiltering = true;
 };
 
+// Pre-capture validation result
+struct CaptureValidation {
+    bool canCapture = true;
+    std::string reason;
+};
+
 /**
  * Captures the game scene by re-rendering into a high-resolution FBO.
  *
- * Works with shaders via direct back-buffer capture that already contains
- * the final composited frame with all effects applied.
+ * Shader handling: reconfigures ShaderLayer to render at target resolution
+ * natively, avoiding back-buffer resolution limitations.
+ * Aspect ratio: handles non-16:9 windows by recalculating camera/ground.
  * Output quality uses maximum settings (single resolution, no tiers).
  */
 class FramebufferCapture {
@@ -33,7 +41,9 @@ public:
     static void requestCapture(
         int levelID, 
         geode::CopyableFunction<void(bool success, cocos2d::CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height)> callback,
-        cocos2d::CCNode* nodeToCapture = nullptr
+        cocos2d::CCNode* nodeToCapture = nullptr,
+        bool hidePlayer1 = false,
+        bool hidePlayer2 = false
     );
     
     // Cancel a pending capture.
@@ -57,11 +67,17 @@ public:
     // Query the GPU's maximum texture size (cached after first call).
     static int getMaxTextureSize();
 
+    // Pre-capture validation: checks High Graphics, LDM, player death state.
+    // Call before requestCapture() to provide user feedback.
+    static CaptureValidation validateCaptureConditions();
+
 private:
     struct CaptureRequest {
         int levelID;
         geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*, std::shared_ptr<uint8_t>, int, int)> callback;
         cocos2d::CCNode* nodeToCapture = nullptr;
+        bool hidePlayer1 = false;
+        bool hidePlayer2 = false;
         bool active = false;
     };
     
@@ -111,6 +127,7 @@ private:
     static void doCaptureNode(cocos2d::CCNode* node);
 
     // Re-render the scene into a separate FBO at the target resolution.
+    // Handles ShaderLayer reconfiguration and aspect ratio correction.
     static void doCaptureRerender(int targetWidth, int viewportW, int viewportH, CaptureQualitySettings const& quality);
 
     // Capture directly from the back-buffer and high-quality downscale.

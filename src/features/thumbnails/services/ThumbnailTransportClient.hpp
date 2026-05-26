@@ -7,6 +7,7 @@
 #include <string>
 #include <chrono>
 #include <mutex>
+#include <atomic>
 #include <unordered_map>
 #include <vector>
 
@@ -21,6 +22,7 @@ public:
     using DownloadDataCallback= geode::CopyableFunction<void(bool success, std::vector<uint8_t> const& data)>;
     using ExistsCallback      = geode::CopyableFunction<void(bool exists)>;
     using ActionCallback      = geode::CopyableFunction<void(bool success, std::string const& message)>;
+    using RatingCallback      = geode::CopyableFunction<void(bool success, float average, int count, int userVote)>;
 
     using ThumbnailInfo = ::ThumbnailInfo;
     using ThumbnailListCallback = geode::CopyableFunction<void(bool success, std::vector<ThumbnailInfo> const& thumbnails)>;
@@ -48,7 +50,7 @@ public:
     void uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data,
                      std::string const& username, UploadCallback callback);
     // descargar miniatura desde servidor
-    void downloadThumbnail(int levelId, DownloadCallback callback);
+    void downloadThumbnail(int levelId, DownloadCallback callback, bool isGif = false);
     // verificar existencia
     void checkExists(int levelId, ExistsCallback callback);
     // borrar miniatura (mod)
@@ -59,7 +61,7 @@ public:
     // votos
     void getRating(int levelId, std::string const& username,
                    std::string const& thumbnailId,
-                   geode::CopyableFunction<void(bool, float, int, int)> callback);
+                   RatingCallback callback);
     void submitVote(int levelId, int stars, std::string const& username,
                     std::string const& thumbnailId, ActionCallback callback);
     // obtener thumbnail (local -> server fallback)
@@ -85,6 +87,13 @@ private:
         std::chrono::steady_clock::time_point fetchedAt{};
     };
 
+    struct RatingCacheEntry {
+        float average = 0.f;
+        int count = 0;
+        int userVote = 0;
+        std::chrono::steady_clock::time_point fetchedAt{};
+    };
+
     ThumbnailTransportClient() = default;
     ThumbnailTransportClient(ThumbnailTransportClient const&) = delete;
     ThumbnailTransportClient& operator=(ThumbnailTransportClient const&) = delete;
@@ -95,6 +104,28 @@ private:
     std::unordered_map<int, std::vector<ThumbnailListCallback>> m_galleryInFlight;
     std::unordered_map<int, uint64_t> m_galleryGenerations;
     std::mutex m_galleryMutex;
+
+    // ── Batch coalescing de getThumbnails ────────────────────────────
+    // Cuando muchos LevelCells solicitan getThumbnails(levelId) al mismo
+    // tiempo (carga inicial de una página de niveles), agrupamos las
+    // peticiones en un único POST /api/thumbnails/list-batch en lugar de
+    // disparar una request por nivel. La ventana de coalescing es corta
+    // (50ms) para no introducir latencia perceptible.
+    static constexpr int BATCH_LIST_FLUSH_DELAY_MS = 50;
+    static constexpr size_t BATCH_LIST_MAX_IDS = 40;
+    std::vector<int> m_batchListPending;
+    std::mutex m_batchListMutex;
+    std::atomic<bool> m_batchListFlushScheduled{false};
+    void scheduleBatchListFlush();
+    void flushBatchList();
+
+    std::unordered_map<std::string, RatingCacheEntry> m_ratingCache;
+    std::unordered_map<std::string, std::vector<RatingCallback>> m_ratingInFlight;
+    std::unordered_map<std::string, uint64_t> m_ratingGenerations;
+    std::mutex m_ratingMutex;
+    static constexpr int RATING_CACHE_TTL_SECONDS = 15;
+
+    void invalidateRatingCache(int levelId, std::string const& thumbnailId = "");
 
     cocos2d::CCTexture2D* loadFromLocal(int levelId);
 };

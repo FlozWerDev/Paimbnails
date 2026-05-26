@@ -1,4 +1,5 @@
 #include "CaptureLayerEditorPopup.hpp"
+#include "../services/CaptureVisibilityState.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -7,7 +8,6 @@
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
 #include <Geode/ui/GeodeUI.hpp>
-#include <Geode/loader/GameEvent.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -26,13 +26,9 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Shared static for restoreAllLayers() — populated by instances, cleared on restore
-static std::vector<std::pair<WeakRef<CCNode>, bool>> s_originalVisibilities;
-
-// Clear WeakRefs during shutdown to avoid interaction with dead CCPoolManager
-$on_game(Exiting) {
-    s_originalVisibilities.clear();
-}
+// Shared state for restore/discard across popup instances.
+// Heap-allocated to avoid destruction-order problems during game shutdown.
+static auto& s_originalVisibilities = *new std::vector<paimon::capture::VisibilityRecord>();
 
 // ─── auxiliares ───────────────────────────────────────────────────
 
@@ -144,14 +140,14 @@ CaptureLayerEditorPopup* CaptureLayerEditorPopup::create(CapturePreviewPopup* pr
 
 void CaptureLayerEditorPopup::restoreAllLayers() {
     if (PlayLayer::get()) {
-        for (auto& [node, vis] : s_originalVisibilities) {
-            if (auto locked = node.lock()) {
-                locked->setVisible(vis);
-            }
-        }
+        paimon::capture::restoreVisibility(s_originalVisibilities);
     }
     s_originalVisibilities.clear();
     log::info("[LayerEditor] All layers restored to original visibility");
+}
+
+void CaptureLayerEditorPopup::discardTrackedLayers() {
+    s_originalVisibilities.clear();
 }
 
 // ─── init ──────────────────────────────────────────────────────
@@ -282,7 +278,6 @@ void CaptureLayerEditorPopup::populateLayers() {
 
     bool needRecordOriginals = s_originalVisibilities.empty();
     std::set<CCNode*> addedNodes;
-    std::set<CCNode*> recordedNodes;
 
     auto addEntry = [&](CCNode* node, std::string const& name, bool isGroup, int depth, int parent) {
         LayerEntry entry;
@@ -294,6 +289,15 @@ void CaptureLayerEditorPopup::populateLayers() {
         entry.depth = depth;
         entry.parentIndex = parent;
 
+        if (!isGroup && node) {
+            bool originalVisibility = node->isVisible();
+            if (needRecordOriginals) {
+                paimon::capture::snapshotVisibility(s_originalVisibilities, node);
+            }
+            (void)paimon::capture::tryGetRecordedVisibility(s_originalVisibilities, node, originalVisibility);
+            entry.originalVisibility = originalVisibility;
+        }
+
         int idx = static_cast<int>(m_layers.size());
         m_layers.push_back(std::move(entry));
         if (parent >= 0 && parent < static_cast<int>(m_layers.size())) {
@@ -302,10 +306,7 @@ void CaptureLayerEditorPopup::populateLayers() {
 
         if (!isGroup && node) {
             addedNodes.insert(node);
-            if (needRecordOriginals && recordedNodes.insert(node).second) {
-                s_originalVisibilities.push_back({WeakRef<CCNode>(node), node->isVisible()});
-                m_originalVisibilities.push_back({WeakRef<CCNode>(node), node->isVisible()});
-            }
+            paimon::capture::recordVisibility(m_originalVisibilities, node, m_layers[idx].originalVisibility);
         }
         return idx;
     };
@@ -341,6 +342,7 @@ void CaptureLayerEditorPopup::populateLayers() {
         };
 
         addTrail(player->m_regularTrail, tr("Trazo normal", "Regular trail"));
+        addTrail(player->m_shipStreak, tr("Trazo ship", "Ship streak"));
         addTrail(player->m_waveTrail, tr("Trazo wave", "Wave trail"));
         addTrail(player->m_ghostTrail, tr("Trazo ghost", "Ghost trail"));
 
@@ -361,7 +363,7 @@ void CaptureLayerEditorPopup::populateLayers() {
         int extrasGroup = -1;
         std::set<CCNode*> skipped = {
             player,
-            player->m_regularTrail, player->m_waveTrail, player->m_ghostTrail,
+            player->m_regularTrail, player->m_shipStreak, player->m_waveTrail, player->m_ghostTrail,
             player->m_vehicleGroundParticles, player->m_robotFire,
             player->m_playerGroundParticles, player->m_trailingParticles,
             player->m_shipClickParticles, player->m_ufoClickParticles,
@@ -378,6 +380,13 @@ void CaptureLayerEditorPopup::populateLayers() {
             for (auto* obj : CCArrayExt<CCObject*>(children)) {
                 auto* nd = typeinfo_cast<CCNode*>(obj);
                 if (!nd) continue;
+                // Nunca mezclar el otro jugador dentro del arbol del jugador actual.
+                // En dual o con ciertas jerarquias internas, Player 2 puede colgar de
+                // Player 1 y viceversa; si lo enumeramos como "extra", un toggle del
+                // grupo termina afectando a ambos jugadores a la vez.
+                if (auto* otherPlayer = typeinfo_cast<PlayerObject*>(nd)) {
+                    if (otherPlayer != player) continue;
+                }
                 if (!skipped.insert(nd).second) { self(self, nd); continue; }
                 if (!addedNodes.count(nd)) {
                     if (extrasGroup == -1) extrasGroup = addGroup(tr("Extras", "Extras"), playerGroup, 1);
@@ -793,18 +802,16 @@ void CaptureLayerEditorPopup::updateMiniPreview() {
     this->setVisible(false);
 
     auto* scene = director->getRunningScene();
-    std::vector<std::pair<CCNode*, bool>> hiddenOverlays;
+    std::vector<paimon::capture::VisibilityRecord> hiddenOverlays;
     if (scene) {
         for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
             if (!child || !child->isVisible() || child == pl) continue;
             if (typeinfo_cast<FLAlertLayer*>(child)) {
-                hiddenOverlays.push_back({child, true});
-                child->setVisible(false);
+                paimon::capture::hideTemporarily(hiddenOverlays, child);
             } else {
                 std::string cls = typeid(*child).name();
                 if (cls.find("PauseLayer") != std::string::npos) {
-                    hiddenOverlays.push_back({child, true});
-                    child->setVisible(false);
+                    paimon::capture::hideTemporarily(hiddenOverlays, child);
                 }
             }
         }
@@ -829,7 +836,7 @@ void CaptureLayerEditorPopup::updateMiniPreview() {
     rt->end();
 
     // Restore overlays
-    for (auto& [node, _] : hiddenOverlays) node->setVisible(true);
+    paimon::capture::restoreVisibility(hiddenOverlays);
     this->setVisible(selfWasVisible);
 
     // Apply texture to mini preview
@@ -1015,8 +1022,17 @@ void CaptureLayerEditorPopup::onFilterSelect(CCObject* sender) {
         m_filterLabel->setString((name + "  \xe2\x96\xbc").c_str());
     }
 
-    closeFilterDropdown();
-    buildList();
+    // Defer the destructive UI rebuild. The button that just fired this
+    // callback lives inside m_filterDropdown, so destroying the dropdown
+    // inline kills the CCMenu while the touch dispatcher is still
+    // unwinding the activate — that leaves subsequent clicks in a
+    // corrupted state (first tap works, second/third go dead).
+    Ref<CaptureLayerEditorPopup> self = this;
+    Loader::get()->queueInMainThread([self]() {
+        if (!self || !self->getParent()) return;
+        self->closeFilterDropdown();
+        self->buildList();
+    });
 }
 
 void CaptureLayerEditorPopup::closeFilterDropdown() {
@@ -1043,14 +1059,10 @@ void CaptureLayerEditorPopup::onRestoreAllBtn(CCObject* sender) {
     if (!sender) return;
 
     // Restore from instance copy (more reliable than static)
-    for (auto& [node, vis] : m_originalVisibilities) {
-        if (auto locked = node.lock()) {
-            locked->setVisible(vis);
-        }
-    }
+    paimon::capture::restoreVisibility(m_originalVisibilities);
 
     for (auto& entry : m_layers) {
-        entry.currentVisibility = entry.node ? entry.node->isVisible() : true;
+        entry.currentVisibility = entry.isGroup ? true : entry.originalVisibility;
     }
 
     // Reset filter to show all

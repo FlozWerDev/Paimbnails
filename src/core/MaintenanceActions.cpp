@@ -15,9 +15,14 @@
 #include <filesystem>
 #include <fstream>
 
+#ifdef GEODE_IS_WINDOWS
+#include <shellapi.h>
+#endif
+
 using namespace geode::prelude;
 
 extern void clearProfileImgCache();
+#include "../features/profiles/services/ProfileImageCache.hpp"
 
 namespace {
 struct MaintenanceStats {
@@ -264,5 +269,31 @@ $execute {
 
         PlatformToolbox::copyToClipboard(code);
         PaimonNotify::create("Mod code copiado al portapapeles.", NotificationIcon::Success)->show();
+    }).leak();
+
+    ButtonSettingPressedEventV3(Mod::get(), "open-thumbnails-folder").listen([](auto buttonKey) {
+        if (buttonKey != "run") return;
+
+        auto cacheDir = paimon::quality::cacheDir();
+        std::error_code ec;
+        std::filesystem::create_directories(cacheDir, ec);
+
+        auto pathStr = geode::utils::string::pathToString(cacheDir);
+
+#ifdef GEODE_IS_WINDOWS
+        ShellExecuteA(nullptr, "open", pathStr.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#elif defined(GEODE_IS_MACOS)
+        std::string cmd = "open \"" + pathStr + "\"";
+        std::system(cmd.c_str());
+#elif defined(GEODE_IS_ANDROID)
+        // Android no tiene explorador de archivos estandar accesible desde NDK
+        PaimonNotify::create("Carpeta: " + pathStr, NotificationIcon::Info)->show();
+#else
+        PaimonNotify::create("Carpeta: " + pathStr, NotificationIcon::Info)->show();
+#endif
+
+#ifndef GEODE_IS_ANDROID
+        PaimonNotify::create("Carpeta de thumbnails abierta.", NotificationIcon::Success)->show();
+#endif
     }).leak();
 }

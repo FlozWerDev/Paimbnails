@@ -2,10 +2,13 @@
 #include "../../audio/services/AudioContextCoordinator.hpp"
 #include "../../dynamic-songs/services/DynamicSongManager.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../utils/ThreadTracker.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
+#include "../../../utils/VideoThumbnailSprite.hpp"
+#include "../../../video/AudioExtractor.hpp"
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/binding/SongInfoObject.hpp>
 #include <Geode/binding/GameManager.hpp>
@@ -202,7 +205,9 @@ bool ProfileMusicManager::tryGetImmediateConfig(int accountID, ProfileMusicConfi
         start = sep + 1;
     }
 
-    if (parts.size() != 4) {
+    // Formato v1 (legacy): songID|startMs|endMs|updatedAt          (4 campos)
+    // Formato v2:           songID|startMs|endMs|updatedAt|isCustom (5 campos)
+    if (parts.size() != 4 && parts.size() != 5) {
         return false;
     }
 
@@ -211,6 +216,9 @@ bool ProfileMusicManager::tryGetImmediateConfig(int accountID, ProfileMusicConfi
     config.startMs = geode::utils::numFromString<int>(parts[1]).unwrapOr(0);
     config.endMs = geode::utils::numFromString<int>(parts[2]).unwrapOr(20000);
     config.updatedAt = parts[3];
+    if (parts.size() == 5) {
+        config.isCustom = (parts[4] == "1" || parts[4] == "true");
+    }
     if (config.songID <= 0 && !config.isCustom) {
         return false;
     }
@@ -229,11 +237,11 @@ bool ProfileMusicManager::isEnabled() const {
 }
 
 bool ProfileMusicManager::isCrossfadeEnabled() const {
-    return Mod::get()->getSettingValue<bool>("profile-music-crossfade");
+    return Mod::get()->getSavedValue<bool>("profile-music-crossfade", true);
 }
 
 float ProfileMusicManager::getFadeDurationMs() const {
-    float seconds = static_cast<float>(Mod::get()->getSettingValue<double>("profile-music-fade-duration"));
+    float seconds = static_cast<float>(Mod::get()->getSavedValue<double>("profile-music-fade-duration", 0.3));
     return seconds * 1000.0f;
 }
 
@@ -313,7 +321,7 @@ void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& u
         }
 
         // Extraer el fragmento de audio en un thread separado
-        std::thread([this, token, localPath, accountID, username, config, callback]() {
+        paimon::ThreadTracker::get().spawn([this, token, localPath, accountID, username, config, callback]() {
             if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                 return;
             }
@@ -399,7 +407,7 @@ void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& u
                     });
                 });
             });
-        }).detach();
+        });
     });
 }
 
@@ -549,14 +557,21 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
 }
 
 void ProfileMusicManager::deleteProfileMusic(int accountID, std::string const& username, UploadCallback callback) {
+    auto token = m_lifetimeToken;
     matjson::Value payload;
     payload["accountID"] = accountID;
     payload["username"] = username;
 
     std::string jsonData = payload.dump();
 
-    HttpClient::get().postWithAuth("/api/profile-music/delete", jsonData, [this, accountID, callback](bool success, std::string const& response) {
-        Loader::get()->queueInMainThread([this, accountID, callback, success, response]() {
+    HttpClient::get().postWithAuth("/api/profile-music/delete", jsonData, [this, token, accountID, callback](bool success, std::string const& response) {
+        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+            return;
+        }
+        Loader::get()->queueInMainThread([this, token, accountID, callback, success, response]() {
+            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+                return;
+            }
             if (success) {
                 invalidateCache(accountID);
                 callback(true, "Music deleted successfully");
@@ -576,24 +591,27 @@ bool ProfileMusicManager::canUploadCustomMusic() const {
 void ProfileMusicManager::uploadCustomProfileMusic(int accountID, std::string const& username,
     std::string const& filePath, ProfileMusicConfig const& config, UploadCallback callback) {
 
+    auto token = m_lifetimeToken;
+
     if (!canUploadCustomMusic()) {
-        Loader::get()->queueInMainThread([callback]() {
+        Loader::get()->queueInMainThread([token, callback]() {
+            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
             callback(false, "You don't have permission to upload custom music. Requires Moderator, VIP, or Whitelist.");
         });
         return;
     }
 
     // Extraer el fragmento de audio en un thread separado
-    std::thread([this, filePath, accountID, username, config, callback]() {
-        if (paimon::isRuntimeShuttingDown()) {
+    paimon::ThreadTracker::get().spawn([this, token, filePath, accountID, username, config, callback]() {
+        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
             return;
         }
 
         auto fragmentData = extractAudioFragment(filePath, config.startMs, config.endMs);
 
         if (fragmentData.empty()) {
-            Loader::get()->queueInMainThread([callback]() {
-                if (paimon::isRuntimeShuttingDown()) return;
+            Loader::get()->queueInMainThread([token, callback]() {
+                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
                 callback(false, "Could not extract audio fragment from file");
             });
             return;
@@ -637,18 +655,18 @@ void ProfileMusicManager::uploadCustomProfileMusic(int accountID, std::string co
 
         std::string jsonData = payload.dump();
 
-        if (paimon::isRuntimeShuttingDown()) {
+        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
             return;
         }
 
-        Loader::get()->queueInMainThread([this, jsonData, accountID, config, callback]() {
-            if (paimon::isRuntimeShuttingDown()) return;
+        Loader::get()->queueInMainThread([this, token, jsonData, accountID, config, callback]() {
+            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
 
-            HttpClient::get().postWithAuth("/api/profile-music/upload", jsonData, [this, accountID, config, callback](bool success, std::string const& response) {
-                if (paimon::isRuntimeShuttingDown()) return;
+            HttpClient::get().postWithAuth("/api/profile-music/upload", jsonData, [this, token, accountID, config, callback](bool success, std::string const& response) {
+                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
 
-                Loader::get()->queueInMainThread([this, accountID, config, callback, success, response]() {
-                    if (paimon::isRuntimeShuttingDown()) return;
+                Loader::get()->queueInMainThread([this, token, accountID, config, callback, success, response]() {
+                    if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
 
                     if (success) {
                         invalidateCache(accountID);
@@ -659,17 +677,18 @@ void ProfileMusicManager::uploadCustomProfileMusic(int accountID, std::string co
                 });
             });
         });
-    }).detach();
+    });
 }
 
 void ProfileMusicManager::getLocalSongInfo(std::string const& filePath, SongInfoCallback callback) {
-    std::thread([filePath, callback]() {
-        if (paimon::isRuntimeShuttingDown()) return;
+    auto token = m_lifetimeToken;
+    paimon::ThreadTracker::get().spawn([token, filePath, callback]() {
+        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
 
         auto engine = FMODAudioEngine::sharedEngine();
         if (!engine || !engine->m_system) {
-            Loader::get()->queueInMainThread([callback]() {
-                if (paimon::isRuntimeShuttingDown()) return;
+            Loader::get()->queueInMainThread([token, callback]() {
+                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
                 callback(false, "", "", 0);
             });
             return;
@@ -678,8 +697,8 @@ void ProfileMusicManager::getLocalSongInfo(std::string const& filePath, SongInfo
         FMOD::Sound* sound = nullptr;
         FMOD_RESULT res = engine->m_system->createSound(filePath.c_str(), FMOD_OPENONLY | FMOD_ACCURATETIME, nullptr, &sound);
         if (res != FMOD_OK || !sound) {
-            Loader::get()->queueInMainThread([callback]() {
-                if (paimon::isRuntimeShuttingDown()) return;
+            Loader::get()->queueInMainThread([token, callback]() {
+                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
                 callback(false, "", "", 0);
             });
             return;
@@ -696,30 +715,32 @@ void ProfileMusicManager::getLocalSongInfo(std::string const& filePath, SongInfo
         std::string songName = geode::utils::string::pathToString(p.stem());
         std::string artistName = "Local File";
 
-        Loader::get()->queueInMainThread([callback, songName, artistName, durationMs]() {
-            if (paimon::isRuntimeShuttingDown()) return;
+        Loader::get()->queueInMainThread([token, callback, songName, artistName, durationMs]() {
+            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
             callback(true, songName, artistName, durationMs);
         });
-    }).detach();
+    });
 }
 
 void ProfileMusicManager::getWaveformPeaksForFile(std::string const& filePath, WaveformCallback callback) {
-    std::thread([this, filePath, callback]() {
-        if (paimon::isRuntimeShuttingDown()) return;
+    auto token = m_lifetimeToken;
+    paimon::ThreadTracker::get().spawn([this, token, filePath, callback]() {
+        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
 
         int durationMs = 0;
         auto peaks = analyzeWaveform(filePath, 200, durationMs);
 
-        if (paimon::isRuntimeShuttingDown()) return;
+        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
 
-        Loader::get()->queueInMainThread([callback, peaks, durationMs]() {
-            if (paimon::isRuntimeShuttingDown()) return;
+        Loader::get()->queueInMainThread([token, callback, peaks, durationMs]() {
+            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
             callback(!peaks.empty(), peaks, durationMs);
         });
-    }).detach();
+    });
 }
 
 void ProfileMusicManager::downloadMusicFragment(int accountID, DownloadCallback callback) {
+    auto token = m_lifetimeToken;
     // El servidor purga Cloudflare al subir/borrar, asi que no hace falta romper
     // el cache con un query param distinto en cada request.
     std::string url = fmt::format("{}/api/profile-music/{}/audio", HttpClient::get().getServerURL(), accountID);
@@ -727,10 +748,14 @@ void ProfileMusicManager::downloadMusicFragment(int accountID, DownloadCallback 
     log::info("[ProfileMusic] Downloading music from: {}", url);
 
     // Usar descarga binaria sin validacion de imagen (es un MP3, no una imagen)
-    HttpClient::get().downloadFromUrlRaw(url, [this, accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+    HttpClient::get().downloadFromUrlRaw(url, [this, token, accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+            return;
+        }
         if (!success || data.empty()) {
             log::error("[ProfileMusic] Failed to download music for account {}", accountID);
-            Loader::get()->queueInMainThread([callback]() {
+            Loader::get()->queueInMainThread([token, callback]() {
+                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
                 callback(false, "");
             });
             return;
@@ -744,12 +769,14 @@ void ProfileMusicManager::downloadMusicFragment(int accountID, DownloadCallback 
         if (writeRes.isOk()) {
             pruneProfileMusicCache();
             log::info("[ProfileMusic] Downloaded and cached music for account {} ({} bytes)", accountID, data.size());
-            Loader::get()->queueInMainThread([callback, cachePath]() {
+            Loader::get()->queueInMainThread([token, callback, cachePath]() {
+                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
                 callback(true, geode::utils::string::pathToString(cachePath));
             });
         } else {
             log::error("[ProfileMusic] Failed to write cache file for account {}: {}", accountID, writeRes.unwrapErr());
-            Loader::get()->queueInMainThread([callback]() {
+            Loader::get()->queueInMainThread([token, callback]() {
+                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
                 callback(false, "");
             });
         }
@@ -793,7 +820,7 @@ void ProfileMusicManager::playProfileMusic(int accountID) {
 
     // Consultar la config del servidor y delegar al overload con config
     getProfileMusicConfig(accountID, [this, accountID](bool success, ProfileMusicConfig const& config) {
-        if (!success || (!config.enabled) || (config.songID <= 0 && !config.isCustom)) {
+        if (!success || (!config.enabled) || (config.songID <= 0 && !config.isCustom && !config.useVideoAudio)) {
             log::info("[ProfileMusic] No valid config from server for account {}", accountID);
             return;
         }
@@ -843,6 +870,79 @@ void ProfileMusicManager::playProfileMusic(int accountID, ProfileMusicConfig con
 }
 
 void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusicConfig const& config) {
+    // ── Audio del video del fondo: ruta especial que extrae el WAV del .mp4
+    //    cacheado del fondo del perfil y lo reproduce en el canal principal
+    //    como una "dynamic song" de perfil.  Tiene prioridad sobre songID /
+    //    isCustom: si useVideoAudio == true, ignoramos cualquier musica
+    //    configurada y usamos el audio del video.
+    if (config.useVideoAudio) {
+        // 1) Resolver el path del .mp4 cacheado.  Si la config trae uno
+        //    pre-resuelto (ProfilePage lo inyecta), lo usamos directamente.
+        std::string videoPath = config.videoAudioPath;
+        if (videoPath.empty()) {
+            auto videoKey = fmt::format("profileimg_video_{}", accountID);
+            videoPath = VideoThumbnailSprite::getCachedPathForKey(videoKey);
+            if (videoPath.empty()) {
+                // Fallback: clave legacy que algunos perfiles antiguos usan.
+                auto legacyKey = fmt::format("profile_video_{}", accountID);
+                videoPath = VideoThumbnailSprite::getCachedPathForKey(legacyKey);
+            }
+        }
+
+        if (videoPath.empty()) {
+            // El video todavia no esta en el cache local.  Esto pasa cuando
+            // ProfilePage abre el perfil pero el .mp4 todavia no se descargo.
+            // En ese caso simplemente no reproducimos: cuando el video llegue
+            // el caller volvera a invocar checkAndPlayProfileMusic.
+            log::warn("[ProfileMusic] useVideoAudio=true but no cached video for account {}", accountID);
+            paimon::setProfileMusicInteropActive(false);
+            return;
+        }
+
+        // 2) Extraer el audio a WAV.  Si ya esta cacheado por
+        //    AudioExtractor, getCachedWavPath devuelve el path al instante.
+        //    En caso contrario hay que correr la extraccion (lectura del MP4
+        //    + transcode a PCM) que puede tardar varios cientos de
+        //    milisegundos en videos largos: la lanzamos en background y
+        //    reproducimos al volver al main thread.
+        std::string wavPath = paimon::video::getCachedWavPath(videoPath);
+        if (!wavPath.empty()) {
+            log::info("[ProfileMusic] Playing cached video-audio WAV for account {}: {}", accountID, wavPath);
+            playAudioFile(wavPath, /*loop=*/true, /*startMs=*/0, /*endMs=*/0);
+            return;
+        }
+
+        // No hay WAV cacheado todavia.  Lanzamos la extraccion en background
+        // para no bloquear el render del perfil.  Capturamos el lifetime token
+        // para evitar callbacks tras shutdown.
+        log::info("[ProfileMusic] Extracting video-audio in background for account {}: {}", accountID, videoPath);
+        auto lifetime = m_lifetimeToken;
+        // Marcamos interop como activo de forma optimista para que dynamic
+        // song no intente arrancar mientras esperamos.
+        paimon::setProfileMusicInteropActive(true);
+        paimon::ThreadTracker::get().spawn(
+            [this, accountID, videoPath, lifetime]() {
+                std::string extracted = paimon::video::extractAudioToWav(videoPath);
+                Loader::get()->queueInMainThread([this, accountID, extracted, lifetime]() {
+                    if (!lifetime->load(std::memory_order_acquire)) return;
+                    if (paimon::isRuntimeShuttingDown()) return;
+                    if (m_currentProfileID != accountID) {
+                        log::info("[ProfileMusic] Profile changed during video-audio extraction, dropping");
+                        return;
+                    }
+                    if (extracted.empty()) {
+                        log::warn("[ProfileMusic] Failed to extract audio from video for account {}", accountID);
+                        paimon::setProfileMusicInteropActive(false);
+                        return;
+                    }
+                    log::info("[ProfileMusic] Background extraction complete, playing: {}", extracted);
+                    playAudioFile(extracted, /*loop=*/true, /*startMs=*/0, /*endMs=*/0);
+                });
+            }
+        );
+        return;
+    }
+
     auto cachePath = getCachePath(accountID);
     std::error_code cacheEc;
     bool cacheExists = std::filesystem::exists(cachePath, cacheEc) && !cacheEc;
@@ -1324,7 +1424,7 @@ void ProfileMusicManager::getWaveformPeaks(int songID, WaveformCallback callback
             return;
         }
 
-        std::thread([this, token, path, callback]() {
+        paimon::ThreadTracker::get().spawn([this, token, path, callback]() {
             if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                 return;
             }
@@ -1343,7 +1443,7 @@ void ProfileMusicManager::getWaveformPeaks(int songID, WaveformCallback callback
 
                 callback(!peaks.empty(), peaks, durationMs);
             });
-        }).detach();
+        });
     });
 }
 
@@ -1513,14 +1613,18 @@ void ProfileMusicManager::saveMetaFile(int accountID, ProfileMusicConfig const& 
     std::error_code ec;
     std::filesystem::create_directories(metaPath.parent_path(), ec);
 
-    // Guardar songID|startMs|endMs|updatedAt para comparacion.
+    // Guardar songID|startMs|endMs|updatedAt|isCustom para comparacion.
     // updatedAt permite detectar re-uploads de la misma cancion con el mismo rango.
-    std::string content = fmt::format("{}|{}|{}|{}", config.songID, config.startMs, config.endMs, config.updatedAt);
+    // isCustom permite distinguir canciones de Newgrounds (songID > 0) de canciones
+    // custom subidas por archivo (songID = -1) al rehidratar desde disco.
+    std::string content = fmt::format("{}|{}|{}|{}|{}",
+        config.songID, config.startMs, config.endMs, config.updatedAt,
+        config.isCustom ? "1" : "0");
     auto writeRes = geode::utils::file::writeString(metaPath, content);
     if (writeRes.isOk()) {
         pruneProfileMusicCache();
-        log::info("[ProfileMusic] Saved meta for account {}: songID={}, {}ms-{}ms, updatedAt={}",
-            accountID, config.songID, config.startMs, config.endMs, config.updatedAt);
+        log::info("[ProfileMusic] Saved meta for account {}: songID={}, {}ms-{}ms, updatedAt={}, isCustom={}",
+            accountID, config.songID, config.startMs, config.endMs, config.updatedAt, config.isCustom);
     }
 }
 
@@ -1540,8 +1644,16 @@ bool ProfileMusicManager::isCacheValid(int accountID, ProfileMusicConfig const& 
     auto nlPos = content.find('\n');
     if (nlPos != std::string::npos) content = content.substr(0, nlPos);
 
-    // Formato: songID|startMs|endMs|updatedAt
-    std::string expected = fmt::format("{}|{}|{}|{}", config.songID, config.startMs, config.endMs, config.updatedAt);
+    // Formato: songID|startMs|endMs|updatedAt|isCustom
+    std::string expected = fmt::format("{}|{}|{}|{}|{}",
+        config.songID, config.startMs, config.endMs, config.updatedAt,
+        config.isCustom ? "1" : "0");
+
+    // Compatibilidad con metas legacy que no incluian isCustom (4 campos):
+    // si el contenido cacheado coincide con los primeros 4 campos, lo aceptamos
+    // y dejamos que saveMetaFile lo migre al guardar de nuevo.
+    std::string legacyExpected = fmt::format("{}|{}|{}|{}",
+        config.songID, config.startMs, config.endMs, config.updatedAt);
 
     // Si updatedAt esta vacio (servidor no lo provee), el cache nunca sera valido
     // para forzar siempre la re-descarga — esto es intencional como fallback seguro.
@@ -1550,7 +1662,7 @@ bool ProfileMusicManager::isCacheValid(int accountID, ProfileMusicConfig const& 
         return false;
     }
 
-    bool valid = (content == expected);
+    bool valid = (content == expected) || (content == legacyExpected);
     if (!valid) {
         log::info("[ProfileMusic] Cache meta mismatch for account {}: cached='{}', server='{}'",
             accountID, content, expected);
@@ -1795,6 +1907,4 @@ float ProfileMusicManager::getCurrentAmplitude() const {
     }
     return peak;
 }
-
-
 

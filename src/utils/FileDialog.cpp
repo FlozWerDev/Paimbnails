@@ -27,8 +27,8 @@ gfile::FilePickOptions::Filter imageFilter() {
 
 gfile::FilePickOptions::Filter audioFilter() {
     gfile::FilePickOptions::Filter f;
-    f.description = "Audio Files (*.mp3, *.ogg, *.wav, *.flac, *.m4a)";
-    f.files = {"*.mp3", "*.ogg", "*.wav", "*.flac", "*.m4a"};
+    f.description = "Audio Files (*.mp3, *.ogg, *.opus, *.wav, *.flac, *.m4a)";
+    f.files = {"*.mp3", "*.ogg", "*.opus", "*.oga", "*.wav", "*.flac", "*.m4a"};
     return f;
 }
 

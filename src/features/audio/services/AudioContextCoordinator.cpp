@@ -6,6 +6,7 @@
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../framework/EventBus.hpp"
 #include "../../../framework/ModEvents.hpp"
+#include "../../backgrounds/services/LayerBackgroundManager.hpp"
 
 using namespace geode::prelude;
 
@@ -122,6 +123,19 @@ void AudioContextCoordinator::activateLevelInfo(GJGameLevel* level, bool playImm
     if (m_profileOpen) {
         clearProfileContext();
     }
+
+    // ── Free the FMOD bg channel from any video-audio that the previous
+    //    layer (MenuLayer, CreatorLayer, etc.) was driving.
+    //
+    // Without this step, a video bg whose audio is still tickling will
+    // make `DynamicSongManager::playSong()` bail on its
+    // `isVideoAudioInteropActive()` guard and never retry.  The user
+    // hears the video's audio instead of the level song until the old
+    // scene tears down (and even then the level song never starts
+    // because forcePlayDynamic only runs once).  Calling
+    // releaseAllVideoAudio() synchronously stops the FMOD channel and
+    // clears the global flag so playSong below sees a clean slate.
+    LayerBackgroundManager::get().releaseAllVideoAudio();
 
     auto* dsm = DynamicSongManager::get();
     dsm->enterLayer(DynSongLayer::LevelInfo);

@@ -8,6 +8,8 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <mutex>
+#include <condition_variable>
 
 #ifdef _WIN32
 #include <malloc.h>   // _aligned_malloc / _aligned_free
@@ -96,6 +98,30 @@ public:
     // Returns DBL_MAX if the ring buffer is empty.
     virtual double peekNextPTS() const = 0;
 
+    // Peek at the PTS of the frame AFTER the current head (slot + 1).
+    // Returns DBL_MAX if fewer than 2 frames are ready.  Default fallback
+    // for decoders that don't override.
+    virtual double peekSecondPTS() const { return 1e300; /* ~DBL_MAX */ }
+
+    // Zero-copy access to the next readable frame.  The returned pointer is
+    // only valid until releaseFrame() is called.  Between peekFrame() and
+    // releaseFrame(), the caller must NOT call consumeFrame/skipFrame/seekTo/
+    // stopDecoding on this decoder.
+    //
+    // Returns nullptr if the ring buffer is empty or if the decoder does not
+    // support zero-copy access (fallback: caller should use consumeFrame()).
+    virtual const Frame* peekFrame() { return nullptr; }
+
+    // Release a frame previously obtained from peekFrame().  No-op if
+    // peekFrame() returned nullptr.  Must be called exactly once per
+    // successful peekFrame() before any other decoder method (except PTS
+    // peeks and state queries).
+    virtual void releaseFrame() {}
+
+    // Returns true if the decoder had to detach its worker thread during
+    // shutdown/stop and is no longer safe to reuse or destroy normally.
+    virtual bool isTerminal() const { return false; }
+
     static std::unique_ptr<IVideoDecoder> create(const std::string& path);
 };
 
@@ -169,10 +195,23 @@ public:
         auto idx = m_writeIdx.load(std::memory_order_relaxed);
         m_slots[idx].ready.store(true, std::memory_order_release);
         m_writeIdx.store((idx + 1) % m_capacity, std::memory_order_release);
+        // Wake any consumer waiting for a readable frame.
+        m_readableCv.notify_one();
     }
 
     // Consumer: get next readable slot (returns nullptr if empty).
     Frame* nextRead() {
+        int r = m_readIdx.load(std::memory_order_relaxed);
+        if (r == m_writeIdx.load(std::memory_order_acquire)) return nullptr;
+        if (!m_slots[r].ready.load(std::memory_order_acquire)) return nullptr;
+        return &m_slots[r];
+    }
+
+    // Consumer: peek at the next readable slot without committing.
+    // Same semantics as nextRead — returns the current read slot.  The
+    // caller must still call commitRead() to advance the read index.
+    // (Kept as a separate method for readability in zero-copy paths.)
+    const Frame* peekRead() const {
         int r = m_readIdx.load(std::memory_order_relaxed);
         if (r == m_writeIdx.load(std::memory_order_acquire)) return nullptr;
         if (!m_slots[r].ready.load(std::memory_order_acquire)) return nullptr;
@@ -184,6 +223,8 @@ public:
         auto idx = m_readIdx.load(std::memory_order_relaxed);
         m_slots[idx].ready.store(false, std::memory_order_release);
         m_readIdx.store((idx + 1) % m_capacity, std::memory_order_release);
+        // Wake the producer if it was waiting because the ring was full.
+        m_writableCv.notify_one();
     }
 
     // Consumer: skip the current read slot without copying data.
@@ -194,6 +235,7 @@ public:
         if (!m_slots[r].ready.load(std::memory_order_acquire)) return false;
         m_slots[r].ready.store(false, std::memory_order_release);
         m_readIdx.store((r + 1) % m_capacity, std::memory_order_release);
+        m_writableCv.notify_one();
         return true;
     }
 
@@ -206,6 +248,20 @@ public:
         return m_slots[r].pts;
     }
 
+    // Peek at the PTS of the slot AFTER the head (i.e. the second-in-line).
+    // Returns DBL_MAX if the buffer has fewer than 2 ready frames.  Used by
+    // VideoPlayer to decide whether to skip the current head (there's a
+    // newer frame already past-due right after).
+    double peekSecondPTS() const {
+        int r = m_readIdx.load(std::memory_order_acquire);
+        int w = m_writeIdx.load(std::memory_order_acquire);
+        if (r == w) return DBL_MAX;
+        int next = (r + 1) % m_capacity;
+        if (next == w) return DBL_MAX;
+        if (!m_slots[next].ready.load(std::memory_order_acquire)) return DBL_MAX;
+        return m_slots[next].pts;
+    }
+
     bool isEmpty() const {
         return m_readIdx.load(std::memory_order_acquire) ==
                m_writeIdx.load(std::memory_order_acquire);
@@ -214,6 +270,42 @@ public:
     bool isFull() const {
         int next = (m_writeIdx.load(std::memory_order_relaxed) + 1) % m_capacity;
         return next == m_readIdx.load(std::memory_order_acquire);
+    }
+
+    // Producer-side wait: blocks (up to timeoutMs) until the ring has room
+    // for another write, or until the abort flag becomes true.  Returns true
+    // if a writable slot is available; false if timed out or aborted.
+    // The caller MUST re-check isFull()/nextWrite() after this returns.
+    template <typename Clock = std::chrono::steady_clock>
+    bool waitForWritable(int timeoutMs, const std::atomic<bool>* abortFlag = nullptr) {
+        if (!isFull()) return true;
+        std::unique_lock<std::mutex> lk(m_writableMtx);
+        m_writableCv.wait_for(lk, std::chrono::milliseconds(timeoutMs), [&] {
+            if (abortFlag && !abortFlag->load(std::memory_order_relaxed)) return true;
+            return !isFull();
+        });
+        return !isFull();
+    }
+
+    // Consumer-side wait: blocks (up to timeoutMs) until a frame is readable,
+    // or until the abort flag becomes true.  Returns true if a readable slot
+    // is available; false if timed out or aborted.
+    template <typename Clock = std::chrono::steady_clock>
+    bool waitForReadable(int timeoutMs, const std::atomic<bool>* abortFlag = nullptr) {
+        if (!isEmpty()) return true;
+        std::unique_lock<std::mutex> lk(m_readableMtx);
+        m_readableCv.wait_for(lk, std::chrono::milliseconds(timeoutMs), [&] {
+            if (abortFlag && !abortFlag->load(std::memory_order_relaxed)) return true;
+            return !isEmpty();
+        });
+        return !isEmpty();
+    }
+
+    // Wake every waiter — used during shutdown so threads can observe
+    // an aborted state and exit promptly.
+    void wakeAll() {
+        m_readableCv.notify_all();
+        m_writableCv.notify_all();
     }
 
     int getWidth()  const { return m_width; }
@@ -238,6 +330,14 @@ private:
     std::atomic<int> m_readIdx{0};
     int m_width  = 0;
     int m_height = 0;
+
+    // Wakeup primitives — notify_one() in commit*() avoids decoder busy-poll.
+    // Mutexes are only ever taken from the wait_for predicate; commit*()
+    // never locks them, preserving the lock-free fast path.
+    mutable std::mutex m_readableMtx;
+    mutable std::mutex m_writableMtx;
+    mutable std::condition_variable m_readableCv;
+    mutable std::condition_variable m_writableCv;
 };
 
 } // namespace paimon

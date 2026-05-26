@@ -19,11 +19,17 @@ std::filesystem::path cfgPathFor(std::string const& key) {
     return base / (key + ".txt");
 }
 
-void limitSpriteSize(CCSprite* spr, float maxDim = 45.0f) {
+// Normaliza el tamaño del sprite a una dimension objetivo. A diferencia
+// de un simple "limit max" (que dejaba sprites pequeños sin escalar y
+// causaba que distintos PNGs custom se vieran de tamaños distintos),
+// esto SIEMPRE escala al tamaño objetivo manteniendo aspect ratio. Asi
+// los botones se ven uniformes independientemente de la resolucion del
+// PNG fuente — clave para que el tamaño no varie entre usuarios.
+void normalizeSpriteSize(CCSprite* spr, float targetDim = 45.0f) {
     if (!spr) return;
     float currentSize = std::max(spr->getContentWidth(), spr->getContentHeight());
-    if (currentSize > maxDim) {
-        spr->setScale(maxDim / currentSize);
+    if (currentSize > 0.f) {
+        spr->setScale(targetDim / currentSize);
     }
 }
 }
@@ -89,7 +95,7 @@ CCSprite* loadButtonSprite(
                 if (!p.is_absolute()) p = cfgPathFor(key).parent_path() / p;
                 if (std::filesystem::exists(p, ecAsset)) {
                     if (auto spr = CCSprite::create(geode::utils::string::pathToString(p).c_str())) {
-                        limitSpriteSize(spr);
+                        normalizeSpriteSize(spr);
                         return spr;
                     }
                 }
@@ -101,14 +107,14 @@ CCSprite* loadButtonSprite(
     auto modResourcePath = Mod::get()->getResourcesDir() / "buttons" / (key + ".png");
     if (std::filesystem::exists(modResourcePath, ecAsset)) {
         if (auto spr = CCSprite::create(geode::utils::string::pathToString(modResourcePath).c_str())) {
-            limitSpriteSize(spr);
+            normalizeSpriteSize(spr);
             return spr;
         }
     }
     auto modResourcePath2 = Mod::get()->getResourcesDir() / (key + ".png");
     if (std::filesystem::exists(modResourcePath2, ecAsset)) {
         if (auto spr = CCSprite::create(geode::utils::string::pathToString(modResourcePath2).c_str())) {
-            limitSpriteSize(spr);
+            normalizeSpriteSize(spr);
             return spr;
         }
     }

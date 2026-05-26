@@ -76,7 +76,7 @@ class $modify(PaimonLevelPage, LevelPage) {
                 if (success && !thumbs.empty()) {
                     self->m_fields->m_thumbnails = thumbs;
                     self->loadThumbnailAt(0);
-                    if (thumbs.size() >= 2 && Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle")) {
+                    if (thumbs.size() >= 2 && Mod::get()->getSavedValue<bool>("levelcell-gallery-autocycle", true)) {
                         self->schedule(schedule_selector(PaimonLevelPage::updateGalleryCycle), 0.f);
                     }
                     return;

@@ -305,6 +305,7 @@ void PetConfigPopup::createTabButtons() {
     spr1->setScale(0.45f);
     auto tab1 = CCMenuItemSpriteExtra::create(spr1, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab1->setTag(0);
+    tab1->setID("pet-gallery-tab-btn"_spr);
     tab1->setPosition({cx - 80.f, topY});
     menu->addChild(tab1);
     m_tabs.push_back(tab1);
@@ -313,6 +314,7 @@ void PetConfigPopup::createTabButtons() {
     spr2->setScale(0.45f);
     auto tab2 = CCMenuItemSpriteExtra::create(spr2, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab2->setTag(1);
+    tab2->setID("pet-settings-tab-btn"_spr);
     tab2->setPosition({cx, topY});
     menu->addChild(tab2);
     m_tabs.push_back(tab2);
@@ -321,6 +323,7 @@ void PetConfigPopup::createTabButtons() {
     spr3->setScale(0.45f);
     auto tab3 = CCMenuItemSpriteExtra::create(spr3, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab3->setTag(2);
+    tab3->setID("pet-advanced-tab-btn"_spr);
     tab3->setPosition({cx + 80.f, topY});
     menu->addChild(tab3);
     m_tabs.push_back(tab3);
@@ -933,7 +936,7 @@ void PetConfigPopup::applyLive() {
     auto& pet = PetManager::get();
     pet.applyConfigLive();
 
-    auto scene = CCDirector::sharedDirector()->getRunningScene();
+    auto scene = CCDirector::get()->getRunningScene();
     if (pet.config().enabled && scene) {
         // attachToScene is idempotent: if already on this scene
         // it refreshes visibility; otherwise it reattaches.

@@ -21,7 +21,7 @@
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
-#include <prevter.imageplus/include/events.hpp>
+#include "../utils/stb_image.h"
 
 using namespace geode::prelude;
 
@@ -38,24 +38,21 @@ protected:
 
         CCTexture2D* texture = nullptr;
 
-        if (imgp::isAvailable()) {
-            auto decRes = imgp::tryDecode(m_data.data(), m_data.size());
-            if (decRes.isOk()) {
-                auto& dec = decRes.unwrap();
-                if (auto* img = std::get_if<imgp::DecodedImage>(&dec)) {
-                    if (*img && img->width > 0 && img->height > 0) {
-                        auto* tex = new CCTexture2D();
-                        if (tex->initWithData(img->data.get(),
-                                kCCTexture2DPixelFormat_RGBA8888,
-                                img->width, img->height,
-                                CCSize(img->width, img->height))) {
-                            texture = tex;
-                            texture->autorelease();
-                        } else {
-                            tex->release();
-                        }
-                    }
+        // stb_image: decode PNG, JPEG, BMP, GIF, TGA, etc.
+        {
+            int w = 0, h = 0, ch = 0;
+            unsigned char* px = stbi_load_from_memory(m_data.data(), static_cast<int>(m_data.size()), &w, &h, &ch, 4);
+            if (px && w > 0 && h > 0) {
+                auto* tex = new CCTexture2D();
+                if (tex->initWithData(px, kCCTexture2DPixelFormat_RGBA8888,
+                        w, h, CCSize(static_cast<float>(w), static_cast<float>(h)))) {
+                    texture = tex;
+                    texture->autorelease();
                 }
+                else tex->release();
+                stbi_image_free(px);
+            } else if (px) {
+                stbi_image_free(px);
             }
         }
 

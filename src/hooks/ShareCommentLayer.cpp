@@ -60,7 +60,19 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
 
     $override
     bool init(gd::string title, int charLimit, CommentType type, int ID, gd::string desc) {
-        if (!ShareCommentLayer::init(title, charLimit, type, ID, desc)) return false;
+        // Doble del limite vanilla para permitir mas emotes/texto.
+        // Nota: GD valida server-side; comentarios muy largos podrian ser
+        // truncados o rechazados por el servidor de RobTop.
+        int extendedLimit = charLimit * 2;
+        if (!ShareCommentLayer::init(title, extendedLimit, type, ID, desc)) return false;
+
+        // Asegura que el campo persista con el limite extendido aunque la
+        // base lo haya clampeado internamente.
+        m_charLimit = extendedLimit;
+        if (m_commentInput) {
+            m_commentInput->setMaxLabelLength(extendedLimit);
+        }
+        this->updateCharCountLabel();
 
         // Permite caracteres especiales para emotes
         if (m_commentInput) {
@@ -114,6 +126,8 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
             }
         };
         ctx.charLimit = self->m_charLimit;
+        ctx.pickerSize = paimon::emotes::EmotePickerPopup::LayoutSize::Large;
+        ctx.centerPicker = true;
 
         auto emoteBtn = paimon::emotes::EmoteButton::create(std::move(ctx));
         if (emoteBtn) {
@@ -208,6 +222,10 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
 
         if (!m_commentInput || !m_fields->m_toolMenu) return;
 
+        // Perf: only check visibility every 10 frames instead of every frame
+        m_fields->m_clipboardCheckCounter++;
+        if (m_fields->m_clipboardCheckCounter % 10 != 0) return;
+
         // Muestra Copy si hay texto
         bool hasText = !std::string(m_commentInput->getString()).empty();
         if (m_fields->m_copyBtn) {
@@ -215,7 +233,6 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
         }
 
         // Revisa clipboard cada ~30 frames
-        m_fields->m_clipboardCheckCounter++;
         if (m_fields->m_clipboardCheckCounter >= 30) {
             m_fields->m_clipboardCheckCounter = 0;
             m_fields->m_lastClipboardHasContent = !geode::utils::clipboard::read().empty();

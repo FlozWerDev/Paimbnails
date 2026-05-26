@@ -4,6 +4,7 @@
 #include <Geode/utils/file.hpp>
 #include "../features/pet/services/PetManager.hpp"
 #include "../features/cursor/services/CursorManager.hpp"
+#include "../features/volume-scroll/services/VolumeScrollManager.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/moderation/ui/VerificationCenterLayer.hpp"
@@ -18,9 +19,19 @@
 #include "../features/profiles/services/ProfilePicCustomizer.hpp"
 #include "../features/profiles/services/ProfilePicRenderer.hpp"
 #include "../features/updates/services/UpdateChecker.hpp"
+#include "../utils/AudioInterop.hpp"
+#include "../utils/SpriteHelper.hpp"
 #include "../utils/Shaders.hpp"
+#include "../utils/PaimonNotification.hpp"
+#include "../utils/Localization.hpp"
 #include "../video/VideoPlayer.hpp"
 #include "../features/forum/services/ForumApi.hpp"
+#include "../features/guide/services/PaimonGuideService.hpp"
+#include "../features/guide/GuideEvents.hpp"
+#include "../features/guide/ui/AnimatedPaimon.hpp"
+#include "../features/guide/ui/PaimonGuideChatPopup.hpp"
+#include "../utils/ThreadTracker.hpp"
+#include "../core/RuntimeLifecycle.hpp"
 #include <random>
 #include <filesystem>
 #include <string>
@@ -40,6 +51,9 @@ extern void initPetTicker();
 
 // declarada en CursorHook.cpp — registra el ticker del cursor con el scheduler
 extern void initCursorTicker();
+
+// declarada en VolumeScrollHook.cpp — registra el ticker del overlay de volumen
+extern void initVolumeScrollTicker();
 
 // ── Helper: construye el nodo clip+container+borde para la foto de perfil ──
 // Delega en paimon::profile_pic::composeProfilePicture para aplicar scaleX/Y,
@@ -67,6 +81,14 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         Ref<CCSprite> m_bgSprite = nullptr;
         Ref<CCLayerColor> m_bgOverlay = nullptr;
         bool m_adaptiveColors = false;
+        // Perf: cached hub button reference to avoid getChildByIDRecursive per frame
+        CCNode* m_hubBtnCached = nullptr;
+        bool m_hubBtnSearched = false;
+        // Perf: throttle adaptive colors to avoid per-frame tree traversal
+        int m_adaptiveFrameCounter = 0;
+        ccColor3B m_lastAdaptiveColor = {255, 255, 255};
+        // Perf: throttle badge check
+        int m_badgeFrameCounter = 0;
     };
 
     // Aplica colores adaptativos
@@ -110,6 +132,32 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             return false;
         }
         log::info("[MenuLayer] init");
+
+        // ── Watchdog interop flags ────────────────────────────────────────
+        // Resetea los flags de "Paimon es duenio del audio" al volver al
+        // MenuLayer. Sin este watchdog, una ruta de error rara (popup de
+        // perfil cerrado durante crossfade, video que aborta entre escenas,
+        // etc.) puede dejar el flag pegado y bloquear toda la musica del
+        // juego hasta cerrar el cliente. Hacemos un sweep aqui porque al
+        // entrar al MenuLayer ningun manager de Paimon deberia "poseer" el
+        // canal de audio; si lo decian, era un leak.
+        {
+            using namespace paimon;
+            bool anyStuck =
+                isProfileMusicInteropActive() ||
+                isDynamicSongInteropActive()  ||
+                isVideoAudioInteropActive();
+            if (anyStuck) {
+                log::warn("[InteropWatchdog] flags stuck on MenuLayer entry: profile={} dynamic={} video={} — clearing",
+                          isProfileMusicInteropActive(),
+                          isDynamicSongInteropActive(),
+                          isVideoAudioInteropActive());
+                setProfileMusicInteropActive(false);
+                setDynamicSongInteropActive(false);
+                setVideoAudioInteropActive(false);
+            }
+        }
+        // ──────────────────────────────────────────────────────────────────
 
         // Inicializa el mod despues de dejar que el menu pinte su primer frame.
         if (!s_paimonLoaded && !s_paimonLoadScheduled) {
@@ -204,7 +252,9 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
                 // Escala Paimon menor que titulo
                 float paimonMaxH = titleH * 0.7f;
-                float paimonScale = paimonMaxH / paimonSpr->getContentSize().height;
+                float sprH = paimonSpr->getContentSize().height;
+                if (sprH <= 0.f) sprH = 1.f;
+                float paimonScale = paimonMaxH / sprH;
                 paimonSpr->setScale(paimonScale);
 
                 // Posicion aleatoria dentro del titulo
@@ -231,7 +281,57 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 paimonMenu->setID("paimon-hidden-menu"_spr);
                 paimonMenu->addChild(paimonBtn);
 
-                paimonSpr->setOpacity(180);
+                // Si el toggle "Guia" del Hub esta activo, montamos un
+                // AnimatedPaimon encima del sprite estatico para animarla
+                // y atraer la atencion. El sprite original conserva el
+                // click (paimonBtn sigue recibiendo touches) — ocultamos
+                // su visual reduciendo la opacidad a 0 mientras el modo
+                // guide este activo.
+                bool guideOn = paimon::guide::PaimonGuideService::get().isEnabled();
+                if (guideOn) {
+                    paimonSpr->setOpacity(0);
+
+                    // AnimatedPaimon usa la misma escala que el sprite
+                    // estatico para que coincidan.
+                    auto* animated = paimon::guide::AnimatedPaimon::create(paimonScale);
+                    if (animated) {
+                        animated->setLively(true);
+                        animated->play(paimon::guide::AnimatedPaimon::Animation::Idle);
+                        animated->setRotation(rot);
+                        // Centrar respecto al boton (mismo origen del sprite)
+                        animated->setAnchorPoint({0.5f, 0.5f});
+                        animated->setPosition(paimonBtn->getContentSize() * 0.5f);
+                        animated->setID("paimon-hidden-animated"_spr);
+                        paimonBtn->addChild(animated, 1);
+
+                        // Burbuja periodica "Preguntame!" cada ~30s con
+                        // probabilidad ~30% para no ser intrusiva. Usamos
+                        // CCRepeatForever sobre un CCSequence(delay, callfunc)
+                        // para que el ciclo viva en el scheduler de Cocos2d
+                        // sin necesidad de Fields adicionales.
+                        WeakRef<paimon::guide::AnimatedPaimon> weakAnim(animated);
+                        auto bubbleTick = CallFuncExt::create([weakAnim] {
+                            if (auto anim = weakAnim.lock()) {
+                                // 30% de probabilidad cada vez que llega el tick
+                                static std::mt19937 brng(std::random_device{}());
+                                std::uniform_int_distribution<int> chance(0, 99);
+                                if (chance(brng) < 30) {
+                                    auto txt = Localization::get().getString("pai.guide.bubble");
+                                    anim->showBubble(txt, 3.f);
+                                }
+                            }
+                        });
+                        animated->runAction(CCRepeatForever::create(
+                            CCSequence::create(
+                                CCDelayTime::create(30.f),
+                                bubbleTick,
+                                nullptr
+                            )
+                        ));
+                    }
+                } else {
+                    paimonSpr->setOpacity(180);
+                }
 
                 // zOrder 1: detras del titulo
                 this->addChild(paimonMenu, 1);
@@ -246,10 +346,20 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         MenuLayer::update(dt);
         
         if (m_fields->m_adaptiveColors && m_fields->m_bgSprite) {
-             // Ref<>::operator->() devuelve el puntero raw para typeinfo_cast
-             if (auto gif = typeinfo_cast<AnimatedGIFSprite*>(static_cast<CCSprite*>(m_fields->m_bgSprite))) {
-                 auto colors = gif->getCurrentFrameColors();
-                 this->applyAdaptiveColor({colors.first.r, colors.first.g, colors.first.b});
+             // Perf: only update adaptive colors every 4 frames (~15 FPS is enough for color sync)
+             if (++m_fields->m_adaptiveFrameCounter >= 4) {
+                 m_fields->m_adaptiveFrameCounter = 0;
+                 if (auto gif = typeinfo_cast<AnimatedGIFSprite*>(static_cast<CCSprite*>(m_fields->m_bgSprite))) {
+                     auto colors = gif->getCurrentFrameColors();
+                     ccColor3B newColor = {colors.first.r, colors.first.g, colors.first.b};
+                     // Only apply if color actually changed
+                     if (newColor.r != m_fields->m_lastAdaptiveColor.r ||
+                         newColor.g != m_fields->m_lastAdaptiveColor.g ||
+                         newColor.b != m_fields->m_lastAdaptiveColor.b) {
+                         m_fields->m_lastAdaptiveColor = newColor;
+                         this->applyAdaptiveColor(newColor);
+                     }
+                 }
              }
         }
 
@@ -259,15 +369,27 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             this->updateProfileButton();
         }
 
-        // Refresca el badge de actualizacion en el boton del Hub
-        this->applyUpdateBadge();
+        // Perf: check badge only every 60 frames (~1 second at 60fps)
+        if (++m_fields->m_badgeFrameCounter >= 60) {
+            m_fields->m_badgeFrameCounter = 0;
+            this->applyUpdateBadge();
+        }
     }
 
     // Coloca/quita un punto rojo encima del boton paimon-hub-btn segun el
     // estado del UpdateChecker. Idempotente.
     void applyUpdateBadge() {
-        auto btn = this->getChildByIDRecursive("paimon-hub-btn"_spr);
-        if (!btn) return;
+        // Perf: cache the hub button reference instead of recursive search each call
+        if (!m_fields->m_hubBtnSearched) {
+            m_fields->m_hubBtnCached = this->getChildByIDRecursive("paimon-hub-btn"_spr);
+            m_fields->m_hubBtnSearched = true;
+        }
+        auto btn = m_fields->m_hubBtnCached;
+        if (!btn || !btn->getParent()) {
+            // Button may have been removed/re-added, retry next time
+            m_fields->m_hubBtnSearched = false;
+            return;
+        }
 
         bool hasUpdate = paimon::updates::UpdateChecker::get().hasUpdate();
         auto existing = btn->getChildByID("paimon-hub-update-badge"_spr);
@@ -317,10 +439,61 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         s_paimonLoaded = true;
         log::info("[PaimonThumbnails] Invoking delayed Mod Loaded initialization from MenuLayer");
         PaimonOnModLoaded();
-        PetManager::get().init();
+
+        // VolumeScrollManager::init() solo asigna primitives, NO hace I/O. Safe en main.
+        paimon::volscroll::VolumeScrollManager::get().init();
+
+        // PERF: los tickers son CCNodes que arrancan independientemente del config
+        // (chequean enabled internamente cada frame). Los registramos YA mismo en
+        // el scheduler para no esperar al worker thread. Si el config termina con
+        // enabled=false, el ticker no hace trabajo util — coste despreciable.
         initPetTicker();
-        CursorManager::get().init();
         initCursorTicker();
+        initVolumeScrollTicker();
+
+        // PERF: Pet/Cursor::init() llamaban loadConfig() que hace file::readString
+        // sincrono (~1-10 ms en HDDs / con AV agresivo). Antes esto bloqueaba el
+        // main thread durante deferredPaimonInit (~0.35s post MenuLayer::init).
+        // Ahora el I/O corre en background; cuando termina, hacemos el setSettingValue
+        // y applyConfigLive en main thread (Geode no es thread-safe para settings).
+        paimon::ThreadTracker::get().spawn([]() {
+            geode::utils::thread::setName("PaimonPetCursorLoad");
+            if (paimon::isRuntimeShuttingDown()) return;
+
+            // I/O de disco (file::readString + matjson::parse) en worker thread
+            PetManager::get().loadConfig();
+            if (paimon::isRuntimeShuttingDown()) return;
+            CursorManager::get().loadConfig();
+
+            if (paimon::isRuntimeShuttingDown()) return;
+
+            // Volver al main thread para tocar Geode settings y nodos cocos2d
+            geode::Loader::get()->queueInMainThread([]() {
+                if (paimon::isRuntimeShuttingDown()) return;
+
+                // PetManager: srand sin orden critico (semilla diferente entre
+                // sesiones es lo que queremos). Lo dejamos en main para no
+                // racear con uses tempranas de std::rand en el ticker.
+                std::srand(static_cast<unsigned int>(std::time(nullptr)));
+
+                // CursorManager: equivalente a init() salvo el loadConfig que
+                // ya corrio en worker. Empuja config -> Geode settings y aplica.
+                {
+                    auto& cm = CursorManager::get();
+                    Mod::get()->setSettingValue<bool>("custom-cursor-enable", cm.config().enabled);
+                    Mod::get()->setSettingValue<double>("custom-cursor-scale", static_cast<double>(cm.config().scale));
+                    Mod::get()->setSettingValue<bool>("custom-cursor-trail", cm.config().trailEnabled);
+                    cm.applyConfigLive();
+                }
+
+                // PetManager: applyConfigLive es no-op si todavia no hay m_petNode
+                // creado (caso normal en arranque). Cuando el ticker cree el nodo,
+                // tomara el config ya cargado.
+                PetManager::get().applyConfigLive();
+
+                log::info("[PaimonThumbnails] Pet/Cursor config loaded and applied");
+            });
+        });
     }
 
     void tickHeartbeat(float dt) {
@@ -344,6 +517,17 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     void onPaimonClick(CCObject* sender) {
         auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
         if (!btn) return;
+
+        // Si el modo Guia esta activo, abrimos el chat de Paimon en lugar
+        // del easter egg de la explosion.  Asi el sprite escondido pasa de
+        // sorpresa puntual a guia interactiva sin perder su rol original
+        // cuando el usuario no quiere la guia.
+        if (paimon::guide::PaimonGuideService::get().isEnabled()) {
+            if (auto* popup = paimon::guide::PaimonGuideChatPopup::create()) {
+                popup->show();
+            }
+            return;
+        }
 
         // Posicion mundial para explosion
         auto* parent = btn->getParent();
@@ -428,6 +612,10 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 oldContainer->removeFromParent();
             }
             LayerBackgroundManager::get().clearAppliedBackground(this, false);
+            // Force-evict any stale/unreferenced shared video players so they
+            // don't keep RAM/decoder threads alive past the TTL grace window.
+            LayerBackgroundManager::get().forceEvictAllStaleVideos();
+            LayerBackgroundManager::get().applyVanillaBackgroundTintFix(this);
             m_fields->m_bgSprite = nullptr;
             m_fields->m_bgOverlay = nullptr;
             this->applyAdaptiveColor({255, 255, 255});
@@ -473,6 +661,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         std::string resolvedType = cfg.type;
         std::string resolvedPath = cfg.customPath;
         int resolvedId = cfg.levelId;
+        std::string resolvedShader = cfg.shader;
 
         int maxHops = 5;
         while (maxHops-- > 0) {
@@ -491,6 +680,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 resolvedType = refCfg.type;
                 resolvedPath = refCfg.customPath;
                 resolvedId = refCfg.levelId;
+                resolvedShader = refCfg.shader;
                 continue;
             }
             break;
@@ -513,8 +703,9 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 float darkIntensity = cfg.darkIntensity;
                 std::string shaderName = cfg.shader;
                 AnimatedGIFSprite::pinGIF(resolvedPath);
-                AnimatedGIFSprite::createAsync(resolvedPath, [safeThis, safeContainer, winSize, darkMode, darkIntensity, shaderName](AnimatedGIFSprite* anim) {
+                AnimatedGIFSprite::createAsync(resolvedPath, [safeThis, safeContainer, winSize, darkMode, darkIntensity, shaderName, resolvedPath](AnimatedGIFSprite* anim) {
                     if (!anim || !safeContainer->getParent()) {
+                        AnimatedGIFSprite::unpinGIF(resolvedPath);
                         if (!anim && safeContainer->getParent()) safeContainer->removeFromParent();
                         return;
                     }
@@ -523,6 +714,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                     float contentHeight = anim->getContentHeight();
 
                     if (contentWidth <= 0 || contentHeight <= 0) {
+                        AnimatedGIFSprite::unpinGIF(resolvedPath);
                         safeContainer->removeFromParent();
                         return;
                     }
@@ -578,13 +770,32 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         } else if (resolvedType == "video" && !resolvedPath.empty()) {
             std::error_code fsEc;
             if (!std::filesystem::exists(resolvedPath, fsEc) || fsEc) {
+                // Video file not found — revert to default gracefully
+                log::warn("[MenuLayer] Video file not found: {} — showing default bg", resolvedPath);
                 container->removeFromParent();
+                if (auto bg = this->getChildByID("main-menu-bg")) {
+                    bg->setVisible(true);
+                    bg->setZOrder(-10);
+                }
+                LayerBackgroundManager::get().forceReleaseSharedVideoByPath(resolvedPath);
+                LayerBackgroundManager::get().forceEvictAllStaleVideos();
+                LayerBackgroundManager::get().applyVanillaBackgroundTintFix(this);
+                PaimonNotify::create("Video file not found", NotificationIcon::Warning)->show();
                 return;
             }
             // Delega video a LayerBackgroundManager
             container->removeFromParent();
             if (auto bg = this->getChildByID("main-menu-bg")) bg->setVisible(false);
             LayerBackgroundManager::get().applyVideoBg(this, resolvedPath, cfg);
+            return;
+        } else if (resolvedType == "shader") {
+            container->removeFromParent();
+            if (auto bg = this->getChildByID("main-menu-bg")) bg->setVisible(false);
+            auto shaderCfg = cfg;
+            shaderCfg.type = "shader";
+            shaderCfg.shader = resolvedShader;
+            LayerBackgroundManager::get().applyProceduralShaderBg(this, shaderCfg);
+            this->applyAdaptiveColor({255, 255, 255});
             return;
         }
 
@@ -606,7 +817,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                     auto* program = Shaders::getBgShaderProgram(cfg.shader);
                     if (program) {
                         shaderSpr->setShaderProgram(program);
-                        shaderSpr->m_shaderIntensity = 0.5f;
+                        shaderSpr->m_shaderIntensity = geode::Mod::get()->getSavedValue<float>("layerbg-shader-intensity", 0.5f);
                         shaderSpr->m_screenW = winSize.width;
                         shaderSpr->m_screenH = winSize.height;
                         shaderSpr->m_shaderTime = 0.f;
@@ -723,8 +934,11 @@ class $modify(PaimonMenuLayer, MenuLayer) {
              // Capturar profileButton con Ref<> para evitar use-after-free
              // si el nodo se destruye antes de que el callback async ejecute
              Ref<CCMenuItemSpriteExtra> safeProfileBtn = profileButton;
-             AnimatedGIFSprite::createAsync(path, [safeThis, safeProfileBtn, targetSize, shapeName, picCfg](AnimatedGIFSprite* anim) {
-                if (!anim || !safeProfileBtn->getParent()) return;
+             AnimatedGIFSprite::createAsync(path, [safeThis, safeProfileBtn, targetSize, shapeName, picCfg, path](AnimatedGIFSprite* anim) {
+                if (!anim || !safeProfileBtn->getParent()) {
+                    AnimatedGIFSprite::unpinGIF(path);
+                    return;
+                }
 
                 auto container = buildProfileClipContainer(anim, shapeName, targetSize, picCfg);
                 if (container) {
@@ -745,3 +959,100 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         }
     }
 };
+
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Listener global del toggle "Guia"
+//
+// Cuando el usuario activa/desactiva la guia desde el sidebar del Hub, esto
+// dispara GuideEnabledChangedEvent. Aqui escuchamos para refrescar la Paimon
+// escondida del MenuLayer en vivo, sin tener que reiniciar la escena.
+//
+// Logica:
+//   - Si la escena actual contiene un MenuLayer con paimon-hidden-menu:
+//     - ON  -> ocultar sprite estatico, montar AnimatedPaimon overlay
+//     - OFF -> remover AnimatedPaimon overlay, restaurar opacidad estatica
+//
+// Se registra una sola vez como listener global "leaked" para que sobreviva
+// toda la sesion. Patron tomado de ExtendedKeybind.cpp:
+//   `Event(filter).listen([](data){...}).leak();`
+// ─────────────────────────────────────────────────────────────────────────────
+$execute {
+    using namespace paimon::guide;
+
+    GuideEnabledChangedEvent(kGuideEventFilter).listen(
+        [](bool enabled) {
+            // Buscar la escena activa y, dentro, un MenuLayer con la Paimon.
+            auto* scene = CCDirector::sharedDirector()->getRunningScene();
+            if (!scene) return geode::ListenerResult::Propagate;
+
+            auto* hiddenMenu = scene->getChildByIDRecursive("paimon-hidden-menu"_spr);
+            if (!hiddenMenu) return geode::ListenerResult::Propagate;
+
+            auto* hiddenBtn = hiddenMenu->getChildByIDRecursive("paimon-hidden-btn"_spr);
+            if (!hiddenBtn) return geode::ListenerResult::Propagate;
+
+            auto* btnSpriteExtra = typeinfo_cast<CCMenuItemSpriteExtra*>(hiddenBtn);
+            if (!btnSpriteExtra) return geode::ListenerResult::Propagate;
+
+            // Sprite estatico: getNormalImage() retorna CCNode* generico,
+            // hay que castear a CCSprite para acceder a setOpacity.
+            auto* staticSprNode = btnSpriteExtra->getNormalImage();
+            auto* staticSpr = typeinfo_cast<CCSprite*>(staticSprNode);
+
+            // AnimatedPaimon overlay (puede no existir aun)
+            auto* overlay = hiddenBtn->getChildByIDRecursive("paimon-hidden-animated"_spr);
+
+            if (enabled) {
+                // Pasar a modo Guia ON
+                if (staticSpr) staticSpr->setOpacity(0);
+                if (!overlay) {
+                    // Calcular escala del sprite estatico para igualar
+                    float spriteScale = staticSpr ? staticSpr->getScale() : 0.5f;
+                    auto* animated = AnimatedPaimon::create(spriteScale);
+                    if (animated) {
+                        animated->setLively(true);
+                        animated->play(AnimatedPaimon::Animation::Idle);
+                        animated->setAnchorPoint({0.5f, 0.5f});
+                        animated->setPosition(btnSpriteExtra->getContentSize() * 0.5f);
+                        animated->setID("paimon-hidden-animated"_spr);
+                        btnSpriteExtra->addChild(animated, 1);
+
+                        // Burbuja periodica con la misma logica que en el
+                        // path inicial (ver MenuLayer init). Si el usuario
+                        // desactiva la guia, el overlay se elimina junto a
+                        // su scheduler de acciones automaticamente.
+                        WeakRef<AnimatedPaimon> weakAnim(animated);
+                        auto bubbleTick = CallFuncExt::create([weakAnim] {
+                            if (auto anim = weakAnim.lock()) {
+                                static std::mt19937 brng(std::random_device{}());
+                                std::uniform_int_distribution<int> chance(0, 99);
+                                if (chance(brng) < 30) {
+                                    auto txt = Localization::get().getString("pai.guide.bubble");
+                                    anim->showBubble(txt, 3.f);
+                                }
+                            }
+                        });
+                        animated->runAction(CCRepeatForever::create(
+                            CCSequence::create(
+                                CCDelayTime::create(30.f),
+                                bubbleTick,
+                                nullptr
+                            )
+                        ));
+                    }
+                }
+            } else {
+                // Pasar a modo Guia OFF
+                if (overlay) {
+                    overlay->removeFromParent();
+                }
+                if (staticSpr) staticSpr->setOpacity(180);
+            }
+
+            return geode::ListenerResult::Propagate;
+        }
+    ).leak();
+}

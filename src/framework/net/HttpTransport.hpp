@@ -203,8 +203,10 @@ public:
         bool isHttp  = lower.starts_with("http://");
         if (!isHttps && !isHttp) return false;
 
-        // Extraer host
-        size_t hostStart = lower.find("://") + 3;
+        // Extraer host: buscar el PRIMER "://", luego el siguiente '/'
+        size_t schemeEnd = lower.find("://");
+        if (schemeEnd == std::string::npos) return false;
+        size_t hostStart = schemeEnd + 3;
 
         // Rechazar credentials en URL
         size_t at = lower.find('@', hostStart);

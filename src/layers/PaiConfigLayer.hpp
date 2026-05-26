@@ -45,7 +45,10 @@ protected:
     cocos2d::CCNode* m_bgPreview = nullptr;
     cocos2d::CCLabelBMFont* m_bgStatusLabel = nullptr;
     cocos2d::CCLabelBMFont* m_shaderLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_shaderIntensityLabel = nullptr;
+    Slider* m_shaderIntensitySlider = nullptr;
     int m_shaderIndex = 0;
+    int m_shaderIntensityIndex = 4; // default 50%
 
     // ── Profile tab ──
     cocos2d::CCNode* m_profilePreview = nullptr;
@@ -70,6 +73,7 @@ protected:
     void onBgVideo(cocos2d::CCObject*);
     void onVideoSettings(cocos2d::CCObject*);
     void onBgRandom(cocos2d::CCObject*);
+    void onBgShader(cocos2d::CCObject*);
     void onBgSetID(cocos2d::CCObject*);
     void onBgSameAs(cocos2d::CCObject*);
     void onBgDefault(cocos2d::CCObject*);
@@ -78,7 +82,9 @@ protected:
     void onAdaptiveColors(cocos2d::CCObject*);
     void onShaderPrev(cocos2d::CCObject*);
     void onShaderNext(cocos2d::CCObject*);
+    void onShaderIntensitySlider(cocos2d::CCObject*);
     void updateShaderLabel();
+    void updateShaderIntensityLabel();
 
     // Profile actions
     void onProfileImage(cocos2d::CCObject*);
@@ -102,5 +108,4 @@ public:
     static PaiConfigLayer* create();
     static cocos2d::CCScene* scene();
 };
-
 

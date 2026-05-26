@@ -7,6 +7,10 @@
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 
+#ifdef GEODE_IS_WINDOWS
+#include <windows.h>
+#endif
+
 using namespace geode::prelude;
 using namespace cocos2d;
 
@@ -25,6 +29,31 @@ std::string formatBytes(uint64_t b) {
     if (b >= static_cast<uint64_t>(kMB)) return fmt::format("{:.2f} MB", b / kMB);
     if (b >= static_cast<uint64_t>(kKB)) return fmt::format("{:.1f} KB", b / kKB);
     return fmt::format("{} B", b);
+}
+
+void restartGameProcess() {
+#ifdef GEODE_IS_WINDOWS
+    wchar_t exePath[MAX_PATH] = {};
+    auto len = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
+        STARTUPINFOW si{};
+        si.cb = sizeof(si);
+        PROCESS_INFORMATION pi{};
+
+        if (CreateProcessW(exePath, nullptr, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+            geode::utils::game::exit(true);
+            return;
+        }
+
+        log::warn("[UpdateChecker] CreateProcessW failed, falling back to Geode restart");
+    } else {
+        log::warn("[UpdateChecker] GetModuleFileNameW failed, falling back to Geode restart");
+    }
+#endif
+
+    geode::utils::game::restart(true);
 }
 }
 
@@ -189,7 +218,7 @@ void UpdateProgressPopup::onDone(bool ok, std::string const& msgOrPath) {
 
     if (ok) {
         if (m_statusLabel) {
-            m_statusLabel->setString(tr("pai.update.done", "Update installed. Restart to apply.").c_str());
+            m_statusLabel->setString(tr("pai.update.ready", "Update ready. Restart to install.").c_str());
             m_statusLabel->setColor({120, 255, 120});
         }
         if (m_barFill && m_barBg) {
@@ -225,7 +254,11 @@ void UpdateProgressPopup::onCancel(CCObject*) {
 
 void UpdateProgressPopup::onRestart(CCObject*) {
     log::info("[UpdateChecker] User requested restart");
-    geode::utils::game::restart(true);
+    if (UpdateChecker::get().restartToApplyPendingUpdate()) {
+        geode::utils::game::exit(true);
+        return;
+    }
+    restartGameProcess();
 }
 
 void UpdateProgressPopup::onClose(CCObject* sender) {

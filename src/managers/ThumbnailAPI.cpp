@@ -53,9 +53,9 @@ void ThumbnailAPI::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, s
 void ThumbnailAPI::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback) {
     ThumbnailTransportClient::get().uploadVideo(levelId, mp4Data, username, std::move(callback));
 }
-void ThumbnailAPI::downloadThumbnail(int levelId, DownloadCallback callback) {
-    log::info("[ThumbnailAPI] downloadThumbnail: levelId={}", levelId);
-    ThumbnailTransportClient::get().downloadThumbnail(levelId, std::move(callback));
+void ThumbnailAPI::downloadThumbnail(int levelId, DownloadCallback callback, bool isGif) {
+    log::info("[ThumbnailAPI] downloadThumbnail: levelId={} isGif={}", levelId, isGif);
+    ThumbnailTransportClient::get().downloadThumbnail(levelId, std::move(callback), isGif);
 }
 void ThumbnailAPI::checkExists(int levelId, ExistsCallback callback) {
     log::debug("[ThumbnailAPI] checkExists: levelId={}", levelId);

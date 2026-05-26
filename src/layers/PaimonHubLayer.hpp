@@ -12,9 +12,9 @@ protected:
     void keyBackClicked() override;
 
     cocos2d::CCMenu* m_mainMenu = nullptr;
-    cocos2d::CCLayer* m_homeTab = nullptr;
-    cocos2d::CCLayer* m_newsTab = nullptr;
-    cocos2d::CCLayer* m_forumTab = nullptr;
+    cocos2d::CCLayerRGBA* m_homeTab = nullptr;
+    cocos2d::CCLayerRGBA* m_newsTab = nullptr;
+    cocos2d::CCLayerRGBA* m_forumTab = nullptr;
     cocos2d::CCMenu* m_homeMenu = nullptr;
     cocos2d::CCMenu* m_newsMenu = nullptr;
     cocos2d::CCMenu* m_forumMenu = nullptr;
@@ -22,12 +22,21 @@ protected:
     cocos2d::CCMenu* m_homeActionsMenu = nullptr;
     cocos2d::CCNode* m_homeActionsAnchor = nullptr;
     geode::ScrollLayer* m_homeSettingsScroll = nullptr;
+    geode::ScrollLayer* m_homeActionsScroll = nullptr;
     cocos2d::CCLabelBMFont* m_homeCategoryTitle = nullptr;
     cocos2d::CCLabelBMFont* m_homeCategoryDesc = nullptr;
     CCMenuItemSpriteExtra* m_homeCategoryInfoBtn = nullptr;
+    geode::TextInput* m_searchInput = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_homeCategoryBtns;
     int m_homeSelectedCategory = 0;
     float m_homeCategorySelectorY = 0.f;
+
+    cocos2d::CCNodeRGBA* m_sidebarBg = nullptr;
+    cocos2d::CCNodeRGBA* m_sidebarHighlight = nullptr;
+    cocos2d::CCNodeRGBA* m_detailsBg = nullptr;
+    cocos2d::CCMenu* m_sidebarMenu = nullptr;
+    std::vector<cocos2d::CCLabelBMFont*> m_sidebarLabels;
+
 
     int m_currentTab = 0;
     std::vector<CCMenuItemSpriteExtra*> m_tabBtns;
@@ -51,6 +60,10 @@ protected:
     std::vector<CCMenuItemSpriteExtra*> m_forumSubTabBtns;
     cocos2d::CCNode* m_forumBrowseNode = nullptr;
     cocos2d::CCNode* m_forumCreateNode = nullptr;
+    // Header is shared between Browse and Create — only the strings change so
+    // the panel chrome stays put when toggling sub-tabs.
+    cocos2d::CCLabelBMFont* m_forumHeaderTitle = nullptr;
+    cocos2d::CCLabelBMFont* m_forumHeaderSubtitle = nullptr;
 
     // ── Inline create-post form ──
     geode::TextInput* m_createTitleInput = nullptr;
@@ -94,8 +107,10 @@ public:
     void onOpenConfig(cocos2d::CCObject*);
     void onOpenProfiles(cocos2d::CCObject*);
     void onOpenBackgrounds(cocos2d::CCObject*);
+    void onOpenPaiDraw(cocos2d::CCObject*);
     void onOpenExtras(cocos2d::CCObject*);
     void onOpenSupport(cocos2d::CCObject*);
+    void onOpenDiscordConfig(cocos2d::CCObject*);
     void onCheckUpdate(cocos2d::CCObject*);
     void onBack(cocos2d::CCObject*);
 

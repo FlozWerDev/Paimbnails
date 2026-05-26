@@ -25,6 +25,14 @@ using namespace cocos2d;
 
 namespace paimon::menu_layout {
 namespace {
+    struct LayoutClipboard {
+        bool hasButton = false;
+        MenuButtonLayout buttonLayout;
+        bool hasShape = false;
+        DrawShapeLayout shapeLayout;
+        bool isValid = false;
+    } s_clipboard;
+
     MainMenuLayoutEditor* s_activeEditor = nullptr;
 
     constexpr float kMinButtonHitSize = 26.f;
@@ -56,6 +64,44 @@ namespace {
             rect.size.height *= -1.f;
         }
         return rect;
+    }
+
+    CCRect nodeWorldBoundingRect(CCNode* node, float minHitSize) {
+        if (!node || !node->getParent()) {
+            return { 0.f, 0.f, 0.f, 0.f };
+        }
+
+        auto bb = node->boundingBox();
+        auto* parent = node->getParent();
+        auto bl = parent->convertToWorldSpace({ bb.getMinX(), bb.getMinY() });
+        auto tr = parent->convertToWorldSpace({ bb.getMaxX(), bb.getMaxY() });
+
+        CCRect rect(
+            std::min(bl.x, tr.x),
+            std::min(bl.y, tr.y),
+            std::abs(tr.x - bl.x),
+            std::abs(tr.y - bl.y)
+        );
+
+        if (rect.size.width < minHitSize) {
+            auto cx = rect.getMidX();
+            rect.origin.x = cx - minHitSize / 2.f;
+            rect.size.width = minHitSize;
+        }
+        if (rect.size.height < minHitSize) {
+            auto cy = rect.getMidY();
+            rect.origin.y = cy - minHitSize / 2.f;
+            rect.size.height = minHitSize;
+        }
+        return rect;
+    }
+
+    CCRect unionWorldRects(CCRect const& a, CCRect const& b) {
+        auto minX = std::min(a.getMinX(), b.getMinX());
+        auto minY = std::min(a.getMinY(), b.getMinY());
+        auto maxX = std::max(a.getMaxX(), b.getMaxX());
+        auto maxY = std::max(a.getMaxY(), b.getMaxY());
+        return { minX, minY, maxX - minX, maxY - minY };
     }
 
     void drawRect(CCDrawNode* node, CCRect rect, ccColor4F color, float thickness) {
@@ -281,9 +327,9 @@ namespace {
     }
 }
 
-MainMenuLayoutEditor* MainMenuLayoutEditor::create(MenuLayer* layer) {
+MainMenuLayoutEditor* MainMenuLayoutEditor::create(CCNode* root) {
     auto* editor = new MainMenuLayoutEditor();
-    if (editor && editor->init(layer)) {
+    if (editor && editor->init(root)) {
         editor->autorelease();
         return editor;
     }
@@ -299,35 +345,35 @@ bool MainMenuLayoutEditor::isActive() {
     return s_activeEditor != nullptr;
 }
 
-void MainMenuLayoutEditor::open(MenuLayer* layer) {
-    if (!layer || s_activeEditor) return;
+void MainMenuLayoutEditor::open(CCNode* root) {
+    if (!root || s_activeEditor) return;
 
     auto* scene = CCDirector::sharedDirector()->getRunningScene();
     if (!scene) return;
 
-    auto* editor = MainMenuLayoutEditor::create(layer);
+    auto* editor = MainMenuLayoutEditor::create(root);
     if (!editor) return;
 
     s_activeEditor = editor;
+
     scene->addChild(editor, INT_MAX - 10);
 }
 
-void MainMenuLayoutEditor::toggle(MenuLayer* layer) {
-    if (!layer) return;
+void MainMenuLayoutEditor::toggle(CCNode* root) {
+    if (!root) return;
 
     if (s_activeEditor) {
-        if (s_activeEditor->getTargetLayer() == layer) {
+        if (s_activeEditor->getTargetRoot() == root) {
             s_activeEditor->saveAndClose();
         }
         return;
     }
 
-    MainMenuLayoutEditor::open(layer);
+    MainMenuLayoutEditor::open(root);
 }
 
-MenuLayer* MainMenuLayoutEditor::getTargetLayer() const {
-    auto ref = m_layer.lock();
-    return static_cast<MenuLayer*>(ref.data());
+CCNode* MainMenuLayoutEditor::getTargetRoot() const {
+    return m_layer.lock().data();
 }
 
 MainMenuLayoutEditor::~MainMenuLayoutEditor() {
@@ -343,10 +389,13 @@ MainMenuLayoutEditor::~MainMenuLayoutEditor() {
     }
 }
 
-bool MainMenuLayoutEditor::init(MenuLayer* layer) {
+bool MainMenuLayoutEditor::init(CCNode* root) {
     if (!CCLayer::init()) return false;
 
-    m_layer = layer;
+    m_lockShapes = false;
+    m_lockShapesBtn = nullptr;
+
+    m_layer = root;
 
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     this->setContentSize(winSize);
@@ -355,6 +404,9 @@ bool MainMenuLayoutEditor::init(MenuLayer* layer) {
     this->setTouchEnabled(true);
     this->setTouchMode(kCCTouchesOneByOne);
     this->setKeypadEnabled(true);
+#ifdef GEODE_IS_DESKTOP
+    this->setKeyboardEnabled(true);
+#endif
     this->scheduleUpdate();
 
     auto* dark = CCLayerColor::create({ 0, 0, 0, 130 });
@@ -436,7 +488,7 @@ void MainMenuLayoutEditor::collectButtons() {
     m_liveLayouts.clear();
     m_selected = nullptr;
 
-    auto* layer = this->getTargetLayer();
+    auto* layer = this->getTargetRoot();
     if (!layer) {
         this->refreshRightPanel();
         return;
@@ -455,7 +507,7 @@ void MainMenuLayoutEditor::collectButtons() {
         auto layout = MainMenuLayoutManager::readLayout(button.node);
         if (auto it = oldLiveLayouts.find(button.key); it != oldLiveLayouts.end()) {
             layout = it->second;
-            MainMenuLayoutManager::applyLayout(button.node, layout);
+            MainMenuLayoutManager::applyLayout(button, layout);
         }
         m_liveLayouts[button.key] = layout;
         if (m_initialLiveLayouts.find(button.key) == m_initialLiveLayouts.end()) {
@@ -615,7 +667,7 @@ void MainMenuLayoutEditor::buildUI() {
     }
 
     // --- Compact hint ---
-    m_hintLabel = CCLabelBMFont::create("Arrastra=mover | Grip=escala | +/-=opacidad | Esc=cancelar", "chatFont.fnt");
+    m_hintLabel = CCLabelBMFont::create("Flechas=Nudge | Ctrl+C/V=Copiar/Pegar | H/V/C=Centrar | L=Bloq. Fondos | Esc=Cancelar", "chatFont.fnt");
     m_hintLabel->setScale(0.34f);
     m_hintLabel->setColor({ 180, 200, 220 });
     float hintY = titleY - 18.f;
@@ -726,6 +778,7 @@ void MainMenuLayoutEditor::buildUI() {
 
         if (auto* cardBg = paimon::SpriteHelper::createDarkPanel(kCardWidth, kCardHeight, 132, 6.f)) {
             cardBg->setPosition({ 0.f, 0.f });
+            cardBg->setTag(98);
             container->addChild(cardBg, 1);
         }
 
@@ -736,11 +789,13 @@ void MainMenuLayoutEditor::buildUI() {
             icon->setFlipY(flipY);
             scaleSpriteToFit(icon, iconCap, iconCapH);
             icon->setPosition({ kCardWidth * 0.5f, caption.empty() ? kCardHeight * 0.5f : 22.f });
+            icon->setTag(99);
             container->addChild(icon, 3);
         } else {
             auto* fallback = CCLabelBMFont::create(fallbackText, "goldFont.fnt");
             fallback->setScale(caption.empty() ? 0.38f : 0.34f);
             fallback->setPosition({ kCardWidth * 0.5f, caption.empty() ? kCardHeight * 0.5f : 22.f });
+            fallback->setTag(99);
             container->addChild(fallback, 3);
         }
 
@@ -755,6 +810,7 @@ void MainMenuLayoutEditor::buildUI() {
             label->setScale(scale);
             label->setColor({ 220, 220, 220 });
             label->setPosition({ kCardWidth * 0.5f, 5.f });
+            label->setTag(100);
             container->addChild(label, 3);
         }
 
@@ -938,6 +994,15 @@ void MainMenuLayoutEditor::buildUI() {
         "Size"
     );
 
+    m_lockShapesBtn = makeRightIconButton(
+        { "GJ_lock_open_001.png", "GJ_lock_001.png" },
+        menu_selector(MainMenuLayoutEditor::onToggleLockShapes),
+        Localization::get().getString("menu_layout.lock_shapes"),
+        18.f,
+        18.f,
+        "Lock"
+    );
+
     std::vector<CCMenuItemSpriteExtra*> rightButtons {
         editBtn,
         hideBtn,
@@ -948,12 +1013,13 @@ void MainMenuLayoutEditor::buildUI() {
         scaleDownBtn,
         scaleUpBtn,
         resizeModeBtn,
+        m_lockShapesBtn,
     };
 
     float leftColX = rightCenterX - 30.f;
     float rightColX = rightCenterX + 30.f;
     float gridStartY = winSize.height - 140.f;
-    float rowGap = 42.f;
+    float rowGap = 40.f;
     for (size_t i = 0; i < rightButtons.size(); ++i) {
         float x = (i % 2 == 0) ? leftColX : rightColX;
         if ((rightButtons.size() % 2 == 1) && i == rightButtons.size() - 1) {
@@ -965,7 +1031,7 @@ void MainMenuLayoutEditor::buildUI() {
 
     m_resizeModeLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_resizeModeLabel->setScale(0.28f);
-    m_resizeModeLabel->setPosition({ rightCenterX, gridStartY - 4.f * rowGap - 20.f });
+    m_resizeModeLabel->setPosition({ rightCenterX, gridStartY - 4.f * rowGap - 27.f });
     m_rightPanel->addChild(m_resizeModeLabel, 4);
     this->refreshResizeModeButton();
 
@@ -1021,7 +1087,7 @@ LayoutSnapshot MainMenuLayoutEditor::buildSnapshot() const {
 
 void MainMenuLayoutEditor::applyEditorSnapshot(LayoutSnapshot const& snapshot) {
     m_isApplyingHistory = true;
-    MainMenuLayoutManager::get().applySnapshot(this->currentButtons(), snapshot, this->getTargetLayer());
+    MainMenuLayoutManager::get().applySnapshot(this->currentButtons(), snapshot, this->getTargetRoot());
     m_shapeLayouts = snapshot.shapes;
     m_liveLayouts = snapshot.buttons;
     this->collectButtons();
@@ -1158,28 +1224,33 @@ CCRect MainMenuLayoutEditor::selectionBounds() const {
 
 std::string MainMenuLayoutEditor::linkGroupFor(ButtonState const& state) const {
     if (isShapeNode(state.target.node)) {
-        constexpr char const* prefix = "MenuLayer/shapes/";
+        auto prefix = fmt::format("{}/shapes/", MainMenuLayoutManager::rootClassName(m_layer.lock().data()));
         auto key = state.target.key;
         if (key.rfind(prefix, 0) == 0) {
-            auto id = key.substr(std::char_traits<char>::length(prefix));
+            auto id = key.substr(prefix.size());
             for (auto const& shape : m_shapeLayouts) {
-                if (shape.id == id) return shape.linkGroup;
+                if (shape.id == id) {
+                    return shape.linkGroup;
+                }
             }
         }
         return "";
     }
 
     auto it = m_liveLayouts.find(state.target.key);
-    return it != m_liveLayouts.end() ? it->second.linkGroup : std::string();
+    if (it != m_liveLayouts.end()) {
+        return it->second.linkGroup;
+    }
+    return "";
 }
 
 std::string MainMenuLayoutEditor::selectionLayerLabel() const {
     if (!m_selected) return "-";
     if (isShapeNode(m_selected->target.node)) {
         auto key = m_selected->target.key;
-        constexpr char const* prefix = "MenuLayer/shapes/";
+        auto prefix = fmt::format("{}/shapes/", MainMenuLayoutManager::rootClassName(m_layer.lock().data()));
         if (key.rfind(prefix, 0) == 0) {
-            auto id = key.substr(std::char_traits<char>::length(prefix));
+            auto id = key.substr(prefix.size());
             for (auto const& shape : m_shapeLayouts) {
                 if (shape.id == id) return fmt::format("{}", shape.layer);
             }
@@ -1240,7 +1311,7 @@ void MainMenuLayoutEditor::syncStateFromNodes() {
         button.hidden = layout.hidden;
     }
 
-    auto current = MainMenuLayoutManager::captureShapes(this->getTargetLayer());
+    auto current = MainMenuLayoutManager::captureShapes(this->getTargetRoot());
     if (current.size() == m_shapeLayouts.size()) {
         m_shapeLayouts = std::move(current);
     }
@@ -1296,35 +1367,12 @@ CCRect MainMenuLayoutEditor::buttonRect(ButtonState const& state) const {
         return { 0.f, 0.f, 0.f, 0.f };
     }
 
-    auto* node = state.target.node;
-    if (!node || !node->getParent()) {
-        return { 0.f, 0.f, 0.f, 0.f };
+    auto out = nodeWorldBoundingRect(state.target.node, kMinButtonHitSize);
+    for (auto& fol : state.target.labelGroupFollowers) {
+        if (!fol || !fol->getParent()) continue;
+        out = unionWorldRects(out, nodeWorldBoundingRect(fol, kMinButtonHitSize));
     }
-
-    auto bb = node->boundingBox();
-    auto* parent = node->getParent();
-    auto bl = parent->convertToWorldSpace({ bb.getMinX(), bb.getMinY() });
-    auto tr = parent->convertToWorldSpace({ bb.getMaxX(), bb.getMaxY() });
-
-    CCRect rect(
-        std::min(bl.x, tr.x),
-        std::min(bl.y, tr.y),
-        std::abs(tr.x - bl.x),
-        std::abs(tr.y - bl.y)
-    );
-
-    if (rect.size.width < kMinButtonHitSize) {
-        auto centerX = rect.getMidX();
-        rect.origin.x = centerX - kMinButtonHitSize / 2.f;
-        rect.size.width = kMinButtonHitSize;
-    }
-    if (rect.size.height < kMinButtonHitSize) {
-        auto centerY = rect.getMidY();
-        rect.origin.y = centerY - kMinButtonHitSize / 2.f;
-        rect.size.height = kMinButtonHitSize;
-    }
-
-    return rect;
+    return out;
 }
 
 void MainMenuLayoutEditor::updateHighlights() {
@@ -1401,7 +1449,7 @@ void MainMenuLayoutEditor::setLinkGroup(ButtonState& state, std::string const& g
 
     if (auto* layout = this->currentLayoutFor(state)) {
         layout->linkGroup = group;
-        MainMenuLayoutManager::applyLayout(state.target.node, *layout);
+        MainMenuLayoutManager::applyLayout(state.target, *layout);
     }
 }
 
@@ -1411,9 +1459,9 @@ std::string MainMenuLayoutEditor::nextLinkGroup() const {
         constexpr char const* prefix = "group-";
         if (group.rfind(prefix, 0) != 0) return;
         auto suffix = group.substr(std::char_traits<char>::length(prefix));
-        try {
-            maxIndex = std::max(maxIndex, std::stoi(suffix));
-        } catch (...) {
+        auto result = geode::utils::numFromString<int>(suffix);
+        if (result.isOk()) {
+            maxIndex = std::max(maxIndex, result.unwrap());
         }
     };
 
@@ -1562,7 +1610,7 @@ void MainMenuLayoutEditor::applyScaleFactor(float factor) {
             layout->scaleX = scaleX;
             layout->scaleY = scaleY;
             layout->scale = std::sqrt(layout->scaleX * layout->scaleY);
-            MainMenuLayoutManager::applyLayout(state->target.node, *layout);
+            MainMenuLayoutManager::applyLayout(state->target, *layout);
         }
     }
 
@@ -1599,13 +1647,26 @@ void MainMenuLayoutEditor::beginDrag(DragMode mode, CCPoint worldPos, ResizeHand
 
     for (auto* state : this->selectionStates()) {
         if (!state || !state->target.node || !state->target.node->getParent()) continue;
-        m_dragSnapshots[state->target.key] = {
-            worldPosition(state->target.node),
-            state->target.node->getPosition(),
-            state->target.node->getScale(),
-            state->target.node->getScaleX(),
-            state->target.node->getScaleY(),
-        };
+        TransformSnapshot snap;
+        snap.worldPosition = worldPosition(state->target.node);
+        snap.localPosition = state->target.node->getPosition();
+        snap.scale = state->target.node->getScale();
+        snap.scaleX = state->target.node->getScaleX();
+        snap.scaleY = state->target.node->getScaleY();
+        if (!isShapeNode(state->target.node) && !state->target.labelGroupFollowers.empty()) {
+            for (auto& fol : state->target.labelGroupFollowers) {
+                if (!fol) {
+                    snap.followerWorldPositions.push_back({ 0.f, 0.f });
+                    snap.followerScaleX.push_back(1.f);
+                    snap.followerScaleY.push_back(1.f);
+                    continue;
+                }
+                snap.followerWorldPositions.push_back(worldPosition(fol));
+                snap.followerScaleX.push_back(fol->getScaleX());
+                snap.followerScaleY.push_back(fol->getScaleY());
+            }
+        }
+        m_dragSnapshots[state->target.key] = std::move(snap);
     }
 
     if (m_selected && m_dragSnapshots.contains(m_selected->target.key)) {
@@ -1635,14 +1696,15 @@ void MainMenuLayoutEditor::applyMoveSelection(CCPoint worldPos) {
 
         auto targetWorld = snapIt->second.worldPosition + deltaWorld;
         auto targetLocal = state->target.node->getParent()->convertToNodeSpace(targetWorld);
-        state->target.node->setPosition(targetLocal);
 
         if (isShapeNode(state->target.node)) {
+            state->target.node->setPosition(targetLocal);
             if (auto* shape = this->shapeLayout(*state)) {
                 shape->position = targetLocal;
             }
         } else if (auto* layout = this->currentLayoutFor(*state)) {
             layout->position = targetLocal;
+            MainMenuLayoutManager::applyLayout(state->target, *layout);
         }
     }
 }
@@ -1679,9 +1741,9 @@ void MainMenuLayoutEditor::applyResizeSelection(CCPoint worldPos) {
             fixed.y + offset.y * scaleY,
         };
         auto targetLocal = state->target.node->getParent()->convertToNodeSpace(targetWorld);
-        state->target.node->setPosition(targetLocal);
 
         if (isShapeNode(state->target.node)) {
+            state->target.node->setPosition(targetLocal);
             if (auto* shape = this->shapeLayout(*state)) {
                 shape->position = targetLocal;
                 shape->scaleX = std::clamp(snap.scaleX * scaleX, kMinAxisScale, kMaxScale);
@@ -1699,6 +1761,26 @@ void MainMenuLayoutEditor::applyResizeSelection(CCPoint worldPos) {
         layout->scaleY = std::clamp(snap.scaleY * scaleY, kMinAxisScale, kMaxScale);
         layout->scale = std::sqrt(layout->scaleX * layout->scaleY);
         MainMenuLayoutManager::applyLayout(state->target.node, *layout);
+
+        auto const& fst = snap;
+        if (
+            !state->target.labelGroupFollowers.empty()
+            && fst.followerWorldPositions.size() == state->target.labelGroupFollowers.size()
+            && fst.followerScaleX.size() == state->target.labelGroupFollowers.size()
+            && fst.followerScaleY.size() == state->target.labelGroupFollowers.size()) {
+            auto* ap = state->target.node->getParent();
+            for (size_t fi = 0; fi < state->target.labelGroupFollowers.size(); ++fi) {
+                auto& fol = state->target.labelGroupFollowers[fi];
+                if (!fol || fol->getParent() != ap) continue;
+                auto offWx = fst.followerWorldPositions[fi].x - fixed.x;
+                auto offWy = fst.followerWorldPositions[fi].y - fixed.y;
+                CCPoint followerWorld(fixed.x + offWx * scaleX, fixed.y + offWy * scaleY);
+                fol->setPosition(ap->convertToNodeSpace(followerWorld));
+                fol->setScaleX(std::clamp(fst.followerScaleX[fi] * scaleX, kMinAxisScale, kMaxScale));
+                fol->setScaleY(std::clamp(fst.followerScaleY[fi] * scaleY, kMinAxisScale, kMaxScale));
+            }
+            MainMenuLayoutManager::rebuildLabelFollowerOffsets(state->target);
+        }
     }
 }
 
@@ -1735,7 +1817,7 @@ void MainMenuLayoutEditor::updateNodeLayer(ButtonState& state, int layer) {
         layout->scale = state.target.node->getScale();
         layout->scaleX = state.target.node->getScaleX();
         layout->scaleY = state.target.node->getScaleY();
-        MainMenuLayoutManager::applyLayout(state.target.node, *layout);
+        MainMenuLayoutManager::applyLayout(state.target, *layout);
     }
 }
 
@@ -1794,12 +1876,12 @@ void MainMenuLayoutEditor::applyPreviewState(ButtonState& state) {
 
     if (auto* layout = this->currentLayoutFor(state)) {
         *layout = this->buildLayout(state);
-        MainMenuLayoutManager::applyLayout(state.target.node, *layout);
+        MainMenuLayoutManager::applyLayout(state.target, *layout);
         return;
     }
 
     auto layout = this->buildLayout(state);
-    MainMenuLayoutManager::applyLayout(state.target.node, layout);
+    MainMenuLayoutManager::applyLayout(state.target, layout);
 }
 
 MenuButtonLayout MainMenuLayoutEditor::buildLayout(ButtonState const& state) const {
@@ -1871,10 +1953,10 @@ void MainMenuLayoutEditor::restoreInitialLayouts() {
         if (!button.target.node || !button.target.node->getParent()) continue;
         if (isShapeNode(button.target.node)) continue;
         auto it = m_initialLiveLayouts.find(button.target.key);
-        MainMenuLayoutManager::applyLayout(button.target.node, it != m_initialLiveLayouts.end() ? it->second : button.initialLayout);
+        MainMenuLayoutManager::applyLayout(button.target, it != m_initialLiveLayouts.end() ? it->second : button.initialLayout);
     }
 
-    MainMenuLayoutManager::get().syncShapes(this->getTargetLayer(), m_initialShapes);
+    MainMenuLayoutManager::get().syncShapes(this->getTargetRoot(), m_initialShapes);
     m_shapeLayouts = m_initialShapes;
     m_liveLayouts = m_initialLiveLayouts;
     this->clearLinkArm();
@@ -1908,6 +1990,18 @@ void MainMenuLayoutEditor::resetSelectedToDefault() {
     }
 
     auto layout = MainMenuLayoutManager::get().getDefaultLayout(m_selected->target.key);
+    // En escenas dinamicas el default almacenado corresponde a otra sesion;
+    // preferimos el default "vanilla" capturado en la sesion actual.
+    if (auto session = MainMenuLayoutManager::get().getSessionDefaultLayout(m_selected->target.key)) {
+        if (layout) {
+            // Preservamos campos que no dependen de la escena (color, font, link)
+            session->linkGroup = layout->linkGroup;
+            session->hasColor = layout->hasColor;
+            session->color = layout->color;
+            session->fontFile = layout->fontFile;
+        }
+        layout = session;
+    }
     if (!layout) {
         auto it = m_initialLiveLayouts.find(m_selected->target.key);
         if (it != m_initialLiveLayouts.end()) {
@@ -1920,7 +2014,7 @@ void MainMenuLayoutEditor::resetSelectedToDefault() {
     m_selected->opacity = layout->opacity;
     m_selected->hidden = layout->hidden;
     m_liveLayouts[m_selected->target.key] = *layout;
-    MainMenuLayoutManager::applyLayout(m_selected->target.node, *layout);
+    MainMenuLayoutManager::applyLayout(m_selected->target, *layout);
 }
 
 void MainMenuLayoutEditor::resetAllToDefault() {
@@ -1930,6 +2024,17 @@ void MainMenuLayoutEditor::resetAllToDefault() {
         if (isShapeNode(button.target.node)) continue;
 
         auto layout = MainMenuLayoutManager::get().getDefaultLayout(button.target.key);
+        // En escenas dinamicas preferir la posicion vanilla actual de la
+        // sesion en curso, para que "Reset" mueva al sitio vanilla real.
+        if (auto session = MainMenuLayoutManager::get().getSessionDefaultLayout(button.target.key)) {
+            if (layout) {
+                session->linkGroup = layout->linkGroup;
+                session->hasColor = layout->hasColor;
+                session->color = layout->color;
+                session->fontFile = layout->fontFile;
+            }
+            layout = session;
+        }
         if (!layout) {
             auto it = m_initialLiveLayouts.find(button.target.key);
             if (it != m_initialLiveLayouts.end()) {
@@ -1942,11 +2047,11 @@ void MainMenuLayoutEditor::resetAllToDefault() {
         button.opacity = layout->opacity;
         button.hidden = layout->hidden;
         m_liveLayouts[button.target.key] = *layout;
-        MainMenuLayoutManager::applyLayout(button.target.node, *layout);
+        MainMenuLayoutManager::applyLayout(button.target, *layout);
     }
 
     m_shapeLayouts.clear();
-    MainMenuLayoutManager::get().syncShapes(this->getTargetLayer(), {});
+    MainMenuLayoutManager::get().syncShapes(this->getTargetRoot(), {});
     this->clearLinkArm();
     this->collectButtons();
 }
@@ -1964,18 +2069,26 @@ void MainMenuLayoutEditor::close(bool save) {
 }
 
 MainMenuLayoutEditor::ButtonState* MainMenuLayoutEditor::findButtonAt(CCPoint worldPos) {
-    ButtonState* fallback = nullptr;
-    ButtonState* hiddenHit = nullptr;
-    float bestDistSq = FLT_MAX;
+    ButtonState* bestDirect = nullptr;
+    int bestDirectLayer = -999;
+    bool bestDirectHidden = true;
 
-    for (auto it = m_buttons.rbegin(); it != m_buttons.rend(); ++it) {
-        if (!it->target.node || !it->target.node->getParent()) continue;
+    ButtonState* bestProx = nullptr;
+    int bestProxLayer = -999;
+    bool bestProxHidden = true;
+    float bestProxDistSq = FLT_MAX;
 
-        bool hidden = it->hidden || !it->target.node->isVisible();
+    for (auto& btn : m_buttons) {
+        if (!btn.target.node || !btn.target.node->getParent()) continue;
+        
+        bool isShape = isShapeNode(btn.target.node);
+        if (isShape && m_lockShapes) continue;
 
-        auto* parent = it->target.node->getParent();
+        bool hidden = btn.hidden || !btn.target.node->isVisible();
+
+        auto* parent = btn.target.node->getParent();
         auto localPos = parent->convertToNodeSpace(worldPos);
-        auto bbox = it->target.node->boundingBox();
+        auto bbox = btn.target.node->boundingBox();
 
         float x0 = bbox.getMinX();
         float y0 = bbox.getMinY();
@@ -1994,36 +2107,121 @@ MainMenuLayoutEditor::ButtonState* MainMenuLayoutEditor::findButtonAt(CCPoint wo
         }
 
         CCRect localRect(x0, y0, x1 - x0, y1 - y0);
-        bool directHit = localRect.containsPoint(localPos) || this->buttonRect(*it).containsPoint(worldPos);
-        if (directHit && !hidden) {
-            return &(*it);
+        bool directHit = localRect.containsPoint(localPos) || this->buttonRect(btn).containsPoint(worldPos);
+
+        // Determine selection layer (1 for label, 0 for button, -1 for background)
+        int layer = 0;
+        if (isShape) {
+            layer = -1;
+        } else if (typeinfo_cast<cocos2d::CCLabelBMFont*>(btn.target.node.data()) || typeinfo_cast<cocos2d::CCLabelTTF*>(btn.target.node.data())) {
+            layer = 1;
+        } else {
+            std::string lowerKey = btn.target.key;
+            std::transform(lowerKey.begin(), lowerKey.end(), lowerKey.begin(), ::tolower);
+            std::string lowerLabel = btn.target.label;
+            std::transform(lowerLabel.begin(), lowerLabel.end(), lowerLabel.begin(), ::tolower);
+
+            if (lowerKey.find("label") != std::string::npos ||
+                lowerKey.find("lbl") != std::string::npos ||
+                lowerKey.find("text") != std::string::npos ||
+                lowerKey.find("txt") != std::string::npos ||
+                lowerKey.find("title") != std::string::npos ||
+                lowerKey.find("desc") != std::string::npos ||
+                lowerKey.find("name") != std::string::npos ||
+                lowerKey.find("tit") != std::string::npos ||
+                lowerLabel.find("label") != std::string::npos ||
+                lowerLabel.find("text") != std::string::npos ||
+                lowerLabel.find("title") != std::string::npos) {
+                layer = 1;
+            } else if (lowerKey.find("bg") != std::string::npos ||
+                       lowerKey.find("background") != std::string::npos ||
+                       lowerKey.find("back") != std::string::npos ||
+                       lowerKey.find("card") != std::string::npos ||
+                       lowerKey.find("fondo") != std::string::npos ||
+                       lowerKey.find("overlay") != std::string::npos ||
+                       lowerKey.find("logo") != std::string::npos ||
+                       lowerKey.find("banner") != std::string::npos ||
+                       lowerKey.find("art") != std::string::npos ||
+                       lowerKey.find("decor") != std::string::npos ||
+                       lowerKey.find("frame") != std::string::npos ||
+                       lowerKey.find("panel") != std::string::npos ||
+                       lowerKey.find("shadow") != std::string::npos ||
+                       lowerKey.find("shape") != std::string::npos ||
+                       lowerKey.find("border") != std::string::npos ||
+                       lowerKey.find("rect") != std::string::npos ||
+                       lowerKey.find("circle") != std::string::npos ||
+                       lowerKey.find("container") != std::string::npos ||
+                       lowerKey.find("box") != std::string::npos) {
+                layer = -1;
+            } else {
+                auto size = btn.target.node->getContentSize();
+                if (size.width > 180.f && size.height > 120.f) {
+                    layer = -1;
+                }
+            }
         }
 
-        if (directHit && hidden && !hiddenHit) {
-            hiddenHit = &(*it);
-            continue;
-        }
-
-        if (hidden) {
-            continue;
-        }
-
-        auto worldCenter = worldPosition(it->target.node);
-        auto dx = worldPos.x - worldCenter.x;
-        auto dy = worldPos.y - worldCenter.y;
-        auto distSq = dx * dx + dy * dy;
-        auto hitRadius = std::max({ 90.f, kMinButtonHitSize, x1 - x0, y1 - y0 }) * 0.75f;
-        if (distSq <= hitRadius * hitRadius && distSq < bestDistSq) {
-            bestDistSq = distSq;
-            fallback = &(*it);
+        if (directHit) {
+            bool isBetter = false;
+            if (!bestDirect) {
+                isBetter = true;
+            } else if (hidden != bestDirectHidden) {
+                isBetter = !hidden;
+            } else if (layer > bestDirectLayer) {
+                isBetter = true;
+            } else if (layer == bestDirectLayer) {
+                int curZ = btn.target.node->getZOrder();
+                int bestZ = bestDirect->target.node->getZOrder();
+                if (curZ > bestZ) {
+                    isBetter = true;
+                } else if (curZ == bestZ) {
+                    auto curBox = btn.target.node->boundingBox();
+                    auto bestBox = bestDirect->target.node->boundingBox();
+                    float curArea = curBox.size.width * curBox.size.height;
+                    float bestArea = bestBox.size.width * bestBox.size.height;
+                    if (curArea < bestArea) {
+                        isBetter = true;
+                    }
+                }
+            }
+            if (isBetter) {
+                bestDirect = &btn;
+                bestDirectLayer = layer;
+                bestDirectHidden = hidden;
+            }
+        } else {
+            auto worldCenter = worldPosition(btn.target.node);
+            auto dx = worldPos.x - worldCenter.x;
+            auto dy = worldPos.y - worldCenter.y;
+            auto distSq = dx * dx + dy * dy;
+            auto hitRadius = std::max({ 90.f, kMinButtonHitSize, x1 - x0, y1 - y0 }) * 0.75f;
+            if (distSq <= hitRadius * hitRadius) {
+                bool isBetter = false;
+                if (!bestProx) {
+                    isBetter = true;
+                } else if (hidden != bestProxHidden) {
+                    isBetter = !hidden;
+                } else if (layer > bestProxLayer) {
+                    isBetter = true;
+                } else if (layer == bestProxLayer) {
+                    if (distSq < bestProxDistSq) {
+                        isBetter = true;
+                    }
+                }
+                if (isBetter) {
+                    bestProx = &btn;
+                    bestProxLayer = layer;
+                    bestProxHidden = hidden;
+                    bestProxDistSq = distSq;
+                }
+            }
         }
     }
 
-    if (hiddenHit) {
-        return hiddenHit;
+    if (bestDirect) {
+        return bestDirect;
     }
-
-    return fallback;
+    return bestProx;
 }
 
 bool MainMenuLayoutEditor::isTouchOnToolbar(CCPoint worldPos) const {
@@ -2287,8 +2485,346 @@ void MainMenuLayoutEditor::keyBackClicked() {
     this->cancelAndClose();
 }
 
-void MainMenuLayoutEditor::update(float) {
-    if (!this->getTargetLayer()) {
+void MainMenuLayoutEditor::keyDown(cocos2d::enumKeyCodes key, double p1) {
+    using cocos2d::enumKeyCodes;
+
+    auto* kd = cocos2d::CCKeyboardDispatcher::get();
+    if (!kd) return;
+
+    const bool isShift = kd->getShiftKeyPressed();
+    const bool isCtrl = kd->getControlKeyPressed();
+    const bool isAlt = kd->getAltKeyPressed();
+
+    // 1. Esc: Cancel and close
+    if (key == enumKeyCodes::KEY_Escape) {
+        this->cancelAndClose();
+        return;
+    }
+
+    // 2. Ctrl + S: Save and close
+    if (isCtrl && key == enumKeyCodes::KEY_S) {
+        this->saveAndClose();
+        return;
+    }
+
+    // 3. Ctrl + Z: Undo
+    if (isCtrl && !isShift && key == enumKeyCodes::KEY_Z) {
+        if (this->canUndo()) {
+            this->undoHistory();
+            this->updateHighlights();
+            this->updateSelectionUI();
+            this->updateStatusText();
+        }
+        return;
+    }
+
+    // 4. Ctrl + Y / Ctrl + Shift + Z: Redo
+    if ((isCtrl && key == enumKeyCodes::KEY_Y) || (isCtrl && isShift && key == enumKeyCodes::KEY_Z)) {
+        if (this->canRedo()) {
+            this->redoHistory();
+            this->updateHighlights();
+            this->updateSelectionUI();
+            this->updateStatusText();
+        }
+        return;
+    }
+
+    // 4.5. Key L: Toggle lock background shapes
+    if (!isCtrl && !isAlt && !isShift && key == enumKeyCodes::KEY_L) {
+        this->onToggleLockShapes(nullptr);
+        return;
+    }
+
+    // Features requiring selection
+    if (m_selected && m_selected->target.node) {
+        // 5. Delete (Delete or Backspace)
+        if (key == enumKeyCodes::KEY_Delete || key == enumKeyCodes::KEY_Backspace) {
+            this->deleteSelection();
+            this->commitHistorySnapshot();
+            this->updateHighlights();
+            this->updateSelectionUI();
+            this->updateStatusText();
+            return;
+        }
+
+        // 6. Copy layout: Ctrl + C
+        if (isCtrl && key == enumKeyCodes::KEY_C) {
+            s_clipboard.isValid = false;
+            s_clipboard.hasButton = false;
+            s_clipboard.hasShape = false;
+
+            if (isShapeNode(m_selected->target.node)) {
+                if (auto* shape = this->shapeLayout(*m_selected)) {
+                    s_clipboard.shapeLayout = *shape;
+                    s_clipboard.hasShape = true;
+                    s_clipboard.isValid = true;
+                }
+            } else {
+                if (auto* layout = this->currentLayoutFor(*m_selected)) {
+                    s_clipboard.buttonLayout = *layout;
+                    s_clipboard.hasButton = true;
+                    s_clipboard.isValid = true;
+                }
+            }
+
+            if (s_clipboard.isValid) {
+                geode::Notification::create("Copied style and properties", geode::NotificationIcon::Success)->show();
+            }
+            return;
+        }
+
+        // 7. Paste layout: Ctrl + V (full) / Ctrl + Shift + V (style only)
+        if (isCtrl && key == enumKeyCodes::KEY_V) {
+            if (!s_clipboard.isValid) {
+                geode::Notification::create("Clipboard is empty", geode::NotificationIcon::Warning)->show();
+                return;
+            }
+
+            const bool pasteStyleOnly = isShift;
+            bool didPaste = false;
+
+            for (auto* state : this->selectionStates()) {
+                if (!state || !state->target.node || !state->target.node->getParent()) continue;
+
+                if (isShapeNode(state->target.node)) {
+                    if (s_clipboard.hasShape) {
+                        if (auto* shape = this->shapeLayout(*state)) {
+                            auto savedPos = shape->position;
+                            auto savedId = shape->id;
+                            auto savedLink = shape->linkGroup;
+
+                            *shape = s_clipboard.shapeLayout;
+
+                            if (pasteStyleOnly) {
+                                shape->position = savedPos;
+                            }
+                            shape->id = savedId;
+                            shape->linkGroup = savedLink;
+
+                            MainMenuLayoutManager::applyShapeLayout(state->target.node, *shape);
+                            didPaste = true;
+                        }
+                    } else if (s_clipboard.hasButton) {
+                        // Paste button style onto shape where applicable (color, opacity, scale, hidden)
+                        if (auto* shape = this->shapeLayout(*state)) {
+                            shape->scale = s_clipboard.buttonLayout.scale;
+                            shape->scaleX = s_clipboard.buttonLayout.scaleX;
+                            shape->scaleY = s_clipboard.buttonLayout.scaleY;
+                            shape->opacity = s_clipboard.buttonLayout.opacity;
+                            shape->hidden = s_clipboard.buttonLayout.hidden;
+                            shape->layer = s_clipboard.buttonLayout.layer;
+                            if (s_clipboard.buttonLayout.hasColor) {
+                                shape->color = s_clipboard.buttonLayout.color;
+                            }
+                            if (!pasteStyleOnly) {
+                                shape->position = s_clipboard.buttonLayout.position;
+                            }
+                            MainMenuLayoutManager::applyShapeLayout(state->target.node, *shape);
+                            didPaste = true;
+                        }
+                    }
+                } else {
+                    if (s_clipboard.hasButton) {
+                        if (auto* layout = this->currentLayoutFor(*state)) {
+                            auto savedPos = layout->position;
+                            auto savedLink = layout->linkGroup;
+
+                            *layout = s_clipboard.buttonLayout;
+
+                            if (pasteStyleOnly) {
+                                layout->position = savedPos;
+                            }
+                            layout->linkGroup = savedLink;
+
+                            MainMenuLayoutManager::applyLayout(state->target, *layout);
+                            didPaste = true;
+                        }
+                    } else if (s_clipboard.hasShape) {
+                        // Paste shape style onto button where applicable (color, opacity, scale, hidden)
+                        if (auto* layout = this->currentLayoutFor(*state)) {
+                            layout->scale = s_clipboard.shapeLayout.scale;
+                            layout->scaleX = s_clipboard.shapeLayout.scaleX;
+                            layout->scaleY = s_clipboard.shapeLayout.scaleY;
+                            layout->opacity = s_clipboard.shapeLayout.opacity;
+                            layout->hidden = s_clipboard.shapeLayout.hidden;
+                            layout->layer = s_clipboard.shapeLayout.layer;
+                            layout->hasColor = true;
+                            layout->color = s_clipboard.shapeLayout.color;
+                            if (!pasteStyleOnly) {
+                                layout->position = s_clipboard.shapeLayout.position;
+                            }
+                            MainMenuLayoutManager::applyLayout(state->target, *layout);
+                            didPaste = true;
+                        }
+                    }
+                }
+            }
+
+            if (didPaste) {
+                this->commitHistorySnapshot();
+                this->updateHighlights();
+                this->updateSelectionUI();
+                this->updateStatusText();
+                geode::Notification::create(pasteStyleOnly ? "Pasted style" : "Pasted full properties", geode::NotificationIcon::Success)->show();
+            }
+            return;
+        }
+
+        // 8. Alignments (H / V / C)
+        if (!isCtrl && !isAlt && !isShift) {
+            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            bool aligned = false;
+
+            if (key == enumKeyCodes::KEY_H || key == enumKeyCodes::KEY_C || key == enumKeyCodes::KEY_V) {
+                for (auto* state : this->selectionStates()) {
+                    if (!state || !state->target.node || !state->target.node->getParent()) continue;
+
+                    auto* parent = state->target.node->getParent();
+                    // Convert screen center to parent space
+                    auto screenCenter = CCPoint{ winSize.width * 0.5f, winSize.height * 0.5f };
+                    auto parentCenter = parent->convertToNodeSpace(screenCenter);
+
+                    CCPoint newPos = state->target.node->getPosition();
+
+                    if (key == enumKeyCodes::KEY_H || key == enumKeyCodes::KEY_C) {
+                        newPos.x = parentCenter.x;
+                    }
+                    if (key == enumKeyCodes::KEY_V || key == enumKeyCodes::KEY_C) {
+                        newPos.y = parentCenter.y;
+                    }
+
+                    if (isShapeNode(state->target.node)) {
+                        state->target.node->setPosition(newPos);
+                        if (auto* shape = this->shapeLayout(*state)) {
+                            shape->position = newPos;
+                        }
+                    } else if (auto* layout = this->currentLayoutFor(*state)) {
+                        layout->position = newPos;
+                        MainMenuLayoutManager::applyLayout(state->target, *layout);
+                    }
+                    aligned = true;
+                }
+
+                if (aligned) {
+                    this->commitHistorySnapshot();
+                    this->updateHighlights();
+                    this->updateSelectionUI();
+                    this->updateStatusText();
+                    geode::Notification::create("Aligned selection", geode::NotificationIcon::Success)->show();
+                }
+                return;
+            }
+        }
+
+        // 9. Scaling and Opacity (+ / - keys)
+        // Check OEM Plus (= key on US keyboard) or KEY_Equal, KEY_Add, Subtract, Numpad, OEM Minus
+        const bool isPlus = (key == enumKeyCodes::KEY_Add || 
+                             key == enumKeyCodes::KEY_Equal || 
+                             static_cast<int>(key) == 0xBB); // VK_OEM_PLUS on Windows
+        const bool isMinus = (key == enumKeyCodes::KEY_Subtract || 
+                              static_cast<int>(key) == 189 || // Windows dash/minus key
+                              static_cast<int>(key) == 0xBD); // VK_OEM_MINUS on Windows
+
+        if (isPlus || isMinus) {
+            const float factor = isPlus ? 1.05f : (1.f / 1.05f);
+            const float opacityDelta = isPlus ? 0.1f : -0.1f;
+
+            if (isShift) {
+                // Adjust opacity
+                this->applyOpacityDelta(opacityDelta);
+            } else {
+                // Adjust scale
+                this->applyScaleFactor(factor);
+            }
+
+            m_nudgePendingCommit = true;
+            m_nudgeCommitTimer = 0.f;
+            this->updateHighlights();
+            this->updateSelectionUI();
+            this->updateStatusText();
+            return;
+        }
+
+        // 10. Arrow Key Nudging
+        const bool isArrowLeft = (key == enumKeyCodes::KEY_Left || key == enumKeyCodes::KEY_ArrowLeft);
+        const bool isArrowRight = (key == enumKeyCodes::KEY_Right || key == enumKeyCodes::KEY_ArrowRight);
+        const bool isArrowUp = (key == enumKeyCodes::KEY_Up || key == enumKeyCodes::KEY_ArrowUp);
+        const bool isArrowDown = (key == enumKeyCodes::KEY_Down || key == enumKeyCodes::KEY_ArrowDown);
+
+        if (isArrowLeft || isArrowRight || isArrowUp || isArrowDown) {
+            float step = 1.0f;
+            if (isShift) {
+                step = 10.0f;
+            } else if (isCtrl) {
+                const auto gridSizeSetting = Mod::get()->getSettingValue<int64_t>("main-menu-layout-grid-size");
+                step = std::max(2.f, static_cast<float>(gridSizeSetting));
+            }
+
+            float dx = 0.f;
+            float dy = 0.f;
+
+            if (isArrowLeft) dx = -step;
+            if (isArrowRight) dx = step;
+            if (isArrowUp) dy = step;
+            if (isArrowDown) dy = -step;
+
+            for (auto* state : this->selectionStates()) {
+                if (!state || !state->target.node || !state->target.node->getParent()) continue;
+
+                auto* parent = state->target.node->getParent();
+                auto currentPos = state->target.node->getPosition();
+                auto worldPos = parent->convertToWorldSpace(currentPos);
+                worldPos.x += dx;
+                worldPos.y += dy;
+                auto targetLocal = parent->convertToNodeSpace(worldPos);
+
+                if (isShapeNode(state->target.node)) {
+                    state->target.node->setPosition(targetLocal);
+                    if (auto* shape = this->shapeLayout(*state)) {
+                        shape->position = targetLocal;
+                    }
+                } else if (auto* layout = this->currentLayoutFor(*state)) {
+                    layout->position = targetLocal;
+                    MainMenuLayoutManager::applyLayout(state->target, *layout);
+                }
+            }
+
+            m_nudgePendingCommit = true;
+            m_nudgeCommitTimer = 0.f;
+            this->updateHighlights();
+            this->updateSelectionUI();
+            this->updateStatusText();
+            return;
+        }
+    }
+}
+
+void MainMenuLayoutEditor::update(float dt) {
+    if (m_nudgePendingCommit) {
+        m_nudgeCommitTimer += dt;
+        if (m_nudgeCommitTimer >= 0.4f) {
+            this->commitHistorySnapshot();
+            m_nudgePendingCommit = false;
+        }
+    }
+
+    if (!this->getTargetRoot()) {
+        this->removeFromParent();
+        return;
+    }
+
+    // Si la escena cambio (por ejemplo, el jugador entro a un nivel con el editor
+    // abierto), el editor puede seguir recibiendo updates desde el scheduler
+    // global aunque sus botones pertenezcan a una escena ya liberada. Cerramos
+    // sin guardar para evitar use-after-free en boundingBox/convertToWorldSpace.
+    auto* runningScene = CCDirector::sharedDirector()->getRunningScene();
+    bool attachedToRunningScene = false;
+    if (runningScene) {
+        for (CCNode* p = this->getParent(); p; p = p->getParent()) {
+            if (p == runningScene) { attachedToRunningScene = true; break; }
+        }
+    }
+    if (!attachedToRunningScene) {
         this->removeFromParent();
         return;
     }
@@ -2407,16 +2943,17 @@ void MainMenuLayoutEditor::openContextEditor(ButtonState& state) {
     auto* layout = this->currentLayoutFor(state);
     if (!layout) return;
 
-    bool allowFont = typeinfo_cast<CCLabelBMFont*>(state.target.node) != nullptr;
-    bool allowColor = layout->hasColor || allowFont || typeinfo_cast<CCMenuItemSprite*>(state.target.node) != nullptr;
+    bool allowFont = typeinfo_cast<CCLabelBMFont*>(state.target.node.data()) != nullptr;
+    bool allowColor = layout->hasColor || allowFont || typeinfo_cast<CCMenuItemSprite*>(state.target.node.data()) != nullptr;
 
     WeakRef<MainMenuLayoutEditor> self = this;
-    auto* popup = MainMenuContextEditPopup::create(state.target.label, *layout, allowColor, allowFont, [self, key = state.target.key, node = state.target.node](MenuButtonLayout const& newLayout) {
+    EditableMenuButton targetCopy = state.target;
+    auto* popup = MainMenuContextEditPopup::create(state.target.label, *layout, allowColor, allowFont, [self, key = state.target.key, targetCopy](MenuButtonLayout const& newLayout) {
         auto ref = self.lock();
         auto* editor = static_cast<MainMenuLayoutEditor*>(ref.data());
-        if (!editor || !editor->getParent() || !node) return;
+        if (!editor || !editor->getParent() || !targetCopy.node) return;
         editor->m_liveLayouts[key] = newLayout;
-        MainMenuLayoutManager::applyLayout(node, newLayout);
+        MainMenuLayoutManager::applyLayout(targetCopy, newLayout);
         editor->syncStateFromNodes();
         editor->commitHistorySnapshot();
         editor->updateHighlights();
@@ -2484,9 +3021,66 @@ void MainMenuLayoutEditor::onToggleResizeMode(CCObject*) {
     this->refreshResizeModeButton();
 }
 
+void MainMenuLayoutEditor::onToggleLockShapes(CCObject*) {
+    m_lockShapes = !m_lockShapes;
+
+    if (m_selected && m_selected->target.node && isShapeNode(m_selected->target.node)) {
+        this->setSelected(nullptr);
+        this->updateSelectionUI();
+        this->updateStatusText();
+        this->hideGuides();
+    }
+
+    if (m_lockShapesBtn) {
+        auto* container = m_lockShapesBtn->getNormalImage();
+        if (container) {
+            auto* cardBg = typeinfo_cast<CCRGBAProtocol*>(container->getChildByTag(98));
+            if (cardBg) {
+                if (m_lockShapes) {
+                    cardBg->setColor(cocos2d::ccColor3B{255, 90, 90});
+                    cardBg->setOpacity(180);
+                } else {
+                    cardBg->setColor(cocos2d::ccColor3B{0, 0, 0});
+                    cardBg->setOpacity(132);
+                }
+            }
+
+            auto* icon = typeinfo_cast<CCSprite*>(container->getChildByTag(99));
+            if (icon) {
+                const char* frameName = m_lockShapes ? "GJ_lock_001.png" : "GJ_lock_open_001.png";
+                auto* frame = CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(frameName);
+                if (frame) {
+                    icon->setDisplayFrame(frame);
+                    scaleSpriteToFit(icon, 18.f, 18.f);
+                }
+            }
+
+            auto* label = typeinfo_cast<CCLabelBMFont*>(container->getChildByTag(100));
+            if (label) {
+                std::string caption = Localization::get().getString(
+                    m_lockShapes ? "menu_layout.unlock_shapes" : "menu_layout.lock_shapes"
+                );
+                label->setString(caption.c_str());
+                float scale = 0.26f;
+                if (caption.size() >= 8) {
+                    scale = 0.18f;
+                } else if (caption.size() >= 6) {
+                    scale = 0.22f;
+                }
+                label->setScale(scale);
+            }
+        }
+    }
+
+    std::string notifyMsg = Localization::get().getString(
+        m_lockShapes ? "menu_layout.lock_shapes_hint" : "menu_layout.unlock_shapes_hint"
+    );
+    PaimonNotify::show(notifyMsg, m_lockShapes ? NotificationIcon::Warning : NotificationIcon::Success);
+}
+
 void MainMenuLayoutEditor::addShape(DrawShapeKind kind) {
-    auto* layer = this->getTargetLayer();
-    if (!layer) return;
+    auto* root = this->getTargetRoot();
+    if (!root) return;
 
     auto shapes = this->currentShapes();
 
@@ -2510,11 +3104,11 @@ void MainMenuLayoutEditor::addShape(DrawShapeKind kind) {
 
     shapes.push_back(shape);
     m_shapeLayouts = shapes;
-    MainMenuLayoutManager::get().syncShapes(layer, shapes);
+    MainMenuLayoutManager::get().syncShapes(root, shapes);
     this->collectButtons();
     this->commitHistorySnapshot();
 
-    auto targetKey = fmt::format("MenuLayer/shapes/{}", shape.id);
+    auto targetKey = fmt::format("{}/shapes/{}", MainMenuLayoutManager::rootClassName(root), shape.id);
     m_selected = nullptr;
     for (auto& button : m_buttons) {
         if (button.target.key == targetKey) {
@@ -2536,10 +3130,10 @@ void MainMenuLayoutEditor::addShape(DrawShapeKind kind) {
 DrawShapeLayout* MainMenuLayoutEditor::shapeLayout(ButtonState& state) {
     if (!isShapeNode(state.target.node)) return nullptr;
 
-    constexpr char const* prefix = "MenuLayer/shapes/";
+    auto prefix = fmt::format("{}/shapes/", MainMenuLayoutManager::rootClassName(m_layer.lock().data()));
     auto key = state.target.key;
     if (key.rfind(prefix, 0) != 0) return nullptr;
-    auto id = key.substr(std::char_traits<char>::length(prefix));
+    auto id = key.substr(prefix.size());
 
     for (auto& shape : m_shapeLayouts) {
         if (shape.id == id) return &shape;

@@ -1,4 +1,5 @@
 #include "LevelCellSettingsPopup.hpp"
+#include "../services/CompactListRefresh.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/InfoButton.hpp"
 
@@ -71,21 +72,22 @@ void LevelCellSettingsPopup::onExit() {
 
 void LevelCellSettingsPopup::loadSettings() {
     // Geode 5 getSettingValue is exception-safe — no try/catch needed
-    m_currentBgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type");
+    m_currentBgType = Mod::get()->getSavedValue<std::string>("levelcell-background-type", "thumbnail");
     m_currentThumbWidth = static_cast<float>(Mod::get()->getSettingValue<double>("level-thumb-width"));
-    m_currentBlur = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-background-blur"));
-    m_currentDarkness = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-background-darkness"));
-    m_showSeparator = Mod::get()->getSettingValue<bool>("levelcell-show-separator");
-    m_showViewButton = Mod::get()->getSettingValue<bool>("levelcell-show-view-button");
+    m_currentBlur = static_cast<float>(Mod::get()->getSavedValue<double>("levelcell-background-blur", 3.0));
+    m_currentDarkness = static_cast<float>(Mod::get()->getSavedValue<double>("levelcell-background-darkness", 0.2));
+    m_showSeparator = Mod::get()->getSavedValue<bool>("levelcell-show-separator", true);
+    m_showViewButton = Mod::get()->getSavedValue<bool>("levelcell-show-view-button", true);
     m_compactMode = Mod::get()->getSettingValue<bool>("compact-list-mode");
-    m_transparentMode = Mod::get()->getSettingValue<bool>("transparent-list-mode");
+    m_compactShowQuickToggle = Mod::get()->getSavedValue<bool>("compact-list-show-toggle", true);
+    m_transparentMode = Mod::get()->getSavedValue<bool>("transparent-list-mode", false);
     m_hoverEffects = Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
-    m_currentAnimType = Mod::get()->getSettingValue<std::string>("levelcell-anim-type");
-    m_currentAnimSpeed = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-anim-speed"));
-    m_currentAnimEffect = Mod::get()->getSettingValue<std::string>("levelcell-anim-effect");
-    m_effectOnGradient = Mod::get()->getSettingValue<bool>("levelcell-effect-on-gradient");
-    m_mythicParticles = Mod::get()->getSettingValue<bool>("levelcell-mythic-particles");
-    m_animatedGradient = Mod::get()->getSettingValue<bool>("levelcell-animated-gradient");
+    m_currentAnimType = Mod::get()->getSavedValue<std::string>("levelcell-anim-type", "zoom-slide");
+    m_currentAnimSpeed = static_cast<float>(Mod::get()->getSavedValue<double>("levelcell-anim-speed", 1.0));
+    m_currentAnimEffect = Mod::get()->getSavedValue<std::string>("levelcell-anim-effect", "none");
+    m_effectOnGradient = Mod::get()->getSavedValue<bool>("levelcell-effect-on-gradient", false);
+    m_mythicParticles = Mod::get()->getSavedValue<bool>("levelcell-mythic-particles", true);
+    m_animatedGradient = Mod::get()->getSavedValue<bool>("levelcell-animated-gradient", true);
 
     // indices
     for (int i = 0; i < (int)m_bgTypes.size(); i++) {
@@ -100,21 +102,22 @@ void LevelCellSettingsPopup::loadSettings() {
 }
 
 void LevelCellSettingsPopup::saveSettings() {
-    Mod::get()->setSettingValue<std::string>("levelcell-background-type", m_currentBgType);
+    Mod::get()->setSavedValue<std::string>("levelcell-background-type", m_currentBgType);
     Mod::get()->setSettingValue<float>("level-thumb-width", m_currentThumbWidth);
-    Mod::get()->setSettingValue<float>("levelcell-background-blur", m_currentBlur);
-    Mod::get()->setSettingValue<float>("levelcell-background-darkness", m_currentDarkness);
-    Mod::get()->setSettingValue<bool>("levelcell-show-separator", m_showSeparator);
-    Mod::get()->setSettingValue<bool>("levelcell-show-view-button", m_showViewButton);
+    Mod::get()->setSavedValue<float>("levelcell-background-blur", m_currentBlur);
+    Mod::get()->setSavedValue<float>("levelcell-background-darkness", m_currentDarkness);
+    Mod::get()->setSavedValue<bool>("levelcell-show-separator", m_showSeparator);
+    Mod::get()->setSavedValue<bool>("levelcell-show-view-button", m_showViewButton);
     Mod::get()->setSettingValue<bool>("compact-list-mode", m_compactMode);
-    Mod::get()->setSettingValue<bool>("transparent-list-mode", m_transparentMode);
+    Mod::get()->setSavedValue<bool>("compact-list-show-toggle", m_compactShowQuickToggle);
+    Mod::get()->setSavedValue<bool>("transparent-list-mode", m_transparentMode);
     Mod::get()->setSettingValue<bool>("levelcell-hover-effects", m_hoverEffects);
-    Mod::get()->setSettingValue<std::string>("levelcell-anim-type", m_currentAnimType);
-    Mod::get()->setSettingValue<float>("levelcell-anim-speed", m_currentAnimSpeed);
-    Mod::get()->setSettingValue<std::string>("levelcell-anim-effect", m_currentAnimEffect);
-    Mod::get()->setSettingValue<bool>("levelcell-effect-on-gradient", m_effectOnGradient);
-    Mod::get()->setSettingValue<bool>("levelcell-mythic-particles", m_mythicParticles);
-    Mod::get()->setSettingValue<bool>("levelcell-animated-gradient", m_animatedGradient);
+    Mod::get()->setSavedValue<std::string>("levelcell-anim-type", m_currentAnimType);
+    Mod::get()->setSavedValue<float>("levelcell-anim-speed", m_currentAnimSpeed);
+    Mod::get()->setSavedValue<std::string>("levelcell-anim-effect", m_currentAnimEffect);
+    Mod::get()->setSavedValue<bool>("levelcell-effect-on-gradient", m_effectOnGradient);
+    Mod::get()->setSavedValue<bool>("levelcell-mythic-particles", m_mythicParticles);
+    Mod::get()->setSavedValue<bool>("levelcell-animated-gradient", m_animatedGradient);
 
     if (m_onSettingsChanged) m_onSettingsChanged();
 
@@ -257,6 +260,7 @@ bool LevelCellSettingsPopup::init() {
         }
 
         toggle = CCMenuItemToggler::createWithStandardSprites(this, callback, 0.35f);
+        toggle->setSizeMult(0.35f);
         toggle->setPosition({cx + 90.f, y});
         toggle->toggle(value);
         navMenu->addChild(toggle);
@@ -355,6 +359,11 @@ bool LevelCellSettingsPopup::init() {
     addToggle("Compact Mode (Lists)", m_compactToggle, m_compactMode,
         menu_selector(LevelCellSettingsPopup::onCompactToggled),
         "Makes level cells in <cy>list views</c> shorter/more compact.\nFits more levels on screen at once.\nInspired by <cy>CompactLists</c> mod.");
+    y -= 20.f;
+
+    addToggle("Show Compact Toggle", m_compactShowToggle, m_compactShowQuickToggle,
+        menu_selector(LevelCellSettingsPopup::onCompactShowToggleToggled),
+        "Shows a quick button in the normal level browser to enable or disable compact lists without opening settings.");
     y -= 20.f;
 
     addToggle("Transparent Lists", m_transparentToggle, m_transparentMode,
@@ -545,15 +554,18 @@ void LevelCellSettingsPopup::onViewButtonToggled(CCObject*) {
 void LevelCellSettingsPopup::onCompactToggled(CCObject*) {
     m_compactMode = !m_compactToggle->isToggled();
     saveSettings();
-    // List relayout is handled by LevelCell::update() detecting the settings
-    // version change and calling setupList() on the parent BoomListView.
-    // Calling reloadAll()/reloadData() from the popup crashes because it
-    // destroys cells while the toggle's touch is still being processed.
+    paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
+}
+
+void LevelCellSettingsPopup::onCompactShowToggleToggled(CCObject*) {
+    m_compactShowQuickToggle = !m_compactShowToggle->isToggled();
+    saveSettings();
 }
 
 void LevelCellSettingsPopup::onTransparentToggled(CCObject*) {
     m_transparentMode = !m_transparentToggle->isToggled();
     saveSettings();
+    paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
 }
 
 void LevelCellSettingsPopup::onHoverToggled(CCObject*) {
@@ -629,11 +641,6 @@ LevelCellSettingsPopup* LevelCellSettingsPopup::create() {
     CC_SAFE_DELETE(ret);
     return nullptr;
 }
-
-
-
-
-
 
 
 

@@ -44,6 +44,9 @@ public:
     void remove(int levelID, bool isGif);
     void removeUrl(std::string const& url);
     void clear();
+    // Borra todas las entradas excepto las de main levels (1-22).
+    // Usado al limpiar cache pero preservando los niveles oficiales.
+    void clearPreservingMainLevels();
 
     // touch lastAccess sin marcar dirty para flush completo
     void touchAccess(int levelID, bool isGif);

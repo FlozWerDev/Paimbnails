@@ -1,4 +1,5 @@
 #include "LeaderboardHistoryLayer.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -337,26 +338,24 @@ void LeaderboardHistoryLayer::loadHistory(std::string type) {
                 auto data = dataRes.unwrap();
                 if (data["success"].asBool().unwrapOr(false)) {
                     auto items = data["items"];
-                    if (items.isArray()) {
-                        for (auto& item : items.asArray().unwrap()) {
-                            HistoryEntry entry;
-                            entry.levelID = item["levelID"].asInt().unwrapOr(0);
-                            entry.setAt = (long long)item["setAt"].asDouble().unwrapOr(0);
-                            entry.setBy = item["setBy"].asString().unwrapOr("");
-                            
-                            if (entry.levelID > 0) {
-                                auto saved = GameLevelManager::get()->getSavedLevel(entry.levelID);
-                                if (saved) {
-                                    entry.levelName = saved->m_levelName;
-                                    entry.creatorName = saved->m_creatorName;
-                                } else {
-                                    entry.levelName = fmt::format("Level {}", entry.levelID);
-                                    entry.creatorName = "";
-                                }
-                                layer->m_entries.push_back(entry);
+                    paimon::json::forEachInArray(items, [&](matjson::Value const& item) {
+                        HistoryEntry entry;
+                        entry.levelID = item["levelID"].asInt().unwrapOr(0);
+                        entry.setAt = (long long)item["setAt"].asDouble().unwrapOr(0);
+                        entry.setBy = item["setBy"].asString().unwrapOr("");
+                        
+                        if (entry.levelID > 0) {
+                            auto saved = GameLevelManager::get()->getSavedLevel(entry.levelID);
+                            if (saved) {
+                                entry.levelName = saved->m_levelName;
+                                entry.creatorName = saved->m_creatorName;
+                            } else {
+                                entry.levelName = fmt::format("Level {}", entry.levelID);
+                                entry.creatorName = "";
                             }
+                            layer->m_entries.push_back(entry);
                         }
-                    }
+                    });
                     // total del servidor para paginacion
                     int total = data["total"].asInt().unwrapOr(0);
                     if (total > 0) {

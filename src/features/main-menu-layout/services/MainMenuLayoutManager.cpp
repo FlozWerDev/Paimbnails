@@ -4,6 +4,9 @@
 
 #include <Geode/cocos/menu_nodes/CCMenuItem.h>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
+#include <Geode/cocos/sprite_nodes/CCSprite.h>
+#include <Geode/cocos/sprite_nodes/CCSpriteBatchNode.h>
+#include <Geode/cocos/label_nodes/CCLabelBMFont.h>
 #include <Geode/utils/file.hpp>
 
 #include <algorithm>
@@ -11,6 +14,10 @@
 #include <fstream>
 #include <functional>
 #include <unordered_set>
+
+#ifndef _WIN32
+#include <cxxabi.h>
+#endif
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -24,9 +31,39 @@ namespace {
     constexpr char const* kShapeContainerID = "paimon-draw-shape-container";
     uint64_t s_shapeIDCounter = 0;
 
-    CCNode* shapeContainer(MenuLayer* layer, bool createIfMissing) {
-        if (!layer) return nullptr;
-        if (auto* existing = layer->getChildByID(kShapeContainerID)) {
+    std::string demangleTypeName(char const* name) {
+#ifdef _WIN32
+        std::string result(name);
+        if (result.rfind("class ", 0) == 0) result.erase(0, 6);
+        auto pos = result.find_last_of("::");
+        if (pos != std::string::npos && pos + 1 < result.size()) {
+            return result.substr(pos + 1);
+        }
+        return result;
+#else
+        int status = 0;
+        char* demangled = abi::__cxa_demangle(name, nullptr, nullptr, &status);
+        if (status == 0 && demangled) {
+            std::string result(demangled);
+            free(demangled);
+            auto pos = result.find_last_of("::");
+            if (pos != std::string::npos && pos + 1 < result.size()) {
+                return result.substr(pos + 1);
+            }
+            return result;
+        }
+        std::string result(name);
+        auto pos = result.find_last_of("::");
+        if (pos != std::string::npos && pos + 1 < result.size()) {
+            return result.substr(pos + 1);
+        }
+        return result;
+#endif
+    }
+
+    CCNode* shapeContainer(CCNode* root, bool createIfMissing) {
+        if (!root) return nullptr;
+        if (auto* existing = root->getChildByID(kShapeContainerID)) {
             return existing;
         }
         if (!createIfMissing) return nullptr;
@@ -36,7 +73,7 @@ namespace {
         container->setAnchorPoint({ 0.f, 0.f });
         container->setPosition({ 0.f, 0.f });
         container->setContentSize(CCDirector::sharedDirector()->getWinSize());
-        layer->addChild(container, 0);
+        root->addChild(container, 0);
         return container;
     }
 
@@ -135,13 +172,13 @@ namespace {
         return result;
     }
 
-    std::string buttonKey(CCMenuItem* item, MenuLayer* root) {
+    std::string buttonKey(CCMenuItem* item, CCNode* root) {
         std::vector<std::string> segments;
         for (CCNode* current = item; current && current != root; current = current->getParent()) {
             segments.push_back(nodeSegment(current));
         }
         std::reverse(segments.begin(), segments.end());
-        return fmt::format("MenuLayer/{}", joinPath(segments));
+        return fmt::format("{}/{}", MainMenuLayoutManager::rootClassName(root), joinPath(segments));
     }
 
     std::string buttonLabel(CCMenu* menu, CCNode* node, std::string const& key) {
@@ -167,24 +204,25 @@ namespace {
         return false;
     }
 
-    void addStandaloneNode(MenuLayer* root, std::vector<EditableMenuButton>& out, char const* id, char const* label) {
+    void addStandaloneNode(CCNode* root, std::vector<EditableMenuButton>& out, char const* id, char const* label) {
         if (!root) return;
 
         auto* node = root->getChildByIDRecursive(id);
         if (!node) return;
 
-        auto key = fmt::format("MenuLayer/labels/{}", sanitizeSegment(id));
+        auto key = fmt::format("{}/labels/{}", MainMenuLayoutManager::rootClassName(root), sanitizeSegment(id));
         if (containsKey(out, key)) return;
 
         out.push_back({
             nullptr,
             node,
+            {},
             key,
             label,
         });
     }
 
-    void collectButtonsRecursive(CCNode* node, MenuLayer* root, std::vector<EditableMenuButton>& out) {
+    void collectButtonsRecursive(CCNode* node, CCNode* root, std::vector<EditableMenuButton>& out) {
         if (!node) return;
 
         if (auto* menu = typeinfo_cast<CCMenu*>(node)) {
@@ -197,6 +235,7 @@ namespace {
                     out.push_back({
                         menu,
                         item,
+                        {},
                         key,
                         buttonLabel(menu, item, key),
                     });
@@ -207,6 +246,188 @@ namespace {
         if (auto* children = node->getChildren()) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 collectButtonsRecursive(child, root, out);
+            }
+        }
+    }
+
+    bool hasMenuItemAncestor(CCNode* node, CCNode* root) {
+        for (CCNode* p = node ? node->getParent() : nullptr; p && p != root; p = p->getParent()) {
+            if (typeinfo_cast<CCMenuItem*>(p)) return true;
+        }
+        return false;
+    }
+
+    bool shouldSkipDecorNode(CCNode* node) {
+        if (!node) return true;
+        auto id = std::string(node->getID());
+        // Fondos / overlays de Paimbnails que ocupan casi toda la pantalla
+        if (id.find("paimon-levelinfo-pixel-bg") != std::string::npos) return true;
+        if (id.find("paimon-levelinfo-pixel-overlay") != std::string::npos) return true;
+        if (id.find("paimon-levelinfo-extra-darkness") != std::string::npos) return true;
+        if (id == kShapeContainerID) return true;
+        return false;
+    }
+
+    std::string decorNodePathKey(CCNode* leaf, CCNode* root) {
+        std::vector<std::string> segments;
+        for (CCNode* current = leaf; current && current != root; current = current->getParent()) {
+            segments.push_back(nodeSegment(current));
+        }
+        std::reverse(segments.begin(), segments.end());
+        return fmt::format("{}/decor/{}", MainMenuLayoutManager::rootClassName(root), joinPath(segments));
+    }
+
+    std::string trimLabelText(std::string const& text, size_t maxLen) {
+        if (text.size() <= maxLen) return text;
+        return text.substr(0, maxLen) + "...";
+    }
+
+    void gatherDecorFonts(CCNode* node, CCNode* root, std::vector<CCLabelBMFont*>& outFonts) {
+        if (!node) return;
+
+        if (node != root && !shouldSkipDecorNode(node)) {
+            if (auto* label = typeinfo_cast<CCLabelBMFont*>(node)) {
+                if (label->isVisible() && !hasMenuItemAncestor(label, root)) {
+                    auto* txt = label->getString();
+                    if (txt && txt[0] != '\0') {
+                        outFonts.push_back(label);
+                    }
+                }
+            }
+        }
+
+        if (auto* children = node->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                gatherDecorFonts(child, root, outFonts);
+            }
+        }
+    }
+
+    /// Agrupa etiquetas BMFont vecinas por padre compartido (horizontal, misma línea).
+    void emitGroupedDecorLabels(CCNode* root, std::vector<EditableMenuButton>& out, int& decorCount) {
+        if (!root) return;
+
+        std::vector<CCLabelBMFont*> gathered;
+        gatherDecorFonts(root, root, gathered);
+        std::unordered_map<CCNode*, std::vector<CCLabelBMFont*>> byParent;
+        byParent.reserve(32);
+
+        for (auto* lbl : gathered) {
+            auto* parent = lbl->getParent();
+            if (!parent) continue;
+            byParent[parent].push_back(lbl);
+        }
+
+        constexpr float kGapPx = 48.f;
+        constexpr float kDyPx = 10.f;
+
+        for (auto& [parent, vec] : byParent) {
+            (void)parent;
+            std::sort(vec.begin(), vec.end(), [](CCLabelBMFont* a, CCLabelBMFont* b) {
+                return a->boundingBox().getMinX() < b->boundingBox().getMinX();
+            });
+
+            std::vector<std::vector<CCLabelBMFont*>> runs;
+            for (auto* cur : vec) {
+                if (runs.empty()) {
+                    runs.push_back({ cur });
+                    continue;
+                }
+
+                auto* prev = runs.back().back();
+                float gap = cur->boundingBox().getMinX() - prev->boundingBox().getMaxX();
+                float dy = std::fabs(cur->getPositionY() - prev->getPositionY());
+                if (gap <= kGapPx && dy <= kDyPx) {
+                    runs.back().push_back(cur);
+                } else {
+                    runs.push_back({ cur });
+                }
+            }
+
+            for (auto const& run : runs) {
+                if (decorCount >= 300 || run.empty()) continue;
+
+                CCLabelBMFont* anchor = run.front();
+
+                EditableMenuButton eb;
+                eb.menu = nullptr;
+                eb.node = anchor;
+                for (size_t i = 1; i < run.size(); ++i) {
+                    eb.labelGroupFollowers.push_back(run[i]);
+                }
+
+                std::string stitched;
+                for (auto* l : run) {
+                    auto* s = l->getString();
+                    if (s) stitched += std::string(s);
+                }
+                while (!stitched.empty() && stitched.front() == ' ') stitched.erase(stitched.begin());
+                while (!stitched.empty() && stitched.back() == ' ') stitched.pop_back();
+                eb.key = decorNodePathKey(anchor, root);
+                eb.label = fmt::format("Label: {}", trimLabelText(stitched.empty() ? "text" : stitched, 48));
+
+                if (containsKey(out, eb.key)) continue;
+
+                out.push_back(std::move(eb));
+                ++decorCount;
+            }
+        }
+    }
+
+    void collectDecorSpritesRecursive(CCNode* node, CCNode* root, std::vector<EditableMenuButton>& out, int& decorCount) {
+        if (!node || decorCount >= 300) return;
+
+        // Los CCLabelBMFont ya los maneja emitGroupedDecorLabels. Ademas heredan
+        // de CCSpriteBatchNode y contienen un CCSprite por glifo, asi que si
+        // recurrimos en sus hijos obtendriamos un entry (y por tanto un highlight)
+        // por cada letra de la palabra. Cortamos la recursion aqui.
+        if (typeinfo_cast<CCLabelBMFont*>(node)) {
+            return;
+        }
+
+        // CCSpriteBatchNode es un contenedor cuyos hijos son sprites batched
+        // (similar caso: cada glifo/particula es un CCSprite). No descendemos.
+        bool isBatchNode = typeinfo_cast<CCSpriteBatchNode*>(node) != nullptr;
+
+        if (node != root && !shouldSkipDecorNode(node)) {
+            if (auto* sprite = typeinfo_cast<CCSprite*>(node)) {
+                if (sprite->isVisible() && !hasMenuItemAncestor(sprite, root)) {
+                    auto sz = sprite->getContentSize();
+                    float w = std::abs(sz.width * sprite->getScaleX());
+                    float h = std::abs(sz.height * sprite->getScaleY());
+                    if (w >= 10.f && h >= 10.f && w <= 900.f && h <= 900.f) {
+                        auto key = decorNodePathKey(sprite, root);
+                        if (!containsKey(out, key)) {
+                            std::string slug;
+                            auto nodeId = std::string(sprite->getID());
+                            if (!nodeId.empty()) {
+                                slug = sanitizeSegment(nodeId);
+                            } else if (auto* fr = sprite->displayFrame()) {
+                                gd::string const& fn = fr->getFrameName();
+                                if (!fn.empty()) {
+                                    slug = sanitizeSegment(std::string(fn.c_str()));
+                                }
+                            }
+                            if (slug.empty()) slug = "icon";
+                            out.push_back({
+                                nullptr,
+                                sprite,
+                                {},
+                                key,
+                                fmt::format("Sprite: {}", trimLabelText(slug, 40)),
+                            });
+                            ++decorCount;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isBatchNode) return;
+
+        if (auto* children = node->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                collectDecorSpritesRecursive(child, root, out, decorCount);
             }
         }
     }
@@ -319,6 +540,7 @@ void MainMenuLayoutManager::load() {
     m_defaults.clear();
     m_custom.clear();
     m_shapes.clear();
+    m_labelFollowerOffsets.clear();
 
     auto raw = file::readString(this->configPath()).unwrapOr("");
     if (raw.empty()) {
@@ -360,6 +582,22 @@ void MainMenuLayoutManager::load() {
     }
 
     syncShapeIDCounter(m_shapes);
+
+    if (auto loff = root["labelFollowerOffsets"].asArray()) {
+        for (auto const& entry : loff.unwrap()) {
+            auto key = entry["key"].asString().unwrapOr("");
+            if (key.empty()) continue;
+            auto oaOpt = entry["offsets"].asArray();
+            if (!oaOpt) continue;
+            std::vector<CCPoint> pts;
+            for (auto const& pt : oaOpt.unwrap()) {
+                float ox = static_cast<float>(pt["x"].asDouble().unwrapOr(0.0));
+                float oy = static_cast<float>(pt["y"].asDouble().unwrapOr(0.0));
+                pts.emplace_back(ox, oy);
+            }
+            m_labelFollowerOffsets[key] = std::move(pts);
+        }
+    }
 }
 
 void MainMenuLayoutManager::save() {
@@ -386,6 +624,23 @@ void MainMenuLayoutManager::save() {
     }
     root["shapes"] = shapes;
 
+    matjson::Value loff = matjson::Value::array();
+    for (auto const& [key, offs] : m_labelFollowerOffsets) {
+        if (offs.empty()) continue;
+        matjson::Value entry = matjson::makeObject({});
+        entry["key"] = key;
+        matjson::Value arr = matjson::Value::array();
+        for (auto const& p : offs) {
+            matjson::Value xy = matjson::makeObject({});
+            xy["x"] = static_cast<double>(p.x);
+            xy["y"] = static_cast<double>(p.y);
+            arr.push(std::move(xy));
+        }
+        entry["offsets"] = std::move(arr);
+        loff.push(std::move(entry));
+    }
+    root["labelFollowerOffsets"] = loff;
+
     auto path = this->configPath();
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
@@ -400,21 +655,25 @@ void MainMenuLayoutManager::save() {
     file.write(text.data(), static_cast<std::streamsize>(text.size()));
 }
 
-std::vector<EditableMenuButton> MainMenuLayoutManager::collectButtons(MenuLayer* layer) const {
+std::vector<EditableMenuButton> MainMenuLayoutManager::collectButtons(CCNode* root) const {
     std::vector<EditableMenuButton> buttons;
-    if (!layer) return buttons;
+    if (!root) return buttons;
 
-    collectButtonsRecursive(layer, layer, buttons);
-    addStandaloneNode(layer, buttons, "main-title", "Geometry Dash Title");
-    addStandaloneNode(layer, buttons, "player-username", "Profile Username");
+    collectButtonsRecursive(root, root, buttons);
+    addStandaloneNode(root, buttons, "main-title", "Geometry Dash Title");
+    addStandaloneNode(root, buttons, "player-username", "Profile Username");
+    int decorCount = 0;
+    emitGroupedDecorLabels(root, buttons, decorCount);
+    collectDecorSpritesRecursive(root, root, buttons, decorCount);
     return buttons;
 }
 
-std::vector<EditableMenuButton> MainMenuLayoutManager::collectShapeNodes(MenuLayer* layer) const {
+std::vector<EditableMenuButton> MainMenuLayoutManager::collectShapeNodes(CCNode* root) const {
     std::vector<EditableMenuButton> out;
-    auto* container = shapeContainer(layer, false);
+    auto* container = shapeContainer(root, false);
     if (!container) return out;
 
+    auto prefix = fmt::format("{}/shapes/", rootClassName(root));
     if (auto* children = container->getChildren()) {
         for (auto* child : CCArrayExt<CCNode*>(children)) {
             if (!isDrawShapeNode(child)) continue;
@@ -422,7 +681,8 @@ std::vector<EditableMenuButton> MainMenuLayoutManager::collectShapeNodes(MenuLay
             out.push_back({
                 nullptr,
                 child,
-                fmt::format("MenuLayer/shapes/{}", shape.id),
+                {},
+                fmt::format("{}{}", prefix, shape.id),
                 fmt::format("Paimon Draw / {}", shape.id),
             });
         }
@@ -430,17 +690,49 @@ std::vector<EditableMenuButton> MainMenuLayoutManager::collectShapeNodes(MenuLay
     return out;
 }
 
-void MainMenuLayoutManager::captureDefaultsAndApply(MenuLayer* layer) {
+void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
     this->ensureLoaded();
-    if (!layer) return;
+    if (!root) return;
 
-    auto buttons = this->collectButtons(layer);
+    auto buttons = this->collectButtons(root);
     bool changed = false;
+
+    // El editor de layout solo opera sobre MenuLayer y PauseLayer; ambas
+    // tienen layouts estables entre sesiones, asi que no necesitamos el
+    // path de "scene dinamica" (antes usado para LevelInfoLayer).
 
     for (auto const& button : buttons) {
         if (!button.node) continue;
         if (m_defaults.find(button.key) != m_defaults.end()) continue;
         m_defaults[button.key] = this->readLayout(button.node);
+        if (!button.labelGroupFollowers.empty()) {
+            CCPoint anch = button.node->getPosition();
+            std::vector<CCPoint> offs;
+            offs.reserve(button.labelGroupFollowers.size());
+            for (auto& f : button.labelGroupFollowers) {
+                if (!f) continue;
+                offs.push_back(ccpSub(f->getPosition(), anch));
+            }
+            m_labelFollowerOffsets[button.key] = std::move(offs);
+        }
+        changed = true;
+    }
+
+    for (auto const& button : buttons) {
+        if (!button.node || button.labelGroupFollowers.empty()) continue;
+        auto itOff = m_labelFollowerOffsets.find(button.key);
+        if (itOff != m_labelFollowerOffsets.end() &&
+            itOff->second.size() == button.labelGroupFollowers.size()) {
+            continue;
+        }
+        CCPoint anch = button.node->getPosition();
+        std::vector<CCPoint> offs;
+        offs.reserve(button.labelGroupFollowers.size());
+        for (auto& f : button.labelGroupFollowers) {
+            if (!f) continue;
+            offs.push_back(ccpSub(f->getPosition(), anch));
+        }
+        m_labelFollowerOffsets[button.key] = std::move(offs);
         changed = true;
     }
 
@@ -448,32 +740,64 @@ void MainMenuLayoutManager::captureDefaultsAndApply(MenuLayer* layer) {
         this->save();
     }
 
+    // Recolecta los menus que contienen botones con layout custom para
+    // desactivar su AxisLayout automatico ANTES de aplicar posiciones.
+    // Si no se desactiva, cualquier llamada posterior a updateLayout()
+    // (por Geode internamente o por otro hook) resetea las posiciones
+    // custom y los botones aparecen "desordenados" al reiniciar.
+    std::unordered_set<CCMenu*> menusWithCustom;
+    for (auto const& button : buttons) {
+        if (!button.node) continue;
+        if (m_custom.find(button.key) == m_custom.end()) continue;
+        if (button.menu) {
+            menusWithCustom.insert(button.menu);
+        }
+    }
+    for (auto* menu : menusWithCustom) {
+        if (menu && menu->getLayout()) {
+            menu->setLayout(nullptr);
+        }
+    }
+
     for (auto const& button : buttons) {
         if (!button.node) continue;
 
         auto it = m_custom.find(button.key);
         if (it == m_custom.end()) continue;
-        this->applyLayout(button.node, it->second);
+
+        MenuButtonLayout effective = it->second;
+
+        MainMenuLayoutManager::applyLayout(button, effective);
     }
 
-    this->syncShapes(layer, m_shapes);
+    this->syncShapes(root, m_shapes);
 }
 
-void MainMenuLayoutManager::apply(MenuLayer* layer) {
-    this->captureDefaultsAndApply(layer);
+void MainMenuLayoutManager::apply(CCNode* root) {
+    this->captureDefaultsAndApply(root);
 }
 
-void MainMenuLayoutManager::applyDefaults(MenuLayer* layer) {
+void MainMenuLayoutManager::applyDefaults(CCNode* root) {
     this->ensureLoaded();
-    if (!layer) return;
+    if (!root) return;
 
-    auto buttons = this->collectButtons(layer);
+    auto buttons = this->collectButtons(root);
     bool changed = false;
 
     for (auto const& button : buttons) {
         if (!button.node) continue;
         if (m_defaults.find(button.key) != m_defaults.end()) continue;
         m_defaults[button.key] = this->readLayout(button.node);
+        if (!button.labelGroupFollowers.empty()) {
+            CCPoint anch = button.node->getPosition();
+            std::vector<CCPoint> offs;
+            offs.reserve(button.labelGroupFollowers.size());
+            for (auto& f : button.labelGroupFollowers) {
+                if (!f) continue;
+                offs.push_back(ccpSub(f->getPosition(), anch));
+            }
+            m_labelFollowerOffsets[button.key] = std::move(offs);
+        }
         changed = true;
     }
 
@@ -486,13 +810,13 @@ void MainMenuLayoutManager::applyDefaults(MenuLayer* layer) {
 
         auto it = m_defaults.find(button.key);
         if (it == m_defaults.end()) continue;
-        this->applyLayout(button.node, it->second);
+        MainMenuLayoutManager::applyLayout(button, it->second);
     }
 
-    this->syncShapes(layer, {});
+    this->syncShapes(root, {});
 }
 
-void MainMenuLayoutManager::applySnapshot(std::vector<EditableMenuButton> const& buttons, LayoutSnapshot const& snapshot, MenuLayer* layer) {
+void MainMenuLayoutManager::applySnapshot(std::vector<EditableMenuButton> const& buttons, LayoutSnapshot const& snapshot, CCNode* root) {
     this->ensureLoaded();
 
     for (auto const& button : buttons) {
@@ -500,19 +824,19 @@ void MainMenuLayoutManager::applySnapshot(std::vector<EditableMenuButton> const&
 
         auto it = snapshot.buttons.find(button.key);
         if (it != snapshot.buttons.end()) {
-            this->applyLayout(button.node, it->second);
+            MainMenuLayoutManager::applyLayout(button, it->second);
             continue;
         }
 
         if (auto def = this->getDefaultLayout(button.key)) {
-            this->applyLayout(button.node, *def);
+            MainMenuLayoutManager::applyLayout(button, *def);
         }
     }
 
-    this->syncShapes(layer, snapshot.shapes);
+    this->syncShapes(root, snapshot.shapes);
 }
 
-void MainMenuLayoutManager::commit(std::vector<EditableMenuButton> const& buttons, MenuLayer* layer) {
+void MainMenuLayoutManager::commit(std::vector<EditableMenuButton> const& buttons, CCNode* root) {
     this->ensureLoaded();
 
     bool changed = false;
@@ -528,7 +852,11 @@ void MainMenuLayoutManager::commit(std::vector<EditableMenuButton> const& button
             continue;
         }
 
-        if (approximatelyEqual(current, defaultIt->second)) {
+        // El editor solo se usa en escenas estables (MenuLayer y PauseLayer),
+        // asi que la posicion live se almacena tal cual.
+        MenuButtonLayout toStore = current;
+
+        if (approximatelyEqual(toStore, defaultIt->second)) {
             auto customIt = m_custom.find(button.key);
             if (customIt != m_custom.end()) {
                 m_custom.erase(customIt);
@@ -538,13 +866,13 @@ void MainMenuLayoutManager::commit(std::vector<EditableMenuButton> const& button
         }
 
         auto customIt = m_custom.find(button.key);
-        if (customIt == m_custom.end() || !approximatelyEqual(customIt->second, current)) {
-            m_custom[button.key] = current;
+        if (customIt == m_custom.end() || !approximatelyEqual(customIt->second, toStore)) {
+            m_custom[button.key] = toStore;
             changed = true;
         }
     }
 
-    auto capturedShapes = captureShapes(layer);
+    auto capturedShapes = captureShapes(root);
     if (capturedShapes.size() != m_shapes.size()) {
         m_shapes = std::move(capturedShapes);
         changed = true;
@@ -593,8 +921,11 @@ void MainMenuLayoutManager::setCustomFromSnapshot(LayoutSnapshot const& snapshot
 
     for (auto const& [key, layout] : snapshot.buttons) {
         auto def = this->getDefaultLayout(key);
-        if (!def || !approximatelyEqual(layout, *def)) {
-            m_custom[key] = layout;
+
+        MenuButtonLayout toStore = layout;
+
+        if (!def || !approximatelyEqual(toStore, *def)) {
+            m_custom[key] = toStore;
         }
     }
 
@@ -616,6 +947,12 @@ std::optional<MenuButtonLayout> MainMenuLayoutManager::getCustomLayout(std::stri
     return it->second;
 }
 
+std::optional<MenuButtonLayout> MainMenuLayoutManager::getSessionDefaultLayout(std::string const& key) const {
+    auto it = m_sessionDefaults.find(key);
+    if (it == m_sessionDefaults.end()) return std::nullopt;
+    return it->second;
+}
+
 LayoutSnapshot MainMenuLayoutManager::captureSnapshot(std::vector<EditableMenuButton> const& buttons) {
     LayoutSnapshot snapshot;
     for (auto const& button : buttons) {
@@ -625,9 +962,9 @@ LayoutSnapshot MainMenuLayoutManager::captureSnapshot(std::vector<EditableMenuBu
     return snapshot;
 }
 
-std::vector<DrawShapeLayout> MainMenuLayoutManager::captureShapes(MenuLayer* layer) {
+std::vector<DrawShapeLayout> MainMenuLayoutManager::captureShapes(CCNode* root) {
     std::vector<DrawShapeLayout> shapes;
-    auto* container = shapeContainer(layer, false);
+    auto* container = shapeContainer(root, false);
     if (!container) return shapes;
 
     if (auto* children = container->getChildren()) {
@@ -748,6 +1085,62 @@ void MainMenuLayoutManager::applyLayout(CCNode* node, MenuButtonLayout const& la
     }
 }
 
+void MainMenuLayoutManager::ensureLabelFollowerOffsets(EditableMenuButton const& eb) {
+    if (!eb.node || eb.labelGroupFollowers.empty()) return;
+    auto it = m_labelFollowerOffsets.find(eb.key);
+    if (it != m_labelFollowerOffsets.end() && it->second.size() == eb.labelGroupFollowers.size()) {
+        return;
+    }
+
+    CCPoint anch = eb.node->getPosition();
+    std::vector<CCPoint> offs(eb.labelGroupFollowers.size());
+    for (size_t i = 0; i < eb.labelGroupFollowers.size(); ++i) {
+        auto& f = eb.labelGroupFollowers[i];
+        if (f) offs[i] = ccpSub(f->getPosition(), anch);
+    }
+    m_labelFollowerOffsets[eb.key] = std::move(offs);
+}
+
+void MainMenuLayoutManager::syncLabelFollowerNodes(EditableMenuButton const& eb) {
+    if (!eb.node || eb.labelGroupFollowers.empty()) return;
+
+    ensureLabelFollowerOffsets(eb);
+    auto it = m_labelFollowerOffsets.find(eb.key);
+    if (it == m_labelFollowerOffsets.end() || it->second.size() != eb.labelGroupFollowers.size()) {
+        return;
+    }
+
+    auto* anchorParent = eb.node->getParent();
+    CCPoint anch = eb.node->getPosition();
+    GLubyte anchorOp = 255;
+    if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(eb.node.data())) {
+        anchorOp = rgba->getOpacity();
+    }
+    bool const show = eb.node->isVisible();
+
+    for (size_t i = 0; i < eb.labelGroupFollowers.size(); ++i) {
+        auto& fol = eb.labelGroupFollowers[i];
+        if (!fol || fol->getParent() != anchorParent) continue;
+        fol->setPosition(ccpAdd(anch, it->second[i]));
+        fol->setVisible(show);
+        if (auto* fr = typeinfo_cast<CCRGBAProtocol*>(fol.data())) {
+            fr->setOpacity(anchorOp);
+        }
+    }
+}
+
+void MainMenuLayoutManager::applyLayout(EditableMenuButton const& button, MenuButtonLayout const& layout) {
+    MainMenuLayoutManager::applyLayout(button.node, layout);
+    if (button.labelGroupFollowers.empty()) return;
+    MainMenuLayoutManager::get().syncLabelFollowerNodes(button);
+}
+
+void MainMenuLayoutManager::rebuildLabelFollowerOffsets(EditableMenuButton const& button) {
+    auto& mgr = MainMenuLayoutManager::get();
+    mgr.m_labelFollowerOffsets.erase(button.key);
+    mgr.ensureLabelFollowerOffsets(button);
+}
+
 bool MainMenuLayoutManager::isDrawShapeNode(CCNode* node) {
     auto id = std::string(node ? node->getID() : "");
     return node && id.rfind(kShapeNodePrefix, 0) == 0 && typeinfo_cast<MainMenuDrawShapeNode*>(node);
@@ -766,8 +1159,8 @@ void MainMenuLayoutManager::applyShapeLayout(CCNode* node, DrawShapeLayout const
     drawNode->applyLayout(layout);
 }
 
-void MainMenuLayoutManager::syncShapes(MenuLayer* layer, std::vector<DrawShapeLayout> const& shapes) {
-    auto* container = shapeContainer(layer, !shapes.empty());
+void MainMenuLayoutManager::syncShapes(CCNode* root, std::vector<DrawShapeLayout> const& shapes) {
+    auto* container = shapeContainer(root, !shapes.empty());
     if (!container) return;
 
     std::unordered_map<std::string, CCNode*> existing;
@@ -802,6 +1195,11 @@ void MainMenuLayoutManager::syncShapes(MenuLayer* layer, std::vector<DrawShapeLa
 
 std::string MainMenuLayoutManager::createShapeID() {
     return fmt::format("shape-{}", ++s_shapeIDCounter);
+}
+
+std::string MainMenuLayoutManager::rootClassName(CCNode* root) {
+    if (!root) return "Unknown";
+    return demangleTypeName(typeid(*root).name());
 }
 
 } // namespace paimon::menu_layout

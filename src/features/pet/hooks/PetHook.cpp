@@ -15,6 +15,7 @@ using namespace geode::prelude;
 
 class PetTickerNode : public CCNode {
     int m_frameCounter = 0;
+    CCScene* m_lastScene = nullptr;
 
 public:
     static PetTickerNode* create() {
@@ -53,14 +54,11 @@ public:
         auto scene = CCDirector::sharedDirector()->getRunningScene();
         if (!scene) return;
 
-        // Always keep the pet attached to the current scene.
-        // If the scene changed (parent lost), reattach.
-        // Visibility is handled inside update() and attachToScene() via
-        // shouldShowOnCurrentScene(), so we never need to detach just
-        // because the pet shouldn't be visible on a particular layer.
-        // attachToScene is idempotent: if already on this scene it just
-        // refreshes visibility; if the scene changed it reattaches.
-        pet.attachToScene(scene);
+        // Only reattach if scene actually changed
+        if (!pet.isAttached() || (pet.isAttached() && m_lastScene != scene)) {
+            pet.attachToScene(scene);
+            m_lastScene = scene;
+        }
     }
 };
 
@@ -98,16 +96,46 @@ $on_game(Exiting) {
 // Game event hooks — trigger pet reactions
 // ════════════════════════════════════════════════════════════
 
+// ────────────────────────────────────────────────────────────
+// Helper: diferir la reaccion al proximo tick del main thread.
+//
+// Porque: PlayLayer::levelComplete y PauseLayer::onQuit ejecutan mucho
+// codigo de juego (achievement bar, scene transitions, stats) DESPUES
+// de nuestro hook. Si disparamos la animacion del pet sincronicamente
+// en el stack, quedamos enredados con cualquier mod (automaticquests,
+// betterinfo, globed, eclipse-menu) que se sume a esa cadena.
+//
+// queueInMainThread garantiza que la reaccion corra en un tick limpio,
+// fuera de cualquier call stack de notificacion de achievement, y nos
+// saca del camino ante crashes de otros mods.
+// ────────────────────────────────────────────────────────────
+static void deferPetReaction(std::string eventType) {
+    Loader::get()->queueInMainThread([eventType = std::move(eventType)]() {
+        PetManager::get().triggerReaction(eventType);
+    });
+}
+
 // Level complete (normal mode)
 class $modify(PetPlayLayerHook, PlayLayer) {
+    static void onModify(auto& self) {
+        // Correr al final de la cadena: otros mods (betterinfo, eclipse,
+        // globed) quedan antes, y nosotros no participamos del stack
+        // en el que el juego dispara notifyAchievement/AchievementBar.
+        (void)self.setHookPriorityPost("PlayLayer::levelComplete", geode::Priority::Late);
+    }
+
     void levelComplete() {
         PlayLayer::levelComplete();
-        PetManager::get().triggerReaction("level_complete");
+        deferPetReaction("level_complete");
     }
 };
 
 // Player death
 class $modify(PetPlayerObjectHook, PlayerObject) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("PlayerObject::playerDestroyed", geode::Priority::Late);
+    }
+
     void playerDestroyed(bool p0) {
         PlayerObject::playerDestroyed(p0);
         auto* pl = PlayLayer::get();
@@ -115,7 +143,7 @@ class $modify(PetPlayerObjectHook, PlayerObject) {
 
         // Trigger once per death sequence using the primary player in dual mode.
         if (this == pl->m_player1) {
-            PetManager::get().triggerReaction("death");
+            deferPetReaction("death");
         }
     }
 };
@@ -123,11 +151,15 @@ class $modify(PetPlayerObjectHook, PlayerObject) {
 // Practice mode exit — hook into GJGameLevel::savePercentage or
 // the practice mode toggle. Using PauseLayer hook for practice exit.
 class $modify(PetPauseLayerHook, PauseLayer) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("PauseLayer::onQuit", geode::Priority::Late);
+    }
+
     void onQuit(cocos2d::CCObject* sender) {
         // check if we're in practice mode
         auto* pl = PlayLayer::get();
         if (pl && pl->m_isPracticeMode) {
-            PetManager::get().triggerReaction("practice_exit");
+            deferPetReaction("practice_exit");
         }
         PauseLayer::onQuit(sender);
     }

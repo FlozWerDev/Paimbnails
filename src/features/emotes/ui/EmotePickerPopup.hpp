@@ -13,12 +13,18 @@ namespace paimon::emotes {
 class EmotePickerPopup : public geode::Popup {
 public:
     enum class Tab { All, Stickers, GIFs };
+    enum class LayoutSize { Normal, Large };
 
 protected:
     // ── Sync callbacks ──
     geode::CopyableFunction<std::string()> m_getText;
     geode::CopyableFunction<void(std::string const&)> m_onTextChanged;
     int m_charLimit = 140;
+    LayoutSize m_layoutSize = LayoutSize::Normal;
+
+    // Computed dimensions based on layout size
+    float m_popupW = 380.f;
+    float m_popupH = 192.f;
 
     // ── Input section (top) ──
     geode::TextInput* m_textInput = nullptr;
@@ -26,6 +32,13 @@ protected:
     // ── Live preview section ──
     cocos2d::CCNode* m_renderPreview = nullptr;
     cocos2d::CCNode* m_renderPreviewBg = nullptr;
+
+    // ── Search ──
+    CCMenuItemSpriteExtra* m_searchBtn = nullptr;
+    geode::TextInput* m_searchInput = nullptr;
+    cocos2d::CCNode* m_searchInputBg = nullptr;
+    bool m_searchActive = false;
+    std::string m_searchQuery;
 
     // ── Category sidebar (bottom-left) ──
     cocos2d::CCMenu* m_typeMenu = nullptr;
@@ -44,6 +57,29 @@ protected:
     cocos2d::CCNode* m_contentNode = nullptr;
     cocos2d::CCLabelBMFont* m_countLabel = nullptr;
 
+    // ── Hover tracking for emote cells ──
+    struct HoverCell {
+        cocos2d::CCNode* btn = nullptr;          // CCMenuItemSpriteExtra*
+        cocos2d::CCLayerColor* hoverLayer = nullptr;
+        cocos2d::CCNode* container = nullptr;    // for content size / world-rect
+        EmoteInfo info;                          // emote data for lazy loading
+        bool loadRequested = false;              // true once thumbnail load was queued
+        bool loaded = false;                     // true once thumbnail was attached
+        cocos2d::CCNode* placeholder = nullptr;  // placeholder label/spinner
+    };
+    std::vector<HoverCell> m_hoverCells;
+    int m_hoverFrameSkip = 0;
+
+    // Every N frames we walk the cell list once to kick off thumbnail loads
+    // for cells that just scrolled into view. Doing this on every frame is
+    // wasteful — the scroll layer doesn't move that fast and the hit test
+    // is uniform across frames.
+    int m_lazyLoadFrameSkip = 0;
+
+    // Bumped on every grid rebuild so in-flight thumbnail callbacks from
+    // a previous grid know to drop themselves on the floor.
+    uint32_t m_gridGeneration = 0;
+
     // ── Grid width cache (changes depending on sidebar visibility) ──
     float m_gridX = 0.f;
     float m_gridW = 0.f;
@@ -54,17 +90,20 @@ protected:
 
     bool ccTouchBegan(cocos2d::CCTouch*, cocos2d::CCEvent*) override;
     void ccTouchEnded(cocos2d::CCTouch*, cocos2d::CCEvent*) override;
+    void update(float dt) override;
     bool isInsideVisibleScroll(cocos2d::CCNode* item);
 
     bool init(
         geode::CopyableFunction<std::string()> getText,
         geode::CopyableFunction<void(std::string const&)> onTextChanged,
-        int charLimit);
+        int charLimit,
+        LayoutSize size);
     void switchTab(Tab tab);
     void rebuildCategorySidebar();
     void selectCategory(std::string const& cat);
     void buildEmoteGrid(std::vector<EmoteInfo> const& emotes);
     void buildAllEmotesGrid();
+    void buildSearchResultsGrid();
     void onEmoteClicked(cocos2d::CCObject* sender);
     void onTabAll(cocos2d::CCObject*);
     void onTabGif(cocos2d::CCObject*);
@@ -74,17 +113,33 @@ protected:
     void updateTabHighlights();
     void updateRefreshButtonState();
     void onRefreshCatalog(cocos2d::CCObject*);
+    void onSearchToggle(cocos2d::CCObject*);
+    void onSearchTextChanged(std::string const& text);
     void onInputTextChanged(std::string const& text);
     void updateRenderPreview();
     void insertEmoteAtCursor(std::string const& emoteName);
     void rebuildScrollArea();
 
+    // Lazy thumbnail loader. Walks `m_hoverCells` and dispatches a load
+    // for any cell whose world rect intersects (or is close to) the
+    // visible scroll viewport. Cheap to call repeatedly: cells with
+    // `loadRequested == true` are skipped.
+    void requestVisibleThumbnails();
+
+    // Attach the loaded thumbnail (texture or GIF data) to a cell.
+    void attachLoadedThumbnail(size_t cellIdx,
+                               cocos2d::CCTexture2D* tex,
+                               bool isGif,
+                               std::vector<uint8_t> gifData);
+
 public:
     static EmotePickerPopup* create(
         geode::CopyableFunction<std::string()> getText,
         geode::CopyableFunction<void(std::string const&)> onTextChanged,
-        int charLimit = 140);
+        int charLimit = 140,
+        LayoutSize size = LayoutSize::Normal);
     void positionNearBottom(cocos2d::CCNode* anchor, float bottomPadding = 0.f);
+    void positionCentered();
 };
 
 } // namespace paimon::emotes

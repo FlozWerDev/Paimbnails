@@ -18,6 +18,7 @@
 #include <Geode/binding/Slider.hpp>
 #include <filesystem>
 #include "../../../utils/FileDialog.hpp"
+#include <random>
 
 using namespace geode::prelude;
 
@@ -280,12 +281,21 @@ void BackgroundConfigPopup::onDefaultMenu(CCObject*) {
     // Escribir en formato unificado (lo que lee MenuLayer)
     LayerBgConfig cfg;
     cfg.type = "default";
+    // Read the old config BEFORE overwriting so we can release the video player
+    LayerBgConfig oldCfg = LayerBackgroundManager::get().getConfig("menu");
     LayerBackgroundManager::get().saveConfig("menu", cfg);
     // Tambien limpiar legacy keys para consistencia
     Mod::get()->setSavedValue("bg-type", std::string("default"));
     Mod::get()->setSavedValue("bg-custom-path", std::string(""));
     Mod::get()->setSavedValue("bg-id", 0);
     paimon::requestDeferredModSave();
+    // If the old config was a video, force-release the shared player immediately
+    // so its decoder/RAM is freed instead of waiting for the TTL grace period.
+    if (oldCfg.type == "video" && !oldCfg.customPath.empty()) {
+        LayerBackgroundManager::get().forceReleaseSharedVideoByPath(oldCfg.customPath);
+    }
+    // Also evict any stale entries that might be lingering from previous sessions
+    LayerBackgroundManager::get().forceEvictAllStaleVideos();
     PaimonNotify::create("Menu Reverted to Default", NotificationIcon::Success)->show();
 }
 
@@ -349,6 +359,14 @@ void BackgroundConfigPopup::onCustomVideo(CCObject*) {
             return;
         }
         auto pathStr = paimon::assets::normalizePathString(imported.path);
+
+        // Release the old video player if menu previously had a different video,
+        // so its decoder/RAM is freed eagerly instead of waiting for the TTL.
+        LayerBgConfig oldCfg = LayerBackgroundManager::get().getConfig("menu");
+        if (oldCfg.type == "video" && !oldCfg.customPath.empty() && oldCfg.customPath != pathStr) {
+            LayerBackgroundManager::get().forceReleaseSharedVideoByPath(oldCfg.customPath);
+        }
+        LayerBackgroundManager::get().forceEvictAllStaleVideos();
 
         LayerBgConfig cfg = LayerBackgroundManager::get().getConfig("menu");
         cfg.type = "video";
@@ -594,10 +612,15 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
 
     // ── botones de accion ──
     float actionY = cy + 10;
-    createBtn("Custom Image", {cx - 130, actionY}, menu_selector(BackgroundConfigPopup::onLayerCustomImage), btnMenu);
-    createBtn("Custom Video", {cx - 45, actionY}, menu_selector(BackgroundConfigPopup::onLayerCustomVideo), btnMenu);
-    createBtn("Random", {cx + 40, actionY}, menu_selector(BackgroundConfigPopup::onLayerRandom), btnMenu);
-    createBtn("Same as...", {cx + 120, actionY}, menu_selector(BackgroundConfigPopup::onLayerSameAs), btnMenu);
+    createBtn("Custom Image", {cx - 145, actionY}, menu_selector(BackgroundConfigPopup::onLayerCustomImage), btnMenu);
+    createBtn("Custom Video", {cx - 60, actionY}, menu_selector(BackgroundConfigPopup::onLayerCustomVideo), btnMenu);
+    createBtn("Random", {cx + 20, actionY}, menu_selector(BackgroundConfigPopup::onLayerRandom), btnMenu);
+    createBtn("Same as...", {cx + 95, actionY}, menu_selector(BackgroundConfigPopup::onLayerSameAs), btnMenu);
+
+    // Second row: Shader + Dynamic
+    float actionY2 = actionY - 30;
+    createBtn("Shader", {cx - 80, actionY2}, menu_selector(BackgroundConfigPopup::onLayerShader), btnMenu);
+    createBtn("Dynamic", {cx + 10, actionY2}, menu_selector(BackgroundConfigPopup::onLayerDynamic), btnMenu);
 
     {
         auto iBtn = PaimonInfo::createInfoBtn("Layer Backgrounds",
@@ -605,6 +628,8 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
             "<cy>Custom Video</c>: local video.\n"
             "<cy>Random</c>: cached thumbnail.\n"
             "<cy>Same as...</c>: copy from another layer.\n"
+            "<cy>Shader</c>: animated GPU shader.\n"
+            "<cy>Dynamic</c>: randomize shader each time.\n"
             "<cy>Set ID</c>: level thumbnail.\n"
             "<cy>Default</c>: original background.", this, 0.28f);
         if (iBtn) {
@@ -744,6 +769,15 @@ void BackgroundConfigPopup::onLayerCustomVideo(CCObject*) {
         }
         auto pathStr = paimon::assets::normalizePathString(imported.path);
 
+        // Release the old video player if this layer previously had a different video,
+        // so its decoder/RAM is freed eagerly instead of waiting for the TTL.
+        LayerBgConfig oldCfg = LayerBackgroundManager::get().getConfig(layerKey);
+        if (oldCfg.type == "video" && !oldCfg.customPath.empty() && oldCfg.customPath != pathStr) {
+            LayerBackgroundManager::get().forceReleaseSharedVideoByPath(oldCfg.customPath);
+        }
+        // Also evict any stale entries
+        LayerBackgroundManager::get().forceEvictAllStaleVideos();
+
         LayerBgConfig cfg = LayerBackgroundManager::get().getConfig(layerKey);
         cfg.type = "video";
         cfg.customPath = pathStr;
@@ -757,6 +791,94 @@ void BackgroundConfigPopup::onLayerRandom(CCObject*) {
     cfg.type = "random";
     LayerBackgroundManager::get().saveConfig(m_selectedLayerKey, cfg);
     PaimonNotify::create("Random background set!", NotificationIcon::Success)->show();
+}
+
+void BackgroundConfigPopup::onLayerShader(CCObject*) {
+    // Cycle through available procedural shaders
+    static std::vector<std::pair<std::string, std::string>> SHADER_OPTIONS = {
+        {"aurora",        "Aurora"},
+        {"nebula",        "Nebula"},
+        {"plasma",        "Plasma"},
+        {"grid",          "Grid"},
+        {"sunburst",      "Sunburst"},
+        {"spiral",        "Spiral"},
+        {"warp",          "Warp"},
+        {"lava",          "Lava"},
+        {"clouds",        "Clouds"},
+        {"rings",         "Rings"},
+        {"waves",         "Waves"},
+        {"hex",           "Hex"},
+        {"fireflies",     "Fireflies"},
+        {"ripple",        "Ripple"},
+        {"starfield",     "Starfield"},
+        {"tunnel",        "Tunnel"},
+        {"checker",       "Checker"},
+        {"digital-rain",  "Digital Rain"},
+        {"horizon",       "Horizon"},
+        {"fractal",       "Fractal"},
+        {"gradient-flow", "Gradient Flow"},
+        {"bubbles",       "Bubbles"},
+        {"lightning",     "Lightning"},
+        {"moire",         "Moire"},
+        {"crystal",       "Crystal"},
+        {"embers",        "Embers"},
+        {"prism",         "Prism"},
+        {"soft-noise",    "Soft Noise"},
+        {"pulse",         "Pulse"},
+        {"topo",          "Topo"},
+        {"bloom-field",   "Bloom Field"},
+        {"synthwave",     "Synthwave"},
+        {"neon-city",     "Neon City"},
+        {"vortex",        "Vortex"},
+        {"ocean",         "Ocean"},
+        {"galaxy",        "Galaxy"},
+    };
+
+    LayerBgConfig cfg = LayerBackgroundManager::get().getConfig(m_selectedLayerKey);
+
+    // Find current shader index and advance to next
+    int currentIdx = -1;
+    if (cfg.type == "shader") {
+        for (int i = 0; i < (int)SHADER_OPTIONS.size(); i++) {
+            if (SHADER_OPTIONS[i].first == cfg.shader) {
+                currentIdx = i;
+                break;
+            }
+        }
+    }
+    int nextIdx = (currentIdx + 1) % (int)SHADER_OPTIONS.size();
+
+    cfg.type = "shader";
+    cfg.shader = SHADER_OPTIONS[nextIdx].first;
+    LayerBackgroundManager::get().saveConfig(m_selectedLayerKey, cfg);
+
+    std::string msg = "Shader: " + SHADER_OPTIONS[nextIdx].second;
+    PaimonNotify::create(msg.c_str(), NotificationIcon::Success)->show();
+}
+
+void BackgroundConfigPopup::onLayerDynamic(CCObject*) {
+    // "Dynamic" picks a random procedural shader each time the layer loads
+    static std::vector<std::string> DYNAMIC_SHADERS = {
+        "aurora", "nebula", "plasma", "grid", "sunburst", "spiral", "warp",
+        "lava", "clouds", "rings", "waves", "hex", "fireflies", "ripple",
+        "starfield", "tunnel", "checker", "digital-rain", "horizon", "fractal",
+        "gradient-flow", "bubbles", "lightning", "moire", "crystal", "embers",
+        "prism", "soft-noise", "pulse", "topo", "bloom-field",
+        "synthwave", "neon-city", "vortex", "ocean", "galaxy"
+    };
+
+    // Pick a random shader
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<int> dist(0, (int)DYNAMIC_SHADERS.size() - 1);
+    std::string picked = DYNAMIC_SHADERS[dist(rng)];
+
+    LayerBgConfig cfg = LayerBackgroundManager::get().getConfig(m_selectedLayerKey);
+    cfg.type = "shader";
+    cfg.shader = picked;
+    LayerBackgroundManager::get().saveConfig(m_selectedLayerKey, cfg);
+
+    std::string msg = "Dynamic: " + picked;
+    PaimonNotify::create(msg.c_str(), NotificationIcon::Success)->show();
 }
 
 void BackgroundConfigPopup::onLayerSameAs(CCObject*) {
@@ -773,9 +895,18 @@ void BackgroundConfigPopup::onLayerSameAs(CCObject*) {
 }
 
 void BackgroundConfigPopup::onLayerDefault(CCObject*) {
+    // Read the old config BEFORE overwriting so we can release the video player
+    LayerBgConfig oldCfg = LayerBackgroundManager::get().getConfig(m_selectedLayerKey);
     LayerBgConfig cfg;
     cfg.type = "default";
     LayerBackgroundManager::get().saveConfig(m_selectedLayerKey, cfg);
+    // If the old config was a video, force-release the shared player immediately
+    // so its decoder/RAM is freed eagerly instead of waiting for the TTL.
+    if (oldCfg.type == "video" && !oldCfg.customPath.empty()) {
+        LayerBackgroundManager::get().forceReleaseSharedVideoByPath(oldCfg.customPath);
+    }
+    // Also evict any stale entries that might be lingering
+    LayerBackgroundManager::get().forceEvictAllStaleVideos();
     PaimonNotify::create("Reverted to default!", NotificationIcon::Success)->show();
 }
 

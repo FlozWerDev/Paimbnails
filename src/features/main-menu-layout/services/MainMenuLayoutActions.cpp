@@ -5,6 +5,8 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/loader/SettingV3.hpp>
+#include <Geode/modify/MenuLayer.hpp>
+#include <Geode/modify/PauseLayer.hpp>
 
 using namespace geode::prelude;
 
@@ -16,9 +18,14 @@ $execute {
         manager.load();
         manager.resetAll();
 
+        // Re-aplica defaults SOLO en las escenas soportadas por el editor:
+        // MenuLayer (menu principal) y PauseLayer (menu de pausa).
         if (auto* scene = CCDirector::sharedDirector()->getRunningScene()) {
             if (auto* menuLayer = scene->getChildByType<MenuLayer>(0)) {
                 manager.applyDefaults(menuLayer);
+            }
+            if (auto* pauseLayer = scene->getChildByType<PauseLayer>(0)) {
+                manager.applyDefaults(pauseLayer);
             }
         }
 

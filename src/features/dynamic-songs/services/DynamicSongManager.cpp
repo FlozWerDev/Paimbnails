@@ -52,7 +52,7 @@ public:
         m_elapsed = 0.0f;
         m_active = true;
 
-        auto* scheduler = cocos2d::CCDirector::sharedDirector()->getScheduler();
+        auto* scheduler = cocos2d::CCDirector::get()->getScheduler();
         scheduler->scheduleSelector(
             schedule_selector(DynSongFadeNode::onFadeTick),
             this, 0.0f, kCCRepeatForever, 0.0f, false
@@ -62,7 +62,7 @@ public:
     void cancel() {
         if (!m_active) return;
         m_active = false;
-        auto* scheduler = cocos2d::CCDirector::sharedDirector()->getScheduler();
+        auto* scheduler = cocos2d::CCDirector::get()->getScheduler();
         scheduler->unscheduleSelector(schedule_selector(DynSongFadeNode::onFadeTick), this);
     }
 
@@ -87,7 +87,7 @@ private:
 
         if (t >= 1.0f) {
             m_active = false;
-            auto* sched = cocos2d::CCDirector::sharedDirector()->getScheduler();
+            auto* sched = cocos2d::CCDirector::get()->getScheduler();
             sched->unscheduleSelector(schedule_selector(DynSongFadeNode::onFadeTick), this);
             DynamicSongManager::get()->onFadeComplete();
         }
@@ -135,8 +135,8 @@ void DynamicSongManager::exitLayer(DynSongLayer layer) {
 
 // ─── Fade helpers ───────────────────────────────────────────────────
 float DynamicSongManager::getFadeDurationSec() const {
-    if (Mod::get()->getSettingValue<bool>("profile-music-crossfade")) {
-        return static_cast<float>(Mod::get()->getSettingValue<double>("profile-music-fade-duration"));
+    if (Mod::get()->getSavedValue<bool>("profile-music-crossfade", true)) {
+        return static_cast<float>(Mod::get()->getSavedValue<double>("profile-music-fade-duration", 0.3));
     }
     return 0.15f; // siempre fade, pero corto si crossfade esta desactivado
 }
@@ -247,9 +247,9 @@ void DynamicSongManager::loadMenuTrack(float startVolume) {
 }
 
 // ─── Seek aleatorio ─────────────────────────────────────────────────
-void DynamicSongManager::applyRandomSeek() {
+void DynamicSongManager::applyRandomSeek(FMOD::Channel* existingCh) {
     auto engine = FMODAudioEngine::sharedEngine();
-    auto* bgCh = getMainBgChannel(engine);
+    auto* bgCh = existingCh ? existingCh : getMainBgChannel(engine);
     if (!bgCh) return;
 
     FMOD::Sound* currentSound = nullptr;
@@ -417,7 +417,8 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
 
     if (m_state == DynState::Idle) {
         // Primera cancion: guardar posicion menu, cargar, fade in
-        if (engine->isMusicPlaying(0)) {
+        // Solo guardar si realmente estamos en menu music (no dynamic ya activa)
+        if (engine->isMusicPlaying(0) && !isActive()) {
             m_savedMenuPos = engine->getMusicTimeMS(0);
         }
         playOnMainChannel(songPath, 0.0f);
@@ -633,7 +634,7 @@ void DynamicSongManager::resumeSuspendedPlayback() {
         if (m_savedDynamicPosMs > 0 && m_savedDynamicPosMs < lengthMs) {
             bgCh->setPosition(m_savedDynamicPosMs, FMOD_TIMEUNIT_MS);
         } else {
-            applyRandomSeek();
+            applyRandomSeek(bgCh);
         }
 
         bgCh->setPaused(false);

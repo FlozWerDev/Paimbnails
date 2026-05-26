@@ -38,6 +38,15 @@ protected:
     cocos2d::CCNode* m_endHandle = nullptr;
     PaimonLoadingOverlay* m_loadingSpinner = nullptr;
 
+    // Cursor de tiempo (línea vertical con glow) que se mueve durante el
+    // preview de reproducción. Inspirado en matcool/song-preview, donde la
+    // posición refleja el tiempo actual de FMOD respecto al fragmento.
+    cocos2d::CCNode* m_playbackCursor = nullptr;
+    bool m_isPreviewPlaying = false;
+    bool m_cursorScheduled  = false;
+    // Pulso sinusoidal para que el cursor "respire" durante reproducción.
+    float m_cursorPulse = 0.f;
+
     // Waveform data
     std::vector<float> m_peaks;
     std::vector<cocos2d::CCNode*> m_waveformBars;
@@ -76,6 +85,7 @@ protected:
     void onSave(cocos2d::CCObject*);
     void onDelete(cocos2d::CCObject*);
     void onDownloadSong(cocos2d::CCObject*);
+    void onSearchSong(cocos2d::CCObject*);
 
     // Waveform
     void loadWaveform();
@@ -84,12 +94,21 @@ protected:
     void updateSelectionOverlay();
     void updateSelectionLabel();
 
+    // Cursor móvil de reproducción (estilo song-preview)
+    void buildPlaybackCursor();
+    void schedulePlaybackTracking();
+    void unschedulePlaybackTracking();
+    void updatePlaybackCursorPosition();
+    void updatePlaybackCursor(float dt);
+
     // Helpers
     int positionToMs(float x);
     float msToPosition(int ms);
     void clampSelection();
     cocos2d::CCNode* createHandleVisual(float height, cocos2d::ccColor3B color, bool isStart);
     void addSeparatorLine(float y);
+    // Formatea "Artista - Cancion · 2:04". Si no hay duración aún, omite el sufijo.
+    std::string formatSongInfoLine() const;
 
     // Touch handling for waveform
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;

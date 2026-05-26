@@ -23,7 +23,7 @@ struct LevelBrowserLocator {
             if (auto menu = typeinfo_cast<cocos2d::CCMenu*>(node)) return menu;
         }
 
-        auto winH = cocos2d::CCDirector::sharedDirector()->getWinSize().height;
+        auto winH = cocos2d::CCDirector::get()->getWinSize().height;
         for (auto* child : CCArrayExt<cocos2d::CCNode*>(layer->getChildren())) {
             if (auto menu = typeinfo_cast<cocos2d::CCMenu*>(child)) {
                 if (menu->getPosition().y > winH * 0.7f) {
@@ -111,7 +111,40 @@ struct InfoLayerLocator {
 // Para LevelSelectLayer (los main levels).
 
 struct LevelSelectLocator {
+    // Determina si un nodo pertenece a otro mod por su ID. Los IDs vienen
+    // prefijados con el mod ID seguido de '/' (formato del literal _spr).
+    // Si encontramos un prefijo conocido de otro mod (texture-loader, happy
+    // textures, imageplus, etc.) NO lo ocultamos — el otro mod sabe lo que
+    // hace y nosotros no debemos pisar su intencion visual.
+    static bool isForeignModNode(cocos2d::CCNode* node) {
+        if (!node) return false;
+        std::string id = node->getID();
+        if (id.empty()) return false;
+
+        // Lista de prefijos de mods conocidos cuya pantalla de fondo no
+        // queremos pisar. Buscamos el prefijo seguido de '/'.
+        static char const* const kForeignPrefixes[] = {
+            "alphalaneous.",       // happy_textures, etc.
+            "geode.texture-loader/",
+            "geode.node-ids/",
+            "prevter.imageplus",
+            "kampwski.",
+            "hjfod.",
+            "cvolton.",
+            "cdc.",
+            "eclipsemenu.",
+            "globed.",
+        };
+        for (auto* prefix : kForeignPrefixes) {
+            if (id.find(prefix) != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Oculta nodos de fondo vanilla (zOrder < -1) y GJGroundLayer.
+    // Respeta nodos de otros mods aunque caigan en esos criterios.
     static void hideVanillaBackground(cocos2d::CCNode* layer) {
         if (!layer) return;
 
@@ -120,6 +153,8 @@ struct LevelSelectLocator {
 
         for (auto* node : CCArrayExt<cocos2d::CCNode*>(children)) {
             if (!node) continue;
+            // No tocar nodos de otros mods.
+            if (isForeignModNode(node)) continue;
             if (node->getZOrder() < -1) {
                 node->setVisible(false);
             }

@@ -51,6 +51,8 @@ protected:
 
     cocos2d::CCSprite* m_bgThumb = nullptr;
     cocos2d::CCNode* m_bgDiagonalGlow = nullptr;
+    cocos2d::CCNode* m_badgePanelContainer = nullptr;
+    cocos2d::CCNode* m_benefitsPanelContainer = nullptr;
     std::vector<std::string> m_cachedThumbPaths;
     int m_currentThumbIndex = 0;
     std::atomic<bool> m_loadingThumb{false};
@@ -59,3 +61,4 @@ public:
     static PaimonSupportLayer* create();
     static cocos2d::CCScene* scene();
 };
+

@@ -3,6 +3,7 @@
 #include "SettingsControls.hpp"
 #include "../services/SettingsPanelManager.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../blur/PopupBlurService.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
@@ -30,6 +31,7 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
     if (blurBg) {
         m_blurBg = blurBg;
         m_blurBg->setPosition(winSize * 0.5f);
+        m_blurBg->setOpacity(0);
         this->addChild(m_blurBg, -2);
     }
 
@@ -45,9 +47,11 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
     m_panelContainer->setPosition(winSize * 0.5f);
     this->addChild(m_panelContainer, 1);
 
-    // 4. fondo del panel (redondeado oscuro)
-    ccColor4F panelColor = {0.08f, 0.08f, 0.1f, 0.95f};
-    m_panelBg = paimon::SpriteHelper::createRoundedRect(PANEL_W, PANEL_H, CORNER_RADIUS, panelColor);
+    // 4. fondo del panel — NineSlice canónico (Geode style, square02b_001
+    // tintado oscuro). Antes era un CCDrawNode rounded rect plano.
+    m_panelBg = paimon::SpriteHelper::createColorPanel(
+        PANEL_W, PANEL_H, cocos2d::ccColor3B{20, 20, 26}, 245, CORNER_RADIUS
+    );
     if (m_panelBg) {
         m_panelBg->setPosition({0.f, 0.f});
         m_panelContainer->addChild(m_panelBg, 0);
@@ -87,17 +91,21 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
 }
 
 void PaimonMultiSettingsPanel::buildTitleBar() {
-    // barra de titulo (mas oscura)
-    ccColor4F titleColor = {0.05f, 0.05f, 0.07f, 1.0f};
-    m_titleBarBg = paimon::SpriteHelper::createRoundedRect(PANEL_W, TITLE_BAR_H, CORNER_RADIUS, titleColor);
+    // barra de titulo (mas oscura) — pasa por createColorPanel; con
+    // height=28 < 30 el smart router lo enruta a CCDrawNode (lo cual es
+    // correcto: una title bar de 28 px no se ve bien con NineSlice corners).
+    m_titleBarBg = paimon::SpriteHelper::createColorPanel(
+        PANEL_W, TITLE_BAR_H, cocos2d::ccColor3B{12, 12, 18}, 255, CORNER_RADIUS
+    );
     if (m_titleBarBg) {
         m_titleBarBg->setPosition({0.f, PANEL_H - TITLE_BAR_H});
         m_panelContainer->addChild(m_titleBarBg, 1);
     }
 
     // tapar esquinas redondeadas inferiores de la title bar
-    ccColor4F titleColorSolid = {0.05f, 0.05f, 0.07f, 1.0f};
-    auto patchBottom = paimon::SpriteHelper::createRoundedRect(PANEL_W, CORNER_RADIUS + 2.f, 0.f, titleColorSolid);
+    auto patchBottom = paimon::SpriteHelper::createColorPanel(
+        PANEL_W, CORNER_RADIUS + 2.f, cocos2d::ccColor3B{12, 12, 18}, 255, 0.f
+    );
     if (patchBottom) {
         patchBottom->setPosition({0.f, PANEL_H - TITLE_BAR_H});
         m_panelContainer->addChild(patchBottom, 1);
@@ -135,16 +143,22 @@ void PaimonMultiSettingsPanel::buildTitleBar() {
 }
 
 void PaimonMultiSettingsPanel::buildSidebar() {
-    // fondo sidebar
-    ccColor4F sidebarColor = {0.06f, 0.06f, 0.08f, 1.0f};
-    m_sidebarBg = paimon::SpriteHelper::createRoundedRect(SIDEBAR_W, CONTENT_H, 0.f, sidebarColor);
+    // fondo sidebar — radius=0 (esquinas afiladas), el smart router de
+    // createColorPanel lo enruta a CCDrawNode (correcto para esquinas
+    // afiladas). El fill es plano y oscuro para coincidir con el tema.
+    m_sidebarBg = paimon::SpriteHelper::createColorPanel(
+        SIDEBAR_W, CONTENT_H, cocos2d::ccColor3B{15, 15, 21}, 255, 0.f
+    );
     if (m_sidebarBg) {
         m_sidebarBg->setPosition({0.f, 0.f});
         m_panelContainer->addChild(m_sidebarBg, 1);
     }
 
-    // acento de seleccion (barra izquierda)
-    m_sidebarAccent = paimon::SpriteHelper::createRoundedRect(3.f, 20.f, 1.5f, {0.94f, 0.76f, 0.22f, 1.0f});
+    // acento de seleccion (barra izquierda) — 3px de ancho, smart router
+    // lo lleva a CCDrawNode (correcto: NineSlice de 3px se vería raro).
+    m_sidebarAccent = paimon::SpriteHelper::createColorPanel(
+        3.f, 20.f, cocos2d::ccColor3B{240, 194, 56}, 255, 1.5f
+    );
     if (m_sidebarAccent) {
         m_sidebarAccent->setPosition({0.f, 0.f});
         m_panelContainer->addChild(m_sidebarAccent, 3);
@@ -442,7 +456,13 @@ void PaimonMultiSettingsPanel::buildSearchResults(std::string const& query) {
 // ── Animations ────────────────────────────────────────────────────────
 
 void PaimonMultiSettingsPanel::runEntryAnimation() {
-    m_darkOverlay->runAction(CCFadeTo::create(0.2f, 150));
+    auto cfg = paimon::popupblur::getConfig();
+    int targetDarkness = std::clamp(static_cast<int>(std::round(cfg.darkness * 255.f)), 100, 220);
+    m_darkOverlay->runAction(CCFadeTo::create(0.2f, targetDarkness));
+
+    if (m_blurBg) {
+        m_blurBg->runAction(CCFadeTo::create(0.2f, 255));
+    }
 
     m_panelContainer->setScale(0.92f);
     auto scaleAction = CCEaseExponentialOut::create(CCScaleTo::create(0.25f, 1.0f));
@@ -457,6 +477,10 @@ void PaimonMultiSettingsPanel::animateClose() {
 
     if (m_darkOverlay) {
         m_darkOverlay->runAction(CCFadeTo::create(0.15f, 0));
+    }
+
+    if (m_blurBg) {
+        m_blurBg->runAction(CCFadeTo::create(0.15f, 0));
     }
 
     if (m_panelContainer) {

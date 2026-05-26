@@ -5,15 +5,18 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/PaimonNotification.hpp"
+#include <Geode/utils/cocos.hpp>
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
 namespace paimon::emotes {
 
-// ── Layout constants ────────────────────────────────
+// ── Layout constants (Normal size baseline) ─────────
 static constexpr float POPUP_W   = 380.f;
 static constexpr float POPUP_H   = 192.f;
+static constexpr float POPUP_W_LARGE = 500.f;
+static constexpr float POPUP_H_LARGE = 280.f;
 static constexpr float CORNER_R  = 12.f;
 static constexpr float PAD       = 6.f;
 static constexpr float INPUT_H   = 24.f;
@@ -36,6 +39,7 @@ static constexpr ccColor4F COL_BOTTOM_BG   = {0.09f, 0.09f, 0.09f, 1.0f};
 static constexpr ccColor4F COL_TAB_ACTIVE  = {0.22f, 0.22f, 0.22f, 1.0f};
 static constexpr ccColor4F COL_TAB_INACTIVE= {0.13f, 0.13f, 0.13f, 0.8f};
 static constexpr ccColor4F COL_CELL_BG     = {0.14f, 0.14f, 0.14f, 0.8f};
+static constexpr ccColor4F COL_CELL_HOVER  = {0.45f, 0.78f, 0.95f, 0.85f}; // celeste claro
 static constexpr ccColor4F COL_CAT_HL      = {0.20f, 0.20f, 0.20f, 0.7f};
 static constexpr ccColor4F COL_DIVIDER     = {0.22f, 0.22f, 0.22f, 0.5f};
 static constexpr ccColor4F COL_SEPARATOR   = {0.18f, 0.18f, 0.18f, 0.6f};
@@ -44,9 +48,10 @@ static constexpr ccColor4F COL_SEPARATOR   = {0.18f, 0.18f, 0.18f, 0.6f};
 EmotePickerPopup* EmotePickerPopup::create(
         CopyableFunction<std::string()> getText,
         CopyableFunction<void(std::string const&)> onTextChanged,
-        int charLimit) {
+        int charLimit,
+        LayoutSize size) {
     auto ret = new EmotePickerPopup();
-    if (ret && ret->init(std::move(getText), std::move(onTextChanged), charLimit)) {
+    if (ret && ret->init(std::move(getText), std::move(onTextChanged), charLimit, size)) {
         ret->autorelease();
         return ret;
     }
@@ -58,12 +63,16 @@ EmotePickerPopup* EmotePickerPopup::create(
 bool EmotePickerPopup::init(
         CopyableFunction<std::string()> getText,
         CopyableFunction<void(std::string const&)> onTextChanged,
-        int charLimit) {
+        int charLimit,
+        LayoutSize size) {
     m_getText = std::move(getText);
     m_onTextChanged = std::move(onTextChanged);
     m_charLimit = charLimit;
+    m_layoutSize = size;
+    m_popupW = (size == LayoutSize::Large) ? POPUP_W_LARGE : POPUP_W;
+    m_popupH = (size == LayoutSize::Large) ? POPUP_H_LARGE : POPUP_H;
 
-    if (!Popup::init(POPUP_W, POPUP_H))
+    if (!Popup::init(m_popupW, m_popupH))
         return false;
 
     // No close button — dismiss by clicking outside
@@ -73,20 +82,22 @@ bool EmotePickerPopup::init(
     if (m_bgSprite) m_bgSprite->setVisible(false);
 
     auto border = paimon::SpriteHelper::createRoundedRect(
-        POPUP_W + 2, POPUP_H + 2, CORNER_R + 1, COL_BORDER);
+        m_popupW + 2, m_popupH + 2, CORNER_R + 1, COL_BORDER);
     border->setPosition({-1.f, -1.f});
     m_mainLayer->addChild(border, -2);
 
     auto bg = paimon::SpriteHelper::createRoundedRect(
-        POPUP_W, POPUP_H, CORNER_R, COL_BG);
+        m_popupW, m_popupH, CORNER_R, COL_BG);
     bg->setPosition({0.f, 0.f});
     m_mainLayer->addChild(bg, -1);
 
-    float contentW = POPUP_W - PAD * 2;
+    float contentW = m_popupW - PAD * 2;
 
     // ══════════ Input section (top) ══════════
-    float inputY = POPUP_H - PAD - INPUT_H;
-    float inputActionTotal = INPUT_ACTION_W + INPUT_ACTION_GAP;
+    float inputY = m_popupH - PAD - INPUT_H;
+    // Two action buttons (search + refresh) next to the input
+    float inputActionsW = INPUT_ACTION_W * 2 + INPUT_ACTION_GAP;
+    float inputActionTotal = inputActionsW + INPUT_ACTION_GAP;
     float inputBoxW = contentW - inputActionTotal;
 
     auto inputBg = paimon::SpriteHelper::createRoundedRect(
@@ -105,15 +116,35 @@ bool EmotePickerPopup::init(
     });
     m_mainLayer->addChild(m_textInput, 2);
 
+    // Container background covering both action buttons
     auto inputActionBg = paimon::SpriteHelper::createRoundedRect(
-        INPUT_ACTION_W, INPUT_H, 6.f, COL_INPUT_BG);
+        inputActionsW, INPUT_H, 6.f, COL_INPUT_BG);
     inputActionBg->setPosition({PAD + inputBoxW + INPUT_ACTION_GAP, inputY});
     m_mainLayer->addChild(inputActionBg, 1);
 
-    auto refreshMenu = CCMenu::create();
-    refreshMenu->setPosition({0, 0});
-    m_mainLayer->addChild(refreshMenu, 3);
+    auto actionsMenu = CCMenu::create();
+    actionsMenu->setPosition({0, 0});
+    m_mainLayer->addChild(actionsMenu, 3);
 
+    float actionsLeft = PAD + inputBoxW + INPUT_ACTION_GAP;
+
+    // Search button (first slot)
+    auto searchSpr = paimon::SpriteHelper::safeCreateWithFrameName("gj_findBtn_001.png");
+    if (!searchSpr) searchSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_searchBtn_001.png");
+    if (searchSpr) {
+        // 20% larger than the refresh icon (0.36 * 1.20 = 0.432)
+        searchSpr->setScale(0.432f);
+        m_searchBtn = CCMenuItemSpriteExtra::create(
+            searchSpr, this,
+            menu_selector(EmotePickerPopup::onSearchToggle));
+        m_searchBtn->setPosition({
+            actionsLeft + INPUT_ACTION_W / 2.f,
+            inputY + INPUT_H / 2.f
+        });
+        actionsMenu->addChild(m_searchBtn);
+    }
+
+    // Refresh button (second slot)
     auto refreshSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_updateBtn_001.png");
     if (!refreshSpr) refreshSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_replayBtn_001.png");
     if (refreshSpr) {
@@ -122,10 +153,10 @@ bool EmotePickerPopup::init(
             refreshSpr, this,
             menu_selector(EmotePickerPopup::onRefreshCatalog));
         m_refreshBtn->setPosition({
-            PAD + inputBoxW + INPUT_ACTION_GAP + INPUT_ACTION_W / 2.f,
+            actionsLeft + INPUT_ACTION_W + INPUT_ACTION_GAP + INPUT_ACTION_W / 2.f,
             inputY + INPUT_H / 2.f
         });
-        refreshMenu->addChild(m_refreshBtn);
+        actionsMenu->addChild(m_refreshBtn);
         updateRefreshButtonState();
     }
 
@@ -151,6 +182,27 @@ bool EmotePickerPopup::init(
     m_mainLayer->addChild(m_renderPreview, 2);
 
     updateRenderPreview();
+
+    // ══════════ Search input (overlays preview when active) ══════════
+    {
+        m_searchInputBg = paimon::SpriteHelper::createRoundedRect(
+            contentW, PREVIEW_H, 6.f, COL_INPUT_BG);
+        m_searchInputBg->setPosition({PAD, previewY});
+        m_searchInputBg->setVisible(false);
+        m_mainLayer->addChild(m_searchInputBg, 3);
+
+        m_searchInput = TextInput::create(contentW - 16, "Search emotes...", "chatFont.fnt");
+        m_searchInput->setCommonFilter(CommonFilter::Any);
+        m_searchInput->setMaxCharCount(40);
+        m_searchInput->setAnchorPoint({0.5f, 0.5f});
+        m_searchInput->setPosition({PAD + contentW / 2.f, previewY + PREVIEW_H / 2.f});
+        m_searchInput->setScale(0.78f);
+        m_searchInput->setVisible(false);
+        m_searchInput->setCallback([this](std::string const& text) {
+            onSearchTextChanged(text);
+        });
+        m_mainLayer->addChild(m_searchInput, 4);
+    }
 
     // ══════════ Bottom section (tabs + grid) ══════════
     float botH = previewY - PAD - PAD;
@@ -231,13 +283,15 @@ bool EmotePickerPopup::init(
     m_countLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_countLabel->setScale(0.3f);
     m_countLabel->setAnchorPoint({1.f, 1.f});
-    m_countLabel->setPosition({POPUP_W - PAD - 2, POPUP_H - 2});
+    m_countLabel->setPosition({m_popupW - PAD - 2, m_popupH - 2});
     m_countLabel->setColor({100, 100, 100});
     m_mainLayer->addChild(m_countLabel, 4);
 
     // Initial data
     updateTabHighlights();
     switchTab(Tab::All);
+
+    this->scheduleUpdate();
 
     return true;
 }
@@ -384,10 +438,41 @@ void EmotePickerPopup::selectCategory(std::string const& cat) {
     }
 }
 
+// ── Cell creation helper ───────────────────────────
+// Builds a flat colored cell with a colored hover overlay. The previous
+// implementation used a CCDrawNode rounded-rect background plus a
+// CCClippingNode (with another rounded-rect stencil) for the hover. With
+// 100+ cells that meant 100+ CCDrawNodes, 100+ CCClippingNodes, and
+// thousands of triangles every frame — the popup dropped to ~38 FPS just
+// from draw call count. We trade the rounded corners (visually a small
+// loss against the dark popup background) for a flat colored quad and a
+// flat hover quad. CCLayerColor reuses a single shared shader and a
+// single quad per node, so the cost is dominated by the drawcall itself.
+static cocos2d::CCNode* makeEmoteCellContainer(CCLayerColor*& outHover) {
+    auto container = CCNode::create();
+    container->setContentSize({CELL_SIZE, CELL_SIZE});
+
+    auto cellBg = CCLayerColor::create({36, 36, 36, 204},
+                                        CELL_SIZE, CELL_SIZE);
+    cellBg->setPosition({0, 0});
+    container->addChild(cellBg, 0);
+
+    auto hoverBg = CCLayerColor::create({115, 199, 242, 0},
+                                         CELL_SIZE, CELL_SIZE);
+    hoverBg->setPosition({0, 0});
+    hoverBg->setTag(97);
+    container->addChild(hoverBg, 1);
+    outHover = hoverBg;
+
+    return container;
+}
+
 // ── Emote grid (filtered by tab/category) ──────────
 void EmotePickerPopup::buildEmoteGrid(
         std::vector<EmoteInfo> const& emotes) {
     m_contentNode->removeAllChildren();
+    m_hoverCells.clear();
+    ++m_gridGeneration;
 
     float gridW = m_scroll->getContentSize().width;
     int cols = std::max(1,
@@ -405,25 +490,21 @@ void EmotePickerPopup::buildEmoteGrid(
     menu->setContentSize({gridW, totalH});
     m_contentNode->addChild(menu);
 
+    m_hoverCells.reserve(emotes.size());
     for (size_t i = 0; i < emotes.size(); ++i) {
         int col = static_cast<int>(i) % cols;
         int row = static_cast<int>(i) / cols;
         float x = col * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2;
         float y = totalH - (row * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2);
 
-        auto cellBg = paimon::SpriteHelper::createRoundedRect(
-            CELL_SIZE, CELL_SIZE, 4.f, COL_CELL_BG);
-
-        auto container = CCNode::create();
-        container->setContentSize({CELL_SIZE, CELL_SIZE});
-        cellBg->setPosition({0, 0});
-        container->addChild(cellBg);
+        CCLayerColor* hoverLayer = nullptr;
+        auto container = makeEmoteCellContainer(hoverLayer);
 
         auto ph = CCLabelBMFont::create("...", "chatFont.fnt");
         ph->setScale(0.3f);
         ph->setPosition({CELL_SIZE / 2, CELL_SIZE / 2});
         ph->setTag(99);
-        container->addChild(ph, 1);
+        container->addChild(ph, 5);
 
         auto btn = CCMenuItemSpriteExtra::create(
             container, this,
@@ -432,48 +513,35 @@ void EmotePickerPopup::buildEmoteGrid(
         btn->setUserObject(CCString::create(emotes[i].name));
         menu->addChild(btn);
 
-        // Async thumbnail load
-        auto emoteCopy = emotes[i];
-        Ref<CCMenuItemSpriteExtra> btnRef = btn;
-        EmoteCache::get().loadEmote(emoteCopy,
-            [btnRef](CCTexture2D* tex, bool isGif,
-                     std::vector<uint8_t> const& gifData) {
-                Loader::get()->queueInMainThread(
-                    [btnRef, tex, isGif, gifData]() {
-                        if (!btnRef || !btnRef->getParent()) return;
-                        auto cont = btnRef->getNormalImage();
-                        if (!cont) return;
-
-                        CCNode* sprite = nullptr;
-                        if (isGif && !gifData.empty()) {
-                            sprite = AnimatedGIFSprite::create(
-                                gifData.data(), gifData.size());
-                        } else if (tex) {
-                            sprite = CCSprite::createWithTexture(tex);
-                        }
-                        if (sprite) {
-                            float maxD = CELL_SIZE - 6.f;
-                            float sc = maxD / std::max(
-                                sprite->getContentSize().width,
-                                sprite->getContentSize().height);
-                            sprite->setScale(sc);
-                            sprite->setPosition(
-                                {CELL_SIZE / 2, CELL_SIZE / 2});
-                            cont->addChild(sprite, 2);
-                            if (auto p = cont->getChildByTag(99))
-                                p->setVisible(false);
-                        }
-                    });
-            });
+        HoverCell hc;
+        hc.btn = btn;
+        hc.hoverLayer = hoverLayer;
+        hc.container = container;
+        hc.info = emotes[i];
+        hc.placeholder = ph;
+        m_hoverCells.push_back(std::move(hc));
     }
 
     m_scroll->moveToTop();
     m_countLabel->setString(fmt::format("{}", emotes.size()).c_str());
+
+    // Kick off thumbnail loads for the first viewport on the next main-
+    // thread tick. We can't do it synchronously here because grids are
+    // built during init() — before the popup is positioned in the scene
+    // — so convertToWorldSpace() would lie about which cells are visible.
+    WeakRef<EmotePickerPopup> selfWeak = this;
+    Loader::get()->queueInMainThread([selfWeak]() {
+        auto self = selfWeak.lock();
+        if (!self) return;
+        self->requestVisibleThumbnails();
+    });
 }
 
 // ── All emotes grid (grouped by category) ──────────
 void EmotePickerPopup::buildAllEmotesGrid() {
     m_contentNode->removeAllChildren();
+    m_hoverCells.clear();
+    ++m_gridGeneration;
 
     float gridW = m_scroll->getContentSize().width;
     int cols = std::max(1,
@@ -481,14 +549,21 @@ void EmotePickerPopup::buildAllEmotesGrid() {
 
     auto cats = EmoteService::get().getAllCategories();
 
-    // First pass: compute total height
-    float totalH = 0.f;
+    // Pre-fetch the per-category emote lists once. Calling
+    // `getAllEmotesByCategory` walks the full catalog under a mutex on
+    // every invocation; doing it twice (height pass + render pass) is
+    // wasteful. Cache the results in a local map keyed by category.
+    std::vector<std::pair<std::string, std::vector<EmoteInfo>>> grouped;
+    grouped.reserve(cats.size());
     size_t totalEmotes = 0;
+    float totalH = 0.f;
     for (auto const& cat : cats) {
         auto emotes = EmoteService::get().getAllEmotesByCategory(cat);
+        if (emotes.empty()) continue;
         int catRows = (static_cast<int>(emotes.size()) + cols - 1) / cols;
         totalH += CAT_HDR_H + catRows * (CELL_SIZE + CELL_GAP) + CAT_GAP;
         totalEmotes += emotes.size();
+        grouped.emplace_back(cat, std::move(emotes));
     }
 
     float scrollH = m_scroll->getContentSize().height;
@@ -502,12 +577,11 @@ void EmotePickerPopup::buildAllEmotesGrid() {
     menu->setContentSize({gridW, totalH});
     m_contentNode->addChild(menu, 1);
 
+    m_hoverCells.reserve(totalEmotes);
+
     float curY = totalH;
 
-    for (auto const& cat : cats) {
-        auto emotes = EmoteService::get().getAllEmotesByCategory(cat);
-        if (emotes.empty()) continue;
-
+    for (auto const& [cat, emotes] : grouped) {
         // Category header
         curY -= CAT_HDR_H;
         auto hdr = CCLabelBMFont::create(cat.c_str(), "chatFont.fnt");
@@ -517,9 +591,9 @@ void EmotePickerPopup::buildAllEmotesGrid() {
         hdr->setColor({150, 150, 150});
         m_contentNode->addChild(hdr, 2);
 
-        // Thin separator line under header
-        auto sep = paimon::SpriteHelper::createRoundedRect(
-            gridW - 8, 1.f, 0.5f, COL_SEPARATOR);
+        // Thin separator line under header. CCLayerColor is a single
+        // colored quad — much cheaper than CCDrawNode for a 1px line.
+        auto sep = CCLayerColor::create({46, 46, 46, 153}, gridW - 8, 1.f);
         sep->setPosition({4.f, curY});
         m_contentNode->addChild(sep, 2);
 
@@ -532,19 +606,14 @@ void EmotePickerPopup::buildAllEmotesGrid() {
             float x = col * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2;
             float y = curY - (row * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2);
 
-            auto cellBg = paimon::SpriteHelper::createRoundedRect(
-                CELL_SIZE, CELL_SIZE, 4.f, COL_CELL_BG);
-
-            auto container = CCNode::create();
-            container->setContentSize({CELL_SIZE, CELL_SIZE});
-            cellBg->setPosition({0, 0});
-            container->addChild(cellBg);
+            CCLayerColor* hoverLayer = nullptr;
+            auto container = makeEmoteCellContainer(hoverLayer);
 
             auto ph = CCLabelBMFont::create("...", "chatFont.fnt");
             ph->setScale(0.3f);
             ph->setPosition({CELL_SIZE / 2, CELL_SIZE / 2});
             ph->setTag(99);
-            container->addChild(ph, 1);
+            container->addChild(ph, 5);
 
             auto btn = CCMenuItemSpriteExtra::create(
                 container, this,
@@ -553,39 +622,13 @@ void EmotePickerPopup::buildAllEmotesGrid() {
             btn->setUserObject(CCString::create(emotes[i].name));
             menu->addChild(btn);
 
-            // Async thumbnail load
-            auto emoteCopy = emotes[i];
-            Ref<CCMenuItemSpriteExtra> btnRef = btn;
-            EmoteCache::get().loadEmote(emoteCopy,
-                [btnRef](CCTexture2D* tex, bool isGif,
-                         std::vector<uint8_t> const& gifData) {
-                    Loader::get()->queueInMainThread(
-                        [btnRef, tex, isGif, gifData]() {
-                            if (!btnRef || !btnRef->getParent()) return;
-                            auto cont = btnRef->getNormalImage();
-                            if (!cont) return;
-
-                            CCNode* sprite = nullptr;
-                            if (isGif && !gifData.empty()) {
-                                sprite = AnimatedGIFSprite::create(
-                                    gifData.data(), gifData.size());
-                            } else if (tex) {
-                                sprite = CCSprite::createWithTexture(tex);
-                            }
-                            if (sprite) {
-                                float maxD = CELL_SIZE - 6.f;
-                                float sc = maxD / std::max(
-                                    sprite->getContentSize().width,
-                                    sprite->getContentSize().height);
-                                sprite->setScale(sc);
-                                sprite->setPosition(
-                                    {CELL_SIZE / 2, CELL_SIZE / 2});
-                                cont->addChild(sprite, 2);
-                                if (auto p = cont->getChildByTag(99))
-                                    p->setVisible(false);
-                            }
-                        });
-                });
+            HoverCell hc;
+            hc.btn = btn;
+            hc.hoverLayer = hoverLayer;
+            hc.container = container;
+            hc.info = emotes[i];
+            hc.placeholder = ph;
+            m_hoverCells.push_back(std::move(hc));
         }
 
         curY -= catRows * (CELL_SIZE + CELL_GAP) + CAT_GAP;
@@ -593,6 +636,15 @@ void EmotePickerPopup::buildAllEmotesGrid() {
 
     m_scroll->moveToTop();
     m_countLabel->setString(fmt::format("{}", totalEmotes).c_str());
+
+    // Kick off thumbnail loads for the first viewport on the next main-
+    // thread tick — same reason as buildEmoteGrid().
+    WeakRef<EmotePickerPopup> selfWeak = this;
+    Loader::get()->queueInMainThread([selfWeak]() {
+        auto self = selfWeak.lock();
+        if (!self) return;
+        self->requestVisibleThumbnails();
+    });
 }
 
 void EmotePickerPopup::onEmoteClicked(CCObject* sender) {
@@ -616,7 +668,7 @@ void EmotePickerPopup::updateRenderPreview() {
     std::string text;
     if (m_textInput) text = m_textInput->getString();
 
-    float contentW = POPUP_W - PAD * 2;
+    float contentW = m_popupW - PAD * 2;
 
     if (text.empty()) {
         auto lbl = CCLabelBMFont::create("Preview...", "chatFont.fnt");
@@ -650,6 +702,10 @@ void EmotePickerPopup::insertEmoteAtCursor(std::string const& emoteName) {
 
 // ── Refresh ────────────────────────────────────────
 void EmotePickerPopup::refreshGrid() {
+    if (m_searchActive) {
+        buildSearchResultsGrid();
+        return;
+    }
     if (m_activeTab == Tab::All) {
         buildAllEmotesGrid();
     } else if (!m_activeCategory.empty()) {
@@ -713,6 +769,316 @@ void EmotePickerPopup::rebuildScrollArea() {
     // Reserved for future use
 }
 
+// ── Search ─────────────────────────────────────────
+void EmotePickerPopup::onSearchToggle(CCObject*) {
+    m_searchActive = !m_searchActive;
+
+    // Smooth scale pulse on the search button itself for tactile feedback.
+    if (m_searchBtn) {
+        m_searchBtn->stopAllActions();
+        m_searchBtn->setScale(1.0f);
+        m_searchBtn->runAction(CCSequence::create(
+            CCEaseSineOut::create(CCScaleTo::create(0.08f, 0.82f)),
+            CCEaseBackOut::create(CCScaleTo::create(0.18f, 1.0f)),
+            nullptr
+        ));
+    }
+
+    auto crossfadeIn = [](CCNode* node) {
+        if (!node) return;
+        node->stopAllActions();
+        node->setVisible(true);
+        if (auto rgba = typeinfo_cast<CCLayerColor*>(node)) {
+            rgba->setOpacity(0);
+            rgba->runAction(CCFadeTo::create(0.18f, 255));
+        }
+    };
+    auto fadeOut = [](CCNode* node) {
+        if (!node) return;
+        node->stopAllActions();
+        if (auto rgba = typeinfo_cast<CCLayerColor*>(node)) {
+            rgba->runAction(CCSequence::create(
+                CCFadeTo::create(0.12f, 0),
+                CCCallFunc::create(node, callfunc_selector(CCNode::removeFromParent)),
+                nullptr
+            ));
+        } else {
+            node->setVisible(false);
+        }
+    };
+    (void)crossfadeIn; (void)fadeOut;
+
+    if (m_searchInputBg) m_searchInputBg->setVisible(m_searchActive);
+    if (m_searchInput) m_searchInput->setVisible(m_searchActive);
+    if (m_renderPreviewBg) m_renderPreviewBg->setVisible(!m_searchActive);
+    if (m_renderPreview) m_renderPreview->setVisible(!m_searchActive);
+
+    if (m_searchActive) {
+        // Hide tab/category sidebar to give the grid full width
+        if (m_typeMenu) m_typeMenu->setVisible(false);
+        if (m_catScroll) m_catScroll->setVisible(false);
+
+        // Expand grid scroll to span full bottom area
+        if (m_scroll) {
+            float fullX = PAD + 4;
+            float fullW = m_popupW - PAD * 2 - 8;
+            m_scroll->setPosition({fullX, m_botY + 1.f});
+            m_scroll->setContentSize({fullW, m_gridH});
+            if (m_scroll->m_contentLayer) {
+                m_scroll->m_contentLayer->setContentSize({fullW, m_gridH});
+            }
+
+            // Soft scale-in pop on the scroll content for a fluid feel.
+            if (m_scroll->m_contentLayer) {
+                m_scroll->m_contentLayer->stopAllActions();
+                m_scroll->m_contentLayer->setScale(0.97f);
+                m_scroll->m_contentLayer->runAction(
+                    CCEaseBackOut::create(CCScaleTo::create(0.20f, 1.0f)));
+            }
+        }
+
+        if (m_searchInput) m_searchInput->setString("");
+        m_searchQuery.clear();
+        buildSearchResultsGrid();
+    } else {
+        // Restore tab/category sidebar
+        if (m_typeMenu) m_typeMenu->setVisible(true);
+        if (m_activeTab != Tab::All && m_catScroll) m_catScroll->setVisible(true);
+
+        // Restore grid scroll to its original (sidebar-aware) bounds
+        if (m_scroll) {
+            m_scroll->setPosition({m_gridX, m_botY + 1.f});
+            m_scroll->setContentSize({m_gridW, m_gridH});
+            if (m_scroll->m_contentLayer) {
+                m_scroll->m_contentLayer->setContentSize({m_gridW, m_gridH});
+            }
+
+            // Same fluid pop when leaving search mode.
+            if (m_scroll->m_contentLayer) {
+                m_scroll->m_contentLayer->stopAllActions();
+                m_scroll->m_contentLayer->setScale(0.97f);
+                m_scroll->m_contentLayer->runAction(
+                    CCEaseBackOut::create(CCScaleTo::create(0.20f, 1.0f)));
+            }
+        }
+
+        m_searchQuery.clear();
+        // Restore the previous tab content
+        if (m_activeTab == Tab::All) {
+            buildAllEmotesGrid();
+        } else if (!m_activeCategory.empty()) {
+            selectCategory(m_activeCategory);
+        } else {
+            rebuildCategorySidebar();
+        }
+    }
+}
+
+void EmotePickerPopup::onSearchTextChanged(std::string const& text) {
+    m_searchQuery = text;
+    buildSearchResultsGrid();
+}
+
+void EmotePickerPopup::buildSearchResultsGrid() {
+    std::vector<EmoteInfo> results;
+    if (m_searchQuery.empty()) {
+        // Show all emotes when query is empty (cap to a reasonable amount
+        // to avoid building hundreds of cells we'll never see at once).
+        auto cats = EmoteService::get().getAllCategories();
+        results.reserve(128);
+        for (auto const& cat : cats) {
+            auto e = EmoteService::get().getAllEmotesByCategory(cat);
+            results.insert(results.end(), e.begin(), e.end());
+            if (results.size() >= 256) break;
+        }
+        if (results.size() > 256) results.resize(256);
+    } else {
+        results = EmoteService::get().searchEmotes(m_searchQuery, 96);
+    }
+    buildEmoteGrid(results);
+}
+
+// ── Hover update ────────────────────────────────────
+void EmotePickerPopup::update(float dt) {
+    if (m_hoverCells.empty() || !m_scroll) return;
+
+    // Throttle to every other frame for performance.
+    if ((m_hoverFrameSkip++ & 1) != 0) return;
+    // Compensate dt since we run half as often.
+    float effDt = dt * 2.f;
+
+    CCPoint mouseGL = geode::cocos::getMousePos();
+    CCPoint scrollWorld = m_scroll->convertToWorldSpace({0, 0});
+    CCSize  scrollSize  = m_scroll->getContentSize();
+    CCRect  scrollRect(scrollWorld.x, scrollWorld.y, scrollSize.width, scrollSize.height);
+    bool mouseInScroll = scrollRect.containsPoint(mouseGL);
+
+    // Smoother fade — lower value = slower transition.
+    // Both directions use the same speed for symmetry.
+    float lerpAmt = std::min(1.f, effDt * 5.5f);
+
+    // Half cell for hit-test (cells anchored at center).
+    float halfCell = CELL_SIZE * 0.5f;
+
+    for (auto const& hc : m_hoverCells) {
+        if (!hc.btn || !hc.btn->getParent() || !hc.hoverLayer) continue;
+
+        // Cull cells outside the scroll viewport quickly (no point updating
+        // hover for non-visible cells).
+        CCPoint cellWorld = hc.btn->getParent()->convertToWorldSpace(hc.btn->getPosition());
+        if (cellWorld.x + halfCell < scrollRect.getMinX() ||
+            cellWorld.x - halfCell > scrollRect.getMaxX() ||
+            cellWorld.y + halfCell < scrollRect.getMinY() ||
+            cellWorld.y - halfCell > scrollRect.getMaxY()) {
+            // Off-screen: snap opacity to zero without per-frame lerp.
+            if (hc.hoverLayer->getOpacity() != 0) hc.hoverLayer->setOpacity(0);
+            continue;
+        }
+
+        bool hovered = mouseInScroll &&
+                       std::abs(mouseGL.x - cellWorld.x) <= halfCell &&
+                       std::abs(mouseGL.y - cellWorld.y) <= halfCell;
+
+        float target = hovered ? 200.f : 0.f;
+        float current = static_cast<float>(hc.hoverLayer->getOpacity());
+
+        // Skip cells already at the target value (cheap idle path).
+        if (std::abs(current - target) < 0.5f) {
+            if (current != target) hc.hoverLayer->setOpacity(static_cast<GLubyte>(target));
+            continue;
+        }
+
+        float next = current + (target - current) * lerpAmt;
+        if (std::abs(next - target) < 1.f) next = target;
+        hc.hoverLayer->setOpacity(static_cast<GLubyte>(std::clamp(next, 0.f, 255.f)));
+    }
+
+    // Lazy thumbnail loader: refresh viewport requests every few body
+    // executions of update. update() is throttled to every other frame,
+    // so a divisor of 3 here roughly translates to ~10 Hz at 60 FPS —
+    // responsive enough to track scroll, cheap enough to not matter.
+    if ((m_lazyLoadFrameSkip++ % 3) == 0) {
+        requestVisibleThumbnails();
+    }
+}
+
+void EmotePickerPopup::requestVisibleThumbnails() {
+    if (!m_scroll || m_hoverCells.empty()) return;
+
+    CCPoint scrollWorld = m_scroll->convertToWorldSpace({0, 0});
+    CCSize  scrollSize  = m_scroll->getContentSize();
+
+    // Add a small margin so thumbnails are pre-warmed just before they
+    // scroll into view. Avoids visible "..." placeholders on fast scroll.
+    constexpr float PREFETCH_MARGIN = CELL_SIZE * 1.5f;
+    CCRect viewport(scrollWorld.x - PREFETCH_MARGIN,
+                    scrollWorld.y - PREFETCH_MARGIN,
+                    scrollSize.width + PREFETCH_MARGIN * 2,
+                    scrollSize.height + PREFETCH_MARGIN * 2);
+
+    float halfCell = CELL_SIZE * 0.5f;
+
+    for (size_t i = 0; i < m_hoverCells.size(); ++i) {
+        auto& hc = m_hoverCells[i];
+        if (hc.loadRequested) continue;
+        if (!hc.btn || !hc.btn->getParent()) continue;
+
+        CCPoint cellWorld = hc.btn->getParent()->convertToWorldSpace(hc.btn->getPosition());
+        bool inView =
+            cellWorld.x + halfCell >= viewport.getMinX() &&
+            cellWorld.x - halfCell <= viewport.getMaxX() &&
+            cellWorld.y + halfCell >= viewport.getMinY() &&
+            cellWorld.y - halfCell <= viewport.getMaxY();
+
+        if (!inView) continue;
+
+        // The decode worker pool will catch up; the lazy loader will fill
+        // in the rest on subsequent frames. Marking loadRequested here
+        // makes that bookkeeping cheap: a single bool per cell.
+        hc.loadRequested = true;
+
+        WeakRef<EmotePickerPopup> selfWeak = this;
+        size_t cellIdx = i;
+        uint32_t gen = m_gridGeneration;
+        // EmoteCache already dispatches its callback on the main thread,
+        // so we can attach the thumbnail directly without queueing again.
+        EmoteCache::get().loadEmote(hc.info,
+            [selfWeak, cellIdx, gen](CCTexture2D* tex, bool isGif,
+                                     std::vector<uint8_t> const& gifData) {
+                auto self = selfWeak.lock();
+                if (!self) return;
+                if (self->m_gridGeneration != gen) return; // grid was rebuilt
+                self->attachLoadedThumbnail(cellIdx, tex, isGif, gifData);
+            });
+    }
+}
+
+void EmotePickerPopup::attachLoadedThumbnail(size_t cellIdx,
+                                              cocos2d::CCTexture2D* tex,
+                                              bool isGif,
+                                              std::vector<uint8_t> gifData) {
+    if (cellIdx >= m_hoverCells.size()) return;
+    auto& hc = m_hoverCells[cellIdx];
+    if (hc.loaded) return;
+    if (!hc.container || !hc.btn || !hc.btn->getParent()) return;
+
+    auto attachSpriteToCell = [](HoverCell& cell, CCNode* sprite) {
+        if (!sprite || !cell.container) return;
+        float maxD = CELL_SIZE - 6.f;
+        float sc = maxD / std::max(sprite->getContentSize().width,
+                                    sprite->getContentSize().height);
+        sprite->setScale(sc);
+        sprite->setPosition({CELL_SIZE / 2, CELL_SIZE / 2});
+        cell.container->addChild(sprite, 2);
+        if (cell.placeholder) cell.placeholder->setVisible(false);
+        cell.loaded = true;
+    };
+
+    if (isGif && !gifData.empty()) {
+        // Hand the GIF off to the async worker pool so the LZW + frame
+        // decode never blocks the main thread. The popup used to call
+        // `AnimatedGIFSprite::create(data, size)` synchronously per cell,
+        // which decoded every frame on the main thread — that's the main
+        // reason FPS dropped to ~38 when the picker opened.
+        WeakRef<EmotePickerPopup> selfWeak = this;
+        size_t idx = cellIdx;
+        std::string key = hc.info.filename;
+        uint32_t gen = m_gridGeneration;
+        // Mark the cell as "in flight" so subsequent passes don't queue
+        // another async decode for the same cell.
+        hc.loaded = true; // optimistic; will stay true if sprite arrives
+        AnimatedGIFSprite::createAsync(gifData, key,
+            [selfWeak, idx, gen](AnimatedGIFSprite* gifSprite) {
+                // createAsync already dispatches its callback on the main
+                // thread (via Loader::queueInMainThread), so we run here.
+                auto self = selfWeak.lock();
+                if (!self) return;
+                if (self->m_gridGeneration != gen) return; // stale
+                if (idx >= self->m_hoverCells.size()) return;
+                auto& cell = self->m_hoverCells[idx];
+                if (!cell.container || !cell.btn || !cell.btn->getParent()) {
+                    return;
+                }
+                if (!gifSprite) {
+                    cell.loaded = false; // allow retry if grid still alive
+                    return;
+                }
+                float maxD = CELL_SIZE - 6.f;
+                float sc = maxD / std::max(gifSprite->getContentSize().width,
+                                            gifSprite->getContentSize().height);
+                gifSprite->setScale(sc);
+                gifSprite->setPosition({CELL_SIZE / 2, CELL_SIZE / 2});
+                cell.container->addChild(gifSprite, 2);
+                if (cell.placeholder) cell.placeholder->setVisible(false);
+            });
+        return;
+    }
+
+    if (tex) {
+        attachSpriteToCell(hc, CCSprite::createWithTexture(tex));
+    }
+}
+
 // ── Touch handling ──────────────────────────────────
 bool EmotePickerPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     auto loc = touch->getLocation();
@@ -745,10 +1111,15 @@ bool EmotePickerPopup::isInsideVisibleScroll(CCNode* item) {
 
 void EmotePickerPopup::positionNearBottom(CCNode* anchor, float bottomPadding) {
     (void)anchor;
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
-    float halfH = POPUP_H * 0.5f;
+    auto winSize = CCDirector::get()->getWinSize();
+    float halfH = m_popupH * 0.5f;
     float y = std::clamp(halfH + bottomPadding, halfH, winSize.height - halfH);
     m_mainLayer->setPosition({winSize.width * 0.5f, y});
+}
+
+void EmotePickerPopup::positionCentered() {
+    auto winSize = CCDirector::get()->getWinSize();
+    m_mainLayer->setPosition({winSize.width * 0.5f, winSize.height * 0.5f});
 }
 
 } // namespace paimon::emotes

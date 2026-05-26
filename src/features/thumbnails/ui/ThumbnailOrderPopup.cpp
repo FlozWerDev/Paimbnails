@@ -145,13 +145,13 @@ bool ThumbnailOrderPopup::init(
 
     m_selectedLabel = CCLabelBMFont::create("Selected: #1", "bigFont.fnt");
     m_selectedLabel->setScale(0.33f);
-    m_selectedLabel->setPosition({content.width * 0.5f, 48.f});
+    m_selectedLabel->setPosition({content.width * 0.5f, 53.f});
     m_mainLayer->addChild(m_selectedLabel, 3);
 
     m_hintLabel = CCLabelBMFont::create("Main thumbnail is always the first slot.", "chatFont.fnt");
     m_hintLabel->setScale(0.55f);
     m_hintLabel->setColor({140, 220, 255});
-    m_hintLabel->setPosition({content.width * 0.5f, 34.f});
+    m_hintLabel->setPosition({content.width * 0.5f, 39.f});
     m_mainLayer->addChild(m_hintLabel, 3);
 
     auto actionMenu = CCMenu::create();
@@ -159,29 +159,29 @@ bool ThumbnailOrderPopup::init(
     m_mainLayer->addChild(actionMenu, 4);
 
     if (auto leftSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png")) {
-        leftSpr->setScale(0.62f);
+        leftSpr->setScale(0.55f);
         m_moveLeftBtn = CCMenuItemSpriteExtra::create(leftSpr, this, menu_selector(ThumbnailOrderPopup::onMoveLeft));
-        m_moveLeftBtn->setPosition({content.width * 0.5f - 92.f, 18.f});
+        m_moveLeftBtn->setPosition({52.f, 18.f});
         actionMenu->addChild(m_moveLeftBtn);
     }
 
     if (auto rightSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png")) {
         rightSpr->setFlipX(true);
-        rightSpr->setScale(0.62f);
+        rightSpr->setScale(0.55f);
         m_moveRightBtn = CCMenuItemSpriteExtra::create(rightSpr, this, menu_selector(ThumbnailOrderPopup::onMoveRight));
-        m_moveRightBtn->setPosition({content.width * 0.5f - 48.f, 18.f});
+        m_moveRightBtn->setPosition({96.f, 18.f});
         actionMenu->addChild(m_moveRightBtn);
     }
 
-    if (auto cancelSpr = createSmallTextButton("Cancel", "GJ_button_05.png", 0.46f)) {
+    if (auto cancelSpr = createSmallTextButton("Cancel", "GJ_button_05.png", 0.42f, 65)) {
         m_cancelBtn = CCMenuItemSpriteExtra::create(cancelSpr, this, menu_selector(ThumbnailOrderPopup::onCancel));
-        m_cancelBtn->setPosition({content.width * 0.5f + 56.f, 18.f});
+        m_cancelBtn->setPosition({content.width - 140.f, 18.f});
         actionMenu->addChild(m_cancelBtn);
     }
 
-    if (auto saveSpr = createSmallTextButton("Save", "GJ_button_01.png", 0.48f)) {
+    if (auto saveSpr = createSmallTextButton("Save", "GJ_button_01.png", 0.44f, 60)) {
         m_saveBtn = CCMenuItemSpriteExtra::create(saveSpr, this, menu_selector(ThumbnailOrderPopup::onSave));
-        m_saveBtn->setPosition({content.width * 0.5f + 122.f, 18.f});
+        m_saveBtn->setPosition({content.width - 58.f, 18.f});
         actionMenu->addChild(m_saveBtn);
     }
 

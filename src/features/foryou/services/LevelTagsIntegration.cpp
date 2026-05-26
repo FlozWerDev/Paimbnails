@@ -1,4 +1,5 @@
 #include "LevelTagsIntegration.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/WebHelper.hpp"
 #include <matjson.hpp>
 
@@ -20,14 +21,12 @@ std::vector<std::string> LevelTagsIntegration::parseTags(matjson::Value const& d
     auto const& levelObj = data[key];
     // Level-Tags format: { style: [...], theme: [...], meta: [...], gameplay: [...] }
     for (auto const& category : {"style", "theme", "meta", "gameplay"}) {
-        if (levelObj.contains(category) && levelObj[category].isArray()) {
-            for (auto const& tag : levelObj[category].asArray().unwrap()) {
-                auto str = tag.asString().unwrapOr("");
-                if (!str.empty()) {
-                    tags.push_back(str);
-                }
+        paimon::json::forEachInArray(levelObj[category], [&](matjson::Value const& tag) {
+            auto str = tag.asString().unwrapOr("");
+            if (!str.empty()) {
+                tags.push_back(str);
             }
-        }
+        });
     }
     return tags;
 }

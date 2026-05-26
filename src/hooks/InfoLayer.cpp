@@ -19,11 +19,30 @@
 #include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
 #include <algorithm>
+#include <tuple>
 
 using namespace geode::prelude;
 
-// Declarado en ProfilePage.cpp: acceso al cache de texturas
-extern CCTexture2D* getProfileImgCachedTexture(int accountID);
+namespace {
+bool shouldHideVanillaCommentBgNode(cocos2d::CCNode* node) {
+    if (!node) return false;
+    std::string nodeID = node->getID();
+    if (!nodeID.empty()) {
+        if (nodeID.find("paimon-") != std::string::npos) return false;
+        if (nodeID == "background" || nodeID == "comment-background" ||
+            nodeID == "left-border" || nodeID == "right-border" ||
+            nodeID == "top-border" || nodeID == "bottom-border") {
+            return true;
+        }
+    }
+    return typeinfo_cast<CCLayerColor*>(node) || typeinfo_cast<CCScale9Sprite*>(node);
+}
+}
+
+// Acceso al cache de texturas de profileimg (declarado en
+// features/profiles/services/ProfileImageCache.hpp). La implementacion vive
+// en este archivo y se exporta sin namespace por compatibilidad historica.
+#include "../features/profiles/services/ProfileImageCache.hpp"
 
 class $modify(PaimonInfoLayer, InfoLayer) {
     static void onModify(auto& self) {
@@ -35,7 +54,106 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         bool m_hasCaveEffect = false;
         int m_levelID = 0;
         paimon::SubscriptionHandle m_bgEventHandle = 0;
+        int m_bgRequestToken = 0;
     };
+
+    static std::string makeInfoLayerBlurCacheKey(int levelID, CCSize const& imgArea) {
+        return fmt::format(
+            "infolayer:{}:{}x{}",
+            levelID,
+            static_cast<int>(std::round(imgArea.width)),
+            static_cast<int>(std::round(imgArea.height))
+        );
+    }
+
+    std::tuple<CCNode*, CCSize, CCPoint> resolvePopupBackgroundLayout() {
+        auto layer = this->m_mainLayer;
+        if (!layer) {
+            return {nullptr, CCSizeZero, CCPointZero};
+        }
+
+        auto layerSize = layer->getContentSize();
+        CCSize popupSize = CCSize(440.f, 290.f);
+        CCPoint popupCenter = ccp(layerSize.width * 0.5f, layerSize.height * 0.5f);
+
+        if (auto bg = layer->getChildByID("background")) {
+            popupSize = bg->getScaledContentSize();
+            popupCenter = bg->getPosition();
+        } else {
+            for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
+                if (typeinfo_cast<CCScale9Sprite*>(child)) {
+                    popupSize = child->getScaledContentSize();
+                    popupCenter = child->getPosition();
+                    break;
+                }
+            }
+        }
+
+        return {layer, popupSize, popupCenter};
+    }
+
+    CCClippingNode* buildBlurBackgroundClip(CCSprite* backgroundSprite, CCSize const& imgArea, CCPoint popupCenter) {
+        if (!backgroundSprite || imgArea.width <= 0.f || imgArea.height <= 0.f) {
+            return nullptr;
+        }
+
+        backgroundSprite->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
+
+        auto stencil = paimon::SpriteHelper::createRectStencil(imgArea.width, imgArea.height);
+        auto clip = CCClippingNode::create();
+        if (!stencil || !clip) {
+            return nullptr;
+        }
+
+        clip->setStencil(stencil);
+        clip->setContentSize(imgArea);
+        clip->setAnchorPoint(ccp(0.5f, 0.5f));
+        clip->setPosition(popupCenter);
+        clip->setID("paimon-infolayer-bg-clip"_spr);
+        clip->addChild(backgroundSprite);
+
+        auto dark = CCLayerColor::create(ccc4(0, 0, 0, 120));
+        dark->setContentSize(imgArea);
+        dark->setAnchorPoint(ccp(0, 0));
+        dark->setPosition(ccp(0, 0));
+        dark->setID("paimon-infolayer-dark-overlay"_spr);
+        clip->addChild(dark);
+        return clip;
+    }
+
+    void installBackgroundClip(CCClippingNode* clip, bool fadeIn) {
+        auto layer = this->m_mainLayer;
+        if (!layer || !clip) {
+            return;
+        }
+
+        if (m_fields->m_bgClip && m_fields->m_bgClip->getParent()) {
+            m_fields->m_bgClip->setID("paimon-infolayer-bg-clip-old"_spr);
+            this->unschedule(schedule_selector(PaimonInfoLayer::cleanupOldBgClip));
+            this->scheduleOnce(schedule_selector(PaimonInfoLayer::cleanupOldBgClip), 0.35f);
+        }
+        m_fields->m_bgClip = nullptr;
+
+        if (fadeIn) {
+            if (auto bgSprite = clip->getChildByType<CCSprite>(0)) {
+                bgSprite->setOpacity(0);
+                bgSprite->runAction(CCFadeTo::create(0.3f, 255));
+            }
+        }
+
+        layer->addChild(clip, -1);
+        m_fields->m_bgClip = clip;
+
+        styleInfoLayerBgs(layer);
+        addInfoAreaPanel();
+        this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
+        // Reduce frecuencia del tick (de 0.5s a 1.5s) — el styleInfoLayerBgs
+        // hace recursion completa por todo el arbol y por cada CommentCell,
+        // lo que dropea FPS sostenidamente. La cache por celda
+        // (paimon-comment-bgs-hidden) hace que las pasadas siguientes sean
+        // O(N) sin recursion profunda.
+        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 1.5f);
+    }
 
     $override
     bool init(GJGameLevel* level, GJUserScore* score, GJLevelList* list) {
@@ -120,69 +238,44 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     void applyBlurredBackground(CCTexture2D* tex) {
         if (!tex) return;
 
-        auto layer = this->m_mainLayer;
+        auto [layer, popupSize, popupCenter] = resolvePopupBackgroundLayout();
         if (!layer) return;
-        auto layerSize = layer->getContentSize();
-
-        CCSize popupSize = CCSize(440.f, 290.f);
-        CCPoint popupCenter = ccp(layerSize.width * 0.5f, layerSize.height * 0.5f);
-
-        if (auto bg = layer->getChildByID("background")) {
-            popupSize = bg->getScaledContentSize();
-            popupCenter = bg->getPosition();
-        } else {
-            for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
-                if (typeinfo_cast<CCScale9Sprite*>(child)) {
-                    popupSize = child->getScaledContentSize();
-                    popupCenter = child->getPosition();
-                    break;
-                }
-            }
-        }
 
         float padding = 3.f;
         CCSize imgArea = CCSize(popupSize.width - padding * 2.f, popupSize.height - padding * 2.f);
 
-        auto blurredSprite = BlurSystem::getInstance()->createPaimonBlurSprite(tex, imgArea, 4.0f);
-        if (!blurredSprite) return;
+        int requestToken = ++m_fields->m_bgRequestToken;
+        int levelID = m_fields->m_levelID;
 
-        blurredSprite->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
-
-        auto stencil = paimon::SpriteHelper::createRectStencil(imgArea.width, imgArea.height);
-
-        auto clip = CCClippingNode::create();
-        clip->setStencil(stencil);
-        clip->setContentSize(imgArea);
-        clip->setAnchorPoint(ccp(0.5f, 0.5f));
-        clip->setPosition(popupCenter);
-        clip->setID("paimon-infolayer-bg-clip"_spr);
-
-        clip->addChild(blurredSprite);
-
-        auto dark = CCLayerColor::create(ccc4(0, 0, 0, 120));
-        dark->setContentSize(imgArea);
-        dark->setAnchorPoint(ccp(0, 0));
-        dark->setPosition(ccp(0, 0));
-        dark->setID("paimon-infolayer-dark-overlay"_spr);
-        clip->addChild(dark);
-
-        if (m_fields->m_bgClip && m_fields->m_bgClip->getParent()) {
-            m_fields->m_bgClip->setID("paimon-infolayer-bg-clip-old"_spr);
-            this->unschedule(schedule_selector(PaimonInfoLayer::cleanupOldBgClip));
-            this->scheduleOnce(schedule_selector(PaimonInfoLayer::cleanupOldBgClip), 0.35f);
+        if (auto placeholderSprite = CCSprite::createWithTexture(tex)) {
+            float scale = std::max(
+                imgArea.width / std::max(1.0f, placeholderSprite->getContentSize().width),
+                imgArea.height / std::max(1.0f, placeholderSprite->getContentSize().height)
+            );
+            placeholderSprite->setScale(scale);
+            if (auto placeholderClip = buildBlurBackgroundClip(placeholderSprite, imgArea, popupCenter)) {
+                installBackgroundClip(placeholderClip, true);
+            }
         }
-        m_fields->m_bgClip = nullptr;
 
-        blurredSprite->setOpacity(0);
-        blurredSprite->runAction(CCFadeTo::create(0.3f, 255));
+        WeakRef<PaimonInfoLayer> safeRef = this;
+        BlurSystem::getInstance()->buildPaimonBlurAsync(
+            tex,
+            imgArea,
+            4.0f,
+            makeInfoLayerBlurCacheKey(levelID, imgArea),
+            [safeRef, requestToken, imgArea, popupCenter](CCSprite* blurredSprite) {
+                auto ref = safeRef.lock();
+                auto* self = static_cast<PaimonInfoLayer*>(ref.data());
+                if (!self || !self->getParent()) return;
+                if (self->m_fields->m_bgRequestToken != requestToken) return;
+                if (!blurredSprite) return;
 
-        layer->addChild(clip, -1);
-        m_fields->m_bgClip = clip;
-
-        styleInfoLayerBgs(layer);
-        addInfoAreaPanel();
-        this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
-        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.0f);
+                if (auto clip = self->buildBlurBackgroundClip(blurredSprite, imgArea, popupCenter)) {
+                    self->installBackgroundClip(clip, true);
+                }
+            }
+        );
     }
 
     void applyBlurredBackgroundGif(std::string const& gifKey) {
@@ -230,31 +323,10 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         }
         gif->play();
 
-        auto stencil = paimon::SpriteHelper::createRectStencil(imgArea.width, imgArea.height);
-
-        auto clip = CCClippingNode::create();
-        clip->setStencil(stencil);
-        clip->setContentSize(imgArea);
-        clip->setAnchorPoint(ccp(0.5f, 0.5f));
-        clip->setPosition(popupCenter);
-        clip->setID("paimon-infolayer-bg-clip"_spr);
-
-        clip->addChild(gif);
-
-        auto dark = CCLayerColor::create(ccc4(0, 0, 0, 120));
-        dark->setContentSize(imgArea);
-        dark->setAnchorPoint(ccp(0, 0));
-        dark->setPosition(ccp(0, 0));
-        dark->setID("paimon-infolayer-dark-overlay"_spr);
-        clip->addChild(dark);
-
-        layer->addChild(clip, -1);
-        m_fields->m_bgClip = clip;
-
-        styleInfoLayerBgs(layer);
-        addInfoAreaPanel();
-        this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
-        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.0f);
+        if (auto clip = buildBlurBackgroundClip(gif, imgArea, popupCenter)) {
+            ++m_fields->m_bgRequestToken;
+            installBackgroundClip(clip, false);
+        }
     }
 
     void addInfoAreaPanel() {
@@ -345,9 +417,6 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                                 id == "top-border" || id == "bottom-border") {
                                 lc->setVisible(false);
                             }
-                            if (id.empty()) {
-                                lc->setVisible(false);
-                            }
                         }
                     }
 
@@ -377,6 +446,13 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                         continue;
                     }
 
+                    // Optimizacion FPS: si la celda ya fue procesada (todos los
+                    // bgs vanilla escondidos) y no ha sido reciclada (loadFromComment
+                    // limpia este flag), saltamos la recursion completa.
+                    if (child->getUserObject("paimon-comment-bgs-hidden"_spr)) {
+                        continue;
+                    }
+
                     auto hideBgsRecursive = [](auto const& recurse, CCNode* node) -> void {
                         if (!node) return;
                         auto* kids = node->getChildren();
@@ -384,28 +460,20 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                         for (auto* k : CCArrayExt<CCNode*>(kids)) {
                             if (!k) continue;
 
-                            std::string kID = k->getID();
-                            if (!kID.empty() && kID.find("paimon-") != std::string::npos) {
+                            if (!shouldHideVanillaCommentBgNode(k)) {
+                                if (!typeinfo_cast<CCMenu*>(k)) {
+                                    recurse(recurse, k);
+                                }
                                 continue;
                             }
 
-                            if (typeinfo_cast<CCLayerColor*>(k)) {
-                                k->setVisible(false);
-                                continue;
-                            }
-
-                            if (typeinfo_cast<CCScale9Sprite*>(k)) {
-                                k->setVisible(false);
-                                continue;
-                            }
-
-                            if (!typeinfo_cast<CCMenu*>(k)) {
-                                recurse(recurse, k);
-                            }
+                            k->setVisible(false);
                         }
                     };
 
                     hideBgsRecursive(hideBgsRecursive, child);
+                    // Marcar como procesada hasta el proximo loadFromComment.
+                    child->setUserObject("paimon-comment-bgs-hidden"_spr, cocos2d::CCBool::create(true));
                 }
 
                 self(self, child);
@@ -439,6 +507,17 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     void onExit() {
         restoreMusicEffect();
         this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
+        this->unschedule(schedule_selector(PaimonInfoLayer::cleanupOldBgClip));
+        // FIX FPS leak: desuscribir el EventBus listener al salir.
+        // Antes, cada apertura de InfoLayer dejaba un listener zombie que se
+        // acumulaba indefinidamente, costando CPU en cada publish del evento.
+        if (m_fields->m_bgEventHandle != 0) {
+            paimon::EventBus::get().unsubscribe(m_fields->m_bgEventHandle);
+            m_fields->m_bgEventHandle = 0;
+        }
+        // Invalidar tokens de callbacks pendientes para que no toquen al InfoLayer
+        // cuando regrese del thread pool / scheduler tras salir.
+        ++m_fields->m_bgRequestToken;
         InfoLayer::onExit();
     }
 

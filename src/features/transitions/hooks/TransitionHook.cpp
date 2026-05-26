@@ -1,4 +1,4 @@
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════
 // TransitionHook: intercepta las transiciones del juego
 //
 // Hookea CCDirector::replaceScene, pushScene y popSceneWithTransition
@@ -10,7 +10,7 @@
 //   - Detecta PlayLayer para aplicar levelEntryConfig si esta configurada.
 //   - Guard de reentrada robusto con RAII para evitar doble intercepcion
 //     (especialmente desde CustomTransitionScene::onTransitionFinished).
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CCDirector.hpp>
@@ -41,6 +41,27 @@ static CCScene* unwrapTransition(CCTransitionScene* trans) {
     return nullptr;
 }
 
+// Detecta si la transicion ya fue creada por otro mod custom (no por
+// cocos/GD vanilla). Si el typeid no es de cocos2d::CCTransition*, asumimos
+// que es de otro mod y dejamos pasar tal cual para no pisar su intencion.
+//
+// Cocos2d-x ships con: CCTransitionFade, CCTransitionMoveInL/R/T/B,
+// CCTransitionSlideInL/R/T/B, CCTransitionShrinkGrow, CCTransitionRotoZoom,
+// CCTransitionFlipX/Y/Angular, CCTransitionZoomFlipX/Y/Angular,
+// CCTransitionCrossFade, CCTransitionTurnOffTiles, CCTransitionSplitCols/Rows,
+// CCTransitionFadeTR/BL/Up/Down, CCTransitionPageTurn, CCTransitionProgress*.
+// Todos llevan "cocos2d::CCTransition" en su typeid.
+static bool isVanillaTransition(CCTransitionScene* trans) {
+    if (!trans) return false;
+    char const* name = typeid(*trans).name();
+    if (!name) return false;
+    std::string_view sv(name);
+    // MSVC: "class cocos2d::CCTransitionFade", GCC: "N7cocos2d18CCTransitionFadeE"
+    // Buscamos el patron comun.
+    return sv.find("cocos2d") != std::string_view::npos &&
+           sv.find("CCTransition") != std::string_view::npos;
+}
+
 static bool shouldIntercept() {
     if (s_applying) return false;
     if (!s_gameReady) return false;
@@ -48,13 +69,13 @@ static bool shouldIntercept() {
     return true;
 }
 
-// â”€â”€ Detecta si la escena destino contiene un PlayLayer â”€â”€â”€â”€â”€â”€
+// ── Detecta si la escena destino contiene un PlayLayer ──────
 // Esto permite aplicar levelEntryConfig cuando el usuario navega hacia un nivel.
 static bool destContainsPlayLayer(CCScene* scene) {
     return scene && scene->getChildByType<PlayLayer>(0);
 }
 
-// â”€â”€ Selecciona la configuracion de transicion apropiada â”€â”€â”€â”€â”€
+// ── Selecciona la configuracion de transicion apropiada ─────
 // Si la escena destino contiene PlayLayer y hay una config de nivel configurada,
 // usa esa; de lo contrario usa la global.
 static TransitionConfig selectConfig(CCScene* destScene) {
@@ -92,14 +113,17 @@ class $modify(PaimonDirector, CCDirector) {
         (void)self.setHookPriorityPre("cocos2d::CCDirector::replaceScene", geode::Priority::VeryLate);
         (void)self.setHookPriorityPre("cocos2d::CCDirector::pushScene", geode::Priority::VeryLate);
         (void)self.setHookPriorityPre("cocos2d::CCDirector::popSceneWithTransition", geode::Priority::VeryLate);
-        (void)self.setHookPriorityPre("cocos2d::CCDirector::popScene", geode::Priority::VeryLate);
+        // Nota: NO hookeamos popScene() (plain) — algunos mods lo usan
+        // para volver atras sin transicion intencionalmente, y reemplazarlo
+        // por nuestra transicion rompe esa intencion. Solo interceptamos
+        // transiciones que YA vienen envueltas en CCTransitionScene.
     }
 
-    // â”€â”€ replaceScene â”€â”€
+    // ── replaceScene ──
     bool replaceScene(CCScene* scene) {
         if (!scene) return CCDirector::replaceScene(scene);
 
-        // Detectar cuando MenuLayer aparece â†’ juego listo
+        // Detectar cuando MenuLayer aparece → juego listo
         if (!s_gameReady) {
             bool foundMenu = false;
             if (scene->getChildByType<MenuLayer>(0)) foundMenu = true;
@@ -125,10 +149,14 @@ class $modify(PaimonDirector, CCDirector) {
         auto* nativeTrans = typeinfo_cast<CCTransitionScene*>(scene);
         if (!nativeTrans) return CCDirector::replaceScene(scene);
 
+        // No pisar transiciones custom de otros mods. Solo reemplazamos
+        // transiciones vanilla de cocos2d/GD.
+        if (!isVanillaTransition(nativeTrans)) return CCDirector::replaceScene(scene);
+
         CCScene* realDest = unwrapTransition(nativeTrans);
         if (!realDest) return CCDirector::replaceScene(scene);
 
-        // Ref<> gestiona el refcount automaticamente â€” prohibido retain/release directo
+        // Ref<> gestiona el refcount automaticamente — prohibido retain/release directo
         Ref<CCScene> safeDest = realDest;
         auto cfg = selectConfig(realDest);
         ApplyingGuard guard;
@@ -136,7 +164,7 @@ class $modify(PaimonDirector, CCDirector) {
         return CCDirector::replaceScene(ourTrans ? ourTrans : realDest);
     }
 
-    // â”€â”€ pushScene â”€â”€
+    // ── pushScene ──
     bool pushScene(CCScene* scene) {
         if (!scene || !shouldIntercept()) return CCDirector::pushScene(scene);
 
@@ -146,10 +174,13 @@ class $modify(PaimonDirector, CCDirector) {
         auto* nativeTrans = typeinfo_cast<CCTransitionScene*>(scene);
         if (!nativeTrans) return CCDirector::pushScene(scene);
 
+        // No pisar transiciones custom de otros mods.
+        if (!isVanillaTransition(nativeTrans)) return CCDirector::pushScene(scene);
+
         CCScene* realDest = unwrapTransition(nativeTrans);
         if (!realDest) return CCDirector::pushScene(scene);
 
-        // Ref<> gestiona el refcount automaticamente â€” prohibido retain/release directo
+        // Ref<> gestiona el refcount automaticamente — prohibido retain/release directo
         Ref<CCScene> safeDest = realDest;
         auto cfg = selectConfig(realDest);
         ApplyingGuard guard;
@@ -157,69 +188,59 @@ class $modify(PaimonDirector, CCDirector) {
         return CCDirector::pushScene(ourTrans ? ourTrans : realDest);
     }
 
-    // â”€â”€ popSceneWithTransition (cubre la mayoria de "back" en GD) â”€â”€
+// ── popSceneWithTransition (cubre la mayoria de "back" en GD) ──
     bool popSceneWithTransition(float duration, PopTransition type) {
         if (!shouldIntercept()) {
             return CCDirector::popSceneWithTransition(duration, type);
         }
 
-        // El popSceneWithTransition internamente hace pop y crea una transicion.
-        // Necesitamos interceptar: hacer el pop, pero aplicar NUESTRA transicion.
         auto& stack = m_pobScenesStack;
         if (!stack || stack->count() < 2) {
             return CCDirector::popSceneWithTransition(duration, type);
         }
 
-        // La escena destino es la penultima del stack
         auto* destScene = typeinfo_cast<CCScene*>(stack->objectAtIndex(stack->count() - 2));
         if (!destScene) {
             return CCDirector::popSceneWithTransition(duration, type);
         }
 
-        // Ref<> en vez de retain/release manual pa seguridad de memoria
+        // CRITICO: Capturar fromScene ANTES de popScene
+        // para que la transicion tenga la escena "from" correcta
+        auto* fromScene = m_pRunningScene;
+        Ref<CCScene> safeFrom = fromScene;
         Ref<CCScene> safeDest = destScene;
 
         auto cfg = selectConfig(destScene);
 
         ApplyingGuard guard;
-        // Hacer pop normal (sin transicion visual nuestra)
-        // con s_applying activo, replaceScene dejara pasar sin interceptar
+        // Hacer pop normal (remueve la escena actual del stack)
         CCDirector::popScene();
 
-        // Ahora reemplazar con nuestra transicion
-        auto* ourTrans = createTransitionSafe(destScene, cfg);
-        CCDirector::replaceScene(ourTrans ? ourTrans : destScene);
+        // Restaurar temporalmente m_pRunningScene a fromScene
+        // para que createTransitionSafe/getRunningScene capturen
+        // la escena "from" correcta (no destScene que es la misma)
+        auto* savedRunning = m_pRunningScene;
+        m_pRunningScene = fromScene;
 
-        return true;
+        auto* ourTrans = createTransitionSafe(destScene, cfg);
+
+        // Restaurar (ourTrans reemplazara savedRunning como running scene)
+        m_pRunningScene = savedRunning;
+
+        return CCDirector::replaceScene(ourTrans ? ourTrans : destScene);
     }
 
-    // â”€â”€ popScene (sin transicion nativa) â”€â”€
+    // ── popScene (sin transicion nativa) ──
+    //
+    // CRITICO para compat con otros mods: NO interceptamos el plain popScene().
+    //
+    // Mods como Globed/BetterInfo usan popScene() explicitamente cuando NO
+    // quieren transicion (volver instantaneo a la escena anterior). Si lo
+    // sustituimos por replaceScene+nuestra transicion, rompemos esa
+    // intencionalidad. Mantenemos passthrough total: solo interceptamos
+    // transiciones que YA vienen envueltas en CCTransitionScene
+    // (replaceScene/pushScene/popSceneWithTransition).
     void popScene() {
-        if (!shouldIntercept()) {
-            CCDirector::popScene();
-            return;
-        }
-
-        auto& stack = m_pobScenesStack;
-        if (!stack || stack->count() < 2) {
-            CCDirector::popScene();
-            return;
-        }
-
-        auto* destScene = typeinfo_cast<CCScene*>(stack->objectAtIndex(stack->count() - 2));
-        if (!destScene) {
-            CCDirector::popScene();
-            return;
-        }
-
-        // Ref<> en vez de retain/release manual pa seguridad de memoria
-        Ref<CCScene> safeDest = destScene;
-
-        auto cfg = selectConfig(destScene);
-
-        ApplyingGuard guard;
         CCDirector::popScene();
-        auto* ourTrans = createTransitionSafe(destScene, cfg);
-        CCDirector::replaceScene(ourTrans ? ourTrans : destScene);
     }
 };

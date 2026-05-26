@@ -14,6 +14,7 @@ using cocos2d::ccColor3B;
 using cocos2d::ccColor4B;
 using cocos2d::ccV3F_C4B_T2F;
 using cocos2d::ccGLBlendFunc;
+using cocos2d::ccTexParams;
 using cocos2d::ccGLBindTexture2D;
 using cocos2d::ccGLEnableVertexAttribs;
 using cocos2d::kCCVertexAttrib_Position;
@@ -38,7 +39,20 @@ public:
     float m_brightness = 1.0f;
     CCSize m_texSize = {0, 0};
 
+    // Cached uniform locations — refreshed only when the shader program
+    // changes. getUniformLocationForName() does a per-call string walk over
+    // the shader's uniform map (cocos2d does not memoize these). With many
+    // thumbnails on screen × 4 lookups per draw × 360 fps that adds up to
+    // a measurable slice of frame time. Caching here is safe because uniform
+    // locations are fixed for the lifetime of a linked shader program.
+    cocos2d::CCGLProgram* m_cachedProgram = nullptr;
+    GLint m_locIntensity  = -2;  // -2 = uninitialized, -1 = not present
+    GLint m_locTime       = -2;
+    GLint m_locBrightness = -2;
+    GLint m_locTexSize    = -2;
+
     static PaimonShaderSprite* createWithTexture(CCTexture2D* texture) {
+        if (!texture) return nullptr;
         auto sprite = new PaimonShaderSprite();
         if (sprite && sprite->initWithTexture(texture)) {
             sprite->autorelease();
@@ -52,27 +66,37 @@ public:
     void draw() override {
         CC_NODE_DRAW_SETUP();
 
-        GLint intensityLoc = getShaderProgram()->getUniformLocationForName("u_intensity");
-        if (intensityLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(intensityLoc, m_intensity);
+        auto* prog = getShaderProgram();
+
+        // Refresh cache when the shader program identity changes (e.g. when
+        // the user switches effects). For the steady-state case (single
+        // shader for the lifetime of the sprite) this is a single pointer
+        // compare per frame.
+        if (prog != m_cachedProgram) {
+            m_cachedProgram = prog;
+            m_locIntensity  = prog ? prog->getUniformLocationForName("u_intensity")  : -1;
+            m_locTime       = prog ? prog->getUniformLocationForName("u_time")       : -1;
+            m_locBrightness = prog ? prog->getUniformLocationForName("u_brightness") : -1;
+            m_locTexSize    = prog ? prog->getUniformLocationForName("u_texSize")    : -1;
         }
 
-        GLint timeLoc = getShaderProgram()->getUniformLocationForName("u_time");
-        if (timeLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(timeLoc, m_time);
+        if (m_locIntensity != -1) {
+            prog->setUniformLocationWith1f(m_locIntensity, m_intensity);
         }
 
-        GLint brightLoc = getShaderProgram()->getUniformLocationForName("u_brightness");
-        if (brightLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(brightLoc, m_brightness);
+        if (m_locTime != -1) {
+            prog->setUniformLocationWith1f(m_locTime, m_time);
         }
 
-        GLint sizeLoc = getShaderProgram()->getUniformLocationForName("u_texSize");
-        if (sizeLoc != -1) {
+        if (m_locBrightness != -1) {
+            prog->setUniformLocationWith1f(m_locBrightness, m_brightness);
+        }
+
+        if (m_locTexSize != -1) {
             if (m_texSize.width == 0) {
                 m_texSize = getTexture()->getContentSizeInPixels();
             }
-            getShaderProgram()->setUniformLocationWith2f(sizeLoc, m_texSize.width, m_texSize.height);
+            prog->setUniformLocationWith2f(m_locTexSize, m_texSize.width, m_texSize.height);
         }
 
         ccGLBlendFunc(m_sBlendFunc.src, m_sBlendFunc.dst);
@@ -130,6 +154,8 @@ public:
 
         auto texture = new CCTexture2D();
         if (texture && texture->initWithData(data, kCCTexture2DPixelFormat_RGBA8888, 2, 2, {2.0f, 2.0f})) {
+            ccTexParams linearParams{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
+            texture->setTexParameters(&linearParams);
             if (sprite && sprite->initWithTexture(texture)) {
                 texture->release();
                 sprite->autorelease();
@@ -185,6 +211,10 @@ public:
 
     void setVector(CCPoint const&) {}
 
+    void updateShaderTime(float dt) {
+        m_time += dt;
+    }
+
     void draw() override {
         CC_NODE_DRAW_SETUP();
 
@@ -200,7 +230,10 @@ public:
 
         GLint sizeLoc = getShaderProgram()->getUniformLocationForName("u_texSize");
         if (sizeLoc != -1) {
-            getShaderProgram()->setUniformLocationWith2f(sizeLoc, getContentSize().width, getContentSize().height);
+            CCSize texSize = m_texSize.width > 0.f && m_texSize.height > 0.f
+                ? m_texSize
+                : getContentSize();
+            getShaderProgram()->setUniformLocationWith2f(sizeLoc, texSize.width, texSize.height);
         }
 
         ccGLBlendFunc(m_sBlendFunc.src, m_sBlendFunc.dst);
@@ -309,5 +342,3 @@ public:
         CCSprite::draw();
     }
 };
-
-

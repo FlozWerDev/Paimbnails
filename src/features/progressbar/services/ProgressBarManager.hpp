@@ -5,6 +5,9 @@
 // ────────────────────────────────────────────────────────────
 // ProgressBarConfig: customization settings for the in-game
 // progress bar (node ID = "progress-bar" from geode.node-ids).
+//
+// Storage layout in the JSON config file is preserved across
+// versions; only fields with the same key get loaded.
 // ────────────────────────────────────────────────────────────
 
 // Color animation mode. Solid = the picked color, Pulse = ping-pong
@@ -145,53 +148,76 @@ public:
     void endDrag();
     bool isDragging() const { return m_dragging; }
 
-    // Remembers the vanilla position so we can restore when disabled.
-    void captureVanillaBaseline(cocos2d::CCNode* bar);
-
     // Forces a fresh baseline capture on the next tick. Useful when
     // transitioning into a new level or when vanilla state changed.
-    void invalidateBaseline() { m_baselineCaptured = false; }
+    void invalidateBaseline() {
+        m_baselineCaptured = false;
+        m_labelBaselineCaptured = false;
+        m_cachedPlayLayer = nullptr;
+        m_cachedBar = nullptr;
+        m_cachedLabel = nullptr;
+    }
 
     // Releases any cached custom texture / GIF. Call this between
     // levels so the invisible host nodes don't leak across scenes.
     void releaseCustomTextures();
 
+    // Clamp / repair invariants on the config (e.g. ranges out of
+    // expected bounds, decoration paths empty). Idempotent.
+    void sanitizeConfig();
+
     // Decoration helpers (manipulated by the edit overlay).
     // Returns the index of the newly-appended decoration.
     int  addDecoration(BarDecoration const& d);
     void removeDecoration(int index);
+    int  decorationCount() const { return static_cast<int>(m_config.decorations.size()); }
     // Returns the live CCNode backing decoration `index` (or nullptr).
     cocos2d::CCNode* getDecorationNode(int index);
 
 private:
-    // Forward member types used by the texture helpers below.
+    ProgressBarManager() = default;
+    std::filesystem::path configPath() const;
+
+    // ── apply(): split into focused helpers ──
+    // Each helper assumes its inputs are already validated.
+    cocos2d::CCNode* findBarNode(cocos2d::CCNode* root);
+    cocos2d::CCNode* findLabelNode(cocos2d::CCNode* root);
+
+    void captureBaselineIfNeeded(cocos2d::CCNode* bar, cocos2d::CCNode* label);
+    void restoreVanillaState(cocos2d::CCNode* bar, cocos2d::CCNode* label);
+
+    void tickAnimClock();
+    void applyTransform(cocos2d::CCNode* bar);
+    void applyOpacity(cocos2d::CCNode* bar);
+    void applySprites(cocos2d::CCNode* bar, cocos2d::CCNode* playLayerRoot);
+    void applyLabel(cocos2d::CCNode* label, cocos2d::CCNode* bar);
+    void applyDecorations(cocos2d::CCNode* playLayerRoot);
+
+    // ── Custom texture support ──
     struct TextureBaseline {
         geode::Ref<cocos2d::CCTexture2D> texture;
         cocos2d::CCRect rect{};
         bool captured = false;
     };
     struct CustomTexture {
-        std::string path;                        // cache key
-        cocos2d::CCNode* animHost = nullptr;     // AnimatedGIFSprite if GIF (owned by PlayLayer)
-        geode::Ref<cocos2d::CCTexture2D> staticTex; // static texture otherwise
+        std::string path;                              // cache key
+        cocos2d::CCNode* animHost = nullptr;           // GIF host (owned by PlayLayer)
+        geode::Ref<cocos2d::CCTexture2D> staticTex;    // static texture otherwise
+        bool justChanged = false;                      // set true the frame the tex changed
     };
 
-    // Updates a CustomTexture slot: loads the image/GIF from `path`
-    // if it changed, caches it, and returns the current frame texture
-    // (nullptr if load failed).
+    // Loads the image/GIF at `path` if it changed since last call,
+    // caches it, and returns the current frame texture (nullptr on
+    // failure). `host` is the parent for invisible GIF host nodes.
     cocos2d::CCTexture2D* resolveCustomTexture(
         cocos2d::CCNode* host,
         CustomTexture& slot,
         std::string const& path);
 
-    // Captures `spr`'s current texture/rect into `tb` if not yet captured.
     void captureSpriteBaseline(cocos2d::CCSprite* spr, TextureBaseline& tb);
-    // Restores sprite back to its captured baseline texture.
     void restoreSpriteBaseline(cocos2d::CCSprite* spr, TextureBaseline& tb);
 
-    ProgressBarManager() = default;
-    std::filesystem::path configPath() const;
-
+    // Persist state
     ProgressBarConfig m_config;
 
     // Cached vanilla position/scale/rotation (sampled once).
@@ -227,6 +253,13 @@ private:
     // rebuild only when needed.
     std::vector<std::string> m_liveDecorationPaths;
 
-    // Clock used for color animation (monotonic seconds).
+    // Clock used for color animation (monotonic seconds). Uses a
+    // member instead of a static so values reset cleanly per session.
     float m_animTime = 0.f;
+    long long m_lastTickNs = 0; // 0 = uninitialized
+
+    // Perf: cached node references to avoid getChildByIDRecursive every frame
+    cocos2d::CCNode* m_cachedPlayLayer = nullptr;
+    cocos2d::CCNode* m_cachedBar = nullptr;
+    cocos2d::CCNode* m_cachedLabel = nullptr;
 };

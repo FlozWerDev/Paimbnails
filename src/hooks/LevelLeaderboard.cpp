@@ -9,6 +9,7 @@
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
+#include <vector>
 
 using namespace geode::prelude;
 
@@ -66,6 +67,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         // Estiliza la lista del leaderboard
         if (m_list) {
             styleLeaderboardList(m_list);
+            normalizeCellBackgrounds(m_list);
         }
 
         return true;
@@ -145,12 +147,166 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         }
     }
 
+    // Normaliza la opacidad de todas las celdas del leaderboard
+    // para que no se vea el patron alternado del juego vanilla
+    void normalizeCellBackgrounds(GJCommentListLayer* list) {
+        if (!list) return;
+
+        // Buscar el BoomListView dentro de la lista
+        BoomListView* listView = nullptr;
+        if (auto* ch = list->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(ch)) {
+                if (auto* blv = typeinfo_cast<BoomListView*>(child)) {
+                    listView = blv;
+                    break;
+                }
+            }
+        }
+        if (!listView) return;
+
+        // Buscar el TableView dentro del BoomListView
+        TableView* tableView = nullptr;
+        if (auto* ch = listView->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(ch)) {
+                if (auto* tv = typeinfo_cast<TableView*>(child)) {
+                    tableView = tv;
+                    break;
+                }
+            }
+        }
+        if (!tableView) return;
+
+        // Buscar el CCContentLayer con las celdas
+        CCNode* contentLayer = nullptr;
+        if (auto* ch = tableView->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(ch)) {
+                if (child && child->getChildrenCount() > 0) {
+                    contentLayer = child;
+                    break;
+                }
+            }
+        }
+        if (!contentLayer) return;
+
+        // Iterar las celdas y ocultar su m_backgroundLayer
+        int cellIndex = 0;
+        auto* cellChildren = contentLayer->getChildren();
+        if (!cellChildren) return;
+        for (auto* child : CCArrayExt<CCNode*>(cellChildren)) {
+            auto* cell = typeinfo_cast<TableViewCell*>(child);
+            if (!cell) continue;
+
+            // Ocultar el fondo alternado vanilla
+            if (auto* bg = cell->m_backgroundLayer) {
+                bg->setOpacity(0);
+            }
+
+            cellIndex++;
+        }
+    }
+
+    // Anima las celdas con un efecto escalonado de deslizamiento + fade-in
+    void animateCellsEntrance(GJCommentListLayer* list) {
+        if (!list) return;
+
+        BoomListView* listView = nullptr;
+        if (auto* ch = list->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(ch)) {
+                if (auto* blv = typeinfo_cast<BoomListView*>(child)) {
+                    listView = blv;
+                    break;
+                }
+            }
+        }
+        if (!listView) return;
+
+        TableView* tableView = nullptr;
+        if (auto* ch = listView->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(ch)) {
+                if (auto* tv = typeinfo_cast<TableView*>(child)) {
+                    tableView = tv;
+                    break;
+                }
+            }
+        }
+        if (!tableView) return;
+
+        CCNode* contentLayer = nullptr;
+        if (auto* ch = tableView->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(ch)) {
+                if (child && child->getChildrenCount() > 0) {
+                    contentLayer = child;
+                    break;
+                }
+            }
+        }
+        if (!contentLayer) return;
+
+        auto* cellChildren = contentLayer->getChildren();
+        if (!cellChildren) return;
+
+        // Recoger todas las celdas visibles
+        std::vector<CCNode*> cells;
+        for (auto* child : CCArrayExt<CCNode*>(cellChildren)) {
+            if (typeinfo_cast<TableViewCell*>(child)) {
+                cells.push_back(child);
+            }
+        }
+
+        // Animar cada celda con delay escalonado
+        for (size_t i = 0; i < cells.size(); i++) {
+            auto* cell = cells[i];
+            float originalX = cell->getPositionX();
+            float originalY = cell->getPositionY();
+
+            // Estado inicial: desplazado a la derecha y transparente
+            cell->setPositionX(originalX + 30.f);
+
+            // Hacer todos los hijos invisibles inicialmente
+            if (auto* ch = cell->getChildren()) {
+                for (auto* child : CCArrayExt<CCNode*>(ch)) {
+                    if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(child)) {
+                        rgba->setOpacity(0);
+                    }
+                }
+            }
+
+            float delay = i * 0.04f;
+            float duration = 0.3f;
+
+            // Slide desde la derecha
+            cell->runAction(CCSequence::create(
+                CCDelayTime::create(delay),
+                CCEaseOut::create(CCMoveTo::create(duration, {originalX, originalY}), 2.0f),
+                nullptr
+            ));
+
+            // Fade in de todos los hijos
+            if (auto* ch = cell->getChildren()) {
+                for (auto* child : CCArrayExt<CCNode*>(ch)) {
+                    auto* tableCell = typeinfo_cast<TableViewCell*>(cell);
+                    // No restaurar opacidad del m_backgroundLayer (ya oculto)
+                    if (tableCell && child == static_cast<CCNode*>(tableCell->m_backgroundLayer)) continue;
+                    if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(child)) {
+                        child->runAction(CCSequence::create(
+                            CCDelayTime::create(delay),
+                            CCFadeTo::create(duration, 255),
+                            nullptr
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     $override
     void setupLeaderboard(cocos2d::CCArray* scores) {
         LevelLeaderboard::setupLeaderboard(scores);
         // Re-estiliza la lista despues de cargar scores
         if (m_list) {
             styleLeaderboardList(m_list);
+            normalizeCellBackgrounds(m_list);
+            animateCellsEntrance(m_list);
         }
     }
 

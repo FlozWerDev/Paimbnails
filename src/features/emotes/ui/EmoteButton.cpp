@@ -101,12 +101,17 @@ void EmoteButton::onToggle(CCObject*) {
     auto picker = EmotePickerPopup::create(
         m_context.getText,
         m_context.setText,
-        m_context.charLimit
+        m_context.charLimit,
+        m_context.pickerSize
     );
 
     if (picker) {
         picker->show();
-        picker->positionNearBottom(this, 0.f);
+        if (m_context.centerPicker) {
+            picker->positionCentered();
+        } else {
+            picker->positionNearBottom(this, 0.f);
+        }
         m_activePicker = picker;
     }
 }

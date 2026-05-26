@@ -1,10 +1,11 @@
 #include "ProfileImageService.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../video/VideoNormalizer.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/VideoThumbnailSprite.hpp"
-#include <prevter.imageplus/include/events.hpp>
+#include "../../../utils/FormatDetect.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "ProfileThumbs.hpp"
 #include "../../thumbnails/services/ThumbnailTransportClient.hpp"
@@ -244,48 +245,52 @@ void ProfileImageService::downloadProfile(int accountID, std::string const& user
     HttpClient::get().downloadProfile(accountID, username,
         [profileAccountID = accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
             if (!success || data.empty()) { callback(false, nullptr); return; }
+            ProfileImageService::processProfileBackgroundBytes(profileAccountID, data, callback);
+        });
+}
 
-            // Detecta MP4
-            bool isMP4 = data.size() > 8 &&
-                data[4]=='f' && data[5]=='t' && data[6]=='y' && data[7]=='p';
+void ProfileImageService::processProfileBackgroundBytes(int profileAccountID,
+                                                        std::vector<uint8_t> const& data,
+                                                        DownloadCallback callback) {
+    if (data.empty()) { callback(false, nullptr); return; }
 
-            if (isMP4) {
-                std::string cacheKey = fmt::format("profile_video_{}", profileAccountID);
-                auto* videoSprite = VideoThumbnailSprite::createFromData(data, cacheKey);
-                if (videoSprite) {
-                    // Cachea el video en ProfileThumbs
-                    std::string videoKey = fmt::format("profile_video_{}", profileAccountID);
-                    ProfileThumbs::get().cacheProfileGIF(profileAccountID, videoKey,
+    // Detecta MP4
+    bool isMP4 = data.size() > 8 &&
+        data[4]=='f' && data[5]=='t' && data[6]=='y' && data[7]=='p';
+
+    if (isMP4) {
+        std::string cacheKey = fmt::format("profile_video_{}", profileAccountID);
+        auto* videoSprite = VideoThumbnailSprite::createFromData(data, cacheKey);
+        if (videoSprite) {
+            std::string videoKey = fmt::format("profile_video_{}", profileAccountID);
+            ProfileThumbs::get().cacheProfileGIF(profileAccountID, videoKey,
+                {255,255,255}, {255,255,255}, 0.6f);
+            callback(true, nullptr);
+        } else {
+            callback(false, nullptr);
+        }
+        return;
+    }
+
+    bool isGIF = paimon::format::isGif(data.data(), data.size());
+
+    if (isGIF) {
+        std::string gifKey = makeProfileGifKey("profile_gif", profileAccountID);
+        AnimatedGIFSprite::createAsync(data, gifKey,
+            [profileAccountID, gifKey, callback](AnimatedGIFSprite* sprite) {
+                if (sprite) {
+                    ProfileThumbs::get().cacheProfileGIF(profileAccountID, gifKey,
                         {255,255,255}, {255,255,255}, 0.6f);
-                    callback(true, nullptr);
+                    callback(true, sprite->getTexture());
                 } else {
                     callback(false, nullptr);
                 }
-                return;
-            }
+            });
+        return;
+    }
 
-            // Detecta GIF o APNG
-            bool isGIF = imgp::formats::isGif(data.data(), data.size())
-                      || imgp::formats::isAPng(data.data(), data.size());
-
-            if (isGIF) {
-                std::string gifKey = makeProfileGifKey("profile_gif", profileAccountID);
-                AnimatedGIFSprite::createAsync(data, gifKey,
-                    [profileAccountID, gifKey, callback](AnimatedGIFSprite* sprite) {
-                        if (sprite) {
-                            ProfileThumbs::get().cacheProfileGIF(profileAccountID, gifKey,
-                                {255,255,255}, {255,255,255}, 0.6f);
-                            callback(true, sprite->getTexture());
-                        } else {
-                            callback(false, nullptr);
-                        }
-                    });
-                return;
-            }
-
-            auto* texture = ThumbnailTransportClient::bytesToTexture(data);
-            callback(texture != nullptr, texture);
-        });
+    auto* texture = ThumbnailTransportClient::bytesToTexture(data);
+    callback(texture != nullptr, texture);
 }
 
 // Verificacion batch
@@ -312,12 +317,10 @@ void ProfileImageService::batchCheckProfiles(std::vector<int> const& accountIDs,
 
             // Parsea perfiles encontrados
             std::unordered_set<int> found;
-            if (json.contains("found") && json["found"].isArray()) {
-                for (auto const& v : json["found"].asArray().unwrap()) {
-                    auto id = v.asInt();
-                    if (id.isOk()) found.insert(id.unwrap());
-                }
-            }
+            paimon::json::forEachInArray(json["found"], [&](matjson::Value const& v) {
+                auto id = v.asInt();
+                if (id.isOk()) found.insert(id.unwrap());
+            });
 
             // Parsea configuraciones
             std::unordered_map<int, ProfileConfig> configs;
@@ -354,6 +357,13 @@ void ProfileImageService::batchCheckProfiles(std::vector<int> const& accountIDs,
                     }
                     if (val.contains("separatorOpacity")) config.separatorOpacity = val["separatorOpacity"].asInt().unwrapOr(50);
                     if (val.contains("widthFactor"))      config.widthFactor      = (float)val["widthFactor"].asDouble().unwrapOr(0.60);
+
+                    // Gradient effect (animaciones para icon-gradient / gradient)
+                    if (val.contains("gradientEffect")) config.gradientEffect = val["gradientEffect"].asString().unwrapOr("none");
+                    if (val.contains("gradientSpeed"))  config.gradientSpeed  = (float)val["gradientSpeed"].asDouble().unwrapOr(1.0);
+
+                    // Audio del video del fondo de perfil
+                    if (val.contains("useVideoAudio")) config.useVideoAudio = val["useVideoAudio"].asBool().unwrapOr(false);
 
                     // Config del fondo de comentarios
                     if (val.contains("commentBgType"))        config.commentBgType        = val["commentBgType"].asString().unwrapOr("none");
@@ -448,8 +458,7 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
                 return;
             }
 
-            bool isGIF = imgp::formats::isGif(data.data(), data.size())
-                      || imgp::formats::isAPng(data.data(), data.size());
+            bool isGIF = paimon::format::isGif(data.data(), data.size());
             if (isGIF) {
                 std::string gifKey = makeProfileGifKey("profileimg_gif", profileAccountID);
                 AnimatedGIFSprite::createAsync(data, gifKey, [this, profileAccountID, gifKey, callback](AnimatedGIFSprite* sprite) {
@@ -528,6 +537,15 @@ void ProfileImageService::uploadProfileConfig(int accountID, ProfileConfig const
     json["separatorOpacity"] = config.separatorOpacity;
     json["widthFactor"]      = config.widthFactor;
 
+    // Gradient effect (animaciones para icon-gradient / gradient)
+    json["gradientEffect"] = config.gradientEffect;
+    json["gradientSpeed"]  = config.gradientSpeed;
+
+    // Audio del video del fondo de perfil (cuando el usuario eligio
+    // "Audio Video" en el picker, los visitantes escuchan el audio del propio
+    // video en lugar de la musica configurada).
+    json["useVideoAudio"] = config.useVideoAudio;
+
     // Comment cell background settings
     json["commentBgType"]        = config.commentBgType;
     json["commentBgThumbnailId"] = config.commentBgThumbnailId;
@@ -597,6 +615,13 @@ void ProfileImageService::downloadProfileConfig(int accountID,
             }
             if (json.contains("separatorOpacity")) config.separatorOpacity = json["separatorOpacity"].asInt().unwrapOr(50);
             if (json.contains("widthFactor"))      config.widthFactor      = (float)json["widthFactor"].asDouble().unwrapOr(0.60);
+
+            // Gradient effect (animaciones para icon-gradient / gradient)
+            if (json.contains("gradientEffect")) config.gradientEffect = json["gradientEffect"].asString().unwrapOr("none");
+            if (json.contains("gradientSpeed"))  config.gradientSpeed  = (float)json["gradientSpeed"].asDouble().unwrapOr(1.0);
+
+            // Audio del video del fondo de perfil
+            if (json.contains("useVideoAudio")) config.useVideoAudio = json["useVideoAudio"].asBool().unwrapOr(false);
 
             // Comment cell background settings
             if (json.contains("commentBgType"))        config.commentBgType        = json["commentBgType"].asString().unwrapOr("none");

@@ -11,7 +11,7 @@ endif()
 
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
-project(Paimbnails VERSION 1.0.1)
+project(Paimbnails VERSION 1.0.5)
 
 # ─────────────────────────────────────────────────────────────
 # CPM
@@ -45,6 +45,22 @@ if (pl_mpeg_ADDED)
 endif()
 
 # ─────────────────────────────────────────────────────────────
+# RapidFuzz — fuzzy string matching header-only para el motor
+# de NLP de la guia de Paimon. MIT licensed.
+# ─────────────────────────────────────────────────────────────
+CPMAddPackage(
+    NAME rapidfuzz
+    GITHUB_REPOSITORY rapidfuzz/rapidfuzz-cpp
+    GIT_TAG v3.0.5
+    DOWNLOAD_ONLY YES
+)
+
+if (rapidfuzz_ADDED)
+    add_library(rapidfuzz INTERFACE)
+    target_include_directories(rapidfuzz INTERFACE ${rapidfuzz_SOURCE_DIR})
+endif()
+
+# ─────────────────────────────────────────────────────────────
 # Sources
 # ─────────────────────────────────────────────────────────────
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.cpp)
@@ -63,11 +79,18 @@ if (MSVC)
         /bigobj
         /O2
         /fp:fast
-        /GL
     )
-    target_link_options(${PROJECT_NAME} PRIVATE
-        /LTCG
-    )
+    # /GL (Whole Program Optimization) y /LTCG sólo los entiende MSVC real,
+    # no clang-cl. Sin esta separación clang-cl emite "argument unused" por
+    # cada archivo. Usamos -flto=thin como equivalente para clang-cl (sólo
+    # si el linker es lld-link, que es el habitual con clang en Windows).
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(${PROJECT_NAME} PRIVATE /GL)
+        target_link_options(${PROJECT_NAME} PRIVATE /LTCG)
+    elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${PROJECT_NAME} PRIVATE -flto=thin)
+        target_link_options(${PROJECT_NAME} PRIVATE -flto=thin)
+    endif()
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE
         -O3
@@ -80,6 +103,10 @@ else()
         target_link_options(${PROJECT_NAME} PRIVATE
             -Wl,--gc-sections
         )
+    endif()
+    # ARM32 Android: enable NEON.  arm64 always has NEON.
+    if (ANDROID AND ANDROID_ABI STREQUAL "armeabi-v7a")
+        target_compile_options(${PROJECT_NAME} PRIVATE -mfpu=neon)
     endif()
 endif()
 
@@ -144,6 +171,13 @@ elseif (APPLE)
 endif()
 
 target_link_libraries(${PROJECT_NAME} pl_mpeg)
+target_link_libraries(${PROJECT_NAME} rapidfuzz)
+
+if (WIN32 OR APPLE)
+    CPMAddPackage("gh:EclipseMenu/discord-presence#3b50b08")
+    target_link_libraries(${PROJECT_NAME} discord-rpc)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE PAIMON_HAS_DISCORD_RPC=1)
+endif()
 
 # ─────────────────────────────────────────────────────────────
 # Geode SDK

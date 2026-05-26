@@ -6,6 +6,7 @@
 #include <string>
 #include <functional>
 #include <atomic>
+#include <filesystem>
 
 namespace paimon::updates {
 
@@ -54,6 +55,20 @@ public:
         std::function<void(bool, std::string)> onDone
     );
 
+    bool hasPendingInstall() const;
+    bool restartToApplyPendingUpdate() const;
+
+    // Aplica el update pendiente SIN relanzar el juego. Ideal para auto-update
+    // silencioso al cerrar: el PowerShell helper espera a que el proceso
+    // termine, reemplaza el .geode y se va. Al siguiente arranque normal
+    // del usuario, el juego ya tiene la nueva version.
+    bool applyPendingUpdateInPlace() const;
+
+    // Si auto-update esta habilitado y hay una actualizacion disponible,
+    // arranca la descarga en silencio. Idempotente: no re-descarga si ya
+    // hay un install pendiente o una descarga en curso.
+    void autoDownloadIfNeeded();
+
     // Cancela una descarga en curso (si la hay).
     void cancelDownload();
 
@@ -70,10 +85,12 @@ private:
     std::string m_remoteTag;
     std::string m_downloadUrl;
     std::string m_lastError;
+    std::filesystem::path m_pendingUpdatePath;
 
     geode::async::TaskHolder<geode::utils::web::WebResponse> m_checkTask;
     geode::async::TaskHolder<geode::utils::web::WebResponse> m_downloadTask;
     std::atomic<bool> m_downloadCancelled{false};
+    std::atomic<bool> m_autoDownloadStarted{false};
 };
 
 } // namespace paimon::updates

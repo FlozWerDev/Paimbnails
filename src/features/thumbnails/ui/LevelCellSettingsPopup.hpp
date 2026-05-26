@@ -25,6 +25,7 @@ protected:
     CCMenuItemToggler* m_separatorToggle = nullptr;
     CCMenuItemToggler* m_viewButtonToggle = nullptr;
     CCMenuItemToggler* m_compactToggle = nullptr;
+    CCMenuItemToggler* m_compactShowToggle = nullptr;
     CCMenuItemToggler* m_transparentToggle = nullptr;
     CCMenuItemToggler* m_hoverToggle = nullptr;
     CCMenuItemToggler* m_effectOnGradientToggle = nullptr;
@@ -51,6 +52,7 @@ protected:
     bool m_showSeparator = true;
     bool m_showViewButton = true;
     bool m_compactMode = false;
+    bool m_compactShowQuickToggle = true;
     bool m_transparentMode = false;
     bool m_hoverEffects = true;
     std::string m_currentAnimType;
@@ -81,6 +83,7 @@ protected:
     void onSeparatorToggled(cocos2d::CCObject*);
     void onViewButtonToggled(cocos2d::CCObject*);
     void onCompactToggled(cocos2d::CCObject*);
+    void onCompactShowToggleToggled(cocos2d::CCObject*);
     void onTransparentToggled(cocos2d::CCObject*);
     void onHoverToggled(cocos2d::CCObject*);
     void onAnimTypePrev(cocos2d::CCObject*);
@@ -104,7 +107,6 @@ public:
     // LevelCell::update() revisa este valor pa invalidar cache y re-aplicar
     static inline int s_settingsVersion = 0;
 };
-
 
 
 

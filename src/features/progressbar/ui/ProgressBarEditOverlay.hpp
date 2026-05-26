@@ -28,18 +28,15 @@ public:
         None,
         Bar,
         Label,
-        Decoration,   // uses m_dragDecoIndex
+        Decoration,   // uses m_selectedDecoIndex
     };
 
     // What action is the current drag performing?
     enum class Action {
         None,
         Move,
-        ResizeLen,    // bar-only (axis length)
-        ResizeThick,  // bar-only (axis thickness)
-        ResizeUniform,// label or decoration uniform scale
+        ResizeUniform, // uniform scale (bar = both axes, label/deco = scale)
         Rotate,
-        Delete,       // decoration remove (click, not drag)
     };
 
 protected:
@@ -63,10 +60,16 @@ protected:
     void onResetPosition(cocos2d::CCObject*);
     void onAddImage(cocos2d::CCObject*);
 
-    // Capture current values of the selected element so drags are additive.
+    // Capture current values of the selected element so drags are
+    // additive (delta-based) rather than absolute.
     void storeOrigValues();
 
-    // Which element is currently selected (shows native GD buttons around it)
+    // Validate that m_selected* / m_drag* still reference valid
+    // decorations; clears them if they don't. Called every frame and
+    // when a decoration removal event fires.
+    void validateSelection();
+
+    // Which element is currently selected (shows native GD buttons).
     Target m_selectedTarget = Target::None;
     int    m_selectedDecoIndex = -1;
 

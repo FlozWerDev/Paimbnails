@@ -3,6 +3,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/binding/PlayerObject.hpp>
 #include <Geode/binding/HardStreak.hpp>
+#include <Geode/cocos/misc_nodes/CCMotionStreak.h>
 #include <vector>
 #include <utility>
 #include <set>
@@ -13,9 +14,15 @@ using cocos2d::CCObject;
 
 struct PlayerVisState {
     bool visible = true;
+    bool hidden = false;
     bool regTrail = true;
+    bool regTrailDraw = true;
+    bool shipStreak = true;
+    bool shipStreakDraw = true;
     bool waveTrail = true;
+    bool waveTrailDraw = true;
     bool ghostTrail = true;
+    bool ghostTrailDraw = true;
     bool vehicleGroundPart = true;
     bool robotFire = true;
     
@@ -30,6 +37,10 @@ struct PlayerVisState {
     bool landPart0 = true;
     bool landPart1 = true;
     bool dashFireSprite = true;
+    bool swingFireMiddle = true;
+    bool swingFireBottom = true;
+    bool swingFireTop = true;
+    bool dashSpritesContainer = true;
 
     std::vector<std::pair<CCNode*, bool>> otherParticles;
 };
@@ -38,6 +49,54 @@ inline void paimTogglePlayer(PlayerObject* p, PlayerVisState& state, bool hide) 
     using namespace geode::prelude;
 
     if (!p) return;
+
+    auto toggleHardStreak = [&](CCNode* node, bool& visibleStateVar, bool& drawStateVar, bool hideNode) {
+        auto* streak = typeinfo_cast<HardStreak*>(node);
+        if (!streak) {
+            return false;
+        }
+
+        if (hideNode) {
+            visibleStateVar = streak->isVisible();
+            drawStateVar = streak->m_drawStreak;
+            streak->stopStroke();
+            streak->reset();
+            streak->setVisible(false);
+        } else {
+            streak->setVisible(visibleStateVar);
+            if (drawStateVar) {
+                streak->resumeStroke();
+            } else {
+                streak->stopStroke();
+            }
+        }
+
+        return true;
+    };
+
+    auto toggleMotionStreak = [&](CCNode* node, bool& visibleStateVar, bool& drawStateVar, bool hideNode) {
+        auto* streak = typeinfo_cast<cocos2d::CCMotionStreak*>(node);
+        if (!streak) {
+            return false;
+        }
+
+        if (hideNode) {
+            visibleStateVar = streak->isVisible();
+            drawStateVar = streak->m_bStroke;
+            streak->stopStroke();
+            streak->reset();
+            streak->setVisible(false);
+        } else {
+            streak->setVisible(visibleStateVar);
+            if (drawStateVar) {
+                streak->resumeStroke();
+            } else {
+                streak->stopStroke();
+            }
+        }
+
+        return true;
+    };
 
     auto toggle = [&](CCNode* node, bool& stateVar, bool hideNode) {
         if (!node) return;
@@ -49,8 +108,21 @@ inline void paimTogglePlayer(PlayerObject* p, PlayerVisState& state, bool hide) 
         }
     };
 
+    auto toggleTrail = [&](CCNode* node, bool& visibleStateVar, bool& drawStateVar, bool hideNode) {
+        if (!node) return;
+        if (toggleHardStreak(node, visibleStateVar, drawStateVar, hideNode)) return;
+        if (toggleMotionStreak(node, visibleStateVar, drawStateVar, hideNode)) return;
+        if (hideNode) {
+            visibleStateVar = node->isVisible();
+            node->setVisible(false);
+        } else {
+            node->setVisible(visibleStateVar);
+        }
+    };
+
     auto isKnownPlayerNode = [&](CCNode* node) {
         return node == p->m_regularTrail ||
+               node == p->m_shipStreak ||
                node == p->m_waveTrail ||
                node == p->m_ghostTrail ||
                node == p->m_vehicleGroundParticles ||
@@ -65,7 +137,11 @@ inline void paimTogglePlayer(PlayerObject* p, PlayerVisState& state, bool hide) 
                node == p->m_swingBurstParticles2 ||
                node == p->m_landParticles0 ||
                node == p->m_landParticles1 ||
-               node == p->m_dashFireSprite;
+               node == p->m_dashFireSprite ||
+               node == p->m_swingFireMiddle ||
+               node == p->m_swingFireBottom ||
+               node == p->m_swingFireTop ||
+               node == p->m_dashSpritesContainer;
     };
 
     auto collectExtraDescendants = [&](auto&& self, CCNode* root, std::set<CCNode*>& seen) -> void {
@@ -92,12 +168,15 @@ inline void paimTogglePlayer(PlayerObject* p, PlayerVisState& state, bool hide) 
 
     if (hide) {
         state.visible = p->isVisible();
+        state.hidden = p->m_isHidden;
         state.otherParticles.clear();
+        p->toggleVisibility(false);
         p->setVisible(false);
 
-        toggle(p->m_regularTrail, state.regTrail, true);
-        toggle(p->m_waveTrail, state.waveTrail, true);
-        toggle(p->m_ghostTrail, state.ghostTrail, true);
+        toggleTrail(p->m_regularTrail, state.regTrail, state.regTrailDraw, true);
+        toggleTrail(p->m_shipStreak, state.shipStreak, state.shipStreakDraw, true);
+        toggleTrail(p->m_waveTrail, state.waveTrail, state.waveTrailDraw, true);
+        toggleTrail(p->m_ghostTrail, state.ghostTrail, state.ghostTrailDraw, true);
         toggle(p->m_vehicleGroundParticles, state.vehicleGroundPart, true);
         toggle(p->m_robotFire, state.robotFire, true);
 
@@ -112,15 +191,21 @@ inline void paimTogglePlayer(PlayerObject* p, PlayerVisState& state, bool hide) 
         toggle(p->m_landParticles0, state.landPart0, true);
         toggle(p->m_landParticles1, state.landPart1, true);
         toggle(p->m_dashFireSprite, state.dashFireSprite, true);
+        toggle(p->m_swingFireMiddle, state.swingFireMiddle, true);
+        toggle(p->m_swingFireBottom, state.swingFireBottom, true);
+        toggle(p->m_swingFireTop, state.swingFireTop, true);
+        toggle(p->m_dashSpritesContainer, state.dashSpritesContainer, true);
 
         std::set<CCNode*> seen;
         collectExtraDescendants(collectExtraDescendants, p, seen);
     } else {
+        p->toggleVisibility(!state.hidden);
         p->setVisible(state.visible);
 
-        toggle(p->m_regularTrail, state.regTrail, false);
-        toggle(p->m_waveTrail, state.waveTrail, false);
-        toggle(p->m_ghostTrail, state.ghostTrail, false);
+        toggleTrail(p->m_regularTrail, state.regTrail, state.regTrailDraw, false);
+        toggleTrail(p->m_shipStreak, state.shipStreak, state.shipStreakDraw, false);
+        toggleTrail(p->m_waveTrail, state.waveTrail, state.waveTrailDraw, false);
+        toggleTrail(p->m_ghostTrail, state.ghostTrail, state.ghostTrailDraw, false);
         toggle(p->m_vehicleGroundParticles, state.vehicleGroundPart, false);
         toggle(p->m_robotFire, state.robotFire, false);
 
@@ -135,6 +220,10 @@ inline void paimTogglePlayer(PlayerObject* p, PlayerVisState& state, bool hide) 
         toggle(p->m_landParticles0, state.landPart0, false);
         toggle(p->m_landParticles1, state.landPart1, false);
         toggle(p->m_dashFireSprite, state.dashFireSprite, false);
+        toggle(p->m_swingFireMiddle, state.swingFireMiddle, false);
+        toggle(p->m_swingFireBottom, state.swingFireBottom, false);
+        toggle(p->m_swingFireTop, state.swingFireTop, false);
+        toggle(p->m_dashSpritesContainer, state.dashSpritesContainer, false);
 
         for (auto& pair : state.otherParticles) {
             if (pair.first) {

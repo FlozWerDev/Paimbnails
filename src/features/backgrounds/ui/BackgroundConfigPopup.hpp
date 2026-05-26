@@ -59,6 +59,8 @@ protected:
     void onLayerCustomVideo(cocos2d::CCObject* sender);
     void onLayerRandom(cocos2d::CCObject* sender);
     void onLayerSameAs(cocos2d::CCObject* sender);
+    void onLayerShader(cocos2d::CCObject* sender);
+    void onLayerDynamic(cocos2d::CCObject* sender);
     void onLayerDefault(cocos2d::CCObject* sender);
     void onLayerSetID(cocos2d::CCObject* sender);
     void onLayerDarkMode(cocos2d::CCObject* sender);

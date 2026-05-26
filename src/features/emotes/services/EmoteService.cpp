@@ -12,14 +12,48 @@
 using namespace geode::prelude;
 using namespace paimon::emotes;
 
-static constexpr auto EMOTE_SERVER = "https://paimbnails-emote.vercel.app";
+// Default API host. Migrated from `paimbnails-emote.vercel.app` (Vercel) to
+// `paimbnailsbot.onrender.com` (Render) on the 2026-05 emote-server unification.
+// Override at runtime by setting the `paimon-emote-server-url` saved value.
+static constexpr auto DEFAULT_EMOTE_SERVER = "https://paimbnailsbot.onrender.com";
+
+// Resolve the active emote server URL (saved value > env override > default).
+// Trailing slashes are stripped so concatenation always produces a clean path.
+static std::string resolveEmoteServer() {
+    auto* mod = Mod::get();
+    std::string url = mod ? mod->getSavedValue<std::string>("paimon-emote-server-url", "") : std::string{};
+    if (url.empty()) {
+        url = DEFAULT_EMOTE_SERVER;
+    }
+    while (!url.empty() && url.back() == '/') {
+        url.pop_back();
+    }
+    return url;
+}
 
 // Catalog format version — bump when URL format or schema changes.
 // Old disk catalogs with a different version are discarded on load.
-static constexpr int CATALOG_VERSION = 2;
+// v3: Render proxy URLs replace the retired Vercel ones (2026-05).
+// v4: server response now always carries the `type` field (gif/static);
+//     pre-v4 cached catalogs that defaulted GIFs to "static" must be purged
+//     so animated emotes start playing again.
+static constexpr int CATALOG_VERSION = 4;
 
 static EmoteType parseEmoteType(std::string const& typeStr) {
     if (typeStr == "gif") return EmoteType::Gif;
+    return EmoteType::Static;
+}
+
+// Force-classify an emote by inspecting its filename. Used as a hardening
+// fallback in case the server response ever drops the `type` field again
+// (the legacy Vercel deploy used `format`; the new Render server adds
+// `type` derived from the extension, but we still prefer to double-check).
+static EmoteType classifyByFilename(std::string const& filename) {
+    auto dot = filename.rfind('.');
+    if (dot == std::string::npos) return EmoteType::Static;
+    std::string ext = filename.substr(dot + 1);
+    for (auto& c : ext) c = static_cast<char>(std::tolower(c));
+    if (ext == "gif") return EmoteType::Gif;
     return EmoteType::Static;
 }
 
@@ -30,13 +64,16 @@ static void dispatchCatalogCallback(EmoteService::CatalogCallback const& callbac
     });
 }
 
-// Convert legacy Bunny CDN / storage URLs to Vercel proxy URLs.
-// Old format: https://paimbnails.b-cdn.net/emotes/file.webp
-// New format: https://paimbnails-emote.vercel.app/api/paimon-emote/file?name=file.webp
+// Convert legacy URLs (Bunny direct + the retired Vercel proxy) to whatever
+// the active server is now. The C++ client should always go through the API
+// so server-side migrations stay transparent.
 static std::string migrateEmoteUrl(std::string const& url, std::string const& filename) {
-    if (url.find("b-cdn.net/") != std::string::npos ||
-        url.find("storage.bunnycdn.com/") != std::string::npos) {
-        return fmt::format("{}/api/paimon-emote/file?name={}", EMOTE_SERVER, filename);
+    bool isLegacy =
+        url.find("b-cdn.net/") != std::string::npos ||
+        url.find("storage.bunnycdn.com/") != std::string::npos ||
+        url.find("paimbnails-emote.vercel.app") != std::string::npos;
+    if (isLegacy) {
+        return fmt::format("{}/api/paimon-emote/file?name={}", resolveEmoteServer(), filename);
     }
     return url;
 }
@@ -88,7 +125,7 @@ void EmoteService::fetchAllEmotes(CatalogCallback callback) {
 
 void EmoteService::fetchPage(int page, int limit, std::string const& timelast,
                              std::vector<EmoteInfo>& accumulator, CatalogCallback callback) {
-    std::string url = fmt::format("{}/api/paimon-emote?page={}&limit={}", EMOTE_SERVER, page, limit);
+    std::string url = fmt::format("{}/api/paimon-emote?page={}&limit={}", resolveEmoteServer(), page, limit);
     if (!timelast.empty()) {
         url += "&timelast=" + timelast;
     }
@@ -140,6 +177,13 @@ void EmoteService::fetchPage(int page, int limit, std::string const& timelast,
                     info.name = item["name"].asString().unwrapOr("");
                     info.filename = item["filename"].asString().unwrapOr("");
                     info.type = parseEmoteType(item["type"].asString().unwrapOr("png"));
+                    // Hardening: if the server omitted/garbled the `type`
+                    // field but the filename clearly is a GIF, override.
+                    // Static emotes never end in .gif, so this is safe.
+                    if (info.type != EmoteType::Gif &&
+                        classifyByFilename(info.filename) == EmoteType::Gif) {
+                        info.type = EmoteType::Gif;
+                    }
                     info.category = item["category"].asString().unwrapOr("");
                     info.size = static_cast<int>(item["size"].asInt().unwrapOr(0));
                     info.url = item["url"].asString().unwrapOr("");
@@ -341,6 +385,12 @@ void EmoteService::loadCatalogFromDisk() {
         info.name = item["name"].asString().unwrapOr("");
         info.filename = item["filename"].asString().unwrapOr("");
         info.type = parseEmoteType(item["type"].asString().unwrapOr("static"));
+        // Same hardening as the live fetch path — a GIF must never load as a
+        // static texture even if the cached catalog stored the wrong type.
+        if (info.type != EmoteType::Gif &&
+            classifyByFilename(info.filename) == EmoteType::Gif) {
+            info.type = EmoteType::Gif;
+        }
         info.category = item["category"].asString().unwrapOr("");
         info.size = static_cast<int>(item["size"].asInt().unwrapOr(0));
         info.url = item["url"].asString().unwrapOr("");

@@ -3,6 +3,12 @@
 #include <Geode/ui/Popup.hpp>
 #include <Geode/binding/Slider.hpp>
 
+// ────────────────────────────────────────────────────────────
+// ProgressBarConfigPopup: tabbed popup for configuring the
+// custom progress bar. Sliders/toggles edit the live config in
+// ProgressBarManager and are persisted on close.
+// ────────────────────────────────────────────────────────────
+
 class ProgressBarConfigPopup : public geode::Popup {
 public:
     static ProgressBarConfigPopup* create();
@@ -11,7 +17,7 @@ protected:
     bool init() override;
     void onExit() override;
 
-    // tabs
+    // ── Tabs ─────────────────────────────────────────────────
     int m_currentTab = 0;
     cocos2d::CCNode* m_generalTab = nullptr;
     cocos2d::CCNode* m_positionTab = nullptr;
@@ -20,7 +26,7 @@ protected:
     cocos2d::CCNode* m_fxTab = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_tabs;
 
-    // sliders
+    // ── Position / size sliders ──
     Slider* m_posXSlider = nullptr;
     cocos2d::CCLabelBMFont* m_posXLabel = nullptr;
     Slider* m_posYSlider = nullptr;
@@ -38,7 +44,7 @@ protected:
     Slider* m_pctOffYSlider = nullptr;
     cocos2d::CCLabelBMFont* m_pctOffYLabel = nullptr;
 
-    // toggles
+    // ── Toggles ──
     CCMenuItemToggler* m_enableToggle = nullptr;
     CCMenuItemToggler* m_verticalToggle = nullptr;
     CCMenuItemToggler* m_useCustomPosToggle = nullptr;
@@ -48,12 +54,12 @@ protected:
     CCMenuItemToggler* m_showPctToggle = nullptr;
     CCMenuItemToggler* m_usePctColorToggle = nullptr;
 
-    // color previews
+    // ── Color previews ──
     cocos2d::CCLayerColor* m_fillColorPreview = nullptr;
     cocos2d::CCLayerColor* m_bgColorPreview = nullptr;
     cocos2d::CCLayerColor* m_pctColorPreview = nullptr;
 
-    // FX/Textures UI
+    // ── FX / Textures UI ──
     Slider* m_colorAnimSpeedSlider = nullptr;
     cocos2d::CCLabelBMFont* m_colorAnimSpeedLabel = nullptr;
     CCMenuItemSpriteExtra* m_fillModeBtn = nullptr;
@@ -67,7 +73,7 @@ protected:
     cocos2d::CCLabelBMFont* m_fillTexPathLabel = nullptr;
     cocos2d::CCLabelBMFont* m_bgTexPathLabel   = nullptr;
 
-    // tab setup helpers
+    // ── Tab setup helpers ──
     void createTabButtons();
     void onTabSwitch(cocos2d::CCObject* sender);
     void buildGeneralTab();
@@ -77,7 +83,7 @@ protected:
     void buildFxTab();
     void refreshFxTab(); // updates mode button labels + path text
 
-    // callbacks
+    // ── Toggle callbacks ──
     void onEnableToggled(cocos2d::CCObject*);
     void onVerticalToggled(cocos2d::CCObject*);
     void onUseCustomPosToggled(cocos2d::CCObject*);
@@ -94,7 +100,7 @@ protected:
     void onResetDefaults(cocos2d::CCObject*);
     void onCenterPosition(cocos2d::CCObject*);
 
-    // slider callbacks
+    // ── Slider callbacks ──
     void onPosXChanged(cocos2d::CCObject*);
     void onPosYChanged(cocos2d::CCObject*);
     void onScaleLenChanged(cocos2d::CCObject*);
@@ -104,7 +110,7 @@ protected:
     void onPctOffXChanged(cocos2d::CCObject*);
     void onPctOffYChanged(cocos2d::CCObject*);
 
-    // FX callbacks
+    // ── FX callbacks ──
     void onCycleFillMode(cocos2d::CCObject*);
     void onCycleBgMode(cocos2d::CCObject*);
     void onCyclePctMode(cocos2d::CCObject*);
@@ -119,5 +125,7 @@ protected:
     void onClearFillTexture(cocos2d::CCObject*);
     void onClearBgTexture(cocos2d::CCObject*);
 
+    // Pushes the live config to disk. Called from onExit and from
+    // most callback methods that want immediate persistence.
     void applyAndSave();
 };

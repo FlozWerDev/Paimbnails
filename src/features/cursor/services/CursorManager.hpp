@@ -34,6 +34,10 @@ struct CursorConfig {
     float scale              = CURSOR_SCALE_DEFAULT;   // 0.10 – 3.0
     int   opacity            = 255;    // 0 – 255
 
+    // Follow delay (lerp smoothing)
+    bool  followDelayEnabled = false;
+    float followDelay        = 0.5f;   // 0.0 (instant) – 1.0 (very slow)
+
     // Trail
     bool  trailEnabled       = false;
     int   trailR             = 255;
@@ -101,6 +105,7 @@ public:
 
 private:
     CursorManager() = default;
+    ~CursorManager();
 
     CursorConfig m_config;
 
@@ -110,14 +115,17 @@ private:
     cocos2d::CCMotionStreak*    m_trail       = nullptr;
 
     cocos2d::CCPoint m_currentPos;
+    cocos2d::CCPoint m_targetPos;   // actual mouse position (for follow delay lerp)
     cocos2d::CCPoint m_velocity;
     bool m_isMoving  = false;
     float m_moveTimer = 0.f;    // seconds since last significant movement
     bool m_systemCursorHidden = false;
+    int m_zReorderCounter = 0; // Perf: throttle Z-reorder checks
 
     std::filesystem::path configPath() const;
     cocos2d::CCSprite* loadSprite(std::string const& filename);
     cocos2d::CCSprite* createFallbackSprite();
+    bool hasLoadedCursorVisual() const;
     bool sceneMatchesVisibleLayers(cocos2d::CCScene* scene) const;
     void syncSystemCursorVisibility(bool hideSystemCursor);
     void updateTrail();

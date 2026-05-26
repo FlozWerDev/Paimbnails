@@ -1,6 +1,7 @@
 #include "HttpClient.hpp"
 #include "Debug.hpp"
 #include "WebHelper.hpp"
+#include "ThreadTracker.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../core/Settings.hpp"
 #include <Geode/Geode.hpp>
@@ -15,6 +16,7 @@
 #include <sstream>
 #include <string_view>
 #include <filesystem>
+#include "FormatDetect.hpp"
 
 using namespace geode::prelude;
 
@@ -56,12 +58,41 @@ std::string getSafeAccountUsername() {
     }
     return "";
 }
+
+// Decodifica una cadena base64 (RFC 4648, sin URL-safe). Tolera padding y whitespace.
+// Devuelve true si decodifico OK, false si encontro caracteres invalidos.
+bool decodeBase64(std::string const& input, std::vector<uint8_t>& out) {
+    static int8_t const* T = []() {
+        static int8_t arr[256];
+        for (int i = 0; i < 256; ++i) arr[i] = -1;
+        char const* alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        for (int i = 0; i < 64; ++i) arr[(unsigned char)alphabet[i]] = (int8_t)i;
+        return arr;
+    }();
+
+    out.clear();
+    out.reserve((input.size() / 4) * 3);
+
+    int bits = 0, value = 0;
+    for (unsigned char c : input) {
+        if (c == '=' || c == '\r' || c == '\n' || c == ' ' || c == '\t') continue;
+        int8_t v = T[c];
+        if (v < 0) return false;
+        value = (value << 6) | v;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out.push_back((uint8_t)((value >> bits) & 0xFF));
+        }
+    }
+    return true;
+}
 } // namespace
 
 HttpClient::HttpClient() {
     // config base del server
     m_serverURL = "https://api.flozwer.org";
-    m_forumServerURL = "https://paimbnailspost.onrender.com";
+    m_forumServerURL = "https://paimbnailsbot.onrender.com";
 
     // Public client identifier used by the backend for shared mod/bot access.
     // This value is intentionally shipped with the client, so persisting it to
@@ -158,29 +189,72 @@ void HttpClient::performRequest(
         req.bodyString(postData);
     }
 
-    WebHelper::dispatch(std::move(req), method, url, [callbackGate, callback, this](web::WebResponse res) {
+    // Capturamos copias de los miembros necesarios para evitar capturar `this`
+    // (dangling pointer si el singleton se recicla por hot-reload de Geode).
+    auto workerExhaustedRef = &m_workerExhausted;
+    auto exhaustedAtRef = &m_exhaustedAt;
+    auto consecutiveFailuresRef = &m_consecutiveWorkerFailures;
+    WebHelper::dispatch(std::move(req), method, url, [callbackGate, callback, workerExhaustedRef, exhaustedAtRef, consecutiveFailuresRef](web::WebResponse res) {
         if (!callbackGate || !callbackGate->load(std::memory_order_acquire)) {
             return;
         }
         bool success = res.ok();
+        // Read the body exactly once. WebResponse::string() may consume the
+        // underlying buffer on some Geode versions, so a second call returns
+        // empty — which previously broke the RATE_LIMITED detection below
+        // and marked the Worker exhausted for 1 hour on every transient 429.
+        std::string body = res.string().unwrapOr("");
         std::string responseStr = success
-            ? res.string().unwrapOr("")
-            : ("HTTP " + std::to_string(res.code()) + ": " + res.string().unwrapOr("Unknown error"));
+            ? body
+            : ("HTTP " + std::to_string(res.code()) + ": " + (body.empty() ? std::string("Unknown error") : body));
+
+        // Reset consecutive failure counter on any success — el worker
+        // claramente esta respondiendo OK, asi que no esta exhausto.
+        if (success) {
+            consecutiveFailuresRef->store(0, std::memory_order_release);
+            // Si el worker estaba marcado como exhausto pero ahora responde,
+            // limpiar el flag inmediatamente.
+            if (workerExhaustedRef->load(std::memory_order_acquire)) {
+                workerExhaustedRef->store(false, std::memory_order_release);
+                PaimonDebug::log("[HttpClient] Worker recovery: success response, clearing exhaustion flag");
+            }
+        }
 
         // Detect Worker quota exhaustion (CF 1015 / 503) but NOT per-IP rate limit (429 RATE_LIMITED).
         // A 429 with code=RATE_LIMITED is a 60-second sliding-window limit — transient.
         // Marking the Worker exhausted on a transient 429 would disable the mod for 1 hour,
         // which is the root cause of "works fine after restarting the game".
+        //
+        // FIX: requerir EXHAUSTION_THRESHOLD fallos 503 consecutivos antes de
+        // marcar exhausted. Un solo 503 puede ser cold-start del Worker o un
+        // request perdido — no debe deshabilitar el sistema entero.
+        bool failureCounted = false;
         if (!success && res.code() == 503) {
-            markWorkerExhausted();
+            int newCount = consecutiveFailuresRef->fetch_add(1, std::memory_order_acq_rel) + 1;
+            failureCounted = true;
+            if (newCount >= EXHAUSTION_THRESHOLD) {
+                workerExhaustedRef->store(true, std::memory_order_release);
+                exhaustedAtRef->store(static_cast<int64_t>(std::time(nullptr)), std::memory_order_release);
+                PaimonDebug::warn("[HttpClient] Worker marked exhausted after {} consecutive 503s", newCount);
+            }
         } else if (!success && res.code() == 429) {
-            // Only treat as exhaustion if it's a CF-level quota error, not our own rate limiter
-            std::string body = res.string().unwrapOr("");
-            bool isAppRateLimit = body.find("RATE_LIMITED") != std::string::npos;
+            // Only treat as exhaustion if it's a CF-level quota error, not our own rate limiter.
+            // Use the cached body — re-reading via res.string() could return empty.
+            bool isAppRateLimit = body.find("RATE_LIMITED") != std::string::npos
+                || body.find("Rate limit exceeded") != std::string::npos;
             if (!isAppRateLimit) {
-                markWorkerExhausted();
+                int newCount = consecutiveFailuresRef->fetch_add(1, std::memory_order_acq_rel) + 1;
+                failureCounted = true;
+                if (newCount >= EXHAUSTION_THRESHOLD) {
+                    workerExhaustedRef->store(true, std::memory_order_release);
+                    exhaustedAtRef->store(static_cast<int64_t>(std::time(nullptr)), std::memory_order_release);
+                    PaimonDebug::warn("[HttpClient] Worker marked exhausted after {} consecutive 429s", newCount);
+                }
             }
         }
+        // Si el fallo no fue 503/429 (e.g. 404, network error), NO contar
+        // como worker failure — el worker no esta caido, simplemente el
+        // recurso no existe o hay otro problema.
 
         if (callback) callback(success, responseStr);
     });
@@ -244,23 +318,10 @@ void HttpClient::performBinaryRequest(
                 data.clear();
             }
 
-            // Also validate magic bytes: PNG, JPEG, GIF, WEBP, BMP
+            // Validate magic bytes with zero-cost format detection
             if (success && data.size() >= 4) {
-                bool validImage = false;
-                // PNG: 89 50 4E 47
-                if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47) validImage = true;
-                // JPEG: FF D8 FF
-                else if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) validImage = true;
-                // GIF: GIF87a or GIF89a
-                else if (data[0] == 'G' && data[1] == 'I' && data[2] == 'F' && data[3] == '8'
-                    && (data[4] == '7' || data[4] == '9') && data[5] == 'a') validImage = true;
-                // WEBP: RIFF....WEBP
-                else if (data.size() >= 12 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
-                    && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P') validImage = true;
-                // BMP: BM
-                else if (data[0] == 'B' && data[1] == 'M') validImage = true;
-                // MP4/ISO BMFF: ftyp box at offset 4
-                else if (data.size() >= 8 && data[4] == 'f' && data[5] == 't' && data[6] == 'y' && data[7] == 'p') validImage = true;
+                auto fmt = paimon::format::detect(data.data(), data.size());
+                bool validImage = (fmt != paimon::format::ImageFormat::Unknown);
 
                 if (!validImage) {
                     std::string preview(data.begin(), data.begin() + std::min(data.size(), (size_t)200));
@@ -1180,47 +1241,61 @@ void HttpClient::removeManifestEntry(int levelId) {
 }
 
 void HttpClient::removeExistsEntry(int levelId) {
+    std::lock_guard<std::mutex> lock(m_existsCacheMutex);
     m_existsCache.erase(levelId);
 }
 
 void HttpClient::saveManifestToDisk() {
     if (!paimon::settings::general::enableDiskCache()) return;
-    std::lock_guard<std::mutex> lock(m_manifestMutex);
 
-    if (m_manifestCache.empty()) return;
-
+    // Serialise the manifest under the lock, then drop the lock and hand the
+    // write off to a worker thread. The previous version did the JSON dump
+    // *and* the disk write while holding the lock on the main thread, which
+    // could cost 10-50 ms with thousands of entries — visible frame drops
+    // when downloads finish in batches.
+    std::string json;
+    size_t entryCount = 0;
     auto path = Mod::get()->getSaveDir() / "manifest_cache.json";
 
-    matjson::Value root = matjson::Value::object();
-    // Persist CDN Pull Zone base URL for fallback downloads
-    if (!m_cdnBaseURL.empty()) {
-        root["_cdnBaseUrl"] = m_cdnBaseURL;
-    }
-    for (auto& [levelId, entry] : m_manifestCache) {
-        matjson::Value obj = matjson::Value::object();
-        obj["format"]   = entry.format;
-        obj["cdnUrl"]   = entry.cdnUrl;
-        obj["version"]  = entry.version;
-        obj["id"]       = entry.id;
-        obj["cachedAt"] = entry.cachedAt;
-        if (!entry.revisionToken.empty()) {
-            obj["revisionToken"] = entry.revisionToken;
+    {
+        std::lock_guard<std::mutex> lock(m_manifestMutex);
+        if (m_manifestCache.empty()) return;
+
+        matjson::Value root = matjson::Value::object();
+        // Persist CDN Pull Zone base URL for fallback downloads
+        if (!m_cdnBaseURL.empty()) {
+            root["_cdnBaseUrl"] = m_cdnBaseURL;
         }
-        root[std::to_string(levelId)] = std::move(obj);
+        for (auto& [levelId, entry] : m_manifestCache) {
+            matjson::Value obj = matjson::Value::object();
+            obj["format"]   = entry.format;
+            obj["cdnUrl"]   = entry.cdnUrl;
+            obj["version"]  = entry.version;
+            obj["id"]       = entry.id;
+            obj["cachedAt"] = entry.cachedAt;
+            if (!entry.revisionToken.empty()) {
+                obj["revisionToken"] = entry.revisionToken;
+            }
+            root[std::to_string(levelId)] = std::move(obj);
+        }
+
+        json = root.dump(matjson::NO_INDENTATION);
+        entryCount = m_manifestCache.size();
     }
 
-    std::string json = root.dump(matjson::NO_INDENTATION);
+    // The actual disk write — atomic temp+rename inside writeStringSafe — is
+    // safe to run from a background thread.
+    paimon::ThreadTracker::get().spawn([path, json = std::move(json), entryCount]() {
+        std::error_code ec;
+        std::filesystem::create_directories(path.parent_path(), ec);
 
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-
-    // writeStringSafe does atomic tmp → rename internally
-    auto writeRes = geode::utils::file::writeStringSafe(path, json);
-    if (writeRes.isErr()) {
-        PaimonDebug::warn("[HttpClient] Failed to write manifest_cache.json: {}", writeRes.unwrapErr());
-        return;
-    }
-    PaimonDebug::log("[HttpClient] Manifest saved to disk ({} entries)", m_manifestCache.size());
+        auto writeRes = geode::utils::file::writeStringSafe(path, json);
+        if (writeRes.isErr()) {
+            PaimonDebug::warn("[HttpClient] Failed to write manifest_cache.json: {}", writeRes.unwrapErr());
+            return;
+        }
+        PaimonDebug::log("[HttpClient] Manifest saved to disk ({} entries)", entryCount);
+    });
 }
 
 void HttpClient::loadManifestFromDisk() {
@@ -1336,8 +1411,12 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
                 PaimonDebug::warn("[HttpClient] CDN download failed for level {}, falling back to Worker", levelId);
 
                 if (isWorkerExhausted()) {
-                    // Worker exhausted: no fallback available, fail gracefully
-                    PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fallback for level {}", levelId);
+                    // Worker exhausted: no fallback available right now.
+                    // NO marcamos como notFound — la mini puede existir, solo
+                    // que el Worker esta caido temporalmente. Solo failed
+                    // transitorio (el ThumbnailLoader's failedCache reintentara
+                    // tras el TTL escalonado de 15s/30s/60s/300s).
+                    PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fallback for level {} (will retry later)", levelId);
                     resolveInflight(levelId, false, {});
                     return;
                 }
@@ -1355,6 +1434,7 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
                     } else {
                         // Ambos fallaron — ahora si invalidar manifest para la proxima vez
                         PaimonDebug::warn("[HttpClient] No thumbnail found for level {} (CDN + Worker both failed)", levelId);
+                        markThumbnailNotFound(levelId);
                         removeManifestEntry(levelId);
                         resolveInflight(levelId, false, {});
                     }
@@ -1381,7 +1461,9 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
                 PaimonDebug::warn("[HttpClient] CDN best-effort failed for level {} (may not exist), falling back to Worker", levelId);
 
                 if (isWorkerExhausted()) {
-                    PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fallback for level {}", levelId);
+                    // Mismo razonamiento: Worker exhausted = problema temporal,
+                    // NO marcar como notFound. Reintento via failedCache TTL.
+                    PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fallback for level {} (will retry later)", levelId);
                     resolveInflight(levelId, false, {});
                     return;
                 }
@@ -1398,6 +1480,7 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
                         resolveInflight(levelId, true, wd);
                     } else {
                         PaimonDebug::warn("[HttpClient] No thumbnail found for level {} (CDN + Worker both failed)", levelId);
+                        markThumbnailNotFound(levelId);
                         resolveInflight(levelId, false, {});
                     }
                 });
@@ -1424,6 +1507,7 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
             resolveInflight(levelId, true, data);
         } else {
             PaimonDebug::warn("[HttpClient] No thumbnail found for level {}", levelId);
+            markThumbnailNotFound(levelId);
             resolveInflight(levelId, false, {});
         }
     });
@@ -1436,6 +1520,8 @@ bool HttpClient::isWorkerExhausted() {
         std::chrono::system_clock::now().time_since_epoch()).count();
     if (now - m_exhaustedAt > EXHAUSTED_RECOVERY_SECONDS) {
         m_workerExhausted.store(false, std::memory_order_release);
+        // Resetear el contador para dar al worker un fresh start tras recovery
+        m_consecutiveWorkerFailures.store(0, std::memory_order_release);
         PaimonDebug::log("[HttpClient] Worker exhaustion reset after {}s recovery period", EXHAUSTED_RECOVERY_SECONDS);
         return false;
     }
@@ -1460,6 +1546,27 @@ void HttpClient::setManifestCooldown(int retryAfterSeconds) {
     PaimonDebug::warn("[HttpClient] Manifest fetch cooldown: {}s (server retryAfter={})", backoff, retryAfterSeconds);
 }
 
+bool HttpClient::isThumbnailNotFound(int levelId) const {
+    std::lock_guard lock(m_notFoundMutex);
+    auto it = m_notFoundCache.find(levelId);
+    if (it == m_notFoundCache.end()) return false;
+    if (std::chrono::steady_clock::now() - it->second >= std::chrono::seconds(NOT_FOUND_TTL_SECONDS)) {
+        m_notFoundCache.erase(it);
+        return false;
+    }
+    return true;
+}
+
+void HttpClient::markThumbnailNotFound(int levelId) const {
+    std::lock_guard lock(m_notFoundMutex);
+    m_notFoundCache[levelId] = std::chrono::steady_clock::now();
+}
+
+void HttpClient::clearThumbnailNotFound(int levelId) {
+    std::lock_guard lock(m_notFoundMutex);
+    m_notFoundCache.erase(levelId);
+}
+
 void HttpClient::resolveInflight(int levelId, bool success, std::vector<uint8_t> const& data) {
     std::vector<DownloadCallback> callbacks;
     {
@@ -1471,6 +1578,7 @@ void HttpClient::resolveInflight(int levelId, bool success, std::vector<uint8_t>
         }
     }
     PaimonDebug::log("[HttpClient] resolveInflight level {}: success={}, {} callbacks", levelId, success, callbacks.size());
+    if (success) clearThumbnailNotFound(levelId);
     for (auto& cb : callbacks) {
         cb(success, data, 0, 0);
     }
@@ -1486,13 +1594,16 @@ void HttpClient::checkThumbnailExists(int levelId, CheckCallback callback) {
     }
 
     time_t now = std::time(nullptr);
-    auto cacheIt = m_existsCache.find(levelId);
-    if (cacheIt != m_existsCache.end()) {
-        if (now - cacheIt->second.timestamp < EXISTS_CACHE_DURATION) {
-            callback(cacheIt->second.exists);
-            return;
-        } else {
-            m_existsCache.erase(cacheIt);
+    {
+        std::lock_guard<std::mutex> lock(m_existsCacheMutex);
+        auto cacheIt = m_existsCache.find(levelId);
+        if (cacheIt != m_existsCache.end()) {
+            if (now - cacheIt->second.timestamp < EXISTS_CACHE_DURATION) {
+                callback(cacheIt->second.exists);
+                return;
+            } else {
+                m_existsCache.erase(cacheIt);
+            }
         }
     }
 
@@ -1510,8 +1621,10 @@ void HttpClient::checkThumbnailExists(int levelId, CheckCallback callback) {
         if (success) {
             bool exists = response.find("\"exists\":true") != std::string::npos || 
                           response.find("\"exists\": true") != std::string::npos;
-            
-            m_existsCache[levelId] = {exists, now};
+            {
+                std::lock_guard<std::mutex> lock(m_existsCacheMutex);
+                m_existsCache[levelId] = {exists, now};
+            }
             PaimonDebug::log("[HttpClient] Thumbnail exists check for level {}: {} (cached)", levelId, exists);
             callback(exists);
         } else {
@@ -1602,10 +1715,16 @@ void HttpClient::checkModeratorAccount(std::string const& username, int accountI
                 }
                 // guardo el nuevo mod code si viene del server
                 Mod::get()->setSavedValue<bool>("gd-verification-failed", false);
+                // Capturamos un puntero a setModCode para evitar capturar `this`
+                // (dangling si el singleton se recicla por hot-reload).
+                // Usamos el mismo patrón que en performRequest.
+                auto modCodeSetter = [this](std::string const& code) {
+                    this->setModCode(code);
+                };
                 if (json.contains("newModCode")) {
                     std::string newCode = json["newModCode"].asString().unwrapOr("");
                     if (!newCode.empty()) {
-                        this->setModCode(newCode);
+                        modCodeSetter(newCode);
                         PaimonDebug::log("[HttpClient] Received and saved new moderator code (prefijo: {}...)", newCode.substr(0, 8));
                     } else {
                         log::warn("[HttpClient] Server respondio newModCode vacio para {}#{}", username, accountID);
@@ -2021,6 +2140,276 @@ void HttpClient::downloadProfileBundle(int accountID, std::string const& usernam
     performRequest(url, "GET", "", headers, callback, false);
 }
 
+// ════════════════════════════════════════════════════════════
+// Batch Init — single request at mod startup
+// ════════════════════════════════════════════════════════════
+
+void HttpClient::fetchInit(std::string const& username, int accountID, std::vector<int> const& levelIds, InitCallback callback) {
+    PaimonDebug::log("[HttpClient] fetchInit for user={} accountID={} levels={}", username, accountID, levelIds.size());
+
+    if (isWorkerExhausted()) {
+        PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fetch init");
+        if (callback) callback(false, {});
+        return;
+    }
+
+    // Build JSON body
+    matjson::Value body;
+    body["username"] = username;
+    body["accountID"] = accountID;
+    auto arr = matjson::Value::array();
+    for (int id : levelIds) {
+        arr.push(id);
+    }
+    body["levelIds"] = arr;
+
+    std::string url = m_serverURL + "/api/init";
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Content-Type: application/json",
+        "Accept: application/json"
+    };
+
+    performRequest(url, "POST", body.dump(), headers, [this, callback = std::move(callback)](bool success, std::string const& response) {
+        if (!success || response.empty()) {
+            if (callback) callback(false, {});
+            return;
+        }
+
+        auto parsed = matjson::parse(response);
+        if (!parsed.isOk()) {
+            if (callback) callback(false, {});
+            return;
+        }
+        auto json = parsed.unwrap();
+
+        InitResult result;
+
+        // Parse moderator info
+        if (json.contains("moderator") && json["moderator"].isObject()) {
+            auto& mod = json["moderator"];
+            result.isModerator = mod["isModerator"].asBool().unwrapOr(false);
+            result.isAdmin = mod["isAdmin"].asBool().unwrapOr(false);
+            result.isVip = mod["isVip"].asBool().unwrapOr(false);
+            result.newModCode = mod["newModCode"].asString().unwrapOr("");
+            result.gdVerificationFailed = mod["gdVerificationFailed"].asBool().unwrapOr(false);
+
+            if (result.isAdmin) result.isModerator = true;
+        }
+
+        // Apply new mod code if received
+        if (!result.newModCode.empty()) {
+            this->setModCode(result.newModCode);
+            PaimonDebug::log("[HttpClient] Init: received new mod code (prefix: {}...)", result.newModCode.substr(0, 8));
+        }
+
+        // Parse manifest entries and apply to cache
+        if (json.contains("manifest") && json["manifest"].isObject()) {
+            // Reuse existing updateManifestFromJson by serializing just the manifest part
+            matjson::Value manifestPayload = json["manifest"];
+            if (json.contains("cdnBaseUrl")) {
+                manifestPayload["_cdnBaseUrl"] = json["cdnBaseUrl"];
+            }
+            updateManifestFromJson(manifestPayload.dump());
+            saveManifestToDisk();
+        }
+
+        // Extract CDN base URL
+        if (json.contains("cdnBaseUrl")) {
+            result.cdnBaseUrl = json["cdnBaseUrl"].asString().unwrapOr("");
+            if (!result.cdnBaseUrl.empty()) {
+                m_cdnBaseURL = result.cdnBaseUrl;
+            }
+        }
+
+        // Serialize daily/weekly for consumers
+        if (json.contains("daily") && !json["daily"].isNull()) {
+            result.dailyJson = json["daily"].dump();
+        }
+        if (json.contains("weekly") && !json["weekly"].isNull()) {
+            result.weeklyJson = json["weekly"].dump();
+        }
+
+        // Store VIP status
+        Mod::get()->setSavedValue<bool>("is-verified-vip", result.isVip);
+
+        if (callback) callback(true, result);
+    }, false);
+}
+
+// ════════════════════════════════════════════════════════════
+// Batch Ratings — get ratings for multiple levels in one request
+// ════════════════════════════════════════════════════════════
+
+void HttpClient::fetchBatchRatings(std::vector<int> const& levelIds, std::string const& username,
+    std::unordered_map<int, std::string> const& thumbnailIds, BatchRatingsCallback callback) {
+    if (levelIds.empty()) {
+        if (callback) callback(true, {});
+        return;
+    }
+
+    PaimonDebug::log("[HttpClient] fetchBatchRatings for {} levels", levelIds.size());
+
+    if (isWorkerExhausted()) {
+        PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fetch batch ratings");
+        if (callback) callback(false, {});
+        return;
+    }
+
+    // Build JSON body
+    matjson::Value body;
+    body["username"] = username;
+    auto arr = matjson::Value::array();
+    for (int id : levelIds) {
+        arr.push(id);
+    }
+    body["levelIds"] = arr;
+
+    if (!thumbnailIds.empty()) {
+        matjson::Value thumbMap;
+        for (auto& [id, thumbId] : thumbnailIds) {
+            thumbMap[std::to_string(id)] = thumbId;
+        }
+        body["thumbnailIds"] = thumbMap;
+    }
+
+    std::string url = m_serverURL + "/api/v2/ratings/batch";
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Content-Type: application/json",
+        "Accept: application/json"
+    };
+
+    performRequest(url, "POST", body.dump(), headers, [callback = std::move(callback)](bool success, std::string const& response) {
+        if (!success || response.empty()) {
+            if (callback) callback(false, {});
+            return;
+        }
+
+        auto parsed = matjson::parse(response);
+        if (!parsed.isOk()) {
+            if (callback) callback(false, {});
+            return;
+        }
+        auto json = parsed.unwrap();
+
+        std::unordered_map<int, BatchRatingEntry> ratings;
+        if (json.contains("ratings") && json["ratings"].isObject()) {
+            for (auto& [key, val] : json["ratings"]) {
+                if (!val.isObject()) continue;
+                int levelId = 0;
+                auto numResult = geode::utils::numFromString<int>(key);
+                if (numResult.isOk()) levelId = numResult.unwrap();
+                if (levelId <= 0) continue;
+
+                BatchRatingEntry entry;
+                entry.average = static_cast<float>(val["average"].asDouble().unwrapOr(0.0));
+                entry.count = static_cast<int>(val["count"].asInt().unwrapOr(0));
+                entry.userVote = static_cast<int>(val["userVote"].asInt().unwrapOr(0));
+                ratings[levelId] = entry;
+            }
+        }
+
+        if (callback) callback(true, ratings);
+    }, false);
+}
+
+// ════════════════════════════════════════════════════════════
+// Discovery — combines top-creators + top-thumbnails + latest-uploads + featured
+// ════════════════════════════════════════════════════════════
+
+void HttpClient::fetchDiscovery(int creatorsLimit, int thumbnailsLimit, int uploadsLimit, DiscoveryCallback callback) {
+    PaimonDebug::log("[HttpClient] fetchDiscovery (creators={}, thumbs={}, uploads={})", creatorsLimit, thumbnailsLimit, uploadsLimit);
+
+    if (isWorkerExhausted() && !m_cdnBaseURL.empty()) {
+        PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fetch discovery");
+        if (callback) callback(false, "");
+        return;
+    }
+
+    std::string url = m_serverURL + "/api/discovery?creatorsLimit=" + std::to_string(creatorsLimit)
+        + "&thumbnailsLimit=" + std::to_string(thumbnailsLimit)
+        + "&uploadsLimit=" + std::to_string(uploadsLimit);
+
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Accept: application/json"
+    };
+
+    performRequest(url, "GET", "", headers, [callback = std::move(callback)](bool success, std::string const& response) {
+        if (callback) callback(success, response);
+    }, false);
+}
+
+// ════════════════════════════════════════════════════════════
+// Queue Summary — all queue categories in one request (moderators)
+// ════════════════════════════════════════════════════════════
+
+void HttpClient::fetchQueueSummary(std::string const& username, int accountID, int previewCount, QueueSummaryCallback callback) {
+    PaimonDebug::log("[HttpClient] fetchQueueSummary for user={}", username);
+
+    if (isWorkerExhausted()) {
+        if (callback) callback(false, "");
+        return;
+    }
+
+    std::string url = m_serverURL + "/api/queue/summary?username=" + encodeQueryParam(username)
+        + "&accountID=" + std::to_string(accountID)
+        + "&preview=" + std::to_string(previewCount);
+
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Accept: application/json"
+    };
+    if (!m_modCode.empty()) {
+        headers.push_back("X-Mod-Code: " + m_modCode);
+    }
+
+    performRequest(url, "GET", "", headers, [callback = std::move(callback)](bool success, std::string const& response) {
+        if (callback) callback(success, response);
+    }, false);
+}
+
+// ════════════════════════════════════════════════════════════
+// Batch Profile Bundle — fetch bundles for multiple accounts
+// ════════════════════════════════════════════════════════════
+
+void HttpClient::fetchBatchProfileBundle(std::vector<std::pair<int, std::string>> const& accounts, BatchBundleCallback callback) {
+    if (accounts.empty()) {
+        if (callback) callback(true, R"({"bundles":{}})");
+        return;
+    }
+
+    PaimonDebug::log("[HttpClient] fetchBatchProfileBundle for {} accounts", accounts.size());
+
+    if (isWorkerExhausted()) {
+        if (callback) callback(false, "");
+        return;
+    }
+
+    // Build JSON body: { "accounts": [{"accountID": 123, "username": "foo"}, ...] }
+    auto arr = matjson::Value::array();
+    for (auto const& [id, name] : accounts) {
+        matjson::Value acc;
+        acc["accountID"] = id;
+        acc["username"] = name;
+        arr.push(acc);
+    }
+    matjson::Value body;
+    body["accounts"] = arr;
+
+    std::string url = m_serverURL + "/api/profile/batch-bundle";
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Content-Type: application/json",
+        "Accept: application/json"
+    };
+
+    performRequest(url, "POST", body.dump(), headers, [callback = std::move(callback)](bool success, std::string const& response) {
+        if (callback) callback(success, response);
+    }, false);
+}
+
 void HttpClient::post(std::string const& endpoint, std::string const& data, GenericCallback callback) {
     std::string url = endpoint;
     if (!url.starts_with("http://") && !url.starts_with("https://")) {
@@ -2327,4 +2716,228 @@ void HttpClient::downloadCustomBadgeBatch(std::vector<int> const& accountIDs, Ge
     performRequest(url, "GET", "", headers, [callback = std::move(callback)](bool success, std::string const& response) {
         callback(success, response);
     });
+}
+
+// ════════════════════════════════════════════════════════════
+// Batch downloads — multi-id descarga en una sola request
+// ════════════════════════════════════════════════════════════
+
+namespace {
+// Parsea la respuesta { items: { "id": { ok, format, data?, reason? } } }
+// y arma el map<int, BatchItem>. Devuelve false si el JSON es invalido.
+bool parseBatchResponse(std::string const& body,
+                        std::unordered_map<int, HttpClient::BatchItem>& out) {
+    auto parsed = matjson::parse(body);
+    if (!parsed.isOk()) {
+        PaimonDebug::warn("[HttpClient] Batch parse error: {}", body.substr(0, 200));
+        return false;
+    }
+    auto const& root = parsed.unwrap();
+    if (!root.isObject()) return false;
+    auto itemsRes = root["items"];
+    if (!itemsRes.isObject()) {
+        // respuesta vacia es valida
+        return true;
+    }
+    for (auto const& [key, val] : itemsRes) {
+        int id = 0;
+        auto parseResult = geode::utils::numFromString<int>(std::string(key));
+        if (!parseResult.isOk()) continue;
+        id = parseResult.unwrap();
+        if (id <= 0) continue;
+
+        HttpClient::BatchItem item;
+        item.ok = val["ok"].asBool().unwrapOr(false);
+        item.format = val["format"].asString().unwrapOr("");
+        if (item.ok) {
+            std::string b64 = val["data"].asString().unwrapOr("");
+            if (!b64.empty()) {
+                std::vector<uint8_t> bytes;
+                if (decodeBase64(b64, bytes) && !bytes.empty()) {
+                    item.data = std::move(bytes);
+                } else {
+                    item.ok = false; // base64 corrupto = fallo
+                }
+            } else {
+                item.ok = false;
+            }
+        }
+        out.emplace(id, std::move(item));
+    }
+    return true;
+}
+
+// Construye un body JSON { "<key>": [id1, id2, ...] }
+std::string buildBatchIdsJson(std::string const& key, std::vector<int> const& ids, size_t cap) {
+    matjson::Value root = matjson::Value::object();
+    matjson::Value arr = matjson::Value::array();
+    size_t pushed = 0;
+    for (int id : ids) {
+        if (id <= 0) continue;
+        arr.push(id);
+        if (++pushed >= cap) break;
+    }
+    root[key] = arr;
+    return root.dump();
+}
+} // namespace
+
+void HttpClient::downloadThumbnailsBatch(std::vector<int> const& levelIds,
+                                         BatchDownloadCallback callback) {
+    if (levelIds.empty()) {
+        if (callback) callback(true, {});
+        return;
+    }
+    if (isWorkerExhausted()) {
+        PaimonDebug::warn("[HttpClient] Worker exhausted, batch thumbnails skipped");
+        if (callback) callback(false, {});
+        return;
+    }
+
+    static constexpr size_t MAX_BATCH = 40; // server cap
+    std::string body = buildBatchIdsJson("ids", levelIds, MAX_BATCH);
+    std::string url = m_serverURL + "/api/thumbnails/batch";
+
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Content-Type: application/json"
+    };
+
+    PaimonDebug::log("[HttpClient] downloadThumbnailsBatch: {} ids -> {}", levelIds.size(), url);
+
+    performRequest(url, "POST", body, headers,
+        [callback = std::move(callback)](bool success, std::string const& response) {
+            std::unordered_map<int, BatchItem> items;
+            if (!success) {
+                if (callback) callback(false, items);
+                return;
+            }
+            bool parsed = parseBatchResponse(response, items);
+            if (callback) callback(parsed, items);
+        }, false);
+}
+
+void HttpClient::getThumbnailsBatch(std::vector<int> const& levelIds, BatchListCallback callback) {
+    if (levelIds.empty()) {
+        if (callback) callback(true, {});
+        return;
+    }
+
+    static constexpr size_t MAX_BATCH = 40;
+    std::string body = buildBatchIdsJson("ids", levelIds, MAX_BATCH);
+    std::string url = m_serverURL + "/api/thumbnails/list-batch";
+
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Content-Type: application/json"
+    };
+
+    PaimonDebug::log("[HttpClient] getThumbnailsBatch: {} ids -> {}", levelIds.size(), url);
+
+    performRequest(url, "POST", body, headers,
+        [callback = std::move(callback)](bool success, std::string const& response) {
+            std::unordered_map<int, std::string> items;
+            if (!success) {
+                if (callback) callback(false, items);
+                return;
+            }
+            auto parsed = matjson::parse(response);
+            if (!parsed.isOk()) {
+                PaimonDebug::warn("[HttpClient] getThumbnailsBatch parse error");
+                if (callback) callback(false, items);
+                return;
+            }
+            auto const& root = parsed.unwrap();
+            if (!root.isObject() || !root.contains("thumbnails")) {
+                if (callback) callback(true, items);
+                return;
+            }
+            auto const& thumbsObj = root["thumbnails"];
+            if (!thumbsObj.isObject()) {
+                if (callback) callback(true, items);
+                return;
+            }
+            // Convertir cada entrada { "<id>": [ ... ] } en un JSON
+            // { "thumbnails": [ ... ] } que parseThumbnailResponse pueda
+            // consumir tal cual. Esto evita duplicar lógica de parseo.
+            for (auto const& [key, val] : thumbsObj) {
+                int id = 0;
+                auto parseResult = geode::utils::numFromString<int>(std::string(key));
+                if (!parseResult.isOk()) continue;
+                id = parseResult.unwrap();
+                if (id <= 0) continue;
+                matjson::Value wrapped = matjson::Value::object();
+                wrapped["thumbnails"] = val;
+                items.emplace(id, wrapped.dump());
+            }
+            if (callback) callback(true, items);
+        }, false);
+}
+
+void HttpClient::downloadProfileBackgroundsBatch(std::vector<int> const& accountIDs,
+                                                 BatchDownloadCallback callback) {
+    if (accountIDs.empty()) {
+        if (callback) callback(true, {});
+        return;
+    }
+    if (isWorkerExhausted()) {
+        if (callback) callback(false, {});
+        return;
+    }
+
+    static constexpr size_t MAX_BATCH = 40;
+    std::string body = buildBatchIdsJson("accountIDs", accountIDs, MAX_BATCH);
+    std::string url = m_serverURL + "/api/profilebackground/batch";
+
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Content-Type: application/json"
+    };
+
+    PaimonDebug::log("[HttpClient] downloadProfileBackgroundsBatch: {} ids -> {}", accountIDs.size(), url);
+
+    performRequest(url, "POST", body, headers,
+        [callback = std::move(callback)](bool success, std::string const& response) {
+            std::unordered_map<int, BatchItem> items;
+            if (!success) {
+                if (callback) callback(false, items);
+                return;
+            }
+            bool parsed = parseBatchResponse(response, items);
+            if (callback) callback(parsed, items);
+        }, false);
+}
+
+void HttpClient::downloadProfileImgsBatch(std::vector<int> const& accountIDs,
+                                          BatchDownloadCallback callback) {
+    if (accountIDs.empty()) {
+        if (callback) callback(true, {});
+        return;
+    }
+    if (isWorkerExhausted()) {
+        if (callback) callback(false, {});
+        return;
+    }
+
+    static constexpr size_t MAX_BATCH = 40;
+    std::string body = buildBatchIdsJson("accountIDs", accountIDs, MAX_BATCH);
+    std::string url = m_serverURL + "/api/profileimgs/batch";
+
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Content-Type: application/json"
+    };
+
+    PaimonDebug::log("[HttpClient] downloadProfileImgsBatch: {} ids -> {}", accountIDs.size(), url);
+
+    performRequest(url, "POST", body, headers,
+        [callback = std::move(callback)](bool success, std::string const& response) {
+            std::unordered_map<int, BatchItem> items;
+            if (!success) {
+                if (callback) callback(false, items);
+                return;
+            }
+            bool parsed = parseBatchResponse(response, items);
+            if (callback) callback(parsed, items);
+        }, false);
 }

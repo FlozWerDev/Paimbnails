@@ -35,10 +35,54 @@ inline std::atomic<bool>& videoAudioInteropState() {
     return active;
 }
 
+// Tracks whether we are currently inside a CCNode/CCScene destructor chain
+// triggered by CCDirector::setNextScene. While this flag is set,
+// syncAudioInteropFlags() must not touch the running scene because
+// CCDirector::getRunningScene() returns a pointer to the scene that is
+// being released (its CCNode members, including m_pUserObject, are in
+// a partially destroyed state). Reading them causes an access violation
+// inside CCNode::setUserFlag (via GeodeNodeMetadata::set).
+inline std::atomic<bool>& interopSceneTeardownGuard() {
+    static std::atomic<bool> inTeardown{false};
+    return inTeardown;
+}
+
+struct InteropSceneTeardownScope {
+    InteropSceneTeardownScope() { interopSceneTeardownGuard().store(true, std::memory_order_release); }
+    ~InteropSceneTeardownScope() { interopSceneTeardownGuard().store(false, std::memory_order_release); }
+};
+
 inline void syncAudioInteropFlags() {
-    auto* director = cocos2d::CCDirector::sharedDirector();
-    auto* scene = director ? director->getRunningScene() : nullptr;
+    // Always update the atomic-only state above; this function only mirrors
+    // those atomics into the running scene's user flags. If we cannot safely
+    // touch the scene, the atomic state is still authoritative.
+    if (interopSceneTeardownGuard().load(std::memory_order_acquire)) {
+        return;
+    }
+
+    auto* director = cocos2d::CCDirector::get();
+    if (!director) {
+        return;
+    }
+
+    // While CCDirector::setNextScene is running, the previous running scene
+    // is being released and its sub-tree is mid-destruction. Touching
+    // m_pRunningScene here will read partially-destroyed CCNode members
+    // (specifically m_pUserObject at offset 0x78 on Windows x64) and crash
+    // inside CCNode::setUserFlag. Detect the transition via getNextScene()
+    // / isSendCleanupToScene() and skip the user-flag mirror in that case.
+    if (director->getNextScene() != nullptr || director->isSendCleanupToScene()) {
+        return;
+    }
+
+    auto* scene = director->getRunningScene();
     if (!scene) {
+        return;
+    }
+
+    // Defensive: if the scene's retain count is 0 it is being destroyed
+    // (this catches the recursive ~CCNode case that follows release()).
+    if (scene->retainCount() <= 0) {
         return;
     }
 

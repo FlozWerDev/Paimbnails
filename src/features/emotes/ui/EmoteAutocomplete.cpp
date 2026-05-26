@@ -31,9 +31,12 @@ bool EmoteAutocomplete::init(
     m_setTextFn = std::move(setTextFn);
     this->setID("emote-autocomplete"_spr);
 
-    // Background (hidden until suggestions appear)
-    // Will be replaced with a dark panel when suggestions appear
-    m_bg = CCScale9Sprite::create("square02_small.png");
+    // Background (hidden until suggestions appear) — preferimos NineSlice
+    // (canónico Geode) sobre CCScale9Sprite. Cae a Scale9 si el tema
+    // del usuario no incluye `square02_small.png` como NineSlice.
+    m_bg = paimon::SpriteHelper::safeCreateNineSliceFromFile("square02_small.png");
+    if (!m_bg) m_bg = paimon::SpriteHelper::safeCreateScale9("square02_small.png");
+    if (!m_bg) m_bg = paimon::SpriteHelper::createDarkPanel(200.f, 60.f, 220, 4.f);
     m_bg->setColor({25, 25, 35});
     m_bg->setOpacity(220);
     m_bg->setVisible(false);
@@ -96,6 +99,7 @@ void EmoteAutocomplete::rebuildSuggestions(
     std::vector<EmoteInfo> const& matches,
     std::string const& /*partial*/, size_t colonPos)
 {
+    bool wasHidden = !m_menu->isVisible();
     m_colonPos = colonPos;
 
     // Clear old items
@@ -173,6 +177,27 @@ void EmoteAutocomplete::rebuildSuggestions(
         btn->setPosition({PAD_X, rowY});
         btn->setAnchorPoint({0.f, 0.5f});
 
+        // Smooth opening animation: each row eases in scaling up + fading in,
+        // staggered so the list "unfolds" from top to bottom.
+        if (wasHidden) {
+            btn->stopAllActions();
+            btn->setScale(0.55f);
+            btn->setOpacity(0);
+            // Cascade rows in their child sprites' opacity through the menu item;
+            // CCMenuItemSpriteExtra forwards opacity to its sprite.
+            float delay = 0.025f * static_cast<float>(i);
+            btn->runAction(CCSequence::create(
+                CCDelayTime::create(delay),
+                CCSpawn::create(
+                    CCEaseBackOut::create(CCScaleTo::create(0.22f, 1.0f)),
+                    CCFadeTo::create(0.18f, 255),
+                    nullptr),
+                nullptr));
+        } else {
+            btn->setScale(1.0f);
+            btn->setOpacity(255);
+        }
+
         m_menu->addChild(btn);
     }
 
@@ -182,14 +207,35 @@ void EmoteAutocomplete::rebuildSuggestions(
     m_bg->setContentSize({bgW, bgH});
     m_bg->setAnchorPoint({0.f, 1.f});
     m_bg->setPosition({-2.f, 4.f});
+
+    // Smooth opening: the background "unfolds" downward (anchored at top).
+    if (wasHidden) {
+        m_bg->stopAllActions();
+        m_bg->setScaleY(0.05f);
+        m_bg->setScaleX(0.96f);
+        m_bg->setOpacity(0);
+        m_bg->runAction(CCSpawn::create(
+            CCEaseBackOut::create(CCScaleTo::create(0.22f, 1.0f, 1.0f)),
+            CCFadeTo::create(0.16f, 220),
+            nullptr));
+    } else {
+        m_bg->setScale(1.0f);
+        m_bg->setOpacity(220);
+    }
 }
 
 void EmoteAutocomplete::clearSuggestions() {
     if (m_menu) {
+        m_menu->stopAllActions();
         m_menu->removeAllChildren();
         m_menu->setVisible(false);
     }
-    if (m_bg) m_bg->setVisible(false);
+    if (m_bg) {
+        m_bg->stopAllActions();
+        m_bg->setVisible(false);
+        m_bg->setScale(1.0f);
+        m_bg->setOpacity(220);
+    }
     m_colonPos = std::string::npos;
 }
 

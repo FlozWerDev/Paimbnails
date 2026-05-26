@@ -76,7 +76,7 @@ bool containsVisibleLayerMatch(CCNode* node, std::set<std::string> const& filter
 }
 
 bool sampleCursorPosition(CCPoint& outPos, bool& outInsideWindow) {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     auto mousePos = geode::cocos::getMousePos();
     outInsideWindow = mousePos.x >= 0.f && mousePos.y >= 0.f &&
         mousePos.x <= winSize.width && mousePos.y <= winSize.height;
@@ -132,6 +132,12 @@ void ensureCursorHostIsFrontmost(CCScene* scene, CCNode* cursorNode) {
     }
 }
 } // namespace
+
+CursorManager::~CursorManager() {
+    detachFromScene();
+    (void)whiteTrailTexture().take();
+    (void)fallbackCursorTexture().take();
+}
 
 // ── Trail presets ─────────────────────────────────────────────────────────
 const CursorTrailPreset CursorManager::TRAIL_PRESETS[CursorManager::TRAIL_PRESET_COUNT] = {
@@ -198,6 +204,9 @@ void CursorManager::loadConfig() {
     m_config.trailOpacity  = j["trailOpacity"].asInt().unwrapOr(200);
     m_config.trailPreset   = j["trailPreset"].asInt().unwrapOr(-1);
 
+    m_config.followDelayEnabled = j["followDelayEnabled"].asBool().unwrapOr(false);
+    m_config.followDelay        = std::clamp(static_cast<float>(j["followDelay"].asDouble().unwrapOr(0.5)), 0.f, 1.f);
+
     auto layersArr = j["visibleLayers"].asArray();
     if (layersArr.isOk()) {
         m_config.visibleLayers.clear();
@@ -226,6 +235,8 @@ void CursorManager::saveConfig() {
     j["trailFadeType"]= m_config.trailFadeType;
     j["trailOpacity"] = m_config.trailOpacity;
     j["trailPreset"]  = m_config.trailPreset;
+    j["followDelayEnabled"] = m_config.followDelayEnabled;
+    j["followDelay"]        = static_cast<double>(m_config.followDelay);
 
     matjson::Value layers = matjson::Value::array();
     for (auto& l : m_config.visibleLayers) {
@@ -247,7 +258,7 @@ void CursorManager::saveConfig() {
 
 // ── Scene visibility ──────────────────────────────────────────────────────
 bool CursorManager::shouldShowOnCurrentScene() const {
-    auto scene = CCDirector::sharedDirector()->getRunningScene();
+    auto scene = CCDirector::get()->getRunningScene();
     if (!scene) return false;
 
     auto sceneClass = normalizeCursorToken(typeid(*scene).name());
@@ -255,8 +266,7 @@ bool CursorManager::shouldShowOnCurrentScene() const {
         return false;
     }
 
-    // cursor is always visible on every layer
-    return true;
+    return sceneMatchesVisibleLayers(scene);
 }
 
 bool CursorManager::sceneMatchesVisibleLayers(CCScene* scene) const {
@@ -463,7 +473,11 @@ CCSprite* CursorManager::createFallbackSprite() {
 
         auto* newTex = new CCTexture2D();
         if (newTex->initWithData(pixels, kCCTexture2DPixelFormat_RGBA8888, sz, sz, CCSizeMake(sz, sz))) {
-            fallbackTex = newTex;
+            // Ref::adopt toma ownership del refcount=1 existente sin retener
+            // extra. Sin adopt, la asignacion `fallbackTex = newTex` retiene
+            // via Ref::operator=, dejando refcount=2 — leak permanente
+            // porque el refcount del `new` nunca se libera.
+            fallbackTex = geode::Ref<CCTexture2D>::adopt(newTex);
         } else {
             newTex->release();
         }
@@ -471,6 +485,10 @@ CCSprite* CursorManager::createFallbackSprite() {
 
     if (!fallbackTex) return nullptr;
     return CCSprite::createWithTexture(fallbackTex.data());
+}
+
+bool CursorManager::hasLoadedCursorVisual() const {
+    return m_idleSprite || m_moveSprite;
 }
 
 void CursorManager::setIdleImage(std::string const& filename) {
@@ -493,10 +511,17 @@ void CursorManager::reloadSprites() {
 
     m_config.scale = clampCursorScale(m_config.scale);
 
-    m_idleSprite = loadSprite(m_config.idleImage);
-    if (!m_idleSprite) {
-        m_idleSprite = createFallbackSprite();
-    }
+    auto loadSlotSprite = [this](std::string const& primary, std::string const& secondary) -> CCSprite* {
+        if (auto* sprite = loadSprite(primary)) {
+            return sprite;
+        }
+        if (secondary != primary) {
+            return loadSprite(secondary);
+        }
+        return nullptr;
+    };
+
+    m_idleSprite = loadSlotSprite(m_config.idleImage, m_config.moveImage);
     if (m_idleSprite) {
         m_idleSprite->setScale(m_config.scale);
         m_idleSprite->setOpacity(static_cast<GLubyte>(m_config.opacity));
@@ -505,7 +530,7 @@ void CursorManager::reloadSprites() {
         m_cursorNode->addChild(m_idleSprite);
     }
 
-    m_moveSprite = loadSprite(m_config.moveImage);
+    m_moveSprite = loadSlotSprite(m_config.moveImage, m_config.idleImage);
     if (m_moveSprite) {
         m_moveSprite->setScale(m_config.scale);
         m_moveSprite->setOpacity(static_cast<GLubyte>(m_config.opacity));
@@ -537,7 +562,7 @@ void CursorManager::attachToScene(CCScene* scene) {
 
     bool insideWindow = true;
     if (!sampleCursorPosition(m_currentPos, insideWindow)) {
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
         m_currentPos = ccp(winSize.width / 2.f, winSize.height / 2.f);
     }
     m_velocity   = ccp(0.f, 0.f);
@@ -545,12 +570,13 @@ void CursorManager::attachToScene(CCScene* scene) {
     m_moveTimer  = 0.f;
 
     reloadSprites();
-    m_cursorNode->setVisible(insideWindow);
+    bool hasVisual = hasLoadedCursorVisual();
+    m_cursorNode->setVisible(insideWindow && hasVisual);
     if (m_trail) {
-        m_trail->setVisible(insideWindow);
+        m_trail->setVisible(insideWindow && hasVisual);
         m_trail->setPosition(m_currentPos);
     }
-    syncSystemCursorVisibility(insideWindow);
+    syncSystemCursorVisibility(insideWindow && hasVisual);
 }
 
 void CursorManager::detachFromScene() {
@@ -566,8 +592,8 @@ void CursorManager::detachFromScene() {
 
 void CursorManager::releaseSharedResources() {
     detachFromScene();
-    whiteTrailTexture() = nullptr;
-    fallbackCursorTexture() = nullptr;
+    (void)whiteTrailTexture().take();
+    (void)fallbackCursorTexture().take();
 }
 
 void CursorManager::syncSystemCursorVisibility(bool hideSystemCursor) {
@@ -592,8 +618,13 @@ void CursorManager::update(float dt) {
         return;
     }
 
-    if (auto* scene = m_cursorNode->getParentByType<CCScene>()) {
-        ensureCursorHostIsFrontmost(scene, m_cursorNode);
+    // Perf: only check Z-order every 10 frames instead of every frame
+    // The cursor Z-order only needs updating when new popups/layers appear
+    if (++m_zReorderCounter >= 10) {
+        m_zReorderCounter = 0;
+        if (auto* scene = m_cursorNode->getParentByType<CCScene>()) {
+            ensureCursorHostIsFrontmost(scene, m_cursorNode);
+        }
     }
 
     CCPoint newPos;
@@ -620,6 +651,16 @@ void CursorManager::update(float dt) {
         return;
     }
 
+    if (!hasLoadedCursorVisual()) {
+        if (m_trail) {
+            m_trail->removeFromParent();
+            m_trail = nullptr;
+        }
+        m_cursorNode->setVisible(false);
+        syncSystemCursorVisibility(false);
+        return;
+    }
+
     bool regainedVisibility = false;
     if (!m_cursorNode->isVisible()) {
         m_cursorNode->setVisible(true);
@@ -628,7 +669,19 @@ void CursorManager::update(float dt) {
     syncSystemCursorVisibility(true);
 
     CCPoint prevPos = m_currentPos;
-    m_currentPos    = newPos;
+    m_targetPos     = newPos;
+
+    // Follow delay: lerp towards target position
+    if (m_config.followDelayEnabled && m_config.followDelay > 0.f) {
+        // followDelay 0.0 = instant, 1.0 = very slow
+        // Convert to a lerp speed: higher delay = lower speed
+        float lerpSpeed = (1.f - m_config.followDelay) * 25.f + 1.f; // range ~1 to ~26
+        float t = std::min(1.f, lerpSpeed * dt);
+        m_currentPos.x = m_currentPos.x + (m_targetPos.x - m_currentPos.x) * t;
+        m_currentPos.y = m_currentPos.y + (m_targetPos.y - m_currentPos.y) * t;
+    } else {
+        m_currentPos = newPos;
+    }
 
     m_velocity.x = (m_currentPos.x - prevPos.x) / std::max(dt, 0.001f);
     m_velocity.y = (m_currentPos.y - prevPos.y) / std::max(dt, 0.001f);
@@ -689,7 +742,7 @@ void CursorManager::updateTrail() {
         m_trail = nullptr;
     }
 
-    if (!m_config.trailEnabled || !m_cursorNode) return;
+    if (!m_config.trailEnabled || !m_cursorNode || !hasLoadedCursorVisual()) return;
 
     auto& trailTex = whiteTrailTexture();
     if (!trailTex) {
@@ -698,7 +751,10 @@ void CursorManager::updateTrail() {
         memset(pixels, 255, sizeof(pixels));
         auto* newTex = new CCTexture2D();
         if (newTex->initWithData(pixels, kCCTexture2DPixelFormat_RGBA8888, sz, sz, CCSizeMake(sz, sz))) {
-            trailTex = newTex;
+            // Ref::adopt toma ownership del refcount=1 existente sin retener
+            // extra. Sin adopt, la asignacion `trailTex = newTex` retiene
+            // via Ref::operator=, dejando refcount=2 — leak permanente.
+            trailTex = geode::Ref<CCTexture2D>::adopt(newTex);
         } else {
             newTex->release();
         }

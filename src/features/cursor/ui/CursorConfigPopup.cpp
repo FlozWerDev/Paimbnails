@@ -1,4 +1,4 @@
-#include "CursorConfigPopup.hpp"
+﻿#include "CursorConfigPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../services/CursorManager.hpp"
@@ -12,7 +12,10 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 namespace {
-bool scrollLayerWithWheel(ScrollLayer* scrollLayer, float x, float y) {
+// Inicia/actualiza el destino de scroll suave para la rueda del raton.
+// Devuelve true si el cursor esta sobre el area de scroll (consume el evento).
+bool queueSmoothScroll(ScrollLayer* scrollLayer, float x, float y,
+                       float& targetY, bool& targetSet) {
 #if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_MACOS)
     return false;
 #else
@@ -23,24 +26,47 @@ bool scrollLayerWithWheel(ScrollLayer* scrollLayer, float x, float y) {
     scrollRect.origin = scrollLayer->getParent()->convertToWorldSpace(scrollRect.origin);
     if (!scrollRect.containsPoint(mousePos)) return false;
 
+    auto* contentLayer = scrollLayer->m_contentLayer;
+    if (!contentLayer) return false;
+
     float scrollAmount = y;
     if (std::abs(scrollAmount) < 0.001f) {
         scrollAmount = -x;
     }
 
-    auto* contentLayer = scrollLayer->m_contentLayer;
-    if (!contentLayer) return false;
-
-    float newY = contentLayer->getPositionY() - scrollAmount * 6.f;
     float minY = scrollLayer->getContentSize().height - contentLayer->getContentSize().height;
     float maxY = 0.f;
     if (minY > maxY) minY = maxY;
 
-    contentLayer->setPositionY(std::max(minY, std::min(maxY, newY)));
+    // Si aun no hay destino, partir de la posicion actual.
+    if (!targetSet) {
+        targetY = contentLayer->getPositionY();
+        targetSet = true;
+    }
+    targetY = std::max(minY, std::min(maxY, targetY - scrollAmount * 16.f));
     return true;
 #endif
 }
+
+// Aproxima suavemente el contentLayer hacia targetY (lerp por frame).
+void stepSmoothScroll(ScrollLayer* scrollLayer, float& targetY, bool& targetSet, float dt) {
+    if (!targetSet || !scrollLayer) return;
+    auto* contentLayer = scrollLayer->m_contentLayer;
+    if (!contentLayer) { targetSet = false; return; }
+
+    float cur = contentLayer->getPositionY();
+    float diff = targetY - cur;
+    if (std::abs(diff) < 0.5f) {
+        contentLayer->setPositionY(targetY);
+        targetSet = false;
+        return;
+    }
+    // factor de suavizado independiente del framerate
+    float t = 1.f - std::pow(0.001f, dt);
+    contentLayer->setPositionY(cur + diff * t);
 }
+}
+
 
 // ════════════════════════════════════════════════════════════
 // create
@@ -61,7 +87,7 @@ CursorConfigPopup* CursorConfigPopup::create() {
 // ════════════════════════════════════════════════════════════
 
 bool CursorConfigPopup::init() {
-    if (!Popup::init(420.f, 290.f)) return false;
+    if (!Popup::init(480.f, 310.f)) return false;
 
     this->setTitle("Custom Cursor");
     this->setMouseEnabled(true);
@@ -90,12 +116,16 @@ bool CursorConfigPopup::init() {
     buildGalleryTab();
     buildSettingsTab();
 
+    // Updater de scroll suave (rueda del raton con glide).
+    this->schedule(schedule_selector(CursorConfigPopup::updateSmoothScroll));
+
     paimon::markDynamicPopup(this);
     return true;
 }
 
 void CursorConfigPopup::onExit() {
     this->unschedule(schedule_selector(CursorConfigPopup::checkScrollPosition));
+    this->unschedule(schedule_selector(CursorConfigPopup::updateSmoothScroll));
     if (m_scrollArrow) {
         m_scrollArrow->stopAllActions();
     }
@@ -103,7 +133,19 @@ void CursorConfigPopup::onExit() {
 }
 
 void CursorConfigPopup::scrollWheel(float x, float y) {
-    if (m_currentTab == 1 && scrollLayerWithWheel(m_scrollLayer, x, y)) return;
+    if (m_currentTab == 1) {
+        queueSmoothScroll(m_scrollLayer, x, y, m_settingsScrollTargetY, m_settingsScrollTargetSet);
+        return;
+    }
+    if (m_currentTab == 0) {
+        queueSmoothScroll(m_thumbScroll, x, y, m_thumbScrollTargetY, m_thumbScrollTargetSet);
+        return;
+    }
+}
+
+void CursorConfigPopup::updateSmoothScroll(float dt) {
+    stepSmoothScroll(m_thumbScroll, m_thumbScrollTargetY, m_thumbScrollTargetSet, dt);
+    stepSmoothScroll(m_scrollLayer, m_settingsScrollTargetY, m_settingsScrollTargetSet, dt);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -166,275 +208,432 @@ void CursorConfigPopup::onTabSwitch(CCObject* sender) {
 // gallery tab
 // ════════════════════════════════════════════════════════════
 
+char const* CursorConfigPopup::slotDisplayName(CursorState state) {
+    switch (state) {
+        case CursorState::Move:     return "Move";
+        case CursorState::Hover:    return "Hover";
+        case CursorState::Click:    return "Click";
+        case CursorState::Text:     return "Text";
+        case CursorState::Disabled: return "Disabled";
+        case CursorState::Idle:
+        default:                    return "Idle";
+    }
+}
+
+std::string CursorConfigPopup::currentPack() const {
+    if (m_currentPackIdx < 0 || m_currentPackIdx >= (int)m_packList.size()) return "";
+    return m_packList[m_currentPackIdx];
+}
+
+// ── States info text shown by the "i" button ──
+static std::string buildStatesInfo() {
+    return
+        "<cy>Cursor states</c> — assign a different image to each one:\n\n"
+        "<cg>Idle</c>: at rest (the default arrow).\n"
+        "<cb>Move</c>: while the mouse is moving.\n"
+        "<co>Hover</c>: over a clickable button.\n"
+        "<cp>Click</c>: holding the left mouse button.\n"
+        "<cl>Text</c>: over a text field (I-beam).\n"
+        "<cr>Disabled</c>: over a disabled button.\n\n"
+        "Tap a state, then tap an image below to assign it.\n"
+        "Any state with no image falls back to <cg>Idle</c>.";
+}
+
 void CursorConfigPopup::buildGalleryTab() {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    // ── slot previews ──
-    float slotSize = 60.f;
-    float slotY = content.height - 90.f;
-    float slotSpacing = 80.f;
+    auto menu = CCMenu::create();
+    menu->setID("cursor-gallery-fixed-menu"_spr);
+    menu->setPosition({0, 0});
+    m_galleryTab->addChild(menu, 10);
 
-    // Idle slot (left)
-    m_idleSlotBg = CCLayerColor::create(ccc4(0, 180, 0, 160), slotSize, slotSize);
-    m_idleSlotBg->setPosition({cx - slotSpacing - slotSize / 2.f, slotY - slotSize / 2.f});
-    m_galleryTab->addChild(m_idleSlotBg);
+    // ── slots: 6 estados en UNA sola fila compacta (deja mucho mas espacio
+    //    libre abajo para la rejilla de miniaturas) ──
+    float slotSize = 30.f;
+    float colStep  = 58.f;
+    float slotRowY = content.height - 62.f;
 
-    m_idleLabel = CCLabelBMFont::create("Idle", "bigFont.fnt");
-    m_idleLabel->setScale(0.25f);
-    m_idleLabel->setPosition({cx - slotSpacing, slotY - slotSize / 2.f - 10.f});
-    m_galleryTab->addChild(m_idleLabel);
+    for (int i = 0; i < kSlotCount; ++i) {
+        CursorState state = kSlotStates[i];
+        float slotX = cx + (static_cast<float>(i) - 2.5f) * colStep;
+        float slotY = slotRowY;
 
-    // Move slot (right)
-    m_moveSlotBg = CCLayerColor::create(ccc4(80, 80, 80, 120), slotSize, slotSize);
-    m_moveSlotBg->setPosition({cx + slotSpacing - slotSize / 2.f, slotY - slotSize / 2.f});
-    m_galleryTab->addChild(m_moveSlotBg);
+        auto bg = CCLayerColor::create(ccc4(80, 80, 80, 120), slotSize, slotSize);
+        bg->setPosition({slotX - slotSize / 2.f, slotY - slotSize / 2.f});
+        m_galleryTab->addChild(bg);
+        m_slots[i].bg = bg;
 
-    m_moveLabel = CCLabelBMFont::create("Move", "bigFont.fnt");
-    m_moveLabel->setScale(0.25f);
-    m_moveLabel->setPosition({cx + slotSpacing, slotY - slotSize / 2.f - 10.f});
-    m_galleryTab->addChild(m_moveLabel);
+        auto label = CCLabelBMFont::create(slotDisplayName(state), "bigFont.fnt");
+        label->setScale(0.18f);
+        label->setPosition({slotX, slotY - slotSize / 2.f - 5.f});
+        m_galleryTab->addChild(label);
+        m_slots[i].label = label;
 
-    // slot tap buttons
-    m_galleryMenu = CCMenu::create();
-    m_galleryMenu->setID("cursor-gallery-menu"_spr);
-    m_galleryMenu->setPosition({0, 0});
-    m_galleryTab->addChild(m_galleryMenu, 10);
+        auto area = CCSprite::create();
+        area->setContentSize({slotSize, slotSize});
+        area->setOpacity(0);
+        auto btn = CCMenuItemSpriteExtra::create(area, this, menu_selector(CursorConfigPopup::onActivateSlot));
+        btn->setContentSize({slotSize, slotSize});
+        btn->setPosition({slotX, slotY});
+        btn->setTag(static_cast<int>(state));
+        menu->addChild(btn);
+    }
 
-    auto idleArea = CCSprite::create();
-    idleArea->setContentSize({slotSize, slotSize});
-    idleArea->setOpacity(0);
-    auto idleBtn = CCMenuItemSpriteExtra::create(idleArea, this, menu_selector(CursorConfigPopup::onActivateIdleSlot));
-    idleBtn->setContentSize({slotSize, slotSize});
-    idleBtn->setPosition({cx - slotSpacing, slotY});
-    m_galleryMenu->addChild(idleBtn);
+    // "i" info button para explicar los estados (arriba a la derecha del grid)
+    if (auto* iBtn = PaimonInfo::createInfoBtn("Cursor States", buildStatesInfo(), this, 0.5f)) {
+        iBtn->setPosition({content.width - 24.f, content.height - 30.f});
+        menu->addChild(iBtn);
+    }
 
-    auto moveArea = CCSprite::create();
-    moveArea->setContentSize({slotSize, slotSize});
-    moveArea->setOpacity(0);
-    auto moveBtn = CCMenuItemSpriteExtra::create(moveArea, this, menu_selector(CursorConfigPopup::onActivateMoveSlot));
-    moveBtn->setContentSize({slotSize, slotSize});
-    moveBtn->setPosition({cx + slotSpacing, slotY});
-    m_galleryMenu->addChild(moveBtn);
+    // ── barra de pack (prev / nombre / next + borrar pack) ──
+    float packY = slotRowY - slotSize / 2.f - 22.f;
 
-    // gallery container for thumbnails
-    m_galleryContainer = CCNode::create();
-    m_galleryContainer->setID("cursor-gallery-container"_spr);
-    m_galleryContainer->setPosition({0, 0});
-    m_galleryTab->addChild(m_galleryContainer);
+    auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+    if (prevSpr) {
+        prevSpr->setScale(0.5f);
+        auto prevBtn = CCMenuItemSpriteExtra::create(prevSpr, this, menu_selector(CursorConfigPopup::onPackPrev));
+        prevBtn->setPosition({cx - 120.f, packY});
+        menu->addChild(prevBtn);
+    }
+    auto nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+    if (nextSpr) {
+        nextSpr->setScale(0.5f);
+        nextSpr->setFlipX(true);
+        auto nextBtn = CCMenuItemSpriteExtra::create(nextSpr, this, menu_selector(CursorConfigPopup::onPackNext));
+        nextBtn->setPosition({cx + 120.f, packY});
+        menu->addChild(nextBtn);
+    }
 
-    // bottom buttons
-    auto addSpr = ButtonSprite::create("+ Add", "goldFont.fnt", "GJ_button_01.png", 0.7f);
-    addSpr->setScale(0.55f);
-    auto addBtn = CCMenuItemSpriteExtra::create(addSpr, this, menu_selector(CursorConfigPopup::onAddImage));
-    addBtn->setPosition({cx - 60.f, 25.f});
-    m_galleryMenu->addChild(addBtn);
+    m_packLabel = CCLabelBMFont::create("All loose images", "bigFont.fnt");
+    m_packLabel->setScale(0.4f);
+    m_packLabel->setPosition({cx, packY});
+    m_galleryTab->addChild(m_packLabel);
 
-    auto delAllSpr = ButtonSprite::create("Delete All", "goldFont.fnt", "GJ_button_06.png", 0.7f);
-    delAllSpr->setScale(0.55f);
-    auto delAllBtn = CCMenuItemSpriteExtra::create(delAllSpr, this, menu_selector(CursorConfigPopup::onDeleteAllImages));
-    delAllBtn->setPosition({cx + 60.f, 25.f});
-    m_galleryMenu->addChild(delAllBtn);
+    // boton borrar pack (papelera, a la derecha del label)
+    auto trashSpr = CCSprite::createWithSpriteFrameName("GJ_trashBtn_001.png");
+    if (trashSpr) {
+        trashSpr->setScale(0.45f);
+        auto trashBtn = CCMenuItemSpriteExtra::create(trashSpr, this, menu_selector(CursorConfigPopup::onDeletePack));
+        trashBtn->setPosition({cx + 155.f, packY});
+        menu->addChild(trashBtn);
+    }
+
+    // ── scroll de miniaturas del pack actual ──
+    float scrollW = content.width - 30.f;
+    float scrollTop = packY - 18.f;
+    float scrollBottom = 46.f;
+    float scrollH = scrollTop - scrollBottom;
+
+    m_thumbScroll = ScrollLayer::create({scrollW, scrollH});
+    m_thumbScroll->setPosition({(content.width - scrollW) / 2.f, scrollBottom});
+    m_galleryTab->addChild(m_thumbScroll, 1);
+    // El contenido del grid (celdas con fondo + miniatura + botones) se crea y
+    // se reconstruye por completo en refreshGallery, dentro del contentLayer
+    // del ScrollLayer de Geode.
 
     m_emptyGalleryLabel = CCLabelBMFont::create(
-        "No images added yet\nSystem cursor stays visible until\nyou assign at least one image.",
+        "No cursors here yet.\nUse + Add to import images, .cur/.ani cursors, or a .zip pack.",
         "bigFont.fnt"
     );
     if (m_emptyGalleryLabel) {
-        m_emptyGalleryLabel->setScale(0.3f);
+        m_emptyGalleryLabel->setScale(0.28f);
         m_emptyGalleryLabel->setOpacity(170);
-        m_emptyGalleryLabel->setPosition({cx, content.height - 190.f});
+        m_emptyGalleryLabel->setAlignment(kCCTextAlignmentCenter);
+        m_emptyGalleryLabel->setPosition({cx, scrollBottom + scrollH / 2.f});
         m_galleryTab->addChild(m_emptyGalleryLabel, 2);
     }
 
+    // ── botones inferiores: + Add / Delete All ──
+    auto addSpr = ButtonSprite::create("+ Add", "goldFont.fnt", "GJ_button_01.png", 0.7f);
+    addSpr->setScale(0.5f);
+    auto addBtn = CCMenuItemSpriteExtra::create(addSpr, this, menu_selector(CursorConfigPopup::onAddImage));
+    addBtn->setPosition({cx - 55.f, 22.f});
+    menu->addChild(addBtn);
+
+    auto delAllSpr = ButtonSprite::create("Delete All", "goldFont.fnt", "GJ_button_06.png", 0.7f);
+    delAllSpr->setScale(0.5f);
+    auto delAllBtn = CCMenuItemSpriteExtra::create(delAllSpr, this, menu_selector(CursorConfigPopup::onDeleteAllImages));
+    delAllBtn->setPosition({cx + 55.f, 22.f});
+    menu->addChild(delAllBtn);
+
+    refreshPackList();
     refreshGallery();
 }
 
-void CursorConfigPopup::refreshGallery() {
-    if (m_galleryContainer) {
-        m_galleryContainer->removeAllChildren();
+void CursorConfigPopup::refreshPackList() {
+    auto& cm = CursorManager::get();
+    m_packList.clear();
+    m_packList.push_back("");                  // index 0 = sueltas
+    for (auto const& p : cm.getPacks()) {
+        m_packList.push_back(p);
     }
-
-    // remove old gallery buttons from menu (tag >= 100)
-    auto toRemove = std::vector<CCNode*>();
-    if (m_galleryMenu && m_galleryMenu->getChildren()) {
-        for (auto* child : CCArrayExt<CCNode*>(m_galleryMenu->getChildren())) {
-            if (child->getTag() >= 100) toRemove.push_back(child);
+    // Si el ultimo import creo un pack, saltar a el.
+    auto last = cm.lastImportedPack();
+    if (!last.empty()) {
+        for (int i = 0; i < (int)m_packList.size(); ++i) {
+            if (m_packList[i] == last) { m_currentPackIdx = i; break; }
         }
     }
-    for (auto* n : toRemove) n->removeFromParent();
+    if (m_currentPackIdx >= (int)m_packList.size()) m_currentPackIdx = 0;
+}
+
+void CursorConfigPopup::refreshGallery() {
+    if (!m_thumbScroll || !m_thumbScroll->m_contentLayer) return;
+
+    // ── Patron probado (igual que RadialConfigPopup) ──
+    // El contentLayer del ScrollLayer de Geode es la unica fuente de verdad.
+    // Cada celda es un CCNode autocontenido (con tamano y posicion explicitos)
+    // que lleva dentro su fondo, su miniatura, su badge GIF y su propio CCMenu
+    // con los botones de seleccion y borrar. Limpiar = removeAllChildren() del
+    // contentLayer. Asi nunca se mezclan paginas ni se "pierden" filas.
+    auto* content = m_thumbScroll->m_contentLayer;
+    content->removeAllChildren();
 
     auto& cm = CursorManager::get();
-    auto images = cm.getGalleryImages();
-    auto content = m_mainLayer->getContentSize();
-    float cx = content.width / 2.f;
+    std::string pack = currentPack();
+    auto images = cm.getImagesInPack(pack);
 
-    if (m_emptyGalleryLabel) {
-        m_emptyGalleryLabel->setVisible(images.empty());
+    // Etiqueta del pack actual.
+    if (m_packLabel) {
+        if (pack.empty()) {
+            m_packLabel->setString(fmt::format("Loose images ({})", images.size()).c_str());
+        } else {
+            m_packLabel->setString(fmt::format("{} ({})", pack, images.size()).c_str());
+        }
+        float maxW = 200.f;
+        float w = m_packLabel->getContentSize().width * 0.4f;
+        m_packLabel->setScale(w > maxW ? 0.4f * maxW / w : 0.4f);
     }
 
-    float startX = 35.f;
-    float startY = content.height - 155.f;
-    float cellSize = 44.f;
-    float padding = 5.f;
-    int cols = static_cast<int>((content.width - 30.f) / (cellSize + padding));
-    if (cols < 1) cols = 1;
+    if (m_emptyGalleryLabel) m_emptyGalleryLabel->setVisible(images.empty());
 
-    auto& cfg = cm.config();
+    float scrollW = m_thumbScroll->getContentSize().width;
+    float scrollViewH = m_thumbScroll->getContentSize().height;
+    float cellSize = 46.f;
+    float padding = 7.f;
+    int cols = std::max(1, static_cast<int>((scrollW - padding) / (cellSize + padding)));
+    int rows = (static_cast<int>(images.size()) + cols - 1) / cols;
+
+    // El contentLayer debe medir AL MENOS el alto visible; si hay mas filas,
+    // crece para permitir scroll. Su altura define el sistema de coordenadas
+    // (origen abajo-izquierda), por eso la primera fila va arriba del todo.
+    float gridH = std::max(scrollViewH, rows * (cellSize + padding) + padding);
+    content->setContentSize({scrollW, gridH});
+
+    float startX = (scrollW - (cols * (cellSize + padding) - padding)) / 2.f + cellSize / 2.f;
+    float topY = gridH - padding - cellSize / 2.f;
 
     for (int i = 0; i < (int)images.size(); i++) {
-        float col = static_cast<float>(i % cols);
-        float row = static_cast<float>(i / cols);
-        float x = startX + col * (cellSize + padding) + cellSize / 2.f;
-        float y = startY - row * (cellSize + padding);
+        int col = i % cols;
+        int row = i / cols;
+        float x = startX + col * (cellSize + padding);
+        float y = topY - row * (cellSize + padding);
 
-        // determine selection color
-        bool isIdle = (images[i] == cfg.idleImage);
-        bool isMove = (images[i] == cfg.moveImage);
+        // ── Celda autocontenida ──
+        auto cell = CCNode::create();
+        cell->setContentSize({cellSize, cellSize});
+        cell->setAnchorPoint({0.5f, 0.5f});
+        cell->setPosition({x, y});
+        content->addChild(cell);
+
+        // Color del fondo segun a que estados esta asignada la imagen.
+        int assignedCount = 0;
+        ccColor3B singleColor = ccc3(0, 200, 0);
+        for (auto state : kSlotStates) {
+            if (cm.imageForState(state) == images[i]) {
+                assignedCount++;
+                switch (state) {
+                    case CursorState::Idle:     singleColor = ccc3(0, 200, 0);   break;
+                    case CursorState::Move:     singleColor = ccc3(0, 120, 255); break;
+                    case CursorState::Hover:    singleColor = ccc3(255, 140, 0); break;
+                    case CursorState::Click:    singleColor = ccc3(200, 60, 255);break;
+                    case CursorState::Text:     singleColor = ccc3(0, 220, 220); break;
+                    case CursorState::Disabled: singleColor = ccc3(255, 70, 70); break;
+                }
+            }
+        }
         ccColor3B bgColor = ccc3(50, 50, 50);
         GLubyte bgOpacity = 100;
-        if (isIdle && isMove) {
-            bgColor = ccc3(255, 200, 0); bgOpacity = 180; // gold: both slots
-        } else if (isIdle) {
-            bgColor = ccc3(0, 200, 0); bgOpacity = 180;   // green: idle
-        } else if (isMove) {
-            bgColor = ccc3(0, 120, 255); bgOpacity = 180;  // blue: move
-        }
+        if (assignedCount > 1)      { bgColor = ccc3(255, 200, 0); bgOpacity = 190; }
+        else if (assignedCount == 1){ bgColor = singleColor; bgOpacity = 190; }
 
-        auto bg = paimon::SpriteHelper::createColorPanel(
-            cellSize, cellSize, bgColor, bgOpacity);
-        bg->setPosition({x - cellSize / 2, y - cellSize / 2});
-        m_galleryContainer->addChild(bg);
+        // fondo (createColorPanel ancla en (0,0))
+        auto bg = paimon::SpriteHelper::createColorPanel(cellSize, cellSize, bgColor, bgOpacity);
+        bg->setPosition({0.f, 0.f});
+        cell->addChild(bg, 0);
 
-        // thumbnail
+        // miniatura centrada en la celda
         auto tex = cm.loadGalleryThumb(images[i]);
         if (tex) {
-            auto thumbSpr = CCSprite::createWithTexture(tex);
-            if (thumbSpr) {
-                float maxDim = std::max(thumbSpr->getContentSize().width, thumbSpr->getContentSize().height);
+            if (auto thumbSpr = CCSprite::createWithTexture(tex)) {
+                float maxDim = std::max(thumbSpr->getContentSize().width,
+                                        thumbSpr->getContentSize().height);
                 if (maxDim > 0) thumbSpr->setScale((cellSize - 6.f) / maxDim);
-                thumbSpr->setPosition({x, y});
-                m_galleryContainer->addChild(thumbSpr, 1);
+                thumbSpr->setPosition({cellSize / 2.f, cellSize / 2.f});
+                cell->addChild(thumbSpr, 1);
 
-                // GIF badge for animated images
                 auto imgPath = cm.galleryDir() / images[i];
                 if (ImageLoadHelper::isAnimatedImage(imgPath)) {
-                    auto* gifLabel = CCLabelBMFont::create("GIF", "bigFont.fnt");
-                    if (gifLabel) {
-                        gifLabel->setScale(0.25f);
-                        gifLabel->setOpacity(200);
+                    if (auto* gifLabel = CCLabelBMFont::create("GIF", "bigFont.fnt")) {
+                        gifLabel->setScale(0.22f);
+                        gifLabel->setOpacity(220);
                         gifLabel->setColor({255, 100, 100});
-                        gifLabel->setPosition({x + cellSize / 2.f - 8.f, y - cellSize / 2.f + 6.f});
-                        m_galleryContainer->addChild(gifLabel, 2);
+                        gifLabel->setPosition({cellSize - 8.f, 5.f});
+                        cell->addChild(gifLabel, 2);
                     }
                 }
             }
             tex->release();
         }
 
-        // select button (invisible overlay)
+        // CCMenu propio de la celda (coordenadas locales a la celda).
+        auto cellMenu = CCMenu::create();
+        cellMenu->setPosition({0.f, 0.f});
+        cellMenu->setContentSize({cellSize, cellSize});
+        cell->addChild(cellMenu, 5);
+
+        // area de seleccion (cubre toda la celda) — se anade primero
         auto selectArea = CCSprite::create();
         selectArea->setContentSize({cellSize, cellSize});
         selectArea->setOpacity(0);
         auto selectBtn = CCMenuItemSpriteExtra::create(selectArea, this, menu_selector(CursorConfigPopup::onSelectImage));
         selectBtn->setContentSize({cellSize, cellSize});
-        selectBtn->setPosition({x, y});
-        selectBtn->setTag(100 + i);
-        auto* nameStr = CCString::create(images[i]);
-        selectBtn->setUserObject(nameStr);
-        m_galleryMenu->addChild(selectBtn);
+        selectBtn->setPosition({cellSize / 2.f, cellSize / 2.f});
+        selectBtn->setUserObject(CCString::create(images[i]));
+        cellMenu->addChild(selectBtn, 0);
 
-        // delete btn (small X)
-        auto xSpr = CCSprite::createWithSpriteFrameName("GJ_deleteIcon_001.png");
-        if (xSpr) {
-            xSpr->setScale(0.3f);
-            auto xBtn = CCMenuItemSpriteExtra::create(xSpr, this, menu_selector(CursorConfigPopup::onDeleteImage));
-            xBtn->setPosition({x + cellSize / 2.f - 4.f, y + cellSize / 2.f - 4.f});
-            xBtn->setTag(500 + i);
-            auto* nameStr2 = CCString::create(images[i]);
-            xBtn->setUserObject(nameStr2);
-            m_galleryMenu->addChild(xBtn);
+        // boton borrar (X) en la esquina superior derecha — z mayor para que
+        // gane el toque sobre el area de seleccion en su esquina.
+        if (auto xSpr = CCSprite::createWithSpriteFrameName("GJ_deleteIcon_001.png")) {
+            xSpr->setScale(0.32f);
+            auto xHit = CCSprite::create();
+            xHit->setContentSize({18.f, 18.f});
+            xHit->setOpacity(0);
+            xHit->addChild(xSpr);
+            xSpr->setPosition({9.f, 9.f});
+            auto xBtn = CCMenuItemSpriteExtra::create(xHit, this, menu_selector(CursorConfigPopup::onDeleteImage));
+            xBtn->setPosition({cellSize - 7.f, cellSize - 7.f});
+            xBtn->setUserObject(CCString::create(images[i]));
+            cellMenu->addChild(xBtn, 10);
         }
     }
 
+    // Geode: scrollToTop() reposiciona el contentLayer correctamente al inicio
+    // (moveToTop() es el metodo crudo de GD y deja la lista mal colocada).
+    m_thumbScroll->scrollToTop();
+    // Cancelar cualquier destino de scroll suave pendiente.
+    m_thumbScrollTargetSet = false;
     updateSlotPreviews();
 }
 
 void CursorConfigPopup::updateSlotPreviews() {
     auto& cm = CursorManager::get();
-    auto& cfg = cm.config();
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
-    float slotSpacing = 80.f;
-    float slotY = content.height - 90.f;
-    float maxThumb = 50.f;
+    float colStep  = 58.f;
+    float slotRowY = content.height - 62.f;
+    float maxThumb = 24.f;
 
-    // idle preview
-    if (m_idlePreview) {
-        m_idlePreview->removeFromParent();
-        m_idlePreview = nullptr;
-    }
-    if (!cfg.idleImage.empty()) {
-        auto tex = cm.loadGalleryThumb(cfg.idleImage);
-        if (tex) {
-            m_idlePreview = CCSprite::createWithTexture(tex);
-            if (m_idlePreview) {
-                float maxDim = std::max(m_idlePreview->getContentSize().width, m_idlePreview->getContentSize().height);
-                if (maxDim > 0) m_idlePreview->setScale(maxThumb / maxDim);
-                m_idlePreview->setPosition({cx - slotSpacing, slotY});
-                m_galleryTab->addChild(m_idlePreview, 5);
-            }
-            tex->release();
+    auto stateColor = [](CursorState state) -> ccColor3B {
+        switch (state) {
+            case CursorState::Idle:     return ccc3(0, 200, 0);
+            case CursorState::Move:     return ccc3(0, 120, 255);
+            case CursorState::Hover:    return ccc3(255, 140, 0);
+            case CursorState::Click:    return ccc3(200, 60, 255);
+            case CursorState::Text:     return ccc3(0, 220, 220);
+            case CursorState::Disabled: return ccc3(255, 70, 70);
         }
-        m_idleLabel->setString("Idle");
-    } else {
-        m_idleLabel->setString("Idle (None)");
-    }
+        return ccc3(0, 200, 0);
+    };
 
-    // move preview
-    if (m_movePreview) {
-        m_movePreview->removeFromParent();
-        m_movePreview = nullptr;
-    }
-    if (!cfg.moveImage.empty()) {
-        auto tex = cm.loadGalleryThumb(cfg.moveImage);
-        if (tex) {
-            m_movePreview = CCSprite::createWithTexture(tex);
-            if (m_movePreview) {
-                float maxDim = std::max(m_movePreview->getContentSize().width, m_movePreview->getContentSize().height);
-                if (maxDim > 0) m_movePreview->setScale(maxThumb / maxDim);
-                m_movePreview->setPosition({cx + slotSpacing, slotY});
-                m_galleryTab->addChild(m_movePreview, 5);
-            }
-            tex->release();
+    for (int i = 0; i < kSlotCount; ++i) {
+        CursorState state = kSlotStates[i];
+        auto& slot = m_slots[i];
+        float slotX = cx + (static_cast<float>(i) - 2.5f) * colStep;
+        float slotY = slotRowY;
+
+        if (slot.preview) {
+            slot.preview->removeFromParent();
+            slot.preview = nullptr;
         }
-        m_moveLabel->setString("Move");
-    } else {
-        m_moveLabel->setString("Move (None)");
-    }
+        std::string filename = cm.imageForState(state);
+        if (!filename.empty()) {
+            auto tex = cm.loadGalleryThumb(filename);
+            if (tex) {
+                slot.preview = CCSprite::createWithTexture(tex);
+                if (slot.preview) {
+                    float maxDim = std::max(slot.preview->getContentSize().width,
+                                            slot.preview->getContentSize().height);
+                    if (maxDim > 0) slot.preview->setScale(maxThumb / maxDim);
+                    slot.preview->setPosition({slotX, slotY});
+                    m_galleryTab->addChild(slot.preview, 5);
+                }
+                tex->release();
+            }
+            if (slot.label) slot.label->setString(slotDisplayName(state));
+        } else {
+            if (slot.label) slot.label->setString(slotDisplayName(state));
+        }
 
-    // highlight active slot
-    if (m_activeSlot == ActiveSlot::Idle) {
-        m_idleSlotBg->setColor(ccc3(0, 180, 0));
-        m_idleSlotBg->setOpacity(160);
-        m_moveSlotBg->setColor(ccc3(80, 80, 80));
-        m_moveSlotBg->setOpacity(120);
-    } else {
-        m_idleSlotBg->setColor(ccc3(80, 80, 80));
-        m_idleSlotBg->setOpacity(120);
-        m_moveSlotBg->setColor(ccc3(0, 120, 255));
-        m_moveSlotBg->setOpacity(160);
+        if (slot.bg) {
+            if (state == m_activeSlot) {
+                slot.bg->setColor(stateColor(state));
+                slot.bg->setOpacity(180);
+            } else {
+                slot.bg->setColor(ccc3(80, 80, 80));
+                slot.bg->setOpacity(120);
+            }
+        }
     }
 }
 
-void CursorConfigPopup::onActivateIdleSlot(CCObject*) {
-    m_activeSlot = ActiveSlot::Idle;
+void CursorConfigPopup::onActivateSlot(CCObject* sender) {
+    auto* btn = typeinfo_cast<CCNode*>(sender);
+    if (!btn) return;
+    m_activeSlot = static_cast<CursorState>(btn->getTag());
     updateSlotPreviews();
 }
 
-void CursorConfigPopup::onActivateMoveSlot(CCObject*) {
-    m_activeSlot = ActiveSlot::Move;
-    updateSlotPreviews();
+void CursorConfigPopup::onPackPrev(CCObject*) {
+    if (m_packList.size() <= 1) return;
+    m_currentPackIdx--;
+    if (m_currentPackIdx < 0) m_currentPackIdx = (int)m_packList.size() - 1;
+    refreshGallery();
+}
+
+void CursorConfigPopup::onPackNext(CCObject*) {
+    if (m_packList.size() <= 1) return;
+    m_currentPackIdx++;
+    if (m_currentPackIdx >= (int)m_packList.size()) m_currentPackIdx = 0;
+    refreshGallery();
+}
+
+void CursorConfigPopup::onDeletePack(CCObject*) {
+    std::string pack = currentPack();
+    if (pack.empty()) {
+        PaimonNotify::create("Pick a pack to delete (loose images can't be deleted as a pack).",
+            NotificationIcon::Info)->show();
+        return;
+    }
+
+    WeakRef<CursorConfigPopup> self = this;
+    geode::createQuickPopup(
+        "Delete Pack",
+        fmt::format("Delete the whole pack <cy>{}</c> and all its cursors?", pack),
+        "Cancel", "Delete",
+        [self, pack](auto*, bool confirmed) {
+            if (!confirmed) return;
+            auto popup = self.lock();
+            if (!popup || !popup->getParent()) return;
+            CursorManager::get().removePack(pack);
+            PaimonNotify::create("Pack deleted", NotificationIcon::Success)->show();
+            auto* p = static_cast<CursorConfigPopup*>(popup.data());
+            p->m_currentPackIdx = 0;
+            p->refreshPackList();
+            p->refreshGallery();
+        }
+    );
 }
 
 void CursorConfigPopup::onSelectImage(CCObject* sender) {
@@ -445,13 +644,11 @@ void CursorConfigPopup::onSelectImage(CCObject* sender) {
 
     std::string filename = nameObj->getCString();
 
-    if (m_activeSlot == ActiveSlot::Idle) {
-        CursorManager::get().setIdleImage(filename);
-        PaimonNotify::create("Idle cursor image set!", NotificationIcon::Success)->show();
-    } else {
-        CursorManager::get().setMoveImage(filename);
-        PaimonNotify::create("Move cursor image set!", NotificationIcon::Success)->show();
-    }
+    CursorManager::get().setImageForState(m_activeSlot, filename);
+    PaimonNotify::create(
+        fmt::format("{} cursor set!", slotDisplayName(m_activeSlot)),
+        NotificationIcon::Success
+    )->show();
     refreshGallery();
 }
 
@@ -466,7 +663,7 @@ void CursorConfigPopup::onDeleteImage(CCObject* sender) {
     WeakRef<CursorConfigPopup> self = this;
     geode::createQuickPopup(
         "Delete Cursor Image",
-        "Are you sure you want to <cr>delete</c> this image?\n<cy>" + filename + "</c>",
+        "Are you sure you want to <cr>delete</c> this image?",
         "Cancel", "Delete",
         [self, filename](auto*, bool confirmed) {
             if (!confirmed) return;
@@ -487,13 +684,13 @@ void CursorConfigPopup::onDeleteAllImages(CCObject*) {
     }
 
     std::string msg = fmt::format(
-        "Are you sure you want to <cr>delete ALL</c> {} cursor images?\nThis cannot be undone!",
+        "Are you sure you want to <cr>delete ALL</c> {} cursors and packs?\nThis cannot be undone!",
         images.size()
     );
 
     WeakRef<CursorConfigPopup> self = this;
     geode::createQuickPopup(
-        "Delete All Cursor Images",
+        "Delete All Cursors",
         msg,
         "Cancel", "Delete All",
         [self](auto*, bool confirmed) {
@@ -504,42 +701,56 @@ void CursorConfigPopup::onDeleteAllImages(CCObject*) {
             int cleaned = CursorManager::get().cleanupInvalidImages();
             CursorManager::get().removeAllFromGallery();
 
-            std::string note = "All cursor images deleted!";
+            std::string note = "All cursors deleted!";
             if (cleaned > 0) {
                 note += fmt::format(" ({} corrupted files removed)", cleaned);
             }
             PaimonNotify::create(note, NotificationIcon::Success)->show();
-            static_cast<CursorConfigPopup*>(popup.data())->refreshGallery();
+            auto* p = static_cast<CursorConfigPopup*>(popup.data());
+            p->m_currentPackIdx = 0;
+            p->refreshPackList();
+            p->refreshGallery();
         }
     );
 }
 
 void CursorConfigPopup::onAddImage(CCObject*) {
     WeakRef<CursorConfigPopup> self = this;
-    pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> result) {
+    pt::pickCursorAsset([self](geode::Result<std::optional<std::filesystem::path>> result) {
         auto popup = self.lock();
         if (!popup) return;
         auto pathOpt = std::move(result).unwrapOr(std::nullopt);
         if (!pathOpt || pathOpt->empty()) return;
 
-        auto filename = CursorManager::get().addToGallery(*pathOpt);
-        if (!filename.empty()) {
-            PaimonNotify::create("Image added to gallery!", NotificationIcon::Success)->show();
-            auto& cfg = CursorManager::get().config();
-            // auto-assign to active slot if empty
-            if (static_cast<CursorConfigPopup*>(popup.data())->m_activeSlot == ActiveSlot::Idle) {
-                if (cfg.idleImage.empty()) {
-                    CursorManager::get().setIdleImage(filename);
-                }
-            } else {
-                if (cfg.moveImage.empty()) {
-                    CursorManager::get().setMoveImage(filename);
-                }
+        auto imported = CursorManager::get().importFromFile(*pathOpt);
+        if (imported.empty()) {
+            auto reason = CursorManager::get().lastImportError();
+            if (reason.empty()) {
+                reason = "Supported: images, .cur/.ani/.ico and .zip packs.";
             }
-            static_cast<CursorConfigPopup*>(popup.data())->refreshGallery();
-        } else {
-            PaimonNotify::create("Failed to add image", NotificationIcon::Error)->show();
+            PaimonNotify::create(reason, NotificationIcon::Error)->show();
+            return;
         }
+
+        auto* p = static_cast<CursorConfigPopup*>(popup.data());
+
+        if (imported.size() == 1) {
+            PaimonNotify::create("Cursor added!", NotificationIcon::Success)->show();
+        } else {
+            PaimonNotify::create(
+                fmt::format("Imported {} cursors into a new pack!", imported.size()),
+                NotificationIcon::Success
+            )->show();
+        }
+
+        // Auto-asignar al slot activo si esta vacio (usa el primer importado).
+        CursorState slot = p->m_activeSlot;
+        if (CursorManager::get().imageForState(slot).empty()) {
+            CursorManager::get().setImageForState(slot, imported.front());
+        }
+        // Navega al pack recien creado (refreshPackList lo detecta) o refresca.
+        p->refreshPackList();
+        p->refreshGallery();
     });
 }
 
@@ -556,7 +767,7 @@ void CursorConfigPopup::buildSettingsTab() {
     auto content = m_mainLayer->getContentSize();
     float scrollW = content.width - 16.f;
     float scrollH = content.height - 52.f;
-    float totalH = 600.f;
+    float totalH = 760.f;
 
     m_scrollLayer = ScrollLayer::create({scrollW, scrollH});
     m_scrollLayer->setPosition({8.f, 8.f});
@@ -653,6 +864,35 @@ void CursorConfigPopup::buildSettingsTab() {
 
     addSlider(m_opacitySlider, m_opacityLabel, static_cast<float>(cfg.opacity), 0.f, 255.f,
         menu_selector(CursorConfigPopup::onOpacityChanged), "{:.0f}");
+    y -= 24.f;
+
+    // ── Cursor States (Ecuet-inspired) ──
+    addTitle("Cursor States",
+        "The cursor reacts to context using the images you assign in the Gallery tab.\n"
+        "<cy>Idle</c>: at rest. <cy>Move</c>: while moving.\n"
+        "<co>Hover</c>: over a button. <cp>Click</c>: holding left click.\n"
+        "<cl>Text</c>: over a text field. <cr>Disabled</c>: over a disabled button.\n"
+        "Any state without its own image falls back to Idle.");
+    y -= 18.f;
+
+    addToggle("Hover State", m_hoverToggle, cfg.hoverEnabled,
+        menu_selector(CursorConfigPopup::onHoverToggled),
+        "Switch to the <co>Hover</c> image while the cursor is over a button.\nNeeds a Hover image assigned in the Gallery.");
+    y -= 22.f;
+
+    addToggle("Click State", m_clickToggle, cfg.clickEnabled,
+        menu_selector(CursorConfigPopup::onClickToggled),
+        "Switch to the <cp>Click</c> image while holding the left mouse button.\nNeeds a Click image assigned in the Gallery.");
+    y -= 22.f;
+
+    addToggle("Text State", m_textToggle, cfg.textEnabled,
+        menu_selector(CursorConfigPopup::onTextToggled),
+        "Switch to the <cl>Text</c> image while the cursor is over a text field.\nNeeds a Text image assigned in the Gallery.");
+    y -= 22.f;
+
+    addToggle("Disabled State", m_disabledToggle, cfg.disabledEnabled,
+        menu_selector(CursorConfigPopup::onDisabledToggled),
+        "Switch to the <cr>Disabled</c> image while the cursor is over a disabled button.\nNeeds a Disabled image assigned in the Gallery.");
     y -= 24.f;
 
     // ── Follow Delay ──
@@ -785,10 +1025,9 @@ void CursorConfigPopup::applyLive() {
     auto& cm = CursorManager::get();
     cm.applyConfigLive();
 
-    auto scene = CCDirector::get()->getRunningScene();
     if (cm.config().enabled) {
-        if (!cm.isAttached() && scene) {
-            cm.attachToScene(scene);
+        if (!cm.isAttached()) {
+            cm.attachToOverlay();
         }
     } else {
         cm.detachFromScene();
@@ -851,6 +1090,58 @@ void CursorConfigPopup::onFollowDelayChanged(CCObject*) {
 void CursorConfigPopup::onTrailToggled(CCObject*) {
     CursorManager::get().config().trailEnabled = !m_trailToggle->isToggled();
     applyLive();
+}
+
+void CursorConfigPopup::onHoverToggled(CCObject*) {
+    auto& cfg = CursorManager::get().config();
+    cfg.hoverEnabled = !m_hoverToggle->isToggled();
+    CursorManager::get().saveConfig();
+
+    if (cfg.hoverEnabled && cfg.hoverImage.empty()) {
+        PaimonNotify::create(
+            "Assign a Hover image in the Gallery tab to see this state.",
+            NotificationIcon::Info
+        )->show();
+    }
+}
+
+void CursorConfigPopup::onClickToggled(CCObject*) {
+    auto& cfg = CursorManager::get().config();
+    cfg.clickEnabled = !m_clickToggle->isToggled();
+    CursorManager::get().saveConfig();
+
+    if (cfg.clickEnabled && cfg.clickImage.empty()) {
+        PaimonNotify::create(
+            "Assign a Click image in the Gallery tab to see this state.",
+            NotificationIcon::Info
+        )->show();
+    }
+}
+
+void CursorConfigPopup::onTextToggled(CCObject*) {
+    auto& cfg = CursorManager::get().config();
+    cfg.textEnabled = !m_textToggle->isToggled();
+    CursorManager::get().saveConfig();
+
+    if (cfg.textEnabled && cfg.textImage.empty()) {
+        PaimonNotify::create(
+            "Assign a Text image in the Gallery tab to see this state.",
+            NotificationIcon::Info
+        )->show();
+    }
+}
+
+void CursorConfigPopup::onDisabledToggled(CCObject*) {
+    auto& cfg = CursorManager::get().config();
+    cfg.disabledEnabled = !m_disabledToggle->isToggled();
+    CursorManager::get().saveConfig();
+
+    if (cfg.disabledEnabled && cfg.disabledImage.empty()) {
+        PaimonNotify::create(
+            "Assign a Disabled image in the Gallery tab to see this state.",
+            NotificationIcon::Info
+        )->show();
+    }
 }
 
 // ════════════════════════════════════════════════════════════

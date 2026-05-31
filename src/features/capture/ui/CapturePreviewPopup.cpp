@@ -1,4 +1,4 @@
-#include "CapturePreviewPopup.hpp"
+﻿#include "CapturePreviewPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/BetaUploadWarning.hpp"
@@ -106,7 +106,7 @@ void CapturePreviewPopup::registerWithTouchDispatcher() {
     // Usar getTargetPrio() para participar en el force priority system de GD
     // en vez de hardcodear -502. Esto permite que popups de otros mods
     // se stackeen correctamente encima/debajo de este.
-    auto* dispatcher = CCDirector::sharedDirector()->getTouchDispatcher();
+    auto* dispatcher = CCDirector::get()->getTouchDispatcher();
     dispatcher->addTargetedDelegate(this, dispatcher->getTargetPrio() - 1, true);
 }
 

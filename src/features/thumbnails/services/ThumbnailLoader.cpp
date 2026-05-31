@@ -1,4 +1,4 @@
-#include "ThumbnailLoader.hpp"
+﻿#include "ThumbnailLoader.hpp"
 #include "ThumbnailTransportClient.hpp"
 #include "LocalThumbs.hpp"
 #include "LevelColors.hpp"
@@ -1897,7 +1897,9 @@ ThumbnailLoader::DecodeResult ThumbnailLoader::decodeImageData(std::vector<uint8
             result.height = img->getHeight();
             result.success = true;
         } else {
-            delete img;
+            // CCImage hereda de CCObject — usar release() (no delete) para
+            // respetar el sistema de refcount de cocos2d.
+            img->release();
         }
     }
 

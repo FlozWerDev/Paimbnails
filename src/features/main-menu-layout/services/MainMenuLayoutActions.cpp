@@ -1,4 +1,4 @@
-#include "MainMenuLayoutManager.hpp"
+﻿#include "MainMenuLayoutManager.hpp"
 
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -20,7 +20,7 @@ $execute {
 
         // Re-aplica defaults SOLO en las escenas soportadas por el editor:
         // MenuLayer (menu principal) y PauseLayer (menu de pausa).
-        if (auto* scene = CCDirector::sharedDirector()->getRunningScene()) {
+        if (auto* scene = CCDirector::get()->getRunningScene()) {
             if (auto* menuLayer = scene->getChildByType<MenuLayer>(0)) {
                 manager.applyDefaults(menuLayer);
             }

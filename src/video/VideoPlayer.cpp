@@ -1,4 +1,4 @@
-#include "VideoDecoder.hpp"
+﻿#include "VideoDecoder.hpp"
 #include "VideoPlayer.hpp"
 #include "AudioExtractor.hpp"
 #include "../utils/GLSLLoader.hpp"
@@ -127,6 +127,14 @@ VideoPlayer::~VideoPlayer() {
     // If destroyed elsewhere (e.g. worker thread), post GL cleanup to main thread.
     if (!isOnMainThread()) {
         geode::log::warn("[VideoPlayer] Destructor called off main thread — deferring GL cleanup");
+        // Retain textures before posting to main thread to prevent double-free
+        // if another thread releases them while the lambda is queued.
+        if (m_texture) m_texture->retain();
+        if (m_texY) m_texY->retain();
+        if (m_texCb) m_texCb->retain();
+        if (m_texCr) m_texCr->retain();
+        if (m_resolveSprite) m_resolveSprite->retain();
+        if (m_resolveRT) m_resolveRT->retain();
         geode::Loader::get()->queueInMainThread([
             tex = m_texture, texY = m_texY, texCb = m_texCb, texCr = m_texCr,
             spr = m_resolveSprite, rt = m_resolveRT, fbo = m_readbackFBO
@@ -415,7 +423,7 @@ void VideoPlayer::initYUVTextures(int width, int height) {
         auto* tex = new (std::nothrow) cocos2d::CCTexture2D();
         if (!tex) return nullptr;
         auto* data = new (std::nothrow) uint8_t[w * h]();
-        if (!data) { delete tex; return nullptr; }
+        if (!data) { tex->release(); return nullptr; }
         // Use I8 (GL_LUMINANCE) so the shader can read the value from .r
         // A8 (GL_ALPHA) stores data in .a only, causing .r=0 → green/black tint
         tex->initWithData(data, cocos2d::kCCTexture2DPixelFormat_I8, w, h,

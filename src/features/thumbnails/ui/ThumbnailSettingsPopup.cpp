@@ -1,4 +1,4 @@
-#include "ThumbnailSettingsPopup.hpp"
+﻿#include "ThumbnailSettingsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../visuals/ui/ExtraEffectsPopup.hpp"
 #include "LocalThumbnailViewPopup.hpp"
@@ -641,8 +641,8 @@ bool ThumbnailSettingsPopup::init() {
     // Usa un handler independiente en la escena para que el boton
     // SIEMPRE reciba toques incluso con los popups invisibles.
     {
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
-        auto scene = CCDirector::sharedDirector()->getRunningScene();
+        auto winSize = CCDirector::get()->getWinSize();
+        auto scene = CCDirector::get()->getRunningScene();
 
         if (scene) {
             auto handler = PeekButtonHandler::create(this);
@@ -749,7 +749,7 @@ void ThumbnailSettingsPopup::togglePeek() {
     this->setTouchEnabled(show);
 
     // Buscar el LocalThumbnailViewPopup en la escena y ocultar/mostrar
-    auto scene = CCDirector::sharedDirector()->getRunningScene();
+    auto scene = CCDirector::get()->getRunningScene();
     if (scene) {
         auto* children = scene->getChildren();
         if (children) {
@@ -776,7 +776,7 @@ void ThumbnailSettingsPopup::onClose(CCObject* sender) {
         this->setVisible(true);
         this->setTouchEnabled(true);
 
-        auto scene = CCDirector::sharedDirector()->getRunningScene();
+        auto scene = CCDirector::get()->getRunningScene();
         if (scene) {
             auto* children = scene->getChildren();
             if (children) {
@@ -793,7 +793,7 @@ void ThumbnailSettingsPopup::onClose(CCObject* sender) {
     }
 
     // Quitar el handler (y su peek menu) de la escena
-    auto scene = CCDirector::sharedDirector()->getRunningScene();
+    auto scene = CCDirector::get()->getRunningScene();
     if (scene) {
         if (auto* handler = scene->getChildByID("paimon-peek-handler"_spr)) {
             handler->removeFromParent();

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Geode/ui/LazySprite.hpp>
 #include <Geode/utils/function.hpp>

@@ -1,4 +1,4 @@
-#include "QuickHubManager.hpp"
+﻿#include "QuickHubManager.hpp"
 #include "../ui/QuickHubRadial.hpp"
 #include "../../main-menu-layout/ui/MainMenuLayoutEditor.hpp"
 #include "../../main-menu-layout/services/MainMenuLayoutManager.hpp"
@@ -10,7 +10,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// QuickHubTouchHold — Gesto de hold-tap para Android/iOS (touch puro).
+// QuickHubTouchHold — Gesto de hold-tap para Android (touch puro).
 //
 // En plataformas sin teclado fisico, el hold de Ctrl no funciona. En su lugar:
 //   - 1 dedo mantenido 1.5s → abre el Quick Hub Radial
@@ -21,10 +21,14 @@ using namespace cocos2d;
 //   - Si se suelta antes de completar → cancelar
 //   - Si ya hay un popup/radial abierto → no iniciar
 //
-// Solo se compila en Android/iOS. En Windows/Mac el Ctrl hold se encarga.
+// Solo se compila en Android. En Windows/Mac el Ctrl hold se encarga, y en iOS
+// la clase cocos2d::CCEGLView NO esta linkeada (ver Cocos2d.bro: "[[link(win,
+// android)]] class cocos2d::CCEGLView"). Si quieres soportar gestos hold en
+// iOS, hay que hookear CCEAGLView (la clase de iOS que reemplaza CCEGLView)
+// con un binding distinto.
 // ─────────────────────────────────────────────────────────────────────────────
 
-#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+#if defined(GEODE_IS_ANDROID)
 
 namespace {
 
@@ -64,10 +68,10 @@ void resetTouch() {
 }
 
 void createBar() {
-    auto scene = CCDirector::sharedDirector()->getRunningScene();
+    auto scene = CCDirector::get()->getRunningScene();
     if (!scene) return;
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     auto container = CCNode::create();
     container->setPosition({winSize.width / 2.f, winSize.height - 8.f});
@@ -106,7 +110,7 @@ public:
             s_instance = new TouchHoldScheduler();
             s_instance->init();
             s_instance->retain();
-            CCDirector::sharedDirector()->getScheduler()->scheduleSelector(
+            CCDirector::get()->getScheduler()->scheduleSelector(
                 schedule_selector(TouchHoldScheduler::onUpdate),
                 s_instance, 0.f, false
             );
@@ -151,7 +155,7 @@ private:
         if (MainMenuLayoutEditor::isActive()) return;
 
         // Buscar el layer interactivo mas arriba en la escena
-        auto* scene = CCDirector::sharedDirector()->getRunningScene();
+        auto* scene = CCDirector::get()->getRunningScene();
         if (!scene) return;
 
         CCLayer* topLayer = nullptr;
@@ -256,4 +260,4 @@ class $modify(TouchHoldView, CCEGLView) {
     }
 };
 
-#endif // GEODE_IS_ANDROID || GEODE_IS_IOS
+#endif // GEODE_IS_ANDROID

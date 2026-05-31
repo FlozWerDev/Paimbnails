@@ -1,4 +1,4 @@
-#include "FileDialog.hpp"
+﻿#include "FileDialog.hpp"
 
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/general.hpp>
@@ -57,11 +57,30 @@ gfile::FilePickOptions::Filter pngFilter() {
     return f;
 }
 
+gfile::FilePickOptions::Filter cursorAssetFilter() {
+    gfile::FilePickOptions::Filter f;
+    f.description = "Cursors & Packs (*.png, *.gif, *.cur, *.ani, *.ico, *.zip ...)";
+    f.files = {
+        "*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif", "*.bmp", "*.tiff", "*.tif",
+        "*.tga", "*.psd", "*.qoi", "*.jxl",
+        "*.cur", "*.ani", "*.ico",
+        "*.zip"
+    };
+    return f;
+}
+
 // ── pickers ─────────────────────────────────────────────────────
 
 void pickImage(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {imageFilter()}}),
+        std::move(cb)
+    );
+}
+
+void pickCursorAsset(FilePickCallback cb) {
+    s_filePickHolder.spawn("Paimbnails FilePicker",
+        gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {cursorAssetFilter()}}),
         std::move(cb)
     );
 }

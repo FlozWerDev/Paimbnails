@@ -1,4 +1,4 @@
-#include "LocalThumbnailViewPopup.hpp"
+﻿#include "LocalThumbnailViewPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../framework/state/SessionState.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"

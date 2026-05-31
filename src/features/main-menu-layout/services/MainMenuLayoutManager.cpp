@@ -1,4 +1,4 @@
-#include "MainMenuLayoutManager.hpp"
+﻿#include "MainMenuLayoutManager.hpp"
 
 #include "../ui/MainMenuDrawShapeNode.hpp"
 
@@ -72,7 +72,7 @@ namespace {
         container->setID(kShapeContainerID);
         container->setAnchorPoint({ 0.f, 0.f });
         container->setPosition({ 0.f, 0.f });
-        container->setContentSize(CCDirector::sharedDirector()->getWinSize());
+        container->setContentSize(CCDirector::get()->getWinSize());
         root->addChild(container, 0);
         return container;
     }

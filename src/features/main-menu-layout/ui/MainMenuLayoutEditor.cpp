@@ -1,4 +1,4 @@
-#include "MainMenuLayoutEditor.hpp"
+﻿#include "MainMenuLayoutEditor.hpp"
 
 #include "MainMenuDrawShapeNode.hpp"
 #include "MainMenuLayoutPresetPopup.hpp"
@@ -348,7 +348,7 @@ bool MainMenuLayoutEditor::isActive() {
 void MainMenuLayoutEditor::open(CCNode* root) {
     if (!root || s_activeEditor) return;
 
-    auto* scene = CCDirector::sharedDirector()->getRunningScene();
+    auto* scene = CCDirector::get()->getRunningScene();
     if (!scene) return;
 
     auto* editor = MainMenuLayoutEditor::create(root);
@@ -397,7 +397,7 @@ bool MainMenuLayoutEditor::init(CCNode* root) {
 
     m_layer = root;
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     this->setContentSize(winSize);
     this->setAnchorPoint({ 0.f, 0.f });
     this->setPosition({ 0.f, 0.f });
@@ -478,7 +478,7 @@ bool MainMenuLayoutEditor::init(CCNode* root) {
 }
 
 void MainMenuLayoutEditor::registerWithTouchDispatcher() {
-    CCDirector::sharedDirector()->getTouchDispatcher()->addTargetedDelegate(this, -INT_MAX + 200, true);
+    CCDirector::get()->getTouchDispatcher()->addTargetedDelegate(this, -INT_MAX + 200, true);
 }
 
 void MainMenuLayoutEditor::collectButtons() {
@@ -572,7 +572,7 @@ void MainMenuLayoutEditor::disableTargetMenus() {
 }
 
 void MainMenuLayoutEditor::buildUI() {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     constexpr float kOuterMargin = 8.f;
     constexpr float kRightPanelVisiblePadding = 6.f;
     constexpr float kRightTabWidth = 26.f;
@@ -778,7 +778,7 @@ void MainMenuLayoutEditor::buildUI() {
 
         if (auto* cardBg = paimon::SpriteHelper::createDarkPanel(kCardWidth, kCardHeight, 132, 6.f)) {
             cardBg->setPosition({ 0.f, 0.f });
-            cardBg->setTag(98);
+            cardBg->setID("paimon-card-bg"_spr);
             container->addChild(cardBg, 1);
         }
 
@@ -789,13 +789,13 @@ void MainMenuLayoutEditor::buildUI() {
             icon->setFlipY(flipY);
             scaleSpriteToFit(icon, iconCap, iconCapH);
             icon->setPosition({ kCardWidth * 0.5f, caption.empty() ? kCardHeight * 0.5f : 22.f });
-            icon->setTag(99);
+            icon->setID("paimon-card-icon"_spr);
             container->addChild(icon, 3);
         } else {
             auto* fallback = CCLabelBMFont::create(fallbackText, "goldFont.fnt");
             fallback->setScale(caption.empty() ? 0.38f : 0.34f);
             fallback->setPosition({ kCardWidth * 0.5f, caption.empty() ? kCardHeight * 0.5f : 22.f });
-            fallback->setTag(99);
+            fallback->setID("paimon-card-icon"_spr);
             container->addChild(fallback, 3);
         }
 
@@ -810,7 +810,7 @@ void MainMenuLayoutEditor::buildUI() {
             label->setScale(scale);
             label->setColor({ 220, 220, 220 });
             label->setPosition({ kCardWidth * 0.5f, 5.f });
-            label->setTag(100);
+            label->setID("paimon-card-label"_spr);
             container->addChild(label, 3);
         }
 
@@ -1918,13 +1918,13 @@ void MainMenuLayoutEditor::hideGuides() {
 }
 
 void MainMenuLayoutEditor::updateGuides(bool showX, bool showY, float x, float y) {
-    auto showGuides = Mod::get()->getSettingValue<bool>("main-menu-layout-show-guides");
+    auto showGuides = Mod::get()->getSavedValue<bool>("main-menu-layout-show-guides", true);
     if (!showGuides) {
         this->hideGuides();
         return;
     }
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     ccColor4F color = { 0.15f, 1.f, 0.55f, 0.85f };
 
     if (m_guideX) {
@@ -1974,7 +1974,7 @@ void MainMenuLayoutEditor::resetSelectedToDefault() {
             if (initial != m_initialShapes.end()) {
                 *shape = *initial;
             } else {
-                shape->position = ccp(CCDirector::sharedDirector()->getWinSize().width * 0.5f, CCDirector::sharedDirector()->getWinSize().height * 0.5f);
+                shape->position = ccp(CCDirector::get()->getWinSize().width * 0.5f, CCDirector::get()->getWinSize().height * 0.5f);
                 shape->scale = 1.f;
                 shape->scaleX = 1.f;
                 shape->scaleY = 1.f;
@@ -2295,11 +2295,11 @@ CCPoint MainMenuLayoutEditor::snappedLocalPosition(ButtonState* state, CCPoint p
         return { 0.f, 0.f };
     }
 
-    auto snapDistance = std::clamp(static_cast<float>(Mod::get()->getSettingValue<int64_t>("main-menu-layout-snap-distance")), 1.f, 64.f);
-    auto gridSize = std::max(2.f, static_cast<float>(Mod::get()->getSettingValue<int64_t>("main-menu-layout-grid-size")));
-    auto gridSnap = Mod::get()->getSettingValue<bool>("main-menu-layout-grid-snap");
-    auto edgeSnap = Mod::get()->getSettingValue<bool>("main-menu-layout-snap-to-edges");
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto snapDistance = std::clamp(static_cast<float>(Mod::get()->getSavedValue<int64_t>("main-menu-layout-snap-distance", 10)), 1.f, 64.f);
+    auto gridSize = std::max(2.f, static_cast<float>(Mod::get()->getSavedValue<int64_t>("main-menu-layout-grid-size", 10)));
+    auto gridSnap = Mod::get()->getSavedValue<bool>("main-menu-layout-grid-snap", true);
+    auto edgeSnap = Mod::get()->getSavedValue<bool>("main-menu-layout-snap-to-edges", true);
+    auto winSize = CCDirector::get()->getWinSize();
     auto currentRect = this->buttonRect(*state);
     auto halfW = currentRect.size.width / 2.f;
     auto halfH = currentRect.size.height / 2.f;
@@ -2672,7 +2672,7 @@ void MainMenuLayoutEditor::keyDown(cocos2d::enumKeyCodes key, double p1) {
 
         // 8. Alignments (H / V / C)
         if (!isCtrl && !isAlt && !isShift) {
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            auto winSize = CCDirector::get()->getWinSize();
             bool aligned = false;
 
             if (key == enumKeyCodes::KEY_H || key == enumKeyCodes::KEY_C || key == enumKeyCodes::KEY_V) {
@@ -2817,7 +2817,7 @@ void MainMenuLayoutEditor::update(float dt) {
     // abierto), el editor puede seguir recibiendo updates desde el scheduler
     // global aunque sus botones pertenezcan a una escena ya liberada. Cerramos
     // sin guardar para evitar use-after-free en boundingBox/convertToWorldSpace.
-    auto* runningScene = CCDirector::sharedDirector()->getRunningScene();
+    auto* runningScene = CCDirector::get()->getRunningScene();
     bool attachedToRunningScene = false;
     if (runningScene) {
         for (CCNode* p = this->getParent(); p; p = p->getParent()) {
@@ -3034,7 +3034,7 @@ void MainMenuLayoutEditor::onToggleLockShapes(CCObject*) {
     if (m_lockShapesBtn) {
         auto* container = m_lockShapesBtn->getNormalImage();
         if (container) {
-            auto* cardBg = typeinfo_cast<CCRGBAProtocol*>(container->getChildByTag(98));
+            auto* cardBg = typeinfo_cast<CCRGBAProtocol*>(container->getChildByID("paimon-card-bg"_spr));
             if (cardBg) {
                 if (m_lockShapes) {
                     cardBg->setColor(cocos2d::ccColor3B{255, 90, 90});
@@ -3045,7 +3045,7 @@ void MainMenuLayoutEditor::onToggleLockShapes(CCObject*) {
                 }
             }
 
-            auto* icon = typeinfo_cast<CCSprite*>(container->getChildByTag(99));
+            auto* icon = typeinfo_cast<CCSprite*>(container->getChildByID("paimon-card-icon"_spr));
             if (icon) {
                 const char* frameName = m_lockShapes ? "GJ_lock_001.png" : "GJ_lock_open_001.png";
                 auto* frame = CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(frameName);
@@ -3055,7 +3055,7 @@ void MainMenuLayoutEditor::onToggleLockShapes(CCObject*) {
                 }
             }
 
-            auto* label = typeinfo_cast<CCLabelBMFont*>(container->getChildByTag(100));
+            auto* label = typeinfo_cast<CCLabelBMFont*>(container->getChildByID("paimon-card-label"_spr));
             if (label) {
                 std::string caption = Localization::get().getString(
                     m_lockShapes ? "menu_layout.unlock_shapes" : "menu_layout.lock_shapes"
@@ -3087,7 +3087,7 @@ void MainMenuLayoutEditor::addShape(DrawShapeKind kind) {
     DrawShapeLayout shape;
     shape.id = MainMenuLayoutManager::createShapeID();
     shape.kind = kind;
-    shape.position = ccp(CCDirector::sharedDirector()->getWinSize().width * 0.5f, CCDirector::sharedDirector()->getWinSize().height * 0.5f - 18.f);
+    shape.position = ccp(CCDirector::get()->getWinSize().width * 0.5f, CCDirector::get()->getWinSize().height * 0.5f - 18.f);
     shape.scale = 1.f;
     shape.opacity = 0.78f;
     shape.hidden = false;

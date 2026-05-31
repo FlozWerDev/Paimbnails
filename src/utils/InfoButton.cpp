@@ -1,4 +1,4 @@
-#include "InfoButton.hpp"
+﻿#include "InfoButton.hpp"
 #include <Geode/loader/GameEvent.hpp>
 
 using namespace cocos2d;
@@ -19,7 +19,18 @@ void PaimonInfoTarget::onInfo(CCObject* sender) {
     std::string title = (sep != std::string::npos) ? raw.substr(0, sep) : "Info";
     std::string desc = (sep != std::string::npos) ? raw.substr(sep + 5) : raw;
 
-    auto* alert = FLAlertLayer::create(title.c_str(), desc.c_str(), "OK");
+    // Popup compacto: mas angosto y con texto algo mas pequeno para que no
+    // ocupe casi toda la pantalla. width=280, scroll auto, textScale=0.75.
+    auto* alert = FLAlertLayer::create(
+        nullptr,
+        title.c_str(),
+        desc,
+        "OK", nullptr,
+        280.f,      // width
+        true,       // scroll si el texto es largo
+        0.f,        // height auto
+        0.75f       // text scale
+    );
     if (alert) alert->show();
 }
 

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // CoverBlurBackground — fondo del popup con la portada difuminada.
 //

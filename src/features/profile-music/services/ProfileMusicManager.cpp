@@ -1,4 +1,4 @@
-#include "ProfileMusicManager.hpp"
+﻿#include "ProfileMusicManager.hpp"
 #include "../../audio/services/AudioContextCoordinator.hpp"
 #include "../../dynamic-songs/services/DynamicSongManager.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Geode/cocos/platform/CCGL.h>
 #include <Geode/cocos/draw_nodes/CCDrawNode.h>

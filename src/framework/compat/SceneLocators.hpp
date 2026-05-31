@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // SceneLocators.hpp — Localizadores centralizados de nodos por escena.
 // Cada funcion encapsula la cadena de fallback (ID → tipo → heuristica)

@@ -1,10 +1,11 @@
-#pragma once
+﻿#pragma once
 #include <thread>
 #include <vector>
 #include <mutex>
 #include <memory>
 #include <atomic>
 #include <Geode/Geode.hpp>
+#include "TimedJoin.hpp"
 
 namespace paimon {
 
@@ -71,10 +72,13 @@ public:
         geode::log::info("[ThreadTracker] Shutting down. Joining {} active background threads...", threadsToJoin.size());
         for (auto& tt : threadsToJoin) {
             if (tt.thread.joinable()) {
-                tt.thread.join();
+                // timedJoin: si una tarea I/O lenta (DNS stall, fs hang) no termina
+                // en 3s, la dejamos detacheada en vez de colgar atexit del juego.
+                // Consistente con paimon::ThreadPool::shutdown().
+                paimon::timedJoin(tt.thread, std::chrono::seconds(3));
             }
         }
-        geode::log::info("[ThreadTracker] All background threads joined.");
+        geode::log::info("[ThreadTracker] All background threads joined (or detached after timeout).");
     }
 
     // Periodic cleanup of completed threads
@@ -94,7 +98,11 @@ private:
         for (auto it = m_threads.begin(); it != m_threads.end(); ) {
             if (it->completed->load(std::memory_order_acquire)) {
                 if (it->thread.joinable()) {
-                    it->thread.join();
+                    // Tarea ya marcada completed — el join debe ser inmediato.
+                    // Usamos timedJoin defensivamente igual: si por alguna razon
+                    // el thread no se puede joinear (raro pero posible si el
+                    // OS aun no agendo la senal), no bloqueamos cleanup.
+                    paimon::timedJoin(it->thread, std::chrono::seconds(1));
                 }
                 it = m_threads.erase(it);
             } else {

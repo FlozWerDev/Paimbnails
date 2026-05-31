@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include "../features/forum/services/ForumApi.hpp"

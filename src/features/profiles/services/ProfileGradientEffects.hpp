@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <Geode/Geode.hpp>
 #include <Geode/cocos/layers_scenes_transitions_nodes/CCLayer.h>
 #include <Geode/cocos/actions/CCActionInterval.h>

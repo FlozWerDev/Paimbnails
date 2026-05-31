@@ -1,4 +1,4 @@
-#include "DiscordConfigPopup.hpp"
+﻿#include "DiscordConfigPopup.hpp"
 
 #include "../services/DiscordPresenceManager.hpp"
 #include "../../../core/Settings.hpp"

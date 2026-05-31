@@ -1,4 +1,4 @@
-#include "LeaderboardLayer.hpp"
+﻿#include "LeaderboardLayer.hpp"
 #include "LeaderboardHistoryLayer.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
@@ -25,6 +25,7 @@
 #include "../../../utils/GLSLLoader.hpp"
 #include "../../../blur/BlurSystem.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/ScissorClipNode.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
 #include "../../foryou/services/ForYouTracker.hpp"
 #include "../../foryou/services/ForYouEngine.hpp"
@@ -386,7 +387,7 @@ void LeaderboardLayer::onTab(CCObject* sender) {
         return;
     }
 
-    if (type == "foryou" && !Mod::get()->getSettingValue<bool>("enable-for-you")) {
+    if (type == "foryou" && !Mod::get()->getSavedValue<bool>("enable-for-you", false)) {
         PaimonNotify::create(
             Localization::get().getString("foryou.coming_soon").c_str(),
             NotificationIcon::Info)->show();
@@ -410,8 +411,8 @@ void LeaderboardLayer::onTab(CCObject* sender) {
     }
 
     // limpia la lista vieja
-    if (this->getChildByTag(999)) {
-        this->removeChildByTag(999);
+    if (auto* oldList = this->getChildByID("paimon-leaderboard-list"_spr)) {
+        oldList->removeFromParent();
     }
     m_scroll = nullptr;
     m_listMenu = nullptr;
@@ -514,14 +515,12 @@ void LeaderboardLayer::loadLeaderboard(std::string type) {
 }
 
 void LeaderboardLayer::createList(std::string type) {
-    static int LIST_CONTAINER_TAG = 999;
-
-    this->removeChildByTag(LIST_CONTAINER_TAG);
+    this->removeChildByID("paimon-leaderboard-list"_spr);
 
     auto winSize = CCDirector::get()->getWinSize();
 
     auto container = CCNode::create();
-    container->setTag(LIST_CONTAINER_TAG);
+    container->setID("paimon-leaderboard-list"_spr);
     this->addChild(container);
 
     if (!m_featuredLevel) {
@@ -851,10 +850,9 @@ void LeaderboardLayer::loadForYou() {
 
     auto& tracker = paimon::foryou::ForYouTracker::get();
 
-    int minLevels = Mod::get()->getSettingValue<int64_t>("for-you-min-levels");
+    int minLevels = Mod::get()->getSavedValue<int64_t>("for-you-min-levels", 5);
     if (!tracker.hasEnoughData(minLevels)) {
-        static int LIST_CONTAINER_TAG = 999;
-        this->removeChildByTag(LIST_CONTAINER_TAG);
+        this->removeChildByID("paimon-leaderboard-list"_spr);
 
         m_dataLoaded = true;
         m_thumbLoaded = true;
@@ -910,14 +908,12 @@ void LeaderboardLayer::fireNextForYouQuery() {
 }
 
 void LeaderboardLayer::createForYouList() {
-    static int LIST_CONTAINER_TAG = 999;
-
-    this->removeChildByTag(LIST_CONTAINER_TAG);
+    this->removeChildByID("paimon-leaderboard-list"_spr);
 
     auto winSize = CCDirector::get()->getWinSize();
 
     auto container = CCNode::create();
-    container->setTag(LIST_CONTAINER_TAG);
+    container->setID("paimon-leaderboard-list"_spr);
     this->addChild(container);
 
     auto topMenu = CCMenu::create();
@@ -975,7 +971,7 @@ void LeaderboardLayer::createForYouList() {
 
     Ref<LeaderboardLayer> self = this;
     bool useTags = paimon::compat::ModCompat::isLevelTagsLoaded() &&
-                   Mod::get()->getSettingValue<bool>("for-you-use-tags");
+                   Mod::get()->getSavedValue<bool>("for-you-use-tags", true);
 
     for (size_t i = 0; i < m_forYouResults.size(); i++) {
         GJGameLevel* level = m_forYouResults[i];
@@ -1008,7 +1004,7 @@ void LeaderboardLayer::createForYouList() {
         float thumbH = cardH;
         float thumbPad = 3.f;
 
-        auto clipper = CCClippingNode::create();
+        auto clipper = paimon::ScissorClipNode::create();
         clipper->setContentSize({thumbW - thumbPad, thumbH - thumbPad * 2});
         clipper->setAnchorPoint({0, 0});
         clipper->setPosition({thumbPad, thumbPad});
@@ -1574,7 +1570,7 @@ void LeaderboardLayer::setupPageInfo(gd::string, char const*) {
 void LeaderboardLayer::updateLevelInfo() {
     if (!m_featuredLevel) return;
 
-    auto container = this->getChildByTag(999);
+    auto container = this->getChildByID("paimon-leaderboard-list"_spr);
     if (!container) return;
 
     // buscar recursivamente los labels por tag

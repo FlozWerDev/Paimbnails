@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <Geode/cocos/platform/CCGL.h>
 #include <Geode/cocos/shaders/CCGLProgram.h>
 #include <Geode/cocos/shaders/CCShaderCache.h>
@@ -247,6 +247,17 @@ public:
     float m_cursorY = 0.5f;
     float m_clickState = 0.f;
 
+    // Audio reactivity multipliers (set per-instance from BeatShaderManager).
+    // When the beat-shaders feature is off these stay at zero so audio
+    // uniforms are pushed as 0.0 and shaders that read them behave like
+    // their non-reactive counterparts.
+    float m_audioReactive = 0.f;   // master 0..1 — gate for audio uniforms
+    float m_bassMult      = 1.f;
+    float m_midMult       = 1.f;
+    float m_trebleMult    = 1.f;
+    float m_beatMult      = 1.f;
+    float m_energyMult    = 1.f;
+
     static ShaderBgSprite* createWithTexture(cocos2d::CCTexture2D* tex) {
         auto ret = new ShaderBgSprite();
         if (ret && ret->initWithTexture(tex)) {
@@ -257,57 +268,8 @@ public:
         return nullptr;
     }
 
-    void draw() override {
-        auto* shader = getShaderProgram();
-        if (shader) {
-            shader->use();
-            shader->setUniformsForBuiltins();
-
-            GLint loc;
-            loc = shader->getUniformLocationForName("u_intensity");
-            if (loc != -1) shader->setUniformLocationWith1f(loc, m_shaderIntensity);
-
-            loc = shader->getUniformLocationForName("u_screenSize");
-            if (loc != -1) shader->setUniformLocationWith2f(loc, m_screenW, m_screenH);
-
-            loc = shader->getUniformLocationForName("u_time");
-            if (loc != -1) shader->setUniformLocationWith1f(loc, m_shaderTime);
-
-            loc = shader->getUniformLocationForName("u_texSize");
-            if (loc != -1) {
-                auto* t = getTexture();
-                float tw = t ? static_cast<float>(t->getPixelsWide()) : 1.f;
-                float th = t ? static_cast<float>(t->getPixelsHigh()) : 1.f;
-                shader->setUniformLocationWith2f(loc, tw, th);
-            }
-
-            // Dynamic/interactive shader uniforms (cursor position + click state)
-            loc = shader->getUniformLocationForName("u_cursor");
-            if (loc != -1) shader->setUniformLocationWith2f(loc, m_cursorX, 1.0f - m_cursorY);
-
-            loc = shader->getUniformLocationForName("u_click");
-            if (loc != -1) shader->setUniformLocationWith1f(loc, m_clickState);
-        }
-        CCSprite::draw();
-    }
-
-    void updateShaderTime(float dt) {
-        m_shaderTime += dt;
-
-        // Track mouse/cursor position (normalized 0..1)
-        auto* director = cocos2d::CCDirector::get();
-        auto* glView = director->getOpenGLView();
-        if (glView) {
-            auto mousePos = glView->getMousePosition();
-            auto winSize = director->getWinSize();
-            if (winSize.width > 0.f && winSize.height > 0.f) {
-                float nx = mousePos.x / winSize.width;
-                float ny = mousePos.y / winSize.height;
-                m_cursorX = nx < 0.f ? 0.f : (nx > 1.f ? 1.f : nx);
-                m_cursorY = ny < 0.f ? 0.f : (ny > 1.f ? 1.f : ny);
-            }
-        }
-    }
+    void draw() override;
+    void updateShaderTime(float dt);
 };
 
 // Declared in Shaders.cpp
@@ -316,10 +278,31 @@ cocos2d::CCGLProgram* getBgShaderProgram(std::string const& shaderName);
 // Distinct procedural background shaders generated fully on GPU.
 cocos2d::CCGLProgram* getProceduralBgShaderProgram(std::string const& shaderName);
 
+// Beat-reactive shaders authored for the BeatShaders feature. These read
+// u_bass / u_mid / u_treble / u_beat / u_energy uniforms and are intended to
+// be applied as an overlay on top of any existing background. Returns nullptr
+// when the name is unknown.
+cocos2d::CCGLProgram* getBeatShaderProgram(std::string const& shaderName);
+
+// Global gate for audio reactivity. When enabled, every ShaderBgSprite in
+// the scene pushes audio uniforms (bass / mid / treble / beat / energy) to
+// its shader and ticks PaimonAudio once per frame. Disabled by default.
+namespace ShaderBgSpriteAudioGate {
+    void setEnabled(bool e);
+    bool isEnabled();
+}
+
 /// Pre-compila todos los shaders de LevelInfoLayer durante el idle del menu
 /// para evitar stutter la primera vez que se entra a un nivel.
 /// DEBE llamarse desde el hilo principal (contexto GL requerido).
 void prewarmLevelInfoShaders();
+
+/// Pre-compila SOLO los shaders de fondo que el usuario tiene configurados
+/// en alguna capa (menu, levelinfo, profile, etc.). Evita el stutter de
+/// compilar un shader dinamico (rain, matrix, crt, ...) la primera vez que
+/// se entra a la capa que lo usa, sin malgastar tiempo compilando los 30+
+/// shaders que no estan en uso. DEBE llamarse desde el hilo principal.
+void prewarmConfiguredBackgroundShaders();
 
 /// Motor de blur progresivo que reparte las pasadas FBO entre frames
 /// para evitar freezes. Hereda de CCObject para lifecycle con Ref<>.

@@ -1,4 +1,4 @@
-#include "CompactListRefresh.hpp"
+﻿#include "CompactListRefresh.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/LevelBrowserLayer.hpp>
@@ -10,7 +10,7 @@ using namespace geode::prelude;
 namespace paimon::thumbnails {
     namespace {
         LevelBrowserLayer* findActiveLevelBrowserLayer() {
-            auto* scene = CCDirector::sharedDirector()->getRunningScene();
+            auto* scene = CCDirector::get()->getRunningScene();
             if (!scene) {
                 return nullptr;
             }

@@ -1,4 +1,4 @@
-#include "CommentTextSelector.hpp"
+﻿#include "CommentTextSelector.hpp"
 #include "SpriteHelper.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/binding/TextArea.hpp>
@@ -234,7 +234,7 @@ void CommentTextSelector::refresh(
 
 void CommentTextSelector::registerWithTouchDispatcher() {
     // Register WITHOUT swallowing so scroll views & buttons still receive touches
-    CCDirector::sharedDirector()->getTouchDispatcher()
+    CCDirector::get()->getTouchDispatcher()
         ->addTargetedDelegate(this, getTouchPriority(), false);
 }
 

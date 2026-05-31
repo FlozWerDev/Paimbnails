@@ -1,4 +1,4 @@
-#include "QuickHubManager.hpp"
+﻿#include "QuickHubManager.hpp"
 #include "../data/QuickHubCategories.hpp"
 #include <matjson.hpp>
 

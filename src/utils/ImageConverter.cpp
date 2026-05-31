@@ -1,4 +1,4 @@
-#include "ImageConverter.hpp"
+﻿#include "ImageConverter.hpp"
 #include <Geode/Geode.hpp>
 
 #include <Geode/utils/file.hpp>

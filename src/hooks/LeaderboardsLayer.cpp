@@ -1,4 +1,4 @@
-#include <Geode/modify/LeaderboardsLayer.hpp>
+﻿#include <Geode/modify/LeaderboardsLayer.hpp>
 #include "../utils/DynamicPopupRegistry.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include "../utils/PaimonButtonHighlighter.hpp"
@@ -70,8 +70,8 @@ protected:
                 return false;
             }
             image->release();
+            tex->autorelease();
             texture = tex;
-            texture->autorelease();
         }
 
         ProfileConfig config;
@@ -155,7 +155,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
                 return byId;
             }
             std::vector<CCMenu*> topMenus;
-            auto winH = CCDirector::sharedDirector()->getWinSize().height;
+            auto winH = CCDirector::get()->getWinSize().height;
             for (auto* node : CCArrayExt<CCNode*>(this->getChildren())) {
                 auto menu = typeinfo_cast<CCMenu*>(node);
                 if (!menu) continue;
@@ -221,7 +221,13 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     }
 
     void createPaimonButtons() {
+        // Idempotencia: si init se invoca varias veces, no duplicar el menu.
+        if (this->getChildByID("paimon-leaderboards-side-menu"_spr)) {
+            return;
+        }
+
         auto menu = CCMenu::create();
+        menu->setID("paimon-leaderboards-side-menu"_spr);
         menu->setPosition({30, 100}); 
         this->addChild(menu);
 

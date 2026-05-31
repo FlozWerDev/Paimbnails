@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/cocos.hpp>
@@ -45,6 +45,7 @@ private:
     void onDownload(cocos2d::CCObject* sender);
     void onOpenFolder(cocos2d::CCObject* sender);
     void onOpenShortcuts(cocos2d::CCObject* sender);
+    void onToggleInvert(cocos2d::CCObject* sender);
 
     void triggerCaptureProcess();
     void playFlyToBottomRightAnimation();

@@ -281,7 +281,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
         bool m_leaveForClose = false;
         bool m_pausedForTemporaryExit = false;
         bool m_audioCleanedUp = false;
-        CCLabelBMFont* m_thumbCountLabel = nullptr;
+        // WeakRef<>: el statsMenu de GD puede ser reconstruido por otros mods,
+        // dejando este label dangling. WeakRef nos permite chequear con lock().
+        WeakRef<CCLabelBMFont> m_thumbCountLabel;
         int64_t m_statusLastSeen = 0;
         bool m_statusOnline = false;
 

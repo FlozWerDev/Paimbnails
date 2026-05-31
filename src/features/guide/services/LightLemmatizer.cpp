@@ -1,4 +1,4 @@
-#include "LightLemmatizer.hpp"
+﻿#include "LightLemmatizer.hpp"
 
 #include <algorithm>
 

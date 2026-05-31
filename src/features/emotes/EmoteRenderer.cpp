@@ -1,4 +1,4 @@
-#include "EmoteRenderer.hpp"
+﻿#include "EmoteRenderer.hpp"
 #include "services/EmoteService.hpp"
 #include "services/EmoteCache.hpp"
 #include "../../utils/AnimatedGIFSprite.hpp"

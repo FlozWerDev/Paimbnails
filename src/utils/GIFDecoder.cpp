@@ -1,4 +1,4 @@
-#include "GIFDecoder.hpp"
+﻿#include "GIFDecoder.hpp"
 #include <Geode/loader/Log.hpp>
 #include <cstring>
 #include <algorithm>

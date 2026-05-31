@@ -1,4 +1,4 @@
-#include "ThumbsRegistry.hpp"
+﻿#include "ThumbsRegistry.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>

@@ -1,4 +1,4 @@
-#include "ForYouPreferencesPopup.hpp"
+﻿#include "ForYouPreferencesPopup.hpp"
 #include "../services/ForYouTracker.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/InfoButton.hpp"

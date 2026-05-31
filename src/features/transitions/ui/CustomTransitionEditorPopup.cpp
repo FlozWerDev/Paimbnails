@@ -1,4 +1,4 @@
-#include "CustomTransitionEditorPopup.hpp"
+﻿#include "CustomTransitionEditorPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "CustomTransitionScene.hpp"
@@ -322,16 +322,19 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     fxLbl->setAnchorPoint({1.f, 0.5f});
     fxLbl->setPosition({ecx - 70, ey});
     fxLbl->setTag(100);
+    fxLbl->setID("paimon-trans-from-x-lbl"_spr);
     m_editorPanel->addChild(fxLbl);
 
     auto fxDown = makeArrow(true, this, menu_selector(CustomTransitionEditorPopup::onFromXDown));
     fxDown->setPosition({editX + ecx - 65, editY + ey});
     fxDown->setTag(101);
+    fxDown->setID("paimon-trans-from-x-down"_spr);
     m_buttonMenu->addChild(fxDown);
 
     auto fxUp = makeArrow(false, this, menu_selector(CustomTransitionEditorPopup::onFromXUp));
     fxUp->setPosition({editX + ecx - 25, editY + ey});
     fxUp->setTag(102);
+    fxUp->setID("paimon-trans-from-x-up"_spr);
     m_buttonMenu->addChild(fxUp);
 
     auto fyLbl = CCLabelBMFont::create("FromY:", "bigFont.fnt");
@@ -339,16 +342,19 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     fyLbl->setAnchorPoint({1.f, 0.5f});
     fyLbl->setPosition({ecx + 15, ey});
     fyLbl->setTag(103);
+    fyLbl->setID("paimon-trans-from-y-lbl"_spr);
     m_editorPanel->addChild(fyLbl);
 
     auto fyDown = makeArrow(true, this, menu_selector(CustomTransitionEditorPopup::onFromYDown));
     fyDown->setPosition({editX + ecx + 20, editY + ey});
     fyDown->setTag(104);
+    fyDown->setID("paimon-trans-from-y-down"_spr);
     m_buttonMenu->addChild(fyDown);
 
     auto fyUp = makeArrow(false, this, menu_selector(CustomTransitionEditorPopup::onFromYUp));
     fyUp->setPosition({editX + ecx + 60, editY + ey});
     fyUp->setTag(105);
+    fyUp->setID("paimon-trans-from-y-up"_spr);
     m_buttonMenu->addChild(fyUp);
 
     ey -= 18;
@@ -357,16 +363,19 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     txLbl->setAnchorPoint({1.f, 0.5f});
     txLbl->setPosition({ecx - 70, ey});
     txLbl->setTag(110);
+    txLbl->setID("paimon-trans-to-x-lbl"_spr);
     m_editorPanel->addChild(txLbl);
 
     auto txDown = makeArrow(true, this, menu_selector(CustomTransitionEditorPopup::onToXDown));
     txDown->setPosition({editX + ecx - 65, editY + ey});
     txDown->setTag(111);
+    txDown->setID("paimon-trans-to-x-down"_spr);
     m_buttonMenu->addChild(txDown);
 
     auto txUp = makeArrow(false, this, menu_selector(CustomTransitionEditorPopup::onToXUp));
     txUp->setPosition({editX + ecx - 25, editY + ey});
     txUp->setTag(112);
+    txUp->setID("paimon-trans-to-x-up"_spr);
     m_buttonMenu->addChild(txUp);
 
     auto tyLbl = CCLabelBMFont::create("ToY:", "bigFont.fnt");
@@ -374,16 +383,19 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     tyLbl->setAnchorPoint({1.f, 0.5f});
     tyLbl->setPosition({ecx + 15, ey});
     tyLbl->setTag(113);
+    tyLbl->setID("paimon-trans-to-y-lbl"_spr);
     m_editorPanel->addChild(tyLbl);
 
     auto tyDown = makeArrow(true, this, menu_selector(CustomTransitionEditorPopup::onToYDown));
     tyDown->setPosition({editX + ecx + 20, editY + ey});
     tyDown->setTag(114);
+    tyDown->setID("paimon-trans-to-y-down"_spr);
     m_buttonMenu->addChild(tyDown);
 
     auto tyUp = makeArrow(false, this, menu_selector(CustomTransitionEditorPopup::onToYUp));
     tyUp->setPosition({editX + ecx + 60, editY + ey});
     tyUp->setTag(115);
+    tyUp->setID("paimon-trans-to-y-up"_spr);
     m_buttonMenu->addChild(tyUp);
 
     // Intensity (for Shake)
@@ -393,16 +405,19 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     intLbl->setAnchorPoint({1.f, 0.5f});
     intLbl->setPosition({ecx - 55, ey});
     intLbl->setTag(120);
+    intLbl->setID("paimon-trans-intensity-lbl"_spr);
     m_editorPanel->addChild(intLbl);
 
     auto intDown = makeArrow(true, this, menu_selector(CustomTransitionEditorPopup::onIntensityDown));
     intDown->setPosition({editX + ecx - 50, editY + ey});
     intDown->setTag(121);
+    intDown->setID("paimon-trans-intensity-down"_spr);
     m_buttonMenu->addChild(intDown);
 
     auto intUp = makeArrow(false, this, menu_selector(CustomTransitionEditorPopup::onIntensityUp));
     intUp->setPosition({editX + ecx + 70, editY + ey});
     intUp->setTag(122);
+    intUp->setID("paimon-trans-intensity-up"_spr);
     m_buttonMenu->addChild(intUp);
 
     // ════════════════════════════════════════════════════

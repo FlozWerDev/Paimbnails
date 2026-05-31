@@ -1,4 +1,4 @@
-#include "services/DiscordPresenceManager.hpp"
+﻿#include "services/DiscordPresenceManager.hpp"
 
 #include <Geode/Geode.hpp>
 

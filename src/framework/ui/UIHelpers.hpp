@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // UIHelpers.hpp — Funciones de fabrica para componentes UI reutilizables.
 // Reduce la repeticion de codigo de creacion de UI entre popups y capas.

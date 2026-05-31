@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "DominantColors.hpp"
 #include <Geode/cocos/textures/CCTexture2D.h>

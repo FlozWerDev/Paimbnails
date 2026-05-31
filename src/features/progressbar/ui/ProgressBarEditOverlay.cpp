@@ -1,4 +1,4 @@
-#include "ProgressBarEditOverlay.hpp"
+﻿#include "ProgressBarEditOverlay.hpp"
 #include "../services/ProgressBarManager.hpp"
 #include "../../fonts/ui/FontPickerPopup.hpp"
 #include "../../fonts/FontTag.hpp"
@@ -117,7 +117,7 @@ ProgressBarEditOverlay* ProgressBarEditOverlay::create() {
 
 bool ProgressBarEditOverlay::init() {
     if (!CCLayer::init()) return false;
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     this->setContentSize(winSize);
     this->setID("paimon-progressbar-edit-overlay"_spr);
     this->setTouchEnabled(true);
@@ -135,7 +135,7 @@ bool ProgressBarEditOverlay::init() {
 }
 
 void ProgressBarEditOverlay::buildToolbar() {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     auto* menu = CCMenu::create();
     menu->setPosition({0, 0});
     this->addChild(menu, 100);
@@ -247,7 +247,7 @@ void ProgressBarEditOverlay::update(float) {
 // ─────────────────────────────────────────────────────────────
 
 void ProgressBarEditOverlay::registerWithTouchDispatcher() {
-    CCDirector::sharedDirector()->getTouchDispatcher()
+    CCDirector::get()->getTouchDispatcher()
         ->addTargetedDelegate(this, -INT_MAX + 100, true);
 }
 
@@ -582,7 +582,7 @@ void ProgressBarEditOverlay::onAddImage(CCObject*) {
 
         BarDecoration d;
         d.path = paimon::assets::normalizePathString(imported.path);
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
         d.posX = winSize.width / 2.f;
         d.posY = winSize.height / 2.f;
         d.scale = 1.f;
@@ -627,7 +627,7 @@ void detachNode(CCNode* node) {
 
 void ProgressBarEditOverlay::enterEditMode() {
     if (s_activeOverlay) return;
-    auto* scene = CCDirector::sharedDirector()->getRunningScene();
+    auto* scene = CCDirector::get()->getRunningScene();
     if (!scene) {
         log::warn("[ProgressBar] enterEditMode: no running scene");
         return;

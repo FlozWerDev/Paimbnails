@@ -1,4 +1,4 @@
-#include <Geode/modify/LevelCell.hpp>
+﻿#include <Geode/modify/LevelCell.hpp>
 #include <Geode/binding/BoomListView.hpp>
 #include <Geode/binding/DailyLevelNode.hpp>
 #include <Geode/binding/LevelBrowserLayer.hpp>
@@ -31,6 +31,7 @@
 #include "../features/thumbnails/ui/LevelCellSettingsPopup.hpp"
 #include "../framework/compat/ModCompat.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../utils/ScissorClipNode.hpp"
 #include "../video/VideoPlayer.hpp"
 #include "../utils/VideoThumbnailSprite.hpp"
 #include "../utils/HttpClient.hpp"
@@ -347,9 +348,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (fields) {
             fields->m_isBeingDestroyed = true;
         }
-        // Cancelar layouts diferidos para evitar callbacks en celdas destruidas
-        this->unschedule(schedule_selector(PaimonLevelCell::deferredSetupGradient));
-        this->unschedule(schedule_selector(PaimonLevelCell::deferredSetupExtras));
     }
     
     static void calculateLevelCellThumbScale(CCSprite* sprite, float bgWidth, float bgHeight, float widthFactor, float& outScaleX, float& outScaleY) {
@@ -557,8 +555,9 @@ class $modify(PaimonLevelCell, LevelCell) {
             blackTex->autorelease();
             this->addOrUpdateThumb(blackTex);
         } else {
-            // Si initWithData falla, liberamos manualmente (delete porque no se llamo a autorelease)
-            delete blackTex;
+            // initWithData fallo: liberar el CCObject via release() (NO delete).
+            // CCObject derivados deben pasar por su sistema de refcount.
+            blackTex->release();
         }
     }
 
@@ -939,7 +938,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         // Clipper maestro que limita al area visible de la celda
         auto boundsStencil = paimon::SpriteHelper::createRectStencil(bgSize.width, bgSize.height);
         if (!boundsStencil) return;
-        auto boundsClipper = CCClippingNode::create(boundsStencil);
+        auto boundsClipper = paimon::ScissorClipNode::create(boundsStencil);
         if (!boundsClipper) return;
         boundsClipper->setContentSize(bgSize);
         boundsClipper->setPosition(bgPos);
@@ -1069,7 +1068,7 @@ class $modify(PaimonLevelCell, LevelCell) {
 
                  auto stencil = paimon::SpriteHelper::createRectStencil(safeBg->getContentWidth(), safeBg->getContentHeight());
                  if (!stencil) return nullptr;
-                 auto clipper = CCClippingNode::create(stencil);
+                 auto clipper = paimon::ScissorClipNode::create(stencil);
                  if (!clipper) {
                      return nullptr;
                  }
@@ -2614,6 +2613,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
         this->unschedule(schedule_selector(PaimonLevelCell::updateGradientAnim));
         this->unschedule(schedule_selector(PaimonLevelCell::updateCenterAnimation));
+        this->unschedule(schedule_selector(PaimonLevelCell::deferredSetupGradient));
+        this->unschedule(schedule_selector(PaimonLevelCell::deferredSetupExtras));
 
         if (auto fields = m_fields.self()) {
             fields->m_isCenterAnimScheduled = false;
@@ -2840,7 +2841,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_wasInCenter = false;
             return;
         }
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
         CCPoint worldPos = this->convertToWorldSpace(CCPointZero);
         float cellCenterY = worldPos.y + this->getContentSize().height / 2.0f;
         float screenCenterY = winSize.height / 2.0f;
@@ -3736,7 +3737,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         // Fallback adicional: revisar la escena activa por si la celda no esta
         // parented aun (caso de creacion inicial). Si la layer en escena es
         // LevelListLayer o un LevelBrowserLayer en MyLevels, excluir.
-        if (auto* scene = cocos2d::CCDirector::sharedDirector()->getRunningScene()) {
+        if (auto* scene = cocos2d::CCDirector::get()->getRunningScene()) {
             for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
                 if (typeinfo_cast<LevelListLayer*>(child)) {
                     return true;

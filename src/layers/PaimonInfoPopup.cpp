@@ -1,4 +1,4 @@
-#include "PaimonInfoPopup.hpp"
+﻿#include "PaimonInfoPopup.hpp"
 #include "../features/emotes/EmoteRenderer.hpp"
 #include "../utils/DynamicPopupRegistry.hpp"
 #include "../utils/Shaders.hpp"

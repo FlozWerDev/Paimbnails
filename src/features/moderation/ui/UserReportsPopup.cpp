@@ -1,4 +1,4 @@
-#include "UserReportsPopup.hpp"
+﻿#include "UserReportsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // ModCompat.hpp — Deteccion de mods de texturas activos para evitar conflictos.
 // Consulta el Loader en cada llamada (las funciones son baratas y el resultado

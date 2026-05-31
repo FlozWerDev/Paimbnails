@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/CCMouseDispatcher.hpp>
 #include <Geode/modify/CCKeyboardDispatcher.hpp>
@@ -736,28 +736,31 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                 [levelID, pausedByPopup](bool okSave, int levelIDAccepted, std::shared_ptr<uint8_t> buf, int W, int H, std::string mode, std::string replaceId){
                                     gCaptureInProgress.store(false);
                                     if (pausedByPopup) {
-                                        auto* pl = PlayLayer::get();
-                                        if (pl && pl->m_isPaused) {
-                                            bool hasPause = false;
-                                            if (auto* dir = CCDirector::get()) {
-                                                if (auto* sc = dir->getRunningScene()) {
-                                                    CCArrayExt<CCNode*> children(sc->getChildren());
-                                                    for (auto child : children) { 
-                                                        if (typeinfo_cast<PauseLayer*>(child)) { hasPause = true; break; } 
+                                        // Resume PlayLayer desde el main thread para thread-safety
+                                        geode::Loader::get()->queueInMainThread([levelID]() {
+                                            auto* pl = PlayLayer::get();
+                                            if (pl && pl->m_isPaused) {
+                                                bool hasPause = false;
+                                                if (auto* dir = CCDirector::get()) {
+                                                    if (auto* sc = dir->getRunningScene()) {
+                                                        CCArrayExt<CCNode*> children(sc->getChildren());
+                                                        for (auto child : children) { 
+                                                            if (typeinfo_cast<PauseLayer*>(child)) { hasPause = true; break; } 
+                                                        }
+                                                    }
+                                                }
+                                                if (!hasPause) {
+                                                    if (auto* d = CCDirector::get()) {
+                                                        if (d->getScheduler() && d->getActionManager()) {
+                                                            d->getScheduler()->resumeTarget(pl);
+                                                            d->getActionManager()->resumeTarget(pl);
+                                                            pl->m_isPaused = false;
+                                                            PauseZoomManager::get().onResume();
+                                                        }
                                                     }
                                                 }
                                             }
-                                            if (!hasPause) {
-                                                if (auto* d = CCDirector::get()) {
-                                                    if (d->getScheduler() && d->getActionManager()) {
-                                                        d->getScheduler()->resumeTarget(pl);
-                                                        d->getActionManager()->resumeTarget(pl);
-                                                        pl->m_isPaused = false;
-                                                        PauseZoomManager::get().onResume();
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        });
                                     }
                                     if (okSave && levelIDAccepted > 0 && buf) {
                                         if (W <= 0 || H <= 0) return;

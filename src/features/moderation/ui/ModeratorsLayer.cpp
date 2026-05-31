@@ -1,4 +1,4 @@
-#include "ModeratorsLayer.hpp"
+﻿#include "ModeratorsLayer.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
@@ -160,7 +160,7 @@ void ModeratorsLayer::onAllProfilesFetched() {
 }
 
 void ModeratorsLayer::createList() {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     
     if (!m_scores) {
         m_scores = CCArray::create();

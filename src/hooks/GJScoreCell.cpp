@@ -1,4 +1,4 @@
-#include <Geode/modify/GJScoreCell.hpp>
+﻿#include <Geode/modify/GJScoreCell.hpp>
 #include <Geode/binding/GJUserScore.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/cocos.hpp>
@@ -12,6 +12,7 @@
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/VideoThumbnailSprite.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../utils/ScissorClipNode.hpp"
 
 using namespace geode::prelude;
 #include "../utils/Shaders.hpp"
@@ -331,7 +332,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                     // Crea clipper para fondo
                     auto stencil = paimon::SpriteHelper::createRectStencil(cs.width, cs.height);
                     
-                    auto clipper = CCClippingNode::create(stencil);
+                    auto clipper = paimon::ScissorClipNode::create(stencil);
                     clipper->setContentSize(cs);
                     clipper->setPosition({0,0});
                     clipper->setZOrder(-2); // Al fondo

@@ -1,4 +1,4 @@
-#include "BlurSystem.hpp"
+﻿#include "BlurSystem.hpp"
 #include "BlurDiskCache.hpp"
 
 #include <Geode/utils/cocos.hpp>

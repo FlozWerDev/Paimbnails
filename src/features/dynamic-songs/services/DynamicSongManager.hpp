@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <Geode/Geode.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/SongInfoObject.hpp>

@@ -1,4 +1,4 @@
-#include "LeaderboardHistoryLayer.hpp"
+﻿#include "LeaderboardHistoryLayer.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/Localization.hpp"
@@ -38,7 +38,7 @@ bool LeaderboardHistoryLayer::init() {
     if (!CCLayer::init()) return false;
     log::info("[LeaderboardHistory] init");
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // fondo
     auto bg = CCLayerColor::create(ccc4(15, 12, 25, 255));
@@ -138,7 +138,7 @@ bool LeaderboardHistoryLayer::init() {
     this->setMouseEnabled(true);
 #endif
     
-    CCDirector::sharedDirector()->getTouchDispatcher()->addTargetedDelegate(this, 0, false);
+    CCDirector::get()->getTouchDispatcher()->addTargetedDelegate(this, 0, false);
 
     // aplicar efecto cueva sobre musica de menu
     applyCaveEffect();
@@ -159,7 +159,7 @@ void LeaderboardHistoryLayer::onEnterTransitionDidFinish() {
 
 void LeaderboardHistoryLayer::onExitTransitionDidStart() {
     this->unscheduleUpdate();
-    CCDirector::sharedDirector()->getTouchDispatcher()->removeDelegate(this);
+    CCDirector::get()->getTouchDispatcher()->removeDelegate(this);
     CCLayer::onExitTransitionDidStart();
 }
 
@@ -257,7 +257,7 @@ void LeaderboardHistoryLayer::onBack(CCObject*) {
         GameLevelManager::get()->m_levelManagerDelegate = nullptr;
     }
     removeCaveEffect();
-    CCDirector::sharedDirector()->popSceneWithTransition(0.5f, PopTransition::kPopTransitionFade);
+    CCDirector::get()->popSceneWithTransition(0.5f, PopTransition::kPopTransitionFade);
 }
 
 void LeaderboardHistoryLayer::keyBackClicked() {
@@ -396,7 +396,7 @@ void LeaderboardHistoryLayer::createList() {
     }
     m_scrollView = nullptr;
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     m_listContainer = CCNode::create();
     m_listContainer->setTag(800);

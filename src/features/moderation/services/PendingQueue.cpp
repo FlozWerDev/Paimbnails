@@ -1,4 +1,4 @@
-#include "PendingQueue.hpp"
+﻿#include "PendingQueue.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/loader/Log.hpp>
 #include <Geode/utils/file.hpp>

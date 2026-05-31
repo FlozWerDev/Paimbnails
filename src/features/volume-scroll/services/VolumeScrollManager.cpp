@@ -1,4 +1,4 @@
-#include "VolumeScrollManager.hpp"
+﻿#include "VolumeScrollManager.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
 
 #include <Geode/Geode.hpp>

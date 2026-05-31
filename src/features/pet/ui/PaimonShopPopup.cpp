@@ -1,4 +1,4 @@
-#include "PaimonShopPopup.hpp"
+﻿#include "PaimonShopPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/PetManager.hpp"
 #include "../../../utils/HttpClient.hpp"

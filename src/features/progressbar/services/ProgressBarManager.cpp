@@ -1,4 +1,4 @@
-#include "ProgressBarManager.hpp"
+﻿#include "ProgressBarManager.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/LocalAssetStore.hpp"

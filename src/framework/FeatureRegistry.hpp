@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "FeatureSpec.hpp"
 #include <string>

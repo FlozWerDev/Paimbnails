@@ -1,4 +1,4 @@
-#include "PaimonFormat.hpp"
+﻿#include "PaimonFormat.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>

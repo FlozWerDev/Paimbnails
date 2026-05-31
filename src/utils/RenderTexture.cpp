@@ -1,4 +1,4 @@
-#include "RenderTexture.hpp"
+﻿#include "RenderTexture.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/cocos/platform/CCGL.h>
 
@@ -58,13 +58,24 @@ RenderTexture::RenderTexture(uint32_t width, uint32_t height) : m_width(width), 
 }
 
 RenderTexture::~RenderTexture() {
+    // GL context safety: si el destructor se llama tras la destruccion de
+    // CCDirector/GL view (ej. atexit, hot-reload), los handles GL ya no son
+    // validos y glDelete* causa silent corruption o crash en algunos drivers.
+    auto* director = cocos2d::CCDirector::get();
+    bool glAlive = director && director->getOpenGLView();
+    if (!glAlive) {
+        // GL context muerto — leak intencional de los handles. El driver/OS
+        // los liberara al terminar el proceso. Mejor leak que crash.
+        return;
+    }
+
     this->end();
-    glDeleteTextures(1, &m_texture);
+    if (m_texture) glDeleteTextures(1, &m_texture);
     if (m_depthStencil) glDeleteRenderbuffers(1, &m_depthStencil);
 #ifdef PT_SEPARATE_DEPTH_STENCIL
     if (m_stencilBuffer) glDeleteRenderbuffers(1, &m_stencilBuffer);
 #endif
-    glDeleteFramebuffers(1, &m_fbo);
+    if (m_fbo) glDeleteFramebuffers(1, &m_fbo);
 }
 
 void RenderTexture::begin() {

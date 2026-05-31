@@ -7,6 +7,7 @@
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/ShapeStencil.hpp"
+#include "../../../utils/EditorContext.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -410,6 +411,50 @@ CCNode* CustomSliderManager::createThumbNode() {
 
 bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
     if (!slider) return false;
+    if (!slider->getParent()) return false;
+
+    // ── AISLAMIENTO DEL EDITOR (fuente unica de verdad, anti-crash) ──
+    // Mientras el editor esta activo, el mod NO debe tocar NINGUN slider nativo
+    // (color/HSV en ColorSelectPopup/CustomizeObjectLayer, sliders de triggers,
+    // sliders de EditorUI, etc.). Reemplazar setNormalImage/setSelectedImage de
+    // sus SliderThumb corrompe el estado que GD lee luego en
+    // CustomizeObjectLayer::updateColorSprite al cerrar la popup -> crash.
+    //
+    // Este guard se basa en la ESCENA en ejecucion, no en typeid de los padres:
+    // cuando otro mod hace $modify de ColorSelectPopup/CustomizeObjectLayer el
+    // nombre de typeid deja de contener "ColorSelect"/"CustomizeObject" y la
+    // exclusion por string fallaba. La unica excepcion es el propio popup de
+    // configuracion del mod (CustomSliderPopup), que si debe verse skineado.
+    if (paimon::isEditorScene()) {
+        for (auto* p = slider->getParent(); p; p = p->getParent()) {
+            if (std::string(typeid(*p).name()).find("CustomSliderPopup") != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ── EXCLUSION DURA (anti-crash) ──
+    // Nunca tocar los sliders nativos del editor de color: ColorSelectPopup,
+    // CustomizeObjectLayer y los widgets HSV (ConfigureHSVWidget /
+    // HSVWidgetPopup). Al cerrar esas popups, GD reconstruye su estado de
+    // color en CustomizeObjectLayer::updateColorSprite leyendo punteros
+    // internos (m_colorSprite, canales, etc.). Reemplazar setNormalImage/
+    // setSelectedImage del SliderThumb y ocultar sus hijos en ese contexto
+    // es de alto riesgo y bajo valor para la feature, y coincide exactamente
+    // con la cadena del crash conocido (ColorSelectPopup::closeColorSelect ->
+    // CustomizeObjectLayer::updateColorSprite, con betteredit hookeando en
+    // medio). Excluimos SIEMPRE estos sliders, incluso bajo el fallback de
+    // "todos los targets activos" mas abajo.
+    for (auto* p = slider->getParent(); p; p = p->getParent()) {
+        auto cn = std::string(typeid(*p).name());
+        if (cn.find("CustomizeObject") != std::string::npos ||
+            cn.find("ColorSelect")     != std::string::npos ||
+            cn.find("ConfigureHSV")    != std::string::npos ||
+            cn.find("HSV")             != std::string::npos) {
+            return false;
+        }
+    }
 
     auto* parent = slider->getParent();
     while (parent) {
@@ -438,14 +483,12 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
             }
         }
 
-        if (m_config.targets.colorSliders) {
-            if (className.find("ColorSelect") != std::string::npos ||
-                className.find("ConfigureHSV") != std::string::npos ||
-                className.find("HSV") != std::string::npos ||
-                className.find("CustomizeObject") != std::string::npos) {
-                return true;
-            }
-        }
+        // NOTA: el target `colorSliders` queda intencionalmente sin efecto.
+        // Los sliders de color/HSV del editor (ColorSelectPopup,
+        // CustomizeObjectLayer, widgets HSV) se excluyen de forma dura al
+        // inicio de esta funcion por seguridad — ver comentario "EXCLUSION
+        // DURA (anti-crash)" arriba. El campo se conserva en la config solo
+        // por compatibilidad con saves existentes.
 
         if (m_config.targets.garageSliders) {
             if (className.find("GJGarageLayer") != std::string::npos ||
@@ -472,15 +515,15 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
 // Apply / Restore
 // ────────────────────────────────────────────────────────────
 
-static const int kCustomIconTag = 0x50414900; // "PAI\0"
+static const char* kCustomIconID = "paimon-slider-icon";
 
 bool CustomSliderManager::applyCustomThumb(CCNode* sliderThumb) {
     if (!m_config.enabled) return false;
     if (!sliderThumb) return false;
 
     // Don't double-apply
-    if (sliderThumb->getChildByTag(kCustomIconTag)) {
-        auto* existing = sliderThumb->getChildByTag(kCustomIconTag);
+    if (sliderThumb->getChildByID("paimon-slider-icon"_spr)) {
+        auto* existing = sliderThumb->getChildByID("paimon-slider-icon"_spr);
         existing->setScale(m_config.iconScale);
         existing->setRotation(m_config.iconRotation);
         return true;
@@ -493,7 +536,6 @@ bool CustomSliderManager::applyCustomThumb(CCNode* sliderThumb) {
     auto* thumbNode = createThumbNode();
     if (!thumbNode) return false;
 
-    thumbNode->setTag(kCustomIconTag);
     thumbNode->setID("paimon-slider-icon"_spr);
 
     // Position at center of the thumb
@@ -525,7 +567,7 @@ bool CustomSliderManager::applyCustomThumb(CCNode* sliderThumb) {
     // Hide any pre-existing children (original thumb sprites)
     if (auto* children = sliderThumb->getChildren()) {
         for (auto* child : CCArrayExt<CCNode*>(children)) {
-            if (child && child->getTag() != kCustomIconTag) {
+            if (child && child->getID() != "paimon-slider-icon"_spr) {
                 child->setVisible(false);
             }
         }
@@ -539,7 +581,7 @@ void CustomSliderManager::restoreOriginalThumb(CCNode* sliderThumb) {
     if (!sliderThumb) return;
 
     // Remove our custom icon
-    auto* icon = sliderThumb->getChildByTag(kCustomIconTag);
+    auto* icon = sliderThumb->getChildByID("paimon-slider-icon"_spr);
     if (icon) {
         icon->removeFromParent();
     }

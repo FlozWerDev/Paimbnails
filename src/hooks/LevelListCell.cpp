@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/LevelListCell.hpp>
 #include "../utils/ListThumbnailCarousel.hpp"
 #include "../managers/ThumbnailAPI.hpp"

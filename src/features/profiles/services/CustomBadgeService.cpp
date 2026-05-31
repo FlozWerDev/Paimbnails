@@ -1,4 +1,4 @@
-#include "CustomBadgeService.hpp"
+﻿#include "CustomBadgeService.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include <matjson.hpp>
 #include <Geode/loader/Log.hpp>

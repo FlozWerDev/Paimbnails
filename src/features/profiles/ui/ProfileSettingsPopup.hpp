@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <Geode/Geode.hpp>
 
 // Configuracion del perfil: musica, imagen, badge y fondo de comentarios

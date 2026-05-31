@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // SessionState.hpp — Estado de sesion tipado para flujo de navegacion.
 // Reemplaza las keys transitorias de Mod::get()->setSavedValue() con un

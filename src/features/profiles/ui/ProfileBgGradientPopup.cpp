@@ -1,4 +1,4 @@
-#include "ProfileBgGradientPopup.hpp"
+﻿#include "ProfileBgGradientPopup.hpp"
 #include "../services/ProfileGradientEffects.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"

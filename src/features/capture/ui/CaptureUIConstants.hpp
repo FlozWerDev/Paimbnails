@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // CaptureUIConstants.hpp — Named constants for the capture UI system.
 // Replaces scattered magic numbers across CapturePreviewPopup,

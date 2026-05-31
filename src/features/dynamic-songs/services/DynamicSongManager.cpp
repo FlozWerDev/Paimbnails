@@ -1,4 +1,4 @@
-#include "DynamicSongManager.hpp"
+﻿#include "DynamicSongManager.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../framework/HookInterceptor.hpp"
@@ -520,6 +520,7 @@ void DynamicSongManager::forceKill() {
     stopStreamingPreview();
 
     if (m_fadeNode) {
+        m_fadeNode->cancel(); // unschedule from scheduler before release
         m_fadeNode->release();
         m_fadeNode = nullptr;
     }
@@ -770,7 +771,7 @@ private:
 };
 
 void DynamicSongManager::startStreamingPreview(GJGameLevel* level) {
-    if (!Mod::get()->getSettingValue<bool>("dynamic-song-stream-preview")) return;
+    if (!Mod::get()->getSavedValue<bool>("dynamic-song-stream-preview", true)) return;
     if (m_streamingPreview || isStreamingPreviewPending()) return;
 
     int songID = level->m_songID;

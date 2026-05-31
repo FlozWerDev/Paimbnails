@@ -1,4 +1,4 @@
-#include "FontPickerPopup.hpp"
+﻿#include "FontPickerPopup.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -311,7 +311,7 @@ void FontPickerPopup::updateTabHighlights() {
         if (!btn) return;
         auto container = btn->getNormalImage();
         if (!container) return;
-        if (auto old = container->getChildByTag(50))
+        if (auto old = container->getChildByID("paimon-tab-bg"_spr))
             old->removeFromParent();
         float w = container->getContentSize().width;
         float h = container->getContentSize().height;
@@ -319,7 +319,7 @@ void FontPickerPopup::updateTabHighlights() {
             ? ccColor4F{0.28f, 0.26f, 0.45f, 1.f}
             : ccColor4F{0.15f, 0.15f, 0.22f, 0.7f};
         auto hl = paimon::SpriteHelper::createRoundedRect(w, h, 5.f, col);
-        hl->setTag(50);
+        hl->setID("paimon-tab-bg"_spr);
         hl->setPosition({0, 0});
         container->addChild(hl, -1);
     };
@@ -532,7 +532,7 @@ bool FontPickerPopup::isInsideVisibleScroll(CCNode* item) {
 // ── Positioning ─────────────────────────────────────
 void FontPickerPopup::positionBelow(CCNode* anchor, float gap) {
     (void)anchor;
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     float halfH = POPUP_H * 0.5f;
     float y = std::clamp(halfH + gap, halfH, winSize.height - halfH);
     m_mainLayer->setPosition({winSize.width * 0.5f, y});

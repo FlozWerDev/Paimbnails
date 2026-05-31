@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // MainLevels.hpp — Identificacion y proteccion de los niveles oficiales (1-22).
 //

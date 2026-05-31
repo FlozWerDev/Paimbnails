@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // UIConstants.hpp — Shared named constants for the mod's UI layout.
 // Used by PaiConfigLayer, ButtonEditOverlay, and any shared UI components.

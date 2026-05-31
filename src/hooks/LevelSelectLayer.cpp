@@ -1,4 +1,4 @@
-#include <Geode/modify/LevelSelectLayer.hpp>
+﻿#include <Geode/modify/LevelSelectLayer.hpp>
 #include <Geode/modify/GameManager.hpp>
 #include <Geode/modify/FMODAudioEngine.hpp>
 #include <Geode/utils/cocos.hpp>
@@ -7,14 +7,11 @@
 #include <Geode/binding/BoomScrollLayer.hpp>
 #include <Geode/binding/GJGroundLayer.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
-#include <Geode/binding/GJBaseGameLayer.hpp>
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/audio/services/AudioContextCoordinator.hpp"
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../features/menu-loop/services/MenuLoopManager.hpp"
-#include "../features/menu-loop/services/MenuLoopControl.hpp"
-#include "../features/menu-loop/ui/NowPlayingCard.hpp"
 #include "../utils/AudioInterop.hpp"
 #include "../utils/Shaders.hpp"
 #include "../blur/BlurSystem.hpp"
@@ -112,55 +109,6 @@ class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
     }
 
     $override
-    void update(float dt) {
-        FMODAudioEngine::update(dt);
-
-        // Perf: Menu loop position tracking and constant shuffle are already
-        // handled by PaimonMenuLoopFMODHook.
-        auto* engine = FMODAudioEngine::sharedEngine();
-        if (!engine) return;
-        auto* ch = engine->getActiveMusicChannel(0);
-        if (!ch) return;
-        // â”€â”€ Menu Loop position tracking + constant shuffle â”€â”€
-        auto& sm = paimon::menuloop::MenuLoopManager::get();
-        if (!GJBaseGameLayer::get() && !sm.isOriginalMenuLoop() && !paimon::menuloop::isVanillaMenuLoopDisabled()) {
-            unsigned int position = 0;
-            if (ch->getPosition(&position, FMOD_TIMEUNIT_MS) == FMOD_OK) {
-                if (!sm.getPauseSongPositionTracking()) {
-                    sm.setLastMenuLoopPosition(position);
-                }
-            }
-
-            // Constant shuffle: switch song when near end
-            if (sm.getConstantShuffleMode() && !sm.isOverride() && sm.getSongsSize() >= 2) {
-                bool isPlaying = true;
-                FMOD::Sound* sound = nullptr;
-                unsigned int length = 0;
-                ch->getCurrentSound(&sound);
-                ch->isPlaying(&isPlaying);
-                if (sound && isPlaying) {
-                    sound->getLength(&length, FMOD_TIMEUNIT_MS);
-                    if (length > 0 && (length - 100) < position) {
-                        paimon::menuloop::MenuLoopControl::constantShuffleModeNewSong();
-                        if (auto* menuLayer = GameManager::get()->m_menuLayer) {
-                            paimon::menuloop::NowPlayingCard::showForCurrentSong(menuLayer);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    $override
-    void stopAllMusic(bool p0) {
-        // Pausar tracking de posiciÃ³n del MenuLoopManager
-        if (!GJBaseGameLayer::get()) {
-            paimon::menuloop::MenuLoopManager::get().setPauseSongPositionTracking(true);
-        }
-        FMODAudioEngine::stopAllMusic(p0);
-    }
-
-    $override
     void playMusic(gd::string path, bool shouldLoop, float fadeInTime, int channel) {
         bool passthrough = Mod::get()->getSavedValue<bool>("music-hook-passthrough", false);
         if (passthrough) {
@@ -227,7 +175,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     bool init(int p0) {
         if (!LevelSelectLayer::init(p0)) return false;
 
-        auto win = CCDirector::sharedDirector()->getWinSize();
+        auto win = CCDirector::get()->getWinSize();
 
         // pagina 0 = nivel 1 (Stereo Madness)
         int levelID = p0 + 1;
@@ -603,7 +551,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     
     
     void applyBackground(CCTexture2D* tex, int levelID = -1) {
-        auto win = CCDirector::sharedDirector()->getWinSize();
+        auto win = CCDirector::get()->getWinSize();
         CCSprite* finalSprite = nullptr;
         CCSprite* sharpSprite = nullptr;
 

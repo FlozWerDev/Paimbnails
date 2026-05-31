@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // HttpTransport.hpp — Capa de transporte HTTP de bajo nivel.
 // Extrae las primitivas de comunicacion de HttpClient para que los

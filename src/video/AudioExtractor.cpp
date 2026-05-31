@@ -1,4 +1,4 @@
-#include "AudioExtractor.hpp"
+﻿#include "AudioExtractor.hpp"
 
 #if defined(USE_MEDIA_FOUNDATION)
 

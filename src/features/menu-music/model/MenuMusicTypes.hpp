@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // MenuMusicTypes — tipos de datos centrales del sistema "Menu Music".
 //

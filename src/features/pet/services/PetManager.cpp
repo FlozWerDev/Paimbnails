@@ -1,6 +1,7 @@
-#include "PetManager.hpp"
+﻿#include "PetManager.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../utils/EditorContext.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>
 #include <fstream>
@@ -21,18 +22,15 @@ geode::Ref<CCTexture2D>& whiteTrailTexture() {
     return s_whiteTrailTex;
 }
 
-constexpr int kPetBaseZOrder = 99999;
-constexpr int kPetMaxZOrder = std::numeric_limits<int>::max() - 1024;
+// Z fijo del host del pet: justo por debajo del cursor (que usa INT_MAX-2048)
+// pero por encima de cualquier otro asset del juego/mod. Constante para no
+// escalar ni pelear el Z con el host del cursor frame a frame.
+constexpr int kPetHostZOrder = std::numeric_limits<int>::max() - 4096;
 
 int desiredPetHostZ(CCScene* scene, CCNode* petNode) {
-    if (!scene) return kPetBaseZOrder;
-    int highest = kPetBaseZOrder;
-    for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
-        if (!child || child == petNode) continue;
-        highest = std::max(highest, child->getZOrder());
-    }
-    if (highest >= kPetMaxZOrder) return kPetMaxZOrder;
-    return highest + 1;
+    (void)scene;
+    (void)petNode;
+    return kPetHostZOrder;
 }
 
 void ensurePetNodeIsFrontmost(CCScene* scene, CCNode* petNode) {
@@ -743,6 +741,20 @@ void PetManager::attachToScene(CCScene* scene) {
     log::debug("[PetManager] attachToScene: enabled={}", m_config.enabled);
     if (!scene) return;
 
+    // ── AISLAMIENTO DEL EDITOR (anti-crash) ──
+    // El mod debe aislarse por completo del editor (ver EditorContext.hpp).
+    // El pet, ademas de su nodo en la escena, mantiene un pipeline propio
+    // (AnimatedGIFSprite con scheduleUpdate independiente de la visibilidad,
+    // shaders, trail/particulas). Dejarlo correr en la escena del editor
+    // coincide con la cadena de crash conocida al cerrar el editor de color:
+    // ColorSelectPopup::closeColorSelect -> CustomizeObjectLayer::updateColorSprite.
+    // Ocultarlo no basta (los nodos invisibles siguen recibiendo update): hay
+    // que DESACOPLARLO para detener su pipeline mientras el editor este activo.
+    if (paimon::isEditorScene()) {
+        detachFromScene();
+        return;
+    }
+
     // If already attached to this exact scene, just refresh visibility
     if (m_petNode && m_petNode->getParent() == scene) {
         refreshVisibility();
@@ -756,7 +768,7 @@ void PetManager::attachToScene(CCScene* scene) {
 
     m_petNode = CCNode::create();
     m_petNode->setID("paimon-pet-host"_spr);
-    m_petNode->setZOrder(99999); // always on top
+    m_petNode->setZOrder(kPetHostZOrder); // siempre por encima de todo (bajo el cursor)
     scene->addChild(m_petNode);
     m_petNode->setVisible(shouldShowOnCurrentScene());
 

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // YtDlpBootstrap — instala yt-dlp automaticamente la primera vez.
 //

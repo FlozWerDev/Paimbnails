@@ -1,9 +1,10 @@
-#include "LevelColors.hpp"
+﻿#include "LevelColors.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/PaimonFormat.hpp"
 #include "../../../utils/DominantColors.hpp"
 #include "../../../utils/DominantColorsGPU.hpp"
 #include "../../../utils/ImageConverter.hpp"
+#include "../../../utils/MainThread.hpp"
 #include "../../../core/QualityConfig.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/loader/Log.hpp>
@@ -128,8 +129,9 @@ void LevelColors::extractFromImage(int32_t levelID, cocos2d::CCImage* image) {
     
     if (!imgData || w <= 0 || h <= 0) return;
     
-    // GPU path: use DominantColorsGPU for hardware-accelerated extraction
-    if (DominantColorsGPU::isAvailable()) {
+    // GPU path: use DominantColorsGPU for hardware-accelerated extraction.
+    // Mismo gate que extractFromRawData — ver comentario alli.
+    if (paimon::isMainThread() && DominantColorsGPU::isAvailable()) {
         std::pair<DCColor, DCColor> pair;
         if (hasAlpha) {
             pair = DominantColorsGPU::extractFromRGBA(imgData, w, h);
@@ -165,8 +167,12 @@ void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, in
     if (!imgData || w <= 0 || h <= 0) return;
     log::debug("[LevelColors] extractFromRawData: levelID={} {}x{} alpha={}", levelID, w, h, hasAlpha);
     
-    // GPU path: use DominantColorsGPU for hardware-accelerated extraction
-    if (DominantColorsGPU::isAvailable()) {
+    // GPU path: use DominantColorsGPU for hardware-accelerated extraction.
+    // CRITICAL: GL calls SOLO desde main thread. Si esta funcion se llama
+    // desde el CPU pool worker (ThumbnailLoader::decodeImageData) en background,
+    // forzamos el CPU fallback. cocos2d-x no tolera multi-threaded GL en
+    // la mayoria de drivers (Intel iGPU, macOS Metal-on-OpenGL, GLES movil).
+    if (paimon::isMainThread() && DominantColorsGPU::isAvailable()) {
         std::pair<DCColor, DCColor> pair;
         if (hasAlpha) {
             pair = DominantColorsGPU::extractFromRGBA(imgData, w, h);

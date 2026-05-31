@@ -1,4 +1,4 @@
-#include "FeatureConfigPopup.hpp"
+﻿#include "FeatureConfigPopup.hpp"
 
 #include "../features/settings-panel/services/SettingsPanelManager.hpp"
 #include "../features/settings-panel/ui/SettingsControls.hpp"
@@ -36,12 +36,14 @@ namespace {
 
 template<typename T>
 T gset(const char* key) {
-    return Mod::get()->getSettingValue<T>(key);
+    if (Mod::get()->hasSetting(key)) return Mod::get()->getSettingValue<T>(key);
+    return Mod::get()->getSavedValue<T>(key, T{});
 }
 
 template<typename T>
 void sset(const char* key, T val) {
-    Mod::get()->setSettingValue<T>(key, val);
+    if (Mod::get()->hasSetting(key)) Mod::get()->setSettingValue<T>(key, val);
+    else Mod::get()->setSavedValue(key, val);
 }
 
 template<typename T>
@@ -660,7 +662,7 @@ GranularRoute routeForGranular(std::string const& englishName) {
         return {{}, []() {
             // PaiConfigLayer es un layer fullscreen — replicamos la ruta del Hub.
             SettingsPanelManager::get().close();
-            auto scene = CCDirector::sharedDirector()->getRunningScene();
+            auto scene = CCDirector::get()->getRunningScene();
             if (!scene) return;
             if (auto* layer = PaiConfigLayer::create()) {
                 scene->addChild(layer, 5000);

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <Geode/Geode.hpp>
 #include <Geode/utils/function.hpp>
 #include "EmotePickerPopup.hpp"

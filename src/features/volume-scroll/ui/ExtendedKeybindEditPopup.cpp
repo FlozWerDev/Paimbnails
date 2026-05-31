@@ -1,4 +1,4 @@
-#include "ExtendedKeybindEditPopup.hpp"
+﻿#include "ExtendedKeybindEditPopup.hpp"
 
 #include "../../../utils/SpriteHelper.hpp"
 

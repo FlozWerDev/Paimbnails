@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <matjson.hpp>
 #include <utility>

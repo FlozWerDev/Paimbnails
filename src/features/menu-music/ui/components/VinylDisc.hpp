@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // VinylDisc — disco giratorio con la portada del track al centro.
 //

@@ -1,4 +1,4 @@
-#include <Geode/binding/InfoLayer.hpp>
+﻿#include <Geode/binding/InfoLayer.hpp>
 #include <Geode/modify/InfoLayer.hpp>
 #include <Geode/binding/GJUserScore.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
@@ -205,8 +205,8 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             m_fields->m_levelID = levelID;
 
             if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID &&
-                paimon::ThumbnailBackgroundChangedEvent::s_lastTexture) {
-                applyBlurredBackground(paimon::ThumbnailBackgroundChangedEvent::s_lastTexture);
+                paimon::ThumbnailBackgroundChangedEvent::getLastTexture()) {
+                applyBlurredBackground(paimon::ThumbnailBackgroundChangedEvent::getLastTexture());
             } else {
                 std::string fileName = fmt::format("{}.png", levelID);
                 Ref<InfoLayer> safeRef = this;
@@ -495,6 +495,41 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         if (auto* layer = this->m_mainLayer) {
             styleInfoLayerBgs(layer);
         }
+    }
+
+    // Re-aplica el estilo (ocultar fondo marron de la lista de comentarios y
+    // de cada celda) en cuanto GD reconstruye la lista. Solo actua si hay un
+    // fondo paimon instalado (m_bgClip): sin thumbnail propio conservamos la
+    // UI vanilla. Esto reemplaza la dependencia del tick de 1.5s para la
+    // aparicion inicial — el marron se oculta en el MISMO frame en que la
+    // lista se crea, sin parpadeo ni retraso.
+    void styleCommentsNow() {
+        if (!m_fields->m_bgClip) return;
+        if (auto* layer = this->m_mainLayer) {
+            styleInfoLayerBgs(layer);
+        }
+    }
+
+    // setupCommentsBrowser construye la GJCommentListLayer y sus celdas.
+    // loadCommentsFinished se dispara cuando el server responde con los
+    // comentarios. loadPage reconstruye la lista al paginar. En los tres
+    // casos los nodos marrones vanilla acaban de crearse: los ocultamos ya.
+    $override
+    void setupCommentsBrowser(cocos2d::CCArray* comments) {
+        InfoLayer::setupCommentsBrowser(comments);
+        styleCommentsNow();
+    }
+
+    $override
+    void loadCommentsFinished(cocos2d::CCArray* comments, char const* key) {
+        InfoLayer::loadCommentsFinished(comments, key);
+        styleCommentsNow();
+    }
+
+    $override
+    void loadPage(int page, bool noSetup) {
+        InfoLayer::loadPage(page, noSetup);
+        styleCommentsNow();
     }
 
     $override

@@ -1,4 +1,4 @@
-#include "DominantColors.hpp"
+﻿#include "DominantColors.hpp"
 #include "../utils/Constants.hpp"
 #include <algorithm>
 #include <vector>

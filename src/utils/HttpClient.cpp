@@ -1,4 +1,4 @@
-#include "HttpClient.hpp"
+﻿#include "HttpClient.hpp"
 #include "Debug.hpp"
 #include "WebHelper.hpp"
 #include "ThreadTracker.hpp"
@@ -381,9 +381,13 @@ void HttpClient::performUpload(
             return;
         }
         bool success = res.ok();
+        // Lectura unica del body — WebResponse::string() puede consumir el
+        // buffer en algunas versiones de Geode; un segundo call devolveria
+        // string vacio y truncaria el mensaje de error.
+        std::string body = res.string().unwrapOr("");
         std::string responseStr = success
-            ? res.string().unwrapOr("")
-            : ("HTTP " + std::to_string(res.code()) + ": " + res.string().unwrapOr("Unknown error"));
+            ? body
+            : ("HTTP " + std::to_string(res.code()) + ": " + (body.empty() ? std::string("Unknown error") : body));
 
         if (callback) callback(success, responseStr);
     });
@@ -668,9 +672,11 @@ void HttpClient::uploadProfileConfig(int accountID, std::string const& jsonConfi
             return;
         }
         bool success = res.ok();
+        // Lectura unica del body — ver comentario en performUpload sobre buffer consumption.
+        std::string body = res.string().unwrapOr("");
         std::string responseStr = success
-            ? res.string().unwrapOr("")
-            : ("HTTP " + std::to_string(res.code()) + ": " + res.string().unwrapOr("Unknown error"));
+            ? body
+            : ("HTTP " + std::to_string(res.code()) + ": " + (body.empty() ? std::string("Unknown error") : body));
 
         if (callback) callback(success, responseStr);
     });
@@ -1808,12 +1814,19 @@ void HttpClient::getBanList(BanListCallback callback) {
     PaimonDebug::log("[HttpClient] Getting ban list");
     std::string reqUser = getSafeAccountUsername();
     int reqAccountID = getSafeAccountID();
-    std::string url = m_serverURL + "/api/admin/banlist?username=" + reqUser + "&accountID=" + std::to_string(reqAccountID);
+    // URL-encode el username para evitar URL injection / parameter pollution.
+    // Sin esto, un username con `&` o `=` puede inyectar parametros adicionales.
+    std::string url = m_serverURL + "/api/admin/banlist?username=" + encodeQueryParam(reqUser)
+        + "&accountID=" + std::to_string(reqAccountID);
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
-        "X-Mod-Code: " + m_modCode,
         "Accept: application/json"
     };
+    // Solo incluir X-Mod-Code si tenemos uno valido — un header vacio confunde
+    // al server (no es lo mismo que header ausente, lo trata como auth incorrecta).
+    if (!m_modCode.empty()) {
+        headers.push_back("X-Mod-Code: " + m_modCode);
+    }
     performRequest(url, "GET", "", headers, callback);
 }
 
@@ -2131,7 +2144,8 @@ void HttpClient::downloadProfileBundle(int accountID, std::string const& usernam
 
     std::string url = m_serverURL + "/api/profile/bundle/" + std::to_string(accountID);
     if (!username.empty()) {
-        url += "?username=" + username;
+        // URL-encode para evitar parameter pollution / injection.
+        url += "?username=" + encodeQueryParam(username);
     }
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
@@ -2531,10 +2545,13 @@ void HttpClient::addToWhitelist(std::string const& targetUsername, std::string c
 
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
-        "X-Mod-Code: " + m_modCode,
         "Content-Type: application/json",
         "Accept: application/json"
     };
+    // Solo incluir X-Mod-Code si existe — un valor vacio confunde al server.
+    if (!m_modCode.empty()) {
+        headers.push_back("X-Mod-Code: " + m_modCode);
+    }
     performRequest(m_serverURL + "/api/whitelist/add", "POST", json.dump(), headers, callback);
 }
 
@@ -2552,10 +2569,12 @@ void HttpClient::removeFromWhitelist(std::string const& targetUsername, std::str
 
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
-        "X-Mod-Code: " + m_modCode,
         "Content-Type: application/json",
         "Accept: application/json"
     };
+    if (!m_modCode.empty()) {
+        headers.push_back("X-Mod-Code: " + m_modCode);
+    }
     performRequest(m_serverURL + "/api/whitelist/remove", "POST", json.dump(), headers, callback);
 }
 
@@ -2603,16 +2622,42 @@ bool HttpClient::isUrlSafe(std::string const& url) {
 
     if (host.empty()) return false;
 
-    // bloquear localhost
+    // ── Localhost / loopback ────────────────────────────────────
     if (host == "localhost" || host == "127.0.0.1" || host == "::1" ||
-        host == "[::1]" || host == "0.0.0.0") {
+        host == "[::1]" || host == "0.0.0.0" || host == "[::]") {
         return false;
     }
 
-    // bloquear rangos privados (10.*, 172.16-31.*, 192.168.*, 169.254.*)
-    if (host.starts_with("10.") || host.starts_with("192.168.") ||
-        host.starts_with("169.254.")) {
+    // ── Loopback IPv4 completo (127.0.0.0/8) ────────────────────
+    if (host.starts_with("127.")) {
         return false;
+    }
+
+    // ── 0.0.0.0/8 — INADDR_ANY y ranges no enrutables ───────────
+    if (host.starts_with("0.")) {
+        return false;
+    }
+
+    // ── Rangos privados IPv4 (10.*, 172.16-31.*, 192.168.*) ─────
+    if (host.starts_with("10.") || host.starts_with("192.168.")) {
+        return false;
+    }
+
+    // ── Link-local IPv4 (169.254.0.0/16) y CGNAT (100.64.0.0/10) ─
+    if (host.starts_with("169.254.")) {
+        return false;
+    }
+    if (host.starts_with("100.")) {
+        // 100.64.0.0 - 100.127.255.255 (RFC 6598 carrier-grade NAT)
+        size_t dot = host.find('.', 4);
+        if (dot != std::string::npos) {
+            std::string octet2Str = host.substr(4, dot - 4);
+            auto parsed = geode::utils::numFromString<int>(octet2Str);
+            if (parsed.isOk()) {
+                int octet2 = parsed.unwrap();
+                if (octet2 >= 64 && octet2 <= 127) return false;
+            }
+        }
     }
     if (host.starts_with("172.")) {
         // 172.16.0.0 - 172.31.255.255
@@ -2624,6 +2669,45 @@ bool HttpClient::isUrlSafe(std::string const& url) {
                 int octet2 = parsed.unwrap();
                 if (octet2 >= 16 && octet2 <= 31) return false;
             }
+        }
+    }
+
+    // ── IPv6: link-local (fe80::/10), ULA (fc00::/7), multicast (ff00::/8) ──
+    // Los URLs IPv6 vienen entre brackets: [fe80::1]
+    auto hostNoBrackets = host;
+    if (hostNoBrackets.size() >= 2 && hostNoBrackets.front() == '[' && hostNoBrackets.back() == ']') {
+        hostNoBrackets = hostNoBrackets.substr(1, hostNoBrackets.size() - 2);
+    }
+    // Link-local
+    if (hostNoBrackets.starts_with("fe80:") || hostNoBrackets.starts_with("fe80::")) {
+        return false;
+    }
+    // Unique Local Address (fc00::/7 → primer octeto fc o fd)
+    if (hostNoBrackets.starts_with("fc") || hostNoBrackets.starts_with("fd")) {
+        // Solo bloquear si es un prefijo IPv6 (tiene `:` cerca del inicio)
+        if (hostNoBrackets.size() >= 4 &&
+            (hostNoBrackets[2] == ':' || hostNoBrackets.find(':') < 5)) {
+            return false;
+        }
+    }
+    // Multicast
+    if (hostNoBrackets.starts_with("ff0") || hostNoBrackets.starts_with("ff:") ||
+        hostNoBrackets.starts_with("ff1") || hostNoBrackets.starts_with("ff2") ||
+        hostNoBrackets.starts_with("ff3") || hostNoBrackets.starts_with("ff4") ||
+        hostNoBrackets.starts_with("ff5") || hostNoBrackets.starts_with("ff6") ||
+        hostNoBrackets.starts_with("ff7") || hostNoBrackets.starts_with("ff8") ||
+        hostNoBrackets.starts_with("ff9") || hostNoBrackets.starts_with("ffa") ||
+        hostNoBrackets.starts_with("ffb") || hostNoBrackets.starts_with("ffc") ||
+        hostNoBrackets.starts_with("ffd") || hostNoBrackets.starts_with("ffe") ||
+        hostNoBrackets.starts_with("fff")) {
+        return false;
+    }
+    // IPv4-mapped IPv6 (::ffff:a.b.c.d) — verificar el IPv4 embebido
+    if (hostNoBrackets.starts_with("::ffff:") || hostNoBrackets.starts_with("::FFFF:")) {
+        std::string v4 = hostNoBrackets.substr(7);
+        if (v4 == "127.0.0.1" || v4.starts_with("127.") || v4.starts_with("10.") ||
+            v4.starts_with("192.168.") || v4.starts_with("169.254.") || v4 == "0.0.0.0") {
+            return false;
         }
     }
 
@@ -2648,9 +2732,11 @@ void HttpClient::uploadCustomBadge(int accountID, std::string const& emoteName, 
     WebHelper::dispatch(std::move(req), "POST", url, [callbackGate, callback = std::move(callback)](web::WebResponse res) mutable {
         if (!callbackGate || !callbackGate->load(std::memory_order_acquire)) return;
         bool success = res.ok();
+        // Lectura unica del body — segundo res.string() podria devolver vacio.
+        std::string body = res.string().unwrapOr("");
         std::string responseStr = success
-            ? res.string().unwrapOr("")
-            : ("HTTP " + std::to_string(res.code()) + ": " + res.string().unwrapOr("Unknown error"));
+            ? body
+            : ("HTTP " + std::to_string(res.code()) + ": " + (body.empty() ? std::string("Unknown error") : body));
         if (callback) callback(success, responseStr);
     });
 }
@@ -2686,9 +2772,11 @@ void HttpClient::deleteCustomBadge(int accountID, GenericCallback callback) {
     WebHelper::dispatch(std::move(req), "POST", url, [callbackGate, callback = std::move(callback)](web::WebResponse res) mutable {
         if (!callbackGate || !callbackGate->load(std::memory_order_acquire)) return;
         bool success = res.ok();
+        // Lectura unica del body — segundo res.string() podria devolver vacio.
+        std::string body = res.string().unwrapOr("");
         std::string responseStr = success
-            ? res.string().unwrapOr("")
-            : ("HTTP " + std::to_string(res.code()) + ": " + res.string().unwrapOr("Unknown error"));
+            ? body
+            : ("HTTP " + std::to_string(res.code()) + ": " + (body.empty() ? std::string("Unknown error") : body));
         if (callback) callback(success, responseStr);
     });
 }

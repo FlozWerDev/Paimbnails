@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // NowPlayingToast — notificacion flotante que muestra el nombre de la cancion
 // actual. Usa una animacion de "circulo -> pill -> circulo" pulida:

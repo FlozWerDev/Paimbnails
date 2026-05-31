@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
 #include "../utils/Localization.hpp"
 

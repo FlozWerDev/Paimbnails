@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // YtDlpDownloader — wrapper async sobre el binario yt-dlp.
 //

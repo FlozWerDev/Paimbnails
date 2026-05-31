@@ -5,9 +5,9 @@
 
 // Helper to mark mod buttons
 class PaimonButtonHighlighter {
-    static auto& registry() {
-        static std::unordered_set<CCMenuItemSpriteExtra*> s_registry;
-        return s_registry;
+    static std::string const& buttonFlag() {
+        static const std::string flag = geode::Mod::get()->getID() + "/paimon-button";
+        return flag;
     }
 
 public:
@@ -15,13 +15,13 @@ public:
     static void registerButton(CCMenuItemSpriteExtra* btn) {
         if (!btn) return;
 
-        registry().insert(btn);
+        btn->setUserFlag(buttonFlag(), true);
     }
     
     // Check if a button is registered
     static bool isRegisteredButton(CCMenuItemSpriteExtra* btn) {
         if (!btn) return false;
-        if (registry().find(btn) != registry().end()) return true;
+        if (btn->getUserFlag(buttonFlag())) return true;
 
         // Compat con versiones anteriores que marcaban el boton mutando el ID.
         std::string id = btn->getID();

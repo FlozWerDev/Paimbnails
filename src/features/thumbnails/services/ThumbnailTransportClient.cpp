@@ -1,4 +1,4 @@
-#include "ThumbnailTransportClient.hpp"
+﻿#include "ThumbnailTransportClient.hpp"
 #include "ThumbnailLoader.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"

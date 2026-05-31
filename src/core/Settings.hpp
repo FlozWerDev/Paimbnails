@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // Settings.hpp — Acceso tipado y centralizado a los settings del mod.
 // Elimina la duplicacion de string keys y permite autocompletar en IDE.
@@ -116,7 +116,7 @@ namespace backgrounds {
         return geode::Mod::get()->getSavedValue<bool>("bg-adaptive-colors", false);
     }
     inline bool transparentBackgroundMode() {
-        return geode::Mod::get()->getSettingValue<bool>("transparent-background-mode");
+        return geode::Mod::get()->getSavedValue<bool>("transparent-background-mode", false);
     }
 } // namespace backgrounds
 
@@ -159,7 +159,7 @@ namespace video {
         return geode::Mod::get()->getSavedValue<bool>("video-audio-enabled", false);
     }
     inline bool disableVideoChunks() {
-        return geode::Mod::get()->getSettingValue<bool>("disable-video-chunks");
+        return geode::Mod::get()->getSavedValue<bool>("disable-video-chunks", true);
     }
     // Video decode quality: 0=Auto, 50=Low, 75=Medium, 100=High
     inline int videoQuality() {
@@ -231,7 +231,9 @@ namespace profiles {
         return geode::Mod::get()->getSavedValue<float>("profile-thumb-width", 0.6f);
     }
     inline int64_t profileImgZLayer() {
-        return geode::Mod::get()->getSavedValue<int>("profile-img-zlayer", 1);
+        // Default -1: el fondo de perfil va detras de la lista de comentarios
+        // (que vive en z=0). Con default 1 la imagen tapaba los comentarios.
+        return geode::Mod::get()->getSavedValue<int>("profile-img-zlayer", -1);
     }
     inline std::string profileBgType() {
         return geode::Mod::get()->getSavedValue<std::string>("profile-bg-type", "none");
@@ -330,7 +332,7 @@ namespace discord_rpc {
 
 namespace cursor {
     inline bool hideInGameplay() {
-        return geode::Mod::get()->getSettingValue<bool>("custom-cursor-hide-in-gameplay");
+        return geode::Mod::get()->getSavedValue<bool>("custom-cursor-hide-in-gameplay", true);
     }
 } // namespace cursor
 

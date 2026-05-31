@@ -1,6 +1,8 @@
-#include "PopupBlurService.hpp"
+﻿#include "PopupBlurService.hpp"
 
 #include <Geode/Geode.hpp>
+#include <Geode/binding/EditorUI.hpp>
+#include <Geode/binding/LevelEditorLayer.hpp>
 #include "../utils/Shaders.hpp"
 #include "../core/Settings.hpp"
 #include "../framework/compat/ModCompat.hpp"
@@ -17,6 +19,27 @@ using namespace cocos2d;
 using namespace geode::prelude;
 
 namespace paimon::popupblur {
+
+// ── GUARD CENTRAL DEL EDITOR (anti-crash / anti-artefactos) ──
+// El popup blur NUNCA debe ejecutarse en el editor. Razones:
+//   1. Seguridad: el editor de color (ColorSelectPopup / CustomizeObjectLayer)
+//      tiene flujos de cierre/recreacion de popups muy sensibles; capturar la
+//      escena e insertar nodos de blur como siblings de esas popups es riesgo
+//      innecesario.
+//   2. Visual: el editor necesita ver el nivel nitido detras de las popups de
+//      triggers/color para trabajar; el blur lo haria inusable.
+// Este guard es la unica fuente de verdad y se consulta en TODOS los puntos
+// de entrada del servicio (captureAndApply y captureSceneTexture), de modo que
+// da igual desde donde se invoque: en el editor el blur queda completamente
+// desactivado.
+bool isEditorContextActive() {
+    auto* director = CCDirector::get();
+    if (!director) return false;
+    auto* scene = director->getRunningScene();
+    if (!scene) return false;
+    return scene->getChildByType<LevelEditorLayer>(0) != nullptr ||
+           scene->getChildByType<EditorUI>(0) != nullptr;
+}
 
 // Key usada en user flags del popup para guardar el blur node asociado
 static std::string const& blurNodeIdKey() {
@@ -430,11 +453,16 @@ static void pruneDeadEntries() {
 Config getConfig() {
     Config cfg;
     cfg.enabled = paimon::settings::popupblur::enabled();
-    // Forzar paimonblur siempre (el usuario lo pidio asi).
-    // El gaussian se mantiene en el codigo como fallback automatico cuando
-    // los shaders Kawase no pueden cargar (manejado dentro del shader),
-    // pero aqui no se setea desde settings.
-    cfg.style = "paimonblur";
+    // Estilo desde el setting popup-blur-style. Valores aceptados:
+    //   - "paimonblur"  (Dual Kawase, default — alta calidad, sprite estatico)
+    //   - "gaussian"    (Gaussian H+V, sprite estatico)
+    // Cualquier valor desconocido cae a paimonblur.
+    auto styleSetting = paimon::settings::popupblur::style();
+    if (styleSetting == "gaussian" || styleSetting == "paimonblur") {
+        cfg.style = styleSetting;
+    } else {
+        cfg.style = "paimonblur";
+    }
     cfg.intensity = std::max(0.1f, static_cast<float>(paimon::settings::popupblur::intensity()));
     cfg.darkness = std::clamp(static_cast<float>(paimon::settings::popupblur::darkness()), 0.0f, 1.0f);
     return cfg;
@@ -489,6 +517,12 @@ void restoreHiddenBlurs(std::vector<std::pair<CCNode*, bool>> const& hidden) {
 CCTexture2D* captureSceneTexture(CCNode* popupToHide, CCSize& outSize) {
     auto* director = CCDirector::get();
     if (!director) return nullptr;
+
+    // GUARD CENTRAL: nunca capturar la escena para blur dentro del editor.
+    // Esto cubre el hook FLAlertLayer (que llama capturePopupBlurSnapshot ->
+    // captureSceneTexture) ademas de captureAndApply, dejando el blur de
+    // popups completamente inactivo en el editor por cualquier ruta.
+    if (isEditorContextActive()) return nullptr;
 
     auto* scene = director->getRunningScene();
     auto winSize = director->getWinSize();
@@ -819,25 +853,72 @@ CCLayerColor* buildBlurNode(CCSprite* blurred, CCSize const& winSize, Config con
         blurred->setColor(ccc3(c, c, c));
     }
 
+    // Tag el blurred sprite para que captureAndApply / cleanup puedan
+    // localizarlo y togglear su blend func entre transparente (durante fade)
+    // y opaco (steady-state). Vease comentario en switchBlurToOpaque().
+    blurred->setID("paimon-popup-blur-sprite"_spr);
+
     root->addChild(blurred, 0);
 
     return root;
 }
 
+// ── PERF helper: switch del blend mode segun estado del fade ──
+// Cuando el blur esta en steady-state (opacity 255 sin fade animandose),
+// usamos blend opaco {GL_ONE, GL_ZERO}. El sprite cubre fullscreen y la
+// GPU solo escribe — fillrate efectivo se duplica vs blend default
+// (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA) que requiere read+modify+write.
+// Diferencia perceptible en monitores 240/360 Hz a 1080p+.
+//
+// Durante fade-in / fade-out necesitamos blend transparente para que
+// cascadeOpacity tenga efecto visual. switchBlurToTransparent() restaura
+// el blend default antes de animar la opacidad.
+static void switchBlurToOpaque(CCNode* root) {
+    if (!root) return;
+    auto* spr = typeinfo_cast<CCSprite*>(root->getChildByID("paimon-popup-blur-sprite"_spr));
+    if (!spr) return;
+    spr->setBlendFunc({GL_ONE, GL_ZERO});
+    // PERF: deshabilitar cascadeOpacity en steady-state. Cocos2d itera
+    // recursivamente hijos para propagar opacity en cada visit() — innecesario
+    // cuando el fade ya termino. CCLayerColor hereda de CCLayerRGBA que si
+    // expone setCascadeOpacityEnabled.
+    if (auto* layer = typeinfo_cast<CCLayerRGBA*>(root)) {
+        layer->setCascadeOpacityEnabled(false);
+    }
+}
+
+static void switchBlurToTransparent(CCNode* root) {
+    if (!root) return;
+    auto* spr = typeinfo_cast<CCSprite*>(root->getChildByID("paimon-popup-blur-sprite"_spr));
+    if (!spr) return;
+    spr->setBlendFunc({GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA});
+    // Re-enable cascadeOpacity para que CCFadeTo propague al sprite hijo.
+    if (auto* layer = typeinfo_cast<CCLayerRGBA*>(root)) {
+        layer->setCascadeOpacityEnabled(true);
+    }
+}
+
 // Static fallback texture cacheada — solo se crea una vez. Antes se hacia
 // `new CCTexture2D` por cada failure, lo que sumaba allocs/leaks bajo
 // presion (popups que fallan en serie).
+//
+// IMPORTANTE: heap-leak intencional. Si usaramos `static Ref<CCTexture2D>`,
+// el destructor del Ref<> se ejecutaria en atexit cuando CCPoolManager ya
+// esta destruido → crash silencioso. El leak (1 textura 1x1 pixel) es
+// trivial; el OS recupera al cerrar el proceso.
 static CCTexture2D* getDarkFallbackTexture() {
-    static Ref<CCTexture2D> s_tex = []() -> CCTexture2D* {
+    static auto* s_texPtr = []() -> CCTexture2D* {
         auto* t = new CCTexture2D();
         unsigned char blackPixel[4] = {0, 0, 0, 255};
         if (!t->initWithData(blackPixel, kCCTexture2DPixelFormat_RGBA8888, 1, 1, CCSizeMake(1, 1))) {
             t->release();
             return nullptr;
         }
-        return t;  // Ref<> retains, no autorelease aqui — vive para siempre
+        // refcount=1, sin autorelease — vive para siempre. NO retain extra,
+        // para mantener exactamente 1 referencia "leakeada".
+        return t;
     }();
-    return s_tex.data();
+    return s_texPtr;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -927,6 +1008,9 @@ bool captureAndApply(CCNode* popup) {
     if (!popup) return false;
     auto cfg = getConfig();
     if (!cfg.enabled) return false;
+
+    // GUARD CENTRAL: jamas aplicar blur en el editor (ver isEditorContextActive).
+    if (isEditorContextActive()) return false;
 
     // Compatibilidad con mods que ya aplican blur global a todos los
     // popups (alphalaneous.blur_bg). Si ese mod esta activo, aplicar
@@ -1072,7 +1156,23 @@ bool captureAndApply(CCNode* popup) {
         0.0f, 1.0f);
     if (fadeDuration > 0.01f) {
         root->setOpacity(0);
-        root->runAction(CCFadeTo::create(fadeDuration, 255));
+        // Durante el fade-in usamos blend transparente para que cascadeOpacity
+        // se vea. Al terminar, switch a blend opaco para fillrate doble en
+        // steady-state (clave para FPS sostenido a 240/360 Hz a 1080p+).
+        switchBlurToTransparent(root);
+        WeakRef<CCNode> weakRoot(root);
+        root->runAction(CCSequence::create(
+            CCFadeTo::create(fadeDuration, 255),
+            CallFuncExt::create([weakRoot] {
+                if (auto r = weakRoot.lock()) {
+                    switchBlurToOpaque(r);
+                }
+            }),
+            nullptr
+        ));
+    } else {
+        // Sin fade: directamente blend opaco para maxima perf.
+        switchBlurToOpaque(root);
     }
     return true;
 }
@@ -1083,6 +1183,7 @@ bool captureAndApply(CCNode* popup) {
 // ocultarlo durante la animacion de salida.
 static void cleanupImpl(CCNode* popup, float fadeDuration) {
     if (!popup) return;
+
     auto& reg = blurRegistry();
     auto it = reg.find(popup);
     if (it == reg.end()) return;
@@ -1144,6 +1245,10 @@ static void cleanupImpl(CCNode* popup, float fadeDuration) {
     // retiene (addChild incrementa refCount). El runAction + CCCallFunc al
     // final garantizan el remove incluso si el scene graph no lo hace.
     blurNode->stopAllActions();
+    // Antes de iniciar el fade, restaurar blend transparente — sino el
+    // sprite ignoraria el cascadeOpacity y se veria opaco hasta que termine
+    // la action. Vease comentario en switchBlurToOpaque().
+    switchBlurToTransparent(blurNode);
     blurNode->runAction(CCSequence::create(
         CCFadeTo::create(fadeDuration, 0),
         CCCallFunc::create(blurNode, callfunc_selector(CCNode::removeFromParent)),

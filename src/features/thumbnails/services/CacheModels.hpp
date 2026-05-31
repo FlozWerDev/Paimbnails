@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // CacheModels.hpp — Modelos canonicos de cache para thumbnails.
 // Define CacheKey (clave unica por recurso+calidad+formato),

@@ -26,7 +26,7 @@ PopupBlurConfig getPopupBlurConfig() {
 }
 
 bool isEditorContextActive() {
-    auto* director = CCDirector::sharedDirector();
+    auto* director = CCDirector::get();
     if (!director) return false;
 
     auto* scene = director->getRunningScene();
@@ -52,6 +52,14 @@ class $modify(PaimonButtonOriginCapture, CCMenuItemSpriteExtra) {
 
     $override
     void activate() {
+        // Aislamiento total del editor: aqui el hook es un passthrough puro.
+        // No captura ni consume origenes ni toca estado del mod, de modo que el
+        // mod no participa en la cadena activate() de los botones del editor
+        // (incluida la del ColorSelectPopup que dispara el crash conocido).
+        if (isEditorContextActive()) {
+            CCMenuItemSpriteExtra::activate();
+            return;
+        }
         // Cachear el valor del setting para evitar pagar el costo del
         // mutex de getSettingValue() en CADA click de TODOS los botones
         // del juego (incluyendo botones que nunca abren popups). El
@@ -64,11 +72,13 @@ class $modify(PaimonButtonOriginCapture, CCMenuItemSpriteExtra) {
             return 0;
         }();
         (void)s_listener;
-        if (s_enabled) {
+        if (s_enabled && this->getParent()) {
             auto sz = this->getContentSize();
-            paimon::storeButtonOrigin(
-                this->convertToWorldSpace({sz.width / 2.f, sz.height / 2.f})
-            );
+            if (sz.width > 0.f && sz.height > 0.f) {
+                paimon::storeButtonOrigin(
+                    this->convertToWorldSpace({sz.width / 2.f, sz.height / 2.f})
+                );
+            }
         }
         CCMenuItemSpriteExtra::activate();
     }
@@ -107,7 +117,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     }
 
     bool shouldAnimatePopup() {
-        return isPaimonPopup() && Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
+        return isPaimonPopup() && !isEditorContextActive() && Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
     }
 
     bool shouldAnimateExit() {
@@ -255,7 +265,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         if (captureSize.width <= 0.f || captureSize.height <= 0.f) return;
 
         // winSize real de la pantalla (el blur node debe cubrir toda la ventana)
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
 
         // ── FIX (popup blur thumbnail en esquina + todo en negro) ──
         // Normalizar el sprite blureado a un FBO de winSize antes de pasarlo a
@@ -868,9 +878,8 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         FLAlertLayer::onExit();
     }
 
-    void destructor() {
+    ~PaimonDynamicPopupHook() {
         clearPopupBlurState();
-        FLAlertLayer::~FLAlertLayer();
     }
 };
 
@@ -897,7 +906,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 #include <Geode/binding/SetupShaderEffectPopup.hpp>
 
 namespace {
-// Lista de clases excluidas del popup blur. Cualquier popup cuyo dynamic_cast
+// Lista de clases excluidas del popup blur. Cualquier popup cuyo typeinfo_cast
 // a alguno de estos tipos sea no-null es dejado sin blur.
 bool isShaderRelatedPopup(cocos2d::CCNode* popup) {
     if (!popup) return false;

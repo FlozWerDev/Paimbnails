@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // PreloadProgress.hpp — Estado global del preload de assets en el arranque.
 //

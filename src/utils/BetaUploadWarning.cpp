@@ -1,4 +1,4 @@
-#include "BetaUploadWarning.hpp"
+﻿#include "BetaUploadWarning.hpp"
 #include "../core/Settings.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/MDTextArea.hpp>

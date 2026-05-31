@@ -1,4 +1,4 @@
-#include "SettingsPanelManager.hpp"
+﻿#include "SettingsPanelManager.hpp"
 #include "../ui/PaimonMultiSettingsPanel.hpp"
 #include "../../../utils/Shaders.hpp"
 #include "../../../blur/PopupBlurService.hpp"
@@ -22,7 +22,7 @@ void SettingsPanelManager::open(int initialCategory) {
         return;
     }
 
-    auto director = CCDirector::sharedDirector();
+    auto director = CCDirector::get();
     auto scene = director->getRunningScene();
     if (!scene) return;
 

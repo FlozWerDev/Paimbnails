@@ -136,6 +136,20 @@
       "description": "Vinyl button in main menu for library, playlists and downloads.",
       "default": true
     },
+    "editorMusicEnable": {
+      "type": "bool",
+      "name": "Enable Editor Music",
+      "description": "Listen to your music library inside the level editor on a separate audio channel. Toggle the mini player with the Editor Music keybind.",
+      "default": false
+    },
+    "editorMusicToggleKeybind": {
+      "type": "keybind",
+      "name": "Toggle Editor Music",
+      "description": "Show/hide the editor music mini player (only works inside the level editor).",
+      "default": "Ctrl+M",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
     "menuLoopConstantShuffle": {
       "type": "bool",
       "name": "Menu Loop Shuffle",
@@ -218,6 +232,12 @@
       "description": "Additional features",
       "type": "title"
     },
+    "colorful-icons-enabled": {
+      "type": "bool",
+      "name": "Paimon Icons (Recolor)",
+      "description": "Recolor every icon (icon kit, shops, achievements, rewards) using your player colors. Detailed settings - color modes, lock styles, animations, presets - are inside the garage gear button.",
+      "default": true
+    },
     "custom-slider-enabled": {
       "type": "bool",
       "name": "Custom Slider Thumb",
@@ -258,6 +278,13 @@
       "description": "Show capture button in pause menu.",
       "type": "bool",
       "default": true
+    },
+    "capture-resolution": {
+      "type": "string",
+      "name": "Capture Resolution",
+      "description": "Resolution used when capturing thumbnails.",
+      "default": "1080p",
+      "one-of": ["1080p", "1440p", "4k"]
     },
     "settings-panel-keybind": {
       "type": "keybind",
@@ -386,6 +413,29 @@
       "name": "Open Thumbnails Folder",
       "description": "Open the folder where downloaded thumbnails are stored on disk."
     },
+    "texture-studio-title": {
+      "name": "Texture Studio",
+      "description": "Algorithmic texture pack generator",
+      "type": "title"
+    },
+    "texture-studio-enabled": {
+      "type": "bool",
+      "name": "Enable Texture Studio Button",
+      "description": "Show the Texture Studio button in the main menu.",
+      "default": true
+    },
+    "texture-studio-auto-apply": {
+      "type": "bool",
+      "name": "Auto-apply on Generate",
+      "description": "Automatically copy generated packs to Texture Loader's packs folder.",
+      "default": true
+    },
+    "texture-studio-medium-port": {
+      "type": "bool",
+      "name": "Always include Medium Quality Port",
+      "description": "Generate -hd files alongside -uhd by default.",
+      "default": false
+    },
     "debug-title": {
       "name": "Debug",
       "description": "Developer options",
@@ -405,7 +455,11 @@
     },
     "prevter.imageplus": {
       "version": ">=v1.1.0",
-      "required": true
+      "required": false
+    },
+    "geode.texture-loader": {
+      "version": ">=v1.10.0",
+      "required": false
     }
   },
   "incompatibilities": {

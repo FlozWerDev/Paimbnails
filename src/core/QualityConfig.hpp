@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // QualityConfig.hpp — Cache path helpers and legacy migration.
 // Single resolution: thumbnails are served and displayed at their original

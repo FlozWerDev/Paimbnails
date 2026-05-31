@@ -1,8 +1,9 @@
-#include "ProfileReviewsPopup.hpp"
+﻿#include "ProfileReviewsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/ScissorClipNode.hpp"
 #include "../../emotes/EmoteRenderer.hpp"
 #include "../../emotes/services/EmoteService.hpp"
 #include <Geode/binding/GameManager.hpp>
@@ -141,7 +142,9 @@ void ProfileReviewsPopup::buildReviewList(float average, int count, const matjso
         for (auto& item : arr) {
             if (!item.isObject()) continue;
             std::string user = item["username"].asString().unwrapOr("???");
-            int stars = item["stars"].asInt().unwrapOr(0);
+            // stars puede venir como entero (votos antiguos) o como decimal
+            // 0.5..5.0 (votos nuevos con medias estrellas).
+            float stars = static_cast<float>(item["stars"].asDouble().unwrapOr(0.0));
             std::string msg = item["message"].asString().unwrapOr("");
 
             auto cell = createReviewCell(user, stars, msg, scrollW);
@@ -240,7 +243,7 @@ void ProfileReviewsPopup::animateReviewCells(std::vector<CCNode*> const& cells) 
     }
 }
 
-CCNode* ProfileReviewsPopup::createReviewCell(std::string const& username, int stars, std::string const& message, float width) {
+CCNode* ProfileReviewsPopup::createReviewCell(std::string const& username, float stars, std::string const& message, float width) {
     float cellH = message.empty() ? 34.f : 52.f;
 
     auto cell = CCNode::create();
@@ -263,18 +266,60 @@ CCNode* ProfileReviewsPopup::createReviewCell(std::string const& username, int s
     }
     cell->addChild(nameLabel);
 
-    // Estrellas a la derecha
+    // Estrellas a la derecha. Renderizamos cada estrella como un pequeno
+    // contenedor con base gris + sprite amarillo recortado por
+    // ScissorClipNode para soportar medias estrellas (1.5, 2.5, ...).
+    constexpr float STAR_SCALE = 0.32f;
     float starStartX = width - 10.f;
-    // Dibuja 5 estrellas de derecha a izquierda
+
     for (int i = 5; i >= 1; i--) {
-        auto starSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
-        if (!starSpr) continue;
-        starSpr->setScale(0.32f);
-        starSpr->setColor(i <= stars ? ccc3(255, 255, 50) : ccc3(60, 60, 60));
-        starSpr->setAnchorPoint({1, 0.5f});
-        starSpr->setPosition({starStartX, cellH - 14.f});
-        starStartX -= starSpr->getScaledContentWidth() + 2.f;
-        cell->addChild(starSpr);
+        // Base gris (siempre visible)
+        auto baseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
+        if (!baseSpr) continue;
+        baseSpr->setColor({60, 60, 60});
+
+        auto starSize = baseSpr->getContentSize();
+        float scaledW = starSize.width * STAR_SCALE;
+        float scaledH = starSize.height * STAR_SCALE;
+
+        // Contenedor anchor (1, 0.5) para apilar estrellas de derecha a izquierda
+        auto container = CCNode::create();
+        container->setContentSize(starSize);
+        container->setAnchorPoint({1.f, 0.5f});
+        container->setScale(STAR_SCALE);
+        container->setPosition({starStartX, cellH - 14.f});
+
+        baseSpr->setPosition({starSize.width / 2.f, starSize.height / 2.f});
+        container->addChild(baseSpr, 0);
+
+        // Determinar nivel de relleno para esta posicion
+        // (full / half / empty)
+        float pos = static_cast<float>(i);
+        float fillWidth = 0.f;
+        if (stars >= pos - 0.01f) {
+            fillWidth = starSize.width;
+        } else if (stars >= pos - 0.5f - 0.01f) {
+            fillWidth = starSize.width * 0.5f;
+        }
+
+        if (fillWidth > 0.f) {
+            auto fillSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
+            if (fillSpr) {
+                fillSpr->setColor({255, 255, 50});
+                fillSpr->setPosition({starSize.width / 2.f, starSize.height / 2.f});
+
+                auto stencil = paimon::SpriteHelper::createRectStencil(fillWidth, starSize.height);
+                auto fillClip = paimon::ScissorClipNode::create(stencil);
+                fillClip->setContentSize({fillWidth, starSize.height});
+                fillClip->setAnchorPoint({0.f, 0.f});
+                fillClip->setPosition({0.f, 0.f});
+                fillClip->addChild(fillSpr);
+                container->addChild(fillClip, 1);
+            }
+        }
+
+        cell->addChild(container);
+        starStartX -= scaledW + 2.f;
     }
 
     // Mensaje

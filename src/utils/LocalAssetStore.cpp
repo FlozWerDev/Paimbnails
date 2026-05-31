@@ -1,4 +1,4 @@
-#include "LocalAssetStore.hpp"
+﻿#include "LocalAssetStore.hpp"
 
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>

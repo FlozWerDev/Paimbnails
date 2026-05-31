@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // MenuMusicPlaylistsPopup — administrador de playlists.
 // Dos modos:

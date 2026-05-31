@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // FfmpegBootstrap — instala ffmpeg automaticamente la primera vez que
 // hace falta.

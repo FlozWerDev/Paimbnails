@@ -1,4 +1,4 @@
-#include "CustomSliderPopup.hpp"
+﻿#include "CustomSliderPopup.hpp"
 #include "../services/CustomSliderManager.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"

@@ -1,4 +1,4 @@
-#include "BackgroundConfigPopup.hpp"
+﻿#include "BackgroundConfigPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../pet/ui/PetConfigPopup.hpp"

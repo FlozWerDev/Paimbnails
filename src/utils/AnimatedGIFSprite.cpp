@@ -1,7 +1,8 @@
-#include "AnimatedGIFSprite.hpp"
+﻿#include "AnimatedGIFSprite.hpp"
 #include "DominantColors.hpp"
 #include "Debug.hpp"
 #include "../core/QualityConfig.hpp"
+#include "../core/RuntimeLifecycle.hpp"
 #include <Geode/loader/Log.hpp>
 #include <fstream>
 #include <filesystem>
@@ -57,6 +58,10 @@ std::atomic<bool> AnimatedGIFSprite::s_shutdownMode = false;
 std::mutex AnimatedGIFSprite::s_workerLifecycleMutex;
 
 void AnimatedGIFSprite::initWorker() {
+    // Rechazo de spawn durante shutdown — coherente con ThreadTracker.
+    if (paimon::isRuntimeShuttingDown()) {
+        return;
+    }
     std::lock_guard<std::mutex> lock(s_workerLifecycleMutex);
     s_shutdownMode.store(false, std::memory_order_release);
     if (!s_workerRunning.load(std::memory_order_acquire)) {
@@ -523,6 +528,17 @@ bool AnimatedGIFSprite::loadFromDiskCache(std::string const& path, DiskCacheEntr
     uint32_t frameCount;
     file.read(reinterpret_cast<char*>(&frameCount), sizeof(frameCount));
 
+    // Validacion defensiva: cache file corrupto puede tener frameCount/dimensiones
+    // absurdos. Sin esto, resize() puede causar bad_alloc/OOM o lecturas
+    // desbalanceadas (frame.pixels con tamaño no consistente con width*height*4).
+    constexpr uint32_t kMaxFrames = 1024;        // GIFs razonables
+    constexpr uint32_t kMaxDim = 8192;            // dimensiones plausibles
+    constexpr uint32_t kMaxFrameBytes = 64 * 1024 * 1024; // 64 MB por frame max
+
+    if (frameCount == 0 || frameCount > kMaxFrames) return false;
+    if (outEntry.width == 0 || outEntry.width > kMaxDim) return false;
+    if (outEntry.height == 0 || outEntry.height > kMaxDim) return false;
+
     outEntry.frames.resize(frameCount);
     for (uint32_t i = 0; i < frameCount; ++i) {
         auto& frame = outEntry.frames[i];
@@ -532,6 +548,15 @@ bool AnimatedGIFSprite::loadFromDiskCache(std::string const& path, DiskCacheEntr
 
         uint32_t dataSize;
         file.read(reinterpret_cast<char*>(&dataSize), sizeof(dataSize));
+
+        // Validar dimensiones del frame y consistencia con dataSize.
+        if (frame.width == 0 || frame.width > kMaxDim) return false;
+        if (frame.height == 0 || frame.height > kMaxDim) return false;
+        if (dataSize > kMaxFrameBytes) return false;
+        // dataSize debe ser exactamente width*height*4 (RGBA8).
+        uint64_t expected = static_cast<uint64_t>(frame.width)
+            * static_cast<uint64_t>(frame.height) * 4u;
+        if (static_cast<uint64_t>(dataSize) != expected) return false;
 
         frame.pixels.resize(dataSize);
         file.read(reinterpret_cast<char*>(frame.pixels.data()), dataSize);
@@ -567,14 +592,36 @@ void AnimatedGIFSprite::saveToDiskCache(std::string const& path, DiskCacheEntry 
 }
 
 void AnimatedGIFSprite::workerLoop() {
+    geode::utils::thread::setName("PaimonGIFWorker");
     while (true) {
+        // Defensa contra hot-reload / atexit: si el runtime global del mod
+        // entro en shutdown sin que clearCache() llegue a llamarse (DLL
+        // descargada en caliente, crash del juego), salimos antes de tocar
+        // statics que pueden estar siendo destruidas en otra TU.
+        if (paimon::isRuntimeShuttingDown()) {
+            s_workerRunning.store(false, std::memory_order_release);
+            return;
+        }
+
         GIFTask task;
         {
             std::unique_lock<std::mutex> lock(s_queueMutex);
-            s_queueCV.wait(lock, []{ return !s_taskQueue.empty() || !s_workerRunning.load(std::memory_order_acquire); });
-            
+            // Wait con timeout: aunque el shutdown global no nos haga notify,
+            // re-chequeamos isRuntimeShuttingDown() cada 500ms para salir
+            // responsivamente. Es coste despreciable cuando no hay carga.
+            s_queueCV.wait_for(lock, std::chrono::milliseconds(500), []{
+                return !s_taskQueue.empty()
+                    || !s_workerRunning.load(std::memory_order_acquire)
+                    || paimon::isRuntimeShuttingDown();
+            });
+
+            if (paimon::isRuntimeShuttingDown()) {
+                s_workerRunning.store(false, std::memory_order_release);
+                return;
+            }
             if (!s_workerRunning.load(std::memory_order_acquire) && s_taskQueue.empty()) break;
-            
+            if (s_taskQueue.empty()) continue;  // timeout sin trabajo
+
             task = s_taskQueue.front();
             s_taskQueue.pop_front();
         }
@@ -860,9 +907,16 @@ AnimatedGIFSprite::~AnimatedGIFSprite() {
     PaimonDebug::log("[AnimatedGIFSprite] Destroying sprite for file: {}", m_filename);
     this->unscheduleUpdate();
     this->setTexture(nullptr);
-    
+
+    // Cada GIFFrame retiene su texture (ver retain() en initFromCache, line 908,
+    // y en los paths de carga directa). Si solo hacemos `delete frame`, el
+    // CCTexture2D queda con refcount permanentemente incrementado → leak GPU.
     for (auto* frame : m_frames) {
         if (frame) {
+            if (frame->texture) {
+                frame->texture->release();
+                frame->texture = nullptr;
+            }
             delete frame;
         }
     }

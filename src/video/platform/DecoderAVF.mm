@@ -1,4 +1,4 @@
-#import "DecoderAVF.hpp"
+﻿#import "DecoderAVF.hpp"
 
 #if defined(USE_AV_FOUNDATION)
 

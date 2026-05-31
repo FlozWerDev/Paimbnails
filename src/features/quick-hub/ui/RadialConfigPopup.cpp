@@ -1,4 +1,4 @@
-#include "RadialConfigPopup.hpp"
+﻿#include "RadialConfigPopup.hpp"
 #include "../services/QuickHubManager.hpp"
 #include "../data/QuickHubCategories.hpp"
 #include "../../../utils/SpriteHelper.hpp"

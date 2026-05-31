@@ -1,4 +1,4 @@
-#include "TransitionConfigPopup.hpp"
+﻿#include "TransitionConfigPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../layers/PaimonInfoPopup.hpp"
 #include "../../../utils/PaimonNotification.hpp"

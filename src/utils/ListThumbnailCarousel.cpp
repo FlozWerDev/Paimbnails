@@ -1,4 +1,4 @@
-#include "ListThumbnailCarousel.hpp"
+﻿#include "ListThumbnailCarousel.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/thumbnails/services/ListThumbnailManager.hpp"
 #include <Geode/Geode.hpp>

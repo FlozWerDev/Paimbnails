@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "../VideoDecoder.hpp"
 #include <pl_mpeg.h>

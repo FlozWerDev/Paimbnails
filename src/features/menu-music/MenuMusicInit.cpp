@@ -1,4 +1,4 @@
-// MenuMusicInit — bootstrap del sistema MenuMusic.
+﻿// MenuMusicInit — bootstrap del sistema MenuMusic.
 // Sólo carga la libreria desde disco al arranque; el resto de componentes
 // son singletons lazy inicializados bajo demanda.
 

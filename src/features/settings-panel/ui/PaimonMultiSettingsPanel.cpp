@@ -1,4 +1,4 @@
-#include "PaimonMultiSettingsPanel.hpp"
+﻿#include "PaimonMultiSettingsPanel.hpp"
 #include "SettingsCategoryBuilder.hpp"
 #include "SettingsControls.hpp"
 #include "../services/SettingsPanelManager.hpp"
@@ -25,7 +25,7 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
     if (!CCLayer::init()) return false;
 
     this->setID("paimon-multisettings-panel"_spr);
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // 1. fondo blur (fullscreen)
     if (blurBg) {
@@ -74,7 +74,7 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
     // Usar getTargetPrio() para participar en el force priority system de GD.
     // Si hay un popup activo debajo, respetamos su prioridad.
     // Si no hay popup, getTargetPrio() retorna 0 y usamos -1 (por encima de menus normales).
-    auto* dispatcher = CCDirector::sharedDirector()->getTouchDispatcher();
+    auto* dispatcher = CCDirector::get()->getTouchDispatcher();
     int basePrio = dispatcher->getTargetPrio();
     m_touchPrio = basePrio - 1;
     m_childTouchPrio = basePrio - 2;

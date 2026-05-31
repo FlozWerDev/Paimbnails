@@ -1,26 +1,46 @@
-#pragma once
+﻿#pragma once
 #include <Geode/Geode.hpp>
 #include <Geode/binding/Slider.hpp>
+#include "../services/CursorManager.hpp"
+#include <array>
+#include <string>
+#include <vector>
 
 class CursorConfigPopup : public geode::Popup {
 protected:
     void onExit() override;
     void scrollWheel(float x, float y) override;
 
-    // Gallery state
-    enum class ActiveSlot { Idle, Move };
-    ActiveSlot m_activeSlot = ActiveSlot::Idle;
+    // Smooth-scroll target tracking (per scrollable area).
+    float m_thumbScrollTargetY      = 0.f;
+    bool  m_thumbScrollTargetSet    = false;
+    float m_settingsScrollTargetY   = 0.f;
+    bool  m_settingsScrollTargetSet = false;
 
-    cocos2d::CCNode* m_galleryContainer = nullptr;
-    cocos2d::CCMenu* m_galleryMenu      = nullptr;
+    // ── Per-state slots (Idle / Move / Hover / Click / Text / Disabled) ──
+    static constexpr int kSlotCount = CURSOR_STATE_COUNT;
+    static constexpr std::array<CursorState, kSlotCount> kSlotStates = {
+        CursorState::Idle, CursorState::Move, CursorState::Hover,
+        CursorState::Click, CursorState::Text, CursorState::Disabled
+    };
 
-    // Preview sprites for idle/move slots
-    cocos2d::CCSprite*      m_idlePreview     = nullptr;
-    cocos2d::CCSprite*      m_movePreview     = nullptr;
-    cocos2d::CCLayerColor*  m_idleSlotBg      = nullptr;
-    cocos2d::CCLayerColor*  m_moveSlotBg      = nullptr;
-    cocos2d::CCLabelBMFont* m_idleLabel       = nullptr;
-    cocos2d::CCLabelBMFont* m_moveLabel       = nullptr;
+    CursorState m_activeSlot = CursorState::Idle;
+
+    struct SlotWidgets {
+        cocos2d::CCLayerColor*  bg      = nullptr;
+        cocos2d::CCLabelBMFont* label   = nullptr;
+        cocos2d::CCSprite*      preview = nullptr;
+    };
+    std::array<SlotWidgets, kSlotCount> m_slots{};
+
+    // ── Pack navigation ──
+    // m_packList[0] siempre es "" (sueltas); el resto son nombres de pack.
+    std::vector<std::string> m_packList;
+    int m_currentPackIdx = 0;
+    cocos2d::CCLabelBMFont* m_packLabel = nullptr;
+
+    // Thumbnail grid (scrollable)
+    geode::ScrollLayer*     m_thumbScroll = nullptr;
     cocos2d::CCLabelBMFont* m_emptyGalleryLabel = nullptr;
 
     // Settings scroll
@@ -39,6 +59,10 @@ protected:
     CCMenuItemToggler* m_enableToggle     = nullptr;
     CCMenuItemToggler* m_trailToggle      = nullptr;
     CCMenuItemToggler* m_followDelayToggle = nullptr;
+    CCMenuItemToggler* m_hoverToggle      = nullptr;
+    CCMenuItemToggler* m_clickToggle      = nullptr;
+    CCMenuItemToggler* m_textToggle       = nullptr;
+    CCMenuItemToggler* m_disabledToggle   = nullptr;
 
     // Trail preset picker
     cocos2d::CCLabelBMFont* m_presetLabel = nullptr;
@@ -55,10 +79,15 @@ protected:
 
     // Gallery
     void buildGalleryTab();
+    void refreshPackList();
     void refreshGallery();
     void updateSlotPreviews();
-    void onActivateIdleSlot(cocos2d::CCObject*);
-    void onActivateMoveSlot(cocos2d::CCObject*);
+    static char const* slotDisplayName(CursorState state);
+    std::string currentPack() const;
+    void onActivateSlot(cocos2d::CCObject*);
+    void onPackPrev(cocos2d::CCObject*);
+    void onPackNext(cocos2d::CCObject*);
+    void onDeletePack(cocos2d::CCObject*);
     void onSelectImage(cocos2d::CCObject*);
     void onDeleteImage(cocos2d::CCObject*);
     void onDeleteAllImages(cocos2d::CCObject*);
@@ -67,8 +96,13 @@ protected:
     // Settings
     void buildSettingsTab();
     void checkScrollPosition(float dt);
+    void updateSmoothScroll(float dt);
     void onEnableToggled(cocos2d::CCObject*);
     void onTrailToggled(cocos2d::CCObject*);
+    void onHoverToggled(cocos2d::CCObject*);
+    void onClickToggled(cocos2d::CCObject*);
+    void onTextToggled(cocos2d::CCObject*);
+    void onDisabledToggled(cocos2d::CCObject*);
     void onScaleChanged(cocos2d::CCObject*);
     void onOpacityChanged(cocos2d::CCObject*);
     void onFollowDelayToggled(cocos2d::CCObject*);

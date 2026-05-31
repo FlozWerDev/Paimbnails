@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // PopupBlurService — servicio compartido para aplicar blur detras de popups.
 // Extraido del hook PaimonDynamicPopupHook para poder reusarlo con otros popups

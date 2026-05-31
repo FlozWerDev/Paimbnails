@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <Geode/Geode.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
@@ -20,7 +20,7 @@ protected:
     bool init(int accountID);
     void loadReviews();
     void buildReviewList(float average, int count, const matjson::Value& reviews);
-    cocos2d::CCNode* createReviewCell(std::string const& username, int stars, std::string const& message, float width);
+    cocos2d::CCNode* createReviewCell(std::string const& username, float stars, std::string const& message, float width);
     void animateReviewCells(std::vector<cocos2d::CCNode*> const& cells);
 
 public:

@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────
 // CCSceneSafety.cpp
 //
 // Protege contra crashes en cocos2d::CCScene::getHighestChildZ

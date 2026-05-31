@@ -1,4 +1,4 @@
-#include "ProfilePicRenderer.hpp"
+﻿#include "ProfilePicRenderer.hpp"
 #include "ProfilePicCustomizer.hpp"
 #include "../../../utils/ShapeStencil.hpp"
 #include "../../../utils/SpriteHelper.hpp"

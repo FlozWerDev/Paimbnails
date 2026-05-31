@@ -1,4 +1,4 @@
-#include "LayerBackgroundManager.hpp"
+﻿#include "LayerBackgroundManager.hpp"
 #include "../../thumbnails/services/LocalThumbs.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
@@ -73,7 +73,8 @@ CCTexture2D* createProceduralBaseTexture() {
     unsigned char whitePixel[4] = {255, 255, 255, 255};
     auto* tex = new CCTexture2D();
     if (!tex->initWithData(whitePixel, kCCTexture2DPixelFormat_RGBA8888, 1, 1, CCSizeMake(1.f, 1.f))) {
-        delete tex;
+        // CCObject derivado: usar release() (no delete) para respetar refcount.
+        tex->release();
         return nullptr;
     }
     tex->autorelease();

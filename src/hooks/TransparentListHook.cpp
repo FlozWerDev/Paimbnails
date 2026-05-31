@@ -1,11 +1,15 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/GJListLayer.hpp>
 #include <Geode/modify/LevelListCell.hpp>
 #include <Geode/modify/GJScoreCell.hpp>
 #include <Geode/modify/MapPackCell.hpp>
+#include <atomic>
 
 using namespace geode::prelude;
 
+// transparent-list-mode is a saved value (configured from the in-mod settings
+// panel), so it cannot be observed via listenForSettingChanges. Read it directly
+// each call — getSavedValue is an in-memory lookup, cheap at cell-load frequency.
 static bool isTransparentMode() {
     return Mod::get()->getSavedValue<bool>("transparent-list-mode", false);
 }
@@ -52,22 +56,27 @@ static void applyTransparentCellBg(CCNode* self) {
 }
 
 // LevelCell se maneja en LevelCell.cpp (PaimonLevelCell::applyTransparentMode)
+//
+// IMPORTANTE: las clases $modify aqui usan nombres distintos a las de
+// LevelListCell.cpp / GJScoreCell.cpp / MapPackCell.cpp para evitar
+// ODR violation. $modify(SameName, SameClass) en dos TUs viola ODR y
+// el linker descarta uno de los hooks silenciosamente.
 
-class $modify(PaimonLevelListCell, LevelListCell) {
+class $modify(PaimonTransparentLevelListCell, LevelListCell) {
     void loadFromList(GJLevelList* list) {
         LevelListCell::loadFromList(list);
         applyTransparentCellBg(this);
     }
 };
 
-class $modify(PaimonGJScoreCell, GJScoreCell) {
+class $modify(PaimonTransparentGJScoreCell, GJScoreCell) {
     void loadFromScore(GJUserScore* score) {
         GJScoreCell::loadFromScore(score);
         applyTransparentCellBg(this);
     }
 };
 
-class $modify(PaimonMapPackCell, MapPackCell) {
+class $modify(PaimonTransparentMapPackCell, MapPackCell) {
     void loadFromMapPack(GJMapPack* pack) {
         MapPackCell::loadFromMapPack(pack);
         applyTransparentCellBg(this);

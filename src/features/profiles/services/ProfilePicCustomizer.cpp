@@ -1,4 +1,4 @@
-#include "ProfilePicCustomizer.hpp"
+﻿#include "ProfilePicCustomizer.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>

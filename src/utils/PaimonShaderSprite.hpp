@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Geode/cocos/platform/CCGL.h>
 #include <Geode/utils/cocos.hpp>
@@ -271,12 +271,23 @@ public:
 /**
  * sprite blur pa fondos de celdas con sync a GIF animado.
  * reutilizable en GJScoreCell y otros sitios.
+ *
+ * Sync target: usamos geode::Ref<> en lugar de raw CCSprite* para evitar UAF
+ * si el AnimatedGIFSprite target se destruye antes que este blur (caso comun
+ * en scroll rapido de listas con GIFs animados). Ref<> retiene/libera
+ * automaticamente sin coste extra perceptible.
  */
 class PaimonBlurSprite : public CCSprite {
 public:
     float m_intensity = 0.0f;
     CCSize m_texSize = {0, 0};
-    CCSprite* m_syncTarget = nullptr;
+
+private:
+    geode::Ref<CCSprite> m_syncTarget = nullptr;
+
+public:
+    void setSyncTarget(CCSprite* target) { m_syncTarget = target; }
+    CCSprite* getSyncTarget() const { return m_syncTarget; }
 
     static PaimonBlurSprite* createWithTexture(CCTexture2D* tex) {
         auto ret = new PaimonBlurSprite();

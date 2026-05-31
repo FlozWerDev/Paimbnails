@@ -1,4 +1,4 @@
-#include "ButtonLayoutManager.hpp"
+﻿#include "ButtonLayoutManager.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/loader/Log.hpp>
 #include <Geode/utils/file.hpp>

@@ -1,4 +1,4 @@
-#include "BanListPopup.hpp"
+﻿#include "BanListPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"

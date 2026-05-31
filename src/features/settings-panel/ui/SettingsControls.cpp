@@ -1,4 +1,4 @@
-#include "SettingsControls.hpp"
+﻿#include "SettingsControls.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 
 #include <Geode/Geode.hpp>
@@ -13,7 +13,7 @@ namespace paimon::settings_ui {
 // Prioridad dinamica para controles hijo dentro del panel.
 // Se lee en tiempo de creacion para participar en el force priority system de GD.
 static int childTouchPrio() {
-    return CCDirector::sharedDirector()->getTouchDispatcher()->getTargetPrio() - 2;
+    return CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2;
 }
 
 static CCLabelBMFont* makeLabel(const char* text) {

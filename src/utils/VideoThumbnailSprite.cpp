@@ -1,4 +1,4 @@
-// VideoThumbnailSprite.cpp — CCSprite wrapper for video thumbnails.
+﻿// VideoThumbnailSprite.cpp — CCSprite wrapper for video thumbnails.
 
 #include "VideoThumbnailSprite.hpp"
 #include "WebHelper.hpp"

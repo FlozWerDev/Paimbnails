@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // DiskManifest.hpp — Indice persistente del cache de disco.
 // Reemplaza el antiguo almacenamiento en Geode SavedValues por un

@@ -1,4 +1,4 @@
-#include "ReportUserPopup.hpp"
+﻿#include "ReportUserPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../emotes/ui/EmoteButton.hpp"

@@ -1,4 +1,4 @@
-#include "CommunityHubLayer.hpp"
+﻿#include "CommunityHubLayer.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/ModProfileCache.hpp"
@@ -8,6 +8,7 @@
 #include "../../transitions/services/TransitionManager.hpp"
 #include "../../backgrounds/services/LayerBackgroundManager.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/ScissorClipNode.hpp"
 #include "../../profiles/services/ProfileThumbs.hpp"
 #include "../../../utils/Shaders.hpp"
 #include "../../../blur/BlurSystem.hpp"
@@ -1602,7 +1603,7 @@ void CommunityHubLayer::buildThumbnailsList() {
 
         // Clipping node to contain the sprite exactly within thumb bounds
         auto thumbStencil = paimon::SpriteHelper::createRectStencil(thumbW, thumbH);
-        auto thumbClipper = CCClippingNode::create(thumbStencil);
+        auto thumbClipper = paimon::ScissorClipNode::create(thumbStencil);
         thumbClipper->setContentSize({thumbW, thumbH});
         thumbClipper->setPosition({thumbX, thumbY});
         cell->addChild(thumbClipper, 2);

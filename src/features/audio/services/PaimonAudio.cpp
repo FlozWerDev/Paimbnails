@@ -1,4 +1,4 @@
-#include "PaimonAudio.hpp"
+﻿#include "PaimonAudio.hpp"
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/loader/Log.hpp>
 #include <algorithm>

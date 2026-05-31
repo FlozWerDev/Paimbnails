@@ -1,4 +1,4 @@
-#include "VerificationCenterLayer.hpp"
+﻿#include "VerificationCenterLayer.hpp"
 #include "../../../framework/state/SessionState.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/ui/LoadingSpinner.hpp>
@@ -58,7 +58,7 @@ bool VerificationCenterLayer::init() {
 
     this->setKeypadEnabled(true);
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // fondo opaco GD estandar
     auto bg = CCLayerColor::create(ccc4(18, 18, 40, 255));
@@ -297,7 +297,7 @@ bool VerificationCenterLayer::init() {
 
 void VerificationCenterLayer::onBack(CCObject*) {
     this->unschedule(schedule_selector(VerificationCenterLayer::checkLevelDownloaded));
-    CCDirector::sharedDirector()->popSceneWithTransition(0.5f, kPopTransitionFade);
+    CCDirector::get()->popSceneWithTransition(0.5f, kPopTransitionFade);
 }
 
 void VerificationCenterLayer::keyBackClicked() {

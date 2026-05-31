@@ -1,4 +1,4 @@
-#include <Geode/modify/LevelAreaInnerLayer.hpp>
+﻿#include <Geode/modify/LevelAreaInnerLayer.hpp>
 #include "../utils/DynamicPopupRegistry.hpp"
 #include <Geode/modify/FLAlertLayer.hpp>
 #include <Geode/utils/cocos.hpp>
@@ -242,7 +242,7 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
         FLAlertLayer::show();
 
         // Filtra para no afectar otros popups del juego
-        auto* scene = CCDirector::sharedDirector()->getRunningScene();
+        auto* scene = CCDirector::get()->getRunningScene();
         if (!scene) return;
         LevelAreaInnerLayer* lai = nullptr;
         if (auto* children = scene->getChildren()) {
@@ -277,7 +277,7 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
         if (!container) return;
 
         if (foundLevelID > 0) {
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            auto winSize = CCDirector::get()->getWinSize();
             
             // Cadena de fallback para el icono
             CCSprite* iconSpr = CCSprite::create("paim_BotonMostrarThumbnails.png"_spr);
@@ -320,7 +320,7 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
                     container->addChild(menu, 10);
                     // Prioridad dinamica para no bloquear otros mods
                     menu->setTouchPriority(
-                        CCDirector::sharedDirector()->getTouchDispatcher()->getTargetPrio() - 1
+                        CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 1
                     ); 
                 }
             }

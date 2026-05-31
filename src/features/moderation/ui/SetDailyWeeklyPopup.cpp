@@ -1,4 +1,4 @@
-#include "SetDailyWeeklyPopup.hpp"
+﻿#include "SetDailyWeeklyPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/HttpClient.hpp"

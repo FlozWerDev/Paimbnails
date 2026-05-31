@@ -1,4 +1,4 @@
-#include "MenuMusicAddPopup.hpp"
+﻿#include "MenuMusicAddPopup.hpp"
 
 #include "../services/MenuMusicLibrary.hpp"
 #include "../services/YtDlpDownloader.hpp"
@@ -397,20 +397,25 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                 // Pasamos `this` y usamos m_alive como atomic guard para
                 // evitar tocar la UI si el popup padre se cerro mientras
                 // el install popup estaba abierto.
+                // Usamos WeakRef para evitar dangling pointer si el popup se destruye
+                // durante la instalacion.
+                auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
                 auto installPopup = YtDlpInstallPopup::create(
-                    [this](bool ok) {
-                        if (!m_alive.load()) return;
+                    [weakThis](bool ok) {
+                        auto ref = weakThis.lock();
+                        auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
+                        if (!self || !self->m_alive.load()) return;
                         if (!ok) {
-                            if (m_statusLabel) {
-                                m_statusLabel->setString("yt-dlp install failed or cancelled.");
-                                m_statusLabel->setColor({255, 130, 130});
+                            if (self->m_statusLabel) {
+                                self->m_statusLabel->setString("yt-dlp install failed or cancelled.");
+                                self->m_statusLabel->setColor({255, 130, 130});
                             }
-                            refreshStatus();
+                            self->refreshStatus();
                             return;
                         }
-                        refreshStatus();
+                        self->refreshStatus();
                         // Reintentamos la descarga; ya tenemos yt-dlp.
-                        this->onStartDownload(nullptr);
+                        self->onStartDownload(nullptr);
                     }
                 );
                 if (installPopup) installPopup->show();
@@ -446,19 +451,22 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                     return;
                 }
 
+                auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
                 auto installPopup = FfmpegInstallPopup::create(
-                    [this](bool ok) {
-                        if (!m_alive.load()) return;
+                    [weakThis](bool ok) {
+                        auto ref = weakThis.lock();
+                        auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
+                        if (!self || !self->m_alive.load()) return;
                         if (!ok) {
-                            if (m_statusLabel) {
-                                m_statusLabel->setString("ffmpeg install failed or cancelled.");
-                                m_statusLabel->setColor({255, 130, 130});
+                            if (self->m_statusLabel) {
+                                self->m_statusLabel->setString("ffmpeg install failed or cancelled.");
+                                self->m_statusLabel->setColor({255, 130, 130});
                             }
-                            refreshStatus();
+                            self->refreshStatus();
                             return;
                         }
-                        refreshStatus();
-                        this->onStartDownload(nullptr);
+                        self->refreshStatus();
+                        self->onStartDownload(nullptr);
                     }
                 );
                 if (installPopup) installPopup->show();
@@ -484,20 +492,25 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
 
     auto id = MenuMusicLibrary::get().generateId("dl");
 
+    auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
     dl.download(url, id,
-        [this](YtDlpProgress p) {
-            if (!m_alive.load()) return;
-            if (m_statusLabel) {
+        [weakThis](YtDlpProgress p) {
+            auto ref = weakThis.lock();
+            auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
+            if (!self || !self->m_alive.load()) return;
+            if (self->m_statusLabel) {
                 if (p.stage == "downloading") {
-                    m_statusLabel->setString(
+                    self->m_statusLabel->setString(
                         fmt::format("Downloading... {:.0f}%", p.percent * 100.f).c_str());
                 } else if (!p.message.empty()) {
-                    m_statusLabel->setString(p.message.substr(0, 64).c_str());
+                    self->m_statusLabel->setString(p.message.substr(0, 64).c_str());
                 }
             }
         },
-        [this, url](YtDlpResult result) {
-            if (!m_alive.load()) {
+        [weakThis, url](YtDlpResult result) {
+            auto ref = weakThis.lock();
+            auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
+            if (!self || !self->m_alive.load()) {
                 // popup cerrado: igual registramos el track para no perder el download
                 if (result.success) {
                     MusicTrack t;
@@ -515,25 +528,25 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                 return;
             }
 
-            m_busy = false;
+            self->m_busy = false;
 
             // Manejo de errores especiales: el downloader nos dice que
             // falta un binario. Reintentamos entrando por onStartDownload,
             // que ahora si preguntara al usuario.
             if (!result.success && result.error == "__NEED_YTDLP__") {
-                this->onStartDownload(nullptr);
+                self->onStartDownload(nullptr);
                 return;
             }
             if (!result.success && result.error == "__NEED_FFMPEG__") {
-                this->onStartDownload(nullptr);
+                self->onStartDownload(nullptr);
                 return;
             }
 
             if (!result.success) {
-                if (m_statusLabel) {
-                    m_statusLabel->setString(
+                if (self->m_statusLabel) {
+                    self->m_statusLabel->setString(
                         fmt::format("Error: {}", result.error.substr(0, 100)).c_str());
-                    m_statusLabel->setColor({255, 130, 130});
+                    self->m_statusLabel->setColor({255, 130, 130});
                 }
                 Notification::create(result.error.substr(0, 120),
                     NotificationIcon::Error, 5.f)->show();
@@ -555,11 +568,11 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                 std::chrono::system_clock::now().time_since_epoch()).count();
             MenuMusicLibrary::get().addTrack(t);
 
-            if (m_statusLabel) {
-                m_statusLabel->setString("Download complete!");
-                m_statusLabel->setColor({140, 230, 140});
+            if (self->m_statusLabel) {
+                self->m_statusLabel->setString("Download complete!");
+                self->m_statusLabel->setColor({140, 230, 140});
             }
-            if (m_urlInput) m_urlInput->setString("");
+            if (self->m_urlInput) self->m_urlInput->setString("");
             Notification::create("Track downloaded!", NotificationIcon::Success)->show();
         }
     );

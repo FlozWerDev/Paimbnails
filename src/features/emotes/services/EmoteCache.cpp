@@ -1,7 +1,8 @@
-#include "EmoteCache.hpp"
+﻿#include "EmoteCache.hpp"
 #include "EmoteService.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../utils/TimedJoin.hpp"
 #include <Geode/Geode.hpp>
 #include "../../../utils/stb_image.h"
 #include <fstream>
@@ -514,7 +515,9 @@ void EmoteCache::shutdownDecodeWorker() {
 
     for (auto& t : m_decodeWorkers) {
         if (t.joinable()) {
-            t.join();
+            if (!paimon::timedJoin(t, std::chrono::seconds(5))) {
+                geode::log::warn("[EmoteCache] Decode worker did not finish in 5s, detaching");
+            }
         }
     }
     m_decodeWorkers.clear();

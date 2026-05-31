@@ -1,4 +1,4 @@
-#include "DecoderMF.hpp"
+﻿#include "DecoderMF.hpp"
 
 #if defined(USE_MEDIA_FOUNDATION)
 

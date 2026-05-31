@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "MenuLoopManager.hpp"
 #include <Geode/binding/FMODAudioEngine.hpp>

@@ -1,4 +1,4 @@
-#include "MenuMusicPopup.hpp"
+﻿#include "MenuMusicPopup.hpp"
 
 #include "components/VinylDisc.hpp"
 #include "components/CoverBlurBackground.hpp"
@@ -276,7 +276,7 @@ void MenuMusicPopup::buildBlurBackground() {
 // vez que cambia la portada detectada.
 
 void MenuMusicPopup::buildFullscreenBackdrop() {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // Contenedor que agrupa dim + sprite blurred para poder removerlo
     // y cambiarlo en conjunto.
@@ -328,7 +328,7 @@ void MenuMusicPopup::applyFullscreenCover(const std::string& coverPath) {
     auto* source = CCTextureCache::sharedTextureCache()->addImage(coverPath.c_str(), false);
     if (!source) return;
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // Intensidad: la misma que el popup interior para look consistente.
     // Valor un poco mayor para que el fondo no compita con los elementos.
@@ -350,7 +350,7 @@ void MenuMusicPopup::applyFullscreenCover(const std::string& coverPath) {
             if (!m_fullscreenBackdrop || !m_fullscreenBackdrop->getParent()) return;
             if (gen != m_fullscreenBlurGen) return; // portada cambio de nuevo
 
-            auto win = CCDirector::sharedDirector()->getWinSize();
+            auto win = CCDirector::get()->getWinSize();
             const CCSize ts = blurred->getContentSize();
             float sx = win.width / ts.width;
             float sy = win.height / ts.height;
@@ -390,7 +390,41 @@ void MenuMusicPopup::buildTopBar() {
     // Indicador de modo eliminado a pedido del usuario: la barra superior
     // se queda solo con el titulo "Menu Music" para un look mas limpio.
     // m_modeLabel queda nullptr y refreshFromState lo ignora via null-check.
-    (void)size;
+
+    // ── Engranaje: habilitar/deshabilitar Editor Music ──
+    // Vive arriba-derecha del popup. El tinte refleja el estado on/off.
+    if (auto cog = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png")) {
+        cog->setScale(0.5f);
+        const bool on = Mod::get()->getSettingValue<bool>("editorMusicEnable");
+        cog->setColor(on ? ccColor3B{255, 255, 255} : ccColor3B{120, 120, 120});
+        if (auto btn = CCMenuItemSpriteExtra::create(
+                cog, this, menu_selector(MenuMusicPopup::onEditorMusicGear))) {
+            btn->setID("editor-music-gear"_spr);
+            auto gearMenu = CCMenu::create();
+            gearMenu->setID("editor-music-gear-menu"_spr);
+            gearMenu->setContentSize({0.f, 0.f});
+            gearMenu->setPosition({size.width - 20.f, size.height - 20.f});
+            gearMenu->addChild(btn);
+            m_mainLayer->addChild(gearMenu, 20);
+        }
+    }
+}
+
+// ── Engranaje: toggle de Editor Music ─────────────────────────
+
+void MenuMusicPopup::onEditorMusicGear(cocos2d::CCObject* sender) {
+    const bool now = !Mod::get()->getSettingValue<bool>("editorMusicEnable");
+    Mod::get()->setSettingValue<bool>("editorMusicEnable", now);
+
+    if (auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender)) {
+        if (auto* spr = typeinfo_cast<CCSprite*>(btn->getNormalImage())) {
+            spr->setColor(now ? ccColor3B{255, 255, 255} : ccColor3B{120, 120, 120});
+        }
+    }
+    Notification::create(
+        now ? "Editor Music ON - press Ctrl+M inside the editor" : "Editor Music OFF",
+        now ? NotificationIcon::Success : NotificationIcon::None, 2.f)
+        ->show();
 }
 
 // ── Build: vinyl / hero cover ────────────────────────────────

@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/loader/SettingV3.hpp>
 #include "../utils/Debug.hpp"
 #include "Settings.hpp"

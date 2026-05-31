@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/function.hpp>
@@ -8,11 +8,12 @@
 #include <string>
 #include <mutex>
 #include <atomic>
-#include <future>
+#include <memory>
 #include <vector>
 #include <functional>
 
 #include <unordered_set>
+#include "../../../utils/ThreadPool.hpp"
 
 struct ProfileConfig {
     std::string backgroundType = "gradient";
@@ -171,7 +172,10 @@ private:
     void spawnBackground(std::function<void()> job);
     void pruneFinishedWorkers();
     void waitBackgroundWorkers();
-    std::vector<std::future<void>> m_backgroundWorkers;
+    // Pool de threads centralizado en lugar de std::async (anti-patron:
+    // el destructor del std::future bloquea, encadenando atexit en cierres
+    // lentos). Se inicializa lazy en spawnBackground.
+    std::unique_ptr<paimon::ThreadPool> m_workerPool;
     std::mutex m_workerMutex;
 };
 

@@ -1,4 +1,4 @@
-#include "PaigoritV1.hpp"
+﻿#include "PaigoritV1.hpp"
 #include "LightLemmatizer.hpp"
 
 #include <rapidfuzz/fuzz.hpp>

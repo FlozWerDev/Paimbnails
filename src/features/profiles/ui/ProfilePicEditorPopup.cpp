@@ -1,4 +1,4 @@
-#include "ProfilePicEditorPopup.hpp"
+﻿#include "ProfilePicEditorPopup.hpp"
 #include "ProfilePicIconsDetailPopup.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -1203,7 +1203,7 @@ void ProfilePicEditorPopup::onPreset(CCObject*) {
     auto presets = ProfilePicCustomizer::getPresets();
     if (presets.empty()) return;
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // Overlay fullscreen semitransparente
     auto overlay = CCLayerColor::create({0, 0, 0, 160});

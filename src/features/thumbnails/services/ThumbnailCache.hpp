@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // ThumbnailCache.hpp — Sistema de cache unificado para thumbnails.
 // Inspirado en https://github.com/cdc-sys/level-thumbs-mod

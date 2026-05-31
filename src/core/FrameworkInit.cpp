@@ -1,4 +1,4 @@
-#include "../framework/FeatureRegistry.hpp"
+﻿#include "../framework/FeatureRegistry.hpp"
 #include "../framework/PermissionPolicy.hpp"
 #include "../framework/HookInterceptor.hpp"
 #include "../framework/EventBus.hpp"

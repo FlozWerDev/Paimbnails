@@ -1,4 +1,4 @@
-#include "VideoSettingsPopup.hpp"
+﻿#include "VideoSettingsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/MainThreadDelay.hpp"

@@ -1,4 +1,4 @@
-#include "FramebufferCapture.hpp"
+﻿#include "FramebufferCapture.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/PlayerToggleHelper.hpp"
 #include <Geode/loader/Log.hpp>
@@ -137,7 +137,7 @@ CaptureValidation FramebufferCapture::validateCaptureConditions() {
     CaptureValidation result;
 
     // Check High Graphics quality
-    if (CCDirector::sharedDirector()->getContentScaleFactor() < 4.0f) {
+    if (CCDirector::get()->getContentScaleFactor() < 4.0f) {
         result.canCapture = false;
         result.reason = "Thumbnails require High Graphics quality. Enable it in GD settings.";
         return result;
@@ -360,7 +360,7 @@ static bool hasActiveShaders() {
 static std::vector<std::pair<CCNode*, bool>> hideNonVanillaUI() {
     std::vector<std::pair<CCNode*, bool>> hidden;
 
-    auto* director = CCDirector::sharedDirector();
+    auto* director = CCDirector::get();
     if (!director) return hidden;
 
     auto* scene = director->getRunningScene();
@@ -645,7 +645,7 @@ void FramebufferCapture::executeIfPending() {
     int targetW  = quality.targetWidth;
 
     // obtiene viewport
-    auto* director = CCDirector::sharedDirector();
+    auto* director = CCDirector::get();
     int vpW = 0, vpH = 0;
     if (director && director->getOpenGLView()) {
         auto frameSize = director->getOpenGLView()->getFrameSize();
@@ -793,7 +793,7 @@ static bool pixelBufferHasContent(std::vector<uint8_t> const& pixels, int width,
 //   3. si sigue uniforme, recurre a rerender
 // ─────────────────────────────────────────────────────────────
 void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW, int viewportH, CaptureQualitySettings const& quality) {
-    auto* director = CCDirector::sharedDirector();
+    auto* director = CCDirector::get();
         if (!director) {
             log::error("[FramebufferCapture] CCDirector is null");
             if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
@@ -1043,7 +1043,7 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
 //   - glfinish() antes de leer asegura renderizado listo.
 // ─────────────────────────────────────────────────────────────
 void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int viewportH, CaptureQualitySettings const& quality) {
-    auto* director = CCDirector::sharedDirector();
+    auto* director = CCDirector::get();
         if (!director) {
             log::error("[FramebufferCapture] CCDirector is null");
             if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);

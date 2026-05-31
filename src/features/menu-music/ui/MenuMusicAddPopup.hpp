@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // MenuMusicAddPopup — dos formas de anadir musica:
 //   1. Importar un archivo local (audio + opcional cover) via file picker.

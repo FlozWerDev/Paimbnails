@@ -1,4 +1,4 @@
-// LoadingLayer.cpp — Hook del LoadingLayer vanilla.
+﻿// LoadingLayer.cpp — Hook del LoadingLayer vanilla.
 //
 // Aquí hacemos dos cosas:
 //   1. Preload del set core de assets de Paimbnails (igual que Globed):

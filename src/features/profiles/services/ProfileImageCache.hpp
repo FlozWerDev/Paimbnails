@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // ProfileImageCache.hpp — Acceso publico al cache de texturas de profileimg.
 // La implementacion vive en hooks/ProfilePage.cpp (donde se setea el cache

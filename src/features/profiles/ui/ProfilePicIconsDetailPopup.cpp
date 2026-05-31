@@ -1,4 +1,4 @@
-#include "ProfilePicIconsDetailPopup.hpp"
+﻿#include "ProfilePicIconsDetailPopup.hpp"
 #include "ProfilePicEditorPopup.hpp"
 #include "../services/ProfilePicRenderer.hpp"
 #include "../../../utils/PaimonNotification.hpp"

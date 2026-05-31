@@ -1,4 +1,4 @@
-#include "MainMenuLayoutPresetManager.hpp"
+﻿#include "MainMenuLayoutPresetManager.hpp"
 
 #include <Geode/utils/file.hpp>
 

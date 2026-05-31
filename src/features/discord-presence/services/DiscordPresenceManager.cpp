@@ -1,4 +1,4 @@
-#include "DiscordPresenceManager.hpp"
+﻿#include "DiscordPresenceManager.hpp"
 
 #include "../../../core/Settings.hpp"
 #include "../../../utils/HttpClient.hpp"
@@ -133,45 +133,10 @@ void DiscordPresenceManager::init() {
         geode::listenForSettingChanges<bool>("discord-rpc-enabled", +[](bool) {
             DiscordPresenceManager::get().refreshSoon();
         });
-        geode::listenForSettingChanges<bool>("discord-rpc-private-mode", +[](bool) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<bool>("discord-rpc-idle-when-unfocused", +[](bool) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<bool>("discord-rpc-show-progress", +[](bool) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<bool>("discord-rpc-include-paimbnails-features", +[](bool) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<std::string>("discord-rpc-large-text", +[](std::string const&) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<std::string>("discord-rpc-large-image-key", +[](std::string const&) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<std::string>("discord-rpc-small-image-key", +[](std::string const&) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<std::string>("discord-rpc-activity-type", +[](std::string const&) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<bool>("discord-rpc-show-timestamp", +[](bool) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<bool>("discord-rpc-override-details", +[](bool) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<std::string>("discord-rpc-custom-details", +[](std::string const&) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<bool>("discord-rpc-override-state", +[](bool) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-        geode::listenForSettingChanges<std::string>("discord-rpc-custom-state", +[](std::string const&) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
+        // discord-rpc-* (except discord-rpc-enabled) are saved values configured
+        // from the Discord config popup, which calls refreshSoon() on every change
+        // (a 5s polling worker also refreshes). listenForSettingChanges only fires
+        // for registered mod.json settings, so no listeners are needed for the rest.
     }
 
     m_workerToken = std::make_shared<std::atomic<bool>>(true);

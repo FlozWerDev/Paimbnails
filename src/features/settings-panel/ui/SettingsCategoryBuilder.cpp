@@ -1,4 +1,4 @@
-#include "SettingsCategoryBuilder.hpp"
+﻿#include "SettingsCategoryBuilder.hpp"
 #include "SettingsControls.hpp"
 #include "../services/SettingsPanelManager.hpp"
 #include "../../../core/Settings.hpp"
@@ -30,16 +30,18 @@ using namespace geode::prelude;
 
 namespace {
 
-// shortcut para getSettingValue
+// shortcut para getSettingValue (cae a saved value si la key no es un setting)
 template<typename T>
 T gset(const char* key) {
-    return Mod::get()->getSettingValue<T>(key);
+    if (Mod::get()->hasSetting(key)) return Mod::get()->getSettingValue<T>(key);
+    return Mod::get()->getSavedValue<T>(key, T{});
 }
 
-// shortcut para setSettingValue
+// shortcut para setSettingValue (cae a saved value si la key no es un setting)
 template<typename T>
 void sset(const char* key, T val) {
-    Mod::get()->setSettingValue<T>(key, val);
+    if (Mod::get()->hasSetting(key)) Mod::get()->setSettingValue<T>(key, val);
+    else Mod::get()->setSavedValue(key, val);
 }
 
 // shortcut para getSavedValue
@@ -329,7 +331,7 @@ void buildInterface(CCNode* c, float w) {
     c->addChild(createSectionHeader("Profile Image", w));
 
     c->addChild(createIntSliderRow("Profile Image Z-Layer",
-        gsaved<int>("profile-img-zlayer", 1),
+        gsaved<int>("profile-img-zlayer", -1),
         -10, 10,
         [](int v){ ssaved<int>("profile-img-zlayer", v); },
         w));
@@ -483,7 +485,7 @@ void buildBackgrounds(CCNode* c, float w) {
         [](){
             // cerrar el panel de settings antes de abrir PaiConfigLayer (fullscreen)
             SettingsPanelManager::get().close();
-            auto scene = CCDirector::sharedDirector()->getRunningScene();
+            auto scene = CCDirector::get()->getRunningScene();
             if (!scene) return;
             auto layer = PaiConfigLayer::create();
             if (layer) scene->addChild(layer, 5000);

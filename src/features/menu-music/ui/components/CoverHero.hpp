@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // CoverHero — "hero" visual del popup Menu Music.
 //

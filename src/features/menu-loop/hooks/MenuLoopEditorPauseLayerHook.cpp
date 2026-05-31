@@ -1,4 +1,4 @@
-// MenuLoopEditorPauseLayerHook — runs the same "randomize / restore on
+﻿// MenuLoopEditorPauseLayerHook — runs the same "randomize / restore on
 // exit" logic the reference mod (Menu Loop Randomizer) applies when the
 // user quits back to the editor main screen.
 //

@@ -1,4 +1,4 @@
-#include "EmoteService.hpp"
+﻿#include "EmoteService.hpp"
 #include "../../../utils/WebHelper.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/utils/web.hpp>

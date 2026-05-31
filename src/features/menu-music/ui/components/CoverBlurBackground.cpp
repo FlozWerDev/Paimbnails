@@ -1,4 +1,4 @@
-#include "CoverBlurBackground.hpp"
+﻿#include "CoverBlurBackground.hpp"
 #include "../../../../blur/BlurSystem.hpp"
 #include "../../../../utils/SpriteHelper.hpp"
 
@@ -57,7 +57,7 @@ void CoverBlurBackground::setCoverFromPath(const std::string& absolutePath) {
     // que el usuario pueda subirla o bajarla. Default = 6 (medio-alto) para
     // que el fondo del popup se sienta elegante sin emborronar demasiado.
     float intensity = static_cast<float>(
-        Mod::get()->getSettingValue<double>("menuMusicBlurIntensity"));
+        Mod::get()->getSavedValue<double>("menuMusicBlurIntensity", 5.0));
     if (intensity <= 0.f) intensity = 6.f;
 
     auto callback = [this, gen](CCSprite* blurred) {

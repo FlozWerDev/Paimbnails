@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -236,7 +236,27 @@ inline void migrateToSavedValues() {
     defBool("zoom-alt-disables-scroll", true);
 
     // ── Profile ──
-    defInt("profile-img-zlayer", 1);
+    // El fondo de perfil debe ir DETRAS del popup y de la lista de comentarios
+    // (la lista de comentarios vive en z=0). Por eso el default correcto es -1,
+    // igual que en InfoLayer (que agrega su clip de fondo con addChild(clip, -1)).
+    //
+    // El default original en mod.json era -1; al migrar a saved values se puso
+    // 1 por error, lo que dejaba la imagen de fondo POR ENCIMA de los
+    // comentarios y los ocultaba ("no se ven los comentarios de mi propio
+    // perfil" en perfiles con fondo personalizado).
+    defInt("profile-img-zlayer", -1);
+
+    // Migracion one-shot: usuarios que ya tenian el valor migrado a 1 (el
+    // default erroneo) y nunca lo cambiaron a mano quedaron con la imagen
+    // tapando los comentarios. Si el valor actual sigue en 1 y no se aplico
+    // esta correccion, lo bajamos a -1. Si el usuario lo ajusto manualmente
+    // despues, esta migracion corre una sola vez y no lo vuelve a pisar.
+    if (!mod->hasSavedValue("profile-img-zlayer-fixed-default")) {
+        if (mod->getSavedValue<int>("profile-img-zlayer", -1) == 1) {
+            mod->setSavedValue<int>("profile-img-zlayer", -1);
+        }
+        mod->setSavedValue<bool>("profile-img-zlayer-fixed-default", true);
+    }
 }
 
 } // namespace paimon::settings

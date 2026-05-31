@@ -1,4 +1,4 @@
-#include "PaimonHubLayer.hpp"
+﻿#include "PaimonHubLayer.hpp"
 #include "PaiConfigLayer.hpp"
 #include "PaimonSupportLayer.hpp"
 #include "../features/quick-hub/ui/RadialConfigPopup.hpp"
@@ -15,6 +15,7 @@
 #include "../features/custom-slider/ui/CustomSliderPopup.hpp"
 #include "../features/discord-presence/ui/DiscordConfigPopup.hpp"
 #include "../features/discord-presence/services/DiscordPresenceManager.hpp"
+#include "../features/beat-shaders/ui/BeatShaderConfigLayer.hpp"
 #include "../features/settings-panel/services/SettingsPanelManager.hpp"
 #include "../features/settings-panel/ui/SettingsCategoryBuilder.hpp"
 #include "../features/settings-panel/ui/SettingsControls.hpp"
@@ -126,6 +127,11 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                 {"Mascota", "GJ_button_03.png", [](PaimonHubLayer*) { if (auto popup = PetConfigPopup::create()) popup->show(); }},
                 {"Cursor", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = CursorConfigPopup::create()) popup->show(); }},
                 {"Slider", "GJ_button_01.png", [](PaimonHubLayer*) { if (auto popup = paimon::slider::CustomSliderPopup::create()) popup->show(); }},
+                {"Beat Shaders", "GJ_button_04.png", [](PaimonHubLayer*) {
+                    if (auto popup = paimon::beat_shaders::BeatShaderConfigLayer::create()) {
+                        popup->show();
+                    }
+                }},
                 {"Perfil", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenProfiles(nullptr); }},
             };
         case 6: // Discord

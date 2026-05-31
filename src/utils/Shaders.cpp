@@ -1,9 +1,13 @@
-#include "Shaders.hpp"
+﻿#include "Shaders.hpp"
 #include "GLSLLoader.hpp"
+#include "../features/audio/services/PaimonAudio.hpp"
+#include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/loader/Log.hpp>
 #include <algorithm>
 #include <cmath>
+
+#include <atomic>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -171,17 +175,24 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
 }
 
 CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, float intensity) {
-    // ── FIX (popup blur "un poco mas grande") ──
-    // Misma estructura que createBlurredSprite generico, PERO sin el clamp
-    // kMaxBlurDim=1024. Para popups necesitamos que el FBO final tenga
-    // EXACTAMENTE las dimensiones de winSize (= targetSize), asi el sprite
-    // final cubre la pantalla 1:1 sin necesidad de reescalado en
-    // buildBlurNode (que es lo que producia el "se ve mas grande").
+    // ── PERF: blur interno a half-res, upsample final ──
     //
-    // El costo perf es minimo: el blur es un H+V (o 2 pares H+V para
-    // intensidad alta) en FBOs de winSize. En winSize tipico ~569x320
-    // o ~1280x720 esto es perfectamente manejable. Solo se notaria en
-    // 4K (3840x2160), pero la mayoria de gente juega a 1080p o 1440p.
+    // El blur destruye altas frecuencias por definicion. Renderizar los blur
+    // passes a winSize completo es desperdicio puro: el sampling bilinear
+    // del upsample final NO produce diferencia visual perceptible vs blur
+    // a fullres porque el contenido ya esta suavizado.
+    //
+    // Antes: 4 fullscreen FBO passes a winSize (~1080p = ~8.3 MP por pass).
+    // Ahora: 4 passes a max 960 (~480p en aspect 16:9 = ~2.1 MP por pass) +
+    //        1 pass de upsample a winSize (1 sample de bilinear, ~gratis).
+    //
+    // Reduccion de fragments en blur: ~75%. A 360 Hz esto es la diferencia
+    // entre frame budget de 2.78ms (sostenible) o no.
+    //
+    // El sprite resultado tiene contentSize = targetSize via FBO de upsample,
+    // exactamente como antes. buildBlurNode no necesita cambios.
+    //
+    // No tocamos el clamp en createPaimonBlurSprite (ya tenia kMaxBlurDim=1024).
     if (!texture) return nullptr;
     if (targetSize.width <= 0.f || targetSize.height <= 0.f ||
         targetSize.width > 4096.f || targetSize.height > 4096.f) return nullptr;
@@ -192,8 +203,20 @@ CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSiz
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     texture->setTexParameters(&params);
 
-    // SIN clamp: blurSize == targetSize (== winSize del popup).
+    // ── Internal blur dim cap ──
+    // 960 mantiene buena calidad incluso con downsample agresivo (1080p → 960
+    // = 89% lineal, factor 0.79 area). El blur subsecuente difumina
+    // cualquier aliasing de downsample asi que es invisible al ojo.
+    constexpr float kInternalBlurDim = 960.f;
     CCSize blurSize = targetSize;
+    if (blurSize.width > kInternalBlurDim || blurSize.height > kInternalBlurDim) {
+        float scale = std::min(kInternalBlurDim / blurSize.width,
+                                kInternalBlurDim / blurSize.height);
+        blurSize.width = std::round(blurSize.width * scale);
+        blurSize.height = std::round(blurSize.height * scale);
+        if (blurSize.width < 16.f) blurSize.width = 16.f;
+        if (blurSize.height < 16.f) blurSize.height = 16.f;
+    }
 
     // Stretch source sprite a blurSize via setScaleX/Y independientes
     // (modo "stretch", no "cover" — evita recortar bordes).
@@ -210,6 +233,8 @@ CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSiz
     auto blurH = paimon::shaders::getBlurHorizontalShader();
     auto blurV = paimon::shaders::getBlurVerticalShader();
     if (!blurH || !blurV) {
+        srcSprite->setScaleX(targetSize.width / std::max(1.0f, srcSprite->getContentSize().width));
+        srcSprite->setScaleY(targetSize.height / std::max(1.0f, srcSprite->getContentSize().height));
         srcSprite->setPosition(targetSize * 0.5f);
         return srcSprite;
     }
@@ -217,6 +242,8 @@ CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSiz
     auto rtA = CCRenderTexture::create(static_cast<int>(blurSize.width), static_cast<int>(blurSize.height));
     auto rtB = CCRenderTexture::create(static_cast<int>(blurSize.width), static_cast<int>(blurSize.height));
     if (!rtA || !rtB) {
+        srcSprite->setScaleX(targetSize.width / std::max(1.0f, srcSprite->getContentSize().width));
+        srcSprite->setScaleY(targetSize.height / std::max(1.0f, srcSprite->getContentSize().height));
         srcSprite->setPosition(targetSize * 0.5f);
         return srcSprite;
     }
@@ -244,7 +271,12 @@ CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSiz
     applyBlurPass(mid1, rtB, blurV, blurSize, radius);
 
     if (intensity >= 4.0f) {
+        // PERF: glFlush() entre passes era pure overhead en desktop OpenGL.
+        // Driver-round-trip que bloquea la CPU. Mantenerlo solo en mobile
+        // (deferred renderers necesitan barrier explicito).
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
         glFlush();
+#endif
 
         auto mid2 = CCSprite::createWithTexture(rtB->getSprite()->getTexture());
         if (!mid2) return nullptr;
@@ -548,6 +580,29 @@ CCGLProgram* getBgShaderProgram(std::string const& shaderName) {
     if (shaderName == "time-warp") return paimon::shaders::loadShader("layerbg-time-warp-dyn"_spr, "cell_vertex.glsl", "time_warp_dynamic.glsl", nullptr, nullptr);
     if (shaderName == "underwater") return paimon::shaders::loadShader("layerbg-underwater-dyn"_spr, "cell_vertex.glsl", "underwater_dynamic.glsl", nullptr, nullptr);
     if (shaderName == "neon-trail") return paimon::shaders::loadShader("layerbg-neon-trail-dyn"_spr, "cell_vertex.glsl", "neon_trail_dynamic.glsl", nullptr, nullptr);
+
+    // ── Beat-reactive postprocess shaders ──
+    // These transform u_texture (the existing background) using audio FFT
+    // uniforms (u_bass / u_mid / u_treble / u_beat / u_energy). They become
+    // active when ShaderBgSprite::m_audioReactive > 0 (set by
+    // BeatShaderManager). Otherwise the audio uniforms are pushed as 0.0
+    // and they degrade gracefully into a static look.
+    if (shaderName == "glitch-beat")      return paimon::shaders::loadShader("beat-glitch"_spr,      "cell_vertex.glsl", "glitch_beat.glsl",      nullptr, nullptr);
+    if (shaderName == "wave-beat")        return paimon::shaders::loadShader("beat-wave"_spr,        "cell_vertex.glsl", "wave_beat.glsl",        nullptr, nullptr);
+    if (shaderName == "chromatic-beat")   return paimon::shaders::loadShader("beat-chromatic"_spr,   "cell_vertex.glsl", "chromatic_beat.glsl",   nullptr, nullptr);
+    if (shaderName == "pixelate-beat")    return paimon::shaders::loadShader("beat-pixelate"_spr,    "cell_vertex.glsl", "pixelate_beat.glsl",    nullptr, nullptr);
+    if (shaderName == "shockwave-beat")   return paimon::shaders::loadShader("beat-shockwave"_spr,   "cell_vertex.glsl", "shockwave_beat.glsl",   nullptr, nullptr);
+    if (shaderName == "rgb-split-beat")   return paimon::shaders::loadShader("beat-rgb-split"_spr,   "cell_vertex.glsl", "rgb_split_beat.glsl",   nullptr, nullptr);
+    if (shaderName == "kaleidoscope-beat")return paimon::shaders::loadShader("beat-kaleidoscope"_spr,"cell_vertex.glsl", "kaleidoscope_beat.glsl",nullptr, nullptr);
+    if (shaderName == "zoom-pulse-beat")  return paimon::shaders::loadShader("beat-zoom-pulse"_spr,  "cell_vertex.glsl", "zoom_pulse_beat.glsl",  nullptr, nullptr);
+    if (shaderName == "scanlines-beat")   return paimon::shaders::loadShader("beat-scanlines"_spr,   "cell_vertex.glsl", "scanlines_beat.glsl",   nullptr, nullptr);
+    if (shaderName == "vortex-beat")      return paimon::shaders::loadShader("beat-vortex"_spr,      "cell_vertex.glsl", "vortex_beat.glsl",      nullptr, nullptr);
+    if (shaderName == "edge-pulse-beat")  return paimon::shaders::loadShader("beat-edge-pulse"_spr,  "cell_vertex.glsl", "edge_pulse_beat.glsl",  nullptr, nullptr);
+    if (shaderName == "hue-shift-beat")   return paimon::shaders::loadShader("beat-hue-shift"_spr,   "cell_vertex.glsl", "hue_shift_beat.glsl",   nullptr, nullptr);
+    if (shaderName == "liquid-beat")      return paimon::shaders::loadShader("beat-liquid"_spr,      "cell_vertex.glsl", "liquid_beat.glsl",      nullptr, nullptr);
+    if (shaderName == "mosaic-beat")      return paimon::shaders::loadShader("beat-mosaic"_spr,      "cell_vertex.glsl", "mosaic_beat.glsl",      nullptr, nullptr);
+    if (shaderName == "dream-beat")       return paimon::shaders::loadShader("beat-dream"_spr,       "cell_vertex.glsl", "dream_beat.glsl",       nullptr, nullptr);
+
     return nullptr;
 }
 
@@ -588,6 +643,17 @@ CCGLProgram* getProceduralBgShaderProgram(std::string const& shaderName) {
     if (shaderName == "vortex") return paimon::shaders::loadShader("layerbg-proc-vortex"_spr, "cell_vertex.glsl", "vortex_bg.glsl", nullptr, nullptr);
     if (shaderName == "ocean") return paimon::shaders::loadShader("layerbg-proc-ocean"_spr, "cell_vertex.glsl", "ocean_bg.glsl", nullptr, nullptr);
     if (shaderName == "galaxy") return paimon::shaders::loadShader("layerbg-proc-galaxy"_spr, "cell_vertex.glsl", "galaxy_bg.glsl", nullptr, nullptr);
+    return nullptr;
+}
+
+CCGLProgram* getBeatShaderProgram(std::string const& shaderName) {
+    if (shaderName.empty() || shaderName == "none") return nullptr;
+    if (shaderName == "beat-bars")     return paimon::shaders::loadShader("beat-bars"_spr,     "cell_vertex.glsl", "beat_bars.glsl",     nullptr, nullptr);
+    if (shaderName == "beat-circles")  return paimon::shaders::loadShader("beat-circles"_spr,  "cell_vertex.glsl", "beat_circles.glsl",  nullptr, nullptr);
+    if (shaderName == "beat-grid")     return paimon::shaders::loadShader("beat-grid"_spr,     "cell_vertex.glsl", "beat_grid.glsl",     nullptr, nullptr);
+    if (shaderName == "freq-spectrum") return paimon::shaders::loadShader("freq-spectrum"_spr, "cell_vertex.glsl", "freq_spectrum.glsl", nullptr, nullptr);
+    if (shaderName == "beat-tunnel")   return paimon::shaders::loadShader("beat-tunnel"_spr,   "cell_vertex.glsl", "beat_tunnel.glsl",   nullptr, nullptr);
+    if (shaderName == "audio-aurora")  return paimon::shaders::loadShader("audio-aurora"_spr,  "cell_vertex.glsl", "audio_aurora.glsl",  nullptr, nullptr);
     return nullptr;
 }
 
@@ -637,6 +703,28 @@ void prewarmLevelInfoShaders() {
     paimon::shaders::getDominantColorsDownsampleShader();
 
     geode::log::info("[Shaders] Pre-warm complete (24 shaders compiled)");
+}
+
+void prewarmConfiguredBackgroundShaders() {
+    // Compila por adelantado solo los shaders de fondo que el usuario tiene
+    // realmente configurados en alguna capa. getBgShaderProgram() compila y
+    // cachea; las llamadas posteriores (al entrar a la capa) son un lookup
+    // O(1) sin coste de compile → sin stutter en la transicion de entrada.
+    int compiled = 0;
+    std::vector<std::string> warmed;
+    for (auto const& [key, _name] : LayerBackgroundManager::LAYER_OPTIONS) {
+        auto cfg = LayerBackgroundManager::get().resolveConfig(key);
+        if (cfg.shader.empty() || cfg.shader == "none") continue;
+        // Evita recompilar el mismo shader si varias capas lo comparten.
+        if (std::find(warmed.begin(), warmed.end(), cfg.shader) != warmed.end()) continue;
+        if (getBgShaderProgram(cfg.shader)) {
+            warmed.push_back(cfg.shader);
+            ++compiled;
+        }
+    }
+    if (compiled > 0) {
+        geode::log::info("[Shaders] Pre-warm de fondos: {} shader(s) configurados compilados", compiled);
+    }
 }
 
 // ============================================================================
@@ -1093,6 +1181,160 @@ void ProgressiveBlurJob::tickPaimonBlur() {
             auto finalSprite = m_currentSprite.data();
             finalSprite->getTexture()->setTexParameters(&linearParams);
             finish(finalSprite);
+        }
+    }
+}
+
+// ── ShaderBgSprite implementation ────────────────────────────────
+// Pushes per-frame uniforms to whatever shader is currently bound to the
+// sprite. Audio uniforms (u_bass / u_mid / u_treble / u_beat / u_energy)
+// are gated by m_audioReactive — when the beat-shaders feature is
+// disabled the values are pushed as 0.0 and the shader behaves as if no
+// audio were attached. PaimonAudio::update is called from updateShaderTime
+// when audio is active so the FFT spectrum stays current.
+
+namespace {
+    // Per-frame guard: many ShaderBgSprite instances can exist in the same
+    // scene (e.g. during a layer transition). They all want u_bass / etc to
+    // be up-to-date but PaimonAudio::update only needs to run once per
+    // frame; running it repeatedly compounds dt smoothing.
+    uint64_t g_lastShaderAudioFrame = 0;
+
+    // Global beat-shaders feature flag, set by BeatShaderManager whenever the
+    // user toggles the feature. ShaderBgSprite reads it every draw() so newly
+    // created sprites pick up the audio-reactive state without anybody
+    // having to hunt them down and flip m_audioReactive manually.
+    std::atomic<bool> g_beatShadersGloballyEnabled{false};
+
+    uint64_t currentFrameForAudio() {
+        auto* dir = CCDirector::get();
+        return dir ? static_cast<uint64_t>(dir->getTotalFrames()) : 0;
+    }
+}
+
+namespace ShaderBgSpriteAudioGate {
+    void setEnabled(bool e) { g_beatShadersGloballyEnabled.store(e, std::memory_order_relaxed); }
+    bool isEnabled()        { return g_beatShadersGloballyEnabled.load(std::memory_order_relaxed); }
+}
+
+void ShaderBgSprite::draw() {
+    auto* shader = getShaderProgram();
+    if (shader) {
+        shader->use();
+        shader->setUniformsForBuiltins();
+
+        GLint loc;
+        loc = shader->getUniformLocationForName("u_intensity");
+        if (loc != -1) shader->setUniformLocationWith1f(loc, m_shaderIntensity);
+
+        loc = shader->getUniformLocationForName("u_screenSize");
+        if (loc != -1) shader->setUniformLocationWith2f(loc, m_screenW, m_screenH);
+
+        loc = shader->getUniformLocationForName("u_time");
+        if (loc != -1) shader->setUniformLocationWith1f(loc, m_shaderTime);
+
+        loc = shader->getUniformLocationForName("u_texSize");
+        if (loc != -1) {
+            auto* t = getTexture();
+            float tw = t ? static_cast<float>(t->getPixelsWide()) : 1.f;
+            float th = t ? static_cast<float>(t->getPixelsHigh()) : 1.f;
+            shader->setUniformLocationWith2f(loc, tw, th);
+        }
+
+        // Cursor / click — kept for the existing dynamic shaders.
+        loc = shader->getUniformLocationForName("u_cursor");
+        if (loc != -1) shader->setUniformLocationWith2f(loc, m_cursorX, 1.0f - m_cursorY);
+
+        loc = shader->getUniformLocationForName("u_click");
+        if (loc != -1) shader->setUniformLocationWith1f(loc, m_clickState);
+
+        // Audio reactivity — gated by the global beat-shaders flag. We
+        // intentionally ignore m_audioReactive here so that ShaderBgSprites
+        // created by LayerBackgroundManager (which never sets that field)
+        // still react to the music when the user has the feature enabled.
+        bool audioGate = g_beatShadersGloballyEnabled.load(std::memory_order_relaxed);
+        float bass = 0.f, mid = 0.f, treble = 0.f, beat = 0.f, energy = 0.f;
+        if (audioGate) {
+            auto& audio = PaimonAudio::get();
+            // Pump audio analysis here too as a safety net — updateShaderTime
+            // also calls update() but we cover the case where the sprite is
+            // drawn before its scheduler tick (or scheduling failed).
+            static uint64_t s_lastDrawAudioFrame = 0;
+            auto frame = static_cast<uint64_t>(CCDirector::get()->getTotalFrames());
+            if (frame != s_lastDrawAudioFrame) {
+                s_lastDrawAudioFrame = frame;
+                float dt = CCDirector::get()->getDeltaTime();
+                audio.update(dt);
+            }
+            bass   = audio.bass()      * m_bassMult;
+            mid    = audio.mid()       * m_midMult;
+            treble = audio.treble()    * m_trebleMult;
+            beat   = audio.beatPulse() * m_beatMult;
+            energy = audio.energy()    * m_energyMult;
+            // Soft clamp — peaks above 2 / 1 are visually unstable.
+            if (bass   > 2.f) bass   = 2.f;
+            if (mid    > 2.f) mid    = 2.f;
+            if (treble > 2.f) treble = 2.f;
+            if (beat   > 1.f) beat   = 1.f;
+            if (energy > 2.f) energy = 2.f;
+        }
+
+        loc = shader->getUniformLocationForName("u_bass");
+        if (loc != -1) shader->setUniformLocationWith1f(loc, bass);
+
+        loc = shader->getUniformLocationForName("u_mid");
+        if (loc != -1) shader->setUniformLocationWith1f(loc, mid);
+
+        loc = shader->getUniformLocationForName("u_treble");
+        if (loc != -1) shader->setUniformLocationWith1f(loc, treble);
+
+        loc = shader->getUniformLocationForName("u_beat");
+        if (loc != -1) shader->setUniformLocationWith1f(loc, beat);
+
+        loc = shader->getUniformLocationForName("u_energy");
+        if (loc != -1) shader->setUniformLocationWith1f(loc, energy);
+    }
+    CCSprite::draw();
+}
+
+void ShaderBgSprite::updateShaderTime(float dt) {
+    m_shaderTime += dt;
+
+    // Cursor tracking (existing behavior).
+    auto* director = CCDirector::get();
+    auto* glView = director ? director->getOpenGLView() : nullptr;
+    if (glView) {
+        auto mousePos = glView->getMousePosition();
+        auto winSize = director->getWinSize();
+        if (winSize.width > 0.f && winSize.height > 0.f) {
+            float nx = mousePos.x / winSize.width;
+            float ny = mousePos.y / winSize.height;
+            m_cursorX = nx < 0.f ? 0.f : (nx > 1.f ? 1.f : nx);
+            m_cursorY = ny < 0.f ? 0.f : (ny > 1.f ? 1.f : ny);
+        }
+    }
+
+    // Drive PaimonAudio once per frame globally — multiple ShaderBgSprite
+    // instances coexist during transitions, but only one update is needed.
+    if (g_beatShadersGloballyEnabled.load(std::memory_order_relaxed)) {
+        uint64_t frame = currentFrameForAudio();
+        if (frame != g_lastShaderAudioFrame) {
+            g_lastShaderAudioFrame = frame;
+            PaimonAudio::get().update(dt);
+
+            // Periodic diagnostic — once per second emit current audio
+            // levels so the user can verify the FFT is producing data.
+            // Using static counters keeps state local.
+            static int s_logAccum = 0;
+            ++s_logAccum;
+            if (s_logAccum >= 60) {
+                s_logAccum = 0;
+                auto& a = PaimonAudio::get();
+                geode::log::info(
+                    "[ShaderBgSprite] audio: bass={:.2f} mid={:.2f} treble={:.2f} beat={:.2f} energy={:.2f} active={}",
+                    a.bass(), a.mid(), a.treble(), a.beatPulse(), a.energy(), a.isActive()
+                );
+            }
         }
     }
 }

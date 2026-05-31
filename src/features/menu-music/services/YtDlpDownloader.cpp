@@ -1,4 +1,4 @@
-#include "YtDlpDownloader.hpp"
+﻿#include "YtDlpDownloader.hpp"
 #include "YtDlpBootstrap.hpp"
 #include "FfmpegBootstrap.hpp"
 #include "MenuMusicLibrary.hpp"
@@ -10,6 +10,7 @@
 #include <matjson.hpp>
 #include <fmt/format.h>
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -25,6 +26,13 @@
     // una ventana de consola.
     #define WIN32_LEAN_AND_MEAN
     #include <windows.h>
+#else
+    // POSIX: fork+execvp para evitar shell (anti-injection) + signal/poll
+    // para timeout y SIGKILL si el proceso se cuelga.
+    #include <unistd.h>
+    #include <fcntl.h>
+    #include <signal.h>
+    #include <sys/wait.h>
 #endif
 
 using namespace geode::prelude;
@@ -90,9 +98,62 @@ static std::string joinArg(const std::string& s) {
 // Ejecuta un comando y captura stdout+stderr linea a linea, invocando
 // onLine por cada linea leida. Devuelve el exit code (-1 si no se pudo
 // lanzar). Bloquea el thread que lo llama — llamar desde worker.
+//
+// Existen dos variantes:
+//   - runAndCaptureArgv(argv, onLine, timeoutMs): toma un vector de strings
+//     que se pasan DIRECTAMENTE al proceso sin involucrar shell. Esto evita
+//     command injection si algun argumento contiene metachars del shell
+//     (', `, $, ;, &, |, etc.). USAR para datos de usuario (URLs, nombres).
+//
+//   - runAndCapture(cmdLine, onLine): mantenida para casos triviales
+//     (`where yt-dlp.exe`) donde el cmd es constante hardcoded. NO usar
+//     con datos de usuario.
+//
+// Ambas variantes incluyen timeout opcional para evitar que un yt-dlp
+// colgado bloquee el worker thread indefinidamente y termine colgando
+// ThreadTracker en atexit.
 #ifdef GEODE_IS_WINDOWS
-static int runAndCapture(const std::string& cmdLine,
-                         const std::function<void(const std::string&)>& onLine) {
+// Combina argv en una linea de comandos Windows con escape correcto.
+// Ver: https://learn.microsoft.com/en-us/cpp/c-runtime-library/parsing-cpp-command-line-arguments
+static std::string winQuoteArg(const std::string& arg) {
+    if (!arg.empty() && arg.find_first_of(" \t\n\v\"") == std::string::npos) {
+        return arg;
+    }
+    std::string out;
+    out.push_back('"');
+    for (auto it = arg.begin(); ; ++it) {
+        unsigned backslashes = 0;
+        while (it != arg.end() && *it == '\\') {
+            ++backslashes;
+            ++it;
+        }
+        if (it == arg.end()) {
+            out.append(backslashes * 2, '\\');
+            break;
+        } else if (*it == '"') {
+            out.append(backslashes * 2 + 1, '\\');
+            out.push_back(*it);
+        } else {
+            out.append(backslashes, '\\');
+            out.push_back(*it);
+        }
+    }
+    out.push_back('"');
+    return out;
+}
+
+static std::string buildWindowsCmdLine(const std::vector<std::string>& argv) {
+    std::string cmd;
+    for (size_t i = 0; i < argv.size(); ++i) {
+        if (i) cmd.push_back(' ');
+        cmd += winQuoteArg(argv[i]);
+    }
+    return cmd;
+}
+
+static int runWindowsProcess(const std::wstring& wideCmdLine,
+                             const std::function<void(const std::string&)>& onLine,
+                             int timeoutMs) {
     SECURITY_ATTRIBUTES sa{};
     sa.nLength = sizeof(sa);
     sa.bInheritHandle = TRUE;
@@ -111,14 +172,11 @@ static int runAndCapture(const std::string& cmdLine,
 
     PROCESS_INFORMATION pi{};
 
-    // Convertir a wide. Asumimos que el cmdLine esta en UTF-8.
-    int wideLen = MultiByteToWideChar(CP_UTF8, 0, cmdLine.c_str(), -1, nullptr, 0);
-    std::wstring wide(wideLen, 0);
-    MultiByteToWideChar(CP_UTF8, 0, cmdLine.c_str(), -1, wide.data(), wideLen);
-
+    // CreateProcessW puede modificar wideCmdLine — necesita buffer mutable.
+    std::wstring mutableCmd = wideCmdLine;
     BOOL ok = CreateProcessW(
         nullptr,
-        wide.data(),
+        mutableCmd.data(),
         nullptr, nullptr,
         TRUE,
         CREATE_NO_WINDOW,
@@ -127,45 +185,219 @@ static int runAndCapture(const std::string& cmdLine,
     );
 
     CloseHandle(writePipe);
-
     if (!ok) {
         CloseHandle(readPipe);
         return -1;
     }
 
+    // Lectura del pipe con check periodico de timeout. PeekNamedPipe permite
+    // verificar disponibilidad sin bloquear. Si no hay data y excedimos el
+    // timeout absoluto, terminamos el proceso para evitar cuelgues.
+    auto startTime = std::chrono::steady_clock::now();
     std::string buffer;
     char chunk[1024];
-    DWORD read = 0;
-    while (ReadFile(readPipe, chunk, sizeof(chunk), &read, nullptr) && read > 0) {
-        buffer.append(chunk, read);
-        // Emitir cada linea completa que veamos (CR, LF o CR+LF).
-        std::size_t pos = 0;
-        while (true) {
-            auto n = buffer.find_first_of("\r\n", pos);
-            if (n == std::string::npos) break;
-            onLine(buffer.substr(pos, n - pos));
-            // saltar CR+LF agrupados
-            pos = n + 1;
-            if (pos < buffer.size() && (buffer[pos - 1] == '\r') && (buffer[pos] == '\n')) {
-                pos++;
+    DWORD readN = 0;
+    bool timedOut = false;
+
+    while (true) {
+        DWORD avail = 0;
+        if (!PeekNamedPipe(readPipe, nullptr, 0, nullptr, &avail, nullptr)) {
+            break; // pipe cerrado por el child
+        }
+
+        if (avail > 0) {
+            DWORD toRead = std::min<DWORD>(avail, sizeof(chunk));
+            if (!ReadFile(readPipe, chunk, toRead, &readN, nullptr) || readN == 0) {
+                break;
+            }
+            buffer.append(chunk, readN);
+            std::size_t pos = 0;
+            while (true) {
+                auto n = buffer.find_first_of("\r\n", pos);
+                if (n == std::string::npos) break;
+                onLine(buffer.substr(pos, n - pos));
+                pos = n + 1;
+                if (pos < buffer.size() && buffer[pos - 1] == '\r' && buffer[pos] == '\n') {
+                    pos++;
+                }
+            }
+            buffer.erase(0, pos);
+        } else {
+            // Sin data ahora: esperamos un poco antes de re-poll.
+            DWORD waitRes = WaitForSingleObject(pi.hProcess, 100);
+            if (waitRes == WAIT_OBJECT_0) {
+                // Proceso termino — leer ultimos bytes del pipe y salir.
+                DWORD finalAvail = 0;
+                if (PeekNamedPipe(readPipe, nullptr, 0, nullptr, &finalAvail, nullptr) && finalAvail > 0) {
+                    continue;
+                }
+                break;
             }
         }
-        buffer.erase(0, pos);
+
+        if (timeoutMs > 0) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - startTime).count();
+            if (elapsed > timeoutMs) {
+                geode::log::warn("[YtDlpDownloader] subprocess timeout after {}ms — killing", timeoutMs);
+                TerminateProcess(pi.hProcess, 1);
+                timedOut = true;
+                break;
+            }
+        }
+
+        // Tambien chequeamos shutdown del runtime
+        if (paimon::isRuntimeShuttingDown()) {
+            TerminateProcess(pi.hProcess, 1);
+            break;
+        }
     }
+
     if (!buffer.empty()) onLine(buffer);
 
     CloseHandle(readPipe);
-    WaitForSingleObject(pi.hProcess, INFINITE);
+    WaitForSingleObject(pi.hProcess, 5000);
     DWORD exitCode = 0;
     GetExitCodeProcess(pi.hProcess, &exitCode);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
-    return static_cast<int>(exitCode);
+    return timedOut ? -2 : static_cast<int>(exitCode);
 }
-#else
+
+static int runAndCaptureArgv(const std::vector<std::string>& argv,
+                             const std::function<void(const std::string&)>& onLine,
+                             int timeoutMs = 0) {
+    if (argv.empty()) return -1;
+    std::string cmdLine = buildWindowsCmdLine(argv);
+
+    int wideLen = MultiByteToWideChar(CP_UTF8, 0, cmdLine.c_str(), -1, nullptr, 0);
+    std::wstring wide(wideLen, 0);
+    MultiByteToWideChar(CP_UTF8, 0, cmdLine.c_str(), -1, wide.data(), wideLen);
+
+    return runWindowsProcess(wide, onLine, timeoutMs);
+}
+
 static int runAndCapture(const std::string& cmdLine,
                          const std::function<void(const std::string&)>& onLine) {
-    // Redirigir stderr a stdout para capturar todo con popen.
+    int wideLen = MultiByteToWideChar(CP_UTF8, 0, cmdLine.c_str(), -1, nullptr, 0);
+    std::wstring wide(wideLen, 0);
+    MultiByteToWideChar(CP_UTF8, 0, cmdLine.c_str(), -1, wide.data(), wideLen);
+
+    // Sin timeout para `where`/`which` simples — son comandos rapidos.
+    return runWindowsProcess(wide, onLine, 0);
+}
+#else
+// POSIX: usar fork+execvp con argv (sin shell) — evita command injection.
+// Tambien implementa timeout matando el proceso si excede el limite.
+static int runAndCaptureArgv(const std::vector<std::string>& argv,
+                             const std::function<void(const std::string&)>& onLine,
+                             int timeoutMs = 0) {
+    if (argv.empty()) return -1;
+
+    int pipefd[2];
+    if (pipe(pipefd) != 0) return -1;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    }
+
+    if (pid == 0) {
+        // Child: redirigir stdout y stderr al pipe.
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        dup2(pipefd[1], STDERR_FILENO);
+        close(pipefd[1]);
+
+        // Construir argv-style char* array. NO usamos shell.
+        std::vector<char*> cargv;
+        cargv.reserve(argv.size() + 1);
+        for (auto& s : argv) cargv.push_back(const_cast<char*>(s.c_str()));
+        cargv.push_back(nullptr);
+
+        execvp(cargv[0], cargv.data());
+        _exit(127); // execvp solo retorna en error
+    }
+
+    // Parent: leer pipe con timeout.
+    close(pipefd[1]);
+
+    auto startTime = std::chrono::steady_clock::now();
+    std::string buffer;
+    char chunk[1024];
+    bool timedOut = false;
+
+    // Set non-blocking on read end para poder hacer poll-style con timeout.
+    int flags = fcntl(pipefd[0], F_GETFL, 0);
+    if (flags >= 0) fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+
+    while (true) {
+        ssize_t n = read(pipefd[0], chunk, sizeof(chunk));
+        if (n > 0) {
+            buffer.append(chunk, n);
+            std::size_t pos = 0;
+            while (true) {
+                auto nl = buffer.find('\n', pos);
+                if (nl == std::string::npos) break;
+                std::string line = buffer.substr(pos, nl - pos);
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                onLine(line);
+                pos = nl + 1;
+            }
+            buffer.erase(0, pos);
+        } else if (n == 0) {
+            break; // EOF
+        } else {
+            // EAGAIN/EWOULDBLOCK: no data — chequear estado del proceso.
+            int status = 0;
+            pid_t w = waitpid(pid, &status, WNOHANG);
+            if (w == pid) {
+                // child termino — drenar lo que quede.
+                while ((n = read(pipefd[0], chunk, sizeof(chunk))) > 0) {
+                    buffer.append(chunk, n);
+                }
+                break;
+            }
+            if (w < 0) break;
+
+            if (timeoutMs > 0) {
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - startTime).count();
+                if (elapsed > timeoutMs) {
+                    geode::log::warn("[YtDlpDownloader] subprocess timeout after {}ms — killing", timeoutMs);
+                    kill(pid, SIGKILL);
+                    timedOut = true;
+                    break;
+                }
+            }
+
+            if (paimon::isRuntimeShuttingDown()) {
+                kill(pid, SIGKILL);
+                break;
+            }
+
+            // Espera corta antes de re-poll.
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }
+
+    if (!buffer.empty()) onLine(buffer);
+    close(pipefd[0]);
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (timedOut) return -2;
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    return -1;
+}
+
+static int runAndCapture(const std::string& cmdLine,
+                         const std::function<void(const std::string&)>& onLine) {
+    // Mantenida para casos hardcoded como `which yt-dlp`. NO usar con datos
+    // de usuario — usa shell y abre command injection. runAndCaptureArgv()
+    // es el path seguro para descargas reales.
     std::string full = cmdLine + " 2>&1";
     FILE* fp = popen(full.c_str(), "r");
     if (!fp) return -1;
@@ -364,7 +596,7 @@ void YtDlpDownloader::download(
     // Fallback: si la setting es desconocida, usamos mp3.
     std::string formatChoice = "mp3";
     try {
-        formatChoice = Mod::get()->getSettingValue<std::string>("menuMusicDownloadFormat");
+        formatChoice = Mod::get()->getSavedValue<std::string>("menuMusicDownloadFormat", "mp3");
     } catch (...) {
         // Puede que la setting no exista (mod actualizado sobre save viejo).
     }
@@ -410,29 +642,32 @@ void YtDlpDownloader::download(
     std::string templatePath =
         geode::utils::string::pathToString(tracksDir / (trackId + ".%(ext)s"));
 
-    std::string cmd = joinArg(binary)
-        + " --no-playlist"
-        + " -f " + joinArg(formatSelector)
-        + " -x"
-        + " --audio-format " + audioFormatArg
-        + " --audio-quality 0"
-        + " --ffmpeg-location " + joinArg(ffmpegPath)
-        + " --write-thumbnail"
-        + " --write-info-json"
-        + " --no-warnings"
-        + " --no-check-certificate"
-        + " --newline"
-        + " --progress"
-        + " -o " + joinArg(templatePath)
-        + " " + joinArg(url);
+    // CRITICAL: usar argv array en lugar de string concatenado para evitar
+    // command injection. Una URL con `;`, `&`, `'`, `$(...)`, `` ` `` etc.
+    // no se interpreta por shell porque execvp/CreateProcessW no usa shell.
+    std::vector<std::string> argv = {
+        binary,
+        "--no-playlist",
+        "-f", formatSelector,
+        "-x",
+        "--audio-format", audioFormatArg,
+        "--audio-quality", "0",
+        "--ffmpeg-location", ffmpegPath,
+        "--write-thumbnail",
+        "--write-info-json",
+        "--no-warnings",
+        "--newline",
+        "--progress",
+        "-o", templatePath,
+        url,
+    };
 
     log::info("[yt-dlp] starting download. trackId={}, url='{}', format={}",
         trackId, url, formatChoice);
-    log::info("[yt-dlp] command: {}", cmd);
 
     m_activeJobs.fetch_add(1, std::memory_order_relaxed);
 
-    paimon::ThreadTracker::get().spawn([this, cmd, trackId, url, tracksDir, coversDir, expectedExt, formatChoice,
+    paimon::ThreadTracker::get().spawn([this, argv, trackId, url, tracksDir, coversDir, expectedExt, formatChoice,
                  onProgress, onComplete]() mutable {
         geode::utils::thread::setName("Paimon YT-DLP Worker");
         if (paimon::isRuntimeShuttingDown()) {
@@ -453,7 +688,10 @@ void YtDlpDownloader::download(
                    line.compare(0, prefix.size(), prefix) == 0;
         };
 
-        int exitCode = runAndCapture(cmd, [&](const std::string& line) {
+        // Timeout 5 minutos: yt-dlp puede tardar mucho en archivos grandes
+        // o conexiones lentas, pero no debe colgar el shutdown del juego.
+        constexpr int kDownloadTimeoutMs = 5 * 60 * 1000;
+        int exitCode = runAndCaptureArgv(argv, [&](const std::string& line) {
             // Log todo al debug log para debugging. No saturan mucho porque
             // yt-dlp no es un mod critico de tiempo real.
             log::debug("[yt-dlp] {}", line);
@@ -488,7 +726,7 @@ void YtDlpDownloader::download(
                     lastErrorLine = trimmed;
                 }
             }
-        });
+        }, kDownloadTimeoutMs);
 
         result.exitCode = exitCode;
 

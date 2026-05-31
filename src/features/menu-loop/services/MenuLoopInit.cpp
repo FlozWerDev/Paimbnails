@@ -1,4 +1,4 @@
-#include "MenuLoopManager.hpp"
+﻿#include "MenuLoopManager.hpp"
 #include "MenuLoopControl.hpp"
 #include <Geode/loader/Loader.hpp>
 #include <Geode/utils/file.hpp>
@@ -39,7 +39,7 @@ static void scanAndLoadSongs() {
     }
 
     // ── Scan additional folder if set ──
-    auto extraFolder = Mod::get()->getSettingValue<std::filesystem::path>("menuLoopAdditionalFolder");
+    auto extraFolder = std::filesystem::path(Mod::get()->getSavedValue<std::string>("menuLoopAdditionalFolder", ""));
     if (!extraFolder.empty() && std::filesystem::exists(extraFolder, ec) && !ec) {
         for (auto const& entry : std::filesystem::directory_iterator(extraFolder, ec)) {
             if (ec) break;
@@ -52,8 +52,8 @@ static void scanAndLoadSongs() {
     }
 
     // ── Load playlist file if enabled ──
-    if (Mod::get()->getSettingValue<bool>("menuLoopLoadPlaylistFile")) {
-        auto playlistPath = Mod::get()->getSettingValue<std::filesystem::path>("menuLoopPlaylistFile");
+    if (Mod::get()->getSavedValue<bool>("menuLoopLoadPlaylistFile", false)) {
+        auto playlistPath = std::filesystem::path(Mod::get()->getSavedValue<std::string>("menuLoopPlaylistFile", ""));
     if (playlistPath.empty()) playlistPath = configDir / "playlistOne.txt";
         if (std::filesystem::exists(playlistPath, ec) && !ec) {
             auto content = geode::utils::file::readString(playlistPath);

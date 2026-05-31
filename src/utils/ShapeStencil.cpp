@@ -1,4 +1,4 @@
-#include "ShapeStencil.hpp"
+﻿#include "ShapeStencil.hpp"
 #include "PaimonDrawNode.hpp"
 #include <cmath>
 

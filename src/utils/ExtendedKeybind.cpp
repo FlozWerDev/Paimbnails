@@ -1,4 +1,4 @@
-#include "ExtendedKeybind.hpp"
+﻿#include "ExtendedKeybind.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/Keyboard.hpp>
@@ -65,6 +65,8 @@ std::vector<std::string> const& managedList() {
         "settings-panel-keybind",
         "main-menu-layout-keybind",
         "level-search-enter",
+        // editor music
+        "editorMusicToggleKeybind",
         // volume scroll (hold-while-scroll, no usan trigger-event)
         "volume-music-mod-game",
         "volume-sfx-mod-game",
@@ -87,6 +89,7 @@ std::vector<std::string> const& triggerOnlyList() {
         "settings-panel-keybind",
         "main-menu-layout-keybind",
         "level-search-enter",
+        "editorMusicToggleKeybind",
     };
     return kKeys;
 }

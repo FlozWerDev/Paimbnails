@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/ShareCommentLayer.hpp>
 #include <Geode/binding/CCTextInputNode.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -15,9 +15,11 @@ using namespace cocos2d;
 
 class $modify(PaimonShareComment, ShareCommentLayer) {
     struct Fields {
-        CCMenu* m_toolMenu = nullptr;
-        CCMenuItemSpriteExtra* m_copyBtn = nullptr;
-        CCMenuItemSpriteExtra* m_pasteBtn = nullptr;
+        // WeakRef<>: si otros mods removeFromParent-ean estos nodos durante
+        // teardown, lock() devuelve null en vez de dangling pointer.
+        WeakRef<CCMenu> m_toolMenu;
+        WeakRef<CCMenuItemSpriteExtra> m_copyBtn;
+        WeakRef<CCMenuItemSpriteExtra> m_pasteBtn;
         int m_clipboardCheckCounter = 0;
         bool m_lastClipboardHasContent = false;
     };
@@ -220,7 +222,8 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
     void update(float dt) {
         ShareCommentLayer::update(dt);
 
-        if (!m_commentInput || !m_fields->m_toolMenu) return;
+        auto toolMenu = m_fields->m_toolMenu.lock();
+        if (!m_commentInput || !toolMenu) return;
 
         // Perf: only check visibility every 10 frames instead of every frame
         m_fields->m_clipboardCheckCounter++;
@@ -228,8 +231,8 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
 
         // Muestra Copy si hay texto
         bool hasText = !std::string(m_commentInput->getString()).empty();
-        if (m_fields->m_copyBtn) {
-            m_fields->m_copyBtn->setVisible(hasText);
+        if (auto copyBtn = m_fields->m_copyBtn.lock()) {
+            copyBtn->setVisible(hasText);
         }
 
         // Revisa clipboard cada ~30 frames
@@ -238,8 +241,8 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
             m_fields->m_lastClipboardHasContent = !geode::utils::clipboard::read().empty();
         }
 
-        if (m_fields->m_pasteBtn) {
-            m_fields->m_pasteBtn->setVisible(m_fields->m_lastClipboardHasContent);
+        if (auto pasteBtn = m_fields->m_pasteBtn.lock()) {
+            pasteBtn->setVisible(m_fields->m_lastClipboardHasContent);
         }
     }
 };

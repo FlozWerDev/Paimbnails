@@ -1,4 +1,4 @@
-#include "PaiConfigLayer.hpp"
+﻿#include "PaiConfigLayer.hpp"
 #include "../core/UIConstants.hpp"
 #include "../features/backgrounds/ui/SameAsPickerPopup.hpp"
 #include "../features/backgrounds/ui/VideoSettingsPopup.hpp"

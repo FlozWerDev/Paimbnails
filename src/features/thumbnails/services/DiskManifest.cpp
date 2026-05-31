@@ -1,4 +1,4 @@
-#include "DiskManifest.hpp"
+﻿#include "DiskManifest.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>

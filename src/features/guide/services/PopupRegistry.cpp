@@ -1,4 +1,4 @@
-#include "PopupRegistry.hpp"
+﻿#include "PopupRegistry.hpp"
 
 #include "../../../utils/Localization.hpp"
 #include "../ui/PaimonGuideChatPopup.hpp"

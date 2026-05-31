@@ -1,4 +1,4 @@
-// MenuLayerPreloadFallback.cpp — Garantiza que el preload arranque
+﻿// MenuLayerPreloadFallback.cpp — Garantiza que el preload arranque
 // y el label X/Y se muestre incluso si el LoadingLayer hook no llegó
 // a interceptar nada (caso típico: mod con early-load:false que se
 // terminó de cargar después de los 14 steps de LoadingLayer::loadAssets).

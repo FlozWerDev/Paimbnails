@@ -1,4 +1,4 @@
-#include <Geode/modify/LevelLeaderboard.hpp>
+﻿#include <Geode/modify/LevelLeaderboard.hpp>
 #include <Geode/binding/LevelLeaderboard.hpp>
 #include <Geode/binding/GJCommentListLayer.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
@@ -34,8 +34,8 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
 
         // Usa thumbnail activo de LevelInfoLayer si esta disponible
         if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID &&
-            paimon::ThumbnailBackgroundChangedEvent::s_lastTexture) {
-            applyBlurredBackground(paimon::ThumbnailBackgroundChangedEvent::s_lastTexture);
+            paimon::ThumbnailBackgroundChangedEvent::getLastTexture()) {
+            applyBlurredBackground(paimon::ThumbnailBackgroundChangedEvent::getLastTexture());
         } else {
             WeakRef<PaimonLevelLeaderboard> safeRef = this;
             ThumbnailLoader::get().requestLoad(
@@ -317,5 +317,18 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
             m_fields->m_bgEventHandle = 0;
         }
         LevelLeaderboard::keyBackClicked();
+    }
+
+    // Red de seguridad: si la layer se destruye por scene-replace, popScene,
+    // o cualquier camino que NO pase por keyBackClicked, el listener quedaba
+    // zombie en EventBus y la lambda con WeakRef seguia ejecutandose para
+    // siempre. Aqui aseguramos la desuscripcion.
+    $override
+    void onExit() {
+        if (m_fields->m_bgEventHandle != 0) {
+            paimon::EventBus::get().unsubscribe(m_fields->m_bgEventHandle);
+            m_fields->m_bgEventHandle = 0;
+        }
+        LevelLeaderboard::onExit();
     }
 };

@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/GauntletLayer.hpp>
 #include <Geode/binding/GauntletLayer.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
@@ -98,7 +98,7 @@ public:
         m_currentIndex = 0;
         
         // Fondo negro
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
         auto bg = CCLayerColor::create(ccc4(0, 0, 0, 200), winSize.width, winSize.height);
         this->addChild(bg, -1);
         
@@ -207,7 +207,7 @@ public:
         CCSprite* nextSprite = m_sprites[nextIdx];
         CCSprite* currentSprite = m_sprites[m_activeSpriteIndex];
 
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
 
         // Actualiza textura y shader
         nextSprite->setTexture(tex);
@@ -299,7 +299,12 @@ class $modify(PaimonGauntletLayer, GauntletLayer) {
     bool init(GauntletType type) {
         if (!GauntletLayer::init(type)) return false;
         log::info("[GauntletLayer] init: type={}", static_cast<int>(type));
-        
+
+        // Idempotencia: si init se llama varias veces no acumular fondos.
+        if (this->getChildByID("paimon-gauntlet-background"_spr)) {
+            return true;
+        }
+
         // Oculta fondo default
         if (auto bg = this->getChildByID("background")) {
             bg->setVisible(false);

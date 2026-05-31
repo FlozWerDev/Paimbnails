@@ -1,4 +1,4 @@
-#include "MainMenuContextEditPopup.hpp"
+﻿#include "MainMenuContextEditPopup.hpp"
 
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"

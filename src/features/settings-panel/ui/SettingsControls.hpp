@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>

@@ -1,4 +1,4 @@
-#include <Geode/modify/PauseLayer.hpp>
+﻿#include <Geode/modify/PauseLayer.hpp>
 #include <Geode/binding/PlayLayer.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/utils/cocos.hpp>
@@ -189,6 +189,12 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             return;
         }
 
+        // Idempotencia: customSetup puede invocarse varias veces (otros mods
+        // re-construyen el menu). Si el boton ya existe, no duplicamos.
+        if (rightMenu->getChildByID("thumbnail-capture-button"_spr)) {
+            return;
+        }
+
         auto spr = tryCreateIcon();
             if (!spr) {
                 log::error("Failed to create button sprite");
@@ -206,7 +212,11 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             rightMenu->updateLayout();
 
             // anade boton para elegir archivo (icono de carpeta)
-            {
+            // Idempotencia: el guard de capture-button arriba ya filtra reentry
+            // pero por defensa anidada chequeamos tambien aqui.
+            if (rightMenu->getChildByID("thumbnail-select-button"_spr)) {
+                // ya añadido en una invocacion previa
+            } else {
                 auto selectSpr = Assets::loadButtonSprite(
                     "pause-select-file",
                     "frame:accountBtn_myLevels_001.png",
@@ -748,6 +758,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 // Obtiene pixeles con CCRenderTexture
                 auto renderTex = CCRenderTexture::create(width, height, kCCTexture2DPixelFormat_RGBA8888);
                 if (!renderTex) {
+                    texture->release();
                     PaimonNotify::create(Localization::get().getString("pause.render_error").c_str(), NotificationIcon::Error)->show();
                     return;
                 }
@@ -835,7 +846,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 );
 
                 if (popup) {
-                    texture->autorelease();
+                    // texture se pasa al popup; el popup hace retain
                     popup->show();
                 } else {
                     log::error("[PauseLayer] Failed to create GIF preview popup");
@@ -1068,7 +1079,9 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         // ya que intenta acceder a campos de un PlayLayer inexistente.
         if (!PlayLayer::get()) {
             log::warn("[PauseLayer] onResume called but PlayLayer::get() is null. Preventing crash.");
-            this->removeFromParentAndCleanup(true);
+            // No hacemos removeFromParentAndCleanup aqui — si el PauseLayer esta siendo
+            // destruido por una transicion de escena, forzar el cleanup puede causar
+            // double-free. Es mas seguro dejar que el sistema maneje la destruccion.
             return;
         }
 
@@ -1089,6 +1102,9 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             log::warn("[PauseLayer] onRestart called but PlayLayer::get() is null. Preventing crash.");
             return;
         }
+        // Notifica al PauseZoomManager para limpiar estado de zoom y evitar
+        // que el siguiente nivel entre con el PauseLayer invisible.
+        paimon::notifyPauseClosing();
         PauseLayer::onRestart(sender);
     }
 
@@ -1097,6 +1113,8 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             log::warn("[PauseLayer] onRestartFull called but PlayLayer::get() is null. Preventing crash.");
             return;
         }
+        // Notifica al PauseZoomManager para limpiar estado de zoom.
+        paimon::notifyPauseClosing();
         PauseLayer::onRestartFull(sender);
     }
 
@@ -1105,6 +1123,8 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             log::warn("[PauseLayer] onNormalMode called but PlayLayer::get() is null. Preventing crash.");
             return;
         }
+        // Notifica al PauseZoomManager para limpiar estado de zoom.
+        paimon::notifyPauseClosing();
         PauseLayer::onNormalMode(sender);
     }
 
@@ -1113,6 +1133,8 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             log::warn("[PauseLayer] onPracticeMode called but PlayLayer::get() is null. Preventing crash.");
             return;
         }
+        // Notifica al PauseZoomManager para limpiar estado de zoom.
+        paimon::notifyPauseClosing();
         PauseLayer::onPracticeMode(sender);
     }
 };

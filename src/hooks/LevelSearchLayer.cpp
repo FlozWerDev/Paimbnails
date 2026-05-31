@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GJLevelList.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
@@ -18,12 +18,12 @@
 #include <Geode/binding/TableViewCell.hpp>
 #include <Geode/binding/TableViewCellDelegate.hpp>
 #include <Geode/modify/LevelSearchLayer.hpp>
-#include <Geode/utils/VMTHookManager.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
 #include "../features/community/ui/LeaderboardLayer.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../utils/ScissorClipNode.hpp"
 #include "../utils/PaimonDrawNode.hpp"
 #include "LevelCellContext.hpp"
 #include "../framework/compat/SceneLocators.hpp"
@@ -39,14 +39,94 @@
 using namespace geode::prelude;
 
 namespace {
+    // Releases ALL focus state from the search input so that no IME/keyboard
+    // listener stays alive after we transition to another scene (e.g. starting
+    // a level from the realtime preview). Without this, the text input keeps
+    // its CCIMEDispatcher delegate registered and starts swallowing keys in
+    // gameplay (ESC, arrows, letters, etc).
     void releaseSearchInputFocus(LevelSearchLayer* layer) {
         if (!layer || !layer->m_searchInput) return;
 
-        layer->m_searchInput->onClickTrackNode(false);
-        if (layer->m_searchInput->m_textField) {
-            layer->m_searchInput->m_textField->detachWithIME();
+        auto* input = layer->m_searchInput;
+
+        // 1. Detach the underlying CCTextFieldTTF from the IME dispatcher.
+        //    This is what actually stops keystrokes from being routed to the
+        //    text field. Without this call, the text field stays as the
+        //    "active IME delegate" inside CCIMEDispatcher and keeps eating
+        //    keys typed in any later scene (PlayLayer, etc).
+        if (input->m_textField) {
+            input->m_textField->detachWithIME();
         }
+
+        // 2. Force the input's "selected" bookkeeping to false. CCTextInputNode
+        //    keeps an `m_selected` bool that gates cursor blinking and the
+        //    re-attach logic. If we leave it as true, the next visit() can
+        //    reattach to IME on its own.
+        input->m_selected = false;
+
+        // 3. Tell the wrapper to deselect — this clears the visual cursor
+        //    and triggers GD's own bookkeeping. We do this *after* clearing
+        //    m_selected so the subsequent visit() does not re-enter the
+        //    selected state.
+        input->onClickTrackNode(false);
     }
+
+    // CCMenu subclass that ignores touches outside the rect of an external
+    // bounds node (in world coordinates). Used for the realtime search rows
+    // so that scrolled-out items can't be tapped just because they sit in
+    // the touch dispatcher with their original positions.
+    //
+    // CCClippingNode only clips RENDERING, not input. Without this filter,
+    // a row that has been scrolled out of the visible area still captures
+    // touches at its on-screen position (which is now outside the clip).
+    class BoundedTouchMenu : public CCMenu {
+    public:
+        static BoundedTouchMenu* create() {
+            auto ret = new BoundedTouchMenu();
+            if (ret && ret->init()) {
+                ret->autorelease();
+                return ret;
+            }
+            CC_SAFE_DELETE(ret);
+            return nullptr;
+        }
+
+        bool init() override {
+            if (!CCMenu::init()) return false;
+            return true;
+        }
+
+        // Track the node whose AABB (in world space) defines the allowed
+        // input region. The menu does not retain it — the caller must keep
+        // it alive through the normal node hierarchy.
+        void setBoundsNode(CCNode* bounds) { m_boundsNode = bounds; }
+
+        bool ccTouchBegan(CCTouch* touch, CCEvent* event) override {
+            if (!isTouchInsideBounds(touch)) {
+                return false;
+            }
+            return CCMenu::ccTouchBegan(touch, event);
+        }
+
+    private:
+        CCNode* m_boundsNode = nullptr;
+
+        bool isTouchInsideBounds(CCTouch* touch) const {
+            if (!m_boundsNode || !touch) return true;
+
+            auto location = touch->getLocation();
+            auto size = m_boundsNode->getContentSize();
+            CCRect localRect{0.f, 0.f, size.width, size.height};
+            auto worldOrigin = m_boundsNode->convertToWorldSpace({localRect.origin.x, localRect.origin.y});
+            auto worldOpposite = m_boundsNode->convertToWorldSpace({localRect.getMaxX(), localRect.getMaxY()});
+            float minX = std::min(worldOrigin.x, worldOpposite.x);
+            float minY = std::min(worldOrigin.y, worldOpposite.y);
+            float maxX = std::max(worldOrigin.x, worldOpposite.x);
+            float maxY = std::max(worldOrigin.y, worldOpposite.y);
+            return location.x >= minX && location.x <= maxX &&
+                   location.y >= minY && location.y <= maxY;
+        }
+    };
 
     // Keep this preview scoped to normal level search. List search uses
     // different result objects and should continue using GD's normal flow.
@@ -619,7 +699,7 @@ namespace {
         }
 
         void buildUI() {
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            auto winSize = CCDirector::get()->getWinSize();
             auto rect = quickSearchRect();
 
             m_container = CCNode::create();
@@ -884,8 +964,6 @@ namespace {
         void openLevel(GJGameLevel* level) {
             if (!level) return;
 
-            releaseSearchInputFocus(m_owner);
-
             auto manager = GameLevelManager::get();
             auto savedLevel = manager ? manager->getSavedLevel(level->m_levelID) : nullptr;
             auto levelToUse = savedLevel ? savedLevel : level;
@@ -894,6 +972,17 @@ namespace {
             auto layer = LevelInfoLayer::create(levelToUse, false);
             auto scene = CCScene::create();
             scene->addChild(layer);
+
+            // Release the search input focus and freeze callbacks BEFORE
+            // pushing the new scene. See the matching method in
+            // RealtimeSearchBrowserPreview for the full rationale — short
+            // version: without this the search input keeps capturing keys
+            // in the next scene (gameplay), so ESC/arrows/etc are eaten.
+            releaseSearchInputFocus(m_owner);
+            m_shuttingDown = true;
+            cancelPendingSearch();
+            clearDelegate();
+
             TransitionManager::get().pushScene(scene);
         }
 
@@ -962,7 +1051,7 @@ namespace {
                 }
             }
 
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            auto winSize = CCDirector::get()->getWinSize();
             return {
                 winSize.width / 2.f - kPreviewFallbackWidth / 2.f,
                 winSize.height / 2.f - 8.f,
@@ -2065,8 +2154,6 @@ namespace {
         void openLevel(GJGameLevel* level) {
             if (!level) return;
 
-            releaseSearchInputFocus(m_owner);
-
             auto manager = GameLevelManager::get();
             auto savedLevel = manager ? manager->getSavedLevel(level->m_levelID) : nullptr;
             auto levelToUse = savedLevel ? savedLevel : level;
@@ -2075,12 +2162,28 @@ namespace {
             auto layer = LevelInfoLayer::create(levelToUse, false);
             auto scene = CCScene::create();
             scene->addChild(layer);
+
+            // Release the search input focus and mark the preview as shutting
+            // down BEFORE pushing the new scene. We cannot fully destroy the
+            // preview synchronously here because we are inside a touch
+            // handler — the CCMenuItemSpriteExtra that fired this callback
+            // is still on the stack and removing it now would crash on
+            // return. Instead we:
+            //   1. Detach the IME / clear the input focus immediately, so no
+            //      keystrokes typed in the next scene leak into the search
+            //      input.
+            //   2. Set m_shuttingDown so any pending callbacks (network
+            //      delegate, scheduled search) become no-ops.
+            //   3. Cancel the pending search and clear the delegate so the
+            //      GameLevelManager doesn't call back into a stale preview.
+            // The actual node removal happens via the LevelSearchLayer
+            // cleanup chain when the scene transition finishes.
+            prepareForSceneTransition();
+
             TransitionManager::get().pushScene(scene);
         }
 
         void openObject(CCObject* object) {
-            releaseSearchInputFocus(m_owner);
-
             if (auto level = typeinfo_cast<GJGameLevel*>(object)) {
                 openLevel(level);
                 return;
@@ -2093,6 +2196,7 @@ namespace {
                         accountID = manager->accountIDForUserID(score->m_userID);
                     }
                 }
+                prepareForSceneTransition();
                 if (accountID > 0) {
                     ProfilePage::create(accountID, false)->show();
                 }
@@ -2100,8 +2204,30 @@ namespace {
             }
 
             if (auto list = typeinfo_cast<GJLevelList*>(object)) {
-                TransitionManager::get().pushScene(LevelListLayer::scene(list));
+                auto scene = LevelListLayer::scene(list);
+                prepareForSceneTransition();
+                TransitionManager::get().pushScene(scene);
             }
+        }
+
+        // Detaches the search input from the IME and freezes the preview so
+        // it stops emitting any callbacks during the upcoming scene
+        // transition. Safe to call from inside a touch handler — does NOT
+        // remove the node or its children. Final node cleanup happens when
+        // the LevelSearchLayer is destroyed.
+        void prepareForSceneTransition() {
+            // 1. Release the search input. This is THE fix for the reported
+            //    bug: without it, the CCTextFieldTTF inside m_searchInput
+            //    keeps its IME delegate registered, and any key typed in
+            //    the next scene (LevelInfoLayer / PlayLayer) is captured by
+            //    the input that stayed alive in the previous layer.
+            releaseSearchInputFocus(m_owner);
+
+            // 2. Freeze our state so no callback re-attaches the input or
+            //    triggers a re-render after we've started the transition.
+            m_shuttingDown = true;
+            cancelPendingSearch();
+            clearDelegate();
         }
 
         void onRowOpen(CCObject* sender) {
@@ -2116,7 +2242,13 @@ namespace {
         void addRowOpenButton(CCNode* wrapper, int index, float width, float height) {
             if (!wrapper) return;
 
-            auto menu = CCMenu::create();
+            // Use a BoundedTouchMenu instead of a plain CCMenu so that touches
+            // outside the visible clip rect are rejected. Without this, rows
+            // that the scroll has pushed above/below the visible region still
+            // capture touches at their world-space position (CCClippingNode
+            // does not filter input, only rendering).
+            auto menu = BoundedTouchMenu::create();
+            menu->setBoundsNode(m_resultsClip);
             menu->setPosition({0.f, 0.f});
             wrapper->addChild(menu, 5);
 
@@ -2138,7 +2270,7 @@ namespace {
             wrapper->ignoreAnchorPointForPosition(false);
 
             if (auto level = typeinfo_cast<GJGameLevel*>(object)) {
-                auto cellClip = CCClippingNode::create(paimon::SpriteHelper::createRectStencil(width, height));
+                auto cellClip = paimon::ScissorClipNode::create(paimon::SpriteHelper::createRectStencil(width, height));
                 if (!cellClip) return wrapper;
                 cellClip->setContentSize({width, height});
                 cellClip->setAnchorPoint({0.f, 0.f});
@@ -2310,7 +2442,7 @@ namespace {
                 }
             }
 
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            auto winSize = CCDirector::get()->getWinSize();
             return insetRect({
                 winSize.width / 2.f - kPreviewFallbackWidth / 2.f,
                 winSize.height / 2.f - 8.f,
@@ -2386,12 +2518,11 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
         if (!LevelSearchLayer::init(searchType)) return false;
         m_fields->m_previewCallbacksSuspended = false;
 
-        auto onExitHook = VMTHookManager::get().addHook<
-            ResolveC<MyLevelSearchLayer>::func(&MyLevelSearchLayer::onExit)
-        >(this, "LevelSearchLayer::onExit");
-        if (!onExitHook) {
-            log::error("Failed to hook LevelSearchLayer::onExit: {}", onExitHook.unwrapErr());
-        }
+        // El hook a onExit ya esta cubierto por el `$override void onExit()` mas
+        // abajo en este archivo. Antes habia ademas un VMTHookManager::addHook
+        // sobre el mismo metodo, lo que instalaba dos puntos de hook por instancia
+        // y los side-effects (m_previewCallbacksSuspended, releaseSearchInputFocus)
+        // corrian dos veces. Removido para evitar duplicacion.
 
         // fondo custom
         bool hasCustomBg = LayerBackgroundManager::get().applyBackground(this, "search");

@@ -1,4 +1,4 @@
-// RuntimeLifecycle.cpp — Manejo de ciclo de vida: arranque y cierre.
+﻿// RuntimeLifecycle.cpp — Manejo de ciclo de vida: arranque y cierre.
 // - cleanupDiskCache(): limpieza selectiva del cache de disco
 // - $on_game(Exiting): limpieza de RAM y disco al cerrar el juego
 
@@ -250,7 +250,9 @@ $on_game(Exiting) {
 
     safeShutdownStep("thumbnail-bg-event-clear", []() {
         paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID = 0;
-        (void)paimon::ThumbnailBackgroundChangedEvent::s_lastTexture.take();
+        // Libera la referencia (decrementa refcount). Si el GL context o
+        // CCPoolManager ya murieron, esto puede ser no-op pero es defensivo.
+        paimon::ThumbnailBackgroundChangedEvent::setLastTexture(nullptr);
     });
 
     // 3. detener audio dinamico/perfil de forma forzada (evita estados intermedios

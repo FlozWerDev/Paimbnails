@@ -1,4 +1,4 @@
-#include "ListThumbnailManager.hpp"
+﻿#include "ListThumbnailManager.hpp"
 #include "ThumbnailLoader.hpp"
 #include <fstream>
 

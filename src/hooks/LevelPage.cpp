@@ -1,4 +1,4 @@
-#include <Geode/modify/LevelPage.hpp>
+﻿#include <Geode/modify/LevelPage.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../managers/ThumbnailAPI.hpp"

@@ -1,4 +1,4 @@
-#include "LocalThumbs.hpp"
+﻿#include "LocalThumbs.hpp"
 
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/utils/file.hpp>

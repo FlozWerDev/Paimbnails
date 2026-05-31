@@ -1,4 +1,4 @@
-#include "TransitionManager.hpp"
+﻿#include "TransitionManager.hpp"
 #include "../ui/CustomTransitionScene.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
 #include <Geode/utils/file.hpp>

@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/LevelListLayer.hpp>
 #include <Geode/modify/LevelBrowserLayer.hpp>
 #include <Geode/binding/LevelCell.hpp>
@@ -270,7 +270,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         if (!searchMenu) {
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
                 if (auto menu = typeinfo_cast<CCMenu*>(child)) {
-                    if (menu->getPosition().y > CCDirector::sharedDirector()->getWinSize().height * 0.7f) {
+                    if (menu->getPosition().y > CCDirector::get()->getWinSize().height * 0.7f) {
                         searchMenu = menu;
                         break;
                     }
@@ -279,7 +279,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         }
 
         if (!searchMenu) {
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            auto winSize = CCDirector::get()->getWinSize();
             auto gearMenu = CCMenu::create();
             gearMenu->setPosition({0, 0});
             gearMenu->setID("paimon-levelcell-settings-menu"_spr);
@@ -339,7 +339,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         if (!searchMenu) {
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
                 if (auto menu = typeinfo_cast<CCMenu*>(child)) {
-                    if (menu->getPosition().y > CCDirector::sharedDirector()->getWinSize().height * 0.7f) {
+                    if (menu->getPosition().y > CCDirector::get()->getWinSize().height * 0.7f) {
                         searchMenu = menu;
                         break;
                     }
@@ -364,7 +364,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
             }
         } else {
             // Menu propio en esquina superior derecha
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            auto winSize = CCDirector::get()->getWinSize();
             auto menu = CCMenu::create();
             menu->setPosition({0, 0});
             menu->setID("paimon-refresh-menu"_spr);

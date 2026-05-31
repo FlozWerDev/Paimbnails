@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Geode/ui/Popup.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>

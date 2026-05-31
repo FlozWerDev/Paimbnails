@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Geode/binding/PauseLayer.hpp>
 #include <Geode/utils/cocos.hpp>
@@ -125,7 +125,7 @@ namespace paimon {
     // un PauseLayer real. Es O(N) donde N = hijos de la escena (~20),
     // mucho más fiable que confiar solo en el flag.
     inline bool hasPauseLayerInScene() {
-        auto* director = cocos2d::CCDirector::sharedDirector();
+        auto* director = cocos2d::CCDirector::get();
         if (!director) return false;
         auto* scene = director->getRunningScene();
         if (!scene) return false;

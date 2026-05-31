@@ -1,4 +1,4 @@
-#include "QuickHubManager.hpp"
+﻿#include "QuickHubManager.hpp"
 #include "../ui/QuickHubRadial.hpp"
 
 #include <Geode/Geode.hpp>
@@ -62,10 +62,10 @@ void cleanupProgressBar() {
 }
 
 void createProgressBar() {
-    auto scene = CCDirector::sharedDirector()->getRunningScene();
+    auto scene = CCDirector::get()->getRunningScene();
     if (!scene) return;
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // Contenedor de la barra
     auto container = CCNode::create();
@@ -117,7 +117,7 @@ public:
             s_instance = new QuickHubScheduler();
             s_instance->init();
             s_instance->retain();
-            CCDirector::sharedDirector()->getScheduler()->scheduleSelector(
+            CCDirector::get()->getScheduler()->scheduleSelector(
                 schedule_selector(QuickHubScheduler::onUpdate),
                 s_instance, 0.f, false
             );

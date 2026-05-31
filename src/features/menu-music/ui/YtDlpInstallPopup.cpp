@@ -1,4 +1,4 @@
-#include "YtDlpInstallPopup.hpp"
+﻿#include "YtDlpInstallPopup.hpp"
 
 #include "../services/YtDlpBootstrap.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -128,7 +128,7 @@ bool YtDlpInstallPopup::init(std::function<void(bool)> onFinished) {
 }
 
 void YtDlpInstallPopup::onExit() {
-    m_alive = false;
+    *m_alive = false;
     // Si el popup se cierra antes de terminar, notificar al caller.
     if (!m_finished && m_onFinished) {
         auto cb = std::move(m_onFinished);
@@ -148,14 +148,20 @@ void YtDlpInstallPopup::startInstall() {
     }
 
     boot.ensureInstalled(
-        [this](BootstrapProgress p) {
-            if (!m_alive.load()) return;
-            this->updateProgress(p.percent, p.message);
+        [this, alive = m_alive](BootstrapProgress p) {
+            if (!alive->load()) return;
+            geode::Loader::get()->queueInMainThread([this, alive, p]() {
+                if (!alive->load()) return;
+                this->updateProgress(p.percent, p.message);
+            });
         },
-        [this](bool ok, std::string msg) {
-            if (!m_alive.load()) return;
-            if (ok) this->finishSuccess();
-            else this->finishError(msg);
+        [this, alive = m_alive](bool ok, std::string msg) {
+            if (!alive->load()) return;
+            geode::Loader::get()->queueInMainThread([this, alive, ok, msg]() {
+                if (!alive->load()) return;
+                if (ok) this->finishSuccess();
+                else this->finishError(msg);
+            });
         }
     );
 }

@@ -1,4 +1,4 @@
-// Hook al MenuLayer de GD para:
+﻿// Hook al MenuLayer de GD para:
 //   1. Anadir un boton "vinyl" al right-side-menu que abre el popup principal.
 //   2. Mostrar un NowPlayingToast cuando cambia el track (unica vez por
 //      entrada al MenuLayer para no spamear al usuario).
@@ -41,7 +41,7 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
         if (!Mod::get()->getSettingValue<bool>("menuMusicEnable")) return true;
 
         // Boton del right-side-menu.
-        auto* rightMenu = static_cast<CCMenu*>(this->getChildByID("right-side-menu"));
+        auto* rightMenu = typeinfo_cast<CCMenu*>(this->getChildByID("right-side-menu"));
         if (rightMenu) {
             // Evitar duplicar si ya fue inyectado por otra pasada del hook.
             if (!rightMenu->getChildByID("menu-music-btn"_spr)) {

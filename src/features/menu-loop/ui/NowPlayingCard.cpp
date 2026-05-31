@@ -1,4 +1,4 @@
-#include "NowPlayingCard.hpp"
+﻿#include "NowPlayingCard.hpp"
 #include "../services/MenuLoopManager.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/GameManager.hpp>
@@ -77,7 +77,7 @@ bool NowPlayingCard::init(const std::string& text) {
 
 static std::string formatNGMLSongName(SongInfoObject* songInfo) {
     if (!songInfo) return "Unknown";
-    const std::string& fmt = Mod::get()->getSettingValue<std::string>("menuLoopSongFormatNGML");
+    const std::string fmt = Mod::get()->getSavedValue<std::string>("menuLoopSongFormatNGML", "Song Name, Artist, Song ID");
     if (fmt == "Song Name") return songInfo->m_songName;
     if (fmt == "Song Name + Artist") return fmt::format("{} by {}", songInfo->m_songName, songInfo->m_artistName);
     if (fmt == "Song Name + Song ID") return fmt::format("{} ({})", songInfo->m_songName, songInfo->m_songID);

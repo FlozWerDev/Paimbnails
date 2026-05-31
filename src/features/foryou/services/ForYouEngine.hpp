@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJSearchObject.hpp>
 #include <Geode/binding/GJGameLevel.hpp>

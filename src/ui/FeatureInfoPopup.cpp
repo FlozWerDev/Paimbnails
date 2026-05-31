@@ -1,4 +1,4 @@
-#include "FeatureInfoPopup.hpp"
+﻿#include "FeatureInfoPopup.hpp"
 #include "../utils/SpriteHelper.hpp"
 
 using namespace cocos2d;

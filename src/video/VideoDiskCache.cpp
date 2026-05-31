@@ -1,4 +1,4 @@
-#include "VideoDiskCache.hpp"
+﻿#include "VideoDiskCache.hpp"
 #include "AudioExtractor.hpp"
 #include <Geode/loader/Log.hpp>
 #include <filesystem>

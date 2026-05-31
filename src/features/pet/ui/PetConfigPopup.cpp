@@ -1,4 +1,4 @@
-#include "PetConfigPopup.hpp"
+﻿#include "PetConfigPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "PaimonShopPopup.hpp"
@@ -961,13 +961,14 @@ void PetConfigPopup::refreshIconStateLabels() {
     auto* sc = m_advancedScroll->m_contentLayer;
     for (int i = 0; i < 4; ++i) {
         CCLabelBMFont* lbl = nullptr;
-        if (auto* direct = sc->getChildByTag(600 + i)) {
+        std::string labelID = fmt::format("paimon-pet-label-{}", i);
+        if (auto* direct = sc->getChildByID(labelID.c_str())) {
             lbl = typeinfo_cast<CCLabelBMFont*>(direct);
         }
         if (!lbl) {
             for (auto* child : CCArrayExt<CCNode*>(sc->getChildren())) {
                 if (!child) continue;
-                if (auto* nested = child->getChildByTag(600 + i)) {
+                if (auto* nested = child->getChildByID(labelID.c_str())) {
                     lbl = typeinfo_cast<CCLabelBMFont*>(nested);
                     if (lbl) break;
                 }
@@ -1293,7 +1294,7 @@ void PetConfigPopup::buildAdvancedTab() {
         lbl->setScale(0.4f);
         lbl->setAnchorPoint({0.f, 0.5f});
         lbl->setPosition({cx - 85.f, y});
-        lbl->setTag(600 + i);
+        lbl->setID(fmt::format("paimon-pet-label-{}", i).c_str());
         sc->addChild(lbl);
 
         auto btnSpr = ButtonSprite::create("Set", "bigFont.fnt", "GJ_button_01.png", 0.6f);

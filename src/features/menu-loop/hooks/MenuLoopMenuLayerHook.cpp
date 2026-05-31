@@ -1,5 +1,6 @@
-#include <Geode/modify/MenuLayer.hpp>
+﻿#include <Geode/modify/MenuLayer.hpp>
 #include <Geode/modify/GameManager.hpp>
+#include <chrono>
 #include "../services/MenuLoopManager.hpp"
 #include "../services/MenuLoopControl.hpp"
 #include "../ui/NowPlayingCard.hpp"
@@ -47,10 +48,30 @@ class $modify(PaimonMenuLoopGameManager, GameManager) {
             return GameManager::getMenuMusicFile();
         }
         // Verificamos que el archivo existe para evitar que GD intente
-        // reproducir un path roto (lo que dejaria silencio total en vez
-        // del menu loop vanilla).
+        // reproducir un path roto. PERF: GD llama getMenuMusicFile() a
+        // menudo (cada playMusic / fadeInMenuMusic). Cada std::filesystem
+        // stat puede tardar 1-50ms en HDD/AV agresivo. Cacheamos por path
+        // con TTL de 5 segundos para evitar bloquear el main thread.
+        static std::string s_cachedPath;
+        static bool s_cachedValid = false;
+        static std::chrono::steady_clock::time_point s_cachedAt{};
+
+        auto now = std::chrono::steady_clock::now();
+        bool stale = std::chrono::duration_cast<std::chrono::seconds>(
+            now - s_cachedAt).count() >= 5;
+
+        if (s_cachedPath == song && !stale) {
+            if (!s_cachedValid) return GameManager::getMenuMusicFile();
+            return song;
+        }
+
         std::error_code ec;
-        if (!std::filesystem::is_regular_file(song, ec)) {
+        bool exists = std::filesystem::is_regular_file(song, ec);
+        s_cachedPath = song;
+        s_cachedValid = exists;
+        s_cachedAt = now;
+
+        if (!exists) {
             return GameManager::getMenuMusicFile();
         }
         return song;
@@ -84,11 +105,13 @@ class $modify(PaimonMenuLoopMenuLayer, MenuLayer) {
         auto* loader = Loader::get();
 
         // ── Mod compat checks ──
-        if (loader->isModLoaded("omgrod.geodify"))
-            sm.setGeodify(loader->getLoadedMod("omgrod.geodify")->getSettingValue<bool>("menu-loop"));
+        if (auto* geodify = loader->getLoadedMod("omgrod.geodify")) {
+            sm.setGeodify(geodify->getSettingValue<bool>("menu-loop"));
+        }
         sm.setSawbladeCustomSongsFolder(loader->isModLoaded("sawblade.custom_song_folder"));
-        if (loader->isModLoaded("colon.menu_loop_start_time"))
-            sm.setColonMenuLoopStartTime(loader->getLoadedMod("colon.menu_loop_start_time"));
+        if (auto* colonStartTime = loader->getLoadedMod("colon.menu_loop_start_time")) {
+            sm.setColonMenuLoopStartTime(colonStartTime);
+        }
 
         // ── Conflict warning ──
         if (!s_shownWarning && sm.getVibecodedVentilla() && loader->isModLoaded("joseii.ventilla")) {

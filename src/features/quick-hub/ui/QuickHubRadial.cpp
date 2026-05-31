@@ -1,4 +1,4 @@
-#include "QuickHubRadial.hpp"
+﻿#include "QuickHubRadial.hpp"
 #include "../services/QuickHubManager.hpp"
 #include "../data/QuickHubCategories.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -43,7 +43,7 @@ bool QuickHubRadial::isOpen() {
 void QuickHubRadial::openRadial() {
     if (s_instance) return;
 
-    auto scene = CCDirector::sharedDirector()->getRunningScene();
+    auto scene = CCDirector::get()->getRunningScene();
     if (!scene) return;
 
     auto radial = QuickHubRadial::create();
@@ -60,7 +60,7 @@ void QuickHubRadial::openRadial() {
     // Fallback: si el blur esta deshabilitado en settings, aplicar un overlay
     // oscuro para que el radial sea legible sobre el fondo.
     if (!blurApplied) {
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
         auto fallback = CCLayerColor::create({8, 10, 18, 0});
         fallback->setContentSize(winSize);
         fallback->setID("paimon-radial-fallback-overlay"_spr);
@@ -96,7 +96,7 @@ bool QuickHubRadial::init() {
     this->setTouchPriority(-1000);
     this->setKeypadEnabled(true);
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // El blur de fondo lo aplica openRadial() via paimon::popupblur::captureAndApply
     // (mismo sistema que usan los popups dinamicos del mod).
@@ -110,7 +110,7 @@ bool QuickHubRadial::init() {
 
     auto label = CCLabelBMFont::create("", "goldFont.fnt");
     label->setScale(0.7f);
-    label->setTag(100);
+    label->setID("paimon-center-label"_spr);
     m_centerLabel->addChild(label);
 
     // ── Build radial items ──
@@ -165,7 +165,7 @@ void QuickHubRadial::update(float dt) {
 // ─── Build Items ─────────────────────────────────────────────────────────────
 
 void QuickHubRadial::buildRadialItems() {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     CCPoint center = winSize / 2.f;
 
     auto activeIds = QuickHubManager::get().getActiveOptions();
@@ -327,7 +327,7 @@ void QuickHubRadial::animateOpen() {
 }
 
 void QuickHubRadial::animateClose() {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     CCPoint center = winSize / 2.f;
 
     // Pedir al PopupBlurService que haga fade-out del blur en sync con la
@@ -445,7 +445,7 @@ void QuickHubRadial::updateHover(int index) {
 
     // El label dorado central muestra el nombre del item bajo el cursor.
     if (m_centerLabel) {
-        auto label = typeinfo_cast<CCLabelBMFont*>(m_centerLabel->getChildByTag(100));
+        auto label = typeinfo_cast<CCLabelBMFont*>(m_centerLabel->getChildByID("paimon-center-label"_spr));
         if (label) {
             if (index >= 0 && index < static_cast<int>(m_items.size())) {
                 auto allOpts = getAllAvailableOptions();
@@ -576,25 +576,25 @@ void QuickHubRadial::executeOption(int index) {
         // ── Layers / scenes ──
         if (id == "hub") {
             if (auto scene = PaimonHubLayer::scene()) {
-                CCDirector::sharedDirector()->pushScene(scene);
+                CCDirector::get()->pushScene(scene);
             }
             return;
         }
         if (id == "paidraw") {
             if (auto scene = paidraw::PaiDrawLobbyLayer::scene()) {
-                CCDirector::sharedDirector()->pushScene(scene);
+                CCDirector::get()->pushScene(scene);
             }
             return;
         }
         if (id == "support") {
             if (auto scene = PaimonSupportLayer::scene()) {
-                CCDirector::sharedDirector()->pushScene(scene);
+                CCDirector::get()->pushScene(scene);
             }
             return;
         }
         if (id == "full-config") {
             if (auto scene = PaiConfigLayer::scene()) {
-                CCDirector::sharedDirector()->pushScene(scene);
+                CCDirector::get()->pushScene(scene);
             }
             return;
         }

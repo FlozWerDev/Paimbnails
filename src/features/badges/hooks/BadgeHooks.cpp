@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/modify/CommentCell.hpp>
 #include <Geode/binding/GJComment.hpp>
@@ -602,6 +602,26 @@ class $modify(BadgeCommentCell, CommentCell) {
         CommentCell::onExit();
     }
 
+    // ── Ocultado instantaneo del fondo marron vanilla ──────────────────
+    // El fondo marron de cada comentario es TableViewCell::m_backgroundLayer
+    // (un CCLayerColor). GD lo re-colorea y lo vuelve a mostrar en
+    // CommentCell::updateBGColor(int) durante el layout y el scroll de la
+    // lista, DESPUES de que loadFromComment lo haya ocultado. updateBGColor
+    // esta inlineado en Windows y no se puede hookear, asi que antes el
+    // marron solo desaparecia en el siguiente tick de styleInfoLayerBgs
+    // (hasta 1.5s) o tras el retry de 0.05s — de ahi el "tarda en
+    // desaparecer". draw() corre cada frame justo antes de renderizar la
+    // celda: reponer aqui la invisibilidad garantiza que el marron nunca
+    // alcance a verse (cero parpadeo) en cuanto hay panel paimon instalado.
+    $override
+    void draw() {
+        if ((m_fields->m_commentBgPanel || m_fields->m_commentBgClip) &&
+            m_backgroundLayer && m_backgroundLayer->isVisible()) {
+            m_backgroundLayer->setVisible(false);
+        }
+        CommentCell::draw();
+    }
+
     void onPaimonBadge(CCObject* sender) {
         if (auto node = typeinfo_cast<CCNode*>(sender)) {
             showBadgeInfoPopup(node);
@@ -874,7 +894,7 @@ class $modify(BadgeCommentCell, CommentCell) {
             if (auto* bitmapFont = textArea->m_label) {
                 auto* lines = bitmapFont->m_lines;
                 if (lines && lines->count() > 0) {
-                    auto* firstLine = static_cast<CCLabelBMFont*>(lines->objectAtIndex(0));
+                    auto* firstLine = typeinfo_cast<CCLabelBMFont*>(lines->objectAtIndex(0));
                     if (firstLine) {
                         if (auto* firstChild = firstLine->getChildByType<CCSprite>(0)) {
                             textColor = firstChild->getColor();
@@ -946,6 +966,12 @@ class $modify(BadgeCommentCell, CommentCell) {
 
 // ── Deferred emote retry implementation ──
 // Polls every 0.5 s until the emote catalog loads (up to `retries` attempts).
+//
+// IMPORTANTE: validamos que el comentario de la celda no haya cambiado entre
+// reintentos. CommentCell se recicla en BoomListView durante scroll: si la
+// celda original tenia "hi :smile:" pero ahora muestra "bye", aplicar emotes
+// del comentario antiguo sobreescribe el nuevo. Comparamos `text` capturado
+// vs el commentString actual antes de re-renderizar.
 static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
                             std::string text, std::string font, int retries) {
     paimon::scheduleMainThreadDelay(0.5f,
@@ -953,8 +979,23 @@ static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
             auto self = weakSelf.lock();
             if (!self || !self->getParent()) return;
 
+            // Validar que el comentario no haya cambiado: si la celda fue
+            // reciclada para otro comentario, abortar el retry.
+            auto* commentCell = static_cast<BadgeCommentCell*>(self.data());
+            if (!commentCell->m_comment) return;
+            // Reconstruir el "remaining text" del comentario actual para
+            // compararlo contra el `text` capturado. Si difieren, la celda
+            // fue reciclada — abortar.
+            std::string currentText = commentCell->m_comment->m_commentString;
+            auto currentParse = paimon::fonts::parseFontTag(currentText);
+            if (currentParse.remainingText != text) {
+                // Comentario distinto — la celda muestra otro mensaje ahora.
+                // No re-renderizar emotes con texto stale.
+                return;
+            }
+
             if (paimon::emotes::EmoteService::get().isLoaded()) {
-                static_cast<BadgeCommentCell*>(self.data())->tryRenderWithFont(text, font);
+                commentCell->tryRenderWithFont(text, font);
                 return;
             }
 

@@ -1,4 +1,4 @@
-#include "ProfileSettingsPopup.hpp"
+﻿#include "ProfileSettingsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/Localization.hpp"

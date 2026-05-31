@@ -1,4 +1,4 @@
-#include "ExtraEffectsPopup.hpp"
+﻿#include "ExtraEffectsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/InfoButton.hpp"
 
@@ -181,7 +181,7 @@ void ExtraEffectsPopup::save() {
         if (i > 0) str += ",";
         str += m_styles[m_indices[i]];
     }
-    Mod::get()->setSettingValue<std::string>("levelinfo-extra-styles", str);
+    Mod::get()->setSavedValue<std::string>("levelinfo-extra-styles", str);
     if (m_onChanged) m_onChanged();
 }
 

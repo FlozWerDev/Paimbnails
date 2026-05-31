@@ -1,4 +1,4 @@
-#include "EmotePickerPopup.hpp"
+﻿#include "EmotePickerPopup.hpp"
 #include "../services/EmoteService.hpp"
 #include "../services/EmoteCache.hpp"
 #include "../EmoteRenderer.hpp"
@@ -317,13 +317,13 @@ void EmotePickerPopup::updateTabHighlights() {
         if (!btn) return;
         auto container = btn->getNormalImage();
         if (!container) return;
-        if (auto old = container->getChildByTag(50))
+        if (auto old = container->getChildByID("paimon-tab-bg"_spr))
             old->removeFromParent();
         float w = container->getContentSize().width;
         float h = container->getContentSize().height;
         ccColor4F col = active ? COL_TAB_ACTIVE : COL_TAB_INACTIVE;
         auto hl = paimon::SpriteHelper::createRoundedRect(w, h, 4.f, col);
-        hl->setTag(50);
+        hl->setID("paimon-tab-bg"_spr);
         hl->setPosition({0, 0});
         container->addChild(hl, -1);
     };
@@ -424,14 +424,14 @@ void EmotePickerPopup::selectCategory(std::string const& cat) {
         auto item = static_cast<CCMenuItemSpriteExtra*>(child);
         auto container = item->getNormalImage();
         if (!container) continue;
-        if (auto old = container->getChildByTag(51))
+        if (auto old = container->getChildByID("paimon-cat-hl"_spr))
             old->removeFromParent();
         if (child->getTag() == selTag) {
             float w = container->getContentSize().width;
             float h = container->getContentSize().height;
             auto hl = paimon::SpriteHelper::createRoundedRect(
                 w, h, 3.f, COL_CAT_HL);
-            hl->setTag(51);
+            hl->setID("paimon-cat-hl"_spr);
             hl->setPosition({0, 0});
             container->addChild(hl, -1);
         }

@@ -1,4 +1,4 @@
-#include "Assets.hpp"
+﻿#include "Assets.hpp"
 #include "SpriteHelper.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>

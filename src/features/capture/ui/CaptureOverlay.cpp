@@ -1,4 +1,4 @@
-#include "CaptureOverlay.hpp"
+﻿#include "CaptureOverlay.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/ClipboardImage.hpp"
@@ -8,10 +8,12 @@
 #include "../../volume-scroll/ui/ScrollKeybindsPopup.hpp"
 
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
+#include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/binding/PlayLayer.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
+#include <Geode/ui/OverlayManager.hpp>
 #include <filesystem>
 #include <chrono>
 #include <iomanip>
@@ -33,9 +35,6 @@ using namespace geode::prelude;
 CaptureOverlay* CaptureOverlay::s_instance = nullptr;
 
 void CaptureOverlay::show() {
-    auto* scene = CCDirector::sharedDirector()->getRunningScene();
-    if (!scene) return;
-
     if (s_instance) {
         // Toggle behavior: if already open, close it
         s_instance->onClose(nullptr);
@@ -44,7 +43,18 @@ void CaptureOverlay::show() {
 
     auto* overlay = CaptureOverlay::create();
     overlay->setID("CaptureOverlay");
-    scene->addChild(overlay, 99999);
+
+    // Host the overlay in Geode's OverlayManager (cocos2d's notification node),
+    // which is always visited *after* the running scene — so it renders above
+    // every scene element. We use a z-order just below the custom cursor's
+    // (CursorManager::kCursorBaseZOrder == 1000000) so the menu sits above
+    // everything yet still below the cursor. Falls back to the scene if the
+    // overlay host is unavailable.
+    if (auto* host = geode::OverlayManager::get()) {
+        host->addChild(overlay, 999000);
+    } else if (auto* scene = cocos2d::CCDirector::get()->getRunningScene()) {
+        scene->addChild(overlay, 99999);
+    }
 }
 
 void CaptureOverlay::hideOverlay() {
@@ -60,7 +70,7 @@ bool CaptureOverlay::init() {
     this->setTouchEnabled(true);
     this->setKeypadEnabled(true);
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // Semi-transparent dim background
     auto* bg = CCLayerColor::create({0, 0, 0, 120});
@@ -87,7 +97,7 @@ bool CaptureOverlay::init() {
     auto* captureBtn = CCMenuItemSpriteExtra::create(
         captureBtnSpr, this, menu_selector(CaptureOverlay::onCapture)
     );
-    captureBtn->setPosition({0.f, 5.f});
+    captureBtn->setPosition({0.f, 18.f});
 
     // Shortcuts Button (bottom half) — abre el popup de configuracion de
     // modificadores para el scroll de volumen (Ctrl/Shift/Alt + scroll).
@@ -95,7 +105,26 @@ bool CaptureOverlay::init() {
     auto* shortcutsBtn = CCMenuItemSpriteExtra::create(
         shortcutsBtnSpr, this, menu_selector(CaptureOverlay::onOpenShortcuts)
     );
-    shortcutsBtn->setPosition({0.f, -32.f});
+    shortcutsBtn->setPosition({0.f, -10.f});
+
+    // Invert Inputs toggle — para usuarios cuyo boton principal del mouse es el
+    // derecho: con esto el clic derecho actua como salto durante el juego.
+    bool const invertOn = Mod::get()->getSavedValue<bool>("invert-mouse-inputs", false);
+    auto* invOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
+    auto* invOn  = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
+    invOff->setScale(.6f);
+    invOn->setScale(.6f);
+    auto* invertToggle = CCMenuItemToggler::create(
+        invOff, invOn, this, menu_selector(CaptureOverlay::onToggleInvert)
+    );
+    invertToggle->toggle(invertOn);
+    invertToggle->setPosition({-74.f, -42.f});
+
+    auto* invLabel = CCLabelBMFont::create("Invertir Inputs", "bigFont.fnt");
+    invLabel->setAnchorPoint({0.f, .5f});
+    invLabel->setPosition({-58.f, -42.f});
+    invLabel->limitLabelWidth(120.f, .32f, .1f);
+    m_centerCard->addChild(invLabel);
 
     // Close Button (Small X in top right of card)
     auto* closeSpr = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
@@ -115,6 +144,7 @@ bool CaptureOverlay::init() {
     m_centerMenu->setPosition({0.f, 0.f});
     m_centerMenu->addChild(captureBtn);
     m_centerMenu->addChild(shortcutsBtn);
+    m_centerMenu->addChild(invertToggle);
     m_centerMenu->addChild(closeBtn);
     m_centerCard->addChild(m_centerMenu);
 
@@ -136,7 +166,7 @@ void CaptureOverlay::onExit() {
 }
 
 void CaptureOverlay::registerWithTouchDispatcher() {
-    CCDirector::sharedDirector()->getTouchDispatcher()->addTargetedDelegate(this, -505, true);
+    CCDirector::get()->getTouchDispatcher()->addTargetedDelegate(this, -505, true);
 }
 
 bool CaptureOverlay::ccTouchBegan(CCTouch* touch, CCEvent* event) {
@@ -311,7 +341,7 @@ void CaptureOverlay::triggerCaptureProcess() {
 void CaptureOverlay::playFlyToBottomRightAnimation() {
     if (!m_capturedTexture) return;
 
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // ── Card dimensions ──
     constexpr float kCardW = 190.f;
@@ -584,4 +614,13 @@ void CaptureOverlay::onOpenShortcuts(CCObject* sender) {
         }
     });
     this->onClose(nullptr);
+}
+
+void CaptureOverlay::onToggleInvert(CCObject* sender) {
+    bool const now = !Mod::get()->getSavedValue<bool>("invert-mouse-inputs", false);
+    Mod::get()->setSavedValue<bool>("invert-mouse-inputs", now);
+    PaimonNotify::create(
+        now ? "Inputs invertidos: clic derecho = saltar" : "Inputs normales restaurados",
+        NotificationIcon::Info
+    )->show();
 }

@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/ShareCommentLayer.hpp>
 
 using namespace geode::prelude;
@@ -9,10 +9,17 @@ using namespace geode::prelude;
 class $modify(PaimonShareCommentSmartEnter, ShareCommentLayer) {
     $override
     void enterPressed(CCTextInputNode* node) {
-        if (node == m_commentInput && !m_commentInput->getString().empty() && !m_uploadPopup) {
-            this->onShare(nullptr);
-            return;
-        }
+        // Primero llamamos al original — los demas observers reciben el evento.
+        // Luego evaluamos la condicion smart-enter para auto-share. Si el
+        // upload popup se abrio durante el original (poco probable pero
+        // posible si otro hook lo dispara), no volvemos a abrirlo.
         ShareCommentLayer::enterPressed(node);
+
+        if (node == m_commentInput
+            && m_commentInput
+            && !m_commentInput->getString().empty()
+            && !m_uploadPopup) {
+            this->onShare(nullptr);
+        }
     }
 };

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // PaimonButton.hpp — Fabrica de botones del mod con auto-registro.
 // Evita que cada hook repita el patron de crear CCMenuItemSpriteExtra

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // FfmpegInstallPopup — popup modal con barra de progreso para la descarga
 // inicial del binario de ffmpeg.
@@ -12,6 +12,7 @@
 #include <Geode/ui/Popup.hpp>
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <string>
 
 namespace paimon::menumusic {
@@ -46,7 +47,10 @@ protected:
     std::function<void(bool)> m_onFinished;
     bool m_finished = false;
     bool m_success = false;
-    std::atomic<bool> m_alive{true};
+    // Shared alive-token: captured by value in async callbacks so they can
+    // safely check liveness even after this popup has been destroyed (the
+    // bootstrap keeps the callback alive past the popup's lifetime).
+    std::shared_ptr<std::atomic<bool>> m_alive = std::make_shared<std::atomic<bool>>(true);
 };
 
 } // namespace paimon::menumusic

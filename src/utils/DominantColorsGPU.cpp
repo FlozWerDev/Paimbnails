@@ -1,4 +1,4 @@
-#include "DominantColorsGPU.hpp"
+﻿#include "DominantColorsGPU.hpp"
 #include "DominantColors.hpp"
 #include "GLSLLoader.hpp"
 #include "ImageConverter.hpp"
@@ -297,7 +297,7 @@ bool isAvailable() {
     static int cached = -1;
     if (cached >= 0) return cached != 0;
 
-    auto* director = CCDirector::sharedDirector();
+    auto* director = CCDirector::get();
     if (!director || !director->getOpenGLView()) {
         cached = 0;
         return false;

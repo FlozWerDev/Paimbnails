@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Geode/Geode.hpp>
 
@@ -109,7 +109,7 @@ private:
 } // namespace paimon::volscroll
 
 // Funciones helper para inicializar el ticker (registrado en
-// CCDirector::sharedDirector()->getScheduler()). Se llaman desde MenuLayer.cpp
+// CCDirector::get()->getScheduler()). Se llaman desde MenuLayer.cpp
 // (init) y desde RuntimeLifecycle.cpp / $on_game(Exiting) (shutdown).
 void initVolumeScrollTicker();
 void shutdownVolumeScrollTicker();

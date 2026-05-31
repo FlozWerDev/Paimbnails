@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // BlurDiskCache — cache persistente en disco para texturas blur pre-computadas.
 //
 // Porque: el blur Dual Kawase (6-14 FBO passes) es el paso mas caro del pipeline

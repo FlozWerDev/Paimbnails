@@ -1,4 +1,4 @@
-#include "ProfileThumbs.hpp"
+﻿#include "ProfileThumbs.hpp"
 #include "../../../managers/ThumbnailAPI.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
@@ -15,7 +15,6 @@
 #include <fstream>
 #include <algorithm>
 #include <deque>
-#include <future>
 
 #include "../../../utils/Shaders.hpp"
 #include "../../../utils/GLSLLoader.hpp"
@@ -576,33 +575,28 @@ void ProfileThumbs::clearPendingDownloads() {
 
 void ProfileThumbs::spawnBackground(std::function<void()> job) {
     std::lock_guard<std::mutex> lock(m_workerMutex);
-    pruneFinishedWorkers();
-    m_backgroundWorkers.emplace_back(std::async(std::launch::async, [job = std::move(job)]() mutable {
-        job();
-    }));
+    if (!m_workerPool) {
+        // Pool con 2 threads — suficiente para encode WebP + escritura disco
+        // sin saturar el bus de I/O. Lazy init: solo si efectivamente se usa.
+        m_workerPool = std::make_unique<paimon::ThreadPool>(2, "PaimonProfileThumbsBG");
+    }
+    m_workerPool->enqueue(std::move(job));
 }
 
 void ProfileThumbs::pruneFinishedWorkers() {
-    auto it = m_backgroundWorkers.begin();
-    while (it != m_backgroundWorkers.end()) {
-        if (!it->valid() || it->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            it = m_backgroundWorkers.erase(it);
-        } else {
-            ++it;
-        }
-    }
+    // No-op con ThreadPool — el pool maneja su propia ciclo de vida.
 }
 
 void ProfileThumbs::waitBackgroundWorkers() {
-    std::vector<std::future<void>> workers;
+    std::unique_ptr<paimon::ThreadPool> poolToShutdown;
     {
         std::lock_guard<std::mutex> lock(m_workerMutex);
-        workers.swap(m_backgroundWorkers);
+        poolToShutdown = std::move(m_workerPool);
     }
-    for (auto& worker : workers) {
-        if (worker.valid()) {
-            paimon::timedWait(worker, std::chrono::seconds(3));
-        }
+    if (poolToShutdown) {
+        // ThreadPool::shutdown() ya usa timedJoin con 3s — descarta jobs
+        // pendientes y solo espera a los actualmente en ejecucion.
+        poolToShutdown->shutdown();
     }
 }
 

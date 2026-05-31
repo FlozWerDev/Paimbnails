@@ -1,4 +1,4 @@
-#include "ForumApi.hpp"
+﻿#include "ForumApi.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>

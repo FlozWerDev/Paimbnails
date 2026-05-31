@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // GLSLLoader — carga programas GLSL desde archivos en disco con fallback a
 // literales inline. Objetivo: mover los literales `constexpr auto ...` de
 // Shaders.hpp a archivos `.glsl` dedicados (mejor mantenibilidad, hot-reload

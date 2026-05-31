@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <Geode/Geode.hpp>
 
 class VideoSettingsPopup : public geode::Popup {

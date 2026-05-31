@@ -10,9 +10,26 @@
 // The hook also drives the "constant shuffle" auto-advance: when the
 // user enabled menuLoopConstantShuffle and the current track finishes,
 // we trigger a new shuffle so the next song plays automatically.
+//
+// Notas sobre los hooks usados (verificadas contra GeometryDash.bro de 2.2081):
+//
+//   - virtual void update(float dt)        -> 4884 (VIRTUAL)
+//   - void stopAllMusic(bool clear)        -> 4886 (NO virtual; hookeada por
+//                                             direccion)
+//
+// stopAllMusic NO es virtual, asi que el hook se aplica por direccion. Si una
+// futura version de GD cambia el offset, Geode no puede reapuntar via vtable y
+// el hook simplemente no se aplica. Validamos esto en onModify() y logueamos
+// si falla, para no quedarnos con seek tracking roto en silencio.
+//
+// Ademas, FMODAudioEngine::update se llama cada frame; durante el shutdown
+// del juego ($on_game(Exiting)) los singletons MenuLoopManager y/o el propio
+// FMODAudioEngine pueden estar en estado intermedio. Verificamos
+// paimon::isRuntimeShuttingDown() temprano y devolvemos sin tocar nada.
 
 #include "../services/MenuLoopManager.hpp"
 #include "../services/MenuLoopControl.hpp"
+#include "../../../core/RuntimeLifecycle.hpp"
 
 #include <Geode/modify/FMODAudioEngine.hpp>
 #include <Geode/binding/GJBaseGameLayer.hpp>
@@ -20,13 +37,31 @@
 using namespace geode::prelude;
 
 class $modify(PaimonMenuLoopFMODHook, FMODAudioEngine) {
+    static void onModify(auto& self) {
+        // Validamos que ambos hooks se aplicaron. stopAllMusic en particular
+        // es no-virtual y se hookea por direccion, asi que un cambio de offset
+        // en una update de GD lo dejaria sin enganche silenciosamente.
+        if (auto h = self.getHook("FMODAudioEngine::stopAllMusic"); !h) {
+            log::warn("[MenuLoop] failed to install hook on FMODAudioEngine::stopAllMusic — "
+                      "seek pause-tracking will be inactive ({})", h.unwrapErr());
+        }
+        if (auto h = self.getHook("FMODAudioEngine::update"); !h) {
+            log::warn("[MenuLoop] failed to install hook on FMODAudioEngine::update — "
+                      "seek/shuffle tracking will be inactive ({})", h.unwrapErr());
+        }
+    }
+
     $override
     void stopAllMusic(bool p0) {
-        // When GD stops music while in the menu (no level running) we
-        // freeze position tracking so restoreLastMenuLoopPosition() can
-        // resume from the right point.
-        if (!GJBaseGameLayer::get()) {
-            paimon::menuloop::MenuLoopManager::get().setPauseSongPositionTracking(true);
+        // Defensa contra atexit: el manager singleton puede estar a punto
+        // de destruirse o ya haber sido marcado para shutdown.
+        if (!paimon::isRuntimeShuttingDown()) {
+            // When GD stops music while in the menu (no level running) we
+            // freeze position tracking so restoreLastMenuLoopPosition() can
+            // resume from the right point.
+            if (!GJBaseGameLayer::get()) {
+                paimon::menuloop::MenuLoopManager::get().setPauseSongPositionTracking(true);
+            }
         }
         FMODAudioEngine::stopAllMusic(p0);
     }
@@ -34,6 +69,12 @@ class $modify(PaimonMenuLoopFMODHook, FMODAudioEngine) {
     $override
     void update(float dt) {
         FMODAudioEngine::update(dt);
+
+        // Early-out durante shutdown — MenuLoopManager y FMODAudioEngine
+        // pueden estar en estado intermedio durante $on_game(Exiting), y
+        // tocar m_backgroundMusicChannel / getActiveMusicChannel ahi puede
+        // ser UAF si los descriptores FMOD ya se liberaron.
+        if (paimon::isRuntimeShuttingDown()) return;
 
         auto& sm = paimon::menuloop::MenuLoopManager::get();
 

@@ -1,4 +1,4 @@
-#include "PaiDrawUI.hpp"
+﻿#include "PaiDrawUI.hpp"
 
 #include "PaiDrawIcon.hpp"
 #include "../../utils/DynamicPopupRegistry.hpp"
@@ -84,7 +84,7 @@ void addNativeBackground(CCLayer* layer, cocos2d::ccColor4B /*fallbackColor*/ = 
         layer->addChild(bg, -10);
         return;
     }
-    auto win = CCDirector::sharedDirector()->getWinSize();
+    auto win = CCDirector::get()->getWinSize();
     if (auto* bg = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
         auto bgSize = bg->getTextureRect().size;
         bg->setAnchorPoint({0.f, 0.f});
@@ -414,7 +414,7 @@ void PaiDrawLobbyLayer::keyBackClicked() {
 }
 
 void PaiDrawLobbyLayer::buildLayout() {
-    auto win = CCDirector::sharedDirector()->getWinSize();
+    auto win = CCDirector::get()->getWinSize();
     addNativeBackground(this);
 
     m_menu = CCMenu::create();
@@ -526,11 +526,11 @@ void PaiDrawLobbyLayer::buildLayout() {
 }
 
 void PaiDrawLobbyLayer::onCreateRoom(CCObject*) {
-    CCDirector::sharedDirector()->pushScene(PaiDrawCreateRoomLayer::scene());
+    CCDirector::get()->pushScene(PaiDrawCreateRoomLayer::scene());
 }
 
 void PaiDrawLobbyLayer::onJoinRoom(CCObject*) {
-    CCDirector::sharedDirector()->pushScene(PaiDrawRoomsLayer::scene());
+    CCDirector::get()->pushScene(PaiDrawRoomsLayer::scene());
 }
 
 void PaiDrawLobbyLayer::onRefresh(CCObject*) {
@@ -541,7 +541,7 @@ void PaiDrawLobbyLayer::onRefresh(CCObject*) {
 void PaiDrawLobbyLayer::onBack(CCObject*) {
     paimon::EventBus::get().unsubscribe(m_connectionSub);
     paimon::EventBus::get().unsubscribe(m_lobbySub);
-    CCDirector::sharedDirector()->popScene();
+    CCDirector::get()->popScene();
 }
 
 void PaiDrawLobbyLayer::updateHeader() {
@@ -700,7 +700,7 @@ void PaiDrawRoomsLayer::keyBackClicked() {
 }
 
 void PaiDrawRoomsLayer::buildLayout() {
-    auto win = CCDirector::sharedDirector()->getWinSize();
+    auto win = CCDirector::get()->getWinSize();
     addNativeBackground(this);
 
     m_menu = CCMenu::create();
@@ -804,7 +804,7 @@ void PaiDrawRoomsLayer::buildLayout() {
 void PaiDrawRoomsLayer::onBack(CCObject*) {
     paimon::EventBus::get().unsubscribe(m_connectionSub);
     paimon::EventBus::get().unsubscribe(m_lobbySub);
-    CCDirector::sharedDirector()->popScene();
+    CCDirector::get()->popScene();
 }
 
 void PaiDrawRoomsLayer::onRefresh(CCObject*) {
@@ -813,13 +813,13 @@ void PaiDrawRoomsLayer::onRefresh(CCObject*) {
 }
 
 void PaiDrawRoomsLayer::onCreateRoom(CCObject*) {
-    CCDirector::sharedDirector()->pushScene(PaiDrawCreateRoomLayer::scene());
+    CCDirector::get()->pushScene(PaiDrawCreateRoomLayer::scene());
 }
 
 void PaiDrawRoomsLayer::onJoinRoom(CCObject* sender) {
     auto roomId = static_cast<uint32_t>(sender->getTag());
     PaiDrawManager::get().joinRoom(roomId);
-    CCDirector::sharedDirector()->pushScene(PaiDrawRoomLayer::scene());
+    CCDirector::get()->pushScene(PaiDrawRoomLayer::scene());
 }
 
 CCNode* PaiDrawRoomsLayer::createRoomRow(RoomInfo const& room, float width, float height) {
@@ -991,7 +991,7 @@ void PaiDrawCreateRoomLayer::keyBackClicked() {
 }
 
 void PaiDrawCreateRoomLayer::buildLayout() {
-    auto win = CCDirector::sharedDirector()->getWinSize();
+    auto win = CCDirector::get()->getWinSize();
     addNativeBackground(this);
 
     m_menu = CCMenu::create();
@@ -1198,7 +1198,7 @@ void PaiDrawCreateRoomLayer::loadInitialValues() {
 }
 
 void PaiDrawCreateRoomLayer::onBack(CCObject*) {
-    CCDirector::sharedDirector()->popScene();
+    CCDirector::get()->popScene();
 }
 
 void PaiDrawCreateRoomLayer::onPlayersChanged(CCObject*) {
@@ -1260,12 +1260,12 @@ void PaiDrawCreateRoomLayer::onCreate(CCObject*) {
 
     if (m_editMode) {
         PaiDrawManager::get().updateRoomConfig(config);
-        CCDirector::sharedDirector()->popScene();
+        CCDirector::get()->popScene();
         return;
     }
 
     PaiDrawManager::get().createRoom(config);
-    CCDirector::sharedDirector()->replaceScene(PaiDrawRoomLayer::scene());
+    CCDirector::get()->replaceScene(PaiDrawRoomLayer::scene());
 }
 
 PaiDrawRoomLayer* PaiDrawRoomLayer::create() {
@@ -1306,7 +1306,7 @@ bool PaiDrawRoomLayer::init() {
 void PaiDrawRoomLayer::keyBackClicked() { onBack(nullptr); }
 
 void PaiDrawRoomLayer::buildLayout() {
-    auto win = CCDirector::sharedDirector()->getWinSize();
+    auto win = CCDirector::get()->getWinSize();
     addNativeBackground(this);
 
     m_menu = CCMenu::create();
@@ -1565,7 +1565,7 @@ void PaiDrawRoomLayer::onBack(CCObject*) {
     paimon::EventBus::get().unsubscribe(m_roomSub);
     paimon::EventBus::get().unsubscribe(m_chatSub);
     PaiDrawManager::get().leaveRoom();
-    CCDirector::sharedDirector()->popScene();
+    CCDirector::get()->popScene();
 }
 
 void PaiDrawRoomLayer::onReady(CCObject*) {
@@ -1574,7 +1574,7 @@ void PaiDrawRoomLayer::onReady(CCObject*) {
 
 void PaiDrawRoomLayer::onStart(CCObject*) {
     PaiDrawManager::get().startGame();
-    CCDirector::sharedDirector()->pushScene(PaiDrawGameLayer::scene());
+    CCDirector::get()->pushScene(PaiDrawGameLayer::scene());
 }
 
 void PaiDrawRoomLayer::onSendChat(CCObject*) {
@@ -1585,7 +1585,7 @@ void PaiDrawRoomLayer::onSendChat(CCObject*) {
 }
 
 void PaiDrawRoomLayer::onOpenCreate(CCObject*) {
-    CCDirector::sharedDirector()->pushScene(PaiDrawCreateRoomLayer::scene(true));
+    CCDirector::get()->pushScene(PaiDrawCreateRoomLayer::scene(true));
 }
 
 PaiDrawCanvasNode* PaiDrawCanvasNode::create() {
@@ -1902,7 +1902,7 @@ bool PaiDrawGameLayer::init() {
 void PaiDrawGameLayer::keyBackClicked() { onBack(nullptr); }
 
 void PaiDrawGameLayer::buildLayout() {
-    auto win = CCDirector::sharedDirector()->getWinSize();
+    auto win = CCDirector::get()->getWinSize();
     addNativeBackground(this);
 
     m_menu = CCMenu::create();
@@ -2366,7 +2366,7 @@ void PaiDrawGameLayer::onBack(CCObject*) {
     paimon::EventBus::get().unsubscribe(m_chatSub);
     paimon::EventBus::get().unsubscribe(m_roundSub);
     paimon::EventBus::get().unsubscribe(m_strokeSub);
-    CCDirector::sharedDirector()->popScene();
+    CCDirector::get()->popScene();
 }
 
 void PaiDrawGameLayer::onSendGuess(CCObject*) {
@@ -2441,7 +2441,7 @@ bool PaiDrawResultsLayer::init() {
 void PaiDrawResultsLayer::keyBackClicked() { onBackLobby(nullptr); }
 
 void PaiDrawResultsLayer::buildLayout() {
-    auto win = CCDirector::sharedDirector()->getWinSize();
+    auto win = CCDirector::get()->getWinSize();
     addNativeBackground(this);
 
     auto* menu = CCMenu::create();
@@ -2613,11 +2613,11 @@ void PaiDrawResultsLayer::refreshResults() {
 
 void PaiDrawResultsLayer::onBackLobby(CCObject*) {
     paimon::EventBus::get().unsubscribe(m_resultsSub);
-    CCDirector::sharedDirector()->replaceScene(PaiDrawLobbyLayer::scene());
+    CCDirector::get()->replaceScene(PaiDrawLobbyLayer::scene());
 }
 
 void PaiDrawResultsLayer::onPlayAgain(CCObject*) {
-    CCDirector::sharedDirector()->replaceScene(PaiDrawRoomLayer::scene());
+    CCDirector::get()->replaceScene(PaiDrawRoomLayer::scene());
 }
 
 } // namespace paidraw

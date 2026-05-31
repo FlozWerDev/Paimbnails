@@ -1,4 +1,4 @@
-#include "NowPlayingToast.hpp"
+﻿#include "NowPlayingToast.hpp"
 
 #include "../../services/MenuMusicLibrary.hpp"
 #include "../../services/MenuMusicPlayer.hpp"

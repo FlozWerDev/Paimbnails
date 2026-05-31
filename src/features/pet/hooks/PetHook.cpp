@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/loader/GameEvent.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PlayerObject.hpp>
@@ -51,7 +51,7 @@ public:
             return;
         }
 
-        auto scene = CCDirector::sharedDirector()->getRunningScene();
+        auto scene = CCDirector::get()->getRunningScene();
         if (!scene) return;
 
         // Only reattach if scene actually changed
@@ -68,7 +68,7 @@ static Ref<PetTickerNode> s_petTicker = nullptr;
 void shutdownPetTicker() {
     if (!s_petTicker) return;
 
-    if (auto* director = CCDirector::sharedDirector()) {
+    if (auto* director = CCDirector::get()) {
         if (auto* scheduler = director->getScheduler()) {
             scheduler->unscheduleUpdateForTarget(s_petTicker.data());
         }
@@ -83,7 +83,7 @@ void initPetTicker() {
     // Registrar directamente con el scheduler global (paused=false).
     // No usamos CCNode::scheduleUpdate() porque requiere que el nodo
     // este en un running scene (m_bRunning==true) para no pausarse.
-    CCDirector::sharedDirector()->getScheduler()->scheduleUpdateForTarget(
+    CCDirector::get()->getScheduler()->scheduleUpdateForTarget(
         s_petTicker.data(), 0, false
     );
 }

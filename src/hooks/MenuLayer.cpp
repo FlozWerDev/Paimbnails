@@ -1,4 +1,4 @@
-#include <Geode/modify/MenuLayer.hpp>
+﻿#include <Geode/modify/MenuLayer.hpp>
 #include <Geode/utils/cocos.hpp>
 #include "../framework/state/SessionState.hpp"
 #include <Geode/utils/file.hpp>
@@ -14,6 +14,7 @@
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/DominantColors.hpp"
 #include "../utils/ImageLoadHelper.hpp"
+#include "../utils/RetainedLazyTextureLoad.hpp"
 #include "../utils/ShapeStencil.hpp"
 #include "../core/Settings.hpp"
 #include "../features/profiles/services/ProfilePicCustomizer.hpp"
@@ -81,14 +82,21 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         Ref<CCSprite> m_bgSprite = nullptr;
         Ref<CCLayerColor> m_bgOverlay = nullptr;
         bool m_adaptiveColors = false;
-        // Perf: cached hub button reference to avoid getChildByIDRecursive per frame
-        CCNode* m_hubBtnCached = nullptr;
+        // Perf: cached hub button reference to avoid getChildByIDRecursive per frame.
+        // WeakRef<>: si otro mod removeFromParent-ea el boton, lock() devuelve null
+        // en vez de dangling pointer → use-after-free imposible.
+        WeakRef<CCNode> m_hubBtnCached;
         bool m_hubBtnSearched = false;
         // Perf: throttle adaptive colors to avoid per-frame tree traversal
         int m_adaptiveFrameCounter = 0;
         ccColor3B m_lastAdaptiveColor = {255, 255, 255};
         // Perf: throttle badge check
         int m_badgeFrameCounter = 0;
+        // Carga asincrona del fondo custom estatico. Decodifica la imagen en
+        // un hilo de fondo (LazySprite) para no congelar el frame al entrar
+        // al menu. El loader retenido cancela la carga anterior si se cambia
+        // el fondo o se sale del menu antes de terminar.
+        paimon::image::RetainedLazyTextureLoad m_bgStaticLoad;
     };
 
     // Aplica colores adaptativos
@@ -205,7 +213,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 }
             } else {
                 // Fallback: menu propio con RowLayout
-                auto winSize = CCDirector::sharedDirector()->getWinSize();
+                auto winSize = CCDirector::get()->getWinSize();
                 auto menu = CCMenu::create();
                 menu->setContentSize({winSize.width, 40.f});
                 menu->setAnchorPoint({0.f, 0.f});
@@ -379,12 +387,18 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     // Coloca/quita un punto rojo encima del boton paimon-hub-btn segun el
     // estado del UpdateChecker. Idempotente.
     void applyUpdateBadge() {
-        // Perf: cache the hub button reference instead of recursive search each call
+        // Perf: cache the hub button reference instead of recursive search each call.
+        // WeakRef<>::lock() devuelve null si el nodo fue destruido — safe.
+        Ref<CCNode> btnRef;
         if (!m_fields->m_hubBtnSearched) {
-            m_fields->m_hubBtnCached = this->getChildByIDRecursive("paimon-hub-btn"_spr);
+            auto* found = this->getChildByIDRecursive("paimon-hub-btn"_spr);
+            m_fields->m_hubBtnCached = found;
             m_fields->m_hubBtnSearched = true;
+            btnRef = found;
+        } else {
+            btnRef = m_fields->m_hubBtnCached.lock();
         }
-        auto btn = m_fields->m_hubBtnCached;
+        auto* btn = btnRef.data();
         if (!btn || !btn->getParent()) {
             // Button may have been removed/re-added, retry next time
             m_fields->m_hubBtnSearched = false;
@@ -481,8 +495,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 {
                     auto& cm = CursorManager::get();
                     Mod::get()->setSettingValue<bool>("custom-cursor-enable", cm.config().enabled);
-                    Mod::get()->setSettingValue<double>("custom-cursor-scale", static_cast<double>(cm.config().scale));
-                    Mod::get()->setSettingValue<bool>("custom-cursor-trail", cm.config().trailEnabled);
                     cm.applyConfigLive();
                 }
 
@@ -511,7 +523,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
     void onPaimonHub(CCObject*) {
         auto scene = PaimonHubLayer::scene();
-        CCDirector::sharedDirector()->replaceScene(scene);
+        CCDirector::get()->replaceScene(scene);
     }
 
     void onPaimonClick(CCObject* sender) {
@@ -583,21 +595,12 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         // Lee config unificada
         auto cfg = LayerBackgroundManager::get().getConfig("menu");
 
-        // Fallback a legacy keys
-        if (cfg.type == "default") {
-            std::string legacyType = Mod::get()->getSavedValue<std::string>("bg-type", "default");
-            if (legacyType == "thumbnails") legacyType = "random";
-            if (legacyType != "default" && !legacyType.empty()) {
-                // Migra datos legacy al formato unificado
-                cfg.type = legacyType;
-                cfg.customPath = Mod::get()->getSavedValue<std::string>("bg-custom-path", "");
-                cfg.levelId = Mod::get()->getSavedValue<int>("bg-id", 0);
-                cfg.darkMode = Mod::get()->getSavedValue<bool>("bg-dark-mode", false);
-                cfg.darkIntensity = Mod::get()->getSavedValue<float>("bg-dark-intensity", 0.5f);
-                // Guarda en formato unificado
-                LayerBackgroundManager::get().saveConfig("menu", cfg);
-            }
-        }
+        // NOTE: legacy fallback removed — migration runs once at startup via
+        // LayerBackgroundManager::migrateFromLegacy(). Re-running it on every
+        // scene reload caused the user's "Default" choice to be overwritten
+        // by stale `bg-type` legacy values that other UI paths had set in
+        // earlier sessions. The unified `layerbg-menu-type` saved value is
+        // the single source of truth from now on.
 
         // Modo default: restaurar fondo original
         if (cfg.type == "default") {
@@ -647,7 +650,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         m_fields->m_bgSprite = nullptr;
         m_fields->m_bgOverlay = nullptr;
 
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
 
         auto container = CCNode::create();
         container->setContentSize(winSize);
@@ -754,16 +757,34 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 });
                 return;
             } else {
-                // Imagen estatica
+                // Imagen estatica — carga ASINCRONA para no congelar el frame
+                // al entrar al menu. La decodificacion (PNG/JPG/WebP/etc) corre
+                // en un hilo de fondo via LazySprite; cuando termina, el callback
+                // (ya en main thread) finaliza el sprite. m_bgStaticLoad cancela
+                // automaticamente cualquier carga previa si el usuario cambia de
+                // fondo o sale del menu antes de que termine.
                 CCTextureCache::sharedTextureCache()->removeTextureForKey(resolvedPath.c_str());
-                tex = CCTextureCache::sharedTextureCache()->addImage(resolvedPath.c_str(), false);
-                if (!tex) {
-                    auto stbResult = ImageLoadHelper::loadWithSTB(std::filesystem::path(resolvedPath));
-                    if (stbResult.success && stbResult.texture) {
-                        stbResult.texture->autorelease();
-                        tex = stbResult.texture;
-                    }
-                }
+
+                Ref<CCNode> safeContainer = container;
+                Ref<MenuLayer> safeThis = this;
+                LayerBgConfig cfgCopy = cfg;
+                std::string pathCopy = resolvedPath;
+
+                m_fields->m_bgStaticLoad.loadFromFile(
+                    std::filesystem::path(resolvedPath),
+                    [safeThis, safeContainer, cfgCopy, pathCopy](CCTexture2D* loadedTex, bool success) {
+                        if (paimon::isRuntimeShuttingDown()) return;
+                        if (!safeContainer->getParent()) return;
+                        auto* self = static_cast<PaimonMenuLayer*>(safeThis.data());
+                        if (!self) return;
+                        if (!success || !loadedTex) {
+                            safeContainer->removeFromParent();
+                            return;
+                        }
+                        self->finalizeBackgroundWithTexture(safeContainer, loadedTex, cfgCopy, "custom", pathCopy);
+                    },
+                    /*ignoreCache=*/true);
+                return;
             }
         } else if (resolvedType == "id" && resolvedId > 0) {
             tex = LocalThumbs::get().loadTexture(resolvedId);
@@ -809,29 +830,58 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             }
         }
 
-        if (!sprite && tex) {
-            // Usar ShaderBgSprite si hay shader configurado
-            if (!cfg.shader.empty() && cfg.shader != "none") {
-                auto shaderSpr = Shaders::ShaderBgSprite::createWithTexture(tex);
-                if (shaderSpr) {
-                    auto* program = Shaders::getBgShaderProgram(cfg.shader);
-                    if (program) {
-                        shaderSpr->setShaderProgram(program);
-                        shaderSpr->m_shaderIntensity = geode::Mod::get()->getSavedValue<float>("layerbg-shader-intensity", 0.5f);
-                        shaderSpr->m_screenW = winSize.width;
-                        shaderSpr->m_screenH = winSize.height;
-                        shaderSpr->m_shaderTime = 0.f;
-                        shaderSpr->schedule(schedule_selector(Shaders::ShaderBgSprite::updateShaderTime));
-                    }
-                    sprite = shaderSpr;
-                }
-            }
-            if (!sprite) {
-                sprite = CCSprite::createWithTexture(tex);
-            }
+        if (!tex) {
+            container->removeFromParent();
+            return;
         }
 
+        // Camino sincrono restante (id/random): la textura ya esta en RAM/GPU,
+        // asi que finalizar aqui no decodifica nada pesado en el frame.
+        this->finalizeBackgroundWithTexture(container, tex, cfg, resolvedType, resolvedPath);
+    }
+
+    // Finaliza el fondo una vez que la textura esta lista (sincrono o tras
+    // carga async). Crea el sprite (con shader opcional), lo escala a pantalla,
+    // aplica modo oscuro y dispara la extraccion de colores adaptativos en un
+    // hilo de fondo. Seguro de llamar desde el callback async: el caller ya
+    // verifico container->getParent().
+    void finalizeBackgroundWithTexture(
+        CCNode* container, CCTexture2D* tex, LayerBgConfig const& cfg,
+        std::string const& resolvedType, std::string const& resolvedPath
+    ) {
+        if (!container || !tex) {
+            if (container) container->removeFromParent();
+            return;
+        }
+
+        auto winSize = CCDirector::get()->getWinSize();
+        CCSprite* sprite = nullptr;
+
+        // Usar ShaderBgSprite si hay shader configurado
+        if (!cfg.shader.empty() && cfg.shader != "none") {
+            auto shaderSpr = Shaders::ShaderBgSprite::createWithTexture(tex);
+            if (shaderSpr) {
+                auto* program = Shaders::getBgShaderProgram(cfg.shader);
+                if (program) {
+                    shaderSpr->setShaderProgram(program);
+                    shaderSpr->m_shaderIntensity = geode::Mod::get()->getSavedValue<float>("layerbg-shader-intensity", 0.5f);
+                    shaderSpr->m_screenW = winSize.width;
+                    shaderSpr->m_screenH = winSize.height;
+                    shaderSpr->m_shaderTime = 0.f;
+                    shaderSpr->schedule(schedule_selector(Shaders::ShaderBgSprite::updateShaderTime));
+                }
+                sprite = shaderSpr;
+            }
+        }
         if (!sprite) {
+            sprite = CCSprite::createWithTexture(tex);
+        }
+        if (!sprite) {
+            container->removeFromParent();
+            return;
+        }
+
+        if (sprite->getContentWidth() <= 0 || sprite->getContentHeight() <= 0) {
             container->removeFromParent();
             return;
         }
@@ -845,34 +895,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         sprite->ignoreAnchorPointForPosition(false);
         sprite->setAnchorPoint({0.5f, 0.5f});
 
-        // Colores adaptativos
-        bool adaptive = Mod::get()->getSavedValue<bool>("bg-adaptive-colors", false);
-        m_fields->m_adaptiveColors = adaptive;
-        if (adaptive && tex) {
-            // RAII guard para release() seguro
-            auto imgDeleter = [](CCImage* p) { if (p) p->release(); };
-            std::unique_ptr<CCImage, decltype(imgDeleter)> img(
-                new (std::nothrow) CCImage(), imgDeleter);
-            if (img) {
-                bool loaded = false;
-                if (resolvedType == "custom" && !resolvedPath.empty()) {
-                    loaded = img->initWithImageFile(resolvedPath.c_str());
-                }
-                if (loaded) {
-                    auto colors = DominantColors::extract(img->getData(), img->getWidth(), img->getHeight());
-                    ccColor3B primary = { colors.first.r, colors.first.g, colors.first.b };
-                    this->applyAdaptiveColor(primary);
-                } else {
-                    this->applyAdaptiveColor({255, 255, 255});
-                }
-                // release() automatico por RAII deleter
-            } else {
-                this->applyAdaptiveColor({255, 255, 255});
-            }
-        } else {
-            this->applyAdaptiveColor({255, 255, 255});
-        }
-
         // Modo oscuro
         if (cfg.darkMode) {
             GLubyte alpha = static_cast<GLubyte>(cfg.darkIntensity * 200.0f);
@@ -885,6 +907,39 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
         container->addChild(sprite);
         m_fields->m_bgSprite = sprite;
+
+        // Colores adaptativos: la extraccion (K-means en LAB) es CPU-puro y
+        // costosa, asi que la corremos en un hilo de fondo y aplicamos el
+        // resultado en el main thread. Antes corria sincrona en init →
+        // congelaba el frame al entrar al menu con un wallpaper custom.
+        bool adaptive = Mod::get()->getSavedValue<bool>("bg-adaptive-colors", false);
+        m_fields->m_adaptiveColors = adaptive;
+        if (adaptive && resolvedType == "custom" && !resolvedPath.empty()) {
+            Ref<MenuLayer> safeThis = this;
+            std::string pathCopy = resolvedPath;
+            paimon::ThreadTracker::get().spawn([safeThis, pathCopy]() {
+                if (paimon::isRuntimeShuttingDown()) return;
+                // Decodifica una copia en CPU (no toca GL) para muestrear colores.
+                auto imgDeleter = [](CCImage* p) { if (p) p->release(); };
+                std::unique_ptr<CCImage, decltype(imgDeleter)> img(
+                    new (std::nothrow) CCImage(), imgDeleter);
+                ccColor3B primary{255, 255, 255};
+                bool ok = false;
+                if (img && img->initWithImageFile(pathCopy.c_str())) {
+                    auto colors = DominantColors::extract(img->getData(), img->getWidth(), img->getHeight());
+                    primary = { colors.first.r, colors.first.g, colors.first.b };
+                    ok = true;
+                }
+                geode::Loader::get()->queueInMainThread([safeThis, primary, ok]() {
+                    if (paimon::isRuntimeShuttingDown()) return;
+                    auto* self = static_cast<PaimonMenuLayer*>(safeThis.data());
+                    if (!self || !self->getParent()) return;
+                    self->applyAdaptiveColor(ok ? primary : ccColor3B{255, 255, 255});
+                });
+            });
+        } else {
+            this->applyAdaptiveColor({255, 255, 255});
+        }
 
         log::debug("Updated menu background with unified config, type: {}", cfg.type);
     }
@@ -985,7 +1040,7 @@ $execute {
     GuideEnabledChangedEvent(kGuideEventFilter).listen(
         [](bool enabled) {
             // Buscar la escena activa y, dentro, un MenuLayer con la Paimon.
-            auto* scene = CCDirector::sharedDirector()->getRunningScene();
+            auto* scene = CCDirector::get()->getRunningScene();
             if (!scene) return geode::ListenerResult::Propagate;
 
             auto* hiddenMenu = scene->getChildByIDRecursive("paimon-hidden-menu"_spr);

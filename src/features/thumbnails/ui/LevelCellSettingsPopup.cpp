@@ -1,4 +1,4 @@
-#include "LevelCellSettingsPopup.hpp"
+﻿#include "LevelCellSettingsPopup.hpp"
 #include "../services/CompactListRefresh.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/InfoButton.hpp"
@@ -103,7 +103,7 @@ void LevelCellSettingsPopup::loadSettings() {
 
 void LevelCellSettingsPopup::saveSettings() {
     Mod::get()->setSavedValue<std::string>("levelcell-background-type", m_currentBgType);
-    Mod::get()->setSettingValue<float>("level-thumb-width", m_currentThumbWidth);
+    Mod::get()->setSettingValue<double>("level-thumb-width", static_cast<double>(m_currentThumbWidth));
     Mod::get()->setSavedValue<float>("levelcell-background-blur", m_currentBlur);
     Mod::get()->setSavedValue<float>("levelcell-background-darkness", m_currentDarkness);
     Mod::get()->setSavedValue<bool>("levelcell-show-separator", m_showSeparator);

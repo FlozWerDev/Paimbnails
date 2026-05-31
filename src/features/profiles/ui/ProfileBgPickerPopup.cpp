@@ -1,4 +1,4 @@
-#include "ProfileBgPickerPopup.hpp"
+﻿#include "ProfileBgPickerPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/Localization.hpp"

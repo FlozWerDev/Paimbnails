@@ -1,4 +1,4 @@
-// Inicializacion diferida del mod desde MenuLayer::init().
+﻿// Inicializacion diferida del mod desde MenuLayer::init().
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/string.hpp>
@@ -15,6 +15,7 @@
 #include "../features/progressbar/services/ProgressBarManager.hpp"
 #include "../features/custom-slider/services/CustomSliderManager.hpp"
 #include "../features/updates/services/UpdateChecker.hpp"
+#include "../managers/ButtonLayoutManager.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "StartupIncompatibilityCheck.hpp"
 #include "QualityConfig.hpp"
@@ -27,6 +28,7 @@
 #include "../blur/BlurSystem.hpp"
 #include "../blur/BlurDiskCache.hpp"
 #include "../features/thumbnails/services/ThumbnailCache.hpp"
+#include "../features/beat-shaders/services/BeatShaderManager.hpp"
 #include "../utils/ThreadTracker.hpp"
 #include <thread>
 #include <chrono>
@@ -63,6 +65,11 @@ void PaimonOnModLoaded() {
 
     // â”€â”€ PaiDraw â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     paidraw::PaiDrawManager::get().init();
+
+    // ── Beat Shaders ───────────────────────────────────────────────
+    // Initializes the audio FFT pipeline lazily — only attaches the FMOD DSP
+    // when the feature is enabled.
+    paimon::beat_shaders::BeatShaderManager::get().init();
 
     // â”€â”€ Blur disk cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Inicializa cache persistente de texturas blur pre-calculadas. El init
@@ -177,34 +184,20 @@ void PaimonOnModLoaded() {
             CursorManager::get().applyConfigLive();
             s_cursorSyncGuard.store(false, std::memory_order_release);
         });
-        geode::listenForSettingChanges<double>("custom-cursor-scale", +[](double value) {
-            if (s_cursorSyncGuard.exchange(true, std::memory_order_acq_rel)) return;
-            CursorManager::get().config().scale = static_cast<float>(value);
-            CursorManager::get().applyConfigLive();
-            s_cursorSyncGuard.store(false, std::memory_order_release);
-        });
-        geode::listenForSettingChanges<bool>("custom-cursor-trail", +[](bool value) {
-            if (s_cursorSyncGuard.exchange(true, std::memory_order_acq_rel)) return;
-            CursorManager::get().config().trailEnabled = value;
-            CursorManager::get().applyConfigLive();
-            s_cursorSyncGuard.store(false, std::memory_order_release);
-        });
+        // custom-cursor-scale / custom-cursor-trail are saved values (not mod.json
+        // settings) configured from the cursor config popup, so listenForSettingChanges
+        // would never fire for them; the popup applies them live directly.
 
         // â”€â”€ Thumbnail / Background settings reactivity â”€â”€
         // Increment global version so LevelCell & LevelInfoLayer re-cache settings
-        geode::listenForSettingChanges<std::string>("levelcell-background-type", &paimonOnSettingChanged<std::string>);
+        // Only keys registered in mod.json fire listenForSettingChanges. The
+        // granular keys (levelcell-background-*, transparent-list-mode, anim-*,
+        // gallery-autocycle, levelinfo-effect-intensity/extra-styles/bg-darkness)
+        // are saved values configured from the in-mod settings panel.
         geode::listenForSettingChanges<bool>("levelcell-hover-effects", &paimonOnSettingChanged<bool>);
         geode::listenForSettingChanges<bool>("compact-list-mode", &paimonOnSettingChanged<bool>);
-        geode::listenForSettingChanges<bool>("transparent-list-mode", &paimonOnSettingChanged<bool>);
         geode::listenForSettingChanges<double>("level-thumb-width", &paimonOnSettingChanged<double>);
-        geode::listenForSettingChanges<double>("levelcell-background-blur", &paimonOnSettingChanged<double>);
-        geode::listenForSettingChanges<double>("levelcell-background-darkness", &paimonOnSettingChanged<double>);
-        geode::listenForSettingChanges<std::string>("levelcell-anim-type", &paimonOnSettingChanged<std::string>);
-        geode::listenForSettingChanges<bool>("levelcell-gallery-autocycle", &paimonOnSettingChanged<bool>);
         geode::listenForSettingChanges<std::string>("levelinfo-background-style", &paimonOnSettingChanged<std::string>);
-        geode::listenForSettingChanges<int64_t>("levelinfo-effect-intensity", &paimonOnSettingChanged<int64_t>);
-        geode::listenForSettingChanges<std::string>("levelinfo-extra-styles", &paimonOnSettingChanged<std::string>);
-        geode::listenForSettingChanges<int64_t>("levelinfo-bg-darkness", &paimonOnSettingChanged<int64_t>);
     }
 
     log::info("[PaimonThumbnails][Init] Applying startup init");
@@ -257,6 +250,11 @@ void PaimonOnModLoaded() {
         if (paimon::isRuntimeShuttingDown()) return;
         Shaders::prewarmLevelInfoShaders();
 
+        // Precompila los shaders de fondo dinamicos que el usuario tiene
+        // configurados (rain, matrix, crt, ...). Asi la primera entrada a la
+        // capa con ese fondo no paga el compile (4-10ms) como micro-stutter.
+        Shaders::prewarmConfiguredBackgroundShaders();
+
         // Fase 0 de migracion a .glsl: verifica que los archivos .glsl
         // instalados en resources/shaders se pueden leer correctamente.
         // Si falla, el log indica la ruta esperada para debug. Las fases
@@ -269,5 +267,16 @@ void PaimonOnModLoaded() {
     paimon::scheduleMainThreadDelay(8.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         paimon::updates::UpdateChecker::get().checkAsync();
+    });
+
+    // ── Precarga de layouts de botones ──────────────────────────────
+    // ButtonLayoutManager::load() recorre directorios y parsea archivos .txt
+    // por escena. Antes corria sincrono dentro de LevelInfoLayer::init() la
+    // primera vez → micro-freeze al abrir el primer nivel. Lo hacemos durante
+    // el idle del menu (main thread, fuera del camino de entrada). El guard
+    // m_loaded interno hace que la llamada posterior en init() sea no-op.
+    paimon::scheduleMainThreadDelay(6.0f, []() {
+        if (paimon::isRuntimeShuttingDown()) return;
+        ButtonLayoutManager::get().load();
     });
 }

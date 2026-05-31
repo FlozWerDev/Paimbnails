@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/DailyLevelNode.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"

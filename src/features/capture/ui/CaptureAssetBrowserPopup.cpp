@@ -1,4 +1,4 @@
-#include "CaptureAssetBrowserPopup.hpp"
+﻿#include "CaptureAssetBrowserPopup.hpp"
 #include "../services/CaptureVisibilityState.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -615,7 +615,7 @@ void CaptureAssetBrowserPopup::updateMiniPreview() {
     auto* pl = PlayLayer::get();
     if (!pl) return;
 
-    auto* director = CCDirector::sharedDirector();
+    auto* director = CCDirector::get();
     auto winSize = director->getWinSize();
 
     const int rtW = C::RT_WIDTH;

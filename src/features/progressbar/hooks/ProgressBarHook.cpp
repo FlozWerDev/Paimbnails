@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PauseLayer.hpp>
 #include <Geode/binding/PlayLayer.hpp>
@@ -52,7 +52,7 @@ void ensureProgressBarTicker() {
         log::error("[ProgressBar] Failed to create ticker");
         return;
     }
-    auto* dir = CCDirector::sharedDirector();
+    auto* dir = CCDirector::get();
     if (!dir) return;
     auto* sch = dir->getScheduler();
     if (!sch) return;
@@ -61,7 +61,7 @@ void ensureProgressBarTicker() {
 
 void shutdownProgressBarTicker() {
     if (!s_progressBarTicker) return;
-    if (auto* dir = CCDirector::sharedDirector()) {
+    if (auto* dir = CCDirector::get()) {
         if (auto* sch = dir->getScheduler()) {
             sch->unscheduleUpdateForTarget(s_progressBarTicker.data());
         }
@@ -99,7 +99,7 @@ public:
 
     void registerWithTouchDispatcher() override {
         // Priority just above the PauseLayer (which is typically -128)
-        CCDirector::sharedDirector()->getTouchDispatcher()
+        CCDirector::get()->getTouchDispatcher()
             ->addTargetedDelegate(this, -129, true);
     }
 
@@ -193,7 +193,7 @@ class $modify(PaimonProgressBarPauseLayer, PauseLayer) {
 
         auto* dragLayer = ProgressBarDragLayer::create();
         if (!dragLayer) return;
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
         dragLayer->setContentSize(winSize);
         dragLayer->setPosition({0.f, 0.f});
         this->addChild(dragLayer, -1);
@@ -203,7 +203,7 @@ class $modify(PaimonProgressBarPauseLayer, PauseLayer) {
         // Avoid duplicates if customSetup runs multiple times.
         if (this->getChildByID("paimon-progressbar-config-button"_spr)) return;
 
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto winSize = CCDirector::get()->getWinSize();
 
         // Find a suitable menu (prefer geode.node-ids "left-button-menu"
         // / "right-button-menu", fall back to side-detection heuristic).

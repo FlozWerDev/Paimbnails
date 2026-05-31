@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // BlurSystem — thin singleton wrapper over Shaders:: blur utilities.
 // Keeps all existing #include "../blur/BlurSystem.hpp" working without changes.
 

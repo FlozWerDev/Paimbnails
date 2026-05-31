@@ -1,4 +1,4 @@
-#include "ThumbnailCache.hpp"
+﻿#include "ThumbnailCache.hpp"
 #include "ThumbnailTransportClient.hpp"
 #include "ThumbnailLoader.hpp"
 #include "../../../core/QualityConfig.hpp"

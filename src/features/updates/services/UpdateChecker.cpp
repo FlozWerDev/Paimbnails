@@ -1,4 +1,4 @@
-#include "UpdateChecker.hpp"
+﻿#include "UpdateChecker.hpp"
 #include "../../../utils/WebHelper.hpp"
 #include "../../../core/Settings.hpp"
 

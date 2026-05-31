@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/MapPackCell.hpp>
 #include "../utils/ListThumbnailCarousel.hpp"
 #include <sstream>

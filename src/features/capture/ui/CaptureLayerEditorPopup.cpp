@@ -1,4 +1,4 @@
-#include "CaptureLayerEditorPopup.hpp"
+﻿#include "CaptureLayerEditorPopup.hpp"
 #include "../services/CaptureVisibilityState.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -272,7 +272,7 @@ void CaptureLayerEditorPopup::populateLayers() {
     auto* pl = PlayLayer::get();
     if (!pl) return;
 
-    auto* scene = CCDirector::sharedDirector()->getRunningScene();
+    auto* scene = CCDirector::get()->getRunningScene();
 
     m_layers.clear();
 
@@ -428,7 +428,7 @@ void CaptureLayerEditorPopup::populateLayers() {
     if (pl->m_batchNodes) {
         int batchGroup = -1;
         for (unsigned int bi = 0; bi < pl->m_batchNodes->count(); ++bi) {
-            auto* bn = static_cast<CCNode*>(pl->m_batchNodes->objectAtIndex(bi));
+            auto* bn = typeinfo_cast<CCNode*>(pl->m_batchNodes->objectAtIndex(bi));
             if (!bn || addedNodes.count(bn)) continue;
             if (batchGroup == -1) batchGroup = addGroup(tr("Batch nodes", "Batch nodes"), ensureObjectGroup(), 1);
             std::string batchName = describeNode(bn);
@@ -788,7 +788,7 @@ void CaptureLayerEditorPopup::updateMiniPreview() {
     auto* pl = PlayLayer::get();
     if (!pl) return;
 
-    auto* director = CCDirector::sharedDirector();
+    auto* director = CCDirector::get();
     auto winSize = director->getWinSize();
 
     const int rtW = C::RT_WIDTH;

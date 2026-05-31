@@ -1,4 +1,4 @@
-#include "ProfileMusicPopup.hpp"
+﻿#include "ProfileMusicPopup.hpp"
 #include "SongSearchPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -248,7 +248,7 @@ void ProfileMusicPopup::createWaveformDisplay() {
     placeholderLabel->setScale(0.72f);
     placeholderLabel->setOpacity(120);
     placeholderLabel->setPosition({m_waveformWidth / 2.f, m_waveformHeight / 2.f});
-    placeholderLabel->setTag(999);
+    placeholderLabel->setID("paimon-waveform-placeholder"_spr);
     m_waveformContainer->addChild(placeholderLabel, 0);
 
     // Selection time — small badge-like panel behind the label.
@@ -569,7 +569,7 @@ void ProfileMusicPopup::onLoadCustomFile(CCObject*) {
                 }
 
                 // Remove placeholder
-                if (auto placeholder = popup->m_waveformContainer->getChildByTag(999)) {
+                if (auto placeholder = popup->m_waveformContainer->getChildByID("paimon-waveform-placeholder"_spr)) {
                     placeholder->removeFromParent();
                 }
 
@@ -638,7 +638,7 @@ void ProfileMusicPopup::loadWaveform() {
             }
 
             // Eliminar placeholder
-            if (auto placeholder = popup->m_waveformContainer->getChildByTag(999)) {
+            if (auto placeholder = popup->m_waveformContainer->getChildByID("paimon-waveform-placeholder"_spr)) {
                 placeholder->removeFromParent();
             }
 
@@ -669,12 +669,12 @@ void ProfileMusicPopup::renderWaveform() {
     m_waveformBars.clear();
 
     // Also remove any existing orange selection bars
-    if (auto existingOrange = m_waveformContainer->getChildByTag(997)) {
+    if (auto existingOrange = m_waveformContainer->getChildByID("paimon-waveform-selection"_spr)) {
         existingOrange->removeFromParent();
     }
 
     auto waveformDraw = PaimonDrawNode::create();
-    waveformDraw->setTag(996);
+    waveformDraw->setID("paimon-waveform-draw"_spr);
 
     if (m_peaks.empty()) {
         // Fallback: simple center line
@@ -748,12 +748,12 @@ void ProfileMusicPopup::drawSelectionBars() {
     if (m_peaks.empty() || m_songDurationMs <= 0) return;
 
     // Remove previous orange selection bars
-    if (auto existingNode = m_waveformContainer->getChildByTag(997)) {
+    if (auto existingNode = m_waveformContainer->getChildByID("paimon-waveform-selection"_spr)) {
         existingNode->removeFromParent();
     }
 
     auto orangeDraw = PaimonDrawNode::create();
-    orangeDraw->setTag(997);
+    orangeDraw->setID("paimon-waveform-selection"_spr);
 
     const int   numBars      = 150;
     const float barWidth     = m_waveformWidth / static_cast<float>(numBars);

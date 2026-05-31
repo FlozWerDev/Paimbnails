@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <string>
 #include <vector>
@@ -62,8 +62,29 @@ struct ThumbnailBackgroundChangedEvent {
 
     // Cache del ultimo thumbnail activo por nivel (para que InfoLayer pueda
     // consultar la textura actual al abrirse, sin esperar al proximo ciclo).
+    //
+    // IMPORTANTE: NO usamos `geode::Ref<>` aqui porque seria una variable
+    // estatica con destructor no-trivial. En atexit, CCPoolManager ya esta
+    // destruido y `Ref::~Ref()` llama `release()` sobre memoria invalida → crash.
+    //
+    // Usamos raw pointer con retain manual; RuntimeLifecycle.cpp ($on_game(Exiting))
+    // hace setLastTexture(nullptr) para liberar correctamente. Si Exiting no
+    // dispara (kill -9, crash de otro hilo), el OS recupera el handle al cerrar
+    // el proceso — preferible al crash de atexit.
     static inline int s_lastLevelID = 0;
-    static inline geode::Ref<cocos2d::CCTexture2D> s_lastTexture = nullptr;
+    static inline cocos2d::CCTexture2D* s_lastTextureRaw = nullptr;
+
+    // Helpers thread-safe para mutar el cache (deben llamarse desde main thread).
+    static void setLastTexture(cocos2d::CCTexture2D* tex) {
+        if (s_lastTextureRaw == tex) return;
+        if (tex) tex->retain();
+        if (s_lastTextureRaw) s_lastTextureRaw->release();
+        s_lastTextureRaw = tex;
+    }
+
+    static cocos2d::CCTexture2D* getLastTexture() {
+        return s_lastTextureRaw;
+    }
 };
 
 } // namespace paimon

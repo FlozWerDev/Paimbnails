@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // DiscordConfigPopup — popup para personalizar la Rich Presence de Paimbnails.
 // Configuraciones disponibles: enable, private mode, idle, timestamps,

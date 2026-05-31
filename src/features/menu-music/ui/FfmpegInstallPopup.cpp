@@ -1,4 +1,4 @@
-#include "FfmpegInstallPopup.hpp"
+﻿#include "FfmpegInstallPopup.hpp"
 
 #include "../services/FfmpegBootstrap.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -125,7 +125,7 @@ bool FfmpegInstallPopup::init(std::function<void(bool)> onFinished) {
 }
 
 void FfmpegInstallPopup::onExit() {
-    m_alive = false;
+    *m_alive = false;
     if (!m_finished && m_onFinished) {
         auto cb = std::move(m_onFinished);
         m_onFinished = nullptr;
@@ -143,14 +143,20 @@ void FfmpegInstallPopup::startInstall() {
     }
 
     boot.ensureInstalled(
-        [this](FfmpegBootstrapProgress p) {
-            if (!m_alive.load()) return;
-            this->updateProgress(p.percent, p.message);
+        [this, alive = m_alive](FfmpegBootstrapProgress p) {
+            if (!alive->load()) return;
+            geode::Loader::get()->queueInMainThread([this, alive, p]() {
+                if (!alive->load()) return;
+                this->updateProgress(p.percent, p.message);
+            });
         },
-        [this](bool ok, std::string msg) {
-            if (!m_alive.load()) return;
-            if (ok) this->finishSuccess();
-            else this->finishError(msg);
+        [this, alive = m_alive](bool ok, std::string msg) {
+            if (!alive->load()) return;
+            geode::Loader::get()->queueInMainThread([this, alive, ok, msg]() {
+                if (!alive->load()) return;
+                if (ok) this->finishSuccess();
+                else this->finishError(msg);
+            });
         }
     );
 }

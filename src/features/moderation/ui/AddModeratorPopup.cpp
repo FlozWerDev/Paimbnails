@@ -1,4 +1,4 @@
-#include "AddModeratorPopup.hpp"
+﻿#include "AddModeratorPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"

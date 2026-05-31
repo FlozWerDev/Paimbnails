@@ -1,4 +1,4 @@
-#include "UpdateProgressPopup.hpp"
+﻿#include "UpdateProgressPopup.hpp"
 #include "../services/UpdateChecker.hpp"
 #include "../../../utils/Localization.hpp"
 

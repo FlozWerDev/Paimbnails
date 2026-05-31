@@ -1,4 +1,4 @@
-#include "BlurDiskCache.hpp"
+﻿#include "BlurDiskCache.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -35,8 +35,18 @@ static std::unique_ptr<paimon::ThreadPool>& getBlurIOPool() {
 }
 
 BlurDiskCache& BlurDiskCache::get() {
-    static BlurDiskCache instance;
-    return instance;
+    // Heap-leak intencional: este singleton tiene un thread pool de I/O y un
+    // indice protegido por mutex. Destruir el objeto en atexit causa carreras
+    // con workers que aun pueden estar leyendo/escribiendo el indice. Para
+    // mantener orden con ThumbnailLoader y PopupBlurService::blurRegistry()
+    // (que ya usan este patron), usamos `new` sin delete: el SO recupera la
+    // memoria al cerrar el proceso.
+    //
+    // shutdown() sigue marcando el flag atomico para rechazar nuevos lookups
+    // y flushear el indice al disco; este patron solo evita que el destructor
+    // del objeto corra durante atexit con workers vivos.
+    static BlurDiskCache* instance = new BlurDiskCache();
+    return *instance;
 }
 
 std::filesystem::path BlurDiskCache::cacheDir() const {

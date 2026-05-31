@@ -1,4 +1,4 @@
-#include "CustomTransitionScene.hpp"
+﻿#include "CustomTransitionScene.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
@@ -267,7 +267,7 @@ void CustomTransitionScene::beginCommand(TransitionCommand const& cmd) {
 
     // Image: create a sprite overlay
     if (cmd.action == CommandAction::Image) {
-        if (auto* existing = this->getChildByTag(8888)) {
+        if (auto* existing = this->getChildByID("paimon-transition-image"_spr)) {
             existing->removeFromParent();
         }
 
@@ -288,7 +288,7 @@ void CustomTransitionScene::beginCommand(TransitionCommand const& cmd) {
                 auto winSize = CCDirector::get()->getWinSize();
                 spr->setPosition({winSize.width / 2, winSize.height / 2});
                 spr->setOpacity(0);
-                spr->setTag(8888);
+                spr->setID("paimon-transition-image"_spr);
                 this->addChild(spr, 10);
             } else {
                 log::warn("[CustomTransitionScene] Failed to load image overlay: {}", cmd.imagePath);
@@ -368,7 +368,7 @@ void CustomTransitionScene::updateCommand(TransitionCommand const& cmd, float pr
 
     if (cmd.action == CommandAction::Image) {
         // Fade in the image overlay
-        auto* imgNode = this->getChildByTag(8888);
+        auto* imgNode = this->getChildByID("paimon-transition-image"_spr);
         if (auto* imgSpr = typeinfo_cast<CCSprite*>(imgNode)) {
             float opacity = 255.f * t;
             imgSpr->setOpacity(static_cast<GLubyte>(std::clamp(opacity, 0.f, 255.f)));

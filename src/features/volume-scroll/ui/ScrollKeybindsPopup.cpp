@@ -1,4 +1,4 @@
-#include "ScrollKeybindsPopup.hpp"
+﻿#include "ScrollKeybindsPopup.hpp"
 #include "ExtendedKeybindEditPopup.hpp"
 
 #include "../../../utils/ExtendedKeybind.hpp"
@@ -354,9 +354,9 @@ void ScrollKeybindsPopup::onResetVolumeDefaults(CCObject*) {
         auto children = m_scrollLayer->m_contentLayer->getChildren();
         if (children) {
             for (int i = 0; i < static_cast<int>(children->count()); ++i) {
-                auto* row = static_cast<CCNode*>(children->objectAtIndex(i));
+                auto* row = typeinfo_cast<CCNode*>(children->objectAtIndex(i));
                 if (!row) continue;
-                auto* label = static_cast<CCLabelBMFont*>(
+                auto* label = typeinfo_cast<CCLabelBMFont*>(
                     row->getUserObject("paimon-binding-label"_spr));
                 if (!label) continue;
                 // Buscar el setting key asociado tampoco es trivial sin
@@ -368,7 +368,7 @@ void ScrollKeybindsPopup::onResetVolumeDefaults(CCObject*) {
                 //
                 // Nos hace falta saber a que setting pertenece este label.
                 // Lo guardamos como otro userObject "paimon-binding-key".
-                auto* keyObj = static_cast<CCString*>(
+                auto* keyObj = typeinfo_cast<CCString*>(
                     row->getUserObject("paimon-binding-key"_spr));
                 if (!keyObj) continue;
                 std::string settingKey = keyObj->getCString();

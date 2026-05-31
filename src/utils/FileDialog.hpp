@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Geode/utils/file.hpp>
 #include <functional>
@@ -15,9 +15,13 @@ namespace pt {
     geode::utils::file::FilePickOptions::Filter videoFilter();
     geode::utils::file::FilePickOptions::Filter mediaFilter();
     geode::utils::file::FilePickOptions::Filter pngFilter();
+    // Imagenes + cursores de Windows (.cur/.ico/.ani) + packs .zip.
+    geode::utils::file::FilePickOptions::Filter cursorAssetFilter();
 
     // ── pickers (fire-and-forget, same pattern as reference mods) ──
     void pickImage(FilePickCallback callback);
+    // Picker para la galeria de cursores: acepta imagenes, cursores Windows y .zip.
+    void pickCursorAsset(FilePickCallback callback);
     void pickAudio(FilePickCallback callback);
     void pickVideo(FilePickCallback callback);
     void pickMedia(FilePickCallback callback);

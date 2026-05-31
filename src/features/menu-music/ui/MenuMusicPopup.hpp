@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // MenuMusicPopup — popup principal del sistema Menu Music.
 //
@@ -71,6 +71,7 @@ protected:
     void onOpenLibrary(cocos2d::CCObject*);
     void onOpenPlaylists(cocos2d::CCObject*);
     void onOpenAdd(cocos2d::CCObject*);
+    void onEditorMusicGear(cocos2d::CCObject*);  // habilita/deshabilita Editor Music
 
     // ── Quick actions (parity with Menu Loop Randomizer) ──
     // Actuan sobre el sistema menu-loop (songs externas, override, etc.)

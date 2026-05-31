@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════════════════
 // TransitionHook: intercepta las transiciones del juego
 //
 // Hookea CCDirector::replaceScene, pushScene y popSceneWithTransition

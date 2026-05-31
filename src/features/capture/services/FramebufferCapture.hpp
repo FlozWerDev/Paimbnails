@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Geode/utils/function.hpp>
 #include <vector>

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // MenuMusicPlayer — API de alto nivel para controlar que cancion suena
 // en el menu principal. Es la pieza que conecta la libreria con el sistema

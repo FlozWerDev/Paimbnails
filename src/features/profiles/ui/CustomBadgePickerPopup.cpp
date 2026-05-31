@@ -1,4 +1,4 @@
-#include "CustomBadgePickerPopup.hpp"
+﻿#include "CustomBadgePickerPopup.hpp"
 #include "../services/CustomBadgeService.hpp"
 #include "../../../features/emotes/services/EmoteService.hpp"
 #include "../../../features/emotes/services/EmoteCache.hpp"
@@ -200,7 +200,7 @@ void CustomBadgePickerPopup::buildEmoteGrid(std::vector<EmoteInfo> const& emotes
         auto ph = CCLabelBMFont::create("...", "chatFont.fnt");
         ph->setScale(0.28f);
         ph->setPosition({CELL_SIZE / 2.f, CELL_SIZE / 2.f});
-        ph->setTag(99);
+        ph->setID("paimon-badge-placeholder"_spr);
         container->addChild(ph, 2);
 
         // Boton
@@ -235,7 +235,7 @@ void CustomBadgePickerPopup::buildEmoteGrid(std::vector<EmoteInfo> const& emotes
                         cont->addChild(spr, 3);
                     }
 
-                    if (auto* p = cont->getChildByTag(99))
+                    if (auto* p = cont->getChildByID("paimon-badge-placeholder"_spr))
                         p->setVisible(false);
                 });
             });

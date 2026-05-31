@@ -121,7 +121,8 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 )
 
 # ─────────────────────────────────────────────────────────────
-# Librerías — SIN keyword PRIVATE, compatible con Geode
+# Librerías — sin keyword (firma "plain") porque setup_geode_mod
+# usa la firma plain internamente y CMake exige consistencia.
 # ─────────────────────────────────────────────────────────────
 if (WIN32)
     target_link_libraries(${PROJECT_NAME}

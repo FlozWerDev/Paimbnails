@@ -1,4 +1,4 @@
-#include "ProgressBarConfigPopup.hpp"
+﻿#include "ProgressBarConfigPopup.hpp"
 #include "../services/ProgressBarManager.hpp"
 #include "ProgressBarEditOverlay.hpp"
 #include "../../fonts/ui/FontPickerPopup.hpp"
@@ -256,7 +256,7 @@ void ProgressBarConfigPopup::buildPositionTab() {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
     auto& cfg = ProgressBarManager::get().config();
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
 
     // Default custom pos if zero (so user-friendly first-edit).
     if (cfg.posX <= 0.f && cfg.posY <= 0.f) {
@@ -766,7 +766,7 @@ void ProgressBarConfigPopup::onEnterFreeEditMode(CCObject*) {
 }
 
 void ProgressBarConfigPopup::onCenterPosition(CCObject*) {
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     auto& cfg = ProgressBarManager::get().config();
     cfg.posX = winSize.width / 2.f;
     cfg.posY = winSize.height - 20.f;
@@ -785,7 +785,7 @@ void ProgressBarConfigPopup::onCenterPosition(CCObject*) {
 
 void ProgressBarConfigPopup::onPosXChanged(CCObject*) {
     if (!m_posXSlider) return;
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     auto& c = ProgressBarManager::get().config();
     c.posX = readSliderRange(m_posXSlider, 0.f, winSize.width);
     c.useCustomPosition = true;
@@ -794,7 +794,7 @@ void ProgressBarConfigPopup::onPosXChanged(CCObject*) {
 }
 void ProgressBarConfigPopup::onPosYChanged(CCObject*) {
     if (!m_posYSlider) return;
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto winSize = CCDirector::get()->getWinSize();
     auto& c = ProgressBarManager::get().config();
     c.posY = readSliderRange(m_posYSlider, 0.f, winSize.height);
     c.useCustomPosition = true;

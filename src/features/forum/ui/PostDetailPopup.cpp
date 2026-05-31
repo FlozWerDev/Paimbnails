@@ -1,4 +1,4 @@
-#include "PostDetailPopup.hpp"
+﻿#include "PostDetailPopup.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/binding/ButtonSprite.hpp>

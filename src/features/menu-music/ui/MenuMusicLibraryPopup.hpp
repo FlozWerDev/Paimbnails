@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // MenuMusicLibraryPopup — lista de tracks con scroll, buscador y acciones
 // por-track (play, remove, add-to-playlist). Diseño intencionalmente distinto

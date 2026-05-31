@@ -1,15 +1,17 @@
-#include "RateProfilePopup.hpp"
+﻿#include "RateProfilePopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "ReportUserPopup.hpp"
 #include "ProfileReviewsPopup.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/ScissorClipNode.hpp"
 #include "../../emotes/ui/EmoteButton.hpp"
 #include "../../emotes/ui/EmoteAutocomplete.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
+#include <cmath>
 
 using namespace geode::prelude;
 
@@ -94,13 +96,49 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_mainLayer->addChild(starMenu, 2);
 
     for (int i = 1; i <= 5; i++) {
-        auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
-        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png");
-        if (!spr) spr = CCSprite::create();
-        spr->setColor({80, 80, 80});
-        spr->setScale(0.85f);
+        // Estrella base (gris) - siempre visible
+        auto baseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
+        if (!baseSpr) baseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png");
+        if (!baseSpr) baseSpr = CCSprite::create();
+        baseSpr->setColor({80, 80, 80});
 
-        auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(RateProfilePopup::onStar));
+        // Estrella de relleno (amarilla) - se recorta segun rating
+        auto fillSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
+        if (!fillSpr) fillSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png");
+        if (!fillSpr) fillSpr = CCSprite::create();
+        fillSpr->setColor({255, 255, 50});
+
+        auto starSize = baseSpr->getContentSize();
+        if (i == 1) {
+            m_starWidth = starSize.width;
+            m_starHeight = starSize.height;
+        }
+
+        // Contenedor que sera la "imagen" del CCMenuItemSpriteExtra.
+        // Mantenemos contentSize natural del frame y aplicamos scale al
+        // contenedor para no romper la deteccion de click ni los hijos.
+        auto container = CCNode::create();
+        container->setContentSize(starSize);
+        container->setAnchorPoint({0.5f, 0.5f});
+        container->setScale(0.85f);
+
+        // Base gris centrada
+        baseSpr->setPosition({starSize.width / 2.f, starSize.height / 2.f});
+        container->addChild(baseSpr, 0);
+
+        // ScissorClipNode que recorta el sprite amarillo para soportar
+        // medias estrellas: contentSize.width controla cuanto se ve.
+        auto stencil = paimon::SpriteHelper::createRectStencil(starSize.width, starSize.height);
+        auto fillClip = paimon::ScissorClipNode::create(stencil);
+        fillClip->setContentSize(starSize);
+        fillClip->setAnchorPoint({0.f, 0.f});
+        fillClip->setPosition({0.f, 0.f});
+        fillClip->setVisible(false);
+        fillSpr->setPosition({starSize.width / 2.f, starSize.height / 2.f});
+        fillClip->addChild(fillSpr);
+        container->addChild(fillClip, 1);
+
+        auto btn = CCMenuItemSpriteExtra::create(container, this, menu_selector(RateProfilePopup::onStar));
         btn->setTag(i);
 
         float col = (i - 3.f);
@@ -108,6 +146,7 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
 
         starMenu->addChild(btn);
         m_starBtns.push_back(btn);
+        m_starFillClips.push_back(fillClip);
     }
 
     // Etiqueta de calificacion seleccionada
@@ -210,7 +249,19 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
 void RateProfilePopup::onStar(CCObject* sender) {
     auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
     if (!btn) return;
-    m_rating = btn->getTag();
+    int starPos = btn->getTag();
+    float starF = static_cast<float>(starPos);
+
+    // Toggle: si la estrella esta llena en esta posicion, pasar a media.
+    // En cualquier otro caso (vacia, media, o estrella distinta), poner llena.
+    if (std::fabs(m_rating - starF) < 0.01f) {
+        // Pasar a media estrella; minimo 0.5 (no permitir 0 con click).
+        m_rating = starF - 0.5f;
+        if (m_rating < 0.5f) m_rating = 0.5f;
+    } else {
+        m_rating = starF;
+    }
+
     updateStarVisuals();
 
     // Animacion de rebote en la estrella
@@ -224,20 +275,39 @@ void RateProfilePopup::updateStarVisuals() {
     };
 
     for (int i = 0; i < (int)m_starBtns.size(); i++) {
-        auto b = m_starBtns[i];
-        if (auto spr = typeinfo_cast<CCSprite*>(b->getNormalImage())) {
-            if (i < m_rating) {
-                spr->setColor({255, 255, 50});
-                spr->setScale(0.85f);
-            } else {
-                spr->setColor({80, 80, 80});
-                spr->setScale(0.85f);
-            }
+        if (i >= (int)m_starFillClips.size()) break;
+        auto fillClip = m_starFillClips[i];
+        if (!fillClip) continue;
+        float pos = static_cast<float>(i + 1); // posicion de estrella (1..5)
+
+        if (m_rating >= pos - 0.01f) {
+            // Estrella llena
+            fillClip->setVisible(true);
+            fillClip->setContentSize({m_starWidth, m_starHeight});
+        } else if (m_rating >= pos - 0.5f - 0.01f) {
+            // Media estrella (mitad izquierda visible)
+            fillClip->setVisible(true);
+            fillClip->setContentSize({m_starWidth * 0.5f, m_starHeight});
+        } else {
+            // Estrella vacia
+            fillClip->setVisible(false);
         }
     }
+
     if (m_selectedLabel) {
-        if (m_rating > 0 && m_rating <= 5) {
-            m_selectedLabel->setString(fmt::format("{}/5 - {}", m_rating, ratingTexts[m_rating]).c_str());
+        if (m_rating > 0.f) {
+            // Formato: entero si es exacto, sino con un decimal
+            std::string ratingStr;
+            if (std::fabs(std::fmod(m_rating, 1.0f)) < 0.01f) {
+                ratingStr = fmt::format("{}/5", static_cast<int>(m_rating + 0.01f));
+            } else {
+                ratingStr = fmt::format("{:.1f}/5", m_rating);
+            }
+            // Texto descriptivo: redondear al entero mas cercano (1..5)
+            int textIdx = static_cast<int>(std::round(m_rating));
+            if (textIdx < 1) textIdx = 1;
+            if (textIdx > 5) textIdx = 5;
+            m_selectedLabel->setString(fmt::format("{} - {}", ratingStr, ratingTexts[textIdx]).c_str());
         } else {
             m_selectedLabel->setString("");
         }
@@ -304,7 +374,7 @@ void RateProfilePopup::loadExistingRating() {
         if (root["userVote"].isObject()) {
             auto uv = root["userVote"];
             if (uv["stars"].isNumber()) {
-                popup->m_rating = static_cast<int>(uv["stars"].asInt().unwrapOr(0));
+                popup->m_rating = static_cast<float>(uv["stars"].asDouble().unwrapOr(0.0));
                 popup->updateStarVisuals();
             }
             if (uv["message"].isString() && popup->m_messageInput) {
@@ -315,7 +385,7 @@ void RateProfilePopup::loadExistingRating() {
 }
 
 void RateProfilePopup::onSubmit(CCObject* sender) {
-    if (m_rating == 0) {
+    if (m_rating <= 0.f) {
         PaimonNotify::create("Select a rating first", NotificationIcon::Error)->show();
         return;
     }
@@ -340,10 +410,12 @@ void RateProfilePopup::onSubmit(CCObject* sender) {
 
     std::string message = m_messageInput ? m_messageInput->getString() : "";
 
-    // Construye el JSON del cuerpo
+    // Construye el JSON del cuerpo. stars puede ser float (1.0 a 5.0 en
+    // pasos de 0.5). Lo enviamos como double para que matjson lo serialice
+    // como numero JSON (no como string).
     matjson::Value bodyObj = matjson::makeObject({
         {"accountID", m_accountID},
-        {"stars", m_rating},
+        {"stars", static_cast<double>(m_rating)},
         {"username", username},
         {"message", message}
     });

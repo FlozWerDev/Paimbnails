@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // ExternalSongsPopup — lista scrollable con todas las canciones que el
 // sistema menu-loop puede reproducir (config-dir + playlist + Newgrounds

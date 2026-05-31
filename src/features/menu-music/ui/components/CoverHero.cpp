@@ -1,4 +1,4 @@
-#include "CoverHero.hpp"
+﻿#include "CoverHero.hpp"
 #include "VinylDisc.hpp"
 
 #include "../../../../utils/PaimonDrawNode.hpp"

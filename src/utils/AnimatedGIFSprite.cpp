@@ -1,4 +1,4 @@
-#include "AnimatedGIFSprite.hpp"
+﻿#include "AnimatedGIFSprite.hpp"
 #include "DominantColors.hpp"
 #include "Debug.hpp"
 #include "../core/QualityConfig.hpp"
@@ -165,27 +165,74 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
             return ret;
         }
         
-        // Asynchronous load to avoid blocking the main thread
-        AnimatedGIFSprite::createAsync(filename, [ref = geode::Ref<AnimatedGIFSprite>(ret)](AnimatedGIFSprite* loadedSprite) {
-            if (!loadedSprite) return;
-            if (!ref->getParent()) return; // if original sprite was removed, do nothing
-            
-            ref->m_canvasWidth = loadedSprite->m_canvasWidth;
-            ref->m_canvasHeight = loadedSprite->m_canvasHeight;
-            ref->setContentSize(loadedSprite->getContentSize());
-            
-            for (auto* f : loadedSprite->m_frames) {
-                f->texture->retain(); // retain since we're stealing them
-                auto* newF = new GIFFrame();
-                newF->texture = f->texture;
-                newF->delay = f->delay;
-                newF->rect = f->rect;
-                ref->m_frames.push_back(newF);
-                ref->m_frameColors.push_back({ {0,0,0}, {255,255,255} });
+        // carga sincrona
+        std::ifstream file(filename, std::ios::binary);
+        if (!file) return nullptr;
+        
+        std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        file.close();
+        
+        if (!GIFDecoder::isGIF(data.data(), data.size())) return nullptr;
+        
+        auto gifData = GIFDecoder::decode(data.data(), data.size());
+        if (gifData.frames.empty()) return nullptr;
+
+        float sf = getContentScaleFactorSafe();
+        
+        // lo guardo en cache
+        SharedGIFData sharedData;
+        sharedData.width = gifData.width;
+        sharedData.height = gifData.height;
+        
+        for (auto const& frame : gifData.frames) {
+            auto texture = new CCTexture2D();
+            if (!texture->initWithData(
+                frame.pixels.data(),
+                kCCTexture2DPixelFormat_RGBA8888,
+                frame.width,
+                frame.height,
+                CCSize(frame.width / sf, frame.height / sf)
+            )) {
+                texture->release();
+                continue;
             }
-            ref->setCurrentFrame(0);
-            ref->scheduleUpdate();
-        });
+            texture->setAntiAliasTexParameters();
+            
+            sharedData.textures.push_back(texture);
+            sharedData.delays.push_back(frame.delayMs / 1000.0f);
+            sharedData.frameRects.push_back(CCRect(0, 0, gifData.width, gifData.height));
+        }
+        
+        {
+            std::unique_lock<std::shared_mutex> lock(s_cacheMutex);
+            // Si ya existia una entrada para este filename, hay que liberar
+            // las texturas viejas antes de sobrescribir la entrada — si no,
+            // se filtran permanentemente porque nadie mas las referencia.
+            auto existingIt = s_gifCache.find(filename);
+            if (existingIt != s_gifCache.end()) {
+                size_t oldSize = getSharedGIFDataSize(existingIt->second);
+                for (auto* tex : existingIt->second.textures) {
+                    if (tex) tex->release();
+                }
+                if (s_currentCacheSize >= oldSize) s_currentCacheSize -= oldSize;
+                else s_currentCacheSize = 0;
+            }
+
+            // guardo la entrada en cache
+            s_gifCache[filename] = sharedData;
+
+            // calculo tamano aproximado en RAM
+            s_currentCacheSize += getSharedGIFDataSize(sharedData);
+
+            if (!isPinned(filename)) {
+                s_lruList.push_back(filename);
+                s_lruMap[filename] = std::prev(s_lruList.end());
+            }
+            evictIfNeeded();
+        }
+        
+        // lo vuelvo a inicializar pero ya tirando del cache
+        ret->initFromCache(filename);
         
         return ret;
     }
@@ -199,27 +246,44 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(const void* data, size_t size) {
         ret->autorelease();
         ret->m_filename = "memory"; // nombre fake, solo indica que viene de memoria
         
-        std::vector<uint8_t> dataVec((uint8_t*)data, ((uint8_t*)data) + size);
-        AnimatedGIFSprite::createAsync(dataVec, "memory", [ref = geode::Ref<AnimatedGIFSprite>(ret)](AnimatedGIFSprite* loadedSprite) {
-            if (!loadedSprite) return;
-            if (!ref->getParent()) return;
-            
-            ref->m_canvasWidth = loadedSprite->m_canvasWidth;
-            ref->m_canvasHeight = loadedSprite->m_canvasHeight;
-            ref->setContentSize(loadedSprite->getContentSize());
-            
-            for (auto* f : loadedSprite->m_frames) {
-                f->texture->retain();
-                auto* newF = new GIFFrame();
-                newF->texture = f->texture;
-                newF->delay = f->delay;
-                newF->rect = f->rect;
-                ref->m_frames.push_back(newF);
-                ref->m_frameColors.push_back({ {0,0,0}, {255,255,255} });
+        if (!GIFDecoder::isGIF(static_cast<uint8_t const*>(data), size)) return nullptr;
+        
+        auto gifData = GIFDecoder::decode(static_cast<uint8_t const*>(data), size);
+        if (gifData.frames.empty()) return nullptr;
+        
+        // GIFs en memoria no se cachean globalmente salvo que tengamos key
+        
+        ret->m_canvasWidth = gifData.width;
+        ret->m_canvasHeight = gifData.height;
+
+        float sf = getContentScaleFactorSafe();
+        
+        for (auto const& frame : gifData.frames) {
+            auto texture = new CCTexture2D();
+            if (!texture->initWithData(
+                frame.pixels.data(),
+                kCCTexture2DPixelFormat_RGBA8888,
+                frame.width,
+                frame.height,
+                CCSize(frame.width / sf, frame.height / sf)
+            )) {
+                texture->release();
+                continue;
             }
-            ref->setCurrentFrame(0);
-            ref->scheduleUpdate();
-        });
+            texture->setAntiAliasTexParameters();
+            
+            auto* gifFrame = new GIFFrame();
+            gifFrame->texture = texture;
+            gifFrame->delay = frame.delayMs / 1000.0f;
+            gifFrame->rect = CCRect(0, 0, gifData.width, gifData.height);
+            ret->m_frames.push_back(gifFrame);
+            
+            ret->m_frameColors.push_back({ {0,0,0}, {255,255,255} });
+        }
+        
+        ret->setContentSize(CCSize(ret->m_canvasWidth / sf, ret->m_canvasHeight / sf));
+        ret->setCurrentFrame(0);
+        ret->scheduleUpdate();
         
         return ret;
     }

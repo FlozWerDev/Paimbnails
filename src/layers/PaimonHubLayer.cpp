@@ -1,4 +1,4 @@
-﻿#include "PaimonHubLayer.hpp"
+#include "PaimonHubLayer.hpp"
 #include "PaiConfigLayer.hpp"
 #include "PaimonSupportLayer.hpp"
 #include "../features/quick-hub/ui/RadialConfigPopup.hpp"
@@ -133,6 +133,58 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                     }
                 }},
                 {"Perfil", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenProfiles(nullptr); }},
+                {"Actualizar", "GJ_button_02.png", [](PaimonHubLayer*) {
+                    auto& chk = paimon::updates::UpdateChecker::get();
+                    auto state = chk.state();
+
+                    // Si ya sabemos que hay update, ir directo al popup de descarga.
+                    if (state == paimon::updates::UpdateChecker::State::UpdateAvailable) {
+                        if (auto popup = paimon::updates::UpdateProgressPopup::create()) popup->show();
+                        return;
+                    }
+
+                    // Si ya hay un install pendiente (auto-download lo bajo), ofrecer restart.
+                    if (chk.hasPendingInstall()) {
+                        geode::createQuickPopup(
+                            "Actualizar",
+                            fmt::format(
+                                "La version <cy>{}</c> ya esta descargada.\n<cg>Reiniciar para instalar?</c>",
+                                chk.remoteVersion()
+                            ),
+                            "No", "Reiniciar",
+                            [](auto*, bool yes) {
+                                if (!yes) return;
+                                auto& c = paimon::updates::UpdateChecker::get();
+                                if (c.restartToApplyPendingUpdate()) {
+                                    geode::utils::game::exit(true);
+                                } else {
+                                    geode::utils::game::restart(true);
+                                }
+                            }
+                        );
+                        return;
+                    }
+
+                    // Si ya estamos al dia, notificar.
+                    if (state == paimon::updates::UpdateChecker::State::UpToDate) {
+                        PaimonNotify::create(
+                            fmt::format("Ya tienes la ultima version ({})", chk.localVersion()),
+                            NotificationIcon::Success
+                        )->show();
+                        return;
+                    }
+
+                    // Si esta comprobando actualmente, avisar.
+                    if (state == paimon::updates::UpdateChecker::State::Checking) {
+                        PaimonNotify::create("Comprobando actualizaciones...", NotificationIcon::Loading)->show();
+                        return;
+                    }
+
+                    // Idle o Failed: relanzar el check y pedir al usuario que
+                    // vuelva a pulsar en unos segundos.
+                    chk.checkAsync();
+                    PaimonNotify::create("Buscando actualizaciones... pulsa de nuevo en unos segundos.", NotificationIcon::Loading)->show();
+                }},
             };
         case 6: // Discord
             return {

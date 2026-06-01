@@ -1,4 +1,4 @@
-﻿#include <Geode/binding/GJAccountManager.hpp>
+#include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/binding/GJCommentListLayer.hpp>
 #include <Geode/binding/SimplePlayer.hpp>
 #include <Geode/modify/ProfilePage.hpp>
@@ -2186,7 +2186,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         // No esperamos al callback para mostrar el resultado:
                         // basta con saber que se intento.
                         auto* accountManager = GJAccountManager::get();
-                        std::string username = accountManager ? accountManager->m_username : std::string();
+                        std::string username = accountManager ? std::string(accountManager->m_username) : std::string();
                         ProfileMusicManager::get().deleteProfileMusic(accountID, username,
                             [accountID](bool delOk, std::string const& delMsg) {
                                 if (delOk) {

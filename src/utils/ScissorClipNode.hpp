@@ -53,7 +53,8 @@ public:
         if (!this->isVisible()) return;
 
         auto size = this->getContentSize();
-        auto* view = cocos2d::CCEGLView::sharedOpenGLView();
+        auto* director = cocos2d::CCDirector::get();
+        auto* view = director ? director->getOpenGLView() : nullptr;
 
         // Sin tamano valido o sin vista GL: usar el clipping clasico.
         if (!view || size.width <= 0.f || size.height <= 0.f) {

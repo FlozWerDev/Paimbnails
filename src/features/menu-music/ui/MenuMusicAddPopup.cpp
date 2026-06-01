@@ -314,7 +314,7 @@ void MenuMusicAddPopup::finalizeLocalImport() {
         }
     }
 
-    std::string name = m_nameInput ? m_nameInput->getString() : "";
+    std::string name = m_nameInput ? std::string(m_nameInput->getString()) : std::string();
     if (name.empty()) name = geode::utils::string::pathToString(audioP.stem());
 
     MusicTrack track;

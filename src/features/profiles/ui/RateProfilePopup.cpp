@@ -408,7 +408,7 @@ void RateProfilePopup::onSubmit(CCObject* sender) {
     auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
     if (btn) btn->setEnabled(false);
 
-    std::string message = m_messageInput ? m_messageInput->getString() : "";
+    std::string message = m_messageInput ? std::string(m_messageInput->getString()) : std::string();
 
     // Construye el JSON del cuerpo. stars puede ser float (1.0 a 5.0 en
     // pasos de 0.5). Lo enviamos como double para que matjson lo serialice

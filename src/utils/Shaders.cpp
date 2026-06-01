@@ -1300,7 +1300,9 @@ void ShaderBgSprite::draw() {
 void ShaderBgSprite::updateShaderTime(float dt) {
     m_shaderTime += dt;
 
-    // Cursor tracking (existing behavior).
+    // CCEGLView::getMousePosition is not exposed by Geode's Cocos bindings on
+    // every target, so keep cursor-driven shader motion desktop-only.
+#if defined(GEODE_IS_WINDOWS)
     auto* director = CCDirector::get();
     auto* glView = director ? director->getOpenGLView() : nullptr;
     if (glView) {
@@ -1313,6 +1315,7 @@ void ShaderBgSprite::updateShaderTime(float dt) {
             m_cursorY = ny < 0.f ? 0.f : (ny > 1.f ? 1.f : ny);
         }
     }
+#endif
 
     // Drive PaimonAudio once per frame globally — multiple ShaderBgSprite
     // instances coexist during transitions, but only one update is needed.

@@ -1,7 +1,5 @@
 ﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
-#include <Geode/modify/CCMouseDispatcher.hpp>
-#include <Geode/modify/CCKeyboardDispatcher.hpp>
 #include <Geode/modify/CCNode.hpp>
 #include <Geode/ui/Notification.hpp>
 #include "../utils/PaimonNotification.hpp"
@@ -190,13 +188,13 @@ namespace {
                 return;
             }
 
+#ifdef GEODE_IS_WINDOWS
             auto mousePos = cocos::getMousePos();
             m_deltaMousePos = ccp(mousePos.x - m_lastMousePos.x, mousePos.y - m_lastMousePos.y);
             m_lastMousePos = mousePos;
-
-#ifdef GEODE_IS_WINDOWS
             m_isPanning = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
 #else
+            m_deltaMousePos = CCPointZero;
             m_isPanning = false;
 #endif
 
@@ -926,7 +924,11 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
         auto hiddenCopy = hidden;
         int levelID = this->m_level->m_levelID;
 
-        auto view = CCEGLView::sharedOpenGLView();
+        auto* view = director->getOpenGLView();
+        if (!view) {
+            gCaptureInProgress.store(false);
+            return;
+        }
         auto screenSize = view->getFrameSize();
         int screenW = static_cast<int>(screenSize.width);
         int screenH = static_cast<int>(screenSize.height);

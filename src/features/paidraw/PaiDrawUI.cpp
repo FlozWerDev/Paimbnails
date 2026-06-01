@@ -1245,8 +1245,8 @@ void PaiDrawCreateRoomLayer::refreshSelectionColors() {
 
 void PaiDrawCreateRoomLayer::onCreate(CCObject*) {
     RoomConfig config;
-    config.name = m_nameInput ? sanitizeRoomName(m_nameInput->getString()) : "";
-    config.password = (!m_editMode && m_passwordInput) ? m_passwordInput->getString() : "";
+    config.name = m_nameInput ? sanitizeRoomName(std::string(m_nameInput->getString())) : std::string();
+    config.password = (!m_editMode && m_passwordInput) ? std::string(m_passwordInput->getString()) : std::string();
     config.maxPlayers = m_maxPlayers;
     config.rounds = m_rounds;
     config.roundTimeSeconds = m_timeSeconds;

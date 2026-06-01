@@ -89,7 +89,7 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
 }
 
 void ReportUserPopup::onSend(CCObject*) {
-    std::string reason = m_textInput ? m_textInput->getString() : "";
+    std::string reason = m_textInput ? std::string(m_textInput->getString()) : std::string();
     if (reason.empty()) {
         PaimonNotify::create("Please provide a reason", NotificationIcon::Warning)->show();
         return;

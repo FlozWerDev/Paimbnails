@@ -2386,8 +2386,8 @@ void PaimonHubLayer::onCreateToggleTag(CCObject* sender) {
 }
 
 void PaimonHubLayer::onCreateSubmit(CCObject*) {
-    std::string title = m_createTitleInput ? m_createTitleInput->getString() : "";
-    std::string desc  = m_createDescInput  ? m_createDescInput->getString()  : "";
+    std::string title = m_createTitleInput ? std::string(m_createTitleInput->getString()) : std::string();
+    std::string desc  = m_createDescInput  ? std::string(m_createDescInput->getString())  : std::string();
 
     if (title.empty()) {
         PaimonNotify::create("Please enter a title", NotificationIcon::Warning)->show();

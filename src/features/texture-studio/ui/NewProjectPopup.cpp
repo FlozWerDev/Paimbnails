@@ -193,7 +193,7 @@ void NewProjectPopup::refreshSheetsList() {
 }
 
 void NewProjectPopup::onCreateClicked(CCObject*) {
-    std::string name = m_nameInput ? m_nameInput->getString() : std::string("My Pack");
+    std::string name = m_nameInput ? std::string(m_nameInput->getString()) : std::string("My Pack");
     if (name.empty()) name = "My Pack";
 
     TextureProject p;

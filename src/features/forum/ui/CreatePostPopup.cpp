@@ -228,8 +228,8 @@ void CreatePostPopup::FLAlert_Click(FLAlertLayer* alert, bool isAdd) {
 }
 
 void CreatePostPopup::onSubmit(CCObject*) {
-    std::string title = m_titleInput ? m_titleInput->getString() : "";
-    std::string desc  = m_descInput  ? m_descInput->getString()  : "";
+    std::string title = m_titleInput ? std::string(m_titleInput->getString()) : std::string();
+    std::string desc  = m_descInput  ? std::string(m_descInput->getString())  : std::string();
 
     if (title.empty()) {
         PaimonNotify::create("Please enter a title", NotificationIcon::Warning)->show();

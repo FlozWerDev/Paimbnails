@@ -81,8 +81,9 @@ RenderTexture::~RenderTexture() {
 void RenderTexture::begin() {
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &m_oldFBO);
 
-    auto view = cocos2d::CCEGLView::get();
     auto director = cocos2d::CCDirector::get();
+    auto* view = director ? director->getOpenGLView() : nullptr;
+    if (!view) return;
     auto winSize = director->getWinSize();
 
     m_oldScale = cocos2d::CCSize{ view->m_fScaleX, view->m_fScaleY };
@@ -121,8 +122,9 @@ void RenderTexture::end() {
     }
 
     if (m_oldScale.width != 0 && m_oldScale.height != 0) {
-        auto view = cocos2d::CCEGLView::get();
         auto director = cocos2d::CCDirector::get();
+        auto* view = director ? director->getOpenGLView() : nullptr;
+        if (!view) return;
 
         view->m_fScaleX = m_oldScale.width;
         view->m_fScaleY = m_oldScale.height;

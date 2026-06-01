@@ -798,3 +798,8 @@ void ThumbnailTransportClient::getTopThumbnails(ActionCallback callback) {
     if (!m_serverEnabled) { callback(false, "servidor desactivado"); return; }
     HttpClient::get().getTopThumbnails([callback](bool s, std::string const& r) { callback(s, r); });
 }
+
+void ThumbnailTransportClient::getUserUploads(std::string const& username, ActionCallback callback) {
+    if (!m_serverEnabled) { callback(false, "servidor desactivado"); return; }
+    HttpClient::get().getUserUploads(username, [callback](bool s, std::string const& r) { callback(s, r); });
+}

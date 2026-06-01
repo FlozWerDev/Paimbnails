@@ -71,7 +71,7 @@ void MenuMusicAddPopup::buildUrlSection() {
 
     auto header = CCLabelBMFont::create("Download via yt-dlp", "goldFont.fnt");
     if (header) {
-        header->setScale(0.45f);
+        header->setScale(0.5f);
         header->setPosition({size.width / 2.f, size.height * 0.88f});
         header->setID("url-header"_spr);
         m_mainLayer->addChild(header, 3);
@@ -79,14 +79,14 @@ void MenuMusicAddPopup::buildUrlSection() {
 
     m_ytDlpLabel = CCLabelBMFont::create("", "chatFont.fnt");
     if (m_ytDlpLabel) {
-        m_ytDlpLabel->setScale(0.38f);
+        m_ytDlpLabel->setScale(0.4f);
         m_ytDlpLabel->setPosition({size.width / 2.f, size.height * 0.82f});
         m_ytDlpLabel->setColor({180, 220, 180});
         m_ytDlpLabel->setID("ytdlp-status"_spr);
         m_mainLayer->addChild(m_ytDlpLabel, 3);
     }
 
-    m_urlInput = TextInput::create(size.width * 0.55f, "Paste URL or click the clipboard button");
+    m_urlInput = TextInput::create(size.width * 0.6f, "Paste URL");
     if (m_urlInput) {
         // Forzamos el whitelist completo (Any) primero...
         m_urlInput->setCommonFilter(geode::CommonFilter::Any);
@@ -99,53 +99,37 @@ void MenuMusicAddPopup::buildUrlSection() {
             inner->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
         }
         m_urlInput->setMaxCharCount(2048);
-        m_urlInput->setPosition({size.width * 0.34f, size.height * 0.73f});
+        m_urlInput->setPosition({size.width * 0.38f, size.height * 0.73f});
         m_urlInput->setID("url-input"_spr);
         m_mainLayer->addChild(m_urlInput, 3);
     }
 
-    // Boton "Paste from clipboard" — via geode::utils::clipboard::read bypass
-    // completamente el filtro de chars del TextInput. Aunque el usuario pegue
-    // con Ctrl+V y Geode le coma los ':' y '/', este boton lee la URL directa
-    // del portapapeles y la inyecta con setString(), que no aplica filtro.
+    // Boton de paste usando el sprite completo de GD
     {
-        auto pasteSpr = CCSprite::createWithSpriteFrameName("GJ_clipboardIcon_001.png");
-        if (!pasteSpr) {
-            // Fallback: boton textual si el sprite frame no existe.
-            auto bs = ButtonSprite::create("Paste", 50, true, "bigFont.fnt",
-                "GJ_button_04.png", 22.f, 0.5f);
-            if (bs) {
-                auto btn = CCMenuItemSpriteExtra::create(bs, this,
-                    menu_selector(MenuMusicAddPopup::onPasteUrl));
-                auto menu = CCMenu::create();
-                menu->setPosition({size.width * 0.73f, size.height * 0.73f});
-                menu->addChild(btn);
-                menu->setID("paste-menu"_spr);
-                m_mainLayer->addChild(menu, 3);
-            }
-        } else {
-            pasteSpr->setScale(0.7f);
+        auto pasteSpr = CCSprite::createWithSpriteFrameName("GJ_pasteBtn2_001.png");
+        if (pasteSpr) {
             auto btn = CCMenuItemSpriteExtra::create(pasteSpr, this,
                 menu_selector(MenuMusicAddPopup::onPasteUrl));
-            if (btn) {
-                auto menu = CCMenu::create();
-                menu->setPosition({size.width * 0.73f, size.height * 0.73f});
-                menu->addChild(btn);
-                menu->setID("paste-menu"_spr);
-                m_mainLayer->addChild(menu, 3);
-            }
+            auto menu = CCMenu::create();
+            menu->setPosition({size.width * 0.75f, size.height * 0.73f});
+            menu->addChild(btn);
+            menu->setID("paste-menu"_spr);
+            m_mainLayer->addChild(menu, 3);
         }
     }
 
-    auto dlSpr = ButtonSprite::create("Download", 90, true, "bigFont.fnt", "GJ_button_05.png", 24.f, 0.55f);
-    if (dlSpr) {
-        auto btn = CCMenuItemSpriteExtra::create(dlSpr, this,
-            menu_selector(MenuMusicAddPopup::onStartDownload));
-        auto menu = CCMenu::create();
-        menu->setPosition({size.width * 0.88f, size.height * 0.73f});
-        menu->addChild(btn);
-        menu->setID("dl-menu"_spr);
-        m_mainLayer->addChild(menu, 3);
+    // Boton de download usando el sprite completo de GD
+    {
+        auto dlSpr = CCSprite::createWithSpriteFrameName("GJ_downloadBtn_001.png");
+        if (dlSpr) {
+            auto btn = CCMenuItemSpriteExtra::create(dlSpr, this,
+                menu_selector(MenuMusicAddPopup::onStartDownload));
+            auto menu = CCMenu::create();
+            menu->setPosition({size.width * 0.9f, size.height * 0.73f});
+            menu->addChild(btn);
+            menu->setID("dl-menu"_spr);
+            m_mainLayer->addChild(menu, 3);
+        }
     }
 
     // Boton info con el path sugerido.
@@ -167,9 +151,10 @@ void MenuMusicAddPopup::buildUrlSection() {
 void MenuMusicAddPopup::buildLocalSection() {
     auto size = m_mainLayer->getContentSize();
 
-    auto sep = CCLayerColor::create(ccc4(100, 100, 120, 120));
+    // Separador con gradiente sutil
+    auto sep = CCLayerColor::create(ccc4(120, 140, 160, 150));
     if (sep) {
-        sep->setContentSize({size.width - 30.f, 1.f});
+        sep->setContentSize({size.width - 40.f, 2.f});
         sep->setAnchorPoint({0.5f, 0.5f});
         sep->setPosition({size.width / 2.f, size.height * 0.62f});
         sep->ignoreAnchorPointForPosition(false);
@@ -178,66 +163,67 @@ void MenuMusicAddPopup::buildLocalSection() {
 
     auto header = CCLabelBMFont::create("Import local files", "goldFont.fnt");
     if (header) {
-        header->setScale(0.45f);
-        header->setPosition({size.width / 2.f, size.height * 0.57f});
+        header->setScale(0.5f);
+        header->setPosition({size.width / 2.f, size.height * 0.56f});
         header->setID("local-header"_spr);
         m_mainLayer->addChild(header, 3);
     }
 
-    auto audioSpr = ButtonSprite::create("Audio", 80, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.55f);
+    // Botones con mejor estilo
+    auto audioSpr = ButtonSprite::create("Audio", 90, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.6f);
     if (audioSpr) {
         auto b = CCMenuItemSpriteExtra::create(audioSpr, this,
             menu_selector(MenuMusicAddPopup::onPickAudio));
         auto menu = CCMenu::create();
-        menu->setPosition({size.width * 0.23f, size.height * 0.48f});
+        menu->setPosition({size.width * 0.25f, size.height * 0.47f});
         menu->addChild(b);
         m_mainLayer->addChild(menu, 3);
     }
     m_audioPathLabel = CCLabelBMFont::create("No audio selected", "chatFont.fnt");
     if (m_audioPathLabel) {
-        m_audioPathLabel->setScale(0.35f);
+        m_audioPathLabel->setScale(0.38f);
         m_audioPathLabel->setAnchorPoint({0.f, 0.5f});
-        m_audioPathLabel->setPosition({size.width * 0.4f, size.height * 0.48f});
-        m_audioPathLabel->setColor({200, 200, 200});
+        m_audioPathLabel->setPosition({size.width * 0.42f, size.height * 0.47f});
+        m_audioPathLabel->setColor({220, 220, 220});
         m_mainLayer->addChild(m_audioPathLabel, 3);
     }
 
-    auto coverSpr = ButtonSprite::create("Cover", 80, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.55f);
+    auto coverSpr = ButtonSprite::create("Cover", 90, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.6f);
     if (coverSpr) {
         auto b = CCMenuItemSpriteExtra::create(coverSpr, this,
             menu_selector(MenuMusicAddPopup::onPickCover));
         auto menu = CCMenu::create();
-        menu->setPosition({size.width * 0.23f, size.height * 0.38f});
+        menu->setPosition({size.width * 0.25f, size.height * 0.37f});
         menu->addChild(b);
         m_mainLayer->addChild(menu, 3);
     }
     m_coverPathLabel = CCLabelBMFont::create("No cover (optional)", "chatFont.fnt");
     if (m_coverPathLabel) {
-        m_coverPathLabel->setScale(0.35f);
+        m_coverPathLabel->setScale(0.38f);
         m_coverPathLabel->setAnchorPoint({0.f, 0.5f});
-        m_coverPathLabel->setPosition({size.width * 0.4f, size.height * 0.38f});
-        m_coverPathLabel->setColor({200, 200, 200});
+        m_coverPathLabel->setPosition({size.width * 0.42f, size.height * 0.37f});
+        m_coverPathLabel->setColor({220, 220, 220});
         m_mainLayer->addChild(m_coverPathLabel, 3);
     }
 
-    m_nameInput = TextInput::create(size.width * 0.75f, "Display name (optional)");
+    m_nameInput = TextInput::create(size.width * 0.78f, "Display name (optional)");
     if (m_nameInput) {
         m_nameInput->setCommonFilter(geode::CommonFilter::Any);
         if (auto* inner = m_nameInput->getInputNode()) {
             inner->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
         }
         m_nameInput->setMaxCharCount(120);
-        m_nameInput->setPosition({size.width / 2.f, size.height * 0.28f});
+        m_nameInput->setPosition({size.width / 2.f, size.height * 0.27f});
         m_nameInput->setID("name-input"_spr);
         m_mainLayer->addChild(m_nameInput, 3);
     }
 
-    auto importSpr = ButtonSprite::create("Import", 110, true, "bigFont.fnt", "GJ_button_05.png", 26.f, 0.6f);
+    auto importSpr = ButtonSprite::create("Import", 120, true, "bigFont.fnt", "GJ_button_05.png", 28.f, 0.65f);
     if (importSpr) {
         auto b = CCMenuItemSpriteExtra::create(importSpr, this,
             menu_selector(MenuMusicAddPopup::onImportLocal));
         auto menu = CCMenu::create();
-        menu->setPosition({size.width / 2.f, size.height * 0.15f});
+        menu->setPosition({size.width / 2.f, size.height * 0.14f});
         menu->addChild(b);
         m_mainLayer->addChild(menu, 3);
     }

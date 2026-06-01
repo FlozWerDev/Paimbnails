@@ -1,10 +1,41 @@
 ﻿#include "FeatureInfoPopup.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../framework/ui/declarative/DeclarativeUI.hpp"
 
 using namespace cocos2d;
 using namespace geode::prelude;
 
 namespace paimon::ui {
+
+// Construye un CCLabelBMFont a traves del motor declarativo (anchor sup-izq).
+static cocos2d::CCNode* decLabel(cocos2d::CCNode* parent, std::string const& text,
+                                 char const* font, float scale,
+                                 cocos2d::ccColor3B color, cocos2d::CCPoint pos) {
+    namespace dec = paimon::ui::dec;
+
+    auto attrs = matjson::Value::object();
+    attrs["text"]  = text;
+    attrs["font"]  = std::string(font);
+    attrs["scale"] = scale;
+
+    auto col = matjson::Value::object();
+    col["r"] = static_cast<int>(color.r);
+    col["g"] = static_cast<int>(color.g);
+    col["b"] = static_cast<int>(color.b);
+    attrs["color"] = col;
+
+    auto anchor = matjson::Value::object();
+    anchor["x"] = 0.f;
+    anchor["y"] = 1.f;
+    attrs["anchor-point"] = anchor;
+
+    auto position = matjson::Value::object();
+    position["x"] = pos.x;
+    position["y"] = pos.y;
+    attrs["position"] = position;
+
+    return dec::build(dec::Spec{"CCLabelBMFont", "", attrs, {}}, parent);
+}
 
 FeatureInfoPopup* FeatureInfoPopup::create(
     std::string const& mainTitle,
@@ -65,13 +96,8 @@ void FeatureInfoPopup::buildContent(
     float y = contentH - padTop;
 
     for (auto const& sec : sections) {
-        // Título de sección
-        auto titleLbl = CCLabelBMFont::create(sec.title.c_str(), "goldFont.fnt");
-        titleLbl->setScale(0.38f);
-        titleLbl->setColor(sec.color);
-        titleLbl->setAnchorPoint({0.f, 1.f});
-        titleLbl->setPosition({8.f, y});
-        content->addChild(titleLbl);
+        // Título de sección (construido por el motor declarativo)
+        decLabel(content, sec.title, "goldFont.fnt", 0.38f, sec.color, {8.f, y});
         y -= titleH;
 
         // Body — dividir en líneas de ~55 chars para wrapping manual
@@ -90,12 +116,8 @@ void FeatureInfoPopup::buildContent(
                 remaining = remaining.substr(breakAt + 1);
             }
 
-            auto lineLbl = CCLabelBMFont::create(line.c_str(), "chatFont.fnt");
-            lineLbl->setScale(0.52f);
-            lineLbl->setColor({210, 210, 220});
-            lineLbl->setAnchorPoint({0.f, 1.f});
-            lineLbl->setPosition({12.f, y});
-            content->addChild(lineLbl);
+            // Línea de cuerpo (construida por el motor declarativo)
+            decLabel(content, line, "chatFont.fnt", 0.52f, {210, 210, 220}, {12.f, y});
             y -= lineH;
         }
 

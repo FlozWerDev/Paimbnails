@@ -402,57 +402,15 @@ class $modify(BadgeCommentCell, CommentCell) {
             m_fields->m_commentBgPanel = nullptr;
         }
 
-        // Create blurred background sprite
-        // Use smaller blur buffer — comment cells are small, blur is low-freq
-        CCSize targetSize = layout.size;
-        targetSize.width = std::max(targetSize.width, 256.f);
-        targetSize.height = std::max(targetSize.height, 128.f);
-
-        float blurIntensity = config.commentBgBlur;
-        CCNode* bgNode = nullptr;
-
-        bool usePaimonBlur = (config.commentBgBlurType == "paimon");
-        auto blurredBg = usePaimonBlur
-            ? BlurSystem::getInstance()->createPaimonBlurSprite(texture, targetSize, blurIntensity)
-            : BlurSystem::getInstance()->createBlurredSprite(texture, targetSize, blurIntensity);
-        if (blurredBg) {
-            blurredBg->setPosition(targetSize * 0.5f);
-            bgNode = blurredBg;
-        } else {
-            // Fallback: use shader blur
-            auto tempSprite = CCSprite::createWithTexture(texture);
-            if (!tempSprite) return;
-            float scaleX = targetSize.width / texture->getContentSize().width;
-            float scaleY = targetSize.height / texture->getContentSize().height;
-            tempSprite->setScale(std::max(scaleX, scaleY));
-            tempSprite->setAnchorPoint({0.5f, 0.5f});
-            tempSprite->setPosition(targetSize * 0.5f);
-
-            auto shader = Shaders::getBlurCellShader();
-            if (shader) tempSprite->setShaderProgram(shader);
-            bgNode = tempSprite;
-        }
-
-        if (!bgNode) return;
-
-        // Scale bgNode to fill the layout area
-        CCSize bgSize = bgNode->getContentSize();
-        if (bgSize.width > 0 && bgSize.height > 0) {
-            float scaleToFitX = layout.size.width / bgSize.width;
-            float scaleToFitY = layout.size.height / bgSize.height;
-            bgNode->setScale(std::max(scaleToFitX, scaleToFitY));
-        }
-        bgNode->setAnchorPoint({0.5f, 0.5f});
-        bgNode->setPosition(layout.size / 2);
-
-        // Create clipping node with rounded-rect stencil
+        // Clipping node con stencil redondeado — se crea YA (barato). El
+        // sprite de fondo blurreado se inyecta de forma ASINCRONA cuando la GPU
+        // termina los passes, evitando bloquear el main thread.
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(layout.size.width, layout.size.height, layout.radius);
         auto clipper = CCClippingNode::create(stencil);
         clipper->setContentSize(layout.size);
         clipper->setPosition(layout.origin);
         clipper->setZOrder(-13);
         clipper->setID("paimon-comment-bg-clip"_spr);
-        clipper->addChild(bgNode);
         this->addChild(clipper);
         m_fields->m_commentBgClip = clipper;
 
@@ -466,6 +424,69 @@ class $modify(BadgeCommentCell, CommentCell) {
             overlay->setID("paimon-comment-bg-dark"_spr);
             this->addChild(overlay);
             m_fields->m_commentBgDarkOverlay = overlay;
+        }
+
+        // Use smaller blur buffer — comment cells are small, blur is low-freq
+        CCSize targetSize = layout.size;
+        targetSize.width = std::max(targetSize.width, 256.f);
+        targetSize.height = std::max(targetSize.height, 128.f);
+
+        float blurIntensity = config.commentBgBlur;
+        bool usePaimonBlur = (config.commentBgBlurType == "paimon");
+
+        int token = m_fields->m_commentBgToken;
+        int accountID = m_comment ? m_comment->m_accountID : 0;
+        WeakRef<BadgeCommentCell> weakSelf = this;
+        Ref<CCClippingNode> clipRef = clipper;
+
+        // Escala el nodo de fondo para llenar el area y lo inserta en el clipper,
+        // validando que la celda no haya sido reciclada mientras tanto.
+        auto attachBlurred = [weakSelf, token, accountID, layout, clipRef](CCNode* bgNode) {
+            if (!bgNode) return;
+            auto selfRef = weakSelf.lock();
+            auto* self = static_cast<BadgeCommentCell*>(selfRef.data());
+            if (!self || !self->shouldHandleCommentProfileResult(token, accountID)) return;
+            if (self->m_fields->m_commentBgClip.data() != clipRef.data() || !clipRef->getParent()) return;
+
+            CCSize bgSize = bgNode->getContentSize();
+            if (bgSize.width > 0 && bgSize.height > 0) {
+                float scaleToFitX = layout.size.width / bgSize.width;
+                float scaleToFitY = layout.size.height / bgSize.height;
+                bgNode->setScale(std::max(scaleToFitX, scaleToFitY));
+            }
+            bgNode->setAnchorPoint({0.5f, 0.5f});
+            bgNode->setPosition(layout.size / 2);
+            clipRef->addChild(bgNode, -1);
+        };
+
+        // Blur GPU ASINCRONO: reparte los passes FBO entre frames + cachea (RAM
+        // y disco). Antes se usaba createPaimonBlurSprite/createBlurredSprite
+        // SINCRONOS (marcados DEPRECATED): ejecutaban ~8-16 passes de golpe en el
+        // main thread, y con varias celdas con fondo de imagen visibles a la vez
+        // la GPU se saturaba en UN frame -> freeze al abrir/scrollear comentarios.
+        std::string cacheKey = fmt::format("cbg:{}:{}:{}", accountID,
+            config.commentBgType == "thumbnail"
+                ? fmt::format("t{}_{}", config.commentBgThumbnailId, config.commentBgThumbnailPos)
+                : fmt::format("b{}", config.commentBgBannerMode),
+            usePaimonBlur ? "p" : "g");
+
+        Ref<CCTexture2D> texRef = texture;
+        auto onBlur = [attachBlurred, texRef](CCSprite* blurred) {
+            if (blurred) {
+                attachBlurred(blurred);
+                return;
+            }
+            // Fallback: blur por shader en tiempo real (1 pass GPU/frame).
+            auto tempSprite = CCSprite::createWithTexture(texRef.data());
+            if (!tempSprite) return;
+            if (auto* shader = Shaders::getBlurCellShader()) tempSprite->setShaderProgram(shader);
+            attachBlurred(tempSprite);
+        };
+
+        if (usePaimonBlur) {
+            BlurSystem::getInstance()->buildPaimonBlurAsync(texture, targetSize, blurIntensity, cacheKey, onBlur);
+        } else {
+            BlurSystem::getInstance()->buildGaussianBlurAsync(texture, targetSize, blurIntensity, cacheKey, onBlur);
         }
     }
 
@@ -655,8 +676,9 @@ class $modify(BadgeCommentCell, CommentCell) {
             bool serviceLoaded = paimon::emotes::EmoteService::get().isLoaded();
             bool hasEmoteSyntax = paimon::emotes::EmoteRenderer::hasEmoteSyntax(fontResult.remainingText);
             bool hasEmotes = serviceLoaded && hasEmoteSyntax;
+            bool hasMention = paimon::emotes::EmoteRenderer::hasMentionSyntax(fontResult.remainingText);
 
-            if (fontResult.hasTag || hasEmotes) {
+            if (fontResult.hasTag || hasEmotes || hasMention) {
                 this->tryRenderWithFont(fontResult.remainingText, fontResult.fontFile);
             } else if (!serviceLoaded && hasEmoteSyntax) {
                 // Emote catalog not loaded yet — schedule deferred retry

@@ -170,6 +170,7 @@ public:
     // top creators y top thumbnails
     void getTopCreators(GenericCallback callback);
     void getTopThumbnails(GenericCallback callback);
+    void getUserUploads(std::string const& username, GenericCallback callback);
     
     // votos
     void getRating(int levelId, std::string const& username, std::string const& thumbnailId, GenericCallback callback);

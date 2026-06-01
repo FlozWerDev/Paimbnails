@@ -15,6 +15,7 @@
 #include "../../../utils/Debug.hpp"
 #include "../../../utils/FormatDetect.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
+#include "../../../utils/FrameBudget.hpp"
 #include "../../../utils/stb_image.h"
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -259,12 +260,13 @@ void ThumbnailLoader::drainPendingCallbacks() {
     m_drainScheduledAtUs.store(0, std::memory_order_relaxed);
     if (m_shuttingDown.load(std::memory_order_acquire)) return;
 
-    // Frame lag detection: si el frame anterior duro mas de 4ms (indicando
-    // que ya estamos laggeando), reducir drasticamente el trabajo para
-    // no empeorar el lag.
+    // Frame lag detection: si el frame anterior duro mas de 16ms (indicando
+    // que ya estamos laggeando a 60fps), reducir el trabajo para no empeorar.
+    // Aumentado de 4ms a 16ms porque la mayoria de usuarios juegan a 60-144fps,
+    // no a 360fps. Con 16ms threshold, solo activamos reduccion en lag real.
     float dt = cocos2d::CCDirector::get()->getDeltaTime();
-    bool isFrameLag = dt > 0.004f; // > 4ms = potencial lag a 360fps
-    int frameLagSkip = isFrameLag ? 1 : 0; // Saltear 1 callback adicional
+    bool isFrameLag = dt > 0.016f; // > 16ms = lag real a 60fps
+    int frameLagSkip = isFrameLag ? 2 : 0; // Saltear 2 callbacks durante lag severo
 
     std::vector<PendingCallback> batch;
     {
@@ -312,19 +314,26 @@ void ThumbnailLoader::drainPendingCallbacks() {
             m_pendingCallbacks.begin() + static_cast<std::ptrdiff_t>(count));
     }
 
-    // Presupuesto de tiempo por frame. A 360fps cada frame es ~2.78ms.
-    // Un callback de LevelCell cuesta ~300-600us. Budget de 1200us permite
-    // 3 callbacks por frame sin bajar de 360fps.
+    // Presupuesto de tiempo por frame. A 60fps cada frame es ~16.6ms.
+    // Un callback de LevelCell cuesta ~300-600us. Budget de 3000us permite
+    // 5-10 callbacks por frame sin bajar de 60fps, dejando margen para render.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    constexpr int64_t CALLBACK_FRAME_BUDGET_US = 800;
-    constexpr int64_t FRAME_TARGET_US = 2778;
+    constexpr int64_t CALLBACK_FRAME_BUDGET_US = 2000;  // 2ms en movil
+    constexpr int64_t FRAME_TARGET_US = 16666;          // 60fps target
 #else
-    constexpr int64_t CALLBACK_FRAME_BUDGET_US = 1200;
-    constexpr int64_t FRAME_TARGET_US = 2778;
+    constexpr int64_t CALLBACK_FRAME_BUDGET_US = 3000;  // 3ms en desktop
+    constexpr int64_t FRAME_TARGET_US = 16666;          // 60fps target
 #endif
     
-    // Emergency budget reduction si detectamos lag
-    int64_t effectiveBudgetUs = isFrameLag ? 600 : CALLBACK_FRAME_BUDGET_US;
+    // Emergency budget reduction si detectamos lag severo (>16ms)
+    // Reducimos a 1.5ms en vez de 600us para mantener progreso razonable
+    int64_t effectiveBudgetUs = isFrameLag ? 1500 : CALLBACK_FRAME_BUDGET_US;
+    // Coordinacion con el presupuesto de frame COMPARTIDO: no exceder lo que
+    // queda del budget global de thumbnails este frame (uploads + callbacks +
+    // setup diferido lo comparten). max(1,...) garantiza procesar al menos 1
+    // callback para no estancar la carga aunque el budget ya este agotado.
+    effectiveBudgetUs = std::min<int64_t>(effectiveBudgetUs,
+        std::max<int64_t>(1, paimon::framebudget::remainingUs()));
 
     auto frameStart = std::chrono::steady_clock::now();
     std::vector<PendingCallback> deferred;
@@ -381,6 +390,12 @@ void ThumbnailLoader::drainPendingCallbacks() {
             }
         }
     }
+
+    // Registrar el tiempo gastado en callbacks en el presupuesto compartido
+    // para que el drain de uploads y el setup diferido vean menos budget
+    // disponible este frame.
+    paimon::framebudget::consume(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - frameStart).count());
 
     // Re-encolar los diferidos al frente para el siguiente frame
     if (!deferred.empty()) {
@@ -478,6 +493,13 @@ void ThumbnailLoader::drainPendingUploads() {
     int uploaded = 0;
     std::vector<PendingUpload> deferred; // los que no cupieron en el budget
 
+    // Coordinacion con el presupuesto de frame COMPARTIDO: el tiempo de upload
+    // no debe exceder lo que queda del budget global de thumbnails este frame.
+    // Las celdas visibles igual hacen bypass mas abajo, y siempre se sube al
+    // menos 1 para garantizar progreso.
+    int64_t uploadBudgetUs = std::min<int64_t>(UPLOAD_FRAME_BUDGET_US,
+        std::max<int64_t>(1, paimon::framebudget::remainingUs()));
+
     for (auto& pu : batch) {
         if (!pu.task || pu.task->cancelled) {
             finishTask(pu.task, nullptr, false);
@@ -502,7 +524,7 @@ void ThumbnailLoader::drainPendingUploads() {
         if (uploaded > 0 && !isVisibleCell) {
             auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - frameStart).count();
-            if (elapsed >= UPLOAD_FRAME_BUDGET_US) {
+            if (elapsed >= uploadBudgetUs) {
                 deferred.push_back(std::move(pu));
                 continue;
             }
@@ -538,6 +560,12 @@ void ThumbnailLoader::drainPendingUploads() {
             }
         }
     }
+
+    // Registrar el tiempo gastado en GPU uploads en el presupuesto compartido
+    // (incluye el bypass de celdas visibles) para que callbacks y setup
+    // diferido vean menos budget disponible este frame.
+    paimon::framebudget::consume(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - frameStart).count());
 
     // Devolver uploads que no cupieron en el budget al frente de la cola
     if (!deferred.empty()) {
@@ -625,7 +653,7 @@ cocos2d::CCTexture2D* ThumbnailLoader::tryGetCachedTexture(int levelID, bool isG
 
 bool ThumbnailLoader::isPending(int levelID, bool isGif) const {
     int key = isGif ? -levelID : levelID;
-    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+    std::shared_lock<std::shared_mutex> lock(m_queueMutex);
     return m_tasks.find(key) != m_tasks.end();
 }
 
@@ -683,18 +711,20 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
             cache.touchDiskAccess(std::abs(key), isGif);
         }
 
-        // fuerzo callback asincrono para no trabar la UI
+        // Cache hit: ejecutar callback inmediatamente sin batching para latencia cero.
+        // Level-thumbs-mod style: los cache hits son instantáneos y no causan lag.
         PaimonDebug::log("[ThumbnailLoader] requestLoad: RAM cache hit for key={}", key);
         auto tex = ramTex.value();
-        // Sin callback (prefetch puro como Bootstrap.cpp / LoadingLayer fallback), no
-        // tiene sentido encolar al drain — solo gastaria CPU. Importante: pasar un
-        // LoadCallback construido desde nullptr a enqueuePendingCallback hace que el
-        // PendingCallback contenga un std23::function vacio, y el subsiguiente
-        // batch.assign + erase + drain trabaja igual, pero algunos build flags pueden
-        // dejar la storage del function con bytes no inicializados despues del move,
-        // lo cual el destructor del vector toca al hacer erase. Evitamos el caso entero.
         if (callback) {
-            enqueuePendingCallback(std::move(callback), tex, true, std::abs(key));
+            // Verificar invalidation version antes de ejecutar
+            int currentVersion = paimon::cache::ThumbnailCache::get().getInvalidationVersion(std::abs(key));
+            Loader::get()->queueInMainThread([cb = std::move(callback), tex, currentVersion, levelID = std::abs(key)]() {
+                // Re-verificar version en main thread por si hubo invalidacion entre medio
+                int latestVersion = paimon::cache::ThumbnailCache::get().getInvalidationVersion(levelID);
+                if (currentVersion == latestVersion) {
+                    cb(tex, true);
+                }
+            });
         }
         return;
     }
@@ -719,7 +749,7 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
     }
 
     // lock protege m_tasks de carreras con finishTask
-    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+    std::unique_lock<std::shared_mutex> lock(m_queueMutex);
 
     // 3. reviso si ya hay una tarea en cola
     auto taskIt = m_tasks.find(key);
@@ -833,7 +863,7 @@ void ThumbnailLoader::prefetchLevels(std::vector<int> const& levelIDs, int prior
 
 void ThumbnailLoader::cancelLoad(int levelID, bool isGif) {
     int key = isGif ? -levelID : levelID;
-    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+    std::unique_lock<std::shared_mutex> lock(m_queueMutex);
     auto it = m_tasks.find(key);
     if (it != m_tasks.end()) {
         PaimonDebug::log("[ThumbnailLoader] cancelLoad: key={}", key);
@@ -991,7 +1021,7 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
     if (!diskPath.empty()) {
         auto readStart = std::chrono::steady_clock::now();
         {
-            std::lock_guard<std::mutex> diskLock(m_diskReadMutex);
+            // ELIMINADO: m_diskReadMutex - permitimos I/O paralelo
             std::error_code fsEc;
             auto fileSize = std::filesystem::file_size(diskPath, fsEc);
             if (!fsEc && fileSize > 0 && fileSize <= 64 * 1024 * 1024) {
@@ -1319,7 +1349,7 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
 
     // main thread: lock protege m_tasks
     {
-        std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+        std::unique_lock<std::shared_mutex> lock(m_queueMutex);
 
         if (task->isUrlTask) {
             // URL-based task (gallery shared cache) — usa pool separado
@@ -1406,7 +1436,7 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
     std::vector<InvalidationCallback> listeners;
 
     {
-        std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+        std::unique_lock<std::shared_mutex> lock(m_queueMutex);
         // incremento la version de invalidacion para que los consumidores sepan que hay cambio
         cache.incrementInvalidation(levelID);
 
@@ -1511,7 +1541,7 @@ int ThumbnailLoader::getInvalidationVersion(int levelID) const {
 
 int ThumbnailLoader::addInvalidationListener(InvalidationCallback callback) {
     if (!callback) return 0;
-    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+    std::unique_lock<std::shared_mutex> lock(m_queueMutex);
     int id = m_nextInvalidationListenerId++;
     m_invalidationListeners[id] = std::move(callback);
     return id;
@@ -1519,7 +1549,7 @@ int ThumbnailLoader::addInvalidationListener(InvalidationCallback callback) {
 
 void ThumbnailLoader::removeInvalidationListener(int listenerId) {
     if (listenerId <= 0) return;
-    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+    std::unique_lock<std::shared_mutex> lock(m_queueMutex);
     m_invalidationListeners.erase(listenerId);
 }
 
@@ -1541,7 +1571,7 @@ void ThumbnailLoader::clearDiskCache() {
 }
 
 void ThumbnailLoader::clearPendingQueue() {
-    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+    std::unique_lock<std::shared_mutex> lock(m_queueMutex);
     for (auto& [id, task] : m_tasks) {
         task->cancelled = true;
     }
@@ -1582,7 +1612,7 @@ void ThumbnailLoader::cleanup() {
     // interactua con CCPoolManager — si se destruyen en el ~ThumbnailLoader
     // (destruccion estatica del DLL), CCPoolManager ya murio → crash.
     {
-        std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+        std::unique_lock<std::shared_mutex> lock(m_queueMutex);
         m_invalidationListeners.clear();
 
         // Limpiar callbacks de tasks que capturan WeakRef<PaimonLevelCell>.
@@ -1641,7 +1671,7 @@ void ThumbnailLoader::requestUrlLoad(std::string const& url, LoadCallback callba
     auto& cache = paimon::cache::ThumbnailCache::get();
     std::string cacheKey = normalizeUrlKey(url);
 
-    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+    std::unique_lock<std::shared_mutex> lock(m_queueMutex);
 
     // 1. reviso cache RAM de URLs (con key normalizada para compartir entre _pv variants)
     auto urlTex = cache.getUrlFromRam(cacheKey);
@@ -1736,7 +1766,7 @@ bool ThumbnailLoader::isUrlLoaded(std::string const& url) const {
 }
 
 void ThumbnailLoader::cancelUrlLoad(std::string const& url) {
-    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+    std::unique_lock<std::shared_mutex> lock(m_queueMutex);
     auto it = m_urlTasks.find(normalizeUrlKey(url));
     if (it != m_urlTasks.end()) {
         it->second->cancelled = true;
@@ -1915,7 +1945,7 @@ ThumbnailLoader::DecodeResult ThumbnailLoader::decodeImageData(std::vector<uint8
 void ThumbnailLoader::updateRemoteRevision(int levelID, std::string const& revisionToken) {
     if (levelID <= 0 || revisionToken.empty()) return;
 
-    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+    std::unique_lock<std::shared_mutex> lock(m_queueMutex);
     auto it = m_remoteRevisions.find(levelID);
     if (it != m_remoteRevisions.end() && it->second == revisionToken) {
         return; // sin cambios

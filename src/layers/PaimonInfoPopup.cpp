@@ -73,9 +73,11 @@ bool PaimonInfoPopup::init(std::string const& title, std::string const& desc) {
     float cx = content.width / 2.f;
 
     // description text — use Geode MDTextArea for rich markdown rendering
-    auto descLabel = geode::MDTextArea::create(desc, {300.f, 180.f});
+    // Center the text area properly in the available space
+    auto descLabel = geode::MDTextArea::create(desc, {300.f, 160.f});
     if (descLabel) {
-        descLabel->setPosition({cx, content.height - 55.f});
+        // Position text centered vertically in the content area (below title, above OK button)
+        descLabel->setPosition({cx, content.height / 2.f + 10.f});
         descLabel->setZOrder(10);
         m_mainLayer->addChild(descLabel);
 
@@ -83,8 +85,8 @@ bool PaimonInfoPopup::init(std::string const& title, std::string const& desc) {
         // hide the MDTextArea and render with the emote system instead
         if (paimon::emotes::EmoteRenderer::hasEmoteSyntax(desc)) {
             if (auto emoteNode = paimon::emotes::EmoteRenderer::renderComment(desc, 18.f, 300.f, "chatFont.fnt", 1.0f)) {
-                emoteNode->setAnchorPoint({0.f, 1.f});
-                emoteNode->setPosition({cx - 150.f, content.height - 45.f});
+                emoteNode->setAnchorPoint({0.5f, 0.5f});
+                emoteNode->setPosition({cx, content.height / 2.f + 10.f});
                 emoteNode->setZOrder(11);
                 descLabel->setVisible(false);
                 m_mainLayer->addChild(emoteNode);
@@ -141,8 +143,11 @@ void PaimonInfoPopup::loadRandomThumbnailBg() {
 
     if (bgSpr) {
         // clip blur to popup area using a CCClippingNode
+        // Reduce popup size slightly to ensure borders don't extend beyond the frame
+        CCSize clippedSize = {popupSize.width - 4.f, popupSize.height - 4.f};
+        
         auto stencil = CCLayerColor::create({255, 255, 255, 255});
-        stencil->setContentSize(popupSize);
+        stencil->setContentSize(clippedSize);
         stencil->setAnchorPoint({0.5f, 0.5f});
         stencil->ignoreAnchorPointForPosition(false);
 
@@ -150,20 +155,20 @@ void PaimonInfoPopup::loadRandomThumbnailBg() {
         clip->setAlphaThreshold(0.05f);
         clip->setAnchorPoint({0.5f, 0.5f});
         clip->ignoreAnchorPointForPosition(false);
-        clip->setContentSize(popupSize);
+        clip->setContentSize(clippedSize);
 
         bgSpr->setAnchorPoint({0.5f, 0.5f});
-        bgSpr->setPosition(popupSize / 2.f);
+        bgSpr->setPosition(clippedSize / 2.f);
         clip->addChild(bgSpr);
 
         // position clip at same place as m_bgSprite
         if (m_bgSprite) {
             clip->setPosition(m_bgSprite->getPosition());
-            stencil->setPosition(popupSize / 2.f);
+            stencil->setPosition(clippedSize / 2.f);
         } else {
             auto content = m_mainLayer->getContentSize();
             clip->setPosition(content / 2.f);
-            stencil->setPosition(popupSize / 2.f);
+            stencil->setPosition(clippedSize / 2.f);
         }
 
         // zOrder 1: above bg (0), below text/buttons (10+, 100)

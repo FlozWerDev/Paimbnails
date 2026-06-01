@@ -174,14 +174,18 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                 Ref<InfoLayer> safeRef = this;
                 ThumbnailAPI::get().downloadProfileImg(accountID, [safeRef, accountID](bool success, CCTexture2D* texture) {
                     if (success && texture) {
-                        Loader::get()->queueInMainThread([safeRef, accountID, texture]() {
+                        // Retener la textura: viene autoreleased y el pool se
+                        // drena antes de que corra este segundo hop al main
+                        // thread, dejando un puntero colgante -> crash.
+                        Ref<CCTexture2D> texRef = texture;
+                        Loader::get()->queueInMainThread([safeRef, accountID, texRef]() {
                             auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
                             if (self && self->getParent()) {
                                 auto liveGifKey = ProfileImageService::get().getProfileImgGifKey(accountID);
                                 if (!liveGifKey.empty() && AnimatedGIFSprite::isCached(liveGifKey)) {
                                     self->applyBlurredBackgroundGif(liveGifKey);
                                 } else {
-                                    self->applyBlurredBackground(texture);
+                                    self->applyBlurredBackground(texRef);
                                 }
                             }
                         });

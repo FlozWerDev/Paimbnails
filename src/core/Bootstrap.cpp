@@ -15,7 +15,6 @@
 #include "../features/progressbar/services/ProgressBarManager.hpp"
 #include "../features/custom-slider/services/CustomSliderManager.hpp"
 #include "../features/updates/services/UpdateChecker.hpp"
-#include "../managers/ButtonLayoutManager.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "StartupIncompatibilityCheck.hpp"
 #include "QualityConfig.hpp"
@@ -267,16 +266,5 @@ void PaimonOnModLoaded() {
     paimon::scheduleMainThreadDelay(8.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         paimon::updates::UpdateChecker::get().checkAsync();
-    });
-
-    // ── Precarga de layouts de botones ──────────────────────────────
-    // ButtonLayoutManager::load() recorre directorios y parsea archivos .txt
-    // por escena. Antes corria sincrono dentro de LevelInfoLayer::init() la
-    // primera vez → micro-freeze al abrir el primer nivel. Lo hacemos durante
-    // el idle del menu (main thread, fuera del camino de entrada). El guard
-    // m_loaded interno hace que la llamada posterior en init() sea no-op.
-    paimon::scheduleMainThreadDelay(6.0f, []() {
-        if (paimon::isRuntimeShuttingDown()) return;
-        ButtonLayoutManager::get().load();
     });
 }

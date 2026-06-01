@@ -2,7 +2,10 @@
 #include "services/EmoteService.hpp"
 #include "services/EmoteCache.hpp"
 #include "../../utils/AnimatedGIFSprite.hpp"
+#include "../comment-mentions/MentionLink.hpp"
 #include <Geode/Geode.hpp>
+#include <Geode/utils/cocos.hpp>
+#include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <cctype>
 
 using namespace geode::prelude;
@@ -106,6 +109,28 @@ static bool isGDColorCode(std::string const& inner) {
     return false;
 }
 
+// Characters that may form a @mention username.
+static bool isMentionWordChar(char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
+}
+
+// Reads a mention starting at text[i] (which must be '@'). Returns the username
+// length (excluding '@') in `len`, or 0 if it's not a valid clickable mention.
+// '@everyone' is intentionally ignored (it has no profile to open).
+static size_t matchMention(std::string const& text, size_t i) {
+    if (text[i] != '@') return 0;
+    if (i > 0 && isMentionWordChar(text[i - 1])) return 0; // must start a word
+    size_t j = i + 1;
+    while (j < text.size() && isMentionWordChar(text[j])) ++j;
+    size_t len = j - i - 1;
+    if (len == 0) return 0;
+    std::string lower;
+    lower.reserve(len);
+    for (size_t k = i + 1; k < j; ++k) lower += (char)std::tolower((unsigned char)text[k]);
+    if (lower == "everyone") return 0;
+    return len;
+}
+
 bool EmoteRenderer::hasEmoteSyntax(std::string const& text) {
     for (size_t i = 0; i < text.size(); ++i) {
         char c = text[i];
@@ -126,17 +151,20 @@ bool EmoteRenderer::hasEmoteSyntax(std::string const& text) {
     return false;
 }
 
+bool EmoteRenderer::hasMentionSyntax(std::string const& text) {
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (matchMention(text, i) > 0) return true;
+    }
+    return false;
+}
+
 std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText) {
     std::vector<CommentToken> tokens;
     auto& service = EmoteService::get();
+    bool emotesAvailable = service.isLoaded();
 
     // Strip GD color codes so they don't interfere with parsing or rendering
     std::string text = stripGDColorCodes(rawText);
-
-    if (!service.isLoaded()) {
-        tokens.push_back(TextToken{text});
-        return tokens;
-    }
 
     size_t i = 0;
     std::string currentText;
@@ -144,8 +172,19 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
     while (i < text.size()) {
         bool matched = false;
 
+        // Try @username mention (works even without the emote catalog loaded)
+        if (size_t mlen = matchMention(text, i); mlen > 0) {
+            if (!currentText.empty()) {
+                tokens.push_back(TextToken{currentText});
+                currentText.clear();
+            }
+            tokens.push_back(MentionToken{text.substr(i + 1, mlen)});
+            i += mlen + 1;
+            matched = true;
+        }
+
         // Try :emotename: syntax
-        if (text[i] == ':') {
+        if (!matched && emotesAvailable && text[i] == ':') {
             auto end = text.find(':', i + 1);
             if (end != std::string::npos && end > i + 1) {
                 auto name = text.substr(i + 1, end - i - 1);
@@ -162,7 +201,7 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
         }
 
         // Try <emotename> syntax
-        if (!matched && text[i] == '<') {
+        if (!matched && emotesAvailable && text[i] == '<') {
             auto end = text.find('>', i + 1);
             if (end != std::string::npos && end > i + 1) {
                 auto name = text.substr(i + 1, end - i - 1);
@@ -211,15 +250,14 @@ CCNode* EmoteRenderer::renderComment(
 
     auto tokens = parseTokens(rawText);
 
-    // If no emotes found and not forced, return nullptr (caller keeps original label)
+    // If nothing special found and not forced, return nullptr (caller keeps original label)
     bool hasEmote = false;
+    bool hasMention = false;
     for (auto& t : tokens) {
-        if (std::holds_alternative<EmoteToken>(t)) {
-            hasEmote = true;
-            break;
-        }
+        if (std::holds_alternative<EmoteToken>(t)) hasEmote = true;
+        else if (std::holds_alternative<MentionToken>(t)) hasMention = true;
     }
-    if (!hasEmote && !forceRender) return nullptr;
+    if (!hasEmote && !hasMention && !forceRender) return nullptr;
 
     auto container = CCNode::create();
     container->setAnchorPoint({0.f, 1.f});
@@ -257,6 +295,22 @@ CCNode* EmoteRenderer::renderComment(
     float curX = 0.f;
     float curY = -lineHeight;
     float maxUsedX = 0.f;
+
+    // Lazily-created menu that holds the clickable @mention buttons. It shares
+    // the container's coordinate space (origin 0,0) so the final upward shift
+    // moves it together with the text labels.
+    CCMenu* mentionMenu = nullptr;
+    auto ensureMentionMenu = [&]() -> CCMenu* {
+        if (!mentionMenu) {
+            mentionMenu = CCMenu::create();
+            mentionMenu->ignoreAnchorPointForPosition(false);
+            mentionMenu->setAnchorPoint({0.f, 0.f});
+            mentionMenu->setPosition({0.f, 0.f});
+            mentionMenu->setContentSize({0.f, 0.f});
+            container->addChild(mentionMenu, 6);
+        }
+        return mentionMenu;
+    };
 
     for (auto& token : tokens) {
         if (auto* tt = std::get_if<TextToken>(&token)) {
@@ -316,26 +370,33 @@ CCNode* EmoteRenderer::renderComment(
             auto info = EmoteService::get().getEmoteByName(et->name);
             if (info) {
                 auto phRef = Ref(placeholder);
-                EmoteCache::get().loadEmote(*info, [phRef, emoteSize](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
-                    Loader::get()->queueInMainThread([phRef, tex, isGif, gifData, emoteSize]() {
-                        auto ph = phRef.data();
-                        if (!ph || !ph->getParent()) return;
+                std::string emoteKey = et->name;
+                EmoteCache::get().loadEmote(*info, [phRef, emoteSize, emoteKey](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
+                    Loader::get()->queueInMainThread([phRef, tex, isGif, gifData, emoteSize, emoteKey]() {
+                        if (auto ph = phRef.data(); !ph || !ph->getParent()) return;
 
-                        CCNode* sprite = nullptr;
-                        if (isGif && !gifData.empty()) {
-                            auto gifSprite = AnimatedGIFSprite::create(gifData.data(), gifData.size());
-                            if (gifSprite) sprite = gifSprite;
-                        } else if (tex) {
-                            auto spr = CCSprite::createWithTexture(tex);
-                            if (spr) sprite = spr;
-                        }
-
-                        if (sprite) {
+                        auto attach = [phRef, emoteSize](CCNode* sprite) {
+                            auto ph = phRef.data();
+                            if (!ph || !ph->getParent() || !sprite) return;
                             float scale = emoteSize / std::max(sprite->getContentSize().width, sprite->getContentSize().height);
                             sprite->setScale(scale);
                             sprite->setAnchorPoint({0.5f, 0.5f});
                             sprite->setPosition({emoteSize / 2.f, emoteSize / 2.f});
                             ph->addChild(sprite);
+                        };
+
+                        if (isGif && !gifData.empty()) {
+                            // Cacheado por nombre de emote: comparte texturas GPU entre
+                            // todas las apariciones del mismo emote y decodifica en un
+                            // worker (no en el main thread). Antes se usaba la version no
+                            // cacheada create(data,size), que re-decodificaba el GIF y
+                            // creaba texturas propias por cada comentario visible — el FPS
+                            // caia poco a poco al ver muchos emotes en los comentarios.
+                            AnimatedGIFSprite::createAsync(gifData, emoteKey, [attach](AnimatedGIFSprite* spr) {
+                                attach(spr);
+                            });
+                        } else if (tex) {
+                            attach(CCSprite::createWithTexture(tex));
                         }
                     });
                 });
@@ -343,6 +404,41 @@ CCNode* EmoteRenderer::renderComment(
 
             curX += emoteSize + 2.f;
             maxUsedX = std::max(maxUsedX, curX);
+        } else if (auto* mt = std::get_if<MentionToken>(&token)) {
+            // Render the mention as a colored, clickable label that opens the
+            // mentioned user's profile. Laid out as a single unit (no splitting).
+            std::string display = "@" + mt->username;
+            auto label = CCLabelBMFont::create(display.c_str(), font);
+            if (label) {
+                label->setColor({90, 170, 255}); // link blue
+                // Pre-scale the label itself (not the menu item): CCMenuItemSpriteExtra
+                // tracks its own base scale and resets the item to it on press, which
+                // would make a scaled item snap back to full size when tapped.
+                label->setScale(fontScale);
+
+                float labelW = label->getContentSize().width * fontScale;
+                float labelH = label->getContentSize().height * fontScale;
+
+                if (curX + labelW > maxWidth && curX > 0.f) {
+                    maxUsedX = std::max(maxUsedX, curX);
+                    curX = 0.f;
+                    curY -= lineHeight;
+                }
+
+                float textYOff = (lineHeight - labelH) / 2.f + baselineAdjust;
+
+                std::string username = mt->username;
+                auto* item = CCMenuItemExt::createSpriteExtra(
+                    label, [username](CCMenuItemSpriteExtra*) {
+                        paimon::mentions::openProfile(username);
+                    });
+                item->setAnchorPoint({0.f, 0.f});
+                item->setPosition({curX, curY + textYOff});
+                ensureMentionMenu()->addChild(item);
+
+                curX += labelW;
+                maxUsedX = std::max(maxUsedX, curX);
+            }
         }
     }
 

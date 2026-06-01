@@ -1,5 +1,6 @@
 ﻿#include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/binding/GJCommentListLayer.hpp>
+#include <Geode/binding/SimplePlayer.hpp>
 #include <Geode/modify/ProfilePage.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/utils/cocos.hpp>
@@ -10,6 +11,7 @@
 #include <Geode/binding/GameManager.hpp>
 #include "../utils/Localization.hpp"
 #include "../utils/Debug.hpp"
+#include "../layers/UserThumbnailsLayer.hpp"
 #include <chrono>
 #include <cmath>
 #include <optional>
@@ -36,6 +38,7 @@
 #include "../features/profiles/ui/RateProfilePopup.hpp"
 #include "../features/profiles/ui/ProfileReviewsPopup.hpp"
 #include "../features/profiles/services/ProfileImageService.hpp"
+#include "../features/profiles/services/ProfileImageCache.hpp"
 #include "../core/Settings.hpp"
 #include "../utils/Shaders.hpp"
 #include "../utils/ImageLoadHelper.hpp"
@@ -90,170 +93,24 @@ bool shouldHideVanillaCommentBgNode(cocos2d::CCNode* node) {
 // cache de texturas de profileimg para carga instantanea entre popups.
 // Usa Ref<> para manejo automatico de refcount, con guardia de shutdown
 // para evitar release() cuando el CCPoolManager ya este destruido.
-static std::mutex s_profileImgMutex;
-static std::unordered_map<int, geode::Ref<CCTexture2D>> s_profileImgCache;
-static std::list<int> s_profileImgLru;
-static std::unordered_map<int, std::list<int>::iterator> s_profileImgLruMap;
-static constexpr size_t MAX_PROFILEIMG_CACHE_SIZE = 64;
-static constexpr size_t MAX_PROFILEIMG_CACHE_BYTES = 64ull * 1024 * 1024; // 64 MB
-static size_t s_profileImgCacheBytes = 0;
-static std::atomic<bool> s_profileImgShutdown{false};
+// (Implementacion del cache de profileimg movida a
+//  features/profiles/services/ProfileImageCache.cpp)
 
-static size_t estimateTextureBytes(CCTexture2D* tex) {
-    if (!tex) return 0;
-    return static_cast<size_t>(tex->getPixelsWide()) * static_cast<size_t>(tex->getPixelsHigh()) * 4;
-}
-
-static void touchProfileImgCache(int accountID) {
-    auto it = s_profileImgLruMap.find(accountID);
-    if (it != s_profileImgLruMap.end()) {
-        s_profileImgLru.erase(it->second);
-    }
-    s_profileImgLru.push_back(accountID);
-    s_profileImgLruMap[accountID] = std::prev(s_profileImgLru.end());
-}
-
-static void cacheProfileImgTexture(int accountID, CCTexture2D* texture) {
-    if (!texture) return;
-    std::lock_guard<std::mutex> lock(s_profileImgMutex);
-
-    size_t incomingBytes = estimateTextureBytes(texture);
-
-    // if replacing an existing entry, subtract old bytes
-    auto oldIt = s_profileImgCache.find(accountID);
-    if (oldIt != s_profileImgCache.end()) {
-        size_t oldBytes = estimateTextureBytes(oldIt->second);
-        if (s_profileImgCacheBytes >= oldBytes) s_profileImgCacheBytes -= oldBytes;
-    }
-
-    s_profileImgCache[accountID] = texture;
-    s_profileImgCacheBytes += incomingBytes;
-    touchProfileImgCache(accountID);
-
-    // evict by entry count OR byte limit
-    while ((s_profileImgCache.size() > MAX_PROFILEIMG_CACHE_SIZE ||
-            s_profileImgCacheBytes > MAX_PROFILEIMG_CACHE_BYTES) &&
-           !s_profileImgLru.empty()) {
-        int removeID = s_profileImgLru.front();
-        s_profileImgLru.pop_front();
-        s_profileImgLruMap.erase(removeID);
-        auto removeIt = s_profileImgCache.find(removeID);
-        if (removeIt != s_profileImgCache.end()) {
-            size_t removedBytes = estimateTextureBytes(removeIt->second);
-            if (s_profileImgCacheBytes >= removedBytes) s_profileImgCacheBytes -= removedBytes;
-            s_profileImgCache.erase(removeIt);
-        }
-    }
-}
 
 // Limpiar el cache de profileimg durante el cierre del juego.
 // Los destructores estaticos se ejecutan en orden indefinido y
 // CCPoolManager puede ya estar muerto Ã¢â‚¬â€ usamos take() para sacar
 // los Ref<> sin llamar release().
-$on_game(Exiting) {
-    s_profileImgShutdown.store(true, std::memory_order_release);
-    std::lock_guard<std::mutex> lock(s_profileImgMutex);
-    for (auto& [id, ref] : s_profileImgCache) {
-        (void)ref.take();
-    }
-    s_profileImgCache.clear();
-    s_profileImgCacheBytes = 0;
-    s_profileImgLru.clear();
-    s_profileImgLruMap.clear();
-}
 
-// Acceso externo al cache de profileimg (usado por InfoLayer hook).
-CCTexture2D* getProfileImgCachedTexture(int accountID) {
-    if (s_profileImgShutdown.load(std::memory_order_acquire)) return nullptr;
-    std::lock_guard<std::mutex> lock(s_profileImgMutex);
-    auto it = s_profileImgCache.find(accountID);
-    if (it != s_profileImgCache.end()) {
-        touchProfileImgCache(accountID);
-        return it->second;
-    }
-    return nullptr;
-}
 
-// --- helpers de cache de disco para profileimg ---
-static std::filesystem::path getProfileImgCacheDir() {
-    return Mod::get()->getSaveDir() / "profileimg_cache";
-}
 
-static std::filesystem::path getProfileImgCachePath(int accountID) {
-    return getProfileImgCacheDir() / fmt::format("{}.dat", accountID);
-}
 
-static std::string getProfileImgGifCacheKey(int accountID) {
-    auto key = ProfileImageService::get().getProfileImgGifKey(accountID);
-    if (!key.empty()) {
-        return key;
-    }
-    return fmt::format("profileimg_gif_{}", accountID);
-}
 
-// Limpia todo el cache de profileimg (RAM + disco)
-void clearProfileImgCache() {
-    std::lock_guard<std::mutex> lock(s_profileImgMutex);
-    s_profileImgCache.clear();
-    s_profileImgCacheBytes = 0;
-    s_profileImgLru.clear();
-    s_profileImgLruMap.clear();
-    std::error_code ec;
-    auto dir = getProfileImgCacheDir();
-    if (std::filesystem::exists(dir, ec)) {
-        std::filesystem::remove_all(dir, ec);
-    }
-}
-
-static CCTexture2D* loadProfileImgFromDisk(int accountID) {
-    auto path = getProfileImgCachePath(accountID);
-    std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) return nullptr;
-
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) return nullptr;
-
-    auto size = file.tellg();
-    if (size <= 0) return nullptr;
-    file.seekg(0, std::ios::beg);
-
-    std::vector<uint8_t> data(static_cast<size_t>(size));
-    if (!file.read(reinterpret_cast<char*>(data.data()), size)) return nullptr;
-    file.close();
-
-    if (paimon::format::isGif(data.data(), data.size())) {
-        return nullptr;
-    }
 
     // skip MP4 video files (handled by ensureAnimatedProfileImg)
     // ftyp box can start at different offsets â€” search first 12 bytes
-    if (data.size() > 12) {
-        for (size_t i = 0; i + 3 < data.size() && i < 12; ++i) {
-            if (data[i]=='f' && data[i+1]=='t' && data[i+2]=='y' && data[i+3]=='p') {
-                return nullptr;
-            }
-        }
-    }
 
-    auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data.data(), data.size());
-    if (!loaded.success || !loaded.texture) {
-        return nullptr;
-    }
-    loaded.texture->autorelease();
-    return loaded.texture;
-}
 
-static void saveProfileImgToDisk(int accountID, std::vector<uint8_t> const& data) {
-    auto cacheDir = getProfileImgCacheDir();
-    std::error_code ec;
-    std::filesystem::create_directories(cacheDir, ec);
-    auto cachePath = getProfileImgCachePath(accountID);
-    std::ofstream cacheFile(cachePath, std::ios::binary);
-    if (cacheFile) {
-        cacheFile.write(reinterpret_cast<char const*>(data.data()), data.size());
-        cacheFile.close();
-    }
-}
 
 class $modify(PaimonProfilePage, ProfilePage) {
     static void onModify(auto& self) {
@@ -655,6 +512,21 @@ class $modify(PaimonProfilePage, ProfilePage) {
             });
     }
 
+    void onThumbnailCountClicked(CCObject*) {
+        std::string username = getViewedUsername();
+        int accountID = this->m_accountID;
+        
+        if (username.empty() || accountID <= 0) {
+            PaimonNotify::create("Unable to load thumbnails", NotificationIcon::Warning)->show();
+            return;
+        }
+        
+        log::info("[ProfilePage] Opening thumbnails layer for user: {} (accountID: {})", username, accountID);
+        
+        auto scene = UserThumbnailsLayer::scene(username, accountID);
+        CCDirector::sharedDirector()->pushScene(CCTransitionFade::create(0.5f, scene));
+    }
+
     void addThumbnailCountBadge(int uploadCount) {
         if (!this->m_mainLayer) return;
 
@@ -666,7 +538,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
 
         // Avoid duplicates
-        if (statsMenu->getChildByID("paimon-thumb-count-icon"_spr)) return;
+        if (statsMenu->getChildByID("paimon-thumb-count-btn"_spr)) return;
 
         // Only show if user has at least 1 approved thumbnail
         if (uploadCount <= 0) return;
@@ -674,49 +546,52 @@ class $modify(PaimonProfilePage, ProfilePage) {
         auto* statsMenuCC = typeinfo_cast<CCMenu*>(statsMenu);
         if (!statsMenuCC) return;
 
+        // Icon sprite â€" use the mod's thumbnail icon or a GD frame
+        auto* iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_bigStar_001.png");
+        if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
+        if (!iconSprite) iconSprite = CCSprite::create();
+        
         // Create the count label (like SendDB's sends label)
         auto* countLabel = CCLabelBMFont::create(
             fmt::format("{}", uploadCount).c_str(),
             "bigFont.fnt"
         );
         countLabel->setScale(0.6f);
-        countLabel->setAnchorPoint({0.0f, 0.0f});
-        countLabel->setID("paimon-thumb-count-label"_spr);
-        countLabel->setZOrder(2);
-
-        // Text node that wraps the label for layout
-        auto* textNode = CCNode::create();
-        textNode->setAnchorPoint({0.0f, 0.0f});
-        textNode->setContentSize(CCPoint{0.6f, 0.6f} * countLabel->getContentSize());
-        textNode->setID("paimon-thumb-count-text"_spr);
-        textNode->setZOrder(1);
-        textNode->addChild(countLabel);
-        textNode->setLayoutOptions(AxisLayoutOptions::create()
-            ->setScaleLimits(0.0f, 1.0f)
-        );
-
-        // Icon sprite â€” use the mod's thumbnail icon or a GD frame
-        auto* iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_bigStar_001.png");
-        if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
-        if (!iconSprite) iconSprite = CCSprite::create();
+        
+        // Create a simple sprite that combines icon and text
+        auto* combinedSprite = CCNode::create();
+        combinedSprite->setAnchorPoint({0.5f, 0.5f});
+        combinedSprite->setContentSize({50.f, 30.f});
+        
         if (iconSprite) {
             scaleToFit(iconSprite, 20.f);
             iconSprite->setAnchorPoint({0.5f, 0.5f});
-            iconSprite->setID("paimon-thumb-count-icon"_spr);
-            iconSprite->setZOrder(1);
-            iconSprite->setLayoutOptions(AxisLayoutOptions::create()
-                ->setScaleLimits(0.0f, 1.0f)
-                ->setRelativeScale(0.8f)
-                ->setNextGap(5.0f)
-            );
+            iconSprite->setPosition({15.f, 15.f});
+            combinedSprite->addChild(iconSprite);
         }
+        
+        countLabel->setAnchorPoint({0.f, 0.5f});
+        countLabel->setPosition({iconSprite ? 28.f : 10.f, 15.f});
+        combinedSprite->addChild(countLabel);
 
-        statsMenuCC->addChild(textNode);
-        if (iconSprite) statsMenuCC->addChild(iconSprite);
+        // Create clickable button with the combined sprite
+        auto* thumbBtn = CCMenuItemSpriteExtra::create(
+            combinedSprite,
+            this,
+            menu_selector(PaimonProfilePage::onThumbnailCountClicked)
+        );
+        thumbBtn->setID("paimon-thumb-count-btn"_spr);
+        
+        // Use same layout options as other stats items
+        thumbBtn->setLayoutOptions(AxisLayoutOptions::create()
+            ->setScaleLimits(0.0f, 1.0f)
+        );
+
+        statsMenuCC->addChild(thumbBtn);
         statsMenuCC->updateLayout();
 
         m_fields->m_thumbCountLabel = countLabel;
-        log::debug("[ProfilePage] Added thumbnail count badge: {} uploads", uploadCount);
+        log::debug("[ProfilePage] Added clickable thumbnail count badge: {} uploads", uploadCount);
     }
 
     std::string getViewedUsername() {
@@ -1157,14 +1032,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         if (!queuedAnimated) {
             // 1) si hay cache en memoria, mostrar de inmediato
-            CCTexture2D* cachedTex = nullptr;
-            {
-                std::lock_guard<std::mutex> lock(s_profileImgMutex);
-                auto it = s_profileImgCache.find(accountID);
-                if (it != s_profileImgCache.end() && it->second) {
-                    cachedTex = it->second;
-                }
-            }
+            CCTexture2D* cachedTex = getProfileImgCachedTexture(accountID);
             if (cachedTex) {
                 this->displayProfileImg(accountID, cachedTex);
             } else {
@@ -1300,21 +1168,50 @@ class $modify(PaimonProfilePage, ProfilePage) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 if (!child) continue;
 
-                // Oculta icon-background y pone panel oscuro
+                // Oculta icon-background. El otro mod lo reubica lejos de los
+                // iconos, pero los ICONOS no se mueven, asi que son la posicion
+                // "original" correcta. Centramos el panel sobre la fila real de
+                // iconos (SimplePlayers fuera de la lista de comentarios),
+                // calculada en espacio de mundo -> espacio de 'parent'. Si no
+                // se encuentran iconos, caemos al valor vanilla de siempre.
                 if (child->getID() == "icon-background") {
                     child->setVisible(false);
 
-                    // Solo agrega una vez
-                    if (!parent->getChildByID("paimon-icon-dark-panel"_spr)) {
-                        auto* panel = paimon::SpriteHelper::createDarkPanel(
-                            340.f, 45.f, 100, 8.f
-                        );
+                    CCPoint lo{0.f, 0.f}, hi{0.f, 0.f};
+                    bool any = false;
+                    auto scan = [&](auto const& self, CCNode* n) -> void {
+                        if (!n || typeinfo_cast<GJCommentListLayer*>(n)) return;
+                        if (typeinfo_cast<SimplePlayer*>(n) && n->getParent()) {
+                            auto w = n->getParent()->convertToWorldSpace(n->getPosition());
+                            auto p = parent->convertToNodeSpace(w);
+                            if (!any) { lo = hi = p; any = true; }
+                            else {
+                                lo.x = std::min(lo.x, p.x); lo.y = std::min(lo.y, p.y);
+                                hi.x = std::max(hi.x, p.x); hi.y = std::max(hi.y, p.y);
+                            }
+                        }
+                        if (auto* ch = n->getChildren())
+                            for (auto* k : CCArrayExt<CCNode*>(ch)) self(self, k);
+                    };
+                    scan(scan, root);
+
+                    auto* panel = parent->getChildByID("paimon-icon-dark-panel"_spr);
+                    if (!panel) {
+                        panel = paimon::SpriteHelper::createDarkPanel(340.f, 45.f, 100, 8.f);
                         if (panel) {
-                            panel->setPosition(ccp(283.f, 200.f));
                             panel->setAnchorPoint(ccp(0.5f, 0.5f));
                             panel->setZOrder(child->getZOrder());
                             panel->setID("paimon-icon-dark-panel"_spr);
                             parent->addChild(panel);
+                        }
+                    }
+                    if (panel) {
+                        if (any) {
+                            panel->setPosition(ccp((lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f));
+                            panel->setContentSize(CCSize((hi.x - lo.x) + 60.f, 45.f));
+                        } else {
+                            panel->setPosition(ccp(283.f, 200.f));
+                            panel->setContentSize(CCSize(340.f, 45.f));
                         }
                     }
                 }

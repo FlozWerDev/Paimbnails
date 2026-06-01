@@ -32,6 +32,7 @@ static void registerAllFeatures() {
     reg.registerFeature({"transitions",    "1.0.4", {},              PermissionTier::Viewer});
     reg.registerFeature({"visuals",        "1.0.4", {},              PermissionTier::Viewer});
     reg.registerFeature({"progressbar",    "1.0.4", {},              PermissionTier::Viewer});
+    reg.registerFeature({"mod-previews",   "1.0.0", {},              PermissionTier::Viewer});
 
     log::info("[PaimonFramework] Registered {} features", reg.featureCount());
 }

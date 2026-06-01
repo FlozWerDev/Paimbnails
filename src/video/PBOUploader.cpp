@@ -281,12 +281,19 @@ bool PBOUploader::init(int ySize, int cbSize, int crSize) {
     loadGLSyncFunctions();
     while (glGetError() != GL_NO_ERROR) {}
 
-    // Pick a runtime slot count.  At 4K+ a full YUV frame footprint is
-    // ~12 MB per slot (Y+Cb+Cr); 3 slots = 36 MB.  Drop to 2 slots at that
-    // tier to keep PBO RAM under control.  Smaller frames keep the full
-    // 3-slot rotation for maximum overlap.
+    // Pick a runtime slot count based on frame size to balance memory vs performance.
+    // More slots = less chance of all PBOs being busy = fewer stalls.
+    // 4K+: 3 slots (was 2) - ~36 MB total
+    // 1080p-1440p: 5 slots (was 3) - ~25 MB total
+    // 720p and below: 6 slots (was 3) - ~12 MB total
     int totalBytes = ySize + cbSize + crSize;
-    m_activeSlots = (totalBytes > 8 * 1024 * 1024) ? 2 : kPBOCount;
+    if (totalBytes > 12 * 1024 * 1024) {
+        m_activeSlots = 3;  // 4K+: increased from 2 to reduce stalls
+    } else if (totalBytes > 4 * 1024 * 1024) {
+        m_activeSlots = 5;  // 1080p-1440p: increased from 3
+    } else {
+        m_activeSlots = 6;  // 720p: increased from 3
+    }
 
     m_rgbaMode = false;
     m_ySize  = ySize;
@@ -342,9 +349,17 @@ bool PBOUploader::init(int rgbaSize) {
     m_rgbaMode = true;
     m_rgbaSize = rgbaSize;
 
-    // RGBA at 4K is ~33 MB/slot; 3 slots = 100 MB.  Drop to 2 slots when the
-    // single-frame size exceeds 16 MB (roughly 2K RGBA / 4K YUV equivalent).
-    m_activeSlots = (rgbaSize > 16 * 1024 * 1024) ? 2 : kPBOCount;
+    // RGBA slot count: balance memory vs performance to reduce PBO busy stalls.
+    // 4K+: 3 slots (was 2) - ~99 MB total
+    // 1080p-1440p: 5 slots (was 3) - ~40 MB total
+    // 720p: 6 slots (was 3) - ~11 MB total
+    if (rgbaSize > 20 * 1024 * 1024) {
+        m_activeSlots = 3;  // 4K+: increased from 2
+    } else if (rgbaSize > 6 * 1024 * 1024) {
+        m_activeSlots = 5;  // 1080p-1440p: increased from 3
+    } else {
+        m_activeSlots = 6;  // 720p: increased from 3
+    }
 
 #if defined(GEODE_IS_ANDROID)
     // Android: only use PBO if glMapBufferRange is available (GLES3 context).

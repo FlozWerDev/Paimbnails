@@ -80,6 +80,10 @@ public:
     void commit(std::vector<EditableMenuButton> const& buttons, cocos2d::CCNode* root);
     void resetAll();
     void setCustomFromSnapshot(LayoutSnapshot const& snapshot);
+    /// Merge: actualiza solo las claves dadas (si == default las borra de
+    /// custom, si no las guarda). No borra customs de otras escenas/niveles
+    /// ni toca las figuras. Usado por el editor al guardar.
+    void mergeCustomFromButtons(std::unordered_map<std::string, MenuButtonLayout> const& buttons);
     void syncShapes(cocos2d::CCNode* root, std::vector<DrawShapeLayout> const& shapes);
 
     std::optional<MenuButtonLayout> getDefaultLayout(std::string const& key) const;

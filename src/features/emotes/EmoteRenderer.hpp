@@ -16,7 +16,12 @@ struct EmoteToken {
     std::string name; // the emote identifier (without : or < >)
 };
 
-using CommentToken = std::variant<TextToken, EmoteToken>;
+// A @username mention, rendered as a clickable link that opens the user's profile.
+struct MentionToken {
+    std::string username; // without the leading '@'
+};
+
+using CommentToken = std::variant<TextToken, EmoteToken, MentionToken>;
 
 class EmoteRenderer {
 public:
@@ -27,6 +32,9 @@ public:
 
     // Returns true if the text contains any valid emote syntax worth parsing
     static bool hasEmoteSyntax(std::string const& text);
+
+    // Returns true if the text contains a clickable @username mention.
+    static bool hasMentionSyntax(std::string const& text);
 
     // Render a comment with emotes as a mixed CCNode (text labels + emote sprites).
     // The returned node should replace the original comment label.

@@ -150,7 +150,9 @@ private:
 #else
     int m_maxConcurrentUrlTasks = 8;
 #endif
-    mutable std::recursive_mutex m_queueMutex;
+    // Cambiado a shared_mutex para permitir lecturas concurrentes sin bloqueo.
+    // Múltiples tryGetCachedTexture() pueden ejecutarse en paralelo.
+    mutable std::shared_mutex m_queueMutex;
 
     // cache gifs (tracking which levels have GIF data) — shared_mutex para evitar
     // contender con m_queueMutex en hot path (LevelCell::hasGIFData lo consulta
@@ -207,18 +209,12 @@ private:
     // considera stale y enqueuePendingCallback puede re-armar el drain.
     std::atomic<int64_t> m_drainScheduledAtUs{0};
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    static constexpr int MAX_CALLBACKS_PER_FRAME = 3;
+    static constexpr int MAX_CALLBACKS_PER_FRAME = 12;
 #else
-    // Desktop @ 360fps: cada frame es ~2.78ms. Un callback de LevelCell dispara
-    // cleanPaimonNodes + setupClippingAndSeparator + setupGradient (~0.3-0.6ms).
-    // Con 4 callbacks = ~1.2-2.4ms, dejando ~0.4-1.6ms para render + game logic.
-    // A 60fps esto seria ~24 callbacks/frame equivalentes; a 360fps necesitamos
-    // mucho menos por frame pero mas frames por segundo para la misma tasa neta.
-    // Aumentado a 4 para reducir latencia de batching en listas de 10+ celdas
-    // y evitar que la ultima celda se quede esperando demasiados frames.
-    // El rate-limiting mejorado en LevelCell (que ahora NUNCA bloquea la primera
-    // aplicacion) garantiza que el trabajo extra no se acumule.
-    static constexpr int MAX_CALLBACKS_PER_FRAME = 4;
+    // Desktop @ 60-144fps: aumentado a 24 para reducir latencia.
+    // Los cache hits son instantáneos y no causan lag.
+    // El presupuesto de frame sigue activo para prevenir sobrecarga.
+    static constexpr int MAX_CALLBACKS_PER_FRAME = 24;
 #endif
     void enqueuePendingCallback(LoadCallback cb, cocos2d::CCTexture2D* tex, bool success, int levelID = 0);
     void drainPendingCallbacks();
@@ -248,14 +244,13 @@ private:
     // demasiado tiempo del frame. Asi en PCs rapidos subimos mas,
     // y en moviles lentos subimos menos — sin bajar FPS.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    static constexpr int MAX_UPLOADS_PER_FRAME = 3;          // tope absoluto de seguridad
-    static constexpr int64_t UPLOAD_FRAME_BUDGET_US = 1500;   // 1.5ms max por frame en movil (360fps ~2.78ms total)
+    static constexpr int MAX_UPLOADS_PER_FRAME = 12;          // aumentado para mejor throughput
+    static constexpr int64_t UPLOAD_FRAME_BUDGET_US = 3500;   // 3.5ms max por frame en movil
 #else
-    // Desktop @ 360fps: frame budget = ~2778us. Dejar headroom para game logic
-    // y render. A 60fps equivalente seria ~16 uploads/frame; a 360fps limitamos
-    // a 4 uploads por frame para no consumir mas de ~1.5ms del budget.
-    static constexpr int MAX_UPLOADS_PER_FRAME = 4;           // tope absoluto de seguridad
-    static constexpr int64_t UPLOAD_FRAME_BUDGET_US = 1500;  // 1.5ms max por frame en desktop
+    // Desktop @ 60-144fps: aumentado a 16 para reducir latencia.
+    // GPU upload es rápido en desktop moderno (~200-400µs por textura).
+    static constexpr int MAX_UPLOADS_PER_FRAME = 16;
+    static constexpr int64_t UPLOAD_FRAME_BUDGET_US = 6000;  // 6ms max por frame en desktop
 #endif
     // Maximum dimension for RAM-cached thumbnails. Images larger than this
     // are downsampled before GPU upload to reduce RAM usage and upload time.
@@ -328,15 +323,13 @@ private:
     DecodeResult decodeImageData(std::vector<uint8_t> const& data, int realID, int maxDim = 0);
 
     // Thread pools de tamano fijo — reemplazan std::async sin limite.
-    // Disk pool: serializa I/O de disco (2 threads)
+    // Disk pool: I/O de disco paralelo (2-4 threads)
     // CPU pool: decode de imagenes + color extraction
     std::unique_ptr<paimon::ThreadPool> m_diskPool;
     std::unique_ptr<paimon::ThreadPool> m_cpuPool;
 
-    // Mutex para serializar lecturas de disco.
-    // Aunque el disk pool tiene 2 threads, solo 1 lee a la vez
-    // para evitar I/O thrash. El segundo thread puede escribir.
-    std::mutex m_diskReadMutex;
+    // ELIMINADO: m_diskReadMutex - permitimos I/O paralelo.
+    // El OS maneja eficientemente múltiples lecturas concurrentes.
 
     static constexpr auto MAX_DISK_CACHE_AGE = std::chrono::hours(24 * 21);
     static constexpr auto FAILED_CACHE_TTL = std::chrono::minutes(10);

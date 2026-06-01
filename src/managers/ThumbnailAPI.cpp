@@ -91,6 +91,10 @@ void ThumbnailAPI::getTopCreators(ActionCallback callback) {
 void ThumbnailAPI::getTopThumbnails(ActionCallback callback) {
     ThumbnailTransportClient::get().getTopThumbnails(std::move(callback));
 }
+void ThumbnailAPI::getUserUploads(std::string const& username, ActionCallback callback) {
+    log::info("[ThumbnailAPI] getUserUploads: username={}", username);
+    ThumbnailTransportClient::get().getUserUploads(username, std::move(callback));
+}
 cocos2d::CCTexture2D* ThumbnailAPI::webpToTexture(std::vector<uint8_t> const& webpData) {
     return ThumbnailTransportClient::webpToTexture(webpData);
 }

@@ -2,6 +2,7 @@
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/HttpClient.hpp"
+#include "ProfileImageCache.hpp"
 #include "../../../video/VideoNormalizer.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/VideoThumbnailSprite.hpp"
@@ -185,6 +186,16 @@ void ProfileImageService::uploadProfile(int accountID, std::vector<uint8_t> cons
             if (success) {
                 m_uploadCount++;
                 ProfileThumbs::get().deleteProfile(accountID);
+                // Invalidar cache RAM
+                invalidateProfileImgCache(accountID);
+                // Invalidar cache en disco para forzar re-descarga
+                std::error_code ec;
+                auto cachePath = ::getProfileImgCachePath(accountID);
+                if (std::filesystem::exists(cachePath, ec)) {
+                    std::filesystem::remove(cachePath, ec);
+                    log::info("[ProfileImageService] Invalidated disk cache after profile upload for accountID={}", accountID);
+                }
+                clearProfileImgGifKey(accountID);
             }
             callback(success, message);
         });
@@ -204,6 +215,16 @@ void ProfileImageService::uploadProfileGIF(int accountID, std::vector<uint8_t> c
             if (success) {
                 m_uploadCount++;
                 ProfileThumbs::get().deleteProfile(accountID);
+                // Invalidar cache RAM
+                invalidateProfileImgCache(accountID);
+                // Invalidar cache en disco para forzar re-descarga
+                std::error_code ec;
+                auto cachePath = ::getProfileImgCachePath(accountID);
+                if (std::filesystem::exists(cachePath, ec)) {
+                    std::filesystem::remove(cachePath, ec);
+                    log::info("[ProfileImageService] Invalidated disk cache after GIF upload for accountID={}", accountID);
+                }
+                clearProfileImgGifKey(accountID);
             }
             callback(success, message);
         });
@@ -231,6 +252,16 @@ void ProfileImageService::uploadProfileVideo(int accountID, std::vector<uint8_t>
             if (success) {
                 m_uploadCount++;
                 ProfileThumbs::get().deleteProfile(accountID);
+                // Invalidar cache RAM
+                invalidateProfileImgCache(accountID);
+                // Invalidar cache en disco para forzar re-descarga
+                std::error_code ec;
+                auto cachePath = ::getProfileImgCachePath(accountID);
+                if (std::filesystem::exists(cachePath, ec)) {
+                    std::filesystem::remove(cachePath, ec);
+                    log::info("[ProfileImageService] Invalidated disk cache after video upload for accountID={}", accountID);
+                }
+                clearProfileImgGifKey(accountID);
             }
             callback(success, message);
         });
@@ -405,8 +436,21 @@ void ProfileImageService::uploadProfileImg(int accountID, std::vector<uint8_t> c
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
     HttpClient::get().uploadProfileImg(accountID, imgData, username, contentType,
-        [this, callback](bool success, std::string const& message) {
-            if (success) m_uploadCount++;
+        [this, callback, accountID](bool success, std::string const& message) {
+            if (success) {
+                m_uploadCount++;
+                // Invalidar cache RAM
+                invalidateProfileImgCache(accountID);
+                // Invalidar cache en disco para forzar re-descarga
+                std::error_code ec;
+                auto cachePath = ::getProfileImgCachePath(accountID);
+                if (std::filesystem::exists(cachePath, ec)) {
+                    std::filesystem::remove(cachePath, ec);
+                    log::info("[ProfileImageService] Invalidated disk cache for accountID={}", accountID);
+                }
+                // Limpiar GIF key si existe
+                clearProfileImgGifKey(accountID);
+            }
             callback(success, message);
         });
 }
@@ -435,7 +479,7 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
                 std::error_code ec;
                 std::filesystem::create_directories(cacheDir, ec);
                 pruneProfileImgCacheVariants(profileAccountID);
-                auto cachePath = getProfileImgCachePath(profileAccountID);
+                auto cachePath = ::getProfileImgCachePath(profileAccountID);
                 std::ofstream cacheFile(cachePath, std::ios::binary);
                 if (cacheFile) {
                     cacheFile.write(reinterpret_cast<char const*>(data.data()), data.size());

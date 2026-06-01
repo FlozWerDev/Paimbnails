@@ -1031,6 +1031,17 @@ bool VideoPlayer::uploadFrame(const IVideoDecoder::Frame& frame) {
     int w = frame.width;
     int h = frame.height;
 
+    // ✅ Detectar si estamos en un frame con lag (UI ocupada)
+    // Durante lag, diferir conversiones YUV costosas para no empeorar la situación
+    float dt = cocos2d::CCDirector::get()->getDeltaTime();
+    bool isFrameLag = dt > 0.020f;  // > 20ms = lag severo @ 60fps
+    
+    // Si es el primer frame Y hay lag, diferir para no bloquear más
+    // Los frames subsiguientes se procesan normalmente (el video ya está visible)
+    if (isFrameLag && !m_hasVisibleFrame) {
+        return false;  // Reintentar en próximo frame cuando UI esté menos ocupada
+    }
+
     if (m_pboUploader.isInitialized()) {
         // Zero-copy path: convert YUV straight into mapped PBO memory.  This
         // avoids the intermediate m_rgbaBuffer → PBO copy (~4MB at 1080p).
@@ -1223,14 +1234,22 @@ void VideoPlayer::play() {
     m_timeSincePlay = 0.0;
     m_decoderStalled = false;
     if (m_decoder) m_decoder->startDecoding();
-    // Pre-allocate textures + PBOs + resolve FBO now while the decoder is
-    // spinning up.  Doing this here moves ~10–25 ms of GL allocation
-    // (glTexImage2D, glBufferData x N, FBO + sprite + uniform locations)
-    // out of the first uploadFrame() call on the main thread.  Skipping
-    // it would mean the first frame after the user enters a profile with
-    // a video pays the entire init cost in a single update() invocation,
-    // which is what produces the visible 360→120 fps drop.
-    prepareGPUPipeline();
+    
+    // ✅ OPTIMIZACIÓN: Inicializar GPU pipeline de forma asíncrona para evitar
+    // el freeze de 20-38ms que ocurría al entrar a un perfil con video.
+    // La inicialización se pospone al main thread pero sin bloquear play().
+    // Si el primer frame llega antes de que termine la init, uploadFrame()
+    // hará la init de forma lazy (comportamiento anterior como fallback).
+    if (!m_pboInitAttempted && m_texWidth > 0 && m_texHeight > 0) {
+        // Postear a main thread para que se ejecute en el próximo frame
+        // cuando el director ya no esté procesando el frame actual
+        geode::Loader::get()->queueInMainThread([this]() {
+            if (m_playing && !m_pboInitAttempted) {
+                prepareGPUPipeline();
+            }
+        });
+    }
+    
     playAudioFromCurrentTime(true);
 }
 

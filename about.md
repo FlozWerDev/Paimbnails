@@ -22,6 +22,10 @@ Over <cg>**30 screen transitions**</c>: fades, slides, flips, zooms, page curls,
 
 <cg>**Full control**</c> over the in-game progress bar: move, scale, rotate, or set <cg>vertical orientation</c>. Pick <cg>custom colors</c> with solid, pulse, or rainbow animation modes for the fill, background and percentage label. Swap in your own <cg>textures</c> (PNG, JPG, WebP or GIF) and add <cg>free-floating decorations</c>. The percentage font, position and offset are fully configurable too. Enable <cg>free drag</c> from the pause menu or enter the <cg>edit overlay</c> to fine-tune everything live.
 
+## Mod Previews
+
+When you open a Geode mod, Paimbnails shows <cb>**preview images**</c> for any mod whose repository includes a <cb>`previews`</c> folder. Click a thumbnail for a <cb>full-screen gallery</c>. Based on the original idea by <cb>Alphalaneous</c> ([Mod-Previews](https://github.com/Alphalaneous/Mod-Previews)).
+
 ## Audio
 
 <cy>**Dynamic Song**</c> plays the level's song while browsing. <cy>**Stream Undownloaded Songs**</c> to preview them before downloading. <cy>**Profile Music**</c> lets users set a custom song fragment on their profile with waveform visualization and crossfade. All audio sources coordinate automatically, <cy>no conflicts, smooth transitions</c>. The leaderboard features <cy>real-time beat detection</c> with FFT spectrum analysis powering reactive visuals.

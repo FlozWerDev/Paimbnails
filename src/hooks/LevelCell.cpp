@@ -36,183 +36,16 @@
 #include "../utils/VideoThumbnailSprite.hpp"
 #include "../utils/HttpClient.hpp"
 #include "LevelCellContext.hpp"
+#include "../features/thumbnails/services/LevelCellThumbHelpers.hpp"
 
 using namespace geode::prelude;
 using namespace Shaders;
+using namespace paimon::levelcell;
 
 namespace paimon::hooks {
     bool g_suppressLevelCellEnhancements = false;
     bool g_forceCompactLevelCells = false;
     thread_local bool g_suppressCompactLevelCellsInContext = false;
-}
-
-// Enums para settings cached
-enum class PaimonAnimType : uint8_t {
-    None, ZoomSlide, Zoom, Slide, Bounce, Rotate, RotateContent, Shake, Pulse, Swing
-};
-
-enum class PaimonAnimEffect : uint8_t {
-    None, Brightness, Darken, Sepia, Sharpen, EdgeDetection, Vignette, Pixelate,
-    Posterize, Chromatic, Scanlines, Solarize, Rainbow, Red, Blue, Gold, Fade,
-    Grayscale, Invert, Blur, Glitch
-};
-
-enum class PaimonBgType : uint8_t { Gradient, Thumbnail };
-
-enum class PaimonGalleryTransition : uint8_t {
-    Crossfade, SlideLeft, SlideRight, SlideUp, SlideDown,
-    ZoomIn, ZoomOut, FlipHorizontal, FlipVertical,
-    RotateCW, RotateCCW, Cube, Dissolve, Swipe, Bounce,
-    ElasticSlide, DirectionalElastic, Spiral, Wave, Pop,
-    Random
-};
-
-static float safeCoverScale(float targetWidth, float targetHeight, float contentWidth, float contentHeight, float fallback = 1.0f) {
-    if (targetWidth <= 0.0f || targetHeight <= 0.0f || contentWidth <= 0.0f || contentHeight <= 0.0f) {
-        return fallback;
-    }
-    float scale = std::max(targetWidth / contentWidth, targetHeight / contentHeight);
-    if (scale <= 0.0f) return fallback;
-    return std::clamp(scale, 0.01f, 64.0f);
-}
-
-static float getLevelCellThumbWidthFactor() {
-    float widthFactor = static_cast<float>(Mod::get()->getSettingValue<double>("level-thumb-width"));
-    return std::clamp(widthFactor, PaimonConstants::MIN_THUMB_WIDTH_FACTOR, PaimonConstants::MAX_THUMB_WIDTH_FACTOR);
-}
-
-static float calculateLevelCellThumbCoverScale(CCSprite* sprite, float bgWidth, float bgHeight, float widthFactor, float fallback = 1.0f) {
-    if (!sprite) {
-        return fallback;
-    }
-
-    return safeCoverScale(
-        bgWidth * widthFactor,
-        bgHeight,
-        sprite->getContentSize().width,
-        sprite->getContentSize().height,
-        fallback
-    );
-}
-
-static std::vector<ThumbnailAPI::ThumbnailInfo> normalizeLevelCellGalleryThumbnails(
-    int32_t levelID,
-    std::vector<ThumbnailAPI::ThumbnailInfo> thumbnails
-) {
-    std::erase_if(thumbnails, [](ThumbnailAPI::ThumbnailInfo const& thumb) {
-        return thumb.url.empty();
-    });
-
-    std::stable_sort(thumbnails.begin(), thumbnails.end(), [](ThumbnailAPI::ThumbnailInfo const& a, ThumbnailAPI::ThumbnailInfo const& b) {
-        if (a.position != b.position) return a.position < b.position;
-        if (a.id != b.id) return a.id < b.id;
-        return a.url < b.url;
-    });
-
-    // Elimina duplicados por URL
-    std::unordered_set<std::string_view> seenUrls;
-    seenUrls.reserve(thumbnails.size());
-    std::vector<ThumbnailAPI::ThumbnailInfo> normalized;
-    normalized.reserve(thumbnails.size() + 1);
-
-    for (auto& thumb : thumbnails) {
-        if (!seenUrls.insert(thumb.url).second) {
-            continue;
-        }
-        normalized.push_back(std::move(thumb));
-    }
-
-    if (normalized.empty() && levelID > 0) {
-        ThumbnailAPI::ThumbnailInfo mainThumb;
-        mainThumb.id = "0";
-        mainThumb.url = ThumbnailAPI::get().getThumbnailURL(levelID);
-        mainThumb.type = "static";
-        mainThumb.position = 0;
-        normalized.push_back(std::move(mainThumb));
-    }
-
-    return normalized;
-}
-
-static constexpr int LEVELCELL_GALLERY_LOOKAHEAD = 2;
-static constexpr int LEVELCELL_GALLERY_SEARCH_WINDOW = 3;
-static constexpr size_t LEVELCELL_GALLERY_MAX_PENDING = 3;
-static constexpr float LEVELCELL_GALLERY_RETRY_DELAY = 8.0f;
-static constexpr int LEVELCELL_GALLERY_MAX_MISSES = 2;
-static constexpr float LEVELCELL_VISUAL_TICK_INTERVAL = 1.0f / 30.0f;
-static constexpr float LEVELCELL_MAINTENANCE_INTERVAL = 0.2f;
-
-static std::string makeLevelCellBlurCacheKey(int32_t levelID, int galleryIndex, float blurIntensity, bool isBackground) {
-    return fmt::format(
-        "levelcell:{}:{}:{}:{}",
-        isBackground ? "bg" : "thumb",
-        levelID,
-        galleryIndex,
-        static_cast<int>(std::round(blurIntensity * 2.0f))
-    );
-}
-
-static PaimonAnimType parseAnimType(std::string const& s) {
-    static constexpr std::pair<std::string_view, PaimonAnimType> table[] = {
-        {"zoom-slide", PaimonAnimType::ZoomSlide}, {"zoom", PaimonAnimType::Zoom},
-        {"slide", PaimonAnimType::Slide}, {"bounce", PaimonAnimType::Bounce},
-        {"rotate", PaimonAnimType::Rotate}, {"rotate-content", PaimonAnimType::RotateContent},
-        {"shake", PaimonAnimType::Shake}, {"pulse", PaimonAnimType::Pulse},
-        {"swing", PaimonAnimType::Swing},
-    };
-    for (auto const& [key, val] : table) {
-        if (key == s) return val;
-    }
-    return PaimonAnimType::None;
-}
-
-static PaimonAnimEffect parseAnimEffect(std::string const& s) {
-    static constexpr std::pair<std::string_view, PaimonAnimEffect> table[] = {
-        {"brightness", PaimonAnimEffect::Brightness}, {"darken", PaimonAnimEffect::Darken},
-        {"sepia", PaimonAnimEffect::Sepia}, {"sharpen", PaimonAnimEffect::Sharpen},
-        {"edge-detection", PaimonAnimEffect::EdgeDetection}, {"vignette", PaimonAnimEffect::Vignette},
-        {"pixelate", PaimonAnimEffect::Pixelate}, {"posterize", PaimonAnimEffect::Posterize},
-        {"chromatic", PaimonAnimEffect::Chromatic}, {"scanlines", PaimonAnimEffect::Scanlines},
-        {"solarize", PaimonAnimEffect::Solarize}, {"rainbow", PaimonAnimEffect::Rainbow},
-        {"red", PaimonAnimEffect::Red}, {"blue", PaimonAnimEffect::Blue},
-        {"gold", PaimonAnimEffect::Gold}, {"fade", PaimonAnimEffect::Fade},
-        {"grayscale", PaimonAnimEffect::Grayscale}, {"invert", PaimonAnimEffect::Invert},
-        {"blur", PaimonAnimEffect::Blur}, {"glitch", PaimonAnimEffect::Glitch},
-    };
-    for (auto const& [key, val] : table) {
-        if (key == s) return val;
-    }
-    return PaimonAnimEffect::None;
-}
-
-static PaimonBgType parseBgType(std::string const& s) {
-    return s == "thumbnail" ? PaimonBgType::Thumbnail : PaimonBgType::Gradient;
-}
-
-static PaimonGalleryTransition parseGalleryTransition(std::string const& s) {
-    static constexpr std::pair<std::string_view, PaimonGalleryTransition> table[] = {
-        {"crossfade", PaimonGalleryTransition::Crossfade}, {"slide-left", PaimonGalleryTransition::SlideLeft},
-        {"slide-right", PaimonGalleryTransition::SlideRight}, {"slide-up", PaimonGalleryTransition::SlideUp},
-        {"slide-down", PaimonGalleryTransition::SlideDown}, {"zoom-in", PaimonGalleryTransition::ZoomIn},
-        {"zoom-out", PaimonGalleryTransition::ZoomOut}, {"flip-horizontal", PaimonGalleryTransition::FlipHorizontal},
-        {"flip-vertical", PaimonGalleryTransition::FlipVertical}, {"rotate-cw", PaimonGalleryTransition::RotateCW},
-        {"rotate-ccw", PaimonGalleryTransition::RotateCCW}, {"cube", PaimonGalleryTransition::Cube},
-        {"dissolve", PaimonGalleryTransition::Dissolve}, {"swipe", PaimonGalleryTransition::Swipe},
-        {"bounce", PaimonGalleryTransition::Bounce}, {"elastic-slide", PaimonGalleryTransition::ElasticSlide},
-        {"directional-elastic", PaimonGalleryTransition::DirectionalElastic},
-        {"spiral", PaimonGalleryTransition::Spiral}, {"wave", PaimonGalleryTransition::Wave},
-        {"pop", PaimonGalleryTransition::Pop}, {"random", PaimonGalleryTransition::Random},
-    };
-    for (auto const& [key, val] : table) {
-        if (key == s) return val;
-    }
-    return PaimonGalleryTransition::Crossfade;
-}
-
-static PaimonGalleryTransition resolveRandomTransition() {
-    thread_local std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<int> dist(0, 19); // Excluye Random
-    return static_cast<PaimonGalleryTransition>(dist(rng));
 }
 
 class $modify(PaimonLevelCell, LevelCell) {
@@ -348,25 +181,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (fields) {
             fields->m_isBeingDestroyed = true;
         }
-    }
-    
-    static void calculateLevelCellThumbScale(CCSprite* sprite, float bgWidth, float bgHeight, float widthFactor, float& outScaleX, float& outScaleY) {
-        if (!sprite) return;
-        
-        const float contentWidth = sprite->getContentSize().width;
-        const float contentHeight = sprite->getContentSize().height;
-        if (contentWidth <= 0.f || contentHeight <= 0.f || bgWidth <= 0.f || bgHeight <= 0.f) {
-            outScaleX = 1.f;
-            outScaleY = 1.f;
-            return;
-        }
-        const float desiredWidth = bgWidth * widthFactor;
-        
-        outScaleY = bgHeight / contentHeight;
-        
-        float minScaleX = outScaleY; 
-        float desiredScaleX = desiredWidth / contentWidth;
-        outScaleX = std::max(minScaleX, desiredScaleX);
     }
     
     static void calculateFullCoverageThumbScale(CCSprite* sprite, float targetWidth, float targetHeight, float& outScale) {
@@ -878,46 +692,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         return sprite;
     }
 
-    CCClippingNode* createThumbnailClippingNode(CCNode* bg, CCSprite* sprite, float& outCoverScale) {
-        if (!bg || !sprite) {
-            log::warn("[LevelCell] createThumbnailClippingNode: null bg or sprite");
-            return nullptr;
-        }
-
-        float kThumbWidthFactor = getLevelCellThumbWidthFactor();
-        const float bgWidth = bg->getContentWidth();
-        const float bgHeight = bg->getContentHeight();
-        const float desiredWidth = bgWidth * kThumbWidthFactor;
-
-        float scaleX, scaleY;
-        calculateLevelCellThumbScale(sprite, bgWidth, bgHeight, kThumbWidthFactor, scaleX, scaleY);
-        outCoverScale = calculateLevelCellThumbCoverScale(sprite, bgWidth, bgHeight, kThumbWidthFactor);
-        sprite->setScale(outCoverScale);
-        log::debug("[LevelCell] createThumbnailClippingNode: bgSize=({:.1f},{:.1f}) widthFactor={:.2f} coverScale={:.4f} scaleX={:.4f} scaleY={:.4f}",
-            bgWidth, bgHeight, kThumbWidthFactor, outCoverScale, scaleX, scaleY);
-
-        CCSize scaledSize{ desiredWidth, bgHeight };
-        const float kDiagonalSkew = 35.f; // Desplazamiento diagonal del borde izquierdo
-        auto drawMask = paimon::SpriteHelper::createDiagonalStencil(scaledSize.width, scaledSize.height, kDiagonalSkew);
-        if (!drawMask) return nullptr;
-        drawMask->setAnchorPoint({1,0});
-        drawMask->ignoreAnchorPointForPosition(true);
-
-        auto clippingNode = CCClippingNode::create();
-        if (!clippingNode) return nullptr;
-
-        clippingNode->setStencil(drawMask);
-        clippingNode->setContentSize(scaledSize);
-        clippingNode->setAnchorPoint({1,0});
-        clippingNode->setPosition({ bgWidth, 0.f });
-        clippingNode->setID("paimon-clipping-node"_spr);
-        clippingNode->setZOrder(-1);
-
-        sprite->setPosition(clippingNode->getContentSize() * 0.5f);
-        clippingNode->addChild(sprite);
-        return clippingNode;
-    }
-
     void setupClippingAndSeparator(CCNode* bg, CCSprite* sprite) {
         auto fields = m_fields.self();
         if (!fields) return;
@@ -1013,35 +787,9 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
     }
 
-    void setupGradient(CCNode* bg, int levelID, CCTexture2D* texture) {
+    void setupThumbnailBackground(CCNode* bg, int levelID, CCTexture2D* texture, bool transparentMode) {
         auto fields = m_fields.self();
-        Ref<CCNode> safeBg = bg; // Retain bg for async callbacks to avoid dangling pointer
-        log::debug("[LevelCell] setupGradient: levelID={} hasTexture={}", levelID, texture != nullptr);
-
-        // Clean up previous background nodes
-        if (auto children = bg->getChildren()) {
-            std::vector<CCNode*> toRemove;
-            toRemove.reserve(4);
-            for (auto* child : CCArrayExt<CCNode*>(children)) {
-                if (!child) continue;
-                std::string_view childID = child->getID();
-                if (childID.find("paimon-level-gradient") != std::string_view::npos ||
-                    childID.find("paimon-bg-clipper") != std::string_view::npos ||
-                    childID == "paimon-level-background") {
-                    toRemove.push_back(child);
-                }
-            }
-            for (auto node : toRemove) node->removeFromParent();
-        }
-        fields->m_gradientLayer = nullptr;
-
-        cacheSettings();
-        PaimonBgType bgType = fields->m_cachedBgType;
-
-        // Leer directamente el modo transparente (no depender solo del cache)
-        bool transparentMode = Mod::get()->getSavedValue<bool>("transparent-list-mode", false);
-
-        if (bgType == PaimonBgType::Thumbnail && texture) {
+        Ref<CCNode> safeBg = bg;
              // Oculta bg pero mantiene nodo visible para hijos
              bg->setVisible(true);
              if (auto* bgLayer = typeinfo_cast<CCLayerColor*>(bg)) {
@@ -1240,19 +988,10 @@ class $modify(PaimonLevelCell, LevelCell) {
              }
 
              return;
-        }
+    }
 
-        // Caso Gradient: en modo transparente, solo ocultar el bg sin agregar gradiente
-        if (transparentMode) {
-            bg->setVisible(true);
-            if (auto* bgLayer = typeinfo_cast<CCLayerColor*>(bg)) {
-                auto size = bgLayer->getContentSize();
-                bgLayer->changeWidthAndHeight(0.f, 0.f);
-                bgLayer->setContentSize(size);
-            }
-            return;
-        }
-
+    void setupColorGradient(CCNode* bg, int levelID) {
+        auto fields = m_fields.self();
         // Oculta bg completo para gradiente
         bg->setVisible(false);
 
@@ -1300,6 +1039,53 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_gradientColorB = colorB;
 
         (void)animatedGradient;
+    }
+
+    void setupGradient(CCNode* bg, int levelID, CCTexture2D* texture) {
+        auto fields = m_fields.self();
+        Ref<CCNode> safeBg = bg; // Retain bg for async callbacks to avoid dangling pointer
+        log::debug("[LevelCell] setupGradient: levelID={} hasTexture={}", levelID, texture != nullptr);
+
+        // Clean up previous background nodes
+        if (auto children = bg->getChildren()) {
+            std::vector<CCNode*> toRemove;
+            toRemove.reserve(4);
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                if (!child) continue;
+                std::string_view childID = child->getID();
+                if (childID.find("paimon-level-gradient") != std::string_view::npos ||
+                    childID.find("paimon-bg-clipper") != std::string_view::npos ||
+                    childID == "paimon-level-background") {
+                    toRemove.push_back(child);
+                }
+            }
+            for (auto node : toRemove) node->removeFromParent();
+        }
+        fields->m_gradientLayer = nullptr;
+
+        cacheSettings();
+        PaimonBgType bgType = fields->m_cachedBgType;
+
+        // Leer directamente el modo transparente (no depender solo del cache)
+        bool transparentMode = Mod::get()->getSavedValue<bool>("transparent-list-mode", false);
+
+        if (bgType == PaimonBgType::Thumbnail && texture) {
+            setupThumbnailBackground(bg, levelID, texture, transparentMode);
+            return;
+        }
+
+        // Caso Gradient: en modo transparente, solo ocultar el bg sin agregar gradiente
+        if (transparentMode) {
+            bg->setVisible(true);
+            if (auto* bgLayer = typeinfo_cast<CCLayerColor*>(bg)) {
+                auto size = bgLayer->getContentSize();
+                bgLayer->changeWidthAndHeight(0.f, 0.f);
+                bgLayer->setContentSize(size);
+            }
+            return;
+        }
+
+        setupColorGradient(bg, levelID);
     }
 
     void setupMythicParticles(CCNode* bg, int levelID) {
@@ -3274,6 +3060,277 @@ class $modify(PaimonLevelCell, LevelCell) {
     
     // Removed onLevelInfo hook as it's not available in binding
     
+    // Resetea el estado de thumbnail/galeria/video cuando la celda pasa a
+    // representar un nivel distinto.
+    void resetThumbnailStateForLevelChange(int32_t levelID) {
+        auto fields = m_fields.self();
+        log::debug("[LevelCell] tryLoadThumbnail: level changed {} -> {}, resetting state", fields->m_lastRequestedLevelID, levelID);
+        fields->m_thumbnailRequested = false;
+        fields->m_thumbnailApplied = false;
+        fields->m_thumbnailFailed = false;
+        fields->m_lastRequestedLevelID = levelID;
+        fields->m_hasGif = false;
+        fields->m_staticTexture = nullptr;
+        fields->m_staticThumbLoad.reset();
+        fields->m_loadedInvalidationVersion = 0;
+        fields->m_isDailyCellCached = false;
+        fields->m_galleryThumbnails.clear();
+        fields->m_galleryPendingUrls.clear();
+        fields->m_galleryIndex = 0;
+        fields->m_galleryTimer = 0.f;
+        fields->m_galleryRequested = false;
+        fields->m_galleryToken++;
+        // Reset video player on level change
+        if (fields->m_videoPlayer) {
+            fields->m_videoPlayer->stop();
+            fields->m_videoPlayer.reset();
+            fields->m_hasVideo = false;
+        }
+        if (fields->m_videoDriver) {
+            if (fields->m_videoDriver->getParent()) {
+                fields->m_videoDriver->removeFromParent();
+            }
+            fields->m_videoDriver = nullptr;
+        }
+    }
+
+    // Registra (una sola vez) el listener que reintenta la carga cuando el
+    // thumbnail del nivel se invalida remotamente.
+    void ensureInvalidationListener() {
+        auto fields = m_fields.self();
+        if (fields->m_invalidationListenerId == 0) {
+            WeakRef<PaimonLevelCell> safeRef = this;
+            fields->m_invalidationListenerId = ThumbnailLoader::get().addInvalidationListener([safeRef](int invalidLevelID) {
+                auto selfRef = safeRef.lock();
+                auto* self = static_cast<PaimonLevelCell*>(selfRef.data());
+                if (!self || !self->getParent() || !self->m_level) return;
+                if (self->m_level->m_levelID.value() != invalidLevelID) return;
+                auto fields = self->m_fields.self();
+                if (!fields) return;
+                fields->m_thumbnailRequested = false;
+                fields->m_thumbnailApplied = false;
+                fields->m_thumbnailFailed = false;
+                fields->m_galleryRequested = false;
+                fields->m_galleryThumbnails.clear();
+                fields->m_galleryPendingUrls.clear();
+                fields->m_galleryIndex = -1;
+                fields->m_galleryTimer = 0.f;
+                fields->m_galleryToken++;
+                fields->m_loadedInvalidationVersion = ThumbnailLoader::get().getInvalidationVersion(invalidLevelID);
+                // Invalidacion remota = thumbnail cambio. Permitir reintento.
+                self->tryLoadThumbnail();
+            });
+        }
+    }
+
+    // Si el thumbnail ya esta aplicado y visible, evita re-pedirlo (reanuda
+    // el ciclo de galeria si corresponde). Devuelve true si no hay que seguir.
+    bool tryReuseAppliedThumbnail(int32_t levelID) {
+        auto fields = m_fields.self();
+        if (fields->m_thumbnailApplied && fields->m_thumbSprite &&
+            fields->m_thumbSprite->getParent()) {
+            log::debug("[LevelCell] tryLoadThumbnail: thumbnail still applied for levelID={}, skipping re-request", levelID);
+            fields->m_thumbnailRequested = true;
+            refreshRuntimeScheduling();
+            if (fields->m_galleryRequested && fields->m_galleryThumbnails.size() > 1) {
+                bool autoCycle = fields->m_cachedGalleryAutocycle;
+                this->requestGalleryWindow(fields->m_galleryIndex);
+                if (autoCycle) {
+                    this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
+                    this->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 4.5f);
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // Si existe un .mp4 local para el nivel, arranca el reproductor de video.
+    // Devuelve true si tomo ese camino (el caller debe retornar).
+    bool tryStartLocalVideoThumbnail(int32_t levelID, bool enableSpinners) {
+        auto fields = m_fields.self();
+        auto localPath = LocalThumbs::get().findAnyThumbnail(levelID);
+        if (localPath) {
+            auto lowerPath = geode::utils::string::toLower(*localPath);
+            if (lowerPath.ends_with(".mp4")) {
+                log::debug("[LevelCell] tryLoadThumbnail: found MP4 for levelID={}: {}", levelID, *localPath);
+                auto player = paimon::video::VideoPlayer::create(*localPath);
+                if (player) {
+                    fields->m_hasVideo = true;
+                    fields->m_videoPlayer = std::move(player);
+                    fields->m_videoPlayer->setLoop(true);
+                    fields->m_videoPlayer->setVolume(0.0f); // muted until hover/focus
+                    fields->m_videoPlayer->play();
+                    refreshRuntimeScheduling();
+
+                    // Wait for a real decoded frame instead of swapping in the
+                    // black prewarm texture immediately.
+                    if (fields->m_videoPlayer->hasVisibleFrame()) {
+                        auto* videoTex = fields->m_videoPlayer->getCurrentFrameTexture();
+                        fields->m_thumbnailApplied = true;
+                        if (enableSpinners) hideLoadingSpinner();
+                        addOrUpdateThumb(videoTex);
+                        log::debug("[LevelCell] tryLoadThumbnail: video player started for levelID={}", levelID);
+                        return true;
+                    }
+                    log::debug("[LevelCell] tryLoadThumbnail: waiting for first MP4 frame for levelID={}", levelID);
+                    return true;
+                }
+                log::warn("[LevelCell] tryLoadThumbnail: MP4 player creation failed for levelID={}", levelID);
+            }
+        }
+        return false;
+    }
+
+    // Si el thumbnail principal (segun la galeria) es un video de servidor,
+    // arranca su carga async. Devuelve true si tomo ese camino.
+    bool tryStartServerVideoThumbnail(int32_t levelID, int currentRequestId, bool enableSpinners) {
+        auto fields = m_fields.self();
+        if (!fields->m_galleryThumbnails.empty()) {
+            auto const& mainThumb = fields->m_galleryThumbnails[0];
+            if (mainThumb.isVideo() && !mainThumb.url.empty()) {
+                log::debug("[LevelCell] tryLoadThumbnail: main thumb is server video for levelID={}", levelID);
+                if (enableSpinners) showLoadingSpinner();
+                std::string cacheKey = fmt::format("thumb_video_{}", levelID);
+                WeakRef<PaimonLevelCell> safeRef = this;
+                int currentReqId = currentRequestId;
+                VideoThumbnailSprite::createAsync(mainThumb.url, cacheKey, [safeRef, levelID, currentReqId, enableSpinners](VideoThumbnailSprite* videoSprite) {
+                    auto cellRef = safeRef.lock();
+                    auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
+                    if (!cell || !cell->getParent() || !cell->shouldHandleThumbnailCallback(levelID, currentReqId)) return;
+                    auto fields = cell->m_fields.self();
+                    if (!fields) return;
+
+                    if (!videoSprite) {
+                        log::warn("[LevelCell] tryLoadThumbnail: server video creation failed for levelID={}", levelID);
+                        // Fall through to GIF/static via retry
+                        fields->m_thumbnailRequested = false;
+                        cell->tryLoadThumbnail();
+                        return;
+                    }
+
+                    videoSprite->setVolume(0.0f);
+                    videoSprite->setLoop(true);
+                    videoSprite->setVisible(false);
+                    videoSprite->setID("video-driver-pending"_spr);
+                    cell->addChild(videoSprite, -1000);
+                    videoSprite->setOnFirstVisibleFrame([safeRef, levelID, currentReqId, enableSpinners](VideoThumbnailSprite* readySprite) {
+                        auto cellRefInner = safeRef.lock();
+                        auto* currentCell = static_cast<PaimonLevelCell*>(cellRefInner.data());
+                        if (!currentCell || !currentCell->shouldHandleThumbnailCallback(levelID, currentReqId)) {
+                            if (readySprite->getParent()) {
+                                readySprite->removeFromParent();
+                            }
+                            return;
+                        }
+
+                        auto currentFields = currentCell->m_fields.self();
+                        if (!currentFields) {
+                            if (readySprite->getParent()) {
+                                readySprite->removeFromParent();
+                            }
+                            return;
+                        }
+
+                        if (auto* tex = readySprite->getTexture()) {
+                            currentFields->m_hasVideo = true;
+                            currentFields->m_thumbnailApplied = true;
+                            if (enableSpinners) {
+                                currentCell->hideLoadingSpinner();
+                            }
+                            currentCell->addOrUpdateThumb(tex, readySprite);
+
+                            if (currentFields->m_galleryThumbnails.size() > 1) {
+                                currentFields->m_galleryIndex = 0;
+                                bool autoCycle = currentFields->m_cachedGalleryAutocycle;
+                                if (autoCycle) {
+                                    currentCell->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
+                                    currentCell->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 4.5f);
+                                }
+                            }
+
+                            log::debug("[LevelCell] tryLoadThumbnail: server video first frame ready for levelID={}", levelID);
+                        }
+                    });
+                    videoSprite->play();
+                });
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Pide (una sola vez) la lista de thumbnails de galeria del nivel y, al
+    // llegar, la normaliza y arranca el ciclo de auto-cambio si corresponde.
+    void requestGalleryData(int32_t levelID) {
+        auto fields = m_fields.self();
+        if (fields->m_galleryRequested) return;
+        fields->m_galleryRequested = true;
+        int galleryToken = ++fields->m_galleryToken;
+        log::debug("[LevelCell] tryLoadThumbnail: requesting gallery for levelID={} token={}", levelID, galleryToken);
+        WeakRef<PaimonLevelCell> safeGalleryRef = this;
+        ThumbnailAPI::get().getThumbnails(levelID, [safeGalleryRef, levelID, galleryToken](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
+            auto cellRef = safeGalleryRef.lock();
+            auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
+            if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
+            auto fields = cell->m_fields.self();
+            if (!fields || fields->m_galleryToken != galleryToken) return;
+            fields->m_galleryPendingUrls.clear();
+            fields->m_galleryThumbnails = normalizeLevelCellGalleryThumbnails(
+                levelID,
+                success ? thumbs : std::vector<ThumbnailAPI::ThumbnailInfo>{}
+            );
+            fields->m_galleryIndex = 0;
+            fields->m_galleryTimer = 0.f;
+            if (!fields->m_galleryThumbnails.empty()) {
+                cell->requestGalleryWindow(0);
+            }
+            bool autoCycleEnabled = fields->m_cachedGalleryAutocycle;
+            cell->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
+            if (autoCycleEnabled && fields->m_galleryThumbnails.size() > 1) {
+                // Empieza en 4.5s; el ciclo usa una ventana de reintento acotada si la siguiente imagen no esta lista.
+                cell->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 4.5f);
+            }
+        });
+    }
+
+    // Camino por defecto: pide la carga del thumbnail al servidor (/t/{id} retorna
+    // GIF/WebP/PNG; el decoder detecta el formato por magic bytes).
+    void requestStaticThumbnailLoad(int32_t levelID, int currentRequestId, bool enableSpinners, bool isOnScreen) {
+        auto fields = m_fields.self();
+        std::string fileName = fmt::format("{}.png", levelID);
+        if (enableSpinners) showLoadingSpinner();
+        log::debug("[LevelCell] tryLoadThumbnail: requesting load levelID={} requestId={}", levelID, currentRequestId);
+        WeakRef<PaimonLevelCell> safeRef = this;
+        int capturedVersion = fields->m_loadedInvalidationVersion;
+        ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId, capturedVersion](CCTexture2D* tex, bool success) {
+            auto cellRef = safeRef.lock();
+            auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
+            if (!cell || !cell->getParent() || !cell->shouldHandleThumbnailCallback(levelID, currentRequestId)) return;
+            {
+                auto f = cell->m_fields.self();
+                if (f && f->m_loadedInvalidationVersion != capturedVersion) return;
+            }
+            if (!success || !tex) {
+                // warn solo la primera vez; los reintentos post-invalidacion van a debug
+                {
+                    auto f = cell->m_fields.self();
+                    if (f && f->m_thumbnailFailed) {
+                        log::debug("[LevelCell] tryLoadThumbnail: load FAILED levelID={} (cached fail)", levelID);
+                    } else {
+                        log::warn("[LevelCell] tryLoadThumbnail: load FAILED levelID={}", levelID);
+                    }
+                }
+                cell->applyStaticThumbnailTexture(levelID, currentRequestId, nullptr, enableSpinners);
+                return;
+            }
+            log::debug("[LevelCell] tryLoadThumbnail: texture loaded OK levelID={}", levelID);
+            auto fields = cell->m_fields.self();
+            if (fields) fields->m_hasGif = ThumbnailLoader::get().hasGIFData(levelID);
+            cell->applyStaticThumbnailTexture(levelID, currentRequestId, tex, enableSpinners);
+        }, isOnScreen ? ThumbnailLoader::PriorityVisibleCell : ThumbnailLoader::PriorityPredictivePrefetch, false);
+    }
+
     void tryLoadThumbnail() {
             configureThumbnailLoader();
             ensureMaintenanceTickScheduled();
@@ -3327,60 +3384,11 @@ class $modify(PaimonLevelCell, LevelCell) {
                 fields->m_thumbnailRequested = false;
             }
 
-            if (fields->m_invalidationListenerId == 0) {
-                WeakRef<PaimonLevelCell> safeRef = this;
-                fields->m_invalidationListenerId = ThumbnailLoader::get().addInvalidationListener([safeRef](int invalidLevelID) {
-                    auto selfRef = safeRef.lock();
-                    auto* self = static_cast<PaimonLevelCell*>(selfRef.data());
-                    if (!self || !self->getParent() || !self->m_level) return;
-                    if (self->m_level->m_levelID.value() != invalidLevelID) return;
-                    auto fields = self->m_fields.self();
-                    if (!fields) return;
-                    fields->m_thumbnailRequested = false;
-                    fields->m_thumbnailApplied = false;
-                    fields->m_thumbnailFailed = false;
-                    fields->m_galleryRequested = false;
-                    fields->m_galleryThumbnails.clear();
-                    fields->m_galleryPendingUrls.clear();
-                    fields->m_galleryIndex = -1;
-                    fields->m_galleryTimer = 0.f;
-                    fields->m_galleryToken++;
-                    fields->m_loadedInvalidationVersion = ThumbnailLoader::get().getInvalidationVersion(invalidLevelID);
-                    // Invalidacion remota = thumbnail cambio. Permitir reintento.
-                    self->tryLoadThumbnail();
-                });
-            }
+            ensureInvalidationListener();
             
             // comprobar si el level cambio
             if (fields->m_lastRequestedLevelID != levelID) {
-                log::debug("[LevelCell] tryLoadThumbnail: level changed {} -> {}, resetting state", fields->m_lastRequestedLevelID, levelID);
-                fields->m_thumbnailRequested = false;
-                fields->m_thumbnailApplied = false;
-                fields->m_thumbnailFailed = false;
-                fields->m_lastRequestedLevelID = levelID;
-                fields->m_hasGif = false;
-                fields->m_staticTexture = nullptr;
-                fields->m_staticThumbLoad.reset();
-                fields->m_loadedInvalidationVersion = 0;
-                fields->m_isDailyCellCached = false;
-                fields->m_galleryThumbnails.clear();
-                fields->m_galleryPendingUrls.clear();
-                fields->m_galleryIndex = 0;
-                fields->m_galleryTimer = 0.f;
-                fields->m_galleryRequested = false;
-                fields->m_galleryToken++;
-                // Reset video player on level change
-                if (fields->m_videoPlayer) {
-                    fields->m_videoPlayer->stop();
-                    fields->m_videoPlayer.reset();
-                    fields->m_hasVideo = false;
-                }
-                if (fields->m_videoDriver) {
-                    if (fields->m_videoDriver->getParent()) {
-                        fields->m_videoDriver->removeFromParent();
-                    }
-                    fields->m_videoDriver = nullptr;
-                }
+                resetThumbnailStateForLevelChange(levelID);
             }
 
             // comprobar si la miniatura fue invalidada (usuario subiÃƒÆ’Ã‚Â³ una nueva)
@@ -3396,53 +3404,9 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
             fields->m_loadedInvalidationVersion = currentVersion;
 
-            // If thumbnail is already applied and visible, skip re-requesting
-            if (fields->m_thumbnailApplied && fields->m_thumbSprite &&
-                fields->m_thumbSprite->getParent()) {
-                log::debug("[LevelCell] tryLoadThumbnail: thumbnail still applied for levelID={}, skipping re-request", levelID);
-                fields->m_thumbnailRequested = true;
-                refreshRuntimeScheduling();
-                // Re-start gallery cycling if data is still available
-                if (fields->m_galleryRequested && fields->m_galleryThumbnails.size() > 1) {
-                    bool autoCycle = fields->m_cachedGalleryAutocycle;
-                    this->requestGalleryWindow(fields->m_galleryIndex);
-                    if (autoCycle) {
-                        this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
-                        this->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 4.5f);
-                    }
-                }
-                return;
-            }
+            if (tryReuseAppliedThumbnail(levelID)) return;
 
-            if (!fields->m_galleryRequested) {
-                fields->m_galleryRequested = true;
-                int galleryToken = ++fields->m_galleryToken;
-                log::debug("[LevelCell] tryLoadThumbnail: requesting gallery for levelID={} token={}", levelID, galleryToken);
-                WeakRef<PaimonLevelCell> safeGalleryRef = this;
-                ThumbnailAPI::get().getThumbnails(levelID, [safeGalleryRef, levelID, galleryToken](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
-                    auto cellRef = safeGalleryRef.lock();
-                    auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
-                    if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
-                    auto fields = cell->m_fields.self();
-                    if (!fields || fields->m_galleryToken != galleryToken) return;
-                    fields->m_galleryPendingUrls.clear();
-                    fields->m_galleryThumbnails = normalizeLevelCellGalleryThumbnails(
-                        levelID,
-                        success ? thumbs : std::vector<ThumbnailAPI::ThumbnailInfo>{}
-                    );
-                    fields->m_galleryIndex = 0;
-                    fields->m_galleryTimer = 0.f;
-                    if (!fields->m_galleryThumbnails.empty()) {
-                        cell->requestGalleryWindow(0);
-                    }
-                    bool autoCycleEnabled = fields->m_cachedGalleryAutocycle;
-                    cell->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
-                    if (autoCycleEnabled && fields->m_galleryThumbnails.size() > 1) {
-                        // Start at 4.5s â€” the cycle will use a bounded retry window if the next image is not ready yet.
-                        cell->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 4.5f);
-                    }
-                });
-            }
+            requestGalleryData(levelID);
 
             if (fields->m_thumbnailRequested) {
                 log::debug("[LevelCell] tryLoadThumbnail: already requested for levelID={}", levelID);
@@ -3458,155 +3422,11 @@ class $modify(PaimonLevelCell, LevelCell) {
 
             bool enableSpinners = true;
 
-            // 0) Check for local .mp4 video thumbnail first
-            {
-                auto localPath = LocalThumbs::get().findAnyThumbnail(levelID);
-                if (localPath) {
-                    auto lowerPath = geode::utils::string::toLower(*localPath);
-                    if (lowerPath.ends_with(".mp4")) {
-                        log::debug("[LevelCell] tryLoadThumbnail: found MP4 for levelID={}: {}", levelID, *localPath);
-                        auto player = paimon::video::VideoPlayer::create(*localPath);
-                        if (player) {
-                            fields->m_hasVideo = true;
-                            fields->m_videoPlayer = std::move(player);
-                            fields->m_videoPlayer->setLoop(true);
-                            fields->m_videoPlayer->setVolume(0.0f); // muted until hover/focus
-                            fields->m_videoPlayer->play();
-                            refreshRuntimeScheduling();
-
-                            // Wait for a real decoded frame instead of swapping in the
-                            // black prewarm texture immediately.
-                            if (fields->m_videoPlayer->hasVisibleFrame()) {
-                                auto* videoTex = fields->m_videoPlayer->getCurrentFrameTexture();
-                                fields->m_thumbnailApplied = true;
-                                if (enableSpinners) hideLoadingSpinner();
-                                addOrUpdateThumb(videoTex);
-                                log::debug("[LevelCell] tryLoadThumbnail: video player started for levelID={}", levelID);
-                                return;
-                            }
-                            log::debug("[LevelCell] tryLoadThumbnail: waiting for first MP4 frame for levelID={}", levelID);
-                            return;
-                        }
-                        log::warn("[LevelCell] tryLoadThumbnail: MP4 player creation failed for levelID={}", levelID);
-                    }
-                }
-            }
+            if (tryStartLocalVideoThumbnail(levelID, enableSpinners)) return;
             
-            // 0.5) Check if gallery data indicates the main thumbnail is a video from server
-            if (!fields->m_galleryThumbnails.empty()) {
-                auto const& mainThumb = fields->m_galleryThumbnails[0];
-                if (mainThumb.isVideo() && !mainThumb.url.empty()) {
-                    log::debug("[LevelCell] tryLoadThumbnail: main thumb is server video for levelID={}", levelID);
-                    if (enableSpinners) showLoadingSpinner();
-                    std::string cacheKey = fmt::format("thumb_video_{}", levelID);
-                    WeakRef<PaimonLevelCell> safeRef = this;
-                    int currentReqId = currentRequestId;
-                    VideoThumbnailSprite::createAsync(mainThumb.url, cacheKey, [safeRef, levelID, currentReqId, enableSpinners](VideoThumbnailSprite* videoSprite) {
-                        auto cellRef = safeRef.lock();
-                        auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
-                        if (!cell || !cell->getParent() || !cell->shouldHandleThumbnailCallback(levelID, currentReqId)) return;
-                        auto fields = cell->m_fields.self();
-                        if (!fields) return;
+            if (tryStartServerVideoThumbnail(levelID, currentRequestId, enableSpinners)) return;
 
-                        if (!videoSprite) {
-                            log::warn("[LevelCell] tryLoadThumbnail: server video creation failed for levelID={}", levelID);
-                            // Fall through to GIF/static via retry
-                            fields->m_thumbnailRequested = false;
-                            cell->tryLoadThumbnail();
-                            return;
-                        }
-
-                        videoSprite->setVolume(0.0f);
-                        videoSprite->setLoop(true);
-                        videoSprite->setVisible(false);
-                    videoSprite->setID("video-driver-pending"_spr);
-                        cell->addChild(videoSprite, -1000);
-                        videoSprite->setOnFirstVisibleFrame([safeRef, levelID, currentReqId, enableSpinners](VideoThumbnailSprite* readySprite) {
-                            auto cellRefInner = safeRef.lock();
-                            auto* currentCell = static_cast<PaimonLevelCell*>(cellRefInner.data());
-                            if (!currentCell || !currentCell->shouldHandleThumbnailCallback(levelID, currentReqId)) {
-                                if (readySprite->getParent()) {
-                                    readySprite->removeFromParent();
-                                }
-                                return;
-                            }
-
-                            auto currentFields = currentCell->m_fields.self();
-                            if (!currentFields) {
-                                if (readySprite->getParent()) {
-                                    readySprite->removeFromParent();
-                                }
-                                return;
-                            }
-
-                            if (auto* tex = readySprite->getTexture()) {
-                                currentFields->m_hasVideo = true;
-                                currentFields->m_thumbnailApplied = true;
-                                if (enableSpinners) {
-                                    currentCell->hideLoadingSpinner();
-                                }
-                                currentCell->addOrUpdateThumb(tex, readySprite);
-
-                                if (currentFields->m_galleryThumbnails.size() > 1) {
-                                    currentFields->m_galleryIndex = 0;
-                                    bool autoCycle = currentFields->m_cachedGalleryAutocycle;
-                                    if (autoCycle) {
-                                        currentCell->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
-                                        currentCell->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 4.5f);
-                                    }
-                                }
-
-                                log::debug("[LevelCell] tryLoadThumbnail: server video first frame ready for levelID={}", levelID);
-                            }
-                        });
-                        videoSprite->play();
-                    });
-                    return;
-                }
-            }
-
-            std::string fileName = fmt::format("{}.png", levelID);
-            
-            if (enableSpinners) showLoadingSpinner();
-            
-            log::debug("[LevelCell] tryLoadThumbnail: requesting load levelID={} requestId={}", levelID, currentRequestId);
-            WeakRef<PaimonLevelCell> safeRef = this;
-            int capturedVersion = fields->m_loadedInvalidationVersion;
-
-            // Request unificado: el servidor retorna el formato correcto (GIF/WebP/PNG)
-            // automaticamente via /t/{levelId}. El decodificador detecta el formato
-            // por magic bytes, asi que no necesitamos bifurcar GIF vs estatico aqui.
-            // Esto elimina el doble request serial GIFâ†’Static que duplicaba latencia.
-            ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId, capturedVersion](CCTexture2D* tex, bool success) {
-                auto cellRef = safeRef.lock();
-                auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
-                if (!cell || !cell->getParent() || !cell->shouldHandleThumbnailCallback(levelID, currentRequestId)) return;
-                {
-                    auto f = cell->m_fields.self();
-                    if (f && f->m_loadedInvalidationVersion != capturedVersion) return;
-                }
-                if (!success || !tex) {
-                    // Log a warn solo la PRIMERA vez que falla esta carga.
-                    // Si el flag m_thumbnailFailed ya esta puesto, este es un
-                    // retry post-invalidacion o re-pedido del cache: bajamos
-                    // a debug para no spamear los logs cuando el thumbnail
-                    // realmente no existe en el servidor.
-                    {
-                        auto f = cell->m_fields.self();
-                        if (f && f->m_thumbnailFailed) {
-                            log::debug("[LevelCell] tryLoadThumbnail: load FAILED levelID={} (cached fail)", levelID);
-                        } else {
-                            log::warn("[LevelCell] tryLoadThumbnail: load FAILED levelID={}", levelID);
-                        }
-                    }
-                    cell->applyStaticThumbnailTexture(levelID, currentRequestId, nullptr, enableSpinners);
-                    return;
-                }
-                log::debug("[LevelCell] tryLoadThumbnail: texture loaded OK levelID={}", levelID);
-                auto fields = cell->m_fields.self();
-                if (fields) fields->m_hasGif = ThumbnailLoader::get().hasGIFData(levelID);
-                cell->applyStaticThumbnailTexture(levelID, currentRequestId, tex, enableSpinners);
-            }, isOnScreen ? ThumbnailLoader::PriorityVisibleCell : ThumbnailLoader::PriorityPredictivePrefetch, false);
+            requestStaticThumbnailLoad(levelID, currentRequestId, enableSpinners, isOnScreen);
     }
 
     $override void update(float dt) {

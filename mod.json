@@ -40,6 +40,12 @@
       "description": "Download and apply updates automatically when the game closes.",
       "default": false
     },
+    "mod-previews-enable": {
+      "type": "bool",
+      "name": "Mod Previews",
+      "description": "Show preview images for Geode mods whose repository has a 'previews' folder (preview-1.png ... preview-10.png). Original idea by Alphalaneous.",
+      "default": true
+    },
     "level-search-enter": {
       "type": "keybind",
       "name": "Quick Search Key",
@@ -52,6 +58,17 @@
       "type": "bool",
       "name": "Realtime Search Preview",
       "description": "Shows search results as you type.",
+      "default": false
+    },
+    "search-history-title": {
+      "name": "Search History",
+      "description": "Save and re-run your recent level searches. Original mod by hiimjasmine00.",
+      "type": "title"
+    },
+    "incognito-mode": {
+      "type": "bool",
+      "name": "Incognito Mode",
+      "description": "Hide the search history button and stop saving any searches.",
       "default": false
     },
     "discord-rpc-title": {
@@ -434,6 +451,148 @@
       "type": "bool",
       "name": "Always include Medium Quality Port",
       "description": "Generate -hd files alongside -uhd by default.",
+      "default": false
+    },
+    "comment-mentions-title": {
+      "name": "Comment Mentions",
+      "description": "Get notified when someone mentions you in level comments.",
+      "type": "title"
+    },
+    "mentions-enabled": {
+      "type": "bool",
+      "name": "Enable Comment Mentions",
+      "description": "Periodically check level comments and notify you when your name (or an alias) is mentioned. This makes requests to the Geometry Dash servers while you play.",
+      "default": false
+    },
+    "mentions-aliases": {
+      "type": "string",
+      "name": "Aliases",
+      "description": "Comma separated names to watch for in comments. Defaults to your username on first launch.",
+      "default": "",
+      "filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789, "
+    },
+    "mentions-enable-everyone": {
+      "type": "bool",
+      "name": "Notify on @everyone",
+      "description": "Also get notified when a comment uses the @everyone alias.",
+      "default": true
+    },
+    "mentions-require-at": {
+      "type": "bool",
+      "name": "Require @ Sign",
+      "description": "Only notify when the mention starts with a literal '@'.",
+      "default": false
+    },
+    "mentions-daily": {
+      "type": "bool",
+      "name": "Track Daily Level",
+      "default": true
+    },
+    "mentions-weekly": {
+      "type": "bool",
+      "name": "Track Weekly Demon",
+      "default": true
+    },
+    "mentions-event": {
+      "type": "bool",
+      "name": "Track Event Level",
+      "default": false
+    },
+    "mentions-custom-ids": {
+      "type": "string",
+      "name": "Custom Level IDs",
+      "description": "Comma separated level IDs whose comments will also be checked.",
+      "default": "",
+      "filter": "0123456789, "
+    },
+    "mentions-refresh-rate": {
+      "type": "int",
+      "name": "Refresh Rate (s)",
+      "description": "How often (in seconds) the servers are checked. Low values may get you rate limited.",
+      "default": 30,
+      "min": 10,
+      "max": 300,
+      "control": { "slider": true }
+    },
+    "mentions-max-notifications": {
+      "type": "int",
+      "name": "Max Notifications",
+      "description": "If more than this many new mentions arrive at once, they are compressed into a single notification.",
+      "default": 3,
+      "min": 1,
+      "max": 20,
+      "control": { "slider": true }
+    },
+    "mentions-case-sensitive": {
+      "type": "bool",
+      "name": "Case Sensitive",
+      "default": false
+    },
+    "mentions-ignore-self": {
+      "type": "bool",
+      "name": "Ignore Self Mentions",
+      "default": true
+    },
+    "mentions-show-while-playing": {
+      "type": "bool",
+      "name": "Show While Playing",
+      "default": false
+    },
+    "mentions-user-blacklist": {
+      "type": "string",
+      "name": "User Blacklist",
+      "description": "Comma separated usernames you don't want notifications from.",
+      "default": "",
+      "filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789, "
+    },
+    "mentions-word-blacklist": {
+      "type": "string",
+      "name": "Hidden Words",
+      "description": "Comma separated words; comments containing any of them are ignored. Leave empty to disable filtering.",
+      "default": ""
+    },
+    "msgnotif-title": {
+      "name": "Message Notifications",
+      "description": "Get notified when you receive a new message or friend request. Polls the Geometry Dash servers while logged in.",
+      "type": "title"
+    },
+    "msgnotif-enabled": {
+      "type": "bool",
+      "name": "Enable Message Notifications",
+      "description": "Periodically check for new messages and friend requests and show a notification. Original mod by BlueToadMaker.",
+      "default": false
+    },
+    "msgnotif-check-interval": {
+      "type": "int",
+      "name": "Check Interval (s)",
+      "description": "How often (in seconds) to check for new messages and friend requests. Low values may get you temporarily IP banned.",
+      "default": 300,
+      "min": 60,
+      "max": 3600,
+      "control": { "slider": true }
+    },
+    "msgnotif-stop-messages": {
+      "type": "bool",
+      "name": "Stop Message Notifications",
+      "description": "Disable notifications for new messages.",
+      "default": false
+    },
+    "msgnotif-stop-friends": {
+      "type": "bool",
+      "name": "Stop Friend Request Notifications",
+      "description": "Disable notifications for new friend requests.",
+      "default": false
+    },
+    "msgnotif-disable-while-editing": {
+      "type": "bool",
+      "name": "Disable While Editing",
+      "description": "Don't check while in the level editor.",
+      "default": false
+    },
+    "msgnotif-disable-while-playing": {
+      "type": "bool",
+      "name": "Disable While Playing",
+      "description": "Don't check while playing levels.",
       "default": false
     },
     "debug-title": {

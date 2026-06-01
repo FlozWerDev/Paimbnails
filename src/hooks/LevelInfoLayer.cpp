@@ -37,8 +37,8 @@
 #include "../utils/BetaUploadWarning.hpp"
 #include "../features/foryou/services/ForYouTracker.hpp"
 
-#include "../layers/ButtonEditOverlay.hpp"
-#include "../managers/ButtonLayoutManager.hpp"
+#include "../features/main-menu-layout/ui/MainMenuLayoutEditor.hpp"
+#include "../features/main-menu-layout/services/MainMenuLayoutManager.hpp"
 #include "../features/moderation/ui/SetDailyWeeklyPopup.hpp"
 #include "../framework/state/SessionState.hpp"
 
@@ -55,24 +55,11 @@ using namespace Shaders;
 
 #include "../features/thumbnails/ui/LocalThumbnailViewPopup.hpp"
 #include "../features/thumbnails/ui/ThumbnailSettingsPopup.hpp"
+#include "../features/backgrounds/services/LevelInfoBgHelpers.hpp"
+using namespace paimon::levelinfo;
 
-// Z-order constants for LevelInfoLayer background layering
-static constexpr int kBackgroundZOrder = -4;
-static constexpr int kExtraDarknessZOrder = -3; // oscuridad extra separada del bg
-static constexpr int kEffectsZOrder   = -2;
-static constexpr int kOverlayZOrder   = -1;
-
-static std::string makeLevelInfoBlurCacheKey(int levelID, int thumbnailIndex, std::string const& bgStyle, int intensity, cocos2d::CCSize const& targetSize) {
-    return fmt::format(
-        "levelinfo:{}:{}:{}:{}:{}x{}",
-        levelID,
-        thumbnailIndex,
-        bgStyle,
-        intensity,
-        static_cast<int>(std::round(targetSize.width)),
-        static_cast<int>(std::round(targetSize.height))
-    );
-}
+// (Z-orders + makeLevelInfoBlurCacheKey movidos a
+//  features/backgrounds/services/LevelInfoBgHelpers.hpp)
 
 class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     CCMenu* findLeftSideMenu() {
@@ -113,27 +100,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         return nullptr;
     }
 
-    std::vector<CCMenu*> collectEditableMenus() {
-        std::vector<CCMenu*> menus;
-
-        auto pushUnique = [&menus](CCMenu* menu) {
-            if (!menu) return;
-            if (std::find(menus.begin(), menus.end(), menu) != menus.end()) return;
-            menus.push_back(menu);
-        };
-
-        pushUnique(findLeftSideMenu());
-        pushUnique(typeinfo_cast<CCMenu*>(this->getChildByID("gallery-menu"_spr)));
-
-        return menus;
-    }
-
     void applyLayoutsToEditableMenus() {
-        for (auto* menu : collectEditableMenus()) {
-            ButtonLayoutManager::get().applyLayoutToMenu("LevelInfoLayer", menu);
-        }
-        ButtonLayoutManager::get().captureLabelDefaultsIfAbsent("LevelInfoLayer", this);
-        ButtonLayoutManager::get().applyLayoutsToLabels("LevelInfoLayer", this);
+        paimon::menu_layout::MainMenuLayoutManager::get().captureDefaultsAndApply(this);
     }
 
     void createUtilityButtons(CCMenu* leftMenu) {
@@ -216,6 +184,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         bool m_fromVerificationQueue = false;
         bool m_fromLeaderboards = false;
         LeaderboardType m_leaderboardType = LeaderboardType::Default;
+        // Daily/weekly ID capturado antes del re-download forzado, para
+        // restaurarlo si el download (endpoint de nivel normal) lo borra.
+        int m_forcedDailyID = 0;
         LeaderboardStat m_leaderboardStat = LeaderboardStat::Stars;
         Ref<CCMenuItemSpriteExtra> m_acceptThumbBtn = nullptr;
         Ref<CCMenuItemSpriteExtra> m_editModeBtn = nullptr;
@@ -1593,6 +1564,20 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         SetDailyWeeklyPopup::create(m_level->m_levelID.value())->show();
     }
 
+    // El download forzado para datos parciales de daily/weekly usa el
+    // endpoint de nivel normal, que devuelve el nivel SIN su daily/weekly ID.
+    // GD reemplaza m_level por ese objeto (m_dailyID=0), asi que al completar
+    // el nivel se registra como nivel normal en vez de daily. Restauramos el
+    // ID capturado en init para que la finalizacion cuente para el daily.
+    $override
+    void levelDownloadFinished(GJGameLevel* level) {
+        LevelInfoLayer::levelDownloadFinished(level);
+        if (m_fields->m_forcedDailyID > 0 && m_level && m_level->m_dailyID.value() <= 0) {
+            log::info("[LevelInfoLayer] restaurando dailyID={} tras re-download", m_fields->m_forcedDailyID);
+            m_level->m_dailyID = m_fields->m_forcedDailyID;
+        }
+    }
+
     $override
     bool init(GJGameLevel* level, bool challenge) {
         log::info("[LevelInfoLayer] init: levelID={} challenge={}", level ? level->m_levelID.value() : 0, challenge);
@@ -1633,6 +1618,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                                || level->m_creatorName.empty();
             if (isDailyOrWeekly && hasPartialData) {
                 log::info("[LevelInfoLayer] daily/weekly partial data detected (levelID={}), forcing re-download", level->m_levelID.value());
+                // El re-download usa el endpoint de nivel NORMAL, que no
+                // devuelve el daily/weekly ID. Sin esto, levelDownloadFinished
+                // reemplaza m_level por la version normal (m_dailyID=0) y al
+                // completar el daily se marca el nivel normal en vez del daily.
+                // Guardamos el ID para restaurarlo en levelDownloadFinished.
+                m_fields->m_forcedDailyID = level->m_dailyID.value();
                 // Ref<> mantiene vivo el layer durante el callback del server.
                 // Geode queueInMainThread garantiza que corra fuera del stack
                 // de init (evita reentrancy con otros hooks de LevelInfoLayer).
@@ -1768,9 +1759,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 // nunca se aplicara.
             }
 
-            // load layouts botones
-            ButtonLayoutManager::get().load();
-            
             // menu izq
             auto leftMenu = findLeftSideMenu();
             if (!leftMenu) {
@@ -1872,12 +1860,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             leftMenu->addChild(button);
             leftMenu->updateLayout();
 
-            ButtonLayout defaultLayout;
-            defaultLayout.position = button->getPosition();
-            defaultLayout.scale = button->getScale();
-            defaultLayout.opacity = 1.0f;
-            ButtonLayoutManager::get().setDefaultLayoutIfAbsent("LevelInfoLayer", "thumbnail-view-button", defaultLayout);
-
             // admin? -> btn daily/weekly
             // Verificacion local primero: si el mod code esta guardado y el usuario
             // esta marcado como admin, mostrar el boton inmediatamente sin esperar al server.
@@ -1954,19 +1936,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     }
 
     void onToggleEditMode(CCObject*) {
-        if (!m_fields->m_extraMenu) return;
-
-        auto extraMenus = collectEditableMenus();
-        extraMenus.erase(
-            std::remove(extraMenus.begin(), extraMenus.end(), static_cast<CCMenu*>(m_fields->m_extraMenu)),
-            extraMenus.end()
-        );
-
-        // overlay edicion
-        auto overlay = ButtonEditOverlay::create("LevelInfoLayer", m_fields->m_extraMenu, extraMenus, this);
-        if (auto scene = CCDirector::get()->getRunningScene()) {
-            scene->addChild(overlay, 1000);
-        }
+        paimon::menu_layout::MainMenuLayoutManager::get().captureDefaultsAndApply(this);
+        paimon::menu_layout::MainMenuLayoutEditor::open(this);
     }
 
     void onUploadLocalThumbnail(CCObject*) {

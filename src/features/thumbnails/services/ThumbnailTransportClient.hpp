@@ -72,6 +72,7 @@ public:
     // top lists
     void getTopCreators(ActionCallback callback);
     void getTopThumbnails(ActionCallback callback);
+    void getUserUploads(std::string const& username, ActionCallback callback);
     void invalidateGalleryMetadata(int levelId);
 
     // utilidad compartida: datos binarios -> CCTexture2D (autorelease)

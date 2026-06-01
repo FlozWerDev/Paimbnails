@@ -1938,6 +1938,13 @@ void HttpClient::getTopThumbnails(GenericCallback callback) {
     performRequest(url, "GET", "", headers, callback, false);
 }
 
+void HttpClient::getUserUploads(std::string const& username, GenericCallback callback) {
+    PaimonDebug::log("[HttpClient] Getting uploads for user {}", username);
+    std::string url = m_serverURL + "/api/user/" + username + "/uploads";
+    std::vector<std::string> headers = { "X-API-Key: " + m_apiKey, "Accept: application/json" };
+    performRequest(url, "GET", "", headers, callback, false);
+}
+
 void HttpClient::submitReport(int levelId, std::string const& username, std::string const& note, GenericCallback callback) {
     PaimonDebug::log("[HttpClient] Submitting report for level {} by user {}", levelId, username);
     std::string url = m_serverURL + "/api/report/submit";

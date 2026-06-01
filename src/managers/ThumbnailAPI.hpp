@@ -245,6 +245,13 @@ public:
     void getTopThumbnails(ActionCallback callback);
     
     /**
+     * obtener lista de niveles donde el usuario subio miniaturas
+     * @param username Username to get uploads for
+     * @param callback Callback with raw json response containing level IDs
+     */
+    void getUserUploads(std::string const& username, ActionCallback callback);
+    
+    /**
      * borrar miniatura servidor (solo moderador)
      * @param levelId Level ID
      * @param username Moderator username

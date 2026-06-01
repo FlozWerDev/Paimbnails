@@ -432,6 +432,56 @@ namespace {
         }
     }
 
+    // Recoleccion por IDs estables (LevelInfoLayer): SOLO nodos con getID()
+    // no vacio, para que un layout guardado mapee al mismo nodo logico aunque
+    // el nivel cambie. Nodos sin ID (volatiles por nivel) no son editables.
+    void collectStableRecursive(CCNode* node, CCNode* root, std::vector<EditableMenuButton>& out, std::unordered_set<std::string>& keys) {
+        if (!node) return;
+
+        if (auto* menu = typeinfo_cast<CCMenu*>(node)) {
+            if (auto* children = menu->getChildren()) {
+                for (auto* child : CCArrayExt<CCNode*>(children)) {
+                    auto* item = typeinfo_cast<CCMenuItem*>(child);
+                    if (!item) continue;
+                    auto id = std::string(item->getID());
+                    if (id.empty()) continue;
+                    auto key = fmt::format("{}/btn/{}", MainMenuLayoutManager::rootClassName(root), sanitizeSegment(id));
+                    if (!keys.insert(key).second) continue;
+                    out.push_back({ menu, item, {}, key, id });
+                }
+            }
+        }
+
+        if (node != root && !shouldSkipDecorNode(node) && !typeinfo_cast<CCMenuItem*>(node) && !hasMenuItemAncestor(node, root)) {
+            auto id = std::string(node->getID());
+            if (!id.empty()) {
+                if (auto* label = typeinfo_cast<CCLabelBMFont*>(node)) {
+                    if (label->isVisible()) {
+                        auto key = fmt::format("{}/lbl/{}", MainMenuLayoutManager::rootClassName(root), sanitizeSegment(id));
+                        if (keys.insert(key).second) out.push_back({ nullptr, node, {}, key, id });
+                    }
+                } else if (auto* sprite = typeinfo_cast<CCSprite*>(node)) {
+                    auto sz = sprite->getContentSize();
+                    float w = std::abs(sz.width * sprite->getScaleX());
+                    float h = std::abs(sz.height * sprite->getScaleY());
+                    if (sprite->isVisible() && w >= 10.f && h >= 10.f && w <= 900.f && h <= 900.f) {
+                        auto key = fmt::format("{}/spr/{}", MainMenuLayoutManager::rootClassName(root), sanitizeSegment(id));
+                        if (keys.insert(key).second) out.push_back({ nullptr, node, {}, key, id });
+                    }
+                }
+            }
+        }
+
+        // No descender dentro de CCLabelBMFont (sus hijos son glifos batched).
+        if (typeinfo_cast<CCLabelBMFont*>(node)) return;
+
+        if (auto* children = node->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                collectStableRecursive(child, root, out, keys);
+            }
+        }
+    }
+
     MenuButtonLayout parseLayout(matjson::Value const& value) {
         MenuButtonLayout layout;
         layout.position.x = static_cast<float>(value["x"].asDouble().unwrapOr(0.0));
@@ -659,6 +709,14 @@ std::vector<EditableMenuButton> MainMenuLayoutManager::collectButtons(CCNode* ro
     std::vector<EditableMenuButton> buttons;
     if (!root) return buttons;
 
+    // LevelInfoLayer cambia mucho por nivel: usamos SOLO nodos con ID estable
+    // para que los layouts guardados sean precisos entre niveles/sesiones.
+    if (rootClassName(root) == "LevelInfoLayer") {
+        std::unordered_set<std::string> keys;
+        collectStableRecursive(root, root, buttons, keys);
+        return buttons;
+    }
+
     collectButtonsRecursive(root, root, buttons);
     addStandaloneNode(root, buttons, "main-title", "Geometry Dash Title");
     addStandaloneNode(root, buttons, "player-username", "Profile Username");
@@ -696,6 +754,16 @@ void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
 
     auto buttons = this->collectButtons(root);
     bool changed = false;
+
+    // Captura la posicion REAL (pre-custom) de cada boton una vez por sesion,
+    // ANTES de aplicar cualquier layout custom. El "Reset" usa esto para volver
+    // al estado vanilla actual aunque los defaults guardados esten desfasados.
+    for (auto const& button : buttons) {
+        if (!button.node) continue;
+        if (m_sessionDefaults.find(button.key) == m_sessionDefaults.end()) {
+            m_sessionDefaults[button.key] = this->readLayout(button.node);
+        }
+    }
 
     // El editor de layout solo opera sobre MenuLayer y PauseLayer; ambas
     // tienen layouts estables entre sesiones, asi que no necesitamos el
@@ -770,7 +838,11 @@ void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
         MainMenuLayoutManager::applyLayout(button, effective);
     }
 
-    this->syncShapes(root, m_shapes);
+    // En LevelInfoLayer NO sincronizamos figuras: son una decoracion global
+    // de MenuLayer/PauseLayer y filtrarlas a la pantalla de nivel seria un bug.
+    if (rootClassName(root) != "LevelInfoLayer") {
+        this->syncShapes(root, m_shapes);
+    }
 }
 
 void MainMenuLayoutManager::apply(CCNode* root) {
@@ -933,6 +1005,27 @@ void MainMenuLayoutManager::setCustomFromSnapshot(LayoutSnapshot const& snapshot
     syncShapeIDCounter(m_shapes);
 
     this->save();
+}
+
+void MainMenuLayoutManager::mergeCustomFromButtons(std::unordered_map<std::string, MenuButtonLayout> const& buttons) {
+    this->ensureLoaded();
+
+    bool changed = false;
+    for (auto const& [key, layout] : buttons) {
+        auto def = this->getSessionDefaultLayout(key);
+        if (!def) def = this->getDefaultLayout(key);
+        if (def && approximatelyEqual(layout, *def)) {
+            if (m_custom.erase(key) > 0) changed = true;
+            continue;
+        }
+        auto it = m_custom.find(key);
+        if (it == m_custom.end() || !approximatelyEqual(it->second, layout)) {
+            m_custom[key] = layout;
+            changed = true;
+        }
+    }
+
+    if (changed) this->save();
 }
 
 std::optional<MenuButtonLayout> MainMenuLayoutManager::getDefaultLayout(std::string const& key) const {

@@ -2,6 +2,10 @@
 
 Release notes for Paimbnails 2 v1.0.5.
 
+**Mod Previews**
+- New **Mod Previews** feature: when you open a Geode mod, if its repository has a `previews/` folder with `preview-1.png` … `preview-10.png`, Paimbnails shows a thumbnail strip in the Details tab. Click a thumbnail to open a full-screen gallery with prev/next navigation. Toggle it from the **Mod Previews** setting.
+- Based on the original idea and design by **Alphalaneous** ([Mod-Previews](https://github.com/Alphalaneous/Mod-Previews)), reimplemented natively for Geode v5 (no extra dependencies).
+
 **Paimon Agent Mode**
 - New **Agent Mode** toggle button under Paimon in the guide chat. Pink (`agent:off`) means Paimon answers questions and shows you the way; blue (`agent:on`) means Paimon executes actions for you.
 - **Visual agent execution with real clicks**: in agent mode, when you press *Ask*, the chat closes and an **AgentPilot** Paimon spawns on top of the running scene (z=99999, above any popup). She flies in a soft bezier curve through a chain of targets, **really clicking buttons along the way** — not just opening the final popup. For example, "abre discord" produces a chain of: open Hub → wait for Discord shortcut → fly to it → highlight → click → done.

@@ -310,7 +310,7 @@ void SongSearchPopup::rebuildScrollList() {
         if (!song) continue;
         // Indexamos contra un texto en lowercase con nombre + artista
         // (orden no importa para fuzzy match — sólo es haystack)
-        std::string indexable = asciiLower(song->m_songName + " " + song->m_artistName);
+        std::string indexable = asciiLower(std::string(song->m_songName) + " " + std::string(song->m_artistName));
         m_allDownloaded.emplace_back(std::move(indexable), song);
     }
 

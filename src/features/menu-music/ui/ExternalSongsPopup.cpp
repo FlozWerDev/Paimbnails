@@ -79,7 +79,7 @@ bool ExternalSongsPopup::init(float width, float height) {
                 ext != ".flac" && ext != ".oga" && ext != ".m4a") continue;
             std::string label = song->m_songName.empty()
                 ? geode::utils::string::pathToString(std::filesystem::path(songPath).stem())
-                : song->m_songName;
+                : std::string(song->m_songName);
             addUnique(songPath, label, "downloaded");
         }
     }

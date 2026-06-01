@@ -224,7 +224,12 @@ $execute {
 // ────────────────────────────────────────────────────────────────────────
 // Hook: CCMouseDispatcher::dispatchScrollMSG
 // ────────────────────────────────────────────────────────────────────────
+// NOTA: dispatchScrollMSG es inline en macOS/iOS, por lo que el hook
+//       solo se compila en Windows. En otras plataformas el scroll de
+//       volumen no está disponible por ahora.
+// ────────────────────────────────────────────────────────────────────────
 
+#ifdef GEODE_IS_WINDOWS
 class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre("cocos2d::CCMouseDispatcher::dispatchScrollMSG",
@@ -236,6 +241,105 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
             paimon::pausezoom::dispatchScroll(y, x);
             return CCMouseDispatcher::dispatchScrollMSG(y, x);
         };
+
+        if (y == 0.f) return passthrough();
+
+        // ── 1) Captor de scroll del ExtendedKeybind ────────────────────
+        // Si hay un popup de edicion en modo recording, le pasamos el
+        // scroll directamente y consumimos el evento.
+        if (paimon::keybinds::hasScrollCaptor()) {
+            auto const& captor = paimon::keybinds::currentScrollCaptor();
+            if (captor) {
+                bool consumed = captor(static_cast<double>(y),
+                                       paimon::keybinds::currentModifiers());
+                if (consumed) return true;
+            }
+        }
+
+        // Re-sincronizar modificadores desde la fuente más autoritativa
+        // disponible en este punto. Esto es CRÍTICO: sin este re-sync,
+        // el scroll *podría* activar el cambio de volumen sin la tecla
+        // modificadora pulsada porque los flags `g_ctrlDown` etc.
+        // pueden quedar atascados en `true` si:
+        //   - GD pierde foco mientras la tecla Ctrl/Shift estaba pulsada
+        //     (loader/src/platform/windows/input.cpp limpia
+        //     `RawInputQueue` y descarta el evento Release).
+        //   - Algún popup intermedio bloquea los `KeyboardInputEvent`
+        //     antes de que lleguen al listener global.
+        //
+        // Antes este re-sync usaba `kb->getControlKeyPressed() || g_ctrlDown`
+        // (sticky-OR) lo que NUNCA reseteaba los flags a false; bastaba
+        // con que un solo evento espurio dejara `g_ctrlDown=true` para
+        // que cualquier scroll posterior se interpretara como
+        // Ctrl+Scroll, aunque el usuario hubiera soltado la tecla hace
+        // rato.
+        //
+        // El fix es REEMPLAZAR los flags con el estado real:
+        //  - En Windows usamos `GetAsyncKeyState` (mismo patrón que
+        //    `isMouseButtonHeld` en ExtendedKeybind.cpp).
+        //  - En el resto de plataformas confiamos en
+        //    `CCKeyboardDispatcher`, que sí refleja el release aunque
+        //    Geode no haya despachado el evento todavía.
+        {
+            bool ctrlOS  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+            bool shiftOS = (GetAsyncKeyState(VK_SHIFT)   & 0x8000) != 0;
+            bool altOS   = (GetAsyncKeyState(VK_MENU)    & 0x8000) != 0;
+            g_ctrlDown  = ctrlOS;
+            g_shiftDown = shiftOS;
+            g_altDown   = altOS;
+        }
+
+        bool editor = isInEditor();
+        char const* musicKey = editor ? kMusicEditorKey : kMusicGameKey;
+        char const* sfxKey   = editor ? kSFXEditorKey   : kSFXGameKey;
+
+        Keybind musicBind = getKeybind(musicKey);
+        Keybind sfxBind   = getKeybind(sfxKey);
+
+        auto musicExt = paimon::keybinds::loadExtendedKeybind(musicKey);
+        auto sfxExt   = paimon::keybinds::loadExtendedKeybind(sfxKey);
+
+        log::debug("[VolScroll] scroll y={:.2f} editor={} music={{kbKey={:#x},kbMods={:#x},extKind={}}} sfx={{kbKey={:#x},kbMods={:#x},extKind={}}} state ctrl={} shift={} alt={}",
+            y, editor,
+            (int)musicBind.key, (int)musicBind.modifiers.value, (int)musicExt.kind,
+            (int)sfxBind.key,   (int)sfxBind.modifiers.value,   (int)sfxExt.kind,
+            g_ctrlDown, g_shiftDown, g_altDown);
+
+        VolumeKind kind;
+        bool match = false;
+        // Probamos en orden: keybind del teclado, luego extended (mouse).
+        if (isKeybindActive(musicBind) || paimon::keybinds::isExtendedHeld(musicExt)) {
+            kind = VolumeKind::Music;
+            match = true;
+        } else if (isKeybindActive(sfxBind) || paimon::keybinds::isExtendedHeld(sfxExt)) {
+            kind = VolumeKind::SFX;
+            match = true;
+        }
+
+        if (!match) {
+            // Antes de pasar el scroll al juego, dejamos que el sistema de
+            // ExtendedKeybind despache scroll-as-trigger (por ejemplo si el
+            // usuario configuro "scroll up" como zoom-in-keybind).
+            (void)paimon::keybinds::dispatchScrollAsTrigger(
+                static_cast<double>(y),
+                static_cast<double>(geode::utils::getInputTimestamp())
+            );
+            return passthrough();
+        }
+
+        log::info("[VolScroll] consuming scroll: kind={} y={}",
+                  kind == VolumeKind::Music ? "music" : "sfx", y);
+
+        const float delta = (y > 0.f) ? -kVolumeStep : +kVolumeStep;
+        VolumeScrollManager::get().onScroll(kind, delta);
+
+        if (g_ctrlDown) {
+            paimon::quickhub::notifyVolumeScrollUsed();
+        }
+        return true;
+    }
+};
+#endif
 
         if (y == 0.f) return passthrough();
 

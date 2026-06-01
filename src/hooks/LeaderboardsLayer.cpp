@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/LeaderboardsLayer.hpp>
+#include <Geode/modify/LeaderboardsLayer.hpp>
 #include "../utils/DynamicPopupRegistry.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include "../utils/PaimonButtonHighlighter.hpp"
@@ -29,6 +29,7 @@ class ProfilePreviewPopup : public geode::Popup {
 protected:
     std::vector<uint8_t> m_data;
     std::string m_username;
+    CCTexture2D* m_texture;
     geode::CopyableFunction<void()> m_callback;
 
     bool init() {
@@ -36,43 +37,7 @@ protected:
 
         this->setTitle("Preview Profile");
 
-        CCTexture2D* texture = nullptr;
-
-        // stb_image: decode PNG, JPEG, BMP, GIF, TGA, etc.
-        {
-            int w = 0, h = 0, ch = 0;
-            unsigned char* px = stbi_load_from_memory(m_data.data(), static_cast<int>(m_data.size()), &w, &h, &ch, 4);
-            if (px && w > 0 && h > 0) {
-                auto* tex = new CCTexture2D();
-                if (tex->initWithData(px, kCCTexture2DPixelFormat_RGBA8888,
-                        w, h, CCSize(static_cast<float>(w), static_cast<float>(h)))) {
-                    texture = tex;
-                    texture->autorelease();
-                }
-                else tex->release();
-                stbi_image_free(px);
-            } else if (px) {
-                stbi_image_free(px);
-            }
-        }
-
-        if (!texture) {
-            // Perfil de usuario: usa imagen de perfil como fondo
-            auto* image = new CCImage();
-            if (!image->initWithImageData(const_cast<uint8_t*>(m_data.data()), m_data.size())) {
-                image->release();
-                return false;
-            }
-            auto* tex = new CCTexture2D();
-            if (!tex->initWithImage(image)) {
-                image->release();
-                tex->release();
-                return false;
-            }
-            image->release();
-            tex->autorelease();
-            texture = tex;
-        }
+        CCTexture2D* texture = m_texture;
 
         ProfileConfig config;
         config.backgroundType = Mod::get()->getSavedValue<std::string>("scorecell-background-type", "thumbnail");
@@ -117,11 +82,14 @@ protected:
     }
 
 public:
-    static ProfilePreviewPopup* create(std::vector<uint8_t> const& data, std::string const& username, geode::CopyableFunction<void()> callback) {
+    static ProfilePreviewPopup* create(std::vector<uint8_t> const& data, std::string const& username, CCTexture2D* texture, geode::CopyableFunction<void()> callback) {
         auto ret = new ProfilePreviewPopup();
-        ret->m_data = data;
-        ret->m_username = username;
-        ret->m_callback = callback;
+        if (ret) {
+            ret->m_data = data;
+            ret->m_username = username;
+            ret->m_texture = texture;
+            ret->m_callback = callback;
+        }
         if (ret && ret->init()) {
             ret->autorelease();
             return ret;
@@ -293,83 +261,131 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     }
 
     void processProfileGIF(std::filesystem::path path) {
-        std::ifstream file(path, std::ios::binary);
-        if (!file) {
-            PaimonNotify::create("Failed to read GIF file", NotificationIcon::Error)->show();
-            return;
-        }
-        std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        
-        if (data.size() > 10 * 1024 * 1024) {
-             PaimonNotify::create("GIF too large (max 10MB)", NotificationIcon::Error)->show();
-             return;
-        }
-
-        auto* accountManager = GJAccountManager::get();
-        if (!accountManager) {
-            PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
-            return;
-        }
-
-        int accountID = accountManager->m_accountID;
-        std::string username = accountManager->m_username;
-
-        PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
-
-        paimon::showBetaUploadWarningIfNeeded([accountID, data = std::move(data), username]() mutable {
-            ThumbnailAPI::get().uploadProfileGIF(accountID, data, username, [](bool success, std::string const& msg) {
-                if (success) {
-                    PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
-                } else {
-                    PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
+        std::thread([path]() {
+            std::ifstream file(path, std::ios::binary);
+            if (!file) {
+                geode::Loader::get()->queueInMainThread([] {
+                    PaimonNotify::create("Failed to read GIF file", NotificationIcon::Error)->show();
+                });
+                return;
+            }
+            std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+            
+            geode::Loader::get()->queueInMainThread([data = std::move(data)]() mutable {
+                if (data.size() > 10 * 1024 * 1024) {
+                     PaimonNotify::create("GIF too large (max 10MB)", NotificationIcon::Error)->show();
+                     return;
                 }
+
+                auto* accountManager = GJAccountManager::get();
+                if (!accountManager) {
+                    PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
+                    return;
+                }
+
+                int accountID = accountManager->m_accountID;
+                std::string username = accountManager->m_username;
+
+                PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+
+                paimon::showBetaUploadWarningIfNeeded([accountID, data = std::move(data), username]() mutable {
+                    ThumbnailAPI::get().uploadProfileGIF(accountID, data, username, [](bool success, std::string const& msg) {
+                        if (success) {
+                            PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                        } else {
+                            PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
+                        }
+                    });
+                });
             });
-        });
+        }).detach();
     }
 
     void processProfileImage(std::filesystem::path path) {
-        auto* imgCheck = new CCImage();
-        if (!imgCheck->initWithImageFile(geode::utils::string::pathToString(path).c_str())) { 
-            imgCheck->release();
-            PaimonNotify::create(Localization::get().getString("profile.image_open_error").c_str(), NotificationIcon::Error)->show(); 
-            return; 
-        }
-        imgCheck->release(); 
+        std::thread([path]() {
+            std::ifstream file(path, std::ios::binary);
+            if (!file) {
+                geode::Loader::get()->queueInMainThread([]{
+                    PaimonNotify::create(Localization::get().getString("profile.image_open_error").c_str(), NotificationIcon::Error)->show(); 
+                });
+                return;
+            }
+            std::vector<uint8_t> rawData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
 
-        std::ifstream file(path, std::ios::binary);
-        if (!file) return;
-        std::vector<uint8_t> rawData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        if (rawData.size() > 7 * 1024 * 1024) {
-             PaimonNotify::create("Image too large (max 7MB)", NotificationIcon::Error)->show();
-             return;
-        }
+            if (rawData.size() > 7 * 1024 * 1024) {
+                 geode::Loader::get()->queueInMainThread([]{
+                     PaimonNotify::create("Image too large (max 7MB)", NotificationIcon::Error)->show();
+                 });
+                 return;
+            }
 
-        auto* accountManager = GJAccountManager::get();
-        if (!accountManager) {
-            PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
-            return;
-        }
+            int w = 0, h = 0, ch = 0;
+            unsigned char* px = stbi_load_from_memory(rawData.data(), static_cast<int>(rawData.size()), &w, &h, &ch, 4);
 
-        int accountID = accountManager->m_accountID;
-        std::string username = accountManager->m_username;
-
-
-        auto popup = ProfilePreviewPopup::create(rawData, username, [rawData, accountID, username]() {
-            PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
-            ThumbnailAPI::get().uploadProfile(accountID, rawData, username, [](bool success, std::string const& msg) {
-                if (success) {
-                    bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
-                    if (isPending) {
-                        PaimonNotify::create("Background submitted! Pending moderator verification.", NotificationIcon::Warning)->show();
-                    } else {
-                        PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
-                    }
-                } else {
-                    PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
+            geode::Loader::get()->queueInMainThread([rawData = std::move(rawData), px, w, h]() mutable {
+                auto* accountManager = GJAccountManager::get();
+                if (!accountManager) {
+                    if (px) stbi_image_free(px);
+                    PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
+                    return;
                 }
+
+                int accountID = accountManager->m_accountID;
+                std::string username = accountManager->m_username;
+
+                CCTexture2D* texture = nullptr;
+                if (px && w > 0 && h > 0) {
+                    auto* tex = new CCTexture2D();
+                    if (tex->initWithData(px, kCCTexture2DPixelFormat_RGBA8888, w, h, CCSize(static_cast<float>(w), static_cast<float>(h)))) {
+                        texture = tex;
+                        texture->autorelease();
+                    } else {
+                        tex->release();
+                    }
+                    stbi_image_free(px);
+                } else if (px) {
+                    stbi_image_free(px);
+                }
+
+                if (!texture) {
+                    auto* image = new CCImage();
+                    if (!image->initWithImageData(const_cast<uint8_t*>(rawData.data()), rawData.size())) {
+                        image->release();
+                        PaimonNotify::create("Failed to decode image", NotificationIcon::Error)->show();
+                        return;
+                    }
+                    auto* tex = new CCTexture2D();
+                    if (!tex->initWithImage(image)) {
+                        image->release();
+                        tex->release();
+                        PaimonNotify::create("Failed to create texture", NotificationIcon::Error)->show();
+                        return;
+                    }
+                    image->release();
+                    tex->autorelease();
+                    texture = tex;
+                }
+
+                auto popup = ProfilePreviewPopup::create(rawData, username, texture, [rawData, accountID, username]() {
+                    PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+                    ThumbnailAPI::get().uploadProfile(accountID, rawData, username, [](bool success, std::string const& msg) {
+                        if (success) {
+                            bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
+                            if (isPending) {
+                                PaimonNotify::create("Background submitted! Pending moderator verification.", NotificationIcon::Warning)->show();
+                            } else {
+                                PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                            }
+                        } else {
+                            PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
+                        }
+                    });
+                });
+                if (popup) popup->show();
             });
-        });
-        if (popup) popup->show();
+        }).detach();
     }
     
 

@@ -1,3 +1,25 @@
+# v1.0.6
+
+Release notes for Paimbnails 2 v1.0.6.
+
+**ARREGLOS Y OPTIMIZACIONES**
+- Optimización del mod (resolución de cuellos de botella en carga de imágenes, GIFs y peticiones)
+- Bugs arreglados
+- Custom cursor mejorado
+- Pet sin crash en el editor
+- Sistema de emotes optimizado
+
+**NUEVAS FUNCIONES**
+- Historial
+- Texture Studio Beta 1
+- Nuevo sistema de botones
+- Popups con animaciones nuevas
+- Degradado de perfil
+- Video con audio en perfil
+- Notificación de mensajes
+- Nueva UI de Paimbnails
+- Editor Music (ponés tu música mientras creás en el editor)
+
 # v1.0.5
 
 Release notes for Paimbnails 2 v1.0.5.

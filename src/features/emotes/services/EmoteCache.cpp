@@ -1,4 +1,4 @@
-﻿#include "EmoteCache.hpp"
+#include "EmoteCache.hpp"
 #include "EmoteService.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -101,26 +101,8 @@ CCTexture2D* pixelsToStaticTexture(DecodedPixels const& decoded) {
     return tex;
 }
 
-// CCImage fallback for files that stbi can't decode (some exotic JPEGs).
-// Must run on the main thread — CCImage isn't thread-safe.
-CCTexture2D* ccImageFallbackToTexture(std::vector<uint8_t> const& data) {
-    if (data.empty()) return nullptr;
-    auto* ccImg = new CCImage();
-    if (!ccImg->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
-        ccImg->release();
-        return nullptr;
-    }
-    auto* tex = new CCTexture2D();
-    if (!tex->initWithImage(ccImg)) {
-        tex->release();
-        ccImg->release();
-        return nullptr;
-    }
-    tex->setAntiAliasTexParameters();
-    ccImg->release();
-    tex->autorelease();
-    return tex;
-}
+// Removed ccImageFallbackToTexture since we now split the CCImage decode
+// (background thread) and CCTexture2D upload (main thread) inline.
 } // namespace
 
 // ─── Disk cache paths ───
@@ -269,75 +251,75 @@ void EmoteCache::loadEmote(EmoteInfo const& info, TextureCallback callback) {
         }
     }
 
-    // 2) Check disk cache
-    if (isDiskEntryValid(info.filename)) {
-        std::vector<uint8_t> diskData;
-        if (loadFromDisk(info.filename, diskData)) {
-            if (info.type == EmoteType::Gif) {
-                // Store raw GIF bytes for AnimatedGIFSprite — the actual GIF
-                // decoding happens later, on demand, via createAsync().
-                RamEntry entry;
-                entry.type = EmoteType::Gif;
-                entry.gifData = diskData;
-                entry.byteSize = diskData.size();
-                entry.cachedAt = std::chrono::steady_clock::now();
-                addToRam(info.name, std::move(entry));
-                dispatchTextureCallback(std::move(callback), nullptr, true, std::move(diskData));
+    // 2) Check disk cache and 3) Download - run disk ops async
+    std::thread([this, info, callback = std::move(callback)]() mutable {
+        if (isDiskEntryValid(info.filename)) {
+            std::vector<uint8_t> diskData;
+            if (loadFromDisk(info.filename, diskData)) {
+                if (info.type == EmoteType::Gif) {
+                    geode::Loader::get()->queueInMainThread([this, info, diskData = std::move(diskData), cb = std::move(callback)]() mutable {
+                        RamEntry entry;
+                        entry.type = EmoteType::Gif;
+                        entry.gifData = diskData;
+                        entry.byteSize = diskData.size();
+                        entry.cachedAt = std::chrono::steady_clock::now();
+                        addToRam(info.name, std::move(entry));
+                        dispatchTextureCallback(std::move(cb), nullptr, true, std::move(diskData));
+                    });
+                    return;
+                }
+
+                DecodeTask task;
+                task.info = info;
+                task.data = std::move(diskData);
+                task.callback = std::move(callback);
+                enqueueDecode(std::move(task));
                 return;
             }
-
-            // Static emote: hand the decode off to the worker pool. Keeping
-            // this on the main thread used to make the picker stutter for
-            // ~150 ms when ~100 emotes hit disk simultaneously on first
-            // popup open.
-            DecodeTask task;
-            task.info = info;
-            task.data = std::move(diskData);
-            task.callback = std::move(callback);
-            enqueueDecode(std::move(task));
-            return;
-        }
-    }
-
-    // 3) Download from URL
-    auto emoteName = info.name;
-    auto emoteFilename = info.filename;
-    auto emoteType = info.type;
-    auto emoteUrl = info.url;
-    auto emoteInfo = info;
-
-    HttpClient::get().downloadFromUrlRaw(info.url, [this, emoteInfo, emoteName, emoteFilename, emoteType, emoteUrl, callback = std::move(callback)](
-        bool success, std::vector<uint8_t> const& data, int, int) mutable {
-
-        if (!success || data.empty()) {
-            log::warn("[EmoteCache] Failed to download emote: {} (url: {})", emoteName, emoteUrl);
-            dispatchTextureCallback(std::move(callback), nullptr, false, {});
-            return;
         }
 
-        if (emoteType == EmoteType::Gif) {
-            saveToDisk(emoteFilename, data);
+        // 3) Download from URL
+        geode::Loader::get()->queueInMainThread([this, info, cb = std::move(callback)]() mutable {
+            auto emoteName = info.name;
+            auto emoteFilename = info.filename;
+            auto emoteType = info.type;
+            auto emoteUrl = info.url;
+            auto emoteInfo = info;
 
-            RamEntry entry;
-            entry.type = EmoteType::Gif;
-            entry.gifData = data;
-            entry.byteSize = data.size();
-            entry.cachedAt = std::chrono::steady_clock::now();
-            addToRam(emoteName, std::move(entry));
-            dispatchTextureCallback(std::move(callback), nullptr, true, std::vector<uint8_t>(data.begin(), data.end()));
-            return;
-        }
+            HttpClient::get().downloadFromUrlRaw(info.url, [this, emoteInfo, emoteName, emoteFilename, emoteType, emoteUrl, callback = std::move(cb)](
+                bool success, std::vector<uint8_t> const& data, int, int) mutable {
 
-        // Static path: persist to disk synchronously (small files) but push
-        // the decode itself onto the worker pool.
-        saveToDisk(emoteFilename, data);
+                if (!success || data.empty()) {
+                    log::warn("[EmoteCache] Failed to download emote: {} (url: {})", emoteName, emoteUrl);
+                    dispatchTextureCallback(std::move(callback), nullptr, false, {});
+                    return;
+                }
 
-        DecodeTask task;
-        task.info = emoteInfo;
-        task.data = data;
-        task.callback = std::move(callback);
-        enqueueDecode(std::move(task));
-    });
+                if (emoteType == EmoteType::Gif) {
+                    saveToDisk(emoteFilename, data);
+
+                    RamEntry entry;
+                    entry.type = EmoteType::Gif;
+                    entry.gifData = data;
+                    entry.byteSize = data.size();
+                    entry.cachedAt = std::chrono::steady_clock::now();
+                    addToRam(emoteName, std::move(entry));
+                    dispatchTextureCallback(std::move(callback), nullptr, true, std::vector<uint8_t>(data.begin(), data.end()));
+                    return;
+                }
+
+                // Static path: persist to disk synchronously (small files) but push
+                // the decode itself onto the worker pool.
+                saveToDisk(emoteFilename, data);
+
+                DecodeTask task;
+                task.info = emoteInfo;
+                task.data = data;
+                task.callback = std::move(callback);
+                enqueueDecode(std::move(task));
+            });
+        });
+    }).detach();
 }
 
 // ─── Clear all ───
@@ -554,26 +536,42 @@ void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
         // Heavy CPU work happens here, off the main thread.
         auto decoded = decodeStaticPixels(task.data);
         if (!decoded.ok) {
-            // stbi failed: try the CCImage fallback on the main thread
-            // (CCImage is not thread-safe in cocos2d-x).
+            // stbi failed: use CCImage to decode the image in the background.
+            // CCImage::initWithImageData is safe on background threads (it's CCTexture2D that needs GL).
+            auto* ccImg = new CCImage();
+            if (!ccImg->initWithImageData(const_cast<uint8_t*>(task.data.data()), task.data.size())) {
+                ccImg->release();
+                log::warn("[EmoteCache] Static decode failed for emote '{}', purging cached file", task.info.name);
+                std::error_code ec;
+                std::filesystem::remove(self->getDiskPath(task.info.filename), ec);
+                if (task.callback) {
+                    auto cb = std::move(task.callback);
+                    Loader::get()->queueInMainThread([cb = std::move(cb)]() mutable { cb(nullptr, false, {}); });
+                }
+                continue;
+            }
+
             EmoteInfo info = std::move(task.info);
-            std::vector<uint8_t> rawBytes = std::move(task.data);
+            size_t rawBytesSize = task.data.size();
             auto cb = std::move(task.callback);
+
             Loader::get()->queueInMainThread(
-                [self, info = std::move(info), rawBytes = std::move(rawBytes), cb = std::move(cb)]() mutable {
-                    auto* tex = ccImageFallbackToTexture(rawBytes);
-                    if (!tex) {
-                        log::warn("[EmoteCache] Static decode failed for emote '{}', purging cached file", info.name);
-                        std::error_code ec;
-                        std::filesystem::remove(self->getDiskPath(info.filename), ec);
+                [self, info = std::move(info), rawBytesSize, cb = std::move(cb), ccImg]() mutable {
+                    auto* tex = new CCTexture2D();
+                    if (!tex->initWithImage(ccImg)) {
+                        tex->release();
+                        ccImg->release();
                         if (cb) cb(nullptr, false, {});
                         return;
                     }
+                    tex->setAntiAliasTexParameters();
+                    ccImg->release();
+                    tex->autorelease();
 
                     RamEntry entry;
                     entry.type = EmoteType::Static;
                     entry.texture = tex;
-                    entry.byteSize = rawBytes.size();
+                    entry.byteSize = rawBytesSize;
                     entry.cachedAt = std::chrono::steady_clock::now();
                     self->addToRam(info.name, std::move(entry));
                     if (cb) cb(tex, false, {});

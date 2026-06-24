@@ -1,0 +1,350 @@
+﻿#pragma once
+
+#include <Geode/cocos/platform/CCGL.h>
+#include <Geode/utils/cocos.hpp>
+#include <Geode/loader/Mod.hpp>
+
+// Targeted type imports to avoid namespace pollution in headers
+using cocos2d::CCSprite;
+using cocos2d::CCTexture2D;
+using cocos2d::CCSize;
+using cocos2d::CCRect;
+using cocos2d::CCPoint;
+using cocos2d::ccColor3B;
+using cocos2d::ccColor4B;
+using cocos2d::ccV3F_C4B_T2F;
+using cocos2d::ccGLBlendFunc;
+using cocos2d::ccTexParams;
+using cocos2d::ccGLBindTexture2D;
+using cocos2d::ccGLEnableVertexAttribs;
+using cocos2d::kCCVertexAttrib_Position;
+using cocos2d::kCCVertexAttrib_TexCoords;
+using cocos2d::kCCVertexAttrib_Color;
+using cocos2d::kCCVertexAttribFlag_PosColorTex;
+using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
+
+#ifndef kQuadSize
+#define kQuadSize sizeof(ccV3F_C4B_T2F)
+#endif
+
+/**
+ * Sprite with a custom shader for thumbnails. Manual draw() to dodge other mods'
+ * hooks (e.g. HappyTextures). Reusable in LevelCell, GJScoreCell, etc.
+ */
+class PaimonShaderSprite : public CCSprite {
+public:
+    float m_intensity = 0.0f;
+    float m_time = 0.0f;
+    float m_brightness = 1.0f;
+    CCSize m_texSize = {0, 0};
+
+    // Cached uniform locations — refreshed only when the shader program
+    // changes. getUniformLocationForName() does a per-call string walk over
+    // the shader's uniform map (cocos2d does not memoize these). With many
+    // thumbnails on screen × 4 lookups per draw × 360 fps that adds up to
+    // a measurable slice of frame time. Caching here is safe because uniform
+    // locations are fixed for the lifetime of a linked shader program.
+    cocos2d::CCGLProgram* m_cachedProgram = nullptr;
+    GLint m_locIntensity  = -2;  // -2 = uninitialized, -1 = not present
+    GLint m_locTime       = -2;
+    GLint m_locBrightness = -2;
+    GLint m_locTexSize    = -2;
+
+    static PaimonShaderSprite* createWithTexture(CCTexture2D* texture) {
+        if (!texture) return nullptr;
+        auto sprite = new PaimonShaderSprite();
+        if (sprite && sprite->initWithTexture(texture)) {
+            sprite->autorelease();
+            sprite->setID("paimon-shader-sprite"_spr);
+            return sprite;
+        }
+        CC_SAFE_DELETE(sprite);
+        return nullptr;
+    }
+
+    void draw() override {
+        CC_NODE_DRAW_SETUP();
+
+        auto* prog = getShaderProgram();
+
+        // Refresh cache when the shader program identity changes (e.g. when
+        // the user switches effects). For the steady-state case (single
+        // shader for the lifetime of the sprite) this is a single pointer
+        // compare per frame.
+        if (prog != m_cachedProgram) {
+            m_cachedProgram = prog;
+            m_locIntensity  = prog ? prog->getUniformLocationForName("u_intensity")  : -1;
+            m_locTime       = prog ? prog->getUniformLocationForName("u_time")       : -1;
+            m_locBrightness = prog ? prog->getUniformLocationForName("u_brightness") : -1;
+            m_locTexSize    = prog ? prog->getUniformLocationForName("u_texSize")    : -1;
+        }
+
+        if (m_locIntensity != -1) {
+            prog->setUniformLocationWith1f(m_locIntensity, m_intensity);
+        }
+
+        if (m_locTime != -1) {
+            prog->setUniformLocationWith1f(m_locTime, m_time);
+        }
+
+        if (m_locBrightness != -1) {
+            prog->setUniformLocationWith1f(m_locBrightness, m_brightness);
+        }
+
+        if (m_locTexSize != -1) {
+            if (m_texSize.width == 0) {
+                m_texSize = getTexture()->getContentSizeInPixels();
+            }
+            prog->setUniformLocationWith2f(m_locTexSize, m_texSize.width, m_texSize.height);
+        }
+
+        ccGLBlendFunc(m_sBlendFunc.src, m_sBlendFunc.dst);
+
+        if (getTexture()) {
+            ccGLBindTexture2D(getTexture()->getName());
+        } else {
+            ccGLBindTexture2D(0);
+        }
+
+        // unbind the active VBO to avoid driver crashes (e.g. atio6axx.dll)
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        ccGLEnableVertexAttribs(kCCVertexAttribFlag_PosColorTex);
+
+        uintptr_t offset = (uintptr_t)&m_sQuad;
+
+        int diff = offsetof(ccV3F_C4B_T2F, vertices);
+        glVertexAttribPointer(kCCVertexAttrib_Position, 3, GL_FLOAT, GL_FALSE, kQuadSize, (void*)(offset + diff));
+
+        diff = offsetof(ccV3F_C4B_T2F, texCoords);
+        glVertexAttribPointer(kCCVertexAttrib_TexCoords, 2, GL_FLOAT, GL_FALSE, kQuadSize, (void*)(offset + diff));
+
+        diff = offsetof(ccV3F_C4B_T2F, colors);
+        glVertexAttribPointer(kCCVertexAttrib_Color, 4, GL_UNSIGNED_BYTE, GL_TRUE, kQuadSize, (void*)(offset + diff));
+
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+        CHECK_GL_ERROR_DEBUG();
+#if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID)
+        CC_INCREMENT_GL_DRAWS(1);
+#endif
+    }
+};
+
+/**
+ * Custom shader gradient with per-vertex colors. Manual draw() to dodge other
+ * mods' hooks.
+ */
+class PaimonShaderGradient : public CCSprite {
+public:
+    float m_intensity = 0.0f;
+    float m_time = 0.0f;
+    CCSize m_texSize = {0, 0};
+    ccColor3B m_startColor = {255, 255, 255};
+    ccColor3B m_endColor = {255, 255, 255};
+
+    static PaimonShaderGradient* create(ccColor4B const& start, ccColor4B const& end) {
+        auto sprite = new PaimonShaderGradient();
+
+        unsigned char data[] = {
+            255, 255, 255, 255, 255, 255, 255, 255,
+            255, 255, 255, 255, 255, 255, 255, 255
+        };
+
+        auto texture = new CCTexture2D();
+        if (texture && texture->initWithData(data, kCCTexture2DPixelFormat_RGBA8888, 2, 2, {2.0f, 2.0f})) {
+            ccTexParams linearParams{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
+            texture->setTexParameters(&linearParams);
+            if (sprite && sprite->initWithTexture(texture)) {
+                texture->release();
+                sprite->autorelease();
+                sprite->setTextureRect({0, 0, 2, 2});
+                sprite->setStartColor({start.r, start.g, start.b});
+                sprite->setEndColor({end.r, end.g, end.b});
+                sprite->setOpacity(start.a);
+                return sprite;
+            }
+        }
+
+        CC_SAFE_DELETE(texture);
+        CC_SAFE_DELETE(sprite);
+        return nullptr;
+    }
+
+    void setStartColor(ccColor3B const& color) {
+        m_startColor = color;
+        updateGradient();
+    }
+
+    void setEndColor(ccColor3B const& color) {
+        m_endColor = color;
+        updateGradient();
+    }
+
+    void updateGradient() {
+        GLubyte opacity = getOpacity();
+        ccColor4B start4 = {m_startColor.r, m_startColor.g, m_startColor.b, opacity};
+        ccColor4B end4 = {m_endColor.r, m_endColor.g, m_endColor.b, opacity};
+
+        m_sQuad.bl.colors = start4;
+        m_sQuad.tl.colors = start4;
+        m_sQuad.br.colors = end4;
+        m_sQuad.tr.colors = end4;
+    }
+
+    void setOpacity(GLubyte opacity) override {
+        CCSprite::setOpacity(opacity);
+        updateGradient();
+    }
+
+    void setContentSize(CCSize const& size) override {
+        CCSprite::setContentSize(size);
+
+        m_sQuad.bl.vertices = {0.0f, 0.0f, 0.0f};
+        m_sQuad.br.vertices = {size.width, 0.0f, 0.0f};
+        m_sQuad.tl.vertices = {0.0f, size.height, 0.0f};
+        m_sQuad.tr.vertices = {size.width, size.height, 0.0f};
+
+        updateGradient();
+    }
+
+    void setVector(CCPoint const&) {}
+
+    void updateShaderTime(float dt) {
+        m_time += dt;
+    }
+
+    void draw() override {
+        CC_NODE_DRAW_SETUP();
+
+        GLint intensityLoc = getShaderProgram()->getUniformLocationForName("u_intensity");
+        if (intensityLoc != -1) {
+            getShaderProgram()->setUniformLocationWith1f(intensityLoc, m_intensity);
+        }
+
+        GLint timeLoc = getShaderProgram()->getUniformLocationForName("u_time");
+        if (timeLoc != -1) {
+            getShaderProgram()->setUniformLocationWith1f(timeLoc, m_time);
+        }
+
+        GLint sizeLoc = getShaderProgram()->getUniformLocationForName("u_texSize");
+        if (sizeLoc != -1) {
+            CCSize texSize = m_texSize.width > 0.f && m_texSize.height > 0.f
+                ? m_texSize
+                : getContentSize();
+            getShaderProgram()->setUniformLocationWith2f(sizeLoc, texSize.width, texSize.height);
+        }
+
+        ccGLBlendFunc(m_sBlendFunc.src, m_sBlendFunc.dst);
+
+        if (getTexture()) {
+            ccGLBindTexture2D(getTexture()->getName());
+        } else {
+            ccGLBindTexture2D(0);
+        }
+
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        ccGLEnableVertexAttribs(kCCVertexAttribFlag_PosColorTex);
+
+        uintptr_t offset = (uintptr_t)&m_sQuad;
+
+        int diff = offsetof(ccV3F_C4B_T2F, vertices);
+        glVertexAttribPointer(kCCVertexAttrib_Position, 3, GL_FLOAT, GL_FALSE, kQuadSize, (void*)(offset + diff));
+
+        diff = offsetof(ccV3F_C4B_T2F, texCoords);
+        glVertexAttribPointer(kCCVertexAttrib_TexCoords, 2, GL_FLOAT, GL_FALSE, kQuadSize, (void*)(offset + diff));
+
+        diff = offsetof(ccV3F_C4B_T2F, colors);
+        glVertexAttribPointer(kCCVertexAttrib_Color, 4, GL_UNSIGNED_BYTE, GL_TRUE, kQuadSize, (void*)(offset + diff));
+
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+        CHECK_GL_ERROR_DEBUG();
+#if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID)
+        CC_INCREMENT_GL_DRAWS(1);
+#endif
+    }
+};
+
+/**
+ * Blur sprite for cell backgrounds, synced to an animated GIF. Uses geode::Ref<>
+ * instead of a raw CCSprite* to avoid UAF if the GIF target is destroyed before
+ * this blur (common during fast list scroll).
+ */
+class PaimonBlurSprite : public CCSprite {
+public:
+    float m_intensity = 0.0f;
+    CCSize m_texSize = {0, 0};
+
+private:
+    geode::Ref<CCSprite> m_syncTarget = nullptr;
+
+public:
+    void setSyncTarget(CCSprite* target) { m_syncTarget = target; }
+    CCSprite* getSyncTarget() const { return m_syncTarget; }
+
+    static PaimonBlurSprite* createWithTexture(CCTexture2D* tex) {
+        auto ret = new PaimonBlurSprite();
+        if (ret && ret->initWithTexture(tex)) {
+            ret->autorelease();
+            return ret;
+        }
+        CC_SAFE_DELETE(ret);
+        return nullptr;
+    }
+
+    void update(float dt) override {
+        if (m_syncTarget) {
+            // AnimatedGIFSprite swaps texture via setDisplayFrame() each frame;
+            // sync the texture directly without touching rect/contentSize so the
+            // blur's scale stays correct
+            auto targetTex = m_syncTarget->getTexture();
+            if (targetTex && targetTex != this->getTexture()) {
+                // save the original size so setTextureRect doesn't break it
+                auto savedSize = this->getContentSize();
+                auto savedScale = this->getScale();
+
+                this->setTexture(targetTex);
+                // update texSize so the shader uses the correct dimensions
+                m_texSize = targetTex->getContentSizeInPixels();
+                // update the rect to match the new texture
+                auto texSize = targetTex->getContentSize();
+                this->setTextureRect(CCRect(0, 0, texSize.width, texSize.height));
+
+                // restore the original size and scale to keep the layout
+                this->setContentSize(savedSize);
+                this->setScale(savedScale);
+            }
+        }
+        CCSprite::update(dt);
+    }
+
+    void draw() override {
+        if (getShaderProgram()) {
+            getShaderProgram()->use();
+            getShaderProgram()->setUniformsForBuiltins();
+
+            GLint intensityLoc = getShaderProgram()->getUniformLocationForName("u_intensity");
+            if (intensityLoc != -1) {
+                getShaderProgram()->setUniformLocationWith1f(intensityLoc, m_intensity);
+            }
+
+            if (m_texSize.width == 0 && getTexture()) {
+                m_texSize = getTexture()->getContentSizeInPixels();
+            }
+            float w = m_texSize.width > 0 ? m_texSize.width : 1.0f;
+            float h = m_texSize.height > 0 ? m_texSize.height : 1.0f;
+
+            GLint sizeLoc = getShaderProgram()->getUniformLocationForName("u_texSize");
+            if (sizeLoc != -1) {
+                getShaderProgram()->setUniformLocationWith2f(sizeLoc, w, h);
+            }
+            GLint screenLoc = getShaderProgram()->getUniformLocationForName("u_screenSize");
+            if (screenLoc != -1) {
+                getShaderProgram()->setUniformLocationWith2f(screenLoc, w, h);
+            }
+        }
+        CCSprite::draw();
+    }
+};

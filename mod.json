@@ -1,0 +1,850 @@
+{
+  "geode": "5.6.1",
+  "gd": {
+    "win": "2.2081",
+    "android": "2.2081",
+    "mac": "2.2081",
+    "ios": "2.2081"
+  },
+  "version": "v1.0.7",
+  "id": "flozwer.paimbnails2",
+  "name": "Paimbnails",
+  "developer": "FlozWer",
+  "description": "Thumbnails, capture, visual effects, audio, emotes, profiles, and custom backgrounds for Geometry Dash.",
+  "tags": ["interface", "online", "enhancement", "performance", "customization", "music"],
+  "links": {
+    "community": "https://discord.gg/5N5vpSfZwY",
+    "source": "https://github.com/FlozWerDev/Paimbnails"
+  },
+
+  "resources": {
+    "sprites": ["resources/*.png", "Logo.png"],
+    "files": ["resources/shaders/*.glsl"]
+  },
+  "settings": {
+    "general-title": {
+      "name": "General",
+      "description": "General mod settings",
+      "type": "title"
+    },
+    "language": {
+      "type": "string",
+      "name": "Language / Idioma",
+      "description": "Select language / Seleccionar idioma",
+      "default": "english",
+      "one-of": ["spanish", "english", "portuguese", "french", "german", "russian", "japanese"]
+    },
+    "auto-update": {
+      "type": "bool",
+      "name": "Auto Update",
+      "description": "Download and apply updates automatically when the game closes.",
+      "default": false
+    },
+    "mod-previews-enable": {
+      "type": "bool",
+      "name": "Mod Previews",
+      "description": "Show preview images for Geode mods whose repository has a 'previews' folder (preview-1.png ... preview-10.png).",
+      "default": true
+    },
+    "level-search-enter": {
+      "type": "keybind",
+      "name": "Quick Search Key",
+      "description": "Key to trigger search in the level browser.",
+      "default": "Enter",
+      "category": "universal",
+      "allow-in-text-inputs": true
+    },
+    "realtime-search-preview": {
+      "type": "bool",
+      "name": "Realtime Search Preview",
+      "description": "Shows search results as you type.",
+      "default": false
+    },
+    "smooth-scroll": {
+      "type": "bool",
+      "name": "Smooth Scroll",
+      "description": "Smooth mouse wheel scrolling in menus and lists.",
+      "default": true
+    },
+    "search-history-title": {
+      "name": "Search History",
+      "description": "Save and re-run your recent level searches.",
+      "type": "title"
+    },
+    "incognito-mode": {
+      "type": "bool",
+      "name": "Incognito Mode",
+      "description": "Hide the search history button and stop saving any searches.",
+      "default": false
+    },
+    "discord-rpc-title": {
+      "name": "Discord Rich Presence",
+      "description": "Discord status integration",
+      "type": "title"
+    },
+    "discord-rpc-enabled": {
+      "type": "bool",
+      "name": "Enable Discord Rich Presence",
+      "description": "Show your activity on Discord. Configure details in Paimon Hub > Discord.",
+      "default": true
+    },
+    "level-thumbs-title": {
+      "name": "Level Thumbnails",
+      "description": "Thumbnail display settings",
+      "type": "title"
+    },
+    "level-thumb-width": {
+      "type": "float",
+      "name": "Thumbnail Size",
+      "description": "Width of the thumbnail area in level cells.",
+      "default": 0.5,
+      "min": 0.2,
+      "max": 0.95
+    },
+    "levelcell-hover-effects": {
+      "type": "bool",
+      "name": "Hover Animation",
+      "description": "Animate level cells on hover.",
+      "default": true
+    },
+    "compact-list-mode": {
+      "type": "bool",
+      "name": "Compact Mode",
+      "description": "Shorter level cells to fit more on screen.",
+      "default": false
+    },
+    "auto-preview-title": {
+      "name": "Auto Previews",
+      "description": "Generate a thumbnail for levels that have none by rendering a small zone of the level.",
+      "type": "title"
+    },
+    "auto-preview-enable": {
+      "type": "bool",
+      "name": "Auto Previews",
+      "description": "For levels with no thumbnail, automatically generate one. By default this happens for free when you play such a level (a clean frame is captured and reused as its thumbnail everywhere).",
+      "default": true
+    },
+    "auto-preview-quality": {
+      "type": "string",
+      "name": "Preview Quality",
+      "description": "Resolution of generated previews. Higher = sharper but a bit larger on disk.",
+      "default": "small",
+      "one-of": ["tiny", "small", "medium"],
+      "enable-if": "auto-preview-enable"
+    },
+    "auto-preview-badge": {
+      "type": "bool",
+      "name": "Show 'AUTO' Badge",
+      "description": "Mark auto-generated previews so they are not confused with real, community-made thumbnails.",
+      "default": true,
+      "enable-if": "auto-preview-enable"
+    },
+    "auto-preview-browser-gen": {
+      "type": "bool",
+      "name": "Generate In Level List (Experimental)",
+      "description": "EXPERIMENTAL, desktop only. Also generate previews directly from the level browser by rendering levels off-screen, without you having to play them. This is heavy (each level is fully loaded once) and is rate-limited to one at a time. Leave off if you notice instability.",
+      "default": false,
+      "enable-if": "auto-preview-enable"
+    },
+    "auto-preview-max-objects": {
+      "type": "int",
+      "name": "Max Level Size",
+      "description": "Skip browser generation for levels with more objects than this (avoids long freezes on huge levels).",
+      "default": 20000,
+      "min": 5000,
+      "max": 200000,
+      "enable-if": "auto-preview-browser-gen"
+    },
+    "auto-preview-max-per-session": {
+      "type": "int",
+      "name": "Max Previews Per Session",
+      "description": "Hard cap on how many browser previews are generated each time you open the game.",
+      "default": 25,
+      "min": 1,
+      "max": 200,
+      "enable-if": "auto-preview-browser-gen"
+    },
+    "auto-preview-clear": {
+      "type": "button",
+      "name": "Clear Generated Previews",
+      "description": "Delete every auto-generated preview from disk. Real thumbnails and your own captures are not affected."
+    },
+    "levelinfo-title": {
+      "name": "Level Info Screen",
+      "description": "Level info background settings",
+      "type": "title"
+    },
+    "levelinfo-background-style": {
+      "type": "string",
+      "name": "Background Style",
+      "description": "Visual style of the level info background.",
+      "default": "blur",
+      "one-of": [
+        "normal", "pixel", "blur", "paimonblur", "grayscale", "sepia",
+        "vignette", "scanlines", "bloom", "chromatic", "radial-blur",
+        "glitch", "posterize", "rain", "matrix", "neon-pulse",
+        "wave-distortion", "crt",
+        "shockwave", "vortex", "magnetic", "spotlight",
+        "ripple", "plasma-cursor", "freeze", "pixelate-cursor",
+        "kaleidoscope", "sonar", "electric-arc", "prism-split",
+        "gravity-well", "shatter", "heat-haze", "liquify",
+        "ink-spread", "hologram", "time-warp", "underwater", "neon-trail",
+        "synthwave", "neon-city", "ocean", "galaxy"
+      ]
+    },
+    "dynamic-song": {
+      "type": "bool",
+      "name": "Dynamic Song",
+      "description": "Play the level song at a random position when viewing level info.",
+      "default": true
+    },
+    "profile-page-title": {
+      "name": "Profile Page",
+      "type": "title"
+    },
+    "profile-redesign-enabled": {
+      "type": "bool",
+      "name": "Redesign Profile",
+      "description": "Reimagines the profile page with a modern layered-card layout: an identity header, framed action rails, a stats strip, and a refined activity frame. Designed to combine with profile backgrounds and all other Paimbnails profile features.",
+      "default": true
+    },
+    "audio-title": {
+      "name": "Audio",
+      "description": "Music and audio settings",
+      "type": "title"
+    },
+    "profile-music-enabled": {
+      "type": "bool",
+      "name": "Enable Profile Music",
+      "description": "Play custom music when viewing profiles.",
+      "default": true
+    },
+    "menuMusicEnable": {
+      "type": "bool",
+      "name": "Enable Menu Music Player",
+      "description": "Vinyl button in main menu for library, playlists and downloads.",
+      "default": true
+    },
+    "menu-music-cover-debug": {
+      "type": "bool",
+      "name": "Menu Music Cover Debug",
+      "description": "Log cover loading diagnostics to Geode console and saveDir/menu-music/cover-debug.log (works even when Debug Logs is off).",
+      "default": true
+    },
+    "open-menu-music-folder": {
+      "type": "button",
+      "name": "Open Menu Music Folder",
+      "description": "Open the folder with cover-debug.log, library.json and saved song covers."
+    },
+    "editorMusicEnable": {
+      "type": "bool",
+      "name": "Enable Editor Music",
+      "description": "Listen to your music library inside the level editor on a separate audio channel. Toggle the mini player with the Editor Music keybind.",
+      "default": false
+    },
+    "editorMusicToggleKeybind": {
+      "type": "keybind",
+      "name": "Toggle Editor Music",
+      "description": "Show/hide the editor music mini player (only works inside the level editor).",
+      "default": "Ctrl+M",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "menuLoopConstantShuffle": {
+      "type": "bool",
+      "name": "Menu Loop Shuffle",
+      "description": "Change menu loops automatically after each song finishes.",
+      "default": false
+    },
+    "menuLoopEnableNotification": {
+      "type": "bool",
+      "name": "Now Playing Notifications",
+      "description": "Show a toast when the menu loop song changes.",
+      "default": true
+    },
+    "menuLoopNotificationTime": {
+      "type": "float",
+      "name": "Notification Duration",
+      "description": "How long the Now Playing toast stays on screen (seconds).",
+      "default": 2.0,
+      "min": 0.5,
+      "max": 5.0
+    },
+    "menuLoopCustomPrefix": {
+      "type": "string",
+      "name": "Notification Prefix",
+      "description": "Text shown before the song name in the toast. Use [Empty] to hide.",
+      "default": "Now Playing",
+      "one-of": ["Now Playing", "Current Song", "Looping", "Song", "Music", "Playing", "[Empty]"]
+    },
+    "menuLoopSeekAmountMs": {
+      "type": "int",
+      "name": "Seek Step (ms)",
+      "description": "Milliseconds the skip forward/backward buttons move.",
+      "default": 5000,
+      "min": 100,
+      "max": 30000
+    },
+    "menuLoopShowPlaybackProgress": {
+      "type": "bool",
+      "name": "Show Playback Progress",
+      "description": "Show the seek bar and skip buttons inside the Menu Music popup.",
+      "default": true
+    },
+    "menuLoopEnableKeyboardShortcuts": {
+      "type": "bool",
+      "name": "Menu Music Hotkeys",
+      "description": "YouTube/VLC/Spotify-like hotkeys inside the Menu Music popup (0-9 to seek, Ctrl+S to shuffle, etc.).",
+      "default": true
+    },
+    "menuLoopSaveSongOnGameClose": {
+      "type": "bool",
+      "name": "Remember Last Menu Loop",
+      "description": "Resume the last menu loop when you reopen the game.",
+      "default": false
+    },
+    "menuLoopRandomizeOnLevelExit": {
+      "type": "bool",
+      "name": "Randomize on Level Exit",
+      "description": "Pick a new menu loop when you quit back from a level.",
+      "default": false
+    },
+    "menuLoopRestoreOnLevelExit": {
+      "type": "bool",
+      "name": "Restore Position on Level Exit",
+      "description": "Resume the previous menu loop from where it was when you return from a level.",
+      "default": true
+    },
+    "menuLoopRandomizeOnEditorExit": {
+      "type": "bool",
+      "name": "Randomize on Editor Exit",
+      "description": "Pick a new menu loop when you quit from the editor.",
+      "default": false
+    },
+    "menuLoopRestoreOnEditorExit": {
+      "type": "bool",
+      "name": "Restore Position on Editor Exit",
+      "description": "Resume the previous menu loop from where it was when you return from the editor.",
+      "default": true
+    },
+    "extras-title": {
+      "name": "Extras",
+      "description": "Additional features",
+      "type": "title"
+    },
+    "colorful-icons-enabled": {
+      "type": "bool",
+      "name": "Paimon Icons (Recolor)",
+      "description": "Recolor every icon (icon kit, shops, achievements, rewards) using your player colors. Detailed settings - color modes, lock styles, animations, presets - are inside the garage gear button.",
+      "default": true
+    },
+    "global-icons-enabled": {
+      "type": "bool",
+      "name": "Global Icons",
+      "description": "Show other players' shared custom icons on their profile, and share yours from the profile settings gear. Requires the More Icons mod.",
+      "default": true
+    },
+    "global-icon-server-url": {
+      "type": "string",
+      "name": "Global Icon Server URL",
+      "description": "Base URL of your deployed Global Icon server (Vercel). Must match the server whose PAIMON_API_KEY equals the mod's API key.",
+      "default": "https://global-icons.vercel.app"
+    },
+    "custom-slider-enabled": {
+      "type": "bool",
+      "name": "Custom Slider Thumb",
+      "description": "Replace slider thumbs with your player icon.",
+      "default": false
+    },
+    "dynamic-popup-enabled": {
+      "type": "bool",
+      "name": "Dynamic Popups",
+      "description": "Custom entry/exit animations for Paimbnails popups.",
+      "default": true
+    },
+    "dynamic-exit-enabled": {
+      "type": "bool",
+      "name": "Dynamic Popup Exit",
+      "description": "Apply dynamic transition effects when closing Paimbnails popups.",
+      "default": true
+    },
+    "popup-blur-enabled": {
+      "type": "bool",
+      "name": "Popup Blur",
+      "description": "Blur the background behind Paimbnails popups.",
+      "default": true
+    },
+    "popup-ui-theme": {
+      "type": "string",
+      "name": "Popup UI Theme",
+      "description": "Visual style of Paimbnails popups. 'gd' = original, 'glass' = blur + black borders, 'dark' = dark mode, 'carbon' = carbon fiber, 'aurora' = animated gradient border, 'minimal' = clean with soft shadow. Glass/Dark/Carbon/Aurora enable popup blur automatically.",
+      "default": "gd",
+      "one-of": ["gd", "glass", "dark", "carbon", "aurora", "minimal"]
+    },
+    "custom-cursor-enable": {
+      "type": "bool",
+      "name": "Custom Cursor",
+      "description": "Replace the OS cursor with a custom image.",
+      "default": false
+    },
+    "capture-title": {
+      "name": "Capture & Keybinds",
+      "description": "Capture and keyboard shortcuts",
+      "type": "title"
+    },
+    "enable-thumbnail-taking": {
+      "name": "Enable Capture Button",
+      "description": "Show capture button in pause menu.",
+      "type": "bool",
+      "default": true
+    },
+    "capture-resolution": {
+      "type": "string",
+      "name": "Capture Resolution",
+      "description": "Resolution used when capturing thumbnails.",
+      "default": "1080p",
+      "one-of": ["1080p", "1440p", "4k"]
+    },
+    "settings-panel-keybind": {
+      "type": "keybind",
+      "name": "Open Settings Panel",
+      "description": "Key to open/close the Paimon settings panel.",
+      "default": "Ctrl+P",
+      "allow-in-text-inputs": false
+    },
+    "capture-keybind": {
+      "type": "keybind",
+      "name": "Capture Thumbnail",
+      "description": "Key to capture a thumbnail during gameplay.",
+      "default": "T",
+      "category": "gameplay",
+      "allow-in-text-inputs": false
+    },
+    "pause-zoom-title": {
+      "name": "Pause Zoom",
+      "description": "Zoom controls while paused.",
+      "type": "title"
+    },
+    "zoom-in-keybind": {
+      "type": "keybind",
+      "name": "Zoom In",
+      "description": "Zoom in while the game is paused.",
+      "default": [],
+      "category": "gameplay",
+      "allow-in-text-inputs": false
+    },
+    "zoom-out-keybind": {
+      "type": "keybind",
+      "name": "Zoom Out",
+      "description": "Zoom out while the game is paused.",
+      "default": [],
+      "category": "gameplay",
+      "allow-in-text-inputs": false
+    },
+    "zoom-reset-keybind": {
+      "type": "keybind",
+      "name": "Reset Pause Zoom",
+      "description": "Reset zoom and show the pause menu.",
+      "default": [],
+      "category": "gameplay",
+      "allow-in-text-inputs": false
+    },
+    "zoom-toggle-menu-keybind": {
+      "type": "keybind",
+      "name": "Toggle Pause Menu",
+      "description": "Hide or show the pause menu during pause zoom.",
+      "default": [],
+      "category": "gameplay",
+      "allow-in-text-inputs": false
+    },
+    "main-menu-layout-keybind": {
+      "type": "keybind",
+      "name": "Layout Editor",
+      "description": "Opens the button layout editor on the main menu and pause menu.",
+      "default": "Ctrl+Q",
+      "category": "universal",
+      "allow-in-text-inputs": false
+    },
+    "volume-scroll-title": {
+      "name": "Volume Scroll",
+      "description": "Modifier + scroll wheel to change volume in-game and in the editor.",
+      "type": "title"
+    },
+    "volume-music-mod-game": {
+      "type": "keybind",
+      "name": "Music Volume (Game)",
+      "description": "Hold this key (or right-click / a configured mouse button) while scrolling to change the music volume during gameplay. Can be a single key (e.g. T), a modifier (Ctrl), or a combination (Ctrl+T).",
+      "default": "Control",
+      "category": "gameplay",
+      "allow-in-text-inputs": false
+    },
+    "volume-sfx-mod-game": {
+      "type": "keybind",
+      "name": "SFX Volume (Game)",
+      "description": "Hold this key while scrolling to change the SFX volume during gameplay.",
+      "default": "Shift",
+      "category": "gameplay",
+      "allow-in-text-inputs": false
+    },
+    "volume-music-mod-editor": {
+      "type": "keybind",
+      "name": "Music Volume (Editor)",
+      "description": "Hold this key while scrolling to change the music volume in the level editor.",
+      "default": "Control",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "volume-sfx-mod-editor": {
+      "type": "keybind",
+      "name": "SFX Volume (Editor)",
+      "description": "Hold this key while scrolling to change the SFX volume in the level editor.",
+      "default": "Shift",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "performance-title": {
+      "name": "Performance",
+      "description": "Performance and cache settings",
+      "type": "title"
+    },
+    "thumbnail-concurrent-downloads": {
+      "type": "int",
+      "name": "Download Threads",
+      "description": "Max simultaneous thumbnail downloads (12-20 recommended).",
+      "default": 20,
+      "min": 1,
+      "max": 40
+    },
+    "enable-disk-cache": {
+      "type": "bool",
+      "name": "Disk Cache",
+      "description": "Save thumbnails to disk to avoid re-downloading.",
+      "default": true
+    },
+    "gd-robtop-cache-enabled": {
+      "type": "bool",
+      "name": "RobTop Response Cache",
+      "description": "Cache Geometry Dash server responses (profiles, level searches, comments, etc.) on disk for 7 days to reduce rate limits. Live message/friend polling is never cached.",
+      "default": true
+    },
+    "clear-cache-on-exit": {
+      "type": "bool",
+      "name": "Clear Cache on Exit",
+      "description": "Delete cached thumbnails when the game closes.",
+      "default": false
+    },
+    "open-thumbnails-folder": {
+      "type": "button",
+      "name": "Open Thumbnails Folder",
+      "description": "Open the folder where downloaded thumbnails are stored on disk."
+    },
+    "texture-studio-title": {
+      "name": "Texture Studio",
+      "description": "Algorithmic texture pack generator",
+      "type": "title"
+    },
+    "texture-studio-enabled": {
+      "type": "bool",
+      "name": "Enable Texture Studio Button",
+      "description": "Show the Texture Studio button in the main menu.",
+      "default": true
+    },
+    "texture-studio-auto-apply": {
+      "type": "bool",
+      "name": "Auto-apply on Generate",
+      "description": "Automatically copy generated packs to Texture Loader's packs folder.",
+      "default": true
+    },
+    "texture-studio-medium-port": {
+      "type": "bool",
+      "name": "Always include Medium Quality Port",
+      "description": "Generate -hd files alongside -uhd by default.",
+      "default": false
+    },
+    "comment-mentions-title": {
+      "name": "Comment Mentions",
+      "description": "Get notified when someone mentions you in level comments.",
+      "type": "title"
+    },
+    "mentions-enabled": {
+      "type": "bool",
+      "name": "Enable Comment Mentions",
+      "description": "Periodically check level comments and notify you when your name (or an alias) is mentioned. This makes requests to the Geometry Dash servers while you play.",
+      "default": false
+    },
+    "mentions-aliases": {
+      "type": "string",
+      "name": "Aliases",
+      "description": "Comma separated names to watch for in comments. Defaults to your username on first launch.",
+      "default": "",
+      "filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789, "
+    },
+    "mentions-enable-everyone": {
+      "type": "bool",
+      "name": "Notify on @everyone",
+      "description": "Also get notified when a comment uses the @everyone alias.",
+      "default": true
+    },
+    "mentions-require-at": {
+      "type": "bool",
+      "name": "Require @ Sign",
+      "description": "Only notify when the mention starts with a literal '@'.",
+      "default": false
+    },
+    "mentions-daily": {
+      "type": "bool",
+      "name": "Track Daily Level",
+      "default": true
+    },
+    "mentions-weekly": {
+      "type": "bool",
+      "name": "Track Weekly Demon",
+      "default": true
+    },
+    "mentions-event": {
+      "type": "bool",
+      "name": "Track Event Level",
+      "default": false
+    },
+    "mentions-custom-ids": {
+      "type": "string",
+      "name": "Custom Level IDs",
+      "description": "Comma separated level IDs whose comments will also be checked.",
+      "default": "",
+      "filter": "0123456789, "
+    },
+    "mentions-refresh-rate": {
+      "type": "int",
+      "name": "Refresh Rate (s)",
+      "description": "How often (in seconds) the servers are checked. Low values may get you rate limited.",
+      "default": 30,
+      "min": 10,
+      "max": 300,
+      "control": { "slider": true }
+    },
+    "mentions-max-notifications": {
+      "type": "int",
+      "name": "Max Notifications",
+      "description": "If more than this many new mentions arrive at once, they are compressed into a single notification.",
+      "default": 3,
+      "min": 1,
+      "max": 20,
+      "control": { "slider": true }
+    },
+    "mentions-case-sensitive": {
+      "type": "bool",
+      "name": "Case Sensitive",
+      "default": false
+    },
+    "mentions-ignore-self": {
+      "type": "bool",
+      "name": "Ignore Self Mentions",
+      "default": true
+    },
+    "mentions-show-while-playing": {
+      "type": "bool",
+      "name": "Show While Playing",
+      "default": false
+    },
+    "mentions-user-blacklist": {
+      "type": "string",
+      "name": "User Blacklist",
+      "description": "Comma separated usernames you don't want notifications from.",
+      "default": "",
+      "filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789, "
+    },
+    "mentions-word-blacklist": {
+      "type": "string",
+      "name": "Hidden Words",
+      "description": "Comma separated words; comments containing any of them are ignored. Leave empty to disable filtering.",
+      "default": ""
+    },
+    "msgnotif-title": {
+      "name": "Message Notifications",
+      "description": "Get notified when you receive a new message or friend request. Polls the Geometry Dash servers while logged in.",
+      "type": "title"
+    },
+    "msgnotif-enabled": {
+      "type": "bool",
+      "name": "Enable Message Notifications",
+      "description": "Periodically check for new messages and friend requests and show a notification.",
+      "default": false
+    },
+    "msgnotif-check-interval": {
+      "type": "int",
+      "name": "Check Interval (s)",
+      "description": "How often (in seconds) to check for new messages and friend requests. Low values may get you temporarily IP banned.",
+      "default": 300,
+      "min": 60,
+      "max": 3600,
+      "control": { "slider": true }
+    },
+    "msgnotif-stop-messages": {
+      "type": "bool",
+      "name": "Stop Message Notifications",
+      "description": "Disable notifications for new messages.",
+      "default": false
+    },
+    "msgnotif-stop-friends": {
+      "type": "bool",
+      "name": "Stop Friend Request Notifications",
+      "description": "Disable notifications for new friend requests.",
+      "default": false
+    },
+    "msgnotif-disable-while-editing": {
+      "type": "bool",
+      "name": "Disable While Editing",
+      "description": "Don't check while in the level editor.",
+      "default": false
+    },
+    "msgnotif-disable-while-playing": {
+      "type": "bool",
+      "name": "Disable While Playing",
+      "description": "Don't check while playing levels.",
+      "default": false
+    },
+    "v107-title": {
+      "name": "New Features (v1.0.7)",
+      "description": "Song search by name, My Levels filters, and menu physics.",
+      "type": "title"
+    },
+    "song-search-enable": {
+      "type": "bool",
+      "name": "Search Song By Name",
+      "description": "Type a song name in the custom-song ID box and the first Newgrounds match is selected automatically. Numeric IDs still work as usual.",
+      "default": true
+    },
+    "editor-filters-enable": {
+      "type": "bool",
+      "name": "My Levels Filters",
+      "description": "Adds a filter button to the My Levels tab to filter your created levels by length, verification status, and song ID.",
+      "default": true
+    },
+    "menu-physics-enable": {
+      "type": "bool",
+      "name": "Menu Physics",
+      "description": "Makes the buttons on any menu screen drop, bounce, and become draggable. Can also be toggled in-game from the right-click menu (below Invert). Just for fun.",
+      "default": false
+    },
+    "menu-physics-gravity": {
+      "type": "float",
+      "name": "Physics: Gravity",
+      "description": "Strength of gravity for Menu Physics. Negative pulls down, positive pulls up.",
+      "default": -30.0,
+      "min": -100.0,
+      "max": 100.0,
+      "control": { "slider": true }
+    },
+    "menu-physics-bounciness": {
+      "type": "float",
+      "name": "Physics: Bounciness",
+      "description": "How much buttons bounce off the walls. 0 = no bounce, 1 = very bouncy.",
+      "default": 0.2,
+      "min": 0.0,
+      "max": 1.0,
+      "control": { "slider": true }
+    },
+    "menu-physics-friction": {
+      "type": "float",
+      "name": "Physics: Friction",
+      "description": "Higher values make buttons lose speed faster when they slide along walls.",
+      "default": 0.4,
+      "min": 0.0,
+      "max": 1.0,
+      "control": { "slider": true }
+    },
+    "menu-physics-air-drag": {
+      "type": "float",
+      "name": "Physics: Air Drag",
+      "description": "How much buttons slow down while flying through the air. 0 = no drag, 1 = very floaty.",
+      "default": 0.1,
+      "min": 0.0,
+      "max": 1.0,
+      "control": { "slider": true }
+    },
+    "menu-physics-angular-drag": {
+      "type": "float",
+      "name": "Physics: Spin Drag",
+      "description": "How fast buttons stop spinning. 0 = spin forever, 2 = stop quickly.",
+      "default": 0.6,
+      "min": 0.0,
+      "max": 2.0,
+      "control": { "slider": true }
+    },
+    "menu-physics-push-power": {
+      "type": "float",
+      "name": "Physics: Push Power",
+      "description": "Click empty space to push nearby buttons away. 0 = disabled, 2 = very strong.",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 2.0,
+      "control": { "slider": true }
+    },
+    "menu-physics-mass-by-size": {
+      "type": "bool",
+      "name": "Physics: Mass By Size",
+      "description": "Bigger buttons are heavier and push smaller ones around more realistically.",
+      "default": true
+    },
+    "menu-physics-remove-ceiling": {
+      "type": "bool",
+      "name": "Physics: Remove Ceiling",
+      "description": "Let buttons fly out past the top of the screen instead of bouncing off it.",
+      "default": false
+    },
+    "editor-colorpicker-title": {
+      "name": "Editor Color Picker",
+      "description": "Eyedropper tool inside the level editor.",
+      "type": "title"
+    },
+    "editor-color-picker-enable": {
+      "type": "bool",
+      "name": "Editor Color Picker",
+      "description": "Adds a square eyedropper button to the editor's top-right button menu. It freezes the screen, shows an imagecolorpicker-style magnifier, and lets you click any pixel to pick its color. Copy it as HEX / RGB / GD format, or type a color channel ID to load the picked color into Geometry Dash's color editor.",
+      "default": true
+    },
+    "editor-color-picker-keybind": {
+      "type": "keybind",
+      "name": "Open Color Picker (Editor)",
+      "description": "Opens the editor color picker eyedropper. Only works inside the level editor.",
+      "default": "Ctrl+G",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "debug-title": {
+      "name": "Debug",
+      "description": "Developer options",
+      "type": "title"
+    },
+    "enable-debug-logs": {
+      "type": "bool",
+      "name": "Debug Logs",
+      "description": "Show detailed mod logs in Geode console.",
+      "default": false
+    }
+  },
+  "dependencies": {
+    "geode.node-ids": {
+      "version": ">=v1.23.0",
+      "required": true
+    },
+    "prevter.imageplus": {
+      "version": ">=v1.1.0",
+      "required": false
+    },
+    "geode.texture-loader": {
+      "version": ">=v1.10.0",
+      "required": false
+    },
+    "hiimjustin000.more_icons": {
+      "version": ">=v2.0.0",
+      "required": false
+    }
+  },
+  "incompatibilities": {
+    "cdc.level_thumbnails": {
+      "version": "*",
+      "breaking": false
+    }
+  }
+}

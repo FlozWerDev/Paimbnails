@@ -1,0 +1,42 @@
+# Ignore everything
+*
+
+# Keep this file
+!.gitignore
+
+# Keep Logo.png
+!Logo.png
+
+# Keep all .md files
+!*.md
+
+# Keep mod.json
+!mod.json
+
+# Keep CMakeLists.txt
+!CMakeLists.txt
+
+# Keep src/ and all its contents
+!src/
+!src/**
+
+# Keep resources/ and all its contents
+!resources/
+!resources/**
+
+# Keep .github/ and all its contents
+!.github/
+!.github/**
+
+# Keep installer/ scripts only (not binaries)
+!installer/
+!installer/**
+installer/*.exe
+installer/*.geode
+installer/banner.bmp
+
+# Exclude AI/agent config files
+AGENTS.md
+CLAUDE.md
+post.md
+.kiro/

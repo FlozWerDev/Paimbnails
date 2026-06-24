@@ -1,0 +1,178 @@
+name: Build Geode Mod
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+        - name: Windows
+          os: windows-latest
+        - name: macOS
+          os: macos-latest
+
+        - name: iOS
+          os: macos-latest
+          target: iOS
+
+        - name: Android32
+          os: ubuntu-latest
+          target: Android32
+
+        - name: Android64
+          os: ubuntu-latest
+          target: Android64
+
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the mod
+        uses: geode-sdk/build-geode-mod@main
+        with:
+          combine: true
+          target: ${{ matrix.config.target }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.config.name }}-geode-build
+          path: build\flozwer.paimbnails2.geode
+
+  build-installer:
+    name: Build Windows Installer
+    runs-on: windows-latest
+    needs: package
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download combined build
+        uses: actions/download-artifact@v4
+        with:
+          name: Build Output
+          path: build
+
+      - name: Prepare .geode for installer
+        run: |
+          $file = Get-ChildItem -Path build -Filter "*.geode" | Select-Object -First 1
+          if ($file.Name -ne "flozwer.paimbnails2.geode") {
+            Copy-Item $file.FullName -Destination "build\flozwer.paimbnails2.geode" -Force
+          }
+
+      - name: Install NSIS
+        run: |
+          choco install nsis -y
+          echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
+
+      - name: Build NSIS installer
+        run: |
+          cd installer
+          & "C:\Program Files (x86)\NSIS\makensis.exe" /V4 installer.nsi
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Paimbnails-Windows-Installer
+          path: installer\Paimbnails-Installer.exe
+
+  build-macos-dmg:
+    name: Build macOS Package
+    runs-on: macos-latest
+    needs: package
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download combined build
+        uses: actions/download-artifact@v4
+        with:
+          name: Build Output
+          path: build
+
+      - name: Prepare .geode for package
+        run: |
+          for f in build/*.geode; do
+            if [ "$(basename "$f")" != "flozwer.paimbnails2.geode" ]; then
+              cp "$f" build/flozwer.paimbnails2.geode
+            fi
+            break
+          done
+
+      - name: Create macOS install package
+        run: |
+          mkdir -p "Paimbnails-macOS"
+          cp build/flozwer.paimbnails2.geode "Paimbnails-macOS/"
+          cp installer/mac/install.sh "Paimbnails-macOS/"
+          chmod +x "Paimbnails-macOS/install.sh"
+          zip -r "Paimbnails-macOS.zip" "Paimbnails-macOS/"
+
+      - name: Upload macOS package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Paimbnails-macOS-Package
+          path: Paimbnails-macOS.zip
+
+  build-linux-installer:
+    name: Build Linux Installer
+    runs-on: ubuntu-latest
+    needs: package
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download combined build
+        uses: actions/download-artifact@v4
+        with:
+          name: Build Output
+          path: build
+
+      - name: Prepare .geode for Linux
+        run: |
+          for f in build/*.geode; do
+            if [ "$(basename "$f")" != "flozwer.paimbnails2.geode" ]; then
+              cp "$f" build/flozwer.paimbnails2.geode
+            fi
+            break
+          done
+
+      - name: Create Linux install package
+        run: |
+          mkdir -p "Paimbnails-Linux"
+          cp build/flozwer.paimbnails2.geode "Paimbnails-Linux/"
+          cp installer/linux/install.sh "Paimbnails-Linux/"
+          chmod +x "Paimbnails-Linux/install.sh"
+          tar -czf "Paimbnails-Linux.tar.gz" "Paimbnails-Linux/"
+
+      - name: Upload Linux package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Paimbnails-Linux-Package
+          path: Paimbnails-Linux.tar.gz
+
+  package:
+    name: Package builds
+    runs-on: ubuntu-latest
+    needs: ['build']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: geode-sdk/build-geode-mod/combine@main
+        id: build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Build Output
+          path: ${{ steps.build.outputs.build-output }}
+

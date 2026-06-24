@@ -1,0 +1,330 @@
+#include "CursorIcoDecoder.hpp"
+#include "ImageLoadHelper.hpp"   // for embedded PNG (stb_image)
+#include "FormatDetect.hpp"
+#include <Geode/loader/Log.hpp>
+#include <cstring>
+#include <algorithm>
+
+using namespace geode::prelude;
+
+namespace paimon::cursor_ico {
+
+namespace {
+
+// safe little-endian reads (no buffer overrun)
+inline uint16_t rd16(uint8_t const* p) {
+    return static_cast<uint16_t>(p[0] | (p[1] << 8));
+}
+inline uint32_t rd32(uint8_t const* p) {
+    return static_cast<uint32_t>(p[0] | (p[1] << 8) | (p[2] << 16) | (uint32_t(p[3]) << 24));
+}
+inline int32_t rd32s(uint8_t const* p) {
+    return static_cast<int32_t>(rd32(p));
+}
+
+constexpr int kMaxDim = 1024; // cursors are never large; cap abuse
+
+// Decode an icon entry payload. img/imgSize point to the payload start
+// (BMP DIB with AND mask, or a full PNG).
+bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
+    if (imgSize < 8) return false;
+
+    // embedded PNG (Vista+ icons): decode directly with stb_image (no
+    // CCTexture2D) so import doesn't depend on the GL context or main thread
+    if (paimon::format::isPng(img, imgSize)) {
+        int w = 0, h = 0, channels = 0;
+        unsigned char* pixels = stbi_load_from_memory(
+            img, static_cast<int>(imgSize), &w, &h, &channels, 4);
+        if (!pixels) return false;
+        if (w <= 0 || h <= 0 || w > kMaxDim || h > kMaxDim) {
+            stbi_image_free(pixels);
+            return false;
+        }
+        out.width  = w;
+        out.height = h;
+        size_t n = static_cast<size_t>(w) * h * 4;
+        out.rgba.assign(pixels, pixels + n);
+        stbi_image_free(pixels);
+        return true;
+    }
+
+    // BMP/DIB (BITMAPINFOHEADER): 40-byte header; the DIB "height" is double
+    // the real height because it includes the 1bpp AND mask stacked under the color
+    if (imgSize < 40) return false;
+    uint32_t headerSize = rd32(img + 0);
+    if (headerSize < 40) return false;
+
+    int32_t  w        = rd32s(img + 4);
+    int32_t  hRaw     = rd32s(img + 8);
+    uint16_t bpp      = rd16(img + 14);
+    uint32_t compress = rd32(img + 16);
+
+    if (w <= 0 || w > kMaxDim) return false;
+    int32_t h = hRaw / 2; // real height (color); the other half is the AND mask
+    if (h <= 0 || h > kMaxDim) return false;
+    if (compress != 0) return false; // only uncompressed BI_RGB
+
+    size_t pixelCount = static_cast<size_t>(w) * h;
+    out.width  = w;
+    out.height = h;
+    out.rgba.assign(pixelCount * 4, 0);
+
+    uint8_t const* p = img + headerSize;
+    uint8_t const* end = img + imgSize;
+
+    // the DIB is bottom-up (first buffer row is the bottom); we write top-down
+    // into out.rgba (row 0 = top)
+    auto setPixel = [&](int x, int yTop, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+        size_t idx = (static_cast<size_t>(yTop) * w + x) * 4;
+        out.rgba[idx + 0] = r;
+        out.rgba[idx + 1] = g;
+        out.rgba[idx + 2] = b;
+        out.rgba[idx + 3] = a;
+    };
+
+    if (bpp == 32) {
+        // rows are 4-byte aligned (32bpp already is); BGRA order
+        size_t rowBytes = static_cast<size_t>(w) * 4;
+        for (int y = 0; y < h; ++y) {
+            uint8_t const* row = p + static_cast<size_t>(y) * rowBytes;
+            if (row + rowBytes > end) break;
+            int yTop = h - 1 - y;
+            for (int x = 0; x < w; ++x) {
+                uint8_t const* px = row + static_cast<size_t>(x) * 4;
+                setPixel(x, yTop, px[2], px[1], px[0], px[3]);
+            }
+        }
+        return true;
+    }
+
+    if (bpp == 24) {
+        size_t rowBytes = ((static_cast<size_t>(w) * 3 + 3) / 4) * 4; // pad to 4
+        // the AND mask follows the color block
+        size_t colorBytes = rowBytes * h;
+        uint8_t const* maskBase = p + colorBytes;
+        size_t maskRowBytes = ((static_cast<size_t>(w) + 31) / 32) * 4; // 1bpp, pad 4
+        for (int y = 0; y < h; ++y) {
+            uint8_t const* row = p + static_cast<size_t>(y) * rowBytes;
+            if (row + rowBytes > end) break;
+            uint8_t const* maskRow = maskBase + static_cast<size_t>(y) * maskRowBytes;
+            int yTop = h - 1 - y;
+            for (int x = 0; x < w; ++x) {
+                uint8_t const* px = row + static_cast<size_t>(x) * 3;
+                uint8_t a = 255;
+                if (maskRow + (x / 8) < end) {
+                    uint8_t maskByte = maskRow[x / 8];
+                    bool transparent = (maskByte >> (7 - (x % 8))) & 1;
+                    if (transparent) a = 0;
+                }
+                setPixel(x, yTop, px[2], px[1], px[0], a);
+            }
+        }
+        return true;
+    }
+
+    if (bpp == 8 || bpp == 4 || bpp == 1) {
+        // indexed palette: BITMAPINFOHEADER followed by the color table
+        int paletteCount = 1 << bpp;
+        uint8_t const* palette = img + headerSize;
+        size_t paletteBytes = static_cast<size_t>(paletteCount) * 4; // BGRA (reserved)
+        uint8_t const* bits = palette + paletteBytes;
+        if (bits >= end) return false;
+
+        size_t rowBits = static_cast<size_t>(w) * bpp;
+        size_t rowBytes = ((rowBits + 31) / 32) * 4; // pad to 4
+        size_t colorBytes = rowBytes * h;
+        uint8_t const* maskBase = bits + colorBytes;
+        size_t maskRowBytes = ((static_cast<size_t>(w) + 31) / 32) * 4;
+
+        for (int y = 0; y < h; ++y) {
+            uint8_t const* row = bits + static_cast<size_t>(y) * rowBytes;
+            if (row + rowBytes > end) break;
+            uint8_t const* maskRow = maskBase + static_cast<size_t>(y) * maskRowBytes;
+            int yTop = h - 1 - y;
+            for (int x = 0; x < w; ++x) {
+                int index = 0;
+                if (bpp == 8) {
+                    index = row[x];
+                } else if (bpp == 4) {
+                    uint8_t byte = row[x / 2];
+                    index = (x & 1) ? (byte & 0x0F) : (byte >> 4);
+                } else { // 1bpp
+                    uint8_t byte = row[x / 8];
+                    index = (byte >> (7 - (x % 8))) & 1;
+                }
+                if (index >= paletteCount) index = 0;
+                uint8_t const* pe = palette + static_cast<size_t>(index) * 4;
+                uint8_t a = 255;
+                if (maskRow + (x / 8) < end) {
+                    uint8_t maskByte = maskRow[x / 8];
+                    bool transparent = (maskByte >> (7 - (x % 8))) & 1;
+                    if (transparent) a = 0;
+                }
+                setPixel(x, yTop, pe[2], pe[1], pe[0], a);
+            }
+        }
+        return true;
+    }
+
+    log::warn("[CursorIcoDecoder] Unsupported icon bpp: {}", bpp);
+    return false;
+}
+
+// Decode a .ico/.cur to a single frame (the highest-resolution image).
+bool decodeIcoInternal(uint8_t const* data, size_t size, DecodedFrame& out) {
+    if (size < 6) return false;
+    uint16_t reserved = rd16(data + 0);
+    uint16_t type     = rd16(data + 2);
+    uint16_t count    = rd16(data + 4);
+    if (reserved != 0 || (type != 1 && type != 2) || count == 0) return false;
+
+    size_t dirSize = 6 + static_cast<size_t>(count) * 16;
+    if (size < dirSize) return false;
+
+    // pick the largest-area entry
+    int bestIdx = -1;
+    long bestArea = -1;
+    for (int i = 0; i < count; ++i) {
+        uint8_t const* e = data + 6 + static_cast<size_t>(i) * 16;
+        int w = e[0] == 0 ? 256 : e[0];
+        int h = e[1] == 0 ? 256 : e[1];
+        long area = static_cast<long>(w) * h;
+        if (area > bestArea) { bestArea = area; bestIdx = i; }
+    }
+    if (bestIdx < 0) return false;
+
+    uint8_t const* e = data + 6 + static_cast<size_t>(bestIdx) * 16;
+    uint32_t bytesInRes  = rd32(e + 8);
+    uint32_t imageOffset = rd32(e + 12);
+    // overflow-safe check: imageOffset + bytesInRes could wrap in uint32 with a
+    // corrupt/malicious file and pass, causing an out-of-buffer read
+    if (bytesInRes == 0 || imageOffset > size || bytesInRes > size - imageOffset) return false;
+
+    return decodeIconImage(data + imageOffset, bytesInRes, out);
+}
+
+} // namespace
+
+// Detection
+bool isIco(uint8_t const* data, size_t size) {
+    return size >= 4 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x01 && data[3] == 0x00;
+}
+bool isCur(uint8_t const* data, size_t size) {
+    return size >= 4 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x02 && data[3] == 0x00;
+}
+bool isAni(uint8_t const* data, size_t size) {
+    return size >= 12 && memcmp(data, "RIFF", 4) == 0 && memcmp(data + 8, "ACON", 4) == 0;
+}
+bool isSupported(uint8_t const* data, size_t size) {
+    return isIco(data, size) || isCur(data, size) || isAni(data, size);
+}
+
+// .ico / .cur
+DecodeResult decodeIco(uint8_t const* data, size_t size) {
+    DecodeResult res;
+    DecodedFrame frame;
+    if (!decodeIcoInternal(data, size, frame)) {
+        res.error = "ico_decode_failed";
+        return res;
+    }
+    res.success = true;
+    res.animated = false;
+    res.frames.push_back(std::move(frame));
+    return res;
+}
+
+// .ani (RIFF/ACON)
+DecodeResult decodeAni(uint8_t const* data, size_t size) {
+    DecodeResult res;
+    if (!isAni(data, size)) { res.error = "not_ani"; return res; }
+
+    // RIFF structure: "RIFF" <size> "ACON" { chunks }. Relevant chunks:
+    //   "anih": ANIHEADER (default jifRate, nFrames/nSteps)
+    //   "rate": per-step rates (jiffies = 1/60 s)
+    //   "seq ": playback order (frame indices)
+    //   "LIST" "fram" { "icon" <ico/cur> ... }: the frames themselves
+    uint32_t defaultJiffies = 6;     // ~100ms (6/60s) default
+    std::vector<DecodedFrame> icons; // decoded frames in appearance order
+    std::vector<uint32_t> rates;     // per step
+    std::vector<uint32_t> seq;       // playback order
+
+    auto const* p = data + 12;       // after "RIFF"<size>"ACON"
+    auto const* end = data + size;
+
+    while (p + 8 <= end) {
+        char id[5] = {0};
+        memcpy(id, p, 4);
+        uint32_t chunkSize = rd32(p + 4);
+        uint8_t const* body = p + 8;
+        if (body + chunkSize > end) break;
+
+        if (memcmp(id, "anih", 4) == 0 && chunkSize >= 36) {
+            // ANIHEADER: cbSize, nFrames, nSteps, ..., iDispRate (offset 28), flags(32)
+            defaultJiffies = rd32(body + 28);
+            if (defaultJiffies == 0) defaultJiffies = 6;
+        } else if (memcmp(id, "rate", 4) == 0) {
+            int n = static_cast<int>(chunkSize / 4);
+            for (int i = 0; i < n; ++i) rates.push_back(rd32(body + i * 4));
+        } else if (memcmp(id, "seq ", 4) == 0) {
+            int n = static_cast<int>(chunkSize / 4);
+            for (int i = 0; i < n; ++i) seq.push_back(rd32(body + i * 4));
+        } else if (memcmp(id, "LIST", 4) == 0 && chunkSize >= 4 && memcmp(body, "fram", 4) == 0) {
+            // walk "icon" sub-chunks inside the "fram" list
+            uint8_t const* lp = body + 4;
+            uint8_t const* lend = body + chunkSize;
+            while (lp + 8 <= lend) {
+                char sid[5] = {0};
+                memcpy(sid, lp, 4);
+                uint32_t sSize = rd32(lp + 4);
+                uint8_t const* sBody = lp + 8;
+                if (sBody + sSize > lend) break;
+                if (memcmp(sid, "icon", 4) == 0) {
+                    DecodedFrame frame;
+                    if (decodeIcoInternal(sBody, sSize, frame)) {
+                        icons.push_back(std::move(frame));
+                    }
+                }
+                // RIFF chunks are word-aligned
+                lp = sBody + sSize + (sSize & 1);
+            }
+        }
+
+        p = body + chunkSize + (chunkSize & 1); // word alignment
+    }
+
+    if (icons.empty()) { res.error = "ani_no_frames"; return res; }
+
+    // build the final sequence, applying "seq" and "rate" if present
+    std::vector<DecodedFrame> out;
+    auto jiffiesToMs = [](uint32_t j) -> int {
+        if (j == 0) j = 6;
+        return static_cast<int>(j * 1000.0 / 60.0);
+    };
+
+    size_t steps = !seq.empty() ? seq.size() : icons.size();
+    for (size_t s = 0; s < steps; ++s) {
+        size_t iconIdx = !seq.empty() ? seq[s] : s;
+        if (iconIdx >= icons.size()) iconIdx = icons.size() - 1;
+
+        DecodedFrame f = icons[iconIdx]; // copy (frames may repeat)
+        uint32_t jiffies = (s < rates.size()) ? rates[s] : defaultJiffies;
+        f.delayMs = jiffiesToMs(jiffies);
+        out.push_back(std::move(f));
+    }
+
+    res.success = true;
+    res.animated = out.size() > 1;
+    res.frames = std::move(out);
+    return res;
+}
+
+// Generic entry point
+DecodeResult decode(uint8_t const* data, size_t size) {
+    if (isAni(data, size)) return decodeAni(data, size);
+    if (isIco(data, size) || isCur(data, size)) return decodeIco(data, size);
+    DecodeResult res;
+    res.error = "unsupported_format";
+    return res;
+}
+
+} // namespace paimon::cursor_ico

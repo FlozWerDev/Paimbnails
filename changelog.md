@@ -1,4 +1,4 @@
-# Unreleased
+# v1.0.8
 
 **PROFILE REDESIGN — Perfil personalizable**
 - Nuevo diseño de perfil completamente renovado con soporte para imagen de fondo, gradientes y efectos visuales.

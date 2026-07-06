@@ -14,8 +14,12 @@ namespace paimon::collab {
 //  - Place-style attribution: a colored name tag per peer that jumps to the
 //    object they just placed/edited and fades out, plus a brief flash on the
 //    object itself (tags live in the object layer, so they follow the camera).
-//  - Toast notifications that slide down from the top for chat/system notices
-//    (max 2 at once, each animating independently) + "who's talking" label.
+//  - Toast notifications for chat/system notices that slide in from the right
+//    edge (stacked, each animating independently) so they never cover the
+//    center of the canvas.
+//  - Voice chips at the top: one per active speaker (including yourself) with
+//    a colored avatar, the name and a live audio-level bar; the row re-centers
+//    itself as speakers come and go.
 // Registers itself with CollabManager on init and unregisters on destruction.
 class CollabEditorOverlay : public cocos2d::CCNode {
 public:
@@ -30,16 +34,29 @@ private:
     bool init(LevelEditorLayer* editor);
     ~CollabEditorOverlay() override;
 
-    void buildButtons();
     void onFlashDone(cocos2d::CCObject*);
     void refresh(float dt);
 
-    // Toast notifications (top of the screen).
+    // Toast notifications (right edge of the screen).
     cocos2d::CCNode* buildToast(ChatMessage const& msg);
     void showToast(ChatMessage const& msg);
     void layoutToasts();
     void dismissToast(cocos2d::CCNode* toast);
     void onToastExpired(cocos2d::CCObject* sender);
+
+    // Voice chips ("who's talking" with live level bars).
+    struct VoiceChip {
+        geode::Ref<cocos2d::CCNode> root;
+        cocos2d::CCLayerColor* barFill = nullptr;
+        float shown = 0.f;   // displayed level (smoothed)
+        float target = 0.f;  // latest reported level
+        float silent = 0.f;  // seconds since the speaker was last active
+        float width = 0.f;
+        bool placed = false; // got its first layout position
+    };
+    void buildVoiceChip(int clientId, std::string const& name, VoiceChip& chip);
+    void updateVoice(float dt);
+    void layoutVoiceChips();
 
     LevelEditorLayer* m_editor = nullptr;
 
@@ -51,7 +68,10 @@ private:
     cocos2d::CCNode* m_toastLayer = nullptr;
     std::vector<geode::Ref<cocos2d::CCNode>> m_toasts;
 
-    cocos2d::CCLabelBMFont* m_speakingLabel = nullptr;
+    // clientId (0 = local) -> live voice chip.
+    cocos2d::CCNode* m_voiceLayer = nullptr;
+    std::unordered_map<int, VoiceChip> m_voiceChips;
+
     int m_flashCount = 0;
 };
 

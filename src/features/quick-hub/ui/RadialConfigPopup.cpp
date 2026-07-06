@@ -1,6 +1,7 @@
 ﻿#include "RadialConfigPopup.hpp"
 #include "../services/QuickHubManager.hpp"
 #include "../data/QuickHubCategories.hpp"
+#include "../../../ui/PaiConfigKit.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -70,6 +71,15 @@ bool RadialConfigPopup::init() {
     previewLabel->setScale(0.35f);
     previewLabel->setPosition({cx - 80.f, winSize.height - 48.f});
     m_mainLayer->addChild(previewLabel, 2);
+
+    // Toggle: abrir el radial manteniendo Ctrl (debajo de la vista previa)
+    auto* holdRow = paimon::configkit::makeToggleRow(190.f,
+        "Abrir con Ctrl",
+        "Manten Ctrl para abrirlo.",
+        QuickHubManager::isHoldCtrlEnabled(),
+        [](bool v) { QuickHubManager::setHoldCtrlEnabled(v); });
+    holdRow->setPosition({cx - 175.f, 40.f});
+    m_mainLayer->addChild(holdRow, 2);
 
     // Lista scrolleable (lado derecho)
     float listX = cx + 50.f;

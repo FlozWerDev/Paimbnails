@@ -85,6 +85,14 @@ bool BeatShaderConfigLayer::init() {
     return true;
 }
 
+void BeatShaderConfigLayer::scheduleRebuild() {
+    Ref<BeatShaderConfigLayer> self = this;
+    Loader::get()->queueInMainThread([self] {
+        if (paimon::isRuntimeShuttingDown()) return;
+        if (self && self->getParent()) self->rebuild();
+    });
+}
+
 void BeatShaderConfigLayer::rebuild() {
     if (m_scroll) {
         m_scroll->removeFromParent();
@@ -150,51 +158,71 @@ void BeatShaderConfigLayer::rebuild() {
     auto* styleCard = kit::makeCard(scrollW, "Estilo del efecto", {255, 140, 220},
                                     {styleRow, descRow});
 
-    // Tarjeta: reaccion al audio
-    auto* audioCard = kit::makeCard(scrollW, "Reaccion a la musica", {120, 210, 255}, {
-        kit::makeSliderRow(innerW,
-            "Intensidad", "Fuerza general del efecto.",
-            m_cfg.intensity, 0.0, 1.0, fmtPercent,
-            [this](double v) { m_cfg.intensity = static_cast<float>(v); persistAndRefresh(false); }),
-        kit::makeSliderRow(innerW,
-            "Graves", "Reaccion a los bajos y al bombo.",
-            m_cfg.bassMult, 0.0, 3.0, fmtTimes,
-            [this](double v) { m_cfg.bassMult = static_cast<float>(v); persistAndRefresh(false); }),
-        kit::makeSliderRow(innerW,
-            "Medios", "Reaccion a voces e instrumentos.",
-            m_cfg.midMult, 0.0, 3.0, fmtTimes,
-            [this](double v) { m_cfg.midMult = static_cast<float>(v); persistAndRefresh(false); }),
-        kit::makeSliderRow(innerW,
-            "Agudos", "Reaccion a platillos y detalles.",
-            m_cfg.trebleMult, 0.0, 3.0, fmtTimes,
-            [this](double v) { m_cfg.trebleMult = static_cast<float>(v); persistAndRefresh(false); }),
-        kit::makeSliderRow(innerW,
-            "Golpe del beat", "Impulso extra en cada golpe del ritmo.",
-            m_cfg.beatMult, 0.0, 3.0, fmtTimes,
-            [this](double v) { m_cfg.beatMult = static_cast<float>(v); persistAndRefresh(false); }),
-    });
+    // Pestanas Basico / Avanzado
+    auto* tabs = kit::makeTabBar(scrollW, {"Basico", "Avanzado"}, m_tab,
+        [this](int i) {
+            m_tab = i;
+            scheduleRebuild();
+        });
 
-    // Tarjeta: pantallas donde se aplica
-    std::vector<CCNode*> layerRows;
-    auto layers = BeatShaderManager::get().availableLayers();
-    for (size_t i = 0; i < layers.size(); ++i) {
-        auto const& [key, name] = layers[i];
-        std::string keyCopy = key;
-        layerRows.push_back(kit::makeToggleRow(innerW,
-            name.c_str(), nullptr,
-            BeatShaderManager::get().isLayerEnabled(key),
-            [keyCopy](bool v) {
-                BeatShaderManager::get().setLayerEnabled(keyCopy, v);
-                Loader::get()->queueInMainThread([] {
-                    if (paimon::isRuntimeShuttingDown()) return;
-                    BeatShaderManager::get().rebuildBackgrounds();
-                });
-            }));
-    }
+    std::vector<CCNode*> items = {hero, tabs};
 
-    std::vector<CCNode*> items = {hero, styleCard, audioCard};
-    if (!layerRows.empty()) {
-        items.push_back(kit::makeCard(scrollW, "Donde se aplica", {130, 240, 170}, layerRows));
+    if (m_tab == 0) {
+        items.push_back(styleCard);
+        items.push_back(kit::makeCard(scrollW, "Reaccion a la musica", {120, 210, 255}, {
+            kit::makeSliderRow(innerW,
+                "Intensidad", "Fuerza general del efecto.",
+                m_cfg.intensity, 0.0, 1.0, fmtPercent,
+                [this](double v) { m_cfg.intensity = static_cast<float>(v); persistAndRefresh(false); }),
+        }));
+        items.push_back(kit::makeHint(scrollW,
+            "En Avanzado: reaccion por frecuencias (graves, medios, agudos) "
+            "y en que pantallas se aplica."));
+    } else {
+        // Ecualizador de la reaccion
+        items.push_back(kit::makeCard(scrollW, "Reaccion por frecuencias", {120, 210, 255}, {
+            kit::makeSliderRow(innerW,
+                "Graves", "Reaccion a los bajos y al bombo.",
+                m_cfg.bassMult, 0.0, 3.0, fmtTimes,
+                [this](double v) { m_cfg.bassMult = static_cast<float>(v); persistAndRefresh(false); }),
+            kit::makeSliderRow(innerW,
+                "Medios", "Reaccion a voces e instrumentos.",
+                m_cfg.midMult, 0.0, 3.0, fmtTimes,
+                [this](double v) { m_cfg.midMult = static_cast<float>(v); persistAndRefresh(false); }),
+            kit::makeSliderRow(innerW,
+                "Agudos", "Reaccion a platillos y detalles.",
+                m_cfg.trebleMult, 0.0, 3.0, fmtTimes,
+                [this](double v) { m_cfg.trebleMult = static_cast<float>(v); persistAndRefresh(false); }),
+            kit::makeSliderRow(innerW,
+                "Golpe del beat", "Impulso extra en cada golpe del ritmo.",
+                m_cfg.beatMult, 0.0, 3.0, fmtTimes,
+                [this](double v) { m_cfg.beatMult = static_cast<float>(v); persistAndRefresh(false); }),
+        }));
+
+        // Pantallas donde se aplica
+        std::vector<CCNode*> layerRows;
+        auto layers = BeatShaderManager::get().availableLayers();
+        for (size_t i = 0; i < layers.size(); ++i) {
+            auto const& [key, name] = layers[i];
+            std::string keyCopy = key;
+            layerRows.push_back(kit::makeToggleRow(innerW,
+                name.c_str(), nullptr,
+                BeatShaderManager::get().isLayerEnabled(key),
+                [keyCopy](bool v) {
+                    BeatShaderManager::get().setLayerEnabled(keyCopy, v);
+                    Loader::get()->queueInMainThread([] {
+                        if (paimon::isRuntimeShuttingDown()) return;
+                        BeatShaderManager::get().rebuildBackgrounds();
+                    });
+                }));
+        }
+        if (!layerRows.empty()) {
+            items.push_back(kit::makeCard(scrollW, "Donde se aplica", {130, 240, 170}, layerRows));
+        }
+
+        // La tarjeta de estilo no se usa en esta pestana.
+        styleCard->removeAllChildren();
+        m_shaderDescLabel = nullptr;
     }
 
     m_scroll = kit::makeScrollStack({scrollW, scrollH}, items);

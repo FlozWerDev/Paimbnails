@@ -14,8 +14,11 @@ protected:
 
     // Reconstruye el contenido scrolleable (tras un reset, por ejemplo).
     void rebuild();
+    // Reconstruccion diferida al siguiente tick (cambio de pestana).
+    void scheduleRebuild();
 
     geode::ScrollLayer* m_scroll = nullptr;
+    int m_tab = 0; // 0 = Basico (menus), 1 = Avanzado (editor)
 };
 
 } // namespace paimon::smoothscroll

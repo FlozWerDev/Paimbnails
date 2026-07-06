@@ -176,3 +176,32 @@ jobs:
           name: Build Output
           path: ${{ steps.build.outputs.build-output }}
 
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: ['package', 'build-installer', 'build-macos-dmg', 'build-linux-installer']
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: false
+          files: |
+            artifacts/**/*.geode
+            artifacts/**/*.exe
+            artifacts/**/*.zip
+            artifacts/**/*.tar.gz
+

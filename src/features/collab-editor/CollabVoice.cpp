@@ -7,6 +7,7 @@
 #include <fmod.hpp>
 
 #include <chrono>
+#include <cmath>
 
 using namespace geode::prelude;
 
@@ -123,6 +124,13 @@ float vadThreshold() {
     return static_cast<float>(v);
 }
 
+// Perceptual 0..1 loudness from a PCM16 peak: sqrt compresses the range so
+// normal speech already reads as a mostly-full bar and shouting caps at 1.
+float levelFromPeak(int peak) {
+    float linear = std::min(1.f, static_cast<float>(peak) / 26000.f);
+    return std::sqrt(linear);
+}
+
 } // namespace
 
 // --- Playback speaker -------------------------------------------------------
@@ -134,6 +142,7 @@ struct CollabVoice::Speaker {
     std::mutex mutex;
     std::deque<int16_t> fifo;
     double lastFrameAt = 0.0;
+    float level = 0.f; // 0..1 loudness of the last received frame
 
     ~Speaker() {
         if (channel) channel->stop();
@@ -230,6 +239,7 @@ void CollabVoice::stopRecording() {
     }
     m_capture.clear();
     m_gateOpenTicks = 0;
+    m_localLevel = 0.f;
     m_recording = false;
     log::info("[CollabVoice] recording stopped");
 }
@@ -284,6 +294,7 @@ void CollabVoice::update(float) {
         } else if (m_gateOpenTicks > 0) {
             --m_gateOpenTicks;
         }
+        m_localLevel = voiced ? levelFromPeak(peak) : m_localLevel * 0.5f;
         if (m_gateOpenTicks > 0) emitFrame(frame);
     }
 
@@ -347,21 +358,34 @@ void CollabVoice::onRemoteFrame(int from, std::string const& name, std::string c
     auto bytes = b64Decode(b64);
     if (bytes.empty()) return;
 
-    std::lock_guard lock(speaker->mutex);
-    for (uint8_t b : bytes) speaker->fifo.push_back(muLawDecode(b));
-    // Latency control: if the FIFO built up (slow poll bursts), skip ahead.
-    if (speaker->fifo.size() > kFifoMaxSamples) {
-        while (speaker->fifo.size() > kFifoCatchupSamples) speaker->fifo.pop_front();
+    int peak = 0;
+    {
+        std::lock_guard lock(speaker->mutex);
+        for (uint8_t b : bytes) {
+            int16_t s = muLawDecode(b);
+            peak = std::max(peak, std::abs(static_cast<int>(s)));
+            speaker->fifo.push_back(s);
+        }
+        // Latency control: if the FIFO built up (slow poll bursts), skip ahead.
+        if (speaker->fifo.size() > kFifoMaxSamples) {
+            while (speaker->fifo.size() > kFifoCatchupSamples) speaker->fifo.pop_front();
+        }
     }
+    speaker->level = levelFromPeak(peak);
     speaker->lastFrameAt = nowSeconds();
     if (speaker->channel) speaker->channel->setVolume(voiceVolume());
 }
 
-std::vector<std::string> CollabVoice::speakingPeers() const {
-    std::vector<std::string> out;
+std::vector<SpeakingInfo> CollabVoice::speakingNow() const {
+    std::vector<SpeakingInfo> out;
     double t = nowSeconds();
     for (auto const& [id, speaker] : m_speakers) {
-        if (t - speaker->lastFrameAt < 0.6) out.push_back(speaker->name);
+        double age = t - speaker->lastFrameAt;
+        if (age >= 0.6) continue;
+        // Fade the reported level as the last frame gets stale so bars fall
+        // smoothly instead of snapping to zero when a peer stops talking.
+        float fade = age > 0.3 ? static_cast<float>((0.6 - age) / 0.3) : 1.f;
+        out.push_back({id, speaker->name, speaker->level * fade});
     }
     return out;
 }

@@ -16,6 +16,14 @@ class System;
 
 namespace paimon::collab {
 
+// A peer (or the local user) currently producing audio, with a perceptual
+// loudness level for the "who's talking" indicator bars.
+struct SpeakingInfo {
+    int clientId = 0; // 0 = local user
+    std::string name;
+    float level = 0.f; // 0..1
+};
+
 // Proximity-less room voice chat (Globed-style walkie-talkie) over the collab
 // server's HTTP relay.
 //
@@ -45,9 +53,11 @@ public:
     // Incoming relayed frame from a peer (main thread).
     void onRemoteFrame(int from, std::string const& name, std::string const& b64);
 
-    // Names of peers whose audio played within the last ~600 ms, for the
-    // "who's talking" indicator. Includes "yo" marker handled by caller.
-    std::vector<std::string> speakingPeers() const;
+    // Peers whose audio played within the last ~600 ms, with their current
+    // loudness. The local user is not included; callers combine localLevel().
+    std::vector<SpeakingInfo> speakingNow() const;
+    // Loudness of our own mic while the VAD gate is open, 0 otherwise.
+    float localLevel() const { return m_gateOpenTicks > 0 ? m_localLevel : 0.f; }
 
     // Drop a single peer's stream (peer left) or everything (disconnect).
     void dropPeer(int clientId);
@@ -73,6 +83,7 @@ private:
     // VAD gate: opens on energy above threshold, holds for a few frames so
     // words aren't clipped.
     int m_gateOpenTicks = 0;
+    float m_localLevel = 0.f; // 0..1 from the last captured frame
 
     uint32_t m_txSeq = 0;
 

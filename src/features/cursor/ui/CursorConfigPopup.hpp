@@ -15,6 +15,8 @@ protected:
     bool  m_thumbScrollTargetSet    = false;
     float m_settingsScrollTargetY   = 0.f;
     bool  m_settingsScrollTargetSet = false;
+    float m_advancedScrollTargetY   = 0.f;
+    bool  m_advancedScrollTargetSet = false;
 
     // Per-state slots (Idle / Move / Hover / Click / Text / Disabled)
     static constexpr int kSlotCount = CURSOR_STATE_COUNT;
@@ -44,6 +46,7 @@ protected:
 
     // Settings scroll (construido con PaiConfigKit)
     geode::ScrollLayer*     m_scrollLayer = nullptr;
+    geode::ScrollLayer*     m_advancedScroll = nullptr;
     cocos2d::CCSprite*      m_scrollArrow = nullptr;
 
     // Controles que la galeria necesita mantener sincronizados
@@ -56,9 +59,10 @@ protected:
     void syncEnableUI(bool enabled);
 
     // Tabs
-    int m_currentTab = 0; // 0=gallery, 1=settings
+    int m_currentTab = 0; // 0=gallery, 1=settings (basico), 2=avanzado
     cocos2d::CCNode* m_galleryTab  = nullptr;
     cocos2d::CCNode* m_settingsTab = nullptr;
+    cocos2d::CCNode* m_advancedTab = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_tabs;
 
     bool init() override;
@@ -83,6 +87,7 @@ protected:
 
     // Settings
     void buildSettingsTab();
+    void buildAdvancedTab();
     void checkScrollPosition(float dt);
     void updateSmoothScroll(float dt);
 

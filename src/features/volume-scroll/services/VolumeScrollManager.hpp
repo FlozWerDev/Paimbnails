@@ -56,8 +56,8 @@ private:
     void rebuildContent();         // re-render icon + bar + label
     void resetAutoHideTimer();
     void startSlideOut();
-    void redrawPill();             // redraw the pill rounded rect at current width
-    void redrawBar();              // redraw the bar with rounded corners
+    void redrawPill();             // resize the GJ_square background to the current width
+    void redrawBar();              // redraw the volume fill (CCDrawNode, colored per 25%) + thumb
     void applyExpandProgress();    // position/opacity of children per m_expandProgress
 
     // Read/write volumes from FMODAudioEngine. Clamp to [0, 1].
@@ -77,13 +77,13 @@ private:
 
     // UI
     geode::Ref<cocos2d::CCLayerRGBA> m_overlay;     // container with cascade opacity
-    geode::Ref<cocos2d::CCNode> m_pillNode;         // pill PaimonDrawNode (background)
+    geode::Ref<cocos2d::CCNode> m_pillNode;         // GJ_square01 background (CCScale9Sprite)
     geode::Ref<cocos2d::CCLabelBMFont> m_iconLabel; // "MUS"/"SFX" chip (always visible when overlay shown)
     geode::Ref<cocos2d::CCLabelBMFont> m_kindLabel; // "Music"/"SFX" (only when expanded)
     geode::Ref<cocos2d::CCLabelBMFont> m_label;     // "75%" text (only when expanded)
-    geode::Ref<cocos2d::CCNodeRGBA> m_barBg;        // bar background PaimonDrawNode (expanded only)
-    geode::Ref<cocos2d::CCNodeRGBA> m_barFill;      // bar fill PaimonDrawNode (expanded only)
-    cocos2d::CCScene* m_attachedScene = nullptr;    // weak (Cocos retains parent)
+    geode::Ref<cocos2d::CCDrawNode> m_barDraw;      // fully drawn volume bar: track + colored fill (expanded only)
+    float m_barAlpha = 0.f;                         // fade factor for the drawn bar (baked into vertex alpha)
+    cocos2d::CCScene* m_attachedScene = nullptr;    // weak (Cocos retains parent; null when on OverlayManager)
 };
 
 // True if a volume-scroll keybind (music/sfx, current game/editor context) is

@@ -13,6 +13,7 @@
 #include <Geode/ui/TextInput.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
+#include <algorithm>
 #include <cctype>
 #include <random>
 
@@ -811,18 +812,57 @@ CollabChatPopup* CollabChatPopup::create() {
 }
 
 bool CollabChatPopup::init() {
-    if (!Popup::init(380.f, 260.f)) return false;
+    if (!Popup::init(400.f, 280.f)) return false;
     paimon::markDynamicPopup(this);
     setID("collab-chat"_spr);
     setTitle("Chat de sala");
 
-    m_messages = CCNode::create();
-    m_messages->setAnchorPoint({0.f, 0.f});
-    m_mainLayer->addChildAtPosition(m_messages, Anchor::BottomLeft, {20.f, 78.f});
+    // --- Header: connection dot + room code + editor count ------------------
+    m_statusDot = CCDrawNode::create();
+    m_mainLayer->addChild(m_statusDot, 5); // positioned next to the label on refresh
+    m_headerLabel = CCLabelBMFont::create("", "goldFont.fnt");
+    m_headerLabel->setScale(0.45f);
+    m_mainLayer->addChildAtPosition(m_headerLabel, Anchor::Top, {0.f, -38.f});
 
+    // --- Message history: dark card + scrollable list -----------------------
+    constexpr float kChatW = 360.f, kChatH = 148.f;
+    m_mainLayer->addChildAtPosition(makeCard(kChatW + 8.f, kChatH + 8.f), Anchor::Center, {0.f, 16.f});
+
+    m_scroll = ScrollLayer::create({kChatW, kChatH});
+    m_scroll->setPosition({(m_mainLayer->getContentWidth() - kChatW) / 2.f, 82.f});
+    m_mainLayer->addChild(m_scroll, 1);
+
+    m_emptyLabel = makeHint("Aun no hay mensajes. Saluda!");
+    m_emptyLabel->setVisible(false);
+    m_mainLayer->addChildAtPosition(m_emptyLabel, Anchor::Center, {0.f, 16.f});
+    m_emptyLabel->setZOrder(5);
+
+    // --- Who's talking + local mic level bar ---------------------------------
+    m_speakingLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    m_speakingLabel->setScale(0.4f);
+    m_speakingLabel->setColor({140, 255, 140});
+    m_mainLayer->addChildAtPosition(m_speakingLabel, Anchor::Bottom, {-30.f, 62.f});
+
+    // Thin bar above the mic button showing your own level while you talk.
+    m_micBarTrack = CCLayerColor::create({0, 0, 0, 130}, 60.f, 4.f);
+    m_micBarTrack->ignoreAnchorPointForPosition(false);
+    m_micBarTrack->setAnchorPoint({0.f, 0.5f});
+    m_micBarTrack->setPosition({322.f, 62.f});
+    m_micBarTrack->setVisible(false);
+    m_mainLayer->addChild(m_micBarTrack, 1);
+
+    m_micBarFill = CCLayerColor::create({140, 255, 140, 255}, 60.f, 4.f);
+    m_micBarFill->ignoreAnchorPointForPosition(false);
+    m_micBarFill->setAnchorPoint({0.f, 0.5f});
+    m_micBarFill->setPosition({322.f, 62.f});
+    m_micBarFill->setScaleX(0.f);
+    m_micBarFill->setVisible(false);
+    m_mainLayer->addChild(m_micBarFill, 2);
+
+    // --- Input row ------------------------------------------------------------
     m_input = TextInput::create(210.f, "Mensaje", "chatFont.fnt");
     m_input->setMaxCharCount(200);
-    m_mainLayer->addChildAtPosition(m_input, Anchor::Bottom, {-52.f, 34.f});
+    m_mainLayer->addChildAtPosition(m_input, Anchor::Bottom, {-65.f, 32.f});
 
     auto* menu = CCMenu::create();
 
@@ -851,10 +891,12 @@ bool CollabChatPopup::init() {
 
     menu->setLayout(RowLayout::create()->setGap(8.f));
     menu->updateLayout();
-    m_mainLayer->addChildAtPosition(menu, Anchor::Bottom, {118.f, 34.f});
+    m_mainLayer->addChildAtPosition(menu, Anchor::Bottom, {122.f, 32.f});
 
     refresh();
-    this->schedule(schedule_selector(CollabChatPopup::refresh), 0.3f);
+    this->schedule(schedule_selector(CollabChatPopup::refresh), 0.15f);
+    // Per-frame so the mic bar rises and falls smoothly.
+    this->schedule(schedule_selector(CollabChatPopup::tickVoice));
     return true;
 }
 
@@ -881,24 +923,117 @@ void CollabChatPopup::onMic(CCObject*) {
 
 void CollabChatPopup::refresh(float) {
     auto& mgr = CollabManager::get();
+    auto& voice = CollabVoice::get();
+
+    // Header: green dot + room info when connected, red dot otherwise.
+    bool connected = mgr.connected();
+    int connState = connected ? 1 : 0;
+    if (m_statusDot && connState != m_connShown) {
+        m_connShown = connState;
+        m_statusDot->clear();
+        m_statusDot->drawDot({0.f, 0.f}, 4.f,
+            connected ? ccColor4F{0.35f, 0.95f, 0.45f, 1.f} : ccColor4F{0.95f, 0.4f, 0.4f, 1.f});
+    }
+    if (m_headerLabel) {
+        std::string header;
+        if (connected) {
+            int n = mgr.peerCount();
+            header = fmt::format("Sala {}  -  {} {}", mgr.roomCode(), n, n == 1 ? "editor" : "editores");
+        } else {
+            header = "Sin conexion a ninguna sala";
+        }
+        m_headerLabel->setString(header.c_str());
+        m_headerLabel->limitLabelWidth(300.f, 0.45f, 0.2f);
+        if (m_statusDot) {
+            float half = m_headerLabel->getContentSize().width * m_headerLabel->getScale() / 2.f;
+            auto center = m_headerLabel->getPosition();
+            m_statusDot->setPosition({center.x - half - 9.f, center.y});
+        }
+    }
+
+    // Who's talking right now (you + peers).
+    if (m_speakingLabel) {
+        std::string speaking;
+        if (voice.transmitting()) speaking = "Tu";
+        for (auto const& s : voice.speakingNow()) {
+            if (!speaking.empty()) speaking += ", ";
+            speaking += s.name;
+        }
+        m_speakingLabel->setString(speaking.empty() ? "" : fmt::format("Hablando: {}", speaking).c_str());
+        m_speakingLabel->limitLabelWidth(240.f, 0.4f, 0.15f);
+    }
 
     if (m_micSprite) {
-        bool on = CollabVoice::get().micEnabled();
+        bool on = voice.micEnabled();
         m_micSprite->updateBGImage(on ? "GJ_button_01.png" : "GJ_button_06.png");
     }
 
     if (mgr.chatRevision() == m_lastRevision) return;
     m_lastRevision = mgr.chatRevision();
+    rebuildMessages();
+}
 
-    m_messages->removeAllChildren();
-    auto history = mgr.recentChat(11);
-    constexpr float kLineHeight = 16.f;
-    int count = static_cast<int>(history.size());
-    for (int i = 0; i < count; ++i) {
-        auto* line = buildChatLine(history[i], 0.55f);
-        line->setPosition({0.f, (count - 1 - i) * kLineHeight});
-        m_messages->addChild(line);
+void CollabChatPopup::rebuildMessages() {
+    if (!m_scroll) return;
+    auto history = CollabManager::get().recentChat(60);
+    if (m_emptyLabel) m_emptyLabel->setVisible(history.empty());
+
+    auto* content = m_scroll->m_contentLayer;
+    content->removeAllChildren();
+
+    constexpr float kPadX = 8.f, kPadY = 6.f, kGapY = 3.f;
+    float const width = m_scroll->getContentSize().width;
+    float const viewH = m_scroll->getContentSize().height;
+
+    struct Row {
+        CCNode* node;
+        float height;
+    };
+    std::vector<Row> rows;
+    rows.reserve(history.size());
+    float total = kPadY * 2.f;
+    for (auto const& msg : history) {
+        auto* node = buildChatLine(msg, 0.5f);
+        if (!node) continue;
+        if (auto* label = typeinfo_cast<CCLabelBMFont*>(node)) {
+            label->limitLabelWidth(width - kPadX * 2.f, 0.5f, 0.2f);
+        }
+        float h = std::max(node->getContentSize().height * node->getScaleY(), 11.f);
+        rows.push_back({node, h});
+        total += h + kGapY;
     }
+    if (!rows.empty()) total -= kGapY;
+
+    float contentH = std::max(total, viewH);
+    content->setContentSize({width, contentH});
+
+    // Oldest at the top, newest at the bottom (chat order).
+    float y = contentH - kPadY;
+    for (auto const& row : rows) {
+        y -= row.height;
+        row.node->setPosition({kPadX, y});
+        content->addChild(row.node);
+        y -= kGapY;
+    }
+
+    // Pin the view to the newest message.
+    content->setPosition({0.f, 0.f});
+}
+
+void CollabChatPopup::tickVoice(float dt) {
+    auto& voice = CollabVoice::get();
+    bool micOn = voice.micEnabled();
+    if (m_micBarTrack) m_micBarTrack->setVisible(micOn);
+    if (m_micBarFill) m_micBarFill->setVisible(micOn);
+    if (!micOn) {
+        m_micShown = 0.f;
+        return;
+    }
+    // Fast attack, slower release, same feel as the overlay bars.
+    float target = voice.localLevel();
+    float k = target > m_micShown ? 16.f : 6.f;
+    m_micShown += (target - m_micShown) * std::min(1.f, k * dt);
+    if (m_micBarFill) m_micBarFill->setScaleX(std::clamp(m_micShown, 0.f, 1.f));
 }
 
 } // namespace paimon::collab

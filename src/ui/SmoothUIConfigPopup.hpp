@@ -21,6 +21,7 @@ protected:
     void scheduleRebuild();
 
     geode::ScrollLayer* m_scroll = nullptr;
+    int m_tab = 0; // 0 = Basico, 1 = Avanzado
 };
 
 } // namespace paimon::ui

@@ -1,4 +1,5 @@
 ﻿#include "FeatureConfigPopup.hpp"
+#include "SmoothUIConfigPopup.hpp"
 
 #include "../utils/DynamicPopupRegistry.hpp"
 #include "../features/settings-panel/services/SettingsPanelManager.hpp"
@@ -871,6 +872,15 @@ GranularRoute routeForGranular(std::string const& englishName) {
     };
 
     // 1. direct actions to existing dedicated popups
+    if (englishName == "Smooth UI" ||
+        englishName == "Smooth Popups" ||
+        englishName == "Button Animations" ||
+        englishName == "Global UI Speed" ||
+        englishName == "Reduced Motion") {
+        return {{}, []() {
+            if (auto* p = paimon::ui::SmoothUIConfigPopup::create()) p->show();
+        }};
+    }
     if (englishName == "Progress Bar") {
         return {{}, []() { if (auto* p = ProgressBarConfigPopup::create()) p->show(); }};
     }

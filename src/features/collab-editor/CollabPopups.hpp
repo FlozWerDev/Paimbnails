@@ -134,7 +134,8 @@ private:
     std::string m_room;
 };
 
-// In-room text chat: recent history + input. Opened from the editor overlay.
+// In-room text chat: scrollable history, room status header, "who's talking"
+// line and a live mic level bar. Opened from the editor overlay.
 class CollabChatPopup : public geode::Popup {
 public:
     static CollabChatPopup* create();
@@ -144,10 +145,20 @@ private:
     void onSend(cocos2d::CCObject*);
     void onMic(cocos2d::CCObject*);
     void refresh(float dt = 0.f);
+    void rebuildMessages();
+    void tickVoice(float dt); // per-frame: smooth mic level bar
 
     geode::TextInput* m_input = nullptr;
-    cocos2d::CCNode* m_messages = nullptr;
+    geode::ScrollLayer* m_scroll = nullptr;
+    cocos2d::CCLabelBMFont* m_headerLabel = nullptr;
+    cocos2d::CCDrawNode* m_statusDot = nullptr;
+    cocos2d::CCLabelBMFont* m_speakingLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_emptyLabel = nullptr;
     ButtonSprite* m_micSprite = nullptr;
+    cocos2d::CCLayerColor* m_micBarFill = nullptr;
+    cocos2d::CCLayerColor* m_micBarTrack = nullptr;
+    float m_micShown = 0.f;      // smoothed local level
+    int m_connShown = -1;        // last drawn connection state (-1 = never)
     uint64_t m_lastRevision = ~0ull;
 };
 

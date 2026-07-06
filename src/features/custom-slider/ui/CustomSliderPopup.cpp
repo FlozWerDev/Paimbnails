@@ -240,6 +240,13 @@ void CustomSliderPopup::rebuild() {
 
     auto* styleCard = kit::makeCard(scrollW, "Estilo del puntero", {120, 210, 255}, styleRows);
 
+    // Pestanas Basico / Avanzado
+    auto* tabs = kit::makeTabBar(scrollW, {"Basico", "Avanzado"}, m_tab,
+        [this](int i) {
+            m_tab = i;
+            scheduleRebuild();
+        });
+
     // Tarjeta: tamano
     auto* sizeCard = kit::makeCard(scrollW, "Tamano", {255, 200, 100}, {
         kit::makeSliderRow(innerW,
@@ -302,8 +309,25 @@ void CustomSliderPopup::rebuild() {
             [](bool v) { CustomSliderManager::get().config().targets.garageSliders = v; }),
     });
 
-    m_scroll = kit::makeScrollStack({scrollW, scrollH},
-        {hero, styleCard, sizeCard, animCard, targetsCard});
+    std::vector<CCNode*> items = {hero, tabs};
+    if (m_tab == 0) {
+        items.push_back(styleCard);
+        items.push_back(sizeCard);
+        items.push_back(kit::makeHint(scrollW,
+            "En Avanzado: animacion al arrastrar y en que barras se aplica."));
+        // no usados en esta pestana
+        animCard->removeAllChildren();
+        targetsCard->removeAllChildren();
+    } else {
+        items.push_back(animCard);
+        items.push_back(targetsCard);
+        // no usados en esta pestana
+        styleCard->removeAllChildren();
+        sizeCard->removeAllChildren();
+        m_shapeGridMenu = nullptr;
+    }
+
+    m_scroll = kit::makeScrollStack({scrollW, scrollH}, items);
     m_scroll->setPosition({12.f, 34.f});
     m_mainLayer->addChild(m_scroll);
 

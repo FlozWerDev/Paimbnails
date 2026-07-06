@@ -5,6 +5,7 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <fmt/format.h>
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 using namespace cocos2d;
@@ -534,6 +535,145 @@ geode::ScrollLayer* makeScrollStack(
 
     scroll->moveToTop();
     return scroll;
+}
+
+namespace {
+
+// Estado compartido de una barra de pestanas para poder re-estilizar
+// todas las pestanas cuando cambia la seleccion.
+struct TabBarState {
+    std::vector<cocos2d::CCNodeRGBA*> panels;
+    std::vector<CCLabelBMFont*> labels;
+    int selected = 0;
+
+    void restyle() {
+        constexpr ccColor3B kSelPanel   = {66, 132, 245};
+        constexpr ccColor3B kUnselPanel = {10, 13, 24};
+        for (size_t i = 0; i < panels.size(); ++i) {
+            bool sel = static_cast<int>(i) == selected;
+            if (panels[i]) {
+                panels[i]->setColor(sel ? kSelPanel : kUnselPanel);
+                panels[i]->setOpacity(sel ? 235 : 120);
+            }
+            if (i < labels.size() && labels[i]) {
+                labels[i]->setColor(sel ? ccColor3B{255, 255, 255} : kDescColor);
+                labels[i]->setOpacity(sel ? 255 : 210);
+            }
+        }
+    }
+};
+
+} // namespace
+
+CCNode* makeTabBar(
+    float width,
+    std::vector<std::string> const& labels,
+    int selected,
+    std::function<void(int)> onSelect
+) {
+    constexpr float kGap = 6.f;
+    float const barH = kTabBarHeight;
+
+    auto* bar = CCNode::create();
+    bar->setAnchorPoint({0.f, 0.f});
+    bar->setContentSize({width, barH});
+
+    auto* menu = makeRowMenu(bar);
+
+    int n = std::max<int>(1, static_cast<int>(labels.size()));
+    float tabW = (width - kGap * static_cast<float>(n - 1)) / static_cast<float>(n);
+
+    auto state = std::make_shared<TabBarState>();
+    state->selected = std::clamp(selected, 0, n - 1);
+    auto cb = std::make_shared<std::function<void(int)>>(std::move(onSelect));
+
+    for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
+        float x0 = static_cast<float>(i) * (tabW + kGap);
+
+        // Contenedor visual de la pestana: panel + etiqueta
+        auto* holder = CCNode::create();
+        holder->setAnchorPoint({0.5f, 0.5f});
+        holder->setContentSize({tabW, barH - 4.f});
+
+        auto* panel = paimon::SpriteHelper::createColorPanel(
+            tabW, barH - 4.f, kCardColor, 120, 6.f);
+        if (panel) {
+            panel->setAnchorPoint({0.f, 0.f});
+            panel->setPosition({0.f, 0.f});
+            holder->addChild(panel, -1);
+        }
+        state->panels.push_back(panel);
+
+        auto* lbl = CCLabelBMFont::create(labels[static_cast<size_t>(i)].c_str(), "bigFont.fnt");
+        lbl->setAnchorPoint({0.5f, 0.5f});
+        lbl->limitLabelWidth(tabW - 14.f, 0.38f, 0.1f);
+        lbl->setPosition({tabW / 2.f, (barH - 4.f) / 2.f});
+        holder->addChild(lbl);
+        state->labels.push_back(lbl);
+
+        auto* btn = CCMenuItemExt::createSpriteExtra(
+            holder, [state, cb, i](CCMenuItemSpriteExtra*) {
+                if (state->selected == i) return;
+                state->selected = i;
+                state->restyle();
+                if (*cb) (*cb)(i);
+            });
+        btn->setPosition({x0 + tabW / 2.f, barH / 2.f});
+        menu->addChild(btn);
+    }
+
+    state->restyle();
+    return bar;
+}
+
+bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
+    float& targetY, bool& targetSet, float speed
+) {
+#if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_MACOS)
+    return false;
+#else
+    if (!scrollLayer || !scrollLayer->getParent()) return false;
+
+    CCPoint mousePos = geode::cocos::getMousePos();
+    CCRect scrollRect = scrollLayer->boundingBox();
+    scrollRect.origin = scrollLayer->getParent()->convertToWorldSpace(scrollRect.origin);
+    if (!scrollRect.containsPoint(mousePos)) return false;
+
+    auto* contentLayer = scrollLayer->m_contentLayer;
+    if (!contentLayer) return false;
+
+    float amount = y;
+    if (std::abs(amount) < 0.001f) amount = -x;
+
+    float minY = scrollLayer->getContentSize().height - contentLayer->getContentSize().height;
+    float maxY = 0.f;
+    if (minY > maxY) minY = maxY;
+
+    if (!targetSet) {
+        targetY = contentLayer->getPositionY();
+        targetSet = true;
+    }
+    targetY = std::max(minY, std::min(maxY, targetY - amount * speed));
+    return true;
+#endif
+}
+
+void stepWheelScroll(geode::ScrollLayer* scrollLayer,
+    float& targetY, bool& targetSet, float dt
+) {
+    if (!targetSet || !scrollLayer) return;
+    auto* contentLayer = scrollLayer->m_contentLayer;
+    if (!contentLayer) { targetSet = false; return; }
+
+    float cur = contentLayer->getPositionY();
+    float diff = targetY - cur;
+    if (std::abs(diff) < 0.5f) {
+        contentLayer->setPositionY(targetY);
+        targetSet = false;
+        return;
+    }
+    float t = 1.f - std::pow(0.001f, dt);
+    contentLayer->setPositionY(cur + diff * t);
 }
 
 } // namespace paimon::configkit

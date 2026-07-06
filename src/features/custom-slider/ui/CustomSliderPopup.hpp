@@ -18,6 +18,7 @@ protected:
     geode::ScrollLayer*     m_scroll         = nullptr;
     cocos2d::CCNode*        m_previewNode    = nullptr;
     cocos2d::CCMenu*        m_shapeGridMenu  = nullptr;
+    int                     m_tab            = 0; // 0 = Basico, 1 = Avanzado
 
     // Reconstruye el contenido scrolleable (cambios de modo/marco).
     void rebuild();

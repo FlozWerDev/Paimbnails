@@ -14,60 +14,6 @@ using namespace cocos2d;
 
 namespace {
 namespace kit = paimon::configkit;
-
-// Inicia/actualiza el destino de scroll suave para la rueda del raton.
-// Devuelve true si el cursor esta sobre el area de scroll (consume el evento).
-bool queueSmoothScroll(ScrollLayer* scrollLayer, float x, float y,
-                       float& targetY, bool& targetSet) {
-#if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_MACOS)
-    return false;
-#else
-    if (!scrollLayer) return false;
-
-    CCPoint mousePos = geode::cocos::getMousePos();
-    CCRect scrollRect = scrollLayer->boundingBox();
-    scrollRect.origin = scrollLayer->getParent()->convertToWorldSpace(scrollRect.origin);
-    if (!scrollRect.containsPoint(mousePos)) return false;
-
-    auto* contentLayer = scrollLayer->m_contentLayer;
-    if (!contentLayer) return false;
-
-    float scrollAmount = y;
-    if (std::abs(scrollAmount) < 0.001f) {
-        scrollAmount = -x;
-    }
-
-    float minY = scrollLayer->getContentSize().height - contentLayer->getContentSize().height;
-    float maxY = 0.f;
-    if (minY > maxY) minY = maxY;
-
-    // Si aun no hay destino, partir de la posicion actual.
-    if (!targetSet) {
-        targetY = contentLayer->getPositionY();
-        targetSet = true;
-    }
-    targetY = std::max(minY, std::min(maxY, targetY - scrollAmount * 16.f));
-    return true;
-#endif
-}
-
-// Aproxima suavemente el contentLayer hacia targetY (lerp por frame).
-void stepSmoothScroll(ScrollLayer* scrollLayer, float& targetY, bool& targetSet, float dt) {
-    if (!targetSet || !scrollLayer) return;
-    auto* contentLayer = scrollLayer->m_contentLayer;
-    if (!contentLayer) { targetSet = false; return; }
-
-    float cur = contentLayer->getPositionY();
-    float diff = targetY - cur;
-    if (std::abs(diff) < 0.5f) {
-        contentLayer->setPositionY(targetY);
-        targetSet = false;
-        return;
-    }
-    // factor de suavizado independiente del framerate
-    float t = 1.f - std::pow(0.001f, dt);
-    contentLayer->setPositionY(cur + diff * t);
-}
 }
 
 
@@ -111,9 +57,16 @@ bool CursorConfigPopup::init() {
     m_settingsTab->setVisible(false);
     m_mainLayer->addChild(m_settingsTab, 5);
 
+    m_advancedTab = CCNode::create();
+    m_advancedTab->setID("cursor-advanced-tab"_spr);
+    m_advancedTab->setContentSize(content);
+    m_advancedTab->setVisible(false);
+    m_mainLayer->addChild(m_advancedTab, 5);
+
     createTabButtons();
     buildGalleryTab();
     buildSettingsTab();
+    buildAdvancedTab();
 
     // Updater de scroll suave (rueda del raton con glide).
     this->schedule(schedule_selector(CursorConfigPopup::updateSmoothScroll));
@@ -132,19 +85,24 @@ void CursorConfigPopup::onExit() {
 }
 
 void CursorConfigPopup::scrollWheel(float x, float y) {
+    if (m_currentTab == 2) {
+        kit::queueWheelScroll(m_advancedScroll, x, y, m_advancedScrollTargetY, m_advancedScrollTargetSet);
+        return;
+    }
     if (m_currentTab == 1) {
-        queueSmoothScroll(m_scrollLayer, x, y, m_settingsScrollTargetY, m_settingsScrollTargetSet);
+        kit::queueWheelScroll(m_scrollLayer, x, y, m_settingsScrollTargetY, m_settingsScrollTargetSet);
         return;
     }
     if (m_currentTab == 0) {
-        queueSmoothScroll(m_thumbScroll, x, y, m_thumbScrollTargetY, m_thumbScrollTargetSet);
+        kit::queueWheelScroll(m_thumbScroll, x, y, m_thumbScrollTargetY, m_thumbScrollTargetSet);
         return;
     }
 }
 
 void CursorConfigPopup::updateSmoothScroll(float dt) {
-    stepSmoothScroll(m_thumbScroll, m_thumbScrollTargetY, m_thumbScrollTargetSet, dt);
-    stepSmoothScroll(m_scrollLayer, m_settingsScrollTargetY, m_settingsScrollTargetSet, dt);
+    kit::stepWheelScroll(m_thumbScroll, m_thumbScrollTargetY, m_thumbScrollTargetSet, dt);
+    kit::stepWheelScroll(m_scrollLayer, m_settingsScrollTargetY, m_settingsScrollTargetSet, dt);
+    kit::stepWheelScroll(m_advancedScroll, m_advancedScrollTargetY, m_advancedScrollTargetSet, dt);
 }
 
 // tabs
@@ -179,6 +137,14 @@ void CursorConfigPopup::createTabButtons() {
     menu->addChild(tab2);
     m_tabs.push_back(tab2);
 
+    auto spr3 = ButtonSprite::create("Avanzado");
+    spr3->setScale(0.5f);
+    auto tab3 = CCMenuItemSpriteExtra::create(spr3, this, menu_selector(CursorConfigPopup::onTabSwitch));
+    tab3->setTag(2);
+    tab3->setID("cursor-advanced-tab-btn"_spr);
+    menu->addChild(tab3);
+    m_tabs.push_back(tab3);
+
     menu->updateLayout();
     onTabSwitch(tab1);
 }
@@ -190,6 +156,7 @@ void CursorConfigPopup::onTabSwitch(CCObject* sender) {
 
     m_galleryTab->setVisible(m_currentTab == 0);
     m_settingsTab->setVisible(m_currentTab == 1);
+    if (m_advancedTab) m_advancedTab->setVisible(m_currentTab == 2);
 
     for (auto* tab : m_tabs) {
         auto spr = typeinfo_cast<ButtonSprite*>(tab->getNormalImage());
@@ -844,6 +811,79 @@ void CursorConfigPopup::buildSettingsTab() {
             }),
     });
 
+    // Estela (lo esencial: encender y elegir estilo)
+    std::vector<std::string> presetNames;
+    presetNames.push_back("Personalizado");
+    for (int i = 0; i < CursorManager::TRAIL_PRESET_COUNT; ++i) {
+        presetNames.push_back(CursorManager::TRAIL_PRESETS[i].name);
+    }
+    int presetIdx = (cfg.trailPreset >= 0 && cfg.trailPreset < CursorManager::TRAIL_PRESET_COUNT)
+        ? cfg.trailPreset + 1 : 0;
+
+    CCLabelBMFont* presetLabel = nullptr;
+    auto* presetRow = kit::makeSelectRow(innerW,
+        "Estilo de estela", "Elige entre 10 estilos listos.",
+        presetNames, presetIdx,
+        [this](int idx) {
+            auto& c = CursorManager::get().config();
+            c.trailPreset = idx - 1; // 0 = Personalizado -> -1
+            if (c.trailPreset >= 0) applyPresetToConfig(c);
+            CursorManager::get().saveConfig();
+            applyLive();
+        },
+        &presetLabel);
+    m_presetLabel = presetLabel;
+
+    auto* trailCard = kit::makeCard(scrollW, "Estela del cursor", {255, 200, 100}, {
+        kit::makeToggleRow(innerW,
+            "Mostrar estela",
+            "Deja un rastro brillante al mover el cursor.",
+            cfg.trailEnabled,
+            [this](bool v) {
+                CursorManager::get().config().trailEnabled = v;
+                applyLive();
+            }),
+        presetRow,
+    });
+
+    auto* footer = kit::makeHint(scrollW,
+        "Consejo: en la pestana Avanzado puedes cambiar el cursor segun lo que "
+        "toques (botones, texto...) y darle movimiento con retraso.");
+
+    m_scrollLayer = kit::makeScrollStack({scrollW, scrollH},
+        {hero, lookCard, trailCard, footer});
+    m_scrollLayer->setPosition({12.f, 8.f});
+    m_settingsTab->addChild(m_scrollLayer, 5);
+
+    // scroll arrow indicator
+    auto scrollArrow = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
+    if (scrollArrow) {
+        scrollArrow->setRotation(-90.f);
+        scrollArrow->setScale(0.3f);
+        scrollArrow->setOpacity(150);
+        scrollArrow->setPosition({content.width / 2.f, 16.f});
+        scrollArrow->setID("cursor-scroll-arrow"_spr);
+        m_settingsTab->addChild(scrollArrow, 20);
+
+        auto bounce = CCRepeatForever::create(CCSequence::create(
+            CCMoveBy::create(0.5f, {0, 3.f}),
+            CCMoveBy::create(0.5f, {0, -3.f}), nullptr));
+        scrollArrow->runAction(bounce);
+        m_scrollArrow = scrollArrow;
+        this->unschedule(schedule_selector(CursorConfigPopup::checkScrollPosition));
+        this->schedule(schedule_selector(CursorConfigPopup::checkScrollPosition), 0.2f);
+    }
+}
+
+void CursorConfigPopup::buildAdvancedTab() {
+    auto content = m_mainLayer->getContentSize();
+    float scrollW = content.width - 24.f;
+    float scrollH = content.height - 58.f;
+    float innerW = kit::cardInnerWidth(scrollW);
+
+    auto& cfg = CursorManager::get().config();
+    auto save = [] { CursorManager::get().saveConfig(); };
+
     // Estados (las imagenes se asignan en la Galeria)
     auto* statesCard = kit::makeCard(scrollW, "Estados del cursor", {255, 140, 220}, {
         kit::makeHint(innerW,
@@ -919,39 +959,8 @@ void CursorConfigPopup::buildSettingsTab() {
             }),
     });
 
-    // Estela
-    std::vector<std::string> presetNames;
-    presetNames.push_back("Personalizado");
-    for (int i = 0; i < CursorManager::TRAIL_PRESET_COUNT; ++i) {
-        presetNames.push_back(CursorManager::TRAIL_PRESETS[i].name);
-    }
-    int presetIdx = (cfg.trailPreset >= 0 && cfg.trailPreset < CursorManager::TRAIL_PRESET_COUNT)
-        ? cfg.trailPreset + 1 : 0;
-
-    CCLabelBMFont* presetLabel = nullptr;
-    auto* presetRow = kit::makeSelectRow(innerW,
-        "Estilo de estela", "10 estilos listos para usar.",
-        presetNames, presetIdx,
-        [this](int idx) {
-            auto& c = CursorManager::get().config();
-            c.trailPreset = idx - 1; // 0 = Personalizado -> -1
-            if (c.trailPreset >= 0) applyPresetToConfig(c);
-            CursorManager::get().saveConfig();
-            applyLive();
-        },
-        &presetLabel);
-    m_presetLabel = presetLabel;
-
-    auto* trailCard = kit::makeCard(scrollW, "Estela del cursor", {255, 200, 100}, {
-        kit::makeToggleRow(innerW,
-            "Mostrar estela",
-            "Deja un rastro brillante al mover el cursor.",
-            cfg.trailEnabled,
-            [this](bool v) {
-                CursorManager::get().config().trailEnabled = v;
-                applyLive();
-            }),
-        presetRow,
+    // Detalles de la estela (solo lectura + edicion manual)
+    auto* trailDetailCard = kit::makeCard(scrollW, "Detalles de la estela", {255, 200, 100}, {
         kit::makeButtonRow(innerW,
             "Valores actuales",
             "Consulta el color, largo y opacidad de la estela.",
@@ -978,29 +987,10 @@ void CursorConfigPopup::buildSettingsTab() {
     auto* footer = kit::makeHint(scrollW,
         "El cursor aparece en todas las pantallas y se oculta solo durante el gameplay.");
 
-    m_scrollLayer = kit::makeScrollStack({scrollW, scrollH},
-        {hero, lookCard, statesCard, moveCard, trailCard, footer});
-    m_scrollLayer->setPosition({12.f, 8.f});
-    m_settingsTab->addChild(m_scrollLayer, 5);
-
-    // scroll arrow indicator
-    auto scrollArrow = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
-    if (scrollArrow) {
-        scrollArrow->setRotation(-90.f);
-        scrollArrow->setScale(0.3f);
-        scrollArrow->setOpacity(150);
-        scrollArrow->setPosition({content.width / 2.f, 16.f});
-        scrollArrow->setID("cursor-scroll-arrow"_spr);
-        m_settingsTab->addChild(scrollArrow, 20);
-
-        auto bounce = CCRepeatForever::create(CCSequence::create(
-            CCMoveBy::create(0.5f, {0, 3.f}),
-            CCMoveBy::create(0.5f, {0, -3.f}), nullptr));
-        scrollArrow->runAction(bounce);
-        m_scrollArrow = scrollArrow;
-        this->unschedule(schedule_selector(CursorConfigPopup::checkScrollPosition));
-        this->schedule(schedule_selector(CursorConfigPopup::checkScrollPosition), 0.2f);
-    }
+    m_advancedScroll = kit::makeScrollStack({scrollW, scrollH},
+        {statesCard, moveCard, trailDetailCard, footer});
+    m_advancedScroll->setPosition({12.f, 8.f});
+    m_advancedTab->addChild(m_advancedScroll, 5);
 }
 
 void CursorConfigPopup::checkScrollPosition(float dt) {

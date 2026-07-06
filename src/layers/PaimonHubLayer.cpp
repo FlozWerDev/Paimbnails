@@ -30,6 +30,7 @@
 #include "../features/updates/ui/UpdateProgressPopup.hpp"
 #include "../ui/FeatureInfoPopup.hpp"
 #include "../ui/FeatureConfigPopup.hpp"
+#include "../ui/SmoothUIConfigPopup.hpp"
 #include "../ui/HubFeatureInfo.hpp"
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/PaimonLoadingOverlay.hpp"
@@ -127,7 +128,7 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
         case 5: // Extras
             return {
                 {"Smooth UI", "GJ_button_05.png", [](PaimonHubLayer*) {
-                    if (auto popup = paimon::ui::FeatureConfigPopup::create("smooth-ui")) popup->show();
+                    if (auto popup = paimon::ui::SmoothUIConfigPopup::create()) popup->show();
                 }, 5, "Animaciones suaves"},
                 {"Mascota", "GJ_button_03.png", [](PaimonHubLayer*) { if (auto popup = PetConfigPopup::create()) popup->show(); }, 5, "Companero en pantalla"},
                 {"Cursor", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = CursorConfigPopup::create()) popup->show(); }, 5, "Cursor personalizado"},

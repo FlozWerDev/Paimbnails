@@ -93,4 +93,24 @@ geode::ScrollLayer* makeScrollStack(
     std::vector<cocos2d::CCNode*> const& items,
     float gap = 8.f);
 
+// Scroll suave con la rueda del raton para un ScrollLayer.
+// queueWheelScroll: llamar desde scrollWheel(); si el cursor esta sobre el area
+// mueve el destino y devuelve true (consume el evento). `speed` controla cuanto
+// avanza por tick de rueda.
+// stepWheelScroll: llamar cada frame para acercar el contenido al destino.
+bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
+    float& targetY, bool& targetSet, float speed = 16.f);
+void stepWheelScroll(geode::ScrollLayer* scrollLayer,
+    float& targetY, bool& targetSet, float dt);
+
+// Barra de pestanas (ej. "Basico" / "Avanzado"). Devuelve un CCNode con
+// anchor {0,0} y alto fijo (kTabBarHeight). Al pulsar una pestana se
+// re-estiliza sola y llama onSelect(indice).
+constexpr float kTabBarHeight = 26.f;
+cocos2d::CCNode* makeTabBar(
+    float width,
+    std::vector<std::string> const& labels,
+    int selected,
+    std::function<void(int)> onSelect);
+
 } // namespace paimon::configkit

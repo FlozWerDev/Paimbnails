@@ -54,6 +54,15 @@ bool SmoothScrollConfigPopup::init() {
     return true;
 }
 
+void SmoothScrollConfigPopup::scheduleRebuild() {
+    // Diferido al siguiente tick para no destruir el control que disparo
+    // el cambio mientras el touch dispatcher lo sigue usando.
+    Ref<SmoothScrollConfigPopup> self = this;
+    Loader::get()->queueInMainThread([self] {
+        if (self && self->getParent()) self->rebuild();
+    });
+}
+
 void SmoothScrollConfigPopup::rebuild() {
     if (m_scroll) {
         m_scroll->removeFromParent();
@@ -74,6 +83,13 @@ void SmoothScrollConfigPopup::rebuild() {
         "Desplaza los menus con inercia suave, como en el celular.",
         ss::enabled(),
         [](bool v) { Mod::get()->setSettingValue<bool>("smooth-scroll", v); });
+
+    // Pestanas Basico / Avanzado
+    auto* tabs = kit::makeTabBar(scrollW, {"Basico", "Avanzado"}, m_tab,
+        [this](int i) {
+            m_tab = i;
+            scheduleRebuild();
+        });
 
     // Tarjeta: comportamiento en menus
     auto* menusCard = kit::makeCard(scrollW, "En los menus", {120, 210, 255}, {
@@ -113,7 +129,18 @@ void SmoothScrollConfigPopup::rebuild() {
             [](bool v) { (void)Mod::get()->setSavedValue<bool>("smooth-scroll-fix-editor", v); }),
     });
 
-    m_scroll = kit::makeScrollStack({scrollW, scrollH}, {hero, menusCard, editorCard});
+    std::vector<CCNode*> items = {hero, tabs};
+    if (m_tab == 0) {
+        items.push_back(menusCard);
+        items.push_back(kit::makeHint(scrollW,
+            "En Avanzado: zoom suave y ajustes del editor de niveles."));
+        editorCard->removeAllChildren();
+    } else {
+        items.push_back(editorCard);
+        menusCard->removeAllChildren();
+    }
+
+    m_scroll = kit::makeScrollStack({scrollW, scrollH}, items);
     m_scroll->setPosition({12.f, 38.f});
     m_mainLayer->addChild(m_scroll);
 }

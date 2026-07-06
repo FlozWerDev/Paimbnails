@@ -46,7 +46,6 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
         if (!LevelSearchLayer::init(searchType)) return false;
         m_fields->m_previewCallbacksSuspended = false;
 
-        // Custom background
         bool hasCustomBg = LayerBackgroundManager::get().applyBackground(this, "search");
 
         // With a custom bg, hide GD's decorative sprites
@@ -184,20 +183,24 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     }
 
     void destroyRealtimePreviewNow() {
+        // Grab the node before suspending callbacks: getRealtimePreviewNodeSafe()
+        // returns null once m_previewCallbacksSuspended is set, which would turn
+        // this teardown into a no-op and leave the preview's debounced search and
+        // GameLevelManager delegate alive. A late firePendingSearch would then
+        // steal m_levelManagerDelegate from the LevelBrowserLayer we're opening,
+        // leaving the results layer stuck loading forever.
+        auto* node = this->getChildByID("paimon-realtime-search-preview"_spr);
+
         m_fields->m_previewCallbacksSuspended = true;
         releaseSearchInputFocus(this);
 
-        if (auto preview = typeinfo_cast<RealtimeLevelSearchPreview*>(
-            getRealtimePreviewNodeSafe()
-        )) {
+        if (auto preview = typeinfo_cast<RealtimeLevelSearchPreview*>(node)) {
             preview->shutdown(true);
             preview->removeFromParentAndCleanup(true);
             return;
         }
 
-        if (auto preview = typeinfo_cast<RealtimeSearchBrowserPreview*>(
-            getRealtimePreviewNodeSafe()
-        )) {
+        if (auto preview = typeinfo_cast<RealtimeSearchBrowserPreview*>(node)) {
             preview->shutdown(true);
             preview->removeFromParentAndCleanup(true);
         }

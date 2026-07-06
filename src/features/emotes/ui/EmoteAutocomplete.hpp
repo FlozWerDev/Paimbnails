@@ -4,9 +4,6 @@
 
 namespace paimon::emotes {
 
-/// Autocomplete popup that appears above a text input when the
-/// user types `:XX` (colon + 2+ chars).  Shows up to 8 matching
-/// emote names that can be clicked to complete the emote code.
 class EmoteAutocomplete : public cocos2d::CCNode {
     CCTextInputNode* m_inputNode = nullptr;
     geode::CopyableFunction<void(std::string const&)> m_setTextFn;

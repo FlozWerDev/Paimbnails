@@ -16,27 +16,13 @@ namespace paimon::menumusic {
 
 static const std::string kToastId = "menumusic/now-playing-toast";
 
-// Duraciones (fijas)
-//
-// El hold es dinamico (`menuLoopNotificationTime`), el resto esta
-// calibrado para sentirse "snappy" sin ser brusco.
-// kWaitDur: delay inicial antes de arrancar la animacion. Necesario
-// porque cuando detectamos el main menu y creamos el toast el nodo
-// se anade al escenario inmediatamente, pero el juego sigue con su
-// propia transicion de entrada. Un pequeno respiro evita que el
-// circulo aparezca "de golpe" sin caer desde arriba.
-
 static constexpr float kWaitDur     = 0.30f;
 static constexpr float kDropInDur   = 0.30f;
 static constexpr float kExpandDur   = 0.38f;
 static constexpr float kCollapseDur = 0.30f;
 static constexpr float kLiftOutDur  = 0.30f;
 
-// Segmentos por esquina del rounded rect. 10 es suave sin saturar
-// el triangulador de CCDrawNode.
 static constexpr int kCornerSegments = 10;
-
-// Easings manuales
 
 float NowPlayingToast::easeOutCubic(float t) {
     const float u = 1.f - t;
@@ -71,16 +57,12 @@ void NowPlayingToast::redrawPill(float width) {
     paimonPill->clear();
 
     const float h = m_pillHeight;
-    const float w = std::max(width, h);  // minimo un circulo perfecto
+    const float w = std::max(width, h);
     const float r = h / 2.f;
 
-    // Paleta: fondo oscuro frio + borde gris oscuro.
     const ccColor4F fill   = ccc4FFromccc4B({22, 24, 38, 235});
     const ccColor4F stroke = ccc4FFromccc4B({35, 38, 55, 255});
 
-    // Construir los puntos del contorno recorriendo las 4 esquinas
-    // en sentido anti-horario. Cada esquina aporta kCornerSegments
-    // puntos sobre el arco correspondiente.
     std::vector<CCPoint> pts;
     pts.reserve(4 * kCornerSegments);
 
@@ -92,7 +74,6 @@ void NowPlayingToast::redrawPill(float width) {
         }
     };
 
-    // BL (pi..3pi/2), BR (3pi/2..2pi), TR (0..pi/2), TL (pi/2..pi)
     addArc(r,       r,       static_cast<float>(M_PI));
     addArc(w - r,   r,       static_cast<float>(M_PI) * 1.5f);
     addArc(w - r,   h - r,   0.f);
@@ -102,10 +83,6 @@ void NowPlayingToast::redrawPill(float width) {
         static_cast<unsigned int>(pts.size()),
         fill, 1.0f, stroke);
 
-    // Highlight superior: un segmento muy fino arriba para dar
-    // sensacion de volumen (se desvanece cuando la pill es un
-    // circulo porque la separacion de bordes r*0.6..w-r*0.6 queda
-    // casi en 0).
     if (w > h * 1.1f) {
         paimonPill->drawSegment(
             {r * 0.6f, h - 1.5f},
@@ -114,9 +91,8 @@ void NowPlayingToast::redrawPill(float width) {
             ccc4FFromccc4B({80, 85, 105, 90}));
     }
 
-    // Centramos el nodo dentro del toast. CCDrawNode dibuja desde
-    // (0,0), asi que para que la pill se expanda simetricamente
-    // posicionamos el nodo en (parentCx - w/2, parentCy - h/2).
+    // CCDrawNode dibuja desde (0,0); centramos restando w/2,h/2 para que
+    // la pill se expanda simetricamente.
     const CCSize parentSize = this->getContentSize();
     paimonPill->setContentSize({w, h});
     paimonPill->setAnchorPoint({0.f, 0.f});
@@ -126,15 +102,12 @@ void NowPlayingToast::redrawPill(float width) {
     });
 }
 
-// Opacidad del contenido
-
 void NowPlayingToast::setContentOpacity(float op) {
     if (!m_contentHolder) return;
     const GLubyte a = static_cast<GLubyte>(std::clamp(op, 0.f, 1.f) * 255.f);
 
-    // Aplicar recursivo a todos los nodos con interfaz RGBA. Se usa
-    // esto en vez de cascadeOpacity porque CCLabelBMFont no siempre
-    // lo propaga bien con cocos 2.x.
+    // Recursivo en vez de cascadeOpacity: CCLabelBMFont no siempre lo
+    // propaga bien en cocos 2.x.
     std::function<void(CCNode*)> apply = [&](CCNode* n) {
         if (!n) return;
         if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(n)) {
@@ -148,8 +121,6 @@ void NowPlayingToast::setContentOpacity(float op) {
     };
     apply(m_contentHolder);
 }
-
-// init
 
 bool NowPlayingToast::init(const std::string& title, const std::string& subtitle) {
     if (!CCNode::init()) return false;
@@ -167,20 +138,15 @@ bool NowPlayingToast::init(const std::string& title, const std::string& subtitle
     m_pillHeight = cardH;
     m_circleWidth = cardH;
 
-    // Y: fuera y dentro de pantalla.
     m_showY = winSize.height - cardH * 0.65f;
     m_hideY = winSize.height + cardH * 1.5f;
 
-    // Pill (PaimonDrawNode). Inmune a HappyTextures / TextureLdr
-    // gracias al draw() custom con client-side arrays.
     m_pill = PaimonDrawNode::create();
     if (m_pill) {
         this->addChild(m_pill, 0);
     }
     this->redrawPill(m_circleWidth);
 
-    // Content holder: contenedor comun del icono + labels. Lo usamos
-    // para modular la opacidad y escala de todo el contenido visible.
     m_contentHolder = CCNode::create();
     if (m_contentHolder) {
         m_contentHolder->setContentSize({cardW, cardH});
@@ -191,7 +157,6 @@ bool NowPlayingToast::init(const std::string& title, const std::string& subtitle
     }
 
     if (m_contentHolder) {
-        // Icono de nota musical (dentro del holder).
         if (auto icon = CCSprite::createWithSpriteFrameName("GJ_musicOnBtn_001.png")) {
             icon->setScale(0.38f);
             icon->setPosition({22.f, cardH / 2.f});
@@ -199,7 +164,6 @@ bool NowPlayingToast::init(const std::string& title, const std::string& subtitle
             m_contentHolder->addChild(icon, 1);
         }
 
-        // Titulo.
         if (auto titleLbl = CCLabelBMFont::create(title.c_str(), "bigFont.fnt")) {
             titleLbl->setScale(0.45f);
             titleLbl->setAnchorPoint({0.f, 0.5f});
@@ -224,7 +188,6 @@ bool NowPlayingToast::init(const std::string& title, const std::string& subtitle
     // Contenido arranca invisible; se revelara durante Expand.
     this->setContentOpacity(0.f);
 
-    // Hold time: la setting del reference mod. Fallback 1.5s.
     float holdDuration = 1.5f;
     try {
         holdDuration = static_cast<float>(
@@ -234,13 +197,10 @@ bool NowPlayingToast::init(const std::string& title, const std::string& subtitle
     }
     m_stayFor = std::clamp(holdDuration, 0.8f, 5.f);
 
-    // Posicion inicial: fuera de pantalla.
     this->setPosition({winSize.width / 2.f, m_hideY});
 
-    // Arrancar el pipeline en Wait: un pequeno delay para que el main
-    // menu termine de hacer su transicion de entrada antes de que la
-    // animacion baje. Durante el Wait el toast sigue INVISIBLE para
-    // que el primer frame no muestre el circulo parado.
+    // Wait deja al main menu terminar su transicion; el toast queda
+    // invisible para que el primer frame no muestre el circulo parado.
     this->setVisible(false);
     m_phase = Phase::Wait;
     m_phaseTime = 0.f;
@@ -249,8 +209,6 @@ bool NowPlayingToast::init(const std::string& title, const std::string& subtitle
     this->schedule(schedule_selector(NowPlayingToast::onTick));
     return true;
 }
-
-// Pipeline de animacion (state machine)
 
 void NowPlayingToast::onExit() {
     this->unschedule(schedule_selector(NowPlayingToast::onTick));
@@ -269,9 +227,6 @@ void NowPlayingToast::onTick(float dt) {
 
     switch (m_phase) {
         case Phase::Wait: {
-            // Delay inicial. El toast esta invisible; solo esperamos.
-            // Al terminar el wait hacemos el toast visible y
-            // comenzamos el DropIn desde arriba de la pantalla.
             if (raw >= 1.f) {
                 this->setVisible(true);
                 m_phase = Phase::DropIn;
@@ -281,11 +236,9 @@ void NowPlayingToast::onTick(float dt) {
             break;
         }
         case Phase::DropIn: {
-            // Baja desde hideY hasta showY manteniendo forma circular.
             const float t = easeOutCubic(raw);
             const float y = m_hideY + (m_showY - m_hideY) * t;
             this->setPosition({winSize.width / 2.f, y});
-            // Scale in: el circulo crece desde 0.6 hasta 1.0.
             const float s = 0.6f + 0.4f * t;
             this->setScale(s);
 
@@ -297,12 +250,9 @@ void NowPlayingToast::onTick(float dt) {
             break;
         }
         case Phase::Expand: {
-            // La pill se estira de circulo -> full width; contenido fade in.
             const float t = easeInOutCubic(raw);
             const float w = m_circleWidth + (m_pillWidth - m_circleWidth) * t;
             this->redrawPill(w);
-            // Contenido aparece en la mitad final del expand, asi
-            // nunca se ve "apretado" dentro del circulo.
             const float contentT = std::clamp((raw - 0.3f) / 0.7f, 0.f, 1.f);
             this->setContentOpacity(easeOutCubic(contentT));
             this->setScale(1.f);
@@ -317,7 +267,6 @@ void NowPlayingToast::onTick(float dt) {
             break;
         }
         case Phase::Hold: {
-            // Nada que animar: esperamos stayFor.
             if (raw >= 1.f) {
                 m_phase = Phase::Collapse;
                 m_phaseTime = 0.f;
@@ -326,8 +275,6 @@ void NowPlayingToast::onTick(float dt) {
             break;
         }
         case Phase::Collapse: {
-            // Contenido desaparece primero (mas rapido), luego la
-            // pill se colapsa a circulo.
             const float t = easeInOutCubic(raw);
             const float contentT = std::clamp(raw / 0.55f, 0.f, 1.f);
             this->setContentOpacity(1.f - easeInCubic(contentT));
@@ -344,7 +291,6 @@ void NowPlayingToast::onTick(float dt) {
             break;
         }
         case Phase::LiftOut: {
-            // Sube y encoge a la vez: efecto "cohete".
             const float t = easeInCubic(raw);
             const float y = m_showY + (m_hideY - m_showY) * t;
             this->setPosition({winSize.width / 2.f, y});
@@ -364,13 +310,10 @@ void NowPlayingToast::onTick(float dt) {
     }
 }
 
-// Factory
-
 void NowPlayingToast::showForCurrent(CCNode* parent) {
     if (!parent) return;
     if (!Mod::get()->getSettingValue<bool>("menuLoopEnableNotification")) return;
 
-    // Retirar toast anterior.
     if (auto old = parent->getChildByIDRecursive(kToastId.c_str())) {
         old->removeFromParentAndCleanup(true);
     }

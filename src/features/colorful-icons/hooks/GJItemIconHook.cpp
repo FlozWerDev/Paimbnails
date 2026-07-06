@@ -43,6 +43,9 @@ class $modify(PaimonGJItemIcon, GJItemIcon) {
     $override
     void changeToLockedState(float p0) {
         GJItemIcon::changeToLockedState(p0);
+        // Durable "locked" marker: opacity-based detection breaks as soon as
+        // a lock style changes the player opacity away from vanilla's 120.
+        this->setUserObject(paimon::icons::kIconLockedKey, CCBool::create(true));
         IconLockStyler::get().apply(this);
     }
 };

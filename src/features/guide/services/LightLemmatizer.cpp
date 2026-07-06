@@ -28,6 +28,13 @@ std::unordered_set<std::string> const& LightLemmatizer::stopwords() {
         // Common auxiliary verbs with no info
         "hay", "tiene", "tengo", "tienes", "puedo", "puede", "puedes",
         "sabes", "quiero", "quieres", "necesito", "ayuda",
+        // Generic action verbs that carry no topic info (EN). Note: deliberately
+        // NOT including registry alias words like "config", "capture", "update".
+        "configure", "change", "set", "enable", "disable", "open", "find",
+        "use", "want", "need", "show", "make", "give", "tell",
+        // Generic action verbs (ES)
+        "configurar", "cambiar", "poner", "activar", "desactivar", "abrir",
+        "encontrar", "usar", "mostrar", "dame", "dime", "hacer",
         // Filler EN
         "please", "me", "my", "your", "any",
         // Filler ES
@@ -54,11 +61,21 @@ std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() 
         {"song",       "music"},
         {"songs",      "music"},
         {"musics",     "music"},
+        {"soundtrack", "music"},
+        {"track",      "music"},
+        {"tune",       "music"},
+        {"tunes",      "music"},
+        {"wallpaper",  "background"},
+        {"wallpapers", "background"},
         {"backgrounds","background"},
         {"profiles",   "profile"},
         {"emoji",      "emote"},
         {"emojis",     "emote"},
         {"emoticon",   "emote"},
+        {"mouse",      "cursor"},
+        {"pointer",    "cursor"},
+        {"mascot",     "pet"},
+        {"companion",  "pet"},
         // ES abbreviations and variants
         {"perfilar",   "perfil"},
         {"perfiles",   "perfil"},
@@ -92,6 +109,13 @@ std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() 
         {"capturar",   "capture"},
         {"captura",    "capture"},
         {"vinilo",     "menumusic"},
+        {"papel",      "background"},  // "papel tapiz" / "papel de pantalla"
+        {"tapiz",      "background"},
+        {"companero",  "pet"},
+        {"rueda",      "quickhub"},
+        {"radial",     "quickhub"},
+        {"playlists",  "playlist"},
+        {"barra",      "progressbar"},
     };
     return kSyn;
 }

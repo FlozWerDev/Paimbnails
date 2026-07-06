@@ -36,7 +36,6 @@ bool UserThumbnailsLayer::init(std::string const& username, int accountID) {
     
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     
-    // Background
     auto bg = CCSprite::create("GJ_gradientBG.png");
     if (bg) {
         bg->setAnchorPoint({0.5f, 0.5f});
@@ -49,7 +48,6 @@ bool UserThumbnailsLayer::init(std::string const& username, int accountID) {
         this->addChild(bg);
     }
     
-    // Top bar with back button
     auto topMenu = CCMenu::create();
     topMenu->setPosition({0, 0});
     
@@ -71,13 +69,12 @@ bool UserThumbnailsLayer::init(std::string const& username, int accountID) {
     m_titleLabel->setScale(0.7f);
     this->addChild(m_titleLabel);
     
-    // Loading label
     m_loadingLabel = CCLabelBMFont::create("Loading...", "bigFont.fnt");
     m_loadingLabel->setPosition(winSize / 2);
     m_loadingLabel->setScale(0.5f);
     this->addChild(m_loadingLabel);
     
-    // Error label (hidden initially)
+    // hidden until a load error occurs
     m_errorLabel = CCLabelBMFont::create("", "bigFont.fnt");
     m_errorLabel->setPosition(winSize / 2);
     m_errorLabel->setScale(0.4f);
@@ -85,14 +82,12 @@ bool UserThumbnailsLayer::init(std::string const& username, int accountID) {
     m_errorLabel->setVisible(false);
     this->addChild(m_errorLabel);
     
-    // Create scroll layer for level list
     auto scrollSize = CCSize{winSize.width - 40.f, winSize.height - 100.f};
     m_scrollLayer = geode::ScrollLayer::create(scrollSize);
     m_scrollLayer->setPosition({20.f, 50.f});
     m_scrollLayer->setVisible(false);
     this->addChild(m_scrollLayer);
     
-    // Load thumbnails
     loadUserThumbnails();
     
     this->setKeypadEnabled(true);

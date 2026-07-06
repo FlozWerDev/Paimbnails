@@ -7,8 +7,6 @@
 
 using namespace geode::prelude;
 
-// cache helpers
-
 bool ModerationService::tryModCache(ModeratorCallback& callback) {
     if (!m_modCache.has_value()) return false;
     auto elapsed = std::chrono::steady_clock::now() - m_modCache->timestamp;
@@ -23,8 +21,6 @@ bool ModerationService::tryModCache(ModeratorCallback& callback) {
 void ModerationService::updateModCache(bool isMod, bool isAdmin) {
     m_modCache = ModCacheEntry{isMod || isAdmin, isAdmin, std::chrono::steady_clock::now()};
 }
-
-// moderator checks
 
 void ModerationService::checkModerator(std::string const& username, ModeratorCallback callback) {
     log::info("[ModService] checkModerator: user={}", username);
@@ -99,8 +95,6 @@ void ModerationService::checkModeratorAccount(std::string const& username, int a
         });
 }
 
-// per-username public status cache
-
 bool ModerationService::tryUserStatusCache(std::string const& username, ModeratorCallback& callback) {
     std::string key = geode::utils::string::toLower(username);
     std::lock_guard<std::mutex> lock(m_userStatusMutex);
@@ -139,8 +133,7 @@ void ModerationService::checkUserStatus(std::string const& username, ModeratorCa
         return;
     }
 
-    // Need a valid accountID to check moderator status — without it the server
-    // will always return 401, wasting a request and spamming error logs.
+    // Without a valid accountID the server always returns 401, wasting a request and spamming errors.
     auto* accountManager = GJAccountManager::get();
     if (!accountManager || accountManager->m_accountID <= 0) {
         log::debug("[ModService] checkUserStatus: no logged-in account, skipping server check for user={}", username);
@@ -154,8 +147,6 @@ void ModerationService::checkUserStatus(std::string const& username, ModeratorCa
             callback(isMod, isAdmin);
         });
 }
-
-// admin ops
 
 void ModerationService::addModerator(std::string const& username, std::string const& adminUser, ActionCallback callback) {
     if (!m_serverEnabled) { callback(false, "server disabled"); return; }
@@ -198,8 +189,6 @@ void ModerationService::removeModerator(std::string const& username, std::string
             callback(success, success ? "moderador eliminado con exito" : response);
         });
 }
-
-// queue operations
 
 void ModerationService::syncVerificationQueue(PendingCategory category, QueueCallback callback) {
     log::debug("[ModService] syncVerificationQueue: category={}", static_cast<int>(category));
@@ -246,13 +235,11 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
         for (auto const& item : itemsRes.unwrap()) {
             PendingItem it{};
 
-            // levelId
             if (item["levelId"].isString())
                 it.levelID = geode::utils::numFromString<int>(item["levelId"].asString().unwrapOr("0")).unwrapOr(0);
             else if (item["levelId"].isNumber())
                 it.levelID = item["levelId"].asInt().unwrapOr(0);
             if (it.levelID == 0) {
-                // Try multiple field names for account ID
                 static const char* accountIdFields[] = {"accountID", "accountId", "account_id", "userID", "userId", "user_id"};
                 for (const char* fieldName : accountIdFields) {
                     if (item.contains(fieldName)) {
@@ -277,7 +264,6 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
 
             it.category = category;
 
-            // timestamp ms → s
             {
                 long long ms = 0;
                 if (item["timestamp"].isString())
@@ -294,7 +280,6 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
             it.status    = PendingStatus::Open;
             it.isCreator = false;
 
-            // suggestions array
             auto sugArr = item["suggestions"].asArray();
             if (sugArr.isOk()) {
                 for (auto const& sug : sugArr.unwrap()) {
@@ -310,7 +295,6 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
                 }
             } else if (it.category == PendingCategory::Verify) {
                 Suggestion s;
-                // Use server-provided filename if available (e.g., pending_thumbnails/ for captured uploads)
                 std::string serverFilename = item["filename"].asString().unwrapOr("");
                 if (!serverFilename.empty()) {
                     s.filename = serverFilename;
@@ -329,7 +313,6 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
                 if (!s.filename.empty()) it.suggestions.push_back(s);
             }
 
-            // user report fields
             it.type = item["type"].asString().unwrapOr("");
             it.reportedUsername = item["reportedUsername"].asString().unwrapOr("");
             auto repArr = item["reports"].asArray();
@@ -391,7 +374,6 @@ void ModerationService::claimQueueItem(int levelId, PendingCategory category,
                                      response.find("Moderator auth required") != std::string::npos;
                     if (!authFailed) { callback(false, response); return; }
 
-                    // retry: refresh mod code and try once more
                     m_modCache.reset();
                     HttpClient::get().checkModeratorAccount(username, accountID,
                         [callback, endpoint, postData](bool isMod2, bool isAdmin2) {

@@ -22,11 +22,9 @@ EmoteButton* EmoteButton::create(EmoteInputContext context) {
 }
 
 bool EmoteButton::init(EmoteInputContext context) {
-    // Fallback label shown until async emote loads
     auto fallback = CCLabelBMFont::create(":)", "chatFont.fnt");
     fallback->setScale(0.55f);
 
-    // Geode circular button with the fallback as initial top node
     auto circle = CircleButtonSprite::create(
         fallback,
         CircleBaseColor::DarkPurple,
@@ -71,12 +69,10 @@ void EmoteButton::loadRandomEmote() {
                 }
 
                 if (sprite) {
-                    // Remove the old fallback top node
                     if (auto oldTop = circle->getTopNode()) {
                         oldTop->removeFromParent();
                     }
 
-                    // Scale emote to fit inside the circle
                     auto maxSize = circle->getMaxTopSize();
                     float scale = std::min(
                         maxSize.width / sprite->getContentSize().width,
@@ -91,13 +87,11 @@ void EmoteButton::loadRandomEmote() {
 }
 
 void EmoteButton::onToggle(CCObject*) {
-    // Close existing picker if it's still in the scene
     if (m_activePicker && m_activePicker->getParent()) {
-        m_activePicker->removeFromParent();
+        m_activePicker->closeAnimated();
         m_activePicker = nullptr;
         return;
     }
-    // Clear stale ref (popup was closed externally)
     m_activePicker = nullptr;
 
     auto picker = EmotePickerPopup::create(

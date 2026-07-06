@@ -7,7 +7,6 @@
 using namespace geode::prelude;
 
 void CustomBadgeService::fetchBadge(int accountID, BadgeCallback callback) {
-    // Revisa el cache en memoria
     {
         std::lock_guard lock(m_mutex);
         auto it = m_cache.find(accountID);
@@ -24,10 +23,8 @@ void CustomBadgeService::fetchBadge(int accountID, BadgeCallback callback) {
             m_cache.erase(it);
         }
 
-        // Agrega a la cola batch
         m_pendingRequests.push_back({ accountID, std::move(callback) });
 
-        // Programa el envio batch en el siguiente tick
         if (!m_flushScheduled) {
             m_flushScheduled = true;
             Loader::get()->queueInMainThread([this]() {
@@ -49,7 +46,6 @@ void CustomBadgeService::flushPendingRequests() {
 
     if (pending.empty()) return;
 
-    // Recolecta IDs unicos
     std::vector<int> uniqueIDs;
     for (auto& req : pending) {
         bool found = false;
@@ -59,7 +55,6 @@ void CustomBadgeService::flushPendingRequests() {
         if (!found) uniqueIDs.push_back(req.accountID);
     }
 
-    // Si es solo 1 ID, usa el endpoint simple
     if (uniqueIDs.size() == 1) {
         int accountID = uniqueIDs[0];
         HttpClient::get().downloadCustomBadge(accountID,
@@ -88,10 +83,8 @@ void CustomBadgeService::flushPendingRequests() {
         return;
     }
 
-    // Multiples IDs: usa el endpoint batch
     HttpClient::get().downloadCustomBadgeBatch(uniqueIDs,
         [this, pending = std::move(pending)](bool success, std::string const& response) mutable {
-            // Procesa la respuesta batch
             std::unordered_map<int, std::string> results;
             if (success && !response.empty()) {
                 auto res = matjson::parse(response);
@@ -116,7 +109,6 @@ void CustomBadgeService::flushPendingRequests() {
                 }
             }
 
-            // Actualiza el cache
             {
                 std::lock_guard lock(m_mutex);
                 for (auto& [id, emote] : results) {
@@ -124,7 +116,6 @@ void CustomBadgeService::flushPendingRequests() {
                 }
             }
 
-            // Llama los callbacks
             Loader::get()->queueInMainThread([pending = std::move(pending), success, results = std::move(results)]() mutable {
                 if (paimon::isRuntimeShuttingDown()) return;
                 for (auto& req : pending) {

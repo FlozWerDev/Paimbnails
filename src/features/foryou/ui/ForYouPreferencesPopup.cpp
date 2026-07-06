@@ -1,4 +1,5 @@
 ﻿#include "ForYouPreferencesPopup.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/ForYouTracker.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/InfoButton.hpp"
@@ -113,6 +114,7 @@ ForYouPreferencesPopup* ForYouPreferencesPopup::create(std::function<void()> onC
 // init
 bool ForYouPreferencesPopup::init(std::function<void()> onConfirm) {
     if (!Popup::init(POPUP_W, POPUP_H)) return false;
+    paimon::markDynamicPopup(this);
 
     m_onConfirm = std::move(onConfirm);
 

@@ -22,6 +22,8 @@
 #include "../../../utils/VideoThumbnailSprite.hpp"
 #include "../../profiles/services/CustomBadgeService.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../services/RoleService.hpp"
+#include "../services/RoleBadges.hpp"
 
 using namespace geode::prelude;
 
@@ -45,20 +47,7 @@ bool moderatorCacheGet(std::string const& username, bool& isMod, bool& isAdmin) 
 
 // shared helper to show badge info; also used by ProfilePage.cpp
 void showBadgeInfoPopup(CCNode* sender) {
-    if (!sender) return;
-
-    std::string title = "Unknown Rank";
-    std::string desc = "No description available.";
-    
-    if (sender->getID() == "paimon-admin-badge"_spr) {
-        title = "Paimbnails Admin";
-        desc = "A <cj>Paimbnails Admin</c> is a developer or manager of the <cg>Paimbnails</c> mod. They have full control over the mod's infrastructure and content.";
-    } else if (sender->getID() == "paimon-moderator-badge"_spr) {
-        title = "Paimbnails Moderator";
-        desc = "A <cj>Paimbnails Moderator</c> is a trusted user who helps review and manage thumbnails for the <cg>Paimbnails</c> mod. They ensure that content follows the guidelines.";
-    }
-    
-    FLAlertLayer::create(title.c_str(), desc.c_str(), "OK")->show();
+    paimon::badges::showRoleBadgeInfoPopup(sender);
 }
 
 // Deferred emote retry: poll until the emote catalog is ready, then re-render.
@@ -716,29 +705,19 @@ class $modify(BadgeCommentCell, CommentCell) {
         std::string username = comment->m_userName;
         int accountID = comment->m_accountID;
 
-        // Mod/admin badge — from cache or network
-        bool isMod = false;
-        bool isAdmin = false;
-        if (moderatorCacheGet(username, isMod, isAdmin)) {
-            if (isMod || isAdmin) {
-                this->addBadgeToComment(isMod, isAdmin);
-            }
-            // fall through to also fetch custom badge below
-        } else {
-            // Fetch mod status from server
+        // Role badges (admin/mod/vip/helper/idea) — resolved through RoleService,
+        // which caches and coalesces requests so scrolling doesn't spam the server.
+        {
             WeakRef<BadgeCommentCell> weakSelf = this;
-            ThumbnailAPI::get().checkUserStatus(username, [weakSelf, username](bool isMod, bool isAdmin) {
-                moderatorCacheInsert(username, isMod, isAdmin);
-                Loader::get()->queueInMainThread([weakSelf, username, isMod, isAdmin]() {
-                    if (paimon::isRuntimeShuttingDown()) return;
+            std::string capturedUser = username;
+            paimon::roles::RoleService::get().fetch(username,
+                [weakSelf, capturedUser](paimon::roles::UserRoles roles) {
+                    if (!roles.any()) return;
                     auto self = weakSelf.lock();
                     if (!self || !self->getParent() || !self->m_comment) return;
-                    if (std::string(self->m_comment->m_userName) != username) return;
-                    if (isMod || isAdmin) {
-                        self->addBadgeToComment(isMod, isAdmin);
-                    }
+                    if (std::string(self->m_comment->m_userName) != capturedUser) return;
+                    self->addRoleBadgesToComment(roles);
                 });
-            });
         }
 
         // Custom emote badge — always fetch (independent of mod status)
@@ -752,6 +731,17 @@ class $modify(BadgeCommentCell, CommentCell) {
                 self->addCustomBadgeToComment(emoteName);
             });
         }
+    }
+
+    void addRoleBadgesToComment(paimon::roles::UserRoles const& roles) {
+        auto menu = typeinfo_cast<CCMenu*>(this->getChildByIDRecursive("username-menu"));
+        if (!menu) return;
+        auto* percentage = this->getChildByIDRecursive("percentage-label");
+        paimon::badges::applyRoleBadges(
+            menu, roles, this,
+            menu_selector(BadgeCommentCell::onPaimonBadge),
+            15.5f, percentage
+        );
     }
 
     void addBadgeToComment(bool isMod, bool isAdmin) {

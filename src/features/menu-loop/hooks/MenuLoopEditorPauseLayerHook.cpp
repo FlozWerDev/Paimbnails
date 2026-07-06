@@ -1,16 +1,4 @@
-﻿// MenuLoopEditorPauseLayerHook — runs the same "randomize / restore on
-// exit" logic the reference mod (Menu Loop Randomizer) applies when the
-// user quits back to the editor main screen.
-//
-// Without this hook, leaving the editor would keep playing the same
-// menu loop from its last position only if GD itself decided to reuse
-// it; with the hook we honour the user's preference between:
-//   * menuLoopRandomizeOnEditorExit → shuffle immediately
-//   * menuLoopRestoreOnEditorExit    → flag the manager so the stored
-//                                      position is re-applied on
-//                                      GameManager::fadeInMenuMusic
-
-#include <Geode/modify/EditorPauseLayer.hpp>
+﻿#include <Geode/modify/EditorPauseLayer.hpp>
 
 #include "../../../framework/compat/ModCompat.hpp"
 #include "../services/MenuLoopManager.hpp"
@@ -27,10 +15,10 @@ class $modify(PaimonMenuLoopEditorPauseHook, EditorPauseLayer) {
         }
 
         auto& sm = paimon::menuloop::MenuLoopManager::get();
-        const bool randomize = Mod::get()->getSavedValue<bool>(
-            "menuLoopRandomizeOnEditorExit", false);
-        const bool restore = Mod::get()->getSavedValue<bool>(
-            "menuLoopRestoreOnEditorExit", true);
+        const bool randomize = Mod::get()->getSettingValue<bool>(
+            "menuLoopRandomizeOnEditorExit");
+        const bool restore = Mod::get()->getSettingValue<bool>(
+            "menuLoopRestoreOnEditorExit");
         if (randomize) {
             sm.setShouldRestoreMenuLoopPoint(false);
             paimon::menuloop::MenuLoopControl::shuffleSong();

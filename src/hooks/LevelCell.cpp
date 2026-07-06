@@ -27,7 +27,6 @@
 #include "../utils/Shaders.hpp"
 #include "../utils/GLSLLoader.hpp"
 #include "../blur/BlurSystem.hpp"
-#include "../blur/PopupBlurService.hpp"
 #include "../utils/PaimonShaderSprite.hpp"
 #include "../utils/RetainedLazyTextureLoad.hpp"
 #include "../features/thumbnails/ui/LevelCellSettingsPopup.hpp"
@@ -242,7 +241,6 @@ class $modify(PaimonLevelCell, LevelCell) {
     void hideLoadingSpinner() {
         auto fields = m_fields.self();
         if (fields->m_loadingSpinner) {
-            // Fade out and remove
             auto* spinnerNode = static_cast<geode::LoadingSpinner*>(fields->m_loadingSpinner);
             spinnerNode->runAction(CCSequence::create(
                 CCFadeOut::create(0.2f),
@@ -532,10 +530,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         flash->setContentSize(fields->m_thumbSprite->getContentSize());
         flash->setBlendFunc({GL_SRC_ALPHA, GL_ONE});
         fields->m_thumbSprite->addChild(flash, 100);
-        // Register in the flash registry so PopupBlurService::captureSceneTexture
-        // can hide it during capture without scanning the scene. The registry
-        // holds a strong Ref, so the node stays alive until auto-prune removes it.
-        paimon::popupblur::registerFlashOverlay(flash);
         flash->runAction(CCSequence::create(CCFadeOut::create(0.5f), CCRemoveSelf::create(), nullptr));
     }
 
@@ -548,16 +542,24 @@ class $modify(PaimonLevelCell, LevelCell) {
             return;
         }
 
-        uint8_t blackPixel[4] = {0, 0, 0, 255};
-        auto* blackTex = new CCTexture2D();
-        if (blackTex->initWithData(blackPixel, kCCTexture2DPixelFormat_RGBA8888, 1, 1, CCSize(1, 1))) {
-            // Ref<> manages the refcount: retain on assign, release at scope exit.
-            geode::Ref<CCTexture2D> texRef = blackTex;
-            blackTex->autorelease();
-            this->addOrUpdateThumb(blackTex);
-        } else {
+        // Shared 1x1 black placeholder, built once and reused across every official
+        // level fallback (and every retry). Intentionally leaked (no autorelease, no
+        // Ref): the raw retainCount keeps it alive for the process lifetime, which
+        // avoids both per-fallback allocation and a static-destruction release
+        // touching a dead CCTextureCache at exit. Sprites share it via retain/release.
+        static CCTexture2D* s_blackTex = []() -> CCTexture2D* {
+            uint8_t blackPixel[4] = {0, 0, 0, 255};
+            auto* tex = new CCTexture2D();
+            if (tex->initWithData(blackPixel, kCCTexture2DPixelFormat_RGBA8888, 1, 1, CCSize(1, 1))) {
+                return tex;
+            }
             // initWithData failed: free via release(), not delete (CCObject refcount).
-            blackTex->release();
+            tex->release();
+            return nullptr;
+        }();
+
+        if (s_blackTex) {
+            this->addOrUpdateThumb(s_blackTex);
         }
     }
 
@@ -736,7 +738,6 @@ class $modify(PaimonLevelCell, LevelCell) {
 
         removeNodeSafe(fields->m_darkOverlay);
         
-        // Clear other references
         fields->m_gradientLayer = nullptr;
         fields->m_gradientIsPSG = false;
         fields->m_thumbSprite = nullptr;
@@ -888,7 +889,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         hoverContainer->setID("paimon-hover-container"_spr);
         boundsClipper->addChild(hoverContainer);
 
-        // Thumbnail inside the hover container
         hoverContainer->addChild(clippingNode);
 
         fields->m_boundsClipper = boundsClipper;
@@ -1170,27 +1170,18 @@ class $modify(PaimonLevelCell, LevelCell) {
         );
         grad->setContentSize({ bg->getContentWidth() + 2.f, bg->getContentHeight() + 1.f });
         grad->setAnchorPoint({0,0});
-        grad->setPosition({0.0f, 0.0f}); // Reset to 0,0 relative to this if bg is at 0,0? No, bg checks its pos
+        grad->setPosition({0.0f, 0.0f});
         
         // Add gradient to 'this' to avoid BatchNode issues
         int bgZ = bg->getZOrder();
         grad->setZOrder(bgZ - 1); // Behind bg
         grad->setID("paimon-level-gradient"_spr);
         
-        // Position the gradient like bg
         grad->setPosition(bg->getPosition());
-        // Bg anchor is usually 0,0?
-        if (bg->isIgnoreAnchorPointForPosition()) {
-             // If bg ignores anchor, grad should match
-        }
         
-        // bg already hidden
         this->addChild(grad);
         
-        // fields->m_gradient = grad; // m_gradient is CCNode* in struct
         fields->m_gradient = grad;
-        // bg->addChild(grad); // REMOVED
-        // bg->reorderChild(grad, 10); // REMOVED
 
         fields->m_gradientLayer = grad;
         fields->m_gradientIsPSG = (typeinfo_cast<PaimonShaderGradient*>(static_cast<CCSprite*>(grad)) != nullptr);
@@ -1331,8 +1322,7 @@ class $modify(PaimonLevelCell, LevelCell) {
     }
 
     // Is this menu item the "view" button?
-    static bool isViewButtonItem(CCMenuItemSpriteExtra* menuItem, bool checkDailyPos, bool isDaily, CCSize const& cellSize) {
-        std::string_view id = menuItem->getID();
+    static bool isViewButtonItem(CCMenuItemSpriteExtra* menuItem, bool checkDailyPos, bool isDaily, CCSize const& cellSize) {        std::string_view id = menuItem->getID();
         if (id == "view-button" || id == "main-button" || id == "paimon-view-button") return true;
         if (id == "paimon-view-button"_spr) return true;
 
@@ -1375,8 +1365,7 @@ class $modify(PaimonLevelCell, LevelCell) {
 
         // DFS over all children
         std::vector<CCNode*> stack;
-        stack.reserve(32);
-        stack.push_back(this);
+        stack.reserve(32);        stack.push_back(this);
 
         while (!stack.empty()) {
             CCNode* cur = stack.back();
@@ -1428,8 +1417,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                         }
                     }
                     return; // found and configured
-                }
-            }
+                }            }
 
             if (auto arr = cur->getChildren()) {
                 for (auto* child : CCArrayExt<CCNode*>(arr)) {
@@ -2407,7 +2395,6 @@ class $modify(PaimonLevelCell, LevelCell) {
                 
                 auto item = typeinfo_cast<CCMenuItem*>(child);
                 if (item && item->isEnabled()) {
-                    // Check collision
                     CCPoint local = item->getParent()->convertToNodeSpace(worldPoint);
                     CCRect r = item->boundingBox();
                     if (r.containsPoint(local)) {
@@ -2417,7 +2404,6 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
         }
         
-        // Recurse
         auto children = node->getChildren();
         if (children) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
@@ -2513,6 +2499,16 @@ class $modify(PaimonLevelCell, LevelCell) {
                 tryLoadThumbnail();
                 return;
             }
+        }
+
+        // Deferred gallery metadata: cells bound while off-screen skip the gallery
+        // request in the load pipeline. Fire it once (guarded internally by
+        // m_galleryRequested / shouldRequestGalleryMetadata) when the cell scrolls
+        // into view so autocycle can start. The cheap bool checks short-circuit
+        // before the convertToWorldSpace in isLevelCellLikelyOnScreen.
+        if (fields->m_thumbnailApplied && !fields->m_galleryRequested && levelID > 0 &&
+            paimon::levelcell::isLevelCellLikelyOnScreen(this)) {
+            requestGalleryData(levelID);
         }
 
         if (fields->m_thumbnailApplied && levelID > 0) {
@@ -2703,8 +2699,7 @@ class $modify(PaimonLevelCell, LevelCell) {
     }
 
     // Lighten a color
-    static inline ccColor3B brightenColor(ccColor3B const& c, int add) {
-        auto clamp = [](int v){ return std::max(0, std::min(255, v)); };
+    static inline ccColor3B brightenColor(ccColor3B const& c, int add) {        auto clamp = [](int v){ return std::max(0, std::min(255, v)); };
         return ccColor3B{
             (GLubyte)clamp(c.r + add),
             (GLubyte)clamp(c.g + add),
@@ -2719,11 +2714,6 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             auto grad = typeinfo_cast<PaimonShaderGradient*>(static_cast<CCSprite*>(fields->m_gradientLayer));
             if (!grad) return;
-
-            // Dynamic GIF gradient support
-            if (fields->m_thumbSprite) {
-                // GifSprite does not support getCurrentFrameColors yet
-            }
 
             fields->m_gradientTime += dt;
             float t = (sinf(fields->m_gradientTime * 1.2f) + 1.0f) / 2.0f;

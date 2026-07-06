@@ -1,8 +1,5 @@
 #pragma once
 
-// Orquestacion de carga de thumbnails para LevelCell (patron CDC simplificado).
-// El hook solo provee callbacks; la logica de decision vive aqui.
-
 #include <Geode/Geode.hpp>
 #include <chrono>
 #include <cstdint>
@@ -48,7 +45,6 @@ struct ThumbnailLoadOps {
     geode::CopyableFunction<void(int32_t, int, bool, bool)> requestStatic;
 };
 
-// Flujo lineal: validar -> cache/reuse -> galeria -> video -> estatico.
 void runThumbnailLoadPipeline(
     ThumbnailLoadInput const& input,
     ThumbnailLoadFieldRefs& fields,

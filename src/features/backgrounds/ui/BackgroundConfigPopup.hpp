@@ -12,7 +12,6 @@ protected:
     int m_selectedTab = 0;
     Slider* m_slider = nullptr;
 
-    // layer bg tab
     std::string m_selectedLayerKey = "creator";
     geode::TextInput* m_layerIdInput = nullptr;
     Slider* m_layerDarkSlider = nullptr;
@@ -21,7 +20,6 @@ protected:
 
     bool init();
     
-    // UI helpers
     void createTabs();
     void onTab(cocos2d::CCObject* sender);
     void updateTabs();

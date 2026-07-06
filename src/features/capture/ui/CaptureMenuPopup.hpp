@@ -26,6 +26,8 @@ private:
     void onOpenShortcuts(cocos2d::CCObject* sender);
     void onToggleInvert(cocos2d::CCObject* sender);
     void onTogglePhysics(cocos2d::CCObject* sender);
+    void onToggleSmoothScroll(cocos2d::CCObject* sender);
+    void onOpenSmoothScrollConfig(cocos2d::CCObject* sender);
     void onToggleHoldCtrl(cocos2d::CCObject* sender);
     void refreshHoldCtrlButton();
 };

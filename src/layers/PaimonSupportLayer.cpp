@@ -19,8 +19,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// factory
-
 PaimonSupportLayer* PaimonSupportLayer::create() {
     auto ret = new PaimonSupportLayer();
     if (ret && ret->init()) {
@@ -36,8 +34,6 @@ CCScene* PaimonSupportLayer::scene() {
     scene->addChild(PaimonSupportLayer::create());
     return scene;
 }
-
-// init
 
 bool PaimonSupportLayer::init() {
     if (!CCLayer::init()) return false;
@@ -55,24 +51,19 @@ bool PaimonSupportLayer::init() {
     return true;
 }
 
-// background
-
 void PaimonSupportLayer::createBackground() {
     auto winSize = CCDirector::get()->getWinSize();
 
-    // dark base background (visible while thumbnails load)
     auto bg = CCLayerColor::create(ccc4(15, 10, 30, 255));
     bg->setContentSize(winSize);
     bg->setID("base-background");
     this->addChild(bg, -5);
 
-    // dark overlay for readability
     auto overlay = CCLayerColor::create({0, 0, 0, 100});
     overlay->setContentSize(winSize);
     overlay->setID("dark-overlay");
     this->addChild(overlay, -2);
 
-    // subtle gradient from dark purple (top) to black (bottom)
     auto gradient = CCLayerGradient::create(
         ccc4(30, 15, 50, 90),
         ccc4(5, 5, 15, 120)
@@ -82,7 +73,6 @@ void PaimonSupportLayer::createBackground() {
     gradient->setID("gradient-overlay");
     this->addChild(gradient, -1);
 
-    // decorative GD side art
     auto bottomLeft = CCSprite::createWithSpriteFrameName("GJ_sideArt_001.png");
     if (bottomLeft) {
         bottomLeft->setAnchorPoint({0, 0});
@@ -101,7 +91,6 @@ void PaimonSupportLayer::createBackground() {
         this->addChild(bottomRight, 0);
     }
 
-    // slow ambient diagonal glow
     auto glow = CCSprite::createWithSpriteFrameName("GJ_bigStar_001.png");
     if (glow) {
         glow->setScale(6.f);
@@ -111,10 +100,8 @@ void PaimonSupportLayer::createBackground() {
         glow->setBlendFunc({GL_SRC_ALPHA, GL_ONE});
         glow->setID("ambient-glow");
         this->addChild(glow, -4);
-        
-        // rotate slowly
+
         glow->runAction(CCRepeatForever::create(CCRotateBy::create(20.f, 360.f)));
-        // pulse gently
         auto pulse = CCSequence::create(
             CCFadeTo::create(4.0f, 60),
             CCFadeTo::create(4.0f, 20),
@@ -124,15 +111,10 @@ void PaimonSupportLayer::createBackground() {
         m_bgDiagonalGlow = glow;
     }
 
-    // start loading showcase thumbnails
     loadShowcaseThumbnails();
 }
 
-
-// dynamic thumbnail background
-
 void PaimonSupportLayer::loadShowcaseThumbnails() {
-    // scan the on-disk thumbnail cache
     auto cachePath = paimon::quality::cacheDir();
     
     std::error_code ec;
@@ -154,21 +136,18 @@ void PaimonSupportLayer::loadShowcaseThumbnails() {
 
     if (m_cachedThumbPaths.empty()) return;
 
-    // shuffle
     {
         static std::mt19937 rng(std::random_device{}());
         std::shuffle(m_cachedThumbPaths.begin(), m_cachedThumbPaths.end(), rng);
     }
 
-    // cap at 20
     if (m_cachedThumbPaths.size() > 20) m_cachedThumbPaths.resize(20);
 
     m_currentThumbIndex = 0;
 
-    // load the first thumbnail immediately
     cycleThumbnail(0.f);
 
-    // cycle every 5s (unschedule first to avoid stacking)
+    // unschedule first to avoid stacking
     this->unschedule(schedule_selector(PaimonSupportLayer::cycleThumbnail));
     this->schedule(schedule_selector(PaimonSupportLayer::cycleThumbnail), 5.0f);
 }
@@ -190,7 +169,7 @@ void PaimonSupportLayer::cycleThumbnail(float dt) {
     auto filePath = m_cachedThumbPaths[m_currentThumbIndex % m_cachedThumbPaths.size()];
     m_currentThumbIndex++;
 
-    // load the image off-thread to avoid blocking the UI
+    // load off-thread to avoid blocking the UI
     WeakRef<PaimonSupportLayer> safeSelf = this;
 
     paimon::ThreadTracker::get().spawn([safeSelf, filePath]() {
@@ -273,11 +252,10 @@ void PaimonSupportLayer::applyThumbnailBackground(CCTexture2D* texture) {
     if (!director) return;
     auto winSize = director->getWinSize();
 
-    // offline 2-pass Gaussian blur
     auto blurred = BlurSystem::getInstance()->createBlurredSprite(texture, winSize, 0.10f);
     if (!blurred) return;
 
-    // sprite from the blurred texture (from RenderTexture, needs flipY)
+    // texture comes from a RenderTexture, so it needs flipY
     auto newBg = CCSprite::createWithTexture(blurred->getTexture());
     if (!newBg) return;
 
@@ -291,14 +269,13 @@ void PaimonSupportLayer::applyThumbnailBackground(CCTexture2D* texture) {
     newBg->setScale(scale);
 
     newBg->setOpacity(0);
-    newBg->setColor({170, 160, 210}); // cool purple tint
+    newBg->setColor({170, 160, 210});
     this->addChild(newBg, -3);
 
     // crossfade new in, old out
     float fadeDuration = 1.2f;
     newBg->runAction(CCFadeTo::create(fadeDuration, 200));
 
-    // breathing opacity pulse
     auto breatheIn = CCFadeTo::create(2.0f, 220);
     auto breatheOut = CCFadeTo::create(2.0f, 160);
     auto breathe = CCSequence::create(breatheIn, breatheOut, nullptr);
@@ -317,18 +294,15 @@ void PaimonSupportLayer::applyThumbnailBackground(CCTexture2D* texture) {
     m_bgThumb = newBg;
 }
 
-// title
-
 void PaimonSupportLayer::createTitle() {
     auto winSize = CCDirector::get()->getWinSize();
     float topY = winSize.height - 24.f;
 
     auto titleContainer = CCNode::create();
-    titleContainer->setPosition({0, 60.f}); // start above the screen
+    titleContainer->setPosition({0, 60.f}); // starts above the screen, drops into place
     titleContainer->setID("title-container");
     this->addChild(titleContainer, 2);
 
-    // left star
     auto starL = CCSprite::createWithSpriteFrameName("GJ_bigStar_001.png");
     if (starL) {
         starL->setScale(0.4f);
@@ -337,18 +311,15 @@ void PaimonSupportLayer::createTitle() {
         starL->setID("left-star");
         titleContainer->addChild(starL, 2);
 
-        // slow continuous rotation
         starL->runAction(CCRepeatForever::create(CCRotateBy::create(2.f, -180.f)));
     }
 
-    // main title
     auto title = CCLabelBMFont::create("Support Paimbnails", "goldFont.fnt");
     title->setPosition({winSize.width / 2, topY});
     title->setScale(0.85f);
     title->setID("main-title");
     titleContainer->addChild(title, 2);
 
-    // right star
     auto starR = CCSprite::createWithSpriteFrameName("GJ_bigStar_001.png");
     if (starR) {
         starR->setScale(0.4f);
@@ -357,31 +328,25 @@ void PaimonSupportLayer::createTitle() {
         starR->setID("right-star");
         titleContainer->addChild(starR, 2);
 
-        // slow continuous rotation
         starR->runAction(CCRepeatForever::create(CCRotateBy::create(2.f, 180.f)));
     }
 
-    // subtitle
     auto subtitle = CCLabelBMFont::create("Help keep the mod alive and growing!", "chatFont.fnt");
     subtitle->setPosition({winSize.width / 2, topY - 20.f});
     subtitle->setScale(0.55f);
     subtitle->setColor({200, 180, 255});
-    subtitle->setOpacity(0); // start invisible for fade-in
+    subtitle->setOpacity(0); // fades in
     subtitle->setID("subtitle");
     titleContainer->addChild(subtitle, 2);
 
-    // title drops in with a bounce
     titleContainer->runAction(CCEaseBackOut::create(CCMoveTo::create(0.8f, {0, 0})));
 
-    // subtitle fades in
     subtitle->runAction(CCSequence::create(
         CCDelayTime::create(0.6f),
         CCFadeTo::create(0.4f, 255),
         nullptr
     ));
 }
-
-// badge panel (left)
 
 void PaimonSupportLayer::createBadgePanel() {
     auto winSize = CCDirector::get()->getWinSize();
@@ -392,7 +357,7 @@ void PaimonSupportLayer::createBadgePanel() {
     float panelY = winSize.height * 0.52f;
 
     m_badgePanelContainer = CCNode::create();
-    m_badgePanelContainer->setPosition({-panelX - panelW, 0}); // start off-screen left
+    m_badgePanelContainer->setPosition({-panelX - panelW, 0}); // starts off-screen left
     m_badgePanelContainer->setID("badge-panel-container");
     this->addChild(m_badgePanelContainer, 3);
 
@@ -401,7 +366,6 @@ void PaimonSupportLayer::createBadgePanel() {
     panelBg->setID("panel-bg");
     m_badgePanelContainer->addChild(panelBg, 1);
 
-    // pulsing gold neon glow border
     auto neonGlow = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png");
     if (neonGlow) {
         neonGlow->setContentSize({panelW + 8.f, panelH + 8.f});
@@ -411,7 +375,6 @@ void PaimonSupportLayer::createBadgePanel() {
         neonGlow->setID("neon-glow");
         m_badgePanelContainer->addChild(neonGlow, 2);
 
-        // continuous scale/opacity pulse
         auto pulse = CCSequence::create(
             CCSpawn::create(
                 CCScaleTo::create(1.5f, 1.03f),
@@ -429,7 +392,6 @@ void PaimonSupportLayer::createBadgePanel() {
     }
 
 
-    // main gold border
     auto border = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png");
     if (border) {
         border->setContentSize({panelW + 6.f, panelH + 6.f});
@@ -450,7 +412,6 @@ void PaimonSupportLayer::createBadgePanel() {
     badgeGroup->setID("badge-group");
     m_badgePanelContainer->addChild(badgeGroup, 4);
 
-    // badge icon — gold crown
     auto crownIcon = CCSprite::createWithSpriteFrameName("GJ_bigStar_001.png");
     if (crownIcon) {
         crownIcon->setScale(0.7f);
@@ -458,7 +419,6 @@ void PaimonSupportLayer::createBadgePanel() {
         crownIcon->setID("crown-icon");
         badgeGroup->addChild(crownIcon, 3);
 
-        // inner pulse on the icon itself
         auto innerPulse = CCSequence::create(
             CCScaleTo::create(1.0f, 0.74f),
             CCScaleTo::create(1.0f, 0.66f),
@@ -466,7 +426,6 @@ void PaimonSupportLayer::createBadgePanel() {
         );
         crownIcon->runAction(CCRepeatForever::create(innerPulse));
 
-        // additive glow behind the icon
         auto iconGlow = CCSprite::createWithSpriteFrameName("GJ_bigStar_001.png");
         if (iconGlow) {
             iconGlow->setScale(0.95f);
@@ -486,15 +445,12 @@ void PaimonSupportLayer::createBadgePanel() {
         }
     }
 
-    // orbiting stars
     auto orbitNode = CCNode::create();
     orbitNode->setID("orbit-node");
     badgeGroup->addChild(orbitNode, 4);
 
-    // infinite rotation of the orbit node
     orbitNode->runAction(CCRepeatForever::create(CCRotateBy::create(5.0f, 360.f)));
 
-    // 4 stars at 90-degree intervals
     float orbitRadius = 35.f;
     for (int i = 0; i < 4; i++) {
         float angle = i * (static_cast<float>(M_PI) / 2.f);
@@ -506,12 +462,10 @@ void PaimonSupportLayer::createBadgePanel() {
             oStar->setID(fmt::format("orbit-star-{}", i));
             orbitNode->addChild(oStar);
 
-            // each star spins the opposite way
             oStar->runAction(CCRepeatForever::create(CCRotateBy::create(1.5f, -360.f)));
         }
     }
 
-    // float the whole badge group up/down
     auto floatAction = CCSequence::create(
         CCMoveBy::create(1.8f, {0, 4.f}),
         CCMoveBy::create(1.8f, {0, -4.f}),
@@ -519,7 +473,6 @@ void PaimonSupportLayer::createBadgePanel() {
     );
     badgeGroup->runAction(CCRepeatForever::create(floatAction));
 
-    // "Exclusive" label
     auto exclusiveLbl = CCLabelBMFont::create("Exclusive", "bigFont.fnt");
     exclusiveLbl->setScale(0.3f);
     exclusiveLbl->setColor({255, 205, 100});
@@ -527,7 +480,6 @@ void PaimonSupportLayer::createBadgePanel() {
     exclusiveLbl->setID("exclusive-label");
     m_badgePanelContainer->addChild(exclusiveLbl, 4);
 
-    // pulse for the Exclusive label
     auto textPulse = CCSequence::create(
         CCScaleTo::create(1.2f, 0.315f),
         CCScaleTo::create(1.2f, 0.285f),
@@ -535,7 +487,6 @@ void PaimonSupportLayer::createBadgePanel() {
     );
     exclusiveLbl->runAction(CCRepeatForever::create(textPulse));
 
-    // decorative text under the badge
     auto badgeDesc = CCLabelBMFont::create("Shown on your profile", "chatFont.fnt");
     badgeDesc->setScale(0.35f);
     badgeDesc->setColor({180, 160, 220});
@@ -543,11 +494,8 @@ void PaimonSupportLayer::createBadgePanel() {
     badgeDesc->setID("badge-description");
     m_badgePanelContainer->addChild(badgeDesc, 4);
 
-    // slide-in with elastic ease
     m_badgePanelContainer->runAction(CCEaseBackOut::create(CCMoveTo::create(1.0f, {0, 0})));
 }
-
-// benefits panel (right)
 
 void PaimonSupportLayer::createBenefitsPanel() {
     auto winSize = CCDirector::get()->getWinSize();
@@ -558,7 +506,7 @@ void PaimonSupportLayer::createBenefitsPanel() {
     float panelY = winSize.height * 0.52f;
 
     m_benefitsPanelContainer = CCNode::create();
-    m_benefitsPanelContainer->setPosition({winSize.width - panelX + panelW, 0}); // start off-screen right
+    m_benefitsPanelContainer->setPosition({winSize.width - panelX + panelW, 0}); // starts off-screen right
     m_benefitsPanelContainer->setID("benefits-panel-container");
     this->addChild(m_benefitsPanelContainer, 3);
 
@@ -567,7 +515,6 @@ void PaimonSupportLayer::createBenefitsPanel() {
     panelBg->setID("panel-bg");
     m_benefitsPanelContainer->addChild(panelBg, 1);
 
-    // pulsing pink/violet neon glow border
     auto neonGlow = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png");
     if (neonGlow) {
         neonGlow->setContentSize({panelW + 8.f, panelH + 8.f});
@@ -577,7 +524,6 @@ void PaimonSupportLayer::createBenefitsPanel() {
         neonGlow->setID("neon-glow");
         m_benefitsPanelContainer->addChild(neonGlow, 2);
 
-        // continuous scale/opacity pulse
         auto pulse = CCSequence::create(
             CCSpawn::create(
                 CCScaleTo::create(1.5f, 1.03f),
@@ -595,12 +541,11 @@ void PaimonSupportLayer::createBenefitsPanel() {
     }
 
 
-    // main border
     auto border = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png");
     if (border) {
         border->setContentSize({panelW + 6.f, panelH + 6.f});
         border->setPosition({panelX, panelY});
-        border->setColor({255, 120, 180}); // match the pink neon
+        border->setColor({255, 120, 180});
         border->setID("border");
         m_benefitsPanelContainer->addChild(border, 3);
     }
@@ -611,7 +556,6 @@ void PaimonSupportLayer::createBenefitsPanel() {
     benefitsTitle->setID("benefits-title");
     m_benefitsPanelContainer->addChild(benefitsTitle, 4);
 
-    // benefit row
     struct Benefit {
         char const* icon;
         char const* text;
@@ -635,11 +579,10 @@ void PaimonSupportLayer::createBenefitsPanel() {
         float rowY = startY - (float)i * rowH;
 
         auto rowNode = CCNode::create();
-        rowNode->setPosition({15.f, 0}); // start shifted right
+        rowNode->setPosition({15.f, 0}); // starts shifted right, slides into place
         rowNode->setID(fmt::format("benefit-row-{}", i));
         m_benefitsPanelContainer->addChild(rowNode, 4);
 
-        // icon
         auto icon = CCSprite::createWithSpriteFrameName(benefits[i].icon);
         if (icon) {
             icon->setScale(0.32f);
@@ -648,13 +591,10 @@ void PaimonSupportLayer::createBenefitsPanel() {
             icon->setID("icon");
             rowNode->addChild(icon, 3);
 
-            // unique micro-animation per icon
             if (i == 0) {
-                // row 0 (badge star): slow continuous rotation
                 icon->runAction(CCRepeatForever::create(CCRotateBy::create(2.5f, 360.f)));
             }
             else if (i == 1) {
-                // row 1 (priority checkmark): elastic scale pulse
                 auto chkPulse = CCSequence::create(
                     CCScaleTo::create(0.8f, 0.36f),
                     CCScaleTo::create(0.8f, 0.28f),
@@ -663,7 +603,6 @@ void PaimonSupportLayer::createBenefitsPanel() {
                 icon->runAction(CCRepeatForever::create(chkPulse));
             }
             else if (i == 2) {
-                // row 2 (VIP star): opacity glow blink
                 auto glowPulse = CCSequence::create(
                     CCFadeTo::create(0.9f, 255),
                     CCFadeTo::create(0.9f, 100),
@@ -672,7 +611,6 @@ void PaimonSupportLayer::createBenefitsPanel() {
                 icon->runAction(CCRepeatForever::create(glowPulse));
             }
             else if (i == 3) {
-                // row 3 (GIF magic): wiggle
                 auto wiggle = CCSequence::create(
                     CCRotateTo::create(0.12f, 15.f),
                     CCRotateTo::create(0.24f, -15.f),
@@ -683,7 +621,6 @@ void PaimonSupportLayer::createBenefitsPanel() {
                 icon->runAction(CCRepeatForever::create(wiggle));
             }
             else if (i == 4) {
-                // row 4 (lock): vertical bob
                 auto bob = CCSequence::create(
                     CCMoveBy::create(0.8f, {0, 2.5f}),
                     CCMoveBy::create(0.8f, {0, -2.5f}),
@@ -692,7 +629,6 @@ void PaimonSupportLayer::createBenefitsPanel() {
                 icon->runAction(CCRepeatForever::create(bob));
             }
             else if (i == 5) {
-                // row 5 (heart): lub-dub heartbeat
                 auto beat = CCSequence::create(
                     CCScaleTo::create(0.15f, 0.42f),
                     CCScaleTo::create(0.15f, 0.32f),
@@ -725,53 +661,45 @@ void PaimonSupportLayer::createBenefitsPanel() {
         ));
     }
 
-    // panel slide-in with elastic ease
     m_benefitsPanelContainer->runAction(CCEaseBackOut::create(CCMoveTo::create(1.0f, {0, 0})));
 }
-
-// thank you section
 
 void PaimonSupportLayer::createThankYouSection() {
     auto winSize = CCDirector::get()->getWinSize();
     float sectionY = winSize.height * 0.20f;
 
-    // thank-you section container
     auto thankYouContainer = CCNode::create();
     thankYouContainer->setID("thank-you-container");
     this->addChild(thankYouContainer, 2);
 
-    // subtle gold/pink separator line
     auto separator = CCLayerColor::create({255, 120, 180, 45});
     separator->setContentSize({winSize.width * 0.6f, 1.5f});
     separator->setPosition({winSize.width * 0.2f, sectionY + 22.f});
-    separator->setScaleX(0); // start collapsed horizontally
+    separator->setScaleX(0); // expands horizontally on entrance
     separator->setID("separator");
     thankYouContainer->addChild(separator, 2);
 
-    // main message
     auto msg = CCLabelBMFont::create(
         "Every donation helps me dedicate more time\nto improving Paimbnails for the community.",
         "chatFont.fnt"
     );
     msg->setScale(0.48f);
     msg->setAlignment(CCTextAlignment::kCCTextAlignmentCenter);
-    msg->setPosition({winSize.width / 2, sectionY - 8.f}); // start slightly lower
+    msg->setPosition({winSize.width / 2, sectionY - 8.f}); // starts slightly lower, slides up
     msg->setColor({200, 190, 230});
-    msg->setOpacity(0); // start invisible
+    msg->setOpacity(0); // fades in
     msg->setID("thank-you-message");
     thankYouContainer->addChild(msg, 2);
 
-    // heart
     auto heart = CCSprite::createWithSpriteFrameName("gj_heartOn_001.png");
     if (heart) {
         heart->setScale(0.4f);
         heart->setPosition({winSize.width / 2, sectionY + 30.f});
         heart->setColor({255, 80, 120});
-        heart->setOpacity(0); // start invisible
+        heart->setOpacity(0); // fades in
         heart->setID("heart-icon");
         thankYouContainer->addChild(heart, 3);
 
-        // cinematic lub-dub heartbeat
         auto beat = CCSequence::create(
             CCScaleTo::create(0.18f, 0.52f),
             CCScaleTo::create(0.18f, 0.38f),
@@ -781,7 +709,6 @@ void PaimonSupportLayer::createThankYouSection() {
         );
         heart->runAction(CCRepeatForever::create(beat));
         
-        // glow halo behind the heart
         auto heartGlow = CCSprite::createWithSpriteFrameName("gj_heartOn_001.png");
         if (heartGlow) {
             heartGlow->setScale(0.45f);
@@ -810,14 +737,12 @@ void PaimonSupportLayer::createThankYouSection() {
         }
     }
 
-    // section entrance: expand the divider horizontally
     separator->runAction(CCSequence::create(
         CCDelayTime::create(0.7f),
         CCEaseBackOut::create(CCScaleTo::create(0.8f, 1.0f, 1.0f)),
         nullptr
     ));
 
-    // fade and slide the message up
     msg->runAction(CCSequence::create(
         CCDelayTime::create(0.9f),
         CCSpawn::create(
@@ -828,7 +753,6 @@ void PaimonSupportLayer::createThankYouSection() {
         nullptr
     ));
 
-    // fade in the heart
     if (heart) {
         heart->runAction(CCSequence::create(
             CCDelayTime::create(0.8f),
@@ -847,12 +771,9 @@ void PaimonSupportLayer::createThankYouSection() {
     }
 }
 
-// buttons
-
 void PaimonSupportLayer::createButtons() {
     auto winSize = CCDirector::get()->getWinSize();
 
-    // donate button menu
     auto donateMenu = CCMenu::create();
     donateMenu->setPosition({winSize.width / 2, 28.f});
     donateMenu->setID("donate-menu");
@@ -869,7 +790,6 @@ void PaimonSupportLayer::createButtons() {
     donateBtn->setID("donate-btn"_spr);
     donateMenu->addChild(donateBtn);
 
-    // heart icon next to the text
     auto heartIcon = CCSprite::createWithSpriteFrameName("gj_heartOn_001.png");
     if (heartIcon) {
         heartIcon->setScale(0.35f);
@@ -878,7 +798,6 @@ void PaimonSupportLayer::createButtons() {
         heartIcon->setID("heart-icon");
         donateSpr->addChild(heartIcon, 10);
 
-        // quick heartbeat
         auto quickBeat = CCSequence::create(
             CCScaleTo::create(0.12f, 0.44f),
             CCScaleTo::create(0.12f, 0.32f),
@@ -889,7 +808,6 @@ void PaimonSupportLayer::createButtons() {
         heartIcon->runAction(CCRepeatForever::create(quickBeat));
     }
 
-    // pulsing additive ripple glow
     auto btnGlow = CCSprite::createWithSpriteFrameName("GJ_bigStar_001.png");
     if (btnGlow) {
         btnGlow->setPosition({winSize.width / 2, 28.f});
@@ -899,7 +817,6 @@ void PaimonSupportLayer::createButtons() {
         btnGlow->setID("donate-ripple-glow");
         this->addChild(btnGlow, 4);
 
-        // infinite ripple: expand and fade
         auto ripple = CCSequence::create(
             CCSpawn::create(
                 CCScaleTo::create(2.0f, 1.8f),
@@ -917,29 +834,25 @@ void PaimonSupportLayer::createButtons() {
         btnGlow->runAction(CCRepeatForever::create(ripple));
     }
 
-    // donate elastic pop-in (delayed)
     donateBtn->setScale(0);
     donateBtn->runAction(CCSequence::create(
         CCDelayTime::create(1.1f),
         CCEaseElasticOut::create(CCScaleTo::create(0.9f, 1.0f)),
-        CCCallFunc::create(this, callfunc_selector(PaimonSupportLayer::createParticles)), // start particles afterward
+        CCCallFunc::create(this, callfunc_selector(PaimonSupportLayer::createParticles)),
         nullptr
     ));
 
-    // gentle constant breathing on the whole button
     auto btnBreathe = CCSequence::create(
         CCScaleTo::create(1.2f, 1.03f),
         CCScaleTo::create(1.2f, 0.97f),
         nullptr
     );
-    // run after the entrance animation
     donateBtn->runAction(CCSequence::create(
         CCDelayTime::create(2.0f),
         CCRepeatForever::create(btnBreathe),
         nullptr
     ));
 
-    // back button
     auto backMenu = CCMenu::create();
     auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
     auto backBtn = CCMenuItemSpriteExtra::create(
@@ -952,8 +865,7 @@ void PaimonSupportLayer::createButtons() {
     backMenu->setID("back-menu");
     this->addChild(backMenu, 5);
 
-    // back slides in from the left
-    backBtn->setPosition({-winSize.width / 2 - 50.f, winSize.height / 2 - 25.f}); // start off-screen
+    backBtn->setPosition({-winSize.width / 2 - 50.f, winSize.height / 2 - 25.f}); // starts off-screen, slides in
     backBtn->runAction(CCSequence::create(
         CCDelayTime::create(0.3f),
         CCEaseBackOut::create(CCMoveTo::create(0.7f, {-winSize.width / 2 + 25.f, winSize.height / 2 - 25.f})),
@@ -961,15 +873,12 @@ void PaimonSupportLayer::createButtons() {
     ));
 }
 
-// particles
-
 void PaimonSupportLayer::createParticles() {
     auto winSize = CCDirector::get()->getWinSize();
     static std::mt19937 rng(std::random_device{}());
 
-    // seed 16 particles across the screen so it doesn't start empty
+    // seed particles across the screen so it doesn't start empty
     for (int i = 0; i < 16; i++) {
-        // random particle type
         std::uniform_int_distribution<int> typeDist(0, 2);
         int type = typeDist(rng);
 
@@ -979,15 +888,15 @@ void PaimonSupportLayer::createParticles() {
 
         if (type == 0) {
             particle = CCSprite::createWithSpriteFrameName("GJ_bigStar_001.png");
-            color = {255, 220, 70}; // gold
+            color = {255, 220, 70};
             baseScale = 0.12f;
         } else if (type == 1) {
             particle = CCSprite::createWithSpriteFrameName("gj_heartOn_001.png");
-            color = {255, 95, 135}; // pink
+            color = {255, 95, 135};
             baseScale = 0.14f;
         } else {
             particle = CCSprite::createWithSpriteFrameName("GJ_starsIcon_001.png");
-            color = {100, 210, 255}; // light blue
+            color = {100, 210, 255};
             baseScale = 0.10f;
         }
 
@@ -1012,7 +921,6 @@ void PaimonSupportLayer::createParticles() {
         particle->setPosition({startX, startY});
         this->addChild(particle, 1);
 
-        // drift gently upward
         float targetY = winSize.height + 20.f;
         float remainingDist = targetY - startY;
         float totalDist = targetY + 10.f;
@@ -1028,12 +936,10 @@ void PaimonSupportLayer::createParticles() {
         auto cleanup = CCCallFunc::create(particle, callfunc_selector(CCNode::removeFromParent));
         particle->runAction(CCSequence::create(spawn, cleanup, nullptr));
 
-        // continuous rotation
         float rotSpeed = rotDist(rng);
         particle->runAction(CCRepeatForever::create(CCRotateBy::create(2.f, rotSpeed)));
     }
 
-    // spawn particles every 3.5s
     this->unschedule(schedule_selector(PaimonSupportLayer::spawnParticles));
     this->schedule(schedule_selector(PaimonSupportLayer::spawnParticles), 3.5f);
 }
@@ -1045,7 +951,7 @@ void PaimonSupportLayer::spawnParticles(float dt) {
     auto winSize = director->getWinSize();
     static std::mt19937 rng(std::random_device{}());
 
-    // spawn 6 new particles from the bottom each interval
+    // spawn new particles from the bottom each interval
     for (int i = 0; i < 6; i++) {
         std::uniform_int_distribution<int> typeDist(0, 2);
         int type = typeDist(rng);
@@ -1088,7 +994,6 @@ void PaimonSupportLayer::spawnParticles(float dt) {
         particle->setPosition({startX, startY});
         this->addChild(particle, 1);
 
-        // drift gently upward
         float duration = durDist(rng);
         float driftX = driftDist(rng);
         float targetY = winSize.height + 20.f;
@@ -1099,13 +1004,10 @@ void PaimonSupportLayer::spawnParticles(float dt) {
         auto cleanup = CCCallFunc::create(particle, callfunc_selector(CCNode::removeFromParent));
         particle->runAction(CCSequence::create(spawn, cleanup, nullptr));
 
-        // continuous rotation
         float rotSpeed = rotDist(rng);
         particle->runAction(CCRepeatForever::create(CCRotateBy::create(2.f, rotSpeed)));
     }
 }
-
-// navigation
 
 void PaimonSupportLayer::onBack(CCObject*) {
     CCDirector::get()->popSceneWithTransition(0.5f, PopTransition::kPopTransitionFade);

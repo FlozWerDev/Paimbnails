@@ -10,7 +10,6 @@ geode::Result<SheetTinterOutput> MediumPort::generate(
     SheetTinterRequest hdReq = uhdRequest;
     hdReq.outputQualitySuffix = "-hd";
     hdReq.resizeScale = 0.5f;
-    // The PackGen special-case for GJ_table_side_001 stays enabled.
     hdReq.preserveOffsetForTableSide = true;
     return SheetTinter::process(hdReq);
 }

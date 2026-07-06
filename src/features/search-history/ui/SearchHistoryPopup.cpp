@@ -1,5 +1,6 @@
 #include "SearchHistoryPopup.hpp"
 #include "../SearchHistory.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 
 using namespace geode::prelude;
 
@@ -21,6 +22,7 @@ SearchHistoryPopup* SearchHistoryPopup::create(std::function<void(int)> callback
 
 bool SearchHistoryPopup::init(std::function<void(int)> callback) {
     if (!Popup::init(POPUP_W, POPUP_H)) return false;
+    paimon::markDynamicPopup(this);
     m_callback = std::move(callback);
     this->setTitle("Search History");
 

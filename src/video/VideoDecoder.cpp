@@ -40,7 +40,6 @@ std::unique_ptr<IVideoDecoder> IVideoDecoder::create(const std::string& path) {
         return nullptr;
     }
 
-    // Platform-native decoder
 #if defined(USE_MEDIA_FOUNDATION)
     {
         auto dec = std::make_unique<DecoderMF>();

@@ -9,7 +9,6 @@ namespace PaimonFormat {
     constexpr uint8_t XOR_KEY[] = {0x50, 0x41, 0x49, 0x4D, 0x4F, 0x4E, 0x5F, 0x53, 0x45, 0x43, 0x52, 0x45, 0x54}; // "PAIMON_SECRET"
     constexpr size_t KEY_LENGTH = 13;
     
-    // Hash salt
     constexpr uint64_t HASH_SALT = 0x9E3779B97F4A7C15;
 
     // compute FNV-1a 64-bit hash

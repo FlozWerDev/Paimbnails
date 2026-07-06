@@ -137,7 +137,6 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
     }
 
     CCNode* findDoorForLevel(int levelID) {
-        // Find the doors
         auto children = CCArrayExt<CCNode*>(this->getChildren());
         
         for (auto child : children) {
@@ -271,10 +270,8 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
 
             if (iconSpr) {
                 iconSpr->setRotation(-90.0f);
-                // Shrink the icon 20%
                 iconSpr->setScale(0.8f);
                 
-                // Green circle button
                 auto btnSprite = CircleButtonSprite::create(
                     iconSpr,
                     CircleBaseColor::Green,

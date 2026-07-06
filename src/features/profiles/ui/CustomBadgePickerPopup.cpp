@@ -11,23 +11,17 @@ using namespace geode::prelude;
 using namespace cocos2d;
 using namespace paimon::emotes;
 
-// Constantes de layout
 static constexpr float POP_W     = 340.f;
 static constexpr float POP_H     = 260.f;
 static constexpr float CELL_SIZE = 34.f;
 static constexpr float CELL_GAP  = 4.f;
 
-// Paleta de colores
 static constexpr ccColor4F COL_DARK_INTERIOR   = {0.00f, 0.00f, 0.03f, 0.93f};
-// Fondo del scroll
 static constexpr ccColor4F COL_SCROLL_BG       = {0.00f, 0.00f, 0.00f, 0.45f};
-// Celda normal
 static constexpr ccColor4F COL_CELL_BG         = {0.00f, 0.00f, 0.00f, 0.65f};
 static constexpr ccColor4F COL_CELL_BORDER     = {0.26f, 0.26f, 0.26f, 0.72f};
-// Celda seleccionada
 static constexpr ccColor4F COL_CELL_SEL_BG     = {0.18f, 0.13f, 0.00f, 0.78f};
 static constexpr ccColor4F COL_CELL_SEL_BORDER = {1.00f, 0.82f, 0.00f, 0.90f};
-// Separador
 static constexpr ccColor4F COL_SEPARATOR       = {0.30f, 0.30f, 0.30f, 0.38f};
 
 
@@ -51,24 +45,20 @@ bool CustomBadgePickerPopup::init(int accountID, std::string const& currentBadge
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    // Fondo oscuro sobre el popup original
     auto darkBg = paimon::SpriteHelper::createRoundedRect(
         content.width  - 8.f,
         content.height - 8.f,
         4.f, COL_DARK_INTERIOR);
     darkBg->setPosition({4.f, 4.f});
-    m_mainLayer->addChild(darkBg, 0);   // above m_bgSprite (-1), below everything else
+    m_mainLayer->addChild(darkBg, 0);
 
-    // Title
     this->setTitle("Custom Badge");
 
-    // Separador debajo del titulo
     auto titleSep = paimon::SpriteHelper::createRoundedRect(
         content.width - 28.f, 1.f, 0.5f, COL_SEPARATOR);
     titleSep->setPosition({14.f, content.height - 48.f});
     m_mainLayer->addChild(titleSep, 1);
 
-    // Badge actual
     {
         std::string txt = currentBadge.empty()
             ? "Current: none"
@@ -80,14 +70,12 @@ bool CustomBadgePickerPopup::init(int accountID, std::string const& currentBadge
         m_mainLayer->addChild(m_currentLabel, 2);
     }
 
-    // Estado y mensajes
     m_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
     m_statusLabel->setScale(0.27f);
     m_statusLabel->setPosition({cx, 24.f});
     m_statusLabel->setColor({255, 210, 60});
     m_mainLayer->addChild(m_statusLabel, 2);
 
-    // Menu inferior
     auto menu = CCMenu::create();
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu, 3);
@@ -102,13 +90,11 @@ bool CustomBadgePickerPopup::init(int accountID, std::string const& currentBadge
         menu->addChild(btn);
     }
 
-    // Area de scroll
     float gridBot = 44.f;
     float gridTop = content.height - 54.f;
     float gridH   = gridTop - gridBot;
     float gridW   = content.width - 16.f;
 
-    // Fondo oscuro del grid
     auto scrollBg = paimon::SpriteHelper::createRoundedRect(
         gridW, gridH, 6.f, COL_SCROLL_BG);
     scrollBg->setPosition({8.f, gridBot});
@@ -123,7 +109,6 @@ bool CustomBadgePickerPopup::init(int accountID, std::string const& currentBadge
     m_scroll->m_contentLayer->setContentSize({gridW, gridH});
     m_scroll->m_contentLayer->addChild(m_contentNode);
 
-    // Carga inicial de emotes
     auto& service = EmoteService::get();
     if (service.isLoaded()) {
         buildEmoteGrid(service.getStaticEmotes());
@@ -147,7 +132,6 @@ bool CustomBadgePickerPopup::init(int accountID, std::string const& currentBadge
     return true;
 }
 
-// buildEmoteGrid: crea el grid de emotes
 void CustomBadgePickerPopup::buildEmoteGrid(std::vector<EmoteInfo> const& emotes) {
     m_contentNode->removeAllChildren();
 
@@ -179,32 +163,27 @@ void CustomBadgePickerPopup::buildEmoteGrid(std::vector<EmoteInfo> const& emotes
 
         bool isSelected = (emotes[i].name == m_currentBadge);
 
-        // Contenedor de celda
         auto container = CCNode::create();
         container->setContentSize({CELL_SIZE, CELL_SIZE});
 
-        // Borde
         ccColor4F borderCol = isSelected ? COL_CELL_SEL_BORDER : COL_CELL_BORDER;
         auto cellBorder = paimon::SpriteHelper::createRoundedRect(
             CELL_SIZE, CELL_SIZE, 5.f, borderCol);
         cellBorder->setPosition({0.f, 0.f});
         container->addChild(cellBorder, 0);
 
-        // Relleno interior
         ccColor4F bgCol = isSelected ? COL_CELL_SEL_BG : COL_CELL_BG;
         auto cellBg = paimon::SpriteHelper::createRoundedRect(
             CELL_SIZE - 2.f, CELL_SIZE - 2.f, 4.f, bgCol);
         cellBg->setPosition({1.f, 1.f});
         container->addChild(cellBg, 1);
 
-        // Placeholder de carga
         auto ph = CCLabelBMFont::create("...", "chatFont.fnt");
         ph->setScale(0.28f);
         ph->setPosition({CELL_SIZE / 2.f, CELL_SIZE / 2.f});
         ph->setID("paimon-badge-placeholder"_spr);
         container->addChild(ph, 2);
 
-        // Boton
         auto btn = CCMenuItemSpriteExtra::create(
             container, this,
             menu_selector(CustomBadgePickerPopup::onEmoteSelected));
@@ -213,13 +192,12 @@ void CustomBadgePickerPopup::buildEmoteGrid(std::vector<EmoteInfo> const& emotes
         btn->setSizeMult(0.97f);
         gridMenu->addChild(btn);
 
-        // Carga la textura asincronamente
         EmoteInfo emoteCopy = emotes[i];
         Ref<CCMenuItemSpriteExtra> btnRef = btn;
 
         EmoteCache::get().loadEmote(emoteCopy,
-            [btnRef](CCTexture2D* tex, bool /*isGif*/,
-                     std::vector<uint8_t> const& /*gifData*/) {
+            [btnRef](CCTexture2D* tex, bool ,
+                     std::vector<uint8_t> const& ) {
                 Loader::get()->queueInMainThread([btnRef, tex]() {
                     if (paimon::isRuntimeShuttingDown()) return;
                     if (!btnRef || !btnRef->getParent()) return;
@@ -246,7 +224,6 @@ void CustomBadgePickerPopup::buildEmoteGrid(std::vector<EmoteInfo> const& emotes
     m_scroll->moveToTop();
 }
 
-// Callbacks
 
 void CustomBadgePickerPopup::onEmoteSelected(CCObject* sender) {
     auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);

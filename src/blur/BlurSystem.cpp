@@ -7,10 +7,8 @@
 
 using namespace cocos2d;
 
-// Cache helpers
-
 BlurSystem::BlurKey BlurSystem::makeBlurKey(CCTexture2D* source, CCSize const& targetSize, float intensity, std::string const& cacheKey) {
-    // Bucket intensity in 0.5 steps so small slider deltas don't thrash the cache.
+    // Bucket intensity in 0.5 steps to avoid thrashing the cache on small slider deltas.
     int intensityBucket = std::clamp(static_cast<int>(std::round(intensity * 2.0f)), 0, 20);
     std::string sourceKey = cacheKey;
     if (sourceKey.empty()) {
@@ -24,13 +22,11 @@ BlurSystem::BlurKey BlurSystem::makeBlurKey(CCTexture2D* source, CCSize const& t
     };
 }
 
-// Build a disk-cache key from a BlurKey. Returns empty for pointer-based ("tex:")
-// source keys, which don't survive across sessions.
+// Returns empty for pointer-based ("tex:") source keys, which don't survive across sessions.
 static std::string makeDiskKey(BlurSystem::BlurKey const& k, BlurSystem::BlurFlavor flavor) {
     if (k.sourceKey.empty() || k.sourceKey.rfind("tex:", 0) == 0) {
         return {};
     }
-    // Sanitize filename-unsafe chars (e.g. ':' is invalid on Windows) to '_'.
     std::string safe = k.sourceKey;
     for (auto& c : safe) {
         if (std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '_') {
@@ -46,7 +42,6 @@ static std::string makeDiskKey(BlurSystem::BlurKey const& k, BlurSystem::BlurFla
 CCTexture2D* BlurSystem::lookupBlur(BlurKey const& k) {
     auto it = m_blurCache.find(k);
     if (it == m_blurCache.end()) return nullptr;
-    // Move to front (LRU).
     m_blurLru.erase(it->second.lruIt);
     m_blurLru.push_front(k);
     it->second.lruIt = m_blurLru.begin();
@@ -65,7 +60,6 @@ void BlurSystem::insertBlur(BlurKey const& k, CCTexture2D* tex) {
         return;
     }
 
-    // Evict if over capacity.
     while (m_blurCache.size() >= MAX_BLUR_CACHE_ENTRIES && !m_blurLru.empty()) {
         auto const& oldKey = m_blurLru.back();
         m_blurCache.erase(oldKey);
@@ -109,21 +103,16 @@ void BlurSystem::destroy() {
     clearBlurCache();
 }
 
-// Disk cache integration
-
-// Try loading the blur from disk cache. Returns true if a lookup was dispatched
-// (not necessarily a hit — the callback decides).
+// Try loading the blur from disk cache. Returns true if a lookup was dispatched.
 bool BlurSystem::tryDispatchFromDisk(BlurKey const& key, BlurFlavor flavor, QueuedJob const& fallbackJob) {
     std::string diskKey = makeDiskKey(key, flavor);
     if (diskKey.empty()) return false;
     if (!paimon::blur::BlurDiskCache::get().hasEntry(diskKey)) return false;
 
-    // Retain the source texture in case the GPU fallback fires.
     paimon::blur::BlurDiskCache::get().lookupAsync(diskKey,
         [this, key, fallbackJob](CCTexture2D* diskTex) {
             if (m_shutdown) return;
             if (diskTex) {
-                // Disk hit — cache in RAM and notify.
                 insertBlur(key, diskTex);
                 auto it = m_inFlight.find(key);
                 if (it != m_inFlight.end()) {
@@ -151,12 +140,9 @@ void BlurSystem::clearDiskCache() {
     clearBlurCache();
 }
 
-// Job dispatch with concurrency limit
-
 void BlurSystem::dispatchJob(QueuedJob const& jobDesc) {
     // Reserve slot up-front so onJobCompleted() balances the counter on every exit path.
     ++m_activeJobCount;
-
     auto* src = jobDesc.source.data();
     if (!src) {
         onJobCompleted(jobDesc.key, nullptr);
@@ -247,8 +233,6 @@ void BlurSystem::drainPendingJobs() {
     }
 }
 
-// Async Dual Kawase with cache
-
 void BlurSystem::buildPaimonBlurAsync(
     CCTexture2D* source,
     CCSize const& targetSize,
@@ -264,7 +248,6 @@ void BlurSystem::buildPaimonBlurAsync(
 
     BlurKey key = makeBlurKey(source, targetSize, intensity, cacheKey);
 
-    // Cache hit.
     if (auto* tex = lookupBlur(key)) {
         onReady(spriteFromCachedTexture(tex));
         return;
@@ -281,13 +264,11 @@ void BlurSystem::buildPaimonBlurAsync(
 
     QueuedJob job{key, geode::Ref<CCTexture2D>(source), targetSize, intensity, BlurFlavor::Paimon};
 
-    // Try disk cache before GPU.
     if (tryDispatchFromDisk(key, BlurFlavor::Paimon, job)) return;
 
     if (m_activeJobCount < MAX_CONCURRENT_BLUR_JOBS) {
         dispatchJob(job);
     } else {
-        // Queue until a slot frees.
         m_pendingJobs.push_back(std::move(job));
     }
 }
@@ -300,7 +281,6 @@ void BlurSystem::buildPaimonBlurAsync(
 ) {
     buildPaimonBlurAsync(source, targetSize, intensity, {}, std::move(onReady));
 }
-
 void BlurSystem::buildPaimonBlurPriority(
     CCTexture2D* source,
     CCSize const& targetSize,
@@ -330,14 +310,12 @@ void BlurSystem::buildPaimonBlurPriority(
     m_inFlight[key].push_back(std::move(onReady));
     QueuedJob job{key, geode::Ref<CCTexture2D>(source), targetSize, intensity, BlurFlavor::Paimon, /*fastMode*/true};
 
-    // Disk cache first: even on the priority path, a disk hit beats running the GPU job.
+    // Disk cache first: even on the priority path, a disk hit beats a GPU job.
     if (tryDispatchFromDisk(key, BlurFlavor::Paimon, job)) return;
 
     // Priority: bypass the limit, dispatch immediately.
     dispatchJob(job);
 }
-
-// Async Gaussian with cache (same strategy as buildPaimonBlurAsync)
 
 void BlurSystem::buildGaussianBlurAsync(
     CCTexture2D* source,

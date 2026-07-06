@@ -20,7 +20,10 @@ enum class QueryStrategy {
 
 struct ForYouQuery {
     QueryStrategy strategy;
-    GJSearchObject* searchObj = nullptr;
+    // Ref (not raw): GJSearchObject::create returns an autoreleased object, but
+    // the queue is consumed across later frames (async loadLevelsFinished), long
+    // after the autorelease pool drained. A raw pointer would dangle -> UAF.
+    geode::Ref<GJSearchObject> searchObj = nullptr;
     std::string label;
 };
 

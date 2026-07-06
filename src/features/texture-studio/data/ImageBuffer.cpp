@@ -9,8 +9,7 @@
 #include <cmath>
 #include <cstring>
 
-// stb_image_write's IMPLEMENTATION macro is defined in ImageConverter.cpp;
-// stb_image's implementation lives in stb_impl.cpp. This TU only consumes headers.
+// stb implementations live in other TUs; this TU only consumes the headers.
 
 using namespace geode::prelude;
 
@@ -62,13 +61,10 @@ void ImageBuffer::reset(int width, int height) {
 
 void ImageBuffer::clear(Pixel color) {
     if (empty()) return;
-    // memset path when all bytes are the same (transparent black is the
-    // overwhelming common case).
     if (color.r == 0 && color.g == 0 && color.b == 0 && color.a == 0) {
         std::memset(m_pixels.data(), 0, m_pixels.size());
         return;
     }
-    // General path: write 4 bytes at a time.
     std::uint32_t packed =
         static_cast<std::uint32_t>(color.r)
         | (static_cast<std::uint32_t>(color.g) << 8)
@@ -85,8 +81,7 @@ ImageBuffer ImageBuffer::subRect(int x, int y, int w, int h) const {
     ImageBuffer out(w, h);
     if (out.empty() || empty()) return out;
 
-    // Clip the source rectangle to the actual image bounds; rows/cols outside
-    // remain transparent (already zeroed by reset()).
+    // Out-of-bounds rows/cols stay transparent (already zeroed by reset()).
     int srcX0 = std::max(x, 0);
     int srcY0 = std::max(y, 0);
     int srcX1 = std::min(x + w, m_width);
@@ -113,7 +108,6 @@ void ImageBuffer::blitOverwrite(int dstX, int dstY, ImageBuffer const& src) {
     int srcX1 = src.width();
     int srcY1 = src.height();
 
-    // Clip against destination bounds.
     if (dstX < 0)            { srcX0 = -dstX; dstX = 0; }
     if (dstY < 0)            { srcY0 = -dstY; dstY = 0; }
     if (dstX + (srcX1 - srcX0) > m_width)  srcX1 = srcX0 + (m_width  - dstX);
@@ -239,7 +233,7 @@ geode::Result<std::vector<std::uint8_t>> ImageBuffer::encodeAsPng() const {
     if (empty()) return Err("ImageBuffer::encodeAsPng: empty image");
 
     std::vector<std::uint8_t> out;
-    out.reserve(pixelCount());  // rough lower bound; stb will grow as needed
+    out.reserve(pixelCount());
 
     int ok = stbi_write_png_to_func(
         &stbiWriteToVector, &out,

@@ -3,6 +3,7 @@
 #include "../services/QuickHubManager.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 
 #include <Geode/ui/ScrollLayer.hpp>
 
@@ -54,6 +55,7 @@ protected:
 
     bool init() {
         if (!Popup::init(360.f, 250.f)) return false;
+        paimon::markDynamicPopup(this);
         this->setTitle("Elegir icono");
 
         auto size = m_mainLayer->getContentSize();
@@ -105,7 +107,6 @@ protected:
 
             auto holder = CCNode::create();
             holder->setContentSize({cell, cell});
-            holder->setAnchorPoint({0.5f, 0.5f});
 
             auto card = paimon::SpriteHelper::createRoundedRect(
                 cell - 6.f, cell - 6.f, 6.f,
@@ -115,7 +116,9 @@ protected:
                           : ccc4f(0.30f, 0.35f, 0.45f, 0.7f),
                 1.2f);
             if (card) {
-                card->setPosition({-(cell - 6.f) * 0.5f, -(cell - 6.f) * 0.5f});
+                // createRoundedRect draws from its origin (0,0) to (w,h), so
+                // center the (cell-6) card inside the cell box: (cell-(cell-6))/2 = 3.
+                card->setPosition({3.f, 3.f});
                 holder->addChild(card, 0);
             }
 
@@ -124,6 +127,8 @@ protected:
                 auto cs = icon->getContentSize();
                 float longest = std::max(cs.width, cs.height);
                 icon->setScale(longest > 0.f ? std::min(1.f, iconBox / longest) : 0.6f);
+                // Anchor (0.5,0.5) by default; center within the cell box.
+                icon->setPosition({cell * 0.5f, cell * 0.5f});
                 holder->addChild(icon, 1);
             }
 
@@ -161,6 +166,7 @@ QuickButtonPopup* QuickButtonPopup::create(CustomQuickButton candidate) {
 
 bool QuickButtonPopup::init() {
     if (!Popup::init(380.f, 260.f)) return false;
+    paimon::markDynamicPopup(this);
     s_instance = this;
     this->setTitle("Anadir a Hold Control");
 
@@ -300,8 +306,8 @@ void QuickButtonPopup::rebuildPreview() {
 }
 
 void QuickButtonPopup::onSave(CCObject*) {
-    auto name = m_nameInput ? m_nameInput->getString() : std::string();
-    auto id = m_idInput ? m_idInput->getString() : std::string();
+    std::string name = m_nameInput ? std::string(m_nameInput->getString()) : std::string();
+    std::string id = m_idInput ? std::string(m_idInput->getString()) : std::string();
     if (name.empty() || id.empty()) {
         PaimonNotify::create("Completa el nombre y el ID.", NotificationIcon::Warning)->show();
         return;

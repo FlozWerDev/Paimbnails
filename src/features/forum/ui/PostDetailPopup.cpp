@@ -22,7 +22,6 @@ namespace {
 
     static constexpr ccColor3B kAccent = {130, 180, 255};
 
-    // build the author's icon sprite (SimplePlayer)
     static SimplePlayer* makeAuthorIcon(Author const& a, float targetSize) {
         auto* gm = GameManager::get();
         int iconID = std::max(1, a.iconID);
@@ -48,7 +47,6 @@ namespace {
     }
 
     static CCNode* makeDarkPanel(float w, float h, GLubyte alpha = 70) {
-        // Dark interior + thin near-white border to match the rest of the forum.
         return paimon::SpriteHelper::createRoundedRect(
             w, h, 5.f,
             {0.06f, 0.07f, 0.11f, alpha / 255.f},
@@ -65,7 +63,6 @@ bool PostDetailPopup::init(Post const& post, CopyableFunction<void()> onChanged)
 
     this->setTitle(m_post.title.c_str());
 
-    // Replace the vanilla brown frame with the mod's dark rounded panel.
     if (m_bgSprite) m_bgSprite->setVisible(false);
 
     auto popupSize = m_mainLayer->getContentSize();
@@ -91,7 +88,6 @@ void PostDetailPopup::rebuild() {
     auto contentSize = m_mainLayer->getContentSize();
     float cx = contentSize.width / 2.f;
 
-    // Clear previous children (except title and close, managed by Popup).
     {
         std::vector<CCNode*> toRemove;
         for (auto child : CCArrayExt<CCNode*>(m_mainLayer->getChildren())) {
@@ -107,7 +103,14 @@ void PostDetailPopup::rebuild() {
         for (auto* c : toRemove) c->removeFromParent();
     }
 
-    // Layout, top to bottom: header, tags, description, action bar, replies, reply input.
+    // m_replyInput and m_cooldownLabel are "rebuild-block" children freed just
+    // above; they are only recreated in the !locked branch below. Null them now
+    // so that when a thread is locked (branch skipped) they don't dangle — the
+    // per-frame update()->updateCooldownLabel() and onSubmitReply/onReplyToReply
+    // all null-check these pointers.
+    m_replyInput = nullptr;
+    m_cooldownLabel = nullptr;
+
     constexpr float kRowGap   = 7.f;
     constexpr float kHeaderH  = 34.f;
     constexpr float kTagsH    = 18.f;
@@ -116,14 +119,12 @@ void PostDetailPopup::rebuild() {
     constexpr float kReplyLblH = 16.f;
     constexpr float kInputH   = 30.f;
 
-    // Header
     float headerBot = contentSize.height - kHeaderH - 32.f;
     auto headerRow = makeAuthorRow(m_post.author, m_post.createdAt, contentSize.width - 36.f);
     headerRow->setPosition({18.f, headerBot + kHeaderH});
     headerRow->setID("rebuild-block"_spr);
     m_mainLayer->addChild(headerRow);
 
-    // Tags row (only when there are tags)
     float tagsBot = headerBot - kRowGap - kTagsH;
     bool hasTags = !m_post.tags.empty();
     if (hasTags) {
@@ -152,11 +153,9 @@ void PostDetailPopup::rebuild() {
             if (x > contentSize.width - 32.f) break;
         }
     } else {
-        // Skip the row entirely so descriptions can use that vertical space.
         tagsBot = headerBot - kRowGap;
     }
 
-    // Description box
     float descBot = tagsBot - kRowGap - kDescH;
     {
         if (auto descBg = makeDarkPanel(contentSize.width - 24.f, kDescH, 70)) {
@@ -177,14 +176,12 @@ void PostDetailPopup::rebuild() {
         }
     }
 
-    // Action bar (sticks left, balanced sizing)
     float actionY = descBot - kRowGap - kActionH / 2.f;
     {
         auto* acc = GJAccountManager::get();
         int myId = acc ? acc->m_accountID : 0;
         bool canDelete = myId > 0 && myId == m_post.author.accountID;
 
-        // CCMenu row layout keeps spacing uniform regardless of label widths.
         auto bar = CCMenu::create();
         bar->setID("rebuild-btn"_spr);
         bar->setContentSize({contentSize.width - 36.f, kActionH});
@@ -198,7 +195,6 @@ void PostDetailPopup::rebuild() {
         );
         m_buttonMenu->addChild(bar);
 
-        // Like — "Liked X" stays gold-filled when active so the toggle is obvious.
         std::string likeText = fmt::format("{}  {}",
             m_post.likedByMe ? "Liked" : "Like", m_post.likes);
         auto likeSpr = ButtonSprite::create(likeText.c_str(), "bigFont.fnt",
@@ -226,7 +222,6 @@ void PostDetailPopup::rebuild() {
         bar->updateLayout();
     }
 
-    // Replies
     float actionBot = actionY - kActionH / 2.f;
     float replyLblBot = actionBot - kRowGap - kReplyLblH;
     float inputBot = 8.f;
@@ -257,7 +252,6 @@ void PostDetailPopup::rebuild() {
         m_scroll->setID("rebuild-block"_spr);
         m_mainLayer->addChild(m_scroll, 5);
 
-        // Build replies
         float cardGap = 5.f;
         float cardX = 4.f;
         float cardW = SCROLL_W - 8.f;
@@ -291,12 +285,10 @@ void PostDetailPopup::rebuild() {
         }
     }
 
-    // Reply input + send
     if (!m_post.locked) {
         float inputW = SCROLL_W - 75.f;
         float inputCenterY = inputBot + kInputH / 2.f;
 
-        // Subtle backing panel makes the input row feel grouped with the send btn.
         if (auto inputBg = makeDarkPanel(SCROLL_W, kInputH + 6.f, 50)) {
             inputBg->setPosition({(contentSize.width - SCROLL_W) / 2.f, inputBot - 3.f});
             inputBg->setID("rebuild-block"_spr);
@@ -322,7 +314,6 @@ void PostDetailPopup::rebuild() {
         sendBtn->setID("rebuild-btn"_spr);
         m_buttonMenu->addChild(sendBtn);
 
-        // Cooldown label (above the input row, only shown when active)
         m_cooldownLabel = CCLabelBMFont::create("", "chatFont.fnt");
         m_cooldownLabel->setScale(0.42f);
         m_cooldownLabel->setPosition({contentSize.width / 2.f, inputBot + kInputH + 8.f});
@@ -332,7 +323,6 @@ void PostDetailPopup::rebuild() {
         m_mainLayer->addChild(m_cooldownLabel, 10);
         updateCooldownLabel();
     } else {
-        // Locked posts: show a banner instead of the input row.
         auto lockedBg = makeDarkPanel(SCROLL_W, kInputH, 60);
         if (lockedBg) {
             lockedBg->setPosition({(contentSize.width - SCROLL_W) / 2.f, inputBot});
@@ -350,7 +340,6 @@ void PostDetailPopup::rebuild() {
 }
 
 CCNode* PostDetailPopup::makeAuthorRow(Author const& author, int64_t when, float w) {
-    // Header layout: [icon] [name] [relative] ... [absolute]
     float h = 34.f;
     auto row = CCNode::create();
     row->setContentSize({w, h});
@@ -396,7 +385,6 @@ CCNode* PostDetailPopup::makeAuthorRow(Author const& author, int64_t when, float
 }
 
 CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w) {
-    // Reply card: row1 author + time, row2 content, row3 action buttons.
     constexpr float kRow1   = 22.f;
     constexpr float kRow2   = 26.f;
     constexpr float kRow3   = 24.f;
@@ -408,7 +396,6 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w) {
     card->setContentSize({w, h});
     card->setAnchorPoint({0.f, 0.f});
 
-    // Highlight the current user's own replies with a softer border.
     auto* acc = GJAccountManager::get();
     int myId = acc ? acc->m_accountID : 0;
     bool isMine = myId > 0 && myId == r.author.accountID;
@@ -426,7 +413,6 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w) {
         card->addChild(bg, 0);
     }
 
-    // Row 1: icon + name + relative time
     float row1Y = h - kPad - kRow1 / 2.f;
     float iconSize = 20.f;
     if (auto* icon = makeAuthorIcon(r.author, iconSize)) {
@@ -459,7 +445,6 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w) {
     when->setPosition({w - 10.f, row1Y});
     card->addChild(when);
 
-    // Row 2: content (single-line truncated for predictable height)
     float row2Y = h - kPad - kRow1 - kRowGap - kRow2 / 2.f;
     std::string preview = r.content;
     if (preview.size() > 130) preview = preview.substr(0, 127) + "...";
@@ -473,7 +458,6 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w) {
     }
     card->addChild(content);
 
-    // Row 3: action buttons row
     auto menu = CCMenu::create();
     menu->setContentSize({w - 12.f, kRow3});
     menu->setAnchorPoint({0.f, 0.f});
@@ -538,15 +522,12 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w) {
     return card;
 }
 
-// Actions
-
 void PostDetailPopup::onLikePost(CCObject*) {
     auto postId = m_post.id;
     WeakRef<PostDetailPopup> self = this;
     ForumApi::get().togglePostLike(postId, [self, postId](paimon::forum::Result<bool>) {
         auto popup = self.lock();
         if (!popup) return;
-        // local toggle (cache already updated by ForumApi)
         popup->m_post.likedByMe = !popup->m_post.likedByMe;
         popup->m_post.likes += popup->m_post.likedByMe ? 1 : -1;
         if (popup->m_post.likes < 0) popup->m_post.likes = 0;
@@ -581,7 +562,6 @@ void PostDetailPopup::onSubmitReply(CCObject*) {
         return;
     }
 
-    // Check cooldown
     auto cd = ForumApi::get().getReplyCooldownRemaining();
     if (cd > 0) {
         PaimonNotify::create(fmt::format("Please wait {} seconds before replying again.", cd).c_str(), NotificationIcon::Warning)->show();
@@ -606,7 +586,6 @@ void PostDetailPopup::onSubmitReply(CCObject*) {
             }
             return;
         }
-        // reload post from cache
         ForumApi::get().getPost(postId, [self](paimon::forum::Result<Post> r2) {
             auto popup = self.lock();
             if (!popup) return;

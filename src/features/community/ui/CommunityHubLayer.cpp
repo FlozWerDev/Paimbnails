@@ -45,7 +45,6 @@ namespace {
         return *s_ptr;
     }
 
-    // Session cache for moderators tab (persists until game closes or TTL expires)
     struct CachedModEntry {
         std::string username;
         std::string role;
@@ -59,7 +58,7 @@ namespace {
     }
     static std::time_t s_modCacheTimestamp = 0;
     static bool s_modCacheValid = false;
-    static constexpr std::time_t k_modCacheTTL = 900; // 15 minutes
+    static constexpr std::time_t k_modCacheTTL = 900;
 
     std::string toLowerCopy(std::string const& value) {
         return geode::utils::string::toLower(value);
@@ -438,7 +437,6 @@ void CommunityHubLayer::onEnterTransitionDidFinish() {
 
 void CommunityHubLayer::update(float dt) {
     if (m_isExiting) return;
-    // Verify cave effect is still applied (channel may have changed).
     if (!m_caveApplied) {
         applyCaveEffect();
     }
@@ -450,12 +448,10 @@ void CommunityHubLayer::applyCaveEffect() {
     if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) return;
     if (m_caveApplied) return;
 
-    // Save original volume and reduce to 55% for distance effect.
     engine->m_backgroundMusicChannel->getVolume(&m_savedBgVolume);
     float caveVol = engine->m_musicVolume * 0.55f;
     engine->m_backgroundMusicChannel->setVolume(caveVol);
 
-    // Lowpass filter â€” simulates cave walls.
     if (!m_lowpassDSP) {
         engine->m_system->createDSPByType(FMOD_DSP_TYPE_LOWPASS, &m_lowpassDSP);
         if (m_lowpassDSP) {
@@ -464,7 +460,6 @@ void CommunityHubLayer::applyCaveEffect() {
         }
     }
 
-    // Subtle reverb â€” cave echo.
     if (!m_reverbDSP) {
         engine->m_system->createDSPByType(FMOD_DSP_TYPE_SFXREVERB, &m_reverbDSP);
         if (m_reverbDSP) {
@@ -487,7 +482,6 @@ void CommunityHubLayer::removeCaveEffect() {
     if (engine && engine->m_backgroundMusicChannel) {
         if (m_lowpassDSP) engine->m_backgroundMusicChannel->removeDSP(m_lowpassDSP);
         if (m_reverbDSP) engine->m_backgroundMusicChannel->removeDSP(m_reverbDSP);
-        // Restore the real volume the channel had before the cave effect.
         engine->m_backgroundMusicChannel->setVolume(m_savedBgVolume);
     }
     if (m_lowpassDSP) { m_lowpassDSP->release(); m_lowpassDSP = nullptr; }
@@ -612,7 +606,7 @@ void CommunityHubLayer::loadTab(Tab tab) {
     // if the user navigates away and back before the timer fires, the old timer
     // calls retryLoadTab() with the current tag and launches a duplicate request.
     this->unschedule(schedule_selector(CommunityHubLayer::onRetryTimer));
-    ++m_retryTag; // cancel any pending callbacks from previous tab
+    ++m_retryTag;
     if (tab != Tab::Moderators) {
         clearPendingNativeModeratorRequests();
     }
@@ -641,7 +635,6 @@ void CommunityHubLayer::onRetryTimer(float) {
 }
 
 void CommunityHubLayer::loadModerators(int attempt) {
-    // Use session cache on first attempt if still fresh
     if (attempt == 0 && s_modCacheValid && getCachedModScores() && getCachedModScores()->count() > 0) {
         std::time_t now = std::time(nullptr);
         if (now - s_modCacheTimestamp < k_modCacheTTL) {
@@ -724,7 +717,7 @@ void CommunityHubLayer::loadModerators(int attempt) {
             }
 
             layer->m_pendingNativeModeratorLookupQueue.reserve(layer->m_modEntries.size());
-            std::vector<std::pair<int, std::string>> accountIDsToFetch; // accountID, username
+            std::vector<std::pair<int, std::string>> accountIDsToFetch;
             for (auto const& entry : layer->m_modEntries) {
                 ModProfileCache::get().store(entry.username, entry.role);
 
@@ -744,7 +737,6 @@ void CommunityHubLayer::loadModerators(int attempt) {
                 }
             }
 
-            // Update session cache
             {
                 s_cachedModEntries.clear();
                 for (auto const& e : layer->m_modEntries) {
@@ -760,7 +752,6 @@ void CommunityHubLayer::loadModerators(int attempt) {
             }
             layer->onAllProfilesFetched();
 
-            // Parallel GD API requests (getGJUserInfo20) for mods with accountID.
             if (!accountIDsToFetch.empty()) {
                 auto pendingCount = std::make_shared<std::atomic<int>>(static_cast<int>(accountIDsToFetch.size()));
 
@@ -787,20 +778,16 @@ void CommunityHubLayer::loadModerators(int attempt) {
                             if (ok) {
                                 auto body = std::move(responseBody);
                                 if (!body.empty() && body != "-1") {
-                                    // getGJUserInfo20 devuelve formato key:value separado por ':'
                                     auto* dict = GameLevelManager::responseToDict(body, true);
                                     if (!dict) {
-                                        // Fallback: try without keyed format (in case it changes).
                                         dict = GameLevelManager::responseToDict(body, false);
                                     }
                                     if (dict) {
                                         auto* parsed = GJUserScore::create(dict);
                                         if (parsed) {
-                                            // Ensure correct accountID.
                                             if (parsed->m_accountID <= 0) {
                                                 parsed->m_accountID = accID;
                                             }
-                                            // Resolve iconID if zero.
                                             if (parsed->m_iconID <= 0) {
                                                 switch (parsed->m_iconType) {
                                                     case IconType::Cube: parsed->m_iconID = parsed->m_playerCube; break;
@@ -817,7 +804,6 @@ void CommunityHubLayer::loadModerators(int attempt) {
                                             }
                                             if (parsed->m_iconID <= 0) parsed->m_iconID = 1;
 
-                                            // Match by accountID or username (more robust).
                                             auto wantedLower = toLowerCopy(username);
                                             for (auto* obj : CCArrayExt<GJUserScore*>(lyr->m_modScores)) {
                                                 if (!obj) continue;
@@ -853,7 +839,6 @@ void CommunityHubLayer::loadModerators(int attempt) {
                 }
             }
 
-            // Sequentially look up those without accountID (username fallback).
             if (!layer->m_pendingNativeModeratorLookupQueue.empty()) {
                 layer->requestNativeModeratorLookup(layer->m_pendingNativeModeratorLookupQueue.front());
             }
@@ -989,7 +974,6 @@ void CommunityHubLayer::getUserInfoFinished(GJUserScore* score) {
         return;
     }
 
-    // Apply the native GD score data directly to the moderator entry
     if (score && score->m_accountID > 0) {
         if (auto* modScore = findModeratorScore(m_modScores, m_activeNativeModeratorUserInfoUsername)) {
             applyNativeScoreToModerator(modScore, score);
@@ -1015,7 +999,6 @@ void CommunityHubLayer::userInfoChanged(GJUserScore* score) {}
 void CommunityHubLayer::onAllProfilesFetched() {
     hideLoading();
 
-    // Sort by original server order (admins first)
     if (m_modScores && m_modScores->count() > 0) {
         auto toVec = std::vector<Ref<GJUserScore>>();
         for (auto* obj : CCArrayExt<GJUserScore*>(m_modScores)) {
@@ -1027,7 +1010,6 @@ void CommunityHubLayer::onAllProfilesFetched() {
         };
 
         std::stable_sort(toVec.begin(), toVec.end(), [&](Ref<GJUserScore> const& a, Ref<GJUserScore> const& b) {
-            // Admins (modBadge=2) first, then mods (modBadge=1)
             return a->m_modBadge > b->m_modBadge;
         });
 
@@ -1226,7 +1208,6 @@ void CommunityHubLayer::buildModeratorsList() {
         }
 
         if (!hasBanner) {
-            // fallback: alternating dark background
             auto cellBg = paimon::SpriteHelper::createColorPanel(
                 listW, cellInnerH,
                 i % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32}, 200);
@@ -1282,7 +1263,6 @@ void CommunityHubLayer::buildModeratorsList() {
         profileBtn->setTag(score->m_accountID);
         profileBtn->setAnchorPoint({0, 0.5f});
         profileBtn->setPosition({0, cellInnerH / 2});
-        // subtle press: barely noticeable scale
         profileBtn->m_scaleMultiplier = 1.02f;
         PaimonButtonHighlighter::registerButton(profileBtn);
 
@@ -1315,7 +1295,6 @@ void CommunityHubLayer::buildModeratorsList() {
         i++;
     }
 
-    // Scroll to top
     scrollView->m_contentLayer->setPositionY(listH - totalH);
     addInfoButton(Tab::Moderators);
 }
@@ -1424,7 +1403,6 @@ void CommunityHubLayer::buildCreatorsList() {
         cell->setPosition({listW / 2, y});
         content->addChild(cell);
 
-        // alternating background
         auto cellBg = paimon::SpriteHelper::createColorPanel(
             listW, cellH - 2.f,
             i % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32}, 200);
@@ -1434,7 +1412,6 @@ void CommunityHubLayer::buildCreatorsList() {
         float textX = 10.f;
         float cellMidY = (cellH - 2.f) / 2;
 
-        // rank number
         auto numLbl = CCLabelBMFont::create(fmt::format("#{}", i + 1).c_str(), "chatFont.fnt");
         numLbl->setScale(0.5f);
         numLbl->setColor({255, 200, 50});
@@ -1442,7 +1419,6 @@ void CommunityHubLayer::buildCreatorsList() {
         numLbl->setPosition({textX, cellMidY});
         cell->addChild(numLbl, 10);
 
-        // username
         float nameX = 45.f;
         auto nameLbl = CCLabelBMFont::create(entry.username.c_str(), "bigFont.fnt");
         nameLbl->setScale(0.4f);
@@ -1454,7 +1430,6 @@ void CommunityHubLayer::buildCreatorsList() {
         }
         cell->addChild(nameLbl, 10);
 
-        // stats line
         auto statsStr = fmt::format("{}: {}  |  {}: {:.1f}",
             loc.getString("community.uploads"), entry.uploadCount,
             loc.getString("community.avg_rating"), entry.avgRating);
@@ -1466,7 +1441,6 @@ void CommunityHubLayer::buildCreatorsList() {
         cell->addChild(statsLbl, 10);
     }
 
-    // Scroll to top
     scrollView->m_contentLayer->setPositionY(listH - totalH);
     addInfoButton(Tab::TopCreators);
 }
@@ -1571,27 +1545,23 @@ void CommunityHubLayer::buildThumbnailsList() {
         cell->setPosition({listW / 2, y});
         content->addChild(cell);
 
-        // alternating background
         auto cellBg = paimon::SpriteHelper::createColorPanel(
             listW, cellH - 2.f,
             i % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32}, 200);
         cellBg->setPosition({0, 0});
         cell->addChild(cellBg, 0);
 
-        // thumbnail preview
         float thumbSize = cellH - 8.f;
         float thumbW = thumbSize * 1.6f;
         float thumbH = thumbSize;
         float thumbX = 4.f;
         float thumbY = (cellH - 2.f - thumbH) / 2.f;
 
-        // Dark background (always visible behind the image)
         auto thumbBg = CCLayerColor::create({30, 28, 40, 255});
         thumbBg->setContentSize({thumbW, thumbH});
         thumbBg->setPosition({thumbX, thumbY});
         cell->addChild(thumbBg, 1);
 
-        // Clipping node to contain the sprite exactly within thumb bounds
         auto thumbStencil = paimon::SpriteHelper::createRectStencil(thumbW, thumbH);
         auto thumbClipper = paimon::ScissorClipNode::create(thumbStencil);
         thumbClipper->setContentSize({thumbW, thumbH});
@@ -1626,7 +1596,6 @@ void CommunityHubLayer::buildThumbnailsList() {
         float textX = thumbSize * 1.6f + 12.f;
         float cellMidY = (cellH - 2.f) / 2;
 
-        // rank number
         auto numLbl = CCLabelBMFont::create(fmt::format("#{}", i + 1).c_str(), "chatFont.fnt");
         numLbl->setScale(0.4f);
         numLbl->setColor({255, 200, 50});
@@ -1634,7 +1603,6 @@ void CommunityHubLayer::buildThumbnailsList() {
         numLbl->setPosition({textX, cellMidY + 14.f});
         cell->addChild(numLbl, 10);
 
-        // level name
         auto saved = GameLevelManager::get()->getSavedLevel(levelID);
         std::string levelName = saved ? std::string(saved->m_levelName) : fmt::format("{} {}", loc.getString("community.level"), levelID);
         auto nameLbl = CCLabelBMFont::create(levelName.c_str(), "bigFont.fnt");
@@ -1647,7 +1615,6 @@ void CommunityHubLayer::buildThumbnailsList() {
         }
         cell->addChild(nameLbl, 10);
 
-        // creator + stats
         auto infoStr = fmt::format("{} {} | {}: {:.1f} ({} {})",
             loc.getString("community.by"), entry.uploadedBy,
             loc.getString("community.rating"), entry.rating,
@@ -1660,7 +1627,6 @@ void CommunityHubLayer::buildThumbnailsList() {
         cell->addChild(infoLbl, 10);
     }
 
-    // Scroll to top
     scrollView->m_contentLayer->setPositionY(listH - totalH);
     addInfoButton(Tab::TopThumbnails);
 }
@@ -1677,7 +1643,6 @@ void CommunityHubLayer::addInfoButton(Tab tab) {
     if (infoSpr) infoSpr->setScale(0.65f);
 
     if (!infoSpr) {
-        // fallback: small question-mark label
         auto fallback = CCLabelBMFont::create("?", "bigFont.fnt");
         fallback->setScale(0.5f);
         auto infoBtn = CCMenuItemSpriteExtra::create(
@@ -1746,14 +1711,12 @@ void CommunityHubLayer::buildCompatibleModsList() {
     m_listContainer = CCNode::create();
     this->addChild(m_listContainer, 5);
 
-    // Title label
     auto titleLbl = CCLabelBMFont::create(
         loc.getString("community.compat_mods_title").c_str(), "bigFont.fnt");
     titleLbl->setScale(0.5f);
     titleLbl->setPosition({winSize.width / 2, winSize.height / 2 + 60.f});
     m_listContainer->addChild(titleLbl, 10);
 
-    // Version badge
     auto versionLbl = CCLabelBMFont::create(
         loc.getString("community.compat_mods_version").c_str(), "goldFont.fnt");
     versionLbl->setScale(0.55f);
@@ -1761,7 +1724,6 @@ void CommunityHubLayer::buildCompatibleModsList() {
     versionLbl->setPosition({winSize.width / 2, winSize.height / 2 + 20.f});
     m_listContainer->addChild(versionLbl, 10);
 
-    // Description
     auto descLbl = CCLabelBMFont::create(
         loc.getString("community.compat_mods_desc").c_str(), "chatFont.fnt");
     descLbl->setScale(0.55f);
@@ -1770,7 +1732,6 @@ void CommunityHubLayer::buildCompatibleModsList() {
     descLbl->setPosition({winSize.width / 2, winSize.height / 2 - 20.f});
     m_listContainer->addChild(descLbl, 10);
 
-    // Coming soon label
     auto soonLbl = CCLabelBMFont::create(
         loc.getString("community.compat_mods_soon").c_str(), "chatFont.fnt");
     soonLbl->setScale(0.5f);

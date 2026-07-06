@@ -1,5 +1,6 @@
 #include "NewProjectPopup.hpp"
 
+#include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../data/GdResourcesLocator.hpp"
 #include "../engine/PackMetadataBuilder.hpp"
 #include "../persist/SlotStore.hpp"
@@ -25,24 +26,38 @@ NewProjectPopup* NewProjectPopup::create(SlotCreatedCallback cb) {
 
 bool NewProjectPopup::init(SlotCreatedCallback cb) {
     if (!Popup::init(420.f, 280.f)) return false;
+    paimon::markDynamicPopup(this);
     m_onCreated = std::move(cb);
     this->setTitle("New Texture Pack");
 
-    // Pack name
-    if (auto* nameLbl = CCLabelBMFont::create("Pack Name:", "bigFont.fnt")) {
-        nameLbl->setScale(0.5f);
+    if (auto* nameLbl = CCLabelBMFont::create("Name:", "bigFont.fnt")) {
+        nameLbl->setScale(0.45f);
         nameLbl->setAnchorPoint({0.f, 0.5f});
         m_mainLayer->addChildAtPosition(nameLbl, Anchor::TopLeft, {20.f, -50.f});
     }
 
-    if (auto* input = TextInput::create(280.f, "My Pack")) {
+    if (auto* input = TextInput::create(150.f, "My Pack")) {
         input->setString("My Pack");
         input->setMaxCharCount(40);
-        m_mainLayer->addChildAtPosition(input, Anchor::TopLeft, {120.f, -55.f});
+        input->setScale(0.9f);
+        m_mainLayer->addChildAtPosition(input, Anchor::TopLeft, {145.f, -50.f});
         m_nameInput = input;
     }
 
-    // Sheets list label
+    if (auto* authorLbl = CCLabelBMFont::create("Author:", "bigFont.fnt")) {
+        authorLbl->setScale(0.45f);
+        authorLbl->setAnchorPoint({0.f, 0.5f});
+        m_mainLayer->addChildAtPosition(authorLbl, Anchor::TopLeft, {230.f, -50.f});
+    }
+
+    if (auto* author = TextInput::create(130.f, "Paimbnails")) {
+        author->setString("");
+        author->setMaxCharCount(30);
+        author->setScale(0.9f);
+        m_mainLayer->addChildAtPosition(author, Anchor::TopLeft, {345.f, -50.f});
+        m_authorInput = author;
+    }
+
     if (auto* listLbl = CCLabelBMFont::create(
             "Sheets to include (auto-detected):", "bigFont.fnt")) {
         listLbl->setScale(0.45f);
@@ -50,7 +65,21 @@ bool NewProjectPopup::init(SlotCreatedCallback cb) {
         m_mainLayer->addChildAtPosition(listLbl, Anchor::TopLeft, {20.f, -90.f});
     }
 
-    // Sheets list (scroll)
+    if (m_buttonMenu) {
+        auto makeSmallBtn = [this](char const* label, float x, bool checked) {
+            auto* spr = ButtonSprite::create(label, "bigFont.fnt", "GJ_button_04.png", 0.34f);
+            if (!spr) return;
+            if (auto* btn = CCMenuItemExt::createSpriteExtra(spr,
+                    [this, checked](CCMenuItemSpriteExtra*) {
+                        this->setAllChecked(checked);
+                    })) {
+                m_buttonMenu->addChildAtPosition(btn, Anchor::TopRight, {x, -90.f});
+            }
+        };
+        makeSmallBtn("All",  -92.f, true);
+        makeSmallBtn("None", -42.f, false);
+    }
+
     auto* container = CCNode::create();
     if (container) {
         container->setContentSize({380.f, 130.f});
@@ -59,7 +88,6 @@ bool NewProjectPopup::init(SlotCreatedCallback cb) {
         refreshSheetsList();
     }
 
-    // Footer buttons
     if (m_buttonMenu) {
         if (auto* createBtnSpr = ButtonSprite::create("Create", "goldFont.fnt", "GJ_button_01.png", 0.8f)) {
             if (auto* createBtn = CCMenuItemExt::createSpriteExtra(createBtnSpr,
@@ -72,40 +100,55 @@ bool NewProjectPopup::init(SlotCreatedCallback cb) {
     return true;
 }
 
+void NewProjectPopup::setAllChecked(bool checked) {
+    for (auto& r : m_rows) r.checked = checked;
+    refreshSheetsList();
+}
+
 void NewProjectPopup::refreshSheetsList() {
     if (!m_sheetsListContainer) return;
     m_sheetsListContainer->removeAllChildren();
-    m_rows.clear();
 
-    auto detected = GdResourcesLocator::detectVanillaSheets();
-    if (!detected || detected.unwrap().empty()) {
-        if (auto* empty = CCLabelBMFont::create(
-                "No sheets detected in GD Resources.", "bigFont.fnt")) {
-            empty->setScale(0.4f);
-            empty->setColor({200, 80, 80});
-            m_sheetsListContainer->addChildAtPosition(empty, Anchor::Center);
+    // Detect once; later calls just rebuild the UI from m_rows so the
+    // All/None buttons can flip states without losing them.
+    if (m_rows.empty()) {
+        auto detected = GdResourcesLocator::detectVanillaSheets();
+        if (!detected || detected.unwrap().empty()) {
+            if (auto* empty = CCLabelBMFont::create(
+                    "No sheets detected in GD Resources.", "bigFont.fnt")) {
+                empty->setScale(0.4f);
+                empty->setColor({200, 80, 80});
+                m_sheetsListContainer->addChildAtPosition(empty, Anchor::Center);
+            }
+            return;
         }
-        return;
-    }
 
-    auto sheets = detected.unwrap();
-    // Restrict to the most relevant sheets for menu recoloring (matches
-    // PackGen's typical selection). Users can expand later via the
-    // ProjectEditorLayer.
-    static const std::vector<std::string> kRelevantPrefixes = {
-        "GJ_GameSheet", "GJ_LaunchSheet", "GJ_LaunchSheet2",
-        "FireSheet", "GauntletSheet", "PixelSheet",
-    };
-    std::vector<DetectedSheet> filtered;
-    for (auto const& s : sheets) {
-        for (auto const& p : kRelevantPrefixes) {
-            if (s.baseName.rfind(p, 0) == 0) {
-                filtered.push_back(s);
-                break;
+        auto sheets = detected.unwrap();
+        static const std::vector<std::string> kRelevantPrefixes = {
+            "GJ_GameSheet", "GJ_LaunchSheet", "GJ_LaunchSheet2",
+            "FireSheet", "GauntletSheet", "PixelSheet",
+        };
+        std::vector<DetectedSheet> filtered;
+        for (auto const& s : sheets) {
+            for (auto const& p : kRelevantPrefixes) {
+                if (s.baseName.rfind(p, 0) == 0) {
+                    filtered.push_back(s);
+                    break;
+                }
             }
         }
+        if (filtered.empty()) filtered = sheets;
+
+        for (auto const& s : filtered) {
+            SheetRow row;
+            row.baseName      = s.baseName;
+            row.qualitySuffix = s.qualitySuffix;
+            row.plistPath     = geode::utils::string::pathToString(s.plistPath);
+            row.pngPath       = geode::utils::string::pathToString(s.pngPath);
+            row.checked       = true;
+            m_rows.push_back(row);
+        }
     }
-    if (filtered.empty()) filtered = sheets;  // fallback: show everything
 
     auto* scroll = ScrollLayer::create({380.f, 130.f});
     if (!scroll) return;
@@ -115,15 +158,7 @@ void NewProjectPopup::refreshSheetsList() {
 
     constexpr float kRowH = 22.f;
     int idx = 0;
-    for (auto const& s : filtered) {
-        SheetRow row;
-        row.baseName      = s.baseName;
-        row.qualitySuffix = s.qualitySuffix;
-        row.plistPath     = geode::utils::string::pathToString(s.plistPath);
-        row.pngPath       = geode::utils::string::pathToString(s.pngPath);
-        row.checked       = true;
-        m_rows.push_back(row);
-
+    for (auto const& row : m_rows) {
         auto* rowNode = CCNode::create();
         if (!rowNode) { ++idx; continue; }
         rowNode->setContentSize({380.f, kRowH});
@@ -132,13 +167,9 @@ void NewProjectPopup::refreshSheetsList() {
         if (!checkMenu) { ++idx; continue; }
         checkMenu->setContentSize({30.f, kRowH});
 
-        // Use the Geode lambda variant directly. The previous code created a
-        // standard-sprites toggler with a null selector, attached it to the
-        // menu, then immediately removed it and re-added an ext toggler.
-        // That dance leaves an orphaned toggler with target=this and
-        // selector=nullptr in the autorelease pool, plus has retain/release
-        // sequencing that has been observed to corrupt the menu's child
-        // array on cleanup (CCNode::cleanup recursion crash).
+        // Lambda toggler variant: the old standard-sprites + null-selector
+        // dance left an orphaned toggler that corrupted the menu child array
+        // on cleanup (CCNode::cleanup recursion crash).
         int rowIndex = idx;
         auto* extToggler = CCMenuItemExt::createTogglerWithStandardSprites(
             0.5f, [this, rowIndex](CCMenuItemToggler* t) {
@@ -148,20 +179,19 @@ void NewProjectPopup::refreshSheetsList() {
                 }
             });
         if (extToggler) {
-            extToggler->toggle(true);
+            extToggler->toggle(row.checked);
             checkMenu->addChildAtPosition(extToggler, Anchor::Left, {15.f, 0.f});
         }
         rowNode->addChild(checkMenu);
 
         if (auto* lbl = CCLabelBMFont::create(
-                (s.baseName + " (" + s.qualitySuffix.substr(0, 3) + ")").c_str(),
+                (row.baseName + " (" + row.qualitySuffix.substr(0, 3) + ")").c_str(),
                 "bigFont.fnt")) {
             lbl->setScale(0.4f);
             lbl->setAnchorPoint({0.f, 0.5f});
             rowNode->addChildAtPosition(lbl, Anchor::Left, {40.f, 0.f});
         }
 
-        // Position in scroll content layer.
         rowNode->setAnchorPoint({0.5f, 0.5f});
         rowNode->setPosition({190.f, 130.f - (idx + 0.5f) * kRowH});
         content->addChild(rowNode);
@@ -171,7 +201,6 @@ void NewProjectPopup::refreshSheetsList() {
 
     float totalH = std::max(130.f, idx * kRowH);
     content->setContentHeight(totalH);
-    // Position children top-down within the content layer.
     if (auto* children = content->getChildren()) {
         for (unsigned int i = 0; i < children->count(); ++i) {
             auto* c = static_cast<CCNode*>(children->objectAtIndex(i));
@@ -189,11 +218,13 @@ void NewProjectPopup::refreshSheetsList() {
 void NewProjectPopup::onCreateClicked(CCObject*) {
     std::string name = m_nameInput ? std::string(m_nameInput->getString()) : std::string("My Pack");
     if (name.empty()) name = "My Pack";
+    std::string author = m_authorInput ? std::string(m_authorInput->getString()) : std::string();
+    if (author.empty()) author = "Paimbnails";
 
     TextureProject p;
     p.id        = PackMetadataBuilder::buildPackId(name);
     p.name      = name;
-    p.author    = "Paimbnails";
+    p.author    = author;
     p.createdAt = nowUnixMs();
     p.modifiedAt = p.createdAt;
 

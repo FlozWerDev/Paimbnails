@@ -4,6 +4,7 @@
 
 #include <Geode/cocos/menu_nodes/CCMenuItem.h>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
+#include <Geode/binding/MenuGameLayer.hpp>
 #include <Geode/cocos/sprite_nodes/CCSprite.h>
 #include <Geode/cocos/sprite_nodes/CCSpriteBatchNode.h>
 #include <Geode/cocos/label_nodes/CCLabelBMFont.h>
@@ -281,10 +282,15 @@ namespace {
         return text.substr(0, maxLen) + "...";
     }
 
-    void gatherDecorFonts(CCNode* node, CCNode* root, std::vector<CCLabelBMFont*>& outFonts) {
+    void gatherDecorFonts(CCNode* node, CCNode* root, std::vector<CCLabelBMFont*>& outFonts,
+                          std::unordered_set<CCNode*> const& claimed) {
         if (!node) return;
 
-        if (node != root && !shouldSkipDecorNode(node)) {
+        // Skip the main-menu animated icon layer (player icon that runs across
+        // the menu, ground, etc.) so it can't be edited.
+        if (node != root && typeinfo_cast<MenuGameLayer*>(node)) return;
+
+        if (node != root && !shouldSkipDecorNode(node) && !claimed.count(node)) {
             if (auto* label = typeinfo_cast<CCLabelBMFont*>(node)) {
                 if (label->isVisible() && !hasMenuItemAncestor(label, root)) {
                     auto* txt = label->getString();
@@ -297,17 +303,18 @@ namespace {
 
         if (auto* children = node->getChildren()) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
-                gatherDecorFonts(child, root, outFonts);
+                gatherDecorFonts(child, root, outFonts, claimed);
             }
         }
     }
 
     /// Groups adjacent BMFont labels by shared parent (horizontal, same line).
-    void emitGroupedDecorLabels(CCNode* root, std::vector<EditableMenuButton>& out, int& decorCount) {
+    void emitGroupedDecorLabels(CCNode* root, std::vector<EditableMenuButton>& out, int& decorCount,
+                                std::unordered_set<CCNode*> const& claimed) {
         if (!root) return;
 
         std::vector<CCLabelBMFont*> gathered;
-        gatherDecorFonts(root, root, gathered);
+        gatherDecorFonts(root, root, gathered, claimed);
         std::unordered_map<CCNode*, std::vector<CCLabelBMFont*>> byParent;
         byParent.reserve(32);
 
@@ -373,8 +380,13 @@ namespace {
         }
     }
 
-    void collectDecorSpritesRecursive(CCNode* node, CCNode* root, std::vector<EditableMenuButton>& out, int& decorCount) {
+    void collectDecorSpritesRecursive(CCNode* node, CCNode* root, std::vector<EditableMenuButton>& out, int& decorCount,
+                                      std::unordered_set<CCNode*> const& claimed) {
         if (!node || decorCount >= 300) return;
+
+        // Skip the main-menu animated icon layer (player icon that runs across
+        // the menu, ground, etc.) so it can't be edited.
+        if (node != root && typeinfo_cast<MenuGameLayer*>(node)) return;
 
         // CCLabelBMFont children are per-glyph sprites; skip to avoid one entry per letter.
         if (typeinfo_cast<CCLabelBMFont*>(node)) {
@@ -384,7 +396,7 @@ namespace {
         // CCSpriteBatchNode children are batched sprites (glyphs/particles); don't recurse.
         bool isBatchNode = typeinfo_cast<CCSpriteBatchNode*>(node) != nullptr;
 
-        if (node != root && !shouldSkipDecorNode(node)) {
+        if (node != root && !shouldSkipDecorNode(node) && !claimed.count(node)) {
             if (auto* sprite = typeinfo_cast<CCSprite*>(node)) {
                 if (sprite->isVisible() && !hasMenuItemAncestor(sprite, root)) {
                     auto sz = sprite->getContentSize();
@@ -422,7 +434,7 @@ namespace {
 
         if (auto* children = node->getChildren()) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
-                collectDecorSpritesRecursive(child, root, out, decorCount);
+                collectDecorSpritesRecursive(child, root, out, decorCount, claimed);
             }
         }
     }
@@ -713,9 +725,22 @@ std::vector<EditableMenuButton> MainMenuLayoutManager::collectButtons(CCNode* ro
     collectButtonsRecursive(root, root, buttons);
     addStandaloneNode(root, buttons, "main-title", "Geometry Dash Title");
     addStandaloneNode(root, buttons, "player-username", "Profile Username");
+
+    // Nodes already represented as buttons/standalone items are claimed so the
+    // decor collectors below don't create a second editable item for the same
+    // node (which would fight the user's edits and snap it back on re-apply).
+    std::unordered_set<CCNode*> claimed;
+    claimed.reserve(buttons.size() * 2);
+    for (auto const& b : buttons) {
+        if (b.node) claimed.insert(b.node.data());
+        for (auto const& f : b.labelGroupFollowers) {
+            if (f) claimed.insert(f.data());
+        }
+    }
+
     int decorCount = 0;
-    emitGroupedDecorLabels(root, buttons, decorCount);
-    collectDecorSpritesRecursive(root, root, buttons, decorCount);
+    emitGroupedDecorLabels(root, buttons, decorCount, claimed);
+    collectDecorSpritesRecursive(root, root, buttons, decorCount, claimed);
     return buttons;
 }
 

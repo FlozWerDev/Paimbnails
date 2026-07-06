@@ -108,7 +108,6 @@ geode::Result<FramePixelCache::FrameData> FramePixelCache::frameData(
 void FramePixelCache::setByteBudget(std::size_t bytes) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_byteBudget = std::max(bytes, kFrameCacheByteFloor);
-    // Enforce the new (possibly smaller) budget right away.
     while (m_frameCacheBytes > m_byteBudget && !m_frameOrder.empty()) {
         auto const oldKey = m_frameOrder.front();
         m_frameOrder.pop_front();

@@ -18,14 +18,12 @@ protected:
     cocos2d::CCMenu* m_bgRow1Menu = nullptr;
     cocos2d::CCMenu* m_profileBtnColumn = nullptr;
 
-    // Main tabs
     int m_currentMainTab = 0;
     std::vector<CCMenuItemSpriteExtra*> m_mainTabBtns;
     cocos2d::CCLayer* m_bgTab = nullptr;
     cocos2d::CCLayer* m_profileTab = nullptr;
     cocos2d::CCLayer* m_extrasTab = nullptr;
 
-    // Background tab
     std::string m_selectedKey = "menu";
     std::vector<CCMenuItemSpriteExtra*> m_layerBtns;
     geode::TextInput* m_bgIdInput = nullptr;
@@ -43,27 +41,22 @@ protected:
     int m_shaderIndex = 0;
     int m_shaderIntensityIndex = 4; // default 50%
 
-    // Profile tab
     cocos2d::CCNode* m_profilePreview = nullptr;
     // profile preview generation: invalidates in-flight async loads when the preview is rebuilt.
     int m_profilePreviewGen = 0;
 
-    // Tab switching
     void onMainTabSwitch(cocos2d::CCObject* sender);
     void switchMainTab(int idx);
 
-    // Build tabs
     void buildBackgroundTab();
     void buildProfileTab();
     void buildExtrasTab();
 
-    // Layer selector (Background tab)
     void onLayerSelect(cocos2d::CCObject* sender);
     void updateLayerButtons();
     void refreshForCurrentLayer();
     void rebuildBgPreview();
 
-    // Background actions
     void onBgCustomImage(cocos2d::CCObject*);
     void onBgVideo(cocos2d::CCObject*);
     void onVideoSettings(cocos2d::CCObject*);
@@ -81,19 +74,16 @@ protected:
     void updateShaderLabel();
     void updateShaderIntensityLabel();
 
-    // Profile actions
     void onProfileImage(cocos2d::CCObject*);
     void onProfileImageClear(cocos2d::CCObject*);
     void onProfilePhoto(cocos2d::CCObject*);
     void rebuildProfilePreview();
 
-    // Extras
     void onPetConfig(cocos2d::CCObject*);
     void onCustomCursor(cocos2d::CCObject*);
     void onTransitions(cocos2d::CCObject*);
     void onClearAllCache(cocos2d::CCObject*);
 
-    // Common
     void onApply(cocos2d::CCObject*);
     void onBack(cocos2d::CCObject*);
     CCMenuItemSpriteExtra* makeBtn(char const* text, cocos2d::CCPoint pos,

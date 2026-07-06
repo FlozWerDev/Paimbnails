@@ -104,7 +104,7 @@ public:
                 m_container->addChild(m_spinner);
             }
             return;
-        }        // to the most recent level overall.
+        }
         GJGameLevel* firstLevel = nullptr;
         GJGameLevel* ratedLevel = nullptr;
         for (int i = 0; i < levels->count(); ++i) {
@@ -126,7 +126,6 @@ public:
         cell->loadFromLevel(level);
         cell->setPosition({0.f, 0.f});
 
-        // strip the cell's own dark background / separator lines so it blends
         if (cell->m_backgroundLayer) cell->m_backgroundLayer->setVisible(false);
         for (auto* ch : CCArrayExt<CCNode*>(cell->getChildren())) {
             if (typeinfo_cast<cocos2d::CCLayerColor*>(ch)) ch->setVisible(false);
@@ -136,19 +135,6 @@ public:
                 if (typeinfo_cast<cocos2d::CCLayerColor*>(ch)) ch->setVisible(false);
             }
         }
-        // The embedded level is the profile OWNER's own level (the loader queries
-        // SearchType::UsersLevels for score->m_userID). GD's LevelCell builds a
-        // clickable creator button wired to LevelCell::onViewProfile
-        // (GeometryDash.bro: LevelCell::onViewProfile = win 0xb1a20), parented to
-        // m_mainMenu. Left active, tapping it calls ProfilePage::create(creator)
-        // ->show(); because the level is the owner's own, that re-opens THIS exact
-        // profile, which re-embeds the same level with the same live button ->
-        // ProfilePages stack on top indefinitely, each one repeatable.
-        // NOTE: depending on the geode.node-ids "creator-name" id was unreliable
-        // (it is not assigned on a freshly-created, detached cell). Disable the
-        // button directly through the cell's own structure: kill every CCMenuItem
-        // in m_mainMenu EXCEPT the main level button (m_button), so the preview
-        // can still open the level on tap but can never open a profile.
         if (cell->m_mainMenu) {
             for (auto* ch : CCArrayExt<CCNode*>(cell->m_mainMenu->getChildren())) {
                 auto* item = typeinfo_cast<cocos2d::CCMenuItem*>(ch);
@@ -158,7 +144,6 @@ public:
                 }
             }
         }
-        // redundant. Recursively hide any goldFont label inside the cell.
         std::function<void(CCNode*)> hideGoldLabels = [&](CCNode* node) {
             if (!node) return;
             for (auto* ch : CCArrayExt<CCNode*>(node->getChildren())) {
@@ -206,7 +191,7 @@ public:
         m_done = true;
         showNone();
     }
-};// gives independent, position-aware scrolling for the two side-by-side cards.
+};
 class DualScrollLayer : public geode::ScrollLayer {
 public:
     CCScrollLayerExt* m_commentScroller = nullptr;
@@ -409,7 +394,6 @@ public:
         float w = m_area.width;
         bool hasMsg = !msg.empty();
         float maxMsgW = w - 12.f;
-        // multi-line text (with inline emotes) instead of clipping/overflowing.
         cocos2d::CCNode* msgNode = nullptr;
         if (hasMsg) {
             if (paimon::emotes::EmoteService::get().isLoaded() &&
@@ -419,7 +403,6 @@ public:
                     msg, 13.f, maxMsgW, "chatFont.fnt", 0.4f);
             }
             if (!msgNode) {
-                // Wrapped label (width set) so long text grows the cell.
                 auto* lbl = cocos2d::CCLabelBMFont::create(
                     msg.c_str(), "chatFont.fnt", maxMsgW / 0.4f, kCCTextAlignmentLeft);
                 if (lbl) {
@@ -432,7 +415,7 @@ public:
         }
         float msgH = msgNode ? msgNode->getContentSize().height * msgNode->getScaleY() : 0.f;
 
-        const float headerH = 14.f;   // name + stars row
+        const float headerH = 14.f;
         float h = hasMsg ? std::max(24.f, headerH + msgH + 6.f) : 16.f;
 
         auto cell = cocos2d::CCNode::create();
@@ -519,18 +502,17 @@ static bool isCommentDecoration(CCNode* node) {
     if (!node) return false;
     std::string const id = std::string(node->getID());
     if (!id.empty()) {
-        if (id.find("paimon-") != std::string::npos) return false; // keep our own nodes
+        if (id.find("paimon-") != std::string::npos) return false;
         if (id == "background" || id == "comment-background" ||
             id == "left-border" || id == "right-border" ||
             id == "top-border" || id == "bottom-border") {
             return true;
         }
-        // and ".../special-border".
         if (id.find("happy_textures") != std::string::npos) return true;
     }
     return typeinfo_cast<cocos2d::CCLayerColor*>(node) ||
            typeinfo_cast<cocos2d::extension::CCScale9Sprite*>(node);
-}// and the like/dislike menus are left untouched.
+}
 static void stripCommentDecorations(CCNode* listNode) {
     if (!listNode) return;
     auto walk = [&](auto const& self, CCNode* node) -> void {
@@ -544,7 +526,7 @@ static void stripCommentDecorations(CCNode* listNode) {
                 k->setVisible(false);
                 continue;
             }
-            if (typeinfo_cast<CCMenu*>(k)) continue; // keep buttons intact
+            if (typeinfo_cast<CCMenu*>(k)) continue;
             self(self, k);
         }
     };
@@ -572,21 +554,14 @@ static CommentCell* makeAccountCommentCell(GJComment* comment, float width, floa
     }
 #endif
     cell->autorelease();
-    cell->m_accountComment = true;   // render as an account post, not a level comment
+    cell->m_accountComment = true;
     cell->loadFromComment(comment);
     return cell;
 }
 
 static void styleAccountCommentCell(CommentCell* cell, float w, float h) {
     if (!cell) return;
-    stripCommentDecorations(cell);                         // hides CCLayerColor/scale9/borders/happy
-    // These are the profile owner's OWN posts. GD's CommentCell wraps the poster
-    // icon in a CCMenuItem wired to CommentCell::onViewProfile (GeometryDash.bro:
-    // CommentCell::onViewProfile = win 0xb8190). Tapping it calls
-    // ProfilePage::create(poster)->show(); since every post here belongs to the
-    // owner, that re-opens THIS same profile and stacks ProfilePages indefinitely.
-    // Disable the icon's CCMenuItem ancestor so an embedded post can no longer
-    // re-open the profile (no-op if GD didn't build that button for account posts).
+    stripCommentDecorations(cell);
     if (cell->m_iconSprite) {
         for (cocos2d::CCNode* n = cell->m_iconSprite; n && n != cell; n = n->getParent()) {
             if (auto* item = typeinfo_cast<cocos2d::CCMenuItem*>(n)) {
@@ -596,13 +571,9 @@ static void styleAccountCommentCell(CommentCell* cell, float w, float h) {
         }
     }
     if (cell->m_backgroundLayer) cell->m_backgroundLayer->setVisible(false);
-    // deferred refresh won't recreate it) and use ours instead.
     if (auto* p = cell->getChildByID("paimon-comment-bg-panel"_spr)) p->setVisible(false);
 
     if (!cell->getChildByID("paimon-rd-comment-panel"_spr)) {
-        // Tinted, semi-transparent panel (not pure black) so the profile
-        // backdrop shows through behind each comment. The comments card already
-        // provides a darker backing, so this only needs a subtle tint.
         auto* panel = paimon::SpriteHelper::createColorPanel(
             w - 4.f, h - 2.f, {30, 33, 48}, 60, 4.f);
         if (panel) {
@@ -615,7 +586,6 @@ static void styleAccountCommentCell(CommentCell* cell, float w, float h) {
     }
 }
 
-// tree. Used to find where the comment text actually sits, so the list can bepadding/header layout (which we cannot assume).
 static void accumulateLabelAABB(CCNode* node, cocos2d::CCRect& out, bool& has) {
     if (!node || !node->isVisible()) return;
     if (typeinfo_cast<cocos2d::CCLabelBMFont*>(node)) {
@@ -690,7 +660,6 @@ void prepareInPlace(CCLayer* layer) {
     if (!layer) return;
 
     hideVanillaChrome(layer);
-    // redesign is mounted, keep the vanilla scale9 as a neutral dark fallback
     CCNode* background = layer->getChildByID("background");
     if (!background && layer->getChildren()) {
         for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
@@ -751,7 +720,6 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     const float bottomY = c.y - hh + 24.f;
 
     Ref<GJUserScore> scoreRef = score;
-    // their old parent menus are left hidden.
     prepareInPlace(layer);
     constexpr float commentsH = 64.f;
     const float commentsGap = 10.f;
@@ -764,7 +732,6 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     // it is re-parented and scaled). The only build that ever rendered comments    // locate it, then scale/position/lock it below. Drop any stale clip left by
     // older versions of the redesign.
     removeByID(layer, "rd-comments-clip"_spr);
-    // it is not the asynchronously-created account comments list.
     if (commentList && commentList->getID() == "icon-background") {
         commentList = nullptr;
     }
@@ -878,6 +845,47 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         node->setLayoutOptions(AxisLayoutOptions::create()->setScaleLimits(0.45f, 1.f));
         return true;
     };
+
+    // Shrinks a vertical rail (and its dark backing panel) so it hugs the
+    // buttons it actually holds, instead of always spanning the full popup
+    // height. This keeps the panels from looking empty when a profile only
+    // has a couple of buttons.
+    auto fitRail = [&](CCMenu* menu, std::string const& id, CCPoint center, float maxH) {
+        if (!menu) return;
+        auto* bg = layer->getChildByID(id + "-bg");
+        const int n = menu->getChildrenCount();
+        if (n <= 0) {
+            menu->setVisible(false);
+            if (bg) bg->setVisible(false);
+            return;
+        }
+        menu->setVisible(true);
+        if (bg) bg->setVisible(true);
+
+        constexpr float gap = 5.f;
+        constexpr float innerPad = 8.f; // breathing room above/below buttons
+        float content = 0.f;
+        for (auto* ch : CCArrayExt<CCNode*>(menu->getChildren())) {
+            content += ch->getScaledContentSize().height;
+        }
+        content += gap * static_cast<float>(n - 1);
+
+        float h = std::clamp(content + innerPad, 40.f, maxH);
+        const float w = menu->getContentSize().width;
+        // Anchor the rail to where the top of the full-height rail used to be,
+        // so buttons start from the top and grow downward instead of sitting
+        // centered in the middle of the popup.
+        const float topY = center.y + maxH * 0.5f;
+        const CCPoint anchored = {center.x, topY - h * 0.5f};
+        menu->setContentSize({w, h});
+        menu->setPosition(anchored);
+        menu->updateLayout();
+        if (bg) {
+            bg->setContentSize({w + 6.f, h + 6.f});
+            bg->setPosition(anchored);
+        }
+    };
+
     auto* closeMenu = makeRail({railXLeft, cornerY}, {34.f, 34.f}, "rd-close"_spr);
     auto* swapMenu = makeRail({railXRight, cornerY}, {34.f, 34.f}, "rd-swap"_spr);
     removeGeneratedChildren(closeMenu);
@@ -895,28 +903,12 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     auto* optionsRail = makeRail({railXLeft, railY}, railSize, "rd-options-rail"_spr);
     removeGeneratedChildren(optionsRail);
     if (ownProfile) {
-        // Relocate GD's REAL own-profile account buttons instead of recreating
-        // them. geode.node-ids assigns these ids on the own profile (NodeIDs
-        // ProfilePage own-profile branch: message-button / friend-button /
-        // requests-button / settings-button / comment-button) and moves them into
-        // "bottom-menu". The vanilla buttons keep:
-        //   - their native callbacks (onFriends/onRequests/onMessages/onSettings),
-        //     so they behave exactly like RobTop's (no custom create()->show()),
-        //   - their live children — most importantly the friend-request COUNT
-        //     badge on the requests button, which a hand-made icon cannot show.
-        // Recreating them with plain icons dropped that badge and diverged from
-        // RobTop's flow (the cause of the duplicate-feeling stacking the user hit).
         relocate(optionsRail, "settings-button");
         relocate(optionsRail, "friend-button");
         relocate(optionsRail, "requests-button");
         relocate(optionsRail, "message-button");
+        relocate(optionsRail, "comment-button");
     } else {
-        // Relocate GD's real account buttons instead of recreating them. The
-        // vanilla buttons already reflect the live state: geode.node-ids only
-        // creates "friend-button" when (m_friendStatus != 1 || m_friendReqStatus),
-        // so when you are already friends there is simply no add-friend button to
-        // relocate. They also keep their native callbacks, so pressing them no
-        // longer fires a spurious friend request that makes GD reload the page.
         relocate(optionsRail, "message-button");
         relocate(optionsRail, "friend-button");
         relocate(optionsRail, "block-button");
@@ -929,6 +921,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         "flozwer.paimbnails2/ban-user-button",
     }) relocate(optionsRail, id);
     optionsRail->updateLayout();
+    fitRail(optionsRail, "rd-options-rail"_spr, {railXLeft, railY}, railSize.height);
     auto* socialsRail = makeRail({railXRight, railY}, railSize, "rd-socials-rail"_spr);
     removeGeneratedChildren(socialsRail);
     auto addSocial = [&](gd::string const& url, char const* frame, std::string const& base) {
@@ -944,6 +937,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     addSocial(score->m_instagramURL, "gj_instaIcon_001.png", "https://instagram.com/");
     addSocial(score->m_tiktokURL, "gj_tiktokIcon_001.png", "https://tiktok.com/@");
     socialsRail->updateLayout();
+    fitRail(socialsRail, "rd-socials-rail"_spr, {railXRight, railY}, railSize.height);
 
     makeCard("rd-header-card"_spr, {c.x, headerY}, {contentW, 48.f}, cardA);
     makeCard("rd-icons-card"_spr, {c.x, iconsY}, {contentW, 40.f}, cardA);
@@ -964,8 +958,6 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             sidePanel->setCommentRouting(nullptr, nullptr);
         }
     }
-    // every post is reachable by scrolling. The ScrollLayer clips via scissor,
-    // so cells never spill out of the card. Its own wheel handling is disabled;
     {
         const float innerW = std::max(20.f, commentsLeftW - 6.f);
         const float innerH = std::max(20.f, commentsH + 2.f);
@@ -981,7 +973,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             layer->addChild(scroll);
         }
         scroll->setPosition({commentsLeftX, commentsY});
-        scroll->setZOrder(Z_CONTENT + 1);        // settle passes don't recreate the cells (which would re-trigger the
+        scroll->setZOrder(Z_CONTENT + 1);
         int count = comments ? comments->count() : 0;
         std::string sig = !commentsLoaded ? "loading" : ("n" + std::to_string(count));
         if (commentsLoaded && count > 0) {
@@ -1015,9 +1007,6 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             } else if (count == 0) {
                 centeredMsg(ownProfile ? "You haven't posted yet" : "No posts yet");
             } else {
-                // Build each cell at GD's natural comment dimensions so its
-                // text/buttons lay out correctly, then scale the whole cell
-                // down to the card width. Each scaled cell lives in a holder
                 const float naturalW = 350.f;
                 const float naturalH = 80.f;
                 const float scale = innerW / naturalW;
@@ -1049,13 +1038,11 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             }
             scroll->scrollToTop();
         }
-        // is over the left card.
         if (auto* sp = typeinfo_cast<ProfileSidePanel*>(
                 layer->getChildByID("rd-side-panel"_spr))) {
             sp->setCommentRouting(scroll, scroll);
         }
     }
-    // rank and info button, so long usernames cannot overlap them.
     {
         auto* menu = getOrCreateMenu(
             "rd-username"_spr, {contentLeft + 8.f, headerY + 10.f}, {contentW - 98.f, 24.f}
@@ -1115,7 +1102,6 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             layer->addChild(rankValue);
         }
     }
-    // out as one unit, so the row reads clearly and stays evenly spaced and
     {
         auto* menu = getOrCreateMenu(
             "rd-stats"_spr, {c.x, headerY - 13.f}, {contentW - 8.f, 18.f}
@@ -1162,7 +1148,6 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         addStat(score->m_secretCoins, "GJ_coinsIcon_001.png", {248, 138, 0});
         menu->updateLayout();
     }
-    // our own. This keeps full compatibility with other icon mods and matches
     {
         removeByID(layer, "rd-icons"_spr);
         if (auto* playerMenu = layer->getChildByID("player-menu")) {
@@ -1178,7 +1163,6 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         }
     }
 
-    // Recent / rated level.
     {
         const CCSize levelArea = {contentW - 6.f, 44.f};
         makeCard("rd-level-card"_spr, {c.x, levelY}, {contentW, 48.f}, cardA);
@@ -1239,8 +1223,6 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         for (auto const* id : {
             "profile-reviews-btn", "rate-profile-btn", "paimon-thumb-count-btn"
         }) relocate(row, std::string("flozwer.paimbnails2/") + id);
-        // buttons (they only exist when viewing other people's profiles), so
-        // add our own. They open the player's published levels and their lists.
         if (ownProfile) {
             int const userID = score->m_userID;
             auto addBrowseBtn = [&](std::string const& id, char const* baseFrame,
@@ -1284,10 +1266,29 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         relocate(row, "flozwer.paimbnails2/profile-music-pause-button");
 
         row->updateLayout();
+        // Adapt the bottom dark panel width to the buttons it actually holds,
+        // so it hugs the row instead of always spanning the full content width.
+        if (auto* bg = layer->getChildByID("rd-bottom-row-bg"_spr)) {
+            const int n = row->getChildrenCount();
+            if (n <= 0) {
+                bg->setVisible(false);
+                row->setVisible(false);
+            } else {
+                bg->setVisible(true);
+                constexpr float gap = 7.f;
+                float content = 0.f;
+                for (auto* ch : CCArrayExt<CCNode*>(row->getChildren())) {
+                    content += ch->getScaledContentSize().width;
+                }
+                content += gap * static_cast<float>(n - 1);
+                const float w = std::clamp(content + 18.f, 60.f, contentW);
+                bg->setContentSize({w, 38.f});
+                bg->setPosition({c.x, bottomY});
+            }
+        }
     }
     swapMenu->updateLayout();
 
-    // Integrated info button in the header.
     {
         auto* menu = getOrCreateMenu(
             "rd-corner"_spr, {contentRight - 14.f, headerY + 9.f}, {24.f, 24.f}
@@ -1315,4 +1316,4 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     }
 }
 
-} // namespace paimon::profile_redesign
+}

@@ -1,6 +1,4 @@
-﻿// MenuMusicInit — bootstrap for the MenuMusic system.
-// Only loads the library from disk at startup; other components are lazy singletons.
-
+﻿
 #include "services/MenuMusicLibrary.hpp"
 #include "services/MenuMusicPlayer.hpp"
 #include <Geode/Geode.hpp>
@@ -13,9 +11,6 @@ using namespace geode::prelude;
 using namespace paimon::menumusic;
 
 $on_mod(Loaded) {
-    // Load the music library in the background to avoid blocking startup.
-    // The player is lazy and not used until the music popup is opened,
-    // so there's no race with the main thread.
     paimon::ThreadTracker::get().spawn([]() {
         geode::utils::thread::setName("PaimonMenuMusicLoad");
         if (paimon::isRuntimeShuttingDown()) return;

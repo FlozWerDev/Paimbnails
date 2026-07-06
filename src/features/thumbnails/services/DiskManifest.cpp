@@ -30,13 +30,11 @@ void DiskManifest::load(std::filesystem::path const& cacheDir) {
 
     std::error_code ec;
     if (!std::filesystem::exists(m_manifestPath, ec)) {
-        // no hay manifest previo — escanear la carpeta para crear uno inicial
-        // esto permite migracion desde la version sin manifest
+        // No manifest yet: scan the folder to migrate from the pre-manifest version.
         rebuildFromDirectory(cacheDir);
         return;
     }
 
-    // leer y parsear manifest existente
     auto readRes = file::readString(m_manifestPath);
     if (!readRes) {
         log::warn("[DiskManifest] could not open manifest for reading");
@@ -46,7 +44,6 @@ void DiskManifest::load(std::filesystem::path const& cacheDir) {
     auto parseResult = matjson::parse(readRes.unwrap());
     if (!parseResult.isOk()) {
         log::warn("[DiskManifest] manifest parse error, rebuilding from directory scan");
-        // Reconstruir desde los archivos que existen en disco para no perder el cache
         rebuildFromDirectory(cacheDir);
         return;
     }
@@ -78,17 +75,15 @@ void DiskManifest::load(std::filesystem::path const& cacheDir) {
         me.isGif = val["isGif"].asBool().unwrapOr(false);
         me.qualityTag = val["qualityTag"].asString().unwrapOr("");
 
-        // validar que el archivo existe en disco
         if (!me.filename.empty()) {
             auto filePath = cacheDir / me.filename;
             if (!std::filesystem::exists(filePath, ec)) {
                 orphans++;
                 m_dirty = true;
-                continue; // no lo cargamos al indice
+                continue;
             }
         }
 
-        // registrar en indices
         m_entries[key] = std::move(me);
         if (!m_entries[key].sourceUrl.empty()) {
             m_urlToKey[m_entries[key].sourceUrl] = key;
@@ -102,7 +97,7 @@ void DiskManifest::load(std::filesystem::path const& cacheDir) {
         log::info("[DiskManifest] loaded {} entries", loaded);
     }
 
-    // limpiar archivos .tmp huerfanos (escrituras atomicas interrumpidas)
+    // clean orphaned .tmp files left by interrupted atomic writes
     {
         int tmpCleaned = 0;
         for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ec)) {
@@ -147,8 +142,7 @@ void DiskManifest::flush() {
     std::error_code ec;
     std::filesystem::create_directories(m_cacheDir, ec);
 
-    // Escritura atomica: escribir a .tmp y renombrar, para que un crash
-    // a mitad de escritura no corrompa el manifest existente.
+    // Atomic write: write to .tmp then rename, so a crash mid-write can't corrupt the existing manifest.
     auto tmpPath = m_manifestPath;
     tmpPath += ".tmp";
 
@@ -168,7 +162,6 @@ void DiskManifest::flush() {
         file.close();
     }
 
-    // rename atomico
     std::filesystem::remove(m_manifestPath, ec);
     ec.clear();
     std::filesystem::rename(tmpPath, m_manifestPath, ec);
@@ -181,8 +174,6 @@ void DiskManifest::flush() {
     m_dirty = false;
     log::debug("[DiskManifest] flushed {} entries", m_entries.size());
 }
-
-// Consultas thread-safe (toman mutex internamente)
 
 bool DiskManifest::contains(int levelID, bool isGif) const {
     std::lock_guard<std::recursive_mutex> lock(mutex);
@@ -227,8 +218,6 @@ DiskManifestEntry const* DiskManifest::getEntryByUrlLocked(std::string const& ur
     auto it = m_entries.find(keyIt->second);
     return it != m_entries.end() ? &it->second : nullptr;
 }
-
-// Mutaciones
 
 void DiskManifest::upsert(int levelID, bool isGif, DiskManifestEntry entry) {
     auto key = makeKey(levelID, isGif);
@@ -275,7 +264,6 @@ void DiskManifest::clear() {
 }
 
 void DiskManifest::clearPreservingMainLevels() {
-    // proteger main levels (1-22) — equivalente a la regla de computePrune.
     int kept = 0;
     int removed = 0;
     for (auto it = m_entries.begin(); it != m_entries.end();) {
@@ -318,8 +306,6 @@ void DiskManifest::touchAccessUrl(std::string const& url) {
     }
 }
 
-// Poda
-
 DiskManifest::PruneResult DiskManifest::computePrune(size_t maxBytes, std::chrono::hours maxAge) const {
     PruneResult result;
     auto nowEpoch = std::chrono::duration_cast<std::chrono::seconds>(
@@ -329,7 +315,6 @@ DiskManifest::PruneResult DiskManifest::computePrune(size_t maxBytes, std::chron
 
     size_t currentTotal = totalBytesLocked();
 
-    // primero: entradas mas viejas que maxAge
     struct Candidate {
         std::string key;
         std::string filename;
@@ -341,7 +326,7 @@ DiskManifest::PruneResult DiskManifest::computePrune(size_t maxBytes, std::chron
     candidates.reserve(m_entries.size());
 
     for (auto const& [key, me] : m_entries) {
-        // proteger main levels (1-22)
+        // protect main levels (1-22)
         int realID = me.levelID > 0 ? me.levelID : 0;
         if (realID >= 1 && realID <= 22) continue;
 
@@ -355,7 +340,7 @@ DiskManifest::PruneResult DiskManifest::computePrune(size_t maxBytes, std::chron
         }
     }
 
-    // si sigue por encima de la quota, evictar por lastAccess (LRU en disco)
+    // if still over quota, evict by lastAccess (disk LRU)
     if (currentTotal > maxBytes) {
         std::sort(candidates.begin(), candidates.end(), [](Candidate const& a, Candidate const& b) {
             return a.lastAccess < b.lastAccess;
@@ -375,7 +360,7 @@ DiskManifest::PruneResult DiskManifest::computePrune(size_t maxBytes, std::chron
 void DiskManifest::applyPrune(PruneResult const& result) {
     if (result.filesToDelete.empty()) return;
 
-    // indice inverso filename->key para evitar O(entries * filesToDelete)
+    // reverse filename->key index to avoid O(entries * filesToDelete)
     std::unordered_map<std::string, std::string> filenameToKey;
     filenameToKey.reserve(m_entries.size());
     for (auto const& [key, me] : m_entries) {
@@ -393,7 +378,6 @@ void DiskManifest::applyPrune(PruneResult const& result) {
             if (!entryIt->second.sourceUrl.empty()) {
                 m_urlToKey.erase(entryIt->second.sourceUrl);
             }
-            // borrar archivo fisico
             auto filePath = m_cacheDir / filename;
             std::error_code ec;
             std::filesystem::remove(filePath, ec);
@@ -403,8 +387,6 @@ void DiskManifest::applyPrune(PruneResult const& result) {
         }
     }
 }
-
-// Stats
 
 size_t DiskManifest::totalBytes() const {
     std::lock_guard<std::recursive_mutex> lock(mutex);
@@ -423,8 +405,6 @@ size_t DiskManifest::entryCount() const {
     std::lock_guard<std::recursive_mutex> lock(mutex);
     return m_entries.size();
 }
-
-// Legacy compat
 
 std::unordered_set<int> DiskManifest::legacyKeySet() const {
     std::unordered_set<int> keys;
@@ -447,7 +427,7 @@ void DiskManifest::rebuildFromDirectory(std::filesystem::path const& cacheDir) {
         auto ext = geode::utils::string::toLower(
             geode::utils::string::pathToString(entry.path().extension()));
 
-        // limpiar .tmp huerfanos de escrituras atomicas interrumpidas
+        // clean orphaned .tmp files from interrupted atomic writes
         if (ext == ".tmp") {
             std::error_code rmEc;
             std::filesystem::remove(entry.path(), rmEc);

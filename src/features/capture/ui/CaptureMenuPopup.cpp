@@ -3,6 +3,7 @@
 #include "../../volume-scroll/ui/ScrollKeybindsPopup.hpp"
 #include "../../quick-hub/services/QuickHubManager.hpp"
 #include "../../menu-physics/services/MenuPhysicsManager.hpp"
+#include "../../smooth-scroll/ui/SmoothScrollConfigPopup.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../blur/PopupBlurService.hpp"
@@ -16,15 +17,19 @@ using namespace geode::prelude;
 using paimon::quickhub::QuickHubManager;
 
 namespace {
-constexpr float kPopupW   = 220.f;
-constexpr float kPopupH   = 224.f;
+constexpr float kPopupW   = 360.f;
+constexpr float kPopupH   = 190.f;
 constexpr float kCenterX  = kPopupW / 2.f;
-constexpr float kCenterY  = 104.f;
-constexpr float kCaptureY  = 70.f;
-constexpr float kShortcutsY = 28.f;
-constexpr float kHoldCtrlY = -14.f;
-constexpr float kInvertY   = -52.f;
-constexpr float kPhysicsY  = -84.f;
+constexpr float kCenterY  = 90.f;
+constexpr float kCaptureY  = 38.f;
+constexpr float kShortcutsY = -6.f;
+constexpr float kHoldCtrlY = -50.f;
+constexpr float kToggleX  = 132.f;
+constexpr float kLabelX   = 194.f;
+constexpr float kGearX    = 342.f;
+constexpr float kInvertY  = 42.f;
+constexpr float kPhysicsY = 6.f;
+constexpr float kSmoothY  = -30.f;
 
 ButtonSprite* makeHoldCtrlButtonSprite(bool enabled) {
     char const* bg = enabled ? "GJ_button_01.png" : "GJ_button_06.png";
@@ -65,7 +70,7 @@ bool CaptureMenuPopup::initContents() {
 
     this->setTitle("Captura de Pantalla");
 
-    // Central menu with relative button offsets
+    // Compact two-column layout: actions left, quick toggles right.
     auto* menu = CCMenu::create();
     menu->setPosition({kCenterX, kCenterY});
     m_mainLayer->addChild(menu);
@@ -75,7 +80,7 @@ bool CaptureMenuPopup::initContents() {
     auto* captureBtn = CCMenuItemSpriteExtra::create(
         captureBtnSpr, this, menu_selector(CaptureMenuPopup::onCapture)
     );
-    captureBtn->setPosition({0.f, kCaptureY});
+    captureBtn->setPosition({-74.f, kCaptureY});
     menu->addChild(captureBtn);
 
     // Shortcuts button
@@ -83,7 +88,7 @@ bool CaptureMenuPopup::initContents() {
     auto* shortcutsBtn = CCMenuItemSpriteExtra::create(
         shortcutsBtnSpr, this, menu_selector(CaptureMenuPopup::onOpenShortcuts)
     );
-    shortcutsBtn->setPosition({0.f, kShortcutsY});
+    shortcutsBtn->setPosition({-74.f, kShortcutsY});
     menu->addChild(shortcutsBtn);
 
     // Hold Ctrl toggle
@@ -92,7 +97,7 @@ bool CaptureMenuPopup::initContents() {
     auto* holdCtrlBtn = CCMenuItemSpriteExtra::create(
         m_holdCtrlBtnSpr, this, menu_selector(CaptureMenuPopup::onToggleHoldCtrl)
     );
-    holdCtrlBtn->setPosition({0.f, kHoldCtrlY});
+    holdCtrlBtn->setPosition({-74.f, kHoldCtrlY});
     menu->addChild(holdCtrlBtn);
 
     // Invert Inputs toggle (right-click = jump)
@@ -105,13 +110,13 @@ bool CaptureMenuPopup::initContents() {
         invOff, invOn, this, menu_selector(CaptureMenuPopup::onToggleInvert)
     );
     invertToggle->toggle(invertOn);
-    invertToggle->setPosition({-78.f, kInvertY});
+    invertToggle->setPosition({kToggleX, kInvertY});
     menu->addChild(invertToggle);
 
     auto* invLabel = CCLabelBMFont::create("Invertir Inputs", "bigFont.fnt");
     invLabel->setAnchorPoint({0.f, .5f});
-    invLabel->setPosition({kCenterX - 62.f, kCenterY + kInvertY});
-    invLabel->limitLabelWidth(120.f, .32f, .1f);
+    invLabel->setPosition({kLabelX, kCenterY + kInvertY});
+    invLabel->limitLabelWidth(104.f, .28f, .1f);
     m_mainLayer->addChild(invLabel);
 
     // Menu Physics toggle
@@ -124,14 +129,42 @@ bool CaptureMenuPopup::initContents() {
         phyOff, phyOn, this, menu_selector(CaptureMenuPopup::onTogglePhysics)
     );
     physicsToggle->toggle(physicsOn);
-    physicsToggle->setPosition({-78.f, kPhysicsY});
+    physicsToggle->setPosition({kToggleX, kPhysicsY});
     menu->addChild(physicsToggle);
 
     auto* phyLabel = CCLabelBMFont::create("Menu Physics", "bigFont.fnt");
     phyLabel->setAnchorPoint({0.f, .5f});
-    phyLabel->setPosition({kCenterX - 62.f, kCenterY + kPhysicsY});
-    phyLabel->limitLabelWidth(120.f, .32f, .1f);
+    phyLabel->setPosition({kLabelX, kCenterY + kPhysicsY});
+    phyLabel->limitLabelWidth(104.f, .28f, .1f);
     m_mainLayer->addChild(phyLabel);
+
+    // Smooth Scroll toggle + config
+    bool const smoothOn = Mod::get()->getSettingValue<bool>("smooth-scroll");
+    auto* smoothOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
+    auto* smoothOnSpr = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
+    smoothOff->setScale(.6f);
+    smoothOnSpr->setScale(.6f);
+    auto* smoothToggle = CCMenuItemToggler::create(
+        smoothOff, smoothOnSpr, this, menu_selector(CaptureMenuPopup::onToggleSmoothScroll)
+    );
+    smoothToggle->toggle(smoothOn);
+    smoothToggle->setPosition({kToggleX, kSmoothY});
+    menu->addChild(smoothToggle);
+
+    auto* smoothLabel = CCLabelBMFont::create("Smooth Scroll", "bigFont.fnt");
+    smoothLabel->setAnchorPoint({0.f, .5f});
+    smoothLabel->setPosition({kLabelX, kCenterY + kSmoothY});
+    smoothLabel->limitLabelWidth(104.f, .28f, .1f);
+    m_mainLayer->addChild(smoothLabel);
+
+    auto* gearSpr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
+    if (gearSpr) {
+        gearSpr->setScale(0.38f);
+        auto* gearBtn = CCMenuItemSpriteExtra::create(
+            gearSpr, this, menu_selector(CaptureMenuPopup::onOpenSmoothScrollConfig));
+        gearBtn->setPosition({kGearX - kCenterX, kSmoothY});
+        menu->addChild(gearBtn);
+    }
 
     // Opt-in al tema/animaciones/blur dinamico del mod (DynamicPopupHook).
     paimon::markDynamicPopup(this);
@@ -186,6 +219,23 @@ void CaptureMenuPopup::onTogglePhysics(CCObject*) {
         now ? "Menu Physics activado" : "Menu Physics desactivado",
         NotificationIcon::Info
     )->show();
+}
+
+void CaptureMenuPopup::onToggleSmoothScroll(CCObject*) {
+    bool const now = !Mod::get()->getSettingValue<bool>("smooth-scroll");
+    Mod::get()->setSettingValue<bool>("smooth-scroll", now);
+    PaimonNotify::create(
+        now ? "Smooth Scroll activado" : "Smooth Scroll desactivado",
+        NotificationIcon::Info
+    )->show();
+}
+
+void CaptureMenuPopup::onOpenSmoothScrollConfig(CCObject*) {
+    geode::Loader::get()->queueInMainThread([]() {
+        if (auto* popup = paimon::smoothscroll::SmoothScrollConfigPopup::create()) {
+            popup->show();
+        }
+    });
 }
 
 void CaptureMenuPopup::refreshHoldCtrlButton() {

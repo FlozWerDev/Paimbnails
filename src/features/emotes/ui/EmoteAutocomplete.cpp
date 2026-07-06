@@ -32,7 +32,6 @@ bool EmoteAutocomplete::init(
     m_setTextFn = std::move(setTextFn);
     this->setID("emote-autocomplete"_spr);
 
-    // Background (hidden until suggestions appear); prefer NineSlice, fall back to Scale9.
     m_bg = paimon::SpriteHelper::safeCreateNineSliceFromFile("square02_small.png");
     if (!m_bg) m_bg = paimon::SpriteHelper::safeCreateScale9("square02_small.png");
     if (!m_bg) m_bg = paimon::SpriteHelper::createDarkPanel(200.f, 60.f, 220, 4.f);
@@ -41,7 +40,6 @@ bool EmoteAutocomplete::init(
     m_bg->setVisible(false);
     this->addChild(m_bg, 0);
 
-    // Menu for clickable suggestions
     m_menu = CCMenu::create();
     m_menu->setPosition({0.f, 0.f});
     m_menu->setVisible(false);
@@ -61,21 +59,18 @@ void EmoteAutocomplete::update(float /*dt*/) {
     if (text == m_lastText) return;
     m_lastText = text;
 
-    // Find the last unmatched ':' followed by a 2+ char partial.
     size_t lastColon = text.rfind(':');
     if (lastColon == std::string::npos) {
         clearSuggestions();
         return;
     }
 
-    // Check there's no closing ':' after this one
     std::string partial = text.substr(lastColon + 1);
     if (partial.empty() || partial.size() < 2) {
         clearSuggestions();
         return;
     }
 
-    // Only allow word-like characters in the partial (letters, digits, _, -)
     for (char c : partial) {
         if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
             clearSuggestions();
@@ -83,7 +78,6 @@ void EmoteAutocomplete::update(float /*dt*/) {
         }
     }
 
-    // Search for matching emotes
     auto matches = EmoteService::get().searchEmotes(partial, 8);
     if (matches.empty()) {
         clearSuggestions();
@@ -100,7 +94,6 @@ void EmoteAutocomplete::rebuildSuggestions(
     bool wasHidden = !m_menu->isVisible();
     m_colonPos = colonPos;
 
-    // Clear old items
     m_menu->removeAllChildren();
     m_menu->setVisible(true);
     m_bg->setVisible(true);
@@ -114,19 +107,16 @@ void EmoteAutocomplete::rebuildSuggestions(
     for (size_t i = 0; i < matches.size(); ++i) {
         auto const& info = matches[i];
 
-        // Row container: [emote] :name:
         auto row = CCNode::create();
         row->setAnchorPoint({0.f, 0.5f});
         row->setContentSize({220.f, ROW_H});
 
-        // Emote sprite placeholder (left side)
         auto emotePh = CCNode::create();
         emotePh->setContentSize({EMOTE_SZ, EMOTE_SZ});
         emotePh->setAnchorPoint({0.f, 0.5f});
         emotePh->setPosition({0.f, ROW_H / 2.f});
         row->addChild(emotePh, 5);
 
-        // Label: ":name:" (right of emote)
         auto label = CCLabelBMFont::create(
             fmt::format(":{}:", info.name).c_str(), "chatFont.fnt");
         label->setScale(0.55f);
@@ -140,17 +130,20 @@ void EmoteAutocomplete::rebuildSuggestions(
         if (rowW > maxWidth) maxWidth = rowW;
         row->setContentSize({rowW, ROW_H});
 
-        // Async load emote image into placeholder
         Ref<CCNode> phRef = emotePh;
         EmoteCache::get().loadEmote(info, [phRef, EMOTE_SZ](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
-            Loader::get()->queueInMainThread([phRef, tex, isGif, gifData, EMOTE_SZ]() {
+            // Retain the texture across the deferred task; the RAM cache may evict
+            // and free it before the queued lambda runs, which would dangle a raw
+            // `tex` and crash inside CCSprite::createWithTexture. Mirrors EmoteRenderer.
+            geode::Ref<CCTexture2D> texRef = tex;
+            Loader::get()->queueInMainThread([phRef, texRef, isGif, gifData, EMOTE_SZ]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 if (!phRef || !phRef->getParent()) return;
 
                 CCNode* sprite = nullptr;
                 if (isGif && !gifData.empty()) {
                     sprite = AnimatedGIFSprite::create(gifData.data(), gifData.size());
-                } else if (tex) {
+                } else if (auto* tex = texRef.data()) {
                     sprite = CCSprite::createWithTexture(tex);
                 }
 
@@ -164,19 +157,15 @@ void EmoteAutocomplete::rebuildSuggestions(
             });
         });
 
-        // Wrap row in a button
         auto btn = CCMenuItemSpriteExtra::create(
             row, this, menu_selector(EmoteAutocomplete::onSuggestionClicked));
 
-        // Store emote name in UserObject
         btn->setUserObject(CCString::create(info.name));
 
-        // Position: stack rows downward from y=0 (negative y)
         float rowY = -(static_cast<float>(i) + 0.5f) * ROW_H;
         btn->setPosition({PAD_X, rowY});
         btn->setAnchorPoint({0.f, 0.5f});
 
-        // Staggered ease-in so the list unfolds top to bottom.
         if (wasHidden) {
             btn->stopAllActions();
             btn->setScale(0.55f);
@@ -198,14 +187,12 @@ void EmoteAutocomplete::rebuildSuggestions(
         m_menu->addChild(btn);
     }
 
-    // Resize background (dropdown goes downward)
     float bgW = std::max(maxWidth + PAD_X, 160.f);
     float bgH = totalHeight + 8.f;
     m_bg->setContentSize({bgW, bgH});
     m_bg->setAnchorPoint({0.f, 1.f});
     m_bg->setPosition({-2.f, 4.f});
 
-    // Smooth opening: the background "unfolds" downward (anchored at top).
     if (wasHidden) {
         m_bg->stopAllActions();
         m_bg->setScaleY(0.05f);
@@ -246,7 +233,6 @@ void EmoteAutocomplete::onSuggestionClicked(CCObject* sender) {
 
     if (m_colonPos == std::string::npos || m_colonPos >= text.size()) return;
 
-    // Replace ":partial" with ":emotename:"
     std::string newText = text.substr(0, m_colonPos) + ":" + emoteName + ":";
     if (m_setTextFn) {
         m_setTextFn(newText);

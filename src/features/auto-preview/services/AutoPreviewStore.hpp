@@ -2,6 +2,7 @@
 
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -43,7 +44,9 @@ private:
     bool m_scanned = false;
     std::unordered_set<int32_t> m_present;
     std::unordered_set<int32_t> m_attempted;
-    int m_generatedThisSession = 0;
+    // Atomic: noteGenerated() is called from the AutoPreview background worker
+    // (AutoPreviewGenerator) while the main-thread queue reads/resets it.
+    std::atomic<int> m_generatedThisSession{0};
 
     static constexpr size_t MAX_TEX_CACHE = 6;
     std::mutex m_texMutex;

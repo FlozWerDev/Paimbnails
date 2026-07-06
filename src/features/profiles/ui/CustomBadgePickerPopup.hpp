@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 
-// Selector de emote como badge personalizado
 class CustomBadgePickerPopup : public geode::Popup {
 public:
     using SelectCallback = geode::CopyableFunction<void(std::string const& emoteName)>;

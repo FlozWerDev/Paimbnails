@@ -5,8 +5,7 @@
 #include "../services/RedesignedProfile.hpp"
 #include "../../../core/Settings.hpp"
 
-using namespace geode::prelude;// into the bottom row). The profile background system keeps working natively
-// because this is the actual ProfilePage, not a separate popup.
+using namespace geode::prelude;
 class $modify(RedesignProfilePage, ProfilePage) {
     struct Fields {
         int m_settlePasses = 0;
@@ -31,7 +30,6 @@ class $modify(RedesignProfilePage, ProfilePage) {
         if (!paimon::settings::profiles::redesignEnabled()) return;
 
         doRedesign();
-        // call, so re-run the redesign a few times to catch the post and the        m_fields->m_settlePasses = 0;
         this->unschedule(schedule_selector(RedesignProfilePage::settleRedesign));
         this->schedule(schedule_selector(RedesignProfilePage::settleRedesign), 0.35f);
     }
@@ -47,8 +45,6 @@ class $modify(RedesignProfilePage, ProfilePage) {
         doRedesign();
     }
 
-    // Fired whenever the cached user score changes (UserInfoDelegate). Rebuild
-    // so any stat/icon change is reflected immediately.
     $override
     void userInfoChanged(GJUserScore* score) {
         ProfilePage::userInfoChanged(score);
@@ -77,7 +73,6 @@ class $modify(RedesignProfilePage, ProfilePage) {
     void loadCommentsFailed(char const* key) {
         ProfilePage::loadCommentsFailed(key);
         if (!paimon::settings::profiles::redesignEnabled()) return;
-        // stops saying "Loading...".
         m_fields->m_commentsLoaded = true;
         m_fields->m_comments = nullptr;
         geode::log::info("[paim-redesign] loadCommentsFailed");

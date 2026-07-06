@@ -26,9 +26,11 @@ private:
     double m_momentumY = 0.0;
     double m_momentumX = 0.0;
     bool m_replaying = false;
+    bool m_editorZoomMode = false;
 };
 
 bool shouldBypassSmoothScroll();
 bool shouldUseSmoothPauseZoom();
+bool isEditorZoomGesture();
 
 } // namespace paimon::smoothscroll

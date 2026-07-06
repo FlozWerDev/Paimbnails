@@ -1,4 +1,5 @@
 ﻿#include "ProfilePicIconsDetailPopup.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 #include "ProfilePicEditorPopup.hpp"
 #include "../services/ProfilePicRenderer.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -28,6 +29,7 @@ ProfilePicIconsDetailPopup* ProfilePicIconsDetailPopup::create(ProfilePicConfig*
 
 bool ProfilePicIconsDetailPopup::init(ProfilePicConfig* cfg, std::function<void()> onChange) {
     if (!Popup::init(kW, kH)) return false;
+    paimon::markDynamicPopup(this);
     this->setTitle("Icon Settings");
     m_cfg = cfg;
     m_onChange = onChange;
@@ -44,7 +46,6 @@ void ProfilePicIconsDetailPopup::onClose(CCObject* sender) {
     Popup::onClose(sender);
 }
 
-// Build a live icon preview node
 static CCNode* makeIconPreview(ProfilePicConfig* cfg, float size) {
     if (!cfg) return nullptr;
     ProfilePicConfig previewCfg = *cfg;
@@ -104,7 +105,6 @@ void ProfilePicIconsDetailPopup::rebuild() {
         btn->setTag(i);
         c1Menu->addChild(btn);
     }
-    // Pick color button (only when custom)
     if (m_cfg->iconConfig.colorSource == IconColorSource::Custom) {
         auto pickSpr = ButtonSprite::create("Pick", "goldFont.fnt", "GJ_button_04.png", 0.6f);
         pickSpr->setScale(0.36f);

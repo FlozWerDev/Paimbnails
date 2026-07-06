@@ -111,8 +111,6 @@ bool parseThumbnailResponse(std::string const& response, std::vector<TransportTh
 
 } // namespace
 
-// helpers
-
 bool ThumbnailTransportClient::isGIFData(std::vector<uint8_t> const& data) {
     return data.size() >= 6 && paimon::format::isGif(data.data(), data.size());
 }
@@ -121,15 +119,12 @@ cocos2d::CCTexture2D* ThumbnailTransportClient::bytesToTexture(std::vector<uint8
     if (data.empty()) return nullptr;
     log::debug("[ThumbTransport] bytesToTexture: {} bytes", data.size());
 
-    // Delegate to ImageLoadHelper which already handles ImagePlus + stb_image fallback
-    // with proper error handling and dimension validation
     auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data.data(), data.size(), false /* no buffer copy needed */);
     if (loaded.success && loaded.texture) {
         loaded.texture->autorelease();
         return loaded.texture;
     }
 
-    // Fallback: CCImage para JPEG y formatos que ImagePlus no soporta
     return webpToTexture(data);
 }
 
@@ -160,8 +155,6 @@ cocos2d::CCTexture2D* ThumbnailTransportClient::loadFromLocal(int levelId) {
     if (!LocalThumbs::get().has(levelId)) return nullptr;
     return LocalThumbs::get().loadTexture(levelId);
 }
-
-// queries
 
 bool ThumbnailTransportClient::hasGalleryMetadataCached(int levelId) {
     if (levelId <= 0) return false;
@@ -201,8 +194,7 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
             auto& callbacks = m_galleryInFlight[levelId];
             joinedInFlight = !callbacks.empty();
             callbacks.push_back(std::move(callback));
-            // Asegura que la entrada exista para que el flush capture la
-            // generación actual (0 si nunca se ha invalidado).
+            // Ensure the entry exists so the flush captures the current generation.
             (void)m_galleryGenerations[levelId];
         }
     }
@@ -219,11 +211,6 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
 
     log::debug("[ThumbTransport] getThumbnails: queued levelId={} forceRefresh={}", levelId, forceRefresh);
 
-    // En lugar de disparar inmediatamente HttpClient::getThumbnails para 1 id,
-    // encolamos en m_batchListPending y dejamos que scheduleBatchListFlush()
-    // agrupe todos los ids pendientes en un único POST /api/thumbnails/list-batch.
-    // Esto coalesce todas las peticiones que ocurren en la misma ventana de
-    // ~50ms (típicamente: la inicialización de un LevelListLayer con N celdas).
     {
         std::lock_guard<std::mutex> lock(m_batchListMutex);
         m_batchListPending.push_back(levelId);
@@ -235,7 +222,7 @@ void ThumbnailTransportClient::scheduleBatchListFlush() {
     bool expected = false;
     if (!m_batchListFlushScheduled.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
-        return; // ya agendado
+        return;
     }
     if (paimon::isRuntimeShuttingDown()) {
         m_batchListFlushScheduled.store(false, std::memory_order_release);
@@ -260,7 +247,6 @@ void ThumbnailTransportClient::flushBatchList() {
             m_batchListFlushScheduled.store(false, std::memory_order_release);
             return;
         }
-        // Dedup preservando orden de inserción.
         std::unordered_map<int, char> seen;
         seen.reserve(m_batchListPending.size());
         for (int id : m_batchListPending) {
@@ -270,7 +256,6 @@ void ThumbnailTransportClient::flushBatchList() {
                 if (ids.size() >= BATCH_LIST_MAX_IDS) break;
             }
         }
-        // Cualquier id que no entró en este flush queda para el próximo.
         if (ids.size() >= BATCH_LIST_MAX_IDS && m_batchListPending.size() > BATCH_LIST_MAX_IDS) {
             std::vector<int> remaining;
             remaining.reserve(m_batchListPending.size());
@@ -289,8 +274,7 @@ void ThumbnailTransportClient::flushBatchList() {
         return;
     }
 
-    // Capturamos las generaciones actuales para detectar invalidaciones que
-    // ocurran entre la salida de la request y su respuesta.
+    // Capture current generations to detect invalidations between request dispatch and response.
     std::unordered_map<int, uint64_t> generations;
     {
         std::lock_guard<std::mutex> lock(m_galleryMutex);
@@ -384,7 +368,6 @@ void ThumbnailTransportClient::flushBatchList() {
                 }
             }
 
-            // Si quedaron ids fuera del cap, agendar otro pase.
             bool needsAnother = false;
             {
                 std::lock_guard<std::mutex> lock(m_batchListMutex);
@@ -397,10 +380,7 @@ void ThumbnailTransportClient::flushBatchList() {
         });
 
     if (moreLeft) {
-        // Si esta función ya extrajo el cap pero quedó más en cola y por
-        // alguna razón el callback de arriba no dispara (ej. fallo síncrono),
-        // re-agendar de forma defensiva. compare_exchange en
-        // scheduleBatchListFlush lo deduplica.
+        // Defensive re-schedule in case the callback above never fires; compare_exchange dedups it.
         m_batchListFlushScheduled.store(false, std::memory_order_release);
         scheduleBatchListFlush();
     }
@@ -421,7 +401,6 @@ void ThumbnailTransportClient::getThumbnailInfo(int levelId, ActionCallback call
 
 std::string ThumbnailTransportClient::getThumbnailURL(int levelId) {
     // Prefer direct CDN URL from manifest (img.flozwer.org) — 0 Worker invocations.
-    // Fall back to Worker URL if manifest not yet fetched.
     auto manifest = HttpClient::get().getManifestEntry(levelId);
     if (manifest.has_value() && !manifest->cdnUrl.empty()) {
         return manifest->cdnUrl;
@@ -429,17 +408,15 @@ std::string ThumbnailTransportClient::getThumbnailURL(int levelId) {
     return HttpClient::get().getServerURL() + "/t/" + std::to_string(levelId) + ".webp";
 }
 
-// uploads
-
 void ThumbnailTransportClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData,
-                                               std::string const& username, UploadCallback callback) {
+                                               std::string const& username, UploadCallback callback,
+                                               std::string const& levelMeta) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         callback(false, "Debes estar logueado para subir miniaturas.");
         return;
     }
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
-    // Hook interceptors: upload + validate + security
     paimon::HookContext ctx{"upload", levelId, username, "png", pngData.size(), &pngData};
     auto hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
     if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
@@ -456,28 +433,24 @@ void ThumbnailTransportClient::uploadThumbnail(int levelId, std::vector<uint8_t>
         [this, callback, levelId, username](bool success, std::string const& message) {
             if (success) {
                 m_uploadCount++;
-                // Invalidar cache completa del nivel para que se descargue fresca
-                // (invalidateLevel ya limpia manifest, gallery metadata, exists cache, etc.)
                 ThumbnailLoader::get().invalidateLevel(levelId);
-                // Inmediatamente re-solicitar el thumbnail para pre-poblar RAM con datos frescos
-                // del write-through CF cache (la UI vera el thumbnail nuevo sin delay)
                 ThumbnailLoader::get().requestLoad(levelId, std::to_string(levelId), [](cocos2d::CCTexture2D*, bool){}, 0, false);
             }
             paimon::HookContext postCtx{"upload", levelId, username, "png", 0, nullptr};
             paimon::HookInterceptor::get().runPostHooks(postCtx, success);
             callback(success, message);
-        });
+        }, levelMeta);
 }
 
 void ThumbnailTransportClient::uploadGIF(int levelId, std::vector<uint8_t> const& gifData,
-                                         std::string const& username, UploadCallback callback) {
+                                         std::string const& username, UploadCallback callback,
+                                         std::string const& levelMeta) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         callback(false, "Debes estar logueado para subir miniaturas.");
         return;
     }
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
-    // Hook interceptors: upload + validate + security
     paimon::HookContext ctx{"upload", levelId, username, "gif", gifData.size(), &gifData};
     auto hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
     if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
@@ -494,27 +467,24 @@ void ThumbnailTransportClient::uploadGIF(int levelId, std::vector<uint8_t> const
         [this, callback, levelId, username](bool success, std::string const& message) {
             if (success) {
                 m_uploadCount++;
-                // Invalidar cache completa del nivel para que se descargue fresca
-                // (invalidateLevel ya limpia manifest, gallery metadata, exists cache, etc.)
                 ThumbnailLoader::get().invalidateLevel(levelId);
-                // Inmediatamente re-solicitar el thumbnail para pre-poblar RAM con datos frescos
                 ThumbnailLoader::get().requestLoad(levelId, std::to_string(levelId), [](cocos2d::CCTexture2D*, bool){}, 0, true);
             }
             paimon::HookContext postCtx{"upload", levelId, username, "gif", 0, nullptr};
             paimon::HookInterceptor::get().runPostHooks(postCtx, success);
             callback(success, message);
-        });
+        }, levelMeta);
 }
 
 void ThumbnailTransportClient::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data,
-                                           std::string const& username, UploadCallback callback) {
+                                           std::string const& username, UploadCallback callback,
+                                           std::string const& levelMeta) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         callback(false, "Debes estar logueado para subir miniaturas.");
         return;
     }
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
-    // Hook interceptors: upload + validate + security
     paimon::HookContext ctx{"upload", levelId, username, "mp4", mp4Data.size(), &mp4Data};
     auto hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
     if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
@@ -527,7 +497,6 @@ void ThumbnailTransportClient::uploadVideo(int levelId, std::vector<uint8_t> con
 
     log::info("[ThumbTransport] subiendo video nivel {} ({} bytes)", levelId, mp4Data.size());
 
-    // Normalize to canonical H.264+AAC before uploading
     auto normalRes = paimon::video::VideoNormalizer::normalizeData(
         mp4Data, fmt::format("upload_video_{}", levelId));
     auto const& uploadData = normalRes.isOk() ? normalRes.unwrap() : mp4Data;
@@ -539,19 +508,14 @@ void ThumbnailTransportClient::uploadVideo(int levelId, std::vector<uint8_t> con
         [this, callback, levelId, username](bool success, std::string const& message) {
             if (success) {
                 m_uploadCount++;
-                // Invalidar cache completa del nivel para que se descargue fresca
-                // (invalidateLevel ya limpia manifest, gallery metadata, exists cache, etc.)
                 ThumbnailLoader::get().invalidateLevel(levelId);
-                // Inmediatamente re-solicitar el thumbnail para pre-poblar RAM con datos frescos
                 ThumbnailLoader::get().requestLoad(levelId, std::to_string(levelId), [](cocos2d::CCTexture2D*, bool){}, 0, false);
             }
             paimon::HookContext postCtx{"upload", levelId, username, "mp4", 0, nullptr};
             paimon::HookInterceptor::get().runPostHooks(postCtx, success);
             callback(success, message);
-        });
+        }, levelMeta);
 }
-
-// downloads
 
 void ThumbnailTransportClient::downloadThumbnail(int levelId, DownloadCallback callback, bool isGif) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }
@@ -566,9 +530,7 @@ void ThumbnailTransportClient::downloadThumbnail(int levelId, DownloadCallback c
 }
 
 void ThumbnailTransportClient::getThumbnail(int levelId, DownloadCallback callback) {
-    // 1. local
     if (auto* tex = loadFromLocal(levelId)) { log::debug("[ThumbTransport] getThumbnail: local hit levelId={}", levelId); callback(true, tex); return; }
-    // 2. servidor
     if (m_serverEnabled) {
         log::debug("[ThumbTransport] getThumbnail: fetching from server levelId={}", levelId);
         downloadThumbnail(levelId, callback);
@@ -584,8 +546,7 @@ void ThumbnailTransportClient::downloadFromUrl(std::string const& url, DownloadC
             log::debug("[ThumbTransport] downloadFromUrl callback: OK bytes={}", data.size());
             callback(success, bytesToTexture(data));
         } else if (success && data.empty()) {
-            // CCTextureCache hit: la textura ya existe en Cocos2d cache.
-            // CCTextureCache solo se puede tocar desde el main thread.
+            // CCTextureCache can only be touched from the main thread.
             Loader::get()->queueInMainThread([callback, url]() {
                 auto* tex = CCTextureCache::sharedTextureCache()->textureForKey(url.c_str());
                 if (tex) {
@@ -608,8 +569,6 @@ void ThumbnailTransportClient::downloadFromUrlData(std::string const& url, Downl
         callback(success, data);
     });
 }
-
-// exists / delete
 
 void ThumbnailTransportClient::checkExists(int levelId, ExistsCallback callback) {
     if (!m_serverEnabled) { callback(false); return; }
@@ -665,8 +624,6 @@ void ThumbnailTransportClient::reorderThumbnails(int levelId, std::vector<std::s
             }
         });
 }
-
-// ratings
 
 void ThumbnailTransportClient::getRating(int levelId, std::string const& username,
                                          std::string const& thumbnailId,
@@ -796,8 +753,6 @@ void ThumbnailTransportClient::submitVote(int levelId, int stars, std::string co
         });
 }
 
-// top lists
-
 void ThumbnailTransportClient::getTopCreators(ActionCallback callback) {
     if (!m_serverEnabled) { callback(false, "servidor desactivado"); return; }
     HttpClient::get().getTopCreators([callback](bool s, std::string const& r) { callback(s, r); });
@@ -812,8 +767,6 @@ void ThumbnailTransportClient::getUserUploads(std::string const& username, Actio
     if (!m_serverEnabled) { callback(false, "servidor desactivado"); return; }
     HttpClient::get().getUserUploads(username, [callback](bool s, std::string const& r) { callback(s, r); });
 }
-
-// arc::Future
 
 arc::Future<ThumbnailGalleryResult> ThumbnailTransportClient::fetchThumbnailsFuture(int levelId, bool forceRefresh) {
     struct Pending {

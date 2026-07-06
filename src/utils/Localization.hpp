@@ -8,12 +8,7 @@ class Localization {
 public:
     enum class Language {
         SPANISH,
-        ENGLISH,
-        PORTUGUESE,
-        FRENCH,
-        GERMAN,
-        RUSSIAN,
-        JAPANESE
+        ENGLISH
     };
 
     static Localization& get() {
@@ -25,11 +20,6 @@ public:
         return {
             Language::SPANISH,
             Language::ENGLISH,
-            Language::PORTUGUESE,
-            Language::FRENCH,
-            Language::GERMAN,
-            Language::RUSSIAN,
-            Language::JAPANESE,
         };
     }
 
@@ -37,22 +27,12 @@ public:
         switch (lang) {
             case Language::SPANISH: return "spanish";
             case Language::ENGLISH: return "english";
-            case Language::PORTUGUESE: return "portuguese";
-            case Language::FRENCH: return "french";
-            case Language::GERMAN: return "german";
-            case Language::RUSSIAN: return "russian";
-            case Language::JAPANESE: return "japanese";
         }
         return "english";
     }
 
     static Language languageFromId(std::string const& id) {
         if (id == "spanish") return Language::SPANISH;
-        if (id == "portuguese") return Language::PORTUGUESE;
-        if (id == "french") return Language::FRENCH;
-        if (id == "german") return Language::GERMAN;
-        if (id == "russian") return Language::RUSSIAN;
-        if (id == "japanese") return Language::JAPANESE;
         return Language::ENGLISH;
     }
 
@@ -60,11 +40,6 @@ public:
         switch (lang) {
             case Language::SPANISH: return "Espanol";
             case Language::ENGLISH: return "English";
-            case Language::PORTUGUESE: return "Portugues";
-            case Language::FRENCH: return "Francais";
-            case Language::GERMAN: return "Deutsch";
-            case Language::RUSSIAN: return "Russkiy";
-            case Language::JAPANESE: return "Nihongo";
         }
         return "English";
     }
@@ -125,11 +100,6 @@ private:
         switch (lang) {
             case Language::SPANISH: return m_spanish;
             case Language::ENGLISH: return m_english;
-            case Language::PORTUGUESE: return m_portuguese;
-            case Language::FRENCH: return m_french;
-            case Language::GERMAN: return m_german;
-            case Language::RUSSIAN: return m_russian;
-            case Language::JAPANESE: return m_japanese;
         }
         return m_english;
     }
@@ -139,10 +109,5 @@ private:
     Language m_currentLanguage = Language::SPANISH;
     std::unordered_map<std::string, std::string> m_spanish;
     std::unordered_map<std::string, std::string> m_english;
-    std::unordered_map<std::string, std::string> m_portuguese;
-    std::unordered_map<std::string, std::string> m_french;
-    std::unordered_map<std::string, std::string> m_german;
-    std::unordered_map<std::string, std::string> m_russian;
-    std::unordered_map<std::string, std::string> m_japanese;
 };
 

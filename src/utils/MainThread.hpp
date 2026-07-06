@@ -31,7 +31,7 @@ inline void captureMainThread() {
 // True if running on the thread captured via captureMainThread(); false if never captured.
 inline bool isMainThread() {
     auto& id = getMainThreadId();
-    if (id == std::thread::id{}) return false; // not initialized
+    if (id == std::thread::id{}) return false;
     return std::this_thread::get_id() == id;
 }
 

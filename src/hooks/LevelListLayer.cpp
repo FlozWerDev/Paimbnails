@@ -123,7 +123,6 @@ class $modify(PaimonLevelListLayer, LevelListLayer) {
 
     $override
     bool init(GJLevelList* list) {
-        // Save the list ID
         if (list) {
             paimon::SessionState::get().currentListID = list->m_listID;
             log::debug("Entered List: {}", list->m_listID);
@@ -144,7 +143,6 @@ class $modify(PaimonLevelListLayer, LevelListLayer) {
 
 class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
     static void onModify(auto& self) {
-        // Run after geode.node-ids
         paimon::hooks::afterNodeIdsOrLate(self, "LevelBrowserLayer::init");
     }
 
@@ -218,16 +216,12 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         paimon::SessionState::get().currentListID = 0;
         if (!LevelBrowserLayer::init(p0)) return false;
 
-        // Apply custom background
         LayerBackgroundManager::get().applyBackground(this, "browser");
 
-        // Settings button
         addSettingsGearButton();
 
-        // Quick compact-list toggle
         addCompactToggleButton();
 
-        // Refresh-thumbnails button
         addRefreshButton();
 
         m_fields->m_prefetchInterval = 1.0f;

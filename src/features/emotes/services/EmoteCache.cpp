@@ -39,11 +39,9 @@ void dispatchPreloadCallback(EmoteCache::PreloadCallback callback,
 }
 } // namespace
 
-// Static decoding: decode pixels on a worker thread; GL texture upload must stay on the main thread.
-
 namespace {
 struct DecodedPixels {
-    std::vector<uint8_t> rgba; // RGBA8888
+    std::vector<uint8_t> rgba;
     int width = 0;
     int height = 0;
     bool ok = false;
@@ -82,15 +80,12 @@ CCTexture2D* pixelsToStaticTexture(DecodedPixels const& decoded) {
         tex->release();
         return nullptr;
     }
-    // Bilinear filtering so emotes scale smoothly to fixed-size cells.
     tex->setAntiAliasTexParameters();
     tex->autorelease();
     return tex;
 }
 
 } // namespace
-
-// Disk cache paths
 
 std::filesystem::path EmoteCache::getDiskCacheDir() const {
     return Mod::get()->getSaveDir() / "emote_cache";
@@ -144,12 +139,9 @@ void EmoteCache::saveToDisk(std::string const& filename, std::vector<uint8_t> co
     }
 }
 
-// RAM cache
-
 void EmoteCache::addToRam(std::string const& name, RamEntry entry) {
     std::lock_guard lock(m_ramMutex);
 
-    // Remove old entry if exists
     auto it = m_ramCache.find(name);
     if (it != m_ramCache.end()) {
         m_currentRamBytes -= it->second.byteSize;
@@ -204,10 +196,7 @@ bool EmoteCache::isInRamCache(std::string const& name) const {
     return m_ramCache.find(name) != m_ramCache.end();
 }
 
-// Main load method
-
 void EmoteCache::loadEmote(EmoteInfo const& info, TextureCallback callback) {
-    // 1) Check RAM cache
     {
         geode::Ref<CCTexture2D> cachedTexture = nullptr;
         std::vector<uint8_t> cachedGifData;
@@ -236,7 +225,6 @@ void EmoteCache::loadEmote(EmoteInfo const& info, TextureCallback callback) {
         }
     }
 
-    // 2) Check disk cache and 3) Download - run disk ops async
     paimon::ThreadTracker::get().spawn([this, info, callback = std::move(callback)]() mutable {
         if (paimon::isRuntimeShuttingDown()) return;
         if (isDiskEntryValid(info.filename)) {
@@ -265,7 +253,6 @@ void EmoteCache::loadEmote(EmoteInfo const& info, TextureCallback callback) {
             }
         }
 
-        // 3) Download from URL
         geode::Loader::get()->queueInMainThread([this, info, cb = std::move(callback)]() mutable {
             if (paimon::isRuntimeShuttingDown()) return;
             auto emoteName = info.name;
@@ -298,7 +285,6 @@ void EmoteCache::loadEmote(EmoteInfo const& info, TextureCallback callback) {
                     return;
                 }
 
-                // Persist to disk synchronously, then decode on the worker pool.
                 saveToDisk(emoteFilename, data);
 
                 DecodeTask task;
@@ -315,8 +301,6 @@ void EmoteCache::shutdown() {
     cancelPreload();
     shutdownDecodeWorker();
 }
-
-// Clear all
 
 void EmoteCache::clearAll() {
     cancelPreload();
@@ -341,8 +325,6 @@ void EmoteCache::clearRam() {
     log::info("[EmoteCache] RAM cache cleared");
 }
 
-// Background preload
-
 void EmoteCache::cancelPreload() {
     m_preloadCancel.store(true, std::memory_order_release);
 }
@@ -350,11 +332,10 @@ void EmoteCache::cancelPreload() {
 void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallback progressCallback) {
     if (m_preloading.exchange(true, std::memory_order_acq_rel)) {
         dispatchPreloadCallback(std::move(callback), 0, 0, 0);
-        return; // already running
+        return;
     }
     m_preloadCancel.store(false, std::memory_order_release);
 
-    // Copy the emote list so we don't hold locks during downloads
     auto allEmotes = EmoteService::get().getAllEmotes();
     if (allEmotes.empty()) {
         m_preloading.store(false, std::memory_order_release);
@@ -362,7 +343,6 @@ void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallb
         return;
     }
 
-    // Shared index to track progress through the emote list
     auto idx = std::make_shared<size_t>(0);
     auto emotes = std::make_shared<std::vector<EmoteInfo>>(std::move(allEmotes));
     auto skipped = std::make_shared<size_t>(0);
@@ -370,7 +350,6 @@ void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallb
     auto cb = std::make_shared<PreloadCallback>(std::move(callback));
     auto progressCb = std::make_shared<PreloadProgressCallback>(std::move(progressCallback));
 
-    // Dispatch helper for the per-step progress: always on main thread, no-op if no callback.
     auto reportProgress = [progressCb](size_t completed, size_t total) {
         if (!progressCb || !*progressCb) return;
         Loader::get()->queueInMainThread([progressCb, completed, total]() {
@@ -379,14 +358,13 @@ void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallb
         });
     };
 
-    // Recursive lambda: downloads one emote at a time, then schedules the next
     auto downloadNext = std::make_shared<std::function<void()>>();
-    *downloadNext = [this, idx, emotes, skipped, downloaded, downloadNext, cb, reportProgress]() {
+    std::weak_ptr<std::function<void()>> weakDownloadNext = downloadNext;
+    *downloadNext = [this, idx, emotes, skipped, downloaded, weakDownloadNext, cb, reportProgress]() {
         if (m_preloadCancel.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
             log::info("[EmoteCache] Preload cancelled ({}/{} done, {} skipped)",
                 *downloaded, emotes->size(), *skipped);
             m_preloading.store(false, std::memory_order_release);
-            // Final progress (so the X/Y can settle to its terminal value).
             reportProgress(*downloaded + *skipped, emotes->size());
             if (*cb) {
                 size_t d = *downloaded, s = *skipped, t = emotes->size();
@@ -395,7 +373,6 @@ void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallb
             return;
         }
 
-        // Skip emotes already on disk; each skip counts as progress.
         while (*idx < emotes->size()) {
             auto const& info = (*emotes)[*idx];
             if (isDiskEntryValid(info.filename)) {
@@ -424,40 +401,44 @@ void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallb
         auto url = info.url;
         ++(*idx);
 
-        HttpClient::get().downloadFromUrlRaw(url, [this, filename, downloaded, skipped, emotes, downloadNext, reportProgress](
+        // Strong ref held only by the in-flight download + its main-thread
+        // re-invoke; the closure itself holds a weak self-ref (avoids leak cycle).
+        auto strongNext = weakDownloadNext.lock();
+        if (!strongNext) return;
+        HttpClient::get().downloadFromUrlRaw(url, [this, filename, downloaded, skipped, emotes, strongNext, reportProgress](
             bool success, std::vector<uint8_t> const& data, int, int) {
 
             if (success && !data.empty()) {
                 saveToDisk(filename, data);
                 ++(*downloaded);
             }
-            // Count the item even on failure so progress keeps advancing.
             reportProgress(*downloaded + *skipped, emotes->size());
 
-            // Schedule next download with a small delay to avoid hammering the server
-            Loader::get()->queueInMainThread([downloadNext]() {
+            Loader::get()->queueInMainThread([strongNext]() {
                 if (paimon::isRuntimeShuttingDown()) return;
-                if (*downloadNext) (*downloadNext)();
+                if (*strongNext) (*strongNext)();
             });
         });
     };
 
-    // Start the chain
     log::info("[EmoteCache] Starting background preload of {} emotes", emotes->size());
-    // Emit initial 0/N so the UI can immediately show the total.
     reportProgress(0, emotes->size());
     (*downloadNext)();
 }
 
-// Decode worker pool: worker threads decode bytes off the main thread; GL upload bounces back to main.
-
 void EmoteCache::initDecodeWorker() {
+    // Guard the whole check-then-spawn: enqueueDecode() calls this from the
+    // per-emote worker threads (loadEmote's spawn), so without the lock two
+    // threads could both pass a lock-free check, both spawn workers, and both
+    // emplace_back into m_decodeWorkers concurrently (vector data race +
+    // double the pool). enqueueDecode() takes this same mutex only afterwards,
+    // so there is no re-entrant lock.
+    std::lock_guard<std::mutex> lock(m_decodeMutex);
     if (m_decodeRunning.load(std::memory_order_acquire)) return;
 
     m_decodeShutdown.store(false, std::memory_order_release);
     m_decodeRunning.store(true, std::memory_order_release);
 
-    // 2 threads suffice (GPU upload on main is the bottleneck); mobile uses 1.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     constexpr int NUM_DECODE_WORKERS = 1;
 #else
@@ -518,7 +499,6 @@ void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
             self->m_decodeQueue.pop_front();
         }
 
-        // Heavy CPU work happens here, off the main thread.
         auto decoded = decodeStaticPixels(task.data);
         if (!decoded.ok) {
             // stbi failed: fall back to CCImage (safe off-thread; only CCTexture2D needs GL).
@@ -570,7 +550,6 @@ void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
             continue;
         }
 
-        // Hand off the decoded pixels to the main thread for GL upload.
         size_t origSize = task.data.size();
         EmoteInfo info = std::move(task.info);
         auto cb = std::move(task.callback);

@@ -8,17 +8,15 @@
 
 using namespace geode::prelude;
 
-// uploads
-
 void ThumbnailSubmissionService::uploadSuggestion(int levelId,
-    std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
+    std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback,
+    std::string const& levelMeta) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         callback(false, "Debes estar logueado para subir miniaturas.");
         return;
     }
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
-    // Hook interceptors
     paimon::HookContext ctx{"upload", levelId, username, "png", pngData.size(), &pngData};
     auto hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
     if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
@@ -35,18 +33,18 @@ void ThumbnailSubmissionService::uploadSuggestion(int levelId,
             paimon::HookContext postCtx{"upload", levelId, username, "png", 0, nullptr};
             paimon::HookInterceptor::get().runPostHooks(postCtx, success);
             callback(success, message);
-        });
+        }, levelMeta);
 }
 
 void ThumbnailSubmissionService::uploadUpdate(int levelId,
-    std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
+    std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback,
+    std::string const& levelMeta) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         callback(false, "Debes estar logueado para subir miniaturas.");
         return;
     }
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
-    // Hook interceptors
     paimon::HookContext ctx{"upload", levelId, username, "png", pngData.size(), &pngData};
     auto hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
     if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
@@ -66,10 +64,8 @@ void ThumbnailSubmissionService::uploadUpdate(int levelId,
             paimon::HookContext postCtx{"upload", levelId, username, "png", 0, nullptr};
             paimon::HookInterceptor::get().runPostHooks(postCtx, success);
             callback(success, message);
-        });
+        }, levelMeta);
 }
-
-// downloads
 
 void ThumbnailSubmissionService::downloadSuggestion(int levelId, DownloadCallback callback) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }

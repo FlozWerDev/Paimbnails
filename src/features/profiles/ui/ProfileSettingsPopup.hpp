@@ -1,7 +1,6 @@
 ﻿#pragma once
 #include <Geode/Geode.hpp>
 
-// Configuracion del perfil: musica, imagen, badge y fondo de comentarios
 class ProfileSettingsPopup : public geode::Popup {
 protected:
     int m_accountID = 0;
@@ -11,7 +10,6 @@ protected:
     geode::CopyableFunction<void()> m_onCommentBgCallback;
     geode::CopyableFunction<void(bool enabled)> m_onGlobalIconCallback;
 
-    // Estado del toggle Global Icon (icono gris cuando off, color cuando on).
     geode::Ref<SimplePlayer> m_globalIconSprite;
     cocos2d::ccColor3B m_globalIconColor1 = {255, 255, 255};
     cocos2d::ccColor3B m_globalIconColor2 = {255, 255, 255};
@@ -35,6 +33,5 @@ public:
     void setOnImageCallback(geode::CopyableFunction<void()> cb) { m_onImageCallback = std::move(cb); }
     void setOnBadgeCallback(geode::CopyableFunction<void()> cb) { m_onBadgeCallback = std::move(cb); }
     void setOnCommentBgCallback(geode::CopyableFunction<void()> cb) { m_onCommentBgCallback = std::move(cb); }
-    // cb(enabled): enabled = nuevo estado deseado tras el toggle.
     void setOnGlobalIconCallback(geode::CopyableFunction<void(bool enabled)> cb) { m_onGlobalIconCallback = std::move(cb); }
 };

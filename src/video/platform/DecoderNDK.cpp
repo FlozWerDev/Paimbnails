@@ -85,7 +85,6 @@ void DecoderNDK::updateOutputFormat() {
     AMediaFormat_delete(fmt);
 }
 
-// Open
 bool DecoderNDK::open(const std::string& path) {
     closeInternal();
     m_decodeThreadDetached.store(false, std::memory_order_release);
@@ -109,7 +108,6 @@ bool DecoderNDK::open(const std::string& path) {
         return false;
     }
 
-    // Create decoder
     AMediaFormat* trackFmt = AMediaExtractor_getTrackFormat(m_extractor, m_trackIdx);
     const char* mime = nullptr;
     AMediaFormat_getString(trackFmt, AMEDIAFORMAT_KEY_MIME, &mime);
@@ -229,11 +227,13 @@ static inline void deinterleaveNV12Row(const uint8_t* uv, uint8_t* cb, uint8_t* 
 #endif
 }
 
-// Decode loop
 void DecoderNDK::startDecoding() {
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) {
-        m_decodeThreadDetached.store(false, std::memory_order_release);
-    }
+    // A detached worker (its join timed out) may still be running decodeLoop;
+    // spawning a second thread would put two producers on the SPSC ring and call
+    // the non-thread-safe AMediaCodec concurrently. Treat detached as terminal,
+    // matching DecoderPLM/DecoderAVF and the isTerminal() contract that
+    // VideoPlayer relies on to drop and recreate the decoder.
+    if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
     if (m_decoding.load(std::memory_order_relaxed)) return;
     if (!m_codec || !m_codecStarted) return;
     m_decoding.store(true, std::memory_order_relaxed);
@@ -267,7 +267,6 @@ void DecoderNDK::decodeLoop() {
                 if (inputBuf) {
                     int sampleSize = AMediaExtractor_readSampleData(m_extractor, inputBuf, bufSize);
                     if (sampleSize < 0) {
-                        // EOS
                         AMediaCodec_queueInputBuffer(m_codec, inputIdx, 0, 0, 0,
                                                      AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
                         inputDone = true;
@@ -382,7 +381,6 @@ void DecoderNDK::decodeLoop() {
                 semiPlanar = false;
             }
 
-            // Copy Y plane
             int yCopy = std::min(m_width, stride);
             if (slot->strideY == stride) {
                 std::memcpy(slot->planeY, outBuf, static_cast<size_t>(stride) * m_height);
@@ -440,7 +438,6 @@ void DecoderNDK::decodeLoop() {
     }
 }
 
-// Consume / Seek / Accessors
 bool DecoderNDK::consumeFrame(Frame& outFrame) {
     auto* slot = m_ring.nextRead();
     if (!slot) return false;
@@ -519,7 +516,6 @@ void DecoderNDK::setSurface(ANativeWindow* window) {
     m_useSurface = (window != nullptr);
 }
 
-// Close
 void DecoderNDK::closeInternal() {
     stopDecoding();
 

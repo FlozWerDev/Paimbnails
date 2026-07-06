@@ -38,7 +38,6 @@ void attemptAutoCapture(WeakRef<PlayLayer> weak, int levelID) {
     if (!paimon::autopreview::config::enabled()) return;
     if (!levelHasNoThumbnail(levelID)) return;
 
-    // Don't collide with a manual capture or another auto-capture.
     if (paimon::isCaptureInProgress()) return;
     if (FramebufferCapture::isCapturing() || FramebufferCapture::hasPendingCapture()) return;
 
@@ -55,7 +54,7 @@ void attemptAutoCapture(WeakRef<PlayLayer> weak, int levelID) {
 
     FramebufferCapture::requestCapture(
         levelID,
-        [levelID](bool success, CCTexture2D* /*texture*/, std::shared_ptr<uint8_t> rgbaData,
+        [levelID](bool success, CCTexture2D*, std::shared_ptr<uint8_t> rgbaData,
                   int width, int height) {
             Loader::get()->queueInMainThread([success, rgbaData, width, height, levelID]() {
                 paimon::setCaptureInProgress(false);
@@ -65,9 +64,9 @@ void attemptAutoCapture(WeakRef<PlayLayer> weak, int levelID) {
                 paimon::autopreview::storeCapturedFrame(levelID, rgbaData, width, height);
             });
         },
-        /*nodeToCapture*/ nullptr,
-        /*hidePlayer1*/ true,
-        /*hidePlayer2*/ true
+        nullptr,
+        true,
+        true
     );
 }
 

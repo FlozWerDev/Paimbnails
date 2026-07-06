@@ -26,7 +26,6 @@ public:
         return btn;
     }
 
-    // Create a button from a sprite frame name.
     static CCMenuItemSpriteExtra* createFromSprite(
         char const* spriteName,
         cocos2d::CCObject* target,

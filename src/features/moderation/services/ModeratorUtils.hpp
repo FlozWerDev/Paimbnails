@@ -7,8 +7,6 @@
 
 namespace PaimonUtils {
 
-    // verifica si el usuario es moderador verificado
-    // lee moderator_verification.dat y comprueba que no hayan pasado mas de 30 dias
     // No usa try/catch — Geode v5 recomienda evitar excepciones C++ por ABI
     inline bool isUserModerator() {
         auto isFreshVerification = [](std::filesystem::path const& path) {

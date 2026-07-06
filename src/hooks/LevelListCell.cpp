@@ -77,16 +77,14 @@ class $modify(PaimonLevelListCell, LevelListCell) {
             if (id != 0) {
                 levelIDs.push_back(id);
             }
-            // No cap, so the full carousel is shown
         }
 
         auto size = this->getContentSize();
-        // log::info("PaimonLevelListCell: Cell content size: {}, {}", size.width, size.height);
         
         // Fallback if size is 0
         if (size.width == 0 || size.height == 0) {
             size = CCSize(356, 50);
-            this->setContentSize(size); // force update content size
+            this->setContentSize(size);
         }
 
         // Force height to cover the whole cell
@@ -104,7 +102,6 @@ class $modify(PaimonLevelListCell, LevelListCell) {
                 // Center the carousel, raised 20px
                 carousel->setPosition({size.width / 2, size.height / 2 + 20.0f});
                 
-                // z=-1, behind text/buttons
                 carousel->setZOrder(-1);
                 
                 // Move the background behind the carousel

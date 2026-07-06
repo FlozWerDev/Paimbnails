@@ -1,10 +1,6 @@
 ﻿#pragma once
 #include <Geode/Geode.hpp>
 
-// ProfileBgGradientPopup
-// Sub-popup que aparece tras pulsar "Degradado Iconos" en
-// ProfileBgPickerPopup.  Permite elegir un efecto animado y la velocidad,
-// y previsualiza el degradado con los colores actuales del icono del jugador.
 class ProfileBgGradientPopup : public geode::Popup {
 public:
     using ApplyCallback = geode::CopyableFunction<void(std::string const& effect, float speed)>;
@@ -20,14 +16,11 @@ protected:
     float         m_speed     = 1.0f;
     ApplyCallback m_onApply;
 
-    // Preview
     cocos2d::CCNode*           m_previewContainer = nullptr;
 
-    // Speed slider
     Slider*                    m_speedSlider = nullptr;
     cocos2d::CCLabelBMFont*    m_speedLabel  = nullptr;
 
-    // Effect buttons (en orden: none, rotate, pulse, shift, slide)
     std::vector<std::pair<std::string, CCMenuItemSpriteExtra*>> m_effectButtons;
 
     bool init(int accountID, std::string const& initialEffect, float initialSpeed,

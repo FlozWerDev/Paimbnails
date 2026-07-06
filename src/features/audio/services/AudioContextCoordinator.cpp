@@ -119,7 +119,6 @@ void AudioContextCoordinator::activateLevelInfo(GJGameLevel* level, bool playImm
     m_levelInfoLevel = level;
     m_dynamicContextLayer = DynSongLayer::LevelInfo;
 
-    // Profile left open by mistake; clear it since the user is on another layer.
     if (m_profileOpen) {
         clearProfileContext();
     }
@@ -139,14 +138,13 @@ void AudioContextCoordinator::deactivateLevelInfo(bool returnsToLevelSelect) {
     auto* dsm = DynamicSongManager::get();
     dsm->exitLayer(DynSongLayer::LevelInfo);
 
-    // Dynamic songs only play in LevelInfoLayer; always stop on exit
     if (m_dynamicContextLayer == DynSongLayer::LevelInfo) {
         m_dynamicContextLayer = DynSongLayer::None;
     }
 
     if (!m_profileOpen) {
         if (dsm->isActive()) {
-            dsm->stopSong(); // stopSong handles menu music restoration
+            dsm->stopSong();
         } else {
             restoreMenuMusic();
         }
@@ -172,7 +170,6 @@ void AudioContextCoordinator::activateProfile(int accountID) {
     m_profileAccountID = accountID;
     m_gameplayActive = false;
 
-    // Save current menu music position before profile music replaces it
     auto* engine = FMODAudioEngine::sharedEngine();
     auto* gm = GameManager::get();
     if (engine && gm) {
@@ -190,7 +187,6 @@ void AudioContextCoordinator::activateProfile(int accountID, ProfileMusicManager
     m_profileAccountID = accountID;
     m_gameplayActive = false;
 
-    // Save current menu music position before profile music replaces it
     auto* engine = FMODAudioEngine::sharedEngine();
     auto* gm = GameManager::get();
     if (engine && gm) {
@@ -307,7 +303,6 @@ void AudioContextCoordinator::restoreMenuMusic() {
     if (!engine || !gm) return;
     if (gm->getGameVariable("0122")) return;
     if (engine->m_musicVolume <= 0.0f) return;
-    // Don't restore menu music while video audio is active
     if (paimon::isVideoAudioInteropActive()) return;
 
     std::string menuTrack = gm->getMenuMusicFile();
@@ -320,7 +315,6 @@ void AudioContextCoordinator::restoreMenuMusic() {
     if (engine->m_backgroundMusicChannel) {
         engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume);
 
-        // Resume from saved position if the track matches what was playing before
         if (m_savedMenuMusicPosMs > 0 && menuTrack == m_savedMenuMusicTrack) {
             FMOD::Channel* ch = nullptr;
             if (engine->m_backgroundMusicChannel->getChannel(0, &ch) == FMOD_OK && ch) {

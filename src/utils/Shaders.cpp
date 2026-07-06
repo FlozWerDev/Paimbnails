@@ -671,7 +671,8 @@ void runStaggeredPrewarm(
         label, state->steps.size(), state->perTick);
 
     auto tick = std::make_shared<std::function<void()>>();
-    *tick = [state, label, tick]() {
+    std::weak_ptr<std::function<void()>> weakTick = tick;
+    *tick = [state, label, weakTick]() {
         if (paimon::isRuntimeShuttingDown()) return;
 
         size_t done = 0;
@@ -682,7 +683,11 @@ void runStaggeredPrewarm(
         }
 
         if (state->index < state->steps.size()) {
-            paimon::scheduleMainThreadDelay(state->delay, [tick]() { (*tick)(); });
+            // Strong ref only in the pending continuation; the closure holds a weak
+            // self-ref to avoid a self-owning shared_ptr cycle (permanent leak).
+            if (auto strong = weakTick.lock()) {
+                paimon::scheduleMainThreadDelay(state->delay, [strong]() { (*strong)(); });
+            }
         } else {
             geode::log::info("[Shaders] Stagger prewarm '{}' complete", label);
         }

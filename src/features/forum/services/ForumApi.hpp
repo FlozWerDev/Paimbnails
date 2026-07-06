@@ -4,46 +4,29 @@
 #include <vector>
 #include <cstdint>
 
-// Forum client for Paimbnails: REST models + endpoints, with a local cache
-// (Mod savedValues) fallback when offline.
-//
-//   GET    /api/forum/posts                (filters: ?sort&tags&q&page&limit)
-//   GET    /api/forum/posts/:postId
-//   POST   /api/forum/posts
-//   DELETE /api/forum/posts/:postId
-//   POST   /api/forum/posts/:postId/like
-//   POST   /api/forum/posts/:postId/report
-//   GET    /api/forum/posts/:postId/replies
-//   POST   /api/forum/posts/:postId/replies        (parentReplyId optional for threads)
-//   POST   /api/forum/replies/:replyId/like
-//   POST   /api/forum/replies/:replyId/report
-//   DELETE /api/forum/replies/:replyId
-//   GET    /api/forum/tags                          (predefined + popular)
-
 namespace paimon::forum {
 
-    // Post/reply author; filled from GD user info on create, or from server JSON.
     struct Author {
         int accountID = 0;
         std::string username;
         int iconID = 1;
-        int iconType = 0;     // IconType (0=cube)
+        int iconType = 0;
         int color1 = 0;
         int color2 = 3;
         bool glowEnabled = false;
 
         matjson::Value toJson() const;
         static Author fromJson(matjson::Value const& v);
-        static Author currentUser(); // from GameManager + GJAccountManager
+        static Author currentUser();
     };
 
     struct Reply {
         std::string id;
         std::string postId;
-        std::string parentReplyId; // empty = direct reply; otherwise a thread
+        std::string parentReplyId;
         Author author;
         std::string content;
-        int64_t createdAt = 0;     // epoch seconds
+        int64_t createdAt = 0;
         int likes = 0;
         bool likedByMe = false;
         int reportCount = 0;
@@ -58,7 +41,7 @@ namespace paimon::forum {
         std::string title;
         std::string description;
         std::vector<std::string> tags;
-        int64_t createdAt = 0;     // epoch seconds (UTC)
+        int64_t createdAt = 0;
         int64_t updatedAt = 0;
         int likes = 0;
         bool likedByMe = false;
@@ -80,7 +63,7 @@ namespace paimon::forum {
 
     struct ListFilter {
         SortMode sort = SortMode::Recent;
-        std::vector<std::string> tags; // OR-match if not empty
+        std::vector<std::string> tags;
         std::string query;
         int page = 1;
         int limit = 20;
@@ -94,14 +77,14 @@ namespace paimon::forum {
 
     struct CreateReplyRequest {
         std::string postId;
-        std::string parentReplyId; // empty = direct reply
+        std::string parentReplyId;
         std::string content;
     };
 
     struct UserStatus {
         int accountID = 0;
         bool online = false;
-        int64_t lastSeen = 0; // epoch seconds
+        int64_t lastSeen = 0;
 
         matjson::Value toJson() const;
         static UserStatus fromJson(matjson::Value const& v);
@@ -110,13 +93,12 @@ namespace paimon::forum {
     struct ProfileView {
         int viewerAccountID = 0;
         std::string viewerUsername;
-        int64_t viewedAt = 0; // epoch seconds
+        int64_t viewedAt = 0;
 
         matjson::Value toJson() const;
         static ProfileView fromJson(matjson::Value const& v);
     };
 
-    // Generic result of API operations.
     template<typename T>
     struct Result {
         bool ok = false;
@@ -136,7 +118,6 @@ namespace paimon::forum {
     public:
         static ForumApi& get();
 
-        // Endpoints
         void listPosts(ListFilter const& filter, ListCallback cb);
         void getPost(std::string const& postId, PostCallback cb);
         void createPost(CreatePostRequest const& req, PostCallback cb);
@@ -151,21 +132,17 @@ namespace paimon::forum {
 
         void listTags(TagsCallback cb);
 
-        // User status (online/offline)
         void getUserStatus(int accountID, UserStatusCallback cb);
         void sendHeartbeat(BoolCallback cb);
 
-        // Profile views (who viewed your profile)
         void recordProfileView(int accountID, BoolCallback cb);
         void getProfileViews(int accountID, ProfileViewsCallback cb);
 
-        // Local cache (offline fallback), persisted in Mod savedValues.
         void loadCache();
         void saveCache();
         std::vector<Post> const& cachedPosts() const { return m_cache; }
         bool hasServer() const;
 
-        // Cooldown tracking (client-side rate limit awareness)
         int64_t getPostCooldownRemaining() const;
         int64_t getReplyCooldownRemaining() const;
         void markPostCooldown(int64_t seconds);
@@ -176,11 +153,9 @@ namespace paimon::forum {
         std::vector<Post> m_cache;
         bool m_loaded = false;
 
-        // cooldowns (epoch seconds when the cooldown expires)
         int64_t m_postCooldownUntil = 0;
         int64_t m_replyCooldownUntil = 0;
 
-        // helpers
         Post& upsertCache(Post const& p);
         Post* findCached(std::string const& id);
         std::string makeLocalId() const;
@@ -189,7 +164,6 @@ namespace paimon::forum {
         static std::string urlEncode(std::string const& s);
     };
 
-    // Helpers UI
     std::string formatRelativeTime(int64_t epoch);
     std::string formatAbsoluteTime(int64_t epoch);
 

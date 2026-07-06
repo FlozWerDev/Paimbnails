@@ -9,7 +9,6 @@
 #include <Geode/binding/LevelEditorLayer.hpp>
 #include <Geode/loader/Mod.hpp>
 #include "../utils/DynamicPopupRegistry.hpp"
-#include "../blur/BlurSystem.hpp"
 #include "../blur/PopupBlurService.hpp"
 #include "../core/Settings.hpp"
 #include "../core/RuntimeLifecycle.hpp"
@@ -20,12 +19,6 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 namespace {
-using PopupBlurConfig = paimon::popupblur::Config;
-
-PopupBlurConfig getPopupBlurConfig() {
-    return paimon::popupblur::getConfig();
-}
-
 bool isEditorContextActive() {
     auto* director = CCDirector::get();
     if (!director) return false;
@@ -86,10 +79,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         CCPoint m_finalPos= {0.f, 0.f};
         Ref<FLAlertLayer> m_exitGuard = nullptr;
         Ref<CCNode> m_blurNode = nullptr;
-        Ref<CCTexture2D> m_snapshotTexture = nullptr;
-        CCSize m_snapshotSize = CCSizeZero;
-        GLubyte m_blurTargetOpacity = 255;
-        int m_blurRequestToken = 0;
     };
 
     static void onModify(auto& self) {
@@ -108,7 +97,10 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     }
 
     bool shouldAnimatePopup() {
-        return isPaimonPopup() && !isEditorContextActive() && Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
+        return isPaimonPopup()
+            && !isEditorContextActive()
+            && !paimon::settings::smoothui::reducedMotion()
+            && Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
     }
 
     bool shouldAnimateExit() {
@@ -118,7 +110,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     // Only blur the mod's own popups; blurring any FLAlertLayer would break
     // other mods' popups (Globed, EclipseMenu, GDShare, etc.).
     bool shouldApplyPopupBlur() {
-        return isPaimonPopup() && getPopupBlurConfig().enabled && !isEditorContextActive();
+        return isPaimonPopup() && paimon::popupblur::getConfig().enabled && !isEditorContextActive();
     }
 
     float getSpeed() {
@@ -127,6 +119,10 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         );
         if (!(speed > 0.f)) {
             speed = 1.0f;
+        }
+        if (paimon::settings::smoothui::enabled()) {
+            speed *= static_cast<float>(std::clamp(
+                paimon::settings::smoothui::globalSpeed(), 0.35, 2.5));
         }
         return std::max(0.1f, speed);
     }
@@ -138,17 +134,15 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         if (!(speed > 0.f)) {
             speed = 1.0f;
         }
+        if (paimon::settings::smoothui::enabled()) {
+            speed *= static_cast<float>(std::clamp(
+                paimon::settings::smoothui::globalSpeed(), 0.35, 2.5));
+        }
         return std::max(0.1f, speed);
     }
 
     std::string getStyle() {
         return Mod::get()->getSavedValue<std::string>("dynamic-popup-style", "paimonUI");
-    }
-
-    void invalidateBlurRequest() {
-        ++m_fields->m_blurRequestToken;
-        m_fields->m_snapshotTexture = nullptr;
-        m_fields->m_snapshotSize = CCSizeZero;
     }
 
     void removePopupBlurNode() {
@@ -164,7 +158,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
             });
         }
         m_fields->m_blurNode = nullptr;
-        m_fields->m_blurTargetOpacity = 255;
         // Unregister from the shared service
         paimon::popupblur::cleanup(this);
     }
@@ -176,13 +169,11 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         paimon::popupblur::cleanupWithFade(this, duration);
 
         if (!m_fields->m_blurNode) {
-            m_fields->m_blurTargetOpacity = 255;
             return;
         }
         auto* node = m_fields->m_blurNode.data();
         // Drop the field ref; the node stays alive as a child until removeFromParent.
         m_fields->m_blurNode = nullptr;
-        m_fields->m_blurTargetOpacity = 255;
 
         if (!node || !node->getParent()) return;
 
@@ -206,128 +197,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     }
 
     void clearPopupBlurState() {
-        invalidateBlurRequest();
         removePopupBlurNode();
-    }
-
-    bool capturePopupBlurSnapshot() {
-        invalidateBlurRequest();
-
-        // Delegate capture to the shared service (hides active blur nodes,
-        // atomic beginWithClear, glFinish for deferred-rendering GPUs, FBO
-        // validation, reduced-resolution capture).
-        CCSize captureSize = CCSizeZero;
-        auto* tex = paimon::popupblur::captureSceneTexture(this, captureSize);
-        if (!tex || captureSize.width <= 0.f || captureSize.height <= 0.f) return false;
-
-        m_fields->m_snapshotTexture = tex;
-        m_fields->m_snapshotSize = captureSize;
-        return true;
-    }
-
-    void installFullscreenPopupBlur(CCSprite* blurredSprite, PopupBlurConfig const& cfg) {
-        if (!blurredSprite) return;
-
-        auto captureSize = m_fields->m_snapshotSize;
-        if (captureSize.width <= 0.f || captureSize.height <= 0.f) return;
-
-        // Real screen winSize; the blur node must cover the whole window.
-        auto winSize = CCDirector::get()->getWinSize();
-
-        // PERF: skip normalizeBlurSpriteToWinSize. createPopupPaimonBlurredSprite /
-        // createPopupBlurredSprite already produce a sprite with contentSize == winSize
-        // and flipY=true, and buildBlurNode rescales via setScaleX/Y as a final guard.
-        // The extra winSize FBO + visit pass was pure overhead per popup. (NB: this
-        // function is currently dead — the live path is paimon::popupblur::captureAndApply
-        // from show() — but kept consistent with the other call sites.)
-
-        // buildBlurNode scales the (possibly lower-res) sprite to cover the full winSize.
-        auto root = paimon::popupblur::buildBlurNode(blurredSprite, winSize, cfg);
-        if (!root) return;
-
-        removePopupBlurNode();
-        if (auto* parent = this->getParent()) {
-            parent->addChild(root, this->getZOrder() - 1);
-        } else {
-            this->addChild(root, -999);
-        }
-        m_fields->m_blurNode = root;
-
-        // Register so other popups can auto-hide us during their capture
-        // (avoids blur-on-blur).
-        paimon::popupblur::registerExternalBlur(this, root);
-
-        // Fade in synced with the popup's entry animation; short so it isn't slow
-        // but doesn't pop.
-        float fadeDuration = std::clamp(
-            static_cast<float>(paimon::settings::popupblur::fadeDuration()),
-            0.0f, 1.0f);
-        if (fadeDuration > 0.01f) {
-            root->setOpacity(0);
-            root->runAction(CCFadeTo::create(fadeDuration, 255));
-        }
-    }
-
-    void applyPopupBlur() {
-        if (!m_fields->m_snapshotTexture || m_fields->m_snapshotSize.width <= 0.f || m_fields->m_snapshotSize.height <= 0.f) {
-            return;
-        }
-
-        auto cfg = getPopupBlurConfig();
-        m_fields->m_blurTargetOpacity = 255;
-
-        ++m_fields->m_blurRequestToken;
-
-        float effectiveIntensity = cfg.intensity;
-        if (cfg.style == "paimonblur") {
-            effectiveIntensity = std::min(10.0f, cfg.intensity * 1.15f + 0.35f);
-        }
-
-        // Reuse a cached blur of the same snapshot (e.g. previous popup) to skip
-        // 4-6 FBO blur passes when popups cascade.
-        CCSprite* blurredSprite = paimon::popupblur::reuseBlurForSnapshot(
-            m_fields->m_snapshotTexture.data(),
-            cfg.style, effectiveIntensity, cfg.darkness);
-
-        if (!blurredSprite) {
-            if (cfg.style == "paimonblur") {
-                blurredSprite = Shaders::createPopupPaimonBlurredSprite(
-                    m_fields->m_snapshotTexture.data(),
-                    m_fields->m_snapshotSize,
-                    effectiveIntensity
-                );
-            } else {
-                blurredSprite = Shaders::createPopupBlurredSprite(
-                    m_fields->m_snapshotTexture.data(),
-                    m_fields->m_snapshotSize,
-                    effectiveIntensity
-                );
-            }
-            // Store in the shared cache for the next popup
-            if (blurredSprite) {
-                paimon::popupblur::storeBlurForSnapshot(
-                    m_fields->m_snapshotTexture.data(),
-                    blurredSprite, cfg.style, effectiveIntensity, cfg.darkness);
-            }
-        }
-
-        // If blur fails, use a black sprite so it never shows white;
-        // buildBlurNode's darkness overlay handles dimming.
-        if (!blurredSprite) {
-            geode::log::warn("[PopupBlur/Hook] Blur failed, using dark fallback");
-            auto* fallbackTex = new CCTexture2D();
-            unsigned char blackPixel[4] = {0, 0, 0, 255};
-            fallbackTex->initWithData(blackPixel, kCCTexture2DPixelFormat_RGBA8888, 1, 1, CCSizeMake(1, 1));
-            fallbackTex->autorelease();
-            blurredSprite = CCSprite::createWithTexture(fallbackTex);
-        }
-
-        if (blurredSprite) {
-            installFullscreenPopupBlur(blurredSprite, cfg);
-        }
-
-        m_fields->m_snapshotTexture = nullptr;
-        m_fields->m_snapshotSize = CCSizeZero;
     }
 
     CCPoint worldToMLParent(CCPoint wp) {
@@ -336,7 +206,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         return p ? p->convertToNodeSpace(wp) : wp;
     }
 
-    // Get or clear the button origin
     CCPoint resolveOrigin(CCPoint const& fallback) {
         CCPoint o = fallback;
         if (paimon::hasButtonOrigin())
@@ -357,7 +226,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         CCPoint     fp  = ml->getPosition();
         m_fields->m_finalPos = fp;
 
-        // -- paimonUI --
         if (sty == "paimonUI") {
             CCPoint org = resolveOrigin(fp);
 
@@ -366,7 +234,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
             float dur = 0.42f / spd;
 
-            // Expand and settle phases
             auto phase1 = CCEaseExponentialOut::create(CCScaleTo::create(dur * 0.65f, 1.05f));
             auto phase2 = CCEaseSineInOut::create(CCScaleTo::create(dur * 0.20f, 0.985f));
             auto phase3 = CCEaseSineOut::create(CCScaleTo::create(dur * 0.15f, 1.00f));
@@ -586,7 +453,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
         float dur = 0.f;
 
-        // -- paimonUI --
         if (sty == "paimonUI") {
             dur = 0.28f / spd;
             // Stretch slightly, then shrink to the button
@@ -717,7 +583,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
             ml->runAction(CCEaseExponentialIn::create(CCScaleTo::create(dur, 0.60f)));
         }
 
-        // Close after the animation
         this->runAction(CCSequence::create(
             CCDelayTime::create(dur + 0.01f),
             CCCallFunc::create(this, callfunc_selector(PaimonDynamicPopupHook::finishExit)),
@@ -780,8 +645,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
     $override
     void removeFromParentAndCleanup(bool cleanup) {
-        invalidateBlurRequest();
-
         if (!shouldAnimateExit() || m_fields->m_exiting) {
             // No popup animation: use the configured fade duration so the blur
             // fades out smoothly.
@@ -817,7 +680,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         // Only clean up if keyBackClicked didn't already; its fade nulls
         // m_blurNode, so this is a no-op in the normal flow.
         if (m_fields->m_blurNode) {
-            // No animation in progress — remove immediately.
             removePopupBlurNode();
         }
         // Service cleanup() removes anything left in the shared registry.
@@ -840,7 +702,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 #include <Geode/binding/SetupShaderEffectPopup.hpp>
 
 namespace {
-// Popups whose typeinfo_cast matches one of these types are left unblurred.
 bool isShaderRelatedPopup(cocos2d::CCNode* popup) {
     if (!popup) return false;
     // SetupShaderEffectPopup needs the live gameplay background visible so the

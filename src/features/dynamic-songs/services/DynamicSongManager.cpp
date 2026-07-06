@@ -376,7 +376,7 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
     int levelId = level->m_levelID.value();
     float targetVol = engine->m_musicVolume;
 
-    if (levelId != m_currentPlayingLevelID && (m_streamingPreview || isStreamingPreviewPending())) {
+    if (levelId != m_currentPlayingLevelID && (m_streamingPreview || isStreamingPreviewPending() || m_awaitingDownloadOnly)) {
         cancelFade();
         stopStreamingPreview();
         m_state = DynState::Idle;
@@ -445,6 +445,19 @@ void DynamicSongManager::stopSong() {
 
     cancelFade();
 
+    // Download-watch mode: nothing is playing on our channel (menu music is
+    // untouched), so just kill the poll and go idle — no fade needed.
+    if (m_awaitingDownloadOnly) {
+        stopStreamingPreview();
+        m_activeSongPath.clear();
+        m_currentPlayingLevelID = 0;
+        m_currentLayer = DynSongLayer::None;
+        m_state = DynState::Idle;
+        paimon::setDynamicSongInteropActive(false);
+        AudioContextCoordinator::get().clearDynamicAudio();
+        return;
+    }
+
     if (isStreamingPreviewPending() && !m_streamingPreview) {
         stopStreamingPreview();
         m_activeSongPath.clear();
@@ -486,6 +499,18 @@ void DynamicSongManager::fadeOutForLevelStart() {
     if (!isActive()) return;
 
     cancelFade();
+
+    // Download-watch mode: nothing playing on our channel — just kill the poll.
+    if (m_awaitingDownloadOnly) {
+        stopStreamingPreview();
+        m_activeSongPath.clear();
+        m_currentPlayingLevelID = 0;
+        m_currentLayer = DynSongLayer::None;
+        m_state = DynState::Idle;
+        paimon::setDynamicSongInteropActive(false);
+        AudioContextCoordinator::get().clearDynamicAudio();
+        return;
+    }
 
     if (isStreamingPreviewPending() && !m_streamingPreview) {
         stopStreamingPreview();
@@ -549,7 +574,7 @@ void DynamicSongManager::suspendPlaybackForExternalAudio() {
     cancelFade();
 
     // If streaming preview is active, stop it.
-    if (m_streamingPreview || isStreamingPreviewPending()) {
+    if (m_streamingPreview || isStreamingPreviewPending() || m_awaitingDownloadOnly) {
         stopStreamingPreview();
         m_state = DynState::Idle;
         m_activeSongPath.clear();
@@ -759,12 +784,22 @@ public:
     }
 
     void startPolling() {
-        this->unschedule(schedule_selector(DynStreamPollNode::pollTick));
-        this->schedule(schedule_selector(DynStreamPollNode::pollTick), 0.1f);
+        // The node is never added to the scene tree, so m_bRunning is false.
+        // CCNode::schedule() would register the selector as PAUSED in that
+        // case (paused = !m_bRunning), so it would never tick. Register
+        // directly with the scheduler with paused=false instead (same trick
+        // DynSongFadeNode uses).
+        auto* scheduler = cocos2d::CCDirector::get()->getScheduler();
+        scheduler->unscheduleSelector(schedule_selector(DynStreamPollNode::pollTick), this);
+        scheduler->scheduleSelector(
+            schedule_selector(DynStreamPollNode::pollTick),
+            this, 0.1f, kCCRepeatForever, 0.0f, false
+        );
     }
 
     void stopPolling() {
-        this->unschedule(schedule_selector(DynStreamPollNode::pollTick));
+        auto* scheduler = cocos2d::CCDirector::get()->getScheduler();
+        scheduler->unscheduleSelector(schedule_selector(DynStreamPollNode::pollTick), this);
     }
 
 private:
@@ -778,8 +813,7 @@ private:
 };
 
 void DynamicSongManager::startStreamingPreview(GJGameLevel* level) {
-    if (!Mod::get()->getSavedValue<bool>("dynamic-song-stream-preview", true)) return;
-    if (m_streamingPreview || isStreamingPreviewPending()) return;
+    if (m_streamingPreview || isStreamingPreviewPending() || m_awaitingDownloadOnly) return;
 
     int songID = level->m_songID;
     if (songID <= 0) return;
@@ -788,6 +822,24 @@ void DynamicSongManager::startStreamingPreview(GJGameLevel* level) {
     auto* engine = FMODAudioEngine::sharedEngine();
     if (!mdm || !engine || !engine->m_system) return;
     if (engine->m_musicVolume <= 0.0f) return;
+
+    // Streaming preview disabled: don't play a live stream, but still watch for
+    // the song download to finish so it auto-plays the instant it's local
+    // (instead of only after leaving and re-entering the layer).
+    if (!Mod::get()->getSavedValue<bool>("dynamic-song-stream-preview", true)) {
+        m_previewSongID = songID;
+        m_currentPlayingLevelID = level->m_levelID.value();
+        m_awaitingDownloadOnly = true;
+
+        if (!m_streamPollNode) {
+            m_streamPollNode = DynStreamPollNode::create();
+            m_streamPollNode->retain();
+        }
+        static_cast<DynStreamPollNode*>(m_streamPollNode)->startPolling();
+
+        log::info("[DynSong] startStreamingPreview: preview disabled, awaiting download for songID={}", songID);
+        return;
+    }
 
     m_previewSongID = songID;
     m_currentPlayingLevelID = level->m_levelID.value();
@@ -843,7 +895,7 @@ void DynamicSongManager::startStreamingPreview(GJGameLevel* level) {
 }
 
 void DynamicSongManager::stopStreamingPreview() {
-    if (!m_streamingPreview && !isStreamingPreviewPending()) return;
+    if (!m_streamingPreview && !isStreamingPreviewPending() && !m_awaitingDownloadOnly) return;
 
     log::info("[DynSong] stopStreamingPreview: cleaning up songID={}", m_previewSongID);
 
@@ -863,6 +915,7 @@ void DynamicSongManager::stopStreamingPreview() {
     m_previewAwaitingSongInfo = false;
     m_streamingPreviewPending = false;
     m_streamingPreview = false;
+    m_awaitingDownloadOnly = false;
     m_previewSongID = 0;
     m_previewRequestStartTime = {};
     m_previewPlayAttemptSince = {};
@@ -873,7 +926,7 @@ void DynamicSongManager::checkPreviewSwap() {
         stopStreamingPreview();
         return;
     }
-    if (!m_streamingPreview && !isStreamingPreviewPending()) return;
+    if (!m_streamingPreview && !isStreamingPreviewPending() && !m_awaitingDownloadOnly) return;
     if (m_previewSongID <= 0) return;
 
     auto resetPreviewState = [this]() {
@@ -889,6 +942,41 @@ void DynamicSongManager::checkPreviewSwap() {
     auto* engine = FMODAudioEngine::sharedEngine();
     if (!mdm || !engine || !engine->m_system) {
         resetPreviewState();
+        return;
+    }
+
+    // Download-watch mode (streaming preview disabled): just wait until the
+    // song is downloaded locally, then start playing it like normal.
+    if (m_awaitingDownloadOnly) {
+        if (!isInValidLayer()) {
+            resetPreviewState();
+            return;
+        }
+        if (!mdm->isSongDownloaded(m_previewSongID)) return;
+
+        std::string localPath = mdm->pathForSong(m_previewSongID);
+        if (localPath.empty()) return;
+
+        log::info("[DynSong] checkPreviewSwap: songID={} downloaded, starting playback", m_previewSongID);
+
+        int levelID = m_currentPlayingLevelID;
+        stopStreamingPreview(); // clears poll node + flags
+
+        m_activeSongPath = localPath;
+        m_currentPlayingLevelID = levelID;
+
+        if (engine->isMusicPlaying(0)) {
+            m_savedMenuPos = engine->getMusicTimeMS(0);
+        }
+
+        playOnMainChannel(localPath, 0.0f);
+        applyRandomSeek();
+
+        paimon::setDynamicSongInteropActive(true);
+
+        float targetVol = engine->m_musicVolume;
+        m_state = DynState::FadingIn;
+        fadeVolume(0.0f, targetVol, getFadeDurationSec(), PostFadeAction::None);
         return;
     }
 

@@ -26,22 +26,22 @@ bool containsAny(std::string const& haystack,
     return false;
 }bool isGameplayEffectFrame(std::string const& lower) {
     return containsAny(lower, {
-        "portalshine",      // brillo de portales (Sheet04)
-        "playerdash",       // efecto dash del jugador (Sheet04)
-        "spiderdash",       // efecto dash de spider (Sheet04)
-        "boost_",           // boost_01_shine... (Sheet04)
-        "player_special",   // previews de efectos del jugador (Sheet03)
-        "explosionicon",    // previews de death effects (Sheet03)
-        "shipfireicon",     // previews de fuego de nave (Sheet03)
-        "gjitem_",          // items 3D del shop (Sheet03)
-        "chompo_",          // criatura del shop (Sheet03)
+        "portalshine",
+        "playerdash",
+        "spiderdash",
+        "boost_",
+        "player_special",
+        "explosionicon",
+        "shipfireicon",
+        "gjitem_",
+        "chompo_",
     });
 }
 
 bool isColorMeaningfulFrame(std::string const& lower) {
     return containsAny(lower, {
-        "difficulty_",      // caritas de dificultad (easy=azul, demon=rojo...)
-        "difficon_",        "modbadge",         // badges de moderador
+        "difficulty_",
+        "difficon_",        "modbadge",
         "rankicon_",        "featuredcoin",
     });
 }
@@ -69,23 +69,23 @@ bool isCuratedButtonFrame(std::string const& lower) {
 
 bool isMenuUiFrame(std::string const& lower) {
     return containsAny(lower, {
-        "icon",        // GJ_starsIcon, folderIcon, chestIcon, social icons...
-        "txt",         // GJ_optionsTxt, GJ_followTxt...
-        "label",       // weeklyLevelLabel, rewardsLabel, shard labels...
-        "table_",      // GJ_table_top/side/corner/bottom
-        "topbar",      // GJ_topBar
-        "sideart",     // GJ_sideArt
-        "comment",     // GJ_commentSide/Top (marcos de comentarios)
-        "lock",        // GJ_lock, GJ_secretLock, GJLargeLock...
-        "rope",        // shopRope, garageRope, adRope
-        "corner",      // dailyLevelCorner, gauntletCorner, rewardCorner
+        "icon",
+        "txt",
+        "label",
+        "table_",
+        "topbar",
+        "sideart",
+        "comment",
+        "lock",
+        "rope",
+        "corner",
         "uidot",
-        "crown",       // gj_dailyCrown, gj_weeklyCrown
-        "bigstar", "bigmoon", "bigdiamond", "bigkey",  // moneda/logros grandes
+        "crown",
+        "bigstar", "bigmoon", "bigdiamond", "bigkey",
         "star_small", "moon_small", "diamond_small", "usercoin_small",
-        "shard",       // displays de shards (fire/ice/lava/poison/shadow...)
-        "secretcoin",  // secretCoinUI
-        "chest",       // chestIcon ya cae en icon; cofres de recompensa
+        "shard",
+        "secretcoin",
+        "chest",
         "levelcomplete", "practicecomplete", "newbest",
         "checkpoint",
     });
@@ -116,14 +116,12 @@ SpriteKind UiSpriteCatalog::classify(std::string_view frameName,
 
     if (isColorMeaningfulFrame(lower)) return SpriteKind::Other;
 
-    // Capa 3: botones (token o lista curada).
     if (lower.find("btn") != std::string::npos ||
         lower.find("button") != std::string::npos ||
         isCuratedButtonFrame(lower)) {
         return SpriteKind::Button;
     }
 
-    // Capa 4: chrome de menú.
     if (isMenuUiFrame(lower)) return SpriteKind::MenuUi;
 
     return SpriteKind::Other;

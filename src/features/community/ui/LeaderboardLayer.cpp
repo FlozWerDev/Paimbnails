@@ -32,6 +32,7 @@
 #include "../../foryou/services/ForYouEngine.hpp"
 #include "../../foryou/services/LevelTagsIntegration.hpp"
 #include "../../foryou/ui/ForYouPreferencesPopup.hpp"
+#include "../../dynamic-songs/services/DynamicSongManager.hpp"
 #include "../../../framework/compat/ModCompat.hpp"
 #include <random>
 #include <cmath>
@@ -126,6 +127,23 @@ static FMOD::ChannelGroup* ensureLeaderboardAudioGroup(FMOD::System* system, FMO
     return group;
 }
 
+// Gets the underlying FMOD::Channel for the main music BG group, same approach
+// as DynamicSongManager. Returns nullptr if nothing is currently playing.
+static FMOD::Channel* lbGetMainBgChannel(FMODAudioEngine* engine) {
+    if (!engine) return nullptr;
+    if (auto* channel = engine->getActiveMusicChannel(0)) {
+        return channel;
+    }
+    if (!engine->m_backgroundMusicChannel) return nullptr;
+
+    int numCh = 0;
+    engine->m_backgroundMusicChannel->getNumChannels(&numCh);
+    if (numCh <= 0) return nullptr;
+    FMOD::Channel* ch = nullptr;
+    if (engine->m_backgroundMusicChannel->getChannel(0, &ch) != FMOD_OK) return nullptr;
+    return ch;
+}
+
 LeaderboardLayer* LeaderboardLayer::create(BackTarget backTarget) {
     auto ret = new LeaderboardLayer();
     if (ret && ret->init()) {
@@ -150,45 +168,38 @@ bool LeaderboardLayer::init() {
     
     auto winSize = CCDirector::get()->getWinSize();
 
-    // dark base background
     auto bg = CCLayerColor::create(ccc4(12, 10, 20, 255));
     bg->setID("background"_spr);
     bg->setContentSize(winSize);
     bg->setZOrder(-10);
     this->addChild(bg);
 
-    // dynamic background on top
     m_bgSprite = LeaderboardPaimonSprite::create(); 
     m_bgSprite->setPosition(winSize / 2);
     m_bgSprite->setVisible(false);
     m_bgSprite->setZOrder(-5);
     this->addChild(m_bgSprite);
 
-    // capa negra para transiciones
     m_bgOverlay = CCLayerColor::create({0, 0, 0, 0});
     m_bgOverlay->setContentSize(winSize);
     m_bgOverlay->setZOrder(-4);
     this->addChild(m_bgOverlay);
 
-    // particle container
     m_particleContainer = CCNode::create();
     m_particleContainer->setPosition({0, 0});
     m_particleContainer->setZOrder(-3);
     this->addChild(m_particleContainer);
 
-    // vignette oscura en los bordes
-    auto vignette = CCLayerColor::create({0, 0, 0, 50});
+    auto vignette = CCLayerColor::create({0, 0, 0, 140});
     vignette->setContentSize(winSize);
     vignette->setZOrder(-2);
     this->addChild(vignette);
 
-    // glow overlay (pulses with music — themed color)
     m_glowOverlay = CCLayerColor::create({255, 180, 50, 0});
     m_glowOverlay->setContentSize(winSize);
     m_glowOverlay->setZOrder(-1);
     this->addChild(m_glowOverlay);
 
-    // beat flash (white flash on strong beats)
     m_beatFlash = CCLayerColor::create({255, 255, 255, 0});
     m_beatFlash->setContentSize(winSize);
     m_beatFlash->setZOrder(-1);
@@ -196,7 +207,6 @@ bool LeaderboardLayer::init() {
 
     this->scheduleUpdate();
 
-    // back button
     auto menu = CCMenu::create();
     menu->setPosition(0, 0);
     menu->setZOrder(20);
@@ -210,7 +220,6 @@ bool LeaderboardLayer::init() {
     backBtn->setPosition(25, winSize.height - 25);
     menu->addChild(backBtn);
 
-    // top tabs
     auto tabMenu = CCMenu::create();
     tabMenu->setPosition(0, 0);
     tabMenu->setZOrder(10);
@@ -256,7 +265,6 @@ bool LeaderboardLayer::init() {
     auto forYouBtn = createTab(Localization::get().getString("foryou.tab").c_str(), "foryou", {centerX + btnSpacing, topY});
     tabMenu->addChild(forYouBtn);
 
-    // history button (list icon)
     auto historySpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_menuBtn_001.png");
     if (!historySpr) historySpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plainBtn_001.png");
     if (historySpr) {
@@ -273,7 +281,6 @@ bool LeaderboardLayer::init() {
         historySpr->addChild(histLabel, 10);
     }
 
-    // centered spinner
     m_loadingSpinner = PaimonLoadingOverlay::create("Loading...", 50.f);
     if (m_loadingSpinner) {
         m_loadingSpinner->show(this, 100);
@@ -281,10 +288,27 @@ bool LeaderboardLayer::init() {
 
     this->setKeypadEnabled(true);
 
-    // soft fade-out of menu music on enter
-    fadeOutMenuMusic();
+    // Hard-stop whatever is on the BG channel BEFORE startCaveMusic runs.
+    // If the menu music stays at vol 0 it can come back any time the user
+    // touches the volume slider (GD's volume scroll re-applies channel volume
+    // from m_musicVolume), which is the bleed the user reported. Stopping the
+    // channel guarantees no audio plays until we replace it with the cave song.
+    {
+        auto* dsm = DynamicSongManager::get();
+        if (dsm && dsm->isActive()) {
+            // suspendPlaybackForExternalAudio() also calls
+            // m_backgroundMusicChannel->stop() internally and saves the
+            // position so we can resume on onBack.
+            dsm->suspendPlaybackForExternalAudio();
+            m_didSuspendDynSong = true;
+        } else {
+            auto engine = FMODAudioEngine::sharedEngine();
+            if (engine && engine->m_backgroundMusicChannel) {
+                engine->m_backgroundMusicChannel->stop();
+            }
+        }
+    }
 
-    // reset flags
     m_dataLoaded = false;
     m_thumbLoaded = false;
     m_listCreated = false;
@@ -296,29 +320,15 @@ bool LeaderboardLayer::init() {
 
 void LeaderboardLayer::onEnterTransitionDidFinish() {
     CCLayer::onEnterTransitionDidFinish();
-    // if we return from a push and cave music is already ready, resume with fade-in
-    if (m_levelMusicChannel && !m_musicPlaying && !m_leavingForGood) {
-        // channel exists but is paused — fade-in
-        bool isPaused = false;
-        m_levelMusicChannel->getPaused(&isPaused);
-        if (isPaused) {
-            m_levelMusicChannel->setPaused(false);
-            m_musicPlaying = true;
-            auto engine = FMODAudioEngine::sharedEngine();
-            float target = engine ? engine->m_musicVolume * 0.55f : 0.4f;
-            m_levelMusicChannel->setVolume(0.f);
-            m_isFadingCaveIn = true;
-            m_isFadingCaveOut = false;
-            executeCaveFade(0, AUDIO_FADE_STEPS, 0.f, target, false);
-        }
+
+    // Returning from a pushed scene (LevelInfoLayer, history). The pushed scene
+    // overwrote our cave music on the BG channel; restart it from the saved
+    // position so the user experiences a near-seamless return.
+    if (m_caveMusicShouldRestore && !m_musicPlaying && !m_leavingForGood) {
+        startCaveMusic();
     }
+
     m_goingToHistory = false;
-    // silence BG immediately
-    ensureBgSilenced();
-    // DynamicSongManager::stopSong() restaura BG en un thread con delay,
-    // asi que re-silenciamos varias veces para ganarle
-    this->scheduleOnce(schedule_selector(LeaderboardLayer::delaySilenceBg), 0.3f);
-    this->scheduleOnce(schedule_selector(LeaderboardLayer::delaySilenceBg2), 0.7f);
 }
 
 void LeaderboardLayer::onExit() {
@@ -329,37 +339,71 @@ void LeaderboardLayer::onExit() {
 
     this->unscheduleUpdate();
     this->unschedule(schedule_selector(LeaderboardLayer::spawnThemeParticle));
-    this->unschedule(schedule_selector(LeaderboardLayer::delaySilenceBg));
-    this->unschedule(schedule_selector(LeaderboardLayer::delaySilenceBg2));
     clearParticles();
 
     if (GameLevelManager::get()->m_levelManagerDelegate == this) {
         GameLevelManager::get()->m_levelManagerDelegate = nullptr;
     }
 
-    killCaveMusic();
+    // Only kill cave music if we're truly leaving (back/destroyed). Pushing a
+    // scene leaves m_leavingForGood=false; for that path, onExitTransitionDidStart
+    // saved the position and we keep the FFT DSP intact for the brief window.
+    if (m_leavingForGood) {
+        killCaveMusic();
+    }
+
     CCLayer::onExit();
 }
 
 void LeaderboardLayer::onExitTransitionDidStart() {
     CCLayer::onExitTransitionDidStart();
-    // if pushing to a level, pause the cave; if going to history, leave it playing
-    if (!m_leavingForGood && !m_goingToHistory && m_musicPlaying && m_levelMusicChannel) {
-        // quick fade-out and pause
+
+    // Pushed to another scene (LevelInfoLayer / history). Save the playback
+    // position so we can resume on the return trip. We do NOT stop the channel
+    // — the next scene's playMusic call will replace it.
+    if (!m_leavingForGood && m_musicPlaying) {
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (engine) {
+            if (auto* bgCh = lbGetMainBgChannel(engine)) {
+                unsigned int posMs = 0;
+                if (bgCh->getPosition(&posMs, FMOD_TIMEUNIT_MS) == FMOD_OK) {
+                    m_savedCaveMusicPosMs = posMs;
+                }
+            }
+        }
+        // Stop the fades, but don't kill the audio (next scene takes the channel).
         m_isFadingCaveIn = false;
         m_isFadingCaveOut = false;
-        float currentVol = 0.f;
-        m_levelMusicChannel->getVolume(&currentVol);
-        m_levelMusicChannel->setVolume(0.f);
-        m_levelMusicChannel->setPaused(true);
         m_musicPlaying = false;
+        // m_caveMusicShouldRestore stays true so we restart on the way back.
     }
 }
 
 void LeaderboardLayer::onBack(CCObject*) {
     m_leavingForGood = true;
     killCaveMusic();
-    fadeInMenuMusic();
+
+    // Resume the dynamic song (if we suspended it on entry) or restart the
+    // menu music ourselves. Both paths use engine->playMusic, since the BG
+    // channel was hard-stopped on entry and a simple volume fade-in wouldn't
+    // produce audible output.
+    if (m_didSuspendDynSong) {
+        auto* dsm = DynamicSongManager::get();
+        if (dsm && dsm->hasSuspendedPlayback()) {
+            dsm->resumeSuspendedPlayback();
+        }
+        m_didSuspendDynSong = false;
+    } else {
+        auto engine = FMODAudioEngine::sharedEngine();
+        auto gm = GameManager::get();
+        if (engine && gm && !gm->getGameVariable("0122") && engine->m_musicVolume > 0.f) {
+            engine->playMusic(gm->getMenuMusicFile(), true, 0.0f, 0);
+            if (engine->m_backgroundMusicChannel) {
+                engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume);
+            }
+        }
+    }
+
     if (GameLevelManager::get()->m_levelManagerDelegate == this) {
         GameLevelManager::get()->m_levelManagerDelegate = nullptr;
     }
@@ -411,24 +455,20 @@ void LeaderboardLayer::onTab(CCObject* sender) {
         m_historyButton->setVisible(type != "foryou");
     }
 
-    // clear old list
     if (auto* oldList = this->getChildByID("paimon-leaderboard-list"_spr)) {
         oldList->removeFromParent();
     }
     m_scroll = nullptr;
     m_listMenu = nullptr;
 
-    // reset flags
     m_dataLoaded = false;
     m_thumbLoaded = false;
     m_listCreated = false;
 
-    // show spinner
     if (m_loadingSpinner) {
         m_loadingSpinner->setVisible(true);
     }
 
-    // clear particles and previous tab music
     clearParticles();
     killCaveMusic();
 
@@ -515,6 +555,38 @@ void LeaderboardLayer::loadLeaderboard(std::string type) {
     });
 }
 
+// GD-native panel helper.
+// Tries NineSlice -> CCScale9Sprite -> paimondraw fallback. Returns the node added.
+static CCNode* lbAddPanel(CCNode* parent, char const* frame, float w, float h,
+                          CCPoint pos, ccColor3B color, GLubyte opacity, int z) {
+    if (auto* ns = paimon::SpriteHelper::safeCreateNineSlice(frame, {6.f, 6.f, 6.f, 6.f})) {
+        ns->setContentSize({w, h});
+        ns->setAnchorPoint({0, 0});
+        ns->setPosition(pos);
+        ns->setColor(color);
+        ns->setOpacity(opacity);
+        parent->addChild(ns, z);
+        return ns;
+    }
+    if (auto* s9 = paimon::SpriteHelper::safeCreateScale9WithFrameName(frame)) {
+        s9->setContentSize({w, h});
+        s9->setAnchorPoint({0, 0});
+        s9->setPosition(pos);
+        s9->setColor(color);
+        s9->setOpacity(opacity);
+        parent->addChild(s9, z);
+        return s9;
+    }
+    // Last-resort paimondraw fallback (only used if GD assets are missing).
+    ccColor4F fill = { color.r / 255.f, color.g / 255.f, color.b / 255.f, opacity / 255.f };
+    if (auto* fb = paimon::SpriteHelper::createRoundedRect(w, h, 8.f, fill)) {
+        fb->setPosition(pos);
+        parent->addChild(fb, z);
+        return fb;
+    }
+    return nullptr;
+}
+
 void LeaderboardLayer::createList(std::string type) {
     this->removeChildByID("paimon-leaderboard-list"_spr);
 
@@ -537,11 +609,12 @@ void LeaderboardLayer::createList(std::string type) {
 
     GJGameLevel* level = m_featuredLevel;
     int levelID = level->m_levelID;
+    bool isDaily = (type == "daily");
 
-    // dimensiones de la tarjeta
-    float cardW = 440.f;
-    float cardH = 210.f;
-    float cardY = winSize.height / 2 - 10.f;
+    // ============ CARD ============
+    float cardW = 460.f;
+    float cardH = 220.f;
+    float cardY = winSize.height / 2 - 12.f;
 
     auto card = CCNode::create();
     card->setContentSize({cardW, cardH});
@@ -549,115 +622,46 @@ void LeaderboardLayer::createList(std::string type) {
     card->setPosition({winSize.width / 2, cardY});
     container->addChild(card, 5);
 
-    // entry animation
+    // Pop-in animation
     card->setScale(0.85f);
     card->runAction(CCEaseBackOut::create(CCScaleTo::create(0.5f, 1.0f)));
 
-    // diffuse shadow (depth)
-    float cardRadius = 16.f;
-    auto shadow = paimon::SpriteHelper::createRoundedRect(
-        cardW + 14.f, cardH + 16.f, cardRadius + 2.f,
-        {0.f, 0.f, 0.f, 0.34f}
-    );
-    shadow->setPosition({-7.f, -8.f});
-    card->addChild(shadow, -2);
+    // Main card background: GD's beveled GJ_square01 panel, tinted dark.
+    lbAddPanel(card, "GJ_square01.png", cardW, cardH, {0.f, 0.f}, {30, 32, 42}, 245, -1);
 
-    // rounded outer border
-    auto border = paimon::SpriteHelper::createRoundedRect(
-        cardW, cardH, cardRadius,
-        {0.04f, 0.04f, 0.05f, 0.97f},
-        {0.20f, 0.20f, 0.22f, 0.92f},
-        1.5f
-    );
-    border->setPosition({0.f, 0.f});
-    card->addChild(border, -1);
+    // ============ THUMBNAIL ============
+    float pad = 12.f;
+    float thumbW = 204.f;
+    float thumbH = cardH - pad * 2.f;
+    float thumbX = pad;
+    float thumbY = pad;
 
-    // card background
-    auto cardBg = paimon::SpriteHelper::createRoundedRect(
-        cardW - 2.f, cardH - 2.f, cardRadius - 1.f,
-        {0.06f, 0.06f, 0.07f, 0.98f}
-    );
-    cardBg->setPosition({1.f, 1.f});
-    card->addChild(cardBg, 0);
+    // Thumbnail frame using GJ_square03 (lighter accent).
+    lbAddPanel(card, "GJ_square03.png", thumbW + 4.f, thumbH + 4.f,
+               {thumbX - 2.f, thumbY - 2.f}, {72, 78, 96}, 230, 0);
 
-    // DAILY / WEEKLY badge (dark pill)
-    bool isDaily = (type == "daily");
-    float thumbPad = 10.f;
-    float thumbW = 194.f;
-    float thumbH = cardH - thumbPad * 2.f;
-    float infoX = thumbPad + thumbW + 12.f;
-    float infoW = cardW - infoX - thumbPad;
-    float infoH = cardH - thumbPad * 2.f;
-
-    auto infoPanel = CCNode::create();
-    infoPanel->setContentSize({infoW, infoH});
-    infoPanel->setPosition({infoX, thumbPad});
-    card->addChild(infoPanel, 3);
-
-    auto infoBg = paimon::SpriteHelper::createRoundedRect(
-        infoW, infoH, 13.f,
-        {0.09f, 0.09f, 0.10f, 0.96f},
-        {0.15f, 0.15f, 0.17f, 0.86f},
-        1.1f
-    );
-    infoBg->setPosition({0.f, 0.f});
-    infoPanel->addChild(infoBg, 0);
-
-    auto badgeBg = paimon::SpriteHelper::createRoundedRect(
-        82.f, 22.f, 11.f,
-        isDaily ? ccColor4F{0.13f, 0.13f, 0.14f, 1.f} : ccColor4F{0.11f, 0.11f, 0.13f, 1.f},
-        isDaily ? ccColor4F{0.34f, 0.34f, 0.38f, 0.85f} : ccColor4F{0.28f, 0.28f, 0.32f, 0.85f},
-        1.0f
-    );
-    badgeBg->setPosition({infoW - 94.f, infoH - 30.f});
-    infoPanel->addChild(badgeBg, 10);
-
-    auto badgeLbl = CCLabelBMFont::create(isDaily ? "DAILY" : "WEEKLY", "bigFont.fnt");
-    badgeLbl->setScale(0.26f);
-    badgeLbl->setColor({205, 205, 212});
-    badgeLbl->setPosition({41.f, 11.f});
-    badgeBg->addChild(badgeLbl);
-    badgeLbl->setTag(TAG_BADGE_LABEL);
-
-    // thumbnail (lado izquierdo ~50%)
     auto clipper = CCClippingNode::create();
     clipper->setContentSize({thumbW, thumbH});
     clipper->setAnchorPoint({0, 0});
-    clipper->setPosition({thumbPad, thumbPad});
-
-    auto stencil = paimon::SpriteHelper::createRoundedRectStencil(thumbW, thumbH, 14.f);
-    clipper->setStencil(stencil);
+    clipper->setPosition({thumbX, thumbY});
+    // Rectangular stencil is fine: thumbnail sits inside a GD-square frame.
+    clipper->setStencil(paimon::SpriteHelper::createRectStencil(thumbW, thumbH));
     card->addChild(clipper, 2);
 
-    // subtle border around thumbnail (behind clipper)
-    auto thumbBorder = paimon::SpriteHelper::createRoundedRect(
-        thumbW + 2.f, thumbH + 2.f, 15.f,
-        {0.08f, 0.08f, 0.09f, 1.f},
-        {0.18f, 0.18f, 0.20f, 0.88f},
-        1.1f
-    );
-    thumbBorder->setPosition({thumbPad - 1.f, thumbPad - 1.f});
-    card->addChild(thumbBorder, 1);
-
-    // dark placeholder + spinner
-    auto thumbPlaceholder = paimon::SpriteHelper::createRoundedRect(
-        thumbW, thumbH, 14.f,
-        {0.10f, 0.10f, 0.11f, 1.f}
-    );
+    auto thumbPlaceholder = CCLayerColor::create({22, 24, 32, 255});
+    thumbPlaceholder->setContentSize({thumbW, thumbH});
     thumbPlaceholder->setTag(101);
     clipper->addChild(thumbPlaceholder, 0);
 
-    auto thumbGrad = CCLayerGradient::create({0, 0, 0, 0}, {8, 8, 10, 235}, {1, 0});
-    thumbGrad->setContentSize({thumbW * 0.42f, thumbH});
-    thumbGrad->setPosition({thumbW - thumbW * 0.42f, 0.f});
+    // Right-edge gradient for readability where text sits behind the thumb.
+    auto thumbGrad = CCLayerGradient::create({0, 0, 0, 0}, {30, 32, 42, 200}, {1, 0});
+    thumbGrad->setContentSize({thumbW * 0.30f, thumbH});
+    thumbGrad->setPosition({thumbW - thumbW * 0.30f, 0.f});
     clipper->addChild(thumbGrad, 10);
 
-    // cargar thumbnail
     Ref<LeaderboardLayer> self = this;
     auto createThumbSprite = [clipper](CCTexture2D* tex) {
         if (!tex || !clipper) return;
-
-        // remove placeholder and spinner
         clipper->removeChildByTag(101);
 
         auto sprite = CCSprite::createWithTexture(tex);
@@ -700,14 +704,63 @@ void LeaderboardLayer::createList(std::string type) {
         checkLoadingComplete();
     }
 
-    // menu para click en la tarjeta
+    // ============ INFO PANEL ============
+    float infoX = thumbX + thumbW + 10.f;
+    float infoW = cardW - infoX - pad;
+    float infoH = thumbH;
+
+    auto infoPanel = CCNode::create();
+    infoPanel->setContentSize({infoW, infoH});
+    infoPanel->setPosition({infoX, pad});
+    card->addChild(infoPanel, 3);
+
+    // Info panel background: GJ_square05 tinted slightly darker than card.
+    lbAddPanel(infoPanel, "GJ_square05.png", infoW, infoH, {0.f, 0.f}, {22, 24, 32}, 230, 0);
+
+    // ============ BADGE (DAILY / WEEKLY) ============
+    {
+        char const* badgeFrame = isDaily ? "GJ_longBtn01_001.png" : "GJ_longBtn02_001.png";
+        auto badgeBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName(badgeFrame);
+        if (badgeBg) {
+            float badgeW = 108.f;
+            float badgeH = 28.f;
+            badgeBg->setContentSize({badgeW, badgeH});
+            badgeBg->setAnchorPoint({1.f, 1.f});
+            badgeBg->setPosition({infoW - 6.f, infoH - 6.f});
+            infoPanel->addChild(badgeBg, 10);
+
+            // Real GD icon (Daily / Weekly).
+            auto badgeIcon = paimon::SpriteHelper::safeCreateWithFrameName(
+                isDaily ? "GJ_dailyBtn_001.png" : "GJ_weeklyBtn_001.png");
+            float labelLeft = 10.f;
+            if (badgeIcon) {
+                badgeIcon->setScale(0.36f);
+                badgeIcon->setAnchorPoint({0.f, 0.5f});
+                badgeIcon->setPosition({8.f, badgeH / 2.f});
+                badgeBg->addChild(badgeIcon, 1);
+                labelLeft = 26.f;
+            }
+
+            auto badgeLbl = CCLabelBMFont::create(isDaily ? "DAILY" : "WEEKLY", "goldFont.fnt");
+            badgeLbl->setScale(0.45f);
+            float maxLblW = badgeW - labelLeft - 10.f;
+            if (badgeLbl->getScaledContentSize().width > maxLblW) {
+                badgeLbl->setScale(badgeLbl->getScale() * (maxLblW / badgeLbl->getScaledContentSize().width));
+            }
+            badgeLbl->setAnchorPoint({0.f, 0.5f});
+            badgeLbl->setPosition({labelLeft, badgeH / 2.f});
+            badgeBg->addChild(badgeLbl, 2);
+            badgeLbl->setTag(TAG_BADGE_LABEL);
+        }
+    }
+
+    // ============ CARD HIT AREA (entire card opens level info) ============
     auto cellMenu = CCMenu::create();
-    cellMenu->setPosition({0, 0});
+    cellMenu->setPosition({0.f, 0.f});
     cellMenu->setContentSize({cardW, cardH});
     card->addChild(cellMenu, 50);
 
-    // invisible hit area over the whole card
-    if (level) {
+    {
         auto hitArea = CCSprite::create();
         if (hitArea) {
             hitArea->setTextureRect(CCRect(0, 0, 1, 1));
@@ -717,53 +770,56 @@ void LeaderboardLayer::createList(std::string type) {
 
             auto playBtn = CCMenuItemSpriteExtra::create(hitArea, self, menu_selector(LeaderboardLayer::onViewLevel));
             playBtn->setUserObject(level);
-            playBtn->setPosition({cardW / 2, cardH / 2});
+            playBtn->setPosition({cardW / 2.f, cardH / 2.f});
             PaimonButtonHighlighter::registerButton(playBtn);
             cellMenu->addChild(playBtn, 100);
         }
     }
 
-    // right area (info)
+    // ============ TEXT (NAME / CREATOR / SEPARATOR) ============
     float textX = 14.f;
+    float nameY = infoH - 46.f;
     float textMaxW = infoW - 28.f;
 
-    // level name
-    std::string nameStr = level->m_levelName;
-    auto nameLbl = CCLabelBMFont::create(nameStr.c_str(), "bigFont.fnt");
-    nameLbl->setScale(0.62f);
-    nameLbl->setColor({232, 232, 236});
+    auto nameLbl = CCLabelBMFont::create(level->m_levelName.c_str(), "bigFont.fnt");
+    nameLbl->setScale(0.70f);
+    nameLbl->setColor({240, 240, 248});
     nameLbl->setAnchorPoint({0.f, 0.5f});
-    nameLbl->setPosition({textX, infoH - 56.f});
+    nameLbl->setPosition({textX, nameY});
     nameLbl->setTag(TAG_NAME_LABEL);
     if (nameLbl->getScaledContentSize().width > textMaxW) {
         nameLbl->setScale(nameLbl->getScale() * (textMaxW / nameLbl->getScaledContentSize().width));
     }
     infoPanel->addChild(nameLbl, 10);
 
-    // creator
     std::string creatorStr = level->m_creatorName.size() > 0
-        ? "by " + std::string(level->m_creatorName)
-        : "";
-    auto creatorLbl = CCLabelBMFont::create(creatorStr.c_str(), "chatFont.fnt");
-    creatorLbl->setScale(0.50f);
-    creatorLbl->setColor({126, 126, 132});
+        ? "by " + std::string(level->m_creatorName) : "";
+    auto creatorLbl = CCLabelBMFont::create(creatorStr.c_str(), "goldFont.fnt");
+    creatorLbl->setScale(0.45f);
     creatorLbl->setAnchorPoint({0.f, 0.5f});
-    creatorLbl->setPosition({textX, infoH - 80.f});
+    creatorLbl->setPosition({textX, nameY - 22.f});
     creatorLbl->setTag(TAG_CREATOR_LABEL);
     if (creatorLbl->getScaledContentSize().width > textMaxW) {
         creatorLbl->setScale(creatorLbl->getScale() * (textMaxW / creatorLbl->getScaledContentSize().width));
     }
     infoPanel->addChild(creatorLbl, 10);
 
-    // dark separator
-    auto sep = paimon::SpriteHelper::createRoundedRect(
-        textMaxW, 1.5f, 0.75f,
-        {0.24f, 0.24f, 0.27f, 0.38f}
-    );
-    sep->setPosition({textX, infoH - 96.f});
-    infoPanel->addChild(sep, 10);
+    // Thin separator using a 1px stretched CCSprite (no paimondraw).
+    {
+        auto sep = CCSprite::create();
+        if (sep) {
+            sep->setTextureRect(CCRect(0, 0, 1, 1));
+            sep->setScaleX(textMaxW);
+            sep->setScaleY(1.5f);
+            sep->setColor({80, 85, 100});
+            sep->setOpacity(160);
+            sep->setAnchorPoint({0.f, 0.5f});
+            sep->setPosition({textX, nameY - 40.f});
+            infoPanel->addChild(sep, 10);
+        }
+    }
 
-    // countdown
+    // ============ TIMER CHIP ============
     if (m_featuredExpiresAt > 0) {
         long long now = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -773,71 +829,54 @@ void LeaderboardLayer::createList(std::string type) {
             int hours = (int)(diff / (1000LL * 60 * 60));
             int mins = (int)((diff % (1000LL * 60 * 60)) / (1000LL * 60));
 
-            auto timeBg = paimon::SpriteHelper::createRoundedRect(
-                120.f, 20.f, 10.f,
-                {0.10f, 0.10f, 0.11f, 1.f},
-                {0.18f, 0.18f, 0.20f, 0.82f},
-                1.0f
-            );
-            timeBg->setPosition({textX, infoH - 126.f});
-            infoPanel->addChild(timeBg, 10);
+            float chipW = 158.f;
+            float chipH = 24.f;
+            float chipX = textX;
+            float chipY = nameY - 66.f;
+
+            // Chip background using GJ_square05 tinted.
+            lbAddPanel(infoPanel, "GJ_square05.png", chipW, chipH,
+                       {chipX, chipY}, {40, 44, 56}, 220, 10);
+
+            // Time icon (real GD asset).
+            float iconX = chipX + 10.f;
+            auto timeIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_timeIcon_001.png");
+            float labelOffset = 0.f;
+            if (timeIcon) {
+                timeIcon->setScale(0.42f);
+                timeIcon->setColor({210, 215, 225});
+                timeIcon->setAnchorPoint({0.f, 0.5f});
+                timeIcon->setPosition({iconX, chipY + chipH / 2.f});
+                infoPanel->addChild(timeIcon, 11);
+                labelOffset = 14.f;
+            }
 
             auto timeLbl = CCLabelBMFont::create(
                 fmt::format("Ends in {}h {}m", hours, mins).c_str(), "chatFont.fnt");
-            timeLbl->setScale(0.43f);
-            timeLbl->setColor({156, 156, 162});
-            timeLbl->setPosition({60.f, 10.f});
+            timeLbl->setScale(0.50f);
+            timeLbl->setColor({200, 205, 220});
+            timeLbl->setAnchorPoint({0.f, 0.5f});
+            timeLbl->setPosition({iconX + labelOffset, chipY + chipH / 2.f});
             timeLbl->setTag(TAG_TIME_LABEL);
-            timeBg->addChild(timeLbl, 11);
+            infoPanel->addChild(timeLbl, 11);
         }
     }
 
+    // ============ PLAY BUTTON (native GD ButtonSprite) ============
     auto playMenu = CCMenu::create();
-    playMenu->setPosition({0, 0});
+    playMenu->setPosition({0.f, 0.f});
     infoPanel->addChild(playMenu, 15);
 
-    if (level) {
-        float btnW = textMaxW;
-        float btnH = 36.f;
-
-        auto playNode = CCNode::create();
-        playNode->setContentSize({btnW, btnH});
-
-        auto playShadow = paimon::SpriteHelper::createRoundedRect(
-            btnW + 4.f, btnH + 6.f, 12.f,
-            {0.f, 0.f, 0.f, 0.18f}
-        );
-        playShadow->setPosition({-2.f, -3.f});
-        playNode->addChild(playShadow, -2);
-
-        auto playBg = paimon::SpriteHelper::createRoundedRect(
-            btnW, btnH, 11.f,
-            {0.12f, 0.12f, 0.13f, 1.f},
-            {0.28f, 0.28f, 0.31f, 0.92f},
-            1.2f
-        );
-        playBg->setPosition({0.f, 0.f});
-        playNode->addChild(playBg, 0);
-
-        auto playStrip = paimon::SpriteHelper::createRoundedRect(
-            btnW - 18.f, 2.f, 1.f,
-            {0.62f, 0.62f, 0.66f, 0.18f}
-        );
-        playStrip->setPosition({9.f, btnH - 6.f});
-        playNode->addChild(playStrip, 1);
-
-        auto playText = CCLabelBMFont::create("PLAY", "bigFont.fnt");
-        playText->setScale(0.56f);
-        playText->setColor({216, 216, 222});
-        playText->setPosition({btnW / 2, btnH / 2});
-        playNode->addChild(playText, 2);
-
-        auto playBtnVis = CCMenuItemSpriteExtra::create(playNode, self, menu_selector(LeaderboardLayer::onViewLevel));
-        playBtnVis->setUserObject(level);
-        playBtnVis->setPosition({textX + textMaxW / 2, 24.f});
-        playBtnVis->m_scaleMultiplier = 1.02f;
-        PaimonButtonHighlighter::registerButton(playBtnVis);
-        playMenu->addChild(playBtnVis);
+    {
+        auto playSpr = ButtonSprite::create("PLAY", 130, true, "bigFont.fnt", "GJ_button_01.png", 38.f, 0.85f);
+        if (playSpr) {
+            auto playBtnVis = CCMenuItemSpriteExtra::create(playSpr, self, menu_selector(LeaderboardLayer::onViewLevel));
+            playBtnVis->setUserObject(level);
+            playBtnVis->setPosition({infoW / 2.f, 26.f});
+            playBtnVis->m_scaleMultiplier = 1.1f;
+            PaimonButtonHighlighter::registerButton(playBtnVis);
+            playMenu->addChild(playBtnVis);
+        }
     }
 }
 
@@ -876,14 +915,12 @@ void LeaderboardLayer::loadForYou() {
         return;
     }
 
-    // One-time Level-Tags download prompt (opens native Geode mod popup)
     if (!paimon::compat::ModCompat::isLevelTagsLoaded() &&
         !Mod::get()->getSavedValue<bool>("foryou-tags-prompt-shown", false)) {
         Mod::get()->setSavedValue("foryou-tags-prompt-shown", true);
         geode::openInfoPopup("kampwski.level_tags");
     }
 
-    // Generate queries
     m_forYouQueryQueue = paimon::foryou::ForYouEngine::get().generateQueries(3);
     if (m_forYouQueryQueue.empty()) {
         m_dataLoaded = true;
@@ -892,7 +929,6 @@ void LeaderboardLayer::loadForYou() {
         return;
     }
 
-    // Fire first query
     GameLevelManager::get()->m_levelManagerDelegate = this;
     fireNextForYouQuery();
 }
@@ -954,7 +990,6 @@ void LeaderboardLayer::createForYouList() {
         return;
     }
 
-    // Scrollable list of level cards
     float scrollH = winSize.height - 60.f;
     float scrollW = winSize.width;
     auto scroll = ScrollLayer::create({scrollW, scrollH});
@@ -1219,18 +1254,13 @@ void LeaderboardLayer::onViewLevel(CCObject* sender) {
     if (!btn) return;
     auto level = typeinfo_cast<GJGameLevel*>(btn->getUserObject());
     if (level) {
-        // nivel + musica desde cache
         auto savedLevel = GameLevelManager::get()->getSavedLevel(level->m_levelID);
         GJGameLevel* levelToUse = level;
 
         if (savedLevel) {
-            // saved level with music
             levelToUse = savedLevel;
-        } else {
-            // no saved level — copy available info; LevelInfoLayer downloads the rest
         }
 
-        // cave music pauses automatically in onExitTransitionDidStart
         auto layer = LevelInfoLayer::create(levelToUse, false);
         auto infoScene = CCScene::create();
         infoScene->addChild(layer);
@@ -1247,7 +1277,6 @@ float LeaderboardLayer::getAudioBassLevel() {
     
     if (result != FMOD_OK || !fftData || fftData->numchannels < 1) return 0.f;
 
-    // promediar bins de bajos (0-8 de 256 bins = ~0-350 Hz)
     float bassSum = 0.f;
     int bassBins = std::min(8, fftData->length);
     for (int i = 0; i < bassBins; i++) {
@@ -1255,7 +1284,6 @@ float LeaderboardLayer::getAudioBassLevel() {
     }
     float bassAvg = (bassBins > 0) ? bassSum / bassBins : 0.f;
 
-    // promediar mids (8-32 = ~350-1400 Hz)
     float midSum = 0.f;
     int midStart = std::min(8, fftData->length);
     int midEnd = std::min(32, fftData->length);
@@ -1264,7 +1292,6 @@ float LeaderboardLayer::getAudioBassLevel() {
     }
     float midAvg = (midEnd > midStart) ? midSum / (midEnd - midStart) : 0.f;
 
-    // combinar: bajos pesan mas para el beat
     return bassAvg * 0.7f + midAvg * 0.3f;
 }
 
@@ -1273,58 +1300,44 @@ void LeaderboardLayer::updateAudioReactive(float dt) {
 
     float rawBass = getAudioBassLevel();
     
-    // normalize (FFT values are typically 0-0.1)
     float normalizedBass = std::min(1.f, rawBass * 12.f);
     
-    // beat detection: sudden energy spike
     float delta = normalizedBass - m_prevBassLevel;
     m_prevBassLevel = normalizedBass;
     
     float beatThreshold = 0.15f;
     if (delta > beatThreshold) {
-        // beat detected — strong pulse
         m_beatPulse = std::min(1.f, m_beatPulse + delta * 2.5f);
     }
     
-    // soft beat decay
     m_beatPulse = std::max(0.f, m_beatPulse - dt * 3.5f);
     
-    // smooth glow follows the overall energy
     float targetGlow = normalizedBass * 0.6f;
     m_glowPulse += (targetGlow - m_glowPulse) * std::min(1.f, dt * 8.f);
     
-    // bg brightness pulse
     m_bgPulse += (normalizedBass * 0.4f - m_bgPulse) * std::min(1.f, dt * 6.f);
     
-    // particle boost en beats
     m_particleBoost = std::max(0.f, m_particleBoost - dt * 2.f);
     if (delta > beatThreshold * 1.2f) {
         m_particleBoost = std::min(1.f, m_particleBoost + 0.5f);
     }
     
-    // apply visual effects
-    
-    // 1. glow overlay — pulses with themed color
     if (m_glowOverlay) {
-        // blend themed color
         float t = (std::sin(m_audioReactTime * 0.5f) + 1.f) * 0.5f;
         GLubyte r = (GLubyte)(m_themeColorA.r + (m_themeColorB.r - m_themeColorA.r) * t);
         GLubyte g = (GLubyte)(m_themeColorA.g + (m_themeColorB.g - m_themeColorA.g) * t);
         GLubyte b = (GLubyte)(m_themeColorA.b + (m_themeColorB.b - m_themeColorA.b) * t);
         m_glowOverlay->setColor({r, g, b});
         
-        // opacity based on glow + beat
         float glowAlpha = m_glowPulse * 18.f + m_beatPulse * 25.f;
         m_glowOverlay->setOpacity((GLubyte)std::min(45.f, glowAlpha));
     }
     
-    // 2. beat flash — white flash on strong beats
     if (m_beatFlash) {
         float flashAlpha = m_beatPulse * 35.f;
         m_beatFlash->setOpacity((GLubyte)std::min(30.f, flashAlpha));
     }
     
-    // 3. bg sprite brightness pulses
     if (m_bgSprite) {
         if (auto paimonSprite = typeinfo_cast<LeaderboardPaimonSprite*>(m_bgSprite)) {
             float baseBrightness = 1.0f + m_bgPulse * 0.3f + m_beatPulse * 0.15f;
@@ -1332,14 +1345,12 @@ void LeaderboardLayer::updateAudioReactive(float dt) {
         }
     }
     
-    // 4. bg overlay pulses (less dark on beats)
     if (m_bgOverlay) {
         float baseOverlay = 100.f;
         float overlayReduction = m_beatPulse * 30.f + m_glowPulse * 15.f;
         m_bgOverlay->setOpacity((GLubyte)std::max(40.f, baseOverlay - overlayReduction));
     }
     
-    // 5. extra particles on beats
     if (m_particleBoost > 0.3f && m_particleContainer) {
         spawnThemeParticle(0.f);
     }
@@ -1348,15 +1359,6 @@ void LeaderboardLayer::updateAudioReactive(float dt) {
 void LeaderboardLayer::update(float dt) {
     m_blurTime += dt;
     
-    // Perf: throttle ensureBgSilenced to every 30 frames instead of every frame
-    if (!m_leavingForGood) {
-        if (++m_bgSilenceCounter >= 30) {
-            m_bgSilenceCounter = 0;
-            ensureBgSilenced();
-        }
-    }
-    
-    // Perf: cache typeinfo_cast result — sprite type never changes after creation
     if (m_bgSprite) {
         if (!m_bgSpriteCastCached) {
             m_bgSpriteCastCached = true;
@@ -1368,11 +1370,9 @@ void LeaderboardLayer::update(float dt) {
         }
     }
     
-    // audio-reactive visual effects
     if (m_musicPlaying && m_levelMusicChannel) {
         updateAudioReactive(dt);
     } else {
-        // no music: decay all effects
         if (m_glowOverlay) m_glowOverlay->setOpacity(0);
         if (m_beatFlash) m_beatFlash->setOpacity(0);
         m_beatPulse = 0.f;
@@ -1389,31 +1389,26 @@ void LeaderboardLayer::applyBackground(CCTexture2D* texture) {
 
     auto winSize = CCDirector::get()->getWinSize();
     
-    // nuevo sprite blur
-    // blur +40%
     auto newSprite = createLeaderboardBlurredSprite(texture, winSize, 0.095f);
     
     if (newSprite) {
         newSprite->setPosition(winSize / 2);
-        newSprite->setZOrder(-5); // = m_bgSprite
+        newSprite->setZOrder(-5);
         newSprite->setOpacity(0);
         
-        // shader atmosfera — solo GLSL (inline eliminado)
         auto shader = BlurSystem::getInstance()->getRealtimeBlurShader();
         if (!shader) shader = paimon::shaders::getBlurSinglePassShader();
         if (shader) {
             newSprite->setShaderProgram(shader);
-            newSprite->m_intensity = 0.0f; // comenzar en 0
+            newSprite->m_intensity = 0.0f;
             newSprite->m_texSize = newSprite->getTexture()->getContentSizeInPixels();
         }
         
         this->addChild(newSprite);
         
-        // transicion
         float duration = 0.5f;
         newSprite->runAction(CCFadeIn::create(duration));
         
-        // anim atmosfera
         auto breathe = CCRepeatForever::create(CCSequence::create(
             CCScaleTo::create(6.0f, 1.05f),
             CCScaleTo::create(6.0f, 1.0f),
@@ -1421,7 +1416,6 @@ void LeaderboardLayer::applyBackground(CCTexture2D* texture) {
         ));
         newSprite->runAction(breathe);
         
-        // fade sprite viejo
         if (m_bgSprite) {
             m_bgSprite->stopAllActions();
             m_bgSprite->runAction(CCSequence::create(
@@ -1434,10 +1428,9 @@ void LeaderboardLayer::applyBackground(CCTexture2D* texture) {
         m_bgSprite = newSprite;
     }
     
-    // fade overlay si hace falta
     if (m_bgOverlay) {
         m_bgOverlay->stopAllActions();
-        m_bgOverlay->runAction(CCFadeTo::create(0.5f, 100)); // negro semi
+        m_bgOverlay->runAction(CCFadeTo::create(0.5f, 100));
     }
 }
 
@@ -1446,7 +1439,6 @@ void LeaderboardLayer::updateBackground(int levelID) {
     int requestToken = static_cast<int>(m_requestGeneration);
 
     if (levelID <= 0) {
-        // fade a default
         if (m_bgSprite) {
             m_bgSprite->stopAllActions();
             m_bgSprite->runAction(CCSequence::create(
@@ -1468,7 +1460,6 @@ void LeaderboardLayer::updateBackground(int levelID) {
         if (static_cast<int>(m_requestGeneration) != requestToken) return;
         applyBackground(texture);
     } else {
-        // solicita descarga
         std::string fileName = fmt::format("{}.png", levelID);
         Ref<LeaderboardLayer> self = this;
         ThumbnailLoader::get().requestLoad(levelID, fileName, [self, requestToken](CCTexture2D* tex, bool) {
@@ -1485,30 +1476,25 @@ void LeaderboardLayer::updateBackground(int levelID) {
 void LeaderboardLayer::loadLevelsFinished(CCArray* levels, char const* key) {
     if (!levels) return;
 
-    // ForYou mode: collect results and fire next query
     if (m_forYouActive) {
         if (m_currentType != "foryou") return;
         if (m_pendingLevelGeneration != m_requestGeneration) return;
         for (auto* level : CCArrayExt<GJGameLevel*>(levels)) {
             if (!level) continue;
-            // Skip already-tracked levels
             if (!paimon::foryou::ForYouTracker::get().isLevelTracked(level->m_levelID)) {
                 m_forYouResults.push_back(level);
             }
         }
-        // Fire next query or finalize
         m_forYouQueryIndex++;
         if (m_forYouQueryIndex < static_cast<int>(m_forYouQueryQueue.size())) {
             fireNextForYouQuery();
         } else {
-            // All queries done — score, sort, and display
             paimon::foryou::ForYouEngine::get().scoreAndSortResults(m_forYouResults);
-            // Limit to 5 results
             if (m_forYouResults.size() > 5) {
                 m_forYouResults.resize(5);
             }
             m_dataLoaded = true;
-            m_thumbLoaded = true; // ForYou cards load thumbs individually
+            m_thumbLoaded = true;
             createForYouList();
             checkLoadingComplete();
         }
@@ -1518,7 +1504,6 @@ void LeaderboardLayer::loadLevelsFinished(CCArray* levels, char const* key) {
     if (m_currentType != "daily" && m_currentType != "weekly") return;
     if (m_pendingLevelGeneration != m_requestGeneration) return;
 
-    // Normal daily/weekly mode
     for (auto* downloadedLevel : CCArrayExt<GJGameLevel*>(levels)) {
         if (!downloadedLevel) continue;
         
@@ -1539,7 +1524,6 @@ void LeaderboardLayer::loadLevelsFinished(CCArray* levels, char const* key) {
         }
     }
     
-    // only update labels, don't recreate the list (avoids double animation)
     updateLevelInfo();
 }
 
@@ -1567,17 +1551,14 @@ void LeaderboardLayer::loadLevelsFailed(char const* key) {
 }
 
 void LeaderboardLayer::setupPageInfo(gd::string, char const*) {
-    // no necesario
 }
 
-// update labels without recreating the list
 void LeaderboardLayer::updateLevelInfo() {
     if (!m_featuredLevel) return;
 
     auto container = this->getChildByID("paimon-leaderboard-list"_spr);
     if (!container) return;
 
-    // buscar recursivamente los labels por tag
     auto findByTag = [&](auto const& self, CCNode* parent, int tag) -> CCNode* {
         if (!parent) return nullptr;
         auto children = parent->getChildren();
@@ -1591,31 +1572,28 @@ void LeaderboardLayer::updateLevelInfo() {
         return nullptr;
     };
 
-    // update name
     if (auto nameLbl = typeinfo_cast<CCLabelBMFont*>(findByTag(findByTag, container, TAG_NAME_LABEL))) {
-        nameLbl->setScale(0.62f);
+        nameLbl->setScale(0.70f);
         nameLbl->setString(m_featuredLevel->m_levelName.c_str());
-        float maxNameW = 188.f;
+        float maxNameW = 194.f;
         if (nameLbl->getScaledContentSize().width > maxNameW) {
             nameLbl->setScale(nameLbl->getScale() * (maxNameW / nameLbl->getScaledContentSize().width));
         }
     }
 
-    // update creator
     if (auto creatorLbl = typeinfo_cast<CCLabelBMFont*>(findByTag(findByTag, container, TAG_CREATOR_LABEL))) {
         std::string creatorStr = m_featuredLevel->m_creatorName.size() > 0
             ? "by " + std::string(m_featuredLevel->m_creatorName) 
             : "";
-        creatorLbl->setScale(0.50f);
+        creatorLbl->setScale(0.45f);
         creatorLbl->setString(creatorStr.c_str());
-        float maxCreatorW = 188.f;
+        float maxCreatorW = 194.f;
         if (creatorLbl->getScaledContentSize().width > maxCreatorW) {
             creatorLbl->setScale(creatorLbl->getScale() * (maxCreatorW / creatorLbl->getScaledContentSize().width));
         }
     }
 }
 
-// check if all loading is done
 void LeaderboardLayer::checkLoadingComplete() {
     if (m_dataLoaded && m_thumbLoaded) {
         if (m_loadingSpinner) {
@@ -1632,13 +1610,11 @@ void LeaderboardLayer::checkLoadingComplete() {
         // start music and themed particles
         if (m_featuredLevel) {
             startCaveMusic();
-            // get level colors
             auto colors = LevelColors::get().getPair(m_featuredLevel->m_levelID);
             if (colors.has_value()) {
                 m_themeColorA = colors->a;
                 m_themeColorB = colors->b;
             } else {
-                // default colors by type
                 if (m_currentType == "daily") {
                     m_themeColorA = {255, 200, 50};
                     m_themeColorB = {255, 130, 30};
@@ -1649,7 +1625,6 @@ void LeaderboardLayer::checkLoadingComplete() {
             }
             createThemeParticles();
         } else if (m_forYouActive && !m_forYouResults.empty()) {
-            // ForYou tab theme colors
             m_themeColorA = {255, 100, 120};
             m_themeColorB = {200, 60, 100};
             createThemeParticles();
@@ -1657,7 +1632,6 @@ void LeaderboardLayer::checkLoadingComplete() {
     }
 }
 
-// themed particles
 void LeaderboardLayer::clearParticles() {
     this->unschedule(schedule_selector(LeaderboardLayer::spawnThemeParticle));
     if (m_particleContainer) {
@@ -1668,10 +1642,8 @@ void LeaderboardLayer::clearParticles() {
 void LeaderboardLayer::createThemeParticles() {
     clearParticles();
     
-    // spawn particles periodically
     this->schedule(schedule_selector(LeaderboardLayer::spawnThemeParticle), 0.4f);
     
-    // algunas particulas iniciales
     for (int i = 0; i < 8; i++) {
         spawnThemeParticle(0.f);
     }
@@ -1680,12 +1652,10 @@ void LeaderboardLayer::createThemeParticles() {
 void LeaderboardLayer::spawnThemeParticle(float dt) {
     if (!m_particleContainer) return;
     
-    // limitar cantidad
     if (m_particleContainer->getChildrenCount() > 25) return;
 
     auto winSize = CCDirector::get()->getWinSize();
 
-    // pick a random color between the two themed colors
     float t = (rand() % 100) / 100.f;
     ccColor3B color = {
         (GLubyte)(m_themeColorA.r + (m_themeColorB.r - m_themeColorA.r) * t),
@@ -1693,7 +1663,6 @@ void LeaderboardLayer::spawnThemeParticle(float dt) {
         (GLubyte)(m_themeColorA.b + (m_themeColorB.b - m_themeColorA.b) * t),
     };
 
-    // star/flash using GD sprites
     char const* spriteNames[] = {
         "GJ_starsIcon_001.png",
         "GJ_bigStar_001.png",
@@ -1710,11 +1679,9 @@ void LeaderboardLayer::spawnThemeParticle(float dt) {
 
     particle->setColor(color);
     
-    // random size
     float baseScale = 0.08f + (rand() % 15) / 100.f;
     particle->setScale(baseScale);
     
-    // random X position, start below the screen
     float startX = (rand() % (int)winSize.width);
     float startY = -10.f;
     particle->setPosition({startX, startY});
@@ -1722,12 +1689,10 @@ void LeaderboardLayer::spawnThemeParticle(float dt) {
 
     m_particleContainer->addChild(particle);
 
-    // movement: floats up smoothly with horizontal drift
     float duration = 6.f + (rand() % 40) / 10.f;
     float driftX = ((rand() % 100) - 50) * 0.8f;
     float endY = winSize.height + 20.f;
 
-    // fade in -> hold -> fade out
     float fadeIn = 0.8f;
     float fadeOut = 1.5f;
     float holdOpacity = 80 + rand() % 100;
@@ -1746,22 +1711,17 @@ void LeaderboardLayer::spawnThemeParticle(float dt) {
     ));
 }
 
-// history
 void LeaderboardLayer::onHistory(CCObject*) {
-    // cave music is NOT paused when going to history — it keeps playing
     m_goingToHistory = true;
     auto scene = LeaderboardHistoryLayer::scene();
     TransitionManager::get().pushScene(scene);
 }
-
-//  AUDIO SYSTEM — cave music + menu music control
 
 void LeaderboardLayer::startCaveMusic() {
     if (!m_featuredLevel) return;
     if (m_musicPlaying) return;
     if (m_leavingForGood) return;
 
-    // find the song path
     std::string songPath;
     if (m_featuredLevel->m_songID > 0) {
         if (MusicDownloadManager::sharedState()->isSongDownloaded(m_featuredLevel->m_songID)) {
@@ -1778,60 +1738,54 @@ void LeaderboardLayer::startCaveMusic() {
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system) return;
 
-    // asegurar BG silenciado
-    if (engine->m_backgroundMusicChannel) {
-        engine->m_backgroundMusicChannel->setVolume(0.f);
+    // Take over the main BG channel via GD's native playMusic — same as
+    // DynamicSongManager / LevelInfoLayer. This replaces whatever was on the
+    // channel (menu music, dyn song) so there is no bleed when the user
+    // changes the music volume slider.
+    engine->playMusic(songPath, true, 0.0f, 0);
+
+    // Seek: either resume from a saved position (after returning from a
+    // pushed scene) or pick a random offset for variety.
+    auto* bgCh = lbGetMainBgChannel(engine);
+    if (bgCh) {
+        if (m_savedCaveMusicPosMs > 0) {
+            bgCh->setPosition(m_savedCaveMusicPosMs, FMOD_TIMEUNIT_MS);
+            m_savedCaveMusicPosMs = 0;
+        } else {
+            FMOD::Sound* currentSound = nullptr;
+            bgCh->getCurrentSound(&currentSound);
+            if (currentSound) {
+                unsigned int lengthMs = 0;
+                currentSound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
+                if (lengthMs > 10000) {
+                    static std::mt19937 gen(std::random_device{}());
+                    std::uniform_int_distribution<unsigned int> dist(
+                        (unsigned int)(lengthMs * 0.1f), (unsigned int)(lengthMs * 0.8f));
+                    bgCh->setPosition(dist(gen), FMOD_TIMEUNIT_MS);
+                }
+            }
+        }
     }
 
-    auto* audioGroup = ensureLeaderboardAudioGroup(engine->m_system, m_levelAudioGroup);
-    if (!audioGroup) return;
-
-    // crear sonido
-    FMOD::Sound* sound = nullptr;
-    FMOD_RESULT result = engine->m_system->createSound(
-        songPath.c_str(), FMOD_CREATESTREAM | FMOD_LOOP_NORMAL, nullptr, &sound);
-    if (result != FMOD_OK || !sound) return;
-    m_levelMusicSound = sound;
-
-    // reproducir (pausado para configurar)
-    FMOD::Channel* channel = nullptr;
-    result = engine->m_system->playSound(m_levelMusicSound, audioGroup, true, &channel);
-    if (result != FMOD_OK || !channel) {
-        m_levelMusicSound->release();
-        m_levelMusicSound = nullptr;
-        return;
-    }
-    m_levelMusicChannel = channel;
-
-    // random seek
-    unsigned int lengthMs = 0;
-    m_levelMusicSound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
-    if (lengthMs > 10000) {
-        static std::mt19937 gen(std::random_device{}());
-        std::uniform_int_distribution<unsigned int> dist(
-            (unsigned int)(lengthMs * 0.1f), (unsigned int)(lengthMs * 0.8f));
-        m_levelMusicChannel->setPosition(dist(gen), FMOD_TIMEUNIT_MS);
-    }
-
-    // Disabled: don't apply the "cave" DSP to daily/weekly.
-
-    // FFT DSP for audio analysis (audio-reactive visuals)
+    // FFT for audio-reactive visuals goes on the BG group.
     if (!m_fftDSP) {
         engine->m_system->createDSPByType(FMOD_DSP_TYPE_FFT, &m_fftDSP);
         if (m_fftDSP) {
             m_fftDSP->setParameterInt(FMOD_DSP_FFT_WINDOWSIZE, 512);
         }
     }
-    if (m_fftDSP) {
-        m_levelMusicChannel->addDSP(2, m_fftDSP);
+    if (m_fftDSP && engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->addDSP(2, m_fftDSP);
     }
 
-    // fade-in from 0
+    // Fade in volume from 0 -> game music volume * cave factor.
     float gameVol = engine->m_musicVolume;
     float targetVol = gameVol * 0.55f;
-    m_levelMusicChannel->setVolume(0.f);
-    m_levelMusicChannel->setPaused(false);
+    if (engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->setVolume(0.f);
+    }
     m_musicPlaying = true;
+    m_caveMusicShouldRestore = true;
 
     m_isFadingCaveIn = true;
     m_isFadingCaveOut = false;
@@ -1839,12 +1793,18 @@ void LeaderboardLayer::startCaveMusic() {
 }
 
 void LeaderboardLayer::fadeOutCaveMusic() {
-    if (!m_musicPlaying || !m_levelMusicChannel) return;
+    if (!m_musicPlaying) return;
+
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (!engine || !engine->m_backgroundMusicChannel) {
+        killCaveMusic();
+        return;
+    }
 
     m_isFadingCaveIn = false;
 
     float currentVol = 0.f;
-    m_levelMusicChannel->getVolume(&currentVol);
+    engine->m_backgroundMusicChannel->getVolume(&currentVol);
     if (currentVol <= 0.001f) {
         killCaveMusic();
         return;
@@ -1860,30 +1820,28 @@ void LeaderboardLayer::killCaveMusic() {
 
     removeCaveEffect();
 
-    if (m_levelMusicChannel) {
-        m_levelMusicChannel->stop();
-        m_levelMusicChannel = nullptr;
+    // Stop the BG channel hard so the menu music doesn't suddenly become
+    // audible when the user adjusts the volume slider. The next scene
+    // (CreatorLayer or resumed DynSong) will restart whatever it wants.
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (engine && engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->stop();
     }
-    if (m_levelMusicSound) {
-        m_levelMusicSound->release();
-        m_levelMusicSound = nullptr;
-    }
-    if (m_levelAudioGroup) {
-        m_levelAudioGroup->stop();
-        m_levelAudioGroup->release();
-        m_levelAudioGroup = nullptr;
-    }
+
     m_musicPlaying = false;
+    m_caveMusicShouldRestore = false;
 }
 
 void LeaderboardLayer::executeCaveFade(int step, int totalSteps, float from, float to, bool fadeOut) {
+    auto engine = FMODAudioEngine::sharedEngine();
+
     if (step > totalSteps) {
         if (fadeOut) {
-            // fade-out done: clean up
             killCaveMusic();
         } else {
-            // fade-in done: lock final volume
-            if (m_levelMusicChannel) m_levelMusicChannel->setVolume(to);
+            if (engine && engine->m_backgroundMusicChannel) {
+                engine->m_backgroundMusicChannel->setVolume(to);
+            }
             m_isFadingCaveIn = false;
         }
         return;
@@ -1893,8 +1851,8 @@ void LeaderboardLayer::executeCaveFade(int step, int totalSteps, float from, flo
     float eT = (t < 0.5f) ? (2.f * t * t) : (1.f - std::pow(-2.f * t + 2.f, 2.f) / 2.f);
     float vol = from + (to - from) * eT;
 
-    if (m_levelMusicChannel) {
-        m_levelMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
+    if (engine && engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
     }
 
     float stepDelay = (AUDIO_FADE_MS / static_cast<float>(totalSteps)) / 1000.f;
@@ -1913,9 +1871,8 @@ void LeaderboardLayer::executeCaveFade(int step, int totalSteps, float from, flo
 
 void LeaderboardLayer::applyCaveEffect() {
     auto engine = FMODAudioEngine::sharedEngine();
-    if (!engine || !engine->m_system || !m_levelMusicChannel) return;
+    if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) return;
 
-    // lowpass filter — simulates cave walls
     if (!m_lowpassDSP) {
         engine->m_system->createDSPByType(FMOD_DSP_TYPE_LOWPASS, &m_lowpassDSP);
         if (m_lowpassDSP) {
@@ -1924,7 +1881,6 @@ void LeaderboardLayer::applyCaveEffect() {
         }
     }
 
-    // subtle reverb — cave echo
     if (!m_reverbDSP) {
         engine->m_system->createDSPByType(FMOD_DSP_TYPE_SFXREVERB, &m_reverbDSP);
         if (m_reverbDSP) {
@@ -1937,22 +1893,22 @@ void LeaderboardLayer::applyCaveEffect() {
         }
     }
 
-    if (m_lowpassDSP) m_levelMusicChannel->addDSP(0, m_lowpassDSP);
-    if (m_reverbDSP) m_levelMusicChannel->addDSP(1, m_reverbDSP);
+    if (m_lowpassDSP) engine->m_backgroundMusicChannel->addDSP(0, m_lowpassDSP);
+    if (m_reverbDSP) engine->m_backgroundMusicChannel->addDSP(1, m_reverbDSP);
 }
 
 void LeaderboardLayer::removeCaveEffect() {
-    if (m_levelMusicChannel) {
-        if (m_lowpassDSP) m_levelMusicChannel->removeDSP(m_lowpassDSP);
-        if (m_reverbDSP) m_levelMusicChannel->removeDSP(m_reverbDSP);
-        if (m_fftDSP) m_levelMusicChannel->removeDSP(m_fftDSP);
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (engine && engine->m_backgroundMusicChannel) {
+        if (m_lowpassDSP) engine->m_backgroundMusicChannel->removeDSP(m_lowpassDSP);
+        if (m_reverbDSP) engine->m_backgroundMusicChannel->removeDSP(m_reverbDSP);
+        if (m_fftDSP) engine->m_backgroundMusicChannel->removeDSP(m_fftDSP);
     }
     if (m_lowpassDSP) { m_lowpassDSP->release(); m_lowpassDSP = nullptr; }
     if (m_reverbDSP) { m_reverbDSP->release(); m_reverbDSP = nullptr; }
     if (m_fftDSP) { m_fftDSP->release(); m_fftDSP = nullptr; }
 }
 
-// menu music control (soft fade)
 void LeaderboardLayer::fadeOutMenuMusic() {
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_backgroundMusicChannel) return;
@@ -1972,7 +1928,6 @@ void LeaderboardLayer::fadeInMenuMusic() {
     float currentVol = 0.f;
     engine->m_backgroundMusicChannel->getVolume(&currentVol);
 
-    // unpause if it was paused
     bool isPaused = false;
     engine->m_backgroundMusicChannel->getPaused(&isPaused);
     if (isPaused) {
@@ -2013,23 +1968,31 @@ void LeaderboardLayer::executeMenuFade(int step, int totalSteps, float from, flo
 }
 
 void LeaderboardLayer::ensureBgSilenced() {
-    if (m_leavingForGood) return;
-    auto engine = FMODAudioEngine::sharedEngine();
-    if (engine && engine->m_backgroundMusicChannel) {
-        engine->m_backgroundMusicChannel->setVolume(0.f);
-    }
+    // No-op after refactor. The cave music now plays on the main BG channel
+    // directly via engine->playMusic, so there is no "menu music in parallel"
+    // to silence anymore. Keep the symbol to satisfy the existing header /
+    // scheduler bindings.
 }
 
-void LeaderboardLayer::delaySilenceBg(float dt) {
-    ensureBgSilenced();
+void LeaderboardLayer::delaySilenceBg(float) {
+    // No-op (see ensureBgSilenced).
 }
 
-void LeaderboardLayer::delaySilenceBg2(float dt) {
-    ensureBgSilenced();
+void LeaderboardLayer::delaySilenceBg2(float) {
+    // No-op (see ensureBgSilenced).
 }
 
 LeaderboardLayer::~LeaderboardLayer() {
-    // restore BG immediately in destructor (safety net)
+    // Safety net: if for some reason we exited without going through onBack
+    // (e.g. external scene replacement), resume the dynamic song now.
+    if (m_didSuspendDynSong) {
+        auto* dsm = DynamicSongManager::get();
+        if (dsm && dsm->hasSuspendedPlayback()) {
+            dsm->resumeSuspendedPlayback();
+        }
+        m_didSuspendDynSong = false;
+    }
+
     auto engine = FMODAudioEngine::sharedEngine();
     if (engine && engine->m_backgroundMusicChannel) {
         engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume);

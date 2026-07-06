@@ -8,7 +8,6 @@ using namespace geode::prelude;
 
 bool GIFDecoder::isGIF(uint8_t const* data, size_t size) {
     if (size < 6) return false;
-    // check GIF87a or GIF89a signature
     return (memcmp(data, "GIF87a", 6) == 0 || memcmp(data, "GIF89a", 6) == 0);
 }
 
@@ -46,7 +45,6 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
         return result;
     }
 
-    // read flags
     if (ptr >= end) return result;
     uint8_t flags = *ptr++;
     bool hasGlobalColorTable = (flags & 0x80) != 0;
@@ -122,18 +120,16 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
                 
                 // 1. handle the previous frame's disposal
                 if (prevDisposal == 2) {
-                    // restore to background (transparent)
-                    for (int y = 0; y < prevRawFrame.height; y++) {
-                        for (int x = 0; x < prevRawFrame.width; x++) {
-                            int cy = prevRawFrame.top + y;
-                            int cx = prevRawFrame.left + x;
-                            if (cx >= 0 && cx < result.width && cy >= 0 && cy < result.height) {
-                                int idx = (cy * result.width + cx) * 4;
-                                canvas[idx] = 0;
-                                canvas[idx+1] = 0;
-                                canvas[idx+2] = 0;
-                                canvas[idx+3] = 0;
-                            }
+                    // restore to background (transparent): clamp the rect to the
+                    // canvas once, then clear whole rows with memset
+                    int x0 = std::max(0, prevRawFrame.left);
+                    int y0 = std::max(0, prevRawFrame.top);
+                    int x1 = std::min(result.width, prevRawFrame.left + prevRawFrame.width);
+                    int y1 = std::min(result.height, prevRawFrame.top + prevRawFrame.height);
+                    if (x1 > x0) {
+                        size_t rowBytes = static_cast<size_t>(x1 - x0) * 4;
+                        for (int cy = y0; cy < y1; ++cy) {
+                            std::memset(&canvas[(static_cast<size_t>(cy) * result.width + x0) * 4], 0, rowBytes);
                         }
                     }
                 } else if (prevDisposal == 3) {
@@ -147,19 +143,37 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
                 }
                 
                 // 3. draw the current frame onto the canvas
-                for (int y = 0; y < rawFrame.height; y++) {
-                    for (int x = 0; x < rawFrame.width; x++) {
-                        int cy = rawFrame.top + y;
-                        int cx = rawFrame.left + x;
-                        if (cx >= 0 && cx < result.width && cy >= 0 && cy < result.height) {
-                            int rawIdx = (y * rawFrame.width + x) * 4;
-                            int canvasIdx = (cy * result.width + cx) * 4;
-                            
-                            if (rawFrame.pixels[rawIdx + 3] > 0) {
-                                canvas[canvasIdx] = rawFrame.pixels[rawIdx];
-                                canvas[canvasIdx+1] = rawFrame.pixels[rawIdx+1];
-                                canvas[canvasIdx+2] = rawFrame.pixels[rawIdx+2];
-                                canvas[canvasIdx+3] = rawFrame.pixels[rawIdx+3];
+                if (!hasTransparency) {
+                    // no transparent index: every pixel is opaque, so copy whole
+                    // rows with memcpy instead of an alpha test per pixel
+                    int x0 = std::max(0, rawFrame.left);
+                    int y0 = std::max(0, rawFrame.top);
+                    int x1 = std::min(result.width, rawFrame.left + rawFrame.width);
+                    int y1 = std::min(result.height, rawFrame.top + rawFrame.height);
+                    if (x1 > x0) {
+                        size_t rowBytes = static_cast<size_t>(x1 - x0) * 4;
+                        for (int cy = y0; cy < y1; ++cy) {
+                            size_t srcIdx = (static_cast<size_t>(cy - rawFrame.top) * rawFrame.width
+                                             + (x0 - rawFrame.left)) * 4;
+                            size_t dstIdx = (static_cast<size_t>(cy) * result.width + x0) * 4;
+                            std::memcpy(&canvas[dstIdx], &rawFrame.pixels[srcIdx], rowBytes);
+                        }
+                    }
+                } else {
+                    for (int y = 0; y < rawFrame.height; y++) {
+                        for (int x = 0; x < rawFrame.width; x++) {
+                            int cy = rawFrame.top + y;
+                            int cx = rawFrame.left + x;
+                            if (cx >= 0 && cx < result.width && cy >= 0 && cy < result.height) {
+                                int rawIdx = (y * rawFrame.width + x) * 4;
+                                int canvasIdx = (cy * result.width + cx) * 4;
+                                
+                                if (rawFrame.pixels[rawIdx + 3] > 0) {
+                                    canvas[canvasIdx] = rawFrame.pixels[rawIdx];
+                                    canvas[canvasIdx+1] = rawFrame.pixels[rawIdx+1];
+                                    canvas[canvasIdx+2] = rawFrame.pixels[rawIdx+2];
+                                    canvas[canvasIdx+3] = rawFrame.pixels[rawIdx+3];
+                                }
                             }
                         }
                     }
@@ -226,7 +240,6 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
     int currentCodeSize = minCodeSize + 1;
     int codeMask = (1 << currentCodeSize) - 1;
 
-    // LZW dictionary entry
     struct DictEntry {
         int prefix = -1;
         uint8_t suffix = 0;
@@ -243,9 +256,13 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
     int dictSize = eoiCode + 1;
     int oldCode = -1;
     
-    // bit-reading state
-    int bitPos = 0;
-    int bytePos = 0;
+    // LSB-first bit accumulator: refills a whole byte at a time and shifts the
+    // requested code width out in one mask. Replaces the per-bit branch loop,
+    // which was the hottest path in GIF decode.
+    uint32_t bitBuffer = 0;
+    int bitCount = 0;
+    size_t bytePos = 0;
+    size_t const compressedSize = compressed.size();
     
     output.reserve(pixelCount);
     
@@ -254,19 +271,17 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
     sequence.reserve(4096);
     
     while (output.size() < pixelCount) {
-        // read a code
-        int code = 0;
-        for (int i = 0; i < currentCodeSize; ++i) {
-            if (bytePos >= compressed.size()) break;
-            if ((compressed[bytePos] >> bitPos) & 1) {
-                code |= (1 << i);
-            }
-            bitPos++;
-            if (bitPos == 8) {
-                bitPos = 0;
-                bytePos++;
-            }
+        // refill enough bits for the current code width
+        while (bitCount < currentCodeSize) {
+            if (bytePos >= compressedSize) break;
+            bitBuffer |= static_cast<uint32_t>(compressed[bytePos++]) << bitCount;
+            bitCount += 8;
         }
+        if (bitCount < currentCodeSize) break; // stream exhausted
+
+        int code = static_cast<int>(bitBuffer & codeMask);
+        bitBuffer >>= currentCodeSize;
+        bitCount -= currentCodeSize;
         
         if (code == clearCode) {
             currentCodeSize = minCodeSize + 1;
@@ -325,6 +340,7 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
             
             if (dictSize >= (1 << currentCodeSize) && currentCodeSize < 12) {
                 currentCodeSize++;
+                codeMask = (1 << currentCodeSize) - 1;
             }
         }
         

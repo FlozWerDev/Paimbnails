@@ -1,19 +1,14 @@
 ﻿#pragma once
 
-// Typed accessors for mod settings.
-
 #include <Geode/Geode.hpp>
 #include <string>
 #include <atomic>
 
 namespace paimon::settings {
 
-// Internal: settings reactivity
 namespace internal {
     inline std::atomic<uint64_t> g_settingsVersion{0};
 }
-
-// Thumbnails / LevelCell
 
 namespace thumbnails {
     inline std::string backgroundType() {
@@ -72,16 +67,14 @@ namespace thumbnails {
     }
 } // namespace thumbnails
 
-// LevelInfo
-
 namespace levelinfo {
     inline std::string backgroundStyle() {
         return geode::Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
     }
-    inline int64_t effectIntensity() {
+    inline int effectIntensity() {
         return geode::Mod::get()->getSavedValue<int>("levelinfo-effect-intensity", 4);
     }
-    inline int64_t bgDarkness() {
+    inline int bgDarkness() {
         return geode::Mod::get()->getSavedValue<int>("levelinfo-bg-darkness", 27);
     }
     inline std::string extraStyles() {
@@ -91,8 +84,6 @@ namespace levelinfo {
         return geode::Mod::get()->getSettingValue<bool>("dynamic-song");
     }
 } // namespace levelinfo
-
-// Backgrounds
 
 namespace backgrounds {
     inline std::string bgType() {
@@ -118,15 +109,11 @@ namespace backgrounds {
     }
 } // namespace backgrounds
 
-// Popup Blur
-
 namespace popupblur {
     inline bool enabled() {
         return geode::Mod::get()->getSettingValue<bool>("popup-blur-enabled");
     }
     inline std::string style() {
-        // "paiblur" (dynamic per-frame, EclipseMenu-style) is the default;
-        // "paimonblur" / "gaussian" are the static snapshot fallbacks.
         return geode::Mod::get()->getSavedValue<std::string>("popup-blur-style", "paiblur");
     }
     inline double intensity() {
@@ -142,7 +129,7 @@ namespace popupblur {
         return geode::Mod::get()->getSavedValue<double>("popup-blur-corner-radius", 8.0);
     }
     inline double fadeDuration() {
-        return geode::Mod::get()->getSavedValue<double>("popup-blur-fade-duration", 0.3);
+        return geode::Mod::get()->getSavedValue<double>("popup-blur-fade-duration", 0.18);
     }
     inline bool showPlaceholder() {
         return geode::Mod::get()->getSavedValue<bool>("popup-blur-show-placeholder", true);
@@ -151,8 +138,6 @@ namespace popupblur {
         return geode::Mod::get()->getSettingValue<std::string>("popup-ui-theme");
     }
 } // namespace popupblur
-
-// Video
 
 namespace video {
     inline int fpsLimit() {
@@ -164,9 +149,20 @@ namespace video {
     inline bool disableVideoChunks() {
         return geode::Mod::get()->getSavedValue<bool>("disable-video-chunks", true);
     }
-    // Video decode quality: 0=Auto, 50=Low, 75=Medium, 100=High
+    // 0=Auto, 50=Low, 75=Medium, 100=High
     inline int videoQuality() {
         return geode::Mod::get()->getSavedValue<int>("video-quality", 0);
+    }
+    // Longest-side cap (px) the decoder downscales to. 0 = native (no cap).
+    // Downscaling at decode time shrinks the ring buffer, GL textures, PBOs
+    // and the resolve FBO proportionally — the main video RAM consumers.
+    inline int videoMaxDecodeDimension() {
+        switch (videoQuality()) {
+            case 100: return 0;     // High: native resolution
+            case 75:  return 1280;  // Medium: ~720p cap
+            case 50:  return 854;   // Low: ~480p cap
+            default:  return 1920;  // Auto: 1080p native, only 1440p/4K downscale
+        }
     }
     inline std::string videoBlurType() {
         return geode::Mod::get()->getSavedValue<std::string>("video-blur-type", "none");
@@ -174,13 +170,11 @@ namespace video {
     inline float videoBlurIntensity() {
         return geode::Mod::get()->getSavedValue<float>("video-blur-intensity", 0.5f);
     }
-    // Video rotation in degrees: 0, 90, 180, 270
+    // Degrees: 0, 90, 180, 270
     inline int videoRotation() {
         return geode::Mod::get()->getSavedValue<int>("video-rotation", 0);
     }
-    // Max video chunk memory budget in MB (0 = unlimited)
-    // 4K video requires ~180MB per player (RGBA + YUV + ring buffer),
-    // so 512MB allows 2-3 concurrent 4K players.
+    // 4K video needs ~180MB per player, so 512MB allows 2-3 concurrent 4K players.
     inline int maxChunkMemoryMB() {
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
         return geode::Mod::get()->getSavedValue<int>("video-max-chunk-memory-mb", 256);
@@ -189,10 +183,6 @@ namespace video {
 #endif
     }
 
-    // Maximum number of video backgrounds that may decode simultaneously.
-    // Once this many are active, acquiring a new one evicts the least-recently
-    // used inactive entry. Mobile defaults to a smaller number to limit
-    // CPU/GPU/RAM pressure; desktop can handle more.
     inline int maxConcurrentVideos() {
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
         return geode::Mod::get()->getSavedValue<int>("video-max-concurrent", 2);
@@ -201,24 +191,17 @@ namespace video {
 #endif
     }
 
-    // When true, the manager automatically lowers each video's target FPS as
-    // more videos become active so the total frame-budget stays bounded.
     // Effective FPS = clamp(fpsLimit() / activeCount, minVideoFPS(), fpsLimit()).
     inline bool adaptiveFPS() {
         return geode::Mod::get()->getSavedValue<bool>("video-adaptive-fps", true);
     }
 
-    // Minimum FPS to which the adaptive scaler is allowed to drop a video.
-    // Below this rate playback feels choppy, so the manager prefers eviction.
     inline int minVideoFPS() {
         return geode::Mod::get()->getSavedValue<int>("video-min-fps", 12);
     }
 
-    // Max video file size in bytes (2 GB)
     static constexpr size_t kMaxVideoFileSize = 2ULL * 1024 * 1024 * 1024;
 } // namespace video
-
-// Profiles
 
 namespace profiles {
     inline std::string scorecellBgType() {
@@ -234,8 +217,7 @@ namespace profiles {
         return geode::Mod::get()->getSavedValue<float>("profile-thumb-width", 0.6f);
     }
     inline int64_t profileImgZLayer() {
-        // Default -1: the profile background sits behind the comment list
-        // (z=0). With default 1 the image covered the comments.
+        // -1: background sits behind the comment list (z=0); 1 would cover comments.
         return geode::Mod::get()->getSavedValue<int>("profile-img-zlayer", -1);
     }
     inline std::string profileBgType() {
@@ -248,11 +230,6 @@ namespace profiles {
         return geode::Mod::get()->getSettingValue<bool>("profile-redesign-enabled");
     }
 } // namespace profiles
-
-// Transitions
-// Transition state is managed by TransitionManager::isEnabled() via transitions.json
-
-// Moderation
 
 namespace moderation {
     inline bool isVerifiedModerator() {
@@ -268,8 +245,6 @@ namespace moderation {
         return isVerifiedVip() || isVerifiedModerator() || isVerifiedAdmin();
     }
 } // namespace moderation
-
-// General / Cache
 
 namespace general {
     inline bool smoothScroll() {
@@ -292,11 +267,6 @@ namespace general {
     }
 } // namespace general
 
-// Smooth Scroll
-// "smooth-scroll" (enable) is a mod.json setting; sensitivity/smoothness are
-// saved-values edited from the Hub popup (SmoothScrollConfigPopup). Defaults are
-// shared here so the controller and the popup agree.
-
 namespace smoothscroll {
     inline constexpr double kSensitivityDefault = 2.0;
     inline constexpr double kSensitivityMin     = 0.25;
@@ -304,19 +274,64 @@ namespace smoothscroll {
     inline constexpr double kSmoothnessDefault  = 1.0;
     inline constexpr double kSmoothnessMin      = 0.25;
     inline constexpr double kSmoothnessMax      = 3.0;
+    inline constexpr double kEditorZoomSensitivityDefault = 1.0;
+    inline constexpr double kEditorZoomSensitivityMin     = 0.25;
+    inline constexpr double kEditorZoomSensitivityMax     = 3.0;
+    inline constexpr double kEditorZoomSmoothnessDefault  = 1.15;
+    inline constexpr double kEditorZoomSmoothnessMin      = 0.25;
+    inline constexpr double kEditorZoomSmoothnessMax      = 3.0;
 
     inline bool enabled() {
         return geode::Mod::get()->getSettingValue<bool>("smooth-scroll");
     }
-    // How far one wheel tick scrolls. 1.0 = base; higher = faster / more sensitive.
     inline double sensitivity() {
         return geode::Mod::get()->getSavedValue<double>("smooth-scroll-sensitivity", kSensitivityDefault);
     }
-    // Glide factor. 1.0 = base; higher = momentum lingers longer (smoother, floatier).
     inline double smoothness() {
         return geode::Mod::get()->getSavedValue<double>("smooth-scroll-smoothness", kSmoothnessDefault);
     }
+    inline bool editorZoomEnabled() {
+        return geode::Mod::get()->getSavedValue<bool>("smooth-scroll-editor-zoom", true);
+    }
+    inline bool fixEditorScroll() {
+        return geode::Mod::get()->getSavedValue<bool>("smooth-scroll-fix-editor", true);
+    }
+    inline double editorZoomSensitivity() {
+        return geode::Mod::get()->getSavedValue<double>(
+            "smooth-scroll-editor-zoom-sensitivity", kEditorZoomSensitivityDefault);
+    }
+    inline double editorZoomSmoothness() {
+        return geode::Mod::get()->getSavedValue<double>(
+            "smooth-scroll-editor-zoom-smoothness", kEditorZoomSmoothnessDefault);
+    }
 } // namespace smoothscroll
+
+namespace smoothui {
+    inline bool enabled() {
+        return geode::Mod::get()->getSettingValue<bool>("smooth-ui-enabled");
+    }
+    inline bool reducedMotion() {
+        return geode::Mod::get()->getSavedValue<bool>("smooth-ui-reduced-motion", false);
+    }
+    inline double globalSpeed() {
+        return geode::Mod::get()->getSavedValue<double>("smooth-ui-global-speed", 1.0);
+    }
+    inline double motionStrength() {
+        return geode::Mod::get()->getSavedValue<double>("smooth-ui-motion-strength", 1.0);
+    }
+    inline bool animateButtons() {
+        return geode::Mod::get()->getSavedValue<bool>("smooth-ui-animate-buttons", true);
+    }
+    inline std::string buttonScope() {
+        return geode::Mod::get()->getSavedValue<std::string>("smooth-ui-button-scope", "all");
+    }
+    inline double buttonPressScale() {
+        return geode::Mod::get()->getSavedValue<double>("smooth-ui-button-press-scale", 0.94);
+    }
+    inline bool buttonReleaseBounce() {
+        return geode::Mod::get()->getSavedValue<bool>("smooth-ui-button-release-bounce", true);
+    }
+} // namespace smoothui
 
 namespace discord_rpc {
     inline bool enabled() {
@@ -363,35 +378,23 @@ namespace discord_rpc {
     }
 } // namespace discord_rpc
 
-// Cursor
-
 namespace cursor {
     inline bool hideInGameplay() {
         return geode::Mod::get()->getSavedValue<bool>("custom-cursor-hide-in-gameplay", true);
     }
 } // namespace cursor
 
-// Quality (single resolution — no tiers)
-
 namespace quality {
-    // RAM LRU entry limit.
-    //
-    // The 22 main levels (1-22) are PINNED in RAM (exempt from the LRU in
-    // ThumbnailCache::evictRamLocked) since they're preloaded and never change,
-    // so the cap leaves extra room beyond those 22 for online list browsing.
-    // The byte cap below is the real memory limit.
+    // The 22 main levels are pinned in RAM (exempt from the LRU); this entry cap
+    // leaves room beyond them. The byte cap below is the real memory limit.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     inline size_t ramCacheEntries() { return 40; }
-    // RAM LRU byte cap
     inline size_t ramCacheBytes()   { return 100ull * 1024 * 1024; }
 #else
     inline size_t ramCacheEntries() { return 64; }
-    // RAM LRU byte cap — 200MB for 1920px textures (~8MB each at 1080p)
     inline size_t ramCacheBytes()   { return 200ull * 1024 * 1024; }
 #endif
-    // disk cache byte quota
     inline size_t diskCacheBytes()  { return 512ull * 1024 * 1024; }
-    // unified cache subdirectory
     inline std::string cacheSubdir() { return "cache"; }
 } // namespace quality
 

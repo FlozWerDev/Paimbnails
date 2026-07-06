@@ -3,7 +3,6 @@
 #include <Geode/Geode.hpp>
 
 
-// Popup con la imagen de perfil como fondo
 class ProfileImgPopup : public geode::Popup {
 protected:
     int m_accountID;

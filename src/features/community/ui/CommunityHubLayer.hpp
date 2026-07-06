@@ -46,7 +46,6 @@ protected:
     void getUserInfoFailed(int type) override;
     void userInfoChanged(GJUserScore* score) override;
 
-    // data loading
     void loadTab(Tab tab);
     void loadModerators(int attempt = 0);
     void loadTopCreators(int attempt = 0);
@@ -58,7 +57,6 @@ protected:
     void onNativeModeratorUserInfoCompleted(std::string const& username, int accountID);
     void clearPendingNativeModeratorRequests();
 
-    // list building
     void buildModeratorsList();
     void buildCreatorsList();
     void buildThumbnailsList();
@@ -73,24 +71,20 @@ protected:
     void hideLoading();
     void ensureBgSilenced();
 
-    // tab state
     Tab m_currentTab = Tab::Moderators;
     cocos2d::CCMenu* m_tabsMenu = nullptr;
     std::vector<CCMenuItemToggler*> m_tabs;
     bool m_isLoadingTab = false;
     bool m_moderatorsRebuildQueued = false;
 
-    // loading
     PaimonLoadingOverlay* m_loadingSpinner = nullptr;
 
-    // list container
     cocos2d::CCNode* m_listContainer = nullptr;
     geode::ScrollLayer* m_scrollView = nullptr;
 
-    // moderators data
     struct ModEntry {
         std::string username;
-        std::string role; // "admin" or "mod"
+        std::string role;
         int accountID = 0;
     };
     std::vector<ModEntry> m_modEntries;
@@ -102,7 +96,6 @@ protected:
     std::string m_activeNativeModeratorUserInfoUsername;
     int m_activeNativeModeratorUserInfoAccountID = 0;
 
-    // creators data
     struct CreatorEntry {
         std::string username;
         int accountID = 0;
@@ -111,7 +104,6 @@ protected:
     };
     std::vector<CreatorEntry> m_creatorEntries;
 
-    // thumbnails data
     struct ThumbnailEntry {
         int levelId = 0;
         float rating = 0.f;
@@ -121,13 +113,12 @@ protected:
     };
     std::vector<ThumbnailEntry> m_thumbnailEntries;
 
-    // FMOD cave effect on menu music
     FMOD::DSP* m_lowpassDSP = nullptr;
     FMOD::DSP* m_reverbDSP = nullptr;
     float m_savedBgVolume = 1.0f;
     bool m_caveApplied = false;
     bool m_isExiting = false;
-    int m_retryTag = 0; // incremented on tab switch to cancel pending retries
+    int m_retryTag = 0;
     Tab m_pendingRetryTab = Tab::Moderators;
     int m_pendingRetryAttempt = 0;
     void onRetryTimer(float dt);

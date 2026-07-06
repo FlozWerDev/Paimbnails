@@ -13,8 +13,6 @@ using namespace geode::prelude;
 
 namespace paimon::texture_studio {
 
-// matjson serialization for SlotIndexEntry
-
 namespace {
 
 matjson::Value indexEntryToJson(SlotIndexEntry const& e) {
@@ -39,14 +37,10 @@ SlotIndexEntry indexEntryFromJson(matjson::Value const& v) {
 
 }  // anonymous namespace
 
-// Singleton
-
 SlotStore& SlotStore::get() {
     static SlotStore instance;
     return instance;
 }
-
-// Lifecycle
 
 void SlotStore::loadIndex() {
     if (m_indexLoaded) return;
@@ -55,7 +49,6 @@ void SlotStore::loadIndex() {
     auto path = SlotPaths::slotsIndexFile();
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
-        // Fresh install: index is empty, nothing to load.
         return;
     }
 
@@ -76,7 +69,6 @@ void SlotStore::loadIndex() {
             }
         }
     }
-    // Sort by modifiedAt descending — newest at the top of the UI.
     std::sort(m_index.begin(), m_index.end(),
         [](SlotIndexEntry const& a, SlotIndexEntry const& b) {
             return a.modifiedAt > b.modifiedAt;
@@ -86,7 +78,6 @@ void SlotStore::loadIndex() {
 }
 
 geode::Result<> SlotStore::saveIndex() {
-    // Make sure the root dir exists.
     std::error_code ec;
     std::filesystem::create_directories(SlotPaths::rootDir(), ec);
     if (ec) {
@@ -106,8 +97,6 @@ geode::Result<> SlotStore::saveIndex() {
     return Ok();
 }
 
-// Active slot
-
 void SlotStore::setActiveSlot(std::string id) {
     if (m_activeSlotId == id) return;
     m_activeSlotId = std::move(id);
@@ -115,8 +104,6 @@ void SlotStore::setActiveSlot(std::string id) {
         log::warn("[texture-studio] saveIndex (setActiveSlot): {}", r.unwrapErr());
     }
 }
-
-// CRUD
 
 bool SlotStore::exists(std::string_view id) const {
     for (auto const& e : m_index) {
@@ -128,12 +115,10 @@ bool SlotStore::exists(std::string_view id) const {
 std::string SlotStore::makeUniqueId(std::string desiredId) const {
     if (!exists(desiredId)) return desiredId;
 
-    // Append _2, _3, ... until we find a free slot.
     for (int i = 2; i < 1000; ++i) {
         auto candidate = desiredId + "_" + std::to_string(i);
         if (!exists(candidate)) return candidate;
     }
-    // Pathological: fall back to a millisecond suffix.
     return desiredId + "_" + std::to_string(nowUnixMs());
 }
 
@@ -154,14 +139,12 @@ geode::Result<std::string> SlotStore::createSlot(TextureProject seed) {
         return Err("createSlot dir setup: {}", r.unwrapErr());
     }
 
-    // Write the project file.
     auto json = matjson::Value(seed);
     auto wr = file::writeString(SlotPaths::projectFile(finalId), json.dump());
     if (!wr) {
         return Err("writeString project: {}", wr.unwrapErr());
     }
 
-    // Cache + index.
     m_projects[finalId] = seed;
     SlotIndexEntry e;
     e.id           = finalId;
@@ -169,7 +152,7 @@ geode::Result<std::string> SlotStore::createSlot(TextureProject seed) {
     e.modifiedAt   = seed.modifiedAt;
     e.createdAt    = seed.createdAt;
     e.hasBuiltOnce = seed.hasBuiltOnce;
-    m_index.insert(m_index.begin(), e);  // newest first
+    m_index.insert(m_index.begin(), e);
 
     if (auto r = saveIndex(); !r) {
         log::warn("[texture-studio] saveIndex (createSlot): {}", r.unwrapErr());
@@ -221,7 +204,6 @@ geode::Result<> SlotStore::saveSlot(TextureProject const& project) {
 
     m_projects[project.id] = project;
 
-    // Refresh the matching index entry (or insert if new).
     bool found = false;
     for (auto& e : m_index) {
         if (e.id == project.id) {
@@ -252,10 +234,8 @@ geode::Result<> SlotStore::saveSlot(TextureProject const& project) {
 geode::Result<> SlotStore::deleteSlot(std::string_view id) {
     loadIndex();
 
-    // Remove from in-memory cache.
     m_projects.erase(std::string(id));
 
-    // Remove from index.
     m_index.erase(
         std::remove_if(m_index.begin(), m_index.end(),
             [&](SlotIndexEntry const& e) { return e.id == id; }),
@@ -263,9 +243,7 @@ geode::Result<> SlotStore::deleteSlot(std::string_view id) {
 
     if (m_activeSlotId == id) m_activeSlotId.clear();
 
-    // Remove the on-disk slot directory recursively. We tolerate failure
-    // (e.g. file held open by another process) — the next saveIndex pass
-    // forgets the slot regardless.
+    // Tolerate failure (e.g. file held open); next saveIndex forgets it anyway.
     auto dir = SlotPaths::slotDir(id);
     std::error_code ec;
     if (std::filesystem::exists(dir, ec)) {

@@ -8,8 +8,6 @@ namespace cocos2d { class CCTexture2D; }
 
 namespace paimon {
 
-// Typed mod events
-
 struct ThumbnailLoadedEvent {
     int levelID = 0;
     std::string source;   // "network", "disk-cache", "ram-cache"

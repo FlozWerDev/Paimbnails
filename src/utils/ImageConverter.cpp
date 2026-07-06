@@ -147,7 +147,6 @@ bool ImageConverter::loadRgbFile(std::string const& rgbFilePath, std::vector<uin
         return false;
     }
     
-    // read header
     RGBHeader header{};
     in.read(reinterpret_cast<char*>(&header), sizeof(header));
     if (!in || header.width == 0 || header.height == 0) {

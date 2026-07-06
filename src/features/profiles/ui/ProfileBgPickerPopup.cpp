@@ -17,8 +17,6 @@ ProfileBgPickerPopup* ProfileBgPickerPopup::create(int accountID) {
 }
 
 bool ProfileBgPickerPopup::init(int accountID) {
-    // Mismas dimensiones que ProfileSettingsPopup para consistencia visual,
-    // ligeramente mas ancho para que entren 4 botones holgadamente.
     if (!Popup::init(400.f, 200.f)) return false;
 
     m_accountID = accountID;
@@ -33,7 +31,6 @@ bool ProfileBgPickerPopup::init(int accountID) {
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu);
 
-    // 4 botones en una fila (Media / Gradient / Video Audio / Reset)
     constexpr float btnSpacing  = 80.f;
     const float    rowY        = cy + 8.f;
     constexpr float labelOffset = -32.f;
@@ -60,8 +57,6 @@ bool ProfileBgPickerPopup::init(int accountID) {
         lbl->setScale(0.34f);
         lbl->setColor(labelColor);
         lbl->setPosition({x, rowY + labelOffset});
-        // Truncar visualmente labels largos (ej "Audio Video" en algunas
-        // localizaciones) para que no choquen entre si.
         const float maxLabelWidth = btnSpacing - 6.f;
         if (lbl->getContentWidth() * lbl->getScale() > maxLabelWidth) {
             float fit = maxLabelWidth / std::max(1.f, lbl->getContentWidth());
@@ -72,10 +67,8 @@ bool ProfileBgPickerPopup::init(int accountID) {
         return btn;
     };
 
-    // Calcula posiciones: 4 botones centrados.
     const float startX = cx - 1.5f * btnSpacing;
 
-    // Media: subir imagen / GIF / video (flujo existente)
     makeBtn(
         Localization::get().getString("profilebg.picker.media").c_str(),
         "GJ_duplicateBtn_001.png", "GJ_editBtn_001.png",
@@ -84,7 +77,6 @@ bool ProfileBgPickerPopup::init(int accountID) {
         {255, 255, 255}
     );
 
-    // Icon Gradient: usa los colores del icono del jugador
     makeBtn(
         Localization::get().getString("profilebg.picker.icon_gradient").c_str(),
         "GJ_paintBtn_001.png", "GJ_colorBtn_001.png",
@@ -93,9 +85,6 @@ bool ProfileBgPickerPopup::init(int accountID) {
         {255, 255, 255}
     );
 
-    // Audio del video del fondo: usa el audio del video como musica de
-    // perfil y borra cualquier musica configurada.  Solo tiene efecto si
-    // el fondo es un video.
     makeBtn(
         Localization::get().getString("profilebg.picker.video_audio").c_str(),
         "GJ_audioOnBtn_001.png", "GJ_playMusicBtn_001.png",
@@ -104,7 +93,6 @@ bool ProfileBgPickerPopup::init(int accountID) {
         {200, 230, 255}
     );
 
-    // Reset: borrar fondo y volver al default
     makeBtn(
         Localization::get().getString("profilebg.picker.reset").c_str(),
         "GJ_deleteBtn_001.png", "GJ_deleteIcon_001.png",
@@ -113,7 +101,6 @@ bool ProfileBgPickerPopup::init(int accountID) {
         {255, 200, 200}
     );
 
-    // Boton de info en la esquina
     {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
         if (!spr) spr = CCSprite::create();

@@ -30,10 +30,8 @@ AutoTuner::Suggestion AutoTuner::tuneForSprite(ImageBuffer const& framePixels,
     auto classified = ClusterClassifier::classify(clusters, framePixels);
     if (classified.clusters.empty()) return result;
 
-    // Pick the luminance to centre the tint on: the brightest of the
-    // *colored* roles (Color1/Color2/Glow), weighted toward the dominant
-    // Color1 cluster. Outline is excluded — it's never tinted, so its
-    // luminance shouldn't drag the exposure.
+    // Centre the tint on the brightest colored role (Color1/Color2/Glow),
+    // weighted toward dominant Color1. Outline is excluded — it's never tinted.
     float targetLum = -1.0f;
     bool  haveColored = false;
     for (auto const& c : classified.clusters) {
@@ -44,21 +42,16 @@ AutoTuner::Suggestion AutoTuner::tuneForSprite(ImageBuffer const& framePixels,
         }
         haveColored = true;
         float lum = luminance601(c.source.r, c.source.g, c.source.b);
-        // Color1 is the dominant fill: give it priority by treating its
-        // luminance as the anchor even if a thin glow is brighter.
         if (c.role == ClusterRole::Color1) {
             targetLum = std::max(targetLum, lum);
         } else if (targetLum < 0.0f) {
-            // Only let secondary roles set the anchor when there's no
-            // Color1 at all.
             targetLum = std::max(targetLum, lum * 0.9f);
         }
     }
     if (!haveColored || targetLum < 0.0f) return result;
 
-    // Setting brightness == target luminance makes the dominant fill map to
-    // factor ≈ 1.0 (full user color, no saturation rescale). Clamp to the
-    // tinter's supported range; PackGen recommends ~100..300.
+    // brightness == target luminance maps the dominant fill to factor ≈ 1.0
+    // (full user color). PackGen supports ~100..300.
     int tuned = std::clamp(static_cast<int>(std::lround(targetLum)), 100, 300);
 
     result.suggestedBrightness = tuned;

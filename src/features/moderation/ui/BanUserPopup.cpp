@@ -41,7 +41,6 @@ bool BanUserPopup::init(std::string const& username) {
     m_input->setPosition({content.width / 2, content.height / 2});
     m_mainLayer->addChild(m_input);
 
-    // emote button
     {
         paimon::emotes::EmoteInputContext ctx;
         ctx.getText = [this]() -> std::string {
@@ -62,7 +61,6 @@ bool BanUserPopup::init(std::string const& username) {
         m_mainLayer->addChild(emoteMenu, 5);
     }
 
-    // Autocomplete
     {
         auto ac = paimon::emotes::EmoteAutocomplete::create(
             m_input->getInputNode(),

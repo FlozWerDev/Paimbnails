@@ -1,20 +1,4 @@
 #pragma once
-//
-// TextureProjectSerialize.hpp - matjson::Serialize specialisations that
-// teach Geode how to convert a TextureProject (and its nested types) to
-// and from matjson::Value.
-//
-// Pattern follows IconConfigStore.cpp: include this header in the .cpp
-// that needs to write/read project.json. The matjson::Serialize<> template
-// resolves at the call site and pulls the conversion in.
-//
-// Why a separate header instead of inline in TextureProject.hpp?
-//   - matjson is a fairly heavy header. Many consumers of TextureProject
-//     (e.g. UI code that just reads the name and modifiedAt) don't need
-//     serialization, and shouldn't pay the compile cost.
-//   - Multiple .cpp files needing serialization can include this header
-//     without ODR conflicts (specialisations are inline-friendly).
-//
 
 #include "TextureProject.hpp"
 
@@ -24,8 +8,6 @@
 #include <algorithm>
 
 namespace paimon::texture_studio::serial {
-
-// Local helpers (exposed in the namespace for unit tests if needed).
 
 inline matjson::Value colorToJson(cocos2d::ccColor3B c) {
     auto arr = matjson::Value::array();
@@ -53,8 +35,6 @@ inline cocos2d::ccColor3B colorFromJson(matjson::Value const& v,
 
 }  // namespace paimon::texture_studio::serial
 
-
-// matjson specialisations
 
 template <>
 struct matjson::Serialize<paimon::texture_studio::ProjectSheetRef> {
@@ -105,8 +85,7 @@ struct matjson::Serialize<paimon::texture_studio::AutoCacheRef> {
     static matjson::Value toJson(paimon::texture_studio::AutoCacheRef const& r) {
         auto obj = matjson::Value::object();
         obj["sprite"]   = r.spriteName;
-        // matjson stores ints as 64-bit signed; we store the hash as
-        // signed because the sign bit is meaningless for hashing.
+        // Hash stored signed; the sign bit is meaningless for hashing.
         obj["hash"]     = static_cast<std::int64_t>(r.spriteHash);
         obj["clusters"] = r.clusterCount;
         return obj;
@@ -122,6 +101,39 @@ struct matjson::Serialize<paimon::texture_studio::AutoCacheRef> {
 };
 
 template <>
+struct matjson::Serialize<paimon::texture_studio::ImageTransform> {
+    static matjson::Value toJson(paimon::texture_studio::ImageTransform const& t) {
+        auto obj = matjson::Value::object();
+        obj["fit"]      = static_cast<int>(t.fitMode);
+        obj["scale"]    = t.scale;
+        obj["offX"]     = t.offsetX;
+        obj["offY"]     = t.offsetY;
+        obj["rot"]      = t.rotationDeg;
+        obj["opacity"]  = t.opacity;
+        obj["flipX"]    = t.flipX;
+        obj["flipY"]    = t.flipY;
+        return obj;
+    }
+
+    static geode::Result<paimon::texture_studio::ImageTransform> fromJson(
+        matjson::Value const& v) {
+        using namespace paimon::texture_studio;
+        ImageTransform t;
+        t.fitMode = static_cast<ImageFitMode>(std::clamp<std::int64_t>(
+            v["fit"].asInt().unwrapOr(0), 0, 2));
+        t.scale       = static_cast<float>(v["scale"].asDouble().unwrapOr(1.0));
+        t.offsetX     = static_cast<float>(v["offX"].asDouble().unwrapOr(0.0));
+        t.offsetY     = static_cast<float>(v["offY"].asDouble().unwrapOr(0.0));
+        t.rotationDeg = static_cast<float>(v["rot"].asDouble().unwrapOr(0.0));
+        t.opacity     = static_cast<int>(std::clamp<std::int64_t>(
+            v["opacity"].asInt().unwrapOr(255), 0, 255));
+        t.flipX       = v["flipX"].asBool().unwrapOr(false);
+        t.flipY       = v["flipY"].asBool().unwrapOr(false);
+        return geode::Ok(t);
+    }
+};
+
+template <>
 struct matjson::Serialize<paimon::texture_studio::SpriteSetting> {
     static matjson::Value toJson(paimon::texture_studio::SpriteSetting const& s) {
         using namespace paimon::texture_studio;
@@ -129,9 +141,14 @@ struct matjson::Serialize<paimon::texture_studio::SpriteSetting> {
         obj["skip"] = s.skip;
         obj["useCustomColors"] = s.useCustomColors;
         obj["hasCustomImage"] = s.hasCustomImage;
+        obj["imageOverlay"] = s.imageOverlay;
         obj["color1"] = serial::colorToJson(s.color1);
         obj["color2"] = serial::colorToJson(s.color2);
         obj["colorGlow"] = serial::colorToJson(s.colorGlow);
+        obj["colorDetail"] = serial::colorToJson(s.colorDetail);
+        if (s.hasCustomImage && !s.imageTransform.isDefault()) {
+            obj["imageTransform"] = matjson::Value(s.imageTransform);
+        }
         return obj;
     }
 
@@ -142,9 +159,16 @@ struct matjson::Serialize<paimon::texture_studio::SpriteSetting> {
         s.skip = v["skip"].asBool().unwrapOr(false);
         s.useCustomColors = v["useCustomColors"].asBool().unwrapOr(false);
         s.hasCustomImage = v["hasCustomImage"].asBool().unwrapOr(false);
+        s.imageOverlay = v["imageOverlay"].asBool().unwrapOr(false);
         s.color1 = serial::colorFromJson(v["color1"], s.color1);
         s.color2 = serial::colorFromJson(v["color2"], s.color2);
         s.colorGlow = serial::colorFromJson(v["colorGlow"], s.colorGlow);
+        s.colorDetail = serial::colorFromJson(v["colorDetail"], s.colorDetail);
+        if (v["imageTransform"].isObject()) {
+            if (auto t = v["imageTransform"].as<ImageTransform>(); t.isOk()) {
+                s.imageTransform = t.unwrap();
+            }
+        }
         return geode::Ok(s);
     }
 };
@@ -172,7 +196,15 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
         obj["color1"]    = serial::colorToJson(p.color1);
         obj["color2"]    = serial::colorToJson(p.color2);
         obj["colorGlow"] = serial::colorToJson(p.colorGlow);
+        obj["colorDetail"] = serial::colorToJson(p.colorDetail);
         obj["brightness"] = p.brightness;
+
+        obj["maskSoftness"]     = p.maskSoftness;
+        obj["clusterPrecision"] = p.clusterPrecision;
+        obj["edgeCleanup"]      = p.edgeCleanup;
+        obj["outlineProtect"]   = p.outlineProtect;
+        obj["saturation"]       = p.saturation;
+        obj["contrast"]         = p.contrast;
 
         obj["includeMediumPort"]     = p.includeMediumPort;
         obj["alternativeGlowOverlay"]= p.alternativeGlowOverlay;
@@ -180,7 +212,13 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
         obj["colorGradientBg"]       = p.colorGradientBg;
         obj["colorMainMenu"]         = p.colorMainMenu;
 
-        // overrides + autoCache: store as object keyed by sprite name.
+        obj["usePackGenAssets"]   = p.usePackGenAssets;
+        obj["tintGoldFont"]       = p.tintGoldFont;
+        obj["colorGoldTitles"]    = p.colorGoldTitles;
+        obj["colorDemonFaces"]    = p.colorDemonFaces;
+        obj["mythicCompat"]       = p.mythicCompat;
+        obj["includeModTextures"] = p.includeModTextures;
+
         auto overrides = matjson::Value::object();
         for (auto const& [k, v] : p.overrides) overrides[k] = matjson::Value(v);
         obj["overrides"] = overrides;
@@ -226,7 +264,21 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
         p.color1     = serial::colorFromJson(v["color1"],     p.color1);
         p.color2     = serial::colorFromJson(v["color2"],     p.color2);
         p.colorGlow  = serial::colorFromJson(v["colorGlow"],  p.colorGlow);
+        p.colorDetail = serial::colorFromJson(v["colorDetail"], p.colorDetail);
         p.brightness = static_cast<int>(v["brightness"].asInt().unwrapOr(160));
+
+        p.maskSoftness = static_cast<float>(
+            v["maskSoftness"].asDouble().unwrapOr(0.35));
+        p.clusterPrecision = static_cast<int>(std::clamp<std::int64_t>(
+            v["clusterPrecision"].asInt().unwrapOr(5), 2, 10));
+        p.edgeCleanup = static_cast<int>(std::clamp<std::int64_t>(
+            v["edgeCleanup"].asInt().unwrapOr(1), 0, 4));
+        p.outlineProtect = static_cast<int>(std::clamp<std::int64_t>(
+            v["outlineProtect"].asInt().unwrapOr(0), 0, 255));
+        p.saturation = static_cast<float>(
+            v["saturation"].asDouble().unwrapOr(1.0));
+        p.contrast = static_cast<float>(
+            v["contrast"].asDouble().unwrapOr(0.0));
 
         p.includeMediumPort     = v["includeMediumPort"].asBool().unwrapOr(false);
         p.alternativeGlowOverlay= v["alternativeGlowOverlay"].asBool().unwrapOr(false);
@@ -234,7 +286,13 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
         p.colorGradientBg       = v["colorGradientBg"].asBool().unwrapOr(false);
         p.colorMainMenu         = v["colorMainMenu"].asBool().unwrapOr(false);
 
-        // overrides / autoCache come back as objects keyed by sprite name.
+        p.usePackGenAssets   = v["usePackGenAssets"].asBool().unwrapOr(true);
+        p.tintGoldFont       = v["tintGoldFont"].asBool().unwrapOr(false);
+        p.colorGoldTitles    = v["colorGoldTitles"].asBool().unwrapOr(false);
+        p.colorDemonFaces    = v["colorDemonFaces"].asBool().unwrapOr(false);
+        p.mythicCompat       = v["mythicCompat"].asBool().unwrapOr(false);
+        p.includeModTextures = v["includeModTextures"].asBool().unwrapOr(true);
+
         if (v["overrides"].isObject()) {
             for (auto const& val : v["overrides"]) {
                 auto entry = val.as<ManualOverrideRef>();

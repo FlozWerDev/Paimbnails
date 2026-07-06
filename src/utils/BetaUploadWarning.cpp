@@ -1,4 +1,5 @@
 ﻿#include "BetaUploadWarning.hpp"
+#include "DynamicPopupRegistry.hpp"
 #include "../core/Settings.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/MDTextArea.hpp>
@@ -7,6 +8,7 @@ using namespace geode::prelude;
 
 bool BetaUploadWarningPopup::init(std::function<void()> onProceed) {
     if (!Popup::init(320.f, 180.f)) return false;
+    paimon::markDynamicPopup(this);
     m_onProceed = std::move(onProceed);
 
     auto content = m_mainLayer->getContentSize();

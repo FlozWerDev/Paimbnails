@@ -1,40 +1,42 @@
 #pragma once
-//
-// TextureStudioLayer.hpp - Top-level entry popup for the texture studio.
-// Shows the slot grid, hosts the "New Pack" flow, and acts as the
-// landing screen the MenuLayer button opens.
-//
-// Layout (matches the mockup in PLAN_TEXTURE_STUDIO.md):
-//
-// Texture Studio              [+ New Pack]
-// [SlotsGridView with cards + "New Pack" tile]
-// Active: "Mi Pack"   [Folder]  [Help]
-//
 
 #include <Geode/Geode.hpp>
+
+#include <string>
 
 namespace paimon::texture_studio {
 
 class SlotsGridView;
 
-class TextureStudioLayer : public geode::Popup {
+// Full-screen pack manager: grid of pack slots with apply/edit/delete,
+// pushed as its own scene (no longer a popup).
+class TextureStudioLayer : public cocos2d::CCLayer {
 public:
     static TextureStudioLayer* create();
+    static cocos2d::CCScene* scene();
+
+    // Push the studio scene with a fade transition.
+    static void open();
 
 protected:
-    bool init();
+    bool init() override;
+    void onEnter() override;
+    void keyBackClicked() override;
 
+    void onBack(cocos2d::CCObject*);
     void onNewPack(cocos2d::CCObject*);
     void onApplySlot(std::string const& slotId);
     void onEditSlot(std::string const& slotId);
     void onDeleteSlot(std::string const& slotId);
     void onOpenFolder(cocos2d::CCObject*);
 
+    void buildBackground();
     void refreshFooter();
 
 private:
     SlotsGridView*           m_grid       = nullptr;
     cocos2d::CCLabelBMFont*  m_activeLbl  = nullptr;
+    bool                     m_enteredOnce = false;
 };
 
 }  // namespace paimon::texture_studio

@@ -16,8 +16,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 LevelColors& LevelColors::get() {
-    // RuntimeLifecycle flushes pending writes explicitly on exit. Keep the
-    // singleton alive to avoid destructor-order issues during shutdown.
+    // Kept alive intentionally: avoids destructor-order issues during shutdown (RuntimeLifecycle flushes on exit).
     static auto* lc = new LevelColors();
     return *lc;
 }
@@ -41,11 +40,9 @@ void LevelColors::load() const {
     std::error_code ec;
     if (!std::filesystem::exists(p, ec)) return;
     
-    // cargar datos desencriptados de .paimon.
     auto data = PaimonFormat::load(p);
     if (data.empty()) return;
     
-    // parsear csv.
     std::string content(data.begin(), data.end());
     std::stringstream ss(content); 
     std::string line;
@@ -81,7 +78,6 @@ void LevelColors::save() const {
     std::string content = ss.str();
     std::vector<uint8_t> data(content.begin(), content.end());
     
-    // guardar encriptado en formato .paimon.
     auto p = path();
     PaimonFormat::save(p, data);
 }
@@ -148,8 +144,7 @@ void LevelColors::extractFromImage(int32_t levelID, cocos2d::CCImage* image) {
     
     if (!imgData || w <= 0 || h <= 0) return;
     
-    // GPU path: use DominantColorsGPU for hardware-accelerated extraction.
-    // Mismo gate que extractFromRawData — ver comentario alli.
+    // Mismo gate de main-thread/GL que extractFromRawData.
     if (paimon::isMainThread() && DominantColorsGPU::isAvailable()) {
         std::pair<DCColor, DCColor> pair;
         if (hasAlpha) {
@@ -163,7 +158,6 @@ void LevelColors::extractFromImage(int32_t levelID, cocos2d::CCImage* image) {
         return;
     }
     
-    // CPU fallback: convertir rgba->rgb24 si necesario.
     std::vector<uint8_t> rgb24;
     const uint8_t* rgbPtr = nullptr;
     
@@ -186,11 +180,7 @@ void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, in
     if (!imgData || w <= 0 || h <= 0) return;
     log::debug("[LevelColors] extractFromRawData: levelID={} {}x{} alpha={}", levelID, w, h, hasAlpha);
     
-    // GPU path: use DominantColorsGPU for hardware-accelerated extraction.
-    // CRITICAL: GL calls SOLO desde main thread. Si esta funcion se llama
-    // desde el CPU pool worker (ThumbnailLoader::decodeImageData) en background,
-    // forzamos el CPU fallback. cocos2d-x no tolera multi-threaded GL en
-    // la mayoria de drivers (Intel iGPU, macOS Metal-on-OpenGL, GLES movil).
+    // CRITICAL: GL solo en main thread; los workers de fondo deben usar el CPU fallback (cocos2d-x GL no es thread-safe).
     if (paimon::isMainThread() && DominantColorsGPU::isAvailable()) {
         std::pair<DCColor, DCColor> pair;
         if (hasAlpha) {
@@ -204,7 +194,6 @@ void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, in
         return;
     }
     
-    // CPU fallback: convertir rgba->rgb24 si necesario.
     std::vector<uint8_t> rgb24;
     const uint8_t* rgbPtr = nullptr;
     
@@ -223,7 +212,6 @@ void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, in
     this->set(levelID, colorA2, colorB2);
 }
 
-// procesar imagen cacheada.
 void processCachedImage(std::filesystem::path const& filepath, int32_t levelID) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) {
@@ -295,13 +283,11 @@ void LevelColors::extractColorsFromCache() {
         }
     };
 
-    // coherencia: escanear ambos orígenes de thumbnails
     scanDir(Mod::get()->getSaveDir() / "thumbnails");
     scanDir(paimon::quality::cacheDir());
     
     log::info("[LevelColors] listo: {} ok, {} saltado, {} procesado", 
               success, skipped, processed);
     
-    // fuerzo escritura si quedaron cambios pendientes del batch
     flushIfDirty();
 }

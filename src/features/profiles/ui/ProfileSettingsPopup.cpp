@@ -34,14 +34,12 @@ bool ProfileSettingsPopup::init(int accountID) {
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu);
 
-    // Grid 2x2 para 4 botones
     float colSpacing = 70.f;
     float rowSpacing = 45.f;
     float topRowY = cy + 8.f;
     float botRowY = cy - rowSpacing + 8.f;
     float labelOffsetY = -24.f;
 
-    // Boton de musica
     {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_musicOnBtn_001.png");
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_playMusicBtn_001.png");
@@ -60,7 +58,6 @@ bool ProfileSettingsPopup::init(int accountID) {
         m_mainLayer->addChild(label);
     }
 
-    // Boton de badge
     {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png");
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_collectible_goldKey_001.png");
@@ -79,7 +76,6 @@ bool ProfileSettingsPopup::init(int accountID) {
         m_mainLayer->addChild(label);
     }
 
-    // Boton de imagen
     {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_duplicateBtn_001.png");
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_editBtn_001.png");
@@ -98,7 +94,6 @@ bool ProfileSettingsPopup::init(int accountID) {
         m_mainLayer->addChild(label);
     }
 
-    // Boton de Comment BG (deshabilitado - saldra en 1.1.0)
     {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_colorBtn_001.png");
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_paintBtn_001.png");
@@ -119,8 +114,6 @@ bool ProfileSettingsPopup::init(int accountID) {
         m_mainLayer->addChild(label);
     }
 
-    // Boton de Global Icon (toggle): usa el cubo del jugador como icono.
-    // Gris cuando esta desactivado, a color cuando esta activo.
     {
         m_globalIconEnabled = paimon::globalicon::GlobalIconService::isEnabledLocally();
 
@@ -138,9 +131,6 @@ bool ProfileSettingsPopup::init(int accountID) {
         }
         m_globalIconSprite = iconSpr;
 
-        // Un SimplePlayer puede quedar con contentSize 0, lo que deja al
-        // CCMenuItemSpriteExtra sin area de toque. Usamos un fondo invisible
-        // con tamaño fijo como hitbox y montamos el icono encima.
         auto hit = CCLayerColor::create(ccc4(0, 0, 0, 0), 34.f, 34.f);
         hit->ignoreAnchorPointForPosition(false);
         hit->setAnchorPoint({0.5f, 0.5f});
@@ -148,7 +138,7 @@ bool ProfileSettingsPopup::init(int accountID) {
         auto btn = CCMenuItemSpriteExtra::create(hit, this, menu_selector(ProfileSettingsPopup::onToggleGlobalIcon));
         btn->setContentSize({34.f, 34.f});
         if (iconSpr) {
-            iconSpr->setPosition({17.f, 17.f}); // centro del hitbox 34x34
+            iconSpr->setPosition({17.f, 17.f});
             btn->addChild(iconSpr);
         }
         btn->setPosition({cx + 45.f, botRowY});
@@ -163,7 +153,6 @@ bool ProfileSettingsPopup::init(int accountID) {
         applyGlobalIconColor();
     }
 
-    // Boton de info
     {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
         if (!spr) spr = CCSprite::create();
@@ -220,7 +209,6 @@ void ProfileSettingsPopup::applyGlobalIconColor() {
         m_globalIconSprite->setColor(m_globalIconColor1);
         m_globalIconSprite->setSecondColor(m_globalIconColor2);
     } else {
-        // Oscuro/gris cuando esta desactivado.
         m_globalIconSprite->setColor({120, 120, 120});
         m_globalIconSprite->setSecondColor({90, 90, 90});
     }
@@ -236,9 +224,6 @@ void ProfileSettingsPopup::onToggleGlobalIcon(CCObject*) {
         return;
     }
 
-    // Flip optimista del estado visual; el resultado real (y la persistencia
-    // del flag) lo maneja el callback en ProfilePage segun la respuesta del
-    // servidor.
     m_globalIconEnabled = !m_globalIconEnabled;
     applyGlobalIconColor();
 

@@ -147,18 +147,15 @@ std::string ProfileThumbs::makePath(int accountID) const {
     return geode::utils::string::pathToString(dir / fmt::format("{}.webp", accountID));
 }
 
-/// ruta legacy (.rgb) para migrar archivos antiguos
 static std::string makeLegacyPath(int accountID) {
     auto dir = getProfileThumbsDir();
     return geode::utils::string::pathToString(dir / fmt::format("{}.rgb", accountID));
 }
 
 bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int height) {
-    // Actualiza el cache en memoria
 
     if (!rgb || width <= 0 || height <= 0) return false;
 
-    // Convierte RGB a RGBA
     size_t pixelCount = static_cast<size_t>(width) * height;
     std::vector<uint8_t> rgbaBuf(pixelCount * 4);
     ImageConverter::rgbToRgbaFast(rgb, rgbaBuf.data(), pixelCount);
@@ -169,7 +166,6 @@ bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int he
 
         auto path = makePath(accountID);
 
-        // Guarda en disco en segundo plano como WebP
         spawnBackground([accountID, width, height, path, data = std::move(rgbaBuf)]() mutable {
             std::vector<uint8_t> encoded;
             if (ImageConverter::rgbaToWebpBuffer(data.data(), width, height, encoded, 85.f)) {
@@ -181,7 +177,6 @@ bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int he
                     log::debug("[ProfileThumbs] Saved profile WebP to disk for account {} ({} bytes)", accountID, encoded.size());
                 }
             } else {
-                // Fallback a PNG
                 std::vector<uint8_t> pngData;
                 if (ImageConverter::rgbaToPngBuffer(data.data(), width, height, pngData)) {
                     std::ofstream out(path, std::ios::binary);
@@ -195,7 +190,6 @@ bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int he
             }
         });
 
-        // Actualiza cache preservando la config anterior
         ccColor3B cA = {255,255,255};
         ccColor3B cB = {255,255,255};
         float wF = 0.6f;
@@ -226,7 +220,6 @@ bool ProfileThumbs::has(int accountID) const {
 void ProfileThumbs::deleteProfile(int accountID) {
     clearCache(accountID);
     std::error_code ec;
-    // Borra ambos formatos
     auto path = makePath(accountID);
     if (std::filesystem::exists(path, ec)) {
         std::filesystem::remove(path, ec);
@@ -240,8 +233,8 @@ void ProfileThumbs::deleteProfile(int accountID) {
 }
 
 CCTexture2D* ProfileThumbs::loadTexture(int accountID) {
-    auto path = makePath(accountID);     // .webp
-    auto legacy = makeLegacyPath(accountID); // .rgb
+    auto path = makePath(accountID);
+    auto legacy = makeLegacyPath(accountID);
     log::debug("[ProfileThumbs] Loading profile thumbnail for account {}: {}", accountID, path);
     
     std::error_code ec;
@@ -253,7 +246,6 @@ CCTexture2D* ProfileThumbs::loadTexture(int accountID) {
         return nullptr;
     }
 
-    // Formato nuevo (WebP/PNG)
     if (hasNew) {
         std::error_code sizeEc;
         auto fileSize = std::filesystem::file_size(path, sizeEc);
@@ -285,7 +277,6 @@ CCTexture2D* ProfileThumbs::loadTexture(int accountID) {
         return nullptr;
     }
 
-    // Formato legacy (.rgb)
     std::ifstream in(legacy, std::ios::binary);
     if (!in) { log::error("[ProfileThumbs] Error opening legacy file: {}", legacy); return nullptr; }
     
@@ -311,7 +302,6 @@ CCTexture2D* ProfileThumbs::loadTexture(int accountID) {
     }
     in.close();
 
-    // Convierte RGB a RGBA
     std::vector<uint8_t> rgbaBuf(h.w * h.h * 4);
     ImageConverter::rgbToRgbaFast(buf.data(), rgbaBuf.data(), static_cast<size_t>(h.w) * h.h);
 
@@ -328,7 +318,6 @@ CCTexture2D* ProfileThumbs::loadTexture(int accountID) {
 }
 
 bool ProfileThumbs::loadRGB(int accountID, std::vector<uint8_t>& out, int& w, int& h) {
-    // Intenta formato nuevo primero
     auto path = makePath(accountID);
     std::error_code ec;
     if (std::filesystem::exists(path, ec) && !ec) {
@@ -346,7 +335,6 @@ bool ProfileThumbs::loadRGB(int accountID, std::vector<uint8_t>& out, int& w, in
             unsigned char* px = stbi_load_from_memory(fileData.data(), static_cast<int>(fileData.size()), &sw, &sh, &sch, 4);
             if (px && sw > 0 && sh > 0 && sw <= 4096 && sh <= 4096) {
                 w = sw; h = sh;
-                // Convierte RGBA a RGB
                 out.resize(static_cast<size_t>(sw) * sh * 3);
                 ImageConverter::rgbaToRgbFast(px, out.data(), static_cast<size_t>(sw) * sh);
                 stbi_image_free(px);
@@ -355,15 +343,11 @@ bool ProfileThumbs::loadRGB(int accountID, std::vector<uint8_t>& out, int& w, in
             if (px) stbi_image_free(px);
         }
     }
-    // Fallback a .rgb
     auto legacy = makeLegacyPath(accountID);
     if (!std::filesystem::exists(legacy, ec) || ec) return false;
     std::ifstream in(legacy, std::ios::binary);
     if (!in) return false;
     Header head{}; in.read(reinterpret_cast<char*>(&head), sizeof(head));
-    // Mismo clamp que loadTexture(): sin el limite de 4096, head.w * head.h * 3
-    // (aritmetica int32) puede desbordar con un header corrupto y producir un
-    // resize() con un tamano basura (bad_alloc o asignacion masiva).
     if (head.fmt != 24 || head.w <= 0 || head.h <= 0 || head.w > 4096 || head.h > 4096) return false;
     out.resize(static_cast<size_t>(head.w) * head.h * 3);
     in.read(reinterpret_cast<char*>(out.data()), out.size());
@@ -376,7 +360,6 @@ void ProfileThumbs::cacheProfile(int accountID, CCTexture2D* texture,
     
     std::lock_guard<std::mutex> lock(m_cacheMutex);
     
-    // Limpia expiradas cada N inserciones
     m_insertsSinceCleanup++;
     if (m_insertsSinceCleanup >= CLEANUP_INTERVAL) {
         clearOldCache();
@@ -386,7 +369,6 @@ void ProfileThumbs::cacheProfile(int accountID, CCTexture2D* texture,
     log::debug("[ProfileThumbs] Caching profile for account {} with colors RGB({},{},{}) -> RGB({},{},{}), width: {}", 
                accountID, colorA.r, colorA.g, colorA.b, colorB.r, colorB.g, colorB.b, widthFactor);
     
-    // Preserva config y gifKey existentes
     ProfileConfig existingConfig;
     std::string existingGifKey;
     auto it = m_profileCache.find(accountID);
@@ -398,13 +380,11 @@ void ProfileThumbs::cacheProfile(int accountID, CCTexture2D* texture,
     m_profileCache[accountID] = ProfileCacheEntry(texture, colorA, colorB, widthFactor);
     m_profileCache[accountID].config = existingConfig;
 
-    // Restaura la gifKey si existia
     if (!existingGifKey.empty()) {
         m_profileCache[accountID].gifKey = existingGifKey;
         log::debug("[ProfileThumbs] Preserved existing gifKey: {} for account {}", existingGifKey, accountID);
     }
 
-    // Actualiza el orden LRU
     auto lruIt = m_lruMap.find(accountID);
     if (lruIt != m_lruMap.end()) {
         m_lruOrder.erase(lruIt->second);
@@ -412,11 +392,9 @@ void ProfileThumbs::cacheProfile(int accountID, CCTexture2D* texture,
     m_lruOrder.push_back(accountID);
     m_lruMap[accountID] = std::prev(m_lruOrder.end());
 
-    // Elimina entradas viejas si excede el limite
     while (m_profileCache.size() > MAX_PROFILE_CACHE_SIZE && !m_lruOrder.empty()) {
         int removeID = m_lruOrder.front();
         if (removeID == accountID) {
-            // No elimina la entrada recien agregada
             break;
         }
         m_lruOrder.pop_front();
@@ -435,7 +413,6 @@ void ProfileThumbs::cacheProfileGIF(int accountID, std::string const& gifKey,
                                     cocos2d::ccColor3B colorA, cocos2d::ccColor3B colorB, float widthFactor) {
     std::lock_guard<std::mutex> lock(m_cacheMutex);
     
-    // Limpia cache viejo periodicamente
     m_insertsSinceCleanup++;
     if (m_insertsSinceCleanup >= CLEANUP_INTERVAL) {
         clearOldCache();
@@ -446,14 +423,12 @@ void ProfileThumbs::cacheProfileGIF(int accountID, std::string const& gifKey,
     
     AnimatedGIFSprite::pinGIF(gifKey);
 
-    // Preserva la config existente
     ProfileConfig existingConfig;
     auto it = m_profileCache.find(accountID);
     if (it != m_profileCache.end()) {
         existingConfig = it->second.config;
     }
 
-    // Solo guarda la key del GIF (no la textura)
     
     m_profileCache[accountID] = ProfileCacheEntry(gifKey, colorA, colorB, widthFactor);
     m_profileCache[accountID].config = existingConfig;
@@ -465,7 +440,6 @@ void ProfileThumbs::cacheProfileConfig(int accountID, ProfileConfig const& confi
     if (it != m_profileCache.end()) {
         it->second.config = config;
     } else {
-        // Crea entrada vacia con solo config
         ProfileCacheEntry entry;
         entry.config = config;
         m_profileCache[accountID] = std::move(entry);
@@ -477,7 +451,6 @@ ProfileConfig ProfileThumbs::getProfileConfig(int accountID) {
     auto it = m_profileCache.find(accountID);
     if (it != m_profileCache.end()) {
         ProfileConfig config = it->second.config;
-        // Incluye la gifKey en la config
         if (!it->second.gifKey.empty()) {
             config.gifKey = it->second.gifKey;
         }
@@ -493,11 +466,9 @@ std::optional<ProfileCacheEntry> ProfileThumbs::getCachedProfile(int accountID) 
         return std::nullopt;
     }
 
-    // Revisa si expiro el cache
     auto now = std::chrono::steady_clock::now();
     if (now - it->second.timestamp > CACHE_DURATION) {
         log::debug("[ProfileThumbs] Cache expired for account {}", accountID);
-        // Limpia del orden LRU
         auto lruIt = m_lruMap.find(accountID);
         if (lruIt != m_lruMap.end()) {
             m_lruOrder.erase(lruIt->second);
@@ -507,7 +478,6 @@ std::optional<ProfileCacheEntry> ProfileThumbs::getCachedProfile(int accountID) 
         return std::nullopt;
     }
 
-    // Marca como recientemente usado
     auto lruIt = m_lruMap.find(accountID);
     if (lruIt != m_lruMap.end()) {
         m_lruOrder.erase(lruIt->second);
@@ -534,7 +504,6 @@ void ProfileThumbs::clearCache(int accountID) {
     removeFromNoProfileCache(accountID);
 }
 
-// El caller debe tener el mutex bloqueado
 void ProfileThumbs::clearOldCache() {
     auto now = std::chrono::steady_clock::now();
     
@@ -605,15 +574,12 @@ void ProfileThumbs::clearPendingDownloads() {
 void ProfileThumbs::spawnBackground(std::function<void()> job) {
     std::lock_guard<std::mutex> lock(m_workerMutex);
     if (!m_workerPool) {
-        // Pool con 2 threads — suficiente para encode WebP + escritura disco
-        // sin saturar el bus de I/O. Lazy init: solo si efectivamente se usa.
         m_workerPool = std::make_unique<paimon::ThreadPool>(2, "PaimonProfileThumbsBG");
     }
     m_workerPool->enqueue(std::move(job));
 }
 
 void ProfileThumbs::pruneFinishedWorkers() {
-    // No-op con ThreadPool — el pool maneja su propia ciclo de vida.
 }
 
 void ProfileThumbs::waitBackgroundWorkers() {
@@ -623,8 +589,6 @@ void ProfileThumbs::waitBackgroundWorkers() {
         poolToShutdown = std::move(m_workerPool);
     }
     if (poolToShutdown) {
-        // ThreadPool::shutdown() ya usa timedJoin con 3s — descarta jobs
-        // pendientes y solo espera a los actualmente en ejecucion.
         poolToShutdown->shutdown();
     }
 }
@@ -634,10 +598,8 @@ void ProfileThumbs::shutdown() {
 }
 
 CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig const& config, CCSize cs, bool onlyBackground) {
-    // si tenemos gifKey intento crear un AnimatedGIFSprite
     AnimatedGIFSprite* gifSprite = nullptr;
     if (!config.gifKey.empty()) {
-        // primero pruebo a crearlo desde el cache
         if (AnimatedGIFSprite::isCached(config.gifKey)) {
             gifSprite = AnimatedGIFSprite::createFromCache(config.gifKey);
         }
@@ -645,26 +607,16 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
 
     if (!texture && !gifSprite) return nullptr;
 
-    // nodo contenedor
     auto container = CCNode::create();
     container->setContentSize(cs);
 
     CCNode* bg = nullptr;
 
-    // tipo de fondo final que se va a usar
     std::string bgType = config.backgroundType;
 
-    // "icon-gradient" se trata como un degradado normal pero NO debe ser
-    // pisado por el modo "thumbnail" aunque exista textura/gif: el usuario
-    // pidio explicitamente un degradado basado en sus iconos y eso manda.
-    // Si no hay textura/gif podemos cargar el flujo de gradiente igual que
-    // antes.
     if (bgType == "icon-gradient") {
         bgType = "gradient";
     } else if ((onlyBackground || bgType == "gradient") && (texture || !config.gifKey.empty())) {
-        // fuerzo modo thumbnail si hay textura/GIF y:
-        // 1. estamos en modo banner (onlyBackground=true)
-        // 2. o config viene en "gradient" por defecto
         bgType = "thumbnail";
     }
 
@@ -725,7 +677,6 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
             if (!bgSprite) bgSprite = CCSprite::createWithTexture(texture);
 
             if (bgSprite) {
-                // clipper para el fondo estatico
                 auto stencil = PaimonDrawNode::create();
                 CCPoint rect[4];
                 rect[0] = ccp(0, 0);
@@ -739,7 +690,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
                 clipper->setAlphaThreshold(0.05f);
                 clipper->setContentSize(cs);
                 clipper->setPosition({0,0});
-                clipper->setZOrder(-10); // bien detras de todo
+                clipper->setZOrder(-10);
                 
                 float targetW = cs.width;
                 float targetH = cs.height;
@@ -753,7 +704,6 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
                 clipper->addChild(bgSprite);
                 bg = clipper;
 
-                // capa oscura extra por encima
                 if (config.darkness > 0.0f) {
                     auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(config.darkness * 255)});
                     overlay->setContentSize(cs);
@@ -764,7 +714,6 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
             }
         }
     } else if (bgType != "none") {
-        // degradado o color solido
         if (config.useGradient) {
             auto grad = CCLayerGradient::create(
                 ccc4(config.colorA.r, config.colorA.g, config.colorA.b, 255),
@@ -773,7 +722,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
             grad->setContentSize(cs);
             grad->setAnchorPoint({0,0});
             grad->setPosition({0,0});
-            grad->setVector({1.f, 0.f}); // horizontal
+            grad->setVector({1.f, 0.f});
             grad->setZOrder(-10);
             bg = grad;
         } else {
@@ -801,7 +750,6 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
         mainSprite = gifSprite;
         contentW = gifSprite->getContentSize().width;
         contentH = gifSprite->getContentSize().height;
-        // me aseguro de que el GIF este actualizando
         gifSprite->scheduleUpdate();
     } else if (texture) {
         auto s = CCSprite::createWithTexture(texture);
@@ -826,7 +774,6 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
         mainSprite->setScaleY(scaleY);
         mainSprite->setScaleX(scaleX);
         
-        // clipping inclinado estilo “banner”
         constexpr float angle = 18.f;
         CCSize scaledSize{ desiredWidth, contentH * scaleY };
         auto mask = PaimonDrawNode::create();
@@ -846,18 +793,15 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
         clip->setContentSize(scaledSize);
         clip->setAnchorPoint({1,0});
         
-        // pego el clip al lado derecho
         clip->setPosition({cs.width, 0});
-        clip->setZOrder(10); // lo dejo por encima del fondo
+        clip->setZOrder(10);
         
-        // ajusto posicion del sprite dentro del clip
         mainSprite->setAnchorPoint({1,0});
         mainSprite->setPosition({scaledSize.width, 0});
         
         clip->addChild(mainSprite);
         container->addChild(clip);
         
-        // linea separadora
         auto separator = CCLayerColor::create({
             config.separatorColor.r, 
             config.separatorColor.g, 
@@ -868,7 +812,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
         separator->setAnchorPoint({0.5f, 0});
         separator->setSkewX(angle);
         separator->setPosition({cs.width - desiredWidth, 0});
-        separator->setZOrder(15); // por encima del clip
+        separator->setZOrder(15);
         container->addChild(separator);
     }
 
@@ -880,13 +824,11 @@ void ProfileThumbs::queueLoad(int accountID, std::string const& username, geode:
         if (callback) callback(false, nullptr);
         return;
     }
-    // 0. miro cache negativa (si ya fallo antes, ni lo intento en esta sesion)
     if (isNoProfile(accountID)) {
         if (callback) callback(false, nullptr);
         return;
     }
 
-    // 1. miro cache primero
     auto cached = getCachedProfile(accountID);
     if (cached) {
         if (cached->texture) {
@@ -899,21 +841,16 @@ void ProfileThumbs::queueLoad(int accountID, std::string const& username, geode:
         }
     }
 
-    // 2. si ya esta en cola, solo apilo el callback
     if (m_pendingCallbacks.find(accountID) != m_pendingCallbacks.end()) {
         m_pendingCallbacks[accountID].push_back(callback);
         return;
     }
 
-    // 3. lo meto en la cola (FIFO, al final)
-    // asi la lista carga de arriba a abajo, y la visibilidad afina el orden
     m_downloadQueue.push_back(accountID);
     m_pendingCallbacks[accountID].push_back(callback);
     
-    // guardo username asociado a esta peticion
     m_usernameMap[accountID] = username;
 
-    // 4. arranco el procesado de la cola
     processQueue();
 }
 
@@ -923,28 +860,20 @@ void ProfileThumbs::notifyVisible(int accountID) {
 
 void ProfileThumbs::processQueue() {
     if (ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) return;
-    // si ya hay un batch en vuelo, espero a que termine
     if (m_batchInFlight) return;
 
-    // si hay binarios pendientes del batch anterior, los proceso primero
     if (!m_binaryQueue.empty()) {
         processBinaryQueue();
         return;
     }
 
-    // si no hay nada en la cola principal, nada que hacer
     if (m_downloadQueue.empty()) return;
 
-    // Perfiles visibles recientes primero (notifyVisible).
-    // Partition visible to front (O(n)) instead of full sort (O(n log n))
     std::stable_partition(m_downloadQueue.begin(), m_downloadQueue.end(),
         [this](int id) {
             return m_visibilityMap.find(id) != m_visibilityMap.end();
         });
 
-    // dreno hasta 16 IDs de la cola para el batch (limite del servidor por
-    // budget de subrequests del Worker Free). El servidor descarta lo que
-    // venga arriba, asi que mandar mas seria desperdicio de bandwidth.
     static constexpr int MAX_BATCH_SIZE = 16;
     std::vector<int> batchIDs;
     while (!m_downloadQueue.empty() && static_cast<int>(batchIDs.size()) < MAX_BATCH_SIZE) {
@@ -964,8 +893,6 @@ void ProfileThumbs::processQueue() {
             if (ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) return;
 
             if (!success) {
-                // fallback: si el endpoint no existe aun o fallo,
-                // meto todo en la cola binaria y bajo uno a uno (sin config batch)
                 log::warn("[ProfileThumbs] Batch check failed, fallback to individual downloads");
                 for (int id : batchIDs) {
                     m_binaryQueue.push_back(id);
@@ -974,7 +901,6 @@ void ProfileThumbs::processQueue() {
                 return;
             }
 
-            // los que NO tienen perfil: notifico y marco cache negativa de golpe
             for (int id : batchIDs) {
                 if (found.count(id) == 0) {
                     markNoProfile(id);
@@ -986,13 +912,11 @@ void ProfileThumbs::processQueue() {
                 }
             }
 
-            // cacheo las configs que vinieron en el batch (ahorro 1 request por perfil)
             for (auto& [id, config] : configs) {
                 m_batchConfigs[id] = config;
                 cacheProfileConfig(id, config);
             }
 
-            // meto los que SI existen en la cola binaria
             for (int id : batchIDs) {
                 if (found.count(id)) {
                     m_binaryQueue.push_back(id);
@@ -1002,10 +926,8 @@ void ProfileThumbs::processQueue() {
             log::info("[ProfileThumbs] Batch result: {} found, {} not found, saved {} config requests",
                 found.size(), batchIDs.size() - found.size(), configs.size());
 
-            // arranco descargas binarias solo de los que existen
             processBinaryQueue();
 
-            // si no hubo binarios (0 found) y quedan IDs pendientes, proceso el siguiente batch
             if (!m_downloadQueue.empty()) {
                 Loader::get()->queueInMainThread([this]() {
                     if (profileThumbsShouldAbort()) return;
@@ -1017,14 +939,9 @@ void ProfileThumbs::processQueue() {
 
 void ProfileThumbs::processBinaryQueue() {
     if (ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) return;
-    // Si solo queda 1 en la cola y ya hay descargas activas, dejamos el flujo individual.
-    // En cuanto haya >=2 items, aprovechamos /api/profilebackground/batch para ahorrar requests.
     if (m_binaryQueue.empty() || m_activeDownloads >= MAX_CONCURRENT_DOWNLOADS) return;
 
     if (m_binaryQueue.size() >= 2) {
-        // Batch path
-        // Drenamos hasta 40 IDs (cap del server). Solo 1 batch en vuelo a la vez,
-        // contabilizado como "1 active download" para no bloquear la cola.
         static constexpr size_t BATCH_CAP = 40;
         std::vector<int> batchIDs;
         std::vector<std::string> batchUsernames;
@@ -1047,7 +964,6 @@ void ProfileThumbs::processBinaryQueue() {
         m_activeDownloads++;
         log::info("[ProfileThumbs] batch background download: {} ids", batchIDs.size());
 
-        // Snapshot de configs vino-en-batch (los iremos consumiendo por id).
         std::unordered_map<int, ProfileConfig> snappedConfigs;
         for (int id : batchIDs) {
             auto it = m_batchConfigs.find(id);
@@ -1065,8 +981,6 @@ void ProfileThumbs::processBinaryQueue() {
                     return;
                 }
 
-                // Para cada ID del batch original, dispatch de imagen + finalizar callback.
-                // Los que fallaron vuelven al fallback individual.
                 std::vector<int> fallbackIds;
                 fallbackIds.reserve(4);
 
@@ -1075,7 +989,6 @@ void ProfileThumbs::processBinaryQueue() {
                     bool itemOk = (itItem != items.end()) && itItem->second.ok && !itItem->second.data.empty();
 
                     if (!success || !itemOk) {
-                        // Servidor no devolvio bytes: requeue para fallback individual.
                         fallbackIds.push_back(accountID);
                         continue;
                     }
@@ -1088,7 +1001,6 @@ void ProfileThumbs::processBinaryQueue() {
                         hasCfg = true;
                     }
 
-                    // Decode bytes (puede ser GIF/MP4/static — el helper lo maneja).
                     ProfileImageService::processProfileBackgroundBytes(accountID, itItem->second.data,
                         [this, accountID, cfg, hasCfg](bool decodeOk, CCTexture2D* texture) {
                             if (ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) return;
@@ -1125,24 +1037,18 @@ void ProfileThumbs::processBinaryQueue() {
                         });
                 }
 
-                // El batch contó como 1 download — ya termino para el accounting de la cola.
                 m_activeDownloads = std::max(0, m_activeDownloads - 1);
 
-                // Re-queue de los que fallaron, para fallback individual.
                 if (!fallbackIds.empty()) {
                     Loader::get()->queueInMainThread([this, fallbackIds]() {
                         if (profileThumbsShouldAbort()) return;
                         for (int id : fallbackIds) {
                             m_binaryQueue.push_back(id);
                         }
-                        // Re-disparamos uno por uno por la ruta legacy (profileImg).
-                        // Para evitar loops infinitos si tambien falla el individual,
-                        // procesamos como en el path antiguo de a uno.
                         processBinaryQueueIndividual();
                     });
                 }
 
-                // Si quedan IDs en la cola principal o secundaria, seguimos.
                 if (!profileThumbsShouldAbort()) {
                     Loader::get()->queueInMainThread([this]() {
                         if (profileThumbsShouldAbort()) return;
@@ -1152,10 +1058,9 @@ void ProfileThumbs::processBinaryQueue() {
                 }
             });
 
-        return; // batch en vuelo, salimos
+        return;
     }
 
-    // Single path (1 elemento)
     processBinaryQueueIndividual();
 }
 
@@ -1174,7 +1079,6 @@ void ProfileThumbs::processBinaryQueueIndividual() {
             m_usernameMap.erase(accountID);
         }
 
-        // si la config ya vino en el batch, la uso y me ahorro el request individual
         ProfileConfig config;
         bool hasConfig = false;
         auto cfgIt = m_batchConfigs.find(accountID);
@@ -1193,7 +1097,6 @@ void ProfileThumbs::processBinaryQueueIndividual() {
 
                 Ref<CCTexture2D> texRef = texture;
 
-                // funcion que notifica callbacks y sigue con la cola
                 auto finalize = [this, accountID, success, texRef](bool configSuccess, ProfileConfig const& finalConfig) {
                     if (success && texRef) {
                         this->cacheProfile(accountID, texRef, finalConfig.colorA, finalConfig.colorB, finalConfig.widthFactor);
@@ -1223,10 +1126,8 @@ void ProfileThumbs::processBinaryQueueIndividual() {
                 };
 
                 if (hasConfig) {
-                    // ya tengo la config del batch, no hago request extra
                     finalize(true, config);
                 } else {
-                    // fallback: si no vino config en batch, la bajo individual
                     ThumbnailAPI::get().downloadProfileConfig(accountID,
                         [finalize](bool configSuccess, ProfileConfig const& dlConfig) {
                             finalize(configSuccess, dlConfig);

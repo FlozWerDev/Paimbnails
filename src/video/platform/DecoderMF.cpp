@@ -9,6 +9,7 @@
 #include <mutex>
 #include <objbase.h>   // CoInitializeEx / CoUninitialize
 #include "../../utils/TimedJoin.hpp"
+#include "../../core/Settings.hpp"
 
 #if defined(__SSE2__) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2) || defined(_M_X64)
 #include <emmintrin.h>
@@ -166,7 +167,6 @@ void releaseD3D11Safely(ID3D11Device*& dev, ID3D11DeviceContext*& ctx, IMFDXGIDe
 }
 } // namespace
 
-// Open
 bool DecoderMF::open(const std::string& path) {
     closeInternal();
     m_decodeThreadDetached.store(false, std::memory_order_release);
@@ -187,9 +187,27 @@ bool DecoderMF::open(const std::string& path) {
         return false;
     }
 
-    if (!m_ring.init(m_width, m_height)) {
+    if (!m_ring.init(m_outWidth, m_outHeight)) {
         closeInternal();
         return false;
+    }
+
+    if (m_downscaleFactor > 1) {
+        int uvW = (m_width + 1) / 2;
+        int uvH = (m_height + 1) / 2;
+        m_scratch.planeY  = Frame::allocAligned(Frame::alignedSize(m_width, m_height));
+        m_scratch.planeCb = Frame::allocAligned(Frame::alignedSize(uvW, uvH));
+        m_scratch.planeCr = Frame::allocAligned(Frame::alignedSize(uvW, uvH));
+        m_scratch.strideY  = Frame::alignedStride(m_width);
+        m_scratch.strideCb = Frame::alignedStride(uvW);
+        m_scratch.strideCr = Frame::alignedStride(uvW);
+        m_scratch.width  = m_width;
+        m_scratch.height = m_height;
+        if (!m_scratch.planeY || !m_scratch.planeCb || !m_scratch.planeCr) {
+            geode::log::warn("DecoderMF: scratch alloc failed, disabling downscale");
+            closeInternal();
+            return false;
+        }
     }
 
     m_finished.store(false, std::memory_order_relaxed);
@@ -262,7 +280,6 @@ bool DecoderMF::setupReader(const std::string& path) {
     std::string normPath = path;
     std::replace(normPath.begin(), normPath.end(), '/', '\\');
 
-    // Wide string conversion for MFCreateSourceReaderFromURL
     int wLen = MultiByteToWideChar(CP_UTF8, 0, normPath.c_str(), -1, nullptr, 0);
     if (wLen <= 0) { attrs->Release(); return false; }
     auto* wPath = new (std::nothrow) wchar_t[wLen];
@@ -284,7 +301,6 @@ bool DecoderMF::setupReader(const std::string& path) {
         return false;
     }
 
-    // Retrieve actual dimensions from the reader
     IMFMediaType* currentType = nullptr;
     hr = m_reader->GetCurrentMediaType(
         static_cast<UINT32>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), &currentType);
@@ -311,7 +327,30 @@ bool DecoderMF::setupReader(const std::string& path) {
     m_width  = static_cast<int>(w);
     m_height = static_cast<int>(h);
 
-    // Duration
+    // Resolve output (decode) resolution from the video-quality setting. A
+    // smaller decode size shrinks the ring buffer, GL textures, PBOs and the
+    // resolve FBO — the dominant video RAM consumers. Integer factor keeps the
+    // aspect ratio and avoids chroma-alignment artifacts; dims stay even for
+    // 4:2:0. High quality (cap 0) keeps native resolution and the zero-overhead
+    // direct-copy path.
+    m_outWidth  = m_width;
+    m_outHeight = m_height;
+    m_downscaleFactor = 1;
+    int cap = paimon::settings::video::videoMaxDecodeDimension();
+    if (cap > 0) {
+        int maxDim = std::max(m_width, m_height);
+        if (maxDim > cap) {
+            int f = std::min((maxDim + cap - 1) / cap, 4);
+            if (f >= 2) {
+                m_downscaleFactor = f;
+                m_outWidth  = std::max(2, (m_width  / f) & ~1);
+                m_outHeight = std::max(2, (m_height / f) & ~1);
+                geode::log::info("DecoderMF: downscaling {}x{} -> {}x{} (factor {}, quality cap {})",
+                    m_width, m_height, m_outWidth, m_outHeight, f, cap);
+            }
+        }
+    }
+
     PROPVARIANT var;
     hr = m_reader->GetPresentationAttribute(
         static_cast<UINT32>(MF_SOURCE_READER_MEDIASOURCE),
@@ -326,7 +365,6 @@ bool DecoderMF::setupReader(const std::string& path) {
     return true;
 }
 
-// Output format selection
 bool DecoderMF::setOutputFormat() {
     const GUID formatsToTry[] = {
         MFVideoFormat_NV12,  // native MF format — no conversion, unambiguous CbCr order
@@ -650,11 +688,13 @@ bool DecoderMF::copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresourc
     return true;
 }
 
-// Decode loop
 void DecoderMF::startDecoding() {
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) {
-        m_decodeThreadDetached.store(false, std::memory_order_release);
-    }
+    // A detached worker (its join timed out) may still be running decodeLoop;
+    // spawning a second thread would put two producers on the SPSC ring and call
+    // the non-thread-safe IMFSourceReader concurrently. Treat detached as
+    // terminal, matching DecoderPLM/DecoderAVF and the isTerminal() contract that
+    // VideoPlayer relies on to drop and recreate the decoder.
+    if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
     if (m_decoding.load(std::memory_order_relaxed)) return;
     m_decoding.store(true, std::memory_order_relaxed);
     m_finished.store(false, std::memory_order_relaxed);
@@ -704,7 +744,6 @@ void DecoderMF::decodeLoop() {
 
     // Raise decode thread priority to reduce ReadSample latency
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-
     int frameCount = 0;
     while (m_decoding.load(std::memory_order_relaxed)) {
         if (m_ring.isFull()) {
@@ -754,12 +793,10 @@ void DecoderMF::decodeLoop() {
             continue;
         }
 
-        // Get PTS
         LONGLONG pts100ns = 0;
         sample->GetSampleTime(&pts100ns);
         slot->pts = static_cast<double>(pts100ns) / 10000000.0;
 
-        // Extract buffer
         IMFMediaBuffer* buf = nullptr;
         hr = sample->GetBufferByIndex(0, &buf);
         if (FAILED(hr) || !buf) {
@@ -771,6 +808,10 @@ void DecoderMF::decodeLoop() {
         buf->GetCurrentLength(&bufLen);
 
         bool copied = false;
+
+        // When downscaling, decode into the native-sized scratch then box-average
+        // into the (smaller) ring slot. Otherwise write straight into the slot.
+        Frame* dst = (m_downscaleFactor > 1) ? &m_scratch : slot;
 
         // Path 1: D3D11 surface (DXVA hardware decode)
         // When DXVA is active, the buffer may contain a D3D11 texture surface
@@ -785,7 +826,7 @@ void DecoderMF::decodeLoop() {
                 if (SUCCEEDED(hr) && tex) {
                     dxgiBuf->GetSubresourceIndex(&subresource);
 
-                    copied = copyPlanesFromD3D11(tex, subresource, *slot);
+                    copied = copyPlanesFromD3D11(tex, subresource, *dst);
 
                     tex->Release();
                 }
@@ -805,7 +846,7 @@ void DecoderMF::decodeLoop() {
                                        &scanline0, &lStride,
                                        nullptr, &cbBuffer);
                 if (SUCCEEDED(hr)) {
-                    copyPlanesToSlot2D(scanline0, lStride, *slot, static_cast<size_t>(cbBuffer));
+                    copyPlanesToSlot2D(scanline0, lStride, *dst, static_cast<size_t>(cbBuffer));
                     copied = true;
                     buf2d->Unlock2D();
                 }
@@ -818,7 +859,7 @@ void DecoderMF::decodeLoop() {
             BYTE* data = nullptr;
             hr = buf->Lock(&data, nullptr, &bufLen);
             if (SUCCEEDED(hr) && data) {
-                copyPlanesToSlotLinear(data, bufLen, *slot);
+                copyPlanesToSlotLinear(data, bufLen, *dst);
                 copied = true;
                 buf->Unlock();
             }
@@ -828,7 +869,10 @@ void DecoderMF::decodeLoop() {
         sample->Release();
 
         if (copied) {
-            m_dxvaReadbackFailures = 0;  // reset on success
+            if (m_downscaleFactor > 1) {
+                downscalePlanes(m_scratch, *slot, m_downscaleFactor);
+            }
+            m_dxvaReadbackFailures = 0;
             m_ring.commitWrite();
             ++frameCount;
             if (frameCount == 1) {
@@ -859,7 +903,6 @@ void DecoderMF::decodeLoop() {
 
 // DXVA fallback — recreate reader for software decode
 bool DecoderMF::fallbackToSoftwareDecode(const std::string& path) {
-    // Disable DXVA for this decoder instance
     m_dxvaEnabled = false;
     m_dxvaReadbackFailures = 0;
 
@@ -882,7 +925,7 @@ bool DecoderMF::fallbackToSoftwareDecode(const std::string& path) {
         m_reader = nullptr;
     }
 
-    // Create new reader WITHOUT D3D manager — forces software decode
+    // Create a new reader WITHOUT the D3D manager to force software decode.
     IMFAttributes* attrs = nullptr;
     HRESULT hr = MFCreateAttributes(&attrs, 3);
     if (FAILED(hr)) return false;
@@ -892,13 +935,11 @@ bool DecoderMF::fallbackToSoftwareDecode(const std::string& path) {
         geode::log::warn("DecoderMF: fallback - failed to set MF_LOW_LATENCY");
     }
 
-    // Explicitly disable DXVA to force software decode
     hr = attrs->SetUINT32(MF_SOURCE_READER_DISABLE_DXVA, TRUE);
     if (FAILED(hr)) {
         geode::log::warn("DecoderMF: fallback - failed to disable DXVA");
     }
 
-    // Normalize path
     std::string normPath = path;
     std::replace(normPath.begin(), normPath.end(), '/', '\\');
 
@@ -917,7 +958,6 @@ bool DecoderMF::fallbackToSoftwareDecode(const std::string& path) {
         return false;
     }
 
-    // Re-set output format
     if (!setOutputFormat()) {
         geode::log::warn("DecoderMF: fallback - failed to set output format");
         return false;
@@ -927,7 +967,6 @@ bool DecoderMF::fallbackToSoftwareDecode(const std::string& path) {
     return true;
 }
 
-// Seek
 void DecoderMF::seekTo(double seconds) {
     if (!m_reader) return;
     bool wasDecoding = m_decoding.load(std::memory_order_relaxed);
@@ -946,7 +985,41 @@ void DecoderMF::seekTo(double seconds) {
     if (wasDecoding) startDecoding();
 }
 
-// Accessors
+// Box-average a single 8-bit plane by an integer factor. Averages each f×f
+// source block into one destination pixel; edge blocks clamp to plane bounds.
+static void boxDownscalePlane(const uint8_t* src, int srcStride, int srcW, int srcH,
+                              uint8_t* dst, int dstStride, int dstW, int dstH, int f) {
+    for (int dy = 0; dy < dstH; ++dy) {
+        int sy0 = dy * f;
+        int sy1 = std::min(sy0 + f, srcH);
+        uint8_t* dstRow = dst + dy * dstStride;
+        for (int dx = 0; dx < dstW; ++dx) {
+            int sx0 = dx * f;
+            int sx1 = std::min(sx0 + f, srcW);
+            unsigned sum = 0, count = 0;
+            for (int sy = sy0; sy < sy1; ++sy) {
+                const uint8_t* srcRow = src + sy * srcStride;
+                for (int sx = sx0; sx < sx1; ++sx) {
+                    sum += srcRow[sx];
+                    ++count;
+                }
+            }
+            dstRow[dx] = count ? static_cast<uint8_t>(sum / count) : 0;
+        }
+    }
+}
+
+void DecoderMF::downscalePlanes(const Frame& src, Frame& dst, int factor) {
+    boxDownscalePlane(src.planeY, src.strideY, m_width, m_height,
+                      dst.planeY, dst.strideY, m_outWidth, m_outHeight, factor);
+    int srcUvW = (m_width + 1) / 2,  srcUvH = (m_height + 1) / 2;
+    int dstUvW = (m_outWidth + 1) / 2, dstUvH = (m_outHeight + 1) / 2;
+    boxDownscalePlane(src.planeCb, src.strideCb, srcUvW, srcUvH,
+                      dst.planeCb, dst.strideCb, dstUvW, dstUvH, factor);
+    boxDownscalePlane(src.planeCr, src.strideCr, srcUvW, srcUvH,
+                      dst.planeCr, dst.strideCr, dstUvW, dstUvH, factor);
+}
+
 bool DecoderMF::consumeFrame(Frame& outFrame) {
     auto* slot = m_ring.nextRead();
     if (!slot) return false;
@@ -988,8 +1061,8 @@ bool DecoderMF::skipFrame() {
 }
 
 double DecoderMF::getDuration() const { return m_duration; }
-int DecoderMF::getWidth()  const { return m_width; }
-int DecoderMF::getHeight() const { return m_height; }
+int DecoderMF::getWidth()  const { return m_outWidth  > 0 ? m_outWidth  : m_width; }
+int DecoderMF::getHeight() const { return m_outHeight > 0 ? m_outHeight : m_height; }
 bool DecoderMF::isFinished() const {
     return m_finished.load(std::memory_order_acquire);
 }
@@ -1010,7 +1083,6 @@ void DecoderMF::releaseFrame() {
     if (m_ring.peekRead()) m_ring.commitRead();
 }
 
-// Close
 void DecoderMF::closeInternal() {
     stopDecoding();
 
@@ -1090,6 +1162,13 @@ void DecoderMF::closeInternal() {
     m_stagingWidth = 0;
     m_stagingHeight = 0;
     m_videoPath.clear();
+
+    // Decode thread is joined here, so the scratch is no longer in use.
+    Frame::freeAligned(m_scratch.planeY);
+    Frame::freeAligned(m_scratch.planeCb);
+    Frame::freeAligned(m_scratch.planeCr);
+    m_scratch.planeY = m_scratch.planeCb = m_scratch.planeCr = nullptr;
+    m_downscaleFactor = 1;
 }
 
 } // namespace paimon

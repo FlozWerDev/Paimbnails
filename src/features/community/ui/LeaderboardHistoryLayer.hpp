@@ -19,7 +19,6 @@ protected:
     void onExitTransitionDidStart() override;
     void update(float dt) override;
     
-    // CCMouseDelegate
     bool ccMouseScroll(float x, float y);
 
     void onBack(cocos2d::CCObject* sender);
@@ -32,7 +31,6 @@ protected:
     void createList();
     void updatePageButtons();
 
-    // LevelManagerDelegate
     void loadLevelsFinished(cocos2d::CCArray* levels, char const* key) override;
     void loadLevelsFailed(char const* key) override;
     void setupPageInfo(gd::string, char const*) override;
@@ -42,7 +40,6 @@ protected:
     std::vector<CCMenuItemToggler*> m_tabs;
     std::string m_currentType = "daily";
 
-    // history data
     struct HistoryEntry {
         int levelID = 0;
         long long setAt = 0;
@@ -52,7 +49,6 @@ protected:
     };
     std::vector<HistoryEntry> m_entries;
 
-    // pagination
     static constexpr int ITEMS_PER_PAGE = 4;
     int m_currentPage = 0;
     int m_totalServerItems = 0;
@@ -64,7 +60,6 @@ protected:
     cocos2d::CCNode* m_listContainer = nullptr;
     geode::ScrollLayer* m_scrollView = nullptr;
 
-    // cave FMOD effect on menu music
     FMOD::DSP* m_lowpassDSP = nullptr;
     FMOD::DSP* m_reverbDSP = nullptr;
     float m_savedBgVolume = 1.0f;

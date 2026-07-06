@@ -1,6 +1,7 @@
 ﻿#include "ExtendedKeybindEditPopup.hpp"
 
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/loader/SettingV3.hpp>
@@ -65,6 +66,7 @@ bool ExtendedKeybindEditPopup::init(
     SaveCallback onSave
 ) {
     if (!Popup::init(kPopupW, kPopupH)) return false;
+    paimon::markDynamicPopup(this);
 
     m_settingKey = std::move(settingKey);
     m_title = std::move(title);

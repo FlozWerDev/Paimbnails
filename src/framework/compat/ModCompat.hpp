@@ -8,7 +8,6 @@
 namespace paimon::compat {
 
 struct ModCompat {
-    // Texture mods
     static bool isHappyTexturesLoaded() {
         return geode::Loader::get()->isModLoaded("alphalaneous.happy_textures");
     }
@@ -21,7 +20,6 @@ struct ModCompat {
         return geode::Loader::get()->isModLoaded("prevter.imageplus");
     }
 
-    // true if any texture mod is active
     static bool anyTextureModLoaded() {
         return isHappyTexturesLoaded() || isTextureLdrLoaded() || isImagePlusLoaded();
     }

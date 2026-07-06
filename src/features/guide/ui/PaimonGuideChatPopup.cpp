@@ -1,5 +1,6 @@
 ﻿#include "PaimonGuideChatPopup.hpp"
 
+#include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/PaimonGuideService.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -94,6 +95,7 @@ PaimonGuideChatPopup* PaimonGuideChatPopup::create() {
 
 bool PaimonGuideChatPopup::init() {
     if (!Popup::init(380.f, 240.f)) return false;
+    paimon::markDynamicPopup(this);
 
     auto title = tr("pai.guide.title", "Paimon Guide");
     this->setTitle(title.c_str());

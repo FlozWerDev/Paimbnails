@@ -9,8 +9,8 @@
 #include "../../../utils/VideoThumbnailSprite.hpp"
 #include "../../../utils/FormatDetect.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/ThreadPool.hpp"
 #include "ProfileThumbs.hpp"
-#include "../../thumbnails/services/ThumbnailTransportClient.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <algorithm>
@@ -121,6 +121,76 @@ std::filesystem::path getProfileImgCachePath(int accountID) {
            fmt::format("{}.dat", accountID);
 }
 
+paimon::ThreadPool& profileImagePool() {
+    static auto* pool = new paimon::ThreadPool(2, "PaimonProfileImg");
+    return *pool;
+}
+
+int profileImageMaxDim() {
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    return 768;
+#else
+    return 1024;
+#endif
+}
+
+void decodeStaticProfileImageAsync(std::shared_ptr<std::vector<uint8_t>> data,
+                                   ProfileImageService::DownloadCallback callback) {
+    if (!data || data->empty()) {
+        queueInMainThread([callback]() {
+            if (callback) callback(false, nullptr);
+        });
+        return;
+    }
+
+    profileImagePool().enqueue([data = std::move(data), callback = std::move(callback)]() mutable {
+        if (paimon::isRuntimeShuttingDown()) return;
+
+        int w = 0;
+        int h = 0;
+        int channels = 0;
+        unsigned char* pixels = stbi_load_from_memory(
+            data->data(), static_cast<int>(data->size()), &w, &h, &channels, 4);
+
+        if (!pixels || w <= 0 || h <= 0 || w > 4096 || h > 4096) {
+            if (pixels) stbi_image_free(pixels);
+            queueInMainThread([callback = std::move(callback)]() mutable {
+                if (paimon::isRuntimeShuttingDown()) return;
+                if (callback) callback(false, nullptr);
+            });
+            return;
+        }
+
+        std::vector<uint8_t> rgba;
+        int outW = w;
+        int outH = h;
+        int maxDim = profileImageMaxDim();
+        if (w > maxDim || h > maxDim) {
+            auto ds = ImageLoadHelper::downsampleForCache(pixels, w, h, maxDim);
+            if (!ds.pixels.empty() && ds.width > 0 && ds.height > 0) {
+                rgba = std::move(ds.pixels);
+                outW = ds.width;
+                outH = ds.height;
+            }
+        }
+        if (rgba.empty()) {
+            rgba.assign(pixels, pixels + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
+        }
+        stbi_image_free(pixels);
+
+        queueInMainThread([rgba = std::move(rgba), outW, outH, callback = std::move(callback)]() mutable {
+            if (paimon::isRuntimeShuttingDown()) return;
+            auto loaded = ImageLoadHelper::createFromRGBA(rgba.data(), outW, outH, false);
+            if (!loaded.success || !loaded.texture) {
+                if (callback) callback(false, nullptr);
+                return;
+            }
+            loaded.texture->autorelease();
+            if (callback) callback(true, loaded.texture);
+        });
+    });
+}
+
 void pruneProfileImgCacheVariants(int accountID) {
     auto cacheDir = getProfileImgCacheDir();
     std::error_code ec;
@@ -171,7 +241,6 @@ void ProfileImageService::clearProfileImgGifKey(int accountID) {
     m_profileImgGifKeys.erase(getProfileVariantSlot(accountID));
 }
 
-// Subidas de banner
 
 void ProfileImageService::uploadProfile(int accountID, std::vector<uint8_t> const& pngData,
                                         std::string const& username, UploadCallback callback) {
@@ -187,9 +256,7 @@ void ProfileImageService::uploadProfile(int accountID, std::vector<uint8_t> cons
             if (success) {
                 m_uploadCount++;
                 ProfileThumbs::get().deleteProfile(accountID);
-                // Invalidar cache RAM
                 invalidateProfileImgCache(accountID);
-                // Invalidar cache en disco para forzar re-descarga
                 std::error_code ec;
                 auto cachePath = ::getProfileImgCachePath(accountID);
                 if (std::filesystem::exists(cachePath, ec)) {
@@ -216,9 +283,7 @@ void ProfileImageService::uploadProfileGIF(int accountID, std::vector<uint8_t> c
             if (success) {
                 m_uploadCount++;
                 ProfileThumbs::get().deleteProfile(accountID);
-                // Invalidar cache RAM
                 invalidateProfileImgCache(accountID);
-                // Invalidar cache en disco para forzar re-descarga
                 std::error_code ec;
                 auto cachePath = ::getProfileImgCachePath(accountID);
                 if (std::filesystem::exists(cachePath, ec)) {
@@ -240,7 +305,6 @@ void ProfileImageService::uploadProfileVideo(int accountID, std::vector<uint8_t>
     }
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
-    // Normaliza a H.264+AAC antes de subir
     auto normalRes = paimon::video::VideoNormalizer::normalizeData(
         mp4Data, fmt::format("upload_profile_{}", accountID));
     auto const& uploadData = normalRes.isOk() ? normalRes.unwrap() : mp4Data;
@@ -253,9 +317,7 @@ void ProfileImageService::uploadProfileVideo(int accountID, std::vector<uint8_t>
             if (success) {
                 m_uploadCount++;
                 ProfileThumbs::get().deleteProfile(accountID);
-                // Invalidar cache RAM
                 invalidateProfileImgCache(accountID);
-                // Invalidar cache en disco para forzar re-descarga
                 std::error_code ec;
                 auto cachePath = ::getProfileImgCachePath(accountID);
                 if (std::filesystem::exists(cachePath, ec)) {
@@ -268,7 +330,6 @@ void ProfileImageService::uploadProfileVideo(int accountID, std::vector<uint8_t>
         });
 }
 
-// Descarga de banner
 
 void ProfileImageService::downloadProfile(int accountID, std::string const& username,
                                           DownloadCallback callback) {
@@ -286,7 +347,6 @@ void ProfileImageService::processProfileBackgroundBytes(int profileAccountID,
                                                         DownloadCallback callback) {
     if (data.empty()) { callback(false, nullptr); return; }
 
-    // Detecta MP4
     bool isMP4 = data.size() > 8 &&
         data[4]=='f' && data[5]=='t' && data[6]=='y' && data[7]=='p';
 
@@ -321,11 +381,9 @@ void ProfileImageService::processProfileBackgroundBytes(int profileAccountID,
         return;
     }
 
-    auto* texture = ThumbnailTransportClient::bytesToTexture(data);
-    callback(texture != nullptr, texture);
+    decodeStaticProfileImageAsync(std::make_shared<std::vector<uint8_t>>(data), callback);
 }
 
-// Verificacion batch
 
 void ProfileImageService::batchCheckProfiles(std::vector<int> const& accountIDs, BatchCheckCallback callback) {
     if (!m_serverEnabled || accountIDs.empty()) {
@@ -347,14 +405,12 @@ void ProfileImageService::batchCheckProfiles(std::vector<int> const& accountIDs,
             }
             auto json = res.unwrap();
 
-            // Parsea perfiles encontrados
             std::unordered_set<int> found;
             paimon::json::forEachInArray(json["found"], [&](matjson::Value const& v) {
                 auto id = v.asInt();
                 if (id.isOk()) found.insert(id.unwrap());
             });
 
-            // Parsea configuraciones
             std::unordered_map<int, ProfileConfig> configs;
             if (json.contains("configs") && json["configs"].isObject()) {
                 for (auto const& [key, val] : json["configs"]) {
@@ -390,14 +446,11 @@ void ProfileImageService::batchCheckProfiles(std::vector<int> const& accountIDs,
                     if (val.contains("separatorOpacity")) config.separatorOpacity = val["separatorOpacity"].asInt().unwrapOr(50);
                     if (val.contains("widthFactor"))      config.widthFactor      = (float)val["widthFactor"].asDouble().unwrapOr(0.60);
 
-                    // Gradient effect (animaciones para icon-gradient / gradient)
                     if (val.contains("gradientEffect")) config.gradientEffect = val["gradientEffect"].asString().unwrapOr("none");
                     if (val.contains("gradientSpeed"))  config.gradientSpeed  = (float)val["gradientSpeed"].asDouble().unwrapOr(1.0);
 
-                    // Audio del video del fondo de perfil
                     if (val.contains("useVideoAudio")) config.useVideoAudio = val["useVideoAudio"].asBool().unwrapOr(false);
 
-                    // Config del fondo de comentarios
                     if (val.contains("commentBgType"))        config.commentBgType        = val["commentBgType"].asString().unwrapOr("none");
                     if (val.contains("commentBgThumbnailId")) config.commentBgThumbnailId = val["commentBgThumbnailId"].asString().unwrapOr("");
                     if (val.contains("commentBgThumbnailPos")) config.commentBgThumbnailPos = val["commentBgThumbnailPos"].asInt().unwrapOr(1);
@@ -423,7 +476,6 @@ void ProfileImageService::batchCheckProfiles(std::vector<int> const& accountIDs,
         });
 }
 
-// Subidas de imagen de perfil
 
 void ProfileImageService::uploadProfileImg(int accountID, std::vector<uint8_t> const& imgData,
                                            std::string const& username,
@@ -440,16 +492,13 @@ void ProfileImageService::uploadProfileImg(int accountID, std::vector<uint8_t> c
         [this, callback, accountID](bool success, std::string const& message) {
             if (success) {
                 m_uploadCount++;
-                // Invalidar cache RAM
                 invalidateProfileImgCache(accountID);
-                // Invalidar cache en disco para forzar re-descarga
                 std::error_code ec;
                 auto cachePath = ::getProfileImgCachePath(accountID);
                 if (std::filesystem::exists(cachePath, ec)) {
                     std::filesystem::remove(cachePath, ec);
                     log::info("[ProfileImageService] Invalidated disk cache for accountID={}", accountID);
                 }
-                // Limpiar GIF key si existe
                 clearProfileImgGifKey(accountID);
             }
             callback(success, message);
@@ -461,7 +510,6 @@ void ProfileImageService::uploadProfileImgGIF(int accountID, std::vector<uint8_t
     uploadProfileImg(accountID, gifData, username, "image/gif", callback);
 }
 
-// Descarga de imagen de perfil
 
 void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }
@@ -474,7 +522,6 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
                 return;
             }
 
-            // Cache en disco
             {
                 auto cacheDir = getProfileImgCacheDir();
                 std::error_code ec;
@@ -527,20 +574,10 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
 
             clearProfileImgGifKey(profileAccountID);
             auto dataCopy = std::make_shared<std::vector<uint8_t>>(data);
-            queueInMainThread([callback, dataCopy]() {
-                if (paimon::isRuntimeShuttingDown()) return;
-                auto loaded = ImageLoadHelper::loadWithSTBFromMemory(dataCopy->data(), dataCopy->size());
-                if (!loaded.success || !loaded.texture) {
-                    callback(false, nullptr);
-                    return;
-                }
-                loaded.texture->autorelease();
-                callback(true, loaded.texture);
-            });
+            decodeStaticProfileImageAsync(std::move(dataCopy), callback);
         }, isSelf);
 }
 
-// Perfil pendiente (moderadores)
 
 void ProfileImageService::downloadPendingProfile(int accountID, DownloadCallback callback) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }
@@ -551,12 +588,10 @@ void ProfileImageService::downloadPendingProfile(int accountID, DownloadCallback
     HttpClient::get().downloadFromUrl(url,
         [callback](bool success, std::vector<uint8_t> const& data, int, int) {
             if (!success || data.empty()) { callback(false, nullptr); return; }
-            auto* texture = ThumbnailTransportClient::bytesToTexture(data);
-            callback(texture != nullptr, texture);
+            decodeStaticProfileImageAsync(std::make_shared<std::vector<uint8_t>>(data), callback);
         });
 }
 
-// profile config
 
 void ProfileImageService::uploadProfileConfig(int accountID, ProfileConfig const& config,
                                               ActionCallback callback) {
@@ -585,16 +620,11 @@ void ProfileImageService::uploadProfileConfig(int accountID, ProfileConfig const
     json["separatorOpacity"] = config.separatorOpacity;
     json["widthFactor"]      = config.widthFactor;
 
-    // Gradient effect (animaciones para icon-gradient / gradient)
     json["gradientEffect"] = config.gradientEffect;
     json["gradientSpeed"]  = config.gradientSpeed;
 
-    // Audio del video del fondo de perfil (cuando el usuario eligio
-    // "Audio Video" en el picker, los visitantes escuchan el audio del propio
-    // video en lugar de la musica configurada).
     json["useVideoAudio"] = config.useVideoAudio;
 
-    // Comment cell background settings
     json["commentBgType"]        = config.commentBgType;
     json["commentBgThumbnailId"] = config.commentBgThumbnailId;
     json["commentBgThumbnailPos"] = config.commentBgThumbnailPos;
@@ -616,7 +646,6 @@ void ProfileImageService::uploadProfileConfig(int accountID, ProfileConfig const
         [callback, accountID, config](bool success, std::string const& msg) {
             if (success) {
                 ProfileThumbs::get().deleteProfile(accountID);
-                // Recachea la config para evitar esperar al servidor
                 ProfileThumbs::get().cacheProfileConfig(accountID, config);
             }
             callback(success, msg);
@@ -664,14 +693,11 @@ void ProfileImageService::downloadProfileConfig(int accountID,
             if (json.contains("separatorOpacity")) config.separatorOpacity = json["separatorOpacity"].asInt().unwrapOr(50);
             if (json.contains("widthFactor"))      config.widthFactor      = (float)json["widthFactor"].asDouble().unwrapOr(0.60);
 
-            // Gradient effect (animaciones para icon-gradient / gradient)
             if (json.contains("gradientEffect")) config.gradientEffect = json["gradientEffect"].asString().unwrapOr("none");
             if (json.contains("gradientSpeed"))  config.gradientSpeed  = (float)json["gradientSpeed"].asDouble().unwrapOr(1.0);
 
-            // Audio del video del fondo de perfil
             if (json.contains("useVideoAudio")) config.useVideoAudio = json["useVideoAudio"].asBool().unwrapOr(false);
 
-            // Comment cell background settings
             if (json.contains("commentBgType"))        config.commentBgType        = json["commentBgType"].asString().unwrapOr("none");
             if (json.contains("commentBgThumbnailId")) config.commentBgThumbnailId = json["commentBgThumbnailId"].asString().unwrapOr("");
             if (json.contains("commentBgThumbnailPos")) config.commentBgThumbnailPos = json["commentBgThumbnailPos"].asInt().unwrapOr(1);

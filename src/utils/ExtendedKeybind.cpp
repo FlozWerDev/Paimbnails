@@ -18,7 +18,6 @@ using namespace cocos2d;
 
 namespace paimon::keybinds {
 
-// Global state
 namespace {
 
 // Current modifiers — resynced from KeyboardInputEvent and MouseInputEvent.
@@ -49,6 +48,7 @@ std::vector<std::string> const& managedList() {
     static std::vector<std::string> const kKeys = {
         // gameplay / capture
         "capture-keybind",
+        "capture-menu-keybind",
         // pause zoom
         "zoom-in-keybind",
         "zoom-out-keybind",
@@ -74,6 +74,7 @@ std::vector<std::string> const& managedList() {
 std::vector<std::string> const& triggerOnlyList() {
     static std::vector<std::string> const kKeys = {
         "capture-keybind",
+        "capture-menu-keybind",
         "zoom-in-keybind",
         "zoom-out-keybind",
         "zoom-reset-keybind",
@@ -123,8 +124,6 @@ std::string modifiersPrefix(KeyboardModifier mods) {
 
 } // namespace
 
-// ExtendedKeybind public methods
-
 std::string ExtendedKeybind::toDisplayString() const {
     if (kind == ExtendedKind::None) return "";
     auto prefix = modifiersPrefix(modifiers);
@@ -147,8 +146,6 @@ std::string ExtendedKeybind::toDisplayString() const {
     return "";
 }
 
-// Native Keybind formatting
-
 std::string formatKeyboardKeybind(Keybind const& kb) {
     bool const hasKey = (kb.key != KEY_None);
     bool const hasMods = (kb.modifiers != KeyboardModifier::None);
@@ -165,8 +162,6 @@ std::string formatKeyboardKeybind(Keybind const& kb) {
 
     return kb.toString();
 }
-
-// Persistence
 
 ExtendedKeybind loadExtendedKeybind(std::string_view settingKey) {
     auto* mod = Mod::get();
@@ -223,8 +218,6 @@ void saveExtendedKeybind(std::string_view settingKey, ExtendedKeybind const& bin
     mod->setSavedValue<matjson::Value>(savedKey, obj);
 }
 
-// Mouse / mods state
-
 bool isMouseButtonHeld(MouseButton button) {
     int idx = static_cast<int>(button);
     if (!isMouseButtonIndexValid(idx)) return false;
@@ -257,8 +250,6 @@ bool isMouseButtonHeld(MouseButton button) {
 KeyboardModifier currentModifiers() {
     return g_currentMods;
 }
-
-// Match
 
 namespace {
     // Subset check: required is a subset of current (extra modifiers allowed).
@@ -306,13 +297,9 @@ bool extendedMatchesScrollTrigger(
     return modsMatchSubset(bind.modifiers, currentMods);
 }
 
-// Public list
-
 std::vector<std::string> const& allManagedKeybinds() {
     return managedList();
 }
-
-// Trigger broadcast
 
 void emitExtendedTrigger(std::string_view settingKey, double timestamp) {
     // 1) Custom event for the mod's own listeners (where we want mouse/scroll-
@@ -351,8 +338,6 @@ void emitExtendedTrigger(std::string_view settingKey, double timestamp) {
     );
 }
 
-// System initialization
-
 void initExtendedKeybindSystem() {
     if (g_systemInitialized) return;
     g_systemInitialized = true;
@@ -365,7 +350,6 @@ void initExtendedKeybindSystem() {
 
     // Mouse listener: update button state and fire triggers.
     MouseInputEvent().listen(+[](MouseInputData& data) {
-        // keep mods in sync.
         g_currentMods = data.modifiers;
 
         int idx = static_cast<int>(fromGeodeMouseButton(data.button));

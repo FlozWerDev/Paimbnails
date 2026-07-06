@@ -7,6 +7,7 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Notification.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <Geode/utils/string.hpp>
 #include <chrono>
 #include <fmt/format.h>
 
@@ -54,8 +55,6 @@ void MenuMusicPlaylistsPopup::onExit() {
     Popup::onExit();
 }
 
-// Header
-
 void MenuMusicPlaylistsPopup::buildHeader() {
     auto size = m_mainLayer->getContentSize();
 
@@ -77,7 +76,6 @@ void MenuMusicPlaylistsPopup::buildHeader() {
         m_mainLayer->addChild(menu, 3);
     }
 
-    // Back button (solo visible en modo detail).
     auto backSpr = ButtonSprite::create("Back", 60, true, "bigFont.fnt", "GJ_button_02.png", 20.f, 0.55f);
     if (backSpr) {
         auto btn = CCMenuItemSpriteExtra::create(backSpr, this,
@@ -99,8 +97,6 @@ void MenuMusicPlaylistsPopup::buildList() {
     m_scroll->m_contentLayer->setID("playlists-scroll-content"_spr);
     m_mainLayer->addChild(m_scroll, 2);
 }
-
-// Grid
 
 void MenuMusicPlaylistsPopup::showGrid() {
     m_inDetail = false;
@@ -204,8 +200,6 @@ void MenuMusicPlaylistsPopup::showGrid() {
     m_scroll->scrollToTop();
 }
 
-// Detail
-
 void MenuMusicPlaylistsPopup::showDetail(const std::string& playlistId) {
     m_inDetail = true;
     m_detailPlaylistId = playlistId;
@@ -262,7 +256,7 @@ void MenuMusicPlaylistsPopup::showDetail(const std::string& playlistId) {
 
     if (pl->trackIds.empty()) {
         auto lbl = CCLabelBMFont::create(
-            "Empty playlist. Use the + icon from the Library to add tracks.",
+            "Empty playlist. Open 'My Songs' and press + on a song to add it here.",
             "chatFont.fnt");
         if (lbl) {
             lbl->setScale(0.45f);
@@ -278,11 +272,9 @@ void MenuMusicPlaylistsPopup::showDetail(const std::string& playlistId) {
     m_scroll->scrollToTop();
 }
 
-// Callbacks
-
 void MenuMusicPlaylistsPopup::onCreatePlaylist(CCObject*) {
     if (!m_nameInput) return;
-    auto name = m_nameInput->getString();
+    auto name = geode::utils::string::trim(m_nameInput->getString());
     if (name.empty()) {
         Notification::create("Enter a name first.", NotificationIcon::Warning)->show();
         return;
@@ -294,6 +286,11 @@ void MenuMusicPlaylistsPopup::onCreatePlaylist(CCObject*) {
     pl.createdUnixMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     lib.addPlaylist(pl);
+    // La primera playlist se vuelve la activa automaticamente para que el
+    // modo "Playlist" funcione sin un paso extra de "Use".
+    if (lib.activePlaylistId().empty()) {
+        lib.setActivePlaylistId(pl.id);
+    }
     m_nameInput->setString("");
     Notification::create("Playlist created.", NotificationIcon::Success)->show();
 }

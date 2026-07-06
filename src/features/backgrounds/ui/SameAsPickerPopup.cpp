@@ -26,7 +26,6 @@ bool SameAsPickerPopup::init(std::string const& currentKey, geode::CopyableFunct
 
     auto content = m_mainLayer->getContentSize();
 
-    // options: all layers except the selected one
     struct Opt { std::string key; std::string label; };
     std::vector<Opt> options;
     for (auto& [k, n] : LayerBackgroundManager::LAYER_OPTIONS) {

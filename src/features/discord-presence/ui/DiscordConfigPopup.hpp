@@ -16,7 +16,6 @@ protected:
     void onResetDefaults(cocos2d::CCObject*);
     void onRefreshPresence(cocos2d::CCObject*);
 
-    // Status inputs
     geode::TextInput* m_detailsInput = nullptr;
     geode::TextInput* m_stateInput = nullptr;
     geode::TextInput* m_largeTextInput = nullptr;

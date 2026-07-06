@@ -9,7 +9,6 @@ namespace pt {
     using FilePickCallback =
         std::function<void(geode::Result<std::optional<std::filesystem::path>>)>;
 
-    // filter helpers
     geode::utils::file::FilePickOptions::Filter imageFilter();
     geode::utils::file::FilePickOptions::Filter audioFilter();
     geode::utils::file::FilePickOptions::Filter videoFilter();

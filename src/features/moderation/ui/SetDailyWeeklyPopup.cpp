@@ -11,28 +11,23 @@ using namespace geode::prelude;
 bool SetDailyWeeklyPopup::init(int levelID) {
     m_levelID = levelID;
     
-    // inicia popup con tamano
     if (!Popup::init(300.f, 220.f)) return false;
 
     this->setTitle("Set Daily/Weekly");
 
-    // no tocar m_buttonMenu (tiene X). menu separado para contenido.
-    
     auto actionMenu = CCMenu::create();
     actionMenu->setPosition(this->getContentSize() / 2);
-    actionMenu->setContentSize({ 200.f, 160.f }); // ancho, alto contenedor
+    actionMenu->setContentSize({ 200.f, 160.f });
     actionMenu->ignoreAnchorPointForPosition(false);
     
-    // columnlayout
     actionMenu->setLayout(
         ColumnLayout::create()
             ->setGap(10.f)
-            ->setAxisReverse(true) // de arriba a abajo
+            ->setAxisReverse(true)
     );
     
     this->addChild(actionMenu);
 
-    // btn daily
     auto dailyBtn = CCMenuItemSpriteExtra::create(
         ButtonSprite::create("Set Daily", 0, false, "goldFont.fnt", "GJ_button_01.png", 0, 1.0f),
         this,
@@ -41,7 +36,6 @@ bool SetDailyWeeklyPopup::init(int levelID) {
     dailyBtn->setID("set-daily-btn"_spr);
     actionMenu->addChild(dailyBtn);
 
-    // btn weekly
     auto weeklyBtn = CCMenuItemSpriteExtra::create(
         ButtonSprite::create("Set Weekly", 0, false, "goldFont.fnt", "GJ_button_01.png", 0, 1.0f),
         this,
@@ -50,7 +44,6 @@ bool SetDailyWeeklyPopup::init(int levelID) {
     weeklyBtn->setID("set-weekly-btn"_spr);
     actionMenu->addChild(weeklyBtn);
     
-    // btn unset
     auto unsetBtn = CCMenuItemSpriteExtra::create(
         ButtonSprite::create("Unset", 0, false, "goldFont.fnt", "GJ_button_06.png", 0, 1.0f),
         this,
@@ -60,7 +53,6 @@ bool SetDailyWeeklyPopup::init(int levelID) {
     unsetBtn->setScale(0.8f);
     actionMenu->addChild(unsetBtn);
 
-    // layout menu
     actionMenu->updateLayout();
 
     paimon::markDynamicPopup(this);

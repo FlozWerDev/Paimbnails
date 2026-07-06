@@ -1,5 +1,7 @@
-﻿#include "CustomSliderPopup.hpp"
+#include "CustomSliderPopup.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/CustomSliderManager.hpp"
+#include "../../../ui/PaiConfigKit.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
@@ -18,16 +20,15 @@ using namespace geode::prelude;
 using namespace cocos2d;
 using namespace paimon::slider;
 
-static const char* kIconTypeNames[] = { "Cube", "Ship", "Ball", "UFO", "Wave", "Robot", "Spider", "Swing" };
-static constexpr int kIconTypeCount = 8;
-static const char* kModeNames[] = { "Icon", "Image", "GIF" };
-static constexpr int kModeCount = 3;
-static const char* kAnimTypeNames[] = { "None", "Bounce", "Rotate", "Both" };
-static constexpr int kAnimTypeCount = 4;
-
 namespace {
-float sliderNorm(float val, float mn, float mx) { return (mx <= mn) ? 0.f : std::clamp((val - mn) / (mx - mn), 0.f, 1.f); }
-float sliderDenorm(float n, float mn, float mx) { return mn + n * (mx - mn); }
+namespace kit = paimon::configkit;
+
+const char* kIconTypeNames[] = { "Cubo", "Nave", "Bola", "OVNI", "Onda", "Robot", "Arana", "Swing" };
+constexpr int kIconTypeCount = 8;
+const char* kModeNames[] = { "Icono", "Imagen", "GIF" };
+constexpr int kModeCount = 3;
+const char* kAnimTypeNames[] = { "Ninguna", "Rebote", "Girar", "Ambas" };
+constexpr int kAnimTypeCount = 4;
 }
 
 CustomSliderPopup* CustomSliderPopup::create() {
@@ -41,32 +42,13 @@ CustomSliderPopup* CustomSliderPopup::create() {
 }
 
 bool CustomSliderPopup::init() {
-    if (!Popup::init(380.f, 270.f)) return false;
-    this->setTitle("Custom Slider");
+    if (!Popup::init(400.f, 280.f)) return false;
+    paimon::markDynamicPopup(this);
+    this->setTitle("Slider Personalizado");
 
     auto content = m_mainLayer->getContentSize();
-    float cx = content.width / 2.f;
 
-    auto* tabMenu = CCMenu::create();
-    tabMenu->setPosition({0, 0});
-    m_mainLayer->addChild(tabMenu, 20);
-
-    float tabY = content.height - 26.f;
-    float tabSpacing = 72.f;
-    const char* tabNames[] = { "General", "Animation", "Targets" };
-
-    for (int i = 0; i < 3; i++) {
-        auto* spr = ButtonSprite::create(tabNames[i], "bigFont.fnt", "GJ_button_04.png", 0.7f);
-        spr->setScale(0.45f);
-        auto* btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(CustomSliderPopup::onTab));
-        btn->setPosition({cx - 20.f + (i - 1) * tabSpacing, tabY});
-        btn->setTag(i);
-        tabMenu->addChild(btn);
-        if (i == 0) m_tabBtn0 = btn;
-        else if (i == 1) m_tabBtn1 = btn;
-        else m_tabBtn2 = btn;
-    }
-
+    // Vista previa fija arriba a la derecha (siempre visible al ajustar).
     {
         float px = content.width - 30.f, py = content.height - 26.f;
         auto* bg = paimon::SpriteHelper::createDarkPanel(34.f, 34.f, 80, 4.f);
@@ -76,480 +58,28 @@ bool CustomSliderPopup::init() {
         m_previewNode = CCNode::create();
         m_previewNode->setPosition({px, py});
         m_mainLayer->addChild(m_previewNode, 5);
+
+        auto* lbl = CCLabelBMFont::create("Vista", "chatFont.fnt");
+        lbl->setScale(0.4f);
+        lbl->setColor(kit::kDescColor);
+        lbl->setPosition({px, py - 23.f});
+        m_mainLayer->addChild(lbl, 4);
     }
 
-    constexpr float kTopReserve    = 52.f; // tabs + padding
-    constexpr float kBottomReserve = 24.f; // reset button + padding
-    float tabAreaH = content.height - kTopReserve - kBottomReserve;
-    float tabAreaY = kBottomReserve;
+    rebuild();
 
-    auto makeTab = [&]() {
-        auto* n = CCNode::create();
-        n->setContentSize({content.width, tabAreaH});
-        n->setAnchorPoint({0.f, 0.f});
-        n->setPosition({0.f, tabAreaY});
-        m_mainLayer->addChild(n, 10);
-        return n;
-    };
-    m_tabGeneral = makeTab();
-    m_tabAnim    = makeTab();
-    m_tabTargets = makeTab();
+    // Boton fijo abajo: restaurar valores por defecto
+    auto* resetSpr = ButtonSprite::create("Restaurar", "goldFont.fnt", "GJ_button_06.png", 0.7f);
+    if (resetSpr) resetSpr->setScale(0.5f);
+    auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr,
+        [this](CCMenuItemSpriteExtra*) {
+            CustomSliderManager::get().resetToDefaults();
+            scheduleRebuild();
+        });
+    resetBtn->setPosition({content.width / 2.f, 18.f});
+    m_buttonMenu->addChild(resetBtn);
 
-    buildGeneralTab();
-    buildAnimTab();
-    buildTargetsTab();
-
-    {
-        auto* spr = ButtonSprite::create("Reset", "goldFont.fnt", "GJ_button_04.png", 0.6f);
-        spr->setScale(0.4f);
-        auto* btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(CustomSliderPopup::onReset));
-        btn->setPosition({cx, 12.f});
-        tabMenu->addChild(btn);
-    }
-
-    switchTab(0);
-    refreshPreview();
     return true;
-}
-
-// Layout helpers (file-local).
-//
-// Each "row" is an independent CCNode of fixed height that owns its labels,
-// arrows, sliders and toggles via absolute child positions. Menu items live
-// inside a per-row CCMenu so they move and hide together with the row.
-// All rows are stacked by a parent ColumnLayout that has
-// `ignoreInvisibleChildren(true)`, so toggling a row off (e.g. switching to
-// Image mode) collapses the empty space automatically.
-
-namespace {
-constexpr float kRowH      = 22.f;   // visual row height
-constexpr float kPadX      = 20.f;   // inner horizontal padding for tabs
-
-struct Row {
-    CCNode*  node;   // outer container, added to the column
-    CCMenu*  menu;   // covers the row, holds CCMenuItems
-    float    width;
-    float    height;
-    float    mid() const { return height / 2.f; }
-};
-
-Row makeRow(float width, float height = kRowH) {
-    auto* node = CCNode::create();
-    node->setContentSize({width, height});
-    node->setAnchorPoint({0.f, 0.5f});
-
-    auto* menu = CCMenu::create();
-    menu->setContentSize({width, height});
-    menu->setAnchorPoint({0.f, 0.f});
-    menu->ignoreAnchorPointForPosition(false);
-    menu->setPosition({0.f, 0.f});
-    node->addChild(menu, 5);
-
-    return Row{ node, menu, width, height };
-}
-
-cocos2d::CCLabelBMFont* makeLabel(const char* text, float scale = 0.4f) {
-    auto* lbl = CCLabelBMFont::create(text, "bigFont.fnt");
-    lbl->setScale(scale);
-    lbl->setAnchorPoint({0.f, 0.5f});
-    return lbl;
-}
-
-// Column container that auto-stacks visible children top-to-bottom and skips
-// the gap when a child is invisible.
-CCNode* makeColumn(const CCSize& size, float gap = 4.f) {
-    auto* col = CCNode::create();
-    col->setContentSize(size);
-    col->setAnchorPoint({0.5f, 1.f});
-    col->ignoreAnchorPointForPosition(false);
-    auto* layout = ColumnLayout::create()
-        ->setGap(gap)
-        ->setAxisReverse(true)               // first child on top
-        ->setAxisAlignment(AxisAlignment::Start)
-        ->setCrossAxisAlignment(AxisAlignment::Start)
-        ->setCrossAxisLineAlignment(AxisAlignment::Start)
-        ->setAutoScale(false)
-        ->setGrowCrossAxis(false);
-    layout->ignoreInvisibleChildren(true);
-    col->setLayout(layout);
-    return col;
-}
-} // namespace
-
-void CustomSliderPopup::buildGeneralTab() {
-    auto& cfg = CustomSliderManager::get().config();
-    auto content = m_tabGeneral->getContentSize();
-
-    float colW = content.width - kPadX * 2.f;
-    m_generalColumn = makeColumn({colW, content.height - 4.f}, 2.f);
-    m_generalColumn->setPosition({content.width / 2.f, content.height - 2.f});
-    m_tabGeneral->addChild(m_generalColumn, 1);
-
-    const float labelX  = 8.f;
-    const float rightX  = colW - 30.f;          // right edge for toggles (well inside popup)
-    const float valueX  = colW - 80.f;          // arrow-cycler value label X
-    const float arrLftX = colW - 120.f;         // left arrow
-    const float arrRgtX = colW - 50.f;          // right arrow
-
-    {
-        auto r = makeRow(colW);
-        auto* lbl = makeLabel("Enable");
-        lbl->setPosition({labelX, r.mid()});
-        r.node->addChild(lbl);
-
-        m_enableToggle = CCMenuItemToggler::createWithStandardSprites(
-            this, menu_selector(CustomSliderPopup::onToggleEnabled), 0.6f);
-        m_enableToggle->setPosition({rightX, r.mid()});
-        m_enableToggle->toggle(cfg.enabled);
-        r.menu->addChild(m_enableToggle);
-
-        m_rowEnable = r.node;
-        m_generalColumn->addChild(r.node);
-    }
-
-    {
-        auto r = makeRow(colW);
-        auto* lbl = makeLabel("Mode");
-        lbl->setPosition({labelX, r.mid()});
-        r.node->addChild(lbl);
-
-        m_modeLabel = CCLabelBMFont::create(kModeNames[static_cast<int>(cfg.thumbMode)], "bigFont.fnt");
-        m_modeLabel->setScale(0.38f);
-        m_modeLabel->setPosition({valueX, r.mid()});
-        r.node->addChild(m_modeLabel);
-
-        auto* ls = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
-        ls->setFlipX(true); ls->setScale(0.35f);
-        auto* lb = CCMenuItemSpriteExtra::create(ls, this, menu_selector(CustomSliderPopup::onModeLeft));
-        lb->setPosition({arrLftX, r.mid()});
-        r.menu->addChild(lb);
-        auto* rs = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
-        rs->setScale(0.35f);
-        auto* rb = CCMenuItemSpriteExtra::create(rs, this, menu_selector(CustomSliderPopup::onModeRight));
-        rb->setPosition({arrRgtX, r.mid()});
-        r.menu->addChild(rb);
-
-        m_rowMode = r.node;
-        m_generalColumn->addChild(r.node);
-    }
-
-    {
-        auto r = makeRow(colW);
-        auto* lbl = makeLabel("Icon");
-        lbl->setPosition({labelX, r.mid()});
-        r.node->addChild(lbl);
-
-        m_iconTypeLabel = CCLabelBMFont::create(kIconTypeNames[static_cast<int>(cfg.iconType)], "bigFont.fnt");
-        m_iconTypeLabel->setScale(0.38f);
-        m_iconTypeLabel->setPosition({valueX, r.mid()});
-        r.node->addChild(m_iconTypeLabel);
-
-        auto* ls = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
-        ls->setFlipX(true); ls->setScale(0.35f);
-        auto* lb = CCMenuItemSpriteExtra::create(ls, this, menu_selector(CustomSliderPopup::onIconTypeLeft));
-        lb->setPosition({arrLftX, r.mid()});
-        r.menu->addChild(lb);
-        auto* rs = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
-        rs->setScale(0.35f);
-        auto* rb = CCMenuItemSpriteExtra::create(rs, this, menu_selector(CustomSliderPopup::onIconTypeRight));
-        rb->setPosition({arrRgtX, r.mid()});
-        r.menu->addChild(rb);
-
-        m_rowIconType = r.node;
-        m_generalColumn->addChild(r.node);
-    }
-
-    {
-        auto r = makeRow(colW);
-
-        std::string dp = cfg.customImagePath.empty() ? "(no file)" :
-            geode::utils::string::pathToString(std::filesystem::path(cfg.customImagePath).filename());
-        if (dp.size() > 22) dp = dp.substr(0, 19) + "...";
-        m_imagePathLabel = CCLabelBMFont::create(dp.c_str(), "chatFont.fnt");
-        m_imagePathLabel->setScale(0.45f);
-        m_imagePathLabel->setAnchorPoint({0.f, 0.5f});
-        m_imagePathLabel->setPosition({labelX, r.mid()});
-        r.node->addChild(m_imagePathLabel);
-
-        auto* pickSpr = ButtonSprite::create("Select", "goldFont.fnt", "GJ_button_01.png", 0.7f);
-        pickSpr->setScale(0.45f);
-        auto* pickBtn = CCMenuItemSpriteExtra::create(pickSpr, this, menu_selector(CustomSliderPopup::onPickImage));
-        pickBtn->setPosition({rightX - 10.f, r.mid()});
-        r.menu->addChild(pickBtn);
-
-        m_rowImagePick = r.node;
-        m_generalColumn->addChild(r.node);
-    }
-
-    {
-        auto r = makeRow(colW);
-        auto* lbl = makeLabel("Player Icon", 0.38f);
-        lbl->setPosition({labelX, r.mid()});
-        r.node->addChild(lbl);
-
-        m_playerIconToggle = CCMenuItemToggler::createWithStandardSprites(
-            this, menu_selector(CustomSliderPopup::onTogglePlayerIcon), 0.55f);
-        m_playerIconToggle->setPosition({rightX, r.mid()});
-        m_playerIconToggle->toggle(cfg.usePlayerIcon);
-        r.menu->addChild(m_playerIconToggle);
-
-        m_rowPlayerIcon = r.node;
-        m_generalColumn->addChild(r.node);
-    }
-
-    {
-        auto r = makeRow(colW);
-        auto* lbl = makeLabel("Player Colors", 0.38f);
-        lbl->setPosition({labelX, r.mid()});
-        r.node->addChild(lbl);
-
-        m_playerColorsToggle = CCMenuItemToggler::createWithStandardSprites(
-            this, menu_selector(CustomSliderPopup::onTogglePlayerColors), 0.55f);
-        m_playerColorsToggle->setPosition({rightX, r.mid()});
-        m_playerColorsToggle->toggle(cfg.usePlayerColors);
-        r.menu->addChild(m_playerColorsToggle);
-
-        m_rowPlayerColors = r.node;
-        m_generalColumn->addChild(r.node);
-    }
-
-    {
-        auto r = makeRow(colW, 22.f);
-
-        m_scaleLabel = CCLabelBMFont::create(
-            fmt::format("Scale: {:.2f}", cfg.iconScale).c_str(), "bigFont.fnt");
-        m_scaleLabel->setScale(0.35f);
-        m_scaleLabel->setAnchorPoint({0.f, 0.5f});
-        m_scaleLabel->setPosition({labelX, r.mid()});
-        r.node->addChild(m_scaleLabel);
-
-        m_scaleSlider = Slider::create(this, menu_selector(CustomSliderPopup::onScaleChanged));
-        m_scaleSlider->setScale(0.45f);
-        // Slider sprite is anchored at its center; place it on the right half.
-        m_scaleSlider->setPosition({colW * 0.58f, r.mid()});
-        m_scaleSlider->setValue(sliderNorm(cfg.iconScale, 0.10f, 1.0f));
-        r.node->addChild(m_scaleSlider);
-
-        m_rowScale = r.node;
-        m_generalColumn->addChild(r.node);
-    }
-
-    {
-        auto r = makeRow(colW);
-        auto* lbl = makeLabel("Container", 0.38f);
-        lbl->setPosition({labelX, r.mid()});
-        r.node->addChild(lbl);
-
-        m_containerToggle = CCMenuItemToggler::createWithStandardSprites(
-            this, menu_selector(CustomSliderPopup::onToggleContainer), 0.55f);
-        m_containerToggle->setPosition({labelX + 70.f, r.mid()});
-        m_containerToggle->toggle(cfg.containerEnabled);
-        r.menu->addChild(m_containerToggle);
-
-        m_borderToggleLabel = CCLabelBMFont::create("Border", "bigFont.fnt");
-        m_borderToggleLabel->setScale(0.38f);
-        m_borderToggleLabel->setAnchorPoint({0.f, 0.5f});
-        m_borderToggleLabel->setPosition({labelX + 105.f, r.mid()});
-        r.node->addChild(m_borderToggleLabel);
-
-        m_borderToggle = CCMenuItemToggler::createWithStandardSprites(
-            this, menu_selector(CustomSliderPopup::onToggleBorder), 0.55f);
-        m_borderToggle->setPosition({labelX + 160.f, r.mid()});
-        m_borderToggle->toggle(cfg.containerBorderEnabled);
-        r.menu->addChild(m_borderToggle);
-
-        m_rowContainer = r.node;
-        m_generalColumn->addChild(r.node);
-    }
-
-    {
-        // Shape row is taller because it stacks a title + 2-row grid.
-        constexpr float kCell      = 18.f;
-        constexpr int   kCols      = 10;     // forces a clean 2x10 grid for 20 shapes
-        constexpr float kGridGap   = 2.f;
-        const float gridW = kCols * kCell + (kCols - 1) * kGridGap;
-        const float gridH = 2.f * kCell + kGridGap;
-        const float rowH  = gridH + 14.f;    // + title
-
-        auto r = makeRow(colW, rowH);
-
-        auto* title = makeLabel("Shape", 0.36f);
-        title->setPosition({labelX, rowH - 6.f});
-        r.node->addChild(title);
-
-        m_shapeGridNode = CCNode::create();
-        m_shapeGridNode->setAnchorPoint({0.5f, 0.5f});
-        m_shapeGridNode->setContentSize({gridW, gridH});
-        m_shapeGridNode->setPosition({colW * 0.5f, gridH * 0.5f + 2.f});
-        r.node->addChild(m_shapeGridNode);
-
-        m_shapeGridMenu = CCMenu::create();
-        m_shapeGridMenu->setAnchorPoint({0.5f, 0.5f});
-        m_shapeGridMenu->ignoreAnchorPointForPosition(false);
-        m_shapeGridMenu->setContentSize({gridW, gridH});
-        m_shapeGridMenu->setPosition({gridW * 0.5f, gridH * 0.5f});
-        m_shapeGridMenu->setLayout(
-            RowLayout::create()
-                ->setGap(kGridGap)
-                ->setGrowCrossAxis(true)
-                ->setCrossAxisOverflow(false)
-                ->setCrossAxisAlignment(AxisAlignment::Center)
-                ->setAutoScale(false)
-        );
-        m_shapeGridNode->addChild(m_shapeGridMenu);
-        rebuildShapeGrid();
-
-        m_rowShape = r.node;
-        m_generalColumn->addChild(r.node);
-    }
-
-    m_generalColumn->updateLayout();
-}
-
-void CustomSliderPopup::buildAnimTab() {
-    auto& cfg = CustomSliderManager::get().config();
-    auto content = m_tabAnim->getContentSize();
-
-    float colW = content.width - kPadX * 2.f;
-    m_animColumn = makeColumn({colW, content.height - 4.f}, 3.f);
-    m_animColumn->setPosition({content.width / 2.f, content.height - 2.f});
-    m_tabAnim->addChild(m_animColumn, 1);
-
-    const float labelX = 8.f;
-    const float rightX = colW - 30.f;
-    const float valueX = colW - 80.f;
-    const float arrLft = colW - 120.f;
-    const float arrRgt = colW - 50.f;
-
-    {
-        auto r = makeRow(colW);
-        auto* lbl = makeLabel("Animate");
-        lbl->setPosition({labelX, r.mid()});
-        r.node->addChild(lbl);
-
-        m_animToggle = CCMenuItemToggler::createWithStandardSprites(
-            this, menu_selector(CustomSliderPopup::onToggleAnimate), 0.6f);
-        m_animToggle->setPosition({rightX, r.mid()});
-        m_animToggle->toggle(cfg.animateOnDrag);
-        r.menu->addChild(m_animToggle);
-
-        m_animColumn->addChild(r.node);
-    }
-
-    {
-        auto r = makeRow(colW);
-        auto* lbl = makeLabel("Type");
-        lbl->setPosition({labelX, r.mid()});
-        r.node->addChild(lbl);
-
-        m_animTypeLabel = CCLabelBMFont::create(kAnimTypeNames[static_cast<int>(cfg.animType)], "bigFont.fnt");
-        m_animTypeLabel->setScale(0.38f);
-        m_animTypeLabel->setPosition({valueX, r.mid()});
-        r.node->addChild(m_animTypeLabel);
-
-        auto* ls = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
-        ls->setFlipX(true); ls->setScale(0.35f);
-        auto* lb = CCMenuItemSpriteExtra::create(ls, this, menu_selector(CustomSliderPopup::onAnimTypeLeft));
-        lb->setPosition({arrLft, r.mid()});
-        r.menu->addChild(lb);
-        auto* rs = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
-        rs->setScale(0.35f);
-        auto* rb = CCMenuItemSpriteExtra::create(rs, this, menu_selector(CustomSliderPopup::onAnimTypeRight));
-        rb->setPosition({arrRgt, r.mid()});
-        r.menu->addChild(rb);
-
-        m_animColumn->addChild(r.node);
-    }
-
-    // Helper that builds a "label + slider" row with label on the left
-    // and a centered slider on the right half.
-    auto addSliderRow = [&](Slider*& outSlider, CCLabelBMFont*& outLabel,
-                            const std::string& text, float norm,
-                            cocos2d::SEL_MenuHandler sel) {
-        auto r = makeRow(colW, 22.f);
-
-        outLabel = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
-        outLabel->setScale(0.35f);
-        outLabel->setAnchorPoint({0.f, 0.5f});
-        outLabel->setPosition({labelX, r.mid()});
-        r.node->addChild(outLabel);
-
-        outSlider = Slider::create(this, sel);
-        outSlider->setScale(0.45f);
-        outSlider->setPosition({colW * 0.58f, r.mid()});
-        outSlider->setValue(norm);
-        r.node->addChild(outSlider);
-
-        m_animColumn->addChild(r.node);
-    };
-
-    addSliderRow(m_animDurationSlider, m_animDurationLabel,
-        fmt::format("Duration: {:.2f}s", cfg.animDuration),
-        sliderNorm(cfg.animDuration, 0.05f, 0.5f),
-        menu_selector(CustomSliderPopup::onAnimDurationChanged));
-
-    addSliderRow(m_animBounceSlider, m_animBounceLabel,
-        fmt::format("Bounce: {:.0f}%", (cfg.animBounceScale - 1.f) * 100.f),
-        sliderNorm(cfg.animBounceScale, 1.0f, 2.0f),
-        menu_selector(CustomSliderPopup::onAnimBounceChanged));
-
-    addSliderRow(m_animRotateSlider, m_animRotateLabel,
-        fmt::format("Rotate: {:.0f} deg", cfg.animRotateDeg),
-        sliderNorm(cfg.animRotateDeg, 5.f, 45.f),
-        menu_selector(CustomSliderPopup::onAnimRotateChanged));
-
-    m_animColumn->updateLayout();
-}
-
-void CustomSliderPopup::buildTargetsTab() {
-    auto& cfg = CustomSliderManager::get().config();
-    auto content = m_tabTargets->getContentSize();
-
-    float colW = content.width - kPadX * 2.f;
-    auto* col = makeColumn({colW, content.height - 4.f}, 4.f);
-    col->setPosition({content.width / 2.f, content.height - 2.f});
-    m_tabTargets->addChild(col, 1);
-
-    // Description (separate non-row child; never hidden)
-    {
-        auto* descRow = CCNode::create();
-        descRow->setContentSize({colW, 16.f});
-        descRow->setAnchorPoint({0.f, 0.5f});
-        auto* desc = CCLabelBMFont::create("Choose which sliders are affected", "chatFont.fnt");
-        desc->setScale(0.45f);
-        desc->setColor({200, 200, 200});
-        desc->setAnchorPoint({0.5f, 0.5f});
-        desc->setPosition({colW * 0.5f, 8.f});
-        descRow->addChild(desc);
-        col->addChild(descRow);
-    }
-
-    const float labelX = 18.f;
-    const float rightX = colW - 40.f;
-
-    struct ToggleRow { const char* name; bool val; CCMenuItemToggler** toggle; SEL_MenuHandler sel; };
-    ToggleRow rows[] = {
-        {"Options / Volume", cfg.targets.optionsSliders, &m_optionsToggle, menu_selector(CustomSliderPopup::onToggleOptions)},
-        {"Editor",           cfg.targets.editorSliders,  &m_editorToggle,  menu_selector(CustomSliderPopup::onToggleEditor)},
-        {"Color Pickers",    cfg.targets.colorSliders,   &m_colorsToggle,  menu_selector(CustomSliderPopup::onToggleColors)},
-        {"Garage",           cfg.targets.garageSliders,  &m_garageToggle,  menu_selector(CustomSliderPopup::onToggleGarage)},
-    };
-
-    for (auto& row : rows) {
-        auto r = makeRow(colW, 24.f);
-        auto* lbl = makeLabel(row.name, 0.42f);
-        lbl->setPosition({labelX, r.mid()});
-        r.node->addChild(lbl);
-
-        *row.toggle = CCMenuItemToggler::createWithStandardSprites(this, row.sel, 0.6f);
-        (*row.toggle)->setPosition({rightX, r.mid()});
-        (*row.toggle)->toggle(row.val);
-        r.menu->addChild(*row.toggle);
-
-        col->addChild(r.node);
-    }
-
-    col->updateLayout();
 }
 
 void CustomSliderPopup::onExit() {
@@ -557,46 +87,282 @@ void CustomSliderPopup::onExit() {
     Popup::onExit();
 }
 
-void CustomSliderPopup::switchTab(int tab) {
-    m_currentTab = tab;
-    m_tabGeneral->setVisible(tab == 0);
-    m_tabAnim->setVisible(tab == 1);
-    m_tabTargets->setVisible(tab == 2);
-
-    auto setTabActive = [](CCMenuItemSpriteExtra* btn, bool active) {
-        if (!btn) return;
-        btn->setOpacity(active ? 255 : 150);
-        btn->setScale(active ? 1.f : 0.9f);
-    };
-    setTabActive(m_tabBtn0, tab == 0);
-    setTabActive(m_tabBtn1, tab == 1);
-    setTabActive(m_tabBtn2, tab == 2);
-
-    // Mode-dependent row visibility on the General tab.
-    // The ColumnLayout will collapse hidden rows automatically
-    // (ignoreInvisibleChildren = true).
-    if (tab == 0 && m_generalColumn) {
-        auto& cfg = CustomSliderManager::get().config();
-        const bool isIconMode  = (cfg.thumbMode == SliderThumbMode::Icon);
-        const bool isImageMode = !isIconMode;
-
-        if (m_rowIconType)     m_rowIconType->setVisible(isIconMode);
-        if (m_rowPlayerIcon)   m_rowPlayerIcon->setVisible(isIconMode);
-        if (m_rowPlayerColors) m_rowPlayerColors->setVisible(isIconMode);
-        if (m_rowImagePick)    m_rowImagePick->setVisible(isImageMode);
-        if (m_rowContainer)    m_rowContainer->setVisible(isImageMode);
-        if (m_rowShape)        m_rowShape->setVisible(isImageMode && cfg.containerEnabled);
-
-        if (m_borderToggleLabel) m_borderToggleLabel->setVisible(isImageMode && cfg.containerEnabled);
-        if (m_borderToggle)      m_borderToggle->setVisible(isImageMode && cfg.containerEnabled);
-
-        m_generalColumn->updateLayout();
-    }
+void CustomSliderPopup::scheduleRebuild() {
+    Ref<CustomSliderPopup> self = this;
+    Loader::get()->queueInMainThread([self] {
+        if (self && self->getParent()) self->rebuild();
+    });
 }
 
-void CustomSliderPopup::onTab(CCObject* sender) {
-    int tag = static_cast<CCNode*>(sender)->getTag();
-    switchTab(tag);
+void CustomSliderPopup::rebuild() {
+    if (m_scroll) {
+        m_scroll->removeFromParent();
+        m_scroll = nullptr;
+        m_shapeGridMenu = nullptr;
+    }
+
+    auto content = m_mainLayer->getContentSize();
+    float scrollW = content.width - 24.f;
+    float scrollH = content.height - 36.f - 34.f;
+    float innerW = kit::cardInnerWidth(scrollW);
+
+    auto& cfg = CustomSliderManager::get().config();
+
+    // Interruptor principal
+    auto* hero = kit::makeHeroToggle(scrollW,
+        "Slider personalizado",
+        "Cambia el puntero de las barras deslizantes del juego.",
+        cfg.enabled,
+        [this](bool v) {
+            CustomSliderManager::get().config().enabled = v;
+            refreshPreview();
+            reapplyAllSliders();
+        });
+
+    // Tarjeta: que se muestra como puntero
+    std::vector<CCNode*> styleRows;
+    styleRows.push_back(kit::makeSelectRow(innerW,
+        "Tipo de puntero",
+        "Icono del juego, una imagen tuya o un GIF animado.",
+        {kModeNames[0], kModeNames[1], kModeNames[2]},
+        static_cast<int>(cfg.thumbMode),
+        [this](int v) {
+            CustomSliderManager::get().config().thumbMode = static_cast<SliderThumbMode>(v);
+            refreshPreview();
+            reapplyAllSliders();
+            scheduleRebuild(); // cambian las opciones visibles
+        }));
+
+    const bool isIconMode = (cfg.thumbMode == SliderThumbMode::Icon);
+
+    if (isIconMode) {
+        std::vector<std::string> iconNames(kIconTypeNames, kIconTypeNames + kIconTypeCount);
+        styleRows.push_back(kit::makeSelectRow(innerW,
+            "Vehiculo", nullptr,
+            iconNames, static_cast<int>(cfg.iconType),
+            [this](int v) {
+                CustomSliderManager::get().config().iconType = static_cast<SliderIconType>(v);
+                refreshPreview();
+                reapplyAllSliders();
+            }));
+        styleRows.push_back(kit::makeToggleRow(innerW,
+            "Usar tu icono",
+            "Muestra el icono que llevas equipado en el juego.",
+            cfg.usePlayerIcon,
+            [this](bool v) {
+                CustomSliderManager::get().config().usePlayerIcon = v;
+                refreshPreview();
+                reapplyAllSliders();
+            }));
+        styleRows.push_back(kit::makeToggleRow(innerW,
+            "Usar tus colores",
+            "Pinta el icono con tus colores del juego.",
+            cfg.usePlayerColors,
+            [this](bool v) {
+                CustomSliderManager::get().config().usePlayerColors = v;
+                refreshPreview();
+                reapplyAllSliders();
+            }));
+    } else {
+        std::string fileName = cfg.customImagePath.empty()
+            ? "Ningun archivo elegido"
+            : geode::utils::string::pathToString(
+                  std::filesystem::path(cfg.customImagePath).filename());
+        if (fileName.size() > 28) fileName = fileName.substr(0, 25) + "...";
+
+        styleRows.push_back(kit::makeButtonRow(innerW,
+            "Imagen", fileName.c_str(), "Elegir",
+            [this] { onPickImage(); }));
+
+        styleRows.push_back(kit::makeToggleRow(innerW,
+            "Marco",
+            "Recorta la imagen dentro de una forma.",
+            cfg.containerEnabled,
+            [this](bool v) {
+                CustomSliderManager::get().config().containerEnabled = v;
+                refreshPreview();
+                reapplyAllSliders();
+                scheduleRebuild(); // muestra/oculta borde y formas
+            }));
+
+        if (cfg.containerEnabled) {
+            styleRows.push_back(kit::makeToggleRow(innerW,
+                "Borde del marco",
+                "Dibuja un contorno alrededor de la forma.",
+                cfg.containerBorderEnabled,
+                [this](bool v) {
+                    CustomSliderManager::get().config().containerBorderEnabled = v;
+                    refreshPreview();
+                    reapplyAllSliders();
+                }));
+
+            // Fila propia: rejilla de formas (2 filas de 10)
+            {
+                constexpr float kCell    = 18.f;
+                constexpr int   kCols    = 10;
+                constexpr float kGridGap = 2.f;
+                const float gridW = kCols * kCell + (kCols - 1) * kGridGap;
+                const float gridH = 2.f * kCell + kGridGap;
+                const float rowH  = gridH + 18.f;
+
+                auto* row = CCNode::create();
+                row->setAnchorPoint({0.f, 0.f});
+                row->setContentSize({innerW, rowH});
+
+                auto* title = CCLabelBMFont::create("Forma del marco", "bigFont.fnt");
+                title->setAnchorPoint({0.f, 1.f});
+                title->limitLabelWidth(innerW - 20.f, 0.40f, 0.1f);
+                title->setPosition({10.f, rowH - 2.f});
+                row->addChild(title);
+
+                m_shapeGridMenu = CCMenu::create();
+                m_shapeGridMenu->setAnchorPoint({0.5f, 0.5f});
+                m_shapeGridMenu->ignoreAnchorPointForPosition(false);
+                m_shapeGridMenu->setContentSize({gridW, gridH});
+                m_shapeGridMenu->setPosition({innerW / 2.f, gridH / 2.f});
+                m_shapeGridMenu->setTouchPriority(
+                    CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
+                m_shapeGridMenu->setLayout(
+                    RowLayout::create()
+                        ->setGap(kGridGap)
+                        ->setGrowCrossAxis(true)
+                        ->setCrossAxisOverflow(false)
+                        ->setCrossAxisAlignment(AxisAlignment::Center)
+                        ->setAutoScale(false)
+                );
+                row->addChild(m_shapeGridMenu, 5);
+                rebuildShapeGrid();
+
+                styleRows.push_back(row);
+            }
+        }
+    }
+
+    auto* styleCard = kit::makeCard(scrollW, "Estilo del puntero", {120, 210, 255}, styleRows);
+
+    // Tarjeta: tamano
+    auto* sizeCard = kit::makeCard(scrollW, "Tamano", {255, 200, 100}, {
+        kit::makeSliderRow(innerW,
+            "Tamano del puntero", "Que tan grande se ve sobre la barra.",
+            cfg.iconScale, 0.10, 1.0,
+            [](double v) { return fmt::format("x{:.2f}", v); },
+            [this](double v) {
+                CustomSliderManager::get().config().iconScale = static_cast<float>(v);
+                refreshPreview();
+                reapplyAllSliders();
+            }),
+    });
+
+    // Tarjeta: animacion al arrastrar
+    auto* animCard = kit::makeCard(scrollW, "Animacion al arrastrar", {255, 140, 220}, {
+        kit::makeToggleRow(innerW,
+            "Animar",
+            "El puntero reacciona cuando lo arrastras.",
+            cfg.animateOnDrag,
+            [](bool v) { CustomSliderManager::get().config().animateOnDrag = v; }),
+        kit::makeSelectRow(innerW,
+            "Tipo", nullptr,
+            {kAnimTypeNames[0], kAnimTypeNames[1], kAnimTypeNames[2], kAnimTypeNames[3]},
+            static_cast<int>(cfg.animType),
+            [](int v) { CustomSliderManager::get().config().animType = static_cast<SliderAnimType>(v); }),
+        kit::makeSliderRow(innerW,
+            "Duracion", "Cuanto dura la animacion.",
+            cfg.animDuration, 0.05, 0.5,
+            [](double v) { return fmt::format("{:.2f}s", v); },
+            [](double v) { CustomSliderManager::get().config().animDuration = static_cast<float>(v); }),
+        kit::makeSliderRow(innerW,
+            "Rebote", "Cuanto crece el puntero al agarrarlo.",
+            cfg.animBounceScale, 1.0, 2.0,
+            [](double v) { return fmt::format("{:.0f}%", (v - 1.0) * 100.0); },
+            [](double v) { CustomSliderManager::get().config().animBounceScale = static_cast<float>(v); }),
+        kit::makeSliderRow(innerW,
+            "Giro", "Cuantos grados gira al moverse.",
+            cfg.animRotateDeg, 5.0, 45.0,
+            [](double v) { return fmt::format("{:.0f}", v); },
+            [](double v) { CustomSliderManager::get().config().animRotateDeg = static_cast<float>(v); }),
+    });
+
+    // Tarjeta: donde se aplica
+    auto* targetsCard = kit::makeCard(scrollW, "Donde se aplica", {130, 240, 170}, {
+        kit::makeToggleRow(innerW,
+            "Opciones y volumen", "Barras del menu de opciones y del volumen.",
+            cfg.targets.optionsSliders,
+            [](bool v) { CustomSliderManager::get().config().targets.optionsSliders = v; }),
+        kit::makeToggleRow(innerW,
+            "Editor", "Barras dentro del editor de niveles.",
+            cfg.targets.editorSliders,
+            [](bool v) { CustomSliderManager::get().config().targets.editorSliders = v; }),
+        kit::makeToggleRow(innerW,
+            "Selector de color", "Barras de los selectores de color.",
+            cfg.targets.colorSliders,
+            [](bool v) { CustomSliderManager::get().config().targets.colorSliders = v; }),
+        kit::makeToggleRow(innerW,
+            "Garage", "Barras de la pantalla de iconos.",
+            cfg.targets.garageSliders,
+            [](bool v) { CustomSliderManager::get().config().targets.garageSliders = v; }),
+    });
+
+    m_scroll = kit::makeScrollStack({scrollW, scrollH},
+        {hero, styleCard, sizeCard, animCard, targetsCard});
+    m_scroll->setPosition({12.f, 34.f});
+    m_mainLayer->addChild(m_scroll);
+
+    refreshPreview();
+}
+
+void CustomSliderPopup::rebuildShapeGrid() {
+    if (!m_shapeGridMenu) return;
+    m_shapeGridMenu->removeAllChildren();
+
+    auto const& cfg = CustomSliderManager::get().config();
+    auto shapes = getGeometricShapes();
+    constexpr float kCell = 18.f;
+
+    for (size_t i = 0; i < shapes.size(); i++) {
+        auto const& shapeName = shapes[i].first;
+        bool selected = (cfg.containerShape == shapeName);
+
+        cocos2d::ccColor3B bgCol = selected ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40};
+        GLubyte bgAlpha = selected ? 220 : 140;
+        auto* cellBg = paimon::SpriteHelper::createColorPanel(kCell, kCell, bgCol, bgAlpha, 3.f);
+        cellBg->setContentSize({kCell, kCell});
+
+        if (auto* icon = createShapeStencil(shapeName, kCell - 6.f)) {
+            icon->setAnchorPoint({0.5f, 0.5f});
+            icon->setPosition({kCell * 0.5f, kCell * 0.5f});
+            cellBg->addChild(icon);
+        }
+
+        std::string shapeCopy = shapeName;
+        auto* btn = CCMenuItemExt::createSpriteExtra(cellBg,
+            [this, shapeCopy](CCMenuItemSpriteExtra*) {
+                CustomSliderManager::get().config().containerShape = shapeCopy;
+                rebuildShapeGrid();
+                refreshPreview();
+                reapplyAllSliders();
+            });
+        m_shapeGridMenu->addChild(btn);
+    }
+    m_shapeGridMenu->updateLayout();
+}
+
+void CustomSliderPopup::onPickImage() {
+    WeakRef<CustomSliderPopup> self = this;
+    pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> result) {
+        auto popup = self.lock();
+        if (!popup) return;
+        auto opt = std::move(result).unwrapOr(std::nullopt);
+        if (!opt.has_value() || opt->empty()) return;
+        auto path = *opt;
+        auto& cfg = CustomSliderManager::get().config();
+        auto dest = CustomSliderManager::get().imagesDir() / path.filename();
+        std::error_code ec;
+        std::filesystem::copy_file(path, dest, std::filesystem::copy_options::overwrite_existing, ec);
+        cfg.customImagePath = ec ? geode::utils::string::pathToString(path) : geode::utils::string::pathToString(dest);
+        auto* p = static_cast<CustomSliderPopup*>(popup.data());
+        p->reapplyAllSliders();
+        p->rebuild(); // refresca el nombre de archivo y la vista previa
+    });
 }
 
 void CustomSliderPopup::refreshPreview() {
@@ -764,163 +530,4 @@ void CustomSliderPopup::reapplyAllSliders() {
     };
 
     findSliders(scene, 0);
-}
-
-void CustomSliderPopup::onToggleEnabled(CCObject* s) {
-    CustomSliderManager::get().config().enabled = !static_cast<CCMenuItemToggler*>(s)->isToggled();
-    refreshPreview();
-    reapplyAllSliders();
-}
-void CustomSliderPopup::onModeLeft(CCObject*) {
-    auto& cfg = CustomSliderManager::get().config();
-    int v = (static_cast<int>(cfg.thumbMode) - 1 + kModeCount) % kModeCount;
-    cfg.thumbMode = static_cast<SliderThumbMode>(v);
-    if (m_modeLabel) m_modeLabel->setString(kModeNames[v]);
-    switchTab(0); refreshPreview(); reapplyAllSliders();
-}
-void CustomSliderPopup::onModeRight(CCObject*) {
-    auto& cfg = CustomSliderManager::get().config();
-    int v = (static_cast<int>(cfg.thumbMode) + 1) % kModeCount;
-    cfg.thumbMode = static_cast<SliderThumbMode>(v);
-    if (m_modeLabel) m_modeLabel->setString(kModeNames[v]);
-    switchTab(0); refreshPreview(); reapplyAllSliders();
-}
-void CustomSliderPopup::onIconTypeLeft(CCObject*) {
-    auto& cfg = CustomSliderManager::get().config();
-    int v = (static_cast<int>(cfg.iconType) - 1 + kIconTypeCount) % kIconTypeCount;
-    cfg.iconType = static_cast<SliderIconType>(v);
-    if (m_iconTypeLabel) m_iconTypeLabel->setString(kIconTypeNames[v]);
-    refreshPreview(); reapplyAllSliders();
-}
-void CustomSliderPopup::onIconTypeRight(CCObject*) {
-    auto& cfg = CustomSliderManager::get().config();
-    int v = (static_cast<int>(cfg.iconType) + 1) % kIconTypeCount;
-    cfg.iconType = static_cast<SliderIconType>(v);
-    if (m_iconTypeLabel) m_iconTypeLabel->setString(kIconTypeNames[v]);
-    refreshPreview(); reapplyAllSliders();
-}
-void CustomSliderPopup::onTogglePlayerIcon(CCObject* s) {
-    CustomSliderManager::get().config().usePlayerIcon = !static_cast<CCMenuItemToggler*>(s)->isToggled();
-    refreshPreview(); reapplyAllSliders();
-}
-void CustomSliderPopup::onTogglePlayerColors(CCObject* s) {
-    CustomSliderManager::get().config().usePlayerColors = !static_cast<CCMenuItemToggler*>(s)->isToggled();
-    refreshPreview(); reapplyAllSliders();
-}
-void CustomSliderPopup::onScaleChanged(CCObject* s) {
-    float v = sliderDenorm(static_cast<SliderThumb*>(s)->getValue(), 0.10f, 1.0f);
-    CustomSliderManager::get().config().iconScale = v;
-    if (m_scaleLabel) m_scaleLabel->setString(fmt::format("Scale: {:.2f}", v).c_str());
-    refreshPreview(); reapplyAllSliders();
-}
-void CustomSliderPopup::onPickImage(CCObject*) {
-    WeakRef<CustomSliderPopup> self = this;
-    pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> result) {
-        auto popup = self.lock();
-        if (!popup) return;
-        auto opt = std::move(result).unwrapOr(std::nullopt);
-        if (!opt.has_value() || opt->empty()) return;
-        auto path = *opt;
-        auto& cfg = CustomSliderManager::get().config();
-        auto dest = CustomSliderManager::get().imagesDir() / path.filename();
-        std::error_code ec;
-        std::filesystem::copy_file(path, dest, std::filesystem::copy_options::overwrite_existing, ec);
-        cfg.customImagePath = ec ? geode::utils::string::pathToString(path) : geode::utils::string::pathToString(dest);
-        std::string dp = geode::utils::string::pathToString(path.filename());
-        if (dp.size() > 20) dp = dp.substr(0, 17) + "...";
-        if (popup->m_imagePathLabel) popup->m_imagePathLabel->setString(dp.c_str());
-        popup->refreshPreview();
-        popup->reapplyAllSliders();
-    });
-}
-void CustomSliderPopup::onToggleAnimate(CCObject* s) {
-    CustomSliderManager::get().config().animateOnDrag = !static_cast<CCMenuItemToggler*>(s)->isToggled();
-}
-void CustomSliderPopup::onToggleContainer(CCObject* s) {
-    auto& cfg = CustomSliderManager::get().config();
-    cfg.containerEnabled = !static_cast<CCMenuItemToggler*>(s)->isToggled();
-    switchTab(0);
-    refreshPreview();
-    reapplyAllSliders();
-}
-void CustomSliderPopup::onToggleBorder(CCObject* s) {
-    CustomSliderManager::get().config().containerBorderEnabled = !static_cast<CCMenuItemToggler*>(s)->isToggled();
-    refreshPreview();
-    reapplyAllSliders();
-}
-void CustomSliderPopup::onShapeSelect(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    auto shapes = getGeometricShapes();
-    if (idx < 0 || idx >= static_cast<int>(shapes.size())) return;
-    CustomSliderManager::get().config().containerShape = shapes[idx].first;
-    rebuildShapeGrid();
-    refreshPreview();
-    reapplyAllSliders();
-}
-void CustomSliderPopup::rebuildShapeGrid() {
-    if (!m_shapeGridMenu) return;
-    m_shapeGridMenu->removeAllChildren();
-
-    auto const& cfg = CustomSliderManager::get().config();
-    auto shapes = getGeometricShapes();
-    constexpr float kCell = 18.f;
-
-    for (size_t i = 0; i < shapes.size(); i++) {
-        auto const& shapeName = shapes[i].first;
-        bool selected = (cfg.containerShape == shapeName);
-
-        // Use PaimonDrawNode rounded rect instead of CCScale9Sprite
-        cocos2d::ccColor3B bgCol = selected ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40};
-        GLubyte bgAlpha = selected ? 220 : 140;
-        auto* cellBg = paimon::SpriteHelper::createColorPanel(kCell, kCell, bgCol, bgAlpha, 3.f);
-        cellBg->setContentSize({kCell, kCell});
-
-        if (auto* icon = createShapeStencil(shapeName, kCell - 6.f)) {
-            icon->setAnchorPoint({0.5f, 0.5f});
-            icon->setPosition({kCell * 0.5f, kCell * 0.5f});
-            cellBg->addChild(icon);
-        }
-
-        auto* btn = CCMenuItemSpriteExtra::create(
-            cellBg, this, menu_selector(CustomSliderPopup::onShapeSelect));
-        btn->setTag(static_cast<int>(i));
-        m_shapeGridMenu->addChild(btn);
-    }
-    m_shapeGridMenu->updateLayout();
-}
-void CustomSliderPopup::onAnimTypeLeft(CCObject*) {
-    auto& cfg = CustomSliderManager::get().config();
-    int v = (static_cast<int>(cfg.animType) - 1 + kAnimTypeCount) % kAnimTypeCount;
-    cfg.animType = static_cast<SliderAnimType>(v);
-    if (m_animTypeLabel) m_animTypeLabel->setString(kAnimTypeNames[v]);
-}
-void CustomSliderPopup::onAnimTypeRight(CCObject*) {
-    auto& cfg = CustomSliderManager::get().config();
-    int v = (static_cast<int>(cfg.animType) + 1) % kAnimTypeCount;
-    cfg.animType = static_cast<SliderAnimType>(v);
-    if (m_animTypeLabel) m_animTypeLabel->setString(kAnimTypeNames[v]);
-}
-void CustomSliderPopup::onAnimDurationChanged(CCObject* s) {
-    float v = sliderDenorm(static_cast<SliderThumb*>(s)->getValue(), 0.05f, 0.5f);
-    CustomSliderManager::get().config().animDuration = v;
-    if (m_animDurationLabel) m_animDurationLabel->setString(fmt::format("Duration: {:.2f}s", v).c_str());
-}
-void CustomSliderPopup::onAnimBounceChanged(CCObject* s) {
-    float v = sliderDenorm(static_cast<SliderThumb*>(s)->getValue(), 1.0f, 2.0f);
-    CustomSliderManager::get().config().animBounceScale = v;
-    if (m_animBounceLabel) m_animBounceLabel->setString(fmt::format("Bounce: {:.0f}%", (v - 1.f) * 100.f).c_str());
-}
-void CustomSliderPopup::onAnimRotateChanged(CCObject* s) {
-    float v = sliderDenorm(static_cast<SliderThumb*>(s)->getValue(), 5.f, 45.f);
-    CustomSliderManager::get().config().animRotateDeg = v;
-    if (m_animRotateLabel) m_animRotateLabel->setString(fmt::format("Rotate: {:.0f} deg", v).c_str());
-}
-void CustomSliderPopup::onToggleOptions(CCObject* s) { CustomSliderManager::get().config().targets.optionsSliders = !static_cast<CCMenuItemToggler*>(s)->isToggled(); }
-void CustomSliderPopup::onToggleEditor(CCObject* s) { CustomSliderManager::get().config().targets.editorSliders = !static_cast<CCMenuItemToggler*>(s)->isToggled(); }
-void CustomSliderPopup::onToggleColors(CCObject* s) { CustomSliderManager::get().config().targets.colorSliders = !static_cast<CCMenuItemToggler*>(s)->isToggled(); }
-void CustomSliderPopup::onToggleGarage(CCObject* s) { CustomSliderManager::get().config().targets.garageSliders = !static_cast<CCMenuItemToggler*>(s)->isToggled(); }
-void CustomSliderPopup::onReset(CCObject*) {
-    CustomSliderManager::get().resetToDefaults();
-    this->onClose(nullptr);
-    if (auto* p = CustomSliderPopup::create()) p->show();
 }

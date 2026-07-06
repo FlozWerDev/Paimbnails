@@ -14,10 +14,7 @@ bool TextureLoaderInstaller::isInstalled() {
 }
 
 std::filesystem::path TextureLoaderInstaller::packsDir() {
-    // Texture Loader stores packs at:
-    //   <save dir>/geode/config/geode.texture-loader/packs/
-    // We get there via Loader::getInstalledMod (works even if disabled)
-    // and fallback to dirs::getModConfigDir if that's missing.
+    // getInstalledMod works even if the mod is disabled.
     if (auto* mod = Loader::get()->getInstalledMod("geode.texture-loader")) {
         return mod->getConfigDir() / "packs";
     }
@@ -44,8 +41,6 @@ geode::Result<std::filesystem::path> TextureLoaderInstaller::install(
 
     auto destPath = target / (packId + ".zip");
 
-    // Replace existing pack with the new one. copy_file with
-    // overwrite_existing avoids a stale-file race.
     std::filesystem::copy_file(sourceZip, destPath,
         std::filesystem::copy_options::overwrite_existing, ec);
     if (ec) {

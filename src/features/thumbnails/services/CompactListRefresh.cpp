@@ -31,8 +31,7 @@ namespace paimon::thumbnails {
                 return;
             }
 
-            // Remove the current list so GD creates fresh cells with the new
-            // compact-mode type/height instead of trying to recycle stale ones.
+            // Recreate the list so GD builds fresh cells with the new compact-mode type/height instead of recycling stale ones.
             if (browser->m_list) {
                 browser->m_list->removeFromParentAndCleanup(true);
                 browser->m_list = nullptr;

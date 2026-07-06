@@ -1,9 +1,4 @@
 #pragma once
-//
-// Plain-Old-Data describing one sprite frame in a cocos2d-x .plist atlas.
-// Avoids Geode/Cocos types so the data layer is cheap to include and can
-// be unit-tested offline.
-//
 
 #include <cstdint>
 #include <string>

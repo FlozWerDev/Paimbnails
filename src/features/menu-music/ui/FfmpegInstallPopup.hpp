@@ -1,12 +1,6 @@
 ﻿#pragma once
 
-// FfmpegInstallPopup — popup modal con barra de progreso para la descarga
-// inicial del binario de ffmpeg.
-//
-// Se muestra cuando el usuario acepta la pregunta "descargar ffmpeg?" en
-// el flujo de importacion desde URL. Identico en comportamiento al
-// YtDlpInstallPopup, pero apunta al FfmpegBootstrap y al archivo final
-// es mas grande (~80 MB), asi que avisa del tamano en el label.
+// FfmpegInstallPopup — modal progress popup for the initial ffmpeg download.
 
 #include <Geode/Geode.hpp>
 #include <atomic>
@@ -18,9 +12,6 @@ namespace paimon::menumusic {
 
 class FfmpegInstallPopup : public geode::Popup {
 public:
-    // `onFinished(true)` cuando el binario quedo instalado.
-    // `onFinished(false)` si hubo error o se cerro sin exito.
-    // El callback se invoca siempre en main thread; puede ser nullptr.
     static FfmpegInstallPopup* create(std::function<void(bool)> onFinished);
 
 protected:

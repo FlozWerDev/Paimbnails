@@ -75,7 +75,6 @@ class $modify(PaimonCustomListView, CustomListView) {
         bool compactEnabled = getCachedCompactMode() || paimon::hooks::g_forceCompactLevelCells;
         bool contextSuppressCompact = paimon::hooks::g_suppressCompactLevelCellsInContext;
 
-        // Only override for Level-type cells
         bool isLevelType = type == BoomListType::Level ||
                            type == BoomListType::Level2 ||
                            type == BoomListType::Level3 ||
@@ -92,7 +91,6 @@ class $modify(PaimonCustomListView, CustomListView) {
             if (type == BoomListType::Level4) {
                 return original > 0.f ? original : COMPACT_LEVEL_CELL_HEIGHT;
             }
-            // Return compact height: half the normal height
             if (original > 0.f && original <= 200.f) {
                 return original * 0.5f;
             }

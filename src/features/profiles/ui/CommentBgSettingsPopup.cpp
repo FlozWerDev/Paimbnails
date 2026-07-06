@@ -1,4 +1,5 @@
 ﻿#include "CommentBgSettingsPopup.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/ProfileThumbs.hpp"
 #include <Geode/ui/ColorPickPopup.hpp>
 #include "../../../utils/SpriteHelper.hpp"
@@ -13,7 +14,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Constants
 static constexpr float kPreviewWidth  = 360.f;
 static constexpr float kPreviewHeight = 60.f;
 static constexpr float kPreviewRadius = 5.f;
@@ -35,6 +35,7 @@ CommentBgSettingsPopup::~CommentBgSettingsPopup() {
 
 bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
     if (!Popup::init(420.f, 300.f)) return false;
+    paimon::markDynamicPopup(this);
 
     m_accountID = accountID;
     m_configPtr = new ProfileConfig(config);
@@ -49,7 +50,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu, 5);
 
-    // Etiqueta del tipo
     m_typeLabel = CCLabelBMFont::create("Type: None", "bigFont.fnt");
     m_typeLabel->setScale(0.32f);
     m_typeLabel->setPosition({cx, y});
@@ -57,7 +57,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
 
     y -= 22.f;
 
-    // Botones de seleccion de tipo
     float btnSpacing = 85.f;
     float startX = cx - btnSpacing * 1.5f;
 
@@ -87,7 +86,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
 
     y -= 40.f;
 
-    // Input de ID de nivel para miniatura
     m_thumbnailIdRow = CCNode::create();
     m_thumbnailIdRow->setPosition({0, 0});
     m_mainLayer->addChild(m_thumbnailIdRow);
@@ -130,7 +128,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
         m_btnThumbNext->setScale(0.45f);
         posMenu->addChild(m_btnThumbNext);
 
-        // Preview de miniatura
         float miniW = 50.f, miniH = 25.f;
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(miniW, miniH, 3.f);
         m_thumbPreviewClip = CCClippingNode::create(stencil);
@@ -151,7 +148,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
         m_thumbnailIdRow->addChild(border);
     }
 
-    // Opciones de banner
     m_bannerRow = CCNode::create();
     m_bannerRow->setPosition({0, 0});
     m_mainLayer->addChild(m_bannerRow);
@@ -192,7 +188,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
         m_bannerRow->addChild(imgLabel);
     }
 
-    // Selector de color
     m_solidColorRow = CCNode::create();
     m_solidColorRow->setPosition({0, 0});
     m_mainLayer->addChild(m_solidColorRow);
@@ -224,12 +219,10 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
 
     y -= 32.f;
 
-    // Sliders de configuracion
     {
         float leftX = cx - 95.f;
         float rightX = cx + 95.f;
 
-        // Blur (left half)
         auto blurLbl = CCLabelBMFont::create("Blur:", "bigFont.fnt");
         blurLbl->setScale(0.24f);
         blurLbl->setPosition({leftX - 80.f, y});
@@ -245,7 +238,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
         m_blurLabel->setPosition({leftX + 80.f, y});
         m_mainLayer->addChild(m_blurLabel);
 
-        // Darkness (right half)
         auto darkLbl = CCLabelBMFont::create("Dark:", "bigFont.fnt");
         darkLbl->setScale(0.24f);
         darkLbl->setPosition({rightX - 80.f, y});
@@ -264,7 +256,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
 
     y -= 28.f;
 
-    // Selector de tipo de blur
     {
         auto* blurMenu = CCMenu::create();
         blurMenu->setPosition({0, 0});
@@ -289,7 +280,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
         m_toggleBlurPaimon->setPosition({cx + 55.f, y});
         blurMenu->addChild(m_toggleBlurPaimon);
 
-        // Set initial toggle state
         if (m_configPtr->commentBgBlurType == "paimon") {
             m_toggleBlurGaussian->toggle(true);
         } else {
@@ -299,7 +289,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
 
     y -= 35.f;
 
-    // Preview en tiempo real
     {
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(kPreviewWidth, kPreviewHeight, kPreviewRadius);
         m_previewClip = CCClippingNode::create(stencil);
@@ -309,21 +298,18 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
         m_previewClip->setAlphaThreshold(0.5f);
         m_mainLayer->addChild(m_previewClip);
 
-        // Background container (inside clip)
         m_previewBgContainer = CCNode::create();
         m_previewBgContainer->setContentSize({kPreviewWidth, kPreviewHeight});
         m_previewBgContainer->setAnchorPoint({0, 0});
         m_previewBgContainer->setPosition({0, 0});
         m_previewClip->addChild(m_previewBgContainer);
 
-        // Foreground container (outside clip, on top)
         m_previewNode = CCNode::create();
         m_previewNode->setContentSize({kPreviewWidth, kPreviewHeight});
         m_previewNode->setAnchorPoint({0.5f, 0.5f});
         m_previewNode->setPosition({cx, y - kPreviewHeight / 2.f});
         m_mainLayer->addChild(m_previewNode);
 
-        // User icon (circle)
         auto iconBg = CCSprite::create("GJ_playerIcon.png");
         if (!iconBg) iconBg = CCSprite::create("GJ_button_05.png");
         if (iconBg) {
@@ -336,7 +322,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
             m_previewNode->addChild(iconBg);
         }
 
-        // Username
         m_previewUsername = CCLabelBMFont::create("Player", "goldFont.fnt");
         m_previewUsername->setScale(0.28f);
         m_previewUsername->setAnchorPoint({0, 0.5f});
@@ -344,14 +329,12 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
         m_previewUsername->setColor({255, 255, 100});
         m_previewNode->addChild(m_previewUsername);
 
-        // Comment text
         m_previewComment = CCLabelBMFont::create("hola mundo w", "chatFont.fnt");
         m_previewComment->setScale(0.35f);
         m_previewComment->setAnchorPoint({0, 0.5f});
         m_previewComment->setPosition({-kPreviewWidth / 2.f + 30.f, -8.f});
         m_previewNode->addChild(m_previewComment);
 
-        // Border around preview (outline-only, doesn't cover content)
         auto border = paimon::SpriteHelper::createRoundedRectOutline(
             kPreviewWidth, kPreviewHeight, kPreviewRadius,
             {60.f / 255.f, 60.f / 255.f, 60.f / 255.f, 200.f / 255.f}, 1.5f);
@@ -362,7 +345,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
 
     y -= (kPreviewHeight + 16.f);
 
-    // Save button
     {
         auto saveBtnSpr = ButtonSprite::create("Save", "bigFont.fnt", "GJ_button_05.png");
         auto saveBtn = CCMenuItemSpriteExtra::create(saveBtnSpr, this, menu_selector(CommentBgSettingsPopup::onSave));
@@ -370,12 +352,10 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
         menu->addChild(saveBtn);
     }
 
-    // Initial state
     updateTypeSelection();
     updateConditionalRows();
     refreshPreview();
 
-    // Fetch thumbnails if we have a level ID
     if (m_configPtr->commentBgType == "thumbnail" && !m_configPtr->commentBgThumbnailId.empty()) {
         fetchThumbnailsForLevel();
     }
@@ -385,7 +365,6 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
     return true;
 }
 
-// Type selection
 
 void CommentBgSettingsPopup::onSelectType(CCObject* sender) {
     auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
@@ -432,12 +411,10 @@ void CommentBgSettingsPopup::updateConditionalRows() {
     if (m_bannerRow)      m_bannerRow->setVisible(m_configPtr->commentBgType == "banner");
     if (m_solidColorRow)  m_solidColorRow->setVisible(m_configPtr->commentBgType == "solid");
 
-    // Update banner toggles
     if (m_toggleBannerBg)  m_toggleBannerBg->toggle(m_configPtr->commentBgBannerMode != "background");
     if (m_toggleBannerImg) m_toggleBannerImg->toggle(m_configPtr->commentBgBannerMode != "image");
 }
 
-// Thumbnail position navigation
 
 void CommentBgSettingsPopup::onThumbPrev(CCObject*) {
     if (m_configPtr->commentBgThumbnailPos > 1) {
@@ -501,7 +478,6 @@ void CommentBgSettingsPopup::updateThumbnailPreview() {
         }
     }
 
-    // Update mini preview sprite
     if (m_thumbPreviewSprite) {
         m_thumbPreviewSprite->setTexture(nullptr);
         m_thumbPreviewSprite->setVisible(false);
@@ -509,7 +485,6 @@ void CommentBgSettingsPopup::updateThumbnailPreview() {
         if (total > 0 && m_configPtr->commentBgThumbnailPos >= 1 && m_configPtr->commentBgThumbnailPos <= total) {
             auto& thumb = m_cachedThumbnails[m_configPtr->commentBgThumbnailPos - 1];
             if (!thumb.url.empty()) {
-                // Load thumbnail from URL
                 WeakRef<CommentBgSettingsPopup> weakSelf = this;
                 HttpClient::get().downloadFromUrl(thumb.url,
                     [weakSelf](bool success, std::vector<uint8_t> const& data, int, int) {
@@ -535,7 +510,6 @@ void CommentBgSettingsPopup::updateThumbnailPreview() {
     }
 }
 
-// Color picker
 
 void CommentBgSettingsPopup::onPickColor(CCObject*) {
     auto popup = geode::ColorPickPopup::create(m_configPtr->commentBgSolidColor);
@@ -556,7 +530,6 @@ void CommentBgSettingsPopup::onColorSelected(cocos2d::ccColor3B color) {
     refreshPreview();
 }
 
-// Banner toggles
 
 void CommentBgSettingsPopup::onToggleBannerBg(CCObject*) {
     m_configPtr->commentBgBannerMode = "background";
@@ -572,7 +545,6 @@ void CommentBgSettingsPopup::onToggleBannerImg(CCObject*) {
     refreshPreview();
 }
 
-// Sliders
 
 void CommentBgSettingsPopup::onBlurChanged(CCObject* sender) {
     auto* slider = typeinfo_cast<Slider*>(sender);
@@ -607,22 +579,18 @@ void CommentBgSettingsPopup::refreshSliderLabels() {
     if (m_darknessLabel) m_darknessLabel->setString(fmt::format("{:.2f}", m_configPtr->commentBgDarkness).c_str());
 }
 
-// Real-time preview
 
 void CommentBgSettingsPopup::refreshPreview() {
     if (!m_previewBgContainer) return;
 
-    // Limpia el fondo previo
     m_previewBgContainer->removeAllChildren();
 
-    // Invalida callbacks anteriores
     int token = ++m_previewToken;
 
     float pw = kPreviewWidth;
     float ph = kPreviewHeight;
 
     if (m_configPtr->commentBgType == "none") {
-        // Panel oscuro por defecto
         auto panel = paimon::SpriteHelper::createDarkPanel(pw, ph, 92, kPreviewRadius);
         if (panel) {
             panel->setAnchorPoint({0, 0});
@@ -642,7 +610,6 @@ void CommentBgSettingsPopup::refreshPreview() {
         }
     }
     else if (m_configPtr->commentBgType == "thumbnail") {
-        // Muestra preview de miniatura
         if (!m_cachedThumbnails.empty() && m_configPtr->commentBgThumbnailPos >= 1
             && m_configPtr->commentBgThumbnailPos <= static_cast<int>(m_cachedThumbnails.size())) {
             auto& thumb = m_cachedThumbnails[m_configPtr->commentBgThumbnailPos - 1];
@@ -652,7 +619,6 @@ void CommentBgSettingsPopup::refreshPreview() {
                     [weakSelf, token, pw, ph](bool success, std::vector<uint8_t> const& data, int, int) {
                         auto self = weakSelf.lock();
                         if (!self || !self->m_previewBgContainer) return;
-                        // Callback obsoleto, lo ignora
                         if (self->m_previewToken != token) return;
                         if (success && !data.empty()) {
                             auto* tex = ThumbnailTransportClient::bytesToTexture(data);
@@ -686,7 +652,6 @@ void CommentBgSettingsPopup::refreshPreview() {
                 );
             }
         } else {
-            // Sin miniatura cargada: placeholder
             auto panel = paimon::SpriteHelper::createDarkPanel(pw, ph, 92, kPreviewRadius);
             if (panel) {
                 panel->setAnchorPoint({0, 0});
@@ -696,7 +661,6 @@ void CommentBgSettingsPopup::refreshPreview() {
         }
     }
     else if (m_configPtr->commentBgType == "banner") {
-        // Usa el fondo de perfil como preview
         auto& thumbs = ProfileThumbs::get();
         if (auto cached = thumbs.getCachedProfile(m_accountID)) {
             CCTexture2D* tex = cached->texture.data();
@@ -724,7 +688,6 @@ void CommentBgSettingsPopup::refreshPreview() {
                 m_previewBgContainer->addChild(gifLabel);
             }
         } else {
-            // Sin perfil en cache: placeholder
             auto panel = paimon::SpriteHelper::createDarkPanel(pw, ph, 92, kPreviewRadius);
             if (panel) {
                 panel->setAnchorPoint({0, 0});
@@ -733,7 +696,6 @@ void CommentBgSettingsPopup::refreshPreview() {
             }
         }
 
-        // Oscurece el fondo
         if (m_configPtr->commentBgDarkness > 0.f) {
             auto overlay = CCLayerColor::create(
                 {0, 0, 0, static_cast<GLubyte>(m_configPtr->commentBgDarkness * 255)});
@@ -745,10 +707,8 @@ void CommentBgSettingsPopup::refreshPreview() {
     }
 }
 
-// Save
 
 void CommentBgSettingsPopup::onSave(CCObject*) {
-    // Lee el ID del input si aplica
     if (m_configPtr->commentBgType == "thumbnail" && m_inputField) {
         m_configPtr->commentBgThumbnailId = m_inputField->getString();
         if (m_configPtr->commentBgThumbnailId.empty()) {
@@ -757,7 +717,6 @@ void CommentBgSettingsPopup::onSave(CCObject*) {
         }
     }
 
-    // Sube la config al servidor
     WeakRef<CommentBgSettingsPopup> weakSelf = this;
     int accountID = m_accountID;
     ProfileConfig config = *m_configPtr;

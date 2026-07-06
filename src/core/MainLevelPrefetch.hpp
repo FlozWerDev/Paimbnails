@@ -1,8 +1,5 @@
 #pragma once
 
-// Spread main-level (1-22) thumbnail preloading across frames so disk, CPU
-// decode and GPU uploads don't all hit in one tick.
-
 #include "MainLevels.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "../utils/MainThreadDelay.hpp"
@@ -51,7 +48,6 @@ void staggerMainLevelThumbnailLoads(LoadFn&& loadFn, int batchSize = 4, float ba
     (*step)();
 }
 
-// Resolve CDN URLs for the 22 main levels, honoring the 14-day cache window.
 inline void fetchMainLevelManifestWithCache(std::vector<int> const& mainLevels,
                                             std::string context) {
     if (paimon::areMainLevelsFreshlyCached()) {
@@ -65,8 +61,6 @@ inline void fetchMainLevelManifestWithCache(std::vector<int> const& mainLevels,
     HttpClient::get().fetchManifest(mainLevels, [context](bool success) {
         if (paimon::isRuntimeShuttingDown()) return;
         if (success) {
-            // Renew the 14-day window: future sessions serve main levels from
-            // disk without touching the network.
             paimon::markMainLevelsCached();
         }
         geode::log::info(

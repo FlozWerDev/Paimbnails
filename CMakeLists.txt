@@ -11,7 +11,7 @@ endif()
 
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
-project(Paimbnails VERSION 1.0.8)
+project(Paimbnails VERSION 1.0.9)
 
 # CPM
 set(CPM_DOWNLOAD_VERSION 0.40.2)
@@ -139,6 +139,7 @@ if (WIN32)
         dxgi.lib
         ole32.lib
         shell32.lib
+        ws2_32.lib
         winmm.lib
         opengl32.lib
     )
@@ -179,9 +180,10 @@ endif()
 target_link_libraries(${PROJECT_NAME} pl_mpeg)
 target_link_libraries(${PROJECT_NAME} rapidfuzz)
 
+# Discord Rich Presence uses our own self-contained IPC client
+# (src/features/discord-presence/services/DiscordIpcClient.*), so there's no
+# external dependency to fetch. Enabled on desktop platforms only.
 if (WIN32 OR APPLE)
-    CPMAddPackage("gh:EclipseMenu/discord-presence#3b50b08")
-    target_link_libraries(${PROJECT_NAME} discord-rpc)
     target_compile_definitions(${PROJECT_NAME} PRIVATE PAIMON_HAS_DISCORD_RPC=1)
 endif()
 

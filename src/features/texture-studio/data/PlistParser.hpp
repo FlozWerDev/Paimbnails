@@ -1,14 +1,4 @@
 #pragma once
-//
-// Hand-written cocos2d-x .plist parser.
-//
-// We do not pull in a full XML library because .plist files are intensely
-// regular: known <key>/<value> pairs, no namespaces, no DTD. A SAX-like
-// state machine fits in <300 lines and is trivial to fuzz.
-//
-// Supports cocos2d-x formats 0..3 (GD 2.2 ships format 3 exclusively, but
-// older packs and PackGen's "old" option use 0/1/2 for round-trip).
-//
 
 #include "SpriteFrameInfo.hpp"
 

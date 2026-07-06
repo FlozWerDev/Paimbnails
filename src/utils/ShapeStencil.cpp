@@ -11,7 +11,6 @@ using namespace cocos2d;
 // All shapes are drawn centered in the draw area (offset = half,half). The
 // caller does NOT move the stencil node; the vertices are already positioned.
 
-// regular polygon centered in the area
 static CCDrawNode* drawRegularPolygon(float half, int sides, float radius) {
     auto draw = PaimonDrawNode::create();
     std::vector<CCPoint> verts;
@@ -24,7 +23,6 @@ static CCDrawNode* drawRegularPolygon(float half, int sides, float radius) {
     return draw;
 }
 
-// star centered in the area
 static CCDrawNode* drawStar(float half, int points, float outerR, float innerR) {
     auto draw = PaimonDrawNode::create();
     int totalVerts = points * 2;
@@ -39,7 +37,6 @@ static CCDrawNode* drawStar(float half, int points, float outerR, float innerR) 
     return draw;
 }
 
-// heart centered in the area
 static CCDrawNode* drawHeart(float half, float size) {
     auto draw = PaimonDrawNode::create();
     const int segments = 60;
@@ -56,7 +53,6 @@ static CCDrawNode* drawHeart(float half, float size) {
     return draw;
 }
 
-// smooth circle (128 segments)
 static CCDrawNode* drawCircle(float half, float radius) {
     auto draw = PaimonDrawNode::create();
     const int segments = 128;
@@ -70,7 +66,6 @@ static CCDrawNode* drawCircle(float half, float radius) {
     return draw;
 }
 
-// rounded-corner square
 static CCDrawNode* drawRoundedSquare(float size, float radius) {
     auto draw = PaimonDrawNode::create();
     float h = size * 0.5f;
@@ -101,7 +96,6 @@ static CCDrawNode* drawRoundedSquare(float size, float radius) {
     return draw;
 }
 
-// pill (rounded rect / capsule)
 static CCDrawNode* drawPill(float half, float width, float height) {
     auto draw = PaimonDrawNode::create();
     float r = std::min(width, height) * 0.5f;
@@ -123,7 +117,6 @@ static CCDrawNode* drawPill(float half, float width, float height) {
     return draw;
 }
 
-// arch / inverted crescent
 static CCDrawNode* drawArch(float half, float size) {
     auto draw = PaimonDrawNode::create();
     float r = size * 0.5f;
@@ -143,7 +136,6 @@ static CCDrawNode* drawArch(float half, float size) {
     return draw;
 }
 
-// teardrop
 static CCDrawNode* drawTeardrop(float half, float size) {
     auto draw = PaimonDrawNode::create();
     float r = size * 0.4f;
@@ -160,7 +152,6 @@ static CCDrawNode* drawTeardrop(float half, float size) {
     return draw;
 }
 
-// cloud (3 overlapping circles as one polygon)
 static CCDrawNode* drawCloud(float half, float size) {
     auto draw = PaimonDrawNode::create();
     float r = size * 0.25f;
@@ -185,7 +176,6 @@ static CCDrawNode* drawCloud(float half, float size) {
     return draw;
 }
 
-// cross
 static CCDrawNode* drawCross(float half, float size) {
     auto draw = PaimonDrawNode::create();
     float t = size * 0.2f;
@@ -199,7 +189,6 @@ static CCDrawNode* drawCross(float half, float size) {
     return draw;
 }
 
-// moon
 static CCDrawNode* drawMoon(float half, float size) {
     auto draw = PaimonDrawNode::create();
     float r = size * 0.45f;
@@ -221,7 +210,6 @@ static CCDrawNode* drawMoon(float half, float size) {
     return draw;
 }
 
-// shield
 static CCDrawNode* drawShield(float half, float size) {
     auto draw = PaimonDrawNode::create();
     float w = size * 0.45f;
@@ -248,7 +236,6 @@ static CCDrawNode* drawShield(float half, float size) {
     return draw;
 }
 
-// badge (vertically elongated hexagon)
 static CCDrawNode* drawBadge(float half, float size) {
     auto draw = PaimonDrawNode::create();
     float w = size * 0.4f;
@@ -346,7 +333,6 @@ CCNode* createShapeStencil(std::string const& shapeName, float size) {
     return nullptr;
 }
 
-// generate regular-polygon vertices centered in the area
 static std::vector<CCPoint> getRegularPolygonVerts(float half, int sides, float radius) {
     std::vector<CCPoint> verts;
     verts.reserve(sides);
@@ -357,7 +343,6 @@ static std::vector<CCPoint> getRegularPolygonVerts(float half, int sides, float 
     return verts;
 }
 
-// star vertices centered in the area
 static std::vector<CCPoint> getStarVerts(float half, int points, float outerR, float innerR) {
     int totalVerts = points * 2;
     std::vector<CCPoint> verts;
@@ -370,7 +355,6 @@ static std::vector<CCPoint> getStarVerts(float half, int points, float outerR, f
     return verts;
 }
 
-// heart vertices centered in the area
 static std::vector<CCPoint> getHeartVerts(float half, float size) {
     const int segments = 60;
     std::vector<CCPoint> verts;
@@ -385,7 +369,6 @@ static std::vector<CCPoint> getHeartVerts(float half, float size) {
     return verts;
 }
 
-// cross vertices centered in the area
 static std::vector<CCPoint> getCrossVerts(float half, float size) {
     float t = size * 0.2f;
     float h = size * 0.5f;
@@ -396,7 +379,6 @@ static std::vector<CCPoint> getCrossVerts(float half, float size) {
     };
 }
 
-// square vertices centered in the area
 static std::vector<CCPoint> getSquareVerts(float half) {
     return {
         ccp(0, 0), ccp(half * 2, 0),
@@ -404,14 +386,12 @@ static std::vector<CCPoint> getSquareVerts(float half) {
     };
 }
 
-// rectangle vertices centered in the area
 static std::vector<CCPoint> getRectVerts(float half, float w, float h) {
     return {
         ccp(half - w, half - h), ccp(half + w, half - h), ccp(half + w, half + h), ccp(half - w, half + h)
     };
 }
 
-// smooth-circle vertices centered in the area
 static std::vector<CCPoint> getCircleVerts(float half, float radius) {
     const int segments = 128;
     std::vector<CCPoint> verts;
@@ -423,7 +403,6 @@ static std::vector<CCPoint> getCircleVerts(float half, float radius) {
     return verts;
 }
 
-// rounded-square vertices centered in the area
 static std::vector<CCPoint> getRoundedSquareVerts(float half, float size, float radius) {
     float h = size * 0.5f;
     float r = std::min(radius, h * 0.5f);
@@ -448,7 +427,6 @@ static std::vector<CCPoint> getRoundedSquareVerts(float half, float size, float 
     return verts;
 }
 
-// get shape vertices by name (centered at 0,0)
 static std::vector<CCPoint> getShapeVerts(std::string const& shapeName, float half) {
     if (shapeName == "circle") return getCircleVerts(half, half);
     if (shapeName == "square") return getSquareVerts(half);

@@ -120,7 +120,6 @@ class $modify(PaimonSlider, Slider) {
                 CCScaleTo::create(cfg.animDuration * 0.5f, targetScale)));
         }
 
-        // Reset rotation
         if (cfg.animType == SliderAnimType::Rotate || cfg.animType == SliderAnimType::BounceRotate) {
             node->setRotation(0.f);
         }
@@ -128,7 +127,6 @@ class $modify(PaimonSlider, Slider) {
         m_fields->m_oldValue = this->getValue();
     }
 
-    // auto-reset rotation when slider stops
     void onDragMove() {
         auto& cfg = CustomSliderManager::get().config();
         if (!cfg.animateOnDrag) return;
@@ -170,7 +168,6 @@ class $modify(PaimonSlider, Slider) {
                 CCScaleTo::create(cfg.animDuration, 0.9f)));
         }
 
-        // Reset rotation
         if (cfg.animType == SliderAnimType::Rotate || cfg.animType == SliderAnimType::BounceRotate) {
             node->stopActionByTag(42);
             node->runAction(CCEaseBackOut::create(

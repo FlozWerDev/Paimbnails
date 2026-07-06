@@ -1,5 +1,5 @@
 #pragma once
-// Hooks containers (GJGarageLayer, ShopLayer) instead of GJItemIcon::init (brittle).
+// Hooks containers (GJGarageLayer, GJShopLayer) instead of GJItemIcon::init (brittle).
 
 #include <Geode/cocos/include/ccTypes.h>
 
@@ -7,20 +7,21 @@ namespace cocos2d {
     class CCNode;
 }
 class GJItemIcon;
-class SimplePlayer;
 class ListButtonBar;
 
 namespace paimon::icons {
 
-// Areas where we recolor. Used to gate recoloring on the per-area Apply flag.
+// UserObject keys stamped on icons we touch.
+inline constexpr char const* kIconRecoloredKey = "paimbnails/icon-recolored";
+// Set by the GJItemIcon::changeToLockedState hook. Opacity-based lock
+// detection breaks as soon as a lock style changes the opacity, so the flag
+// is the durable source of truth.
+inline constexpr char const* kIconLockedKey = "paimbnails/locked-icon";
+
+// Areas where we recolor. Only areas with an actual hook exist here.
 enum class RecolorArea {
     IconKit,
     Shop,
-    Achievement,
-    Reward,
-    Profile,
-    Comment,
-    LevelCell,
 };
 
 class IconRecolorEngine final {
@@ -34,16 +35,14 @@ public:
 
     bool recolorOne(GJItemIcon* icon, int displayIndex, int totalCount, RecolorArea area);
 
-    void applySelectedHighlight(cocos2d::CCNode* root, int equippedID, int gamemodeIndex);
-
-    void applyAnimations(cocos2d::CCNode* root, RecolorArea area);
-
-    void revertSubtree(cocos2d::CCNode* root);
+    // Put every icon we touched back to its stock look (master switch off).
+    void restoreVanilla(cocos2d::CCNode* root);
+    void restoreListBar(ListButtonBar* bar);
 
 private:
     IconRecolorEngine() = default;
     bool isAreaEnabled(RecolorArea area) const;
-    int gamemodeIndexOf(SimplePlayer* sp) const;
+    void restoreOne(GJItemIcon* icon);
 };
 
 }  // namespace paimon::icons

@@ -231,8 +231,24 @@ std::string CursorManager::imageForState(CursorState state) const {
 
 void CursorManager::setImageForState(CursorState state, std::string const& filename) {
     configFieldForState(state) = filename;
+
+    // Auto-enable: assigning an image is a clear signal the user wants the
+    // custom cursor on. A lot of people set an image and think it's broken
+    // because they never flipped the Enable toggle, so turn it on for them.
+    bool justEnabled = false;
+    if (!filename.empty() && !m_config.enabled) {
+        m_config.enabled = true;
+        justEnabled = true;
+    }
+
     saveConfig();
-    reloadSprites();
+
+    // attachToOverlay reloads the sprites itself, so only one path runs.
+    if (justEnabled && !isAttached()) {
+        attachToOverlay();
+    } else {
+        reloadSprites();
+    }
 }
 
 // Config persistence
@@ -1200,8 +1216,18 @@ void CursorManager::update(float dt) {
     // retry/complete overlays.
     bool hideInGameplay = false;
     if (auto* pl = PlayLayer::get()) {
-        bool nativeHide = !GameManager::get()->getGameVariable("0024"); // GameVar::ShowCursor
-        bool modHide = paimon::settings::cursor::hideInGameplay();
+        // Both are string-keyed map lookups and only change from settings UIs;
+        // sample ~2x/sec instead of every frame.
+        static int s_hideFlagsCooldown = 0;
+        static bool s_nativeHide = false;
+        static bool s_modHide = false;
+        if (s_hideFlagsCooldown-- <= 0) {
+            s_hideFlagsCooldown = 30;
+            s_nativeHide = !GameManager::get()->getGameVariable("0024"); // GameVar::ShowCursor
+            s_modHide = paimon::settings::cursor::hideInGameplay();
+        }
+        bool nativeHide = s_nativeHide;
+        bool modHide = s_modHide;
 
         bool inMenuOverlay = pl->m_isPaused
             || pl->getChildByType<RetryLevelLayer>(0) != nullptr

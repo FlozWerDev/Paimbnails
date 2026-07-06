@@ -88,7 +88,6 @@ bool decodeBase64(std::string const& input, std::vector<uint8_t>& out) {
 } // namespace
 
 HttpClient::HttpClient() {
-    // base server config
     m_serverURL = "https://api.flozwer.org";
     m_forumServerURL = "https://paimbnailsbot.onrender.com";
 
@@ -97,7 +96,6 @@ HttpClient::HttpClient() {
     // saved values is unnecessary.
     m_apiKey = "074b91c9-6631-4670-a6f08a2ce970-0183-471b";
 
-    // load the saved mod code
     m_modCode = Mod::get()->getSavedValue<std::string>("mod-code", "");
     m_callbackGate = std::make_shared<std::atomic<bool>>(true);
 
@@ -183,7 +181,6 @@ void HttpClient::performRequest(
 
     bool hasExplicitModCodeHeader = false;
 
-    // apply headers
     applyHeaderList(req, headers, &hasExplicitModCodeHeader);
 
     if (includeStoredModCode && !hasExplicitModCodeHeader && !m_modCode.empty()) {
@@ -286,7 +283,6 @@ void HttpClient::performBinaryRequest(
     // Prefer WebP for smaller download size / faster decode, fall back to PNG/GIF
     req.header("Accept", "image/webp,image/png,image/gif,*/*");
 
-    // apply headers
     applyHeaderList(req, headers);
 
     if (includeModCode && !m_modCode.empty()) {
@@ -350,15 +346,12 @@ void HttpClient::performUpload(
     std::string const& fileContentType
 ) {
     auto callbackGate = m_callbackGate;
-    // use geode v5 MultipartForm
     web::MultipartForm form;
 
-    // add form fields
     for (auto const& field : formFields) {
         form.param(field.first, field.second);
     }
     
-    // add the file
     form.file(fieldName, std::span<uint8_t const>(data), filename, fileContentType);
 
     auto req = web::WebRequest();
@@ -368,7 +361,6 @@ void HttpClient::performUpload(
     // apply headers — only include X-Mod-Code if explicitly passed in the headers array
     applyHeaderList(req, headers);
 
-    // send geode multipart body
     req.bodyMultipart(form);
 
     WebHelper::dispatch(std::move(req), "POST", url, [callbackGate, callback](web::WebResponse res) {
@@ -647,7 +639,6 @@ void HttpClient::uploadProfileConfig(int accountID, std::string const& jsonConfi
     
     std::string url = m_serverURL + "/api/profiles/config/upload";
 
-    // use Geode v5 MultipartForm
     web::MultipartForm form;
     form.param("accountID", std::to_string(accountID));
     form.param("config", jsonConfig);
@@ -760,7 +751,7 @@ void HttpClient::batchCheckProfiles(std::vector<int> const& accountIDs, GenericC
     performRequest(url, "POST", body.dump(), headers, std::move(callback));
 }
 
-void HttpClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
+void HttpClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     PaimonDebug::log("[HttpClient] Uploading thumbnail as PNG for level {}, size: {} bytes", levelId, pngData.size());
     
     std::string url = m_serverURL + "/mod/upload";
@@ -775,6 +766,7 @@ void HttpClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngDat
         {"accountID", std::to_string(account.accountID)},
         {"isOfficialServer", account.isOfficialServer ? "true" : "false"}
     };
+    if (!levelMeta.empty()) formFields.push_back({"levelMeta", levelMeta});
 
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
@@ -810,7 +802,7 @@ void HttpClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngDat
     );
 }
 
-void HttpClient::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback) {
+void HttpClient::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     PaimonDebug::log("[HttpClient] Uploading GIF for level {}, size: {} bytes", levelId, gifData.size());
     
     std::string url = m_serverURL + "/mod/upload-gif";
@@ -825,6 +817,7 @@ void HttpClient::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std
         {"accountID", std::to_string(account.accountID)},
         {"isOfficialServer", account.isOfficialServer ? "true" : "false"}
     };
+    if (!levelMeta.empty()) formFields.push_back({"levelMeta", levelMeta});
 
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
@@ -853,7 +846,7 @@ void HttpClient::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std
     );
 }
 
-void HttpClient::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback) {
+void HttpClient::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     PaimonDebug::log("[HttpClient] Uploading video for level {}, size: {} bytes", levelId, mp4Data.size());
     
     std::string url = m_serverURL + "/mod/upload-video";
@@ -868,6 +861,7 @@ void HttpClient::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, s
         {"accountID", std::to_string(account.accountID)},
         {"isOfficialServer", account.isOfficialServer ? "true" : "false"}
     };
+    if (!levelMeta.empty()) formFields.push_back({"levelMeta", levelMeta});
 
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
@@ -912,7 +906,7 @@ void HttpClient::getThumbnailInfo(int levelId, GenericCallback callback) {
      performRequest(url, "GET", "", {}, callback, false);
 }
 
-void HttpClient::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
+void HttpClient::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     PaimonDebug::log("[HttpClient] Uploading suggestion for level {}, size: {} bytes", levelId, pngData.size());
     
     std::string url = m_serverURL + "/api/suggestions/upload";
@@ -926,6 +920,7 @@ void HttpClient::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngDa
         {"username", username},
         {"accountID", std::to_string(accountID)}
     };
+    if (!levelMeta.empty()) formFields.push_back({"levelMeta", levelMeta});
     
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
@@ -946,7 +941,7 @@ void HttpClient::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngDa
     );
 }
 
-void HttpClient::uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
+void HttpClient::uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     PaimonDebug::log("[HttpClient] Uploading update for level {}, size: {} bytes", levelId, pngData.size());
     
     std::string url = m_serverURL + "/api/updates/upload";
@@ -960,6 +955,7 @@ void HttpClient::uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, 
         {"username", username},
         {"accountID", std::to_string(accountID)}
     };
+    if (!levelMeta.empty()) formFields.push_back({"levelMeta", levelMeta});
     
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
@@ -1832,6 +1828,32 @@ void HttpClient::getBanList(BanListCallback callback) {
     performRequest(url, "GET", "", headers, callback);
 }
 
+void HttpClient::checkBanned(BanCheckCallback callback) {
+    std::string reqUser = getSafeAccountUsername();
+    int reqAccountID = getSafeAccountID();
+    std::string url = m_serverURL + "/api/banned?username=" + encodeQueryParam(reqUser)
+        + "&accountID=" + std::to_string(reqAccountID);
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Accept: application/json"
+    };
+    performRequest(url, "GET", "", headers, [callback = std::move(callback)](bool success, std::string const& response) {
+        if (!success) {
+            if (callback) callback(false, false, "");
+            return;
+        }
+        auto res = matjson::parse(response);
+        if (!res.isOk()) {
+            if (callback) callback(false, false, "");
+            return;
+        }
+        auto json = res.unwrap();
+        bool banned = json.contains("banned") && json["banned"].asBool().unwrapOr(false);
+        std::string reason = json.contains("reason") ? json["reason"].asString().unwrapOr("") : "";
+        if (callback) callback(true, banned, reason);
+    }, false);
+}
+
 void HttpClient::banUser(std::string const& username, std::string const& reason, BanUserCallback callback) {
     std::string url = m_serverURL + "/api/admin/ban";
     std::string adminUser = getSafeAccountUsername();
@@ -1914,6 +1936,86 @@ void HttpClient::getModerators(ModeratorsListCallback callback) {
         }
         callback(true, moderators);
     }, false);
+}
+
+void HttpClient::checkUserRoles(std::string const& username, int accountID, UserRolesCallback callback) {
+    std::string url = m_serverURL + "/api/moderator/check?username=" + encodeQueryParam(username);
+    if (accountID > 0) url += "&accountID=" + std::to_string(accountID);
+
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Accept: application/json"
+    };
+
+    performRequest(url, "GET", "", headers, [callback = std::move(callback)](bool success, std::string const& response) {
+        if (paimon::isRuntimeShuttingDown()) { callback({}, false); return; }
+        UserRoleFlags flags;
+        if (!success) { callback(flags, false); return; }
+
+        auto res = matjson::parse(response);
+        if (!res.isOk()) { callback(flags, false); return; }
+        auto json = res.unwrap();
+
+        flags.isMod    = json["isModerator"].asBool().unwrapOr(false);
+        flags.isAdmin  = json["isAdmin"].asBool().unwrapOr(false);
+        flags.isVip    = json["isVip"].asBool().unwrapOr(false);
+        flags.isHelper = json["isHelper"].asBool().unwrapOr(false);
+        flags.isIdea   = json["isIdea"].asBool().unwrapOr(false);
+        if (flags.isAdmin) flags.isMod = true;
+        callback(flags, true);
+    }, false);
+}
+
+void HttpClient::addRoleMember(std::string const& role, std::string const& username, int targetAccountID, GenericCallback callback) {
+    int adminAccountID = 0;
+    std::string adminUser;
+    if (auto* am = GJAccountManager::get()) adminAccountID = am->m_accountID;
+    if (auto* gm = GameManager::get()) adminUser = gm->m_playerName;
+
+    matjson::Value json = matjson::makeObject({
+        {"role", role},
+        {"username", username},
+        {"adminUser", adminUser},
+        {"accountID", adminAccountID},
+        {"targetAccountID", targetAccountID}
+    });
+    postWithAuth("/api/admin/add-role", json.dump(), std::move(callback));
+}
+
+void HttpClient::removeRoleMember(std::string const& role, std::string const& username, int targetAccountID, GenericCallback callback) {
+    int adminAccountID = 0;
+    std::string adminUser;
+    if (auto* am = GJAccountManager::get()) adminAccountID = am->m_accountID;
+    if (auto* gm = GameManager::get()) adminUser = gm->m_playerName;
+
+    matjson::Value json = matjson::makeObject({
+        {"role", role},
+        {"username", username},
+        {"adminUser", adminUser},
+        {"accountID", adminAccountID},
+        {"targetAccountID", targetAccountID}
+    });
+    postWithAuth("/api/admin/remove-role", json.dump(), std::move(callback));
+}
+
+void HttpClient::getRoleMembers(std::string const& role, GenericCallback callback) {
+    int adminAccountID = 0;
+    std::string adminUser;
+    if (auto* am = GJAccountManager::get()) adminAccountID = am->m_accountID;
+    if (auto* gm = GameManager::get()) adminUser = gm->m_playerName;
+
+    std::string url = m_serverURL + "/api/admin/role-members?role=" + encodeQueryParam(role)
+        + "&username=" + encodeQueryParam(adminUser)
+        + "&accountID=" + std::to_string(adminAccountID);
+
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "X-Admin-User: " + adminUser,
+        "Accept: application/json"
+    };
+    if (!m_modCode.empty()) headers.push_back("X-Mod-Code: " + m_modCode);
+
+    performRequest(url, "GET", "", headers, std::move(callback), false);
 }
 
 void HttpClient::getTopCreators(GenericCallback callback) {

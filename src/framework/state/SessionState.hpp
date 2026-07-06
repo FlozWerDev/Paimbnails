@@ -26,14 +26,10 @@ public:
         return instance;
     }
 
-    // General navigation
     int         currentListID          = 0;
     std::string lastNavigationOrigin;
 
-    // Verification/moderation context
     VerificationContext verification;
-
-    // Helpers
 
     // Consume a one-shot flag: reads and resets it in one call.
     static bool consumeFlag(bool& flag) {
@@ -54,7 +50,6 @@ public:
         verification = VerificationContext{};
     }
 
-    // Reset all transient state.
     void resetAll() {
         currentListID = 0;
         lastNavigationOrigin.clear();

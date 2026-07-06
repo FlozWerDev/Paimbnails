@@ -96,7 +96,6 @@ void VideoPlayer::bindMainThreadId() {
     s_mainThreadIdBound.store(true, std::memory_order_release);
 }
 
-// Factory
 std::unique_ptr<VideoPlayer> VideoPlayer::create(const std::string& videoPath) {
     auto ret = std::unique_ptr<VideoPlayer>(new (std::nothrow) VideoPlayer());
     if (ret && ret->init(videoPath, {})) {
@@ -137,14 +136,12 @@ VideoPlayer::~VideoPlayer() {
     // If destroyed elsewhere (e.g. worker thread), post GL cleanup to main thread.
     if (!isOnMainThread()) {
         geode::log::warn("[VideoPlayer] Destructor called off main thread — deferring GL cleanup");
-        // Retain textures before posting to main thread to prevent double-free
-        // if another thread releases them while the lambda is queued.
-        if (m_texture) m_texture->retain();
-        if (m_texY) m_texY->retain();
-        if (m_texCb) m_texCb->retain();
-        if (m_texCr) m_texCr->retain();
-        if (m_resolveSprite) m_resolveSprite->retain();
-        if (m_resolveRT) m_resolveRT->retain();
+        // Transfer our single owning reference on each object to the main-thread
+        // lambda, which drops it there (release may run ~CCTexture2D/glDelete*,
+        // which is only valid on the GL thread). We must NOT retain here: a
+        // retain paired with a single release would leave our owning reference
+        // undropped and leak every texture/RT. The owning reference itself keeps
+        // the objects alive until the lambda runs, so nothing can free them early.
         geode::Loader::get()->queueInMainThread([
             tex = m_texture, texY = m_texY, texCb = m_texCb, texCr = m_texCr,
             spr = m_resolveSprite, rt = m_resolveRT, fbo = m_readbackFBO
@@ -178,7 +175,6 @@ VideoPlayer::~VideoPlayer() {
     // The VideoPlayer uses its own m_targetFPS throttle instead.
     auto* director = cocos2d::CCDirector::get();
 
-    // Clean up RGBA buffer
     delete[] m_rgbaBuffer;
     m_rgbaBuffer = nullptr;
     
@@ -256,7 +252,10 @@ bool VideoPlayer::initAudio(const VideoPlayerCreateOptions& options) {
         return true;
     }
 
-#if defined(USE_MEDIA_FOUNDATION)
+    // Audio extraction is implemented per-platform: Media Foundation (Windows),
+    // MediaNDK (Android) and AVFoundation (Apple). All write a cached PCM WAV
+    // that FMOD plays back; the playback/sync path below is platform-agnostic.
+#if defined(USE_MEDIA_FOUNDATION) || defined(USE_MEDIA_NDK) || defined(USE_AV_FOUNDATION)
     std::string wavPath = getCachedWavPath(m_filePath);
     if (wavPath.empty()) {
         wavPath = extractAudioToWav(m_filePath);
@@ -389,12 +388,11 @@ void VideoPlayer::initTexture(int width, int height) {
             width, height,
             cocos2d::CCSize(static_cast<float>(width),
                             static_cast<float>(height)));
-        // The VideoPlayer must own the texture for its entire lifetime.
-        // `new` already sets refcount=1 — that IS our ownership reference.
-        // Do NOT autorelease — the player may outlive the sprites that
-        // reference this texture (e.g. during shared-video TTL grace).
-        // Matching release() is in ~VideoPlayer().
-        // LINEAR filtering + CLAMP_TO_EDGE
+        // The VideoPlayer owns the texture for its entire lifetime. `new`
+        // already sets refcount=1 — that IS our ownership reference. Do NOT
+        // autorelease: the player may outlive the sprites that reference this
+        // texture (e.g. during shared-video TTL grace). Matching release() is
+        // in ~VideoPlayer().
         glBindTexture(GL_TEXTURE_2D, m_texture->getName());
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -406,7 +404,7 @@ void VideoPlayer::initTexture(int width, int height) {
 }
 
 void VideoPlayer::initYUVTextures(int width, int height) {
-    if (m_texY) return;  // already initialized
+    if (m_texY) return;
 
     int uvW = (width + 1) / 2;
     int uvH = (height + 1) / 2;
@@ -416,12 +414,11 @@ void VideoPlayer::initYUVTextures(int width, int height) {
         if (!tex) return nullptr;
         auto* data = new (std::nothrow) uint8_t[w * h]();
         if (!data) { tex->release(); return nullptr; }
-        // Use I8 (GL_LUMINANCE) so the shader can read the value from .r
-        // A8 (GL_ALPHA) stores data in .a only, causing .r=0 → green/black tint
+        // I8 (GL_LUMINANCE) lets the shader read the value from .r; A8
+        // (GL_ALPHA) stores it in .a only, leaving .r=0 → green/black tint.
         tex->initWithData(data, cocos2d::kCCTexture2DPixelFormat_I8, w, h,
                           cocos2d::CCSize(static_cast<float>(w), static_cast<float>(h)));
         delete[] data;
-        // LINEAR + CLAMP
         glBindTexture(GL_TEXTURE_2D, tex->getName());
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -436,7 +433,6 @@ void VideoPlayer::initYUVTextures(int width, int height) {
     m_texCr = createLuminanceTex(uvW, uvH);
 
     if (!m_texY || !m_texCb || !m_texCr) {
-        // Cleanup on failure
         if (m_texY)  { m_texY->release();  m_texY = nullptr; }
         if (m_texCb) { m_texCb->release(); m_texCb = nullptr; }
         if (m_texCr) { m_texCr->release(); m_texCr = nullptr; }
@@ -869,7 +865,6 @@ void VideoPlayer::prepareGPUPipeline() {
     if (!isOnMainThread()) return;
     if (m_texWidth <= 0 || m_texHeight <= 0) return;
 
-    // 1) PBO + texture init, amortised between play() and the first frame.
     if (!m_pboInitAttempted) {
         m_pboInitAttempted = true;
 
@@ -907,13 +902,13 @@ void VideoPlayer::prepareGPUPipeline() {
         }
     }
 
-    // 2) RGBA texture (CPU YUV→RGBA path).  GPU YUV path doesn't need it.
+    // RGBA texture (CPU YUV→RGBA path).  GPU YUV path doesn't need it.
     if (!m_useGPUYuv && !m_texture) {
         initTexture(m_texWidth, m_texHeight);
     }
 
-    // 3) Resolve FBO (GPU YUV path only). Building it here removes the
-    //    visible hitch from the first getResolvedRGBATexture() call.
+    // Resolve FBO (GPU YUV path only). Building it here removes the
+    // visible hitch from the first getResolvedRGBATexture() call.
     if (m_useGPUYuv && m_texY && m_texCb && m_texCr && !m_resolveRT) {
         m_blitShader = paimon::shaders::getYUVBlitShader();
         if (m_blitShader) {
@@ -1073,10 +1068,8 @@ bool VideoPlayer::retryUploadFromRgbaBuffer() {
     return true;
 }
 
-// Update loop
 void VideoPlayer::update(float dt) {
     if (!m_playing || !m_decoder) return;
-
     auto* director = cocos2d::CCDirector::get();
     if (!director) return;
 
@@ -1087,29 +1080,63 @@ void VideoPlayer::update(float dt) {
     if (currentFrame == m_lastUpdateFrame) return;
     m_lastUpdateFrame = currentFrame;
 
-    m_playbackTime += static_cast<double>(dt);
-    m_timeSinceLastUpload += static_cast<double>(dt);
-    m_audioSyncAccumulator += static_cast<double>(dt);
-
-    // Decoder stall detection (Android)
-    // If the hardware decoder never produces a frame within 5 seconds of
-    // play(), it's likely stuck on an unsupported color format or a driver
-    // bug.  Stop gracefully to avoid leaving the player in a zombie state
-    // that later causes ANR when releaseSharedVideo() tries to forceStop().
-    if (!m_hasVisibleFrame && !m_decoderStalled) {
-        m_timeSincePlay += static_cast<double>(dt);
-        if (m_timeSincePlay > 5.0) {
-            m_decoderStalled = true;
-            geode::log::warn("[VideoPlayer] Decoder stall detected — no frame produced in 5s, "
-                             "stopping playback: {}", m_filePath);
-            m_playing = false;
-            if (m_decoder) {
-                m_decoder->stopDecoding();
+    // Hold the playback clock at zero until the first frame is actually on
+    // screen. The decoder + GPU pipeline take a moment to warm up on load; if
+    // the clock kept advancing during that wait it would be ahead of the video
+    // by the time the first frame uploads, and the drain loop below would skip
+    // a burst of frames — a visible jump on load. Show the first available
+    // frame immediately (PTS-gate bypassed) and anchor the clock to its PTS.
+    if (!m_hasVisibleFrame) {
+        if (!m_decoderStalled && !m_pendingUpload) {
+            m_timeSincePlay += static_cast<double>(dt);
+            if (m_timeSincePlay > 5.0) {
+                m_decoderStalled = true;
+                geode::log::warn("[VideoPlayer] Decoder stall detected — no frame produced in 5s, "
+                                 "stopping playback: {}", m_filePath);
+                m_playing = false;
+                if (m_decoder) m_decoder->stopDecoding();
+                if (m_onFinished) m_onFinished();
+                return;
             }
-            if (m_onFinished) m_onFinished();
+        }
+
+        // Re-submit a first frame that was converted but couldn't reach the GPU
+        // last update (all PBO slots busy). No PTS gate — this is the load frame.
+        if (m_pendingUpload) {
+            if (retryUploadFromRgbaBuffer()) {
+                m_pendingUpload = false;
+                m_timeSinceLastUpload = 0.0;
+                ++m_frameCounter;
+            }
+            syncAudioToPlaybackTime(false);
             return;
         }
+
+        if (const IVideoDecoder::Frame* f = m_decoder->peekFrame()) {
+            double firstPTS = f->pts;
+            bool ok = uploadFrame(*f);
+            m_decoder->releaseFrame();
+            if (ok) {
+                m_playbackTime = firstPTS;
+                m_timeSinceLastUpload = 0.0;
+                ++m_frameCounter;
+            } else {
+                // CPU path: data is staged in m_rgbaBuffer, retry next update.
+                m_pendingUpload = true;
+            }
+        }
+        syncAudioToPlaybackTime(false);
+        return;
     }
+
+    // Clamp the per-frame advance so a single hitch (GL warm-up, scene
+    // transition, GC) doesn't push the clock far ahead and skip a burst of
+    // frames. The cap sits above the lowest target-FPS interval so normal
+    // low-FPS playback is unaffected.
+    double advance = std::min(static_cast<double>(dt), 0.1);
+    m_playbackTime += advance;
+    m_timeSinceLastUpload += advance;
+    m_audioSyncAccumulator += advance;
 
     double minInterval = 1.0 / std::max(m_targetFPS, 1);
 
@@ -1541,7 +1568,8 @@ void VideoPlayer::fadeAudioIn(float duration) {
     auto fadeGeneration = m_audioFadeGeneration;
 
     auto fadeStep = std::make_shared<std::function<void(int)>>();
-    *fadeStep = [generation, totalSteps, targetVolume, fadeStep, audioName, playingFlag, fadeGeneration](int step) {
+    std::weak_ptr<std::function<void(int)>> weakFadeStep = fadeStep;
+    *fadeStep = [generation, totalSteps, targetVolume, weakFadeStep, audioName, playingFlag, fadeGeneration](int step) {
         if (generation != fadeGeneration->load(std::memory_order_acquire)) return;
         auto* engine = FMODAudioEngine::sharedEngine();
         auto* bgCh = getMainBgChannel(engine);
@@ -1556,9 +1584,12 @@ void VideoPlayer::fadeAudioIn(float duration) {
             return;
         }
 
-        paimon::scheduleMainThreadDelay(0.05f, [fadeStep, step]() {
-            (*fadeStep)(step + 1);
-        });
+        // Weak self-ref + strong-in-continuation avoids a self-owning cycle leak.
+        if (auto strong = weakFadeStep.lock()) {
+            paimon::scheduleMainThreadDelay(0.05f, [strong, step]() {
+                (*strong)(step + 1);
+            });
+        }
     };
 
     (*fadeStep)(0);
@@ -1601,7 +1632,8 @@ void VideoPlayer::fadeAudioOut(float duration, std::function<void()> onComplete)
     auto fadeGeneration = m_audioFadeGeneration;
 
     auto fadeStep = std::make_shared<std::function<void(int)>>();
-    *fadeStep = [generation, totalSteps, startVol, fadeStep, callback, audioName, playingFlag, fadeGeneration](int step) {
+    std::weak_ptr<std::function<void(int)>> weakFadeStep = fadeStep;
+    *fadeStep = [generation, totalSteps, startVol, weakFadeStep, callback, audioName, playingFlag, fadeGeneration](int step) {
         if (generation != fadeGeneration->load(std::memory_order_acquire)) return;
         auto* engine = FMODAudioEngine::sharedEngine();
         auto* bgCh = getMainBgChannel(engine);
@@ -1626,9 +1658,12 @@ void VideoPlayer::fadeAudioOut(float duration, std::function<void()> onComplete)
             return;
         }
 
-        paimon::scheduleMainThreadDelay(0.05f, [fadeStep, step]() {
-            (*fadeStep)(step + 1);
-        });
+        // Weak self-ref + strong-in-continuation avoids a self-owning cycle leak.
+        if (auto strong = weakFadeStep.lock()) {
+            paimon::scheduleMainThreadDelay(0.05f, [strong, step]() {
+                (*strong)(step + 1);
+            });
+        }
     };
 
     (*fadeStep)(0);

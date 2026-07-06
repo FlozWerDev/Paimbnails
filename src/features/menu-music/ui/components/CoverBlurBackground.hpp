@@ -1,16 +1,5 @@
 ﻿#pragma once
 
-// CoverBlurBackground — fondo del popup con la portada difuminada.
-//
-// Se usa como hijo del content clipper del popup con zOrder 0.
-// Cuando se le pasa una nueva portada, dispara buildPaimonBlurAsync
-// sobre el sistema Shaders existente y, al completarse, crossfade del
-// sprite antiguo al nuevo. Si la portada cambia antes de que termine
-// el blur, se cancela el reemplazo (token de generacion).
-//
-// Esta version NO pinta overlay oscuro encima: solo la imagen. El
-// recorte redondeado lo aporta el content clipper maestro del popup.
-
 #include <Geode/Geode.hpp>
 #include <string>
 
@@ -20,9 +9,8 @@ class CoverBlurBackground : public cocos2d::CCNode {
 public:
     static CoverBlurBackground* create(cocos2d::CCSize const& size);
 
-    // Reemplaza el fondo por la portada dada. Si el path esta vacio,
-    // limpia (fondo queda transparente). Es seguro llamarla multiples
-    // veces aunque el blur anterior no haya terminado.
+    // Reemplaza el fondo por la portada dada (path vacio = limpiar).
+    // Seguro de llamar varias veces aunque el blur previo no haya terminado.
     void setCoverFromPath(const std::string& absolutePath);
 
 protected:

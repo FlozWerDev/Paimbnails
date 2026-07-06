@@ -79,17 +79,22 @@ bool BanListPopup::init() {
                     }
                 }
 
-                for (auto const& val : root["details"]) {
-                    if (!val.isObject()) continue;
-                    auto keyOpt = val.getKey();
-                    if (!keyOpt) continue;
+                // Only iterate when 'details' is actually an object: matjson's
+                // begin()/end() extract a std::vector<Value> and throw on a
+                // non-container, so a missing/scalar 'details' would crash here.
+                if (root["details"].isObject()) {
+                    for (auto const& val : root["details"]) {
+                        if (!val.isObject()) continue;
+                        auto keyOpt = val.getKey();
+                        if (!keyOpt) continue;
 
-                    BanDetail d;
-                    d.reason   = val["reason"].asString().unwrapOr("");
-                    d.bannedBy = val["bannedBy"].asString().unwrapOr("");
-                    d.date     = val["date"].asString().unwrapOr("");
+                        BanDetail d;
+                        d.reason   = val["reason"].asString().unwrapOr("");
+                        d.bannedBy = val["bannedBy"].asString().unwrapOr("");
+                        d.date     = val["date"].asString().unwrapOr("");
 
-                    popup->m_banDetails[*keyOpt] = d;
+                        popup->m_banDetails[*keyOpt] = d;
+                    }
                 }
             }
         }

@@ -16,7 +16,7 @@ public:
         return instance;
     }
 
-    // Register a feature. Returns false if one with that name already exists.
+    // Returns false if a feature with that name already exists.
     bool registerFeature(FeatureSpec spec) {
         std::lock_guard lock(m_mutex);
         if (m_specs.contains(spec.name)) return false;
@@ -26,7 +26,6 @@ public:
         return true;
     }
 
-    // Enable or disable a feature at runtime.
     void setEnabled(std::string const& name, bool enabled) {
         std::lock_guard lock(m_mutex);
         auto it = m_enabled.find(name);

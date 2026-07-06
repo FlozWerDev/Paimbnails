@@ -21,7 +21,6 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
     auto contentSize = m_mainLayer->getContentSize();
     float cx = contentSize.width / 2.f;
 
-    // Usuario reportado
     auto infoLabel = CCLabelBMFont::create(
         fmt::format("User: {}", username).c_str(),
         "goldFont.fnt"
@@ -35,7 +34,6 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
     }
     m_mainLayer->addChild(infoLabel);
 
-    // Input de razon
     m_textInput = geode::TextInput::create(280.f, "Reason for reporting...", "chatFont.fnt");
     m_textInput->setCommonFilter(geode::CommonFilter::Any);
     m_textInput->setMaxCharCount(200);
@@ -43,7 +41,6 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
     m_textInput->setScale(0.9f);
     m_mainLayer->addChild(m_textInput);
 
-    // Boton de emote
     {
         paimon::emotes::EmoteInputContext ctx;
         ctx.getText = [this]() -> std::string {
@@ -64,7 +61,6 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
         m_mainLayer->addChild(emoteMenu, 5);
     }
 
-    // Autocompletar emotes
     {
         auto ac = paimon::emotes::EmoteAutocomplete::create(
             m_textInput->getInputNode(),
@@ -76,7 +72,6 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
         m_mainLayer->addChild(ac, 100);
     }
 
-    // Boton de enviar
     auto sendSpr = ButtonSprite::create("Send", "goldFont.fnt", "GJ_button_06.png", 0.8f);
     sendSpr->setScale(0.85f);
     auto sendBtn = CCMenuItemSpriteExtra::create(sendSpr, this, menu_selector(ReportUserPopup::onSend));

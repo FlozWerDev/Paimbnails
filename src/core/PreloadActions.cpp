@@ -1,5 +1,3 @@
-// Shared implementation for the main-level thumbnail + emote preload.
-
 #include "PreloadActions.hpp"
 
 #include <Geode/Geode.hpp>
@@ -19,13 +17,10 @@ using namespace geode::prelude;
 
 namespace {
 
-// Phase 1: queue main-level (1-22) thumbnails.
 void schedulePrefetchMainLevels() {
     using namespace paimon::preload;
 
-    // Claim Bootstrap's legacy flag so its fallback won't re-queue the same 22
-    // tasks. ThumbnailLoader is idempotent, but skipping 22 redundant
-    // requestLoad calls speeds startup and avoids duplicate logs.
+    // Claim Bootstrap's flag so its fallback won't re-queue the same 22 tasks.
     (void)paimon::tryClaimMainLevelsPrefetch();
 
     std::vector<int> mainLevels;
@@ -37,8 +32,6 @@ void schedulePrefetchMainLevels() {
     g_thumbsTotal.store(static_cast<int>(mainLevels.size()), std::memory_order_release);
     g_thumbsLoaded.store(0, std::memory_order_release);
 
-    // Batched manifest to resolve all 22 CDN URLs in one request; honors the
-    // 14-day cache window.
     paimon::preload::fetchMainLevelManifestWithCache(mainLevels, "Preload");
 
     auto& loader = ThumbnailLoader::get();
@@ -59,7 +52,6 @@ void schedulePrefetchMainLevels() {
     );
 }
 
-// Start emote preload once the catalog is available.
 void startEmotePreloadIfReady() {
     using namespace paimon::preload;
     using paimon::emotes::EmoteCache;
@@ -94,14 +86,11 @@ void startEmotePreloadIfReady() {
     );
 }
 
-// Phase 2: emotes. If no catalog yet, try loading from disk; otherwise fetch
-// from the server and wait for the callback.
 void schedulePrefetchEmotes() {
     using paimon::emotes::EmoteService;
 
     auto& service = EmoteService::get();
 
-    // Disk first: cheap, no network.
     if (!service.isLoaded()) {
         service.loadCatalogFromDisk();
     }
@@ -112,7 +101,6 @@ void schedulePrefetchEmotes() {
     }
 
     if (service.isFetching()) {
-        // Another caller (delayed Bootstrap) is already fetching; don't duplicate.
         log::info("[Paimbnails Preload] EmoteService ya está fetcheando catálogo; esperaremos al callback");
         return;
     }
@@ -122,8 +110,7 @@ void schedulePrefetchEmotes() {
         if (paimon::isRuntimeShuttingDown()) return;
         if (!success) {
             log::warn("[Paimbnails Preload] Fetch de catálogo de emotes falló");
-            // Mark the catalog "ready" even on failure so the label doesn't wait
-            // forever; total = 0 emotes.
+            // Mark ready even on failure so the label doesn't wait forever.
             paimon::preload::g_emotesCatalogReady.store(true, std::memory_order_release);
             return;
         }
@@ -137,8 +124,6 @@ namespace paimon::preload {
 
 void startFullPreload() {
     schedulePrefetchMainLevels();
-    // Defer emotes until after the menu so they don't compete with thumbnails
-    // and GPU decode during loading / the first seconds in the menu.
     paimon::scheduleMainThreadDelay(14.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         schedulePrefetchEmotes();

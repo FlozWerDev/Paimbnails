@@ -4,12 +4,10 @@
 
 namespace paimon::scorecell {
 
-// Self-contained hover animation node for GJScoreCell. Types: scale/lift/tilt/glow/shine.
 class ScoreCellHoverWatcher : public cocos2d::CCNode {
 public:
     static ScoreCellHoverWatcher* create(std::string const& type, float intensity);
 
-    // Register target node for transform-based hovers (scale/lift/tilt) with its resting transform.
     void setTransformTarget(cocos2d::CCNode* target,
                             float baseScaleX, float baseScaleY,
                             cocos2d::CCPoint basePos, float baseRot);
@@ -40,8 +38,7 @@ protected:
     geode::Ref<cocos2d::CCNode> m_shine = nullptr;
 };
 
-// One-shot entrance animation. type: none/fade/slide/pop/bounce.
 void applyEntrance(cocos2d::CCNode* node, std::string const& type,
                    cocos2d::CCPoint finalPos, float finalScaleX, float finalScaleY);
 
-} // namespace paimon::scorecell
+}

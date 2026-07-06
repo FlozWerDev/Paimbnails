@@ -29,25 +29,20 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Geometria del popup
 namespace {
     constexpr float kPopupW = 440.f;
     constexpr float kPopupH = 270.f;
 
-    // Area de preview
     constexpr float kPreviewBoxW = 110.f;
     constexpr float kPreviewBoxH = 150.f;
     constexpr float kPreviewPad  = 10.f;
 
-    // Panel de controles
-    constexpr float kPanelX = 130.f;        // x del borde izquierdo del panel
-    constexpr float kPanelW = 290.f;        // ancho
-    constexpr float kPanelH = 185.f;        // alto
+    constexpr float kPanelX = 130.f;
+    constexpr float kPanelW = 290.f;
+    constexpr float kPanelH = 185.f;
 
-    // Slider
     constexpr float kSliderW = 140.f;
 
-    // Helpers
     CCLabelBMFont* smallLabel(std::string const& str, float scale = 0.4f, char const* font = "goldFont.fnt") {
         auto lbl = CCLabelBMFont::create(str.c_str(), font);
         lbl->setScale(scale);
@@ -68,7 +63,6 @@ namespace {
         }
     }
 
-    // Crea un slider normalizado [0..1]
     Slider* makeSlider(
         CCNode* parent, float yPos, float normValue,
         SEL_MenuHandler handler, CCNode* target
@@ -82,7 +76,6 @@ namespace {
     }
 }
 
-// create / init
 
 ProfilePicEditorPopup* ProfilePicEditorPopup::create() {
     auto ret = new ProfilePicEditorPopup();
@@ -98,13 +91,11 @@ bool ProfilePicEditorPopup::init() {
     if (!Popup::init(kPopupW, kPopupH)) return false;
     this->setTitle("Profile Photo Editor");
 
-    // Carga la configuracion actual
     m_editConfig = ProfilePicCustomizer::get().getConfig();
 
     auto winSize = m_mainLayer->getContentSize();
     float cx = winSize.width * 0.5f;
 
-    // Zona de preview
     float previewCenterX = kPreviewPad + kPreviewBoxW * 0.5f;
     float previewCenterY = winSize.height * 0.5f - 5.f;
 
@@ -130,7 +121,6 @@ bool ProfilePicEditorPopup::init() {
     m_previewContainer->setPosition({previewCenterX, previewCenterY - 8.f});
     m_mainLayer->addChild(m_previewContainer);
 
-    // Panel de controles
     float panelCenterX = kPanelX + kPanelW * 0.5f;
     float panelCenterY = winSize.height * 0.5f + 10.f;
 
@@ -145,17 +135,14 @@ bool ProfilePicEditorPopup::init() {
         m_mainLayer->addChild(panelBg, -1);
     }
 
-    // Tabs del panel
     createTabs();
 
-    // Contenedor del contenido de cada tab
     m_tabContent = CCNode::create();
     m_tabContent->setAnchorPoint({0.5f, 0.5f});
     m_tabContent->setContentSize({kPanelW - 16.f, kPanelH - 40.f});
     m_tabContent->setPosition({panelCenterX, panelCenterY - 14.f});
     m_mainLayer->addChild(m_tabContent);
 
-    // Barra inferior: preset, random, reset, guardar
     float bottomY = 19.f;
 
     auto bottomMenu = CCMenu::create();
@@ -175,25 +162,21 @@ bool ProfilePicEditorPopup::init() {
     saveBtn->setPosition({panelCenterX + 10.f, bottomY});
     bottomMenu->addChild(saveBtn);
 
-    (void)cx; // sin uso
+    (void)cx;
 
-    // Tab inicial
     switchTab(0);
 
-    // Preview inicial
     rebuildPreview();
 
     paimon::markDynamicPopup(this);
     return true;
 }
 
-// Tabs
 
 void ProfilePicEditorPopup::createTabs() {
     auto winSize = m_mainLayer->getContentSize();
     float panelCenterX = kPanelX + kPanelW * 0.5f;
     float panelTopY    = winSize.height * 0.5f + kPanelH * 0.5f + 10.f - 14.f;
-    // Calcula la posicion superior del panel
 
     static const std::array<char const*, 6> kTabNames = {
         "Border", "Shape", "Image", "Icon", "Deco", "Style"
@@ -227,7 +210,6 @@ void ProfilePicEditorPopup::onTabBtn(CCObject* sender) {
 void ProfilePicEditorPopup::switchTab(int tab) {
     m_currentTab = tab;
 
-    // Marca el tab activo
     for (int i = 0; i < (int)m_tabBtns.size(); i++) {
         auto* spr = typeinfo_cast<ButtonSprite*>(m_tabBtns[i]->getNormalImage());
         if (!spr) continue;
@@ -241,7 +223,6 @@ void ProfilePicEditorPopup::rebuildCurrentTab() {
     if (!m_tabContent) return;
     m_tabContent->removeAllChildrenWithCleanup(true);
 
-    // Limpia referencias de sliders para evitar punteros invalidos
     m_thicknessSlider = nullptr;
     m_thicknessLabel = nullptr;
     m_frameOpacitySlider = nullptr;
@@ -257,12 +238,12 @@ void ProfilePicEditorPopup::rebuildCurrentTab() {
 
     CCNode* tabNode = nullptr;
     switch (m_currentTab) {
-        case 0: tabNode = createFrameTab(); break;         // Border
-        case 1: tabNode = createShapeTab(); break;         // Shape
-        case 2: tabNode = createAdjustTab(); break;        // Image
-        case 3: tabNode = createIconTab(); break;          // Icon
-        case 4: tabNode = createDecoTab(); break;          // Deco
-        case 5: tabNode = createStyleTab(); break;         // Style (Font + Presets)
+        case 0: tabNode = createFrameTab(); break;
+        case 1: tabNode = createShapeTab(); break;
+        case 2: tabNode = createAdjustTab(); break;
+        case 3: tabNode = createIconTab(); break;
+        case 4: tabNode = createDecoTab(); break;
+        case 5: tabNode = createStyleTab(); break;
     }
     if (tabNode) {
         tabNode->setAnchorPoint({0.5f, 0.5f});
@@ -271,7 +252,6 @@ void ProfilePicEditorPopup::rebuildCurrentTab() {
     }
 }
 
-// Tab de borde
 
 CCNode* ProfilePicEditorPopup::createFrameTab() {
     auto root = CCNode::create();
@@ -281,7 +261,6 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
     float cx = area.width * 0.5f;
     float topY = area.height - 18.f;
 
-    // Activa/desactiva el borde
     auto toggleMenu = CCMenu::create();
     toggleMenu->setPosition({cx, topY});
     root->addChild(toggleMenu);
@@ -298,7 +277,6 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
     toggleLbl->setPosition({cx - 78.f, topY});
     root->addChild(toggleLbl);
 
-    // Sliders de grosor y opacidad
     float sliderY1 = topY - 28.f;
     float sliderY2 = topY - 54.f;
 
@@ -324,21 +302,18 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
         outLabel = vlbl;
     };
 
-    // Grosor: 0-20px normalizado
     float thickNorm = std::clamp(m_editConfig.frame.thickness / 20.f, 0.f, 1.f);
     addSlider("Thickness", sliderY1, thickNorm,
               menu_selector(ProfilePicEditorPopup::onThicknessChanged),
               fmt::format("{:.1f}", m_editConfig.frame.thickness),
               m_thicknessSlider, m_thicknessLabel);
 
-    // Opacidad: 0-255
     float opNorm = std::clamp(m_editConfig.frame.opacity / 255.f, 0.f, 1.f);
     addSlider("Opacity", sliderY2, opNorm,
               menu_selector(ProfilePicEditorPopup::onFrameOpacityChanged),
               std::to_string(static_cast<int>(m_editConfig.frame.opacity)),
               m_frameOpacitySlider, m_frameOpacityLabel);
 
-    // Paleta de colores
     auto colLbl = smallLabel("Color", 0.45f);
     colLbl->setAnchorPoint({0.f, 0.5f});
     colLbl->setPosition({18.f, sliderY2 - 28.f});
@@ -376,7 +351,6 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
         colMenu->addChild(btn);
     }
 
-    // Boton de color personalizado
     auto customSpr = ButtonSprite::create("Custom", "goldFont.fnt", "GJ_button_04.png", 0.6f);
     customSpr->setScale(0.5f);
     auto customBtn = CCMenuItemSpriteExtra::create(customSpr, this,
@@ -390,7 +364,7 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
 
 void ProfilePicEditorPopup::onFrameToggle(CCObject* sender) {
     auto toggler = static_cast<CCMenuItemToggler*>(sender);
-    m_editConfig.frameEnabled = !toggler->isToggled(); // Estado antes del toggle
+    m_editConfig.frameEnabled = !toggler->isToggled();
     rebuildPreview();
 }
 
@@ -430,7 +404,6 @@ void ProfilePicEditorPopup::onPickCustomBorderColor(CCObject*) {
     popup->show();
 }
 
-// Tab de forma
 
 CCNode* ProfilePicEditorPopup::createShapeTab() {
     auto root = CCNode::create();
@@ -461,35 +434,30 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
         outLabel = vlbl;
     };
 
-    // Ancho normalizado
     float wNorm = std::clamp((m_editConfig.scaleX - 0.5f) / 1.3f, 0.f, 1.f);
     addSlider("Width", topY, wNorm,
               menu_selector(ProfilePicEditorPopup::onScaleXChanged),
               fmt::format("{:.2f}", m_editConfig.scaleX),
               m_scaleXSlider, m_scaleXLabel);
 
-    // Alto normalizado
     float hNorm = std::clamp((m_editConfig.scaleY - 0.5f) / 1.3f, 0.f, 1.f);
     addSlider("Height", topY - 14.f, hNorm,
               menu_selector(ProfilePicEditorPopup::onScaleYChanged),
               fmt::format("{:.2f}", m_editConfig.scaleY),
               m_scaleYSlider, m_scaleYLabel);
 
-    // Tamano: 60-200
     float sNorm = std::clamp((m_editConfig.size - 60.f) / 140.f, 0.f, 1.f);
     addSlider("Size", topY - 28.f, sNorm,
               menu_selector(ProfilePicEditorPopup::onSizeChanged),
               std::to_string(static_cast<int>(m_editConfig.size)),
               m_sizeSlider, m_sizeLabel);
 
-    // Rotacion: -180..180
     float rNorm = std::clamp((m_editConfig.rotation + 180.f) / 360.f, 0.f, 1.f);
     addSlider("Rotation", topY - 42.f, rNorm,
               menu_selector(ProfilePicEditorPopup::onRotationChanged),
               fmt::format("{:.0f}", m_editConfig.rotation),
               m_rotationSlider, m_rotationLabel);
 
-    // Grid de formas
     auto shapeLbl = smallLabel("Shape", 0.42f);
     shapeLbl->setAnchorPoint({0.f, 0.5f});
     shapeLbl->setPosition({14.f, topY - 62.f});
@@ -511,14 +479,12 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
         float cellSize = 26.f;
         bool selected = m_editConfig.stencilSprite == shapeName;
 
-        // Fondo del boton
         auto cellBg = paimon::SpriteHelper::createColorPanel(
             cellSize, cellSize,
             selected ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40},
             selected ? 200 : 120, 3.f
         );
 
-        // Icono centrado
         auto stencilIcon = createShapeStencil(shapeName, cellSize - 8.f);
         if (stencilIcon) {
             stencilIcon->setAnchorPoint({0.5f, 0.5f});
@@ -532,7 +498,6 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
     }
     shapeMenu->updateLayout();
 
-    // Boton de resetear forma
     auto resetSpr = ButtonSprite::create("Reset Shape", "goldFont.fnt", "GJ_button_06.png", 0.6f);
     resetSpr->setScale(0.5f);
     auto resetBtn = CCMenuItemSpriteExtra::create(resetSpr, this, menu_selector(ProfilePicEditorPopup::onResetShape));
@@ -596,7 +561,6 @@ void ProfilePicEditorPopup::onResetShape(CCObject*) {
     rebuildPreview();
 }
 
-// Tab de decoraciones
 
 namespace {
     constexpr int kDecoGridCols = 6;
@@ -620,7 +584,6 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
 
     m_decoCategoryIdx = std::clamp(m_decoCategoryIdx, 0, (int)categories.size() - 1);
 
-    // Categorias de decoraciones
     float chipsY = area.height - 14.f;
     auto chipsMenu = CCMenu::create();
     chipsMenu->setAnchorPoint({0.5f, 0.5f});
@@ -643,11 +606,9 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
     }
     chipsMenu->updateLayout();
 
-    // Modo inspector de decoracion seleccionada
     if (m_selectedDecoIdx >= 0 && m_selectedDecoIdx < (int)m_editConfig.decorations.size()) {
         auto const& deco = m_editConfig.decorations[m_selectedDecoIdx];
 
-        // Cabecera: icono + nombre + count
         float headerY = chipsY - 26.f;
         auto headerLbl = smallLabel(
             fmt::format("Editing deco #{} ({}/{})",
@@ -660,17 +621,15 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
         headerLbl->setColor({255, 220, 120});
         root->addChild(headerLbl);
 
-        // Boton "Back" arriba izq
         auto backSpr = ButtonSprite::create("Back", "goldFont.fnt", "GJ_button_04.png", 0.6f);
         backSpr->setScale(0.45f);
         auto backBtn = CCMenuItemSpriteExtra::create(backSpr, this, menu_selector(ProfilePicEditorPopup::onCategorySelect));
-        backBtn->setTag(-1000); // hack: tag especial para deseleccionar
+        backBtn->setTag(-1000);
         auto backMenu = CCMenu::create();
         backMenu->setPosition({18.f, headerY});
         backMenu->addChild(backBtn);
         root->addChild(backMenu);
 
-        // Sliders del inspector
         auto addInspector = [&](char const* name, float y, float normValue,
                                 SEL_MenuHandler sel, std::string const& valueText,
                                 Slider*& outSlider, CCLabelBMFont*& outLabel) {
@@ -694,7 +653,6 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
         };
 
         float y0 = headerY - 22.f;
-        // Scale: 0.2-2.0 -> norm = (s-0.2)/1.8
         addInspector("Scale",
             y0, (deco.scale - 0.2f) / 1.8f,
             menu_selector(ProfilePicEditorPopup::onDecoScaleChanged),
@@ -707,7 +665,6 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
             fmt::format("{:.0f}", deco.rotation),
             m_decoRotSlider, m_decoRotLabel);
 
-        // posX/Y range: -1.2 .. 1.2
         addInspector("Pos X",
             y0 - 36.f, (deco.posX + 1.2f) / 2.4f,
             menu_selector(ProfilePicEditorPopup::onDecoPosXChanged),
@@ -726,7 +683,6 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
             std::to_string(static_cast<int>(deco.opacity)),
             m_decoOpacitySlider, m_decoOpacityLabel);
 
-        // Botones de accion: voltear, capa, copiar, color, eliminar
         float btnY = y0 - 96.f;
         auto actionsMenu = CCMenu::create();
         actionsMenu->setAnchorPoint({0.5f, 0.5f});
@@ -762,13 +718,11 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
         return root;
     }
 
-    // Grid de decoraciones disponibles
     auto const& cat = categories[m_decoCategoryIdx];
     int totalPages = std::max(1, ((int)cat.decorations.size() + kDecoPerPage - 1) / kDecoPerPage);
     m_decoPage = std::clamp(m_decoPage, 0, totalPages - 1);
 
-    // Grid 2x6 de decoraciones
-    float gridY = chipsY - 24.f - 29.f; // centro vertical del grid
+    float gridY = chipsY - 24.f - 29.f;
     float cellSize = 26.f;
     float cellGap = 4.f;
     float gridW = kDecoGridCols * cellSize + (kDecoGridCols - 1) * cellGap;
@@ -808,11 +762,10 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
 
         auto btn = CCMenuItemSpriteExtra::create(cellBg, this, menu_selector(ProfilePicEditorPopup::onAddDeco));
         btn->setPosition({x, y});
-        btn->setTag(i); // indice absoluto en la categoria
+        btn->setTag(i);
         gridMenu->addChild(btn);
     }
 
-    // Pagination + counter
     float pagY = gridY - cellSize - 10.f;
 
     auto pageLbl = smallLabel(
@@ -850,7 +803,6 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
         }
     }
 
-    // Lista de decos colocadas (chips clickables + clear all)
     float listY = pagY - 20.f;
     if (!m_editConfig.decorations.empty()) {
         auto placedLbl = smallLabel("Placed:", 0.4f);
@@ -890,7 +842,6 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
         }
         placedMenu->updateLayout();
 
-        // Clear all
         auto clearSpr = ButtonSprite::create("Clear", "goldFont.fnt", "GJ_button_06.png", 0.6f);
         clearSpr->setScale(0.4f);
         auto clearBtn = CCMenuItemSpriteExtra::create(clearSpr, this, menu_selector(ProfilePicEditorPopup::onClearAllDecos));
@@ -906,7 +857,6 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
 void ProfilePicEditorPopup::onCategorySelect(CCObject* sender) {
     int tag = static_cast<CCNode*>(sender)->getTag();
     if (tag == -1000) {
-        // Back: deseleccionar deco
         m_selectedDecoIdx = -1;
     } else {
         m_decoCategoryIdx = tag;
@@ -928,7 +878,6 @@ void ProfilePicEditorPopup::onAddDeco(CCObject* sender) {
         return;
     }
 
-    // Colocar en posicion distribuida radialmente para no apilar todas encima
     int placed = (int)m_editConfig.decorations.size();
     float angle = static_cast<float>(placed) * 0.9f + 0.4f;
     float radius = 0.85f;
@@ -1054,7 +1003,7 @@ void ProfilePicEditorPopup::onDecoDelete(CCObject*) {
     rebuildPreview();
 }
 
-void ProfilePicEditorPopup::onDecoColorSelect(CCObject*) { /* no usado */ }
+void ProfilePicEditorPopup::onDecoColorSelect(CCObject*) {  }
 
 void ProfilePicEditorPopup::onDecoPickColor(CCObject*) {
     if (m_selectedDecoIdx < 0 || m_selectedDecoIdx >= (int)m_editConfig.decorations.size()) return;
@@ -1078,7 +1027,6 @@ void ProfilePicEditorPopup::onClearAllDecos(CCObject*) {
     rebuildPreview();
 }
 
-// ADJUST TAB (zoom, rotation de imagen, offsets)
 
 CCNode* ProfilePicEditorPopup::createAdjustTab() {
     auto root = CCNode::create();
@@ -1109,35 +1057,30 @@ CCNode* ProfilePicEditorPopup::createAdjustTab() {
         outLabel = vlbl;
     };
 
-    // Image Zoom: 0.5-3.0 -> norm = (v-0.5)/2.5
     float zoomNorm = std::clamp((m_editConfig.imageZoom - 0.5f) / 2.5f, 0.f, 1.f);
     addSlider("Zoom", topY, zoomNorm,
               menu_selector(ProfilePicEditorPopup::onImgZoomChanged),
               fmt::format("{:.2f}x", m_editConfig.imageZoom),
               m_imgZoomSlider, m_imgZoomLabel);
 
-    // Image Rotation: -180..180
     float imgRotNorm = std::clamp((m_editConfig.imageRotation + 180.f) / 360.f, 0.f, 1.f);
     addSlider("Img Rotate", topY - 22.f, imgRotNorm,
               menu_selector(ProfilePicEditorPopup::onImgRotationChanged),
               fmt::format("{:.0f}", m_editConfig.imageRotation),
               m_imgRotationSlider, m_imgRotationLabel);
 
-    // Offset X: -40..40 (pixels logicos)
     float offXNorm = std::clamp((m_editConfig.imageOffsetX + 40.f) / 80.f, 0.f, 1.f);
     addSlider("Offset X", topY - 44.f, offXNorm,
               menu_selector(ProfilePicEditorPopup::onImgOffsetXChanged),
               fmt::format("{:.0f}", m_editConfig.imageOffsetX),
               m_imgOffsetXSlider, m_imgOffsetXLabel);
 
-    // Offset Y
     float offYNorm = std::clamp((m_editConfig.imageOffsetY + 40.f) / 80.f, 0.f, 1.f);
     addSlider("Offset Y", topY - 66.f, offYNorm,
               menu_selector(ProfilePicEditorPopup::onImgOffsetYChanged),
               fmt::format("{:.0f}", m_editConfig.imageOffsetY),
               m_imgOffsetYSlider, m_imgOffsetYLabel);
 
-    // Reset
     auto resetSpr = ButtonSprite::create("Reset Adjust", "goldFont.fnt", "GJ_button_06.png", 0.6f);
     resetSpr->setScale(0.5f);
     auto resetBtn = CCMenuItemSpriteExtra::create(resetSpr, this, menu_selector(ProfilePicEditorPopup::onResetAdjust));
@@ -1146,7 +1089,6 @@ CCNode* ProfilePicEditorPopup::createAdjustTab() {
     resetMenu->addChild(resetBtn);
     root->addChild(resetMenu);
 
-    // Tip
     auto tipLbl = smallLabel("Zoom y offset permiten encuadrar tu foto dentro de la forma.", 0.34f, "chatFont.fnt");
     tipLbl->setColor({180, 180, 200});
     tipLbl->setOpacity(200);
@@ -1194,7 +1136,6 @@ void ProfilePicEditorPopup::onResetAdjust(CCObject*) {
     rebuildPreview();
 }
 
-// TOOLBAR: Preset / Randomize / Reset
 
 void ProfilePicEditorPopup::onPreset(CCObject*) {
     auto presets = ProfilePicCustomizer::getPresets();
@@ -1202,7 +1143,6 @@ void ProfilePicEditorPopup::onPreset(CCObject*) {
 
     auto winSize = CCDirector::get()->getWinSize();
 
-    // Overlay fullscreen semitransparente
     auto overlay = CCLayerColor::create({0, 0, 0, 160});
     overlay->setContentSize(winSize);
     overlay->setPosition({0, 0});
@@ -1214,7 +1154,6 @@ void ProfilePicEditorPopup::onPreset(CCObject*) {
         if (overlayRef) overlayRef->removeFromParent();
     };
 
-    // Panel
     float panelW = 240.f;
     float rowH = 30.f;
     float panelH = 40.f + (float)presets.size() * rowH;
@@ -1241,7 +1180,6 @@ void ProfilePicEditorPopup::onPreset(CCObject*) {
     btnMenu->ignoreAnchorPointForPosition(false);
     panel->addChild(btnMenu);
 
-    // Boton X para cerrar
     auto closeSpr = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
     if (closeSpr) {
         closeSpr->setScale(0.5f);
@@ -1264,7 +1202,6 @@ void ProfilePicEditorPopup::onPreset(CCObject*) {
         auto captured = presets[i].config;
         auto* btn = CCMenuItemExt::createSpriteExtra(spr,
             [this, captured, closeOverlay](CCMenuItemSpriteExtra*) {
-                // Aplicar campos visuales del preset (no sobreescribe size/offsets de imagen)
                 m_editConfig.stencilSprite = captured.stencilSprite;
                 m_editConfig.frameEnabled = captured.frameEnabled;
                 m_editConfig.frame = captured.frame;
@@ -1280,7 +1217,6 @@ void ProfilePicEditorPopup::onPreset(CCObject*) {
         );
         btnMenu->addChild(btn);
     }
-    // ColumnLayout apila verticalmente (Axis::Vertical por defecto para ColumnLayout)
     btnMenu->setLayout(
         ColumnLayout::create()->setGap(4.f)->setAutoScale(false)
     );
@@ -1315,7 +1251,6 @@ void ProfilePicEditorPopup::onRandomize(CCObject*) {
         m_editConfig.frame.opacity = 255.f;
     }
 
-    // Decoraciones: 0-5 random, distribuidas radialmente
     m_editConfig.decorations.clear();
     int numDecos = static_cast<int>(rf01(rng) * 5.f);
     if (!cats.empty()) {
@@ -1348,7 +1283,7 @@ void ProfilePicEditorPopup::onRandomize(CCObject*) {
 }
 
 void ProfilePicEditorPopup::onResetAll(CCObject*) {
-    m_editConfig = ProfilePicConfig(); // reset completo
+    m_editConfig = ProfilePicConfig();
     m_selectedDecoIdx = -1;
     m_decoCategoryIdx = 0;
     m_decoPage = 0;
@@ -1357,7 +1292,6 @@ void ProfilePicEditorPopup::onResetAll(CCObject*) {
     PaimonNotify::create("Config reset", NotificationIcon::Info)->show();
 }
 
-// PREVIEW (con fix de carga de imagen)
 
 void ProfilePicEditorPopup::triggerImageDownloadIfNeeded() {
     if (m_triggeredDownload) return;
@@ -1366,7 +1300,6 @@ void ProfilePicEditorPopup::triggerImageDownloadIfNeeded() {
     int myID = acc->m_accountID;
     if (myID <= 0) return;
 
-    // Si ya hay texture cacheada, nada que hacer
     if (ProfileThumbs::get().has(myID)) return;
 
     m_triggeredDownload = true;
@@ -1381,20 +1314,18 @@ void ProfilePicEditorPopup::triggerImageDownloadIfNeeded() {
             if (!safeSelf || !safeSelf->getParent()) return;
             rebuildPreview();
         });
-    }, /*isSelf=*/true);
+    }, true);
 }
 
 void ProfilePicEditorPopup::rebuildPreview() {
     if (!m_previewContainer) return;
     m_previewContainer->removeAllChildrenWithCleanup(true);
-    m_previewTexture = nullptr; // liberar textura anterior
+    m_previewTexture = nullptr;
 
     CCSize box = m_previewContainer->getContentSize();
     float center = std::min(box.width, box.height);
     float targetSize = center * 0.72f;
 
-    // Intentar cargar imagen del usuario
-    // Misma logica que MenuLayer::updateProfileButton y PaiConfigLayer::rebuildProfilePreview
     CCNode* imageNode = nullptr;
 
     std::string bgType = Mod::get()->getSavedValue<std::string>("profile-bg-type", "none");
@@ -1402,7 +1333,6 @@ void ProfilePicEditorPopup::rebuildPreview() {
 
     std::error_code fsEc;
     if (bgType == "custom" && !bgPath.empty() && std::filesystem::exists(bgPath, fsEc) && !fsEc) {
-        // Detectar GIF/APNG por contenido (magic bytes)
         bool isAnimated = false;
         {
             std::ifstream probe(bgPath, std::ios::binary);
@@ -1428,25 +1358,21 @@ void ProfilePicEditorPopup::rebuildPreview() {
         }
     }
 
-    // Fallback: imagen de perfil descargada del servidor (profileimg_cache)
     if (!imageNode) {
         auto* acc = GJAccountManager::sharedState();
         int myID = acc ? acc->m_accountID : 0;
         if (myID > 0) {
-            // 1) GIF animado cacheado
             std::string gifKey = ProfileImageService::get().getProfileImgGifKey(myID);
             if (!gifKey.empty() && AnimatedGIFSprite::isCached(gifKey)) {
                 imageNode = AnimatedGIFSprite::createFromCache(gifKey);
             }
 
-            // 2) Cache RAM del ProfilePage
             CCTexture2D* tex = nullptr;
             if (!imageNode) {
                 m_previewTexture = getProfileImgCachedTexture(myID);
                 tex = m_previewTexture;
             }
 
-            // 3) Cache disco profileimg_cache
             if (!imageNode && !tex) {
                 auto cachePath = geode::Mod::get()->getSaveDir() / "profileimg_cache" / fmt::format("{}.dat", myID);
                 std::error_code ec;
@@ -1483,10 +1409,8 @@ void ProfilePicEditorPopup::rebuildPreview() {
 
             if (tex) {
                 imageNode = CCSprite::createWithTexture(tex);
-                // m_previewTexture (Ref) mantiene la textura viva
             }
 
-            // 4) Si no hay nada local ni cache, descargar async
             if (!imageNode) {
                 triggerImageDownloadIfNeeded();
             }
@@ -1502,14 +1426,12 @@ void ProfilePicEditorPopup::rebuildPreview() {
         }
     }
 
-    // Placeholder: render con config pero sin imagen (el renderer dibuja un rect oscuro)
     auto composed = paimon::profile_pic::composeProfilePicture(nullptr, targetSize, m_editConfig);
     if (composed) {
         composed->setPosition({box.width * 0.5f, box.height * 0.5f});
         m_previewContainer->addChild(composed);
     }
 
-    // Only show "NO IMAGE" text when not in icon-only mode (the icon itself is the content)
     if (!m_editConfig.onlyIconMode) {
         auto lbl = smallLabel("NO IMAGE", 0.45f, "bigFont.fnt");
         lbl->setColor({200, 200, 200});
@@ -1542,7 +1464,7 @@ void ProfilePicEditorPopup::onOpenIconsDetail(CCObject*) {
 }
 
 void ProfilePicEditorPopup::onGameIconSelect(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag(); // 0..7 = Cube..Swing
+    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
     auto gm = GameManager::get();
     int id = equippedIconIdForType(gm, idx);
     m_editConfig.iconConfig.iconType = idx;
@@ -1703,7 +1625,6 @@ void ProfilePicEditorPopup::onIconImageToggle(CCObject* sender) {
     rebuildPreview();
 }
 
-// ICON TAB (only icon toggle + icon settings combined)
 
 CCNode* ProfilePicEditorPopup::createIconTab() {
     auto root = CCNode::create();
@@ -1712,7 +1633,6 @@ CCNode* ProfilePicEditorPopup::createIconTab() {
 
     float topY = area.height - 14.f;
 
-    // Only Icon Mode Toggle
     auto toggleMenu = CCMenu::create();
     toggleMenu->setPosition({area.width * 0.5f, topY});
     root->addChild(toggleMenu);
@@ -1731,7 +1651,6 @@ CCNode* ProfilePicEditorPopup::createIconTab() {
 
     float y = topY - 24.f;
 
-    // Equipped Game Icons
     auto idLbl = smallLabel("Your Icons", 0.38f);
     idLbl->setAnchorPoint({0.f, 0.5f});
     idLbl->setPosition({14.f, y});
@@ -1809,7 +1728,6 @@ CCNode* ProfilePicEditorPopup::createIconTab() {
 
     y -= 74.f;
 
-    // Colors hint
     auto colorTip = smallLabel("Colors, Glow, Scale & Anim in Detail", 0.32f, "chatFont.fnt");
     colorTip->setColor({150, 150, 170});
     colorTip->setOpacity(180);
@@ -1817,7 +1735,6 @@ CCNode* ProfilePicEditorPopup::createIconTab() {
     colorTip->setPosition({area.width * 0.5f, y});
     root->addChild(colorTip);
 
-    // Open detail button
     auto moreSpr = ButtonSprite::create("Open Icon Detail", "goldFont.fnt", "GJ_button_02.png", 0.6f);
     moreSpr->setScale(0.42f);
     auto moreBtn = CCMenuItemSpriteExtra::create(moreSpr, this, menu_selector(ProfilePicEditorPopup::onOpenIconsDetail));
@@ -1844,7 +1761,6 @@ void ProfilePicEditorPopup::onIconTypeSelect(CCObject* sender) {
     rebuildPreview();
 }
 
-// STYLE TAB (Font + Presets + Random + Reset)
 
 CCNode* ProfilePicEditorPopup::createStyleTab() {
     auto root = CCNode::create();
@@ -1853,7 +1769,6 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
 
     float topY = area.height - 14.f;
 
-    // Presets section
     auto presetLbl = smallLabel("Presets", 0.42f);
     presetLbl->setAnchorPoint({0.f, 0.5f});
     presetLbl->setPosition({14.f, topY});
@@ -1879,7 +1794,6 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
     actionMenu->addChild(mkActBtn("Reset", "GJ_button_06.png", menu_selector(ProfilePicEditorPopup::onResetAll)));
     actionMenu->updateLayout();
 
-    // Font section
     float fontY = topY - 50.f;
     auto fontLbl = smallLabel("Font", 0.42f);
     fontLbl->setAnchorPoint({0.f, 0.5f});
@@ -1937,7 +1851,6 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
     return root;
 }
 
-// SAVE
 
 void ProfilePicEditorPopup::onSave(CCObject*) {
     ProfilePicCustomizer::get().setConfig(m_editConfig);

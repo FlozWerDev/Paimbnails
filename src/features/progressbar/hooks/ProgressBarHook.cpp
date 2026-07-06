@@ -10,9 +10,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Ticker: a dedicated CCNode registered with the global scheduler
-// so it keeps ticking even while gameplay is paused (needed for
-// live-applying config changes from the pause menu).
+// Registered with the global scheduler so it keeps ticking even while gameplay is paused.
 class ProgressBarTicker : public CCNode {
 public:
     static ProgressBarTicker* create() {

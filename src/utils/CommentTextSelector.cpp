@@ -144,8 +144,6 @@ std::vector<LayoutToken> tokenizeForLayout(std::string const& text) {
 }
 } // namespace
 
-// Factory
-
 CommentTextSelector* CommentTextSelector::create(
     std::string const& text, CCNode* textNode, CCSize const& cellSize,
     std::string const& fontFile)
@@ -158,8 +156,6 @@ CommentTextSelector* CommentTextSelector::create(
     CC_SAFE_DELETE(ret);
     return nullptr;
 }
-
-// Init
 
 bool CommentTextSelector::init(
     std::string const& text, CCNode* textNode, CCSize const& cellSize,
@@ -228,8 +224,6 @@ void CommentTextSelector::refresh(
     dismissCopyButton();
     rebuildLayoutCache();
 }
-
-// Touch handlers
 
 void CommentTextSelector::registerWithTouchDispatcher() {
     // Register WITHOUT swallowing so scroll views & buttons still receive touches
@@ -531,8 +525,6 @@ void CommentTextSelector::updateSelection(CCPoint const& point, bool resetStart)
     updateHighlight();
 }
 
-// Highlight
-
 void CommentTextSelector::updateHighlight() {
     if (!m_highlight || m_lines.empty()) return;
     m_highlight->clear();
@@ -626,8 +618,6 @@ void CommentTextSelector::updateHighlight() {
     m_highlight->setVisible(true);
 }
 
-// Text extraction
-
 std::string CommentTextSelector::getSelectedText() const {
     if (m_fullText.empty()) return "";
 
@@ -638,8 +628,6 @@ std::string CommentTextSelector::getSelectedText() const {
     if (startIdx >= endIdx || startIdx >= m_fullText.size()) return "";
     return m_fullText.substr(startIdx, endIdx - startIdx);
 }
-
-// Copy action
 
 void CommentTextSelector::onCopy(CCObject*) {
     std::string selected = getSelectedText();
@@ -660,8 +648,6 @@ void CommentTextSelector::dismissCopyButton() {
         m_highlight->setVisible(false);
     }
 }
-
-// Static attach helper
 
 void CommentTextSelector::attach(
     CCNode* parent,

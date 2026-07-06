@@ -27,11 +27,6 @@ using namespace geode::prelude;
 
 using namespace Shaders;
 
-// helpers for the premium effects
-namespace {
-   
-}
-
 namespace {
     struct ButtonMoveCache {
         bool initialized = false;
@@ -73,13 +68,12 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
     void showLoadingSpinner() {
         auto f = m_fields.self();
         
-        // remove the old spinner if present
         if (f->m_loadingSpinner) {
             f->m_loadingSpinner->removeFromParent();
             f->m_loadingSpinner = nullptr;
         }
         
-        // create spinner via geode::LoadingSpinner (10px diameter ~ loadingCircle.png * 0.25)
+        // 10px diameter ~ loadingCircle.png * 0.25
         auto spinner = geode::LoadingSpinner::create(10.f);
         
         // place it on the right where the thumbnail goes
@@ -238,7 +232,6 @@ public:
                 return;
             }
             
-            // bail if the cell is already being destroyed
             if (f->m_isBeingDestroyed) {
                 log::debug("[GJScoreCell] Cell marked as destroyed, skipping thumbnail update");
                 return;
@@ -271,7 +264,6 @@ public:
             f->m_profileBg = nullptr;
             f->m_darkOverlay = nullptr;
 
-            // base geometry from cell size
             auto cs = this->getContentSize();
             if (cs.width <= 0 || cs.height <= 0) {
                 log::error("[GJScoreCell] Invalid cell content size: {}x{}", cs.width, cs.height);
@@ -342,7 +334,6 @@ public:
                 // Keep the game background
             }
             else if (bgType == "thumbnail") {
-                // Create blurred background
                 CCSize targetSize = cs;
                 targetSize.width = std::max(targetSize.width, 512.f);
                 targetSize.height = std::max(targetSize.height, 256.f);
@@ -351,7 +342,6 @@ public:
 
                 // Try GIF or video first
                 if (!gifKey.empty()) {
-                    // Check cached video
                     if (VideoThumbnailSprite::isCached(gifKey)) {
                         auto bgVideo = VideoThumbnailSprite::createFromCache(gifKey);
                         if (bgVideo) {
@@ -374,7 +364,6 @@ public:
 
                     // Fall back to GIF
                     if (!bgNode) {
-                    // Use AnimatedGIFSprite as a blurred background
                     auto bgGif = AnimatedGIFSprite::createFromCache(gifKey);
                     if (bgGif) {
                         // Scale to cover the area
@@ -386,7 +375,6 @@ public:
                         bgGif->setAnchorPoint({0.5f, 0.5f});
                         bgGif->setPosition(targetSize * 0.5f);
 
-                        // Configure blur via shader
                         float norm = (blurIntensity - 1.0f) / 9.0f;
                         bgGif->m_intensity = std::min(1.7f, norm * 2.5f);
                         if (bgGif->getTexture()) {
@@ -412,7 +400,7 @@ public:
                     blurTargetSize.width = std::max(blurTargetSize.width, 512.f);
                     blurTargetSize.height = std::max(blurTargetSize.height, 256.f);
 
-                    float stronger = std::min(10.0f, blurIntensity + 3.0f); // more blur
+                    float stronger = std::min(10.0f, blurIntensity + 3.0f);
                     auto blurredBg = BlurSystem::getInstance()->createBlurredSprite(texture, blurTargetSize, stronger);
                     if (blurredBg) {
                         blurredBg->setPosition(blurTargetSize * 0.5f);
@@ -436,13 +424,12 @@ public:
                 }
 
                 if (bgNode) {
-                    // Background clipper
                     auto stencil = paimon::SpriteHelper::createRectStencil(cs.width, cs.height);
                     
                     auto clipper = paimon::ScissorClipNode::create(stencil);
                     clipper->setContentSize(cs);
                     clipper->setPosition({0,0});
-                    clipper->setZOrder(-2); // back
+                    clipper->setZOrder(-2);
                     clipper->setID("paimon-score-bg-clipper"_spr);
 
                     // Scale bgNode to cell size
@@ -470,7 +457,6 @@ public:
                         f->m_darkOverlay = overlay;
                     }
 
-                    // Push the original background behind
                     pushGameColorLayersBehind(this);
                 }
             }
@@ -495,7 +481,6 @@ public:
             if (!mainNode && !gifKey.empty()) {
                 log::debug("[GJScoreCell] Trying to create GIF sprite from cache key: {}", gifKey);
 
-                // Check cached GIF
                 if (AnimatedGIFSprite::isCached(gifKey)) {
                     log::debug("[GJScoreCell] GIF is cached, creating sprite...");
                     auto gifSprite = AnimatedGIFSprite::createFromCache(gifKey);
@@ -504,7 +489,6 @@ public:
                         contentW = gifSprite->getContentSize().width;
                         contentH = gifSprite->getContentSize().height;
 
-                        // Make sure the animation runs
                         gifSprite->play();
 
                         gifSprite->setID("paimon-profile-thumb-gif"_spr);
@@ -544,19 +528,16 @@ public:
         
         log::debug("[GJScoreCell] Cell size: {}x{}", cs.width, cs.height);
 
-            // Width scale factor
             float factor = 0.80f;
             
             if (isCurrentUser) {
                 factor = Mod::get()->getSavedValue<float>("profile-thumb-width", 0.6f);
             } else {
-                // Other users: config from cache
                 int accountID = (this->m_score) ? this->m_score->m_accountID : 0;
                 auto config = ProfileThumbs::get().getProfileConfig(accountID);
                 if (config.hasConfig) {
                     factor = config.widthFactor;
                 } else {
-                    // No config: use default
                     factor = 0.60f; 
                 }
             }
@@ -605,7 +586,6 @@ public:
             }
         }
         
-        // Apply premium effects
         bool isPremiumUser = false;
 
         // Borders around the thumbnail
@@ -666,7 +646,6 @@ public:
             if (accountID <= 0) return;
 
             {
-                // check cache first, download only if needed
                 std::string username = score->m_userName;
                 if (username.empty()) {
                     log::warn("[GJScoreCell] Username empty for account {}", accountID);
@@ -731,7 +710,6 @@ public:
                     // cached via cacheProfileGIF; let it continue so
                     // addOrUpdateProfileThumb detects it via gifKey.
                     if (!texture) {
-                        // Check for a cached GIF for this profile
                         auto cachedEntry = ProfileThumbs::get().getCachedProfile(accountID);
                         if (!cachedEntry.has_value() || cachedEntry->gifKey.empty()) {
                             if (enableSpinners) self->hideLoadingSpinner();
@@ -744,14 +722,12 @@ public:
                     // Ref<> so it isn't autoreleased before the next async call
                     Ref<CCTexture2D> safeTex = texture;
 
-                    // download config
                     ThumbnailAPI::get().downloadProfileConfig(accountID, [safeRef, accountID, safeTex, enableSpinners](bool success2, ProfileConfig const& config) {
                         auto selfRef = safeRef.lock();
                         auto* self = static_cast<PaimonGJScoreCell*>(selfRef.data());
                         if (!self) return;
                         if (enableSpinners) self->hideLoadingSpinner();
 
-                        // store in cache
                         if (safeTex) {
                             ProfileThumbs::get().cacheProfile(accountID, safeTex, {255,255,255}, {255,255,255}, 0.5f);
                         }
@@ -759,9 +735,7 @@ public:
                             ProfileThumbs::get().cacheProfileConfig(accountID, config);
                         }
 
-                        // apply the texture last
                         self->addOrUpdateProfileThumb(safeTex);
-                        // Ref<> manages the refcount automatically
                     });
                 });
             }
@@ -769,9 +743,8 @@ public:
         // move the player's profile button (using that cache)
         auto f = m_fields.self();
         if (!f->m_buttonsMoved) {
-            f->m_buttonsMoved = true; // mark as processed
+            f->m_buttonsMoved = true;
             
-            // init the cache once
                 if (!g_buttonCache.initialized) {
                         g_buttonCache.buttonOffset = 0.0f;
                     g_buttonCache.initialized = true;

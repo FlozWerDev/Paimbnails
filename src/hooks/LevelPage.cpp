@@ -54,7 +54,6 @@ class $modify(PaimonLevelPage, LevelPage) {
             });
         }
         
-        // Only levels with ID > 0
         if (level->m_levelID <= 0) return;
         
         if (this->m_levelDisplay) {
@@ -169,7 +168,7 @@ class $modify(PaimonLevelPage, LevelPage) {
         auto clipper = CCClippingNode::create(stencil);
         clipper->setContentSize(boxSize);
         clipper->setAnchorPoint({0.5f, 0.5f});
-        clipper->setPosition(boxSize / 2); // center in m_levelDisplay
+        clipper->setPosition(boxSize / 2);
 
         // Fit sprite to the container
         float scaleX = boxSize.width / sprite->getContentSize().width;
@@ -178,7 +177,7 @@ class $modify(PaimonLevelPage, LevelPage) {
 
         sprite->setScaleX(scale);
         sprite->setScaleY(scale * 0.985f); // shrink height slightly so it doesn't overflow a pixel top/bottom
-        sprite->setPosition(boxSize / 2); // center in the clipper
+        sprite->setPosition(boxSize / 2);
         sprite->setColor({255, 255, 255});
         sprite->setOpacity(0); // fade in over the original preview
 

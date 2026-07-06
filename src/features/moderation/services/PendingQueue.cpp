@@ -62,7 +62,6 @@ std::string PendingQueue::escape(std::string const& s) {
 bool PendingQueue::isLevelCreator(GJGameLevel* level, std::string const& username) {
     if (!level || username.empty()) return false;
 
-    // comparar con m_creatorName de GJGameLevel
     std::string creatorName = level->m_creatorName;
 
     return geode::utils::string::toLower(creatorName) == geode::utils::string::toLower(username);
@@ -101,11 +100,10 @@ void PendingQueue::load() {
         it.isCreator = obj["isCreator"].asBool().unwrapOr(false);
         if (it.levelID != 0) m_items.push_back(it);
     }
-    }); // end call_once
+    });
 }
 
 void PendingQueue::save() {
-    // mantener historial; escribir estado completo
     std::string json = toJson();
     auto p = jsonPath();
     std::error_code ec; std::filesystem::create_directories(p.parent_path(), ec);
@@ -114,7 +112,6 @@ void PendingQueue::save() {
 }
 
 std::string PendingQueue::toJson() const {
-    // construir: {"items":[...]} con todos items
     std::stringstream ss;
     ss << "{\"items\":[";
     bool first = true;
@@ -201,16 +198,14 @@ std::vector<PendingItem> PendingQueue::list(PendingCategory cat) const {
     const_cast<PendingQueue*>(this)->load(); // safe: load() uses std::call_once internally
     std::vector<PendingItem> out;
     for (auto const& it : m_items) if (it.category == cat && it.status == PendingStatus::Open) out.push_back(it);
-    // orden: sugerencias creador primero, luego timestamp desc
     std::sort(out.begin(), out.end(), [](auto const& a, auto const& b){ 
-        if (a.isCreator != b.isCreator) return a.isCreator > b.isCreator; // creadores primero
-        return a.timestamp > b.timestamp; // luego mas nuevos primero
+        if (a.isCreator != b.isCreator) return a.isCreator > b.isCreator;
+        return a.timestamp > b.timestamp;
     });
     return out;
 }
 
 void PendingQueue::syncNow() {
-    // sync servidor desactivada - cola ahora es solo local
     log::info("[PendingQueue] Server sync disabled - changes are saved locally only");
 }
 

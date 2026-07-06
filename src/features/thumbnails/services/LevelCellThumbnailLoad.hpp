@@ -1,8 +1,5 @@
 #pragma once
 
-// Carga de thumbnail estatico para LevelCell — patron alineado con cdc.level_thumbnails
-// (cancel token + WeakRef + ThumbnailLoader) pero delegado fuera del hook.
-
 #include <Geode/Geode.hpp>
 #include <cocos2d.h>
 #include <functional>

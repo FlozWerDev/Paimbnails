@@ -31,9 +31,7 @@ public:
                                            std::filesystem::path const& pngPath,
                                            std::string const& frameName);
 
-    // Adjust the per-frame LRU byte budget at runtime. Values are clamped to
-    // a sane floor (1 MB) so a misconfiguration can't disable caching
-    // entirely. Shrinking the budget evicts immediately on the next access.
+    // Clamped to a 1 MB floor so a misconfiguration can't disable caching.
     void setByteBudget(std::size_t bytes);
     std::size_t byteBudget() const;
 

@@ -1,6 +1,4 @@
 #pragma once
-// Dynamic per-frame popup background blur (EclipseMenu-style raw-GL pipeline).
-// Falls back to static blur if shader/FBO setup fails.
 
 #include <Geode/cocos/cocoa/CCGeometry.h>
 #include <Geode/cocos/base_nodes/CCNode.h>
@@ -33,17 +31,22 @@ protected:
     GLuint m_fboB = 0;
     GLuint m_texB = 0;
     GLuint m_vbo  = 0;
-    int m_blurW = 0;            // blur FBO size in real pixels
+    int m_blurW = 0;
     int m_blurH = 0;
-    int m_lastSrcW = 0;         // viewport size the FBOs were sized from
+    int m_lastSrcW = 0;
     int m_lastSrcH = 0;
 
     float m_intensity = 4.0f;
     float m_darkness = 0.28f;
 
-    // Set when a GL step failed unrecoverably (blit unsupported, FBO lost).
-    // visit() becomes a no-op so the popup stays usable over the sharp scene.
+    // Set when a GL step failed unrecoverably; visit() becomes a no-op.
     bool m_broken = false;
+
+    // Steady-state throttle: once fully faded in, re-run the costly capture +
+    // horizontal pass only every Nth frame and reuse the cached intermediate (m_texB).
+    bool m_hasCachedBlur = false;
+    float m_lastRadius = -1.f;
+    int m_steadyFrames = 0;
 };
 
 } // namespace paimon::paiblur

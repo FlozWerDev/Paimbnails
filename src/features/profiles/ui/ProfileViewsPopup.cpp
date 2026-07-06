@@ -64,7 +64,6 @@ bool ProfileViewsPopup::init(int accountID) {
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
-    // Info button (i)
     auto infoBtn = PaimonInfo::createInfoBtn(
         "Profile Views Info",
         "This shows who has viewed your profile.\n\nThe list displays usernames and when they viewed your profile.",
@@ -120,7 +119,6 @@ void ProfileViewsPopup::loadViews() {
                 popup->m_spinner = nullptr;
             }
             if (!result.ok) {
-                // Show friendly message depending on error type
                 std::string msg = "Failed to load views";
                 if (result.error.find("not available") != std::string::npos) {
                     msg = "Profile views not available";

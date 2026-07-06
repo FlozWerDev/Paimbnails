@@ -74,43 +74,50 @@ bool tokensSimilar(std::string const& a, std::string const& b) {
 
 } // namespace
 
-double PaigoritV1::bestFuzzyAgainstKeyword(
+PaigoritV1::KwMatch PaigoritV1::matchKeyword(
     std::string const& normalizedQuery,
     std::vector<std::string> const& expandedTokens,
     std::string const& keyword)
 {
-    if (keyword.empty()) return 0.0;
+    KwMatch m;
+    if (keyword.empty()) return m;
 
-    // 1) Direct keyword match against the full query (token_set + partial; long substring boosted to 95).
-    double tokenSet = rapidfuzz::fuzz::token_set_ratio(normalizedQuery, keyword);
-    double partial  = rapidfuzz::fuzz::partial_ratio(normalizedQuery, keyword);
-    if (keyword.size() >= 5 && normalizedQuery.find(keyword) != std::string::npos) {
-        partial = std::max(partial, 95.0);
+    // Phrase-level: token_set + partial against the whole query. Catches keywords
+    // embedded in a sentence, but it's easy to inflate on short keywords (a 2-char
+    // alias matching inside a longer word), so it's skipped for short keywords and
+    // never anchors the match.
+    if (keyword.size() >= 4) {
+        double tokenSet = rapidfuzz::fuzz::token_set_ratio(normalizedQuery, keyword);
+        double partial  = rapidfuzz::fuzz::partial_ratio(normalizedQuery, keyword);
+        if (keyword.size() >= 5 && normalizedQuery.find(keyword) != std::string::npos) {
+            partial = std::max(partial, 95.0);
+        }
+        m.score = std::max(tokenSet, partial);
     }
-    double best = std::max(tokenSet, partial);
 
-    // 2) Single-word keywords: compare against each expanded token form (catches synonyms/plurals).
+    // Token-level: compare single-word keywords against each expanded query form.
+    // Exact/stem/synonym/typo hits here are trustworthy, so they anchor the match.
     auto kwTokens = tokenizeKw(keyword);
     if (kwTokens.size() == 1) {
         std::string const& kw = kwTokens[0];
-        for (auto const& expandedToken : expandedTokens) {
-            if (expandedToken == kw) {
-                best = std::max(best, 100.0);
-                break;
+        std::string kwStem = LightLemmatizer::stem(kw);
+        for (auto const& tok : expandedTokens) {
+            double tokenScore = 0.0;
+            if (tok == kw) {
+                tokenScore = 100.0;
+            } else if (!kwStem.empty() && LightLemmatizer::stem(tok) == kwStem) {
+                tokenScore = 95.0;
+            } else {
+                tokenScore = rapidfuzz::fuzz::ratio(tok, kw);
             }
-            // Stem-equivalence
-            if (LightLemmatizer::stem(expandedToken) == LightLemmatizer::stem(kw)
-                && !LightLemmatizer::stem(kw).empty())
-            {
-                best = std::max(best, 95.0);
+            m.score = std::max(m.score, tokenScore);
+            if (tokenScore >= kTokenAnchor) {
+                m.anchoredScore = std::max(m.anchoredScore, tokenScore);
             }
-            // Levenshtein
-            double r = rapidfuzz::fuzz::ratio(expandedToken, kw);
-            if (r > best) best = r;
         }
     }
 
-    return best;
+    return m;
 }
 
 // Compound matching (multi-word keyword as a contiguous run or bag-of-words)
@@ -162,6 +169,23 @@ bool PaigoritV1::anyTokenFormEquals(
     return false;
 }
 
+void PaigoritV1::markCoveredTokens(
+    std::vector<std::vector<std::string>> const& tokenForms,
+    std::vector<std::string> const& kwTokens,
+    std::vector<bool>& covered)
+{
+    for (size_t i = 0; i < tokenForms.size(); ++i) {
+        if (covered[i]) continue;
+        for (auto const& form : tokenForms[i]) {
+            bool hit = false;
+            for (auto const& kwt : kwTokens) {
+                if (tokensSimilar(form, kwt)) { hit = true; break; }
+            }
+            if (hit) { covered[i] = true; break; }
+        }
+    }
+}
+
 // Run: the matcher core
 
 PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
@@ -206,21 +230,35 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
         ScoredIntent scored;
         scored.intent = &intent;
 
-        // For each keyword, compute fuzzy score and detect compound/exact.
+        // Track which query tokens this intent explains (for coverage).
+        std::vector<bool> covered(tokenForms.size(), false);
+
+        // For each keyword: fuzzy/anchor score + compound/exact/coverage.
         for (auto const& kw : normalizedKeywords) {
-            double s = bestFuzzyAgainstKeyword(normalizedQuery, flatForms, kw);
-            if (s > scored.bestKeywordFuzzy) scored.bestKeywordFuzzy = s;
+            if (kw == normalizedQuery) scored.hasFullExactMatch = true;
+            auto km = matchKeyword(normalizedQuery, flatForms, kw);
+            scored.bestKeywordFuzzy = std::max(scored.bestKeywordFuzzy, km.score);
+            scored.bestAnchoredFuzzy = std::max(scored.bestAnchoredFuzzy, km.anchoredScore);
 
             auto kwTokens = tokenizeKw(kw);
             if (kwTokens.size() >= 2) {
                 if (keywordAppearsAsCompound(tokenForms, kwTokens)) {
                     scored.hasCompoundMatch = true;
+                    scored.bestAnchoredFuzzy = std::max(scored.bestAnchoredFuzzy, 100.0);
+                    scored.bestKeywordFuzzy = std::max(scored.bestKeywordFuzzy, 100.0);
                 }
             } else if (!kwTokens.empty()) {
                 if (anyTokenFormEquals(tokenForms, kwTokens[0])) {
                     scored.hasExactTokenMatch = true;
                 }
             }
+            markCoveredTokens(tokenForms, kwTokens, covered);
+        }
+
+        if (!tokenForms.empty()) {
+            int hit = 0;
+            for (bool c : covered) if (c) ++hit;
+            scored.coverageRatio = static_cast<double>(hit) / tokenForms.size();
         }
 
         // Pick the floor based on intent kind and query length.
@@ -231,39 +269,79 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
                 : kMatchFloorConversational;
         }
 
-        // Qualify the intent only if it passes the floor.
-        if (scored.bestKeywordFuzzy < floor) {
-            scored.qualified = false;
-            // Keep it in the array for debug; filtered out later.
+        // Qualify on token-level evidence at the normal floor, OR on a strong
+        // phrase-level match (>= kPhraseFloor). Phrase-only weak matches are dropped.
+        bool anchoredQual = scored.bestAnchoredFuzzy >= floor;
+        bool phraseQual = scored.bestKeywordFuzzy >= std::max(floor, kPhraseFloor);
+        scored.qualified = anchoredQual || phraseQual;
+
+        // Match-quality tier. Token-level certainty (exact word / compound) ranks
+        // above strong-but-fuzzy phrase matches, which rank above weak ones, so a
+        // perfect match to a light intent beats a heavy intent matched by substring.
+        if (scored.hasFullExactMatch) {
+            scored.tier = 4;
+        } else if (scored.hasExactTokenMatch || scored.hasCompoundMatch) {
+            scored.tier = 3;
+        } else if (scored.bestAnchoredFuzzy >= 90.0 || scored.bestKeywordFuzzy >= 97.0) {
+            scored.tier = 2;
+        } else if (scored.bestAnchoredFuzzy >= kTokenAnchor
+                   || scored.bestKeywordFuzzy >= kPhraseFloor) {
+            scored.tier = 1;
         } else {
-            scored.qualified = true;
+            scored.tier = 0;
         }
 
-        // Confidence bonus from compound / exact / high fuzzy.
+        // Confidence bonus from compound / exact / high fuzzy / coverage.
         if (scored.hasCompoundMatch) scored.confidenceBonus += 20.0;
         if (scored.hasExactTokenMatch) scored.confidenceBonus += 10.0;
         if (scored.bestKeywordFuzzy >= 95.0) scored.confidenceBonus += 5.0;
+        scored.confidenceBonus += scored.coverageRatio * kCoverageBonusMax;
 
-        // Final score = intent weight + confidenceBonus: among qualified intents, the higher weight wins.
-        scored.finalScore = static_cast<double>(intent.weight)
+        // Quality factor scales the curated weight by match strength (used only
+        // to order intents within the same tier).
+        double span = std::max(1.0, 100.0 - floor);
+        double norm = std::clamp((scored.bestKeywordFuzzy - floor) / span, 0.0, 1.0);
+        double qualityFactor = kQualityBase + kQualityRange * norm;
+
+        scored.finalScore = static_cast<double>(intent.weight) * qualityFactor
                           + scored.confidenceBonus;
 
         all.push_back(scored);
     }
 
-    // 3) Keep qualified intents and sort by finalScore (desc).
+    // 3) Keep qualified intents and sort by tier, then within-tier finalScore.
     for (auto const& s : all) {
         if (s.qualified) result.ranking.push_back(s);
     }
     std::sort(result.ranking.begin(), result.ranking.end(),
               [](ScoredIntent const& a, ScoredIntent const& b) {
+                  if (a.tier != b.tier) return a.tier > b.tier;
                   if (a.finalScore != b.finalScore)
                       return a.finalScore > b.finalScore;
-                  // Tie-breaker: higher fuzzy first.
+                  if (a.coverageRatio != b.coverageRatio)
+                      return a.coverageRatio > b.coverageRatio;
                   return a.bestKeywordFuzzy > b.bestKeywordFuzzy;
               });
 
-    if (result.ranking.empty()) return result;
+    if (result.ranking.empty()) {
+        // Nothing qualified: surface the closest functional near-misses so the
+        // caller can ask "did you mean ...?" instead of a static fallback.
+        std::vector<ScoredIntent> nearMisses;
+        for (auto const& s : all) {
+            if (s.intent->kind == IntentKind::Functional
+                && s.bestKeywordFuzzy >= kSuggestionFloor) {
+                nearMisses.push_back(s);
+            }
+        }
+        std::sort(nearMisses.begin(), nearMisses.end(),
+                  [](ScoredIntent const& a, ScoredIntent const& b) {
+                      return a.bestKeywordFuzzy > b.bestKeywordFuzzy;
+                  });
+        for (std::size_t i = 0; i < nearMisses.size() && i < 2; ++i) {
+            result.suggestions.push_back(nearMisses[i].intent);
+        }
+        return result;
+    }
 
     auto const& top = result.ranking.front();
     result.best = top.intent;
@@ -271,11 +349,62 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
     result.bestRawFuzzy = top.bestKeywordFuzzy;
 
     if (result.ranking.size() >= 2) {
-        double gap = top.finalScore - result.ranking[1].finalScore;
-        if (gap < kAmbiguityGap) result.ambiguous = true;
+        auto const& second = result.ranking[1];
+        double gap = top.finalScore - second.finalScore;
+        if (top.tier == second.tier && gap < kAmbiguityGap) {
+            result.ambiguous = true;
+            result.runnerUp = second.intent;
+        }
     }
 
     return result;
+}
+
+std::vector<GuideIntent const*> PaigoritV1::splitTopics(
+    std::vector<GuideIntent> const& intents,
+    std::string const& normalizedQuery,
+    std::string const& langId)
+{
+    auto toks = tokenizeKw(normalizedQuery);
+
+    auto isConj = [](std::string const& t) {
+        return t == "and" || t == "y" || t == "e";
+    };
+
+    bool hasConj = false;
+    for (auto const& t : toks) if (isConj(t)) { hasConj = true; break; }
+    if (!hasConj) return {};
+
+    // Build segments split on conjunction tokens.
+    std::vector<std::string> segments;
+    std::string cur;
+    for (auto const& t : toks) {
+        if (isConj(t)) {
+            if (!cur.empty()) { cur.pop_back(); segments.push_back(cur); cur.clear(); }
+        } else {
+            cur += t;
+            cur.push_back(' ');
+        }
+    }
+    if (!cur.empty()) { cur.pop_back(); segments.push_back(cur); }
+
+    std::vector<GuideIntent const*> hits;
+    for (auto const& seg : segments) {
+        if (seg.empty()) continue;
+        auto segToks = tokenizeKw(seg);
+        auto res = run(intents, seg, segToks, langId);
+        if (!res.best || res.ranking.empty()) continue;
+        if (res.best->kind != IntentKind::Functional) continue;
+        if (res.ranking.front().tier < 3) continue;
+
+        bool dup = false;
+        for (auto const* h : hits) if (h->id == res.best->id) { dup = true; break; }
+        if (!dup) hits.push_back(res.best);
+        if (hits.size() >= 3) break;
+    }
+
+    if (hits.size() < 2) return {};
+    return hits;
 }
 
 } // namespace paimon::guide

@@ -1,4 +1,5 @@
 #include "MyLevelFilterPopup.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/MyLevelFilters.hpp"
 
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -55,6 +56,7 @@ CCMenuItemToggler* MyLevelFilterPopup::makeToggler(char const* text, int tag, bo
 
 bool MyLevelFilterPopup::init() {
     if (!Popup::init(kPopupW, kPopupH)) return false;
+    paimon::markDynamicPopup(this);
     this->setTitle("Filter My Levels");
 
     auto size = m_mainLayer->getContentSize();

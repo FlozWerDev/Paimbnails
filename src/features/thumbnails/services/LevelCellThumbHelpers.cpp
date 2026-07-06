@@ -56,7 +56,6 @@ std::vector<ThumbnailAPI::ThumbnailInfo> normalizeLevelCellGalleryThumbnails(
         return a.url < b.url;
     });
 
-    // Elimina duplicados por URL
     std::unordered_set<std::string_view> seenUrls;
     seenUrls.reserve(thumbnails.size());
     std::vector<ThumbnailAPI::ThumbnailInfo> normalized;
@@ -192,7 +191,7 @@ CCClippingNode* createThumbnailClippingNode(CCNode* bg, CCSprite* sprite, float&
         bgWidth, bgHeight, kThumbWidthFactor, outCoverScale, scaleX, scaleY);
 
     CCSize scaledSize{ desiredWidth, bgHeight };
-    const float kDiagonalSkew = 35.f; // Desplazamiento diagonal del borde izquierdo
+    const float kDiagonalSkew = 35.f;
     auto drawMask = paimon::SpriteHelper::createDiagonalStencil(scaledSize.width, scaledSize.height, kDiagonalSkew);
     if (!drawMask) return nullptr;
     drawMask->setAnchorPoint({1,0});

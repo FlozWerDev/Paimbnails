@@ -18,98 +18,71 @@ public:
 
     static LocalThumbs& get();
 
-    // ruta local thumb si existe (retorna la mas reciente)
     std::optional<std::string> getThumbPath(int32_t levelID) const;
 
-    // ruta a thumb por indice (0-based)
     std::optional<std::string> getThumbPathByIndex(int32_t levelID, int index) const;
 
-    // todas las rutas de thumbnails locales para un nivel
     std::vector<std::string> getAllThumbPaths(int32_t levelID) const;
 
-    // cuantos thumbnails locales tiene un nivel
     int getThumbCount(int32_t levelID) const;
 
-    // ruta a thumb valida (rgb/png/jpg/webp)
     std::optional<std::string> findAnyThumbnail(int32_t levelID) const;
 
-    // carga un archivo local (.rgb o imagen estandar) y retorna pixels.
-    // Para .rgb: retorna RGB888 raw (isRgb=true) — ThumbnailLoader convierte a RGBA antes de subir.
-    // Para png/jpg/webp: retorna bytes crudos para decoder.
-    // out_width/out_height se llenan con las dimensiones de la imagen.
-    // retorna vector vacio si fallo la carga.
+    // Para .rgb: pixels son RGB888 raw (isRgb=true). Para png/jpg/webp: bytes crudos del archivo.
     struct LoadResult {
-        std::vector<uint8_t> pixels; // RGB888 if isRgb, else raw file bytes
+        std::vector<uint8_t> pixels;
         int width = 0;
         int height = 0;
-        bool isRgb = false; // true si la fuente era .rgb (pixels son RGB888, se convierte antes de upload)
+        bool isRgb = false;
     };
     LoadResult loadAsRGBA(int32_t levelID) const;
 
     bool has(int32_t levelID) const { return getThumbPath(levelID).has_value(); }
 
-    // load textura levelID; nullptr si no. Cachea en RAM: se llama en cada
-    // transicion de capa (menu, leaderboards, level info...) y sin cache cada
-    // llamada releia varios MB del disco en el main thread.
+    // Cachea en RAM: se llama en cada transicion de capa; sin cache cada llamada releeria varios MB del disco en el main thread.
     cocos2d::CCTexture2D* loadTexture(int32_t levelID) const;
 
-    // textura ya cacheada en RAM (no toca disco); nullptr si no esta
     cocos2d::CCTexture2D* getCachedTexture(int32_t levelID) const;
 
-    // Carga async: lee el .rgb y convierte a RGBA en un worker; solo el upload
-    // a GPU corre en el main thread. callback siempre se invoca en main thread
-    // (nullptr si fallo). Para png/jpg/webp cae al loadTexture sincrono.
+    // Carga async: lectura+conversion en worker, upload GPU en main thread. callback siempre se invoca en main thread.
     void loadTextureAsync(int32_t levelID, std::function<void(cocos2d::CCTexture2D*)> callback);
 
-    // load textura por indice
     cocos2d::CCTexture2D* loadTextureByIndex(int32_t levelID, int index) const;
 
-    // todos los levelIDs con thumb local
     std::vector<int32_t> getAllLevelIDs() const;
 
-    // guardar rgb24 + size (agrega al final de la galeria, no sobreescribe)
+    // agrega al final de la galeria, no sobreescribe
     bool saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, uint32_t height);
 
-    // guardar rgba32 (-> rgb24 interno)
     bool saveFromRGBA(int32_t levelID, const uint8_t* data, uint32_t width, uint32_t height);
 
-    // borrar un thumbnail por indice, re-indexa los restantes
     bool removeThumb(int32_t levelID, int index);
 
-    // Mapping system: levelID -> fileName (para nueva API)
     void storeFileMapping(int32_t levelID, std::string const& fileName);
     std::optional<std::string> getFileName(int32_t levelID) const;
     void loadMappings();
     void saveMappings();
     void shutdown();
 
-    // invalida el cache de lookup (llamar tras saveRGB / removeThumb / etc)
     void invalidateLookup(int32_t levelID);
 
 private:
-    LocalThumbs(); // privado
+    LocalThumbs();
     std::string dir() const;
     std::string mappingFile() const;
     std::unordered_map<int32_t, std::string> m_fileMapping;
     
-    // cache busqueda
     std::unordered_set<int32_t> m_availableLevels;
     mutable std::mutex m_mutex;
     std::atomic<bool> m_cacheInitialized{false};
     std::atomic<bool> m_shuttingDown{false};
 
-    // Cache de findAnyThumbnail: evita multiples std::filesystem::exists por
-    // scroll. La entrada es valida durante toda la sesion hasta que se
-    // invalida explicitamente.
     struct LookupEntry {
-        std::optional<std::string> path; // nullopt si no existe ningun thumb
+        std::optional<std::string> path;
     };
     mutable std::unordered_map<int32_t, LookupEntry> m_lookupCache;
     mutable std::mutex m_lookupMutex;
 
-    // Cache RAM de texturas (LRU chico). Las entradas retienen la textura;
-    // se libera al evictar/invalidar. Solo para loadTexture (la variante "mas
-    // reciente"), no para loadTextureByIndex (galeria, navegacion one-off).
     static constexpr size_t MAX_TEX_CACHE_ENTRIES = 4;
     mutable std::mutex m_texCacheMutex;
     mutable std::unordered_map<int32_t, cocos2d::CCTexture2D*> m_texCache;
@@ -119,6 +92,6 @@ private:
 
     void initCache();
     void migrateLegacyFile(int32_t levelID, std::filesystem::path const& legacyPath);
-    int nextIndex(int32_t levelID) const; // siguiente indice disponible (sin lock)
+    int nextIndex(int32_t levelID) const;
 };
 

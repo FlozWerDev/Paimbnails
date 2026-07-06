@@ -21,7 +21,7 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 
 #ifdef PAIMON_HAS_DISCORD_RPC
-#include <discord-rpc.hpp>
+#include "DiscordIpcClient.hpp"
 #endif
 
 #ifdef GEODE_IS_WINDOWS
@@ -76,8 +76,7 @@ std::string trimAssetKey(std::string value) {
 }
 
 DiscordPresenceManager& DiscordPresenceManager::get() {
-    // The RPC polling worker can outlive Cocos teardown. shutdown() stops it
-    // explicitly; keeping the manager alive prevents an atexit race.
+    // RPC worker can outlive Cocos teardown; never-freed instance avoids an atexit race.
     static auto* instance = new DiscordPresenceManager();
     return *instance;
 }
@@ -87,9 +86,7 @@ void DiscordPresenceManager::init() {
     m_startTimestamp = static_cast<int64_t>(std::time(nullptr));
 
 #ifdef PAIMON_HAS_DISCORD_RPC
-    ::discord::RPCManager::get()
-        .setClientID(kApplicationID)
-        .initialize();
+    DiscordIpcClient::get().setClientID(kApplicationID);
 #endif
 
     static bool s_listenersRegistered = false;
@@ -130,8 +127,8 @@ void DiscordPresenceManager::shutdown() {
     }
 
 #ifdef PAIMON_HAS_DISCORD_RPC
-    ::discord::RPCManager::get().clearPresence();
-    ::discord::RPCManager::get().shutdown();
+    DiscordIpcClient::get().clear();
+    DiscordIpcClient::get().close();
 #endif
 }
 
@@ -169,7 +166,7 @@ void DiscordPresenceManager::refreshNow() {
     return;
 #else
     if (!paimon::settings::discord_rpc::enabled()) {
-        ::discord::RPCManager::get().clearPresence();
+        DiscordIpcClient::get().clear();
         return;
     }
 
@@ -179,37 +176,32 @@ void DiscordPresenceManager::refreshNow() {
     }
     m_lastPayload = payload;
 
-    auto& presence = ::discord::Presence::get();
-    presence.clear();
-    presence
-        .setState(payload.state)
-        .setDetails(payload.details)
-        .setLargeImageKey(payload.largeImage)
-        .setLargeImageText(payload.largeImageText)
-        .setSmallImageKey(payload.smallImage)
-        .setSmallImageText(payload.smallImageText)
-        .setInstance(false);
+    DiscordActivity activity;
+    activity.state = payload.state;
+    activity.details = payload.details;
+    activity.largeImage = payload.largeImage;
+    activity.largeText = payload.largeImageText;
+    activity.smallImage = payload.smallImage;
+    activity.smallText = payload.smallImageText;
 
     {
         auto type = paimon::settings::discord_rpc::activityType();
-        auto activity = ::discord::ActivityType::Game;
-        if (type == "Listening") activity = ::discord::ActivityType::Listening;
-        else if (type == "Watching") activity = ::discord::ActivityType::Watching;
-        else if (type == "Competing") activity = ::discord::ActivityType::Competing;
-        presence.setActivityType(activity);
+        activity.type = DiscordActivityType::Playing;
+        if (type == "Listening") activity.type = DiscordActivityType::Listening;
+        else if (type == "Watching") activity.type = DiscordActivityType::Watching;
+        else if (type == "Competing") activity.type = DiscordActivityType::Competing;
     }
 
-    // Elapsed-time counter.
     if (paimon::settings::discord_rpc::showTimestamp()) {
-        presence.setStartTimestamp(payload.startTimestamp ? payload.startTimestamp : m_startTimestamp);
-    } else {
-        presence.setStartTimestamp(static_cast<int64_t>(0));
+        activity.startTimestamp = payload.startTimestamp ? payload.startTimestamp : m_startTimestamp;
     }
 
-    presence.setButton1("Paimbnails Page", "https://github.com/FlozWerDev/Paimbnails", true);
-    presence.setButton2("Paimbnails Discord", "https://discord.gg/5N5vpSfZwY", true);
+    activity.button1Label = "Paimbnails Page";
+    activity.button1Url = "https://github.com/FlozWerDev/Paimbnails";
+    activity.button2Label = "Paimbnails Discord";
+    activity.button2Url = "https://discord.gg/5N5vpSfZwY";
 
-    presence.refresh();
+    DiscordIpcClient::get().update(activity);
 #endif
 }
 

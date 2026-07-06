@@ -99,18 +99,14 @@ void ListThumbnailCarousel::tryShowNextImage() {
         int idx = (m_currentIndex + i) % listSize;
         int levelID = m_levelIDs[idx];
 
-        // failed before -> skip
         if (ThumbnailLoader::get().isFailed(levelID)) {
             continue;
         }
 
-        // already loaded = candidate
         if (ThumbnailLoader::get().isLoaded(levelID)) {
             foundIndex = idx;
             break;
         } else {
-            // not loaded -> enqueue download
-            
             // auto-download only the first 3; the rest only if cached
             if (idx < 3) {
                 // max 3 requests per cycle
@@ -127,7 +123,6 @@ void ListThumbnailCarousel::tryShowNextImage() {
     }
 
     if (foundIndex != -1) {
-        // valid image
         int levelID = m_levelIDs[foundIndex];
         
         // shared alive flag for callbacks
@@ -137,7 +132,6 @@ void ListThumbnailCarousel::tryShowNextImage() {
         
         ThumbnailLoader::get().requestLoad(levelID, fileName, [self, alive, levelID](CCTexture2D* tex, bool) {
             if (!alive || !*alive) return;
-            // double-check parent
             if (!self->getParent()) return;
 
             if (self->m_loadingSpinner) {
@@ -205,7 +199,6 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
         return;
     }
 
-    // check texture validity
     if (!ThumbnailLoader::isTextureSane(texture)) {
         return;
     }
@@ -253,7 +246,6 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
     float startX = panRight ? offsetX : (offsetX + travelX);
     float endX = panRight ? (offsetX + travelX) : offsetX;
     
-    // center Y
     float startY = (texHeight - visibleH) / 2.0f;
     float endY = startY;
     
@@ -263,11 +255,9 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
     
     sprite->setTextureRect(m_panStartRect);
     
-    // scale sprite
     float scale = m_size.width / visibleW;
     sprite->setScale(scale);
     
-    // center the node
     sprite->setPosition(m_size / 2);
     sprite->setOpacity(0);
     

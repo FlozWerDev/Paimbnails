@@ -173,7 +173,6 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
             float gap = 4.f;
             float centerX = contentSize.width - 28.f;
 
-            // Copy button
             auto copyBtn = createToolButton("Copy",
                 menu_selector(PaimonShareComment::onCopyInput));
             copyBtn->setPosition({centerX - 22.f - gap / 2, toolY});
@@ -181,7 +180,6 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
             toolMenu->addChild(copyBtn);
             m_fields->m_copyBtn = copyBtn;
 
-            // Paste button
             auto pasteBtn = createToolButton("Paste",
                 menu_selector(PaimonShareComment::onPasteInput));
             pasteBtn->setPosition({centerX + 22.f + gap / 2, toolY});
@@ -194,8 +192,7 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
 
         // Autocomplete
         if (m_commentInput) {
-            auto ac = paimon::emotes::EmoteAutocomplete::create(
-                m_commentInput,
+            auto ac = paimon::emotes::EmoteAutocomplete::create(                m_commentInput,
                 [self](std::string const& newText) {
                     if (!self->m_commentInput) return;
                     self->m_commentInput->setString(newText);

@@ -13,7 +13,6 @@
 
 namespace paimon::thumbnails::levelcell {
 
-// Subconjunto de Fields de LevelCell para resets centralizados (sin acoplar al hook).
 struct ThumbLoadResetFields {
     int32_t& lastRequestedLevelID;
     bool& thumbnailRequested;

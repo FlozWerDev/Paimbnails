@@ -37,7 +37,6 @@ bool YtDlpInstallPopup::init(std::function<void(bool)> onFinished) {
     auto content = m_mainLayer->getContentSize();
     const float cx = content.width / 2.f;
 
-    // Info
     m_infoLabel = CCLabelBMFont::create(
         "Downloading the audio downloader (one-time, ~17 MB)",
         "chatFont.fnt");
@@ -48,7 +47,6 @@ bool YtDlpInstallPopup::init(std::function<void(bool)> onFinished) {
         m_mainLayer->addChild(m_infoLabel, 3);
     }
 
-    // Status (bytes)
     m_statusLabel = CCLabelBMFont::create("Preparing...", "bigFont.fnt");
     if (m_statusLabel) {
         m_statusLabel->setScale(0.42f);
@@ -57,7 +55,6 @@ bool YtDlpInstallPopup::init(std::function<void(bool)> onFinished) {
         m_mainLayer->addChild(m_statusLabel, 3);
     }
 
-    // Barra de progreso
     const float barW = 320.f;
     const float barH = 18.f;
     const float barY = content.height / 2.f - 4.f;
@@ -74,7 +71,6 @@ bool YtDlpInstallPopup::init(std::function<void(bool)> onFinished) {
     barBg->addChild(barFill);
     m_barFill = barFill;
 
-    // Borde visual encima de la barra para hacerla destacar.
     auto border = CCLayerColor::create(ccc4(255, 255, 255, 60));
     border->setContentSize({barW, 1.f});
     border->setPosition({cx - barW / 2.f, barY});
@@ -91,10 +87,8 @@ bool YtDlpInstallPopup::init(std::function<void(bool)> onFinished) {
         m_mainLayer->addChild(m_percentLabel, 3);
     }
 
-    // Path donde va a quedar
     auto destPath = YtDlpBootstrap::get().bundledPath();
     auto destStr = geode::utils::string::pathToString(destPath);
-    // Acortar visualmente si es muy largo
     std::string displayPath = destStr;
     if (displayPath.size() > 60) {
         displayPath = "..." + displayPath.substr(displayPath.size() - 57);
@@ -109,7 +103,6 @@ bool YtDlpInstallPopup::init(std::function<void(bool)> onFinished) {
         m_mainLayer->addChild(m_pathLabel, 3);
     }
 
-    // Boton dismiss (oculto mientras descarga)
     auto dismissSpr = ButtonSprite::create("Close", 80, true, "bigFont.fnt", "GJ_button_06.png", 24.f, 0.6f);
     if (dismissSpr) {
         m_dismissBtn = CCMenuItemSpriteExtra::create(
@@ -123,14 +116,12 @@ bool YtDlpInstallPopup::init(std::function<void(bool)> onFinished) {
         }
     }
 
-    // Arrancar la descarga inmediatamente tras construir el popup.
     this->startInstall();
     return true;
 }
 
 void YtDlpInstallPopup::onExit() {
     *m_alive = false;
-    // Si el popup se cierra antes de terminar, notificar al caller.
     if (!m_finished && m_onFinished) {
         auto cb = std::move(m_onFinished);
         m_onFinished = nullptr;
@@ -142,7 +133,6 @@ void YtDlpInstallPopup::onExit() {
 void YtDlpInstallPopup::startInstall() {
     auto& boot = YtDlpBootstrap::get();
 
-    // Fast path: ya instalado (el usuario podria haber copiado el binario).
     if (boot.exists()) {
         this->finishSuccess();
         return;
@@ -198,14 +188,12 @@ void YtDlpInstallPopup::finishSuccess() {
         m_statusLabel->setColor({150, 255, 150});
     }
 
-    // Notificar al caller y cerrar.
     if (m_onFinished) {
         auto cb = std::move(m_onFinished);
         m_onFinished = nullptr;
         cb(true);
     }
 
-    // Cerrar con un pequenio delay para que el usuario vea el "complete".
     this->runAction(CCSequence::create(
         CCDelayTime::create(0.35f),
         CCCallFunc::create(this, callfunc_selector(YtDlpInstallPopup::removeFromParent)),
@@ -219,7 +207,6 @@ void YtDlpInstallPopup::finishError(const std::string& error) {
     m_success = false;
 
     if (m_statusLabel) {
-        // Truncar mensaje largo.
         std::string e = error;
         if (e.size() > 140) e = e.substr(0, 137) + "...";
         m_statusLabel->setString(e.c_str());
@@ -228,6 +215,12 @@ void YtDlpInstallPopup::finishError(const std::string& error) {
     if (m_percentLabel) m_percentLabel->setString("Failed");
 
     if (m_dismissBtn) m_dismissBtn->setVisible(true);
+
+    if (m_onFinished) {
+        auto cb = std::move(m_onFinished);
+        m_onFinished = nullptr;
+        cb(false);
+    }
 }
 
 void YtDlpInstallPopup::onDismiss(CCObject*) {

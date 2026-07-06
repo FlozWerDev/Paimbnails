@@ -22,8 +22,6 @@ namespace paimon::cache {
 
 static std::atomic<bool> s_cacheInstanceAlive{false};
 
-// Helpers
-
 ThumbnailCache& ThumbnailCache::get() {
     static ThumbnailCache instance;
     s_cacheInstanceAlive = true;
@@ -35,8 +33,7 @@ bool ThumbnailCache::isAlive() {
 }
 
 ThumbnailCache::~ThumbnailCache() {
-    // Defensive: detach any remaining textures without calling release()
-    // to avoid crash when CCPoolManager is already dead during static destruction.
+    // Detach without release() to avoid crash if CCPoolManager is already dead during static destruction.
     takeAllTextures();
     s_cacheInstanceAlive = false;
 }
@@ -60,30 +57,24 @@ int64_t ThumbnailCache::nowEpoch() {
     ).count();
 }
 
-// RAM Cache: Level Thumbnails
-
 std::optional<geode::Ref<cocos2d::CCTexture2D>> ThumbnailCache::getFromRam(int levelID, bool isGif) {
     auto key = makeRamKey(levelID, isGif);
     
     {
-        // Shared lock for read — allows concurrent lookups without serialization.
-        // lastAccess es atomic, asi que se puede tocar sin escalar a unique_lock.
         std::shared_lock slock(m_ramMutex);
         auto it = m_ramCache.find(key);
         if (it != m_ramCache.end()) {
             it->second.touchAccess(std::chrono::steady_clock::now());
             return it->second.texture;
         }
-    } // slock se libera automáticamente aquí
+    }
     
-    // Puente de caché (Cache-bridging): buscar textura en caché de URLs como fallback
     if (!isGif) {
         std::string defaultUrl = ThumbnailTransportClient::get().getThumbnailURL(levelID);
         if (!defaultUrl.empty()) {
             std::string cacheKey = ThumbnailLoader::normalizeUrlKey(defaultUrl);
             auto urlTex = getUrlFromRam(cacheKey);
             if (urlTex.has_value()) {
-                // Poblar caché principal para agilizar futuros accesos
                 addToRam(levelID, isGif, urlTex.value().data());
                 return urlTex.value();
             }
@@ -93,6 +84,26 @@ std::optional<geode::Ref<cocos2d::CCTexture2D>> ThumbnailCache::getFromRam(int l
     return std::nullopt;
 }
 
+bool ThumbnailCache::isRamEntrySuitable(int levelID, bool isGif, int requestedMaxDim) const {
+    if (requestedMaxDim <= 0) return true;
+
+    auto key = makeRamKey(levelID, isGif);
+    std::shared_lock slock(m_ramMutex);
+    auto it = m_ramCache.find(key);
+    if (it == m_ramCache.end() || !it->second.texture) return false;
+
+    auto* tex = it->second.texture.data();
+    int texLong = std::max(tex->getPixelsWide(), tex->getPixelsHigh());
+    int originalLong = std::max(it->second.originalWidth, it->second.originalHeight);
+
+    // Older cache entries may not know their source dimensions. Treat them as
+    // suitable so we do not churn disk/network trying to "upgrade" unknowns.
+    if (originalLong <= 0) return true;
+
+    int targetLong = std::min(requestedMaxDim, originalLong);
+    return texLong + 8 >= targetLong;
+}
+
 void ThumbnailCache::addToRam(int levelID, bool isGif, cocos2d::CCTexture2D* texture, int version, int origW, int origH) {
     if (!texture) return;
     auto key = makeRamKey(levelID, isGif);
@@ -100,7 +111,6 @@ void ThumbnailCache::addToRam(int levelID, bool isGif, cocos2d::CCTexture2D* tex
 
     std::unique_lock lock(m_ramMutex);
 
-    // subtract old entry bytes if replacing
     if (auto oldIt = m_ramCache.find(key); oldIt != m_ramCache.end()) {
         if (m_ramBytes >= oldIt->second.byteSize) m_ramBytes -= oldIt->second.byteSize;
         else m_ramBytes = 0;
@@ -138,12 +148,10 @@ void ThumbnailCache::evictRamLocked() {
     size_t maxEntries = paimon::settings::quality::ramCacheEntries();
     size_t maxBytes   = paimon::settings::quality::ramCacheBytes();
 
-    // Early-exit: si estamos dentro de los limites, no hacer nada
     if (m_ramCache.size() <= maxEntries && m_ramBytes <= maxBytes) {
         return;
     }
 
-    // aggregate cap: thumbnails + URL + GIF caches
     size_t gifCacheBytes = AnimatedGIFSprite::currentCacheBytes();
     size_t urlBytes = 0;
     {
@@ -159,23 +167,15 @@ void ThumbnailCache::evictRamLocked() {
             : maxBytes / 2;
     }
 
-    // Eviction LRU: evitar el bucle O(k·n) que hacia min_element por cada
-    // eviction. Recolectamos candidatos y usamos partial_sort para ordenar
-    // solo los primeros k por lastAccess (mas viejos primero) y borramos.
+    // Eviction LRU: partial_sort de los k mas viejos por lastAccess, evita el bucle O(k·n).
     if (m_ramCache.size() <= maxEntries && m_ramBytes <= effectiveMaxBytes) return;
 
     struct EvictCandidate { std::string key; int64_t accessUs; size_t bytes; };
     std::vector<EvictCandidate> candidates;
     candidates.reserve(m_ramCache.size());
     for (auto const& [k, e] : m_ramCache) {
-        // Main levels (1-22): PINNED — nunca se expulsan del RAM cache por LRU.
-        // Son solo 22 texturas que nunca cambian y se precargan al arrancar
-        // (ver PreloadActions / Bootstrap). Mantenerlas calientes garantiza que
-        // LevelSelectLayer (y las puertas de LevelAreaInnerLayer / LevelInfoLayer)
-        // muestren el fondo al instante, sin pagar disco+decode+upload cada vez
-        // que el usuario navega listas online y llena la cache. Esto refleja la
-        // misma exencion que ya hace purgeUnusedTextures(); antes el LRU las
-        // expulsaba apenas se superaban las ~40 entradas, anulando la precarga.
+        // Main levels (1-22): PINNED — nunca se expulsan por LRU. Se precargan al arrancar
+        // y mantenerlas calientes garantiza fondo instantaneo en LevelSelectLayer.
         if (auto idRes = geode::utils::numFromString<int>(k); idRes) {
             int id = idRes.unwrap();
             if (id < 0) id = -id;
@@ -183,13 +183,10 @@ void ThumbnailCache::evictRamLocked() {
         }
         candidates.push_back({k, e.lastAccessUs.load(std::memory_order_relaxed), e.byteSize});
     }
-    // Estimar cuantas entradas hay que evictar. Usamos partial_sort para
-    // ordenar solo lo necesario en O(n log k) en vez de O(n log n).
     size_t toEvictCount = std::max<size_t>(
         m_ramCache.size() > maxEntries ? m_ramCache.size() - maxEntries : 0,
         1
     );
-    // Limite de seguridad por si los bytes piden mucho mas que entries
     toEvictCount = std::min(toEvictCount + 8, candidates.size());
 
     if (toEvictCount < candidates.size()) {
@@ -226,12 +223,9 @@ void ThumbnailCache::purgeUnusedTextures() {
     }
     if (!m_lastPurgeUs.compare_exchange_strong(lastUs, nowUs,
                                                 std::memory_order_relaxed)) {
-        // otro hilo ya gano la carrera; no hacer purge duplicado
         return;
     }
 
-    // purge level RAM: acotar escaneo por tick (main thread) para no recorrer
-    // miles de entradas en un solo drain de ThumbnailLoader.
     constexpr size_t kMaxPurgeCandidates = 64;
 
     {
@@ -241,10 +235,7 @@ void ThumbnailCache::purgeUnusedTextures() {
             toPurge.reserve(std::min(m_ramCache.size() / 4, kMaxPurgeCandidates));
             for (auto const& [key, entry] : m_ramCache) {
                 if (toPurge.size() >= kMaxPurgeCandidates) break;
-                // Main levels (1-22): nunca se purgan. La precarga del menu
-                // los deja calientes en RAM para que LevelSelectLayer muestre
-                // el fondo al instante (incluso al volver de un nivel). Siguen
-                // sujetos a eviction LRU para no acaparar memoria.
+                // Main levels (1-22): nunca se purgan; la precarga los deja calientes en RAM.
                 if (auto idRes = geode::utils::numFromString<int>(key); idRes) {
                     int id = idRes.unwrap();
                     if (id < 0) id = -id;
@@ -261,7 +252,7 @@ void ThumbnailCache::purgeUnusedTextures() {
             for (auto const& key : toPurge) {
                 auto it = m_ramCache.find(key);
                 if (it != m_ramCache.end()) {
-                    // Re-check conditions under exclusive lock (entry may have changed)
+                    // Re-check bajo lock exclusivo (la entrada pudo cambiar).
                     if (now - it->second.addedAt >= PURGE_GRACE_PERIOD &&
                         it->second.texture && it->second.texture->retainCount() <= 1) {
                         if (m_ramBytes >= it->second.byteSize) m_ramBytes -= it->second.byteSize;
@@ -315,11 +306,7 @@ size_t ThumbnailCache::ramEntryCount() const {
     return m_ramCache.size();
 }
 
-// RAM Cache: URL Gallery
-
 std::optional<geode::Ref<cocos2d::CCTexture2D>> ThumbnailCache::getUrlFromRam(std::string const& url) {
-    // Shared lock for read — allows concurrent lookups without serialization.
-    // lastAccess es atomic, asi que se puede tocar sin escalar a unique_lock.
     std::shared_lock slock(m_urlMutex);
     auto it = m_urlRamCache.find(url);
     if (it == m_urlRamCache.end()) return std::nullopt;
@@ -405,18 +392,13 @@ size_t ThumbnailCache::urlRamEntryCount() const {
 
 void ThumbnailCache::clearUrlsForLevel(int levelID) {
     if (levelID <= 0) return;
-    // Buscamos URLs cuyo path contenga el levelID seguido de un separador
-    // tipico ('.', '_', '/'). Esto cubre patrones como:
-    //   - /t/12345.png
-    //   - /t/12345_2.png
-    //   - /api/thumbnails/12345/list
-    // Sin matchear falsos positivos como /12345abc.png o /12345000.png.
+    // Match URLs con el levelID seguido de separador (.,_,/) o como parametro de query; evita falsos positivos como /12345abc.png.
     std::string idStr = std::to_string(levelID);
     std::string n1 = "/" + idStr + ".";
     std::string n2 = "/" + idStr + "_";
     std::string n3 = "/" + idStr + "/";
-    std::string n4 = "=" + idStr + "&";   // parametros tipo ?levelId=12345&...
-    std::string n5 = "=" + idStr;          // al final del query string
+    std::string n4 = "=" + idStr + "&";
+    std::string n5 = "=" + idStr;
 
     std::unique_lock lock(m_urlMutex);
     size_t freed = 0;
@@ -427,13 +409,14 @@ void ThumbnailCache::clearUrlsForLevel(int levelID) {
             it->first.find(n2) != std::string::npos ||
             it->first.find(n3) != std::string::npos ||
             it->first.find(n4) != std::string::npos ||
-            // Para n5 verificamos que termine exactamente con el patron
-            // (evita match parcial con "=12345000" cuando buscamos "=12345").
+            // Suffix match: URL ends with "=<id>". The "=" delimiter + end anchor
+            // already prevent cross-level partial matches (e.g. "...=1234" cannot
+            // end with "=123"), so no trailing-char check is needed. The previous
+            // guard tested it->first[n5.size()] — an index from the START of the
+            // string, unrelated to the matched suffix — and wrongly rejected valid
+            // matches whenever that character happened to be a digit.
             (it->first.size() >= n5.size() &&
-             it->first.compare(it->first.size() - n5.size(), n5.size(), n5) == 0 &&
-             // siguiente char debe ser fin de string o no-digito
-             (it->first.size() == n5.size() ||
-              !std::isdigit(static_cast<unsigned char>(it->first[n5.size()]))));
+             it->first.compare(it->first.size() - n5.size(), n5.size(), n5) == 0);
 
         if (matches) {
             freed += it->second.byteSize;
@@ -452,8 +435,6 @@ void ThumbnailCache::clearUrlsForLevel(int levelID) {
     }
 }
 
-// Disk Index (delegates to DiskManifest)
-
 bool ThumbnailCache::hasDiskEntry(int levelID, bool isGif) const {
     return m_manifest.contains(levelID, isGif);
 }
@@ -467,7 +448,6 @@ std::optional<ThumbnailCache::DiskEntry> ThumbnailCache::getDiskEntry(int levelI
 void ThumbnailCache::upsertDisk(DiskEntry entry) {
     bool isGif = entry.isGif;
     int levelID = entry.levelID;
-    // ensure filename is set for the manifest
     if (entry.filename.empty()) {
         entry.filename = paimon::quality::thumbFilename(levelID, isGif);
     }
@@ -509,24 +489,18 @@ size_t ThumbnailCache::diskEntryCount() const {
     return m_manifest.entryCount();
 }
 
-// Disk Index Persistence (DiskManifest — standalone manifest.json)
-
 void ThumbnailCache::loadDiskIndex() {
     auto cacheDir = paimon::quality::cacheDir();
 
-    // ensure cache dir exists
     std::error_code ec;
     std::filesystem::create_directories(cacheDir, ec);
 
-    // delegate loading to DiskManifest (handles migration from dir scan,
-    // legacy manifest.json, orphan cleanup, etc.)
     {
         std::lock_guard<std::recursive_mutex> lock(m_manifest.mutex);
         m_manifest.load(cacheDir);
     }
 
-    // also try migrating from Geode SavedValues if DiskManifest came up empty
-    // (one-time migration from the old persistence layer)
+    // one-time migration desde Geode SavedValues si DiskManifest quedo vacio
     if (m_manifest.entryCount() == 0) {
         auto savedCache = Mod::get()->getSavedValue<matjson::Value>("thumbnail-disk-cache");
         if (savedCache.isObject()) {
@@ -547,7 +521,6 @@ void ThumbnailCache::loadDiskIndex() {
                 entry.isGif = val["isGif"].asBool().unwrapOr(false);
                 entry.filename = paimon::quality::thumbFilename(entry.levelID, entry.isGif);
 
-                // validate file exists
                 if (!std::filesystem::exists(cacheDir / entry.filename, ec)) {
                     continue;
                 }
@@ -557,17 +530,13 @@ void ThumbnailCache::loadDiskIndex() {
             }
             if (migrated > 0) {
                 log::info("[ThumbnailCache] migrated {} entries from Geode SavedValues to DiskManifest", migrated);
-                // flush immediately so the manifest.json file is created
                 m_manifest.flush();
-                // clear the old saved value to avoid re-migration
                 Mod::get()->setSavedValue("thumbnail-disk-cache", matjson::makeObject({}));
                 (void)Mod::get()->saveData();
             }
         }
     }
 
-    // persist immediately if dirty (dir scan, SavedValues migration)
-    // so the manifest.json exists even if the game crashes later
     m_manifest.flush();
 
     log::info("[ThumbnailCache] disk index ready: {} entries", m_manifest.entryCount());
@@ -578,17 +547,10 @@ void ThumbnailCache::saveDiskIndex(bool allowDuringShutdown) {
     m_manifest.flush();
 }
 
-// auto-persist on DataSaved hook
 $on_mod(DataSaved) {
-    // allowDuringShutdown=true: DataSaved se dispara incluso durante el
-    // shutdown de Geode. Sin este flag, saveDiskIndex retornaria temprano
-    // y perderiamos las entradas pendientes de flush (debounced 10s tras
-    // cada descarga exitosa). Pasarlo en true garantiza que el manifest
-    // siempre se persista al cerrar el juego.
+    // allowDuringShutdown=true: DataSaved se dispara durante el shutdown; sin el flag perderiamos el flush pendiente.
     ThumbnailCache::get().saveDiskIndex(true);
 }
-
-// Failed Cache
 
 bool ThumbnailCache::isFailed(std::string const& key) const {
     std::lock_guard lock(m_failedMutex);
@@ -597,13 +559,10 @@ bool ThumbnailCache::isFailed(std::string const& key) const {
 
     int step = std::min(it->second.retryStep, FAILED_BACKOFF_MAX_STEP);
 
-    // backoff exponencial: el TTL crece con cada retry.
-    // El paso maximo (index FAILED_BACKOFF_MAX_STEP) tiene TTL de 5 min;
-    // tras eso se permite reintento — no es permanente.
+    // backoff exponencial: el TTL crece con cada retry; el ultimo paso (5 min) no es permanente.
     auto ttl = std::chrono::seconds(FAILED_BACKOFF_STEPS[step]);
     if (std::chrono::steady_clock::now() - it->second.timestamp >= ttl) {
-        // TTL expirado — permitir reintento pero NO borrar la entrada.
-        // Asi markFailed() puede incrementar retryStep y el backoff escala.
+        // TTL expirado: permitir reintento pero NO borrar, asi markFailed() escala el backoff.
         return false;
     }
     return true;
@@ -613,9 +572,6 @@ void ThumbnailCache::markFailed(std::string const& key) {
     std::lock_guard lock(m_failedMutex);
     auto it = m_failedCache.find(key);
     if (it != m_failedCache.end()) {
-        // Escalar backoff exponencial sin promover a notFound permanente.
-        // markNotFound() solo se invoca desde finishTask() cuando el servidor
-        // confirma 404 (wasNotFound / isThumbnailNotFound).
         it->second.retryStep = std::min(it->second.retryStep + 1, FAILED_BACKOFF_MAX_STEP);
         it->second.timestamp = std::chrono::steady_clock::now();
     } else {
@@ -638,7 +594,6 @@ void ThumbnailCache::purgeExpiredFailed() {
     auto now = std::chrono::steady_clock::now();
     for (auto it = m_failedCache.begin(); it != m_failedCache.end();) {
         int step = std::min(it->second.retryStep, FAILED_BACKOFF_MAX_STEP);
-        // Ningun fallo es permanente; tras el TTL del ultimo paso se purga.
         auto ttl = std::chrono::seconds(FAILED_BACKOFF_STEPS[step]);
         if (now - it->second.timestamp >= ttl) {
             it = m_failedCache.erase(it);
@@ -647,8 +602,6 @@ void ThumbnailCache::purgeExpiredFailed() {
         }
     }
 }
-
-// Not-Found Cache (with TTL)
 
 bool ThumbnailCache::isNotFound(std::string const& key) const {
     std::lock_guard lock(m_notFoundMutex);
@@ -676,8 +629,6 @@ void ThumbnailCache::clearAllNotFound() {
     m_notFoundCache.clear();
 }
 
-// Invalidation
-
 int ThumbnailCache::getInvalidationVersion(int levelID) const {
     std::lock_guard lock(m_invalidationMutex);
     auto it = m_invalidationVersions.find(levelID);
@@ -693,8 +644,6 @@ int ThumbnailCache::getVersionForKey(int legacyKey) const {
     int realID = (legacyKey < 0) ? -legacyKey : legacyKey;
     return getInvalidationVersion(realID);
 }
-
-// Lifecycle
 
 void ThumbnailCache::clearRam() {
     {
@@ -727,7 +676,6 @@ void ThumbnailCache::clearDisk() {
         std::lock_guard<std::recursive_mutex> lock(m_manifest.mutex);
         m_manifest.clearPreservingMainLevels();
     }
-    // recreate dir si por algun caso quedo vacio
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
 }
@@ -738,8 +686,7 @@ void ThumbnailCache::clearAll() {
 }
 
 void ThumbnailCache::takeAllTextures() {
-    // take() Ref pointers without calling release() to avoid crash
-    // when Cocos2d is already dead during static destruction
+    // take() sin release() para evitar crash si Cocos2d ya murio durante static destruction.
     size_t levelCount = 0;
     {
         std::unique_lock lock(m_ramMutex);

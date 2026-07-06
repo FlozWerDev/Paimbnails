@@ -37,7 +37,6 @@ bool FfmpegInstallPopup::init(std::function<void(bool)> onFinished) {
     auto content = m_mainLayer->getContentSize();
     const float cx = content.width / 2.f;
 
-    // Info
     m_infoLabel = CCLabelBMFont::create(
         "Downloading audio converter (one-time, ~80 MB)",
         "chatFont.fnt");
@@ -48,7 +47,6 @@ bool FfmpegInstallPopup::init(std::function<void(bool)> onFinished) {
         m_mainLayer->addChild(m_infoLabel, 3);
     }
 
-    // Status
     m_statusLabel = CCLabelBMFont::create("Preparing...", "bigFont.fnt");
     if (m_statusLabel) {
         m_statusLabel->setScale(0.42f);
@@ -57,7 +55,6 @@ bool FfmpegInstallPopup::init(std::function<void(bool)> onFinished) {
         m_mainLayer->addChild(m_statusLabel, 3);
     }
 
-    // Barra de progreso
     const float barW = 340.f;
     const float barH = 18.f;
     const float barY = content.height / 2.f - 4.f;
@@ -90,7 +87,6 @@ bool FfmpegInstallPopup::init(std::function<void(bool)> onFinished) {
         m_mainLayer->addChild(m_percentLabel, 3);
     }
 
-    // Path donde va a quedar
     auto destPath = FfmpegBootstrap::get().bundledPath();
     auto destStr = geode::utils::string::pathToString(destPath);
     std::string displayPath = destStr;
@@ -107,7 +103,6 @@ bool FfmpegInstallPopup::init(std::function<void(bool)> onFinished) {
         m_mainLayer->addChild(m_pathLabel, 3);
     }
 
-    // Boton dismiss (oculto hasta que haya error)
     auto dismissSpr = ButtonSprite::create("Close", 80, true, "bigFont.fnt", "GJ_button_06.png", 24.f, 0.6f);
     if (dismissSpr) {
         m_dismissBtn = CCMenuItemSpriteExtra::create(
@@ -220,6 +215,12 @@ void FfmpegInstallPopup::finishError(const std::string& error) {
     if (m_percentLabel) m_percentLabel->setString("Failed");
 
     if (m_dismissBtn) m_dismissBtn->setVisible(true);
+
+    if (m_onFinished) {
+        auto cb = std::move(m_onFinished);
+        m_onFinished = nullptr;
+        cb(false);
+    }
 }
 
 void FfmpegInstallPopup::onDismiss(CCObject*) {

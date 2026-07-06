@@ -1,4 +1,5 @@
 ﻿#include "UpdateProgressPopup.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/UpdateChecker.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -67,6 +68,7 @@ UpdateProgressPopup* UpdateProgressPopup::create() {
 
 bool UpdateProgressPopup::init() {
     if (!Popup::init(360.f, 200.f)) return false;
+    paimon::markDynamicPopup(this);
     this->setTitle(tr("pai.update.title", "Downloading update"));
 
     auto content = m_mainLayer->getContentSize();
@@ -166,11 +168,16 @@ void UpdateProgressPopup::startDownload() {
         return;
     }
 
-    Ref<UpdateProgressPopup> self = this;
+    // WeakRef (not Ref): these callbacks are wrapped and held by the WebRequest,
+    // whose progress callback runs off the main thread (see the queueInMainThread
+    // in UpdateChecker::downloadUpdate). A strong Ref could run cocos2d's
+    // non-atomic release() off the main thread when the request tears down. We
+    // lock() back on the main thread; a closed popup simply skips the update.
+    WeakRef<UpdateProgressPopup> self = this;
 
     checker.downloadUpdate(
         [self](uint64_t received, uint64_t total) {
-            if (auto p = self.data()) p->onProgress(received, total);
+            if (auto p = self.lock()) p->onProgress(received, total);
         },
         [self](bool ok, std::string msg) {
             // queueInMainThread por seguridad: el callback de dispatchOwned
@@ -178,7 +185,7 @@ void UpdateProgressPopup::startDownload() {
             // si llega una respuesta sincronica antes de terminar el init.
             Loader::get()->queueInMainThread([self, ok, msg]() {
                 if (paimon::isRuntimeShuttingDown()) return;
-                if (auto p = self.data()) p->onDone(ok, msg);
+                if (auto p = self.lock()) p->onDone(ok, msg);
             });
         }
     );

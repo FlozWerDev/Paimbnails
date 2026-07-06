@@ -48,7 +48,6 @@ inline CCMenuItemSpriteExtra* makeCircleIconButton(
     return btn;
 }
 
-// Add a child to a menu and update the layout.
 inline void addToMenuAndUpdate(cocos2d::CCMenu* menu, cocos2d::CCNode* child) {
     if (!menu || !child) return;
     menu->addChild(child);

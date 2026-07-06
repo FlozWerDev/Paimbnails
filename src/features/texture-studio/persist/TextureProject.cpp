@@ -21,30 +21,44 @@ PackExportConfig TextureProject::toExportConfig() const {
     cfg.colors.color1          = color1;
     cfg.colors.color2          = color2;
     cfg.colors.glow            = colorGlow;
+    cfg.colors.detail          = colorDetail;
     cfg.brightness             = brightness;
     cfg.alternativeGlowOverlay = alternativeGlowOverlay;
     cfg.tintScope              = tintScope;
     cfg.onlyTintUiSprites      = tintScope != TintScope::Everything;
+    cfg.maskSoftness           = maskSoftness;
+    cfg.clusterPrecision       = clusterPrecision;
+    cfg.edgeCleanup            = edgeCleanup;
+    cfg.outlineProtect         = outlineProtect;
+    cfg.saturation             = saturation;
+    cfg.contrast               = contrast;
     cfg.includeMediumPort      = includeMediumPort;
     cfg.transparentLists       = transparentLists;
     cfg.colorGradientBg        = colorGradientBg;
     cfg.colorMainMenu          = colorMainMenu;
+    cfg.usePackGenAssets       = usePackGenAssets;
+    cfg.tintGoldFont           = tintGoldFont;
+    cfg.colorGoldTitles        = colorGoldTitles;
+    cfg.colorDemonFaces        = colorDemonFaces;
+    cfg.mythicCompat           = mythicCompat;
+    cfg.includeModTextures     = includeModTextures;
 
     for (auto const& [frameName, setting] : spriteSettings) {
         if (setting.skip) cfg.spriteSkip.insert(frameName);
         if (setting.useCustomColors) {
             cfg.spriteColors.emplace(frameName, TintColors{
-                setting.color1, setting.color2, setting.colorGlow});
+                setting.color1, setting.color2, setting.colorGlow,
+                setting.colorDetail});
         }
         if (setting.hasCustomImage) {
-            cfg.spriteImages.emplace(frameName,
-                SlotPaths::spriteImageFile(id, frameName));
+            SpriteImageOverride ov;
+            ov.path      = SlotPaths::spriteImageFile(id, frameName);
+            ov.transform = setting.imageTransform;
+            ov.overlay   = setting.imageOverlay;
+            cfg.spriteImages.emplace(frameName, std::move(ov));
         }
     }
 
-    // Convert sheet refs into SheetSelection. The caller is expected to
-    // overwrite the path fields from a fresh GdResourcesLocator scan when
-    // GD has been reinstalled or the user is on a different machine.
     cfg.sheets.reserve(sheets.size());
     for (auto const& s : sheets) {
         SheetSelection sel;

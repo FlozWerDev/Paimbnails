@@ -1,18 +1,26 @@
 #include "BeatShaderConfigLayer.hpp"
 
+#include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/BeatShaderManager.hpp"
+#include "../../../ui/PaiConfigKit.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 
 #include <Geode/Geode.hpp>
+#include <Geode/binding/ButtonSprite.hpp>
+#include <fmt/format.h>
 
 #include <algorithm>
 
 using namespace geode::prelude;
 
+namespace {
+namespace kit = paimon::configkit;
+}
+
 namespace paimon::beat_shaders {
 
-constexpr float kPopupW = 460.f;
+constexpr float kPopupW = 440.f;
 constexpr float kPopupH = 300.f;
 
 BeatShaderConfigLayer* BeatShaderConfigLayer::create() {
@@ -27,6 +35,7 @@ BeatShaderConfigLayer* BeatShaderConfigLayer::create() {
 
 bool BeatShaderConfigLayer::init() {
     if (!Popup::init(kPopupW, kPopupH)) return false;
+    paimon::markDynamicPopup(this);
 
     setTitle("Beat Shaders");
 
@@ -46,157 +55,151 @@ bool BeatShaderConfigLayer::init() {
         }
     }
 
-    buildHeader();
-    buildShaderPicker();
-    buildSensitivitySliders();
-    buildIntensityRow();
-    buildLayerToggles();
-    buildFooter();
+    rebuild();
+
+    // Boton fijo abajo: restaurar valores por defecto
+    auto* resetSpr = ButtonSprite::create("Restaurar", "goldFont.fnt", "GJ_button_06.png", 0.7f);
+    if (resetSpr) resetSpr->setScale(0.55f);
+    auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr,
+        [this](CCMenuItemSpriteExtra*) {
+            m_cfg = BeatShaderConfig{};
+            m_shaderIdx = 0;
+            BeatShaderManager::get().saveConfig(m_cfg);
+            for (auto const& key : m_layerKeys) {
+                BeatShaderManager::get().setLayerEnabled(key, true);
+            }
+            // Reconstruimos la UI y el fondo fuera del touch dispatcher (ver
+            // persistAndRefresh para la explicacion del crash).
+            Ref<BeatShaderConfigLayer> self = this;
+            Loader::get()->queueInMainThread([self] {
+                if (paimon::isRuntimeShuttingDown()) return;
+                BeatShaderManager::get().rebuildBackgrounds();
+                if (self && self->getParent()) self->rebuild();
+            });
+            PaimonNotify::create("Beat Shaders restablecido", NotificationIcon::Success)->show();
+        });
+    resetBtn->setID("beat-shader-default-btn"_spr);
+    resetBtn->setPosition({m_mainLayer->getContentSize().width / 2.f, 20.f});
+    m_buttonMenu->addChild(resetBtn);
 
     return true;
 }
 
-void BeatShaderConfigLayer::buildHeader() {
-    auto* desc = CCLabelBMFont::create(
-        "Distorsiona el fondo actual con el ritmo de la musica.",
-        "chatFont.fnt");
-    desc->setScale(0.55f);
-    desc->setOpacity(180);
-    m_mainLayer->addChildAtPosition(desc, Anchor::Top, {0, -28});
-
-    m_enabledToggle = CCMenuItemToggler::createWithStandardSprites(
-        this, menu_selector(BeatShaderConfigLayer::onToggleEnabled), 0.7f);
-    m_enabledToggle->toggle(m_cfg.enabled);
-
-    auto* enabledLabel = CCLabelBMFont::create("Enabled", "bigFont.fnt");
-    enabledLabel->setScale(0.4f);
-
-    m_buttonMenu->addChildAtPosition(m_enabledToggle, Anchor::TopRight, {-30, -25});
-    m_mainLayer->addChildAtPosition(enabledLabel, Anchor::TopRight, {-65, -25});
-}
-
-void BeatShaderConfigLayer::buildShaderPicker() {
-    auto* leftSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
-    if (leftSpr) leftSpr->setScale(0.6f);
-    auto* leftBtn = CCMenuItemSpriteExtra::create(
-        leftSpr, this, menu_selector(BeatShaderConfigLayer::onPrevShader));
-    leftBtn->setID("beat-shader-prev"_spr);
-    m_buttonMenu->addChildAtPosition(leftBtn, Anchor::Top, {-110, -65});
-
-    auto* rightSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
-    if (rightSpr) {
-        rightSpr->setScale(0.6f);
-        rightSpr->setFlipX(true);
+void BeatShaderConfigLayer::rebuild() {
+    if (m_scroll) {
+        m_scroll->removeFromParent();
+        m_scroll = nullptr;
+        m_shaderDescLabel = nullptr;
     }
-    auto* rightBtn = CCMenuItemSpriteExtra::create(
-        rightSpr, this, menu_selector(BeatShaderConfigLayer::onNextShader));
-    rightBtn->setID("beat-shader-next"_spr);
-    m_buttonMenu->addChildAtPosition(rightBtn, Anchor::Top, {110, -65});
 
-    m_shaderNameLabel = CCLabelBMFont::create("Glitch", "bigFont.fnt");
-    m_shaderNameLabel->setScale(0.55f);
-    m_mainLayer->addChildAtPosition(m_shaderNameLabel, Anchor::Top, {0, -60});
+    auto content = m_mainLayer->getContentSize();
+    float scrollW = content.width - 24.f;
+    float scrollH = content.height - 36.f - 38.f;
+    float innerW = kit::cardInnerWidth(scrollW);
 
-    m_shaderDescLabel = CCLabelBMFont::create("", "chatFont.fnt");
-    m_shaderDescLabel->setScale(0.42f);
-    m_shaderDescLabel->setOpacity(170);
-    m_mainLayer->addChildAtPosition(m_shaderDescLabel, Anchor::Top, {0, -82});
+    auto fmtPercent = [](double v) { return fmt::format("{}%", static_cast<int>(v * 100.0)); };
+    auto fmtTimes   = [](double v) { return fmt::format("x{:.1f}", v); };
 
-    refreshShaderLabel();
-}
+    // Interruptor principal
+    auto* hero = kit::makeHeroToggle(scrollW,
+        "Fondos al ritmo",
+        "El fondo del menu se mueve siguiendo la musica.",
+        m_cfg.enabled,
+        [this](bool v) {
+            m_cfg.enabled = v;
+            persistAndRefresh(true);
+        });
 
-void BeatShaderConfigLayer::buildSensitivitySliders() {
-    auto makeSlider = [&](char const* label, SEL_MenuHandler cb,
-                           float xOffset, float yOffset, float currentVal) -> Slider*
+    // Tarjeta: estilo del efecto
+    std::vector<std::string> shaderNames;
+    shaderNames.reserve(m_shaders.size());
+    for (auto const& s : m_shaders) shaderNames.push_back(s.label);
+
+    auto* styleRow = kit::makeSelectRow(innerW,
+        "Estilo", nullptr,
+        shaderNames, m_shaderIdx,
+        [this](int idx) {
+            if (idx < 0 || idx >= static_cast<int>(m_shaders.size())) return;
+            m_shaderIdx = idx;
+            m_cfg.shaderName = m_shaders[static_cast<size_t>(idx)].id;
+            if (m_shaderDescLabel) {
+                m_shaderDescLabel->setString(
+                    m_shaders[static_cast<size_t>(idx)].description.c_str());
+            }
+            persistAndRefresh(true);
+        });
+
+    // Descripcion del estilo actual (se actualiza al cambiar de estilo).
+    // Nodo propio con altura fija para dos lineas.
+    auto* descRow = CCNode::create();
+    descRow->setAnchorPoint({0.f, 0.f});
+    descRow->setContentSize({innerW, 22.f});
     {
-        auto* lbl = CCLabelBMFont::create(label, "bigFont.fnt");
-        lbl->setScale(0.42f);
-        m_mainLayer->addChildAtPosition(lbl, Anchor::Center, {xOffset, yOffset + 18});
+        std::string initial = (m_shaderIdx >= 0 && m_shaderIdx < static_cast<int>(m_shaders.size()))
+            ? m_shaders[static_cast<size_t>(m_shaderIdx)].description : "";
+        auto* lbl = CCLabelBMFont::create(initial.c_str(), "chatFont.fnt",
+            (innerW - 24.f) / 0.46f, kCCTextAlignmentLeft);
+        lbl->setScale(0.46f);
+        lbl->setAnchorPoint({0.f, 1.f});
+        lbl->setColor(kit::kDescColor);
+        lbl->setPosition({12.f, 20.f});
+        descRow->addChild(lbl);
+        m_shaderDescLabel = lbl;
+    }
 
-        auto* slider = Slider::create(this, cb, 0.55f);
-        slider->setValue(std::clamp(currentVal / 3.0f, 0.f, 1.f));
-        m_mainLayer->addChildAtPosition(slider, Anchor::Center, {xOffset, yOffset});
-        return slider;
-    };
+    auto* styleCard = kit::makeCard(scrollW, "Estilo del efecto", {255, 140, 220},
+                                    {styleRow, descRow});
 
-    m_bassSlider   = makeSlider("Bass",   menu_selector(BeatShaderConfigLayer::onBassChanged),   -150, 10, m_cfg.bassMult);
-    m_midSlider    = makeSlider("Mid",    menu_selector(BeatShaderConfigLayer::onMidChanged),     -50, 10, m_cfg.midMult);
-    m_trebleSlider = makeSlider("Treble", menu_selector(BeatShaderConfigLayer::onTrebleChanged),   50, 10, m_cfg.trebleMult);
-    m_beatSlider   = makeSlider("Beat",   menu_selector(BeatShaderConfigLayer::onBeatChanged),    150, 10, m_cfg.beatMult);
-}
+    // Tarjeta: reaccion al audio
+    auto* audioCard = kit::makeCard(scrollW, "Reaccion a la musica", {120, 210, 255}, {
+        kit::makeSliderRow(innerW,
+            "Intensidad", "Fuerza general del efecto.",
+            m_cfg.intensity, 0.0, 1.0, fmtPercent,
+            [this](double v) { m_cfg.intensity = static_cast<float>(v); persistAndRefresh(false); }),
+        kit::makeSliderRow(innerW,
+            "Graves", "Reaccion a los bajos y al bombo.",
+            m_cfg.bassMult, 0.0, 3.0, fmtTimes,
+            [this](double v) { m_cfg.bassMult = static_cast<float>(v); persistAndRefresh(false); }),
+        kit::makeSliderRow(innerW,
+            "Medios", "Reaccion a voces e instrumentos.",
+            m_cfg.midMult, 0.0, 3.0, fmtTimes,
+            [this](double v) { m_cfg.midMult = static_cast<float>(v); persistAndRefresh(false); }),
+        kit::makeSliderRow(innerW,
+            "Agudos", "Reaccion a platillos y detalles.",
+            m_cfg.trebleMult, 0.0, 3.0, fmtTimes,
+            [this](double v) { m_cfg.trebleMult = static_cast<float>(v); persistAndRefresh(false); }),
+        kit::makeSliderRow(innerW,
+            "Golpe del beat", "Impulso extra en cada golpe del ritmo.",
+            m_cfg.beatMult, 0.0, 3.0, fmtTimes,
+            [this](double v) { m_cfg.beatMult = static_cast<float>(v); persistAndRefresh(false); }),
+    });
 
-void BeatShaderConfigLayer::buildIntensityRow() {
-    auto* intLbl = CCLabelBMFont::create("Intensity", "bigFont.fnt");
-    intLbl->setScale(0.45f);
-    m_mainLayer->addChildAtPosition(intLbl, Anchor::Center, {0, -25});
-
-    m_intensitySlider = Slider::create(this, menu_selector(BeatShaderConfigLayer::onIntensityChanged), 0.6f);
-    m_intensitySlider->setValue(std::clamp(m_cfg.intensity, 0.f, 1.f));
-    m_mainLayer->addChildAtPosition(m_intensitySlider, Anchor::Center, {0, -45});
-}
-
-void BeatShaderConfigLayer::buildLayerToggles() {
+    // Tarjeta: pantallas donde se aplica
+    std::vector<CCNode*> layerRows;
     auto layers = BeatShaderManager::get().availableLayers();
-    if (layers.empty()) return;
-
-    auto* sectionLbl = CCLabelBMFont::create("Active Layers", "bigFont.fnt");
-    sectionLbl->setScale(0.4f);
-    sectionLbl->setOpacity(200);
-    m_mainLayer->addChildAtPosition(sectionLbl, Anchor::Bottom, {0, 88});
-
-    auto* row = CCMenu::create();
-    row->setContentSize({kPopupW - 50.f, 50.f});
-    row->setLayout(
-        RowLayout::create()
-            ->setGap(8.f)
-            ->setAxisAlignment(AxisAlignment::Center)
-            ->setCrossAxisAlignment(AxisAlignment::Center)
-            ->setGrowCrossAxis(true)
-    );
-    m_mainLayer->addChildAtPosition(row, Anchor::Bottom, {0, 60});
-
-    m_layerToggles.clear();
     for (size_t i = 0; i < layers.size(); ++i) {
         auto const& [key, name] = layers[i];
-
-        auto* itemNode = CCNode::create();
-        itemNode->setContentSize({54.f, 46.f});
-
-        auto* toggle = CCMenuItemToggler::createWithStandardSprites(
-            this, menu_selector(BeatShaderConfigLayer::onToggleLayer), 0.45f);
-        toggle->toggle(BeatShaderManager::get().isLayerEnabled(key));
-        toggle->setTag(static_cast<int>(i));
-        itemNode->addChildAtPosition(toggle, Anchor::Top, {0, -5});
-
-        auto* lbl = CCLabelBMFont::create(name.c_str(), "chatFont.fnt");
-        lbl->setScale(0.35f);
-        itemNode->addChildAtPosition(lbl, Anchor::Bottom, {0, 5});
-
-        row->addChild(itemNode);
-        m_layerToggles.push_back(toggle);
+        std::string keyCopy = key;
+        layerRows.push_back(kit::makeToggleRow(innerW,
+            name.c_str(), nullptr,
+            BeatShaderManager::get().isLayerEnabled(key),
+            [keyCopy](bool v) {
+                BeatShaderManager::get().setLayerEnabled(keyCopy, v);
+                Loader::get()->queueInMainThread([] {
+                    if (paimon::isRuntimeShuttingDown()) return;
+                    BeatShaderManager::get().rebuildBackgrounds();
+                });
+            }));
     }
-    row->updateLayout();
-}
 
-void BeatShaderConfigLayer::buildFooter() {
-    auto* resetSpr = ButtonSprite::create("Default", "goldFont.fnt", "GJ_button_04.png", .65f);
-    if (resetSpr) resetSpr->setScale(0.6f);
-    auto* resetBtn = CCMenuItemSpriteExtra::create(
-        resetSpr, this, menu_selector(BeatShaderConfigLayer::onResetDefaults));
-    resetBtn->setID("beat-shader-default-btn"_spr);
-    m_buttonMenu->addChildAtPosition(resetBtn, Anchor::Bottom, {0, 22});
-}
-
-void BeatShaderConfigLayer::refreshShaderLabel() {
-    if (m_shaders.empty()) return;
-    if (m_shaderIdx < 0) m_shaderIdx = 0;
-    if (m_shaderIdx >= static_cast<int>(m_shaders.size())) {
-        m_shaderIdx = static_cast<int>(m_shaders.size()) - 1;
+    std::vector<CCNode*> items = {hero, styleCard, audioCard};
+    if (!layerRows.empty()) {
+        items.push_back(kit::makeCard(scrollW, "Donde se aplica", {130, 240, 170}, layerRows));
     }
-    auto const& entry = m_shaders[m_shaderIdx];
-    if (m_shaderNameLabel) m_shaderNameLabel->setString(entry.label.c_str());
-    if (m_shaderDescLabel) m_shaderDescLabel->setString(entry.description.c_str());
-    m_cfg.shaderName = entry.id;
+
+    m_scroll = kit::makeScrollStack({scrollW, scrollH}, items);
+    m_scroll->setPosition({12.f, 38.f});
+    m_mainLayer->addChild(m_scroll);
 }
 
 void BeatShaderConfigLayer::persistAndRefresh(bool shaderChanged) {
@@ -216,104 +219,6 @@ void BeatShaderConfigLayer::persistAndRefresh(bool shaderChanged) {
             BeatShaderManager::get().refreshLiveSpriteUniforms();
         });
     }
-}
-
-void BeatShaderConfigLayer::onToggleEnabled(CCObject*) {
-    if (!m_enabledToggle) return;
-    m_cfg.enabled = !m_enabledToggle->isToggled();
-    persistAndRefresh(true);
-    PaimonNotify::create(
-        m_cfg.enabled ? "Beat Shaders activado" : "Beat Shaders desactivado",
-        m_cfg.enabled ? NotificationIcon::Success : NotificationIcon::None
-    )->show();
-}
-
-void BeatShaderConfigLayer::onPrevShader(CCObject*) {
-    if (m_shaders.empty()) return;
-    --m_shaderIdx;
-    if (m_shaderIdx < 0) m_shaderIdx = static_cast<int>(m_shaders.size()) - 1;
-    refreshShaderLabel();
-    persistAndRefresh(true);
-}
-
-void BeatShaderConfigLayer::onNextShader(CCObject*) {
-    if (m_shaders.empty()) return;
-    ++m_shaderIdx;
-    if (m_shaderIdx >= static_cast<int>(m_shaders.size())) m_shaderIdx = 0;
-    refreshShaderLabel();
-    persistAndRefresh(true);
-}
-
-void BeatShaderConfigLayer::onIntensityChanged(CCObject* sender) {
-    auto* thumb = static_cast<SliderThumb*>(sender);
-    m_cfg.intensity = thumb->getValue();
-    persistAndRefresh(false);
-}
-
-void BeatShaderConfigLayer::onBassChanged(CCObject* sender) {
-    auto* thumb = static_cast<SliderThumb*>(sender);
-    m_cfg.bassMult = thumb->getValue() * 3.0f;
-    persistAndRefresh(false);
-}
-
-void BeatShaderConfigLayer::onMidChanged(CCObject* sender) {
-    auto* thumb = static_cast<SliderThumb*>(sender);
-    m_cfg.midMult = thumb->getValue() * 3.0f;
-    persistAndRefresh(false);
-}
-
-void BeatShaderConfigLayer::onTrebleChanged(CCObject* sender) {
-    auto* thumb = static_cast<SliderThumb*>(sender);
-    m_cfg.trebleMult = thumb->getValue() * 3.0f;
-    persistAndRefresh(false);
-}
-
-void BeatShaderConfigLayer::onBeatChanged(CCObject* sender) {
-    auto* thumb = static_cast<SliderThumb*>(sender);
-    m_cfg.beatMult = thumb->getValue() * 3.0f;
-    persistAndRefresh(false);
-}
-
-void BeatShaderConfigLayer::onToggleLayer(CCObject* sender) {
-    auto* tog = static_cast<CCMenuItemToggler*>(sender);
-    int idx = tog->getTag();
-    if (idx < 0 || idx >= static_cast<int>(m_layerKeys.size())) return;
-    bool newState = !tog->isToggled();
-    BeatShaderManager::get().setLayerEnabled(m_layerKeys[idx], newState);
-    // Defer scene mutation until the touch dispatcher finishes — see
-    // persistAndRefresh() above for the full rationale.
-    Loader::get()->queueInMainThread([] {
-        if (paimon::isRuntimeShuttingDown()) return;
-        BeatShaderManager::get().rebuildBackgrounds();
-    });
-}
-
-void BeatShaderConfigLayer::onResetDefaults(CCObject*) {
-    m_cfg = BeatShaderConfig{};
-    m_shaderIdx = 0;
-    BeatShaderManager::get().saveConfig(m_cfg);
-
-    for (auto const& key : m_layerKeys) {
-        BeatShaderManager::get().setLayerEnabled(key, true);
-    }
-
-    if (m_enabledToggle)   m_enabledToggle->toggle(m_cfg.enabled);
-    if (m_intensitySlider) m_intensitySlider->setValue(m_cfg.intensity);
-    if (m_bassSlider)      m_bassSlider->setValue(m_cfg.bassMult / 3.0f);
-    if (m_midSlider)       m_midSlider->setValue(m_cfg.midMult / 3.0f);
-    if (m_trebleSlider)    m_trebleSlider->setValue(m_cfg.trebleMult / 3.0f);
-    if (m_beatSlider)      m_beatSlider->setValue(m_cfg.beatMult / 3.0f);
-    for (auto* tog : m_layerToggles) if (tog) tog->toggle(true);
-
-    refreshShaderLabel();
-    // Defer scene mutation until the touch dispatcher finishes — see
-    // persistAndRefresh() above for the full rationale.
-    Loader::get()->queueInMainThread([] {
-        if (paimon::isRuntimeShuttingDown()) return;
-        BeatShaderManager::get().rebuildBackgrounds();
-    });
-
-    PaimonNotify::create("Beat Shaders restablecido", NotificationIcon::Success)->show();
 }
 
 } // namespace paimon::beat_shaders

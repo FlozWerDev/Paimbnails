@@ -19,7 +19,7 @@ bool IconLockStyler::isUnobtainable(GJItemIcon* icon) const {
     return gsm->getItemUnlockState(icon->m_unlockID, icon->m_unlockType) == 0;
 }
 
-cocos2d::CCSprite* IconLockStyler::findLockSprite(GJItemIcon* icon) const {
+cocos2d::CCSprite* IconLockStyler::findLockSprite(GJItemIcon* icon) {
     if (!icon) return nullptr;
     // GJItemIcon::changeToLockedState adds "GJ_lock_001.png" as a direct child.
     auto* children = icon->getChildren();
@@ -35,10 +35,10 @@ cocos2d::CCSprite* IconLockStyler::findLockSprite(GJItemIcon* icon) const {
 }
 
 // Walk the SimplePlayer's tree and force every visible part to a given color.
-static void recolorAllParts(SimplePlayer* sp, ccColor3B tint) {
+void IconLockStyler::tintAllParts(SimplePlayer* sp, ccColor3B tint) {
     if (!sp) return;
-    if (sp->m_firstLayer)   sp->m_firstLayer->setColor(tint);
-    if (sp->m_secondLayer)  sp->m_secondLayer->setColor(tint);
+    if (sp->m_firstLayer)    sp->m_firstLayer->setColor(tint);
+    if (sp->m_secondLayer)   sp->m_secondLayer->setColor(tint);
     if (sp->m_outlineSprite) sp->m_outlineSprite->setColor(tint);
     if (sp->m_detailSprite)  sp->m_detailSprite->setColor(tint);
     if (sp->m_birdDome)      sp->m_birdDome->setColor(tint);
@@ -67,7 +67,7 @@ static void recolorAllParts(SimplePlayer* sp, ccColor3B tint) {
 }
 
 // Set the same opacity recursively on all CCSprites under a SimplePlayer.
-static void recolorAllOpacity(SimplePlayer* sp, GLubyte opacity) {
+void IconLockStyler::fadeAllParts(SimplePlayer* sp, unsigned char opacity) {
     if (!sp) return;
     sp->setOpacity(opacity);
     if (sp->m_firstLayer)    sp->m_firstLayer->setOpacity(opacity);
@@ -106,12 +106,11 @@ void IconLockStyler::apply(GJItemIcon* icon) {
     bool unobtainable = isUnobtainable(icon);
 
     switch (cfg.lockStyle) {
-        case LockStyle::Default:                                         break;
-        case LockStyle::ShowDimmed:  applyShowDimmed (icon, sp, unobtainable, cfg); break;
-        case LockStyle::TintedLock:  applyTinted    (icon, sp, unobtainable, cfg); break;
-        case LockStyle::Silhouette:  applySilhouette(icon, sp, unobtainable, cfg); break;
-        case LockStyle::CustomMix:   applyCustomMix (icon, sp, unobtainable, cfg); break;
-        case LockStyle::HideBoth:    applyHideBoth  (icon, sp); break;
+        case LockStyle::Default:                                                    break;
+        case LockStyle::ShowDimmed: applyShowDimmed(icon, sp, unobtainable, cfg);   break;
+        case LockStyle::TintedLock: applyTinted    (icon, sp, unobtainable, cfg);   break;
+        case LockStyle::Silhouette: applySilhouette(icon, sp, unobtainable, cfg);   break;
+        case LockStyle::HideBoth:   applyHideBoth  (icon, sp);                      break;
     }
 }
 
@@ -128,10 +127,10 @@ void IconLockStyler::applyShowDimmed(GJItemIcon* icon, SimplePlayer* sp, bool un
     GLubyte op = static_cast<GLubyte>(std::clamp(
         unobtainable && cfg.dimUnobtainable ? cfg.unobtainableOpacity : cfg.dimOpacity,
         0, 255));
-    recolorAllOpacity(sp, op);
+    fadeAllParts(sp, op);
 
     if (unobtainable && cfg.dimUnobtainable) {
-        recolorAllParts(sp, cfg.unobtainableTint);
+        tintAllParts(sp, cfg.unobtainableTint);
     }
 }
 
@@ -153,23 +152,8 @@ void IconLockStyler::applySilhouette(GJItemIcon* icon, SimplePlayer* sp, bool un
     if (sp->m_robotSprite && sp->m_robotSprite->m_extraSprite) sp->m_robotSprite->m_extraSprite->setVisible(false);
     if (sp->m_spiderSprite && sp->m_spiderSprite->m_extraSprite) sp->m_spiderSprite->m_extraSprite->setVisible(false);
 
-    recolorAllOpacity(sp, 230);
-    recolorAllParts(sp, unobtainable && cfg.dimUnobtainable ? cfg.unobtainableTint : cfg.silhouetteColor);
-}
-
-void IconLockStyler::applyCustomMix(GJItemIcon* icon, SimplePlayer* sp, bool unobtainable, PaimonIconConfig const& cfg) {
-    // Custom mix re-uses the dim style fields but lets the lock stay visible.
-    if (auto* lock = findLockSprite(icon)) {
-        lock->setVisible(true);
-        lock->setColor(unobtainable && cfg.dimUnobtainable ? cfg.unobtainableTint : cfg.lockTint);
-        lock->setOpacity(200);
-    }
-    if (!sp) return;
-    sp->setVisible(true);
-    GLubyte op = static_cast<GLubyte>(std::clamp(
-        unobtainable && cfg.dimUnobtainable ? cfg.unobtainableOpacity : cfg.dimOpacity,
-        0, 255));
-    recolorAllOpacity(sp, op);
+    fadeAllParts(sp, 230);
+    tintAllParts(sp, unobtainable && cfg.dimUnobtainable ? cfg.unobtainableTint : cfg.silhouetteColor);
 }
 
 void IconLockStyler::applyHideBoth(GJItemIcon* icon, SimplePlayer* sp) {

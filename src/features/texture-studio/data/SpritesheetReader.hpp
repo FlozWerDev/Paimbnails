@@ -1,9 +1,4 @@
 #pragma once
-//
-// Composes PlistParser + ImageBuffer to extract each frame's un-rotated pixels.
-// Clustering and tinting just consume SpriteFrameInfo + ImageBuffer without
-// caring about the original atlas packing.
-//
 
 #include "ImageBuffer.hpp"
 #include "SpriteFrameInfo.hpp"

@@ -29,12 +29,10 @@ bool ProfileReviewsPopup::init(int accountID) {
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
-    // Panel de promedio
     auto headerPanel = paimon::SpriteHelper::createDarkPanel(260.f, 50.f, 90, 8.f);
     headerPanel->setPosition({centerX - 130.f, contentSize.height - 72.f});
     m_mainLayer->addChild(headerPanel, 1);
 
-    // Icono de estrella
     if (auto starIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png")) {
         starIcon->setScale(0.6f);
         starIcon->setPosition({centerX - 65.f, contentSize.height - 42.f});
@@ -54,12 +52,10 @@ bool ProfileReviewsPopup::init(int accountID) {
     m_countLabel->setColor({180, 180, 180});
     m_mainLayer->addChild(m_countLabel, 2);
 
-    // Separador
     auto separator = paimon::SpriteHelper::createDarkPanel(320.f, 1.5f, 60, 0.f);
     separator->setPosition({centerX - 160.f, contentSize.height - 78.f});
     m_mainLayer->addChild(separator, 1);
 
-    // Spinner de carga
     m_spinner = PaimonLoadingOverlay::create("Loading...", 35.f);
     m_spinner->show(m_mainLayer, 10);
 
@@ -112,7 +108,6 @@ void ProfileReviewsPopup::buildReviewList(float average, int count, const matjso
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
-    // Actualiza el header con animacion
     if (m_averageLabel) {
         m_averageLabel->setString(fmt::format("{:.1f}/5", average).c_str());
         m_averageLabel->setScale(0.0f);
@@ -126,13 +121,11 @@ void ProfileReviewsPopup::buildReviewList(float average, int count, const matjso
         }
     }
 
-    // Area de scroll
     float scrollW = contentSize.width - 30.f;
     float scrollH = contentSize.height - 100.f;
     float scrollX = 15.f;
     float scrollY = 15.f;
 
-    // Crea las celdas
     float cellPadding = 5.f;
 
     std::vector<CCNode*> cells;
@@ -142,8 +135,6 @@ void ProfileReviewsPopup::buildReviewList(float average, int count, const matjso
         for (auto& item : arr) {
             if (!item.isObject()) continue;
             std::string user = item["username"].asString().unwrapOr("???");
-            // stars puede venir como entero (votos antiguos) o como decimal
-            // 0.5..5.0 (votos nuevos con medias estrellas).
             float stars = static_cast<float>(item["stars"].asDouble().unwrapOr(0.0));
             std::string msg = item["message"].asString().unwrapOr("");
 
@@ -157,7 +148,6 @@ void ProfileReviewsPopup::buildReviewList(float average, int count, const matjso
         noReviews->setScale(0.6f);
         noReviews->setColor({150, 150, 150});
         noReviews->setPosition({centerX, contentSize.height / 2.f - 20.f});
-        // fade in
         noReviews->setOpacity(0);
         noReviews->runAction(CCFadeIn::create(0.5f));
         m_mainLayer->addChild(noReviews);
@@ -173,7 +163,6 @@ void ProfileReviewsPopup::buildReviewList(float average, int count, const matjso
     auto container = CCLayer::create();
     container->setContentSize({scrollW, totalH});
 
-    // Apila las celdas de arriba a abajo
     float yPos = totalH;
     for (auto& c : cells) {
         yPos -= c->getContentHeight() + cellPadding;
@@ -189,20 +178,16 @@ void ProfileReviewsPopup::buildReviewList(float average, int count, const matjso
     m_mainLayer->addChild(scroll);
     m_scrollView = scroll;
 
-    // Anima las celdas
     animateReviewCells(cells);
 }
 
 void ProfileReviewsPopup::animateReviewCells(std::vector<CCNode*> const& cells) {
-    // Anima cada celda con retardo escalonado
     for (int i = 0; i < (int)cells.size(); i++) {
         auto cell = cells[i];
         auto finalPos = cell->getPosition();
 
-        // Posicion inicial abajo
         cell->setPosition({finalPos.x, finalPos.y - 25.f});
 
-        // Oculta los hijos inicialmente
         if (auto children = cell->getChildren()) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 if (auto rgba = typeinfo_cast<CCRGBAProtocol*>(child)) {
@@ -211,10 +196,9 @@ void ProfileReviewsPopup::animateReviewCells(std::vector<CCNode*> const& cells) 
             }
         }
 
-        float delay = 0.05f * i;  // stagger: 50ms between each cell
+        float delay = 0.05f * i;
         float duration = 0.35f;
 
-        // Desliza hacia arriba
         auto moveAction = CCEaseOut::create(
             CCMoveTo::create(duration, finalPos),
             2.5f
@@ -227,7 +211,6 @@ void ProfileReviewsPopup::animateReviewCells(std::vector<CCNode*> const& cells) 
         );
         cell->runAction(delayedMove);
 
-        // Aparece los hijos con retardo
         if (auto children = cell->getChildren()) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 if (typeinfo_cast<CCRGBAProtocol*>(child)) {
@@ -249,31 +232,24 @@ CCNode* ProfileReviewsPopup::createReviewCell(std::string const& username, float
     auto cell = CCNode::create();
     cell->setContentSize({width, cellH});
 
-    // Fondo oscuro con esquinas redondeadas
     auto bg = paimon::SpriteHelper::createDarkPanel(width, cellH, 50, 5.f);
     bg->setPosition({0, 0});
     cell->addChild(bg, -1);
 
-    // Nombre de usuario
     auto nameLabel = CCLabelBMFont::create(username.c_str(), "goldFont.fnt");
     nameLabel->setScale(0.45f);
     nameLabel->setAnchorPoint({0, 0.5f});
     nameLabel->setPosition({10.f, cellH - 14.f});
-    // Limita el ancho
     float maxNameW = width * 0.45f;
     if (nameLabel->getScaledContentWidth() > maxNameW) {
         nameLabel->setScale(maxNameW / nameLabel->getContentWidth());
     }
     cell->addChild(nameLabel);
 
-    // Estrellas a la derecha. Renderizamos cada estrella como un pequeno
-    // contenedor con base gris + sprite amarillo recortado por
-    // ScissorClipNode para soportar medias estrellas (1.5, 2.5, ...).
     constexpr float STAR_SCALE = 0.32f;
     float starStartX = width - 10.f;
 
     for (int i = 5; i >= 1; i--) {
-        // Base gris (siempre visible)
         auto baseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
         if (!baseSpr) continue;
         baseSpr->setColor({60, 60, 60});
@@ -282,7 +258,6 @@ CCNode* ProfileReviewsPopup::createReviewCell(std::string const& username, float
         float scaledW = starSize.width * STAR_SCALE;
         float scaledH = starSize.height * STAR_SCALE;
 
-        // Contenedor anchor (1, 0.5) para apilar estrellas de derecha a izquierda
         auto container = CCNode::create();
         container->setContentSize(starSize);
         container->setAnchorPoint({1.f, 0.5f});
@@ -292,8 +267,6 @@ CCNode* ProfileReviewsPopup::createReviewCell(std::string const& username, float
         baseSpr->setPosition({starSize.width / 2.f, starSize.height / 2.f});
         container->addChild(baseSpr, 0);
 
-        // Determinar nivel de relleno para esta posicion
-        // (full / half / empty)
         float pos = static_cast<float>(i);
         float fillWidth = 0.f;
         if (stars >= pos - 0.01f) {
@@ -322,11 +295,9 @@ CCNode* ProfileReviewsPopup::createReviewCell(std::string const& username, float
         starStartX -= scaledW + 2.f;
     }
 
-    // Mensaje
     if (!message.empty()) {
         float maxMsgW = width - 24.f;
 
-        // Intenta renderizar emotes primero
         bool emoteRendered = false;
         if (paimon::emotes::EmoteService::get().isLoaded() &&
             paimon::emotes::EmoteRenderer::hasEmoteSyntax(message))

@@ -36,12 +36,10 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
-    // Panel de promedio
     auto avgPanel = paimon::SpriteHelper::createDarkPanel(200.f, 50.f, 100, 8.f);
     avgPanel->setPosition({centerX - 100.f, contentSize.height - 96.f});
     m_mainLayer->addChild(avgPanel, 1);
 
-    // Icono de estrella
     if (auto starIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png")) {
         starIcon->setScale(0.6f);
         starIcon->setPosition({centerX - 55.f, contentSize.height - 66.f});
@@ -63,28 +61,23 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_countLabel->setID("count-label"_spr);
     m_mainLayer->addChild(m_countLabel, 2);
 
-    // Spinner de carga
     m_loadingSpinner = PaimonLoadingOverlay::create("Loading...", 20.f);
     m_loadingSpinner->show(m_mainLayer, 3);
 
-    // Separador
     auto separator = paimon::SpriteHelper::createDarkPanel(280.f, 1.5f, 60, 0.f);
     separator->setPosition({centerX - 140.f, contentSize.height - 104.f});
     m_mainLayer->addChild(separator, 1);
 
-    // Tu calificacion
     auto yourRatingLabel = CCLabelBMFont::create("Your Rating", "bigFont.fnt");
     yourRatingLabel->setScale(0.35f);
     yourRatingLabel->setPosition({centerX, contentSize.height - 116.f});
     yourRatingLabel->setColor({200, 200, 200});
     m_mainLayer->addChild(yourRatingLabel, 2);
 
-    // Panel de botones de estrella
     auto starPanel = paimon::SpriteHelper::createDarkPanel(240.f, 44.f, 80, 8.f);
     starPanel->setPosition({centerX - 120.f, contentSize.height - 152.f});
     m_mainLayer->addChild(starPanel, 1);
 
-    // Resalta la estrella seleccionada
     m_starHighlight = CCNode::create();
     m_starHighlight->setPosition({centerX, contentSize.height - 130.f});
     m_starHighlight->setVisible(false);
@@ -96,13 +89,11 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_mainLayer->addChild(starMenu, 2);
 
     for (int i = 1; i <= 5; i++) {
-        // Estrella base (gris) - siempre visible
         auto baseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
         if (!baseSpr) baseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png");
         if (!baseSpr) baseSpr = CCSprite::create();
         baseSpr->setColor({80, 80, 80});
 
-        // Estrella de relleno (amarilla) - se recorta segun rating
         auto fillSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
         if (!fillSpr) fillSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png");
         if (!fillSpr) fillSpr = CCSprite::create();
@@ -114,20 +105,14 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
             m_starHeight = starSize.height;
         }
 
-        // Contenedor que sera la "imagen" del CCMenuItemSpriteExtra.
-        // Mantenemos contentSize natural del frame y aplicamos scale al
-        // contenedor para no romper la deteccion de click ni los hijos.
         auto container = CCNode::create();
         container->setContentSize(starSize);
         container->setAnchorPoint({0.5f, 0.5f});
         container->setScale(0.85f);
 
-        // Base gris centrada
         baseSpr->setPosition({starSize.width / 2.f, starSize.height / 2.f});
         container->addChild(baseSpr, 0);
 
-        // ScissorClipNode que recorta el sprite amarillo para soportar
-        // medias estrellas: contentSize.width controla cuanto se ve.
         auto stencil = paimon::SpriteHelper::createRectStencil(starSize.width, starSize.height);
         auto fillClip = paimon::ScissorClipNode::create(stencil);
         fillClip->setContentSize(starSize);
@@ -149,7 +134,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
         m_starFillClips.push_back(fillClip);
     }
 
-    // Etiqueta de calificacion seleccionada
     m_selectedLabel = CCLabelBMFont::create("", "bigFont.fnt");
     m_selectedLabel->setScale(0.3f);
     m_selectedLabel->setPosition({centerX, contentSize.height - 158.f});
@@ -157,7 +141,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_selectedLabel->setID("selected-label"_spr);
     m_mainLayer->addChild(m_selectedLabel, 2);
 
-    // Input de mensaje
     m_messageInput = TextInput::create(290.f, "Leave a comment (optional)", "chatFont.fnt");
     m_messageInput->setID("message-input"_spr);
     m_messageInput->setPosition({centerX, contentSize.height - 186.f});
@@ -166,7 +149,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_messageInput->setScale(0.85f);
     m_mainLayer->addChild(m_messageInput, 2);
 
-    // Boton de emote
     {
         paimon::emotes::EmoteInputContext ctx;
         ctx.getText = [this]() -> std::string {
@@ -187,7 +169,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
         m_mainLayer->addChild(emoteMenu, 5);
     }
 
-    // Autocompletar emotes
     {
         auto ac = paimon::emotes::EmoteAutocomplete::create(
             m_messageInput->getInputNode(),
@@ -199,7 +180,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
         m_mainLayer->addChild(ac, 100);
     }
 
-    // Botones inferiores
     auto bottomMenu = CCMenu::create();
     bottomMenu->setID("bottom-menu"_spr);
     bottomMenu->setPosition({centerX, contentSize.height - 224.f});
@@ -210,14 +190,12 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     );
     m_mainLayer->addChild(bottomMenu, 2);
 
-    // Boton de enviar
     auto submitSpr = ButtonSprite::create("Submit", "goldFont.fnt", "GJ_button_01.png", 0.8f);
     submitSpr->setScale(0.9f);
     auto submitBtn = CCMenuItemSpriteExtra::create(submitSpr, this, menu_selector(RateProfilePopup::onSubmit));
     submitBtn->setID("submit-btn"_spr);
     bottomMenu->addChild(submitBtn);
 
-    // Boton de ver resenas
     auto reviewsSpr = ButtonSprite::create("Reviews", "bigFont.fnt", "GJ_button_04.png", 0.7f);
     reviewsSpr->setScale(0.7f);
     auto reviewsBtn = CCMenuItemSpriteExtra::create(reviewsSpr, this, menu_selector(RateProfilePopup::onViewReviews));
@@ -226,7 +204,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
 
     bottomMenu->updateLayout();
 
-    // Boton de reportar
     auto reportMenu = CCMenu::create();
     reportMenu->setID("report-menu"_spr);
     reportMenu->setPosition({contentSize.width - 30.f, 22.f});
@@ -239,7 +216,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     reportBtn->setPosition({0.f, 0.f});
     reportMenu->addChild(reportBtn);
 
-    // Carga la calificacion existente
     loadExistingRating();
 
     paimon::markDynamicPopup(this);
@@ -252,10 +228,7 @@ void RateProfilePopup::onStar(CCObject* sender) {
     int starPos = btn->getTag();
     float starF = static_cast<float>(starPos);
 
-    // Toggle: si la estrella esta llena en esta posicion, pasar a media.
-    // En cualquier otro caso (vacia, media, o estrella distinta), poner llena.
     if (std::fabs(m_rating - starF) < 0.01f) {
-        // Pasar a media estrella; minimo 0.5 (no permitir 0 con click).
         m_rating = starF - 0.5f;
         if (m_rating < 0.5f) m_rating = 0.5f;
     } else {
@@ -264,7 +237,6 @@ void RateProfilePopup::onStar(CCObject* sender) {
 
     updateStarVisuals();
 
-    // Animacion de rebote en la estrella
     btn->setScale(1.3f);
     btn->runAction(CCEaseBackOut::create(CCScaleTo::create(0.2f, 1.0f)));
 }
@@ -278,32 +250,27 @@ void RateProfilePopup::updateStarVisuals() {
         if (i >= (int)m_starFillClips.size()) break;
         auto fillClip = m_starFillClips[i];
         if (!fillClip) continue;
-        float pos = static_cast<float>(i + 1); // posicion de estrella (1..5)
+        float pos = static_cast<float>(i + 1);
 
         if (m_rating >= pos - 0.01f) {
-            // Estrella llena
             fillClip->setVisible(true);
             fillClip->setContentSize({m_starWidth, m_starHeight});
         } else if (m_rating >= pos - 0.5f - 0.01f) {
-            // Media estrella (mitad izquierda visible)
             fillClip->setVisible(true);
             fillClip->setContentSize({m_starWidth * 0.5f, m_starHeight});
         } else {
-            // Estrella vacia
             fillClip->setVisible(false);
         }
     }
 
     if (m_selectedLabel) {
         if (m_rating > 0.f) {
-            // Formato: entero si es exacto, sino con un decimal
             std::string ratingStr;
             if (std::fabs(std::fmod(m_rating, 1.0f)) < 0.01f) {
                 ratingStr = fmt::format("{}/5", static_cast<int>(m_rating + 0.01f));
             } else {
                 ratingStr = fmt::format("{:.1f}/5", m_rating);
             }
-            // Texto descriptivo: redondear al entero mas cercano (1..5)
             int textIdx = static_cast<int>(std::round(m_rating));
             if (textIdx < 1) textIdx = 1;
             if (textIdx > 5) textIdx = 5;
@@ -331,7 +298,6 @@ void RateProfilePopup::loadExistingRating() {
         auto popup = self.lock();
         if (!popup) return;
 
-        // Remove loading spinner
         if (popup->m_loadingSpinner) {
             popup->m_loadingSpinner->dismiss();
             popup->m_loadingSpinner = nullptr;
@@ -358,7 +324,6 @@ void RateProfilePopup::loadExistingRating() {
 
         if (popup->m_averageLabel) {
             popup->m_averageLabel->setString(fmt::format("{:.1f}/5", avg).c_str());
-            // Anima la aparicion del promedio
             popup->m_averageLabel->setScale(0.0f);
             popup->m_averageLabel->runAction(CCEaseBackOut::create(CCScaleTo::create(0.3f, 0.55f)));
         }
@@ -370,7 +335,6 @@ void RateProfilePopup::loadExistingRating() {
             }
         }
 
-        // Restaura el voto existente del usuario
         if (root["userVote"].isObject()) {
             auto uv = root["userVote"];
             if (uv["stars"].isNumber()) {
@@ -401,7 +365,6 @@ void RateProfilePopup::onSubmit(CCObject* sender) {
         username = gm->m_playerName;
     }
 
-    // Cargando
     auto spinner = PaimonLoadingOverlay::create("Loading...", 30.f);
     spinner->show(m_mainLayer, 100);
 
@@ -410,9 +373,6 @@ void RateProfilePopup::onSubmit(CCObject* sender) {
 
     std::string message = m_messageInput ? std::string(m_messageInput->getString()) : std::string();
 
-    // Construye el JSON del cuerpo. stars puede ser float (1.0 a 5.0 en
-    // pasos de 0.5). Lo enviamos como double para que matjson lo serialice
-    // como numero JSON (no como string).
     matjson::Value bodyObj = matjson::makeObject({
         {"accountID", m_accountID},
         {"stars", static_cast<double>(m_rating)},

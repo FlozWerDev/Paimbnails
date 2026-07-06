@@ -43,6 +43,8 @@ private:
     bool m_captured = false;
     bool m_detaching = false;
     float m_returnElapsed = 0.f;
+    cocos2d::CCPoint m_touchStart {0.f, 0.f};
+    bool m_dragMoved = false;
 };
 
 } // namespace paimon::menuphysics

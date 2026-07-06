@@ -36,9 +36,6 @@ public:
      */
     static GIFData decode(uint8_t const* data, size_t size, int maxFrames = 0);
 
-    /**
-     * Verifies whether the data is a valid GIF.
-     */
     static bool isGIF(uint8_t const* data, size_t size);
 
     /**
@@ -47,7 +44,6 @@ public:
     static bool getDimensions(uint8_t const* data, size_t size, int& width, int& height);
 
 private:
-    // Internal decoding helpers
     static bool parseHeader(uint8_t const*& ptr, uint8_t const* end, int& width, int& height);
     static bool parseColorTable(uint8_t const*& ptr, uint8_t const* end, std::vector<uint8_t>& palette, int size);
     struct RawFrame {

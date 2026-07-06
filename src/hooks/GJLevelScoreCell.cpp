@@ -10,7 +10,6 @@
 
 using namespace geode::prelude;
 
-// Find SimplePlayer recursively
 static SimplePlayer* findSimplePlayerRec(CCNode* node, int depth = 0) {
     if (!node || depth > 6) return nullptr;
     for (auto* child : CCArrayExt<CCNode*>(node->getChildren())) {
@@ -21,18 +20,15 @@ static SimplePlayer* findSimplePlayerRec(CCNode* node, int depth = 0) {
     return nullptr;
 }
 
-// Mouse position in GL space
 static CCPoint getGLMousePos() {
     return geode::cocos::getMousePos();
 }
 
-// Per-cell hover data
 struct LevelScoreCellHoverData {
     bool    wasHovered    = false;
     float   hoverLerp     = 0.f;
     float   hoverTime     = 0.f;
 
-    // cube
     Ref<CCNode>  cubeNode      = nullptr;
     float        cubeBaseScale = 1.f;
 
@@ -40,7 +36,6 @@ struct LevelScoreCellHoverData {
     struct Entry { CCNode* node; CCPoint base; };
     std::vector<Entry> movable;
 
-    // Gradient reference for glow
     Ref<CCNode> gradient = nullptr;   // actual type: CCLayerGradient*
 };
 
@@ -63,7 +58,6 @@ public:
         return nullptr;
     }
 
-    // Shine effect
     void triggerShine() {
         if (!m_cell) return;
         CCSize cs = m_cell->getContentSize();
@@ -141,11 +135,9 @@ public:
                          local.y >= 0.f && local.y <= cs.height);
         }
 
-        // Shine on hover enter
         if (isHovered && !d.wasHovered) triggerShine();
         d.wasHovered = isHovered;
 
-        // Hover interpolation
         float target = isHovered ? 1.f : 0.f;
         d.hoverLerp += (target - d.hoverLerp) * std::min(1.f, dt * 10.f);
         if (std::abs(d.hoverLerp - target) < 0.004f) d.hoverLerp = target;
@@ -155,7 +147,6 @@ public:
         if (lerp > 0.004f) d.hoverTime += dt;
         else                d.hoverTime  = 0.f;
 
-        // Brighten the gradient
         if (d.gradient && d.gradient->getParent()) {
             if (auto* grad = typeinfo_cast<CCLayerGradient*>(d.gradient.data())) {
                 GLubyte alpha = static_cast<GLubyte>(60.f + lerp * 170.f);
@@ -169,7 +160,6 @@ public:
             e.node->setPositionX(e.base.x + lerp * 15.f);
         }
 
-        // Cube scale and rotation
         if (d.cubeNode && d.cubeNode->getParent()) {
             d.cubeNode->setScale(d.cubeBaseScale * (1.f + lerp * 0.15f));
             d.cubeNode->setRotation(std::sinf(d.hoverTime * 5.f) * 5.f * lerp);
@@ -184,18 +174,15 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
     }
 
     struct Fields {
-        // pointer to the child helper
         PaimonLevelScoreCellHelper* helper = nullptr;
     };
 
-    // Click flash
     void triggerClickFlash() {
         CCSize cs = this->getContentSize();
         if (cs.width  <= 1.f) cs.width  = this->m_width;
         if (cs.height <= 1.f) cs.height = this->m_height;
         if (cs.width <= 0.f || cs.height <= 0.f) return;
 
-        // Remove previous flash
         if (auto* old = this->getChildByID("paimon-click-flash"_spr))
             old->removeFromParent();
 
@@ -206,7 +193,7 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
         this->addChild(flash);
 
         flash->runAction(CCSequence::create(
-            CCFadeTo::create(0.25f, 0),     // fade from max opacity
+            CCFadeTo::create(0.25f, 0),
             CCRemoveSelf::create(),
             nullptr
         ));
@@ -226,7 +213,7 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
         auto f = m_fields.self();
         if (!f) return;
 
-        // Remove previous nodes
+        // Remove previous paimon nodes
         {
             std::vector<CCNode*> rem;
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
@@ -238,7 +225,6 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
         }
         f->helper = nullptr;
 
-        // Cell size
         CCSize cs = this->getContentSize();
         if (cs.width  <= 1.f) cs.width  = this->m_width;
         if (cs.height <= 1.f) cs.height = this->m_height;
@@ -279,10 +265,9 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
         f->helper = helper;
 
         auto& d = helper->m_data;
-        d = LevelScoreCellHoverData{};          // reset hover data
+        d = LevelScoreCellHoverData{};
         d.gradient = gradient;
 
-        // Find the cube anywhere in the hierarchy
         if (auto* sp = findSimplePlayerRec(this)) {
             d.cubeNode      = sp;
             d.cubeBaseScale = sp->getScale();

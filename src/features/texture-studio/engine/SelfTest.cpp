@@ -4,6 +4,7 @@
 #include "ColorClustering.hpp"
 #include "LuminanceTinter.hpp"
 #include "MaskBuilder.hpp"
+#include "OverlayTinter.hpp"
 #include "../data/ImageBuffer.hpp"
 
 #include <Geode/Geode.hpp>
@@ -17,7 +18,6 @@ namespace paimon::texture_studio {
 namespace {
 
 ImageBuffer makeSyntheticSprite() {
-    // 16×16 sprite: black outline frame, green inner ring, black-fill core.
     constexpr int W = 16;
     constexpr int H = 16;
     ImageBuffer img(W, H);
@@ -26,7 +26,6 @@ ImageBuffer makeSyntheticSprite() {
         img.setAt(x, y, {r, g, b, 255});
     };
 
-    // Outline ring (very dark grey, S~0, V~0.13).
     for (int x = 0; x < W; ++x) {
         put(x, 0, 0x22, 0x22, 0x22);
         put(x, H - 1, 0x22, 0x22, 0x22);
@@ -36,14 +35,12 @@ ImageBuffer makeSyntheticSprite() {
         put(W - 1, y, 0x22, 0x22, 0x22);
     }
 
-    // Green inner band (rows 1..H-2, cols 1..W-2 minus a 4×4 inner core).
     for (int y = 1; y < H - 1; ++y) {
         for (int x = 1; x < W - 1; ++x) {
             put(x, y, 0x3F, 0xCC, 0x2F);
         }
     }
 
-    // Inner 4×4 black core.
     for (int y = 6; y < 10; ++y) {
         for (int x = 6; x < 10; ++x) {
             put(x, y, 0x0F, 0x0F, 0x0F);
@@ -53,10 +50,8 @@ ImageBuffer makeSyntheticSprite() {
     return img;
 }
 
-// Build the *ground-truth* masks for the synthetic sprite from its known
-// geometry (not from the classifier). The PSNR check compares the pipeline's
-// tinted output against the tint produced from these reference masks: a high
-// PSNR proves the classifier + mask builder reproduced the intended roles.
+// Ground-truth masks derived from known geometry (not the classifier), used as
+// the PSNR reference to verify the classifier + mask builder reproduced roles.
 MaskSet makeGroundTruthMasks(ImageBuffer const& sprite) {
     int W = sprite.width();
     int H = sprite.height();
@@ -85,8 +80,7 @@ MaskSet makeGroundTruthMasks(ImageBuffer const& sprite) {
     return gt;
 }
 
-// Peak signal-to-noise ratio (dB) between two equally-sized RGBA buffers.
-// Returns a large sentinel (120 dB) when the images are bit-identical.
+// Returns a 120 dB sentinel when the images are bit-identical.
 double computePsnr(ImageBuffer const& a, ImageBuffer const& b) {
     if (a.width() != b.width() || a.height() != b.height() || a.empty()) {
         return 0.0;
@@ -104,15 +98,14 @@ double computePsnr(ImageBuffer const& a, ImageBuffer const& b) {
     return 10.0 * std::log10((255.0 * 255.0) / mse);
 }
 
-}  // anonymous namespace
+}  // namespace
 
 bool engineSelfTest() {
     log::info("[texture-studio] engineSelfTest: starting");
     auto sprite = makeSyntheticSprite();
 
-    // 1) Clustering
     ClusteringOptions copts;
-    copts.k = 4;  // expect ≤3 distinct colors but ask for 4 to test re-seeding
+    copts.k = 4;  // ask for more than the ~3 distinct colors to exercise re-seeding
     auto clusters = ColorClustering::compute(sprite, copts);
     log::info("[texture-studio] selfTest: clusters={}, totalPixels={}, rejected={}",
         clusters.clusters.size(), clusters.totalPixels, clusters.rejected);
@@ -123,7 +116,6 @@ bool engineSelfTest() {
         ok = false;
     }
 
-    // 2) Classification
     auto classified = ClusterClassifier::classify(clusters, sprite);
     int outlineCount = 0, c1Count = 0, c2Count = 0, glowCount = 0;
     for (auto const& c : classified.clusters) {
@@ -154,8 +146,6 @@ bool engineSelfTest() {
         ok = false;
     }
 
-    // 3) Mask building — at minimum the C1 mask must be non-empty (the
-    // green band has lots of pixels).
     auto masks = MaskBuilder::build(sprite, classified);
     int c1Coverage = 0, c2Coverage = 0, outlineCoverage = 0;
     for (auto v : masks.color1.data) if (v > 0) ++c1Coverage;
@@ -172,16 +162,12 @@ bool engineSelfTest() {
         ok = false;
     }
 
-    // 4) Tinting — pick C1=red, C2=blue, glow=white. The result should
-    // have the green band recolored to a reddish hue.
     TintColors tc;
     tc.color1 = {255, 64, 64};
     tc.color2 = {64,  64, 255};
     tc.glow   = {255, 255, 255};
     auto tinted = LuminanceTinter::apply(sprite, masks, tc);
 
-    // Verify: pick a known-green pixel (x=4, y=4) and check it's now reddish
-    // (R > G and R > B).
     auto px = tinted.at(4, 4);
     log::info("[texture-studio] selfTest: tinted (4,4) = ({},{},{},{})", px.r, px.g, px.b, px.a);
     if (!(px.r > px.g && px.r > px.b)) {
@@ -193,16 +179,14 @@ bool engineSelfTest() {
         ok = false;
     }
 
-    // The dark inner accent is Color2 and must become blue; this catches a
-    // former global dark-pixel guard that accidentally preserved all dark
-    // details, not just the outline.
+    // Regression guard: a former global dark-pixel guard wrongly preserved all
+    // dark details; the dark Color2 accent must actually become blue.
     auto inner = tinted.at(7, 7);
     if (!(inner.b > inner.r && inner.b > inner.g)) {
         log::error("[texture-studio] selfTest FAIL: dark Color2 pixel did not become blue-dominant");
         ok = false;
     }
 
-    // The silhouette outline is explicitly masked and must remain bit-exact.
     auto outline = tinted.at(0, 0);
     auto originalOutline = sprite.at(0, 0);
     if (outline.r != originalOutline.r || outline.g != originalOutline.g ||
@@ -211,10 +195,7 @@ bool engineSelfTest() {
         ok = false;
     }
 
-    // 5) Precision metric. Compare the full pipeline output against the tint
-    // produced from ground-truth masks. A high PSNR means the classifier +
-    // mask builder reproduced the intended per-role assignment. Anything
-    // above ~30 dB is visually indistinguishable for this palette.
+    // >~30 dB PSNR is visually indistinguishable for this palette.
     auto gtMasks = makeGroundTruthMasks(sprite);
     auto expected = LuminanceTinter::apply(sprite, gtMasks, tc);
     double psnr = computePsnr(tinted, expected);
@@ -225,6 +206,39 @@ bool engineSelfTest() {
         log::error("[texture-studio] selfTest FAIL: PSNR {:.2f} dB below {:.0f} dB "
                    "(classifier/mask mismatch vs ground truth)", psnr, kMinPsnr);
         ok = false;
+    }
+
+    // --- OverlayTinter: PackGen algorithm parity on a known pixel -----------
+    {
+        ImageBuffer base(2, 1);
+        base.setAt(0, 0, {10, 10, 10, 255});
+        base.setAt(1, 0, {10, 10, 10, 255});
+
+        // Overlay ink only on x=0: grey 200 (lum = 200) at full alpha.
+        OverlayImages ov;
+        ov.overlay1 = ImageBuffer(2, 1);
+        ov.overlay1.setAt(0, 0, {200, 200, 200, 255});
+
+        TintColors otc;
+        otc.color1 = {160, 80, 40};
+        TinterOptions topts;
+        topts.brightness = 160;  // factor = 200/160 = 1.25
+
+        auto out = OverlayTinter::apply(base, ov, otc, topts);
+
+        // PackGen: tinted = color * 1.25 → (200, 100, 50), hard replace at a=255.
+        auto covered = out.at(0, 0);
+        if (covered.r != 200 || covered.g != 100 || covered.b != 50) {
+            log::error("[texture-studio] selfTest FAIL: overlay tint = ({},{},{}), "
+                       "expected (200,100,50)", covered.r, covered.g, covered.b);
+            ok = false;
+        }
+        // No ink at x=1: PackGen leaves the base pixel untouched.
+        auto bare = out.at(1, 0);
+        if (bare.r != 10 || bare.g != 10 || bare.b != 10 || bare.a != 255) {
+            log::error("[texture-studio] selfTest FAIL: uncovered pixel changed");
+            ok = false;
+        }
     }
 
     log::info("[texture-studio] engineSelfTest: {}", ok ? "PASS" : "FAIL");

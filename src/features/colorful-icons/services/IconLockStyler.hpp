@@ -18,17 +18,19 @@ public:
     // Pre: GJItemIcon::changeToLockedState has run; SimplePlayer not yet hidden by us.
     void apply(GJItemIcon* icon);
 
+    // Shared helpers, also used by the popup preview and the vanilla restore.
+    static cocos2d::CCSprite* findLockSprite(GJItemIcon* icon);
+    static void tintAllParts(SimplePlayer* sp, cocos2d::ccColor3B tint);
+    static void fadeAllParts(SimplePlayer* sp, unsigned char opacity);
+
 private:
     IconLockStyler() = default;
 
     bool isUnobtainable(GJItemIcon* icon) const;
 
-    cocos2d::CCSprite* findLockSprite(GJItemIcon* icon) const;
-
     void applyShowDimmed(GJItemIcon* icon, SimplePlayer* sp, bool unobtainable, PaimonIconConfig const& cfg);
     void applyTinted    (GJItemIcon* icon, SimplePlayer* sp, bool unobtainable, PaimonIconConfig const& cfg);
     void applySilhouette(GJItemIcon* icon, SimplePlayer* sp, bool unobtainable, PaimonIconConfig const& cfg);
-    void applyCustomMix (GJItemIcon* icon, SimplePlayer* sp, bool unobtainable, PaimonIconConfig const& cfg);
     void applyHideBoth  (GJItemIcon* icon, SimplePlayer* sp);
 };
 

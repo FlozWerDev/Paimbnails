@@ -13,7 +13,6 @@
 
 namespace Shaders {
 
-    // Declared in Shaders.cpp
     cocos2d::CCGLProgram* getOrCreateShader(char const* key, char const* vertexSrc, char const* fragmentSrc);
 
 
@@ -21,10 +20,8 @@ namespace Shaders {
 
     void applyBlurPass(cocos2d::CCSprite* input, cocos2d::CCRenderTexture* output, cocos2d::CCGLProgram* program, cocos2d::CCSize const& size, float radius);
 
-    // Declared in Shaders.cpp
     float intensityToBlurRadius(float intensity);
 
-    /// Declared in Shaders.cpp
     cocos2d::CCSprite* createBlurredSprite(cocos2d::CCTexture2D* texture, cocos2d::CCSize const& targetSize, float intensity, bool useDirectRadius = false);
 
     /// Tuned version for fullscreen overlays / popup backgrounds.
@@ -33,10 +30,8 @@ namespace Shaders {
     /// Premium popup blur: fixed Dual Kawase with mips 1/2, 1/4, 1/8.
     cocos2d::CCSprite* createPopupPaimonBlurredSprite(cocos2d::CCTexture2D* texture, cocos2d::CCSize const& targetSize, float intensity);
 
-    /// Declared in Shaders.cpp
     cocos2d::CCGLProgram* getBlurCellShader();
 
-    /// Declared in Shaders.cpp
     cocos2d::CCGLProgram* getBlurSinglePassShader();
 
 //  PAIMON BLUR — Dual Kawase multi-pass (downsample + upsample)
@@ -46,10 +41,10 @@ namespace Shaders {
 // paimon::shaders::getKawase*Shader. Helpers cache through CCShaderCache, so
 // only the first use pays the compile.
 
-    /// Declared in Shaders.cpp — multi-pass Dual Kawase blur for static thumbnails
+    /// Multi-pass Dual Kawase blur for static thumbnails
     cocos2d::CCSprite* createPaimonBlurSprite(cocos2d::CCTexture2D* texture, cocos2d::CCSize const& targetSize, float intensity);
 
-    /// Declared in Shaders.cpp — real-time PaimonBlur shader for GIFs
+    /// Real-time PaimonBlur shader for GIFs
     cocos2d::CCGLProgram* getPaimonBlurShader();
 
 //  UNIQUE ANIMATED EFFECTS
@@ -262,7 +257,6 @@ public:
     void updateShaderTime(float dt);
 };
 
-// Declared in Shaders.cpp
 cocos2d::CCGLProgram* getBgShaderProgram(std::string const& shaderName);
 
 // Distinct procedural background shaders generated fully on GPU.

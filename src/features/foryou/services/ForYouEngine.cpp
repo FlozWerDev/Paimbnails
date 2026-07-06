@@ -495,29 +495,25 @@ float ForYouEngine::scoreLevelForUser(GJGameLevel* level) const {
         }
     }
 
-    // favorite creator = strongest signal
-    if (profile.favoriteCreators.count(level->m_accountID)) {
+    // favorite creator = strongest signal. m_accountID/m_songID are anti-tamper
+    // wrapped fields; convert to int explicitly so std::find compares int==int
+    // (unordered_set::count forced the conversion implicitly, std::find does not).
+    int accountID = level->m_accountID;
+    int songID = level->m_songID;
+    if (profile.favoriteCreators.count(accountID)) {
         score += 5.0f;
-    } else {
-        static thread_local std::unordered_set<int> s_creatorSet;
-        if (s_creatorSet.empty() || s_creatorSet.size() != profile.preferredCreators.size()) {
-            s_creatorSet.clear();
-            s_creatorSet.insert(profile.preferredCreators.begin(), profile.preferredCreators.end());
-        }
-        if (s_creatorSet.count(level->m_accountID)) {
-            score += 3.0f;
-        }
+    } else if (std::find(profile.preferredCreators.begin(), profile.preferredCreators.end(),
+                         accountID) != profile.preferredCreators.end()) {
+        // preferredCreators is capped at 5 entries; a direct scan avoids the stale
+        // thread_local cache that was only invalidated on size() change and thus
+        // missed same-count content churn (one creator replaced by another).
+        score += 3.0f;
     }
 
-    {
-        static thread_local std::unordered_set<int> s_songSet;
-        if (s_songSet.empty() || s_songSet.size() != profile.preferredSongs.size()) {
-            s_songSet.clear();
-            s_songSet.insert(profile.preferredSongs.begin(), profile.preferredSongs.end());
-        }
-        if (s_songSet.count(level->m_songID)) {
-            score += 2.0f;
-        }
+    // preferredSongs is likewise capped at 5 entries; direct scan (see above).
+    if (std::find(profile.preferredSongs.begin(), profile.preferredSongs.end(),
+                  songID) != profile.preferredSongs.end()) {
+        score += 2.0f;
     }
 
     if (paimon::compat::ModCompat::isLevelTagsLoaded()) {

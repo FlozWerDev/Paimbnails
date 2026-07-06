@@ -29,7 +29,7 @@ namespace {
         static std::string const targetId = "paim-menu-physics-node"_spr;
         if (n->getID() == targetId) {
             out.push_back(static_cast<MenuPhysicsNode*>(n));
-            return;  // physics nodes don't nest
+            return;
         }
         if (auto* children = n->getChildren()) {
             for (int i = 0; i < static_cast<int>(children->count()); ++i) {
@@ -50,8 +50,8 @@ bool MenuPhysicsManager::enabled() const {
 
 void MenuPhysicsManager::attach(CCNode* host) {
     if (!host) return;
-    if (host->getChildByID("paim-menu-physics-node"_spr)) return;  // already attached
-    if (!hasMenuButtons(host)) return;                              // nothing to drop
+    if (host->getChildByID("paim-menu-physics-node"_spr)) return;
+    if (!hasMenuButtons(host)) return;
 
     if (auto* node = MenuPhysicsNode::create()) {
         host->addChild(node, 100);

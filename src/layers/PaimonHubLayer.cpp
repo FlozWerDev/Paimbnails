@@ -1,6 +1,8 @@
 #include "PaimonHubLayer.hpp"
+#include "PaimonHubData.hpp"
 #include "PaiConfigLayer.hpp"
 #include "PaimonSupportLayer.hpp"
+#include "PaimonModulesLayer.hpp"
 #include "../features/quick-hub/ui/RadialConfigPopup.hpp"
 #include "../features/paidraw/PaiDrawIcon.hpp"
 #include "../features/paidraw/PaiDrawUI.hpp"
@@ -60,21 +62,11 @@ std::string tr(char const* key, char const* fallback = "") {
     }
     return value;
 }
+} // namespace
 
-struct HubCategoryMeta {
-    std::string title;
-    std::string shortDesc;
-    ccColor3B color;
-    // returns info sections for FeatureInfoPopup
-    std::function<std::vector<paimon::ui::InfoSection>()> getInfo;
-};
-
-struct HubActionMeta {
-    std::string title;
-    std::string sprite;
-    std::function<void(PaimonHubLayer*)> onPress;
-    int categoryIndex = 0;
-};
+// Shared between the original skin (this file) and the GD skin
+// (PaimonHubLayerGD.cpp); declared in PaimonHubData.hpp.
+namespace paimon::hubdata {
 
 std::vector<HubCategoryMeta> getHubCategories() {
     return {
@@ -92,26 +84,30 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
     switch (categoryIndex) {
         case 0: // General
             return {
-                {"Configurar", "GJ_button_01.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(0); }},
-                {"PaiDraw", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenPaiDraw(nullptr); }},
-                {"Soporte", "GJ_button_04.png", [](PaimonHubLayer* self) { self->onOpenSupport(nullptr); }},
+                {"Modulos", "GJ_button_03.png", [](PaimonHubLayer*) {
+                    auto scene = PaimonModulesLayer::scene();
+                    if (scene) CCDirector::get()->pushScene(scene);
+                }, 0, "Activa o desactiva funciones"},
+                {"Configurar", "GJ_button_01.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(0); }, 0, "Idioma, updates y basicos"},
+                {"PaiDraw", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenPaiDraw(nullptr); }, 0, "Dibuja con la comunidad"},
+                {"Soporte", "GJ_button_04.png", [](PaimonHubLayer* self) { self->onOpenSupport(nullptr); }, 0, "Ayuda y contacto"},
                 {"Reiniciar ajustes", "GJ_button_03.png", [](PaimonHubLayer*) {
                     paimon::factory_reset::requestWithConfirmation();
-                }},
+                }, 0, "Restaura todo por defecto"},
             };
         case 1: // Thumbnails
             return {
-                {"Configurar", "GJ_button_02.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(1); }},
-                {"Efectos", "GJ_button_03.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(2); }},
+                {"Configurar", "GJ_button_02.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(1); }, 1, "Tamano y estilo de celdas"},
+                {"Efectos", "GJ_button_03.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(2); }, 1, "Animaciones y transiciones"},
             };
         case 2: // Level
             return {
-                {"Configurar", "GJ_button_01.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(3); }},
-                {"Barra Progreso", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = ProgressBarConfigPopup::create()) popup->show(); }},
+                {"Configurar", "GJ_button_01.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(3); }, 2, "Fondo y efectos del nivel"},
+                {"Barra Progreso", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = ProgressBarConfigPopup::create()) popup->show(); }, 2, "Personaliza la barra"},
             };
         case 3: // Audio
             return {
-                {"Configurar", "GJ_button_04.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(4); }},
+                {"Configurar", "GJ_button_04.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(4); }, 3, "Musica de menu y capas"},
                 {"Musica Perfil", "GJ_button_02.png", [](PaimonHubLayer*) {
                     auto* acc = GJAccountManager::sharedState();
                     int accountID = acc ? acc->m_accountID : 0;
@@ -120,26 +116,29 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                     } else {
                         PaimonNotify::create("Necesitas iniciar sesion.", NotificationIcon::Warning)->show();
                     }
-                }},
+                }, 3, "Tu cancion en tu perfil"},
             };
         case 4: // Backgrounds
             return {
-                {"Editor Fondos", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenBackgrounds(nullptr); }},
-                {"Transiciones", "GJ_button_04.png", [](PaimonHubLayer*) { if (auto popup = TransitionConfigPopup::create()) popup->show(); }},
-                {"Config Full", "GJ_button_01.png", [](PaimonHubLayer* self) { self->onOpenConfig(nullptr); }},
+                {"Editor Fondos", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenBackgrounds(nullptr); }, 4, "Fondo por pantalla"},
+                {"Transiciones", "GJ_button_04.png", [](PaimonHubLayer*) { if (auto popup = TransitionConfigPopup::create()) popup->show(); }, 4, "Animaciones entre escenas"},
+                {"Config Full", "GJ_button_01.png", [](PaimonHubLayer* self) { self->onOpenConfig(nullptr); }, 4, "Panel completo de fondos"},
             };
         case 5: // Extras
             return {
-                {"Mascota", "GJ_button_03.png", [](PaimonHubLayer*) { if (auto popup = PetConfigPopup::create()) popup->show(); }},
-                {"Cursor", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = CursorConfigPopup::create()) popup->show(); }},
-                {"Slider", "GJ_button_01.png", [](PaimonHubLayer*) { if (auto popup = paimon::slider::CustomSliderPopup::create()) popup->show(); }},
-                {"Scroll", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = paimon::smoothscroll::SmoothScrollConfigPopup::create()) popup->show(); }},
+                {"Smooth UI", "GJ_button_05.png", [](PaimonHubLayer*) {
+                    if (auto popup = paimon::ui::FeatureConfigPopup::create("smooth-ui")) popup->show();
+                }, 5, "Animaciones suaves"},
+                {"Mascota", "GJ_button_03.png", [](PaimonHubLayer*) { if (auto popup = PetConfigPopup::create()) popup->show(); }, 5, "Companero en pantalla"},
+                {"Cursor", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = CursorConfigPopup::create()) popup->show(); }, 5, "Cursor personalizado"},
+                {"Slider", "GJ_button_01.png", [](PaimonHubLayer*) { if (auto popup = paimon::slider::CustomSliderPopup::create()) popup->show(); }, 5, "Barra de scroll custom"},
+                {"Scroll", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = paimon::smoothscroll::SmoothScrollConfigPopup::create()) popup->show(); }, 5, "Desplazamiento suave"},
                 {"Beat Shaders", "GJ_button_04.png", [](PaimonHubLayer*) {
                     if (auto popup = paimon::beat_shaders::BeatShaderConfigLayer::create()) {
                         popup->show();
                     }
-                }},
-                {"Perfil", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenProfiles(nullptr); }},
+                }, 5, "Fondos al ritmo"},
+                {"Perfil", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenProfiles(nullptr); }, 5, "Editor de foto de perfil"},
                 {"Actualizar", "GJ_button_02.png", [](PaimonHubLayer*) {
                     auto& chk = paimon::updates::UpdateChecker::get();
                     auto state = chk.state();
@@ -191,23 +190,17 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                     // tap again in a few seconds.
                     chk.checkAsync();
                     PaimonNotify::create("Buscando actualizaciones... pulsa de nuevo en unos segundos.", NotificationIcon::Loading)->show();
-                }},
+                }, 5, "Busca nueva version"},
             };
         case 6: // Discord
             return {
-                {"Configurar", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = paimon::discord::DiscordConfigPopup::create()) popup->show(); }},
-                {"Refrescar", "GJ_button_05.png", [](PaimonHubLayer*) { paimon::discord::DiscordPresenceManager::get().refreshSoon(); PaimonNotify::create("Rich Presence actualizada.", NotificationIcon::Success)->show(); }},
+                {"Configurar", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = paimon::discord::DiscordConfigPopup::create()) popup->show(); }, 6, "Rich Presence a tu gusto"},
+                {"Refrescar", "GJ_button_05.png", [](PaimonHubLayer*) { paimon::discord::DiscordPresenceManager::get().refreshSoon(); PaimonNotify::create("Rich Presence actualizada.", NotificationIcon::Success)->show(); }, 6, "Fuerza la actualizacion"},
             };
         default:
             return {};
     }
 }
-
-struct GranularSettingMeta {
-    std::string englishName;
-    std::string spanishName;
-    int categoryIndex;
-};
 
 std::vector<GranularSettingMeta> getGranularSettings() {
     return {
@@ -267,6 +260,11 @@ std::vector<GranularSettingMeta> getGranularSettings() {
         {"Configuración Completa", "Configuración Completa", 4},
 
         // Category 5: Extras
+        {"Smooth UI", "Smooth UI", 5},
+        {"Smooth Popups", "Popups Suaves", 5},
+        {"Button Animations", "Animaciones de Botones", 5},
+        {"Global UI Speed", "Velocidad Global UI", 5},
+        {"Reduced Motion", "Reducir Movimiento", 5},
         {"Enable Pet", "Activar Mascota", 5},
         {"Pet Sprite / Pet Type", "Sprite de Mascota / Tipo de Mascota", 5},
         {"Pet Scale", "Escala de Mascota", 5},
@@ -290,7 +288,10 @@ std::vector<GranularSettingMeta> getGranularSettings() {
         {"Refresh Discord Status", "Refrescar Estado de Discord", 6}
     };
 }
-}
+
+} // namespace paimon::hubdata
+
+using namespace paimon::hubdata;
 
 PaimonHubLayer* PaimonHubLayer::create() {
     auto ret = new PaimonHubLayer();
@@ -322,6 +323,19 @@ bool PaimonHubLayer::init() {
     this->setKeypadEnabled(true);
     this->setTouchEnabled(true);
 
+    m_forumTags = {
+        "Guide", "Tip", "Question", "Bug", "Suggestion",
+        "Showcase", "Discussion", "Help", "News", "Update",
+        "Level", "Video", "Art", "Music", "Story",
+        "Theory", "Challenge", "Competition", "Feedback", "Other"
+    };
+
+    m_gdMode = Mod::get()->getSavedValue<std::string>("hub-ui-style", "original") == "gd";
+    if (m_gdMode) {
+        buildGDShell();
+        return true;
+    }
+
     auto winSize = CCDirector::get()->getWinSize();
     float cx = winSize.width / 2;
     float top = winSize.height;
@@ -352,6 +366,14 @@ bool PaimonHubLayer::init() {
     auto helpBtn = CCMenuItemSpriteExtra::create(helpSpr, this, menu_selector(PaimonHubLayer::onOpenHelp));
     helpBtn->setPosition({winSize.width - 20.f, top - 20.f});
     m_mainMenu->addChild(helpBtn);
+
+    // switch to the GD-style skin
+    auto uiSpr = ButtonSprite::create(tr("pai.hub.style.gd", "UI: GD").c_str(), "bigFont.fnt", "GJ_button_05.png", .8f);
+    uiSpr->setScale(0.34f);
+    auto uiBtn = CCMenuItemSpriteExtra::create(uiSpr, this, menu_selector(PaimonHubLayer::onToggleUIStyle));
+    uiBtn->setID("ui-style-btn"_spr);
+    uiBtn->setPosition({winSize.width - 58.f, top - 20.f});
+    m_mainMenu->addChild(uiBtn);
 
     float tabY = top - 20.f;
     std::vector<std::string> tabNames = {
@@ -424,13 +446,6 @@ bool PaimonHubLayer::init() {
     m_forumMenu->setVisible(false);
     this->addChild(m_forumMenu, 11);
 
-    m_forumTags = {
-        "Guide", "Tip", "Question", "Bug", "Suggestion",
-        "Showcase", "Discussion", "Help", "News", "Update",
-        "Level", "Video", "Art", "Music", "Story",
-        "Theory", "Challenge", "Competition", "Feedback", "Other"
-    };
-
     buildHomeTab();
     buildNewsTab();
     buildForumTab();
@@ -441,9 +456,25 @@ bool PaimonHubLayer::init() {
 }
 
 void PaimonHubLayer::keyBackClicked() {
+    // GD skin: Escape walks back through the guided levels before leaving.
+    if (m_gdMode) {
+        if (m_gdTourOverlay) { gdEndTour(); return; }
+        if (m_currentTab == 0 && m_gdHomeState != 0) {
+            gdShowCategories();
+            return;
+        }
+    }
     // MenuLayer::scene(false) does the full setup; building the scene manually
     // left it uninitialized (black screen on Escape).
     CCDirector::get()->replaceScene(MenuLayer::scene(false));
+}
+
+void PaimonHubLayer::onToggleUIStyle(CCObject*) {
+    bool toGD = !m_gdMode;
+    Mod::get()->setSavedValue<std::string>("hub-ui-style", toGD ? "gd" : "original");
+    auto scene = CCScene::create();
+    scene->addChild(PaimonHubLayer::create());
+    CCDirector::get()->replaceScene(CCTransitionFade::create(0.4f, scene));
 }
 
 void PaimonHubLayer::onTabSwitch(CCObject* sender) {
@@ -493,12 +524,12 @@ void PaimonHubLayer::buildHomeTab() {
 
     auto categories = getHubCategories();
 
-    // 1. left sidebar panel (canonical dark NineSlice via createDarkPanel)
+    // (canonical dark NineSlice via createDarkPanel)
     m_sidebarBg = paimon::SpriteHelper::createDarkPanel(135.f, 250.f, 220, 6.f);
     m_sidebarBg->setPosition({15.f, 15.f});
     m_homeTab->addChild(m_sidebarBg, 0);
 
-    // 2. sliding category highlight (white tint so setColor applies cleanly)
+    // (white tint so setColor applies cleanly)
     m_sidebarHighlight = paimon::SpriteHelper::createColorPanel(
         125.f, 26.f, cocos2d::ccColor3B{255, 255, 255}, 200, 4.f
     );
@@ -508,7 +539,6 @@ void PaimonHubLayer::buildHomeTab() {
         m_sidebarHighlight->setColor(categories[0].color);
     }
 
-    // 3. Create Sidebar Menu containing the 7 category items
     m_sidebarMenu = CCMenu::create();
     m_sidebarMenu->setPosition({0, 0});
     m_sidebarMenu->setID("paimon-sidebar-menu"_spr);
@@ -536,7 +566,6 @@ void PaimonHubLayer::buildHomeTab() {
         m_sidebarMenu->addChild(btn);
     }
 
-    // 4. quick shortcuts row at the bottom of the sidebar.
     // Keeps the old button IDs ("discord-sidebar-btn", "quickhub-sidebar-btn",
     // "paidraw-sidebar-btn") for cross-mod compat.
     {
@@ -554,7 +583,6 @@ void PaimonHubLayer::buildHomeTab() {
                 ->setCrossAxisAlignment(AxisAlignment::Center)
         );
 
-        // Discord
         auto* discordBgBtn = CCScale9Sprite::create("GJ_button_02.png");
         discordBgBtn->setContentSize({26.f, 26.f});
         discordBgBtn->setColor({110, 150, 255});
@@ -563,13 +591,14 @@ void PaimonHubLayer::buildHomeTab() {
         discordLabel->setPosition(discordBgBtn->getContentSize() / 2.f);
         discordBgBtn->addChild(discordLabel);
 
-        auto* discordBtn = CCMenuItemExt::createSpriteExtra(discordBgBtn, [self = Ref<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
-            if (self && self->getParent()) self->onOpenDiscordConfig(nullptr);
+        auto* discordBtn = CCMenuItemExt::createSpriteExtra(discordBgBtn, [self = WeakRef<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
+            auto selfRef = self.lock();
+            auto* hub = selfRef.data();
+            if (hub && hub->getParent()) hub->onOpenDiscordConfig(nullptr);
         });
         discordBtn->setID("discord-sidebar-btn"_spr);
         shortcutsRow->addChild(discordBtn);
 
-        // Quick Hub
         auto* qhBgBtn = CCScale9Sprite::create("GJ_button_02.png");
         qhBgBtn->setContentSize({26.f, 26.f});
         qhBgBtn->setColor({255, 200, 80});
@@ -584,7 +613,6 @@ void PaimonHubLayer::buildHomeTab() {
         qhBtn->setID("quickhub-sidebar-btn"_spr);
         shortcutsRow->addChild(qhBtn);
 
-        // PaiDraw
         auto* drawBgBtn = CCScale9Sprite::create("GJ_button_02.png");
         drawBgBtn->setContentSize({26.f, 26.f});
         if (auto* icon = paidraw::createPaiDrawIcon(20.f)) {
@@ -596,8 +624,6 @@ void PaimonHubLayer::buildHomeTab() {
         drawBtn->setID("paidraw-sidebar-btn"_spr);
         shortcutsRow->addChild(drawBtn);
 
-        // Guide (toggle).
-        // Current toggle state from the saved value.
         bool guideEnabled = paimon::guide::PaimonGuideService::get().isEnabled();
 
         auto* guideBgBtn = CCScale9Sprite::create("GJ_button_02.png");
@@ -616,7 +642,7 @@ void PaimonHubLayer::buildHomeTab() {
 
         auto* guideBtn = CCMenuItemExt::createSpriteExtra(
             guideBgBtn,
-            [self = Ref<PaimonHubLayer>(this)](CCMenuItemSpriteExtra* sender) {
+            [](CCMenuItemSpriteExtra* sender) {
                 using namespace paimon::guide;
                 bool current = PaimonGuideService::get().isEnabled();
                 bool newState = !current;
@@ -639,7 +665,6 @@ void PaimonHubLayer::buildHomeTab() {
                     }
                 }
 
-                // translated toast
                 Notification::create(
                     newState
                         ? Localization::get().getString("pai.guide.toggle.on")
@@ -648,7 +673,6 @@ void PaimonHubLayer::buildHomeTab() {
                     1.8f
                 )->show();
 
-                (void)self; // future: refresh the Hub UI if needed
             }
         );
         guideBtn->setID("guide-sidebar-btn"_spr);
@@ -658,7 +682,7 @@ void PaimonHubLayer::buildHomeTab() {
         m_sidebarMenu->addChild(shortcutsRow);
     }
 
-    // 5. right details panel (canonical dark NineSlice)
+    // (canonical dark NineSlice)
     float detailsW = winSize.width - 175.f;
     m_detailsBg = paimon::SpriteHelper::createDarkPanel(detailsW, 250.f, 240, 6.f);
     m_detailsBg->setPosition({160.f, 15.f});
@@ -673,11 +697,13 @@ void PaimonHubLayer::buildHomeTab() {
 
     m_homeCategoryInfoBtn = CCMenuItemExt::createSpriteExtra(
         CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png"),
-        [self = Ref<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
-            if (!self || !self->getParent()) return;
+        [self = WeakRef<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
+            auto selfRef = self.lock();
+            auto* hub = selfRef.data();
+            if (!hub || !hub->getParent()) return;
             auto categories = getHubCategories();
-            if (self->m_homeSelectedCategory < 0 || self->m_homeSelectedCategory >= static_cast<int>(categories.size())) return;
-            auto const& cat = categories[self->m_homeSelectedCategory];
+            if (hub->m_homeSelectedCategory < 0 || hub->m_homeSelectedCategory >= static_cast<int>(categories.size())) return;
+            auto const& cat = categories[hub->m_homeSelectedCategory];
             auto sections = cat.getInfo();
             if (auto popup = paimon::ui::FeatureInfoPopup::create(cat.title, sections)) {
                 popup->show();
@@ -694,21 +720,21 @@ void PaimonHubLayer::buildHomeTab() {
     m_homeCategoryDesc->setPosition({178.f, 222.f});
     m_homeTab->addChild(m_homeCategoryDesc, 2);
 
-    // 6b. search input in the details header
     m_searchInput = TextInput::create(120.f, tr("pai.hub.search", "Search...").c_str(), "chatFont.fnt");
     m_searchInput->setCommonFilter(CommonFilter::Any);
     m_searchInput->setMaxCharCount(20);
     m_searchInput->setPosition({winSize.width - 95.f, 236.f});
     m_searchInput->setScale(0.68f);
-    Ref<PaimonHubLayer> hubRef = this;
+    WeakRef<PaimonHubLayer> hubRef = this;
     m_searchInput->setCallback([hubRef](std::string const&) {
-        if (hubRef && hubRef->getParent()) {
-            hubRef->rebuildHomeCategoryCards();
+        auto selfRef = hubRef.lock();
+        auto* hub = selfRef.data();
+        if (hub && hub->getParent()) {
+            hub->rebuildHomeCategoryCards();
         }
     });
     m_homeTab->addChild(m_searchInput, 10);
 
-    // 7. Action cards setup
     m_homeActionsAnchor = CCNode::create();
     m_homeTab->addChild(m_homeActionsAnchor, 2);
 
@@ -716,7 +742,6 @@ void PaimonHubLayer::buildHomeTab() {
     m_homeActionsMenu->setPosition({0.f, 0.f});
     m_homeMenu->addChild(m_homeActionsMenu, 3);
 
-    // 8. Version Label
     {
         auto& chk = paimon::updates::UpdateChecker::get();
         std::string verText = fmt::format(
@@ -775,7 +800,6 @@ void PaimonHubLayer::refreshHomeCategorySelector() {
         m_sidebarHighlight->runAction(CCTintTo::create(0.22f, categories[m_homeSelectedCategory].color.r, categories[m_homeSelectedCategory].color.g, categories[m_homeSelectedCategory].color.b));
     }
 
-    // Refresh label scaling/colors
     for (size_t i = 0; i < m_sidebarLabels.size(); i++) {
         if (!m_sidebarLabels[i]) continue;
         if (static_cast<int>(i) == m_homeSelectedCategory) {
@@ -868,7 +892,6 @@ void PaimonHubLayer::rebuildHomeCategoryCards() {
     } else {
         std::string lowerQuery = toLower(query);
         
-        // 1. Search in category-level quick actions
         for (size_t catIdx = 0; catIdx < categories.size(); ++catIdx) {
             auto catActions = getHubActions(static_cast<int>(catIdx));
             for (auto const& act : catActions) {
@@ -882,7 +905,6 @@ void PaimonHubLayer::rebuildHomeCategoryCards() {
             }
         }
 
-        // 2. Search in individual granular settings
         std::string lang = geode::Mod::get()->getSettingValue<std::string>("language");
         bool isSpanish = (lang == "spanish");
 
@@ -969,7 +991,6 @@ void PaimonHubLayer::rebuildHomeCategoryCards() {
                 cardW, cardH, cocos2d::ccColor3B{24, 25, 38}, 230, 5.f
             );
 
-            // thin 2px top accent in the category color
             auto accent = paimon::SpriteHelper::createColorPanel(
                 cardW - 14.f, 2.f, borderColor, 220, 0.f
             );
@@ -989,8 +1010,10 @@ void PaimonHubLayer::rebuildHomeCategoryCards() {
             label->setPosition({cardW / 2.f, cardH / 2.f});
             cardBg->addChild(label);
 
-            auto btn = CCMenuItemExt::createSpriteExtra(cardBg, [self = Ref<PaimonHubLayer>(this), action](CCMenuItemSpriteExtra*) {
-                if (self && self->getParent()) action.onPress(self);
+            auto btn = CCMenuItemExt::createSpriteExtra(cardBg, [self = WeakRef<PaimonHubLayer>(this), action](CCMenuItemSpriteExtra*) {
+                auto selfRef = self.lock();
+                auto* hub = selfRef.data();
+                if (hub && hub->getParent()) action.onPress(hub);
             });
 
             btn->setPosition({x, targetY - 18.f});
@@ -1059,8 +1082,10 @@ void PaimonHubLayer::rebuildHomeCategoryCards() {
             label->setPosition({112.f / 2.f, 48.f / 2.f});
             cardBg->addChild(label);
 
-            auto btn = CCMenuItemExt::createSpriteExtra(cardBg, [self = Ref<PaimonHubLayer>(this), action](CCMenuItemSpriteExtra*) {
-                if (self && self->getParent()) action.onPress(self);
+            auto btn = CCMenuItemExt::createSpriteExtra(cardBg, [self = WeakRef<PaimonHubLayer>(this), action](CCMenuItemSpriteExtra*) {
+                auto selfRef = self.lock();
+                auto* hub = selfRef.data();
+                if (hub && hub->getParent()) action.onPress(hub);
             });
 
             btn->setPosition({x, targetY - 18.f});
@@ -1090,7 +1115,6 @@ void PaimonHubLayer::buildNewsTab() {
     float panelW = winSize.width - 30.f;
     float panelH = 250.f;
 
-    // 1. panel background with gold border
     auto panelBg = paimon::SpriteHelper::createRoundedRect(
         panelW, panelH, 6.f,
         {10/255.f, 10/255.f, 18/255.f, 245/255.f},       // dark transparent background
@@ -1109,7 +1133,6 @@ void PaimonHubLayer::buildNewsTab() {
     titleLbl->setPosition({35.f, 242.f});
     m_newsTab->addChild(titleLbl, 1);
 
-    // gold divider under title
     auto sep = CCLayerColor::create({255, 200, 80, 50});
     sep->setContentSize({winSize.width - 70.f, 1.f});
     sep->setPosition({35.f, 226.f});
@@ -1159,7 +1182,6 @@ void PaimonHubLayer::buildNewsTab() {
         cardContainer->setCascadeOpacityEnabled(true);
         scroll->m_contentLayer->addChild(cardContainer, 1);
 
-        // Rounded rect background for each card
         auto cardBg = paimon::SpriteHelper::createRoundedRect(
             itemW, itemH, 5.f,
             {20/255.f, 20/255.f, 32/255.f, 180/255.f},       // dark fill
@@ -1183,7 +1205,6 @@ void PaimonHubLayer::buildNewsTab() {
         itemDesc->setPosition({14.f, 15.f});
         cardContainer->addChild(itemDesc, 1);
 
-        // Glow green "NEW" Badge
         auto newBadge = CCLabelBMFont::create("NEW", "bigFont.fnt");
         newBadge->setScale(0.24f);
         newBadge->setColor({100, 255, 100});
@@ -1333,7 +1354,6 @@ void PaimonHubLayer::buildForumTab() {
     sep->setPosition({contentLeft, kForumDividerY});
     m_forumTab->addChild(sep, 1);
 
-    // Browse section
     m_forumBrowseNode = CCNode::create();
     m_forumBrowseNode->setPosition({0, 0});
     m_forumBrowseNode->setContentSize(winSize);
@@ -1395,13 +1415,11 @@ void PaimonHubLayer::buildForumTab() {
             }
         }
 
-        // Vertical separator between clusters
         auto vsep = CCLayerColor::create({kForumAccent.r, kForumAccent.g, kForumAccent.b, 60});
         vsep->setContentSize({1.f, 18.f});
         vsep->setPosition({cx + 30.f, kForumToolbarY - 9.f});
         m_forumBrowseNode->addChild(vsep, 1);
 
-        // Tag cluster (right of separator)
         auto tagLabel = CCLabelBMFont::create(
             tr("pai.hub.forum.tags", "Tags:").c_str(), "bigFont.fnt"
         );
@@ -1426,13 +1444,14 @@ void PaimonHubLayer::buildForumTab() {
         createTagBtn->setPosition({cx + 142.f, kForumToolbarY});
         browseMenu->addChild(createTagBtn);
 
-        // Refresh icon — anchored to the toolbar's right edge
         if (auto refreshSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_replayBtn_001.png")) {
             refreshSpr->setScale(0.5f);
             auto refreshBtn = CCMenuItemExt::createSpriteExtra(
                 refreshSpr,
-                [self = Ref<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
-                    if (self && self->getParent()) self->refreshForumPosts();
+                [self = WeakRef<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
+                    auto selfRef = self.lock();
+                    auto* hub = selfRef.data();
+                    if (hub && hub->getParent()) hub->refreshForumPosts();
                 }
             );
             refreshBtn->setID("forum-refresh"_spr);
@@ -1441,7 +1460,6 @@ void PaimonHubLayer::buildForumTab() {
         }
     }
 
-    // Active filter chips row
     float tagAreaW = panelW - 36.f;
     float tagAreaH = 22.f;
 
@@ -1472,7 +1490,6 @@ void PaimonHubLayer::buildForumTab() {
 
     refreshTagButtons();
 
-    // Post list
     float listW = panelW - 24.f;
     float listH = kForumListTop - kForumListBottom;
 
@@ -1493,7 +1510,6 @@ void PaimonHubLayer::buildForumTab() {
 
     refreshForumPosts();
 
-    // Inline Create form
     m_forumCreateNode = CCNode::create();
     m_forumCreateNode->setPosition({0, 0});
     m_forumCreateNode->setContentSize(winSize);
@@ -1580,7 +1596,6 @@ void PaimonHubLayer::buildForumTab() {
     m_createTagMenu->setVisible(false);
     m_forumCreateNode->addChild(m_createTagMenu, 1);
 
-    // Submit + Cancel buttons (centered, larger, gold post)
     auto btnMenu = CCMenu::create();
     btnMenu->setPosition({0, 0});
     btnMenu->setContentSize(winSize);
@@ -1735,7 +1750,6 @@ void PaimonHubLayer::onRefreshNews(CCObject*) {
 }
 
 void PaimonHubLayer::onCreatePost(CCObject*) {
-    // build the available tag list: predef + custom
     std::vector<std::string> available;
     for (auto const& t : m_forumTags)  available.push_back(t);
     for (auto const& t : m_customTags) {
@@ -1745,15 +1759,17 @@ void PaimonHubLayer::onCreatePost(CCObject*) {
 
     auto popup = CreatePostPopup::create(
         std::move(available),
-        [self = Ref<PaimonHubLayer>(this)](paimon::forum::Post const& p) {
-            if (!self || !self->getParent()) return;
+        [self = WeakRef<PaimonHubLayer>(this)](paimon::forum::Post const& p) {
+            auto selfRef = self.lock();
+            auto* hub = selfRef.data();
+            if (!hub || !hub->getParent()) return;
             for (auto const& t : p.tags) {
-                bool inPredef = std::find(self->m_forumTags.begin(), self->m_forumTags.end(), t) != self->m_forumTags.end();
-                bool inCustom = std::find(self->m_customTags.begin(), self->m_customTags.end(), t) != self->m_customTags.end();
-                if (!inPredef && !inCustom) self->m_customTags.push_back(t);
+                bool inPredef = std::find(hub->m_forumTags.begin(), hub->m_forumTags.end(), t) != hub->m_forumTags.end();
+                bool inCustom = std::find(hub->m_customTags.begin(), hub->m_customTags.end(), t) != hub->m_customTags.end();
+                if (!inPredef && !inCustom) hub->m_customTags.push_back(t);
             }
-            self->refreshTagButtons();
-            self->refreshForumPosts();
+            hub->refreshTagButtons();
+            hub->refreshForumPosts();
         }
     );
     if (popup) popup->show();
@@ -1888,7 +1904,6 @@ void PaimonHubLayer::refreshForumPosts() {
     m_forumPostList->removeAllChildren();
     showForumLoading();
 
-    // build filter from the hub's current state
     paimon::forum::ListFilter filter;
     switch (m_sortMode) {
         case SortMode::TopRated:  filter.sort = paimon::forum::SortMode::TopRated;  break;
@@ -1899,12 +1914,14 @@ void PaimonHubLayer::refreshForumPosts() {
     filter.tags = m_selectedTags;
     filter.limit = 50;
 
-    Ref<PaimonHubLayer> self = this;
+    WeakRef<PaimonHubLayer> self = this;
     paimon::forum::ForumApi::get().listPosts(filter,
         [self](paimon::forum::Result<std::vector<paimon::forum::Post>> res) {
-            if (!self || !self->getParent() || !self->m_forumPostList) return;
-            self->hideForumLoading();
-            self->renderPosts(res.ok ? res.data : std::vector<paimon::forum::Post>{});
+            auto selfRef = self.lock();
+            auto* hub = selfRef.data();
+            if (!hub || !hub->getParent() || !hub->m_forumPostList) return;
+            hub->hideForumLoading();
+            hub->renderPosts(res.ok ? res.data : std::vector<paimon::forum::Post>{});
         });
 }
 
@@ -1943,7 +1960,6 @@ void PaimonHubLayer::renderPosts(std::vector<paimon::forum::Post> const& posts) 
     for (auto const& post : posts) {
         y -= kPostH;
 
-        // Card container
         auto cardContainer = cocos2d::CCNodeRGBA::create();
         cardContainer->setContentSize({cardW, kPostH});
         cardContainer->setAnchorPoint({0.f, 0.f});
@@ -1973,14 +1989,18 @@ void PaimonHubLayer::renderPosts(std::vector<paimon::forum::Post> const& posts) 
         cardMenu->ignoreAnchorPointForPosition(true);
         cardContainer->addChild(cardMenu, 4);
 
-        Ref<PaimonHubLayer> selfRef = this;
+        WeakRef<PaimonHubLayer> selfRef = this;
         std::string postId = post.id;
         auto openPostDetail = [selfRef, postId]() {
             paimon::forum::ForumApi::get().getPost(postId,
                 [selfRef](paimon::forum::Result<paimon::forum::Post> res) {
-                    if (!selfRef || !selfRef->getParent() || !res.ok) return;
+                    auto hubRef = selfRef.lock();
+                    auto* hub = hubRef.data();
+                    if (!hub || !hub->getParent() || !res.ok) return;
                     auto popup = PostDetailPopup::create(res.data, [selfRef]() {
-                        if (selfRef && selfRef->getParent()) selfRef->refreshForumPosts();
+                        auto hubRef = selfRef.lock();
+                        auto* hub = hubRef.data();
+                        if (hub && hub->getParent()) hub->refreshForumPosts();
                     });
                     if (popup) popup->show();
                 });
@@ -1997,7 +2017,6 @@ void PaimonHubLayer::renderPosts(std::vector<paimon::forum::Post> const& posts) 
             cardMenu->addChild(hitBtn);
         }
 
-        // Author avatar (left)
         int iconID = std::max(1, post.author.iconID);
         if (auto* player = SimplePlayer::create(iconID)) {
             if (post.author.iconType > 0) {
@@ -2019,7 +2038,6 @@ void PaimonHubLayer::renderPosts(std::vector<paimon::forum::Post> const& posts) 
             cardContainer->addChild(player, 5);
         }
 
-        // Author name + relative time (header row)
         float headerY = kPostH - kPad - kIconSize / 2.f;
         auto nameLbl = CCLabelBMFont::create(
             post.author.username.empty() ? "Anonymous" : post.author.username.c_str(),
@@ -2069,7 +2087,6 @@ void PaimonHubLayer::renderPosts(std::vector<paimon::forum::Post> const& posts) 
             cardContainer->addChild(pre, 1);
         }
 
-        // Footer: tag chips (left) + stats (right)
         float footerY = kPad + 4.f;
         float tagX = kPad;
         int tagsShown = 0;
@@ -2290,7 +2307,6 @@ void PaimonHubLayer::onTogglePredefTag(CCObject* sender) {
         m_activePredefTags.push_back(tag);
     }
 
-    // update chip visual
     if (auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender)) {
         if (auto spr = typeinfo_cast<ButtonSprite*>(btn->getNormalImage())) {
             bool isActive = std::find(m_activePredefTags.begin(), m_activePredefTags.end(),
@@ -2394,15 +2410,17 @@ void PaimonHubLayer::onCreateSubmit(CCObject*) {
     req.description = desc;
     req.tags = m_createSelectedTags;
 
-    Ref<PaimonHubLayer> self = this;
+    WeakRef<PaimonHubLayer> self = this;
     paimon::forum::ForumApi::get().createPost(req, [self](paimon::forum::Result<paimon::forum::Post> res) {
-        if (!self || !self->getParent()) return;
+        auto selfRef = self.lock();
+        auto* hub = selfRef.data();
+        if (!hub || !hub->getParent()) return;
         if (!res.ok) {
             PaimonNotify::create(("Failed: " + res.error).c_str(), NotificationIcon::Error)->show();
             return;
         }
         PaimonNotify::create("Post published!", NotificationIcon::Success)->show();
-        self->switchForumSubTab(0);
+        hub->switchForumSubTab(0);
     });
 }
 

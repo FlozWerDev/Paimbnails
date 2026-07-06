@@ -30,10 +30,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// forward del popup de thumbnails (definido en LevelInfoLayer.cpp)
 extern CCNode* createThumbnailViewPopup(int32_t levelID, bool canAcceptUpload, std::vector<Suggestion> const& suggestions);
-
-// factory
 
 VerificationCenterLayer* VerificationCenterLayer::create() {
     auto ret = new VerificationCenterLayer();
@@ -51,8 +48,6 @@ CCScene* VerificationCenterLayer::scene() {
     return scene;
 }
 
-// init
-
 bool VerificationCenterLayer::init() {
     if (!CCLayer::init()) return false;
 
@@ -60,12 +55,10 @@ bool VerificationCenterLayer::init() {
 
     auto winSize = CCDirector::get()->getWinSize();
 
-    // fondo opaco GD estandar
     auto bg = CCLayerColor::create(ccc4(18, 18, 40, 255));
     bg->setContentSize(winSize);
     this->addChild(bg, -2);
 
-    // bordes decorativos (estilo GD)
     auto bottomLeft = CCSprite::createWithSpriteFrameName("GJ_sideArt_001.png");
     if (bottomLeft) {
         bottomLeft->setAnchorPoint({0, 0});
@@ -82,7 +75,6 @@ bool VerificationCenterLayer::init() {
         this->addChild(bottomRight, -1);
     }
 
-    // titulo
     auto title = CCLabelBMFont::create(
         Localization::get().getString("queue.title").c_str(), "goldFont.fnt"
     );
@@ -90,7 +82,6 @@ bool VerificationCenterLayer::init() {
     title->setScale(0.8f);
     this->addChild(title, 2);
 
-    // pestanas
     m_tabsMenu = CCMenu::create();
     m_tabsMenu->setID("tabs-menu"_spr);
     m_tabsMenu->setPosition({winSize.width / 2, winSize.height - 50.f});
@@ -117,7 +108,6 @@ bool VerificationCenterLayer::init() {
     m_tabsMenu->addChild(mkTab("PI",
         menu_selector(VerificationCenterLayer::onTabProfileImg), PendingCategory::ProfileImg));
 
-    // btn baneados
     {
         auto spr = ButtonSprite::create(
             Localization::get().getString("queue.banned_btn").c_str(),
@@ -129,7 +119,6 @@ bool VerificationCenterLayer::init() {
         m_tabsMenu->addChild(btn);
     }
 
-    // btn whitelist
     {
         auto spr = ButtonSprite::create(
             "WL", 50, true, "bigFont.fnt", "GJ_button_04.png", 28.f, 0.55f);
@@ -143,18 +132,15 @@ bool VerificationCenterLayer::init() {
     m_tabsMenu->setLayout(RowLayout::create()->setGap(4.f)->setAxisAlignment(AxisAlignment::Center));
     this->addChild(m_tabsMenu, 2);
 
-    // panel izquierdo: lista con scroll
     float listW = winSize.width * 0.52f;
     float listH = winSize.height - 100.f;
     float listX = 18.f;
     float listY = 35.f;
 
-    // fondo lista
     auto listBg = paimon::SpriteHelper::createDarkPanel(listW, listH, 80);
     listBg->setPosition({listX, listY});
     this->addChild(listBg, 0);
 
-    // contenedor pa scroll + scrollbar
     m_listContainer = CCNode::create();
     m_listContainer->setID("list-container"_spr);
     m_listContainer->setContentSize({listW, listH});
@@ -171,7 +157,6 @@ bool VerificationCenterLayer::init() {
     m_scrollbar->setContentSize({8.f, listH});
     m_listContainer->addChild(m_scrollbar, 10);
 
-    // panel derecho: preview
     float previewX = listX + listW + 10.f;
     float previewW = winSize.width - previewX - 18.f;
     float previewH = listH;
@@ -188,7 +173,6 @@ bool VerificationCenterLayer::init() {
     m_previewPanel->setPosition({previewX, previewY});
     this->addChild(m_previewPanel, 1);
 
-    // borde preview
     m_previewBorder = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png");
     if (m_previewBorder) {
         static_cast<CCScale9Sprite*>(m_previewBorder)->setContentSize({previewW + 4.f, previewH + 4.f});
@@ -197,7 +181,6 @@ bool VerificationCenterLayer::init() {
         this->addChild(m_previewBorder, 2);
     }
 
-    // label "selecciona un item"
     m_previewLabel = CCLabelBMFont::create(
         Localization::get().getString("queue.select_item").c_str(), "bigFont.fnt");
     if (std::string(m_previewLabel->getString()).empty()) {
@@ -208,7 +191,6 @@ bool VerificationCenterLayer::init() {
     m_previewLabel->setPosition({previewW / 2, previewH / 2});
     m_previewPanel->addChild(m_previewLabel, 5);
 
-    // suggestion navigation arrows
     m_previewNavMenu = CCMenu::create();
     m_previewNavMenu->setPosition({0, 0});
     m_previewNavMenu->setContentSize({previewW, previewH});
@@ -252,7 +234,6 @@ bool VerificationCenterLayer::init() {
     m_suggestionCountLabel->setVisible(false);
     m_previewPanel->addChild(m_suggestionCountLabel, 25);
 
-    // btn volver
     auto backMenu = CCMenu::create();
     backMenu->setID("back-menu"_spr);
     auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
@@ -264,7 +245,6 @@ bool VerificationCenterLayer::init() {
     backMenu->setPosition({winSize.width / 2, winSize.height / 2});
     this->addChild(backMenu, 5);
 
-    // filter toggle
     {
         auto filterMenu = CCMenu::create();
         filterMenu->setPosition({0, 0});
@@ -276,7 +256,6 @@ bool VerificationCenterLayer::init() {
         filterBtn->setPosition({listX + 38.f, listY - 12.f});
         filterMenu->addChild(filterBtn);
 
-        // manual refresh button
         auto refreshSpr = ButtonSprite::create("Refresh", 70, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.5f);
         refreshSpr->setScale(0.6f);
         m_refreshBtn = CCMenuItemSpriteExtra::create(refreshSpr, this,
@@ -288,12 +267,9 @@ bool VerificationCenterLayer::init() {
         this->addChild(filterMenu, 5);
     }
 
-    // cargar primera tab
     switchTo(PendingCategory::Verify);
     return true;
 }
-
-// navegacion
 
 void VerificationCenterLayer::onExit() {
     this->unschedule(schedule_selector(VerificationCenterLayer::checkLevelDownloaded));
@@ -311,8 +287,6 @@ void VerificationCenterLayer::keyBackClicked() {
     onBack(nullptr);
 }
 
-// tabs
-
 void VerificationCenterLayer::onTabVerify(CCObject*)    { switchTo(PendingCategory::Verify); }
 void VerificationCenterLayer::onTabUpdate(CCObject*)    { switchTo(PendingCategory::Update); }
 void VerificationCenterLayer::onTabReport(CCObject*)    { switchTo(PendingCategory::Report); }
@@ -324,7 +298,6 @@ void VerificationCenterLayer::switchTo(PendingCategory cat) {
     m_selectedIndex = -1;
     clearPreview();
 
-    // resaltar tab activa
     if (m_tabsMenu) {
         for (auto* n : CCArrayExt<CCNode*>(m_tabsMenu->getChildren())) {
             auto* it = static_cast<CCMenuItemSpriteExtra*>(n);
@@ -333,7 +306,6 @@ void VerificationCenterLayer::switchTo(PendingCategory cat) {
         }
     }
 
-    // loading
     auto content = m_scrollLayer->m_contentLayer;
     content->removeAllChildren();
     auto loadLbl = CCLabelBMFont::create("Loading...", "goldFont.fnt");
@@ -343,7 +315,6 @@ void VerificationCenterLayer::switchTo(PendingCategory cat) {
     loadLbl->setPosition(scrollSize / 2);
     content->addChild(loadLbl);
 
-    // sync server
     WeakRef<VerificationCenterLayer> self = this;
     ThumbnailAPI::get().syncVerificationQueue(cat, [self, cat](bool success, std::vector<PendingItem> const& items) {
         auto layer = self.lock();
@@ -362,8 +333,6 @@ void VerificationCenterLayer::switchTo(PendingCategory cat) {
     });
 }
 
-// lista
-
 void VerificationCenterLayer::rebuildList() {
     if (!m_scrollLayer) return;
     auto content = m_scrollLayer->m_contentLayer;
@@ -374,7 +343,6 @@ void VerificationCenterLayer::rebuildList() {
         float rowH = 46.f;
         float listW = scrollSize.width;
 
-        // username pa reclamo
         std::string currentUsername;
         if (auto gm = GameManager::get()) {
             currentUsername = gm->m_playerName;
@@ -408,21 +376,18 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
     row->setContentSize({width, 42.f});
     row->setAnchorPoint({0, 0});
 
-    // fondo alterno
     auto rowBg = paimon::SpriteHelper::createColorPanel(
         width - 4.f, 40.f,
         index % 2 == 0 ? ccColor3B{30, 30, 50} : ccColor3B{20, 20, 35}, 100);
     rowBg->setPosition({2.f, 21.f - 20.f});
-    rowBg->setTag(1000 + index); // pa highlight
+    rowBg->setTag(1000 + index);
     row->addChild(rowBg, -1);
 
-    // username
     std::string currentUsername;
     if (auto gm = GameManager::get()) currentUsername = gm->m_playerName;
     bool isClaimed = !item.claimedBy.empty();
     bool claimedByMe = isClaimed && (item.claimedBy == currentUsername);
 
-    // etiqueta ID
     bool isUserReport = (m_current == PendingCategory::Report && item.type == "user");
     std::string idText;
     if (isUserReport) {
@@ -440,7 +405,6 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
     if (isUserReport) idLbl->setColor({255, 120, 120});
     row->addChild(idLbl);
 
-    // suggestion count badge
     if (item.suggestions.size() > 1) {
         auto countLbl = CCLabelBMFont::create(
             fmt::format("[{}]", item.suggestions.size()).c_str(), "bigFont.fnt");
@@ -451,7 +415,6 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         row->addChild(countLbl);
     }
 
-    // submitter
     if (!item.submittedBy.empty()) {
         auto subLbl = CCLabelBMFont::create(
             fmt::format("by {}", item.submittedBy).c_str(), "chatFont.fnt");
@@ -462,7 +425,6 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         row->addChild(subLbl);
     }
 
-    // claim status
     if (isClaimed) {
         std::string claimText = claimedByMe
             ? Localization::get().getString("queue.claimed_by_you")
@@ -475,7 +437,6 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         row->addChild(claimLbl);
     }
 
-    // menu botones derecha
     auto btnMenu = CCMenu::create();
     btnMenu->setPosition({0, 0});
     btnMenu->setContentSize(row->getContentSize());
@@ -496,7 +457,6 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
     float btnY = 21.f;
     float btnGap = 30.f;
 
-    // rechazar / banear
     if (isUserReport) {
         auto spr = ButtonSprite::create("Ban", 32, true, "bigFont.fnt", "GJ_button_06.png", 22.f, 0.5f);
         spr->setScale(0.55f);
@@ -528,7 +488,6 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         btnX -= btnGap;
     }
 
-    // aceptar (no en reportes)
     if (m_current != PendingCategory::Report) {
         auto spr = ButtonSprite::create("OK", 22, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.5f);
         spr->setScale(0.55f);
@@ -540,7 +499,6 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         btnX -= btnGap;
     }
 
-    // ver reporte
     if (m_current == PendingCategory::Report) {
         auto spr = ButtonSprite::create("?", 22, true, "bigFont.fnt", "GJ_button_05.png", 22.f, 0.5f);
         spr->setScale(0.55f);
@@ -553,7 +511,6 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         btnX -= btnGap;
     }
 
-    // reclamar
     {
         char const* claimImg = claimedByMe ? "GJ_button_02.png" : "GJ_button_04.png";
         auto spr = ButtonSprite::create("C", 22, true, "bigFont.fnt", claimImg, 22.f, 0.5f);
@@ -573,10 +530,8 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
 
     row->addChild(btnMenu, 5);
 
-    // click en la fila -> seleccionar y preview
-    // usamos un boton invisible que cubre el area izquierda
     auto selectSpr = CCSprite::create();
-    selectSpr->setContentSize({btnX - 4.f, 40.f}); // area a la izquierda de los botones
+    selectSpr->setContentSize({btnX - 4.f, 40.f});
     selectSpr->setOpacity(0);
     auto selectBtn = CCMenuItemSpriteExtra::create(selectSpr, this,
         menu_selector(VerificationCenterLayer::onSelectItem));
@@ -612,8 +567,6 @@ void VerificationCenterLayer::highlightRow(int index) {
     }
 }
 
-// seleccion y preview
-
 void VerificationCenterLayer::onSelectItem(CCObject* sender) {
     int index = static_cast<CCNode*>(sender)->getTag();
     if (index < 0 || index >= static_cast<int>(m_items.size())) return;
@@ -625,7 +578,6 @@ void VerificationCenterLayer::onSelectItem(CCObject* sender) {
 
 void VerificationCenterLayer::clearPreview() {
     if (!m_previewPanel) return;
-    // quitar sprite viejo
     if (m_previewSprite) {
         m_previewSprite->removeFromParent();
         m_previewSprite = nullptr;
@@ -638,11 +590,9 @@ void VerificationCenterLayer::clearPreview() {
         m_previewSpinner->dismiss();
         m_previewSpinner = nullptr;
     }
-    // hide navigation
     if (m_prevArrowBtn) m_prevArrowBtn->setVisible(false);
     if (m_nextArrowBtn) m_nextArrowBtn->setVisible(false);
     if (m_suggestionCountLabel) m_suggestionCountLabel->setVisible(false);
-    // restaurar label
     if (m_previewLabel) {
         m_previewLabel->setVisible(true);
     }
@@ -694,7 +644,6 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
 
     auto panelSize = m_previewPanel->getContentSize();
 
-    // spinner cargando
     m_previewSpinner = PaimonLoadingOverlay::create("Loading...", 40.f);
     m_previewSpinner->showLocal(m_previewPanel, 10);
 
@@ -702,7 +651,6 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
     WeakRef<VerificationCenterLayer> self = this;
     int savedIndex = index;
 
-    // callback que recibe bytes crudos — soporta GIF animado + cualquier otro formato
     auto onRawLoaded = [self, savedIndex](bool success, std::vector<uint8_t> const& data, int, int) {
         auto layer = self.lock();
         if (!layer) return;
@@ -725,7 +673,6 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
         float maxW = panelSize.width - 16.f;
         float maxH = panelSize.height - 16.f;
 
-        // GIF: usar AnimatedGIFSprite para preview animado
         if (ThumbnailTransportClient::isGIFData(data)) {
             auto* gifSpr = AnimatedGIFSprite::create(data.data(), data.size());
             if (gifSpr) {
@@ -738,10 +685,8 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
                 if (layer->m_previewLabel) layer->m_previewLabel->setVisible(false);
                 return;
             }
-            // fallback: decode first frame as static
         }
 
-        // PNG/JPG/WebP (or GIF fallback): static texture
         auto* tex = ThumbnailTransportClient::bytesToTexture(data);
         if (tex) {
             layer->setPreviewTexture(tex);
@@ -753,7 +698,6 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
         }
     };
 
-    // helper for texture-based callbacks (wraps to raw callback via download)
     auto onLoaded = [self, savedIndex](bool success, CCTexture2D* tex) {
         auto layer = self.lock();
         if (!layer) return;
@@ -774,7 +718,6 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
         }
     };
 
-    // descargar segun categoria — raw bytes cuando posible para GIF animado
     auto const& item = m_items[index];
     switch (m_current) {
     case PendingCategory::Verify: {
@@ -816,8 +759,6 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
 
     updateNavigationArrows();
 }
-
-// acciones
 
 void VerificationCenterLayer::onViewBans(CCObject*) {
     if (auto popup = BanListPopup::create()) popup->show();
@@ -891,11 +832,9 @@ void VerificationCenterLayer::onAccept(CCObject* sender) {
     int lvl = static_cast<CCNode*>(sender)->getTag();
 
     std::string targetFilename;
-    // find the item matching this levelID
     for (auto const& it : m_items) {
         if (it.levelID == lvl) {
             int sugIdx = 0;
-            // if this item is selected, use the current suggestion index
             if (m_selectedIndex >= 0 && m_selectedIndex < (int)m_items.size()
                 && m_items[m_selectedIndex].levelID == lvl) {
                 sugIdx = m_currentSuggestionIndex;
@@ -956,7 +895,6 @@ void VerificationCenterLayer::onReject(CCObject* sender) {
     std::string username;
     if (auto gm = GameManager::get()) username = gm->m_playerName;
 
-    // Determine if this is a user report
     std::string itemType;
     for (auto const& it : m_items) {
         if (it.levelID == lvl && it.type == "user") { itemType = "user"; break; }
@@ -1009,7 +947,6 @@ void VerificationCenterLayer::onClaimLevel(CCObject* sender) {
         return;
     }
 
-    // Determine if this is a user report
     std::string itemType;
     for (auto const& it : m_items) {
         if (it.levelID == lvl && it.type == "user") { itemType = "user"; break; }
@@ -1056,16 +993,13 @@ void VerificationCenterLayer::onClaimLevel(CCObject* sender) {
 void VerificationCenterLayer::onViewReport(CCObject* sender) {
     int lvl = static_cast<CCNode*>(sender)->getTag();
 
-    // Find the item
     for (auto const& it : m_items) {
         if (it.levelID == lvl) {
-            // User report with multiple entries
             if (it.type == "user" && !it.reports.empty()) {
                 auto popup = UserReportsPopup::create(it.reportedUsername, it.reports);
                 if (popup) popup->show();
                 return;
             }
-            // Regular level report
             std::string note = it.note;
             if (note.empty()) note = "No details provided";
             FLAlertLayer::create(
@@ -1080,7 +1014,6 @@ void VerificationCenterLayer::onViewReport(CCObject* sender) {
 void VerificationCenterLayer::onBanUser(CCObject* sender) {
     int accountID = static_cast<CCNode*>(sender)->getTag();
 
-    // Find the reported username
     std::string reportedUsername;
     for (auto const& it : m_items) {
         if (it.levelID == accountID && it.type == "user") {
@@ -1093,7 +1026,6 @@ void VerificationCenterLayer::onBanUser(CCObject* sender) {
         return;
     }
 
-    // Confirmation popup
     WeakRef<VerificationCenterLayer> self = this;
     int capturedAccountID = accountID;
     std::string capturedUsername = reportedUsername;
@@ -1181,8 +1113,6 @@ void VerificationCenterLayer::onViewProfileBackground(CCObject* sender) {
     });
 }
 
-// suggestion navigation
-
 void VerificationCenterLayer::onPreviewClick(CCObject*) {
     if (m_selectedIndex < 0 || m_selectedIndex >= (int)m_items.size()) return;
     auto& item = m_items[m_selectedIndex];
@@ -1248,8 +1178,6 @@ void VerificationCenterLayer::updateNavigationArrows() {
 void VerificationCenterLayer::loadCurrentSuggestionPreview() {
     if (m_selectedIndex >= 0) showPreviewForItem(m_selectedIndex);
 }
-
-// filter + auto-refresh
 
 void VerificationCenterLayer::onToggleFilter(CCObject* sender) {
     m_filterUnclaimed = !m_filterUnclaimed;

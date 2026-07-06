@@ -1,12 +1,5 @@
 ﻿#pragma once
 
-// MenuMusicPlaylistsPopup — administrador de playlists.
-// Dos modos:
-//   * Grid de playlists (default): card por playlist con nombre + count
-//     + 3 acciones (Activate, Rename, Delete).
-//   * Detalle de playlist: lista de tracks con drag-off rapido. Hay un
-//     back button para volver al grid.
-
 #include <Geode/Geode.hpp>
 #include <string>
 

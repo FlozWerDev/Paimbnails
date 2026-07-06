@@ -34,59 +34,47 @@ public:
         return instance;
     }
 
-    // main API functions
-    
     void getThumbnails(int levelId, ThumbnailListCallback callback);
 
     void getThumbnailInfo(int levelId, ActionCallback callback);
 
     std::string getThumbnailURL(int levelId);
 
-    void uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
+    void uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta = "");
 
-    // upload a GIF thumbnail (mod/admin only)
-    void uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
+    void uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback, std::string const& levelMeta = ""); // mod/admin only
 
-    // upload an MP4 video thumbnail (mod/admin only)
-    void uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback);
+    void uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback, std::string const& levelMeta = ""); // mod/admin only
 
-    // upload a suggestion (non-moderator) to /suggestions
-    void uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
-    // upload an update proposal (non-moderator) to /updates
-    void uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
+    void uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta = ""); // non-moderator -> /suggestions
+    void uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta = ""); // non-moderator -> /updates
     void uploadProfile(int accountID, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
     void uploadProfileGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
-    // upload a profile MP4 video by accountID (mod/admin)
-    void uploadProfileVideo(int accountID, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback);
+    void uploadProfileVideo(int accountID, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback); // mod/admin
     void downloadProfile(int accountID, std::string const& username, DownloadCallback callback);
-    // batch check: which accounts have a profile + configs
+    // which accounts have a profile + configs
     using BatchCheckCallback = ProfileImageService::BatchCheckCallback;
     void batchCheckProfiles(std::vector<int> const& accountIDs, BatchCheckCallback callback);
 
-    // upload a profile picture (profileimg) by accountID
+    // profileimg = avatar, distinct from the profile background above
     void uploadProfileImg(int accountID, std::vector<uint8_t> const& imgData, std::string const& username, std::string const& contentType, UploadCallback callback);
-    // upload a profile picture GIF (profileimg) by accountID
     void uploadProfileImgGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
-    // download a profile picture (profileimg) by accountID
     void downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf = false);
 
     void downloadFromUrl(std::string const& url, DownloadCallback callback);
-    // download only the binary image data from a URL
-    void downloadFromUrlData(std::string const& url, DownloadDataCallback callback);
+    void downloadFromUrlData(std::string const& url, DownloadDataCallback callback); // raw bytes, not a texture
 
 
     
     void uploadProfileConfig(int accountID, ProfileConfig const& config, ActionCallback callback);
     void downloadProfileConfig(int accountID, geode::CopyableFunction<void(bool success, ProfileConfig const& config)> callback);
 
-    // download a suggestion from /suggestions
     void downloadSuggestion(int levelId, DownloadCallback callback);
     void downloadSuggestionImage(std::string const& filename, DownloadCallback callback);
-    // download an update from /updates
     void downloadUpdate(int levelId, DownloadCallback callback);
-    // download the reported one (server's current thumbnail)
+    // server's current (reported) thumbnail
     void downloadReported(int levelId, DownloadCallback callback);
-    // download a pending profile background (for moderators in the verification center)
+    // pending profile background, for the moderator verification center
     void downloadPendingProfile(int accountID, DownloadCallback callback);
 
 
@@ -99,7 +87,7 @@ public:
     void checkExists(int levelId, ExistsCallback callback);
     
     void checkModerator(std::string const& username, ModeratorCallback callback);
-    // "safe" moderator check requiring accountID > 0
+    // moderator check requiring accountID > 0
     void checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback);
     
     void checkUserStatus(std::string const& username, ModeratorCallback callback);
@@ -129,10 +117,8 @@ public:
     void deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username, int accountID, ActionCallback callback);
     void reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, ActionCallback callback);
     
-    // configuration
     void setServerEnabled(bool enabled);
 
-    // helper to convert data to CCTexture2D
     cocos2d::CCTexture2D* webpToTexture(std::vector<uint8_t> const& webpData);
 
 private:

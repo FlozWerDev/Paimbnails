@@ -98,7 +98,6 @@ bool ScoreCellSettingsPopup::initContents() {
         return s;
     };
 
-    // ── Preview bar ─────────────────────────────────────────────
     float previewW = 300.f, previewH = 32.f;
     float py = content.height - 56.f;
     m_previewContainer = CCNode::create();
@@ -112,7 +111,6 @@ bool ScoreCellSettingsPopup::initContents() {
     const float kLeft  = 24.f;
     const float kRight = content.width - 18.f;
 
-    // ── Gradient section ────────────────────────────────────────
     float y = py - 42.f;
     addSectionLabel("Icon Gradient", kLeft, y);
     addSmall("Enable", kRight - 24.f, y, 1.f);
@@ -133,7 +131,6 @@ bool ScoreCellSettingsPopup::initContents() {
     addSlider(gradientOpacity() / 255.f, menu_selector(ScoreCellSettingsPopup::onOpacity), y);
     m_opacityLabel = addSmall("", kRight, y, 1.f);
 
-    // ── Hover section ───────────────────────────────────────────
     y -= 38.f;
     addSectionLabel("Hover Animation", kLeft, y);
     addSmall("Enable", kRight - 24.f, y, 1.f);
@@ -148,13 +145,11 @@ bool ScoreCellSettingsPopup::initContents() {
     addSlider(hoverIntensity(), menu_selector(ScoreCellSettingsPopup::onIntensity), y);
     m_intensityLabel = addSmall("", kRight, y, 1.f);
 
-    // ── Entrance section ────────────────────────────────────────
     y -= 38.f;
     addSectionLabel("Entrance", kLeft, y);
     addSmall("Type:", cx - 6.f, y);
     m_entranceBtnSprite = makeCycle(entranceType(), menu_selector(ScoreCellSettingsPopup::onCycleEntrance), cx + 110.f, y);
 
-    // ── Done + Info buttons ─────────────────────────────────────
     auto doneSpr = ButtonSprite::create("Done", "bigFont.fnt", "GJ_button_01.png", 0.8f);
     auto doneBtn = CCMenuItemSpriteExtra::create(doneSpr, this, menu_selector(ScoreCellSettingsPopup::onClose));
     doneBtn->setPosition({cx, 26.f});
@@ -197,7 +192,6 @@ void ScoreCellSettingsPopup::rebuildPreview() {
 
     auto sz = m_previewContainer->getContentSize();
 
-    // Dark backing so gradient opacity is visible.
     auto backing = paimon::SpriteHelper::createColorPanel(sz.width, sz.height, {12, 12, 16}, 255, 3.f);
     if (backing) {
         backing->setAnchorPoint({0.f, 0.f});
@@ -229,7 +223,6 @@ void ScoreCellSettingsPopup::rebuildPreview() {
         grad->setEffect(gradientEffect(), gradientSpeed());
     }
 
-    // Hint label when gradient disabled.
     if (!gradientEnabled()) {
         auto hint = CCLabelBMFont::create("gradient off", "bigFont.fnt");
         hint->setScale(0.3f);
@@ -307,4 +300,4 @@ void ScoreCellSettingsPopup::onClose(CCObject* sender) {
     if (cb) cb();
 }
 
-} // namespace paimon::scorecell
+}

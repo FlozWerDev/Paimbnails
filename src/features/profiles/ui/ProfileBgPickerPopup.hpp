@@ -1,16 +1,6 @@
 ﻿#pragma once
 #include <Geode/Geode.hpp>
 
-// ProfileBgPickerPopup
-// Chooser que ofrece varias formas de configurar el fondo de perfil:
-//   1. Subir media (imagen / GIF / video) — flujo existente.
-//   2. Degradado basado en los colores de los iconos del jugador.
-//   3. Audio del video — usa el audio del video del fondo como musica de
-//      perfil y borra cualquier musica configurada.
-//   4. Restablecer al fondo por defecto.
-//
-// El popup no realiza la accion por si mismo: dispara callbacks para que
-// ProfilePage controle la logica de subida / configuracion / borrado.
 class ProfileBgPickerPopup : public geode::Popup {
 public:
     using SimpleCallback = geode::CopyableFunction<void()>;

@@ -3,7 +3,8 @@
 
 namespace paimon::smoothscroll {
 
-// Config popup for smooth-scroll: toggle, sensitivity, smoothness.
+// Popup de configuracion de smooth-scroll, montado sobre PaiConfigKit:
+// tarjetas por seccion, descripciones y valores siempre visibles.
 class SmoothScrollConfigPopup : public geode::Popup {
 public:
     static SmoothScrollConfigPopup* create();
@@ -11,18 +12,10 @@ public:
 protected:
     bool init() override;
 
-    Slider* m_sensitivitySlider = nullptr;
-    cocos2d::CCLabelBMFont* m_sensitivityLabel = nullptr;
-    Slider* m_smoothnessSlider = nullptr;
-    cocos2d::CCLabelBMFont* m_smoothnessLabel = nullptr;
-    CCMenuItemToggler* m_enableToggle = nullptr;
+    // Reconstruye el contenido scrolleable (tras un reset, por ejemplo).
+    void rebuild();
 
-    void onEnableToggled(cocos2d::CCObject*);
-    void onSensitivityChanged(cocos2d::CCObject*);
-    void onSmoothnessChanged(cocos2d::CCObject*);
-    void onReset(cocos2d::CCObject*);
-
-    void refreshLabels();
+    geode::ScrollLayer* m_scroll = nullptr;
 };
 
 } // namespace paimon::smoothscroll

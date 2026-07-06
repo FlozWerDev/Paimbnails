@@ -136,21 +136,18 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
     if (!card) return nullptr;
     card->setContentSize({kCardW, kCardH});
 
-    // Background panel.
     if (auto* bg = CCScale9Sprite::create("GJ_square01.png")) {
         bg->setContentSize({kCardW, kCardH});
         bg->setColor({46, 46, 54});
         card->addChildAtPosition(bg, Anchor::Center);
     }
 
-    // Pack name (primary line).
     if (auto* nameLbl = CCLabelBMFont::create(name.empty() ? "(unnamed)" : name.c_str(), "bigFont.fnt")) {
         nameLbl->setScale(0.5f);
         nameLbl->limitLabelWidth(kCardW - 58.f, 0.5f, 0.25f);
         card->addChildAtPosition(nameLbl, Anchor::Top, {18.f, -16.f});
     }
 
-    // Relative time + build status, colour-coded (green = built, grey = draft).
     if (auto* metaLbl = CCLabelBMFont::create(
             (formatRelativeTime(modifiedAt) + (hasBuiltOnce ? "   Built" : "   Draft")).c_str(),
             "bigFont.fnt")) {
@@ -171,29 +168,24 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
         previewHost->addChildAtPosition(placeholder, Anchor::Center);
     }
 
-    // Action buttons. Add the items to the menu first (this gives the menu an
-    // AnchorLayout and positions items relative to its card-sized box), then
-    // drop the whole menu onto the card centred via addChildAtPosition. Using
-    // addChildAtPosition for the menu too is important: CCMenu defaults to
-    // ignoreAnchorPointForPosition, and AnchorLayout flips it to false — so a
-    // raw addChild + setPosition(0,0) would centre the menu on the card's
-    // corner and fling the buttons outside.
+    // CCMenu defaults to ignoreAnchorPointForPosition and AnchorLayout flips
+    // it to false, so add items first then place the menu via
+    // addChildAtPosition — a raw addChild + setPosition(0,0) would centre the
+    // menu on the card corner and fling the buttons outside.
     auto* menu = CCMenu::create();
     if (!menu) return card;
     menu->setContentSize({kCardW, kCardH});
 
-    // Primary action: Apply (prominent).
-    if (auto* applySpr = ButtonSprite::create("Apply", "goldFont.fnt", "GJ_button_01.png", 0.6f)) {
+    if (auto* applySpr = ButtonSprite::create("Apply", "goldFont.fnt", "GJ_button_01.png", 0.45f)) {
         if (auto* applyBtn = CCMenuItemExt::createSpriteExtra(applySpr,
                 [this, id](CCMenuItemSpriteExtra*) { if (m_onApply) m_onApply(id); })) {
             menu->addChildAtPosition(applyBtn, Anchor::Bottom, {0.f, 48.f});
         }
     }
 
-    // Secondary actions: Edit + Delete.
     auto makeMini = [&](char const* label, char const* sprite,
                         std::function<void()> action) -> CCMenuItemSpriteExtra* {
-        auto* spr = ButtonSprite::create(label, "bigFont.fnt", sprite, 0.5f);
+        auto* spr = ButtonSprite::create(label, "bigFont.fnt", sprite, 0.38f);
         if (!spr) return nullptr;
         return CCMenuItemExt::createSpriteExtra(spr,
             [action = std::move(action)](CCMenuItemSpriteExtra*) { if (action) action(); });
@@ -237,6 +229,12 @@ void SlotsGridView::requestThumbnails(
             options.colors.glow = project.colorGlow;
             options.brightness = project.brightness;
             options.alternativeGlowOverlay = project.alternativeGlowOverlay;
+            options.maskSoftness     = project.maskSoftness;
+            options.clusterPrecision = project.clusterPrecision;
+            options.edgeCleanup      = project.edgeCleanup;
+            options.outlineProtect   = project.outlineProtect;
+            options.saturation       = project.saturation;
+            options.contrast         = project.contrast;
             auto tinted = SpritePreviewRenderer::renderTinted(frame.pixels, options);
             auto image = std::make_shared<ImageBuffer>(
                 SpritesheetReader::composeLogicalFrame(tinted, frame.info));
@@ -275,8 +273,6 @@ CCNode* SlotsGridView::makeNewPackCard() {
     if (!card) return nullptr;
     card->setContentSize({kCardW, kCardH});
 
-    // The whole tile is one button: the background sprite IS the menu item,
-    // and the "+ New Pack" text sits on top (labels don't intercept touches).
     auto* menu = CCMenu::create();
     if (!menu) return card;
     menu->setContentSize({kCardW, kCardH});

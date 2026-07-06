@@ -19,6 +19,7 @@
 #include <fstream>
 #include <thread>
 #include <atomic>
+#include <unordered_map>
 
 #include "../../../utils/ThreadTracker.hpp"
 #include "../../../utils/Shaders.hpp"
@@ -32,6 +33,78 @@ namespace {
 
 std::atomic<uint32_t> g_layerBgSaveGeneration{0};
 std::atomic<bool> g_layerBgShutdown{false};
+
+// RAM cache for decoded custom-background textures. Every menu transition
+// calls loadTextureForConfig() on the main thread, and the "custom" branch
+// used to stb-decode the full image each time (30-150ms hitch for large PNGs)
+// and create a separate texture per stacked layer. Keyed by path + mtime +
+// size so edits to the file invalidate the entry. Heap-allocated and never
+// destroyed: releasing GL textures during static destruction (GL context
+// already gone) is UB — same rationale as PaiblurNode's shutdown guard.
+struct CustomBgCacheEntry {
+    geode::Ref<CCTexture2D> texture;
+    std::filesystem::file_time_type mtime{};
+    uintmax_t fileSize = 0;
+    uint64_t lastUse = 0;
+};
+
+// Main-thread only (loadTextureForConfig runs on the main thread).
+std::unordered_map<std::string, CustomBgCacheEntry>& customBgCache() {
+    static auto* s_cache = new std::unordered_map<std::string, CustomBgCacheEntry>();
+    return *s_cache;
+}
+
+uint64_t& customBgCacheUseCounter() {
+    static uint64_t s_counter = 0;
+    return s_counter;
+}
+
+CCTexture2D* customBgCacheGet(std::filesystem::path const& path) {
+    auto& cache = customBgCache();
+    auto it = cache.find(geode::utils::string::pathToString(path));
+    if (it == cache.end()) return nullptr;
+
+    std::error_code ec;
+    auto mtime = std::filesystem::last_write_time(path, ec);
+    if (ec) return nullptr;
+    auto size = std::filesystem::file_size(path, ec);
+    if (ec) return nullptr;
+
+    if (it->second.mtime != mtime || it->second.fileSize != size) {
+        cache.erase(it);
+        return nullptr;
+    }
+    it->second.lastUse = ++customBgCacheUseCounter();
+    return it->second.texture.data();
+}
+
+void customBgCachePut(std::filesystem::path const& path, CCTexture2D* tex) {
+    if (!tex) return;
+    std::error_code ec;
+    auto mtime = std::filesystem::last_write_time(path, ec);
+    if (ec) return;
+    auto size = std::filesystem::file_size(path, ec);
+    if (ec) return;
+
+    auto& cache = customBgCache();
+    // Small cap: different layers can use different custom backgrounds, but a
+    // handful covers real usage; evict least-recently-used beyond that.
+    constexpr size_t kMaxEntries = 4;
+    while (cache.size() >= kMaxEntries) {
+        auto oldest = cache.begin();
+        for (auto it = cache.begin(); it != cache.end(); ++it) {
+            if (it->second.lastUse < oldest->second.lastUse) oldest = it;
+        }
+        cache.erase(oldest);
+    }
+
+    CustomBgCacheEntry entry;
+    entry.texture = tex;
+    entry.mtime = mtime;
+    entry.fileSize = size;
+    entry.lastUse = ++customBgCacheUseCounter();
+    cache.emplace(geode::utils::string::pathToString(path), std::move(entry));
+}
 
 // Fullscreen black overlay (alpha = darkIntensity*200) above content, zOrder 1.
 // Shared by the image / gif / procedural / video paths.
@@ -866,9 +939,17 @@ CCTexture2D* LayerBackgroundManager::loadTextureForConfig(LayerBgConfig const& c
             for (auto& c : ext) c = (char)std::tolower(c);
             if (ext == ".gif") return nullptr; // signal to use applyGifBg
 
+            // Cache hit: skip the full stb decode (30-150ms on large PNGs) that
+            // used to run on every menu transition, and share one texture across
+            // stacked layers instead of one copy each.
+            if (auto* cached = customBgCacheGet(normalizedPath)) {
+                return cached;
+            }
+
             auto img = ImageLoadHelper::loadStaticImage(normalizedPath, 32);
             if (img.success && img.texture) {
                 img.texture->autorelease();
+                customBgCachePut(normalizedPath, img.texture);
                 return img.texture;
             }
         }
@@ -901,7 +982,7 @@ CCTexture2D* LayerBackgroundManager::loadTextureForConfig(LayerBgConfig const& c
 
 // Apply static background
 void LayerBackgroundManager::applyStaticBg(CCLayer* layer, CCTexture2D* tex, LayerBgConfig const& cfg) {
-    log::info("[LayerBgMgr] applyStaticBg: dark={} shader={}", cfg.darkMode, cfg.shader);
+    log::debug("[LayerBgMgr] applyStaticBg: dark={} shader={}", cfg.darkMode, cfg.shader);
     clearAppliedBackground(layer, false);
     auto winSize = CCDirector::get()->getWinSize();
     auto winPixels = CCDirector::get()->getWinSizeInPixels();
@@ -1746,25 +1827,24 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
     // Android: keep setup on the main thread (more stable; decoder creation is cheap here).
     finishSharedSetup(container, LayerBackgroundManager::get().acquireSharedVideo(path, videoAudio));
 #else
-    // Create the VideoPlayer on a background thread (it may transcode). Capture a
-    // Ref<CCNode> to keep the container alive during the async work.
+    // Create the VideoPlayer on a background thread (it may transcode). The
+    // container is already owned by its parent layer for the whole async window;
+    // we hand a strong Ref to the main-thread continuation via std::move so that
+    // cocos2d's non-atomic retain()/release() (and any resulting ~CCNode) only
+    // ever run on the main thread — capturing a Ref by copy into the worker
+    // lambda would run those refcount ops on this worker thread and race the
+    // scene's own refcount ops on the same container.
     Ref<CCNode> containerRef = container;
     CCNode* containerRaw = container;
     auto containerAlive = registerContainerAliveFlag(container);
 
-    paimon::ThreadTracker::get().spawn([containerRef, containerRaw, containerAlive, path, videoAudio, finishSharedSetup]() {
+    paimon::ThreadTracker::get().spawn([containerRef, containerRaw, containerAlive, path, videoAudio, finishSharedSetup]() mutable {
         geode::utils::thread::setName("VideoBg Normalizer");
 
         // Acquire via shared cache; reuses a player another layer just created.
         auto shared = LayerBackgroundManager::get().acquireSharedVideo(path, videoAudio);
 
-        if (g_layerBgShutdown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
-            unregisterContainerAliveFlag(containerRaw, containerAlive);
-            return;
-        }
-
-        Loader::get()->queueInMainThread([containerRef, containerRaw, containerAlive, shared, path, finishSharedSetup]() {
-            auto* liveContainer = containerRef.data();
+        Loader::get()->queueInMainThread([containerRef = std::move(containerRef), containerRaw, containerAlive, shared, path, finishSharedSetup]() {
             if (g_layerBgShutdown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                 unregisterContainerAliveFlag(containerRaw, containerAlive);
                 return;
@@ -1778,7 +1858,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                 return;
             }
 
-            finishSharedSetup(liveContainer, shared);
+            finishSharedSetup(containerRef.data(), shared);
 
             // Clean up the alive flag; the container is fully set up now.
             unregisterContainerAliveFlag(containerRaw, containerAlive);

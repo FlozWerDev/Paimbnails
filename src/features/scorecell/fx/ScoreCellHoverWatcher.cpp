@@ -11,8 +11,8 @@ using namespace cocos2d;
 namespace paimon::scorecell {
 
 namespace {
-    constexpr int kHoverTag    = 0x48565200; // 'HVR\0'
-    constexpr int kEntranceTag = 0x454E5400; // 'ENT\0'
+    constexpr int kHoverTag    = 0x48565200;
+    constexpr int kEntranceTag = 0x454E5400;
 
     ccBlendFunc additiveBlend() {
         return ccBlendFunc{GL_SRC_ALPHA, GL_ONE};
@@ -57,7 +57,6 @@ void ScoreCellHoverWatcher::update(float) {
     auto* cellParent = cell->getParent();
     if (!cellParent) return;
 
-    // Cell bounding box in world (cocos) space, matching getMousePos().
     CCRect rect = cell->boundingBox();
     rect.origin = cellParent->convertToWorldSpace(rect.origin);
 
@@ -133,7 +132,7 @@ void ScoreCellHoverWatcher::ensureGlow() {
     if (m_glow && m_glow->getParent() == cell) return;
 
     auto cs = cell->getContentSize();
-    if (cs.width <= 1.f || cs.height <= 1.f) return; // retry on next hover
+    if (cs.width <= 1.f || cs.height <= 1.f) return;
 
     auto glow = CCLayerColor::create(ccc4(255, 255, 255, 0));
     if (!glow) return;
@@ -224,4 +223,4 @@ void applyEntrance(CCNode* node, std::string const& type,
     }
 }
 
-} // namespace paimon::scorecell
+}

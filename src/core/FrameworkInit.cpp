@@ -11,7 +11,6 @@ using namespace geode::prelude;
 
 namespace paimon {
 
-// Register the mod's features with their permission tiers.
 static void registerAllFeatures() {
     auto& reg = FeatureRegistry::get();
 
@@ -37,15 +36,13 @@ static void registerAllFeatures() {
     log::info("[PaimonFramework] Registered {} features", reg.featureCount());
 }
 
-// Security and validation hooks for uploads.
 static void registerDefaultHooks() {
     auto& hooks = HookInterceptor::get();
 
-    // Pre-upload: size validation
     hooks.addPreHook("upload", [](HookContext const& ctx) -> HookResult {
-        constexpr size_t MAX_PNG = 5 * 1024 * 1024;   // 5 MB
-        constexpr size_t MAX_GIF = 10 * 1024 * 1024;  // 10 MB
-        constexpr size_t MAX_MP4 = 25 * 1024 * 1024;  // 25 MB
+        constexpr size_t MAX_PNG = 5 * 1024 * 1024;
+        constexpr size_t MAX_GIF = 10 * 1024 * 1024;
+        constexpr size_t MAX_MP4 = 25 * 1024 * 1024;
 
         size_t limit = MAX_PNG;
         if (ctx.format == "gif") limit = MAX_GIF;
@@ -60,9 +57,7 @@ static void registerDefaultHooks() {
         return HookResult::allow();
     });
 
-    // Pre-upload: permission check
     hooks.addPreHook("upload", [](HookContext const& ctx) -> HookResult {
-        // GIF and MP4 require VIP/Mod/Admin
         if (ctx.format == "gif" || ctx.format == "mp4") {
             auto auth = PermissionPolicy::get().authorize(PermissionTier::Contributor);
             if (!auth) return HookResult::deny(auth.reason);
@@ -70,7 +65,6 @@ static void registerDefaultHooks() {
         return HookResult::allow();
     });
 
-    // Pre-upload: magic-byte validation
     hooks.addPreHook("validate", [](HookContext const& ctx) -> HookResult {
         if (!ctx.data || ctx.data->size() < 4) {
             return HookResult::deny("Datos vacios o insuficientes");
@@ -91,14 +85,12 @@ static void registerDefaultHooks() {
         return HookResult::allow();
     });
 
-    // Post-upload: publish event
     hooks.addPostHook("upload", [](HookContext const& ctx, bool success) {
         EventBus::get().publish(UploadCompletedEvent{
             ctx.levelID, ctx.format, ctx.username, success, {}
         });
     });
 
-    // Pre-security: basic per-session rate limit
     static std::atomic<int> s_uploadCount{0};
     hooks.addPreHook("security-check", [](HookContext const& ctx) -> HookResult {
         constexpr int MAX_UPLOADS_PER_SESSION = 50;
@@ -112,11 +104,9 @@ static void registerDefaultHooks() {
     log::info("[PaimonFramework] Default hooks registered (upload/validate/security-check)");
 }
 
-// Hooks for dynamic song playback.
 static void registerDynamicSongHooks() {
     auto& hooks = HookInterceptor::get();
 
-    // Pre-hook: deny dynamic playback if another audio owner has priority
     hooks.addPreHook("dynamic-play", [](HookContext const& ctx) -> HookResult {
         if (paimon::isVideoAudioInteropActive()) {
             return HookResult::deny("Video audio is active");
@@ -135,8 +125,6 @@ void initFramework() {
     registerDefaultHooks();
     registerDynamicSongHooks();
 
-    // Extended keybind system (mouse + scroll): global listeners that detect
-    // clicks/scroll and dispatch to mod settings. See src/utils/ExtendedKeybind.{hpp,cpp}.
     paimon::keybinds::initExtendedKeybindSystem();
 
     log::info("[PaimonFramework] Framework initialized");

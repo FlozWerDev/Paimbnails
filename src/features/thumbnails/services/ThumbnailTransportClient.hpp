@@ -11,10 +11,6 @@
 #include <unordered_map>
 #include <vector>
 
-/**
- * ThumbnailTransportClient — operaciones de subida/bajada/consulta de miniaturas.
- * Extraido de ThumbnailAPI para separar dominio 'thumbnails' de moderacion/profiles.
- */
 class ThumbnailTransportClient {
 public:
     using UploadCallback      = geode::CopyableFunction<void(bool success, std::string const& message)>;
@@ -34,40 +30,30 @@ public:
 
     void setServerEnabled(bool enabled) { m_serverEnabled = enabled; }
 
-    // lista miniaturas nivel
     void getThumbnails(int levelId, ThumbnailListCallback callback, bool forceRefresh = false);
     arc::Future<ThumbnailGalleryResult> fetchThumbnailsFuture(int levelId, bool forceRefresh = false);
-    // info completa JSON
     void getThumbnailInfo(int levelId, ActionCallback callback);
-    // URL directa
     std::string getThumbnailURL(int levelId);
-    // subir PNG
     void uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData,
-                         std::string const& username, UploadCallback callback);
-    // subir GIF (mod/admin)
+                         std::string const& username, UploadCallback callback,
+                         std::string const& levelMeta = "");
     void uploadGIF(int levelId, std::vector<uint8_t> const& gifData,
-                   std::string const& username, UploadCallback callback);
-    // subir video MP4 (mod/admin)
+                   std::string const& username, UploadCallback callback,
+                   std::string const& levelMeta = "");
     void uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data,
-                     std::string const& username, UploadCallback callback);
-    // descargar miniatura desde servidor
+                     std::string const& username, UploadCallback callback,
+                     std::string const& levelMeta = "");
     void downloadThumbnail(int levelId, DownloadCallback callback, bool isGif = false);
-    // verificar existencia
     void checkExists(int levelId, ExistsCallback callback);
-    // borrar miniatura (mod)
     void deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username, int accountID,
                          ActionCallback callback);
-    // reordenar miniaturas (admin)
     void reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, ActionCallback callback);
-    // votos
     void getRating(int levelId, std::string const& username,
                    std::string const& thumbnailId,
                    RatingCallback callback);
     void submitVote(int levelId, int stars, std::string const& username,
                     std::string const& thumbnailId, ActionCallback callback);
-    // obtener thumbnail (local -> server fallback)
     void getThumbnail(int levelId, DownloadCallback callback);
-    // descargar desde URL arbitraria
     void downloadFromUrl(std::string const& url, DownloadCallback callback);
     void downloadFromUrlData(std::string const& url, DownloadDataCallback callback);
     arc::Future<ThumbnailTextureResult> downloadFromUrlFuture(std::string url);
@@ -75,17 +61,13 @@ public:
     arc::Future<ThumbnailTextureResult> downloadThumbnailFuture(int levelId, bool isGif = false);
     arc::Future<ThumbnailTextureResult> getThumbnailFuture(int levelId);
     arc::Future<bool> checkExistsFuture(int levelId);
-    // top lists
     void getTopCreators(ActionCallback callback);
     void getTopThumbnails(ActionCallback callback);
     void getUserUploads(std::string const& username, ActionCallback callback);
     void invalidateGalleryMetadata(int levelId);
 
-    // True si la lista de galeria de este nivel ya esta en cache de sesion
-    // (evita list-batch redundante al scrollear con autocycle desactivado).
     bool hasGalleryMetadataCached(int levelId);
 
-    // utilidad compartida: datos binarios -> CCTexture2D (autorelease)
     // Soporta PNG, JPG, WebP, GIF, QOI, JPEG XL via ImagePlus; JPEG fallback via CCImage
     static cocos2d::CCTexture2D* webpToTexture(std::vector<uint8_t> const& data);
     static cocos2d::CCTexture2D* bytesToTexture(std::vector<uint8_t> const& data);
@@ -116,12 +98,8 @@ private:
     std::unordered_map<int, uint64_t> m_galleryGenerations;
     std::mutex m_galleryMutex;
 
-    // Batch coalescing de getThumbnails
-    // Cuando muchos LevelCells solicitan getThumbnails(levelId) al mismo
-    // tiempo (carga inicial de una página de niveles), agrupamos las
-    // peticiones en un único POST /api/thumbnails/list-batch en lugar de
-    // disparar una request por nivel. La ventana de coalescing es corta
-    // (50ms) para no introducir latencia perceptible.
+    // Batch coalescing of getThumbnails into a single /api/thumbnails/list-batch
+    // over a short window to avoid one request per level.
     static constexpr int BATCH_LIST_FLUSH_DELAY_MS = 50;
     static constexpr size_t BATCH_LIST_MAX_IDS = 40;
     std::vector<int> m_batchListPending;

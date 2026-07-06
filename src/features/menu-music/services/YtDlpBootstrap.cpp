@@ -21,14 +21,6 @@ YtDlpBootstrap& YtDlpBootstrap::get() {
     return instance;
 }
 
-// Ruta bundleada
-//
-// Se almacena bajo el saveDir del mod (data del mod gestionada por
-// Geode). Esto garantiza que si el usuario desinstala el mod y marca
-// "Delete data", el binario tambien se borra automaticamente junto
-// con el resto de datos. Ademas saveDir es escribible y persiste
-// entre updates del mod.
-
 std::filesystem::path YtDlpBootstrap::bundledPath() const {
 #ifdef GEODE_IS_WINDOWS
     constexpr const char* kName = "yt-dlp.exe";
@@ -50,8 +42,6 @@ void YtDlpBootstrap::uninstall() {
     std::filesystem::remove(bundledPath(), ec);
 }
 
-// URL de descarga
-
 std::string YtDlpBootstrap::releaseUrl() {
 #ifdef GEODE_IS_WINDOWS
     return "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
@@ -65,13 +55,10 @@ std::string YtDlpBootstrap::releaseUrl() {
 #endif
 }
 
-// Ensure installed
-
 void YtDlpBootstrap::ensureInstalled(
     BootstrapProgressCallback onProgress,
     BootstrapCompleteCallback onComplete
 ) {
-    // Fast path: ya instalado.
     if (exists()) {
         auto path = geode::utils::string::pathToString(bundledPath());
         if (onComplete) {
@@ -83,7 +70,6 @@ void YtDlpBootstrap::ensureInstalled(
         return;
     }
 
-    // Mobile: no soportado (yt-dlp requiere python).
     auto url = releaseUrl();
     if (url.empty()) {
         if (onComplete) {
@@ -97,7 +83,6 @@ void YtDlpBootstrap::ensureInstalled(
         return;
     }
 
-    // Evitar descargas concurrentes.
     bool expected = false;
     if (!m_downloading.compare_exchange_strong(expected, true)) {
         if (onComplete) {
@@ -109,12 +94,10 @@ void YtDlpBootstrap::ensureInstalled(
         return;
     }
 
-    // Preparar directorio destino.
     auto destPath = bundledPath();
     std::error_code ec;
     std::filesystem::create_directories(destPath.parent_path(), ec);
 
-    // Notificar inicio.
     if (onProgress) {
         Loader::get()->queueInMainThread([onProgress]() {
             if (paimon::isRuntimeShuttingDown()) return;
@@ -122,8 +105,6 @@ void YtDlpBootstrap::ensureInstalled(
         });
     }
 
-    // Compartir los callbacks entre closures (onProgress puede ser invocado
-    // varias veces, onComplete una sola).
     auto progressShared = std::make_shared<BootstrapProgressCallback>(std::move(onProgress));
     auto completeShared = std::make_shared<BootstrapCompleteCallback>(std::move(onComplete));
 
@@ -131,8 +112,8 @@ void YtDlpBootstrap::ensureInstalled(
         .timeout(std::chrono::minutes(5))
         .userAgent("Paimbnails-MenuMusic/1.0 (yt-dlp-bootstrap)");
 
-    // Progreso por bytes (WebProgress). Geode lo despacha en un worker
-    // thread, asi que re-encolamos en main thread antes de tocar UI.
+    // Geode despacha onProgress en un worker thread, asi que re-encolamos
+    // en main thread antes de tocar UI.
     req.onProgress([progressShared](web::WebProgress const& p) {
         if (!progressShared || !*progressShared) return;
         auto downloaded = static_cast<uint64_t>(p.downloaded());
@@ -190,7 +171,6 @@ void YtDlpBootstrap::ensureInstalled(
             }
 
 #ifndef GEODE_IS_WINDOWS
-            // POSIX: marcar como ejecutable.
             std::error_code permEc;
             std::filesystem::permissions(destPath,
                 std::filesystem::perms::owner_exec |

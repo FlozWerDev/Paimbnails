@@ -5,7 +5,6 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
-#include "../../../blur/BlurSystem.hpp"
 #include "../../../blur/PopupBlurService.hpp"
 #include "../../../layers/PaimonHubLayer.hpp"
 #include "../../../layers/PaiConfigLayer.hpp"
@@ -53,9 +52,7 @@ void QuickHubRadial::openRadial() {
     scene->addChild(radial, 99998);
     s_instance = radial;
 
-    // Aplicar el mismo blur dinamico que usan los popups del mod (respeta
-    // los settings del usuario: estilo gaussian/paimonblur, intensidad,
-    // oscuridad y fade-in).
+    // Aplicar el mismo blur Paiblur en tiempo real que usan los popups del mod.
     bool blurApplied = paimon::popupblur::captureAndApply(radial);
 
     // Fallback: si el blur esta deshabilitado en settings, aplicar un overlay

@@ -284,8 +284,7 @@ class $modify(PaimonGauntletLayer, GauntletLayer) {
             bg->setVisible(false);
         } else {
             // Fallback: first child = background
-            if (auto firstChild = this->getChildByType<CCNode>(0)) {
-                 firstChild->setVisible(false);
+            if (auto firstChild = this->getChildByType<CCNode>(0)) {                 firstChild->setVisible(false);
             }
         }
 
@@ -294,7 +293,6 @@ class $modify(PaimonGauntletLayer, GauntletLayer) {
         
         std::vector<int> ids;
         if (mapPack && mapPack->m_levels) {
-            // Extract IDs from m_levels
             for (auto* str : CCArrayExt<CCString*>(mapPack->m_levels)) {
                 if (str) {
                     ids.push_back(str->intValue());

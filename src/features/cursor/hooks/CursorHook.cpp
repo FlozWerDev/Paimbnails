@@ -6,10 +6,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// CursorTickerNode: dedicated CCNode that drives CursorManager::update()
-// every frame via scheduleUpdateForTarget. Mirrors PetTickerNode pattern.
-// Direct hook to CCScheduler::update is explicitly discouraged by Geode.
-
+// Avoids hooking CCScheduler::update directly, which Geode discourages.
 class CursorTickerNode : public CCNode {
 public:
     static CursorTickerNode* create() {

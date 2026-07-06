@@ -6,17 +6,17 @@
 namespace paimon::emotes {
 
 enum class EmoteType {
-    Static, // png, webp
+    Static,
     Gif
 };
 
 struct EmoteInfo {
-    std::string name;     // unique emote identifier (e.g. "paimon_happy")
-    std::string filename; // server filename (e.g. "paimon_happy.gif")
+    std::string name;
+    std::string filename;
     EmoteType type = EmoteType::Static;
-    std::string category; // server category (e.g. "reaction")
-    int size = 0;         // bytes
-    std::string url;      // full download URL
+    std::string category;
+    int size = 0;
+    std::string url;
 };
 
 struct EmotePage {

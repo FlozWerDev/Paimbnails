@@ -22,6 +22,7 @@
 #include "../features/moderation/services/PendingQueue.hpp"
 #include "../utils/Assets.hpp"
 #include "../managers/ThumbnailAPI.hpp"
+#include "../utils/LevelMetadata.hpp"
 #include "../utils/ImageConverter.hpp"
 #include "../utils/PaimonLoadingOverlay.hpp"
 #include "../utils/FileDialog.hpp"
@@ -258,6 +259,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             }
 
             btn->setID("thumbnail-capture-button"_spr);
+            btn->setRotation(-90.f);
             rightMenu->addChild(btn);
             rightMenu->updateLayout();
 
@@ -331,7 +333,6 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 }
             };
 
-            // try both menus
             rewireScreenshotInMenu(findButtonMenu("right-button-menu", true));
             rewireScreenshotInMenu(findButtonMenu("left-button-menu", false));
 
@@ -395,7 +396,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         // #endregion
         m_fields->m_captureInProgress = true;
 
-        // Show loading circle
+        // Show loading overlay
         showLoadingOverlay();
         // Guard rail: restore UI if the callback never returns
         this->scheduleOnce(schedule_selector(PaimonPauseLayer::captureSafetyRestore), 8.0f);
@@ -571,7 +572,6 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                     if (success && texture && rgbData) {
                         log::info("[PauseLayer] Capture successful: {}x{}", width, height);
 
-                        // show preview popup
                         auto popup = CapturePreviewPopup::create(
                             texture,
                             levelID,
@@ -587,7 +587,6 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
                                 log::info("[PauseLayer] Thumbnail accepted for level {}", lvlID);
 
-                                // Get the username for upload
                                 std::string username;
                                 int accountID = 0;
                                 auto* gm = GameManager::get();
@@ -619,6 +618,8 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                                             PaimonNotify::create(Localization::get().getString("capture.save_png_error").c_str(), NotificationIcon::Error)->show();
                                             return;
                                         }
+                                        std::string levelMeta;
+                                        if (auto* pl = PlayLayer::get()) levelMeta = paimon::collectLevelMetadata(pl->m_level);
                                         ThumbnailAPI::get().uploadThumbnail(lvlID, pngData, username, [lvlID, username](bool success, std::string const& msg) {
                                             handleUploadResult(success, msg, lvlID, username,
                                                 "capture.upload_success", "capture.upload_error");
@@ -627,7 +628,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                                             } else {
                                                 log::error("[PauseLayer] Upload failed: {}", msg);
                                             }
-                                        });
+                                        }, levelMeta);
                                     });
                             },
                             // Recapture callback
@@ -736,13 +737,15 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
             // Single upload — server handles mod check + routing (live vs pending)
             PaimonNotify::create(Localization::get().getString("pause.video_uploading").c_str(), NotificationIcon::Loading)->show();
+            std::string levelMeta;
+            if (auto* pl = PlayLayer::get()) levelMeta = paimon::collectLevelMetadata(pl->m_level);
             ThumbnailAPI::get().uploadVideo(levelID, mp4Data, username, [levelID, username](bool ok, std::string const& msg) {
                 handleUploadResult(ok, msg, levelID, username,
                     "pause.video_success", "pause.video_upload_error");
                 if (!ok) {
                     log::error("[PauseLayer] Video upload failed: {}", msg);
                 }
-            });
+            }, levelMeta);
             return;
         }
 
@@ -878,10 +881,12 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
                         // Single upload — server handles mod check + routing (live vs pending)
                         PaimonNotify::create(Localization::get().getString("pause.gif_uploading").c_str(), NotificationIcon::Loading)->show();
+                        std::string levelMeta;
+                        if (auto* pl = PlayLayer::get()) levelMeta = paimon::collectLevelMetadata(pl->m_level);
                         ThumbnailAPI::get().uploadGIF(lvlID, gifData, username, [lvlID, username](bool ok, std::string const& msg){
                             handleUploadResult(ok, msg, lvlID, username,
                                 "pause.gif_uploaded", "pause.gif_upload_error");
-                        });
+                        }, levelMeta);
                     }
                 );
 
@@ -1040,10 +1045,12 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                             PaimonNotify::create(Localization::get().getString("capture.save_png_error").c_str(), NotificationIcon::Error)->show();
                             return;
                         }
+                        std::string levelMeta;
+                        if (auto* pl = PlayLayer::get()) levelMeta = paimon::collectLevelMetadata(pl->m_level);
                         ThumbnailAPI::get().uploadThumbnail(lvlID, pngData, username, [lvlID, username](bool s, std::string const& msg){
                             handleUploadResult(s, msg, lvlID, username,
                                 "capture.upload_success", "capture.upload_error");
-                        });
+                        }, levelMeta);
                     });
             }
         );

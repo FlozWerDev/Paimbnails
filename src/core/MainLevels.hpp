@@ -1,7 +1,5 @@
 ﻿#pragma once
 
-// Official main levels (1-22) are prefetched at startup and preserved across cache clears.
-
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/string.hpp>
@@ -15,18 +13,14 @@
 
 namespace paimon {
 
-// Range of official GD levels (1 = Stereo Madness, 22 = The Tower / sub-zero etc).
 inline constexpr int kMainLevelMinID = 1;
 inline constexpr int kMainLevelMaxID = 22;
 
-// True if <levelID> is an official main level.
 inline bool isMainLevelID(int levelID) {
     return levelID >= kMainLevelMinID && levelID <= kMainLevelMaxID;
 }
 
-// True if <filename> is an official main-level thumbnail. Accepts only
-// "<id>.png" or "<id>.gif" with id in [1, 22]; the cache only stores main
-// levels under those names, so the check is exact.
+// Accepts only "<id>.png"/"<id>.gif" with id in [1, 22].
 inline bool isMainLevelCacheFile(std::filesystem::path const& filename) {
     auto ext = geode::utils::string::toLower(
         geode::utils::string::pathToString(filename.extension()));
@@ -65,7 +59,6 @@ inline std::pair<int, int> clearCachePreservingMainLevels(
         auto const path = entry.path();
         auto filename = geode::utils::string::pathToString(path.filename());
 
-        // 1) Keep protected subdirs (e.g. cache/gifs/).
         if (entry.is_directory(dummy)) {
             bool keep = false;
             for (auto const& kept : preservedSubdirs) {
@@ -80,13 +73,11 @@ inline std::pair<int, int> clearCachePreservingMainLevels(
             }
         }
 
-        // 2) Keep main-level thumbnails (1-22.png/.gif).
         if (entry.is_regular_file(dummy) && isMainLevelCacheFile(path.filename())) {
             preserved++;
             continue;
         }
 
-        // 3) Remove the rest.
         std::error_code rmEc;
         std::filesystem::remove_all(path, rmEc);
         if (rmEc) {
@@ -102,17 +93,14 @@ inline std::pair<int, int> clearCachePreservingMainLevels(
     return {preserved, removed};
 }
 
-// Guard to avoid redundant main-level prefetch requests.
 inline std::atomic<bool> g_mainLevelsPrefetched{false};
 
-// Returns true only for the first caller.
 inline bool tryClaimMainLevelsPrefetch() {
     bool expected = false;
     return g_mainLevelsPrefetched.compare_exchange_strong(expected, true);
 }
 
-// 14-day cache window for the main-level manifest. If all 22 thumbnails are on
-// disk and were validated within this window, no network request is made.
+// 14-day cache window for the main-level manifest.
 inline constexpr int64_t kMainLevelsCacheTTLSeconds = 14LL * 24 * 60 * 60;
 inline constexpr char const* kMainLevelsCachedAtKey = "main-levels-cached-at";
 
@@ -141,10 +129,10 @@ inline void markMainLevelsCached() {
 
 inline bool areMainLevelsFreshlyCached() {
     int64_t cachedAt = mainLevelsCachedAtEpoch();
-    if (cachedAt <= 0) return false;                 // never validated
+    if (cachedAt <= 0) return false;
     int64_t age = mainLevelsNowEpoch() - cachedAt;
-    if (age < 0 || age > kMainLevelsCacheTTLSeconds) return false; // expired / clock moved
-    return allMainLevelThumbnailsOnDisk();            // all present on disk
+    if (age < 0 || age > kMainLevelsCacheTTLSeconds) return false;
+    return allMainLevelThumbnailsOnDisk();
 }
 
 } // namespace paimon

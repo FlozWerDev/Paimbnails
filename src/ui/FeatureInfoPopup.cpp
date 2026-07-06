@@ -1,4 +1,5 @@
 ﻿#include "FeatureInfoPopup.hpp"
+#include "../utils/DynamicPopupRegistry.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../framework/ui/declarative/DeclarativeUI.hpp"
 
@@ -7,7 +8,7 @@ using namespace geode::prelude;
 
 namespace paimon::ui {
 
-// build a CCLabelBMFont via the declarative engine (top-left anchor).
+// builds a top-left-anchored CCLabelBMFont through the declarative engine
 static cocos2d::CCNode* decLabel(cocos2d::CCNode* parent, std::string const& text,
                                  char const* font, float scale,
                                  cocos2d::ccColor3B color, cocos2d::CCPoint pos) {
@@ -55,6 +56,7 @@ bool FeatureInfoPopup::init(
     std::vector<InfoSection> const& sections
 ) {
     if (!Popup::init(380.f, 260.f)) return false;
+    paimon::markDynamicPopup(this);
 
     this->setTitle(mainTitle.c_str());
     buildContent(mainTitle, sections);
@@ -75,10 +77,10 @@ void FeatureInfoPopup::buildContent(
     m_scroll->setPosition({scrollX, scrollY});
     m_mainLayer->addChild(m_scroll);
 
-    // compute total content height
-    float lineH = 16.f;    // body line height
-    float titleH = 24.f;   // section title height
-    float gapH = 12.f;     // gap between sections
+    // compute total content height up-front so the ScrollLayer can size itself
+    float lineH = 16.f;
+    float titleH = 24.f;
+    float gapH = 12.f;
     float padTop = 8.f;
 
     float contentH = padTop;
@@ -96,11 +98,10 @@ void FeatureInfoPopup::buildContent(
     float y = contentH - padTop;
 
     for (auto const& sec : sections) {
-        // section title (built by the declarative engine)
         decLabel(content, sec.title, "goldFont.fnt", 0.38f, sec.color, {8.f, y});
         y -= titleH;
 
-        // body: split into ~55-char lines for manual wrapping
+        // split into ~55-char lines for manual word wrapping
         std::string remaining = sec.body;
         while (!remaining.empty()) {
             std::string line;
@@ -116,7 +117,6 @@ void FeatureInfoPopup::buildContent(
                 remaining = remaining.substr(breakAt + 1);
             }
 
-            // body line (built by the declarative engine)
             decLabel(content, line, "chatFont.fnt", 0.52f, {210, 210, 220}, {12.f, y});
             y -= lineH;
         }

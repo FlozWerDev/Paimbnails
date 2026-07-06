@@ -54,7 +54,6 @@ protected:
     SortMode m_sortMode = SortMode::Recent;
     std::vector<CCMenuItemSpriteExtra*> m_sortBtns;
 
-    // Forum sub-tabs (Browse / Create)
     int m_forumSubTab = 0; // 0 = Browse, 1 = Create
     std::vector<CCMenuItemSpriteExtra*> m_forumSubTabBtns;
     cocos2d::CCNode* m_forumBrowseNode = nullptr;
@@ -64,7 +63,6 @@ protected:
     cocos2d::CCLabelBMFont* m_forumHeaderTitle = nullptr;
     cocos2d::CCLabelBMFont* m_forumHeaderSubtitle = nullptr;
 
-    // Inline create-post form
     geode::TextInput* m_createTitleInput = nullptr;
     geode::TextInput* m_createDescInput = nullptr;
     cocos2d::CCMenu* m_createTagMenu = nullptr;
@@ -145,7 +143,31 @@ protected:
     CCMenuItemSpriteExtra* makeBtn(char const* text, cocos2d::CCPoint pos,
         cocos2d::SEL_MenuHandler handler, cocos2d::CCNode* parent, float scale = 0.55f);
 
+    // ---- GD-style skin (alternative, guided hub UI) ----
+    bool m_gdMode = false;
+    int m_gdHomeState = 0;      // 0 = categories, 1 = category detail, 2 = search results
+    int m_gdCategoryIdx = 0;
+    cocos2d::CCNode* m_gdContent = nullptr;      // static visuals of the current state
+    cocos2d::CCMenu* m_gdContentMenu = nullptr;  // buttons of the current state
+    geode::ScrollLayer* m_gdScroll = nullptr;
+    cocos2d::CCLabelBMFont* m_gdHintLabel = nullptr;
+    cocos2d::CCNode* m_gdTourOverlay = nullptr;
+    int m_gdTourStep = 0;
+
+    void buildGDShell();
+    void gdBuildHome();
+    void gdClearContent();
+    void gdShowCategories(bool animate = true);
+    void gdShowCategory(int idx);
+    void gdShowSearchResults(std::string const& query);
+    void gdSetHint(std::string const& text);
+    void gdStartTour();
+    void gdShowTourStep(int step);
+    void gdEndTour();
+
 public:
+    void onToggleUIStyle(cocos2d::CCObject*);
+
     static PaimonHubLayer* create();
     static cocos2d::CCScene* scene();
 };

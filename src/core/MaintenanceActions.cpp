@@ -135,7 +135,6 @@ MaintenanceStats runMaintenanceCleanup() {
     purgeDirectoryTree(saveDir / "gif_cache", stats);
     purgeDirectoryTree(saveDir / "thumbnails" / "profiles", stats);
 
-    // also clean quality-aware dirs
     sanitizeDirectory(paimon::quality::cacheDir(), stats);
     sanitizeDirectory(paimon::quality::cacheDir() / "profiles", stats);
     sanitizeDirectory(paimon::quality::cacheDir() / "gifs", stats);
@@ -219,7 +218,7 @@ $execute {
         PaimonNotify::create("Verificando permisos de mod/admin...", NotificationIcon::Info)->show();
 
         ThumbnailAPI::get().checkModeratorAccount(username, accountID, [oldCode](bool isMod, bool isAdmin) {
-            Loader::get()->queueInMainThread([oldCode, isMod, isAdmin]() {
+            geode::queueInMainThread([oldCode, isMod, isAdmin]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 bool effectiveMod = isMod || isAdmin;
                 Mod::get()->setSavedValue<bool>("is-verified-admin", isAdmin);
@@ -230,7 +229,6 @@ $execute {
                     return;
                 }
 
-                // Check if GDBrowser verification failed (code not generated/refreshed)
                 bool gdFailed = Mod::get()->getSavedValue<bool>("gd-verification-failed", false);
                 auto newCode = HttpClient::get().getModCode();
 
@@ -310,7 +308,6 @@ $execute {
         std::string cmd = "open \"" + pathStr + "\"";
         std::system(cmd.c_str());
 #elif defined(GEODE_IS_ANDROID)
-        // Android has no standard NDK-accessible file explorer
         PaimonNotify::create("Carpeta: " + pathStr, NotificationIcon::Info)->show();
 #else
         PaimonNotify::create("Carpeta: " + pathStr, NotificationIcon::Info)->show();

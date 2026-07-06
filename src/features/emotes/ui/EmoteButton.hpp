@@ -12,8 +12,6 @@ struct EmoteInputContext {
     bool centerPicker = false;
 };
 
-/// Circular emote button (CircleButtonSprite) with a random emote sprite inside.
-/// IS a CCMenuItemSpriteExtra — add directly to a CCMenu.
 class EmoteButton : public CCMenuItemSpriteExtra {
     EmoteInputContext m_context;
     geode::Ref<EmotePickerPopup> m_activePicker = nullptr;

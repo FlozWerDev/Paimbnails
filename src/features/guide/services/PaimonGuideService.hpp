@@ -46,8 +46,10 @@ private:
     // Tokenize the normalized string on whitespace and basic ASCII punctuation.
     static std::vector<std::string> tokenize(std::string const& normalized);
 
-    // Build a "didn't understand" GuideAnswer in the active language.
-    GuideAnswer makeFallback() const;
+    // Build a "didn't understand" GuideAnswer in the active language. When the
+    // matcher found close-but-unqualified candidates, names them as suggestions.
+    GuideAnswer makeFallback(std::vector<GuideIntent const*> const& suggestions,
+                             std::string const& langId) const;
 
     // Build a response for an intent, varying the message on repeats (variants).
     GuideAnswer buildAnswerFor(GuideIntent const& intent,

@@ -20,6 +20,7 @@
 #include <Geode/cocos/robtop/keyboard_dispatcher/CCKeyboardDispatcher.h>
 
 #include "../utils/DominantColors.hpp"
+#include "../utils/LevelMetadata.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../features/audio/services/AudioContextCoordinator.hpp"
 #include "../features/foryou/services/ForYouTracker.hpp"
@@ -110,7 +111,7 @@ namespace {
         void onPause() {
             if (m_isPaused) return;
             m_isPaused = true;
-            log::info("[PauseZoom] onPause() called — m_isPaused=true");
+            log::debug("[PauseZoom] onPause() called — m_isPaused=true");
             m_isPanning = false;
             m_menuForcedHidden = false;
             m_pauseLayerMissingFrames = 0;
@@ -120,7 +121,7 @@ namespace {
 
         void onResume() {
             if (!m_isPaused) return;
-            log::info("[PauseZoom] onResume() called — m_isPaused=false (was paused)");
+            log::debug("[PauseZoom] onResume() called — m_isPaused=false (was paused)");
             if (auto* playLayer = PlayLayer::get()) {
                 resetPlayLayerZoom(playLayer);
             }
@@ -161,7 +162,7 @@ namespace {
                 // pause was cancelled.
                 m_pauseLayerMissingFrames++;
                 if (m_pauseLayerMissingFrames > 120) {
-                    log::info("[PauseZoom] update auto-resume: pauseLayer missing for {} frames", m_pauseLayerMissingFrames);
+                    log::debug("[PauseZoom] update auto-resume: pauseLayer missing for {} frames", m_pauseLayerMissingFrames);
                     this->onResume();
                 }
                 return;
@@ -210,7 +211,7 @@ namespace {
                 // #region agent log
                 agentLog347("PlayLayer.cpp:onScroll", "blocked_not_paused", "E", "{}");
                 // #endregion
-                log::info("[PauseZoom] onScroll blocked: !m_isPaused");
+                log::debug("[PauseZoom] onScroll blocked: !m_isPaused");
                 return;
             }
 
@@ -219,6 +220,7 @@ namespace {
             auto* activePause = paimon::getActivePauseLayer();
             if (!playLayer || !pauseLayer) {
                 // #region agent log
+#ifdef PAIMON_DEBUG_AGENT347
                 {
                     std::ostringstream d;
                     d << "{\"playLayer\":" << (playLayer ? "true" : "false")
@@ -226,8 +228,9 @@ namespace {
                       << ",\"activePause\":" << (activePause ? "true" : "false") << "}";
                     agentLog347("PlayLayer.cpp:onScroll", "blocked_missing_layer", "B", d.str());
                 }
+#endif
                 // #endregion
-                log::info("[PauseZoom] onScroll blocked: playLayer={} pauseLayer={}", (void*)playLayer, (void*)pauseLayer);
+                log::debug("[PauseZoom] onScroll blocked: playLayer={} pauseLayer={}", (void*)playLayer, (void*)pauseLayer);
                 return;  // No auto-resume on scroll; wait for the ticker
             }
 
@@ -235,13 +238,13 @@ namespace {
                 // #region agent log
                 agentLog347("PlayLayer.cpp:onScroll", "blocked_popup", "E", "{}");
                 // #endregion
-                log::info("[PauseZoom] onScroll blocked: hasBlockingPopup=true");
+                log::debug("[PauseZoom] onScroll blocked: hasBlockingPopup=true");
                 return;
             }
 
             if (pauseZoomAltDisablesScroll()) {
                 if (auto* kb = CCKeyboardDispatcher::get(); kb && kb->getAltKeyPressed()) {
-                    log::info("[PauseZoom] onScroll blocked: Alt key held (alt-disables-scroll)");
+                    log::debug("[PauseZoom] onScroll blocked: Alt key held (alt-disables-scroll)");
                     return;
                 }
             }
@@ -268,6 +271,7 @@ namespace {
                 }
             }
             // #region agent log
+#ifdef PAIMON_DEBUG_AGENT347
             {
                 std::ostringstream d;
                 d << "{\"y\":" << y << ",\"scale\":" << scale
@@ -279,6 +283,7 @@ namespace {
                   << ",\"ptrMatch\":" << (pauseLayer == activePause ? "true" : "false") << "}";
                 agentLog347("PlayLayer.cpp:onScroll", "scroll_zoom_done", "A", d.str());
             }
+#endif
             // #endregion
         }
 
@@ -307,6 +312,7 @@ namespace {
                 }
             }
             // #region agent log
+#ifdef PAIMON_DEBUG_AGENT347
             if (auto* playLayer = PlayLayer::get()) {
                 auto* pauseLayer = getPauseLayer();
                 std::ostringstream d;
@@ -314,6 +320,9 @@ namespace {
                   << ",\"pauseVisible\":" << (pauseLayer && pauseLayer->isVisible() ? "true" : "false") << "}";
                 agentLog347("PlayLayer.cpp:zoomInStep", "keybind_zoom", "A", d.str());
             }
+#else
+            (void)scaleBefore;
+#endif
             // #endregion
         }
 
@@ -423,6 +432,7 @@ namespace {
                 m_menuForcedHidden = true;
             }
             // #region agent log
+#ifdef PAIMON_DEBUG_AGENT347
             {
                 std::ostringstream d;
                 d << "{\"visBefore\":" << (visBefore ? "true" : "false")
@@ -432,6 +442,10 @@ namespace {
                   << ",\"ptrMatch\":" << (pauseLayer == activePause ? "true" : "false") << "}";
                 agentLog347("PlayLayer.cpp:hidePauseMenu", "hide_called", "B", d.str());
             }
+#else
+            (void)visBefore;
+            (void)activePause;
+#endif
             // #endregion
         }
 
@@ -449,12 +463,16 @@ namespace {
             paimon::setPauseZoomHidden(false);
             m_menuForcedHidden = false;
             // #region agent log
+#ifdef PAIMON_DEBUG_AGENT347
             {
                 std::ostringstream d;
                 d << "{\"visBefore\":" << (visBefore ? "true" : "false")
                   << ",\"visAfter\":" << (pauseLayer && pauseLayer->isVisible() ? "true" : "false") << "}";
                 agentLog347("PlayLayer.cpp:restorePauseMenuVisible", "restore_called", "D", d.str());
             }
+#else
+            (void)visBefore;
+#endif
             // #endregion
         }
 
@@ -593,7 +611,7 @@ namespace {
 
 namespace paimon {
     void notifyPauseClosing() {
-        log::info("[PauseZoom] notifyPauseClosing() → onResume()");
+        log::debug("[PauseZoom] notifyPauseClosing() → onResume()");
         PauseZoomManager::get().onResume();
     }
 }
@@ -617,9 +635,16 @@ static void uploadCapturedThumbnail(int levelID, std::shared_ptr<uint8_t> const&
         return;
     }
 
+    // Collect the full level metadata on the main thread (GJGameLevel bindings)
+    // so it can be attached to the upload.
+    std::string levelMeta;
+    if (auto* pl = PlayLayer::get()) {
+        levelMeta = paimon::collectLevelMetadata(pl->m_level);
+    }
+
     PaimonNotify::show(Localization::get().getString("capture.uploading"), geode::NotificationIcon::Info);
 
-    paimon::ThreadTracker::get().spawn([levelID, buf, W, H, username]() {
+    paimon::ThreadTracker::get().spawn([levelID, buf, W, H, username, levelMeta]() {
         geode::utils::thread::setName("Paimon Capture Upload");
         if (paimon::isRuntimeShuttingDown()) return;
 
@@ -634,7 +659,7 @@ static void uploadCapturedThumbnail(int levelID, std::shared_ptr<uint8_t> const&
             buf.get(), static_cast<uint32_t>(W), static_cast<uint32_t>(H), pngData);
 
         Loader::get()->queueInMainThread(
-            [levelID, username, A, B, encoded, pngData = std::move(pngData)]() mutable {
+            [levelID, username, A, B, encoded, levelMeta, pngData = std::move(pngData)]() mutable {
                 if (paimon::isRuntimeShuttingDown()) return;
                 LevelColors::get().set(levelID, A, B);
 
@@ -659,7 +684,7 @@ static void uploadCapturedThumbnail(int levelID, std::shared_ptr<uint8_t> const&
                             NotificationIcon::Error
                         )->show();
                     }
-                });
+                }, levelMeta);
             });
     });
 }
@@ -938,8 +963,8 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
 
         {
             auto& sm = paimon::menuloop::MenuLoopManager::get();
-            const bool randomize = Mod::get()->getSavedValue<bool>("menuLoopRandomizeOnLevelExit", false);
-            const bool restore = Mod::get()->getSavedValue<bool>("menuLoopRestoreOnLevelExit", true);
+            const bool randomize = Mod::get()->getSettingValue<bool>("menuLoopRandomizeOnLevelExit");
+            const bool restore = Mod::get()->getSettingValue<bool>("menuLoopRestoreOnLevelExit");
             if (randomize) { sm.setShouldRestoreMenuLoopPoint(false); paimon::menuloop::MenuLoopControl::shuffleSong(); }
             else if (restore) { sm.setShouldRestoreMenuLoopPoint(true); }
         }
@@ -1010,6 +1035,16 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                         return;
                     }
 
+                    // (5) Same guard as the primary keybind path: if Esc brought
+                    // up a PauseLayer while the recapture was in flight, never
+                    // open a fresh CapturePreviewPopup on top of it (freezes the
+                    // pause menu behind it). Abort cleanly instead.
+                    if (paimon::hasPauseLayerInScene() || layer->m_isPaused) {
+                        log::warn("[CaptureKeybind] PauseLayer presente durante recaptura; "
+                                  "abortando para no montar el preview sobre la pausa");
+                        return;
+                    }
+
                     bool pausedByPopup = false;
                     if (!layer->m_isPaused) {
                         layer->pauseGame(true);
@@ -1075,7 +1110,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
 
     $override
     void pauseGame(bool value) {
-        log::info("[PauseZoom] pauseGame({}) called", value);
+        log::debug("[PauseZoom] pauseGame({}) called", value);
         ensurePauseZoomTicker();
         if (value) {
             PauseZoomManager::get().onPause();
@@ -1149,6 +1184,16 @@ class $modify(PaimonPauseZoomVisitFilter, CCNode) {
         // CCNode::visit (devtools, debug overlays). If something wants to see the
         // PauseLayer during zoom, it calls the original before our filter, which is correct.
         (void)self.setHookPriorityPre("cocos2d::CCNode::visit", geode::Priority::Late);
+
+        // CCNode::visit fires for every node every frame (easily 10k+ calls/frame
+        // in a busy level), so even this cheap filter pays trampoline overhead on
+        // all of them. Keep the hook dormant and let setPauseZoomHidden() enable
+        // it only while the PauseLayer is hidden by pause-zoom. If getHook fails,
+        // the hook auto-enables as before (correctness over speed).
+        if (auto hook = self.getHook("cocos2d::CCNode::visit")) {
+            hook.unwrap()->setAutoEnable(false);
+            paimon::setPauseZoomVisitHook(hook.unwrap());
+        }
     }
 
     void visit() {

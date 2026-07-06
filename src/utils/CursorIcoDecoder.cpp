@@ -205,7 +205,6 @@ bool decodeIcoInternal(uint8_t const* data, size_t size, DecodedFrame& out) {
 
 } // namespace
 
-// Detection
 bool isIco(uint8_t const* data, size_t size) {
     return size >= 4 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x01 && data[3] == 0x00;
 }
@@ -219,7 +218,6 @@ bool isSupported(uint8_t const* data, size_t size) {
     return isIco(data, size) || isCur(data, size) || isAni(data, size);
 }
 
-// .ico / .cur
 DecodeResult decodeIco(uint8_t const* data, size_t size) {
     DecodeResult res;
     DecodedFrame frame;
@@ -233,7 +231,6 @@ DecodeResult decodeIco(uint8_t const* data, size_t size) {
     return res;
 }
 
-// .ani (RIFF/ACON)
 DecodeResult decodeAni(uint8_t const* data, size_t size) {
     DecodeResult res;
     if (!isAni(data, size)) { res.error = "not_ani"; return res; }
@@ -318,7 +315,6 @@ DecodeResult decodeAni(uint8_t const* data, size_t size) {
     return res;
 }
 
-// Generic entry point
 DecodeResult decode(uint8_t const* data, size_t size) {
     if (isAni(data, size)) return decodeAni(data, size);
     if (isIco(data, size) || isCur(data, size)) return decodeIco(data, size);

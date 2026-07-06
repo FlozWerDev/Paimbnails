@@ -43,18 +43,16 @@ class $modify(PaimonMyLevelsFilterBrowser, LevelBrowserLayer) {
         if (!LevelBrowserLayer::init(obj)) return false;
         if (!filtersEnabled() || !isMyLevels(obj)) return true;
 
-        auto menu = CCMenu::create();
-        menu->setID("paim-mylevels-filter-menu"_spr);
-        auto win = CCDirector::get()->getWinSize();
-        menu->setPosition({28.f, win.height / 2.f});
+        auto pageMenu = this->getChildByID("page-menu");
+        if (!pageMenu) return true;
 
         auto spr = CCSprite::createWithSpriteFrameName("GJ_filterIcon_001.png");
         if (spr) spr->setScale(0.9f);
         auto btn = CCMenuItemSpriteExtra::create(
             spr, this, menu_selector(PaimonMyLevelsFilterBrowser::onFilter));
         btn->setID("paim-mylevels-filter-btn"_spr);
-        menu->addChild(btn);
-        this->addChild(menu, 100);
+        pageMenu->addChild(btn);
+        pageMenu->updateLayout();
 
         return true;
     }

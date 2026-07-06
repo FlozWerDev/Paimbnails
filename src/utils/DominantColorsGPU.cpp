@@ -149,7 +149,6 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
         if (converged) break;
     }
 
-    // Sort by cluster size (descending)
     std::sort(clusters.begin(), clusters.end(),
         [](Cluster const& a, Cluster const& b) { return a.count > b.count; });
 
@@ -206,7 +205,6 @@ static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
     auto* shader = paimon::shaders::getDominantColorsDownsampleShader();
     if (!shader) return {DCColor{0, 0, 0}, DCColor{0, 0, 0}};
 
-    // Create a sprite with the source texture
     auto* sprite = CCSprite::createWithTexture(texture);
     if (!sprite) return {DCColor{0, 0, 0}, DCColor{0, 0, 0}};
 
@@ -227,7 +225,6 @@ static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     texture->setTexParameters(&params);
 
-    // Render to FBO
     auto* rt = CCRenderTexture::create(kDownsampleSize, kDownsampleSize);
     if (!rt) return {DCColor{0, 0, 0}, DCColor{0, 0, 0}};
 

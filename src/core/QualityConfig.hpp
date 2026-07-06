@@ -1,7 +1,5 @@
 ﻿#pragma once
 
-// Cache path helpers and legacy migration.
-
 #include "Settings.hpp"
 #include <string>
 #include <cstdint>
@@ -29,7 +27,6 @@ inline std::filesystem::path profileCachePath(int accountID, bool isGif) {
     return cacheDir() / profileFilename(accountID, isGif);
 }
 
-// Migrate legacy quality-specific directories into the unified cache dir.
 inline void migrateLegacyCache() {
     auto saveDir  = geode::Mod::get()->getSaveDir();
     auto qualDir  = cacheDir();

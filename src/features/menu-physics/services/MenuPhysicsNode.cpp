@@ -13,6 +13,7 @@ namespace {
     constexpr int kMaxBodies = 80;
     constexpr float kReturnDuration = 0.45f;
     constexpr float kPi = 3.14159265f;
+    constexpr float kTapMoveThreshold = 10.f;  // px; below this a touch counts as a tap
 
     void collectButtons(CCNode* n, CCNode* exclude, std::vector<CCMenuItem*>& out) {
         if (!n || n == exclude) return;
@@ -101,7 +102,6 @@ void MenuPhysicsNode::captureHost() {
         CCPoint dir = worldPos - center;
         float dl = std::sqrt(dir.x * dir.x + dir.y * dir.y);
         if (dl < 1e-3f) {
-            // Boton justo en el centro: direccion aleatoria.
             std::uniform_real_distribution<float> angleDist(0.f, 6.2831853f);
             float a = angleDist(gen);
             dir = CCPoint{std::cos(a), std::sin(a)};
@@ -185,25 +185,37 @@ for (auto& o : m_originals) {
 
 bool MenuPhysicsNode::ccTouchBegan(CCTouch* touch, CCEvent*) {
     CCPoint p = touch->getLocation();
+    m_touchStart = p;
+    m_dragMoved = false;
     if (m_world.beginDrag(p)) {
-        return true;  // agarramos un cuerpo, tragamos el touch
+        return true;
     }
     float push = static_cast<float>(Mod::get()->getSettingValue<double>("menu-physics-push-power"));
     if (push > 0.f) {
         m_world.pushExplosion(p, push);
     }
-    return false;  // dejar que el click pase a GD (botones siguen clickeables)
+    return false;  // touch must pass through so GD buttons stay clickable
 }
 
 void MenuPhysicsNode::ccTouchMoved(CCTouch* touch, CCEvent*) {
     if (m_world.isDragging()) {
+        CCPoint p = touch->getLocation();
+        if (!m_dragMoved && ccpDistance(p, m_touchStart) > kTapMoveThreshold) {
+            m_dragMoved = true;
+        }
         float dt = CCDirector::get()->getDeltaTime();
         if (dt <= 0.f) dt = 1.f / 60.f;
-        m_world.moveDrag(touch->getLocation(), dt);
+        m_world.moveDrag(p, dt);
     }
 }
 
 void MenuPhysicsNode::ccTouchEnded(CCTouch*, CCEvent*) {
+    // A quick tap activates the button; a hold/drag just releases it.
+    if (m_world.isDragging() && !m_dragMoved) {
+        if (auto* item = typeinfo_cast<CCMenuItem*>(m_world.draggedNode())) {
+            if (item->isEnabled()) item->activate();
+        }
+    }
     m_world.endDrag();
 }
 

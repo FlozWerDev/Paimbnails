@@ -92,7 +92,6 @@ public:
         stopDecoding();
         if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
 
-        // Drain ring buffer
         while (m_ring.nextRead()) m_ring.commitRead();
 
         plm_seek(m_plm, seconds, false);
@@ -162,7 +161,6 @@ private:
                             std::min(slot->strideY, yStride));
             }
 
-            // Copy Cb plane
             int cbRows = frame->cb.height;
             int cbStride = frame->cb.width;
             for (int r = 0; r < cbRows; ++r) {
@@ -171,7 +169,6 @@ private:
                             std::min(slot->strideCb, cbStride));
             }
 
-            // Copy Cr plane
             int crRows = frame->cr.height;
             int crStride = frame->cr.width;
             for (int r = 0; r < crRows; ++r) {

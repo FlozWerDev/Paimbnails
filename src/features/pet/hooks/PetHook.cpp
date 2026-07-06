@@ -7,8 +7,6 @@
 
 using namespace geode::prelude;
 
-// PetTickerNode: runs pet logic each frame via scheduleUpdateForTarget
-// (avoids hooking CCScheduler::update).
 class PetTickerNode : public CCNode {
     int m_frameCounter = 0;
     CCScene* m_lastScene = nullptr;
@@ -33,12 +31,10 @@ public:
     void update(float dt) override {
         auto& pet = PetManager::get();
 
-        // pet animation must run every frame while attached
         if (pet.isAttached()) {
             pet.update(dt);
         }
 
-        // Throttle config/scene/visibility checks to ~every 6 frames.
         if (++m_frameCounter % 6 != 0) return;
 
         if (!pet.config().enabled) {
@@ -49,7 +45,6 @@ public:
         auto scene = CCDirector::get()->getRunningScene();
         if (!scene) return;
 
-        // Reattach if scene changed.
         if (!pet.isAttached() || (pet.isAttached() && m_lastScene != scene)) {
             pet.attachToScene(scene);
             m_lastScene = scene;

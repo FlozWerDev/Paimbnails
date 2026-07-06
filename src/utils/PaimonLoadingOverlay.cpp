@@ -158,10 +158,8 @@ void PaimonLoadingOverlay::dismiss() {
     if (m_dismissed) return;
     m_dismissed = true;
 
-    // fade out the background
     this->runAction(CCFadeTo::create(0.2f, 0));
 
-    // shrink + fade the spinner
     if (m_spinner) {
         m_spinner->stopActionByTag(99);
         m_spinner->runAction(
@@ -173,7 +171,6 @@ void PaimonLoadingOverlay::dismiss() {
         );
     }
 
-    // fade out the text + cleanup
     if (m_statusLabel) {
         m_statusLabel->runAction(CCFadeOut::create(0.1f));
     }

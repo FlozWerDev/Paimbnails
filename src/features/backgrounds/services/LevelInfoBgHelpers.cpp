@@ -19,4 +19,4 @@ std::string makeLevelInfoBlurCacheKey(int levelID, int thumbnailIndex, std::stri
     );
 }
 
-} // namespace paimon::levelinfo
+}

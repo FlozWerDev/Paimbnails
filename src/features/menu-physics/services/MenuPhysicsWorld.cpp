@@ -8,19 +8,18 @@ using namespace cocos2d;
 namespace paimon::menuphysics {
 
 namespace {
-    // Constantes de estabilidad / feel.
-    constexpr float kGravityScale = 32.f;        // 1 unidad = 32 px
+    constexpr float kGravityScale = 32.f;
     constexpr float kMaxDt = 1.f / 30.f;
-    constexpr float kSleepAngVel = 18.f;         // deg/s
+    constexpr float kSleepAngVel = 18.f;
     constexpr float kSleepTime = 0.6f;
     constexpr int kSolverIterations = 4;
-    constexpr float kSubstepTarget = 6.f;        // px por subpaso (restringe tunneling)
+    constexpr float kSubstepTarget = 6.f;        // px per substep; caps tunneling
     constexpr float kDragVelLerp = 0.55f;
-    constexpr float kPushTorqueFactor = 0.0008f; // conversion a torque
-    constexpr float kRestitutionCutoff = 60.f;   // px/s: por debajo no rebota
-    constexpr float kSleepVel = 10.f;            // px/s: umbral de sleep lineal
-    constexpr int kMaxSubsteps = 4;              // subpasos maximos por tick
-    constexpr float kPushRadius = 160.f;         // px: radio de empuje al click
+    constexpr float kPushTorqueFactor = 0.0008f;
+    constexpr float kRestitutionCutoff = 60.f;   // px/s: below this, no bounce
+    constexpr float kSleepVel = 10.f;
+    constexpr int kMaxSubsteps = 4;
+    constexpr float kPushRadius = 160.f;
 
     float clamp01(float v) { return std::clamp(v, 0.f, 1.f); }
 
@@ -32,7 +31,6 @@ namespace {
         return p / l;
     }
 
-    // producto cruz 2D (escalar): a x b
     float cross(CCPoint a, CCPoint b) { return a.x * b.y - a.y * b.x; }
 }
 
@@ -310,6 +308,11 @@ void PhysicsWorld::moveDrag(CCPoint p, float dt) {
 
 void PhysicsWorld::endDrag() {
     m_dragIndex = -1;
+}
+
+CCNode* PhysicsWorld::draggedNode() const {
+    if (m_dragIndex < 0 || m_dragIndex >= static_cast<int>(m_bodies.size())) return nullptr;
+    return m_bodies[m_dragIndex].node.data();
 }
 
 void PhysicsWorld::pushExplosion(CCPoint worldPoint, float strength) {

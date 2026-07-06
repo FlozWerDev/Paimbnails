@@ -28,6 +28,12 @@
 #include <Geode/ui/Popup.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/general.hpp>
+#include <Geode/modify/PlayLayer.hpp>
+#include <Geode/modify/GJBaseGameLayer.hpp>
+
+#ifdef GEODE_IS_WINDOWS
+#include <excpt.h>
+#endif
 
 #include <atomic>
 #include <algorithm>
@@ -49,6 +55,60 @@ using namespace cocos2d;
 #endif
 #ifndef GL_STREAM_READ
 #define GL_STREAM_READ 0x88E1
+#endif
+
+// PlayLayer::flipArt (flipArt+0x29) and GJBaseGameLayer::updateCameraBGArt
+// (updateCameraBGArt+0x1a8, null read at 0x0) crash — both reached via
+// GJBaseGameLayer::updateCamera, also through Globed's updateCamera hook —
+// when updateCamera runs out-of-band during the offscreen capture render:
+// mid-drawScene, dt=0, with the cocos view retargeted to the capture
+// resolution. Both only reposition/flip background art, so they're suppressed
+// while the capture render owns the camera; the real game loop re-evaluates
+// them on the next frame.
+static std::atomic<bool> s_suppressCameraArt{false};
+
+struct SuppressCameraArtGuard {
+    SuppressCameraArtGuard()  { s_suppressCameraArt.store(true,  std::memory_order_relaxed); }
+    ~SuppressCameraArtGuard() { s_suppressCameraArt.store(false, std::memory_order_relaxed); }
+};
+
+class $modify(PaimonCaptureFlipArtGuard, PlayLayer) {
+    void flipArt(bool flip) {
+        if (s_suppressCameraArt.load(std::memory_order_relaxed)) return;
+        PlayLayer::flipArt(flip);
+    }
+};
+
+class $modify(PaimonCaptureBGArtGuard, GJBaseGameLayer) {
+    void updateCameraBGArt(cocos2d::CCPoint position, float zoom) {
+        if (s_suppressCameraArt.load(std::memory_order_relaxed)) return;
+        GJBaseGameLayer::updateCameraBGArt(position, zoom);
+    }
+};
+
+// Last-resort net for the out-of-band recalc calls in renderPlayLayerToTexture:
+// vanilla updateCamera/preUpdateVisibility keep finding new null-derefs when run
+// mid-drawScene with the view retargeted (updateCameraBGArt null at 0x0,
+// preUpdateVisibility+0x363 null read at 0x1D0). Both calls are best-effort
+// repositioning/culling for the capture aspect; on an access violation the rest
+// of that call is skipped and the render continues — the real game loop
+// recomputes everything on the next frame. SEH frames can't hold C++ objects
+// with destructors, hence the raw function-pointer shape.
+#ifdef GEODE_IS_WINDOWS
+static bool sehGuardedCall(void (*fn)(PlayLayer*), PlayLayer* pl) noexcept {
+    __try {
+        fn(pl);
+        return true;
+    } __except (GetExceptionCode() == 0xC0000005L /* EXCEPTION_ACCESS_VIOLATION */
+                    ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+        return false;
+    }
+}
+#else
+static bool sehGuardedCall(void (*fn)(PlayLayer*), PlayLayer* pl) {
+    fn(pl);
+    return true;
+}
 #endif
 
 FramebufferCapture::CaptureRequest FramebufferCapture::s_request;
@@ -191,6 +251,110 @@ void hideKnownModNodes(PlayLayer* pl, HiddenNodeList& hidden) {
     }
 }
 
+// (4) Classifying scene-graph children reads their vtable (typeid /
+// typeinfo_cast) and members. A node another mod released but left in a
+// children array would fault when touched; sehClassify runs the classifier
+// under SEH and skips that child on an access violation instead of crashing.
+// The classifier functions must not contain __try themselves (they use C++
+// objects with destructors), hence this function-pointer split.
+#ifdef GEODE_IS_WINDOWS
+bool sehClassify(bool (*fn)(void*), void* ctx, bool* faulted) noexcept {
+    __try {
+        return fn(ctx);
+    } __except (GetExceptionCode() == 0xC0000005L /* EXCEPTION_ACCESS_VIOLATION */
+                    ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+        if (faulted) *faulted = true;
+        return false;
+    }
+}
+#else
+bool sehClassify(bool (*fn)(void*), void* ctx, bool*) { return fn(ctx); }
+#endif
+
+struct PLChildClassifyCtx {
+    CCNode* child;
+    std::unordered_set<CCNode*>* keep;
+};
+
+// Whether a direct PlayLayer child is non-vanilla UI to hide. Mirrors the
+// original inline decision exactly.
+bool classifyPlayLayerChild(void* p) {
+    auto* c = static_cast<PLChildClassifyCtx*>(p);
+    CCNode* child = c->child;
+    if (!child->isVisible())                      return false;
+    if (c->keep->count(child))                    return false;
+    if (paimon::capture::isUserShown(child))      return false;
+    if (typeinfo_cast<PlayerObject*>(child))      return false;
+    if (typeinfo_cast<CCSpriteBatchNode*>(child)) return false;
+    if (typeinfo_cast<CCParticleSystem*>(child))  return false;
+
+    static const std::vector<std::string> kUIPatterns = {
+        "ui", "uilayer", "pause", "menu", "dialog", "popup", "editor",
+        "notification", "btn", "button", "overlay", "checkpoint", "fps",
+        "debug", "attempt", "percent", "progress", "bar", "score",
+        "practice", "hitbox", "trajectory", "status", "info", "label",
+        "hud", "indicator", "counter", "timer", "stat", "cheat",
+        "noclip", "speedhack", "startpos", "testmode", "macro"
+    };
+
+    std::string nid  = child->getID();
+    std::string nidL = geode::utils::string::toLower(nid);
+    std::string clsL = geode::utils::string::toLower(typeid(*child).name());
+
+    bool shouldHide = false;
+    if (nid.find('/') != std::string::npos) shouldHide = true;
+    if (!shouldHide && !nidL.empty()) {
+        for (auto const& pat : kUIPatterns) {
+            if (nidL.find(pat) != std::string::npos) { shouldHide = true; break; }
+        }
+    }
+    if (!shouldHide && (
+            typeinfo_cast<CCMenu*>(child)         ||
+            typeinfo_cast<CCLabelBMFont*>(child)  ||
+            typeinfo_cast<CCLabelTTF*>(child))) {
+        shouldHide = true;
+    }
+    if (!shouldHide) {
+        if (clsL.find("uilayer")    != std::string::npos ||
+            clsL.find("progress")   != std::string::npos ||
+            clsL.find("status")     != std::string::npos ||
+            clsL.find("overlay")    != std::string::npos ||
+            clsL.find("hitbox")     != std::string::npos ||
+            clsL.find("trajectory") != std::string::npos ||
+            clsL.find("noclip")     != std::string::npos ||
+            clsL.find("debugdraw")  != std::string::npos) {
+            shouldHide = true;
+        }
+    }
+    if (!shouldHide && child->getZOrder() >= 10
+        && !typeinfo_cast<GJBaseGameLayer*>(child)) {
+        shouldHide = true;
+    }
+    return shouldHide;
+}
+
+struct SceneChildClassifyCtx { CCNode* child; };
+
+// Whether a scene child (sibling of PlayLayer) is a popup/pause/overlay to hide.
+bool classifySceneChild(void* p) {
+    CCNode* child = static_cast<SceneChildClassifyCtx*>(p)->child;
+    if (!child->isVisible()) return false;
+
+    std::string nid = child->getID();
+    char const* cls = typeid(*child).name();
+
+    if (typeinfo_cast<PauseLayer*>(child))               return true;
+    if (typeinfo_cast<FLAlertLayer*>(child))             return true;
+    if (strstr(cls, "Popup"))                            return true; // Geode popups (template)
+    if (nid.find("pause") != std::string::npos ||
+        nid.find("Pause") != std::string::npos)          return true;
+    if (strstr(cls, "PauseLayer"))                       return true;
+    if (nid.find("paimon-loading") != std::string::npos) return true;
+    if (nid.find('/') != std::string::npos)              return true;
+    if (child->getZOrder() > 100)                        return true;
+    return false;
+}
+
 HiddenNodeList hideNonVanillaUI() {
     HiddenNodeList hidden;
 
@@ -232,75 +396,58 @@ HiddenNodeList hideNonVanillaUI() {
             }
         }
 
-        hideNode(pl->m_uiLayer);
-        hideNode(pl->m_attemptLabel);
-        hideNode(pl->m_percentageLabel);
-        hideNode(pl->m_progressBar);
-        hideNode(pl->m_debugDrawNode);
-        if (pl->m_debugDrawNode) {
+        // Some PlayLayer UI member pointers can be stale or uninitialized
+        // depending on the level type / setup state (e.g. holding 0xFFFF...FF),
+        // and dereferencing them crashes. Collect the live descendants of the
+        // PlayLayer so we can validate a member is a real node before touching
+        // it. Comparing pointer values against this set never dereferences.
+        std::unordered_set<CCNode*> liveNodes;
+        {
+            std::vector<CCNode*> stack{pl};
+            while (!stack.empty()) {
+                CCNode* cur = stack.back();
+                stack.pop_back();
+                auto* kids = cur->getChildren();
+                if (!kids) continue;
+                for (auto* k : CCArrayExt<CCNode*>(kids)) {
+                    if (k && liveNodes.insert(k).second) stack.push_back(k);
+                }
+            }
+        }
+        auto hideMember = [&](CCNode* n) {
+            if (n && liveNodes.count(n)) hideNode(n);
+        };
+
+        hideMember(pl->m_uiLayer);
+        hideMember(pl->m_attemptLabel);
+        hideMember(pl->m_percentageLabel);
+        hideMember(pl->m_progressBar);
+        hideMember(pl->m_debugDrawNode);
+        if (pl->m_debugDrawNode && liveNodes.count(pl->m_debugDrawNode)) {
             // The debug draw node may live inside a kept gameplay container
             // (e.g. the object layer); hiding that parent would blank the
             // whole level in the capture.
             auto* ddParent = pl->m_debugDrawNode->getParent();
             if (ddParent && !keep.count(ddParent)) hideNode(ddParent);
         }
-        hideNode(pl->m_infoLabel);
+        hideMember(pl->m_infoLabel);
 
-        static const std::vector<std::string> kUIPatterns = {
-            "ui", "uilayer", "pause", "menu", "dialog", "popup", "editor",
-            "notification", "btn", "button", "overlay", "checkpoint", "fps",
-            "debug", "attempt", "percent", "progress", "bar", "score",
-            "practice", "hitbox", "trajectory", "status", "info", "label",
-            "hud", "indicator", "counter", "timer", "stat", "cheat",
-            "noclip", "speedhack", "startpos", "testmode", "macro"
-        };
-
+        bool plChildFaulted = false;
         for (auto* child : CCArrayExt<CCNode*>(pl->getChildren())) {
-            if (!child || !child->isVisible()) continue;
+            if (!child) continue;
             if (keep.count(child)) continue;
-            if (paimon::capture::isUserShown(child))         continue;
-            if (typeinfo_cast<PlayerObject*>(child))         continue;
-            if (typeinfo_cast<CCSpriteBatchNode*>(child))    continue;
-            if (typeinfo_cast<CCParticleSystem*>(child))     continue;
-
-            std::string nid = child->getID();
-            std::string nidL = geode::utils::string::toLower(nid);
-            std::string clsL = geode::utils::string::toLower(typeid(*child).name());
-
-            bool shouldHide = false;
-            if (nid.find('/') != std::string::npos) shouldHide = true;
-            if (!shouldHide && !nidL.empty()) {
-                for (auto const& p : kUIPatterns) {
-                    if (nidL.find(p) != std::string::npos) { shouldHide = true; break; }
-                }
-            }
-            if (!shouldHide && (
-                    typeinfo_cast<CCMenu*>(child)         ||
-                    typeinfo_cast<CCLabelBMFont*>(child)  ||
-                    typeinfo_cast<CCLabelTTF*>(child))) {
-                shouldHide = true;
-            }
-            if (!shouldHide) {
-                if (clsL.find("uilayer")    != std::string::npos ||
-                    clsL.find("progress")   != std::string::npos ||
-                    clsL.find("status")     != std::string::npos ||
-                    clsL.find("overlay")    != std::string::npos ||
-                    clsL.find("hitbox")     != std::string::npos ||
-                    clsL.find("trajectory") != std::string::npos ||
-                    clsL.find("noclip")     != std::string::npos ||
-                    clsL.find("debugdraw")  != std::string::npos) {
-                    shouldHide = true;
-                }
-            }
-            if (!shouldHide && child->getZOrder() >= 10
-                && !typeinfo_cast<GJBaseGameLayer*>(child)) {
-                shouldHide = true;
-            }
-
-            if (shouldHide) {
+            if (paimon::capture::isUserShown(child)) continue;
+            // (4) Vtable access (typeid/typeinfo_cast) guarded against a
+            // dangling child left in the array by another mod.
+            PLChildClassifyCtx ctx{child, &keep};
+            if (sehClassify(&classifyPlayLayerChild, &ctx, &plChildFaulted)) {
                 hidden.push_back({child, true});
                 child->setVisible(false);
             }
+        }
+        if (plChildFaulted) {
+            log::warn("[FramebufferCapture] Skipped one or more dangling PlayLayer "
+                      "children while hiding UI");
         }
 
             hideGameplayEffectNodes(pl, hidden);
@@ -311,29 +458,21 @@ HiddenNodeList hideNonVanillaUI() {
 
     if (scene) {
         auto* pl = PlayLayer::get();
+        bool sceneFaulted = false;
         for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
-            if (!child || !child->isVisible()) continue;
+            if (!child) continue;
             if (pl && child == pl) continue;
             if (paimon::capture::isUserShown(child)) continue;
-
-            std::string nid = child->getID();
-            char const* cls = typeid(*child).name();
-            bool hide = false;
-
-            if (typeinfo_cast<PauseLayer*>(child))           hide = true;
-            else if (typeinfo_cast<FLAlertLayer*>(child))    hide = true;
-            else if (strstr(cls, "Popup"))                   hide = true; // Geode popups (template)
-            else if (nid.find("pause") != std::string::npos ||
-                     nid.find("Pause") != std::string::npos) hide = true;
-            else if (strstr(cls, "PauseLayer"))              hide = true;
-            else if (nid.find("paimon-loading") != std::string::npos) hide = true;
-            else if (nid.find('/') != std::string::npos)     hide = true;
-            else if (child->getZOrder() > 100)               hide = true;
-
-            if (hide) {
+            // (4) Vtable access guarded against a dangling scene sibling.
+            SceneChildClassifyCtx ctx{child};
+            if (sehClassify(&classifySceneChild, &ctx, &sceneFaulted)) {
                 hidden.push_back({child, true});
                 child->setVisible(false);
             }
+        }
+        if (sceneFaulted) {
+            log::warn("[FramebufferCapture] Skipped one or more dangling scene "
+                      "nodes while hiding UI");
         }
     }
 
@@ -688,6 +827,10 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     auto* glView   = director ? director->getOpenGLView() : nullptr;
     if (!pl || !glView || W <= 0 || H <= 0) return nullptr;
 
+    // Suppress flipArt/updateCameraBGArt for the whole render — updateCamera(0.f)
+    // below can reach them with the view retargeted, which crashes (see guard above).
+    SuppressCameraArtGuard suppressCameraArt;
+
     while (glGetError() != GL_NO_ERROR) {} // drain stale errors
 
     GLint oldFBO = 0;
@@ -717,14 +860,52 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
         return nullptr;
     }
 
-    // Retarget the cocos view to the capture resolution.
+    // GL objects are torn down and the previous FBO rebound on EVERY exit path
+    // (including the mid-render aborts below), so a fault never leaks the FBO
+    // nor leaves it bound for the next real frame.
+    struct GLCleanupGuard {
+        GLuint tex; GLuint fbo; GLint oldFBO;
+        ~GLCleanupGuard() {
+            glBindFramebuffer(GL_FRAMEBUFFER, oldFBO);
+            if (fbo) glDeleteFramebuffers(1, &fbo);
+            if (tex) glDeleteTextures(1, &tex);
+        }
+    } glCleanup{tex, fbo, oldFBO};
+
+    // (1c) Validate the retarget math before dividing: a zero/negative display
+    // factor or window size would produce inf/NaN in the viewport/projection.
+    // Bail to the back-buffer fallback instead of poisoning GL state.
     CCSize oldWinSize = director->getWinSize();
+    float displayFactor = geode::utils::getDisplayFactor();
+    if (displayFactor <= 0.f || oldWinSize.width <= 0.f || oldWinSize.height <= 0.f) {
+        log::warn("[FramebufferCapture] Bad view metrics (displayFactor={}, winSize={}x{}); "
+                  "skipping offscreen render -> back-buffer fallback",
+                  displayFactor, oldWinSize.width, oldWinSize.height);
+        return nullptr; // glCleanup restores GL
+    }
+
     CCSize oldDesign  = glView->getDesignResolutionSize();
     CCSize oldScreen  = glView->m_obScreenSize;
     float  oldScaleX  = glView->m_fScaleX;
     float  oldScaleY  = glView->m_fScaleY;
 
-    float displayFactor = geode::utils::getDisplayFactor();
+    // (1b) RAII net: the cocos view is always restored, even on a mid-render
+    // abort, so the next real frame is never left at the capture resolution.
+    struct ViewRestoreGuard {
+        CCDirector* director; CCEGLView* glView;
+        CCSize oldDesign, oldScreen; float oldScaleX, oldScaleY;
+        bool armed = false;
+        ~ViewRestoreGuard() {
+            if (!armed) return;
+            glView->m_fScaleX = oldScaleX;
+            glView->m_fScaleY = oldScaleY;
+            director->m_obWinSizeInPoints = oldDesign;
+            glView->m_obScreenSize = oldScreen;
+            glView->setDesignResolutionSize(oldDesign.width, oldDesign.height, kResolutionExactFit);
+            director->setViewport();
+        }
+    } viewGuard{director, glView, oldDesign, oldScreen, oldScaleX, oldScaleY};
+
     glView->m_fScaleX = static_cast<float>(W) / oldWinSize.width  / displayFactor;
     glView->m_fScaleY = static_cast<float>(H) / oldWinSize.height / displayFactor;
 
@@ -733,6 +914,7 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     director->m_obWinSizeInPoints = newRes;
     glView->m_obScreenSize = CCSize{static_cast<float>(W), static_cast<float>(H)};
     glView->setDesignResolutionSize(newRes.width, newRes.height, kResolutionExactFit);
+    viewGuard.armed = true;
 
     glViewport(0, 0, W, H);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -747,14 +929,32 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     CCSize newWinSize  = director->getWinSize();
     bool aspectMatches = sizesMatch(oldWinSize, newWinSize);
 
+    // (2) Third-party camera hooks (e.g. Globed) run inside the out-of-band
+    // updateCamera/preUpdateVisibility recalcs below and have repeatedly
+    // null-derefed with the view retargeted. When such a mod is present, skip
+    // those best-effort recalcs entirely (they only tweak non-16:9 framing);
+    // the real game loop recomputes them next frame, and the RAII guards keep
+    // the view/GL/camera state clean regardless.
+    static bool s_cameraModWarned = false;
+    bool thirdPartyCameraMod = Loader::get()->isModLoaded("dankmeme.globed2");
+    if (thirdPartyCameraMod && !s_cameraModWarned) {
+        s_cameraModWarned = true;
+        log::warn("[FramebufferCapture] Third-party camera mod detected; skipping "
+                  "out-of-band camera recalc during offscreen render for safety");
+    }
+    bool doCameraRecalc = !aspectMatches && !thirdPartyCameraMod;
+
     // When the window aspect differs from 16:9 the camera and UI-trigger
     // layers are positioned for the old winSize; recalculate for the render.
     bool hadUIPos = false;
     CCPoint oldUIPos{};
-    if (!aspectMatches) {
+    if (doCameraRecalc) {
         pl->m_calculateTargetHeightOffset = true;
         pl->m_updateGroundShadows = true;
-        pl->updateCamera(0.f);
+        if (!sehGuardedCall(+[](PlayLayer* p) { p->updateCamera(0.f); }, pl)) {
+            log::warn("[FramebufferCapture] updateCamera faulted during offscreen "
+                      "render; continuing with previous camera");
+        }
         if (auto* uiTrigger = pl->m_uiTriggerUI;
             uiTrigger && uiTrigger->getChildrenCount() > 0) {
             oldUIPos = uiTrigger->getPosition();
@@ -770,31 +970,70 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     CCSize const captureSize{static_cast<float>(W), static_cast<float>(H)};
     bool hadShader = shader && shader->getParent()
                   && !sizesMatch(shader->m_targetTextureSize, captureSize);
-    CCSize oldShaderScreen{};
-    CCSize oldShaderTarget{};
-    bool pixelateHardEdges = false;
+    CCSize oldShaderScreen = hadShader ? shader->m_screenSize : CCSize{};
+    CCSize oldShaderTarget = hadShader ? shader->m_targetTextureSize : CCSize{};
+    bool pixelateHardEdges = hadShader ? shader->m_state.m_pixelateHardEdges : false;
     auto applyLinearFilter = [&]() {
         if (shader && shader->m_sprite && shader->m_sprite->getTexture()) {
             ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
             shader->m_sprite->getTexture()->setTexParameters(&params);
         }
     };
+
+    // (1a/1b) Shader state is always put back, even on an abort between retarget
+    // and restore. setupShader/prePixelateShader are SEH-guarded: doubling an
+    // already-large shader FBO is exactly the allocation that faults mid-capture.
+    struct ShaderRestoreGuard {
+        PlayLayer* pl; ShaderLayer* shader;
+        CCSize oldScreen, oldTarget; bool pixelateHardEdges;
+        bool armed = false;
+        ~ShaderRestoreGuard() {
+            if (!armed || !shader) return;
+            shader->m_screenSize        = oldScreen;
+            shader->m_targetTextureSize = oldTarget;
+            sehGuardedCall(+[](PlayLayer* p) { if (p->m_shaderLayer) p->m_shaderLayer->setupShader(false); }, pl);
+            if (!pixelateHardEdges && shader->m_sprite && shader->m_sprite->getTexture()) {
+                ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
+                shader->m_sprite->getTexture()->setTexParameters(&params);
+            }
+            sehGuardedCall(+[](PlayLayer* p) { if (p->m_shaderLayer) p->m_shaderLayer->prePixelateShader(); }, pl);
+        }
+    } shaderGuard{pl, hadShader ? shader : nullptr,
+                  oldShaderScreen, oldShaderTarget, pixelateHardEdges, hadShader};
+
     if (hadShader) {
-        pixelateHardEdges = shader->m_state.m_pixelateHardEdges;
-        oldShaderScreen   = shader->m_screenSize;
-        oldShaderTarget   = shader->m_targetTextureSize;
         shader->m_screenSize        = newWinSize;
         shader->m_targetTextureSize = captureSize;
-        shader->setupShader(false);
+        sehGuardedCall(+[](PlayLayer* p) { if (p->m_shaderLayer) p->m_shaderLayer->setupShader(false); }, pl);
         if (!pixelateHardEdges) applyLinearFilter();
-        shader->prePixelateShader();
-        pl->updateShaderLayer(0.f);
+        sehGuardedCall(+[](PlayLayer* p) { if (p->m_shaderLayer) p->m_shaderLayer->prePixelateShader(); }, pl);
+        sehGuardedCall(+[](PlayLayer* p) { p->updateShaderLayer(0.f); }, pl);
         // setupShader recreates the shader's FBO; rebind ours for the visit.
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+        // (1d) If setupShader left our FBO incomplete, abort cleanly instead of
+        // drawing into an invalid target. The guards restore shader/view/GL.
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            log::warn("[FramebufferCapture] FBO incomplete after shader retarget "
+                      "-> back-buffer fallback");
+            return nullptr;
+        }
     }
 
-    if (!aspectMatches) pl->preUpdateVisibility(0.f);
-    pl->visit();
+    if (doCameraRecalc
+        && !sehGuardedCall(+[](PlayLayer* p) { p->preUpdateVisibility(0.f); }, pl)) {
+        log::warn("[FramebufferCapture] preUpdateVisibility faulted during "
+                  "offscreen render; skipped");
+    }
+
+    // (1a) visit() drives the whole scene draw with the retargeted view; SEH
+    // guard it so a fault inside a hooked node's draw falls back to the
+    // back-buffer instead of crashing.
+    if (!sehGuardedCall(+[](PlayLayer* p) { p->visit(); }, pl)) {
+        log::warn("[FramebufferCapture] pl->visit() faulted during offscreen "
+                  "render -> back-buffer fallback");
+        return nullptr; // guards restore shader/view/GL
+    }
 
     // Drain benign GL errors from retargeted shader render.
     while (glGetError() != GL_NO_ERROR) {}
@@ -807,33 +1046,15 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     bool readOk = (glGetError() == GL_NO_ERROR)
                && pixelBufferHasContent(raw->data(), raw->size());
 
-    // Restore the shader, camera flags and the view.
-    if (hadShader) {
-        shader->m_screenSize        = oldShaderScreen;
-        shader->m_targetTextureSize = oldShaderTarget;
-        shader->setupShader(false);
-        if (!pixelateHardEdges) applyLinearFilter();
-        shader->prePixelateShader();
-    }
+    // Camera flags marked dirty for next frame; shader/view/GL are restored by
+    // the RAII guards above on scope exit.
     if (!aspectMatches) {
-        // Mark dirty for next frame recalculation.
         pl->m_updateGroundShadows = true;
         pl->m_calculateTargetHeightOffset = true;
         if (hadUIPos && pl->m_uiTriggerUI) {
             pl->m_uiTriggerUI->setPosition(oldUIPos);
         }
     }
-
-    glView->m_fScaleX = oldScaleX;
-    glView->m_fScaleY = oldScaleY;
-    director->m_obWinSizeInPoints = oldDesign;
-    glView->m_obScreenSize = oldScreen;
-    glView->setDesignResolutionSize(oldDesign.width, oldDesign.height, kResolutionExactFit);
-    director->setViewport();
-
-    glBindFramebuffer(GL_FRAMEBUFFER, oldFBO);
-    glDeleteFramebuffers(1, &fbo);
-    glDeleteTextures(1, &tex);
 
     if (!readOk) {
         log::warn("[FramebufferCapture] Offscreen render returned empty content");
@@ -859,6 +1080,8 @@ void deletePboIfAny() {
 
 // Issue async glReadPixels into PBO; returns false so caller can fall back.
 bool issuePboRead(int W, int H) {
+    // Never leak or overwrite a live PBO handle (double-free / stale map guard).
+    deletePboIfAny();
     while (glGetError() != GL_NO_ERROR) {} // drain stale errors
 
     GLuint pbo = 0;
@@ -1028,6 +1251,26 @@ void FramebufferCapture::cancelPending() {
 // State machine driver, called from CCEGLView pre-swap.
 void FramebufferCapture::executeIfPending() {
     Phase phase = g_phase.load();
+
+    // (3) Runtime tearing down: never touch GL, hide state or map a PBO. Reset
+    // everything to Idle so nothing is left half-armed across shutdown.
+    if (paimon::isRuntimeShuttingDown()) {
+        if (phase != Phase::Idle || s_request.active) {
+            log::warn("[FramebufferCapture] Runtime shutting down; aborting pending capture (phase={})",
+                      static_cast<int>(phase));
+            if (s_request.callback) {
+                auto cb = std::move(s_request.callback);
+                cb(false, nullptr, nullptr, 0, 0);
+            }
+            s_request.active = false;
+            if (g_prep.active) restoreCaptureState();
+#ifdef GEODE_IS_WINDOWS
+            deletePboIfAny();
+#endif
+            g_phase.store(Phase::Idle);
+        }
+        return;
+    }
 
     // Phase: ArmedHide — hide UI; don't read yet (back-buffer still has UI).
     if (phase == Phase::ArmedHide) {

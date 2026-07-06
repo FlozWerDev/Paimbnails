@@ -31,7 +31,6 @@ public:
         return instance;
     }
 
-    // Check whether the user's tier meets the required tier.
     AuthResult authorize(PermissionTier required) const {
         PermissionTier user = currentUserTier();
         if (static_cast<int>(user) >= static_cast<int>(required)) {

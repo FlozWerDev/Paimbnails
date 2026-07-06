@@ -1,4 +1,5 @@
 #include "ModPreviewGalleryPopup.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/Geode.hpp>
 #include <algorithm>
 
@@ -8,6 +9,7 @@ namespace paimon::mod_previews {
 
 bool ModPreviewGalleryPopup::init(int page, int count, std::string urlBase) {
     if (!Popup::init(380.f, 250.f)) return false;
+    paimon::markDynamicPopup(this);
 
     m_page = page;
     m_count = std::max(count, 1);

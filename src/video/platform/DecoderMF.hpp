@@ -49,6 +49,8 @@ private:
     bool createStagingTexture();
     bool copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresource, Frame& slot);
     bool fallbackToSoftwareDecode(const std::string& path);
+    // Box-average downscale of the native scratch frame into a smaller ring slot.
+    void downscalePlanes(const Frame& src, Frame& dst, int factor);
     IMFSourceReader*   m_reader     = nullptr;
     IMFDXGIDeviceManager* m_dxgiMgr = nullptr;
     ID3D11Device*      m_d3dDevice  = nullptr;
@@ -71,6 +73,14 @@ private:
     std::string        m_videoPath;
     int                m_width  = 0;
     int                m_height = 0;
+    // Output (post-downscale) dimensions reported via getWidth/getHeight and
+    // used to size the ring + every downstream GPU buffer. Equal to m_width/
+    // m_height when m_downscaleFactor == 1.
+    int                m_outWidth  = 0;
+    int                m_outHeight = 0;
+    int                m_downscaleFactor = 1;
+    // Native-sized scratch frame; only allocated when downscaling is active.
+    Frame              m_scratch;
     double             m_duration = 0.0;
     GUID               m_subType  = GUID_NULL;
     GUID               m_pixelFormat = GUID_NULL;

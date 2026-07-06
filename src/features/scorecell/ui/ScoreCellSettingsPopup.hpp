@@ -6,8 +6,6 @@
 
 namespace paimon::scorecell {
 
-// Settings popup for the leaderboard GJScoreCell visual FX.
-// Opened from the gear button in LeaderboardsLayer's right-side menu.
 class ScoreCellSettingsPopup : public geode::Popup {
 public:
     static ScoreCellSettingsPopup* create();
@@ -35,13 +33,13 @@ protected:
 
     cocos2d::CCNode* m_previewContainer = nullptr;
 
-    geode::Ref<cocos2d::CCNode> m_effectBtnSprite = nullptr;   // ButtonSprite
-    geode::Ref<cocos2d::CCNode> m_hoverBtnSprite = nullptr;    // ButtonSprite
-    geode::Ref<cocos2d::CCNode> m_entranceBtnSprite = nullptr; // ButtonSprite
+    geode::Ref<cocos2d::CCNode> m_effectBtnSprite = nullptr;
+    geode::Ref<cocos2d::CCNode> m_hoverBtnSprite = nullptr;
+    geode::Ref<cocos2d::CCNode> m_entranceBtnSprite = nullptr;
 
     cocos2d::CCLabelBMFont* m_speedLabel = nullptr;
     cocos2d::CCLabelBMFont* m_opacityLabel = nullptr;
     cocos2d::CCLabelBMFont* m_intensityLabel = nullptr;
 };
 
-} // namespace paimon::scorecell
+}

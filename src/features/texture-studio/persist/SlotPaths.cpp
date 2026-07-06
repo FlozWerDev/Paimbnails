@@ -70,7 +70,6 @@ std::string SlotPaths::sanitizeFilename(std::string_view name) {
     out.reserve(name.size());
     for (char c : name) {
         unsigned char uc = static_cast<unsigned char>(c);
-        // Keep alphanumerics, dot, dash, underscore. Replace the rest.
         if (std::isalnum(uc) || c == '.' || c == '-' || c == '_') {
             out += c;
         } else {
@@ -78,9 +77,7 @@ std::string SlotPaths::sanitizeFilename(std::string_view name) {
         }
     }
     if (out.empty()) out = "_unnamed";
-    // Trim Windows max-component length (255 chars). A texture-studio
-    // override .bin is small enough that this only matters for pathological
-    // sprite names, but be defensive.
+    // Defensive cap below the Windows 255-char path-component limit.
     if (out.size() > 200) out.resize(200);
     return out;
 }

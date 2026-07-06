@@ -24,7 +24,7 @@ static PFN_CLIENTWAITSYNC  pglClientWaitSync  = nullptr;
 static PFN_DELETESYNC      pglDeleteSync      = nullptr;
 
 static void loadGLSyncFunctions() {
-    if (pglFenceSync) return;  // already loaded
+    if (pglFenceSync) return;
     auto* dll = GetModuleHandleA("opengl32.dll");
     if (!dll) dll = GetModuleHandleA("OPENGL32.dll");
 
@@ -106,9 +106,8 @@ static void loadGLSyncFunctions() {
     if (pglMapBufferRange) return;
     pglMapBufferRange  = (PFN_glMapBufferRange)eglGetProcAddress("glMapBufferRange");
     pglUnmapBuffer     = (PFN_glUnmapBuffer)eglGetProcAddress("glUnmapBuffer");
-    // GLES3 fence sync
-    pglFenceSync       = (PFN_glFenceSync)eglGetProcAddress("glFenceSync");
-    pglClientWaitSync  = (PFN_glClientWaitSync)eglGetProcAddress("glClientWaitSync");
+        pglFenceSync       = (PFN_glFenceSync)eglGetProcAddress("glFenceSync");
+        pglClientWaitSync  = (PFN_glClientWaitSync)eglGetProcAddress("glClientWaitSync");
     pglDeleteSync      = (PFN_glDeleteSync)eglGetProcAddress("glDeleteSync");
 
     if (!pglMapBufferRange || !pglUnmapBuffer) {
@@ -225,10 +224,9 @@ static void loadGLSyncFunctions() {
 
 namespace paimon::video {
 
-// Fence helpers
 bool PBOUploader::checkAndClearFence(int idx) {
     GLsync& fence = m_slots[idx].fence;
-    if (!fence) return true;  // no fence → slot is ready
+    if (!fence) return true;
 
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID) || defined(GEODE_IS_MACOS)
     // If sync functions aren't available, always allow reuse
@@ -267,7 +265,6 @@ void PBOUploader::deleteAllFences() {
     }
 }
 
-// Init — allocate 9 PBOs (3 per YUV plane) into PBOSlots
 bool PBOUploader::init(int ySize, int cbSize, int crSize) {
     if (m_initialized) shutdown();
 
@@ -275,18 +272,15 @@ bool PBOUploader::init(int ySize, int cbSize, int crSize) {
     loadGLSyncFunctions();
     while (glGetError() != GL_NO_ERROR) {}
 
-    // Pick a runtime slot count based on frame size to balance memory vs performance.
-    // More slots = less chance of all PBOs being busy = fewer stalls.
-    // 4K+: 3 slots (was 2) - ~36 MB total
-    // 1080p-1440p: 5 slots (was 3) - ~25 MB total
-    // 720p and below: 6 slots (was 3) - ~12 MB total
+    // Slot count scales with frame size: more slots = fewer stalls from all
+    // PBOs being busy, fewer slots at high resolution to cap memory.
     int totalBytes = ySize + cbSize + crSize;
     if (totalBytes > 12 * 1024 * 1024) {
-        m_activeSlots = 3;  // 4K+: increased from 2 to reduce stalls
+        m_activeSlots = 3;
     } else if (totalBytes > 4 * 1024 * 1024) {
-        m_activeSlots = 5;  // 1080p-1440p: increased from 3
+        m_activeSlots = 5;
     } else {
-        m_activeSlots = 6;  // 720p: increased from 3
+        m_activeSlots = 6;
     }
 
     m_rgbaMode = false;
@@ -343,16 +337,12 @@ bool PBOUploader::init(int rgbaSize) {
     m_rgbaMode = true;
     m_rgbaSize = rgbaSize;
 
-    // RGBA slot count: balance memory vs performance to reduce PBO busy stalls.
-    // 4K+: 3 slots (was 2) - ~99 MB total
-    // 1080p-1440p: 5 slots (was 3) - ~40 MB total
-    // 720p: 6 slots (was 3) - ~11 MB total
     if (rgbaSize > 20 * 1024 * 1024) {
-        m_activeSlots = 3;  // 4K+: increased from 2
+        m_activeSlots = 3;
     } else if (rgbaSize > 6 * 1024 * 1024) {
-        m_activeSlots = 5;  // 1080p-1440p: increased from 3
+        m_activeSlots = 5;
     } else {
-        m_activeSlots = 6;  // 720p: increased from 3
+        m_activeSlots = 6;
     }
 
 #if defined(GEODE_IS_ANDROID)
@@ -381,7 +371,9 @@ bool PBOUploader::init(int rgbaSize) {
         if (glGetError() != GL_NO_ERROR) {
             geode::log::warn("PBOUploader: glBufferData failed for RGBA PBO {}", i);
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            shutdown();
+            // m_initialized is still false here, so shutdown() would no-op and
+            // leak the names glGenBuffers just created — free them explicitly.
+            glDeleteBuffers(m_activeSlots, pboRGBA);
             return false;
         }
     }
@@ -407,7 +399,6 @@ bool PBOUploader::init(int rgbaSize) {
 void PBOUploader::shutdown() {
     if (!m_initialized) return;
 
-    // GL/main-thread safety check
     // gl* calls are only valid on the main thread with a live GL context. If
     // either condition fails, "forget" the GL handles and let the OS reclaim
     // them when the process exits. Calling glDelete* off-thread is undefined
@@ -468,7 +459,6 @@ void PBOUploader::uploadPlane(int slotIdx, GLuint texId, GLenum format,
     (void)data; (void)stride; (void)width; (void)height;
 }
 
-// Helper: write data into a single PBO and upload to texture
 static void uploadSinglePBO(GLuint pbo, int pboSize, GLuint texId,
                              GLenum format, const uint8_t* data,
                              int stride, int width, int height) {
@@ -531,13 +521,10 @@ bool PBOUploader::upload(GLuint texY, GLuint texCb, GLuint texCr,
     int uvH = (height + 1) / 2;
     int uvW = (width + 1) / 2;
 
-    // Y plane
     uploadSinglePBO(m_slots[m_uploadIdx].pboY, m_ySize, texY,
                     GL_LUMINANCE, planeY, strideY, width, height);
-    // Cb plane
     uploadSinglePBO(m_slots[m_uploadIdx].pboCb, m_cbSize, texCb,
                     GL_LUMINANCE, planeCb, strideCb, uvW, uvH);
-    // Cr plane
     uploadSinglePBO(m_slots[m_uploadIdx].pboCr, m_crSize, texCr,
                     GL_LUMINANCE, planeCr, strideCr, uvW, uvH);
 

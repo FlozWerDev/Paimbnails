@@ -40,19 +40,16 @@ bool LeaderboardHistoryLayer::init() {
 
     auto winSize = CCDirector::get()->getWinSize();
 
-    // background
     auto bg = CCLayerColor::create(ccc4(15, 12, 25, 255));
     bg->setContentSize(winSize);
     bg->setZOrder(-10);
     this->addChild(bg);
 
-    // title
     auto title = CCLabelBMFont::create("Featured History", "bigFont.fnt");
     title->setScale(0.65f);
     title->setPosition({winSize.width / 2, winSize.height - 20.f});
     this->addChild(title, 10);
 
-    // back button
     auto menu = CCMenu::create();
     menu->setPosition(0, 0);
     menu->setZOrder(20);
@@ -66,7 +63,6 @@ bool LeaderboardHistoryLayer::init() {
     backBtn->setPosition(25, winSize.height - 25);
     menu->addChild(backBtn);
 
-    // daily / weekly tabs
     auto tabMenu = CCMenu::create();
     tabMenu->setPosition(0, 0);
     tabMenu->setZOrder(10);
@@ -104,7 +100,6 @@ bool LeaderboardHistoryLayer::init() {
     auto weeklyBtn = createTab("Weekly", "weekly", {centerX + 55.f, topY});
     tabMenu->addChild(weeklyBtn);
 
-    // pagination buttons
     m_pageMenu = CCMenu::create();
     m_pageMenu->setPosition(0, 0);
     m_pageMenu->setZOrder(15);
@@ -129,7 +124,6 @@ bool LeaderboardHistoryLayer::init() {
     m_pageLbl->setOpacity(180);
     this->addChild(m_pageLbl, 15);
 
-    // spinner
     m_loadingSpinner = PaimonLoadingOverlay::create("Loading...", 40.f);
     m_loadingSpinner->show(this, 100);
 
@@ -140,7 +134,6 @@ bool LeaderboardHistoryLayer::init() {
     
     CCDirector::get()->getTouchDispatcher()->addTargetedDelegate(this, 0, false);
 
-    // apply cave effect on menu music
     applyCaveEffect();
     this->scheduleUpdate();
 
@@ -174,7 +167,6 @@ void LeaderboardHistoryLayer::onExitTransitionDidStart() {
 }
 
 void LeaderboardHistoryLayer::update(float dt) {
-    // Verify cave effect is still applied.
     if (!m_caveApplied) {
         applyCaveEffect();
     }
@@ -185,12 +177,10 @@ void LeaderboardHistoryLayer::applyCaveEffect() {
     if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) return;
     if (m_caveApplied) return;
 
-    // Save original volume and reduce to 55% for distance effect.
     engine->m_backgroundMusicChannel->getVolume(&m_savedBgVolume);
     float caveVol = engine->m_musicVolume * 0.55f;
     engine->m_backgroundMusicChannel->setVolume(caveVol);
 
-    // Lowpass filter
     if (!m_lowpassDSP) {
         engine->m_system->createDSPByType(FMOD_DSP_TYPE_LOWPASS, &m_lowpassDSP);
         if (m_lowpassDSP) {
@@ -199,7 +189,6 @@ void LeaderboardHistoryLayer::applyCaveEffect() {
         }
     }
 
-    // Subtle reverb
     if (!m_reverbDSP) {
         engine->m_system->createDSPByType(FMOD_DSP_TYPE_SFXREVERB, &m_reverbDSP);
         if (m_reverbDSP) {
@@ -231,7 +220,6 @@ void LeaderboardHistoryLayer::removeCaveEffect() {
 
 bool LeaderboardHistoryLayer::ccMouseScroll(float x, float y) {
 #if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_MACOS)
-    // Non-Windows/macOS has no mouse scroll; CCScrollView handles native touch.
     return false;
 #else
     if (!m_scrollView) return false;
@@ -366,7 +354,6 @@ void LeaderboardHistoryLayer::loadHistory(std::string type) {
                             layer->m_entries.push_back(entry);
                         }
                     });
-                    // total from server for pagination
                     int total = data["total"].asInt().unwrapOr(0);
                     if (total > 0) {
                         layer->m_totalServerItems = total;
@@ -380,7 +367,6 @@ void LeaderboardHistoryLayer::loadHistory(std::string type) {
         if (layer->m_loadingSpinner) layer->m_loadingSpinner->setVisible(false);
         layer->createList();
 
-        // resolve names from GD server in batch
         if (!layer->m_entries.empty()) {
             std::string idList;
             for (auto& e : layer->m_entries) {
@@ -423,10 +409,8 @@ void LeaderboardHistoryLayer::createList() {
         return;
     }
 
-    // Entries are already the current page only (loaded with offset/limit).
     int pageCount = (int)m_entries.size();
 
-    // scroll area
     float listW = 380.f;
     float cellH = 55.f;
     float listH = winSize.height - 90.f;
@@ -458,25 +442,21 @@ void LeaderboardHistoryLayer::createList() {
         cell->setPosition({listW / 2, y});
         content->addChild(cell);
 
-        // alternating cell background
         auto cellBg = paimon::SpriteHelper::createColorPanel(
             listW, cellH - 2.f,
             p % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32}, 200);
         cellBg->setPosition({0, 0});
         cell->addChild(cellBg, 0);
 
-        // thumbnail — with clipping so aspect-fill doesn't overflow
         float thumbSize = cellH - 8.f;
         float tw = thumbSize * 1.6f;
         float th = thumbSize;
 
-        // dark background below the clipper
         auto thumbBg = CCLayerColor::create({30, 28, 40, 255});
         thumbBg->setContentSize({tw, th});
         thumbBg->setPosition({4.f, (cellH - 2.f - th) / 2});
         cell->addChild(thumbBg, 1);
 
-        // clipper above the background
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(tw, th, 4.f);
         auto clipper = CCClippingNode::create(stencil);
         clipper->setContentSize({tw, th});
@@ -510,7 +490,6 @@ void LeaderboardHistoryLayer::createList() {
 
         float textX = thumbSize * 1.6f + 12.f;
 
-        // rank number
         auto numLbl = CCLabelBMFont::create(fmt::format("#{}", globalIdx + 1).c_str(), "chatFont.fnt");
         numLbl->setScale(0.4f);
         numLbl->setColor({255, 200, 50});
@@ -518,7 +497,6 @@ void LeaderboardHistoryLayer::createList() {
         numLbl->setPosition({textX, (cellH - 2.f) / 2 + 14.f});
         cell->addChild(numLbl, 10);
 
-        // level name
         auto nameLbl = CCLabelBMFont::create(entry.levelName.c_str(), "bigFont.fnt");
         nameLbl->setScale(0.38f);
         nameLbl->setAnchorPoint({0, 0.5f});
@@ -529,7 +507,6 @@ void LeaderboardHistoryLayer::createList() {
         }
         cell->addChild(nameLbl, 10);
 
-        // creator
         std::string creatorStr = entry.creatorName.empty() ? "" : "by " + entry.creatorName;
         auto creatorLbl = CCLabelBMFont::create(creatorStr.c_str(), "chatFont.fnt");
         creatorLbl->setScale(0.42f);
@@ -538,7 +515,6 @@ void LeaderboardHistoryLayer::createList() {
         creatorLbl->setPosition({textX, (cellH - 2.f) / 2 - 12.f});
         cell->addChild(creatorLbl, 10);
 
-        // date
         if (entry.setAt > 0) {
             time_t seconds = entry.setAt / 1000;
             auto tmBuf = asp::localtime(seconds);
@@ -555,7 +531,6 @@ void LeaderboardHistoryLayer::createList() {
             }
         }
 
-        // click button
         auto cellMenu = CCMenu::create();
         cellMenu->setPosition({0, 0});
         cellMenu->setContentSize(cell->getContentSize());

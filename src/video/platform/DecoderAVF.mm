@@ -95,11 +95,9 @@ bool DecoderAVF::open(const std::string& path) {
             return false;
         }
 
-        // Load duration
         CMTime dur = asset.duration;
         m_duration = CMTimeGetSeconds(dur);
 
-        // Find video track
         AVAssetTrack* videoTrack = nil;
         NSArray<AVAssetTrack*>* tracks = [asset tracksWithMediaType:AVMediaTypeVideo];
         if (tracks.count == 0) {

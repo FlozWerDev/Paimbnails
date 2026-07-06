@@ -14,11 +14,6 @@ class GJGameLevel;
 
 namespace paimon::menumusic {
 
-// Cache permanente de portadas para canciones de GD por song ID.
-// Busca hasta 10 niveles con mas likes que usen la cancion, descarga sus
-// miniaturas por level ID (batch del ThumbnailLoader) y las guarda en
-// [saveDir]/menu-music/song-covers/{songID}/.
-// Si ya hay portadas guardadas, no contacta RobTop ni el servidor del mod.
 class SongCoverCache {
 public:
     using CoversCallback = geode::CopyableFunction<void(std::vector<std::string> const& coverPaths, bool success)>;

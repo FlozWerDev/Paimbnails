@@ -145,7 +145,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         getSongInfoIfUnloaded();
     }
 
-    // Build rounded clipper
     CCClippingNode* buildClipper(CCSize const& sz) {
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(sz.width, sz.height);
 
@@ -178,7 +177,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             m_fields->m_bgSwapped = false;
         }
         if (m_fields->m_bgSwapped) return true;
-        // Fall back to the node with ID "bg"
         CCNode* bgNode = (m_bgSpr && isValidChild(m_bgSpr)) ? m_bgSpr : nullptr;
         if (!bgNode) bgNode = this->getChildByID("bg");
         if (!bgNode) {
@@ -214,7 +212,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         clip->setAnchorPoint(bgAnchor);
         clip->setPosition(bgPos);
 
-        // Semi-transparent dark fallback
         auto fallback = paimon::SpriteHelper::createDarkPanel(bgSz.width, bgSz.height, 160, 6.f);
         fallback->setAnchorPoint({0.f, 0.f});
         fallback->setPosition({0.f, 0.f});
@@ -302,7 +299,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             });
     }
 
-    // Find the level in the hierarchy
     GJGameLevel* findLevel() {
         if (auto* lil = findLevelInfoLayer()) {
             return lil->m_level;
@@ -315,7 +311,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         return nullptr;
     }
 
-    // Request thumbnail load
     void tryApplyBlur() {
         if (!shouldManageBlur()) {
             return;
@@ -339,9 +334,8 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
         log::info("[PaimonCSW] tryApplyBlur: requesting thumbnail for levelID={}", levelID);
 
-        // Try RAM cache first
-        auto ramTex = paimon::cache::ThumbnailCache::get().getFromRam(levelID, false);
-        if (ramTex.has_value() && ramTex.value()) {
+        // Try RAM cache before any async load.
+        auto ramTex = paimon::cache::ThumbnailCache::get().getFromRam(levelID, false);        if (ramTex.has_value() && ramTex.value()) {
             log::info("[PaimonCSW] RAM cache HIT for {}", levelID);
             applyBlurredThumbnail(ramTex.value());
             return;
@@ -386,12 +380,11 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         );
     }
 
-    // Scheduled retry if onEnter failed
     void retryBlur(float) {
         m_fields->m_retryScheduled = false;
         if (!paimon::csw::Lifecycle::isAlive(asBase())) return;
         if (!getParent()) return;
-        if (m_fields->m_levelID > 0) return; // already resolved
+        if (m_fields->m_levelID > 0) return;
         if (!shouldManageBlur()) return;
         log::info("[PaimonCSW] retryBlur: trying again...");
         tryApplyBlur();
@@ -419,7 +412,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             (void*)m_bgSpr, getContentSize().width, getContentSize().height,
             isRobtopSong, isMusicLibrary);
 
-        // Subscribe to thumbnail change event
         if (m_fields->m_bgEventHandle == 0) {
             auto* widget = asBase();
             m_fields->m_bgEventHandle = paimon::EventBus::get().subscribe<paimon::ThumbnailBackgroundChangedEvent>(
@@ -434,7 +426,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
                     if (paimon::csw::Lifecycle::shouldSkipDelegateCall(widget)) return;
                     if (!e.texture || e.levelID <= 0) { log::warn("[PaimonCSW] event: bad payload"); return; }
 
-                    // Resolve levelID from the event if needed
                     if (w->m_fields->m_levelID <= 0) {
                         auto* level = w->findLevel();
                         if (level && level->m_levelID.value() == e.levelID) {
@@ -468,7 +459,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
         ensureClipper();
 
-        // Hide bg in case it was re-shown
+        // Re-hide bg: GD may have re-shown it.
         if (m_fields->m_bgSwapped) {
             if (m_bgSpr && isValidChild(m_bgSpr)) m_bgSpr->setVisible(false);
             if (auto* bgById = this->getChildByID("bg")) bgById->setVisible(false);
@@ -477,7 +468,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         tryApplyBlur();
         requestSongMetadataIfNeeded();
 
-        // Retry if findLevel failed
         if (m_fields->m_levelID <= 0 && !m_fields->m_retryScheduled) {
             m_fields->m_retryScheduled = true;
             this->scheduleOnce(
@@ -563,7 +553,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
                 curSz.height != m_fields->m_originalBgSize.height) {
                 m_fields->m_clipper->setContentSize(m_fields->m_originalBgSize);
                 m_fields->m_clipper->setPosition(m_fields->m_originalBgPos);
-                // Reposition the blur sprite if present
                 if (auto* blurSpr = m_fields->m_clipper->getChildByID("paimon-song-blur"_spr)) {
                     blurSpr->setPosition(m_fields->m_originalBgSize / 2);
                     float sx = m_fields->m_originalBgSize.width / blurSpr->getContentSize().width;
@@ -578,7 +567,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             }
         }
 
-        // Hide bg if it was recreated
+        // Re-hide bg: GD may have recreated it.
         if (m_fields->m_bgSwapped) {
             if (m_bgSpr && isValidChild(m_bgSpr)) m_bgSpr->setVisible(false);
             if (auto* bgById = this->getChildByID("bg")) bgById->setVisible(false);

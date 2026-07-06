@@ -1,26 +1,11 @@
 ﻿#pragma once
 
-// MenuMusicPopup — popup principal del sistema Menu Music.
-//
-// Layout rectangular compacto (460x210):
-//   [ cover blur como fondo, ocupa todo ]
-// MENU MUSIC               Title (clipped)
-// Downloaded track
-// /⏸    🔀
-// HERO     0:15  3:20  [-5s] [+5s]
-// COVER    ⭐  ❌  ⏸  📋  🔁  ➕
-// [Library] [Playlists] [Add] [Random All]
-//
-// Usa:
-//   * CoverBlurBackground para el fondo
-//   * CoverHero / VinylDisc para el disco
-//   * Slider de Geode para el seek bar (drag libre)
-
 #include <Geode/Geode.hpp>
 #include <string>
 
 // Forward decl for the cocos Slider class from Geode bindings.
 class Slider;
+class ButtonSprite;
 
 namespace paimon::menumusic {
 
@@ -37,7 +22,6 @@ protected:
     void onEnterTransitionDidFinish() override;
     void onExit() override;
 
-    // Build
     void buildFullBackground();
     void buildContentClipper();
     void buildBlurBackground();
@@ -47,51 +31,34 @@ protected:
     void buildInfoColumn();
     void buildTransport();
     void buildSeekBar();
-    void buildQuickActions();
+    void buildModeSelector();
     void buildBottomBar();
 
-    // Refresh
     void refreshFromState();
+    void updateModeSelector();
     void onTrackChanged(const std::string& trackId);
     void onLibraryChanged();
 
-    // Button callbacks
     void onPlayPause(cocos2d::CCObject*);
     void onPrev(cocos2d::CCObject*);
     void onNext(cocos2d::CCObject*);
-    void onShuffle(cocos2d::CCObject*);       // shuffle sobre Library
-    void onShuffleAll(cocos2d::CCObject*);    // shuffle sobre Library + menu-loop + GD downloaded
+    void onShuffle(cocos2d::CCObject*);
     void onModeLibrary(cocos2d::CCObject*);
     void onModePlaylist(cocos2d::CCObject*);
     void onModeDisabled(cocos2d::CCObject*);
     void onOpenLibrary(cocos2d::CCObject*);
     void onOpenPlaylists(cocos2d::CCObject*);
     void onOpenAdd(cocos2d::CCObject*);
-    void onEditorMusicGear(cocos2d::CCObject*);  // habilita/deshabilita Editor Music
+    void onOpenSettings(cocos2d::CCObject*);
 
-    // Quick actions (parity with Menu Loop Randomizer)
-    // Actuan sobre el sistema menu-loop (songs externas, override, etc.)
-    // y sobre el player del mod segun lo que este sonando. Las acciones
-    // que afectan al estado global (favorite/blacklist/previous) siempre
-    // usan el MenuLoopControl porque es el que gestiona la persistencia.
-    void onFavorite(cocos2d::CCObject*);
-    void onBlacklist(cocos2d::CCObject*);
-    void onHold(cocos2d::CCObject*);
-    void onCopyName(cocos2d::CCObject*);
-    void onRegenNotification(cocos2d::CCObject*);
-    void onAddToPlaylistFile(cocos2d::CCObject*);
-    void onOpenSongs(cocos2d::CCObject*);
-
-    // Playback progress controls
     void onSeekBackward(cocos2d::CCObject*);
     void onSeekForward(cocos2d::CCObject*);
     void onSeekSliderChanged(cocos2d::CCObject*);
     void tickSeekUpdate(float dt);
+    void pressAndHoldSeek(float dt);
 
-    // Keyboard shortcuts (YT/VLC/Spotify-like)
     void keyDown(cocos2d::enumKeyCodes key, double p1) override;
 
-    // External song detection
     struct DetectedSong {
         std::string displayName;
         std::string artist;
@@ -99,18 +66,16 @@ protected:
         std::vector<std::string> coverPaths;
         std::string audioPath;
         int songID = 0;
-        bool isPaimonTrack = false;  // true si viene de MenuMusicLibrary
-        bool hasAnything = false;    // true si al menos hay algo sonando
+        bool isPaimonTrack = false;
+        bool hasAnything = false;
     };
     DetectedSong detectActiveSong() const;
 
     void applyCovers(std::vector<std::string> const& coverPaths);
 
-    // Fullscreen backdrop (blur de la cover ocupando toda la pantalla)
     void applyFullscreenCover(const std::string& coverPath);
     void syncCoverChrome(float dt);
 
-    // Ticker para detectar cambios del menu-loop vanilla
     void pollExternalSong(float dt);
 
     CoverBlurBackground* m_bg = nullptr;
@@ -118,12 +83,8 @@ protected:
     CoverHero* m_hero = nullptr;
     cocos2d::CCClippingNode* m_contentClip = nullptr;
 
-    // Fondo oscuro que cubre todo m_mainLayer para que no se vean
-    // huecos del frame vanilla de GD entre el clipper y los bordes.
     cocos2d::CCDrawNode* m_fullBg = nullptr;
 
-    // Fullscreen backdrop que vive como hijo directo de `this` detras
-    // del m_mainLayer.
     cocos2d::CCNode* m_fullscreenBackdrop = nullptr;
     cocos2d::CCLayerColor* m_fullscreenDim = nullptr;
     cocos2d::CCSprite* m_fullscreenBlur = nullptr;
@@ -137,7 +98,11 @@ protected:
     cocos2d::CCClippingNode* m_trackClip = nullptr;
     float m_trackClipWidth = 0.f;
     cocos2d::CCLabelBMFont* m_subtitleLabel = nullptr;
-    cocos2d::CCLabelBMFont* m_modeLabel = nullptr;
+
+    // Selector de modo (Off / All Songs / Playlist): el activo se resalta.
+    ButtonSprite* m_modeOffSpr = nullptr;
+    ButtonSprite* m_modeAllSpr = nullptr;
+    ButtonSprite* m_modePlaylistSpr = nullptr;
 
     CCMenuItemSpriteExtra* m_playBtn = nullptr;
     cocos2d::CCSprite* m_playSprite = nullptr;
@@ -152,6 +117,7 @@ protected:
     cocos2d::CCLabelBMFont* m_seekTotalLabel = nullptr;
     CCMenuItemSpriteExtra* m_seekBkwdBtn = nullptr;
     CCMenuItemSpriteExtra* m_seekFwrdBtn = nullptr;
+    float m_seekHoldTime = 0.f;
     cocos2d::CCNode* m_seekRow = nullptr;
     cocos2d::CCSize m_seekFillMaxSize {0.f, 0.f};
 

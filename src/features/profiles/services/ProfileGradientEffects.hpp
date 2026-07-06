@@ -11,9 +11,6 @@
 
 namespace paimon::profilebg {
 
-// CCLayerGradient con efecto animado integrado.  La logica del efecto vive
-// en update() para soportar transiciones de color (que CCAction estandar no
-// puede hacer sobre el gradient real).
 class AnimatedGradientLayer : public cocos2d::CCLayerGradient {
 public:
     static AnimatedGradientLayer* create(
@@ -45,7 +42,6 @@ public:
         m_speed   = std::clamp(speed, 0.1f, 5.0f);
         m_time    = 0.f;
 
-        // Reinicia transformaciones que pudieran estar de un efecto anterior.
         this->stopAllActions();
         this->setRotation(0.f);
         this->setScale(1.f);
@@ -58,12 +54,8 @@ public:
             return;
         }
 
-        // Para efectos que se hacen mejor con CCAction (rotate / pulse /
-        // slide) los aplicamos directamente.  El efecto "shift" se
-        // resuelve en update() porque interpola las colores del gradient.
         auto sz = this->getContentSize();
         if (m_effect == "rotate") {
-            // Sobreescala para que la rotacion no muestre esquinas vacias
             float oversize = std::sqrt(sz.width * sz.width + sz.height * sz.height);
             float scale = oversize / std::max(1.f, std::min(sz.width, sz.height));
             this->setScale(std::max(scale, 1.5f));
@@ -85,8 +77,6 @@ public:
             this->unscheduleUpdate();
         }
         else if (m_effect == "slide") {
-            // El layer es un poco mas ancho que su contenedor y oscilamos
-            // posX para crear el efecto de flujo.
             this->setScaleX(1.6f);
             float distance = sz.width * 0.25f;
             float duration = std::max(0.3f, 2.0f / m_speed);
@@ -103,7 +93,6 @@ public:
             this->unscheduleUpdate();
         }
         else if (m_effect == "shift") {
-            // update() se encarga: interpola los dos colores de A->B->A
             this->scheduleUpdate();
         }
         else {
@@ -118,8 +107,6 @@ public:
         cocos2d::CCLayerGradient::update(dt);
         if (m_effect != "shift") return;
 
-        // Periodo total = 2 * (1.5/speed) segundos.  En la primera mitad
-        // hacemos lerp(A, B), en la segunda lerp(B, A).
         float halfPeriod = std::max(0.3f, 1.5f / m_speed);
         m_time += dt;
         float local = std::fmod(m_time, halfPeriod * 2.f);
@@ -186,4 +173,4 @@ inline float normalizeSpeed(float speed) {
     return std::clamp(speed, 0.1f, 5.0f);
 }
 
-} // namespace paimon::profilebg
+}

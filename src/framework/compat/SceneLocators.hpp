@@ -13,7 +13,6 @@ namespace paimon::compat {
 // search layers.
 
 struct LevelBrowserLocator {
-    // Find the search menu near the top of the layer.
     // Chain: getChildByID("search-menu") -> first CCMenu with Y > 70% of screen.
     static cocos2d::CCMenu* findSearchMenu(cocos2d::CCNode* layer) {
         if (!layer) return nullptr;
@@ -33,7 +32,6 @@ struct LevelBrowserLocator {
         return nullptr;
     }
 
-    // Find a generic background node.
     // Chain: getChildByID("background") -> first CCScale9Sprite child.
     static cocos2d::CCNode* findBackground(cocos2d::CCNode* layer) {
         if (!layer) return nullptr;
@@ -52,7 +50,6 @@ struct LevelBrowserLocator {
 // GauntletLocator: for GauntletLayer.
 
 struct GauntletLocator {
-    // Find the gauntlet background.
     // Chain: getChildByID("background") -> first direct child.
     static cocos2d::CCNode* findBackground(cocos2d::CCNode* layer) {
         if (!layer) return nullptr;
@@ -74,7 +71,6 @@ struct InfoLayerLocator {
         bool found = false;
     };
 
-    // Locate the popup background and return its geometry.
     // Chain: getChildByID("background") -> first CCScale9Sprite child.
     static PopupGeometry findPopupGeometry(cocos2d::CCNode* mainLayer) {
         if (!mainLayer) return {};

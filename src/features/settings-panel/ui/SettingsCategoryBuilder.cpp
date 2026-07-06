@@ -68,7 +68,7 @@ void buildGeneral(CCNode* c, float w) {
 
     c->addChild(createDropdownRow("Language",
         gset<std::string>("language"),
-        {"english", "spanish", "portuguese", "french", "german", "russian", "japanese"},
+        {"english", "spanish"},
         [](std::string const& v){ sset<std::string>("language", v); },
         w));
 
@@ -347,16 +347,11 @@ void buildInterface(CCNode* c, float w) {
         w));
 
     c->addChild(createSectionHeader("Popup Blur", w));
+    ssaved<std::string>("popup-blur-style", "paiblur");
 
     c->addChild(createToggleRow("Enable Popup Blur",
         gset<bool>("popup-blur-enabled"),
         [](bool v){ sset<bool>("popup-blur-enabled", v); },
-        w));
-
-    c->addChild(createDropdownRow("Blur Style",
-        gsaved<std::string>("popup-blur-style", "paiblur"),
-        {"paiblur", "paimonblur", "gaussian"},
-        [](std::string const& v){ ssaved<std::string>("popup-blur-style", v); },
         w));
 
     c->addChild(createSliderRow("Blur Intensity",

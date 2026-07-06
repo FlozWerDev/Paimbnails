@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
 #include "../services/CursorManager.hpp"
 #include <array>
@@ -42,29 +42,18 @@ protected:
     geode::ScrollLayer*     m_thumbScroll = nullptr;
     cocos2d::CCLabelBMFont* m_emptyGalleryLabel = nullptr;
 
-    // Settings scroll
-    geode::ScrollLayer*     m_scrollLayer     = nullptr;
-    cocos2d::CCSprite*      m_scrollArrow     = nullptr;
+    // Settings scroll (construido con PaiConfigKit)
+    geode::ScrollLayer*     m_scrollLayer = nullptr;
+    cocos2d::CCSprite*      m_scrollArrow = nullptr;
 
-    // Sliders
-    Slider*                 m_scaleSlider     = nullptr;
-    cocos2d::CCLabelBMFont* m_scaleLabel      = nullptr;
-    Slider*                 m_opacitySlider   = nullptr;
-    cocos2d::CCLabelBMFont* m_opacityLabel    = nullptr;
-    Slider*                 m_followDelaySlider = nullptr;
-    cocos2d::CCLabelBMFont* m_followDelayLabel  = nullptr;
+    // Controles que la galeria necesita mantener sincronizados
+    CCMenuItemToggler*      m_enableToggle     = nullptr;
+    cocos2d::CCLabelBMFont* m_enableStateLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_presetLabel      = nullptr;
 
-    // Toggles
-    CCMenuItemToggler* m_enableToggle     = nullptr;
-    CCMenuItemToggler* m_trailToggle      = nullptr;
-    CCMenuItemToggler* m_followDelayToggle = nullptr;
-    CCMenuItemToggler* m_hoverToggle      = nullptr;
-    CCMenuItemToggler* m_clickToggle      = nullptr;
-    CCMenuItemToggler* m_textToggle       = nullptr;
-    CCMenuItemToggler* m_disabledToggle   = nullptr;
-
-    // Trail preset picker
-    cocos2d::CCLabelBMFont* m_presetLabel = nullptr;
+    // Sincroniza el interruptor de "Ajustes" cuando la galeria cambia el
+    // estado enabled por codigo.
+    void syncEnableUI(bool enabled);
 
     // Tabs
     int m_currentTab = 0; // 0=gallery, 1=settings
@@ -96,20 +85,6 @@ protected:
     void buildSettingsTab();
     void checkScrollPosition(float dt);
     void updateSmoothScroll(float dt);
-    void onEnableToggled(cocos2d::CCObject*);
-    void onTrailToggled(cocos2d::CCObject*);
-    void onHoverToggled(cocos2d::CCObject*);
-    void onClickToggled(cocos2d::CCObject*);
-    void onTextToggled(cocos2d::CCObject*);
-    void onDisabledToggled(cocos2d::CCObject*);
-    void onScaleChanged(cocos2d::CCObject*);
-    void onOpacityChanged(cocos2d::CCObject*);
-    void onFollowDelayToggled(cocos2d::CCObject*);
-    void onFollowDelayChanged(cocos2d::CCObject*);
-    void onPresetPrev(cocos2d::CCObject*);
-    void onPresetNext(cocos2d::CCObject*);
-    void onEditTrail(cocos2d::CCObject*);
-    void onLayerToggled(cocos2d::CCObject*);
 
     void applyLive();
     void updatePresetLabel();

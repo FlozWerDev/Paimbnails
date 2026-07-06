@@ -14,8 +14,6 @@ namespace gfile = geode::utils::file;
 static geode::async::TaskHolder<Result<std::optional<std::filesystem::path>>>
     s_filePickHolder;
 
-// filters
-
 namespace pt {
 
 gfile::FilePickOptions::Filter imageFilter() {
@@ -68,8 +66,6 @@ gfile::FilePickOptions::Filter cursorAssetFilter() {
     };
     return f;
 }
-
-// pickers
 
 void pickImage(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",

@@ -21,7 +21,7 @@ using namespace geode::prelude;
 
 namespace paimon::blur {
 
-// Dedicated 1-thread I/O pool for the blur cache; FIFO order, separate from ThumbnailLoader's disk pool.
+// Dedicated 1-thread I/O pool for the blur cache; separate from ThumbnailLoader's disk pool.
 static std::unique_ptr<paimon::ThreadPool>& getBlurIOPool() {
     static std::unique_ptr<paimon::ThreadPool> pool;
     static std::once_flag initFlag;
@@ -32,8 +32,8 @@ static std::unique_ptr<paimon::ThreadPool>& getBlurIOPool() {
 }
 
 BlurDiskCache& BlurDiskCache::get() {
-    // Intentional heap leak: avoids the destructor running during atexit while I/O
-    // workers may still touch the index. shutdown() still flips the atomic flag.
+    // Heap leak is intentional: avoids destructor running during atexit while I/O
+    // workers may still touch the index. shutdown() flips the atomic flag.
     static BlurDiskCache* instance = new BlurDiskCache();
     return *instance;
 }
@@ -43,7 +43,6 @@ std::filesystem::path BlurDiskCache::cacheDir() const {
 }
 
 std::filesystem::path BlurDiskCache::pathForKey(std::string const& key) const {
-    // key is already sanitized (alnum, dashes, underscores).
     return cacheDir() / (key + ".pblur");
 }
 
@@ -60,12 +59,11 @@ void BlurDiskCache::init() {
         if (!std::filesystem::exists(dir, ec)) {
             std::filesystem::create_directories(dir, ec);
             if (ec) {
-                log::warn("[BlurDiskCache] No se pudo crear cache dir: {}", ec.message());
+                log::warn("[BlurDiskCache] could not create cache dir: {}", ec.message());
                 return;
             }
         }
 
-        // Initial directory scan to populate the index.
         std::unordered_map<std::string, IndexEntry> loaded;
         std::int64_t totalBytes = 0;
         for (auto const& entry : std::filesystem::directory_iterator(dir, ec)) {
@@ -87,7 +85,6 @@ void BlurDiskCache::init() {
             }
             ec.clear();
 
-            // Read header for width/height.
             std::ifstream f(path, std::ios::binary);
             if (!f) continue;
             std::uint32_t header[5] = {0};
@@ -96,7 +93,12 @@ void BlurDiskCache::init() {
             ie.width = static_cast<int>(header[2]);
             ie.height = static_cast<int>(header[3]);
 
-            // Sanity check: header + width*height*4 must match byteSize.
+            if (ie.width <= 0 || ie.height <= 0 || ie.width > 8192 || ie.height > 8192) {
+                log::debug("[BlurDiskCache] entry {} has invalid dimensions {}x{}",
+                    geode::utils::string::pathToString(path.stem()), ie.width, ie.height);
+                continue;
+            }
+
             std::int64_t expectedSize = HEADER_SIZE + static_cast<std::int64_t>(ie.width) * ie.height * 4;
             if (expectedSize != ie.byteSize) {
                 log::debug("[BlurDiskCache] corrupted entry {}: expected {} bytes, got {}",
@@ -114,7 +116,7 @@ void BlurDiskCache::init() {
             evictIndexIfNeededLocked();
             entryCount = m_index.size();
         }
-        log::info("[BlurDiskCache] inicializado: {} entradas, ~{} MB",
+        log::info("[BlurDiskCache] initialized: {} entries, ~{} MB",
             entryCount, totalBytes / (1024 * 1024));
     });
 }
@@ -148,10 +150,6 @@ std::size_t BlurDiskCache::diskEntryCount() const {
     return m_index.size();
 }
 
-std::size_t BlurDiskCache::ramEntryCount() const {
-    return 0; // RAM cache lives in BlurSystem, not here
-}
-
 CCTexture2D* BlurDiskCache::uploadRawRGBA(std::vector<uint8_t> const& pixels, int w, int h) {
     if (pixels.empty() || w <= 0 || h <= 0) return nullptr;
     std::size_t expected = static_cast<std::size_t>(w) * h * 4;
@@ -180,11 +178,9 @@ void BlurDiskCache::lookupAsync(std::string const& key, ReadyCallback onReady) {
         return;
     }
 
-    // Fast path: skip I/O entirely if the index doesn't have the key.
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         if (m_index.find(key) == m_index.end()) {
-            m_misses.fetch_add(1, std::memory_order_relaxed);
             onReady(nullptr);
             return;
         }
@@ -236,9 +232,6 @@ void BlurDiskCache::lookupAsync(std::string const& key, ReadyCallback onReady) {
             return;
         }
 
-        m_diskHits.fetch_add(1, std::memory_order_relaxed);
-
-        // Upload on the main thread.
         auto pixelsPtr = std::make_shared<std::vector<uint8_t>>(std::move(pixels));
         Loader::get()->queueInMainThread([this, pixelsPtr, w, h, onReady]() {
             if (m_shuttingDown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
@@ -254,13 +247,12 @@ void BlurDiskCache::storeFromTextureAsync(std::string const& key, CCTexture2D* t
     if (!tex || m_shuttingDown.load(std::memory_order_acquire)) return;
     if (width <= 0 || height <= 0) return;
 
-    // Already cached? Skip.
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         if (m_index.find(key) != m_index.end()) return;
     }
 
-    // glReadPixels needs the GL main thread; render the texture to a temp RT and read it back via newCCImage.
+    // glReadPixels needs the GL main thread; render to a temp RT and read back via newCCImage.
     int w = width;
     int h = height;
     auto* rt = CCRenderTexture::create(w, h);
@@ -291,54 +283,12 @@ void BlurDiskCache::storeFromTextureAsync(std::string const& key, CCTexture2D* t
     auto pixels = std::make_shared<std::vector<uint8_t>>(data, data + pixelBytes);
     img->release();
 
-    // Write in background.
-    getBlurIOPool()->enqueue([this, key, pixels, ow, oh]() {
-        if (m_shuttingDown.load(std::memory_order_acquire)) return;
-
-        auto path = pathForKey(key);
-        std::ofstream f(path, std::ios::binary | std::ios::trunc);
-        if (!f) {
-            log::debug("[BlurDiskCache] no se pudo escribir {}", geode::utils::string::pathToString(path));
-            return;
-        }
-
-        std::uint32_t header[5] = {MAGIC, VERSION,
-            static_cast<std::uint32_t>(ow),
-            static_cast<std::uint32_t>(oh), 0};
-        f.write(reinterpret_cast<char const*>(header), sizeof(header));
-        f.write(reinterpret_cast<char const*>(pixels->data()), pixels->size());
-        if (!f) {
-            std::error_code ec;
-            std::filesystem::remove(path, ec);
-            return;
-        }
-        f.close();
-
-        IndexEntry ie;
-        ie.width = ow;
-        ie.height = oh;
-        ie.byteSize = static_cast<std::int64_t>(HEADER_SIZE + pixels->size());
-        // Use the file's own mtime so it shares a clock with the entries
-        // scanned in init() (steady_clock and file_clock have different
-        // epochs, which broke LRU eviction ordering across sessions).
-        std::error_code mtEc;
-        auto ftime = std::filesystem::last_write_time(path, mtEc);
-        ie.mtimeEpoch = mtEc ? 0 : std::chrono::duration_cast<std::chrono::seconds>(
-            ftime.time_since_epoch()).count();
-
-        {
-            std::unique_lock<std::shared_mutex> lock(m_mutex);
-            m_index[key] = ie;
-            evictIndexIfNeededLocked();
-        }
-        m_stores.fetch_add(1, std::memory_order_relaxed);
-    });
+    persistPixelsAsync(key, std::move(pixels), ow, oh);
 }
 
 void BlurDiskCache::storeAsync(std::string const& key, CCRenderTexture* rt) {
     if (!rt || m_shuttingDown.load(std::memory_order_acquire)) return;
 
-    // Already cached? Skip.
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         if (m_index.find(key) != m_index.end()) return;
@@ -359,12 +309,19 @@ void BlurDiskCache::storeAsync(std::string const& key, CCRenderTexture* rt) {
     auto pixels = std::make_shared<std::vector<uint8_t>>(data, data + pixelBytes);
     img->release();
 
-    getBlurIOPool()->enqueue([this, key, pixels, w, h]() {
+    persistPixelsAsync(key, std::move(pixels), w, h);
+}
+
+void BlurDiskCache::persistPixelsAsync(std::string key, std::shared_ptr<std::vector<uint8_t>> pixels, int w, int h) {
+    getBlurIOPool()->enqueue([this, key = std::move(key), pixels = std::move(pixels), w, h]() {
         if (m_shuttingDown.load(std::memory_order_acquire)) return;
 
         auto path = pathForKey(key);
         std::ofstream f(path, std::ios::binary | std::ios::trunc);
-        if (!f) return;
+        if (!f) {
+            log::debug("[BlurDiskCache] could not write {}", geode::utils::string::pathToString(path));
+            return;
+        }
 
         std::uint32_t header[5] = {MAGIC, VERSION,
             static_cast<std::uint32_t>(w),
@@ -382,7 +339,8 @@ void BlurDiskCache::storeAsync(std::string const& key, CCRenderTexture* rt) {
         ie.width = w;
         ie.height = h;
         ie.byteSize = static_cast<std::int64_t>(HEADER_SIZE + pixels->size());
-        // Same clock fix as storeFromTextureAsync: index with the file's mtime.
+        // Index with the file's own mtime: steady_clock and file_clock have
+        // different epochs, which broke LRU eviction ordering across sessions.
         std::error_code mtEc;
         auto ftime = std::filesystem::last_write_time(path, mtEc);
         ie.mtimeEpoch = mtEc ? 0 : std::chrono::duration_cast<std::chrono::seconds>(
@@ -393,7 +351,6 @@ void BlurDiskCache::storeAsync(std::string const& key, CCRenderTexture* rt) {
             m_index[key] = ie;
             evictIndexIfNeededLocked();
         }
-        m_stores.fetch_add(1, std::memory_order_relaxed);
     });
 }
 
@@ -430,13 +387,11 @@ void BlurDiskCache::clear() {
 
 void BlurDiskCache::shutdown() {
     m_shuttingDown.store(true, std::memory_order_release);
-    // Pool singleton is reclaimed at process exit; not destroyed here to avoid racing pending main-thread callbacks.
 }
 
 
 std::string makeKey(std::int64_t sourceID, int thumbIndex, char const* style,
                     int intensity, int width, int height) {
-    // Format: lvl<id>_i<idx>_<style>_q<intensity>_<w>x<h>. Alnum + underscore only, safe as a filename.
     return fmt::format("lvl{}_i{}_{}_q{}_{}x{}",
         sourceID, thumbIndex, style ? style : "paimon", intensity, width, height);
 }

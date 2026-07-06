@@ -28,7 +28,6 @@ bool CreatePostPopup::init(
 
     this->setTitle("Create New Post");
 
-    // Replace the brown vanilla background with the dark forum chrome.
     if (m_bgSprite) m_bgSprite->setVisible(false);
     {
         auto popupSize = m_mainLayer->getContentSize();
@@ -48,7 +47,6 @@ bool CreatePostPopup::init(
     auto contentSize = m_mainLayer->getContentSize();
     float cx = contentSize.width / 2.f;
 
-    // Title input
     auto titleLbl = CCLabelBMFont::create("Title", "bigFont.fnt");
     titleLbl->setScale(0.35f);
     titleLbl->setAnchorPoint({0.f, 0.5f});
@@ -64,7 +62,6 @@ bool CreatePostPopup::init(
     m_titleInput->setScale(0.85f);
     m_mainLayer->addChild(m_titleInput);
 
-    // Description input
     auto descLbl = CCLabelBMFont::create("Description", "bigFont.fnt");
     descLbl->setScale(0.35f);
     descLbl->setAnchorPoint({0.f, 0.5f});
@@ -80,7 +77,6 @@ bool CreatePostPopup::init(
     m_descInput->setScale(0.85f);
     m_mainLayer->addChild(m_descInput);
 
-    // Tags section
     auto tagsLbl = CCLabelBMFont::create("Tags", "bigFont.fnt");
     tagsLbl->setScale(0.32f);
     tagsLbl->setAnchorPoint({0.f, 0.5f});
@@ -88,7 +84,6 @@ bool CreatePostPopup::init(
     tagsLbl->setColor({200, 200, 220});
     m_mainLayer->addChild(tagsLbl);
 
-    // auto-wrapping chip grid (compact)
     m_tagMenu = CCMenu::create();
     m_tagMenu->setID("create-post-tags"_spr);
     m_tagMenu->setContentSize({contentSize.width - 60.f, 80.f});
@@ -104,7 +99,6 @@ bool CreatePostPopup::init(
     );
     m_mainLayer->addChild(m_tagMenu);
 
-    // + button for a custom tag (right of the grid)
     auto plusSpr = ButtonSprite::create("+", "bigFont.fnt", "GJ_button_06.png", 0.8f);
     plusSpr->setScale(0.4f);
     auto plusBtn = CCMenuItemSpriteExtra::create(plusSpr, this, menu_selector(CreatePostPopup::onAddCustomTag));
@@ -119,7 +113,6 @@ bool CreatePostPopup::init(
 
     rebuildTagChips();
 
-    // Cooldown label
     m_cooldownLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_cooldownLabel->setScale(0.45f);
     m_cooldownLabel->setAnchorPoint({0.5f, 0.5f});
@@ -129,7 +122,6 @@ bool CreatePostPopup::init(
     m_cooldownLabel->setZOrder(10);
     updateCooldownLabel();
 
-    // Submit button
     auto postSpr = ButtonSprite::create("Post", "goldFont.fnt", "GJ_button_01.png", 0.9f);
     postSpr->setScale(0.85f);
     auto postBtn = CCMenuItemSpriteExtra::create(postSpr, this, menu_selector(CreatePostPopup::onSubmit));
@@ -237,7 +229,6 @@ void CreatePostPopup::onSubmit(CCObject*) {
         return;
     }
 
-    // Check cooldown
     auto cd = ForumApi::get().getPostCooldownRemaining();
     if (cd > 0) {
         PaimonNotify::create(fmt::format("Please wait {} seconds before posting again.", cd).c_str(), NotificationIcon::Warning)->show();

@@ -32,6 +32,8 @@
 #include "../utils/ImageConverter.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../features/moderation/services/ModerationService.hpp"
+#include "../features/badges/services/RoleService.hpp"
+#include "../features/badges/services/RoleBadges.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../features/audio/services/AudioContextCoordinator.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
@@ -166,7 +168,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     bool canShowModerationControls() {
-        // Controls if mod or admin
         return m_fields->m_isApprovedMod || m_fields->m_isAdmin;
     }
 
@@ -184,14 +185,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
         return node ? typeinfo_cast<CCMenu*>(node) : nullptr;
     }
 
-    // Scale sprite to a square size
     static void scaleToFit(CCNode* spr, float targetSize) {
         if (!spr) return;
         float curSize = std::max(spr->getContentWidth(), spr->getContentHeight());
         if (curSize > 0) spr->setScale(targetSize / curSize);
     }
 
-    // Create the gear button if it doesn't exist
     void ensureGearButton(CCMenu* menu) {
         if (!menu || m_fields->m_gearBtn) return;
         if (menu->getChildByID("thumbs-gear-button"_spr)) return;
@@ -214,8 +213,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     // Create the add-moderator button if it doesn't exist
-    void ensureAddModeratorButton(CCMenu* menu) {
-        if (!menu || m_fields->m_addModBtn) return;
+    void ensureAddModeratorButton(CCMenu* menu) {        if (!menu || m_fields->m_addModBtn) return;
         if (menu->getChildByID("add-moderator-button"_spr)) return;
 
         auto addModSpr = Assets::loadButtonSprite(
@@ -349,8 +347,17 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
     }
 
+    void addRoleBadgesToProfile(paimon::roles::UserRoles const& roles) {
+        auto menu = getUsernameMenu();
+        if (!menu) return;
+        paimon::badges::applyRoleBadges(
+            menu, roles, this,
+            menu_selector(PaimonProfilePage::onPaimonBadge),
+            20.0f, nullptr
+        );
+    }
+
     void addModeratorBadge(bool isMod, bool isAdmin) {
-        // Find the username menu
         auto menu = getUsernameMenu();
         if (!menu) return;
 
@@ -593,8 +600,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         combinedSprite->addChild(countLabel);
 
         // Create clickable button with the combined sprite
-        auto* thumbBtn = CCMenuItemSpriteExtra::create(
-            combinedSprite,
+        auto* thumbBtn = CCMenuItemSpriteExtra::create(            combinedSprite,
             this,
             menu_selector(PaimonProfilePage::onThumbnailCountClicked)
         );
@@ -691,7 +697,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             return;
         }
 
-        // the user's name on the profile
         std::string target = getViewedUsername();
         if (target.empty()) {
             PaimonNotify::create(Localization::get().getString("ban.profile.read_error"), NotificationIcon::Error)->show();
@@ -812,7 +817,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void displayProfileImgVideo(std::string const& videoKey) {
-        // Clean up previous video if exists
         clearProfileImgClip();
 
         auto video = VideoThumbnailSprite::createFromCache(videoKey);
@@ -1412,7 +1416,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         walk(walk, root);
     }
 
-    // Hide CommentCells' internal backgrounds
     void hideCommentCellBgs(CCNode* listNode) {
         paimon::commentbg::hideCommentCellBgs(listNode);
     }
@@ -1594,11 +1597,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         if (!this->m_mainLayer) return;
 
-        // Popup reference
         auto popCenter = getPopupCenter();
         auto popSize = getPopupSize();
 
-        // Get or create the left-menu
         auto leftMenuNode = this->m_mainLayer->getChildByID("left-menu");
         CCMenu* menu = leftMenuNode ? typeinfo_cast<CCMenu*>(leftMenuNode) : nullptr;
 
@@ -1638,7 +1639,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
         m_fields->m_thumbCountLabel = nullptr;
 
-        // Reviews button
         ensureReviewsButton(menu);
 
         if (!this->m_ownProfile) {
@@ -1678,17 +1678,14 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         // Moderation buttons (own profile)
         if (this->m_ownProfile) {
-            // If already verified as mod/admin, show the gear (verification center)
             if (m_fields->m_isApprovedMod || m_fields->m_isAdmin) {
                 ensureGearButton(menu);
             }
-            // If admin, show the add-moderator button
             if (m_fields->m_isAdmin) {
                 ensureAddModeratorButton(menu);
             }
         }
 
-        // Recompute the left-menu layout
         menu->updateLayout();
 
         // Buttons in socials-menu
@@ -1766,10 +1763,29 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
             bool isMod = false;
             bool isAdmin = false;
-            if (moderatorCacheGet(badgeUsername, isMod, isAdmin)) {
+            if (auto cached = paimon::roles::RoleService::get().lookup(badgeUsername)) {
+                if (cached->any()) this->addRoleBadgesToProfile(*cached);
+            } else if (moderatorCacheGet(badgeUsername, isMod, isAdmin)) {
                 if (isMod || isAdmin) {
-                    this->addModeratorBadge(isMod, isAdmin);
+                    paimon::roles::UserRoles roles;
+                    roles.admin = isAdmin;
+                    roles.mod = isMod || isAdmin;
+                    this->addRoleBadgesToProfile(roles);
                 }
+            }
+
+            // Authoritative role set for badges (admin/mod/vip/helper/idea).
+            {
+                Ref<PaimonProfilePage> rbSelf = this;
+                std::string capturedUser = badgeUsername;
+                int viewedForBadges = this->m_accountID;
+                paimon::roles::RoleService::get().fetch(badgeUsername,
+                    [rbSelf, capturedUser, viewedForBadges](paimon::roles::UserRoles roles) {
+                        if (!roles.any()) return;
+                        if (!rbSelf || !rbSelf->getParent()) return;
+                        if (rbSelf->m_accountID != viewedForBadges) return;
+                        rbSelf->addRoleBadgesToProfile(roles);
+                    });
             }
 
             // Profile Bundle: mod status + badge + stats in 1 request
@@ -1803,10 +1819,22 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     bool isMod = json["isModerator"].asBool().unwrapOr(false);
                     std::string role = json["role"].asString().unwrapOr("");
                     bool isAdmin = (role == "admin");
+                    bool isVip = json["isVip"].asBool().unwrapOr(false);
+                    bool isHelper = json["isHelper"].asBool().unwrapOr(false);
+                    bool isIdea = json["isIdea"].asBool().unwrapOr(false);
 
                     // Update caches
                     moderatorCacheInsert(badgeUsername, isMod, isAdmin);
                     ModerationService::get().updateUserStatusCache(badgeUsername, isMod, isAdmin);
+                    {
+                        paimon::roles::UserRoles cacheRoles;
+                        cacheRoles.admin = isAdmin;
+                        cacheRoles.mod = isMod || isAdmin;
+                        cacheRoles.vip = isVip;
+                        cacheRoles.helper = isHelper;
+                        cacheRoles.idea = isIdea;
+                        paimon::roles::RoleService::get().update(badgeUsername, cacheRoles);
+                    }
 
                     // Custom badge
                     std::string emoteName;
@@ -1853,6 +1881,22 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         });
                     }
 
+                    // Determine whether this is the local user's own profile.
+                    // The profile bundle is served from a Cloudflare edge cache
+                    // that is NOT purged when the user changes their profile
+                    // music — only the dedicated /api/profile-music endpoint is
+                    // invalidated on upload/delete. So right after an upload the
+                    // bundle's "music" block can be stale and still describe the
+                    // previously configured song (old songID / old updatedAt),
+                    // which then drives both playback and the audio download
+                    // cache-buster, serving the previous clip. For our own
+                    // profile we therefore ignore the bundle music and reconcile
+                    // against the authoritative endpoint instead.
+                    bool isOwnProfileMusic = false;
+                    if (auto* am = GJAccountManager::get()) {
+                        isOwnProfileMusic = (am->m_accountID == viewedAccountID);
+                    }
+
                     // Music config from the bundle
                     std::optional<ProfileMusicManager::ProfileMusicConfig> bundleMusicConfig;
                     bool hasBundleMusicConfig = json.contains("music");
@@ -1868,18 +1912,30 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         musicCfg.artistName = musicJson["artistName"].asString().unwrapOr("");
                         musicCfg.updatedAt = musicJson["updatedAt"].asString().unwrapOr("");
                         musicCfg.isCustom = musicJson["isCustom"].asBool().unwrapOr(false);
-                        ProfileMusicManager::get().injectBundleConfig(viewedAccountID, musicCfg);
-                        bundleMusicConfig = musicCfg;
+                        // Only cache/trust the bundle music for other users'
+                        // profiles. For our own profile the bundle may be stale,
+                        // so we leave bundleMusicConfig empty and force the
+                        // authoritative fetch below.
+                        if (!isOwnProfileMusic) {
+                            ProfileMusicManager::get().injectBundleConfig(viewedAccountID, musicCfg);
+                            bundleMusicConfig = musicCfg;
+                        }
                     }
 
-                    Loader::get()->queueInMainThread([bundleSelf, viewedAccountID, isMod, isAdmin, emoteName, uploadCount, bundleMusicConfig, hasBundleMusicConfig]() {
+                    Loader::get()->queueInMainThread([bundleSelf, viewedAccountID, isMod, isAdmin, isVip, isHelper, isIdea, emoteName, uploadCount, bundleMusicConfig, hasBundleMusicConfig, isOwnProfileMusic]() {
                         if (paimon::isRuntimeShuttingDown()) return;
                         if (!bundleSelf || !bundleSelf->getParent()) return;
                         if (bundleSelf->m_accountID != viewedAccountID) return;
 
-                        // Mod badge
-                        if (isMod || isAdmin) {
-                            bundleSelf->addModeratorBadge(isMod, isAdmin);
+                        // Role badges (admin/mod/vip/helper/idea)
+                        paimon::roles::UserRoles roles;
+                        roles.admin = isAdmin;
+                        roles.mod = isMod || isAdmin;
+                        roles.vip = isVip;
+                        roles.helper = isHelper;
+                        roles.idea = isIdea;
+                        if (roles.any()) {
+                            bundleSelf->addRoleBadgesToProfile(roles);
                         }
 
                         // Custom emote badge
@@ -1890,7 +1946,15 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         // Upload count badge
                         bundleSelf->addThumbnailCountBadge(uploadCount);
 
-                        bundleSelf->checkAndPlayProfileMusic(viewedAccountID, bundleMusicConfig, hasBundleMusicConfig, !hasBundleMusicConfig);
+                        if (isOwnProfileMusic) {
+                            // Bundle music may be stale for our own profile right
+                            // after an upload; force the authoritative fetch so a
+                            // freshly changed/custom song is picked up instead of
+                            // re-downloading the previously configured one.
+                            bundleSelf->checkAndPlayProfileMusic(viewedAccountID, std::nullopt, false, true);
+                        } else {
+                            bundleSelf->checkAndPlayProfileMusic(viewedAccountID, bundleMusicConfig, hasBundleMusicConfig, !hasBundleMusicConfig);
+                        }
                     });
                 });
         }
@@ -1912,10 +1976,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
         CCSize imgArea = layout.imgArea;
         CCPoint popupCenter = layout.popupCenter;
 
-        // Stencil with rounded corners
         auto clip = makeProfileBackdropClip(imgArea, popupCenter, /*rounded=*/true);
 
-        // Image as the popup background
         auto imgSprite = CCSprite::createWithTexture(tex);
         if (!imgSprite) return;
 
@@ -1947,7 +2009,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
     bool init(int accountID, bool ownProfile) {
         if (!ProfilePage::init(accountID, ownProfile)) return false;
 
-            // Start as non-moderator
             m_fields->m_isApprovedMod = false;
             m_fields->m_isAdmin = false;
             PaimonDebug::log("[ProfilePage] Inicializando perfil - status moderador: false");
@@ -1976,12 +2037,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
                             page->m_fields->m_isApprovedMod = effectiveMod;
                             page->m_fields->m_isAdmin = isAdmin;
 
-            // Save persistent state
                             Mod::get()->setSavedValue("is-verified-moderator", effectiveMod);
                             Mod::get()->setSavedValue("is-verified-admin", isAdmin);
 
                             if (effectiveMod) {
-                // Save the verification file
                                 auto modDataPath = Mod::get()->getSaveDir() / "moderator_verification.dat";
                                 std::ofstream modFile(modDataPath, std::ios::binary);
                                 if (modFile) {
@@ -1994,7 +2053,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                             page->refreshBanButtonVisibility();
 
-            // Add/remove buttons by rank
                             if (auto* leftMenu = page->getLeftMenu()) {
                                 if (effectiveMod) {
                                     page->ensureGearButton(leftMenu);
@@ -2012,16 +2070,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
             // Mark profile open to restore the BG on close
             m_fields->m_menuMusicPaused = true;
 
-            // Check and play the profile music
             checkAndPlayProfileMusic(accountID, std::nullopt, false, false);
 
-            // Load the profile image
             addOrUpdateProfileImgOnPage(accountID, ownProfile);
 
             // loadPageFromUserInfo / show can detach the clip; short retry.
             this->schedule(schedule_selector(PaimonProfilePage::refreshProfileBackdropTick), 0.12f);
 
-            // Schedule the integrity check every 0.5s
             this->schedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity), 0.5f);
 
             // Hide vanilla hint labels on next frame
@@ -2044,7 +2099,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void onOpenThumbsCenter(CCObject*) {
-        // Verify mod or admin
         if (!m_fields->m_isApprovedMod && !m_fields->m_isAdmin) {
             log::warn("[ProfilePage] Usuario NO es moderador ni admin, bloqueando acceso al centro de verificacion");
             FLAlertLayer::create(
@@ -2055,7 +2109,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             return;
         }
         
-        // Open the verification center
         log::info("[ProfilePage] Abriendo centro de verificacion para moderador");
         auto scene = VerificationCenterLayer::scene();
         if (scene) {
@@ -2654,8 +2707,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     // Profile music functions
 
-    void onOpenProfileSettings(CCObject*) {
-        if (!this->m_ownProfile) return;
+    void onOpenProfileSettings(CCObject*) {        if (!this->m_ownProfile) return;
 
         auto popup = ProfileSettingsPopup::create(this->m_accountID);
         if (!popup) return;
@@ -2743,8 +2795,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         // Open the music popup
         if (auto popup = ProfileMusicPopup::create(this->m_accountID)) {
             popup->show();
-        }
-    }
+        }    }
 
     void onToggleProfileMusic(CCObject*) {
         auto& musicManager = ProfileMusicManager::get();
@@ -3029,13 +3080,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
             engine->m_backgroundMusicChannel->setVolume(std::max(0.0f, std::min(1.0f, vol)));
         }
 
-        // Save state in Fields
         m_fields->m_fadeStep = step + 1;
         m_fields->m_fadeTotalSteps = totalSteps;
         m_fields->m_fadeFromVol = fromVol;
         m_fields->m_fadeToVol = toVol;
 
-        // Schedule the next step
         this->unschedule(schedule_selector(PaimonProfilePage::fadeStepTick));
         this->scheduleOnce(
             schedule_selector(PaimonProfilePage::fadeStepTick),
@@ -3057,7 +3106,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void hideHintLabels(float) {
-        // Hide vanilla hint labels
         if (auto* n = this->getChildByIDRecursive("my-levels-hint"))
             n->setVisible(false);
         if (auto* n = this->getChildByIDRecursive("my-lists-hint"))

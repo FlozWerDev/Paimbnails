@@ -25,6 +25,17 @@ public:
     using BanUserCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
     using ModeratorsListCallback = geode::CopyableFunction<void(bool success, std::vector<std::string> const& moderators)>;
 
+    // Full role set returned by /api/moderator/check. New flags (helper/idea)
+    // default to false so the client keeps working against an older server.
+    struct UserRoleFlags {
+        bool isMod = false;
+        bool isAdmin = false;
+        bool isVip = false;
+        bool isHelper = false;
+        bool isIdea = false;
+    };
+    using UserRolesCallback = geode::CopyableFunction<void(UserRoleFlags const& flags, bool ok)>;
+
     static HttpClient& get() {
         static HttpClient instance;
         return instance;
@@ -48,16 +59,16 @@ public:
     void cleanTasks(bool allowNewRequests = true);
 
 
-    // upload thumb png
-    void uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
+    // upload thumb png. levelMeta: optional JSON string with full level metadata
+    // (see paimon::collectLevelMetadata) attached as a "levelMeta" form field.
+    void uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta = "");
 
     // upload gif (mod/admin)
-    void uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
+    void uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback, std::string const& levelMeta = "");
 
     // upload mp4 video (mod/admin)
-    void uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback);
+    void uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback, std::string const& levelMeta = "");
 
-    // list thumbs
     void getThumbnails(int levelId, GenericCallback callback);
 
     // list thumbs (gallery) for many levels in one request.
@@ -69,27 +80,19 @@ public:
     // reorder thumbs (admin only)
     void reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, GenericCallback callback);
 
-    // info thumb
     void getThumbnailInfo(int levelId, GenericCallback callback);
 
-    // upload suggestion
-    void uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
-    // upload update
-    void uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
-    // download suggestion
+    void uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta = "");
+    void uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta = "");
     void downloadSuggestion(int levelId, DownloadCallback callback);
-    // download update
     void downloadUpdate(int levelId, DownloadCallback callback);
-    // download reported
     void downloadReported(int levelId, DownloadCallback callback);
 
-    // upload profile img
     void uploadProfile(int accountID, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
     // upload profile gif (mod/admin/donator)
     void uploadProfileGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
     // upload profile mp4 video (mod/admin)
     void uploadProfileVideo(int accountID, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback);
-    // download profile
     void downloadProfile(int accountID, std::string const& username, DownloadCallback callback);
     // batch check: ask the server which accounts have a profile and return their configs
     void batchCheckProfiles(std::vector<int> const& accountIDs, GenericCallback callback);
@@ -140,31 +143,37 @@ public:
     // download profile images (avatars) in one request (cap 40 accountIDs).
     void downloadProfileImgsBatch(std::vector<int> const& accountIDs, BatchDownloadCallback callback);
     
-    // thumb exists?
     void checkThumbnailExists(int levelId, CheckCallback callback);
 
     // thumbnail confirmed missing on server (CDN + Worker both failed)
     bool isThumbnailNotFound(int levelId) const;
     void clearThumbnailNotFound(int levelId);
     
-    // is moderator?
     void checkModerator(std::string const& username, ModeratorCallback callback);
     // is moderator by accountid (safer)
     void checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback);
+    // full role set (admin/mod/vip/helper/idea) from a single check request
+    void checkUserRoles(std::string const& username, int accountID, UserRolesCallback callback);
 
-    // reports
     void submitReport(int levelId, std::string const& username, std::string const& note, GenericCallback callback);
 
-    // ban list
     void getBanList(BanListCallback callback);
 
-    // ban user
+    // Public self ban-check used at startup. Returns whether the current user is
+    // banned (by username or accountID). No mod-code required.
+    using BanCheckCallback = geode::CopyableFunction<void(bool ok, bool banned, std::string const& reason)>;
+    void checkBanned(BanCheckCallback callback);
+
     void banUser(std::string const& username, std::string const& reason, BanUserCallback callback);
-    // unban
     void unbanUser(std::string const& username, BanUserCallback callback);
 
-    // list moderators
     void getModerators(ModeratorsListCallback callback);
+
+    // Generic role membership management (mod/vip/helper/idea). Backed by the
+    // server's /api/admin/{add-role,remove-role,role-members} endpoints.
+    void addRoleMember(std::string const& role, std::string const& username, int accountID, GenericCallback callback);
+    void removeRoleMember(std::string const& role, std::string const& username, int accountID, GenericCallback callback);
+    void getRoleMembers(std::string const& role, GenericCallback callback);
 
     // top creators and top thumbnails
     void getTopCreators(GenericCallback callback);

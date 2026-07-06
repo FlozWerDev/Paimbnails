@@ -17,9 +17,12 @@ using namespace cocos2d::extension;
 
 namespace paimon::popuptheme {
 
-namespace {std::string themeDecorID() {
+namespace {
+
+std::string themeDecorID() {
     return "paimon-popup-theme-decor"_spr;
 }
+
 CCScale9Sprite* findPopupBackground(CCNode* mainLayer) {
     if (!mainLayer) return nullptr;
 
@@ -52,7 +55,7 @@ class AuroraBorderSprite : public CCSprite {
 public:
     float m_time = 0.f;
     CCGLProgram* m_cachedProgram = nullptr;
-    GLint m_locTime = -2; // -2 uninitialized, -1 absent
+    GLint m_locTime = -2; // -2 = uninitialized, -1 = absent
 
     static AuroraBorderSprite* create(float width, float height) {
         auto* spr = new AuroraBorderSprite();
@@ -164,7 +167,6 @@ ThemeConfig getThemeConfig(std::string const& id) {
         c.softShadow = true;
     }
     // "gd" and any unknown id => defaults (no-op theme).
-
     return c;
 }
 
@@ -179,9 +181,7 @@ void applyTheme(FLAlertLayer* popup, bool blurAlreadyApplied) {
     if (theme.forceBlur && !blurAlreadyApplied) {
         auto cfg = paimon::popupblur::getConfig();
         cfg.enabled = true;
-        if (cfg.style != "paiblur" && cfg.style != "paimonblur" && cfg.style != "gaussian") {
-            cfg.style = "paiblur";
-        }
+        cfg.style = "paiblur";
         if (theme.blurDarknessOverride >= 0.f) {
             cfg.darkness = theme.blurDarknessOverride;
         }
@@ -209,7 +209,6 @@ void applyTheme(FLAlertLayer* popup, bool blurAlreadyApplied) {
 
     int bgZ = bg->getZOrder();
 
-    // Soft shadow behind the popup background.
     if (theme.softShadow) {
         if (auto* shadow = CCScale9Sprite::create("GJ_square01.png")) {
             shadow->setID(themeDecorID());
@@ -221,7 +220,6 @@ void applyTheme(FLAlertLayer* popup, bool blurAlreadyApplied) {
         }
     }
 
-    // Border / aurora decoration drawn on top.
     if (theme.hasBorders || theme.animatedBorder) {
         constexpr int kDecorZ = 10000;
         auto* decor = CCNode::create();

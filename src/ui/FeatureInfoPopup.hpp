@@ -10,9 +10,9 @@
 namespace paimon::ui {
 
 struct InfoSection {
-    std::string title;       // section title (e.g. "Thumbnail Size")
-    std::string body;        // what it does and where it applies
-    cocos2d::ccColor3B color = {100, 220, 255}; // title color
+    std::string title;
+    std::string body;
+    cocos2d::ccColor3B color = {100, 220, 255};
 };
 
 class FeatureInfoPopup : public geode::Popup {

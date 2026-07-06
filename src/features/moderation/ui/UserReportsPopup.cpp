@@ -16,13 +16,11 @@ bool UserReportsPopup::init(std::string const& reportedUsername, std::vector<Rep
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
-    // reporter name
     m_reporterLabel = CCLabelBMFont::create("", "goldFont.fnt");
     m_reporterLabel->setScale(0.4f);
     m_reporterLabel->setPosition({centerX, contentSize.height - 60.f});
     m_mainLayer->addChild(m_reporterLabel);
 
-    // report note
     m_noteLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_noteLabel->setScale(0.45f);
     m_noteLabel->setPosition({centerX, contentSize.height - 90.f});
@@ -31,27 +29,23 @@ bool UserReportsPopup::init(std::string const& reportedUsername, std::vector<Rep
     m_noteLabel->setAlignment(CCTextAlignment::kCCTextAlignmentCenter);
     m_mainLayer->addChild(m_noteLabel);
 
-    // counter label
     m_counterLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_counterLabel->setScale(0.4f);
     m_counterLabel->setPosition({centerX, 50.f});
     m_counterLabel->setColor({180, 180, 180});
     m_mainLayer->addChild(m_counterLabel);
 
-    // navigation arrows
     auto navMenu = CCMenu::create();
     navMenu->setPosition({0, 0});
     navMenu->setContentSize(contentSize);
     m_mainLayer->addChild(navMenu, 10);
 
-    // prev arrow
     auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     prevSpr->setScale(0.5f);
     m_prevBtn = CCMenuItemSpriteExtra::create(prevSpr, this, menu_selector(UserReportsPopup::onPrev));
     m_prevBtn->setPosition({30.f, contentSize.height / 2.f});
     navMenu->addChild(m_prevBtn);
 
-    // next arrow
     auto nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     nextSpr->setFlipX(true);
     nextSpr->setScale(0.5f);

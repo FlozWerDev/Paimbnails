@@ -4,10 +4,6 @@
 #include <string>
 #include <vector>
 
-/**
- * ThumbnailSubmissionService — sugerencias, updates y descargas de
- * contenido pendiente.  Extraido de ThumbnailAPI.
- */
 class ThumbnailSubmissionService {
 public:
     using UploadCallback   = geode::CopyableFunction<void(bool success, std::string const& message)>;
@@ -20,13 +16,12 @@ public:
 
     void setServerEnabled(bool enabled) { m_serverEnabled = enabled; }
 
-    // sugerencias
     void uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData,
-                          std::string const& username, UploadCallback callback);
-    // updates
+                          std::string const& username, UploadCallback callback,
+                          std::string const& levelMeta = "");
     void uploadUpdate(int levelId, std::vector<uint8_t> const& pngData,
-                      std::string const& username, UploadCallback callback);
-    // descargas
+                      std::string const& username, UploadCallback callback,
+                      std::string const& levelMeta = "");
     void downloadSuggestion(int levelId, DownloadCallback callback);
     void downloadSuggestionImage(std::string const& filename, DownloadCallback callback);
     void downloadUpdate(int levelId, DownloadCallback callback);

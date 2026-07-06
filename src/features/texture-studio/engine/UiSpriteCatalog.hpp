@@ -6,9 +6,9 @@
 namespace paimon::texture_studio {
 
 enum class TintScope : int {
-    ButtonsOnly     = 0,   // default: solo botones
-    ButtonsAndMenuUi = 1,  // botones + chrome de menú
-    Everything      = 2,   // legacy estilo PackGen: todo el sheet
+    ButtonsOnly     = 0,
+    ButtonsAndMenuUi = 1,
+    Everything      = 2,
 };
 
 enum class SpriteKind : int {

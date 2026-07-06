@@ -8,37 +8,21 @@ namespace paimon::texture_studio {
 PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions options) {
     PackResult result;
     if (rects.empty()) {
-        return result;  // empty atlas
+        return result;
     }
 
-    // Step 1: stable-sort by descending height. Same secondary keys (id) keep
-    // input order so the produced placements are reproducible.
     std::sort(rects.begin(), rects.end(),
         [](RectPackInput const& a, RectPackInput const& b) {
             if (a.height != b.height) return a.height > b.height;
             return a.id < b.id;
         });
 
-    // Step 2: shelf-pack. PackGen's algorithm:
-    //
-    //   for each rect (tallest first):
-    //       try to fit it in any existing bin (= shelf row) by appending
-    //       horizontally. A bin is "fittable" if (bin.width + rect.W + gap)
-    //       does not exceed maxSheetWidth. The Y-coordinate of a new shelf
-    //       row is "max(bin.y + bin.maxHeight + gap) for all existing bins".
-    //
-    //   The trick this algorithm gets right is that after a rect is added
-    //   to a bin, its own height grows the bin's `maxHeight` only up to
-    //   that rect's height, not beyond — preserving wasted-space invariant.
-    //
-    // We faithfully reproduce that so that Texture Loader packs we generate
-    // place identically to PackGen's output for the same set of inputs.
-
+    // Faithfully reproduce PackGen's shelf algorithm so output layout matches byte-for-byte.
     struct Bin {
-        int x         = 0;   // unused but kept for parity with PackGen
+        int x         = 0;   // kept for parity with PackGen
         int y         = 0;
-        int width     = 0;   // current right-edge of this shelf
-        int maxHeight = 0;   // height of the tallest rect on this shelf
+        int width     = 0;
+        int maxHeight = 0;
     };
     std::vector<Bin> bins;
     bins.reserve(8);
@@ -50,14 +34,11 @@ PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions opti
 
     for (auto const& r : rects) {
         if (r.width <= 0 || r.height <= 0) {
-            // Defensive: zero-area rects skipped (shouldn't happen but
-            // doesn't make sense to allocate space for them).
             continue;
         }
         int rWG = frameWithGap(r.width);
         int rHG = frameWithGap(r.height);
 
-        // Try to fit into an existing shelf.
         bool placed = false;
         for (auto& bin : bins) {
             if (bin.width + rWG <= maxW) {
@@ -77,7 +58,6 @@ PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions opti
         }
         if (placed) continue;
 
-        // No fit — open a new shelf below all existing ones.
         int newY = 0;
         if (!bins.empty()) {
             int maxBottom = 0;
@@ -102,7 +82,6 @@ PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions opti
         result.placements.push_back(p);
     }
 
-    // Step 3: compute output sheet dimensions.
     if (!bins.empty()) {
         int maxBinW = 0;
         int maxBinB = 0;
@@ -110,7 +89,7 @@ PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions opti
             maxBinW = std::max(maxBinW, bin.width);
             maxBinB = std::max(maxBinB, bin.y + bin.maxHeight);
         }
-        // PackGen subtracts the trailing gap. We do too so sheet sizes match.
+        // Subtract the trailing gap so sheet sizes match PackGen.
         result.sheetWidth  = std::max(0, maxBinW - gap);
         result.sheetHeight = maxBinB;
     }

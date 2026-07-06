@@ -9,7 +9,6 @@ protected:
     cocos2d::CCNode* m_contentNode = nullptr;
     cocos2d::CCNode* m_previewNode = nullptr;
 
-    // Sliders
     Slider* m_scaleSlider = nullptr;
     cocos2d::CCLabelBMFont* m_scaleLabel = nullptr;
     Slider* m_speedSlider = nullptr;
@@ -22,7 +21,6 @@ protected:
 
     void onClose(cocos2d::CCObject* sender) override;
 
-    // Handlers
     void onColor1Source(cocos2d::CCObject* sender);
     void onPickColor1(cocos2d::CCObject* sender);
     void onColor2Source(cocos2d::CCObject* sender);

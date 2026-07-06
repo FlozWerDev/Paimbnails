@@ -116,7 +116,7 @@ namespace ImageLoadHelper {
         if (!result.success) {
             result.error = "texture_error";
         } else {
-            geode::log::info("[ImageLoadHelper] Loaded via stb_image (memory): {}x{} (original {} channels)", w, h, channels);
+            geode::log::debug("[ImageLoadHelper] Loaded via stb_image (memory): {}x{} (original {} channels)", w, h, channels);
         }
         return result;
     }
@@ -128,7 +128,6 @@ namespace ImageLoadHelper {
     inline LoadedImage loadWithSTB(std::filesystem::path const& path) {
         LoadedImage result;
 
-        // read the file into memory with Geode file utils
         auto readRes = geode::utils::file::readBinary(path);
         if (readRes.isErr()) {
             result.error = "image_open_error";
@@ -141,7 +140,6 @@ namespace ImageLoadHelper {
             return result;
         }
 
-        // delegate to loadWithSTBFromMemory (stb + CCImage fallback)
         return loadWithSTBFromMemory(fileData.data(), fileData.size());
     }
 
@@ -155,7 +153,6 @@ namespace ImageLoadHelper {
     inline LoadedImage loadStaticImage(std::filesystem::path const& path, size_t maxSizeMB = 10) {
         LoadedImage result;
 
-        // check size
         if (maxSizeMB > 0) {
             std::error_code ec;
             auto fileSize = std::filesystem::file_size(path, ec);
@@ -165,7 +162,6 @@ namespace ImageLoadHelper {
             }
         }
 
-        // read the file into memory once
         auto readRes = geode::utils::file::readBinary(path);
         if (readRes.isErr()) {
             result.error = "image_open_error";

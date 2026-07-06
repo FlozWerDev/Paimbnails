@@ -3,6 +3,7 @@
 #include "../data/QuickHubCategories.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -39,11 +40,20 @@ RadialConfigPopup* RadialConfigPopup::create() {
 
 bool RadialConfigPopup::init() {
     if (!Popup::init(420.f, 280.f)) return false;
+    paimon::markDynamicPopup(this);
 
     this->setTitle("Configurar Quick Hub");
 
     auto winSize = m_mainLayer->getContentSize();
     float cx = winSize.width / 2.f;
+
+    // Subtitulo explicativo
+    auto subtitle = CCLabelBMFont::create(
+        "Elige que botones aparecen en el menu radial y en que orden.", "chatFont.fnt");
+    subtitle->setScale(0.5f);
+    subtitle->setColor({166, 176, 198});
+    subtitle->setPosition({cx, winSize.height - 32.f});
+    m_mainLayer->addChild(subtitle, 2);
 
     // Cargar configuracion actual como copia de trabajo
     m_activeIds = QuickHubManager::get().getActiveOptions();
@@ -55,10 +65,10 @@ bool RadialConfigPopup::init() {
     m_previewNode->setAnchorPoint({0.5f, 0.5f});
     m_mainLayer->addChild(m_previewNode, 2);
 
-    // Label "Preview"
-    auto previewLabel = CCLabelBMFont::create("Preview", "goldFont.fnt");
+    // Label "Vista previa"
+    auto previewLabel = CCLabelBMFont::create("Vista previa", "goldFont.fnt");
     previewLabel->setScale(0.35f);
-    previewLabel->setPosition({cx - 80.f, winSize.height - 45.f});
+    previewLabel->setPosition({cx - 80.f, winSize.height - 48.f});
     m_mainLayer->addChild(previewLabel, 2);
 
     // Lista scrolleable (lado derecho)
@@ -74,10 +84,10 @@ bool RadialConfigPopup::init() {
     m_scrollLayer->setPosition({listX - listW / 2.f, 40.f});
     m_mainLayer->addChild(m_scrollLayer, 1);
 
-    // Label "Opciones"
-    auto listLabel = CCLabelBMFont::create("Opciones", "goldFont.fnt");
+    // Label "Botones del menu"
+    auto listLabel = CCLabelBMFont::create("Botones del menu", "goldFont.fnt");
     listLabel->setScale(0.3f);
-    listLabel->setPosition({listX, winSize.height - 45.f});
+    listLabel->setPosition({listX, winSize.height - 48.f});
     m_mainLayer->addChild(listLabel, 2);
 
     // Botones inferiores
@@ -229,8 +239,8 @@ void RadialConfigPopup::rebuildList() {
 
         // Nombre
         auto nameLabel = CCLabelBMFont::create(opt->name.c_str(), "bigFont.fnt");
-        nameLabel->setScale(0.22f);
         nameLabel->setAnchorPoint({0.f, 0.5f});
+        nameLabel->limitLabelWidth(listW - 38.f - 52.f, 0.26f, 0.1f);
         nameLabel->setPosition({38.f, rowH / 2.f});
         row->addChild(nameLabel, 1);
 
@@ -289,9 +299,9 @@ void RadialConfigPopup::rebuildList() {
     if (availCount > 0) {
         yPos -= rowH;
 
-        auto sepLabel = CCLabelBMFont::create("-- Disponibles --", "bigFont.fnt");
-        sepLabel->setScale(0.2f);
-        sepLabel->setColor({150, 150, 150});
+        auto sepLabel = CCLabelBMFont::create("Toca + para anadir", "bigFont.fnt");
+        sepLabel->setScale(0.22f);
+        sepLabel->setColor({255, 222, 120});
         sepLabel->setPosition({listW / 2.f, yPos + rowH / 2.f});
         content->addChild(sepLabel, 1);
 
@@ -326,8 +336,8 @@ void RadialConfigPopup::rebuildList() {
 
             // Nombre
             auto nameLabel = CCLabelBMFont::create(opt->name.c_str(), "bigFont.fnt");
-            nameLabel->setScale(0.22f);
             nameLabel->setAnchorPoint({0.f, 0.5f});
+            nameLabel->limitLabelWidth(listW - 30.f - 24.f, 0.26f, 0.1f);
             nameLabel->setPosition({30.f, rowH / 2.f});
             nameLabel->setColor({160, 160, 160});
             row->addChild(nameLabel, 1);

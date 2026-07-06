@@ -12,31 +12,25 @@ public:
     enum class LayoutSize { Normal, Large };
 
 protected:
-    // Sync callbacks
     geode::CopyableFunction<std::string()> m_getText;
     geode::CopyableFunction<void(std::string const&)> m_onTextChanged;
     int m_charLimit = 140;
     LayoutSize m_layoutSize = LayoutSize::Normal;
 
-    // Computed dimensions based on layout size
     float m_popupW = 380.f;
     float m_popupH = 192.f;
 
-    // Input section (top)
     geode::TextInput* m_textInput = nullptr;
 
-    // Live preview section
     cocos2d::CCNode* m_renderPreview = nullptr;
     cocos2d::CCNode* m_renderPreviewBg = nullptr;
 
-    // Search
     CCMenuItemSpriteExtra* m_searchBtn = nullptr;
     geode::TextInput* m_searchInput = nullptr;
     cocos2d::CCNode* m_searchInputBg = nullptr;
     bool m_searchActive = false;
     std::string m_searchQuery;
 
-    // Category sidebar (bottom-left)
     cocos2d::CCMenu* m_typeMenu = nullptr;
     CCMenuItemSpriteExtra* m_refreshBtn = nullptr;
     bool m_isRefreshingCatalog = false;
@@ -48,31 +42,27 @@ protected:
     Tab m_activeTab = Tab::All;
     std::string m_activeCategory;
 
-    // Emote grid (bottom-right)
     geode::ScrollLayer* m_scroll = nullptr;
     cocos2d::CCNode* m_contentNode = nullptr;
     cocos2d::CCLabelBMFont* m_countLabel = nullptr;
 
-    // Hover tracking for emote cells
     struct HoverCell {
-        cocos2d::CCNode* btn = nullptr;          // CCMenuItemSpriteExtra*
+        cocos2d::CCNode* btn = nullptr;
         cocos2d::CCLayerColor* hoverLayer = nullptr;
-        cocos2d::CCNode* container = nullptr;    // for content size / world-rect
-        EmoteInfo info;                          // emote data for lazy loading
-        bool loadRequested = false;              // true once thumbnail load was queued
-        bool loaded = false;                     // true once thumbnail was attached
-        cocos2d::CCNode* placeholder = nullptr;  // placeholder label/spinner
+        cocos2d::CCNode* container = nullptr;
+        EmoteInfo info;
+        bool loadRequested = false;
+        bool loaded = false;
+        cocos2d::CCNode* placeholder = nullptr;
     };
     std::vector<HoverCell> m_hoverCells;
     int m_hoverFrameSkip = 0;
 
-    // Walk the cell list every few frames to load newly visible thumbnails.
     int m_lazyLoadFrameSkip = 0;
 
     // Bumped on grid rebuild so stale thumbnail callbacks drop themselves.
     uint32_t m_gridGeneration = 0;
 
-    // Grid width cache (changes depending on sidebar visibility)
     float m_gridX = 0.f;
     float m_gridW = 0.f;
     float m_gridH = 0.f;
@@ -114,10 +104,15 @@ protected:
 
     void onExit() override;
 
-    // Dispatch thumbnail loads for cells near the visible viewport; already-requested cells are skipped.
-    void requestVisibleThumbnails();
+    void onClose(cocos2d::CCObject*) override;
+    void finishClose();
+    bool m_closing = false;
+    unsigned char m_dimOpacity = 0;
 
-    // Attach the loaded thumbnail (texture or GIF data) to a cell.
+    void requestVisibleThumbnails();
+    void requestAllThumbnails();
+    void loadCellThumbnail(size_t cellIdx);
+
     void attachLoadedThumbnail(size_t cellIdx,
                                cocos2d::CCTexture2D* tex,
                                bool isGif,
@@ -129,8 +124,10 @@ public:
         geode::CopyableFunction<void(std::string const&)> onTextChanged,
         int charLimit = 140,
         LayoutSize size = LayoutSize::Normal);
+    void show() override;
     void positionNearBottom(cocos2d::CCNode* anchor, float bottomPadding = 0.f);
     void positionCentered();
+    void closeAnimated();
 };
 
 } // namespace paimon::emotes

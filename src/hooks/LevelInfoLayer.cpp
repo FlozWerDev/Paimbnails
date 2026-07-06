@@ -22,6 +22,7 @@
 #include "../core/RuntimeLifecycle.hpp"
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../managers/ThumbnailAPI.hpp"
+#include "../utils/LevelMetadata.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/thumbnails/services/ThumbnailCache.hpp"
 #include "../features/thumbnails/services/ThumbnailTransportClient.hpp"
@@ -454,8 +455,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             {"neon-trail",      "neon-trail-dyn"_spr,      "neon_trail_dynamic.glsl",      true, false, true, true},
         };
 
-        // Look up shader by name
-        auto lookupShader = [&](std::string const& style) -> std::tuple<CCGLProgram*, float, bool, bool> {
+        // Look up shader by name. Capture `intensity` and `this` BY VALUE: this
+        // lambda is copied into applyEffects/installBackgroundSprite and invoked
+        // from the async GIF-decode callback, which runs after this function has
+        // returned. A `[&]` capture would leave a dangling reference to the stack
+        // local `intensity` (use-after-scope) feeding garbage into the shader uniform.
+        auto lookupShader = [this, intensity](std::string const& style) -> std::tuple<CCGLProgram*, float, bool, bool> {
             // Dynamic shaders: if enabled and the shader supports cursor, use the _dynamic variant
             bool useDynamic = m_fields->m_dynamicShaders;
             for (auto& e : kShaderTable) {
@@ -1994,7 +1999,10 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         
         WeakRef<PaimonLevelInfoLayer> self = this;
 
-        paimon::showBetaUploadWarningIfNeeded([self, levelID, pngData = std::move(pngData), username]() mutable {
+        // Collect the full level metadata (GJGameLevel bindings) to attach to the upload.
+        std::string levelMeta = paimon::collectLevelMetadata(m_level);
+
+        paimon::showBetaUploadWarningIfNeeded([self, levelID, pngData = std::move(pngData), username, levelMeta]() mutable {
             // Single upload — server handles mod check + exists check + routing (live vs pending)
             PaimonNotify::show(Localization::get().getString("capture.uploading").c_str(), geode::NotificationIcon::Info);
             ThumbnailAPI::get().uploadThumbnail(levelID, pngData, username, [self, levelID, username](bool success, std::string const& msg) {
@@ -2015,7 +2023,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 } else {
                     PaimonNotify::create(Localization::get().getString("capture.upload_error") + msg, NotificationIcon::Error)->show();
                 }
-            });
+            }, levelMeta);
         });
     }
 

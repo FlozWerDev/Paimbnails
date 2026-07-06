@@ -2,79 +2,27 @@
 
 #if defined(USE_MEDIA_FOUNDATION)
 
+#include "AudioWavCommon.hpp"
 #include <Geode/loader/Log.hpp>
-#include <Geode/utils/string.hpp>
 #include <windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
 #include <codecapi.h>
 #include <objbase.h>
-#include <mutex>
+#include <algorithm>
+#include <cstdio>
+#include <filesystem>
+#include <vector>
 
 namespace paimon::video {
 
-// Global mutex serializing concurrent audio extractions. Prevents WAV file
-// corruption and races in MFShutdown.
-static std::mutex& getAudioExtractorMutex() {
-    static std::mutex mtx;
-    return mtx;
-}
-
-// Cache directory for extracted WAV files
-static std::filesystem::path getAudioCacheDir() {
-    auto dir = std::filesystem::temp_directory_path() / "paimbnails_audio_cache";
-    std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    return dir;
-}
-
-static std::string makeWavPath(const std::string& videoPath) {
-    // Use hash of the full video path as the WAV filename
-    std::size_t h = std::hash<std::string>{}(videoPath);
-    auto wavFile = getAudioCacheDir() / ("vid_" + std::to_string(h) + ".wav");
-    return geode::utils::string::pathToString(wavFile);
-}
-
-std::string getCachedWavPath(const std::string& videoPath) {
-    auto wavPath = makeWavPath(videoPath);
-    std::error_code ec;
-    if (std::filesystem::exists(wavPath, ec) && !ec) return wavPath;
-    return {};
-}
-
-void cleanupAudioCache(const std::string& videoPath) {
-    auto wavPath = makeWavPath(videoPath);
-    if (!wavPath.empty()) {
-        std::error_code ec;
-        std::filesystem::remove(wavPath, ec);
-    }
-}
-
-// Simple WAV writer
-struct WavHeader {
-    char     riff[4]     = {'R','I','F','F'};
-    uint32_t fileSize    = 0;          // filled at end
-    char     wave[4]     = {'W','A','V','E'};
-    char     fmt[4]      = {'f','m','t',' '};
-    uint32_t fmtSize     = 16;
-    uint16_t audioFormat = 1;          // PCM
-    uint16_t numChannels = 0;
-    uint32_t sampleRate  = 0;
-    uint32_t byteRate    = 0;
-    uint16_t blockAlign  = 0;
-    uint16_t bitsPerSample = 0;
-    char     data[4]     = {'d','a','t','a'};
-    uint32_t dataSize    = 0;          // filled at end
-};
-
-// Extract audio using MF Source Reader → transcode to PCM WAV
 std::string extractAudioToWav(const std::string& videoPath) {
-    std::lock_guard<std::mutex> lock(getAudioExtractorMutex());
+    std::lock_guard<std::mutex> lock(detail::audioExtractorMutex());
 
     if (videoPath.empty()) return {};
 
-    auto wavPath = makeWavPath(videoPath);
+    auto wavPath = detail::makeWavPath(videoPath);
     std::error_code ec;
     if (std::filesystem::exists(wavPath, ec) && !ec) {
         geode::log::info("[AudioExtract] cached WAV exists: {}", wavPath);
@@ -87,7 +35,6 @@ std::string extractAudioToWav(const std::string& videoPath) {
         return {};
     }
 
-    // Normalize path for MF
     std::string normPath = videoPath;
     std::replace(normPath.begin(), normPath.end(), '/', '\\');
 
@@ -107,7 +54,6 @@ std::string extractAudioToWav(const std::string& videoPath) {
         return {};
     }
 
-    // Set the audio output format to PCM
     IMFMediaType* pcmType = nullptr;
     hr = MFCreateMediaType(&pcmType);
     if (FAILED(hr)) {
@@ -131,7 +77,6 @@ std::string extractAudioToWav(const std::string& videoPath) {
         return {};
     }
 
-    // Get the actual media type for WAV header info
     IMFMediaType* actualType = nullptr;
     hr = reader->GetCurrentMediaType(
         static_cast<UINT32>(MF_SOURCE_READER_FIRST_AUDIO_STREAM), &actualType);
@@ -155,32 +100,9 @@ std::string extractAudioToWav(const std::string& videoPath) {
         return {};
     }
 
-    // Write WAV file
-    FILE* fp = nullptr;
-    #ifdef _MSC_VER
-    fopen_s(&fp, wavPath.c_str(), "wb");
-    #else
-    fp = fopen(wavPath.c_str(), "wb");
-    #endif
-    if (!fp) {
-        geode::log::warn("[AudioExtract] failed to open WAV for writing: {}", wavPath);
-        reader->Release();
-        MFShutdown();
-        return {};
-    }
+    std::vector<uint8_t> pcm;
+    pcm.reserve(1u << 20);  // 1 MB initial — grows as needed
 
-    // Write placeholder header
-    WavHeader hdr;
-    hdr.numChannels   = static_cast<uint16_t>(nChannels);
-    hdr.sampleRate    = sampleRate;
-    hdr.bitsPerSample = static_cast<uint16_t>(bitsPerSample);
-    hdr.blockAlign    = static_cast<uint16_t>(nChannels * bitsPerSample / 8);
-    hdr.byteRate      = sampleRate * hdr.blockAlign;
-    fwrite(&hdr, sizeof(hdr), 1, fp);
-
-    uint32_t totalDataBytes = 0;
-
-    // Read all audio samples
     while (true) {
         DWORD streamIdx = 0, flags = 0;
         IMFSample* sample = nullptr;
@@ -192,12 +114,10 @@ std::string extractAudioToWav(const std::string& videoPath) {
             if (sample) sample->Release();
             break;
         }
-
         if (flags & MF_SOURCE_READERF_ENDOFSTREAM) {
             if (sample) sample->Release();
             break;
         }
-
         if (!sample) continue;
 
         IMFMediaBuffer* buf = nullptr;
@@ -211,46 +131,32 @@ std::string extractAudioToWav(const std::string& videoPath) {
         DWORD bufLen = 0;
         hr = buf->Lock(&data, nullptr, &bufLen);
         if (SUCCEEDED(hr) && data && bufLen > 0) {
-            fwrite(data, 1, bufLen, fp);
-            totalDataBytes += bufLen;
+            pcm.insert(pcm.end(), data, data + bufLen);
             buf->Unlock();
         }
         buf->Release();
         sample->Release();
     }
 
-    // Finalize WAV header
-    hdr.dataSize = totalDataBytes;
-    hdr.fileSize = static_cast<uint32_t>(sizeof(WavHeader) - 8 + totalDataBytes);
-    fseek(fp, 0, SEEK_SET);
-    fwrite(&hdr, sizeof(hdr), 1, fp);
-    fclose(fp);
-
     reader->Release();
     MFShutdown();
 
-    if (totalDataBytes == 0) {
+    if (pcm.empty()) {
         geode::log::warn("[AudioExtract] no audio data extracted from {}", videoPath);
-        std::error_code ec;
-        std::filesystem::remove(wavPath, ec);
+        return {};
+    }
+
+    if (!detail::writeWavFile(wavPath, pcm.data(), pcm.size(),
+                              static_cast<uint16_t>(nChannels), sampleRate,
+                              static_cast<uint16_t>(bitsPerSample))) {
         return {};
     }
 
     geode::log::info("[AudioExtract] extracted {} bytes of PCM audio to {}",
-                     totalDataBytes, wavPath);
+                     pcm.size(), wavPath);
     return wavPath;
 }
 
 } // namespace paimon::video
 
-#else // !USE_MEDIA_FOUNDATION
-
-namespace paimon::video {
-
-std::string extractAudioToWav(const std::string&) { return {}; }
-std::string getCachedWavPath(const std::string&) { return {}; }
-void cleanupAudioCache(const std::string&) {}
-
-} // namespace paimon::video
-
-#endif
+#endif // USE_MEDIA_FOUNDATION

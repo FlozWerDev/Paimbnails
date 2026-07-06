@@ -64,43 +64,28 @@ inline ImageFormat detect(uint8_t const* data, size_t size) {
     return ImageFormat::Unknown;
 }
 
-/**
- * True if the data is a GIF (GIF87a or GIF89a).
- */
 inline bool isGif(uint8_t const* data, size_t size) {
     return size >= 6
         && data[0] == 'G' && data[1] == 'I' && data[2] == 'F' && data[3] == '8'
         && (data[4] == '7' || data[4] == '9') && data[5] == 'a';
 }
 
-/**
- * True if the data is a PNG.
- */
 inline bool isPng(uint8_t const* data, size_t size) {
     return size >= 4
         && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G';
 }
 
-/**
- * True if the data is a JPEG.
- */
 inline bool isJpeg(uint8_t const* data, size_t size) {
     return size >= 3
         && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF;
 }
 
-/**
- * True if the data is WebP.
- */
 inline bool isWebp(uint8_t const* data, size_t size) {
     return size >= 12
         && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
         && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P';
 }
 
-/**
- * True if the data is MP4/MOV.
- */
 inline bool isMp4(uint8_t const* data, size_t size) {
     return size >= 8
         && data[4] == 'f' && data[5] == 't' && data[6] == 'y' && data[7] == 'p';

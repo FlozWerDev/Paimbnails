@@ -30,6 +30,20 @@ namespace {
                               paimon::settings::smoothscroll::kSmoothnessMax);
         return kBaseDecayRate / m;
     }
+
+    double currentEditorZoomGain() {
+        double s = std::clamp(paimon::settings::smoothscroll::editorZoomSensitivity(),
+                              paimon::settings::smoothscroll::kEditorZoomSensitivityMin,
+                              paimon::settings::smoothscroll::kEditorZoomSensitivityMax);
+        return kBaseWheelGain * s;
+    }
+
+    double currentEditorZoomDecayRate() {
+        double m = std::clamp(paimon::settings::smoothscroll::editorZoomSmoothness(),
+                              paimon::settings::smoothscroll::kEditorZoomSmoothnessMin,
+                              paimon::settings::smoothscroll::kEditorZoomSmoothnessMax);
+        return kBaseDecayRate / m;
+    }
 }
 
 SmoothScrollController& SmoothScrollController::get() {
@@ -39,6 +53,7 @@ SmoothScrollController& SmoothScrollController::get() {
 
 bool SmoothScrollController::isActive() const {
     if (!paimon::settings::general::smoothScroll()) return false;
+    if (paimon::settings::smoothui::reducedMotion()) return false;
     if (paimon::compat::ModCompat::isPrevterSmoothScrollLoaded()) return false;
     return true;
 }
@@ -58,13 +73,17 @@ bool shouldBypassSmoothScroll() {
         }
     }
 
-    if (LevelEditorLayer::get()) {
-        if (auto* kb = CCKeyboardDispatcher::get(); kb && kb->getControlKeyPressed()) {
-            return true;
-        }
+    if (isEditorZoomGesture() && !paimon::settings::smoothscroll::editorZoomEnabled()) {
+        return true;
     }
 
     return false;
+}
+
+bool isEditorZoomGesture() {
+    if (!LevelEditorLayer::get()) return false;
+    auto* kb = CCKeyboardDispatcher::get();
+    return kb && kb->getControlKeyPressed();
 }
 
 bool shouldUseSmoothPauseZoom() {
@@ -73,7 +92,8 @@ bool shouldUseSmoothPauseZoom() {
 }
 
 bool SmoothScrollController::queueInput(float wheelY, float wheelX) {
-    double const gain = currentWheelGain();
+    m_editorZoomMode = isEditorZoomGesture() && paimon::settings::smoothscroll::editorZoomEnabled();
+    double const gain = m_editorZoomMode ? currentEditorZoomGain() : currentWheelGain();
     m_momentumY += static_cast<double>(wheelY) * gain;
     m_momentumX += static_cast<double>(wheelX) * gain;
     return std::abs(m_momentumY) > kStopEpsilon || std::abs(m_momentumX) > kStopEpsilon;
@@ -90,12 +110,25 @@ void SmoothScrollController::tick(float dt, ScrollDispatchFn const& dispatch) {
         return;
     }
 
+    // If the editor-zoom gesture state changed mid-momentum (e.g. Ctrl released
+    // after a long zoom scroll), drop the leftover momentum so it doesn't bleed
+    // into a plain vertical scroll.
+    if (paimon::settings::smoothscroll::fixEditorScroll()) {
+        bool const zoomGestureNow = isEditorZoomGesture()
+            && paimon::settings::smoothscroll::editorZoomEnabled();
+        if (m_editorZoomMode != zoomGestureNow) {
+            stop();
+            return;
+        }
+    }
+
     if (shouldBypassSmoothScroll()) {
         stop();
         return;
     }
 
-    double const blend = 1.0 - std::exp(-currentDecayRate() * static_cast<double>(dt));
+    double const decayRate = m_editorZoomMode ? currentEditorZoomDecayRate() : currentDecayRate();
+    double const blend = 1.0 - std::exp(-decayRate * static_cast<double>(dt));
 
     float const stepY = static_cast<float>(m_momentumY * blend);
     float const stepX = static_cast<float>(m_momentumX * blend);
@@ -118,6 +151,7 @@ bool SmoothScrollController::hasMomentum() const {
 void SmoothScrollController::stop() {
     m_momentumY = 0.0;
     m_momentumX = 0.0;
+    m_editorZoomMode = false;
 }
 
 void SmoothScrollController::reset() {

@@ -1,9 +1,4 @@
 #pragma once
-//
-// Serializes a ParsedSpritesheet back into cocos2d-x .plist XML (format 3).
-// Output is byte-compatible with PackGen / TexturePacker so Texture Loader
-// can consume it without surprises.
-//
 
 #include "SpriteFrameInfo.hpp"
 

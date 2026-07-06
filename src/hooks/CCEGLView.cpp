@@ -1,5 +1,7 @@
 ﻿#include <Geode/Geode.hpp>
 #include <Geode/modify/CCEGLView.hpp>
+#include <Geode/loader/SettingV3.hpp>
+#include <Geode/utils/Keyboard.hpp>
 #include <atomic>
 #include "../features/capture/services/FramebufferCapture.hpp"
 #include "../features/capture/ui/CaptureMenuPopup.hpp"
@@ -26,19 +28,19 @@ $execute {
         auto* pl = PlayLayer::get();
         bool const playing = pl && !pl->m_isPaused;
 
-        // "Invert inputs": during active play right-click acts as jump
-        // (button 1) and we consume the event so GD doesn't reprocess it.
+        // During active play right-click acts as jump (button 1); consume so GD doesn't reprocess.
         if (playing && Mod::get()->getSavedValue<bool>("invert-mouse-inputs", false)) {
             pl->handleButton(isPress, 1, true);
-            return true; // consumed
+            return true;
         }
 
-        // Default: right-click toggles the capture menu popup when not playing
-        // (menus/pause), on Press only. The popup uses the mod's popup template
-        // (geode::Popup) for visual consistency with the rest of the mod.
-        if (isPress && (!pl || pl->m_isPaused)) {
-            // A button under the cursor belongs to Quick Hub capture. Consume
-            // the click so the generic capture menu is not opened too.
+        // Right-click toggles the capture menu when not playing (Press only).
+        // Disableable via "capture-menu-rightclick" to move it to a custom keybind.
+        // Alt+right-click is reserved for the editor canvas rotate gesture.
+        if (isPress && !(data.modifiers & KeyboardModifier::Alt)
+            && (!pl || pl->m_isPaused)
+            && Mod::get()->getSettingValue<bool>("capture-menu-rightclick")) {
+            // A button under the cursor belongs to Quick Hub; consume so the generic menu isn't also opened.
             if (paimon::quickhub::handleQuickButtonRightClick()) return true;
 
             Loader::get()->queueInMainThread([]() {
@@ -49,6 +51,27 @@ $execute {
 
         return false;
     }).leak();
+}
+
+// Customizable keybind to open the capture menu, as an alternative or
+// replacement for right-click. Fires for keyboard keys natively and for mouse
+// buttons / scroll via the ExtendedKeybind system (capture-menu-keybind is
+// registered in ExtendedKeybind.cpp). Mirrors the right-click guard: only when
+// not actively playing (menus / pause).
+$execute {
+    KeybindSettingPressedEventV3(Mod::get(), "capture-menu-keybind").listen(
+        +[](Keybind const&, bool down, bool repeat, double) -> void {
+            if (!down || repeat) return;
+
+            auto* pl = PlayLayer::get();
+            if (pl && !pl->m_isPaused) return;
+
+            Loader::get()->queueInMainThread([]() {
+                if (paimon::isRuntimeShuttingDown()) return;
+                CaptureMenuPopup::toggle();
+            });
+        }
+    ).leak();
 }
 
 // cocos2d::CCEGLView is only linked on Windows and Android; mac/iOS use
@@ -91,7 +114,6 @@ class $modify(CaptureView, CCEGLView) {
 
     void setFrameSize(float w, float h) {
         CCEGLView::setFrameSize(w, h);
-        // Invalidate blur FBOs on resize
         BlurSystem::getInstance()->onWindowResized(
             static_cast<int>(w), static_cast<int>(h));
     }

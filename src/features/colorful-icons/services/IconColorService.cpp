@@ -58,11 +58,9 @@ IconColorTriple IconColorService::resolve(IconDescriptor const& desc, float nowS
         case ColorMode::Player:      return resolvePlayer(base);
         case ColorMode::CustomRGB:   return resolveCustomRGB(cfg);
         case ColorMode::HueShift:    return resolveHueShift(base, cfg);
-        case ColorMode::SatBoost:    return resolveSatBoost(base, cfg);
         case ColorMode::RandomStable:return resolveRandom(desc, cfg);
         case ColorMode::Rainbow:     return resolveRainbow(desc, cfg, nowSeconds);
         case ColorMode::Gradient:    return resolveGradient(desc, cfg);
-        case ColorMode::PerGamemode: return resolvePerGamemode(desc, base, cfg);
         case ColorMode::Inverted:    return resolveInverted(base);
         case ColorMode::Monochrome:  return resolveMonochrome(cfg);
     }
@@ -85,14 +83,6 @@ IconColorTriple IconColorService::resolveHueShift(IconColorTriple const& base, P
     return t;
 }
 
-IconColorTriple IconColorService::resolveSatBoost(IconColorTriple const& base, PaimonIconConfig const& cfg) const {
-    IconColorTriple t = base;
-    t.primary   = math::scaleSV(base.primary,   cfg.saturationMul, cfg.brightnessMul);
-    t.secondary = math::scaleSV(base.secondary, cfg.saturationMul, cfg.brightnessMul);
-    t.glow      = math::scaleSV(base.glow,      cfg.saturationMul, cfg.brightnessMul);
-    return t;
-}
-
 IconColorTriple IconColorService::resolveRandom(IconDescriptor const& desc, PaimonIconConfig const& cfg) const {
     const std::uint64_t seed =
         (static_cast<std::uint64_t>(desc.unlockTypeRaw) << 32) ^
@@ -104,15 +94,10 @@ IconColorTriple IconColorService::resolveRandom(IconDescriptor const& desc, Paim
     auto pick = [&](std::uint64_t h, RandomPalette pal) -> cocos2d::ccColor3B {
         const float hue = math::hashToFloat01(h) * 360.0f;
         switch (pal) {
-            case RandomPalette::Vibrant:    return math::fromHSV({hue, 1.00f, 1.00f});
-            case RandomPalette::Pastel:     return math::fromHSV({hue, 0.45f, 1.00f});
-            case RandomPalette::Neon:       return math::fromHSV({hue, 0.85f, 1.00f});
-            case RandomPalette::Earthy:     return math::fromHSV({std::fmod(hue, 60.0f) + 20.0f, 0.55f, 0.75f});
-            case RandomPalette::Monoschemed: {
-                auto baseHsv = math::toHSV(cfg.monochromeBase);
-                baseHsv.h = math::wrapHue(baseHsv.h + (math::hashToFloat01(h) - 0.5f) * 30.0f);
-                return math::fromHSV(baseHsv);
-            }
+            case RandomPalette::Vibrant: return math::fromHSV({hue, 1.00f, 1.00f});
+            case RandomPalette::Pastel:  return math::fromHSV({hue, 0.45f, 1.00f});
+            case RandomPalette::Neon:    return math::fromHSV({hue, 0.85f, 1.00f});
+            case RandomPalette::Earthy:  return math::fromHSV({std::fmod(hue, 60.0f) + 20.0f, 0.55f, 0.75f});
         }
         return math::fromHSV({hue, 1.0f, 1.0f});
     };
@@ -141,26 +126,17 @@ IconColorTriple IconColorService::resolveRainbow(IconDescriptor const& desc, Pai
 
 IconColorTriple IconColorService::resolveGradient(IconDescriptor const& desc, PaimonIconConfig const& cfg) const {
     const float total = std::max(1, desc.totalCount);
-    const float progress = std::clamp(static_cast<float>(desc.displayIndex) / (total - 1.0f), 0.0f, 1.0f);
+    // Guard the single-icon case (total==1): displayIndex/0 would be NaN, and
+    // std::clamp(NaN,..) stays NaN, which later reaches a float->int cast (UB).
+    const float denom = total - 1.0f;
+    const float progress = denom > 0.0f
+        ? std::clamp(static_cast<float>(desc.displayIndex) / denom, 0.0f, 1.0f)
+        : 0.0f;
     cocos2d::ccColor3B mixed = math::lerp(cfg.gradientStart, cfg.gradientEnd, progress);
     IconColorTriple out;
     out.primary   = mixed;
     out.secondary = math::scaleSV(mixed, 1.0f, 0.7f);
     out.glow      = math::scaleSV(mixed, 1.0f, 1.2f);
-    out.hasGlow   = true;
-    return out;
-}
-
-IconColorTriple IconColorService::resolvePerGamemode(IconDescriptor const& desc, IconColorTriple const& base, PaimonIconConfig const& cfg) const {
-    if (desc.gamemodeIndex < 0 || desc.gamemodeIndex >= static_cast<int>(cfg.perMode.size())) {
-        return base;
-    }
-    auto const& slot = cfg.perMode[desc.gamemodeIndex];
-    if (!slot) return base;
-    IconColorTriple out;
-    out.primary   = slot->color1;
-    out.secondary = slot->color2;
-    out.glow      = slot->glow;
     out.hasGlow   = true;
     return out;
 }

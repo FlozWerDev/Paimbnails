@@ -44,6 +44,7 @@ bool MenuMusicAddPopup::init(float width, float height) {
 
     buildUrlSection();
     buildLocalSection();
+    buildProgressBar();
 
     auto size = m_mainLayer->getContentSize();
     m_statusLabel = CCLabelBMFont::create("", "chatFont.fnt");
@@ -64,12 +65,10 @@ void MenuMusicAddPopup::onExit() {
     Popup::onExit();
 }
 
-// URL section
-
 void MenuMusicAddPopup::buildUrlSection() {
     auto size = m_mainLayer->getContentSize();
 
-    auto header = CCLabelBMFont::create("Download via yt-dlp", "goldFont.fnt");
+    auto header = CCLabelBMFont::create("Download from a link", "goldFont.fnt");
     if (header) {
         header->setScale(0.5f);
         header->setPosition({size.width / 2.f, size.height * 0.88f});
@@ -86,15 +85,12 @@ void MenuMusicAddPopup::buildUrlSection() {
         m_mainLayer->addChild(m_ytDlpLabel, 3);
     }
 
-    m_urlInput = TextInput::create(size.width * 0.6f, "Paste URL");
+    m_urlInput = TextInput::create(size.width * 0.6f, "Paste a YouTube/SoundCloud link");
     if (m_urlInput) {
-        // Forzamos el whitelist completo (Any) primero...
         m_urlInput->setCommonFilter(geode::CommonFilter::Any);
-        // ...y ademas sobreescribimos el m_allowedChars del CCTextInputNode
-        // interno, porque en algunas builds de Geode `setCommonFilter(Any)`
-        // no incluye ':', '/', '?', '&', '=' y la URL llega mutilada como
-        // "httpswwwyoutubecomwatchv..." a yt-dlp. Este fallback lo ha usado
-        // tambien ShareCommentLayer para admitir caracteres de emotes.
+        // setCommonFilter(Any) doesn't include ':' '/' '?' '&' '=' in some
+        // Geode builds, so the URL reaches yt-dlp mangled. Override the
+        // inner node's m_allowedChars directly to keep URL chars intact.
         if (auto* inner = m_urlInput->getInputNode()) {
             inner->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
         }
@@ -104,7 +100,6 @@ void MenuMusicAddPopup::buildUrlSection() {
         m_mainLayer->addChild(m_urlInput, 3);
     }
 
-    // Boton de paste usando el sprite completo de GD
     {
         auto pasteSpr = CCSprite::createWithSpriteFrameName("GJ_pasteBtn2_001.png");
         if (pasteSpr) {
@@ -118,7 +113,6 @@ void MenuMusicAddPopup::buildUrlSection() {
         }
     }
 
-    // Boton de download usando el sprite completo de GD
     {
         auto dlSpr = CCSprite::createWithSpriteFrameName("GJ_downloadBtn_001.png");
         if (dlSpr) {
@@ -132,7 +126,6 @@ void MenuMusicAddPopup::buildUrlSection() {
         }
     }
 
-    // Boton info con el path sugerido.
     auto helpSpr = CCSprite::createWithSpriteFrameName("GJ_infoBtn_001.png");
     if (helpSpr) {
         helpSpr->setScale(0.5f);
@@ -146,12 +139,9 @@ void MenuMusicAddPopup::buildUrlSection() {
     }
 }
 
-// Local section
-
 void MenuMusicAddPopup::buildLocalSection() {
     auto size = m_mainLayer->getContentSize();
 
-    // Separador con gradiente sutil
     auto sep = CCLayerColor::create(ccc4(120, 140, 160, 150));
     if (sep) {
         sep->setContentSize({size.width - 40.f, 2.f});
@@ -161,7 +151,7 @@ void MenuMusicAddPopup::buildLocalSection() {
         m_mainLayer->addChild(sep, 2);
     }
 
-    auto header = CCLabelBMFont::create("Import local files", "goldFont.fnt");
+    auto header = CCLabelBMFont::create("Or import a file from your PC", "goldFont.fnt");
     if (header) {
         header->setScale(0.5f);
         header->setPosition({size.width / 2.f, size.height * 0.56f});
@@ -169,7 +159,6 @@ void MenuMusicAddPopup::buildLocalSection() {
         m_mainLayer->addChild(header, 3);
     }
 
-    // Botones con mejor estilo
     auto audioSpr = ButtonSprite::create("Audio", 90, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.6f);
     if (audioSpr) {
         auto b = CCMenuItemSpriteExtra::create(audioSpr, this,
@@ -229,50 +218,122 @@ void MenuMusicAddPopup::buildLocalSection() {
     }
 }
 
-// Refresh status
+void MenuMusicAddPopup::buildProgressBar() {
+    auto size = m_mainLayer->getContentSize();
+
+    // Sit in the empty band between the URL row (~0.73) and the
+    // "Import local files" separator (~0.62). Hidden until a download
+    // actually starts so the popup looks the same in its idle state.
+    const float barW = size.width - 60.f;
+    const float barH = 12.f;
+    const float barY = size.height * 0.66f;
+    const float cx   = size.width / 2.f;
+
+    auto bg = CCLayerColor::create(ccc4(20, 20, 30, 230));
+    if (bg) {
+        bg->setContentSize({barW, barH});
+        bg->ignoreAnchorPointForPosition(false);
+        bg->setAnchorPoint({0.5f, 0.5f});
+        bg->setPosition({cx, barY});
+        bg->setID("download-bar-bg"_spr);
+        bg->setVisible(false);
+        m_mainLayer->addChild(bg, 4);
+        m_progressBarBg = bg;
+
+        auto fill = CCLayerColor::create(ccc4(120, 220, 255, 255));
+        if (fill) {
+            fill->setContentSize({0.f, barH});
+            fill->setAnchorPoint({0.f, 0.f});
+            fill->ignoreAnchorPointForPosition(false);
+            fill->setPosition({0.f, 0.f});
+            fill->setID("download-bar-fill"_spr);
+            bg->addChild(fill, 1);
+            m_progressBarFill = fill;
+        }
+    }
+
+    auto pct = CCLabelBMFont::create("0%", "bigFont.fnt");
+    if (pct) {
+        pct->setScale(0.35f);
+        pct->setAnchorPoint({0.5f, 0.5f});
+        pct->setPosition({cx, barY});
+        pct->setColor({255, 255, 255});
+        pct->setID("download-bar-percent"_spr);
+        pct->setVisible(false);
+        m_mainLayer->addChild(pct, 5);
+        m_progressPercentLabel = pct;
+    }
+}
+
+void MenuMusicAddPopup::setProgressBarVisible(bool visible) {
+    if (m_progressBarBg) m_progressBarBg->setVisible(visible);
+    if (m_progressPercentLabel) m_progressPercentLabel->setVisible(visible);
+    if (visible) {
+        // Reset to 0% on each new download.
+        updateProgressBar(0.f);
+    }
+}
+
+void MenuMusicAddPopup::updateProgressBar(float ratio01) {
+    if (ratio01 < 0.f) ratio01 = 0.f;
+    if (ratio01 > 1.f) ratio01 = 1.f;
+
+    if (m_progressBarBg && m_progressBarFill) {
+        const float barW = m_progressBarBg->getContentSize().width;
+        const float barH = m_progressBarFill->getContentSize().height;
+        m_progressBarFill->setContentSize({barW * ratio01, barH});
+    }
+    if (m_progressPercentLabel) {
+        m_progressPercentLabel->setString(
+            fmt::format("{:.0f}%", ratio01 * 100.f).c_str());
+    }
+}
 
 void MenuMusicAddPopup::refreshStatus() {
     if (!m_ytDlpLabel) return;
     auto& boot = YtDlpBootstrap::get();
     if (boot.exists()) {
-        m_ytDlpLabel->setString("yt-dlp ready - paste URL & hit Download");
+        m_ytDlpLabel->setString("Ready - paste a link and press the download button");
         m_ytDlpLabel->setColor({180, 230, 180});
     } else {
-        m_ytDlpLabel->setString("yt-dlp not installed - will auto-install on first download (~17MB)");
+        m_ytDlpLabel->setString("The first download installs a small helper (~17 MB, one time)");
         m_ytDlpLabel->setColor({255, 220, 150});
     }
 }
 
-// File pickers
-
 void MenuMusicAddPopup::onPickAudio(CCObject*) {
-    auto weakThis = this;
-    pt::pickAudio([weakThis, this](Result<std::optional<std::filesystem::path>> res) {
-        if (!m_alive.load()) return;
+    auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
+    pt::pickAudio([weakThis](Result<std::optional<std::filesystem::path>> res) {
+        auto ref = weakThis.lock();
+        if (!ref) return;
+        auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
+        if (!self || !self->m_alive.load()) return;
         if (!res) return;
         auto v = res.unwrap();
         if (!v.has_value()) return;
-        m_pendingAudioPath = geode::utils::string::pathToString(v.value());
-        if (m_audioPathLabel) {
-            m_audioPathLabel->setString(geode::utils::string::pathToString(v.value().filename()).c_str());
+        self->m_pendingAudioPath = geode::utils::string::pathToString(v.value());
+        if (self->m_audioPathLabel) {
+            self->m_audioPathLabel->setString(geode::utils::string::pathToString(v.value().filename()).c_str());
         }
     });
 }
 
 void MenuMusicAddPopup::onPickCover(CCObject*) {
-    pt::pickImage([this](Result<std::optional<std::filesystem::path>> res) {
-        if (!m_alive.load()) return;
+    auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
+    pt::pickImage([weakThis](Result<std::optional<std::filesystem::path>> res) {
+        auto ref = weakThis.lock();
+        if (!ref) return;
+        auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
+        if (!self || !self->m_alive.load()) return;
         if (!res) return;
         auto v = res.unwrap();
         if (!v.has_value()) return;
-        m_pendingCoverPath = geode::utils::string::pathToString(v.value());
-        if (m_coverPathLabel) {
-            m_coverPathLabel->setString(geode::utils::string::pathToString(v.value().filename()).c_str());
+        self->m_pendingCoverPath = geode::utils::string::pathToString(v.value());
+        if (self->m_coverPathLabel) {
+            self->m_coverPathLabel->setString(geode::utils::string::pathToString(v.value().filename()).c_str());
         }
     });
 }
-
-// Import local
 
 void MenuMusicAddPopup::onImportLocal(CCObject*) {
     finalizeLocalImport();
@@ -327,7 +388,6 @@ void MenuMusicAddPopup::finalizeLocalImport() {
         std::chrono::system_clock::now().time_since_epoch()).count();
     lib.addTrack(track);
 
-    // Reset inputs
     m_pendingAudioPath.clear();
     m_pendingCoverPath.clear();
     if (m_audioPathLabel) m_audioPathLabel->setString("No audio selected");
@@ -336,8 +396,6 @@ void MenuMusicAddPopup::finalizeLocalImport() {
 
     Notification::create("Track imported!", NotificationIcon::Success)->show();
 }
-
-// Download via yt-dlp
 
 void MenuMusicAddPopup::onStartDownload(CCObject*) {
     if (!m_urlInput) return;
@@ -351,11 +409,6 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
         return;
     }
 
-    // Si falta yt-dlp, preguntamos al usuario ANTES de iniciar cualquier
-    // descarga. Es el comportamiento que el usuario pidio explicitamente:
-    // nada de descargas silenciosas. Si acepta, abrimos el popup dedicado
-    // con barra de progreso y al terminar reintentamos esta misma funcion;
-    // ya no caera aqui.
     auto& bootstrap = YtDlpBootstrap::get();
     if (!bootstrap.exists()) {
         if (m_statusLabel) {
@@ -380,11 +433,8 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                     return;
                 }
 
-                // Pasamos `this` y usamos m_alive como atomic guard para
-                // evitar tocar la UI si el popup padre se cerro mientras
-                // el install popup estaba abierto.
-                // Usamos WeakRef para evitar dangling pointer si el popup se destruye
-                // durante la instalacion.
+                // m_alive guards UI access; WeakRef avoids a dangling
+                // pointer if this popup is destroyed during install.
                 auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
                 auto installPopup = YtDlpInstallPopup::create(
                     [weakThis](bool ok) {
@@ -400,7 +450,6 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                             return;
                         }
                         self->refreshStatus();
-                        // Reintentamos la descarga; ya tenemos yt-dlp.
                         self->onStartDownload(nullptr);
                     }
                 );
@@ -410,8 +459,8 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
         return;
     }
 
-    // Lo mismo con ffmpeg — sin el no podemos garantizar audio
-    // reproducible por FMOD (AAC/Opus no funcionan en GD).
+    // GD's audio engine can only play MP3 from YouTube-style sources;
+    // ffmpeg is required to convert AAC/Opus, which FMOD can't play.
     auto& ffmpeg = FfmpegBootstrap::get();
     if (!ffmpeg.exists()) {
         if (m_statusLabel) {
@@ -463,7 +512,6 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
 
     auto& dl = YtDlpDownloader::get();
     if (!dl.isAvailable()) {
-        // No deberia pasar tras ensureInstalled, pero por seguridad.
         Notification::create(
             "yt-dlp binary missing. Try clicking Download again.",
             NotificationIcon::Error, 4.f)->show();
@@ -475,6 +523,8 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
         m_statusLabel->setString("Starting download...");
         m_statusLabel->setColor({255, 220, 120});
     }
+    // Show the visible progress bar so users see something is happening.
+    setProgressBarVisible(true);
 
     auto id = MenuMusicLibrary::get().generateId("dl");
 
@@ -484,11 +534,14 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
             auto ref = weakThis.lock();
             auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
             if (!self || !self->m_alive.load()) return;
-            if (self->m_statusLabel) {
-                if (p.stage == "downloading") {
+            if (p.stage == "downloading") {
+                self->updateProgressBar(p.percent);
+                if (self->m_statusLabel) {
                     self->m_statusLabel->setString(
                         fmt::format("Downloading... {:.0f}%", p.percent * 100.f).c_str());
-                } else if (!p.message.empty()) {
+                }
+            } else if (!p.message.empty()) {
+                if (self->m_statusLabel) {
                     self->m_statusLabel->setString(p.message.substr(0, 64).c_str());
                 }
             }
@@ -497,7 +550,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
             auto ref = weakThis.lock();
             auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
             if (!self || !self->m_alive.load()) {
-                // popup cerrado: igual registramos el track para no perder el download
+                // popup closed: still register the track so the download isn't lost
                 if (result.success) {
                     MusicTrack t;
                     t.id = result.trackId;
@@ -516,19 +569,19 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
 
             self->m_busy = false;
 
-            // Manejo de errores especiales: el downloader nos dice que
-            // falta un binario. Reintentamos entrando por onStartDownload,
-            // que ahora si preguntara al usuario.
             if (!result.success && result.error == "__NEED_YTDLP__") {
+                self->setProgressBarVisible(false);
                 self->onStartDownload(nullptr);
                 return;
             }
             if (!result.success && result.error == "__NEED_FFMPEG__") {
+                self->setProgressBarVisible(false);
                 self->onStartDownload(nullptr);
                 return;
             }
 
             if (!result.success) {
+                self->setProgressBarVisible(false);
                 if (self->m_statusLabel) {
                     self->m_statusLabel->setString(
                         fmt::format("Error: {}", result.error.substr(0, 100)).c_str());
@@ -539,7 +592,6 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                 return;
             }
 
-            // Persistir el track en la libreria.
             MusicTrack t;
             t.id = result.trackId;
             t.audioPath = result.audioPath;
@@ -554,6 +606,11 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                 std::chrono::system_clock::now().time_since_epoch()).count();
             MenuMusicLibrary::get().addTrack(t);
 
+            // Snap to 100% briefly so the user sees the bar fully filled
+            // before it disappears, then hide it.
+            self->updateProgressBar(1.f);
+            self->setProgressBarVisible(false);
+
             if (self->m_statusLabel) {
                 self->m_statusLabel->setString("Download complete!");
                 self->m_statusLabel->setColor({140, 230, 140});
@@ -564,13 +621,10 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
     );
 }
 
-// yt-dlp help popup
-
 void MenuMusicAddPopup::onPasteUrl(CCObject*) {
     if (!m_urlInput) return;
-    // Leer clipboard directamente. Esto evita cualquier filtro del input.
+    // Read the clipboard directly to bypass the input's character filter.
     auto clip = geode::utils::clipboard::read();
-    // Trim whitespace / newlines al inicio y final.
     auto isSpace = [](unsigned char c) {
         return c == ' ' || c == '\t' || c == '\r' || c == '\n';
     };
@@ -582,8 +636,6 @@ void MenuMusicAddPopup::onPasteUrl(CCObject*) {
         return;
     }
     if (clip.size() > 2048) clip = clip.substr(0, 2048);
-    // Inyectar via setString — el TextInput acepta el string completo sin
-    // aplicar el filtro de caracteres (que solo actua en keystroke/paste UI).
     m_urlInput->setString(clip);
     Notification::create("URL pasted from clipboard.", NotificationIcon::Success)->show();
 }

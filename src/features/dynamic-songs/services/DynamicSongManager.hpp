@@ -29,7 +29,7 @@ public:
     static DynamicSongManager* get();
 
     bool isStreamingPreviewPending() const { return m_streamingPreviewPending || m_previewAwaitingSongInfo; }
-    bool isActive() const { return m_state != DynState::Idle || isStreamingPreviewPending(); }
+    bool isActive() const { return m_state != DynState::Idle || isStreamingPreviewPending() || m_awaitingDownloadOnly; }
     bool isFading() const { return m_state == DynState::FadingIn || m_state == DynState::FadingOut; }
     bool isInValidLayer() const { return m_currentLayer != DynSongLayer::None; }
     DynSongLayer getCurrentLayer() const { return m_currentLayer; }
@@ -100,6 +100,9 @@ private:
     bool m_previewAwaitingSongInfo = false;
     bool m_streamingPreviewPending = false;
     bool m_streamingPreview = false;
+    // Set when the streaming preview is disabled but a song is still
+    // downloading: we keep polling so it auto-plays once it's local.
+    bool m_awaitingDownloadOnly = false;
     FMOD::Sound* m_previewStreamSound = nullptr;
     FMOD::Channel* m_previewChannel = nullptr;
     int m_previewSongID = 0;

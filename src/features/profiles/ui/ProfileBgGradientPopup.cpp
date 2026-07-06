@@ -39,7 +39,7 @@ CCSprite* spriteForEffect(std::string const& effect) {
     if (effect == "slide")  return try_("GJ_compactPlayBtn_001.png", "GJ_playBtn_001.png");
     return try_("GJ_paintBtn_001.png", "GJ_colorBtn_001.png");
 }
-} // namespace
+}
 
 ProfileBgGradientPopup* ProfileBgGradientPopup::create(int accountID,
                                                        std::string const& initialEffect,
@@ -70,7 +70,6 @@ bool ProfileBgGradientPopup::init(int accountID,
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    // Preview area
     float previewY = content.height - 90.f;
     float previewW = 260.f;
     float previewH = 60.f;
@@ -84,7 +83,6 @@ bool ProfileBgGradientPopup::init(int accountID,
 
     rebuildPreview();
 
-    // Effect buttons
     auto menu = CCMenu::create();
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu, 5);
@@ -111,7 +109,6 @@ bool ProfileBgGradientPopup::init(int accountID,
 
         m_effectButtons.emplace_back(effectId, btn);
 
-        // Etiqueta debajo
         std::string label = Localization::get().getString("profilebg.gradient.effect." + effectId);
         if (label.empty() || label == ("profilebg.gradient.effect." + effectId)) {
             label = effectId;
@@ -124,7 +121,6 @@ bool ProfileBgGradientPopup::init(int accountID,
 
     refreshEffectSelection();
 
-    // Speed slider
     float sliderY = btnY - 60.f;
 
     auto* speedTitle = CCLabelBMFont::create(
@@ -148,7 +144,6 @@ bool ProfileBgGradientPopup::init(int accountID,
     m_mainLayer->addChild(m_speedLabel);
     refreshSpeedLabel();
 
-    // Apply button
     auto applySpr = ButtonSprite::create(
         Localization::get().getString("profilebg.gradient.apply").c_str(),
         "bigFont.fnt", "GJ_button_01.png", 0.7f
@@ -159,7 +154,6 @@ bool ProfileBgGradientPopup::init(int accountID,
     applyBtn->setPosition({cx, 28.f});
     menu->addChild(applyBtn);
 
-    // Info button
     {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
         if (!spr) spr = CCSprite::create();
@@ -198,7 +192,6 @@ void ProfileBgGradientPopup::rebuildPreview() {
     auto colorA = currentPlayerColor1();
     auto colorB = currentPlayerColor2();
 
-    // Stencil rectangular para clipping del preview animado
     auto stencil = paimon::SpriteHelper::createRectStencil(sz.width, sz.height);
     auto clip = CCClippingNode::create();
     clip->setStencil(stencil);
@@ -217,12 +210,11 @@ void ProfileBgGradientPopup::rebuildPreview() {
         grad->setEffect(m_effect, m_speed);
     }
 
-    // Borde estetico
     auto border = CCLayerColor::create(ccc4(255, 255, 255, 60));
     border->setContentSize(sz);
     border->setAnchorPoint({0, 0});
     border->setPosition({0, 0});
-    border->setVisible(false); // borde oscuro: dejamos solo gradient
+    border->setVisible(false);
     m_previewContainer->addChild(border);
 }
 
@@ -231,8 +223,6 @@ void ProfileBgGradientPopup::refreshEffectSelection() {
         if (!btn) continue;
         auto* spr = typeinfo_cast<CCSprite*>(btn->getNormalImage());
         if (!spr) {
-            // Igual ajustamos la escala como feedback visual aunque no
-            // podamos teñir el sprite.
             btn->setScale(id == m_effect ? 1.15f : 1.0f);
             continue;
         }
@@ -266,8 +256,6 @@ void ProfileBgGradientPopup::onSpeedChanged(CCObject* sender) {
     if (!slider) return;
     m_speed = paimon::profilebg::normalizeSpeed(speedFromSlider(slider->getValue()));
     refreshSpeedLabel();
-    // No reconstruimos el preview entero por cada tick; solo re-seteamos el
-    // efecto en el gradient existente para no recrear el nodo.
     if (m_previewContainer) {
         for (auto* child : CCArrayExt<CCNode*>(m_previewContainer->getChildren())) {
             auto* clip = typeinfo_cast<CCClippingNode*>(child);

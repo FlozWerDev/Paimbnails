@@ -1,6 +1,4 @@
-﻿// Deferred mod init, kicked off from MenuLayer::init().
-
-#include <Geode/Geode.hpp>
+﻿#include <Geode/Geode.hpp>
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../features/cursor/services/CursorManager.hpp"
@@ -17,6 +15,7 @@
 #include "RuntimeLifecycle.hpp"
 #include "StartupIncompatibilityCheck.hpp"
 #include "ModCompatWarnings.hpp"
+#include "BanGate.hpp"
 #include "QualityConfig.hpp"
 #include "MainLevels.hpp"
 #include "MainLevelPrefetch.hpp"
@@ -63,51 +62,44 @@ namespace paimon {
 void bootstrap() {
     log::info("[PaimonThumbnails][Init] Loaded event start");
 
+    // Hard ban gate: if the local .paimon cache marks the user as banned, don't
+    // initialize anything. Otherwise (no cache) this schedules a server check.
+    if (paimon::ban::runStartupBanGate()) {
+        log::warn("[PaimonThumbnails][Init] Aborting init: user is banned");
+        return;
+    }
+
     paimon::video::VideoPlayer::bindMainThreadId();
 
     PaimonCheckStartupIncompatibilities();
     PaimonLogModCompatWarnings();
 
-    // Framework: register features, permissions, hooks
     paimon::initFramework();
 
-    // After Mod::get() is valid: set download threads before thumb preload.
     ThumbnailLoader::get().applyConcurrentDownloadsSetting();
 
-    // PaiDraw
     paidraw::PaiDrawManager::get().init();
 
-    // Lazy FFT pipeline init; attaches the FMOD DSP only when enabled.
     paimon::beat_shaders::BeatShaderManager::get().init();
 
-    // Persistent cache of pre-computed blur textures. Async init reads the
-    // index off the I/O pool, so the main thread isn't blocked; on later runs a
-    // populated cache lets requestLoad lift blur textures straight from disk.
     paimon::blur::BlurDiskCache::get().init();
     paimon::gd::GDRobTopCache::get().init();
-    // Popup post-processing: deferred init in CCScene::visit (needs an active GL context).
 
-    // Safety net: if clear-cache-on-exit is on and the last session crashed
-    // before $on_game(Exiting), disk caches may have leaked. Runs in the
-    // background so the recursive cleanup doesn't stall startup.
     bool const clearCacheAtStartup = paimon::settings::general::clearCacheOnExit();
 
-    // Cleanup: remove orphaned video cache files (>7 days)
     paimon::video::VideoNormalizer::cleanupOrphanedCache();
 
-    // Run independent migrations, cleanups and config loads in parallel.
     paimon::ThreadTracker::get().spawn([clearCacheAtStartup]() {
         geode::utils::thread::setName("PaimonMigrations");
         if (paimon::isRuntimeShuttingDown()) return;
 
-        // Deferred cache cleanup (used to run on the main thread)
         if (clearCacheAtStartup) {
             cleanupDiskCache("startup-safety");
             auto saveDir = Mod::get()->getSaveDir();
             std::error_code ec;
             std::filesystem::remove(saveDir / "manifest_cache.json", ec);
             // setSavedValue touches Geode structures, so do it on the main thread.
-            geode::Loader::get()->queueInMainThread([]() {
+            geode::queueInMainThread([]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 Mod::get()->setSavedValue("thumbnail-disk-cache", matjson::Value::object());
             });
@@ -130,21 +122,14 @@ void bootstrap() {
 
     log::info("[PaimonThumbnails] Queueing main level thumbnails...");
 
-    // Batch fetch manifest for main levels first, then prefetch
     std::vector<int> mainLevels;
     for (int i = paimon::kMainLevelMinID; i <= paimon::kMainLevelMaxID; i++) {
         mainLevels.push_back(i);
     }
 
-    // Load main assets ASAP. If LoadingLayer already started the prefetch (the
-    // normal case), tryClaimMainLevelsPrefetch() returns false and we just log;
-    // otherwise (e.g. texture reload) this fallback ensures they get loaded.
     if (paimon::tryClaimMainLevelsPrefetch()) {
-        // Immediate manifest fetch; honors the 14-day cache window (skips the
-        // network if all 22 are already on disk and fresh).
         paimon::preload::fetchMainLevelManifestWithCache(mainLevels, "Bootstrap");
 
-        // Enqueue on the next frame to avoid contending with the first menu render.
         paimon::scheduleMainThreadDelay(0.25f, []() {
             if (paimon::isRuntimeShuttingDown()) return;
 
@@ -170,9 +155,7 @@ void bootstrap() {
             log::info("[PaimonThumbnails][Language] Changed to '{}'", value);
         });
 
-        // Sync mod.json settings -> CursorManager config. Guard against re-entry
-        // when saveConfig syncs back; atomic since listenForSettingChanges can
-        // fire from any thread in Geode.
+        // Re-entry guard: listenForSettingChanges can fire from any thread in Geode.
         static std::atomic<bool> s_cursorSyncGuard{false};
         geode::listenForSettingChanges<bool>("custom-cursor-enable", +[](bool value) {
             if (s_cursorSyncGuard.exchange(true, std::memory_order_acq_rel)) return;
@@ -180,12 +163,7 @@ void bootstrap() {
             CursorManager::get().applyConfigLive();
             s_cursorSyncGuard.store(false, std::memory_order_release);
         });
-        // custom-cursor-scale / -trail are saved values (not mod.json settings),
-        // applied live by the popup, so no setting listener fires for them.
 
-        // Bump the global version so LevelCell & LevelInfoLayer re-cache settings.
-        // Only mod.json keys fire listenForSettingChanges; granular keys are saved
-        // values configured from the in-mod settings panel.
         geode::listenForSettingChanges<bool>("levelcell-hover-effects", &paimonOnSettingChanged<bool>);
         geode::listenForSettingChanges<bool>("compact-list-mode", &paimonOnSettingChanged<bool>);
         geode::listenForSettingChanges<double>("level-thumb-width", &paimonOnSettingChanged<double>);
@@ -195,8 +173,6 @@ void bootstrap() {
     log::info("[PaimonThumbnails][Init] Applying startup init");
 
     log::info("[PaimonThumbnails][Init] Scheduling color extraction thread");
-    // Not a web request, so this can't move to WebTask.
-    // Disk I/O + CPU work; runs in the background so the main thread isn't blocked.
     paimon::scheduleMainThreadDelay(3.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         paimon::ThreadTracker::get().spawn([]() {
@@ -204,7 +180,7 @@ void bootstrap() {
             if (paimon::isRuntimeShuttingDown()) return;
             LevelColors::get().extractColorsFromCache();
             if (paimon::isRuntimeShuttingDown()) return;
-            geode::Loader::get()->queueInMainThread([]() {
+            geode::queueInMainThread([]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 log::info("[PaimonThumbnails][Init] Color extraction finished");
             });
@@ -212,8 +188,6 @@ void bootstrap() {
     });
 
     log::info("[PaimonThumbnails][Init] Startup init complete");
-
-    // Defer non-critical services so they don't block initial load.
 
     paimon::scheduleMainThreadDelay(12.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -232,22 +206,13 @@ void bootstrap() {
         });
     });
 
-    // Shader pre-warm: load after thumbnails are ready
     paimon::scheduleMainThreadDelay(10.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         Shaders::prewarmLevelInfoShaders();
-
-        // Precompile the user's configured dynamic background shaders (rain,
-        // matrix, crt, ...) so first entry doesn't pay the 4-10ms compile as a stutter.
         Shaders::prewarmConfiguredBackgroundShaders();
-
-        // Verify the .glsl files in resources/shaders load correctly; on
-        // failure the log shows the expected path.
         paimon::shaders::preloadBlurShaders();
     });
 
-    // UpdateChecker: query GitHub Releases for new versions, after a short
-    // delay so it doesn't compete with initial load.
     paimon::scheduleMainThreadDelay(8.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         paimon::updates::UpdateChecker::get().checkAsync();

@@ -19,21 +19,28 @@ MenuMusicPlayer& MenuMusicPlayer::get() {
     return instance;
 }
 
-// Seleccion
-
 std::vector<std::string> MenuMusicPlayer::candidateTrackIds() const {
     auto& lib = MenuMusicLibrary::get();
     std::vector<std::string> out;
+
+    const auto& blacklist = paimon::menuloop::MenuLoopManager::get().getBlacklist();
+    auto isBlacklisted = [&](const std::string& audioPath) {
+        return !audioPath.empty()
+            && std::find(blacklist.begin(), blacklist.end(), audioPath) != blacklist.end();
+    };
 
     const auto mode = lib.mode();
     if (mode == PlaybackMode::Playlist) {
         if (auto* pl = lib.findPlaylist(lib.activePlaylistId())) {
             for (const auto& tid : pl->trackIds) {
-                if (lib.findTrack(tid)) out.push_back(tid);
+                auto* t = lib.findTrack(tid);
+                if (t && !isBlacklisted(t->audioPath)) out.push_back(tid);
             }
         }
     } else if (mode == PlaybackMode::Library || mode == PlaybackMode::Queue) {
-        for (const auto& t : lib.tracks()) out.push_back(t.id);
+        for (const auto& t : lib.tracks()) {
+            if (!isBlacklisted(t.audioPath)) out.push_back(t.id);
+        }
     }
     return out;
 }
@@ -43,7 +50,6 @@ std::string MenuMusicPlayer::pickRandomExcept(const std::string& exceptId) const
     if (ids.empty()) return "";
     if (ids.size() == 1) return ids.front();
 
-    // Random con reintentos finitos para evitar repetir inmediato.
     static std::mt19937 rng(static_cast<unsigned>(
         std::chrono::steady_clock::now().time_since_epoch().count()));
     std::uniform_int_distribution<std::size_t> dist(0, ids.size() - 1);
@@ -55,8 +61,6 @@ std::string MenuMusicPlayer::pickRandomExcept(const std::string& exceptId) const
     return pick;
 }
 
-// Helper: aplicar override e iniciar playback
-
 void MenuMusicPlayer::applyOverrideAndPlay(const std::string& trackId,
                                            const std::string& audioPath) {
     std::error_code existsEc;
@@ -66,7 +70,6 @@ void MenuMusicPlayer::applyOverrideAndPlay(const std::string& trackId,
         return;
     }
 
-    // Empujar al sistema existente de override en MenuLoopManager.
     auto& loop = paimon::menuloop::MenuLoopManager::get();
     loop.setOverride(audioPath);
     loop.setCurrentSong(audioPath);
@@ -75,21 +78,18 @@ void MenuMusicPlayer::applyOverrideAndPlay(const std::string& trackId,
             ? MenuMusicLibrary::get().findTrack(trackId)->displayName
             : geode::utils::string::pathToString(std::filesystem::path(audioPath).stem()));
 
-    // Detener lo que este sonando y replay.
     auto* fmod = FMODAudioEngine::sharedEngine();
     if (fmod && fmod->m_backgroundMusicChannel) {
         fmod->m_backgroundMusicChannel->stop();
     }
     GameManager::sharedState()->playMenuMusic();
 
-    // Actualizar estado local.
     m_state.currentTrackId = trackId;
     m_state.currentAudioPath = audioPath;
     m_state.mode = MenuMusicLibrary::get().mode();
     m_state.isPlaying = true;
     m_paused = false;
 
-    // Historial.
     if (!trackId.empty()) {
         if (m_history.empty() || m_history.back() != trackId) {
             m_history.push_back(trackId);
@@ -99,8 +99,6 @@ void MenuMusicPlayer::applyOverrideAndPlay(const std::string& trackId,
 
     notifyChanged();
 }
-
-// API publica
 
 bool MenuMusicPlayer::playNext() {
     auto& lib = MenuMusicLibrary::get();
@@ -118,7 +116,6 @@ bool MenuMusicPlayer::playNext() {
 
 bool MenuMusicPlayer::playPrevious() {
     if (m_history.size() < 2) return false;
-    // pop del actual, coger el anterior
     m_history.pop_back();
     auto prevId = m_history.back();
     auto& lib = MenuMusicLibrary::get();
@@ -200,7 +197,11 @@ const MusicTrack* MenuMusicPlayer::currentTrack() const {
     return MenuMusicLibrary::get().findTrack(m_state.currentTrackId);
 }
 
-// Listeners
+void MenuMusicPlayer::forgetCurrentTrack() {
+    m_state.currentTrackId.clear();
+    m_state.currentAudioPath.clear();
+    notifyChanged();
+}
 
 std::size_t MenuMusicPlayer::addListener(TrackChangedListener cb) {
     auto token = m_nextListenerToken++;

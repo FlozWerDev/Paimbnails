@@ -3,64 +3,179 @@
 #include <Geode/Geode.hpp>
 #include <string>
 
-// Initialize saved-value defaults for settings moved out of mod.json.
-
 namespace paimon::settings {
 
-inline void migrateToSavedValues() {
+namespace internal {
+
+// Single source of truth for every saved-value default. Applied either as
+// set-if-missing (migration on startup) or force-set (factory reset), so the
+// two paths can never drift apart.
+inline void applyDefaults(bool force) {
     auto* mod = geode::Mod::get();
 
-    auto defBool = [&](const char* key, bool val) {
-        if (!mod->hasSavedValue(key)) mod->setSavedValue(key, val);
+    auto setB = [&](const char* key, bool val) {
+        if (force || !mod->hasSavedValue(key)) mod->setSavedValue(key, val);
     };
-    auto defInt = [&](const char* key, int val) {
-        if (!mod->hasSavedValue(key)) mod->setSavedValue(key, val);
+    auto setI = [&](const char* key, int val) {
+        if (force || !mod->hasSavedValue(key)) mod->setSavedValue(key, val);
     };
-    auto defFloat = [&](const char* key, float val) {
-        if (!mod->hasSavedValue(key)) mod->setSavedValue(key, val);
+    auto setF = [&](const char* key, float val) {
+        if (force || !mod->hasSavedValue(key)) mod->setSavedValue(key, val);
     };
-    auto defDouble = [&](const char* key, double val) {
-        if (!mod->hasSavedValue(key)) mod->setSavedValue(key, val);
+    auto setD = [&](const char* key, double val) {
+        if (force || !mod->hasSavedValue(key)) mod->setSavedValue(key, val);
     };
-    auto defStr = [&](const char* key, std::string val) {
-        if (!mod->hasSavedValue(key)) mod->setSavedValue(key, val);
+    auto setS = [&](const char* key, std::string val) {
+        if (force || !mod->hasSavedValue(key)) mod->setSavedValue(key, val);
     };
 
-    // Discord RPC (migrated from mod.json settings)
-    defBool("discord-rpc-private-mode", false);
-    defBool("discord-rpc-idle-when-unfocused", true);
-    defBool("discord-rpc-show-progress", true);
-    defBool("discord-rpc-include-paimbnails-features", true);
-    defStr("discord-rpc-large-text", "");
-    defStr("discord-rpc-large-image-key", "");
-    defStr("discord-rpc-small-image-key", "");
-    defStr("discord-rpc-activity-type", "Playing");
-    defBool("discord-rpc-show-timestamp", true);
-    defBool("discord-rpc-override-details", false);
-    defStr("discord-rpc-custom-details", "");
-    defBool("discord-rpc-override-state", false);
-    defStr("discord-rpc-custom-state", "");
+    setB("discord-rpc-private-mode", false);
+    setB("discord-rpc-idle-when-unfocused", true);
+    setB("discord-rpc-show-progress", true);
+    setB("discord-rpc-include-paimbnails-features", true);
+    setS("discord-rpc-large-text", "");
+    setS("discord-rpc-large-image-key", "");
+    setS("discord-rpc-small-image-key", "");
+    setS("discord-rpc-activity-type", "Playing");
+    setB("discord-rpc-show-timestamp", true);
+    setB("discord-rpc-override-details", false);
+    setS("discord-rpc-custom-details", "");
+    setB("discord-rpc-override-state", false);
+    setS("discord-rpc-custom-state", "");
 
-    // PaiDraw / Paimon Emote API server
-    // Both PaiDraw and the emote/ytlinks APIs live on the same host. Saved
-    // value `paidraw-server-url` is preserved for backwards compatibility;
-    // `paimon-emote-server-url` is the canonical key going forward.
-    defStr("paidraw-server-url", "https://paimbnailsbot.onrender.com");
-    defStr("paimon-emote-server-url", "https://paimbnailsbot.onrender.com");
+    setS("paidraw-server-url", "https://paimbnailsbot.onrender.com");
+    setS("paimon-emote-server-url", "https://paimbnailsbot.onrender.com");
+    setS("paidraw-display-name", "");
+    setS("paidraw-word-language", "es");
+    setB("paidraw-sound-effects", true);
+    setB("paidraw-invite-notifications", true);
+    setB("paidraw-show-ping", true);
 
-    // One-shot migration: rewrite saved values that still point at the
-    // retired Vercel host (`paimbnails-emote.vercel.app`) or the original
-    // placeholder host (`paidraw.example.com`) so existing installs
-    // transparently pick up the Render endpoint without the user having to
-    // edit settings by hand.
-    //
-    // Two sets of keys exist for historical reasons:
-    //   - `paidraw-server-url` / `paimon-emote-server-url` (kebab-case):
-    //     surface in the in-mod settings panel.
-    //   - `paidraw_server_url` (snake_case): consumed by PaiDrawManager
-    //     directly, persisted from the manager's own state.
-    // We migrate all of them so users coming from older builds with stale
-    // placeholder hosts converge on the Render endpoint.
+    setS("levelcell-background-type", "thumbnail");
+    setD("levelcell-background-blur", 3.0);
+    setD("levelcell-background-darkness", 0.2);
+    setB("levelcell-show-separator", true);
+    setB("levelcell-show-view-button", true);
+    setB("compact-list-show-toggle", true);
+    setB("transparent-list-mode", false);
+    setB("transparent-background-mode", false);
+    setB("levelcell-gallery-autocycle", true);
+    setS("levelcell-gallery-transition", "crossfade");
+    setD("levelcell-gallery-transition-duration", 0.6);
+    setS("popup-gallery-transition", "directional-elastic");
+    setD("popup-gallery-transition-duration", 0.45);
+    setS("levelinfo-bg-transition", "crossfade");
+    setD("levelinfo-bg-transition-duration", 0.5);
+
+    setS("levelcell-anim-type", "zoom-slide");
+    setD("levelcell-anim-speed", 1.0);
+    setS("levelcell-anim-effect", "none");
+    setB("levelcell-effect-on-gradient", false);
+    setB("levelcell-mythic-particles", true);
+    setB("levelcell-animated-gradient", true);
+
+    setS("levelinfo-extra-styles", "");
+    setI("levelinfo-effect-intensity", 4);
+    setI("levelinfo-bg-darkness", 27);
+    setB("dynamic-song-stream-preview", true);
+
+    setB("profile-music-crossfade", true);
+    setD("profile-music-fade-duration", 0.3);
+
+    setI("realtime-search-debounce-ms", 350);
+
+    setS("dynamic-popup-style", "paimonUI");
+    setD("dynamic-popup-speed", 1.0);
+    setD("dynamic-exit-speed", 1.0);
+
+    setS("smooth-ui-preset", "balanced");
+    setB("smooth-ui-reduced-motion", false);
+    setD("smooth-ui-global-speed", 1.0);
+    setD("smooth-ui-motion-strength", 1.0);
+    setB("smooth-ui-animate-buttons", true);
+    setS("smooth-ui-button-scope", "all");
+    setD("smooth-ui-button-press-scale", 0.94);
+    setB("smooth-ui-button-release-bounce", true);
+
+    setS("popup-blur-style", "paiblur");
+    setD("popup-blur-intensity", 4.0);
+    setD("popup-blur-darkness", 0.28);
+    setD("popup-blur-padding", 4.0);
+    setD("popup-blur-corner-radius", 8.0);
+    setD("popup-blur-fade-duration", 0.18);
+    setB("popup-blur-show-placeholder", true);
+
+    setB("enable-for-you", false);
+    setI("for-you-min-levels", 5);
+    setB("for-you-use-tags", true);
+
+    setD("custom-cursor-scale", 0.3);
+    setB("custom-cursor-trail", false);
+    setB("custom-cursor-hide-in-gameplay", true);
+
+    setB("menuLoopSaveSongOnGameClose", false);
+    setS("menuLoopButtonMode", "Reduced");
+    setB("menuLoopEnableShuffleButton", true);
+    setB("menuLoopEnableBlacklistButton", true);
+    setB("menuLoopEnableFavoriteButton", true);
+    setB("menuLoopEnableHoldSongButton", true);
+    setB("menuLoopEnablePreviousButton", true);
+    setB("menuLoopEnableAddToPlaylistButton", true);
+    setB("menuLoopEnableViewSongListButton", true);
+    setB("menuLoopEnableCopySongID", true);
+    setB("menuLoopEnableNotification", true);
+    setB("menuLoopEnableNewNotification", true);
+    setD("menuLoopNotificationTime", 2.0);
+    setS("menuLoopCustomPrefix", "Now Playing");
+    setS("menuLoopSongFormatNGML", "Song Name, Artist, Song ID");
+    setB("menuLoopLoadPlaylistFile", false);
+    setS("menuLoopPlaylistFile", "");
+    setS("menuLoopAdditionalFolder", "");
+    setB("menuLoopAdvancedLogs", false);
+    setI("menuLoopSeekAmountMs", 5000);
+    setB("menuLoopShowPlaybackProgress", true);
+    setB("menuLoopEnableKeyboardShortcuts", true);
+    setB("menuLoopRandomizeOnLevelExit", false);
+    setB("menuLoopRandomizeOnEditorExit", false);
+    setB("menuLoopRestoreOnLevelExit", true);
+    setB("menuLoopRestoreOnEditorExit", true);
+    setB("menuLoopSongIndicators", true);
+    setB("menuLoopCompactSongList", false);
+    setB("menuLoopFavoritesOnlyFilter", false);
+    setS("menuLoopSortMode", "alphabetical");
+    setB("menuLoopSortReverse", false);
+
+    setD("menuMusicBlurIntensity", 5.0);
+    setD("menuMusicBlurDarkness", 0.45);
+    setB("menuMusicAutoplayOnBoot", false);
+    setS("menuMusicDownloadFormat", "mp3");
+
+    setB("gif-ram-cache", true);
+    setB("disable-video-chunks", true);
+
+    setB("main-menu-layout-grid-snap", true);
+    setI("main-menu-layout-grid-size", 10);
+    setI("main-menu-layout-snap-distance", 10);
+    setB("main-menu-layout-show-guides", true);
+    setB("main-menu-layout-snap-to-edges", true);
+
+    setD("zoom-sensitivity", 1.0);
+    setB("zoom-auto-hide-menu", true);
+    setB("zoom-auto-show-menu", true);
+    setB("zoom-alt-disables-scroll", true);
+
+    // Default -1: profile background sits behind the comment list (z=0). A
+    // value of 1 once put it above the comments and hid them.
+    setI("profile-img-zlayer", -1);
+}
+
+// One-shot data migrations that rewrite existing values rather than just filling
+// in defaults. Idempotent and guarded by their own flags where needed.
+inline void runOneShotMigrations() {
+    auto* mod = geode::Mod::get();
+
+    // Rewrite saved URLs still pointing at retired/placeholder hosts so existing
+    // installs converge on the Render endpoint.
     {
         constexpr const char* NEW_URL = "https://paimbnailsbot.onrender.com";
         const char* legacyHosts[] = {
@@ -84,154 +199,27 @@ inline void migrateToSavedValues() {
         }
     }
 
-    defStr("paidraw-display-name", "");
-    defStr("paidraw-word-language", "es");
-    defBool("paidraw-sound-effects", true);
-    defBool("paidraw-invite-notifications", true);
-    defBool("paidraw-show-ping", true);
-
-    // Level Thumbnails (granular)
-    defStr("levelcell-background-type", "thumbnail");
-    defDouble("levelcell-background-blur", 3.0);
-    defDouble("levelcell-background-darkness", 0.2);
-    defBool("levelcell-show-separator", true);
-    defBool("levelcell-show-view-button", true);
-    defBool("compact-list-show-toggle", true);
-    defBool("transparent-list-mode", false);
-    defBool("transparent-background-mode", false);
-    defBool("levelcell-gallery-autocycle", true);
-    defStr("levelcell-gallery-transition", "crossfade");
-    defDouble("levelcell-gallery-transition-duration", 0.6);
-    defStr("popup-gallery-transition", "directional-elastic");
-    defDouble("popup-gallery-transition-duration", 0.45);
-    defStr("levelinfo-bg-transition", "crossfade");
-    defDouble("levelinfo-bg-transition-duration", 0.5);
-
-    // Level Visual Effects
-    defStr("levelcell-anim-type", "zoom-slide");
-    defDouble("levelcell-anim-speed", 1.0);
-    defStr("levelcell-anim-effect", "none");
-    defBool("levelcell-effect-on-gradient", false);
-    defBool("levelcell-mythic-particles", true);
-    defBool("levelcell-animated-gradient", true);
-
-    // Level Info (granular)
-    defStr("levelinfo-extra-styles", "");
-    defInt("levelinfo-effect-intensity", 4);
-    defInt("levelinfo-bg-darkness", 27);
-    defBool("dynamic-song-stream-preview", true);
-
-    // Profile Music (granular)
-    defBool("profile-music-crossfade", true);
-    defDouble("profile-music-fade-duration", 0.3);
-
-    // Realtime Search (granular)
-    defInt("realtime-search-debounce-ms", 350);
-
-    // Dynamic Popup (granular)
-    defStr("dynamic-popup-style", "paimonUI");
-    defDouble("dynamic-popup-speed", 1.0);
-    defDouble("dynamic-exit-speed", 1.0);
-
-    // Popup Blur (granular).
-    // Default style "paimonblur" (Dual Kawase multi-pass): better visual quality
-    // than the 2-pass gaussian. A one-shot migration below moves existing
-    // installs off the old "gaussian" default while respecting manual changes.
-    defStr("popup-blur-style", "paimonblur");
-    defDouble("popup-blur-intensity", 4.0);
-    defDouble("popup-blur-darkness", 0.28);
-    defDouble("popup-blur-padding", 4.0);
-    defDouble("popup-blur-corner-radius", 8.0);
-    defDouble("popup-blur-fade-duration", 0.18);
-    defBool("popup-blur-show-placeholder", true);
-
-    // One-shot migration: convert obsolete styles to the default static blur.
+    // Convert obsolete popup blur styles to the lightweight default.
     if (!mod->hasSavedValue("popup-blur-style-migrated-to-paimonblur")) {
         auto const style = mod->getSavedValue<std::string>("popup-blur-style");
         if (style == "gaussian" || style == "paimonblur-dynamic") {
-            mod->setSavedValue<std::string>("popup-blur-style", "paimonblur");
+            mod->setSavedValue<std::string>("popup-blur-style", "paiblur");
         }
         mod->setSavedValue<bool>("popup-blur-style-migrated-to-paimonblur", true);
     }
 
-    // For You
-    defBool("enable-for-you", false);
-    defInt("for-you-min-levels", 5);
-    defBool("for-you-use-tags", true);
+    // The old default ("paimonblur") snapshots and blurs the whole scene when a
+    // popup opens. Move existing installs to the dynamic style; users can still
+    // pick the static styles manually from the settings UI.
+    if (!mod->hasSavedValue("popup-blur-style-migrated-to-paiblur")) {
+        auto const style = mod->getSavedValue<std::string>("popup-blur-style", "paiblur");
+        if (style == "gaussian" || style == "paimonblur" || style == "paimonblur-dynamic") {
+            mod->setSavedValue<std::string>("popup-blur-style", "paiblur");
+        }
+        mod->setSavedValue<bool>("popup-blur-style-migrated-to-paiblur", true);
+    }
 
-    // Custom Cursor (granular)
-    defDouble("custom-cursor-scale", 0.3);
-    defBool("custom-cursor-trail", false);
-    defBool("custom-cursor-hide-in-gameplay", true);
-
-    // Menu Loop (granular)
-    defBool("menuLoopSaveSongOnGameClose", false);
-    defStr("menuLoopButtonMode", "Reduced");
-    defBool("menuLoopEnableShuffleButton", true);
-    defBool("menuLoopEnableBlacklistButton", true);
-    defBool("menuLoopEnableFavoriteButton", true);
-    defBool("menuLoopEnableHoldSongButton", true);
-    defBool("menuLoopEnablePreviousButton", true);
-    defBool("menuLoopEnableAddToPlaylistButton", true);
-    defBool("menuLoopEnableViewSongListButton", true);
-    defBool("menuLoopEnableCopySongID", true);
-    defBool("menuLoopEnableNotification", true);
-    defBool("menuLoopEnableNewNotification", true);
-    defDouble("menuLoopNotificationTime", 2.0);
-    defStr("menuLoopCustomPrefix", "Now Playing");
-    defStr("menuLoopSongFormatNGML", "Song Name, Artist, Song ID");
-    defBool("menuLoopLoadPlaylistFile", false);
-    defStr("menuLoopPlaylistFile", "");
-    defStr("menuLoopAdditionalFolder", "");
-    defBool("menuLoopAdvancedLogs", false);
-    // Seek + extras from reference mod
-    defInt("menuLoopSeekAmountMs", 5000);
-    defBool("menuLoopShowPlaybackProgress", true);
-    defBool("menuLoopEnableKeyboardShortcuts", true);
-    defBool("menuLoopRandomizeOnLevelExit", false);
-    defBool("menuLoopRandomizeOnEditorExit", false);
-    defBool("menuLoopRestoreOnLevelExit", true);
-    defBool("menuLoopRestoreOnEditorExit", true);
-    defBool("menuLoopSongIndicators", true);
-    defBool("menuLoopCompactSongList", false);
-    defBool("menuLoopFavoritesOnlyFilter", false);
-    defStr("menuLoopSortMode", "alphabetical");
-    defBool("menuLoopSortReverse", false);
-
-    // Menu Music (granular)
-    defDouble("menuMusicBlurIntensity", 5.0);
-    defDouble("menuMusicBlurDarkness", 0.45);
-    defBool("menuMusicAutoplayOnBoot", false);
-    defStr("menuMusicDownloadFormat", "mp3");
-
-    // Performance (granular)
-    defBool("gif-ram-cache", true);
-    defBool("disable-video-chunks", true);
-
-    // Layout Editor (granular)
-    defBool("main-menu-layout-grid-snap", true);
-    defInt("main-menu-layout-grid-size", 10);
-    defInt("main-menu-layout-snap-distance", 10);
-    defBool("main-menu-layout-show-guides", true);
-    defBool("main-menu-layout-snap-to-edges", true);
-
-    // Zoom (granular)
-    defDouble("zoom-sensitivity", 1.0);
-    defBool("zoom-auto-hide-menu", true);
-    defBool("zoom-auto-show-menu", true);
-    defBool("zoom-alt-disables-scroll", true);
-
-    // Profile background must sit behind the popup and the comment list (which
-    // lives at z=0), so the correct default is -1, like InfoLayer (addChild(clip,
-    // -1)). The original mod.json default was -1; migrating to saved values set
-    // it to 1 by mistake, putting the background above the comments and hiding
-    // them on profiles with a custom background.
-    defInt("profile-img-zlayer", -1);
-
-    // One-shot migration: installs that got the wrong default (1) and never
-    // changed it ended up with the image covering comments. If the value is
-    // still 1 and this fix hasn't run, drop it to -1. Runs once, so a manual
-    // change afterward is preserved.
+    // A migration default of 1 once put the profile background above the comments.
     if (!mod->hasSavedValue("profile-img-zlayer-fixed-default")) {
         if (mod->getSavedValue<int>("profile-img-zlayer", -1) == 1) {
             mod->setSavedValue<int>("profile-img-zlayer", -1);
@@ -240,157 +228,25 @@ inline void migrateToSavedValues() {
     }
 }
 
-// Force all migrated saved values back to clean-install defaults. Used by the
-// Hub's factory reset to discard corrupt configuration.
+} // namespace internal
+
+inline void migrateToSavedValues() {
+    internal::applyDefaults(false);
+    internal::runOneShotMigrations();
+}
+
+// Force all saved values back to clean-install defaults (factory reset).
 inline void forceResetSavedValuesToDefaults() {
     auto* mod = geode::Mod::get();
 
-    auto defBool = [&](const char* key, bool val) {
-        mod->setSavedValue(key, val);
-    };
-    auto defInt = [&](const char* key, int val) {
-        mod->setSavedValue(key, val);
-    };
-    auto defFloat = [&](const char* key, float val) {
-        mod->setSavedValue(key, val);
-    };
-    auto defDouble = [&](const char* key, double val) {
-        mod->setSavedValue(key, val);
-    };
-    auto defStr = [&](const char* key, std::string val) {
-        mod->setSavedValue(key, val);
-    };
+    internal::applyDefaults(true);
 
-    defBool("discord-rpc-private-mode", false);
-    defBool("discord-rpc-idle-when-unfocused", true);
-    defBool("discord-rpc-show-progress", true);
-    defBool("discord-rpc-include-paimbnails-features", true);
-    defStr("discord-rpc-large-text", "");
-    defStr("discord-rpc-large-image-key", "");
-    defStr("discord-rpc-small-image-key", "");
-    defStr("discord-rpc-activity-type", "Playing");
-    defBool("discord-rpc-show-timestamp", true);
-    defBool("discord-rpc-override-details", false);
-    defStr("discord-rpc-custom-details", "");
-    defBool("discord-rpc-override-state", false);
-    defStr("discord-rpc-custom-state", "");
-
-    defStr("paidraw-server-url", "https://paimbnailsbot.onrender.com");
-    defStr("paimon-emote-server-url", "https://paimbnailsbot.onrender.com");
-    defStr("paidraw_server_url", "https://paimbnailsbot.onrender.com");
-    defStr("paidraw-display-name", "");
-    defStr("paidraw-word-language", "es");
-    defBool("paidraw-sound-effects", true);
-    defBool("paidraw-invite-notifications", true);
-    defBool("paidraw-show-ping", true);
-
-    defStr("levelcell-background-type", "thumbnail");
-    defDouble("levelcell-background-blur", 3.0);
-    defDouble("levelcell-background-darkness", 0.2);
-    defBool("levelcell-show-separator", true);
-    defBool("levelcell-show-view-button", true);
-    defBool("compact-list-show-toggle", true);
-    defBool("transparent-list-mode", false);
-    defBool("transparent-background-mode", false);
-    defBool("levelcell-gallery-autocycle", true);
-    defStr("levelcell-gallery-transition", "crossfade");
-    defDouble("levelcell-gallery-transition-duration", 0.6);
-    defStr("popup-gallery-transition", "directional-elastic");
-    defDouble("popup-gallery-transition-duration", 0.45);
-    defStr("levelinfo-bg-transition", "crossfade");
-    defDouble("levelinfo-bg-transition-duration", 0.5);
-
-    defStr("levelcell-anim-type", "zoom-slide");
-    defDouble("levelcell-anim-speed", 1.0);
-    defStr("levelcell-anim-effect", "none");
-    defBool("levelcell-effect-on-gradient", false);
-    defBool("levelcell-mythic-particles", true);
-    defBool("levelcell-animated-gradient", true);
-
-    defStr("levelinfo-extra-styles", "");
-    defInt("levelinfo-effect-intensity", 4);
-    defInt("levelinfo-bg-darkness", 27);
-    defBool("dynamic-song-stream-preview", true);
-
-    defBool("profile-music-crossfade", true);
-    defDouble("profile-music-fade-duration", 0.3);
-
-    defInt("realtime-search-debounce-ms", 350);
-
-    defStr("dynamic-popup-style", "paimonUI");
-    defDouble("dynamic-popup-speed", 1.0);
-    defDouble("dynamic-exit-speed", 1.0);
-
-    defStr("popup-blur-style", "paimonblur");
-    defDouble("popup-blur-intensity", 4.0);
-    defDouble("popup-blur-darkness", 0.28);
-    defDouble("popup-blur-padding", 4.0);
-    defDouble("popup-blur-corner-radius", 8.0);
-    defDouble("popup-blur-fade-duration", 0.18);
-    defBool("popup-blur-show-placeholder", true);
-    defBool("popup-blur-style-migrated-to-paimonblur", true);
-
-    defBool("enable-for-you", false);
-    defInt("for-you-min-levels", 5);
-    defBool("for-you-use-tags", true);
-
-    defDouble("custom-cursor-scale", 0.3);
-    defBool("custom-cursor-trail", false);
-    defBool("custom-cursor-hide-in-gameplay", true);
-
-    defBool("menuLoopSaveSongOnGameClose", false);
-    defStr("menuLoopButtonMode", "Reduced");
-    defBool("menuLoopEnableShuffleButton", true);
-    defBool("menuLoopEnableBlacklistButton", true);
-    defBool("menuLoopEnableFavoriteButton", true);
-    defBool("menuLoopEnableHoldSongButton", true);
-    defBool("menuLoopEnablePreviousButton", true);
-    defBool("menuLoopEnableAddToPlaylistButton", true);
-    defBool("menuLoopEnableViewSongListButton", true);
-    defBool("menuLoopEnableCopySongID", true);
-    defBool("menuLoopEnableNotification", true);
-    defBool("menuLoopEnableNewNotification", true);
-    defDouble("menuLoopNotificationTime", 2.0);
-    defStr("menuLoopCustomPrefix", "Now Playing");
-    defStr("menuLoopSongFormatNGML", "Song Name, Artist, Song ID");
-    defBool("menuLoopLoadPlaylistFile", false);
-    defStr("menuLoopPlaylistFile", "");
-    defStr("menuLoopAdditionalFolder", "");
-    defBool("menuLoopAdvancedLogs", false);
-    defInt("menuLoopSeekAmountMs", 5000);
-    defBool("menuLoopShowPlaybackProgress", true);
-    defBool("menuLoopEnableKeyboardShortcuts", true);
-    defBool("menuLoopRandomizeOnLevelExit", false);
-    defBool("menuLoopRandomizeOnEditorExit", false);
-    defBool("menuLoopRestoreOnLevelExit", true);
-    defBool("menuLoopRestoreOnEditorExit", true);
-    defBool("menuLoopSongIndicators", true);
-    defBool("menuLoopCompactSongList", false);
-    defBool("menuLoopFavoritesOnlyFilter", false);
-    defStr("menuLoopSortMode", "alphabetical");
-    defBool("menuLoopSortReverse", false);
-
-    defDouble("menuMusicBlurIntensity", 5.0);
-    defDouble("menuMusicBlurDarkness", 0.45);
-    defBool("menuMusicAutoplayOnBoot", false);
-    defStr("menuMusicDownloadFormat", "mp3");
-
-    defBool("gif-ram-cache", true);
-    defBool("disable-video-chunks", true);
-
-    defBool("main-menu-layout-grid-snap", true);
-    defInt("main-menu-layout-grid-size", 10);
-    defInt("main-menu-layout-snap-distance", 10);
-    defBool("main-menu-layout-show-guides", true);
-    defBool("main-menu-layout-snap-to-edges", true);
-
-    defDouble("zoom-sensitivity", 1.0);
-    defBool("zoom-auto-hide-menu", true);
-    defBool("zoom-auto-show-menu", true);
-    defBool("zoom-alt-disables-scroll", true);
-
-    defInt("profile-img-zlayer", -1);
-    defBool("profile-img-zlayer-fixed-default", true);
+    // Legacy underscore variant of the server URL plus the one-shot flags, so a
+    // reset install matches a freshly migrated one.
+    mod->setSavedValue<std::string>("paidraw_server_url", "https://paimbnailsbot.onrender.com");
+    mod->setSavedValue<bool>("popup-blur-style-migrated-to-paimonblur", true);
+    mod->setSavedValue<bool>("popup-blur-style-migrated-to-paiblur", true);
+    mod->setSavedValue<bool>("profile-img-zlayer-fixed-default", true);
 }
 
 } // namespace paimon::settings

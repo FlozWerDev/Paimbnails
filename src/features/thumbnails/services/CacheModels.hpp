@@ -1,10 +1,5 @@
 ﻿#pragma once
 
-// CacheModels.hpp — Modelos canonicos de cache para thumbnails.
-// Define CacheKey (clave unica por recurso+calidad+formato),
-// DiskManifestEntry (metadata persistente por archivo) y
-// CacheStats (contadores de instrumentacion).
-
 #include <string>
 #include <string_view>
 #include <cstdint>
@@ -16,29 +11,22 @@
 
 namespace paimon::cache {
 
-// Tipos de recurso en cache
-
 enum class ResourceType : uint8_t {
-    LevelThumb   = 0, // thumbnail principal de nivel (PNG)
-    LevelGif     = 1, // thumbnail GIF animado de nivel
-    GalleryThumb = 2, // thumbnail de galeria (por URL)
+    LevelThumb   = 0,
+    LevelGif     = 1,
+    GalleryThumb = 2,
 };
 
-// Cache Key
-
-// Clave canonica que identifica un recurso en cache de forma unica.
-// Reemplaza el antiguo `int key` (levelID negativo para GIF).
 struct CacheKey {
     ResourceType type = ResourceType::LevelThumb;
-    int levelID = 0;           // para LevelThumb/LevelGif
-    std::string url;           // para GalleryThumb (URL canonica sin query de version)
-    std::string qualityTag;    // "low", "med", "high"
+    int levelID = 0;
+    std::string url;
+    std::string qualityTag;
 
     bool operator==(CacheKey const& o) const {
         return type == o.type && levelID == o.levelID && url == o.url && qualityTag == o.qualityTag;
     }
 
-    // conversion de/hacia el legacy int key para compatibilidad
     static CacheKey fromLegacy(int key, std::string const& quality = "") {
         CacheKey k;
         k.qualityTag = quality;
@@ -52,13 +40,11 @@ struct CacheKey {
         return k;
     }
 
-    // devuelve el int legacy equivalente (negativo para GIF)
     int toLegacy() const {
         if (type == ResourceType::LevelGif) return -levelID;
         return levelID;
     }
 
-    // string unico para usar como key de mapa o nombre de manifest
     std::string toString() const {
         switch (type) {
             case ResourceType::LevelThumb:
@@ -82,32 +68,25 @@ struct CacheKeyHash {
     }
 };
 
-// Disk Manifest Entry
-
-// Metadata persistente por archivo en disco. Se serializa a JSON como
-// un diccionario dentro del manifest file.
 struct DiskManifestEntry {
-    std::string filename;          // nombre en disco, e.g. <levelID>.png
-    int levelID = 0;               // levelID original (0 para gallery)
-    std::string sourceUrl;         // URL de descarga si aplica
-    std::string revisionToken;     // hash de revision: thumbnailId o fallback date|format|url
-    std::string format;            // "png", "gif", "jpg", "webp"
+    std::string filename;
+    int levelID = 0;
+    std::string sourceUrl;
+    std::string revisionToken;
+    std::string format;
     int width = 0;
     int height = 0;
     size_t byteSize = 0;
-    int64_t lastAccessEpoch = 0;   // epoch seconds de ultimo acceso
-    int64_t lastValidatedEpoch = 0;// epoch seconds when revision was last confirmed fresh
+    int64_t lastAccessEpoch = 0;
+    int64_t lastValidatedEpoch = 0;
     bool isGif = false;
-    std::string qualityTag;        // quality tier cuando se guardo
+    std::string qualityTag;
 
-    // genera un revision token a partir de ThumbnailInfo del transport
     static std::string makeRevisionToken(std::string const& thumbnailId,
                                          std::string const& date,
                                          std::string const& format,
                                          std::string const& url) {
-        // si tenemos thumbnailId, lo usamos directamente (mas estable)
         if (!thumbnailId.empty()) return thumbnailId;
-        // fallback: concatenar campos que cambian al re-subir
         return date + "|" + format + "|" + url;
     }
 
@@ -121,20 +100,18 @@ struct DiskManifestEntry {
     void touchValidated() { lastValidatedEpoch = nowEpoch(); }
 };
 
-// Cache Stats (instrumentacion)
-
 struct CacheStats {
     std::atomic<uint64_t> ramHits{0};
     std::atomic<uint64_t> ramMisses{0};
     std::atomic<uint64_t> diskHits{0};
     std::atomic<uint64_t> diskMisses{0};
-    std::atomic<uint64_t> staleHits{0};     // RAM hit pero version stale
+    std::atomic<uint64_t> staleHits{0};
     std::atomic<uint64_t> downloads{0};
     std::atomic<uint64_t> downloadErrors{0};
     std::atomic<uint64_t> ramEvictions{0};
     std::atomic<uint64_t> diskEvictions{0};
-    std::atomic<uint64_t> decodeTimeUsTotal{0}; // microsegundos acumulados de decode
-    std::atomic<uint64_t> diskReadTimeUsTotal{0}; // microsegundos acumulados de lectura de disco
+    std::atomic<uint64_t> decodeTimeUsTotal{0};
+    std::atomic<uint64_t> diskReadTimeUsTotal{0};
 
     void reset() {
         ramHits = 0; ramMisses = 0;

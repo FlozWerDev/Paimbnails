@@ -67,7 +67,6 @@ static CCNode* buildProfileClipContainer(
 
 class $modify(PaimonMenuLayer, MenuLayer) {
     static void onModify(auto& self) {
-        // MenuLayer uses node IDs and backgrounds from geode.node-ids
         paimon::hooks::afterNodeIdsOrLate(self, "MenuLayer::init");
     }
 
@@ -93,7 +92,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         paimon::image::RetainedLazyTextureLoad m_bgStaticLoad;
     };
 
-    // Apply adaptive colors
     void applyAdaptiveColor(ccColor3B color) {
         auto tintNode = [color](CCNode* node) {
              if (!node) return;
@@ -158,7 +156,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         }
         log::info("[MenuLayer] init");
 
-        // Watchdog interop flags
         // Reset the "Paimon owns the audio" flags on returning to MenuLayer.
         // Without this watchdog, a rare error path (profile popup closed mid-
         // crossfade, video aborting between scenes, etc.) can leave a flag stuck
@@ -197,7 +194,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         // Clear list context on returning to the menu
         paimon::SessionState::get().currentListID = 0;
 
-        // Schedule update for adaptive colors
         this->scheduleUpdate();
 
         // Reopen the verification popup if needed
@@ -266,8 +262,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 float rot = distRot(rng);
 
                 // Create clickable button
-                auto paimonBtn = CCMenuItemSpriteExtra::create(
-                    paimonSpr, this, menu_selector(PaimonMenuLayer::onPaimonClick));
+                auto paimonBtn = CCMenuItemSpriteExtra::create(                    paimonSpr, this, menu_selector(PaimonMenuLayer::onPaimonClick));
                 paimonBtn->setRotation(rot);
                 paimonBtn->setID("paimon-hidden-btn"_spr);
 
@@ -584,7 +579,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
     void updateBackground() {
         log::info("[MenuLayer] updateBackground");
-        // Read unified config
         auto cfg = LayerBackgroundManager::get().getConfig("menu");
 
         // NOTE: legacy fallback removed — migration runs once at startup via
@@ -626,8 +620,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         // Clear the previous container
         if (auto oldContainer = this->getChildByID("paimon-bg-container"_spr)) {
             oldContainer->removeFromParent();
-        }
-        bool nextOwnsVideoAudio =
+        }        bool nextOwnsVideoAudio =
             LayerBackgroundManager::get().resolveConfig("menu").type == "video" &&
             paimon::settings::video::audioEnabled();
 
@@ -944,7 +937,12 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         bool adaptive = Mod::get()->getSavedValue<bool>("bg-adaptive-colors", false);
         m_fields->m_adaptiveColors = adaptive;
         if (adaptive && resolvedType == "custom" && !resolvedPath.empty()) {
-            Ref<MenuLayer> safeThis = this;
+            // WeakRef (not Ref): this handle is copied on the worker thread when
+            // it builds the queueInMainThread lambda. A Ref would run cocos2d's
+            // non-atomic retain()/release() off the main thread, racing the
+            // scene's own refcount ops. WeakRef only touches an atomic shared_ptr
+            // across threads; we lock() it back on the main thread.
+            WeakRef<MenuLayer> safeThis = this;
             std::string pathCopy = resolvedPath;
             paimon::ThreadTracker::get().spawn([safeThis, pathCopy]() {
                 if (paimon::isRuntimeShuttingDown()) return;
@@ -961,8 +959,10 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 }
                 geode::Loader::get()->queueInMainThread([safeThis, primary, ok]() {
                     if (paimon::isRuntimeShuttingDown()) return;
-                    auto* self = static_cast<PaimonMenuLayer*>(safeThis.data());
-                    if (!self || !self->getParent()) return;
+                    auto ref = safeThis.lock();
+                    if (!ref) return;
+                    auto* self = static_cast<PaimonMenuLayer*>(ref.data());
+                    if (!self->getParent()) return;
                     self->applyAdaptiveColor(ok ? primary : ccColor3B{255, 255, 255});
                 });
             });
@@ -985,7 +985,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
         float const targetSize = 48.0f;
 
-        // Read custom config
         auto picCfg = ProfilePicCustomizer::get().getConfig();
         std::string shapeName = picCfg.stencilSprite;
         if (shapeName.empty()) shapeName = "circle";
@@ -1078,7 +1077,6 @@ $execute {
             auto* overlay = hiddenBtn->getChildByIDRecursive("paimon-hidden-animated"_spr);
 
             if (enabled) {
-                // Switch to guide mode ON
                 if (staticSpr) staticSpr->setOpacity(0);
                 if (!overlay) {
                     // Match the static sprite's scale
@@ -1116,7 +1114,6 @@ $execute {
                     }
                 }
             } else {
-                // Switch to guide mode OFF
                 if (overlay) {
                     overlay->removeFromParent();
                 }

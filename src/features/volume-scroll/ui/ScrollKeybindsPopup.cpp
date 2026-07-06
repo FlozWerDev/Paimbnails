@@ -3,6 +3,7 @@
 
 #include "../../../utils/ExtendedKeybind.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -114,6 +115,7 @@ ScrollKeybindsPopup* ScrollKeybindsPopup::create() {
 
 bool ScrollKeybindsPopup::init() {
     if (!Popup::init(kPopupW, kPopupH)) return false;
+    paimon::markDynamicPopup(this);
 
     this->setTitle("Atajos de Teclado");
 
@@ -161,6 +163,7 @@ bool ScrollKeybindsPopup::init() {
 
     addRow(makeSectionHeader("Captura", scrollW));
     addRow(makeKeybindRow("capture-keybind", "Capturar", scrollW, /*allowScroll=*/true));
+    addRow(makeKeybindRow("capture-menu-keybind", "Abrir Menu Captura", scrollW, /*allowScroll=*/true));
 
     addRow(makeSectionHeader("Pause Zoom", scrollW));
     addRow(makeKeybindRow("zoom-in-keybind",          "Zoom In",      scrollW, true));

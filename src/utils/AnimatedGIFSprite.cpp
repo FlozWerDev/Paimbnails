@@ -1,6 +1,7 @@
 ﻿#include "AnimatedGIFSprite.hpp"
 #include "DominantColors.hpp"
 #include "Debug.hpp"
+#include "FrameBudget.hpp"
 #include "../core/QualityConfig.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include <Geode/loader/Log.hpp>
@@ -48,7 +49,6 @@ size_t AnimatedGIFSprite::getMaxCacheMem() {
     }
 }
 
-// worker queue statics
 std::deque<AnimatedGIFSprite::GIFTask> AnimatedGIFSprite::s_taskQueue;
 std::mutex AnimatedGIFSprite::s_queueMutex;
 std::condition_variable AnimatedGIFSprite::s_queueCV;
@@ -177,7 +177,6 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
 
         float sf = getContentScaleFactorSafe();
         
-        // cache it
         SharedGIFData sharedData;
         sharedData.width = gifData.width;
         sharedData.height = gifData.height;
@@ -215,7 +214,6 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
                 else s_currentCacheSize = 0;
             }
 
-            // store the cache entry
             s_gifCache[filename] = sharedData;
 
             // approximate RAM size
@@ -321,7 +319,6 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
             }
             s_gifCache[m_filename] = cacheEntry;
             
-            // compute size
             s_currentCacheSize += getSharedGIFDataSize(cacheEntry);
 
             // update LRU (O(1))
@@ -342,14 +339,25 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
 
     // Process multiple frames per update to reach full playback faster.
     // Desktop can afford more GPU uploads per frame; mobile stays conservative.
+    // Time-boxed against the shared thumbnail frame budget so several GIFs
+    // loading at once (a list of cells) can't stack uploads into one frame; at
+    // least one frame always uploads per tick so loading is guaranteed to progress.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     int framesToProcess = 1;
 #else
     int framesToProcess = 3;
 #endif
     float sf = getContentScaleFactorSafe();
-    
+    auto uploadStart = std::chrono::steady_clock::now();
+    int64_t uploadBudgetUs = std::max<int64_t>(1, paimon::framebudget::remainingUs());
+    int uploadedThisTick = 0;
+
     while (framesToProcess > 0 && !m_pendingFrames.empty()) {
+        if (uploadedThisTick > 0) {
+            auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - uploadStart).count();
+            if (elapsedUs >= uploadBudgetUs) break;
+        }
         // move: copying the front entry duplicated the whole RGBA buffer
         // (megabytes per frame) for nothing
         auto frameData = std::move(m_pendingFrames.front());
@@ -380,8 +388,12 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
         
         m_pendingFrames.pop_front();
         framesToProcess--;
+        uploadedThisTick++;
     }
-    
+
+    paimon::framebudget::consume(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - uploadStart).count());
+
     if (m_frames.size() == 1) {
         this->setCurrentFrame(0);
     }
@@ -504,7 +516,6 @@ bool AnimatedGIFSprite::loadFromDiskCache(std::string const& path, DiskCacheEntr
     std::error_code existsEc;
     if (!std::filesystem::exists(cachePath, existsEc) || existsEc) return false;
 
-    // check the modification time
     std::error_code ec;
     auto cacheTime = std::filesystem::last_write_time(cachePath, ec);
     if (ec) return false;
@@ -623,7 +634,6 @@ void AnimatedGIFSprite::workerLoop() {
             s_taskQueue.pop_front();
         }
         
-        // process the task
         if (task.isData) {
             // decode from memory
             if (!GIFDecoder::isGIF(task.data.data(), task.data.size())) {
@@ -1077,7 +1087,6 @@ void AnimatedGIFSprite::updateAnimation(float dt) {
         
         m_frameTimer -= currentDelay;
         
-        // advance to the next frame
         m_currentFrame++;
         
         if (m_currentFrame >= m_frames.size()) {

@@ -13,7 +13,6 @@ protected:
     void onBack(cocos2d::CCObject*);
     void onDonate(cocos2d::CCObject*);
 
-    // UI builders
     void createBackground();
     void createTitle();
     void createBadgePanel();
@@ -23,7 +22,6 @@ protected:
     void createParticles();
     void spawnParticles(float dt);
 
-    // dynamic thumbnail background
     void loadShowcaseThumbnails();
     void cycleThumbnail(float dt);
     void applyThumbnailBackground(cocos2d::CCTexture2D* texture);

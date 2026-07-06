@@ -44,14 +44,12 @@ bool ExternalSongsPopup::init(float width, float height) {
 
     this->setTitle("Song List");
 
-    // Collect songs from three sources (deduped, preserves insertion order).
     auto addUnique = [this](const std::string& path, const std::string& label,
                             const std::string& source) {
         for (auto& r : m_rows) if (r.path == path) return;
         m_rows.push_back({path, label, source});
     };
 
-    // 1) MenuMusicLibrary (paimbnails internal library)
     for (const auto& t : MenuMusicLibrary::get().tracks()) {
         if (t.audioPath.empty()) continue;
         std::string label = t.displayName.empty()
@@ -59,12 +57,10 @@ bool ExternalSongsPopup::init(float width, float height) {
             : t.displayName;
         addUnique(t.audioPath, label, "library");
     }
-    // 2) MenuLoopManager (config dir + playlist file + additional folder)
     for (const auto& s : paimon::menuloop::MenuLoopManager::get().getSongs()) {
         if (s.empty()) continue;
         addUnique(s, geode::utils::string::pathToString(std::filesystem::path(s).stem()), "menu-loop");
     }
-    // 3) GD downloaded songs via MusicDownloadManager.
     if (auto* mdm = MusicDownloadManager::sharedState()) {
         for (auto* song : CCArrayExt<SongInfoObject*>(mdm->getDownloadedSongs())) {
             if (!song) continue;
@@ -101,7 +97,6 @@ void ExternalSongsPopup::onExit() {
 void ExternalSongsPopup::buildHeader() {
     auto size = m_mainLayer->getContentSize();
 
-    // Search bar. Uses Geode's TextInput for convenience.
     m_searchBar = TextInput::create(size.width * 0.6f, "Search songs", "chatFont.fnt");
     if (m_searchBar) {
         m_searchBar->setCallback([this](const std::string& q) {
@@ -112,7 +107,6 @@ void ExternalSongsPopup::buildHeader() {
         m_mainLayer->addChild(m_searchBar, 5);
     }
 
-    // Count label (right side).
     m_summaryLabel = CCLabelBMFont::create(
         fmt::format("{} songs", m_rows.size()).c_str(), "chatFont.fnt");
     if (m_summaryLabel) {
@@ -124,7 +118,6 @@ void ExternalSongsPopup::buildHeader() {
         m_mainLayer->addChild(m_summaryLabel, 5);
     }
 
-    // Shuffle-all button on bottom bar.
     auto menu = CCMenu::create();
     menu->setContentSize({size.width, 34.f});
     menu->setPosition({size.width / 2.f, 22.f});
@@ -183,7 +176,6 @@ void ExternalSongsPopup::rebuildList() {
         row->setAnchorPoint({0.f, 0.f});
         row->setPosition({0.f, y - (shown + 1) * cellH});
 
-        // Background stripe (subtle alternating color).
         auto bg = paimon::SpriteHelper::createRoundedRect(
             cellW - 4.f, cellH - 2.f, 4.f,
             (shown % 2 == 0)
@@ -195,21 +187,19 @@ void ExternalSongsPopup::rebuildList() {
             row->addChild(bg, 0);
         }
 
-        // Label.
         auto label = CCLabelBMFont::create(r.label.c_str(), "bigFont.fnt");
         if (label) {
             label->limitLabelWidth(cellW - 90.f, 0.5f, 0.25f);
             label->setAnchorPoint({0.f, 0.5f});
             label->setPosition({12.f, cellH / 2.f});
             if (r.path == current) {
-                label->setColor({120, 255, 140}); // green for the active song
+                label->setColor({120, 255, 140});
             } else {
                 label->setColor({235, 235, 245});
             }
             row->addChild(label, 1);
         }
 
-        // Source tag (small pill on the right).
         auto tag = CCLabelBMFont::create(r.source.c_str(), "chatFont.fnt");
         if (tag) {
             tag->setScale(0.38f);
@@ -219,7 +209,6 @@ void ExternalSongsPopup::rebuildList() {
             row->addChild(tag, 1);
         }
 
-        // Play button.
         auto menu = CCMenu::create();
         menu->setContentSize({30.f, cellH});
         menu->setAnchorPoint({1.f, 0.5f});
@@ -230,8 +219,6 @@ void ExternalSongsPopup::rebuildList() {
             auto btn = CCMenuItemSpriteExtra::create(
                 spr, this, menu_selector(ExternalSongsPopup::onPlayTapped));
             if (btn) {
-                // Stash the path in an object-level map via user data
-                // so the callback can recover it by tag.
                 int tagIdx = static_cast<int>(shown + 1);
                 btn->setTag(tagIdx);
                 btn->setUserObject(

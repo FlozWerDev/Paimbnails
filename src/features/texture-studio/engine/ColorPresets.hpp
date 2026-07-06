@@ -1,11 +1,4 @@
 #pragma once
-//
-// ColorPresets.hpp - A small, hand-curated set of named palettes the
-// user can apply with one click instead of fiddling with the three color
-// pickers. The list intentionally stays short — this is a guideline, not
-// a complete palette database. Users who want more variety can save their
-// own slots.
-//
 
 #include <Geode/cocos/include/ccTypes.h>
 
@@ -24,9 +17,6 @@ struct ColorPreset {
 
 class ColorPresets final {
 public:
-    // Returns a stable, ordered list of presets. Index 0 = "Default"
-    // (PackGen's defaults), so calling apply(0) recovers a known-good
-    // baseline.
     static std::vector<ColorPreset> const& list();
 
 private:

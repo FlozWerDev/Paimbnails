@@ -409,8 +409,6 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     }
 
     void forcePlayMusic(float dt) {
-         // playSong handles transitions, no need to stopSong first
-
          int levelID = this->resolveVisibleLevelID();
          if (levelID <= 0) levelID = 1;
          m_fields->m_currentLevelID = levelID;
@@ -434,15 +432,12 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
 
         int levelID = this->resolveVisibleLevelID();
         
-        // page changed: update song and background
         if (m_fields->m_currentLevelID != levelID) {
             m_fields->m_currentLevelID = levelID;
             m_fields->m_pageCheckTimer = 0.f;
 
-            // new background
             this->updateThumbnailBackground(levelID);
 
-            // new dynamic song
             if (levelID > 0 && levelID <= 22) {
                 this->syncLevelSelectSong(true);
             }

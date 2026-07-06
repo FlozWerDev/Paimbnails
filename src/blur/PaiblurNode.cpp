@@ -11,12 +11,55 @@
 #include <algorithm>
 #include <cmath>
 
+#ifdef GEODE_IS_ANDROID
+#include <EGL/egl.h>
+#endif
+
 #ifndef GL_READ_FRAMEBUFFER
 #define GL_READ_FRAMEBUFFER 0x8CA8
 #endif
 #ifndef GL_DRAW_FRAMEBUFFER
 #define GL_DRAW_FRAMEBUFFER 0x8CA9
 #endif
+
+// glBlitFramebuffer is core on desktop GL and GLES3, but on Android's GLES2 it
+// only exists as the GL_NV_framebuffer_blit extension (glBlitFramebufferNV).
+// Resolve it at runtime there; if unavailable the caller disables the blur.
+#ifndef GL_APIENTRY
+#define GL_APIENTRY
+#endif
+namespace {
+using PaimonBlitFramebufferFn = void (GL_APIENTRY*)(
+    GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
+
+inline bool paimonBlitFramebuffer(
+    GLint sx0, GLint sy0, GLint sx1, GLint sy1,
+    GLint dx0, GLint dy0, GLint dx1, GLint dy1,
+    GLbitfield mask, GLenum filter
+) {
+#if defined(GEODE_IS_ANDROID)
+    static PaimonBlitFramebufferFn fn = []() -> PaimonBlitFramebufferFn {
+        if (auto p = eglGetProcAddress("glBlitFramebuffer"))
+            return reinterpret_cast<PaimonBlitFramebufferFn>(p);
+        if (auto p = eglGetProcAddress("glBlitFramebufferNV"))
+            return reinterpret_cast<PaimonBlitFramebufferFn>(p);
+        return nullptr;
+    }();
+    if (!fn) return false;
+    fn(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
+    return true;
+#elif defined(GEODE_IS_IOS)
+    // iOS ships only the GLES2 headers (no glBlitFramebuffer, no runtime proc
+    // loader like eglGetProcAddress), so the blit-based blur is unavailable.
+    (void)sx0; (void)sy0; (void)sx1; (void)sy1;
+    (void)dx0; (void)dy0; (void)dx1; (void)dy1; (void)mask; (void)filter;
+    return false;
+#else
+    glBlitFramebuffer(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
+    return true;
+#endif
+}
+}
 
 using namespace cocos2d;
 using namespace geode::prelude;
@@ -27,7 +70,9 @@ namespace {
 
 // Half-res blur FBO, capped to keep 4K performant.
 constexpr int kMaxBlurLongEdge = 1280;
-
+// Once steady at full opacity, refresh the frozen backdrop every Nth frame
+// instead of re-blurring every frame (saves the blit + horizontal pass).
+constexpr int kSteadyRefreshInterval = 2;
 // Smoothstep intensity (0.1..10) to normalized blur radius.
 float intensityToEclipseRadius(float intensity) {
     float t = std::clamp((intensity - 0.5f) / 9.5f, 0.0f, 1.0f);
@@ -36,8 +81,7 @@ float intensityToEclipseRadius(float intensity) {
 }
 
 // Embedded shaders (no file I/O).
-constexpr char kVertSrc[] = R"(
-attribute vec2 aPosition;
+constexpr char kVertSrc[] = R"(attribute vec2 aPosition;
 attribute vec2 aTexCoord;
 varying vec2 v_texCoord;
 void main() {
@@ -46,7 +90,7 @@ void main() {
 }
 )";
 
-// EclipseMenu "fast" blur kernel with early-exit; darkness baked into u_colorMul.
+// EclipseMenu "fast" blur kernel; darkness baked into u_colorMul.
 constexpr char kFragSrc[] = R"(
 #ifdef GL_ES
 precision mediump float;
@@ -82,7 +126,7 @@ void main() {
 }
 )";
 
-// Shared blur program; uniform locations cached at link time. Recompiled on context loss.
+// Shared blur program; uniform locations cached at link time.
 struct BlurProgram {
     GLuint prog = 0;
     GLint locTexSize  = -1;
@@ -131,8 +175,7 @@ bool ensureProgram() {
     GLuint prog = glCreateProgram();
     glAttachShader(prog, vs);
     glAttachShader(prog, fs);
-    // Use cocos's standard attribute slots so ccGLEnableVertexAttribs' state
-    // cache stays coherent across our draws and cocos's.
+    // Use cocos's standard attribute slots so ccGLEnableVertexAttribs' state cache stays coherent.
     glBindAttribLocation(prog, kCCVertexAttrib_Position, "aPosition");
     glBindAttribLocation(prog, kCCVertexAttrib_TexCoords, "aTexCoord");
     glLinkProgram(prog);
@@ -163,8 +206,6 @@ bool ensureProgram() {
 
 } // namespace
 
-// CREATION
-
 PaiblurNode* PaiblurNode::create(CCSize const& winSize, float intensity, float darkness) {
     auto* node = new PaiblurNode();
     if (node && node->initWithWinSize(winSize, intensity, darkness)) {
@@ -182,7 +223,7 @@ bool PaiblurNode::initWithWinSize(CCSize const& winSize, float intensity, float 
     m_intensity = std::clamp(intensity, 0.1f, 10.0f);
     m_darkness = std::clamp(darkness, 0.0f, 1.0f);
 
-    // Up-front shader compile; failure means falling back to static blur.
+    // Failure here means falling back to static blur.
     if (!ensureProgram()) {
         log::warn("[Paiblur] blur shader unavailable — Paiblur disabled");
         return false;
@@ -217,15 +258,13 @@ bool PaiblurNode::initWithWinSize(CCSize const& winSize, float intensity, float 
 
     setID("paimon-paiblur-node"_spr);
     setContentSize(winSize);
-
-    // Opacity drives both fade and blur radius.
     setOpacity(0);
     return true;
 }
 
 PaiblurNode::~PaiblurNode() {
     // During shutdown the GL context may already be gone; deleting GL objects
-    // then is UB on some drivers. The leak is irrelevant at that point.
+    // then is UB on some drivers.
     if (paimon::isRuntimeShuttingDown()) return;
     releaseRenderTargets();
     if (m_vbo) {
@@ -233,8 +272,6 @@ PaiblurNode::~PaiblurNode() {
         m_vbo = 0;
     }
 }
-
-// RENDER TARGETS
 
 bool PaiblurNode::ensureRenderTargets(int srcW, int srcH) {
     if (srcW <= 0 || srcH <= 0) return false;
@@ -297,9 +334,10 @@ void PaiblurNode::releaseRenderTargets() {
     m_fboA = m_fboB = m_texA = m_texB = 0;
     m_blurW = m_blurH = 0;
     m_lastSrcW = m_lastSrcH = 0;
+    m_hasCachedBlur = false;
+    m_lastRadius = -1.f;
+    m_steadyFrames = 0;
 }
-
-// COSMETIC SETTERS
 
 void PaiblurNode::setBlurIntensity(float intensity) {
     m_intensity = std::clamp(intensity, 0.1f, 10.0f);
@@ -308,8 +346,6 @@ void PaiblurNode::setBlurIntensity(float intensity) {
 void PaiblurNode::setDarkness(float darkness) {
     m_darkness = std::clamp(darkness, 0.0f, 1.0f);
 }
-
-// FADE HELPERS
 
 void PaiblurNode::fadeIn(float duration) {
     stopAllActions();
@@ -333,8 +369,6 @@ void PaiblurNode::fadeOutAndRemove(float duration) {
     ));
 }
 
-// PER-FRAME PIPELINE
-
 void PaiblurNode::visit() {
     if (m_broken || !isVisible()) return;
 
@@ -353,7 +387,6 @@ void PaiblurNode::visit() {
     int srcH = vp[3];
     if (srcW <= 0 || srcH <= 0) return;
 
-    // Resize blur targets on viewport change.
     if (!ensureRenderTargets(srcW, srcH)) {
         m_broken = true;
         return;
@@ -365,22 +398,45 @@ void PaiblurNode::visit() {
     GLint prevFbo = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
 
+    float radius = intensityToEclipseRadius(m_intensity) * eased;
+    bool steady = (op >= 254);
+
+    // Re-run the capture + horizontal pass only when the result would actually
+    // change (fading, radius moved, no cache yet) or on the periodic backdrop
+    // refresh. Otherwise reuse the cached m_texB and just re-composite it.
+    bool needFull = !m_hasCachedBlur || !steady || std::abs(radius - m_lastRadius) > 0.001f;
+    if (!needFull) {
+        if (++m_steadyFrames >= kSteadyRefreshInterval) {
+            m_steadyFrames = 0;
+            needFull = true;
+        }
+    } else {
+        m_steadyFrames = 0;
+    }
+
     // Clear stale GL errors before blit.
     while (glGetError() != GL_NO_ERROR) {}
 
     // 1) Capture scene into rtA (downsampled via GL_LINEAR).
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_fboA);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
-    glBlitFramebuffer(vp[0], vp[1], vp[0] + srcW, vp[1] + srcH,
-                      0, 0, m_blurW, m_blurH,
-                      GL_COLOR_BUFFER_BIT, GL_LINEAR);
-    GLenum blitErr = glGetError();
-    if (blitErr != GL_NO_ERROR) {
-        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
-        m_broken = true;
-        log::warn("[Paiblur] glBlitFramebuffer failed (err=0x{:X}) — Paiblur disabled for this popup",
-                  static_cast<unsigned>(blitErr));
-        return;
+    if (needFull) {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_fboA);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
+        if (!paimonBlitFramebuffer(vp[0], vp[1], vp[0] + srcW, vp[1] + srcH,
+                                   0, 0, m_blurW, m_blurH,
+                                   GL_COLOR_BUFFER_BIT, GL_LINEAR)) {
+            glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
+            m_broken = true;
+            log::warn("[Paiblur] glBlitFramebuffer unavailable — Paiblur disabled for this popup");
+            return;
+        }
+        GLenum blitErr = glGetError();
+        if (blitErr != GL_NO_ERROR) {
+            glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
+            m_broken = true;
+            log::warn("[Paiblur] glBlitFramebuffer failed (err=0x{:X}) — Paiblur disabled for this popup",
+                      static_cast<unsigned>(blitErr));
+            return;
+        }
     }
 
     // Shared draw state for both passes.
@@ -396,17 +452,21 @@ void PaiblurNode::visit() {
                           4 * sizeof(GLfloat), reinterpret_cast<void*>(2 * sizeof(GLfloat)));
 
     glUniform2f(prg.locTexSize, static_cast<float>(m_blurW), static_cast<float>(m_blurH));
-    glUniform1f(prg.locRadius, intensityToEclipseRadius(m_intensity) * eased);
+    glUniform1f(prg.locRadius, radius);
 
     // 2) Horizontal blur: rtA → rtB.
-    glBindFramebuffer(GL_FRAMEBUFFER, m_fboB);
-    glViewport(0, 0, m_blurW, m_blurH);
-    glUniform2f(prg.locDir, 1.f, 0.f);
-    glUniform3f(prg.locColorMul, 1.f, 1.f, 1.f);
-    glUniform1f(prg.locAlpha, 1.f);
-    ccGLBindTexture2DN(0, m_texA);
-    ccGLBlendFunc(GL_ONE, GL_ZERO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    if (needFull) {
+        glBindFramebuffer(GL_FRAMEBUFFER, m_fboB);
+        glViewport(0, 0, m_blurW, m_blurH);
+        glUniform2f(prg.locDir, 1.f, 0.f);
+        glUniform3f(prg.locColorMul, 1.f, 1.f, 1.f);
+        glUniform1f(prg.locAlpha, 1.f);
+        ccGLBindTexture2DN(0, m_texA);
+        ccGLBlendFunc(GL_ONE, GL_ZERO);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        m_hasCachedBlur = true;
+        m_lastRadius = radius;
+    }
 
     // 3) Vertical blur + darkness: rtB → framebuffer.
     glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));

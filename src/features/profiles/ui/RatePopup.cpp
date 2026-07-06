@@ -29,10 +29,8 @@ bool RatePopup::init(int levelID, std::string thumbnailId) {
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
-    // Titulo
     this->setTitle("Rate Thumbnail");
 
-    // Panel de promedio
     auto avgPanel = paimon::SpriteHelper::createDarkPanel(160.f, 44.f, 140, 6.f);
     avgPanel->setPosition({centerX - 80.f, contentSize.height - 62.f - 22.f});
     m_mainLayer->addChild(avgPanel, 1);
@@ -57,17 +55,14 @@ bool RatePopup::init(int levelID, std::string thumbnailId) {
     m_countLabel->setID("count-label"_spr);
     m_mainLayer->addChild(m_countLabel, 2);
 
-    // Separador
     auto separator = paimon::SpriteHelper::createDarkPanel(240.f, 1.5f, 80, 0.f);
     separator->setPosition({centerX - 120.f, contentSize.height - 90.f - 0.75f});
     m_mainLayer->addChild(separator, 1);
 
-    // Fondo de estrellas
     auto starPanel = paimon::SpriteHelper::createDarkPanel(220.f, 50.f, 100, 6.f);
     starPanel->setPosition({centerX - 110.f, contentSize.height - 120.f - 25.f});
     m_mainLayer->addChild(starPanel, 1);
 
-    // Botones de estrellas
     auto starMenu = CCMenu::create();
     starMenu->setID("stars-menu"_spr);
     starMenu->setPosition({centerX, contentSize.height - 120.f});
@@ -82,13 +77,12 @@ bool RatePopup::init(int levelID, std::string thumbnailId) {
 
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(RatePopup::onStar));
         btn->setTag(i);
-        float col = (i - 3.f);  // -2, -1, 0, 1, 2
+        float col = (i - 3.f);
         btn->setPosition({col * 38.f, 0.f});
         starMenu->addChild(btn);
         m_starBtns.push_back(btn);
     }
 
-    // Etiqueta de calificacion
     m_ratingLabel = CCLabelBMFont::create("", "bigFont.fnt");
     m_ratingLabel->setScale(0.3f);
     m_ratingLabel->setPosition({centerX, contentSize.height - 152.f});
@@ -96,7 +90,6 @@ bool RatePopup::init(int levelID, std::string thumbnailId) {
     m_ratingLabel->setID("rating-label"_spr);
     m_mainLayer->addChild(m_ratingLabel, 2);
 
-    // Boton de enviar
     auto submitMenu = CCMenu::create();
     submitMenu->setID("submit-menu"_spr);
     submitMenu->setPosition({centerX, contentSize.height - 185.f});
@@ -193,15 +186,12 @@ void RatePopup::onSubmit(CCObject* sender) {
         username = gm->m_playerName;
     }
     
-    // Cargando
     auto spinner = PaimonLoadingOverlay::create("Loading...", 30.f);
     spinner->show(m_mainLayer, 100);
 
-    // Desactiva el boton para evitar spam
     auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
     if (btn) btn->setEnabled(false);
     
-    // Referencia debil para async
     WeakRef<RatePopup> self = this;
     Ref<PaimonLoadingOverlay> spinnerRef = spinner;
     int trackedLevelID = m_levelID;
@@ -219,7 +209,6 @@ void RatePopup::onSubmit(CCObject* sender) {
                 popup->onClose(nullptr);
             } else {
                 if (btn) btn->setEnabled(true);
-                // Mensaje del servidor si existe
                 std::string errorMsg = "Failed to submit rating";
                 if (!msg.empty()) {
                     errorMsg += ": " + msg;

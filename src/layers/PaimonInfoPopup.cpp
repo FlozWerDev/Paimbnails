@@ -11,7 +11,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// helper: pick a random cached thumbnail path
 static std::optional<std::filesystem::path> pickRandomThumb() {
     std::vector<std::filesystem::path> candidates;
     std::error_code ec;
@@ -87,7 +86,6 @@ bool PaimonInfoPopup::init(std::string const& title, std::string const& desc) {
         }
     }
 
-    // load blurred thumbnail background
     loadRandomThumbnailBg();
 
     paimon::markDynamicPopup(this);
@@ -101,13 +99,11 @@ void PaimonInfoPopup::loadRandomThumbnailBg() {
     auto img = ImageLoadHelper::loadStaticImage(thumbPath.value());
     if (!img.success || !img.texture) return;
 
-    // RAII guard: auto-release texture when scope exits
+    // RAII guard: auto-releases the texture when scope exits
     Ref<CCTexture2D> texGuard(img.texture);
 
-    // popup size for the blur target
     auto popupSize = m_size;
 
-    // create blurred sprite sized to the popup
     auto* blurredSpr = BlurSystem::getInstance()->createBlurredSprite(img.texture, popupSize, 0.06f);
     CCSprite* bgSpr = nullptr;
 
@@ -152,7 +148,6 @@ void PaimonInfoPopup::loadRandomThumbnailBg() {
         bgSpr->setPosition(clippedSize / 2.f);
         clip->addChild(bgSpr);
 
-        // position clip at same place as m_bgSprite
         if (m_bgSprite) {
             clip->setPosition(m_bgSprite->getPosition());
             stencil->setPosition(clippedSize / 2.f);

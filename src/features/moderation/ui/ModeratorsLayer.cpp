@@ -51,15 +51,12 @@ bool ModeratorsLayer::init() {
 }
 
 void ModeratorsLayer::setup() {
-    // titulo por gjlistlayer
     this->fetchModerators();
 
-    // ocultar fondo para no duplicar popup
     if (m_bgSprite) {
         m_bgSprite->setVisible(false);
     }
     
-    // alternativa: iterar hijos
     auto children = this->getChildren();
     if (children) {
         for (auto* obj : CCArrayExt<CCObject*>(children)) {
@@ -112,7 +109,6 @@ void ModeratorsLayer::fetchModerators() {
 
     m_scores = CCArray::create();
 
-    // weakref para evitar leaks/crashes
     WeakRef<ModeratorsLayer> self = this;
     HttpClient::get().getModerators([self](bool success, std::vector<std::string> const& moderators) {
         auto layer = self.lock();
@@ -129,7 +125,6 @@ void ModeratorsLayer::fetchModerators() {
 
         layer->m_moderatorNames = moderators;
 
-        // Create scores from RAM cache (no GDBrowser)
         for (auto const& mod : moderators) {
             auto score = GJUserScore::create();
             score->m_userName = mod;
@@ -164,7 +159,6 @@ void ModeratorsLayer::createList() {
         m_scores = CCArray::create();
     }
 
-    // customlistview score
     m_listView = CustomListView::create(
         m_scores,
         BoomListType::Score, 
@@ -188,8 +182,7 @@ void ModeratorsLayer::createList() {
 void ModeratorsLayer::getUserInfoFinished(GJUserScore* score) {
     PaimonDebug::log("getUserInfoFinished: Received data for account {}", score->m_accountID);
     
-    // procesa moderadores
-    if (score->m_accountID == 17046382 || score->m_accountID == 23785880 || 
+    if (score->m_accountID == 17046382 || 
         score->m_accountID == 4315943 || score->m_accountID == 4098680 || 
         score->m_accountID == 25339555) {
         
@@ -221,7 +214,6 @@ void ModeratorsLayer::getUserInfoFinished(GJUserScore* score) {
         newScore->m_playerExplosion = score->m_playerExplosion;
         newScore->m_glowEnabled = score->m_glowEnabled;
         
-        // m_iconid por tipo icono
         switch (newScore->m_iconType) {
             case IconType::Cube: newScore->m_iconID = score->m_playerCube; break;
             case IconType::Ship: newScore->m_iconID = score->m_playerShip; break;
@@ -237,7 +229,6 @@ void ModeratorsLayer::getUserInfoFinished(GJUserScore* score) {
         
         PaimonDebug::log("  Set m_iconID to: {}", newScore->m_iconID);
         
-        // stats del server
         newScore->m_stars = score->m_stars;
         newScore->m_moons = score->m_moons;
         newScore->m_diamonds = score->m_diamonds;
@@ -247,12 +238,9 @@ void ModeratorsLayer::getUserInfoFinished(GJUserScore* score) {
         newScore->m_creatorPoints = score->m_creatorPoints;
         newScore->m_globalRank = score->m_globalRank;
         
-        // insignia
-        newScore->m_modBadge = 2; // elder mod
+        newScore->m_modBadge = 2;
 
-        // actualiza m_scores
         if (m_scores) {
-            // quita entrada misma cuenta
             for (int i = static_cast<int>(m_scores->count()) - 1; i >= 0; i--) {
                 auto s = typeinfo_cast<GJUserScore*>(m_scores->objectAtIndex(i));
                 if (s && s->m_accountID == score->m_accountID) {
@@ -260,15 +248,12 @@ void ModeratorsLayer::getUserInfoFinished(GJUserScore* score) {
                     break;
                 }
             }
-            // inserta pos correcta
             m_scores->insertObject(newScore, 0);
-            // reordena
-            sortScoresByPriority(m_scores, {"FlozWer", "Gabriv4", "Debihan", "SirExcelDj", "Robert55GD"});
+            sortScoresByPriority(m_scores, {"FlozWer", "Debihan", "SirExcelDj", "Robert55GD"});
         }
 
         PaimonDebug::log("Recreating list with updated data...");
         
-        // reconstruye lista
         if (m_listLayer) {
             m_listLayer->removeFromParent();
             m_listLayer = nullptr;

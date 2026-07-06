@@ -1,8 +1,14 @@
 #include "../services/SmoothScrollController.hpp"
 #include <Geode/Geode.hpp>
-#include <Geode/modify/CCMouseDispatcher.hpp>
 
 using namespace geode::prelude;
+
+// Mouse-wheel smooth scroll only makes sense on desktop. On iOS the
+// CCMouseDispatcher::dispatchScrollMSG binding is inlined (not hookable) and
+// mobile has no mouse wheel, so the whole hook is desktop-only.
+#if defined(GEODE_IS_DESKTOP)
+
+#include <Geode/modify/CCMouseDispatcher.hpp>
 
 namespace {
     bool s_tickScheduled = false;
@@ -79,6 +85,8 @@ class $modify(PaimonSmoothScrollDispatcher, CCMouseDispatcher) {
         return CCMouseDispatcher::dispatchScrollMSG(y, x);
     }
 };
+
+#endif // GEODE_IS_DESKTOP
 
 #if defined(GEODE_IS_WINDOWS)
 #include <Geode/modify/CCEGLView.hpp>

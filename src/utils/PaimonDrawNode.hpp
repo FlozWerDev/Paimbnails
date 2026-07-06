@@ -55,7 +55,12 @@ public:
         auto* cache = CCTextureCache::sharedTextureCache();
         if (!cache) return nullptr;
         constexpr char const* kKey = "paimon-draw-node-white";
+        // Retain so removeUnusedTextures() (fired by GD on scene changes, e.g.
+        // entering the level list) can't free it out from under s_cached. The
+        // cache alone keeps retain count at 1, which qualifies it for purging;
+        // an extra ref keeps it alive and stops s_cached from dangling.
         if (auto* existing = cache->textureForKey(kKey)) {
+            existing->retain();
             s_cached = existing;
             return s_cached;
         }
@@ -75,6 +80,7 @@ public:
         }
         s_cached = cache->addUIImage(image, kKey);
         image->release();
+        CC_SAFE_RETAIN(s_cached);
         return s_cached;
     }
 

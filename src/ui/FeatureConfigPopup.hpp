@@ -12,7 +12,6 @@ class FeatureConfigPopup : public geode::Popup {
 public:
     static FeatureConfigPopup* create(std::string const& featureKey);
 
-    // true if a group is registered under this key.
     static bool hasFeatureKey(std::string const& featureKey);
 
 protected:

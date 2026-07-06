@@ -26,35 +26,20 @@ struct ProfileConfig {
     int separatorOpacity = 50;
     float widthFactor = 0.60f;
     bool hasConfig = false;
-    std::string gifKey = ""; // gifKey anadido para referencia en cache local
+    std::string gifKey = "";
 
-    // Gradient effects (solo aplican cuando backgroundType == "icon-gradient"
-    // o "gradient"). Los visitantes leen estos campos del config para
-    // reproducir la misma animacion que el dueno del perfil eligio.
-    //   gradientEffect: "none" | "rotate" | "pulse" | "shift" | "slide"
-    //   gradientSpeed : multiplicador de velocidad (0.1 - 5.0). 1.0 = base.
     std::string gradientEffect = "none";
     float gradientSpeed = 1.0f;
 
-    // Cuando el dueno del perfil eligio "Audio Video" en el picker de fondo,
-    // este flag indica que la musica del perfil que escucha cualquier visitante
-    // sale del audio del propio video del fondo (extraido a WAV una vez en el
-    // cliente y reproducido en el canal principal).  Cuando este flag esta
-    // activo, ProfileMusicManager IGNORA cualquier songID/isCustom configurado
-    // y resuelve el audio desde el video cacheado del fondo del perfil.
-    //
-    // El flag se sube al servidor junto con el resto de la config para que los
-    // visitantes lo respeten sin necesidad de un endpoint adicional.
     bool useVideoAudio = false;
 
-    // Comment cell background settings
-    std::string commentBgType = "none"; // "none", "thumbnail", "banner", "solid"
-    std::string commentBgThumbnailId = ""; // level ID for thumbnail source
-    int commentBgThumbnailPos = 1; // thumbnail position (1-based) for levels with multiple thumbnails
-    std::string commentBgBannerMode = "background"; // "background" or "image" for banner sub-type
+    std::string commentBgType = "none";
+    std::string commentBgThumbnailId = "";
+    int commentBgThumbnailPos = 1;
+    std::string commentBgBannerMode = "background";
     cocos2d::ccColor3B commentBgSolidColor = {30, 30, 30};
     int commentBgSolidOpacity = 128;
-    std::string commentBgBlurType = "gaussian"; // "gaussian" or "paimon"
+    std::string commentBgBlurType = "gaussian";
     float commentBgBlur = 5.0f;
     float commentBgDarkness = 0.35f;
 };
@@ -84,7 +69,6 @@ class ProfileThumbs {
 public:
     static ProfileThumbs& get();
     
-    // Evita liberar objetos cocos durante shutdown
     static inline std::atomic<bool> s_shutdownMode{false};
 
     ~ProfileThumbs() {
@@ -101,11 +85,10 @@ public:
 
     bool saveRGB(int accountID, const uint8_t* rgb, int width, int height);
     bool has(int accountID) const;
-    void deleteProfile(int accountID); // Borra local y cache
+    void deleteProfile(int accountID);
     cocos2d::CCTexture2D* loadTexture(int accountID);
     bool loadRGB(int accountID, std::vector<uint8_t>& out, int& w, int& h);
 
-    // Cache en memoria de texturas de perfil
     void cacheProfile(int accountID, cocos2d::CCTexture2D* texture, 
                      cocos2d::ccColor3B colorA, cocos2d::ccColor3B colorB, float widthFactor);
     
@@ -116,26 +99,21 @@ public:
     ProfileConfig getProfileConfig(int accountID);
 
     std::optional<ProfileCacheEntry> getCachedProfile(int accountID);
-    void clearCache(int accountID); // elimina entrada especifica
-    void clearOldCache(); // elimina entradas mas viejas de 14 dias
-    void clearAllCache(); // limpia todas las entradas cacheadas
+    void clearCache(int accountID);
+    void clearOldCache();
+    void clearAllCache();
 
-    // crea un nodo con fondo + imagen de perfil
     cocos2d::CCNode* createProfileNode(cocos2d::CCTexture2D* texture, ProfileConfig const& config, cocos2d::CCSize size, bool onlyBackground = false);
 
-    // Encola la descarga de una miniatura de perfil
     void queueLoad(int accountID, std::string const& username, geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*)> callback);
 
-    // Marca el perfil como visible (aumenta prioridad de descarga)
     void notifyVisible(int accountID);
 
-    // Cache de usuarios sin miniatura
     void markNoProfile(int accountID);
     void removeFromNoProfileCache(int accountID);
     bool isNoProfile(int accountID) const;
     void clearNoProfileCache();
 
-    // Limpia descargas pendientes para shutdown seguro
     void clearPendingDownloads();
     void shutdown();
 
@@ -143,38 +121,33 @@ private:
     ProfileThumbs() = default;
     std::string makePath(int accountID) const;
     void processQueue();
-    void processBinaryQueue(); // Descarga binarios tras verificacion batch
-    void processBinaryQueueIndividual(); // Fallback individual cuando batch falla o solo hay 1 elemento
+    void processBinaryQueue();
+    void processBinaryQueueIndividual();
     
     std::unordered_map<int, ProfileCacheEntry> m_profileCache;
-    // Estructura LRU para cache
     std::list<int> m_lruOrder;
     std::unordered_map<int, std::list<int>::iterator> m_lruMap;
-    mutable std::mutex m_cacheMutex; // Protege el cache de acceso concurrente
-    std::unordered_map<int, std::chrono::steady_clock::time_point> m_visibilityMap; // Ultima vez que se vio cada perfil
-    std::unordered_set<int> m_noProfileCache; // Usuarios sin miniatura (evita requests repetidos)
-    std::unordered_map<int, std::string> m_usernameMap; // accountID -> username para descargas pendientes
-    static constexpr auto CACHE_DURATION = std::chrono::hours(24 * 14); // 14 dias
-    static constexpr size_t MAX_PROFILE_CACHE_SIZE = 100; // Maximo de entradas en cache
+    mutable std::mutex m_cacheMutex;
+    std::unordered_map<int, std::chrono::steady_clock::time_point> m_visibilityMap;
+    std::unordered_set<int> m_noProfileCache;
+    std::unordered_map<int, std::string> m_usernameMap;
+    static constexpr auto CACHE_DURATION = std::chrono::hours(24 * 14);
+    static constexpr size_t MAX_PROFILE_CACHE_SIZE = 100;
     static constexpr size_t MAX_NO_PROFILE_CACHE_SIZE = 1024;
     int m_insertsSinceCleanup = 0;
-    static constexpr int CLEANUP_INTERVAL = 20; // cada N inserciones revisar expiradas
+    static constexpr int CLEANUP_INTERVAL = 20;
 
-    // sistema de cola
     std::deque<int> m_downloadQueue;
     std::unordered_map<int, std::vector<geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*)>>> m_pendingCallbacks;
     int m_activeDownloads = 0;
     const int MAX_CONCURRENT_DOWNLOADS = 10;
-    bool m_batchInFlight = false; // Batch check en progreso
-    std::deque<int> m_binaryQueue; // IDs confirmados por batch, pendientes de descarga binaria
-    std::unordered_map<int, ProfileConfig> m_batchConfigs; // configs que vinieron en el batch
+    bool m_batchInFlight = false;
+    std::deque<int> m_binaryQueue;
+    std::unordered_map<int, ProfileConfig> m_batchConfigs;
 
     void spawnBackground(std::function<void()> job);
     void pruneFinishedWorkers();
     void waitBackgroundWorkers();
-    // Pool de threads centralizado en lugar de std::async (anti-patron:
-    // el destructor del std::future bloquea, encadenando atexit en cierres
-    // lentos). Se inicializa lazy en spawnBackground.
     std::unique_ptr<paimon::ThreadPool> m_workerPool;
     std::mutex m_workerMutex;
 };

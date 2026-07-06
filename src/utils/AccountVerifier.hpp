@@ -43,7 +43,6 @@ public:
         // official Boomlings servers with valid leaderboard scores
         result.isOfficialServer = gm->m_scoreValid;
 
-        // valid = logged in with positive accountID and non-empty username
         result.isValid = result.accountID > 0 && !result.username.empty();
 
         return result;

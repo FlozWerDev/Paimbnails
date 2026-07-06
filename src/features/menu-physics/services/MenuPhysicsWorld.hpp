@@ -48,6 +48,7 @@ public:
     void moveDrag(cocos2d::CCPoint worldPoint, float dt);
     void endDrag();
     bool isDragging() const { return m_dragIndex >= 0; }
+    cocos2d::CCNode* draggedNode() const;
 
     void pushExplosion(cocos2d::CCPoint worldPoint, float strength);
 

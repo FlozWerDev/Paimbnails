@@ -3,6 +3,10 @@
 void Localization::initTranslations() {
         // Spanish translations
         m_spanish = {
+            // Texture Studio (coming soon)
+            {"texture-studio.coming.title", "Texture Studio"},
+            {"texture-studio.coming.message", "Texture Studio llegara <cy>definitivamente en la v1.1.0</c>.\n\nGracias por tu paciencia!"},
+
             // CapturePreviewPopup
             {"preview.title", "Vista previa"},
             {"preview.borders_removed", "Ya se eliminaron los bordes"},
@@ -193,6 +197,36 @@ void Localization::initTranslations() {
             {"addmod.remove_success", "Moderador eliminado exitosamente"},
             {"addmod.remove_error", "No se pudo eliminar al moderador"},
             {"general.cancel", "Cancelar"},
+
+            // Role manager + badges
+            {"rolemgr.title", "Gestionar Roles"},
+            {"rolemgr.role.mod", "Moderador"},
+            {"rolemgr.role.vip", "VIP"},
+            {"rolemgr.role.helper", "Helper"},
+            {"rolemgr.role.idea", "Idea"},
+            {"rolemgr.add_label", "Anadir {}:"},
+            {"rolemgr.enter_username", "Nombre de usuario"},
+            {"rolemgr.searching", "Buscando usuario en los servidores de GD..."},
+            {"rolemgr.user_not_found", "No se encontro a <cy>{}</c> en los servidores de GD"},
+            {"rolemgr.adding", "Anadiendo..."},
+            {"rolemgr.loading_members", "Cargando miembros..."},
+            {"rolemgr.no_members", "Sin miembros para este rol"},
+            {"rolemgr.add_success", "<cy>{}</c> anadido a {}"},
+            {"rolemgr.remove_success", "<cy>{}</c> eliminado de {}"},
+            {"rolemgr.remove_confirm_title", "Quitar rol"},
+            {"rolemgr.remove_confirm_msg", "Quitar a <cy>{}</c> de {}?"},
+            {"rolemgr.error_title", "Error"},
+            {"badge.admin.title", "Admin de Paimbnails"},
+            {"badge.admin.desc", "Un <cj>Admin de Paimbnails</c> es desarrollador o gestor del mod <cg>Paimbnails</c>. Tiene control total sobre la infraestructura y el contenido."},
+            {"badge.mod.title", "Moderador de Paimbnails"},
+            {"badge.mod.desc", "Un <cj>Moderador de Paimbnails</c> es un usuario de confianza que revisa y gestiona el contenido del mod <cg>Paimbnails</c>."},
+            {"badge.vip.title", "VIP de Paimbnails"},
+            {"badge.vip.desc", "Un <cl>VIP de Paimbnails</c> apoya el mod y tiene acceso a funciones extra como fondos de perfil ampliados."},
+            {"badge.helper.title", "Helper de Paimbnails"},
+            {"badge.helper.desc", "Un <co>Helper de Paimbnails</c> ayuda a la comunidad respondiendo dudas y guiando a otros usuarios."},
+            {"badge.idea.title", "Idea de Paimbnails"},
+            {"badge.idea.desc", "Un usuario <cy>Idea</c> ha aportado ideas o sugerencias que dieron forma al mod <cg>Paimbnails</c>."},
+
 
             // BulkUploadPopup
             {"bulk.title", "Subida Masiva"},
@@ -449,6 +483,10 @@ void Localization::initTranslations() {
             {"level.accepting", "Aceptando miniatura..."},
             {"level.accepted", "¡Miniatura aceptada!"},
             {"level.accept_error", "Error al aceptar: "},
+            {"level.rejecting", "Rechazando miniatura..."},
+            {"level.rejected", "Miniatura rechazada"},
+            {"level.reject_error", "Error al rechazar: "},
+            {"level.reject_button", "Rechazar miniatura"},
             {"level.no_local_thumb", "No hay miniatura local"},
             {"level.png_error", "Error al generar PNG"},
             {"level.saved_local_server_disabled", "Miniatura guardada localmente (servidor deshabilitado)"},
@@ -537,6 +575,10 @@ void Localization::initTranslations() {
             {"music.duration_unknown", "Duracion: --:--"},
             {"music.duration_fmt", "Duracion: {}:{:02d}"},
             {"music.selection_fmt", "{}:{:02d} - {}:{:02d} ({} seg)"},
+            {"music.frag_len_fmt", "{} seg"},
+            {"music.start_label", "Inicio"},
+            {"music.end_label", "Fin"},
+            {"music.time_placeholder", "seg"},
             {"music.no_song_loaded_short", "Sin cancion cargada"},
             {"music.popup_title", "Musica de Perfil"},
             {"music.no_custom_perm", "No tienes permiso para subir musica custom.\nRequiere rango Moderador, VIP o Whitelist."},
@@ -737,6 +779,7 @@ void Localization::initTranslations() {
 
             // PauseLayer video
             {"pause.video_open_error", "Error al abrir archivo de video"},
+            {"pause.video_invalid", "Archivo de video invalido"},
             {"pause.video_too_large", "Video demasiado grande (max 50MB)"},
             {"pause.video_mods_only", "Solo moderadores/admins pueden subir videos"},
             {"pause.video_uploading", "Subiendo video..."},
@@ -817,6 +860,10 @@ void Localization::initTranslations() {
 
         // English translations
         m_english = {
+            // Texture Studio (coming soon)
+            {"texture-studio.coming.title", "Texture Studio"},
+            {"texture-studio.coming.message", "Texture Studio will <cy>definitely arrive in v1.1.0</c>.\n\nThanks for your patience!"},
+
             // CapturePreviewPopup
             {"preview.title", "Preview"},
             {"preview.borders_removed", "Borders already removed"},
@@ -1007,6 +1054,36 @@ void Localization::initTranslations() {
             {"addmod.remove_success", "Moderator removed successfully"},
             {"addmod.remove_error", "Could not remove moderator"},
             {"general.cancel", "Cancel"},
+
+            // Role manager + badges
+            {"rolemgr.title", "Manage Roles"},
+            {"rolemgr.role.mod", "Moderator"},
+            {"rolemgr.role.vip", "VIP"},
+            {"rolemgr.role.helper", "Helper"},
+            {"rolemgr.role.idea", "Idea"},
+            {"rolemgr.add_label", "Add {}:"},
+            {"rolemgr.enter_username", "Username"},
+            {"rolemgr.searching", "Searching user on GD servers..."},
+            {"rolemgr.user_not_found", "Could not find <cy>{}</c> on the GD servers"},
+            {"rolemgr.adding", "Adding..."},
+            {"rolemgr.loading_members", "Loading members..."},
+            {"rolemgr.no_members", "No members for this role"},
+            {"rolemgr.add_success", "<cy>{}</c> added to {}"},
+            {"rolemgr.remove_success", "<cy>{}</c> removed from {}"},
+            {"rolemgr.remove_confirm_title", "Remove role"},
+            {"rolemgr.remove_confirm_msg", "Remove <cy>{}</c> from {}?"},
+            {"rolemgr.error_title", "Error"},
+            {"badge.admin.title", "Paimbnails Admin"},
+            {"badge.admin.desc", "A <cj>Paimbnails Admin</c> is a developer or manager of the <cg>Paimbnails</c> mod. They have full control over the mod's infrastructure and content."},
+            {"badge.mod.title", "Paimbnails Moderator"},
+            {"badge.mod.desc", "A <cj>Paimbnails Moderator</c> is a trusted user who helps review and manage content for the <cg>Paimbnails</c> mod."},
+            {"badge.vip.title", "Paimbnails VIP"},
+            {"badge.vip.desc", "A <cl>Paimbnails VIP</c> supports the mod and gets extra perks such as expanded profile backgrounds."},
+            {"badge.helper.title", "Paimbnails Helper"},
+            {"badge.helper.desc", "A <co>Paimbnails Helper</c> supports the community by answering questions and guiding other users."},
+            {"badge.idea.title", "Paimbnails Idea"},
+            {"badge.idea.desc", "An <cy>Idea</c> user contributed ideas or suggestions that shaped the <cg>Paimbnails</c> mod."},
+
 
             // BulkUploadPopup
             {"bulk.title", "Bulk Upload"},
@@ -1265,6 +1342,10 @@ void Localization::initTranslations() {
             {"level.accepting", "Accepting thumbnail..."},
             {"level.accepted", "Thumbnail accepted!"},
             {"level.accept_error", "Error accepting: "},
+            {"level.rejecting", "Rejecting thumbnail..."},
+            {"level.rejected", "Thumbnail rejected"},
+            {"level.reject_error", "Error rejecting: "},
+            {"level.reject_button", "Reject thumbnail"},
             {"level.no_local_thumb", "No local thumbnail"},
             {"level.png_error", "Error generating PNG"},
             {"level.saved_local_server_disabled", "Thumbnail saved locally (server disabled)"},
@@ -1353,6 +1434,10 @@ void Localization::initTranslations() {
             {"music.duration_unknown", "Duration: --:--"},
             {"music.duration_fmt", "Duration: {}:{:02d}"},
             {"music.selection_fmt", "{}:{:02d} - {}:{:02d} ({} sec)"},
+            {"music.frag_len_fmt", "{} sec"},
+            {"music.start_label", "Start"},
+            {"music.end_label", "End"},
+            {"music.time_placeholder", "sec"},
             {"music.no_song_loaded_short", "No song loaded"},
             {"music.popup_title", "Profile Music"},
             {"music.no_custom_perm", "You don't have permission to upload custom music.\nRequires Moderator, VIP, or Whitelist rank."},
@@ -1553,6 +1638,7 @@ void Localization::initTranslations() {
 
             // PauseLayer video
             {"pause.video_open_error", "Could not open video file"},
+            {"pause.video_invalid", "Invalid video file"},
             {"pause.video_too_large", "Video too large (max 50MB)"},
             {"pause.video_mods_only", "Only moderators/admins can upload videos"},
             {"pause.video_uploading", "Uploading video..."},
@@ -1630,125 +1716,4 @@ void Localization::initTranslations() {
             {"startup.incompat.disable_error_title", "Couldn't disable mod"},
             {"startup.incompat.disable_error_missing", "The incompatible mod is no longer loaded."}
         };
-
-        m_portuguese = {
-            {"pai.hub.tab.home", "Inicio"},
-            {"pai.hub.tab.news", "Noticias"},
-            {"pai.hub.tab.forum", "Forum"},
-            {"pai.hub.welcome", "Bem-vindo ao Paimbnails!"},
-            {"pai.hub.description", "Personalize sua experiencia no Geometry Dash"},
-            {"pai.hub.btn.config", "Configuracoes"},
-            {"pai.hub.btn.language", "Idioma"},
-            {"pai.hub.btn.profiles", "Perfis"},
-            {"pai.hub.btn.backgrounds", "Fundos"},
-            {"pai.hub.btn.support", "Suporte"},
-            {"pai.hub.btn.update", "Verificar atualizacao"},
-
-            {"pai.guide.title",         "Guia da Paimon"},
-            {"pai.guide.welcome",       "Oi! Eu sou a <cy>Paimon</c>, sua guia. Pergunte onde configurar coisas como 'cursor', 'musica', 'discord'..."},
-            {"pai.guide.placeholder",   "Pergunte qualquer coisa..."},
-            {"pai.guide.send",          "Perguntar"},
-            {"pai.guide.toggle.on",     "Guia ativada. Encontre a Paimon no menu principal!"},
-            {"pai.guide.toggle.off",    "Guia desativada."},
-            {"pai.guide.take.me.there", "Me leve la"},
-            {"pai.guide.bubble",        "Pergunte!"},
-            {"pai.guide.fallback",      "Hmm, nao entendi. Tente palavras como <cy>cursor</c>, <cy>musica</c>, <cy>fundo</c>, <cy>discord</c>, <cy>emotes</c>, <cy>perfil</c>..."},
-        };
-
-        m_french = {
-            {"pai.hub.tab.home", "Accueil"},
-            {"pai.hub.tab.news", "Actualites"},
-            {"pai.hub.tab.forum", "Forum"},
-            {"pai.hub.welcome", "Bienvenue sur Paimbnails!"},
-            {"pai.hub.description", "Personnalisez votre experience Geometry Dash"},
-            {"pai.hub.btn.config", "Parametres"},
-            {"pai.hub.btn.language", "Langue"},
-            {"pai.hub.btn.profiles", "Profils"},
-            {"pai.hub.btn.backgrounds", "Fonds"},
-            {"pai.hub.btn.support", "Support"},
-            {"pai.hub.btn.update", "Verifier les mises a jour"},
-
-            {"pai.guide.title",         "Guide de Paimon"},
-            {"pai.guide.welcome",       "Salut! Je suis <cy>Paimon</c>, ton guide. Demande ou configurer des trucs comme 'curseur', 'musique', 'discord'..."},
-            {"pai.guide.placeholder",   "Pose-moi une question..."},
-            {"pai.guide.send",          "Demander"},
-            {"pai.guide.toggle.on",     "Guide active. Trouve Paimon dans le menu principal!"},
-            {"pai.guide.toggle.off",    "Guide desactive."},
-            {"pai.guide.take.me.there", "Emmene-moi la"},
-            {"pai.guide.bubble",        "Demande-moi!"},
-            {"pai.guide.fallback",      "Hmm, je ne comprends pas. Essaie des mots comme <cy>curseur</c>, <cy>musique</c>, <cy>fond</c>, <cy>discord</c>, <cy>emotes</c>, <cy>profil</c>..."},
-        };
-
-        m_german = {
-            {"pai.hub.tab.home", "Start"},
-            {"pai.hub.tab.news", "News"},
-            {"pai.hub.tab.forum", "Forum"},
-            {"pai.hub.welcome", "Willkommen bei Paimbnails!"},
-            {"pai.hub.description", "Passe dein Geometry Dash Erlebnis an"},
-            {"pai.hub.btn.config", "Einstellungen"},
-            {"pai.hub.btn.language", "Sprache"},
-            {"pai.hub.btn.profiles", "Profile"},
-            {"pai.hub.btn.backgrounds", "Hintergrunde"},
-            {"pai.hub.btn.support", "Support"},
-            {"pai.hub.btn.update", "Nach Updates suchen"},
-
-            {"pai.guide.title",         "Paimon Guide"},
-            {"pai.guide.welcome",       "Hi! Ich bin <cy>Paimon</c>, dein Guide. Frag mich, wo du Sachen wie 'Cursor', 'Musik', 'Discord' einstellen kannst..."},
-            {"pai.guide.placeholder",   "Frag mich was du willst..."},
-            {"pai.guide.send",          "Fragen"},
-            {"pai.guide.toggle.on",     "Guide aktiviert. Finde Paimon im Hauptmenu!"},
-            {"pai.guide.toggle.off",    "Guide deaktiviert."},
-            {"pai.guide.take.me.there", "Bring mich dahin"},
-            {"pai.guide.bubble",        "Frag mich!"},
-            {"pai.guide.fallback",      "Hmm, das kenne ich nicht. Versuche Worte wie <cy>Cursor</c>, <cy>Musik</c>, <cy>Hintergrund</c>, <cy>Discord</c>, <cy>Emotes</c>, <cy>Profil</c>..."},
-        };
-
-        m_russian = {
-            {"pai.hub.tab.home", "Главная"},
-            {"pai.hub.tab.news", "Новости"},
-            {"pai.hub.tab.forum", "Форум"},
-            {"pai.hub.welcome", "Добро пожаловать в Paimbnails!"},
-            {"pai.hub.description", "Настройте свой опыт Geometry Dash"},
-            {"pai.hub.btn.config", "Настройки"},
-            {"pai.hub.btn.language", "Язык"},
-            {"pai.hub.btn.profiles", "Профили"},
-            {"pai.hub.btn.backgrounds", "Фоны"},
-            {"pai.hub.btn.support", "Поддержка"},
-            {"pai.hub.btn.update", "Проверить обновления"},
-
-            {"pai.guide.title",         "Гид Паймон"},
-            {"pai.guide.welcome",       "Привет! Я <cy>Паймон</c>, твой гид. Спроси, где настроить что-то вроде 'курсор', 'музыка', 'discord'..."},
-            {"pai.guide.placeholder",   "Спроси что хочешь..."},
-            {"pai.guide.send",          "Спросить"},
-            {"pai.guide.toggle.on",     "Гид включен. Найди Паймон в главном меню!"},
-            {"pai.guide.toggle.off",    "Гид выключен."},
-            {"pai.guide.take.me.there", "Отведи меня туда"},
-            {"pai.guide.bubble",        "Спроси меня!"},
-            {"pai.guide.fallback",      "Хмм, не понял. Попробуй слова типа <cy>курсор</c>, <cy>музыка</c>, <cy>фон</c>, <cy>discord</c>, <cy>emotes</c>, <cy>профиль</c>..."},
-        };
-
-        m_japanese = {
-            {"pai.hub.tab.home", "ホーム"},
-            {"pai.hub.tab.news", "ニュース"},
-            {"pai.hub.tab.forum", "フォーラム"},
-            {"pai.hub.welcome", "Paimbnailsへようこそ!"},
-            {"pai.hub.description", "Geometry Dash をもっと自分好みに"},
-            {"pai.hub.btn.config", "設定"},
-            {"pai.hub.btn.language", "言語"},
-            {"pai.hub.btn.profiles", "プロフィール"},
-            {"pai.hub.btn.backgrounds", "背景"},
-            {"pai.hub.btn.support", "サポート"},
-            {"pai.hub.btn.update", "アップデートを確認"},
-
-            {"pai.guide.title",         "パイモンガイド"},
-            {"pai.guide.welcome",       "やあ! 私は <cy>パイモン</c>、ガイドだよ。「カーソル」「音楽」「Discord」など、設定したい場所を聞いてね..."},
-            {"pai.guide.placeholder",   "何でも聞いてね..."},
-            {"pai.guide.send",          "聞く"},
-            {"pai.guide.toggle.on",     "ガイド有効。メインメニューでパイモンを見つけてね!"},
-            {"pai.guide.toggle.off",    "ガイド無効。"},
-            {"pai.guide.take.me.there", "そこへ連れて行って"},
-            {"pai.guide.bubble",        "聞いて!"},
-            {"pai.guide.fallback",      "うーん、わからないよ。<cy>カーソル</c>、<cy>音楽</c>、<cy>背景</c>、<cy>Discord</c>、<cy>emotes</c>、<cy>プロフィール</c> などを試してみて..."},
-        };
 }
-

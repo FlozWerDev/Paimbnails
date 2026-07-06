@@ -7,8 +7,6 @@ using namespace cocos2d;
 
 namespace paimon::ui::dec {
 
-// Safe matjson reads
-
 static bool has(matjson::Value const& v, std::string_view k) { return v.contains(k); }
 
 static float numF(matjson::Value const& v, float def = 0.f) {
@@ -25,8 +23,7 @@ static GLubyte channel(matjson::Value const& v, GLubyte def) {
     return static_cast<GLubyte>(std::clamp(n, 0, 255));
 }
 
-// Color/opacity helpers for the supported concrete types
-
+// Color/opacity helpers for the supported concrete types.
 static void setColorAny(CCNode* n, ccColor3B c) {
     if (auto* s = typeinfo_cast<CCSprite*>(n)) { s->setColor(c); return; }
     if (auto* l = typeinfo_cast<CCLabelBMFont*>(n)) { l->setColor(c); return; }
@@ -54,8 +51,6 @@ static CCPoint anchorIn(std::string const& a, CCSize s) {
     if (a == "bottom-right")  return {s.width,        0};
     return {0, 0};
 }
-
-// Attribute appliers
 
 void applyAttributes(CCNode* node, matjson::Value const& a, CCNode* parent) {
     if (!node) return;
@@ -109,8 +104,6 @@ void applyAttributes(CCNode* node, matjson::Value const& a, CCNode* parent) {
         }
     }
 }
-
-// Factory
 
 Factory& Factory::get() {
     static Factory inst;
@@ -174,8 +167,6 @@ CCNode* Factory::create(std::string_view type, matjson::Value const& attrs) {
     }
     return it->second(attrs);
 }
-
-// Spec / build / query
 
 Spec Spec::fromJson(matjson::Value const& j) {
     Spec s;

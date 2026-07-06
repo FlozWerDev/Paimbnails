@@ -19,7 +19,6 @@ namespace {
     
     // RGB [0,255] -> XYZ (D65)
     static void rgbToXYZ(uint8_t r, uint8_t g, uint8_t b, double& X, double& Y, double& Z) {
-        // normalize RGB to [0, 1]
         double R = r / 255.0;
         double G = g / 255.0;
         double B = b / 255.0;
@@ -72,14 +71,12 @@ namespace {
         return lab;
     }
     
-    // RGB -> LAB directo
     static LABColor rgbToLAB(uint8_t r, uint8_t g, uint8_t b) {
         double X, Y, Z;
         rgbToXYZ(r, g, b, X, Y, Z);
         return xyzToLAB(X, Y, Z);
     }
     
-    // LAB -> XYZ
     static void labToXYZ(LABColor const& lab, double& X, double& Y, double& Z) {
         const double Xn = 95.047;
         const double Yn = 100.000;
@@ -101,7 +98,6 @@ namespace {
     
     // XYZ -> RGB [0,255]
     static DCColor xyzToRGB(double X, double Y, double Z) {
-        // scale back
         X /= 100.0;
         Y /= 100.0;
         Z /= 100.0;
@@ -128,7 +124,6 @@ namespace {
         return DCColor{ clamp(R), clamp(G), clamp(B) };
     }
     
-    // LAB -> RGB
     static DCColor labToRGB(LABColor const& lab) {
         double X, Y, Z;
         labToXYZ(lab, X, Y, Z);
@@ -285,7 +280,6 @@ namespace {
         std::mt19937 rng(42);  // fixed seed for reproducible results
         K = std::min(K, static_cast<int>(pixels.size()));
         
-        // initialize centroids
         std::vector<LABColor> centroids = initializeCentroids(pixels, K, rng);
         if (centroids.size() < static_cast<size_t>(K)) {
             K = static_cast<int>(centroids.size());
@@ -295,7 +289,6 @@ namespace {
         
         // k-means iteration (simple distance for speed)
         for (int iter = 0; iter < maxIterations; iter++) {
-            // clear clusters
             for (auto& cluster : clusters) {
                 cluster.members.clear();
                 cluster.pixelCount = 0;
@@ -347,7 +340,6 @@ namespace {
             if (converged) break;
         }
         
-        // sort clusters by size (desc)
         std::sort(clusters.begin(), clusters.end(),
             [](Cluster const& a, Cluster const& b) {
                 return a.pixelCount > b.pixelCount;

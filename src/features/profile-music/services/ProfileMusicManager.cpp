@@ -127,7 +127,6 @@ void pruneProfileMusicCache() {
 }
 }
 
-// Extract the underlying FMOD::Channel* from the background-music ChannelGroup.
 static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {    if (!engine) return nullptr;
     if (auto* channel = engine->getActiveMusicChannel(0)) {
         return channel;
@@ -188,7 +187,6 @@ bool ProfileMusicManager::tryGetImmediateConfig(int accountID, ProfileMusicConfi
     if (readRes.isErr()) return false;
 
     std::string content = readRes.unwrap();
-    // Read only first line.
     auto nlPos = content.find('\n');
     if (nlPos != std::string::npos) content = content.substr(0, nlPos);
     if (content.empty()) return false;
@@ -204,7 +202,6 @@ bool ProfileMusicManager::tryGetImmediateConfig(int accountID, ProfileMusicConfi
         start = sep + 1;
     }
 
-    // v1 (legacy): songID|startMs|endMs|updatedAt; v2 adds |isCustom.
     if (parts.size() != 4 && parts.size() != 5) {
         return false;
     }
@@ -244,7 +241,6 @@ float ProfileMusicManager::getFadeDurationMs() const {
 }
 
 float ProfileMusicManager::getGlobalVolume() const {
-    // Use the music volume from the game settings
     auto engine = FMODAudioEngine::sharedEngine();
     if (engine) {
         return engine->m_musicVolume;
@@ -253,7 +249,6 @@ float ProfileMusicManager::getGlobalVolume() const {
 }
 
 void ProfileMusicManager::getProfileMusicConfig(int accountID, ConfigCallback callback) {
-    // Always query the server; backend invalidates Cloudflare on upload/delete.
     std::string endpoint = fmt::format("/api/profile-music/{}", accountID);
     log::info("[ProfileMusic] Fetching config from: {}", endpoint);
 
@@ -307,7 +302,6 @@ void ProfileMusicManager::getProfileMusicConfig(int accountID, ConfigCallback ca
 
 void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& username, const ProfileMusicConfig& config, UploadCallback callback) {
     auto token = m_lifetimeToken;
-    // Download the full song locally first.
     downloadSongForPreview(config.songID, [this, token, accountID, username, config, callback](bool success, std::string const& localPath) {
         if (!success || localPath.empty()) {
             Loader::get()->queueInMainThread([callback]() {
@@ -323,7 +317,6 @@ void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& u
                 return;
             }
 
-            // Extract only the fragment using FMOD
             auto fragmentData = extractAudioFragment(localPath, config.startMs, config.endMs);
 
             if (fragmentData.empty()) {
@@ -340,7 +333,6 @@ void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& u
             log::info("[ProfileMusic] Extracted fragment: {} bytes ({}ms - {}ms)",
                 fragmentData.size(), config.startMs, config.endMs);
 
-            // Convert to base64
             static char const* base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
             std::string base64;
             size_t size = fragmentData.size();
@@ -360,7 +352,6 @@ void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& u
             log::info("[ProfileMusic] Uploading fragment: {} bytes ({} base64 chars)",
                 size, base64.size());
 
-            // Build payload with the trimmed fragment.
             matjson::Value payload;
             payload["accountID"] = accountID;
             payload["username"] = username;
@@ -394,7 +385,6 @@ void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& u
                         }
 
                         if (success) {
-                            // Invalidate all cache (RAM + disk + meta) to force re-download
                             invalidateCache(accountID);
                             callback(true, "Music uploaded successfully");
                         } else {
@@ -416,7 +406,6 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
         return result;
     }
 
-    // Create a fully decoded sound sample in memory.
     FMOD::Sound* sound = nullptr;
     FMOD_RESULT res = engine->m_system->createSound(filePath.c_str(), FMOD_CREATESAMPLE, nullptr, &sound);
     if (res != FMOD_OK || !sound) {
@@ -424,7 +413,6 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
         return result;
     }
 
-    // Get duration
     unsigned int totalDurationMs = 0;
     sound->getLength(&totalDurationMs, FMOD_TIMEUNIT_MS);
     if (totalDurationMs == 0) {
@@ -432,7 +420,6 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
         return result;
     }
 
-    // Validate ranges.
     if (endMs > static_cast<int>(totalDurationMs) || endMs <= 0) endMs = static_cast<int>(totalDurationMs);
     if (startMs < 0) startMs = 0;
     if (startMs >= endMs) {
@@ -440,7 +427,6 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
         return result;
     }
 
-    // Get format info
     FMOD_SOUND_TYPE sndType;
     FMOD_SOUND_FORMAT sndFormat;
     int channels = 0, bits = 0;
@@ -452,17 +438,14 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
     int sampleRate = static_cast<int>(frequency);
     int bytesPerSample = channels * (bits / 8);
 
-    // Get total PCM byte count.
     unsigned int totalPcmBytes = 0;
     sound->getLength(&totalPcmBytes, FMOD_TIMEUNIT_PCMBYTES);
 
-    // Calculate byte offsets for the fragment.
     unsigned int startByte = static_cast<unsigned int>(
         static_cast<double>(startMs) / totalDurationMs * totalPcmBytes);
     unsigned int endByte = static_cast<unsigned int>(
         static_cast<double>(endMs) / totalDurationMs * totalPcmBytes);
 
-    // Align to sample boundaries.
     if (bytesPerSample > 0) {
         startByte = (startByte / bytesPerSample) * bytesPerSample;
         endByte = (endByte / bytesPerSample) * bytesPerSample;
@@ -475,7 +458,6 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
 
     unsigned int fragmentBytes = endByte - startByte;
 
-    // Lock the buffer region for direct access.
     void* ptr1 = nullptr, *ptr2 = nullptr;
     unsigned int len1 = 0, len2 = 0;
     res = sound->lock(startByte, fragmentBytes, &ptr1, &ptr2, &len1, &len2);
@@ -485,7 +467,6 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
         return result;
     }
 
-    // Copy PCM data.
     std::vector<uint8_t> pcmData(fragmentBytes);
     size_t written = 0;
     if (ptr1 && len1 > 0) {
@@ -506,7 +487,73 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
         return result;
     }
 
-    // Write WAV file.
+    std::vector<int16_t> samples16;
+    auto pushFloatSample = [&samples16](float f) {
+        if (f > 1.0f) f = 1.0f;
+        else if (f < -1.0f) f = -1.0f;
+        samples16.push_back(static_cast<int16_t>(std::lround(f * 32767.0f)));
+    };
+    switch (sndFormat) {
+        case FMOD_SOUND_FORMAT_PCM16: {
+            size_t count = pcmData.size() / 2;
+            samples16.resize(count);
+            if (count > 0) std::memcpy(samples16.data(), pcmData.data(), count * 2);
+            break;
+        }
+        case FMOD_SOUND_FORMAT_PCMFLOAT: {
+            size_t count = pcmData.size() / 4;
+            samples16.reserve(count);
+            for (size_t i = 0; i < count; ++i) {
+                float f;
+                std::memcpy(&f, pcmData.data() + i * 4, 4);
+                pushFloatSample(f);
+            }
+            break;
+        }
+        case FMOD_SOUND_FORMAT_PCM8: {
+            samples16.reserve(pcmData.size());
+            for (size_t i = 0; i < pcmData.size(); ++i) {
+                int8_t s = static_cast<int8_t>(pcmData[i]);
+                samples16.push_back(static_cast<int16_t>(s << 8));
+            }
+            break;
+        }
+        case FMOD_SOUND_FORMAT_PCM24: {
+            size_t count = pcmData.size() / 3;
+            samples16.reserve(count);
+            for (size_t i = 0; i < count; ++i) {
+                const uint8_t* p = pcmData.data() + i * 3;
+                int32_t s = static_cast<int32_t>(p[0])
+                          | (static_cast<int32_t>(p[1]) << 8)
+                          | (static_cast<int32_t>(p[2]) << 16);
+                if (s & 0x800000) s |= ~0xFFFFFF;
+                samples16.push_back(static_cast<int16_t>(s >> 8));
+            }
+            break;
+        }
+        case FMOD_SOUND_FORMAT_PCM32: {
+            size_t count = pcmData.size() / 4;
+            samples16.reserve(count);
+            for (size_t i = 0; i < count; ++i) {
+                int32_t s;
+                std::memcpy(&s, pcmData.data() + i * 4, 4);
+                samples16.push_back(static_cast<int16_t>(s >> 16));
+            }
+            break;
+        }
+        default: {
+            size_t count = pcmData.size() / 2;
+            samples16.resize(count);
+            if (count > 0) std::memcpy(samples16.data(), pcmData.data(), count * 2);
+            break;
+        }
+    }
+
+    if (samples16.empty()) {
+        log::error("[ProfileMusic] No PCM data after 16-bit conversion");
+        return result;
+    }
+
     auto writeU16 = [&](uint16_t v) {
         result.push_back(static_cast<uint8_t>(v & 0xFF));
         result.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
@@ -518,36 +565,33 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
         result.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
     };
 
-    uint32_t dataSize = static_cast<uint32_t>(pcmData.size());
+    uint32_t dataSize = static_cast<uint32_t>(samples16.size() * sizeof(int16_t));
     uint16_t numChannels = static_cast<uint16_t>(channels);
-    uint16_t bitsPerSample = static_cast<uint16_t>(bits);
+    uint16_t bitsPerSample = 16;
     uint32_t byteRate = static_cast<uint32_t>(sampleRate) * numChannels * (bitsPerSample / 8);
     uint16_t blockAlign = numChannels * (bitsPerSample / 8);
 
-    // RIFF header.
     result.push_back('R'); result.push_back('I'); result.push_back('F'); result.push_back('F');
     writeU32(36 + dataSize);
     result.push_back('W'); result.push_back('A'); result.push_back('V'); result.push_back('E');
 
-    // fmt chunk.
     result.push_back('f'); result.push_back('m'); result.push_back('t'); result.push_back(' ');
     writeU32(16);
-    writeU16(1);  // PCM format
+    writeU16(1);
     writeU16(numChannels);
     writeU32(static_cast<uint32_t>(sampleRate));
     writeU32(byteRate);
     writeU16(blockAlign);
     writeU16(bitsPerSample);
 
-    // data chunk.
     result.push_back('d'); result.push_back('a'); result.push_back('t'); result.push_back('a');
     writeU32(dataSize);
 
-    // PCM samples.
-    result.insert(result.end(), pcmData.begin(), pcmData.end());
+    const uint8_t* sampleBytes = reinterpret_cast<const uint8_t*>(samples16.data());
+    result.insert(result.end(), sampleBytes, sampleBytes + dataSize);
 
-    log::info("[ProfileMusic] Created WAV fragment: {} bytes ({}ms-{}ms, {}Hz, {}ch, {}bit)",
-        result.size(), startMs, endMs, sampleRate, channels, bits);
+    log::info("[ProfileMusic] Created WAV fragment: {} bytes ({}ms-{}ms, {}Hz, {}ch, 16bit out, src {}bit fmt {})",
+        result.size(), startMs, endMs, sampleRate, channels, bits, static_cast<int>(sndFormat));
 
     return result;
 }
@@ -597,7 +641,6 @@ void ProfileMusicManager::uploadCustomProfileMusic(int accountID, std::string co
         return;
     }
 
-    // Extract the audio fragment on a separate thread
     paimon::ThreadTracker::get().spawn([this, token, filePath, accountID, username, config, callback]() {
         if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
             return;
@@ -616,7 +659,6 @@ void ProfileMusicManager::uploadCustomProfileMusic(int accountID, std::string co
         log::info("[ProfileMusic] Extracted custom fragment: {} bytes ({}ms - {}ms)",
             fragmentData.size(), config.startMs, config.endMs);
 
-        // Convert to base64
         static char const* base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         std::string base64;
         size_t size = fragmentData.size();
@@ -636,7 +678,6 @@ void ProfileMusicManager::uploadCustomProfileMusic(int accountID, std::string co
         log::info("[ProfileMusic] Uploading custom fragment: {} bytes ({} base64 chars)",
             size, base64.size());
 
-        // Build payload with the trimmed fragment
         matjson::Value payload;
         payload["accountID"] = accountID;
         payload["username"] = username;
@@ -708,7 +749,6 @@ void ProfileMusicManager::getLocalSongInfo(std::string const& filePath, SongInfo
 
         int durationMs = static_cast<int>(lengthMs);
 
-        // Extract filename as song name
         std::filesystem::path p(filePath);
         std::string songName = geode::utils::string::pathToString(p.stem());
         std::string artistName = "Local File";
@@ -737,14 +777,22 @@ void ProfileMusicManager::getWaveformPeaksForFile(std::string const& filePath, W
     });
 }
 
-void ProfileMusicManager::downloadMusicFragment(int accountID, DownloadCallback callback) {
+void ProfileMusicManager::downloadMusicFragment(int accountID, std::string const& version, DownloadCallback callback) {
     auto token = m_lifetimeToken;
-    // The server purges Cloudflare on upload/delete, so no cache-busting query param is needed.
     std::string url = fmt::format("{}/api/profile-music/{}/audio", HttpClient::get().getServerURL(), accountID);
+    std::string verToken;
+    verToken.reserve(version.size());
+    for (char c : version) {
+        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+            verToken.push_back(c);
+        }
+    }
+    if (!verToken.empty()) {
+        url += "?v=" + verToken;
+    }
 
     log::info("[ProfileMusic] Downloading music from: {}", url);
 
-    // Raw binary download (it's an MP3, not an image), skipping image validation
     HttpClient::get().downloadFromUrlRaw(url, [this, token, accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
         if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
             return;
@@ -788,19 +836,16 @@ void ProfileMusicManager::playProfileMusic(int accountID) {
         return;
     }
 
-    // Don't overlay profile music on top of video audio
     if (paimon::isVideoAudioInteropActive()) {
         log::info("[ProfileMusic] Video audio is active, skipping");
         return;
     }
 
-    // Respect GD's native menu-music toggle (variable 0122)
     if (GameManager::get()->getGameVariable("0122")) {
         log::info("[ProfileMusic] Menu music is toggled off (0122), skipping");
         return;
     }
 
-    // Respect GD's music volume
     auto engineCheck = FMODAudioEngine::sharedEngine();
     if (engineCheck && engineCheck->m_musicVolume <= 0.0f) {
         log::info("[ProfileMusic] Music volume is 0, skipping");
@@ -815,7 +860,6 @@ void ProfileMusicManager::playProfileMusic(int accountID) {
     forceStop();
     m_currentProfileID = accountID;
 
-    // Fetch config from the server and delegate to the config overload
     getProfileMusicConfig(accountID, [this, accountID](bool success, ProfileMusicConfig const& config) {
         if (!success || (!config.enabled) || (config.songID <= 0 && !config.isCustom && !config.useVideoAudio)) {
             log::info("[ProfileMusic] No valid config from server for account {}", accountID);
@@ -837,19 +881,16 @@ void ProfileMusicManager::playProfileMusic(int accountID, ProfileMusicConfig con
         return;
     }
 
-    // Don't overlay profile music on top of video audio
     if (paimon::isVideoAudioInteropActive()) {
         log::info("[ProfileMusic] Video audio is active, skipping");
         return;
     }
 
-    // Respect GD's native menu-music toggle (variable 0122)
     if (GameManager::get()->getGameVariable("0122")) {
         log::info("[ProfileMusic] Menu music is toggled off (0122), skipping");
         return;
     }
 
-    // Respect GD's music volume
     auto engineCheck = FMODAudioEngine::sharedEngine();
     if (engineCheck && engineCheck->m_musicVolume <= 0.0f) {
         log::info("[ProfileMusic] Music volume is 0, skipping");
@@ -867,34 +908,27 @@ void ProfileMusicManager::playProfileMusic(int accountID, ProfileMusicConfig con
 }
 
 void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusicConfig const& config) {
-    // Video-background audio: extract WAV from the cached profile .mp4 and play it on the
-    // main channel. Takes priority over songID/isCustom when useVideoAudio is true.
     if (config.useVideoAudio) {
-        // 1) Resolve the cached .mp4 path; use the pre-resolved one from config if present.
         std::string videoPath = config.videoAudioPath;
         if (videoPath.empty()) {
             auto videoKey = fmt::format("profileimg_video_{}", accountID);
             videoPath = VideoThumbnailSprite::getCachedPathForKey(videoKey);
             if (videoPath.empty()) {
-                // Fallback: legacy key some old profiles use.
                 auto legacyKey = fmt::format("profile_video_{}", accountID);
                 videoPath = VideoThumbnailSprite::getCachedPathForKey(legacyKey);
             }
         }
 
         if (videoPath.empty()) {
-            // Video isn't cached locally yet; skip playback. The caller retries once it arrives.
             log::warn("[ProfileMusic] useVideoAudio=true but no cached video for account {}", accountID);
             paimon::setProfileMusicInteropActive(false);
             return;
         }
 
-        // 2) Extract audio to WAV; use the cached path if available, otherwise run extraction
-        //    in the background (it can take hundreds of ms on long videos).
         std::string wavPath = paimon::video::getCachedWavPath(videoPath);
         if (!wavPath.empty()) {
             log::info("[ProfileMusic] Playing cached video-audio WAV for account {}: {}", accountID, wavPath);
-            playAudioFile(wavPath, /*loop=*/true, /*startMs=*/0, /*endMs=*/0);
+            playAudioFile(wavPath, true, 0, 0);
             return;
         }
 
@@ -902,7 +936,6 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
         // Capture the lifetime token to avoid post-shutdown callbacks.
         log::info("[ProfileMusic] Extracting video-audio in background for account {}: {}", accountID, videoPath);
         auto lifetime = m_lifetimeToken;
-        // Optimistically mark interop active so dynamic song doesn't start while we wait.
         paimon::setProfileMusicInteropActive(true);
         paimon::ThreadTracker::get().spawn(
             [this, accountID, videoPath, lifetime]() {
@@ -920,7 +953,7 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
                         return;
                     }
                     log::info("[ProfileMusic] Background extraction complete, playing: {}", extracted);
-                    playAudioFile(extracted, /*loop=*/true, /*startMs=*/0, /*endMs=*/0);
+                    playAudioFile(extracted, true, 0, 0);
                 });
             }
         );
@@ -931,7 +964,6 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
     std::error_code cacheEc;
     bool cacheExists = std::filesystem::exists(cachePath, cacheEc) && !cacheEc;
 
-    // Check whether the disk cache matches the current server config
     if (cacheExists && isCacheValid(accountID, config)) {
         log::info("[ProfileMusic] Cache is valid and up-to-date, playing from cache: {}",
             geode::utils::string::pathToString(cachePath));
@@ -946,9 +978,8 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
     }
 
     log::info("[ProfileMusic] Downloading fresh music fragment...");
-    downloadMusicFragment(accountID, [this, accountID, config](bool dlSuccess, std::string const& path) {
+    downloadMusicFragment(accountID, config.updatedAt, [this, accountID, config](bool dlSuccess, std::string const& path) {
         if (dlSuccess && m_currentProfileID == accountID) {
-            // Save .meta with the current config for future validation
             saveMetaFile(accountID, config);
             log::info("[ProfileMusic] Download successful, playing: {}", path);
             playAudioFile(path, true, 0, 0);
@@ -963,13 +994,11 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
     m_profileSessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
     m_playbackKind = PlaybackKind::Profile;
 
-    // Cancel fades and clear state
     m_isFadingIn = false;
     m_isFadingOut = false;
     m_isPlaying = false;
     m_isPaused = false;
 
-    // Clear the cave effect if it was active
     forceRemoveCaveEffect();
 
     auto engine = FMODAudioEngine::sharedEngine();
@@ -988,11 +1017,9 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
     bool useCrossfade = isCrossfadeEnabled();
     bool dynamicNeedsSuspension = AudioContextCoordinator::get().shouldSuspendDynamicForProfileMusic();
 
-    // Save position of whatever is playing to restore later.
     m_savedBgPosMs = engine->getMusicTimeMS(0);
 
     if (useCrossfade || dynamicNeedsSuspension) {
-        // Dip fade: lower main volume to 0, load profile, then raise back.
         float currentVol = 0.0f;
         if (engine->m_backgroundMusicChannel) {
             engine->m_backgroundMusicChannel->getVolume(&currentVol);
@@ -1000,10 +1027,8 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
 
         if (currentVol > 0.001f) {
             m_isFadingOut = true;
-            // restoreAfter=false: load profile music once volume hits 0.
             executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, false, generation);
         } else {
-            // Already silent: notify dynamic and load directly.
             AudioContextCoordinator::get().suspendDynamicForProfileMusicIfNeeded();
             loadProfileOnMainChannel(path, loop, startMs, endMs, 0.0f);
             m_isPlaying = true;
@@ -1011,7 +1036,6 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
             executeDipFadeIn(0, FADE_STEPS, 0.0f, gameVolume, generation);
         }
     } else {
-        // No crossfade: stop BG and load directly.
         if (engine->m_backgroundMusicChannel) {
             engine->m_backgroundMusicChannel->stop();
         }
@@ -1039,7 +1063,6 @@ void ProfileMusicManager::loadProfileOnMainChannel(const std::string& path, bool
         AudioContextCoordinator::get().claimProfileAudio(m_profileSessionToken);
     }
 
-    // Configure loop points and position via Channel*.
     auto* bgCh = getMainBgChannel(engine);
     if (!bgCh) return;
 
@@ -1086,17 +1109,14 @@ void ProfileMusicManager::fadeOutAndStop() {
         engine->m_backgroundMusicChannel->getVolume(&currentVol);
     }
 
-    // Update target volume in case it changed during playback.
     m_bgVolumeBeforeFade = engine->m_musicVolume;
 
     log::info("[ProfileMusic] Starting dip fade-out (vol: {:.2f}, bg target: {:.2f})",
         currentVol, m_bgVolumeBeforeFade);
 
-    // Dip fade: lower main to 0, load menu/dynamic, then raise (restoreAfter=true restores prior music)
     executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, true, generation);
 }
 
-// Dip fade-out of the main channel; on reaching 0, loads the next music and fades in.
 void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
     float volFrom, float volTo, bool restoreAfter, uint32_t generation) {
     if (generation != m_fadeGeneration) {
@@ -1104,21 +1124,18 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
     }
 
     if (step > totalSteps || !m_isFadingOut) {
-        // Fade-out done
         auto engine = FMODAudioEngine::sharedEngine();
         if (engine && engine->m_backgroundMusicChannel) {
             engine->m_backgroundMusicChannel->setVolume(0.0f);
         }
 
         if (restoreAfter) {
-            // Leaving profile music: release ownership and restore context.
             auto sessionToken = m_profileSessionToken;
             stopOwnedAudioPlayback();
             m_isFadingOut = false;
             AudioContextCoordinator::get().restoreAfterProfileMusicStop(true, sessionToken);
             log::info("[ProfileMusic] Fade-out complete, context restored by coordinator");
         } else {
-            // Entering profile music: notify dynamic and load profile.
             AudioContextCoordinator::get().suspendDynamicForProfileMusicIfNeeded();
             loadProfileOnMainChannel(m_currentAudioPath, m_pendingLoop,
                                      m_pendingStartMs, m_pendingEndMs, 0.0f);
@@ -1153,7 +1170,6 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
     });
 }
 
-// Dip fade-in of the main channel.
 void ProfileMusicManager::executeDipFadeIn(int step, int totalSteps,
     float volFrom, float volTo, uint32_t generation) {
     if (generation != m_fadeGeneration) {
@@ -1195,16 +1211,12 @@ void ProfileMusicManager::stopOwnedAudioPlayback() {
     ++m_fadeGeneration;
     ++m_caveGeneration;
 
-    // Cancel any in-progress fade
     m_isFadingIn = false;
     m_isFadingOut = false;
     m_caveTransitioning = false;
 
-    // Clear the cave effect if it was active
     forceRemoveCaveEffect();
 
-    // Always stop the main channel, even if ownership flags are out of sync
-    // (e.g. async callback). If we don't own it, at least silence it.
     {
         auto engine = FMODAudioEngine::sharedEngine();
         if (engine && engine->m_backgroundMusicChannel) {
@@ -1264,12 +1276,10 @@ void ProfileMusicManager::stopProfileMusic() {
         return;
     }
 
-    // Nothing playing or fading — do nothing
     if (!m_isPlaying && !m_isPaused && !m_isFadingOut && !m_isFadingIn) {
         return;
     }
 
-    // If a fade-out is already running, force an immediate stop instead of ignoring
     if (m_isFadingOut) {
         log::info("[ProfileMusic] Fade-out in progress, forcing immediate stop");
         forceStop();
@@ -1278,11 +1288,9 @@ void ProfileMusicManager::stopProfileMusic() {
     }
 
     if (m_isPlaying && isCrossfadeEnabled()) {
-        // Use a smooth fade-out
         log::info("[ProfileMusic] Starting fade-out transition");
         fadeOutAndStop();
     } else {
-        // No crossfade or no active playback: stop immediately
         stopCurrentAudio(true);
         log::info("[ProfileMusic] Stopped immediately");
     }
@@ -1299,13 +1307,10 @@ void ProfileMusicManager::getSongInfo(int songID, SongInfoCallback callback) {
     if (songInfo) {
         std::string name = songInfo->m_songName;
         std::string artist = songInfo->m_artistName;
-        // Duration will be determined when loading the audio file
-        // For now we return 0 and let the waveform analysis determine it
         callback(true, name, artist, 0);
         return;
     }
 
-    // Request song info from GD servers
     mdm->getSongInfo(songID, true);
 
     auto attempts = std::make_shared<int>(0);
@@ -1313,7 +1318,7 @@ void ProfileMusicManager::getSongInfo(int songID, SongInfoCallback callback) {
     *poll = [songID, callback, attempts, poll]() {
         auto mdm = MusicDownloadManager::sharedState();
         if (!mdm) {
-            auto cb = callback; // local copy before destroying the closure
+            auto cb = callback;
             *poll = {};
             cb(false, "", "", 0);
             return;
@@ -1323,20 +1328,19 @@ void ProfileMusicManager::getSongInfo(int songID, SongInfoCallback callback) {
         if (songInfo) {
             std::string name = songInfo->m_songName;
             std::string artist = songInfo->m_artistName;
-            auto cb = callback; // local copy before destroying the closure
+            auto cb = callback;
             *poll = {};
             cb(true, name, artist, 0);
             return;
         }
 
         if (++(*attempts) >= 20) {
-            auto cb = callback; // local copy before destroying the closure
+            auto cb = callback;
             *poll = {};
             cb(false, "", "", 0);
             return;
         }
 
-        // MusicDownloadManager resolves this async with no completion callback.
         paimon::scheduleMainThreadDelay(0.5f, [poll]() {            if (*poll) {
                 (*poll)();
             }
@@ -1365,7 +1369,7 @@ void ProfileMusicManager::downloadSongForPreview(int songID, DownloadCallback ca
     *poll = [songID, callback, attempts, poll]() {
         auto mdm = MusicDownloadManager::sharedState();
         if (!mdm) {
-            auto cb = callback; // local copy before destroying the closure
+            auto cb = callback;
             *poll = {};
             cb(false, "");
             return;
@@ -1373,14 +1377,14 @@ void ProfileMusicManager::downloadSongForPreview(int songID, DownloadCallback ca
 
         if (mdm->isSongDownloaded(songID)) {
             std::string path = mdm->pathForSong(songID);
-            auto cb = callback; // local copy before destroying the closure
+            auto cb = callback;
             *poll = {};
             cb(true, path);
             return;
         }
 
         if (++(*attempts) >= 30) {
-            auto cb = callback; // local copy before destroying the closure
+            auto cb = callback;
             *poll = {};
             cb(false, "");
             return;
@@ -1441,7 +1445,6 @@ std::vector<float> ProfileMusicManager::analyzeWaveform(std::string const& fileP
         return peaks;
     }
 
-    // Get duration in milliseconds
     unsigned int lengthMs = 0;
     sound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
     outDurationMs = static_cast<int>(lengthMs);
@@ -1526,16 +1529,13 @@ void ProfileMusicManager::playPreview(std::string const& filePath, int startMs, 
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system) return;
 
-    // Respect GD's native menu-music toggle (variable 0122)
     if (GameManager::get()->getGameVariable("0122")) return;
     if (engine->m_musicVolume <= 0.0f) return;
 
     float gameVolume = engine->m_musicVolume;
 
-    // Save current position to restore when leaving the preview
     m_savedBgPosMs = engine->getMusicTimeMS(0);
 
-    // Load the preview on the main channel
     loadProfileOnMainChannel(filePath, true, startMs, endMs, gameVolume);
     m_isPlaying = true;
     m_isPaused = false;
@@ -1563,18 +1563,15 @@ void ProfileMusicManager::clearCache() {
 }
 
 void ProfileMusicManager::invalidateCache(int accountID) {
-    // Clear RAM config
     m_configCache.erase(accountID);
 
     std::error_code ec;
 
-    // Delete the cached audio file
     auto cachePath = getCachePath(accountID);
     if (std::filesystem::exists(cachePath, ec)) {
         std::filesystem::remove(cachePath, ec);
     }
 
-    // Delete the associated .meta file
     auto metaPath = getMetaPath(accountID);
     if (std::filesystem::exists(metaPath, ec)) {
         std::filesystem::remove(metaPath, ec);
@@ -1592,8 +1589,6 @@ void ProfileMusicManager::saveMetaFile(int accountID, ProfileMusicConfig const& 
     std::error_code ec;
     std::filesystem::create_directories(metaPath.parent_path(), ec);
 
-    // Save songID|startMs|endMs|updatedAt|isCustom; updatedAt detects re-uploads of the same
-    // range, isCustom distinguishes Newgrounds songs from file-uploaded ones when rehydrating.
     std::string content = fmt::format("{}|{}|{}|{}|{}",
         config.songID, config.startMs, config.endMs, config.updatedAt,
         config.isCustom ? "1" : "0");
@@ -1609,7 +1604,6 @@ bool ProfileMusicManager::isCacheValid(int accountID, ProfileMusicConfig const& 
     auto metaPath = getMetaPath(accountID);
     std::error_code ec;
     if (!std::filesystem::exists(metaPath, ec)) {
-        // No .meta — cache is legacy or invalid
         log::info("[ProfileMusic] No meta file for account {}, cache is invalid", accountID);
         return false;
     }
@@ -1621,16 +1615,13 @@ bool ProfileMusicManager::isCacheValid(int accountID, ProfileMusicConfig const& 
     auto nlPos = content.find('\n');
     if (nlPos != std::string::npos) content = content.substr(0, nlPos);
 
-    // Format: songID|startMs|endMs|updatedAt|isCustom
     std::string expected = fmt::format("{}|{}|{}|{}|{}",
         config.songID, config.startMs, config.endMs, config.updatedAt,
         config.isCustom ? "1" : "0");
 
-    // Accept legacy 4-field metas (no isCustom); saveMetaFile migrates them on next save.
     std::string legacyExpected = fmt::format("{}|{}|{}|{}",
         config.songID, config.startMs, config.endMs, config.updatedAt);
 
-    // If updatedAt is empty (server omits it), treat cache as invalid to force re-download — intentional safe fallback.
     if (config.updatedAt.empty()) {
         log::info("[ProfileMusic] Server does not provide updatedAt, cache considered invalid (safe fallback)");
         return false;
@@ -1652,7 +1643,6 @@ void ProfileMusicManager::applyCaveEffect() {
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) return;
 
-    // Create the lowpass DSP if it doesn't exist
     if (!m_lowpassDSP) {
         FMOD_RESULT res = engine->m_system->createDSPByType(FMOD_DSP_TYPE_LOWPASS, &m_lowpassDSP);
         if (res != FMOD_OK || !m_lowpassDSP) {
@@ -1661,12 +1651,10 @@ void ProfileMusicManager::applyCaveEffect() {
         }
     }
 
-    // Start with a high cutoff (no effect) and transition low
     m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_CUTOFF, 22000.0f);
     m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_RESONANCE, 1.0f);
     engine->m_backgroundMusicChannel->addDSP(0, m_lowpassDSP);
 
-    // Save original state via Channel*
     auto* bgCh = getMainBgChannel(engine);
     if (bgCh) {
         bgCh->getFrequency(&m_originalFrequency);
@@ -1680,7 +1668,6 @@ void ProfileMusicManager::applyCaveEffect() {
     log::info("[ProfileMusic] Cave effect: starting smooth transition IN (freq:{:.0f}, vol:{:.2f})",
         m_originalFrequency, m_originalVolume);
 
-    // Smooth transition: cutoff 22000->800, freq 1.0->0.92, vol 1.0->0.6.
     static constexpr int CAVE_STEPS = 15;
     executeCaveTransitionStep(0, CAVE_STEPS,
         22000.0f, 800.0f,
@@ -1690,7 +1677,6 @@ void ProfileMusicManager::applyCaveEffect() {
 }
 
 void ProfileMusicManager::forceRemoveCaveEffect() {
-    // Always clean up if a DSP is pending, even when flags were already cleared.
     if (!m_caveEffectActive && !m_caveTransitioning && !m_lowpassDSP) return;
 
     ++m_caveGeneration;
@@ -1724,7 +1710,6 @@ void ProfileMusicManager::removeCaveEffect() {
 
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_backgroundMusicChannel) {
-        // Channel gone, just clear state
         if (m_lowpassDSP) {
             m_lowpassDSP->release();
             m_lowpassDSP = nullptr;
@@ -1737,7 +1722,6 @@ void ProfileMusicManager::removeCaveEffect() {
     m_caveTransitioning = true;
     auto generation = ++m_caveGeneration;
 
-    // Read current values
     float currentVol = 0.0f;
     engine->m_backgroundMusicChannel->getVolume(&currentVol);
 
@@ -1747,7 +1731,6 @@ void ProfileMusicManager::removeCaveEffect() {
         bgCh->getFrequency(&currentFreq);
     }
 
-    // Target volume = game volume.
     float targetVol = engine->m_musicVolume;
     if (targetVol <= 0.0f && m_originalVolume > 0.0f) targetVol = m_originalVolume;
     float targetFreq = (m_originalFrequency > 0.0f) ? m_originalFrequency : (currentFreq > 0.0f ? currentFreq / 0.92f : 22050.0f);
@@ -1774,7 +1757,6 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
 
     auto engine = FMODAudioEngine::sharedEngine();
     if (!m_caveTransitioning || !engine || !engine->m_backgroundMusicChannel) {
-        // Cancelled or channel gone.
         if (!applying && m_lowpassDSP && engine && engine->m_backgroundMusicChannel) {
             engine->m_backgroundMusicChannel->removeDSP(m_lowpassDSP);
         }
@@ -1788,7 +1770,6 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
     if (step > totalSteps) {
         m_caveTransitioning = false;
         if (!applying) {
-            // OUT transition complete: remove DSP.
             if (m_lowpassDSP) {
                 engine->m_backgroundMusicChannel->removeDSP(m_lowpassDSP);
             }
@@ -1801,7 +1782,6 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
             m_originalVolume = 0.0f;
             log::info("[ProfileMusic] Cave effect fully removed");
         } else {
-            // IN transition complete.
             if (m_lowpassDSP) {
                 m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_CUTOFF, cutoffTo);
                 m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_RESONANCE, 2.0f);
@@ -1816,7 +1796,6 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
     }
 
     float t = static_cast<float>(step) / static_cast<float>(totalSteps);
-    // Quadratic ease in-out
     float eT = (t < 0.5f) ? (2.0f * t * t) : (1.0f - std::pow(-2.0f * t + 2.0f, 2.0f) / 2.0f);
 
     float cutoff = cutoffFrom + (cutoffTo - cutoffFrom) * eT;
@@ -1834,7 +1813,7 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
     engine->m_backgroundMusicChannel->setVolume(std::max(0.0f, std::min(1.0f, vol)));
 
     int next = step + 1;
-    float stepDelay = 400.0f / static_cast<float>(totalSteps) / 1000.f; // 400ms total transition
+    float stepDelay = 400.0f / static_cast<float>(totalSteps) / 1000.f;
     auto lt = m_lifetimeToken;
     paimon::scheduleMainThreadDelay(stepDelay, [lt, this, next, totalSteps, cutoffFrom, cutoffTo,
                                                 freqFrom, freqTo, volFrom, volTo, applying, generation]() {
@@ -1861,7 +1840,6 @@ float ProfileMusicManager::getCurrentAmplitude() const {
     auto* bgCh = getMainBgChannel(engine);
     if (!bgCh) return 0.f;
 
-    // Use FMOD DSP metering to read real amplitude.
     FMOD::DSP* headDSP = nullptr;
     auto result = bgCh->getDSP(FMOD_CHANNELCONTROL_DSP_HEAD, &headDSP);
     if (result != FMOD_OK || !headDSP) return 0.f;

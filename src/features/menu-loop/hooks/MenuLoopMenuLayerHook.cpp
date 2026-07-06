@@ -24,14 +24,8 @@ namespace {
     }
 }
 
-// Hook GameManager
-//
-// Same strategy as Menu Loop Randomizer (MLR): hook getMenuMusicFile() to return
-// the custom path instead of reimplementing playMenuMusic(). This way GD and our
-// own PaimonLevelSelectLayer always get the correct song without reproducing GD's
-// internal channel-0 load/resume logic.
-//
-// fadeInMenuMusic is hooked only to restore the saved position after leaving a level.
+// Hook GameManager: hook getMenuMusicFile() to return the custom path rather than
+// reimplementing playMenuMusic(), so GD's channel-0 load/resume logic is reused.
 class $modify(PaimonMenuLoopGameManager, GameManager) {
     $override
     gd::string getMenuMusicFile() {
@@ -40,8 +34,7 @@ class $modify(PaimonMenuLoopGameManager, GameManager) {
         if (song.empty() || song == "menuLoop.mp3") {
             return GameManager::getMenuMusicFile();
         }
-        // Validate the file exists before passing it to GD.
-        // Cache by path with a 5s TTL to avoid blocking the main thread on every call.
+        // Cache existence by path with a 5s TTL to avoid blocking the main thread on every call.
         static std::string s_cachedPath;
         static bool s_cachedValid = false;
         static std::chrono::steady_clock::time_point s_cachedAt{};

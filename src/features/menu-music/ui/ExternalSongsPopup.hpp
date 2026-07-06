@@ -1,18 +1,5 @@
 ﻿#pragma once
 
-// ExternalSongsPopup — lista scrollable con todas las canciones que el
-// sistema menu-loop puede reproducir (config-dir + playlist + Newgrounds
-// descargados por GD). Pensado para dar paridad con el "Song List" del
-// mod de referencia `menuloop_randomizer` sin tocar la libreria propia
-// del mod (MenuMusicLibrary).
-//
-// El popup vive como hijo del popup principal MenuMusicPopup, se abre
-// desde el boton "Songs" de la fila de quick-actions y ofrece:
-//   * Scroll con celdas compactas (path + filename)
-//   * Buscador in-memory (contains, case-insensitive)
-//   * Play por cancion (aplica override al menu-loop manager)
-//   * Marca visual para la cancion actualmente sonando
-
 #include <Geode/Geode.hpp>
 #include <string>
 #include <vector>
@@ -31,8 +18,6 @@ protected:
     void buildList();
     void rebuildList();
 
-    // Callback: play a specific song (by its absolute path) as the
-    // active menu-loop override.
     void playSongPath(const std::string& path);
 
     void onShuffleAll(cocos2d::CCObject*);
@@ -47,7 +32,7 @@ protected:
     struct Row {
         std::string path;
         std::string label;
-        std::string source;  // "menu-loop" | "downloaded" | "library"
+        std::string source;
     };
     std::vector<Row> m_rows;
 };

@@ -259,7 +259,6 @@ static cocos2d::CCNode* wrapInShapeContainer(
     clipper->setAlphaThreshold(-1.0f);
     clipper->setContentSize({kTargetSize, kTargetSize});
 
-    // Scale the image to "cover" the target square, then center inside the clip
     float iw = std::max(imageNode->getContentWidth(), 1.f);
     float ih = std::max(imageNode->getContentHeight(), 1.f);
     float coverScale = std::max(kTargetSize / iw, kTargetSize / ih);

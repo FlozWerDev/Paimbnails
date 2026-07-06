@@ -16,8 +16,6 @@ using namespace paimon::emotes;
 // Default API host; override at runtime via the paimon-emote-server-url saved value.
 static constexpr auto DEFAULT_EMOTE_SERVER = "https://paimbnailsbot.onrender.com";
 
-// Resolve the active emote server URL (saved value > env override > default).
-// Trailing slashes are stripped so concatenation always produces a clean path.
 static std::string resolveEmoteServer() {
     auto* mod = Mod::get();
     std::string url = mod ? mod->getSavedValue<std::string>("paimon-emote-server-url", "") : std::string{};
@@ -30,7 +28,6 @@ static std::string resolveEmoteServer() {
     return url;
 }
 
-// Catalog format version — bump when URL format or schema changes; old catalogs are discarded.
 static constexpr int CATALOG_VERSION = 4;
 
 static EmoteType parseEmoteType(std::string const& typeStr) {
@@ -38,7 +35,6 @@ static EmoteType parseEmoteType(std::string const& typeStr) {
     return EmoteType::Static;
 }
 
-// Classify by filename extension as a fallback if the server omits the type field.
 static EmoteType classifyByFilename(std::string const& filename) {
     auto dot = filename.rfind('.');
     if (dot == std::string::npos) return EmoteType::Static;
@@ -56,7 +52,6 @@ static void dispatchCatalogCallback(EmoteService::CatalogCallback const& callbac
     });
 }
 
-// Route legacy CDN/proxy URLs through the active API server.
 static std::string migrateEmoteUrl(std::string const& url, std::string const& filename) {
     bool isLegacy =
         url.find("b-cdn.net/") != std::string::npos ||
@@ -74,14 +69,12 @@ void EmoteService::fetchAllEmotes(CatalogCallback callback) {
         return;
     }
 
-    // Grab current timelast for incremental check
     std::string currentTimelast;
     {
         std::lock_guard lock(m_mutex);
         currentTimelast = m_timelast;
     }
 
-    // Shared accumulator across pages
     auto accumulator = std::make_shared<std::vector<EmoteInfo>>();
     auto cb = std::make_shared<CatalogCallback>(std::move(callback));
 
@@ -103,7 +96,6 @@ void EmoteService::fetchAllEmotes(CatalogCallback callback) {
             log::info("[EmoteService] Catalog loaded: {} emotes ({} gif, {} static)",
                 allCount, gifCount, staticCount);
         } else if (success) {
-            // Server said no changes (accumulator empty, timelast matched)
             log::info("[EmoteService] Emote catalog up to date (no changes)");
         } else {
             log::warn("[EmoteService] Failed to fetch emote catalog from server");
@@ -142,14 +134,12 @@ void EmoteService::fetchPage(int page, int limit, std::string const& timelast,
 
         auto json = jsonRes.unwrap();
 
-        // Handle "no changes" response
         if (json.contains("changed") && json["changed"].asBool().unwrapOr(true) == false) {
             log::debug("[EmoteService] Server reports no changes since timelast {}", timelast);
-            callback(true); // success, but accumulator stays empty
+            callback(true);
             return;
         }
 
-        // Update timelast from server response
         if (json.contains("timelast")) {
             auto newTimelast = json["timelast"].asString().unwrapOr("");
             if (!newTimelast.empty()) {
@@ -158,7 +148,6 @@ void EmoteService::fetchPage(int page, int limit, std::string const& timelast,
             }
         }
 
-        // Parse emotes array
         if (json.contains("emotes") && json["emotes"].isArray()) {
             auto arrRes = json["emotes"].asArray();
             if (arrRes.isOk()) {
@@ -167,7 +156,6 @@ void EmoteService::fetchPage(int page, int limit, std::string const& timelast,
                     info.name = item["name"].asString().unwrapOr("");
                     info.filename = item["filename"].asString().unwrapOr("");
                     info.type = parseEmoteType(item["type"].asString().unwrapOr("png"));
-                    // If the server type is wrong but the filename is .gif, force GIF.
                     if (info.type != EmoteType::Gif &&
                         classifyByFilename(info.filename) == EmoteType::Gif) {
                         info.type = EmoteType::Gif;
@@ -176,7 +164,6 @@ void EmoteService::fetchPage(int page, int limit, std::string const& timelast,
                     info.size = static_cast<int>(item["size"].asInt().unwrapOr(0));
                     info.url = item["url"].asString().unwrapOr("");
 
-                    // Migrate legacy Bunny CDN URLs to Vercel proxy
                     info.url = migrateEmoteUrl(info.url, info.filename);
 
                     if (!info.name.empty() && !info.url.empty()) {
@@ -186,7 +173,6 @@ void EmoteService::fetchPage(int page, int limit, std::string const& timelast,
             }
         }
 
-        // Check pagination
         bool hasNext = false;
         if (json.contains("pagination") && json["pagination"].isObject()) {
             auto pag = json["pagination"];
@@ -201,7 +187,6 @@ void EmoteService::fetchPage(int page, int limit, std::string const& timelast,
     });
 }
 
-// Case-insensitive helper — delegates to Geode's string utility.
 static std::string toLowerStr(std::string const& s) {
     return geode::utils::string::toLower(s);
 }
@@ -214,7 +199,6 @@ void EmoteService::buildIndex() {
 
     for (size_t i = 0; i < m_allEmotes.size(); ++i) {
         auto const& e = m_allEmotes[i];
-        // Store lowercase key for case-insensitive lookup
         m_nameIndex[toLowerStr(e.name)] = i;
 
         if (e.type == EmoteType::Gif) {
@@ -227,7 +211,6 @@ void EmoteService::buildIndex() {
 
 std::optional<EmoteInfo> EmoteService::getEmoteByName(std::string const& name) const {
     std::lock_guard lock(m_mutex);
-    // Case-insensitive lookup: index keys are stored lowercase
     auto it = m_nameIndex.find(toLowerStr(name));
     if (it == m_nameIndex.end()) return std::nullopt;
     if (it->second >= m_allEmotes.size()) return std::nullopt;
@@ -238,7 +221,6 @@ std::vector<EmoteInfo> EmoteService::searchEmotes(std::string const& query, size
     if (query.empty()) return {};
     std::lock_guard lock(m_mutex);
 
-    // Lowercase query for case-insensitive matching
     std::string lq = query;
     for (auto& c : lq) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
@@ -258,7 +240,6 @@ std::vector<EmoteInfo> EmoteService::searchEmotes(std::string const& query, size
         if (startsWithMatches.size() >= maxResults) break;
     }
 
-    // Prioritize starts-with matches, then fill with contains
     std::vector<EmoteInfo> results = std::move(startsWithMatches);
     for (auto& e : containsMatches) {
         if (results.size() >= maxResults) break;
@@ -266,8 +247,6 @@ std::vector<EmoteInfo> EmoteService::searchEmotes(std::string const& query, size
     }
     return results;
 }
-
-// Disk persistence
 
 static std::filesystem::path getCatalogPath() {
     return Mod::get()->getSaveDir() / "emote_catalog.json";
@@ -333,7 +312,6 @@ void EmoteService::loadCatalogFromDisk() {
 
     auto json = jsonRes.unwrap();
 
-    // Check TTL
     auto savedAt = json["savedAt"].asInt().unwrapOr(0);
     auto now = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()
@@ -346,7 +324,6 @@ void EmoteService::loadCatalogFromDisk() {
         return;
     }
 
-    // Check catalog version — discard old format catalogs
     auto diskVersion = static_cast<int>(json["catalogVersion"].asInt().unwrapOr(0));
     if (diskVersion < CATALOG_VERSION) {
         log::info("[EmoteService] Disk catalog version {} < {}, discarding", diskVersion, CATALOG_VERSION);
@@ -357,7 +334,6 @@ void EmoteService::loadCatalogFromDisk() {
 
     if (!json.contains("emotes") || !json["emotes"].isArray()) return;
 
-    // Restore timelast
     auto savedTimelast = json["timelast"].asString().unwrapOr("");
 
     std::lock_guard lock(m_mutex);
@@ -372,7 +348,6 @@ void EmoteService::loadCatalogFromDisk() {
         info.name = item["name"].asString().unwrapOr("");
         info.filename = item["filename"].asString().unwrapOr("");
         info.type = parseEmoteType(item["type"].asString().unwrapOr("static"));
-        // Same GIF hardening as the fetch path.
         if (info.type != EmoteType::Gif &&
             classifyByFilename(info.filename) == EmoteType::Gif) {
             info.type = EmoteType::Gif;
@@ -381,7 +356,6 @@ void EmoteService::loadCatalogFromDisk() {
         info.size = static_cast<int>(item["size"].asInt().unwrapOr(0));
         info.url = item["url"].asString().unwrapOr("");
 
-        // Migrate legacy Bunny CDN URLs to Vercel proxy
         info.url = migrateEmoteUrl(info.url, info.filename);
 
         if (!info.name.empty() && !info.url.empty()) {
@@ -460,7 +434,6 @@ void EmoteService::clearCatalog() {
     }
     m_loaded.store(false, std::memory_order_release);
 
-    // Clear timelast so next fetch is a full fetch
     {
         std::lock_guard lock(m_mutex);
         m_timelast.clear();

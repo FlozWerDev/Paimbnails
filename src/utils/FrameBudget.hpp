@@ -40,7 +40,6 @@ inline int64_t remainingUs() {
     return std::max<int64_t>(0, kFrameBudgetUs - usedUsRef());
 }
 
-// true if budget remains this frame
 inline bool hasBudget() {
     return remainingUs() > 0;
 }

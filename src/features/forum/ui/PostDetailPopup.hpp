@@ -5,17 +5,17 @@
 class PostDetailPopup : public geode::Popup {
 protected:
     paimon::forum::Post m_post;
-    geode::CopyableFunction<void()> m_onChanged; // notify hub on like/reply/delete
+    geode::CopyableFunction<void()> m_onChanged;
 
     geode::ScrollLayer* m_scroll = nullptr;
     geode::TextInput*   m_replyInput = nullptr;
     cocos2d::CCLabelBMFont* m_cooldownLabel = nullptr;
-    std::string         m_replyTo; // parentReplyId to start a thread
+    std::string         m_replyTo;
 
     bool init(paimon::forum::Post const& post,
               geode::CopyableFunction<void()> onChanged);
 
-    void rebuild();          // rebuild all content (header + replies)
+    void rebuild();
     cocos2d::CCNode* makeAuthorRow(paimon::forum::Author const& author, int64_t when, float w);
     cocos2d::CCNode* makeReplyCard(paimon::forum::Reply const& r, float w);
 

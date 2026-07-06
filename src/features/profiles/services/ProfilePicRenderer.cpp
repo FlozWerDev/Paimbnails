@@ -10,7 +10,6 @@ using namespace cocos2d;
 
 namespace paimon::profile_pic {
 
-// Helper function to create animated icon using CCActions (more optimized than custom update)
 void applyIconAnimation(SimplePlayer* player, int animType, float speed, float amount, float baseScale) {
     if (!player || animType == 0) return;
 
@@ -20,20 +19,17 @@ void applyIconAnimation(SimplePlayer* player, int animType, float speed, float a
     float scaleFactor = 1.f + 0.15f * amount;
 
     if (animType == 1) {
-        // Zoom only - use CCScaleTo with ping-pong
         auto scaleUp = CCScaleTo::create(duration * 0.5f, baseScale * scaleFactor);
         auto scaleDown = CCScaleTo::create(duration * 0.5f, baseScale / scaleFactor);
         auto bounce = CCRepeatForever::create(CCSequence::create(scaleUp, scaleDown, nullptr));
         player->runAction(bounce);
     }
     else if (animType == 2) {
-        // Rotation only - continuous 360 rotation
         auto rotate = CCRotateBy::create(duration, 360.f * amount);
         auto spin = CCRepeatForever::create(rotate);
         player->runAction(spin);
     }
     else if (animType == 3) {
-        // Both - combine scale and rotation
         auto scaleUp = CCScaleTo::create(duration * 0.5f, baseScale * scaleFactor);
         auto scaleDown = CCScaleTo::create(duration * 0.5f, baseScale / scaleFactor);
         auto rotate = CCRotateBy::create(duration, 360.f * amount);
@@ -45,7 +41,6 @@ void applyIconAnimation(SimplePlayer* player, int animType, float speed, float a
         player->runAction(spin);
     }
     else if (animType == 4) {
-        // Flip X - flip horizontally back and forth
         float flipDur = duration * 0.5f;
         auto toZero  = CCScaleTo::create(flipDur, 0.f, baseScale);
         auto toNeg   = CCScaleTo::create(flipDur, -baseScale, baseScale);
@@ -55,7 +50,6 @@ void applyIconAnimation(SimplePlayer* player, int animType, float speed, float a
         player->runAction(seq);
     }
     else if (animType == 5) {
-        // Flip Y - flip vertically back and forth
         float flipDur = duration * 0.5f;
         auto toZero  = CCScaleTo::create(flipDur, baseScale, 0.f);
         auto toNeg   = CCScaleTo::create(flipDur, baseScale, -baseScale);
@@ -65,7 +59,6 @@ void applyIconAnimation(SimplePlayer* player, int animType, float speed, float a
         player->runAction(seq);
     }
     else if (animType == 6) {
-        // Shake - rapid left-right rotation oscillation
         float shakeDeg = 15.f * amount;
         float shakeDur = duration * 0.15f;
         auto r1 = CCRotateTo::create(shakeDur,  shakeDeg);
@@ -78,7 +71,6 @@ void applyIconAnimation(SimplePlayer* player, int animType, float speed, float a
         player->runAction(seq);
     }
     else if (animType == 7) {
-        // Bounce - drop and bounce up
         float bounceAmt = 8.f * amount;
         float t = duration * 0.25f;
         auto down  = CCMoveBy::create(t,        {0.f, -bounceAmt});
@@ -96,21 +88,17 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
     std::string shapeName = cfg.stencilSprite;
     if (shapeName.empty()) shapeName = "circle";
 
-    // Contenedor final
     auto container = CCNode::create();
     container->setContentSize({targetSize, targetSize});
     container->setAnchorPoint({0.5f, 0.5f});
     container->ignoreAnchorPointForPosition(false);
     container->setID("paimon-profile-container"_spr);
 
-    // Only Icon Mode - mostrar icono del juego en lugar de imagen
     if (cfg.onlyIconMode) {
         auto* gm = GameManager::sharedState();
         if (!gm) return container;
 
-        // Icon Image mode - mostrar icono sobre una imagen/GIF
         if (cfg.iconConfig.iconImageEnabled && !cfg.iconConfig.iconImagePath.empty()) {
-            // Cargar imagen de fondo
             CCSprite* bgImage = CCSprite::create(cfg.iconConfig.iconImagePath.c_str());
             if (bgImage) {
                 float maxDim = std::max(bgImage->getContentSize().width, bgImage->getContentSize().height);
@@ -122,11 +110,9 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
             }
         }
 
-        // Obtener el ID del icono segun el tipo
         int iconId = cfg.iconConfig.iconId;
         int iconType = cfg.iconConfig.iconType;
 
-        // Si no hay icono seleccionado, usar el del jugador actual
         if (iconId == 0) {
             switch (iconType) {
                 case 1: iconId = gm->m_playerShip; break;
@@ -142,13 +128,10 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
 
         auto* player = SimplePlayer::create(iconId);
         if (player) {
-            // Aplicar tipo de icono
             if (iconType > 0) {
                 player->updatePlayerFrame(iconId, static_cast<IconType>(iconType));
             }
 
-            // Aplicar colores correctamente
-            // Usar colores del jugador si esta seleccionado, o los colores custom
             if (cfg.iconConfig.colorSource == IconColorSource::Player) {
                 player->setColor(gm->colorForIdx(gm->m_playerColor));
                 player->setSecondColor(gm->colorForIdx(gm->m_playerColor2));
@@ -157,10 +140,8 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
                 player->setSecondColor(cfg.iconConfig.color2);
             }
 
-            // Forzar actualizacion de colores
             player->updateColors();
 
-            // Aplicar glow
             if (cfg.iconConfig.glowEnabled) {
                 if (cfg.iconConfig.glowColorSource == IconColorSource::Player) {
                     player->setGlowOutline(gm->colorForIdx(gm->m_playerColor));
@@ -171,7 +152,6 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
                 player->disableGlowOutline();
             }
 
-            // Escalar al tamano objetivo
             float maxDim = std::max(player->getContentSize().width, player->getContentSize().height);
             float baseScale = 1.f;
             if (maxDim > 0) {
@@ -182,7 +162,6 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
             player->setPosition({targetSize / 2.f, targetSize / 2.f});
             container->addChild(player);
 
-            // Apply CCAction-based animation (more optimized than custom update loop)
             applyIconAnimation(
                 player,
                 cfg.iconConfig.animationType,
@@ -192,7 +171,6 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
             );
         }
 
-        // Borde con la misma forma
         if (cfg.frameEnabled) {
             float borderSize = targetSize + cfg.frame.thickness * 2.f;
             auto border = createShapeBorder(
@@ -208,7 +186,6 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
             }
         }
 
-        // Aplica escala y rotacion
         float sx = std::clamp(cfg.scaleX, 0.2f, 3.0f);
         float sy = std::clamp(cfg.scaleY, 0.2f, 3.0f);
         container->setScaleX(sx);
@@ -218,9 +195,7 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
         return container;
     }
 
-    // Modo normal - mostrar imagen de perfil
 
-    // Forma del recorte
     auto stencil = createShapeStencil(shapeName, targetSize);
     if (!stencil) stencil = createShapeStencil("circle", targetSize);
     if (!stencil) return nullptr;
@@ -232,7 +207,6 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
     clipper->setContentSize({targetSize, targetSize});
     clipper->setID("paimon-profile-clipper"_spr);
 
-    // Imagen dentro del recorte
     if (imageNode) {
         float iw = std::max(imageNode->getContentWidth(), 1.f);
         float ih = std::max(imageNode->getContentHeight(), 1.f);
@@ -249,14 +223,12 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
         });
         clipper->addChild(imageNode);
     } else {
-        // Placeholder oscuro
         auto placeholder = paimon::SpriteHelper::createColorPanel(targetSize, targetSize, {40, 40, 40}, 220, 0.f);
         clipper->addChild(placeholder);
     }
 
     container->addChild(clipper);
 
-    // Borde con la misma forma
     if (cfg.frameEnabled) {
         float borderSize = targetSize + cfg.frame.thickness * 2.f;
         auto border = createShapeBorder(
@@ -272,7 +244,6 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
         }
     }
 
-    // Decoraciones ordenadas por zOrder
     for (auto const& deco : cfg.decorations) {
         if (deco.spriteName.empty()) continue;
         CCSprite* decoSpr = paimon::SpriteHelper::safeCreateWithFrameName(deco.spriteName.c_str());
@@ -287,7 +258,6 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
         decoSpr->setFlipX(deco.flipX);
         decoSpr->setFlipY(deco.flipY);
 
-        // Posicion relativa: 0 = centro, 1 = borde
         float dx = targetSize / 2.f + deco.posX * (targetSize / 2.f);
         float dy = targetSize / 2.f + deco.posY * (targetSize / 2.f);
         decoSpr->setPosition({dx, dy});
@@ -295,7 +265,6 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
         container->addChild(decoSpr, deco.zOrder + 10);
     }
 
-    // Aplica escala y rotacion
     float sx = std::clamp(cfg.scaleX, 0.2f, 3.0f);
     float sy = std::clamp(cfg.scaleY, 0.2f, 3.0f);
     container->setScaleX(sx);
@@ -305,4 +274,4 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
     return container;
 }
 
-} // namespace paimon::profile_pic
+}

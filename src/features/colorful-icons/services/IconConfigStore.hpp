@@ -6,7 +6,6 @@
 #include <Geode/loader/Event.hpp>
 
 #include <functional>
-#include <memory>
 
 namespace paimon::icons {
 
@@ -31,16 +30,9 @@ public:
 
     void load();
 
-    void notifyChangedExternally();
-
+    // Master switch, backed by the "colorful-icons-enabled" mod setting.
     bool isFeatureEnabled() const;
-
-    bool saveCurrentAsPreset(std::string const& name);
-    bool loadPreset(std::string const& name);
-    bool deletePreset(std::string const& name);
-
-    std::string exportToString() const;
-    bool importFromString(std::string const& serialized);
+    void setFeatureEnabled(bool enabled);
 
 private:
     IconConfigStore();

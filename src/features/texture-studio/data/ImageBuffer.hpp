@@ -1,9 +1,4 @@
 #pragma once
-//
-// Owning, contiguous RGBA8 pixel buffer. The whole texture-studio pipeline
-// uses this instead of raw stb pointers: move semantics + RAII, bounds-checked
-// access helpers, sub-rect copy/paste, rotation, and PNG I/O.
-//
 
 #include <Geode/Geode.hpp>
 
@@ -45,7 +40,7 @@ public:
     std::span<std::uint8_t>       span()       { return std::span(m_pixels); }
     std::span<std::uint8_t const> span() const { return std::span(m_pixels); }
 
-    // Slow bounds-checked pixel access — for hot loops use data() directly.
+    // Bounds-checked; for hot loops use data() directly.
     struct Pixel { std::uint8_t r, g, b, a; };
     Pixel at(int x, int y) const;
     void  setAt(int x, int y, Pixel p);

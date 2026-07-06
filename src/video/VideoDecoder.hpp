@@ -269,29 +269,33 @@ public:
     }
 
     // Producer-side wait: blocks (up to timeoutMs) until the ring has room
-    // for another write, or until the abort flag becomes true.  Returns true
-    // if a writable slot is available; false if timed out or aborted.
+    // for another write, or until aliveFlag becomes false.  Returns true
+    // if a writable slot is available; false if timed out or the producer was
+    // asked to stop.  aliveFlag is the "keep running" flag (e.g. m_decoding):
+    // while it is true the wait continues; when it flips to false the wait
+    // wakes so the caller can observe the stop request.
     // The caller MUST re-check isFull()/nextWrite() after this returns.
     template <typename Clock = std::chrono::steady_clock>
-    bool waitForWritable(int timeoutMs, const std::atomic<bool>* abortFlag = nullptr) {
+    bool waitForWritable(int timeoutMs, const std::atomic<bool>* aliveFlag = nullptr) {
         if (!isFull()) return true;
         std::unique_lock<std::mutex> lk(m_writableMtx);
         m_writableCv.wait_for(lk, std::chrono::milliseconds(timeoutMs), [&] {
-            if (abortFlag && !abortFlag->load(std::memory_order_relaxed)) return true;
+            if (aliveFlag && !aliveFlag->load(std::memory_order_relaxed)) return true;
             return !isFull();
         });
         return !isFull();
     }
 
     // Consumer-side wait: blocks (up to timeoutMs) until a frame is readable,
-    // or until the abort flag becomes true.  Returns true if a readable slot
-    // is available; false if timed out or aborted.
+    // or until aliveFlag becomes false.  Returns true if a readable slot is
+    // available; false if timed out or the consumer was asked to stop.  See
+    // waitForWritable for the aliveFlag semantics.
     template <typename Clock = std::chrono::steady_clock>
-    bool waitForReadable(int timeoutMs, const std::atomic<bool>* abortFlag = nullptr) {
+    bool waitForReadable(int timeoutMs, const std::atomic<bool>* aliveFlag = nullptr) {
         if (!isEmpty()) return true;
         std::unique_lock<std::mutex> lk(m_readableMtx);
         m_readableCv.wait_for(lk, std::chrono::milliseconds(timeoutMs), [&] {
-            if (abortFlag && !abortFlag->load(std::memory_order_relaxed)) return true;
+            if (aliveFlag && !aliveFlag->load(std::memory_order_relaxed)) return true;
             return !isEmpty();
         });
         return !isEmpty();

@@ -1,7 +1,9 @@
 ﻿#include "FeatureConfigPopup.hpp"
 
+#include "../utils/DynamicPopupRegistry.hpp"
 #include "../features/settings-panel/services/SettingsPanelManager.hpp"
 #include "../features/settings-panel/ui/SettingsControls.hpp"
+#include "../features/transitions/services/TransitionManager.hpp"
 #include "../features/transitions/ui/TransitionConfigPopup.hpp"
 #include "../features/cursor/ui/CursorConfigPopup.hpp"
 #include "../features/pet/ui/PetConfigPopup.hpp"
@@ -18,6 +20,7 @@
 #include <Geode/ui/GeodeUI.hpp>
 
 #include <functional>
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -27,8 +30,6 @@ using namespace geode::prelude;
 using namespace paimon::settings_ui;
 
 namespace {
-
-// typed access to settings and saved values
 
 template<typename T>
 T gset(const char* key) {
@@ -56,23 +57,18 @@ void openNativeSettings() {
     geode::openSettingsPopup(Mod::get(), false);
 }
 
-// registry types
-
 struct FeatureGroup {
     std::string title;
     std::string subtitle;
-    // builder adds rows to 'container' at the given 'width'
     std::function<void(CCNode* container, float width)> build;
 };
-
-// group builders
 
 void buildGeneralGroup(CCNode* c, float w) {
     c->addChild(createSectionHeader("Idioma & Logs", w));
 
     c->addChild(createDropdownRow("Language",
         gset<std::string>("language"),
-        {"english", "spanish", "portuguese", "french", "german", "russian", "japanese"},
+        {"english", "spanish"},
         [](std::string const& v) { sset<std::string>("language", v); },
         w));
 
@@ -439,16 +435,11 @@ void buildPopupExitGroup(CCNode* c, float w) {
 
 void buildPopupBlurGroup(CCNode* c, float w) {
     c->addChild(createSectionHeader("Desenfoque de Fondo", w));
+    ssaved<std::string>("popup-blur-style", "paiblur");
 
     c->addChild(createToggleRow("Popup Blur",
         gset<bool>("popup-blur-enabled"),
         [](bool v) { sset<bool>("popup-blur-enabled", v); },
-        w));
-
-    c->addChild(createDropdownRow("Blur Style",
-        gsaved<std::string>("popup-blur-style", "paiblur"),
-        {"paiblur", "paimonblur", "gaussian"},
-        [](std::string const& v) { ssaved<std::string>("popup-blur-style", v); },
         w));
 
     c->addChild(createSliderRow("Blur Intensity",
@@ -512,7 +503,257 @@ void buildScoreCellGroup(CCNode* c, float w) {
         "Aplica a las celdas de leaderboards y scores en el juego.", w));
 }
 
-// registry
+void setGlobalTransitionDuration(float duration) {
+    auto& tm = TransitionManager::get();
+    tm.loadConfig();
+    auto cfg = tm.getGlobalConfig();
+    cfg.duration = std::clamp(duration, 0.05f, 3.0f);
+    tm.setGlobalConfig(cfg);
+    tm.saveConfig();
+}
+
+void applySmoothUIPreset(std::string const& preset) {
+    ssaved<std::string>("smooth-ui-preset", preset);
+
+    auto setBase = [](bool enabled, float globalSpeed, float strength) {
+        sset<bool>("smooth-ui-enabled", enabled);
+        ssaved<double>("smooth-ui-global-speed", globalSpeed);
+        ssaved<double>("smooth-ui-motion-strength", strength);
+        ssaved<bool>("smooth-ui-animate-buttons", enabled);
+        ssaved<std::string>("smooth-ui-button-scope", enabled ? "all" : "off");
+        ssaved<bool>("smooth-ui-reduced-motion", !enabled);
+    };
+
+    if (preset == "off") {
+        setBase(false, 1.0f, 0.0f);
+        sset<bool>("dynamic-popup-enabled", false);
+        sset<bool>("dynamic-exit-enabled", false);
+        sset<bool>("smooth-scroll", false);
+        ssaved<bool>("popup-blur-show-placeholder", true);
+        TransitionManager::get().setEnabled(false);
+        TransitionManager::get().saveConfig();
+        return;
+    }
+
+    sset<bool>("dynamic-popup-enabled", true);
+    sset<bool>("dynamic-exit-enabled", true);
+    sset<bool>("smooth-scroll", true);
+    ssaved<bool>("popup-blur-show-placeholder", true);
+
+    if (preset == "subtle") {
+        setBase(true, 1.25f, 0.65f);
+        ssaved<std::string>("dynamic-popup-style", "zoom-fade");
+        ssaved<double>("dynamic-popup-speed", 1.35);
+        ssaved<double>("dynamic-exit-speed", 1.45);
+        ssaved<double>("popup-blur-fade-duration", 0.12);
+        ssaved<double>("smooth-scroll-smoothness", 0.75);
+        ssaved<double>("smooth-scroll-sensitivity", 1.55);
+        ssaved<double>("smooth-ui-button-press-scale", 0.97);
+        ssaved<bool>("smooth-ui-button-release-bounce", false);
+        setGlobalTransitionDuration(0.25f);
+    } else if (preset == "silky") {
+        setBase(true, 0.88f, 1.15f);
+        ssaved<std::string>("dynamic-popup-style", "paimonUI");
+        ssaved<double>("dynamic-popup-speed", 0.88);
+        ssaved<double>("dynamic-exit-speed", 0.95);
+        ssaved<double>("popup-blur-fade-duration", 0.24);
+        ssaved<double>("smooth-scroll-smoothness", 1.85);
+        ssaved<double>("smooth-scroll-sensitivity", 2.0);
+        ssaved<double>("smooth-ui-button-press-scale", 0.93);
+        ssaved<bool>("smooth-ui-button-release-bounce", true);
+        setGlobalTransitionDuration(0.48f);
+    } else if (preset == "bouncy") {
+        setBase(true, 0.95f, 1.25f);
+        ssaved<std::string>("dynamic-popup-style", "jelly");
+        ssaved<double>("dynamic-popup-speed", 0.90);
+        ssaved<double>("dynamic-exit-speed", 1.05);
+        ssaved<double>("popup-blur-fade-duration", 0.18);
+        ssaved<double>("smooth-scroll-smoothness", 1.35);
+        ssaved<double>("smooth-scroll-sensitivity", 2.15);
+        ssaved<double>("smooth-ui-button-press-scale", 0.90);
+        ssaved<bool>("smooth-ui-button-release-bounce", true);
+        setGlobalTransitionDuration(0.40f);
+    } else if (preset == "cinematic") {
+        setBase(true, 0.72f, 1.35f);
+        ssaved<std::string>("dynamic-popup-style", "elastic-drop");
+        ssaved<double>("dynamic-popup-speed", 0.78);
+        ssaved<double>("dynamic-exit-speed", 0.85);
+        ssaved<double>("popup-blur-fade-duration", 0.32);
+        ssaved<double>("smooth-scroll-smoothness", 2.2);
+        ssaved<double>("smooth-scroll-sensitivity", 1.8);
+        ssaved<double>("smooth-ui-button-press-scale", 0.92);
+        ssaved<bool>("smooth-ui-button-release-bounce", true);
+        TransitionManager::get().setEnabled(true);
+        setGlobalTransitionDuration(0.65f);
+    } else {
+        setBase(true, 1.0f, 1.0f);
+        ssaved<std::string>("dynamic-popup-style", "paimonUI");
+        ssaved<double>("dynamic-popup-speed", 1.0);
+        ssaved<double>("dynamic-exit-speed", 1.0);
+        ssaved<double>("popup-blur-fade-duration", 0.18);
+        ssaved<double>("smooth-scroll-smoothness", 1.0);
+        ssaved<double>("smooth-scroll-sensitivity", 2.0);
+        ssaved<double>("smooth-ui-button-press-scale", 0.94);
+        ssaved<bool>("smooth-ui-button-release-bounce", true);
+        setGlobalTransitionDuration(0.35f);
+    }
+}
+
+void buildSmoothUIGroup(CCNode* c, float w) {
+    TransitionManager::get().loadConfig();
+
+    c->addChild(createSectionHeader("Smooth UI Control Center", w));
+
+    c->addChild(createToggleRow("Smooth UI",
+        gset<bool>("smooth-ui-enabled"),
+        [](bool v) { sset<bool>("smooth-ui-enabled", v); },
+        w));
+
+    c->addChild(createDropdownRow("Preset",
+        gsaved<std::string>("smooth-ui-preset", "balanced"),
+        {"balanced", "subtle", "silky", "bouncy", "cinematic", "off"},
+        [](std::string const& v) { applySmoothUIPreset(v); },
+        w));
+
+    c->addChild(createHintRow(
+        "Preset changes apply immediately; reopen this popup to refresh slider labels.",
+        w));
+
+    c->addChild(createToggleRow("Reduced Motion",
+        gsaved<bool>("smooth-ui-reduced-motion", false),
+        [](bool v) { ssaved<bool>("smooth-ui-reduced-motion", v); },
+        w));
+
+    c->addChild(createSliderRow("Global Speed",
+        static_cast<float>(gsaved<double>("smooth-ui-global-speed", 1.0)),
+        0.35f, 2.5f,
+        [](float v) { ssaved<double>("smooth-ui-global-speed", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createSliderRow("Motion Strength",
+        static_cast<float>(gsaved<double>("smooth-ui-motion-strength", 1.0)),
+        0.0f, 2.0f,
+        [](float v) { ssaved<double>("smooth-ui-motion-strength", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createSectionHeader("Smooth Popups", w));
+
+    c->addChild(createToggleRow("Smooth Popups",
+        gset<bool>("dynamic-popup-enabled"),
+        [](bool v) { sset<bool>("dynamic-popup-enabled", v); },
+        w));
+
+    c->addChild(createDropdownRow("Popup Style",
+        gsaved<std::string>("dynamic-popup-style", "paimonUI"),
+        {"paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic",
+         "bounce", "slide-up", "slide-down", "slide-left", "slide-right",
+         "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop",
+         "glitch-shake", "card-turn", "fly-spin"},
+        [](std::string const& v) { ssaved<std::string>("dynamic-popup-style", v); },
+        w));
+
+    c->addChild(createSliderRow("Popup Speed",
+        static_cast<float>(gsaved<double>("dynamic-popup-speed", 1.0)),
+        0.3f, 3.0f,
+        [](float v) { ssaved<double>("dynamic-popup-speed", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createToggleRow("Smooth Popup Exit",
+        gset<bool>("dynamic-exit-enabled"),
+        [](bool v) { sset<bool>("dynamic-exit-enabled", v); },
+        w));
+
+    c->addChild(createSliderRow("Exit Speed",
+        static_cast<float>(gsaved<double>("dynamic-exit-speed", 1.0)),
+        0.3f, 3.0f,
+        [](float v) { ssaved<double>("dynamic-exit-speed", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createSectionHeader("Buttons", w));
+
+    c->addChild(createToggleRow("Button Animations",
+        gsaved<bool>("smooth-ui-animate-buttons", true),
+        [](bool v) { ssaved<bool>("smooth-ui-animate-buttons", v); },
+        w));
+
+    c->addChild(createDropdownRow("Button Scope",
+        gsaved<std::string>("smooth-ui-button-scope", "all"),
+        {"all", "paimon", "off"},
+        [](std::string const& v) { ssaved<std::string>("smooth-ui-button-scope", v); },
+        w));
+
+    c->addChild(createSliderRow("Press Scale",
+        static_cast<float>(gsaved<double>("smooth-ui-button-press-scale", 0.94)),
+        0.80f, 1.05f,
+        [](float v) { ssaved<double>("smooth-ui-button-press-scale", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createToggleRow("Release Bounce",
+        gsaved<bool>("smooth-ui-button-release-bounce", true),
+        [](bool v) { ssaved<bool>("smooth-ui-button-release-bounce", v); },
+        w));
+
+    c->addChild(createSectionHeader("Scroll & Editor Zoom", w));
+
+    c->addChild(createToggleRow("Smooth Scroll",
+        gset<bool>("smooth-scroll"),
+        [](bool v) { sset<bool>("smooth-scroll", v); },
+        w));
+
+    c->addChild(createSliderRow("Scroll Sensitivity",
+        static_cast<float>(gsaved<double>("smooth-scroll-sensitivity", 2.0)),
+        0.25f, 5.0f,
+        [](float v) { ssaved<double>("smooth-scroll-sensitivity", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createSliderRow("Scroll Smoothness",
+        static_cast<float>(gsaved<double>("smooth-scroll-smoothness", 1.0)),
+        0.25f, 3.0f,
+        [](float v) { ssaved<double>("smooth-scroll-smoothness", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createToggleRow("Smooth Editor Zoom",
+        gsaved<bool>("smooth-scroll-editor-zoom", true),
+        [](bool v) { ssaved<bool>("smooth-scroll-editor-zoom", v); },
+        w));
+
+    c->addChild(createSliderRow("Editor Zoom Smoothness",
+        static_cast<float>(gsaved<double>("smooth-scroll-editor-zoom-smoothness", 1.15)),
+        0.25f, 3.0f,
+        [](float v) { ssaved<double>("smooth-scroll-editor-zoom-smoothness", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createSectionHeader("Blur & Transitions", w));
+
+    c->addChild(createToggleRow("Popup Blur",
+        gset<bool>("popup-blur-enabled"),
+        [](bool v) { sset<bool>("popup-blur-enabled", v); },
+        w));
+
+    c->addChild(createSliderRow("Blur Fade",
+        static_cast<float>(gsaved<double>("popup-blur-fade-duration", 0.18)),
+        0.0f, 0.8f,
+        [](float v) { ssaved<double>("popup-blur-fade-duration", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createToggleRow("Scene Transitions",
+        TransitionManager::get().isEnabled(),
+        [](bool v) {
+            TransitionManager::get().setEnabled(v);
+            TransitionManager::get().saveConfig();
+        },
+        w));
+
+    c->addChild(createSliderRow("Transition Duration",
+        TransitionManager::get().getGlobalConfig().duration,
+        0.05f, 1.5f,
+        [](float v) { setGlobalTransitionDuration(v); },
+        w));
+
+    c->addChild(createLinkRow("Advanced Transition Editor",
+        []() { if (auto* p = TransitionConfigPopup::create()) p->show(); },
+        w));
+}
 
 std::unordered_map<std::string, FeatureGroup> const& featureGroupRegistry() {
     static const std::unordered_map<std::string, FeatureGroup> registry = {
@@ -544,6 +785,8 @@ std::unordered_map<std::string, FeatureGroup> const& featureGroupRegistry() {
             {"Salida de Popups", "Animacion al cerrar.", &buildPopupExitGroup}},
         {"popup-blur",
             {"Blur de Popups", "Estilo, intensidad, oscuridad y fade.", &buildPopupBlurGroup}},
+        {"smooth-ui",
+            {"Smooth UI", "Popups, botones, scroll, blur y transiciones.", &buildSmoothUIGroup}},
         {"performance",
             {"Rendimiento", "Descargas, cache y limpieza.", &buildPerformanceGroup}},
         {"score-cell",
@@ -612,6 +855,11 @@ GranularRoute routeForGranular(std::string const& englishName) {
         {"Notification Prefix",               "menu-loop-notifications"},
 
         // Cat 5: Extras
+        {"Smooth UI",                         "smooth-ui"},
+        {"Smooth Popups",                     "smooth-ui"},
+        {"Button Animations",                 "smooth-ui"},
+        {"Global UI Speed",                   "smooth-ui"},
+        {"Reduced Motion",                    "smooth-ui"},
         {"Score Cell Style",                  "score-cell"},
         {"Dynamic Popups",                    "popup-animation"},
         {"Dynamic Popup Exit",                "popup-exit"},
@@ -702,18 +950,17 @@ bool FeatureConfigPopup::init(std::string const& featureKey) {
     auto const& reg = featureGroupRegistry();
     auto it = reg.find(featureKey);
     if (it == reg.end()) {
-        // group doesn't exist: don't open
         return false;
     }
     auto const& group = it->second;
 
     if (!Popup::init(380.f, 260.f)) return false;
+    paimon::markDynamicPopup(this);
 
     this->setTitle(group.title.c_str());
 
     auto winSize = m_mainLayer->getContentSize();
 
-    // subtitle (below the title)
     if (!group.subtitle.empty()) {
         auto* subtitleLbl = CCLabelBMFont::create(group.subtitle.c_str(), "chatFont.fnt");
         subtitleLbl->setScale(0.55f);

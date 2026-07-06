@@ -18,19 +18,14 @@ public:
     void set(int32_t levelID, cocos2d::ccColor3B a, cocos2d::ccColor3B b);
     std::optional<LevelColorPair> getPair(int32_t levelID) const;
     
-    // fuerza escritura a disco si hay cambios pendientes
     void flushIfDirty();
     
-    // Carga level_colors.paimon en un hilo de fondo (no bloquear main en getPair).
     void preloadIndexFromDisk();
 
-    // procesar todas miniatura cacheadas y extraer colores
     void extractColorsFromCache();
     
-    // extraer colores de un ccimage cargado
     void extractFromImage(int32_t levelID, cocos2d::CCImage* image);
 
-    // extraer colores de datos rgba/rgb crudos
     void extractFromRawData(int32_t levelID, const uint8_t* data, int width, int height, bool hasAlpha);
 
 private:
@@ -45,6 +40,6 @@ private:
     mutable std::mutex m_mutex;
     mutable bool m_dirty = false;
     mutable int m_pendingWrites = 0;
-    static constexpr int BATCH_SAVE_THRESHOLD = 10; // guardar cada N cambios
+    static constexpr int BATCH_SAVE_THRESHOLD = 10;
 };
 

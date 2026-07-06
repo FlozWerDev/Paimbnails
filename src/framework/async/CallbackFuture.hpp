@@ -10,10 +10,6 @@
 
 namespace paimon::async_api {
 
-/**
- * Turn a single-shot callback API into an arc::Future.
- * Start and completion run on the main thread (Cocos / Geode).
- */
 template <typename T, typename StartFn>
     requires std::invocable<StartFn, geode::CopyableFunction<void(T)> const&>
 arc::Future<T> awaitCallback(StartFn&& start) {
@@ -39,4 +35,4 @@ arc::Future<T> awaitCallback(StartFn&& start) {
     co_return T{};
 }
 
-} // namespace paimon::async_api
+} // namespace paimon::async_api 8) 

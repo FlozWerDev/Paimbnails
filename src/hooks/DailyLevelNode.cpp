@@ -93,7 +93,6 @@ public:
 
 class $modify(PaimonDailyLevelNode, DailyLevelNode) {
     static void onModify(auto& self) {
-        // Run after geode.node-ids is ready
         paimon::hooks::afterNodeIdsOrLate(self, "DailyLevelNode::init");
     }
 

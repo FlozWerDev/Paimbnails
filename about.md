@@ -67,7 +67,7 @@ One popup to configure everything: <cy>background type, thumbnail size, blur, da
 ## Special Thanks
 
 <cr>Admins</c>:
-[Gabriv4](user:23785880), [AlvaroEter](user:17431458)
+[AlvaroEter](user:17431458)
 
 <cp>Moderators \& Playtesters</c>:
-[Robert55GD](user:25339555), [Jhano04](user:1371046), [Debihan](user:4315943), [SirexcelDJ](user:4098680), [Neeki](user:14195348), [Zartnez](user:9851985), [AdrixOnCube](user:22682981), [Killtama](user:10444919), [ZeroCheck55](user:13594949), [Maxclaudio5](user:15161769), [kiannuh](user:4618743), [Aztraa2](user:38945801), [GATR2007](user:13919980), [ElD0c](user:6205966), [ChuchitoDomin](user:8102168), [nightrex](user:14428020), [assassindarkexe](user:25498849).
+[Robert55GD](user:25339555), [Jhano04](user:1371046), [Debihan](user:4315943), [SirexcelDJ](user:4098680), [Neeki](user:14195348), [Zartnez](user:9851985), [AdrixOnCube](user:22682981), [Killtama](user:10444919), [ZeroCheck55](user:13594949), [Maxclaudio5](user:15161769), [Aztraa2](user:38945801), [GATR2007](user:13919980), [ElD0c](user:6205966), [ChuchitoDomin](user:8102168), [nightrex](user:14428020), [assassindarkexe](user:25498849).

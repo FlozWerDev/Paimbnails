@@ -11,8 +11,6 @@
 
 namespace paimon {
 
-// HookResult
-
 enum class HookAction { Allow, Deny, Modify };
 
 struct HookResult {
@@ -30,8 +28,7 @@ struct HookResult {
     bool isModified() const { return action == HookAction::Modify; }
 };
 
-// Context passed to each hook
-
+// Context passed to each hook.
 struct HookContext {
     std::string action;       // "upload", "validate", "security-check"
     int levelID = 0;
@@ -42,12 +39,10 @@ struct HookContext {
 };
 
 // Interceptor types
-
 using PreHookFn  = std::function<HookResult(HookContext const&)>;
 using PostHookFn = std::function<void(HookContext const&, bool success)>;
 
-// HookInterceptor
-// Pre/post interceptors ONLY for: uploads, security, validation.
+// HookInterceptor: pre/post interceptors ONLY for uploads, security, validation.
 //
 // Usage:
 //   HookInterceptor::get().addPreHook("upload", [](HookContext const& ctx) {
@@ -65,13 +60,11 @@ public:
         return instance;
     }
 
-    // Register a pre-hook for a specific action.
     void addPreHook(std::string const& action, PreHookFn hook) {
         std::lock_guard lock(m_mutex);
         m_preHooks[action].push_back(std::move(hook));
     }
 
-    // Register a post-hook for a specific action (observation).
     void addPostHook(std::string const& action, PostHookFn hook) {
         std::lock_guard lock(m_mutex);
         m_postHooks[action].push_back(std::move(hook));
@@ -92,7 +85,6 @@ public:
         for (auto const& hook : hooks) {
             auto result = hook(ctx);
             if (result.action == HookAction::Deny) {
-                // Publish denial event.
                 EventBus::get().publish(PermissionDeniedEvent{
                     "", ctx.action, result.reason
                 });

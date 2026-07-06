@@ -14,7 +14,6 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Pack a 16-bit value as little-endian.
 void writeU16LE(std::vector<std::uint8_t>& out, std::uint16_t v) {
     out.push_back(static_cast<std::uint8_t>(v & 0xFF));
     out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFF));
@@ -41,7 +40,6 @@ std::uint32_t readU32LE(std::uint8_t const* p) {
 
 bool maskNonEmpty(MaskBuffer const& m) {
     if (m.empty()) return false;
-    // Treat all-zero as empty. Saves disk space when one role is unused.
     for (auto v : m.data) {
         if (v != 0) return true;
     }
@@ -64,7 +62,6 @@ MaskBuffer makeBlankMask(int W, int H) {
 
 geode::Result<> ManualOverrideStore::save(std::filesystem::path const& path,
                                           MaskSet const& masks) {
-    // Determine which masks are present.
     bool hasC1   = maskNonEmpty(masks.color1);
     bool hasC2   = maskNonEmpty(masks.color2);
     bool hasGlow = maskNonEmpty(masks.glow);
@@ -74,8 +71,6 @@ geode::Result<> ManualOverrideStore::save(std::filesystem::path const& path,
         return Err("ManualOverrideStore::save: all masks empty for {}", geode::utils::string::pathToString(path));
     }
 
-    // Determine canonical W/H. We require all non-empty masks to share
-    // dimensions; the writer normalises to the first non-empty mask.
     int W = 0, H = 0;
     auto pick = [&](MaskBuffer const& m) {
         if (W == 0 && !m.empty()) { W = m.width; H = m.height; }
@@ -118,7 +113,6 @@ geode::Result<> ManualOverrideStore::save(std::filesystem::path const& path,
     if (hasGlow) appendMask(buf, masks.glow);
     if (hasOL)   appendMask(buf, masks.outline);
 
-    // Ensure parent dir exists.
     std::error_code ec;
     auto parent = path.parent_path();
     if (!parent.empty()) {
@@ -206,7 +200,6 @@ geode::Result<> ManualOverrideStore::deleteForSlot(std::string_view slotId,
     auto path = SlotPaths::overrideFile(slotId, spriteName);
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
-        // Idempotent: not-existing is fine.
         return Ok();
     }
     std::filesystem::remove(path, ec);

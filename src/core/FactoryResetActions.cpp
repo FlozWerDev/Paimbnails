@@ -155,8 +155,6 @@ void resetFeatureManagers() {
 }
 
 void refreshMenuIfVisible() {
-    // Rebuild the menu scene from scratch so MenuLayer::init re-applies the
-    // freshly reset background/layout configuration.
     TransitionManager::get().replaceScene(MenuLayer::scene(false));
 }
 } // namespace

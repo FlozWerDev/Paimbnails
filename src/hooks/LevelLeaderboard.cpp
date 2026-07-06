@@ -98,7 +98,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
             }
         );
 
-        // Style the leaderboard list
         if (m_list) {
             styleLeaderboardList(m_list);
             normalizeCellBackgrounds(m_list);
@@ -116,7 +115,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         CCPoint popupCenter = {layer->getContentSize().width * 0.5f,
                                layer->getContentSize().height * 0.5f};
 
-        // Find the popup's background node
         CCNode* bgNode = layer->getChildByID("background");
         if (!bgNode) {
             for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
@@ -126,7 +124,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         if (bgNode) {
             popupSize   = bgNode->getScaledContentSize();
             popupCenter = bgNode->getPosition();
-            // Frosted-glass effect behind the popup
         }
 
         float padding   = 3.f;
@@ -153,7 +150,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         dark->setPosition({0.f, 0.f});
         clip->addChild(dark);
 
-        // Replace the previous clip
         if (m_fields->m_bgClip && m_fields->m_bgClip->getParent()) {
             m_fields->m_bgClip->removeFromParent();
         }
@@ -186,14 +182,12 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         auto* contentLayer = findLeaderboardContentLayer(list);
         if (!contentLayer) return;
 
-        // Hide each cell's m_backgroundLayer
         auto* cellChildren = contentLayer->getChildren();
         if (!cellChildren) return;
         for (auto* child : CCArrayExt<CCNode*>(cellChildren)) {
             auto* cell = typeinfo_cast<TableViewCell*>(child);
             if (!cell) continue;
 
-            // Hide vanilla's alternating background
             if (auto* bg = cell->m_backgroundLayer) {
                 bg->setOpacity(0);
             }
@@ -208,7 +202,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         auto* cellChildren = contentLayer->getChildren();
         if (!cellChildren) return;
 
-        // Collect all visible cells
         std::vector<CCNode*> cells;
         for (auto* child : CCArrayExt<CCNode*>(cellChildren)) {
             if (typeinfo_cast<TableViewCell*>(child)) {
@@ -216,7 +209,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
             }
         }
 
-        // Animate each cell with a staggered delay
         for (size_t i = 0; i < cells.size(); i++) {
             auto* cell = cells[i];
             float originalX = cell->getPositionX();
@@ -225,7 +217,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
             // Initial state: shifted right and transparent
             cell->setPositionX(originalX + 30.f);
 
-            // Make all children invisible initially
             if (auto* ch = cell->getChildren()) {
                 for (auto* child : CCArrayExt<CCNode*>(ch)) {
                     if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(child)) {
@@ -237,14 +228,12 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
             float delay = i * 0.04f;
             float duration = 0.3f;
 
-            // Slide in from the right
             cell->runAction(CCSequence::create(
                 CCDelayTime::create(delay),
                 CCEaseOut::create(CCMoveTo::create(duration, {originalX, originalY}), 2.0f),
                 nullptr
             ));
 
-            // Fade in all children
             if (auto* ch = cell->getChildren()) {
                 for (auto* child : CCArrayExt<CCNode*>(ch)) {
                     auto* tableCell = typeinfo_cast<TableViewCell*>(cell);

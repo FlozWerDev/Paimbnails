@@ -1,7 +1,5 @@
 #pragma once
 
-// Chequeos periodicos de salud del thumbnail en LevelCell (recovery + timeout).
-
 #include <chrono>
 #include <cstdint>
 

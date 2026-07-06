@@ -2,6 +2,7 @@
 
 #include <Geode/binding/PauseLayer.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <Geode/loader/Hook.hpp>
 #include <atomic>
 
 namespace paimon {
@@ -63,8 +64,26 @@ namespace paimon {
         return pauseZoomHiddenFlag().load(std::memory_order_acquire);
     }
 
+    // The CCNode::visit filter hook (PaimonPauseZoomVisitFilter in PlayLayer.cpp).
+    // CCNode::visit runs for every node every frame, so the hook stays disabled
+    // except while the PauseLayer is actually hidden by pause-zoom; that removes
+    // the trampoline overhead from the 99.9% of frames that don't need the filter.
+    inline std::atomic<geode::Hook*>& pauseZoomVisitHookSlot() {
+        static std::atomic<geode::Hook*> s_hook{nullptr};
+        return s_hook;
+    }
+
+    inline void setPauseZoomVisitHook(geode::Hook* hook) {
+        pauseZoomVisitHookSlot().store(hook, std::memory_order_release);
+    }
+
     inline void setPauseZoomHidden(bool hidden) {
-        pauseZoomHiddenFlag().store(hidden, std::memory_order_release);
+        bool prev = pauseZoomHiddenFlag().exchange(hidden, std::memory_order_acq_rel);
+        if (prev == hidden) return;
+        if (auto* hook = pauseZoomVisitHookSlot().load(std::memory_order_acquire)) {
+            if (hidden) (void)hook->enable();
+            else (void)hook->disable();
+        }
     }
 
     // Scan the scene for a real PauseLayer. More reliable than the atomic registry,

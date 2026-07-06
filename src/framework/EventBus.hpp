@@ -12,10 +12,8 @@
 
 namespace paimon {
 
-// Opaque handle for unsubscription.
 using SubscriptionHandle = uint64_t;
 
-// Base interface for typed subscriber containers.
 class ISubscriberList {
 public:
     virtual ~ISubscriberList() = default;

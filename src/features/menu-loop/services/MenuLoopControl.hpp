@@ -247,7 +247,7 @@ namespace MenuLoopControl {
     // Jump amount in milliseconds. If SHIFT is held, doubles;
     // CTRL+SHIFT triples (mimicking the reference mod).
     inline int getJumpAmountMs() {
-        int base = static_cast<int>(Mod::get()->getSavedValue<int>("menuLoopSeekAmountMs", 5000));
+        int base = static_cast<int>(Mod::get()->getSettingValue<int64_t>("menuLoopSeekAmountMs"));
         if (base < 100) base = 100;
         if (base > 30000) base = 30000;
 #ifdef GEODE_IS_DESKTOP

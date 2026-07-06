@@ -73,7 +73,7 @@ inline std::vector<InfoSection> getExtrasInfo() {
         {"Custom Cursor", "Reemplaza el cursor del sistema con imagenes propias. Estados Idle/Move/Hover/Click, trail, e importacion de cursores de Windows (.cur/.ani) y packs .zip. Se oculta en gameplay.", {100, 200, 255}},
         {"Beat Shaders", "Fondos shader animados que reaccionan al ritmo de la musica. Aplican sobre cualquier fondo (default, imagen, video, GIF).", {255, 100, 220}},
         {"Dynamic Popup", "Animaciones custom para todos los popups de Paimbnails: slide, elastic, bounce, flip, fold.", {180, 255, 140}},
-        {"Popup Blur", "Blur del fondo detras de los popups. Estilos: gaussian o paimonblur. Configurable intensidad y bordes.", {180, 255, 140}},
+        {"Popup Blur", "Blur en tiempo real detras de los popups con Paiblur. Configurable intensidad y oscuridad.", {180, 255, 140}},
         {"Profile Image", "Editor de foto de perfil con formas, decoraciones y preview en vivo.", {255, 170, 220}},
         {"Rendimiento", "Cache de GIFs en RAM, threads de descarga, disk cache. Ajusta segun tu hardware.", {255, 150, 150}},
         {"Para Ti (For You)", "Recomendaciones personalizadas de niveles basadas en tu historial de juego.", {120, 255, 120}},

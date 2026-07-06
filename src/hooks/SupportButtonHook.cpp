@@ -5,7 +5,6 @@
 
 using namespace geode::prelude;
 
-// Support button handler
 class SupportButtonHandler : public CCNode {
 public:
     static SupportButtonHandler* create() {
@@ -48,12 +47,10 @@ $execute {
                 return ListenerResult::Propagate;
             }
 
-            // Handler as a child of the button
             auto handler = SupportButtonHandler::create();
             handler->setID("support-handler"_spr);
             menuItem->addChild(handler);
 
-            // Redirect to the custom handler
             menuItem->setTarget(handler, menu_selector(SupportButtonHandler::onSupportClicked));
             menuItem->setEnabled(true);
 

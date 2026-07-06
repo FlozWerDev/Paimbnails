@@ -1,22 +1,4 @@
 #pragma once
-//
-// TextureProject.hpp - Data model for one user "slot" in the texture studio.
-//
-// A TextureProject captures everything needed to (re)build a pack:
-//   - which sheets to process,
-//   - which colors to use,
-//   - which sprites have manual overrides (only the index — the actual
-//     mask bytes live in separate .bin files via ManualOverrideStore),
-//   - timestamps for sorting in the slot list UI,
-//   - per-sprite auto-detection cache index (entries themselves go in
-//     a separate binary blob to keep project.json fast to parse).
-//
-// Why split heavy data out of project.json:
-//   project.json is the file the UI reads to populate the slot grid. We
-//   want it to load instantly even for slots with hundreds of overrides.
-//   Keeping project.json under a few KB lets us load all slots in one
-//   sweep on first open.
-//
 
 #include "../engine/PackExporterTypes.hpp"
 #include "../engine/UiSpriteCatalog.hpp"
@@ -30,33 +12,29 @@
 
 namespace paimon::texture_studio {
 
-// Reference to a sheet that this project pulls from. Stored as paths so
-// re-opening the slot still works even if GD is reinstalled to a new path
-// (the UI re-resolves via GdResourcesLocator and warns on mismatch).
+// Re-opening a slot must work even if GD moved; the UI re-resolves paths
+// via GdResourcesLocator and warns on mismatch.
 struct ProjectSheetRef {
-    std::string baseName;        // "GJ_GameSheet01"
-    std::string qualitySuffix;   // "-uhd"
-    std::string sourcePlistPath; // string-form for matjson round-trip
+    std::string baseName;
+    std::string qualitySuffix;
+    std::string sourcePlistPath;
     std::string sourcePngPath;
 };
 
-// Index of one manual override (the mask bytes live in a .bin file).
 struct ManualOverrideRef {
-    std::string spriteName;      // canonical name, used for filename
+    std::string spriteName;
     int  width  = 0;
     int  height = 0;
     int  version = 1;
-    std::int64_t modifiedAt = 0; // unix ms; lets us purge stale overrides
+    std::int64_t modifiedAt = 0;
 };
 
-// Index of one cached cluster set (the cluster details live in auto.bin).
 struct AutoCacheRef {
     std::string  spriteName;
-    std::uint64_t spriteHash = 0; // FNV-1a of the source sprite's RGBA bytes
+    std::uint64_t spriteHash = 0;  // FNV-1a of the source sprite's RGBA bytes
     int          clusterCount = 0;
 };
 
-// Per-sprite override settings (keyed by frame name in TextureProject).
 struct SpriteSetting {
     bool skip = false;
     bool useCustomColors = false;
@@ -64,63 +42,76 @@ struct SpriteSetting {
     cocos2d::ccColor3B color1{149, 226, 3};
     cocos2d::ccColor3B color2{28, 233, 255};
     cocos2d::ccColor3B colorGlow{255, 255, 255};
+    cocos2d::ccColor3B colorDetail{255, 255, 255};
+
+    // Placement of the custom image inside the frame (only meaningful when
+    // hasCustomImage is set).
+    ImageTransform imageTransform{};
+
+    // false = the image replaces the sprite entirely; true = the image is
+    // composited on top of the (tinted or vanilla) sprite.
+    bool imageOverlay = false;
 
     bool hasAny() const { return skip || useCustomColors || hasCustomImage; }
 };
 
-// One full slot.
 struct TextureProject {
     int schemaVersion = 1;
 
-    // Identity
-    std::string id;          // e.g. "paimbnails.texture_studio.mi_pack_rosa"
-    std::string name;        // user-facing, "Mi Pack Rosa"
-    std::string author;      // optional; shown on pack.json
-    std::int64_t createdAt  = 0;  // unix ms
+    std::string id;
+    std::string name;
+    std::string author;
+    std::int64_t createdAt  = 0;
     std::int64_t modifiedAt = 0;
 
-    // Source sheets
     std::vector<ProjectSheetRef> sheets;
     std::string representativeFrame;
     int representativeSheetIndex = -1;
 
-    // Recoloring config
     cocos2d::ccColor3B color1{149, 226, 3};
     cocos2d::ccColor3B color2{28, 233, 255};
     cocos2d::ccColor3B colorGlow{255, 255, 255};
+    // Interior white glyphs; pure white = keep vanilla.
+    cocos2d::ccColor3B colorDetail{255, 255, 255};
     int  brightness = 160;
 
-    // Toggles
+    // Tint engine tuning (see SpritePreviewOptions for semantics).
+    float maskSoftness     = 0.35f;
+    int   clusterPrecision = 5;
+    int   edgeCleanup      = 1;
+    int   outlineProtect   = 0;
+    float saturation       = 1.0f;
+    float contrast         = 0.0f;
+
     bool includeMediumPort       = false;
     bool alternativeGlowOverlay  = false;
     bool transparentLists        = false;
     bool colorGradientBg         = false;
     bool colorMainMenu           = false;
 
-    // Indexed heavy data (actual blobs on disk)
-    std::map<std::string, ManualOverrideRef> overrides;  // spriteName → ref
-    std::map<std::string, AutoCacheRef>      autoCache;  // spriteName → ref
-    std::map<std::string, SpriteSetting>     spriteSettings; // spriteName → per-sprite override
+    // PackGen asset-pack precision mode (see PackExportConfig).
+    bool usePackGenAssets   = true;
+    bool tintGoldFont       = false;
+    bool colorGoldTitles    = false;
+    bool colorDemonFaces    = false;
+    bool mythicCompat       = false;
+    bool includeModTextures = true;
+
+    std::map<std::string, ManualOverrideRef> overrides;
+    std::map<std::string, AutoCacheRef>      autoCache;
+    std::map<std::string, SpriteSetting>     spriteSettings;
     TintScope tintScope = TintScope::ButtonsOnly;
 
-    // Last build state
     bool         hasBuiltOnce  = false;
     std::int64_t lastBuiltAt   = 0;
-    std::string  lastZipRelPath; // relative to slotDir, e.g. "output/pack.zip"
+    std::string  lastZipRelPath;
 
-    // Helpers
-
-    // Convert this project's recoloring config + sheets into a
-    // PackExportConfig ready for PackExporter. The caller fills the
-    // actual SheetSelection paths from current GD resources.
     PackExportConfig toExportConfig() const;
 };
 
-// Generate a unix-ms timestamp (clock_gettime / system_clock::now()).
 std::int64_t nowUnixMs();
 
-// Pick and cache a stable UI frame for project/card previews. Returns false
-// only when none of the selected plists contains a usable UI sprite.
+// Returns false only when no selected plist contains a usable UI sprite.
 bool ensureRepresentativeFrame(TextureProject& project);
 
 }  // namespace paimon::texture_studio

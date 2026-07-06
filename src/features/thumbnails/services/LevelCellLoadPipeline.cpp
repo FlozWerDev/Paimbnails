@@ -64,12 +64,20 @@ void runThumbnailLoadPipeline(
             fields.thumbnailFailed = false;
             bool const enableSpinners = true;
             ops.applyStatic(input.levelID, cachedRequestId, cachedTex, enableSpinners);
-            ops.requestGallery(input.levelID);
+            // Only fetch gallery metadata for on-screen cells; off-screen prefetch
+            // cells defer it to the maintenance tick once they scroll into view.
+            if (input.isOnScreen) {
+                ops.requestGallery(input.levelID);
+            }
             return;
         }
     }
 
-    ops.requestGallery(input.levelID);
+    // Off-screen prefetch cells skip gallery metadata; the maintenance tick
+    // requests it once the cell scrolls into view.
+    if (input.isOnScreen) {
+        ops.requestGallery(input.levelID);
+    }
 
     if (fields.thumbnailRequested) {
         log::debug("[LevelCell] tryLoadThumbnail: already requested for levelID={}", input.levelID);
@@ -83,7 +91,9 @@ void runThumbnailLoadPipeline(
     fields.lastRequestedLevelID = input.levelID;
     fields.hasGif = ThumbnailLoader::get().hasGIFData(input.levelID);
 
-    bool const enableSpinners = true;
+    // No loading spinner for off-screen prefetch cells: avoids creating a
+    // LoadingSpinner node + fade action per cell during fast scrolling.
+    bool const enableSpinners = input.isOnScreen;
 
     if (ops.tryLocalVideo(input.levelID, enableSpinners)) {
         return;

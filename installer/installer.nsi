@@ -20,9 +20,13 @@ VIAddVersionKey "LegalCopyright" "FlozWer"
 !define MUI_FINISHPAGE_NOAUTOCLOSE
 BrandingText "Paimbnails by FlozWer"
 
-; Banner images
-!define MUI_WELCOMEFINISHPAGE_BITMAP "banner.bmp"
-!define MUI_UNWELCOMEFINISHPAGE_BITMAP "banner.bmp"
+; Custom welcome/finish banner (banner.bmp) is optional and not tracked in the
+; repo (6 MB). If present next to this script, use it; otherwise fall back to
+; NSIS's default wizard bitmap so the installer still builds in CI.
+!if /FileExists "banner.bmp"
+    !define MUI_WELCOMEFINISHPAGE_BITMAP "banner.bmp"
+    !define MUI_UNWELCOMEFINISHPAGE_BITMAP "banner.bmp"
+!endif
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY

@@ -5,17 +5,13 @@
 
 #include <Geode/cocos/include/ccTypes.h>
 
-#include <cstdint>
-
 namespace paimon::icons {
 
 struct IconDescriptor {
-    int unlockTypeRaw = 0;   // GJItemIcon::m_unlockType, raw int (UnlockType enum class)
+    int unlockTypeRaw = 0;  // GJItemIcon::m_unlockType, raw int (UnlockType enum class)
     int iconID        = 1;
-    int gamemodeIndex = 0;   // 0..8, IconType - used by ColorMode::PerGamemode
-    int displayIndex  = 0;   // Position in the visible list - used by Gradient mode
-    int totalCount    = 1;   // Total visible icons - used by Gradient mode
-    bool isLocked     = false;
+    int displayIndex  = 0;  // Position in the visible list - used by Gradient mode
+    int totalCount    = 1;  // Total visible icons - used by Gradient mode
 };
 
 struct IconColorTriple {
@@ -43,11 +39,9 @@ private:
     IconColorTriple resolvePlayer(IconColorTriple const& base) const;
     IconColorTriple resolveCustomRGB(PaimonIconConfig const& cfg) const;
     IconColorTriple resolveHueShift(IconColorTriple const& base, PaimonIconConfig const& cfg) const;
-    IconColorTriple resolveSatBoost(IconColorTriple const& base, PaimonIconConfig const& cfg) const;
     IconColorTriple resolveRandom(IconDescriptor const& desc, PaimonIconConfig const& cfg) const;
     IconColorTriple resolveRainbow(IconDescriptor const& desc, PaimonIconConfig const& cfg, float t) const;
     IconColorTriple resolveGradient(IconDescriptor const& desc, PaimonIconConfig const& cfg) const;
-    IconColorTriple resolvePerGamemode(IconDescriptor const& desc, IconColorTriple const& base, PaimonIconConfig const& cfg) const;
     IconColorTriple resolveInverted(IconColorTriple const& base) const;
     IconColorTriple resolveMonochrome(PaimonIconConfig const& cfg) const;
 };

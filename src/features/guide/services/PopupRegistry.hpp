@@ -76,6 +76,11 @@ public:
     // are built as [displayName + aliases] per language; weight/category drive the final score.
     static GuideIntent toIntent(PopupEntry const& entry);
 
+    // Human-readable display name for an intent/entry id in the given language
+    // (falls back to english, then a prettified id). Used to name alternatives
+    // in "did you mean ...?" answers.
+    std::string displayNameFor(std::string const& id, std::string const& langId) const;
+
 private:
     PopupRegistry();
     void registerAll();

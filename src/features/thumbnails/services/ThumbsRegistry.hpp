@@ -8,7 +8,7 @@ enum class ThumbKind { Level, Profile };
 
 struct ThumbRecord {
     ThumbKind kind;
-    int id;      // levelid o accountid
+    int id;
     bool verified;
 };
 
@@ -23,7 +23,7 @@ public:
 private:
     ThumbsRegistry() = default;
     std::filesystem::path path() const;
-    void load() const; // lazy (diferido) — caller must hold m_mutex
+    void load() const; // caller must hold m_mutex
     void save() const; // caller must hold m_mutex
 
     mutable std::mutex m_mutex;

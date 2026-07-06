@@ -121,7 +121,6 @@ public:
     
     static AnimatedGIFSprite* createFromCache(std::string const& key);
 
-    // Disk cache
     struct DiskCacheEntry {
         int width;
         int height;

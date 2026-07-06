@@ -31,7 +31,6 @@ bool WhitelistPopup::init() {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    // input + add button
     m_input = TextInput::create(180.f, "Username...");
     m_input->setPosition({cx - 30.f, content.height - 50.f});
     m_input->setCommonFilter(geode::CommonFilter::ID);
@@ -48,7 +47,6 @@ bool WhitelistPopup::init() {
     addMenu->addChild(addBtn);
     m_mainLayer->addChild(addMenu);
 
-    // scroll panel
     float panelW = content.width - 20.f;
     float panelH = content.height - 90.f;
     float panelY = (content.height - 60.f) / 2.f - 5.f;
@@ -181,7 +179,6 @@ void WhitelistPopup::onAdd(CCObject*) {
         return;
     }
 
-    // Verify we have Mod Code
     if (HttpClient::get().getModCode().empty()) {
         PaimonNotify::create("Mod Code required", NotificationIcon::Error)->show();
         return;

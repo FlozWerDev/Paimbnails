@@ -1,8 +1,3 @@
-// ProfileImageCache.cpp — Implementacion del cache de texturas de profileimg.
-// Extraido de hooks/ProfilePage.cpp para sacar logica del hook. Las funciones
-// publicas se mantienen en el namespace global para no romper las referencias
-// `extern`/header existentes (InfoLayer, MaintenanceActions, ProfilePicEditor,
-// PaiConfigLayer). Los helpers internos quedan file-local.
 
 #include "ProfileImageCache.hpp"
 #include "ProfileImageService.hpp"
@@ -20,13 +15,12 @@
 
 using namespace geode::prelude;
 
-// cache de texturas de profileimg para carga instantanea entre popups.
 static std::mutex s_profileImgMutex;
 static std::unordered_map<int, geode::Ref<CCTexture2D>> s_profileImgCache;
 static std::list<int> s_profileImgLru;
 static std::unordered_map<int, std::list<int>::iterator> s_profileImgLruMap;
 static constexpr size_t MAX_PROFILEIMG_CACHE_SIZE = 64;
-static constexpr size_t MAX_PROFILEIMG_CACHE_BYTES = 64ull * 1024 * 1024; // 64 MB
+static constexpr size_t MAX_PROFILEIMG_CACHE_BYTES = 64ull * 1024 * 1024;
 static size_t s_profileImgCacheBytes = 0;
 static std::atomic<bool> s_profileImgShutdown{false};
 
@@ -51,7 +45,6 @@ void cacheProfileImgTexture(int accountID, CCTexture2D* texture) {
 
     size_t incomingBytes = estimateTextureBytes(texture);
 
-    // if replacing an existing entry, subtract old bytes
     auto oldIt = s_profileImgCache.find(accountID);
     if (oldIt != s_profileImgCache.end()) {
         size_t oldBytes = estimateTextureBytes(oldIt->second);
@@ -62,7 +55,6 @@ void cacheProfileImgTexture(int accountID, CCTexture2D* texture) {
     s_profileImgCacheBytes += incomingBytes;
     touchProfileImgCache(accountID);
 
-    // evict by entry count OR byte limit
     while ((s_profileImgCache.size() > MAX_PROFILEIMG_CACHE_SIZE ||
             s_profileImgCacheBytes > MAX_PROFILEIMG_CACHE_BYTES) &&
            !s_profileImgLru.empty()) {
@@ -78,10 +70,6 @@ void cacheProfileImgTexture(int accountID, CCTexture2D* texture) {
     }
 }
 
-// Limpiar el cache de profileimg durante el cierre del juego.
-// Los destructores estaticos se ejecutan en orden indefinido y
-// CCPoolManager puede ya estar muerto â€” usamos take() para sacar
-// los Ref<> sin llamar release().
 $on_game(Exiting) {
     s_profileImgShutdown.store(true, std::memory_order_release);
     std::lock_guard<std::mutex> lock(s_profileImgMutex);
@@ -94,7 +82,6 @@ $on_game(Exiting) {
     s_profileImgLruMap.clear();
 }
 
-// Acceso externo al cache de profileimg (usado por InfoLayer hook).
 CCTexture2D* getProfileImgCachedTexture(int accountID) {
     if (s_profileImgShutdown.load(std::memory_order_acquire)) return nullptr;
     std::lock_guard<std::mutex> lock(s_profileImgMutex);
@@ -122,7 +109,6 @@ std::string getProfileImgGifCacheKey(int accountID) {
     return fmt::format("profileimg_gif_{}", accountID);
 }
 
-// Limpia todo el cache de profileimg (RAM + disco)
 void clearProfileImgCache() {
     std::lock_guard<std::mutex> lock(s_profileImgMutex);
     s_profileImgCache.clear();
@@ -136,7 +122,6 @@ void clearProfileImgCache() {
     }
 }
 
-// Invalida el cache RAM de un accountID especifico
 void invalidateProfileImgCache(int accountID) {
     if (s_profileImgShutdown.load(std::memory_order_acquire)) return;
     std::lock_guard<std::mutex> lock(s_profileImgMutex);
@@ -149,7 +134,6 @@ void invalidateProfileImgCache(int accountID) {
         }
         s_profileImgCache.erase(it);
         
-        // Remover de LRU
         auto lruIt = s_profileImgLruMap.find(accountID);
         if (lruIt != s_profileImgLruMap.end()) {
             s_profileImgLru.erase(lruIt->second);
@@ -180,8 +164,6 @@ CCTexture2D* loadProfileImgFromDisk(int accountID) {
         return nullptr;
     }
 
-    // skip MP4 video files (handled by ensureAnimatedProfileImg)
-    // ftyp box can start at different offsets â€” search first 12 bytes
     if (data.size() > 12) {
         for (size_t i = 0; i + 3 < data.size() && i < 12; ++i) {
             if (data[i]=='f' && data[i+1]=='t' && data[i+2]=='y' && data[i+3]=='p') {

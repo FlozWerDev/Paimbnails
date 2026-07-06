@@ -8,7 +8,6 @@ struct ProfileConfig;
 #include <unordered_map>
 #include <mutex>
 
-// Subida y descarga de imagenes de perfil
 class ProfileImageService {
 public:
     using UploadCallback   = geode::CopyableFunction<void(bool success, std::string const& message)>;
@@ -22,7 +21,6 @@ public:
 
     void setServerEnabled(bool enabled) { m_serverEnabled = enabled; }
 
-    // background de perfil (banner)
     void uploadProfile(int accountID, std::vector<uint8_t> const& pngData,
                        std::string const& username, UploadCallback callback);
     void uploadProfileGIF(int accountID, std::vector<uint8_t> const& gifData,
@@ -31,20 +29,15 @@ public:
                             std::string const& username, UploadCallback callback);
     void downloadProfile(int accountID, std::string const& username, DownloadCallback callback);
 
-    // Decodifica bytes ya descargados de un banner (banner del scorecell) y emite
-    // texture/sprite siguiendo la misma logica que downloadProfile (MP4 / GIF / static).
-    // Util para flujos batch donde el bytes vienen de /api/profilebackground/batch.
     static void processProfileBackgroundBytes(int accountID,
         std::vector<uint8_t> const& data, DownloadCallback callback);
 
-    // batch check: pregunta al servidor cuales cuentas tienen perfil + sus configs
     using BatchCheckCallback = geode::CopyableFunction<void(
         bool success,
         std::unordered_set<int> const& found,
         std::unordered_map<int, ProfileConfig> const& configs)>;
     void batchCheckProfiles(std::vector<int> const& accountIDs, BatchCheckCallback callback);
 
-    // foto de perfil (profileimg)
     void uploadProfileImg(int accountID, std::vector<uint8_t> const& imgData,
                           std::string const& username, std::string const& contentType,
                           UploadCallback callback);
@@ -55,10 +48,8 @@ public:
     void rememberProfileImgGifKey(int accountID, std::string const& gifKey);
     void clearProfileImgGifKey(int accountID);
 
-    // perfil pendiente (moderadores en centro de verificacion)
     void downloadPendingProfile(int accountID, DownloadCallback callback);
 
-    // configuracion de perfil
     void uploadProfileConfig(int accountID, ProfileConfig const& config, ActionCallback callback);
     void downloadProfileConfig(int accountID,
         geode::CopyableFunction<void(bool, ProfileConfig const&)> callback);

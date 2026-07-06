@@ -22,7 +22,6 @@ public:
         return instance;
     }
 
-    // Spawn a tracked thread
     template<typename Function, typename... Args>
     void spawn(Function&& f, Args&&... args) {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -80,7 +79,6 @@ public:
         geode::log::info("[ThreadTracker] All background threads joined (or detached after timeout).");
     }
 
-    // Periodic cleanup of completed threads
     void cleanup() {
         std::lock_guard<std::mutex> lock(m_mutex);
         cleanupNoLock();

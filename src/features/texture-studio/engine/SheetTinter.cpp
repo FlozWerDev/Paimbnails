@@ -2,17 +2,18 @@
 #include <Geode/utils/string.hpp>
 
 #include "../data/PlistBuilder.hpp"
+#include "../data/PlistParser.hpp"
 #include "../data/RectPacker.hpp"
 #include "../data/SpritesheetReader.hpp"
 #include "ClusterClassifier.hpp"
 #include "ColorClustering.hpp"
 #include "LuminanceTinter.hpp"
 #include "MaskBuilder.hpp"
+#include "OverlayTinter.hpp"
 #include "SpritePreviewRenderer.hpp"
 #include "UiSpriteCatalog.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <unordered_map>
 
@@ -22,14 +23,8 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Bilinear-ish downscale by an arbitrary scale factor. We don't need
-// production-grade quality (the user is generating texture packs, not
-// printing posters), but the result has to look smooth enough that an
-// HD port from a UHD source isn't visibly blocky.
-//
-// For scale = 0.5 we use a 2×2 box average (ideal for half-resolution).
-// For other scales we fall back to nearest-neighbour. Practically only
-// 0.5 is used (UHD → HD), so this is fine.
+// Downscale by `scale`. Only 0.5 (UHD→HD) uses a 2×2 box average; other
+// factors fall back to nearest-neighbour.
 ImageBuffer resizeImage(ImageBuffer const& src, float scale) {
     if (scale <= 0.0f || scale == 1.0f || src.empty()) return src;
     int newW = std::max(1, static_cast<int>(std::floor(src.width()  * scale)));
@@ -37,7 +32,6 @@ ImageBuffer resizeImage(ImageBuffer const& src, float scale) {
     ImageBuffer out(newW, newH);
 
     if (std::fabs(scale - 0.5f) < 1e-3f) {
-        // 2×2 box filter — averages 4 source pixels per dest pixel.
         for (int y = 0; y < newH; ++y) {
             for (int x = 0; x < newW; ++x) {
                 int sx = x * 2;
@@ -66,7 +60,6 @@ ImageBuffer resizeImage(ImageBuffer const& src, float scale) {
             }
         }
     } else {
-        // Nearest-neighbour fallback.
         float invS = 1.0f / scale;
         for (int y = 0; y < newH; ++y) {
             for (int x = 0; x < newW; ++x) {
@@ -80,157 +73,324 @@ ImageBuffer resizeImage(ImageBuffer const& src, float scale) {
     return out;
 }
 
-}  // anonymous namespace
+TinterOptions makeTintOptions(SheetTinterRequest const& req) {
+    TinterOptions topts;
+    topts.brightness             = req.brightness;
+    topts.alternativeGlowOverlay = req.alternativeGlowOverlay;
+    topts.darkOutlineThreshold   = std::clamp(req.outlineProtect, 0, 255);
+    topts.saturation             = req.saturation;
+    topts.contrast               = req.contrast;
+    return topts;
+}
 
-geode::Result<SheetTinterOutput> SheetTinter::process(SheetTinterRequest const& req) {
-    // Step 1: load the sheet + extract frames.
-    GEODE_UNWRAP_INTO(auto loaded, SpritesheetReader::loadFromPaths(req.sourcePlist, req.sourcePng));
-    if (loaded.frames.empty()) {
-        return Err("SheetTinter: sheet '{}' contains no frames", req.outputBaseName);
+// Auto-detected (clustering) tint of a single logical frame.
+ImageBuffer clusterTintFrame(ImageBuffer const& logical, SheetTinterRequest const& req,
+                             TintColors const& colors, int& needsReviewCount) {
+    ClusteringOptions copts;
+    copts.k = std::clamp(req.clusterPrecision, 2, 10);
+    auto clusters   = ColorClustering::compute(logical, copts);
+    auto classified = ClusterClassifier::classify(clusters, logical);
+    if (classified.needsReview) ++needsReviewCount;
+
+    MaskBuilderOptions mopts;
+    mopts.softness   = req.maskSoftness;
+    mopts.edgeRefine = std::clamp(req.edgeCleanup, 0, 4);
+    auto masks = MaskBuilder::build(logical, classified, mopts);
+
+    return LuminanceTinter::apply(logical, masks, colors, makeTintOptions(req));
+}
+
+// Render a user-supplied image into a frame-sized canvas, or an empty buffer
+// when there is no override (or it failed to load).
+ImageBuffer loadCustomCanvas(SheetTinterRequest const& req, std::string const& frameName,
+                             int frameW, int frameH, bool& overlayMode) {
+    overlayMode = false;
+    auto it = req.spriteImages.find(frameName);
+    if (it == req.spriteImages.end()) return ImageBuffer();
+    if (req.spriteSkip.find(frameName) != req.spriteSkip.end()) return ImageBuffer();
+
+    auto custom = ImageBuffer::loadFromFile(it->second.path);
+    if (!custom) {
+        log::warn("[texture-studio] custom image '{}' unavailable: {}",
+            geode::utils::string::pathToString(it->second.path), custom.unwrapErr());
+        return ImageBuffer();
+    }
+    overlayMode = it->second.overlay;
+    return SpritePreviewRenderer::renderCustomImage(
+        custom.unwrap(), frameW, frameH, it->second.transform);
+}
+
+// Re-insert a logical (un-rotated) frame back into the atlas at its original
+// slot, re-applying the cocos 90° CW packing rotation when needed.
+void blitLogicalBack(ImageBuffer& atlas, SpriteFrameInfo const& f, ImageBuffer logical) {
+    if (logical.empty()) return;
+    if (f.rotated) logical.rotateCW90();
+    atlas.blitOverwrite(f.rectX, f.rectY, logical);
+}
+
+std::string outputTextureName(SheetTinterRequest const& req) {
+    std::string texName = req.outputBaseName + req.outputQualitySuffix + ".png";
+    if (auto slash = texName.find_last_of('/'); slash != std::string::npos) {
+        texName = texName.substr(slash + 1);
+    }
+    return texName;
+}
+
+geode::Result<SheetTinterOutput> buildOutput(ImageBuffer const& atlas,
+                                             ParsedSpritesheet const& outSheet,
+                                             SheetTinterRequest const& req,
+                                             int frameCount, int tintedCount,
+                                             int needsReviewCount) {
+    auto pngRes = atlas.encodeAsPng();
+    if (!pngRes) {
+        return Err("SheetTinter: PNG encode failed for '{}': {}",
+            req.outputBaseName, pngRes.unwrapErr());
+    }
+    auto plistRes = PlistBuilder::buildString(outSheet);
+    if (!plistRes) {
+        return Err("SheetTinter: plist build failed for '{}': {}",
+            req.outputBaseName, plistRes.unwrapErr());
     }
 
-    // Step 2: process each frame. We replace ExtractedFrame::pixels with
-    // the tinted (and optionally resized) image, and update the metadata
-    // so the packer/builder agree with the new sizes.
+    SheetTinterOutput out;
+    out.pngBytes         = std::move(pngRes).unwrap();
+    out.plistXml         = std::move(plistRes).unwrap();
+    out.atlasWidth       = atlas.width();
+    out.atlasHeight      = atlas.height();
+    out.frameCount       = frameCount;
+    out.needsReviewCnt   = needsReviewCount;
+    out.tintedFrameCount = tintedCount;
+    return Ok(std::move(out));
+}
+
+// -- UHD path: tint in place, keep the atlas layout and the plist untouched --
+// This mirrors PackGen exactly: overlays are whole-sheet masks composited over
+// the base sheet in one pass, and the .plist is emitted verbatim. No frame is
+// extracted or re-packed, so nothing can shift or crop.
+geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
+                                                ParsedSpritesheet const& parsed,
+                                                ImageBuffer const& atlas) {
+    ImageBuffer out(atlas);  // working copy
+
+    bool overlayPath = req.overlaySources && req.overlaySources->any();
+    int tintedCount = 0;
     int needsReviewCount = 0;
 
-    struct Tinted {
-        std::string  name;
-        ImageBuffer  pixels;
-        SpriteFrameInfo info;  // updated metadata (size, offset)
-    };
-    std::vector<Tinted> tinted;
-    tinted.reserve(loaded.frames.size());
+    // Fast path: one whole-sheet overlay pass covers every frame at once.
+    if (overlayPath) {
+        auto const& s = *req.overlaySources;
+        OverlayImages ov;
+        ov.overlay1 = s.overlay1;
+        ov.overlay2 = s.overlay2;
+        ov.gold     = s.gold;
+        ov.demon1   = s.demon1;
+        ov.demon2   = s.demon2;
+        ov.glow     = s.glow;
+        if (ov.anyUsable(out.width(), out.height())) {
+            out = OverlayTinter::apply(out, ov, req.colors, makeTintOptions(req));
+        }
+    }
 
-    int tintedCount = 0;
+    for (auto const& info : parsed.frames) {
+        bool skip     = req.spriteSkip.find(info.name) != req.spriteSkip.end();
+        auto colorsIt = req.spriteColors.find(info.name);
+        bool hasColor = colorsIt != req.spriteColors.end();
+        bool hasImage = req.spriteImages.find(info.name) != req.spriteImages.end();
 
-    for (auto& frame : loaded.frames) {
-        auto& origPixels = frame.pixels;
-        if (origPixels.empty()) {
-            // Skip zero-size frames (shouldn't happen but be defensive).
+        // Overlay path: only frames with an explicit override (or a skip that
+        // must undo the sheet-wide tint) need per-frame work.
+        if (overlayPath && !skip && !hasColor && !hasImage) continue;
+
+        ImageBuffer orig = SpritesheetReader::extractFrame(atlas, info);
+        if (orig.empty()) continue;
+
+        if (skip) {
+            // Restore the vanilla region the overlay pass may have tinted.
+            if (overlayPath) blitLogicalBack(out, info, orig);
             continue;
         }
 
-        // Filtro de UI + overrides por sprite:
-        // 1. spriteSkip siempre gana — el sprite pasa intacto.
-        // 2. Un override de color explícito tiñe aunque no sea UI.
-        // 3. Si no, aplica el filtro global de UI.
-        auto colorsIt = req.spriteColors.find(frame.info.name);
-        auto imageIt = req.spriteImages.find(frame.info.name);
-        bool hasColorOverride = (colorsIt != req.spriteColors.end());
-        bool hasImageOverride = (imageIt != req.spriteImages.end());
-        auto kind = UiSpriteCatalog::classify(frame.info.name, req.outputBaseName);
+        bool imageOverlay = false;
+        ImageBuffer customCanvas =
+            loadCustomCanvas(req, info.name, orig.width(), orig.height(), imageOverlay);
+
+        ImageBuffer resultFrame;
+        if (!customCanvas.empty() && !imageOverlay) {
+            resultFrame = std::move(customCanvas);
+            ++tintedCount;
+        } else if (hasColor) {
+            // Explicit per-sprite colors win over the sheet-wide overlay.
+            resultFrame = clusterTintFrame(orig, req, colorsIt->second, needsReviewCount);
+            ++tintedCount;
+            if (!customCanvas.empty()) SpritePreviewRenderer::compositeOver(resultFrame, customCanvas);
+        } else if (overlayPath) {
+            // Frame is already overlay-tinted in `out`; composite the custom
+            // image on top of that tinted region.
+            resultFrame = SpritesheetReader::extractFrame(out, info);
+            if (!customCanvas.empty()) SpritePreviewRenderer::compositeOver(resultFrame, customCanvas);
+        } else {
+            // Auto-detection fallback (no overlay pack available).
+            auto kind = UiSpriteCatalog::classify(info.name, req.outputBaseName);
+            bool tintThis = !req.onlyTintUiSprites
+                         || UiSpriteCatalog::shouldTint(kind, req.tintScope);
+            if (tintThis) {
+                resultFrame = clusterTintFrame(orig, req, req.colors, needsReviewCount);
+                ++tintedCount;
+            } else {
+                resultFrame = orig;
+            }
+            if (!customCanvas.empty()) {
+                SpritePreviewRenderer::compositeOver(resultFrame, customCanvas);
+                ++tintedCount;
+            }
+        }
+
+        blitLogicalBack(out, info, std::move(resultFrame));
+    }
+
+    // Emit the ORIGINAL frame layout verbatim; only metadata is normalised.
+    ParsedSpritesheet outSheet;
+    outSheet.metadata = parsed.metadata;
+    outSheet.metadata.format              = 3;
+    outSheet.metadata.sizeW               = out.width();
+    outSheet.metadata.sizeH               = out.height();
+    outSheet.metadata.textureFileName     = outputTextureName(req);
+    outSheet.metadata.realTextureFileName = outSheet.metadata.textureFileName;
+    // Our PNGs are straight (non-premultiplied) RGBA, like GD's own sheets.
+    outSheet.metadata.premultiplyAlpha    = false;
+    outSheet.frames = parsed.frames;
+
+    int frameCount = static_cast<int>(parsed.frames.size());
+    return buildOutput(out, outSheet, req,
+                       frameCount,
+                       overlayPath ? frameCount : tintedCount,
+                       needsReviewCount);
+}
+
+// -- Medium (HD) port: downscale each frame and re-pack, exactly like PackGen's
+// port pipeline. Layout necessarily changes here because the whole sheet is
+// resampled, but this only affects the optional half-res copy.
+geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
+                                               ParsedSpritesheet const& parsed,
+                                               ImageBuffer const& atlas) {
+    int needsReviewCount = 0;
+    int tintedCount = 0;
+
+    struct Tinted {
+        std::string     name;
+        ImageBuffer     pixels;
+        SpriteFrameInfo info;
+    };
+    std::vector<Tinted> tinted;
+    tinted.reserve(parsed.frames.size());
+
+    for (auto const& info : parsed.frames) {
+        ImageBuffer origPixels = SpritesheetReader::extractFrame(atlas, info);
+        if (origPixels.empty()) continue;
+
+        auto colorsIt = req.spriteColors.find(info.name);
+        bool hasColorOverride = colorsIt != req.spriteColors.end();
+        bool skipped = req.spriteSkip.find(info.name) != req.spriteSkip.end();
+        auto kind = UiSpriteCatalog::classify(info.name, req.outputBaseName);
         bool tintThisFrame =
-            req.spriteSkip.find(frame.info.name) == req.spriteSkip.end()
+            !skipped
             && (hasColorOverride
                 || !req.onlyTintUiSprites
                 || UiSpriteCatalog::shouldTint(kind, req.tintScope));
 
+        bool useOverlayPath =
+            req.overlaySources && req.overlaySources->any()
+            && !skipped && !hasColorOverride;
+
+        bool imageOverlay = false;
+        ImageBuffer customCanvas =
+            loadCustomCanvas(req, info.name, origPixels.width(), origPixels.height(), imageOverlay);
+
         ImageBuffer recolored;
-        if (hasImageOverride &&
-            req.spriteSkip.find(frame.info.name) == req.spriteSkip.end()) {
-            auto custom = ImageBuffer::loadFromFile(imageIt->second);
-            if (custom) {
-                recolored = SpritePreviewRenderer::renderCustomImage(
-                    custom.unwrap(), origPixels.width(), origPixels.height());
+        if (!customCanvas.empty() && !imageOverlay) {
+            recolored = std::move(customCanvas);
+            ++tintedCount;
+        } else if (useOverlayPath) {
+            auto const& src = *req.overlaySources;
+            auto crop = [&](ImageBuffer const& sheet) {
+                return sheet.empty()
+                    ? ImageBuffer()
+                    : SpritesheetReader::extractFrame(sheet, info);
+            };
+            OverlayImages ov;
+            ov.overlay1 = crop(src.overlay1);
+            ov.overlay2 = crop(src.overlay2);
+            ov.gold     = crop(src.gold);
+            ov.demon1   = crop(src.demon1);
+            ov.demon2   = crop(src.demon2);
+            ov.glow     = crop(src.glow);
+
+            auto hasInk = [](ImageBuffer const& img) {
+                auto const* p = img.data();
+                for (std::size_t i = 0, n = img.pixelCount(); i < n; ++i) {
+                    if (p[i * 4 + 3] != 0) return true;
+                }
+                return false;
+            };
+            bool anyInk = hasInk(ov.overlay1) || hasInk(ov.overlay2)
+                       || hasInk(ov.gold)     || hasInk(ov.demon1)
+                       || hasInk(ov.demon2)   || hasInk(ov.glow);
+
+            if (anyInk && ov.anyUsable(origPixels.width(), origPixels.height())) {
+                recolored = OverlayTinter::apply(origPixels, ov, req.colors, makeTintOptions(req));
                 ++tintedCount;
             } else {
-                log::warn("[texture-studio] custom image '{}' unavailable: {}",
-                    geode::utils::string::pathToString(imageIt->second), custom.unwrapErr());
                 recolored = origPixels;
             }
+            if (!customCanvas.empty()) SpritePreviewRenderer::compositeOver(recolored, customCanvas);
         } else if (tintThisFrame) {
-            // Cluster + classify + masks + tint.
-            auto clusters    = ColorClustering::compute(origPixels);
-            auto classified  = ClusterClassifier::classify(clusters, origPixels);
-            if (classified.needsReview) ++needsReviewCount;
-
-            MaskBuilderOptions mopts;
-            mopts.softness = req.maskSoftness;
-            auto masks = MaskBuilder::build(origPixels, classified, mopts);
-
-            TinterOptions topts;
-            topts.brightness = req.brightness;
-            topts.alternativeGlowOverlay = req.alternativeGlowOverlay;
             TintColors const& frameColors =
                 hasColorOverride ? colorsIt->second : req.colors;
-            recolored = LuminanceTinter::apply(origPixels, masks, frameColors, topts);
+            recolored = clusterTintFrame(origPixels, req, frameColors, needsReviewCount);
+            if (!customCanvas.empty()) SpritePreviewRenderer::compositeOver(recolored, customCanvas);
             ++tintedCount;
         } else {
-            // Passthrough: copia intacta del sprite original.
             recolored = origPixels;
+            if (!customCanvas.empty()) {
+                SpritePreviewRenderer::compositeOver(recolored, customCanvas);
+                ++tintedCount;
+            }
         }
 
-        // Resize for medium port if requested.
-        if (req.resizeScale != 1.0f) {
-            recolored = resizeImage(recolored, req.resizeScale);
-        }
+        recolored = resizeImage(recolored, req.resizeScale);
 
         Tinted t;
-        t.name   = frame.info.name;
-        t.pixels = std::move(recolored);
-        t.info   = frame.info;
+        t.name   = info.name;
+        t.info   = info;
 
-        // Update metadata to reflect the (possibly downscaled) size.
-        // IMPORTANT: spriteSourceSize is NOT the same as spriteSize.
-        //   spriteSize       = un-rotated logical pixel dimensions (post-trim)
-        //   spriteSourceSize = full pre-trim sprite dimensions (often larger)
-        //   spriteOffset     = how much the trimmed sprite is shifted within
-        //                      its source rect. Lives in (sourceW, sourceH)
-        //                      space, NOT in (spriteW, spriteH) space.
-        //
-        // GD relies on (sourceSize, offset) to correctly position sprites in
-        // the world. If we collapse sourceSize to spriteSize, sprites that
-        // were originally trimmed (e.g. cogwheel_320x320 trimmed to 162x162)
-        // get mis-positioned, which breaks layouts and ultimately leads to
-        // dangling frame pointers when the cocos2d scene tree cleans up.
-        // That is the root cause of the CCNode::cleanup crash on scene
-        // transitions after applying the generated pack.
-        //
-        // We update spriteW/H to the post-tint pixel size, but preserve
-        // sourceW/H from the original plist (scaled if we are in a medium
-        // port pass).
-        int origSourceW = (frame.info.sourceW > 0) ? frame.info.sourceW : frame.info.spriteW;
-        int origSourceH = (frame.info.sourceH > 0) ? frame.info.sourceH : frame.info.spriteH;
+        int origSourceW = (info.sourceW > 0) ? info.sourceW : info.spriteW;
+        int origSourceH = (info.sourceH > 0) ? info.sourceH : info.spriteH;
 
-        t.info.spriteW = t.pixels.width();
-        t.info.spriteH = t.pixels.height();
+        t.info.spriteW = recolored.width();
+        t.info.spriteH = recolored.height();
 
-        if (req.resizeScale != 1.0f && req.resizeScale > 0.0f) {
-            // Scale the source size by the same factor so (sourceSize,
-            // offset) stays consistent with the new spriteSize.
+        if (req.resizeScale > 0.0f) {
             t.info.sourceW = std::max(1,
                 static_cast<int>(std::lround(origSourceW * req.resizeScale)));
             t.info.sourceH = std::max(1,
                 static_cast<int>(std::lround(origSourceH * req.resizeScale)));
         } else {
-            // No resize: preserve the source size verbatim. spriteOffset
-            // stays unchanged because we did not trim anything new.
             t.info.sourceW = origSourceW;
             t.info.sourceH = origSourceH;
         }
-
-        // Defensive: spriteSize must never exceed sourceSize. If somehow it
-        // does (e.g. a pack with bogus metadata), pin sourceSize up so the
-        // engine doesn't reject the frame.
         if (t.info.sourceW < t.info.spriteW) t.info.sourceW = t.info.spriteW;
         if (t.info.sourceH < t.info.spriteH) t.info.sourceH = t.info.spriteH;
 
-        // Offsets must scale by the same factor — except for PackGen's
-        // hard-coded GJ_table_side_001 case (otherwise the table breaks
-        // visually in medium-quality packs).
         bool preserveOffset =
             req.preserveOffsetForTableSide &&
             t.name.find("GJ_table_side_001") != std::string::npos;
-        if (!preserveOffset && req.resizeScale != 1.0f && req.resizeScale > 0.0f) {
+        if (!preserveOffset && req.resizeScale > 0.0f) {
             t.info.offsetX *= req.resizeScale;
             t.info.offsetY *= req.resizeScale;
         }
-
-        // After tinting we always emit non-rotated frames in the new atlas
-        // (matches PackGen behaviour — simpler atlases, no engine cost).
         t.info.rotated = false;
 
+        t.pixels = std::move(recolored);
         tinted.push_back(std::move(t));
     }
 
@@ -238,9 +398,6 @@ geode::Result<SheetTinterOutput> SheetTinter::process(SheetTinterRequest const& 
         return Err("SheetTinter: no usable frames produced for '{}'", req.outputBaseName);
     }
 
-    // Step 3: pack with shelf algorithm. We feed the inputs sorted by
-    // descending height already (RectPacker re-sorts internally so this is
-    // for output-stability only).
     std::vector<RectPackInput> packerInput;
     packerInput.reserve(tinted.size());
     for (auto const& t : tinted) {
@@ -255,80 +412,56 @@ geode::Result<SheetTinterOutput> SheetTinter::process(SheetTinterRequest const& 
         return Err("SheetTinter: packer produced empty atlas for '{}'", req.outputBaseName);
     }
 
-    // Step 4: build the output atlas image. We blit each tinted frame at
-    // its placement.
-    ImageBuffer atlas(pack.sheetWidth, pack.sheetHeight);
+    ImageBuffer outAtlas(pack.sheetWidth, pack.sheetHeight);
 
-    // Index the tinted frames by name for O(1) lookup during placement.
-    // (Vector lookup would be O(n), and with 1500+ frames per sheet that
-    // matters in the inner loop.)
     std::unordered_map<std::string, Tinted const*> byName;
     byName.reserve(tinted.size());
     for (auto const& t : tinted) byName.emplace(t.name, &t);
 
-    // Build the output frame list in placement order so the plist mirrors
-    // the visual layout of the atlas.
-    std::vector<SpriteFrameInfo> outFrames;
-    outFrames.reserve(pack.placements.size());
+    ParsedSpritesheet outSheet;
+    outSheet.frames.reserve(pack.placements.size());
 
     for (auto const& p : pack.placements) {
         auto it = byName.find(p.id);
-        if (it == byName.end()) continue;  // shouldn't happen
+        if (it == byName.end()) continue;
         auto const* t = it->second;
-        atlas.blitOverwrite(p.x, p.y, t->pixels);
+        outAtlas.blitOverwrite(p.x, p.y, t->pixels);
 
         SpriteFrameInfo info = t->info;
-        info.name   = p.id;
-        info.rectX  = p.x;
-        info.rectY  = p.y;
-        info.rectW  = p.w;
-        info.rectH  = p.h;
+        info.name    = p.id;
+        info.rectX   = p.x;
+        info.rectY   = p.y;
+        info.rectW   = p.w;
+        info.rectH   = p.h;
         info.rotated = false;
-        outFrames.push_back(std::move(info));
+        outSheet.frames.push_back(std::move(info));
     }
 
-    // Step 5: encode PNG + build plist string.
-    auto pngRes = atlas.encodeAsPng();
-    if (!pngRes) {
-        return Err("SheetTinter: PNG encode failed for '{}': {}",
-            req.outputBaseName, pngRes.unwrapErr());
+    outSheet.metadata = parsed.metadata;
+    outSheet.metadata.format              = 3;
+    outSheet.metadata.sizeW               = pack.sheetWidth;
+    outSheet.metadata.sizeH               = pack.sheetHeight;
+    outSheet.metadata.textureFileName     = outputTextureName(req);
+    outSheet.metadata.realTextureFileName = outSheet.metadata.textureFileName;
+    outSheet.metadata.premultiplyAlpha    = false;
+
+    return buildOutput(outAtlas, outSheet, req,
+                       static_cast<int>(tinted.size()), tintedCount, needsReviewCount);
+}
+
+}  // namespace
+
+geode::Result<SheetTinterOutput> SheetTinter::process(SheetTinterRequest const& req) {
+    GEODE_UNWRAP_INTO(auto parsed, PlistParser::parseFile(req.sourcePlist));
+    if (parsed.frames.empty()) {
+        return Err("SheetTinter: sheet '{}' contains no frames", req.outputBaseName);
     }
+    GEODE_UNWRAP_INTO(auto atlas, ImageBuffer::loadFromFile(req.sourcePng));
 
-    // Construct the output plist metadata. PackGen replaces "-uhd" with
-    // "-hd" in textureFileName when emitting the medium port; we follow.
-    PlistMetadata meta = loaded.metadata;
-    meta.format     = 3;
-    meta.sizeW      = pack.sheetWidth;
-    meta.sizeH      = pack.sheetHeight;
-    meta.textureFileName     = req.outputBaseName + req.outputQualitySuffix + ".png";
-    meta.realTextureFileName = meta.textureFileName;
-    // GD emits sprite sheets with premultiplyAlpha=false (the PNG holds
-    // straight RGBA bytes; cocos2d does the premultiply at upload time).
-    // Our PNGs from stb_image_write are also straight RGBA, so we MUST
-    // declare false here. Declaring true would make cocos2d skip the
-    // straight->premul conversion at upload, producing washed-out colors
-    // and incorrect alpha-blend during scene composition.
-    meta.premultiplyAlpha    = false;
-
-    ParsedSpritesheet outSheet;
-    outSheet.metadata = meta;
-    outSheet.frames   = std::move(outFrames);
-
-    auto plistRes = PlistBuilder::buildString(outSheet);
-    if (!plistRes) {
-        return Err("SheetTinter: plist build failed for '{}': {}",
-            req.outputBaseName, plistRes.unwrapErr());
+    if (req.resizeScale == 1.0f) {
+        return processInPlace(req, parsed, atlas);
     }
-
-    SheetTinterOutput out;
-    out.pngBytes     = std::move(pngRes).unwrap();
-    out.plistXml     = std::move(plistRes).unwrap();
-    out.atlasWidth   = pack.sheetWidth;
-    out.atlasHeight  = pack.sheetHeight;
-    out.frameCount   = static_cast<int>(tinted.size());
-    out.needsReviewCnt = needsReviewCount;
-    out.tintedFrameCount = tintedCount;
-    return Ok(std::move(out));
+    return processRepack(req, parsed, atlas);
 }
 
 }  // namespace paimon::texture_studio

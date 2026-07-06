@@ -1,4 +1,5 @@
 ﻿#include "FontPickerPopup.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -49,6 +50,7 @@ bool FontPickerPopup::init(
 
     if (!Popup::init(POPUP_W, POPUP_H))
         return false;
+    paimon::markDynamicPopup(this);
 
     // No close button — dismiss by clicking outside
     if (m_closeBtn) m_closeBtn->setVisible(false);

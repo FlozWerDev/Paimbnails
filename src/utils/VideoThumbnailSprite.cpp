@@ -94,8 +94,6 @@ void VideoThumbnailSprite::releaseActiveSlot() {
     (void)newCount;
 }
 
-// static helpers
-
 std::string VideoThumbnailSprite::getTempPath(std::string const& cacheKey) {
     auto dir = dirs::getModRuntimeDir() / "video_cache";
     std::error_code ec;
@@ -459,8 +457,6 @@ void VideoThumbnailSprite::handleCreateJob(CreateJob job) {
     pumpAsyncQueues();
 }
 
-// first-frame disk cache
-
 std::string VideoThumbnailSprite::getFirstFrameCachePath(std::string const& videoPath) {
     auto dir = dirs::getModRuntimeDir() / "video_cache";
     std::error_code ec;
@@ -551,8 +547,6 @@ bool VideoThumbnailSprite::loadFirstFrameFromCache(std::string const& videoPath)
     return true;
 }
 
-// factory methods
-
 bool VideoThumbnailSprite::isCached(std::string const& cacheKey) {
     std::lock_guard lock(s_cacheMutex);
     return !getCachedPathLocked(cacheKey).empty();
@@ -610,7 +604,6 @@ VideoThumbnailSprite* VideoThumbnailSprite::create(std::string const& filePath) 
         CC_SAFE_DELETE(sprite);
     }
     
-    // Create new player
     auto player = paimon::video::VideoPlayer::create(filePath);
     if (!player) {
         log::warn("[VideoThumbSprite] Failed to create player for: {}", filePath);
@@ -751,8 +744,6 @@ void VideoThumbnailSprite::createAsync(std::string const& url, std::string const
     pumpAsyncQueues();
 }
 
-// init
-
 bool VideoThumbnailSprite::initWithPlayer(std::unique_ptr<paimon::video::VideoPlayer> player) {
     if (!player) return false;
 
@@ -813,8 +804,6 @@ VideoThumbnailSprite::~VideoThumbnailSprite() {
         }
     }
 }
-
-// playback control
 
 void VideoThumbnailSprite::play() {
     if (!m_player) return;
@@ -894,8 +883,6 @@ void VideoThumbnailSprite::setOnFirstVisibleFrame(FrameReadyCallback callback) {
     m_onFirstVisibleFrame = std::move(callback);
 }
 
-// scene graph
-
 void VideoThumbnailSprite::onEnter() {
     CCSprite::onEnter();
     if (m_playing && m_player) {
@@ -927,8 +914,6 @@ void VideoThumbnailSprite::dispatchFirstVisibleFrame() {
     callback(this);
     this->release();
 }
-
-// update
 
 void VideoThumbnailSprite::update(float dt) {
     if (!m_player || !m_playing) return;
@@ -1034,8 +1019,6 @@ void VideoThumbnailSprite::update(float dt) {
         dispatchFirstVisibleFrame();
     }
 }
-
-// cache management
 
 void VideoThumbnailSprite::removeForLevel(int levelID) {
     std::lock_guard lock(s_cacheMutex);
@@ -1148,8 +1131,6 @@ void VideoThumbnailSprite::clearCache() {
     // Clear player cache
     clearPlayerCache();
 }
-
-// VideoPlayer cache
 
 std::unique_ptr<paimon::video::VideoPlayer> VideoThumbnailSprite::getCachedPlayer(std::string const& cacheKey) {
     std::lock_guard lock(s_playerCacheMutex);

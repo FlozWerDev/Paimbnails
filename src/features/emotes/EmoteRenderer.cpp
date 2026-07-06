@@ -11,8 +11,6 @@ using namespace geode::prelude;
 using namespace cocos2d;
 using namespace paimon::emotes;
 
-// Strip GD color codes (<cX> and </c>) from text so BMFont labels
-// don't render them as literal characters.
 static std::string stripGDColorCodes(std::string const& text) {
     std::string result;
     result.reserve(text.size());
@@ -20,14 +18,12 @@ static std::string stripGDColorCodes(std::string const& text) {
     size_t i = 0;
     while (i < text.size()) {
         if (text[i] == '<' && i + 1 < text.size()) {
-            // Check for <cX> pattern (color open)
             if (text[i + 1] == 'c' && i + 3 < text.size() && text[i + 3] == '>') {
-                i += 4; // skip <cX>
+                i += 4;
                 continue;
             }
-            // Check for </c> pattern (color close)
             if (i + 3 < text.size() && text[i + 1] == '/' && text[i + 2] == 'c' && text[i + 3] == '>') {
-                i += 4; // skip </c>
+                i += 4;
                 continue;
             }
         }
@@ -88,8 +84,6 @@ static bool isWhitespaceChunk(std::string const& chunk) {
     return true;
 }
 
-// Parsing
-
 static bool isValidEmoteName(std::string const& name) {
     if (name.size() < 2) return false;
     for (char c : name) {
@@ -106,17 +100,14 @@ static bool isGDColorCode(std::string const& inner) {
     return false;
 }
 
-// Characters that may form a @mention username.
 static bool isMentionWordChar(char c) {
     return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
 }
 
-// Reads a mention starting at text[i] (which must be '@'). Returns the username
-// length (excluding '@') in `len`, or 0 if it's not a valid clickable mention.
 // '@everyone' is intentionally ignored (it has no profile to open).
 static size_t matchMention(std::string const& text, size_t i) {
     if (text[i] != '@') return 0;
-    if (i > 0 && isMentionWordChar(text[i - 1])) return 0; // must start a word
+    if (i > 0 && isMentionWordChar(text[i - 1])) return 0;
     size_t j = i + 1;
     while (j < text.size() && isMentionWordChar(text[j])) ++j;
     size_t len = j - i - 1;
@@ -160,7 +151,6 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
     auto& service = EmoteService::get();
     bool emotesAvailable = service.isLoaded();
 
-    // Strip GD color codes so they don't interfere with parsing or rendering
     std::string text = stripGDColorCodes(rawText);
 
     size_t i = 0;
@@ -169,7 +159,6 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
     while (i < text.size()) {
         bool matched = false;
 
-        // Try @username mention (works even without the emote catalog loaded)
         if (size_t mlen = matchMention(text, i); mlen > 0) {
             if (!currentText.empty()) {
                 tokens.push_back(TextToken{currentText});
@@ -180,7 +169,6 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
             matched = true;
         }
 
-        // Try :emotename: syntax
         if (!matched && emotesAvailable && text[i] == ':') {
             auto end = text.find(':', i + 1);
             if (end != std::string::npos && end > i + 1) {
@@ -197,7 +185,6 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
             }
         }
 
-        // Try <emotename> syntax
         if (!matched && emotesAvailable && text[i] == '<') {
             auto end = text.find('>', i + 1);
             if (end != std::string::npos && end > i + 1) {
@@ -227,8 +214,6 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
     return tokens;
 }
 
-// Rendering
-
 CCNode* EmoteRenderer::renderComment(
     std::string const& rawText,
     float emoteSize,
@@ -237,7 +222,6 @@ CCNode* EmoteRenderer::renderComment(
     float fontSize,
     bool forceRender
 ) {
-    // Size emotes from font metrics so they match the natural line height.
     auto refProbe = CCLabelBMFont::create("Ag", "chatFont.fnt");
     if (emoteSize <= 0.f) {
         float originalRefHeight = refProbe ? refProbe->getContentSize().height * fontSize : 20.f;
@@ -246,7 +230,6 @@ CCNode* EmoteRenderer::renderComment(
 
     auto tokens = parseTokens(rawText);
 
-    // If nothing special found and not forced, return nullptr (caller keeps original label)
     bool hasEmote = false;
     bool hasMention = false;
     for (auto& t : tokens) {
@@ -258,11 +241,9 @@ CCNode* EmoteRenderer::renderComment(
     auto container = CCNode::create();
     container->setAnchorPoint({0.f, 1.f});
 
-    // Use chatFont as the reference line height so all fonts occupy the same vertical space.
     float refHeight = refProbe ? refProbe->getContentSize().height * fontSize : 20.f;
 
     auto fontProbe = CCLabelBMFont::create("Ag", font);
-    // Normalize custom font scale to chatFont's visual height.
     float fontScale = fontSize;
     if (fontProbe && refProbe && std::string(font) != "chatFont.fnt") {
         float fontRawH = fontProbe->getContentSize().height;
@@ -273,18 +254,15 @@ CCNode* EmoteRenderer::renderComment(
     }
     float fontHeight = fontProbe ? fontProbe->getContentSize().height * fontScale : refHeight;
 
-    // Line height is based on the reference font, not the custom font
     constexpr float LINE_GAP = 3.f;
     float lineHeight = std::max(emoteSize, refHeight) + LINE_GAP;
 
-    // Align custom-font baselines with chatFont by centering on the reference height.
     float baselineAdjust = (refHeight - fontHeight) / 2.f;
 
     float curX = 0.f;
     float curY = -lineHeight;
     float maxUsedX = 0.f;
 
-    // Lazy menu holding clickable @mention buttons, sharing the container's coord space.
     CCMenu* mentionMenu = nullptr;
     auto ensureMentionMenu = [&]() -> CCMenu* {
         if (!mentionMenu) {
@@ -328,9 +306,7 @@ CCNode* EmoteRenderer::renderComment(
                     }
                 }
 
-                // Center text vertically using reference height, then apply baseline adjustment.
-                float labelH = label->getContentSize().height * fontScale;
-                float textYOff = (lineHeight - labelH) / 2.f + baselineAdjust;
+                float labelH = label->getContentSize().height * fontScale;                float textYOff = (lineHeight - labelH) / 2.f + baselineAdjust;
                 label->setPosition({curX, curY + textYOff});
                 container->addChild(label);
                 curX += labelW;
@@ -347,7 +323,6 @@ CCNode* EmoteRenderer::renderComment(
             auto placeholder = CCNode::create();
             placeholder->setContentSize({emoteSize, emoteSize});
             placeholder->setAnchorPoint({0.f, 0.f});
-            // Center emote vertically within the line
             float emoteYOff = (lineHeight - emoteSize) / 2.f;
             placeholder->setPosition({curX, curY + emoteYOff});
             container->addChild(placeholder, 5);
@@ -377,7 +352,6 @@ CCNode* EmoteRenderer::renderComment(
                         };
 
                         if (isGif && !gifData.empty()) {
-                            // Cached by emote name: shares GPU textures across uses and decodes off the main thread.
                             AnimatedGIFSprite::createAsync(gifData, emoteKey, [attach](AnimatedGIFSprite* spr) {
                                 attach(spr);
                             });
@@ -391,11 +365,10 @@ CCNode* EmoteRenderer::renderComment(
             curX += emoteSize + 2.f;
             maxUsedX = std::max(maxUsedX, curX);
         } else if (auto* mt = std::get_if<MentionToken>(&token)) {
-            // Colored clickable label that opens the mentioned user's profile.
             std::string display = "@" + mt->username;
             auto label = CCLabelBMFont::create(display.c_str(), font);
             if (label) {
-                label->setColor({90, 170, 255}); // link blue
+                label->setColor({90, 170, 255});
                 // Pre-scale the label, not the menu item: CCMenuItemSpriteExtra resets item scale on press.
                 label->setScale(fontScale);
 
@@ -425,15 +398,12 @@ CCNode* EmoteRenderer::renderComment(
         }
     }
 
-    // curY is the bottom of the last line (negative); content spans y=0 down to curY.
-    float totalH = -curY;  // positive height (curY is negative)
+    float totalH = -curY;
 
-    // Shift children up so content fits in [0, totalH].
     for (auto* child : CCArrayExt<CCNode*>(container->getChildren())) {
         child->setPositionY(child->getPositionY() + totalH);
     }
 
-    // Clamp container size to maxWidth to prevent overflow
     float clampedW = std::min(maxUsedX, maxWidth);
     container->setContentSize({clampedW, totalH});
 

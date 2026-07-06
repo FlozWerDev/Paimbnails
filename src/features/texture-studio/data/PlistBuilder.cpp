@@ -12,29 +12,16 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Format helpers
-
-// Format an int as decimal — wrapped because we want to be explicit and
-// future-proof against the day someone passes a signed value we should clamp.
 std::string formatInt(int v) {
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%d", v);
     return std::string(buf);
 }
 
-// Match PackGen's {x,y} style: no trailing zeros.
-//   Number.isInteger(rounded) ? rounded : trim(rounded.toFixed(2))
-// GD itself emits 1-decimal forms like "{-58.5,58.5}" and 0-decimal forms
-// like "{-79,79}". We replicate by:
-//   1. Rounding to 2 decimal places.
-//   2. Emitting integer form if the result is integer-valued.
-//   3. Otherwise emitting %.2f and trimming trailing zeros (and the dot
-//      if no decimals remain).
+// Emit numbers in PackGen/GD style (no trailing zeros) for byte-compatible output.
 std::string formatNumber(float v) {
-    // Round to 2 decimals first.
     float rounded = std::round(v * 100.0f) / 100.0f;
     if (rounded == std::floor(rounded)) {
-        // Integer-valued: emit without decimals.
         char buf[32];
         std::snprintf(buf, sizeof(buf), "%d", static_cast<int>(rounded));
         return std::string(buf);
@@ -42,13 +29,10 @@ std::string formatNumber(float v) {
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%.2f", rounded);
     std::string s(buf);
-    // Trim trailing zeros after the decimal point (e.g. "1.50" → "1.5").
     if (auto dot = s.find('.'); dot != std::string::npos) {
         std::size_t lastNonZero = s.find_last_not_of('0');
         if (lastNonZero != std::string::npos) {
-            // Cut the trailing zeros.
             s.erase(lastNonZero + 1);
-            // If the dot itself is left at the end, remove it.
             if (!s.empty() && s.back() == '.') s.pop_back();
         }
     }
@@ -64,8 +48,6 @@ std::string formatRect(int x, int y, int w, int h) {
                 + formatInt(w) + "," + formatInt(h) + "}}";
 }
 
-// XML-escape five entities. We only need the bare minimum because plist
-// content is ASCII-safe in practice (sprite names, integers, numeric tuples).
 std::string xmlEscape(std::string_view s) {
     std::string out;
     out.reserve(s.size());
@@ -82,14 +64,11 @@ std::string xmlEscape(std::string_view s) {
     return out;
 }
 
-// XML writer with indentation tracking
-
 class PlistWriter {
 public:
     std::string take() { return std::move(m_out); }
 
     void writeProlog() {
-        // Standard plist 1.0 header.
         m_out += "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
         m_out += "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\""
                  " \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n";
@@ -105,9 +84,7 @@ public:
     void openArray() { line("<array>"); ++m_depth; }
     void closeArray() { --m_depth; line("</array>"); }
 
-    // Self-closing empty array. GD's plists use this form for the (very
-    // common) empty `aliases` arrays; matching it avoids a diff against the
-    // original sheets.
+    // GD emits empty arrays self-closing; match for byte-compat.
     void emptyArray() { line("<array/>"); }
 
     void key(std::string_view k) {
@@ -125,7 +102,7 @@ private:
     int m_depth = 0;
 
     void indent() {
-        for (int i = 0; i < m_depth; ++i) m_out += "    ";  // 4 spaces, matches PackGen
+        for (int i = 0; i < m_depth; ++i) m_out += "    ";
     }
     void line(std::string_view s) {
         indent();
@@ -135,8 +112,6 @@ private:
 };
 
 }  // anonymous namespace
-
-// Public API
 
 geode::Result<std::string> PlistBuilder::buildString(ParsedSpritesheet const& sheet) {
     if (sheet.metadata.sizeW <= 0 || sheet.metadata.sizeH <= 0) {
@@ -148,21 +123,14 @@ geode::Result<std::string> PlistBuilder::buildString(ParsedSpritesheet const& sh
     w.writeProlog();
     w.openDict();
 
-    // <key>frames</key>
     w.key("frames");
     w.openDict();
 
-    // Frames are emitted in insertion order — we rely on the upstream
-    // packer/extractor to put them in a deterministic sequence (matching
-    // PackGen's "tallest first" sort). Re-sorting here would invalidate
-    // the rect data we computed.
+    // Emit in insertion order; re-sorting would invalidate the computed rects.
     for (auto const& f : sheet.frames) {
         w.key(f.name);
         w.openDict();
 
-        // aliases array (always present for round-trip — even if empty).
-        // GD emits the empty case as <array/> (self-closing); we match
-        // that for byte-level compat with the original sheets.
         w.key("aliases");
         if (f.aliases.empty()) {
             w.emptyArray();
@@ -174,43 +142,35 @@ geode::Result<std::string> PlistBuilder::buildString(ParsedSpritesheet const& sh
             w.closeArray();
         }
 
-        // spriteOffset
         w.key("spriteOffset");
         w.valueString(formatBracedTuple(f.offsetX, f.offsetY));
 
-        // spriteSize  (un-rotated logical size)
         w.key("spriteSize");
         w.valueString(formatBracedTuple(static_cast<float>(f.spriteW),
                                         static_cast<float>(f.spriteH)));
 
-        // spriteSourceSize  (full size before trim)
         w.key("spriteSourceSize");
         w.valueString(formatBracedTuple(static_cast<float>(f.sourceW),
                                         static_cast<float>(f.sourceH)));
 
-        // textureRect  (where it lives in the atlas; rotated frames record
-        // the rotated footprint here)
         w.key("textureRect");
         w.valueString(formatRect(f.rectX, f.rectY, f.rectW, f.rectH));
 
-        // textureRotated
         w.key("textureRotated");
         w.valueBool(f.rotated);
 
-        w.closeDict();  // close per-frame dict
+        w.closeDict();
     }
 
-    w.closeDict();  // close <frames> dict
+    w.closeDict();
 
-    // <key>metadata</key>
     w.key("metadata");
     w.openDict();
 
     w.key("format");
-    w.valueInt(3);  // we always write format 3
+    w.valueInt(3);
 
     w.key("pixelFormat");
-    // GD always uses RGBA8888 as the runtime pixelFormat declaration.
     w.valueString("RGBA8888");
 
     w.key("premultiplyAlpha");
@@ -231,9 +191,9 @@ geode::Result<std::string> PlistBuilder::buildString(ParsedSpritesheet const& sh
     w.key("textureFileName");
     w.valueString(sheet.metadata.textureFileName);
 
-    w.closeDict();  // close metadata
+    w.closeDict();
 
-    w.closeDict();  // close root dict
+    w.closeDict();
     w.writeEpilog();
 
     return Ok(w.take());

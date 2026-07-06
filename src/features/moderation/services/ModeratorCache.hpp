@@ -8,10 +8,6 @@
 #include <mutex>
 #include <chrono>
 
-// Cache de roles de moderador/admin por username.
-// Singleton thread-safe con eviction LRU.
-// Reemplaza los extern globales de BadgeCache.hpp.
-
 struct ModStatus {
     bool isMod = false;
     bool isAdmin = false;
@@ -29,12 +25,9 @@ public:
         return instance;
     }
 
-    // inserta o actualiza el rol de un usuario.
-    // admin implica mod (convencion del proyecto).
     void insert(std::string const& username, bool isMod, bool isAdmin) {
         std::lock_guard<std::mutex> lock(m_mutex);
 
-        // normalizar: admin siempre es mod
         if (isAdmin) isMod = true;
         auto now = std::chrono::steady_clock::now();
         purgeExpiredLocked(now);
@@ -45,7 +38,6 @@ public:
             return;
         }
 
-        // purgar la mitad mas antigua si superamos el limite
         while (m_cache.size() >= MAX_SIZE && !m_order.empty()) {
             auto oldest = m_order.front();
             m_cache.erase(oldest);
@@ -58,7 +50,6 @@ public:
         m_orderSet.insert(username);
     }
 
-    // devuelve el estado del usuario si esta en cache
     std::optional<ModStatus> lookup(std::string const& username) {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto now = std::chrono::steady_clock::now();
@@ -108,10 +99,7 @@ private:
     }
 };
 
-// === Wrappers legacy (definidos en BadgeHooks.cpp) ===
-// Mantienen compatibilidad con código que usaba BadgeCache.hpp.
 void moderatorCacheInsert(std::string const& username, bool isMod, bool isAdmin);
 bool moderatorCacheGet(std::string const& username, bool& isMod, bool& isAdmin);
 
-// muestra el popup con info del badge (implementada en BadgeHooks.cpp)
 void showBadgeInfoPopup(cocos2d::CCNode* sender);

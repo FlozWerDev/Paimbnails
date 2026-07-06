@@ -30,8 +30,6 @@ void dispatchForumFallback(Fallback const& fallback) {
 
 } // namespace
 
-// JSON serialization helpers
-
 static std::string jsonStr(matjson::Value const& v, std::string const& def = "") {
     if (v.isString()) return v.asString().unwrapOr(def);
     return def;
@@ -187,8 +185,6 @@ Post Post::fromJson(matjson::Value const& v) {
     return p;
 }
 
-// ForumApi
-
 ForumApi& ForumApi::get() {
     static ForumApi instance;
     return instance;
@@ -243,7 +239,6 @@ void ForumApi::loadCache() {
         try {
             m_cache.push_back(Post::fromJson(v));
         } catch (...) {
-            // skip corrupt entries
         }
     }
 }
@@ -254,7 +249,6 @@ void ForumApi::saveCache() {
         try {
             arr.push(p.toJson());
         } catch (...) {
-            // skip corrupt entries
         }
     }
     Mod::get()->setSavedValue("forum-cache", arr);
@@ -274,8 +268,6 @@ Post& ForumApi::upsertCache(Post const& p) {
     return m_cache.front();
 }
 
-// helpers callback
-
 template<typename T>
 static Result<T> makeOk(T data) {
     Result<T> r;
@@ -292,10 +284,7 @@ static Result<T> makeErr(std::string const& msg) {
     return r;
 }
 
-// listPosts
-
 void ForumApi::listPosts(ListFilter const& filter, ListCallback cb) {
-    // Build query string
     int accountId = Author::currentUser().accountID;
     std::string qs = fmt::format("?sort={}&page={}&limit={}&_aid={}",
         sortToString(filter.sort), filter.page, filter.limit, accountId);
@@ -312,7 +301,6 @@ void ForumApi::listPosts(ListFilter const& filter, ListCallback cb) {
     }
 
     auto fallback = [this, filter, cb]() {
-        // Filter/sort local cache
         std::vector<Post> out;
         out.reserve(m_cache.size());
         for (auto const& p : m_cache) {
@@ -374,8 +362,6 @@ void ForumApi::listPosts(ListFilter const& filter, ListCallback cb) {
         });
 }
 
-// getPost
-
 void ForumApi::getPost(std::string const& postId, PostCallback cb) {
     auto fallback = [this, postId, cb]() {
         if (auto* p = findCached(postId)) {
@@ -397,8 +383,6 @@ void ForumApi::getPost(std::string const& postId, PostCallback cb) {
         });
 }
 
-// createPost
-
 void ForumApi::createPost(CreatePostRequest const& req, PostCallback cb) {
     Post p;
     p.id          = makeLocalId();
@@ -409,7 +393,6 @@ void ForumApi::createPost(CreatePostRequest const& req, PostCallback cb) {
     p.createdAt   = nowEpoch();
     p.updatedAt   = p.createdAt;
 
-    // Always save locally first (optimistic)
     upsertCache(p);
     saveCache();
 
@@ -433,13 +416,12 @@ void ForumApi::createPost(CreatePostRequest const& req, PostCallback cb) {
         [this, cb, localId = p.id](bool ok, std::string const& resp) {
             if (!ok) {
                 int code = extractHttpStatus(resp);
-                // keep local copy on server error so data is not lost
                 if (auto* cached = findCached(localId)) {
                     if (code == 429) {
-                        markPostCooldown(30); // server rate limit ~30s
+                        markPostCooldown(30);
                         dispatchForumCallback(cb, makeErr<Post>("Rate limited. Please wait before posting again."));
                     } else {
-                        dispatchForumCallback(cb, makeOk(*cached)); // silent success with local copy
+                        dispatchForumCallback(cb, makeOk(*cached));
                     }
                 } else {
                     if (code == 429) {
@@ -461,18 +443,14 @@ void ForumApi::createPost(CreatePostRequest const& req, PostCallback cb) {
                 return;
             }
             auto srv = Post::fromJson(parsed.unwrap());
-            // replace optimistic local copy with server copy
             upsertCache(srv);
             saveCache();
-            markPostCooldown(3); // prevent accidental double-submit
+            markPostCooldown(3);
             dispatchForumCallback(cb, makeOk(srv));
         });
 }
 
-// deletePost
-
 void ForumApi::deletePost(std::string const& postId, BoolCallback cb) {
-    // Delete locally without waiting
     for (auto it = m_cache.begin(); it != m_cache.end(); ++it) {
         if (it->id == postId) { m_cache.erase(it); break; }
     }
@@ -490,8 +468,6 @@ void ForumApi::deletePost(std::string const& postId, BoolCallback cb) {
         [cb](bool ok, std::string const&) { dispatchForumCallback(cb, makeOk(ok)); });
 }
 
-// togglePostLike
-
 void ForumApi::togglePostLike(std::string const& postId, BoolCallback cb) {
     if (auto* p = findCached(postId)) {
         p->likedByMe = !p->likedByMe;
@@ -508,11 +484,8 @@ void ForumApi::togglePostLike(std::string const& postId, BoolCallback cb) {
         [cb](bool ok, std::string const&) { dispatchForumCallback(cb, makeOk(ok)); });
 }
 
-// reportPost
-
 void ForumApi::reportPost(std::string const& postId, std::string const& reason, BoolCallback cb) {
     if (!hasServer()) {
-        // Even without a server, record the report locally
         if (auto* p = findCached(postId)) p->reportCount++;
         saveCache();
         dispatchForumCallback(cb, makeOk(true));
@@ -529,8 +502,6 @@ void ForumApi::reportPost(std::string const& postId, std::string const& reason, 
         [cb](bool ok, std::string const&) { dispatchForumCallback(cb, makeOk(ok)); });
 }
 
-// createReply
-
 void ForumApi::createReply(CreateReplyRequest const& req, ReplyCallback cb) {
     Reply r;
     r.id            = "local-" + std::to_string(nowEpoch()) + "-" + std::to_string(rand());
@@ -540,7 +511,6 @@ void ForumApi::createReply(CreateReplyRequest const& req, ReplyCallback cb) {
     r.content       = req.content;
     r.createdAt     = nowEpoch();
 
-    // Optimistic insertion into cache
     if (auto* p = findCached(req.postId)) {
         p->replies.push_back(r);
         p->replyCount++;
@@ -563,7 +533,7 @@ void ForumApi::createReply(CreateReplyRequest const& req, ReplyCallback cb) {
             if (!ok) {
                 int code = extractHttpStatus(resp);
                 if (code == 429) {
-                    markReplyCooldown(15); // server rate limit ~15s for replies
+                    markReplyCooldown(15);
                     dispatchForumCallback(cb, makeErr<Reply>("Rate limited. Please wait before replying again."));
                 } else {
                     dispatchForumCallback(cb, makeErr<Reply>("Server error"));
@@ -572,7 +542,7 @@ void ForumApi::createReply(CreateReplyRequest const& req, ReplyCallback cb) {
             }
             auto parsed = matjson::parse(resp);
             if (!parsed.isOk()) { dispatchForumCallback(cb, makeErr<Reply>("Bad JSON")); return; }
-            markReplyCooldown(3); // prevent accidental double-submit
+            markReplyCooldown(3);
             dispatchForumCallback(cb, makeOk(Reply::fromJson(parsed.unwrap())));
         });
 }
@@ -657,8 +627,6 @@ void ForumApi::listTags(TagsCallback cb) {
         });
 }
 
-// Helpers UI
-
 std::string formatRelativeTime(int64_t epoch) {
     if (epoch <= 0) return "just now";
     int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
@@ -688,8 +656,6 @@ std::string formatAbsoluteTime(int64_t epoch) {
     oss << std::put_time(&tm, "%Y-%m-%d %H:%M");
     return oss.str();
 }
-
-// UserStatus
 
 matjson::Value UserStatus::toJson() const {
     return matjson::makeObject({
@@ -723,11 +689,8 @@ ProfileView ProfileView::fromJson(matjson::Value const& v) {
     return pv;
 }
 
-// User status endpoints
-
 void ForumApi::getUserStatus(int accountID, UserStatusCallback cb) {
     if (!hasServer()) {
-        // No server: return offline with lastSeen = 0
         UserStatus offline;
         offline.accountID = accountID;
         offline.online = false;
@@ -779,8 +742,6 @@ void ForumApi::sendHeartbeat(BoolCallback cb) {
         });
 }
 
-// Profile view endpoints
-
 void ForumApi::recordProfileView(int accountID, BoolCallback cb) {
     if (!hasServer()) {
         dispatchForumCallback(cb, makeOk(true));
@@ -799,7 +760,6 @@ void ForumApi::recordProfileView(int accountID, BoolCallback cb) {
             if (!ok) {
                 int code = extractHttpStatus(resp);
                 if (code == 404) {
-                    // Server does not support profile views yet — silently ignore
                     dispatchForumCallback(cb, makeOk(true));
                 } else if (code == 429) {
                     dispatchForumCallback(cb, makeErr<bool>("Rate limited. Please wait before viewing profiles again."));
@@ -847,8 +807,6 @@ void ForumApi::getProfileViews(int accountID, ProfileViewsCallback cb) {
             dispatchForumCallback(cb, makeOk(std::move(views)));
         });
 }
-
-// Cooldown tracking (client-side rate limit awareness)
 
 int64_t ForumApi::getPostCooldownRemaining() const {
     int64_t now = nowEpoch();

@@ -48,7 +48,6 @@ public:
         shutdown();
     }
 
-    // no copy or move
     ThreadPool(ThreadPool const&) = delete;
     ThreadPool& operator=(ThreadPool const&) = delete;
 

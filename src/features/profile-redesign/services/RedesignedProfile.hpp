@@ -1,6 +1,5 @@
 #pragma once
 
-// real ProfilePage's main layer (so the profile background and every other
 #include <string>
 
 namespace cocos2d {
@@ -13,13 +12,8 @@ class GJCommentListLayer;
 class GJComment;
 
 namespace paimon::profile_redesign {
-// asynchronous profile data is ready, preventing a one-frame vanilla flash.
 void prepareInPlace(cocos2d::CCLayer* mainLayer);
 
-// `comments` is the account's posts (an array of GJComment, may be null/empty);
-// `commentsLoaded` is false until the asynchronous fetch has returned, so the
-// left card can show a "Loading..." placeholder. The redesign builds its own
-// to draw once scaled into the small card.
 void buildInPlace(
     cocos2d::CCLayer* mainLayer,
     cocos2d::CCNode* buttonMenu,
@@ -31,4 +25,4 @@ void buildInPlace(
     bool commentsLoaded
 );
 
-} // namespace paimon::profile_redesign
+}

@@ -1,12 +1,12 @@
 {
-  "geode": "5.6.1",
+  "geode": "5.7.1",
   "gd": {
     "win": "2.2081",
     "android": "2.2081",
     "mac": "2.2081",
     "ios": "2.2081"
   },
-  "version": "v1.0.8",
+  "version": "v1.0.9",
   "id": "flozwer.paimbnails2",
   "name": "Paimbnails",
   "developer": "FlozWer",
@@ -32,7 +32,7 @@
       "name": "Language / Idioma",
       "description": "Select language / Seleccionar idioma",
       "default": "english",
-      "one-of": ["spanish", "english", "portuguese", "french", "german", "russian", "japanese"]
+      "one-of": ["english", "spanish"]
     },
     "auto-update": {
       "type": "bool",
@@ -111,7 +111,7 @@
       "type": "bool",
       "name": "Compact Mode",
       "description": "Shorter level cells to fit more on screen.",
-      "default": false
+      "default": true
     },
     "auto-preview-title": {
       "name": "Auto Previews",
@@ -167,7 +167,10 @@
     "auto-preview-clear": {
       "type": "button",
       "name": "Clear Generated Previews",
-      "description": "Delete every auto-generated preview from disk. Real thumbnails and your own captures are not affected."
+      "description": "Delete every auto-generated preview from disk. Real thumbnails and your own captures are not affected.",
+      "buttons": {
+        "run": "Clear"
+      }
     },
     "levelinfo-title": {
       "name": "Level Info Screen",
@@ -234,7 +237,10 @@
     "open-menu-music-folder": {
       "type": "button",
       "name": "Open Menu Music Folder",
-      "description": "Open the folder with cover-debug.log, library.json and saved song covers."
+      "description": "Open the folder with cover-debug.log, library.json and saved song covers.",
+      "buttons": {
+        "run": "Open"
+      }
     },
     "editorMusicEnable": {
       "type": "bool",
@@ -247,6 +253,32 @@
       "name": "Toggle Editor Music",
       "description": "Show/hide the editor music mini player (only works inside the level editor).",
       "default": "Ctrl+M",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "editor-rotate-title": {
+      "name": "Editor Canvas Rotate",
+      "description": "Rotate the whole editor view to build at an angle.",
+      "type": "title"
+    },
+    "editor-rotate-enable": {
+      "type": "bool",
+      "name": "Editor Canvas Rotate",
+      "description": "Hold Alt and drag with the right mouse button in the level editor to rotate the whole canvas around the center of the screen (uses the game's native camera angle, so objects, grid and background all turn). Snaps to 45-degree steps. Building and dragging keep working while rotated.",
+      "default": false
+    },
+    "editor-rotate-slider-thumb": {
+      "type": "bool",
+      "name": "Rotate Slider Thumb",
+      "description": "Rotate the editor's position-slider thumb to match the current canvas angle, so you can read the rotation at a glance.",
+      "default": true,
+      "enable-if": "editor-rotate-enable"
+    },
+    "editor-rotate-reset-keybind": {
+      "type": "keybind",
+      "name": "Reset Editor Rotation",
+      "description": "Snap the editor canvas back to upright (0 degrees).",
+      "default": [],
       "category": "editor",
       "allow-in-text-inputs": false
     },
@@ -332,10 +364,16 @@
       "description": "Additional features",
       "type": "title"
     },
+    "smooth-ui-enabled": {
+      "type": "bool",
+      "name": "Smooth UI",
+      "description": "Enables the Smooth UI control center in Paimon Hub > Extras: softer popups, button motion, smooth scroll, blur fades, and transition tuning.",
+      "default": true
+    },
     "colorful-icons-enabled": {
       "type": "bool",
       "name": "Paimon Icons (Recolor)",
-      "description": "Recolor every icon (icon kit, shops, achievements, rewards) using your player colors. Detailed settings - color modes, lock styles, animations, presets - are inside the garage gear button.",
+      "description": "Recolor every icon in the icon kit and shops: your colors, fixed colors, gradient, rainbow, random and more. Everything is configured from the round cube button in the garage, with a live preview.",
       "default": true
     },
     "global-icons-enabled": {
@@ -387,6 +425,49 @@
       "description": "Replace the OS cursor with a custom image.",
       "default": false
     },
+    "smooth-text-enabled": {
+      "type": "bool",
+      "name": "Smooth Text Input",
+      "description": "Characters gently fade, rise and pop in as you type in text fields, and fade away when deleted. Geode setting inputs are left untouched to avoid glitches.",
+      "default": false
+    },
+    "smooth-text-fade-in": {
+      "type": "float",
+      "name": "Text: Fade In",
+      "description": "How long a new character takes to appear (seconds). 0 = instant.",
+      "default": 0.16,
+      "min": 0.0,
+      "max": 1.0,
+      "control": { "slider": true },
+      "enable-if": "smooth-text-enabled"
+    },
+    "smooth-text-fade-out": {
+      "type": "float",
+      "name": "Text: Fade Out",
+      "description": "How long a deleted character takes to vanish (seconds). 0 = instant.",
+      "default": 0.14,
+      "min": 0.0,
+      "max": 1.0,
+      "control": { "slider": true },
+      "enable-if": "smooth-text-enabled"
+    },
+    "smooth-text-rise": {
+      "type": "float",
+      "name": "Text: Rise Distance",
+      "description": "How far characters glide up into place (pixels). 0 = pure fade, no motion.",
+      "default": 6.0,
+      "min": 0.0,
+      "max": 30.0,
+      "control": { "slider": true },
+      "enable-if": "smooth-text-enabled"
+    },
+    "smooth-text-scale-pop": {
+      "type": "bool",
+      "name": "Text: Scale Pop",
+      "description": "Characters also spring up from a smaller size for a bouncier feel.",
+      "default": true,
+      "enable-if": "smooth-text-enabled"
+    },
     "capture-title": {
       "name": "Capture & Keybinds",
       "description": "Capture and keyboard shortcuts",
@@ -419,6 +500,19 @@
       "default": "T",
       "category": "gameplay",
       "allow-in-text-inputs": false
+    },
+    "capture-menu-keybind": {
+      "type": "keybind",
+      "name": "Open Capture Menu",
+      "description": "Key (or mouse button) that opens the capture menu when not playing. Works as an alternative or replacement for right-click. Examples: A, Ctrl+A.",
+      "default": "",
+      "allow-in-text-inputs": false
+    },
+    "capture-menu-rightclick": {
+      "type": "bool",
+      "name": "Open Capture Menu with Right-Click",
+      "description": "When enabled, right-click opens the capture menu (default behavior). Disable it if you prefer to use only the 'Open Capture Menu' keybind above.",
+      "default": true
     },
     "pause-zoom-title": {
       "name": "Pause Zoom",
@@ -536,7 +630,10 @@
     "open-thumbnails-folder": {
       "type": "button",
       "name": "Open Thumbnails Folder",
-      "description": "Open the folder where downloaded thumbnails are stored on disk."
+      "description": "Open the folder where downloaded thumbnails are stored on disk.",
+      "buttons": {
+        "run": "Open"
+      }
     },
     "texture-studio-title": {
       "name": "Texture Studio",
@@ -810,6 +907,51 @@
       "default": "Ctrl+G",
       "category": "editor",
       "allow-in-text-inputs": false
+    },
+    "collab-title": {
+      "name": "Collab Editor",
+      "description": "Real-time collaborative level editing over a Render server.",
+      "type": "title"
+    },
+    "collab-enabled": {
+      "type": "bool",
+      "name": "Enable Collab Editor",
+      "description": "Show the Collab button in the editor. Requires the access code the first time.",
+      "default": true
+    },
+    "collab-username": {
+      "type": "string",
+      "name": "Collab Display Name",
+      "description": "Name other editors see in the room. Leave empty to use your GD username.",
+      "default": ""
+    },
+    "collab-invites": {
+      "type": "bool",
+      "name": "Collab Room Invites",
+      "description": "Let friends invite you to their collab rooms while you're online, and receive an invite prompt. Turn off to stop connecting to the invite server.",
+      "default": true
+    },
+    "collab-voice": {
+      "type": "bool",
+      "name": "Collab Voice Chat",
+      "description": "Enable room voice chat (walkie-talkie style) during collab sessions. Toggle your mic with the Mic button inside the editor.",
+      "default": true
+    },
+    "collab-voice-volume": {
+      "type": "float",
+      "name": "Collab Voice Volume",
+      "description": "Playback volume for other editors' voices.",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 2.0
+    },
+    "collab-voice-sensitivity": {
+      "type": "float",
+      "name": "Collab Mic Sensitivity",
+      "description": "Voice activation threshold. Lower values transmit with quieter input.",
+      "default": 0.05,
+      "min": 0.01,
+      "max": 0.5
     },
     "debug-title": {
       "name": "Debug",

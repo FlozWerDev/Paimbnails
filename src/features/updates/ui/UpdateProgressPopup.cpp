@@ -1,14 +1,10 @@
-﻿#include "UpdateProgressPopup.hpp"
+#include "UpdateProgressPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/UpdateChecker.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 
 #include <Geode/Geode.hpp>
-
-#ifdef GEODE_IS_WINDOWS
-#include <windows.h>
-#endif
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -30,30 +26,6 @@ std::string formatBytes(uint64_t b) {
     return fmt::format("{} B", b);
 }
 
-void restartGameProcess() {
-#ifdef GEODE_IS_WINDOWS
-    wchar_t exePath[MAX_PATH] = {};
-    auto len = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    if (len > 0 && len < MAX_PATH) {
-        STARTUPINFOW si{};
-        si.cb = sizeof(si);
-        PROCESS_INFORMATION pi{};
-
-        if (CreateProcessW(exePath, nullptr, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
-            CloseHandle(pi.hThread);
-            CloseHandle(pi.hProcess);
-            geode::utils::game::exit(true);
-            return;
-        }
-
-        log::warn("[UpdateChecker] CreateProcessW failed, falling back to Geode restart");
-    } else {
-        log::warn("[UpdateChecker] GetModuleFileNameW failed, falling back to Geode restart");
-    }
-#endif
-
-    geode::utils::game::restart(true);
-}
 }
 
 UpdateProgressPopup* UpdateProgressPopup::create() {
@@ -260,11 +232,9 @@ void UpdateProgressPopup::onCancel(CCObject*) {
 
 void UpdateProgressPopup::onRestart(CCObject*) {
     log::info("[UpdateChecker] User requested restart");
-    if (UpdateChecker::get().restartToApplyPendingUpdate()) {
-        geode::utils::game::exit(true);
-        return;
+    if (!UpdateChecker::get().restartToApplyPendingUpdate()) {
+        geode::utils::game::restart(true);
     }
-    restartGameProcess();
 }
 
 void UpdateProgressPopup::onClose(CCObject* sender) {

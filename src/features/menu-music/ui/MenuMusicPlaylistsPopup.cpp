@@ -1,4 +1,4 @@
-﻿#include "MenuMusicPlaylistsPopup.hpp"
+#include "MenuMusicPlaylistsPopup.hpp"
 
 #include "../services/MenuMusicLibrary.hpp"
 #include "../services/MenuMusicPlayer.hpp"
@@ -6,6 +6,7 @@
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Notification.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
 #include <chrono>
@@ -320,7 +321,7 @@ void MenuMusicPlaylistsPopup::onDeletePlaylist(CCObject* sender) {
     auto* idStr = typeinfo_cast<CCString*>(btn->getUserObject());
     if (!idStr) return;
     std::string id = idStr->getCString();
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         "Delete Playlist",
         "This cannot be undone (tracks stay in your library).",
         "Cancel", "Delete",
@@ -328,7 +329,7 @@ void MenuMusicPlaylistsPopup::onDeletePlaylist(CCObject* sender) {
             if (!confirm) return;
             MenuMusicLibrary::get().removePlaylist(id);
         }
-    );
+    ).showInstant();
 }
 
 void MenuMusicPlaylistsPopup::onRemoveFromPlaylist(CCObject* sender) {

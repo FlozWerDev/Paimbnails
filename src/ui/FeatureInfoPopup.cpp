@@ -1,4 +1,4 @@
-﻿#include "FeatureInfoPopup.hpp"
+#include "FeatureInfoPopup.hpp"
 #include "../utils/DynamicPopupRegistry.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../framework/ui/declarative/DeclarativeUI.hpp"

@@ -1,7 +1,8 @@
-﻿#include "VerificationCenterLayer.hpp"
+#include "VerificationCenterLayer.hpp"
 #include "../../../framework/state/SessionState.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/ui/LoadingSpinner.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
@@ -1002,10 +1003,7 @@ void VerificationCenterLayer::onViewReport(CCObject* sender) {
             }
             std::string note = it.note;
             if (note.empty()) note = "No details provided";
-            FLAlertLayer::create(
-                Localization::get().getString("queue.report_reason").c_str(),
-                note.c_str(),
-                Localization::get().getString("general.close").c_str())->show();
+            PopupManager::get().alert(Localization::get().getString("queue.report_reason"), note, Localization::get().getString("general.close")).showInstant();
             return;
         }
     }
@@ -1030,7 +1028,7 @@ void VerificationCenterLayer::onBanUser(CCObject* sender) {
     int capturedAccountID = accountID;
     std::string capturedUsername = reportedUsername;
 
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         "Ban User",
         fmt::format("Are you sure you want to <cr>ban</c> <cy>{}</c>?", reportedUsername),
         "Cancel", "Ban",
@@ -1061,7 +1059,7 @@ void VerificationCenterLayer::onBanUser(CCObject* sender) {
                 "", "user"
             );
         }
-    );
+    ).showInstant();
 }
 
 void VerificationCenterLayer::onViewThumb(CCObject* sender) {

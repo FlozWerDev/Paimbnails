@@ -1,4 +1,4 @@
-﻿#include <Geode/binding/InfoLayer.hpp>
+#include <Geode/binding/InfoLayer.hpp>
 #include <Geode/modify/InfoLayer.hpp>
 #include "../framework/HookConventions.hpp"
 #include <Geode/binding/GJUserScore.hpp>
@@ -21,6 +21,7 @@
 #include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include "LevelInfoOverlayPause.hpp"
 #include <algorithm>
 #include <tuple>
 
@@ -42,6 +43,10 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         int m_levelID = 0;
         paimon::SubscriptionHandle m_bgEventHandle = 0;
         int m_bgRequestToken = 0;
+        int m_styleTickCount = 0;
+        bool m_pausedLevelInfo = false;
+        bool m_bgSettled = false;
+        uintptr_t m_lastBgTex = 0;
     };
 
     static std::string makeInfoLayerBlurCacheKey(int levelID, CCSize const& imgArea) {
@@ -108,18 +113,37 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         return clip;
     }
 
+    void removeAllInfoLayerBgClips() {
+        auto layer = this->m_mainLayer;
+        if (!layer) return;
+        // Remove every paimon bg clip — delayed single-ID cleanup leaked clips
+        // when gallery/async blur installed multiple times before 0.35s fired.
+        auto* children = layer->getChildren();
+        if (!children) return;
+        std::vector<CCNode*> toRemove;
+        for (auto* child : CCArrayExt<CCNode*>(children)) {
+            if (!child) continue;
+            auto id = child->getID();
+            if (id == "paimon-infolayer-bg-clip"_spr ||
+                id == "paimon-infolayer-bg-clip-old"_spr) {
+                toRemove.push_back(child);
+            }
+        }
+        for (auto* n : toRemove) {
+            n->stopAllActions();
+            n->removeFromParent();
+        }
+        m_fields->m_bgClip = nullptr;
+    }
+
     void installBackgroundClip(CCClippingNode* clip, bool fadeIn) {
         auto layer = this->m_mainLayer;
         if (!layer || !clip) {
             return;
         }
 
-        if (m_fields->m_bgClip && m_fields->m_bgClip->getParent()) {
-            m_fields->m_bgClip->setID("paimon-infolayer-bg-clip-old"_spr);
-            this->unschedule(schedule_selector(PaimonInfoLayer::cleanupOldBgClip));
-            this->scheduleOnce(schedule_selector(PaimonInfoLayer::cleanupOldBgClip), 0.35f);
-        }
-        m_fields->m_bgClip = nullptr;
+        this->unschedule(schedule_selector(PaimonInfoLayer::cleanupOldBgClip));
+        removeAllInfoLayerBgClips();
 
         if (fadeIn) {
             if (auto bgSprite = clip->getChildByType<CCSprite>(0)) {
@@ -134,15 +158,23 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         styleInfoLayerBgs(layer);
         addInfoAreaPanel();
         this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
-        // Tick every 1.5s (not 0.5s): styleInfoLayerBgs recurses the whole tree
-        // per CommentCell and steadily drops FPS. The per-cell cache
-        // (paimon-comment-bgs-hidden) makes later passes O(N).
-        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 1.5f);
+        // A few catch-up ticks for cells that finish loading after the clip
+        // installs — not a perpetual walk for the whole AFK session.
+        m_fields->m_styleTickCount = 0;
+        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.8f);
     }
 
     $override
     bool init(GJGameLevel* level, GJUserScore* score, GJLevelList* list) {
         if (!InfoLayer::init(level, score, list)) return false;
+
+        // Stop LevelInfoLayer gallery/video/shaders under this popup for the
+        // whole AFK session — otherwise the level keeps cycling and this layer
+        // used to re-blur on every cycle (progressive lag).
+        if (level && level->m_levelID.value() > 0) {
+            paimon::pauseLevelInfoHeavyWorkForOverlay();
+            m_fields->m_pausedLevelInfo = true;
+        }
 
         if (score) {
             int accountID = score->m_accountID;
@@ -212,6 +244,9 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                     }, 12, false, ThumbnailLoader::Quality::High);
             }
 
+            // Only fill the bg once if still missing when LevelInfo finishes a
+            // load — never re-apply on every gallery auto-cycle (that was the
+            // progressive AFK lag: new blur jobs + leaked clips every 3s).
             WeakRef<PaimonInfoLayer> weakSelf = this;
             m_fields->m_bgEventHandle = paimon::EventBus::get().subscribe<paimon::ThumbnailBackgroundChangedEvent>(
                 [weakSelf](paimon::ThumbnailBackgroundChangedEvent const& e) {
@@ -219,6 +254,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                     auto* self = static_cast<PaimonInfoLayer*>(ref.data());
                     if (!self) return;
                     if (!self->getParent()) return;
+                    if (self->m_fields->m_bgSettled) return;
                     if (self->m_fields->m_levelID <= 0 || self->m_fields->m_levelID != e.levelID) return;
                     if (!e.texture) return;
                     self->applyBlurredBackground(e.texture);
@@ -231,6 +267,13 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     void applyBlurredBackground(CCTexture2D* tex) {
         if (!tex) return;
 
+        // Same texture already installed (placeholder or final) — skip.
+        auto texKey = reinterpret_cast<uintptr_t>(tex);
+        if (m_fields->m_bgSettled && m_fields->m_lastBgTex == texKey && m_fields->m_bgClip) {
+            return;
+        }
+        m_fields->m_lastBgTex = texKey;
+
         auto [layer, popupSize, popupCenter] = resolvePopupBackgroundLayout();
         if (!layer) return;
 
@@ -240,14 +283,18 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         int requestToken = ++m_fields->m_bgRequestToken;
         int levelID = m_fields->m_levelID;
 
-        if (auto placeholderSprite = CCSprite::createWithTexture(tex)) {
-            float scale = std::max(
-                imgArea.width / std::max(1.0f, placeholderSprite->getContentSize().width),
-                imgArea.height / std::max(1.0f, placeholderSprite->getContentSize().height)
-            );
-            placeholderSprite->setScale(scale);
-            if (auto placeholderClip = buildBlurBackgroundClip(placeholderSprite, imgArea, popupCenter)) {
-                installBackgroundClip(placeholderClip, true);
+        // Prefer a single async blur pass; only show a plain placeholder if we
+        // have no bg yet (avoids placeholder+blur = two installs every time).
+        if (!m_fields->m_bgClip) {
+            if (auto placeholderSprite = CCSprite::createWithTexture(tex)) {
+                float scale = std::max(
+                    imgArea.width / std::max(1.0f, placeholderSprite->getContentSize().width),
+                    imgArea.height / std::max(1.0f, placeholderSprite->getContentSize().height)
+                );
+                placeholderSprite->setScale(scale);
+                if (auto placeholderClip = buildBlurBackgroundClip(placeholderSprite, imgArea, popupCenter)) {
+                    installBackgroundClip(placeholderClip, true);
+                }
             }
         }
 
@@ -257,16 +304,21 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             imgArea,
             4.0f,
             makeInfoLayerBlurCacheKey(levelID, imgArea),
-            [safeRef, requestToken, imgArea, popupCenter](CCSprite* blurredSprite) {
+            [safeRef, requestToken, imgArea, popupCenter, texKey](CCSprite* blurredSprite) {
                 auto ref = safeRef.lock();
                 auto* self = static_cast<PaimonInfoLayer*>(ref.data());
                 if (!self || !self->getParent()) return;
                 if (self->m_fields->m_bgRequestToken != requestToken) return;
-                if (!blurredSprite) return;
+                if (!blurredSprite) {
+                    self->m_fields->m_bgSettled = true;
+                    return;
+                }
 
                 if (auto clip = self->buildBlurBackgroundClip(blurredSprite, imgArea, popupCenter)) {
                     self->installBackgroundClip(clip, true);
                 }
+                self->m_fields->m_bgSettled = true;
+                self->m_fields->m_lastBgTex = texKey;
             }
         );
     }
@@ -274,10 +326,6 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     void applyBlurredBackgroundGif(std::string const& gifKey) {
         auto gif = AnimatedGIFSprite::createFromCache(gifKey);
         if (!gif) return;
-        if (m_fields->m_bgClip) {
-            m_fields->m_bgClip->removeFromParent();
-            m_fields->m_bgClip = nullptr;
-        }
 
         auto [layer, popupSize, popupCenter] = resolvePopupBackgroundLayout();
         if (!layer) return;
@@ -290,18 +338,14 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         gif->setScale(std::max(scaleX, scaleY));
         gif->setAnchorPoint(ccp(0.5f, 0.5f));
         gif->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
-        gif->m_intensity = std::clamp((7.0f - 1.0f) / 9.0f, 0.0f, 1.0f);
-        if (gif->getTexture()) {
-            gif->m_texSize = gif->getTexture()->getContentSizeInPixels();
-        }
-        if (auto shader = Shaders::getBlurSinglePassShader()) {
-            gif->setShaderProgram(shader);
-        }
-        gif->play();
+        // Static first frame — no blur shader and no animation for the full
+        // popup background (AFK sessions made this a free progressive lag source).
+        gif->stop();
 
         if (auto clip = buildBlurBackgroundClip(gif, imgArea, popupCenter)) {
             ++m_fields->m_bgRequestToken;
             installBackgroundClip(clip, false);
+            m_fields->m_bgSettled = true;
         }
     }
 
@@ -422,6 +466,9 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         if (auto* layer = this->m_mainLayer) {
             styleInfoLayerBgs(layer);
         }
+        if (++m_fields->m_styleTickCount >= 5) {
+            this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
+        }
     }
 
     // Re-apply the style (hide the brown comment-list and per-cell backgrounds)
@@ -433,6 +480,10 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         if (auto* layer = this->m_mainLayer) {
             styleInfoLayerBgs(layer);
         }
+        // After paging, re-arm a short burst of catch-up ticks (new cells).
+        m_fields->m_styleTickCount = 0;
+        this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
+        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.8f);
     }
 
     // setupCommentsBrowser builds the GJCommentListLayer and its cells;
@@ -467,6 +518,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         restoreMusicEffect();
         this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
         this->unschedule(schedule_selector(PaimonInfoLayer::cleanupOldBgClip));
+        removeAllInfoLayerBgClips();
         // Unsubscribe the EventBus listener on exit; otherwise each InfoLayer
         // open leaks a zombie listener that costs CPU on every publish.
         if (m_fields->m_bgEventHandle != 0) {
@@ -476,6 +528,10 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         // Invalidate pending callback tokens so they don't touch the InfoLayer
         // after returning from the thread pool / scheduler post-exit.
         ++m_fields->m_bgRequestToken;
+        if (m_fields->m_pausedLevelInfo) {
+            paimon::resumeLevelInfoHeavyWorkForOverlay();
+            m_fields->m_pausedLevelInfo = false;
+        }
         InfoLayer::onExit();
     }
 

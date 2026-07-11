@@ -24,9 +24,31 @@ bool Entry::operator==(const Entry& o) const {
 }
 
 std::string Entry::summary() const {
+    if (type == 2) return "User search";
     std::vector<std::string> parts;
-    if (type == 2) parts.push_back("Users");
-    else if (type == 1) parts.push_back("Lists");
+    if (type == 1) parts.push_back("Lists");
+
+    static constexpr const char* kDiffNames[] = { "Easy", "Normal", "Hard", "Harder", "Insane" };
+    static constexpr const char* kDemonNames[] = {
+        "Demon", "Easy Demon", "Medium Demon", "Hard Demon", "Insane Demon", "Extreme Demon"
+    };
+    bool hasDemon = false;
+    for (int d : difficulties) {
+        if (d == -1) parts.push_back("Auto");
+        else if (d == -2) hasDemon = true;
+        else if (d == -3) parts.push_back("N/A");
+        else if (d >= 1 && d <= 5) parts.push_back(kDiffNames[d - 1]);
+    }
+    // El tipo de demon solo aplica si la dificultad Demon estaba seleccionada.
+    if (hasDemon) {
+        parts.push_back(kDemonNames[(demonFilter >= 1 && demonFilter <= 5) ? demonFilter : 0]);
+    }
+
+    static constexpr const char* kLenNames[] = { "Tiny", "Short", "Medium", "Long", "XL", "Plat." };
+    for (int l : lengths) {
+        if (l >= 0 && l <= 5) parts.push_back(kLenNames[l]);
+    }
+
     if (star) parts.push_back("Star");
     if (noStar) parts.push_back("No Star");
     if (featured) parts.push_back("Featured");
@@ -39,9 +61,6 @@ std::string Entry::summary() const {
     if (completed) parts.push_back("Completed");
     if (uncompleted) parts.push_back("Uncompleted");
     if (song) parts.push_back("Song");
-    if (!difficulties.empty()) parts.push_back("Difficulty");
-    if (!lengths.empty()) parts.push_back("Length");
-    if (demonFilter > 0) parts.push_back("Demon");
     if (parts.empty()) return "No filters";
     return geode::utils::string::join(parts, ", ");
 }
@@ -66,7 +85,10 @@ void add(GJSearchObject* search, std::vector<int> difficulties, std::vector<int>
     obj.song = search->m_songFilter;
     obj.customSong = search->m_customSongFilter;
     obj.songID = search->m_songID;
-    obj.demonFilter = (int)search->m_demonFilter;
+    // m_demonFilter conserva el ultimo valor elegido aunque la dificultad Demon
+    // ya no este seleccionada; solo lo guardamos si Demon esta activo.
+    bool hasDemon = std::find(obj.difficulties.begin(), obj.difficulties.end(), -2) != obj.difficulties.end();
+    obj.demonFilter = hasDemon ? (int)search->m_demonFilter : 0;
     obj.noStar = search->m_noStarFilter;
     obj.star = search->m_starFilter;
 

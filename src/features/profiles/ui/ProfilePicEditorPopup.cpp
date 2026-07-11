@@ -1,4 +1,4 @@
-﻿#include "ProfilePicEditorPopup.hpp"
+#include "ProfilePicEditorPopup.hpp"
 #include "ProfilePicIconsDetailPopup.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -6,8 +6,8 @@
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/ShapeStencil.hpp"
-#include "../../../utils/AnimatedGIFSprite.hpp"
-#include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/FileDialog.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include "../services/ProfilePicRenderer.hpp"
 #include "../services/ProfileImageService.hpp"
 #include "../services/ProfileImageCache.hpp"
@@ -22,7 +22,6 @@
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <filesystem>
-#include <fstream>
 #include <random>
 #include <cmath>
 
@@ -40,8 +39,6 @@ namespace {
     constexpr float kPanelX = 130.f;
     constexpr float kPanelW = 290.f;
     constexpr float kPanelH = 185.f;
-
-    constexpr float kSliderW = 140.f;
 
     CCLabelBMFont* smallLabel(std::string const& str, float scale = 0.4f, char const* font = "goldFont.fnt") {
         auto lbl = CCLabelBMFont::create(str.c_str(), font);
@@ -61,18 +58,6 @@ namespace {
             case 7: return std::max(1, static_cast<int>(gm->m_playerSwing));
             default: return std::max(1, static_cast<int>(gm->m_playerFrame));
         }
-    }
-
-    Slider* makeSlider(
-        CCNode* parent, float yPos, float normValue,
-        SEL_MenuHandler handler, CCNode* target
-    ) {
-        auto* slider = Slider::create(target, handler, 0.75f);
-        slider->setPosition({0, yPos});
-        slider->setValue(std::clamp(normValue, 0.f, 1.f));
-        slider->setAnchorPoint({0.5f, 0.5f});
-        parent->addChild(slider);
-        return slider;
     }
 }
 
@@ -94,7 +79,6 @@ bool ProfilePicEditorPopup::init() {
     m_editConfig = ProfilePicCustomizer::get().getConfig();
 
     auto winSize = m_mainLayer->getContentSize();
-    float cx = winSize.width * 0.5f;
 
     float previewCenterX = kPreviewPad + kPreviewBoxW * 0.5f;
     float previewCenterY = winSize.height * 0.5f - 5.f;
@@ -115,10 +99,15 @@ bool ProfilePicEditorPopup::init() {
     previewLbl->setPosition({previewCenterX, previewCenterY + kPreviewBoxH * 0.5f - 12.f});
     m_mainLayer->addChild(previewLbl);
 
+    m_previewStatusLabel = smallLabel("", 0.3f, "chatFont.fnt");
+    m_previewStatusLabel->setColor({190, 190, 210});
+    m_previewStatusLabel->setPosition({previewCenterX, previewCenterY - kPreviewBoxH * 0.5f + 10.f});
+    m_mainLayer->addChild(m_previewStatusLabel);
+
     m_previewContainer = CCNode::create();
     m_previewContainer->setContentSize({kPreviewBoxW - 20.f, kPreviewBoxH - 40.f});
     m_previewContainer->setAnchorPoint({0.5f, 0.5f});
-    m_previewContainer->setPosition({previewCenterX, previewCenterY - 8.f});
+    m_previewContainer->setPosition({previewCenterX, previewCenterY - 4.f});
     m_mainLayer->addChild(m_previewContainer);
 
     float panelCenterX = kPanelX + kPanelW * 0.5f;
@@ -152,17 +141,11 @@ bool ProfilePicEditorPopup::init() {
     bottomMenu->ignoreAnchorPointForPosition(false);
     m_mainLayer->addChild(bottomMenu, 2);
 
-    auto mkToolbarBtn = [&](char const* text, char const* bg, SEL_MenuHandler sel, float scale = 0.55f) {
-        auto spr = ButtonSprite::create(text, "bigFont.fnt", bg, 0.7f);
-        spr->setScale(scale);
-        return CCMenuItemSpriteExtra::create(spr, this, sel);
-    };
-
-    auto saveBtn = mkToolbarBtn("Save", "GJ_button_01.png", menu_selector(ProfilePicEditorPopup::onSave), 0.7f);
+    auto saveSpr = ButtonSprite::create("Save", "bigFont.fnt", "GJ_button_01.png", 0.7f);
+    saveSpr->setScale(0.7f);
+    auto saveBtn = CCMenuItemSpriteExtra::create(saveSpr, this, menu_selector(ProfilePicEditorPopup::onSave));
     saveBtn->setPosition({panelCenterX + 10.f, bottomY});
     bottomMenu->addChild(saveBtn);
-
-    (void)cx;
 
     switchTab(0);
 
@@ -179,7 +162,7 @@ void ProfilePicEditorPopup::createTabs() {
     float panelTopY    = winSize.height * 0.5f + kPanelH * 0.5f + 10.f - 14.f;
 
     static const std::array<char const*, 6> kTabNames = {
-        "Border", "Shape", "Image", "Icon", "Deco", "Style"
+        "Photo", "Shape", "Border", "Icon", "Deco", "Style"
     };
 
     auto tabMenu = CCMenu::create();
@@ -230,7 +213,9 @@ void ProfilePicEditorPopup::rebuildCurrentTab() {
     m_scaleXSlider = m_scaleYSlider = m_sizeSlider = m_rotationSlider = nullptr;
     m_scaleXLabel = m_scaleYLabel = m_sizeLabel = m_rotationLabel = nullptr;
     m_imgZoomSlider = m_imgRotationSlider = m_imgOffsetXSlider = m_imgOffsetYSlider = nullptr;
+    m_imgOpacitySlider = nullptr;
     m_imgZoomLabel = m_imgRotationLabel = m_imgOffsetXLabel = m_imgOffsetYLabel = nullptr;
+    m_imgOpacityLabel = nullptr;
     m_decoScaleSlider = m_decoRotSlider = nullptr;
     m_decoPosXSlider = m_decoPosYSlider = m_decoOpacitySlider = nullptr;
     m_decoScaleLabel = m_decoRotLabel = nullptr;
@@ -238,9 +223,9 @@ void ProfilePicEditorPopup::rebuildCurrentTab() {
 
     CCNode* tabNode = nullptr;
     switch (m_currentTab) {
-        case 0: tabNode = createFrameTab(); break;
+        case 0: tabNode = createPhotoTab(); break;
         case 1: tabNode = createShapeTab(); break;
-        case 2: tabNode = createAdjustTab(); break;
+        case 2: tabNode = createBorderTab(); break;
         case 3: tabNode = createIconTab(); break;
         case 4: tabNode = createDecoTab(); break;
         case 5: tabNode = createStyleTab(); break;
@@ -253,13 +238,415 @@ void ProfilePicEditorPopup::rebuildCurrentTab() {
 }
 
 
-CCNode* ProfilePicEditorPopup::createFrameTab() {
+// Shared slider row with fixed columns so labels never overlap the groove:
+// [label 8..80] [slider ~92..210] [value ..area.width-8]
+namespace {
+    void addSliderRow(
+        CCNode* root, CCNode* target, CCSize const& area,
+        char const* name, float y, float normValue,
+        SEL_MenuHandler sel, std::string const& valueText,
+        Slider*& outSlider, CCLabelBMFont*& outLabel
+    ) {
+        auto lbl = smallLabel(name, 0.38f);
+        lbl->setAnchorPoint({0.f, 0.5f});
+        lbl->setPosition({8.f, y});
+        root->addChild(lbl);
+
+        auto* slider = Slider::create(target, sel, 0.58f);
+        slider->setPosition({area.width * 0.5f + 14.f, y});
+        slider->setValue(std::clamp(normValue, 0.f, 1.f));
+        slider->setAnchorPoint({0.5f, 0.5f});
+        root->addChild(slider);
+        outSlider = slider;
+
+        auto vlbl = smallLabel(valueText, 0.38f);
+        vlbl->setAnchorPoint({1.f, 0.5f});
+        vlbl->setPosition({area.width - 8.f, y});
+        root->addChild(vlbl);
+        outLabel = vlbl;
+    }
+}
+
+
+// ============================ Photo tab ============================
+
+CCNode* ProfilePicEditorPopup::createPhotoTab() {
+    auto root = CCNode::create();
+    CCSize area = m_tabContent->getContentSize();
+    root->setContentSize(area);
+
+    auto photo = paimon::profile_pic::resolveProfilePhoto(m_editConfig);
+    bool customActive = m_editConfig.photoSource == "custom";
+
+    float srcY = area.height - 9.f;
+    auto srcLbl = smallLabel("Source", 0.42f);
+    srcLbl->setAnchorPoint({0.f, 0.5f});
+    srcLbl->setPosition({8.f, srcY});
+    root->addChild(srcLbl);
+
+    auto srcMenu = CCMenu::create();
+    srcMenu->setAnchorPoint({0.5f, 0.5f});
+    srcMenu->setPosition({area.width * 0.5f + 30.f, srcY});
+    srcMenu->setContentSize({190.f, 22.f});
+    srcMenu->setLayout(RowLayout::create()->setGap(4.f)->setAutoScale(false));
+    root->addChild(srcMenu);
+
+    auto profileSpr = ButtonSprite::create("My Profile", "goldFont.fnt",
+        customActive ? "GJ_button_04.png" : "GJ_button_01.png", 0.65f);
+    profileSpr->setScale(0.42f);
+    srcMenu->addChild(CCMenuItemSpriteExtra::create(profileSpr, this,
+        menu_selector(ProfilePicEditorPopup::onPhotoSourceProfile)));
+
+    auto customSpr = ButtonSprite::create(customActive ? "Change..." : "Custom...", "goldFont.fnt",
+        customActive ? "GJ_button_01.png" : "GJ_button_04.png", 0.65f);
+    customSpr->setScale(0.42f);
+    srcMenu->addChild(CCMenuItemSpriteExtra::create(customSpr, this,
+        menu_selector(ProfilePicEditorPopup::onPickCustomPhoto)));
+    srcMenu->updateLayout();
+
+    std::string status;
+    using Source = paimon::profile_pic::ResolvedProfilePhoto::Source;
+    switch (photo.source) {
+        case Source::Custom: {
+            auto name = std::filesystem::path(m_editConfig.photoPath).filename().string();
+            if (name.size() > 28) name = name.substr(0, 25) + "...";
+            status = fmt::format("Custom image: {}", name);
+            break;
+        }
+        case Source::OwnProfile:
+            status = "Using your profile picture";
+            break;
+        case Source::LegacyBackground:
+            status = "Using profile background (no profile picture found)";
+            break;
+        default:
+            status = photo.ownPhotoMissing
+                ? "Downloading your profile picture..."
+                : "No image available - pick a custom one";
+            break;
+    }
+    auto statusLbl = smallLabel(status, 0.3f, "chatFont.fnt");
+    statusLbl->setColor({180, 180, 200});
+    statusLbl->setOpacity(200);
+    statusLbl->setAnchorPoint({0.5f, 0.5f});
+    statusLbl->setPosition({area.width * 0.5f, srcY - 15.f});
+    root->addChild(statusLbl);
+
+    float y0 = srcY - 31.f;
+    float step = 15.f;
+
+    float zoomNorm = std::clamp((m_editConfig.imageZoom - 0.5f) / 2.5f, 0.f, 1.f);
+    addSliderRow(root, this, area, "Zoom", y0, zoomNorm,
+                 menu_selector(ProfilePicEditorPopup::onImgZoomChanged),
+                 fmt::format("{:.2f}x", m_editConfig.imageZoom),
+                 m_imgZoomSlider, m_imgZoomLabel);
+
+    float imgRotNorm = std::clamp((m_editConfig.imageRotation + 180.f) / 360.f, 0.f, 1.f);
+    addSliderRow(root, this, area, "Rotation", y0 - step, imgRotNorm,
+                 menu_selector(ProfilePicEditorPopup::onImgRotationChanged),
+                 fmt::format("{:.0f}", m_editConfig.imageRotation),
+                 m_imgRotationSlider, m_imgRotationLabel);
+
+    float offXNorm = std::clamp((m_editConfig.imageOffsetX + 40.f) / 80.f, 0.f, 1.f);
+    addSliderRow(root, this, area, "Offset X", y0 - step * 2.f, offXNorm,
+                 menu_selector(ProfilePicEditorPopup::onImgOffsetXChanged),
+                 fmt::format("{:.0f}", m_editConfig.imageOffsetX),
+                 m_imgOffsetXSlider, m_imgOffsetXLabel);
+
+    float offYNorm = std::clamp((m_editConfig.imageOffsetY + 40.f) / 80.f, 0.f, 1.f);
+    addSliderRow(root, this, area, "Offset Y", y0 - step * 3.f, offYNorm,
+                 menu_selector(ProfilePicEditorPopup::onImgOffsetYChanged),
+                 fmt::format("{:.0f}", m_editConfig.imageOffsetY),
+                 m_imgOffsetYSlider, m_imgOffsetYLabel);
+
+    float opNorm = std::clamp(m_editConfig.imageOpacity / 255.f, 0.f, 1.f);
+    addSliderRow(root, this, area, "Opacity", y0 - step * 4.f, opNorm,
+                 menu_selector(ProfilePicEditorPopup::onImgOpacityChanged),
+                 std::to_string(static_cast<int>(m_editConfig.imageOpacity)),
+                 m_imgOpacitySlider, m_imgOpacityLabel);
+
+    float rowY = 14.f;
+    auto bottomMenu = CCMenu::create();
+    bottomMenu->setPosition({0.f, 0.f});
+    bottomMenu->setContentSize(area);
+    root->addChild(bottomMenu);
+
+    auto flipXToggle = CCMenuItemToggler::createWithStandardSprites(
+        this, menu_selector(ProfilePicEditorPopup::onImgFlipX), 0.5f);
+    flipXToggle->toggle(m_editConfig.imageFlipX);
+    flipXToggle->setPosition({20.f, rowY});
+    bottomMenu->addChild(flipXToggle);
+
+    auto flipXLbl = smallLabel("Flip X", 0.36f);
+    flipXLbl->setAnchorPoint({0.f, 0.5f});
+    flipXLbl->setPosition({32.f, rowY});
+    root->addChild(flipXLbl);
+
+    auto flipYToggle = CCMenuItemToggler::createWithStandardSprites(
+        this, menu_selector(ProfilePicEditorPopup::onImgFlipY), 0.5f);
+    flipYToggle->toggle(m_editConfig.imageFlipY);
+    flipYToggle->setPosition({88.f, rowY});
+    bottomMenu->addChild(flipYToggle);
+
+    auto flipYLbl = smallLabel("Flip Y", 0.36f);
+    flipYLbl->setAnchorPoint({0.f, 0.5f});
+    flipYLbl->setPosition({100.f, rowY});
+    root->addChild(flipYLbl);
+
+    auto resetSpr = ButtonSprite::create("Reset Photo", "goldFont.fnt", "GJ_button_06.png", 0.6f);
+    resetSpr->setScale(0.42f);
+    auto resetBtn = CCMenuItemSpriteExtra::create(resetSpr, this,
+        menu_selector(ProfilePicEditorPopup::onResetAdjust));
+    resetBtn->setPosition({area.width - 52.f, rowY});
+    bottomMenu->addChild(resetBtn);
+
+    return root;
+}
+
+void ProfilePicEditorPopup::onPhotoSourceProfile(CCObject*) {
+    m_editConfig.photoSource = "profile";
+    rebuildCurrentTab();
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onPickCustomPhoto(CCObject*) {
+    // if a custom image already exists but isn't active, just switch to it
+    std::error_code ec;
+    if (m_editConfig.photoSource != "custom" &&
+        !m_editConfig.photoPath.empty() &&
+        std::filesystem::exists(m_editConfig.photoPath, ec) && !ec) {
+        m_editConfig.photoSource = "custom";
+        rebuildCurrentTab();
+        rebuildPreview();
+        return;
+    }
+
+    WeakRef<ProfilePicEditorPopup> self = this;
+    pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> result) {
+        auto popup = self.lock();
+        if (!popup) return;
+        auto pathOpt = std::move(result).unwrapOr(std::nullopt);
+        if (!pathOpt || pathOpt->empty()) return;
+
+        auto imported = paimon::assets::importToBucket(*pathOpt, "profile_photo", paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            return;
+        }
+        popup->m_editConfig.photoSource = "custom";
+        popup->m_editConfig.photoPath = paimon::assets::normalizePathString(imported.path);
+        popup->rebuildCurrentTab();
+        popup->rebuildPreview();
+    });
+}
+
+void ProfilePicEditorPopup::onImgZoomChanged(CCObject* sender) {
+    auto* slider = static_cast<SliderThumb*>(sender);
+    m_editConfig.imageZoom = 0.5f + slider->getValue() * 2.5f;
+    if (m_imgZoomLabel) m_imgZoomLabel->setString(fmt::format("{:.2f}x", m_editConfig.imageZoom).c_str());
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onImgRotationChanged(CCObject* sender) {
+    auto* slider = static_cast<SliderThumb*>(sender);
+    m_editConfig.imageRotation = -180.f + slider->getValue() * 360.f;
+    if (m_imgRotationLabel) m_imgRotationLabel->setString(fmt::format("{:.0f}", m_editConfig.imageRotation).c_str());
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onImgOffsetXChanged(CCObject* sender) {
+    auto* slider = static_cast<SliderThumb*>(sender);
+    m_editConfig.imageOffsetX = -40.f + slider->getValue() * 80.f;
+    if (m_imgOffsetXLabel) m_imgOffsetXLabel->setString(fmt::format("{:.0f}", m_editConfig.imageOffsetX).c_str());
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onImgOffsetYChanged(CCObject* sender) {
+    auto* slider = static_cast<SliderThumb*>(sender);
+    m_editConfig.imageOffsetY = -40.f + slider->getValue() * 80.f;
+    if (m_imgOffsetYLabel) m_imgOffsetYLabel->setString(fmt::format("{:.0f}", m_editConfig.imageOffsetY).c_str());
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onImgOpacityChanged(CCObject* sender) {
+    auto* slider = static_cast<SliderThumb*>(sender);
+    m_editConfig.imageOpacity = slider->getValue() * 255.f;
+    if (m_imgOpacityLabel) m_imgOpacityLabel->setString(std::to_string(static_cast<int>(m_editConfig.imageOpacity)).c_str());
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onImgFlipX(CCObject* sender) {
+    auto toggler = static_cast<CCMenuItemToggler*>(sender);
+    m_editConfig.imageFlipX = !toggler->isToggled();
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onImgFlipY(CCObject* sender) {
+    auto toggler = static_cast<CCMenuItemToggler*>(sender);
+    m_editConfig.imageFlipY = !toggler->isToggled();
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onResetAdjust(CCObject*) {
+    m_editConfig.imageZoom = 1.f;
+    m_editConfig.imageRotation = 0.f;
+    m_editConfig.imageOffsetX = 0.f;
+    m_editConfig.imageOffsetY = 0.f;
+    m_editConfig.imageOpacity = 255.f;
+    m_editConfig.imageFlipX = false;
+    m_editConfig.imageFlipY = false;
+    rebuildCurrentTab();
+    rebuildPreview();
+}
+
+
+// ============================ Shape tab ============================
+
+CCNode* ProfilePicEditorPopup::createShapeTab() {
+    auto root = CCNode::create();
+    CCSize area = m_tabContent->getContentSize();
+    root->setContentSize(area);
+
+    float topY = area.height - 10.f;
+    float step = 15.f;
+
+    float wNorm = std::clamp((m_editConfig.scaleX - 0.5f) / 1.3f, 0.f, 1.f);
+    addSliderRow(root, this, area, "Width", topY, wNorm,
+                 menu_selector(ProfilePicEditorPopup::onScaleXChanged),
+                 fmt::format("{:.2f}", m_editConfig.scaleX),
+                 m_scaleXSlider, m_scaleXLabel);
+
+    float hNorm = std::clamp((m_editConfig.scaleY - 0.5f) / 1.3f, 0.f, 1.f);
+    addSliderRow(root, this, area, "Height", topY - step, hNorm,
+                 menu_selector(ProfilePicEditorPopup::onScaleYChanged),
+                 fmt::format("{:.2f}", m_editConfig.scaleY),
+                 m_scaleYSlider, m_scaleYLabel);
+
+    float sNorm = std::clamp((m_editConfig.size - 60.f) / 140.f, 0.f, 1.f);
+    addSliderRow(root, this, area, "Size", topY - step * 2.f, sNorm,
+                 menu_selector(ProfilePicEditorPopup::onSizeChanged),
+                 fmt::format("{:.0f}%", m_editConfig.size / 120.f * 100.f),
+                 m_sizeSlider, m_sizeLabel);
+
+    float rNorm = std::clamp((m_editConfig.rotation + 180.f) / 360.f, 0.f, 1.f);
+    addSliderRow(root, this, area, "Rotation", topY - step * 3.f, rNorm,
+                 menu_selector(ProfilePicEditorPopup::onRotationChanged),
+                 fmt::format("{:.0f}", m_editConfig.rotation),
+                 m_rotationSlider, m_rotationLabel);
+
+    float shapeRowY = topY - step * 4.f - 4.f;
+    auto shapeLbl = smallLabel("Shape", 0.42f);
+    shapeLbl->setAnchorPoint({0.f, 0.5f});
+    shapeLbl->setPosition({8.f, shapeRowY});
+    root->addChild(shapeLbl);
+
+    auto resetSpr = ButtonSprite::create("Reset", "goldFont.fnt", "GJ_button_06.png", 0.6f);
+    resetSpr->setScale(0.42f);
+    auto resetBtn = CCMenuItemSpriteExtra::create(resetSpr, this, menu_selector(ProfilePicEditorPopup::onResetShape));
+    auto resetMenu = CCMenu::create();
+    resetMenu->setPosition({area.width - 34.f, shapeRowY});
+    resetMenu->addChild(resetBtn);
+    root->addChild(resetMenu);
+
+    auto shapes = ProfilePicCustomizer::getAvailableStencils();
+    auto shapeMenu = CCMenu::create();
+    shapeMenu->setAnchorPoint({0.5f, 0.5f});
+    shapeMenu->setPosition({area.width * 0.5f, shapeRowY - 32.f});
+    shapeMenu->setContentSize({area.width - 12.f, 46.f});
+    root->addChild(shapeMenu);
+    shapeMenu->setLayout(
+        RowLayout::create()->setGap(3.f)->setGrowCrossAxis(true)
+            ->setCrossAxisOverflow(false)->setAutoScale(false)
+    );
+
+    for (size_t i = 0; i < shapes.size(); i++) {
+        auto const& shapeName = shapes[i].first;
+        float cellSize = 20.f;
+        bool selected = m_editConfig.stencilSprite == shapeName;
+
+        auto cellBg = paimon::SpriteHelper::createColorPanel(
+            cellSize, cellSize,
+            selected ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40},
+            selected ? 200 : 120, 3.f
+        );
+
+        auto stencilIcon = createShapeStencil(shapeName, cellSize - 6.f);
+        if (stencilIcon) {
+            stencilIcon->setAnchorPoint({0.5f, 0.5f});
+            stencilIcon->setPosition({cellSize * 0.5f, cellSize * 0.5f});
+            cellBg->addChild(stencilIcon);
+        }
+
+        auto btn = CCMenuItemSpriteExtra::create(cellBg, this, menu_selector(ProfilePicEditorPopup::onStencilSelect));
+        btn->setTag(static_cast<int>(i));
+        shapeMenu->addChild(btn);
+    }
+    shapeMenu->updateLayout();
+
+    return root;
+}
+
+void ProfilePicEditorPopup::onScaleXChanged(CCObject* sender) {
+    auto* slider = static_cast<SliderThumb*>(sender);
+    float v = slider->getValue();
+    m_editConfig.scaleX = 0.5f + v * 1.3f;
+    if (m_scaleXLabel) m_scaleXLabel->setString(fmt::format("{:.2f}", m_editConfig.scaleX).c_str());
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onScaleYChanged(CCObject* sender) {
+    auto* slider = static_cast<SliderThumb*>(sender);
+    float v = slider->getValue();
+    m_editConfig.scaleY = 0.5f + v * 1.3f;
+    if (m_scaleYLabel) m_scaleYLabel->setString(fmt::format("{:.2f}", m_editConfig.scaleY).c_str());
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onSizeChanged(CCObject* sender) {
+    auto* slider = static_cast<SliderThumb*>(sender);
+    float v = slider->getValue();
+    m_editConfig.size = 60.f + v * 140.f;
+    if (m_sizeLabel) m_sizeLabel->setString(fmt::format("{:.0f}%", m_editConfig.size / 120.f * 100.f).c_str());
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onRotationChanged(CCObject* sender) {
+    auto* slider = static_cast<SliderThumb*>(sender);
+    float v = slider->getValue();
+    m_editConfig.rotation = -180.f + v * 360.f;
+    if (m_rotationLabel) m_rotationLabel->setString(fmt::format("{:.0f}", m_editConfig.rotation).c_str());
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onStencilSelect(CCObject* sender) {
+    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
+    auto shapes = ProfilePicCustomizer::getAvailableStencils();
+    if (idx < 0 || idx >= (int)shapes.size()) return;
+    m_editConfig.stencilSprite = shapes[idx].first;
+    rebuildCurrentTab();
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onResetShape(CCObject*) {
+    m_editConfig.scaleX = 1.f;
+    m_editConfig.scaleY = 1.f;
+    m_editConfig.size = 120.f;
+    m_editConfig.rotation = 0.f;
+    m_editConfig.stencilSprite = "circle";
+    rebuildCurrentTab();
+    rebuildPreview();
+}
+
+
+// ============================ Border tab ============================
+
+CCNode* ProfilePicEditorPopup::createBorderTab() {
     auto root = CCNode::create();
     CCSize area = m_tabContent->getContentSize();
     root->setContentSize(area);
 
     float cx = area.width * 0.5f;
-    float topY = area.height - 18.f;
+    float topY = area.height - 14.f;
 
     auto toggleMenu = CCMenu::create();
     toggleMenu->setPosition({cx, topY});
@@ -277,53 +664,41 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
     toggleLbl->setPosition({cx - 78.f, topY});
     root->addChild(toggleLbl);
 
-    float sliderY1 = topY - 28.f;
-    float sliderY2 = topY - 54.f;
+    if (!m_editConfig.frameEnabled) {
+        auto hint = smallLabel("Turn the border on to customize\nthickness, opacity and color.", 0.38f, "chatFont.fnt");
+        hint->setAlignment(kCCTextAlignmentCenter);
+        hint->setColor({180, 180, 200});
+        hint->setOpacity(200);
+        hint->setPosition({cx, area.height * 0.45f});
+        root->addChild(hint);
+        return root;
+    }
 
-    auto addSlider = [&](char const* name, float y, float normValue,
-                         SEL_MenuHandler sel, std::string const& valueText,
-                         Slider*& outSlider, CCLabelBMFont*& outLabel) {
-        auto lbl = smallLabel(name, 0.42f);
-        lbl->setAnchorPoint({0.f, 0.5f});
-        lbl->setPosition({18.f, y});
-        root->addChild(lbl);
-
-        auto* slider = Slider::create(this, sel, 0.7f);
-        slider->setPosition({area.width * 0.5f, y});
-        slider->setValue(std::clamp(normValue, 0.f, 1.f));
-        slider->setAnchorPoint({0.5f, 0.5f});
-        root->addChild(slider);
-        outSlider = slider;
-
-        auto vlbl = smallLabel(valueText, 0.42f);
-        vlbl->setAnchorPoint({1.f, 0.5f});
-        vlbl->setPosition({area.width - 18.f, y});
-        root->addChild(vlbl);
-        outLabel = vlbl;
-    };
+    float sliderY1 = topY - 26.f;
+    float sliderY2 = sliderY1 - 16.f;
 
     float thickNorm = std::clamp(m_editConfig.frame.thickness / 20.f, 0.f, 1.f);
-    addSlider("Thickness", sliderY1, thickNorm,
-              menu_selector(ProfilePicEditorPopup::onThicknessChanged),
-              fmt::format("{:.1f}", m_editConfig.frame.thickness),
-              m_thicknessSlider, m_thicknessLabel);
+    addSliderRow(root, this, area, "Thickness", sliderY1, thickNorm,
+                 menu_selector(ProfilePicEditorPopup::onThicknessChanged),
+                 fmt::format("{:.1f}", m_editConfig.frame.thickness),
+                 m_thicknessSlider, m_thicknessLabel);
 
     float opNorm = std::clamp(m_editConfig.frame.opacity / 255.f, 0.f, 1.f);
-    addSlider("Opacity", sliderY2, opNorm,
-              menu_selector(ProfilePicEditorPopup::onFrameOpacityChanged),
-              std::to_string(static_cast<int>(m_editConfig.frame.opacity)),
-              m_frameOpacitySlider, m_frameOpacityLabel);
+    addSliderRow(root, this, area, "Opacity", sliderY2, opNorm,
+                 menu_selector(ProfilePicEditorPopup::onFrameOpacityChanged),
+                 std::to_string(static_cast<int>(m_editConfig.frame.opacity)),
+                 m_frameOpacitySlider, m_frameOpacityLabel);
 
-    auto colLbl = smallLabel("Color", 0.45f);
+    auto colLbl = smallLabel("Color", 0.42f);
     colLbl->setAnchorPoint({0.f, 0.5f});
-    colLbl->setPosition({18.f, sliderY2 - 28.f});
+    colLbl->setPosition({8.f, sliderY2 - 20.f});
     root->addChild(colLbl);
 
     auto palette = ProfilePicCustomizer::getColorPalette();
     auto colMenu = CCMenu::create();
     colMenu->setAnchorPoint({0.5f, 0.5f});
-    colMenu->setPosition({area.width * 0.5f, sliderY2 - 34.f});
-    colMenu->setContentSize({area.width - 36.f, 24.f});
+    colMenu->setPosition({cx, sliderY2 - 44.f});
+    colMenu->setContentSize({area.width - 24.f, 44.f});
     root->addChild(colMenu);
     colMenu->setLayout(
         RowLayout::create()->setGap(3.f)->setGrowCrossAxis(true)
@@ -352,7 +727,7 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
     }
 
     auto customSpr = ButtonSprite::create("Custom", "goldFont.fnt", "GJ_button_04.png", 0.6f);
-    customSpr->setScale(0.5f);
+    customSpr->setScale(0.42f);
     auto customBtn = CCMenuItemSpriteExtra::create(customSpr, this,
         menu_selector(ProfilePicEditorPopup::onPickCustomBorderColor));
     colMenu->addChild(customBtn);
@@ -365,6 +740,7 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
 void ProfilePicEditorPopup::onFrameToggle(CCObject* sender) {
     auto toggler = static_cast<CCMenuItemToggler*>(sender);
     m_editConfig.frameEnabled = !toggler->isToggled();
+    rebuildCurrentTab();
     rebuildPreview();
 }
 
@@ -405,162 +781,7 @@ void ProfilePicEditorPopup::onPickCustomBorderColor(CCObject*) {
 }
 
 
-CCNode* ProfilePicEditorPopup::createShapeTab() {
-    auto root = CCNode::create();
-    CCSize area = m_tabContent->getContentSize();
-    root->setContentSize(area);
-
-    float topY = area.height - 18.f;
-
-    auto addSlider = [&](char const* name, float y, float normValue,
-                         SEL_MenuHandler sel, std::string const& valueText,
-                         Slider*& outSlider, CCLabelBMFont*& outLabel) {
-        auto lbl = smallLabel(name, 0.4f);
-        lbl->setAnchorPoint({0.f, 0.5f});
-        lbl->setPosition({14.f, y});
-        root->addChild(lbl);
-
-        auto* slider = Slider::create(this, sel, 0.65f);
-        slider->setPosition({area.width * 0.5f + 6.f, y});
-        slider->setValue(std::clamp(normValue, 0.f, 1.f));
-        slider->setAnchorPoint({0.5f, 0.5f});
-        root->addChild(slider);
-        outSlider = slider;
-
-        auto vlbl = smallLabel(valueText, 0.4f);
-        vlbl->setAnchorPoint({1.f, 0.5f});
-        vlbl->setPosition({area.width - 14.f, y});
-        root->addChild(vlbl);
-        outLabel = vlbl;
-    };
-
-    float wNorm = std::clamp((m_editConfig.scaleX - 0.5f) / 1.3f, 0.f, 1.f);
-    addSlider("Width", topY, wNorm,
-              menu_selector(ProfilePicEditorPopup::onScaleXChanged),
-              fmt::format("{:.2f}", m_editConfig.scaleX),
-              m_scaleXSlider, m_scaleXLabel);
-
-    float hNorm = std::clamp((m_editConfig.scaleY - 0.5f) / 1.3f, 0.f, 1.f);
-    addSlider("Height", topY - 14.f, hNorm,
-              menu_selector(ProfilePicEditorPopup::onScaleYChanged),
-              fmt::format("{:.2f}", m_editConfig.scaleY),
-              m_scaleYSlider, m_scaleYLabel);
-
-    float sNorm = std::clamp((m_editConfig.size - 60.f) / 140.f, 0.f, 1.f);
-    addSlider("Size", topY - 28.f, sNorm,
-              menu_selector(ProfilePicEditorPopup::onSizeChanged),
-              std::to_string(static_cast<int>(m_editConfig.size)),
-              m_sizeSlider, m_sizeLabel);
-
-    float rNorm = std::clamp((m_editConfig.rotation + 180.f) / 360.f, 0.f, 1.f);
-    addSlider("Rotation", topY - 42.f, rNorm,
-              menu_selector(ProfilePicEditorPopup::onRotationChanged),
-              fmt::format("{:.0f}", m_editConfig.rotation),
-              m_rotationSlider, m_rotationLabel);
-
-    auto shapeLbl = smallLabel("Shape", 0.42f);
-    shapeLbl->setAnchorPoint({0.f, 0.5f});
-    shapeLbl->setPosition({14.f, topY - 62.f});
-    root->addChild(shapeLbl);
-
-    auto shapes = ProfilePicCustomizer::getAvailableStencils();
-    auto shapeMenu = CCMenu::create();
-    shapeMenu->setAnchorPoint({0.5f, 0.5f});
-    shapeMenu->setPosition({area.width * 0.5f, topY - 86.f});
-    shapeMenu->setContentSize({area.width - 30.f, 48.f});
-    root->addChild(shapeMenu);
-    shapeMenu->setLayout(
-        RowLayout::create()->setGap(4.f)->setGrowCrossAxis(true)
-            ->setCrossAxisOverflow(false)->setAutoScale(false)
-    );
-
-    for (size_t i = 0; i < shapes.size(); i++) {
-        auto const& shapeName = shapes[i].first;
-        float cellSize = 26.f;
-        bool selected = m_editConfig.stencilSprite == shapeName;
-
-        auto cellBg = paimon::SpriteHelper::createColorPanel(
-            cellSize, cellSize,
-            selected ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40},
-            selected ? 200 : 120, 3.f
-        );
-
-        auto stencilIcon = createShapeStencil(shapeName, cellSize - 8.f);
-        if (stencilIcon) {
-            stencilIcon->setAnchorPoint({0.5f, 0.5f});
-            stencilIcon->setPosition({cellSize * 0.5f, cellSize * 0.5f});
-            cellBg->addChild(stencilIcon);
-        }
-
-        auto btn = CCMenuItemSpriteExtra::create(cellBg, this, menu_selector(ProfilePicEditorPopup::onStencilSelect));
-        btn->setTag(static_cast<int>(i));
-        shapeMenu->addChild(btn);
-    }
-    shapeMenu->updateLayout();
-
-    auto resetSpr = ButtonSprite::create("Reset Shape", "goldFont.fnt", "GJ_button_06.png", 0.6f);
-    resetSpr->setScale(0.5f);
-    auto resetBtn = CCMenuItemSpriteExtra::create(resetSpr, this, menu_selector(ProfilePicEditorPopup::onResetShape));
-
-    auto resetMenu = CCMenu::create();
-    resetMenu->setPosition({area.width * 0.5f, 10.f});
-    resetMenu->addChild(resetBtn);
-    root->addChild(resetMenu);
-
-    return root;
-}
-
-void ProfilePicEditorPopup::onScaleXChanged(CCObject* sender) {
-    auto* slider = static_cast<SliderThumb*>(sender);
-    float v = slider->getValue();
-    m_editConfig.scaleX = 0.5f + v * 1.3f;
-    if (m_scaleXLabel) m_scaleXLabel->setString(fmt::format("{:.2f}", m_editConfig.scaleX).c_str());
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onScaleYChanged(CCObject* sender) {
-    auto* slider = static_cast<SliderThumb*>(sender);
-    float v = slider->getValue();
-    m_editConfig.scaleY = 0.5f + v * 1.3f;
-    if (m_scaleYLabel) m_scaleYLabel->setString(fmt::format("{:.2f}", m_editConfig.scaleY).c_str());
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onSizeChanged(CCObject* sender) {
-    auto* slider = static_cast<SliderThumb*>(sender);
-    float v = slider->getValue();
-    m_editConfig.size = 60.f + v * 140.f;
-    if (m_sizeLabel) m_sizeLabel->setString(std::to_string(static_cast<int>(m_editConfig.size)).c_str());
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onRotationChanged(CCObject* sender) {
-    auto* slider = static_cast<SliderThumb*>(sender);
-    float v = slider->getValue();
-    m_editConfig.rotation = -180.f + v * 360.f;
-    if (m_rotationLabel) m_rotationLabel->setString(fmt::format("{:.0f}", m_editConfig.rotation).c_str());
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onStencilSelect(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    auto shapes = ProfilePicCustomizer::getAvailableStencils();
-    if (idx < 0 || idx >= (int)shapes.size()) return;
-    m_editConfig.stencilSprite = shapes[idx].first;
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onResetShape(CCObject*) {
-    m_editConfig.scaleX = 1.f;
-    m_editConfig.scaleY = 1.f;
-    m_editConfig.size = 120.f;
-    m_editConfig.rotation = 0.f;
-    m_editConfig.stencilSprite = "circle";
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
+// ============================ Deco tab ============================
 
 namespace {
     constexpr int kDecoGridCols = 6;
@@ -609,12 +830,12 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
     if (m_selectedDecoIdx >= 0 && m_selectedDecoIdx < (int)m_editConfig.decorations.size()) {
         auto const& deco = m_editConfig.decorations[m_selectedDecoIdx];
 
-        float headerY = chipsY - 26.f;
+        float headerY = chipsY - 24.f;
         auto headerLbl = smallLabel(
-            fmt::format("Editing deco #{} ({}/{})",
-                m_selectedDecoIdx + 1, m_selectedDecoIdx + 1,
+            fmt::format("Editing deco {}/{}",
+                m_selectedDecoIdx + 1,
                 (int)m_editConfig.decorations.size()),
-            0.45f
+            0.42f
         );
         headerLbl->setAnchorPoint({0.5f, 0.5f});
         headerLbl->setPosition({area.width * 0.5f, headerY});
@@ -622,72 +843,52 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
         root->addChild(headerLbl);
 
         auto backSpr = ButtonSprite::create("Back", "goldFont.fnt", "GJ_button_04.png", 0.6f);
-        backSpr->setScale(0.45f);
+        backSpr->setScale(0.42f);
         auto backBtn = CCMenuItemSpriteExtra::create(backSpr, this, menu_selector(ProfilePicEditorPopup::onCategorySelect));
         backBtn->setTag(-1000);
         auto backMenu = CCMenu::create();
-        backMenu->setPosition({18.f, headerY});
+        backMenu->setPosition({20.f, headerY});
         backMenu->addChild(backBtn);
         root->addChild(backMenu);
 
-        auto addInspector = [&](char const* name, float y, float normValue,
-                                SEL_MenuHandler sel, std::string const& valueText,
-                                Slider*& outSlider, CCLabelBMFont*& outLabel) {
-            auto lbl = smallLabel(name, 0.38f);
-            lbl->setAnchorPoint({0.f, 0.5f});
-            lbl->setPosition({14.f, y});
-            root->addChild(lbl);
+        float y0 = headerY - 19.f;
+        float step = 15.f;
 
-            auto* slider = Slider::create(this, sel, 0.6f);
-            slider->setPosition({area.width * 0.5f + 6.f, y});
-            slider->setValue(std::clamp(normValue, 0.f, 1.f));
-            slider->setAnchorPoint({0.5f, 0.5f});
-            root->addChild(slider);
-            outSlider = slider;
-
-            auto vlbl = smallLabel(valueText, 0.38f);
-            vlbl->setAnchorPoint({1.f, 0.5f});
-            vlbl->setPosition({area.width - 14.f, y});
-            root->addChild(vlbl);
-            outLabel = vlbl;
-        };
-
-        float y0 = headerY - 22.f;
-        addInspector("Scale",
+        addSliderRow(root, this, area, "Scale",
             y0, (deco.scale - 0.2f) / 1.8f,
             menu_selector(ProfilePicEditorPopup::onDecoScaleChanged),
             fmt::format("{:.2f}", deco.scale),
             m_decoScaleSlider, m_decoScaleLabel);
 
-        addInspector("Rotation",
-            y0 - 18.f, (deco.rotation + 180.f) / 360.f,
+        addSliderRow(root, this, area, "Rotation",
+            y0 - step, (deco.rotation + 180.f) / 360.f,
             menu_selector(ProfilePicEditorPopup::onDecoRotationChanged),
             fmt::format("{:.0f}", deco.rotation),
             m_decoRotSlider, m_decoRotLabel);
 
-        addInspector("Pos X",
-            y0 - 36.f, (deco.posX + 1.2f) / 2.4f,
+        addSliderRow(root, this, area, "Pos X",
+            y0 - step * 2.f, (deco.posX + 1.2f) / 2.4f,
             menu_selector(ProfilePicEditorPopup::onDecoPosXChanged),
             fmt::format("{:.2f}", deco.posX),
             m_decoPosXSlider, m_decoPosXLabel);
 
-        addInspector("Pos Y",
-            y0 - 54.f, (deco.posY + 1.2f) / 2.4f,
+        addSliderRow(root, this, area, "Pos Y",
+            y0 - step * 3.f, (deco.posY + 1.2f) / 2.4f,
             menu_selector(ProfilePicEditorPopup::onDecoPosYChanged),
             fmt::format("{:.2f}", deco.posY),
             m_decoPosYSlider, m_decoPosYLabel);
 
-        addInspector("Opacity",
-            y0 - 72.f, deco.opacity / 255.f,
+        addSliderRow(root, this, area, "Opacity",
+            y0 - step * 4.f, deco.opacity / 255.f,
             menu_selector(ProfilePicEditorPopup::onDecoOpacityChanged),
             std::to_string(static_cast<int>(deco.opacity)),
             m_decoOpacitySlider, m_decoOpacityLabel);
 
-        float btnY = y0 - 96.f;
+        float btnY = 10.f;
         auto actionsMenu = CCMenu::create();
         actionsMenu->setAnchorPoint({0.5f, 0.5f});
         actionsMenu->setPosition({area.width * 0.5f, btnY});
-        actionsMenu->setContentSize({area.width - 20.f, 24.f});
+        actionsMenu->setContentSize({area.width - 12.f, 22.f});
         actionsMenu->setLayout(RowLayout::create()->setGap(3.f)->setAutoScale(false));
         root->addChild(actionsMenu);
 
@@ -849,6 +1050,12 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
         clearMenu->setPosition({area.width - 32.f, listY});
         clearMenu->addChild(clearBtn);
         root->addChild(clearMenu);
+    } else {
+        auto hint = smallLabel("Tap a decoration above to place it.", 0.32f, "chatFont.fnt");
+        hint->setColor({180, 180, 200});
+        hint->setOpacity(200);
+        hint->setPosition({area.width * 0.5f, listY});
+        root->addChild(hint);
     }
 
     return root;
@@ -1003,8 +1210,6 @@ void ProfilePicEditorPopup::onDecoDelete(CCObject*) {
     rebuildPreview();
 }
 
-void ProfilePicEditorPopup::onDecoColorSelect(CCObject*) {  }
-
 void ProfilePicEditorPopup::onDecoPickColor(CCObject*) {
     if (m_selectedDecoIdx < 0 || m_selectedDecoIdx >= (int)m_editConfig.decorations.size()) return;
     auto current = m_editConfig.decorations[m_selectedDecoIdx].color;
@@ -1028,114 +1233,258 @@ void ProfilePicEditorPopup::onClearAllDecos(CCObject*) {
 }
 
 
-CCNode* ProfilePicEditorPopup::createAdjustTab() {
+// ============================ Icon tab ============================
+
+CCNode* ProfilePicEditorPopup::createIconTab() {
     auto root = CCNode::create();
     CCSize area = m_tabContent->getContentSize();
     root->setContentSize(area);
 
-    float topY = area.height - 18.f;
+    float topY = area.height - 14.f;
 
-    auto addSlider = [&](char const* name, float y, float normValue,
-                         SEL_MenuHandler sel, std::string const& valueText,
-                         Slider*& outSlider, CCLabelBMFont*& outLabel) {
-        auto lbl = smallLabel(name, 0.4f);
-        lbl->setAnchorPoint({0.f, 0.5f});
-        lbl->setPosition({14.f, y});
-        root->addChild(lbl);
+    auto toggleMenu = CCMenu::create();
+    toggleMenu->setPosition({area.width * 0.5f, topY});
+    root->addChild(toggleMenu);
 
-        auto* slider = Slider::create(this, sel, 0.65f);
-        slider->setPosition({area.width * 0.5f + 6.f, y});
-        slider->setValue(std::clamp(normValue, 0.f, 1.f));
-        slider->setAnchorPoint({0.5f, 0.5f});
-        root->addChild(slider);
-        outSlider = slider;
+    auto toggle = CCMenuItemToggler::createWithStandardSprites(
+        this, menu_selector(ProfilePicEditorPopup::onOnlyIconToggle), 0.7f
+    );
+    toggle->toggle(m_editConfig.onlyIconMode);
+    toggle->setPosition({-80.f, 0.f});
+    toggleMenu->addChild(toggle);
 
-        auto vlbl = smallLabel(valueText, 0.4f);
-        vlbl->setAnchorPoint({1.f, 0.5f});
-        vlbl->setPosition({area.width - 14.f, y});
-        root->addChild(vlbl);
-        outLabel = vlbl;
+    auto toggleLbl = smallLabel("Only Icon Mode", 0.45f, "bigFont.fnt");
+    toggleLbl->setAnchorPoint({0.f, 0.5f});
+    toggleLbl->setPosition({area.width * 0.5f - 68.f, topY});
+    root->addChild(toggleLbl);
+
+    float y = topY - 24.f;
+
+    auto idLbl = smallLabel("Your Icons", 0.38f);
+    idLbl->setAnchorPoint({0.f, 0.5f});
+    idLbl->setPosition({14.f, y});
+    root->addChild(idLbl);
+
+    auto iconGrid = CCNode::create();
+    iconGrid->setAnchorPoint({0.5f, 0.5f});
+    iconGrid->setContentSize({area.width - 24.f, 58.f});
+    iconGrid->setPosition({area.width * 0.5f, y - 35.f});
+    root->addChild(iconGrid);
+
+    auto gm = GameManager::get();
+    struct IconEntry { int type; int id; const char* name; };
+    IconEntry entries[] = {
+        {0, gm->m_playerFrame, "Cube"},
+        {1, gm->m_playerShip, "Ship"},
+        {2, gm->m_playerBall, "Ball"},
+        {3, gm->m_playerBird, "UFO"},
+        {4, gm->m_playerDart, "Wave"},
+        {5, gm->m_playerRobot, "Robot"},
+        {6, gm->m_playerSpider, "Spider"},
+        {7, gm->m_playerSwing, "Swing"},
     };
 
-    float zoomNorm = std::clamp((m_editConfig.imageZoom - 0.5f) / 2.5f, 0.f, 1.f);
-    addSlider("Zoom", topY, zoomNorm,
-              menu_selector(ProfilePicEditorPopup::onImgZoomChanged),
-              fmt::format("{:.2f}x", m_editConfig.imageZoom),
-              m_imgZoomSlider, m_imgZoomLabel);
+    for (int row = 0; row < 2; row++) {
+        auto iconMenu = CCMenu::create();
+        iconMenu->setAnchorPoint({0.5f, 0.5f});
+        iconMenu->setPosition({iconGrid->getContentSize().width * 0.5f, row == 0 ? 42.f : 14.f});
+        iconMenu->setContentSize({iconGrid->getContentSize().width, 26.f});
+        iconGrid->addChild(iconMenu);
+        iconMenu->setLayout(
+            RowLayout::create()->setGap(8.f)->setGrowCrossAxis(true)
+                ->setCrossAxisOverflow(false)->setAutoScale(false)
+        );
 
-    float imgRotNorm = std::clamp((m_editConfig.imageRotation + 180.f) / 360.f, 0.f, 1.f);
-    addSlider("Img Rotate", topY - 22.f, imgRotNorm,
-              menu_selector(ProfilePicEditorPopup::onImgRotationChanged),
-              fmt::format("{:.0f}", m_editConfig.imageRotation),
-              m_imgRotationSlider, m_imgRotationLabel);
+        for (size_t i = row * 4; i < static_cast<size_t>(row * 4 + 4); i++) {
+            bool selected = m_editConfig.iconConfig.iconType == (int)i;
+            auto cell = CCNode::create();
+            cell->setContentSize({34.f, 26.f});
+            cell->setAnchorPoint({0.5f, 0.5f});
 
-    float offXNorm = std::clamp((m_editConfig.imageOffsetX + 40.f) / 80.f, 0.f, 1.f);
-    addSlider("Offset X", topY - 44.f, offXNorm,
-              menu_selector(ProfilePicEditorPopup::onImgOffsetXChanged),
-              fmt::format("{:.0f}", m_editConfig.imageOffsetX),
-              m_imgOffsetXSlider, m_imgOffsetXLabel);
+            auto bg = paimon::SpriteHelper::createColorPanel(
+                34.f, 26.f,
+                selected ? ccColor3B{60, 160, 60} : ccColor3B{50, 50, 50},
+                selected ? 220 : 140, 4.f);
+            bg->setAnchorPoint({0.5f, 0.5f});
+            bg->ignoreAnchorPointForPosition(false);
+            bg->setPosition({17.f, 13.f});
+            cell->addChild(bg);
 
-    float offYNorm = std::clamp((m_editConfig.imageOffsetY + 40.f) / 80.f, 0.f, 1.f);
-    addSlider("Offset Y", topY - 66.f, offYNorm,
-              menu_selector(ProfilePicEditorPopup::onImgOffsetYChanged),
-              fmt::format("{:.0f}", m_editConfig.imageOffsetY),
-              m_imgOffsetYSlider, m_imgOffsetYLabel);
+            int cubeFrame = equippedIconIdForType(gm, 0);
+            auto player = SimplePlayer::create(cubeFrame);
+            if (player) {
+                player->updatePlayerFrame(entries[i].id, static_cast<IconType>(entries[i].type));
+                player->setColor(gm->colorForIdx(gm->m_playerColor));
+                player->setSecondColor(gm->colorForIdx(gm->m_playerColor2));
+                if (gm->m_playerGlow) player->setGlowOutline(gm->colorForIdx(gm->m_playerGlowColor));
+                else player->disableGlowOutline();
+                float maxDim = std::max(player->getContentSize().width, player->getContentSize().height);
+                float gdRefSize = 30.f;
+                float scale = (maxDim > 10.f && maxDim < 80.f) ? (18.f / maxDim) : (18.f / gdRefSize);
+                player->setScale(std::clamp(scale, 0.25f, 0.55f));
+                player->setAnchorPoint({0.5f, 0.5f});
+                player->ignoreAnchorPointForPosition(false);
+                player->setPosition({17.f, 13.f});
+                cell->addChild(player, 1);
+            }
 
-    auto resetSpr = ButtonSprite::create("Reset Adjust", "goldFont.fnt", "GJ_button_06.png", 0.6f);
-    resetSpr->setScale(0.5f);
-    auto resetBtn = CCMenuItemSpriteExtra::create(resetSpr, this, menu_selector(ProfilePicEditorPopup::onResetAdjust));
-    auto resetMenu = CCMenu::create();
-    resetMenu->setPosition({area.width * 0.5f, topY - 110.f});
-    resetMenu->addChild(resetBtn);
-    root->addChild(resetMenu);
+            auto btn = CCMenuItemSpriteExtra::create(cell, this, menu_selector(ProfilePicEditorPopup::onGameIconSelect));
+            btn->setTag(static_cast<int>(i));
+            iconMenu->addChild(btn);
+        }
+        iconMenu->updateLayout();
+    }
 
-    auto tipLbl = smallLabel("Zoom y offset permiten encuadrar tu foto dentro de la forma.", 0.34f, "chatFont.fnt");
+    y -= 74.f;
+
+    auto colorTip = smallLabel("Colors, Glow, Scale & Anim in Detail", 0.32f, "chatFont.fnt");
+    colorTip->setColor({150, 150, 170});
+    colorTip->setOpacity(180);
+    colorTip->setAnchorPoint({0.5f, 0.5f});
+    colorTip->setPosition({area.width * 0.5f, y});
+    root->addChild(colorTip);
+
+    auto moreSpr = ButtonSprite::create("Open Icon Detail", "goldFont.fnt", "GJ_button_02.png", 0.6f);
+    moreSpr->setScale(0.42f);
+    auto moreBtn = CCMenuItemSpriteExtra::create(moreSpr, this, menu_selector(ProfilePicEditorPopup::onOpenIconsDetail));
+    auto moreMenu = CCMenu::create();
+    moreMenu->setPosition({area.width * 0.5f, y - 22.f});
+    moreMenu->addChild(moreBtn);
+    root->addChild(moreMenu);
+
+    return root;
+}
+
+void ProfilePicEditorPopup::onOnlyIconToggle(CCObject* sender) {
+    auto toggler = static_cast<CCMenuItemToggler*>(sender);
+    m_editConfig.onlyIconMode = !toggler->isToggled();
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onGameIconSelect(CCObject* sender) {
+    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
+    auto gm = GameManager::get();
+    int id = equippedIconIdForType(gm, idx);
+    m_editConfig.iconConfig.iconType = idx;
+    m_editConfig.iconConfig.iconId = id;
+    m_editConfig.onlyIconMode = true;
+    rebuildCurrentTab();
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onOpenIconsDetail(CCObject*) {
+    auto* pop = ProfilePicIconsDetailPopup::create(&m_editConfig, [this]() {
+        rebuildCurrentTab();
+        rebuildPreview();
+    });
+    if (pop) pop->show();
+}
+
+
+// ============================ Style tab ============================
+
+CCNode* ProfilePicEditorPopup::createStyleTab() {
+    auto root = CCNode::create();
+    CCSize area = m_tabContent->getContentSize();
+    root->setContentSize(area);
+
+    float topY = area.height - 14.f;
+
+    auto presetLbl = smallLabel("Presets", 0.42f);
+    presetLbl->setAnchorPoint({0.f, 0.5f});
+    presetLbl->setPosition({14.f, topY});
+    root->addChild(presetLbl);
+
+    auto actionMenu = CCMenu::create();
+    actionMenu->setAnchorPoint({0.5f, 0.5f});
+    actionMenu->setPosition({area.width * 0.5f, topY - 18.f});
+    actionMenu->setContentSize({area.width - 20.f, 22.f});
+    root->addChild(actionMenu);
+    actionMenu->setLayout(
+        RowLayout::create()->setGap(4.f)->setAutoScale(false)
+    );
+
+    auto mkActBtn = [&](char const* text, char const* bg, SEL_MenuHandler sel, float sc = 0.45f) {
+        auto spr = ButtonSprite::create(text, "goldFont.fnt", bg, 0.7f);
+        spr->setScale(sc);
+        return CCMenuItemSpriteExtra::create(spr, this, sel);
+    };
+
+    actionMenu->addChild(mkActBtn("Preset", "GJ_button_04.png", menu_selector(ProfilePicEditorPopup::onPreset)));
+    actionMenu->addChild(mkActBtn("Random", "GJ_button_02.png", menu_selector(ProfilePicEditorPopup::onRandomize)));
+    actionMenu->addChild(mkActBtn("Reset", "GJ_button_06.png", menu_selector(ProfilePicEditorPopup::onResetAll)));
+    actionMenu->updateLayout();
+
+    float fontY = topY - 50.f;
+    auto fontLbl = smallLabel("Font", 0.42f);
+    fontLbl->setAnchorPoint({0.f, 0.5f});
+    fontLbl->setPosition({14.f, fontY});
+    root->addChild(fontLbl);
+
+    auto allFonts = ProfilePicCustomizer::getAvailableFonts();
+    std::vector<std::pair<std::string, std::string>> fonts;
+    for (auto const& f : allFonts) {
+        if (f.first.size() > 4 && f.first.substr(f.first.size() - 4) == ".fnt")
+            fonts.push_back(f);
+    }
+
+    auto fontMenu = CCMenu::create();
+    fontMenu->setAnchorPoint({0.5f, 0.5f});
+    fontMenu->setPosition({area.width * 0.5f, fontY - 22.f});
+    fontMenu->setContentSize({area.width - 20.f, 60.f});
+    root->addChild(fontMenu);
+    fontMenu->setLayout(
+        RowLayout::create()->setGap(3.f)->setGrowCrossAxis(true)
+            ->setCrossAxisOverflow(false)->setAutoScale(false)
+    );
+
+    for (size_t i = 0; i < fonts.size(); i++) {
+        auto const& font = fonts[i];
+        bool selected = m_editConfig.profileFont == font.first;
+
+        auto cellBg = paimon::SpriteHelper::createColorPanel(
+            44.f, 22.f,
+            selected ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40},
+            selected ? 200 : 120, 3.f
+        );
+
+        auto lbl = CCLabelBMFont::create(font.second.c_str(), font.first.c_str());
+        if (lbl) {
+            lbl->setScale(0.32f);
+            lbl->setAnchorPoint({0.5f, 0.5f});
+            lbl->setPosition({22.f, 11.f});
+            cellBg->addChild(lbl);
+        }
+
+        auto btn = CCMenuItemSpriteExtra::create(cellBg, this, menu_selector(ProfilePicEditorPopup::onFontSelect));
+        btn->setTag(static_cast<int>(i));
+        fontMenu->addChild(btn);
+    }
+    fontMenu->updateLayout();
+
+    auto tipLbl = smallLabel("Font applies to your username in the main menu", 0.32f, "chatFont.fnt");
     tipLbl->setColor({180, 180, 200});
     tipLbl->setOpacity(200);
     tipLbl->setAnchorPoint({0.5f, 0.5f});
-    tipLbl->setPosition({area.width * 0.5f, 14.f});
+    tipLbl->setPosition({area.width * 0.5f, 12.f});
     root->addChild(tipLbl);
 
     return root;
 }
 
-void ProfilePicEditorPopup::onImgZoomChanged(CCObject* sender) {
-    auto* slider = static_cast<SliderThumb*>(sender);
-    m_editConfig.imageZoom = 0.5f + slider->getValue() * 2.5f;
-    if (m_imgZoomLabel) m_imgZoomLabel->setString(fmt::format("{:.2f}x", m_editConfig.imageZoom).c_str());
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onImgRotationChanged(CCObject* sender) {
-    auto* slider = static_cast<SliderThumb*>(sender);
-    m_editConfig.imageRotation = -180.f + slider->getValue() * 360.f;
-    if (m_imgRotationLabel) m_imgRotationLabel->setString(fmt::format("{:.0f}", m_editConfig.imageRotation).c_str());
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onImgOffsetXChanged(CCObject* sender) {
-    auto* slider = static_cast<SliderThumb*>(sender);
-    m_editConfig.imageOffsetX = -40.f + slider->getValue() * 80.f;
-    if (m_imgOffsetXLabel) m_imgOffsetXLabel->setString(fmt::format("{:.0f}", m_editConfig.imageOffsetX).c_str());
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onImgOffsetYChanged(CCObject* sender) {
-    auto* slider = static_cast<SliderThumb*>(sender);
-    m_editConfig.imageOffsetY = -40.f + slider->getValue() * 80.f;
-    if (m_imgOffsetYLabel) m_imgOffsetYLabel->setString(fmt::format("{:.0f}", m_editConfig.imageOffsetY).c_str());
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onResetAdjust(CCObject*) {
-    m_editConfig.imageZoom = 1.f;
-    m_editConfig.imageRotation = 0.f;
-    m_editConfig.imageOffsetX = 0.f;
-    m_editConfig.imageOffsetY = 0.f;
+void ProfilePicEditorPopup::onFontSelect(CCObject* sender) {
+    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
+    auto allFonts = ProfilePicCustomizer::getAvailableFonts();
+    std::vector<std::pair<std::string, std::string>> fonts;
+    for (auto const& f : allFonts) {
+        if (f.first.size() > 4 && f.first.substr(f.first.size() - 4) == ".fnt")
+            fonts.push_back(f);
+    }
+    if (idx < 0 || idx >= (int)fonts.size()) return;
+    m_editConfig.profileFont = fonts[idx].first;
     rebuildCurrentTab();
     rebuildPreview();
 }
-
 
 void ProfilePicEditorPopup::onPreset(CCObject*) {
     auto presets = ProfilePicCustomizer::getPresets();
@@ -1283,7 +1632,12 @@ void ProfilePicEditorPopup::onRandomize(CCObject*) {
 }
 
 void ProfilePicEditorPopup::onResetAll(CCObject*) {
+    // keep the picked photo so a full style reset doesn't lose the image
+    auto keepSource = m_editConfig.photoSource;
+    auto keepPath = m_editConfig.photoPath;
     m_editConfig = ProfilePicConfig();
+    m_editConfig.photoSource = keepSource;
+    m_editConfig.photoPath = keepPath;
     m_selectedDecoIdx = -1;
     m_decoCategoryIdx = 0;
     m_decoPage = 0;
@@ -1292,6 +1646,8 @@ void ProfilePicEditorPopup::onResetAll(CCObject*) {
     PaimonNotify::create("Config reset", NotificationIcon::Info)->show();
 }
 
+
+// ============================ Preview ============================
 
 void ProfilePicEditorPopup::triggerImageDownloadIfNeeded() {
     if (m_triggeredDownload) return;
@@ -1313,6 +1669,7 @@ void ProfilePicEditorPopup::triggerImageDownloadIfNeeded() {
             if (paimon::isRuntimeShuttingDown()) return;
             if (!safeSelf || !safeSelf->getParent()) return;
             rebuildPreview();
+            if (m_currentTab == 0) rebuildCurrentTab();
         });
     }, true);
 }
@@ -1323,532 +1680,59 @@ void ProfilePicEditorPopup::rebuildPreview() {
     m_previewTexture = nullptr;
 
     CCSize box = m_previewContainer->getContentSize();
-    float center = std::min(box.width, box.height);
-    float targetSize = center * 0.72f;
+    float targetSize = std::min(box.width, box.height) * 0.72f;
+
+    using Photo = paimon::profile_pic::ResolvedProfilePhoto;
 
     CCNode* imageNode = nullptr;
+    std::string statusText = "Icon mode";
 
-    std::string bgType = Mod::get()->getSavedValue<std::string>("profile-bg-type", "none");
-    std::string bgPath = Mod::get()->getSavedValue<std::string>("profile-bg-path", "");
+    if (!m_editConfig.onlyIconMode) {
+        auto photo = paimon::profile_pic::resolveProfilePhoto(m_editConfig);
+        if (photo.kind == Photo::Kind::Texture) {
+            m_previewTexture = photo.texture;
+        }
+        imageNode = paimon::profile_pic::createResolvedPhotoNode(photo);
 
-    std::error_code fsEc;
-    if (bgType == "custom" && !bgPath.empty() && std::filesystem::exists(bgPath, fsEc) && !fsEc) {
-        bool isAnimated = false;
-        {
-            std::ifstream probe(bgPath, std::ios::binary);
-            if (probe) {
-                char hdr[32]{};
-                probe.read(hdr, sizeof(hdr));
-                auto fmt = paimon::format::detect(reinterpret_cast<uint8_t const*>(hdr), static_cast<size_t>(probe.gcount()));
-                isAnimated = (fmt == paimon::format::ImageFormat::GIF);
-            }
+        switch (photo.source) {
+            case Photo::Source::Custom:           statusText = "Custom image"; break;
+            case Photo::Source::OwnProfile:       statusText = "Your profile picture"; break;
+            case Photo::Source::LegacyBackground: statusText = "Profile BG (fallback)"; break;
+            default:                              statusText = photo.ownPhotoMissing ? "Downloading..." : "No image"; break;
         }
 
-        if (isAnimated) {
-            auto* gif = AnimatedGIFSprite::create(bgPath);
-            if (gif) imageNode = gif;
-        }
-        if (!imageNode) {
-            auto loaded = ImageLoadHelper::loadStaticImage(std::filesystem::path(bgPath), 16);
-            if (loaded.success && loaded.texture) {
-                auto* sprite = CCSprite::createWithTexture(loaded.texture);
-                loaded.texture->release();
-                if (sprite) imageNode = sprite;
-            }
+        if (!imageNode && photo.ownPhotoMissing) {
+            triggerImageDownloadIfNeeded();
         }
     }
 
-    if (!imageNode) {
-        auto* acc = GJAccountManager::sharedState();
-        int myID = acc ? acc->m_accountID : 0;
-        if (myID > 0) {
-            std::string gifKey = ProfileImageService::get().getProfileImgGifKey(myID);
-            if (!gifKey.empty() && AnimatedGIFSprite::isCached(gifKey)) {
-                imageNode = AnimatedGIFSprite::createFromCache(gifKey);
-            }
+    if (m_previewStatusLabel) m_previewStatusLabel->setString(statusText.c_str());
 
-            CCTexture2D* tex = nullptr;
-            if (!imageNode) {
-                m_previewTexture = getProfileImgCachedTexture(myID);
-                tex = m_previewTexture;
-            }
-
-            if (!imageNode && !tex) {
-                auto cachePath = geode::Mod::get()->getSaveDir() / "profileimg_cache" / fmt::format("{}.dat", myID);
-                std::error_code ec;
-                if (std::filesystem::exists(cachePath, ec) && !ec) {
-                    std::ifstream file(cachePath, std::ios::binary | std::ios::ate);
-                    if (file) {
-                        auto size = file.tellg();
-                        if (size > 0) {
-                            file.seekg(0, std::ios::beg);
-                            std::vector<uint8_t> data(static_cast<size_t>(size));
-                            if (file.read(reinterpret_cast<char*>(data.data()), size)) {
-                                bool isAnim = paimon::format::isGif(data.data(), data.size());
-                                bool isVideo = false;
-                                if (data.size() > 12) {
-                                    for (size_t i = 0; i + 3 < data.size() && i < 12; ++i) {
-                                        if (data[i]=='f' && data[i+1]=='t' && data[i+2]=='y' && data[i+3]=='p') {
-                                            isVideo = true; break;
-                                        }
-                                    }
-                                }
-                                if (!isAnim && !isVideo) {
-                                    auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data.data(), data.size());
-                                    if (loaded.success && loaded.texture) {
-                                        m_previewTexture = loaded.texture;
-                                        loaded.texture->autorelease();
-                                        tex = m_previewTexture;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (tex) {
-                imageNode = CCSprite::createWithTexture(tex);
-            }
-
-            if (!imageNode) {
-                triggerImageDownloadIfNeeded();
-            }
-        }
-    }
-
-    if (imageNode) {
-        auto composed = paimon::profile_pic::composeProfilePicture(imageNode, targetSize, m_editConfig);
-        if (composed) {
-            composed->setPosition({box.width * 0.5f, box.height * 0.5f});
-            m_previewContainer->addChild(composed);
-            return;
-        }
-    }
-
-    auto composed = paimon::profile_pic::composeProfilePicture(nullptr, targetSize, m_editConfig);
+    auto composed = paimon::profile_pic::composeProfilePicture(imageNode, targetSize, m_editConfig);
     if (composed) {
+        // shrink to fit the preview box when size/scale would overflow it
+        float sizeMul = std::clamp(m_editConfig.size, 60.f, 200.f) / 120.f;
+        float ext = targetSize * sizeMul * std::max(
+            std::clamp(m_editConfig.scaleX, 0.2f, 3.f),
+            std::clamp(m_editConfig.scaleY, 0.2f, 3.f));
+        if (m_editConfig.frameEnabled) ext += m_editConfig.frame.thickness * 2.f * sizeMul;
+        float maxFit = std::min(box.width, box.height);
+        if (ext > maxFit && ext > 0.f) {
+            float fit = maxFit / ext;
+            composed->setScaleX(composed->getScaleX() * fit);
+            composed->setScaleY(composed->getScaleY() * fit);
+        }
         composed->setPosition({box.width * 0.5f, box.height * 0.5f});
         m_previewContainer->addChild(composed);
     }
 
-    if (!m_editConfig.onlyIconMode) {
+    if (!imageNode && !m_editConfig.onlyIconMode) {
         auto lbl = smallLabel("NO IMAGE", 0.45f, "bigFont.fnt");
         lbl->setColor({200, 200, 200});
         lbl->setOpacity(180);
         lbl->setPosition({box.width * 0.5f, 8.f});
         m_previewContainer->addChild(lbl);
     }
-}
-
-void ProfilePicEditorPopup::onFontSelect(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    auto allFonts = ProfilePicCustomizer::getAvailableFonts();
-    std::vector<std::pair<std::string, std::string>> fonts;
-    for (auto const& f : allFonts) {
-        if (f.first.size() > 4 && f.first.substr(f.first.size() - 4) == ".fnt")
-            fonts.push_back(f);
-    }
-    if (idx < 0 || idx >= (int)fonts.size()) return;
-    m_editConfig.profileFont = fonts[idx].first;
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onOpenIconsDetail(CCObject*) {
-    auto* pop = ProfilePicIconsDetailPopup::create(&m_editConfig, [this]() {
-        rebuildCurrentTab();
-        rebuildPreview();
-    });
-    if (pop) pop->show();
-}
-
-void ProfilePicEditorPopup::onGameIconSelect(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    auto gm = GameManager::get();
-    int id = equippedIconIdForType(gm, idx);
-    m_editConfig.iconConfig.iconType = idx;
-    m_editConfig.iconConfig.iconId = id;
-    m_editConfig.onlyIconMode = true;
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onCustomIconSelect(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    if (idx < 0 || idx >= (int)m_editConfig.customIcons.size()) return;
-    m_editConfig.selectedCustomIconIndex = idx;
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onAddCustomIcon(CCObject*) {
-    PaimonNotify::create("Custom icons: drag & drop image files to mod folder", NotificationIcon::Info)->show();
-}
-
-void ProfilePicEditorPopup::onRemoveCustomIcon(CCObject*) {
-    if (m_editConfig.selectedCustomIconIndex >= 0 &&
-        m_editConfig.selectedCustomIconIndex < (int)m_editConfig.customIcons.size()) {
-        m_editConfig.customIcons.erase(m_editConfig.customIcons.begin() + m_editConfig.selectedCustomIconIndex);
-        m_editConfig.selectedCustomIconIndex = -1;
-        rebuildCurrentTab();
-        rebuildPreview();
-    }
-}
-
-void ProfilePicEditorPopup::onIconColor1Select(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    auto palette = ProfilePicCustomizer::getColorPalette();
-    if (idx < 0 || idx >= (int)palette.size()) return;
-    m_editConfig.iconConfig.color1 = palette[idx].second;
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onIconColor2Select(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    auto palette = ProfilePicCustomizer::getColorPalette();
-    if (idx < 0 || idx >= (int)palette.size()) return;
-    m_editConfig.iconConfig.color2 = palette[idx].second;
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onIconColor1SourceSelect(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    m_editConfig.iconConfig.colorSource = (idx == 0) ? IconColorSource::Custom : IconColorSource::Player;
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onIconColor2SourceSelect(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    m_editConfig.iconConfig.colorSource = (idx == 0) ? IconColorSource::Custom : IconColorSource::Player;
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onPickIconColor1(CCObject*) {
-    auto* popup = geode::ColorPickPopup::create(m_editConfig.iconConfig.color1);
-    if (!popup) return;
-    popup->setCallback([this](ccColor4B const& c) {
-        m_editConfig.iconConfig.color1 = {c.r, c.g, c.b};
-        rebuildCurrentTab();
-        rebuildPreview();
-    });
-    popup->show();
-}
-
-void ProfilePicEditorPopup::onPickIconColor2(CCObject*) {
-    auto* popup = geode::ColorPickPopup::create(m_editConfig.iconConfig.color2);
-    if (!popup) return;
-    popup->setCallback([this](ccColor4B const& c) {
-        m_editConfig.iconConfig.color2 = {c.r, c.g, c.b};
-        rebuildCurrentTab();
-        rebuildPreview();
-    });
-    popup->show();
-}
-
-void ProfilePicEditorPopup::onIconGlowToggle(CCObject* sender) {
-    auto toggler = static_cast<CCMenuItemToggler*>(sender);
-    m_editConfig.iconConfig.glowEnabled = !toggler->isToggled();
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onIconGlowColorSelect(CCObject*) {
-    auto* popup = geode::ColorPickPopup::create(m_editConfig.iconConfig.glowColor);
-    if (!popup) return;
-    popup->setCallback([this](ccColor4B const& c) {
-        m_editConfig.iconConfig.glowColor = {c.r, c.g, c.b};
-        rebuildCurrentTab();
-        rebuildPreview();
-    });
-    popup->show();
-}
-
-void ProfilePicEditorPopup::onIconGlowColorSourceSelect(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    m_editConfig.iconConfig.glowColorSource = (idx == 0) ? IconColorSource::Custom : IconColorSource::Player;
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onPickIconGlowColor(CCObject*) {
-    auto* popup = geode::ColorPickPopup::create(m_editConfig.iconConfig.glowColor);
-    if (!popup) return;
-    popup->setCallback([this](ccColor4B const& c) {
-        m_editConfig.iconConfig.glowColor = {c.r, c.g, c.b};
-        rebuildCurrentTab();
-        rebuildPreview();
-    });
-    popup->show();
-}
-
-void ProfilePicEditorPopup::onIconScaleChanged(CCObject* sender) {
-    auto* slider = static_cast<SliderThumb*>(sender);
-    m_editConfig.iconConfig.scale = slider->getValue() * 2.f;
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onAnimationTypeSelect(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    m_editConfig.iconConfig.animationType = idx;
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onAnimationSpeedChanged(CCObject* sender) {
-    auto* slider = static_cast<SliderThumb*>(sender);
-    m_editConfig.iconConfig.animationSpeed = slider->getValue() * 3.f;
-    if (auto* lbl = typeinfo_cast<CCLabelBMFont*>(m_tabContent->getChildByID("animSpeedVal"))) {
-        lbl->setString(fmt::format("{:.1f}x", m_editConfig.iconConfig.animationSpeed).c_str());
-    }
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onAnimationAmountChanged(CCObject* sender) {
-    auto* slider = static_cast<SliderThumb*>(sender);
-    m_editConfig.iconConfig.animationAmount = slider->getValue() * 2.f;
-    if (auto* lbl = typeinfo_cast<CCLabelBMFont*>(m_tabContent->getChildByID("animAmountVal"))) {
-        lbl->setString(fmt::format("{:.1f}", m_editConfig.iconConfig.animationAmount).c_str());
-    }
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onIconImageToggle(CCObject* sender) {
-    auto toggler = static_cast<CCMenuItemToggler*>(sender);
-    m_editConfig.iconConfig.iconImageEnabled = !toggler->isToggled();
-    if (m_editConfig.iconConfig.iconImageEnabled && m_editConfig.iconConfig.iconImagePath.empty()) {
-        PaimonNotify::create("Icon Image: drag & drop image to mod folder", NotificationIcon::Info)->show();
-    }
-    rebuildPreview();
-}
-
-
-CCNode* ProfilePicEditorPopup::createIconTab() {
-    auto root = CCNode::create();
-    CCSize area = m_tabContent->getContentSize();
-    root->setContentSize(area);
-
-    float topY = area.height - 14.f;
-
-    auto toggleMenu = CCMenu::create();
-    toggleMenu->setPosition({area.width * 0.5f, topY});
-    root->addChild(toggleMenu);
-
-    auto toggle = CCMenuItemToggler::createWithStandardSprites(
-        this, menu_selector(ProfilePicEditorPopup::onOnlyIconToggle), 0.7f
-    );
-    toggle->toggle(m_editConfig.onlyIconMode);
-    toggle->setPosition({-80.f, 0.f});
-    toggleMenu->addChild(toggle);
-
-    auto toggleLbl = smallLabel("Only Icon Mode", 0.45f, "bigFont.fnt");
-    toggleLbl->setAnchorPoint({0.f, 0.5f});
-    toggleLbl->setPosition({area.width * 0.5f - 68.f, topY});
-    root->addChild(toggleLbl);
-
-    float y = topY - 24.f;
-
-    auto idLbl = smallLabel("Your Icons", 0.38f);
-    idLbl->setAnchorPoint({0.f, 0.5f});
-    idLbl->setPosition({14.f, y});
-    root->addChild(idLbl);
-
-    auto iconGrid = CCNode::create();
-    iconGrid->setAnchorPoint({0.5f, 0.5f});
-    iconGrid->setContentSize({area.width - 24.f, 58.f});
-    iconGrid->setPosition({area.width * 0.5f, y - 35.f});
-    root->addChild(iconGrid);
-
-    auto gm = GameManager::get();
-    struct IconEntry { int type; int id; const char* name; };
-    IconEntry entries[] = {
-        {0, gm->m_playerFrame, "Cube"},
-        {1, gm->m_playerShip, "Ship"},
-        {2, gm->m_playerBall, "Ball"},
-        {3, gm->m_playerBird, "UFO"},
-        {4, gm->m_playerDart, "Wave"},
-        {5, gm->m_playerRobot, "Robot"},
-        {6, gm->m_playerSpider, "Spider"},
-        {7, gm->m_playerSwing, "Swing"},
-    };
-
-    for (int row = 0; row < 2; row++) {
-        auto iconMenu = CCMenu::create();
-        iconMenu->setAnchorPoint({0.5f, 0.5f});
-        iconMenu->setPosition({iconGrid->getContentSize().width * 0.5f, row == 0 ? 42.f : 14.f});
-        iconMenu->setContentSize({iconGrid->getContentSize().width, 26.f});
-        iconGrid->addChild(iconMenu);
-        iconMenu->setLayout(
-            RowLayout::create()->setGap(8.f)->setGrowCrossAxis(true)
-                ->setCrossAxisOverflow(false)->setAutoScale(false)
-        );
-
-        for (size_t i = row * 4; i < static_cast<size_t>(row * 4 + 4); i++) {
-            bool selected = m_editConfig.iconConfig.iconType == (int)i;
-            auto cell = CCNode::create();
-            cell->setContentSize({34.f, 26.f});
-            cell->setAnchorPoint({0.5f, 0.5f});
-
-            auto bg = paimon::SpriteHelper::createColorPanel(
-                34.f, 26.f,
-                selected ? ccColor3B{60, 160, 60} : ccColor3B{50, 50, 50},
-                selected ? 220 : 140, 4.f);
-            bg->setAnchorPoint({0.5f, 0.5f});
-            bg->ignoreAnchorPointForPosition(false);
-            bg->setPosition({17.f, 13.f});
-            cell->addChild(bg);
-
-            int cubeFrame = equippedIconIdForType(gm, 0);
-            auto player = SimplePlayer::create(cubeFrame);
-            if (player) {
-                player->updatePlayerFrame(entries[i].id, static_cast<IconType>(entries[i].type));
-                player->setColor(gm->colorForIdx(gm->m_playerColor));
-                player->setSecondColor(gm->colorForIdx(gm->m_playerColor2));
-                if (gm->m_playerGlow) player->setGlowOutline(gm->colorForIdx(gm->m_playerGlowColor));
-                else player->disableGlowOutline();
-                float maxDim = std::max(player->getContentSize().width, player->getContentSize().height);
-                float gdRefSize = 30.f;
-                float scale = (maxDim > 10.f && maxDim < 80.f) ? (18.f / maxDim) : (18.f / gdRefSize);
-                player->setScale(std::clamp(scale, 0.25f, 0.55f));
-                player->setAnchorPoint({0.5f, 0.5f});
-                player->ignoreAnchorPointForPosition(false);
-                player->setPosition({17.f, 13.f});
-                cell->addChild(player, 1);
-            }
-
-            auto btn = CCMenuItemSpriteExtra::create(cell, this, menu_selector(ProfilePicEditorPopup::onGameIconSelect));
-            btn->setTag(static_cast<int>(i));
-            iconMenu->addChild(btn);
-        }
-        iconMenu->updateLayout();
-    }
-
-    y -= 74.f;
-
-    auto colorTip = smallLabel("Colors, Glow, Scale & Anim in Detail", 0.32f, "chatFont.fnt");
-    colorTip->setColor({150, 150, 170});
-    colorTip->setOpacity(180);
-    colorTip->setAnchorPoint({0.5f, 0.5f});
-    colorTip->setPosition({area.width * 0.5f, y});
-    root->addChild(colorTip);
-
-    auto moreSpr = ButtonSprite::create("Open Icon Detail", "goldFont.fnt", "GJ_button_02.png", 0.6f);
-    moreSpr->setScale(0.42f);
-    auto moreBtn = CCMenuItemSpriteExtra::create(moreSpr, this, menu_selector(ProfilePicEditorPopup::onOpenIconsDetail));
-    auto moreMenu = CCMenu::create();
-    moreMenu->setPosition({area.width * 0.5f, y - 22.f});
-    moreMenu->addChild(moreBtn);
-    root->addChild(moreMenu);
-
-    return root;
-}
-
-void ProfilePicEditorPopup::onOnlyIconToggle(CCObject* sender) {
-    auto toggler = static_cast<CCMenuItemToggler*>(sender);
-    m_editConfig.onlyIconMode = !toggler->isToggled();
-    rebuildPreview();
-}
-
-void ProfilePicEditorPopup::onIconTypeSelect(CCObject* sender) {
-    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    m_editConfig.iconConfig.iconType = idx;
-    m_editConfig.iconConfig.iconId = equippedIconIdForType(GameManager::get(), idx);
-    m_editConfig.onlyIconMode = true;
-    rebuildCurrentTab();
-    rebuildPreview();
-}
-
-
-CCNode* ProfilePicEditorPopup::createStyleTab() {
-    auto root = CCNode::create();
-    CCSize area = m_tabContent->getContentSize();
-    root->setContentSize(area);
-
-    float topY = area.height - 14.f;
-
-    auto presetLbl = smallLabel("Presets", 0.42f);
-    presetLbl->setAnchorPoint({0.f, 0.5f});
-    presetLbl->setPosition({14.f, topY});
-    root->addChild(presetLbl);
-
-    auto actionMenu = CCMenu::create();
-    actionMenu->setAnchorPoint({0.5f, 0.5f});
-    actionMenu->setPosition({area.width * 0.5f, topY - 18.f});
-    actionMenu->setContentSize({area.width - 20.f, 22.f});
-    root->addChild(actionMenu);
-    actionMenu->setLayout(
-        RowLayout::create()->setGap(4.f)->setAutoScale(false)
-    );
-
-    auto mkActBtn = [&](char const* text, char const* bg, SEL_MenuHandler sel, float sc = 0.45f) {
-        auto spr = ButtonSprite::create(text, "goldFont.fnt", bg, 0.7f);
-        spr->setScale(sc);
-        return CCMenuItemSpriteExtra::create(spr, this, sel);
-    };
-
-    actionMenu->addChild(mkActBtn("Preset", "GJ_button_04.png", menu_selector(ProfilePicEditorPopup::onPreset)));
-    actionMenu->addChild(mkActBtn("Random", "GJ_button_02.png", menu_selector(ProfilePicEditorPopup::onRandomize)));
-    actionMenu->addChild(mkActBtn("Reset", "GJ_button_06.png", menu_selector(ProfilePicEditorPopup::onResetAll)));
-    actionMenu->updateLayout();
-
-    float fontY = topY - 50.f;
-    auto fontLbl = smallLabel("Font", 0.42f);
-    fontLbl->setAnchorPoint({0.f, 0.5f});
-    fontLbl->setPosition({14.f, fontY});
-    root->addChild(fontLbl);
-
-    auto allFonts = ProfilePicCustomizer::getAvailableFonts();
-    std::vector<std::pair<std::string, std::string>> fonts;
-    for (auto const& f : allFonts) {
-        if (f.first.size() > 4 && f.first.substr(f.first.size() - 4) == ".fnt")
-            fonts.push_back(f);
-    }
-
-    auto fontMenu = CCMenu::create();
-    fontMenu->setAnchorPoint({0.5f, 0.5f});
-    fontMenu->setPosition({area.width * 0.5f, fontY - 22.f});
-    fontMenu->setContentSize({area.width - 20.f, 60.f});
-    root->addChild(fontMenu);
-    fontMenu->setLayout(
-        RowLayout::create()->setGap(3.f)->setGrowCrossAxis(true)
-            ->setCrossAxisOverflow(false)->setAutoScale(false)
-    );
-
-    for (size_t i = 0; i < fonts.size(); i++) {
-        auto const& font = fonts[i];
-        bool selected = m_editConfig.profileFont == font.first;
-
-        auto cellBg = paimon::SpriteHelper::createColorPanel(
-            44.f, 22.f,
-            selected ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40},
-            selected ? 200 : 120, 3.f
-        );
-
-        auto lbl = CCLabelBMFont::create(font.second.c_str(), font.first.c_str());
-        if (lbl) {
-            lbl->setScale(0.32f);
-            lbl->setAnchorPoint({0.5f, 0.5f});
-            lbl->setPosition({22.f, 11.f});
-            cellBg->addChild(lbl);
-        }
-
-        auto btn = CCMenuItemSpriteExtra::create(cellBg, this, menu_selector(ProfilePicEditorPopup::onFontSelect));
-        btn->setTag(static_cast<int>(i));
-        fontMenu->addChild(btn);
-    }
-    fontMenu->updateLayout();
-
-    auto tipLbl = smallLabel("Used on profile button", 0.32f, "chatFont.fnt");
-    tipLbl->setColor({180, 180, 200});
-    tipLbl->setOpacity(200);
-    tipLbl->setAnchorPoint({0.5f, 0.5f});
-    tipLbl->setPosition({area.width * 0.5f, 12.f});
-    root->addChild(tipLbl);
-
-    return root;
 }
 
 

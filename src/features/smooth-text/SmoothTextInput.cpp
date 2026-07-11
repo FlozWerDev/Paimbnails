@@ -132,6 +132,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
     void popIn(CCSprite* s, Cfg const& c) {
         s->stopActionByTag(kInTag);
 
+        // Capture rest pose AFTER createFontChars / settle — never mid-animation.
         CCPoint dest = s->getPosition();
         float   fx = s->getScaleX(), fy = s->getScaleY();
         GLubyte full = fullOpacity();
@@ -142,8 +143,11 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         steps->addObject(CCFadeTo::create(dur, full));
 
         if (c.rise > 0.f) {
+            // MoveBy (not MoveTo): if the label recenters while we animate,
+            // we still finish rise-relative instead of flying back to a stale
+            // absolute destination from a previous layout.
             s->setPosition(dest - CCPoint(0.f, c.rise));
-            steps->addObject(CCEaseSineOut::create(CCMoveTo::create(dur, dest)));
+            steps->addObject(CCEaseSineOut::create(CCMoveBy::create(dur, CCPoint(0.f, c.rise))));
         }
         if (c.pop) {
             s->setScaleX(fx * 0.3f);
@@ -213,11 +217,24 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         }
     }
 
+    // Kill in-flight entrance anims and restore rest opacity/scale.
+    // Position is left alone — callers must run this only after
+    // CCTextInputNode::refreshLabel() has rewritten layout via createFontChars.
+    //
+    // BMFont reuses letter sprites by tag and does NOT stop actions or reset
+    // scale/opacity on reuse. Typing a second character while the first is
+    // still rising left the old MoveTo/ScaleTo running, which overwrote the
+    // fresh layout and parked early letters at the wrong height until the
+    // next full edit rebuilt them.
     void settle() {
         GLubyte full = fullOpacity();
         forEachGlyph([&](CCSprite* s) {
             s->stopActionByTag(kInTag);
             s->setOpacity(full);
+            // createFontChars never changes letter scale; residual values are
+            // always from our scale-pop animation.
+            s->setScaleX(1.f);
+            s->setScaleY(1.f);
         });
     }
 
@@ -249,6 +266,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
 
         if (oldStr == newStr) {
             CCTextInputNode::refreshLabel();
+            settle();
             m_fields->lastText = newStr;
             snapshot();
             return;
@@ -272,6 +290,10 @@ class $modify(SmoothTextInput, CCTextInputNode) {
 
         CCTextInputNode::refreshLabel();
         m_fields->lastText = newStr;
+
+        // Drop leftover entrance actions on reused glyphs so the layout
+        // createFontChars just wrote is not immediately overwritten.
+        settle();
         snapshot();
 
         for (size_t i = newStart; i < newEnd; ++i)

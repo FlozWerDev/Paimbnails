@@ -1,4 +1,4 @@
-﻿#include "QuickHubManager.hpp"
+#include "QuickHubManager.hpp"
 #include "../ui/QuickHubRadial.hpp"
 #include "../../main-menu-layout/ui/MainMenuLayoutEditor.hpp"
 #include "../../main-menu-layout/services/MainMenuLayoutManager.hpp"

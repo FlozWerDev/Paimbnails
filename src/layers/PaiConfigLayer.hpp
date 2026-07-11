@@ -1,8 +1,7 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 
-// Full-screen settings layer: Backgrounds, Profile, and Extras tabs.
 class PaiConfigLayer : public cocos2d::CCLayer {
 protected:
     bool init() override;
@@ -12,8 +11,6 @@ protected:
     cocos2d::CCMenu* m_bgMenu = nullptr;
     cocos2d::CCMenu* m_profileMenu = nullptr;
     cocos2d::CCMenu* m_extrasMenu = nullptr;
-
-    // Extra menus that live outside the tab layers (need manual visibility toggle)
     cocos2d::CCMenu* m_bgSidebarMenu = nullptr;
     cocos2d::CCMenu* m_bgRow1Menu = nullptr;
     cocos2d::CCMenu* m_profileBtnColumn = nullptr;
@@ -39,10 +36,9 @@ protected:
     cocos2d::CCLabelBMFont* m_shaderIntensityLabel = nullptr;
     Slider* m_shaderIntensitySlider = nullptr;
     int m_shaderIndex = 0;
-    int m_shaderIntensityIndex = 4; // default 50%
+    int m_shaderIntensityIndex = 4;
 
     cocos2d::CCNode* m_profilePreview = nullptr;
-    // profile preview generation: invalidates in-flight async loads when the preview is rebuilt.
     int m_profilePreviewGen = 0;
 
     void onMainTabSwitch(cocos2d::CCObject* sender);
@@ -93,4 +89,3 @@ public:
     static PaiConfigLayer* create();
     static cocos2d::CCScene* scene();
 };
-

@@ -1,4 +1,4 @@
-﻿#include "MenuLoopManager.hpp"
+#include "MenuLoopManager.hpp"
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>

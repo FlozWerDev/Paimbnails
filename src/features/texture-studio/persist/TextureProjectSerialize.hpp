@@ -142,12 +142,23 @@ struct matjson::Serialize<paimon::texture_studio::SpriteSetting> {
         obj["useCustomColors"] = s.useCustomColors;
         obj["hasCustomImage"] = s.hasCustomImage;
         obj["imageOverlay"] = s.imageOverlay;
+        obj["hasFusion"] = s.hasFusion;
+        obj["fusionAnimated"] = s.fusionAnimated;
+        obj["fusionBlend"] = static_cast<int>(s.fusionBlend);
+        obj["fusionTolerance"] = s.fusionTolerance;
+        obj["fusionExpandRadius"] = s.fusionExpandRadius;
+        obj["fusionOpacity"] = s.fusionOpacity;
+        obj["fusionPixelX"] = s.fusionPixelX;
+        obj["fusionPixelY"] = s.fusionPixelY;
         obj["color1"] = serial::colorToJson(s.color1);
         obj["color2"] = serial::colorToJson(s.color2);
         obj["colorGlow"] = serial::colorToJson(s.colorGlow);
         obj["colorDetail"] = serial::colorToJson(s.colorDetail);
         if (s.hasCustomImage && !s.imageTransform.isDefault()) {
             obj["imageTransform"] = matjson::Value(s.imageTransform);
+        }
+        if (s.hasFusion && !s.fusionTransform.isDefault()) {
+            obj["fusionTransform"] = matjson::Value(s.fusionTransform);
         }
         return obj;
     }
@@ -160,6 +171,20 @@ struct matjson::Serialize<paimon::texture_studio::SpriteSetting> {
         s.useCustomColors = v["useCustomColors"].asBool().unwrapOr(false);
         s.hasCustomImage = v["hasCustomImage"].asBool().unwrapOr(false);
         s.imageOverlay = v["imageOverlay"].asBool().unwrapOr(false);
+        s.hasFusion = v["hasFusion"].asBool().unwrapOr(false);
+        s.fusionAnimated = v["fusionAnimated"].asBool().unwrapOr(false);
+        s.fusionBlend = static_cast<FusionBlendMode>(std::clamp<std::int64_t>(
+            v["fusionBlend"].asInt().unwrapOr(0), 0, 2));
+        s.fusionTolerance = static_cast<int>(std::clamp<std::int64_t>(
+            v["fusionTolerance"].asInt().unwrapOr(110), 0, 255));
+        s.fusionExpandRadius = static_cast<int>(std::clamp<std::int64_t>(
+            v["fusionExpandRadius"].asInt().unwrapOr(1), 0, 12));
+        s.fusionOpacity = static_cast<float>(std::clamp(
+            v["fusionOpacity"].asDouble().unwrapOr(1.0), 0.0, 1.0));
+        s.fusionPixelX = static_cast<int>(std::clamp<std::int64_t>(
+            v["fusionPixelX"].asInt().unwrapOr(0), -4096, 4096));
+        s.fusionPixelY = static_cast<int>(std::clamp<std::int64_t>(
+            v["fusionPixelY"].asInt().unwrapOr(0), -4096, 4096));
         s.color1 = serial::colorFromJson(v["color1"], s.color1);
         s.color2 = serial::colorFromJson(v["color2"], s.color2);
         s.colorGlow = serial::colorFromJson(v["colorGlow"], s.colorGlow);
@@ -167,6 +192,11 @@ struct matjson::Serialize<paimon::texture_studio::SpriteSetting> {
         if (v["imageTransform"].isObject()) {
             if (auto t = v["imageTransform"].as<ImageTransform>(); t.isOk()) {
                 s.imageTransform = t.unwrap();
+            }
+        }
+        if (v["fusionTransform"].isObject()) {
+            if (auto t = v["fusionTransform"].as<ImageTransform>(); t.isOk()) {
+                s.fusionTransform = t.unwrap();
             }
         }
         return geode::Ok(s);
@@ -218,6 +248,7 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
         obj["colorDemonFaces"]    = p.colorDemonFaces;
         obj["mythicCompat"]       = p.mythicCompat;
         obj["includeModTextures"] = p.includeModTextures;
+        obj["exportAnimatedFusions"] = p.exportAnimatedFusions;
 
         auto overrides = matjson::Value::object();
         for (auto const& [k, v] : p.overrides) overrides[k] = matjson::Value(v);
@@ -292,6 +323,7 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
         p.colorDemonFaces    = v["colorDemonFaces"].asBool().unwrapOr(false);
         p.mythicCompat       = v["mythicCompat"].asBool().unwrapOr(false);
         p.includeModTextures = v["includeModTextures"].asBool().unwrapOr(true);
+        p.exportAnimatedFusions = v["exportAnimatedFusions"].asBool().unwrapOr(true);
 
         if (v["overrides"].isObject()) {
             for (auto const& val : v["overrides"]) {

@@ -1,14 +1,108 @@
-﻿#include "ProfilePicRenderer.hpp"
+#include "ProfilePicRenderer.hpp"
 #include "ProfilePicCustomizer.hpp"
+#include "ProfileImageCache.hpp"
 #include "../../../utils/ShapeStencil.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
 #include <Geode/binding/SimplePlayer.hpp>
 #include <Geode/binding/GameManager.hpp>
+#include <Geode/binding/GJAccountManager.hpp>
+#include <Geode/loader/Mod.hpp>
+#include <filesystem>
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
 namespace paimon::profile_pic {
+
+namespace {
+    bool resolveFileSource(std::string const& path, ResolvedProfilePhoto& out) {
+        if (path.empty()) return false;
+        std::error_code ec;
+        if (!std::filesystem::exists(path, ec) || ec) return false;
+        out.kind = ImageLoadHelper::isAnimatedImage(std::filesystem::path(path))
+            ? ResolvedProfilePhoto::Kind::GifFile
+            : ResolvedProfilePhoto::Kind::StaticFile;
+        out.path = path;
+        return true;
+    }
+}
+
+ResolvedProfilePhoto resolveProfilePhoto(ProfilePicConfig const& cfg) {
+    ResolvedProfilePhoto out;
+
+    // explicit custom file picked in the editor
+    if (cfg.photoSource == "custom" && resolveFileSource(cfg.photoPath, out)) {
+        out.source = ResolvedProfilePhoto::Source::Custom;
+        return out;
+    }
+
+    // own profile picture (profileimg): animated cache -> RAM -> disk
+    auto* acc = GJAccountManager::sharedState();
+    int myID = acc ? acc->m_accountID : 0;
+    if (myID > 0) {
+        auto gifKey = getProfileImgGifCacheKey(myID);
+        if (!gifKey.empty() && AnimatedGIFSprite::isCached(gifKey)) {
+            out.kind = ResolvedProfilePhoto::Kind::GifCacheKey;
+            out.source = ResolvedProfilePhoto::Source::OwnProfile;
+            out.gifKey = gifKey;
+            return out;
+        }
+        if (auto* tex = getProfileImgCachedTexture(myID)) {
+            out.kind = ResolvedProfilePhoto::Kind::Texture;
+            out.source = ResolvedProfilePhoto::Source::OwnProfile;
+            out.texture = tex;
+            return out;
+        }
+        if (auto* tex = loadProfileImgFromDisk(myID)) {
+            cacheProfileImgTexture(myID, tex);
+            out.kind = ResolvedProfilePhoto::Kind::Texture;
+            out.source = ResolvedProfilePhoto::Source::OwnProfile;
+            out.texture = tex;
+            return out;
+        }
+        out.ownPhotoMissing = true;
+    }
+
+    // legacy fallback: the profile background image (kept so existing setups
+    // that only configured "profile-bg-path" don't lose their button photo)
+    auto bgType = Mod::get()->getSavedValue<std::string>("profile-bg-type", "none");
+    if (bgType == "custom") {
+        auto bgPath = Mod::get()->getSavedValue<std::string>("profile-bg-path", "");
+        if (resolveFileSource(bgPath, out)) {
+            out.source = ResolvedProfilePhoto::Source::LegacyBackground;
+        }
+    }
+    return out;
+}
+
+CCNode* createResolvedPhotoNode(ResolvedProfilePhoto const& photo) {
+    using Kind = ResolvedProfilePhoto::Kind;
+
+    auto loadStatic = [](std::string const& path) -> CCNode* {
+        auto loaded = ImageLoadHelper::loadStaticImage(std::filesystem::path(path), 16);
+        if (!loaded.success || !loaded.texture) return nullptr;
+        auto* sprite = CCSprite::createWithTexture(loaded.texture);
+        loaded.texture->release();
+        return sprite;
+    };
+
+    switch (photo.kind) {
+        case Kind::GifCacheKey:
+            return AnimatedGIFSprite::createFromCache(photo.gifKey);
+        case Kind::Texture:
+            return photo.texture ? CCSprite::createWithTexture(photo.texture) : nullptr;
+        case Kind::GifFile:
+            if (auto* gif = AnimatedGIFSprite::create(photo.path)) return gif;
+            // corrupt/unsupported animation: fall back to a static decode
+            return loadStatic(photo.path);
+        case Kind::StaticFile:
+            return loadStatic(photo.path);
+        default:
+            return nullptr;
+    }
+}
 
 void applyIconAnimation(SimplePlayer* player, int animType, float speed, float amount, float baseScale) {
     if (!player || animType == 0) return;
@@ -186,10 +280,11 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
             }
         }
 
+        float sizeMul = std::clamp(cfg.size, 60.f, 200.f) / 120.f;
         float sx = std::clamp(cfg.scaleX, 0.2f, 3.0f);
         float sy = std::clamp(cfg.scaleY, 0.2f, 3.0f);
-        container->setScaleX(sx);
-        container->setScaleY(sy);
+        container->setScaleX(sx * sizeMul);
+        container->setScaleY(sy * sizeMul);
         container->setRotation(cfg.rotation);
 
         return container;
@@ -213,8 +308,13 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
         float baseScale = std::max(targetSize / iw, targetSize / ih);
 
         float zoom = std::clamp(cfg.imageZoom, 0.5f, 3.0f);
-        imageNode->setScale(baseScale * zoom);
+        float imgScale = baseScale * zoom;
+        imageNode->setScaleX(imgScale * (cfg.imageFlipX ? -1.f : 1.f));
+        imageNode->setScaleY(imgScale * (cfg.imageFlipY ? -1.f : 1.f));
         imageNode->setRotation(cfg.imageRotation);
+        if (auto* rgba = typeinfo_cast<CCSprite*>(imageNode)) {
+            rgba->setOpacity(static_cast<GLubyte>(std::clamp(cfg.imageOpacity, 0.f, 255.f)));
+        }
         imageNode->setAnchorPoint({0.5f, 0.5f});
         imageNode->ignoreAnchorPointForPosition(false);
         imageNode->setPosition({
@@ -265,10 +365,11 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
         container->addChild(decoSpr, deco.zOrder + 10);
     }
 
+    float sizeMul = std::clamp(cfg.size, 60.f, 200.f) / 120.f;
     float sx = std::clamp(cfg.scaleX, 0.2f, 3.0f);
     float sy = std::clamp(cfg.scaleY, 0.2f, 3.0f);
-    container->setScaleX(sx);
-    container->setScaleY(sy);
+    container->setScaleX(sx * sizeMul);
+    container->setScaleY(sy * sizeMul);
     container->setRotation(cfg.rotation);
 
     return container;

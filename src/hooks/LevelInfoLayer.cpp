@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/LevelInfoLayer.hpp>
+#include <Geode/modify/LevelInfoLayer.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/LeaderboardsLayer.hpp>
 #include "../utils/PaimonButtonHighlighter.hpp"
@@ -51,8 +51,16 @@
 #include "../features/audio/services/PaimonAudio.hpp"
 #include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
+#include "LevelInfoOverlayPause.hpp"
 
 using namespace geode::prelude;
+
+namespace {
+// Active LevelInfoLayer for overlay pause (InfoLayer comments, etc.).
+// WeakRef so a destroyed layer never keeps a dangling pause target.
+geode::WeakRef<LevelInfoLayer> s_activeLevelInfoForOverlay;
+int s_levelInfoOverlayPauseDepth = 0;
+}
 using namespace Shaders;
 
 #include "../features/thumbnails/ui/LocalThumbnailViewPopup.hpp"
@@ -277,7 +285,81 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         GLint m_mainLocTime = -2;
         GLint m_mainLocCursor = -2;
         GLint m_mainLocClick = -2;
+        // Snapshot while a comments/info overlay is open (see LevelInfoOverlayPause)
+        bool m_overlayPaused = false;
+        bool m_overlayHadGallery = false;
+        bool m_overlayHadShader = false;
+        bool m_overlayHadAudio = false;
+        bool m_overlayHadCursor = false;
+        bool m_overlayHadVideo = false;
     };
+
+    void pauseHeavyWorkForOverlay() {
+        if (m_fields->m_overlayPaused) return;
+        m_fields->m_overlayPaused = true;
+
+        // Snapshot desired work from fields (don't rely on isScheduled).
+        m_fields->m_overlayHadGallery =
+            m_fields->m_cachedAutoCycle && m_fields->m_cycling &&
+            m_fields->m_thumbnails.size() > 1;
+        m_fields->m_overlayHadShader = m_fields->m_animatedShader;
+        m_fields->m_overlayHadAudio = m_fields->m_paimonAudioActive;
+        m_fields->m_overlayHadCursor = m_fields->m_dynamicShaders;
+
+        this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
+        this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
+        this->unschedule(schedule_selector(PaimonLevelInfoLayer::updatePaimonAudio));
+        this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateCursorFromMouse));
+        this->unschedule(schedule_selector(PaimonLevelInfoLayer::loadNextThumbnailInBackground));
+        m_fields->m_lazyLoadScheduled = false;
+
+        // Freeze video decode under the popup (keep last frame visible).
+        m_fields->m_overlayHadVideo = false;
+        if (m_fields->m_videoSprite && m_fields->m_videoSprite->isPlaying()) {
+            m_fields->m_overlayHadVideo = true;
+            m_fields->m_videoSprite->pause();
+        }
+
+        // Freeze animated GIF backgrounds under the popup.
+        if (auto* gif = typeinfo_cast<AnimatedGIFSprite*>(m_fields->m_pixelBg.data())) {
+            gif->pause();
+        }
+        for (auto& s : m_fields->m_extraBgSprites) {
+            if (auto* gif = typeinfo_cast<AnimatedGIFSprite*>(s.data())) {
+                gif->pause();
+            }
+        }
+    }
+
+    void resumeHeavyWorkForOverlay() {
+        if (!m_fields->m_overlayPaused) return;
+        m_fields->m_overlayPaused = false;
+
+        if (m_fields->m_overlayHadGallery && m_fields->m_thumbnails.size() > 1 &&
+            m_fields->m_cachedAutoCycle && m_fields->m_cycling) {
+            this->schedule(schedule_selector(PaimonLevelInfoLayer::updateGallery), 3.0f);
+        }
+        if (m_fields->m_overlayHadShader && m_fields->m_animatedShader) {
+            this->schedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
+        }
+        if (m_fields->m_overlayHadAudio && m_fields->m_paimonAudioActive) {
+            this->schedule(schedule_selector(PaimonLevelInfoLayer::updatePaimonAudio));
+        }
+        if (m_fields->m_overlayHadCursor && m_fields->m_dynamicShaders) {
+            this->schedule(schedule_selector(PaimonLevelInfoLayer::updateCursorFromMouse));
+        }
+        if (m_fields->m_overlayHadVideo && m_fields->m_videoSprite) {
+            m_fields->m_videoSprite->play();
+        }
+        if (auto* gif = typeinfo_cast<AnimatedGIFSprite*>(m_fields->m_pixelBg.data())) {
+            gif->play();
+        }
+        for (auto& s : m_fields->m_extraBgSprites) {
+            if (auto* gif = typeinfo_cast<AnimatedGIFSprite*>(s.data())) {
+                gif->play();
+            }
+        }
+    }
 
     int readDarknessSetting() const {
         return std::clamp(
@@ -1463,6 +1545,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     void onExit() {
         log::info("[LevelInfoLayer] onExit: levelID={}", m_level ? m_level->m_levelID.value() : 0);
 
+        if (auto active = s_activeLevelInfoForOverlay.lock();
+            active.data() == static_cast<LevelInfoLayer*>(this)) {
+            s_activeLevelInfoForOverlay = nullptr;
+            s_levelInfoOverlayPauseDepth = 0;
+        }
+        m_fields->m_overlayPaused = false;
+
         // Deactivate dynamic song context if this layer is being permanently removed.
         // onBack() already handles normal navigation; this catches scene replacements
         // and forced navigations that bypass onBack().
@@ -1590,6 +1679,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         log::info("[LevelInfoLayer] init: levelID={} challenge={}", level ? level->m_levelID.value() : 0, challenge);
 
         if (!LevelInfoLayer::init(level, challenge)) return false;
+
+        s_activeLevelInfoForOverlay = this;
 
         // came from leaderboards?
         if (auto scene = CCDirector::get()->getRunningScene()) {
@@ -2160,7 +2251,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
             bool autoCycleEnabled = self->m_fields->m_cachedAutoCycle;
             self->unschedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
-            if (self->m_fields->m_thumbnails.size() > 1 && autoCycleEnabled) {
+            // Don't start gallery cycle under an open comments overlay.
+            if (!self->m_fields->m_overlayPaused &&
+                self->m_fields->m_thumbnails.size() > 1 && autoCycleEnabled) {
                 self->schedule(schedule_selector(PaimonLevelInfoLayer::updateGallery), 3.0f);
             }
 
@@ -2308,6 +2401,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     }
     
     void updateGallery(float dt) {
+        if (m_fields->m_overlayPaused) return;
         if (!m_fields->m_cycling || m_fields->m_thumbnails.size() <= 1) return;
         m_fields->m_bgNavDirection = Fields::BgNavDir::Right;
         m_fields->m_currentThumbnailIndex = (m_fields->m_currentThumbnailIndex + 1) % static_cast<int>(m_fields->m_thumbnails.size());
@@ -2492,6 +2586,29 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         }, 0); // Low priority for background loading
     }
 };
+
+namespace paimon {
+
+void pauseLevelInfoHeavyWorkForOverlay() {
+    ++s_levelInfoOverlayPauseDepth;
+    if (s_levelInfoOverlayPauseDepth != 1) return;
+    auto ref = s_activeLevelInfoForOverlay.lock();
+    auto* layer = ref.data();
+    if (!layer) return;
+    static_cast<PaimonLevelInfoLayer*>(layer)->pauseHeavyWorkForOverlay();
+}
+
+void resumeLevelInfoHeavyWorkForOverlay() {
+    if (s_levelInfoOverlayPauseDepth <= 0) return;
+    --s_levelInfoOverlayPauseDepth;
+    if (s_levelInfoOverlayPauseDepth != 0) return;
+    auto ref = s_activeLevelInfoForOverlay.lock();
+    auto* layer = ref.data();
+    if (!layer) return;
+    static_cast<PaimonLevelInfoLayer*>(layer)->resumeHeavyWorkForOverlay();
+}
+
+} // namespace paimon
 
 // onSettings implementation (needs PaimonLevelInfoLayer already defined)
 void LocalThumbnailViewPopup::onSettings(CCObject*) {

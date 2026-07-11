@@ -1,4 +1,4 @@
-﻿#include "CursorHook.hpp"
+#include "CursorHook.hpp"
 #include "../services/CursorManager.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/utils/Keyboard.hpp>

@@ -1,6 +1,7 @@
 #include "PaimonGuideService.hpp"
 #include "PaigoritV1.hpp"
 #include "PopupRegistry.hpp"
+#include "LightLemmatizer.hpp"
 
 #include "../../../utils/Localization.hpp"
 #include "../ui/PaimonGuideChatPopup.hpp"
@@ -9,6 +10,7 @@
 #include <Geode/ui/GeodeUI.hpp>
 #include <algorithm>
 #include <cctype>
+#include <optional>
 
 using namespace geode::prelude;
 
@@ -169,13 +171,15 @@ void PaimonGuideService::registerIntents() {
             "ayuda", "guia", "tutorial", "que puedes hacer", "opciones"
         };
         it.responseByLang["english"] =
-            "I learn from the popups in this mod. Try asking for "
-            "<cy>profile background</c>, <cy>menu music</c>, <cy>cursor</c>, "
-            "<cy>discord</c>, <cy>quick hub</c>, <cy>thumbnails</c>...";
+            "I know every feature of this mod. Try "
+            "<cy>cursor</c>, <cy>menu music</c>, <cy>collab</c>, <cy>icons</c>, "
+            "<cy>capture</c>, <cy>editor history</c>, or say a problem like "
+            "<cy>thumbnails not loading</c>...";
         it.responseByLang["spanish"] =
-            "Yo aprendo de los popups de este mod. Pruebame con "
-            "<cy>fondo de perfil</c>, <cy>musica del menu</c>, <cy>cursor</c>, "
-            "<cy>discord</c>, <cy>quick hub</c>, <cy>miniaturas</c>...";
+            "Conozco todas las funciones del mod. Prueba "
+            "<cy>cursor</c>, <cy>musica del menu</c>, <cy>collab</c>, <cy>iconos</c>, "
+            "<cy>captura</c>, <cy>historial del editor</c>, o un problema como "
+            "<cy>no se ven miniaturas</c>...";
         m_intents.push_back(std::move(it));
     }
 
@@ -511,6 +515,177 @@ void PaimonGuideService::registerIntents() {
     }
 }
 
+GuideRecommendation PaimonGuideService::makeRecommendation(
+    std::string const& intentId,
+    std::string const& langId) const {
+    GuideRecommendation rec;
+    rec.intentId = intentId;
+    rec.label = PopupRegistry::get().displayNameFor(intentId, langId);
+    if (auto const* entry = PopupRegistry::get().findById(intentId)) {
+        rec.action = entry->open;
+    } else {
+        // Conversational / non-registry: try live intent action.
+        for (auto const& it : m_intents) {
+            if (it.id == intentId) {
+                rec.action = it.action;
+                break;
+            }
+        }
+    }
+    return rec;
+}
+
+void PaimonGuideService::attachRelatedRecommendations(
+    GuideAnswer& ans,
+    GuideIntent const& primary,
+    GuideIntent const* runnerUp,
+    std::string const& langId,
+    int maxExtra) const {
+    if (maxExtra <= 0) return;
+
+    auto already = [&](std::string const& id) {
+        if (id == primary.id) return true;
+        for (auto const& r : ans.recommendations) {
+            if (r.intentId == id) return true;
+        }
+        return false;
+    };
+
+    // 1) Ambiguous runner-up first (most useful correction).
+    if (runnerUp && runnerUp->kind == IntentKind::Functional
+        && !already(runnerUp->id)) {
+        ans.recommendations.push_back(makeRecommendation(runnerUp->id, langId));
+        if (static_cast<int>(ans.recommendations.size()) >= maxExtra) return;
+    }
+
+    // 2) Same-category siblings (highest weight first).
+    if (!primary.categoryId.empty()) {
+        auto cat = categoryFromId(primary.categoryId);
+        if (cat != PopupCategory::None) {
+            for (auto const* e : PopupRegistry::get().entriesInCategory(cat)) {
+                if (!e || already(e->id)) continue;
+                ans.recommendations.push_back(makeRecommendation(e->id, langId));
+                if (static_cast<int>(ans.recommendations.size()) >= maxExtra) return;
+            }
+        }
+    }
+}
+
+std::optional<GuideAnswer> PaimonGuideService::tryCategoryBrowse(
+    std::string const& normalized,
+    std::vector<std::string> const& tokens,
+    std::string const& langId) const {
+    // Map free-text tokens / short phrases to a PopupCategory.
+    struct CatHint {
+        PopupCategory cat;
+        char const* en;
+        char const* es;
+    };
+    static CatHint const kHints[] = {
+        { PopupCategory::Music,      "music",     "musica" },
+        { PopupCategory::Profile,    "profile",   "perfil" },
+        { PopupCategory::Background, "background","fondo" },
+        { PopupCategory::Background, "backgrounds","fondos" },
+        { PopupCategory::Thumbnail,  "thumbnail", "miniatura" },
+        { PopupCategory::Thumbnail,  "thumbnails","miniaturas" },
+        { PopupCategory::Cursor,     "cursor",    "cursor" },
+        { PopupCategory::Discord,    "discord",   "discord" },
+        { PopupCategory::Pet,        "pet",       "mascota" },
+        { PopupCategory::Emote,      "emote",     "emote" },
+        { PopupCategory::Emote,      "emotes",    "emotes" },
+        { PopupCategory::Capture,    "capture",   "captura" },
+        { PopupCategory::Transition, "transition","transicion" },
+        { PopupCategory::Transition, "transitions","transiciones" },
+        { PopupCategory::Layout,     "layout",    "layout" },
+        { PopupCategory::Volume,     "volume",    "volumen" },
+        { PopupCategory::QuickHub,   "quickhub",  "quickhub" },
+        { PopupCategory::Forum,      "forum",     "foro" },
+        { PopupCategory::Forum,      "community", "comunidad" },
+        { PopupCategory::Editor,     "editor",    "editor" },
+        { PopupCategory::Visuals,    "visuals",   "visuales" },
+        { PopupCategory::Visuals,    "effects",   "efectos" },
+        { PopupCategory::Visuals,    "shaders",   "shaders" },
+        { PopupCategory::Update,     "update",    "actualizar" },
+        { PopupCategory::Cache,      "settings",  "ajustes" },
+    };
+
+    // Only treat as browse when the query is short or clearly "stuff about X".
+    // Filter stopwords first so "cosas de musica" -> ["musica"].
+    auto content = LightLemmatizer::removeStopwords(tokens);
+    if (content.empty() || content.size() > 3) return std::nullopt;
+
+    // Detect explicit browse phrasing: "stuff about X", "cosas de X", "todo de X".
+    bool browsePhrase = false;
+    if (normalized.find("stuff") != std::string::npos
+        || normalized.find("things") != std::string::npos
+        || normalized.find("cosas") != std::string::npos
+        || normalized.find("todo de") != std::string::npos
+        || normalized.find("todas las") != std::string::npos
+        || normalized.find("all about") != std::string::npos
+        || normalized.find("options for") != std::string::npos) {
+        browsePhrase = true;
+    }
+
+    PopupCategory found = PopupCategory::None;
+    for (auto const& t : content) {
+        auto forms = LightLemmatizer::expand(t);
+        for (auto const& f : forms) {
+            for (auto const& h : kHints) {
+                if (f == h.en || f == h.es || t == h.en || t == h.es) {
+                    found = h.cat;
+                    break;
+                }
+            }
+            if (found != PopupCategory::None) break;
+        }
+        if (found != PopupCategory::None) break;
+    }
+    if (found == PopupCategory::None) return std::nullopt;
+
+    // Only activate on explicit browse phrasing ("cosas de musica", "profile
+    // stuff"). Bare words like "music" / "background" keep going through
+    // Paigorit so category-lead weights don't steal precise alias routing.
+    if (!browsePhrase) return std::nullopt;
+
+    auto members = PopupRegistry::get().entriesInCategory(found);
+    if (members.size() < 2) return std::nullopt;
+
+    auto const* lead = members.front();
+    bool es = (langId == "spanish");
+    auto catName = categoryDisplayName(found, langId);
+
+    std::string list;
+    int listed = 0;
+    for (auto const* e : members) {
+        if (!e) continue;
+        if (listed > 0) list += es ? ", " : ", ";
+        list += "<cy>" + PopupRegistry::get().displayNameFor(e->id, langId) + "</c>";
+        if (++listed >= 5) break;
+    }
+
+    GuideAnswer ans;
+    ans.found = true;
+    ans.animation = GuideAnimation::Point;
+    ans.matchedIntentId = lead->id;
+    ans.action = lead->open;
+    ans.message = es
+        ? ("En <cy>" + catName + "</c> tengo: " + list
+           + ". Te llevo a <cy>"
+           + PopupRegistry::get().displayNameFor(lead->id, langId)
+           + "</c>; toca un chip para otra.")
+        : ("Under <cy>" + catName + "</c> I have: " + list
+           + ". I'll open <cy>"
+           + PopupRegistry::get().displayNameFor(lead->id, langId)
+           + "</c>; tap a chip for another.");
+
+    // Chips for siblings (not the lead — lead uses Take me there).
+    for (std::size_t i = 1; i < members.size() && ans.recommendations.size() < 3; ++i) {
+        ans.recommendations.push_back(
+            makeRecommendation(members[i]->id, langId));
+    }
+    return ans;
+}
+
 GuideAnswer PaimonGuideService::makeFallback(
     std::vector<GuideIntent const*> const& suggestions,
     std::string const& langId) const {
@@ -527,6 +702,10 @@ GuideAnswer PaimonGuideService::makeFallback(
             if (!it) continue;
             auto n = reg.displayNameFor(it->id, langId);
             if (!n.empty()) names.push_back("<cy>" + n + "</c>");
+            // Actionable chips for near-misses.
+            if (ans.recommendations.size() < 3) {
+                ans.recommendations.push_back(makeRecommendation(it->id, langId));
+            }
         }
         if (!names.empty()) {
             bool es = (langId == "spanish");
@@ -536,6 +715,17 @@ GuideAnswer PaimonGuideService::makeFallback(
                 joined += names[1];
             }
             ans.animation = GuideAnimation::Talk;
+            // If the top suggestion has an open action, offer Take me there too.
+            if (!ans.recommendations.empty() && ans.recommendations.front().action) {
+                ans.action = ans.recommendations.front().action;
+                ans.matchedIntentId = ans.recommendations.front().intentId;
+                // Keep first as take-me; remaining as chips.
+                if (ans.recommendations.size() > 1) {
+                    ans.recommendations.erase(ans.recommendations.begin());
+                } else {
+                    ans.recommendations.clear();
+                }
+            }
             ans.message = es
                 ? "Mmm, no estoy segura. Quizas querias " + joined + "?"
                 : "Hmm, not sure. Did you mean " + joined + "?";
@@ -583,6 +773,7 @@ std::string pickResponseString(GuideIntent const& intent,
 }
 
 // Build a combined answer for a multi-topic query, opening the first topic.
+// Remaining topics become recommendation chips.
 GuideAnswer makeMultiTopicAnswer(std::vector<GuideIntent const*> const& topics,
                                  std::string const& langId) {
     auto& reg = PopupRegistry::get();
@@ -604,9 +795,17 @@ GuideAnswer makeMultiTopicAnswer(std::vector<GuideIntent const*> const& topics,
     ans.action = topics.front()->action;
     ans.message = es
         ? ("Mencionaste " + list + ". Te llevo primero a <cy>" + names.front()
-           + "</c>; preguntame de nuevo para el resto!")
+           + "</c>; toca un chip para el resto!")
         : ("You mentioned " + list + ". I'll open <cy>" + names.front()
-           + "</c> first; ask me again for the rest!");
+           + "</c> first; tap a chip for the rest!");
+
+    for (std::size_t i = 1; i < topics.size() && ans.recommendations.size() < 3; ++i) {
+        GuideRecommendation rec;
+        rec.intentId = topics[i]->id;
+        rec.label = names[i];
+        rec.action = topics[i]->action;
+        ans.recommendations.push_back(std::move(rec));
+    }
     return ans;
 }
 
@@ -703,6 +902,8 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery) {
         // No last topic: fall through to the normal matcher.
     }
 
+    auto tokens = tokenize(normalized);
+
     // 1.5) Multi-topic ("cursor and discord"): mention both, open the first.
     if (auto topics = PaigoritV1::splitTopics(m_intents, normalized, langId);
         topics.size() >= 2) {
@@ -717,9 +918,20 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery) {
         return ans;
     }
 
+    // 1.6) Category browse ("music", "cosas de perfil", "profile stuff").
+    if (auto browse = tryCategoryBrowse(normalized, tokens, langId)) {
+        ConversationTurn turn;
+        turn.userQuery = userQuery;
+        turn.normalizedQuery = normalized;
+        turn.matchedIntentId = browse->matchedIntentId;
+        turn.wasFunctional = true;
+        turn.matchScore = 100.0;
+        m_memory.recordTurn(std::move(turn));
+        return *browse;
+    }
+
     // 2) Paigorit V1 matcher (see PaigoritV1.hpp).
 
-    auto tokens = tokenize(normalized);
     auto paigorit = PaigoritV1::run(m_intents, normalized, tokens, langId);
 
     GuideIntent const* best = paigorit.best;
@@ -753,10 +965,12 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery) {
         // Ambiguous result: the runner-up scored almost as high and is a
         // different functional topic. Mention it so the user can correct course,
         // but still take them to the top match.
+        GuideIntent const* runner = nullptr;
         if (paigorit.ambiguous && paigorit.runnerUp
             && paigorit.runnerUp->id != best->id
             && best->kind == IntentKind::Functional
             && paigorit.runnerUp->kind == IntentKind::Functional) {
+            runner = paigorit.runnerUp;
             auto alt = PopupRegistry::get().displayNameFor(
                 paigorit.runnerUp->id, langId);
             if (!alt.empty()) {
@@ -764,6 +978,11 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery) {
                     ? "\n(O quizas querias <cy>" + alt + "</c>?)"
                     : "\n(Or did you mean <cy>" + alt + "</c>?)";
             }
+        }
+
+        // Related same-category chips + ambiguous runner-up as actionable recs.
+        if (best->kind == IntentKind::Functional) {
+            attachRelatedRecommendations(ans, *best, runner, langId, 3);
         }
     } else {
         ans = makeFallback(paigorit.suggestions, langId);
@@ -785,22 +1004,22 @@ PaimonGuideService::getSuggestions() {
     auto langId = Localization::get().getCurrentLanguageId();
     bool es = (langId == "spanish");
 
-    // 6 representative chips: short labels, more explicit queries to ensure correct matches.
+    // Representative chips: short labels, explicit queries for reliable matches.
     std::vector<std::pair<std::string, std::string>> result;
     if (es) {
         result.push_back({"cursor",   "donde configuro el cursor"});
         result.push_back({"musica",   "como pongo musica de menu"});
         result.push_back({"fondos",   "donde cambio los fondos"});
-        result.push_back({"perfil",   "configurar mi perfil"});
-        result.push_back({"emotes",   "como uso emotes"});
-        result.push_back({"ayuda",    "ayuda general"});
+        result.push_back({"iconos",   "recolorear mis iconos"});
+        result.push_back({"captura",  "capturar mi nivel"});
+        result.push_back({"collab",   "editor collab"});
     } else {
-        result.push_back({"cursor",      "where do i configure cursor"});
-        result.push_back({"music",       "how do i set menu music"});
-        result.push_back({"backgrounds", "where do i change backgrounds"});
-        result.push_back({"profile",     "configure my profile"});
-        result.push_back({"emotes",      "how do i use emotes"});
-        result.push_back({"help",        "general help"});
+        result.push_back({"cursor",   "where do i configure cursor"});
+        result.push_back({"music",    "how do i set menu music"});
+        result.push_back({"bg",       "where do i change backgrounds"});
+        result.push_back({"icons",    "recolor my icons"});
+        result.push_back({"capture",  "capture my level"});
+        result.push_back({"collab",   "collab editor"});
     }
     return result;
 }

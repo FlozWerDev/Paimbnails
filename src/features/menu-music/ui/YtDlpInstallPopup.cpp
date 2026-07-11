@@ -1,4 +1,4 @@
-﻿#include "YtDlpInstallPopup.hpp"
+#include "YtDlpInstallPopup.hpp"
 
 #include "../services/YtDlpBootstrap.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"

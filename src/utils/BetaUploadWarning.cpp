@@ -1,4 +1,4 @@
-﻿#include "BetaUploadWarning.hpp"
+#include "BetaUploadWarning.hpp"
 #include "DynamicPopupRegistry.hpp"
 #include "../core/Settings.hpp"
 #include <Geode/binding/ButtonSprite.hpp>

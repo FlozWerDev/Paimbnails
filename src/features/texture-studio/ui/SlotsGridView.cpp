@@ -168,39 +168,46 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
         previewHost->addChildAtPosition(placeholder, Anchor::Center);
     }
 
-    // CCMenu defaults to ignoreAnchorPointForPosition and AnchorLayout flips
-    // it to false, so add items first then place the menu via
-    // addChildAtPosition — a raw addChild + setPosition(0,0) would centre the
-    // menu on the card corner and fling the buttons outside.
+    // CCMenu keeps ignoreAnchorPointForPosition=true: its position is the
+    // menu centre and children are offsets from that centre. Avoid
+    // addChildAtPosition here — AnchorLayout flips the flag and piles every
+    // item on top of each other (Edit/Delete stacked).
     auto* menu = CCMenu::create();
     if (!menu) return card;
-    menu->setContentSize({kCardW, kCardH});
+    menu->setPosition({kCardW * 0.5f, kCardH * 0.5f});
 
-    if (auto* applySpr = ButtonSprite::create("Apply", "goldFont.fnt", "GJ_button_01.png", 0.45f)) {
+    // Local Y of the card's bottom edge, relative to the menu centre.
+    constexpr float kBottom = -kCardH * 0.5f;
+
+    if (auto* applySpr = ButtonSprite::create("Apply", "goldFont.fnt", "GJ_button_01.png", 0.42f)) {
         if (auto* applyBtn = CCMenuItemExt::createSpriteExtra(applySpr,
                 [this, id](CCMenuItemSpriteExtra*) { if (m_onApply) m_onApply(id); })) {
-            menu->addChildAtPosition(applyBtn, Anchor::Bottom, {0.f, 48.f});
+            applyBtn->setPosition({0.f, kBottom + 50.f});
+            menu->addChild(applyBtn);
         }
     }
 
     auto makeMini = [&](char const* label, char const* sprite,
                         std::function<void()> action) -> CCMenuItemSpriteExtra* {
-        auto* spr = ButtonSprite::create(label, "bigFont.fnt", sprite, 0.38f);
+        auto* spr = ButtonSprite::create(label, "bigFont.fnt", sprite, 0.34f);
         if (!spr) return nullptr;
         return CCMenuItemExt::createSpriteExtra(spr,
             [action = std::move(action)](CCMenuItemSpriteExtra*) { if (action) action(); });
     };
 
+    // Side-by-side at the bottom; centres ~100 px apart so the sprites don't touch.
     if (auto* editBtn = makeMini("Edit", "GJ_button_04.png",
             [this, id]() { if (m_onEdit) m_onEdit(id); })) {
-        menu->addChildAtPosition(editBtn, Anchor::Bottom, {-40.f, 16.f});
+        editBtn->setPosition({-50.f, kBottom + 18.f});
+        menu->addChild(editBtn);
     }
     if (auto* delBtn = makeMini("Delete", "GJ_button_06.png",
             [this, id]() { if (m_onDelete) m_onDelete(id); })) {
-        menu->addChildAtPosition(delBtn, Anchor::Bottom, {40.f, 16.f});
+        delBtn->setPosition({50.f, kBottom + 18.f});
+        menu->addChild(delBtn);
     }
 
-    card->addChildAtPosition(menu, Anchor::Center);
+    card->addChild(menu);
     return card;
 }
 

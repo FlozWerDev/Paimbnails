@@ -1,4 +1,4 @@
-﻿#include "VideoSettingsPopup.hpp"
+#include "VideoSettingsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
@@ -6,6 +6,7 @@
 #include "../../../video/VideoDiskCache.hpp"
 #include "../../../video/VideoPlayer.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/ui/PopupManager.hpp>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -275,6 +276,7 @@ void VideoSettingsPopup::onFpsPrev(CCObject*) {
     if (--m_fpsIndex < 0) m_fpsIndex = (int)FPS_OPTIONS.size() - 1;
     int newFPS = FPS_OPTIONS[m_fpsIndex];
     Mod::get()->setSavedValue("video-fps-limit", newFPS);
+    paimon::settings::internal::invalidateSettingsCache();
     paimon::requestDeferredModSave();
     LayerBackgroundManager::get().broadcastFPSUpdate(newFPS);
     updateFpsLabel();
@@ -284,6 +286,7 @@ void VideoSettingsPopup::onFpsNext(CCObject*) {
     if (++m_fpsIndex >= (int)FPS_OPTIONS.size()) m_fpsIndex = 0;
     int newFPS = FPS_OPTIONS[m_fpsIndex];
     Mod::get()->setSavedValue("video-fps-limit", newFPS);
+    paimon::settings::internal::invalidateSettingsCache();
     paimon::requestDeferredModSave();
     LayerBackgroundManager::get().broadcastFPSUpdate(newFPS);
     updateFpsLabel();
@@ -299,6 +302,9 @@ void VideoSettingsPopup::updateFpsLabel() {
 void VideoSettingsPopup::onQualityPrev(CCObject*) {
     if (--m_qualityIndex < 0) m_qualityIndex = (int)QUALITY_OPTIONS.size() - 1;
     Mod::get()->setSavedValue("video-quality", QUALITY_OPTIONS[m_qualityIndex]);
+    // Invalidate videoMaxDecodeDimension + adaptive FPS snapshots so the next
+    // decoder open / sprite slot acquire sees the new quality/FPS immediately.
+    paimon::settings::internal::invalidateSettingsCache();
     paimon::requestDeferredModSave();
     updateQualityLabel();
 }
@@ -306,6 +312,7 @@ void VideoSettingsPopup::onQualityPrev(CCObject*) {
 void VideoSettingsPopup::onQualityNext(CCObject*) {
     if (++m_qualityIndex >= (int)QUALITY_OPTIONS.size()) m_qualityIndex = 0;
     Mod::get()->setSavedValue("video-quality", QUALITY_OPTIONS[m_qualityIndex]);
+    paimon::settings::internal::invalidateSettingsCache();
     paimon::requestDeferredModSave();
     updateQualityLabel();
 }
@@ -423,7 +430,10 @@ void VideoSettingsPopup::updateRotationLabel() {
 void VideoSettingsPopup::onClearRAM(CCObject*) {
     LayerBackgroundManager::get().releaseAllSharedVideos();
     updateRAMLabel();
-    FLAlertLayer::create("RAM Cleared", "All video decode buffers have been released.", "OK")->show();
+    PopupManager::get().alert(
+        "RAM Cleared",
+        "All video decode buffers have been released."
+    ).showInstant();
 }
 
 void VideoSettingsPopup::updateRAMLabel() {
@@ -443,7 +453,9 @@ void VideoSettingsPopup::updateRAMLabel() {
 
 void VideoSettingsPopup::onClearDiskCache(CCObject*) {
     int removed = paimon::video::VideoDiskCache::deleteAllCaches();
-    FLAlertLayer::create("Cache Cleared",
-        fmt::format("Removed {} cached file(s).\nNext playback will rebuild the cache.", removed).c_str(),
-        "OK")->show();
+    PopupManager::get().alertFormat(
+        "Cache Cleared",
+        "Removed {} cached file(s).\nNext playback will rebuild the cache.",
+        removed
+    ).showInstant();
 }

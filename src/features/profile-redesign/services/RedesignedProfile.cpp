@@ -2,6 +2,7 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/ui/Notification.hpp>
 #include <Geode/utils/general.hpp>
 #include <Geode/utils/web.hpp>
@@ -39,12 +40,14 @@
 #include "../../forum/services/ForumApi.hpp"
 #include "../../emotes/EmoteRenderer.hpp"
 #include "../../emotes/services/EmoteService.hpp"
+#include "../../profiles/services/OwnProfileStats.hpp"
 #include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/binding/CCScrollLayerExt.hpp>
 #include <Geode/cocos/extensions/GUI/CCControlExtension/CCScale9Sprite.h>
 
 #include <algorithm>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 #include <functional>
 
@@ -498,6 +501,65 @@ static void removeGeneratedChildren(CCNode* parent) {
     for (auto* child : generated) child->removeFromParent();
 }
 
+static void collectNodesByID(CCNode* root, std::string const& id, std::vector<CCNode*>& out) {
+    if (!root) return;
+    if (root->getID() == id) out.push_back(root);
+    if (auto* kids = root->getChildren()) {
+        for (auto* k : CCArrayExt<CCNode*>(kids)) collectNodesByID(k, id, out);
+    }
+}
+
+// Every node ID that buildInPlace() adopts into one of its rd-* containers.
+// Kept in sync with the relocate() calls below; needsSettlePass() uses it to
+// decide whether a rebuild is actually needed.
+static std::vector<std::string> relocatableIDs(bool ownProfile) {
+    std::vector<std::string> ids = {
+        "close-button", "refresh-button",
+        "message-button", "friend-button",
+        "comment-history-button", "my-levels-button", "my-lists-button", "follow-button",
+        "profile-settings-button"_spr, "thumbs-gear-button"_spr,
+        "add-moderator-button"_spr, "ban-user-button"_spr,
+        "paimon-moderator-badge"_spr, "paimon-admin-badge"_spr,
+        "paimon-custom-badge"_spr, "paimon-user-status-dot"_spr,
+        "profile-reviews-btn"_spr, "rate-profile-btn"_spr,
+        "paimon-thumb-count-btn"_spr, "profile-music-pause-button"_spr,
+    };
+    if (ownProfile) {
+        ids.insert(ids.end(), {"settings-button", "requests-button", "comment-button"});
+    } else {
+        ids.push_back("block-button");
+    }
+    return ids;
+}
+
+bool needsSettlePass(cocos2d::CCLayer* layer, cocos2d::CCNode* buttonMenu, bool ownProfile) {
+    if (!layer) return false;
+    auto const ids = relocatableIDs(ownProfile);
+    std::string const rdPrefix = "rd-"_spr;
+    bool needs = false;
+    std::unordered_set<std::string> seen;
+    auto walk = [&](auto const& self, CCNode* node, bool insideRd) -> void {
+        if (!node || needs) return;
+        auto const id = std::string(node->getID());
+        bool const rd = insideRd || id.rfind(rdPrefix, 0) == 0;
+        if (!id.empty() && std::find(ids.begin(), ids.end(), id) != ids.end()) {
+            // Un-adopted latecomer, or a duplicate of an already-adopted node.
+            if (!rd || !seen.insert(id).second) { needs = true; return; }
+        }
+        if (auto* kids = node->getChildren()) {
+            for (auto* k : CCArrayExt<CCNode*>(kids)) {
+                self(self, k, rd);
+                if (needs) return;
+            }
+        }
+    };
+    walk(walk, layer, false);
+    if (!needs && buttonMenu && !buttonMenu->hasAncestor(layer)) {
+        walk(walk, buttonMenu, false);
+    }
+    return needs;
+}
+
 static bool isCommentDecoration(CCNode* node) {
     if (!node) return false;
     std::string const id = std::string(node->getID());
@@ -816,32 +878,43 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             layer->addChild(bg);
         }
         auto* menu = getOrCreateMenu(id, position, size);
-        menu->setLayout(
-            ColumnLayout::create()->setAxisReverse(true)->setCrossAxisOverflow(false)
-                ->setAxisAlignment(AxisAlignment::Center)->setAutoScale(true)->setGap(5.f)
-        );
+        auto* colLayout = ColumnLayout::create()->setAxisReverse(true)->setCrossAxisOverflow(false)
+            ->setAxisAlignment(AxisAlignment::Center)->setAutoScale(true)->setGap(5.f);
+        colLayout->ignoreInvisibleChildren(true);
+        menu->setLayout(colLayout);
         return menu;
-    };
-
-    auto findNode = [&](std::string const& id) -> CCNode* {
-        if (buttonMenu) {
-            if (auto* node = buttonMenu->getChildByIDRecursive(id)) return node;
-        }
-        return layer->getChildByIDRecursive(id);
     };
 
     auto relocate = [&](CCMenu* destination, std::string const& id) -> bool {
         if (!destination) return false;
-        auto* node = findNode(id);
-        if (!node) return false;
+        // A vanilla reload (refresh button) recreates its buttons with the same
+        // ID while the copy we relocated on a previous build is still parked in
+        // a rail. Collect every match, keep exactly one (prefer the freshly
+        // created one under buttonMenu / the vanilla menus, which are walked
+        // first), and delete the stale copies so they can't pile up.
+        std::vector<CCNode*> matches;
+        if (buttonMenu) collectNodesByID(buttonMenu, id, matches);
+        {
+            std::vector<CCNode*> layerMatches;
+            collectNodesByID(layer, id, layerMatches);
+            for (auto* n : layerMatches) {
+                if (std::find(matches.begin(), matches.end(), n) == matches.end()) {
+                    matches.push_back(n);
+                }
+            }
+        }
+        if (matches.empty()) return false;
+        CCNode* node = matches.front();
+        for (size_t i = 1; i < matches.size(); ++i) matches[i]->removeFromParent();
         if (node->getParent() != destination) {
             node->retain();
             node->removeFromParent();
             destination->addChild(node);
             node->release();
         }
-        node->setVisible(true);
-        if (auto* item = typeinfo_cast<CCMenuItem*>(node)) item->setEnabled(true);
+        // Do NOT force visibility/enabled here: buttons like the ban button are
+        // hidden by their owning feature until it decides they apply (mod-only,
+        // etc.). Forcing them on made them flash and then vanish again.
         node->setLayoutOptions(AxisLayoutOptions::create()->setScaleLimits(0.45f, 1.f));
         return true;
     };
@@ -853,7 +926,17 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     auto fitRail = [&](CCMenu* menu, std::string const& id, CCPoint center, float maxH) {
         if (!menu) return;
         auto* bg = layer->getChildByID(id + "-bg");
-        const int n = menu->getChildrenCount();
+        // Only count visible children: hidden buttons (e.g. the ban button on
+        // profiles where it doesn't apply) are ignored by the layout too.
+        int n = 0;
+        constexpr float gap = 5.f;
+        constexpr float innerPad = 8.f; // breathing room above/below buttons
+        float content = 0.f;
+        for (auto* ch : CCArrayExt<CCNode*>(menu->getChildren())) {
+            if (!ch->isVisible()) continue;
+            content += ch->getScaledContentSize().height;
+            ++n;
+        }
         if (n <= 0) {
             menu->setVisible(false);
             if (bg) bg->setVisible(false);
@@ -861,13 +944,6 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         }
         menu->setVisible(true);
         if (bg) bg->setVisible(true);
-
-        constexpr float gap = 5.f;
-        constexpr float innerPad = 8.f; // breathing room above/below buttons
-        float content = 0.f;
-        for (auto* ch : CCArrayExt<CCNode*>(menu->getChildren())) {
-            content += ch->getScaledContentSize().height;
-        }
         content += gap * static_cast<float>(n - 1);
 
         float h = std::clamp(content + innerPad, 40.f, maxH);
@@ -895,9 +971,10 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     closeMenu->updateLayout();
     swapMenu->updateLayout();
 
-    if (buttonMenu && buttonMenu->getChildren()) {
-        for (auto* child : CCArrayExt<CCNode*>(buttonMenu->getChildren())) child->setVisible(false);
-    }
+    // Hide the whole vanilla button menu instead of hiding children one by one:
+    // buttons that other features create asynchronously land here and used to
+    // flash at their vanilla position until the next rebuild hid them.
+    if (buttonMenu) buttonMenu->setVisible(false);
     const CCSize railSize = {34.f, sz.height - 88.f};
     const float railY = c.y - 12.f;
     auto* optionsRail = makeRail({railXLeft, railY}, railSize, "rd-options-rail"_spr);
@@ -1137,15 +1214,26 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             chip->setContentSize({std::max(cursor, 1.f), kChipH});
             menu->addChild(chip);
         };
-        addStat(score->m_stars, "GJ_starsIcon_001.png", {233, 253, 113});
-        addStat(score->m_moons, "GJ_moonsIcon_001.png", {109, 215, 249});
-        if (score->m_diamonds > 0)
-            addStat(score->m_diamonds, "GJ_diamondsIcon_001.png", {90, 245, 255});
-        addStat(score->m_demons, "GJ_demonIcon_001.png", {240, 140, 140});
+        // Own profile: prefer live local stats (ProfilePage also stamps these onto
+        // score before load, but re-apply here so rebuilds after async settle stay correct).
+        if (ownProfile) {
+            paimon::profiles::applyLiveOwnProfileStats(score);
+        }
+        int const stars = score->m_stars;
+        int const moons = score->m_moons;
+        int const diamonds = score->m_diamonds;
+        int const demons = score->m_demons;
+        int const userCoins = score->m_userCoins;
+        int const secretCoins = score->m_secretCoins;
+        addStat(stars, "GJ_starsIcon_001.png", {233, 253, 113});
+        addStat(moons, "GJ_moonsIcon_001.png", {109, 215, 249});
+        if (diamonds > 0)
+            addStat(diamonds, "GJ_diamondsIcon_001.png", {90, 245, 255});
+        addStat(demons, "GJ_demonIcon_001.png", {240, 140, 140});
         if (score->m_creatorPoints > 0)
             addStat(score->m_creatorPoints, "GJ_hammerIcon_001.png", {182, 186, 186});
-        addStat(score->m_userCoins, "GJ_coinsIcon2_001.png", {255, 255, 255});
-        addStat(score->m_secretCoins, "GJ_coinsIcon_001.png", {248, 138, 0});
+        addStat(userCoins, "GJ_coinsIcon2_001.png", {255, 255, 255});
+        addStat(secretCoins, "GJ_coinsIcon_001.png", {248, 138, 0});
         menu->updateLayout();
     }
     {
@@ -1203,8 +1291,12 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     row->setVisible(true);
     row->setContentSize({contentW - 8.f, 32.f});
     row->setPosition({c.x, bottomY});
-    row->setLayout(RowLayout::create()->setGap(7.f)->setAxisAlignment(AxisAlignment::Center)
-        ->setCrossAxisOverflow(false)->setAutoScale(true));
+    {
+        auto* rowLayout = RowLayout::create()->setGap(7.f)->setAxisAlignment(AxisAlignment::Center)
+            ->setCrossAxisOverflow(false)->setAutoScale(true);
+        rowLayout->ignoreInvisibleChildren(true);
+        row->setLayout(rowLayout);
+    }
     {
         if (auto* bg = paimon::SpriteHelper::safeCreateScale9("square02_small.png")) {
             bg->setContentSize({contentW, 38.f});
@@ -1269,17 +1361,19 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         // Adapt the bottom dark panel width to the buttons it actually holds,
         // so it hugs the row instead of always spanning the full content width.
         if (auto* bg = layer->getChildByID("rd-bottom-row-bg"_spr)) {
-            const int n = row->getChildrenCount();
+            int n = 0;
+            constexpr float gap = 7.f;
+            float content = 0.f;
+            for (auto* ch : CCArrayExt<CCNode*>(row->getChildren())) {
+                if (!ch->isVisible()) continue;
+                content += ch->getScaledContentSize().width;
+                ++n;
+            }
             if (n <= 0) {
                 bg->setVisible(false);
                 row->setVisible(false);
             } else {
                 bg->setVisible(true);
-                constexpr float gap = 7.f;
-                float content = 0.f;
-                for (auto* ch : CCArrayExt<CCNode*>(row->getChildren())) {
-                    content += ch->getScaledContentSize().width;
-                }
                 content += gap * static_cast<float>(n - 1);
                 const float w = std::clamp(content + 18.f, 60.f, contentW);
                 bg->setContentSize({w, 38.f});
@@ -1306,7 +1400,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
                         GameToolbox::pointsToString(scoreRef->m_moons),
                         GameToolbox::pointsToString(scoreRef->m_demons),
                         GameToolbox::pointsToString(scoreRef->m_userCoins));
-                    FLAlertLayer::create(std::string(scoreRef->m_userName).c_str(), msg, "OK")->show();
+                    PopupManager::get().alert(std::string(scoreRef->m_userName), msg).showInstant();
                 })) {
                 infoBtn->setID("rd-generated-info"_spr);
                 menu->addChild(infoBtn);

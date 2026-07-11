@@ -1,4 +1,4 @@
-﻿#include "CaptureAssetBrowserPopup.hpp"
+#include "CaptureAssetBrowserPopup.hpp"
 #include "../services/CaptureVisibilityState.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"

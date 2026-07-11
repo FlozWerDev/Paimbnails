@@ -1,20 +1,15 @@
-﻿#include "UpdateChecker.hpp"
+#include "UpdateChecker.hpp"
 #include "../../../utils/WebHelper.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/web.hpp>
+#include <Geode/utils/file.hpp>
 #include <matjson.hpp>
-#include <fstream>
 #include <filesystem>
 #include <algorithm>
 #include <cctype>
-#include <system_error>
-
-#ifdef GEODE_IS_WINDOWS
-#include <windows.h>
-#endif
 
 using namespace geode::prelude;
 
@@ -25,24 +20,6 @@ namespace {
 constexpr auto kReleasesApiUrl =
     "https://api.github.com/repos/FlozWerDev/Paimbnails/releases/latest";
 constexpr auto kAssetName = "flozwer.paimbnails2.geode";
-
-std::filesystem::path getStagedUpdatePath() {
-    auto dir = Mod::get()->getSaveDir() / "updates";
-    auto filename = Mod::get()->getPackagePath().filename();
-    if (filename.empty()) {
-        filename = kAssetName;
-    }
-    return dir / filename;
-}
-
-std::string escapePowerShellLiteral(std::string value) {
-    size_t pos = 0;
-    while ((pos = value.find('\'', pos)) != std::string::npos) {
-        value.replace(pos, 1, "''");
-        pos += 2;
-    }
-    return value;
-}
 
 // Strip 'v'/'V' prefix and surrounding whitespace from a version string.
 std::string sanitizeVersion(std::string v) {
@@ -215,7 +192,7 @@ void UpdateChecker::downloadUpdate(
     }
 
     m_downloadCancelled.store(false);
-    m_pendingUpdatePath.clear();
+    m_installedPendingRestart.store(false);
 
     // Progress callback dispatches to the main thread before touching UI.
     auto progressShared = std::make_shared<std::function<void(uint64_t, uint64_t)>>(std::move(onProgress));
@@ -259,204 +236,55 @@ void UpdateChecker::downloadUpdate(
                 return;
             }
 
-            // Never overwrite the live .geode in-place; stage it and swap on exit.
-            std::filesystem::path stagedPath = getStagedUpdatePath();
-            std::filesystem::path tempPath = stagedPath;
-            tempPath += ".download";
-            std::error_code ec;
-
-            std::filesystem::create_directories(stagedPath.parent_path(), ec);
-            if (ec) {
-                fail(fmt::format("cannot create update dir: {}", ec.message()));
-                return;
-            }
-
-            std::filesystem::remove(tempPath, ec);
-
-            std::ofstream out(tempPath, std::ios::binary | std::ios::trunc);
-            if (!out) {
-                fail("cannot open staged file");
-                return;
-            }
-
-            out.write(reinterpret_cast<char const*>(bytes.data()), bytes.size());
-            out.close();
-
-            if (!out) {
-                std::filesystem::remove(tempPath, ec);
-                fail("cannot write staged file");
-                return;
-            }
-
             if (m_downloadCancelled.load()) {
-                std::filesystem::remove(tempPath, ec);
                 fail("cancelled");
                 return;
             }
 
-            std::filesystem::remove(stagedPath, ec);
-            ec.clear();
-            std::filesystem::rename(tempPath, stagedPath, ec);
-            if (ec) {
-                std::filesystem::remove(tempPath, ec);
-                fail(fmt::format("cannot finalize staged update: {}", ec.message()));
+            // Same technique Geode's own updater uses: overwrite the installed
+            // .geode in place while the game is running. The file isn't locked
+            // (the binary is loaded from the unzipped runtime dir), so the new
+            // version simply loads on the next restart.
+            auto packagePath = Mod::get()->getPackagePath();
+            if (packagePath.empty()) {
+                fail("no package path");
                 return;
             }
 
-            m_pendingUpdatePath = stagedPath;
-            log::info("[UpdateChecker] Update staged at {}", m_pendingUpdatePath);
+            auto writeRes = geode::utils::file::writeBinary(packagePath, bytes);
+            if (!writeRes) {
+                fail(fmt::format("cannot write update: {}", writeRes.unwrapErr()));
+                return;
+            }
+
+            m_installedPendingRestart.store(true);
+            log::info("[UpdateChecker] Update written in place at {}",
+                geode::utils::string::pathToString(packagePath));
 
             if (doneShared && *doneShared) {
-                (*doneShared)(true, geode::utils::string::pathToString(stagedPath));
+                (*doneShared)(true, geode::utils::string::pathToString(packagePath));
             }
         }
     );
 }
 
 bool UpdateChecker::hasPendingInstall() const {
-    if (m_pendingUpdatePath.empty()) return false;
-    std::error_code ec;
-    return std::filesystem::exists(m_pendingUpdatePath, ec) && !ec;
+    return m_installedPendingRestart.load();
 }
-
-namespace {
-
-#ifdef GEODE_IS_WINDOWS
-// Spawns a PowerShell helper that waits for the game PID, atomically swaps the
-// staged .geode, and optionally relaunches.
-// relaunch=true: restart GD (user-triggered); relaunch=false: silent (auto-update on exit).
-bool spawnUpdaterHelper(std::filesystem::path const& pendingUpdatePath, bool relaunch) {
-    wchar_t exePath[MAX_PATH] = {};
-    auto exeLen = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    if (!(exeLen > 0 && exeLen < MAX_PATH)) {
-        log::warn("[UpdateChecker] GetModuleFileNameW failed while staging swap");
-        return false;
-    }
-
-    std::filesystem::path currentPackage = Mod::get()->getPackagePath();
-    std::filesystem::path backupPackage = currentPackage;
-    backupPackage += ".old";
-    std::filesystem::path scriptPath =
-        Mod::get()->getSaveDir() / "updates" /
-        (relaunch ? "apply-pending-update.ps1" : "apply-pending-update-silent.ps1");
-    std::error_code ec;
-    std::filesystem::create_directories(scriptPath.parent_path(), ec);
-    if (ec) {
-        log::warn("[UpdateChecker] Failed to create updater script dir: {}", ec.message());
-        return false;
-    }
-
-    auto exeString = geode::utils::string::pathToString(std::filesystem::path(exePath));
-    auto workingDirString = geode::utils::string::pathToString(std::filesystem::path(exePath).parent_path());
-    auto sourceString = geode::utils::string::pathToString(pendingUpdatePath);
-    auto destString = geode::utils::string::pathToString(currentPackage);
-    auto backupString = geode::utils::string::pathToString(backupPackage);
-
-    // Optional relaunch segment: restart GD on user-triggered update, silent on auto-update.
-    std::string relaunchSegment = relaunch
-        ? "Start-Process -FilePath $exe -WorkingDirectory $workingDir\n"
-        : "";
-    std::string relaunchOnFailure = relaunch
-        ? "Start-Process -FilePath $exe -WorkingDirectory $workingDir\n"
-        : "";
-
-    auto scriptBody = fmt::format(
-        R"ps($pidToWait = {0}
-$source = '{1}'
-$dest = '{2}'
-$backup = '{3}'
-$exe = '{4}'
-$workingDir = '{5}'
-
-for ($i = 0; $i -lt 200; $i++) {{
-    if (-not (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue)) {{ break }}
-    Start-Sleep -Milliseconds 250
-}}
-
-for ($i = 0; $i -lt 40; $i++) {{
-    try {{
-        if (Test-Path -LiteralPath $backup) {{ Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue }}
-        if (Test-Path -LiteralPath $dest) {{ Move-Item -LiteralPath $dest -Destination $backup -Force }}
-        Move-Item -LiteralPath $source -Destination $dest -Force
-        if (Test-Path -LiteralPath $backup) {{ Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue }}
-        {6}exit 0
-    }} catch {{
-        Start-Sleep -Milliseconds 250
-    }}
-}}
-
-{7}exit 1
-)ps",
-        GetCurrentProcessId(),
-        escapePowerShellLiteral(sourceString),
-        escapePowerShellLiteral(destString),
-        escapePowerShellLiteral(backupString),
-        escapePowerShellLiteral(exeString),
-        escapePowerShellLiteral(workingDirString),
-        relaunchSegment,
-        relaunchOnFailure
-    );
-
-    std::ofstream scriptFile(scriptPath, std::ios::binary | std::ios::trunc);
-    if (!scriptFile) {
-        log::warn("[UpdateChecker] Failed to open updater script file");
-        return false;
-    }
-    scriptFile << scriptBody;
-    scriptFile.close();
-    if (!scriptFile) {
-        log::warn("[UpdateChecker] Failed to write updater script file");
-        return false;
-    }
-
-    std::wstring commandLine =
-        L"powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" +
-        scriptPath.wstring() +
-        L"\"";
-    std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
-    mutableCommand.push_back(L'\0');
-
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
-    PROCESS_INFORMATION pi{};
-
-    if (!CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-        log::warn("[UpdateChecker] Failed to launch updater helper: {}", static_cast<unsigned long>(GetLastError()));
-        return false;
-    }
-
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
-    log::info("[UpdateChecker] Spawned updater helper {} (relaunch={})",
-        geode::utils::string::pathToString(scriptPath), relaunch);
-    return true;
-}
-#endif
-
-} // namespace
 
 bool UpdateChecker::restartToApplyPendingUpdate() const {
     if (!this->hasPendingInstall()) {
         return false;
     }
-
-#ifdef GEODE_IS_WINDOWS
-    return spawnUpdaterHelper(m_pendingUpdatePath, /*relaunch=*/true);
-#else
-    return false;
-#endif
+    // The new .geode is already on disk; restarting loads it on all platforms.
+    geode::utils::game::restart(true);
+    return true;
 }
 
 bool UpdateChecker::applyPendingUpdateInPlace() const {
-    if (!this->hasPendingInstall()) {
-        return false;
-    }
-
-#ifdef GEODE_IS_WINDOWS
-    return spawnUpdaterHelper(m_pendingUpdatePath, /*relaunch=*/false);
-#else
-    return false;
-#endif
+    // The update is written in place as soon as it's downloaded, so there's
+    // nothing to do on exit: the new version loads on the next launch.
+    return this->hasPendingInstall();
 }
 
 void UpdateChecker::autoDownloadIfNeeded() {
@@ -488,7 +316,7 @@ void UpdateChecker::autoDownloadIfNeeded() {
         },
         [](bool ok, std::string detail) {
             if (ok) {
-                log::info("[UpdateChecker] Auto-update downloaded and staged. Will apply on exit.");
+                log::info("[UpdateChecker] Auto-update installed in place. Loads on next restart.");
             } else {
                 log::warn("[UpdateChecker] Auto-update failed: {}", detail);
             }

@@ -3,11 +3,21 @@
 #include <Geode/Geode.hpp>
 #include <string>
 #include <atomic>
+#include <cstdint>
+#include <climits>
 
 namespace paimon::settings {
 
 namespace internal {
     inline std::atomic<uint64_t> g_settingsVersion{0};
+
+    // Bump after any setSavedValue/setSetting that is snapshotted by hot-path
+    // caches (video quality/FPS, levelcell visuals, gif-ram-cache, etc.).
+    // Callers that only write settings without going through LevelCellSettingsPopup
+    // must invoke this or mid-session changes stay stale until restart.
+    inline void invalidateSettingsCache() {
+        g_settingsVersion.fetch_add(1, std::memory_order_relaxed);
+    }
 }
 
 namespace thumbnails {
@@ -156,13 +166,25 @@ namespace video {
     // Longest-side cap (px) the decoder downscales to. 0 = native (no cap).
     // Downscaling at decode time shrinks the ring buffer, GL textures, PBOs
     // and the resolve FBO proportionally — the main video RAM consumers.
+    // Mapping lives in VideoLoadHelpers (pure) so tests drive the same path.
     inline int videoMaxDecodeDimension() {
-        switch (videoQuality()) {
-            case 100: return 0;     // High: native resolution
-            case 75:  return 1280;  // Medium: ~720p cap
-            case 50:  return 854;   // Low: ~480p cap
-            default:  return 1920;  // Auto: 1080p native, only 1440p/4K downscale
+        // Snapshot quality once per settings version — DecoderMF/NDK open paths
+        // call this during load and should not hit Mod save tables every open.
+        static int s_cachedDim = -1;
+        static uint64_t s_ver = UINT64_MAX;
+        uint64_t ver = internal::g_settingsVersion.load(std::memory_order_relaxed);
+        if (s_cachedDim >= 0 && ver == s_ver) return s_cachedDim;
+        s_ver = ver;
+        // Local include-free mapping (mirror of paimon::video::maxDecodeDimensionForQuality)
+        // to avoid circular includes from Settings.hpp into video/.
+        int q = videoQuality();
+        switch (q) {
+            case 100: s_cachedDim = 0; break;
+            case 75:  s_cachedDim = 1280; break;
+            case 50:  s_cachedDim = 854; break;
+            default:  s_cachedDim = 1920; break;
         }
+        return s_cachedDim;
     }
     inline std::string videoBlurType() {
         return geode::Mod::get()->getSavedValue<std::string>("video-blur-type", "none");
@@ -383,6 +405,30 @@ namespace cursor {
         return geode::Mod::get()->getSavedValue<bool>("custom-cursor-hide-in-gameplay", true);
     }
 } // namespace cursor
+
+namespace input_scroll {
+    inline bool enabled() {
+        return geode::Mod::get()->getSettingValue<bool>("input-scroll-enable");
+    }
+    inline int intStep() {
+        return static_cast<int>(geode::Mod::get()->getSettingValue<int64_t>("input-scroll-step"));
+    }
+    inline std::string decimalModifier() {
+        return geode::Mod::get()->getSettingValue<std::string>("input-scroll-decimal-modifier");
+    }
+    inline double decimalStep() {
+        return geode::Mod::get()->getSettingValue<double>("input-scroll-decimal-step");
+    }
+    inline int decimalPlaces() {
+        return static_cast<int>(geode::Mod::get()->getSettingValue<int64_t>("input-scroll-decimal-places"));
+    }
+    inline bool focusOnly() {
+        return geode::Mod::get()->getSettingValue<bool>("input-scroll-focus-only");
+    }
+    inline bool wrap() {
+        return geode::Mod::get()->getSettingValue<bool>("input-scroll-wrap");
+    }
+} // namespace input_scroll
 
 namespace quality {
     // The 22 main levels are pinned in RAM (exempt from the LRU); this entry cap

@@ -64,10 +64,18 @@ struct ProfilePicConfig {
     float size = 120.f;
     float rotation = 0.f;
 
+    // "profile" = own profile picture (profileimg), with the legacy profile
+    // background image as fallback; "custom" = a locally picked file (photoPath)
+    std::string photoSource = "profile";
+    std::string photoPath = "";
+
     float imageZoom = 1.f;
     float imageRotation = 0.f;
     float imageOffsetX = 0.f;
     float imageOffsetY = 0.f;
+    bool imageFlipX = false;
+    bool imageFlipY = false;
+    float imageOpacity = 255.f;
 
     bool frameEnabled = false;
     PicFrameConfig frame;

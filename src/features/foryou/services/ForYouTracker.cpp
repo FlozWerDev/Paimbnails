@@ -1,4 +1,4 @@
-﻿#include "ForYouTracker.hpp"
+#include "ForYouTracker.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/binding/GameManager.hpp>

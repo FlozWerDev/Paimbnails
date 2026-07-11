@@ -58,7 +58,9 @@ public:
     // bilinear resampling.
     static ImageBuffer renderCustomImage(ImageBuffer const& userImage,
                                          int frameW, int frameH,
-                                         ImageTransform const& transform = {});
+                                         ImageTransform const& transform = {},
+                                         float pixelOffsetX = 0.f,
+                                         float pixelOffsetY = 0.f);
 
     // Straight-alpha "over" blend of `top` onto `base` in place. Both buffers
     // must have identical dimensions; mismatches are a no-op.

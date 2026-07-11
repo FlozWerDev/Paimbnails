@@ -1,6 +1,7 @@
 #include "PackExporter.hpp"
 #include <Geode/utils/string.hpp>
 
+#include "AnimatedFusionExporter.hpp"
 #include "MediumPort.hpp"
 #include "OverlayTinter.hpp"
 #include "PackMetadataBuilder.hpp"
@@ -334,6 +335,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.spriteSkip                = cfg.spriteSkip;
         req.spriteColors              = cfg.spriteColors;
         req.spriteImages              = cfg.spriteImages;
+        req.spriteFusions             = cfg.spriteFusions;
         req.resizeScale               = 1.0f;
         req.preserveOffsetForTableSide = true;
 
@@ -438,6 +440,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.contrast                = cfg.contrast;
         req.spriteSkip              = cfg.spriteSkip;
         req.spriteImages            = cfg.spriteImages;
+        req.spriteFusions           = cfg.spriteFusions;
         req.overlaySources          = buildOverlaySources(autoSheet.pngRel, cfg, logMessages);
 
         if (!req.overlaySources->any()) {
@@ -577,12 +580,60 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
     }
 
+    // --- animated fusion GIFs (ImagePlus / Happy Textures) ----------------
+    // Sheets already contain frame 0 of each fusion. Multi-frame textures also
+    // ship as standalone .gif files so ImagePlus can animate them in-game.
+    if (cfg.exportAnimatedFusions && !cfg.spriteFusions.empty()) {
+        if (progress) {
+            progress(workIndex, totalWork + 1, "Animated fusions...");
+        }
+        auto animRes = AnimatedFusionExporter::exportAll(cfg);
+        if (animRes) {
+            for (auto& anim : animRes.unwrap()) {
+                if (anim.gifBytes.empty() || anim.entryName.empty()) continue;
+                if (auto r = ensureZipFolders(zip, anim.entryName, zipFolders); !r) {
+                    logMessages.push_back(anim.entryName + ": " + r.unwrapErr());
+                    continue;
+                }
+                if (auto r = zip.add(anim.entryName, toByteVector(anim.gifBytes)); !r) {
+                    logMessages.push_back(anim.entryName + ": zip add failed: "
+                        + r.unwrapErr());
+                    continue;
+                }
+                ++result.animatedFusionCount;
+                logMessages.push_back(fmt::format(
+                    "animated: {} ({} frames)", anim.entryName, anim.frameCount));
+            }
+        } else {
+            logMessages.push_back(
+                std::string("animated fusions: ") + animRes.unwrapErr());
+        }
+    }
+
     // --- metadata -----------------------------------------------------------
     if (auto r = zip.add("pack.json",
             PackMetadataBuilder::buildPackJson(cfg.packName, cfg.author));
         !r) {
         result.errorMessage = std::string("pack.json: ") + r.unwrapErr();
         return Err(result.errorMessage);
+    }
+
+    // Optional readme so pack users know why .gif files are present.
+    if (result.animatedFusionCount > 0) {
+        std::string readme =
+            "Animated fusion sprites\n"
+            "=======================\n\n"
+            "This pack includes multi-frame .gif sprites from Texture Studio "
+            "Fusion mode.\n\n"
+            "Requirements for animation in-game:\n"
+            "  - geode.texture-loader (or Happy Textures)\n"
+            "  - prevter.imageplus  (GIF / animated formats)\n\n"
+            "Without ImagePlus the static PNG frames inside the spritesheets "
+            "still work (first frame of each fusion).\n";
+        if (auto r = zip.add("ANIMATED_FUSIONS.txt", readme); !r) {
+            logMessages.push_back(
+                std::string("ANIMATED_FUSIONS.txt: ") + r.unwrapErr());
+        }
     }
 
     auto colorsJson = PackMetadataBuilder::buildUiColorsJson(cfg);

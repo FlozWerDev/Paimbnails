@@ -14,9 +14,9 @@
 
 namespace paimon::settings_ui {
 
-constexpr float ROW_HEIGHT = 36.f;
-constexpr float HEADER_HEIGHT = 28.f;
-constexpr float LABEL_X = 8.f;
+constexpr float ROW_HEIGHT = 30.f;
+constexpr float HEADER_HEIGHT = 24.f;
+constexpr float LABEL_X = 10.f;
 
 // Toggle (bool)
 cocos2d::CCNode* createToggleRow(

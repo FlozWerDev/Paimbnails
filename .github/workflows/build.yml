@@ -1,12 +1,8 @@
 name: Build Geode Mod
 
+# CI build disabled for now — run manually from Actions when needed.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - "**"
-    tags:
-      - "v*"
 
 jobs:
   build:

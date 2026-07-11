@@ -1,17 +1,23 @@
-﻿// VideoThumbnailSprite.cpp — CCSprite wrapper for video thumbnails.
+// VideoThumbnailSprite.cpp — CCSprite wrapper for video thumbnails.
 
 #include "VideoThumbnailSprite.hpp"
 #include "WebHelper.hpp"
+#include "FormatDetect.hpp"
+#include "UrlKeyNormalize.hpp"
+#include "Debug.hpp"
 #include "../core/Settings.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include "ThreadPool.hpp"
 #include "../video/AudioExtractor.hpp"
+#include "../video/VideoLoadHelpers.hpp"
 #include <Geode/Geode.hpp>
 #include <filesystem>
 #include <algorithm>
 #include <future>
 #include <mutex>
 #include <unordered_set>
+#include <cstdint>
+#include <climits>
 
 using namespace geode::prelude;
 namespace fs = std::filesystem;
@@ -46,18 +52,19 @@ namespace {
 }
 
 int VideoThumbnailSprite::adaptiveSpriteFPS(int activeCount) {
-    int baseFPS = paimon::settings::video::fpsLimit();
-    if (baseFPS <= 0) baseFPS = 30;
-    if (!paimon::settings::video::adaptiveFPS() || activeCount <= 1) {
-        return baseFPS;
+    // Snapshot FPS settings once per settings-version (called on every slot acquire).
+    static int s_base = 30;
+    static int s_min = 12;
+    static bool s_adaptive = true;
+    static uint64_t s_ver = UINT64_MAX;
+    uint64_t ver = paimon::settings::internal::g_settingsVersion.load(std::memory_order_relaxed);
+    if (ver != s_ver) {
+        s_ver = ver;
+        s_base = paimon::settings::video::fpsLimit();
+        s_min = paimon::settings::video::minVideoFPS();
+        s_adaptive = paimon::settings::video::adaptiveFPS();
     }
-    int minFPS = paimon::settings::video::minVideoFPS();
-    if (minFPS < 1) minFPS = 1;
-    if (minFPS > baseFPS) minFPS = baseFPS;
-    int target = baseFPS / activeCount;
-    if (target < minFPS) target = minFPS;
-    if (target > baseFPS) target = baseFPS;
-    return target;
+    return paimon::video::adaptiveSpriteFpsFromBase(s_base, s_min, s_adaptive, activeCount);
 }
 
 bool VideoThumbnailSprite::tryAcquireActiveSlot() {
@@ -103,10 +110,12 @@ std::string VideoThumbnailSprite::getTempPath(std::string const& cacheKey) {
 }
 
 std::string VideoThumbnailSprite::makeRequestKey(std::string const& url, std::string const& cacheKey) {
-    if (!url.empty()) {
-        return "url:" + url;
+    // Prefer stable cacheKey so the same asset never double-downloads under
+    // different busted URLs. When only a URL is known, strip volatile params.
+    if (!cacheKey.empty()) {
+        return paimon::video::makeVideoRequestKey({}, cacheKey);
     }
-    return "cache:" + cacheKey;
+    return paimon::video::makeVideoRequestKey(paimon::cache::normalizeUrlKey(url), {});
 }
 
 std::string VideoThumbnailSprite::getCachedPathLocked(std::string const& key) {
@@ -308,11 +317,27 @@ void VideoThumbnailSprite::pumpAsyncQueues() {
             downloadsToStart.emplace_back(requestKey, it->second->url);
         }
 
-        while (s_activeCreates < MAX_CONCURRENT_CREATES && !s_createQueue.empty()) {
+        // Prefer disk-hit creates (localPath already on disk, no network wait)
+        // so first visible frame isn't blocked behind unfinished download jobs
+        // that only later enqueue creates. Network-backed creates still run
+        // after their download completes and re-enter this queue.
+        auto takeNextCreate = [&]() -> bool {
+            if (s_createQueue.empty() || s_activeCreates >= MAX_CONCURRENT_CREATES) return false;
+            // Find a disk-ready job first.
+            for (auto it = s_createQueue.begin(); it != s_createQueue.end(); ++it) {
+                if (paimon::video::shouldPrioritizeDiskCreate(!it->localPath.empty(), false)) {
+                    createsToStart.push_back(std::move(*it));
+                    s_createQueue.erase(it);
+                    ++s_activeCreates;
+                    return true;
+                }
+            }
             createsToStart.push_back(std::move(s_createQueue.front()));
             s_createQueue.pop_front();
             ++s_activeCreates;
-        }
+            return true;
+        };
+        while (takeNextCreate()) {}
     }
 
     for (auto& [requestKey, url] : downloadsToStart) {
@@ -366,7 +391,7 @@ void VideoThumbnailSprite::handleDownloadResponse(std::string requestKey, web::W
                 auto writeRes = geode::utils::file::writeBinary(localPath, data);
                 downloadOk = writeRes.isOk();
                 if (downloadOk) {
-                    log::info("[VideoThumbSprite] Downloaded {} bytes to {}", data.size(), localPath);
+                    PaimonDebug::log("[VideoThumbSprite] Downloaded {} bytes to {}", data.size(), localPath);
                 } else {
                     log::warn("[VideoThumbSprite] Failed to write download to {}", localPath);
                 }
@@ -415,9 +440,27 @@ void VideoThumbnailSprite::handleDownloadResponse(std::string requestKey, web::W
 void VideoThumbnailSprite::handleCreateJob(CreateJob job) {
     VideoThumbnailSprite* sprite = nullptr;
     if (!s_asyncShutdown) {
-        sprite = create(job.localPath);
-        if (sprite) {
-            sprite->m_cacheKey = job.cacheKey;
+        // Prefer warm player under path or logical key before a full decoder open.
+        auto warm = getCachedPlayer(job.localPath);
+        if (!warm && !job.cacheKey.empty()) {
+            warm = getCachedPlayer(job.cacheKey);
+        }
+        if (warm) {
+            sprite = new (std::nothrow) VideoThumbnailSprite();
+            if (sprite && sprite->initWithPlayer(std::move(warm))) {
+                sprite->autorelease();
+                sprite->m_cacheKey = job.cacheKey;
+                sprite->m_firstFrame = true;
+            } else {
+                CC_SAFE_DELETE(sprite);
+                sprite = nullptr;
+            }
+        }
+        if (!sprite) {
+            sprite = create(job.localPath);
+            if (sprite) {
+                sprite->m_cacheKey = job.cacheKey;
+            }
         }
     }
 
@@ -565,18 +608,23 @@ VideoThumbnailSprite* VideoThumbnailSprite::createFromCache(std::string const& c
     }
     if (path.empty()) return nullptr;
 
-    // Clear any cached player for this key to avoid stale state
-    {
-        std::lock_guard lock(s_playerCacheMutex);
-        for (auto it = s_playerCache.begin(); it != s_playerCache.end(); ++it) {
-            if (it->cacheKey == path) {
-                if (it->player) {
-                    it->player->stop();
-                }
-                s_playerCache.erase(it);
-                break;
-            }
+    // Reuse a warm player when present (keyed by file path and/or logical key).
+    // Previously this path *destroyed* the cached player then re-opened the
+    // decoder — the opposite of a cache hit.
+    auto warm = getCachedPlayer(path);
+    if (!warm) {
+        warm = getCachedPlayer(cacheKey);
+    }
+    if (warm) {
+        auto* sprite = new (std::nothrow) VideoThumbnailSprite();
+        if (sprite && sprite->initWithPlayer(std::move(warm))) {
+            sprite->autorelease();
+            sprite->m_cacheKey = cacheKey;
+            sprite->m_firstFrame = true;
+            PaimonDebug::log("[VideoThumbSprite] createFromCache: reused warm player key={}", cacheKey);
+            return sprite;
         }
+        CC_SAFE_DELETE(sprite);
     }
 
     auto* sprite = create(path);
@@ -633,36 +681,36 @@ VideoThumbnailSprite* VideoThumbnailSprite::createFromData(std::vector<uint8_t> 
         return nullptr;
     }
 
-    bool isMp4 = false;
-    for (size_t i = 0; i + 3 < data.size() && i < 12; ++i) {
-        if (data[i] == 'f' && data[i+1] == 't' && data[i+2] == 'y' && data[i+3] == 'p') {
-            isMp4 = true;
-            break;
-        }
-    }
-    if (!isMp4) {
+    // Magic-byte detect (same as format::isMp4) — no full-buffer scan.
+    if (!paimon::format::isMp4(data.data(), data.size())) {
         log::warn("[VideoThumbSprite] Data does not contain valid MP4 ftyp box");
         return nullptr;
     }
 
+    // Disk hit: skip rewrite + open player directly (reuse warm player if any).
     std::string tempPath;
     {
         std::lock_guard lock(s_cacheMutex);
         tempPath = getCachedPathLocked(cacheKey);
     }
 
-    if (tempPath.empty()) {
-        tempPath = getTempPath(cacheKey);
-        {
-            auto writeRes = geode::utils::file::writeBinary(tempPath, data);
-            if (writeRes.isErr()) {
-                log::error("[VideoThumbSprite] Failed to write temp file: {}", tempPath);
-                return nullptr;
-            }
+    if (!tempPath.empty()) {
+        auto* sprite = create(tempPath);
+        if (sprite) sprite->m_cacheKey = cacheKey;
+        return sprite;
+    }
+
+    tempPath = getTempPath(cacheKey);
+    {
+        auto writeRes = geode::utils::file::writeBinary(tempPath, data);
+        if (writeRes.isErr()) {
+            log::error("[VideoThumbSprite] Failed to write temp file: {}", tempPath);
+            return nullptr;
         }
+    }
+    {
         std::lock_guard lock(s_cacheMutex);
         registerCachedPathLocked(cacheKey, tempPath);
-        // Trim the on-disk cache to its budget after writing a new entry.
         enforceTempFilesBudgetLocked();
     }
 
@@ -703,10 +751,12 @@ void VideoThumbnailSprite::createAsync(std::string const& url, std::string const
             // different context (e.g. LevelCell) should not block the popup.
             s_recentFailures.erase(requestKey);
             registerCachedPathLocked(cacheKey, cachedPath);
-            s_createQueue.push_back(CreateJob{requestKey, cacheKey, cachedPath, std::move(callback)});
+            // Disk hits go to the *front* of the create queue so first-frame
+            // latency for already-cached videos isn't stuck behind slower jobs.
+            s_createQueue.push_front(CreateJob{requestKey, cacheKey, cachedPath, std::move(callback)});
         } else {
             if (url.empty()) {
-                log::debug("[VideoThumbSprite] createAsync: empty URL for cacheKey={}", cacheKey);
+                PaimonDebug::log("[VideoThumbSprite] createAsync: empty URL for cacheKey={}", cacheKey);
                 Loader::get()->queueInMainThread([callback = std::move(callback)]() mutable {
                     if (callback) callback(nullptr);
                 });
@@ -715,13 +765,15 @@ void VideoThumbnailSprite::createAsync(std::string const& url, std::string const
 
             auto failIt = s_recentFailures.find(requestKey);
             if (failIt != s_recentFailures.end()) {
-                log::info("[VideoThumbSprite] createAsync: skipping recently failed requestKey={} (cacheKey={})", requestKey, cacheKey);
+                PaimonDebug::log("[VideoThumbSprite] createAsync: skipping recently failed requestKey={} (cacheKey={})", requestKey, cacheKey);
                 Loader::get()->queueInMainThread([callback = std::move(callback)]() mutable {
                     if (callback) callback(nullptr);
                 });
                 return;
             }
 
+            // In-flight dedupe: same requestKey (stable cacheKey) coalesces
+            // callbacks instead of starting a second download.
             auto requestIt = s_downloadRequests.find(requestKey);
             if (requestIt != s_downloadRequests.end() && requestIt->second) {
                 requestIt->second->callbacks.push_back(PendingCreateCallback{cacheKey, std::move(callback)});
@@ -730,7 +782,9 @@ void VideoThumbnailSprite::createAsync(std::string const& url, std::string const
                 auto request = std::make_shared<DownloadRequest>();
                 request->key = requestKey;
                 request->url = url;
-                request->localPath = getTempPath(requestKey);
+                // Write under cacheKey so getCachedPathLocked(cacheKey) / isCached
+                // resolve the same on-disk path after a cold restart (s_tempFiles empty).
+                request->localPath = getTempPath(cacheKey);
                 request->callbacks.push_back(PendingCreateCallback{cacheKey, std::move(callback)});
 
                 registerCachedPathLocked(requestKey, request->localPath);
@@ -794,11 +848,18 @@ VideoThumbnailSprite::~VideoThumbnailSprite() {
     // the sprite was destroyed while still mid-update (e.g. parent removed).
     releaseActiveSlot();
     if (m_player) {
-        // Always stop before caching to prevent stale playback
-        m_player->stop();
-        // Return player to cache instead of destroying it (avoids re-decoding)
-        if (!m_cacheKey.empty() && m_firstFrame) {
-            returnPlayerToCache(m_cacheKey, std::move(m_player));
+        // Pause (keep decoder frames warm) rather than stop+seek which forces
+        // a full reopen cost when the player is returned to the warm cache.
+        m_player->pause();
+        // Store under file path so create(path) / createFromCache hit the same key.
+        if (m_firstFrame) {
+            std::string storeKey = paimon::video::playerCacheStoreKey(
+                m_player->getFilePath(), m_cacheKey);
+            if (!storeKey.empty()) {
+                returnPlayerToCache(storeKey, std::move(m_player));
+            } else {
+                m_player.reset();
+            }
         } else {
             m_player.reset();
         }
@@ -1175,11 +1236,18 @@ void VideoThumbnailSprite::returnPlayerToCache(std::string const& cacheKey, std:
     // (terminal) or it never produced a frame, returning it to the cache
     // means the next createFromCache hands out a broken player.
     if (player->isTerminal() || !player->hasVisibleFrame()) {
-        log::debug("[VideoThumbSprite] Not caching unhealthy player "
+        PaimonDebug::log("[VideoThumbSprite] Not caching unhealthy player "
                    "(terminal={}, hasFrame={}) for: {}",
                    player->isTerminal(), player->hasVisibleFrame(), cacheKey);
         player->forceStop();
         player.reset();
+        return;
+    }
+
+    // Canonical store key = file path so create(filePath) can reclaim it.
+    std::string storeKey = paimon::video::playerCacheStoreKey(player->getFilePath(), cacheKey);
+    if (storeKey.empty()) {
+        player->stop();
         return;
     }
 
@@ -1191,10 +1259,10 @@ void VideoThumbnailSprite::returnPlayerToCache(std::string const& cacheKey, std:
         return;
     }
 
-    // Check if already cached
+    // Check if already cached under path or logical key
     for (auto& cached : s_playerCache) {
-        if (cached.cacheKey == cacheKey) {
-            // Already have this one, just update
+        if (cached.cacheKey == storeKey || cached.cacheKey == cacheKey) {
+            cached.cacheKey = storeKey;
             cached.player = std::move(player);
             cached.lastUsed = std::chrono::steady_clock::now();
             return;
@@ -1215,7 +1283,7 @@ void VideoThumbnailSprite::returnPlayerToCache(std::string const& cacheKey, std:
     // This catches the case where MAX_CACHED_PLAYERS > number of recently
     // used videos, leaving stale entries hanging on for the rest of the
     // session.
-    constexpr auto kPlayerCacheTTL = std::chrono::seconds(30);
+    constexpr auto kPlayerCacheTTL = std::chrono::seconds(45);
     auto now = std::chrono::steady_clock::now();
     for (auto it = s_playerCache.begin(); it != s_playerCache.end(); ) {
         if (now - it->lastUsed > kPlayerCacheTTL) {
@@ -1229,7 +1297,7 @@ void VideoThumbnailSprite::returnPlayerToCache(std::string const& cacheKey, std:
 
     CachedPlayer cached;
     cached.player = std::move(player);
-    cached.cacheKey = cacheKey;
+    cached.cacheKey = storeKey; // file path so create(path) hits
     cached.lastUsed = std::chrono::steady_clock::now();
     s_playerCache.push_back(std::move(cached));
 
@@ -1240,10 +1308,10 @@ void VideoThumbnailSprite::returnPlayerToCache(std::string const& cacheKey, std:
             oldest.player->stop();
         }
         s_playerCache.pop_front();
-        log::debug("[VideoThumbSprite] Evicted oldest cached player");
+        PaimonDebug::log("[VideoThumbSprite] Evicted oldest cached player");
     }
 
-    log::debug("[VideoThumbSprite] Cached player for: {} (cache size={})", cacheKey, s_playerCache.size());
+    PaimonDebug::log("[VideoThumbSprite] Cached player for: {} (cache size={})", storeKey, s_playerCache.size());
 }
 
 void VideoThumbnailSprite::clearPlayerCache() {

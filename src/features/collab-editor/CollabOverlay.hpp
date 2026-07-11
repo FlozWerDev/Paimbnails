@@ -30,6 +30,11 @@ public:
     // A chat message (or local system notice) arrived.
     void onChat(ChatMessage const& msg);
 
+    // Peer selection presence (alk draw-selection-overlay). World-space rects
+    // in the object layer; empty clears that peer's overlay.
+    void onPeerSelection(int clientId, std::string const& name, std::vector<cocos2d::CCRect> const& rects);
+    void onPeerSelectionCleared(int clientId);
+
 private:
     bool init(LevelEditorLayer* editor);
     ~CollabEditorOverlay() override;
@@ -58,6 +63,13 @@ private:
     void updateVoice(float dt);
     void layoutVoiceChips();
 
+    // Colored selection rects for a peer (children of the object layer).
+    struct SelectionOverlay {
+        geode::Ref<cocos2d::CCDrawNode> draw;
+        geode::Ref<cocos2d::CCLabelBMFont> label;
+    };
+    void clearSelectionNode(int clientId);
+
     LevelEditorLayer* m_editor = nullptr;
 
     // Per-peer attribution tag, child of the editor's object layer.
@@ -71,6 +83,9 @@ private:
     // clientId (0 = local) -> live voice chip.
     cocos2d::CCNode* m_voiceLayer = nullptr;
     std::unordered_map<int, VoiceChip> m_voiceChips;
+
+    // clientId -> selection outline drawn in object-layer space.
+    std::unordered_map<int, SelectionOverlay> m_selections;
 
     int m_flashCount = 0;
 };

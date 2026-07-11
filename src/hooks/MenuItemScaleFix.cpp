@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/CCMenuItemSpriteExtra.hpp>
+#include <Geode/modify/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>

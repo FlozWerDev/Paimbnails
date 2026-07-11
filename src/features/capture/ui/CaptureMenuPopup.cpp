@@ -31,6 +31,17 @@ constexpr float kInvertY  = 42.f;
 constexpr float kPhysicsY = 6.f;
 constexpr float kSmoothY  = -30.f;
 
+// Flag para marcar popups abiertos desde este menu: solo esos bloquean el
+// toggle por click derecho, el resto de popups del juego no.
+std::string const& captureChildFlag() {
+    static const std::string flag = Mod::get()->getID() + "/capture-menu-child";
+    return flag;
+}
+
+void markCaptureChild(CCNode* node) {
+    if (node) node->setUserFlag(captureChildFlag(), true);
+}
+
 ButtonSprite* makeHoldCtrlButtonSprite(bool enabled) {
     char const* bg = enabled ? "GJ_button_01.png" : "GJ_button_06.png";
     auto* spr = ButtonSprite::create(
@@ -45,6 +56,16 @@ ButtonSprite* makeHoldCtrlButtonSprite(bool enabled) {
 CaptureMenuPopup* CaptureMenuPopup::s_instance = nullptr;
 
 void CaptureMenuPopup::toggle() {
+    // Safe: si hay abierto un popup que salio de este mismo menu (Atajos,
+    // config de Smooth Scroll), el click derecho no debe cerrar ni reabrir
+    // el menu de captura por debajo. Otros popups del juego no bloquean.
+    if (auto* scene = CCDirector::get()->getRunningScene()) {
+        for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
+            auto* alert = typeinfo_cast<FLAlertLayer*>(child);
+            if (alert && alert != s_instance && alert->isVisible()
+                && alert->getUserFlag(captureChildFlag())) return;
+        }
+    }
     if (s_instance) {
         s_instance->onClose(nullptr);
         return;
@@ -191,6 +212,7 @@ void CaptureMenuPopup::onOpenShortcuts(CCObject*) {
     // Queue on main thread to avoid modifying scene during touch dispatch.
     geode::Loader::get()->queueInMainThread([]() {
         if (auto* popup = paimon::volscroll::ScrollKeybindsPopup::create()) {
+            markCaptureChild(popup);
             popup->show();
         }
     });
@@ -233,6 +255,7 @@ void CaptureMenuPopup::onToggleSmoothScroll(CCObject*) {
 void CaptureMenuPopup::onOpenSmoothScrollConfig(CCObject*) {
     geode::Loader::get()->queueInMainThread([]() {
         if (auto* popup = paimon::smoothscroll::SmoothScrollConfigPopup::create()) {
+            markCaptureChild(popup);
             popup->show();
         }
     });

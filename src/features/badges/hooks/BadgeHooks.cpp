@@ -1,4 +1,4 @@
-﻿#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include <Geode/modify/CommentCell.hpp>
 #include "../../../framework/HookConventions.hpp"
 #include "../../../managers/ThumbnailAPI.hpp"
@@ -16,7 +16,6 @@
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../utils/CommentTextSelector.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
-#include "../../../utils/Shaders.hpp"
 #include "../../../blur/BlurSystem.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/VideoThumbnailSprite.hpp"
@@ -96,6 +95,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         Ref<CCLayerColor> m_commentBgDarkOverlay = nullptr;
         int m_commentBgToken = 0;
         int m_commentBgAccountID = 0;
+        int m_vanillaBgHideTicks = 0;
     };
 
     void clearCommentProfileBackground() {
@@ -207,6 +207,7 @@ class $modify(BadgeCommentCell, CommentCell) {
                 std::abs(oldPos.x - layout.origin.x) < 0.5f &&
                 std::abs(oldPos.y - layout.origin.y) < 0.5f) {
                 hideVanillaCommentBackgrounds();
+                ensureVanillaBgLayerHidden();
                 return;
             }
         }
@@ -245,6 +246,7 @@ class $modify(BadgeCommentCell, CommentCell) {
             panel->setID("paimon-comment-bg-panel"_spr);
             this->addChild(panel);
             m_fields->m_commentBgPanel = panel;
+            ensureVanillaBgLayerHidden();
         }
     }
 
@@ -268,6 +270,7 @@ class $modify(BadgeCommentCell, CommentCell) {
             panel->setID("paimon-comment-bg-panel"_spr);
             this->addChild(panel);
             m_fields->m_commentBgPanel = panel;
+            ensureVanillaBgLayerHidden();
         }
         else if (config.commentBgType == "thumbnail" || config.commentBgType == "banner") {
             // Image-based background — load async then render
@@ -404,6 +407,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         clipper->setID("paimon-comment-bg-clip"_spr);
         this->addChild(clipper);
         m_fields->m_commentBgClip = clipper;
+        ensureVanillaBgLayerHidden();
 
         // Dark overlay for readability
         float darkness = config.commentBgDarkness;
@@ -464,10 +468,10 @@ class $modify(BadgeCommentCell, CommentCell) {
                 attachBlurred(blurred);
                 return;
             }
-            // Fallback: real-time shader blur (1 GPU pass/frame).
+            // Fallback: plain sprite (no per-frame multi-tap blur). Async path
+            // already preferred; realtime kawase on every comment cell tanks FPS.
             auto tempSprite = CCSprite::createWithTexture(texRef.data());
             if (!tempSprite) return;
-            if (auto* shader = Shaders::getBlurCellShader()) tempSprite->setShaderProgram(shader);
             attachBlurred(tempSprite);
         };
 
@@ -497,7 +501,9 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         CCNode* bgNode = nullptr;
 
-        // Check for video first
+        // Comment cells are tiny and many are on-screen at once. Realtime multi-tap
+        // blur + continuous video decode is what makes AFK on InfoLayer melt FPS as
+        // profile banners finish loading. Prefer static/first-frame + dark overlay.
         if (VideoThumbnailSprite::isCached(gifKey)) {
             auto bgVideo = VideoThumbnailSprite::createFromCache(gifKey);
             if (bgVideo) {
@@ -507,15 +513,19 @@ class $modify(BadgeCommentCell, CommentCell) {
                 bgVideo->setAnchorPoint({0.5f, 0.5f});
                 bgVideo->setPosition(layout.size * 0.5f);
 
-                auto shader = Shaders::getBlurCellShader();
-                if (shader) bgVideo->setShaderProgram(shader);
-
-                bgVideo->play();
+                // Freeze on first frame — never keep a decoder running per comment.
+                if (bgVideo->hasVisibleFrame()) {
+                    bgVideo->pause();
+                } else {
+                    bgVideo->setOnFirstVisibleFrame([](VideoThumbnailSprite* spr) {
+                        if (spr) spr->pause();
+                    });
+                    bgVideo->play();
+                }
                 bgNode = bgVideo;
             }
         }
 
-        // Fallback to animated GIF
         if (!bgNode) {
             auto bgGif = AnimatedGIFSprite::createFromCache(gifKey);
             if (bgGif) {
@@ -525,16 +535,10 @@ class $modify(BadgeCommentCell, CommentCell) {
                 bgGif->setAnchorPoint({0.5f, 0.5f});
                 bgGif->setPosition(layout.size * 0.5f);
 
-                float norm = (config.commentBgBlur - 1.0f) / 9.0f;
-                bgGif->m_intensity = std::min(1.7f, norm * 2.5f);
-                if (bgGif->getTexture()) {
-                    bgGif->m_texSize = bgGif->getTexture()->getContentSizeInPixels();
-                }
-
-                auto shader = Shaders::getBlurCellShader();
-                if (shader) bgGif->setShaderProgram(shader);
-
-                bgGif->play();
+                // Static first frame only. Many comment cells × GIF scheduleUpdate
+                // for minutes is the progressive AFK lag (allocates CCSpriteFrame
+                // every frame change). Dark overlay keeps text readable.
+                bgGif->stop();
                 bgNode = bgGif;
             }
         }
@@ -551,6 +555,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         clipper->addChild(bgNode);
         this->addChild(clipper);
         m_fields->m_commentBgClip = clipper;
+        ensureVanillaBgLayerHidden();
 
         // Dark overlay
         float darkness = config.commentBgDarkness;
@@ -608,20 +613,38 @@ class $modify(BadgeCommentCell, CommentCell) {
 
     $override
     void onExit() {
+        this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
         clearCommentProfileBackground();
         CommentCell::onExit();
     }
 
-    // Hide the vanilla brown comment background (TableViewCell::m_backgroundLayer)
-    // every frame. GD re-shows it in CommentCell::updateBGColor() (inlined, unhookable)
-    // during layout/scroll, so reasserting it here in draw() avoids any flicker.
-    $override
-    void draw() {
-        if ((m_fields->m_commentBgPanel || m_fields->m_commentBgClip) &&
-            m_backgroundLayer && m_backgroundLayer->isVisible()) {
+    // GD re-shows TableViewCell::m_backgroundLayer in updateBGColor (inlined).
+    // A short burst of ticks is enough; do not run forever per visible cell.
+    void hideVanillaBgLayerTick(float) {
+        if (!(m_fields->m_commentBgPanel || m_fields->m_commentBgClip)) {
+            this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
+            return;
+        }
+        if (m_backgroundLayer && m_backgroundLayer->isVisible()) {
             m_backgroundLayer->setVisible(false);
         }
-        CommentCell::draw();
+        if (++m_fields->m_vanillaBgHideTicks >= 6) {
+            this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
+        }
+    }
+
+    void ensureVanillaBgLayerHidden() {
+        if (m_backgroundLayer) {
+            m_backgroundLayer->setVisible(false);
+            if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(m_backgroundLayer)) {
+                rgba->setOpacity(0);
+            }
+        }
+        this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
+        if (m_fields->m_commentBgPanel || m_fields->m_commentBgClip) {
+            m_fields->m_vanillaBgHideTicks = 0;
+            this->schedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick), 0.2f);
+        }
     }
 
     void onPaimonBadge(CCObject* sender) {
@@ -632,10 +655,18 @@ class $modify(BadgeCommentCell, CommentCell) {
 
     $override
     void loadFromComment(GJComment* comment) {
+        this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
         clearCommentProfileBackground();
         // Invalidate the "bgs-hidden" cache: the cell was recycled with a new
         // comment, so reprocess it next tick to hide the new vanilla nodes.
         this->setUserObject("paimon-comment-bgs-hidden"_spr, nullptr);
+        // Drop previous emote overlay before GD rebuilds text — leftover GIF
+        // emotes would keep scheduleUpdate() running on recycled cells.
+        if (m_mainLayer) {
+            if (auto* oldEmote = m_mainLayer->getChildByID("paimon-emote-overlay"_spr)) {
+                oldEmote->removeFromParent();
+            }
+        }
         CommentCell::loadFromComment(comment);
         
         if (!comment) return;
@@ -827,6 +858,8 @@ class $modify(BadgeCommentCell, CommentCell) {
                             auto menu = typeinfo_cast<CCMenu*>(self->getChildByIDRecursive("username-menu"));
                             if (!menu) return;
                             if (menu->getChildByID("paimon-custom-badge"_spr)) return;
+                            // Static first frame — tiny looping GIFs × many cells adds up AFK.
+                            gifSpr->stop();
                             float maxDim = std::max(gifSpr->getContentWidth(), gifSpr->getContentHeight());
                             if (maxDim > 0) gifSpr->setScale(targetHeight / maxDim);
                             auto btn = CCMenuItemSpriteExtra::create(gifSpr, self, nullptr);
@@ -931,7 +964,8 @@ class $modify(BadgeCommentCell, CommentCell) {
         // properly word-wrapped node even when there are no emote tokens.
         bool isCustomFont = (fontFile != "chatFont.fnt");
         auto emoteNode = paimon::emotes::EmoteRenderer::renderComment(
-            commentText, 0.f, maxWidth, fontFile.c_str(), adjustedFontSize, isCustomFont
+            commentText, 0.f, maxWidth, fontFile.c_str(), adjustedFontSize, isCustomFont,
+            /*animateGifs=*/false
         );
         if (!emoteNode) return;
 

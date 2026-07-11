@@ -1,4 +1,4 @@
-﻿#include "LayerBackgroundManager.hpp"
+#include "LayerBackgroundManager.hpp"
 #include "../../thumbnails/services/LocalThumbs.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
@@ -14,7 +14,7 @@
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "LayerBackgroundManager.hpp"
-#include <random>
+#include <Geode/utils/random.hpp>
 #include <filesystem>
 #include <fstream>
 #include <thread>
@@ -958,9 +958,7 @@ CCTexture2D* LayerBackgroundManager::loadTextureForConfig(LayerBgConfig const& c
     } else if (cfg.type == "random") {
         auto ids = LocalThumbs::get().getAllLevelIDs();
         if (!ids.empty()) {
-            static std::mt19937 rng(std::random_device{}());
-            std::uniform_int_distribution<size_t> dist(0, ids.size() - 1);
-            return LocalThumbs::get().loadTexture(ids[dist(rng)]);
+            return LocalThumbs::get().loadTexture(geode::utils::random::choice(ids));
         }
     } else if (cfg.type == "menu") {
         // use the same config as the main menu

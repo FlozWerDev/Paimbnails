@@ -1,7 +1,11 @@
 #pragma once
 
 #include "../persist/TextureProject.hpp"
+#include "../data/ImageTransform.hpp"
 #include "../data/SpriteFrameInfo.hpp"
+#include "../engine/FusionAsset.hpp"
+#include "../engine/FusionEngine.hpp"
+#include "../engine/MaskBuilder.hpp"
 #include "../engine/SpritePreviewRenderer.hpp"
 #include "../engine/UiSpriteCatalog.hpp"
 
@@ -18,16 +22,12 @@ namespace paimon::texture_studio {
 class ImageBuffer;
 class ParamSliderRow;
 
-// Full-screen pack editor: live preview column, embedded sprite browser and
-// a tabbed side panel (Pack / Tune / Extra / Sprite). Per-sprite tinting and
-// custom images (with scale/offset/rotation/opacity/flip) are edited inline
-// in the Sprite tab — no nested popups.
+// Pack editor: Pack / Tune / Extra / Sprite tabs.
+// Fusion editing lives in its own full-screen FusionEditorLayer.
 class ProjectEditorLayer : public cocos2d::CCLayer {
 public:
     static ProjectEditorLayer* create(std::string slotId);
     static cocos2d::CCScene* scene(std::string slotId);
-
-    // Push the editor scene with a fade transition.
     static void open(std::string slotId);
 
 protected:
@@ -37,7 +37,6 @@ protected:
     void keyBackClicked() override;
     void onBack(cocos2d::CCObject*);
 
-    // --- layout --------------------------------------------------------
     void buildBackground();
     void buildHeader();
     void buildFooter();
@@ -50,8 +49,8 @@ protected:
     void buildExtraTab(cocos2d::CCNode* tab, float w, float h);
     void buildSpriteTab(cocos2d::CCNode* tab, float w, float h);
     void selectTab(int index);
+    void onOpenFusionLayer();
 
-    // --- browser -------------------------------------------------------
     struct Entry {
         std::string frameName;
         int         sheetIndex = -1;
@@ -68,15 +67,12 @@ protected:
     void selectEntry(Entry const& entry);
     void highlightSelectedCell();
 
-    // --- preview -------------------------------------------------------
     void startSelectionPixelLoad();
     void refreshPreviewTint();
     void renderPreviewAfterDelay(float);
     void setOriginalSprite(cocos2d::CCSprite* spr);
     void setResultSprite(cocos2d::CCSprite* spr);
 
-    // --- per-sprite editing ---------------------------------------------
-    // Setting for the selected sprite (map entry, created on demand).
     SpriteSetting currentSetting() const;
     void storeSetting(SpriteSetting const& s);
     void refreshSpriteTabUi();
@@ -84,7 +80,11 @@ protected:
     void onClearImage();
     void onResetSprite();
 
-    // --- actions ---------------------------------------------------------
+    // Fusion data for previews/thumbnails only (editing is FusionEditorLayer).
+    void loadFusionForSelection();
+    void unloadFusion();
+    FusionApplyOptions makeFusionOptions(SpriteSetting const& s) const;
+
     void onSave(cocos2d::CCObject*);
     void onGenerate(cocos2d::CCObject*);
     void onAutoTune(cocos2d::CCObject*);
@@ -98,11 +98,10 @@ private:
     std::string    m_slotId;
     TextureProject m_project;
 
-    // browser state
     std::vector<Entry> m_all;
     std::vector<int>   m_filtered;
     int  m_page = 0;
-    int  m_filterMode = 0;  // 0 buttons, 1 all UI, 2 edited
+    int  m_filterMode = 0;
     std::string m_search;
     int  m_gridCols = 3;
     int  m_gridRows = 3;
@@ -114,12 +113,10 @@ private:
     CCMenuItemSpriteExtra* m_filterAllUiBtn   = nullptr;
     CCMenuItemSpriteExtra* m_filterEditedBtn  = nullptr;
 
-    // selection
     bool        m_hasSelection = false;
     Entry       m_selected;
     int         m_selectedCellTag = -1;
 
-    // preview state
     cocos2d::CCNode*   m_originalHost = nullptr;
     cocos2d::CCNode*   m_resultHost   = nullptr;
     cocos2d::CCSprite* m_originalSpr  = nullptr;
@@ -130,20 +127,20 @@ private:
     std::shared_ptr<ImageBuffer> m_customImage;
     SpriteFrameInfo m_previewFrameInfo;
 
-    // tabs
+    std::shared_ptr<FusionAsset> m_fusionAsset;
+    std::shared_ptr<MaskBuffer>  m_fusionMask;
+    std::size_t m_fusionFrameIndex = 0;
+
     std::array<cocos2d::CCNode*, 4>       m_tabs{};
     std::array<CCMenuItemSpriteExtra*, 4> m_tabBtns{};
     int m_activeTab = 0;
 
-    // pack tab widgets
     cocos2d::CCSprite* m_packSwatch[4] = {};
     ParamSliderRow*    m_brightnessRow = nullptr;
     int m_presetIndex = 0;
 
-    // extra tab widgets
     cocos2d::CCLabelBMFont* m_scopeBtnLbl = nullptr;
 
-    // sprite tab widgets
     cocos2d::CCLabelBMFont* m_spriteNameLbl = nullptr;
     cocos2d::CCLabelBMFont* m_spriteHintLbl = nullptr;
     CCMenuItemSpriteExtra*  m_modeGlobalBtn = nullptr;
@@ -162,13 +159,10 @@ private:
     ParamSliderRow*         m_opacityRow = nullptr;
     cocos2d::CCLabelBMFont* m_imageStateLbl = nullptr;
 
-    // footer
     cocos2d::CCLabelBMFont* m_statusLbl = nullptr;
     CCMenuItemSpriteExtra*  m_saveBtn = nullptr;
     CCMenuItemSpriteExtra*  m_genBtn  = nullptr;
 
-    // async guards. Pixel loads and result renders use SEPARATE generations:
-    // a render must never invalidate an in-flight selection pixel load.
     std::shared_ptr<std::atomic<bool>> m_closed
         = std::make_shared<std::atomic<bool>>(false);
     std::shared_ptr<std::atomic<int>> m_previewGeneration

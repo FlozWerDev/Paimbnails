@@ -11,9 +11,10 @@ namespace paimon::menuphysics {
 
 namespace {
     constexpr int kMaxBodies = 80;
-    constexpr float kReturnDuration = 0.45f;
+    constexpr float kReturnDuration = 0.5f;
     constexpr float kPi = 3.14159265f;
-    constexpr float kTapMoveThreshold = 10.f;  // px; below this a touch counts as a tap
+    constexpr float kTapMoveThreshold = 10.f;
+    constexpr float kConfigRefresh = 0.25f;
 
     void collectButtons(CCNode* n, CCNode* exclude, std::vector<CCMenuItem*>& out) {
         if (!n || n == exclude) return;
@@ -76,15 +77,18 @@ void MenuPhysicsNode::captureHost() {
     float height = win.height;
     if (removeCeiling) height *= 50.f;
     m_world.setBounds(CCRect{0.f, 0.f, win.width, height});
+    m_world.configure(readConfig());
 
     std::vector<CCMenuItem*> buttons;
     collectButtons(host, this, buttons);
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> speed(180.f, 460.f);
-    std::uniform_real_distribution<float> spin(-360.f, 360.f);
-    std::uniform_real_distribution<float> perp(-60.f, 60.f);
+    std::uniform_real_distribution<float> speed(220.f, 560.f);
+    std::uniform_real_distribution<float> spin(-720.f, 720.f);
+    std::uniform_real_distribution<float> perp(-110.f, 110.f);
+    std::uniform_real_distribution<float> popUp(40.f, 180.f);
+    std::uniform_real_distribution<float> tilt(-25.f, 25.f);
 
     CCPoint center{win.width * 0.5f, win.height * 0.5f};
     int count = 0;
@@ -97,8 +101,16 @@ void MenuPhysicsNode::captureHost() {
         CCSize size = btn->getScaledContentSize();
         if (size.width < 4.f || size.height < 4.f) size = CCSize{30.f, 30.f};
 
-        m_originals.push_back({btn, btn->getPosition(), btn->getRotation()});
+        float baseRot = btn->getRotation();
+        m_originals.push_back({
+            btn,
+            btn->getPosition(),
+            baseRot,
+            btn->getScaleX(),
+            btn->getScaleY()
+        });
 
+        // Explosion radial desde el centro + empujon hacia arriba + spin fuerte
         CCPoint dir = worldPos - center;
         float dl = std::sqrt(dir.x * dir.x + dir.y * dir.y);
         if (dl < 1e-3f) {
@@ -111,8 +123,15 @@ void MenuPhysicsNode::captureHost() {
         CCPoint perpDir{-dir.y, dir.x};
         float s = speed(gen);
         CCPoint vel = dir * s + perpDir * perp(gen);
+        vel.y += popUp(gen);
 
-        m_world.addBody(btn, worldPos, size, vel, spin(gen));
+        // Angulo inicial: rotacion del boton + leve inclinacion aleatoria
+        float startAngle = -baseRot + tilt(gen);
+        float angVel = spin(gen);
+        // Botones mas lejanos del centro giran un poco mas
+        angVel += (dl * 0.15f) * ((angVel >= 0.f) ? 1.f : -1.f);
+
+        m_world.addBody(btn, worldPos, size, vel, angVel, startAngle);
         ++count;
     }
 }
@@ -128,6 +147,19 @@ void MenuPhysicsNode::update(float dt) {
         m_captured = true;
         return;
     }
+
+    // Releer ajustes periodicamente para feedback al vivo desde el panel
+    m_configTimer += dt;
+    if (m_configTimer >= kConfigRefresh) {
+        m_configTimer = 0.f;
+        m_world.configure(readConfig());
+        auto win = CCDirector::get()->getWinSize();
+        bool removeCeiling = Mod::get()->getSettingValue<bool>("menu-physics-remove-ceiling");
+        float height = win.height;
+        if (removeCeiling) height *= 50.f;
+        m_world.setBounds(CCRect{0.f, 0.f, win.width, height});
+    }
+
     m_world.step(dt);
     m_world.syncNodes();
 }
@@ -145,6 +177,8 @@ void MenuPhysicsNode::detach() {
         if (!o.node || !o.node->getParent()) continue;
         o.returnStartPos = o.node->getPosition();
         o.returnStartRotation = o.node->getRotation();
+        o.returnStartScaleX = o.node->getScaleX();
+        o.returnStartScaleY = o.node->getScaleY();
         hasAnimatedNodes = true;
     }
 
@@ -152,32 +186,42 @@ void MenuPhysicsNode::detach() {
         finishDetach();
         return;
     }
-
 }
 
 void MenuPhysicsNode::updateReturnAnimation(float dt) {
-m_returnElapsed += std::clamp(dt, 0.f, 1.f / 30.f);
+    m_returnElapsed += std::clamp(dt, 0.f, 1.f / 30.f);
     float const t = std::clamp(m_returnElapsed / kReturnDuration, 0.f, 1.f);
-    float const eased = 0.5f - 0.5f * std::cos(kPi * t);
+    float const easePos = 1.f - std::pow(1.f - t, 3.f);
+    float const easeRot = 1.f - std::pow(1.f - t, 2.5f);
 
     for (auto& o : m_originals) {
         if (!o.node || !o.node->getParent()) continue;
 
-        o.node->setPosition(o.returnStartPos + (o.pos - o.returnStartPos) * eased);
+        o.node->setPosition(o.returnStartPos + (o.pos - o.returnStartPos) * easePos);
+
         float const rotationDelta = std::remainder(
             o.rotation - o.returnStartRotation, 360.f
         );
-        o.node->setRotation(o.returnStartRotation + rotationDelta * eased);
+        // Overshoot de giro al reacomodarse
+        float overshoot = (t < 0.85f) ? std::sin(t * kPi) * 8.f * (1.f - t) : 0.f;
+        o.node->setRotation(o.returnStartRotation + rotationDelta * easeRot + overshoot);
+
+        float sx = o.returnStartScaleX + (o.scaleX - o.returnStartScaleX) * easePos;
+        float sy = o.returnStartScaleY + (o.scaleY - o.returnStartScaleY) * easePos;
+        o.node->setScaleX(sx);
+        o.node->setScaleY(sy);
     }
 
     if (t >= 1.f) finishDetach();
 }
 
 void MenuPhysicsNode::finishDetach() {
-for (auto& o : m_originals) {
+    for (auto& o : m_originals) {
         if (!o.node || !o.node->getParent()) continue;
         o.node->setPosition(o.pos);
         o.node->setRotation(o.rotation);
+        o.node->setScaleX(o.scaleX);
+        o.node->setScaleY(o.scaleY);
     }
     m_originals.clear();
     this->removeFromParent();

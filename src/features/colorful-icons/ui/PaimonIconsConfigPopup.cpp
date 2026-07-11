@@ -6,6 +6,7 @@
 #include "../services/IconLockStyler.hpp"
 
 #include <Geode/Geode.hpp>
+#include <Geode/ui/PopupManager.hpp>
 
 #include <algorithm>
 #include <array>
@@ -357,14 +358,14 @@ void PaimonIconsConfigPopup::buildHeader() {
     spr->setScale(0.5f);
     auto* btn = CCMenuItemExt::createSpriteExtra(spr,
         [self = WeakRef<PaimonIconsConfigPopup>(this)](CCMenuItemSpriteExtra*) {
-            geode::createQuickPopup("Reset",
+            PopupManager::get().quickPopup("Reset",
                 "Volver <cy>Paimon Icons</c> a sus valores por defecto?",
                 "Cancelar", "Reset",
                 [self](FLAlertLayer*, bool yes) {
                     if (!yes) return;
                     IconConfigStore::get().resetToDefaults();
                     if (auto p = self.lock()) p->switchTab(p->m_tab);
-                });
+                }).showInstant();
         });
     if (m_buttonMenu) {
         m_buttonMenu->addChildAtPosition(btn, Anchor::TopLeft, {52.f, -26.f});

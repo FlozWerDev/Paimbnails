@@ -34,8 +34,12 @@ private:
         geode::Ref<cocos2d::CCNode> node;
         cocos2d::CCPoint pos;
         float rotation = 0.f;
+        float scaleX = 1.f;
+        float scaleY = 1.f;
         cocos2d::CCPoint returnStartPos;
         float returnStartRotation = 0.f;
+        float returnStartScaleX = 1.f;
+        float returnStartScaleY = 1.f;
     };
 
     PhysicsWorld m_world;
@@ -45,6 +49,7 @@ private:
     float m_returnElapsed = 0.f;
     cocos2d::CCPoint m_touchStart {0.f, 0.f};
     bool m_dragMoved = false;
+    float m_configTimer = 0.f;
 };
 
 } // namespace paimon::menuphysics

@@ -1,4 +1,4 @@
-﻿#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include "../layers/PaimonSupportLayer.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"

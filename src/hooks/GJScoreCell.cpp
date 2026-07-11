@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/GJScoreCell.hpp>
+#include <Geode/modify/GJScoreCell.hpp>
 #include <Geode/binding/GJUserScore.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/cocos.hpp>

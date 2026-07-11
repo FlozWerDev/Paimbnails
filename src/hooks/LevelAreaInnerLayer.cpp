@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/LevelAreaInnerLayer.hpp>
+#include <Geode/modify/LevelAreaInnerLayer.hpp>
 #include "../utils/DynamicPopupRegistry.hpp"
 #include <Geode/modify/FLAlertLayer.hpp>
 #include <Geode/utils/cocos.hpp>

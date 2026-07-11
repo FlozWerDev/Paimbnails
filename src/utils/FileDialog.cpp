@@ -1,4 +1,4 @@
-﻿#include "FileDialog.hpp"
+#include "FileDialog.hpp"
 
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/general.hpp>

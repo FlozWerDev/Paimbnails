@@ -1,4 +1,4 @@
-﻿#include "ScrollKeybindsPopup.hpp"
+#include "ScrollKeybindsPopup.hpp"
 #include "ExtendedKeybindEditPopup.hpp"
 
 #include "../../../utils/ExtendedKeybind.hpp"

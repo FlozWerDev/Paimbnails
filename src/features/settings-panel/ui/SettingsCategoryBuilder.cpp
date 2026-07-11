@@ -1,4 +1,4 @@
-﻿#include "SettingsCategoryBuilder.hpp"
+#include "SettingsCategoryBuilder.hpp"
 #include "SettingsControls.hpp"
 #include "../services/SettingsPanelManager.hpp"
 #include "../../../core/Settings.hpp"
@@ -15,6 +15,9 @@
 #include "../../../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../../../features/discord-presence/ui/DiscordConfigPopup.hpp"
 #include "../../../features/discord-presence/services/DiscordPresenceManager.hpp"
+#include "../../../features/menu-physics/services/MenuPhysicsManager.hpp"
+#include "../../../features/editor-suite/EditorModule.hpp"
+#include "../../../features/editor-suite/EditorModuleCatalog.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 
 #include <Geode/Geode.hpp>
@@ -793,10 +796,14 @@ void buildMenuPhysics(CCNode* c, float w) {
 
     c->addChild(createToggleRow("Enable Menu Physics",
         gset<bool>("menu-physics-enable"),
-        [](bool v){ sset<bool>("menu-physics-enable", v); },
+        [](bool v){
+            sset<bool>("menu-physics-enable", v);
+            if (v) paimon::menuphysics::MenuPhysicsManager::get().applyToCurrentScene();
+            else   paimon::menuphysics::MenuPhysicsManager::get().clearFromCurrentScene();
+        },
         w));
 
-    c->addChild(createSectionHeader("Tuning", w));
+    c->addChild(createSectionHeader("Motion", w));
 
     c->addChild(createSliderRow("Gravity",
         static_cast<float>(gset<double>("menu-physics-gravity")),
@@ -810,11 +817,13 @@ void buildMenuPhysics(CCNode* c, float w) {
         [](float v){ sset<double>("menu-physics-bounciness", static_cast<double>(v)); },
         w));
 
-    c->addChild(createSliderRow("Friction",
+    c->addChild(createSliderRow("Friction / Roll",
         static_cast<float>(gset<double>("menu-physics-friction")),
         0.f, 1.f,
         [](float v){ sset<double>("menu-physics-friction", static_cast<double>(v)); },
         w));
+
+    c->addChild(createSectionHeader("Spin & Air", w));
 
     c->addChild(createSliderRow("Air Drag",
         static_cast<float>(gset<double>("menu-physics-air-drag")),
@@ -833,6 +842,8 @@ void buildMenuPhysics(CCNode* c, float w) {
         0.f, 2.f,
         [](float v){ sset<double>("menu-physics-push-power", static_cast<double>(v)); },
         w));
+
+    c->addChild(createSectionHeader("Extras", w));
 
     c->addChild(createToggleRow("Mass By Size",
         gset<bool>("menu-physics-mass-by-size"),
@@ -939,6 +950,44 @@ void buildSongSearch(CCNode* c, float w) {
 
 namespace paimon::settings_ui {
 
+void buildEditorSuite(CCNode* c, float w) {
+    c->addChild(createSectionHeader("Paimon Editor Suite", w));
+    c->addChild(createToggleRow(
+        "Suite Master",
+        gset<bool>("editor-suite-enable"),
+        [](bool v) { sset<bool>("editor-suite-enable", v); },
+        w
+    ));
+
+    std::string lastCat;
+    for (auto const& m : paimon::editor::getEditorModuleCatalog()) {
+        if (std::string(m.key) == "editor-suite-enable") continue;
+        if (lastCat != m.category) {
+            lastCat = m.category;
+            c->addChild(createSectionHeader(m.category, w));
+        }
+        std::string key = m.key;
+        bool cur = false;
+        if (Mod::get()->hasSetting(key)) {
+            cur = Mod::get()->getSettingValue<bool>(key);
+        }
+        c->addChild(createToggleRow(
+            m.name,
+            cur,
+            [key](bool v) {
+                if (Mod::get()->hasSetting(key)) {
+                    Mod::get()->setSettingValue<bool>(key, v);
+                }
+            },
+            w
+        ));
+    }
+
+    c->addChild(createLinkRow("Open All Geode Editor Settings",
+        []() { openNativeModSettingsPopup(); },
+        w));
+}
+
 std::vector<SettingsGroup> const& getAllGroups() {
     static std::vector<SettingsGroup> s_groups = {
         { "general", "General", {
@@ -974,6 +1023,9 @@ std::vector<SettingsGroup> const& getAllGroups() {
             { "autopreview",     "Auto Previews",    buildAutoPreview     },
             { "texturestudio",   "Texture Studio",   buildTextureStudio   },
             { "songsearch",      "Song Search",      buildSongSearch      },
+        }},
+        { "editor", "Editor Suite", {
+            { "editorsuite", "Modules", buildEditorSuite },
         }},
         { "discord", "Discord", {
             { "discord", "Rich Presence", buildDiscord },

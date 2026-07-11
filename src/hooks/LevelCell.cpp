@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/LevelCell.hpp>
+#include <Geode/modify/LevelCell.hpp>
 #include <Geode/binding/BoomListView.hpp>
 #include <Geode/binding/DailyLevelNode.hpp>
 #include <Geode/binding/LevelBrowserLayer.hpp>
@@ -18,6 +18,7 @@
 #include <utility>
 #include <unordered_set>
 #include "../core/Settings.hpp"
+#include "../utils/Debug.hpp"
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
@@ -845,9 +846,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                  pss->setID("paimon-shader-sprite"_spr);
             }
             
-            std::string bgType = Mod::get()->getSavedValue<std::string>("levelcell-background-type", "thumbnail");
-
-            // Effects handled in updateCenterAnimation
+            // Effects handled in updateCenterAnimation (settings cached elsewhere)
         }
         return sprite;
     }
@@ -856,7 +855,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         auto fields = m_fields.self();
         if (!fields) return;
         cacheSettings();
-        log::debug("[LevelCell] setupClippingAndSeparator: entering");
+        PaimonDebug::log("[LevelCell] setupClippingAndSeparator: entering");
 
         // force full width for Daily cells
         bool isDaily = false;
@@ -907,7 +906,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_lastSpriteHoverScale = 1.0f;
         fields->m_lastSpriteHoverRotation = 0.0f;
         fields->m_lastSpriteHoverOffsetX = 0.0f;
-        log::debug("[LevelCell] setupClippingAndSeparator: coverScale={:.4f} clipPos=({:.1f},{:.1f}) thumbPos=({:.1f},{:.1f})",
+        PaimonDebug::log("[LevelCell] setupClippingAndSeparator: coverScale={:.4f} clipPos=({:.1f},{:.1f}) thumbPos=({:.1f},{:.1f})",
             coverScale, clippingNode->getPosition().x, clippingNode->getPosition().y, sprite->getPosition().x, sprite->getPosition().y);
         
         fields->m_clippingNode = clippingNode;
@@ -961,7 +960,9 @@ class $modify(PaimonLevelCell, LevelCell) {
                      bgLayer->setOpacity(0);
                  }
              }
-             float blurIntensity = static_cast<float>(Mod::get()->getSavedValue<double>("levelcell-background-blur", 3.0));
+             float blurIntensity = fields && fields->m_settingsCached
+                 ? fields->m_cachedBackgroundBlur
+                 : static_cast<float>(Mod::get()->getSavedValue<double>("levelcell-background-blur", 3.0));
              bool hasGifBackground = ThumbnailLoader::get().hasGIFData(levelID);
              std::string gifPath = hasGifBackground
                  ? geode::utils::string::pathToString(ThumbnailLoader::get().getCachePath(levelID, true))
@@ -1026,8 +1027,10 @@ class $modify(PaimonLevelCell, LevelCell) {
                      mediaSprite->setID("paimon-level-background"_spr);
                      clipper->addChild(mediaSprite);
                      fields->m_gradientLayer = mediaSprite;
+                     fields->m_gradientIsPSG = false; // thumbnail/media sprite, not animated PSG
                  } else {
                      fields->m_gradientLayer = nullptr;
+                     fields->m_gradientIsPSG = false;
                  }
 
                  attachOverlay(clipper);
@@ -1094,6 +1097,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                          blurred->setID("paimon-level-background"_spr);
                          clipper->addChild(blurred);
                          fields2->m_gradientLayer = blurred;
+                         fields2->m_gradientIsPSG = false; // blur result is not PaimonShaderGradient
                      });
              };
 
@@ -1194,7 +1198,7 @@ class $modify(PaimonLevelCell, LevelCell) {
     void setupGradient(CCNode* bg, int levelID, CCTexture2D* texture) {
         auto fields = m_fields.self();
         Ref<CCNode> safeBg = bg; // Retain bg for async callbacks to avoid dangling pointer
-        log::debug("[LevelCell] setupGradient: levelID={} hasTexture={}", levelID, texture != nullptr);
+        PaimonDebug::log("[LevelCell] setupGradient: levelID={} hasTexture={}", levelID, texture != nullptr);
 
         // Clean up previous background nodes
         if (auto children = bg->getChildren()) {
@@ -1212,12 +1216,11 @@ class $modify(PaimonLevelCell, LevelCell) {
             for (auto node : toRemove) node->removeFromParent();
         }
         fields->m_gradientLayer = nullptr;
+        fields->m_gradientIsPSG = false;
 
         cacheSettings();
         PaimonBgType bgType = fields->m_cachedBgType;
-
-        // Read transparent mode directly (don't rely only on the cache)
-        bool transparentMode = Mod::get()->getSavedValue<bool>("transparent-list-mode", false);
+        bool transparentMode = fields->m_cachedTransparentMode;
 
         if (bgType == PaimonBgType::Thumbnail && texture) {
             setupThumbnailBackground(bg, levelID, texture, transparentMode);
@@ -1917,6 +1920,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                             nullptr
                         ));
                         fields2->m_gradientLayer = newBgSprite;
+                        fields2->m_gradientIsPSG = false; // gallery bg swap uses plain/blur sprite
                     });
             }
         }
@@ -2345,13 +2349,17 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (fields->m_gradientLayer) {
             if (!fields->m_gradientLayer->getParent()) {
                 fields->m_gradientLayer = nullptr;
+                fields->m_gradientIsPSG = false;
             } else {
                 if (auto pair = LevelColors::get().getPair(levelID)) {
                     fields->m_gradientColorA = pair->a;
                     fields->m_gradientColorB = pair->b;
                     if (auto grad = typeinfo_cast<PaimonShaderGradient*>(static_cast<CCSprite*>(fields->m_gradientLayer))) {
+                        fields->m_gradientIsPSG = true;
                         grad->setStartColor(pair->a);
                         grad->setEndColor(pair->b);
+                    } else {
+                        fields->m_gradientIsPSG = false;
                     }
                 }
             }
@@ -2472,6 +2480,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (popupSettingsVer != fields->m_loadedPopupSettingsVersion) {
             fields->m_loadedPopupSettingsVersion = popupSettingsVer;
             fields->m_settingsCached = false;
+            cacheSettings();
 
             bool const newCompact = shouldUseCompactForLevel(m_level);
             if (newCompact != fields->m_cachedCompactMode) {
@@ -2492,9 +2501,53 @@ class $modify(PaimonLevelCell, LevelCell) {
                         break;
                     }
                 }
+                return;
             }
 
-            if (fields->m_thumbnailApplied && m_level) {
+            // Live re-apply visual settings without a network re-request.
+            // tryLoadThumbnail() short-circuits via tryReuseAppliedThumbnail()
+            // when the sprite is still mounted, so blur/darkness/separator/
+            // thumb-width changes never reached the cell before.
+            if (m_level && m_backgroundLayer) {
+                CCTexture2D* tex = fields->m_staticTexture.data();
+                if (!tex && fields->m_thumbSprite) {
+                    tex = fields->m_thumbSprite->getTexture();
+                }
+                if (tex) {
+                    Ref<CCTexture2D> keepTex = tex;
+                    auto* bg = m_backgroundLayer;
+                    int32_t levelID = m_level->m_levelID.value();
+
+                    cleanPaimonNodes(bg);
+                    bg->setZOrder(-2);
+
+                    CCSprite* sprite = createThumbnailSprite(keepTex.data());
+                    if (sprite) {
+                        setupClippingAndSeparator(bg, sprite);
+                        fields->m_cellLevelID = levelID;
+                        fields->m_staticTexture = keepTex;
+                        fields->m_thumbnailApplied = true;
+                        fields->m_thumbnailRequested = true;
+                        fields->m_thumbnailFailed = false;
+
+                        // Rebuild bg blur / darkness / gradient + particles
+                        // immediately so slider drags show live results.
+                        setupGradient(bg, levelID, keepTex.data());
+                        setupMythicParticles(bg, levelID);
+
+                        // Re-scan view button (hides when OFF). Restoring the
+                        // vanilla button when ON needs a list refresh from the
+                        // settings popup (handled there).
+                        fields->m_viewOverlay = nullptr;
+                        findAndSetupViewButton();
+
+                        applyTransparentMode();
+                        refreshRuntimeScheduling();
+                        return;
+                    }
+                }
+
+                // No texture yet: fall back to the normal load pipeline.
                 resetThumbnailRequestFlags();
                 tryLoadThumbnail();
                 return;
@@ -2540,11 +2593,22 @@ class $modify(PaimonLevelCell, LevelCell) {
         // next loadFromLevel.
         ensureInvalidationListener();
 
+        // A ProfilePage's level cell is usually loaded while still parentless, so
+        // the initial compact decision missed the profile context. Now that it's
+        // in the tree, force compact once if needed.
+        if (m_level && !m_compactView && isInsideProfilePageContext()) {
+            if (m_cellMode == 0) {
+                this->loadFromLevel(m_level);
+            } else {
+                this->loadCustomLevelCell();
+            }
+        }
+
         refreshRuntimeScheduling();
     }
 
     $override void onExit() {
-        log::debug("[LevelCell] onExit: levelID={}", m_level ? m_level->m_levelID.value() : 0);
+        PaimonDebug::log("[LevelCell] onExit: levelID={}", m_level ? m_level->m_levelID.value() : 0);
         bool realtimePreviewCell = isInsideRealtimeSearchPreviewContext();
 
         // Stop animations (avoid heavy work in the destructor)
@@ -2711,9 +2775,16 @@ class $modify(PaimonLevelCell, LevelCell) {
         {
             auto fields = m_fields.self();
             if (!fields || fields->m_isBeingDestroyed || !fields->m_gradientLayer) return;
-            
-            auto grad = typeinfo_cast<PaimonShaderGradient*>(static_cast<CCSprite*>(fields->m_gradientLayer));
-            if (!grad) return;
+            // Fast path: non-PSG backgrounds never animate; skip RTTI entirely.
+            // Flag is kept in sync on every m_gradientLayer assign/null site.
+            if (!fields->m_gradientIsPSG) return;
+
+            // Defensive: if a future path leaves a stale true flag, heal instead of UB.
+            auto* grad = typeinfo_cast<PaimonShaderGradient*>(static_cast<CCSprite*>(fields->m_gradientLayer));
+            if (!grad) {
+                fields->m_gradientIsPSG = false;
+                return;
+            }
 
             fields->m_gradientTime += dt;
             float t = (sinf(fields->m_gradientTime * 1.2f) + 1.0f) / 2.0f;
@@ -3210,7 +3281,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_thumbnailApplied = true;
         }
         fields->m_thumbnailRequested = true;
-        log::debug("[LevelCell] tryLoadThumbnail: thumbnail still on-screen for levelID={}, skipping re-request", levelID);
+        PaimonDebug::log("[LevelCell] tryLoadThumbnail: thumbnail still on-screen for levelID={}, skipping re-request", levelID);
         refreshRuntimeScheduling();
         if (fields->m_galleryRequested && fields->m_galleryThumbnails.size() > 1) {
             scheduleDeferredGalleryPrefetch();
@@ -3266,7 +3337,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
         fields->m_galleryRequested = true;
         int const galleryToken = ++fields->m_galleryToken;
-        log::debug("[LevelCell] tryLoadThumbnail: requesting gallery for levelID={} token={}", levelID, galleryToken);
+        PaimonDebug::log("[LevelCell] tryLoadThumbnail: requesting gallery for levelID={} token={}", levelID, galleryToken);
         WeakRef<PaimonLevelCell> safeGalleryRef = this;
         auto cancelToken = fields->m_asyncCancelToken;
 
@@ -3299,7 +3370,7 @@ class $modify(PaimonLevelCell, LevelCell) {
     void requestStaticThumbnailLoad(int32_t levelID, int currentRequestId, bool enableSpinners, bool isOnScreen) {
         auto fields = m_fields.self();
         if (enableSpinners) showLoadingSpinner();
-        log::debug("[LevelCell] tryLoadThumbnail: requesting load levelID={} requestId={}", levelID, currentRequestId);
+        PaimonDebug::log("[LevelCell] tryLoadThumbnail: requesting load levelID={} requestId={}", levelID, currentRequestId);
 
         paimon::thumbnails::levelcell::StaticThumbRequest req{
             .levelID = levelID,
@@ -3343,7 +3414,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                     cell->applyStaticThumbnailTexture(levelID, currentRequestId, nullptr, enableSpinners);
                     return;
                 }
-                log::debug("[LevelCell] tryLoadThumbnail: texture loaded OK levelID={}", levelID);
+                PaimonDebug::log("[LevelCell] tryLoadThumbnail: texture loaded OK levelID={}", levelID);
                 if (auto f = cell->m_fields.self()) {
                     f->m_hasGif = ThumbnailLoader::get().hasGIFData(levelID);
                 }
@@ -3506,15 +3577,20 @@ class $modify(PaimonLevelCell, LevelCell) {
         // thumbnail, apply it here.
         auto fields = m_fields.self();
         if (!fields) return;
-        bool transparentMode = Mod::get()->getSavedValue<bool>("transparent-list-mode", false);
-        if (!transparentMode) return;
+        // Prefer the per-cell settings snapshot (refreshed via cacheSettings /
+        // settings version); avoid Mod save-table lookups on the maintenance tick.
+        if (!fields->m_settingsCached) cacheSettings();
+        if (!fields->m_cachedTransparentMode) return;
 
         if (auto bg = m_backgroundLayer) {
             // Save contentSize before hiding
             auto size = bg->getContentSize();
+            // Already collapsed by a prior apply — skip the layout churn.
+            if (size.width <= 0.f && size.height <= 0.f) return;
+            // changeWidthAndHeight zeros the drawable; restore contentSize for children.
+            auto keep = size;
             bg->changeWidthAndHeight(0.f, 0.f);
-            // Restore contentSize so children position correctly
-            bg->setContentSize(size);
+            bg->setContentSize(keep);
         }
     }
 
@@ -3577,6 +3653,20 @@ class $modify(PaimonLevelCell, LevelCell) {
         return false;
     }
 
+    // The level cell shown inside a user's ProfilePage is always rendered
+    // compact, regardless of the global compact setting. Detection is scoped to
+    // the cell's own ancestor chain so it never affects cells in other layers.
+    bool isInsideProfilePageContext() {
+        CCNode* parent = this->getParent();
+        for (int depth = 0; parent && depth < 24; ++depth, parent = parent->getParent()) {
+            std::string_view className(typeid(*parent).name());
+            if (className.find("ProfilePage") != std::string_view::npos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool isInsideRealtimeSearchPreviewContext() {
         if (paimon::hooks::g_forceCompactLevelCells) {
             return true;
@@ -3597,6 +3687,11 @@ class $modify(PaimonLevelCell, LevelCell) {
 
     bool shouldUseCompactForLevel(GJGameLevel* level) {
         if (paimon::hooks::g_forceCompactLevelCells) {
+            return true;
+        }
+
+        // Always compact inside a ProfilePage, ignoring the global setting.
+        if (isInsideProfilePageContext()) {
             return true;
         }
 
@@ -3667,7 +3762,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             applyCompactLayoutAdjustments();
         }
         applyTransparentMode();
-        log::debug("[LevelCell] loadCustomLevelCell levelID={} compact={}", m_level ? m_level->m_levelID.value() : 0, m_compactView);
+        PaimonDebug::log("[LevelCell] loadCustomLevelCell levelID={} compact={}", m_level ? m_level->m_levelID.value() : 0, m_compactView);
         tryLoadThumbnail();
     }
 
@@ -3708,7 +3803,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             return;
         }
         applyTransparentMode();
-        log::debug("[LevelCell] loadFromLevel levelID={} compact={}", level ? level->m_levelID.value() : 0, m_compactView);
+        PaimonDebug::log("[LevelCell] loadFromLevel levelID={} compact={}", level ? level->m_levelID.value() : 0, m_compactView);
         tryLoadThumbnail();
     }
 

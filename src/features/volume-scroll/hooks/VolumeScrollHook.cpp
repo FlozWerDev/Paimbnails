@@ -1,4 +1,4 @@
-﻿#include "../services/VolumeScrollManager.hpp"
+#include "../services/VolumeScrollManager.hpp"
 #include "../../../utils/ExtendedKeybind.hpp"
 
 #include <Geode/Geode.hpp>

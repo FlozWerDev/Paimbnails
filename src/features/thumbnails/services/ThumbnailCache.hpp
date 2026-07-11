@@ -80,6 +80,10 @@ public:
     };
 
     std::optional<geode::Ref<cocos2d::CCTexture2D>> getFromRam(int levelID, bool isGif);
+    // Fast presence check: level RAM map only (no URL fallback, no access touch).
+    // Not equivalent to ThumbnailLoader::isLoaded — that also treats a default-URL
+    // hit in the URL RAM cache as loaded for static thumbs.
+    bool hasInRam(int levelID, bool isGif) const;
     bool isRamEntrySuitable(int levelID, bool isGif, int requestedMaxDim) const;
     void addToRam(int levelID, bool isGif, cocos2d::CCTexture2D* texture, int version = -1, int origW = 0, int origH = 0);
     void removeFromRam(int levelID, bool isGif);
@@ -163,14 +167,14 @@ private:
     ~ThumbnailCache();
 
     static size_t estimateTextureBytes(cocos2d::CCTexture2D* tex);
-    static std::string makeRamKey(int levelID, bool isGif);
-    static std::string makeDiskKey(int levelID, bool isGif);
+    // Integer RAM key: levelID for static, -levelID for GIF (no string alloc on hit path).
+    static int makeRamKey(int levelID, bool isGif);
     static int64_t nowEpoch();
 
     void evictRamLocked();
     void evictUrlRamLocked();
 
-    std::unordered_map<std::string, RamEntry> m_ramCache;
+    std::unordered_map<int, RamEntry> m_ramCache;
     mutable std::shared_mutex m_ramMutex;
     size_t m_ramBytes = 0;
 

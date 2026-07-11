@@ -1,6 +1,7 @@
-﻿#include <Geode/modify/MenuLayer.hpp>
+#include <Geode/modify/MenuLayer.hpp>
 #include "../../../framework/HookConventions.hpp"
 #include <Geode/modify/GameManager.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <chrono>
 #include "../services/MenuLoopManager.hpp"
 #include "../services/MenuLoopControl.hpp"
@@ -95,14 +96,18 @@ class $modify(PaimonMenuLoopMenuLayer, MenuLayer) {
             sm.setColonMenuLoopStartTime(colonStartTime);
         }
 
-        // Conflict warning
+        // Conflict warning — queue so it survives MenuLayer init / transitions
         if (!s_shownWarning && sm.getVibecodedVentilla() && loader->isModLoaded("joseii.ventilla")) {
-            FLAlertLayer::create(
-                this, "Uh oh!",
+            auto popup = PopupManager::get().alert(
+                "Uh oh!",
                 "<c_>Another mod overriding the menu loop is active!</c>\n"
                 "<cy>Please check your loaded mods.</c>",
-                "I Understand", nullptr, 420.f
-            )->show();
+                "I Understand",
+                nullptr,
+                420.f
+            );
+            popup.setPriority(true);
+            popup.showQueue();
             s_shownWarning = true;
         }
 

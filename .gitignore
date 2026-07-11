@@ -28,6 +28,18 @@
 !.github/
 !.github/**
 
+# Keep the Render collaboration server (its own .gitignore excludes secrets
+# and dependencies).
+!collab-editor-render/
+!collab-editor-render/**
+
+# Keep the Cloudflare Worker source/config, but not local Wrangler state or
+# generated dry-run bundles.
+!cloudflare-server/
+cloudflare-server/*
+!cloudflare-server/paimon-thumbnails-server.js
+!cloudflare-server/wrangler.toml
+
 # Keep installer/ scripts only (not binaries)
 !installer/
 !installer/**

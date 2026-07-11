@@ -1,4 +1,4 @@
-﻿#include "YtDlpBootstrap.hpp"
+#include "YtDlpBootstrap.hpp"
 
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/WebHelper.hpp"

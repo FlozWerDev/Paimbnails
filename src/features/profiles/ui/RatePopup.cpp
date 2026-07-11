@@ -1,4 +1,4 @@
-﻿#include "RatePopup.hpp"
+#include "RatePopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"

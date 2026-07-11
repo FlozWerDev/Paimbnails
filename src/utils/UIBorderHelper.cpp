@@ -1,4 +1,4 @@
-﻿#include "UIBorderHelper.hpp"
+#include "UIBorderHelper.hpp"
 
 using namespace cocos2d;
 

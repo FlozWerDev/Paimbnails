@@ -1,4 +1,4 @@
-﻿#include "ThumbnailLoader.hpp"
+#include "ThumbnailLoader.hpp"
 #include "ThumbnailTransportClient.hpp"
 #include "LocalThumbs.hpp"
 #include "LevelColors.hpp"
@@ -16,6 +16,7 @@
 #include "../../../utils/FormatDetect.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../utils/FrameBudget.hpp"
+#include "../../../utils/UrlKeyNormalize.hpp"
 #include "../../../utils/stb_image.h"
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -34,38 +35,8 @@
 
 using namespace geode::prelude;
 
-static bool isVolatileParam(std::string_view key) {
-    return key == "_pv" || key == "_cb" || key == "ts" || key == "v" || key == "t";
-}
-
 std::string ThumbnailLoader::normalizeUrlKey(std::string const& url) {
-    size_t q = url.find('?');
-    if (q == std::string::npos) return url;
-
-    std::string_view base(url.data(), q);
-    std::string_view query(url.data() + q + 1, url.size() - q - 1);
-
-    std::string out;
-    out.reserve(url.size());
-    out.append(base);
-
-    bool first = true;
-    size_t start = 0;
-    while (start < query.size()) {
-        size_t end = query.find('&', start);
-        if (end == std::string_view::npos) end = query.size();
-
-        std::string_view pair(query.data() + start, end - start);
-        size_t eq = pair.find('=');
-        std::string_view key = (eq == std::string_view::npos) ? pair : std::string_view(pair.data(), eq);
-        if (!isVolatileParam(key)) {
-            if (first) { out.push_back('?'); first = false; }
-            else { out.push_back('&'); }
-            out.append(pair);
-        }
-        start = end + 1;
-    }
-    return out;
+    return paimon::cache::normalizeUrlKey(url);
 }
 
 ThumbnailLoader& ThumbnailLoader::get() {
@@ -557,7 +528,24 @@ void ThumbnailLoader::applyConcurrentDownloadsSetting() {
 }
 
 bool ThumbnailLoader::isLoaded(int levelID, bool isGif) const {
-    return paimon::cache::ThumbnailCache::get().getFromRam(levelID, isGif).has_value();
+    // Historical contract (GauntletLayer / ListThumbnailCarousel / LevelListLayer):
+    // a static thumb is "loaded" if it is in the level RAM map OR reachable via the
+    // default-URL entry in the URL RAM cache. hasInRam() alone is insufficient —
+    // it skips that URL fallback and would re-request already-cached gallery/main
+    // thumbs. Decision composition lives in isLevelTextureLoadedInRam (pure);
+    // getFromRam implements the URL probe (+ promote) for the static miss path.
+    auto& cache = paimon::cache::ThumbnailCache::get();
+    bool const hasLevelKey = cache.hasInRam(levelID, isGif);
+    if (hasLevelKey) {
+        return paimon::cache::isLevelTextureLoadedInRam(true, isGif, false);
+    }
+    // GIF never falls back to the URL layer.
+    if (!paimon::cache::isLevelTextureLoadedInRam(false, isGif, /*urlHit=*/true)) {
+        return false;
+    }
+    // Static miss on level key: getFromRam probes URL RAM (skips work if empty)
+    // and promotes a hit into the level map — same as pre-optimization isLoaded.
+    return cache.getFromRam(levelID, isGif).has_value();
 }
 
 cocos2d::CCTexture2D* ThumbnailLoader::tryGetCachedTexture(int levelID, bool isGif) {
@@ -610,7 +598,9 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
     int requestedMaxDim = decodeMaxDimForQuality(quality);
 
     auto ramTex = cache.getFromRam(levelID, isGif);
-    if (ramTex.has_value() && cache.isRamEntrySuitable(levelID, isGif, requestedMaxDim)) {
+    // isRamEntrySuitable re-locks; only call when we already have a hit texture.
+    if (ramTex.has_value() &&
+        (requestedMaxDim <= 0 || cache.isRamEntrySuitable(levelID, isGif, requestedMaxDim))) {
         cache.stats().ramHits.fetch_add(1, std::memory_order_relaxed);
 
         // Throttle disk LRU touch to once/min per level: avoids m_manifest.mutex

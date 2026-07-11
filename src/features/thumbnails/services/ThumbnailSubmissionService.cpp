@@ -1,4 +1,4 @@
-﻿#include "ThumbnailSubmissionService.hpp"
+#include "ThumbnailSubmissionService.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../framework/HookInterceptor.hpp"
 #include "ThumbnailLoader.hpp"

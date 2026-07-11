@@ -1,4 +1,4 @@
-﻿#include "FfmpegInstallPopup.hpp"
+#include "FfmpegInstallPopup.hpp"
 
 #include "../services/FfmpegBootstrap.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"

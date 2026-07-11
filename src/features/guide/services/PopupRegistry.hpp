@@ -39,6 +39,8 @@ enum class PopupCategory {
     QuickHub,
     Thumbnail,
     Help,
+    Editor,   // editor tools: history, filters, collab, color picker, rotate
+    Visuals,  // effects, shaders, scroll, slider, icons, textures, score cells
 };
 
 struct PopupEntry {
@@ -52,6 +54,9 @@ struct PopupEntry {
     // Aliases/synonyms the user might use that aren't in the title (e.g. "pfp" for Profile Photo Editor), per language.
     std::unordered_map<std::string, std::vector<std::string>> aliasesByLang;
 
+    // Problem / natural "how do I" phrases (softer match than names/aliases).
+    std::unordered_map<std::string, std::vector<std::string>> searchPhrasesByLang;
+
     // Short message Paimon says before taking you there, per language.
     std::unordered_map<std::string, std::string> descriptionByLang;
 
@@ -60,6 +65,15 @@ struct PopupEntry {
 
     GuideAnimation animation = GuideAnimation::Point;
 };
+
+// Stable string id for a PopupCategory (used on GuideIntent.categoryId).
+char const* categoryIdString(PopupCategory cat);
+
+// Parse a category id string back to enum (None if unknown).
+PopupCategory categoryFromId(std::string const& id);
+
+// Human label for a category in the given language.
+std::string categoryDisplayName(PopupCategory cat, std::string const& langId);
 
 class PopupRegistry {
 public:
@@ -80,6 +94,15 @@ public:
     // (falls back to english, then a prettified id). Used to name alternatives
     // in "did you mean ...?" answers.
     std::string displayNameFor(std::string const& id, std::string const& langId) const;
+
+    // Look up a full entry by id (nullptr if missing).
+    PopupEntry const* findById(std::string const& id) const;
+
+    // Entries in a category, highest weight first.
+    std::vector<PopupEntry const*> entriesInCategory(PopupCategory cat) const;
+
+    // Highest-weight entry in a category (nullptr if none).
+    PopupEntry const* categoryLead(PopupCategory cat) const;
 
 private:
     PopupRegistry();

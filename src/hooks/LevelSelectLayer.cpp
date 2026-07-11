@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/LevelSelectLayer.hpp>
+#include <Geode/modify/LevelSelectLayer.hpp>
 #include <Geode/modify/GameManager.hpp>
 #include <Geode/modify/FMODAudioEngine.hpp>
 #include <Geode/utils/cocos.hpp>

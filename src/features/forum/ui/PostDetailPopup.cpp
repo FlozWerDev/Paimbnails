@@ -1,4 +1,4 @@
-﻿#include "PostDetailPopup.hpp"
+#include "PostDetailPopup.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
@@ -6,6 +6,7 @@
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/ui/MDTextArea.hpp>
+#include <Geode/ui/General.hpp>
 #include "../../../utils/SpriteHelper.hpp"
 
 using namespace geode::prelude;
@@ -20,7 +21,10 @@ namespace {
     constexpr float POPUP_H = 320.f;
     constexpr float SCROLL_W = 430.f;
 
-    static constexpr ccColor3B kAccent = {130, 180, 255};
+    // GD vanilla list palette (matches the hub's forum/news lists)
+    constexpr ccColor4B kRowDark  = {161, 88, 44, 255};
+    constexpr ccColor4B kRowLight = {194, 114, 62, 255};
+    constexpr ccColor3B kTextSoft = {255, 235, 190};
 
     static SimplePlayer* makeAuthorIcon(Author const& a, float targetSize) {
         auto* gm = GameManager::get();
@@ -46,13 +50,9 @@ namespace {
         return player;
     }
 
+    // GD-style dark inset (square02b tinted black), like vanilla list wells.
     static CCNode* makeDarkPanel(float w, float h, GLubyte alpha = 70) {
-        return paimon::SpriteHelper::createRoundedRect(
-            w, h, 5.f,
-            {0.06f, 0.07f, 0.11f, alpha / 255.f},
-            {0.92f, 0.94f, 1.0f, 0.85f},
-            1.0f
-        );
+        return paimon::SpriteHelper::createDarkPanel(w, h, alpha);
     }
 }
 
@@ -61,21 +61,15 @@ bool PostDetailPopup::init(Post const& post, CopyableFunction<void()> onChanged)
     m_post = post;
     m_onChanged = std::move(onChanged);
 
+    // GD-style: keep the vanilla GJ_square01 popup background and gold title.
     this->setTitle(m_post.title.c_str());
-
-    if (m_bgSprite) m_bgSprite->setVisible(false);
-
-    auto popupSize = m_mainLayer->getContentSize();
-    auto darkBg = paimon::SpriteHelper::createRoundedRect(
-        popupSize.width, popupSize.height, 8.f,
-        {10/255.f, 10/255.f, 18/255.f, 245/255.f},
-        {kAccent.r/255.f, kAccent.g/255.f, kAccent.b/255.f, 130/255.f},
-        1.4f
-    );
-    if (darkBg) {
-        darkBg->setPosition({0.f, 0.f});
-        darkBg->setZOrder(-1);
-        m_mainLayer->addChild(darkBg);
+    if (m_title) {
+        float maxTitleW = POPUP_W - 90.f;
+        if (m_title->getScaledContentSize().width > maxTitleW) {
+            m_title->setScale(
+                m_title->getScale() * maxTitleW / m_title->getScaledContentSize().width
+            );
+        }
     }
 
     rebuild();
@@ -232,16 +226,15 @@ void PostDetailPopup::rebuild() {
     {
         auto repliesLbl = CCLabelBMFont::create(
             fmt::format("Replies  ({})", static_cast<int>(m_post.replies.size())).c_str(),
-            "bigFont.fnt"
+            "goldFont.fnt"
         );
-        repliesLbl->setScale(0.32f);
+        repliesLbl->setScale(0.42f);
         repliesLbl->setAnchorPoint({0.f, 0.5f});
         repliesLbl->setPosition({18.f, replyLblBot + kReplyLblH / 2.f});
-        repliesLbl->setColor({200, 210, 230});
         repliesLbl->setID("rebuild-block"_spr);
         m_mainLayer->addChild(repliesLbl);
 
-        if (auto scrollBg = makeDarkPanel(SCROLL_W, scrollH, 60)) {
+        if (auto scrollBg = makeDarkPanel(SCROLL_W, scrollH, 90)) {
             scrollBg->setPosition({(contentSize.width - SCROLL_W) / 2.f, scrollBot});
             scrollBg->setID("rebuild-block"_spr);
             m_mainLayer->addChild(scrollBg);
@@ -252,15 +245,23 @@ void PostDetailPopup::rebuild() {
         m_scroll->setID("rebuild-block"_spr);
         m_mainLayer->addChild(m_scroll, 5);
 
-        float cardGap = 5.f;
-        float cardX = 4.f;
-        float cardW = SCROLL_W - 8.f;
-        float totalH = 4.f;
+        // GD comment-list borders framing the reply list
+        if (auto borders = geode::ListBorders::create()) {
+            borders->setContentSize({SCROLL_W + 4.f, scrollH});
+            borders->setPosition({contentSize.width / 2.f, scrollBot + scrollH / 2.f});
+            borders->setID("rebuild-block"_spr);
+            m_mainLayer->addChild(borders, 6);
+        }
+
+        // vanilla list: full-width rows, no gaps, alternating browns
+        float cardW = SCROLL_W;
+        float totalH = 0.f;
         std::vector<CCNode*> cards;
+        int idx = 0;
         for (auto const& r : m_post.replies) {
-            auto card = makeReplyCard(r, cardW);
+            auto card = makeReplyCard(r, cardW, idx++);
             cards.push_back(card);
-            totalH += card->getContentSize().height + cardGap;
+            totalH += card->getContentSize().height;
         }
         if (totalH < scrollH) totalH = scrollH;
 
@@ -269,9 +270,8 @@ void PostDetailPopup::rebuild() {
         float y = totalH;
         for (auto* card : cards) {
             y -= card->getContentSize().height;
-            card->setPosition({cardX, y});
+            card->setPosition({0.f, y});
             m_scroll->m_contentLayer->addChild(card);
-            y -= cardGap;
         }
         m_scroll->scrollToTop();
 
@@ -279,7 +279,7 @@ void PostDetailPopup::rebuild() {
             auto empty = CCLabelBMFont::create(
                 "No replies yet — be the first to chime in!", "bigFont.fnt");
             empty->setScale(0.32f);
-            empty->setColor({150, 150, 170});
+            empty->setColor(kTextSoft);
             empty->setPosition({SCROLL_W / 2.f, scrollH / 2.f});
             m_scroll->m_contentLayer->addChild(empty);
         }
@@ -366,7 +366,7 @@ CCNode* PostDetailPopup::makeAuthorRow(Author const& author, int64_t when, float
         "chatFont.fnt"
     );
     dateLbl->setScale(0.46f);
-    dateLbl->setColor({170, 180, 210});
+    dateLbl->setColor(kTextSoft);
     dateLbl->setAnchorPoint({0.f, 0.5f});
     dateLbl->setPosition({nameX, h / 2.f - 8.f});
     row->addChild(dateLbl);
@@ -376,7 +376,8 @@ CCNode* PostDetailPopup::makeAuthorRow(Author const& author, int64_t when, float
         "chatFont.fnt"
     );
     absLbl->setScale(0.42f);
-    absLbl->setColor({130, 140, 160});
+    absLbl->setColor(kTextSoft);
+    absLbl->setOpacity(180);
     absLbl->setAnchorPoint({1.f, 0.5f});
     absLbl->setPosition({w - 4.f, h / 2.f});
     row->addChild(absLbl);
@@ -384,7 +385,7 @@ CCNode* PostDetailPopup::makeAuthorRow(Author const& author, int64_t when, float
     return row;
 }
 
-CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w) {
+CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w, int index) {
     constexpr float kRow1   = 22.f;
     constexpr float kRow2   = 26.f;
     constexpr float kRow3   = 24.f;
@@ -400,17 +401,25 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w) {
     int myId = acc ? acc->m_accountID : 0;
     bool isMine = myId > 0 && myId == r.author.accountID;
 
-    auto bg = paimon::SpriteHelper::createRoundedRect(
-        w, h, 5.f,
-        {0.06f, 0.07f, 0.12f, 0.95f},
-        isMine
-            ? cocos2d::ccColor4F{0.55f, 0.95f, 0.55f, 0.95f}
-            : cocos2d::ccColor4F{0.92f, 0.94f, 1.0f, 0.85f},
-        1.0f
-    );
-    if (bg) {
-        bg->setPosition({0.f, 0.f});
-        card->addChild(bg, 0);
+    // vanilla GD list row: alternating browns + hairline separator
+    auto bg = CCLayerColor::create(index % 2 == 0 ? kRowLight : kRowDark);
+    bg->setContentSize({w, h});
+    bg->setPosition({0.f, 0.f});
+    card->addChild(bg, 0);
+
+    if (index > 0) {
+        auto line = CCLayerColor::create({0, 0, 0, 60});
+        line->setContentSize({w, 1.f});
+        line->setPosition({0.f, h - 1.f});
+        card->addChild(line, 3);
+    }
+
+    // green edge marker on your own replies
+    if (isMine) {
+        auto marker = CCLayerColor::create({140, 255, 140, 200});
+        marker->setContentSize({3.f, h});
+        marker->setPosition({0.f, 0.f});
+        card->addChild(marker, 3);
     }
 
     float row1Y = h - kPad - kRow1 / 2.f;
@@ -440,7 +449,7 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w) {
 
     auto when = CCLabelBMFont::create(paimon::forum::formatRelativeTime(r.createdAt).c_str(), "chatFont.fnt");
     when->setScale(0.42f);
-    when->setColor({150, 160, 185});
+    when->setColor(kTextSoft);
     when->setAnchorPoint({1.f, 0.5f});
     when->setPosition({w - 10.f, row1Y});
     card->addChild(when);
@@ -450,7 +459,7 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w) {
     if (preview.size() > 130) preview = preview.substr(0, 127) + "...";
     auto content = CCLabelBMFont::create(preview.empty() ? " " : preview.c_str(), "chatFont.fnt");
     content->setScale(0.55f);
-    content->setColor({230, 235, 245});
+    content->setColor({255, 250, 240});
     content->setAnchorPoint({0.f, 0.5f});
     content->setPosition({10.f, row2Y});
     if (content->getScaledContentSize().width > w - 20.f) {

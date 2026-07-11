@@ -1,4 +1,4 @@
-﻿#include "CaptureLayerEditorPopup.hpp"
+#include "CaptureLayerEditorPopup.hpp"
 #include "../services/CaptureVisibilityState.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"

@@ -1,4 +1,4 @@
-﻿#include "ProfileReviewsPopup.hpp"
+#include "ProfileReviewsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"

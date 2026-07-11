@@ -1,57 +1,124 @@
-﻿#include "SetDailyWeeklyPopup.hpp"
+#include "SetDailyWeeklyPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/FLAlertLayer.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/utils/web.hpp>
 
 using namespace geode::prelude;
 
 bool SetDailyWeeklyPopup::init(int levelID) {
     m_levelID = levelID;
-    
-    if (!Popup::init(300.f, 220.f)) return false;
 
-    this->setTitle("Set Daily/Weekly");
+    if (!Popup::init(320.f, 240.f)) return false;
+
+    this->setTitle("Set Daily / Weekly");
+    auto size = m_mainLayer->getContentSize();
+
+    // Subtitle with the target level ID.
+    auto subtitle = CCLabelBMFont::create(
+        fmt::format("Level ID: {}", levelID).c_str(), "chatFont.fnt"
+    );
+    subtitle->setScale(0.5f);
+    subtitle->setOpacity(160);
+    subtitle->setPosition({ size.width / 2.f, size.height - 38.f });
+    m_mainLayer->addChild(subtitle);
+
+    constexpr float cardW = 260.f;
+    constexpr float cardH = 46.f;
+
+    // Builds a full-width card button: tinted panel, icon badge, title + hint.
+    auto makeCard = [&](
+        const char* iconFrame, const char* fallbackFrame,
+        const char* label, const char* hint,
+        ccColor3B tint, SEL_MenuHandler sel, std::string const& id
+    ) {
+        auto content = CCNode::create();
+        content->setContentSize({ cardW, cardH });
+        content->setAnchorPoint({ 0.5f, 0.5f });
+
+        auto bg = CCScale9Sprite::create("GJ_square02.png");
+        if (!bg) bg = CCScale9Sprite::create("square02b_001.png");
+        bg->setContentSize({ cardW, cardH });
+        bg->setPosition({ cardW / 2.f, cardH / 2.f });
+        bg->setColor(tint);
+        content->addChild(bg);
+
+        // Dark badge holding the action icon.
+        auto badge = CCScale9Sprite::create("GJ_square05.png");
+        if (badge) {
+            badge->setContentSize({ 34.f, 34.f });
+            badge->setPosition({ 8.f + 17.f, cardH / 2.f });
+            badge->setColor({ 0, 0, 0 });
+            badge->setOpacity(110);
+            content->addChild(badge);
+        }
+
+        auto icon = paimon::SpriteHelper::safeCreateWithFrameName(iconFrame);
+        if (!icon && fallbackFrame)
+            icon = paimon::SpriteHelper::safeCreateWithFrameName(fallbackFrame);
+        if (icon) {
+            float maxSide = std::max(icon->getContentWidth(), icon->getContentHeight());
+            if (maxSide > 0.f) icon->setScale(26.f / maxSide);
+            icon->setPosition({ 8.f + 17.f, cardH / 2.f });
+            content->addChild(icon);
+        }
+
+        auto titleLbl = CCLabelBMFont::create(label, "goldFont.fnt");
+        titleLbl->setScale(0.6f);
+        titleLbl->setAnchorPoint({ 0.f, 0.5f });
+        titleLbl->setPosition({ 52.f, cardH / 2.f + 9.f });
+        content->addChild(titleLbl);
+
+        auto hintLbl = CCLabelBMFont::create(hint, "chatFont.fnt");
+        hintLbl->setScale(0.45f);
+        hintLbl->setOpacity(180);
+        hintLbl->setAnchorPoint({ 0.f, 0.5f });
+        hintLbl->setPosition({ 52.f, cardH / 2.f - 9.f });
+        content->addChild(hintLbl);
+
+        auto btn = CCMenuItemSpriteExtra::create(content, this, sel);
+        btn->setID(id);
+        return btn;
+    };
 
     auto actionMenu = CCMenu::create();
-    actionMenu->setPosition(this->getContentSize() / 2);
-    actionMenu->setContentSize({ 200.f, 160.f });
+    actionMenu->setPosition({ size.width / 2.f, size.height / 2.f - 20.f });
+    actionMenu->setContentSize({ cardW, 3 * cardH + 2 * 10.f });
     actionMenu->ignoreAnchorPointForPosition(false);
-    
     actionMenu->setLayout(
         ColumnLayout::create()
             ->setGap(10.f)
             ->setAxisReverse(true)
     );
-    
-    this->addChild(actionMenu);
+    m_mainLayer->addChild(actionMenu);
 
-    auto dailyBtn = CCMenuItemSpriteExtra::create(
-        ButtonSprite::create("Set Daily", 0, false, "goldFont.fnt", "GJ_button_01.png", 0, 1.0f),
-        this,
-        menu_selector(SetDailyWeeklyPopup::onSetDaily)
-    );
-    dailyBtn->setID("set-daily-btn"_spr);
-    actionMenu->addChild(dailyBtn);
+    actionMenu->addChild(makeCard(
+        "GJ_timeIcon_001.png", "GJ_starsIcon_001.png",
+        "Set Daily", "Feature this level as the Daily",
+        { 110, 200, 110 },
+        menu_selector(SetDailyWeeklyPopup::onSetDaily),
+        "set-daily-btn"_spr
+    ));
 
-    auto weeklyBtn = CCMenuItemSpriteExtra::create(
-        ButtonSprite::create("Set Weekly", 0, false, "goldFont.fnt", "GJ_button_01.png", 0, 1.0f),
-        this,
-        menu_selector(SetDailyWeeklyPopup::onSetWeekly)
-    );
-    weeklyBtn->setID("set-weekly-btn"_spr);
-    actionMenu->addChild(weeklyBtn);
-    
-    auto unsetBtn = CCMenuItemSpriteExtra::create(
-        ButtonSprite::create("Unset", 0, false, "goldFont.fnt", "GJ_button_06.png", 0, 1.0f),
-        this,
-        menu_selector(SetDailyWeeklyPopup::onUnset)
-    );
-    unsetBtn->setID("unset-btn"_spr);
-    unsetBtn->setScale(0.8f);
-    actionMenu->addChild(unsetBtn);
+    actionMenu->addChild(makeCard(
+        "gj_dailyCrown_001.png", "GJ_starsIcon_001.png",
+        "Set Weekly", "Feature this level as the Weekly",
+        { 120, 170, 255 },
+        menu_selector(SetDailyWeeklyPopup::onSetWeekly),
+        "set-weekly-btn"_spr
+    ));
+
+    actionMenu->addChild(makeCard(
+        "GJ_deleteIcon_001.png", nullptr,
+        "Unset", "Remove this level from Daily/Weekly",
+        { 235, 110, 110 },
+        menu_selector(SetDailyWeeklyPopup::onUnset),
+        "unset-btn"_spr
+    ));
 
     actionMenu->updateLayout();
 
@@ -71,7 +138,7 @@ SetDailyWeeklyPopup* SetDailyWeeklyPopup::create(int levelID) {
 
 void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
     WeakRef<SetDailyWeeklyPopup> self = this;
-    createQuickPopup(
+    PopupManager::get().quickPopup(
         "Confirm",
         "Set this level as <cy>Daily</c>?",
         "Cancel", "Set",
@@ -111,12 +178,12 @@ void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
                 });
             }
         }
-    );
+    ).showInstant();
 }
 
 void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
     WeakRef<SetDailyWeeklyPopup> self = this;
-    createQuickPopup(
+    PopupManager::get().quickPopup(
         "Confirm",
         "Set this level as <cy>Weekly</c>?",
         "Cancel", "Set",
@@ -156,12 +223,12 @@ void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
                 });
             }
         }
-    );
+    ).showInstant();
 }
 
 void SetDailyWeeklyPopup::onUnset(CCObject* sender) {
     WeakRef<SetDailyWeeklyPopup> self = this;
-    createQuickPopup(
+    PopupManager::get().quickPopup(
         "Confirm",
         "Unset this level from Daily/Weekly?",
         "Cancel", "Unset",
@@ -195,5 +262,5 @@ void SetDailyWeeklyPopup::onUnset(CCObject* sender) {
                 });
             }
         }
-    );
+    ).showInstant();
 }

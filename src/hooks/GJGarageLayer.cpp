@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/GJGarageLayer.hpp>
+#include <Geode/modify/GJGarageLayer.hpp>
 #include "../framework/HookConventions.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/colorful-icons/hooks/PaimonIconsGarageGlue.hpp"

@@ -36,7 +36,21 @@ struct GuideIntent {
     IntentKind kind = IntentKind::Functional;
 
     // Language -> synonyms (lowercase, ASCII). Any match scores the intent.
+    // Primary signal: display names + aliases. Strong tiers (exact/compound).
     std::unordered_map<std::string, std::vector<std::string>> keywordsByLang;
+
+    // Language -> problem / "how do I" phrases that should route here with a
+    // softer score cap so they never beat an exact name match on another intent.
+    // Example: "no se ven miniaturas" -> thumbnail-settings.
+    std::unordered_map<std::string, std::vector<std::string>> searchPhrasesByLang;
+
+    // Optional description text tokens used only as coverage/desempate (not for
+    // qualification alone). Filled from PopupEntry descriptions when available.
+    std::unordered_map<std::string, std::string> descriptionByLang;
+
+    // Logical category id string for related recommendations (mirrors PopupCategory).
+    // Empty = none / conversational.
+    std::string categoryId;
 
     // Main response per language (key = Localization id). Supports GD <cy>...</c> tags.
     std::unordered_map<std::string, std::string> responseByLang;
@@ -60,12 +74,21 @@ struct GuideIntent {
     GuideAnimation animation = GuideAnimation::Talk;
 };
 
+// Actionable related feature shown as a dynamic chip under the chat.
+struct GuideRecommendation {
+    std::string intentId;
+    std::string label; // short display name for the chip
+    std::function<void(PaimonGuideChatPopup* popup)> action;
+};
+
 struct GuideAnswer {
     std::string message;            // already translated to the active language
     std::function<void(PaimonGuideChatPopup* popup)> action;
     GuideAnimation animation = GuideAnimation::Talk;
     bool found = true;              // false => generic fallback response
     std::string matchedIntentId;    // useful for logs
+    // 0..3 related features the UI can show as chips (open or re-query).
+    std::vector<GuideRecommendation> recommendations;
 };
 
 } // namespace paimon::guide

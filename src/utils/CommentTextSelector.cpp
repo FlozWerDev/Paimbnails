@@ -1,4 +1,4 @@
-﻿#include "CommentTextSelector.hpp"
+#include "CommentTextSelector.hpp"
 #include "SpriteHelper.hpp"
 #include <Geode/Geode.hpp>
 #include <algorithm>

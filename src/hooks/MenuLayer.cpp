@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/MenuLayer.hpp>
+#include <Geode/modify/MenuLayer.hpp>
 #include "../framework/HookConventions.hpp"
 #include <Geode/utils/cocos.hpp>
 #include "../framework/state/SessionState.hpp"
@@ -989,6 +989,13 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         std::string shapeName = picCfg.stencilSprite;
         if (shapeName.empty()) shapeName = "circle";
 
+        // custom font for the username label (goldFont.fnt == vanilla look)
+        if (!picCfg.profileFont.empty()) {
+            if (auto lbl = typeinfo_cast<CCLabelBMFont*>(this->getChildByID("player-username"))) {
+                lbl->setFntFile(picCfg.profileFont.c_str());
+            }
+        }
+
         if (picCfg.onlyIconMode) {
             auto container = paimon::profile_pic::composeProfilePicture(nullptr, targetSize, picCfg);
             if (container) {
@@ -997,25 +1004,19 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             return;
         }
 
-        auto type = Mod::get()->getSavedValue<std::string>("profile-bg-type", "none");
-        if (type != "custom") return;
+        // same source resolution as the editor preview, so the button shows
+        // exactly what was configured (profile picture / custom image / legacy bg)
+        auto photo = paimon::profile_pic::resolveProfilePhoto(picCfg);
+        using PhotoKind = paimon::profile_pic::ResolvedProfilePhoto::Kind;
 
-        auto path = Mod::get()->getSavedValue<std::string>("profile-bg-path", "");
-        if (path.empty()) return;
-
-        std::error_code fsEc;
-        if (!std::filesystem::exists(path, fsEc) || fsEc) {
-             return;
-        }
-
-        if (ImageLoadHelper::isAnimatedImage(std::filesystem::path(path))) {
-              // Ref<> to avoid a leak in the GIF callback
-              Ref<MenuLayer> safeThis = this;
-              AnimatedGIFSprite::pinGIF(path);
-             // Capture profileButton with Ref<> to avoid use-after-free if the
-             // node is destroyed before the async callback runs
-             Ref<CCMenuItemSpriteExtra> safeProfileBtn = profileButton;
-             AnimatedGIFSprite::createAsync(path, [safeThis, safeProfileBtn, targetSize, shapeName, picCfg, path](AnimatedGIFSprite* anim) {
+        if (photo.kind == PhotoKind::GifFile) {
+            auto path = photo.path;
+            // Ref<> to avoid a leak in the GIF callback
+            AnimatedGIFSprite::pinGIF(path);
+            // Capture profileButton with Ref<> to avoid use-after-free if the
+            // node is destroyed before the async callback runs
+            Ref<CCMenuItemSpriteExtra> safeProfileBtn = profileButton;
+            AnimatedGIFSprite::createAsync(path, [safeProfileBtn, targetSize, shapeName, picCfg, path](AnimatedGIFSprite* anim) {
                 if (!anim || !safeProfileBtn->getParent()) {
                     AnimatedGIFSprite::unpinGIF(path);
                     return;
@@ -1026,17 +1027,15 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                     safeProfileBtn->setNormalImage(container);
                 }
             });
-        } else {
-            auto loaded = ImageLoadHelper::loadStaticImage(std::filesystem::path(path), 16);
-            if (!loaded.success || !loaded.texture) return;
-            auto sprite = CCSprite::createWithTexture(loaded.texture);
-            loaded.texture->release();
-            if (!sprite) return;
+            return;
+        }
 
-            auto container = buildProfileClipContainer(sprite, shapeName, targetSize, picCfg);
-            if (container) {
-                profileButton->setNormalImage(container);
-            }
+        auto imageNode = paimon::profile_pic::createResolvedPhotoNode(photo);
+        if (!imageNode) return;
+
+        auto container = buildProfileClipContainer(imageNode, shapeName, targetSize, picCfg);
+        if (container) {
+            profileButton->setNormalImage(container);
         }
     }
 };

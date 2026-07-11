@@ -61,12 +61,41 @@ protected:
     cocos2d::CCPoint m_scrollArrowBasePos = {0.f, 0.f};
     bool m_scrollArrowBouncing = false;
 
+    // While a slider is being dragged, every popup "chrome" node (background,
+    // close button, decorations, section titles, toggles, selectors) hides
+    // so the level list behind the popup becomes a live, uncluttered
+    // preview. The slider being dragged stays exactly where it is and stays
+    // interactive; a small floating caption shows its name + live value.
+    // Everything returns the moment the slider is released.
+    struct SliderRow {
+        Slider* slider = nullptr;
+        cocos2d::CCLabelBMFont* valueLabel = nullptr;
+        std::string title;
+    };
+    std::vector<SliderRow> m_sliderRows;
+    std::vector<cocos2d::CCNode*> m_hideOnDragNodes;
+    bool m_dragHiding = false;
+    Slider* m_activeDragSlider = nullptr;
+    GLubyte m_dimOriginalOpacity = 0;
+    // Saved BlurAPI (thesillydoggo.blur-api) user object while live-previewing.
+    // That mod blurs independently of our Paiblur and would keep the list
+    // unreadable unless we temporarily detach its marker.
+    geode::Ref<cocos2d::CCObject> m_savedBlurApiOptions = nullptr;
+
+    cocos2d::CCNodeRGBA* m_dragCaptionPill = nullptr;
+    cocos2d::CCLabelBMFont* m_dragCaptionLabel = nullptr;
+
     geode::CopyableFunction<void()> m_onSettingsChanged;
 
     bool init() override;
     void loadSettings();
     void saveSettings();
     void checkScrollPosition(float dt);
+    void checkDragState(float dt);
+    void applyDragVisibility(Slider* active);
+    void updateDragCaption(Slider* active);
+    void onDragCaptionHidden();
+    void registerSliderRow(Slider* slider, cocos2d::CCLabelBMFont* valueLabel, std::string title);
 
     void onBgTypePrev(cocos2d::CCObject*);
     void onBgTypeNext(cocos2d::CCObject*);
@@ -99,6 +128,3 @@ public:
     // Incremented on every setting change; LevelCell::update() checks this to invalidate cache
     static inline int s_settingsVersion = 0;
 };
-
-
-

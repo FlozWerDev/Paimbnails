@@ -1,7 +1,12 @@
-﻿#include "LevelCellSettingsPopup.hpp"
+#include "LevelCellSettingsPopup.hpp"
 #include "../services/CompactListRefresh.hpp"
+#include "../../../blur/PopupBlurService.hpp"
+#include "../../../core/Settings.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/InfoButton.hpp"
+#include "../../../utils/SpriteHelper.hpp"
+#include <Geode/binding/Slider.hpp>
+#include <Geode/ui/BreakLine.hpp>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -51,8 +56,28 @@ std::string LevelCellSettingsPopup::getAnimEffectDisplayName(std::string const& 
     return effect;
 }
 
+namespace {
+// BlurAPI (thesillydoggo.blur-api) marks nodes with this user-object key.
+// malikhw47.blur-behind-popups calls BlurAPI::addBlur(popup) on every
+// FLAlertLayer — that blur is independent of our PaiblurNode and is what
+// kept the list unreadable while dragging sliders.
+constexpr char const* kBlurApiTag = "thesillydoggo.blur-api/blur-options";
+}
+
 void LevelCellSettingsPopup::onExit() {
     this->unschedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition));
+    this->unschedule(schedule_selector(LevelCellSettingsPopup::checkDragState));
+    // If the popup closes mid-drag, restore blur so it can fade out cleanly
+    // with the popup (DynamicPopupHook cleanup) instead of staying at 0 opacity.
+    if (m_dragHiding) {
+        m_dragHiding = false;
+        m_activeDragSlider = nullptr;
+        paimon::popupblur::setLivePreviewMode(this, false, 0.f);
+        if (m_savedBlurApiOptions) {
+            this->setUserObject(kBlurApiTag, m_savedBlurApiOptions.data());
+            m_savedBlurApiOptions = nullptr;
+        }
+    }
     if (m_scrollArrow) {
         m_scrollArrow->stopAllActions();
         m_scrollArrow->setPosition(m_scrollArrowBasePos);
@@ -60,7 +85,6 @@ void LevelCellSettingsPopup::onExit() {
     m_scrollArrowBouncing = false;
     Popup::onExit();
 }
-
 
 void LevelCellSettingsPopup::loadSettings() {
     m_currentBgType = Mod::get()->getSavedValue<std::string>("levelcell-background-type", "thumbnail");
@@ -93,10 +117,13 @@ void LevelCellSettingsPopup::loadSettings() {
 }
 
 void LevelCellSettingsPopup::saveSettings() {
+    // Always persist as the same types LevelCell / Settings.hpp read
+    // (double for numeric saved values) so real-time previews pick up
+    // the new values instead of falling back to defaults.
     Mod::get()->setSavedValue<std::string>("levelcell-background-type", m_currentBgType);
     Mod::get()->setSettingValue<double>("level-thumb-width", static_cast<double>(m_currentThumbWidth));
-    Mod::get()->setSavedValue<float>("levelcell-background-blur", m_currentBlur);
-    Mod::get()->setSavedValue<float>("levelcell-background-darkness", m_currentDarkness);
+    Mod::get()->setSavedValue<double>("levelcell-background-blur", static_cast<double>(m_currentBlur));
+    Mod::get()->setSavedValue<double>("levelcell-background-darkness", static_cast<double>(m_currentDarkness));
     Mod::get()->setSavedValue<bool>("levelcell-show-separator", m_showSeparator);
     Mod::get()->setSavedValue<bool>("levelcell-show-view-button", m_showViewButton);
     Mod::get()->setSettingValue<bool>("compact-list-mode", m_compactMode);
@@ -104,15 +131,18 @@ void LevelCellSettingsPopup::saveSettings() {
     Mod::get()->setSavedValue<bool>("transparent-list-mode", m_transparentMode);
     Mod::get()->setSettingValue<bool>("levelcell-hover-effects", m_hoverEffects);
     Mod::get()->setSavedValue<std::string>("levelcell-anim-type", m_currentAnimType);
-    Mod::get()->setSavedValue<float>("levelcell-anim-speed", m_currentAnimSpeed);
+    Mod::get()->setSavedValue<double>("levelcell-anim-speed", static_cast<double>(m_currentAnimSpeed));
     Mod::get()->setSavedValue<std::string>("levelcell-anim-effect", m_currentAnimEffect);
     Mod::get()->setSavedValue<bool>("levelcell-effect-on-gradient", m_effectOnGradient);
     Mod::get()->setSavedValue<bool>("levelcell-mythic-particles", m_mythicParticles);
     Mod::get()->setSavedValue<bool>("levelcell-animated-gradient", m_animatedGradient);
 
-    if (m_onSettingsChanged) m_onSettingsChanged();
-
+    // Bump both counters: LevelCell watches s_settingsVersion for popup
+    // changes, and g_settingsVersion invalidates the shared settings cache.
+    paimon::settings::internal::invalidateSettingsCache();
     s_settingsVersion++;
+
+    if (m_onSettingsChanged) m_onSettingsChanged();
 }
 
 void LevelCellSettingsPopup::checkScrollPosition(float dt) {
@@ -153,12 +183,153 @@ void LevelCellSettingsPopup::checkScrollPosition(float dt) {
     }
 }
 
+// Polls every registered slider's live-drag state each frame. Slider's
+// getLiveDragging() reflects SliderTouchLogic's touch state directly, so
+// this is a cheap, hook-free way to know when a drag starts/stops.
+void LevelCellSettingsPopup::checkDragState(float dt) {
+    Slider* dragging = nullptr;
+    for (auto& row : m_sliderRows) {
+        if (row.slider && row.slider->getLiveDragging()) {
+            dragging = row.slider;
+            break;
+        }
+    }
+
+    if (dragging != m_activeDragSlider) {
+        m_activeDragSlider = dragging;
+        applyDragVisibility(dragging);
+    }
+
+    if (dragging) {
+        updateDragCaption(dragging);
+    }
+}
+
+// Keeps the floating caption glued just above the thumb of the slider being
+// dragged, with live text, so the value stays readable while the rest of
+// the popup is hidden.
+void LevelCellSettingsPopup::updateDragCaption(Slider* active) {
+    if (!m_dragCaptionPill || !active) return;
+
+    std::string title;
+    std::string valueText = "0.00";
+    for (auto& row : m_sliderRows) {
+        if (row.slider == active) {
+            title = row.title;
+            if (row.valueLabel) valueText = row.valueLabel->getString();
+            break;
+        }
+    }
+    if (m_dragCaptionLabel) {
+        m_dragCaptionLabel->setString(fmt::format("{}: {}", title, valueText).c_str());
+    }
+
+    auto* thumb = active->getThumb();
+    CCPoint worldPos = thumb
+        ? thumb->convertToWorldSpace({thumb->getContentSize().width * 0.5f, thumb->getContentSize().height})
+        : active->convertToWorldSpace({0.f, 0.f});
+    CCPoint localPos = m_mainLayer->convertToNodeSpace(worldPos);
+    localPos.y += 20.f;
+
+    // clamp so the pill doesn't drift off the popup while near an edge
+    auto size = m_mainLayer->getContentSize();
+    float halfW = m_dragCaptionPill->getContentSize().width * 0.5f;
+    localPos.x = std::clamp(localPos.x, halfW + 4.f, size.width - halfW - 4.f);
+    localPos.y = std::clamp(localPos.y, 20.f, size.height - 10.f);
+
+    m_dragCaptionPill->setPosition(localPos);
+}
+
+void LevelCellSettingsPopup::applyDragVisibility(Slider* active) {
+    bool hiding = (active != nullptr);
+    m_dragHiding = hiding;
+
+    // Plain setVisible toggling: Slider, ScrollLayer and BreakLine don't
+    // implement CCRGBAProtocol, so animating opacity on them isn't safe.
+    // setVisible is a base CCNode method and works uniformly on everything
+    // in this list, including the sliders themselves.
+    for (auto* node : m_hideOnDragNodes) {
+        if (!node) continue;
+        if (active && node == static_cast<CCNode*>(active)) continue; // keep the active slider on screen
+        node->setVisible(!hiding);
+    }
+
+    // FLAlertLayer (this popup's own base class) is a CCLayerColor: its solid
+    // color quad is the dark dim covering the whole screen behind the popup.
+    // Fading that away during drag lets the level list underneath act as a
+    // live preview instead of staying obscured. The original opacity is
+    // captured on first hide so it's restored exactly, whatever it was.
+    if (hiding && m_dimOriginalOpacity == 0) {
+        m_dimOriginalOpacity = this->getOpacity();
+        if (m_dimOriginalOpacity == 0) m_dimOriginalOpacity = 150;
+    }
+    this->stopActionByTag(9912);
+    auto dimFade = CCFadeTo::create(0.22f, hiding ? 0 : m_dimOriginalOpacity);
+    dimFade->setTag(9912);
+    this->runAction(dimFade);
+
+    // 1) Our PaiblurNode (if active).
+    constexpr float kBlurFade = 0.22f;
+    paimon::popupblur::setLivePreviewMode(this, hiding, kBlurFade);
+
+    // 2) External BlurAPI used by malikhw47.blur-behind-popups. Detach the
+    // marker so its CCNode::visit hook stops drawing blur; keep a Ref so we
+    // can put it back when the slider is released.
+    if (hiding) {
+        if (!m_savedBlurApiOptions) {
+            if (auto* opts = this->getUserObject(kBlurApiTag)) {
+                m_savedBlurApiOptions = opts;
+                this->setUserObject(kBlurApiTag, nullptr);
+            }
+        }
+    } else if (m_savedBlurApiOptions) {
+        this->setUserObject(kBlurApiTag, m_savedBlurApiOptions.data());
+        m_savedBlurApiOptions = nullptr;
+    }
+
+    if (m_dragCaptionPill) {
+        m_dragCaptionPill->stopAllActions();
+        if (hiding) {
+            m_dragCaptionPill->setVisible(true);
+            m_dragCaptionPill->setScale(0.85f);
+            m_dragCaptionPill->setOpacity(0);
+            m_dragCaptionPill->runAction(CCSpawn::create(
+                CCEaseBackOut::create(CCScaleTo::create(0.18f, 1.f)),
+                CCFadeTo::create(0.14f, 255),
+                nullptr));
+        } else {
+            auto fadeOut = CCFadeTo::create(0.14f, 0);
+            auto hide = CCCallFunc::create(this, callfunc_selector(LevelCellSettingsPopup::onDragCaptionHidden));
+            m_dragCaptionPill->runAction(CCSequence::create(fadeOut, hide, nullptr));
+        }
+    }
+
+    if (hiding && active) {
+        updateDragCaption(active);
+    }
+}
+
+void LevelCellSettingsPopup::onDragCaptionHidden() {
+    if (m_dragCaptionPill) m_dragCaptionPill->setVisible(false);
+}
+
+void LevelCellSettingsPopup::registerSliderRow(Slider* slider, CCLabelBMFont* valueLabel, std::string title) {
+    if (!slider) return;
+    m_sliderRows.push_back({slider, valueLabel, std::move(title)});
+}
+
 bool LevelCellSettingsPopup::init() {
-    if (!Popup::init(260.f, 240.f)) return false;
+    // Standard Geode popup (default GJ_square01 brown frame).
+    if (!Popup::init(280.f, 250.f)) return false;
 
     this->setTitle("LevelCell Settings");
 
     auto content = m_mainLayer->getContentSize();
+    float cx = content.width / 2.f;
+
+    if (m_title) m_hideOnDragNodes.push_back(m_title);
+    if (m_closeBtn) m_hideOnDragNodes.push_back(m_closeBtn);
+    if (m_bgSprite) m_hideOnDragNodes.push_back(m_bgSprite);
 
     m_bgTypes = {"gradient", "thumbnail"};
     m_animTypes = {
@@ -175,84 +346,92 @@ bool LevelCellSettingsPopup::init() {
     loadSettings();
 
     float scrollW = content.width - 16.f;
-    float scrollH = content.height - 42.f; // espacio para titulo
-    float totalH = 580.f; // alto total del contenido scroll
+    float scrollH = content.height - 42.f;
+    float totalH = 560.f;
 
     m_scrollLayer = geode::ScrollLayer::create({scrollW, scrollH});
     m_scrollLayer->setPosition({8.f, 8.f});
     m_mainLayer->addChild(m_scrollLayer, 5);
+    // ScrollLayer is not in m_hideOnDragNodes: hiding the parent would hide
+    // the active slider. Chrome nodes inside are hidden individually.
 
     auto* scrollContent = m_scrollLayer->m_contentLayer;
     scrollContent->setContentSize({scrollW, totalH});
 
     auto navMenu = CCMenu::create();
     navMenu->setPosition({0, 0});
-    // GenericContentLayer (the ScrollLayer's content layer) re-evaluates the
-    // visibility of every DIRECT child on each scroll, culling it via
-    // setVisible() when its bounding box leaves the visible window. A CCMenu
-    // defaults to a window-sized contentSize, so this single menu (and every
-    // toggle/arrow/info button inside it) was getting hidden whenever that box
-    // fell outside the scroll viewport — which is exactly why the toggles
-    // vanished and then "all appeared" once you scrolled far enough down.
-    // Sizing the menu to the full scroll content keeps it permanently visible;
-    // the ScrollLayer's glScissor still clips the individual items per-pixel.
+    // Size menu to full scroll content so GenericContentLayer cull doesn't
+    // hide toggles/arrows when their menu bbox leaves the viewport.
     navMenu->ignoreAnchorPointForPosition(true);
     navMenu->setContentSize({scrollW, totalH});
     scrollContent->addChild(navMenu, 10);
 
-    float cx = scrollW / 2.f;
-    float y = totalH - 8.f;
+    float cxs = scrollW / 2.f;
+    float y = totalH - 10.f;
 
     auto addTitle = [&](char const* text, char const* info = nullptr) {
         auto label = CCLabelBMFont::create(text, "goldFont.fnt");
         label->setScale(0.4f);
-        label->setPosition({cx, y});
+        label->setPosition({cxs, y});
         scrollContent->addChild(label);
+        m_hideOnDragNodes.push_back(label);
 
         if (info) {
             auto btn = PaimonInfo::createInfoBtn(text, info, this, 0.48f);
             if (btn) {
                 float halfW = label->getContentSize().width * 0.4f / 2.f;
-                btn->setPosition({cx + halfW + 12.f, y});
+                btn->setPosition({cxs + halfW + 12.f, y});
                 navMenu->addChild(btn);
+                m_hideOnDragNodes.push_back(btn);
             }
         }
     };
 
-    auto addSlider = [&](Slider*& slider, CCLabelBMFont*& label, float value, float maxVal, SEL_MenuHandler callback) {
+    auto addSlider = [&](Slider*& slider, CCLabelBMFont*& label, float value, float maxVal,
+                          SEL_MenuHandler callback, char const* rowTitle, int precision = 2) {
         slider = Slider::create(this, callback, 0.65f);
-        slider->setPosition({cx, y});
+        slider->setPosition({cxs - 10.f, y});
         slider->setValue(value / maxVal);
         scrollContent->addChild(slider);
+        m_hideOnDragNodes.push_back(slider);
 
-        std::string valStr = fmt::format("{:.2f}", value);
+        std::string valStr = precision == 1
+            ? fmt::format("{:.1f}", value)
+            : fmt::format("{:.2f}", value);
         label = CCLabelBMFont::create(valStr.c_str(), "bigFont.fnt");
-        label->setScale(0.35f);
-        label->setPosition({cx + 95.f, y});
+        label->setScale(0.32f);
+        label->setPosition({cxs + 95.f, y});
         scrollContent->addChild(label);
+        m_hideOnDragNodes.push_back(label);
+
+        registerSliderRow(slider, label, rowTitle);
     };
 
-    auto addToggle = [&](char const* text, CCMenuItemToggler*& toggle, bool value, SEL_MenuHandler callback, char const* info = nullptr) {
+    auto addToggle = [&](char const* text, CCMenuItemToggler*& toggle, bool value,
+                         SEL_MenuHandler callback, char const* info = nullptr) {
         auto lbl = CCLabelBMFont::create(text, "bigFont.fnt");
         lbl->setScale(0.35f);
         lbl->setAnchorPoint({0.f, 0.5f});
-        lbl->setPosition({cx - 90.f, y});
+        lbl->setPosition({cxs - 90.f, y});
         scrollContent->addChild(lbl);
+        m_hideOnDragNodes.push_back(lbl);
 
         if (info) {
             auto iBtn = PaimonInfo::createInfoBtn(text, info, this, 0.4f);
             if (iBtn) {
                 float lblW = lbl->getContentSize().width * 0.35f;
-                iBtn->setPosition({cx - 90.f + lblW + 8.f, y});
+                iBtn->setPosition({cxs - 90.f + lblW + 8.f, y});
                 navMenu->addChild(iBtn);
+                m_hideOnDragNodes.push_back(iBtn);
             }
         }
 
-        toggle = CCMenuItemToggler::createWithStandardSprites(this, callback, 0.35f);
-        toggle->setSizeMult(0.35f);
-        toggle->setPosition({cx + 90.f, y});
+        toggle = CCMenuItemToggler::createWithStandardSprites(this, callback, 0.55f);
+        toggle->setScale(0.55f);
+        toggle->setPosition({cxs + 90.f, y});
         toggle->toggle(value);
         navMenu->addChild(toggle);
+        m_hideOnDragNodes.push_back(toggle);
     };
 
     auto addSelector = [&](CCLabelBMFont*& label, std::string const& displayText,
@@ -260,20 +439,23 @@ bool LevelCellSettingsPopup::init() {
         auto lSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
         lSpr->setScale(0.4f);
         auto lBtn = CCMenuItemSpriteExtra::create(lSpr, this, prevCb);
-        lBtn->setPosition({cx - 70.f, y});
+        lBtn->setPosition({cxs - 70.f, y});
         navMenu->addChild(lBtn);
+        m_hideOnDragNodes.push_back(lBtn);
 
         auto rSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
         rSpr->setFlipX(true);
         rSpr->setScale(0.4f);
         auto rBtn = CCMenuItemSpriteExtra::create(rSpr, this, nextCb);
-        rBtn->setPosition({cx + 70.f, y});
+        rBtn->setPosition({cxs + 70.f, y});
         navMenu->addChild(rBtn);
+        m_hideOnDragNodes.push_back(rBtn);
 
         label = CCLabelBMFont::create(displayText.c_str(), "bigFont.fnt");
         label->setScale(0.3f);
-        label->setPosition({cx, y});
+        label->setPosition({cxs, y});
         scrollContent->addChild(label);
+        m_hideOnDragNodes.push_back(label);
     };
 
     addTitle("Background Style",
@@ -281,132 +463,141 @@ bool LevelCellSettingsPopup::init() {
         "<cy>Gradient</c>: uses level colors as a gradient.\n"
         "<cy>Thumbnail</c>: shows the level thumbnail as background.");
     y -= 18.f;
-
     addSelector(m_bgTypeLabel, getBgTypeDisplayName(m_currentBgType),
         menu_selector(LevelCellSettingsPopup::onBgTypePrev),
         menu_selector(LevelCellSettingsPopup::onBgTypeNext));
-    y -= 22.f;
+    y -= 24.f;
 
     addTitle("Thumbnail Size",
-        "Controls how much of the cell width the thumbnail covers.\n"
-        "<cy>Lower values</c> = smaller thumbnail on the right.\n"
-        "<cy>Higher values</c> = thumbnail fills more of the cell.");
+        "Controls how much of the cell width the thumbnail covers.");
     y -= 16.f;
     {
-        m_thumbWidthSlider = Slider::create(this, menu_selector(LevelCellSettingsPopup::onThumbWidthChanged), 0.6f);
-        m_thumbWidthSlider->setPosition({cx - 5.f, y});
+        m_thumbWidthSlider = Slider::create(
+            this, menu_selector(LevelCellSettingsPopup::onThumbWidthChanged), 0.6f);
+        m_thumbWidthSlider->setPosition({cxs - 10.f, y});
         m_thumbWidthSlider->setValue((m_currentThumbWidth - 0.2f) / (0.95f - 0.2f));
         scrollContent->addChild(m_thumbWidthSlider);
+        m_hideOnDragNodes.push_back(m_thumbWidthSlider);
 
-        m_thumbWidthLabel = CCLabelBMFont::create(fmt::format("{:.2f}", m_currentThumbWidth).c_str(), "bigFont.fnt");
-        m_thumbWidthLabel->setScale(0.25f);
-        m_thumbWidthLabel->setPosition({cx + 82.f, y});
+        m_thumbWidthLabel = CCLabelBMFont::create(
+            fmt::format("{:.2f}", m_currentThumbWidth).c_str(), "bigFont.fnt");
+        m_thumbWidthLabel->setScale(0.28f);
+        m_thumbWidthLabel->setPosition({cxs + 90.f, y});
         scrollContent->addChild(m_thumbWidthLabel);
+        m_hideOnDragNodes.push_back(m_thumbWidthLabel);
+
+        registerSliderRow(m_thumbWidthSlider, m_thumbWidthLabel, "Thumbnail Size");
     }
-    y -= 22.f;
+    y -= 24.f;
 
     addTitle("Background Blur",
-        "Applies a gaussian blur to the thumbnail background.\n"
-        "<cy>0</c> = no blur (sharp image).\n"
-        "<cy>10</c> = maximum blur (very soft/dreamy).");
+        "Gaussian blur on the thumbnail background.\n"
+        "<cy>0</c> = sharp, <cy>10</c> = max blur.");
     y -= 16.f;
     addSlider(m_blurSlider, m_blurLabel, m_currentBlur, 10.0f,
-        menu_selector(LevelCellSettingsPopup::onBlurChanged));
-    y -= 22.f;
+        menu_selector(LevelCellSettingsPopup::onBlurChanged), "Background Blur", 1);
+    y -= 24.f;
 
     addTitle("Background Darkness",
-        "Darkens the thumbnail background with a semi-transparent overlay.\n"
-        "<cy>0</c> = no darkening.\n"
-        "<cy>1</c> = fully dark. Helps text readability.");
+        "Dark overlay on the thumbnail background.\n"
+        "<cy>0</c> = none, <cy>1</c> = fully dark.");
     y -= 16.f;
     addSlider(m_darknessSlider, m_darknessLabel, m_currentDarkness, 1.0f,
-        menu_selector(LevelCellSettingsPopup::onDarknessChanged));
-    y -= 24.f;
+        menu_selector(LevelCellSettingsPopup::onDarknessChanged), "Background Darkness");
+    y -= 26.f;
+
+    if (auto* sep = geode::BreakLine::create(scrollW - 20.f, 1.f, {1.f, 1.f, 1.f, 0.15f})) {
+        sep->setPosition({10.f, y + 6.f});
+        sep->setAnchorPoint({0.f, 0.5f});
+        scrollContent->addChild(sep);
+        m_hideOnDragNodes.push_back(sep);
+    }
 
     addTitle("Display Options");
     y -= 18.f;
 
     addToggle("Show Separator Line", m_separatorToggle, m_showSeparator,
         menu_selector(LevelCellSettingsPopup::onSeparatorToggled),
-        "Shows a thin line between the cell content and the thumbnail area.\nHelps visually separate text from the background image.");
+        "Thin line between cell content and the thumbnail area.");
     y -= 20.f;
 
     addToggle("Show View Button", m_viewButtonToggle, m_showViewButton,
         menu_selector(LevelCellSettingsPopup::onViewButtonToggled),
-        "When <cr>OFF</c>, the View button is hidden and replaced with an invisible full-cell click area.\nThe entire cell becomes clickable to open the level.");
+        "When OFF, the View button is hidden and the whole cell is clickable.");
     y -= 20.f;
 
     addToggle("Compact Mode (Lists)", m_compactToggle, m_compactMode,
         menu_selector(LevelCellSettingsPopup::onCompactToggled),
-        "Makes level cells in <cy>list views</c> shorter/more compact.\nFits more levels on screen at once.\nInspired by <cy>CompactLists</c> mod.");
+        "Shorter level cells in list views.");
     y -= 20.f;
 
     addToggle("Show Compact Toggle", m_compactShowToggle, m_compactShowQuickToggle,
         menu_selector(LevelCellSettingsPopup::onCompactShowToggleToggled),
-        "Shows a quick button in the normal level browser to enable or disable compact lists without opening settings.");
+        "Quick compact-mode button in the level browser.");
     y -= 20.f;
 
     addToggle("Transparent Lists", m_transparentToggle, m_transparentMode,
         menu_selector(LevelCellSettingsPopup::onTransparentToggled),
-        "Makes list cell backgrounds <cy>transparent</c> for a cleaner look.\nRemoves the brown background from level cells.\nInspired by <cy>Transparent Lists</c> mod.");
+        "Transparent list cell backgrounds.");
     y -= 20.f;
 
     addToggle("Mythic Particles", m_mythicParticlesToggle, m_mythicParticles,
         menu_selector(LevelCellSettingsPopup::onMythicParticlesToggled),
-        "Adds floating particle effects to <cy>Mythic/Legendary</c> rated levels.\nParticles use the level's dominant colors for a unique look.");
+        "Particles on Mythic/Legendary rated levels.");
     y -= 20.f;
 
     addToggle("Animated Gradient", m_animatedGradientToggle, m_animatedGradient,
         menu_selector(LevelCellSettingsPopup::onAnimatedGradientToggled),
-        "Enables a smooth color-shifting animation on the gradient background.\nThe colors gently cycle based on the level's palette.");
-    y -= 24.f;
+        "Color-shifting animation on gradient backgrounds.");
+    y -= 26.f;
+
+    if (auto* sep = geode::BreakLine::create(scrollW - 20.f, 1.f, {1.f, 1.f, 1.f, 0.15f})) {
+        sep->setPosition({10.f, y + 6.f});
+        sep->setAnchorPoint({0.f, 0.5f});
+        scrollContent->addChild(sep);
+        m_hideOnDragNodes.push_back(sep);
+    }
 
     addTitle("Hover & Animation");
     y -= 18.f;
 
     addToggle("Hover Animation", m_hoverToggle, m_hoverEffects,
         menu_selector(LevelCellSettingsPopup::onHoverToggled),
-        "Enables animations when you hover over a level cell with the mouse.\nThe cell will react with the selected animation type.");
+        "Animate cells when hovering with the mouse.");
     y -= 22.f;
 
     addTitle("Animation Type",
-        "The animation played when hovering over a cell.\n"
-        "<cy>Zoom Slide</c>: subtle zoom + slide.\n"
-        "<cy>Bounce</c>: springy bounce effect.\n"
-        "<cy>Rotate</c>: slight 3D rotation.\n"
-        "<cy>Pulse</c>: gentle pulse effect.\n"
-        "...and more!");
+        "Animation played when hovering over a cell.");
     y -= 18.f;
     addSelector(m_animTypeLabel, getAnimTypeDisplayName(m_currentAnimType),
         menu_selector(LevelCellSettingsPopup::onAnimTypePrev),
         menu_selector(LevelCellSettingsPopup::onAnimTypeNext));
-    y -= 22.f;
+    y -= 24.f;
 
     addTitle("Animation Speed",
-        "How fast the hover animation plays.\n"
-        "<cy>0.1</c> = very slow, smooth.\n"
-        "<cy>5.0</c> = very fast, snappy.");
+        "How fast the hover animation plays.");
     y -= 16.f;
     {
-        m_animSpeedSlider = Slider::create(this, menu_selector(LevelCellSettingsPopup::onAnimSpeedChanged), 0.6f);
-        m_animSpeedSlider->setPosition({cx - 5.f, y});
+        m_animSpeedSlider = Slider::create(
+            this, menu_selector(LevelCellSettingsPopup::onAnimSpeedChanged), 0.6f);
+        m_animSpeedSlider->setPosition({cxs - 10.f, y});
         m_animSpeedSlider->setValue((m_currentAnimSpeed - 0.1f) / (5.0f - 0.1f));
         scrollContent->addChild(m_animSpeedSlider);
+        m_hideOnDragNodes.push_back(m_animSpeedSlider);
 
-        m_animSpeedLabel = CCLabelBMFont::create(fmt::format("{:.1f}", m_currentAnimSpeed).c_str(), "bigFont.fnt");
-        m_animSpeedLabel->setScale(0.25f);
-        m_animSpeedLabel->setPosition({cx + 82.f, y});
+        m_animSpeedLabel = CCLabelBMFont::create(
+            fmt::format("{:.1f}", m_currentAnimSpeed).c_str(), "bigFont.fnt");
+        m_animSpeedLabel->setScale(0.28f);
+        m_animSpeedLabel->setPosition({cxs + 90.f, y});
         scrollContent->addChild(m_animSpeedLabel);
+        m_hideOnDragNodes.push_back(m_animSpeedLabel);
+
+        registerSliderRow(m_animSpeedSlider, m_animSpeedLabel, "Animation Speed");
     }
-    y -= 22.f;
+    y -= 24.f;
 
     addTitle("Color Effect",
-        "Applies a color/visual filter when hovering.\n"
-        "<cy>Brightness</c>: lightens the cell.\n"
-        "<cy>Sepia</c>: warm vintage tone.\n"
-        "<cy>Grayscale</c>: removes color.\n"
-        "<cy>Rainbow</c>: cycles through colors.\n"
-        "...and 15+ more effects!");
+        "Color/visual filter when hovering.");
     y -= 18.f;
     addSelector(m_animEffectLabel, getAnimEffectDisplayName(m_currentAnimEffect),
         menu_selector(LevelCellSettingsPopup::onAnimEffectPrev),
@@ -415,33 +606,51 @@ bool LevelCellSettingsPopup::init() {
 
     addToggle("Apply Effect to BG", m_effectOnGradientToggle, m_effectOnGradient,
         menu_selector(LevelCellSettingsPopup::onEffectOnGradientToggled),
-        "When <cg>ON</c>, the color effect is also applied to the gradient background, not just the thumbnail.\nCreates a more immersive hover effect.");
+        "Also apply the hover color effect to the gradient background.");
 
     m_scrollLayer->moveToTop();
 
-    // Scroll hint arrow at bottom
+    // Scroll hint arrow
     auto scrollArrow = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     if (scrollArrow) {
-        scrollArrow->setRotation(-90.f); // apuntar hacia abajo
+        scrollArrow->setRotation(-90.f);
         scrollArrow->setScale(0.35f);
         scrollArrow->setOpacity(150);
         m_scrollArrowBasePos = ccp(content.width / 2.f, 18.f);
         scrollArrow->setPosition(m_scrollArrowBasePos);
         scrollArrow->setID("scroll-hint-arrow"_spr);
         m_mainLayer->addChild(scrollArrow, 20);
+        m_hideOnDragNodes.push_back(scrollArrow);
 
         auto moveUp = CCMoveBy::create(0.5f, {0, 3.f});
         auto moveDown = CCMoveBy::create(0.5f, {0, -3.f});
-        auto seq = CCSequence::create(moveUp, moveDown, nullptr);
-        auto repeat = CCRepeatForever::create(seq);
-        scrollArrow->runAction(repeat);
+        scrollArrow->runAction(CCRepeatForever::create(
+            CCSequence::create(moveUp, moveDown, nullptr)));
         m_scrollArrowBouncing = true;
-
-        // Hide arrow when user scrolls to bottom
         m_scrollArrow = scrollArrow;
         this->unschedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition));
         this->schedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition), 0.2f);
     }
+
+    // Floating caption while dragging a slider
+    {
+        auto pill = paimon::SpriteHelper::createColorPanel(160.f, 24.f, {0, 0, 0}, 200, 6.f);
+        if (pill) {
+            pill->setAnchorPoint({0.5f, 0.5f});
+            pill->setPosition({content.width / 2.f, content.height + 24.f});
+            pill->setVisible(false);
+            m_mainLayer->addChild(pill, 50);
+            m_dragCaptionPill = pill;
+
+            m_dragCaptionLabel = CCLabelBMFont::create("", "bigFont.fnt");
+            m_dragCaptionLabel->setScale(0.38f);
+            m_dragCaptionLabel->setPosition({80.f, 12.f});
+            pill->addChild(m_dragCaptionLabel);
+        }
+    }
+
+    this->unschedule(schedule_selector(LevelCellSettingsPopup::checkDragState));
+    this->schedule(schedule_selector(LevelCellSettingsPopup::checkDragState), 0.f);
 
     paimon::markDynamicPopup(this);
     return true;
@@ -453,6 +662,7 @@ void LevelCellSettingsPopup::onBgTypePrev(CCObject*) {
     m_currentBgType = m_bgTypes[m_bgTypeIndex];
     if (m_bgTypeLabel) m_bgTypeLabel->setString(getBgTypeDisplayName(m_currentBgType).c_str());
     saveSettings();
+    // Background style swap rebuilds gradient vs thumbnail path on each cell.
 }
 
 void LevelCellSettingsPopup::onBgTypeNext(CCObject*) {
@@ -509,6 +719,9 @@ void LevelCellSettingsPopup::onSeparatorToggled(CCObject*) {
 void LevelCellSettingsPopup::onViewButtonToggled(CCObject*) {
     m_showViewButton = !m_viewButtonToggle->isToggled();
     saveSettings();
+    // Restoring the vanilla View button (after it was made invisible) needs a
+    // full list rebuild — live cell reapply can only hide it, not un-hide it.
+    paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
 }
 
 void LevelCellSettingsPopup::onCompactToggled(CCObject*) {
@@ -525,6 +738,7 @@ void LevelCellSettingsPopup::onCompactShowToggleToggled(CCObject*) {
 void LevelCellSettingsPopup::onTransparentToggled(CCObject*) {
     m_transparentMode = !m_transparentToggle->isToggled();
     saveSettings();
+    // Transparent mode changes the base cell background structure; rebuild.
     paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
 }
 
@@ -589,7 +803,3 @@ LevelCellSettingsPopup* LevelCellSettingsPopup::create() {
     CC_SAFE_DELETE(ret);
     return nullptr;
 }
-
-
-
-

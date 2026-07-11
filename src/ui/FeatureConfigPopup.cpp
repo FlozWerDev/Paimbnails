@@ -1,4 +1,4 @@
-﻿#include "FeatureConfigPopup.hpp"
+#include "FeatureConfigPopup.hpp"
 #include "SmoothUIConfigPopup.hpp"
 
 #include "../utils/DynamicPopupRegistry.hpp"

@@ -1,10 +1,11 @@
-﻿#include "ProfileBgGradientPopup.hpp"
+#include "ProfileBgGradientPopup.hpp"
 #include "../services/ProfileGradientEffects.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
 #include <Geode/binding/GameManager.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <algorithm>
 
 using namespace geode::prelude;
@@ -279,9 +280,5 @@ void ProfileBgGradientPopup::onApplyBtn(CCObject*) {
 }
 
 void ProfileBgGradientPopup::onInfo(CCObject*) {
-    FLAlertLayer::create(
-        Localization::get().getString("profilebg.gradient.info_title").c_str(),
-        Localization::get().getString("profilebg.gradient.info_body"),
-        Localization::get().getString("profilesettings.info_ok").c_str()
-    )->show();
+    PopupManager::get().alert(Localization::get().getString("profilebg.gradient.info_title"), Localization::get().getString("profilebg.gradient.info_body"), Localization::get().getString("profilesettings.info_ok")).showInstant();
 }

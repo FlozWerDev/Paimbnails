@@ -27,11 +27,22 @@ std::string CollabNetClient::apiUrl(std::string const& suffix) const {
     return m_base + suffix;
 }
 
-void CollabNetClient::start(std::string baseUrl, std::string roomCode, std::string username, ConnectMode mode) {
+void CollabNetClient::start(std::string baseUrl, std::string roomCode, std::string username,
+                            PeerAppearance appearance, ConnectMode mode) {
+    beginStart(std::move(baseUrl), std::move(roomCode), std::move(username),
+               std::move(appearance), mode, false);
+}
+
+void CollabNetClient::beginStart(std::string baseUrl, std::string roomCode, std::string username,
+                                 PeerAppearance appearance, ConnectMode mode,
+                                 bool preserveResumeToken) {
+    std::string resumeToken = preserveResumeToken ? m_resumeToken : "";
     stop();
     m_base = std::move(baseUrl);
     m_room = std::move(roomCode);
     m_user = std::move(username);
+    m_appearance = std::move(appearance);
+    m_resumeToken = std::move(resumeToken);
     m_mode = mode;
     m_active = true;
     m_joinRetries = 0;
@@ -49,10 +60,13 @@ void CollabNetClient::stop() {
     std::string base = m_base;
     std::string room = m_room;
     int clientId = m_clientId;
+    std::string sessionToken = m_sessionToken;
 
     m_active = false;
     m_joined = false;
     m_clientId = 0;
+    m_sessionToken.clear();
+    m_resumeToken.clear();
     ++m_gen; // invalidate in-flight callbacks
 
     // Best-effort leave so the server frees the slot promptly.
@@ -63,6 +77,7 @@ void CollabNetClient::stop() {
         });
         auto req = web::WebRequest();
         req.header("Content-Type", "application/json");
+        req.header("Authorization", "Bearer " + sessionToken);
         req.bodyString(body.dump(matjson::NO_INDENTATION));
         WebHelper::dispatch(std::move(req), "POST", base + "/api/leave",
             [](web::WebResponse) {});
@@ -72,7 +87,8 @@ void CollabNetClient::stop() {
 void CollabNetClient::restart(ConnectMode mode) {
     if (m_base.empty() || m_room.empty()) return;
     // Copies on purpose: start() moves its arguments into these same members.
-    start(std::string(m_base), std::string(m_room), std::string(m_user), mode);
+    beginStart(std::string(m_base), std::string(m_room), std::string(m_user),
+               m_appearance, mode, true);
 }
 
 void CollabNetClient::closeRoom() {
@@ -84,6 +100,7 @@ void CollabNetClient::closeRoom() {
     });
     auto req = web::WebRequest();
     req.header("Content-Type", "application/json");
+    req.header("Authorization", "Bearer " + m_sessionToken);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
     WebHelper::dispatch(std::move(req), "POST", apiUrl("/api/close-room"),
         [](web::WebResponse) {});
@@ -92,6 +109,8 @@ void CollabNetClient::closeRoom() {
     m_active = false;
     m_joined = false;
     m_clientId = 0;
+    m_sessionToken.clear();
+    m_resumeToken.clear();
     ++m_gen;
 }
 
@@ -107,12 +126,22 @@ void CollabNetClient::requestResync() {
     });
     auto req = web::WebRequest();
     req.header("Content-Type", "application/json");
+    req.header("Authorization", "Bearer " + m_sessionToken);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
     WebHelper::dispatch(std::move(req), "POST", apiUrl("/api/resync"),
         [](web::WebResponse) {});
 }
 
 void CollabNetClient::onJoinLikeSuccess(matjson::Value value) {
+    std::string sessionToken = value["sessionToken"].asString().unwrapOr("");
+    if (sessionToken.size() < 32) {
+        emitError("upgrade_required", "El servidor no entrego una sesion segura");
+        return;
+    }
+    m_sessionToken = std::move(sessionToken);
+    if (auto resume = value["resumeToken"].asString(); resume && !resume.unwrap().empty()) {
+        m_resumeToken = resume.unwrap();
+    }
     m_clientId = static_cast<int>(value["clientId"].asInt().unwrapOr(0));
     m_joined = true;
     m_joinRetries = 0;
@@ -138,11 +167,17 @@ void CollabNetClient::doJoin() {
     uint64_t gen = m_gen;
 
     auto body = matjson::makeObject({
-        {"accessCode", std::string(kAccessCode)},
         {"roomCode", m_room},
         {"username", m_user},
         {"protocol", static_cast<int64_t>(kProtocolVersion)},
     });
+    body["accountID"] = static_cast<int64_t>(m_appearance.accountID);
+    body["iconID"] = static_cast<int64_t>(m_appearance.iconID);
+    body["iconType"] = static_cast<int64_t>(m_appearance.iconType);
+    body["color1"] = static_cast<int64_t>(m_appearance.color1);
+    body["color2"] = static_cast<int64_t>(m_appearance.color2);
+    body["glowColor"] = static_cast<int64_t>(m_appearance.glowColor);
+    body["glowEnabled"] = m_appearance.glowEnabled;
 
     auto req = web::WebRequest();
     // The shared Render instance sleeps after ~15 min idle; a cold start can
@@ -203,12 +238,19 @@ void CollabNetClient::doCreate() {
     // Send an empty initial snapshot: the manager streams the host's editor
     // objects afterwards via /api/ops (existing seeding path).
     auto body = matjson::makeObject({
-        {"accessCode", std::string(kAccessCode)},
         {"roomCode", m_room},
         {"username", m_user},
         {"protocol", static_cast<int64_t>(kProtocolVersion)},
         {"initialObjects", matjson::Value::array()},
     });
+    if (!m_resumeToken.empty()) body["resumeToken"] = m_resumeToken;
+    body["accountID"] = static_cast<int64_t>(m_appearance.accountID);
+    body["iconID"] = static_cast<int64_t>(m_appearance.iconID);
+    body["iconType"] = static_cast<int64_t>(m_appearance.iconType);
+    body["color1"] = static_cast<int64_t>(m_appearance.color1);
+    body["color2"] = static_cast<int64_t>(m_appearance.color2);
+    body["glowColor"] = static_cast<int64_t>(m_appearance.glowColor);
+    body["glowEnabled"] = m_appearance.glowEnabled;
 
     auto req = web::WebRequest();
     // Same cold-start allowance as join: waking the Render instance can take
@@ -257,6 +299,7 @@ void CollabNetClient::poll() {
 
     auto req = web::WebRequest();
     req.timeout(std::chrono::seconds(35));
+    req.header("Authorization", "Bearer " + m_sessionToken);
     std::string url = apiUrl(fmt::format("/api/poll?room={}&client={}", m_room, m_clientId));
 
     WebHelper::dispatch(std::move(req), "GET", url,
@@ -337,18 +380,68 @@ void CollabNetClient::sendJson(matjson::Value const& value) {
             {"data", value.contains("data") ? value["data"] : matjson::Value("")},
         });
         suffix = "/api/voice";
+    } else if (t == "select") {
+        // Ephemeral peer-selection presence (not part of level LWW state).
+        body = matjson::makeObject({
+            {"room", m_room},
+            {"client", static_cast<int64_t>(m_clientId)},
+            {"rects", value.contains("rects") ? value["rects"] : matjson::Value::array()},
+        });
+        suffix = "/api/select";
+    } else if (t == "kick") {
+        body = matjson::makeObject({
+            {"room", m_room},
+            {"client", static_cast<int64_t>(m_clientId)},
+            {"target", value.contains("target") ? value["target"] : matjson::Value(0)},
+        });
+        suffix = "/api/kick";
     } else {
         return;
     }
 
     auto req = web::WebRequest();
     // Voice frames are perishable: time them out fast so a slow connection
-    // doesn't pile up 15s-long in-flight requests.
-    req.timeout(std::chrono::seconds(t == "voice" ? 6 : 15));
+    // doesn't pile up 15s-long in-flight requests. Selection is similarly
+    // fire-and-forget.
+    req.timeout(std::chrono::seconds((t == "voice" || t == "select") ? 6 : 15));
     req.header("Content-Type", "application/json");
+    req.header("Authorization", "Bearer " + m_sessionToken);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
     WebHelper::dispatch(std::move(req), "POST", apiUrl(suffix),
         [](web::WebResponse) {});
+}
+
+void CollabNetClient::sendOps(matjson::Value const& ops, OpsCb cb) {
+    if (!isOpen()) {
+        if (cb) cb(false, 0, 0);
+        return;
+    }
+    uint64_t gen = m_gen;
+
+    auto body = matjson::makeObject({
+        {"room", m_room},
+        {"client", static_cast<int64_t>(m_clientId)},
+        {"ops", ops},
+    });
+
+    auto req = web::WebRequest();
+    req.timeout(std::chrono::seconds(20));
+    req.header("Content-Type", "application/json");
+    req.header("Authorization", "Bearer " + m_sessionToken);
+    req.bodyString(body.dump(matjson::NO_INDENTATION));
+
+    WebHelper::dispatch(std::move(req), "POST", apiUrl("/api/ops"),
+        [this, gen, cb = std::move(cb)](web::WebResponse res) {
+            if (!cb) return;
+            // A different generation means stop()/start() ran while this was
+            // in flight; the manager reset its outbox too, so stay silent.
+            if (gen != m_gen) return;
+            int accepted = 0;
+            if (auto parsed = matjson::parse(res.string().unwrapOr(""))) {
+                accepted = static_cast<int>(parsed.unwrap()["count"].asInt().unwrapOr(0));
+            }
+            cb(res.code() == 200, res.code(), accepted);
+        });
 }
 
 void CollabNetClient::sendInvite(int accountId, std::string const& fromName, InviteCb cb) {
@@ -358,7 +451,6 @@ void CollabNetClient::sendInvite(int accountId, std::string const& fromName, Inv
     }
 
     auto body = matjson::makeObject({
-        {"accessCode", std::string(kAccessCode)},
         {"room", m_room},
         {"client", static_cast<int64_t>(m_clientId)},
         {"account", static_cast<int64_t>(accountId)},
@@ -368,6 +460,7 @@ void CollabNetClient::sendInvite(int accountId, std::string const& fromName, Inv
     auto req = web::WebRequest();
     req.timeout(std::chrono::seconds(15));
     req.header("Content-Type", "application/json");
+    req.header("Authorization", "Bearer " + m_sessionToken);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
 
     WebHelper::dispatch(std::move(req), "POST", apiUrl("/api/invite"),

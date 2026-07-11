@@ -29,6 +29,14 @@ public:
     static std::filesystem::path spriteImageFile(std::string_view slotId,
                                                  std::string_view spriteName);
 
+    // Fusion mode: region mask + imported texture (png/gif).
+    static std::filesystem::path fusionsDir(std::string_view slotId);
+    static std::filesystem::path fusionMaskFile(std::string_view slotId,
+                                                std::string_view spriteName);
+    static std::filesystem::path fusionTextureFile(std::string_view slotId,
+                                                   std::string_view spriteName,
+                                                   std::string_view ext);
+
     static std::filesystem::path autoCacheFile(std::string_view slotId);
 
     static std::filesystem::path outputZipFile(std::string_view slotId);

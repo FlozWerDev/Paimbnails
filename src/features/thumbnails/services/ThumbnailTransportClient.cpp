@@ -1,4 +1,4 @@
-﻿#include "ThumbnailTransportClient.hpp"
+#include "ThumbnailTransportClient.hpp"
 #include "../../../framework/async/CallbackFuture.hpp"
 #include <Geode/loader/Loader.hpp>
 #include "ThumbnailLoader.hpp"

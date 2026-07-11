@@ -1,4 +1,4 @@
-﻿#include "BlurDiskCache.hpp"
+#include "BlurDiskCache.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/cocos/cocoa/CCGeometry.h>

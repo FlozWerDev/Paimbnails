@@ -1,4 +1,4 @@
-﻿#include "CompactListRefresh.hpp"
+#include "CompactListRefresh.hpp"
 
 #include <Geode/Geode.hpp>
 #include "../../../utils/MainThreadDelay.hpp"

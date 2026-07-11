@@ -68,7 +68,9 @@ SpritePreviewResult SpritePreviewRenderer::renderTintedWithStats(
 
 ImageBuffer SpritePreviewRenderer::renderCustomImage(ImageBuffer const& userImage,
                                                      int frameW, int frameH,
-                                                     ImageTransform const& transform) {
+                                                     ImageTransform const& transform,
+                                                     float pixelOffsetX,
+                                                     float pixelOffsetY) {
     if (userImage.empty() || frameW <= 0 || frameH <= 0) return ImageBuffer();
 
     float imgW = static_cast<float>(userImage.width());
@@ -97,9 +99,11 @@ ImageBuffer SpritePreviewRenderer::renderCustomImage(ImageBuffer const& userImag
     if (sx <= 0.0f || sy <= 0.0f) return ImageBuffer();
 
     // Image centre in canvas space. offsetY is "positive = up" in the UI;
-    // pixel rows grow downward, hence the minus.
-    float cx = fw * 0.5f + std::clamp(transform.offsetX, -2.0f, 2.0f) * fw * 0.5f;
-    float cy = fh * 0.5f - std::clamp(transform.offsetY, -2.0f, 2.0f) * fh * 0.5f;
+    // pixel rows grow downward, hence the minus. Clamp ±2 = full frame shift.
+    float cx = fw * 0.5f + std::clamp(transform.offsetX, -2.0f, 2.0f) * fw * 0.5f
+             + pixelOffsetX;
+    float cy = fh * 0.5f - std::clamp(transform.offsetY, -2.0f, 2.0f) * fh * 0.5f
+             + pixelOffsetY;
 
     float rad  = transform.rotationDeg * (3.14159265358979323846f / 180.0f);
     float cosR = std::cos(rad);

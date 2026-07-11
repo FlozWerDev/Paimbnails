@@ -1,4 +1,4 @@
-﻿#include "EmoteAutocomplete.hpp"
+#include "EmoteAutocomplete.hpp"
 #include "../services/EmoteService.hpp"
 #include "../services/EmoteCache.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"

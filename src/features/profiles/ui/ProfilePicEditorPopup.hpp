@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
 #include "../services/ProfilePicCustomizer.hpp"
 #include "ProfilePicIconsDetailPopup.hpp"
@@ -8,6 +8,7 @@ protected:
     ProfilePicConfig m_editConfig;
 
     cocos2d::CCNode* m_previewContainer = nullptr;
+    cocos2d::CCLabelBMFont* m_previewStatusLabel = nullptr;
 
     cocos2d::CCNode* m_tabContent = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_tabBtns;
@@ -35,10 +36,12 @@ protected:
     Slider* m_imgRotationSlider = nullptr;
     Slider* m_imgOffsetXSlider = nullptr;
     Slider* m_imgOffsetYSlider = nullptr;
+    Slider* m_imgOpacitySlider = nullptr;
     cocos2d::CCLabelBMFont* m_imgZoomLabel = nullptr;
     cocos2d::CCLabelBMFont* m_imgRotationLabel = nullptr;
     cocos2d::CCLabelBMFont* m_imgOffsetXLabel = nullptr;
     cocos2d::CCLabelBMFont* m_imgOffsetYLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_imgOpacityLabel = nullptr;
 
     Slider* m_decoScaleSlider = nullptr;
     Slider* m_decoRotSlider = nullptr;
@@ -62,12 +65,21 @@ protected:
     void onTabBtn(cocos2d::CCObject* sender);
     void rebuildCurrentTab();
 
+    // Photo tab: image source + framing
+    cocos2d::CCNode* createPhotoTab();
+    void onPhotoSourceProfile(cocos2d::CCObject* sender);
+    void onPickCustomPhoto(cocos2d::CCObject* sender);
+    void onImgZoomChanged(cocos2d::CCObject* sender);
+    void onImgRotationChanged(cocos2d::CCObject* sender);
+    void onImgOffsetXChanged(cocos2d::CCObject* sender);
+    void onImgOffsetYChanged(cocos2d::CCObject* sender);
+    void onImgOpacityChanged(cocos2d::CCObject* sender);
+    void onImgFlipX(cocos2d::CCObject* sender);
+    void onImgFlipY(cocos2d::CCObject* sender);
+    void onResetAdjust(cocos2d::CCObject* sender);
+
+    // Shape tab
     cocos2d::CCNode* createShapeTab();
-    void onFrameToggle(cocos2d::CCObject* sender);
-    void onThicknessChanged(cocos2d::CCObject* sender);
-    void onFrameOpacityChanged(cocos2d::CCObject* sender);
-    void onBorderColorSelect(cocos2d::CCObject* sender);
-    void onPickCustomBorderColor(cocos2d::CCObject* sender);
     void onScaleXChanged(cocos2d::CCObject* sender);
     void onScaleYChanged(cocos2d::CCObject* sender);
     void onSizeChanged(cocos2d::CCObject* sender);
@@ -75,6 +87,15 @@ protected:
     void onStencilSelect(cocos2d::CCObject* sender);
     void onResetShape(cocos2d::CCObject* sender);
 
+    // Border tab
+    cocos2d::CCNode* createBorderTab();
+    void onFrameToggle(cocos2d::CCObject* sender);
+    void onThicknessChanged(cocos2d::CCObject* sender);
+    void onFrameOpacityChanged(cocos2d::CCObject* sender);
+    void onBorderColorSelect(cocos2d::CCObject* sender);
+    void onPickCustomBorderColor(cocos2d::CCObject* sender);
+
+    // Deco tab
     cocos2d::CCNode* createDecoTab();
     void onCategorySelect(cocos2d::CCObject* sender);
     void onAddDeco(cocos2d::CCObject* sender);
@@ -91,48 +112,21 @@ protected:
     void onDecoZDown(cocos2d::CCObject* sender);
     void onDecoDelete(cocos2d::CCObject* sender);
     void onDecoDuplicate(cocos2d::CCObject* sender);
-    void onDecoColorSelect(cocos2d::CCObject* sender);
     void onDecoPickColor(cocos2d::CCObject* sender);
     void onClearAllDecos(cocos2d::CCObject* sender);
 
-    cocos2d::CCNode* createAdjustTab();
-    void onImgZoomChanged(cocos2d::CCObject* sender);
-    void onImgRotationChanged(cocos2d::CCObject* sender);
-    void onImgOffsetXChanged(cocos2d::CCObject* sender);
-    void onImgOffsetYChanged(cocos2d::CCObject* sender);
-    void onResetAdjust(cocos2d::CCObject* sender);
-
+    // Icon tab
     cocos2d::CCNode* createIconTab();
     void onOnlyIconToggle(cocos2d::CCObject* sender);
-    void onIconTypeSelect(cocos2d::CCObject* sender);
     void onGameIconSelect(cocos2d::CCObject* sender);
     void onOpenIconsDetail(cocos2d::CCObject* sender);
-    void onCustomIconSelect(cocos2d::CCObject* sender);
-    void onAddCustomIcon(cocos2d::CCObject* sender);
-    void onRemoveCustomIcon(cocos2d::CCObject* sender);
-    void onIconColor1Select(cocos2d::CCObject* sender);
-    void onIconColor2Select(cocos2d::CCObject* sender);
-    void onIconColor1SourceSelect(cocos2d::CCObject* sender);
-    void onIconColor2SourceSelect(cocos2d::CCObject* sender);
-    void onPickIconColor1(cocos2d::CCObject* sender);
-    void onPickIconColor2(cocos2d::CCObject* sender);
-    void onIconGlowToggle(cocos2d::CCObject* sender);
-    void onIconGlowColorSelect(cocos2d::CCObject* sender);
-    void onIconGlowColorSourceSelect(cocos2d::CCObject* sender);
-    void onPickIconGlowColor(cocos2d::CCObject* sender);
-    void onIconScaleChanged(cocos2d::CCObject* sender);
-    void onAnimationTypeSelect(cocos2d::CCObject* sender);
-    void onAnimationSpeedChanged(cocos2d::CCObject* sender);
-    void onAnimationAmountChanged(cocos2d::CCObject* sender);
-    void onIconImageToggle(cocos2d::CCObject* sender);
 
+    // Style tab
     cocos2d::CCNode* createStyleTab();
     void onFontSelect(cocos2d::CCObject* sender);
     void onPreset(cocos2d::CCObject* sender);
     void onRandomize(cocos2d::CCObject* sender);
     void onResetAll(cocos2d::CCObject* sender);
-
-    cocos2d::CCNode* createFrameTab();
 
     void rebuildPreview();
     void triggerImageDownloadIfNeeded();

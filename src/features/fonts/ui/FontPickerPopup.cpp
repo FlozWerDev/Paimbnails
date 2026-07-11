@@ -1,4 +1,4 @@
-﻿#include "FontPickerPopup.hpp"
+#include "FontPickerPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>

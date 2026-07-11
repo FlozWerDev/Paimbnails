@@ -1,4 +1,4 @@
-﻿#include "ConversationMemory.hpp"
+#include "ConversationMemory.hpp"
 
 #include <algorithm>
 

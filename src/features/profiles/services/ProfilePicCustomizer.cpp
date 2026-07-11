@@ -1,4 +1,4 @@
-﻿#include "ProfilePicCustomizer.hpp"
+#include "ProfilePicCustomizer.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>
@@ -49,10 +49,15 @@ void ProfilePicCustomizer::save() {
     root["scaleY"] = m_config.scaleY;
     root["size"] = m_config.size;
     root["rotation"] = m_config.rotation;
+    root["photoSource"] = m_config.photoSource;
+    root["photoPath"] = m_config.photoPath;
     root["imageZoom"] = m_config.imageZoom;
     root["imageRotation"] = m_config.imageRotation;
     root["imageOffsetX"] = m_config.imageOffsetX;
     root["imageOffsetY"] = m_config.imageOffsetY;
+    root["imageFlipX"] = m_config.imageFlipX;
+    root["imageFlipY"] = m_config.imageFlipY;
+    root["imageOpacity"] = m_config.imageOpacity;
     root["frameEnabled"] = m_config.frameEnabled;
     root["stencilSprite"] = m_config.stencilSprite;
     root["offsetX"] = m_config.offsetX;
@@ -149,10 +154,15 @@ void ProfilePicCustomizer::load() {
     if (root.contains("scaleY")) m_config.scaleY = root["scaleY"].asDouble().unwrapOr(1.0);
     if (root.contains("size")) m_config.size = root["size"].asDouble().unwrapOr(120.0);
     if (root.contains("rotation")) m_config.rotation = root["rotation"].asDouble().unwrapOr(0.0);
+    if (root.contains("photoSource")) m_config.photoSource = root["photoSource"].asString().unwrapOr("profile");
+    if (root.contains("photoPath")) m_config.photoPath = root["photoPath"].asString().unwrapOr("");
     if (root.contains("imageZoom")) m_config.imageZoom = root["imageZoom"].asDouble().unwrapOr(1.0);
     if (root.contains("imageRotation")) m_config.imageRotation = root["imageRotation"].asDouble().unwrapOr(0.0);
     if (root.contains("imageOffsetX")) m_config.imageOffsetX = root["imageOffsetX"].asDouble().unwrapOr(0.0);
     if (root.contains("imageOffsetY")) m_config.imageOffsetY = root["imageOffsetY"].asDouble().unwrapOr(0.0);
+    if (root.contains("imageFlipX")) m_config.imageFlipX = root["imageFlipX"].asBool().unwrapOr(false);
+    if (root.contains("imageFlipY")) m_config.imageFlipY = root["imageFlipY"].asBool().unwrapOr(false);
+    if (root.contains("imageOpacity")) m_config.imageOpacity = root["imageOpacity"].asDouble().unwrapOr(255.0);
     if (root.contains("frameEnabled")) m_config.frameEnabled = root["frameEnabled"].asBool().unwrapOr(false);
     if (root.contains("stencilSprite")) m_config.stencilSprite = root["stencilSprite"].asString().unwrapOr("circle");
     if (root.contains("offsetX")) m_config.offsetX = root["offsetX"].asDouble().unwrapOr(0.0);

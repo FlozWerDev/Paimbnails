@@ -1,4 +1,4 @@
-﻿#include "CursorManager.hpp"
+#include "CursorManager.hpp"
 #include <Geode/utils/string.hpp>
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"

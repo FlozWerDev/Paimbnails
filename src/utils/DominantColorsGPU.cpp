@@ -1,4 +1,4 @@
-﻿#include "DominantColorsGPU.hpp"
+#include "DominantColorsGPU.hpp"
 #include "DominantColors.hpp"
 #include "GLSLLoader.hpp"
 #include "ImageConverter.hpp"

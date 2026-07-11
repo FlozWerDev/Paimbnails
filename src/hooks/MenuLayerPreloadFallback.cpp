@@ -1,4 +1,4 @@
-﻿// Fallback that starts the preload and shows the X/Y label even if the
+// Fallback that starts the preload and shows the X/Y label even if the
 // LoadingLayer hook never intercepted anything (e.g. an early-load:false mod
 // that finished loading after LoadingLayer::loadAssets). Only claims the
 // preload/label if LoadingLayer didn't (tryClaimPreload), so it isn't duplicated.

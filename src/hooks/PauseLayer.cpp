@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/PauseLayer.hpp>
+#include <Geode/modify/PauseLayer.hpp>
 #include "../framework/HookConventions.hpp"
 #include <Geode/binding/PlayLayer.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>

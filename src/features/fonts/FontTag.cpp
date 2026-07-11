@@ -1,4 +1,4 @@
-﻿#include "FontTag.hpp"
+#include "FontTag.hpp"
 #include <Geode/Geode.hpp>
 #include <cctype>
 

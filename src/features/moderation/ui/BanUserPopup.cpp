@@ -1,4 +1,4 @@
-﻿#include "BanUserPopup.hpp"
+#include "BanUserPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../../../utils/PaimonNotification.hpp"

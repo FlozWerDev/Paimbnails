@@ -1,4 +1,4 @@
-﻿#include "../services/MainMenuLayoutManager.hpp"
+#include "../services/MainMenuLayoutManager.hpp"
 #include "LayoutEditorKeybind.hpp"
 
 #include <Geode/modify/PauseLayer.hpp>

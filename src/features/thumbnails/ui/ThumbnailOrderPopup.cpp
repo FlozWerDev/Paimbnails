@@ -1,4 +1,4 @@
-﻿#include "ThumbnailOrderPopup.hpp"
+#include "ThumbnailOrderPopup.hpp"
 
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"

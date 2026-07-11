@@ -1,4 +1,4 @@
-﻿#include "RateProfilePopup.hpp"
+#include "RateProfilePopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "ReportUserPopup.hpp"

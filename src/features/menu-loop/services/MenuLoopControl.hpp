@@ -5,6 +5,7 @@
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/ui/GeodeUI.hpp>
+#include <Geode/ui/PopupManager.hpp>
 
 namespace paimon::menuloop {
 
@@ -17,14 +18,14 @@ inline bool isVanillaMenuLoopDisabled() {
 namespace MenuLoopControl {
 
     inline void woahThereBuddy(const std::string& reason) {
-        geode::createQuickPopup(
+        PopupManager::get().quickPopup(
             "Menu Loop", reason,
             "Never Mind", "Open Mod Settings",
             [](FLAlertLayer*, bool openConfig) {
                 if (!openConfig) return;
                 geode::openSettingsPopup(Mod::get(), false);
             }
-        );
+        ).showInstant();
     }
 
     // Shuffle

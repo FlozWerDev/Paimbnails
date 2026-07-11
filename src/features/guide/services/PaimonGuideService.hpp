@@ -1,12 +1,14 @@
 ﻿#pragma once
 
 #include <Geode/Geode.hpp>
+#include <optional>
 #include <string>
 #include <vector>
 #include <utility>
 
 #include "GuideIntents.hpp"
 #include "ConversationMemory.hpp"
+#include "PopupRegistry.hpp"
 
 // Singleton that owns all GuideIntents and answers user questions fully locally
 // (no network, no external AI). Keeps a ConversationMemory for contextual
@@ -47,7 +49,8 @@ private:
     static std::vector<std::string> tokenize(std::string const& normalized);
 
     // Build a "didn't understand" GuideAnswer in the active language. When the
-    // matcher found close-but-unqualified candidates, names them as suggestions.
+    // matcher found close-but-unqualified candidates, names them as suggestions
+    // and fills actionable recommendations when possible.
     GuideAnswer makeFallback(std::vector<GuideIntent const*> const& suggestions,
                              std::string const& langId) const;
 
@@ -59,6 +62,26 @@ private:
     // Build a follow-up response reusing the last functional intent.
     GuideAnswer buildFollowUpAnswer(GuideIntent const& intent,
                                     std::string const& langId);
+
+    // Category browse: "music stuff", "cosas de perfil", bare category words.
+    // Returns nullopt if the query is not a category browse.
+    std::optional<GuideAnswer> tryCategoryBrowse(
+        std::string const& normalized,
+        std::vector<std::string> const& tokens,
+        std::string const& langId) const;
+
+    // Attach related same-category (or runner-up) recommendations to an answer.
+    void attachRelatedRecommendations(
+        GuideAnswer& ans,
+        GuideIntent const& primary,
+        GuideIntent const* runnerUp,
+        std::string const& langId,
+        int maxExtra = 2) const;
+
+    // Build a GuideRecommendation from an intent id (uses registry for label/action).
+    GuideRecommendation makeRecommendation(
+        std::string const& intentId,
+        std::string const& langId) const;
 
     std::vector<GuideIntent> m_intents;
     ConversationMemory m_memory;

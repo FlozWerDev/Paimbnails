@@ -1,4 +1,4 @@
-﻿#include "ProgressBarEditOverlay.hpp"
+#include "ProgressBarEditOverlay.hpp"
 #include "../services/ProgressBarManager.hpp"
 #include "../../fonts/ui/FontPickerPopup.hpp"
 #include "../../fonts/FontTag.hpp"

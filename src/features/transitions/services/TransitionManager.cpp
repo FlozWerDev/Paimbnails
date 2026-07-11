@@ -1,6 +1,7 @@
-﻿#include "TransitionManager.hpp"
+#include "TransitionManager.hpp"
 #include "../ui/CustomTransitionScene.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include <Geode/utils/file.hpp>
 #include <Geode/loader/Log.hpp>
 #include <matjson.hpp>
@@ -11,6 +12,32 @@
 
 using namespace geode::prelude;
 using namespace cocos2d;
+
+// GD-blue gradient behind a transition scene. Native slide/flip/zoom/tile
+// transitions expose the raw GL clear color (a white flash on many setups)
+// wherever neither scene covers; a z=-100 child of the transition scene is
+// drawn before both scenes (CCTransitionScene draws them inside draw()), so
+// it acts as a full-screen backdrop.
+static void attachTransitionBackdrop(CCScene* trans) {
+    if (!trans) return;
+    if (trans->getChildByID("paimon-transition-backdrop"_spr)) return;
+
+    auto winSize = CCDirector::get()->getWinSize();
+    CCNode* backdrop = nullptr;
+    if (auto grad = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
+        grad->setAnchorPoint({0.f, 0.f});
+        grad->setScaleX(winSize.width / grad->getContentSize().width);
+        grad->setScaleY(winSize.height / grad->getContentSize().height);
+        grad->setColor({0, 102, 255});
+        backdrop = grad;
+    } else {
+        backdrop = CCLayerColor::create({0, 102, 255, 255}, winSize.width, winSize.height);
+    }
+    if (backdrop) {
+        backdrop->setID("paimon-transition-backdrop"_spr);
+        trans->addChild(backdrop, -100);
+    }
+}
 
 // Singleton
 
@@ -1088,7 +1115,11 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
 
     // Native Cocos2d transitions
     auto* trans = createNativeTransition(safeCfg, dest);
-    return trans ? static_cast<CCScene*>(trans) : dest;
+    if (trans) {
+        attachTransitionBackdrop(trans);
+        return static_cast<CCScene*>(trans);
+    }
+    return dest;
 }
 
 // Convenience wrappers that apply the user's global transition when navigating to mod scenes.

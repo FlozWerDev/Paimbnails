@@ -27,6 +27,7 @@ private:
 
     bool m_started = false;
     int m_accountId = 0;
+    std::string m_token;
     uint64_t m_gen = 0;
 };
 

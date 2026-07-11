@@ -1,12 +1,3 @@
-// GD-style skin for the Paimon Hub.
-//
-// Alternative, guided presentation of the same hub data: GD assets
-// (GJ_square01 panel, GJ buttons, gradient background, side art), a compact
-// two-step drill-down (categories -> actions), a contextual hint bar, a
-// highlighted recommended action per category and an interactive first-run
-// tour. The original skin lives untouched in PaimonHubLayer.cpp; the user
-// switches between both with the "UI" button (saved value "hub-ui-style").
-
 #include "PaimonHubLayer.hpp"
 #include "PaimonHubData.hpp"
 #include "../features/quick-hub/ui/RadialConfigPopup.hpp"
@@ -31,14 +22,17 @@ namespace {
 
 std::string tr(char const* key, char const* fallback = "") {
     auto value = Localization::get().getString(key);
-    if (value == key && fallback && fallback[0] != '\0') {
-        return fallback;
-    }
+    if (value == key && fallback && fallback[0] != '\0') return fallback;
     return value;
 }
 
-// Layout constants shared by every GD-home state (absolute layer coords,
-// same footprint as the News/Forum panels so tab switching feels seamless).
+CCMenu* makeZeroMenu(char const* id = nullptr) {
+    auto* menu = CCMenu::create();
+    if (id) menu->setID(id);
+    menu->setPosition({0.f, 0.f});
+    return menu;
+}
+
 constexpr float kPanelL = 15.f;
 constexpr float kPanelB = 15.f;
 constexpr float kPanelH = 250.f;
@@ -48,7 +42,6 @@ constexpr float kColGap = 128.f;
 constexpr float kHintBarY = 22.f;
 constexpr float kHintBarH = 26.f;
 
-// GD button texture per category (same palette family as the actions).
 constexpr std::array<char const*, 7> kCatButtonFiles = {
     "GJ_button_01.png", "GJ_button_02.png", "GJ_button_03.png",
     "GJ_button_06.png", "GJ_button_05.png", "GJ_button_04.png",
@@ -62,7 +55,6 @@ void shrinkLabelToFit(CCLabelBMFont* label, float maxW) {
     }
 }
 
-// GD-style tile: GJ button 9-slice + title + one-line hint.
 CCScale9Sprite* makeGDTile(
     std::string const& bgFile,
     std::string const& title,
@@ -92,7 +84,6 @@ CCScale9Sprite* makeGDTile(
     return bg;
 }
 
-// Column x for a grid row, centering incomplete rows.
 float gridColX(float cx, int col, int countInRow) {
     float offset = (3 - countInRow) * 0.5f;
     return cx + (static_cast<float>(col) - 1.f + offset) * kColGap;
@@ -119,17 +110,22 @@ void PaimonHubLayer::buildGDShell() {
     float cx = winSize.width / 2.f;
     float top = winSize.height;
 
-    // GD gradient background + bottom side art
     if (auto bg = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
         bg->setAnchorPoint({0.f, 0.f});
         bg->setScaleX(winSize.width / bg->getContentSize().width);
         bg->setScaleY(winSize.height / bg->getContentSize().height);
         bg->setColor({40, 70, 160});
         this->addChild(bg, -2);
+        m_bgNode = bg;
+        m_bgColorHome = {40, 70, 160};
+        m_bgColorSub  = {0, 102, 255};
     } else {
         auto flat = CCLayerColor::create(ccc4(30, 50, 120, 255));
         flat->setContentSize(winSize);
         this->addChild(flat, -2);
+        m_bgNode = flat;
+        m_bgColorHome = {30, 50, 120};
+        m_bgColorSub  = {0, 102, 255};
     }
 
     if (auto leftArt = paimon::SpriteHelper::safeCreateWithFrameName("GJ_sideArt_001.png")) {
@@ -144,9 +140,7 @@ void PaimonHubLayer::buildGDShell() {
         this->addChild(rightArt, -1);
     }
 
-    m_mainMenu = CCMenu::create();
-    m_mainMenu->setID("paimon-hub-main-menu"_spr);
-    m_mainMenu->setPosition({0, 0});
+    m_mainMenu = makeZeroMenu("paimon-hub-main-menu"_spr);
     this->addChild(m_mainMenu, 10);
 
     auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
@@ -161,7 +155,6 @@ void PaimonHubLayer::buildGDShell() {
     title->setScale(0.48f);
     this->addChild(title);
 
-    // tab bar (same footprint as the original skin so muscle memory carries)
     std::vector<std::string> tabNames = {
         tr("pai.hub.tab.home", "Inicio"),
         tr("pai.hub.tab.news", "News"),
@@ -181,20 +174,18 @@ void PaimonHubLayer::buildGDShell() {
     this->addChild(tabBar, 10);
 
     m_tabBtns.clear();
+    static char const* kTabIds[] = {"home-tab-btn"_spr, "news-tab-btn"_spr, "forum-tab-btn"_spr};
     for (int i = 0; i < 3; i++) {
         auto spr = ButtonSprite::create(tabNames[i].c_str(), "bigFont.fnt", "GJ_button_04.png", .8f);
         spr->setScale(0.38f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(PaimonHubLayer::onTabSwitch));
         btn->setTag(i);
-        if (i == 0)      btn->setID("home-tab-btn"_spr);
-        else if (i == 1) btn->setID("news-tab-btn"_spr);
-        else             btn->setID("forum-tab-btn"_spr);
+        btn->setID(kTabIds[i]);
         tabBar->addChild(btn);
         m_tabBtns.push_back(btn);
     }
     tabBar->updateLayout();
 
-    // switch back to the classic skin
     auto uiSpr = ButtonSprite::create(tr("pai.hub.style.classic", "UI: Clasica").c_str(), "bigFont.fnt", "GJ_button_06.png", .8f);
     uiSpr->setScale(0.32f);
     auto uiBtn = CCMenuItemSpriteExtra::create(uiSpr, this, menu_selector(PaimonHubLayer::onToggleUIStyle));
@@ -202,42 +193,23 @@ void PaimonHubLayer::buildGDShell() {
     uiBtn->setPosition({winSize.width - 42.f, top - 20.f});
     m_mainMenu->addChild(uiBtn);
 
-    // tab containers (same structure the original skin builds in init)
-    m_homeTab = CCLayerRGBA::create();
-    m_homeTab->setID("home-tab"_spr);
-    m_homeTab->setCascadeOpacityEnabled(true);
-    this->addChild(m_homeTab, 5);
-    m_homeMenu = CCMenu::create();
-    m_homeMenu->setID("home-menu"_spr);
-    m_homeMenu->setPosition({0, 0});
-    this->addChild(m_homeMenu, 11);
-
-    m_newsTab = CCLayerRGBA::create();
-    m_newsTab->setID("news-tab"_spr);
-    m_newsTab->setVisible(false);
-    m_newsTab->setCascadeOpacityEnabled(true);
-    this->addChild(m_newsTab, 5);
-    m_newsMenu = CCMenu::create();
-    m_newsMenu->setID("news-menu"_spr);
-    m_newsMenu->setPosition({0, 0});
-    m_newsMenu->setVisible(false);
-    this->addChild(m_newsMenu, 11);
-
-    m_forumTab = CCLayerRGBA::create();
-    m_forumTab->setID("forum-tab"_spr);
-    m_forumTab->setVisible(false);
-    m_forumTab->setCascadeOpacityEnabled(true);
-    this->addChild(m_forumTab, 5);
-    m_forumMenu = CCMenu::create();
-    m_forumMenu->setID("forum-menu"_spr);
-    m_forumMenu->setPosition({0, 0});
-    m_forumMenu->setVisible(false);
-    this->addChild(m_forumMenu, 11);
+    auto addTab = [this](CCLayerRGBA*& tab, CCMenu*& menu, char const* tabId, char const* menuId, bool visible) {
+        tab = CCLayerRGBA::create();
+        tab->setID(tabId);
+        tab->setCascadeOpacityEnabled(true);
+        tab->setVisible(visible);
+        this->addChild(tab, 5);
+        menu = makeZeroMenu(menuId);
+        menu->setVisible(visible);
+        this->addChild(menu, 11);
+    };
+    addTab(m_homeTab, m_homeMenu, "home-tab"_spr, "home-menu"_spr, true);
+    addTab(m_newsTab, m_newsMenu, "news-tab"_spr, "news-menu"_spr, false);
+    addTab(m_forumTab, m_forumMenu, "forum-tab"_spr, "forum-menu"_spr, false);
 
     gdBuildHome();
     buildNewsTab();
     buildForumTab();
-
     switchTab(0);
 
     {
@@ -254,7 +226,6 @@ void PaimonHubLayer::buildGDShell() {
         this->addChild(verLbl, 2);
     }
 
-    // first-run: auto-start the guided tour once the entrance settles
     if (!Mod::get()->getSavedValue<bool>("hub-gd-tour-done", false)) {
         this->runAction(CCSequence::create(
             CCDelayTime::create(0.7f),
@@ -277,7 +248,6 @@ void PaimonHubLayer::gdBuildHome() {
         m_homeTab->addChild(panel, 0);
     }
 
-    // global search: type any setting name, open its config directly
     m_searchInput = TextInput::create(120.f, tr("pai.hub.search", "Buscar...").c_str(), "chatFont.fnt");
     m_searchInput->setCommonFilter(CommonFilter::Any);
     m_searchInput->setMaxCharCount(20);
@@ -296,7 +266,6 @@ void PaimonHubLayer::gdBuildHome() {
     });
     m_homeTab->addChild(m_searchInput, 10);
 
-    // contextual hint bar (bottom strip): tells the user what to do next
     float hintBarW = panelW - 24.f - 76.f;
     auto hintBg = CCScale9Sprite::create("GJ_square02.png");
     if (hintBg) {
@@ -318,7 +287,6 @@ void PaimonHubLayer::gdBuildHome() {
     m_gdHintLabel->setColor({235, 235, 245});
     m_homeTab->addChild(m_gdHintLabel, 3);
 
-    // replayable guided tour
     auto tourSpr = ButtonSprite::create(tr("pai.hub.gd.tour", "Guia").c_str(), "goldFont.fnt", "GJ_button_06.png", .8f);
     tourSpr->setScale(0.42f);
     auto tourBtn = CCMenuItemExt::createSpriteExtra(tourSpr, [hubRef](CCMenuItemSpriteExtra*) {
@@ -334,9 +302,7 @@ void PaimonHubLayer::gdBuildHome() {
     m_gdContent->setID("gd-home-content"_spr);
     m_homeTab->addChild(m_gdContent, 2);
 
-    m_gdContentMenu = CCMenu::create();
-    m_gdContentMenu->setPosition({0, 0});
-    m_gdContentMenu->setID("gd-home-content-menu"_spr);
+    m_gdContentMenu = makeZeroMenu("gd-home-content-menu"_spr);
     m_homeMenu->addChild(m_gdContentMenu, 3);
 
     gdShowCategories(true);
@@ -436,7 +402,6 @@ void PaimonHubLayer::gdShowCategory(int idx) {
     float cx = winSize.width / 2.f;
     WeakRef<PaimonHubLayer> self = this;
 
-    // back to categories
     auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     backSpr->setScale(0.62f);
     auto backBtn = CCMenuItemExt::createSpriteExtra(backSpr, [self](CCMenuItemSpriteExtra*) {
@@ -448,7 +413,6 @@ void PaimonHubLayer::gdShowCategory(int idx) {
     backBtn->setPosition({34.f, 241.f});
     m_gdContentMenu->addChild(backBtn);
 
-    // breadcrumb: Inicio > Category
     auto crumbHome = CCLabelBMFont::create(tr("pai.hub.gd.home", "Inicio >").c_str(), "bigFont.fnt");
     crumbHome->setAnchorPoint({0.f, 0.5f});
     crumbHome->setScale(0.26f);
@@ -463,7 +427,6 @@ void PaimonHubLayer::gdShowCategory(int idx) {
     crumbCat->setPosition({52.f + crumbHome->getScaledContentSize().width + 6.f, 246.f});
     m_gdContent->addChild(crumbCat);
 
-    // full info popup for the category
     auto infoBtn = CCMenuItemExt::createSpriteExtra(
         CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png"),
         [self, idx](CCMenuItemSpriteExtra*) {
@@ -505,7 +468,6 @@ void PaimonHubLayer::gdShowCategory(int idx) {
     auto actions = getHubActions(idx);
     for (auto& act : actions) act.categoryIndex = idx;
 
-    // GD-skin extras that the original exposes through sidebar shortcuts
     if (idx == 5) {
         actions.push_back({
             "Quick Hub", "GJ_button_06.png",
@@ -563,7 +525,6 @@ void PaimonHubLayer::gdShowCategory(int idx) {
         m_gdContentMenu->addChild(btn);
         animateTileEntrance(btn, i, {x, y});
 
-        // first action = recommended entry point: golden outline + tag
         if (i == 0) {
             auto outline = paimon::SpriteHelper::createRoundedRectOutline(
                 kTileW + 10.f, kTileH + 10.f, 7.f,
@@ -612,36 +573,30 @@ void PaimonHubLayer::gdShowSearchResults(std::string const& query) {
         return s;
     };
     std::string lowerQuery = toLower(query);
-
     std::vector<HubActionMeta> results;
     for (size_t catIdx = 0; catIdx < categories.size(); ++catIdx) {
-        auto catActions = getHubActions(static_cast<int>(catIdx));
-        for (auto const& act : catActions) {
-            if (toLower(act.title).find(lowerQuery) != std::string::npos ||
-                toLower(categories[catIdx].title).find(lowerQuery) != std::string::npos) {
-                HubActionMeta entry = act;
-                entry.categoryIndex = static_cast<int>(catIdx);
-                entry.desc = categories[catIdx].title;
-                results.push_back(entry);
-            }
+        for (auto const& act : getHubActions(static_cast<int>(catIdx))) {
+            if (toLower(act.title).find(lowerQuery) == std::string::npos &&
+                toLower(categories[catIdx].title).find(lowerQuery) == std::string::npos) continue;
+            HubActionMeta entry = act;
+            entry.categoryIndex = static_cast<int>(catIdx);
+            entry.desc = categories[catIdx].title;
+            results.push_back(std::move(entry));
         }
     }
-
-    std::string lang = Mod::get()->getSettingValue<std::string>("language");
-    bool isSpanish = (lang == "spanish");
+    bool isSpanish = Mod::get()->getSettingValue<std::string>("language") == "spanish";
     for (auto const& gs : getGranularSettings()) {
-        if (toLower(gs.englishName).find(lowerQuery) != std::string::npos ||
-            toLower(gs.spanishName).find(lowerQuery) != std::string::npos) {
-            HubActionMeta entry;
-            entry.title = isSpanish ? gs.spanishName : gs.englishName;
-            entry.sprite = "GJ_button_02.png";
-            entry.categoryIndex = gs.categoryIndex;
-            entry.desc = categories[gs.categoryIndex].title;
-            entry.onPress = [gs](PaimonHubLayer*) {
-                paimon::ui::openFeatureConfigFor(gs.englishName, gs.categoryIndex);
-            };
-            results.push_back(entry);
-        }
+        if (toLower(gs.englishName).find(lowerQuery) == std::string::npos &&
+            toLower(gs.spanishName).find(lowerQuery) == std::string::npos) continue;
+        HubActionMeta entry;
+        entry.title = isSpanish ? gs.spanishName : gs.englishName;
+        entry.sprite = "GJ_button_02.png";
+        entry.categoryIndex = gs.categoryIndex;
+        entry.desc = categories[gs.categoryIndex].title;
+        entry.onPress = [gs](PaimonHubLayer*) {
+            paimon::ui::openFeatureConfigFor(gs.englishName, gs.categoryIndex);
+        };
+        results.push_back(std::move(entry));
     }
 
     auto header = CCLabelBMFont::create(
@@ -719,8 +674,6 @@ void PaimonHubLayer::gdShowSearchResults(std::string const& query) {
         "Toca un resultado para abrir su configuracion directamente."));
 }
 
-// ---- guided tour -----------------------------------------------------------
-
 namespace {
 struct GDTourStep {
     CCRect target;
@@ -778,7 +731,6 @@ void PaimonHubLayer::gdShowTourStep(int step) {
     this->addChild(overlay, 300);
     m_gdTourOverlay = overlay;
 
-    // dim everything except the highlighted target (4 rects around it)
     auto addDim = [&](float x, float y, float w, float h) {
         if (w <= 0.f || h <= 0.f) return;
         auto dim = CCLayerColor::create(ccc4(0, 0, 0, 155));
@@ -793,7 +745,6 @@ void PaimonHubLayer::gdShowTourStep(int step) {
     addDim(tx, 0.f, tw, ty);
     addDim(tx, ty + th, tw, winSize.height - ty - th);
 
-    // golden frame around the target
     if (auto frame = paimon::SpriteHelper::createRoundedRectOutline(
             tw + 10.f, th + 10.f, 8.f, {255 / 255.f, 222 / 255.f, 90 / 255.f, 0.95f}, 2.5f)) {
         frame->setAnchorPoint({0.f, 0.f});
@@ -801,7 +752,6 @@ void PaimonHubLayer::gdShowTourStep(int step) {
         overlay->addChild(frame, 1);
     }
 
-    // explanation card, placed on the opposite half of the screen
     float targetCY = ty + th / 2.f;
     bool cardAbove = targetCY < winSize.height * 0.5f;
     float cardW = 240.f, cardH = 96.f;
@@ -831,11 +781,9 @@ void PaimonHubLayer::gdShowTourStep(int step) {
     body->setColor({225, 228, 240});
     overlay->addChild(body, 3);
 
-    // bouncing arrow between the card and the target
     if (auto arrow = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png")) {
         arrow->setScale(0.6f);
         arrow->setColor({255, 222, 90});
-        // GJ_arrow points left; +90 = up, -90 = down
         arrow->setRotation(cardAbove ? -90.f : 90.f);
         float arrowY = cardAbove ? ty + th + 16.f : ty - 16.f;
         arrow->setPosition({std::clamp(tx + tw / 2.f, 20.f, winSize.width - 20.f), arrowY});
@@ -855,14 +803,9 @@ void PaimonHubLayer::gdShowTourStep(int step) {
     counter->setPosition({cardX - cardW / 2.f + 24.f, cardY - cardH / 2.f + 14.f});
     overlay->addChild(counter, 3);
 
-    // controls: close (skip), next, and tap-anywhere to advance
     auto menu = CCMenu::create();
     menu->setPosition({0, 0});
     overlay->addChild(menu, 4);
-    // -200 sits above every hub menu. Deferred one frame: when this runs from
-    // a touch callback (Next/tap-to-advance) the dispatcher is locked, the
-    // menu's handler registration is still queued, and an immediate
-    // setHandlerPriority would deref a null handler (crash in setPriority).
     Ref<CCMenu> menuRef = menu;
     Loader::get()->queueInMainThread([menuRef] {
         if (menuRef && menuRef->isRunning()) {
@@ -899,7 +842,6 @@ void PaimonHubLayer::gdShowTourStep(int step) {
     nextBtn->setPosition({cardX + cardW / 2.f - 46.f, cardY - cardH / 2.f + 14.f});
     menu->addChild(nextBtn);
 
-    // added last so explicit buttons win the hit test
     auto catcherNode = CCNode::create();
     catcherNode->setContentSize(winSize);
     auto catcher = CCMenuItemExt::createSpriteExtra(catcherNode, [self, step, isLast](CCMenuItemSpriteExtra*) {
@@ -912,7 +854,6 @@ void PaimonHubLayer::gdShowTourStep(int step) {
     catcher->setPosition({winSize.width / 2.f, winSize.height / 2.f});
     menu->addChild(catcher);
 
-    // entrance
     if (card) {
         card->setScale(0.85f);
         card->runAction(CCEaseBackOut::create(CCScaleTo::create(0.22f, 1.f)));

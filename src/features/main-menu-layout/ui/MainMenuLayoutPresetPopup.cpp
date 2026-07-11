@@ -1,4 +1,4 @@
-﻿#include "MainMenuLayoutPresetPopup.hpp"
+#include "MainMenuLayoutPresetPopup.hpp"
 
 #include "../services/MainMenuLayoutPresetManager.hpp"
 
@@ -6,6 +6,7 @@
 #include "../../../utils/Localization.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/ui/PopupManager.hpp>
 
 #include <algorithm>
 
@@ -269,13 +270,13 @@ void MainMenuLayoutPresetPopup::onSlot(CCObject* sender) {
             fmt::runtime(loc.getString("menu_layout.preset_overwrite_body")),
             slotIndex + 1
         );
-        geode::createQuickPopup(
+        PopupManager::get().quickPopup(
             title.c_str(),
             body,
             cancel.c_str(),
             confirm.c_str(),
             confirmSelection
-        );
+        ).showInstant();
         return;
     }
 
@@ -290,13 +291,13 @@ void MainMenuLayoutPresetPopup::onSlot(CCObject* sender) {
         fmt::runtime(loc.getString("menu_layout.preset_load_body")),
         slotIndex + 1
     );
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         title.c_str(),
         body,
         cancel.c_str(),
         confirm.c_str(),
         confirmSelection
-    );
+    ).showInstant();
 }
 
 void MainMenuLayoutPresetPopup::onPrev(CCObject*) {

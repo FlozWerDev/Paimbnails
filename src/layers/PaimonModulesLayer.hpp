@@ -4,9 +4,6 @@
 #include <string>
 #include <vector>
 
-// Full-screen layer listing every mod feature with an on/off toggle.
-// Each toggle is bound to a bool setting in mod.json, so flipping it here
-// is the same as flipping it in Geode's settings: the feature reacts live.
 class PaimonModulesLayer : public cocos2d::CCLayer {
 protected:
     bool init() override;
@@ -16,7 +13,6 @@ protected:
     geode::ScrollLayer* m_scroll = nullptr;
     cocos2d::CCLabelBMFont* m_countLabel = nullptr;
 
-    // tag -> setting key, parallel to the togglers added to the scroll
     std::vector<std::string> m_keys;
     std::vector<CCMenuItemToggler*> m_togglers;
     std::vector<cocos2d::CCLayerColor*> m_accents;

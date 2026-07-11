@@ -1,4 +1,4 @@
-﻿#include "VinylDisc.hpp"
+#include "VinylDisc.hpp"
 #include "../../../../utils/PaimonDrawNode.hpp"
 
 using namespace cocos2d;

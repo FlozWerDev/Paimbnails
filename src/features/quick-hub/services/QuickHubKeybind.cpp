@@ -1,4 +1,4 @@
-﻿#include "QuickHubManager.hpp"
+#include "QuickHubManager.hpp"
 #include "../ui/QuickHubRadial.hpp"
 
 #include <Geode/Geode.hpp>

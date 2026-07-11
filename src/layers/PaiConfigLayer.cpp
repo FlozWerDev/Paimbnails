@@ -1,4 +1,4 @@
-﻿#include "PaiConfigLayer.hpp"
+#include "PaiConfigLayer.hpp"
 #include "../core/UIConstants.hpp"
 #include "../features/backgrounds/ui/SameAsPickerPopup.hpp"
 #include "../features/backgrounds/ui/VideoSettingsPopup.hpp"
@@ -31,9 +31,9 @@
 #include "../features/emotes/services/EmoteCache.hpp"
 #include "../features/emotes/services/EmoteService.hpp"
 #include <Geode/ui/LoadingSpinner.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 
-// declared in ProfilePage.cpp
 #include "../features/profiles/services/ProfileImageCache.hpp"
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/Slider.hpp>
@@ -44,7 +44,6 @@ using namespace geode::prelude;
 namespace C = paimon::ui::constants::config;
 namespace S = paimon::ui::constants::shared;
 
-// Available shaders for backgrounds
 static std::vector<std::pair<std::string, std::string>> BG_SHADERS = {    {"none",             "pai.config.shader.none"},
     {"grayscale",        "pai.config.shader.grayscale"},
     {"sepia",            "pai.config.shader.sepia"},
@@ -108,14 +107,25 @@ static std::vector<std::pair<std::string, std::string>> PROCEDURAL_BG_SHADERS = 
 namespace {
 std::string tr(char const* key, char const* fallback = "") {
     auto value = Localization::get().getString(key);
-    if (value == key && fallback && fallback[0] != '\0') {
-        return fallback;
-    }
+    if (value == key && fallback && fallback[0] != '\0') return fallback;
     return value;
+}
+
+CCMenu* makeZeroMenu(char const* id = nullptr) {
+    auto* menu = CCMenu::create();
+    if (id) menu->setID(id);
+    menu->setPosition({0.f, 0.f});
+    return menu;
+}
+
+void addInfoIf(CCMenu* menu, float x, float y, char const* title, char const* body, CCNode* target) {
+    auto iBtn = PaimonInfo::createInfoBtn(title, body, target, 0.49f);
+    if (!iBtn) return;
+    iBtn->setPosition({x, y});
+    menu->addChild(iBtn);
 }
 }
 
-// Factory
 PaiConfigLayer* PaiConfigLayer::create() {
     auto ret = new PaiConfigLayer();
     if (ret && ret->init()) { ret->autorelease(); return ret; }
@@ -129,7 +139,6 @@ CCScene* PaiConfigLayer::scene() {
     return scene;
 }
 
-// Init
 bool PaiConfigLayer::init() {
     if (!CCLayer::init()) return false;
     this->setKeypadEnabled(true);
@@ -139,15 +148,11 @@ bool PaiConfigLayer::init() {
     float cx = winSize.width / 2;
     float top = winSize.height;
 
-    // PaiConfigLayer extends CCLayer (not geode::Popup), so it gets no automatic
-    // Geode 5.6.0 theming; Popup-based profile/thumbnail popups already follow the theme.
     auto bg = CCLayerColor::create(ccc4(25, 25, 45, 255));
     bg->setContentSize(winSize);
     this->addChild(bg, -2);
 
-    m_mainMenu = CCMenu::create();
-    m_mainMenu->setID("paimon-config-main-menu"_spr);
-    m_mainMenu->setPosition({0, 0});
+    m_mainMenu = makeZeroMenu("paimon-config-main-menu"_spr);
     this->addChild(m_mainMenu, 10);
 
     auto title = CCLabelBMFont::create(tr("pai.config.title", "Paimon Settings").c_str(), "goldFont.fnt");
@@ -184,33 +189,18 @@ bool PaiConfigLayer::init() {
     sep->setPosition({15, tabY - C::TAB_SEP_BELOW});
     this->addChild(sep, 5);
 
-    m_bgTab = CCLayer::create();
-    m_bgTab->setID("bg-tab"_spr);
-    this->addChild(m_bgTab, 5);
-    m_bgMenu = CCMenu::create();
-    m_bgMenu->setID("bg-menu"_spr);
-    m_bgMenu->setPosition({0, 0});
-    this->addChild(m_bgMenu, 11);
-
-    m_profileTab = CCLayer::create();
-    m_profileTab->setID("profile-tab"_spr);
-    m_profileTab->setVisible(false);
-    this->addChild(m_profileTab, 5);
-    m_profileMenu = CCMenu::create();
-    m_profileMenu->setID("profile-menu"_spr);
-    m_profileMenu->setPosition({0, 0});
-    m_profileMenu->setVisible(false);
-    this->addChild(m_profileMenu, 11);
-
-    m_extrasTab = CCLayer::create();
-    m_extrasTab->setID("extras-tab"_spr);
-    m_extrasTab->setVisible(false);
-    this->addChild(m_extrasTab, 5);
-    m_extrasMenu = CCMenu::create();
-    m_extrasMenu->setID("extras-menu"_spr);
-    m_extrasMenu->setPosition({0, 0});
-    m_extrasMenu->setVisible(false);
-    this->addChild(m_extrasMenu, 11);
+    auto addTab = [this](CCLayer*& tab, CCMenu*& menu, char const* tabId, char const* menuId, bool visible) {
+        tab = CCLayer::create();
+        tab->setID(tabId);
+        tab->setVisible(visible);
+        this->addChild(tab, 5);
+        menu = makeZeroMenu(menuId);
+        menu->setVisible(visible);
+        this->addChild(menu, 11);
+    };
+    addTab(m_bgTab, m_bgMenu, "bg-tab"_spr, "bg-menu"_spr, true);
+    addTab(m_profileTab, m_profileMenu, "profile-tab"_spr, "profile-menu"_spr, false);
+    addTab(m_extrasTab, m_extrasMenu, "extras-tab"_spr, "extras-menu"_spr, false);
 
     buildBackgroundTab();
     buildProfileTab();
@@ -226,15 +216,12 @@ bool PaiConfigLayer::init() {
     updateLayerButtons();
     refreshForCurrentLayer();
 
-    // fluid reveal of the main chrome (title, separator, tab menu);
-    // switchMainTab() reveals the visible tab's content.
     paimon::fluid::revealSequential({ title, sep, m_mainMenu },
         {.fadeDuration = 0.18f, .stagger = 0.06f});
 
     return true;
 }
 
-// Build Background Tab
 void PaiConfigLayer::buildBackgroundTab() {
     auto winSize = CCDirector::get()->getWinSize();
     float cx = winSize.width / 2;
@@ -378,7 +365,6 @@ void PaiConfigLayer::buildBackgroundTab() {
     intLbl->setPosition({rightX + 250, row2 + 10});
     m_bgTab->addChild(intLbl, 1);
 
-    // Adaptive toggle is only shown for the menu layer
     float row3 = row2 - C::CTRL_ROW3_OFFSET;
     m_adaptiveToggle = CCMenuItemToggler::createWithStandardSprites(this, menu_selector(PaiConfigLayer::onAdaptiveColors), 0.35f);
     m_adaptiveToggle->setPosition({rightX + 15, row3});
@@ -472,7 +458,6 @@ void PaiConfigLayer::buildBackgroundTab() {
     m_blockedOverlay->addChild(m_blockedLabel);
 }
 
-// Build Profile Tab
 void PaiConfigLayer::buildProfileTab() {
     auto winSize = CCDirector::get()->getWinSize();
     float cx = winSize.width / 2;
@@ -506,7 +491,6 @@ void PaiConfigLayer::buildProfileTab() {
         }
     }
 
-    // Left column: buttons with ColumnLayout
     float leftX = cx - 100;
     auto btnColumn = CCMenu::create();
     btnColumn->setPosition({leftX, contentMid});
@@ -559,7 +543,6 @@ void PaiConfigLayer::buildProfileTab() {
     rebuildProfilePreview();
 }
 
-// Build Extras Tab
 void PaiConfigLayer::buildExtrasTab() {
     auto winSize = CCDirector::get()->getWinSize();
     float cx = winSize.width / 2;
@@ -594,19 +577,11 @@ void PaiConfigLayer::buildExtrasTab() {
     betaLabel->setRotation(-15.f);
     m_extrasTab->addChild(betaLabel, 10);
 
-    {
-        auto iBtn = PaimonInfo::createInfoBtn(
-            tr("pai.config.extras.pet_info.title", "Pet").c_str(),
-            tr("pai.config.extras.pet_info.body",
-               "A cute pet follows your cursor.\nThis feature is in <cr>BETA</c> — expect bugs!"
-            ).c_str(),
-            this, 0.49f
-        );
-        if (iBtn) {
-            iBtn->setPosition({cx + 48, petY});
-            m_extrasMenu->addChild(iBtn);
-        }
-    }
+    addInfoIf(m_extrasMenu, cx + 48, petY,
+        tr("pai.config.extras.pet_info.title", "Pet").c_str(),
+        tr("pai.config.extras.pet_info.body",
+           "A cute pet follows your cursor.\nThis feature is in <cr>BETA</c> — expect bugs!"
+        ).c_str(), this);
 
     auto cursorSpr = ButtonSprite::create(tr("pai.config.extras.custom_cursor", "Custom Cursor").c_str(), "goldFont.fnt", "GJ_button_02.png", .8f);
     cursorSpr->setScale(S::BTN_SCALE_LARGE);
@@ -615,21 +590,13 @@ void PaiConfigLayer::buildExtrasTab() {
     cursorBtn->setPosition({cx, cursorY});
     m_extrasMenu->addChild(cursorBtn);
 
-    {
-        auto iBtn = PaimonInfo::createInfoBtn(
-            tr("pai.config.extras.custom_cursor_info.title", "Custom Cursor").c_str(),
-            tr("pai.config.extras.custom_cursor_info.body",
-               "Open the full custom cursor editor.\n"
-               "From there you can add images, assign idle/move slots,\n"
-               "and tweak scale, opacity, trail, and active layers."
-            ).c_str(),
-            this, 0.49f
-        );
-        if (iBtn) {
-            iBtn->setPosition({cx + 64, cursorY});
-            m_extrasMenu->addChild(iBtn);
-        }
-    }
+    addInfoIf(m_extrasMenu, cx + 64, cursorY,
+        tr("pai.config.extras.custom_cursor_info.title", "Custom Cursor").c_str(),
+        tr("pai.config.extras.custom_cursor_info.body",
+           "Open the full custom cursor editor.\n"
+           "From there you can add images, assign idle/move slots,\n"
+           "and tweak scale, opacity, trail, and active layers."
+        ).c_str(), this);
 
     auto transSpr = ButtonSprite::create(tr("pai.config.extras.transitions", "Transitions").c_str(), "goldFont.fnt", "GJ_button_04.png", .8f);
     transSpr->setScale(S::BTN_SCALE_LARGE);
@@ -638,21 +605,13 @@ void PaiConfigLayer::buildExtrasTab() {
     transBtn->setPosition({cx, transitionsY});
     m_extrasMenu->addChild(transBtn);
 
-    {
-        auto iBtn = PaimonInfo::createInfoBtn(
-            tr("pai.config.extras.transitions_info.title", "Transitions").c_str(),
-            tr("pai.config.extras.transitions_info.body",
-               "Configure custom scene transition effects.\n"
-               "Choose from 55+ built-in transitions or create your own\n"
-               "with a custom command sequence (DSL)."
-            ).c_str(),
-            this, 0.49f
-        );
-        if (iBtn) {
-            iBtn->setPosition({cx + 55, transitionsY});
-            m_extrasMenu->addChild(iBtn);
-        }
-    }
+    addInfoIf(m_extrasMenu, cx + 55, transitionsY,
+        tr("pai.config.extras.transitions_info.title", "Transitions").c_str(),
+        tr("pai.config.extras.transitions_info.body",
+           "Configure custom scene transition effects.\n"
+           "Choose from 55+ built-in transitions or create your own\n"
+           "with a custom command sequence (DSL)."
+        ).c_str(), this);
 
     auto clearSpr = ButtonSprite::create(tr("pai.config.extras.clear_cache", "Clear All Cache").c_str(), "goldFont.fnt", "GJ_button_06.png", .8f);
     clearSpr->setScale(S::BTN_SCALE_LARGE);
@@ -660,26 +619,18 @@ void PaiConfigLayer::buildExtrasTab() {
     clearBtn->setPosition({cx, clearY});
     m_extrasMenu->addChild(clearBtn);
 
-    {
-        auto iBtn = PaimonInfo::createInfoBtn(
-            tr("pai.config.extras.clear_cache_info.title", "Clear Cache").c_str(),
-            tr("pai.config.extras.clear_cache_info.body",
-               "<cr>Deletes ALL cached data:</c>\n"
-               "- Downloaded thumbnails (RAM + disk)\n"
-               "- Profile thumbnails & images\n"
-               "- Profile music cache\n"
-               "- GIF cache (RAM + disk)\n"
-               "- Profile background settings\n\n"
-               "This frees up space and fixes stale data.\n"
-               "Everything will re-download as needed."
-            ).c_str(),
-            this, 0.49f
-        );
-        if (iBtn) {
-            iBtn->setPosition({cx + 68, clearY});
-            m_extrasMenu->addChild(iBtn);
-        }
-    }
+    addInfoIf(m_extrasMenu, cx + 68, clearY,
+        tr("pai.config.extras.clear_cache_info.title", "Clear Cache").c_str(),
+        tr("pai.config.extras.clear_cache_info.body",
+           "<cr>Deletes ALL cached data:</c>\n"
+           "- Downloaded thumbnails (RAM + disk)\n"
+           "- Profile thumbnails & images\n"
+           "- Profile music cache\n"
+           "- GIF cache (RAM + disk)\n"
+           "- Profile background settings\n\n"
+           "This frees up space and fixes stale data.\n"
+           "Everything will re-download as needed."
+        ).c_str(), this);
 
     auto comingSoon = CCLabelBMFont::create(tr("pai.config.extras.coming_soon", "More features coming soon...").c_str(), "bigFont.fnt");
     comingSoon->setScale(0.2f);
@@ -688,7 +639,6 @@ void PaiConfigLayer::buildExtrasTab() {
     m_extrasTab->addChild(comingSoon, 1);
 }
 
-// Tab switching
 void PaiConfigLayer::onMainTabSwitch(CCObject* sender) {
     int idx = static_cast<CCNode*>(sender)->getTag();
     switchMainTab(idx);
@@ -708,14 +658,12 @@ void PaiConfigLayer::switchMainTab(int idx) {
     m_extrasMenu->setVisible(idx == 2);
 
     for (int i = 0; i < (int)m_mainTabBtns.size(); i++) {
-        auto spr = typeinfo_cast<ButtonSprite*>(m_mainTabBtns[i]->getNormalImage());
-        if (!spr) continue;
-        spr->setColor(i == idx ? ccColor3B{100, 255, 100} : ccColor3B{255, 255, 255});
+        if (auto spr = typeinfo_cast<ButtonSprite*>(m_mainTabBtns[i]->getNormalImage()))
+            spr->setColor(i == idx ? ccColor3B{100, 255, 100} : ccColor3B{255, 255, 255});
     }
 
     if (idx == 1) rebuildProfilePreview();
 
-    // fluid reveal: sequentially reveal the newly shown tab's content instead of snapping in.
     std::vector<cocos2d::CCNode*> revealNodes;
     if (idx == 0)      revealNodes = { m_bgTab, m_bgMenu, m_bgSidebarMenu, m_bgRow1Menu };
     else if (idx == 1) revealNodes = { m_profileTab, m_profileMenu, m_profileBtnColumn };
@@ -723,12 +671,9 @@ void PaiConfigLayer::switchMainTab(int idx) {
     paimon::fluid::revealSequential(revealNodes, {.fadeDuration = 0.16f, .stagger = 0.05f});
 }
 
-// Profile preview
 void PaiConfigLayer::rebuildProfilePreview() {
     if (!m_profilePreview) return;
     m_profilePreview->removeAllChildren();
-    // invalidate any in-flight async preview load; stale loads are discarded
-    // by generation when they return from the thread.
     ++m_profilePreviewGen;
 
     const float thumbSize = C::PROFILE_THUMB_SIZE;
@@ -736,18 +681,11 @@ void PaiConfigLayer::rebuildProfilePreview() {
     float midX = pSize.width / 2;
     float midY = pSize.height / 2;
 
-    std::string type = Mod::get()->getSavedValue<std::string>("profile-bg-type", "none");
-    std::string path = Mod::get()->getSavedValue<std::string>("profile-bg-path", "");
-
     auto picCfg = ProfilePicCustomizer::get().getConfig();
     std::string shapeName = picCfg.stencilSprite;
     if (shapeName.empty()) shapeName = "circle";
 
-    std::error_code ecExists;
-    bool hasImage = (type == "custom" && !path.empty() && std::filesystem::exists(path, ecExists));
-
-    // Only Icon Mode: render icon even without custom image
-    if (!hasImage && picCfg.onlyIconMode) {
+    if (picCfg.onlyIconMode) {
         auto container = paimon::profile_pic::composeProfilePicture(nullptr, thumbSize, picCfg);
         if (container) {
             container->setPosition({midX, midY});
@@ -756,7 +694,10 @@ void PaiConfigLayer::rebuildProfilePreview() {
         return;
     }
 
-    if (!hasImage) {
+    auto photo = paimon::profile_pic::resolveProfilePhoto(picCfg);
+    using PhotoKind = paimon::profile_pic::ResolvedProfilePhoto::Kind;
+
+    if (photo.kind == PhotoKind::None) {
         auto placeholder = CCLayerColor::create({60, 60, 60, 200});
         placeholder->setContentSize({thumbSize, thumbSize});
         placeholder->setPosition({midX - thumbSize / 2, midY - thumbSize / 2});
@@ -771,24 +712,10 @@ void PaiConfigLayer::rebuildProfilePreview() {
         return;
     }
 
-    // Load image — AnimatedGIFSprite only supports GIF. APNG falls back to a
-    // static decode through ImagePlus in the branch below.
-    // detect by content (magic bytes), not extension
-    bool isAnimated = false;
-    {
-        std::ifstream probe(path, std::ios::binary);
-        if (probe) {
-            char hdr[32]{};
-            probe.read(hdr, sizeof(hdr));
-            auto fmt = paimon::format::detect(reinterpret_cast<uint8_t const*>(hdr), static_cast<size_t>(probe.gcount()));
-            isAnimated = (fmt == paimon::format::ImageFormat::GIF);
-        }
-    }
-
-    // GIF: decoding lives in AnimatedGIFSprite, kept inline.
-    if (isAnimated) {
-        if (auto* gifSprite = AnimatedGIFSprite::create(path)) {
-            auto container = paimon::profile_pic::composeProfilePicture(gifSprite, thumbSize, picCfg);
+    // composes synchronously; static files decode off the main thread below
+    if (photo.kind != PhotoKind::StaticFile) {
+        if (auto* imageNode = paimon::profile_pic::createResolvedPhotoNode(photo)) {
+            auto container = paimon::profile_pic::composeProfilePicture(imageNode, thumbSize, picCfg);
             if (container) {
                 container->setPosition({midX, midY});
                 m_profilePreview->addChild(container);
@@ -796,12 +723,12 @@ void PaiConfigLayer::rebuildProfilePreview() {
             }
             return;
         }
-        // if the GIF fails, fall through to the async static loader below
+        if (photo.path.empty()) return;
     }
 
+    std::string path = photo.path;
+
     // static image: decode off the main thread and compose on return so opening
-    // or switching to the Profile tab doesn't freeze the frame; a placeholder
-    // fills the gap and fades in when done.
     auto loadingPh = CCLayerColor::create({60, 60, 60, 140});
     loadingPh->setContentSize({thumbSize, thumbSize});
     loadingPh->setPosition({midX - thumbSize / 2, midY - thumbSize / 2});
@@ -814,7 +741,6 @@ void PaiConfigLayer::rebuildProfilePreview() {
         [self, gen, cfgCopy, thumbSize](CCSprite* sprite) {
             auto* layer = self.data();
             if (!layer) return;
-            // discard if the preview was rebuilt while loading
             if (gen != layer->m_profilePreviewGen) return;
             auto* preview = layer->m_profilePreview;
             if (!preview) return;
@@ -833,7 +759,6 @@ void PaiConfigLayer::rebuildProfilePreview() {
                 return;
             }
 
-            // delegate to the shared renderer (scaleX/Y, rotation, decos, border)
             auto container = paimon::profile_pic::composeProfilePicture(sprite, thumbSize, cfgCopy);
             if (!container) return;
             container->setPosition({mx, my});
@@ -842,14 +767,12 @@ void PaiConfigLayer::rebuildProfilePreview() {
         });
 }
 
-// Navigation
 void PaiConfigLayer::keyBackClicked() { onBack(nullptr); }
 
 void PaiConfigLayer::onBack(CCObject*) {
     CCDirector::get()->popSceneWithTransition(0.3f, PopTransition::kPopTransitionFade);
 }
 
-// Layer selector
 void PaiConfigLayer::onLayerSelect(CCObject* sender) {
     int idx = static_cast<CCNode*>(sender)->getTag();
     auto& layers = LayerBackgroundManager::LAYER_OPTIONS;
@@ -906,29 +829,28 @@ void PaiConfigLayer::refreshForCurrentLayer() {
     if (m_shaderIntensitySlider) m_shaderIntensitySlider->setValue(savedIntensity);
     updateShaderIntensityLabel();
 
-        if (m_bgStatusLabel) {
-            std::string status = tr("pai.config.status.default", "Default");
-            if (bgCfg.type == "custom") status = tr("pai.config.status.custom_image", "Custom Image");
-            else if (bgCfg.type == "video") status = tr("pai.config.status.video", "Video");
-            else if (bgCfg.type == "shader") status = tr("pai.config.status.shader_bg", "Shader Background");
-            else if (bgCfg.type == "random") status = tr("pai.config.status.random", "Random");
-            else if (bgCfg.type == "id") status = tr("pai.config.status.level_id", "Level ID: ") + std::to_string(bgCfg.levelId);
-            else if (bgCfg.type == "menu") status = tr("pai.config.status.same_as_menu", "Same as Menu");
-            if (bgCfg.shader != "none" && !bgCfg.shader.empty()) {
-                for (auto& [k, v] : BG_SHADERS) {
-                    if (k == bgCfg.shader) { status += " + " + tr(v.c_str(), v.c_str()); break; }
-                }
-                for (auto& [k, v] : PROCEDURAL_BG_SHADERS) {
-                    if (k == bgCfg.shader) { status += " + " + tr(v.c_str(), v.c_str()); break; }
-                }
+    if (m_bgStatusLabel) {
+        std::string status = tr("pai.config.status.default", "Default");
+        if (bgCfg.type == "custom") status = tr("pai.config.status.custom_image", "Custom Image");
+        else if (bgCfg.type == "video") status = tr("pai.config.status.video", "Video");
+        else if (bgCfg.type == "shader") status = tr("pai.config.status.shader_bg", "Shader Background");
+        else if (bgCfg.type == "random") status = tr("pai.config.status.random", "Random");
+        else if (bgCfg.type == "id") status = tr("pai.config.status.level_id", "Level ID: ") + std::to_string(bgCfg.levelId);
+        else if (bgCfg.type == "menu") status = tr("pai.config.status.same_as_menu", "Same as Menu");
+        if (bgCfg.shader != "none" && !bgCfg.shader.empty()) {
+            for (auto& [k, v] : BG_SHADERS) {
+                if (k == bgCfg.shader) { status += " + " + tr(v.c_str(), v.c_str()); break; }
             }
-            m_bgStatusLabel->setString(status.c_str());
+            for (auto& [k, v] : PROCEDURAL_BG_SHADERS) {
+                if (k == bgCfg.shader) { status += " + " + tr(v.c_str(), v.c_str()); break; }
+            }
         }
+        m_bgStatusLabel->setString(status.c_str());
+    }
 
     rebuildBgPreview();
 }
 
-// dark overlay for the bg preview; shared by the sync path and async callbacks.
 static void addBgPreviewDarkOverlay(CCNode* bgPreview, float pw, float ph, LayerBgConfig const& cfg) {
     if (!cfg.darkMode || !bgPreview) return;
     auto darkOv = CCLayerColor::create({0, 0, 0, (GLubyte)(cfg.darkIntensity * 200)});
@@ -1020,7 +942,6 @@ void PaiConfigLayer::rebuildBgPreview() {
         return;
     }
 
-    // Type: custom image
     if (cfg.type == "custom") {        std::error_code ecCustom;
         if (cfg.customPath.empty() || !std::filesystem::exists(cfg.customPath, ecCustom)) {
             showPlaceholder(tr("pai.config.preview.file_not_found", "File not\nfound").c_str(), {255, 100, 100});
@@ -1068,7 +989,6 @@ void PaiConfigLayer::rebuildBgPreview() {
             return;
         }
 
-        // Static image
         auto loaded = ImageLoadHelper::loadStaticImage(std::filesystem::path(cfg.customPath), 24);        if (loaded.success && loaded.texture) {
             addTextureToPreview(loaded.texture);
             loaded.texture->release();
@@ -1079,7 +999,6 @@ void PaiConfigLayer::rebuildBgPreview() {
         return;
     }
 
-    // Type: video
     if (cfg.type == "video") {
         std::error_code ecVideo;
         if (cfg.customPath.empty() || !std::filesystem::exists(cfg.customPath, ecVideo)) {
@@ -1087,9 +1006,6 @@ void PaiConfigLayer::rebuildBgPreview() {
             return;
         }
 
-        // Lightweight preview: dark background + VIDEO label.
-        // Avoids creating a full VideoPlayer which would heavyweight-init
-        // MF + FMOD just to produce a black frame.
         auto bg = CCLayerColor::create({20, 20, 35, 255});
         bg->setContentSize({pw, ph});
         m_bgPreview->addChild(bg, 0);
@@ -1112,9 +1028,7 @@ void PaiConfigLayer::rebuildBgPreview() {
         return;
     }
 
-    // Type: level ID — async download
     if (cfg.type == "id" && cfg.levelId > 0) {
-        // try local cache first (instant), download otherwise
         auto* localTex = LocalThumbs::get().loadTexture(cfg.levelId);
         if (localTex) {
             addTextureToPreview(localTex);
@@ -1168,11 +1082,9 @@ void PaiConfigLayer::rebuildBgPreview() {
         return;
     }
 
-    // Type: random
     if (cfg.type == "random") {
         auto ids = LocalThumbs::get().getAllLevelIDs();
         if (!ids.empty()) {
-            // Show a random one each time
             static std::mt19937 rng(std::random_device{}());
             std::uniform_int_distribution<size_t> dist(0, ids.size() - 1);
             auto* tex = LocalThumbs::get().loadTexture(ids[dist(rng)]);
@@ -1186,14 +1098,11 @@ void PaiConfigLayer::rebuildBgPreview() {
         return;
     }
 
-    // Type: same as another layer — resolve and show
-    // Resolve the reference chain to find the actual config
     bool isLayerRef = false;
     for (auto& [k, n] : LayerBackgroundManager::LAYER_OPTIONS) {
         if (cfg.type == k) { isLayerRef = true; break; }
     }
     if (isLayerRef || cfg.type == "menu") {
-        // Resolve the reference chain (max 5 hops)
         LayerBgConfig resolvedCfg = mgr.getConfig(cfg.type == "menu" ? "menu" : cfg.type);
         int resolveHops = 5;
         while (resolveHops-- > 0) {
@@ -1212,7 +1121,6 @@ void PaiConfigLayer::rebuildBgPreview() {
             break; // resolved to a concrete type (custom, random, id)
         }
 
-        // Now resolvedCfg is the actual config — render it
         std::error_code ecResolved;
         if (resolvedCfg.type == "custom" && !resolvedCfg.customPath.empty() && std::filesystem::exists(resolvedCfg.customPath, ecResolved)) {
             auto ext = geode::utils::string::toLower(
@@ -1303,11 +1211,9 @@ void PaiConfigLayer::rebuildBgPreview() {
         return;
     }
 
-    // Fallback
         showPlaceholder(tr("pai.config.preview.unknown_type", "Unknown\ntype").c_str(), {200, 150, 150});
 }
 
-// Background actions
 void PaiConfigLayer::onBgCustomImage(CCObject*) {
     WeakRef<PaiConfigLayer> self = this;
     std::string key = m_selectedKey;
@@ -1347,9 +1253,6 @@ void PaiConfigLayer::onBgVideo(CCObject*) {
         }
         auto pathStr = paimon::assets::normalizePathString(imported.path);
 
-        // Multiple concurrent video backgrounds are supported; no need to
-        // check whether another layer already has a different video.
-
         auto cfg = LayerBackgroundManager::get().getConfig(key);
         cfg.type = "video"; cfg.customPath = pathStr;
         LayerBackgroundManager::get().saveConfig(key, cfg);
@@ -1359,8 +1262,7 @@ void PaiConfigLayer::onBgVideo(CCObject*) {
 }
 
 void PaiConfigLayer::onVideoSettings(CCObject*) {
-    auto popup = VideoSettingsPopup::create();
-    if (popup) popup->show();
+    if (auto popup = VideoSettingsPopup::create()) popup->show();
 }
 
 void PaiConfigLayer::onBgRandom(CCObject*) {
@@ -1446,8 +1348,7 @@ void PaiConfigLayer::onAdaptiveColors(CCObject* sender) {
 void PaiConfigLayer::onShaderPrev(CCObject*) {
     auto cfg = LayerBackgroundManager::get().getConfig(m_selectedKey);
     auto& shaderList = cfg.type == "shader" ? PROCEDURAL_BG_SHADERS : BG_SHADERS;
-    m_shaderIndex--;
-    if (m_shaderIndex < 0) m_shaderIndex = (int)shaderList.size() - 1;
+    m_shaderIndex = (m_shaderIndex - 1 + (int)shaderList.size()) % (int)shaderList.size();
     cfg.shader = shaderList[m_shaderIndex].first;
     LayerBackgroundManager::get().saveConfig(m_selectedKey, cfg);
     updateShaderLabel();
@@ -1457,8 +1358,7 @@ void PaiConfigLayer::onShaderPrev(CCObject*) {
 void PaiConfigLayer::onShaderNext(CCObject*) {
     auto cfg = LayerBackgroundManager::get().getConfig(m_selectedKey);
     auto& shaderList = cfg.type == "shader" ? PROCEDURAL_BG_SHADERS : BG_SHADERS;
-    m_shaderIndex++;
-    if (m_shaderIndex >= (int)shaderList.size()) m_shaderIndex = 0;
+    m_shaderIndex = (m_shaderIndex + 1) % (int)shaderList.size();
     cfg.shader = shaderList[m_shaderIndex].first;
     LayerBackgroundManager::get().saveConfig(m_selectedKey, cfg);
     updateShaderLabel();
@@ -1480,7 +1380,6 @@ void PaiConfigLayer::updateShaderLabel() {
 void PaiConfigLayer::onShaderIntensitySlider(CCObject*) {
     if (!m_shaderIntensitySlider) return;
     float intensity = m_shaderIntensitySlider->getValue(); // 0.0 to 1.0
-    // Clamp to 0.1 – 1.0 range (10% – 100%)
     intensity = std::max(0.1f, intensity);
     Mod::get()->setSavedValue<float>("layerbg-shader-intensity", intensity);
     m_shaderIntensityIndex = std::clamp(static_cast<int>(intensity * 10.f) - 1, 0, 9);
@@ -1496,7 +1395,6 @@ void PaiConfigLayer::updateShaderIntensityLabel() {
     m_shaderIntensityLabel->setString(buf);
 }
 
-// Profile actions
 void PaiConfigLayer::onProfileImage(CCObject*) {
     WeakRef<PaiConfigLayer> self = this;
     pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> result) {
@@ -1528,99 +1426,71 @@ void PaiConfigLayer::onProfileImageClear(CCObject*) {
 }
 
 void PaiConfigLayer::onProfilePhoto(CCObject*) {
-    auto popup = ProfilePicEditorPopup::create();
-    if (popup) popup->show();
+    if (auto popup = ProfilePicEditorPopup::create()) popup->show();
 }
 
-// Extras
 void PaiConfigLayer::onPetConfig(CCObject*) {
-    auto popup = PetConfigPopup::create();
-    if (popup) popup->show();
+    if (auto popup = PetConfigPopup::create()) popup->show();
 }
 
 void PaiConfigLayer::onCustomCursor(CCObject*) {
-    auto popup = CursorConfigPopup::create();
-    if (popup) popup->show();
+    if (auto popup = CursorConfigPopup::create()) popup->show();
 }
 
 void PaiConfigLayer::onTransitions(CCObject*) {
-    auto popup = TransitionConfigPopup::create();
-    if (popup) popup->show();
+    if (auto popup = TransitionConfigPopup::create()) popup->show();
 }
 
 void PaiConfigLayer::onClearAllCache(CCObject*) {
     WeakRef<PaiConfigLayer> self = this;
-    geode::createQuickPopup(
-        tr("pai.config.clear_cache.title", "Clear All Cache").c_str(),
+    PopupManager::get().quickPopup(
+        tr("pai.config.clear_cache.title", "Clear All Cache"),
         tr("pai.config.clear_cache.message",
            "This will <cr>delete all cached data</c>:\n"
            "thumbnails, profile images, profile music,\n"
            "GIFs, and profile background settings.\n\n"
            "Are you sure?"
-        ).c_str(),
-        tr("general.cancel", "Cancel").c_str(),
-        tr("pai.config.clear_cache.confirm", "Clear").c_str(),
-        [self](auto*, bool confirmed) {
+        ),
+        tr("general.cancel", "Cancel"),
+        tr("pai.config.clear_cache.confirm", "Clear"),
+        [self](FLAlertLayer*, bool confirmed) {
             if (!confirmed) return;
             auto layerRef = self.lock();
             auto* layer = static_cast<PaiConfigLayer*>(layerRef.data());
             if (!layer || !layer->getParent()) return;
 
-            // 1) stop profile music if playing
             ProfileMusicManager::get().stopProfileMusic();
             ProfileMusicManager::get().stopPreview();
 
-            // 2) thumbnail cache (RAM)
             ThumbnailLoader::get().clearPendingQueue();
             ThumbnailLoader::get().clearCache();
-
-            // 3) thumbnail cache (disk: "cache/" folder)
             ThumbnailLoader::get().clearDiskCache();
-
-            // 4) profile cache (RAM: textures + config + no-profile)
             ProfileThumbs::get().clearAllCache();
-
-            // 5) profileimg cache (RAM + disk: "profileimg_cache/" folder)
             clearProfileImgCache();
-
-            // 6) profile music cache (disk: "profile_music/" folder)
             ProfileMusicManager::get().clearCache();
-
-            // 7) animated GIF cache (RAM)
             AnimatedGIFSprite::clearCache();
 
-            // 8) GIF disk cache (quality-aware)
-            {
-                std::error_code ec;
-                auto gifCacheDir = paimon::quality::cacheDir() / "gifs";
-                if (std::filesystem::exists(gifCacheDir, ec)) {
-                    std::filesystem::remove_all(gifCacheDir, ec);
-                }
-            }
+            std::error_code ec;
+            auto gifCacheDir = paimon::quality::cacheDir() / "gifs";
+            if (std::filesystem::exists(gifCacheDir, ec)) std::filesystem::remove_all(gifCacheDir, ec);
 
-            // 9) clear profile image settings
             Mod::get()->setSavedValue<std::string>("profile-bg-type", "none");
             Mod::get()->setSavedValue<std::string>("profile-bg-path", "");
             (void)Mod::get()->saveData();
 
-            // 10) emote cache (RAM + disk + catalog)
             paimon::emotes::EmoteCache::get().clearAll();
             paimon::emotes::EmoteService::get().clearCatalog();
-
-            // 11) rebuild preview if on the profile tab
             layer->rebuildProfilePreview();
-
             log::info("[PaiConfigLayer] All caches cleared by user");
             PaimonNotify::create(tr("pai.config.notify.cache_cleared", "All caches cleared!"), NotificationIcon::Success)->show();
         }
-    );
+    ).showInstant();
 }
 
 void PaiConfigLayer::onApply(CCObject*) {
     TransitionManager::get().replaceScene(MenuLayer::scene(false));
 }
 
-// Helper
 CCMenuItemSpriteExtra* PaiConfigLayer::makeBtn(char const* text, CCPoint pos,
     SEL_MenuHandler handler, CCNode* parent, float scale) {
     auto spr = ButtonSprite::create(text);

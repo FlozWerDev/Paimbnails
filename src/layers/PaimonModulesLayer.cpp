@@ -1,50 +1,42 @@
 #include "PaimonModulesLayer.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/PaimonNotification.hpp"
+#include "../features/editor-suite/EditorModuleCatalog.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
-#include <algorithm>
 
 using namespace geode::prelude;
 
 namespace {
 
 struct ModuleEntry {
-    std::string key;          // bool setting key in mod.json
+    std::string key;
     std::string name;
     std::string desc;
     std::string category;
 };
 
-// Every feature that exposes a master on/off bool. Toggling here writes the
-// same setting Geode's settings panel does, so the feature reacts live.
 std::vector<ModuleEntry> getModules() {
-    return {
-        // General
+    std::vector<ModuleEntry> list = {
         {"mod-previews-enable",      "Mod Previews",            "Imagenes de preview para mods de Geode.",        "General"},
         {"realtime-search-preview",  "Busqueda en Tiempo Real", "Resultados mientras escribes en el buscador.",   "General"},
         {"smooth-scroll",            "Smooth Scroll",           "Scroll suave con la rueda en menus y listas.",   "General"},
         {"auto-update",              "Auto Update",             "Descarga e instala actualizaciones al cerrar.",  "General"},
         {"incognito-mode",           "Modo Incognito",          "Oculta y deja de guardar el historial de busqueda.", "General"},
 
-        // Miniaturas
         {"levelcell-hover-effects",  "Efectos Hover",           "Anima las celdas de nivel al pasar el mouse.",   "Miniaturas"},
         {"compact-list-mode",        "Modo Compacto",           "Celdas mas cortas para ver mas niveles.",        "Miniaturas"},
         {"auto-preview-enable",      "Auto Previews",           "Genera miniatura para niveles que no tienen.",   "Miniaturas"},
         {"enable-thumbnail-taking",  "Boton de Captura",        "Boton para capturar thumbnails en la pausa.",    "Miniaturas"},
 
-        // Nivel
         {"dynamic-song",             "Cancion Dinamica",        "Reproduce la cancion del nivel al ver su info.", "Nivel"},
         {"profile-redesign-enabled", "Rediseno de Perfil",      "Layout moderno de la pagina de perfil.",         "Nivel"},
 
-        // Audio
         {"profile-music-enabled",    "Musica de Perfil",        "Musica custom al ver perfiles.",                 "Audio"},
         {"menuMusicEnable",          "Reproductor de Menu",     "Boton de vinilo con biblioteca y playlists.",    "Audio"},
-        {"editorMusicEnable",        "Musica en Editor",        "Tu biblioteca de musica dentro del editor.",     "Audio"},
         {"menuLoopConstantShuffle",  "Menu Loop Shuffle",       "Cambia el menu loop al terminar cada cancion.",  "Audio"},
 
-        // Visual / Extras
         {"smooth-ui-enabled",        "Smooth UI",               "Popups y movimiento de botones suaves.",         "Visual"},
         {"colorful-icons-enabled",   "Paimon Icons",            "Recolorea los iconos con tus colores.",          "Visual"},
         {"global-icons-enabled",     "Global Icons",            "Muestra iconos custom de otros en su perfil.",   "Visual"},
@@ -52,86 +44,56 @@ std::vector<ModuleEntry> getModules() {
         {"dynamic-popup-enabled",    "Popups Dinamicos",        "Animaciones de entrada/salida en los popups.",   "Visual"},
         {"popup-blur-enabled",       "Blur de Popups",          "Desenfoca el fondo detras de los popups.",       "Visual"},
         {"custom-cursor-enable",     "Cursor Personalizado",    "Reemplaza el cursor del sistema con imagenes.",  "Visual"},
-        {"smooth-text-enabled",      "Smooth Text Input",       "Las letras aparecen y desaparecen con animacion al escribir.", "Visual"},
+        {"smooth-text-enabled",      "Smooth Text Input",       "Letras animadas al escribir.", "Visual"},
+        {"menu-physics-enable",      "Fisica del Menu",         "Botones con rotacion y rebotes al impactar.", "Visual"},
 
-        // Editor / Niveles
         {"song-search-enable",       "Buscar Cancion x Nombre", "Escribe un nombre en la caja de song ID.",       "Editor"},
-        {"editor-filters-enable",    "Filtros Mis Niveles",     "Filtra tus niveles creados por varios campos.",  "Editor"},
-        {"menu-physics-enable",      "Fisica del Menu",         "Los botones del menu caen, rebotan y se arrastran.", "Editor"},
-        {"editor-color-picker-enable","Color Picker (Editor)",  "Cuentagotas para tomar colores en el editor.",   "Editor"},
         {"texture-studio-enabled",   "Texture Studio",          "Generador de texture packs en el menu.",         "Editor"},
 
-        // Notificaciones
         {"mentions-enabled",         "Menciones en Comentarios","Avisa cuando te mencionan en comentarios.",      "Notificaciones"},
         {"msgnotif-enabled",         "Notif. de Mensajes",      "Avisa de mensajes y solicitudes nuevas.",        "Notificaciones"},
 
-        // Discord
         {"discord-rpc-enabled",      "Discord Rich Presence",   "Muestra tu actividad en tu perfil de Discord.",  "Discord"},
 
-        // Rendimiento
         {"enable-disk-cache",        "Cache en Disco",          "Guarda thumbnails en disco para no re-bajarlos.", "Rendimiento"},
         {"gd-robtop-cache-enabled",  "Cache RobTop",            "Cachea respuestas de los servidores de GD.",     "Rendimiento"},
     };
+
+    for (auto const& m : paimon::editor::getEditorModuleCatalog()) {
+        list.push_back({m.key, m.name, m.description, "Editor"});
+    }
+    return list;
 }
 
 constexpr float kRowH = 52.f;
 constexpr float kHeaderH = 28.f;
 
-// Warm brown theme that matches the GJ_square01 wood frame. Cards are shades
-// of brown; ON rows warm up and keep a coloured category accent so the list
-// still reads with "combined colours" against the brown shell.
 namespace pal {
-    constexpr ccColor4B kBgTop       {112, 74, 44, 255};
-    constexpr ccColor4B kBgBottom    {38, 24, 15, 255};
-
-    constexpr ccColor3B kInset       {46, 30, 18};
-    constexpr GLubyte    kInsetOpacity = 240;
-
-    constexpr ccColor3B kCardOn      {96, 64, 36};
-    constexpr ccColor3B kCardOff     {52, 35, 22};
-    constexpr GLubyte    kCardOnOpacity  = 245;
-    constexpr GLubyte    kCardOffOpacity = 215;
-
-    constexpr ccColor3B kStateOn     {150, 255, 150};
-    constexpr ccColor3B kStateOff    {180, 158, 130};
-
-    constexpr ccColor3B kAccentOff   {120, 92, 60};
-
-    constexpr ccColor3B kCount       {255, 236, 200};
-    constexpr ccColor3B kName        {255, 244, 224};
-    constexpr ccColor3B kDesc        {214, 190, 162};
+    constexpr ccColor4B kBgTop{112, 74, 44, 255};
+    constexpr ccColor4B kBgBottom{38, 24, 15, 255};
+    constexpr ccColor3B kInset{46, 30, 18};
+    constexpr GLubyte kInsetOpacity = 240;
+    constexpr ccColor3B kCardOn{96, 64, 36};
+    constexpr ccColor3B kCardOff{52, 35, 22};
+    constexpr GLubyte kCardOnOpacity = 245;
+    constexpr GLubyte kCardOffOpacity = 215;
+    constexpr ccColor3B kStateOn{150, 255, 150};
+    constexpr ccColor3B kStateOff{180, 158, 130};
+    constexpr ccColor3B kAccentOff{120, 92, 60};
+    constexpr ccColor3B kCount{255, 236, 200};
+    constexpr ccColor3B kName{255, 244, 224};
+    constexpr ccColor3B kDesc{214, 190, 162};
 }
 
-ccColor3B categoryAccent(std::string const& category) {
-    if (category == "Miniaturas")   return {120, 210, 255};
-    if (category == "Nivel")        return {170, 190, 255};
-    if (category == "Audio")        return {255, 165, 210};
-    if (category == "Visual")       return {145, 240, 210};
-    if (category == "Editor")       return {255, 190, 105};
-    if (category == "Notificaciones") return {255, 140, 145};
-    if (category == "Discord")      return {140, 160, 255};
-    if (category == "Rendimiento")  return {190, 235, 120};
+ccColor3B categoryAccent(std::string const& cat) {
+    static std::pair<char const*, ccColor3B> const kMap[] = {
+        {"Miniaturas", {120, 210, 255}}, {"Nivel", {170, 190, 255}},
+        {"Audio", {255, 165, 210}}, {"Visual", {145, 240, 210}},
+        {"Editor", {255, 190, 105}}, {"Notificaciones", {255, 140, 145}},
+        {"Discord", {140, 160, 255}}, {"Rendimiento", {190, 235, 120}},
+    };
+    for (auto const& [name, col] : kMap) if (cat == name) return col;
     return {245, 195, 110};
-}
-
-ccColor3B cardColorFor(bool enabled) {
-    return enabled ? pal::kCardOn : pal::kCardOff;
-}
-
-// Solid brown gradient, no scenery: clean shell behind the wood frame.
-void addDynamicBackground(CCLayer* layer) {
-    auto win = CCDirector::get()->getWinSize();
-
-    auto grad = CCLayerGradient::create(pal::kBgTop, pal::kBgBottom);
-    if (grad) {
-        grad->setContentSize(win);
-        grad->setVector({0.2f, -1.f});
-        layer->addChild(grad, -10);
-    } else {
-        auto solid = CCLayerColor::create(pal::kBgBottom);
-        solid->setContentSize(win);
-        layer->addChild(solid, -10);
-    }
 }
 
 } // namespace
@@ -154,23 +116,23 @@ bool PaimonModulesLayer::init() {
     this->setKeypadEnabled(true);
     this->setTouchEnabled(true);
 
-    auto winSize = CCDirector::get()->getWinSize();
-    float cx = winSize.width / 2.f;
-    float cy = winSize.height / 2.f;
+    auto win = CCDirector::get()->getWinSize();
+    float cx = win.width / 2.f;
+    float cy = win.height / 2.f;
 
-    addDynamicBackground(this);
+    if (auto grad = CCLayerGradient::create(pal::kBgTop, pal::kBgBottom)) {
+        grad->setContentSize(win);
+        grad->setVector({0.2f, -1.f});
+        this->addChild(grad, -10);
+    }
 
-    // Main GD popup frame (blue square panel).
-    float panelW = std::min(480.f, winSize.width - 40.f);
-    float panelH = winSize.height - 36.f;
+    float panelW = std::min(480.f, win.width - 40.f);
+    float panelH = win.height - 36.f;
     float panelLeft = cx - panelW / 2.f;
-    float panelRight = cx + panelW / 2.f;
     float panelTop = cy + panelH / 2.f;
     float panelBot = cy - panelH / 2.f;
 
-    // Native GD popup frame.
-    auto frame = paimon::SpriteHelper::safeCreateScale9("GJ_square01.png");
-    if (frame) {
+    if (auto frame = paimon::SpriteHelper::safeCreateScale9("GJ_square01.png")) {
         frame->setContentSize({panelW, panelH});
         frame->setPosition({cx, cy});
         this->addChild(frame, 0);
@@ -181,7 +143,7 @@ bool PaimonModulesLayer::init() {
     }
 
     m_menu = CCMenu::create();
-    m_menu->setPosition({0, 0});
+    m_menu->setPosition({0.f, 0.f});
     this->addChild(m_menu, 20);
 
     auto title = CCLabelBMFont::create("Modulos", "goldFont.fnt");
@@ -195,16 +157,17 @@ bool PaimonModulesLayer::init() {
     m_countLabel->setColor(pal::kCount);
     this->addChild(m_countLabel, 10);
 
-    // Back arrow in the top-left, GD style.
-    auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
-    auto backBtn = CCMenuItemSpriteExtra::create(backSpr, this, menu_selector(PaimonModulesLayer::onBack));
+    auto backBtn = CCMenuItemSpriteExtra::create(
+        CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png"),
+        this, menu_selector(PaimonModulesLayer::onBack)
+    );
     backBtn->setPosition({panelLeft - 4.f, panelTop - 2.f});
     m_menu->addChild(backBtn);
 
-    // Bottom action buttons, like a native GD list footer.
     float footerY = panelBot + 28.f;
     float actionScale = panelW < 370.f ? 0.50f : 0.60f;
     float actionOffset = std::min(panelW * 0.24f, 118.f);
+
     auto allOnSpr = ButtonSprite::create("Activar Todo", "bigFont.fnt", "GJ_button_01.png", .8f);
     allOnSpr->setScale(actionScale);
     auto allOnBtn = CCMenuItemSpriteExtra::create(allOnSpr, this, menu_selector(PaimonModulesLayer::onAllOn));
@@ -217,16 +180,14 @@ bool PaimonModulesLayer::init() {
     allOffBtn->setPosition({cx + actionOffset, footerY});
     m_menu->addChild(allOffBtn);
 
-    // Scroll list region with a subtle inset behind the cards.
     float listTop = panelTop - 58.f;
     float listBot = footerY + 26.f;
     float scrollW = panelW - 30.f;
     float scrollH = listTop - listBot;
     float scrollX = cx - scrollW / 2.f;
 
-    auto listBg = paimon::SpriteHelper::createColorPanel(
-        scrollW + 14.f, scrollH + 14.f, pal::kInset, pal::kInsetOpacity, 8.f);
-    if (listBg) {
+    if (auto listBg = paimon::SpriteHelper::createColorPanel(
+            scrollW + 14.f, scrollH + 14.f, pal::kInset, pal::kInsetOpacity, 8.f)) {
         listBg->setPosition({scrollX - 7.f, listBot - 7.f});
         this->addChild(listBg, 1);
     }
@@ -237,7 +198,6 @@ bool PaimonModulesLayer::init() {
 
     buildList();
     refreshCount();
-
     return true;
 }
 
@@ -310,7 +270,7 @@ void PaimonModulesLayer::buildList() {
         float cardY = y + (kRowH - cardH) / 2.f;
 
         auto card = paimon::SpriteHelper::createColorPanel(
-            cardW, cardH, cardColorFor(on),
+            cardW, cardH, on ? pal::kCardOn : pal::kCardOff,
             on ? pal::kCardOnOpacity : pal::kCardOffOpacity, 7.f);
         if (card) {
             card->setPosition({cardX, cardY});
@@ -325,8 +285,8 @@ void PaimonModulesLayer::buildList() {
         accent->setPosition({cardX + 9.f, cardY + 7.f});
         content->addChild(accent, 1);
 
-        bool showStateLabel = cardW >= 365.f;
-        float rightReserve = showStateLabel ? 116.f : 76.f;
+        bool showState = cardW >= 365.f;
+        float rightReserve = showState ? 116.f : 76.f;
 
         auto name = CCLabelBMFont::create(m.name.c_str(), "bigFont.fnt");
         name->setAnchorPoint({0.f, 0.5f});
@@ -345,7 +305,7 @@ void PaimonModulesLayer::buildList() {
         content->addChild(desc, 2);
 
         CCLabelBMFont* state = nullptr;
-        if (showStateLabel) {
+        if (showState) {
             state = CCLabelBMFont::create(on ? "ON" : "OFF", "chatFont.fnt");
             state->setAnchorPoint({1.f, 0.5f});
             state->setScale(0.46f);
@@ -378,21 +338,20 @@ void PaimonModulesLayer::refreshCount() {
     for (auto const& key : m_keys) {
         if (Mod::get()->getSettingValue<bool>(key)) on++;
     }
-    m_countLabel->setString(
-        fmt::format("{} de {} modulos activos", on, m_keys.size()).c_str());
+    m_countLabel->setString(fmt::format("{} de {} modulos activos", on, m_keys.size()).c_str());
 }
 
 void PaimonModulesLayer::refreshRowVisual(int index, bool enabled) {
     if (index < 0 || index >= static_cast<int>(m_keys.size())) return;
 
-    ccColor3B accentColor = index < static_cast<int>(m_accentColors.size())
+    auto accentColor = index < static_cast<int>(m_accentColors.size())
         ? m_accentColors[index] : ccColor3B{255, 255, 255};
 
     if (index < static_cast<int>(m_accents.size()) && m_accents[index]) {
         m_accents[index]->setColor(enabled ? accentColor : pal::kAccentOff);
     }
     if (index < static_cast<int>(m_cards.size()) && m_cards[index]) {
-        m_cards[index]->setColor(cardColorFor(enabled));
+        m_cards[index]->setColor(enabled ? pal::kCardOn : pal::kCardOff);
         m_cards[index]->setOpacity(enabled ? pal::kCardOnOpacity : pal::kCardOffOpacity);
     }
     if (index < static_cast<int>(m_stateLabels.size()) && m_stateLabels[index]) {
@@ -406,9 +365,8 @@ void PaimonModulesLayer::onToggle(CCObject* sender) {
     int tag = toggler->getTag();
     if (tag < 0 || tag >= static_cast<int>(m_keys.size())) return;
 
-    auto const& key = m_keys[tag];
-    bool newState = !Mod::get()->getSettingValue<bool>(key);
-    Mod::get()->setSettingValue<bool>(key, newState);
+    bool newState = !Mod::get()->getSettingValue<bool>(m_keys[tag]);
+    Mod::get()->setSettingValue<bool>(m_keys[tag], newState);
     refreshRowVisual(tag, newState);
     refreshCount();
 }
@@ -433,10 +391,5 @@ void PaimonModulesLayer::onAllOff(CCObject*) {
     PaimonNotify::create("Todos los modulos desactivados.", NotificationIcon::Info)->show();
 }
 
-void PaimonModulesLayer::onBack(CCObject*) {
-    CCDirector::get()->popScene();
-}
-
-void PaimonModulesLayer::keyBackClicked() {
-    CCDirector::get()->popScene();
-}
+void PaimonModulesLayer::onBack(CCObject*) { CCDirector::get()->popScene(); }
+void PaimonModulesLayer::keyBackClicked() { CCDirector::get()->popScene(); }

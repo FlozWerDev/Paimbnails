@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/GJLevelScoreCell.hpp>
+#include <Geode/modify/GJLevelScoreCell.hpp>
 #include "../framework/HookConventions.hpp"
 #include <Geode/binding/GJLevelScoreCell.hpp>
 #include <Geode/binding/GJUserScore.hpp>

@@ -26,7 +26,8 @@ public:
     // baseUrl is the https base (e.g. https://host). Tries /api/join first;
     // if the room doesn't exist (404), automatically falls back to
     // /api/create-room to become the host of that code.
-    void start(std::string baseUrl, std::string roomCode, std::string username, ConnectMode mode);
+    void start(std::string baseUrl, std::string roomCode, std::string username,
+               PeerAppearance appearance, ConnectMode mode);
     void stop();
 
     // Re-runs the join/create handshake for the current room keeping the same
@@ -49,12 +50,23 @@ public:
     // value.t is "op_batch" or "set_perms"; routed to the matching endpoint.
     void sendJson(matjson::Value const& value);
 
+    // Acked op delivery: POSTs the ops array to /api/ops and reports the
+    // outcome. cb(ok, httpStatus, acceptedCount) always fires (a timeout comes
+    // back as ok=false) unless the session generation changed meanwhile, in
+    // which case the manager's epoch guard has already dropped the in-flight
+    // chunk. This is what makes op delivery reliable: the caller keeps the
+    // chunk until ok=true.
+    using OpsCb = std::function<void(bool ok, int status, int accepted)>;
+    void sendOps(matjson::Value const& ops, OpsCb cb);
+
     // Host-only: POST /api/invite. cb(ok, online, message) reports whether the
     // invite was accepted by the server and whether the target was online.
     using InviteCb = std::function<void(bool ok, bool online, std::string const& message)>;
     void sendInvite(int accountId, std::string const& fromName, InviteCb cb);
 
 private:
+    void beginStart(std::string baseUrl, std::string roomCode, std::string username,
+                    PeerAppearance appearance, ConnectMode mode, bool preserveResumeToken);
     void doJoin();
     void doCreate();
     void onJoinLikeSuccess(matjson::Value value); // shared by join/create success
@@ -67,6 +79,9 @@ private:
     std::string m_base;
     std::string m_room;
     std::string m_user;
+    std::string m_sessionToken;
+    std::string m_resumeToken;
+    PeerAppearance m_appearance;
     int m_clientId = 0;
     bool m_joined = false;
     bool m_active = false;

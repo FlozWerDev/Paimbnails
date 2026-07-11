@@ -1,4 +1,4 @@
-﻿#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include <Geode/modify/CustomSongWidget.hpp>
 #include "../framework/HookConventions.hpp"
 #include "../utils/EditorContext.hpp"
@@ -255,9 +255,32 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             ));
         }
 
+        // z=1 above the dark fallback (z=0). Previously blur was at z=-1 and
+        // stayed hidden behind the opaque fallback panel.
         blurred->setOpacity(0);
-        m_fields->m_clipper->addChild(blurred, -1);
-        blurred->runAction(CCFadeTo::create(0.3f, 230));
+        m_fields->m_clipper->addChild(blurred, 1);
+        blurred->runAction(CCFadeTo::create(0.3f, 255));
+
+        // Soft darken above the blur so song title/artist stay readable.
+        if (!m_fields->m_clipper->getChildByID("paimon-song-dark-overlay"_spr)) {
+            auto* dark = CCLayerColor::create(ccc4(0, 0, 0, 110));
+            if (dark) {
+                dark->setContentSize(sz);
+                dark->setAnchorPoint({0.f, 0.f});
+                dark->setPosition({0.f, 0.f});
+                dark->setID("paimon-song-dark-overlay"_spr);
+                m_fields->m_clipper->addChild(dark, 2);
+            }
+        }
+
+        // Fallback only needed until the first blur is ready.
+        if (auto* fallback = m_fields->m_clipper->getChildByID("paimon-song-dark-fallback"_spr)) {
+            fallback->runAction(CCSequence::create(
+                CCFadeOut::create(0.3f),
+                CCRemoveSelf::create(),
+                nullptr
+            ));
+        }
     }
 
     // Async blur: avoid blocking the main thread with a full Kawase pass in one frame.
@@ -329,13 +352,28 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             log::warn("[PaimonCSW] tryApplyBlur: invalid levelID={}", levelID);
             return;
         }
-        if (levelID == m_fields->m_levelID) return; // already in-flight or done
+
+        bool const alreadyBound = (levelID == m_fields->m_levelID);
+        bool const hasBlur = m_fields->m_clipper
+            && m_fields->m_clipper->getChildByID("paimon-song-blur"_spr) != nullptr;
+        if (alreadyBound && hasBlur) return; // already in-flight or done
         m_fields->m_levelID = levelID;
 
         log::info("[PaimonCSW] tryApplyBlur: requesting thumbnail for levelID={}", levelID);
 
+        // Prefer the texture LevelInfoLayer is currently displaying so the song
+        // cell always matches the active gallery/thumbnail background.
+        if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID) {
+            if (auto* lastTex = paimon::ThumbnailBackgroundChangedEvent::getLastTexture()) {
+                log::info("[PaimonCSW] using LevelInfoLayer last texture for {}", levelID);
+                applyBlurredThumbnail(lastTex);
+                return;
+            }
+        }
+
         // Try RAM cache before any async load.
-        auto ramTex = paimon::cache::ThumbnailCache::get().getFromRam(levelID, false);        if (ramTex.has_value() && ramTex.value()) {
+        auto ramTex = paimon::cache::ThumbnailCache::get().getFromRam(levelID, false);
+        if (ramTex.has_value() && ramTex.value()) {
             log::info("[PaimonCSW] RAM cache HIT for {}", levelID);
             applyBlurredThumbnail(ramTex.value());
             return;
@@ -384,8 +422,10 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         m_fields->m_retryScheduled = false;
         if (!paimon::csw::Lifecycle::isAlive(asBase())) return;
         if (!getParent()) return;
-        if (m_fields->m_levelID > 0) return;
         if (!shouldManageBlur()) return;
+        bool const hasBlur = m_fields->m_clipper
+            && m_fields->m_clipper->getChildByID("paimon-song-blur"_spr) != nullptr;
+        if (m_fields->m_levelID > 0 && hasBlur) return;
         log::info("[PaimonCSW] retryBlur: trying again...");
         tryApplyBlur();
     }

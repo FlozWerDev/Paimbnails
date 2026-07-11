@@ -1,4 +1,4 @@
-﻿#include "DecoderNDK.hpp"
+#include "DecoderNDK.hpp"
 
 #if defined(USE_MEDIA_NDK)
 

@@ -1,4 +1,4 @@
-﻿#include "VideoDecoder.hpp"
+#include "VideoDecoder.hpp"
 #include "platform/DecoderPLM.hpp"
 
 #if defined(USE_MEDIA_FOUNDATION)

@@ -1,4 +1,4 @@
-﻿#include "LeaderboardLayer.hpp"
+#include "LeaderboardLayer.hpp"
 #include "LeaderboardHistoryLayer.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
@@ -22,6 +22,7 @@
 #include <Geode/binding/LevelInfoLayer.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
+#include <Geode/binding/GJDifficultySprite.hpp>
 #include "../../../utils/Shaders.hpp"
 #include "../../../utils/GLSLLoader.hpp"
 #include "../../../blur/BlurSystem.hpp"
@@ -226,23 +227,81 @@ bool LeaderboardLayer::init() {
     this->addChild(tabMenu);
     m_tabsMenu = tabMenu;
 
-    auto createTab = [&](char const* text, char const* id, CCPoint pos) -> CCMenuItemToggler* {
-        auto createBtn = [&](char const* frameName) -> CCNode* {
-            auto sprite = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName(frameName);
-            sprite->setContentSize({110.f, 32.f});
-            auto label = CCLabelBMFont::create(text, "goldFont.fnt");
-            label->setScale(0.45f);
-            float maxLabelW = sprite->getContentSize().width - 8.f;
+    // Neon pill tabs built from GD assets: square02b fill + GJ_square07 border.
+    // Dark capsule w/ accent outline when idle, glowing accent when active.
+    auto createTab = [&](char const* text, char const* id, char const* iconFrame,
+                         ccColor3B accent, CCPoint pos) -> CCMenuItemToggler* {
+        float pillW = 116.f;
+        float pillH = 34.f;
+
+        auto buildPill = [&](bool active) -> CCNode* {
+            auto node = CCNode::create();
+            node->setContentSize({pillW, pillH});
+
+            if (active) {
+                if (auto* glow = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
+                    glow->setContentSize({pillW + 14.f, pillH + 14.f});
+                    glow->setAnchorPoint({0.f, 0.f});
+                    glow->setPosition({-7.f, -7.f});
+                    glow->setColor(accent);
+                    glow->setOpacity(80);
+                    node->addChild(glow, -2);
+                }
+            }
+
+            ccColor3B bgCol = active
+                ? ccColor3B{static_cast<GLubyte>(accent.r * 0.30f),
+                            static_cast<GLubyte>(accent.g * 0.30f),
+                            static_cast<GLubyte>(accent.b * 0.30f)}
+                : ccColor3B{14, 16, 24};
+            if (auto* bg = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
+                bg->setContentSize({pillW, pillH});
+                bg->setAnchorPoint({0.f, 0.f});
+                bg->setColor(bgCol);
+                bg->setOpacity(active ? 250 : 210);
+                node->addChild(bg, -1);
+            }
+            if (auto* border = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png")) {
+                border->setContentSize({pillW, pillH});
+                border->setAnchorPoint({0.f, 0.f});
+                border->setColor(accent);
+                border->setOpacity(active ? 255 : 80);
+                node->addChild(border, 0);
+            }
+
+            float textLeft = 14.f;
+            if (auto* icon = paimon::SpriteHelper::safeCreateWithFrameName(iconFrame)) {
+                float maxSide = std::max(icon->getContentSize().width, icon->getContentSize().height);
+                if (maxSide > 0.f) icon->setScale(20.f / maxSide);
+                icon->setPosition({17.f, pillH / 2.f});
+                if (!active) {
+                    icon->setColor({135, 140, 158});
+                    icon->setOpacity(180);
+                }
+                node->addChild(icon, 2);
+                textLeft = 30.f;
+            }
+
+            auto label = CCLabelBMFont::create(text, "bigFont.fnt");
+            label->setScale(0.40f);
+            float maxLabelW = pillW - textLeft - 10.f;
             if (label->getScaledContentSize().width > maxLabelW) {
                 label->setScale(label->getScale() * (maxLabelW / label->getScaledContentSize().width));
             }
-            label->setPosition(sprite->getContentSize() / 2);
-            sprite->addChild(label);
-            return sprite;
+            label->setAnchorPoint({0.f, 0.5f});
+            label->setPosition({textLeft, pillH / 2.f + 1.f});
+            if (active) {
+                label->setColor(accent);
+            } else {
+                label->setColor({150, 155, 172});
+            }
+            node->addChild(label, 2);
+
+            return node;
         };
 
-        auto onSprite = createBtn("GJ_longBtn01_001.png");
-        auto offSprite = createBtn("GJ_longBtn02_001.png");
+        auto onSprite = buildPill(true);
+        auto offSprite = buildPill(false);
 
         auto tab = CCMenuItemToggler::create(offSprite, onSprite, this, menu_selector(LeaderboardLayer::onTab));
         tab->setUserObject(CCString::create(id));
@@ -252,17 +311,20 @@ bool LeaderboardLayer::init() {
         return tab;
     };
 
-    float topY = winSize.height - 22.f;
+    float topY = winSize.height - 24.f;
     float centerX = winSize.width / 2;
-    float btnSpacing = 110.f;
-    auto dailyBtn = createTab(Localization::get().getString("leaderboard.daily").c_str(), "daily", {centerX - btnSpacing, topY});
-    dailyBtn->toggle(true); 
+    float btnSpacing = 126.f;
+    auto dailyBtn = createTab(Localization::get().getString("leaderboard.daily").c_str(), "daily",
+        "GJ_dailyBtn_001.png", {255, 190, 60}, {centerX - btnSpacing, topY});
+    dailyBtn->toggle(true);
     tabMenu->addChild(dailyBtn);
 
-    auto weeklyBtn = createTab(Localization::get().getString("leaderboard.weekly").c_str(), "weekly", {centerX, topY});
+    auto weeklyBtn = createTab(Localization::get().getString("leaderboard.weekly").c_str(), "weekly",
+        "GJ_weeklyBtn_001.png", {150, 110, 255}, {centerX, topY});
     tabMenu->addChild(weeklyBtn);
 
-    auto forYouBtn = createTab(Localization::get().getString("foryou.tab").c_str(), "foryou", {centerX + btnSpacing, topY});
+    auto forYouBtn = createTab(Localization::get().getString("foryou.tab").c_str(), "foryou",
+        "GJ_heartOn_001.png", {255, 105, 150}, {centerX + btnSpacing, topY});
     tabMenu->addChild(forYouBtn);
 
     auto historySpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_menuBtn_001.png");
@@ -555,36 +617,84 @@ void LeaderboardLayer::loadLeaderboard(std::string type) {
     });
 }
 
-// GD-native panel helper.
-// Tries NineSlice -> CCScale9Sprite -> paimondraw fallback. Returns the node added.
-static CCNode* lbAddPanel(CCNode* parent, char const* frame, float w, float h,
-                          CCPoint pos, ccColor3B color, GLubyte opacity, int z) {
-    if (auto* ns = paimon::SpriteHelper::safeCreateNineSlice(frame, {6.f, 6.f, 6.f, 6.f})) {
-        ns->setContentSize({w, h});
-        ns->setAnchorPoint({0, 0});
-        ns->setPosition(pos);
-        ns->setColor(color);
-        ns->setOpacity(opacity);
-        parent->addChild(ns, z);
-        return ns;
+// Difficulty value understood by GJDifficultySprite (7-10 = demon tiers, -1 = auto).
+static int lbDifficultySpriteValue(GJGameLevel* level) {
+    if (!level) return 0;
+    if (level->m_autoLevel) return -1;
+    if (level->m_demon) {
+        switch (static_cast<int>(level->m_demonDifficulty)) {
+            case 3: return 7;
+            case 4: return 8;
+            case 5: return 9;
+            case 6: return 10;
+            default: return 6;
+        }
     }
-    if (auto* s9 = paimon::SpriteHelper::safeCreateScale9WithFrameName(frame)) {
-        s9->setContentSize({w, h});
-        s9->setAnchorPoint({0, 0});
-        s9->setPosition(pos);
-        s9->setColor(color);
-        s9->setOpacity(opacity);
-        parent->addChild(s9, z);
-        return s9;
+    int diff = level->getAverageDifficulty();
+    if (level->m_levelType == GJLevelType::Main) {
+        diff = static_cast<int>(level->m_difficulty);
     }
-    // Last-resort paimondraw fallback (only used if GD assets are missing).
-    ccColor4F fill = { color.r / 255.f, color.g / 255.f, color.b / 255.f, opacity / 255.f };
-    if (auto* fb = paimon::SpriteHelper::createRoundedRect(w, h, 8.f, fill)) {
-        fb->setPosition(pos);
-        parent->addChild(fb, z);
-        return fb;
+    return diff;
+}
+
+// (Re)builds the difficulty + stars chip contents. Called on creation and again
+// from updateLevelInfo once the real level data arrives from the server.
+static void lbFillDiffChip(CCNode* chip, GJGameLevel* level) {
+    if (!chip || !level) return;
+    chip->removeAllChildren();
+
+    CCSize cs = chip->getContentSize();
+    if (auto* bg = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
+        bg->setContentSize(cs);
+        bg->setAnchorPoint({0.f, 0.f});
+        bg->setColor({10, 11, 18});
+        bg->setOpacity(215);
+        chip->addChild(bg, 0);
     }
-    return nullptr;
+    if (auto* border = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png")) {
+        border->setContentSize(cs);
+        border->setAnchorPoint({0.f, 0.f});
+        border->setColor({255, 255, 255});
+        border->setOpacity(70);
+        chip->addChild(border, 1);
+    }
+
+    if (auto diffSpr = GJDifficultySprite::create(lbDifficultySpriteValue(level), GJDifficultyName::Short)) {
+        diffSpr->setScale(0.62f);
+        diffSpr->setPosition({22.f, cs.height / 2.f});
+        chip->addChild(diffSpr, 2);
+    }
+
+    int stars = level->m_stars.value();
+    if (stars > 0) {
+        auto starLbl = CCLabelBMFont::create(fmt::format("{}", stars).c_str(), "bigFont.fnt");
+        starLbl->setScale(0.42f);
+        starLbl->setAnchorPoint({0.f, 0.5f});
+        starLbl->setPosition({42.f, cs.height / 2.f});
+        chip->addChild(starLbl, 2);
+
+        if (auto* starIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png")) {
+            starIcon->setScale(0.55f);
+            starIcon->setAnchorPoint({0.f, 0.5f});
+            starIcon->setPosition({45.f + starLbl->getScaledContentSize().width, cs.height / 2.f});
+            chip->addChild(starIcon, 2);
+        }
+    }
+}
+
+// Keeps very dark thumbnail-derived accents visible against the dark card.
+static ccColor3B lbBrightenAccent(ccColor3B c) {
+    int maxC = std::max({static_cast<int>(c.r), static_cast<int>(c.g), static_cast<int>(c.b)});
+    if (maxC == 0) return {255, 195, 60};
+    if (maxC < 110) {
+        float f = 110.f / static_cast<float>(maxC);
+        return {
+            static_cast<GLubyte>(std::min(255.f, c.r * f)),
+            static_cast<GLubyte>(std::min(255.f, c.g * f)),
+            static_cast<GLubyte>(std::min(255.f, c.b * f)),
+        };
+    }
+    return c;
 }
 
 void LeaderboardLayer::createList(std::string type) {
@@ -611,10 +721,27 @@ void LeaderboardLayer::createList(std::string type) {
     int levelID = level->m_levelID;
     bool isDaily = (type == "daily");
 
-    // ============ CARD ============
-    float cardW = 460.f;
-    float cardH = 220.f;
-    float cardY = winSize.height / 2 - 12.f;
+    // Theme accent: real level colors when cached, otherwise gold for daily /
+    // violet for weekly.
+    ccColor3B accA, accB;
+    if (auto colors = LevelColors::get().getPair(levelID); colors.has_value()) {
+        accA = lbBrightenAccent(colors->a);
+        accB = lbBrightenAccent(colors->b);
+    } else if (isDaily) {
+        accA = {255, 195, 60};
+        accB = {255, 120, 40};
+    } else {
+        accA = {150, 110, 255};
+        accB = {90, 70, 220};
+    }
+
+    // ============ HERO CARD ============
+    // Full-bleed cinematic banner: the thumbnail IS the card, with gradients,
+    // a pulsing accent glow, a shine sweep and staggered element entrances.
+    float cardW = std::min(510.f, winSize.width - 56.f);
+    float cardH = 234.f;
+    float cardR = 14.f;
+    float cardY = winSize.height / 2 - 14.f;
 
     auto card = CCNode::create();
     card->setContentSize({cardW, cardH});
@@ -626,38 +753,82 @@ void LeaderboardLayer::createList(std::string type) {
     card->setScale(0.85f);
     card->runAction(CCEaseBackOut::create(CCScaleTo::create(0.5f, 1.0f)));
 
-    // Main card background: GD's beveled GJ_square01 panel, tinted dark.
-    lbAddPanel(card, "GJ_square01.png", cardW, cardH, {0.f, 0.f}, {30, 32, 42}, 245, -1);
+    // Breathing outer glow, two layers of accent color.
+    if (auto* glowOuter = paimon::SpriteHelper::createColorPanel(cardW + 44.f, cardH + 44.f, accB, 45, 22.f)) {
+        glowOuter->setPosition({-22.f, -22.f});
+        card->addChild(glowOuter, -3);
+        glowOuter->runAction(CCRepeatForever::create(CCSequence::create(
+            CCFadeTo::create(1.6f, 20), CCFadeTo::create(1.6f, 55), nullptr)));
+    }
+    if (auto* glowInner = paimon::SpriteHelper::createColorPanel(cardW + 18.f, cardH + 18.f, accA, 80, 16.f)) {
+        glowInner->setPosition({-9.f, -9.f});
+        card->addChild(glowInner, -2);
+        glowInner->runAction(CCRepeatForever::create(CCSequence::create(
+            CCFadeTo::create(1.1f, 45), CCFadeTo::create(1.1f, 95), nullptr)));
+    }
 
-    // ============ THUMBNAIL ============
-    float pad = 12.f;
-    float thumbW = 204.f;
-    float thumbH = cardH - pad * 2.f;
-    float thumbX = pad;
-    float thumbY = pad;
+    // Dark base under the thumbnail while it loads.
+    if (auto* base = paimon::SpriteHelper::createColorPanel(cardW, cardH, {10, 11, 18}, 255, cardR)) {
+        card->addChild(base, -1);
+    }
 
-    // Thumbnail frame using GJ_square03 (lighter accent).
-    lbAddPanel(card, "GJ_square03.png", thumbW + 4.f, thumbH + 4.f,
-               {thumbX - 2.f, thumbY - 2.f}, {72, 78, 96}, 230, 0);
+    // Accent outline on top of everything inside the card (GD's GJ_square07).
+    if (auto* border = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png")) {
+        border->setContentSize({cardW, cardH});
+        border->setAnchorPoint({0.f, 0.f});
+        border->setColor(accA);
+        border->setOpacity(200);
+        card->addChild(border, 6);
+    }
+
+    // ============ FULL-BLEED THUMBNAIL ============
+    float thumbW = cardW;
+    float thumbH = cardH;
 
     auto clipper = CCClippingNode::create();
     clipper->setContentSize({thumbW, thumbH});
     clipper->setAnchorPoint({0, 0});
-    clipper->setPosition({thumbX, thumbY});
-    // Rectangular stencil is fine: thumbnail sits inside a GD-square frame.
-    clipper->setStencil(paimon::SpriteHelper::createRectStencil(thumbW, thumbH));
-    card->addChild(clipper, 2);
+    clipper->setPosition({0.f, 0.f});
+    clipper->setStencil(paimon::SpriteHelper::createRoundedRectStencil(thumbW, thumbH, cardR));
+    card->addChild(clipper, 1);
 
-    auto thumbPlaceholder = CCLayerColor::create({22, 24, 32, 255});
+    auto thumbPlaceholder = CCLayerColor::create({14, 15, 24, 255});
     thumbPlaceholder->setContentSize({thumbW, thumbH});
     thumbPlaceholder->setTag(101);
     clipper->addChild(thumbPlaceholder, 0);
 
-    // Right-edge gradient for readability where text sits behind the thumb.
-    auto thumbGrad = CCLayerGradient::create({0, 0, 0, 0}, {30, 32, 42, 200}, {1, 0});
-    thumbGrad->setContentSize({thumbW * 0.30f, thumbH});
-    thumbGrad->setPosition({thumbW - thumbW * 0.30f, 0.f});
-    clipper->addChild(thumbGrad, 10);
+    // Cinematic gradients: heavy at the bottom (text zone), light at the top
+    // (badge zone).
+    auto bottomGrad = CCLayerGradient::create({5, 6, 11, 245}, {0, 0, 0, 0}, {0, 1});
+    bottomGrad->setContentSize({thumbW, 128.f});
+    bottomGrad->setPosition({0.f, 0.f});
+    clipper->addChild(bottomGrad, 10);
+
+    auto topGrad = CCLayerGradient::create({0, 0, 0, 0}, {8, 8, 14, 170}, {0, 1});
+    topGrad->setContentSize({thumbW, 64.f});
+    topGrad->setPosition({0.f, thumbH - 64.f});
+    clipper->addChild(topGrad, 10);
+
+    // Periodic shine sweep across the artwork.
+    if (auto shine = CCSprite::create()) {
+        shine->setTextureRect(CCRect(0, 0, 1, 1));
+        shine->setScaleX(46.f);
+        shine->setScaleY(cardH * 1.7f);
+        shine->setRotation(18.f);
+        shine->setOpacity(0);
+        ccBlendFunc additive = {GL_SRC_ALPHA, GL_ONE};
+        shine->setBlendFunc(additive);
+        shine->setPosition({-70.f, cardH / 2.f});
+        clipper->addChild(shine, 12);
+        shine->runAction(CCRepeatForever::create(CCSequence::create(
+            CCDelayTime::create(1.0f),
+            CCPlace::create({-70.f, cardH / 2.f}),
+            CCFadeTo::create(0.f, 55),
+            CCEaseSineInOut::create(CCMoveTo::create(1.3f, {cardW + 70.f, cardH / 2.f})),
+            CCFadeTo::create(0.f, 0),
+            CCDelayTime::create(3.2f),
+            nullptr)));
+    }
 
     Ref<LeaderboardLayer> self = this;
     auto createThumbSprite = [clipper](CCTexture2D* tex) {
@@ -704,54 +875,92 @@ void LeaderboardLayer::createList(std::string type) {
         checkLoadingComplete();
     }
 
-    // ============ INFO PANEL ============
-    float infoX = thumbX + thumbW + 10.f;
-    float infoW = cardW - infoX - pad;
-    float infoH = thumbH;
-
-    auto infoPanel = CCNode::create();
-    infoPanel->setContentSize({infoW, infoH});
-    infoPanel->setPosition({infoX, pad});
-    card->addChild(infoPanel, 3);
-
-    // Info panel background: GJ_square05 tinted slightly darker than card.
-    lbAddPanel(infoPanel, "GJ_square05.png", infoW, infoH, {0.f, 0.f}, {22, 24, 32}, 230, 0);
-
-    // ============ BADGE (DAILY / WEEKLY) ============
+    // ============ RIBBON BADGE (DAILY / WEEKLY) ============
     {
-        char const* badgeFrame = isDaily ? "GJ_longBtn01_001.png" : "GJ_longBtn02_001.png";
-        auto badgeBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName(badgeFrame);
-        if (badgeBg) {
-            float badgeW = 108.f;
-            float badgeH = 28.f;
-            badgeBg->setContentSize({badgeW, badgeH});
-            badgeBg->setAnchorPoint({1.f, 1.f});
-            badgeBg->setPosition({infoW - 6.f, infoH - 6.f});
-            infoPanel->addChild(badgeBg, 10);
+        float bW = 128.f;
+        float bH = 32.f;
+        float badgeX = 18.f;
+        float badgeY = cardH - 18.f - bH;
 
-            // Real GD icon (Daily / Weekly).
-            auto badgeIcon = paimon::SpriteHelper::safeCreateWithFrameName(
-                isDaily ? "GJ_dailyBtn_001.png" : "GJ_weeklyBtn_001.png");
-            float labelLeft = 10.f;
-            if (badgeIcon) {
-                badgeIcon->setScale(0.36f);
-                badgeIcon->setAnchorPoint({0.f, 0.5f});
-                badgeIcon->setPosition({8.f, badgeH / 2.f});
-                badgeBg->addChild(badgeIcon, 1);
-                labelLeft = 26.f;
-            }
+        auto badge = CCNode::create();
+        badge->setContentSize({bW, bH});
+        badge->setRotation(-2.f);
+        card->addChild(badge, 8);
 
-            auto badgeLbl = CCLabelBMFont::create(isDaily ? "DAILY" : "WEEKLY", "goldFont.fnt");
-            badgeLbl->setScale(0.45f);
-            float maxLblW = badgeW - labelLeft - 10.f;
-            if (badgeLbl->getScaledContentSize().width > maxLblW) {
-                badgeLbl->setScale(badgeLbl->getScale() * (maxLblW / badgeLbl->getScaledContentSize().width));
-            }
-            badgeLbl->setAnchorPoint({0.f, 0.5f});
-            badgeLbl->setPosition({labelLeft, badgeH / 2.f});
-            badgeBg->addChild(badgeLbl, 2);
-            badgeLbl->setTag(TAG_BADGE_LABEL);
+        if (auto* glow = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
+            glow->setContentSize({bW + 12.f, bH + 12.f});
+            glow->setAnchorPoint({0.f, 0.f});
+            glow->setPosition({-6.f, -6.f});
+            glow->setColor(accA);
+            glow->setOpacity(85);
+            badge->addChild(glow, -1);
         }
+        if (auto* bg = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
+            bg->setContentSize({bW, bH});
+            bg->setAnchorPoint({0.f, 0.f});
+            bg->setColor({static_cast<GLubyte>(accA.r * 0.28f),
+                          static_cast<GLubyte>(accA.g * 0.28f),
+                          static_cast<GLubyte>(accA.b * 0.28f)});
+            bg->setOpacity(245);
+            badge->addChild(bg, 0);
+        }
+        if (auto* bgBorder = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png")) {
+            bgBorder->setContentSize({bW, bH});
+            bgBorder->setAnchorPoint({0.f, 0.f});
+            bgBorder->setColor(accA);
+            bgBorder->setOpacity(255);
+            badge->addChild(bgBorder, 1);
+        }
+
+        float labelLeft = 14.f;
+        auto badgeIcon = paimon::SpriteHelper::safeCreateWithFrameName(
+            isDaily ? "GJ_dailyBtn_001.png" : "GJ_weeklyBtn_001.png");
+        if (badgeIcon) {
+            float maxSide = std::max(badgeIcon->getContentSize().width, badgeIcon->getContentSize().height);
+            if (maxSide > 0.f) badgeIcon->setScale(34.f / maxSide);
+            badgeIcon->setPosition({16.f, bH / 2.f + 2.f});
+            badge->addChild(badgeIcon, 2);
+            labelLeft = 34.f;
+        }
+
+        auto badgeLbl = CCLabelBMFont::create(isDaily ? "DAILY" : "WEEKLY", "bigFont.fnt");
+        badgeLbl->setScale(0.48f);
+        float maxLblW = bW - labelLeft - 10.f;
+        if (badgeLbl->getScaledContentSize().width > maxLblW) {
+            badgeLbl->setScale(badgeLbl->getScale() * (maxLblW / badgeLbl->getScaledContentSize().width));
+        }
+        badgeLbl->setAnchorPoint({0.f, 0.5f});
+        badgeLbl->setPosition({labelLeft, bH / 2.f});
+        badgeLbl->setColor(accA);
+        badge->addChild(badgeLbl, 2);
+        badgeLbl->setTag(TAG_BADGE_LABEL);
+
+        // Drop-in bounce entrance.
+        badge->setPosition({badgeX, badgeY + 46.f});
+        badge->runAction(CCSequence::create(
+            CCDelayTime::create(0.15f),
+            CCEaseBounceOut::create(CCMoveTo::create(0.55f, {badgeX, badgeY})),
+            nullptr));
+    }
+
+    // ============ DIFFICULTY + STARS CHIP ============
+    {
+        float chipW = 96.f;
+        float chipH = 34.f;
+        float chipX = cardW - chipW - 16.f;
+        float chipY = cardH - chipH - 17.f;
+
+        auto chip = CCNode::create();
+        chip->setContentSize({chipW, chipH});
+        chip->setTag(TAG_DIFF_SPRITE);
+        card->addChild(chip, 8);
+        lbFillDiffChip(chip, level);
+
+        chip->setPosition({chipX + 40.f, chipY});
+        chip->runAction(CCSequence::create(
+            CCDelayTime::create(0.20f),
+            CCEaseBackOut::create(CCMoveTo::create(0.45f, {chipX, chipY})),
+            nullptr));
     }
 
     // ============ CARD HIT AREA (entire card opens level info) ============
@@ -776,50 +985,66 @@ void LeaderboardLayer::createList(std::string type) {
         }
     }
 
-    // ============ TEXT (NAME / CREATOR / SEPARATOR) ============
-    float textX = 14.f;
-    float nameY = infoH - 46.f;
-    float textMaxW = infoW - 28.f;
+    // ============ TITLE BLOCK (NAME / ACCENT LINE / CREATOR) ============
+    float textX = 22.f;
+    float nameY = 96.f;
+    float nameMaxW = cardW - 44.f;
 
     auto nameLbl = CCLabelBMFont::create(level->m_levelName.c_str(), "bigFont.fnt");
-    nameLbl->setScale(0.70f);
-    nameLbl->setColor({240, 240, 248});
+    nameLbl->setScale(0.82f);
+    nameLbl->setColor({255, 255, 255});
     nameLbl->setAnchorPoint({0.f, 0.5f});
-    nameLbl->setPosition({textX, nameY});
     nameLbl->setTag(TAG_NAME_LABEL);
-    if (nameLbl->getScaledContentSize().width > textMaxW) {
-        nameLbl->setScale(nameLbl->getScale() * (textMaxW / nameLbl->getScaledContentSize().width));
+    if (nameLbl->getScaledContentSize().width > nameMaxW) {
+        nameLbl->setScale(nameLbl->getScale() * (nameMaxW / nameLbl->getScaledContentSize().width));
     }
-    infoPanel->addChild(nameLbl, 10);
+    card->addChild(nameLbl, 8);
+    nameLbl->setOpacity(0);
+    nameLbl->setPosition({textX - 26.f, nameY});
+    nameLbl->runAction(CCSequence::create(
+        CCDelayTime::create(0.10f),
+        CCSpawn::create(
+            CCFadeIn::create(0.35f),
+            CCEaseSineOut::create(CCMoveTo::create(0.35f, {textX, nameY})),
+            nullptr),
+        nullptr));
+
+    // Accent line growing between the name and the creator (1px GD sprite).
+    if (auto line = CCSprite::create()) {
+        line->setTextureRect(CCRect(0, 0, 1, 1));
+        line->setColor(accA);
+        line->setAnchorPoint({0.f, 0.5f});
+        line->setPosition({textX + 1.f, 80.f});
+        line->setScaleY(3.5f);
+        line->setScaleX(0.f);
+        card->addChild(line, 8);
+        line->runAction(CCSequence::create(
+            CCDelayTime::create(0.25f),
+            CCEaseSineOut::create(CCScaleTo::create(0.4f, 56.f, 3.5f)),
+            nullptr));
+    }
 
     std::string creatorStr = level->m_creatorName.size() > 0
         ? "by " + std::string(level->m_creatorName) : "";
     auto creatorLbl = CCLabelBMFont::create(creatorStr.c_str(), "goldFont.fnt");
-    creatorLbl->setScale(0.45f);
+    creatorLbl->setScale(0.50f);
     creatorLbl->setAnchorPoint({0.f, 0.5f});
-    creatorLbl->setPosition({textX, nameY - 22.f});
     creatorLbl->setTag(TAG_CREATOR_LABEL);
-    if (creatorLbl->getScaledContentSize().width > textMaxW) {
-        creatorLbl->setScale(creatorLbl->getScale() * (textMaxW / creatorLbl->getScaledContentSize().width));
+    if (creatorLbl->getScaledContentSize().width > nameMaxW) {
+        creatorLbl->setScale(creatorLbl->getScale() * (nameMaxW / creatorLbl->getScaledContentSize().width));
     }
-    infoPanel->addChild(creatorLbl, 10);
+    card->addChild(creatorLbl, 8);
+    creatorLbl->setOpacity(0);
+    creatorLbl->setPosition({textX - 25.f, 66.f});
+    creatorLbl->runAction(CCSequence::create(
+        CCDelayTime::create(0.18f),
+        CCSpawn::create(
+            CCFadeIn::create(0.35f),
+            CCEaseSineOut::create(CCMoveTo::create(0.35f, {textX + 1.f, 66.f})),
+            nullptr),
+        nullptr));
 
-    // Thin separator using a 1px stretched CCSprite (no paimondraw).
-    {
-        auto sep = CCSprite::create();
-        if (sep) {
-            sep->setTextureRect(CCRect(0, 0, 1, 1));
-            sep->setScaleX(textMaxW);
-            sep->setScaleY(1.5f);
-            sep->setColor({80, 85, 100});
-            sep->setOpacity(160);
-            sep->setAnchorPoint({0.f, 0.5f});
-            sep->setPosition({textX, nameY - 40.f});
-            infoPanel->addChild(sep, 10);
-        }
-    }
-
-    // ============ TIMER CHIP ============
+    // ============ COUNTDOWN PROGRESS BAR ============
     if (m_featuredExpiresAt > 0) {
         long long now = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -829,53 +1054,95 @@ void LeaderboardLayer::createList(std::string type) {
             int hours = (int)(diff / (1000LL * 60 * 60));
             int mins = (int)((diff % (1000LL * 60 * 60)) / (1000LL * 60));
 
-            float chipW = 158.f;
-            float chipH = 24.f;
-            float chipX = textX;
-            float chipY = nameY - 66.f;
+            long long totalMs = (isDaily ? 24LL : 24LL * 7) * 60LL * 60LL * 1000LL;
+            float frac = static_cast<float>((double)diff / (double)totalMs);
+            frac = std::max(0.02f, std::min(1.f, frac));
+            bool urgent = diff < 3LL * 60 * 60 * 1000;
+            ccColor3B barCol = urgent ? ccColor3B{255, 90, 90} : accA;
 
-            // Chip background using GJ_square05 tinted.
-            lbAddPanel(infoPanel, "GJ_square05.png", chipW, chipH,
-                       {chipX, chipY}, {40, 44, 56}, 220, 10);
+            float barX = 22.f;
+            float barY = 24.f;
+            float barW = cardW - 44.f - 168.f;
+            float barH = 8.f;
 
-            // Time icon (real GD asset).
-            float iconX = chipX + 10.f;
-            auto timeIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_timeIcon_001.png");
-            float labelOffset = 0.f;
-            if (timeIcon) {
-                timeIcon->setScale(0.42f);
-                timeIcon->setColor({210, 215, 225});
+            // Clock icon + label above the bar.
+            float labelY = barY + 20.f;
+            float labelX = barX;
+            if (auto timeIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_timeIcon_001.png")) {
+                timeIcon->setScale(0.45f);
+                timeIcon->setColor({215, 220, 232});
                 timeIcon->setAnchorPoint({0.f, 0.5f});
-                timeIcon->setPosition({iconX, chipY + chipH / 2.f});
-                infoPanel->addChild(timeIcon, 11);
-                labelOffset = 14.f;
+                timeIcon->setPosition({labelX, labelY});
+                card->addChild(timeIcon, 8);
+                labelX += 15.f;
             }
-
             auto timeLbl = CCLabelBMFont::create(
                 fmt::format("Ends in {}h {}m", hours, mins).c_str(), "chatFont.fnt");
-            timeLbl->setScale(0.50f);
-            timeLbl->setColor({200, 205, 220});
+            timeLbl->setScale(0.55f);
+            timeLbl->setColor(urgent ? ccColor3B{255, 130, 130} : ccColor3B{222, 226, 240});
             timeLbl->setAnchorPoint({0.f, 0.5f});
-            timeLbl->setPosition({iconX + labelOffset, chipY + chipH / 2.f});
+            timeLbl->setPosition({labelX, labelY});
             timeLbl->setTag(TAG_TIME_LABEL);
-            infoPanel->addChild(timeLbl, 11);
+            card->addChild(timeLbl, 8);
+            if (urgent) {
+                timeLbl->runAction(CCRepeatForever::create(CCSequence::create(
+                    CCFadeTo::create(0.5f, 140), CCFadeTo::create(0.5f, 255), nullptr)));
+            }
+
+            // Track + animated fill showing the remaining fraction (GD square02b).
+            if (auto* track = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
+                track->setContentSize({barW, barH});
+                track->setAnchorPoint({0.f, 0.f});
+                track->setColor({35, 38, 52});
+                track->setOpacity(220);
+                track->setPosition({barX, barY});
+                card->addChild(track, 8);
+            }
+            float fillW = std::max(barH, barW * frac);
+            if (auto* fill = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
+                fill->setContentSize({fillW, barH});
+                fill->setAnchorPoint({0.f, 0.f});
+                fill->setColor(barCol);
+                fill->setPosition({barX, barY});
+                card->addChild(fill, 9);
+                fill->setScaleX(0.f);
+                fill->runAction(CCSequence::create(
+                    CCDelayTime::create(0.35f),
+                    CCEaseSineOut::create(CCScaleTo::create(0.7f, 1.f, 1.f)),
+                    nullptr));
+            }
         }
     }
 
-    // ============ PLAY BUTTON (native GD ButtonSprite) ============
+    // ============ PLAY BUTTON + PULSING GLOW RING ============
     auto playMenu = CCMenu::create();
     playMenu->setPosition({0.f, 0.f});
-    infoPanel->addChild(playMenu, 15);
+    card->addChild(playMenu, 15);
 
     {
-        auto playSpr = ButtonSprite::create("PLAY", 130, true, "bigFont.fnt", "GJ_button_01.png", 38.f, 0.85f);
+        CCPoint playPos = {cardW - 92.f, 46.f};
+
+        auto playSpr = ButtonSprite::create("PLAY", 130, true, "bigFont.fnt", "GJ_button_01.png", 42.f, 0.9f);
         if (playSpr) {
             auto playBtnVis = CCMenuItemSpriteExtra::create(playSpr, self, menu_selector(LeaderboardLayer::onViewLevel));
             playBtnVis->setUserObject(level);
-            playBtnVis->setPosition({infoW / 2.f, 26.f});
-            playBtnVis->m_scaleMultiplier = 1.1f;
+            playBtnVis->setPosition(playPos);
+            playBtnVis->m_scaleMultiplier = 1.12f;
             PaimonButtonHighlighter::registerButton(playBtnVis);
             playMenu->addChild(playBtnVis);
+
+            playBtnVis->setScale(0.f);
+            playBtnVis->runAction(CCSequence::create(
+                CCDelayTime::create(0.30f),
+                CCEaseElasticOut::create(CCScaleTo::create(0.6f, 1.f), 0.7f),
+                nullptr));
+
+            // Subtle breathing pulse on the sprite (not the menu item, so the
+            // click-scale animation stays intact).
+            playSpr->runAction(CCRepeatForever::create(CCSequence::create(
+                CCEaseSineInOut::create(CCScaleTo::create(0.9f, playSpr->getScale() * 1.05f)),
+                CCEaseSineInOut::create(CCScaleTo::create(0.9f, playSpr->getScale())),
+                nullptr)));
         }
     }
 }
@@ -1572,25 +1839,33 @@ void LeaderboardLayer::updateLevelInfo() {
         return nullptr;
     };
 
+    // Same geometry as createList's hero card.
+    auto winSize = CCDirector::get()->getWinSize();
+    float cardW = std::min(510.f, winSize.width - 56.f);
+    float nameMaxW = cardW - 44.f;
+
     if (auto nameLbl = typeinfo_cast<CCLabelBMFont*>(findByTag(findByTag, container, TAG_NAME_LABEL))) {
-        nameLbl->setScale(0.70f);
+        nameLbl->setScale(0.82f);
         nameLbl->setString(m_featuredLevel->m_levelName.c_str());
-        float maxNameW = 194.f;
-        if (nameLbl->getScaledContentSize().width > maxNameW) {
-            nameLbl->setScale(nameLbl->getScale() * (maxNameW / nameLbl->getScaledContentSize().width));
+        if (nameLbl->getScaledContentSize().width > nameMaxW) {
+            nameLbl->setScale(nameLbl->getScale() * (nameMaxW / nameLbl->getScaledContentSize().width));
         }
     }
 
     if (auto creatorLbl = typeinfo_cast<CCLabelBMFont*>(findByTag(findByTag, container, TAG_CREATOR_LABEL))) {
         std::string creatorStr = m_featuredLevel->m_creatorName.size() > 0
-            ? "by " + std::string(m_featuredLevel->m_creatorName) 
+            ? "by " + std::string(m_featuredLevel->m_creatorName)
             : "";
-        creatorLbl->setScale(0.45f);
+        creatorLbl->setScale(0.50f);
         creatorLbl->setString(creatorStr.c_str());
-        float maxCreatorW = 194.f;
-        if (creatorLbl->getScaledContentSize().width > maxCreatorW) {
-            creatorLbl->setScale(creatorLbl->getScale() * (maxCreatorW / creatorLbl->getScaledContentSize().width));
+        if (creatorLbl->getScaledContentSize().width > nameMaxW) {
+            creatorLbl->setScale(creatorLbl->getScale() * (nameMaxW / creatorLbl->getScaledContentSize().width));
         }
+    }
+
+    // Rebuild the difficulty/stars chip with the freshly downloaded data.
+    if (auto chip = findByTag(findByTag, container, TAG_DIFF_SPRITE)) {
+        lbFillDiffChip(chip, m_featuredLevel);
     }
 }
 

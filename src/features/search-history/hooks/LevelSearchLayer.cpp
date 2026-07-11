@@ -101,6 +101,10 @@ class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
             }
 
             m_searchInput->setString(object.query);
+
+            // Lanzar la busqueda directamente en vez de solo rellenar el formulario.
+            if (object.type == 2) this->onSearchUser(nullptr);
+            else this->onSearch(nullptr);
         })->show();
     }
 

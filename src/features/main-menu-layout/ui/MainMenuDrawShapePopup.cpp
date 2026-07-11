@@ -1,4 +1,4 @@
-﻿#include "MainMenuDrawShapePopup.hpp"
+#include "MainMenuDrawShapePopup.hpp"
 
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"

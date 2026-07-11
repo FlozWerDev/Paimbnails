@@ -1,4 +1,4 @@
-﻿#include "FontButton.hpp"
+#include "FontButton.hpp"
 #include "FontPickerPopup.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
 

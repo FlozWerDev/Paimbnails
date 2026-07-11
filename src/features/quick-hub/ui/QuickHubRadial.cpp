@@ -1,4 +1,4 @@
-﻿#include "QuickHubRadial.hpp"
+#include "QuickHubRadial.hpp"
 #include "../services/QuickHubManager.hpp"
 #include "../services/QuickHubButtonCapture.hpp"
 #include "../data/QuickHubCategories.hpp"

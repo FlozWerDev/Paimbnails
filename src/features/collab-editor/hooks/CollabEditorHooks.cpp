@@ -1,6 +1,7 @@
 #include "../CollabManager.hpp"
 #include "../CollabOverlay.hpp"
 #include "../CollabPopups.hpp"
+#include "../../editor-suite/EditorAssets.hpp"
 
 #include <Geode/binding/UndoObject.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -12,6 +13,8 @@
 #include <Geode/modify/LevelEditorLayer.hpp>
 #include <Geode/modify/LevelSettingsLayer.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
+#include <Geode/ui/PopupManager.hpp>
+#include <Geode/binding/SimplePlayer.hpp>
 
 using namespace geode::prelude;
 
@@ -22,11 +25,13 @@ bool collabEnabled() {
 }
 
 void showBlocked(std::string const& name) {
-    FLAlertLayer::create(
+    auto popup = PopupManager::get().alertFormat(
         "Collab Editor",
-        fmt::format("El host no permitio cambiar <cy>{}</c> en esta sala.", name),
-        "OK"
-    )->show();
+        "El host no permitio cambiar <cy>{}</c> en esta sala.",
+        name
+    );
+    popup.setPriority(true);
+    popup.showQueue();
 }
 
 // After an undo/redo, re-sync the objects the action touched: re-added objects
@@ -50,6 +55,45 @@ void syncAfterUndoRedo(cocos2d::CCArray* affected, EditorUI* ui) {
     if (ui) mgr.reconcileObjects(ui->getSelectedObjects());
 }
 
+// Cara del boton de collab: dos cubos de jugador con colores vivos (duo) y un
+// rotulo "COLLAB" debajo, para que se entienda que abre salas entre amigos.
+// SimplePlayer tiene contentSize 0, asi que va dentro de un CCNode con tamano
+// fijo — CircleButtonSprite centra el top asumiendo un nodo medible.
+CCMenuItemSpriteExtra* makeCollabButton(std::function<void()> onClick) {
+    auto* wrap = CCNode::create();
+    CCSize const sz{38.f, 34.f};
+    wrap->setContentSize(sz);
+    wrap->setAnchorPoint({0.5f, 0.5f});
+
+    auto addPlayer = [&](float x, float scale, ccColor3B c1, ccColor3B c2, int z) {
+        auto* p = SimplePlayer::create(1);
+        if (!p) return;
+        p->setColor(c1);
+        p->setSecondColor(c2);
+        p->setGlowOutline(c2);
+        p->setScale(scale);
+        p->setPosition({x, 20.f});
+        wrap->addChild(p, z);
+    };
+    addPlayer(13.f, 0.60f, {0, 210, 255}, {0, 90, 210}, 0);   // cubo cian atras
+    addPlayer(26.f, 0.66f, {255, 150, 40}, {255, 225, 90}, 1); // cubo naranja delante
+
+    if (auto* label = CCLabelBMFont::create("COLLAB", "goldFont.fnt")) {
+        label->limitLabelWidth(sz.width - 2.f, 0.4f, 0.05f);
+        label->setPosition({sz.width / 2.f, 3.5f});
+        wrap->addChild(label, 2);
+    }
+
+    auto* base = CircleButtonSprite::create(wrap, CircleBaseColor::Green, CircleBaseSize::Small);
+    if (!base) return nullptr;
+    base->setTopRelativeScale(1.f);
+    return CCMenuItemExt::createSpriteExtra(
+        base, [cb = std::move(onClick)](CCMenuItemSpriteExtra*) {
+            if (cb) cb();
+        }
+    );
+}
+
 } // namespace
 
 class $modify(PaimonCollabEditLevelLayer, EditLevelLayer) {
@@ -61,10 +105,22 @@ class $modify(PaimonCollabEditLevelLayer, EditLevelLayer) {
         auto* folderMenu = typeinfo_cast<CCMenu*>(this->getChildByID("folder-menu"));
         if (!folderMenu) return true;
 
-        auto* spr = CircleButtonSprite::createWithSpriteFrameName(
-            "paim_Paimon.png"_spr, 1.f, CircleBaseColor::Green, CircleBaseSize::Small
-        );
-        auto* btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(PaimonCollabEditLevelLayer::onCollab));
+        // Si el mod trae un PNG propio (paim_collab.png) se respeta; si no,
+        // se compone la cara duo-de-cubos + "COLLAB" en vez del icono blanco.
+        CCMenuItemSpriteExtra* btn = nullptr;
+        if (paimon::editor::assets::hasCustom(paimon::editor::assets::files::collab)) {
+            btn = paimon::editor::assets::circleButton(
+                paimon::editor::assets::files::collab,
+                { "accountBtn_friends_001.png" },
+                0.75f,
+                CircleBaseColor::Green,
+                [this] { this->onCollab(nullptr); },
+                CircleBaseSize::Small
+            );
+        } else {
+            btn = makeCollabButton([this] { this->onCollab(nullptr); });
+        }
+        if (!btn) return true;
         btn->setID("collab-button"_spr);
         folderMenu->addChild(btn);
         folderMenu->updateLayout();
@@ -72,10 +128,6 @@ class $modify(PaimonCollabEditLevelLayer, EditLevelLayer) {
     }
 
     void onCollab(CCObject*) {
-        if (!paimon::collab::isUnlocked()) {
-            if (auto* popup = paimon::collab::CollabGatePopup::create()) popup->show();
-            return;
-        }
         if (auto* popup = paimon::collab::CollabRoomPopup::create(m_level)) popup->show();
     }
 };
@@ -185,7 +237,8 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     $override
     void moveObject(GameObject* object, CCPoint offset) {
         EditorUI::moveObject(object, offset);
-        paimon::collab::CollabManager::get().sendUpdatedObject(object);
+        // Cheap remote apply path (setPosition) — alk MoveCommand style.
+        paimon::collab::CollabManager::get().sendMovedObject(object);
     }
 
     $override
@@ -210,6 +263,73 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     void rotateObjects(CCArray* objects, float rotation, CCPoint pivotPoint) {
         EditorUI::rotateObjects(objects, rotation, pivotPoint);
         paimon::collab::CollabManager::get().sendUpdatedObjects(objects);
+    }
+
+    // --- Selection presence (alk SelectCommand + draw-selection-overlay) ---
+
+    $override
+    void selectObject(GameObject* object, bool ignoreFilter) {
+        EditorUI::selectObject(object, ignoreFilter);
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            mgr.sendSelection(this->getSelectedObjects());
+        }
+    }
+
+    $override
+    void selectObjects(CCArray* objects, bool ignoreFilter) {
+        EditorUI::selectObjects(objects, ignoreFilter);
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            mgr.sendSelection(this->getSelectedObjects());
+        }
+    }
+
+    $override
+    void deselectAll() {
+        EditorUI::deselectAll();
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            mgr.sendSelection(nullptr);
+        }
+    }
+
+    $override
+    void deselectObject(GameObject* object) {
+        EditorUI::deselectObject(object);
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            mgr.sendSelection(this->getSelectedObjects());
+        }
+    }
+
+    // --- Edits that only reconcile used to catch late (alk hook coverage) ---
+
+    $override
+    void onPasteColor(CCObject* sender) {
+        EditorUI::onPasteColor(sender);
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            mgr.reconcileObjects(this->getSelectedObjects());
+        }
+    }
+
+    $override
+    void assignNewGroups(bool groupY) {
+        EditorUI::assignNewGroups(groupY);
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            mgr.reconcileObjects(this->getSelectedObjects());
+        }
+    }
+
+    $override
+    void onGroupSticky(CCObject* sender) {
+        EditorUI::onGroupSticky(sender);
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            mgr.reconcileObjects(this->getSelectedObjects());
+        }
     }
 };
 

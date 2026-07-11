@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../engine/FusionEngine.hpp"
 #include "../engine/PackExporterTypes.hpp"
 #include "../engine/UiSpriteCatalog.hpp"
 
@@ -52,7 +53,30 @@ struct SpriteSetting {
     // composited on top of the (tinted or vanilla) sprite.
     bool imageOverlay = false;
 
-    bool hasAny() const { return skip || useCustomColors || hasCustomImage; }
+    // Fusion: region-fill a texture (PNG/GIF) into a click-selected area.
+    // Mask + texture live under SlotPaths::fusionsDir; this flag only tracks
+    // presence so the UI / export know to load them.
+    // The fusion texture is NEVER recolored by pack colors (always stamped).
+    bool hasFusion = false;
+    bool fusionAnimated = false;
+    // Replace = keep texture colours pure. Luma/Overlay are optional styles.
+    FusionBlendMode fusionBlend = FusionBlendMode::Replace;
+    // Colour radius for paint-bucket (luminance-tolerant). Higher = more
+    // shades of the same colour (light yellow + darker yellow) join together.
+    // Lower if the fill eats the white ring / letters. Typical sweet spot 90–140.
+    int   fusionTolerance = 110;
+    // Grow fill by N px into SAME-COLOUR neighbours only (AA fringes).
+    // 0 = off. 1 is usually enough; high values still cannot cross white borders.
+    int   fusionExpandRadius = 1;
+    float fusionOpacity = 1.0f;
+    ImageTransform fusionTransform{};
+    // Fine placement in whole pixels (arrow keys). +Y = down.
+    int fusionPixelX = 0;
+    int fusionPixelY = 0;
+
+    bool hasAny() const {
+        return skip || useCustomColors || hasCustomImage || hasFusion;
+    }
 };
 
 struct TextureProject {
@@ -96,6 +120,8 @@ struct TextureProject {
     bool colorDemonFaces    = false;
     bool mythicCompat       = false;
     bool includeModTextures = true;
+    // Export animated fusion GIFs (ImagePlus) alongside static sheets.
+    bool exportAnimatedFusions = true;
 
     std::map<std::string, ManualOverrideRef> overrides;
     std::map<std::string, AutoCacheRef>      autoCache;

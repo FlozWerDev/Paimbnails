@@ -53,13 +53,16 @@ public:
         std::function<void(bool, std::string)> onDone
     );
 
+    // True si ya se descargo e instalo un update en esta sesion y solo falta
+    // reiniciar para cargarlo.
     bool hasPendingInstall() const;
+
+    // Reinicia el juego para cargar el update ya escrito en disco.
     bool restartToApplyPendingUpdate() const;
 
-    // Aplica el update pendiente SIN relanzar el juego. Ideal para auto-update
-    // silencioso al cerrar: el PowerShell helper espera a que el proceso
-    // termine, reemplaza el .geode y se va. Al siguiente arranque normal
-    // del usuario, el juego ya tiene la nueva version.
+    // El update se escribe in-place en cuanto termina la descarga (misma
+    // tecnica que el updater de Geode), asi que al cerrar no queda nada por
+    // hacer: la nueva version se carga en el siguiente arranque.
     bool applyPendingUpdateInPlace() const;
 
     // Si auto-update esta habilitado y hay una actualizacion disponible,
@@ -83,7 +86,7 @@ private:
     std::string m_remoteTag;
     std::string m_downloadUrl;
     std::string m_lastError;
-    std::filesystem::path m_pendingUpdatePath;
+    std::atomic<bool> m_installedPendingRestart{false};
 
     geode::async::TaskHolder<geode::utils::web::WebResponse> m_checkTask;
     geode::async::TaskHolder<geode::utils::web::WebResponse> m_downloadTask;

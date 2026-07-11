@@ -40,14 +40,17 @@ inline void hideCommentCellBgs(cocos2d::CCNode* listNode) {
             if (!child) continue;
 
             if (typeinfo_cast<CommentCell*>(child)) {
-                // only hide vanilla if the cell already has a paimon panel
-                if (!child->getChildByIDRecursive("paimon-comment-bg-panel"_spr)) {
-                    self(self, child);
+                // Panel (solid) or clip (image/gif) both count as paimon bg.
+                // Direct getChildByID — both are added on the cell root.
+                bool hasPaimonBg =
+                    child->getChildByID("paimon-comment-bg-panel"_spr) ||
+                    child->getChildByID("paimon-comment-bg-clip"_spr);
+                if (!hasPaimonBg) {
+                    // No nested CommentCells inside a cell; skip the subtree.
                     continue;
                 }
 
-                // FPS: skip recursion if the cell was already processed and not
-                // recycled (loadFromComment clears this flag)
+                // FPS: skip if already processed (loadFromComment clears this)
                 if (child->getUserObject("paimon-comment-bgs-hidden"_spr)) {
                     continue;
                 }
@@ -73,6 +76,7 @@ inline void hideCommentCellBgs(cocos2d::CCNode* listNode) {
                 hideBgsRecursive(hideBgsRecursive, child);
                 // mark processed until the next loadFromComment
                 child->setUserObject("paimon-comment-bgs-hidden"_spr, cocos2d::CCBool::create(true));
+                continue;
             }
 
             self(self, child);

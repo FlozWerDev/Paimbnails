@@ -108,16 +108,117 @@ CollabEditorOverlay::~CollabEditorOverlay() {
     // poll) and the manager must never call into a freed overlay.
     CollabManager::get().clearOverlay(this);
 
-    // Tags are children of the object layer (not ours); drop them explicitly
-    // in case the overlay dies before the editor does.
+    // Tags / selection draws are children of the object layer (not ours); drop
+    // them explicitly in case the overlay dies before the editor does.
     for (auto& [id, tag] : m_tags) {
         if (tag && tag->getParent()) tag->removeFromParent();
     }
     m_tags.clear();
+    for (auto& [id, sel] : m_selections) {
+        if (sel.draw && sel.draw->getParent()) sel.draw->removeFromParent();
+        if (sel.label && sel.label->getParent()) sel.label->removeFromParent();
+    }
+    m_selections.clear();
+}
+
+void CollabEditorOverlay::clearSelectionNode(int clientId) {
+    auto it = m_selections.find(clientId);
+    if (it == m_selections.end()) return;
+    if (it->second.draw && it->second.draw->getParent()) it->second.draw->removeFromParent();
+    if (it->second.label && it->second.label->getParent()) it->second.label->removeFromParent();
+    m_selections.erase(it);
+}
+
+void CollabEditorOverlay::onPeerSelectionCleared(int clientId) {
+    clearSelectionNode(clientId);
+}
+
+void CollabEditorOverlay::onPeerSelection(int clientId, std::string const& name,
+                                          std::vector<CCRect> const& rects) {
+    auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
+    if (!objectLayer) return;
+    if (rects.empty()) {
+        clearSelectionNode(clientId);
+        return;
+    }
+
+    auto color = peerColor(clientId);
+    ccColor4F fill{
+        color.r / 255.f,
+        color.g / 255.f,
+        color.b / 255.f,
+        0.12f,
+    };
+    ccColor4F border{
+        color.r / 255.f,
+        color.g / 255.f,
+        color.b / 255.f,
+        0.85f,
+    };
+
+    SelectionOverlay* slot = nullptr;
+    auto it = m_selections.find(clientId);
+    if (it != m_selections.end() && it->second.draw && it->second.draw->getParent()) {
+        slot = &it->second;
+        slot->draw->clear();
+    } else {
+        clearSelectionNode(clientId);
+        SelectionOverlay overlay;
+        overlay.draw = CCDrawNode::create();
+        if (!overlay.draw) return;
+        overlay.draw->setZOrder(8900);
+        objectLayer->addChild(overlay.draw);
+        m_selections[clientId] = std::move(overlay);
+        slot = &m_selections[clientId];
+    }
+
+    float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
+    for (auto const& r : rects) {
+        minX = std::min(minX, r.origin.x);
+        minY = std::min(minY, r.origin.y);
+        maxX = std::max(maxX, r.origin.x + r.size.width);
+        maxY = std::max(maxY, r.origin.y + r.size.height);
+
+        // Polygon outline for the rect (CCDrawNode drawRect isn't always available).
+        CCPoint verts[4] = {
+            {r.origin.x, r.origin.y},
+            {r.origin.x + r.size.width, r.origin.y},
+            {r.origin.x + r.size.width, r.origin.y + r.size.height},
+            {r.origin.x, r.origin.y + r.size.height},
+        };
+        slot->draw->drawPolygon(verts, 4, fill, 1.5f, border);
+    }
+
+    // Name tag above the union of rects.
+    CCLabelBMFont* label = (slot->label && slot->label->getParent()) ? slot->label.data() : nullptr;
+    if (!label) {
+        label = CCLabelBMFont::create(name.c_str(), "chatFont.fnt");
+        if (label) {
+            label->setZOrder(8901);
+            objectLayer->addChild(label);
+            slot->label = label;
+        }
+    }
+    if (label) {
+        label->setString(name.c_str());
+        label->setColor(color);
+        label->setOpacity(220);
+        float zoom = objectLayer->getScale();
+        label->setScale(zoom > 0.f ? std::clamp(0.4f / zoom, 0.08f, 5.f) : 0.4f);
+        label->setPosition({(minX + maxX) * 0.5f, maxY + 10.f});
+        label->setVisible(true);
+        label->stopAllActions();
+        // Soft fade if the peer stops updating selection; manager clears hard.
+        label->runAction(CCSequence::create(
+            CCDelayTime::create(6.f),
+            CCFadeOut::create(1.5f),
+            nullptr
+        ));
+    }
 }
 
 void CollabEditorOverlay::refresh(float) {
-    // Keep attribution tags readable at any zoom level.
+    // Keep attribution tags and selection labels readable at any zoom level.
     auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
     if (objectLayer) {
         float zoom = objectLayer->getScale();
@@ -125,6 +226,12 @@ void CollabEditorOverlay::refresh(float) {
             float scale = std::clamp(kTagBaseScale / zoom, 0.1f, 6.f);
             for (auto& [id, tag] : m_tags) {
                 if (tag && tag->getParent() && tag->isVisible()) tag->setScale(scale);
+            }
+            float selScale = std::clamp(0.4f / zoom, 0.08f, 5.f);
+            for (auto& [id, sel] : m_selections) {
+                if (sel.label && sel.label->getParent() && sel.label->isVisible()) {
+                    sel.label->setScale(selScale);
+                }
             }
         }
     }

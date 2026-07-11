@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/CreatorLayer.hpp>
+#include <Geode/modify/CreatorLayer.hpp>
 #include "../framework/HookConventions.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 

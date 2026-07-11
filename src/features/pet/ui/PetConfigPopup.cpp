@@ -10,6 +10,7 @@
 #include "../../../ui/PaiConfigKit.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/ColorPickPopup.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/utils/cocos.hpp>
 
 using namespace geode::prelude;
@@ -567,7 +568,7 @@ void PetConfigPopup::onDeleteImage(CCObject* sender) {
     std::string filename = nameObj->getCString();
 
     WeakRef<PetConfigPopup> self = this;
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         "Borrar Imagen",
         "Seguro que quieres <cr>borrar</c> esta imagen?\n<cy>" + filename + "</c>",
         "Cancelar", "Borrar",
@@ -579,7 +580,7 @@ void PetConfigPopup::onDeleteImage(CCObject* sender) {
             PaimonNotify::create("Imagen eliminada", NotificationIcon::Info)->show();
             static_cast<PetConfigPopup*>(popup.data())->refreshGallery();
         }
-    );
+    ).showInstant();
 }
 
 void PetConfigPopup::onDeleteAllImages(CCObject*) {
@@ -595,7 +596,7 @@ void PetConfigPopup::onDeleteAllImages(CCObject*) {
     );
 
     WeakRef<PetConfigPopup> self = this;
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         "Borrar Todas",
         msg,
         "Cancelar", "Borrar todo",
@@ -614,7 +615,7 @@ void PetConfigPopup::onDeleteAllImages(CCObject*) {
             PaimonNotify::create(note, NotificationIcon::Success)->show();
             static_cast<PetConfigPopup*>(popup.data())->refreshGallery();
         }
-    );
+    ).showInstant();
 }
 
 void PetConfigPopup::onSelectImage(CCObject* sender) {

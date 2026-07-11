@@ -1,4 +1,5 @@
-﻿#include "CustomTransitionEditorPopup.hpp"
+#include "CustomTransitionEditorPopup.hpp"
+#include <Geode/ui/PopupManager.hpp>
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "CustomTransitionScene.hpp"
@@ -1042,8 +1043,7 @@ void CustomTransitionEditorPopup::onSave(CCObject*) {
 // Presets
 
 void CustomTransitionEditorPopup::onLoadPreset(CCObject*) {
-    // Show preset menu using a popup
-    auto popup = geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         "Load Preset",
         "Select a preset to load:\n\n"
         "<cy>1</c> Simple Fade\n"
@@ -1057,20 +1057,20 @@ void CustomTransitionEditorPopup::onLoadPreset(CCObject*) {
         "<cy>9</c> Scale Swap\n"
         "<cy>10</c> Slow Dissolve",
         "Cancel", "OK",
-        [self = WeakRef<CustomTransitionEditorPopup>(this)](auto*, bool btn2) {
+        [self = WeakRef<CustomTransitionEditorPopup>(this)](FLAlertLayer*, bool btn2) {
             if (!btn2) return;
             auto popup = self.lock();
             if (!popup) return;
-            // Since we can't get which number was clicked, show a second popup
-            // to pick the preset number
             popup->showPresetPicker();
         }
-    );
+    ).showInstant();
 }
 
 void CustomTransitionEditorPopup::showPresetPicker() {
-    // Use a series of quick popups to let user pick: page 1 (1-5) and page 2 (6-10)
-    geode::createQuickPopup(
+    // btn2 loads that preset id; btn1 advances to the next step.
+    auto self = WeakRef<CustomTransitionEditorPopup>(this);
+
+    PopupManager::get().quickPopup(
         "Choose Preset (1-5)",
         "<cy>1</c> Simple Fade\n"
         "<cy>2</c> Slide Left\n"
@@ -1078,94 +1078,95 @@ void CustomTransitionEditorPopup::showPresetPicker() {
         "<cy>4</c> Spin Away\n"
         "<cy>5</c> Shake + Fade",
         "More...", "1",
-        [self = WeakRef<CustomTransitionEditorPopup>(this)](auto*, bool btn2) {
+        [self](FLAlertLayer*, bool btn2) {
             auto popup = self.lock();
             if (!popup) return;
-            if (btn2) {
-                popup->loadPreset(1);
-                return;
-            }
-            // Show page 2
-            geode::createQuickPopup(
+            if (btn2) { popup->loadPreset(1); return; }
+
+            PopupManager::get().quickPopup(
                 "Choose Preset (2-5)",
                 "<cy>2</c> Slide Left\n"
                 "<cy>3</c> Zoom Out + Fade In\n"
                 "<cy>4</c> Spin Away\n"
                 "<cy>5</c> Shake + Fade",
                 "More...", "2",
-                [self](auto*, bool btn2) {
+                [self](FLAlertLayer*, bool btn2) {
                     auto popup = self.lock();
                     if (!popup) return;
                     if (btn2) { popup->loadPreset(2); return; }
-                    geode::createQuickPopup(
+
+                    PopupManager::get().quickPopup(
                         "Choose Preset (3-5)",
                         "<cy>3</c> Zoom Out + Fade In\n"
                         "<cy>4</c> Spin Away\n"
                         "<cy>5</c> Shake + Fade",
                         "More...", "3",
-                        [self](auto*, bool btn2) {
+                        [self](FLAlertLayer*, bool btn2) {
                             auto popup = self.lock();
                             if (!popup) return;
                             if (btn2) { popup->loadPreset(3); return; }
-                            geode::createQuickPopup(
+
+                            PopupManager::get().quickPopup(
                                 "Choose Preset (4-10)",
                                 "<cy>4</c> Spin Away\n"
                                 "<cy>5</c> Shake + Fade\n"
                                 "<cy>6</c> Dramatic Cinematic\n"
                                 "<cy>7</c> Bounce Reveal",
                                 "More...", "4",
-                                [self](auto*, bool btn2) {
+                                [self](FLAlertLayer*, bool btn2) {
                                     auto popup = self.lock();
                                     if (!popup) return;
                                     if (btn2) { popup->loadPreset(4); return; }
-                                    geode::createQuickPopup(
+
+                                    PopupManager::get().quickPopup(
                                         "Choose Preset (5-10)",
                                         "<cy>5</c> Shake + Fade\n"
                                         "<cy>6</c> Dramatic Cinematic\n"
                                         "<cy>7</c> Bounce Reveal\n"
                                         "<cy>8</c> Glitch Out",
                                         "More...", "5",
-                                        [self](auto*, bool btn2) {
+                                        [self](FLAlertLayer*, bool btn2) {
                                             auto popup = self.lock();
                                             if (!popup) return;
                                             if (btn2) { popup->loadPreset(5); return; }
-                                            geode::createQuickPopup(
+
+                                            PopupManager::get().quickPopup(
                                                 "Choose Preset (6-10)",
                                                 "<cy>6</c> Dramatic Cinematic\n"
                                                 "<cy>7</c> Bounce Reveal\n"
                                                 "<cy>8</c> Glitch Out\n"
                                                 "<cy>9</c> Scale Swap",
                                                 "10: Dissolve", "6",
-                                                [self](auto*, bool btn2) {
+                                                [self](FLAlertLayer*, bool btn2) {
                                                     auto popup = self.lock();
                                                     if (!popup) return;
                                                     if (btn2) { popup->loadPreset(6); return; }
-                                                    // Show remaining
-                                                    geode::createQuickPopup(
+
+                                                    PopupManager::get().quickPopup(
                                                         "Choose Preset (7-10)",
                                                         "<cy>7</c> Bounce Reveal\n"
                                                         "<cy>8</c> Glitch Out\n"
                                                         "<cy>9</c> Scale Swap\n"
                                                         "<cy>10</c> Slow Dissolve",
                                                         "Cancel", "7",
-                                                        [self](auto*, bool btn2) {
+                                                        [self](FLAlertLayer*, bool btn2) {
                                                             auto popup = self.lock();
                                                             if (!popup) return;
                                                             if (btn2) popup->loadPreset(7);
                                                         }
-                                                    );
+                                                    ).showInstant();
                                                 }
-                                            );
+                                            ).showInstant();
                                         }
-                                    );
+                                    ).showInstant();
                                 }
-                            );
+                            ).showInstant();
                         }
-                    );
+                    ).showInstant();
                 }
-            );
+            ).showInstant();
         }
-    );
+    ).showInstant();
 }
 
 void CustomTransitionEditorPopup::loadPreset(int presetId) {

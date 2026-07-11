@@ -1,4 +1,4 @@
-﻿// LoadingLayer hook: starts the core asset preload (22 main-level thumbnails +
+// LoadingLayer hook: starts the core asset preload (22 main-level thumbnails +
 // emote catalog) and shows an X/Y progress label. Downloads run in the
 // background and don't block the LoadingLayer; they continue if the user
 // reaches the menu first.

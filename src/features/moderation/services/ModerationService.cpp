@@ -1,4 +1,4 @@
-﻿#include "ModerationService.hpp"
+#include "ModerationService.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/binding/GJAccountManager.hpp>

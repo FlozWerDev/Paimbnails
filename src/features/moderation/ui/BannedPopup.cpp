@@ -2,6 +2,7 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/MDTextArea.hpp>
+#include <Geode/ui/PopupManager.hpp>
 
 using namespace geode::prelude;
 
@@ -47,7 +48,7 @@ bool BannedPopup::init(std::string const& reason) {
 void BannedPopup::onDisableMod(CCObject*) {
     auto result = Mod::get()->disable();
     if (!result) {
-        FLAlertLayer::create("Error", result.unwrapErr().c_str(), "OK")->show();
+        PopupManager::get().alert("Error", result.unwrapErr()).showInstant();
         return;
     }
     geode::utils::game::restart(true);

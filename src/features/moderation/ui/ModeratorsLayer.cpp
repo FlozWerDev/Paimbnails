@@ -1,4 +1,4 @@
-﻿#include "ModeratorsLayer.hpp"
+#include "ModeratorsLayer.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"

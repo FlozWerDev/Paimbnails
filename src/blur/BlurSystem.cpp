@@ -1,5 +1,6 @@
-﻿#include "BlurSystem.hpp"
+#include "BlurSystem.hpp"
 #include "BlurDiskCache.hpp"
+#include "../utils/UrlKeyNormalize.hpp"
 
 #include <Geode/utils/cocos.hpp>
 #include <algorithm>
@@ -9,7 +10,7 @@ using namespace cocos2d;
 
 BlurSystem::BlurKey BlurSystem::makeBlurKey(CCTexture2D* source, CCSize const& targetSize, float intensity, std::string const& cacheKey) {
     // Bucket intensity in 0.5 steps to avoid thrashing the cache on small slider deltas.
-    int intensityBucket = std::clamp(static_cast<int>(std::round(intensity * 2.0f)), 0, 20);
+    int intensityBucket = paimon::cache::blurIntensityBucket(intensity);
     std::string sourceKey = cacheKey;
     if (sourceKey.empty()) {
         sourceKey = fmt::format("tex:{}", reinterpret_cast<uintptr_t>(source));

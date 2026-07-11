@@ -29,12 +29,11 @@ protected:
     void onGlowColorSource(cocos2d::CCObject* sender);
     void onPickGlowColor(cocos2d::CCObject* sender);
     void onScaleChanged(cocos2d::CCObject* sender);
-    void onAddCustomIcon(cocos2d::CCObject* sender);
-    void onRemoveCustomIcon(cocos2d::CCObject* sender);
-    void onCustomIconSelect(cocos2d::CCObject* sender);
     void onAnimTypeSelect(cocos2d::CCObject* sender);
     void onAnimSpeedChanged(cocos2d::CCObject* sender);
     void onIconImageToggle(cocos2d::CCObject* sender);
+    void onPickIconBgImage(cocos2d::CCObject* sender);
+    void onClearIconBgImage(cocos2d::CCObject* sender);
 
 public:
     static ProfilePicIconsDetailPopup* create(ProfilePicConfig* cfg, std::function<void()> onChange);

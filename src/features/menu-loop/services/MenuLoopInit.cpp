@@ -1,4 +1,4 @@
-﻿#include "MenuLoopManager.hpp"
+#include "MenuLoopManager.hpp"
 #include "MenuLoopControl.hpp"
 #include <Geode/loader/Loader.hpp>
 #include <Geode/utils/file.hpp>

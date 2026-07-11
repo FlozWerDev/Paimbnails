@@ -1,4 +1,4 @@
-﻿#include "ProfileImgPopup.hpp"
+#include "ProfileImgPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Shaders.hpp"
 #include "../../../utils/GLSLLoader.hpp"

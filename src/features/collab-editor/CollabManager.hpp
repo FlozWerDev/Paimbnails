@@ -36,6 +36,10 @@ public:
     bool connected() const;
     bool isHost() const;
     bool isApplyingRemote() const;
+    // True when we are a non-host in a room whose host enabled view-only.
+    bool isViewOnly() const;
+    // Host always can; non-hosts only when the room is not view-only.
+    bool canEditObjects() const;
     HostPermissions permissions() const;
     std::string status() const;
     std::string roomCode() const;
@@ -44,8 +48,13 @@ public:
     // Peers currently in the room (including us), with display names.
     std::vector<PeerInfo> peers() const;
     std::string peerName(int clientId) const;
+    // Snapshot of our own account + icon appearance, read live from
+    // GameManager (the UI uses it so our row always shows the current icon).
+    static PeerAppearance localAppearance();
 
     void setHostPermissions(HostPermissions permissions);
+    // Host-only: remove a peer from the room. They receive a "kicked" notice.
+    void kickPeer(int targetClientId);
     void setEditor(LevelEditorLayer* editor);
     void clearEditor(LevelEditorLayer* editor);
     LevelEditorLayer* editor() const { return m_editor; }
@@ -64,10 +73,21 @@ public:
     void sendCreatedObjects(cocos2d::CCArray* objects);
     void sendUpdatedObject(GameObject* object);
     void sendUpdatedObjects(cocos2d::CCArray* objects);
+    // Move-only path (alk MoveCommand style): still carries a full save for
+    // digest correctness, but peers apply via setPosition instead of destroy/
+    // recreate — no flicker and much cheaper on large multi-selects.
+    void sendMovedObject(GameObject* object);
+    void sendMovedObjects(cocos2d::CCArray* objects);
     void sendDeletedObject(GameObject* object, std::string const& beforeSave = {});
     // Catch-all for edits made through popups/undo: re-send any object whose
     // save string changed since we last sent it. Objects may be nullptrs.
     void reconcileObjects(cocos2d::CCArray* objects);
+
+    // Broadcast the local editor selection so peers can draw colored rects
+    // (alk SelectCommand + draw-selection-overlay). Throttled; empty clears.
+    void sendSelection(cocos2d::CCArray* selected);
+    // Peer selections currently known (for the overlay to redraw).
+    std::unordered_map<int, PeerSelection> const& peerSelections() const { return m_peerSelections; }
 
     // Host-only: invite a GD account to the current room. cb reports the
     // outcome (delivered / offline / error) so the UI can give feedback.
@@ -91,19 +111,25 @@ public:
 
 private:
     struct OutOp {
-        std::string kind; // add | update | delete
+        std::string kind; // add | update | delete | move
         std::string gid;
         uint32_t version = 0;
         std::string save;
+        float x = 0.f;
+        float y = 0.f;
+        bool hasPos = false;
     };
 
     struct ApplyObj {
-        std::string kind = "add"; // add | update | delete
+        std::string kind = "add"; // add | update | delete | move
         std::string gid;
         std::string save;
         uint32_t version = 0;
         int origin = 0;      // clientId that made the edit (0 = snapshot)
         std::string by;      // username of the editor (may be empty)
+        float x = 0.f;
+        float y = 0.f;
+        bool hasPos = false;
     };
 
     CollabManager();
@@ -129,8 +155,26 @@ private:
     // host's level; the joiner copy is just a preview).
     void discardJoinerLevel();
 
-    void enqueueOp(std::string kind, std::string const& gid, uint32_t version, std::string save);
+    void enqueueOp(std::string kind, std::string const& gid, uint32_t version, std::string save,
+                   float x = 0.f, float y = 0.f, bool hasPos = false);
+    void flushSelectionIfNeeded();
+    void handlePeerSelection(matjson::Value const& msg);
+    void clearPeerSelection(int clientId);
+    // Moves the coalescing buffer into the ordered outbox and pumps it.
     void flushOutgoing();
+    // Sends the next outbox chunk if nothing is in flight and pacing allows.
+    void pumpOutbox();
+    // (Re)sends the current in-flight chunk.
+    void sendInflightChunk();
+    // Ack from the server for the in-flight chunk: pop + chain on success,
+    // schedule an in-order retry on failure. Ops are never dropped.
+    void onOpsAck(bool ok, int status);
+    // Compares the server's state digest against ours and auto-resyncs on
+    // persistent mismatch (only evaluated when fully quiescent).
+    void handleDigest(matjson::Value const& msg);
+    // Safety net for edits without a hook: registers untracked editor objects
+    // as adds and tracked-but-removed objects as deletes.
+    void sweepEditor();
 
     // Non-hosts are dropped straight into a fresh editor on join so the host's
     // snapshot/ops populate a clean level (instead of merging onto whatever the
@@ -150,6 +194,7 @@ private:
     size_t seedFromEditor();
     void applyRemoteAdd(ApplyObj const& op);
     void applyRemoteUpdate(ApplyObj const& op);
+    void applyRemoteMove(ApplyObj const& op);
     void applyRemoteDelete(ApplyObj const& op);
     void notifyOverlayEdit(ApplyObj const& op, GameObject* object);
 
@@ -197,6 +242,36 @@ private:
     float m_sinceFlush = 0.f;
     bool m_pendingStructural = false;
 
+    // Reliable ordered outbox. Ops move pendingOps -> outbox -> inflight; the
+    // inflight chunk is only discarded once the server acks it, and only one
+    // chunk is in flight at a time so arrival order matches send order. A
+    // token bucket paces sends under the server's ops/sec limit (mass pastes
+    // used to blow through it and get the whole batch 429'd and lost).
+    std::deque<OutOp> m_outbox;
+    std::vector<OutOp> m_inflight;
+    // Bumped whenever outbox state is reset; in-flight ack callbacks compare
+    // it and drop themselves if the session/state changed under them.
+    uint64_t m_sendEpoch = 0;
+    float m_retryTimer = 0.f;
+    int m_sendFailures = 0;
+    float m_opTokens = kDefaultOpsPerSecond;
+    float m_opsPerSec = kDefaultOpsPerSecond;
+    size_t m_maxOpsPerRequest = kDefaultOpsPerRequest;
+    // High-water mark of a drain, for "syncing N objects" progress status.
+    size_t m_syncTotal = 0;
+
+    // What we believe the server holds per gid (hash of gid|version|save as
+    // sent or received on the wire). XOR-aggregated and compared against the
+    // server's periodic digest; a persistent mismatch triggers an auto-resync.
+    std::unordered_map<std::string, uint64_t> m_wireHash;
+    int m_digestStrikes = 0;
+    float m_digestCooldown = 0.f;
+
+    // Rotating cursors so huge selections/levels are covered in slices instead
+    // of being skipped (large selections used to never reconcile at all).
+    size_t m_reconcileCursor = 0;
+    int m_sweepTicks = 0;
+
     // Remote operations to apply (snapshot + op_batch), applied in arrival
     // order and budgeted per tick. Only drained once the editor exists, so
     // connecting before entering the editor never drops objects.
@@ -232,6 +307,16 @@ private:
     bool m_recovering = false;
     int m_recoverAttempts = 0;
     std::chrono::steady_clock::time_point m_lastRecoverAt{};
+
+    // Peer selection presence (ephemeral). Local selection is staged then
+    // flushed on a short throttle so drag-selects don't spam the server.
+    std::unordered_map<int, PeerSelection> m_peerSelections;
+    matjson::Value m_pendingSelectionJson;
+    bool m_selectionDirty = false;
+    float m_sinceSelectionFlush = 0.f;
+
+    // Playtest edge detection for view-only sandbox reset (alk-style).
+    bool m_wasPlaytesting = false;
 };
 
 } // namespace paimon::collab

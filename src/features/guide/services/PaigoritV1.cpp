@@ -1,4 +1,4 @@
-﻿#include "PaigoritV1.hpp"
+#include "PaigoritV1.hpp"
 #include "LightLemmatizer.hpp"
 
 #include <rapidfuzz/fuzz.hpp>
@@ -255,6 +255,66 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
             markCoveredTokens(tokenForms, kwTokens, covered);
         }
 
+        // Soft search phrases (problem / how-to language). Cap so they never beat
+        // a strong keyword match on another intent. Can still qualify the intent.
+        auto spIt = intent.searchPhrasesByLang.find(langId);
+        if (spIt == intent.searchPhrasesByLang.end()) {
+            spIt = intent.searchPhrasesByLang.find("english");
+        }
+        if (spIt != intent.searchPhrasesByLang.end()) {
+            for (auto const& raw : spIt->second) {
+                auto phrase = normalizeKeyword(raw);
+                if (phrase.empty()) continue;
+                auto km = matchKeyword(normalizedQuery, flatForms, phrase);
+                double capped = std::min(km.score, kSearchPhraseCap);
+                scored.bestSearchFuzzy = std::max(scored.bestSearchFuzzy, capped);
+
+                auto pToks = tokenizeKw(phrase);
+                if (pToks.size() >= 2 && keywordAppearsAsCompound(tokenForms, pToks)) {
+                    scored.bestSearchFuzzy = std::max(scored.bestSearchFuzzy, kSearchPhraseCap);
+                    markCoveredTokens(tokenForms, pToks, covered);
+                } else {
+                    markCoveredTokens(tokenForms, pToks, covered);
+                }
+            }
+            if (scored.bestSearchFuzzy >= kSearchPhraseFloor) {
+                scored.hasSearchPhraseMatch = true;
+                // Fold into the keyword fuzzy used for ranking, but never above the cap.
+                scored.bestKeywordFuzzy = std::max(scored.bestKeywordFuzzy, scored.bestSearchFuzzy);
+                // Search phrases can anchor qualification when they are solid.
+                if (scored.bestSearchFuzzy >= kSearchPhraseFloor) {
+                    scored.bestAnchoredFuzzy = std::max(
+                        scored.bestAnchoredFuzzy,
+                        std::min(scored.bestSearchFuzzy, 88.0));
+                }
+            }
+        }
+
+        // Description tokens: only coverage/desempate, never qualify alone.
+        auto descIt = intent.descriptionByLang.find(langId);
+        if (descIt == intent.descriptionByLang.end()) {
+            descIt = intent.descriptionByLang.find("english");
+        }
+        if (descIt != intent.descriptionByLang.end() && !tokenForms.empty()) {
+            auto descNorm = normalizeKeyword(descIt->second);
+            auto descToks = LightLemmatizer::removeStopwords(tokenizeKw(descNorm));
+            if (!descToks.empty()) {
+                int dHit = 0;
+                for (auto const& forms : tokenForms) {
+                    bool hit = false;
+                    for (auto const& f : forms) {
+                        for (auto const& dt : descToks) {
+                            if (tokensSimilar(f, dt)) { hit = true; break; }
+                        }
+                        if (hit) break;
+                    }
+                    if (hit) ++dHit;
+                }
+                scored.descriptionCoverage =
+                    static_cast<double>(dHit) / tokenForms.size();
+            }
+        }
+
         if (!tokenForms.empty()) {
             int hit = 0;
             for (bool c : covered) if (c) ++hit;
@@ -271,19 +331,32 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
 
         // Qualify on token-level evidence at the normal floor, OR on a strong
         // phrase-level match (>= kPhraseFloor). Phrase-only weak matches are dropped.
+        // Search-phrase matches also qualify when above kSearchPhraseFloor.
         bool anchoredQual = scored.bestAnchoredFuzzy >= floor;
         bool phraseQual = scored.bestKeywordFuzzy >= std::max(floor, kPhraseFloor);
-        scored.qualified = anchoredQual || phraseQual;
+        bool searchQual = scored.hasSearchPhraseMatch
+                          && scored.bestSearchFuzzy >= kSearchPhraseFloor;
+        scored.qualified = anchoredQual || phraseQual || searchQual;
 
         // Match-quality tier. Token-level certainty (exact word / compound) ranks
         // above strong-but-fuzzy phrase matches, which rank above weak ones, so a
         // perfect match to a light intent beats a heavy intent matched by substring.
+        // Search-phrase-only hits are capped at tier 2.
+        bool keywordStrong = scored.hasFullExactMatch
+            || scored.hasExactTokenMatch
+            || scored.hasCompoundMatch
+            || scored.bestAnchoredFuzzy >= 90.0
+            || (!scored.hasSearchPhraseMatch && scored.bestKeywordFuzzy >= 97.0);
+
         if (scored.hasFullExactMatch) {
             scored.tier = 4;
         } else if (scored.hasExactTokenMatch || scored.hasCompoundMatch) {
             scored.tier = 3;
         } else if (scored.bestAnchoredFuzzy >= 90.0 || scored.bestKeywordFuzzy >= 97.0) {
             scored.tier = 2;
+        } else if (scored.hasSearchPhraseMatch && !keywordStrong) {
+            // Soft problem-phrase route: solid but not name-level certainty.
+            scored.tier = (scored.bestSearchFuzzy >= 90.0) ? 2 : 1;
         } else if (scored.bestAnchoredFuzzy >= kTokenAnchor
                    || scored.bestKeywordFuzzy >= kPhraseFloor) {
             scored.tier = 1;
@@ -295,7 +368,9 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
         if (scored.hasCompoundMatch) scored.confidenceBonus += 20.0;
         if (scored.hasExactTokenMatch) scored.confidenceBonus += 10.0;
         if (scored.bestKeywordFuzzy >= 95.0) scored.confidenceBonus += 5.0;
+        if (scored.hasSearchPhraseMatch) scored.confidenceBonus += 6.0;
         scored.confidenceBonus += scored.coverageRatio * kCoverageBonusMax;
+        scored.confidenceBonus += scored.descriptionCoverage * 4.0; // small desempate
 
         // Quality factor scales the curated weight by match strength (used only
         // to order intents within the same tier).

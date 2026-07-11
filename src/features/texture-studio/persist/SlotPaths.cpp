@@ -16,6 +16,7 @@ constexpr std::string_view kSlotsIndexName  = "slots.json";
 constexpr std::string_view kProjectFile     = "project.json";
 constexpr std::string_view kOverridesDir    = "overrides";
 constexpr std::string_view kImagesDir       = "images";
+constexpr std::string_view kFusionsDir      = "fusions";
 constexpr std::string_view kCacheDir        = "cache";
 constexpr std::string_view kAutoCacheFile   = "auto.bin";
 constexpr std::string_view kOutputDir       = "output";
@@ -55,6 +56,23 @@ std::filesystem::path SlotPaths::overrideFile(std::string_view slotId,
 std::filesystem::path SlotPaths::spriteImageFile(std::string_view slotId,
                                                  std::string_view spriteName) {
     return slotDir(slotId) / std::string(kImagesDir) / (sanitizeFilename(spriteName) + ".png");
+}
+
+std::filesystem::path SlotPaths::fusionsDir(std::string_view slotId) {
+    return slotDir(slotId) / std::string(kFusionsDir);
+}
+
+std::filesystem::path SlotPaths::fusionMaskFile(std::string_view slotId,
+                                                std::string_view spriteName) {
+    return fusionsDir(slotId) / (sanitizeFilename(spriteName) + ".fus");
+}
+
+std::filesystem::path SlotPaths::fusionTextureFile(std::string_view slotId,
+                                                   std::string_view spriteName,
+                                                   std::string_view ext) {
+    std::string e(ext);
+    if (!e.empty() && e[0] != '.') e.insert(e.begin(), '.');
+    return fusionsDir(slotId) / (sanitizeFilename(spriteName) + e);
 }
 
 std::filesystem::path SlotPaths::autoCacheFile(std::string_view slotId) {
@@ -97,6 +115,7 @@ geode::Result<> SlotPaths::ensureSlotDirs(std::string_view slotId) {
     if (auto r = mk(base);                                    !r) return r;
     if (auto r = mk(base / std::string(kOverridesDir));       !r) return r;
     if (auto r = mk(base / std::string(kImagesDir));          !r) return r;
+    if (auto r = mk(base / std::string(kFusionsDir));         !r) return r;
     if (auto r = mk(base / std::string(kCacheDir));           !r) return r;
     if (auto r = mk(base / std::string(kOutputDir));          !r) return r;
 

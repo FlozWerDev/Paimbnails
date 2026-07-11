@@ -1,4 +1,4 @@
-﻿#include "ReportInputPopup.hpp"
+#include "ReportInputPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/Localization.hpp"

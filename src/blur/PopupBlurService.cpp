@@ -384,4 +384,65 @@ void cleanupAllActive(float fadeDuration) {
     }
 }
 
+static void fadeBlurNode(CCNode* blur, bool hide, float duration) {
+    if (!blur) return;
+    GLubyte target = hide ? 0 : 255;
+    float dur = std::max(0.f, duration);
+
+    // Prefer opacity fade (PaiblurNode ramps radius with opacity). Avoid
+    // dynamic_cast — GD builds often disable RTTI. CCNodeRGBA is reachable
+    // via the CCRGBAProtocol cast helpers / direct setOpacity if present.
+    if (auto* rgba = typeinfo_cast<CCNodeRGBA*>(blur)) {
+        rgba->stopAllActions();
+        if (dur <= 0.01f) {
+            rgba->setOpacity(target);
+            rgba->setVisible(true); // keep in tree; opacity alone drives draw
+            return;
+        }
+        rgba->setVisible(true);
+        rgba->runAction(CCFadeTo::create(dur, target));
+        return;
+    }
+
+    // Non-RGBA blur nodes: hard hide/show.
+    blur->setVisible(!hide);
+}
+
+void setLivePreviewMode(CCNode* popup, bool active, float duration) {
+    if (!popup) return;
+
+    // 1) Our registry entry for this popup.
+    auto& reg = blurRegistry();
+    auto it = reg.find(popup);
+    if (it != reg.end() && !it->second.fadingOut) {
+        if (CCNode* blur = liveBlur(it->second)) {
+            if (parentAlive(it->second) && blur->getParent()) {
+                fadeBlurNode(blur, active, duration);
+            }
+        }
+    }
+
+    // 2) Also hunt siblings / scene children for leftover paimon blur nodes
+    // (covers re-parent races and external paths that used registerExternalBlur
+    // under a different key).
+    auto fadeMatching = [&](CCNode* parent) {
+        if (!parent) return;
+        auto* kids = parent->getChildren();
+        if (!kids) return;
+        for (auto* child : CCArrayExt<CCNode*>(kids)) {
+            if (!child) continue;
+            auto id = std::string(child->getID());
+            if (id.find("paiblur") != std::string::npos ||
+                id.find("popup-blur") != std::string::npos) {
+                fadeBlurNode(child, active, duration);
+            }
+        }
+    };
+
+    fadeMatching(popup->getParent());
+    if (auto* dir = CCDirector::get()) {
+        fadeMatching(dir->getRunningScene());
+    }
+}
+
 } // namespace paimon::popupblur

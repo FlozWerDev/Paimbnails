@@ -90,6 +90,12 @@ struct ModCompat {
         return geode::Loader::get()->isModLoaded("fleym.menuloop_randomizer");
     }
 
+    // Better Touch Prio: standalone mod that also Replaces CCTouchDispatcher::touches.
+    // Our Z-order touch feature cedes to it to avoid two Replace hooks colliding.
+    static bool isBetterTouchPrioLoaded() {
+        return geode::Loader::get()->isModLoaded("alk.better-touch-prio");
+    }
+
     // Blur mods. Other mods that blur popups. If one is actively blurring (not
     // just exposing an API), we skip ours to avoid duplicate FBO passes and
     // corrupting the scene snapshot.
@@ -102,10 +108,14 @@ struct ModCompat {
         // to blur. Not a conflict on its own.
         return geode::Loader::get()->isModLoaded("thesillydoggo.blur-api");
     }
+    static bool isBlurBehindPopupsLoaded() {
+        // malikhw47.blur-behind-popups applies BlurAPI to every FLAlertLayer.
+        return geode::Loader::get()->isModLoaded("malikhw47.blur-behind-popups");
+    }
     // True if a mod is applying global popup blur that already covers our
     // PopupBlurService use case.
     static bool externalGlobalBlurActive() {
-        return isBlurBGLoaded();
+        return isBlurBGLoaded() || isBlurBehindPopupsLoaded();
     }
 };
 

@@ -1,4 +1,4 @@
-﻿#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include <Geode/modify/GauntletLayer.hpp>
 #include "../framework/HookConventions.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"

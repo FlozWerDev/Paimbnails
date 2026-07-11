@@ -1,4 +1,4 @@
-﻿#include "CaptureOverlay.hpp"
+#include "CaptureOverlay.hpp"
 #include <Geode/utils/string.hpp>
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/ImageConverter.hpp"
@@ -8,9 +8,10 @@
 #include "../services/FramebufferCapture.hpp"
 
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
-#include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
 #include <Geode/ui/OverlayManager.hpp>
+#include <Geode/ui/PopupManager.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <chrono>
 #include <iomanip>
@@ -54,12 +55,31 @@ void CaptureOverlay::hideOverlay() {
     }
 }
 
+namespace {
+// The docked preview behaves like a toast: it dismisses itself so it never
+// lingers on top of popups the user opens afterwards.
+constexpr float kAutoDismissSeconds = 6.f;
+constexpr float kSceneCheckInterval = 0.25f;
+}
+
 bool CaptureOverlay::init() {
     if (!CCLayer::init()) return false;
     s_instance = this;
 
     this->setTouchEnabled(true);
     this->setKeypadEnabled(true);
+
+    // OverlayManager outlives scene transitions; if the scene changes while the
+    // preview card is up, remove it instead of floating over the new scene.
+    if (auto* director = CCDirector::get()) {
+        m_ownerScene = director->getRunningScene();
+        if (auto* scheduler = director->getScheduler()) {
+            scheduler->scheduleSelector(
+                schedule_selector(CaptureOverlay::checkSceneChanged),
+                this, kSceneCheckInterval, false
+            );
+        }
+    }
 
     // Dim background (hidden during capture so it never appears in the screenshot)
     m_dimBg = CCLayerColor::create({0, 0, 0, 0});
@@ -86,9 +106,71 @@ bool CaptureOverlay::init() {
 }
 
 void CaptureOverlay::onExit() {
+    if (auto* director = CCDirector::get(); director && director->getScheduler()) {
+        auto* scheduler = director->getScheduler();
+        scheduler->unscheduleSelector(
+            schedule_selector(CaptureOverlay::checkSceneChanged), this);
+        scheduler->unscheduleSelector(
+            schedule_selector(CaptureOverlay::onAutoDismiss), this);
+        scheduler->unscheduleSelector(
+            schedule_selector(CaptureOverlay::triggerCaptureProcess), this);
+    }
     CCLayer::onExit();
     if (s_instance == this) {
         s_instance = nullptr;
+    }
+}
+
+void CaptureOverlay::startAutoDismissTimer() {
+    auto* director = CCDirector::get();
+    if (!director || !director->getScheduler()) return;
+    auto* scheduler = director->getScheduler();
+    scheduler->unscheduleSelector(
+        schedule_selector(CaptureOverlay::onAutoDismiss), this);
+    scheduler->scheduleSelector(
+        schedule_selector(CaptureOverlay::onAutoDismiss),
+        this, kAutoDismissSeconds, 0, 0.f, false
+    );
+}
+
+void CaptureOverlay::onAutoDismiss(float) {
+    this->onClose(nullptr);
+}
+
+namespace {
+void collectVisibleAlerts(cocos2d::CCScene* scene, std::vector<CCNode*>& out) {
+    if (!scene) return;
+    for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
+        if (!child) continue;
+        auto* alert = typeinfo_cast<FLAlertLayer*>(child);
+        if (alert && alert->isVisible()) out.push_back(child);
+    }
+}
+}
+
+void CaptureOverlay::checkSceneChanged(float) {
+    auto* director = CCDirector::get();
+    if (!director) return;
+    auto* running = director->getRunningScene();
+    // Pointer identity only; the old scene may already be freed.
+    if (running != m_ownerScene) {
+        m_isClosing = true;
+        this->removeFromParent();
+        return;
+    }
+
+    // A popup opened after the card docked: get out of its way immediately
+    // instead of floating on top of it until the auto-dismiss fires.
+    if (m_docked && !m_isClosing) {
+        std::vector<CCNode*> alerts;
+        collectVisibleAlerts(running, alerts);
+        for (auto* a : alerts) {
+            if (std::find(m_alertsAtDock.begin(), m_alertsAtDock.end(), a)
+                    == m_alertsAtDock.end()) {
+                this->onClose(nullptr);
+                return;
+            }
+        }
     }
 }
 
@@ -97,6 +179,7 @@ void CaptureOverlay::registerWithTouchDispatcher() {
 }
 
 bool CaptureOverlay::ccTouchBegan(CCTouch* touch, CCEvent* event) {
+    if (m_isClosing) return false;
     auto touchPos = touch->getLocation();
 
     if (m_previewCard && m_previewCard->isVisible()) {
@@ -107,14 +190,24 @@ bool CaptureOverlay::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         CCRect rect = CCRect{-5.f, -5.f, cardSize.width + 10.f, cardSize.height + kBtnRowH + 10.f};
         if (!rect.containsPoint(localPos)) {
             this->onClose(nullptr);
+            // Don't swallow: the click that dismisses the card must still reach
+            // whatever UI is underneath (popups opened after the capture, etc).
+            return false;
         }
+        return true;
     }
+    // Capture still in flight / fly animation: keep swallowing briefly.
     return true;
 }
 
 void CaptureOverlay::onClose(CCObject* sender) {
     if (m_isClosing) return;
     m_isClosing = true;
+
+    if (auto* director = CCDirector::get(); director && director->getScheduler()) {
+        director->getScheduler()->unscheduleSelector(
+            schedule_selector(CaptureOverlay::onAutoDismiss), this);
+    }
 
     // Disable touch so user can't interact during close animation
     this->setTouchEnabled(false);
@@ -223,7 +316,10 @@ void CaptureOverlay::triggerCaptureProcess(float) {
                 // Run flying/scale transition
                 self->playFlyToBottomRightAnimation();
             } else {
-                FLAlertLayer::create("Error", "No se pudo realizar la captura de pantalla.", "OK")->show();
+                PopupManager::get().alert(
+                    "Error",
+                    "No se pudo realizar la captura de pantalla."
+                ).showInstant();
                 self->onClose(nullptr);
             }
         },
@@ -409,6 +505,20 @@ void CaptureOverlay::revealPreviewControls() {
     fadeInBtn(dismissBtn, fadeDelay);
     fadeInBtn(dlBtn, fadeDelay + 0.05f);
     fadeInBtn(folderBtn, fadeDelay + 0.1f);
+
+    // Card is docked: release the fullscreen dim so the game stays fully
+    // visible and the preview behaves like a transient toast.
+    if (m_dimBg) {
+        m_dimBg->stopAllActions();
+        m_dimBg->runAction(CCFadeTo::create(0.3f, 0));
+    }
+
+    m_docked = true;
+    m_alertsAtDock.clear();
+    if (auto* director = CCDirector::get()) {
+        collectVisibleAlerts(director->getRunningScene(), m_alertsAtDock);
+    }
+    startAutoDismissTimer();
 }
 
 void CaptureOverlay::onDownload(CCObject* sender) {
@@ -450,6 +560,9 @@ void CaptureOverlay::onDownload(CCObject* sender) {
     // Show feedback
     PaimonNotify::create("Guardando captura...", NotificationIcon::Info)->show();
 
+    // The user is interacting with the card; give it a fresh dismiss window.
+    startAutoDismissTimer();
+
     // Save PNG in background thread to avoid stutters
     paimon::ThreadTracker::get().spawn([bufCopy, w, h, filePath]() {
         geode::utils::thread::setName("Paimon Capture Save");
@@ -471,6 +584,8 @@ void CaptureOverlay::onDownload(CCObject* sender) {
 }
 
 void CaptureOverlay::onOpenFolder(CCObject* sender) {
+    startAutoDismissTimer();
+
     auto capturesDir = Mod::get()->getSaveDir() / "captures";
     std::error_code ec;
     if (!std::filesystem::exists(capturesDir, ec)) {

@@ -1,4 +1,4 @@
-﻿#include "ExtendedKeybind.hpp"
+#include "ExtendedKeybind.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/Keyboard.hpp>

@@ -1,4 +1,4 @@
-﻿#include "PaimonMultiSettingsPanel.hpp"
+#include "PaimonMultiSettingsPanel.hpp"
 #include "SettingsCategoryBuilder.hpp"
 #include "SettingsControls.hpp"
 #include "../services/SettingsPanelManager.hpp"

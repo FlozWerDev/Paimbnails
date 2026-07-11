@@ -1,4 +1,4 @@
-﻿#include "SongCoverCache.hpp"
+#include "SongCoverCache.hpp"
 #include "MenuMusicCoverLog.hpp"
 
 #include "../../thumbnails/services/ThumbnailLoader.hpp"

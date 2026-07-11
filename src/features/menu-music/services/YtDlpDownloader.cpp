@@ -1,4 +1,4 @@
-﻿#include "YtDlpDownloader.hpp"
+#include "YtDlpDownloader.hpp"
 #include "YtDlpBootstrap.hpp"
 #include "FfmpegBootstrap.hpp"
 #include "MenuMusicLibrary.hpp"

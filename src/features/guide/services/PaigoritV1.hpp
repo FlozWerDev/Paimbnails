@@ -25,6 +25,14 @@ struct ScoredIntent {
     // Phrase-level partials don't count here; used to gate qualification.
     double bestAnchoredFuzzy = 0.0;
 
+    // Best soft match against searchPhrases (problem / how-to language).
+    // Capped so it cannot outrank a strong keyword match.
+    double bestSearchFuzzy = 0.0;
+    bool hasSearchPhraseMatch = false;
+
+    // Tiny coverage boost from description tokens (desempate only).
+    double descriptionCoverage = 0.0;
+
     // True if a multi-word keyword appears as a contiguous run in the query.
     bool hasCompoundMatch = false;
 
@@ -38,8 +46,9 @@ struct ScoredIntent {
     // Fraction (0-1) of the query's content tokens this intent explains.
     double coverageRatio = 0.0;
 
-    // Match-quality tier (2 high / 1 medium / 0 weak). Primary ranking key, so a
-    // strong match always outranks a weak one regardless of intent weight.
+    // Match-quality tier (4 exact / 3 compound|token / 2 strong fuzzy / 1 typo /
+    // 0 weak). Primary ranking key, so a strong match always outranks a weak one
+    // regardless of intent weight. Search-phrase-only matches cap at tier 2.
     int tier = 0;
 
     // Match confidence: compound/exact/high-fuzzy flags plus coverage.
@@ -95,6 +104,13 @@ public:
 
     // Functional intents scoring at least this (but unqualified) are offered as fallback suggestions.
     static constexpr double kSuggestionFloor = 45.0;
+
+    // Search phrases never contribute more than this to bestKeywordFuzzy (so an
+    // exact name on another intent always wins).
+    static constexpr double kSearchPhraseCap = 92.0;
+
+    // Minimum fuzzy for a search phrase to count / qualify at all.
+    static constexpr double kSearchPhraseFloor = 82.0;
 
     static PaigoritResult run(std::vector<GuideIntent> const& intents,
                               std::string const& normalizedQuery,

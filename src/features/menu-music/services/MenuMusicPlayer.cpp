@@ -1,4 +1,4 @@
-﻿#include "MenuMusicPlayer.hpp"
+#include "MenuMusicPlayer.hpp"
 #include "MenuMusicLibrary.hpp"
 
 #include "../../menu-loop/services/MenuLoopManager.hpp"

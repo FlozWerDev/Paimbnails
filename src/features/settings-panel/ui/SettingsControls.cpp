@@ -1,4 +1,4 @@
-﻿#include "SettingsControls.hpp"
+#include "SettingsControls.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 
 #include <Geode/Geode.hpp>
@@ -17,18 +17,37 @@ static int childTouchPrio() {
 
 static CCLabelBMFont* makeLabel(const char* text) {
     auto label = CCLabelBMFont::create(text, "chatFont.fnt");
-    label->setScale(0.55f);
-    label->setColor({200, 200, 200});
+    label->setScale(0.5f);
+    label->setColor({235, 237, 242});
     label->setAnchorPoint({0.f, 0.5f});
     return label;
 }
 
 static CCLabelBMFont* makeValueLabel(const char* text) {
     auto label = CCLabelBMFont::create(text, "bigFont.fnt");
-    label->setScale(0.32f);
+    label->setScale(0.3f);
     label->setColor({255, 255, 255});
     label->setAnchorPoint({0.f, 0.5f});
     return label;
+}
+
+// Fondo sutil redondeado detras de cada fila de control (lista moderna).
+static void addRowBackground(CCNode* row, float width, float height) {
+    auto bg = paimon::SpriteHelper::createRoundedRect(
+        width - 4.f, height - 3.f, 5.f, {0.f, 0.f, 0.f, 0.30f}
+    );
+    if (bg) {
+        bg->setPosition({2.f, 1.5f});
+        row->addChild(bg, -1);
+    }
+}
+
+static CCNode* makeRow(float width, float height = ROW_HEIGHT, bool withBg = true) {
+    auto row = CCNode::create();
+    row->setContentSize({width, height});
+    row->setAnchorPoint({0.f, 0.f});
+    if (withBg) addRowBackground(row, width, height);
+    return row;
 }
 
 // Toggle Row
@@ -56,9 +75,7 @@ public:
 CCNode* createToggleRow(const char* label, bool initialValue,
                         std::function<void(bool)> onChange,
                         float width) {
-    auto row = CCNode::create();
-    row->setContentSize({width, ROW_HEIGHT});
-    row->setAnchorPoint({0.f, 0.f});
+    auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
@@ -71,14 +88,13 @@ CCNode* createToggleRow(const char* label, bool initialValue,
 
     auto cb = ToggleCallback::create(std::move(onChange));
     auto toggler = CCMenuItemToggler::createWithStandardSprites(
-        cb, menu_selector(ToggleCallback::onToggle), 0.55f
+        cb, menu_selector(ToggleCallback::onToggle), 0.5f
     );
     cb->m_toggler = toggler;
     toggler->toggle(initialValue);
-    toggler->setPosition({width - 28.f, ROW_HEIGHT / 2.f});
+    toggler->setPosition({width - 22.f, ROW_HEIGHT / 2.f});
     menu->addChild(toggler);
     toggler->setUserObject(cb);
-
 
     return row;
 }
@@ -118,9 +134,7 @@ CCNode* createSliderRow(const char* label, float initialValue,
                         float minVal, float maxVal,
                         std::function<void(float)> onChange,
                         float width) {
-    auto row = CCNode::create();
-    row->setContentSize({width, ROW_HEIGHT});
-    row->setAnchorPoint({0.f, 0.f});
+    auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
@@ -139,22 +153,22 @@ CCNode* createSliderRow(const char* label, float initialValue,
     }
 
     // Wrap slider in CCNode for correct positioning (same pattern as Geode ColorPickPopup)
+    float sliderW = slider->m_width * 0.55f;
     auto sliderWrapper = cocos2d::CCNode::create();
-    sliderWrapper->setContentSize(CCSize{slider->m_width * 0.55f, slider->m_height * 0.55f});
+    sliderWrapper->setContentSize(CCSize{sliderW, slider->m_height * 0.55f});
     sliderWrapper->setAnchorPoint({0.f, 0.5f});
-    sliderWrapper->setPosition({115.f, ROW_HEIGHT / 2.f});
+    sliderWrapper->setPosition({width - sliderW - 62.f, ROW_HEIGHT / 2.f});
     sliderWrapper->addChildAtPosition(slider, Anchor::Center, ccp(0, 0));
     row->addChild(sliderWrapper);
     cb->m_slider = slider;
 
     auto valLabel = makeValueLabel(fmt::format("{:.2f}", initialValue).c_str());
-    valLabel->setAnchorPoint({0.f, 0.5f});
-    valLabel->setPosition({235.f, ROW_HEIGHT / 2.f});
+    valLabel->setAnchorPoint({1.f, 0.5f});
+    valLabel->setPosition({width - 12.f, ROW_HEIGHT / 2.f});
     row->addChild(valLabel);
     cb->m_valueLabel = valLabel;
 
     slider->setUserObject(cb);
-
 
     return row;
 }
@@ -194,9 +208,7 @@ CCNode* createIntSliderRow(const char* label, int initialValue,
                            int minVal, int maxVal,
                            std::function<void(int)> onChange,
                            float width) {
-    auto row = CCNode::create();
-    row->setContentSize({width, ROW_HEIGHT});
-    row->setAnchorPoint({0.f, 0.f});
+    auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
@@ -214,17 +226,18 @@ CCNode* createIntSliderRow(const char* label, int initialValue,
         slider->m_touchLogic->setTouchPriority(childTouchPrio());
     }
 
+    float sliderW = slider->m_width * 0.55f;
     auto sliderWrapper = cocos2d::CCNode::create();
-    sliderWrapper->setContentSize(CCSize{slider->m_width * 0.55f, slider->m_height * 0.55f});
+    sliderWrapper->setContentSize(CCSize{sliderW, slider->m_height * 0.55f});
     sliderWrapper->setAnchorPoint({0.f, 0.5f});
-    sliderWrapper->setPosition({115.f, ROW_HEIGHT / 2.f});
+    sliderWrapper->setPosition({width - sliderW - 62.f, ROW_HEIGHT / 2.f});
     sliderWrapper->addChildAtPosition(slider, Anchor::Center, ccp(0, 0));
     row->addChild(sliderWrapper);
     cb->m_slider = slider;
 
     auto valLabel = makeValueLabel(fmt::format("{}", initialValue).c_str());
-    valLabel->setAnchorPoint({0.f, 0.5f});
-    valLabel->setPosition({235.f, ROW_HEIGHT / 2.f});
+    valLabel->setAnchorPoint({1.f, 0.5f});
+    valLabel->setPosition({width - 12.f, ROW_HEIGHT / 2.f});
     row->addChild(valLabel);
     cb->m_valueLabel = valLabel;
 
@@ -277,9 +290,7 @@ CCNode* createDropdownRow(const char* label, std::string const& initialValue,
                           std::vector<std::string> const& options,
                           std::function<void(std::string const&)> onChange,
                           float width) {
-    auto row = CCNode::create();
-    row->setContentSize({width, ROW_HEIGHT});
-    row->setAnchorPoint({0.f, 0.f});
+    auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
@@ -301,18 +312,21 @@ CCNode* createDropdownRow(const char* label, std::string const& initialValue,
 
     auto cb = DropdownCallback::create(std::move(onChange), options, initIdx);
 
+    float rightEdge = width - 12.f;
+    float valueW = 84.f;
+
     // left arrow
     auto leftSpr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
     if (!leftSpr) leftSpr = CCSprite::create();
-    leftSpr->setScale(0.3f);
+    leftSpr->setScale(0.26f);
     leftSpr->setFlipX(true);
     auto leftBtn = CCMenuItemSpriteExtra::create(leftSpr, cb, menu_selector(DropdownCallback::onPrev));
-    leftBtn->setPosition({width - 110.f, ROW_HEIGHT / 2.f});
+    leftBtn->setPosition({rightEdge - valueW - 12.f, ROW_HEIGHT / 2.f});
     menu->addChild(leftBtn);
 
     // current value
     auto valLabel = makeValueLabel(initialValue.c_str());
-    valLabel->setPosition({(width - 110.f + width - 22.f) / 2.f, ROW_HEIGHT / 2.f});
+    valLabel->setPosition({rightEdge - valueW / 2.f, ROW_HEIGHT / 2.f});
     valLabel->setAnchorPoint({0.5f, 0.5f});
     row->addChild(valLabel);
     cb->m_valueLabel = valLabel;
@@ -320,13 +334,12 @@ CCNode* createDropdownRow(const char* label, std::string const& initialValue,
     // right arrow
     auto rightSpr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
     if (!rightSpr) rightSpr = CCSprite::create();
-    rightSpr->setScale(0.3f);
+    rightSpr->setScale(0.26f);
     auto rightBtn = CCMenuItemSpriteExtra::create(rightSpr, cb, menu_selector(DropdownCallback::onNext));
-    rightBtn->setPosition({width - 22.f, ROW_HEIGHT / 2.f});
+    rightBtn->setPosition({rightEdge + 4.f, ROW_HEIGHT / 2.f});
     menu->addChild(rightBtn);
 
     leftBtn->setUserObject(cb);
-
 
     return row;
 }
@@ -352,9 +365,7 @@ public:
 CCNode* createButtonRow(const char* label, const char* buttonText,
                         std::function<void()> onPress,
                         float width) {
-    auto row = CCNode::create();
-    row->setContentSize({width, ROW_HEIGHT});
-    row->setAnchorPoint({0.f, 0.f});
+    auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
@@ -367,9 +378,9 @@ CCNode* createButtonRow(const char* label, const char* buttonText,
 
     auto cb = ButtonCallback::create(std::move(onPress));
 
-    auto btnSpr = ButtonSprite::create(buttonText, 70, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.5f);
+    auto btnSpr = ButtonSprite::create(buttonText, 70, true, "bigFont.fnt", "GJ_button_01.png", 20.f, 0.45f);
     auto btn = CCMenuItemSpriteExtra::create(btnSpr, cb, menu_selector(ButtonCallback::onPress));
-    btn->setPosition({width - 55.f, ROW_HEIGHT / 2.f});
+    btn->setPosition({width - 52.f, ROW_HEIGHT / 2.f});
     btn->setUserObject(cb);
     menu->addChild(btn);
 
@@ -380,9 +391,7 @@ CCNode* createButtonRow(const char* label, const char* buttonText,
 
 CCNode* createLinkRow(const char* label, std::function<void()> onOpen,
                       float width) {
-    auto row = CCNode::create();
-    row->setContentSize({width, ROW_HEIGHT});
-    row->setAnchorPoint({0.f, 0.f});
+    auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
@@ -397,9 +406,9 @@ CCNode* createLinkRow(const char* label, std::function<void()> onOpen,
 
     auto arrowSpr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
     if (!arrowSpr) arrowSpr = CCSprite::create();
-    arrowSpr->setScale(0.3f);
+    arrowSpr->setScale(0.28f);
     auto arrowBtn = CCMenuItemSpriteExtra::create(arrowSpr, cb, menu_selector(ButtonCallback::onPress));
-    arrowBtn->setPosition({width - 22.f, ROW_HEIGHT / 2.f});
+    arrowBtn->setPosition({width - 20.f, ROW_HEIGHT / 2.f});
     arrowBtn->setUserObject(cb);
     menu->addChild(arrowBtn);
 
@@ -412,22 +421,20 @@ CCNode* createTextInputRow(const char* label, std::string const& initialValue,
                            const char* placeholder, int maxChars,
                            std::function<void(std::string const&)> onChange,
                            float width) {
-    auto row = CCNode::create();
-    row->setContentSize({width, ROW_HEIGHT});
-    row->setAnchorPoint({0.f, 0.f});
+    auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
     row->addChild(lbl);
 
     // El input ocupa la mitad derecha del row.
-    float inputW = std::max(width * 0.55f, 140.f);
-    auto input = geode::TextInput::create(inputW, placeholder ? placeholder : "", "chatFont.fnt");
+    float inputW = std::max(width * 0.5f, 140.f);
+    auto input = geode::TextInput::create(inputW / 0.72f, placeholder ? placeholder : "", "chatFont.fnt");
     input->setCommonFilter(geode::CommonFilter::Any);
     if (maxChars > 0) input->setMaxCharCount(maxChars);
     input->setString(initialValue);
     input->setPosition({width - inputW / 2.f - 10.f, ROW_HEIGHT / 2.f});
-    input->setScale(0.75f);
+    input->setScale(0.72f);
     input->setCallback(std::move(onChange));
     row->addChild(input);
 
@@ -438,14 +445,14 @@ CCNode* createTextInputRow(const char* label, std::string const& initialValue,
 
 CCNode* createHintRow(const char* text, float width) {
     auto row = CCNode::create();
-    row->setContentSize({width, 20.f});
+    row->setContentSize({width, 18.f});
     row->setAnchorPoint({0.f, 0.f});
 
     auto lbl = CCLabelBMFont::create(text ? text : "", "chatFont.fnt");
-    lbl->setScale(0.42f);
-    lbl->setColor({170, 180, 195});
+    lbl->setScale(0.38f);
+    lbl->setColor({155, 163, 178});
     lbl->setAnchorPoint({0.f, 0.5f});
-    lbl->setPosition({LABEL_X + 4.f, 10.f});
+    lbl->setPosition({LABEL_X + 4.f, 9.f});
     row->addChild(lbl);
 
     return row;
@@ -458,11 +465,30 @@ CCNode* createSectionHeader(const char* title, float width) {
     row->setContentSize({width, HEADER_HEIGHT});
     row->setAnchorPoint({0.f, 0.f});
 
+    // Acento dorado a la izquierda del titulo
+    auto accent = paimon::SpriteHelper::createRoundedRect(
+        3.f, 11.f, 1.5f, {240.f / 255.f, 194.f / 255.f, 56.f / 255.f, 1.f}
+    );
+    if (accent) {
+        accent->setPosition({4.f, HEADER_HEIGHT / 2.f - 5.5f - 1.f});
+        row->addChild(accent);
+    }
+
     auto lbl = CCLabelBMFont::create(title, "goldFont.fnt");
-    lbl->setScale(0.35f);
+    lbl->setScale(0.38f);
     lbl->setAnchorPoint({0.f, 0.5f});
-    lbl->setPosition({LABEL_X, HEADER_HEIGHT / 2.f});
+    lbl->setPosition({LABEL_X + 2.f, HEADER_HEIGHT / 2.f - 1.f});
     row->addChild(lbl);
+
+    // Linea separadora que corre hasta el borde derecho
+    float lblW = lbl->getContentSize().width * lbl->getScale();
+    float sepX = LABEL_X + 2.f + lblW + 8.f;
+    if (sepX < width - 8.f) {
+        auto sep = CCLayerColor::create({255, 255, 255, 35},
+                                        width - 8.f - sepX, 0.6f);
+        sep->setPosition({sepX, HEADER_HEIGHT / 2.f - 1.f});
+        row->addChild(sep);
+    }
 
     return row;
 }
@@ -502,6 +528,15 @@ CCNode* createCollapsibleHeader(const char* title, float width,
     row->setContentSize({width, HEADER_HEIGHT});
     row->setAnchorPoint({0.f, 0.f});
 
+    // Fondo sutil para que se lea como boton/cabecera
+    auto bg = paimon::SpriteHelper::createRoundedRect(
+        width - 4.f, HEADER_HEIGHT - 4.f, 5.f, {1.f, 1.f, 1.f, 0.06f}
+    );
+    if (bg) {
+        bg->setPosition({2.f, 2.f});
+        row->addChild(bg, -1);
+    }
+
     auto menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     menu->setTouchPriority(childTouchPrio());
@@ -513,7 +548,7 @@ CCNode* createCollapsibleHeader(const char* title, float width,
     caret->setAnchorPoint({0.5f, 0.5f});
 
     auto lbl = CCLabelBMFont::create(title, "goldFont.fnt");
-    lbl->setScale(0.32f);
+    lbl->setScale(0.34f);
     lbl->setAnchorPoint({0.f, 0.5f});
 
     auto btnContent = CCNode::create();

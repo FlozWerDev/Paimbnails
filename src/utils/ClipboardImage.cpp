@@ -1,4 +1,4 @@
-﻿#include "ClipboardImage.hpp"
+#include "ClipboardImage.hpp"
 #include "ImageConverter.hpp"
 
 #include <Geode/loader/Log.hpp>

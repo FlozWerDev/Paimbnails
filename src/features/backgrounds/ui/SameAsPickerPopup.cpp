@@ -1,4 +1,4 @@
-﻿#include "SameAsPickerPopup.hpp"
+#include "SameAsPickerPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/LayerBackgroundManager.hpp"
 #include <Geode/binding/ButtonSprite.hpp>

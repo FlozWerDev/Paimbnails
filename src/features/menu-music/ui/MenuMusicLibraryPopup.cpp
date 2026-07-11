@@ -1,4 +1,4 @@
-﻿#include "MenuMusicLibraryPopup.hpp"
+#include "MenuMusicLibraryPopup.hpp"
 #include "MenuMusicAddPopup.hpp"
 
 #include "../services/MenuMusicLibrary.hpp"
@@ -11,6 +11,7 @@
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Notification.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
 #include <Geode/utils/file.hpp>
@@ -555,7 +556,7 @@ void MenuMusicLibraryPopup::onRemoveTrack(CCObject* sender) {
     if (!idStr) return;
     std::string id = idStr->getCString();
 
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         "Remove Track",
         "Remove this track from your library?\n<cy>Downloaded tracks will also have their file deleted.</c>",
         "Cancel", "Remove",
@@ -563,7 +564,7 @@ void MenuMusicLibraryPopup::onRemoveTrack(CCObject* sender) {
             if (!confirm) return;
             MenuMusicLibrary::get().removeTrack(id, /*deleteFiles=*/true);
         }
-    );
+    ).showInstant();
 }
 
 void MenuMusicLibraryPopup::onAddToPlaylist(CCObject* sender) {

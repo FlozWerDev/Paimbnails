@@ -1,4 +1,4 @@
-﻿#include "LevelColors.hpp"
+#include "LevelColors.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/PaimonFormat.hpp"
 #include "../../../utils/DominantColors.hpp"

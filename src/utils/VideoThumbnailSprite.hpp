@@ -134,15 +134,17 @@ private:
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr int MAX_CONCURRENT_DOWNLOADS = 1;
     static constexpr int MAX_CONCURRENT_CREATES = 1;
-    static constexpr int MAX_CACHED_PLAYERS = 1;  // 1 cached player on mobile
+    static constexpr int MAX_CACHED_PLAYERS = 2;  // warm players across list cells
     // Disk cache hard caps (mobile is tighter on space).
     static constexpr int  MAX_TEMP_FILES = 30;
     static constexpr size_t MAX_TEMP_FILES_BYTES = 80ULL * 1024 * 1024;   // 80 MB
     static constexpr size_t MAX_FIRST_FRAME_BYTES = 30ULL * 1024 * 1024;  // 30 MB
 #else
     static constexpr int MAX_CONCURRENT_DOWNLOADS = 2;
-    static constexpr int MAX_CONCURRENT_CREATES = 1;
-    static constexpr int MAX_CACHED_PLAYERS = 1;  // cache last player to speed up layer transitions
+    // Disk-hit creates are decoder opens; 2 avoids serializing a list of
+    // already-cached MP4s behind a single main-thread create job.
+    static constexpr int MAX_CONCURRENT_CREATES = 2;
+    static constexpr int MAX_CACHED_PLAYERS = 3;  // warm players across layer transitions
     // Disk cache hard caps for desktop.
     static constexpr int  MAX_TEMP_FILES = 80;
     static constexpr size_t MAX_TEMP_FILES_BYTES = 256ULL * 1024 * 1024;  // 256 MB

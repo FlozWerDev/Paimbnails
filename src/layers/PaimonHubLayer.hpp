@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
 #include "../features/forum/services/ForumApi.hpp"
 #include "../utils/PaimonLoadingOverlay.hpp"
@@ -7,7 +7,6 @@ class PaimonHubLayer : public cocos2d::CCLayer {
 protected:
     ~PaimonHubLayer();
     bool init() override;
-    void update(float dt) override;
     void keyBackClicked() override;
 
     cocos2d::CCMenu* m_mainMenu = nullptr;
@@ -28,7 +27,6 @@ protected:
     geode::TextInput* m_searchInput = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_homeCategoryBtns;
     int m_homeSelectedCategory = 0;
-    float m_homeCategorySelectorY = 0.f;
 
     cocos2d::CCNodeRGBA* m_sidebarBg = nullptr;
     cocos2d::CCNodeRGBA* m_sidebarHighlight = nullptr;
@@ -36,9 +34,12 @@ protected:
     cocos2d::CCMenu* m_sidebarMenu = nullptr;
     std::vector<cocos2d::CCLabelBMFont*> m_sidebarLabels;
 
-
     int m_currentTab = 0;
     std::vector<CCMenuItemSpriteExtra*> m_tabBtns;
+
+    cocos2d::CCNode* m_bgNode = nullptr;
+    cocos2d::ccColor3B m_bgColorHome = {20, 20, 32};
+    cocos2d::ccColor3B m_bgColorSub = {160, 170, 195};
 
     cocos2d::CCNode* m_forumPostList = nullptr;
     cocos2d::CCMenu* m_tagMenu = nullptr;
@@ -54,12 +55,10 @@ protected:
     SortMode m_sortMode = SortMode::Recent;
     std::vector<CCMenuItemSpriteExtra*> m_sortBtns;
 
-    int m_forumSubTab = 0; // 0 = Browse, 1 = Create
+    int m_forumSubTab = 0;
     std::vector<CCMenuItemSpriteExtra*> m_forumSubTabBtns;
     cocos2d::CCNode* m_forumBrowseNode = nullptr;
     cocos2d::CCNode* m_forumCreateNode = nullptr;
-    // Header is shared between Browse and Create — only the strings change so
-    // the panel chrome stays put when toggling sub-tabs.
     cocos2d::CCLabelBMFont* m_forumHeaderTitle = nullptr;
     cocos2d::CCLabelBMFont* m_forumHeaderSubtitle = nullptr;
 
@@ -77,8 +76,6 @@ protected:
     geode::TextInput* m_postTagInput = nullptr;
     geode::TextInput* m_newTagInput = nullptr;
 
-    void onCloseCreatePost(cocos2d::CCObject*);
-    void onSubmitPost(cocos2d::CCObject*);
     void onCloseCreateTag(cocos2d::CCObject*);
     void onSubmitTag(cocos2d::CCObject*);
     void onOpenPredefPicker(cocos2d::CCObject*);
@@ -95,9 +92,6 @@ protected:
     void refreshHomeCategorySelector();
     void switchHomeCategory(int idx);
     void rebuildHomeCategoryCards();
-    void rebuildHomeCategorySettings();
-    void onPrevHomeCategory(cocos2d::CCObject*);
-    void onNextHomeCategory(cocos2d::CCObject*);
     void onOpenHelp(cocos2d::CCObject*);
 
 public:
@@ -112,15 +106,14 @@ public:
     void onBack(cocos2d::CCObject*);
 
 protected:
-
-    void refreshUpdateButton();
     cocos2d::CCLabelBMFont* m_versionLabel = nullptr;
 
+    geode::ScrollLayer* m_newsScroll = nullptr;
+    void rebuildNewsList();
     void onRefreshNews(cocos2d::CCObject*);
     void onCreatePost(cocos2d::CCObject*);
     void onFilterByTag(cocos2d::CCObject*);
     void onCreateTag(cocos2d::CCObject*);
-    void onViewPost(cocos2d::CCObject*);
 
     void refreshForumPosts();
     void renderPosts(std::vector<paimon::forum::Post> const& posts);
@@ -131,11 +124,7 @@ protected:
 
     void onForumSubTabSwitch(cocos2d::CCObject* sender);
     void switchForumSubTab(int idx);
-    void buildForumBrowse(cocos2d::CCNode* parent, cocos2d::CCMenu* menu);
-    void buildForumCreate(cocos2d::CCNode* parent, cocos2d::CCMenu* menu);
-    void rebuildCreateTagChips();
     void onCreateToggleTag(cocos2d::CCObject* sender);
-    void onCreateAddCustomTag(cocos2d::CCObject*);
     void onCreateSubmit(cocos2d::CCObject*);
 
     PaimonLoadingOverlay* m_forumLoadingSpinner = nullptr;
@@ -143,12 +132,11 @@ protected:
     CCMenuItemSpriteExtra* makeBtn(char const* text, cocos2d::CCPoint pos,
         cocos2d::SEL_MenuHandler handler, cocos2d::CCNode* parent, float scale = 0.55f);
 
-    // ---- GD-style skin (alternative, guided hub UI) ----
     bool m_gdMode = false;
-    int m_gdHomeState = 0;      // 0 = categories, 1 = category detail, 2 = search results
+    int m_gdHomeState = 0;
     int m_gdCategoryIdx = 0;
-    cocos2d::CCNode* m_gdContent = nullptr;      // static visuals of the current state
-    cocos2d::CCMenu* m_gdContentMenu = nullptr;  // buttons of the current state
+    cocos2d::CCNode* m_gdContent = nullptr;
+    cocos2d::CCMenu* m_gdContentMenu = nullptr;
     geode::ScrollLayer* m_gdScroll = nullptr;
     cocos2d::CCLabelBMFont* m_gdHintLabel = nullptr;
     cocos2d::CCNode* m_gdTourOverlay = nullptr;

@@ -1,4 +1,4 @@
-﻿#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include <Geode/modify/ShareCommentLayer.hpp>
 #include "../framework/HookConventions.hpp"
 #include <algorithm>

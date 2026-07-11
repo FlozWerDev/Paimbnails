@@ -1,4 +1,4 @@
-﻿#include "LeaderboardHistoryLayer.hpp"
+#include "LeaderboardHistoryLayer.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/Localization.hpp"

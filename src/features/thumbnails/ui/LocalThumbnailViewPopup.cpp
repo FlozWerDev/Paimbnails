@@ -1,4 +1,4 @@
-﻿#include "LocalThumbnailViewPopup.hpp"
+#include "LocalThumbnailViewPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../framework/state/SessionState.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
@@ -6,6 +6,7 @@
 #include "../../../utils/MainThreadDelay.hpp"
 
 #include <Geode/ui/Popup.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -289,7 +290,7 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
         "Copy ID",
         340.f
     );
-    if (alert) alert->show();
+    if (alert) PopupManager::get().manage(alert).showInstant();
 }
 
 void LocalThumbnailViewPopup::FLAlert_Clicked(FLAlertLayer* alert, bool btn2) {
@@ -2603,7 +2604,7 @@ void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
                 return;
             }
 
-            geode::createQuickPopup(
+            PopupManager::get().quickPopup(
                 Localization::get().getString("level.confirm_delete_title").c_str(),
                 Localization::get().getString("level.confirm_delete_msg").c_str(),
                 Localization::get().getString("general.cancel").c_str(), Localization::get().getString("level.delete_button").c_str(),
@@ -2655,7 +2656,7 @@ void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
                         });
                     }
                 }
-            );
+            ).showInstant();
         });
     });
 }

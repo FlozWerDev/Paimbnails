@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/EditorPauseLayer.hpp>
+#include <Geode/modify/EditorPauseLayer.hpp>
 
 #include "../../../framework/compat/ModCompat.hpp"
 #include "../services/MenuLoopManager.hpp"

@@ -1,4 +1,4 @@
-﻿#include "LevelTagsIntegration.hpp"
+#include "LevelTagsIntegration.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/WebHelper.hpp"
 #include <matjson.hpp>

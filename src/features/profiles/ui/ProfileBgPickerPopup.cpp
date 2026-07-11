@@ -1,4 +1,5 @@
-﻿#include "ProfileBgPickerPopup.hpp"
+#include <Geode/ui/PopupManager.hpp>
+#include "ProfileBgPickerPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/Localization.hpp"
@@ -143,9 +144,5 @@ void ProfileBgPickerPopup::onPickReset(CCObject*) {
 }
 
 void ProfileBgPickerPopup::onInfo(CCObject*) {
-    FLAlertLayer::create(
-        Localization::get().getString("profilebg.picker.info_title").c_str(),
-        Localization::get().getString("profilebg.picker.info_body"),
-        Localization::get().getString("profilesettings.info_ok").c_str()
-    )->show();
+    PopupManager::get().alert(Localization::get().getString("profilebg.picker.info_title"), Localization::get().getString("profilebg.picker.info_body"), Localization::get().getString("profilesettings.info_ok")).showInstant();
 }

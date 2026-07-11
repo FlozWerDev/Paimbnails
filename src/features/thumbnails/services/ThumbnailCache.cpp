@@ -1,4 +1,4 @@
-﻿#include "ThumbnailCache.hpp"
+#include "ThumbnailCache.hpp"
 #include "ThumbnailTransportClient.hpp"
 #include "ThumbnailLoader.hpp"
 #include "../../../core/QualityConfig.hpp"
@@ -6,6 +6,7 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/Debug.hpp"
+#include "../../../utils/UrlKeyNormalize.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/string.hpp>
@@ -43,12 +44,8 @@ size_t ThumbnailCache::estimateTextureBytes(cocos2d::CCTexture2D* tex) {
     return static_cast<size_t>(tex->getPixelsWide()) * static_cast<size_t>(tex->getPixelsHigh()) * 4;
 }
 
-std::string ThumbnailCache::makeRamKey(int levelID, bool isGif) {
-    return isGif ? ("-" + std::to_string(levelID)) : std::to_string(levelID);
-}
-
-std::string ThumbnailCache::makeDiskKey(int levelID, bool isGif) {
-    return isGif ? ("-" + std::to_string(levelID)) : std::to_string(levelID);
+int ThumbnailCache::makeRamKey(int levelID, bool isGif) {
+    return paimon::cache::makeLevelRamKey(levelID, isGif);
 }
 
 int64_t ThumbnailCache::nowEpoch() {
@@ -58,7 +55,7 @@ int64_t ThumbnailCache::nowEpoch() {
 }
 
 std::optional<geode::Ref<cocos2d::CCTexture2D>> ThumbnailCache::getFromRam(int levelID, bool isGif) {
-    auto key = makeRamKey(levelID, isGif);
+    int const key = makeRamKey(levelID, isGif);
     
     {
         std::shared_lock slock(m_ramMutex);
@@ -69,14 +66,23 @@ std::optional<geode::Ref<cocos2d::CCTexture2D>> ThumbnailCache::getFromRam(int l
         }
     }
     
+    // URL-fallback only when the URL cache may hold a match — skip string work
+    // and lock traffic when empty (common miss path during cold list scroll).
     if (!isGif) {
-        std::string defaultUrl = ThumbnailTransportClient::get().getThumbnailURL(levelID);
-        if (!defaultUrl.empty()) {
-            std::string cacheKey = ThumbnailLoader::normalizeUrlKey(defaultUrl);
-            auto urlTex = getUrlFromRam(cacheKey);
-            if (urlTex.has_value()) {
-                addToRam(levelID, isGif, urlTex.value().data());
-                return urlTex.value();
+        bool urlCacheEmpty = false;
+        {
+            std::shared_lock ulock(m_urlMutex);
+            urlCacheEmpty = m_urlRamCache.empty();
+        }
+        if (!urlCacheEmpty) {
+            std::string defaultUrl = ThumbnailTransportClient::get().getThumbnailURL(levelID);
+            if (!defaultUrl.empty()) {
+                std::string cacheKey = ThumbnailLoader::normalizeUrlKey(defaultUrl);
+                auto urlTex = getUrlFromRam(cacheKey);
+                if (urlTex.has_value()) {
+                    addToRam(levelID, isGif, urlTex.value().data());
+                    return urlTex.value();
+                }
             }
         }
     }
@@ -84,10 +90,16 @@ std::optional<geode::Ref<cocos2d::CCTexture2D>> ThumbnailCache::getFromRam(int l
     return std::nullopt;
 }
 
+bool ThumbnailCache::hasInRam(int levelID, bool isGif) const {
+    int const key = makeRamKey(levelID, isGif);
+    std::shared_lock slock(m_ramMutex);
+    return m_ramCache.find(key) != m_ramCache.end();
+}
+
 bool ThumbnailCache::isRamEntrySuitable(int levelID, bool isGif, int requestedMaxDim) const {
     if (requestedMaxDim <= 0) return true;
 
-    auto key = makeRamKey(levelID, isGif);
+    int const key = makeRamKey(levelID, isGif);
     std::shared_lock slock(m_ramMutex);
     auto it = m_ramCache.find(key);
     if (it == m_ramCache.end() || !it->second.texture) return false;
@@ -106,7 +118,7 @@ bool ThumbnailCache::isRamEntrySuitable(int levelID, bool isGif, int requestedMa
 
 void ThumbnailCache::addToRam(int levelID, bool isGif, cocos2d::CCTexture2D* texture, int version, int origW, int origH) {
     if (!texture) return;
-    auto key = makeRamKey(levelID, isGif);
+    int const key = makeRamKey(levelID, isGif);
     size_t incomingBytes = estimateTextureBytes(texture);
 
     std::unique_lock lock(m_ramMutex);
@@ -129,7 +141,7 @@ void ThumbnailCache::addToRam(int levelID, bool isGif, cocos2d::CCTexture2D* tex
 }
 
 void ThumbnailCache::removeFromRam(int levelID, bool isGif) {
-    auto key = makeRamKey(levelID, isGif);
+    int const key = makeRamKey(levelID, isGif);
     std::unique_lock lock(m_ramMutex);
     auto it = m_ramCache.find(key);
     if (it != m_ramCache.end()) {
@@ -170,17 +182,14 @@ void ThumbnailCache::evictRamLocked() {
     // Eviction LRU: partial_sort de los k mas viejos por lastAccess, evita el bucle O(k·n).
     if (m_ramCache.size() <= maxEntries && m_ramBytes <= effectiveMaxBytes) return;
 
-    struct EvictCandidate { std::string key; int64_t accessUs; size_t bytes; };
+    struct EvictCandidate { int key; int64_t accessUs; size_t bytes; };
     std::vector<EvictCandidate> candidates;
     candidates.reserve(m_ramCache.size());
     for (auto const& [k, e] : m_ramCache) {
         // Main levels (1-22): PINNED — nunca se expulsan por LRU. Se precargan al arrancar
         // y mantenerlas calientes garantiza fondo instantaneo en LevelSelectLayer.
-        if (auto idRes = geode::utils::numFromString<int>(k); idRes) {
-            int id = idRes.unwrap();
-            if (id < 0) id = -id;
-            if (paimon::isMainLevelID(id)) continue;
-        }
+        int id = paimon::cache::levelIdFromRamKey(k);
+        if (paimon::isMainLevelID(id)) continue;
         candidates.push_back({k, e.lastAccessUs.load(std::memory_order_relaxed), e.byteSize});
     }
     size_t toEvictCount = std::max<size_t>(
@@ -229,18 +238,14 @@ void ThumbnailCache::purgeUnusedTextures() {
     constexpr size_t kMaxPurgeCandidates = 64;
 
     {
-        std::vector<std::string> toPurge;
+        std::vector<int> toPurge;
         {
             std::shared_lock slock(m_ramMutex);
             toPurge.reserve(std::min(m_ramCache.size() / 4, kMaxPurgeCandidates));
             for (auto const& [key, entry] : m_ramCache) {
                 if (toPurge.size() >= kMaxPurgeCandidates) break;
                 // Main levels (1-22): nunca se purgan; la precarga los deja calientes en RAM.
-                if (auto idRes = geode::utils::numFromString<int>(key); idRes) {
-                    int id = idRes.unwrap();
-                    if (id < 0) id = -id;
-                    if (paimon::isMainLevelID(id)) continue;
-                }
+                if (paimon::isMainLevelID(paimon::cache::levelIdFromRamKey(key))) continue;
                 if (now - entry.addedAt < PURGE_GRACE_PERIOD) continue;
                 if (entry.texture && entry.texture->retainCount() <= 1) {
                     toPurge.push_back(key);
@@ -249,7 +254,7 @@ void ThumbnailCache::purgeUnusedTextures() {
         }
         if (!toPurge.empty()) {
             std::unique_lock ulock(m_ramMutex);
-            for (auto const& key : toPurge) {
+            for (int key : toPurge) {
                 auto it = m_ramCache.find(key);
                 if (it != m_ramCache.end()) {
                     // Re-check bajo lock exclusivo (la entrada pudo cambiar).

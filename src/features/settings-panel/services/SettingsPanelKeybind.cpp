@@ -1,4 +1,4 @@
-﻿#include "SettingsPanelManager.hpp"
+#include "SettingsPanelManager.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 
 #include <Geode/Geode.hpp>

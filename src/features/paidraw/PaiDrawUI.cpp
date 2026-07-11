@@ -1,4 +1,4 @@
-﻿#include "PaiDrawUI.hpp"
+#include "PaiDrawUI.hpp"
 
 #include "PaiDrawIcon.hpp"
 #include "../../utils/DynamicPopupRegistry.hpp"

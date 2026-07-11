@@ -1,4 +1,4 @@
-﻿#include "AudioContextCoordinator.hpp"
+#include "AudioContextCoordinator.hpp"
 
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/GameLevelManager.hpp>

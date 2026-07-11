@@ -8,6 +8,7 @@
 #include <Geode/utils/string.hpp>
 #include <Geode/loader/Event.hpp>
 #include <Geode/ui/GeodeUI.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include "../utils/Localization.hpp"
@@ -75,6 +76,7 @@
 #include "../features/profiles/ui/ProfileViewsPopup.hpp"
 #include "../features/global-icon/GlobalIconRender.hpp"
 #include "../features/global-icon/services/GlobalIconService.hpp"
+#include "../features/profiles/services/OwnProfileStats.hpp"
 
 using namespace geode::prelude;
 
@@ -448,7 +450,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         } else {
             message = "This user is currently offline.\n(No last seen data available)";
         }
-        FLAlertLayer::create("User Status", message.c_str(), "OK")->show();
+        PopupManager::get().alert("User Status", message).showInstant();
     }
 
     void fetchAndShowUserStatus(int accountID) {
@@ -1568,7 +1570,20 @@ class $modify(PaimonProfilePage, ProfilePage) {
     // Hook: GD builds the profile icon panels
     $override
     void loadPageFromUserInfo(GJUserScore* score) {
+        // Own profile: stamp live local stats onto the score BEFORE vanilla
+        // builds labels. Without this, disabling profile redesign shows the
+        // stale cached GJUserScore (redesign was the only place that used GSM).
+        if (this->m_ownProfile && score) {
+            paimon::profiles::applyLiveOwnProfileStats(score);
+        }
+
         ProfilePage::loadPageFromUserInfo(score);
+
+        // Defense in depth: if node-ids already built labels from an older score
+        // copy, rewrite the visible numbers (no-op when redesign hides stats-menu).
+        if (this->m_ownProfile && score && this->m_mainLayer) {
+            paimon::profiles::refreshVanillaStatsLabels(this->m_mainLayer, score);
+        }
 
         // Global Icons: if this user shares a custom icon, replace the profile's
         // SimplePlayer with theirs (no-op if the feature doesn't apply).
@@ -2101,11 +2116,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     void onOpenThumbsCenter(CCObject*) {
         if (!m_fields->m_isApprovedMod && !m_fields->m_isAdmin) {
             log::warn("[ProfilePage] Usuario NO es moderador ni admin, bloqueando acceso al centro de verificacion");
-            FLAlertLayer::create(
-                Localization::get().getString("profile.access_denied").c_str(),
-                Localization::get().getString("profile.moderators_only").c_str(),
-                Localization::get().getString("general.ok").c_str()
-            )->show();
+            PopupManager::get().alert(Localization::get().getString("profile.access_denied"), Localization::get().getString("profile.moderators_only"), Localization::get().getString("general.ok")).showInstant();
             return;
         }
         

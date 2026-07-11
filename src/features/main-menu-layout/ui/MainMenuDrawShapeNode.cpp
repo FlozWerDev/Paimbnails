@@ -1,4 +1,4 @@
-﻿#include "MainMenuDrawShapeNode.hpp"
+#include "MainMenuDrawShapeNode.hpp"
 
 #include <algorithm>
 #include <cmath>

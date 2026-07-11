@@ -1,4 +1,4 @@
-﻿#include "AnimatedTextInput.hpp"
+#include "AnimatedTextInput.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
 
 #include <Geode/Geode.hpp>
@@ -46,6 +46,21 @@ bool AnimatedTextInput::init(float width, std::string const& placeholder) {
             }
         });
         this->addChild(m_input, 1);
+
+        // Interpose the Enter relay between the input node and geode's
+        // delegate so Enter presses reach setOnSubmit while everything else
+        // keeps flowing to geode's TextInput.
+        if (auto* node = m_input->getInputNode()) {
+            m_enterRelay.forward = node->m_delegate;
+            geode::WeakRef<AnimatedTextInput> weakSelf = this;
+            m_enterRelay.onEnter = [weakSelf]() {
+                auto self = weakSelf.lock();
+                if (!self) return;
+                auto* input = static_cast<AnimatedTextInput*>(self.data());
+                if (input->m_onSubmit) input->m_onSubmit();
+            };
+            node->m_delegate = &m_enterRelay;
+        }
     }
 
     m_typingDot = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
@@ -68,6 +83,8 @@ bool AnimatedTextInput::init(float width, std::string const& placeholder) {
 }
 
 void AnimatedTextInput::onExit() {
+    m_enterRelay.onEnter = nullptr;
+    m_enterRelay.forward = nullptr;
     paimon::ui::detachGeodeTextInput(m_input);
     m_input = nullptr;
     CCNode::onExit();
@@ -75,6 +92,10 @@ void AnimatedTextInput::onExit() {
 
 void AnimatedTextInput::setCallback(std::function<void(std::string const&)> cb) {
     m_userCallback = std::move(cb);
+}
+
+void AnimatedTextInput::setOnSubmit(std::function<void()> cb) {
+    m_onSubmit = std::move(cb);
 }
 
 std::string AnimatedTextInput::getString() const {

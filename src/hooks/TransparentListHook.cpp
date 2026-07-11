@@ -1,4 +1,4 @@
-﻿#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include <Geode/modify/GJListLayer.hpp>
 #include "../framework/HookConventions.hpp"
 #include <Geode/modify/LevelListCell.hpp>

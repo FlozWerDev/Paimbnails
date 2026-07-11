@@ -1,4 +1,4 @@
-﻿#include "SongSearchPopup.hpp"
+#include "SongSearchPopup.hpp"
 
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/SpriteHelper.hpp"

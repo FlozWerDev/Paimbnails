@@ -1,4 +1,4 @@
-﻿#include "GLSLLoader.hpp"
+#include "GLSLLoader.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/cocos/shaders/CCShaderCache.h>

@@ -1,4 +1,4 @@
-﻿#include "AddModeratorPopup.hpp"
+#include "AddModeratorPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -12,6 +12,7 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/ui/GeodeUI.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <matjson.hpp>
 #include <array>
 
@@ -308,11 +309,7 @@ void AddModeratorPopup::onAdd(CCObject*) {
 
             if (!ok) {
                 if (popup->m_loadingSpinner) { popup->m_loadingSpinner->dismiss(); popup->m_loadingSpinner = nullptr; }
-                FLAlertLayer::create(
-                    Localization::get().getString("rolemgr.error_title").c_str(),
-                    fmt::format(fmt::runtime(Localization::get().getString("rolemgr.user_not_found")), username).c_str(),
-                    "OK"
-                )->show();
+                PopupManager::get().alert(Localization::get().getString("rolemgr.error_title"), fmt::format(fmt::runtime(Localization::get().getString("rolemgr.user_not_found")), username)).showInstant();
                 return;
             }
 
@@ -335,11 +332,7 @@ void AddModeratorPopup::onAdd(CCObject*) {
                         if (popup->m_callback) popup->m_callback(true, targetName);
                         popup->fetchMembers();
                     } else {
-                        FLAlertLayer::create(
-                            Localization::get().getString("rolemgr.error_title").c_str(),
-                            message.empty() ? Localization::get().getString("addmod.error_msg").c_str() : message.c_str(),
-                            "OK"
-                        )->show();
+                        PopupManager::get().alert(Localization::get().getString("rolemgr.error_title"), message.empty() ? Localization::get().getString("addmod.error_msg").c_str() : message).showInstant();
                     }
                 });
         });
@@ -354,7 +347,7 @@ void AddModeratorPopup::onRemove(CCObject* sender) {
     std::string role = m_activeRole;
 
     WeakRef<AddModeratorPopup> self = this;
-    createQuickPopup(
+    PopupManager::get().quickPopup(
         Localization::get().getString("rolemgr.remove_confirm_title").c_str(),
         fmt::format(fmt::runtime(Localization::get().getString("rolemgr.remove_confirm_msg")),
                     username, roleDisplayName(role)),
@@ -383,13 +376,12 @@ void AddModeratorPopup::onRemove(CCObject* sender) {
                         paimon::roles::RoleService::get().clear();
                         popup->fetchMembers();
                     } else {
-                        FLAlertLayer::create(
-                            Localization::get().getString("rolemgr.error_title").c_str(),
-                            message.empty() ? Localization::get().getString("addmod.remove_error").c_str() : message.c_str(),
-                            "OK"
-                        )->show();
+                        PopupManager::get().alert(
+                            Localization::get().getString("rolemgr.error_title"),
+                            message.empty() ? Localization::get().getString("addmod.remove_error") : message
+                        ).showInstant();
                     }
                 });
         }
-    );
+    ).showInstant();
 }

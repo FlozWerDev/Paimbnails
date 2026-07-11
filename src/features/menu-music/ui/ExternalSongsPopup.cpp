@@ -1,4 +1,4 @@
-﻿#include "ExternalSongsPopup.hpp"
+#include "ExternalSongsPopup.hpp"
 
 #include "../services/MenuMusicLibrary.hpp"
 #include "../services/MenuMusicPlayer.hpp"

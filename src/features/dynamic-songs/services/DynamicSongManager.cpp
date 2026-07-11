@@ -1,4 +1,4 @@
-﻿#include "DynamicSongManager.hpp"
+#include "DynamicSongManager.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../framework/HookInterceptor.hpp"

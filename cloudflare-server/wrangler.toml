@@ -1,0 +1,22 @@
+name = "paimon-thumbnails-server"
+main = "paimon-thumbnails-server.js"
+compatibility_date = "2025-04-02"
+
+[vars]
+ALLOWED_ORIGINS = "https://api.flozwer.org"
+BUNNY_ENDPOINT = "https://storage.bunnycdn.com"
+BUNNY_STORAGE_URL = "https://storage.bunnycdn.com/paimbnails"
+BUNNY_ZONE_NAME = "paimbnails"
+CDN_PULL_ZONE_URL = "https://paimbnails.b-cdn.net"
+DISCORD_BOT_WEBHOOK_URL = "https://paimbnails-server.onrender.com"
+MAX_UPLOAD_SIZE = "52428800"
+MAX_VIDEO_UPLOAD_SIZE = "26214400"
+R2_PUBLIC_URL = "https://paimbnails.b-cdn.net"
+WORKER_QUOTA_ENABLED = "true"
+WORKER_QUOTA_THRESHOLD = "80000"
+
+# Secrets (no van aquí, se configuran con: npx wrangler secret put <NOMBRE>)
+# API_KEY
+# BUNNY_ACCESS_KEY
+# BUNNY_SECRET_KEY
+# CF_API_TOKEN

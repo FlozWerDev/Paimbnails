@@ -1,4 +1,4 @@
-﻿#include "MainMenuLayoutManager.hpp"
+#include "MainMenuLayoutManager.hpp"
 
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonNotification.hpp"

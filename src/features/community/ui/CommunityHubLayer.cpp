@@ -1,4 +1,4 @@
-﻿#include "CommunityHubLayer.hpp"
+#include "CommunityHubLayer.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/Localization.hpp"
@@ -16,6 +16,7 @@
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
@@ -1692,7 +1693,7 @@ void CommunityHubLayer::onInfoButton(CCObject* sender) {
             break;
     }
 
-    FLAlertLayer::create(nullptr, title.c_str(), body, "OK", nullptr, 350.f)->show();
+    PopupManager::get().alert(title, body, "OK", nullptr, 350.f).showInstant();
 }
 
 void CommunityHubLayer::loadCompatibleMods() {

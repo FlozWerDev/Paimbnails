@@ -1,4 +1,4 @@
-﻿#include "MenuMusicLibrary.hpp"
+#include "MenuMusicLibrary.hpp"
 
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>

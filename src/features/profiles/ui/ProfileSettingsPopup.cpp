@@ -1,10 +1,11 @@
-﻿#include "ProfileSettingsPopup.hpp"
+#include "ProfileSettingsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../global-icon/services/GlobalIconService.hpp"
 #include "../../../framework/compat/ModCompat.hpp"
 #include <Geode/binding/GameManager.hpp>
+#include <Geode/ui/PopupManager.hpp>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -196,11 +197,11 @@ void ProfileSettingsPopup::onConfigureCommentBg(CCObject*) {
 }
 
 void ProfileSettingsPopup::onConfigureCommentBgSoon(CCObject*) {
-    FLAlertLayer::create(
-        Localization::get().getString("profilesettings.comment_soon_title").c_str(),
+    PopupManager::get().alert(
+        Localization::get().getString("profilesettings.comment_soon_title"),
         Localization::get().getString("profilesettings.comment_soon_body"),
-        Localization::get().getString("profilesettings.info_ok").c_str()
-    )->show();
+        Localization::get().getString("profilesettings.info_ok")
+    ).showInstant();
 }
 
 void ProfileSettingsPopup::applyGlobalIconColor() {
@@ -216,11 +217,11 @@ void ProfileSettingsPopup::applyGlobalIconColor() {
 
 void ProfileSettingsPopup::onToggleGlobalIcon(CCObject*) {
     if (!paimon::compat::ModCompat::isMoreIconsLoaded()) {
-        FLAlertLayer::create(
-            Localization::get().getString("globalicon.requires_moreicons_title").c_str(),
+        PopupManager::get().alert(
+            Localization::get().getString("globalicon.requires_moreicons_title"),
             Localization::get().getString("globalicon.requires_moreicons_body"),
-            Localization::get().getString("profilesettings.info_ok").c_str()
-        )->show();
+            Localization::get().getString("profilesettings.info_ok")
+        ).showInstant();
         return;
     }
 
@@ -233,9 +234,9 @@ void ProfileSettingsPopup::onToggleGlobalIcon(CCObject*) {
 }
 
 void ProfileSettingsPopup::onInfo(CCObject*) {
-    FLAlertLayer::create(
-        Localization::get().getString("profilesettings.info_title").c_str(),
+    PopupManager::get().alert(
+        Localization::get().getString("profilesettings.info_title"),
         Localization::get().getString("profilesettings.info_body"),
-        Localization::get().getString("profilesettings.info_ok").c_str()
-    )->show();
+        Localization::get().getString("profilesettings.info_ok")
+    ).showInstant();
 }

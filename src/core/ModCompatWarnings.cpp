@@ -39,6 +39,13 @@ void PaimonLogModCompatWarnings() {
         );
     }
 
+    if (ModCompat::isBetterTouchPrioLoaded()) {
+        log::info(
+            "[Paimbnails] Better Touch Prio detectado: la funcion Z-Order Touch cede el paso a "
+            "ese mod (no se hookea touches() por duplicado)."
+        );
+    }
+
     if (ModCompat::externalGlobalBlurActive()) {
         log::info(
             "[Paimbnails] Blur global externo (blur_bg): PopupBlurService cede cuando aplica."

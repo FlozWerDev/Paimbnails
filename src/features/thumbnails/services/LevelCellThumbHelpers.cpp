@@ -9,6 +9,7 @@
 #include <utility>
 #include "../../../utils/Constants.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/UrlKeyNormalize.hpp"
 
 using namespace geode::prelude;
 
@@ -86,7 +87,7 @@ std::string makeLevelCellBlurCacheKey(int32_t levelID, int galleryIndex, float b
         isBackground ? "bg" : "thumb",
         levelID,
         galleryIndex,
-        static_cast<int>(std::round(blurIntensity * 2.0f))
+        paimon::cache::blurIntensityBucket(blurIntensity)
     );
 }
 

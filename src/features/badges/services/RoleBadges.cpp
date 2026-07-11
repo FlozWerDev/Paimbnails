@@ -2,6 +2,7 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/Localization.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <array>
 
 using namespace geode::prelude;
@@ -138,7 +139,7 @@ void showRoleBadgeInfoPopup(CCNode* sender) {
     std::string title = loc.getString("badge." + role + ".title");
     std::string desc  = loc.getString("badge." + role + ".desc");
 
-    FLAlertLayer::create(title.c_str(), desc.c_str(), "OK")->show();
+    PopupManager::get().alert(title, desc).showInstant();
 }
 
 } // namespace paimon::badges

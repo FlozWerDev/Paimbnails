@@ -1,4 +1,4 @@
-﻿#include "ProfileThumbs.hpp"
+#include "ProfileThumbs.hpp"
 #include "../../../managers/ThumbnailAPI.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"

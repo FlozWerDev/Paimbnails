@@ -8,6 +8,7 @@
 #include "SlotsGridView.hpp"
 
 #include <Geode/Geode.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/utils/web.hpp>
 
 #include <system_error>
@@ -33,8 +34,8 @@ CCScene* TextureStudioLayer::scene() {
 }
 
 void TextureStudioLayer::open() {
-    if (auto* s = TextureStudioLayer::scene()) {
-        CCDirector::get()->pushScene(CCTransitionFade::create(0.4f, s));
+    if (auto* layer = TextureStudioLayer::create()) {
+        geode::pushSceneWithLayer(layer);
     }
 }
 
@@ -175,7 +176,7 @@ void TextureStudioLayer::onApplySlot(std::string const& slotId) {
     refreshFooter();
 
     if (!TextureLoaderInstaller::isInstalled()) {
-        geode::createQuickPopup(
+        PopupManager::get().quickPopup(
             "Texture Loader Required",
             "Install <cy>Texture Loader</c> to apply packs.\n"
             "Open the Geode mod browser?",
@@ -185,7 +186,7 @@ void TextureStudioLayer::onApplySlot(std::string const& slotId) {
                     web::openLinkInBrowser(
                         "https://geode-sdk.org/mods/geode.texture-loader");
                 }
-            });
+            }).showInstant();
         return;
     }
 
@@ -210,12 +211,12 @@ void TextureStudioLayer::onApplySlot(std::string const& slotId) {
         return;
     }
 
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         "Applied!",
         "Pack copied to Texture Loader.\n"
         "<cy>Reload the game</c> to see the changes.",
         "OK", nullptr,
-        [](FLAlertLayer*, bool) {});
+        [](FLAlertLayer*, bool) {}).showInstant();
 }
 
 void TextureStudioLayer::onEditSlot(std::string const& slotId) {
@@ -223,7 +224,7 @@ void TextureStudioLayer::onEditSlot(std::string const& slotId) {
 }
 
 void TextureStudioLayer::onDeleteSlot(std::string const& slotId) {
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         "Delete Slot",
         ("Delete <cy>" + slotId + "</c>?\nThis cannot be undone.").c_str(),
         "Cancel", "Delete",
@@ -239,7 +240,7 @@ void TextureStudioLayer::onDeleteSlot(std::string const& slotId) {
             if (m_grid) m_grid->refresh();
             refreshFooter();
             Notification::create("Slot deleted.", NotificationIcon::Success, 1.5f)->show();
-        });
+        }).showInstant();
 }
 
 void TextureStudioLayer::onOpenFolder(CCObject*) {

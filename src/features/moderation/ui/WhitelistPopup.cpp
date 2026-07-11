@@ -1,4 +1,4 @@
-﻿#include "WhitelistPopup.hpp"
+#include "WhitelistPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"

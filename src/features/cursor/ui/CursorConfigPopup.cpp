@@ -8,6 +8,7 @@
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/InfoButton.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/ui/PopupManager.hpp>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -592,7 +593,7 @@ void CursorConfigPopup::onDeletePack(CCObject*) {
     }
 
     WeakRef<CursorConfigPopup> self = this;
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         "Borrar Pack",
         fmt::format("Borrar el pack <cy>{}</c> completo y todos sus cursores?", pack),
         "Cancelar", "Borrar",
@@ -607,7 +608,7 @@ void CursorConfigPopup::onDeletePack(CCObject*) {
             p->refreshPackList();
             p->refreshGallery();
         }
-    );
+    ).showInstant();
 }
 
 void CursorConfigPopup::syncEnableUI(bool enabled) {
@@ -654,7 +655,7 @@ void CursorConfigPopup::onDeleteImage(CCObject* sender) {
     std::string filename = nameObj->getCString();
 
     WeakRef<CursorConfigPopup> self = this;
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         "Borrar Imagen",
         "Seguro que quieres <cr>borrar</c> esta imagen?",
         "Cancelar", "Borrar",
@@ -666,7 +667,7 @@ void CursorConfigPopup::onDeleteImage(CCObject* sender) {
             PaimonNotify::create("Imagen eliminada", NotificationIcon::Info)->show();
             static_cast<CursorConfigPopup*>(popup.data())->refreshGallery();
         }
-    );
+    ).showInstant();
 }
 
 void CursorConfigPopup::onDeleteAllImages(CCObject*) {
@@ -682,7 +683,7 @@ void CursorConfigPopup::onDeleteAllImages(CCObject*) {
     );
 
     WeakRef<CursorConfigPopup> self = this;
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         "Borrar Todos",
         msg,
         "Cancelar", "Borrar todo",
@@ -704,7 +705,7 @@ void CursorConfigPopup::onDeleteAllImages(CCObject*) {
             p->refreshPackList();
             p->refreshGallery();
         }
-    );
+    ).showInstant();
 }
 
 void CursorConfigPopup::onAddImage(CCObject*) {
@@ -980,7 +981,7 @@ void CursorConfigPopup::buildAdvancedTab() {
                     c.trailFadeType == 0 ? "Lineal" : (c.trailFadeType == 1 ? "Seno" : "Ninguno"),
                     c.trailOpacity
                 );
-                FLAlertLayer::create(nullptr, "Estela", info, "OK", nullptr, 360.f)->show();
+                PopupManager::get().alert("Estela", info, "OK", nullptr, 360.f).showInstant();
             }),
     });
 

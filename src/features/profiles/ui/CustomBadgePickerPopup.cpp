@@ -1,4 +1,4 @@
-﻿#include "CustomBadgePickerPopup.hpp"
+#include "CustomBadgePickerPopup.hpp"
 #include "../services/CustomBadgeService.hpp"
 #include "../../../features/emotes/services/EmoteService.hpp"
 #include "../../../features/emotes/services/EmoteCache.hpp"

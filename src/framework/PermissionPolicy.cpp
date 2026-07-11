@@ -1,4 +1,4 @@
-﻿#include "PermissionPolicy.hpp"
+#include "PermissionPolicy.hpp"
 #include "FeatureRegistry.hpp"
 
 namespace paimon {

@@ -7,15 +7,12 @@
 
 class PaimonHubLayer;
 
-// Shared metadata between the two Hub skins (original + GD style).
-// Defined in PaimonHubLayer.cpp; consumed by PaimonHubLayerGD.cpp too.
 namespace paimon::hubdata {
 
 struct HubCategoryMeta {
     std::string title;
     std::string shortDesc;
     cocos2d::ccColor3B color;
-    // returns info sections for FeatureInfoPopup
     std::function<std::vector<paimon::ui::InfoSection>()> getInfo;
 };
 
@@ -24,7 +21,6 @@ struct HubActionMeta {
     std::string sprite;
     std::function<void(PaimonHubLayer*)> onPress;
     int categoryIndex = 0;
-    // one-line hint shown by the GD skin under the action title
     std::string desc;
 };
 

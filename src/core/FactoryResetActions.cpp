@@ -1,5 +1,6 @@
 #include "FactoryResetActions.hpp"
 #include <Geode/utils/string.hpp>
+#include "Settings.hpp"
 #include "SettingsMigration.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/beat-shaders/services/BeatShaderManager.hpp"
@@ -23,6 +24,7 @@
 #include <Geode/loader/SettingV3.hpp>
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/ui/GeodeUI.hpp>
+#include <Geode/ui/PopupManager.hpp>
 
 #include <filesystem>
 
@@ -120,6 +122,9 @@ void resetLayerBackgrounds() {
     mod->setSavedValue("video-max-chunk-memory-mb", 512);
     mod->setSavedValue("video-max-concurrent", 4);
 #endif
+    // Drop videoMaxDecodeDimension / adaptiveSpriteFPS snapshots so the next
+    // decoder open sees factory-reset quality/FPS instead of pre-reset values.
+    paimon::settings::internal::invalidateSettingsCache();
 
     mod->setSavedValue("thumbnail-disk-cache", matjson::Value::object());
 }
@@ -204,7 +209,7 @@ void execute() {
 }
 
 void requestWithConfirmation() {
-    geode::createQuickPopup(
+    auto popup = PopupManager::get().quickPopup(
         "Reiniciar ajustes",
         "Esto <cr>borrara TODA la configuracion</c> del mod:\n"
         "fondos, layout del menu, shaders, sliders,\n"
@@ -213,11 +218,13 @@ void requestWithConfirmation() {
         "Usalo para comprobar si un bug viene de ajustes guardados.",
         "Cancelar",
         "Reiniciar todo",
-        [](auto*, bool confirmed) {
+        [](FLAlertLayer*, bool confirmed) {
             if (!confirmed) return;
             execute();
         }
     );
+    popup.blockClosingFor(0.6f);
+    popup.showInstant();
 }
 
 } // namespace paimon::factory_reset

@@ -1,4 +1,4 @@
-﻿#include "MainMenuLayoutManager.hpp"
+#include "MainMenuLayoutManager.hpp"
 
 #include "../ui/MainMenuDrawShapeNode.hpp"
 

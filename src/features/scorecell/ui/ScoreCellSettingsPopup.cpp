@@ -4,6 +4,7 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/binding/GameManager.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/Slider.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -281,17 +282,13 @@ void ScoreCellSettingsPopup::onIntensity(CCObject* sender) {
 }
 
 void ScoreCellSettingsPopup::onInfo(CCObject*) {
-    FLAlertLayer::create(
-        "Score Cell FX",
-        "Customize how leaderboard cells look:\n\n"
+    PopupManager::get().alert("Score Cell FX", "Customize how leaderboard cells look:\n\n"
         "<cy>Icon Gradient</c>: paints a gradient behind every cell using that "
         "player's own icon colors. Pick an animated <cj>effect</c>, speed and opacity.\n\n"
         "<cg>Hover Animation</c>: a fluid effect when your mouse is over a cell "
         "(scale, glow, lift, tilt or shine).\n\n"
         "<cp>Entrance</c>: how each cell's profile banner appears.\n\n"
-        "Changes apply to cells as you scroll or reopen the list.",
-        "OK"
-    )->show();
+        "Changes apply to cells as you scroll or reopen the list.").showInstant();
 }
 
 void ScoreCellSettingsPopup::onClose(CCObject* sender) {

@@ -17,7 +17,7 @@ protected:
 
     void rebuild();
     cocos2d::CCNode* makeAuthorRow(paimon::forum::Author const& author, int64_t when, float w);
-    cocos2d::CCNode* makeReplyCard(paimon::forum::Reply const& r, float w);
+    cocos2d::CCNode* makeReplyCard(paimon::forum::Reply const& r, float w, int index);
 
     void onLikePost(cocos2d::CCObject*);
     void onReportPost(cocos2d::CCObject*);

@@ -1,4 +1,4 @@
-﻿#include "PaiDrawManager.hpp"
+#include "PaiDrawManager.hpp"
 
 #include "PaiDrawCodec.hpp"
 #include "../../framework/EventBus.hpp"

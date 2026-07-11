@@ -1,4 +1,4 @@
-﻿#include "CapturePreviewPopup.hpp"
+#include "CapturePreviewPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/BetaUploadWarning.hpp"

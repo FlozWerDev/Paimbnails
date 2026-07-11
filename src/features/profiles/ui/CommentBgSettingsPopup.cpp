@@ -1,4 +1,4 @@
-﻿#include "CommentBgSettingsPopup.hpp"
+#include "CommentBgSettingsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/ProfileThumbs.hpp"
 #include <Geode/ui/ColorPickPopup.hpp>

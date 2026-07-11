@@ -1,7 +1,8 @@
-﻿#include "CustomTransitionScene.hpp"
+#include "CustomTransitionScene.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include <Geode/Geode.hpp>
 #include <exception>
 #include <filesystem>
@@ -43,6 +44,27 @@ bool CustomTransitionScene::initWithScenes(
     m_destScene->retain();
 
     auto winSize = CCDirector::get()->getWinSize();
+
+    // GD-blue gradient backdrop behind both containers: when the scenes move,
+    // rotate or fade during a command, the exposed area shows this instead of
+    // the raw (often white) GL clear color.
+    {
+        CCNode* backdrop = nullptr;
+        if (auto grad = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
+            grad->setAnchorPoint({0.f, 0.f});
+            grad->setScaleX(winSize.width / grad->getContentSize().width);
+            grad->setScaleY(winSize.height / grad->getContentSize().height);
+            grad->setColor({0, 102, 255});
+            backdrop = grad;
+        } else {
+            auto flat = CCLayerColor::create({0, 102, 255, 255}, winSize.width, winSize.height);
+            backdrop = flat;
+        }
+        if (backdrop) {
+            backdrop->setID("paimon-transition-backdrop"_spr);
+            this->addChild(backdrop, -10);
+        }
+    }
 
     m_fromContainer = CCLayerColor::create({0, 0, 0, 255}, winSize.width, winSize.height);
     m_fromContainer->setPosition({0, 0});

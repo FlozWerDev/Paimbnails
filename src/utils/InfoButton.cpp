@@ -1,5 +1,6 @@
-﻿#include "InfoButton.hpp"
+#include "InfoButton.hpp"
 #include <Geode/loader/GameEvent.hpp>
+#include <Geode/ui/PopupManager.hpp>
 
 using namespace cocos2d;
 using namespace geode::prelude;
@@ -31,7 +32,7 @@ void PaimonInfoTarget::onInfo(CCObject* sender) {
         0.f,        // height auto
         0.75f       // text scale
     );
-    if (alert) alert->show();
+    if (alert) PopupManager::get().manage(alert).showInstant();
 }
 
 PaimonInfoTarget* PaimonInfoTarget::create() {

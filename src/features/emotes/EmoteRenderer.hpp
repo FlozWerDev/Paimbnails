@@ -35,7 +35,9 @@ public:
         float maxWidth = 200.f,
         const char* font = "chatFont.fnt",
         float fontSize = 0.45f,
-        bool forceRender = false
+        bool forceRender = false,
+        // false in long comment lists (InfoLayer AFK): first frame only.
+        bool animateGifs = true
     );
 };
 

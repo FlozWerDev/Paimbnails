@@ -1,4 +1,4 @@
-﻿#include <Geode/modify/LevelLeaderboard.hpp>
+#include <Geode/modify/LevelLeaderboard.hpp>
 #include "../framework/HookConventions.hpp"
 #include <Geode/binding/LevelLeaderboard.hpp>
 #include <Geode/binding/GJCommentListLayer.hpp>
@@ -124,6 +124,11 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         if (bgNode) {
             popupSize   = bgNode->getScaledContentSize();
             popupCenter = bgNode->getPosition();
+            // Hide vanilla plate so the blur clip is the visible background.
+            bgNode->setVisible(false);
+            if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(bgNode)) {
+                rgba->setOpacity(0);
+            }
         }
 
         float padding   = 3.f;
@@ -158,7 +163,8 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         blurredSprite->setOpacity(0);
         blurredSprite->runAction(CCFadeTo::create(0.3f, 255));
 
-        layer->addChild(clip, -1);
+        // z=0: above the (now hidden) vanilla plate, below list/UI.
+        layer->addChild(clip, 0);
         m_fields->m_bgClip = clip;
     }
 

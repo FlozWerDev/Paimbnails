@@ -1,4 +1,4 @@
-﻿#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include <Geode/modify/CustomListView.hpp>
 #include "../features/thumbnails/ui/LevelCellSettingsPopup.hpp"
 #include "../framework/compat/ModCompat.hpp"

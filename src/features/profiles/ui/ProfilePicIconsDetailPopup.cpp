@@ -1,10 +1,13 @@
-﻿#include "ProfilePicIconsDetailPopup.hpp"
+#include "ProfilePicIconsDetailPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "ProfilePicEditorPopup.hpp"
 #include "../services/ProfilePicRenderer.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/FileDialog.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include <fmt/format.h>
+#include <filesystem>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -246,73 +249,48 @@ void ProfilePicIconsDetailPopup::rebuild() {
     m_contentNode->addChild(spVal);
     m_speedLabel = spVal;
 
-    y -= 22.f;
-    auto ciLbl = sLbl("Custom", 0.36f);
-    ciLbl->setAnchorPoint({0.f, 0.5f});
-    ciLbl->setPosition({10.f, y});
-    m_contentNode->addChild(ciLbl);
-    auto addSpr = ButtonSprite::create("Add", "goldFont.fnt", "GJ_button_04.png", 0.6f);
-    addSpr->setScale(0.34f);
-    auto addBtn = CCMenuItemSpriteExtra::create(addSpr, this, menu_selector(ProfilePicIconsDetailPopup::onAddCustomIcon));
-    auto addMenu = CCMenu::create();
-    addMenu->setPosition({area.width - 90.f, y});
-    addMenu->addChild(addBtn);
-    m_contentNode->addChild(addMenu);
-
-    if (!m_cfg->customIcons.empty()) {
-        y -= 20.f;
-        auto ciMenu = CCMenu::create();
-        ciMenu->setAnchorPoint({0.5f, 0.5f});
-        ciMenu->setPosition({cx - 10.f, y});
-        ciMenu->setContentSize({area.width - 110.f, 18.f});
-        m_contentNode->addChild(ciMenu);
-        ciMenu->setLayout(RowLayout::create()->setGap(3.f)->setAutoScale(false));
-        for (size_t i = 0; i < m_cfg->customIcons.size(); i++) {
-            bool sel = m_cfg->selectedCustomIconIndex == (int)i;
-            auto cellBg = paimon::SpriteHelper::createColorPanel(22.f, 18.f,
-                sel ? ccColor3B{60,160,60} : ccColor3B{40,40,40}, sel ? 200 : 120, 2.f);
-            auto path = m_cfg->customIcons[i].path;
-            CCSprite* icon = nullptr;
-            if (!path.empty()) icon = CCSprite::create(path.c_str());
-            if (icon) {
-                float md = std::max(icon->getContentWidth(), icon->getContentHeight());
-                if (md > 0) icon->setScale(14.f / md);
-                icon->setAnchorPoint({0.5f, 0.5f});
-                icon->setPosition({11.f, 9.f});
-                cellBg->addChild(icon);
-            } else {
-                auto ql = CCLabelBMFont::create("?", "bigFont.fnt");
-                ql->setScale(0.24f); ql->setAnchorPoint({0.5f,0.5f}); ql->setPosition({11.f,9.f}); cellBg->addChild(ql);
-            }
-            auto btn = CCMenuItemSpriteExtra::create(cellBg, this, menu_selector(ProfilePicIconsDetailPopup::onCustomIconSelect));
-            btn->setTag((int)i);
-            ciMenu->addChild(btn);
-        }
-        ciMenu->updateLayout();
-        if (m_cfg->selectedCustomIconIndex >= 0) {
-            y -= 18.f;
-            auto rmSpr = ButtonSprite::create("Remove", "goldFont.fnt", "GJ_button_06.png", 0.6f);
-            rmSpr->setScale(0.32f);
-            auto rmBtn = CCMenuItemSpriteExtra::create(rmSpr, this, menu_selector(ProfilePicIconsDetailPopup::onRemoveCustomIcon));
-            auto rmMenu = CCMenu::create();
-            rmMenu->setPosition({cx - 10.f, y});
-            rmMenu->addChild(rmBtn);
-            m_contentNode->addChild(rmMenu);
-        }
-    }
-
     y -= 24.f;
+    // background image rendered behind the icon (Only Icon Mode)
     auto iiMenu = CCMenu::create();
     iiMenu->setPosition({20.f, y});
     m_contentNode->addChild(iiMenu);
     auto iiToggle = CCMenuItemToggler::createWithStandardSprites(this, menu_selector(ProfilePicIconsDetailPopup::onIconImageToggle), 0.55f);
     iiToggle->toggle(m_cfg->iconConfig.iconImageEnabled);
     iiMenu->addChild(iiToggle);
-    auto iiLbl = sLbl("Icon on BG", 0.32f, "chatFont.fnt");
-    iiLbl->setColor({180,180,200}); iiLbl->setOpacity(200);
+    auto iiLbl = sLbl("BG Image", 0.36f);
     iiLbl->setAnchorPoint({0.f, 0.5f});
     iiLbl->setPosition({36.f, y});
     m_contentNode->addChild(iiLbl);
+
+    auto bgBtnMenu = CCMenu::create();
+    bgBtnMenu->setAnchorPoint({0.5f, 0.5f});
+    bgBtnMenu->setPosition({cx + 20.f, y});
+    bgBtnMenu->setContentSize({140.f, 18.f});
+    m_contentNode->addChild(bgBtnMenu);
+    bgBtnMenu->setLayout(RowLayout::create()->setGap(4.f)->setAutoScale(false));
+
+    auto pickSpr = ButtonSprite::create("Pick...", "goldFont.fnt", "GJ_button_04.png", 0.6f);
+    pickSpr->setScale(0.36f);
+    bgBtnMenu->addChild(CCMenuItemSpriteExtra::create(pickSpr, this,
+        menu_selector(ProfilePicIconsDetailPopup::onPickIconBgImage)));
+
+    if (!m_cfg->iconConfig.iconImagePath.empty()) {
+        auto clearSpr = ButtonSprite::create("Clear", "goldFont.fnt", "GJ_button_06.png", 0.6f);
+        clearSpr->setScale(0.36f);
+        bgBtnMenu->addChild(CCMenuItemSpriteExtra::create(clearSpr, this,
+            menu_selector(ProfilePicIconsDetailPopup::onClearIconBgImage)));
+    }
+    bgBtnMenu->updateLayout();
+
+    if (m_cfg->iconConfig.iconImageEnabled && m_cfg->iconConfig.iconImagePath.empty()) {
+        y -= 16.f;
+        auto hint = sLbl("Pick an image to show behind the icon", 0.3f, "chatFont.fnt");
+        hint->setColor({180,180,200});
+        hint->setOpacity(200);
+        hint->setAnchorPoint({0.f, 0.5f});
+        hint->setPosition({36.f, y});
+        m_contentNode->addChild(hint);
+    }
 }
 
 void ProfilePicIconsDetailPopup::rebuildPreview() {
@@ -378,25 +356,36 @@ void ProfilePicIconsDetailPopup::onAnimSpeedChanged(CCObject*) {
     rebuildPreview();
     if (m_onChange) m_onChange();
 }
-void ProfilePicIconsDetailPopup::onAddCustomIcon(CCObject*) {
-    PaimonNotify::create("Drag & drop image files to mod folder", NotificationIcon::Info)->show();
-}
-void ProfilePicIconsDetailPopup::onRemoveCustomIcon(CCObject*) {
-    if (m_cfg->selectedCustomIconIndex >= 0 && m_cfg->selectedCustomIconIndex < (int)m_cfg->customIcons.size()) {
-        m_cfg->customIcons.erase(m_cfg->customIcons.begin() + m_cfg->selectedCustomIconIndex);
-        m_cfg->selectedCustomIconIndex = -1;
-    }
-    rebuild(); if (m_onChange) m_onChange();
-}
-void ProfilePicIconsDetailPopup::onCustomIconSelect(CCObject* sender) {
-    m_cfg->selectedCustomIconIndex = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    rebuild(); if (m_onChange) m_onChange();
-}
 void ProfilePicIconsDetailPopup::onAnimTypeSelect(CCObject* sender) {
     m_cfg->iconConfig.animationType = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
     rebuild(); if (m_onChange) m_onChange();
 }
 void ProfilePicIconsDetailPopup::onIconImageToggle(CCObject*) {
     m_cfg->iconConfig.iconImageEnabled = !m_cfg->iconConfig.iconImageEnabled;
+    rebuild(); if (m_onChange) m_onChange();
+}
+void ProfilePicIconsDetailPopup::onPickIconBgImage(CCObject*) {
+    geode::WeakRef<ProfilePicIconsDetailPopup> self = this;
+    pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> result) {
+        auto popup = self.lock();
+        if (!popup) return;
+        auto pathOpt = std::move(result).unwrapOr(std::nullopt);
+        if (!pathOpt || pathOpt->empty()) return;
+
+        auto imported = paimon::assets::importToBucket(*pathOpt, "profile_icon_bg", paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            return;
+        }
+        popup->m_cfg->iconConfig.iconImagePath = paimon::assets::normalizePathString(imported.path);
+        popup->m_cfg->iconConfig.iconImageEnabled = true;
+        popup->rebuild();
+        popup->rebuildPreview();
+        if (popup->m_onChange) popup->m_onChange();
+    });
+}
+void ProfilePicIconsDetailPopup::onClearIconBgImage(CCObject*) {
+    m_cfg->iconConfig.iconImagePath.clear();
+    m_cfg->iconConfig.iconImageEnabled = false;
     rebuild(); if (m_onChange) m_onChange();
 }

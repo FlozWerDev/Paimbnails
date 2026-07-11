@@ -1,4 +1,4 @@
-﻿#include "EmotePickerPopup.hpp"
+#include "EmotePickerPopup.hpp"
 #include "../services/EmoteService.hpp"
 #include "../services/EmoteCache.hpp"
 #include "../EmoteRenderer.hpp"

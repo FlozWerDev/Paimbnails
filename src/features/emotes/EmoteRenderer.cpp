@@ -1,4 +1,4 @@
-﻿#include "EmoteRenderer.hpp"
+#include "EmoteRenderer.hpp"
 #include "services/EmoteService.hpp"
 #include "services/EmoteCache.hpp"
 #include "../../utils/AnimatedGIFSprite.hpp"
@@ -220,7 +220,8 @@ CCNode* EmoteRenderer::renderComment(
     float maxWidth,
     const char* font,
     float fontSize,
-    bool forceRender
+    bool forceRender,
+    bool animateGifs
 ) {
     auto refProbe = CCLabelBMFont::create("Ag", "chatFont.fnt");
     if (emoteSize <= 0.f) {
@@ -331,13 +332,13 @@ CCNode* EmoteRenderer::renderComment(
             if (info) {
                 auto phRef = Ref(placeholder);
                 std::string emoteKey = et->name;
-                EmoteCache::get().loadEmote(*info, [phRef, emoteSize, emoteKey](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
+                EmoteCache::get().loadEmote(*info, [phRef, emoteSize, emoteKey, animateGifs](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
                     // Retain the texture for the lifetime of the deferred task. The RAM cache
                     // may evict (and free) this texture before the queued task runs; capturing
                     // a raw pointer would leave `tex` dangling and crash inside
                     // CCSprite::initWithTexture when it dereferences the freed vtable.
                     geode::Ref<CCTexture2D> texRef = tex;
-                    Loader::get()->queueInMainThread([phRef, texRef, isGif, gifData, emoteSize, emoteKey]() {
+                    Loader::get()->queueInMainThread([phRef, texRef, isGif, gifData, emoteSize, emoteKey, animateGifs]() {
                         if (paimon::isRuntimeShuttingDown()) return;
                         if (auto ph = phRef.data(); !ph || !ph->getParent()) return;
 
@@ -352,7 +353,8 @@ CCNode* EmoteRenderer::renderComment(
                         };
 
                         if (isGif && !gifData.empty()) {
-                            AnimatedGIFSprite::createAsync(gifData, emoteKey, [attach](AnimatedGIFSprite* spr) {
+                            AnimatedGIFSprite::createAsync(gifData, emoteKey, [attach, animateGifs](AnimatedGIFSprite* spr) {
+                                if (spr && !animateGifs) spr->stop();
                                 attach(spr);
                             });
                         } else if (auto* tex = texRef.data()) {

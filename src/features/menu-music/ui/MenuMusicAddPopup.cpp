@@ -1,4 +1,4 @@
-﻿#include "MenuMusicAddPopup.hpp"
+#include "MenuMusicAddPopup.hpp"
 
 #include "../services/MenuMusicLibrary.hpp"
 #include "../services/YtDlpDownloader.hpp"
@@ -14,6 +14,7 @@
 #include <Geode/binding/CCTextInputNode.hpp>
 #include <Geode/loader/Loader.hpp>
 #include <Geode/ui/GeodeUI.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/ui/Notification.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
@@ -416,7 +417,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
             m_statusLabel->setColor({255, 200, 140});
         }
 
-        geode::createQuickPopup(
+        PopupManager::get().quickPopup(
             "yt-dlp Required",
             "To download music from a URL, the <cy>yt-dlp</c> binary is needed.\n"
             "<cl>~17 MB, one-time download.</c>\n\n"
@@ -455,7 +456,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                 );
                 if (installPopup) installPopup->show();
             }
-        );
+        ).showInstant();
         return;
     }
 
@@ -468,7 +469,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
             m_statusLabel->setColor({255, 200, 140});
         }
 
-        geode::createQuickPopup(
+        PopupManager::get().quickPopup(
             "ffmpeg Required",
             "Geometry Dash's audio engine can only play <cy>MP3</c> from YouTube-style sources.\n"
             "We use <cy>ffmpeg</c> to convert downloaded audio to MP3.\n"
@@ -506,7 +507,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                 );
                 if (installPopup) installPopup->show();
             }
-        );
+        ).showInstant();
         return;
     }
 
@@ -667,7 +668,7 @@ void MenuMusicAddPopup::onOpenYtDlpHelp(CCObject*) {
             "Source: <cb>https://github.com/yt-dlp/yt-dlp</c>",
             bundleStr);
 
-    FLAlertLayer::create("yt-dlp setup", msg.c_str(), "OK")->show();
+    PopupManager::get().alert("yt-dlp setup", msg).showInstant();
 }
 
 } // namespace paimon::menumusic

@@ -162,13 +162,18 @@ private:
 
 public:
     void play() { m_isPlaying = true; this->scheduleUpdate(); }
-    void pause() { m_isPlaying = false; }
+    void pause() {
+        m_isPlaying = false;
+        // No animation work while paused — drop the per-frame schedule until play().
+        if (m_pendingFrames.empty()) this->unscheduleUpdate();
+    }
     void stop() { 
         m_isPlaying = false; 
         m_currentFrame = 0;
         if (!m_frames.empty() && m_frames[0] && m_frames[0]->texture) {
             this->setTexture(m_frames[0]->texture);
         }
+        if (m_pendingFrames.empty()) this->unscheduleUpdate();
     }
 
     void onEnter() override {
@@ -176,6 +181,13 @@ public:
         if (m_isPlaying && !m_frames.empty()) {
             this->scheduleUpdate();
         }
+    }
+
+    void onExit() override {
+        // Idle GIFs must not keep a global schedule while off-tree (list recycle).
+        this->unscheduleUpdate();
+        this->unschedule(schedule_selector(AnimatedGIFSprite::updateTextureLoading));
+        CCSprite::onExit();
     }
     
     void setLoop(bool loop) { m_loop = loop; }

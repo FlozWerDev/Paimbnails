@@ -5,8 +5,11 @@
 #include "../data/PlistParser.hpp"
 #include "../data/RectPacker.hpp"
 #include "../data/SpritesheetReader.hpp"
+#include "../persist/FusionStore.hpp"
 #include "ClusterClassifier.hpp"
 #include "ColorClustering.hpp"
+#include "FusionAsset.hpp"
+#include "FusionEngine.hpp"
 #include "LuminanceTinter.hpp"
 #include "MaskBuilder.hpp"
 #include "OverlayTinter.hpp"
@@ -120,6 +123,50 @@ ImageBuffer loadCustomCanvas(SheetTinterRequest const& req, std::string const& f
         custom.unwrap(), frameW, frameH, it->second.transform);
 }
 
+// Apply a stored fusion (region-fill texture) onto `frame` in place.
+// Export always uses the first GIF frame so the pack stays a static PNG.
+bool applyFusionIfAny(SheetTinterRequest const& req, std::string const& frameName,
+                      ImageBuffer& frame) {
+    if (frame.empty()) return false;
+    if (req.spriteSkip.find(frameName) != req.spriteSkip.end()) return false;
+    auto it = req.spriteFusions.find(frameName);
+    if (it == req.spriteFusions.end()) return false;
+
+    auto maskRes = FusionStore::load(it->second.maskPath);
+    if (!maskRes) {
+        log::warn("[texture-studio] fusion mask '{}': {}",
+            geode::utils::string::pathToString(it->second.maskPath),
+            maskRes.unwrapErr());
+        return false;
+    }
+    auto payload = std::move(maskRes).unwrap();
+    if (payload.mask.width != frame.width() || payload.mask.height != frame.height()) {
+        log::warn("[texture-studio] fusion mask size {}x{} != frame {}x{} for '{}'",
+            payload.mask.width, payload.mask.height,
+            frame.width(), frame.height(), frameName);
+        return false;
+    }
+
+    auto texRes = FusionAssetLoader::loadStaticFrame(it->second.texturePath);
+    if (!texRes) {
+        log::warn("[texture-studio] fusion texture '{}': {}",
+            geode::utils::string::pathToString(it->second.texturePath),
+            texRes.unwrapErr());
+        return false;
+    }
+
+    FusionApplyOptions opts;
+    // Texture is stamped as-is (never recolored by pack colours).
+    opts.blendMode = it->second.blendMode;
+    opts.opacity   = it->second.opacity > 0.f ? it->second.opacity : payload.opacity;
+    opts.transform = it->second.transform.isDefault()
+        ? payload.transform : it->second.transform;
+    opts.pixelOffsetX = it->second.pixelOffsetX;
+    opts.pixelOffsetY = it->second.pixelOffsetY;
+    FusionEngine::apply(frame, payload.mask, texRes.unwrap(), opts);
+    return true;
+}
+
 // Re-insert a logical (un-rotated) frame back into the atlas at its original
 // slot, re-applying the cocos 90° CW packing rotation when needed.
 void blitLogicalBack(ImageBuffer& atlas, SpriteFrameInfo const& f, ImageBuffer logical) {
@@ -196,10 +243,11 @@ geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
         auto colorsIt = req.spriteColors.find(info.name);
         bool hasColor = colorsIt != req.spriteColors.end();
         bool hasImage = req.spriteImages.find(info.name) != req.spriteImages.end();
+        bool hasFusion = req.spriteFusions.find(info.name) != req.spriteFusions.end();
 
         // Overlay path: only frames with an explicit override (or a skip that
         // must undo the sheet-wide tint) need per-frame work.
-        if (overlayPath && !skip && !hasColor && !hasImage) continue;
+        if (overlayPath && !skip && !hasColor && !hasImage && !hasFusion) continue;
 
         ImageBuffer orig = SpritesheetReader::extractFrame(atlas, info);
         if (orig.empty()) continue;
@@ -243,6 +291,10 @@ geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
                 SpritePreviewRenderer::compositeOver(resultFrame, customCanvas);
                 ++tintedCount;
             }
+        }
+
+        if (applyFusionIfAny(req, info.name, resultFrame)) {
+            ++tintedCount;
         }
 
         blitLogicalBack(out, info, std::move(resultFrame));
@@ -355,6 +407,10 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
                 SpritePreviewRenderer::compositeOver(recolored, customCanvas);
                 ++tintedCount;
             }
+        }
+
+        if (applyFusionIfAny(req, info.name, recolored)) {
+            ++tintedCount;
         }
 
         recolored = resizeImage(recolored, req.resizeScale);

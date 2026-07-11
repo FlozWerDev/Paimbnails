@@ -1,4 +1,4 @@
-﻿#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include <Geode/modify/LevelSearchLayer.hpp>
 #include "../framework/HookConventions.hpp"
 #include "../features/community/ui/LeaderboardLayer.hpp"

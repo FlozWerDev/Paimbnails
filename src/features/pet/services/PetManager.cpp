@@ -1,4 +1,4 @@
-﻿#include "PetManager.hpp"
+#include "PetManager.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/EditorContext.hpp"

@@ -78,6 +78,7 @@ struct SheetTinterRequest {
     std::unordered_set<std::string> spriteSkip;
     std::unordered_map<std::string, TintColors> spriteColors;
     std::unordered_map<std::string, SpriteImageOverride> spriteImages;
+    std::unordered_map<std::string, SpriteFusionOverride> spriteFusions;
 
     // Downscale factor applied before re-packing (1.0 = none). MediumPort uses 0.5.
     float resizeScale = 1.0f;

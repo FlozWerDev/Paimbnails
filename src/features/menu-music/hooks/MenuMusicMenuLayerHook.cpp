@@ -1,4 +1,4 @@
-﻿// Hook al MenuLayer de GD para:
+// Hook al MenuLayer de GD para:
 //   1. Anadir un boton "vinyl" al right-side-menu que abre el popup principal.
 //   2. Mostrar un NowPlayingToast cuando cambia el track (unica vez por
 //      entrada al MenuLayer para no spamear al usuario).

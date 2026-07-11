@@ -1,4 +1,4 @@
-﻿#include "ThumbnailSettingsPopup.hpp"
+#include "ThumbnailSettingsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../visuals/ui/ExtraEffectsPopup.hpp"
 #include "LocalThumbnailViewPopup.hpp"

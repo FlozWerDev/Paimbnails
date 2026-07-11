@@ -1,4 +1,4 @@
-﻿#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../features/cursor/services/CursorManager.hpp"

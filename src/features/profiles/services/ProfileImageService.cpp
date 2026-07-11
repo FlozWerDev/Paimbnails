@@ -1,4 +1,4 @@
-﻿#include "ProfileImageService.hpp"
+#include "ProfileImageService.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../core/Settings.hpp"

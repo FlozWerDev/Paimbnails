@@ -16,11 +16,18 @@ protected:
     void onResetDefaults(cocos2d::CCObject*);
     void onRefreshPresence(cocos2d::CCObject*);
 
+    void updatePreview();
+
     geode::TextInput* m_detailsInput = nullptr;
     geode::TextInput* m_stateInput = nullptr;
     geode::TextInput* m_largeTextInput = nullptr;
     geode::TextInput* m_largeImageKeyInput = nullptr;
     geode::TextInput* m_smallImageKeyInput = nullptr;
+
+    cocos2d::CCLabelBMFont* m_prevHeader = nullptr;
+    cocos2d::CCLabelBMFont* m_prevDetails = nullptr;
+    cocos2d::CCLabelBMFont* m_prevState = nullptr;
+    cocos2d::CCLabelBMFont* m_prevTime = nullptr;
 };
 
 } // namespace paimon::discord

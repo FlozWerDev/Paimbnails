@@ -42,6 +42,7 @@ PackExportConfig TextureProject::toExportConfig() const {
     cfg.colorDemonFaces        = colorDemonFaces;
     cfg.mythicCompat           = mythicCompat;
     cfg.includeModTextures     = includeModTextures;
+    cfg.exportAnimatedFusions  = exportAnimatedFusions;
 
     for (auto const& [frameName, setting] : spriteSettings) {
         if (setting.skip) cfg.spriteSkip.insert(frameName);
@@ -56,6 +57,29 @@ PackExportConfig TextureProject::toExportConfig() const {
             ov.transform = setting.imageTransform;
             ov.overlay   = setting.imageOverlay;
             cfg.spriteImages.emplace(frameName, std::move(ov));
+        }
+        if (setting.hasFusion) {
+            SpriteFusionOverride fus;
+            fus.maskPath = SlotPaths::fusionMaskFile(id, frameName);
+            // Prefer GIF when animated, else PNG; export only needs one path.
+            auto gifPath = SlotPaths::fusionTextureFile(id, frameName, ".gif");
+            auto pngPath = SlotPaths::fusionTextureFile(id, frameName, ".png");
+            std::error_code ec;
+            if (setting.fusionAnimated && std::filesystem::exists(gifPath, ec)) {
+                fus.texturePath = std::move(gifPath);
+            } else if (std::filesystem::exists(pngPath, ec)) {
+                fus.texturePath = std::move(pngPath);
+            } else if (std::filesystem::exists(gifPath, ec)) {
+                fus.texturePath = std::move(gifPath);
+            } else {
+                fus.texturePath = std::move(pngPath);
+            }
+            fus.blendMode = setting.fusionBlend;
+            fus.opacity   = setting.fusionOpacity;
+            fus.transform = setting.fusionTransform;
+            fus.pixelOffsetX = setting.fusionPixelX;
+            fus.pixelOffsetY = setting.fusionPixelY;
+            cfg.spriteFusions.emplace(frameName, std::move(fus));
         }
     }
 

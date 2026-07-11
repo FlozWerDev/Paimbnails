@@ -1,11 +1,10 @@
-﻿#include "PaimonLoadingOverlay.hpp"
+#include "PaimonLoadingOverlay.hpp"
+#include "SpriteHelper.hpp"
+#include <algorithm>
+#include <cmath>
 #include <random>
 
 using namespace cocos2d;
-
-namespace {
-constexpr auto kSpinnerPulseKey = "flozwer.paimbnails/loading-spinner-pulse";
-}
 
 static std::string getRandomFunFact() {
     static const std::vector<std::string> facts = {
@@ -35,6 +34,13 @@ static std::string getRandomFunFact() {
     return facts[dist(rng)];
 }
 
+// Status texts often arrive as "Loading..." — the dots are animated by the
+// overlay itself, so strip any trailing ones from the base string.
+static std::string stripTrailingDots(std::string s) {
+    while (!s.empty() && s.back() == '.') s.pop_back();
+    return s;
+}
+
 PaimonLoadingOverlay* PaimonLoadingOverlay::create(std::string const& statusText, float spinnerSize) {
     auto ret = new PaimonLoadingOverlay();
     if (ret && ret->init(statusText, spinnerSize)) {
@@ -49,31 +55,58 @@ bool PaimonLoadingOverlay::init(std::string const& statusText, float spinnerSize
     if (!CCLayerColor::initWithColor({0, 0, 0, 0})) return false;
 
     this->setID("paimon-loading-overlay"_spr);
+    m_baseText = stripTrailingDots(statusText);
+    m_spinnerSize = spinnerSize;
 
-    // centered spinner (position adjusted in show())
-    m_spinner = geode::LoadingSpinner::create(spinnerSize);
-    m_spinner->setScale(0.f);
-    m_spinner->setID("paimon-loading-spinner"_spr);
-    this->addChild(m_spinner, 10);
+    // Badge: spinning GD loading circle with Paimon floating inside.
+    m_badge = CCNode::create();
+    m_badge->setID("paimon-loading-badge"_spr);
+    m_badge->setScale(0.f);
+    this->addChild(m_badge, 10);
 
-    // subtle looping pulse
-    auto pulse = CCRepeatForever::create(
-        CCSequence::create(
-            CCEaseInOut::create(CCScaleTo::create(0.8f, 1.08f), 2.0f),
-            CCEaseInOut::create(CCScaleTo::create(0.8f, 0.95f), 2.0f),
+    if (auto ring = paimon::SpriteHelper::safeCreate("loadingCircle.png")) {
+        ring->setBlendFunc({GL_SRC_ALPHA, GL_ONE});
+        ring->setOpacity(220);
+        float texW = ring->getContentSize().width;
+        if (texW > 1.f) ring->setScale(spinnerSize * 2.2f / texW);
+        ring->runAction(CCRepeatForever::create(CCRotateBy::create(1.1f, 360.f)));
+        m_ring = ring;
+        m_badge->addChild(ring, 0);
+    }
+
+    bool hasMascot = false;
+    if (auto emote = paimon::SpriteHelper::safeCreate("paim_Paimon.png"_spr)) {
+        float h = emote->getContentSize().height;
+        if (h > 1.f) emote->setScale(spinnerSize * 1.1f / h);
+        // gentle float + sway
+        emote->runAction(CCRepeatForever::create(CCSequence::create(
+            CCEaseSineInOut::create(CCMoveBy::create(0.8f, {0.f, 5.f})),
+            CCEaseSineInOut::create(CCMoveBy::create(0.8f, {0.f, -5.f})),
             nullptr
-        )
-    );
-    pulse->setTag(99);
+        )));
+        emote->runAction(CCRepeatForever::create(CCSequence::create(
+            CCEaseSineInOut::create(CCRotateTo::create(1.3f, 5.f)),
+            CCEaseSineInOut::create(CCRotateTo::create(1.3f, -5.f)),
+            nullptr
+        )));
+        m_badge->addChild(emote, 1);
+        hasMascot = true;
+    }
 
-    // status text below the spinner (gold)
-    m_statusLabel = CCLabelBMFont::create(statusText.c_str(), "goldFont.fnt");
+    // Fallback when both textures are missing (aggressive texture packs).
+    if (!m_ring && !hasMascot) {
+        m_spinner = geode::LoadingSpinner::create(spinnerSize);
+        m_spinner->setID("paimon-loading-spinner"_spr);
+        m_badge->addChild(m_spinner, 1);
+    }
+
+    m_statusLabel = CCLabelBMFont::create(m_baseText.c_str(), "goldFont.fnt");
     m_statusLabel->setScale(0.5f);
+    m_statusLabel->setAnchorPoint({0.f, 0.5f});
     m_statusLabel->setOpacity(0);
     m_statusLabel->setID("paimon-loading-text"_spr);
     this->addChild(m_statusLabel, 10);
 
-    // random fun fact (white, semi-transparent)
     m_funFactLabel = CCLabelBMFont::create(getRandomFunFact().c_str(), "chatFont.fnt");
     m_funFactLabel->setScale(0.55f);
     m_funFactLabel->setColor({255, 255, 255});
@@ -81,8 +114,8 @@ bool PaimonLoadingOverlay::init(std::string const& statusText, float spinnerSize
     m_funFactLabel->setID("paimon-loading-funfact"_spr);
     this->addChild(m_funFactLabel, 10);
 
-    // store the pulse to apply after the bounce-in
-    m_spinner->setUserObject(kSpinnerPulseKey, pulse);
+    this->schedule(schedule_selector(PaimonLoadingOverlay::updateDots), 0.4f);
+    this->schedule(schedule_selector(PaimonLoadingOverlay::swapFunFact), 5.f);
 
     return true;
 }
@@ -94,15 +127,21 @@ void PaimonLoadingOverlay::showAt(CCNode* parent, CCPoint const& position, CCSiz
 
     float cx = size.width / 2.f;
     float cy = size.height / 2.f;
-    m_spinner->setPosition({cx, cy + 10.f});
-    m_statusLabel->setPosition({cx, cy - 25.f});
-    m_funFactLabel->setPosition({cx, cy - 45.f});
+    m_centerX = cx;
+    m_statusY = cy + 14.f - m_spinnerSize * 1.35f - 12.f;
+
+    m_badge->setPosition({cx, cy + 14.f});
+    positionStatusLabel();
+    m_funFactLabel->setPosition({cx, m_statusY - 18.f});
 
     parent->addChild(this, zOrder);
 
-    this->runAction(CCFadeTo::create(0.25f, 100));
+    // block clicks on whatever is underneath while loading
+    this->setTouchEnabled(true);
 
-    m_spinner->runAction(
+    this->runAction(CCFadeTo::create(0.25f, 140));
+
+    m_badge->runAction(
         CCSequence::create(
             CCEaseBackOut::create(CCScaleTo::create(0.3f, 1.0f)),
             CCCallFunc::create(this, callfunc_selector(PaimonLoadingOverlay::startPulse)),
@@ -130,9 +169,21 @@ void PaimonLoadingOverlay::showAt(CCNode* parent, CCPoint const& position, CCSiz
 void PaimonLoadingOverlay::show(CCNode* parent, int zOrder) {
     if (!parent) return;
 
+    // Convert both screen corners into the parent's local space so the overlay
+    // covers the whole window even when the parent is scaled or offset (e.g.
+    // popup main layers mid-entrance-animation). Using only the origin + raw
+    // winSize left uncovered strips on scaled parents.
     auto winSize = CCDirector::get()->getWinSize();
-    auto localOrigin = parent->convertToNodeSpace(CCPointZero);
-    showAt(parent, localOrigin, winSize, zOrder);
+    auto bl = parent->convertToNodeSpace({0.f, 0.f});
+    auto tr = parent->convertToNodeSpace({winSize.width, winSize.height});
+
+    CCPoint origin{std::min(bl.x, tr.x), std::min(bl.y, tr.y)};
+    CCSize size{std::abs(tr.x - bl.x), std::abs(tr.y - bl.y)};
+    if (size.width < 1.f || size.height < 1.f) {
+        origin = CCPointZero;
+        size = winSize;
+    }
+    showAt(parent, origin, size, zOrder);
 }
 
 void PaimonLoadingOverlay::showLocal(CCNode* parent, int zOrder) {
@@ -145,36 +196,69 @@ void PaimonLoadingOverlay::showLocal(CCNode* parent, int zOrder) {
     showAt(parent, CCPointZero, size, zOrder);
 }
 
-void PaimonLoadingOverlay::startPulse() {
-    if (m_spinner) {
-        auto pulse = static_cast<CCAction*>(m_spinner->getUserObject(kSpinnerPulseKey));
-        if (pulse) {
-            m_spinner->runAction(static_cast<CCAction*>(pulse->copy()->autorelease()));
-        }
+void PaimonLoadingOverlay::positionStatusLabel() {
+    if (!m_statusLabel) return;
+    // Keep the base text centered while the animated dots grow to the right,
+    // so the label doesn't wiggle as dots are added.
+    m_statusLabel->setString(m_baseText.c_str());
+    float baseW = m_statusLabel->getScaledContentSize().width;
+    m_statusLabel->setPosition({m_centerX - baseW / 2.f, m_statusY});
+    m_statusLabel->setString((m_baseText + std::string(m_dotCount, '.')).c_str());
+}
+
+void PaimonLoadingOverlay::updateDots(float) {
+    if (m_dismissed || !m_statusLabel) return;
+    m_dotCount = (m_dotCount + 1) % 4;
+    m_statusLabel->setString((m_baseText + std::string(m_dotCount, '.')).c_str());
+}
+
+void PaimonLoadingOverlay::pickNewFact() {
+    if (m_funFactLabel) {
+        m_funFactLabel->setString(getRandomFunFact().c_str());
     }
+}
+
+void PaimonLoadingOverlay::swapFunFact(float) {
+    if (m_dismissed || !m_funFactLabel) return;
+    m_funFactLabel->runAction(CCSequence::create(
+        CCFadeTo::create(0.25f, 0),
+        CCCallFunc::create(this, callfunc_selector(PaimonLoadingOverlay::pickNewFact)),
+        CCFadeTo::create(0.3f, 90),
+        nullptr
+    ));
+}
+
+void PaimonLoadingOverlay::startPulse() {
+    if (m_dismissed || !m_badge) return;
+    m_badge->runAction(CCRepeatForever::create(
+        CCSequence::create(
+            CCEaseInOut::create(CCScaleTo::create(0.8f, 1.06f), 2.0f),
+            CCEaseInOut::create(CCScaleTo::create(0.8f, 0.96f), 2.0f),
+            nullptr
+        )
+    ));
 }
 
 void PaimonLoadingOverlay::dismiss() {
     if (m_dismissed) return;
     m_dismissed = true;
 
+    this->unschedule(schedule_selector(PaimonLoadingOverlay::updateDots));
+    this->unschedule(schedule_selector(PaimonLoadingOverlay::swapFunFact));
+
+    this->setTouchEnabled(false);
+
     this->runAction(CCFadeTo::create(0.2f, 0));
 
-    if (m_spinner) {
-        m_spinner->stopActionByTag(99);
-        m_spinner->runAction(
-            CCSpawn::create(
-                CCEaseBackIn::create(CCScaleTo::create(0.15f, 0.f)),
-                CCFadeOut::create(0.15f),
-                nullptr
-            )
-        );
+    if (m_badge) {
+        m_badge->stopAllActions();
+        m_badge->runAction(CCEaseBackIn::create(CCScaleTo::create(0.18f, 0.f)));
     }
-
     if (m_statusLabel) {
         m_statusLabel->runAction(CCFadeOut::create(0.1f));
     }
     if (m_funFactLabel) {
+        m_funFactLabel->stopAllActions();
         m_funFactLabel->runAction(CCFadeOut::create(0.1f));
     }
 
@@ -189,7 +273,19 @@ void PaimonLoadingOverlay::dismiss() {
 }
 
 void PaimonLoadingOverlay::updateText(std::string const& text) {
-    if (m_statusLabel) {
-        m_statusLabel->setString(text.c_str());
-    }
+    m_baseText = stripTrailingDots(text);
+    positionStatusLabel();
+}
+
+void PaimonLoadingOverlay::registerWithTouchDispatcher() {
+    // high priority + swallow so buttons underneath can't be pressed mid-load
+    CCTouchDispatcher::get()->addTargetedDelegate(this, -512, true);
+}
+
+bool PaimonLoadingOverlay::ccTouchBegan(CCTouch* touch, CCEvent*) {
+    if (m_dismissed) return false;
+    // only claim touches inside the covered area (showLocal may cover just a popup)
+    auto p = this->convertToNodeSpace(touch->getLocation());
+    auto s = this->getContentSize();
+    return p.x >= 0.f && p.y >= 0.f && p.x <= s.width && p.y <= s.height;
 }

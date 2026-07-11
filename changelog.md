@@ -1,10 +1,15 @@
 # v1.0.9
 
 **Fix Update**
+- Guia Paimon (Paigorit V1.5): cobertura de todo el mod (collab, editor history/filters/color/rotate, song search, mentions, menu physics, smooth UI, settings panel...), frases de problema EN/ES, categorias Editor/Visuales, chips dinamicos y recomendaciones.
 - Se eliminaron varios archivos que provocaban crash.
+- Editor History: compact undo panel for Color / Groups / Layers (last change per category).
 - Collab Editor agregado en beta cerrada. Estara disponible para todos el 20 de julio de 2026 con v1.1.0.
+- Collab Editor: sincronizacion rehecha para ser confiable con assets de miles de objetos. Envio con confirmacion y reintentos (ya no se pierden objetos), verificacion automatica de estado con auto-reparacion de desyncs, y las selecciones gigantes ahora si se sincronizan al moverlas o rotarlas.
 - Editor: nuevo color picker con Ctrl + G.
 - Editor: nueva rotacion con Alt + click derecho.
+- Search History: popup redisenado mas compacto (icono de dificultad, fecha y contador). Tocar una entrada ahora busca directamente, y se corrigio que todas las entradas mostraran "Demon".
+- Perfiles: se elimino el cache en disco de getGJUserInfo; ahora se usa el cache nativo del juego. Corrige que el perfil mostrara un estado de amistad viejo (ej. no aparecer como amigo despues de aceptar la solicitud).
 
 # v1.0.8
 

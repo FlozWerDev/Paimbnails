@@ -1,9 +1,12 @@
-﻿#include "AnimatedGIFSprite.hpp"
+#include "AnimatedGIFSprite.hpp"
 #include "DominantColors.hpp"
 #include "Debug.hpp"
 #include "FrameBudget.hpp"
 #include "../core/QualityConfig.hpp"
+#include "../core/Settings.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include <cstdint>
+#include <climits>
 #include <Geode/loader/Log.hpp>
 #include <fstream>
 #include <filesystem>
@@ -37,16 +40,23 @@ std::shared_mutex AnimatedGIFSprite::s_cacheMutex;
 size_t AnimatedGIFSprite::s_currentCacheSize = 0;
 
 size_t AnimatedGIFSprite::getMaxCacheMem() {
+    // Snapshot settings once per settings-version bump (eviction can run often).
+    static size_t s_cachedMax = 0;
+    static uint64_t s_cachedVer = UINT64_MAX;
+    uint64_t ver = paimon::settings::internal::g_settingsVersion.load(std::memory_order_relaxed);
+    if (s_cachedMax != 0 && ver == s_cachedVer) return s_cachedMax;
+    s_cachedVer = ver;
     bool ramCache = Mod::get()->getSavedValue<bool>("gif-ram-cache", true);
     if (ramCache) {
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-        return 80 * 1024 * 1024; // 80 MB on mobile
+        s_cachedMax = 80ull * 1024 * 1024; // 80 MB on mobile
 #else
-        return 150 * 1024 * 1024; // 150 MB on desktop
+        s_cachedMax = 150ull * 1024 * 1024; // 150 MB on desktop
 #endif
     } else {
-        return 10 * 1024 * 1024; // 10 MB (minimum cache for the current scene)
+        s_cachedMax = 10ull * 1024 * 1024; // 10 MB (minimum cache for the current scene)
     }
+    return s_cachedMax;
 }
 
 std::deque<AnimatedGIFSprite::GIFTask> AnimatedGIFSprite::s_taskQueue;
@@ -1060,6 +1070,10 @@ void AnimatedGIFSprite::update(float dt) {
 
 void AnimatedGIFSprite::updateAnimation(float dt) {
     if (!m_isPlaying || m_frames.empty()) {
+        // Self-heal: stop ticking when nothing to animate (pause/stop races).
+        if (!m_isPlaying && m_pendingFrames.empty()) {
+            this->unscheduleUpdate();
+        }
         return;
     }
     

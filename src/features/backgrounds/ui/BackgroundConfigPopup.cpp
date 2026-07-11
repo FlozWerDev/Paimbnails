@@ -1,4 +1,4 @@
-﻿#include "BackgroundConfigPopup.hpp"
+#include "BackgroundConfigPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../pet/ui/PetConfigPopup.hpp"
@@ -18,7 +18,7 @@
 #include <Geode/binding/Slider.hpp>
 #include <filesystem>
 #include "../../../utils/FileDialog.hpp"
-#include <random>
+#include <Geode/utils/random.hpp>
 
 using namespace geode::prelude;
 
@@ -843,9 +843,7 @@ void BackgroundConfigPopup::onLayerDynamic(CCObject*) {
         "synthwave", "neon-city", "vortex", "ocean", "galaxy"
     };
 
-    static std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<int> dist(0, (int)DYNAMIC_SHADERS.size() - 1);
-    std::string picked = DYNAMIC_SHADERS[dist(rng)];
+    std::string picked = geode::utils::random::choice(DYNAMIC_SHADERS);
 
     LayerBgConfig cfg = LayerBackgroundManager::get().getConfig(m_selectedLayerKey);
     cfg.type = "shader";

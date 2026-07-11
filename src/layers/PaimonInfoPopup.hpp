@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
 
 class PaimonInfoPopup : public geode::Popup {
@@ -12,4 +12,3 @@ protected:
 public:
     static PaimonInfoPopup* create(std::string const& title, std::string const& desc);
 };
-

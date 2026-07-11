@@ -1,10 +1,11 @@
-﻿#include "BanListPopup.hpp"
+#include "BanListPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/utils/cocos.hpp>
 
@@ -205,7 +206,7 @@ void BanListPopup::onInfo(CCObject* sender) {
         );
     }
     
-    geode::createQuickPopup(Localization::get().getString("ban.info.title").c_str(), body, "OK", nullptr, nullptr);
+    PopupManager::get().alert(Localization::get().getString("ban.info.title"), body).showInstant();
 }
 
 void BanListPopup::onUnban(CCObject* sender) {
@@ -217,7 +218,7 @@ void BanListPopup::onUnban(CCObject* sender) {
     std::string username = strObj->getCString();
 
     Ref<BanListPopup> self = this;
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         Localization::get().getString("ban.unban.title").c_str(),
         fmt::format(fmt::runtime(Localization::get().getString("ban.unban.confirm")), username),
         "Cancel", Localization::get().getString("ban.list.unban_btn").c_str(),
@@ -233,5 +234,5 @@ void BanListPopup::onUnban(CCObject* sender) {
                 });
             }
         }
-    );
+    ).showInstant();
 }

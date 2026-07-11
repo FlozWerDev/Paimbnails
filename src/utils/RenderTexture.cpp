@@ -1,4 +1,4 @@
-﻿#include "RenderTexture.hpp"
+#include "RenderTexture.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/cocos/platform/CCGL.h>
 

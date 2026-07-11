@@ -1,4 +1,4 @@
-﻿#include "ExtraEffectsPopup.hpp"
+#include "ExtraEffectsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/InfoButton.hpp"
 

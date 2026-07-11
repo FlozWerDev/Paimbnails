@@ -21,9 +21,6 @@ class ScrollLayer;
 
 namespace paimon::collab {
 
-// Returns true if the user has already entered the access code this install.
-bool isUnlocked();
-
 // Display name shown to peers: the collab-username setting if set, else the GD
 // player name, else "editor". Shared by the room/invite/presence flows.
 std::string defaultDisplayName();
@@ -32,19 +29,6 @@ std::string defaultDisplayName();
 // the manager pushes an editor scene (and after popping back), because a popup
 // that survives a scene swap keeps broken touch priority and looks frozen.
 void closeSessionPopups();
-
-// Asks for the access code ("paimon5"). On success, unlocks and opens the room
-// popup.
-class CollabGatePopup : public geode::Popup {
-public:
-    static CollabGatePopup* create();
-
-private:
-    bool init();
-    void onConfirm(cocos2d::CCObject*);
-
-    geode::TextInput* m_codeInput = nullptr;
-};
 
 // Connect / create a room on the Render server. `hostLevel` is the level to
 // host if we end up creating the room (passed straight to the manager).
@@ -79,6 +63,7 @@ private:
     void onLeave(cocos2d::CCObject*);
     void onHostOptions(cocos2d::CCObject*);
     void onInvite(cocos2d::CCObject*);
+    void onPeers(cocos2d::CCObject*);
     void refresh(float dt = 0.f);
 
     View m_view = View::None;
@@ -86,11 +71,9 @@ private:
     // Inputs survive tab switches and rebuilds through these.
     std::string m_createCode;
     std::string m_joinCode;
-    std::string m_name;
 
     cocos2d::CCNode* m_content = nullptr;
     geode::TextInput* m_codeInput = nullptr;
-    geode::TextInput* m_nameInput = nullptr;
     cocos2d::CCLabelBMFont* m_codeLabel = nullptr;
     cocos2d::CCLabelBMFont* m_statusLabel = nullptr;
     cocos2d::CCLabelBMFont* m_peersLabel = nullptr;
@@ -110,14 +93,33 @@ public:
     void forceReloadList(UserListType) override {}
 
 private:
+    // Snapshot of what a row needs so the list can be rebuilt on every
+    // keystroke of the search bar without keeping the GJUserScore array alive.
+    struct FriendEntry {
+        int accountID = 0;
+        std::string name;
+        std::string nameLower; // precomputed for case-insensitive filtering
+        int iconID = 1;
+        int iconType = 0;
+        int color1 = 0;
+        int color2 = 0;
+        int color3 = 0;
+        bool glow = false;
+    };
+
     bool init();
     void loadFriends();
     void buildList(cocos2d::CCArray* scores);
+    void rebuildRows();
     void setInfo(std::string const& text);
     void onInvite(cocos2d::CCObject* sender);
+    void onFocusSearch(cocos2d::CCObject* sender);
 
     geode::ScrollLayer* m_scroll = nullptr;
+    geode::TextInput* m_search = nullptr;
     cocos2d::CCLabelBMFont* m_info = nullptr;
+    cocos2d::CCLabelBMFont* m_count = nullptr;
+    std::vector<FriendEntry> m_friends;
     std::unordered_map<int, std::string> m_names; // accountID -> username
 };
 
@@ -176,6 +178,24 @@ private:
     ButtonSprite* m_songSpr = nullptr;
     ButtonSprite* m_optionsSpr = nullptr;
     ButtonSprite* m_settingsSpr = nullptr;
+    ButtonSprite* m_viewOnlySpr = nullptr;
+};
+
+// In-room peer list. Hosts can kick non-host peers.
+class CollabPeersPopup : public geode::Popup {
+public:
+    static CollabPeersPopup* create();
+
+private:
+    bool init();
+    void rebuildList();
+    void onProfile(cocos2d::CCObject* sender);
+    void onKick(cocos2d::CCObject* sender);
+    void refresh(float dt = 0.f);
+
+    geode::ScrollLayer* m_scroll = nullptr;
+    cocos2d::CCLabelBMFont* m_info = nullptr;
+    std::string m_lastPeerSignature;
 };
 
 } // namespace paimon::collab

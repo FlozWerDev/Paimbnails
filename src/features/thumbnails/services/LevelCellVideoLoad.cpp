@@ -2,6 +2,7 @@
 #include "LevelCellThumbnailLoad.hpp"
 #include "LocalThumbs.hpp"
 #include "../../../video/VideoPlayer.hpp"
+#include "../../../utils/Debug.hpp"
 #include <Geode/utils/string.hpp>
 #include <utility>
 
@@ -16,7 +17,7 @@ bool tryStartLocalVideoThumbnail(int32_t levelID, bool enableSpinners, LocalVide
     auto const lowerPath = geode::utils::string::toLower(*localPath);
     if (!lowerPath.ends_with(".mp4")) return false;
 
-    log::debug("[LevelCell] tryLoadThumbnail: found MP4 for levelID={}: {}", levelID, *localPath);
+    PaimonDebug::log("[LevelCell] tryLoadThumbnail: found MP4 for levelID={}: {}", levelID, *localPath);
 
     auto player = paimon::video::VideoPlayer::create(*localPath);
     if (!player) {
@@ -26,6 +27,7 @@ bool tryStartLocalVideoThumbnail(int32_t levelID, bool enableSpinners, LocalVide
 
     player->setLoop(true);
     player->setVolume(0.0f);
+    // Decode starts on play(); GPU pipeline init is deferred inside play().
     player->play();
 
     if (host.setHasVideo) host.setHasVideo(true);
@@ -37,12 +39,12 @@ bool tryStartLocalVideoThumbnail(int32_t levelID, bool enableSpinners, LocalVide
             if (host.setThumbnailApplied) host.setThumbnailApplied(true);
             if (enableSpinners && host.hideSpinner) host.hideSpinner();
             if (host.applyThumbTexture) host.applyThumbTexture(live->getCurrentFrameTexture());
-            log::debug("[LevelCell] tryLoadThumbnail: video player started for levelID={}", levelID);
+            PaimonDebug::log("[LevelCell] tryLoadThumbnail: video player started for levelID={}", levelID);
             return true;
         }
     }
 
-    log::debug("[LevelCell] tryLoadThumbnail: waiting for first MP4 frame for levelID={}", levelID);
+    PaimonDebug::log("[LevelCell] tryLoadThumbnail: waiting for first MP4 frame for levelID={}", levelID);
     return true;
 }
 
@@ -57,10 +59,13 @@ bool tryStartServerVideoThumbnail(
 ) {
     if (!mainThumb.isVideo() || mainThumb.url.empty()) return false;
 
-    log::debug("[LevelCell] tryLoadThumbnail: main thumb is server video for levelID={}", levelID);
-    if (enableSpinners && host.showSpinner) host.showSpinner();
+    PaimonDebug::log("[LevelCell] tryLoadThumbnail: main thumb is server video for levelID={}", levelID);
 
     std::string const cacheKey = fmt::format("thumb_video_{}", levelID);
+
+    // Disk / warm-player hit: skip spinner flash for already-local assets.
+    bool const likelyCached = VideoThumbnailSprite::isCached(cacheKey);
+    if (enableSpinners && !likelyCached && host.showSpinner) host.showSpinner();
 
     VideoThumbnailSprite::createAsync(mainThumb.url, cacheKey, [
         cellAnchor,
@@ -124,7 +129,7 @@ bool tryStartServerVideoThumbnail(
                     }
                 }
 
-                log::debug(
+                PaimonDebug::log(
                     "[LevelCell] tryLoadThumbnail: server video first frame ready for levelID={}",
                     levelID
                 );

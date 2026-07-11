@@ -1,4 +1,4 @@
-﻿#include "ProfileMusicPopup.hpp"
+#include "ProfileMusicPopup.hpp"
 #include "SongSearchPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -10,6 +10,7 @@
 #include "../../../utils/GeodeTextInputSafe.hpp"
 #include "../../../framework/PermissionPolicy.hpp"
 #include <Geode/binding/FLAlertLayer.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
@@ -1399,7 +1400,7 @@ void ProfileMusicPopup::onSave(CCObject*) {
 void ProfileMusicPopup::onDelete(CCObject*) {
     WeakRef<ProfileMusicPopup> self = this;
 
-    geode::createQuickPopup(
+    PopupManager::get().quickPopup(
         tr("music.delete_title").c_str(),
         tr("music.delete_message"),
         tr("music.delete_cancel").c_str(),
@@ -1434,7 +1435,7 @@ void ProfileMusicPopup::onDelete(CCObject*) {
                 });
             }
         }
-    );
+    ).showInstant();
 }
 
 void ProfileMusicPopup::onClose(CCObject* sender) {
@@ -1505,7 +1506,7 @@ void ProfileMusicPopup::hideLoading() {
 }
 
 void ProfileMusicPopup::showError(std::string const& message) {
-    FLAlertLayer::create(nullptr, tr("music.error_title").c_str(), message, tr("music.ok").c_str(), nullptr)->show();
+    PopupManager::get().alert(tr("music.error_title"), message, tr("music.ok")).showInstant();
 }
 
 

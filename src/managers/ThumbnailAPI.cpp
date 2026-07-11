@@ -1,4 +1,4 @@
-﻿#include "ThumbnailAPI.hpp"
+#include "ThumbnailAPI.hpp"
 #include <Geode/loader/Log.hpp>
 #include "../features/profiles/services/ProfileThumbs.hpp"
 

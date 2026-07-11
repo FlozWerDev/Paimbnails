@@ -2,6 +2,7 @@
 
 #include "../data/ImageTransform.hpp"
 #include "../data/SpriteFrameInfo.hpp"
+#include "FusionEngine.hpp"
 #include "LuminanceTinter.hpp"
 #include "UiSpriteCatalog.hpp"
 
@@ -32,6 +33,19 @@ struct SpriteImageOverride {
     bool overlay = false;
 };
 
+// Region-fill fusion: mask + texture applied after tint / custom image.
+// Sheets bake texture frame 0 (static fallback). Multi-frame GIFs also ship
+// as standalone .gif when exportAnimatedFusions is enabled.
+struct SpriteFusionOverride {
+    std::filesystem::path maskPath;
+    std::filesystem::path texturePath;
+    FusionBlendMode blendMode = FusionBlendMode::Replace;
+    float opacity = 1.0f;
+    ImageTransform transform{};
+    int pixelOffsetX = 0;
+    int pixelOffsetY = 0;
+};
+
 struct PackExportConfig {
     std::string packName = "My Pack";
     std::string author   = "Paimbnails";
@@ -58,6 +72,11 @@ struct PackExportConfig {
     std::unordered_set<std::string> spriteSkip;
     std::unordered_map<std::string, TintColors> spriteColors;
     std::unordered_map<std::string, SpriteImageOverride> spriteImages;
+    std::unordered_map<std::string, SpriteFusionOverride> spriteFusions;
+
+    // Ship multi-frame fusion sprites as standalone .gif files (requires
+    // ImagePlus in-game for animation). Sheets still contain frame 0.
+    bool exportAnimatedFusions = true;
 
     bool includeMediumPort = false;
 
@@ -110,6 +129,9 @@ struct PackExportResult {
     int  standaloneProcessed  = 0;
     int  standaloneFailed     = 0;
     std::string precisionNote;
+
+    // Multi-frame fusion GIFs shipped for ImagePlus / Happy Textures.
+    int  animatedFusionCount  = 0;
 };
 
 }  // namespace paimon::texture_studio

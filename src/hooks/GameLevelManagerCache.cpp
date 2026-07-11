@@ -1,7 +1,6 @@
-// Intercepts RobTop user/profile lookups via GameLevelManager and serves
-// disk-cached responses (7 days) before hitting the network.
-// Online level/list browse results are deliberately left uncached so the
-// dynamic search filters always reflect the live server (see the class note).
+// Intercepts RobTop user-search lookups via GameLevelManager and serves
+// disk-cached responses for instant results. Online level/list browse results
+// are deliberately left uncached so dynamic search filters stay live.
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GameLevelManager.hpp>
@@ -29,17 +28,15 @@ void deliverCachedResponse(
     });
 }
 
-void maybeStore(std::string const& category, std::string const& key, gd::string const& response) {
+void maybeStore(std::string const& category, std::string const& key, gd::string const& response, std::time_t ttl) {
     if (!shouldUseCache() || key.empty()) return;
     auto body = static_cast<std::string>(response);
     if (body.empty() || body == "-1") return;
-    paimon::gd::GDRobTopCache::get().store(category, key, body, paimon::gd::kCacheTTLWeek);
+    paimon::gd::GDRobTopCache::get().store(category, key, body, ttl);
 }
 
 // Serves a cached response for `key` if present. Returns true when the cached
-// response was queued (caller must then skip the original network call).
-// Callers guard `shouldUseCache()` first to preserve the original short-circuit
-// ordering (no key derivation when caching is disabled).
+// response was queued.
 bool tryServeCached(
     GameLevelManager* self,
     char const* key,
@@ -67,8 +64,15 @@ bool tryServeCached(
 // forth within a session stays fast without our disk cache; the disk layer only
 // added cross-session persistence, which is exactly what caused the staleness.
 //
-// Caching IS still applied to user searches and user info (profiles), where the
-// data is effectively static and rate-limit reduction is the real win.
+// User *search* keeps a hard cache (list results change slowly; rate-limit win).
+//
+// User *info* (profiles) is deliberately NOT cached here anymore: the
+// getGJUserInfo response carries relationship state (friendstate, incoming
+// request, blocked) that changes server-side. Serving a disk-cached copy made
+// ProfilePage show stale "not friends" states even after a request was
+// accepted, and the SWR replay interfered with GD's active-download
+// bookkeeping. GD already keeps profiles in memory for the session, so we let
+// the native cache handle it.
 class $modify(PaimonRobTopCacheGameLevelManager, GameLevelManager) {
     $override
     void getUsers(GJSearchObject* object) {
@@ -81,24 +85,8 @@ class $modify(PaimonRobTopCacheGameLevelManager, GameLevelManager) {
     }
 
     $override
-    void getGJUserInfo(int id) {
-        if (shouldUseCache() && id > 0 &&
-            tryServeCached(this, GameLevelManager::getUserInfoKey(id), "userinfo",
-                           &GameLevelManager::onGetGJUserInfoCompleted)) {
-            return;
-        }
-        GameLevelManager::getGJUserInfo(id);
-    }
-
-    $override
     void onGetUsersCompleted(gd::string response, gd::string tag) {
-        maybeStore("users", static_cast<std::string>(tag), response);
+        maybeStore("users", static_cast<std::string>(tag), response, paimon::gd::kCacheTTLWeek);
         GameLevelManager::onGetUsersCompleted(response, tag);
-    }
-
-    $override
-    void onGetGJUserInfoCompleted(gd::string response, gd::string tag) {
-        maybeStore("userinfo", static_cast<std::string>(tag), response);
-        GameLevelManager::onGetGJUserInfoCompleted(response, tag);
     }
 };

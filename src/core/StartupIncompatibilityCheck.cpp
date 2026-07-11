@@ -1,4 +1,5 @@
-﻿#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include "../utils/Localization.hpp"
 
 using namespace geode::prelude;
@@ -35,21 +36,19 @@ namespace {
 
     void disableModAndRestart(Mod* mod) {
         if (!mod) {
-            FLAlertLayer::create(
-                tr("startup.incompat.disable_error_title").c_str(),
-                tr("startup.incompat.disable_error_missing").c_str(),
-                "OK"
-            )->show();
+            PopupManager::get().alert(
+                tr("startup.incompat.disable_error_title"),
+                tr("startup.incompat.disable_error_missing")
+            ).showQueue();
             return;
         }
 
         auto result = mod->disable();
         if (!result) {
-            FLAlertLayer::create(
-                tr("startup.incompat.disable_error_title").c_str(),
-                result.unwrapErr().c_str(),
-                "OK"
-            )->show();
+            PopupManager::get().alert(
+                tr("startup.incompat.disable_error_title"),
+                result.unwrapErr()
+            ).showQueue();
             return;
         }
 
@@ -75,21 +74,22 @@ void PaimonCheckStartupIncompatibilities() {
 
         s_startupIncompatibilityPopupShown = true;
 
-        createQuickPopup(
-            tr("startup.incompat.title").c_str(),
+        auto popup = PopupManager::get().quickPopup(
+            tr("startup.incompat.title"),
             buildConflictMessage(mod, incompatible),
-            tr("startup.incompat.keep_enabled").c_str(),
-            tr("startup.incompat.disable_restart").c_str(),
-            360.f,
+            tr("startup.incompat.keep_enabled"),
+            tr("startup.incompat.disable_restart"),
             [mod](FLAlertLayer*, bool btn2) {
                 if (!btn2) {
                     return;
                 }
                 disableModAndRestart(mod);
             },
-            true,
-            false
+            360.f
         );
+        popup.setPriority(true);
+        popup.blockClosingFor(0.8f);
+        popup.showQueue();
         return;
     }
 }

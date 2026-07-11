@@ -1,4 +1,4 @@
-﻿#include "FfmpegBootstrap.hpp"
+#include "FfmpegBootstrap.hpp"
 
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/WebHelper.hpp"

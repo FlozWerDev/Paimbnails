@@ -1,4 +1,4 @@
-﻿// TransitionHook: intercepts GD scene transitions.
+// TransitionHook: intercepts GD scene transitions.
 //
 // Hooks CCDirector::replaceScene, pushScene and popSceneWithTransition
 // to replace native transitions with the one the user configured.

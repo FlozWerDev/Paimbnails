@@ -1,4 +1,4 @@
-﻿#include "NowPlayingCard.hpp"
+#include "NowPlayingCard.hpp"
 #include "../services/MenuLoopManager.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/GameManager.hpp>

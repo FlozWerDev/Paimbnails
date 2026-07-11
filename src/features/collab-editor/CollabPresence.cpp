@@ -45,13 +45,16 @@ void CollabPresence::start() {
 void CollabPresence::stop() {
     if (!m_started) return;
     int account = m_accountId;
+    std::string token = m_token;
     m_started = false;
+    m_token.clear();
     ++m_gen; // invalidate in-flight polls
 
     if (account > 0) {
         auto body = matjson::makeObject({{"accountID", static_cast<int64_t>(account)}});
         auto req = web::WebRequest();
         req.header("Content-Type", "application/json");
+        req.header("Authorization", "Bearer " + token);
         req.bodyString(body.dump(matjson::NO_INDENTATION));
         WebHelper::dispatch(std::move(req), "POST", baseUrl() + "/api/presence/leave",
             [](web::WebResponse) {});
@@ -71,12 +74,17 @@ void CollabPresence::registerSelf() {
     auto req = web::WebRequest();
     req.timeout(std::chrono::seconds(15));
     req.header("Content-Type", "application/json");
+    if (!m_token.empty()) req.header("Authorization", "Bearer " + m_token);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
 
     WebHelper::dispatch(std::move(req), "POST", baseUrl() + "/api/presence/register",
         [this, gen](web::WebResponse res) {
             if (!m_started || gen != m_gen) return;
             if (res.ok()) {
+                if (auto parsed = matjson::parse(res.string().unwrapOr(""))) {
+                    std::string token = parsed.unwrap()["presenceToken"].asString().unwrapOr("");
+                    if (!token.empty()) m_token = std::move(token);
+                }
                 poll();
             } else {
                 scheduleRetry(gen, 5000);
@@ -90,6 +98,7 @@ void CollabPresence::poll() {
 
     auto req = web::WebRequest();
     req.timeout(std::chrono::seconds(35));
+    req.header("Authorization", "Bearer " + m_token);
     std::string url = baseUrl() + fmt::format("/api/presence/poll?account={}", m_accountId);
 
     WebHelper::dispatch(std::move(req), "GET", url,

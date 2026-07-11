@@ -1,4 +1,4 @@
-﻿#include "CoverBlurBackground.hpp"
+#include "CoverBlurBackground.hpp"
 #include "../../../../blur/BlurSystem.hpp"
 #include "../../../../utils/SpriteHelper.hpp"
 

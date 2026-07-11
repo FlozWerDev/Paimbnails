@@ -1,4 +1,4 @@
-﻿#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include <Geode/modify/CCEGLView.hpp>
 #include <Geode/loader/SettingV3.hpp>
 #include <Geode/utils/Keyboard.hpp>

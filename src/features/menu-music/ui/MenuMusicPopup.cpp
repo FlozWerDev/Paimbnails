@@ -1,4 +1,4 @@
-﻿#include "MenuMusicPopup.hpp"
+#include "MenuMusicPopup.hpp"
 
 #include "components/VinylDisc.hpp"
 #include "components/CoverBlurBackground.hpp"

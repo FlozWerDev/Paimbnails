@@ -14,7 +14,7 @@ protected:
     void onToggle(cocos2d::CCObject* sender);
     void onTrash(cocos2d::CCObject* sender);
 
-    CCMenuItemToggler* makeToggler(char const* text, int tag, bool on);
+    CCMenuItemToggler* makeToggler(char const* text, int tag, bool on, float scale = 0.55f);
     void reloadBrowser();
 
     std::vector<CCMenuItemToggler*> m_togglers;

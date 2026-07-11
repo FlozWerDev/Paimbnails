@@ -1,5 +1,6 @@
 
 #include <Geode/Geode.hpp>
+#include <Geode/ui/PopupManager.hpp>
 #include <Geode/modify/CustomSongLayer.hpp>
 
 #include "../services/NewgroundsSongSearch.hpp"
@@ -64,17 +65,11 @@ class $modify(PaimonSongSearchLayer, CustomSongLayer) {
                         self->CustomSongLayer::onSearch(nullptr);
                         break;
                     case SearchStatus::NoResults:
-                        FLAlertLayer::create(
-                            "No Results",
-                            "No songs on Newgrounds matched your search.",
-                            "OK")->show();
+                        PopupManager::get().alert("No Results", "No songs on Newgrounds matched your search.").showInstant();
                         break;
                     case SearchStatus::NetworkError:
-                        FLAlertLayer::create(
-                            "Connection Error",
-                            "Couldn't reach Newgrounds. It may be blocking the "
-                            "request, or your connection is down.",
-                            "OK")->show();
+                        PopupManager::get().alert("Connection Error", "Couldn't reach Newgrounds. It may be blocking the "
+                            "request, or your connection is down.").showInstant();
                         break;
                 }
             }

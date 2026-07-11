@@ -1,5 +1,5 @@
 {
-  "geode": "5.7.1",
+  "geode": "5.8.0",
   "gd": {
     "win": "2.2081",
     "android": "2.2081",
@@ -18,7 +18,7 @@
   },
 
   "resources": {
-    "sprites": ["resources/*.png", "Logo.png"],
+    "sprites": ["resources/*.png", "resources/editor/*.png", "Logo.png"],
     "files": ["resources/shaders/*.glsl"]
   },
   "settings": {
@@ -425,6 +425,24 @@
       "description": "Replace the OS cursor with a custom image.",
       "default": false
     },
+    "touch-prio-title": {
+      "name": "Touch Priority",
+      "description": "Route touches by on-screen depth (Z order) instead of GD's touch-priority value.",
+      "type": "title"
+    },
+    "touch-prio-enable": {
+      "type": "bool",
+      "name": "Z-Order Touch",
+      "description": "Decide which node gets a touch by what's visually on top (Z order + order of arrival) instead of the raw touch-priority value. Fixes pressing buttons behind popups and touch layers leaking through. Automatically disabled if the standalone 'Better Touch Prio' mod is installed.",
+      "default": true
+    },
+    "touch-prio-debug-logs": {
+      "type": "bool",
+      "name": "Touch Priority: Debug Logs",
+      "description": "Log which node claims each touch and warn about leaked handlers. For troubleshooting only.",
+      "default": false,
+      "enable-if": "touch-prio-enable"
+    },
     "smooth-text-enabled": {
       "type": "bool",
       "name": "Smooth Text Input",
@@ -820,14 +838,14 @@
     "menu-physics-enable": {
       "type": "bool",
       "name": "Menu Physics",
-      "description": "Makes the buttons on any menu screen drop, bounce, and become draggable. Can also be toggled in-game from the right-click menu (below Invert). Just for fun.",
+      "description": "Buttons drop with realistic rotation, bounce, roll on the floor, squash on impact, and can be dragged/thrown. Click empty space to push them. Toggle also from the right-click menu. Just for fun.",
       "default": false
     },
     "menu-physics-gravity": {
       "type": "float",
       "name": "Physics: Gravity",
       "description": "Strength of gravity for Menu Physics. Negative pulls down, positive pulls up.",
-      "default": -30.0,
+      "default": -32.0,
       "min": -100.0,
       "max": 100.0,
       "control": { "slider": true }
@@ -835,8 +853,8 @@
     "menu-physics-bounciness": {
       "type": "float",
       "name": "Physics: Bounciness",
-      "description": "How much buttons bounce off the walls. 0 = no bounce, 1 = very bouncy.",
-      "default": 0.2,
+      "description": "How much buttons bounce off walls and each other. 0 = no bounce, 1 = super bouncy.",
+      "default": 0.35,
       "min": 0.0,
       "max": 1.0,
       "control": { "slider": true }
@@ -844,8 +862,8 @@
     "menu-physics-friction": {
       "type": "float",
       "name": "Physics: Friction",
-      "description": "Higher values make buttons lose speed faster when they slide along walls.",
-      "default": 0.4,
+      "description": "Surface friction: higher values make buttons roll and stop spinning sooner on the floor.",
+      "default": 0.45,
       "min": 0.0,
       "max": 1.0,
       "control": { "slider": true }
@@ -853,8 +871,8 @@
     "menu-physics-air-drag": {
       "type": "float",
       "name": "Physics: Air Drag",
-      "description": "How much buttons slow down while flying through the air. 0 = no drag, 1 = very floaty.",
-      "default": 0.1,
+      "description": "How much buttons slow down while flying. 0 = no drag, 1 = very floaty.",
+      "default": 0.08,
       "min": 0.0,
       "max": 1.0,
       "control": { "slider": true }
@@ -862,8 +880,8 @@
     "menu-physics-angular-drag": {
       "type": "float",
       "name": "Physics: Spin Drag",
-      "description": "How fast buttons stop spinning. 0 = spin forever, 2 = stop quickly.",
-      "default": 0.6,
+      "description": "How fast buttons stop spinning in the air. 0 = spin forever, 2 = stop quickly.",
+      "default": 0.35,
       "min": 0.0,
       "max": 2.0,
       "control": { "slider": true }
@@ -871,8 +889,8 @@
     "menu-physics-push-power": {
       "type": "float",
       "name": "Physics: Push Power",
-      "description": "Click empty space to push nearby buttons away. 0 = disabled, 2 = very strong.",
-      "default": 1.0,
+      "description": "Click empty space to fling nearby buttons with spin. 0 = disabled, 2 = very strong.",
+      "default": 1.15,
       "min": 0.0,
       "max": 2.0,
       "control": { "slider": true }
@@ -880,7 +898,7 @@
     "menu-physics-mass-by-size": {
       "type": "bool",
       "name": "Physics: Mass By Size",
-      "description": "Bigger buttons are heavier and push smaller ones around more realistically.",
+      "description": "Bigger buttons are heavier, harder to spin, and push smaller ones around more realistically.",
       "default": true
     },
     "menu-physics-remove-ceiling": {
@@ -907,6 +925,703 @@
       "default": "Ctrl+G",
       "category": "editor",
       "allow-in-text-inputs": false
+    },
+    "editor-history-title": {
+      "name": "Editor Undo (Color / Groups / Layers)",
+      "description": "Simple undo for color, group and editor-layer changes only.",
+      "type": "title"
+    },
+    "editor-history-enable": {
+      "type": "bool",
+      "name": "Editor Undo (Color / Groups / Layers)",
+      "description": "Adds a button to the editor toolbar. Pick Color, Groups or Layers and undo the last change of that type. Does not track move/rotate/create/delete.",
+      "default": true
+    },
+    "editor-suite-title": {
+      "name": "Paimon Editor Suite",
+      "description": "Modular editor improvements inspired by Tinker and BetterEdit. Toggle each module independently in Módulos or here. Master switch only gates editor-mod-* features.",
+      "type": "title"
+    },
+    "editor-suite-enable": {
+      "type": "bool",
+      "name": "Editor Suite (Master)",
+      "description": "Master switch for all new editor-mod-* modules. Pre-existing features (rotate, color picker, history, collab, music) keep their own toggles.",
+      "default": true
+    },
+    "editor-mod-scroll-zoom": {
+      "type": "bool",
+      "name": "Smooth Scroll & Zoom",
+      "description": "Better editor pan/zoom. Ctrl+wheel zooms (to cursor), Shift+wheel pans horizontally.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-scroll-zoom-to-cursor": {
+      "type": "bool",
+      "name": "Zoom to Cursor",
+      "description": "Keep the point under the mouse fixed while zooming.",
+      "default": true,
+      "enable-if": "editor-mod-scroll-zoom"
+    },
+    "editor-mod-scroll-multiplier": {
+      "type": "float",
+      "name": "Scroll Multiplier",
+      "default": 12.0,
+      "min": 1.0,
+      "max": 50.0,
+      "enable-if": "editor-mod-scroll-zoom"
+    },
+    "editor-mod-zoom-multiplier": {
+      "type": "float",
+      "name": "Zoom Multiplier",
+      "default": 12.0,
+      "min": 1.0,
+      "max": 50.0,
+      "enable-if": "editor-mod-scroll-zoom"
+    },
+    "editor-mod-zoom-min": {
+      "type": "float",
+      "name": "Minimum Zoom",
+      "default": 0.1,
+      "min": 0.05,
+      "max": 2.0,
+      "enable-if": "editor-mod-scroll-zoom"
+    },
+    "editor-mod-zoom-max": {
+      "type": "float",
+      "name": "Maximum Zoom",
+      "default": 10000000.0,
+      "min": 2.0,
+      "max": 10000000.0,
+      "enable-if": "editor-mod-scroll-zoom"
+    },
+    "editor-mod-scroll-invert-v": {
+      "type": "bool",
+      "name": "Invert Vertical Scroll",
+      "default": false,
+      "enable-if": "editor-mod-scroll-zoom"
+    },
+    "editor-mod-scroll-invert-h": {
+      "type": "bool",
+      "name": "Invert Horizontal Scroll",
+      "default": false,
+      "enable-if": "editor-mod-scroll-zoom"
+    },
+    "editor-mod-scroll-invert-z": {
+      "type": "bool",
+      "name": "Invert Zoom Scroll",
+      "default": false,
+      "enable-if": "editor-mod-scroll-zoom"
+    },
+    "editor-mod-scroll-delegate-vanilla": {
+      "type": "bool",
+      "name": "Delegate Scroll to Vanilla",
+      "description": "Pass scroll to vanilla EditorUI::scrollWheel (better DevTools compat, worse with other scroll mods).",
+      "default": false,
+      "enable-if": "editor-mod-scroll-zoom"
+    },
+    "editor-mod-pinch-to-zoom": {
+      "type": "bool",
+      "name": "Pinch to Zoom",
+      "description": "Two-finger pinch zoom on mobile.",
+      "default": true,
+      "enable-if": "editor-mod-scroll-zoom",
+      "platforms": ["android", "ios"]
+    },
+    "editor-mod-zoom-text": {
+      "type": "bool",
+      "name": "Zoom Level Text",
+      "description": "Flash the current zoom percentage when zooming.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-grid-control": {
+      "type": "bool",
+      "name": "Grid Controls",
+      "description": "Change editor grid size with +/- and a free input.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-grid-show-on-change": {
+      "type": "bool",
+      "name": "Show Grid on Size Change",
+      "default": true,
+      "enable-if": "editor-mod-grid-control"
+    },
+    "editor-mod-hide-ui": {
+      "type": "bool",
+      "name": "Hide UI Toggle",
+      "description": "Button next to undo to hide/show the editor UI.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-length-display": {
+      "type": "bool",
+      "name": "Length Display",
+      "description": "Show estimated level length and object count in the editor HUD.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-object-tooltips": {
+      "type": "bool",
+      "name": "Object Tooltips",
+      "description": "Show object ID tooltips when hovering build-tab buttons.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-tooltips-show-id": {
+      "type": "bool",
+      "name": "Tooltips Show Object ID",
+      "default": true,
+      "enable-if": "editor-mod-object-tooltips"
+    },
+    "editor-mod-tooltips-scale": {
+      "type": "float",
+      "name": "Tooltip Scale",
+      "default": 1.0,
+      "min": 0.5,
+      "max": 2.0,
+      "enable-if": "editor-mod-object-tooltips"
+    },
+    "editor-mod-repeating-buttons": {
+      "type": "bool",
+      "name": "Repeating Buttons",
+      "description": "Hold edit-tab buttons to auto-repeat them.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-repeat-delay-ms": {
+      "type": "int",
+      "name": "Repeat Delay (ms)",
+      "default": 500,
+      "min": 50,
+      "max": 10000,
+      "enable-if": "editor-mod-repeating-buttons"
+    },
+    "editor-mod-repeat-rate-ms": {
+      "type": "int",
+      "name": "Repeat Rate (ms)",
+      "default": 100,
+      "min": 5,
+      "max": 2000,
+      "enable-if": "editor-mod-repeating-buttons"
+    },
+    "editor-mod-camera-tools": {
+      "type": "bool",
+      "name": "Camera Tools",
+      "description": "Buttons and keys N/M: center camera on selection / move selection to camera.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-single-deselect": {
+      "type": "bool",
+      "name": "Single Deselect",
+      "description": "Hold Alt and click a selected object to deselect only that object.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-copy-string": {
+      "type": "bool",
+      "name": "Copy Object String",
+      "description": "Also copy the object string to the system clipboard when copying in the editor.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-paste-warnings": {
+      "type": "bool",
+      "name": "Paste Warnings",
+      "description": "Confirm before paste state / paste color on multi-selection.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-paste-warn-state": {
+      "type": "bool",
+      "name": "Warn on Paste State",
+      "default": true,
+      "enable-if": "editor-mod-paste-warnings"
+    },
+    "editor-mod-paste-warn-color": {
+      "type": "bool",
+      "name": "Warn on Paste Color",
+      "default": true,
+      "enable-if": "editor-mod-paste-warnings"
+    },
+    "editor-mod-paste-warn-min-objects": {
+      "type": "int",
+      "name": "Paste Warn Min Objects",
+      "default": 2,
+      "min": 1,
+      "max": 9999,
+      "enable-if": "editor-mod-paste-warnings"
+    },
+    "editor-mod-fixes-pack": {
+      "type": "bool",
+      "name": "Editor Fixes Pack",
+      "description": "Slider length fix, centered create buttons, link control touch fix, NaN position crash guard.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-ldm-count": {
+      "type": "bool",
+      "name": "LDM Object Count",
+      "description": "Show high-detail object count on the editor pause screen.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-wave-ignore-damage": {
+      "type": "bool",
+      "name": "Wave Ignore Damage Fix",
+      "description": "Fixes wave treating all slopes as if they have D blocks when ignore damage is enabled.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-negate-input": {
+      "type": "bool",
+      "name": "Negate Input",
+      "description": "Press N while a number field is focused to negate it.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-scale-rotate": {
+      "type": "bool",
+      "name": "Improved Scale/Rotate",
+      "description": "Numeric scale/rotation inputs and Shift-to-snap while dragging controls.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-scale-snap": {
+      "type": "float",
+      "name": "Scale Snap Step",
+      "default": 0.25,
+      "min": 0.05,
+      "max": 1.0,
+      "enable-if": "editor-mod-scale-rotate"
+    },
+    "editor-mod-rotate-snap": {
+      "type": "float",
+      "name": "Rotation Snap Degrees",
+      "default": 15.0,
+      "min": 1.0,
+      "max": 90.0,
+      "enable-if": "editor-mod-scale-rotate"
+    },
+    "editor-mod-type-in-layer": {
+      "type": "bool",
+      "name": "Type-in Layer",
+      "description": "Type the editor layer number, jump to next free layer, improved lock control.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-next-free-offset": {
+      "type": "bool",
+      "name": "Next Free Offset",
+      "description": "Next Free group ID starts searching from a saved offset instead of 1.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-start-pos": {
+      "type": "bool",
+      "name": "Start Pos Tools",
+      "description": "Prev/next start position switcher (Q/E) and playtest without start pos.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-auto-build-helper": {
+      "type": "bool",
+      "name": "Auto Build Helper",
+      "description": "When enabled, automatically run Build Helper after paste.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-object-summary": {
+      "type": "bool",
+      "name": "Object Summary",
+      "description": "Button on editor pause listing counts of each object ID.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-multi-text": {
+      "type": "bool",
+      "name": "Multi Text Edit",
+      "description": "When changing one text object, apply the same string to all selected text objects.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-ui-scale": {
+      "type": "bool",
+      "name": "Editor UI Scale",
+      "description": "Scale the editor HUD. Re-enter the editor after changing the scale.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-ui-scale-factor": {
+      "type": "float",
+      "name": "UI Scale Factor",
+      "default": 0.9,
+      "min": 0.5,
+      "max": 1.0,
+      "enable-if": "editor-mod-ui-scale"
+    },
+    "editor-mod-button-rows": {
+      "type": "bool",
+      "name": "Button Rows Bypass",
+      "description": "Raise the limits for button rows and buttons per row in editor options.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-move-keybinds": {
+      "type": "bool",
+      "name": "Move Fractions Keybinds",
+      "description": "Ctrl+Alt+WASD = half block, Alt+WASD = quarter block moves.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-extra-keybinds": {
+      "type": "bool",
+      "name": "Extra Editor Keybinds",
+      "description": "Ctrl+E edit object, Ctrl+G groups, R restart playtest, Ctrl+Shift+R rotate 45, etc.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-group-view": {
+      "type": "bool",
+      "name": "Improved Group View",
+      "description": "Show a scrollable full group list when many groups are used.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-object-search": {
+      "type": "bool",
+      "name": "Object Search",
+      "description": "Search objects by ID or name (Ctrl+Space) and select them in the build tab.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-view-panel": {
+      "type": "bool",
+      "name": "View Toggles Panel",
+      "description": "Floating panel with quick toggles for grid, ground, hitboxes, hide LDM, effect lines.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-trigger-lines": {
+      "type": "bool",
+      "name": "Trigger Indicators",
+      "description": "Draw lines from selected triggers to objects in their target group.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-trigger-lines-all": {
+      "type": "bool",
+      "name": "Show All Trigger Lines",
+      "description": "Also draw lines for unselected triggers (heavier).",
+      "default": false,
+      "enable-if": "editor-mod-trigger-lines"
+    },
+    "editor-mod-playtest-confirm": {
+      "type": "bool",
+      "name": "Playtest Confirmation",
+      "description": "Show a confirmation popup before playtesting.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-hide-level-ids": {
+      "type": "bool",
+      "name": "Hide Level IDs",
+      "description": "Hide IDs on the Edit Level screen unless Shift is held.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-duration-info": {
+      "type": "bool",
+      "name": "Duration HUD",
+      "description": "Show the duration of the selected trigger near the object info.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-live-colors": {
+      "type": "bool",
+      "name": "Live Color Strip",
+      "description": "Show a strip of the level's main color channels at the bottom of the editor.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-native-tabs": {
+      "type": "bool",
+      "name": "Native Editor Tabs",
+      "description": "Show View / Search / Favs as Paimon side tabs (hides the duplicate floating View button).",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-object-favorites": {
+      "type": "bool",
+      "name": "Object Favorites",
+      "description": "Right-click an object in the build bar to favorite it. Open favorites with the Favs button (next to Search).",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-edit-mixed": {
+      "type": "bool",
+      "name": "Edit Mixed Values",
+      "description": "Show min-max ranges for mixed layer/Z values and apply typed values to all selected objects.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-trigger-lines-arrows": {
+      "type": "bool",
+      "name": "Trigger Line Arrows",
+      "description": "Draw arrow heads on trigger indicator lines.",
+      "default": true,
+      "enable-if": "editor-mod-trigger-lines"
+    },
+    "editor-mod-trigger-lines-cluster": {
+      "type": "bool",
+      "name": "Cluster Trigger Targets",
+      "description": "Merge nearby target objects into one line endpoint.",
+      "default": true,
+      "enable-if": "editor-mod-trigger-lines"
+    },
+    "editor-mod-scrollable-objects": {
+      "type": "bool",
+      "name": "Scrollable Object Bar",
+      "description": "Scroll the mouse wheel over the build bar to change object pages.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-preview-object-colors": {
+      "type": "bool",
+      "name": "Preview Object Colors",
+      "description": "Tint create-tab object icons using the level object color channel.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-reference-image": {
+      "type": "bool",
+      "name": "Reference Image",
+      "description": "Import a translucent reference image into the editor (button on undo menu).",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-group-summary": {
+      "type": "bool",
+      "name": "Group Summary",
+      "description": "List used group IDs from the pause menu or Ctrl+Shift+U.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-quick-save": {
+      "type": "bool",
+      "name": "Quick Save Backup",
+      "description": "Button on the undo menu that writes a level-string backup under the mod save folder.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-auto-save": {
+      "type": "bool",
+      "name": "Auto Save Backup",
+      "description": "Periodically write level-string backups while in the editor.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-auto-save-minutes": {
+      "type": "int",
+      "name": "Auto Save Interval (min)",
+      "description": "Minutes between auto-save backups.",
+      "default": 5,
+      "min": 1,
+      "max": 60,
+      "enable-if": "editor-mod-auto-save"
+    },
+    "editor-mod-backups": {
+      "type": "bool",
+      "name": "Backups Browser",
+      "description": "Open a list of backups from the editor pause menu.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-better-color-menu": {
+      "type": "bool",
+      "name": "Better Color Menu",
+      "description": "Show a strip of color channels on Color Select for quick picking.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-better-font-select": {
+      "type": "bool",
+      "name": "Better Font Select",
+      "description": "Scrollable font grid in the font select popup.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-move-menu": {
+      "type": "bool",
+      "name": "Fractional Move Pad",
+      "description": "Half and quarter step move buttons on the right side of the editor. Off by default to keep the HUD clean (use Alt/Ctrl+Alt+WASD keybinds instead).",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-quick-extras": {
+      "type": "bool",
+      "name": "Quick Extras",
+      "description": "Undo-menu button that opens Edit Special for the selection.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-relocate-build-tools": {
+      "type": "bool",
+      "name": "Relocate Build Tools",
+      "description": "Build Helper, Align X/Y and Create Loop buttons on the editor HUD.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-grid-colors": {
+      "type": "bool",
+      "name": "Custom Grid Color",
+      "description": "Draw the editor grid in a color of your choice (solid or gradient), over the vanilla grid. Aligned to the current grid size.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-grid-color-a": {
+      "type": "string",
+      "name": "Grid Color",
+      "description": "Grid color as 'r,g,b' (0-255). This is the solid color, or the first color of the gradient.",
+      "default": "0,200,255",
+      "filter": "0123456789, ",
+      "enable-if": "editor-mod-grid-colors"
+    },
+    "editor-mod-grid-gradient": {
+      "type": "bool",
+      "name": "Grid Gradient",
+      "description": "Blend the grid between two colors across the visible area.",
+      "default": false,
+      "enable-if": "editor-mod-grid-colors"
+    },
+    "editor-mod-grid-color-b": {
+      "type": "string",
+      "name": "Grid Color (Gradient End)",
+      "description": "Second gradient color as 'r,g,b' (0-255).",
+      "default": "255,60,200",
+      "filter": "0123456789, ",
+      "enable-if": "editor-mod-grid-gradient"
+    },
+    "editor-mod-grid-alpha": {
+      "type": "int",
+      "name": "Grid Opacity",
+      "description": "Opacity of the custom grid lines (0 = invisible, 255 = solid).",
+      "default": 90,
+      "min": 0,
+      "max": 255,
+      "control": { "slider": true },
+      "enable-if": "editor-mod-grid-colors"
+    },
+    "editor-mod-grid-line-width": {
+      "type": "float",
+      "name": "Grid Line Width",
+      "description": "Thickness of the custom grid lines.",
+      "default": 1.0,
+      "min": 0.5,
+      "max": 4.0,
+      "control": { "slider": true },
+      "enable-if": "editor-mod-grid-colors"
+    },
+    "editor-mod-toolbar-colors": {
+      "type": "bool",
+      "name": "Toolbar Color Tint",
+      "description": "Tint bottom toolbar panels using saved paim-toolbar-color (r,g,b).",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-joystick-nav": {
+      "type": "bool",
+      "name": "Alt+WASD Camera Pan",
+      "description": "Hold Alt and WASD/arrows to pan the editor canvas.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-joystick-speed": {
+      "type": "float",
+      "name": "Camera Pan Speed",
+      "description": "Pan speed for Alt+WASD navigation.",
+      "default": 12.0,
+      "min": 2.0,
+      "max": 40.0,
+      "enable-if": "editor-mod-joystick-nav"
+    },
+    "editor-mod-old-color-triggers": {
+      "type": "bool",
+      "name": "Old Color Trigger Look",
+      "description": "Prefer classic tint-button frames for common color triggers (Tinker-style).",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-select-direction": {
+      "type": "bool",
+      "name": "Select All Left/Right",
+      "description": "Ctrl+Shift+Left/Right selects all objects in that direction (vanilla API).",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-editor-percentage": {
+      "type": "bool",
+      "name": "Editor Percentage",
+      "description": "Show approximate camera X as a percentage of level length at the top of the editor.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-next-free-color": {
+      "type": "bool",
+      "name": "Next Free Color Offset",
+      "description": "Show an offset field and improve next-free color channel picking in Color Select.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-rotate-lock-pos": {
+      "type": "bool",
+      "name": "Lock Position While Rotating",
+      "description": "Keep the selection center fixed while dragging the rotation control (BetterEdit-style).",
+      "default": false,
+      "enable-if": "editor-mod-scale-rotate"
+    },
+    "editor-mod-back-to-content": {
+      "type": "bool",
+      "name": "Back To Content",
+      "description": "Undo-menu button that centers the camera on the selection (or level content).",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-paste-object-string": {
+      "type": "bool",
+      "name": "Paste Object String",
+      "description": "Ctrl+Shift+P pastes objects from the system clipboard (object string).",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-duration-drag": {
+      "type": "bool",
+      "name": "Duration Drag",
+      "description": "Hold Shift and drag horizontally on a selected duration trigger to change its duration.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-dash-portal-lines": {
+      "type": "bool",
+      "name": "Dash & Portal Guides",
+      "description": "Draw guide lines for selected dash orbs and portals in the editor.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-hide-trigger-ui": {
+      "type": "bool",
+      "name": "Hide Trigger UI on Slider",
+      "description": "Dim the trigger popup while dragging sliders so you can see the level.",
+      "default": false,
+      "enable-if": "editor-suite-enable"
+    },
+    "editor-mod-hsv-preview": {
+      "type": "bool",
+      "name": "HSV Preview Swatch",
+      "description": "Show a color swatch on the HSV configure widget.",
+      "default": true,
+      "enable-if": "editor-suite-enable"
     },
     "collab-title": {
       "name": "Collab Editor",
@@ -952,6 +1667,66 @@
       "default": 0.05,
       "min": 0.01,
       "max": 0.5
+    },
+    "input-scroll-title": {
+      "name": "Input Scroll",
+      "description": "Scroll the mouse wheel over a numeric text input to change its value one at a time. Hold a modifier for fine 0.10 steps on decimal inputs.",
+      "type": "title"
+    },
+    "input-scroll-enable": {
+      "type": "bool",
+      "name": "Enable Input Scroll",
+      "description": "Hover a numeric text input and scroll the wheel to add or subtract 1 to its value.",
+      "default": true
+    },
+    "input-scroll-step": {
+      "type": "int",
+      "name": "Integer Step",
+      "description": "Amount added or subtracted per wheel tick on integer inputs.",
+      "default": 1,
+      "min": 1,
+      "max": 1000,
+      "enable-if": "input-scroll-enable"
+    },
+    "input-scroll-decimal-modifier": {
+      "type": "string",
+      "name": "Decimal Step Modifier",
+      "description": "Hold this key while scrolling on a decimal input to step by the decimal amount. Fn is not detectable on Windows, so pick Shift/Ctrl/Alt instead.",
+      "default": "shift",
+      "one-of": ["shift", "ctrl", "alt"],
+      "enable-if": "input-scroll-enable"
+    },
+    "input-scroll-decimal-step": {
+      "type": "float",
+      "name": "Decimal Step",
+      "description": "Amount added or subtracted per wheel tick on decimal (float) inputs when the modifier is held.",
+      "default": 0.10,
+      "min": 0.001,
+      "max": 10.0,
+      "enable-if": "input-scroll-enable"
+    },
+    "input-scroll-decimal-places": {
+      "type": "int",
+      "name": "Decimal Places",
+      "description": "Number of digits shown after the dot when the decimal step is applied.",
+      "default": 2,
+      "min": 1,
+      "max": 6,
+      "enable-if": "input-scroll-enable"
+    },
+    "input-scroll-focus-only": {
+      "type": "bool",
+      "name": "Only When Focused",
+      "description": "Only change the value when the input is focused (cursor active). If off, hovering the input is enough.",
+      "default": false,
+      "enable-if": "input-scroll-enable"
+    },
+    "input-scroll-wrap": {
+      "type": "bool",
+      "name": "Wrap Around Limits",
+      "description": "When the value would overflow the input's max length, wrap around instead of clamping.",
+      "default": false,
+      "enable-if": "input-scroll-enable"
     },
     "debug-title": {
       "name": "Debug",

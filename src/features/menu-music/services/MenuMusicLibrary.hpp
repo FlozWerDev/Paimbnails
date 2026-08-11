@@ -1,16 +1,7 @@
 ﻿#pragma once
 
-// MenuMusicLibrary — almacen persistente de tracks y playlists.
-//
-// Responsabilidades:
-//   * CRUD de tracks y playlists.
-//   * Persistencia en [saveDir]/menu-music/library.json.
-//   * Generacion de ids unicos.
-//   * No sabe nada de FMOD ni de UI (lo usa MenuMusicPlayer arriba).
-//
-// Convencion: todos los paths son absolutos y normalizados con
-// `geode::utils::string::pathToString` antes de guardarse, para que
-// sobrevivan al round-trip Windows <-> UTF-8.
+// Persistent track/playlist store at [saveDir]/menu-music/library.json. Paths
+// are absolute UTF-8 strings; the library is independent of FMOD and UI.
 
 #include "../model/MenuMusicTypes.hpp"
 #include <Geode/Geode.hpp>
@@ -27,30 +18,34 @@ class MenuMusicLibrary {
 public:
     static MenuMusicLibrary& get();
 
-    // Directorios
     std::filesystem::path getRootDir() const;
     std::filesystem::path getTracksDir() const;
     std::filesystem::path getCoversDir() const;
     std::filesystem::path getLibraryFile() const;
 
-    // Ciclo de vida
-    void load();                     // idempotente
+void load();                     // Idempotent.
     void save();
     bool isLoaded() const { return m_loaded; }
 
-    // Tracks
     std::vector<MusicTrack>& tracks() { return m_tracks; }
     const std::vector<MusicTrack>& tracks() const { return m_tracks; }
     MusicTrack* findTrack(const std::string& id);
     const MusicTrack* findTrack(const std::string& id) const;
+    MusicTrack* findTrackByAudioPath(const std::string& path);
+    const MusicTrack* findTrackByAudioPath(const std::string& path) const;
     void addTrack(const MusicTrack& track);
     void updateTrack(const MusicTrack& track);
-    // removeTrack: if deleteFiles=true, also deletes audio+cover from disk
-    // (only for Downloaded tracks; Local tracks are left untouched).
+    bool deleteLocalAudio(const std::string& id);
+// removeTrack optionally deletes downloaded audio/cover files; local tracks stay.
     void removeTrack(const std::string& id, bool deleteFiles);
+    void setFavorite(const std::string& id, bool favorite);
+    void setBlacklisted(const std::string& id, bool blacklisted);
     bool hasTracks() const { return !m_tracks.empty(); }
 
-    // Playlists
+    std::size_t importFolder(const std::filesystem::path& folder, bool recursive = true);
+// force=false skips the scan while GD's downloaded-song count is unchanged.
+    std::size_t syncDownloadedSongs(bool force = true);
+
     std::vector<MusicPlaylist>& playlists() { return m_playlists; }
     const std::vector<MusicPlaylist>& playlists() const { return m_playlists; }
     MusicPlaylist* findPlaylist(const std::string& id);
@@ -60,20 +55,20 @@ public:
     void addTrackToPlaylist(const std::string& playlistId, const std::string& trackId);
     void removeTrackFromPlaylist(const std::string& playlistId, const std::string& trackId);
 
-    // Modo activo
     PlaybackMode mode() const { return m_mode; }
     void setMode(PlaybackMode mode);
 
     std::string activePlaylistId() const { return m_activePlaylistId; }
     void setActivePlaylistId(const std::string& id);
 
-    // Util
+    const std::string& lastTrackId() const { return m_lastTrackId; }
+    void setLastTrackId(const std::string& id);
+
     std::string generateId(const std::string& prefix = "trk");
     static bool isAudioExtension(const std::filesystem::path& p);
     static bool isImageExtension(const std::filesystem::path& p);
 
-    // Notify: se dispara tras cualquier cambio persistido para que la UI
-    // abierta (popup / library) se refresque. Reentrante.
+// Notify listeners after persisted changes; safe to re-enter.
     using Listener = std::function<void()>;
     std::size_t addListener(Listener cb);
     void removeListener(std::size_t token);
@@ -94,7 +89,10 @@ private:
     std::vector<MusicPlaylist> m_playlists;
     PlaybackMode m_mode = PlaybackMode::Disabled;
     std::string m_activePlaylistId;
+    std::string m_lastTrackId;
     std::uint64_t m_idCounter = 0;
+    // GD downloaded-song count at the last sync; SIZE_MAX means never synced.
+    std::size_t m_syncedSongCount = static_cast<std::size_t>(-1);
     bool m_loaded = false;
     bool m_savePending = false;
 
@@ -102,4 +100,4 @@ private:
     std::size_t m_nextListenerToken = 1;
 };
 
-} // namespace paimon::menumusic
+}

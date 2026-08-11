@@ -10,6 +10,7 @@
 #include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
 #include "CustomSongWidgetLifecycle.hpp"
+#include "../core/RuntimeLifecycle.hpp"
 #include <string_view>
 
 #ifndef M_PI
@@ -19,10 +20,16 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
+namespace {
+// Keep the vanilla 9-slice as the frame; the blur fills only its inner area.
+constexpr float kPlateBorderInset = 2.5f;
+constexpr float kPlateInnerRadius = 5.f;
+}
+
 class $modify(PaimonCustomSongWidget, CustomSongWidget) {
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "CustomSongWidget::init");
-        // After compact-pause-menu (if present) or node-ids; never Priority::Last.
+        // Run after compact-pause-menu/node-ids without claiming Last.
         paimon::hooks::afterModOrElseNodeIdsLate(
             self, "CustomSongWidget::updateSongInfo", "prevter.compact-pause-menu"
         );
@@ -31,19 +38,27 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
     struct Fields {
         Ref<CCClippingNode> m_clipper  = nullptr;
         int                 m_levelID  = 0;
-        bool                m_bgSwapped = false;
+        bool                m_clipperBuilt = false;
         bool                m_retryScheduled = false;
         paimon::SubscriptionHandle m_bgEventHandle = 0;
-        CCSize              m_originalBgSize = {0, 0};  // saved to resist compact-pause-menu
-        CCPoint             m_originalBgPos  = {0, 0};
+        CCSize              m_clipSize = {0, 0};
+        CCPoint             m_clipPos  = {0, 0};
         uint32_t            m_callbackGeneration = 0;
         CustomSongWidget*   m_owner = nullptr;
 
         ~Fields() {
             if (!m_owner) return;
-            if (auto* w = static_cast<PaimonCustomSongWidget*>(m_owner)) {
-                w->invalidateAsyncWork();
-                w->cleanupSubscriptions();
+            // Fields teardown runs after the node's user object is released; do not
+            // access m_fields or call back into the widget here.
+            if (paimon::isRuntimeShuttingDown()) {
+                m_owner = nullptr;
+                return;
+            }
+            ++m_callbackGeneration;
+            m_levelID = 0;
+            if (m_bgEventHandle != 0) {
+                paimon::EventBus::get().unsubscribe(m_bgEventHandle);
+                m_bgEventHandle = 0;
             }
             paimon::csw::Lifecycle::unregisterWidget(m_owner);
             m_owner = nullptr;
@@ -54,8 +69,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         return static_cast<CustomSongWidget*>(static_cast<PaimonCustomSongWidget*>(this));
     }
 
-    // Full passthrough for the editor song list, music browser, and any widget
-    // under LevelEditorLayer/EditorUI.
     bool isUnderEditorHierarchy() {
         for (auto* node = this->getParent(); node; node = node->getParent()) {
             if (typeinfo_cast<LevelEditorLayer*>(node)) return true;
@@ -146,7 +159,8 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
     }
 
     CCClippingNode* buildClipper(CCSize const& sz) {
-        auto stencil = paimon::SpriteHelper::createRoundedRectStencil(sz.width, sz.height);
+        auto stencil = paimon::SpriteHelper::createRoundedRectStencil(
+            sz.width, sz.height, kPlateInnerRadius);
 
         auto clip = CCClippingNode::create();
         clip->setStencil(stencil);
@@ -155,8 +169,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         return clip;
     }
 
-    // m_bgSpr is destroyed/recreated during init/update; verify the node is
-    // still a valid child before use to avoid dangling pointers.
+    // m_bgSpr is recreated during init/update, so verify it is still mounted.
     bool isValidChild(CCNode* child) {
         if (!child) return false;
         auto* children = this->getChildren();
@@ -170,20 +183,20 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
     bool swapBg() {
         if (m_fields->m_clipper && m_fields->m_clipper->getParent() == this) {
-            m_fields->m_bgSwapped = true;
+            m_fields->m_clipperBuilt = true;
             return true;
         }
-        if (m_fields->m_bgSwapped && !m_fields->m_clipper) {
-            m_fields->m_bgSwapped = false;
+        if (m_fields->m_clipperBuilt && !m_fields->m_clipper) {
+            m_fields->m_clipperBuilt = false;
         }
-        if (m_fields->m_bgSwapped) return true;
+        if (m_fields->m_clipperBuilt) return true;
         CCNode* bgNode = (m_bgSpr && isValidChild(m_bgSpr)) ? m_bgSpr : nullptr;
         if (!bgNode) bgNode = this->getChildByID("bg");
         if (!bgNode) {
             log::debug("[PaimonCSW] swapBg: no bg node found");
             return false;
         }
-        m_fields->m_bgSwapped = true;
+        m_fields->m_clipperBuilt = true;
 
         CCSize  bgSz     = bgNode->getScaledContentSize();
         CCPoint bgPos    = bgNode->getPosition();
@@ -198,25 +211,28 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
         if (bgSz.width < 5.f || bgSz.height < 5.f) {
             log::debug("[PaimonCSW] swapBg: bg size too small, waiting");
-            m_fields->m_bgSwapped = false;
+            m_fields->m_clipperBuilt = false;
             return false;
         }
 
-        bgNode->setVisible(false);
+        // Keep the vanilla plate as the frame while blur loads.
+        CCPoint bgOrigin = {
+            bgPos.x - bgAnchor.x * bgSz.width,
+            bgPos.y - bgAnchor.y * bgSz.height
+        };
 
-        // Save original dimensions so compact-pause-menu can't shrink them
-        m_fields->m_originalBgSize = bgSz;
-        m_fields->m_originalBgPos  = bgPos;
+        m_fields->m_clipSize = CCSize(
+            std::max(8.f, bgSz.width  - kPlateBorderInset * 2.f),
+            std::max(8.f, bgSz.height - kPlateBorderInset * 2.f)
+        );
+        m_fields->m_clipPos = CCPoint(
+            bgOrigin.x + kPlateBorderInset,
+            bgOrigin.y + kPlateBorderInset
+        );
 
-        auto clip = buildClipper(bgSz);
-        clip->setAnchorPoint(bgAnchor);
-        clip->setPosition(bgPos);
-
-        auto fallback = paimon::SpriteHelper::createDarkPanel(bgSz.width, bgSz.height, 160, 6.f);
-        fallback->setAnchorPoint({0.f, 0.f});
-        fallback->setPosition({0.f, 0.f});
-        fallback->setID("paimon-song-dark-fallback"_spr);
-        clip->addChild(fallback, 0);
+        auto clip = buildClipper(m_fields->m_clipSize);
+        clip->setAnchorPoint({0.f, 0.f});
+        clip->setPosition(m_fields->m_clipPos);
 
         this->addChild(clip, bgZ);
         m_fields->m_clipper = clip;
@@ -231,7 +247,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         }
         if (m_fields->m_clipper && m_fields->m_clipper->getParent() != this) {
             m_fields->m_clipper = nullptr;
-            m_fields->m_bgSwapped = false;
+            m_fields->m_clipperBuilt = false;
         }
         return swapBg();
     }
@@ -255,13 +271,11 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             ));
         }
 
-        // z=1 above the dark fallback (z=0). Previously blur was at z=-1 and
-        // stayed hidden behind the opaque fallback panel.
         blurred->setOpacity(0);
         m_fields->m_clipper->addChild(blurred, 1);
         blurred->runAction(CCFadeTo::create(0.3f, 255));
 
-        // Soft darken above the blur so song title/artist stay readable.
+        // Keep the song text readable over the blur.
         if (!m_fields->m_clipper->getChildByID("paimon-song-dark-overlay"_spr)) {
             auto* dark = CCLayerColor::create(ccc4(0, 0, 0, 110));
             if (dark) {
@@ -272,18 +286,9 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
                 m_fields->m_clipper->addChild(dark, 2);
             }
         }
-
-        // Fallback only needed until the first blur is ready.
-        if (auto* fallback = m_fields->m_clipper->getChildByID("paimon-song-dark-fallback"_spr)) {
-            fallback->runAction(CCSequence::create(
-                CCFadeOut::create(0.3f),
-                CCRemoveSelf::create(),
-                nullptr
-            ));
-        }
     }
 
-    // Async blur: avoid blocking the main thread with a full Kawase pass in one frame.
+    // Run blur asynchronously so opening the widget does not stall a frame.
     void applyBlurredThumbnail(CCTexture2D* texture) {
         if (!texture) {
             log::warn("[PaimonCSW] applyBlur: texture is null");
@@ -296,10 +301,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         }
 
         CCSize sz = m_fields->m_clipper->getContentSize();
-        int const levelID = m_fields->m_levelID;
-        auto cacheKey = levelID > 0
-            ? fmt::format("levelinfo-song-{}", levelID)
-            : std::string{};
 
         auto* widget = asBase();
         uint32_t const generation = m_fields->m_callbackGeneration;
@@ -308,7 +309,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             texture,
             sz,
             6.0f,
-            cacheKey,
+            std::string{},
             [widget, generation, sz](CCSprite* blurred) {
                 if (!paimon::csw::Lifecycle::isAlive(widget)) return;
                 auto* w = static_cast<PaimonCustomSongWidget*>(widget);
@@ -356,13 +357,12 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         bool const alreadyBound = (levelID == m_fields->m_levelID);
         bool const hasBlur = m_fields->m_clipper
             && m_fields->m_clipper->getChildByID("paimon-song-blur"_spr) != nullptr;
-        if (alreadyBound && hasBlur) return; // already in-flight or done
+        if (alreadyBound && hasBlur) return;
         m_fields->m_levelID = levelID;
 
         log::info("[PaimonCSW] tryApplyBlur: requesting thumbnail for levelID={}", levelID);
 
-        // Prefer the texture LevelInfoLayer is currently displaying so the song
-        // cell always matches the active gallery/thumbnail background.
+        // Match the texture currently shown by LevelInfoLayer.
         if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID) {
             if (auto* lastTex = paimon::ThumbnailBackgroundChangedEvent::getLastTexture()) {
                 log::info("[PaimonCSW] using LevelInfoLayer last texture for {}", levelID);
@@ -371,7 +371,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             }
         }
 
-        // Try RAM cache before any async load.
         auto ramTex = paimon::cache::ThumbnailCache::get().getFromRam(levelID, false);
         if (ramTex.has_value() && ramTex.value()) {
             log::info("[PaimonCSW] RAM cache HIT for {}", levelID);
@@ -444,6 +443,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             return true;
         }
 
+
         m_fields.self();
         m_fields->m_owner = asBase();
         paimon::csw::Lifecycle::registerWidget(m_fields->m_owner);
@@ -499,12 +499,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
         ensureClipper();
 
-        // Re-hide bg: GD may have re-shown it.
-        if (m_fields->m_bgSwapped) {
-            if (m_bgSpr && isValidChild(m_bgSpr)) m_bgSpr->setVisible(false);
-            if (auto* bgById = this->getChildByID("bg")) bgById->setVisible(false);
-        }
-
         tryApplyBlur();
         requestSongMetadataIfNeeded();
 
@@ -524,7 +518,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             cleanupSubscriptions();
         }
         CustomSongWidget::onExit();
-        // onExit may run before ~Fields; the registration is cleaned up in ~Fields.
     }
 
     $override
@@ -567,12 +560,9 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             return;
         }
 
-        // Always call the original first: GD's CustomSongWidget::init() calls
-        // updateSongInfo() during init() while getParent() is still null, which
-        // the original handles correctly.
+        // GD calls updateSongInfo() from init() before the widget has a parent.
         CustomSongWidget::updateSongInfo();
 
-        // Only run Paimon logic if the widget is still registered and not tearing down.
         auto* widget = asBase();
         if (!paimon::csw::Lifecycle::isAlive(widget)) return;
         if (paimon::csw::Lifecycle::shouldSkipDelegateCall(widget)) return;
@@ -586,34 +576,21 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
         ensureClipper();
 
-        // Restore original size/position if compact-pause-menu shrank it
-        if (m_fields->m_clipper && m_fields->m_originalBgSize.width > 0) {
+        if (m_fields->m_clipper && m_fields->m_clipSize.width > 0) {
             auto curSz = m_fields->m_clipper->getContentSize();
-            if (curSz.width != m_fields->m_originalBgSize.width ||
-                curSz.height != m_fields->m_originalBgSize.height) {
-                m_fields->m_clipper->setContentSize(m_fields->m_originalBgSize);
-                m_fields->m_clipper->setPosition(m_fields->m_originalBgPos);
+            if (curSz.width != m_fields->m_clipSize.width ||
+                curSz.height != m_fields->m_clipSize.height) {
+                m_fields->m_clipper->setContentSize(m_fields->m_clipSize);
+                m_fields->m_clipper->setPosition(m_fields->m_clipPos);
                 if (auto* blurSpr = m_fields->m_clipper->getChildByID("paimon-song-blur"_spr)) {
-                    blurSpr->setPosition(m_fields->m_originalBgSize / 2);
-                    float sx = m_fields->m_originalBgSize.width / blurSpr->getContentSize().width;
-                    float sy = m_fields->m_originalBgSize.height / blurSpr->getContentSize().height;
+                    blurSpr->setPosition(m_fields->m_clipSize / 2);
+                    float sx = m_fields->m_clipSize.width / blurSpr->getContentSize().width;
+                    float sy = m_fields->m_clipSize.height / blurSpr->getContentSize().height;
                     blurSpr->setScale(std::max(sx, sy));
                 }
-                if (auto* fallback = m_fields->m_clipper->getChildByID("paimon-song-dark-fallback"_spr)) {
-                    fallback->setContentSize(m_fields->m_originalBgSize);
-                    fallback->setScaleX(1.f);
-                    fallback->setScaleY(1.f);
-                }
             }
-        }
-
-        // Re-hide bg: GD may have recreated it.
-        if (m_fields->m_bgSwapped) {
-            if (m_bgSpr && isValidChild(m_bgSpr)) m_bgSpr->setVisible(false);
-            if (auto* bgById = this->getChildByID("bg")) bgById->setVisible(false);
         }
 
         tryApplyBlur();
     }
 };
-

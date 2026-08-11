@@ -18,6 +18,9 @@ protected:
     Slider* m_darknessSlider = nullptr;
     cocos2d::CCLabelBMFont* m_darknessLabel = nullptr;
 
+    Slider* m_edgeBlendSlider = nullptr;
+    cocos2d::CCLabelBMFont* m_edgeBlendLabel = nullptr;
+
     CCMenuItemToggler* m_separatorToggle = nullptr;
     CCMenuItemToggler* m_viewButtonToggle = nullptr;
     CCMenuItemToggler* m_compactToggle = nullptr;
@@ -43,6 +46,7 @@ protected:
     float m_currentThumbWidth = 0.5f;
     float m_currentBlur = 3.0f;
     float m_currentDarkness = 0.2f;
+    float m_currentEdgeBlend = 0.65f;
     bool m_showSeparator = true;
     bool m_showViewButton = true;
     bool m_compactMode = false;
@@ -102,6 +106,7 @@ protected:
     void onThumbWidthChanged(cocos2d::CCObject*);
     void onBlurChanged(cocos2d::CCObject*);
     void onDarknessChanged(cocos2d::CCObject*);
+    void onEdgeBlendChanged(cocos2d::CCObject*);
     void onSeparatorToggled(cocos2d::CCObject*);
     void onViewButtonToggled(cocos2d::CCObject*);
     void onCompactToggled(cocos2d::CCObject*);

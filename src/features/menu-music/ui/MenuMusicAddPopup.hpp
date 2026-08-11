@@ -7,7 +7,7 @@ namespace paimon::menumusic {
 
 class MenuMusicAddPopup : public geode::Popup {
 public:
-    static MenuMusicAddPopup* create();
+    static MenuMusicAddPopup* create(std::string initialUrl = {});
 
 protected:
     bool init(float width, float height);
@@ -45,6 +45,7 @@ protected:
 
     std::string m_pendingAudioPath;
     std::string m_pendingCoverPath;
+    std::string m_initialUrl;
     bool m_busy = false;
     std::atomic<bool> m_alive{true};
 };

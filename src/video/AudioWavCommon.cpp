@@ -11,8 +11,8 @@ namespace paimon::video {
 
 namespace detail {
 
-std::mutex& audioExtractorMutex() {
-    static std::mutex mtx;
+std::recursive_mutex& audioExtractorMutex() {
+    static std::recursive_mutex mtx;
     return mtx;
 }
 
@@ -87,10 +87,31 @@ void cleanupAudioCache(const std::string& videoPath) {
     }
 }
 
-// Fallback extractor for platforms with no native audio backend (e.g. Linux).
-// Windows/Android/Apple provide their own extractAudioToWav in dedicated TUs.
+// Fallback for platforms with no native audio backend (e.g. Linux).
 #if !defined(USE_MEDIA_FOUNDATION) && !defined(USE_MEDIA_NDK) && !defined(USE_AV_FOUNDATION)
-std::string extractAudioToWav(const std::string&) { return {}; }
+AudioPcm extractAudioToPcm(const std::string&) { return {}; }
 #endif
+
+std::string extractAudioToWav(const std::string& videoPath) {
+    std::lock_guard lock(detail::audioExtractorMutex());
+    if (videoPath.empty()) return {};
+
+    auto wavPath = detail::makeWavPath(videoPath);
+    std::error_code ec;
+    if (std::filesystem::exists(wavPath, ec) && !ec) return wavPath;
+
+    auto pcm = extractAudioToPcm(videoPath);
+    if (!pcm.valid()) return {};
+
+    if (!detail::writeWavFile(wavPath, pcm.data.data(), pcm.data.size(),
+                              static_cast<uint16_t>(pcm.channels),
+                              static_cast<uint32_t>(pcm.sampleRate),
+                              static_cast<uint16_t>(pcm.bitsPerSample))) {
+        return {};
+    }
+
+    geode::log::info("[AudioExtract] cached {} bytes of PCM to {}", pcm.data.size(), wavPath);
+    return wavPath;
+}
 
 } // namespace paimon::video

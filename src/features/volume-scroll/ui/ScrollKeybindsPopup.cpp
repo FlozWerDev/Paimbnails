@@ -23,7 +23,6 @@ using paimon::keybinds::saveExtendedKeybind;
 namespace paimon::volscroll {
 
 namespace {
-    // Layout
     constexpr float kPopupW    = 380.f;
     constexpr float kPopupH    = 260.f;
     constexpr float kScrollPad = 14.f;
@@ -48,7 +47,7 @@ namespace {
         return false;
     }
 
-    // Lee el primer Keybind de un setting. Retorna nullopt si esta vacio.
+    // Read the first keyboard bind from a setting.
     std::optional<Keybind> getFirstKeyboardKeybind(char const* settingKey) {
         auto* mod = Mod::get();
         if (!mod || !mod->hasSetting(settingKey)) return std::nullopt;
@@ -85,8 +84,7 @@ namespace {
         if (kb.has_value() &&
             (kb->key != KEY_None || kb->modifiers != KeyboardModifier::None))
         {
-            // formatKeyboardKeybind maneja el caso "solo modificador"
-            // (ej. "Ctrl") sin que aparezca "Ctrl+Unknown".
+            // Handles modifier-only binds without "Ctrl+Unknown".
             text = paimon::keybinds::formatKeyboardKeybind(*kb);
         }
         if (!ext.isEmpty()) {
@@ -94,8 +92,7 @@ namespace {
             text += ext.toDisplayString();
         }
         if (text.empty()) return "(unset)";
-        // Para los rows de volume scroll, hacer evidente la gesture
-        // "hold + scroll" mostrando "<bind> + Scroll".
+        // Make volume gestures explicit: "<bind> + Scroll".
         if (appendScrollHint) {
             text += " + Scroll";
         }
@@ -121,7 +118,6 @@ bool ScrollKeybindsPopup::init() {
 
     auto winSize = m_mainLayer->getContentSize();
 
-    // Botonera inferior (Restaurar volumen)
     auto resetSpr = ButtonSprite::create(
         "Reset Volumen", "bigFont.fnt", "GJ_button_06.png", 0.4f);
     resetSpr->setScale(0.7f);
@@ -132,7 +128,6 @@ bool ScrollKeybindsPopup::init() {
     bottomMenu->setPosition({winSize.width / 2.f, 14.f});
     m_mainLayer->addChild(bottomMenu);
 
-    // ScrollLayer central
     float scrollX = kScrollPad;
     float scrollY = kBottomBarH;
     float scrollW = winSize.width - kScrollPad * 2.f;
@@ -149,15 +144,14 @@ bool ScrollKeybindsPopup::init() {
 
     auto* content = m_scrollLayer->m_contentLayer;
 
-    // Construir filas
     std::vector<CCNode*> rows;
     auto addRow = [&](CCNode* n) { if (n) rows.push_back(n); };
 
-    addRow(makeSectionHeader("Scroll de Volumen — Juego", scrollW));
+    addRow(makeSectionHeader("Scroll de Volumen - Juego", scrollW));
     addRow(makeKeybindRow(kMusicGameKey, "Music Volume", scrollW, /*allowScroll=*/false));
     addRow(makeKeybindRow(kSFXGameKey,   "SFX Volume",   scrollW, /*allowScroll=*/false));
 
-    addRow(makeSectionHeader("Scroll de Volumen — Editor", scrollW));
+    addRow(makeSectionHeader("Scroll de Volumen - Editor", scrollW));
     addRow(makeKeybindRow(kMusicEditorKey, "Music Volume", scrollW, /*allowScroll=*/false));
     addRow(makeKeybindRow(kSFXEditorKey,   "SFX Volume",   scrollW, /*allowScroll=*/false));
 
@@ -176,7 +170,6 @@ bool ScrollKeybindsPopup::init() {
     addRow(makeKeybindRow("main-menu-layout-keybind", "Layout Editor",    scrollW, true));
     addRow(makeKeybindRow("level-search-enter",       "Quick Search",     scrollW, true));
 
-    // Layout vertical
     float totalH = 0.f;
     for (auto* r : rows) {
         totalH += r->getContentSize().height + kRowGap;
@@ -240,13 +233,11 @@ CCNode* ScrollKeybindsPopup::makeKeybindRow(
     row->setAnchorPoint({0.f, 0.f});
     row->setContentSize({width, kRowH});
 
-    // Fondo sutil para distinguir cada fila
     auto rowBg = CCLayerColor::create({255, 255, 255, 12});
     rowBg->setContentSize({width - 6.f, kRowH - 4.f});
     rowBg->setPosition({3.f, 2.f});
     row->addChild(rowBg, 0);
 
-    // Nombre
     auto nameLabel = CCLabelBMFont::create(displayName, "bigFont.fnt");
     nameLabel->setScale(0.38f);
     nameLabel->setAnchorPoint({0.f, 0.5f});
@@ -254,7 +245,6 @@ CCNode* ScrollKeybindsPopup::makeKeybindRow(
     nameLabel->limitLabelWidth(width * 0.42f, 0.42f, 0.18f);
     row->addChild(nameLabel, 1);
 
-    // Label del binding actual
     auto kb = getFirstKeyboardKeybind(settingKey);
     auto ext = loadExtendedKeybind(settingKey);
     bool const isVolumeRow = isVolumeKey(settingKey);
@@ -267,11 +257,9 @@ CCNode* ScrollKeybindsPopup::makeKeybindRow(
     bindingLabel->limitLabelWidth(width * 0.34f, 0.5f, 0.26f);
     row->addChild(bindingLabel, 1);
 
-    // Boton "Set"
     auto setSpr = ButtonSprite::create("Set", "bigFont.fnt", "GJ_button_01.png", 0.45f);
     setSpr->setScale(0.5f);
 
-    // Captura por valor para usar dentro del callback
     std::string keyCopy = settingKey;
     std::string nameCopy = displayName;
 
@@ -291,8 +279,7 @@ CCNode* ScrollKeybindsPopup::makeKeybindRow(
     btnMenu->updateLayout();
     row->addChild(btnMenu, 1);
 
-    // Guardamos el label y el key del setting en el row para poder
-    // refrescarlos despues sin reabrir el popup.
+    // Store the label and setting key for in-place refreshes.
     row->setUserObject("paimon-binding-label"_spr, bindingLabel);
     row->setUserObject("paimon-binding-key"_spr, CCString::create(settingKey));
 
@@ -337,8 +324,7 @@ void ScrollKeybindsPopup::openEditPopup(
 void ScrollKeybindsPopup::onResetVolumeDefaults(CCObject*) {
     auto* mod = Mod::get();
 
-    // Reset cada keybind del scroll de volumen al default de mod.json y
-    // borrar cualquier extended bind asociado.
+    // Restore the four volume binds and clear their extended binds.
     for (auto const* key : kVolumeKeys) {
         if (!mod->hasSetting(key)) continue;
         auto setting = cast::typeinfo_pointer_cast<KeybindSettingV3>(
@@ -346,13 +332,10 @@ void ScrollKeybindsPopup::onResetVolumeDefaults(CCObject*) {
         if (setting) {
             setting->reset();
         }
-        // Limpiar el extended bind tambien.
         saveExtendedKeybind(key, ExtendedKeybind{});
     }
 
-    // Refrescar los labels visibles. Recorremos las filas dentro del
-    // scrollLayer (cada fila guarda su label en un userObject conocido)
-    // y reescribimos su texto desde el storage actualizado.
+    // Re-read every visible label from storage.
     if (m_scrollLayer && m_scrollLayer->m_contentLayer) {
         auto children = m_scrollLayer->m_contentLayer->getChildren();
         if (children) {
@@ -362,15 +345,6 @@ void ScrollKeybindsPopup::onResetVolumeDefaults(CCObject*) {
                 auto* label = typeinfo_cast<CCLabelBMFont*>(
                     row->getUserObject("paimon-binding-label"_spr));
                 if (!label) continue;
-                // Buscar el setting key asociado tampoco es trivial sin
-                // guardarlo en el row, asi que solo refrescamos los 4
-                // volumes (los demas no son afectados por reset).
-                //
-                // Para simplificar, reescribimos TODOS los labels de la
-                // lista — leen del storage actual asi que es seguro.
-                //
-                // Nos hace falta saber a que setting pertenece este label.
-                // Lo guardamos como otro userObject "paimon-binding-key".
                 auto* keyObj = typeinfo_cast<CCString*>(
                     row->getUserObject("paimon-binding-key"_spr));
                 if (!keyObj) continue;
@@ -387,8 +361,6 @@ void ScrollKeybindsPopup::onResetVolumeDefaults(CCObject*) {
 }
 
 void ScrollKeybindsPopup::reopenAfterReset(float) {
-    // No usado actualmente — refrescamos los labels in-place. Se mantiene
-    // como punto de extension futuro.
 }
 
-} // namespace paimon::volscroll
+}

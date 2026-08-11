@@ -50,7 +50,9 @@ public:
 
     // Renders level with the same pipeline as a real capture, restores before
     // returning. Returns autoreleased texture (setFlipY(true) to display).
-    static cocos2d::CCTexture2D* renderPreviewTexture(int width, int height);
+    // Hiding players mirrors what the accepted capture will look like.
+    static cocos2d::CCTexture2D* renderPreviewTexture(
+        int width, int height, bool hidePlayer1 = false, bool hidePlayer2 = false);
 
     // Internal: don't call from outside the capture service.
     static void clearCaptureFlags();

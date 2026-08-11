@@ -104,6 +104,24 @@ void BlurSystem::destroy() {
     clearBlurCache();
 }
 
+void BlurSystem::onGLContextReload() {
+    for (auto& job : m_runningJobs) {
+        if (job) job->cancel();
+    }
+    m_runningJobs.clear();
+
+    for (auto& [key, callbacks] : m_inFlight) {
+        for (auto& cb : callbacks) {
+            if (cb) cb(nullptr);
+        }
+    }
+    m_inFlight.clear();
+    m_pendingJobs.clear();
+    m_activeJobCount = 0;
+
+    clearBlurCache();
+}
+
 // Try loading the blur from disk cache. Returns true if a lookup was dispatched.
 bool BlurSystem::tryDispatchFromDisk(BlurKey const& key, BlurFlavor flavor, QueuedJob const& fallbackJob) {
     std::string diskKey = makeDiskKey(key, flavor);

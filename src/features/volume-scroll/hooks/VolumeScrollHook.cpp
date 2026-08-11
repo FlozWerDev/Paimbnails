@@ -1,5 +1,7 @@
 #include "../services/VolumeScrollManager.hpp"
 #include "../../../utils/ExtendedKeybind.hpp"
+#include "../../../utils/Debug.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CCMouseDispatcher.hpp>
@@ -10,8 +12,7 @@
 #include <unordered_set>
 
 #ifdef GEODE_IS_WINDOWS
-    // Needed for GetAsyncKeyState — re-syncs modifier flags before a scroll so they don't
-    // stay stuck "true" when GD loses focus while a key is held.
+// GetAsyncKeyState re-syncs modifiers after focus loss drops Release events.
     #include <windows.h>
 #endif
 
@@ -20,30 +21,27 @@ using namespace cocos2d;
 using paimon::volscroll::VolumeKind;
 using paimon::volscroll::VolumeScrollManager;
 
-// Exported by QuickHubKeybind to cancel the Ctrl hold when it's used for Ctrl+Scroll volume (not the radial).
+// Lets QuickHubKeybind cancel Ctrl-hold when Ctrl+Scroll changes volume.
 
 namespace paimon::quickhub {
     void notifyVolumeScrollUsed();
 }
 
-// Pause-zoom hook exposed from src/hooks/PlayLayer.cpp.
+// Pause-zoom hook from PlayLayer.cpp.
 namespace paimon::pausezoom {
     void dispatchScroll(float y, float x);
 }
 
 namespace {
-    constexpr float kVolumeStep = 0.05f; // 5% per click
+constexpr float kVolumeStep = 0.05f;
 
-    // Modifier state, updated in two places for resilience:
-    // onModifierKeysChanged and the KeyboardInputEvent listener.
+// Modifier state is updated by both keybind and keyboard listeners.
     bool g_ctrlDown  = false;
     bool g_shiftDown = false;
     bool g_altDown   = false;
 
-    // Set of currently-pressed non-modifier keys.
     std::unordered_set<int> g_keysDown;
 
-    // Settings keys
     constexpr char const* kMusicGameKey   = "volume-music-mod-game";
     constexpr char const* kSFXGameKey     = "volume-sfx-mod-game";
     constexpr char const* kMusicEditorKey = "volume-music-mod-editor";
@@ -57,7 +55,6 @@ namespace {
         return scene->getChildByType<LevelEditorLayer>(0) != nullptr;
     }
 
-    // Read the first Keybind from a KeybindSettingV3 setting.
     Keybind getKeybind(char const* key) {
         auto* mod = Mod::get();
         if (!mod || !mod->hasSetting(key)) return {};
@@ -87,7 +84,6 @@ namespace {
         return KeyboardModifier(m);
     }
 
-    // Convert a modifier key into its KeyboardModifier, or None.
     KeyboardModifier keyToModifier(enumKeyCodes k) {
         switch (k) {
             case KEY_Control: case KEY_LeftControl: case KEY_RightContol:
@@ -100,32 +96,26 @@ namespace {
         }
     }
 
-    // Is the Keybind active (all its keys and modifiers held)? Geode stores binds in several
-    // shapes, so we move a modifier "key" into modifiers, require the bind's key (if any) and all
-    // its modifiers to be held, but don't require an exact modifier match (avoids stuck-Lock issues).
+// Normalize Geode's bind shapes, then require its key and modifier subset.
     bool isKeybindActive(Keybind bind) {
-        // Step 1: normalize
         auto extra = keyToModifier(bind.key);
         if (extra != KeyboardModifier::None) {
             bind.modifiers = bind.modifiers | extra;
             bind.key = KEY_None;
         }
 
-        // Step 2: empty bind = never active
         if (bind.key == KEY_None && bind.modifiers == KeyboardModifier::None) {
             return false;
         }
 
         auto cur = currentModifiers();
 
-        // Step 3: the bind's key must be held (if any)
         if (bind.key != KEY_None) {
             if (g_keysDown.count(static_cast<int>(bind.key)) == 0) {
                 return false;
             }
         }
 
-        // Step 4: all the bind's modifiers must be held (subset check)
         if ((cur.value & bind.modifiers.value) != bind.modifiers.value) {
             return false;
         }
@@ -133,8 +123,7 @@ namespace {
         return true;
     }
 
-    // Re-sync the modifier flags with the real OS state. On Windows this avoids
-    // stuck flags when GD lost focus mid-keypress (dropped Release). No-op elsewhere.
+// Re-sync modifiers from the OS on Windows; no-op elsewhere.
     void resyncModifiersFromOS() {
 #ifdef GEODE_IS_WINDOWS
         g_ctrlDown  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -143,8 +132,7 @@ namespace {
 #endif
     }
 
-    // True if a music/sfx volume keybind (for the current game/editor context) is
-    // currently held. Mirrors the matching the hook performs. outKind = matched kind.
+// Whether the current-context music/SFX bind is held; outKind receives the match.
     bool matchVolumeGesture(VolumeKind& outKind) {
         bool editor = isInEditor();
         char const* musicKey = editor ? kMusicEditorKey : kMusicGameKey;
@@ -179,28 +167,24 @@ namespace paimon::volscroll {
         g_altDown   = alt;
     }
 
-    // Used by smooth-scroll to detect a volume-scroll gesture (Ctrl/Shift + wheel)
-    // and bypass smoothing, so the wheel tick reaches the volume hook as a single
-    // discrete step instead of being replayed as many momentum steps.
+// Smooth-scroll uses this to bypass momentum for volume gestures.
     bool isVolumeGestureActive() {
+        if (!paimon::modules::isEnabled("paimbnails.volumescroll.global")) return false;
         resyncModifiersFromOS();
         VolumeKind kind;
         return matchVolumeGesture(kind);
     }
 }
 
-// KeyboardInputEvent listener — tracks keys and keeps modifiers in sync
-// (data.modifiers is more reliable than dispatchKeyboardMSG).
+// Track keys and authoritative modifier state.
 
 $execute {
     KeyboardInputEvent().listen(+[](KeyboardInputData& data) {
-        // Re-sync modifiers from data.modifiers (authoritative); cast to uint8_t avoids operator!= ambiguity.
         uint8_t m = data.modifiers.value;
         g_ctrlDown  = (m & uint8_t(KeyboardModifier::Control)) != 0;
         g_shiftDown = (m & uint8_t(KeyboardModifier::Shift))   != 0;
         g_altDown   = (m & uint8_t(KeyboardModifier::Alt))     != 0;
 
-        // Track the key in g_keysDown (modifiers handled by the flags above).
         if (!isModifierKey(data.key)) {
             switch (data.action) {
                 case KeyboardInputData::Action::Press:
@@ -212,10 +196,9 @@ $execute {
                     break;
             }
         }
-        return false; // don't consume the event
+    return false;
     }).leak();
 
-    // Also listen to MouseInputEvent to keep modifiers current (clicks carry modifiers too).
     MouseInputEvent().listen(+[](MouseInputData& data) {
         uint8_t m = data.modifiers.value;
         g_ctrlDown  = (m & uint8_t(KeyboardModifier::Control)) != 0;
@@ -225,7 +208,7 @@ $execute {
     }).leak();
 }
 
-// Hook: CCMouseDispatcher::dispatchScrollMSG. Inline on macOS/iOS, so this hook is Windows-only.
+// Windows-only dispatchScrollMSG hook; macOS/iOS inline this path.
 
 #ifdef GEODE_IS_WINDOWS
 class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
@@ -240,9 +223,18 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
             return CCMouseDispatcher::dispatchScrollMSG(y, x);
         };
 
+// Forward unrelated scroll to ExtendedKeybind and the game.
+        auto notOurs = [&]() -> bool {
+            (void)paimon::keybinds::dispatchScrollAsTrigger(
+                static_cast<double>(y),
+                static_cast<double>(geode::utils::getInputTimestamp())
+            );
+            return passthrough();
+        };
+
         if (y == 0.f) return passthrough();
 
-        // 1) ExtendedKeybind scroll captor: if a recording popup is open, forward scroll and consume it.
+// Let ExtendedKeybind capture scroll while a recording popup is open.
         if (paimon::keybinds::hasScrollCaptor()) {
             auto const& captor = paimon::keybinds::currentScrollCaptor();
             if (captor) {
@@ -252,9 +244,9 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
             }
         }
 
-        // Re-sync modifiers from the most authoritative source here. Critical: stuck g_ctrlDown
-        // flags (e.g. GD lost focus mid-keypress, dropping the Release) could otherwise trigger
-        // volume scroll without the modifier held. Replace the flags with the real OS state.
+        if (!paimon::modules::isEnabled("paimbnails.volumescroll.global")) return notOurs();
+
+// Refresh OS modifiers here so dropped Releases cannot trigger volume scroll.
         resyncModifiersFromOS();
 
         bool editor = isInEditor();
@@ -267,7 +259,8 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
         auto musicExt = paimon::keybinds::loadExtendedKeybind(musicKey);
         auto sfxExt   = paimon::keybinds::loadExtendedKeybind(sfxKey);
 
-        log::debug("[VolScroll] scroll y={:.2f} editor={} music={{kbKey={:#x},kbMods={:#x},extKind={}}} sfx={{kbKey={:#x},kbMods={:#x},extKind={}}} state ctrl={} shift={} alt={}",
+// Guard debug formatting; this path runs on every wheel event.
+        PaimonDebug::log("[VolScroll] scroll y={:.2f} editor={} music={{kbKey={:#x},kbMods={:#x},extKind={}}} sfx={{kbKey={:#x},kbMods={:#x},extKind={}}} state ctrl={} shift={} alt={}",
             y, editor,
             (int)musicBind.key, (int)musicBind.modifiers.value, (int)musicExt.kind,
             (int)sfxBind.key,   (int)sfxBind.modifiers.value,   (int)sfxExt.kind,
@@ -275,7 +268,7 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
 
         VolumeKind kind;
         bool match = false;
-        // Try in order: keyboard keybind, then extended (mouse).
+// Try keyboard binds, then extended mouse binds.
         if (isKeybindActive(musicBind) || paimon::keybinds::isExtendedHeld(musicExt)) {
             kind = VolumeKind::Music;
             match = true;
@@ -284,16 +277,9 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
             match = true;
         }
 
-        if (!match) {
-            // Before passing scroll to the game, let ExtendedKeybind dispatch scroll-as-trigger.
-            (void)paimon::keybinds::dispatchScrollAsTrigger(
-                static_cast<double>(y),
-                static_cast<double>(geode::utils::getInputTimestamp())
-            );
-            return passthrough();
-        }
+        if (!match) return notOurs();
 
-        log::info("[VolScroll] consuming scroll: kind={} y={}",
+        PaimonDebug::log("[VolScroll] consuming scroll: kind={} y={}",
                   kind == VolumeKind::Music ? "music" : "sfx", y);
 
         const float delta = (y > 0.f) ? -kVolumeStep : +kVolumeStep;
@@ -307,7 +293,6 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
 };
 #endif
 
-// Ticker
 
 class VolumeScrollTickerNode : public CCNode {
     CCScene* m_lastScene = nullptr;

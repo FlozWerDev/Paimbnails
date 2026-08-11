@@ -1,11 +1,13 @@
 #include "CursorManager.hpp"
 #include <Geode/utils/string.hpp>
 #include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/CursorIcoDecoder.hpp"
 #include "../../../utils/GifEncoder.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../core/Settings.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 #include <Geode/binding/PlatformToolbox.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/PlayLayer.hpp>
@@ -28,24 +30,14 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Trail texture (2x2 white, created once)
 namespace {
-geode::Ref<CCTexture2D>& whiteTrailTexture() {
-    static geode::Ref<CCTexture2D> s_tex = nullptr;
-    return s_tex;
-}
-
 geode::Ref<CCTexture2D>& fallbackCursorTexture() {
     static geode::Ref<CCTexture2D> s_tex = nullptr;
     return s_tex;
 }
 
-// Use INT_MAX to ensure the cursor is ALWAYS on top, even when other mods
-// (like Eclipse Menu or other overlay-based menus) add popups with high z-orders.
-// This fixes the issue where the cursor appears UNDER some menus instead of on top.
 constexpr int kCursorBaseZOrder = INT_MAX;
 
-// States in ascending priority order for stable iteration.
 constexpr std::array<CursorState, CURSOR_STATE_COUNT> kAllStates = {
     CursorState::Idle, CursorState::Move, CursorState::Hover,
     CursorState::Click, CursorState::Text, CursorState::Disabled
@@ -112,12 +104,6 @@ CCPoint cursorHotspotAnchor() {
     return ccp(CURSOR_HOTSPOT_X, CURSOR_HOTSPOT_Y);
 }
 
-// Normalize any source image (gallery images can be high-resolution) to a
-// consistent on-screen size derived from the user scale. This is the core
-// positioning fix: applying a raw setScale() to an arbitrary-resolution image
-// made the cursor huge and visually detached from the click point, exactly the
-// "mal posicionamiento" bug. limitNodeSize keeps the on-screen footprint fixed
-// regardless of the source resolution (same approach Ecuet uses).
 float cursorTargetSize(float scale) {
     return std::max(4.f, 100.f * clampCursorScale(scale));
 }
@@ -130,27 +116,52 @@ void applyCursorVisual(cocos2d::CCSprite* sprite, float scale, int opacity) {
     sprite->setAnchorPoint(cursorHotspotAnchor());
 }
 
-// Cursor context under the pointer, used to pick the active state.
+paimon::cursorfx::TransitionFrame combineTransitionFrames(
+    paimon::cursorfx::TransitionFrame const& base,
+    paimon::cursorfx::TransitionFrame const& overlay) {
+    return {
+        ccp(base.offset.x + overlay.offset.x, base.offset.y + overlay.offset.y),
+        base.scaleX * overlay.scaleX,
+        base.scaleY * overlay.scaleY,
+        base.rotation + overlay.rotation,
+        base.skewX + overlay.skewX,
+        base.skewY + overlay.skewY,
+        base.opacity * overlay.opacity,
+    };
+}
+
+paimon::cursorfx::TransitionFrame mixTransitionFrames(
+    paimon::cursorfx::TransitionFrame const& from,
+    paimon::cursorfx::TransitionFrame const& to, float t) {
+    t = std::clamp(t, 0.f, 1.f);
+    auto mix = [t](float a, float b) { return a + (b - a) * t; };
+    return {
+        ccp(mix(from.offset.x, to.offset.x), mix(from.offset.y, to.offset.y)),
+        mix(from.scaleX, to.scaleX),
+        mix(from.scaleY, to.scaleY),
+        mix(from.rotation, to.rotation),
+        mix(from.skewX, to.skewX),
+        mix(from.skewY, to.skewY),
+        mix(from.opacity, to.opacity),
+    };
+}
+
 struct CursorContext {
-    bool overButton   = false; // enabled CCMenuItem (hand/link)
-    bool overDisabled = false; // disabled CCMenuItem (not-allowed)
-    bool overText     = false; // CCTextInputNode / text field (I-beam)
+    bool overButton   = false;
+    bool overDisabled = false;
+    bool overText     = false;
 };
 
-// Returns true if worldPos falls inside the boundingBox of `node`.
 bool nodeContainsWorldPoint(CCNode* node, CCPoint const& worldPos) {
     auto* parent = node->getParent();
     CCPoint local = parent ? parent->convertToNodeSpace(worldPos) : worldPos;
     return node->boundingBox().containsPoint(local);
 }
 
-// Walks the hierarchy finding the most relevant context under the cursor.
-// A single pass decides hover/disabled/text to avoid three traversals.
 void scanCursorContext(CCNode* node, CCPoint const& worldPos, int depth,
                        CursorContext& ctx) {
     if (!node || !node->isVisible() || depth > 14) return;
 
-    // Text field (I-beam). CCTextInputNode is the base class for all GD/Geode inputs.
     if (auto* input = typeinfo_cast<CCTextInputNode*>(node)) {
         if (geode::cocos::nodeIsVisible(input) && nodeContainsWorldPoint(input, worldPos)) {
             ctx.overText = true;
@@ -170,35 +181,42 @@ void scanCursorContext(CCNode* node, CCPoint const& worldPos, int depth,
         scanCursorContext(child, worldPos, depth + 1, ctx);
     }
 }
-} // namespace
+}
 
 CursorManager::~CursorManager() {
+    detachClickOverlay();
     detachFromScene();
-    (void)whiteTrailTexture().take();
+    paimon::cursorfx::CursorTrailNode::abandonSharedTextures();
     (void)fallbackCursorTexture().take();
 }
 
-// Trail presets
-const CursorTrailPreset CursorManager::TRAIL_PRESETS[CursorManager::TRAIL_PRESET_COUNT] = {
-    {"Blanco Clasico",  ccc3(255, 255, 255),  80.f,  3.f, 0, 200},
-    {"Fuego",           ccc3(255, 140,   0), 120.f,  5.f, 1, 210},
-    {"Hielo",           ccc3(  0, 220, 255), 100.f,  3.f, 0, 190},
-    {"Arcoiris",        ccc3(255, 255, 255),  90.f,  4.f, 1, 220},
-    {"Sombra",          ccc3( 80,  80,  80),  60.f,  6.f, 2, 180},
-    {"Electrico",       ccc3(255, 255,   0),  40.f,  2.f, 1, 230},
-    {"Rosa Neon",       ccc3(255,  50, 200),  90.f,  4.f, 0, 200},
-    {"Verde Matrix",    ccc3( 50, 255,  50), 110.f,  2.f, 2, 190},
-    {"Dorado",          ccc3(255, 215,   0),  70.f,  5.f, 1, 200},
-    {"Invisible",       ccc3(  0,   0,   0),  10.f,  1.f, 0,   0},
-};
+void CursorManager::applyTrailPreset(int index) {
+    if (index < 0 || index >= paimon::cursorfx::presetCount()) return;
+    m_config.trailPreset = index;
+    m_config.trail = paimon::cursorfx::presetAt(index).settings;
+}
 
-// Singleton
+void CursorManager::applyClickPreset(int index) {
+    if (index < 0 || index >= paimon::cursorfx::clickPresetCount()) return;
+    auto burstTuning = m_config.click.burstTuning;
+    auto holdTuning = m_config.click.holdTuning;
+    m_config.clickPreset = index;
+    m_config.click = paimon::cursorfx::clickPresetAt(index).settings;
+    m_config.click.burstTuning = burstTuning;
+    m_config.click.holdTuning = holdTuning;
+}
+
+void CursorManager::applyTransitionPreset(int index) {
+    if (index < 0 || index >= paimon::cursorfx::transitionPresetCount()) return;
+    m_config.transitionPreset = index;
+    m_config.transition = paimon::cursorfx::transitionPresetAt(index).settings;
+}
+
 CursorManager& CursorManager::get() {
     static CursorManager inst;
     return inst;
 }
 
-// Paths
 std::filesystem::path CursorManager::configPath() const {
     return Mod::get()->getSaveDir() / "cursor_config.json";
 }
@@ -212,7 +230,6 @@ std::filesystem::path CursorManager::galleryDir() const {
     return dir;
 }
 
-// State <-> config mapping
 std::string& CursorManager::configFieldForState(CursorState state) {
     switch (state) {
         case CursorState::Move:     return m_config.moveImage;
@@ -232,9 +249,6 @@ std::string CursorManager::imageForState(CursorState state) const {
 void CursorManager::setImageForState(CursorState state, std::string const& filename) {
     configFieldForState(state) = filename;
 
-    // Auto-enable: assigning an image is a clear signal the user wants the
-    // custom cursor on. A lot of people set an image and think it's broken
-    // because they never flipped the Enable toggle, so turn it on for them.
     bool justEnabled = false;
     if (!filename.empty() && !m_config.enabled) {
         m_config.enabled = true;
@@ -243,7 +257,6 @@ void CursorManager::setImageForState(CursorState state, std::string const& filen
 
     saveConfig();
 
-    // attachToOverlay reloads the sprites itself, so only one path runs.
     if (justEnabled && !isAttached()) {
         attachToOverlay();
     } else {
@@ -251,7 +264,131 @@ void CursorManager::setImageForState(CursorState state, std::string const& filen
     }
 }
 
-// Config persistence
+void CursorManager::loadTrailConfig(matjson::Value const& j) {
+    namespace fx = paimon::cursorfx;
+    auto readInt = [&j](char const* key, int fallback, int lo, int hi) {
+        return std::clamp(static_cast<int>(j[key].asInt().unwrapOr(fallback)), lo, hi);
+    };
+
+    if (!j.contains("trailEffect")) {
+        static constexpr int kLegacyPresetMap[10] = {0, 7, 12, 1, 19, 10, 2, 21, 6, -1};
+        int legacy = readInt("trailPreset", -1, -1, 9);
+        if (legacy >= 0 && kLegacyPresetMap[legacy] >= 0) {
+            applyTrailPreset(kLegacyPresetMap[legacy]);
+            return;
+        }
+
+        m_config.trailPreset = -1;
+        m_config.trail = fx::presetAt(0).settings;
+        m_config.trail.colorMode = fx::TrailColorMode::Solid;
+        m_config.trail.color1 = ccc3(
+            static_cast<GLubyte>(readInt("trailR", 255, 0, 255)),
+            static_cast<GLubyte>(readInt("trailG", 255, 0, 255)),
+            static_cast<GLubyte>(readInt("trailB", 255, 0, 255)));
+        m_config.trail.life = std::clamp(
+            static_cast<float>(j["trailLength"].asDouble().unwrapOr(80.0)) / 60.f,
+            fx::kLifeMin, fx::kLifeMax);
+        m_config.trail.size = std::clamp(
+            static_cast<float>(j["trailWidth"].asDouble().unwrapOr(4.0)),
+            fx::kSizeMin, fx::kSizeMax);
+        m_config.trail.opacity = readInt("trailOpacity", 200, 0, 255);
+        return;
+    }
+
+    m_config.trailPreset = readInt("trailPreset", -1, -1, fx::presetCount() - 1);
+
+    auto& t = m_config.trail;
+    t.effect    = static_cast<fx::TrailEffect>(readInt("trailEffect", 0, 0, fx::kEffectCount - 1));
+    t.colorMode = static_cast<fx::TrailColorMode>(readInt("trailColorMode", 0, 0, fx::kColorModeCount - 1));
+
+    auto readColor = [&](char const* rk, char const* gk, char const* bk, ccColor3B fallback) {
+        return ccc3(
+            static_cast<GLubyte>(readInt(rk, fallback.r, 0, 255)),
+            static_cast<GLubyte>(readInt(gk, fallback.g, 0, 255)),
+            static_cast<GLubyte>(readInt(bk, fallback.b, 0, 255)));
+    };
+    t.color1 = readColor("trailR", "trailG", "trailB", ccc3(255, 255, 255));
+    t.color2 = readColor("trailR2", "trailG2", "trailB2", ccc3(0, 190, 255));
+
+    t.life     = std::clamp(static_cast<float>(j["trailLife"].asDouble().unwrapOr(0.55)),    fx::kLifeMin, fx::kLifeMax);
+    t.size     = std::clamp(static_cast<float>(j["trailSize"].asDouble().unwrapOr(5.0)),     fx::kSizeMin, fx::kSizeMax);
+    t.density  = std::clamp(static_cast<float>(j["trailDensity"].asDouble().unwrapOr(1.0)),  fx::kDensityMin, fx::kDensityMax);
+    t.hueSpeed = std::clamp(static_cast<float>(j["trailHueSpeed"].asDouble().unwrapOr(1.0)), fx::kHueSpeedMin, fx::kHueSpeedMax);
+    t.opacity  = readInt("trailOpacity", 205, 0, 255);
+    t.glow     = j["trailGlow"].asBool().unwrapOr(true);
+}
+
+void CursorManager::loadClickConfig(matjson::Value const& j) {
+    namespace fx = paimon::cursorfx;
+
+    if (!j.contains("clickBurst")) {
+        applyClickPreset(0);
+        return;
+    }
+
+    auto readInt = [&j](char const* key, int fallback, int lo, int hi) {
+        return std::clamp(static_cast<int>(j[key].asInt().unwrapOr(fallback)), lo, hi);
+    };
+    auto readFloat = [&j](char const* key, double fallback, float lo, float hi) {
+        return std::clamp(static_cast<float>(j[key].asDouble().unwrapOr(fallback)), lo, hi);
+    };
+
+    m_config.clickPreset = readInt("clickPreset", -1, -1, fx::clickPresetCount() - 1);
+
+    auto& c = m_config.click;
+    c.press   = static_cast<fx::ClickBurst>(readInt("clickBurst", 1, 0, fx::kClickBurstCount - 1));
+    c.release = static_cast<fx::ClickBurst>(readInt("clickReleaseBurst", 0, 0, fx::kClickBurstCount - 1));
+    c.hold    = static_cast<fx::ClickHold>(readInt("clickHold", 0, 0, fx::kClickHoldCount - 1));
+    c.anim    = static_cast<fx::ClickAnim>(readInt("clickAnim", 1, 0, fx::kClickAnimCount - 1));
+    c.pressSound   = static_cast<fx::ClickSound>(readInt("clickSound", 0, 0, fx::kClickSoundCount - 1));
+    c.releaseSound = static_cast<fx::ClickSound>(readInt("clickReleaseSound", 0, 0, fx::kClickSoundCount - 1));
+
+    c.colorMode = static_cast<fx::TrailColorMode>(
+        readInt("clickColorMode", 0, 0, fx::kColorModeCount - 1));
+    c.color1 = ccc3(static_cast<GLubyte>(readInt("clickR", 255, 0, 255)),
+                    static_cast<GLubyte>(readInt("clickG", 120, 0, 255)),
+                    static_cast<GLubyte>(readInt("clickB", 170, 0, 255)));
+    c.color2 = ccc3(static_cast<GLubyte>(readInt("clickR2", 110, 0, 255)),
+                    static_cast<GLubyte>(readInt("clickG2", 200, 0, 255)),
+                    static_cast<GLubyte>(readInt("clickB2", 255, 0, 255)));
+
+    c.hueSpeed = readFloat("clickHueSpeed", 1.0, fx::kHueSpeedMin, fx::kHueSpeedMax);
+    c.size     = readFloat("clickSize", 1.0, fx::kClickSizeMin, fx::kClickSizeMax);
+    c.amount   = readFloat("clickAmount", 1.0, fx::kClickAmountMin, fx::kClickAmountMax);
+    c.life     = readFloat("clickLife", 0.75, fx::kClickLifeMin, fx::kClickLifeMax);
+    c.spread   = readFloat("clickSpread", 1.0, fx::kClickSpreadMin, fx::kClickSpreadMax);
+    c.opacity  = readInt("clickOpacity", 235, 0, 255);
+    c.glow     = j["clickGlow"].asBool().unwrapOr(true);
+
+    c.animStrength = readFloat("clickAnimStrength", 1.0, fx::kClickAnimMin, fx::kClickAnimMax);
+    c.animDuration = readFloat("clickAnimDuration", 0.18, fx::kClickAnimDurMin, fx::kClickAnimDurMax);
+
+    c.volume      = readFloat("clickVolume", 0.55, 0.f, 1.f);
+    c.pitch       = readFloat("clickPitch", 1.0, fx::kClickPitchMin, fx::kClickPitchMax);
+    c.randomPitch = j["clickRandomPitch"].asBool().unwrapOr(false);
+    c.rightClick  = j["clickRightButton"].asBool().unwrapOr(true);
+
+    auto readTuning = [&j](char const* sizeKey, char const* speedKey, auto& slots) {
+        auto apply = [&slots](char const* key, matjson::Value const& source, bool isSize) {
+            auto arr = source[key].asArray();
+            if (!arr.isOk()) return;
+            auto const& values = arr.unwrap();
+            size_t count = std::min(slots.size(), values.size());
+            for (size_t i = 0; i < count; ++i) {
+                float value = std::clamp(
+                    static_cast<float>(values[i].asDouble().unwrapOr(1.0)),
+                    fx::kClickTuneMin, fx::kClickTuneMax);
+                if (isSize) slots[i].size = value;
+                else        slots[i].speed = value;
+            }
+        };
+        apply(sizeKey, j, true);
+        apply(speedKey, j, false);
+    };
+    readTuning("clickBurstSizes", "clickBurstSpeeds", c.burstTuning);
+    readTuning("clickHoldSizes", "clickHoldSpeeds", c.holdTuning);
+}
+
 void CursorManager::loadConfig() {
     log::debug("[CursorManager] loadConfig");
     auto path = configPath();
@@ -278,17 +415,34 @@ void CursorManager::loadConfig() {
     m_config.clickEnabled  = j["clickEnabled"].asBool().unwrapOr(true);
     m_config.textEnabled   = j["textEnabled"].asBool().unwrapOr(true);
     m_config.disabledEnabled = j["disabledEnabled"].asBool().unwrapOr(true);
+    m_config.transitionEnabled = j["transitionEnabled"].asBool().unwrapOr(true);
     m_config.scale         = clampCursorScale(static_cast<float>(j["scale"].asDouble().unwrapOr(CURSOR_SCALE_DEFAULT)));
     m_config.opacity       = j["opacity"].asInt().unwrapOr(255);
     m_config.trailEnabled  = j["trailEnabled"].asBool().unwrapOr(false);
-    m_config.trailR        = j["trailR"].asInt().unwrapOr(255);
-    m_config.trailG        = j["trailG"].asInt().unwrapOr(255);
-    m_config.trailB        = j["trailB"].asInt().unwrapOr(255);
-    m_config.trailLength   = static_cast<float>(j["trailLength"].asDouble().unwrapOr(80.0));
-    m_config.trailWidth    = static_cast<float>(j["trailWidth"].asDouble().unwrapOr(4.0));
-    m_config.trailFadeType = j["trailFadeType"].asInt().unwrapOr(0);
-    m_config.trailOpacity  = j["trailOpacity"].asInt().unwrapOr(200);
-    m_config.trailPreset   = j["trailPreset"].asInt().unwrapOr(-1);
+    loadTrailConfig(j);
+    m_config.clickFxEnabled = j["clickFxEnabled"].asBool().unwrapOr(false);
+    loadClickConfig(j);
+
+    namespace fx = paimon::cursorfx;
+    if (!j.contains("transitionEffect")) {
+        applyTransitionPreset(0);
+    } else {
+        m_config.transitionPreset = std::clamp(
+            static_cast<int>(j["transitionPreset"].asInt().unwrapOr(-1)),
+            -1, fx::transitionPresetCount() - 1);
+        m_config.transition.effect = static_cast<fx::TransitionEffect>(std::clamp(
+            static_cast<int>(j["transitionEffect"].asInt().unwrapOr(3)),
+            0, fx::kTransitionEffectCount - 1));
+        m_config.transition.easing = static_cast<fx::TransitionEasing>(std::clamp(
+            static_cast<int>(j["transitionEasing"].asInt().unwrapOr(1)),
+            0, fx::kTransitionEasingCount - 1));
+        m_config.transition.duration = std::clamp(
+            static_cast<float>(j["transitionDuration"].asDouble().unwrapOr(0.16)),
+            fx::kTransitionDurationMin, fx::kTransitionDurationMax);
+        m_config.transition.intensity = std::clamp(
+            static_cast<float>(j["transitionIntensity"].asDouble().unwrapOr(0.80)),
+            fx::kTransitionIntensityMin, fx::kTransitionIntensityMax);
+    }
 
     m_config.followDelayEnabled = j["followDelayEnabled"].asBool().unwrapOr(false);
     m_config.followDelay        = std::clamp(static_cast<float>(j["followDelay"].asDouble().unwrapOr(0.5)), 0.f, 1.f);
@@ -318,17 +472,74 @@ void CursorManager::saveConfig() {
     j["clickEnabled"] = m_config.clickEnabled;
     j["textEnabled"]  = m_config.textEnabled;
     j["disabledEnabled"] = m_config.disabledEnabled;
+    j["transitionEnabled"] = m_config.transitionEnabled;
+    j["transitionPreset"] = m_config.transitionPreset;
+    j["transitionEffect"] = static_cast<int>(m_config.transition.effect);
+    j["transitionEasing"] = static_cast<int>(m_config.transition.easing);
+    j["transitionDuration"] = static_cast<double>(m_config.transition.duration);
+    j["transitionIntensity"] = static_cast<double>(m_config.transition.intensity);
     j["scale"]        = static_cast<double>(m_config.scale);
     j["opacity"]      = m_config.opacity;
-    j["trailEnabled"] = m_config.trailEnabled;
-    j["trailR"]       = m_config.trailR;
-    j["trailG"]       = m_config.trailG;
-    j["trailB"]       = m_config.trailB;
-    j["trailLength"]  = static_cast<double>(m_config.trailLength);
-    j["trailWidth"]   = static_cast<double>(m_config.trailWidth);
-    j["trailFadeType"]= m_config.trailFadeType;
-    j["trailOpacity"] = m_config.trailOpacity;
-    j["trailPreset"]  = m_config.trailPreset;
+    j["trailEnabled"]   = m_config.trailEnabled;
+    j["trailPreset"]    = m_config.trailPreset;
+    j["trailEffect"]    = static_cast<int>(m_config.trail.effect);
+    j["trailColorMode"] = static_cast<int>(m_config.trail.colorMode);
+    j["trailR"]         = static_cast<int>(m_config.trail.color1.r);
+    j["trailG"]         = static_cast<int>(m_config.trail.color1.g);
+    j["trailB"]         = static_cast<int>(m_config.trail.color1.b);
+    j["trailR2"]        = static_cast<int>(m_config.trail.color2.r);
+    j["trailG2"]        = static_cast<int>(m_config.trail.color2.g);
+    j["trailB2"]        = static_cast<int>(m_config.trail.color2.b);
+    j["trailLife"]      = static_cast<double>(m_config.trail.life);
+    j["trailSize"]      = static_cast<double>(m_config.trail.size);
+    j["trailDensity"]   = static_cast<double>(m_config.trail.density);
+    j["trailOpacity"]   = m_config.trail.opacity;
+    j["trailGlow"]      = m_config.trail.glow;
+    j["trailHueSpeed"]  = static_cast<double>(m_config.trail.hueSpeed);
+
+    auto const& click = m_config.click;
+    j["clickFxEnabled"]      = m_config.clickFxEnabled;
+    j["clickPreset"]         = m_config.clickPreset;
+    j["clickBurst"]          = static_cast<int>(click.press);
+    j["clickReleaseBurst"]   = static_cast<int>(click.release);
+    j["clickHold"]           = static_cast<int>(click.hold);
+    j["clickAnim"]           = static_cast<int>(click.anim);
+    j["clickSound"]          = static_cast<int>(click.pressSound);
+    j["clickReleaseSound"]   = static_cast<int>(click.releaseSound);
+    j["clickColorMode"]      = static_cast<int>(click.colorMode);
+    j["clickR"]              = static_cast<int>(click.color1.r);
+    j["clickG"]              = static_cast<int>(click.color1.g);
+    j["clickB"]              = static_cast<int>(click.color1.b);
+    j["clickR2"]             = static_cast<int>(click.color2.r);
+    j["clickG2"]             = static_cast<int>(click.color2.g);
+    j["clickB2"]             = static_cast<int>(click.color2.b);
+    j["clickHueSpeed"]       = static_cast<double>(click.hueSpeed);
+    j["clickSize"]           = static_cast<double>(click.size);
+    j["clickAmount"]         = static_cast<double>(click.amount);
+    j["clickLife"]           = static_cast<double>(click.life);
+    j["clickSpread"]         = static_cast<double>(click.spread);
+    j["clickOpacity"]        = click.opacity;
+    j["clickGlow"]           = click.glow;
+    j["clickAnimStrength"]   = static_cast<double>(click.animStrength);
+    j["clickAnimDuration"]   = static_cast<double>(click.animDuration);
+    j["clickVolume"]         = static_cast<double>(click.volume);
+    j["clickPitch"]          = static_cast<double>(click.pitch);
+    j["clickRandomPitch"]    = click.randomPitch;
+    j["clickRightButton"]    = click.rightClick;
+
+    auto writeTuning = [&j](char const* sizeKey, char const* speedKey, auto const& slots) {
+        matjson::Value sizes = matjson::Value::array();
+        matjson::Value speeds = matjson::Value::array();
+        for (auto const& slot : slots) {
+            sizes.push(static_cast<double>(slot.size));
+            speeds.push(static_cast<double>(slot.speed));
+        }
+        j[sizeKey] = sizes;
+        j[speedKey] = speeds;
+    };
+    writeTuning("clickBurstSizes", "clickBurstSpeeds", click.burstTuning);
+    writeTuning("clickHoldSizes", "clickHoldSpeeds", click.holdTuning);
+
     j["followDelayEnabled"] = m_config.followDelayEnabled;
     j["followDelay"]        = static_cast<double>(m_config.followDelay);
 
@@ -344,28 +555,19 @@ void CursorManager::saveConfig() {
         log::error("[CursorManager] Failed to write config: {}", writeRes.unwrapErr());
     }
 
-    // Sync key values to Geode mod settings so the native settings UI stays in sync
     Mod::get()->setSettingValue<bool>("custom-cursor-enable", m_config.enabled);
 }
 
-// Scene visibility
 bool CursorManager::shouldShowOnCurrentScene() const {
     auto scene = CCDirector::get()->getRunningScene();
     if (!scene) return false;
 
-    // During a scene transition, getRunningScene() returns a CCTransitionScene
-    // wrapping the outgoing and incoming scenes. Instead of returning false here
-    // (which made the cursor disappear for the whole transition), we look through
-    // the transition at the real scenes: if either the incoming or outgoing scene
-    // matches a valid layer, the cursor stays visible without flickering.
     if (auto* transition = typeinfo_cast<CCTransitionScene*>(scene)) {
         bool inOk  = transition->m_pInScene  && sceneMatchesVisibleLayers(transition->m_pInScene);
         bool outOk = transition->m_pOutScene && sceneMatchesVisibleLayers(transition->m_pOutScene);
         return inOk || outOk;
     }
 
-    // CustomTransitionScene is a normal CCScene that reparents source/dest layers
-    // as children; sceneMatchesVisibleLayers recurses and finds them.
     return sceneMatchesVisibleLayers(scene);
 }
 
@@ -386,7 +588,6 @@ bool CursorManager::sceneMatchesVisibleLayers(CCScene* scene) const {
     return containsVisibleLayerMatch(scene, m_config.visibleLayers);
 }
 
-// Gallery & packs
 std::filesystem::path CursorManager::packsDir() const {
     auto dir = galleryDir() / "packs";
     std::error_code ec;
@@ -404,7 +605,7 @@ bool relPathIsImage(std::filesystem::path const& p) {
         || ext == ".bmp" || ext == ".webp" || ext == ".tiff" || ext == ".tif"
         || ext == ".tga" || ext == ".psd" || ext == ".qoi" || ext == ".jxl";
 }
-} // namespace
+}
 
 std::vector<std::string> CursorManager::getPacks() const {
     std::vector<std::string> result;
@@ -426,10 +627,10 @@ std::vector<std::string> CursorManager::getImagesInPack(std::string const& packN
     std::filesystem::path dir;
     std::string prefix;
     if (packName.empty()) {
-        dir = galleryDir();           // loose images (root)
+        dir = galleryDir();
         prefix = "";
     } else {
-        dir = packsDir() / packName;  // inside a pack
+        dir = packsDir() / packName;
         prefix = "packs/" + packName + "/";
     }
 
@@ -447,7 +648,6 @@ std::vector<std::string> CursorManager::getImagesInPack(std::string const& packN
 }
 
 std::vector<std::string> CursorManager::getGalleryImages() const {
-    // Compat: loose + all packs, all as relative paths.
     std::vector<std::string> result = getImagesInPack("");
     for (auto const& pack : getPacks()) {
         auto imgs = getImagesInPack(pack);
@@ -477,12 +677,7 @@ std::string CursorManager::addToGallery(std::filesystem::path const& srcPath) {
     return filename;
 }
 
-// Import: normal images + Windows cursors (.cur/.ico/.ani) + .zip
 namespace {
-// Sanitizes a filename to safe ASCII for the Windows filesystem.
-// Cursor packs often have Japanese/unicode names that break file::writeBinary
-// ("The system cannot find the path specified"). Only [A-Za-z0-9 _-] is kept;
-// separators are collapsed to '_'. Returns "" if nothing remains (caller uses fallback).
 std::string sanitizeAsciiStem(std::string const& in) {
     std::string out;
     out.reserve(in.size());
@@ -493,22 +688,18 @@ std::string sanitizeAsciiStem(std::string const& in) {
             out.push_back(static_cast<char>(c));
             lastSpace = false;
         } else if (c == ' ' || c == '.' || c == '(' || c == ')') {
-            // collapse separators to a single '_'
             if (!lastSpace && !out.empty()) {
                 out.push_back('_');
                 lastSpace = true;
             }
         }
-        // discard any other byte (UTF-8 multibyte, etc.)
     }
-    // recortar '_' sobrantes al inicio/fin
     while (!out.empty() && out.front() == '_') out.erase(out.begin());
     while (!out.empty() && out.back() == '_') out.pop_back();
     if (out.size() > 48) out.resize(48);
     return out;
 }
 
-// Returns a unique filename within `dir` for `baseName`.
 std::string uniqueGalleryName(std::filesystem::path const& dir, std::string baseName) {
     std::filesystem::path candidate(baseName);
     auto stem = geode::utils::string::pathToString(candidate.stem());
@@ -530,7 +721,6 @@ bool extensionLooksLikeCursor(std::string const& lowerExt) {
     return lowerExt == ".cur" || lowerExt == ".ani" || lowerExt == ".ico";
 }
 
-// Returns a unique ASCII pack name (subfolder) derived from the zip filename.
 std::string uniquePackName(std::filesystem::path const& packsRoot, std::string base) {
     std::string clean = sanitizeAsciiStem(base);
     if (clean.empty()) clean = "pack";
@@ -551,7 +741,7 @@ bool extensionLooksLikeImage(std::string const& lowerExt) {
         || lowerExt == ".tiff" || lowerExt == ".tif" || lowerExt == ".tga"
         || lowerExt == ".psd" || lowerExt == ".qoi" || lowerExt == ".jxl";
 }
-} // namespace
+}
 
 std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
                                             std::string const& displayName,
@@ -569,7 +759,6 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
     auto stem = sanitizeAsciiStem(geode::utils::string::pathToString(namePath.stem()));
     if (stem.empty()) stem = "cursor";
 
-    // Windows cursors (.cur / .ico / .ani)
     if (paimon::cursor_ico::isSupported(data.data(), data.size())) {
         auto decoded = paimon::cursor_ico::decode(data.data(), data.size());
         if (!decoded.success || decoded.frames.empty()) {
@@ -580,7 +769,6 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
             displayName, decoded.frames.size(), decoded.animated);
 
         if (decoded.animated && decoded.frames.size() > 1) {
-            // Animado -> GIF (el pipeline de animacion del mod solo lee GIF).
             std::vector<paimon::gif::EncodeFrame> gifFrames;
             gifFrames.reserve(decoded.frames.size());
             for (auto& f : decoded.frames) {
@@ -606,7 +794,6 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
             return relPrefix + name;
         }
 
-        // Estatico -> PNG.
         auto& f = decoded.frames.front();
         if (f.width <= 0 || f.height <= 0 || f.rgba.empty()) return "";
         std::vector<uint8_t> png;
@@ -626,11 +813,9 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
         return relPrefix + name;
     }
 
-    // Imagen estandar: guardar tal cual (conserva GIF animado original)
     auto ext = geode::utils::string::toLower(
         geode::utils::string::pathToString(namePath.extension()));
     if (ext.empty() || !extensionLooksLikeImage(ext)) {
-        // Sin extension util: deducir por contenido para al menos los comunes.
         using paimon::format::ImageFormat;
         switch (paimon::format::detect(data.data(), data.size())) {
             case ImageFormat::PNG:  ext = ".png";  break;
@@ -638,7 +823,7 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
             case ImageFormat::GIF:  ext = ".gif";  break;
             case ImageFormat::WebP: ext = ".webp"; break;
             case ImageFormat::BMP:  ext = ".bmp";  break;
-            default: return ""; // unknown format, skip
+            default: return "";
         }
     }
     auto name = uniqueGalleryName(dir, stem + ext);
@@ -662,7 +847,6 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
 
     m_lastImportedPack.clear();
 
-    // Pack .zip (cursors-4u.com, etc.)
     if (ext == ".zip") {
         auto unzipRes = file::Unzip::create(srcPath);
         if (!unzipRes) {
@@ -672,10 +856,6 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
         }
         auto& unzip = unzipRes.unwrap();
 
-        // Don't extract entry-by-entry. Cursor packs often have Japanese/unicode names
-        // that break Geode's Unzip re-lookup by name on Windows ("Unable to locate
-        // entry, code -100"). Instead, extract everything to a temp folder at once,
-        // then walk the disk.
         auto tmpDir = Mod::get()->getSaveDir() / "cursor_zip_tmp";
         std::error_code ec;
         std::filesystem::remove_all(tmpDir, ec);
@@ -689,7 +869,6 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
             return imported;
         }
 
-        // Each zip gets its own pack (subfolder) to avoid cluttering the gallery.
         auto packName = uniquePackName(packsDir(),
             geode::utils::string::pathToString(srcPath.stem()));
         auto packDir  = packsDir() / packName;
@@ -740,7 +919,6 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
             packName, considered, imported.size(), skipped, failed);
 
         if (imported.empty()) {
-            // limpiar el pack vacio
             std::filesystem::remove_all(packDir, ec);
             if (considered == 0) {
                 m_lastImportError = "The .zip had no cursor/image files (.cur, .ani, .png, .gif).";
@@ -754,7 +932,6 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
         return imported;
     }
 
-    // Loose Windows cursor (.cur/.ico/.ani)
     if (extensionLooksLikeCursor(ext)) {
         auto readRes = file::readBinary(srcPath);
         if (!readRes) {
@@ -771,15 +948,82 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
         return imported;
     }
 
-    // Regular image: classic direct-copy path (loose).
     auto name = addToGallery(srcPath);
     if (!name.empty()) imported.push_back(name);
     else m_lastImportError = "Couldn't import that image.";
     return imported;
 }
 
+std::string CursorManager::createPack(std::string const& baseName) {
+    auto name = uniquePackName(packsDir(), baseName);
+    std::error_code ec;
+    std::filesystem::create_directories(packsDir() / name, ec);
+    if (ec) {
+        log::error("[CursorManager] Failed to create pack '{}': {}", name, ec.message());
+        return "";
+    }
+    return name;
+}
+
+std::string CursorManager::importData(std::vector<uint8_t> const& data,
+                                      std::string const& displayName,
+                                      std::string const& packName) {
+    m_lastImportError.clear();
+    if (data.empty()) {
+        m_lastImportError = "La descarga llego vacia.";
+        return "";
+    }
+
+    std::filesystem::path destDir = packName.empty() ? galleryDir() : packsDir() / packName;
+    std::string relPrefix = packName.empty() ? "" : "packs/" + packName + "/";
+
+    auto name = importSingleData(data, displayName, destDir, relPrefix);
+    if (name.empty()) {
+        m_lastImportError = "No se pudo decodificar ese cursor.";
+    } else if (!packName.empty()) {
+        m_lastImportedPack = packName;
+    }
+    return name;
+}
+
+std::vector<std::string> CursorManager::importZipData(std::vector<uint8_t> const& data,
+                                                      std::string const& displayName) {
+    m_lastImportError.clear();
+    if (data.empty()) {
+        m_lastImportError = "La descarga llego vacia.";
+        return {};
+    }
+
+    // file::Unzip solo abre ficheros, asi que el .zip pasa por disco.
+    auto tmpPath = Mod::get()->getSaveDir() / "cursor_shop_download.zip";
+    auto writeRes = file::writeBinary(tmpPath, geode::ByteVector(data.begin(), data.end()));
+    if (!writeRes) {
+        log::error("[CursorManager] Failed to stage downloaded zip: {}", writeRes.unwrapErr());
+        m_lastImportError = "No se pudo guardar el .zip descargado.";
+        return {};
+    }
+
+    // El nombre del pack sale del stem del fichero, asi que conviene renombrarlo.
+    auto stem = sanitizeAsciiStem(displayName);
+    if (stem.empty()) stem = "pack";
+
+    std::filesystem::path named = tmpPath;
+    named.replace_filename(stem + ".zip");
+    std::error_code renameEc;
+    if (named != tmpPath) {
+        std::filesystem::rename(tmpPath, named, renameEc);
+        if (renameEc) named = tmpPath;
+    }
+
+    auto imported = importFromFile(named);
+
+    std::error_code rmEc;
+    std::filesystem::remove(named, rmEc);
+    return imported;
+}
+
 void CursorManager::removeFromGallery(std::string const& filename) {
-    auto path = galleryDir() / filename;
+    auto path = galleryDir() / paimon::assets::pathFromUtf8(filename);
     std::error_code rmEc;
     if (std::filesystem::exists(path, rmEc)) {
         std::filesystem::remove(path, rmEc);
@@ -793,9 +1037,8 @@ void CursorManager::removeFromGallery(std::string const& filename) {
 }
 
 void CursorManager::removeAllFromGallery() {
-    // Delete loose images and all pack folders.
     for (auto& img : getImagesInPack("")) {
-        auto path = galleryDir() / img;
+        auto path = galleryDir() / paimon::assets::pathFromUtf8(img);
         std::error_code ec;
         if (std::filesystem::exists(path, ec)) std::filesystem::remove(path, ec);
     }
@@ -818,7 +1061,6 @@ void CursorManager::removePack(std::string const& packName) {
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
 
-    // Si algun estado apuntaba a una imagen de este pack, limpiarlo.
     std::string prefix = "packs/" + packName + "/";
     bool changed = false;
     for (auto state : kAllStates) {
@@ -873,21 +1115,16 @@ int CursorManager::cleanupInvalidImages() {
 }
 
 CCTexture2D* CursorManager::loadGalleryThumb(std::string const& filename) const {
-    auto path = galleryDir() / filename;
+    auto path = galleryDir() / paimon::assets::pathFromUtf8(filename);
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || ec) return nullptr;
 
-    // 1) Normal attempt (PNG/JPG/BMP/... and first GIF frame via stb).
     auto img = ImageLoadHelper::loadStaticImage(path);
     if (img.success && img.texture) return img.texture;
 
-    // 2) Fallback for GIFs that stb can't decode (some disposal/interlace modes):
-    //    use the mod's own decoder and take the first frame, so .gif files
-    //    don't appear as empty cells in the gallery.
     if (ImageLoadHelper::isAnimatedImage(path)) {
         auto bin = ImageLoadHelper::readBinaryFile(path);
         if (!bin.empty() && GIFDecoder::isGIF(bin.data(), bin.size())) {
-            // Gallery thumbnail: only the first frame is shown.
             auto gif = GIFDecoder::decode(bin.data(), bin.size(), 1);
             if (!gif.frames.empty()) {
                 auto const& f = gif.frames.front();
@@ -895,7 +1132,7 @@ CCTexture2D* CursorManager::loadGalleryThumb(std::string const& filename) const 
                 if (tex->initWithData(f.pixels.data(), kCCTexture2DPixelFormat_RGBA8888,
                                       f.width, f.height, CCSize(f.width, f.height))) {
                     tex->setAntiAliasTexParameters();
-                    return tex;  // caller hace release
+                    return tex;
                 }
                 tex->release();
             }
@@ -904,20 +1141,17 @@ CCTexture2D* CursorManager::loadGalleryThumb(std::string const& filename) const 
     return nullptr;
 }
 
-// Init
 void CursorManager::init() {
     log::info("[CursorManager] init");
     loadConfig();
     m_config.scale = clampCursorScale(m_config.scale);
 
-    // Push loaded config to Geode mod settings for initial sync
     Mod::get()->setSettingValue<bool>("custom-cursor-enable", m_config.enabled);
 }
 
-// Image loading
 CCSprite* CursorManager::loadSprite(std::string const& filename) {
     if (filename.empty()) return nullptr;
-    auto path = galleryDir() / filename;
+    auto path = galleryDir() / paimon::assets::pathFromUtf8(filename);
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || ec) return nullptr;
 
@@ -930,9 +1164,6 @@ CCSprite* CursorManager::loadSprite(std::string const& filename) {
 CCSprite* CursorManager::createFallbackSprite() {
     auto& fallbackTex = fallbackCursorTexture();
     if (!fallbackTex) {
-        // Classic arrow drawn from an explicit pixel map. Hotspot is the
-        // top-left corner, matching the OS cursor.
-        //   ' ' = transparente,  '#' = borde negro,  '.' = relleno blanco
         static char const* kArrow[] = {
             "#.          ",
             "#..         ",
@@ -977,7 +1208,6 @@ CCSprite* CursorManager::createFallbackSprite() {
 
         auto* newTex = new CCTexture2D();
         if (newTex->initWithData(pixels.data(), kCCTexture2DPixelFormat_RGBA8888, kW, kH, CCSizeMake(kW, kH))) {
-            // Nearest-neighbor filtering keeps the arrow sharp when scaled.
             ccTexParams params{GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
             newTex->setTexParameters(&params);
             // Ref::adopt takes ownership of the existing refcount=1 without
@@ -1002,12 +1232,27 @@ bool CursorManager::hasLoadedCursorVisual() const {
     return !m_sprites.empty();
 }
 
+CCSprite* CursorManager::createPreviewSprite() {
+    return createPreviewSprite(CursorState::Idle);
+}
+
+CCSprite* CursorManager::createPreviewSprite(CursorState state) {
+    auto filename = imageForState(state);
+    if (filename.empty() && state != CursorState::Idle) {
+        filename = m_config.idleImage;
+    }
+    CCSprite* spr = loadSprite(filename);
+    if (!spr) spr = createFallbackSprite();
+    if (spr) applyCursorVisual(spr, m_config.scale, 255);
+    return spr;
+}
+
 void CursorManager::reloadSprites() {
-    // Limpia todos los sprites de estado existentes.
     for (auto& [state, sprite] : m_sprites) {
         if (sprite && m_cursorNode) sprite->removeFromParent();
     }
     m_sprites.clear();
+    m_spriteBaseScales.clear();
 
     if (!m_config.enabled || !m_cursorNode) return;
 
@@ -1020,31 +1265,36 @@ void CursorManager::reloadSprites() {
         sprite->setVisible(false);
         m_cursorNode->addChild(sprite);
         m_sprites[state] = sprite;
+        m_spriteBaseScales[state] = ccp(sprite->getScaleX(), sprite->getScaleY());
     };
 
-    // Idle is the base state: if no image is assigned, use the fallback arrow
-    // so enabling the feature always renders something visible.
     CCSprite* idle = loadSprite(m_config.idleImage);
     if (!idle) idle = createFallbackSprite();
     attachSprite(CursorState::Idle, idle);
 
-    // Other states are only created when they have an assigned image;
-    // resolveActiveState falls back to Idle automatically.
     attachSprite(CursorState::Move,     loadSprite(m_config.moveImage));
     attachSprite(CursorState::Hover,    loadSprite(m_config.hoverImage));
     attachSprite(CursorState::Click,    loadSprite(m_config.clickImage));
     attachSprite(CursorState::Text,     loadSprite(m_config.textImage));
     attachSprite(CursorState::Disabled, loadSprite(m_config.disabledImage));
 
-    // Show the initial base state.
     if (auto* base = spriteForState(CursorState::Idle)) {
         base->setVisible(true);
     }
 
+    m_activeState = CursorState::Idle;
+    m_previousState = CursorState::Idle;
+    m_cachedState = CursorState::Idle;
+    m_contextFrame = 0;
+    m_stateTransitionTime = 0.f;
+    m_stateTransitioning = false;
+    m_stateTransitionInterrupted = false;
+    m_transitionStartFrames.clear();
+    m_renderedTransitionFrames.clear();
+
     updateTrail();
 }
 
-// Hover / state resolution
 bool CursorManager::isCursorOverButton(CCPoint const& worldPos) const {
     auto* scene = CCDirector::get()->getRunningScene();
     if (!scene) return false;
@@ -1055,15 +1305,10 @@ bool CursorManager::isCursorOverButton(CCPoint const& worldPos) const {
 
 CursorState CursorManager::resolveActiveState(CCPoint const& mouseWorld) const {
     // Priority: Click > Disabled > Text > Hover > Move > Idle.
-    // Un estado solo "gana" si tiene un sprite cargado; si no, seguimos bajando.
-
-    // Click no depende del contexto de escena, asi que se evalua primero.
     if (m_config.clickEnabled && m_mouseDown && spriteForState(CursorState::Click)) {
         return CursorState::Click;
     }
 
-    // Inspect the context under the cursor once (expensive at 60fps,
-    // but only when a contextual state has a sprite loaded).
     bool needContext =
         (m_config.disabledEnabled && spriteForState(CursorState::Disabled)) ||
         (m_config.textEnabled     && spriteForState(CursorState::Text)) ||
@@ -1095,7 +1340,6 @@ CursorState CursorManager::resolveActiveState(CCPoint const& mouseWorld) const {
     return CursorState::Idle;
 }
 
-// Attach / Detach
 void CursorManager::attachToOverlay() {
     log::debug("[CursorManager] attachToOverlay");
     if (!m_config.enabled) return;
@@ -1120,11 +1364,26 @@ void CursorManager::attachToOverlay() {
     m_moveTimer  = 0.f;
 
     reloadSprites();
-    // Start hidden: update() makes the first correct visibility decision (scene
-    // filter, gameplay state, window bounds) on the very next frame, which
-    // avoids a one-frame flash at a stale position.
     m_cursorNode->setVisible(false);
-    if (m_trail) m_trail->setPosition(m_currentPos);
+}
+
+void CursorManager::setMouseDown(bool down) {
+    m_mouseDown = down;
+    refreshClickHold();
+}
+
+void CursorManager::setSecondaryMouseDown(bool down) {
+    m_rightDown = down;
+    refreshClickHold();
+}
+
+void CursorManager::refreshClickHold() {
+    bool held = m_mouseDown || (m_config.click.rightClick && m_rightDown);
+    if (held == m_fxHeld) return;
+    m_fxHeld = held;
+    if (m_clickQueue.size() < 8) {
+        m_clickQueue.push_back(held ? uint8_t{1} : uint8_t{0});
+    }
 }
 
 void CursorManager::detachFromScene() {
@@ -1132,57 +1391,48 @@ void CursorManager::detachFromScene() {
         m_cursorNode->removeFromParent();
         m_cursorNode  = nullptr;
         m_sprites.clear();
+        m_spriteBaseScales.clear();
         m_trail       = nullptr;
+        m_stateTransitioning = false;
+        m_stateTransitionInterrupted = false;
+        m_transitionStartFrames.clear();
+        m_renderedTransitionFrames.clear();
     }
     syncSystemCursorVisibility(false);
 }
 
-// Re-render the cursor node on top of any ImGui pass.
-//
-// Why: gd-imgui-cocos hooks cocos2d::CCEGLView::swapBuffers and runs
-//   ImGuiCocos::drawFrame() BEFORE the original swap, which means every ImGui
-//   menu (EclipseMenu, OpenHack, GD Mega Overlay, ...) ends up painted on top
-//   of the entire cocos2d scene graph -- including OverlayManager. Re-ordering
-//   our cursor inside cocos2d (INT_MAX z-order, re-add as last child every
-//   frame) cannot beat that, because ImGui is a separate render pass that
-//   runs AFTER cocos2d's whole frame.
-//
-// How: this function is invoked from a CCEGLView::swapBuffers hook installed
-//   with Priority::VeryLate (see src/hooks/CCEGLView.cpp). VeryLate runs
-//   closer to the original than imgui-cocos's Early/default priority, so by
-//   the time we get here:
-//     1. cocos2d already drew the scene + OverlayManager (cursor first time).
-//     2. imgui-cocos already drew its ImGui frame on top.
-//     3. The original swapBuffers has NOT been called yet, so anything we draw
-//        now lands on the back buffer above ImGui and is presented next swap.
-//
-// Cost: the cursor node is one sprite (or a few state sprites of which only
-//   one is visible per frame) plus an optional CCMotionStreak. Visiting it
-//   twice per frame is negligible, and we deliberately skip the call when
-//   the cursor is disabled, hidden, or off-window so we do not waste a draw.
 void CursorManager::renderOverlay() {
-    // Cheap fast-paths first so this is essentially free when the feature is
-    // off or the cursor is currently hidden by update().
+    if (m_clickFx && m_clickHost && m_clickHost->getParent() && m_clickHost->isVisible()) {
+        m_clickFx->beginOverlayPass();
+        m_clickHost->visit();
+        m_clickFx->endOverlayPass();
+    }
+
     if (!m_config.enabled) return;
     if (!m_cursorNode) return;
     if (!m_cursorNode->getParent()) return;
     if (!m_cursorNode->isVisible()) return;
     if (!hasLoadedCursorVisual()) return;
 
-    // m_cursorNode is parented to OverlayManager (a top-level CCNode at
-    // identity transform), and its sprites use absolute window coordinates,
-    // so calling visit() directly draws them at the correct screen position
-    // using the current cocos2d projection matrix (which CCDirector left in
-    // place after drawScene()). CCSprite::draw() and CCMotionStreak::draw()
-    // both rebind their own shader, blend func, texture and vertex attribs,
-    // so any GL state ImGui left behind is irrelevant to the result.
+    // The host uses window coordinates and restores its own GL state.
+    if (m_trail) m_trail->beginOverlayPass();
     m_cursorNode->visit();
+    if (m_trail) m_trail->endOverlayPass();
 }
 
 void CursorManager::releaseSharedResources() {
+    detachClickOverlay();
     detachFromScene();
-    (void)whiteTrailTexture().take();
+    paimon::cursorfx::CursorTrailNode::abandonSharedTextures();
     (void)fallbackCursorTexture().take();
+}
+
+void CursorManager::onGLContextReload() {
+    detachClickOverlay();
+    detachFromScene();
+    // Release while the old GL context is still active.
+    paimon::cursorfx::CursorTrailNode::releaseSharedTextures();
+    fallbackCursorTexture() = nullptr;
 }
 
 void CursorManager::syncSystemCursorVisibility(bool hideSystemCursor) {
@@ -1197,11 +1447,12 @@ void CursorManager::syncSystemCursorVisibility(bool hideSystemCursor) {
     m_systemCursorHidden = hideSystemCursor;
 }
 
-// Update (every frame)
 void CursorManager::update(float dt) {
+    m_sceneVisible = shouldShowOnCurrentScene();
+    updateClickOverlay(dt);
+
     if (!m_config.enabled || !m_cursorNode) return;
 
-    // Safety: lost parent during scene transition
     if (!m_cursorNode->getParent()) {
         detachFromScene();
         return;
@@ -1211,13 +1462,8 @@ void CursorManager::update(float dt) {
     bool insideWindow = true;
     if (!sampleCursorPosition(newPos, insideWindow)) return;
 
-    // Hide during gameplay if the user has disabled the native cursor or the mod
-    // option. Mirrors Ecuet: only show in PlayLayer while paused or on the
-    // retry/complete overlays.
     bool hideInGameplay = false;
     if (auto* pl = PlayLayer::get()) {
-        // Both are string-keyed map lookups and only change from settings UIs;
-        // sample ~2x/sec instead of every frame.
         static int s_hideFlagsCooldown = 0;
         static bool s_nativeHide = false;
         static bool s_modHide = false;
@@ -1236,16 +1482,15 @@ void CursorManager::update(float dt) {
         hideInGameplay = (nativeHide || modHide) && !inMenuOverlay;
     }
 
-    // Single visibility decision per frame. The trail and all state sprites are
-    // children of the host node, so toggling ONLY the host hides/shows the whole
-    // cursor without destroying and rebuilding the CCMotionStreak — which is
-    // what produced the per-frame flicker before.
+    // cursor without destroying and rebuilding the trail — which is what
+    // produced the per-frame flicker before.
     bool show = insideWindow && !hideInGameplay &&
-                shouldShowOnCurrentScene() && hasLoadedCursorVisual();
+                m_sceneVisible && hasLoadedCursorVisual();
 
     if (!show) {
         if (m_cursorNode->isVisible()) m_cursorNode->setVisible(false);
         syncSystemCursorVisibility(false);
+        m_clickQueue.clear();
         return;
     }
 
@@ -1253,29 +1498,22 @@ void CursorManager::update(float dt) {
         m_cursorNode->setVisible(true);
         m_currentPos = newPos;          // snap on reappear (no lerp dash)
         if (m_trail) m_trail->reset();  // clear stale points (no streak jump)
+        if (m_clickFx) m_clickFx->reset();
+        m_clickQueue.clear();
     }
 
-    // Re-hide the OS cursor every frame: GD/OS re-assert the native cursor on
-    // focus/scene changes, so a one-shot hide lets the arrow bleed through.
     PlatformToolbox::hideCursor();
     m_systemCursorHidden = true;
 
-    // Ensure cursor is always on top, even when mods like Eclipse Menu (which uses
-    // ImGui) add overlays. We need to reorder every frame because:
-    // 1. ImGui layers are added dynamically with high z-orders
-    // 2. Other mods may add popups at any time
-    // 3. Simply setting INT_MAX once isn't enough if something is added after us
-    // Solution: Move cursor to the END of parent's children array every frame
     if (auto* parent = m_cursorNode->getParent()) {
         auto children = parent->getChildren();
         if (children && children->count() > 0) {
             auto* lastChild = static_cast<CCNode*>(children->lastObject());
             if (lastChild != m_cursorNode) {
-                // Cursor is not the last child, move it to the end
-                m_cursorNode->retain();  // Prevent deallocation during move
+                m_cursorNode->retain();
                 m_cursorNode->removeFromParentAndCleanup(false);
                 parent->addChild(m_cursorNode, INT_MAX);  // Re-add with max z-order
-                m_cursorNode->release();  // Balance the retain
+                m_cursorNode->release();
             }
         }
     }
@@ -1283,7 +1521,6 @@ void CursorManager::update(float dt) {
     CCPoint prevPos = m_currentPos;
     m_targetPos     = newPos;
 
-    // Follow delay: lerp towards the target (0.0 = instant, 1.0 = very slow)
     if (m_config.followDelayEnabled && m_config.followDelay > 0.f) {
         float lerpSpeed = (1.f - m_config.followDelay) * 25.f + 1.f;
         float t = std::min(1.f, lerpSpeed * dt);
@@ -1297,7 +1534,6 @@ void CursorManager::update(float dt) {
     m_velocity.y = (m_currentPos.y - prevPos.y) / std::max(dt, 0.001f);
     float speed  = std::sqrt(m_velocity.x * m_velocity.x + m_velocity.y * m_velocity.y);
 
-    // "Moving" stays true for 0.15s after the last movement above threshold
     if (speed > 5.f) {
         m_isMoving  = true;
         m_moveTimer = 0.15f;
@@ -1309,88 +1545,304 @@ void CursorManager::update(float dt) {
         }
     }
 
-    // Decide el estado activo. Throttle context scan to every 2 frames
-    // since hover detection doesn't need 60fps precision.
-    static int s_contextFrame = 0;
-    static CursorState s_cachedState = CursorState::Idle;
-    if (++s_contextFrame % 2 == 0 || m_mouseDown) {
-        s_cachedState = resolveActiveState(newPos);
+    if (++m_contextFrame % 2 == 0 || m_mouseDown) {
+        m_cachedState = resolveActiveState(newPos);
     }
-    CursorState active = s_cachedState;
-    for (auto state : kAllStates) {
-        if (auto* sprite = spriteForState(state)) {
-            sprite->setVisible(state == active);
-            sprite->setPosition(m_currentPos);
-        }
-    }
+    CursorState active = m_cachedState;
+    updateStateSprites(dt, active);
 
-    if (m_trail) m_trail->setPosition(m_currentPos);
+    if (m_trail) {
+        m_trail->setEchoSource(spriteForState(active));
+        m_trail->step(dt, m_currentPos);
+    }
 }
 
-// Apply config live
 void CursorManager::applyConfigLive() {
     m_config.scale = clampCursorScale(m_config.scale);
 
     for (auto& [state, sprite] : m_sprites) {
         applyCursorVisual(sprite, m_config.scale, m_config.opacity);
+        m_spriteBaseScales[state] = ccp(sprite->getScaleX(), sprite->getScaleY());
     }
+    finishStateTransition();
     updateTrail();
     saveConfig();
 }
 
-// Trail
-void CursorManager::updateTrail() {
-    if (m_trail && m_cursorNode) {
-        m_trail->removeFromParent();
-        m_trail = nullptr;
-    }
+void CursorManager::applyTrailLive() {
+    updateTrail();
+}
 
-    if (!m_config.trailEnabled || !m_cursorNode || !hasLoadedCursorVisual()) return;
+void CursorManager::applyClickLive() {
+    m_clickModuleCooldown = 0;
+    updateClickFx();
+}
 
-    auto& trailTex = whiteTrailTexture();
-    if (!trailTex) {
-        const int sz = 2;
-        uint8_t pixels[sz * sz * 4];
-        memset(pixels, 255, sizeof(pixels));
-        auto* newTex = new CCTexture2D();
-        if (newTex->initWithData(pixels, kCCTexture2DPixelFormat_RGBA8888, sz, sz, CCSizeMake(sz, sz))) {
-            // Ref::adopt takes ownership of refcount=1 without an extra retain.
-            // Without adopt, `trailTex = newTex` retains via Ref::operator=,
-            // leaving refcount=2 — permanent leak.
-            trailTex = geode::Ref<CCTexture2D>::adopt(newTex);
+void CursorManager::processClickEvents(CCPoint const& at) {
+    if (m_clickQueue.empty()) return;
+
+    auto queue = std::move(m_clickQueue);
+    m_clickQueue.clear();
+    if (!m_clickFx) return;
+
+    for (uint8_t event : queue) {
+        bool pressed = event != 0;
+        m_clickAnimTime = 0.f;
+        m_clickAnimHeld = pressed;
+        if (pressed) {
+            m_clickFx->press(at);
+            paimon::cursorfx::playClickSound(
+                m_config.click.pressSound, m_config.click.volume,
+                m_config.click.pitch, m_config.click.randomPitch);
         } else {
-            newTex->release();
+            m_clickFx->release(at);
+            paimon::cursorfx::playClickSound(
+                m_config.click.releaseSound, m_config.click.volume,
+                m_config.click.pitch, m_config.click.randomPitch);
         }
     }
-    if (!trailTex) return;
+}
 
-    float fadeTime = m_config.trailLength / 60.f;
-    // Apply fade type variation via fade time scaling
-    if (m_config.trailFadeType == 1) fadeTime *= 1.4f; // sine: longer fade
-    if (m_config.trailFadeType == 2) fadeTime = 0.05f; // none: instant cut
+void CursorManager::applyTransitionLive() {
+    m_config.transition.duration = std::clamp(
+        m_config.transition.duration,
+        paimon::cursorfx::kTransitionDurationMin,
+        paimon::cursorfx::kTransitionDurationMax);
+    m_config.transition.intensity = std::clamp(
+        m_config.transition.intensity,
+        paimon::cursorfx::kTransitionIntensityMin,
+        paimon::cursorfx::kTransitionIntensityMax);
+    finishStateTransition();
+}
 
-    m_trail = CCMotionStreak::create(
-        fadeTime,
-        1.f,
-        m_config.trailWidth,
-        ccc3(static_cast<GLubyte>(m_config.trailR),
-             static_cast<GLubyte>(m_config.trailG),
-             static_cast<GLubyte>(m_config.trailB)),
-        trailTex.data()
-    );
+void CursorManager::finishStateTransition() {
+    m_stateTransitioning = false;
+    m_stateTransitionInterrupted = false;
+    m_stateTransitionTime = 0.f;
+    m_transitionStartFrames.clear();
+    m_renderedTransitionFrames.clear();
+    for (auto state : kAllStates) {
+        auto* sprite = spriteForState(state);
+        if (!sprite) continue;
+        auto scale = m_spriteBaseScales.contains(state)
+            ? m_spriteBaseScales.at(state) : ccp(sprite->getScaleX(), sprite->getScaleY());
+        sprite->setVisible(state == m_activeState);
+        paimon::cursorfx::applyTransitionFrame(
+            sprite, m_currentPos, scale, m_config.opacity, m_clickFrame);
+    }
+    m_renderedTransitionFrames[m_activeState] = {};
+}
 
-    if (m_trail && m_trail->getTexture()) {
-        m_trail->setOpacity(static_cast<GLubyte>(m_config.trailOpacity));
-        ccBlendFunc blend = {GL_SRC_ALPHA, GL_ONE};
-        m_trail->setBlendFunc(blend);
+void CursorManager::updateStateSprites(float dt, CursorState active) {
+    namespace fx = paimon::cursorfx;
+    if (m_transitionModuleCooldown-- <= 0) {
+        m_transitionModuleCooldown = 30;
+        m_transitionModuleOn =
+            paimon::modules::isEnabled("paimbnails.cursortransition.global");
+    }
+    bool transitionsOn = m_transitionModuleOn;
+
+    if (active != m_activeState) {
+        m_stateTransitionInterrupted = m_stateTransitioning;
+        m_transitionStartFrames.clear();
+        if (m_stateTransitionInterrupted) {
+            m_transitionStartFrames = m_renderedTransitionFrames;
+        } else {
+            m_transitionStartFrames[m_activeState] = {};
+        }
+        m_previousState = m_activeState;
+        m_activeState = active;
+        m_stateTransitionTime = 0.f;
+        m_stateTransitioning = transitionsOn &&
+            m_config.transition.effect != fx::TransitionEffect::Instant &&
+            spriteForState(m_previousState) && spriteForState(m_activeState);
+    }
+
+    if (!transitionsOn || !m_stateTransitioning) {
+        finishStateTransition();
+        return;
+    }
+
+    float duration = std::clamp(
+        m_config.transition.duration,
+        fx::kTransitionDurationMin,
+        fx::kTransitionDurationMax);
+    m_stateTransitionTime += std::max(dt, 0.f);
+    float progress = std::min(m_stateTransitionTime / duration, 1.f);
+
+    for (auto state : kAllStates) {
+        if (auto* sprite = spriteForState(state)) sprite->setVisible(false);
+    }
+
+    m_renderedTransitionFrames.clear();
+
+    auto apply = [&](CursorState state, fx::TransitionFrame const& frame) {
+        auto* sprite = spriteForState(state);
+        if (!sprite) return;
+        auto scale = m_spriteBaseScales.contains(state)
+            ? m_spriteBaseScales.at(state) : ccp(sprite->getScaleX(), sprite->getScaleY());
+        sprite->setVisible(true);
+        fx::applyTransitionFrame(
+            sprite, m_currentPos, scale, m_config.opacity,
+            combineTransitionFrames(frame, m_clickFrame));
+        m_renderedTransitionFrames[state] = frame;
+    };
+
+    for (auto const& [state, start] : m_transitionStartFrames) {
+        if (state == m_activeState) continue;
+        auto frame = fx::sampleTransition(m_config.transition, progress, false);
+        if (m_stateTransitionInterrupted) {
+            frame = mixTransitionFrames(start, frame, progress);
+        }
+        apply(state, frame);
+    }
+
+    auto incoming = fx::sampleTransition(m_config.transition, progress, true);
+    if (m_stateTransitionInterrupted) {
+        if (auto it = m_transitionStartFrames.find(m_activeState);
+            it != m_transitionStartFrames.end()) {
+            incoming = mixTransitionFrames(it->second, incoming, progress);
+        }
+    }
+    apply(m_activeState, incoming);
+
+    if (progress >= 1.f) finishStateTransition();
+}
+
+void CursorManager::updateTrail() {
+    bool wanted = m_config.trailEnabled && m_cursorNode && hasLoadedCursorVisual();
+
+    if (!wanted) {
+        if (m_trail) {
+            m_trail->removeFromParent();
+            m_trail = nullptr;
+        }
+        return;
+    }
+
+    if (!m_trail) {
+        m_trail = paimon::cursorfx::CursorTrailNode::create();
+        if (!m_trail) {
+            log::warn("[CursorManager] no se pudo crear el nodo de estela");
+            return;
+        }
         m_trail->setZOrder(5);
         m_cursorNode->addChild(m_trail);
-        // Keep the streak's own flag visible; the host node is the single
-        // gate for show/hide, so the trail never needs to be rebuilt.
-        m_trail->setVisible(true);
-        m_trail->setPosition(m_currentPos);
-    } else {
-        m_trail = nullptr;
-        log::warn("[CursorManager] Failed to create trail with valid texture");
+        m_trail->reset();
     }
+
+    m_trail->applySettings(m_config.trail);
+}
+
+void CursorManager::detachClickOverlay() {
+    if (m_clickHost) {
+        m_clickHost->removeFromParent();
+        m_clickHost = nullptr;
+    }
+    m_clickFx = nullptr;
+    m_clickQueue.clear();
+    m_clickFrame = {};
+    m_clickAnimTime = 999.f;
+    m_clickAnimHeld = false;
+}
+
+void CursorManager::updateClickFx() {
+    if (m_clickModuleCooldown-- <= 0) {
+        m_clickModuleCooldown = 30;
+        m_clickModuleOn = paimon::modules::isEnabled("paimbnails.cursorclick.global");
+    }
+
+    if (!m_config.clickFxEnabled || !m_clickModuleOn) {
+        if (m_clickHost) detachClickOverlay();
+        return;
+    }
+
+    if (!m_clickHost) {
+        auto* overlay = OverlayManager::get();
+        if (!overlay) return;
+
+        m_clickHost = CCNode::create();
+        m_clickHost->setID("paimon-cursor-click-host"_spr);
+        m_clickHost->setZOrder(kCursorBaseZOrder - 1);
+        overlay->addChild(m_clickHost);
+
+        m_clickFx = paimon::cursorfx::CursorClickNode::create();
+        if (!m_clickFx) {
+            log::warn("[CursorManager] no se pudo crear el nodo de efectos de click");
+            detachClickOverlay();
+            return;
+        }
+        m_clickHost->addChild(m_clickFx);
+        m_clickFx->reset();
+        m_clickHost->setVisible(false);
+        m_clickQueue.clear();
+    }
+
+    if (!m_clickHost->getParent()) {
+        detachClickOverlay();
+        return;
+    }
+
+    if (m_clickFx) m_clickFx->applySettings(m_config.click);
+}
+
+CCPoint CursorManager::pointerPos() const {
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    return m_touchPoint;
+#else
+    auto winSize = CCDirector::get()->getWinSize();
+    auto mouse = geode::cocos::getMousePos();
+    return ccp(std::clamp(mouse.x, 0.f, winSize.width),
+               std::clamp(mouse.y, 0.f, winSize.height));
+#endif
+}
+
+void CursorManager::updateClickOverlay(float dt) {
+    updateClickFx();
+    if (!m_clickFx || !m_clickHost) {
+        m_clickFrame = {};
+        return;
+    }
+
+    bool inGameplay = false;
+    if (auto* pl = PlayLayer::get()) {
+        inGameplay = !(pl->m_isPaused
+            || pl->getChildByType<RetryLevelLayer>(0) != nullptr
+            || pl->getChildByType<EndLevelLayer>(0) != nullptr);
+    }
+
+    if (inGameplay || !m_sceneVisible) {
+        if (m_clickHost->isVisible()) {
+            m_clickHost->setVisible(false);
+            m_clickFx->reset();
+        }
+        m_clickQueue.clear();
+        m_clickFrame = {};
+        return;
+    }
+
+    if (!m_clickHost->isVisible()) {
+        m_clickHost->setVisible(true);
+        m_clickFx->reset();
+        m_clickQueue.clear();
+    }
+
+    if (auto* parent = m_clickHost->getParent()) {
+        auto* children = parent->getChildren();
+        if (children && children->count() > 0 &&
+            static_cast<CCNode*>(children->lastObject()) != m_clickHost.data()) {
+            m_clickHost->retain();
+            m_clickHost->removeFromParentAndCleanup(false);
+            parent->addChild(m_clickHost, kCursorBaseZOrder - 1);
+            m_clickHost->release();
+        }
+    }
+
+    CCPoint at = pointerPos();
+    processClickEvents(at);
+    m_clickAnimTime += dt;
+    m_clickFrame = paimon::cursorfx::sampleClickAnim(
+        m_config.click.anim, m_clickAnimTime, m_config.click.animDuration,
+        m_config.click.animStrength, m_clickAnimHeld);
+    m_clickFx->step(dt, at, m_fxHeld);
 }

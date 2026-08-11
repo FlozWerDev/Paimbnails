@@ -9,7 +9,7 @@
 
 namespace paimon::texture_studio {
 
-// One R8 mask. Pixel layout matches ImageBuffer (row-major, top-left origin).
+// One R8 mask in ImageBuffer's row-major, top-left layout.
 struct MaskBuffer {
     int width  = 0;
     int height = 0;
@@ -27,9 +27,8 @@ struct MaskBuffer {
     }
 };
 
-// Masks per role, plus `detail`: glow-classified pixels that do NOT touch
-// the sprite silhouette (interior white glyphs), split out spatially so the
-// glow color only affects the actual outer ring.
+// Masks per role plus detail pixels: enclosed glow components moved out of the
+// outer ring so they keep their original color.
 struct MaskSet {
     MaskBuffer color1;
     MaskBuffer color2;
@@ -41,12 +40,8 @@ struct MaskSet {
     MaskBuffer const& get(ClusterRole r) const;
 };
 
-// Grayscale "open" (erode then dilate) applied per mask to remove isolated
-// mis-classified specks on anti-aliased edges without shifting large
-// contours.
-//
-// OFF by default ({0, 0}) so the export path stays bit-exact with PackGen;
-// only the live preview turns it on.
+// Per-mask grayscale opening removes isolated AA specks without shifting large
+// contours. Off by default to keep exports bit-exact with PackGen.
 struct MaskMorphology {
     int erode  = 0;
     int dilate = 0;
@@ -55,32 +50,25 @@ struct MaskMorphology {
 };
 
 struct MaskBuilderOptions {
-    // 0.0 = hard assignment (default). 1.0 = full soft. The split is scaled
-    // by how ambiguous the pixel actually is (d0/d1 ratio), so pixels that
-    // clearly belong to one cluster stay pure at any softness.
+// 0 = hard, 1 = full soft; ambiguity scales the split so clear pixels stay pure.
     float softness = 0.0f;
 
     int alphaCutoff = 16;
 
     MaskMorphology morphology{};
 
-    // Edge-aware refinement passes (0 = off). Each pass re-averages the
-    // masks over a 3x3 window weighted by color similarity in the source
-    // sprite: speckles inside a flat region get absorbed, while mask edges
-    // that coincide with color edges stay razor sharp. Mask sums are
-    // renormalized to the pixel alpha, so tint coverage is preserved.
+// Edge-aware 3x3 refinement absorbs flat-region speckles while preserving color
+// edges and pixel-alpha coverage.
     int edgeRefine = 0;
 
-    // Split glow into outer ring (touching transparency / image border) and
-    // interior components, which move to the `detail` mask. On by default:
-    // the glow color should never repaint a button's inner white glyph.
+// Move enclosed glow components to detail; the glow color should not repaint
+// inner white glyphs.
     bool separateInteriorGlow = true;
 };
 
 class MaskBuilder final {
 public:
-    // Build masks from a classified set + the source sprite, same size as
-    // the sprite. Roles with no assigned cluster come back all-zero.
+// Build same-size masks from cluster assignments and the source sprite.
     static MaskSet build(ImageBuffer const& sprite,
                          ClassifiedSet const& classified,
                          MaskBuilderOptions options = {});
@@ -89,4 +77,4 @@ private:
     MaskBuilder() = delete;
 };
 
-}  // namespace paimon::texture_studio
+}

@@ -1,5 +1,6 @@
 #include "../services/MainMenuLayoutManager.hpp"
 #include "LayoutEditorKeybind.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 
 #include <Geode/modify/PauseLayer.hpp>
 #include "../../../framework/HookConventions.hpp"
@@ -14,6 +15,9 @@ class $modify(PaimonPauseLayerLayoutHook, PauseLayer) {
     $override
     void customSetup() {
         PauseLayer::customSetup();
+
+        if (!paimon::modules::isEnabled("paimbnails.menulayout.menu")) return;
+
 
         paimon::menu_layout::MainMenuLayoutManager::get().load();
 

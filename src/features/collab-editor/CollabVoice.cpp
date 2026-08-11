@@ -15,18 +15,16 @@ namespace paimon::collab {
 
 namespace {
 
-constexpr int kSampleRate = 12000;           // Hz, mono
-constexpr int kFrameSamples = kSampleRate / 4; // 250 ms per frame
-constexpr int kGateHoldFrames = 3;           // keep transmitting ~750 ms after voice
-constexpr size_t kFifoMaxSamples = kSampleRate * 2;   // 2 s cap per speaker
-constexpr size_t kFifoCatchupSamples = kSampleRate / 2; // trim back to 500 ms
+constexpr int kSampleRate = 12000;             // Mono Hz.
+constexpr int kFrameSamples = kSampleRate / 4;  // 250 ms.
+constexpr int kGateHoldFrames = 3;              // ~750 ms hold.
+constexpr size_t kFifoMaxSamples = kSampleRate * 2;     // 2 s cap.
+constexpr size_t kFifoCatchupSamples = kSampleRate / 2; // 500 ms catch-up.
 
 double nowSeconds() {
     using namespace std::chrono;
     return duration<double>(steady_clock::now().time_since_epoch()).count();
 }
-
-// --- G.711 mu-law ----------------------------------------------------------
 
 uint8_t muLawEncode(int16_t sample) {
     constexpr int kBias = 0x84, kClip = 32635;
@@ -48,8 +46,6 @@ int16_t muLawDecode(uint8_t code) {
     int s = (((mantissa << 3) + 0x84) << exponent) - 0x84;
     return static_cast<int16_t>(sign ? -s : s);
 }
-
-// --- base64 ----------------------------------------------------------------
 
 constexpr char kB64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -124,16 +120,13 @@ float vadThreshold() {
     return static_cast<float>(v);
 }
 
-// Perceptual 0..1 loudness from a PCM16 peak: sqrt compresses the range so
-// normal speech already reads as a mostly-full bar and shouting caps at 1.
+// Perceptual 0..1 loudness; sqrt keeps normal speech visible without clipping.
 float levelFromPeak(int peak) {
     float linear = std::min(1.f, static_cast<float>(peak) / 26000.f);
     return std::sqrt(linear);
 }
 
-} // namespace
-
-// --- Playback speaker -------------------------------------------------------
+}
 
 struct CollabVoice::Speaker {
     FMOD::Sound* stream = nullptr;
@@ -142,7 +135,7 @@ struct CollabVoice::Speaker {
     std::mutex mutex;
     std::deque<int16_t> fifo;
     double lastFrameAt = 0.0;
-    float level = 0.f; // 0..1 loudness of the last received frame
+    float level = 0.f; // 0..1 from the last frame.
 
     ~Speaker() {
         if (channel) channel->stop();
@@ -152,8 +145,7 @@ struct CollabVoice::Speaker {
 
 namespace {
 
-// FMOD mixer-thread callback: feed the peer's FIFO into the stream, silence on
-// underrun. userdata is the owning Speaker (kept alive until Sound::release).
+// FMOD mixer callback: drain the peer FIFO and silence underruns.
 FMOD_RESULT F_CALLBACK voicePcmRead(FMOD_SOUND* sound, void* data, unsigned int datalen) {
     void* userdata = nullptr;
     reinterpret_cast<FMOD::Sound*>(sound)->getUserData(&userdata);
@@ -174,14 +166,12 @@ FMOD_RESULT F_CALLBACK voicePcmRead(FMOD_SOUND* sound, void* data, unsigned int 
     return FMOD_OK;
 }
 
-} // namespace
+}
 
 CollabVoice& CollabVoice::get() {
     static CollabVoice instance;
     return instance;
 }
-
-// --- Capture -----------------------------------------------------------------
 
 void CollabVoice::setMicEnabled(bool enabled) {
     if (m_micEnabled == enabled) return;
@@ -284,8 +274,7 @@ void CollabVoice::update(float) {
         std::vector<int16_t> frame(m_capture.begin(), m_capture.begin() + kFrameSamples);
         m_capture.erase(m_capture.begin(), m_capture.begin() + kFrameSamples);
 
-        // Energy VAD: peak of the frame vs. sensitivity, with hold so word
-        // tails aren't clipped.
+        // Energy VAD with a short hold so word tails are not clipped.
         int peak = 0;
         for (int16_t s : frame) peak = std::max(peak, std::abs(static_cast<int>(s)));
         bool voiced = peak > static_cast<int>(vadThreshold() * 32767.f);
@@ -298,7 +287,7 @@ void CollabVoice::update(float) {
         if (m_gateOpenTicks > 0) emitFrame(frame);
     }
 
-    // Cap accumulated backlog if something stalls (shouldn't grow past a frame).
+    // Drop excessive backlog after a stall.
     if (m_capture.size() > static_cast<size_t>(kFrameSamples * 4)) m_capture.clear();
 }
 
@@ -308,8 +297,6 @@ void CollabVoice::emitFrame(std::vector<int16_t> const& samples) {
     for (int16_t s : samples) encoded.push_back(muLawEncode(s));
     CollabManager::get().sendVoiceFrame(++m_txSeq, b64Encode(encoded));
 }
-
-// --- Playback ----------------------------------------------------------------
 
 CollabVoice::Speaker* CollabVoice::speakerFor(int clientId, std::string const& name) {
     auto it = m_speakers.find(clientId);
@@ -330,7 +317,7 @@ CollabVoice::Speaker* CollabVoice::speakerFor(int clientId, std::string const& n
     exinfo.format = FMOD_SOUND_FORMAT_PCM16;
     exinfo.defaultfrequency = kSampleRate;
     exinfo.length = kSampleRate * sizeof(int16_t);
-    exinfo.decodebuffersize = kSampleRate / 10; // 100 ms pulls keep latency low
+    exinfo.decodebuffersize = kSampleRate / 10; // 100 ms pulls.
     exinfo.pcmreadcallback = voicePcmRead;
     exinfo.userdata = speaker.get();
 
@@ -366,7 +353,7 @@ void CollabVoice::onRemoteFrame(int from, std::string const& name, std::string c
             peak = std::max(peak, std::abs(static_cast<int>(s)));
             speaker->fifo.push_back(s);
         }
-        // Latency control: if the FIFO built up (slow poll bursts), skip ahead.
+    // Trim accumulated FIFO latency after slow poll bursts.
         if (speaker->fifo.size() > kFifoMaxSamples) {
             while (speaker->fifo.size() > kFifoCatchupSamples) speaker->fifo.pop_front();
         }
@@ -382,8 +369,7 @@ std::vector<SpeakingInfo> CollabVoice::speakingNow() const {
     for (auto const& [id, speaker] : m_speakers) {
         double age = t - speaker->lastFrameAt;
         if (age >= 0.6) continue;
-        // Fade the reported level as the last frame gets stale so bars fall
-        // smoothly instead of snapping to zero when a peer stops talking.
+    // Fade stale levels so speaking bars fall smoothly.
         float fade = age > 0.3 ? static_cast<float>((0.6 - age) / 0.3) : 1.f;
         out.push_back({id, speaker->name, speaker->level * fade});
     }
@@ -400,4 +386,4 @@ void CollabVoice::stopAll() {
     m_speakers.clear();
 }
 
-} // namespace paimon::collab
+}

@@ -25,6 +25,8 @@ public:
     bool save(int32_t levelID, uint8_t const* rgba, uint32_t width, uint32_t height);
     cocos2d::CCTexture2D* loadTexture(int32_t levelID);
     void clearAll();
+    // Solo texturas RAM (mueren con el contexto GL); los .rgb en disco quedan.
+    void clearRamCache();
     bool wasAttempted(int32_t levelID) const;
     void markAttempted(int32_t levelID);
     int generatedThisSession() const { return m_generatedThisSession; }

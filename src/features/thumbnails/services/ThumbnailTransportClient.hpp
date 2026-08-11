@@ -98,6 +98,12 @@ private:
     std::unordered_map<int, uint64_t> m_galleryGenerations;
     std::mutex m_galleryMutex;
 
+    static constexpr auto UPLOAD_GUARD_TIMEOUT = std::chrono::minutes(2);
+    std::unordered_map<int, std::chrono::steady_clock::time_point> m_uploadsInFlight;
+    std::mutex m_uploadMutex;
+    bool beginUpload(int levelId);
+    void finishUpload(int levelId);
+
     // Batch coalescing of getThumbnails into a single /api/thumbnails/list-batch
     // over a short window to avoid one request per level.
     static constexpr int BATCH_LIST_FLUSH_DELAY_MS = 50;

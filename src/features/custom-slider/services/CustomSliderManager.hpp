@@ -41,6 +41,7 @@ struct CustomSliderConfig {
     cocos2d::ccColor3B color1 = {0, 255, 100};
     cocos2d::ccColor3B color2 = {255, 255, 255};
     bool enableGlow = false;
+    bool useGradients = false;
 
     std::string customImagePath;
     bool containerEnabled = true;
@@ -73,12 +74,10 @@ public:
     CustomSliderConfig const& config() const { return m_config; }
 
     void resetToDefaults();
+    void invalidateImageCache();
 
-    bool applyCustomThumb(cocos2d::CCNode* sliderThumb);
-    void restoreOriginalThumb(cocos2d::CCNode* sliderThumb);
     bool shouldAffectSlider(cocos2d::CCNode* slider);
-    void startDragAnimation(cocos2d::CCNode* sliderThumb);
-    void stopDragAnimation(cocos2d::CCNode* sliderThumb);
+    cocos2d::CCNode* createThumbNode(bool isSelected = false);
     void addIconToNode(cocos2d::CCNode* baseNode, bool isSelected);
     std::filesystem::path imagesDir() const;
 
@@ -86,12 +85,14 @@ private:
     CustomSliderManager() = default;
     std::filesystem::path configPath() const;
 
-    cocos2d::CCNode* createIconNode();
+    cocos2d::CCTexture2D* imageTexture();
+    cocos2d::CCNode* createIconNode(bool isSelected);
     cocos2d::CCNode* createImageNode();
-    cocos2d::CCNode* createGifNode();
-    cocos2d::CCNode* createThumbNode();
+    cocos2d::CCNode* createGifNode(bool isSelected);
 
     CustomSliderConfig m_config;
+    geode::Ref<cocos2d::CCTexture2D> m_imageTexture;
+    std::string m_imageTexturePath;
 };
 
 } // namespace paimon::slider

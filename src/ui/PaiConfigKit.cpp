@@ -3,6 +3,7 @@
 
 #include <Geode/binding/SliderThumb.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/ui/ColorPickPopup.hpp>
 #include <fmt/format.h>
 #include <algorithm>
 #include <cmath>
@@ -15,7 +16,7 @@ namespace paimon::configkit {
 
 namespace {
 
-// Touch priority para controles hijos (compatible con force-priority de FLAlertLayer)
+// Touch priority for child controls.
 int childTouchPrio() {
     return CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2;
 }
@@ -28,7 +29,7 @@ CCLabelBMFont* makeTitleLabel(char const* text, float maxW, float scale = 0.40f)
     return l;
 }
 
-// Descripcion gris con salto de linea automatico.
+// Gray description with automatic wrapping.
 CCLabelBMFont* makeDescLabel(char const* text, float wrapW) {
     constexpr float kScale = 0.46f;
     auto* l = CCLabelBMFont::create(text, "chatFont.fnt", wrapW / kScale, kCCTextAlignmentLeft);
@@ -51,7 +52,7 @@ CCMenu* makeRowMenu(CCNode* row) {
     return menu;
 }
 
-// Wrapper CCObject para callbacks de toggle (mismo patron que SettingsControls).
+// CCObject wrapper for toggle callbacks.
 class KitToggleCallback : public CCObject {
 public:
     std::function<void(bool)> m_callback;
@@ -65,13 +66,12 @@ public:
     }
 
     void onToggle(CCObject*) {
-        // isToggled() devuelve el estado ANTES del click
+// isToggled() still reports the pre-click state here.
         if (m_callback && m_toggler) m_callback(!m_toggler->isToggled());
     }
 };
 
-// Wrapper para callbacks de slider con etiqueta de valor en vivo.
-// Hereda de CCNode porque Slider::create exige un CCNode* como target.
+// Slider callback wrapper; Slider::create requires a CCNode target.
 class KitSliderCallback : public CCNode {
 public:
     std::function<void(double)> m_callback;
@@ -119,12 +119,12 @@ CCMenuItemToggler* addStandardToggler(
     cb->m_toggler = tog;
     tog->toggle(value);
     tog->setPosition(pos);
-    tog->setUserObject(cb); // retiene el wrapper mientras viva el toggler
+tog->setUserObject(cb); // Keep the wrapper alive with the toggler.
     menu->addChild(tog);
     return tog;
 }
 
-} // namespace
+}
 
 CCNode* makeToggleRow(
     float width,
@@ -178,7 +178,7 @@ CCNode* makeSliderRow(
     constexpr float kPad = 6.f;
     constexpr float kTitleH = 14.f;
 
-    // Columna izquierda: titulo + descripcion. Columna derecha: valor + slider.
+// Title/description on the left; value/slider on the right.
     float leftW = width * 0.50f;
     float textMaxW = leftW - 14.f;
 
@@ -204,7 +204,6 @@ CCNode* makeSliderRow(
         row->addChild(descLbl);
     }
 
-    // Slider a la derecha
     float grooveW = width * 0.38f;
     float sliderScale = std::clamp(grooveW / 210.f, 0.35f, 0.85f);
     float sliderCX = width - 14.f - (210.f * sliderScale) / 2.f;
@@ -215,10 +214,9 @@ CCNode* makeSliderRow(
     cb->m_slider = slider;
     slider->setPosition({sliderCX, sliderCY});
     slider->setValue(normFromValue(value, minV, maxV));
-    slider->setUserObject(cb); // retiene el wrapper
+slider->setUserObject(cb); // Keep the wrapper alive.
     row->addChild(slider);
 
-    // Chip de valor siempre visible sobre el slider
     auto* chip = paimon::SpriteHelper::createColorPanel(54.f, 15.f, {0, 0, 0}, 110, 5.f);
     if (chip) {
         chip->setAnchorPoint({0.f, 0.f});
@@ -245,12 +243,15 @@ CCNode* makeSelectRow(
     char const* title, char const* desc,
     std::vector<std::string> options, int index,
     std::function<void(int)> onChange,
-    cocos2d::CCLabelBMFont** outLabel
+    cocos2d::CCLabelBMFont** outLabel,
+    std::function<void()> onGear
 ) {
     constexpr float kPad = 6.f;
     constexpr float kTitleH = 14.f;
     constexpr float kZoneW = 150.f;
-    float textMaxW = width - kZoneW - 24.f;
+// Leave room for the gear without overlapping arrows.
+    float gearW = onGear ? 24.f : 0.f;
+    float textMaxW = width - kZoneW - 24.f - gearW;
 
     CCLabelBMFont* descLbl = nullptr;
     float descH = 0.f;
@@ -290,7 +291,7 @@ CCNode* makeSelectRow(
 
     auto* menu = makeRowMenu(row);
 
-    // Estado compartido entre ambas flechas
+// Shared state for both arrows.
     auto state = std::make_shared<int>(index);
     auto opts = std::make_shared<std::vector<std::string>>(std::move(options));
     auto cb = std::make_shared<std::function<void(int)>>(std::move(onChange));
@@ -320,6 +321,16 @@ CCNode* makeSelectRow(
         rightSpr, [cycle](CCMenuItemSpriteExtra*) { cycle(1); });
     rightBtn->setPosition({valueCX + kZoneW / 2.f - 16.f, cy});
     menu->addChild(rightBtn);
+
+    if (onGear) {
+        auto* gearSpr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
+        if (gearSpr) gearSpr->setScale(0.32f);
+        auto gear = std::make_shared<std::function<void()>>(std::move(onGear));
+        auto* gearBtn = CCMenuItemExt::createSpriteExtra(
+            gearSpr, [gear](CCMenuItemSpriteExtra*) { if (*gear) (*gear)(); });
+        gearBtn->setPosition({valueCX - kZoneW / 2.f - 10.f, cy});
+        menu->addChild(gearBtn);
+    }
 
     return row;
 }
@@ -367,6 +378,72 @@ CCNode* makeButtonRow(
     return row;
 }
 
+CCNode* makeColorRow(
+    float width,
+    char const* title, char const* desc,
+    ccColor3B value,
+    std::function<void(ccColor3B)> onChange,
+    CCSprite** outSwatch
+) {
+    constexpr float kPad = 6.f;
+    constexpr float kTitleH = 14.f;
+    constexpr float kSwatch = 26.f;
+    float textMaxW = width - 90.f;
+
+    CCLabelBMFont* descLbl = nullptr;
+    float descH = 0.f;
+    if (desc && desc[0] != '\0') {
+        descLbl = makeDescLabel(desc, textMaxW);
+        descH = scaledHeight(descLbl) + 2.f;
+    }
+
+    float rowH = std::max(kPad + kTitleH + descH + kPad, 34.f);
+
+    auto* row = CCNode::create();
+    row->setAnchorPoint({0.f, 0.f});
+    row->setContentSize({width, rowH});
+
+    auto* titleLbl = makeTitleLabel(title, textMaxW);
+    titleLbl->setPosition({10.f, rowH - kPad});
+    row->addChild(titleLbl);
+
+    if (descLbl) {
+        descLbl->setPosition({10.f, rowH - kPad - kTitleH - 1.f});
+        row->addChild(descLbl);
+    }
+
+    auto* menu = makeRowMenu(row);
+
+// Tint a white swatch so every color previews accurately.
+    auto* swatch = CCSprite::create("square02_001.png");
+    if (!swatch) swatch = CCSprite::createWithSpriteFrameName("square02_001.png");
+    if (swatch) {
+        auto size = swatch->getContentSize();
+        if (size.width > 0.f) swatch->setScale(kSwatch / size.width);
+        swatch->setColor(value);
+        if (outSwatch) *outSwatch = swatch;
+
+// Keep a Ref because the modal callback may outlive a rebuilt row.
+        geode::Ref<CCSprite> swatchRef = swatch;
+        auto* btn = CCMenuItemExt::createSpriteExtra(
+            swatch, [cb = std::move(onChange), swatchRef](CCMenuItemSpriteExtra*) {
+                auto cur = swatchRef->getColor();
+                auto* picker = geode::ColorPickPopup::create(ccc4(cur.r, cur.g, cur.b, 255));
+                if (!picker) return;
+                picker->setCallback([cb, swatchRef](ccColor4B const& col) {
+                    ccColor3B rgb{col.r, col.g, col.b};
+                    swatchRef->setColor(rgb);
+                    if (cb) cb(rgb);
+                });
+                picker->show();
+            });
+        btn->setPosition({width - 14.f - kSwatch / 2.f, rowH / 2.f});
+        menu->addChild(btn);
+    }
+
+    return row;
+}
+
 CCNode* makeHint(float width, char const* text) {
     auto* lbl = makeDescLabel(text, width - 24.f);
     float rowH = scaledHeight(lbl) + 8.f;
@@ -410,7 +487,7 @@ CCNode* makeCard(
 
     float y = cardH - kPad;
     if (hasTitle) {
-        // Barrita de acento + titulo de seccion
+// Accent bar and section title.
         auto* bar = paimon::SpriteHelper::createColorPanel(4.f, 13.f, accent, 255, 2.f);
         if (bar) {
             bar->setAnchorPoint({0.f, 0.f});
@@ -539,8 +616,7 @@ geode::ScrollLayer* makeScrollStack(
 
 namespace {
 
-// Estado compartido de una barra de pestanas para poder re-estilizar
-// todas las pestanas cuando cambia la seleccion.
+// Shared tab-bar state for restyling after selection changes.
 struct TabBarState {
     std::vector<cocos2d::CCNodeRGBA*> panels;
     std::vector<CCLabelBMFont*> labels;
@@ -563,7 +639,7 @@ struct TabBarState {
     }
 };
 
-} // namespace
+}
 
 CCNode* makeTabBar(
     float width,
@@ -590,7 +666,7 @@ CCNode* makeTabBar(
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
         float x0 = static_cast<float>(i) * (tabW + kGap);
 
-        // Contenedor visual de la pestana: panel + etiqueta
+// Tab visual: panel plus label.
         auto* holder = CCNode::create();
         holder->setAnchorPoint({0.5f, 0.5f});
         holder->setContentSize({tabW, barH - 4.f});
@@ -676,4 +752,4 @@ void stepWheelScroll(geode::ScrollLayer* scrollLayer,
     contentLayer->setPositionY(cur + diff * t);
 }
 
-} // namespace paimon::configkit
+}

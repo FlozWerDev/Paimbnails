@@ -16,8 +16,6 @@
 #include "../../../features/discord-presence/ui/DiscordConfigPopup.hpp"
 #include "../../../features/discord-presence/services/DiscordPresenceManager.hpp"
 #include "../../../features/menu-physics/services/MenuPhysicsManager.hpp"
-#include "../../../features/editor-suite/EditorModule.hpp"
-#include "../../../features/editor-suite/EditorModuleCatalog.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 
 #include <Geode/Geode.hpp>
@@ -27,18 +25,15 @@
 using namespace cocos2d;
 using namespace geode::prelude;
 
-// Setting read/write helpers
 
 namespace {
 
-// getSettingValue with saved-value fallback
 template<typename T>
 T gset(const char* key) {
     if (Mod::get()->hasSetting(key)) return Mod::get()->getSettingValue<T>(key);
     return Mod::get()->getSavedValue<T>(key, T{});
 }
 
-// setSettingValue with saved-value fallback
 template<typename T>
 void sset(const char* key, T val) {
     if (Mod::get()->hasSetting(key)) Mod::get()->setSettingValue<T>(key, val);
@@ -64,7 +59,6 @@ void openNativeModSettingsPopup() {
     });
 }
 
-// CATEGORIA 0: General
 
 void buildGeneral(CCNode* c, float w) {
     c->addChild(createSectionHeader("General", w));
@@ -89,7 +83,6 @@ void buildGeneral(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA 1: Level Thumbnails
 
 void buildLevelThumbnails(CCNode* c, float w) {
     c->addChild(createSectionHeader("Thumbnail Layout", w));
@@ -160,7 +153,6 @@ void buildLevelThumbnails(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA 2: Visual Effects (LevelCell)
 
 void buildVisualEffects(CCNode* c, float w) {
     c->addChild(createSectionHeader("Hover Animation", w));
@@ -208,7 +200,6 @@ void buildVisualEffects(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA 3: Level Info Screen
 
 void buildLevelInfo(CCNode* c, float w) {
     c->addChild(createSectionHeader("Level Info Background", w));
@@ -246,7 +237,6 @@ void buildLevelInfo(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA 4: Profile Music
 
 void buildProfileMusic(CCNode* c, float w) {
     c->addChild(createSectionHeader("Profile Music", w));
@@ -268,7 +258,6 @@ void buildProfileMusic(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA 5: Capture
 
 void buildCapture(CCNode* c, float w) {
     c->addChild(createSectionHeader("Thumbnail Capture", w));
@@ -291,7 +280,6 @@ void buildCapture(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA 6: Performance
 
 void buildPerformance(CCNode* c, float w) {
     c->addChild(createSectionHeader("Cache & Downloads", w));
@@ -308,7 +296,6 @@ void buildPerformance(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA 7: Interface / Popups
 
 void buildInterface(CCNode* c, float w) {
     c->addChild(createSectionHeader("Profile Image", w));
@@ -454,7 +441,7 @@ void buildBackgrounds(CCNode* c, float w) {
 
     c->addChild(createLinkRow("Full Background Editor",
         [](){
-            // close panel before opening PaiConfigLayer (fullscreen)
+    // Close this panel before opening the fullscreen editor.
             SettingsPanelManager::get().close();
             auto scene = CCDirector::get()->getRunningScene();
             if (!scene) return;
@@ -464,7 +451,6 @@ void buildBackgrounds(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA 9: Custom Transitions
 
 void buildTransitions(CCNode* c, float w) {
     c->addChild(createSectionHeader("Scene Transitions", w));
@@ -485,7 +471,6 @@ void buildTransitions(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA 10: Pet System
 
 void buildPet(CCNode* c, float w) {
     auto& cfg = PetManager::get().config();
@@ -604,7 +589,6 @@ void buildPet(CCNode* c, float w) {
         [save](float v){ PetManager::get().config().offsetY = v; save(); },
         w));
 
-    // link al editor completo
     c->addChild(createLinkRow("Open Full Pet Config",
         [](){
             auto popup = PetConfigPopup::create();
@@ -613,7 +597,6 @@ void buildPet(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA: Custom Cursor
 
 void buildCursor(CCNode* c, float w) {
     auto& cfg = CursorManager::get().config();
@@ -641,6 +624,11 @@ void buildCursor(CCNode* c, float w) {
         [save](bool v){ CursorManager::get().config().trailEnabled = v; save(); },
         w));
 
+    c->addChild(createToggleRow("Click Effects",
+        cfg.clickFxEnabled,
+        [save](bool v){ CursorManager::get().config().clickFxEnabled = v; save(); },
+        w));
+
     c->addChild(createLinkRow("Open Full Cursor Config",
         [](){
             auto popup = CursorConfigPopup::create();
@@ -649,7 +637,6 @@ void buildCursor(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA 11: Score Cells / Leaderboard
 
 void buildScoreCells(CCNode* c, float w) {
     c->addChild(createSectionHeader("Leaderboard Cells", w));
@@ -684,7 +671,6 @@ void buildScoreCells(CCNode* c, float w) {
 void buildGlobalMusic(CCNode* c, float w) {
     c->addChild(createSectionHeader("Global Layer Music", w));
 
-    // seleccion del layer activo
     static const std::vector<std::string> LAYERS_KEYS = {
         "menu","levelinfo","levelselect","creator","browser","search","leaderboards","profile"
     };
@@ -730,7 +716,6 @@ void buildGlobalMusic(CCNode* c, float w) {
     }
 }
 
-// CATEGORIA 13: Maintenance
 
 void buildMaintenance(CCNode* c, float w) {
     c->addChild(createSectionHeader("Cache", w));
@@ -742,10 +727,8 @@ void buildMaintenance(CCNode* c, float w) {
 
     c->addChild(createSectionHeader("Actions", w));
 
-    // Use native Geode settings for button-type controls
     c->addChild(createButtonRow("Run Cleanup", "Run",
         [](){
-            // clear thumbnails, GIFs, and profile music caches
             ThumbnailLoader::get().cleanup();
             ThumbnailLoader::get().clearPendingQueue();
             ThumbnailLoader::get().clearCache();
@@ -767,7 +750,6 @@ void buildMaintenance(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA: Discord Rich Presence
 
 void buildDiscord(CCNode* c, float w) {
     c->addChild(createSectionHeader("Rich Presence", w));
@@ -789,7 +771,6 @@ void buildDiscord(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA: Menu Physics
 
 void buildMenuPhysics(CCNode* c, float w) {
     c->addChild(createSectionHeader("Menu Physics", w));
@@ -856,7 +837,6 @@ void buildMenuPhysics(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA: Profile Redesign
 
 void buildProfileRedesign(CCNode* c, float w) {
     c->addChild(createSectionHeader("Profile Redesign", w));
@@ -867,7 +847,6 @@ void buildProfileRedesign(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA: Auto Previews
 
 void buildAutoPreview(CCNode* c, float w) {
     c->addChild(createSectionHeader("Auto Previews", w));
@@ -912,7 +891,6 @@ void buildAutoPreview(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA: Texture Studio
 
 void buildTextureStudio(CCNode* c, float w) {
     c->addChild(createSectionHeader("Texture Studio", w));
@@ -933,7 +911,6 @@ void buildTextureStudio(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA: Song Search
 
 void buildSongSearch(CCNode* c, float w) {
     c->addChild(createSectionHeader("Song Search", w));
@@ -944,44 +921,40 @@ void buildSongSearch(CCNode* c, float w) {
         w));
 }
 
-} // anonymous namespace
+}
 
-// Groups with collapsible subcategories
 
 namespace paimon::settings_ui {
 
-void buildEditorSuite(CCNode* c, float w) {
-    c->addChild(createSectionHeader("Paimon Editor Suite", w));
-    c->addChild(createToggleRow(
-        "Suite Master",
-        gset<bool>("editor-suite-enable"),
-        [](bool v) { sset<bool>("editor-suite-enable", v); },
-        w
-    ));
+void buildEditor(CCNode* c, float w) {
+    c->addChild(createSectionHeader("Tools", w));
 
-    std::string lastCat;
-    for (auto const& m : paimon::editor::getEditorModuleCatalog()) {
-        if (std::string(m.key) == "editor-suite-enable") continue;
-        if (lastCat != m.category) {
-            lastCat = m.category;
-            c->addChild(createSectionHeader(m.category, w));
-        }
-        std::string key = m.key;
-        bool cur = false;
-        if (Mod::get()->hasSetting(key)) {
-            cur = Mod::get()->getSettingValue<bool>(key);
-        }
-        c->addChild(createToggleRow(
-            m.name,
-            cur,
-            [key](bool v) {
-                if (Mod::get()->hasSetting(key)) {
-                    Mod::get()->setSettingValue<bool>(key, v);
-                }
-            },
-            w
-        ));
-    }
+    c->addChild(createToggleRow("Editor Color Picker",
+        gset<bool>("editor-color-picker-enable"),
+        [](bool v) { sset<bool>("editor-color-picker-enable", v); },
+        w));
+
+    c->addChild(createSectionHeader("Collab", w));
+
+    c->addChild(createToggleRow("Enable Collab Editor",
+        gset<bool>("collab-enabled"),
+        [](bool v) { sset<bool>("collab-enabled", v); },
+        w));
+
+    c->addChild(createToggleRow("Collab Custom Cursors",
+        gset<bool>("collab-custom-cursors"),
+        [](bool v) { sset<bool>("collab-custom-cursors", v); },
+        w));
+
+    c->addChild(createToggleRow("Collab Room Invites",
+        gset<bool>("collab-invites"),
+        [](bool v) { sset<bool>("collab-invites", v); },
+        w));
+
+    c->addChild(createToggleRow("Collab Voice Chat",
+        gset<bool>("collab-voice"),
+        [](bool v) { sset<bool>("collab-voice", v); },
+        w));
 
     c->addChild(createLinkRow("Open All Geode Editor Settings",
         []() { openNativeModSettingsPopup(); },
@@ -1024,8 +997,8 @@ std::vector<SettingsGroup> const& getAllGroups() {
             { "texturestudio",   "Texture Studio",   buildTextureStudio   },
             { "songsearch",      "Song Search",      buildSongSearch      },
         }},
-        { "editor", "Editor Suite", {
-            { "editorsuite", "Modules", buildEditorSuite },
+        { "editor", "Editor", {
+            { "editor", "Editor", buildEditor },
         }},
         { "discord", "Discord", {
             { "discord", "Rich Presence", buildDiscord },
@@ -1034,7 +1007,6 @@ std::vector<SettingsGroup> const& getAllGroups() {
     return s_groups;
 }
 
-// Flat category list (legacy)
 std::vector<SettingsCategory> const& getAllCategories() {
     static std::vector<SettingsCategory> s_categories = {
         { "general",       "General",       "", buildGeneral       },
@@ -1062,4 +1034,4 @@ std::vector<SettingsCategory> const& getAllCategories() {
     return s_categories;
 }
 
-} // namespace paimon::settings_ui
+}

@@ -25,16 +25,14 @@ struct SheetTinterOutput {
     int   tintedFrameCount = 0;
 };
 
-// Whole-sheet overlay layers from the PackGen asset pack, aligned to the
-// SOURCE atlas layout — they only make sense when sourcePlist/sourcePng also
-// come from that pack. Empty buffers mean "no such overlay".
+// PackGen overlays aligned to the source atlas; empty buffers mean unavailable.
 struct SheetOverlaySources {
-    ImageBuffer overlay1;  // → color1
-    ImageBuffer overlay2;  // → color2
-    ImageBuffer gold;      // → color2 (gold titles)
-    ImageBuffer demon1;    // → color1 (demon faces)
-    ImageBuffer demon2;    // → color2 (demon faces)
-    ImageBuffer glow;      // → glow
+    ImageBuffer overlay1;  // color1.
+    ImageBuffer overlay2;  // color2.
+    ImageBuffer gold;      // color2 for gold titles.
+    ImageBuffer demon1;    // color1 for demon faces.
+    ImageBuffer demon2;    // color2 for demon faces.
+    ImageBuffer glow;      // glow.
 
     bool any() const {
         return !overlay1.empty() || !overlay2.empty() || !gold.empty()
@@ -48,42 +46,38 @@ struct SheetTinterRequest {
     std::string outputBaseName;
     std::string outputQualitySuffix;
 
-    // When set (and non-empty), frames are tinted by cropping these
-    // hand-drawn overlays instead of auto-clustering: pixel-exact PackGen
-    // output. Frames without overlay coverage stay vanilla on purpose.
-    // Per-sprite color overrides still use the clustering path.
+// Non-empty overlays use pixel-exact PackGen tinting; uncovered frames stay
+// vanilla. Per-sprite color overrides still use clustering.
     std::shared_ptr<SheetOverlaySources const> overlaySources;
 
     TintColors    colors{};
     int           brightness = 160;
     bool          alternativeGlowOverlay = false;
 
-    // When true (default), only menu/button UI sprites are tinted; gameplay
-    // assets pass through untouched to keep the game readable.
+// When true, tint only menu/button UI sprites for readability.
     bool onlyTintUiSprites = true;
     TintScope tintScope = TintScope::ButtonsOnly;
 
-    // 0 = hard assignment, 1 = fully soft. Only blurs ambiguous cluster edges.
+// 0 = hard, 1 = fully soft; softness affects ambiguous cluster edges.
     float maskSoftness = 0.35f;
 
-    // Segmentation / grading parameters (see SpritePreviewOptions).
+// Segmentation/grading parameters; see SpritePreviewOptions.
     int   clusterPrecision = 5;
     int   edgeCleanup = 1;
     int   outlineProtect = 0;
     float saturation = 1.0f;
     float contrast   = 0.0f;
 
-    // spriteSkip: never tinted (passthrough). spriteColors: per-sprite colors
-    // that take priority over `colors` and tint even when the UI filter rejects it.
+// spriteSkip bypasses tinting; spriteColors override global colors and filters.
     std::unordered_set<std::string> spriteSkip;
     std::unordered_map<std::string, TintColors> spriteColors;
     std::unordered_map<std::string, SpriteImageOverride> spriteImages;
     std::unordered_map<std::string, SpriteFusionOverride> spriteFusions;
 
-    // Downscale factor applied before re-packing (1.0 = none). MediumPort uses 0.5.
+// Downscale before repacking; 1.0 means none.
     float resizeScale = 1.0f;
 
-    // PackGen byte-compat: GJ_table_side_001's offset must not be scaled.
+// PackGen compatibility: do not scale GJ_table_side_001's offset.
     bool preserveOffsetForTableSide = true;
 };
 
@@ -95,4 +89,4 @@ private:
     SheetTinter() = delete;
 };
 
-}  // namespace paimon::texture_studio
+}

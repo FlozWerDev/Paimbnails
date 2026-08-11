@@ -48,6 +48,7 @@ class $modify(PaimonMenuLayerPreload, MenuLayer) {
             return false;
         }
 
+
         // If nobody claimed it yet (LoadingLayer hook never ran), start it here;
         // otherwise just observe the counters.
         if (paimon::preload::tryClaimPreload()) {

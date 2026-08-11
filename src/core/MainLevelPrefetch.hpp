@@ -49,25 +49,28 @@ void staggerMainLevelThumbnailLoads(LoadFn&& loadFn, int batchSize = 4, float ba
 }
 
 inline void fetchMainLevelManifestWithCache(std::vector<int> const& mainLevels,
-                                            std::string context) {
+                                            std::string context,
+                                            std::function<void()> onReady = {}) {
     if (paimon::areMainLevelsFreshlyCached()) {
         geode::log::info(
-            "[Paimbnails Cache] Main levels en cache permanente de 14 dias — "
+            "[Paimbnails Cache] Main levels en cache permanente de 30 dias - "
             "se omite el manifest fetch ({})",
             context);
+        if (onReady) onReady();
         return;
     }
 
-    HttpClient::get().fetchManifest(mainLevels, [context](bool success) {
+    HttpClient::get().fetchManifest(mainLevels, [context, onReady = std::move(onReady)](bool success) {
         if (paimon::isRuntimeShuttingDown()) return;
         if (success) {
             paimon::markMainLevelsCached();
         }
         geode::log::info(
             "[Paimbnails Cache] Main level manifest fetch {} ({})",
-            success ? "exitoso — ventana de 14 dias renovada"
+            success ? "exitoso - ventana de 30 dias renovada"
                     : "fallido (se usara Worker fallback)",
             context);
+        if (onReady) onReady();
     });
 }
 

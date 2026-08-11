@@ -66,10 +66,14 @@ public:
 
     void invalidateLookup(int32_t levelID);
 
+    // Suelta el cache RAM de texturas (mueren con el contexto GL en
+    // GameManager::reloadAll); los archivos en disco quedan y se recargan lazy.
+    void clearTextureCache();
+
 private:
     LocalThumbs();
-    std::string dir() const;
-    std::string mappingFile() const;
+    std::filesystem::path dir() const;
+    std::filesystem::path mappingFile() const;
     std::unordered_map<int32_t, std::string> m_fileMapping;
     
     std::unordered_set<int32_t> m_availableLevels;
@@ -94,4 +98,3 @@ private:
     void migrateLegacyFile(int32_t levelID, std::filesystem::path const& legacyPath);
     int nextIndex(int32_t levelID) const;
 };
-

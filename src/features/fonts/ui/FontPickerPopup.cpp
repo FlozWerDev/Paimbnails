@@ -8,7 +8,6 @@ using namespace geode::prelude;
 using namespace cocos2d;
 using namespace paimon::fonts;
 
-// Layout constants (improved, larger cells + cleaner layout)
 static constexpr float POPUP_W   = 360.f;
 static constexpr float POPUP_H   = 218.f;
 static constexpr float CORNER_R  = 12.f;
@@ -31,7 +30,6 @@ static std::vector<std::pair<std::string, std::string>> getGDFonts() {
     return v;
 }
 
-// Factory
 FontPickerPopup* FontPickerPopup::create(
         CopyableFunction<void(std::string const&)> onSelect) {
     auto ret = new FontPickerPopup();
@@ -43,7 +41,6 @@ FontPickerPopup* FontPickerPopup::create(
     return nullptr;
 }
 
-// Init
 bool FontPickerPopup::init(
         CopyableFunction<void(std::string const&)> onSelect) {
     m_onSelect = std::move(onSelect);
@@ -52,10 +49,8 @@ bool FontPickerPopup::init(
         return false;
     paimon::markDynamicPopup(this);
 
-    // No close button — dismiss by clicking outside
     if (m_closeBtn) m_closeBtn->setVisible(false);
 
-    // Replace default bg with custom dark rounded rect
     if (m_bgSprite) m_bgSprite->setVisible(false);
 
     auto bg = paimon::SpriteHelper::createRoundedRect(
@@ -64,7 +59,6 @@ bool FontPickerPopup::init(
     bg->setPosition({0.f, 0.f});
     m_mainLayer->addChild(bg, -1);
 
-    // Preview section (top, compact)
     float pvW = POPUP_W - PAD * 2;
     float pvY = POPUP_H - PAD - PREVIEW_H;
 
@@ -84,7 +78,6 @@ bool FontPickerPopup::init(
     m_previewLabel->setColor({190, 190, 200});
     m_previewContainer->addChild(m_previewLabel);
 
-    // Bottom section (rounded rect)
     float botH = pvY - PAD;
     float botY = PAD;
     float botW = POPUP_W - PAD * 2;
@@ -94,7 +87,6 @@ bool FontPickerPopup::init(
     botBg->setPosition({PAD, botY});
     m_mainLayer->addChild(botBg, 1);
 
-    // Left sidebar: tab buttons + quick-picks
     float sideX = PAD + 4;
 
     m_sideMenu = CCMenu::create();
@@ -132,7 +124,6 @@ bool FontPickerPopup::init(
         menu_selector(FontPickerPopup::onTabCustom));
     m_sideMenu->addChild(m_tabCustom);
 
-    // Quick-pick separator (added to sidebar's layout flow via SpacerNode)
     auto divLine = paimon::SpriteHelper::createRoundedRect(
         SIDEBAR_W - 16, 1.f, 0.5f, {0.3f, 0.3f, 0.4f, 0.4f});
     divLine->setContentSize({SIDEBAR_W - 16, 1.f});
@@ -143,7 +134,6 @@ bool FontPickerPopup::init(
     qpLabel->setColor({120, 120, 140});
     m_sideMenu->addChild(qpLabel);
 
-    // Quick-pick buttons (Big / Chat / Gold) in sidebar
     struct QuickFont { const char* display; const char* fontFile; const char* fontId; };
     QuickFont quickFonts[] = {
         {"Big",  "bigFont.fnt",  "big"},
@@ -184,7 +174,6 @@ bool FontPickerPopup::init(
     m_qpChat = qpBtns[1];
     m_qpGold = qpBtns[2];
 
-    // "None" button to remove font tag
     {
         float bw = SIDEBAR_W - 8;
         auto container = CCNode::create();
@@ -210,14 +199,12 @@ bool FontPickerPopup::init(
 
     m_sideMenu->updateLayout();
 
-    // Vertical divider
     float divX = PAD + SIDEBAR_W + 4;
     auto divider = paimon::SpriteHelper::createRoundedRect(
         1.5f, botH - 8.f, 1.f, {0.25f, 0.25f, 0.35f, 0.4f});
     divider->setPosition({divX, botY + 4.f});
     m_mainLayer->addChild(divider, 2);
 
-    // Right side: font grid
     float gridX = divX + 6.f;
     float gridW = PAD + botW - gridX + PAD;
     float gridH = botH - 4.f;
@@ -230,14 +217,12 @@ bool FontPickerPopup::init(
     m_contentNode->setContentSize({gridW, gridH});
     m_scroll->m_contentLayer->addChild(m_contentNode);
 
-    // Custom tab container (hidden, swaps into grid area)
     m_customContainer = CCNode::create();
     m_customContainer->setContentSize({gridW, gridH});
     m_customContainer->setPosition({gridX, botY + 2.f});
     m_customContainer->setVisible(false);
     m_mainLayer->addChild(m_customContainer, 4);
 
-    // Custom tab: centered card layout
     float cardW = gridW - 16.f;
     float cardH = 84.f;
     float cardX = 8.f;
@@ -290,14 +275,12 @@ bool FontPickerPopup::init(
     hintLabel->setPosition({gridW / 2.f, cardY - 8.f});
     m_customContainer->addChild(hintLabel);
 
-    // Build default tab
     updateTabHighlights();
     switchTab(Tab::GDFonts);
 
     return true;
 }
 
-// Tab switching
 void FontPickerPopup::onTabGD(CCObject*)     { switchTab(Tab::GDFonts); }
 void FontPickerPopup::onTabCustom(CCObject*) { switchTab(Tab::Custom); }
 
@@ -333,7 +316,6 @@ void FontPickerPopup::updateTabHighlights() {
     setTabBg(m_tabCustom, m_activeTab == Tab::Custom);
 }
 
-// GD Font Grid
 void FontPickerPopup::buildGDFontGrid() {
     m_contentNode->removeAllChildren();
 
@@ -366,7 +348,6 @@ void FontPickerPopup::buildGDFontGrid() {
     for (int i = 0; i < static_cast<int>(gdFonts.size()); ++i) {
         auto const& [fontId, fontFile] = gdFonts[i];
 
-        // Cell background with rounded corners
         auto cellBg = paimon::SpriteHelper::createRoundedRect(
             CELL_SIZE, CELL_SIZE, 6.f,
             {0.16f, 0.16f, 0.24f, 0.85f});
@@ -376,7 +357,6 @@ void FontPickerPopup::buildGDFontGrid() {
         cellBg->setPosition({0, 0});
         container->addChild(cellBg);
 
-        // Preview "Abc" in target font — bigger and centered
         auto preview = CCLabelBMFont::create("Abc", fontFile.c_str());
         if (preview) {
             float maxW = CELL_SIZE - 8.f;
@@ -388,7 +368,6 @@ void FontPickerPopup::buildGDFontGrid() {
             container->addChild(preview, 1);
         }
 
-        // Font ID label at bottom — slightly larger for readability
         auto idLbl = CCLabelBMFont::create(fontId.c_str(), "chatFont.fnt");
         idLbl->setScale(0.22f);
         idLbl->setColor({140, 140, 155});
@@ -406,7 +385,6 @@ void FontPickerPopup::buildGDFontGrid() {
     m_scroll->moveToTop();
 }
 
-// Preview
 void FontPickerPopup::showPreview(
         std::string const& fontId, std::string const& fontFile) {
     if (m_previewFontSprite) {
@@ -418,7 +396,6 @@ void FontPickerPopup::showPreview(
     float pvW = pvSize.width;
     float pvH = pvSize.height;
 
-    // Big preview text in target font
     auto preview = CCLabelBMFont::create("AaBbCc", fontFile.c_str());
     if (preview) {
         float maxD = pvH - 8.f;
@@ -432,13 +409,11 @@ void FontPickerPopup::showPreview(
         m_previewFontSprite = preview;
     }
 
-    // Update label with font name
     m_previewLabel->setString(fmt::format("Font: {}", fontId).c_str());
     m_previewLabel->setAnchorPoint({0.f, 0.5f});
     m_previewLabel->setPosition({pvH + 10.f, pvH / 2});
 }
 
-// Events
 void FontPickerPopup::onQuickPick(CCObject* sender) {
     auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
     if (!btn) return;
@@ -495,10 +470,9 @@ void FontPickerPopup::onCustomApply(CCObject*) {
 }
 
 void FontPickerPopup::onRemoveFont(CCObject*) {
-    // Signal with empty string so the callback strips the existing tag
+    // Empty tag removes the current font.
     if (m_onSelect) m_onSelect("");
 
-    // Reset preview
     if (m_previewFontSprite) {
         m_previewFontSprite->removeFromParent();
         m_previewFontSprite = nullptr;
@@ -509,7 +483,6 @@ void FontPickerPopup::onRemoveFont(CCObject*) {
     m_previewLabel->setString("Default font");
 }
 
-// Touch handling
 bool FontPickerPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     auto loc = touch->getLocation();
     auto local = m_mainLayer->convertToNodeSpace(loc);
@@ -539,7 +512,6 @@ bool FontPickerPopup::isInsideVisibleScroll(CCNode* item) {
         && itemWorld.y >= scrollWorld.y && itemWorld.y <= scrollWorld.y + scrollSize.height;
 }
 
-// Positioning
 void FontPickerPopup::positionBelow(CCNode* anchor, float gap) {
     (void)anchor;
     auto winSize = CCDirector::get()->getWinSize();

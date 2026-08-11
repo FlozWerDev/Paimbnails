@@ -82,23 +82,8 @@ static std::string joinArg(const std::string& s) {
 #endif
 }
 
-// Ejecuta un comando y captura stdout+stderr linea a linea, invocando
-// onLine por cada linea leida. Devuelve el exit code (-1 si no se pudo
-// lanzar). Bloquea el thread que lo llama — llamar desde worker.
-//
-// Existen dos variantes:
-//   - runAndCaptureArgv(argv, onLine, timeoutMs): toma un vector de strings
-//     que se pasan DIRECTAMENTE al proceso sin involucrar shell. Esto evita
-//     command injection si algun argumento contiene metachars del shell
-//     (', `, $, ;, &, |, etc.). USAR para datos de usuario (URLs, nombres).
-//
-//   - runAndCapture(cmdLine, onLine): mantenida para casos triviales
-//     (`where yt-dlp.exe`) donde el cmd es constante hardcoded. NO usar
-//     con datos de usuario.
-//
-// Ambas variantes incluyen timeout opcional para evitar que un yt-dlp
-// colgado bloquee el worker thread indefinidamente y termine colgando
-// ThreadTracker en atexit.
+// Runs on a worker, streams merged stdout/stderr, and returns -1 on launch
+// failure. Use argv for user data; shell mode is reserved for fixed probes.
 #ifdef GEODE_IS_WINDOWS
 static std::string winQuoteArg(const std::string& arg) {
     if (!arg.empty() && arg.find_first_of(" \t\n\v\"") == std::string::npos) {
@@ -219,7 +204,7 @@ static int runWindowsProcess(const std::wstring& wideCmdLine,
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - startTime).count();
             if (elapsed > timeoutMs) {
-                geode::log::warn("[YtDlpDownloader] subprocess timeout after {}ms — killing", timeoutMs);
+                geode::log::warn("[YtDlpDownloader] subprocess timeout after {}ms - killing", timeoutMs);
                 TerminateProcess(pi.hProcess, 1);
                 timedOut = true;
                 break;
@@ -337,7 +322,7 @@ static int runAndCaptureArgv(const std::vector<std::string>& argv,
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now() - startTime).count();
                 if (elapsed > timeoutMs) {
-                    geode::log::warn("[YtDlpDownloader] subprocess timeout after {}ms — killing", timeoutMs);
+                    geode::log::warn("[YtDlpDownloader] subprocess timeout after {}ms - killing", timeoutMs);
                     kill(pid, SIGKILL);
                     timedOut = true;
                     break;
@@ -365,9 +350,7 @@ static int runAndCaptureArgv(const std::vector<std::string>& argv,
 
 static int runAndCapture(const std::string& cmdLine,
                          const std::function<void(const std::string&)>& onLine) {
-    // Mantenida para casos hardcoded como `which yt-dlp`. NO usar con datos
-    // de usuario — usa shell y abre command injection. runAndCaptureArgv()
-    // es el path seguro para descargas reales.
+    // Shell path for fixed probes only; downloads must use runAndCaptureArgv().
     std::string full = cmdLine + " 2>&1";
     FILE* fp = popen(full.c_str(), "r");
     if (!fp) return -1;
@@ -470,7 +453,7 @@ static float parseProgressLine(const std::string& line) {
     return -1.f;
 }
 
-} // namespace
+}
 
 std::string YtDlpDownloader::locateBinary() {
     auto now = std::chrono::steady_clock::now();
@@ -504,9 +487,7 @@ void YtDlpDownloader::download(
         return;
     }
 
-    // FMOD en Geometry Dash no decodifica AAC/M4A ni Opus/WebM, asi que la
-    // unica forma fiable de garantizar que el track sonara es pedir a yt-dlp
-    // que recodifique a MP3 tras la descarga. Eso requiere ffmpeg.
+    // Audio conversion requires the bundled ffmpeg path.
     auto& ffmpeg = FfmpegBootstrap::get();
     if (!ffmpeg.exists()) {
         Loader::get()->queueInMainThread([onComplete, trackId]() {
@@ -529,8 +510,7 @@ void YtDlpDownloader::download(
         formatChoice = Mod::get()->getSavedValue<std::string>("menuMusicDownloadFormat", "mp3");
     } catch (...) {
     }
-    // Opus NO esta soportado por este mod (FMOD en GD no lo decodifica
-    // correctamente en todos los casos). Solo permitimos mp3 y m4a.
+    // This mod exposes only the formats supported by its FMOD path.
     if (formatChoice != "mp3" && formatChoice != "m4a") {
         formatChoice = "mp3";
     }
@@ -555,9 +535,7 @@ void YtDlpDownloader::download(
     std::string templatePath =
         geode::utils::string::pathToString(tracksDir / (trackId + ".%(ext)s"));
 
-    // CRITICAL: usar argv array en lugar de string concatenado para evitar
-    // command injection. Una URL con `;`, `&`, `'`, `$(...)`, `` ` `` etc.
-    // no se interpreta por shell porque execvp/CreateProcessW no usa shell.
+    // Keep user-controlled values in argv; neither platform path invokes a shell.
     std::vector<std::string> argv = {
         binary,
         "--no-playlist",
@@ -599,7 +577,7 @@ void YtDlpDownloader::download(
                    line.compare(0, prefix.size(), prefix) == 0;
         };
 
-        // Timeout para que un yt-dlp colgado no bloquee el shutdown del juego.
+        // Prevent a hung yt-dlp process from blocking shutdown.
         constexpr int kDownloadTimeoutMs = 5 * 60 * 1000;
         int exitCode = runAndCaptureArgv(argv, [&](const std::string& line) {
             log::debug("[yt-dlp] {}", line);
@@ -654,8 +632,7 @@ void YtDlpDownloader::download(
                 if (paimon::isRuntimeShuttingDown()) return;
                 if (!e.is_regular_file()) continue;
                 const auto& entryPath = e.path();
-                // pathToString en vez de path::string(): este ultimo devuelve
-                // la codificacion ANSI del sistema en Windows (pierde no-ASCII).
+                // pathToString preserves non-ASCII names on Windows.
                 auto stem = geode::utils::string::pathToString(entryPath.stem());
                 bool stemMatches =
                     (stem == trackId) ||
@@ -755,8 +732,7 @@ void YtDlpDownloader::download(
             return out;
         };
 
-        // path(std::string) en Windows usa la codepage local y pierde acentos;
-        // ruteamos via wstring para preservar caracteres no-ASCII.
+        // Route through UTF-16 on Windows so non-ASCII names survive.
         auto utf8ToPath = [](const std::string& s) -> std::filesystem::path {
 #ifdef GEODE_IS_WINDOWS
             return std::filesystem::path(geode::utils::string::utf8ToWide(s));
@@ -840,8 +816,7 @@ void YtDlpDownloader::download(
                 geode::utils::string::pathToString(foundIntermediate));
         }
 
-        // Si el audio existe es EXITO aunque exitCode != 0: yt-dlp a veces
-        // devuelve codigo no-cero por warnings menores tras convertir bien.
+        // A valid output file counts as success despite nonzero warning exits.
         std::error_code finalEc;
         const bool audioExists = !foundAudio.empty() &&
             std::filesystem::exists(foundAudio, finalEc);
@@ -883,4 +858,4 @@ void YtDlpDownloader::download(
     });
 }
 
-} // namespace paimon::menumusic
+}

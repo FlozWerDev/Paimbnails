@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -6,6 +6,8 @@
 #include <string>
 #include "CapturePreviewPopup.hpp"
 #include "../services/CaptureVisibilityState.hpp"
+
+namespace paimon::capture { class MiniPreview; }
 
 class CaptureLayerEditorPopup : public geode::Popup {
 public:
@@ -22,7 +24,7 @@ protected:
 
 private:
     geode::WeakRef<CapturePreviewPopup> m_previewPopup = nullptr;
-    cocos2d::CCSprite* m_miniPreview = nullptr;
+    paimon::capture::MiniPreview* m_miniPreview = nullptr;
     geode::ScrollLayer* m_scrollView = nullptr;
     cocos2d::CCNode* m_listRoot = nullptr;
 
@@ -30,6 +32,8 @@ private:
     int m_filterGroupIndex = -1;
     cocos2d::CCLabelBMFont* m_filterLabel = nullptr;
     cocos2d::CCNode* m_filterDropdown = nullptr;
+    cocos2d::CCLabelBMFont* m_collapseLabel = nullptr;
+    bool m_allCollapsed = false;
 
     struct LayerEntry {
         cocos2d::CCNode* node = nullptr;
@@ -37,11 +41,13 @@ private:
         bool currentVisibility = true;
         bool originalVisibility = true;
         bool isGroup = false;
+        bool collapsed = false;
         int depth = 0;
         int parentIndex = -1;
         std::vector<int> childIndices;
         CCMenuItemToggler* toggler = nullptr;
         cocos2d::CCLabelBMFont* label = nullptr;
+        cocos2d::CCLabelBMFont* countLabel = nullptr;
     };
 
     std::vector<LayerEntry> m_layers;
@@ -51,12 +57,18 @@ private:
 
     void populateLayers();
     void buildList();
-    void updateMiniPreview();
+    void refreshPreview();
     void refreshRowVisuals(int idx);
+    void refreshAncestors(int idx);
     [[nodiscard]] bool isEntryVisible(int idx) const;
     [[nodiscard]] bool entryMatchesFilter(int idx) const;
+    [[nodiscard]] bool isEntryHiddenByCollapse(int idx) const;
+    [[nodiscard]] std::pair<int, int> visibleLeafCount(int idx) const;
     void setEntryVisible(int idx, bool visible, bool cascadeChildren);
+    void rebuildListDeferred();
     void onToggleLayer(cocos2d::CCObject* sender);
+    void onToggleCollapse(cocos2d::CCObject* sender);
+    void onCollapseAllBtn(cocos2d::CCObject* sender);
     void onFilterBtn(cocos2d::CCObject* sender);
     void onFilterSelect(cocos2d::CCObject* sender);
     void closeFilterDropdown();

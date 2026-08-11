@@ -17,6 +17,8 @@ struct NodeState {
 
 class CustomTransitionScene : public cocos2d::CCScene {
 public:
+    static bool isActive();
+
     static CustomTransitionScene* create(
         cocos2d::CCScene* fromScene,
         cocos2d::CCScene* destScene,
@@ -43,11 +45,14 @@ private:
     void finishCurrentCommand();
     void finishTransition();
     void onTransitionFinished(float dt);
+    void restoreSceneChildren(cocos2d::CCLayerColor* container, cocos2d::CCScene* scene);
+    void restoreTouchDispatch();
     cocos2d::CCLayerColor* getTarget(std::string const& targetName);
 
     cocos2d::CCLayerColor* m_fromContainer = nullptr;
     cocos2d::CCLayerColor* m_toContainer = nullptr;
-    cocos2d::CCScene* m_destScene = nullptr;
+    geode::Ref<cocos2d::CCScene> m_fromScene;
+    geode::Ref<cocos2d::CCScene> m_destScene;
 
     std::vector<TransitionCommand> m_commands;
     int m_currentCommandIdx = 0;
@@ -56,6 +61,8 @@ private:
     float m_totalDuration = 0.f;
     bool m_isPush = false;
     bool m_finished = false;
+    bool m_started = false;
+    bool m_touchDispatchDisabled = false;
 
     std::unordered_map<cocos2d::CCNode*, NodeState> m_originalStates;
 };

@@ -87,6 +87,10 @@ public:
 
     void clearBlurCache();
     void clearDiskCache();
+    // Cancela jobs y suelta texturas RAM antes de que GD recree el contexto GL
+    // (GameManager::reloadAll). A diferencia de destroy(), el sistema sigue
+    // usable: los blurs se regeneran lazy (disco/GPU) tras el reload.
+    void onGLContextReload();
     void onWindowResized(int /*w*/, int /*h*/) {}
     void destroy();
 

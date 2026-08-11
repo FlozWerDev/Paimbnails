@@ -3,24 +3,15 @@
 #include "../../main-menu-layout/ui/MainMenuLayoutEditor.hpp"
 #include "../../main-menu-layout/services/MainMenuLayoutManager.hpp"
 #include "../../main-menu-layout/hooks/LayoutEditorKeybind.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 
 #include <Geode/Geode.hpp>
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// QuickHubTouchHold — hold-tap gesture for Android (touch-only platforms).
-//
-// 1 finger held 1.5s → opens Quick Hub Radial.
-// 2 fingers held 1.5s → opens Button Layout Editor.
-//
-// Cancellation:
-//   - Finger moves > 15px (drag/scroll)
-//   - Released before time elapses
-//   - A popup or radial is already open
-//
-// Only compiled on Android. On Windows/Mac, Ctrl hold handles this.
-// On iOS, CCEGLView is not linked (use CCEAGLView binding for iOS support).
+// Android hold gestures: one finger opens the radial menu, two open the layout
+// editor. Movement, early release, or an active popup cancels the gesture.
 
 #if defined(GEODE_IS_ANDROID)
 
@@ -33,11 +24,11 @@ constexpr float kMoveThreshold = 15.f; // px before cancelling
 
 struct TouchHoldState {
     bool active = false;
-    int fingerCount = 0;        // 1 o 2 dedos
+    int fingerCount = 0;
     float elapsed = 0.f;
     bool barVisible = false;
     bool completed = false;
-    CCPoint startPos = CCPointZero; // posicion inicial del primer dedo
+    CCPoint startPos = CCPointZero;
     CCNode* progressBar = nullptr;
     CCNode* progressFill = nullptr;
 };
@@ -53,12 +44,15 @@ void cleanupBar() {
     s_touch.barVisible = false;
 }
 
+void syncTouchTicking();
+
 void resetTouch() {
     s_touch.active = false;
     s_touch.fingerCount = 0;
     s_touch.elapsed = 0.f;
     s_touch.completed = false;
     cleanupBar();
+    syncTouchTicking();
 }
 
 void createBar() {
@@ -95,7 +89,6 @@ void updateBar(float progress) {
     s_touch.progressFill->setContentSize({w, 4.f});
 }
 
-// Scheduler node for the hold update loop.
 class TouchHoldScheduler : public CCNode {
 public:
     static TouchHoldScheduler* get() {
@@ -104,12 +97,27 @@ public:
             s_instance = new TouchHoldScheduler();
             s_instance->init();
             s_instance->retain();
-            CCDirector::get()->getScheduler()->scheduleSelector(
-                schedule_selector(TouchHoldScheduler::onUpdate),
-                s_instance, 0.f, false
-            );
         }
         return s_instance;
+    }
+
+    // Registered only while a touch hold is in progress; outside that window the
+    // tick has nothing to advance.
+    static void setTicking(bool on) {
+        auto* self = get();
+        if (self->m_ticking == on) return;
+        auto* director = CCDirector::get();
+        auto* scheduler = director ? director->getScheduler() : nullptr;
+        if (!scheduler) return;
+
+        self->m_ticking = on;
+        if (on) {
+            scheduler->scheduleSelector(
+                schedule_selector(TouchHoldScheduler::onUpdate), self, 0.f, false);
+        } else {
+            scheduler->unscheduleSelector(
+                schedule_selector(TouchHoldScheduler::onUpdate), self);
+        }
     }
 
     void onUpdate(float dt) {
@@ -130,12 +138,11 @@ public:
         if (s_touch.elapsed >= kTotalHold) {
             cleanupBar();
             s_touch.completed = true;
+            syncTouchTicking();
 
             if (s_touch.fingerCount >= 2) {
-                // 2 fingers → open layout editor.
                 openLayoutEditor();
             } else {
-                // 1 finger → open Quick Hub Radial.
                 paimon::quickhub::QuickHubRadial::openRadial();
             }
         }
@@ -145,10 +152,10 @@ private:
     void openLayoutEditor() {
         using namespace paimon::menu_layout;
 
-        // Don't open another if already active.
+    // Do not open another popup while one is active.
         if (MainMenuLayoutEditor::isActive()) return;
 
-        // Find the top-most interactive layer in the scene.
+    // Find the top-most interactive layer in the scene.
         auto* scene = CCDirector::get()->getRunningScene();
         if (!scene) return;
 
@@ -168,51 +175,51 @@ private:
         MainMenuLayoutManager::get().captureDefaultsAndApply(topLayer);
         MainMenuLayoutEditor::open(topLayer);
     }
+
+    bool m_ticking = false;
 };
 
-} // anonymous namespace
+void syncTouchTicking() {
+    TouchHoldScheduler::setTicking(s_touch.active && !s_touch.completed);
+}
 
-// Hook CCEGLView to detect hold gestures.
-//
-// NOTA: a second $modify(TouchHoldView, CCEGLView) with a distinct name
-// — avoids ODR collision with CaptureView in src/hooks/CCEGLView.cpp.
-#include <Geode/modify/CCEGLView.hpp>
+}
 
-class $modify(TouchHoldView, CCEGLView) {
+// Hooks CCEGLViewProtocol: handleTouches* is declared there, not on CCEGLView.
+#include <Geode/modify/CCEGLViewProtocol.hpp>
+
+class $modify(TouchHoldView, CCEGLViewProtocol) {
     void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {
-        CCEGLView::handleTouchesBegin(num, ids, xs, ys, timestamp);
+        CCEGLViewProtocol::handleTouchesBegin(num, ids, xs, ys, timestamp);
 
-        // Don't start if radial or editor is already open.
+    // Both gestures are gated features.
+        if (!paimon::modules::isEnabled("paimbnails.quickhub.global") &&
+            !paimon::modules::isEnabled("paimbnails.menulayout.menu")) return;
+
         if (paimon::quickhub::QuickHubRadial::isOpen()) return;
         if (paimon::menu_layout::MainMenuLayoutEditor::isActive()) return;
 
-        // Asegurar scheduler
-        TouchHoldScheduler::get();
-
         if (!s_touch.active) {
-            // First touch: start 1-finger hold.
             s_touch.active = true;
             s_touch.fingerCount = num;
             s_touch.elapsed = 0.f;
             s_touch.completed = false;
             s_touch.barVisible = false;
-            // Save start position for movement detection.
             if (num > 0) {
                 s_touch.startPos = ccp(xs[0], ys[0]);
             }
+            syncTouchTicking();
         } else if (!s_touch.completed) {
-            // More fingers joined: upgrade to 2 fingers.
             s_touch.fingerCount += num;
             if (s_touch.fingerCount > 2) s_touch.fingerCount = 2;
         }
     }
 
     void handleTouchesMove(int num, int ids[], float xs[], float ys[], double timestamp) {
-        CCEGLView::handleTouchesMove(num, ids, xs, ys, timestamp);
+        CCEGLViewProtocol::handleTouchesMove(num, ids, xs, ys, timestamp);
 
         if (!s_touch.active || s_touch.completed) return;
 
-        // Cancel if finger moved too far (drag/scroll).
         if (num > 0) {
             CCPoint current = ccp(xs[0], ys[0]);
             float dist = ccpDistance(current, s_touch.startPos);
@@ -223,18 +230,16 @@ class $modify(TouchHoldView, CCEGLView) {
     }
 
     void handleTouchesEnd(int num, int ids[], float xs[], float ys[], double timestamp) {
-        CCEGLView::handleTouchesEnd(num, ids, xs, ys, timestamp);
+        CCEGLViewProtocol::handleTouchesEnd(num, ids, xs, ys, timestamp);
 
         if (!s_touch.active) return;
 
-        // Released before completion: cancel.
         if (!s_touch.completed) {
             s_touch.fingerCount -= num;
             if (s_touch.fingerCount <= 0) {
                 resetTouch();
             }
         } else {
-            // Completed: reset for next gesture.
             s_touch.fingerCount -= num;
             if (s_touch.fingerCount <= 0) {
                 resetTouch();
@@ -243,9 +248,9 @@ class $modify(TouchHoldView, CCEGLView) {
     }
 
     void handleTouchesCancel(int num, int ids[], float xs[], float ys[], double timestamp) {
-        CCEGLView::handleTouchesCancel(num, ids, xs, ys, timestamp);
+        CCEGLViewProtocol::handleTouchesCancel(num, ids, xs, ys, timestamp);
         resetTouch();
     }
 };
 
-#endif // GEODE_IS_ANDROID
+#endif

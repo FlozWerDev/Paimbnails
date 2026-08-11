@@ -7,6 +7,7 @@
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
+#include "../../../utils/MusicChannel.hpp"
 #include "../../../utils/VideoThumbnailSprite.hpp"
 #include "../../../video/AudioExtractor.hpp"
 #include <Geode/binding/MusicDownloadManager.hpp>
@@ -127,17 +128,8 @@ void pruneProfileMusicCache() {
 }
 }
 
-static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {    if (!engine) return nullptr;
-    if (auto* channel = engine->getActiveMusicChannel(0)) {
-        return channel;
-    }
-    if (!engine->m_backgroundMusicChannel) return nullptr;
-    int numCh = 0;
-    engine->m_backgroundMusicChannel->getNumChannels(&numCh);
-    if (numCh <= 0) return nullptr;
-    FMOD::Channel* ch = nullptr;
-    if (engine->m_backgroundMusicChannel->getChannel(0, &ch) != FMOD_OK) return nullptr;
-    return ch;
+static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {
+    return paimon::audio::mainMusicChannel(engine);
 }
 
 ProfileMusicManager::ProfileMusicManager() {
@@ -998,6 +990,7 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
     m_isFadingOut = false;
     m_isPlaying = false;
     m_isPaused = false;
+    m_pausedChannel = nullptr;
 
     forceRemoveCaveEffect();
 
@@ -1047,6 +1040,8 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
 void ProfileMusicManager::loadProfileOnMainChannel(const std::string& path, bool loop, int startMs, int endMs, float volume) {
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system) return;
+
+    paimon::audio::clearMusicGroupPause();
 
     DynamicSongManager::s_selfPlayMusic = true;
     engine->playMusic(path, loop, 0.0f, 0);
@@ -1217,7 +1212,8 @@ void ProfileMusicManager::stopOwnedAudioPlayback() {
 
     forceRemoveCaveEffect();
 
-    {
+    // Stopping the shared group during exit notifies stale GD editor delegates.
+    if (!paimon::isRuntimeShuttingDown()) {
         auto engine = FMODAudioEngine::sharedEngine();
         if (engine && engine->m_backgroundMusicChannel) {
             engine->m_backgroundMusicChannel->stop();
@@ -1226,6 +1222,7 @@ void ProfileMusicManager::stopOwnedAudioPlayback() {
 
     m_isPlaying = false;
     m_isPaused = false;
+    m_pausedChannel = nullptr;
     m_isFadingIn = false;
     m_isFadingOut = false;
     m_currentProfileID = 0;
@@ -1250,10 +1247,10 @@ void ProfileMusicManager::stopCurrentAudio(bool restoreContext) {
 
 void ProfileMusicManager::pauseProfileMusic() {
     if (m_playbackKind == PlaybackKind::Profile && m_isPlaying) {
-        auto engine = FMODAudioEngine::sharedEngine();
-        if (engine && engine->m_backgroundMusicChannel) {
-            engine->m_backgroundMusicChannel->setPaused(true);
-        }
+        // Solo el canal de la cancion del perfil: m_backgroundMusicChannel es
+        // el grupo compartido y pausarlo deja mudo tambien el nivel.
+        m_pausedChannel = paimon::audio::mainMusicChannel(FMODAudioEngine::sharedEngine());
+        paimon::audio::setMusicChannelPaused(m_pausedChannel, true);
         m_isPaused = true;
         log::info("[ProfileMusic] Paused");
     }
@@ -1261,10 +1258,8 @@ void ProfileMusicManager::pauseProfileMusic() {
 
 void ProfileMusicManager::resumeProfileMusic() {
     if (m_playbackKind == PlaybackKind::Profile && m_isPaused) {
-        auto engine = FMODAudioEngine::sharedEngine();
-        if (engine && engine->m_backgroundMusicChannel) {
-            engine->m_backgroundMusicChannel->setPaused(false);
-        }
+        paimon::audio::setMusicChannelPaused(m_pausedChannel, false);
+        m_pausedChannel = nullptr;
         m_isPaused = false;
         log::info("[ProfileMusic] Resumed");
     }
@@ -1539,6 +1534,7 @@ void ProfileMusicManager::playPreview(std::string const& filePath, int startMs, 
     loadProfileOnMainChannel(filePath, true, startMs, endMs, gameVolume);
     m_isPlaying = true;
     m_isPaused = false;
+    m_pausedChannel = nullptr;
 }
 
 void ProfileMusicManager::stopPreview() {

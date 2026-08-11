@@ -31,6 +31,7 @@ protected:
     void buildInfoColumn();
     void buildTransport();
     void buildSeekBar();
+    void buildActions();
     void buildModeSelector();
     void buildBottomBar();
 
@@ -48,8 +49,16 @@ protected:
     void onModeDisabled(cocos2d::CCObject*);
     void onOpenLibrary(cocos2d::CCObject*);
     void onOpenPlaylists(cocos2d::CCObject*);
+    void onOpenExternalSongs(cocos2d::CCObject*);
+    void onOpenTags(cocos2d::CCObject*);
     void onOpenAdd(cocos2d::CCObject*);
     void onOpenSettings(cocos2d::CCObject*);
+    void onHold(cocos2d::CCObject*);
+    void onFavorite(cocos2d::CCObject*);
+    void onBlacklist(cocos2d::CCObject*);
+    void onCopy(cocos2d::CCObject*);
+    void onAddCurrentToPlaylist(cocos2d::CCObject*);
+    void onReplayToast(cocos2d::CCObject*);
 
     void onSeekBackward(cocos2d::CCObject*);
     void onSeekForward(cocos2d::CCObject*);
@@ -69,7 +78,7 @@ protected:
         bool isPaimonTrack = false;
         bool hasAnything = false;
     };
-    DetectedSong detectActiveSong() const;
+    DetectedSong detectActiveSong(bool logResult = true) const;
 
     void applyCovers(std::vector<std::string> const& coverPaths);
 
@@ -103,12 +112,14 @@ protected:
     ButtonSprite* m_modeOffSpr = nullptr;
     ButtonSprite* m_modeAllSpr = nullptr;
     ButtonSprite* m_modePlaylistSpr = nullptr;
+    ButtonSprite* m_holdActionSpr = nullptr;
+    ButtonSprite* m_favoriteActionSpr = nullptr;
+    ButtonSprite* m_blacklistActionSpr = nullptr;
 
     CCMenuItemSpriteExtra* m_playBtn = nullptr;
     cocos2d::CCSprite* m_playSprite = nullptr;
     cocos2d::CCSprite* m_pauseSprite = nullptr;
 
-    // Playback progress UI
     cocos2d::CCDrawNode* m_seekTrack = nullptr;
     cocos2d::CCDrawNode* m_seekFill = nullptr;
     Slider* m_seekSlider = nullptr;
@@ -124,6 +135,7 @@ protected:
     std::size_t m_libListenerToken = 0;
     std::size_t m_playerListenerToken = 0;
     int m_pendingSongCoverID = 0;
+    int m_failedSongCoverID = 0;
 };
 
 } // namespace paimon::menumusic

@@ -1,4 +1,5 @@
 #include "PostDetailPopup.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
@@ -277,7 +278,7 @@ void PostDetailPopup::rebuild() {
 
         if (m_post.replies.empty()) {
             auto empty = CCLabelBMFont::create(
-                "No replies yet — be the first to chime in!", "bigFont.fnt");
+                "No replies yet - be the first to chime in!", "bigFont.fnt");
             empty->setScale(0.32f);
             empty->setColor(kTextSoft);
             empty->setPosition({SCROLL_W / 2.f, scrollH / 2.f});
@@ -330,7 +331,7 @@ void PostDetailPopup::rebuild() {
             m_mainLayer->addChild(lockedBg);
         }
         auto locked = CCLabelBMFont::create(
-            "This post is locked — replies are disabled.", "bigFont.fnt");
+            "This post is locked - replies are disabled.", "bigFont.fnt");
         locked->setScale(0.34f);
         locked->setColor({200, 200, 200});
         locked->setPosition({contentSize.width / 2.f, inputBot + kInputH / 2.f});
@@ -644,7 +645,7 @@ void PostDetailPopup::onDeleteReplyById(std::string id) {
 }
 
 void PostDetailPopup::onReplyToReply(std::string id) {
-    m_replyTo = id;
+    m_replyTo = std::move(id);
     if (m_replyInput) {
         m_replyInput->setString("@reply ");
         PaimonNotify::create("Replying in thread", NotificationIcon::Info)->show();
@@ -673,6 +674,7 @@ void PostDetailPopup::update(float) {
 }
 
 PostDetailPopup* PostDetailPopup::create(Post const& post, CopyableFunction<void()> onChanged) {
+    if (!paimon::modules::isEnabled("paimbnails.forum.menu")) return nullptr;
     auto ret = new PostDetailPopup();
     if (ret && ret->init(post, std::move(onChanged))) {
         ret->autorelease();

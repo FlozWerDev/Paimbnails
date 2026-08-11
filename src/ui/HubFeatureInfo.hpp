@@ -21,7 +21,7 @@ inline std::vector<InfoSection> getGeneralInfo() {
 inline std::vector<InfoSection> getThumbnailsInfo() {
     return {
         {"Thumbnail Size", "Controla el ancho del area de miniatura en las celdas de nivel. Se aplica en listas de niveles (busqueda, saved, featured).", {100, 200, 255}},
-        {"Background Style", "Elige entre gradiente de colores o miniatura borrosa como fondo de la celda.", {100, 200, 255}},
+        {"Background Style", "Elige entre blur fuerte, gradiente legacy de colores dominantes o miniatura como fondo de la celda.", {100, 200, 255}},
         {"Background Blur/Darkness", "Intensidad del blur y oscuridad del fondo. Solo aplica cuando el estilo es 'thumbnail'.", {100, 200, 255}},
         {"Galeria Auto-Cycle", "Si un nivel tiene varias fotos, las rota automaticamente en la celda de la lista.", {180, 255, 140}},
         {"Transiciones de Galeria", "Estilo de animacion al cambiar entre fotos (crossfade, slide, cube, etc). Aplica en celdas y en el popup de galeria.", {180, 255, 140}},
@@ -90,6 +90,13 @@ inline std::vector<InfoSection> getDiscordInfo() {
         {"Buttons", "Dos botones configurables debajo de tu status con texto y URL custom (max 32 chars por label).", {255, 170, 220}},
         {"Idle When Unfocused", "Cambia tu status a idle cuando GD no es la ventana activa.", {180, 180, 180}},
         {"Elapsed Time", "Muestra un contador de tiempo desde que Paimbnails inicio.", {180, 180, 180}},
+    };
+}
+
+inline std::vector<InfoSection> getDevInfo() {
+    return {
+        {"GIF a Sheet", "Convierte un GIF animado en un spritesheet PNG en cuadricula + un JSON con frameW/frameH/cols/rows/count/delaysMs. Ideal para animaciones eficientes tipo SheetAnimSprite.", {255, 210, 100}},
+        {"Para la comunidad", "Herramientas para crear contenido y assets compatibles con Paimbnails. Mas utilidades proximamente.", {180, 180, 180}},
     };
 }
 

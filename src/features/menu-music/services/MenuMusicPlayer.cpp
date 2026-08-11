@@ -1,7 +1,9 @@
 #include "MenuMusicPlayer.hpp"
+#include "MenuMusicEffects.hpp"
 #include "MenuMusicLibrary.hpp"
 
 #include "../../menu-loop/services/MenuLoopManager.hpp"
+#include "../../../utils/MusicChannel.hpp"
 
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/GameManager.hpp>
@@ -24,9 +26,14 @@ std::vector<std::string> MenuMusicPlayer::candidateTrackIds() const {
     std::vector<std::string> out;
 
     const auto& blacklist = paimon::menuloop::MenuLoopManager::get().getBlacklist();
-    auto isBlacklisted = [&](const std::string& audioPath) {
-        return !audioPath.empty()
-            && std::find(blacklist.begin(), blacklist.end(), audioPath) != blacklist.end();
+    auto isBlacklisted = [&](const MusicTrack& track) {
+        return track.blacklisted || (!track.audioPath.empty()
+            && std::find(blacklist.begin(), blacklist.end(), track.audioPath) != blacklist.end());
+    };
+    auto isPlayable = [](const MusicTrack& track) {
+        std::error_code ec;
+        return !track.audioPath.empty()
+            && std::filesystem::is_regular_file(track.audioPath, ec) && !ec;
     };
 
     const auto mode = lib.mode();
@@ -34,12 +41,18 @@ std::vector<std::string> MenuMusicPlayer::candidateTrackIds() const {
         if (auto* pl = lib.findPlaylist(lib.activePlaylistId())) {
             for (const auto& tid : pl->trackIds) {
                 auto* t = lib.findTrack(tid);
-                if (t && !isBlacklisted(t->audioPath)) out.push_back(tid);
+                if (t && isPlayable(*t) && !isBlacklisted(*t)) {
+                    out.push_back(tid);
+                    if (t->favorite) out.push_back(tid);
+                }
             }
         }
     } else if (mode == PlaybackMode::Library || mode == PlaybackMode::Queue) {
         for (const auto& t : lib.tracks()) {
-            if (!isBlacklisted(t.audioPath)) out.push_back(t.id);
+            if (isPlayable(t) && !isBlacklisted(t)) {
+                out.push_back(t.id);
+                if (t.favorite) out.push_back(t.id);
+            }
         }
     }
     return out;
@@ -48,26 +61,27 @@ std::vector<std::string> MenuMusicPlayer::candidateTrackIds() const {
 std::string MenuMusicPlayer::pickRandomExcept(const std::string& exceptId) const {
     auto ids = candidateTrackIds();
     if (ids.empty()) return "";
-    if (ids.size() == 1) return ids.front();
+    if (std::ranges::all_of(ids, [&](const std::string& id) { return id == ids.front(); })) {
+        return ids.front();
+    }
+
+    std::erase(ids, exceptId);
+    if (ids.empty()) return exceptId;
 
     static std::mt19937 rng(static_cast<unsigned>(
         std::chrono::steady_clock::now().time_since_epoch().count()));
     std::uniform_int_distribution<std::size_t> dist(0, ids.size() - 1);
 
-    std::string pick = ids[dist(rng)];
-    for (int tries = 0; tries < 5 && pick == exceptId; ++tries) {
-        pick = ids[dist(rng)];
-    }
-    return pick;
+    return ids[dist(rng)];
 }
 
-void MenuMusicPlayer::applyOverrideAndPlay(const std::string& trackId,
+bool MenuMusicPlayer::applyOverrideAndPlay(const std::string& trackId,
                                            const std::string& audioPath) {
     std::error_code existsEc;
     if (audioPath.empty() || !std::filesystem::exists(audioPath, existsEc) || existsEc) {
         log::warn("[MenuMusic] audio file missing for track {}: '{}'",
             trackId, audioPath);
-        return;
+        return false;
     }
 
     auto& loop = paimon::menuloop::MenuLoopManager::get();
@@ -82,6 +96,7 @@ void MenuMusicPlayer::applyOverrideAndPlay(const std::string& trackId,
     if (fmod && fmod->m_backgroundMusicChannel) {
         fmod->m_backgroundMusicChannel->stop();
     }
+    paimon::audio::clearMusicGroupPause();
     GameManager::sharedState()->playMenuMusic();
 
     m_state.currentTrackId = trackId;
@@ -89,6 +104,8 @@ void MenuMusicPlayer::applyOverrideAndPlay(const std::string& trackId,
     m_state.mode = MenuMusicLibrary::get().mode();
     m_state.isPlaying = true;
     m_paused = false;
+    m_pausedChannel = nullptr;
+    MenuMusicLibrary::get().setLastTrackId(trackId);
 
     if (!trackId.empty()) {
         if (m_history.empty() || m_history.back() != trackId) {
@@ -97,7 +114,9 @@ void MenuMusicPlayer::applyOverrideAndPlay(const std::string& trackId,
         }
     }
 
+    MenuMusicEffects::get().activateForCurrentTrack();
     notifyChanged();
+    return true;
 }
 
 bool MenuMusicPlayer::playNext() {
@@ -110,8 +129,7 @@ bool MenuMusicPlayer::playNext() {
     auto* track = lib.findTrack(pick);
     if (!track) return false;
 
-    applyOverrideAndPlay(track->id, track->audioPath);
-    return true;
+    return applyOverrideAndPlay(track->id, track->audioPath);
 }
 
 bool MenuMusicPlayer::playPrevious() {
@@ -124,41 +142,67 @@ bool MenuMusicPlayer::playPrevious() {
         m_history.pop_back();
         return false;
     }
-    applyOverrideAndPlay(track->id, track->audioPath);
-    return true;
+    return applyOverrideAndPlay(track->id, track->audioPath);
 }
 
 bool MenuMusicPlayer::playSpecific(const std::string& trackId) {
     auto& lib = MenuMusicLibrary::get();
     auto* track = lib.findTrack(trackId);
-    if (!track) return false;
+    if (!track || track->blacklisted) return false;
 
     // Cambiar a modo Queue para que el siguiente tick no sobreescriba.
     if (lib.mode() == PlaybackMode::Disabled) {
         lib.setMode(PlaybackMode::Queue);
     }
-    applyOverrideAndPlay(track->id, track->audioPath);
+    return applyOverrideAndPlay(track->id, track->audioPath);
+}
+
+bool MenuMusicPlayer::swapHeldTrack() {
+    auto* current = currentTrack();
+    if (!current) return false;
+    const std::string currentId = current->id;
+
+    if (m_heldTrackId.empty()) {
+        auto nextId = pickRandomExcept(currentId);
+        if (nextId.empty() || nextId == currentId) return false;
+        if (!playSpecific(nextId)) return false;
+        m_heldTrackId = currentId;
+        return true;
+    }
+    if (m_heldTrackId == currentId) return false;
+
+    const std::string heldId = m_heldTrackId;
+    if (!playSpecific(heldId)) return false;
+    m_heldTrackId = currentId;
     return true;
 }
 
+bool MenuMusicPlayer::isManagingPlayback() const {
+    return MenuMusicLibrary::get().mode() != PlaybackMode::Disabled && currentTrack();
+}
+
 void MenuMusicPlayer::pause() {
-    auto* fmod = FMODAudioEngine::sharedEngine();
-    if (fmod && fmod->m_backgroundMusicChannel) {
-        fmod->m_backgroundMusicChannel->setPaused(true);
-    }
-    m_paused = true;
-    m_state.isPlaying = false;
+    // Solo el canal donde suena la cancion del menu: m_backgroundMusicChannel
+    // es el grupo compartido y pausarlo deja mudo tambien el nivel.
+    m_pausedChannel = paimon::audio::mainMusicChannel();
+    paimon::audio::setMusicChannelPaused(m_pausedChannel, true);
+    m_paused = m_pausedChannel != nullptr;
+    m_state.isPlaying = !m_paused;
     notifyChanged();
 }
 
 void MenuMusicPlayer::resume() {
-    auto* fmod = FMODAudioEngine::sharedEngine();
-    if (fmod && fmod->m_backgroundMusicChannel) {
-        fmod->m_backgroundMusicChannel->setPaused(false);
-    }
+    paimon::audio::setMusicChannelPaused(m_pausedChannel, false);
+    m_pausedChannel = nullptr;
     m_paused = false;
     m_state.isPlaying = true;
     notifyChanged();
+}
+
+bool MenuMusicPlayer::isPaused() const {
+    // El juego rearranca la musica del menu en un canal nuevo al salir de un
+    // nivel o cambiar de escena; la pausa que aplicamos murio con el anterior.
+    return m_paused && paimon::audio::isMusicChannelPaused(m_pausedChannel);
 }
 
 void MenuMusicPlayer::toggleVanillaFallback() {
@@ -171,12 +215,15 @@ void MenuMusicPlayer::toggleVanillaFallback() {
     if (fmod && fmod->m_backgroundMusicChannel) {
         fmod->m_backgroundMusicChannel->stop();
     }
+    paimon::audio::clearMusicGroupPause();
     GameManager::sharedState()->playMenuMusic();
 
     m_state.currentTrackId.clear();
     m_state.currentAudioPath.clear();
     m_state.isPlaying = true;
     m_paused = false;
+    m_pausedChannel = nullptr;
+    MenuMusicEffects::get().deactivate();
     notifyChanged();
 }
 
@@ -200,6 +247,7 @@ const MusicTrack* MenuMusicPlayer::currentTrack() const {
 void MenuMusicPlayer::forgetCurrentTrack() {
     m_state.currentTrackId.clear();
     m_state.currentAudioPath.clear();
+    MenuMusicEffects::get().deactivate();
     notifyChanged();
 }
 

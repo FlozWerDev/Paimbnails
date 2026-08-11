@@ -4,11 +4,11 @@
 #include "../../../utils/PaimonNotification.hpp"
 
 #include "CustomTransitionEditorPopup.hpp"
+#include "LevelEntryConfigPopup.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Helpers
 
 static void cycleType(TransitionConfig& cfg, int dir) {
     auto const& types = TransitionManager::allTypes();
@@ -44,7 +44,6 @@ static CCMenuItemSpriteExtra* createSmallButton(const char* text, CCObject* targ
     return btn;
 }
 
-// Create / Init
 
 TransitionConfigPopup* TransitionConfigPopup::create() {
     auto ret = new TransitionConfigPopup();
@@ -71,7 +70,6 @@ bool TransitionConfigPopup::init() {
     float cx = ws.width / 2.f;
     float y = ws.height - 42.f;
 
-    // ENABLE TOGGLE
     auto enableLbl = CCLabelBMFont::create("Enabled", "bigFont.fnt");
     enableLbl->setScale(0.3f);
     enableLbl->setPosition({cx - 35, y});
@@ -86,7 +84,6 @@ bool TransitionConfigPopup::init() {
     m_enableToggle->setPosition({cx + 10, y});
     m_buttonMenu->addChild(m_enableToggle);
 
-    // GLOBAL TRANSITION SECTION
     y -= 18;
     auto gTitle = CCLabelBMFont::create("Global Transition", "goldFont.fnt");
     gTitle->setScale(0.38f);
@@ -97,7 +94,6 @@ bool TransitionConfigPopup::init() {
     gInfo->setPosition({cx + 70, y});
     m_buttonMenu->addChild(gInfo);
 
-    // Type selector + Duration (same row)
     y -= 16;
     auto gLeftArr = createArrowBtn(true, this, menu_selector(TransitionConfigPopup::onGlobalPrevType));
     gLeftArr->setPosition({cx - 115, y});
@@ -131,14 +127,12 @@ bool TransitionConfigPopup::init() {
     gDurUp->setPosition({cx + 148, y});
     m_buttonMenu->addChild(gDurUp);
 
-    // Description (hidden — saves vertical space)
     m_globalDescLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_globalDescLabel->setScale(0.35f);
     m_globalDescLabel->setColor({200, 200, 200});
     m_globalDescLabel->setVisible(false);
     m_mainLayer->addChild(m_globalDescLabel);
 
-    // Conditional: Color swatch + Custom DSL button
     y -= 14;
     m_globalColorSwatch = CCLayerColor::create({0, 0, 0, 255}, 14, 14);
     m_globalColorSwatch->setPosition({cx - 115, y - 7});
@@ -152,7 +146,6 @@ bool TransitionConfigPopup::init() {
     m_globalCustomBtn->setPosition({cx - 35, y});
     m_buttonMenu->addChild(m_globalCustomBtn);
 
-    // LEVEL ENTRY SECTION
     y -= 20;
     auto lTitle = CCLabelBMFont::create("Level Entry", "goldFont.fnt");
     lTitle->setScale(0.36f);
@@ -177,7 +170,6 @@ bool TransitionConfigPopup::init() {
     lInfo->setPosition({cx + 75, y});
     m_buttonMenu->addChild(lInfo);
 
-    // Type selector + Duration (same row)
     y -= 16;
     auto lLeftArr = createArrowBtn(true, this, menu_selector(TransitionConfigPopup::onLevelPrevType));
     lLeftArr->setPosition({cx - 115, y});
@@ -211,14 +203,12 @@ bool TransitionConfigPopup::init() {
     lDurUp->setPosition({cx + 148, y});
     m_buttonMenu->addChild(lDurUp);
 
-    // Description (hidden)
     m_levelDescLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_levelDescLabel->setScale(0.35f);
     m_levelDescLabel->setColor({200, 200, 200});
     m_levelDescLabel->setVisible(false);
     m_mainLayer->addChild(m_levelDescLabel);
 
-    // Conditional
     y -= 14;
     m_levelColorSwatch = CCLayerColor::create({0, 0, 0, 255}, 14, 14);
     m_levelColorSwatch->setPosition({cx - 115, y - 7});
@@ -232,7 +222,10 @@ bool TransitionConfigPopup::init() {
     m_levelCustomBtn->setPosition({cx - 35, y});
     m_buttonMenu->addChild(m_levelCustomBtn);
 
-    // BOTTOM BUTTONS
+    auto levelEffectsBtn = createSmallButton("Smooth+...", this, menu_selector(TransitionConfigPopup::onLevelEffects));
+    levelEffectsBtn->setPosition({cx + 95, y});
+    m_buttonMenu->addChild(levelEffectsBtn);
+
     float btnY = 26;
 
     auto saveSpr = ButtonSprite::create("Save", "goldFont.fnt", "GJ_button_01.png", .8f);
@@ -255,7 +248,6 @@ bool TransitionConfigPopup::init() {
     return true;
 }
 
-// Display updates
 
 int TransitionConfigPopup::getTypeIndex(TransitionType t) const {
     auto const& types = TransitionManager::allTypes();
@@ -308,14 +300,12 @@ void TransitionConfigPopup::updateLevelDisplay() {
 }
 
 void TransitionConfigPopup::updateConditionalButtons() {
-    // Global: show color button only for FadeColor
     bool gShowColor = (m_editingGlobal.type == TransitionType::FadeColor);
     bool gShowCustom = (m_editingGlobal.type == TransitionType::Custom);
     m_globalColorBtn->setVisible(gShowColor);
     m_globalColorSwatch->setVisible(gShowColor);
     m_globalCustomBtn->setVisible(gShowCustom);
 
-    // Level: show color button only for FadeColor
     bool lShowColor = (m_editingLevel.type == TransitionType::FadeColor);
     bool lShowCustom = (m_editingLevel.type == TransitionType::Custom);
     m_levelColorBtn->setVisible(lShowColor);
@@ -323,7 +313,6 @@ void TransitionConfigPopup::updateConditionalButtons() {
     m_levelCustomBtn->setVisible(lShowCustom);
 }
 
-// Callbacks — Toggle
 
 void TransitionConfigPopup::onToggleEnabled(CCObject*) {
     TransitionManager::get().setEnabled(!m_enableToggle->isToggled());
@@ -337,24 +326,20 @@ void TransitionConfigPopup::onToggleLevelEntry(CCObject*) {
     }
 }
 
-// Callbacks — Type cycling
 
 void TransitionConfigPopup::onGlobalPrevType(CCObject*) { cycleType(m_editingGlobal, -1); updateGlobalDisplay(); }
 void TransitionConfigPopup::onGlobalNextType(CCObject*) { cycleType(m_editingGlobal, 1);  updateGlobalDisplay(); }
 void TransitionConfigPopup::onLevelPrevType(CCObject*)  { cycleType(m_editingLevel, -1);  updateLevelDisplay(); }
 void TransitionConfigPopup::onLevelNextType(CCObject*)  { cycleType(m_editingLevel, 1);   updateLevelDisplay(); }
 
-// Callbacks — Duration
 
 void TransitionConfigPopup::onGlobalDurDown(CCObject*) { m_editingGlobal.duration = std::max(0.05f, m_editingGlobal.duration - 0.05f); updateGlobalDisplay(); }
 void TransitionConfigPopup::onGlobalDurUp(CCObject*)   { m_editingGlobal.duration = std::min(3.0f,  m_editingGlobal.duration + 0.05f); updateGlobalDisplay(); }
 void TransitionConfigPopup::onLevelDurDown(CCObject*)  { m_editingLevel.duration  = std::max(0.05f, m_editingLevel.duration  - 0.05f); updateLevelDisplay(); }
 void TransitionConfigPopup::onLevelDurUp(CCObject*)    { m_editingLevel.duration  = std::min(3.0f,  m_editingLevel.duration  + 0.05f); updateLevelDisplay(); }
 
-// Callbacks — Color (simple R/G/B cycle for now)
 
 static void cycleColor(TransitionConfig& cfg) {
-    // Cycle through some preset colors
     struct ColorPreset { int r, g, b; };
     static const std::vector<ColorPreset> presets = {
         {0,0,0}, {255,255,255}, {255,0,0}, {0,255,0}, {0,0,255},
@@ -383,7 +368,6 @@ void TransitionConfigPopup::onLevelColor(CCObject*) {
     updateLevelDisplay();
 }
 
-// Callbacks — Custom DSL
 
 void TransitionConfigPopup::onGlobalCustom(CCObject*) {
     m_editingIsGlobal = true;
@@ -397,7 +381,10 @@ void TransitionConfigPopup::onLevelCustom(CCObject*) {
     if (popup) popup->show();
 }
 
-// Callbacks — Info popups
+void TransitionConfigPopup::onLevelEffects(CCObject*) {
+    if (auto* popup = paimon::transitions::LevelEntryConfigPopup::create()) popup->show();
+}
+
 
 void TransitionConfigPopup::onInfoGlobal(CCObject*) {
     PaimonInfoPopup::create(
@@ -413,7 +400,8 @@ void TransitionConfigPopup::onInfoLevel(CCObject*) {
         "Level Entry Transition",
         "Enable <cy>Override</c> to use a <cg>different transition</c> when entering a level (PlayLayer).\n\n"
         "If disabled, the <cl>Global</c> transition is used everywhere.\n"
-        "Great for having a dramatic entry effect for levels!"
+        "When <cl>Smooth+</c> is enabled it replaces that preset with its own live scene choreography. "
+        "Disable it to use the transition type selected here."
     )->show();
 }
 
@@ -449,7 +437,6 @@ void TransitionConfigPopup::onInfoCustom(CCObject*) {
     onGlobalCustom(nullptr);
 }
 
-// Save
 
 void TransitionConfigPopup::onSave(CCObject*) {
     auto& tm = TransitionManager::get();

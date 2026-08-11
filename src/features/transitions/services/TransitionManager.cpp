@@ -13,11 +13,8 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// GD-blue gradient behind a transition scene. Native slide/flip/zoom/tile
-// transitions expose the raw GL clear color (a white flash on many setups)
-// wherever neither scene covers; a z=-100 child of the transition scene is
-// drawn before both scenes (CCTransitionScene draws them inside draw()), so
-// it acts as a full-screen backdrop.
+// Backdrop for native transitions, which may expose the raw GL clear color
+// while neither scene covers the screen.
 static void attachTransitionBackdrop(CCScene* trans) {
     if (!trans) return;
     if (trans->getChildByID("paimon-transition-backdrop"_spr)) return;
@@ -38,8 +35,6 @@ static void attachTransitionBackdrop(CCScene* trans) {
         trans->addChild(backdrop, -100);
     }
 }
-
-// Singleton
 
 TransitionManager::TransitionManager() {
     m_globalConfig.type = TransitionType::Fade;
@@ -65,7 +60,6 @@ void TransitionManager::resetCustomSafeMode() {
     m_customSafeModeTripped = false;
 }
 
-// allTypes — ordered list for UI.
 std::vector<TransitionType> const& TransitionManager::allTypes() {
     static const std::vector<TransitionType> types = {
         TransitionType::Fade,
@@ -130,7 +124,6 @@ std::vector<TransitionType> const& TransitionManager::allTypes() {
     return types;
 }
 
-// String <-> Enum.
 TransitionType TransitionManager::typeFromString(std::string const& s) {
     if (s == "fade")             return TransitionType::Fade;
     if (s == "fade_white")       return TransitionType::FadeWhite;
@@ -550,13 +543,11 @@ int TransitionManager::sanitizeConfig(TransitionConfig& cfg) {
     return fixes;
 }
 
-// Config path
 
 std::filesystem::path TransitionManager::getConfigPath() const {
     return Mod::get()->getSaveDir() / "transitions.json";
 }
 
-// JSON helpers
 
 static TransitionCommand parseCommand(matjson::Value const& obj) {
     TransitionCommand cmd;
@@ -704,7 +695,6 @@ static matjson::Value configToJson(TransitionConfig const& cfg) {
     return obj;
 }
 
-// Load / Save
 
 void TransitionManager::loadConfig() {
     auto path = getConfigPath();
@@ -790,7 +780,6 @@ void TransitionManager::saveConfig() {
     else log::info("[TransitionManager] Config saved");
 }
 
-// Level entry config
 
 TransitionConfig TransitionManager::getLevelEntryConfig() const {
     return m_hasLevelEntryConfig ? m_levelEntryConfig : m_globalConfig;
@@ -815,9 +804,7 @@ void TransitionManager::clearLevelEntryConfig() {
     m_levelEntryConfig = TransitionConfig{};
 }
 
-// Helper: generate DSL commands for ANY transition type
-// Converts native cocos2d transitions to equivalent DSL commands
-// so they can be previewed consistently with CustomTransitionScene.
+// Convert any transition type to DSL commands for consistent previews.
 
 std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(TransitionType type, float dur) const {
     std::vector<TransitionCommand> cmds;
@@ -831,7 +818,6 @@ std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(Transitio
     float cy = h / 2.f;
 
     switch (type) {
-        // Native fades (previewed as DSL fade)
         case TransitionType::Fade:
         case TransitionType::FadeWhite:
         case TransitionType::FadeColor:
@@ -862,7 +848,6 @@ std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(Transitio
             cmds.push_back({CommandAction::FadeIn, "to", dur, 0,0,0,0, 0.f, 255.f});
             break;
 
-        // Native slides
         case TransitionType::SlideLeft:
             cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
             cmds.push_back({CommandAction::Move, "from", dur, cx, cy, -w/2, cy, 1.f, 1.f});
@@ -884,7 +869,6 @@ std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(Transitio
             cmds.push_back({CommandAction::Move, "to", dur, cx, h + h/2, cx, cy, 1.f, 1.f});
             break;
 
-        // Move In (old stays, new enters)
         case TransitionType::MoveInLeft:
             cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
             cmds.push_back({CommandAction::Move, "to", dur, -w/2, cy, cx, cy, 1.f, 1.f});
@@ -902,7 +886,6 @@ std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(Transitio
             cmds.push_back({CommandAction::Move, "to", dur, cx, -h/2, cx, cy, 1.f, 1.f});
             break;
 
-        // Zooms & Flips
         case TransitionType::ZoomIn:
         case TransitionType::ZoomOut:
         case TransitionType::ZoomFlipYUp:
@@ -935,7 +918,6 @@ std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(Transitio
             cmds.push_back({CommandAction::Scale, "to", dur, 0,0,0,0, 0.01f, 1.f});
             break;
 
-        // Creative types
         case TransitionType::FadeBounce: {
             cmds.push_back({CommandAction::FadeOut, "from", half, 0,0,0,0, 255.f, 0.f});
             cmds.push_back({CommandAction::Bounce, "to", half, 0,0,0,0, 0.f, 255.f});
@@ -1013,11 +995,9 @@ std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(Transitio
             break;
         }
 
-        // Custom — empty (caller provides commands)
         case TransitionType::Custom:
             break;
 
-        // Fallback: simple fade for Random/None/unknown
         default: {
             cmds.push_back({CommandAction::FadeOut, "from", half, 0,0,0,0, 255.f, 0.f});
             cmds.push_back({CommandAction::FadeIn, "to", half, 0,0,0,0, 0.f, 255.f});
@@ -1028,21 +1008,23 @@ std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(Transitio
     return cmds;
 }
 
-// createTransition
 
-CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScene* dest) {
+CCScene* TransitionManager::createTransition(
+    TransitionConfig const& cfg,
+    CCScene* dest,
+    bool isPush)
+{
     if (!m_loaded) loadConfig();
 
     if (cfg.type == TransitionType::None) return dest;
+    if (CustomTransitionScene::isActive()) return dest;
 
     TransitionConfig safeCfg = cfg;
     migrateConfigImages(safeCfg);
     sanitizeConfig(safeCfg);
 
-    // Random: pick a random non-special type
     if (safeCfg.type == TransitionType::Random) {
         auto const& types = allTypes();
-        // Build list of eligible types (exclude Random, Custom, None)
         std::vector<TransitionType> eligible;
         for (auto t : types) {
             if (t != TransitionType::Random && t != TransitionType::Custom && t != TransitionType::None)
@@ -1057,7 +1039,6 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
         }
     }
 
-    // Custom DSL
     if (safeCfg.type == TransitionType::Custom) {
         if (m_customSafeModeTripped) {
             return CCTransitionFade::create(safeCfg.duration, dest);
@@ -1070,14 +1051,13 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
 
         auto fromScene = CCDirector::get()->getRunningScene();
         if (fromScene && dest && !commands.empty()) {
-            auto* transScene = CustomTransitionScene::create(fromScene, dest, commands, false);
+            auto* transScene = CustomTransitionScene::create(fromScene, dest, commands, isPush);
             if (transScene) return transScene;
         }
         tripCustomSafeMode("createTransition returned nullptr");
         return CCTransitionFade::create(safeCfg.duration, dest);
     }
 
-    // Creative types that use DSL engine
     bool isCreativeType = false;
     switch (safeCfg.type) {
         case TransitionType::FadeBounce:
@@ -1107,13 +1087,12 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
         sanitizeCommands(commands);
         auto fromScene = CCDirector::get()->getRunningScene();
         if (fromScene && dest && !commands.empty()) {
-            auto* transScene = CustomTransitionScene::create(fromScene, dest, commands, false);
+            auto* transScene = CustomTransitionScene::create(fromScene, dest, commands, isPush);
             if (transScene) return transScene;
         }
         return CCTransitionFade::create(safeCfg.duration, dest);
     }
 
-    // Native Cocos2d transitions
     auto* trans = createNativeTransition(safeCfg, dest);
     if (trans) {
         attachTransitionBackdrop(trans);
@@ -1122,8 +1101,7 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
     return dest;
 }
 
-// Convenience wrappers that apply the user's global transition when navigating to mod scenes.
-// Fall through to direct navigation if transitions are disabled or config isn't loaded.
+// Apply the global transition when enabled; otherwise navigate directly.
 void TransitionManager::replaceScene(CCScene* dest) {
     if (!dest) return;
 
@@ -1141,14 +1119,13 @@ void TransitionManager::pushScene(CCScene* dest) {
 
     if (m_enabled) {
         if (!m_loaded) loadConfig();
-        auto* trans = createTransition(m_globalConfig, dest);
+        auto* trans = createTransition(m_globalConfig, dest, true);
         CCDirector::get()->pushScene(trans ? trans : dest);
     } else {
         CCDirector::get()->pushScene(dest);
     }
 }
 
-// Native Cocos2d transitions.
 CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig const& cfg, CCScene* dest) const {
     float dur = cfg.duration;
     ccColor3B col = {
@@ -1158,7 +1135,6 @@ CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig co
     };
 
     switch (cfg.type) {
-        // Fades (CCTransitionFade is available on all platforms)
         case TransitionType::Fade:              return CCTransitionFade::create(dur, dest, {0, 0, 0});
         case TransitionType::FadeWhite:         return CCTransitionFade::create(dur, dest, {255, 255, 255});
         case TransitionType::FadeColor:         return CCTransitionFade::create(dur, dest, col);
@@ -1166,7 +1142,6 @@ CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig co
 #if !defined(GEODE_IS_IOS)
         case TransitionType::CrossFade:         return CCTransitionCrossFade::create(dur, dest);
 
-        // Slides
         case TransitionType::SlideLeft:         return CCTransitionSlideInL::create(dur, dest);
         case TransitionType::SlideRight:        return CCTransitionSlideInR::create(dur, dest);
         case TransitionType::SlideUp:           return CCTransitionSlideInT::create(dur, dest);
@@ -1176,7 +1151,6 @@ CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig co
         case TransitionType::MoveInTop:         return CCTransitionMoveInT::create(dur, dest);
         case TransitionType::MoveInBottom:      return CCTransitionMoveInB::create(dur, dest);
 
-        // Zooms & Flips
         case TransitionType::ZoomIn:            return CCTransitionZoomFlipX::create(dur, dest, tOrientation::kCCTransitionOrientationLeftOver);
         case TransitionType::ZoomOut:           return CCTransitionZoomFlipX::create(dur, dest, tOrientation::kCCTransitionOrientationRightOver);
         case TransitionType::ZoomFlipYUp:       return CCTransitionZoomFlipY::create(dur, dest, tOrientation::kCCTransitionOrientationUpOver);
@@ -1188,7 +1162,6 @@ CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig co
         case TransitionType::RotoZoom:          return CCTransitionRotoZoom::create(dur, dest);
         case TransitionType::JumpZoom:          return CCTransitionJumpZoom::create(dur, dest);
 
-        // Tiles & Progress
         case TransitionType::FadeTR:            return CCTransitionFadeTR::create(dur, dest);
         case TransitionType::FadeBL:            return CCTransitionFadeBL::create(dur, dest);
         case TransitionType::FadeUp:            return CCTransitionFadeUp::create(dur, dest);
@@ -1203,11 +1176,9 @@ CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig co
         case TransitionType::ProgressHorizontal: return CCTransitionProgressHorizontal::create(dur, dest);
         case TransitionType::ProgressVertical:  return CCTransitionProgressVertical::create(dur, dest);
 
-        // Pages
         case TransitionType::PageForward:       return CCTransitionPageTurn::create(dur, dest, false);
         case TransitionType::PageBackward:      return CCTransitionPageTurn::create(dur, dest, true);
 
-        // Native aliases for creative types.
         case TransitionType::PixelateFade:      return CCTransitionTurnOffTiles::create(dur, dest);
         case TransitionType::DiamondWipe:       return CCTransitionProgressInOut::create(dur, dest);
         case TransitionType::DoubleDoor:        return CCTransitionSplitCols::create(dur, dest);
@@ -1219,7 +1190,6 @@ CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig co
     }
 }
 
-// Script parser
 
 std::vector<TransitionCommand> TransitionManager::parseScriptFile(std::string const& scriptPath) const {
     log::info("[TransitionManager] parseScriptFile: {}", scriptPath);

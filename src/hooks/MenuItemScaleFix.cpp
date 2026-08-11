@@ -125,7 +125,7 @@ class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
             // (recycled or created programmatically). Still call the original so we don't
             // cut other mods' hook chain; vanilla activate() tolerates null selectors.
             if ((!this->m_pListener || !this->m_pfnSelector) && this->m_nScriptTapHandler == 0) {
-                log::warn("[MenuItemScaleFix] Paimbnails button without target/selector — passing through to original");
+                log::warn("[MenuItemScaleFix] Paimbnails button without target/selector - passing through to original");
                 CCMenuItemSpriteExtra::activate();
                 return;
             }

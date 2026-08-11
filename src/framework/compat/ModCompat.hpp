@@ -1,7 +1,6 @@
 ﻿#pragma once
 
-// Detect active texture mods to avoid conflicts. Queries the Loader on each
-// call (cheap, and the result can change as the user toggles mods at runtime).
+// Detect active mods at call time so runtime toggles are respected.
 
 #include <Geode/loader/Loader.hpp>
 
@@ -24,32 +23,24 @@ struct ModCompat {
         return isHappyTexturesLoaded() || isTextureLdrLoaded() || isImagePlusLoaded();
     }
 
-    static bool isLevelTagsLoaded() {
-        return geode::Loader::get()->isModLoaded("kampwski.level_tags");
-    }
-
-    // More Icons (hiimjustin000.more_icons): provides the custom-icon API.
-    // OPTIONAL dependency; Global Icons degrades gracefully without it.
+// More Icons provides the optional custom-icon API.
     static bool isMoreIconsLoaded() {
         return geode::Loader::get()->isModLoaded("hiimjustin000.more_icons");
     }
 
-    // Mods that may collide with our features. We detect them to adjust
-    // behavior (e.g. lower hook priority or cede ownership of a UI area).
+// Known conflicts that require lower hook priority or ceded UI ownership.
 
-    // CDC level thumbnails: incompatible; see mod.json + startup popup.
+// CDC level thumbnails are incompatible.
     static bool isCDCLevelThumbnailsLoaded() {
         return geode::Loader::get()->isModLoaded("cdc.level_thumbnails");
     }
 
-    // CompactLists: same as our compact mode. If active, cede and let the user
-    // use theirs.
+// CompactLists owns compact mode when active.
     static bool isCompactListsLoaded() {
         return geode::Loader::get()->isModLoaded("cvolton.compactlists-geode");
     }
 
-    // Compact Pause Menu: shrinks the paused song widget; our CustomSongWidget
-    // hook must run after to restore size.
+// Compact Pause Menu requires our song-widget hook to run after it.
     static bool isCompactPauseMenuLoaded() {
         return geode::Loader::get()->isModLoaded("prevter.compact-pause-menu");
     }
@@ -62,61 +53,46 @@ struct ModCompat {
         return geode::Loader::get()->isModLoaded("hjfod.quick-volume-controls");
     }
 
-    // BetterInfo: adds lots of UI to info layers / level browser. Not
-    // incompatible, but avoid stomping its buttons.
+// BetterInfo is compatible, but overlapping buttons must be left alone.
     static bool isBetterInfoLoaded() {
-        return geode::Loader::get()->isModLoaded("hjfod.betterinfo");
+        return geode::Loader::get()->isModLoaded("cvolton.betterinfo");
     }
 
-    // EclipseMenu: has its own popup/blur layer and renders via ImGui on top
-    // of cocos2d (through the gd-imgui-cocos library). The real published mod
-    // ID is `eclipse.eclipse-menu`; the older aliases are kept as fallbacks
-    // for safety in case forks or pre-release builds use them.
+// EclipseMenu owns its ImGui popup/blur layer; detect its published and legacy IDs.
     static bool isEclipseMenuLoaded() {
         return geode::Loader::get()->isModLoaded("eclipse.eclipse-menu") ||
                geode::Loader::get()->isModLoaded("eclipsemenu.eclipse-menu") ||
                geode::Loader::get()->isModLoaded("prevter.eclipsemenu");
     }
 
-    // Globed: adds popups and a RoomPopup sharing a parent with our blur;
-    // there was a documented crash (see DynamicPopupHook).
+// Globed shares popup parents with our blur and has a known crash path.
     static bool isGlobedLoaded() {
         return geode::Loader::get()->isModLoaded("dankmeme.globed2") ||
                geode::Loader::get()->isModLoaded("dankmeme.globed");
     }
 
-    // Menu Loop Randomizer: shares domain with our Menu Music.
+// Menu Loop Randomizer overlaps with Menu Music.
     static bool isMenuLoopRandomizerLoaded() {
         return geode::Loader::get()->isModLoaded("fleym.menuloop_randomizer");
     }
 
-    // Better Touch Prio: standalone mod that also Replaces CCTouchDispatcher::touches.
-    // Our Z-order touch feature cedes to it to avoid two Replace hooks colliding.
-    static bool isBetterTouchPrioLoaded() {
-        return geode::Loader::get()->isModLoaded("alk.better-touch-prio");
-    }
-
-    // Blur mods. Other mods that blur popups. If one is actively blurring (not
-    // just exposing an API), we skip ours to avoid duplicate FBO passes and
-    // corrupting the scene snapshot.
+// Active blur mods disable ours to avoid duplicate FBO passes and bad snapshots.
     static bool isBlurBGLoaded() {
-        // alphalaneous.blur_bg blurs ALL game popups.
+// alphalaneous.blur_bg blurs all popups.
         return geode::Loader::get()->isModLoaded("alphalaneous.blur_bg");
     }
     static bool isBlurAPILoaded() {
-        // thesillydoggo.blur-api just exposes an API; other mods decide whether
-        // to blur. Not a conflict on its own.
+// thesillydoggo.blur-api only exposes an API; it is not a conflict alone.
         return geode::Loader::get()->isModLoaded("thesillydoggo.blur-api");
     }
     static bool isBlurBehindPopupsLoaded() {
-        // malikhw47.blur-behind-popups applies BlurAPI to every FLAlertLayer.
+// malikhw47.blur-behind-popups applies BlurAPI to every FLAlertLayer.
         return geode::Loader::get()->isModLoaded("malikhw47.blur-behind-popups");
     }
-    // True if a mod is applying global popup blur that already covers our
-    // PopupBlurService use case.
+// True when another mod already covers our popup blur use case.
     static bool externalGlobalBlurActive() {
         return isBlurBGLoaded() || isBlurBehindPopupsLoaded();
     }
 };
 
-} // namespace paimon::compat
+}

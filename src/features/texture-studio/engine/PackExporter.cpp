@@ -74,7 +74,7 @@ geode::ByteVector toByteVector(std::vector<std::uint8_t> const& v) {
     return geode::ByteVector(v.begin(), v.end());
 }
 
-// file::Zip needs every parent folder registered before a nested entry.
+// file::Zip requires each parent folder before nested entries.
 geode::Result<> ensureZipFolders(file::Zip& zip, std::string const& entryPath,
                                  std::set<std::string>& created) {
     std::size_t pos = 0;
@@ -90,11 +90,8 @@ geode::Result<> ensureZipFolders(file::Zip& zip, std::string const& entryPath,
     return Ok();
 }
 
-// Ship the recolored PNG together with its matching plist. Used for the
-// user-selected vanilla sheets (GameSheet03/04) — their frame set is stable
-// per GD version, so the self-consistent pair is safe — and for every -hd
-// medium port, whose re-packed layout requires its own plist. Mod / Geode
-// auto-sheets must NOT go through this: use addSheetPngToZip for those.
+// Ship PNG+plist only for stable vanilla sheets and re-packed -hd atlases.
+// Mod/Geode auto-sheets keep the installed plist via addSheetPngToZip.
 geode::Result<> addSheetToZip(file::Zip& zip,
                               std::set<std::string>& createdFolders,
                               std::string const& baseName,
@@ -114,13 +111,8 @@ geode::Result<> addSheetToZip(file::Zip& zip,
     return Ok();
 }
 
-// PNG-only variant for auto sheets (mod / geode.loader / extra vanilla
-// sheets). Mirrors PackGen's web generator, which never ships plists for
-// these: the installed mod's own plist stays authoritative, so a mod that
-// updated and ADDED frames since the asset pack was snapshotted keeps
-// rendering them (our snapshot plist would make those sprites vanish).
-// The in-place tint never changes the atlas layout, so the recolored PNG
-// stays valid under the installed plist exactly like PackGen's output.
+// Auto-sheets ship PNG-only so the installed plist remains authoritative;
+// in-place tinting does not change their atlas layout.
 geode::Result<> addSheetPngToZip(file::Zip& zip,
                                  std::set<std::string>& createdFolders,
                                  std::string const& baseName,
@@ -134,7 +126,6 @@ geode::Result<> addSheetPngToZip(file::Zip& zip,
     return Ok();
 }
 
-// Downloads an overlay variant if the server has it; empty buffer otherwise.
 ImageBuffer loadOptionalOverlay(std::string const& relativePath,
                                 std::vector<std::string>& logMessages) {
     auto res = PackGenAssets::get().ensureOptionalFile(relativePath);
@@ -153,8 +144,7 @@ ImageBuffer loadOptionalOverlay(std::string const& relativePath,
     return std::move(img).unwrap();
 }
 
-// Gathers every overlay layer that applies to `pngRel` under the current
-// options. Gold/demon layers are only probed when their toggle warrants it.
+// Collect overlay layers for pngRel under the active options.
 std::shared_ptr<SheetOverlaySources const> buildOverlaySources(
     std::string const& pngRel,
     PackExportConfig const& cfg,
@@ -175,19 +165,15 @@ std::shared_ptr<SheetOverlaySources const> buildOverlaySources(
     return src;
 }
 
-// PackGen inclusion rules for asset-pack files the user didn't hand-pick.
-// geode.loader/* is included on purpose (GE_button_*, GE_square*, tab
-// gradient... are the buttons every mod popup uses, and PackGen tints them).
-// This is safe because sheets ship WITHOUT a plist (see the auto-sheet loop):
-// Geode keeps using its own plist, so its resource-version check never sees
-// missing frames.
+// PackGen inclusion rules for files not explicitly selected. geode.loader/*
+// is included; those sheets ship without a plist, so Geode keeps its own.
 bool standaloneAllowed(std::string const& rel, PackExportConfig const& cfg) {
-    if (rel == "pack.png") return false;  // PackGen's own pack icon
+    if (rel == "pack.png") return false;
     if (startsWith(rel, "goldFont")) return cfg.tintGoldFont;
     if (inList(kDibBaseFiles, rel))  return cfg.colorDemonFaces;
     if (inList(kMythicFiles, rel))   return cfg.mythicCompat;
     if (rel.find('/') != std::string::npos) return cfg.includeModTextures;
-    return true;  // vanilla buttons / squares / sliders
+    return true;
 }
 
 TinterOptions standaloneTintOptions(PackExportConfig const& cfg) {
@@ -199,7 +185,7 @@ TinterOptions standaloneTintOptions(PackExportConfig const& cfg) {
     return topts;
 }
 
-}  // namespace
+}
 
 geode::Result<PackExportResult> PackExporter::exportPack(
     PackExportConfig const& cfg,
@@ -234,7 +220,6 @@ geode::Result<PackExportResult> PackExporter::exportPack(
     std::set<std::string> zipFolders;
     std::vector<std::string> logMessages;
 
-    // --- PackGen asset pack (precision mode) ------------------------------
     PackGenManifest manifest;
     bool precision = false;
     if (cfg.usePackGenAssets) {
@@ -251,10 +236,8 @@ geode::Result<PackExportResult> PackExporter::exportPack(
     }
     result.precisionUsed = precision;
 
-    // Extra sheets shipped by the asset pack (launch screen, treasure room,
-    // mod UIs...). GameSheet03/04 stay under the user's explicit selection.
     struct AutoSheet {
-        std::string baseName;   // may contain a "modid/" prefix
+        std::string baseName;   // may contain a modid/ prefix
         std::string pngRel;
         std::string plistRel;
     };
@@ -310,7 +293,6 @@ geode::Result<PackExportResult> PackExporter::exportPack(
                   + static_cast<int>(standalonePngs.size());
     int workIndex = 0;
 
-    // --- user-selected sheets ---------------------------------------------
     for (int i = 0; i < totalSheets; ++i) {
         auto const& sel = cfg.sheets[i];
 
@@ -339,8 +321,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.resizeScale               = 1.0f;
         req.preserveOffsetForTableSide = true;
 
-        // Precision: swap sources to the asset pack's copy of the sheet so
-        // the hand-drawn overlays align with the atlas layout.
+        // Use the asset-pack copy so hand-drawn overlays match its atlas.
         if (precision) {
             std::string pngRel   = sel.baseName + sel.qualitySuffix + ".png";
             std::string plistRel = sel.baseName + sel.qualitySuffix + ".plist";
@@ -413,7 +394,6 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
     }
 
-    // --- asset-pack sheets (launch screen, treasure room, mod UIs) ---------
     for (auto const& autoSheet : autoSheets) {
         if (progress) progress(workIndex++, totalWork, autoSheet.baseName);
 
@@ -433,8 +413,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.colors                  = cfg.colors;
         req.brightness              = cfg.brightness;
         req.alternativeGlowOverlay  = cfg.alternativeGlowOverlay;
-        // Overlay ink decides coverage on asset-pack sheets; the name-based
-        // classifier doesn't know mod sprites and would block everything.
+        // Overlay ink decides coverage; name-based classification misses mod sprites.
         req.onlyTintUiSprites       = false;
         req.saturation              = cfg.saturation;
         req.contrast                = cfg.contrast;
@@ -444,14 +423,12 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.overlaySources          = buildOverlaySources(autoSheet.pngRel, cfg, logMessages);
 
         if (!req.overlaySources->any()) {
-            // No hand-drawn masks for this sheet: nothing to recolor, and a
-            // vanilla copy would only bloat the zip.
+            // No mask means no tint; a vanilla copy would only bloat the zip.
             if (!inList(kDibBaseFiles, autoSheet.pngRel) &&
                 !inList(kMythicFiles, autoSheet.pngRel)) {
                 continue;
             }
-            // DIB/Godlike sheets are wanted even untinted (they replace the
-            // demon faces the base game lacks).
+            // DIB/Godlike sheets replace demon faces missing from the base game.
         }
 
         auto outRes = SheetTinter::process(req);
@@ -462,8 +439,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
         auto out = std::move(outRes).unwrap();
 
-        // PNG only — the installed mod / Geode plist must stay authoritative
-        // (see addSheetPngToZip).
+        // PNG only: the installed mod/Geode plist stays authoritative.
         if (auto r = addSheetPngToZip(zip, zipFolders, autoSheet.baseName, "-uhd", out); !r) {
             ++result.standaloneFailed;
             logMessages.push_back(autoSheet.pngRel + ": " + r.unwrapErr());
@@ -472,8 +448,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         ++result.standaloneProcessed;
 
         if (cfg.includeMediumPort) {
-            // The -hd port re-packs the atlas, so it does need its own plist
-            // (PackGen ships this same pair in medium-port mode).
+            // The -hd port re-packs the atlas, so it needs its own plist.
             if (auto hdOutRes = MediumPort::generate(req)) {
                 auto hdOut = std::move(hdOutRes).unwrap();
                 if (auto r = addSheetToZip(zip, zipFolders, autoSheet.baseName, "-hd", hdOut); !r) {
@@ -485,7 +460,6 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
     }
 
-    // --- standalone textures (buttons, squares, sliders, mod icons) --------
     for (auto const& rel : standalonePngs) {
         if (progress) progress(workIndex++, totalWork, rel);
 
@@ -512,8 +486,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
 
         if (!ov.anyUsable(base.width(), base.height())) {
-            // PackGen ships untinted bases too, but for us that's dead
-            // weight — the game already has the original texture.
+            // The game already has the untinted base texture.
             logMessages.push_back(rel + ": no overlays, skipped");
             continue;
         }
@@ -539,8 +512,8 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
         ++result.standaloneProcessed;
 
-        // Medium port: halve -uhd textures unless the pack says not to
-        // (fonts and pre-scaled atlases break when resized).
+        // Halve -uhd textures for medium ports unless excluded; fonts and
+        // pre-scaled atlases break when resized.
         if (cfg.includeMediumPort && endsWith(rel, "-uhd.png") &&
             !manifest.isNoScaling(rel)) {
             auto half = tinted.resizedBilinear(
@@ -554,7 +527,6 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
     }
 
-    // --- bitmap font descriptors -------------------------------------------
     for (auto const& rel : fontFiles) {
         bool wanted = startsWith(rel, "goldFont")
             ? cfg.tintGoldFont
@@ -580,9 +552,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
     }
 
-    // --- animated fusion GIFs (ImagePlus / Happy Textures) ----------------
-    // Sheets already contain frame 0 of each fusion. Multi-frame textures also
-    // ship as standalone .gif files so ImagePlus can animate them in-game.
+    // Multi-frame fusion textures also ship as standalone GIFs for ImagePlus.
     if (cfg.exportAnimatedFusions && !cfg.spriteFusions.empty()) {
         if (progress) {
             progress(workIndex, totalWork + 1, "Animated fusions...");
@@ -610,7 +580,6 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
     }
 
-    // --- metadata -----------------------------------------------------------
     if (auto r = zip.add("pack.json",
             PackMetadataBuilder::buildPackJson(cfg.packName, cfg.author));
         !r) {
@@ -618,7 +587,6 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         return Err(result.errorMessage);
     }
 
-    // Optional readme so pack users know why .gif files are present.
     if (result.animatedFusionCount > 0) {
         std::string readme =
             "Animated fusion sprites\n"
@@ -657,8 +625,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         return Err(result.errorMessage);
     }
 
-    // Custom loading background. LoadingLayer.json references
-    // "LoadingLayerBG.png"; the -uhd/-hd suffixes are resolved per quality.
+    // LoadingLayer.json resolves the custom background's -uhd/-hd variants.
     if (!cfg.customLoadingBgPng.empty()) {
         if (auto r = zip.add("LoadingLayerBG-uhd.png",
                              toByteVector(cfg.customLoadingBgPng)); !r) {
@@ -676,7 +643,6 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
     }
 
-    // --- README + generation log (PackGen tradition) ------------------------
     auto fmtColor = [](cocos2d::ccColor3B c) {
         return fmt::format("RGB({}, {}, {})", c.r, c.g, c.b);
     };
@@ -722,7 +688,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         log::warn("[texture-studio] log add failed: {}", r.unwrapErr());
     }
 
-    // Destroy the zip to flush it to disk before reading its size below.
+    // Flush the zip before measuring it.
     {
         auto _ = std::move(zip);
     }
@@ -733,7 +699,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         result.outputZipSizeBytes = static_cast<std::int64_t>(sz);
     }
 
-    // Per-sheet failures don't fail the whole export; we still ship a partial pack.
+    // Keep exporting other sheets after a per-sheet failure.
     bool anySuccess = std::any_of(
         result.sheetResults.begin(), result.sheetResults.end(),
         [](SheetExportResult const& sr) { return sr.success; });
@@ -757,4 +723,4 @@ geode::Result<PackExportResult> PackExporter::exportPack(
     return Ok(std::move(result));
 }
 
-}  // namespace paimon::texture_studio
+}

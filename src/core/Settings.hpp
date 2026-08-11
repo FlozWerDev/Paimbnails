@@ -11,10 +11,8 @@ namespace paimon::settings {
 namespace internal {
     inline std::atomic<uint64_t> g_settingsVersion{0};
 
-    // Bump after any setSavedValue/setSetting that is snapshotted by hot-path
-    // caches (video quality/FPS, levelcell visuals, gif-ram-cache, etc.).
-    // Callers that only write settings without going through LevelCellSettingsPopup
-    // must invoke this or mid-session changes stay stale until restart.
+// Bump after writes mirrored by hot-path caches; otherwise changes stay stale
+// until restart.
     inline void invalidateSettingsCache() {
         g_settingsVersion.fetch_add(1, std::memory_order_relaxed);
     }
@@ -75,7 +73,10 @@ namespace thumbnails {
     inline bool gifRamCache() {
         return geode::Mod::get()->getSavedValue<bool>("gif-ram-cache", true);
     }
-} // namespace thumbnails
+    inline double thumbnailEdgeBlend() {
+        return geode::Mod::get()->getSavedValue<double>("levelcell-thumbnail-edge-blend", 0.65);
+    }
+}
 
 namespace levelinfo {
     inline std::string backgroundStyle() {
@@ -93,7 +94,7 @@ namespace levelinfo {
     inline bool dynamicSong() {
         return geode::Mod::get()->getSettingValue<bool>("dynamic-song");
     }
-} // namespace levelinfo
+}
 
 namespace backgrounds {
     inline std::string bgType() {
@@ -117,7 +118,7 @@ namespace backgrounds {
     inline bool transparentBackgroundMode() {
         return geode::Mod::get()->getSavedValue<bool>("transparent-background-mode", false);
     }
-} // namespace backgrounds
+}
 
 namespace popupblur {
     inline bool enabled() {
@@ -147,7 +148,7 @@ namespace popupblur {
     inline std::string uiTheme() {
         return geode::Mod::get()->getSettingValue<std::string>("popup-ui-theme");
     }
-} // namespace popupblur
+}
 
 namespace video {
     inline int fpsLimit() {
@@ -159,24 +160,20 @@ namespace video {
     inline bool disableVideoChunks() {
         return geode::Mod::get()->getSavedValue<bool>("disable-video-chunks", true);
     }
-    // 0=Auto, 50=Low, 75=Medium, 100=High
+// 0=Auto, 50=Low, 75=Medium, 100=High.
     inline int videoQuality() {
         return geode::Mod::get()->getSavedValue<int>("video-quality", 0);
     }
-    // Longest-side cap (px) the decoder downscales to. 0 = native (no cap).
-    // Downscaling at decode time shrinks the ring buffer, GL textures, PBOs
-    // and the resolve FBO proportionally — the main video RAM consumers.
-    // Mapping lives in VideoLoadHelpers (pure) so tests drive the same path.
+// Longest-side decode cap in pixels; 0 keeps native size.
+// Decode-time scaling also reduces ring-buffer, GL texture, PBO, and FBO memory.
     inline int videoMaxDecodeDimension() {
-        // Snapshot quality once per settings version — DecoderMF/NDK open paths
-        // call this during load and should not hit Mod save tables every open.
+// Snapshot quality per settings version; decoders reuse it across opens.
         static int s_cachedDim = -1;
         static uint64_t s_ver = UINT64_MAX;
         uint64_t ver = internal::g_settingsVersion.load(std::memory_order_relaxed);
         if (s_cachedDim >= 0 && ver == s_ver) return s_cachedDim;
         s_ver = ver;
-        // Local include-free mapping (mirror of paimon::video::maxDecodeDimensionForQuality)
-        // to avoid circular includes from Settings.hpp into video/.
+// Keep the mapping local to avoid a Settings.hpp/video include cycle.
         int q = videoQuality();
         switch (q) {
             case 100: s_cachedDim = 0; break;
@@ -192,11 +189,11 @@ namespace video {
     inline float videoBlurIntensity() {
         return geode::Mod::get()->getSavedValue<float>("video-blur-intensity", 0.5f);
     }
-    // Degrees: 0, 90, 180, 270
+// Degrees: 0, 90, 180, 270.
     inline int videoRotation() {
         return geode::Mod::get()->getSavedValue<int>("video-rotation", 0);
     }
-    // 4K video needs ~180MB per player, so 512MB allows 2-3 concurrent 4K players.
+// 512 MB allows roughly 2–3 concurrent 4K players.
     inline int maxChunkMemoryMB() {
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
         return geode::Mod::get()->getSavedValue<int>("video-max-chunk-memory-mb", 256);
@@ -213,7 +210,7 @@ namespace video {
 #endif
     }
 
-    // Effective FPS = clamp(fpsLimit() / activeCount, minVideoFPS(), fpsLimit()).
+// Effective FPS = clamp(fpsLimit() / activeCount, minVideoFPS(), fpsLimit()).
     inline bool adaptiveFPS() {
         return geode::Mod::get()->getSavedValue<bool>("video-adaptive-fps", true);
     }
@@ -223,7 +220,7 @@ namespace video {
     }
 
     static constexpr size_t kMaxVideoFileSize = 2ULL * 1024 * 1024 * 1024;
-} // namespace video
+}
 
 namespace profiles {
     inline std::string scorecellBgType() {
@@ -239,7 +236,7 @@ namespace profiles {
         return geode::Mod::get()->getSavedValue<float>("profile-thumb-width", 0.6f);
     }
     inline int64_t profileImgZLayer() {
-        // -1: background sits behind the comment list (z=0); 1 would cover comments.
+// -1 keeps the background behind the comment list.
         return geode::Mod::get()->getSavedValue<int>("profile-img-zlayer", -1);
     }
     inline std::string profileBgType() {
@@ -251,7 +248,7 @@ namespace profiles {
     inline bool redesignEnabled() {
         return geode::Mod::get()->getSettingValue<bool>("profile-redesign-enabled");
     }
-} // namespace profiles
+}
 
 namespace moderation {
     inline bool isVerifiedModerator() {
@@ -266,7 +263,7 @@ namespace moderation {
     inline bool canUploadGIF() {
         return isVerifiedVip() || isVerifiedModerator() || isVerifiedAdmin();
     }
-} // namespace moderation
+}
 
 namespace general {
     inline bool smoothScroll() {
@@ -287,7 +284,7 @@ namespace general {
     inline bool autoUpdate() {
         return geode::Mod::get()->getSettingValue<bool>("auto-update");
     }
-} // namespace general
+}
 
 namespace smoothscroll {
     inline constexpr double kSensitivityDefault = 2.0;
@@ -326,7 +323,7 @@ namespace smoothscroll {
         return geode::Mod::get()->getSavedValue<double>(
             "smooth-scroll-editor-zoom-smoothness", kEditorZoomSmoothnessDefault);
     }
-} // namespace smoothscroll
+}
 
 namespace smoothui {
     inline bool enabled() {
@@ -353,7 +350,7 @@ namespace smoothui {
     inline bool buttonReleaseBounce() {
         return geode::Mod::get()->getSavedValue<bool>("smooth-ui-button-release-bounce", true);
     }
-} // namespace smoothui
+}
 
 namespace discord_rpc {
     inline bool enabled() {
@@ -380,6 +377,9 @@ namespace discord_rpc {
     inline std::string smallImageKey() {
         return geode::Mod::get()->getSavedValue<std::string>("discord-rpc-small-image-key", "");
     }
+    inline std::string smallText() {
+        return geode::Mod::get()->getSavedValue<std::string>("discord-rpc-small-text", "");
+    }
     inline std::string activityType() {
         return geode::Mod::get()->getSavedValue<std::string>("discord-rpc-activity-type", "Playing");
     }
@@ -398,13 +398,25 @@ namespace discord_rpc {
     inline std::string customState() {
         return geode::Mod::get()->getSavedValue<std::string>("discord-rpc-custom-state", "");
     }
-} // namespace discord_rpc
+}
+
+namespace icon_maker {
+    inline bool enabled() {
+        return geode::Mod::get()->getSettingValue<bool>("icon-maker-enabled");
+    }
+}
+
+namespace icon_gallery {
+    inline bool enabled() {
+        return geode::Mod::get()->getSettingValue<bool>("icon-gallery-enabled");
+    }
+}
 
 namespace cursor {
     inline bool hideInGameplay() {
         return geode::Mod::get()->getSavedValue<bool>("custom-cursor-hide-in-gameplay", true);
     }
-} // namespace cursor
+}
 
 namespace input_scroll {
     inline bool enabled() {
@@ -428,11 +440,10 @@ namespace input_scroll {
     inline bool wrap() {
         return geode::Mod::get()->getSettingValue<bool>("input-scroll-wrap");
     }
-} // namespace input_scroll
+}
 
 namespace quality {
-    // The 22 main levels are pinned in RAM (exempt from the LRU); this entry cap
-    // leaves room beyond them. The byte cap below is the real memory limit.
+// 22 main levels are pinned; the byte cap remains the real memory limit.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     inline size_t ramCacheEntries() { return 40; }
     inline size_t ramCacheBytes()   { return 100ull * 1024 * 1024; }
@@ -442,6 +453,6 @@ namespace quality {
 #endif
     inline size_t diskCacheBytes()  { return 512ull * 1024 * 1024; }
     inline std::string cacheSubdir() { return "cache"; }
-} // namespace quality
+}
 
-} // namespace paimon::settings
+}

@@ -45,11 +45,10 @@ static constexpr ccColor4F COL_CAT_HL      = {0.20f, 0.20f, 0.20f, 0.7f};
 static constexpr ccColor4F COL_DIVIDER     = {0.22f, 0.22f, 0.22f, 0.5f};
 static constexpr ccColor4F COL_SEPARATOR   = {0.18f, 0.18f, 0.18f, 0.6f};
 
-// Tags for the entrance/exit animations so they can be cancelled cleanly.
+// Action tags used to cancel entrance/exit animations.
 static constexpr int kDimActionTag  = 8801;
 static constexpr int kBodyActionTag = 8802;
 
-// Animation tuning — smooth single-overshoot zoom + backdrop cross-fade.
 static constexpr float ANIM_IN_DUR    = 0.34f;
 static constexpr float ANIM_IN_SCALE  = 0.80f;
 static constexpr float ANIM_DIM_IN    = 0.24f;
@@ -303,8 +302,7 @@ bool EmotePickerPopup::init(
     updateTabHighlights();
     switchTab(Tab::All);
 
-    // Remember the background dim level set by the base popup so the entrance /
-    // exit can cross-fade it (captured here because it is reliably set by init).
+    // Preserve the base popup's dim level for the cross-fade.
     m_dimOpacity = this->getOpacity();
 
     this->scheduleUpdate();
@@ -502,9 +500,7 @@ void EmotePickerPopup::buildEmoteGrid(
 
     m_hoverCells.reserve(emotes.size());
     for (size_t i = 0; i < emotes.size(); ++i) {
-        // Manual grid positioning (no RowLayout). RowLayout proved unreliable
-        // here — cells in some sections ended up unplaced/offscreen. This mirrors
-        // the proven CustomBadgePickerPopup layout.
+    // Manual placement avoids RowLayout cells disappearing in this popup.
         int col = static_cast<int>(i % static_cast<size_t>(cols));
         int row = static_cast<int>(i / static_cast<size_t>(cols));
         float x = static_cast<float>(col) * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2.f;
@@ -538,7 +534,7 @@ void EmotePickerPopup::buildEmoteGrid(
     m_scroll->moveToTop();
     m_countLabel->setString(fmt::format("{}", emotes.size()).c_str());
 
-    // Defer thumbnail loads a tick: grids build during init() before positioning, so world-space is wrong here.
+    // Wait one tick so world-space positions are valid before loading thumbnails.
     WeakRef<EmotePickerPopup> selfWeak = this;
     Loader::get()->queueInMainThread([selfWeak]() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -580,9 +576,7 @@ void EmotePickerPopup::buildAllEmotesGrid() {
 
     m_hoverCells.reserve(totalEmotes);
 
-    // Single menu for all cells; manual positioning per category section.
-    // (RowLayout per-category proved unreliable — some sections rendered headers
-    // but their cells were never placed/visible.)
+    // One menu owns all cells; positions are assigned per category.
     auto menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     menu->setContentSize({gridW, totalH});
@@ -644,7 +638,7 @@ void EmotePickerPopup::buildAllEmotesGrid() {
     m_scroll->moveToTop();
     m_countLabel->setString(fmt::format("{}", totalEmotes).c_str());
 
-    // Defer thumbnail loads a tick (same reason as buildEmoteGrid()).
+    // Wait one tick before resolving thumbnail positions.
     WeakRef<EmotePickerPopup> selfWeak = this;
     Loader::get()->queueInMainThread([selfWeak]() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -772,7 +766,6 @@ void EmotePickerPopup::onRefreshCatalog(CCObject*) {
 }
 
 void EmotePickerPopup::rebuildScrollArea() {
-    // Reserved for future use
 }
 
 void EmotePickerPopup::onSearchToggle(CCObject*) {
@@ -975,13 +968,8 @@ void EmotePickerPopup::requestVisibleThumbnails() {
     }
 }
 
-// Eager load every cell regardless of viewport visibility. The viewport-based
-// lazy loader (requestVisibleThumbnails) can miss cells while the popup is still
-// playing its open animation (world-space positions are unreliable during the
-// scale-in), which left the grid showing only placeholders. Loading directly by
-// cell index does not depend on positioning and mirrors the proven approach used
-// by CustomBadgePickerPopup. EmoteCache de-dupes via RAM/disk caches, so this is
-// cheap for already-cached emotes.
+    // Load by cell index while the popup animates; viewport coordinates are not
+    // reliable yet, and EmoteCache de-duplicates repeated requests.
 void EmotePickerPopup::requestAllThumbnails() {
     for (size_t i = 0; i < m_hoverCells.size(); ++i) {
         loadCellThumbnail(i);
@@ -998,7 +986,6 @@ void EmotePickerPopup::loadCellThumbnail(size_t cellIdx) {
 
     WeakRef<EmotePickerPopup> selfWeak = this;
     uint32_t gen = m_gridGeneration;
-    // EmoteCache dispatches on the main thread, so attach directly.
     EmoteCache::get().loadEmote(hc.info,
         [selfWeak, cellIdx, gen](CCTexture2D* tex, bool isGif,
                                  std::vector<uint8_t> const& gifData) {
@@ -1035,7 +1022,7 @@ void EmotePickerPopup::attachLoadedThumbnail(size_t cellIdx,
         size_t idx = cellIdx;
         std::string key = hc.info.filename;
         uint32_t gen = m_gridGeneration;
-        hc.loaded = true; // optimistic; will stay true if sprite arrives
+    hc.loaded = true; // Keep the cell marked loaded while the sprite resolves.
         AnimatedGIFSprite::createAsync(gifData, key,
             [selfWeak, idx, gen](AnimatedGIFSprite* gifSprite) {
                 auto self = selfWeak.lock();
@@ -1047,7 +1034,7 @@ void EmotePickerPopup::attachLoadedThumbnail(size_t cellIdx,
                     return;
                 }
                 if (!gifSprite) {
-                    cell.loaded = false; // allow retry if grid still alive
+    cell.loaded = false; // Allow retry while the grid remains alive.
                     return;
                 }
                 float maxD = CELL_SIZE - 6.f;
@@ -1108,27 +1095,19 @@ void EmotePickerPopup::positionCentered() {
     m_mainLayer->setPosition({winSize.width * 0.5f, winSize.height * 0.5f});
 }
 
-// --- Entrance / exit animations -------------------------------------------
-// A polished, fluid feel: the dimmed backdrop cross-fades while the body does a
-// smooth single-overshoot zoom (EaseBack) on the way in and a quick anticipated
-// scale-down on the way out. No elastic jelly, no hard pop.
 
 void EmotePickerPopup::show() {
     FLAlertLayer::show();
 
-    // Blur the scene behind the popup. Marked directly (not via the dynamic
-    // popup flag) so the shared hook's entry animation doesn't fight this
-    // popup's own zoom/cross-fade below.
+    // Mark blur directly so the shared popup animation does not fight this one.
     paimon::popupblur::captureAndApply(this);
 
-    // Cross-fade the dim backdrop in (level captured in init()).
     this->stopActionByTag(kDimActionTag);
     this->setOpacity(0);
     auto dimIn = CCEaseSineOut::create(CCFadeTo::create(ANIM_DIM_IN, m_dimOpacity));
     dimIn->setTag(kDimActionTag);
     this->runAction(dimIn);
 
-    // Body: smooth zoom-in with a soft overshoot.
     if (m_mainLayer) {
         m_mainLayer->stopActionByTag(kBodyActionTag);
         m_mainLayer->setScale(ANIM_IN_SCALE);
@@ -1144,11 +1123,9 @@ void EmotePickerPopup::onClose(CCObject*) {
 
     paimon::popupblur::cleanupWithFade(this, ANIM_DIM_OUT);
 
-    // Dismiss the keyboard with the popup so it doesn't linger over the scene.
     paimon::ui::detachGeodeTextInput(m_textInput);
     paimon::ui::detachGeodeTextInput(m_searchInput);
 
-    // Block further interaction while the exit plays.
     this->setTouchEnabled(false);
 
     this->stopActionByTag(kDimActionTag);
@@ -1170,7 +1147,6 @@ void EmotePickerPopup::onClose(CCObject*) {
 }
 
 void EmotePickerPopup::finishClose() {
-    // Base implementation posts CloseEvent and removes the popup from its parent.
     Popup::onClose(nullptr);
 }
 
@@ -1178,4 +1154,4 @@ void EmotePickerPopup::closeAnimated() {
     onClose(nullptr);
 }
 
-} // namespace paimon::emotes
+}

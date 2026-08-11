@@ -12,6 +12,7 @@
 #include "../features/custom-slider/ui/CustomSliderPopup.hpp"
 #include "../features/discord-presence/ui/DiscordConfigPopup.hpp"
 #include "../features/discord-presence/services/DiscordPresenceManager.hpp"
+#include "../features/dynamic-songs/ui/DynamicSongPopup.hpp"
 #include "../features/profile-music/ui/ProfileMusicPopup.hpp"
 #include "../layers/PaiConfigLayer.hpp"
 #include "../utils/PaimonNotification.hpp"
@@ -116,7 +117,7 @@ void buildThumbnailLayoutGroup(CCNode* c, float w) {
 
     c->addChild(createDropdownRow("Background Style",
         gsaved<std::string>("levelcell-background-type", "thumbnail"),
-        {"gradient", "thumbnail"},
+        {"gradient", "legacy-gradient", "thumbnail"},
         [](std::string const& v) { ssaved<std::string>("levelcell-background-type", v); },
         w));
 
@@ -270,6 +271,10 @@ void buildDynamicSongGroup(CCNode* c, float w) {
     c->addChild(createHintRow(
         "Reproduce la cancion del nivel en una posicion aleatoria al ver su info.",
         w));
+
+    c->addChild(createLinkRow("Ajustes de Cancion Dinamica",
+        []() { if (auto* p = paimon::dynsong::DynamicSongPopup::create()) p->show(); },
+        w));
 }
 
 void buildProfileMusicGroup(CCNode* c, float w) {
@@ -311,6 +316,16 @@ void buildMenuMusicPlayerGroup(CCNode* c, float w) {
     c->addChild(createToggleRow("Enable Menu Music Player",
         gset<bool>("menuMusicEnable"),
         [](bool v) { sset<bool>("menuMusicEnable", v); },
+        w));
+
+    c->addChild(createToggleRow("Autoplay on Startup",
+        gsaved<bool>("menuMusicAutoplayOnBoot", false),
+        [](bool v) { ssaved<bool>("menuMusicAutoplayOnBoot", v); },
+        w));
+
+    c->addChild(createToggleRow("Auto-scroll to Current Song",
+        gsaved<bool>("menuLoopAutoScrollCurrent", true),
+        [](bool v) { ssaved<bool>("menuLoopAutoScrollCurrent", v); },
         w));
 
     c->addChild(createToggleRow("Show Playback Progress",
@@ -387,6 +402,12 @@ void buildMenuLoopNotificationsGroup(CCNode* c, float w) {
         {"Now Playing", "Current Song", "Looping", "Song", "Music", "Playing", "[Empty]"},
         [](std::string const& v) { sset<std::string>("menuLoopCustomPrefix", v); },
         w));
+}
+
+void buildMenuMusicAllGroup(CCNode* c, float w) {
+    buildMenuMusicPlayerGroup(c, w);
+    buildMenuLoopGroup(c, w);
+    buildMenuLoopNotificationsGroup(c, w);
 }
 
 void buildPopupAnimationGroup(CCNode* c, float w) {
@@ -485,7 +506,7 @@ void buildPerformanceGroup(CCNode* c, float w) {
 
     c->addChild(createLinkRow("Open Thumbnails Folder",
         []() {
-            // reuse the mod's own "button" setting; handler is registered in MaintenanceActions.cpp.
+// Reuse the mod's "button" setting; MaintenanceActions registers the handler.
             openNativeSettings();
         },
         w));
@@ -776,6 +797,8 @@ std::unordered_map<std::string, FeatureGroup> const& featureGroupRegistry() {
             {"Musica de Perfil", "Crossfade y fragmento personal.", &buildProfileMusicGroup}},
         {"menu-music-player",
             {"Reproductor del Menu", "Hotkeys, progreso y skip.", &buildMenuMusicPlayerGroup}},
+        {"menu-music-all",
+            {"Musica del Menu", "Reproductor, shuffle, salidas y avisos.", &buildMenuMusicAllGroup}},
         {"menu-loop",
             {"Bucle del Menu", "Shuffle, randomizar y restaurar.", &buildMenuLoopGroup}},
         {"menu-loop-notifications",
@@ -796,17 +819,15 @@ std::unordered_map<std::string, FeatureGroup> const& featureGroupRegistry() {
     return registry;
 }
 
-// Map granular setting name (English) to a registry group key, or to a direct
-// action when the entry opens an existing dedicated popup instead.
+// Map a setting to a registry group or a dedicated popup action.
 
 struct GranularRoute {
-    std::string groupKey;                    // if non-empty, open a FeatureConfigPopup
-    std::function<void()> dedicatedAction;   // if set, run instead of groupKey
+    std::string groupKey;                    // Opens a FeatureConfigPopup.
+    std::function<void()> dedicatedAction;   // Takes priority over groupKey.
 };
 
 GranularRoute routeForGranular(std::string const& englishName) {
     static const std::unordered_map<std::string, std::string> nameToGroup = {
-        // Cat 0: General
         {"Language / Idioma",                 "general"},
         {"Auto Update",                       "general"},
         {"Quick Search Key",                  "general"},
@@ -815,7 +836,6 @@ GranularRoute routeForGranular(std::string const& englishName) {
         {"Layout Editor Keybind",             "general"},
         {"Debug Logs",                        "general"},
 
-        // Cat 1: Thumbnails
         {"Thumbnail Size",                    "thumbnail-layout"},
         {"Background Style (Cell)",           "thumbnail-layout"},
         {"Background Blur (Cell)",            "thumbnail-layout"},
@@ -835,11 +855,9 @@ GranularRoute routeForGranular(std::string const& englishName) {
         {"Enable Capture Button",             "capture"},
         {"Capture Thumbnail Key",             "capture"},
 
-        // Cat 2: Level
         {"Background Style (Level)",          "level-info"},
         {"Dynamic Song",                      "dynamic-song"},
 
-        // Cat 3: Audio
         {"Enable Profile Music",              "profile-music"},
         {"Enable Menu Music Player",          "menu-music-player"},
         {"Show Playback Progress",            "menu-music-player"},
@@ -855,7 +873,6 @@ GranularRoute routeForGranular(std::string const& englishName) {
         {"Notification Duration",             "menu-loop-notifications"},
         {"Notification Prefix",               "menu-loop-notifications"},
 
-        // Cat 5: Extras
         {"Smooth UI",                         "smooth-ui"},
         {"Smooth Popups",                     "smooth-ui"},
         {"Button Animations",                 "smooth-ui"},
@@ -871,7 +888,6 @@ GranularRoute routeForGranular(std::string const& englishName) {
         {"Open Thumbnails Folder",            "performance"},
     };
 
-    // 1. direct actions to existing dedicated popups
     if (englishName == "Smooth UI" ||
         englishName == "Smooth Popups" ||
         englishName == "Button Animations" ||
@@ -900,15 +916,11 @@ GranularRoute routeForGranular(std::string const& englishName) {
             if (auto* p = paimon::slider::CustomSliderPopup::create()) p->show();
         }};
     }
-    if (englishName == "Editor Fondos" || englishName == "Configuración Completa") {
+    if (englishName == "Editor Fondos" || englishName == "Configuracion Completa") {
         return {{}, []() {
-            // PaiConfigLayer is a fullscreen layer; mirror the Hub's path.
+// PaiConfigLayer is fullscreen; mirror the Hub path.
             SettingsPanelManager::get().close();
-            auto scene = CCDirector::get()->getRunningScene();
-            if (!scene) return;
-            if (auto* layer = PaiConfigLayer::create()) {
-                scene->addChild(layer, 5000);
-            }
+            PaiConfigLayer::openOverlay();
         }};
     }
     if (englishName == "Transiciones de Fondos") {
@@ -927,17 +939,15 @@ GranularRoute routeForGranular(std::string const& englishName) {
         }};
     }
 
-    // 2. map to a FeatureConfigPopup
     auto it = nameToGroup.find(englishName);
     if (it != nameToGroup.end()) {
         return {it->second, {}};
     }
 
-    // 3. no route (caller falls back to the panel)
     return {};
 }
 
-} // namespace
+}
 
 namespace paimon::ui {
 
@@ -980,7 +990,7 @@ bool FeatureConfigPopup::init(std::string const& featureKey) {
         m_mainLayer->addChild(subtitleLbl);
     }
 
-    // ScrollLayer fills the space below the title + subtitle
+// ScrollLayer fills the space below title and subtitle.
     float topOffset = group.subtitle.empty() ? 28.f : 44.f;
     float scrollW = winSize.width - 30.f;
     float scrollH = winSize.height - topOffset - 16.f;
@@ -994,8 +1004,7 @@ bool FeatureConfigPopup::init(std::string const& featureKey) {
 
     auto* contentLayer = m_scroll->m_contentLayer;
 
-    // builder adds each row to 'tmp'; we then move them to m_contentLayer at
-    // computed top-down positions (same pattern as PaimonMultiSettingsPanel).
+// Move rows from the builder into contentLayer with computed top-down positions.
     auto* tmp = CCNode::create();
     tmp->setContentSize({scrollW, scrollH});
     group.build(tmp, scrollW);
@@ -1034,13 +1043,11 @@ void openFeatureConfigFor(std::string const& englishGranularName,
                           int fallbackCategoryIndex) {
     auto route = routeForGranular(englishGranularName);
 
-    // 1. dedicated action (existing popup, fullscreen layer, etc.)
     if (route.dedicatedAction) {
         route.dedicatedAction();
         return;
     }
 
-    // 2. FeatureConfigPopup with a registered groupKey
     if (!route.groupKey.empty() && FeatureConfigPopup::hasFeatureKey(route.groupKey)) {
         if (auto* popup = FeatureConfigPopup::create(route.groupKey)) {
             popup->show();
@@ -1048,8 +1055,7 @@ void openFeatureConfigFor(std::string const& englishGranularName,
         }
     }
 
-    // 3. fallback: traditional settings panel for the matching category.
     SettingsPanelManager::get().open(fallbackCategoryIndex);
 }
 
-} // namespace paimon::ui
+}

@@ -17,13 +17,12 @@ struct Body {
     float invInertia = 1.f;               // 1/I, momento de inercia inverso
     bool asleep = false;
     float sleepTimer = 0.f;
-    cocos2d::CCPoint lastPos {0.f, 0.f};
     // Escala base + deformacion de impacto (squash/stretch)
     float baseScaleX = 1.f;
     float baseScaleY = 1.f;
     float squash = 0.f;                   // 0..1, se decae cada frame
     float stretchAxis = 0.f;              // grados: eje del impacto
-    bool onGround = false;
+    float supportOffsetY = 0.f;
 };
 
 struct PhysicsConfig {
@@ -33,7 +32,6 @@ struct PhysicsConfig {
     float airDrag = 0.08f;       // 0..1, amortiguacion lineal en aire
     float angularDrag = 0.35f;   // 0..2, amortiguacion de giro
     bool removeCeiling = false;
-    float pushPower = 1.0f;      // 0..2, fuerza del empujon al click en vacio
     bool massBySize = true;      // masa proporcional al area
 };
 

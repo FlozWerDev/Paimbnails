@@ -124,11 +124,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         if (bgNode) {
             popupSize   = bgNode->getScaledContentSize();
             popupCenter = bgNode->getPosition();
-            // Hide vanilla plate so the blur clip is the visible background.
-            bgNode->setVisible(false);
-            if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(bgNode)) {
-                rgba->setOpacity(0);
-            }
         }
 
         float padding   = 3.f;
@@ -163,8 +158,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         blurredSprite->setOpacity(0);
         blurredSprite->runAction(CCFadeTo::create(0.3f, 255));
 
-        // z=0: above the (now hidden) vanilla plate, below list/UI.
-        layer->addChild(clip, 0);
+        layer->addChild(clip, -1);
         m_fields->m_bgClip = clip;
     }
 

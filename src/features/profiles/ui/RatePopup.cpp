@@ -3,7 +3,7 @@
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../../../utils/SpriteHelper.hpp"
-#include "../../foryou/services/ForYouTracker.hpp"
+#include "../../foryou/services/TasteProfile.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/binding/GameManager.hpp>
@@ -24,7 +24,7 @@ bool RatePopup::init(int levelID, std::string thumbnailId) {
     if (!Popup::init(320.f, 220.f)) return false;
 
     m_levelID = levelID;
-    m_thumbnailId = thumbnailId;
+    m_thumbnailId = std::move(thumbnailId);
 
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
@@ -201,7 +201,7 @@ void RatePopup::onSubmit(CCObject* sender) {
             if (spinnerRef) spinnerRef->dismiss();
             
             if (success) {
-                paimon::foryou::ForYouTracker::get().onThumbnailRated(trackedLevelID, trackedRating);
+                paimon::foryou::TasteProfile::get().onThumbnailRated(trackedLevelID, trackedRating);
                 PaimonNotify::create("Rating submitted!", NotificationIcon::Success)->show();
                 if (popup->m_onRateCallback) {
                     popup->m_onRateCallback();

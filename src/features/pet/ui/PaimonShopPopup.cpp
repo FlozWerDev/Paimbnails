@@ -33,7 +33,6 @@ bool PaimonShopPopup::init() {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    // info button
     auto infoMenu = CCMenu::create();
     infoMenu->setPosition({0, 0});
     m_mainLayer->addChild(infoMenu, 15);
@@ -58,14 +57,12 @@ bool PaimonShopPopup::init() {
         infoMenu->addChild(uploadBtn);
     }
 
-    // status label
     m_statusLabel = CCLabelBMFont::create("Loading shop...", "chatFont.fnt");
     m_statusLabel->setScale(0.6f);
     m_statusLabel->setColor({200, 200, 200});
     m_statusLabel->setPosition({cx, content.height / 2.f});
     m_mainLayer->addChild(m_statusLabel, 5);
 
-    // scroll area
     float scrollW = content.width - 16.f;
     float scrollH = content.height - 50.f;
     m_scrollLayer = ScrollLayer::create({scrollW, scrollH});
@@ -154,20 +151,17 @@ void PaimonShopPopup::buildList() {
     float y = totalH - 30.f;
 
     for (auto& item : m_items) {
-        // background stripe
         auto stripe = CCLayerColor::create({0, 0, 0, 40});
         stripe->setContentSize({scrollW - 4.f, rowH - 4.f});
         stripe->setPosition({2.f, y - rowH / 2.f + 2.f});
         sc->addChild(stripe);
 
-        // name
         auto nameLbl = CCLabelBMFont::create(item.name.c_str(), "bigFont.fnt");
         nameLbl->setScale(0.3f);
         nameLbl->setAnchorPoint({0.f, 0.5f});
         nameLbl->setPosition({10.f, y + 8.f});
         sc->addChild(nameLbl);
 
-        // creator + size
         std::string meta = "by " + item.creator + " | " + formatFileSize(item.fileSize) + " | " + item.format;
         auto metaLbl = CCLabelBMFont::create(meta.c_str(), "chatFont.fnt");
         metaLbl->setScale(0.45f);
@@ -240,7 +234,6 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
 
             log::info("[PetShop] Downloaded '{}': {} bytes", name, data.size());
 
-            // save to pet gallery
             std::string filename = itemId + "." + format;
             auto path = PetManager::get().galleryDir() / filename;
             {
@@ -255,7 +248,6 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
                 f.write(reinterpret_cast<char const*>(data.data()), data.size());
                 f.close();
 
-                // verify write
                 std::error_code verifyEc;
                 if (f.fail() || !std::filesystem::exists(path, verifyEc) || std::filesystem::file_size(path, verifyEc) != data.size()) {
                     log::error("[PetShop] File write verification failed for: {}", geode::utils::string::pathToString(path));

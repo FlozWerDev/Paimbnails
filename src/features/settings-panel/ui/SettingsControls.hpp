@@ -36,7 +36,6 @@ cocos2d::CCNode* createSliderRow(
     float width
 );
 
-// Int slider
 cocos2d::CCNode* createIntSliderRow(
     const char* label,
     int initialValue,
@@ -86,7 +85,6 @@ cocos2d::CCNode* createHintRow(
     float width
 );
 
-// Section header
 cocos2d::CCNode* createSectionHeader(const char* title, float width);
 
 // Collapsible subsection header — toggles visibility of contentContainer on tap

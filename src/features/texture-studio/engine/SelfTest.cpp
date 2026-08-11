@@ -112,7 +112,7 @@ bool engineSelfTest() {
 
     bool ok = true;
     if (clusters.clusters.size() < 3) {
-        log::error("[texture-studio] selfTest FAIL: expected ≥3 clusters, got {}", clusters.clusters.size());
+        log::error("[texture-studio] selfTest FAIL: expected >=3 clusters, got {}", clusters.clusters.size());
         ok = false;
     }
 
@@ -127,7 +127,7 @@ bool engineSelfTest() {
             default: break;
         }
         log::info("[texture-studio] selfTest: cluster RGB=({},{},{}) HSV=({:.0f},{:.2f},{:.2f}) "
-                  "px={} border={:.2f} → role={}",
+                  "px={} border={:.2f} -> role={}",
             c.source.r, c.source.g, c.source.b,
             c.source.h, c.source.s, c.source.v,
             c.source.pixelCount, c.source.borderRatio,
@@ -208,7 +208,7 @@ bool engineSelfTest() {
         ok = false;
     }
 
-    // --- OverlayTinter: PackGen algorithm parity on a known pixel -----------
+// OverlayTinter/PackGen parity on a known pixel.
     {
         ImageBuffer base(2, 1);
         base.setAt(0, 0, {10, 10, 10, 255});

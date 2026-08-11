@@ -2,13 +2,12 @@
 #include <Geode/loader/SettingV3.hpp>
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/HttpClient.hpp"
-#include "../managers/ThumbnailAPI.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/profiles/services/ProfileThumbs.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "QualityConfig.hpp"
-#include "RuntimeLifecycle.hpp"
+#include "ModAuthFlow.hpp"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -134,6 +133,7 @@ MaintenanceStats runMaintenanceCleanup() {
 
     purgeDirectoryTree(saveDir / "gif_cache", stats);
     purgeDirectoryTree(saveDir / "thumbnails" / "profiles", stats);
+    purgeDirectoryTree(saveDir / "global_icons_cache", stats);
 
     sanitizeDirectory(paimon::quality::cacheDir(), stats);
     sanitizeDirectory(paimon::quality::cacheDir() / "profiles", stats);
@@ -203,56 +203,7 @@ $execute {
 
     ButtonSettingPressedEventV3(Mod::get(), "maintenance-refresh-mod-code").listen([](auto buttonKey) {
         if (buttonKey != "run") return;
-
-        auto* gm = GameManager::get();
-        auto* am = GJAccountManager::get();
-        std::string username = gm ? gm->m_playerName : "";
-        int accountID = am ? am->m_accountID : 0;
-
-        if (username.empty() || accountID <= 0) {
-            PaimonNotify::create("Necesitas iniciar sesion para obtener el mod code.", NotificationIcon::Error)->show();
-            return;
-        }
-
-        std::string oldCode = HttpClient::get().getModCode();
-        PaimonNotify::create("Verificando permisos de mod/admin...", NotificationIcon::Info)->show();
-
-        ThumbnailAPI::get().checkModeratorAccount(username, accountID, [oldCode](bool isMod, bool isAdmin) {
-            geode::queueInMainThread([oldCode, isMod, isAdmin]() {
-                if (paimon::isRuntimeShuttingDown()) return;
-                bool effectiveMod = isMod || isAdmin;
-                Mod::get()->setSavedValue<bool>("is-verified-admin", isAdmin);
-                Mod::get()->setSavedValue<bool>("is-verified-moderator", effectiveMod);
-
-                if (!effectiveMod) {
-                    PaimonNotify::create("Tu cuenta no tiene permisos de mod/admin.", NotificationIcon::Error)->show();
-                    return;
-                }
-
-                bool gdFailed = Mod::get()->getSavedValue<bool>("gd-verification-failed", false);
-                auto newCode = HttpClient::get().getModCode();
-
-                if (gdFailed) {
-                    if (newCode.empty()) {
-                        PaimonNotify::create("Error: GDBrowser no disponible. No se pudo generar mod code. Reintenta mas tarde.", NotificationIcon::Error)->show();
-                    } else {
-                        PaimonNotify::create("Advertencia: GDBrowser fallo, no se pudo refrescar el codigo. El codigo actual puede no funcionar.", NotificationIcon::Warning)->show();
-                    }
-                    return;
-                }
-
-                if (newCode.empty()) {
-                    PaimonNotify::create("Error: el servidor no envio mod code. Reintenta mas tarde.", NotificationIcon::Error)->show();
-                    return;
-                }
-
-                if (newCode != oldCode) {
-                    PaimonNotify::create("Mod code actualizado y sincronizado correctamente.", NotificationIcon::Success)->show();
-                } else {
-                    PaimonNotify::create("Mod code validado correctamente.", NotificationIcon::Success)->show();
-                }
-            });
-        });
+        paimon::modauth::startOrComplete();
     }).leak();
 
     ButtonSettingPressedEventV3(Mod::get(), "maintenance-copy-mod-code").listen([](auto buttonKey) {

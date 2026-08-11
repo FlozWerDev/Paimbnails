@@ -5,6 +5,7 @@
 
 #include "../services/ProgressBarManager.hpp"
 #include "../ui/ProgressBarConfigPopup.hpp"
+#include "../../gameplay-performance/GameplayPerformance.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 
 using namespace geode::prelude;
@@ -28,6 +29,8 @@ public:
 
     void update(float) override {
         // Returns nullptr outside gameplay.
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kModVisualsModuleId)) return;
         if (auto* pl = PlayLayer::get()) {
             ProgressBarManager::get().applyToPlayLayer(pl);
         }

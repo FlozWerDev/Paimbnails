@@ -35,17 +35,10 @@ bool loadKeys(AVAsset* asset, NSArray<NSString*>* keys, NSTimeInterval timeout) 
 }
 } 
 
-std::string extractAudioToWav(const std::string& videoPath) {
-    std::lock_guard<std::mutex> lock(detail::audioExtractorMutex());
+AudioPcm extractAudioToPcm(const std::string& videoPath) {
+    std::lock_guard lock(detail::audioExtractorMutex());
 
     if (videoPath.empty()) return {};
-
-    auto wavPath = detail::makeWavPath(videoPath);
-    std::error_code ec;
-    if (std::filesystem::exists(wavPath, ec) && !ec) {
-        geode::log::info("[AudioExtract] cached WAV exists: {}", wavPath);
-        return wavPath;
-    }
 
     std::vector<uint8_t> pcm;
     uint32_t sampleRate = 0;
@@ -141,13 +134,14 @@ std::string extractAudioToWav(const std::string& videoPath) {
         return {};
     }
 
-    if (!detail::writeWavFile(wavPath, pcm.data(), pcm.size(), channels, sampleRate, 16)) {
-        return {};
-    }
-
-    geode::log::info("[AudioExtract] extracted {} bytes of PCM audio to {}",
-                     pcm.size(), wavPath);
-    return wavPath;
+    AudioPcm out;
+    out.data          = std::move(pcm);
+    out.channels      = channels;
+    out.sampleRate    = static_cast<int>(sampleRate);
+    out.bitsPerSample = 16;
+    geode::log::info("[AudioExtract] decoded {} bytes ({} ch, {} Hz) from {}",
+                     out.data.size(), out.channels, out.sampleRate, videoPath);
+    return out;
 }
 
 } // namespace paimon::video

@@ -1,7 +1,19 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/CCNode.hpp>
+#include <Geode/modify/CCCircleWave.hpp>
+#include <Geode/modify/CCLayerGradient.hpp>
+#include <Geode/modify/CCParticleBatchNode.hpp>
+#include <Geode/modify/CCParticleSystem.hpp>
+#include <Geode/modify/CCParticleSystemQuad.hpp>
+#include <Geode/modify/GameObject.hpp>
+#include <Geode/modify/GJBaseGameLayer.hpp>
+#include <Geode/modify/ShaderLayer.hpp>
+#include <Geode/binding/GhostTrailEffect.hpp>
+#include <Geode/binding/HardStreak.hpp>
 #include "../utils/PaimonNotification.hpp"
+#include "../utils/Debug.hpp"
+#include "../core/modules/ModuleRegistry.hpp"
 #include <Geode/loader/SettingV3.hpp>
 #include <Geode/utils/Keyboard.hpp>
 #include "../features/capture/ui/CapturePreviewPopup.hpp"
@@ -23,8 +35,11 @@
 #include "../utils/LevelMetadata.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../features/audio/services/AudioContextCoordinator.hpp"
-#include "../features/foryou/services/ForYouTracker.hpp"
-#include "../features/foryou/services/LevelTagsIntegration.hpp"
+#include "../features/foryou/services/TasteProfile.hpp"
+#include "../features/foryou/services/LevelTagsClient.hpp"
+#include "../features/transitions/services/LevelEntryEffects.hpp"
+#include "../features/gameplay-performance/GameplayPerformance.hpp"
+#include "../features/dynamic-volume/services/DynamicVolumeManager.hpp"
 #include "../framework/compat/ModCompat.hpp"
 #include "../features/smooth-scroll/services/SmoothScrollController.hpp"
 #include "../core/RuntimeLifecycle.hpp"
@@ -35,6 +50,7 @@
 #include <memory>
 #include <chrono>
 #include <fstream>
+#include <initializer_list>
 #include <sstream>
 
 #ifdef GEODE_IS_WINDOWS
@@ -44,15 +60,12 @@
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
 #include "../features/menu-loop/services/MenuLoopManager.hpp"
 #include "../features/menu-loop/services/MenuLoopControl.hpp"
+#include "../features/menu-music/services/MenuMusicPlayer.hpp"
 
 using namespace geode::prelude;
 
 namespace {
-    // #region agent log
-    // PERF: the body opened/wrote/closed debug-347aef.log every call (50-200us
-    // on Windows). Since onScroll invokes it per scroll event during pause-zoom,
-    // that added 1-10ms of jitter per frame. Now a no-op. Define
-    // PAIMON_DEBUG_AGENT347 in CMake to re-enable instrumentation.
+    // Keep optional instrumentation off the hot scroll path by default.
     void agentLog347(char const* loc, char const* msg, char const* hid, std::string const& data) {
 #ifdef PAIMON_DEBUG_AGENT347
         std::ofstream f("debug-347aef.log", std::ios::app);
@@ -66,12 +79,105 @@ namespace {
         (void)loc; (void)msg; (void)hid; (void)data;
 #endif
     }
-    // #endregion
 
     std::atomic_bool gCaptureInProgress{false};
     constexpr float kPauseZoomStep = 0.18f;
     constexpr float kPauseZoomMin = 1.0f;
     constexpr float kPauseZoomMax = 4.0f;
+
+    void hideNodes(std::initializer_list<CCNode*> nodes) {
+        for (auto* node : nodes) {
+            if (node) node->setVisible(false);
+        }
+    }
+
+    void disablePlayerEffects(PlayerObject* player) {
+        if (!player) return;
+
+        player->m_playEffects = false;
+        player->m_maybeReducedEffects = true;
+        player->m_hasGroundParticles = false;
+        player->m_hasShipParticles = false;
+
+        if (player->m_ghostTrail) player->m_ghostTrail->stopTrail();
+        if (player->m_waveTrail) player->m_waveTrail->stopStroke();
+
+        hideNodes({
+            player->m_ghostTrail,
+            player->m_regularTrail,
+            player->m_shipStreak,
+            player->m_waveTrail,
+            player->m_playerGroundParticles,
+            player->m_trailingParticles,
+            player->m_shipClickParticles,
+            player->m_vehicleGroundParticles,
+            player->m_ufoClickParticles,
+            player->m_robotBurstParticles,
+            player->m_dashParticles,
+            player->m_swingBurstParticles1,
+            player->m_swingBurstParticles2,
+            player->m_landParticles0,
+            player->m_landParticles1,
+        });
+    }
+
+    void applyConfiguredVisualCuts(PlayLayer* playLayer) {
+        if (!playLayer) return;
+
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kBackgroundModuleId)) {
+            hideNodes({playLayer->m_background, playLayer->m_middleground});
+        }
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kGroundModuleId)) {
+            hideNodes({playLayer->m_groundLayer, playLayer->m_groundLayer2});
+        }
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kLevelEffectsModuleId)) {
+            hideNodes({
+                playLayer->m_flashNode,
+                playLayer->m_glowLayerT4,
+                playLayer->m_glowLayerT3,
+                playLayer->m_glowLayerT2,
+                playLayer->m_glowLayerT1,
+                playLayer->m_glowLayerB1,
+                playLayer->m_glowLayerB2,
+                playLayer->m_glowLayerB3,
+                playLayer->m_glowLayerB4,
+                playLayer->m_glowLayerB5,
+            });
+        }
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kParticlesModuleId)) {
+            hideNodes({
+                playLayer->m_particleLayerT4,
+                playLayer->m_particleLayerT3,
+                playLayer->m_particleLayerT2,
+                playLayer->m_particleLayerT1,
+                playLayer->m_particleLayerB1,
+                playLayer->m_particleLayerB2,
+                playLayer->m_particleLayerB3,
+                playLayer->m_particleLayerB4,
+                playLayer->m_particleLayerB5,
+                playLayer->m_particleBlendingLayerT5,
+                playLayer->m_particleBlendingLayerT4,
+                playLayer->m_particleBlendingLayerT3,
+                playLayer->m_particleBlendingLayerT2,
+                playLayer->m_particleBlendingLayerT1,
+                playLayer->m_particleBlendingLayerB1,
+                playLayer->m_particleBlendingLayerB2,
+                playLayer->m_particleBlendingLayerB3,
+                playLayer->m_particleBlendingLayerB4,
+                playLayer->m_particleBlendingLayerB5,
+            });
+        }
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kDecorationModuleId) && playLayer->m_objects) {
+            for (auto* object : CCArrayExt<GameObject*>(playLayer->m_objects)) {
+                if (object && object->m_isDecoration) object->setVisible(false);
+            }
+        }
+    }
 
     float getPauseZoomSensitivity() {
         return static_cast<float>(Mod::get()->getSavedValue<double>("zoom-sensitivity", 1.0));
@@ -94,12 +200,8 @@ namespace {
     void resetPlayLayerZoom(CCNode* playLayer);
     void clampPlayLayerZoomPosition(CCNode* playLayer);
 
-    // The PauseLayer may not exist in the scene tree for the first few frames
-    // after pausing (GD's entry animation takes ~0.3s). update() must not call
-    // onResume() when it's missing — that would set m_isPaused=false permanently
-    // and break zoom (the !m_isPaused guards). Instead, m_pauseLayerMissingFrames
-    // counts consecutive missing frames; only assume pause was cancelled after
-    // ~2s (~120 frames at 60fps). Normally the PauseLayer appears by frame 2-3.
+    // PauseLayer appears a few frames after pausing. Require a grace period
+    // before treating a missing layer as resume, or pause-zoom can reset early.
 
     class PauseZoomManager {
     public:
@@ -110,8 +212,9 @@ namespace {
 
         void onPause() {
             if (m_isPaused) return;
+            if (!paimon::modules::isEnabled("paimbnails.pausezoom.gameplay")) return;
             m_isPaused = true;
-            log::debug("[PauseZoom] onPause() called — m_isPaused=true");
+            log::debug("[PauseZoom] onPause() called - m_isPaused=true");
             m_isPanning = false;
             m_menuForcedHidden = false;
             m_pauseLayerMissingFrames = 0;
@@ -121,14 +224,12 @@ namespace {
 
         void onResume() {
             if (!m_isPaused) return;
-            log::debug("[PauseZoom] onResume() called — m_isPaused=false (was paused)");
+            log::debug("[PauseZoom] onResume() called - m_isPaused=false (was paused)");
             if (auto* playLayer = PlayLayer::get()) {
                 resetPlayLayerZoom(playLayer);
             }
             restorePauseMenuVisible();
-            // Extra guarantee: if restorePauseMenuVisible didn't find the
-            // pauseLayer (already destroyed by a scene change), still clear the
-            // global flag so state doesn't leak into the next session.
+    // Clear the global flag even if the layer was already destroyed.
             paimon::setPauseZoomHidden(false);
             m_isPaused = false;
             m_isPanning = false;
@@ -141,15 +242,12 @@ namespace {
             m_isPanning = false;
             m_menuForcedHidden = false;
             m_pauseLayerMissingFrames = 0;
-            // Defensive reset: if a previous level left the flag true (crash,
-            // abrupt exit), the next level won't end up with an invisible PauseLayer.
+            // Do not carry a hidden-pause flag into the next level.
             paimon::setPauseZoomHidden(false);
         }
 
         void update(float dt) {
-            // Detect pause by the PauseLayer's presence in the scene (not
-            // pauseGame(), since mods like compact-pause-menu replace the pause
-            // logic and never call pauseGame(true)).
+            // Use the PauseLayer itself; other mods may bypass pauseGame().
             auto* playLayer = PlayLayer::get();
             auto* pauseLayer = getPauseLayer();
             bool pauseLayerPresent = (playLayer && pauseLayer);
@@ -158,8 +256,6 @@ namespace {
                 this->onPause();
             }
             if (!pauseLayerPresent && m_isPaused) {
-                // If the PauseLayer has been gone for over 2 seconds, assume
-                // pause was cancelled.
                 m_pauseLayerMissingFrames++;
                 if (m_pauseLayerMissingFrames > 120) {
                     log::debug("[PauseZoom] update auto-resume: pauseLayer missing for {} frames", m_pauseLayerMissingFrames);
@@ -208,10 +304,9 @@ namespace {
 
         void onScroll(float y, float) {
             if (!m_isPaused) {
-                // #region agent log
                 agentLog347("PlayLayer.cpp:onScroll", "blocked_not_paused", "E", "{}");
-                // #endregion
-                log::debug("[PauseZoom] onScroll blocked: !m_isPaused");
+    // This hot path is logged only when debug logging is enabled.
+                PaimonDebug::log("[PauseZoom] onScroll blocked: !m_isPaused");
                 return;
             }
 
@@ -219,7 +314,6 @@ namespace {
             auto* pauseLayer = getPauseLayer();
             auto* activePause = paimon::getActivePauseLayer();
             if (!playLayer || !pauseLayer) {
-                // #region agent log
 #ifdef PAIMON_DEBUG_AGENT347
                 {
                     std::ostringstream d;
@@ -229,22 +323,19 @@ namespace {
                     agentLog347("PlayLayer.cpp:onScroll", "blocked_missing_layer", "B", d.str());
                 }
 #endif
-                // #endregion
-                log::debug("[PauseZoom] onScroll blocked: playLayer={} pauseLayer={}", (void*)playLayer, (void*)pauseLayer);
-                return;  // No auto-resume on scroll; wait for the ticker
+                PaimonDebug::log("[PauseZoom] onScroll blocked: playLayer={} pauseLayer={}", (void*)playLayer, (void*)pauseLayer);
+                return;
             }
 
             if (hasBlockingPopup()) {
-                // #region agent log
                 agentLog347("PlayLayer.cpp:onScroll", "blocked_popup", "E", "{}");
-                // #endregion
-                log::debug("[PauseZoom] onScroll blocked: hasBlockingPopup=true");
+                PaimonDebug::log("[PauseZoom] onScroll blocked: hasBlockingPopup=true");
                 return;
             }
 
             if (pauseZoomAltDisablesScroll()) {
                 if (auto* kb = CCKeyboardDispatcher::get(); kb && kb->getAltKeyPressed()) {
-                    log::debug("[PauseZoom] onScroll blocked: Alt key held (alt-disables-scroll)");
+                    PaimonDebug::log("[PauseZoom] onScroll blocked: Alt key held (alt-disables-scroll)");
                     return;
                 }
             }
@@ -270,7 +361,6 @@ namespace {
                     hidePauseMenu();
                 }
             }
-            // #region agent log
 #ifdef PAIMON_DEBUG_AGENT347
             {
                 std::ostringstream d;
@@ -284,7 +374,6 @@ namespace {
                 agentLog347("PlayLayer.cpp:onScroll", "scroll_zoom_done", "A", d.str());
             }
 #endif
-            // #endregion
         }
 
         void togglePauseMenu() {
@@ -311,7 +400,6 @@ namespace {
                     hidePauseMenu();
                 }
             }
-            // #region agent log
 #ifdef PAIMON_DEBUG_AGENT347
             if (auto* playLayer = PlayLayer::get()) {
                 auto* pauseLayer = getPauseLayer();
@@ -323,7 +411,6 @@ namespace {
 #else
             (void)scaleBefore;
 #endif
-            // #endregion
         }
 
         void zoomOutStep() {
@@ -353,15 +440,7 @@ namespace {
         CCPoint m_lastMousePos = ccp(0.f, 0.f);
         CCPoint m_deltaMousePos = ccp(0.f, 0.f);
 
-        // Always resolve the PauseLayer fresh from the running scene. We must NOT
-        // cache a raw PauseLayer* here: the PauseLayer is destroyed on resume /
-        // level exit, and the per-frame ticker (PauseZoomTickerNode::update) would
-        // then dereference the stale pointer. Even the "is it still valid?" check
-        // (cached->getParent()) is itself a use-after-free that can read garbage
-        // and return the dangling pointer, after which a virtual call such as
-        // isVisible() jumps through a freed vtable — exactly the
-        // EXCEPTION_ACCESS_VIOLATION reported inside libcocos2d. The lookup below
-        // is a cheap scan of the scene's direct children, run at most once/frame.
+    // PauseLayer is destroyed on resume, so resolve it every frame.
         PauseLayer* getPauseLayer() {
             auto* scene = CCDirector::get() ? CCDirector::get()->getRunningScene() : nullptr;
             if (!scene) return nullptr;
@@ -421,17 +500,11 @@ namespace {
                 if (pauseLayer->isVisible()) {
                     pauseLayer->setVisible(false);
                 }
-                // Set the GLOBAL zoom-hidden flag; the visit() filter checks it
-                // and returns early. Needed because setVisible(false) alone isn't
-                // persistent: GD/CCBlockLayer/another mod restores m_bVisible
-                // every frame (verified in debug-347aef.log).
+                // The visit filter keeps this hidden because GD may restore visibility.
                 paimon::setPauseZoomHidden(true);
-                // Also disable touch so clicks where the menu would be don't
-                // trigger invisible buttons.
                 pauseLayer->setTouchEnabled(false);
                 m_menuForcedHidden = true;
             }
-            // #region agent log
 #ifdef PAIMON_DEBUG_AGENT347
             {
                 std::ostringstream d;
@@ -446,7 +519,6 @@ namespace {
             (void)visBefore;
             (void)activePause;
 #endif
-            // #endregion
         }
 
         void restorePauseMenuVisible() {
@@ -456,13 +528,10 @@ namespace {
                 if (pauseLayer->getParent() && !pauseLayer->isVisible()) {
                     pauseLayer->setVisible(true);
                 }
-                // Re-enable touch (disabled in hidePauseMenu).
                 pauseLayer->setTouchEnabled(true);
             }
-            // Clear the zoom-hidden flag; visit() will render the PauseLayer normally again.
             paimon::setPauseZoomHidden(false);
             m_menuForcedHidden = false;
-            // #region agent log
 #ifdef PAIMON_DEBUG_AGENT347
             {
                 std::ostringstream d;
@@ -473,7 +542,6 @@ namespace {
 #else
             (void)visBefore;
 #endif
-            // #endregion
         }
 
         void zoomAtMouse(float delta) {
@@ -611,17 +679,102 @@ namespace {
 
 namespace paimon {
     void notifyPauseClosing() {
-        log::debug("[PauseZoom] notifyPauseClosing() → onResume()");
+        log::debug("[PauseZoom] notifyPauseClosing() -> onResume()");
         PauseZoomManager::get().onResume();
     }
 }
 
-// Processes the captured RGBA buffer and uploads the thumbnail: extracts
-// dominant colors, encodes PNG, and routes the upload (pending vs live).
-// Shared by the keybind capture path (init) and captureScreenshot(). Caller
-// validates W/H and okSave/buf first. The heavy CPU work (color K-means +
-// PNG encode, ~300-500ms at 1080p) runs on a worker thread — doing it inline
-// froze the frame every time the user accepted a capture.
+class $modify(PaimonPerformanceBaseGameLayer, GJBaseGameLayer) {
+    void updateGradientLayers() {
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kGradientsModuleId)) return;
+        GJBaseGameLayer::updateGradientLayers();
+    }
+
+    void updateShaderLayer(float dt) {
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kShadersModuleId)) return;
+        GJBaseGameLayer::updateShaderLayer(dt);
+    }
+};
+
+class $modify(PaimonPerformanceGradientLayer, CCLayerGradient) {
+    void visit() {
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kGradientsModuleId)) return;
+        CCLayerGradient::visit();
+    }
+};
+
+class $modify(PaimonPerformanceCircleWave, CCCircleWave) {
+    void draw() {
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kLevelEffectsModuleId)) return;
+        CCCircleWave::draw();
+    }
+};
+
+class $modify(PaimonPerformanceGameObject, GameObject) {
+    void setVisible(bool visible) {
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kDecorationModuleId) && m_isDecoration) {
+            GameObject::setVisible(false);
+            return;
+        }
+        GameObject::setVisible(visible);
+    }
+};
+
+class $modify(PaimonPerformanceShaderLayer, ShaderLayer) {
+    void update(float dt) {
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kShadersModuleId)) return;
+        ShaderLayer::update(dt);
+    }
+
+    void visit() {
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kShadersModuleId) && m_state.m_usesShaders) {
+            this->resetAllShaders();
+        }
+        ShaderLayer::visit();
+    }
+};
+
+class $modify(PaimonPerformanceParticleSystem, CCParticleSystem) {
+    void update(float dt) {
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kParticlesModuleId) &&
+            (this->isActive() || this->getParticleCount() != 0)) {
+            this->resetSystem();
+            this->stopSystem();
+        }
+        CCParticleSystem::update(dt);
+    }
+};
+
+class $modify(PaimonPerformanceParticleSystemQuad, CCParticleSystemQuad) {
+    void draw() {
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kParticlesModuleId)) return;
+        CCParticleSystemQuad::draw();
+    }
+};
+
+// CCParticleBatchNode has no iOS address in the bindings, so hooking draw()
+// there is a static_assert. The CCParticleSystem/Quad hooks above already cover
+// the batched systems' particles, so iOS just keeps the batch node's own draw.
+#ifndef GEODE_IS_IOS
+class $modify(PaimonPerformanceParticleBatchNode, CCParticleBatchNode) {
+    void draw() {
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kParticlesModuleId)) return;
+        CCParticleBatchNode::draw();
+    }
+};
+#endif
+
+    // Process and upload captures off-thread; encoding and color extraction are expensive.
 static void uploadCapturedThumbnail(int levelID, std::shared_ptr<uint8_t> const& buf, int W, int H) {
     std::string username;
     int accountID = 0;
@@ -635,8 +788,6 @@ static void uploadCapturedThumbnail(int levelID, std::shared_ptr<uint8_t> const&
         return;
     }
 
-    // Collect the full level metadata on the main thread (GJGameLevel bindings)
-    // so it can be attached to the upload.
     std::string levelMeta;
     if (auto* pl = PlayLayer::get()) {
         levelMeta = paimon::collectLevelMetadata(pl->m_level);
@@ -697,26 +848,66 @@ static void ensurePauseZoomTicker();
 class $modify(PaimonCapturePlayLayer, PlayLayer) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre("PlayLayer::init", geode::Priority::VeryLate);
-        // VeryEarly so we record the death tick before noclip-style mods hook
-        // destroyPlayer and short-circuit it; otherwise the capture death guard
-        // would never see deaths those mods cancel.
+    // Record deaths before noclip hooks can cancel destroyPlayer.
         (void)self.setHookPriorityPre("PlayLayer::destroyPlayer", geode::Priority::VeryEarly);
     }
 
     struct Fields {
         float m_frameTimer = 0.0f;
         std::chrono::steady_clock::time_point m_forYouSessionStart;
+        bool m_performanceApplied = false;
+        bool m_previousPerformanceMode = false;
+        bool m_previousAddGlow = false;
     };
 
     $override
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
-        AudioContextCoordinator::get().notifyGameplayStarted();
+        if (auto* gameManager = GameManager::get();
+            paimon::gameplayperf::isEnabled() && gameManager) {
+            m_fields->m_previousPerformanceMode = gameManager->m_performanceMode;
+            m_fields->m_previousAddGlow = gameManager->m_addGlow;
+            m_fields->m_performanceApplied = true;
+            if (paimon::gameplayperf::isOptionEnabled(
+                    paimon::gameplayperf::kNativeModeModuleId)) {
+                gameManager->m_performanceMode = true;
+            }
+            if (paimon::gameplayperf::isOptionEnabled(
+                    paimon::gameplayperf::kGlowModuleId)) {
+                gameManager->m_addGlow = false;
+            }
+        }
+
+        AudioContextCoordinator::get().notifyGameplayStarted(level);
 
         s_hideP1ForCapture = false;
         s_hideP2ForCapture = false;
-        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
+        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) {
+            this->restorePerformanceMode();
+            return false;
+        }
+        paimon::gameplayperf::setActive(m_fields->m_performanceApplied);
+        if (m_fields->m_performanceApplied) {
+            if (paimon::gameplayperf::isOptionActive(
+                    paimon::gameplayperf::kBackgroundEffectsModuleId)) {
+                this->toggleBGEffectVisibility(false);
+            }
+            if (paimon::gameplayperf::isOptionActive(
+                    paimon::gameplayperf::kGameplayEffectsModuleId)) {
+                this->m_disableGravityEffect = true;
+                this->m_glitterEnabled = false;
+            }
+            if (paimon::gameplayperf::isOptionActive(
+                    paimon::gameplayperf::kPlayerEffectsModuleId)) {
+                disablePlayerEffects(this->m_player1);
+                disablePlayerEffects(this->m_player2);
+            }
+            applyConfiguredVisualCuts(this);
+            paimon::dynvol::DynamicVolumeManager::get().setPerformancePaused(
+                paimon::gameplayperf::isOptionActive(
+                    paimon::gameplayperf::kDynamicVolumeModuleId)
+            );
+        }
         PauseZoomManager::get().resetForNewLevel();
-        // Clear any death tick carried over from a previous level/attempt.
         paimon::capture::clearDeathTick();
 
         if (Mod::get()->getSettingValue<bool>("enable-thumbnail-taking")) {
@@ -726,20 +917,14 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                     if (!down || repeat) return;
                     if (PlayLayer::get() != this) return;
                     if (this->m_isPaused) return;
-                    // Race-condition guard: if the user presses Esc + T on the
-                    // same frame, GD may have created a PauseLayer before
-                    // m_isPaused propagates visibly. Without this check, the
-                    // keybind's async callback could show a CapturePreviewPopup
-                    // over the PauseLayer, freezing the pause menu behind the
-                    // popup (inconsistent state that crashes on GD exit).
+    // Do not open capture over a PauseLayer created in the same frame.
                     if (paimon::hasPauseLayerInScene()) return;
                     if (!this->m_level || this->m_level->m_levelID <= 0) return;
 
                     bool expected = false;
                     if (!gCaptureInProgress.compare_exchange_strong(expected, true)) return;
 
-                    // Also mutual exclusion with path A (PauseLayer button): if a
-                    // capture is already in progress from the PauseLayer, don't start another.
+    // Button and keybind capture share one guard.
                     if (paimon::isCaptureInProgress()) {
                         gCaptureInProgress.store(false);
                         return;
@@ -774,8 +959,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                 return;
                             }
                             CCTexture2D* texture = texRef.data();
-                            // Local helper to clear all state and restore music.
-                            // Used on ALL early-exit paths to avoid leaking flags.
+    // Restore capture state on every early exit.
                             auto cleanup = []() {
                                 gCaptureInProgress.store(false);
                                 paimon::setCaptureInProgress(false);
@@ -803,22 +987,14 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                 return;
                             }
 
-                            // Race-condition guard 2: if Esc was pressed during
-                            // the ~50ms between requestCapture and the async
-                            // callback, a PauseLayer is now on screen. Showing the
-                            // CapturePreviewPopup over it would freeze the pause
-                            // menu behind it. Abort cleanly: the user can use the
-                            // PauseLayer's capture button (path A), which
-                            // coordinates with the pause menu.
+    // Abort if Esc opened PauseLayer while the request was in flight.
                             if (paimon::hasPauseLayerInScene() || self->m_isPaused) {
                                 log::warn("[CaptureKeybind] PauseLayer aparecido durante captura, abortando para evitar UI inconsistente");
                                 cleanup();
                                 return;
                             }
 
-                            // From here, clear only the local gCaptureInProgress
-                            // flag; the global flag is cleared in the popup
-                            // callback or on cancellation.
+    // The popup owns the capture flag from this point.
                             paimon::setCaptureInProgress(false);
 
                             bool pausedByPopup = false;
@@ -829,7 +1005,6 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                 [levelID, pausedByPopup](bool okSave, int levelIDAccepted, std::shared_ptr<uint8_t> buf, int W, int H, std::string mode, std::string replaceId){
                                     gCaptureInProgress.store(false);
                                     if (pausedByPopup) {
-                                        // Resume PlayLayer from the main thread for thread-safety
                                         geode::Loader::get()->queueInMainThread([levelID]() {
                                             if (paimon::isRuntimeShuttingDown()) return;
                                             auto* pl = PlayLayer::get();
@@ -865,9 +1040,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                     s_hideP1ForCapture = hideP1; s_hideP2ForCapture = hideP2;
                                     if (popup) popup->setVisible(false);
                                     gCaptureInProgress.store(false);
-                                    // popup may be destroyed before the queued lambda runs (the
-                                    // user can dismiss it between frames). Capture by WeakRef so
-                                    // we never dereference a dangling pointer.
+    // The popup may close before the queued callback; keep only a WeakRef.
                                     WeakRef<CapturePreviewPopup> weakPopup = popup;
                                     Loader::get()->queueInMainThread([weakRef, weakPopup]() {
                                         if (paimon::isRuntimeShuttingDown()) return;
@@ -924,13 +1097,15 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
         );
 
         m_fields->m_forYouSessionStart = std::chrono::steady_clock::now();
-        paimon::foryou::ForYouTracker::get().onLevelEnter(this->m_level);
+        paimon::foryou::TasteProfile::get().onLevelEnter(this->m_level);
 
-        if (paimon::compat::ModCompat::isLevelTagsLoaded() && this->m_level && this->m_level->m_levelID > 0) {
+        if (paimon::foryou::LevelTagsClient::isAvailable() && this->m_level && this->m_level->m_levelID > 0) {
             int levelID = this->m_level->m_levelID;
-            paimon::foryou::LevelTagsIntegration::get().fetchTagsForLevel(levelID,
-                [levelID](std::vector<std::string> tags) {
-                    if (!tags.empty()) paimon::foryou::ForYouTracker::get().onLevelTagsFetched(levelID, tags);
+            paimon::foryou::LevelTagsClient::get().fetchTags({levelID},
+                [levelID](paimon::foryou::LevelTagMap tags) {
+                    auto it = tags.find(levelID);
+                    if (it == tags.end() || it->second.empty()) return;
+                    paimon::foryou::TasteProfile::get().onTagsResolved(levelID, it->second);
                 });
         }
 
@@ -939,10 +1114,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
     
     $override
     void destroyPlayer(PlayerObject* player, GameObject* object) {
-        // Record the progress tick of real deaths (ignore anticheat-spike
-        // pseudo-deaths) so validateCaptureConditions() can reject captures
-        // taken on or right after the death frame. VeryEarly hook priority
-        // ensures this runs before noclip mods that cancel the death.
+    // Reject captures taken on the death frame before noclip cancellation.
         if (object != this->m_anticheatSpike) {
             paimon::capture::recordDeathTick(this->m_gameState.m_currentProgress);
         } else {
@@ -953,23 +1125,54 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
 
     $override
     void onQuit() {
+        bool const skipExitTransition = m_fields->m_performanceApplied;
+        this->restorePerformanceMode();
         PauseZoomManager::get().onResume();
         FramebufferCapture::cancelPending();
         CaptureLayerEditorPopup::discardTrackedLayers();
         CaptureAssetBrowserPopup::discardTrackedAssets();
         gCaptureInProgress.store(false);
 
-        paimon::foryou::ForYouTracker::get().onLevelExit(this->m_level);
+        paimon::foryou::TasteProfile::get().onLevelExit(this->m_level);
 
         {
             auto& sm = paimon::menuloop::MenuLoopManager::get();
             const bool randomize = Mod::get()->getSettingValue<bool>("menuLoopRandomizeOnLevelExit");
             const bool restore = Mod::get()->getSettingValue<bool>("menuLoopRestoreOnLevelExit");
-            if (randomize) { sm.setShouldRestoreMenuLoopPoint(false); paimon::menuloop::MenuLoopControl::shuffleSong(); }
+            if (randomize) {
+                sm.setShouldRestoreMenuLoopPoint(false);
+                auto& player = paimon::menumusic::MenuMusicPlayer::get();
+                if (player.isManagingPlayback()) player.playNext();
+                else paimon::menuloop::MenuLoopControl::shuffleSong();
+            }
             else if (restore) { sm.setShouldRestoreMenuLoopPoint(true); }
         }
 
-        PlayLayer::onQuit();
+        if (skipExitTransition) {
+            PlayLayer::onQuit();
+        } else {
+            paimon::transitions::beginLevelExitTransition(this);
+            PlayLayer::onQuit();
+            paimon::transitions::endLevelExitTransition();
+        }
+    }
+
+    $override
+    void onExit() {
+        this->restorePerformanceMode();
+        PlayLayer::onExit();
+    }
+
+    void restorePerformanceMode() {
+        paimon::gameplayperf::setActive(false);
+        paimon::dynvol::DynamicVolumeManager::get().setPerformancePaused(false);
+        if (!m_fields->m_performanceApplied) return;
+
+        if (auto* gameManager = GameManager::get()) {
+            gameManager->m_performanceMode = m_fields->m_previousPerformanceMode;
+            gameManager->m_addGlow = m_fields->m_previousAddGlow;
+        }
+        m_fields->m_performanceApplied = false;
     }
 
     void captureScreenshot(CapturePreviewPopup* existingPopup = nullptr) {
@@ -1035,10 +1238,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                         return;
                     }
 
-                    // (5) Same guard as the primary keybind path: if Esc brought
-                    // up a PauseLayer while the recapture was in flight, never
-                    // open a fresh CapturePreviewPopup on top of it (freezes the
-                    // pause menu behind it). Abort cleanly instead.
+    // Do not open recapture over a newly created PauseLayer.
                     if (paimon::hasPauseLayerInScene() || layer->m_isPaused) {
                         log::warn("[CaptureKeybind] PauseLayer presente durante recaptura; "
                                   "abortando para no montar el preview sobre la pausa");
@@ -1141,6 +1341,8 @@ public:
     }
     void update(float dt) override {
         if (!PlayLayer::get()) return;
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kModVisualsModuleId)) return;
         PauseZoomManager::get().update(dt);
     }
 };
@@ -1172,24 +1374,13 @@ $on_game(Exiting) {
     shutdownPauseZoomTicker();
 }
 
-// CCNode::visit hook to skip rendering the PauseLayer during zoom.
-// Hooked globally on CCNode (not as a PauseLayer override) because visit() isn't
-// in PauseLayer's modify-binding, so $override void visit() there would hook
-// nothing. Cheap: an atomic-bool early-out plus a pointer comparison (~5ns/visit).
-// Robust where setVisible(false) failed: GD/another mod restores m_bVisible every
-// frame, but skipping visit() avoids drawing the node and its children regardless.
+    // Filter PauseLayer in CCNode::visit; the atomic flag survives GD visibility restores.
 class $modify(PaimonPauseZoomVisitFilter, CCNode) {
     static void onModify(auto& self) {
-        // Priority Late: run after other mods that may legitimately hook
-        // CCNode::visit (devtools, debug overlays). If something wants to see the
-        // PauseLayer during zoom, it calls the original before our filter, which is correct.
+    // Run late so other visit hooks see the original first.
         (void)self.setHookPriorityPre("cocos2d::CCNode::visit", geode::Priority::Late);
 
-        // CCNode::visit fires for every node every frame (easily 10k+ calls/frame
-        // in a busy level), so even this cheap filter pays trampoline overhead on
-        // all of them. Keep the hook dormant and let setPauseZoomHidden() enable
-        // it only while the PauseLayer is hidden by pause-zoom. If getHook fails,
-        // the hook auto-enables as before (correctness over speed).
+    // Keep this global hook dormant outside pause-zoom; visit runs for every node.
         if (auto hook = self.getHook("cocos2d::CCNode::visit")) {
             hook.unwrap()->setAutoEnable(false);
             paimon::setPauseZoomVisitHook(hook.unwrap());
@@ -1197,14 +1388,9 @@ class $modify(PaimonPauseZoomVisitFilter, CCNode) {
     }
 
     void visit() {
-        // Fast path: only matters when the zoom-hidden flag is set. Most game
-        // frames aren't in pause-zoom, so this is the hot branch.
         if (paimon::isPauseZoomHidden()) {
-            // Direct cast to CCNode* for comparison (PauseLayer extends CCNode
-            // via CCBlockLayer/CCLayerColor/CCLayer/CCLayerRGBA).
             auto* activePause = static_cast<CCNode*>(paimon::getActivePauseLayer());
             if (activePause && this == activePause) {
-                // Skip rendering the PauseLayer and all its descendants.
                 return;
             }
         }

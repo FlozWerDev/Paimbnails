@@ -47,7 +47,6 @@ inline bool matches(GJGameLevel* level) {
     if (!level) return false;
     auto& f = state();
 
-    // Length
     bool lengthOk = true;
     if (anyLengthFilter()) {
         int len = level->m_levelLength;
@@ -59,7 +58,6 @@ inline bool matches(GJGameLevel* level) {
             (len == 4 && f.xl);
     }
 
-    // Verification
     bool verifyOk = true;
     if (anyVerificationFilter()) {
         bool isVerified = level->m_isVerified;

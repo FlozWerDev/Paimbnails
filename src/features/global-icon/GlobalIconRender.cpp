@@ -24,8 +24,18 @@ namespace {
         return nullptr;
     }
 
+    // node-ids gives the profile icon a stable id; the recursive walk is only a
+    // fallback for when that mod isn't installed.
+    SimplePlayer* findProfileIcon(CCNode* root) {
+        if (!root) return nullptr;
+        if (auto* byID = typeinfo_cast<SimplePlayer*>(root->getChildByIDRecursive("player-icon"))) {
+            return byID;
+        }
+        return findSimplePlayerRec(root);
+    }
+
     void makeIconClickable(SimplePlayer* sp, int accountID, std::string const& username,
-                           GlobalIconSlot const& cubeSlot) {
+                           GlobalIconMeta const& meta) {
         if (!sp) return;
         if (sp->getChildByID("paimon-globalicon-touch"_spr)) return;
 
@@ -38,8 +48,8 @@ namespace {
         hit->setAnchorPoint({0.5f, 0.5f});
 
         auto item = CCMenuItemExt::createSpriteExtra(hit,
-            [accountID, username, cubeSlot](CCMenuItemSpriteExtra*) {
-                if (auto p = GlobalIconViewPopup::create(accountID, username, cubeSlot)) p->show();
+            [accountID, username, meta](CCMenuItemSpriteExtra*) {
+                if (auto p = GlobalIconViewPopup::create(accountID, username, meta)) p->show();
             });
         if (!item) return;
         item->setContentSize(spSize);
@@ -50,6 +60,22 @@ namespace {
         menu->setPosition(sp->getContentSize() / 2.f);
         menu->addChild(item);
         sp->addChild(menu, 100);
+    }
+
+    // Paints the profile icon with the player's shared cube and wires the tap
+    // target. Assumes the cube is already registered in More Icons.
+    void applyToProfile(CCNode* root, int accountID, GlobalIconMeta const& meta) {
+        auto it = meta.icons.find("cube");
+        if (it == meta.icons.end()) return;
+
+        auto* sp = findProfileIcon(root);
+        if (!sp) return;
+
+        auto regName = GlobalIconStorage::registeredName(accountID, it->second);
+        if (auto* info = more_icons::getIcon(regName, IconType::Cube)) {
+            more_icons::updateSimplePlayer(sp, info);
+        }
+        makeIconClickable(sp, accountID, meta.username, meta);
     }
 }
 
@@ -65,20 +91,23 @@ void renderProfileCube(cocos2d::CCNode* searchRoot, int accountID) {
             if (!success || !found || !meta.enabled) return;
             auto it = meta.icons.find("cube");
             if (it == meta.icons.end()) return;
-            GlobalIconSlot cubeSlot = it->second;
-            std::string username = meta.username;
 
-            GlobalIconStorage::get().ensureIcon(accountID, cubeSlot,
-                [rootWeak, accountID, username, cubeSlot](bool ok, std::string const& iconName) mutable {
+            auto root = rootWeak.lock();
+            if (!root) return;
+
+            // Already downloaded and registered: skip straight to drawing, which
+            // is the common path once the cache is warm.
+            if (GlobalIconStorage::get().isReady(accountID, it->second)) {
+                applyToProfile(root.data(), accountID, meta);
+                return;
+            }
+
+            GlobalIconStorage::get().ensureIcon(accountID, it->second,
+                [rootWeak, accountID, meta](bool ok, std::string const& iconName) mutable {
                     if (!ok || iconName.empty()) return;
                     auto root = rootWeak.lock();
                     if (!root) return;
-                    auto* sp = findSimplePlayerRec(root.data());
-                    if (!sp) return;
-                    if (auto* info = more_icons::getIcon(iconName, IconType::Cube)) {
-                        more_icons::updateSimplePlayer(sp, info);
-                    }
-                    makeIconClickable(sp, accountID, username, cubeSlot);
+                    applyToProfile(root.data(), accountID, meta);
                 });
         });
 }

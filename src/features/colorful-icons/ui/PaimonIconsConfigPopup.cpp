@@ -1,6 +1,8 @@
 #include "PaimonIconsConfigPopup.hpp"
 
+#include "../../../core/Settings.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../icon-maker/ui/IconGalleryLayer.hpp"
 #include "../services/IconColorService.hpp"
 #include "../services/IconConfigStore.hpp"
 #include "../services/IconLockStyler.hpp"
@@ -26,14 +28,15 @@ constexpr float kPopupH = 290.f;
 constexpr float kRowW   = 420.f;
 constexpr float kRowH   = 26.f;
 
-// Vanilla browser-item colors, shown when the feature is off.
+// The creator strip is added only when the feature is enabled.
+constexpr float kMakerBandH   = 34.f;
+constexpr float kMakerBandPad = 6.f;
+constexpr float kMakerExtraH  = 28.f;
+
 constexpr ccColor3B kVanilla1{175, 175, 175};
 constexpr ccColor3B kVanilla2{255, 255, 255};
 
-// ---- catalog of what the UI offers -----------------------------------------
-// One entry per mode/style: internal enum value + short Spanish name + a one
-// line description. The selector cycles this list; everything else derives
-// from it, so adding a mode is a single new row here plus its controls.
+// Keep mode metadata in one list; controls are derived from it.
 
 struct ModeInfo {
     ColorMode mode;
@@ -78,8 +81,7 @@ int lockIndexOf(LockStyle s) {
     return 0;
 }
 
-// ---- small row builders -----------------------------------------------------
-// Every row is a {kRowW x kRowH} node positioned by its center.
+// Small row builders use centered {kRowW x kRowH} nodes.
 
 CCLabelBMFont* makeLabel(std::string const& text, const char* font = "bigFont.fnt", float scale = 0.45f) {
     auto* lbl = CCLabelBMFont::create(text.c_str(), font);
@@ -98,7 +100,6 @@ std::string formatValue(float v, ValueFmt kind) {
     return fmt::format("{}", static_cast<int>(std::lround(v)));
 }
 
-// [label ......................... toggle]
 CCNode* makeToggleRow(std::string const& label, bool initial, std::function<void(bool)> onChange) {
     auto* row = CCNode::create();
     row->setContentSize({kRowW, kRowH});
@@ -115,7 +116,6 @@ CCNode* makeToggleRow(std::string const& label, bool initial, std::function<void
     auto* tog = CCMenuItemExt::createTogglerWithStandardSprites(0.65f,
         [cb = std::move(onChange)](CCMenuItemToggler* t) {
             if (!t) return;
-            // isToggled() is the state BEFORE this tap lands.
             if (cb) cb(!t->isToggled());
         });
     if (tog) {
@@ -127,7 +127,6 @@ CCNode* makeToggleRow(std::string const& label, bool initial, std::function<void
     return row;
 }
 
-// [label ......... slider ......... value]
 CCNode* makeSliderRow(std::string const& label, float minVal, float maxVal, float current,
                       ValueFmt kind, std::function<void(float)> onChange) {
     auto* row = CCNode::create();
@@ -156,8 +155,7 @@ CCNode* makeSliderRow(std::string const& label, float minVal, float maxVal, floa
         slider->setPosition({260.f, kRowH / 2});
         row->addChild(slider);
 
-        // The bare Slider has no change callback, so poll at 15Hz like the
-        // rest of the mod's sliders.
+        // Slider has no change callback, so poll at 15 Hz.
         struct Watcher : public CCNode {
             std::function<void(float)> cb;
             Ref<Slider> slider;
@@ -189,7 +187,6 @@ CCNode* makeSliderRow(std::string const& label, float minVal, float maxVal, floa
     return row;
 }
 
-// [label ..................... color swatch]
 CCNode* makeColorRow(std::string const& label, ccColor3B initial,
                      std::function<void(ccColor3B)> onChange) {
     auto* row = CCNode::create();
@@ -232,7 +229,6 @@ CCNode* makeColorRow(std::string const& label, ccColor3B initial,
     return row;
 }
 
-// [label ........... [<] value [>]]
 CCNode* makeCycleRow(std::string const& label, std::vector<std::string> options,
                      int initialIdx, std::function<void(int)> onChange) {
     auto* row = CCNode::create();
@@ -288,9 +284,7 @@ CCNode* makeCycleRow(std::string const& label, std::vector<std::string> options,
     return row;
 }
 
-}  // anonymous namespace
-
-// ---- popup ------------------------------------------------------------------
+}
 
 PaimonIconsConfigPopup* PaimonIconsConfigPopup::open() {
     auto* p = new PaimonIconsConfigPopup();
@@ -304,7 +298,8 @@ PaimonIconsConfigPopup* PaimonIconsConfigPopup::open() {
 }
 
 bool PaimonIconsConfigPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    bool const withMaker = paimon::settings::icon_maker::enabled();
+    if (!Popup::init(kPopupW, kPopupH + (withMaker ? kMakerExtraH : 0.f))) return false;
     paimon::markDynamicPopup(this);
     IconConfigStore::get().load();
     setTitle("Paimon Icons");
@@ -312,8 +307,8 @@ bool PaimonIconsConfigPopup::init() {
     buildHeader();
     buildPreview();
     buildTabs();
+    if (withMaker) buildIconMakerSection();
 
-    // Containers for the per-tab content (selector + description + rows).
     m_selectorArea = CCNode::create();
     m_selectorArea->setContentSize({kRowW, 52.f});
     m_selectorArea->setAnchorPoint({0.5f, 1.f});
@@ -326,13 +321,11 @@ bool PaimonIconsConfigPopup::init() {
 
     switchTab(Tab::Colors);
 
-    // Drives the live preview (rainbow motion + slider drags).
     schedule(schedule_selector(PaimonIconsConfigPopup::refreshPreview), 1.f / 10.f);
     return true;
 }
 
 void PaimonIconsConfigPopup::buildHeader() {
-    // Master switch (mirrors the "colorful-icons-enabled" mod setting).
     auto* label = makeLabel("Activado", "goldFont.fnt", 0.5f);
     if (label) {
         label->setAnchorPoint({1.f, 0.5f});
@@ -342,7 +335,6 @@ void PaimonIconsConfigPopup::buildHeader() {
     auto* tog = CCMenuItemExt::createTogglerWithStandardSprites(0.6f,
         [](CCMenuItemToggler* t) {
             if (!t) return;
-            // isToggled() is the state BEFORE this tap lands.
             IconConfigStore::get().setFeatureEnabled(!t->isToggled());
         });
     if (tog) {
@@ -352,7 +344,6 @@ void PaimonIconsConfigPopup::buildHeader() {
         }
     }
 
-    // Reset, tucked next to the close button and behind a confirm dialog.
     auto* spr = ButtonSprite::create("Reset", "goldFont.fnt", "GJ_button_06.png", 0.8f);
     if (!spr) return;
     spr->setScale(0.5f);
@@ -421,10 +412,66 @@ void PaimonIconsConfigPopup::buildTabs() {
     m_mainLayer->addChildAtPosition(m_tabMenu, Anchor::Top, {0.f, -120.f});
 }
 
+void PaimonIconsConfigPopup::buildIconMakerSection() {
+    auto* band = CCScale9Sprite::create("square02b_001.png");
+    if (!band) return;
+    band->setContentSize({kRowW + 4.f, kMakerBandH});
+    band->setColor({58, 32, 86});
+    band->setOpacity(200);
+    m_mainLayer->addChildAtPosition(band, Anchor::Bottom,
+        {0.f, kMakerBandPad + kMakerBandH / 2.f});
+
+    float const w  = band->getContentSize().width;
+    float const cy = kMakerBandH / 2.f;
+
+    constexpr float kAccentH = kMakerBandH - 10.f;
+    if (auto* accent = CCLayerColor::create({255, 140, 220, 255}, 3.f, kAccentH)) {
+        accent->setPosition({8.f, cy - kAccentH / 2.f});
+        band->addChild(accent);
+    }
+    if (auto* glyph = CCSprite::createWithSpriteFrameName("GJ_editBtn_001.png")) {
+        glyph->setScale(0.42f);
+        glyph->setPosition({28.f, cy});
+        band->addChild(glyph);
+    }
+
+    auto* menu = CCMenu::create();
+    menu->setPosition({0.f, 0.f});
+    band->addChild(menu);
+
+    float textMaxW = w - 60.f;
+    auto* spr = ButtonSprite::create("Abrir", "goldFont.fnt", "GJ_button_01.png", 0.8f);
+    if (spr) {
+        spr->setScale(0.55f);
+        auto* btn = CCMenuItemExt::createSpriteExtra(spr,
+            [self = WeakRef<PaimonIconsConfigPopup>(this)](CCMenuItemSpriteExtra*) {
+                if (auto p = self.lock()) p->onClose(nullptr);
+                paimon::icon_maker::IconGalleryLayer::open();
+            });
+        float const halfW = btn->getScaledContentSize().width / 2.f;
+        btn->setPosition({w - 12.f - halfW, cy});
+        menu->addChild(btn);
+        textMaxW = w - 60.f - halfW * 2.f - 16.f;
+    }
+
+    if (auto* title = makeLabel("Creador de Iconos", "goldFont.fnt", 0.45f)) {
+        title->setAnchorPoint({0.f, 0.5f});
+        title->setPosition({44.f, cy + 7.f});
+        title->limitLabelWidth(textMaxW, 0.45f, 0.25f);
+        band->addChild(title);
+    }
+    if (auto* desc = makeLabel("Crea y edita tus propios iconos.", "chatFont.fnt", 0.42f)) {
+        desc->setAnchorPoint({0.f, 0.5f});
+        desc->setColor({170, 180, 205});
+        desc->setPosition({44.f, cy - 8.f});
+        desc->limitLabelWidth(textMaxW, 0.42f, 0.25f);
+        band->addChild(desc);
+    }
+}
+
 void PaimonIconsConfigPopup::switchTab(Tab tab) {
     m_tab = tab;
-    // Highlight the active tab in place -- the buttons themselves are never
-    // rebuilt, so switching from a tab button callback is safe.
+    // Update the active tab in place; the buttons are never rebuilt.
     for (int i = 0; i < static_cast<int>(m_tabSprites.size()); ++i) {
         if (m_tabSprites[i]) {
             m_tabSprites[i]->updateBGImage(
@@ -510,7 +557,6 @@ void PaimonIconsConfigPopup::rebuildSelector() {
     Ref<CCLabelBMFont> descRef = desc;
 
     if (m_tab == Tab::Areas) {
-        // No selector: a static heading is enough here.
         if (auto* head = makeLabel("Donde se aplica", "bigFont.fnt", 0.5f)) {
             head->setColor({255, 210, 80});
             head->setPosition({w / 2, rowY});
@@ -539,8 +585,7 @@ void PaimonIconsConfigPopup::rebuildSelector() {
         }
     };
 
-    // The arrows only mutate labels and the controls container (never the
-    // selector row itself), so stepping from an arrow callback is safe.
+    // Arrow callbacks update labels and controls, not the selector row.
     std::function<void(int)> step;
     if (m_tab == Tab::Colors) {
         auto idx = std::make_shared<int>(modeIndexOf(cfg.mode));
@@ -699,7 +744,6 @@ void PaimonIconsConfigPopup::rebuildControls() {
                     break;
             }
             if (showUnobtainable) {
-                // "Imposibles": icons that can no longer be obtained.
                 addRow(makeToggleRow("Oscurecer imposibles", cfg.dimUnobtainable, [set](bool v) {
                     set([&](PaimonIconConfig& g) { g.dimUnobtainable = v; });
                 }));
@@ -741,7 +785,6 @@ void PaimonIconsConfigPopup::refreshPreview(float) {
         auto* sp = slot.player;
         if (!sp) continue;
 
-        // Reset everything a style variant may have touched last tick.
         sp->setVisible(true);
         IconLockStyler::fadeAllParts(sp, 255);
         if (slot.lock) slot.lock->setVisible(false);
@@ -764,8 +807,7 @@ void PaimonIconsConfigPopup::refreshPreview(float) {
             continue;
         }
 
-        // Locked / unobtainable samples mirror IconLockStyler's styles on the
-        // plain preview nodes.
+        // Locked samples mirror IconLockStyler on plain preview nodes.
         sp->setColors(kVanilla1, kVanilla2);
         sp->disableGlowOutline();
         bool const unob = slot.role == SlotRole::Unobtainable && cfg.dimUnobtainable;
@@ -802,4 +844,4 @@ void PaimonIconsConfigPopup::refreshPreview(float) {
     }
 }
 
-}  // namespace paimon::icons::ui
+}

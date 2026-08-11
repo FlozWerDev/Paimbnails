@@ -21,23 +21,13 @@ class ScrollLayer;
 
 namespace paimon::collab {
 
-// Display name shown to peers: the collab-username setting if set, else the GD
-// player name, else "editor". Shared by the room/invite/presence flows.
+// Display name: collab setting, GD player name, or "editor".
 std::string defaultDisplayName();
 
-// Closes any open collab gate/room popup on the running scene. Called before
-// the manager pushes an editor scene (and after popping back), because a popup
-// that survives a scene swap keeps broken touch priority and looks frozen.
+// Close room popups before scene swaps to avoid stale touch priority.
 void closeSessionPopups();
 
-// Connect / create a room on the Render server. `hostLevel` is the level to
-// host if we end up creating the room (passed straight to the manager).
-//
-// The popup is a small state machine rebuilt in place:
-//  - Setup:      two tabs, "Crear sala" (shows a generated code to share) and
-//                "Unirse" (paste the host's code), plus the display name.
-//  - Connecting: spinner + live status + cancel.
-//  - Connected:  room code + copy, who's in the room, host tools and leave.
+// Connect/create a room; setup, connecting, and connected states rebuild in place.
 class CollabRoomPopup : public geode::Popup {
 public:
     static CollabRoomPopup* create(GJGameLevel* hostLevel = nullptr);
@@ -47,8 +37,10 @@ private:
 
     bool init(GJGameLevel* hostLevel);
     void rebuild();
-    void scheduleRebuild(); // deferred a frame: never destroys the pressed button mid-callback
+    void scheduleRebuild();
     void buildSetupView();
+    cocos2d::CCNode* buildSetupPanel();
+    void switchSetupTab(bool join);
     void buildConnectingView();
     void buildConnectedView();
     void captureInputs();
@@ -68,11 +60,13 @@ private:
 
     View m_view = View::None;
     bool m_joinTab = false;
-    // Inputs survive tab switches and rebuilds through these.
     std::string m_createCode;
     std::string m_joinCode;
 
     cocos2d::CCNode* m_content = nullptr;
+    cocos2d::CCNode* m_setupPanel = nullptr;
+    ButtonSprite* m_createTabSpr = nullptr;
+    ButtonSprite* m_joinTabSpr = nullptr;
     geode::TextInput* m_codeInput = nullptr;
     cocos2d::CCLabelBMFont* m_codeLabel = nullptr;
     cocos2d::CCLabelBMFont* m_statusLabel = nullptr;
@@ -80,8 +74,7 @@ private:
     geode::Ref<GJGameLevel> m_hostLevel;
 };
 
-// Host-only: pick friends to invite to the current room. Loads the GD friend
-// list and sends an invite that reaches online friends as a notification.
+// Host-only friend invite flow.
 class CollabInvitePopup : public geode::Popup, public UserListDelegate {
 public:
     static CollabInvitePopup* create();
@@ -93,12 +86,11 @@ public:
     void forceReloadList(UserListType) override {}
 
 private:
-    // Snapshot of what a row needs so the list can be rebuilt on every
-    // keystroke of the search bar without keeping the GJUserScore array alive.
+    // Row snapshot used while filtering without retaining GJUserScore objects.
     struct FriendEntry {
         int accountID = 0;
         std::string name;
-        std::string nameLower; // precomputed for case-insensitive filtering
+        std::string nameLower;
         int iconID = 1;
         int iconType = 0;
         int color1 = 0;
@@ -107,7 +99,7 @@ private:
         bool glow = false;
     };
 
-    bool init();
+    bool init() override;
     void loadFriends();
     void buildList(cocos2d::CCArray* scores);
     void rebuildRows();
@@ -120,35 +112,21 @@ private:
     cocos2d::CCLabelBMFont* m_info = nullptr;
     cocos2d::CCLabelBMFont* m_count = nullptr;
     std::vector<FriendEntry> m_friends;
-    std::unordered_map<int, std::string> m_names; // accountID -> username
+    std::unordered_map<int, std::string> m_names;
 };
 
-// Incoming invite prompt (shown by the presence client). Accept joins the room.
-class CollabInvitePromptPopup : public geode::Popup {
-public:
-    static CollabInvitePromptPopup* create(std::string const& room, std::string const& fromName);
-
-private:
-    bool init(std::string const& room, std::string const& fromName);
-    void onAccept(cocos2d::CCObject*);
-    void onReject(cocos2d::CCObject*);
-
-    std::string m_room;
-};
-
-// In-room text chat: scrollable history, room status header, "who's talking"
-// line and a live mic level bar. Opened from the editor overlay.
+// In-room chat and voice status.
 class CollabChatPopup : public geode::Popup {
 public:
     static CollabChatPopup* create();
 
 private:
-    bool init();
+    bool init() override;
     void onSend(cocos2d::CCObject*);
     void onMic(cocos2d::CCObject*);
     void refresh(float dt = 0.f);
     void rebuildMessages();
-    void tickVoice(float dt); // per-frame: smooth mic level bar
+    void tickVoice(float dt);
 
     geode::TextInput* m_input = nullptr;
     geode::ScrollLayer* m_scroll = nullptr;
@@ -159,35 +137,28 @@ private:
     ButtonSprite* m_micSprite = nullptr;
     cocos2d::CCLayerColor* m_micBarFill = nullptr;
     cocos2d::CCLayerColor* m_micBarTrack = nullptr;
-    float m_micShown = 0.f;      // smoothed local level
-    int m_connShown = -1;        // last drawn connection state (-1 = never)
+    float m_micShown = 0.f;
+    int m_connShown = -1;
     uint64_t m_lastRevision = ~0ull;
 };
 
-// Host-only permissions for non-host editors.
 class HostOptionsPopup : public geode::Popup {
 public:
     static HostOptionsPopup* create();
 
 private:
-    bool init();
-    void onToggle(cocos2d::CCObject* sender);
-    void refresh();
+    bool init() override;
+    void togglePermission(bool HostPermissions::*field, bool on);
 
     HostPermissions m_permissions;
-    ButtonSprite* m_songSpr = nullptr;
-    ButtonSprite* m_optionsSpr = nullptr;
-    ButtonSprite* m_settingsSpr = nullptr;
-    ButtonSprite* m_viewOnlySpr = nullptr;
 };
 
-// In-room peer list. Hosts can kick non-host peers.
 class CollabPeersPopup : public geode::Popup {
 public:
     static CollabPeersPopup* create();
 
 private:
-    bool init();
+    bool init() override;
     void rebuildList();
     void onProfile(cocos2d::CCObject* sender);
     void onKick(cocos2d::CCObject* sender);
@@ -198,4 +169,4 @@ private:
     std::string m_lastPeerSignature;
 };
 
-} // namespace paimon::collab
+}

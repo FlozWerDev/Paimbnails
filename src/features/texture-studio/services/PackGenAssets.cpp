@@ -18,17 +18,13 @@ namespace {
 constexpr char const* kDefaultBaseUrl = "https://packgenweb.pages.dev/pack/";
 constexpr char const* kManifestFile   = "manifest.json";
 constexpr char const* kNoScalingFile  = "noscaling.json";
-// Sentinel extension marking a server-confirmed 404 so overlay probing does
-// not re-hit the network on every export.
+// Sentinel extension for server-confirmed 404s.
 constexpr char const* kMissingSuffix  = ".404";
-// The PackGen server gains overlays / mod textures over time; cached
-// negatives and the manifest must expire or the mod silently falls behind
-// the website forever (unpainted buttons that the web does paint).
+// Expire manifests and negative caches so new server assets appear.
 constexpr auto kMissingSentinelTtl = std::chrono::hours(24 * 7);
 constexpr auto kManifestTtl        = std::chrono::hours(24);
 
-// True when `path` exists and was written within `ttl`. Any filesystem error
-// counts as expired, which just costs one extra network probe.
+// True when path exists and is newer than ttl; filesystem errors mean expired.
 bool fileIsFresh(std::filesystem::path const& path, std::chrono::hours ttl) {
     std::error_code ec;
     auto mtime = std::filesystem::last_write_time(path, ec);
@@ -37,8 +33,7 @@ bool fileIsFresh(std::filesystem::path const& path, std::chrono::hours ttl) {
     return mtime <= now && (now - mtime) < ttl;
 }
 
-// Remote manifest paths feed directly into filesystem paths; reject anything
-// that could escape the cache directory.
+// Reject manifest paths that escape the cache directory.
 bool isSafeRelativePath(std::string const& rel) {
     if (rel.empty() || rel.front() == '/' || rel.find(':') != std::string::npos) {
         return false;
@@ -48,7 +43,7 @@ bool isSafeRelativePath(std::string const& rel) {
 
 std::string replaceExtensionSuffix(std::string const& pngRelPath,
                                    char const* overlayTag) {
-    // "dir/name.png" → "dir/name<overlayTag>.png", mirroring PackGen's JS.
+// Mirror PackGen's overlay filename convention.
     constexpr std::string_view kPng = ".png";
     if (pngRelPath.size() < kPng.size() ||
         pngRelPath.compare(pngRelPath.size() - kPng.size(), kPng.size(), kPng) != 0) {
@@ -58,9 +53,7 @@ std::string replaceExtensionSuffix(std::string const& pngRelPath,
          + overlayTag + std::string(kPng);
 }
 
-// The 8-byte PNG signature. Cloudflare Pages answers missing files with the
-// SPA's index.html (HTTP 200), so a content-type check is unreliable; the
-// magic bytes are the only trustworthy "is this really a PNG" signal.
+// PNG signature; Cloudflare's SPA fallback can return HTML with HTTP 200.
 bool bytesArePng(std::vector<std::uint8_t> const& b) {
     static constexpr std::uint8_t kSig[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
     return b.size() >= 8 && std::equal(std::begin(kSig), std::end(kSig), b.begin());
@@ -90,8 +83,7 @@ geode::Result<> writeBytesToFile(std::filesystem::path const& path,
     std::filesystem::create_directories(path.parent_path(), ec);
     if (ec) return Err("mkdir failed: {}", ec.message());
 
-    // Write to a temp name then rename, so a crash mid-write never leaves a
-    // truncated file that later reads as a valid cached asset.
+// Write temp then rename to avoid partial cache files.
     auto tmp = path;
     tmp += ".tmp";
     {
@@ -109,7 +101,7 @@ geode::Result<> writeBytesToFile(std::filesystem::path const& path,
     return Ok();
 }
 
-}  // namespace
+}
 
 namespace packgen_suffix {
 std::string overlay1(std::string const& p)    { return replaceExtensionSuffix(p, "_OVERLAY1"); }
@@ -118,7 +110,7 @@ std::string glow(std::string const& p)        { return replaceExtensionSuffix(p,
 std::string gold(std::string const& p)        { return replaceExtensionSuffix(p, "_GOLDOVERLAY"); }
 std::string demonFaces1(std::string const& p) { return replaceExtensionSuffix(p, "_OVERLAY1_DEMONFACES"); }
 std::string demonFaces2(std::string const& p) { return replaceExtensionSuffix(p, "_OVERLAY2_DEMONFACES"); }
-}  // namespace packgen_suffix
+}
 
 bool PackGenManifest::contains(std::string const& relativePath) const {
     return std::find(files.begin(), files.end(), relativePath) != files.end();
@@ -189,10 +181,7 @@ geode::Result<> PackGenAssets::ensureManifest(bool forceRefresh) {
     auto manifestPath  = cacheDir() / kManifestFile;
     auto noScalingPath = cacheDir() / kNoScalingFile;
 
-    // A fresh-enough cached manifest also refreshes the in-memory copy; an
-    // EXPIRED cache falls through to a re-download so newly added server
-    // files show up like they do on the website, but is kept as offline
-    // fallback if that download fails.
+// Refresh expired manifests; keep the stale copy as an offline fallback.
     std::error_code ec;
     bool haveLocal = !forceRefresh
         && std::filesystem::exists(manifestPath, ec) && !ec;
@@ -207,15 +196,14 @@ geode::Result<> PackGenAssets::ensureManifest(bool forceRefresh) {
                 }
                 return Ok();
             }
-            // Corrupt cache: fall through to a fresh download.
         } else {
-            return Ok();  // stale but already loaded this session
+    return Ok();
         }
     }
 
     auto bytesRes = syncFetchBytes(m_baseUrl + kManifestFile);
     if (!bytesRes) {
-        // Offline: fall back to the stale cached copy rather than failing.
+// Use the stale cached copy when offline.
         if (haveLocal) {
             auto text = readTextFile(manifestPath);
             if (text && parseManifestJson(text.unwrap())) {
@@ -232,7 +220,7 @@ geode::Result<> PackGenAssets::ensureManifest(bool forceRefresh) {
     GEODE_UNWRAP(parseManifestJson(text));
     (void)writeBytesToFile(manifestPath, bytes);
 
-    // noscaling.json is optional on the server (PackGen treats it as such).
+// noscaling.json is optional.
     if (auto nsBytes = syncFetchBytes(m_baseUrl + kNoScalingFile)) {
         auto ns = nsBytes.unwrap();
         std::string nsText(ns.begin(), ns.end());
@@ -244,7 +232,6 @@ geode::Result<> PackGenAssets::ensureManifest(bool forceRefresh) {
 }
 
 std::filesystem::path PackGenAssets::localPathFor(std::string const& relativePath) const {
-    // The manifest paths use '/'; std::filesystem handles them on Windows too.
     return cacheDir() / std::filesystem::path(relativePath);
 }
 
@@ -263,12 +250,11 @@ geode::Result<std::filesystem::path> PackGenAssets::ensureFile(
     if (std::filesystem::exists(local, ec) && !ec &&
         std::filesystem::file_size(local, ec) > 0 && !ec) {
         if (!isPng || fileIsPng(local)) return Ok(local);
-        std::filesystem::remove(local, ec);  // stale HTML cache, re-fetch
+std::filesystem::remove(local, ec);
     }
 
     GEODE_UNWRAP_INTO(auto bytes, syncFetchBytes(m_baseUrl + relativePath));
-    // A .png that comes back as the SPA fallback means the server doesn't
-    // actually have it; caching that HTML would later fail to decode.
+// Do not cache SPA HTML returned for a missing PNG.
     if (isPng && !bytesArePng(bytes)) {
         return Err("server returned a non-PNG body for {} (missing asset)", relativePath);
     }
@@ -287,8 +273,7 @@ geode::Result<std::optional<std::filesystem::path>> PackGenAssets::ensureOptiona
     std::error_code ec;
     if (std::filesystem::exists(local, ec) && !ec &&
         std::filesystem::file_size(local, ec) > 0 && !ec) {
-        // Self-heal caches written before PNG-signature validation: an entry
-        // that is actually the SPA fallback (HTML) is discarded and re-probed.
+// Discard pre-validation HTML cache entries and re-probe.
         if (fileIsPng(local)) return Ok(std::optional(local));
         std::filesystem::remove(local, ec);
     }
@@ -299,14 +284,11 @@ geode::Result<std::optional<std::filesystem::path>> PackGenAssets::ensureOptiona
         if (fileIsFresh(sentinel, kMissingSentinelTtl)) {
             return Ok(std::nullopt);
         }
-        // Stale negative: the server may have added this overlay since
-        // (PackGen's site would already be using it) — re-probe.
+// Re-probe expired negative entries; the server may have added the overlay.
         std::filesystem::remove(sentinel, ec);
     }
 
-    // Single GET, then decide by the actual bytes. A non-PNG body means the
-    // overlay does not exist on the server (SPA catch-all) — cache a sentinel
-    // so we never re-hit the network or try to decode HTML as an image.
+// Validate the body by PNG signature; cache non-PNG responses as missing.
     GEODE_UNWRAP_INTO(auto bytes, syncFetchBytes(m_baseUrl + relativePath));
     if (!bytesArePng(bytes)) {
         (void)writeBytesToFile(sentinel, {});
@@ -343,8 +325,7 @@ PackGenAssets::PrefetchResult PackGenAssets::prefetchAll(PackGenProgressCallback
         }
         wasCached ? ++result.alreadyCached : ++result.downloaded;
 
-        // Probe the overlay variants PackGen probes. Optional-miss (404) is
-        // normal; only transport errors count as failures.
+// Probe PackGen's overlay variants; 404 is a normal miss.
         bool isPng = rel.size() > 4 && rel.compare(rel.size() - 4, 4, ".png") == 0;
         if (!isPng) continue;
 
@@ -375,4 +356,4 @@ PackGenAssets::PrefetchResult PackGenAssets::prefetchAll(PackGenProgressCallback
     return result;
 }
 
-}  // namespace paimon::texture_studio
+}

@@ -12,7 +12,9 @@ namespace {
 
 static bool isAudioFile(const std::filesystem::path& p) {
     auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(p.extension()));
-    static const std::array<std::string, 5> ok = {".mp3", ".ogg", ".wav", ".flac", ".oga"};
+    static const std::array<std::string, 7> ok = {
+        ".mp3", ".ogg", ".wav", ".flac", ".oga", ".m4a", ".opus"
+    };
     return std::ranges::find(ok, ext) != ok.end();
 }
 
@@ -27,32 +29,46 @@ static void scanAndLoadSongs() {
     auto& sm = MenuLoopManager::get();
     auto configDir = sm.getConfigDir();
 
-    // Scan config dir for audio files
-    std::error_code ec;
-    for (auto const& entry : std::filesystem::directory_iterator(configDir, ec)) {
-        if (ec) break;
-        if (!entry.is_regular_file()) continue;
-        auto path = entry.path();
-        if (isAudioFile(path)) {
-            sm.addSong(geode::utils::string::pathToString(path));
-        }
-    }
+    sm.clearSongs();
+    sm.getBlacklist().clear();
+    sm.getFavorites().clear();
+    const bool loadPlaylist = Mod::get()->getSavedValue<bool>(
+        "menuLoopLoadPlaylistFile", false);
 
-    // Scan additional folder if set
-    auto extraFolder = std::filesystem::path(Mod::get()->getSavedValue<std::string>("menuLoopAdditionalFolder", ""));
-    if (!extraFolder.empty() && std::filesystem::exists(extraFolder, ec) && !ec) {
-        for (auto const& entry : std::filesystem::directory_iterator(extraFolder, ec)) {
-            if (ec) break;
+    std::error_code ec;
+    if (!loadPlaylist) {
+        for (auto const& entry : std::filesystem::recursive_directory_iterator(
+                 configDir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+            if (ec) {
+                ec.clear();
+                continue;
+            }
             if (!entry.is_regular_file()) continue;
             auto path = entry.path();
             if (isAudioFile(path)) {
                 sm.addSong(geode::utils::string::pathToString(path));
             }
         }
+
+        auto extraFolder = std::filesystem::path(
+            Mod::get()->getSavedValue<std::string>("menuLoopAdditionalFolder", ""));
+        if (!extraFolder.empty() && std::filesystem::exists(extraFolder, ec) && !ec) {
+            for (auto const& entry : std::filesystem::recursive_directory_iterator(
+                     extraFolder, std::filesystem::directory_options::skip_permission_denied, ec)) {
+                if (ec) {
+                    ec.clear();
+                    continue;
+                }
+                if (!entry.is_regular_file()) continue;
+                auto path = entry.path();
+                if (isAudioFile(path)) {
+                    sm.addSong(geode::utils::string::pathToString(path));
+                }
+            }
+        }
     }
 
-    // Load playlist file if enabled
-    if (Mod::get()->getSavedValue<bool>("menuLoopLoadPlaylistFile", false)) {
+    if (loadPlaylist) {
         auto playlistPath = std::filesystem::path(Mod::get()->getSavedValue<std::string>("menuLoopPlaylistFile", ""));
     if (playlistPath.empty()) playlistPath = configDir / "playlistOne.txt";
         if (std::filesystem::exists(playlistPath, ec) && !ec) {
@@ -63,7 +79,6 @@ static void scanAndLoadSongs() {
                 while (std::getline(stream, line)) {
                     if (line.empty() || line[0] == '#') continue;
                     auto trimmed = line;
-                    // trim whitespace
                     auto start = trimmed.find_first_not_of(" \t\r\n");
                     if (start == std::string::npos) continue;
                     auto end = trimmed.find_last_not_of(" \t\r\n");
@@ -76,7 +91,6 @@ static void scanAndLoadSongs() {
         }
     }
 
-    // Load blacklist
     auto blPath = configDir / "blacklist.txt";
     if (std::filesystem::exists(blPath, ec) && !ec) {
         auto content = geode::utils::file::readString(blPath);
@@ -90,7 +104,6 @@ static void scanAndLoadSongs() {
         }
     }
 
-    // Load favorites
     auto favPath = configDir / "favorites.txt";
     if (std::filesystem::exists(favPath, ec) && !ec) {
         auto content = geode::utils::file::readString(favPath);
@@ -104,12 +117,22 @@ static void scanAndLoadSongs() {
         }
     }
 
-    // Apply blacklist
     for (const auto& bl : sm.getBlacklist()) {
         sm.removeSong(bl);
     }
 
-    // Pick initial song
+    auto& songData = sm.getSongToSongDataEntries();
+    for (const auto& song : sm.getSongs()) {
+        auto path = std::filesystem::path(song);
+        SongData data;
+        data.path = song;
+        data.displayName = geode::utils::string::pathToString(path.stem());
+        data.type = std::ranges::find(sm.getFavorites(), song) != sm.getFavorites().end()
+            ? SongType::Favorited
+            : SongType::Normal;
+        songData.emplace(song, std::move(data));
+    }
+
     if (Mod::get()->getSettingValue<bool>("menuLoopSaveSongOnGameClose")) {
         sm.setCurrentSongToSavedSong();
     } else {
@@ -128,7 +151,6 @@ $on_mod(Loaded) {
     auto& sm = MenuLoopManager::get();
     auto configDir = sm.getConfigDir();
 
-    // Ensure config files exist
     ensureFileExists(configDir / "playlistOne.txt", "# Menu Loop Playlist 1\n");
     ensureFileExists(configDir / "playlistTwo.txt", "# Menu Loop Playlist 2\n");
     ensureFileExists(configDir / "playlistThree.txt", "# Menu Loop Playlist 3\n");
@@ -146,13 +168,16 @@ $on_mod(Loaded) {
     sm.setLastMenuLoopPosition(0);
     sm.setShouldRestoreMenuLoopPoint(true);
     sm.setFinishedCalculatingSongLengths(false);
-    sm.setAdvancedLogs(Mod::get()->getSettingValue<bool>("menuLoopAdvancedLogs"));
+    sm.setAdvancedLogs(Mod::get()->getSavedValue<bool>("menuLoopAdvancedLogs", false));
     sm.setPlaylistIsEmpty(true);
     sm.setCalledOnce(false);
 
     auto* loader = Loader::get();
     sm.setVibecodedVentilla(loader->isModLoaded("joseii.ventilla"));
 
-    // Scan and load songs
     scanAndLoadSongs();
+
+    listenForSettingChanges<bool>("menuLoopConstantShuffle", [](bool enabled) {
+        MenuLoopManager::get().setConstantShuffleMode(enabled);
+    });
 }

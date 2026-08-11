@@ -34,27 +34,82 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Three-column layout (left preview | center browser | right tools).
-// Proportions tuned for GD's common ~569x320 window and widescreen mods.
-constexpr float kMargin      = 8.f;
-constexpr float kHeaderH     = 34.f;
+constexpr float kMargin      = 6.f;
+constexpr float kHeaderH     = 38.f;
 constexpr float kFooterH     = 30.f;
-constexpr float kLeftColW    = 108.f;
-constexpr float kRightColW   = 214.f;
-constexpr float kColGap      = 8.f;
+constexpr float kLeftColW    = 112.f;
+constexpr float kRightColW   = 216.f;
+constexpr float kColGap      = 6.f;
+constexpr float kTabRowH     = 22.f;
+constexpr float kCardTitleH  = 18.f;
 
 constexpr float kCellW = 70.f;
 constexpr float kCellH = 56.f;
 
+constexpr cocos2d::ccColor3B kAccent     {138,  96, 255};
+constexpr cocos2d::ccColor3B kCardBorder { 74,  56, 118};
+constexpr cocos2d::ccColor3B kCardFill   { 23,  19,  33};
+constexpr cocos2d::ccColor3B kBarFill    { 33,  26,  50};
+constexpr cocos2d::ccColor3B kInsetFill  { 30,  27,  40};
+
 // Derived helpers — keep call sites readable.
-inline float leftCenterX() { return kMargin + kLeftColW * 0.5f; }
-inline float centerX0()    { return kMargin + kLeftColW + kColGap; }
-inline float rightPanelW() { return kRightColW; }
+inline float panelTopY(cocos2d::CCSize const& win) {
+    return win.height - kHeaderH - kColGap;
+}
+inline float panelBottomY() { return kFooterH + kColGap; }
+inline float centerX0()     { return kMargin + kLeftColW + kColGap; }
+inline float rightPanelW()  { return kRightColW; }
 inline float rightPanelX(float winW) {
     return winW - kMargin - kRightColW;
 }
 inline float centerRightX(float winW) {
     return rightPanelX(winW) - kColGap;
+}
+
+CCNode* makeCard(CCNode* parent, float x, float y, float w, float h) {
+    auto* card = CCNode::create();
+    card->setContentSize({w, h});
+    card->setAnchorPoint({0.f, 0.f});
+    card->setPosition({x, y});
+    parent->addChild(card, 2);
+
+    if (auto* border = CCScale9Sprite::create("GJ_square01.png")) {
+        border->setContentSize({w, h});
+        border->setColor(kCardBorder);
+        border->setOpacity(170);
+        card->addChildAtPosition(border, Anchor::Center);
+    }
+    if (auto* fill = CCScale9Sprite::create("GJ_square01.png")) {
+        fill->setContentSize({w - 3.f, h - 3.f});
+        fill->setColor(kCardFill);
+        card->addChildAtPosition(fill, Anchor::Center);
+    }
+    return card;
+}
+
+void addCardTitle(CCNode* card, char const* text) {
+    auto sz = card->getContentSize();
+    if (auto* strip = CCScale9Sprite::create("GJ_square01.png")) {
+        strip->setContentSize({sz.width - 3.f, kCardTitleH});
+        strip->setColor(kBarFill);
+        card->addChildAtPosition(strip, Anchor::Top,
+            {0.f, -kCardTitleH * 0.5f - 1.5f});
+    }
+    if (auto* lbl = CCLabelBMFont::create(text, "goldFont.fnt")) {
+        lbl->setScale(0.38f);
+        card->addChildAtPosition(lbl, Anchor::Top,
+            {0.f, -kCardTitleH * 0.5f - 1.5f});
+    }
+}
+
+void addCardDivider(CCNode* card, float localY) {
+    auto w = card->getContentSize().width;
+    if (auto* line = CCLayerColor::create(
+            ccc4(kCardBorder.r, kCardBorder.g, kCardBorder.b, 130))) {
+        line->setContentSize({w - 10.f, 1.f});
+        line->setPosition({5.f, localY});
+        card->addChild(line, 1);
+    }
 }
 
 char const* scopeLabel(TintScope s) {
@@ -120,10 +175,8 @@ CCSprite* makeSwatchSprite(ccColor3B color, float size) {
     return spr;
 }
 
-}  // anonymous namespace
+}
 
-// ---------------------------------------------------------------------------
-// Creation / lifecycle
 
 ProjectEditorLayer* ProjectEditorLayer::create(std::string slotId) {
     auto* ret = new ProjectEditorLayer();
@@ -154,8 +207,6 @@ ProjectEditorLayer::~ProjectEditorLayer() {
     m_previewGeneration->fetch_add(1, std::memory_order_acq_rel);
     m_renderGeneration->fetch_add(1, std::memory_order_acq_rel);
     m_thumbGeneration->fetch_add(1, std::memory_order_acq_rel);
-    // Drop fusion assets immediately so animated frames free RAM even if
-    // cocos defers the actual CCObject release.
     m_fusionAsset.reset();
     m_fusionMask.reset();
 }
@@ -185,7 +236,6 @@ bool ProjectEditorLayer::init(std::string slotId) {
     applyFilter();
     selectTab(0);
 
-    // No selection yet: preview the pack's representative UI sprite.
     startSelectionPixelLoad();
 
     return true;
@@ -196,21 +246,17 @@ void ProjectEditorLayer::keyBackClicked() {
 }
 
 void ProjectEditorLayer::onBack(CCObject*) {
-    // Autosave: leaving the editor should never silently lose work.
     (void)SlotStore::get().saveSlot(m_project);
     CCDirector::get()->popSceneWithTransition(0.4f, PopTransition::kPopTransitionFade);
 }
 
 void ProjectEditorLayer::onOpenFusionLayer() {
-    // Open the dedicated full-screen Fusion layer for this pack.
     std::string frame;
     if (m_hasSelection) frame = m_selected.frameName;
     (void)SlotStore::get().saveSlot(m_project);
     FusionEditorLayer::open(m_slotId, frame);
 }
 
-// ---------------------------------------------------------------------------
-// Static layout
 
 void ProjectEditorLayer::buildBackground() {
     auto winSize = CCDirector::get()->getWinSize();
@@ -230,97 +276,142 @@ void ProjectEditorLayer::buildHeader() {
     auto winSize = CCDirector::get()->getWinSize();
     const float headerY = winSize.height - kHeaderH * 0.5f;
 
+    if (auto* bar = CCLayerColor::create(
+            ccc4(kBarFill.r, kBarFill.g, kBarFill.b, 235))) {
+        bar->setContentSize({winSize.width, kHeaderH});
+        bar->setPosition({0.f, winSize.height - kHeaderH});
+        this->addChild(bar, 3);
+    }
+    if (auto* line = CCLayerColor::create(
+            ccc4(kAccent.r, kAccent.g, kAccent.b, 200))) {
+        line->setContentSize({winSize.width, 1.5f});
+        line->setPosition({0.f, winSize.height - kHeaderH});
+        this->addChild(line, 3);
+    }
+
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     this->addChild(menu, 10);
 
     if (auto* backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png")) {
-        backSpr->setScale(0.8f);
+        backSpr->setScale(0.72f);
         if (auto* backBtn = CCMenuItemExt::createSpriteExtra(backSpr,
                 [this](CCMenuItemSpriteExtra*) { this->onBack(nullptr); })) {
-            backBtn->setPosition({kMargin + 16.f, headerY});
+            backBtn->setPosition({18.f, headerY});
             menu->addChild(backBtn);
         }
     }
 
+    float titleRight = 40.f;
     if (auto* title = CCLabelBMFont::create(m_project.name.c_str(), "bigFont.fnt")) {
-        title->limitLabelWidth(160.f, 0.55f, 0.28f);
-        title->setPosition({winSize.width * 0.42f, headerY + 1.f});
+        title->setAnchorPoint({0.f, 0.5f});
+        title->limitLabelWidth(150.f, 0.5f, 0.24f);
+        title->setPosition({38.f, headerY + 1.f});
         this->addChild(title, 5);
+        titleRight = 38.f + title->getScaledContentSize().width;
+    }
+    if (auto* sub = CCLabelBMFont::create("TEXTURE STUDIO", "goldFont.fnt")) {
+        sub->setAnchorPoint({0.f, 0.5f});
+        sub->setScale(0.28f);
+        sub->setOpacity(190);
+        sub->setPosition({titleRight + 8.f, headerY - 1.f});
+        this->addChild(sub, 5);
     }
 
-    // Dedicated full-screen Fusion layer (not a tab).
-    if (auto* fusSpr = ButtonSprite::create("Fusion Layer", "bigFont.fnt",
+    float rightEdge = winSize.width - 10.f;
+    auto placeRight = [&rightEdge, headerY, menu](CCMenuItemSpriteExtra* btn) {
+        float bw = btn->getScaledContentSize().width;
+        btn->setPosition({rightEdge - bw * 0.5f, headerY});
+        menu->addChild(btn);
+        rightEdge -= bw + 6.f;
+    };
+
+    if (auto* fusSpr = ButtonSprite::create("Fusion", "bigFont.fnt",
                                             "GJ_button_01.png", 0.32f)) {
         if (auto* fusBtn = CCMenuItemExt::createSpriteExtra(fusSpr,
                 [this](CCMenuItemSpriteExtra*) { this->onOpenFusionLayer(); })) {
-            fusBtn->setPosition({winSize.width - 72.f, headerY});
-            menu->addChild(fusBtn);
+            placeRight(fusBtn);
         }
     }
-
-    if (auto* autoSpr = ButtonSprite::create("Auto", "bigFont.fnt", "GJ_button_02.png", 0.3f)) {
+    if (auto* autoSpr = ButtonSprite::create("Auto", "bigFont.fnt", "GJ_button_02.png", 0.32f)) {
         if (auto* autoBtn = CCMenuItemExt::createSpriteExtra(autoSpr,
                 [this](CCMenuItemSpriteExtra*) { this->onAutoTune(nullptr); })) {
-            // Align with the right tools column.
-            autoBtn->setPosition({
-                rightPanelX(winSize.width) + kRightColW - 28.f, headerY});
-            menu->addChild(autoBtn);
+            placeRight(autoBtn);
         }
     }
 }
 
 void ProjectEditorLayer::buildFooter() {
     auto winSize = CCDirector::get()->getWinSize();
-    // Shared baseline with browser pagination so the bottom strip reads as one bar.
-    const float barY = kFooterH * 0.55f;
-    const float panelX = rightPanelX(winSize.width);
+    const float barY = kFooterH * 0.5f;
+
+    if (auto* bar = CCLayerColor::create(
+            ccc4(kBarFill.r, kBarFill.g, kBarFill.b, 235))) {
+        bar->setContentSize({winSize.width, kFooterH});
+        bar->setPosition({0.f, 0.f});
+        this->addChild(bar, 3);
+    }
+    if (auto* line = CCLayerColor::create(
+            ccc4(kAccent.r, kAccent.g, kAccent.b, 200))) {
+        line->setContentSize({winSize.width, 1.5f});
+        line->setPosition({0.f, kFooterH});
+        this->addChild(line, 3);
+    }
 
     if (auto* status = CCLabelBMFont::create("Ready.", "bigFont.fnt")) {
         status->setScale(0.28f);
         status->setAnchorPoint({0.f, 0.5f});
         status->setColor({170, 190, 175});
-        status->setPosition({kMargin + 4.f, barY});
+        status->setPosition({10.f, barY});
         this->addChild(status, 5);
         m_statusLbl = status;
     }
 
-    // Primary actions under the right column (aligned with tools panel).
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     this->addChild(menu, 10);
 
-    if (auto* saveSpr = ButtonSprite::create("Save", "goldFont.fnt", "GJ_button_05.png", 0.34f)) {
-        if (auto* saveBtn = CCMenuItemExt::createSpriteExtra(saveSpr,
-                [this](CCMenuItemSpriteExtra*) { this->onSave(nullptr); })) {
-            saveBtn->setPosition({panelX + kRightColW * 0.28f, barY});
-            menu->addChild(saveBtn);
-            m_saveBtn = saveBtn;
-        }
-    }
+    float rightEdge = winSize.width - 10.f;
+    auto placeRight = [&rightEdge, barY, menu](CCMenuItemSpriteExtra* btn) {
+        float bw = btn->getScaledContentSize().width;
+        btn->setPosition({rightEdge - bw * 0.5f, barY});
+        menu->addChild(btn);
+        rightEdge -= bw + 8.f;
+    };
+
     if (auto* genSpr = ButtonSprite::create("Generate", "goldFont.fnt", "GJ_button_01.png", 0.34f)) {
         if (auto* genBtn = CCMenuItemExt::createSpriteExtra(genSpr,
                 [this](CCMenuItemSpriteExtra*) { this->onGenerate(nullptr); })) {
-            genBtn->setPosition({panelX + kRightColW * 0.72f, barY});
-            menu->addChild(genBtn);
+            placeRight(genBtn);
             m_genBtn = genBtn;
+        }
+    }
+    if (auto* saveSpr = ButtonSprite::create("Save", "goldFont.fnt", "GJ_button_05.png", 0.34f)) {
+        if (auto* saveBtn = CCMenuItemExt::createSpriteExtra(saveSpr,
+                [this](CCMenuItemSpriteExtra*) { this->onSave(nullptr); })) {
+            placeRight(saveBtn);
+            m_saveBtn = saveBtn;
         }
     }
 }
 
 void ProjectEditorLayer::buildPreviewPanel() {
     auto winSize = CCDirector::get()->getWinSize();
-    const float cx = leftCenterX();
-    // Room under the header for caption + two preview boxes + coverage.
-    const float topY = winSize.height - kHeaderH - 6.f;
-    constexpr float kBox = 78.f;
-    constexpr float kGap = 10.f;
+    const float pb = panelBottomY();
+    const float ph = panelTopY(winSize) - pb;
+    auto* card = makeCard(this, kMargin, pb, kLeftColW, ph);
+    addCardTitle(card, "Preview");
+
+    const float cx = kMargin + kLeftColW * 0.5f;
+    const float contentTop = pb + ph - kCardTitleH - 3.f;
+    constexpr float kBox = 84.f;
+    constexpr float kGap = 8.f;
 
     if (auto* nameLbl = CCLabelBMFont::create("(pack preview)", "chatFont.fnt")) {
         nameLbl->setScale(0.4f);
         nameLbl->setColor({185, 190, 200});
-        nameLbl->limitLabelWidth(kLeftColW - 4.f, 0.4f, 0.18f);
-        nameLbl->setPosition({cx, topY - 4.f});
+        nameLbl->limitLabelWidth(kLeftColW - 10.f, 0.4f, 0.18f);
+        nameLbl->setPosition({cx, contentTop - 7.f});
         this->addChild(nameLbl, 5);
         m_previewNameLbl = nameLbl;
     }
@@ -334,7 +425,7 @@ void ProjectEditorLayer::buildPreviewPanel() {
 
         if (auto* frame = CCScale9Sprite::create("GJ_square01.png")) {
             frame->setContentSize({kBox, kBox});
-            frame->setColor({26, 26, 32});
+            frame->setColor(kInsetFill);
             host->addChildAtPosition(frame, Anchor::Center);
         }
         if (auto* lbl = CCLabelBMFont::create(caption, "bigFont.fnt")) {
@@ -352,16 +443,16 @@ void ProjectEditorLayer::buildPreviewPanel() {
     };
 
     // Original → Result top-to-bottom (before / after comparison).
-    const float origCy = topY - 18.f - kBox * 0.5f;
-    const float resultCy = origCy - kBox - kGap - 6.f;
+    const float origCy = contentTop - 14.f - kBox * 0.5f;
+    const float resultCy = origCy - kBox - kGap;
     m_originalHost = makeBox(origCy, "Original");
     m_resultHost   = makeBox(resultCy, "Result");
 
     if (auto* coverage = CCLabelBMFont::create("Loading...", "chatFont.fnt")) {
         coverage->setScale(0.36f);
         coverage->setColor({185, 190, 200});
-        coverage->limitLabelWidth(kLeftColW - 4.f, 0.36f, 0.16f);
-        coverage->setPosition({cx, resultCy - kBox * 0.5f - 12.f});
+        coverage->limitLabelWidth(kLeftColW - 10.f, 0.36f, 0.16f);
+        coverage->setPosition({cx, resultCy - kBox * 0.5f - 10.f});
         this->addChild(coverage, 5);
         m_coverageLbl = coverage;
     }
@@ -372,15 +463,19 @@ void ProjectEditorLayer::buildBrowserPanel() {
     const float c0 = centerX0();
     const float c1 = centerRightX(winSize.width);
     const float centerW = c1 - c0;
-    const float toolbarY = winSize.height - kHeaderH - 14.f;
-    // Same baseline as status / Save / Generate (one bottom bar).
-    const float pageY = kFooterH * 0.55f;
-    const float gridTop = toolbarY - 16.f;
-    const float gridBottom = pageY + 16.f;
-    const float gridH = std::max(80.f, gridTop - gridBottom);
+    const float pb = panelBottomY();
+    const float ph = panelTopY(winSize) - pb;
+    auto* card = makeCard(this, c0, pb, centerW, ph);
 
-    // Toolbar: search on the left, filter chips fill the rest.
-    constexpr float kSearchW = 108.f;
+    const float toolbarY = pb + ph - 14.f;
+    const float pageY = pb + 12.f;
+    const float gridTop = toolbarY - 15.f;
+    const float gridBottom = pageY + 12.f;
+    const float gridH = std::max(80.f, gridTop - gridBottom);
+    addCardDivider(card, ph - 28.f);
+    addCardDivider(card, 24.f);
+
+    constexpr float kSearchW = 100.f;
     if (auto* search = TextInput::create(kSearchW, "Search...")) {
         search->setMaxCharCount(32);
         search->setScale(0.7f);
@@ -389,12 +484,10 @@ void ProjectEditorLayer::buildBrowserPanel() {
             m_search = toLowerCopy(text);
             applyFilter();
         });
-        search->setPosition({c0 + kSearchW * 0.5f * 0.7f + 4.f, toolbarY});
+        search->setPosition({c0 + kSearchW * 0.5f * 0.7f + 8.f, toolbarY});
         this->addChild(search, 6);
     }
 
-    // Explicit positions (not RowLayout): on a narrow center column the layout
-    // auto-scale + End alignment can stack the three chips on top of each other.
     auto* filterRow = CCMenu::create();
     filterRow->setPosition({0.f, 0.f});
     this->addChild(filterRow, 10);
@@ -415,14 +508,13 @@ void ProjectEditorLayer::buildBrowserPanel() {
         }
         return btn;
     };
-    // Right-align the chip group inside the center column, spaced so they never overlap.
-    const float filterRight = c1 - 6.f;
-    const float chipGap = 42.f;
+    const float filterRight = c1 - 28.f;
+    const float chipGap = 40.f;
     m_filterEditedBtn  = makeFilterBtn("Edit", 2, filterRight - chipGap * 0.f, toolbarY);
     m_filterAllUiBtn   = makeFilterBtn("UI",   1, filterRight - chipGap * 1.f, toolbarY);
     m_filterButtonsBtn = makeFilterBtn("Btns", 0, filterRight - chipGap * 2.f, toolbarY);
 
-    m_gridCols = std::max(2, static_cast<int>(centerW / kCellW));
+    m_gridCols = std::max(2, static_cast<int>((centerW - 10.f) / kCellW));
     m_gridRows = std::max(2, static_cast<int>(gridH / kCellH));
 
     auto* gridHost = CCNode::create();
@@ -439,17 +531,17 @@ void ProjectEditorLayer::buildBrowserPanel() {
 
     const float midX = c0 + centerW * 0.5f;
     if (auto* prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png")) {
-        prevSpr->setScale(0.45f);
+        prevSpr->setScale(0.42f);
         if (auto* prevBtn = CCMenuItemExt::createSpriteExtra(prevSpr,
                 [this](CCMenuItemSpriteExtra*) {
                     if (m_page > 0) { --m_page; rebuildGrid(); }
                 })) {
-            prevBtn->setPosition({c0 + 12.f, pageY});
+            prevBtn->setPosition({c0 + 16.f, pageY});
             menu->addChild(prevBtn);
         }
     }
     if (auto* nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png")) {
-        nextSpr->setScale(0.45f);
+        nextSpr->setScale(0.42f);
         nextSpr->setFlipX(true);
         if (auto* nextBtn = CCMenuItemExt::createSpriteExtra(nextSpr,
                 [this](CCMenuItemSpriteExtra*) {
@@ -458,14 +550,14 @@ void ProjectEditorLayer::buildBrowserPanel() {
                         (static_cast<int>(m_filtered.size()) + perPage - 1) / perPage);
                     if (m_page + 1 < pages) { ++m_page; rebuildGrid(); }
                 })) {
-            nextBtn->setPosition({c1 - 12.f, pageY});
+            nextBtn->setPosition({c1 - 16.f, pageY});
             menu->addChild(nextBtn);
         }
     }
     if (auto* pageLbl = CCLabelBMFont::create("1 / 1", "bigFont.fnt")) {
         pageLbl->setScale(0.3f);
         pageLbl->setAnchorPoint({0.5f, 0.5f});
-        pageLbl->setPosition({midX - 36.f, pageY});
+        pageLbl->setPosition({midX - 34.f, pageY});
         this->addChild(pageLbl, 5);
         m_pageLbl = pageLbl;
     }
@@ -473,7 +565,7 @@ void ProjectEditorLayer::buildBrowserPanel() {
         countLbl->setScale(0.24f);
         countLbl->setColor({170, 170, 180});
         countLbl->setAnchorPoint({0.5f, 0.5f});
-        countLbl->setPosition({midX + 48.f, pageY});
+        countLbl->setPosition({midX + 44.f, pageY});
         this->addChild(countLbl, 5);
         m_countLbl = countLbl;
     }
@@ -483,11 +575,13 @@ void ProjectEditorLayer::buildTabsPanel() {
     auto winSize = CCDirector::get()->getWinSize();
     const float panelX = rightPanelX(winSize.width);
     const float panelW = rightPanelW();
-    // Tabs under the header; panel stops above the shared bottom action bar.
-    const float tabRowY = winSize.height - kHeaderH - 12.f;
-    const float panelBottom = kFooterH + 10.f;
-    const float panelTop = tabRowY - 14.f;
-    const float panelH = std::max(120.f, panelTop - panelBottom);
+    const float pb = panelBottomY();
+    const float ph = panelTopY(winSize) - pb;
+    auto* card = makeCard(this, panelX, pb, panelW, ph);
+
+    const float tabRowY = pb + ph - kTabRowH * 0.5f - 3.f;
+    const float contentH = std::max(120.f, ph - kTabRowH - 8.f);
+    addCardDivider(card, contentH + 3.f);
 
     struct TabDef {
         char const* label;
@@ -501,7 +595,7 @@ void ProjectEditorLayer::buildTabsPanel() {
     };
 
     auto* tabRow = CCMenu::create();
-    tabRow->setContentSize({panelW, 20.f});
+    tabRow->setContentSize({panelW - 10.f, kTabRowH});
     tabRow->setAnchorPoint({0.5f, 0.5f});
     tabRow->setPosition({panelX + panelW * 0.5f, tabRowY});
     tabRow->setLayout(
@@ -523,20 +617,13 @@ void ProjectEditorLayer::buildTabsPanel() {
         }
 
         auto* tab = CCNode::create();
-        tab->setContentSize({panelW, panelH});
+        tab->setContentSize({panelW, contentH});
         tab->setAnchorPoint({0.f, 0.f});
-        tab->setPosition({panelX, panelBottom});
+        tab->setPosition({panelX, pb});
         this->addChild(tab, 5);
         m_tabs[i] = tab;
 
-        if (auto* bg = CCScale9Sprite::create("square02b_001.png")) {
-            bg->setContentSize({panelW, panelH});
-            bg->setColor({0, 0, 0});
-            bg->setOpacity(90);
-            tab->addChildAtPosition(bg, Anchor::Center);
-        }
-
-        (this->*(defs[i].builder))(tab, panelW, panelH);
+        (this->*(defs[i].builder))(tab, panelW, contentH);
     }
     tabRow->updateLayout();
 }
@@ -554,8 +641,6 @@ void ProjectEditorLayer::selectTab(int index) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tab contents
 
 void ProjectEditorLayer::buildPackTab(CCNode* tab, float w, float h) {
     auto* menu = CCMenu::create();
@@ -564,7 +649,6 @@ void ProjectEditorLayer::buildPackTab(CCNode* tab, float w, float h) {
     tab->addChild(menu);
 
     // Compact top-to-bottom stack: title → swatches → brightness → hints → actions.
-    // No orphan controls floating in empty space.
     float y = h - 12.f;
 
     if (auto* caption = CCLabelBMFont::create("Pack colors", "goldFont.fnt")) {
@@ -779,8 +863,6 @@ void ProjectEditorLayer::buildExtraTab(CCNode* tab, float w, float h) {
         std::function<void(ProjectEditorLayer*, bool)> apply;
         bool affectsPreview;
     };
-    // Two-column grid: left = classic PackGen options, right = the
-    // asset-pack precision extras.
     const ToggleDef defs[] = {
         {"Alt glow", m_project.alternativeGlowOverlay,
          [](ProjectEditorLayer* s, bool v) { s->m_project.alternativeGlowOverlay = v; }, true},
@@ -823,7 +905,6 @@ void ProjectEditorLayer::buildExtraTab(CCNode* tab, float w, float h) {
         auto* toggler = CCMenuItemExt::createTogglerWithStandardSprites(0.42f,
             [this, apply, affectsPreview](CCMenuItemToggler* t) {
                 if (!t) return;
-                // isToggled() is the state BEFORE this tap lands.
                 apply(this, !t->isToggled());
                 markEdited(affectsPreview);
             });
@@ -899,7 +980,7 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
         nameLbl->setScale(0.42f);
         nameLbl->setAnchorPoint({0.f, 0.5f});
         nameLbl->limitLabelWidth(w - 46.f, 0.42f, 0.2f);
-        nameLbl->setPosition({8.f, h - 10.f});
+        nameLbl->setPosition({8.f, h - 8.f});
         tab->addChild(nameLbl);
         m_spriteNameLbl = nameLbl;
     }
@@ -907,7 +988,7 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
         if (auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr,
                 [this](CCMenuItemSpriteExtra*) { this->onResetSprite(); })) {
             resetBtn->setAnchorPoint({1.f, 0.5f});
-            resetBtn->setPosition({w - 6.f, h - 12.f});
+            resetBtn->setPosition({w - 6.f, h - 9.f});
             menu->addChild(resetBtn);
         }
     }
@@ -915,7 +996,7 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
     auto* modeRow = CCMenu::create();
     modeRow->setContentSize({w - 16.f, 20.f});
     modeRow->setAnchorPoint({0.5f, 0.5f});
-    modeRow->setPosition({w / 2.f, h - 30.f});
+    modeRow->setPosition({w / 2.f, h - 26.f});
     modeRow->setLayout(
         RowLayout::create()
             ->setGap(5.f)
@@ -936,7 +1017,7 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
                 s.useCustomColors = (mode == 1);
                 storeSetting(s);
                 refreshSpriteTabUi();
-                rebuildGrid();  // badge letters depend on the mode
+                 rebuildGrid();
                 refreshPreviewTint();
             });
         if (btn) modeRow->addChild(btn);
@@ -947,7 +1028,6 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
     m_modeSkipBtn   = makeModeBtn("Skip",   2);
     modeRow->updateLayout();
 
-    // Per-sprite color swatches (only active in Custom mode).
     struct SwatchDef {
         char const* caption;
         std::function<ccColor3B(SpriteSetting const&)> get;
@@ -994,21 +1074,20 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
             });
         if (!btn) continue;
         m_spriteSwatch[i] = swatch;
-        btn->setPosition({x, h - 52.f});
+        btn->setPosition({x, h - 46.f});
         menu->addChild(btn);
         if (auto* cap = CCLabelBMFont::create(swatches[i].caption, "bigFont.fnt")) {
             cap->setScale(0.18f);
             cap->setColor({170, 170, 180});
-            cap->setPosition({x, h - 66.f});
+            cap->setPosition({x, h - 59.f});
             tab->addChild(cap);
         }
     }
 
-    // Image row: Pick / Clear / Fit / Replace-Overlay, evenly spaced.
     auto* imageRow = CCMenu::create();
     imageRow->setContentSize({w - 16.f, 20.f});
     imageRow->setAnchorPoint({0.5f, 0.5f});
-    imageRow->setPosition({w / 2.f, h - 84.f});
+    imageRow->setPosition({w / 2.f, h - 74.f});
     imageRow->setLayout(
         RowLayout::create()
             ->setGap(5.f)
@@ -1067,7 +1146,7 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
     if (auto* stateLbl = CCLabelBMFont::create("no image", "bigFont.fnt")) {
         stateLbl->setScale(0.22f);
         stateLbl->setColor({170, 170, 180});
-        stateLbl->setPosition({w / 2.f, h - 98.f});
+        stateLbl->setPosition({w / 2.f, h - 88.f});
         tab->addChild(stateLbl);
         m_imageStateLbl = stateLbl;
     }
@@ -1076,7 +1155,7 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
     auto* flipRow = CCMenu::create();
     flipRow->setContentSize({w - 16.f, 20.f});
     flipRow->setAnchorPoint({0.5f, 0.5f});
-    flipRow->setPosition({w / 2.f, h - 114.f});
+    flipRow->setPosition({w / 2.f, h - 102.f});
     flipRow->setLayout(
         RowLayout::create()
             ->setGap(10.f)
@@ -1116,8 +1195,7 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
             "Open Fusion Layer", "bigFont.fnt", "GJ_button_01.png", 0.3f)) {
         if (auto* goFusionBtn = CCMenuItemExt::createSpriteExtra(goFusionSpr,
                 [this](CCMenuItemSpriteExtra*) { this->onOpenFusionLayer(); })) {
-            goFusionBtn->setPosition({w / 2.f, h - 132.f});
-            // Sprite tab has its own menu — add to a small local menu.
+            goFusionBtn->setPosition({w / 2.f, h - 118.f});
             auto* fm = CCMenu::create();
             fm->setPosition({0, 0});
             tab->addChild(fm);
@@ -1125,7 +1203,6 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
         }
     }
 
-    // Custom-image transform sliders.
     struct RowDef {
         char const* label;
         float minV, maxV;
@@ -1159,7 +1236,7 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
          }, pct, &m_opacityRow},
     };
 
-    float y = h - 150.f;
+    float y = h - 136.f;
     for (auto const& def : rows) {
         auto set = def.set;
         auto* row = ParamSliderRow::create(def.label, def.minV, def.maxV, 0.f,
@@ -1176,14 +1253,12 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
             tab->addChild(row);
             *def.store = row;
         }
-        y -= 19.f;
+        y -= 17.f;
     }
 
     refreshSpriteTabUi();
 }
 
-// ---------------------------------------------------------------------------
-// Sprite settings plumbing
 
 SpriteSetting ProjectEditorLayer::currentSetting() const {
     SpriteSetting s;
@@ -1315,7 +1390,6 @@ void ProjectEditorLayer::onPickImage() {
                         NotificationIcon::Error, 3.0f)->show();
                     return;
                 }
-                // Selection may have moved while the dialog was open.
                 if (!self->m_hasSelection ||
                     self->m_selected.frameName != frameName) return;
                 self->m_customImage = img;
@@ -1347,8 +1421,6 @@ void ProjectEditorLayer::onClearImage() {
     refreshPreviewTint();
 }
 
-// ---------------------------------------------------------------------------
-// Fusion layer (own tab)
 
 FusionApplyOptions ProjectEditorLayer::makeFusionOptions(SpriteSetting const& s) const {
     FusionApplyOptions opts;
@@ -1373,8 +1445,6 @@ void ProjectEditorLayer::unloadFusion() {
 }
 
 void ProjectEditorLayer::loadFusionForSelection() {
-    // Load fusion data for pack-editor previews only.
-    // Full editing is FusionEditorLayer.
     unloadFusion();
     if (!m_hasSelection) return;
     auto s = currentSetting();
@@ -1420,7 +1490,6 @@ void ProjectEditorLayer::loadFusionForSelection() {
     });
 }
 
-// (mapTouch / paint / fusion UI live in FusionEditorLayer)
 
 
 void ProjectEditorLayer::onResetSprite() {
@@ -1446,8 +1515,6 @@ void ProjectEditorLayer::onResetSprite() {
     refreshPreviewTint();
 }
 
-// ---------------------------------------------------------------------------
-// Browser
 
 void ProjectEditorLayer::buildEntries() {
     m_all.clear();
@@ -1537,7 +1604,6 @@ void ProjectEditorLayer::rebuildGrid() {
         m_countLbl->setString(
             (std::to_string(total) + " sprites, " +
              std::to_string(edited) + " edited").c_str());
-        // Keep clear of the page label on narrow windows.
         auto winSize = CCDirector::get()->getWinSize();
         const float centerW = centerRightX(winSize.width) - centerX0();
         m_countLbl->limitLabelWidth(
@@ -1731,7 +1797,6 @@ void ProjectEditorLayer::requestThumbnails(std::vector<Entry> entries, int gener
                 }
             }
 
-            // Thumbnails use first fusion frame only (cheap static preview).
             if (!setting.skip && setting.hasFusion) {
                 auto maskRes = FusionStore::loadForSlot(slotId, entry.frameName);
                 if (maskRes) {
@@ -1809,7 +1874,7 @@ void ProjectEditorLayer::selectEntry(Entry const& entry) {
     selectTab(3);
     if (m_previewNameLbl) {
         m_previewNameLbl->setString(entry.frameName.c_str());
-        m_previewNameLbl->limitLabelWidth(108.f, 0.42f, 0.2f);
+        m_previewNameLbl->limitLabelWidth(kLeftColW - 10.f, 0.42f, 0.2f);
     }
     if (currentSetting().hasFusion) {
         loadFusionForSelection();
@@ -1844,8 +1909,6 @@ void ProjectEditorLayer::highlightSelectedCell() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Preview
 
 void ProjectEditorLayer::setOriginalSprite(CCSprite* spr) {
     if (!m_originalHost || !spr) return;
@@ -1870,8 +1933,6 @@ void ProjectEditorLayer::setResultSprite(CCSprite* spr) {
 }
 
 void ProjectEditorLayer::startSelectionPixelLoad() {
-    // Resolve the preview target: the selected sprite, else the pack's
-    // representative UI frame.
     Entry target = m_selected;
     if (!m_hasSelection) {
         if (!ensureRepresentativeFrame(m_project)) {
@@ -2068,8 +2129,6 @@ void ProjectEditorLayer::renderPreviewAfterDelay(float) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// Actions
 
 SpritePreviewOptions ProjectEditorLayer::makePreviewOptions() const {
     SpritePreviewOptions options;
@@ -2164,7 +2223,6 @@ void ProjectEditorLayer::setBusy(bool busy) {
 }
 
 void ProjectEditorLayer::onGenerate(CCObject*) {
-    // Reentrancy guard: setBusy disables the button but a fast tap can slip in.
     if (m_generating->load(std::memory_order_acquire)) {
         return;
     }
@@ -2199,11 +2257,7 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
             return;
         }
 
-        // CPU-bound work runs off the main thread: SheetTinter / RectPacker /
-        // PNG encode are pure RAM (no GL/cocos2d). Without this, multi-sheet
-        // packs hang the main thread and Windows kills the process.
-        // Progress matters here: the first precision export downloads the
-        // PackGen asset pack (~200 small files) and would look frozen.
+         // Keep packing and encoding off the UI thread; downloads can be large.
         auto progressCb = [weakSelf](int idx, int total, std::string const& name) {
             if (paimon::isRuntimeShuttingDown()) return;
             std::string label = name.empty()
@@ -2234,16 +2288,12 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
         auto resultPtr = std::make_shared<geode::Result<PackExportResult>>(std::move(result));
 
         Loader::get()->queueInMainThread([weakSelf, generating, projectId, resultPtr]() mutable {
-            // Clear busy *before* touching the layer so the flag reflects
-            // reality even if the layer is already gone.
             generating->store(false, std::memory_order_release);
 
             if (paimon::isRuntimeShuttingDown()) return;
 
             auto self = weakSelf.lock();
             if (!self || !self->getParent()) {
-                // Layer popped mid-generation: zip is written, but we can't
-                // refresh the UI — persist the "built" state via SlotStore.
                 if (resultPtr && *resultPtr) {
                     auto loaded = SlotStore::get().loadSlot(projectId);
                     if (loaded) {
@@ -2279,7 +2329,6 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
                     ? fmt::format(" (+{} anim GIF)", exportRes.animatedFusionCount)
                     : ""));
             if (!exportRes.precisionNote.empty()) {
-                // Requested precision but the asset pack was unreachable.
                 Notification::create(
                     "Pack generated with auto-detection (PackGen assets offline).",
                     NotificationIcon::Warning, 4.0f)->show();
@@ -2297,4 +2346,4 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
     });
 }
 
-}  // namespace paimon::texture_studio
+ }

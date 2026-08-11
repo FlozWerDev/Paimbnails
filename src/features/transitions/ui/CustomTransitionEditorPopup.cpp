@@ -13,7 +13,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Static helpers
 
 static CCMenuItemSpriteExtra* makeArrow(bool left, CCObject* t, SEL_MenuHandler s) {
     auto spr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
@@ -28,7 +27,6 @@ static CCMenuItemSpriteExtra* makeSmallBtn(const char* text, CCObject* t, SEL_Me
     return CCMenuItemSpriteExtra::create(spr, t, s);
 }
 
-// allActions — all available command actions
 
 std::vector<CommandAction> const& CustomTransitionEditorPopup::allActions() {
     static const std::vector<CommandAction> actions = {
@@ -71,7 +69,6 @@ std::string CustomTransitionEditorPopup::actionDisplayName(CommandAction a) {
     return "?";
 }
 
-// Create / Setup
 
 CustomTransitionEditorPopup* CustomTransitionEditorPopup::create(TransitionConfig* config, bool isGlobal) {
     auto ret = new CustomTransitionEditorPopup();
@@ -95,7 +92,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     auto ws = m_mainLayer->getContentSize();
     float cx = ws.width / 2.f;
 
-    // LEFT SIDE: Command list with scrollable area
     float listW = 180.f;
     float listH = ws.height - 80.f;
     float listX = 15.f;
@@ -106,7 +102,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     listTitle->setPosition({listX + listW / 2, ws.height - 40.f});
     m_mainLayer->addChild(listTitle);
 
-    // Dark panel behind list
     auto listPanel = paimon::SpriteHelper::createDarkPanel(listW, listH, 80);
     listPanel->setPosition({listX, listY});
     m_mainLayer->addChild(listPanel);
@@ -121,7 +116,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     m_commandListMenu->setContentSize(m_scrollSize);
     m_commandScroll->m_contentLayer->addChild(m_commandListMenu);
 
-    // Buttons below list: Add, Remove, Up, Down, Duplicate
     float btnY = 18.f;
     float btnBaseX = listX + 10.f;
 
@@ -153,7 +147,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     nextCmdBtn->setPosition({btnBaseX + 175, btnY});
     m_buttonMenu->addChild(nextCmdBtn);
 
-    // RIGHT SIDE: Editor panel
     float editX = listX + listW + 10.f;
     float editW = ws.width - editX - 10.f;
     float editH = listH;
@@ -176,7 +169,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     float ey = editH - 10.f;
     float ecx = editW / 2.f;
 
-    // Action selector
     auto actLbl = CCLabelBMFont::create("Action:", "bigFont.fnt");
     actLbl->setScale(0.25f);
     actLbl->setAnchorPoint({1.f, 0.5f});
@@ -196,7 +188,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     actRight->setPosition({editX + ecx + 70, editY + ey});
     m_buttonMenu->addChild(actRight);
 
-    // Target selector
     ey -= 22;
     auto tgtLbl = CCLabelBMFont::create("Target:", "bigFont.fnt");
     tgtLbl->setScale(0.25f);
@@ -214,7 +205,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     tgtBtn->setPosition({editX + ecx + 70, editY + ey});
     m_buttonMenu->addChild(tgtBtn);
 
-    // Duration
     ey -= 22;
     auto durLbl = CCLabelBMFont::create("Duration:", "bigFont.fnt");
     durLbl->setScale(0.25f);
@@ -235,7 +225,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     durUp->setPosition({editX + ecx + 70, editY + ey});
     m_buttonMenu->addChild(durUp);
 
-    // Delay
     ey -= 22;
     auto delayLbl = CCLabelBMFont::create("Delay:", "bigFont.fnt");
     delayLbl->setScale(0.25f);
@@ -256,7 +245,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     delayUp->setPosition({editX + ecx + 70, editY + ey});
     m_buttonMenu->addChild(delayUp);
 
-    // From value (opacity/scale/rotation depending on action)
     ey -= 22;
     auto fromLbl = CCLabelBMFont::create("From:", "bigFont.fnt");
     fromLbl->setScale(0.25f);
@@ -277,7 +265,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     fromUp->setPosition({editX + ecx + 70, editY + ey});
     m_buttonMenu->addChild(fromUp);
 
-    // To value
     ey -= 22;
     auto toLbl = CCLabelBMFont::create("To:", "bigFont.fnt");
     toLbl->setScale(0.25f);
@@ -298,7 +285,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     toUp->setPosition({editX + ecx + 70, editY + ey});
     m_buttonMenu->addChild(toUp);
 
-    // Extra info label (for move: shows X/Y, for color: shows RGB, etc.)
     ey -= 22;
     m_extraLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_extraLabel->setScale(0.4f);
@@ -306,7 +292,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     m_extraLabel->setPosition({ecx, ey});
     m_editorPanel->addChild(m_extraLabel);
 
-    // Move X/Y controls
     ey -= 18;
     auto fxLbl = CCLabelBMFont::create("FromX:", "bigFont.fnt");
     fxLbl->setScale(0.2f);
@@ -389,7 +374,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     tyUp->setID("paimon-trans-to-y-up"_spr);
     m_buttonMenu->addChild(tyUp);
 
-    // Intensity (for Shake)
     ey -= 18;
     auto intLbl = CCLabelBMFont::create("Intensity:", "bigFont.fnt");
     intLbl->setScale(0.2f);
@@ -411,7 +395,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     intUp->setID("paimon-trans-intensity-up"_spr);
     m_buttonMenu->addChild(intUp);
 
-    // MINI PREVIEW (Scene A -> B)
     float prevW = editW - 20;
     float prevH = 40.f;
     float prevY = editY + 5.f;
@@ -421,7 +404,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     m_previewArea->setPosition({editX + 10, prevY});
     m_mainLayer->addChild(m_previewArea, 6);
 
-    // Scene A mini box
     m_previewFrom = CCLayerColor::create({60, 60, 180, 255}, prevW / 2 - 5, prevH);
     m_previewFrom->setPosition({0, 0});
     m_previewArea->addChild(m_previewFrom);
@@ -431,13 +413,11 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     fromLblPrev->setPosition({(prevW / 2 - 5) / 2, prevH / 2});
     m_previewFrom->addChild(fromLblPrev);
 
-    // Arrow
     auto arrow = CCLabelBMFont::create("->", "bigFont.fnt");
     arrow->setScale(0.3f);
     arrow->setPosition({prevW / 2, prevH / 2});
     m_previewArea->addChild(arrow);
 
-    // Scene B mini box
     m_previewTo = CCLayerColor::create({180, 60, 60, 255}, prevW / 2 - 5, prevH);
     m_previewTo->setPosition({prevW / 2 + 5, 0});
     m_previewArea->addChild(m_previewTo);
@@ -447,7 +427,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     toLblPrev->setPosition({(prevW / 2 - 5) / 2, prevH / 2});
     m_previewTo->addChild(toLblPrev);
 
-    // BOTTOM BUTTONS: Save, Preview, Load Preset
     float bbY = 18.f;
     float bbX = editX + editW / 2;
 
@@ -473,7 +452,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     m_statusLabel->setPosition({cx, 8});
     m_mainLayer->addChild(m_statusLabel);
 
-    // If no commands, add default ones
     if (m_commands.empty()) {
         m_commands.push_back({CommandAction::FadeOut, "from", 0.25f, 0,0,0,0, 255.f, 0.f});
         m_commands.push_back({CommandAction::FadeIn, "to", 0.25f, 0,0,0,0, 0.f, 255.f});
@@ -486,7 +464,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     return true;
 }
 
-// Command list
 
 void CustomTransitionEditorPopup::rebuildCommandList() {
     m_commandListMenu->removeAllChildren();
@@ -503,7 +480,6 @@ void CustomTransitionEditorPopup::rebuildCommandList() {
 
         float y = contentH - (i + 0.5f) * cellH;
 
-        // Cell background
         auto bg = paimon::SpriteHelper::createColorPanel(
             m_scrollSize.width - 6.f, cellH - 2.f,
             i == m_selectedIdx ? ccColor3B{80, 120, 200} : ccColor3B{40, 40, 40},
@@ -511,7 +487,6 @@ void CustomTransitionEditorPopup::rebuildCommandList() {
         bg->setPosition({(m_scrollSize.width - 6.f) / 2.f + 3.f, y - (cellH - 2.f) / 2.f});
         m_commandListMenu->addChild(bg);
 
-        // Command index + name
         char buf[64];
         snprintf(buf, sizeof(buf), "%d. %s [%s] %.2fs",
             i + 1, actionDisplayName(cmd.action).c_str(),
@@ -529,7 +504,6 @@ void CustomTransitionEditorPopup::rebuildCommandList() {
     m_commandScroll->scrollToTop();
 }
 
-// Selection
 
 void CustomTransitionEditorPopup::selectCommand(int idx) {
     if (idx < 0 || idx >= static_cast<int>(m_commands.size())) {
@@ -548,7 +522,6 @@ TransitionCommand& CustomTransitionEditorPopup::selectedCmd() {
     return dummy;
 }
 
-// Editor panel display
 
 void CustomTransitionEditorPopup::updateEditorPanel() {
     if (m_selectedIdx < 0 || m_selectedIdx >= static_cast<int>(m_commands.size())) {
@@ -574,7 +547,6 @@ void CustomTransitionEditorPopup::updateEditorPanel() {
     char delBuf[16]; snprintf(delBuf, sizeof(delBuf), "%.2fs", cmd.delay);
     m_delayLabel->setString(delBuf);
 
-    // From/To display depends on action type
     bool showMoveXY = false;
     bool showIntensity = false;
 
@@ -654,7 +626,6 @@ void CustomTransitionEditorPopup::updateEditorPanel() {
         }
     }
 
-    // Show/hide move XY controls
     for (int tag = 100; tag <= 115; tag++) {
         auto* n = m_editorPanel->getChildByTag(tag);
         if (n) n->setVisible(showMoveXY);
@@ -662,7 +633,6 @@ void CustomTransitionEditorPopup::updateEditorPanel() {
         if (b) b->setVisible(showMoveXY);
     }
 
-    // Show/hide intensity controls
     for (int tag = 120; tag <= 122; tag++) {
         auto* n = m_editorPanel->getChildByTag(tag);
         if (n) n->setVisible(showIntensity);
@@ -677,7 +647,6 @@ void CustomTransitionEditorPopup::refreshDisplay() {
     updatePreviewArea();
 }
 
-// Command list callbacks
 
 void CustomTransitionEditorPopup::onAddCommand(CCObject*) {
     TransitionCommand cmd;
@@ -743,7 +712,6 @@ void CustomTransitionEditorPopup::onNextCommand(CCObject*) {
         selectCommand(0);
 }
 
-// Editor callbacks
 
 void CustomTransitionEditorPopup::onActionPrev(CCObject*) {
     if (m_selectedIdx < 0) return;
@@ -756,7 +724,6 @@ void CustomTransitionEditorPopup::onActionPrev(CCObject*) {
     idx = (idx - 1 + static_cast<int>(actions.size())) % static_cast<int>(actions.size());
     cmd.action = actions[idx];
 
-    // Set reasonable defaults when switching action
     switch (cmd.action) {
         case CommandAction::FadeOut: cmd.fromVal = 255; cmd.toVal = 0; break;
         case CommandAction::FadeIn:  cmd.fromVal = 0; cmd.toVal = 255; break;
@@ -854,7 +821,6 @@ void CustomTransitionEditorPopup::onToValUp(CCObject*) {
     updateEditorPanel();
 }
 
-// Move X/Y callbacks
 void CustomTransitionEditorPopup::onFromXDown(CCObject*) {
     if (m_selectedIdx < 0) return; selectedCmd().fromX -= 20.f; updateEditorPanel();
 }
@@ -891,7 +857,6 @@ void CustomTransitionEditorPopup::onIntensityUp(CCObject*) {
     updateEditorPanel();
 }
 
-// Image selection
 
 void CustomTransitionEditorPopup::onSelectImage(CCObject*) {
     if (m_selectedIdx < 0) {
@@ -905,7 +870,6 @@ void CustomTransitionEditorPopup::onSelectImage(CCObject*) {
         return;
     }
 
-    // Open file dialog for image selection
     WeakRef<CustomTransitionEditorPopup> self = this;
     pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> result) {
         auto pathOpt = std::move(result).unwrapOr(std::nullopt);
@@ -926,7 +890,6 @@ void CustomTransitionEditorPopup::onSelectImage(CCObject*) {
     });
 }
 
-// Preview
 
 void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     if (m_commands.empty()) {
@@ -937,7 +900,6 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     auto director = CCDirector::get();
     auto winSize = director->getWinSize();
 
-    // Build temp destination scene
     auto destScene = CCScene::create();
     auto bg = CCLayerGradient::create(
         {40, 160, 80, 255}, {80, 40, 160, 255}, {0.5f, 1.0f});
@@ -953,15 +915,13 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     sub->setScale(0.5f);
     destScene->addChild(sub);
 
-    // Use a sanitized copy for preview so invalid edits never crash the editor.
+// Preview a sanitized copy so invalid edits cannot crash the editor.
     auto previewCommands = m_commands;
     validateAndSanitizeForSave(previewCommands);
 
-    // Calculate total duration from commands
     float totalDur = 0.f;
     for (auto const& cmd : previewCommands) totalDur += cmd.duration + cmd.delay;
 
-    // Add auto-return
     class ReturnNode : public CCNode {
     public:
         static ReturnNode* create(float d) {
@@ -986,7 +946,6 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     auto rn = ReturnNode::create(totalDur + 1.5f);
     if (rn) destScene->addChild(rn);
 
-    // Create custom transition from current commands
     auto fromScene = director->getRunningScene();
     CustomTransitionScene* transScene = nullptr;
     if (fromScene && destScene && !previewCommands.empty()) {
@@ -996,7 +955,7 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
         log::warn("[CustomTransitionEditorPopup] Preview failed: create returned nullptr");
     }
 
-    // Keep the popup alive locally so onClose can't destroy it mid-function.
+// Keep the popup alive while onClose callbacks run.
     [[maybe_unused]] Ref<CustomTransitionEditorPopup> safeSelf = this;
     this->onClose(nullptr);
 
@@ -1006,7 +965,6 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     TransitionManager::get().setEnabled(wasEnabled);
 }
 
-// Save
 
 void CustomTransitionEditorPopup::onSave(CCObject*) {
     if (!m_config) return;
@@ -1035,12 +993,11 @@ void CustomTransitionEditorPopup::onSave(CCObject*) {
         PaimonNotify::create("Custom transition saved!", NotificationIcon::Success)->show();
     }
 
-    // Mirror sanitized values in editor state so UI matches persisted config.
+// Keep the editor state in sync with the sanitized persisted values.
     m_commands = safeCommands;
     refreshDisplay();
 }
 
-// Presets
 
 void CustomTransitionEditorPopup::onLoadPreset(CCObject*) {
     PopupManager::get().quickPopup(
@@ -1067,7 +1024,6 @@ void CustomTransitionEditorPopup::onLoadPreset(CCObject*) {
 }
 
 void CustomTransitionEditorPopup::showPresetPicker() {
-    // btn2 loads that preset id; btn1 advances to the next step.
     auto self = WeakRef<CustomTransitionEditorPopup>(this);
 
     PopupManager::get().quickPopup(
@@ -1181,20 +1137,20 @@ void CustomTransitionEditorPopup::loadPreset(int presetId) {
     std::string name;
 
     switch (presetId) {
-        case 1: // Simple Fade
+        case 1:
             name = "Simple Fade";
             m_commands.push_back({CommandAction::FadeOut, "from", 0.3f, 0,0,0,0, 255.f, 0.f});
             m_commands.push_back({CommandAction::FadeIn, "to", 0.3f, 0,0,0,0, 0.f, 255.f});
             break;
 
-        case 2: // Slide Left
+        case 2:
             name = "Slide Left";
             m_commands.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
             m_commands.push_back({CommandAction::Move, "from", 0.5f, cx, cy, -w/2, cy});
             m_commands.push_back({CommandAction::Move, "to", 0.5f, w + w/2, cy, cx, cy});
             break;
 
-        case 3: { // Zoom Out + Fade In
+        case 3: {
             name = "Zoom Out + Fade In";
             m_commands.push_back({CommandAction::Scale, "from", 0.4f, 0,0,0,0, 1.f, 0.3f});
             m_commands.push_back({CommandAction::FadeOut, "from", 0.3f, 0,0,0,0, 255.f, 0.f});
@@ -1202,7 +1158,7 @@ void CustomTransitionEditorPopup::loadPreset(int presetId) {
             break;
         }
 
-        case 4: { // Spin Away
+        case 4: {
             name = "Spin Away";
             m_commands.push_back({CommandAction::Rotate, "from", 0.6f, 0,0,0,0, 0.f, 360.f});
             m_commands.push_back({CommandAction::Scale, "from", 0.6f, 0,0,0,0, 1.f, 0.01f});
@@ -1211,7 +1167,7 @@ void CustomTransitionEditorPopup::loadPreset(int presetId) {
             break;
         }
 
-        case 5: { // Shake + Fade
+        case 5: {
             name = "Shake + Fade";
             TransitionCommand shakeCmd;
             shakeCmd.action = CommandAction::Shake;
@@ -1224,7 +1180,7 @@ void CustomTransitionEditorPopup::loadPreset(int presetId) {
             break;
         }
 
-        case 6: { // Dramatic Cinematic
+        case 6: {
             name = "Dramatic Cinematic";
             m_commands.push_back({CommandAction::EaseOut, "from", 0.5f, 0,0,0,0, 255.f, 0.f});
             m_commands.push_back({CommandAction::Wait, "from", 0.3f});
@@ -1232,14 +1188,14 @@ void CustomTransitionEditorPopup::loadPreset(int presetId) {
             break;
         }
 
-        case 7: { // Bounce Reveal
+        case 7: {
             name = "Bounce Reveal";
             m_commands.push_back({CommandAction::FadeOut, "from", 0.25f, 0,0,0,0, 255.f, 0.f});
             m_commands.push_back({CommandAction::Bounce, "to", 0.5f, 0,0,0,0, 0.f, 255.f});
             break;
         }
 
-        case 8: { // Glitch Out
+        case 8: {
             name = "Glitch Out";
             TransitionCommand shake1;
             shake1.action = CommandAction::Shake;
@@ -1259,7 +1215,7 @@ void CustomTransitionEditorPopup::loadPreset(int presetId) {
             break;
         }
 
-        case 9: { // Scale Swap
+        case 9: {
             name = "Scale Swap";
             m_commands.push_back({CommandAction::Scale, "from", 0.35f, 0,0,0,0, 1.f, 0.5f});
             m_commands.push_back({CommandAction::FadeOut, "from", 0.2f, 0,0,0,0, 255.f, 0.f});
@@ -1269,7 +1225,7 @@ void CustomTransitionEditorPopup::loadPreset(int presetId) {
             break;
         }
 
-        case 10: { // Slow Dissolve
+        case 10: {
             name = "Slow Dissolve";
             m_commands.push_back({CommandAction::EaseOut, "from", 0.8f, 0,0,0,0, 255.f, 0.f});
             m_commands.push_back({CommandAction::EaseIn, "to", 0.8f, 0,0,0,0, 0.f, 255.f});
@@ -1291,10 +1247,8 @@ void CustomTransitionEditorPopup::loadPreset(int presetId) {
 }
 
 void CustomTransitionEditorPopup::updatePreviewArea() {
-    // Mini preview shows timeline state
     if (m_commands.empty()) return;
 
-    // Visualize by adjusting box opacities based on command sequence
     bool hasFadeOut = false, hasFadeIn = false;
     for (auto const& cmd : m_commands) {
         if (cmd.action == CommandAction::FadeOut && cmd.target == "from") hasFadeOut = true;

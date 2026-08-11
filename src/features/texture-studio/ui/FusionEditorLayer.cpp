@@ -14,6 +14,7 @@
 #include <Geode/Geode.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <system_error>
@@ -24,12 +25,19 @@ namespace paimon::texture_studio {
 
 namespace {
 
-constexpr float kMargin = 8.f;
-constexpr float kHeaderH = 32.f;
-constexpr float kFooterH = 26.f;
-constexpr float kToolsW = 218.f;
-constexpr float kStripH = 52.f;
-constexpr float kColGap = 10.f;
+constexpr float kMargin   = 6.f;
+constexpr float kHeaderH  = 30.f;
+constexpr float kBrowserW = 128.f;
+constexpr float kToolsW   = 204.f;
+constexpr float kColGap   = 8.f;
+constexpr float kCellW    = 62.f;
+constexpr float kCellH    = 50.f;
+
+constexpr int kTagCellBg    = 99;
+constexpr int kTagCellThumb = 100;
+constexpr int kTagCellLoad  = 102;
+constexpr int kTagCellBadge = 103;
+constexpr int kTagTexThumb  = 7;
 
 char const* blendLabel(FusionBlendMode m) {
     switch (m) {
@@ -57,7 +65,40 @@ void fitInto(CCSprite* spr, float box) {
     spr->setScale(std::min({maxSide / sz.width, maxSide / sz.height, 4.f}));
 }
 
-}  // namespace
+std::string toLowerCopy(std::string const& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        out.push_back(static_cast<char>(
+            std::tolower(static_cast<unsigned char>(c))));
+    }
+    return out;
+}
+
+std::string shortFrameName(std::string name) {
+    if (auto p = name.rfind("_001.png"); p != std::string::npos) name.resize(p);
+    else if (auto p2 = name.rfind(".png"); p2 != std::string::npos) name.resize(p2);
+    return name;
+}
+
+// Show the painted region before a texture is selected or after Clear.
+void highlightMask(ImageBuffer& img, MaskBuffer const& mask) {
+    if (img.empty() || mask.empty()) return;
+    if (img.width() != mask.width || img.height() != mask.height) return;
+    auto* d = img.data();
+    auto const* m = mask.data.data();
+    std::size_t n = img.pixelCount();
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!m[i]) continue;
+        auto* p = d + i * ImageBuffer::kBytesPerPixel;
+        if (p[3] == 0) continue;
+        p[0] = static_cast<std::uint8_t>((p[0] * 45 + 100 * 55) / 100);
+        p[1] = static_cast<std::uint8_t>((p[1] * 45 + 235 * 55) / 100);
+        p[2] = static_cast<std::uint8_t>((p[2] * 45 + 140 * 55) / 100);
+    }
+}
+
+}
 
 FusionEditorLayer* FusionEditorLayer::create(std::string slotId, std::string frameName) {
     auto* ret = new FusionEditorLayer();
@@ -87,6 +128,7 @@ FusionEditorLayer::~FusionEditorLayer() {
     m_closed->store(true, std::memory_order_release);
     m_loadGen->fetch_add(1, std::memory_order_acq_rel);
     m_renderGen->fetch_add(1, std::memory_order_acq_rel);
+    m_thumbGen->fetch_add(1, std::memory_order_acq_rel);
     stopAnim();
     m_asset.reset();
     m_mask.reset();
@@ -111,10 +153,11 @@ bool FusionEditorLayer::init(std::string slotId, std::string frameName) {
 
     buildBackground();
     buildHeader();
+    buildBrowser();
     buildPreviews();
     buildTools();
-    buildSpriteStrip();
     buildEntries();
+    applyBrowserFilter();
 
     if (!frameName.empty()) {
         selectFrame(frameName);
@@ -156,8 +199,6 @@ void FusionEditorLayer::registerWithTouchDispatcher() {
         this, 0, true);
 }
 
-// ---------------------------------------------------------------------------
-// Layout
 
 void FusionEditorLayer::buildBackground() {
     auto win = CCDirector::get()->getWinSize();
@@ -180,7 +221,7 @@ void FusionEditorLayer::buildHeader() {
         back->setScale(0.7f);
         if (auto* btn = CCMenuItemExt::createSpriteExtra(back,
                 [this](CCMenuItemSpriteExtra*) { this->onBack(nullptr); })) {
-            btn->setPosition({22.f, win.height - kHeaderH * 0.5f});
+            btn->setPosition({20.f, win.height - kHeaderH * 0.5f});
             menu->addChild(btn);
         }
     }
@@ -188,7 +229,6 @@ void FusionEditorLayer::buildHeader() {
         title->setScale(0.48f);
         title->setPosition({win.width * 0.5f, win.height - kHeaderH * 0.5f + 2.f});
         this->addChild(title, 10);
-        m_titleLbl = title;
     }
     if (auto* saveSpr = ButtonSprite::create("Save", "goldFont.fnt", "GJ_button_05.png", 0.32f)) {
         if (auto* btn = CCMenuItemExt::createSpriteExtra(saveSpr,
@@ -202,7 +242,7 @@ void FusionEditorLayer::buildHeader() {
                         Notification::create("Fusion saved.", NotificationIcon::Success, 1.2f)->show();
                     }
                 })) {
-            btn->setPosition({win.width - 40.f, win.height - kHeaderH * 0.5f});
+            btn->setPosition({win.width - 38.f, win.height - kHeaderH * 0.5f});
             menu->addChild(btn);
         }
     }
@@ -210,22 +250,98 @@ void FusionEditorLayer::buildHeader() {
         st->setScale(0.38f);
         st->setColor({180, 185, 195});
         st->setAnchorPoint({0.f, 0.5f});
-        st->setPosition({48.f, win.height - kHeaderH * 0.5f - 1.f});
+        st->setPosition({40.f, win.height - kHeaderH * 0.5f - 1.f});
         this->addChild(st, 10);
         m_statusLbl = st;
     }
 }
 
+void FusionEditorLayer::buildBrowser() {
+    auto win = CCDirector::get()->getWinSize();
+    const float colX = kMargin;
+    const float searchY = win.height - kHeaderH - 12.f;
+    const float pageY = kMargin + 9.f;
+    const float gridTop = searchY - 13.f;
+    const float gridBottom = pageY + 12.f;
+    const float gridH = std::max(kCellH * 2.f, gridTop - gridBottom);
+
+    if (auto* panelBg = CCScale9Sprite::create("square02b_001.png")) {
+        panelBg->setContentSize({kBrowserW, win.height - kHeaderH - kMargin * 2.f + 4.f});
+        panelBg->setColor({0, 0, 0});
+        panelBg->setOpacity(80);
+        panelBg->setAnchorPoint({0.f, 0.f});
+        panelBg->setPosition({colX - 2.f, kMargin - 2.f});
+        this->addChild(panelBg, 3);
+    }
+
+    if (auto* search = TextInput::create(150.f, "Search...")) {
+        search->setMaxCharCount(32);
+        search->setScale(0.62f);
+        search->setID("fusion-search"_spr);
+        search->setCallback([this](std::string const& text) {
+            m_search = toLowerCopy(text);
+            applyBrowserFilter();
+        });
+        search->setPosition({colX + kBrowserW * 0.5f, searchY});
+        this->addChild(search, 6);
+    }
+
+    m_browserCols = 2;
+    m_browserRows = std::max(2, static_cast<int>(gridH / kCellH));
+
+    auto* host = CCNode::create();
+    host->setContentSize({m_browserCols * kCellW, m_browserRows * kCellH});
+    host->setAnchorPoint({0.5f, 1.f});
+    host->setPosition({colX + kBrowserW * 0.5f, gridTop});
+    this->addChild(host, 5);
+    m_browserHost = host;
+
+    auto* menu = CCMenu::create();
+    menu->setPosition({0, 0});
+    this->addChild(menu, 10);
+    if (auto* prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png")) {
+        prevSpr->setScale(0.42f);
+        if (auto* btn = CCMenuItemExt::createSpriteExtra(prevSpr,
+                [this](CCMenuItemSpriteExtra*) {
+                    if (m_page > 0) { --m_page; rebuildBrowser(); }
+                })) {
+            btn->setPosition({colX + 13.f, pageY});
+            menu->addChild(btn);
+        }
+    }
+    if (auto* nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png")) {
+        nextSpr->setScale(0.42f);
+        nextSpr->setFlipX(true);
+        if (auto* btn = CCMenuItemExt::createSpriteExtra(nextSpr,
+                [this](CCMenuItemSpriteExtra*) {
+                    int perPage = m_browserCols * m_browserRows;
+                    int pages = std::max(1,
+                        (static_cast<int>(m_filtered.size()) + perPage - 1) / perPage);
+                    if (m_page + 1 < pages) { ++m_page; rebuildBrowser(); }
+                })) {
+            btn->setPosition({colX + kBrowserW - 13.f, pageY});
+            menu->addChild(btn);
+        }
+    }
+    if (auto* pageLbl = CCLabelBMFont::create("1 / 1", "bigFont.fnt")) {
+        pageLbl->setScale(0.28f);
+        pageLbl->setPosition({colX + kBrowserW * 0.5f, pageY});
+        this->addChild(pageLbl, 5);
+        m_pageLbl = pageLbl;
+    }
+}
+
 void FusionEditorLayer::buildPreviews() {
     auto win = CCDirector::get()->getWinSize();
-    const float toolsX = win.width - kMargin - kToolsW;
-    const float areaW = toolsX - kMargin - kColGap - kMargin;
-    // two big boxes side by side
-    const float boxW = (areaW - kColGap) * 0.5f;
-    const float boxH = win.height - kHeaderH - kFooterH - kStripH - 28.f;
-    const float boxSize = std::min(boxW, boxH);
-    const float cy = kFooterH + kStripH + 12.f + boxSize * 0.5f;
-    const float leftCx = kMargin + boxSize * 0.5f;
+    const float cLeft = kMargin + kBrowserW + kColGap;
+    const float cRight = win.width - kMargin - kToolsW - kColGap;
+    const float areaW = std::max(80.f, cRight - cLeft);
+    const float top = win.height - kHeaderH - 8.f;
+    const float bottom = 22.f;
+    const float boxSize = std::min((areaW - kColGap) * 0.5f, top - bottom - 14.f);
+    const float cy = bottom + 14.f + (top - bottom - 14.f) * 0.5f;
+    const float pairW = boxSize * 2.f + kColGap;
+    const float leftCx = cLeft + (areaW - pairW) * 0.5f + boxSize * 0.5f;
     const float rightCx = leftCx + boxSize + kColGap;
 
     auto makeBox = [this, boxSize](float cx, float cy, char const* cap) -> CCNode* {
@@ -240,9 +356,10 @@ void FusionEditorLayer::buildPreviews() {
             host->addChildAtPosition(frame, Anchor::Center);
         }
         if (auto* lbl = CCLabelBMFont::create(cap, "bigFont.fnt")) {
-            lbl->setScale(0.32f);
+            lbl->setScale(0.3f);
             lbl->setColor({170, 175, 185});
-            host->addChildAtPosition(lbl, Anchor::Top, {0.f, 10.f});
+            lbl->limitLabelWidth(boxSize - 10.f, 0.3f, 0.14f);
+            host->addChildAtPosition(lbl, Anchor::Top, {0.f, 9.f});
         }
         if (auto* loading = CCLabelBMFont::create("...", "bigFont.fnt")) {
             loading->setScale(0.4f);
@@ -253,13 +370,13 @@ void FusionEditorLayer::buildPreviews() {
         return host;
     };
 
-    m_originalHost = makeBox(leftCx, cy, "ORIGINAL  (tap = fill)");
-    m_resultHost   = makeBox(rightCx, cy, "RESULT  (drag = move)");
+    m_originalHost = makeBox(leftCx, cy, "ORIGINAL (tap = paint)");
+    m_resultHost   = makeBox(rightCx, cy, "RESULT (tap = paint, drag = move)");
 
     if (auto* fl = CCLabelBMFont::create("", "chatFont.fnt")) {
         fl->setScale(0.4f);
         fl->setColor({200, 200, 210});
-        fl->setPosition({(leftCx + rightCx) * 0.5f, cy - boxSize * 0.5f - 12.f});
+        fl->setPosition({(leftCx + rightCx) * 0.5f, cy - boxSize * 0.5f - 10.f});
         this->addChild(fl, 5);
         m_frameLbl = fl;
     }
@@ -268,7 +385,7 @@ void FusionEditorLayer::buildPreviews() {
 void FusionEditorLayer::buildTools() {
     auto win = CCDirector::get()->getWinSize();
     const float panelX = win.width - kMargin - kToolsW;
-    const float panelBottom = kFooterH + 6.f;
+    const float panelBottom = kMargin;
     const float panelH = win.height - kHeaderH - panelBottom - 4.f;
     const float w = kToolsW;
 
@@ -285,74 +402,69 @@ void FusionEditorLayer::buildTools() {
         panel->addChildAtPosition(bg, Anchor::Center);
     }
 
+// Keep the menu at panel origin; CCMenu ignores its anchor point when placing
+// children, so centering it offsets every control.
     auto* menu = CCMenu::create();
     menu->setPosition({0, 0});
     menu->setContentSize({w, panelH});
-    panel->addChild(menu);
+    panel->addChild(menu, 2);
 
-    float y = panelH - 14.f;
-    if (auto* cap = CCLabelBMFont::create("TOOLS", "goldFont.fnt")) {
-        cap->setScale(0.36f);
+    float y = panelH - 12.f;
+    if (auto* cap = CCLabelBMFont::create("FUSION TOOLS", "goldFont.fnt")) {
+        cap->setScale(0.34f);
         cap->setPosition({w * 0.5f, y});
         panel->addChild(cap);
     }
-    y -= 22.f;
+    y -= 20.f;
 
-    auto* row1 = CCMenu::create();
-    row1->setContentSize({w - 10.f, 20.f});
-    row1->setAnchorPoint({0.5f, 0.5f});
-    row1->setPosition({w * 0.5f, y});
-    row1->setLayout(RowLayout::create()->setGap(3.f)
-        ->setAxisAlignment(AxisAlignment::Even)->setAutoScale(false));
-    panel->addChild(row1);
-
-    auto addToMenu = [](CCMenu* row, char const* lab, char const* bg,
-                        std::function<void()> fn, CCMenuItemSpriteExtra** store = nullptr) {
+    auto addBtn = [menu](char const* lab, char const* bg, float x, float y,
+                         std::function<void()> fn,
+                         CCMenuItemSpriteExtra** store = nullptr) {
         if (auto* spr = ButtonSprite::create(
                 lab, 62, true, "bigFont.fnt", bg, 20.f, 0.42f)) {
             if (auto* btn = CCMenuItemExt::createSpriteExtra(spr,
                     [fn](CCMenuItemSpriteExtra*) { fn(); })) {
-                row->addChild(btn);
+                btn->setPosition({x, y});
+                menu->addChild(btn);
                 if (store) *store = btn;
             }
         }
     };
-    addToMenu(row1, "Pick", "GJ_button_05.png", [this] { onPickTexture(); });
-    addToMenu(row1, "Clear", "GJ_button_06.png", [this] { onClearFusion(); });
-    addToMenu(row1, "Undo", "GJ_button_06.png", [this] { onUndo(); }, &m_undoBtn);
-    row1->updateLayout();
+    addBtn("Pick",  "GJ_button_05.png", w * 0.19f, y, [this] { onPickTexture(); });
+    addBtn("Clear", "GJ_button_06.png", w * 0.50f, y, [this] { onClearFusion(); });
+    addBtn("Undo",  "GJ_button_06.png", w * 0.81f, y, [this] { onUndo(); }, &m_undoBtn);
+    y -= 22.f;
+    addBtn("Replace", "GJ_button_04.png", w * 0.19f, y, [this] { onCycleBlend(); }, &m_blendBtn);
+    addBtn("Fill",    "GJ_button_04.png", w * 0.50f, y, [this] { onCycleFit(); }, &m_fitBtn);
+    addBtn("0,0",     "GJ_button_04.png", w * 0.81f, y, [this] { onResetPlacement(); });
+    y -= 21.f;
+
+    {
+        auto* thumbHost = CCNode::create();
+        thumbHost->setContentSize({26.f, 26.f});
+        thumbHost->setAnchorPoint({0.5f, 0.5f});
+        thumbHost->setPosition({20.f, y - 3.f});
+        panel->addChild(thumbHost);
+        if (auto* box = CCScale9Sprite::create("GJ_square01.png")) {
+            box->setContentSize({26.f, 26.f});
+            box->setColor({28, 28, 36});
+            thumbHost->addChildAtPosition(box, Anchor::Center);
+        }
+        m_texThumbHost = thumbHost;
+
+        if (auto* st = CCLabelBMFont::create("no texture", "bigFont.fnt")) {
+            st->setScale(0.22f);
+            st->setColor({170, 170, 180});
+            st->setAnchorPoint({0.f, 0.5f});
+            st->setPosition({38.f, y - 3.f});
+            st->limitLabelWidth(w - 44.f, 0.22f, 0.1f);
+            panel->addChild(st);
+            m_stateLbl = st;
+        }
+    }
     y -= 24.f;
 
-    auto* row2 = CCMenu::create();
-    row2->setContentSize({w - 10.f, 20.f});
-    row2->setAnchorPoint({0.5f, 0.5f});
-    row2->setPosition({w * 0.5f, y});
-    row2->setLayout(RowLayout::create()->setGap(3.f)
-        ->setAxisAlignment(AxisAlignment::Even)->setAutoScale(false));
-    panel->addChild(row2);
-    addToMenu(row2, "Replace", "GJ_button_04.png", [this] { onCycleBlend(); }, &m_blendBtn);
-    addToMenu(row2, "Fill", "GJ_button_04.png", [this] { onCycleFit(); }, &m_fitBtn);
-    addToMenu(row2, "0,0", "GJ_button_04.png", [this] { onResetPlacement(); });
-    row2->updateLayout();
-    y -= 22.f;
-
-    if (auto* st = CCLabelBMFont::create("no texture", "bigFont.fnt")) {
-        st->setScale(0.2f);
-        st->setColor({170, 170, 180});
-        st->setPosition({w * 0.5f, y});
-        panel->addChild(st);
-        m_stateLbl = st;
-    }
-    y -= 18.f;
-
-    // Paint + nudge
-    auto* row3 = CCMenu::create();
-    row3->setContentSize({w - 8.f, 22.f});
-    row3->setAnchorPoint({0.5f, 0.5f});
-    row3->setPosition({w * 0.5f, y});
-    panel->addChild(row3);
-
-    auto* paintTog = CCMenuItemExt::createTogglerWithStandardSprites(0.4f,
+    auto* paintTog = CCMenuItemExt::createTogglerWithStandardSprites(0.38f,
         [this](CCMenuItemToggler* t) {
             if (!t) return;
             m_paintArmed = !t->isToggled();
@@ -360,50 +472,35 @@ void FusionEditorLayer::buildTools() {
         });
     if (paintTog) {
         paintTog->toggle(true);
-        paintTog->setPosition({12.f, 11.f});
-        row3->addChild(paintTog);
+        paintTog->setPosition({14.f, y});
+        menu->addChild(paintTog);
         m_paintTog = paintTog;
         if (auto* lbl = CCLabelBMFont::create("Paint", "bigFont.fnt")) {
             lbl->setScale(0.22f);
             lbl->setAnchorPoint({0.f, 0.5f});
-            lbl->setPosition({paintTog->getContentSize().width / 2.f + 2.f, 0.f});
+            lbl->setPosition({paintTog->getContentSize().width * 0.5f + 3.f, 0.f});
             paintTog->addChild(lbl);
         }
     }
-    auto nudge = [this, row3](char const* lab, float x, int dx, int dy) {
+    auto nudge = [this, menu](char const* lab, float x, float y, int dx, int dy) {
         if (auto* spr = ButtonSprite::create(
                 lab, 26, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.46f)) {
             if (auto* btn = CCMenuItemExt::createSpriteExtra(spr,
                     [this, dx, dy](CCMenuItemSpriteExtra*) { onNudge(dx, dy); })) {
-                btn->setPosition({x, 11.f});
-                row3->addChild(btn);
+                btn->setPosition({x, y});
+                menu->addChild(btn);
             }
         }
     };
-    nudge("<", 92.f, -1, 0);
-    nudge(">", 122.f, 1, 0);
-    nudge("^", 152.f, 0, -1);
-    nudge("v", 182.f, 0, 1);
-    y -= 20.f;
+    nudge("<", w - 110.f, y, -1, 0);
+    nudge(">", w - 82.f,  y,  1, 0);
+    nudge("^", w - 54.f,  y,  0, -1);
+    nudge("v", w - 26.f,  y,  0,  1);
+    y -= 19.f;
 
-    if (auto* px = CCLabelBMFont::create("px +0, +0", "chatFont.fnt")) {
-        px->setScale(0.34f);
-        px->setColor({255, 200, 120});
-        px->setPosition({w * 0.5f, y});
-        panel->addChild(px);
-        m_pixelLbl = px;
-    }
-    y -= 16.f;
-
-    // flips
-    auto* flipRow = CCMenu::create();
-    flipRow->setContentSize({w - 10.f, 18.f});
-    flipRow->setAnchorPoint({0.5f, 0.5f});
-    flipRow->setPosition({w * 0.5f, y});
-    panel->addChild(flipRow);
-    auto mkFlip = [this, flipRow](char const* lab, float x,
-                                  CCMenuItemToggler*& out, bool isX) {
-        auto* tog = CCMenuItemExt::createTogglerWithStandardSprites(0.36f,
+    auto mkFlip = [this, menu](char const* lab, float x, float y,
+                               CCMenuItemToggler*& out, bool isX) {
+        auto* tog = CCMenuItemExt::createTogglerWithStandardSprites(0.34f,
             [this, isX](CCMenuItemToggler* t) {
                 if (!t || !m_hasSelection) return;
                 auto s = currentSetting();
@@ -412,33 +509,43 @@ void FusionEditorLayer::buildTools() {
                 else s.fusionTransform.flipY = v;
                 storeSetting(s);
                 if (s.hasFusion) persistMask();
-                refreshPreview();
+                invalidateStampCache();
+                ensureStampCache();
+                renderPreviewFast();
         });
         if (!tog) return;
-        tog->setPosition({x, 9.f});
-        flipRow->addChild(tog);
+        tog->setPosition({x, y});
+        menu->addChild(tog);
         out = tog;
         if (auto* lbl = CCLabelBMFont::create(lab, "bigFont.fnt")) {
-            lbl->setScale(0.22f);
+            lbl->setScale(0.2f);
             lbl->setAnchorPoint({0.f, 0.5f});
-            lbl->setPosition({tog->getContentSize().width / 2.f + 2.f, 0.f});
+            lbl->setPosition({tog->getContentSize().width * 0.5f + 3.f, 0.f});
             tog->addChild(lbl);
         }
     };
-    mkFlip("Flip X", 50.f, m_flipXTog, true);
-    mkFlip("Flip Y", 135.f, m_flipYTog, false);
-    y -= 18.f;
+    mkFlip("Flip X", 14.f, y, m_flipXTog, true);
+    mkFlip("Flip Y", 68.f, y, m_flipYTog, false);
+    if (auto* px = CCLabelBMFont::create("px +0, +0", "chatFont.fnt")) {
+        px->setScale(0.34f);
+        px->setColor({255, 200, 120});
+        px->setAnchorPoint({1.f, 0.5f});
+        px->setPosition({w - 12.f, y});
+        panel->addChild(px);
+        m_pixelLbl = px;
+    }
+    y -= 16.f;
 
     if (auto* hint = CCLabelBMFont::create(
-            "Original colours. Texture never recolored.", "chatFont.fnt")) {
+            "Tap Original to paint. Texture never recolored.", "chatFont.fnt")) {
         hint->setScale(0.28f);
         hint->setColor({150, 155, 165});
-        hint->limitLabelWidth(w - 8.f, 0.28f, 0.12f);
+        hint->limitLabelWidth(w - 10.f, 0.28f, 0.12f);
         hint->setPosition({w * 0.5f, y});
         panel->addChild(hint);
         m_hintLbl = hint;
     }
-    y -= 16.f;
+    y -= 15.f;
 
     auto pct = [](float v) { return fmt::format("{:.0f}%", v * 100.f); };
     struct Row {
@@ -469,15 +576,14 @@ void FusionEditorLayer::buildTools() {
          [](SpriteSetting const& s) { return s.fusionOpacity; },
          [](SpriteSetting& s, float v) { s.fusionOpacity = v; },
          pct, &m_opacRow},
-        // Colour radius: how different a shade can be (light vs dark yellow).
-        // Lower if fill eats white ring / BPM letters. Raise if shade gaps remain.
+// Colour radius controls how far the fill spreads across nearby shades.
         {"Color R", 20.f, 220.f, 1.f,
          [](SpriteSetting const& s) { return static_cast<float>(s.fusionTolerance); },
          [](SpriteSetting& s, float v) {
              s.fusionTolerance = static_cast<int>(std::lround(v));
          },
          [](float v) { return fmt::format("{:.0f}", v); }, &m_tolRow},
-        // Spatial expand: grow fill by N px into SAME-colour neighbours only.
+// Expand only into same-colour neighbors.
         {"Expand", 0.f, 8.f, 1.f,
          [](SpriteSetting const& s) {
              return static_cast<float>(s.fusionExpandRadius);
@@ -496,7 +602,7 @@ void FusionEditorLayer::buildTools() {
                 auto s = currentSetting();
                 set(s, v);
                 storeSetting(s);
-                // Transform/opacity changed → rebuild stamp once, then fast paint.
+// Rebuild the stamp once after transform/opacity changes.
                 invalidateStampCache();
                 if (s.hasFusion) persistMask();
                 ensureStampCache();
@@ -508,28 +614,10 @@ void FusionEditorLayer::buildTools() {
             panel->addChild(row);
             *def.store = row;
         }
-        y -= 18.f;
+        y -= 17.f;
     }
 }
 
-void FusionEditorLayer::buildSpriteStrip() {
-    auto win = CCDirector::get()->getWinSize();
-    auto* host = CCNode::create();
-    host->setContentSize({win.width - kToolsW - kMargin * 3.f, kStripH});
-    host->setAnchorPoint({0.f, 0.f});
-    host->setPosition({kMargin, kFooterH * 0.35f});
-    this->addChild(host, 6);
-    m_stripHost = host;
-    if (auto* bg = CCScale9Sprite::create("square02b_001.png")) {
-        bg->setContentSize(host->getContentSize());
-        bg->setColor({0, 0, 0});
-        bg->setOpacity(70);
-        host->addChildAtPosition(bg, Anchor::Center);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Data
 
 void FusionEditorLayer::buildEntries() {
     m_entries.clear();
@@ -544,52 +632,227 @@ void FusionEditorLayer::buildEntries() {
             m_entries.push_back({frame.name, i, kind});
         }
     }
-    refreshSpriteStrip();
+    std::sort(m_entries.begin(), m_entries.end(),
+        [](Entry const& a, Entry const& b) {
+            if (a.kind != b.kind) return a.kind == SpriteKind::Button;
+            return a.frameName < b.frameName;
+        });
 }
 
-void FusionEditorLayer::refreshSpriteStrip() {
-    if (!m_stripHost) return;
-    // rebuild clickable chips
-    m_stripHost->removeChildByID("strip-menu");
+void FusionEditorLayer::applyBrowserFilter() {
+    m_filtered.clear();
+    for (int i = 0; i < static_cast<int>(m_entries.size()); ++i) {
+        if (!m_search.empty()
+            && toLowerCopy(m_entries[i].frameName).find(m_search)
+                == std::string::npos) {
+            continue;
+        }
+        m_filtered.push_back(i);
+    }
+    m_page = 0;
+    rebuildBrowser();
+}
+
+void FusionEditorLayer::rebuildBrowser() {
+    if (!m_browserHost) return;
+    int generation = m_thumbGen->fetch_add(1, std::memory_order_acq_rel) + 1;
+    m_browserHost->removeAllChildren();
+    m_browserMenu = nullptr;
+
+    int perPage = m_browserCols * m_browserRows;
+    int total = static_cast<int>(m_filtered.size());
+    int pages = std::max(1, (total + perPage - 1) / perPage);
+    m_page = std::clamp(m_page, 0, pages - 1);
+
+    if (m_pageLbl) {
+        m_pageLbl->setString(
+            fmt::format("{} / {}", m_page + 1, pages).c_str());
+    }
+
+    if (total == 0) {
+        if (auto* empty = CCLabelBMFont::create("No match.", "bigFont.fnt")) {
+            empty->setScale(0.32f);
+            empty->setColor({170, 170, 180});
+            m_browserHost->addChildAtPosition(empty, Anchor::Center);
+        }
+        return;
+    }
+
     auto* menu = CCMenu::create();
-    menu->setID("strip-menu");
+    if (!menu) return;
     menu->setPosition({0, 0});
-    menu->setContentSize(m_stripHost->getContentSize());
-    m_stripHost->addChild(menu);
+    menu->setContentSize(m_browserHost->getContentSize());
+    m_browserHost->addChild(menu);
+    m_browserMenu = menu;
 
-    float x = 8.f;
-    float y = kStripH * 0.5f;
-    int shown = 0;
-    for (auto const& e : m_entries) {
-        if (shown >= 18) break; // keep strip light
-        bool sel = m_hasSelection && e.frameName == m_selected.frameName;
-        bool hasF = m_project.spriteSettings.count(e.frameName)
-            && m_project.spriteSettings[e.frameName].hasFusion;
-        std::string shortName = e.frameName;
-        if (auto p = shortName.rfind("_001.png"); p != std::string::npos) shortName.resize(p);
-        else if (auto p2 = shortName.rfind(".png"); p2 != std::string::npos) shortName.resize(p2);
-        if (shortName.size() > 14) shortName = shortName.substr(0, 12) + "..";
-        if (hasF) shortName = "F " + shortName;
+    int start = m_page * perPage;
+    int end = std::min(total, start + perPage);
+    float gridH = m_browserHost->getContentSize().height;
 
-        auto* spr = ButtonSprite::create(shortName.c_str(), "bigFont.fnt",
-            sel ? "GJ_button_01.png" : "GJ_button_04.png", 0.22f);
-        if (!spr) continue;
-        auto nameCopy = e.frameName;
-        if (auto* btn = CCMenuItemExt::createSpriteExtra(spr,
-                [this, nameCopy](CCMenuItemSpriteExtra*) {
-                    this->selectFrame(nameCopy);
-                })) {
-            btn->setPosition({x + spr->getContentSize().width * 0.5f * 0.22f / 0.22f, y});
-            // Use actual scaled width approx
-            auto cs = btn->getContentSize();
-            btn->setPosition({x + cs.width * 0.5f, y});
-            menu->addChild(btn);
-            x += cs.width + 4.f;
-            ++shown;
-            if (x > m_stripHost->getContentSize().width - 10.f) break;
+    for (int slot = 0; slot < end - start; ++slot) {
+        auto const& entry = m_entries[m_filtered[start + slot]];
+        int col = slot % m_browserCols;
+        int row = slot / m_browserCols;
+        bool isSelected = m_hasSelection && entry.frameName == m_selected.frameName;
+
+        auto* cell = CCNode::create();
+        cell->setContentSize({kCellW - 4.f, kCellH - 4.f});
+
+        if (auto* bg = CCScale9Sprite::create("GJ_square01.png")) {
+            bg->setContentSize(cell->getContentSize());
+            bg->setTag(kTagCellBg);
+            bg->setColor(isSelected
+                ? ccColor3B{64, 100, 74}
+                : ccColor3B{38, 40, 50});
+            cell->addChildAtPosition(bg, Anchor::Center);
+        }
+        if (auto* loading = CCLabelBMFont::create("...", "bigFont.fnt")) {
+            loading->setScale(0.24f);
+            loading->setColor({120, 120, 130});
+            loading->setTag(kTagCellLoad);
+            cell->addChildAtPosition(loading, Anchor::Center, {0.f, 4.f});
+        }
+        if (auto* nameLbl = CCLabelBMFont::create(
+                shortFrameName(entry.frameName).c_str(), "chatFont.fnt")) {
+            nameLbl->limitLabelWidth(kCellW - 10.f, 0.36f, 0.1f);
+            cell->addChildAtPosition(nameLbl, Anchor::Bottom, {0.f, 6.f});
+        }
+        auto it = m_project.spriteSettings.find(entry.frameName);
+        bool hasF = it != m_project.spriteSettings.end() && it->second.hasFusion;
+        if (auto* badge = CCLabelBMFont::create("F", "goldFont.fnt")) {
+            badge->setScale(0.34f);
+            badge->setTag(kTagCellBadge);
+            badge->setVisible(hasF);
+            cell->addChildAtPosition(badge, Anchor::TopRight, {-6.f, -7.f});
+        }
+
+        std::string nameCopy = entry.frameName;
+        auto* item = CCMenuItemExt::createSpriteExtra(cell,
+            [this, nameCopy](CCMenuItemSpriteExtra*) {
+                this->selectFrame(nameCopy);
+            });
+        if (!item) continue;
+        item->setTag(slot + 1);
+        item->setPosition({(col + 0.5f) * kCellW,
+                           gridH - (row + 0.5f) * kCellH});
+        menu->addChild(item);
+    }
+
+    std::vector<Entry> pageEntries;
+    pageEntries.reserve(end - start);
+    for (int i = start; i < end; ++i) pageEntries.push_back(m_entries[m_filtered[i]]);
+    requestThumbnails(std::move(pageEntries), generation);
+}
+
+void FusionEditorLayer::requestThumbnails(std::vector<Entry> entries, int generation) {
+    if (entries.empty()) return;
+
+    WeakRef<FusionEditorLayer> weakSelf(this);
+    auto thumbGen = m_thumbGen;
+    auto closed = m_closed;
+    auto sheets = m_project.sheets;
+
+    paimon::ThreadTracker::get().spawn(
+        [weakSelf, thumbGen, closed, sheets,
+         entries = std::move(entries), generation]() {
+        for (int slot = 0; slot < static_cast<int>(entries.size()); ++slot) {
+            if (paimon::isRuntimeShuttingDown()
+                || closed->load(std::memory_order_acquire)
+                || thumbGen->load(std::memory_order_acquire) != generation) {
+                return;
+            }
+            auto const& entry = entries[slot];
+            if (entry.sheetIndex < 0
+                || entry.sheetIndex >= static_cast<int>(sheets.size())) continue;
+            auto const& sheet = sheets[entry.sheetIndex];
+            auto dataRes = FramePixelCache::get().frameData(
+                std::filesystem::path(sheet.sourcePlistPath),
+                std::filesystem::path(sheet.sourcePngPath), entry.frameName);
+            if (!dataRes) continue;
+            auto data = std::move(dataRes).unwrap();
+            auto img = std::make_shared<ImageBuffer>(
+                SpritesheetReader::composeLogicalFrame(data.pixels, data.info));
+
+            Loader::get()->queueInMainThread(
+                [weakSelf, thumbGen, closed, generation, slot, img]() {
+                if (paimon::isRuntimeShuttingDown()
+                    || closed->load(std::memory_order_acquire)
+                    || thumbGen->load(std::memory_order_acquire) != generation) return;
+                auto self = weakSelf.lock();
+                if (!self || !self->getParent()) return;
+                self->applyThumbnail(slot, generation, img);
+            });
+        }
+    });
+}
+
+void FusionEditorLayer::applyThumbnail(int slot, int generation,
+                                       std::shared_ptr<ImageBuffer> image) {
+    if (!image || image->empty() || !m_browserMenu
+        || m_thumbGen->load(std::memory_order_acquire) != generation) return;
+    auto* item = typeinfo_cast<CCMenuItemSpriteExtra*>(
+        m_browserMenu->getChildByTag(slot + 1));
+    if (!item) return;
+    auto* cell = item->getNormalImage();
+    if (!cell) return;
+    if (auto* old = cell->getChildByTag(kTagCellThumb)) old->removeFromParent();
+    if (auto* loading = cell->getChildByTag(kTagCellLoad)) loading->removeFromParent();
+
+    if (auto* spr = SpritePreviewRenderer::createSprite(*image)) {
+        auto sz = spr->getContentSize();
+        if (sz.width > 0 && sz.height > 0) {
+            spr->setScale(std::min({26.f / sz.width, 26.f / sz.height, 2.f}));
+        }
+        spr->setTag(kTagCellThumb);
+        cell->addChildAtPosition(spr, Anchor::Center, {0.f, 4.f});
+    }
+}
+
+void FusionEditorLayer::highlightBrowserSelection() {
+    if (!m_browserMenu) return;
+    int perPage = m_browserCols * m_browserRows;
+    int start = m_page * perPage;
+    auto* children = m_browserMenu->getChildren();
+    if (!children) return;
+    for (unsigned int i = 0; i < children->count(); ++i) {
+        auto* item = typeinfo_cast<CCMenuItemSpriteExtra*>(
+            static_cast<CCNode*>(children->objectAtIndex(i)));
+        if (!item) continue;
+        int idx = start + item->getTag() - 1;
+        if (idx < 0 || idx >= static_cast<int>(m_filtered.size())) continue;
+        auto const& entry = m_entries[m_filtered[idx]];
+        auto* cell = item->getNormalImage();
+        if (!cell) continue;
+        if (auto* bg = typeinfo_cast<CCScale9Sprite*>(cell->getChildByTag(kTagCellBg))) {
+            bool sel = m_hasSelection && entry.frameName == m_selected.frameName;
+            bg->setColor(sel ? ccColor3B{64, 100, 74} : ccColor3B{38, 40, 50});
         }
     }
 }
+
+void FusionEditorLayer::refreshBrowserBadges() {
+    if (!m_browserMenu) return;
+    int perPage = m_browserCols * m_browserRows;
+    int start = m_page * perPage;
+    auto* children = m_browserMenu->getChildren();
+    if (!children) return;
+    for (unsigned int i = 0; i < children->count(); ++i) {
+        auto* item = typeinfo_cast<CCMenuItemSpriteExtra*>(
+            static_cast<CCNode*>(children->objectAtIndex(i)));
+        if (!item) continue;
+        int idx = start + item->getTag() - 1;
+        if (idx < 0 || idx >= static_cast<int>(m_filtered.size())) continue;
+        auto const& entry = m_entries[m_filtered[idx]];
+        auto* cell = item->getNormalImage();
+        if (!cell) continue;
+        if (auto* badge = cell->getChildByTag(kTagCellBadge)) {
+            auto it = m_project.spriteSettings.find(entry.frameName);
+            badge->setVisible(it != m_project.spriteSettings.end()
+                && it->second.hasFusion);
+        }
+    }
+}
+
 
 void FusionEditorLayer::selectFrame(std::string const& frameName) {
     unloadFusion();
@@ -602,16 +865,28 @@ void FusionEditorLayer::selectFrame(std::string const& frameName) {
         }
     }
     if (!m_hasSelection) return;
-    refreshSpriteStrip();
+
+    int idx = -1;
+    for (int i = 0; i < static_cast<int>(m_filtered.size()); ++i) {
+        if (m_entries[m_filtered[i]].frameName == frameName) { idx = i; break; }
+    }
+    int perPage = std::max(1, m_browserCols * m_browserRows);
+    if (idx >= 0 && idx / perPage != m_page) {
+        m_page = idx / perPage;
+        rebuildBrowser();
+    } else {
+        highlightBrowserSelection();
+    }
+
     if (m_frameLbl) {
         m_frameLbl->setString(frameName.c_str());
-        m_frameLbl->limitLabelWidth(280.f, 0.4f, 0.18f);
+        m_frameLbl->limitLabelWidth(240.f, 0.4f, 0.18f);
     }
     loadPixelsForSelection();
-    // Load an already-picked texture even when no region is currently painted.
+// Load a picked texture even before a region is painted.
     loadFusionForSelection();
     refreshToolsUi();
-    setStatus("Selected — Pick texture, then tap Original to fill.");
+    setStatus("Tap a preview to paint a region, Pick to choose a texture.");
 }
 
 SpriteSetting FusionEditorLayer::currentSetting() const {
@@ -628,9 +903,8 @@ SpriteSetting FusionEditorLayer::currentSetting() const {
 
 void FusionEditorLayer::storeSetting(SpriteSetting const& s) {
     if (!m_hasSelection) return;
-    // Always keep the entry while editing Fusion. Color R / Expand / scale /
-    // offsets must persist even before a texture is loaded (hasFusion false).
-    // hasAny() alone erased them and made sliders snap back to defaults.
+// Keep Fusion config while editing so color, expand, scale, and offsets survive
+// before a texture is loaded.
     m_project.spriteSettings[m_selected.frameName] = s;
     m_project.modifiedAt = nowUnixMs();
 }
@@ -649,12 +923,10 @@ FusionApplyOptions FusionEditorLayer::makeFusionOptions(SpriteSetting const& s) 
 void FusionEditorLayer::setStatus(std::string const& text) {
     if (m_statusLbl) {
         m_statusLbl->setString(text.c_str());
-        m_statusLbl->limitLabelWidth(220.f, 0.38f, 0.16f);
+        m_statusLbl->limitLabelWidth(200.f, 0.38f, 0.16f);
     }
 }
 
-// ---------------------------------------------------------------------------
-// Load / preview
 
 void FusionEditorLayer::loadPixelsForSelection() {
     if (!m_hasSelection) return;
@@ -733,7 +1005,7 @@ void FusionEditorLayer::ensureStampCache() {
     auto s = currentSetting();
     ImageTransform t = s.fusionTransform;
     if (t.isDefault()) t.fitMode = ImageFitMode::Fill;
-    // Pixel offsets are NOT baked into the stamp — applied at composite time.
+// Apply pixel offsets at composite time, not when building the stamp.
     int fi = static_cast<int>(m_frameIndex);
     int w = m_pixels->width(), h = m_pixels->height();
     bool same =
@@ -758,8 +1030,7 @@ void FusionEditorLayer::ensureStampCache() {
     if (same) return;
 
     m_cachedCoverage = FusionEngine::softCoverage(*m_mask);
-    // Stamp is fitted into the painted region (mask bounds), not the whole
-    // frame — stops the texture looking cropped to a random slice of the sprite.
+// Fit the stamp to mask bounds rather than the whole frame.
     m_cachedStamp = FusionEngine::buildStampCanvas(
         m_asset->frameAt(static_cast<std::size_t>(fi)), w, h, t, m_mask.get(),
         s.fusionPixelX, s.fusionPixelY);
@@ -775,22 +1046,24 @@ void FusionEditorLayer::ensureStampCache() {
 }
 
 void FusionEditorLayer::renderPreviewFast() {
-    // Main-thread only: base copy + cached stamp shifted by pixel offset.
-    // Avoids worker threads and full bilinear re-sample every mouse move.
+// Main-thread composite uses a cached stamp shifted by the pixel offset.
     m_fastPreviewPending = false;
     if (!m_pixels || m_pixels->empty()) return;
 
     auto s = currentSetting();
     ImageBuffer out = *m_pixels;
-    if (s.hasFusion && m_mask && !m_mask->empty() && m_asset && !m_asset->empty()) {
-        ensureStampCache();
-        if (m_cacheValid) {
-            auto opts = makeFusionOptions(s);
-            // Placement is baked into the stamp so source pixels beyond the
-            // mask bounds remain available while the image is moved.
-            opts.pixelOffsetX = 0;
-            opts.pixelOffsetY = 0;
-            FusionEngine::applyCached(out, m_cachedCoverage, m_cachedStamp, opts);
+    if (m_mask && !m_mask->empty()) {
+        if (m_asset && !m_asset->empty()) {
+            ensureStampCache();
+            if (m_cacheValid) {
+                auto opts = makeFusionOptions(s);
+// Bake placement into the stamp so moved images retain pixels beyond the mask.
+                opts.pixelOffsetX = 0;
+                opts.pixelOffsetY = 0;
+                FusionEngine::applyCached(out, m_cachedCoverage, m_cachedStamp, opts);
+            }
+        } else {
+            highlightMask(out, *m_mask);
         }
     }
     out = SpritesheetReader::composeLogicalFrame(out, m_frameInfo);
@@ -802,7 +1075,6 @@ void FusionEditorLayer::renderPreviewFast() {
 void FusionEditorLayer::refreshPreview() {
     this->unschedule(schedule_selector(FusionEditorLayer::renderPreview));
     if (m_pixels && !m_pixels->empty()) {
-        // Full-quality async path (after paint / slider / drag end).
         this->scheduleOnce(schedule_selector(FusionEditorLayer::renderPreview), 0.02f);
     }
 }
@@ -810,9 +1082,9 @@ void FusionEditorLayer::refreshPreview() {
 void FusionEditorLayer::renderPreview(float) {
     if (!m_pixels || m_pixels->empty()) return;
 
-    // Prefer cached path when possible (same visual, less work).
+// Prefer the cached path when it produces the same visual result.
     auto s = currentSetting();
-    if (s.hasFusion && m_mask && !m_mask->empty() && m_asset && !m_asset->empty()) {
+    if (m_mask && !m_mask->empty() && m_asset && !m_asset->empty()) {
         ensureStampCache();
         if (m_cacheValid) {
             renderPreviewFast();
@@ -832,12 +1104,16 @@ void FusionEditorLayer::renderPreview(float) {
     WeakRef<FusionEditorLayer> weakSelf(this);
 
     paimon::ThreadTracker::get().spawn(
-        [weakSelf, renderGen, closed, gen, pixels, mask, asset, frameInfo, fi, opts, s]() {
+        [weakSelf, renderGen, closed, gen, pixels, mask, asset, frameInfo, fi, opts]() {
         if (paimon::isRuntimeShuttingDown() || closed->load(std::memory_order_acquire)) return;
 
         ImageBuffer out = *pixels;
-        if (s.hasFusion && mask && !mask->empty() && asset && !asset->empty()) {
-            FusionEngine::apply(out, *mask, asset->frameAt(fi), opts);
+        if (mask && !mask->empty()) {
+            if (asset && !asset->empty()) {
+                FusionEngine::apply(out, *mask, asset->frameAt(fi), opts);
+            } else {
+                highlightMask(out, *mask);
+            }
         }
         out = SpritesheetReader::composeLogicalFrame(out, frameInfo);
         auto img = std::make_shared<ImageBuffer>(std::move(out));
@@ -856,12 +1132,10 @@ void FusionEditorLayer::renderPreview(float) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// Fusion actions
 
 void FusionEditorLayer::onPickTexture() {
     if (!m_hasSelection) {
-        Notification::create("Select a sprite in the strip first.",
+        Notification::create("Select a sprite in the list first.",
             NotificationIcon::Info, 1.5f)->show();
         return;
     }
@@ -905,15 +1179,19 @@ void FusionEditorLayer::onPickTexture() {
                     s.fusionTransform.fitMode = ImageFitMode::Fill;
                 if (s.fusionTolerance < 40) s.fusionTolerance = 110;
                 if (s.fusionExpandRadius < 0) s.fusionExpandRadius = 1;
-                if (s.hasFusion) self->persistMask();
                 self->storeSetting(s);
+                if (s.hasFusion) self->persistMask();
                 self->refreshToolsUi();
+                self->refreshTextureThumb();
                 self->ensureStampCache();
                 self->renderPreviewFast();
                 if (asset->animated) self->startAnim();
                 else self->stopAnim();
-                self->setStatus(fmt::format("Texture {}x{} ({}f). Tap Original to fill.",
-                    asset->width(), asset->height(), asset->frameCount()));
+                bool hasMask = self->m_mask && !self->m_mask->empty();
+                self->setStatus(fmt::format("Texture {}x{} ({}f). {}",
+                    asset->width(), asset->height(), asset->frameCount(),
+                    hasMask ? "Fused into painted region."
+                            : "Tap a preview to paint a region."));
             });
         });
     });
@@ -922,7 +1200,7 @@ void FusionEditorLayer::onPickTexture() {
 void FusionEditorLayer::onClearFusion() {
     if (!m_hasSelection) return;
     auto s = currentSetting();
-    if (!s.hasFusion && !m_asset) return;
+    if (!s.hasFusion && !m_asset && (!m_mask || m_mask->empty())) return;
     stopAnim();
     s.hasFusion = false;
     s.fusionAnimated = false;
@@ -939,9 +1217,11 @@ void FusionEditorLayer::onClearFusion() {
     m_asset.reset();
     m_frameIndex = 0;
     clearUndo();
+    invalidateStampCache();
     (void)FusionStore::deleteForSlot(m_slotId, m_selected.frameName);
     refreshToolsUi();
-    refreshSpriteStrip();
+    refreshTextureThumb();
+    refreshBrowserBadges();
     refreshPreview();
     setStatus("Fusion cleared.");
 }
@@ -998,6 +1278,7 @@ void FusionEditorLayer::onResetPlacement() {
     s.fusionOpacity = 1.f;
     storeSetting(s);
     if (s.hasFusion) persistMask();
+    invalidateStampCache();
     refreshToolsUi();
     refreshPreview();
     setStatus("Placement reset.");
@@ -1036,7 +1317,7 @@ void FusionEditorLayer::onUndo() {
     }
     invalidateStampCache();
     refreshToolsUi();
-    refreshSpriteStrip();
+    refreshBrowserBadges();
     ensureStampCache();
     renderPreviewFast();
     setStatus(fmt::format("Undo ({} left).", m_undo.size()));
@@ -1053,6 +1334,7 @@ void FusionEditorLayer::unloadFusion() {
     m_dragging = false;
     m_touchOnResult = false;
     m_fastPreviewPending = false;
+    refreshTextureThumb();
 }
 
 void FusionEditorLayer::loadFusionForSelection() {
@@ -1113,6 +1395,7 @@ void FusionEditorLayer::loadFusionForSelection() {
                 self->storeSetting(st);
             }
             self->refreshToolsUi();
+            self->refreshTextureThumb();
             self->refreshPreview();
             if (asset && asset->animated) self->startAnim();
         });
@@ -1146,16 +1429,38 @@ void FusionEditorLayer::persistMask() {
     storeSetting(s);
 }
 
+void FusionEditorLayer::refreshTextureThumb() {
+    if (!m_texThumbHost) return;
+    if (auto* old = m_texThumbHost->getChildByTag(kTagTexThumb)) {
+        old->removeFromParent();
+    }
+    if (!m_asset || m_asset->empty()) return;
+    auto const& frame = m_asset->frameAt(0);
+    if (frame.empty()) return;
+    if (auto* spr = SpritePreviewRenderer::createSprite(frame)) {
+        auto sz = spr->getContentSize();
+        if (sz.width > 0 && sz.height > 0) {
+            spr->setScale(std::min({22.f / sz.width, 22.f / sz.height, 3.f}));
+        }
+        spr->setTag(kTagTexThumb);
+        m_texThumbHost->addChildAtPosition(spr, Anchor::Center);
+    }
+}
+
 void FusionEditorLayer::refreshToolsUi() {
     auto s = currentSetting();
+    bool hasMask = m_mask && !m_mask->empty();
     if (m_stateLbl) {
         if (!m_asset || m_asset->empty()) {
-            m_stateLbl->setString(s.hasFusion ? "mask OK — reload tex" : "no texture");
+            m_stateLbl->setString(hasMask
+                ? "region painted - Pick a texture"
+                : "no texture - Pick or paint first");
         } else {
             m_stateLbl->setString(fmt::format("{}x{} {}f {}",
                 m_asset->width(), m_asset->height(), m_asset->frameCount(),
-                s.hasFusion ? "mask ON" : "tap fill").c_str());
+                hasMask ? "- fused" : "- tap to paint").c_str());
         }
+        m_stateLbl->limitLabelWidth(kToolsW - 44.f, 0.22f, 0.1f);
     }
     if (m_blendBtn) {
         if (auto* spr = typeinfo_cast<ButtonSprite*>(m_blendBtn->getNormalImage()))
@@ -1166,7 +1471,7 @@ void FusionEditorLayer::refreshToolsUi() {
             spr->setString(fitLabel(s.fusionTransform.fitMode));
     }
     if (m_pixelLbl) {
-        m_pixelLbl->setString(fmt::format("px {:+d}, {:+d}  arrows=1  shift=10",
+        m_pixelLbl->setString(fmt::format("px {:+d}, {:+d}",
             s.fusionPixelX, s.fusionPixelY).c_str());
     }
     auto sync = [](CCMenuItemToggler* t, bool v) {
@@ -1185,8 +1490,8 @@ void FusionEditorLayer::refreshToolsUi() {
     if (m_hintLbl) {
         m_hintLbl->setString(m_paintArmed
             ? "Lower Color R if it eats the border/text"
-            : "Paint OFF · drag move · arrows 1px");
-        m_hintLbl->limitLabelWidth(kToolsW - 8.f, 0.28f, 0.12f);
+            : "Paint OFF - drag Result to move, arrows 1px");
+        m_hintLbl->limitLabelWidth(kToolsW - 10.f, 0.28f, 0.12f);
     }
     if (m_undoBtn) {
         m_undoBtn->setEnabled(!m_undo.empty());
@@ -1195,8 +1500,6 @@ void FusionEditorLayer::refreshToolsUi() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Touch / paint / drag
 
 bool FusionEditorLayer::mapTouchToSpriteFloatOn(CCSprite* spr, CCTouch* touch,
                                                 float& outX, float& outY,
@@ -1215,8 +1518,7 @@ bool FusionEditorLayer::mapTouchToSpriteFloatOn(CCSprite* spr, CCTouch* touch,
         }
     }
 
-    // Do not clamp an active Result drag to the preview rectangle. Keeping
-    // these coordinates unbounded lets the pointer leave the box naturally.
+// Do not clamp an active Result drag; the pointer may leave the preview box.
     float lx = requireInside
         ? std::clamp(local.x, 0.f, sz.width - 0.001f) : local.x;
     float ly = requireInside
@@ -1248,11 +1550,19 @@ bool FusionEditorLayer::ccTouchBegan(CCTouch* touch, CCEvent*) {
     bool onOriginal = mapTouchToSpriteFloatOn(m_originalSpr, touch, fx, fy, true);
     bool onResult = !onOriginal
         && mapTouchToSpriteFloatOn(m_resultSpr, touch, fx, fy, true);
-    if (!onOriginal && !onResult) return false;
-    if (!m_asset || m_asset->empty()) {
-        Notification::create("Pick a texture first.", NotificationIcon::Info, 1.5f)->show();
+    if (!onOriginal && !onResult) {
+        if (m_originalSpr) {
+            auto lo = m_originalSpr->convertToNodeSpace(touch->getLocation());
+            auto szo = m_originalSpr->getContentSize();
+            log::info("[fusion] touch missed both previews: orig-local "
+                "({:.1f},{:.1f}) of {:.0f}x{:.0f}", lo.x, lo.y, szo.width, szo.height);
+        } else {
+            log::info("[fusion] touch ignored: original sprite not loaded yet");
+        }
         return false;
     }
+    log::info("[fusion] touch began on {} at raw ({:.1f},{:.1f})",
+        onResult ? "result" : "original", fx, fy);
     auto s = currentSetting();
     m_touchActive = true;
     m_dragging = false;
@@ -1266,6 +1576,8 @@ bool FusionEditorLayer::ccTouchBegan(CCTouch* touch, CCEvent*) {
 
 void FusionEditorLayer::ccTouchMoved(CCTouch* touch, CCEvent*) {
     if (!m_touchActive || !m_touchOnResult) return;
+// Without a texture, keep the gesture as a tap so release still paints.
+    if (!m_asset || m_asset->empty()) return;
     float fx = 0.f, fy = 0.f;
     if (!mapTouchToSpriteFloatOn(m_resultSpr, touch, fx, fy, false)) return;
     float dx = fx - m_touchStartX, dy = fy - m_touchStartY;
@@ -1280,13 +1592,12 @@ void FusionEditorLayer::ccTouchMoved(CCTouch* touch, CCEvent*) {
     if (s.fusionPixelX == newPx && s.fusionPixelY == newPy) return;
     s.fusionPixelX = newPx;
     s.fusionPixelY = newPy;
-    // In-memory only during drag — no full UI rebuild / disk IO.
+// Keep drag updates in memory; avoid UI rebuilds and disk I/O.
     m_project.spriteSettings[m_selected.frameName] = s;
     if (m_pixelLbl) {
         m_pixelLbl->setString(fmt::format("px {:+d}, {:+d}", newPx, newPy).c_str());
     }
-    // Re-sample from the original asset so moving never exposes a clipped
-    // edge from the previous placement.
+// Re-sample the original asset so movement never exposes a clipped old edge.
     renderPreviewFast();
 }
 
@@ -1321,24 +1632,22 @@ void FusionEditorLayer::endGesture(CCTouch* touch, bool cancelled) {
         if (s.hasFusion) persistMask();
         m_fastPreviewPending = false;
         refreshToolsUi();
-        // One clean composite after drag (cache already warm).
+// Composite once after drag; the cache is already warm.
         renderPreviewFast();
         setStatus(fmt::format("Moved px {:+d}, {:+d}", s.fusionPixelX, s.fusionPixelY));
         return;
     }
-    if (wasResult) {
-        setStatus("Drag Result to move the texture.");
-        return;
-    }
+// A tap paints either preview; both boxes use the same gesture.
     if (!m_paintArmed) {
-        setStatus("Paint OFF — drag to move the texture.");
+        setStatus("Paint OFF - toggle it on to fill regions.");
         return;
     }
     int px = static_cast<int>(std::floor(sx));
     int py = static_cast<int>(std::floor(sy));
     if (touch) {
         float tx = 0.f, ty = 0.f;
-        if (mapTouchToSpriteFloatOn(m_originalSpr, touch, tx, ty, true)) {
+        if (mapTouchToSpriteFloatOn(wasResult ? m_resultSpr : m_originalSpr,
+                                    touch, tx, ty, true)) {
             px = static_cast<int>(std::floor(tx));
             py = static_cast<int>(std::floor(ty));
         }
@@ -1348,7 +1657,6 @@ void FusionEditorLayer::endGesture(CCTouch* touch, bool cancelled) {
 
 void FusionEditorLayer::applyFill(int pixelX, int pixelY) {
     if (!m_hasSelection || !m_pixels || m_pixels->empty()) return;
-    if (!m_asset || m_asset->empty()) return;
     auto s = currentSetting();
     int colorR = s.fusionTolerance > 0 ? s.fusionTolerance : 110;
     int expand = std::clamp(s.fusionExpandRadius, 0, 12);
@@ -1356,7 +1664,13 @@ void FusionEditorLayer::applyFill(int pixelX, int pixelY) {
         *m_pixels, pixelX, pixelY, colorR, /*alphaCutoff=*/12, expand);
     bool any = false;
     for (auto v : region.data) if (v) { any = true; break; }
+    log::info("[fusion] fill at ({},{}) frame {}x{} tol={} expand={} -> {}",
+        pixelX, pixelY, m_pixels->width(), m_pixels->height(),
+        colorR, expand, any ? "region" : "empty");
     if (!any) {
+        auto seed = m_pixels->at(pixelX, pixelY);
+        setStatus(fmt::format("Nothing to fill at {},{} (alpha {}).",
+            pixelX, pixelY, seed.a));
         Notification::create("Nothing to fill there.", NotificationIcon::Info, 1.3f)->show();
         return;
     }
@@ -1366,13 +1680,16 @@ void FusionEditorLayer::applyFill(int pixelX, int pixelY) {
     } else {
         FusionEngine::orMask(*m_mask, region);
     }
-    invalidateStampCache(); // soft coverage depends on mask
+    invalidateStampCache();
     persistMask();
     refreshToolsUi();
-    refreshSpriteStrip();
+    refreshBrowserBadges();
     ensureStampCache();
     renderPreviewFast();
-    setStatus("Region filled (Ctrl+Z undo).");
+    bool hasTex = m_asset && !m_asset->empty();
+    setStatus(hasTex
+        ? "Region filled (Ctrl+Z undo)."
+        : "Region painted - now Pick a texture.");
 }
 
 void FusionEditorLayer::startAnim() {
@@ -1391,8 +1708,7 @@ void FusionEditorLayer::stopAnim() {
 
 void FusionEditorLayer::tickAnim(float dt) {
     if (!m_asset || !m_asset->animated || m_asset->empty()) { stopAnim(); return; }
-    auto s = currentSetting();
-    if (!s.hasFusion || !m_mask || m_mask->empty()) return;
+    if (!m_mask || m_mask->empty()) return;
     m_frameAccum += dt * 1000.f;
     int delay = m_asset->delayAt(m_frameIndex);
     if (m_frameAccum < static_cast<float>(delay)) return;
@@ -1402,4 +1718,4 @@ void FusionEditorLayer::tickAnim(float dt) {
     this->renderPreview(0.f);
 }
 
-}  // namespace paimon::texture_studio
+}

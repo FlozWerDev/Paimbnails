@@ -72,34 +72,32 @@
 #include "../features/profiles/ui/CommentBgSettingsPopup.hpp"
 #include "../features/profiles/ui/CustomBadgePickerPopup.hpp"
 #include "../features/profiles/services/CustomBadgeService.hpp"
-#include "../features/foryou/services/ForYouTracker.hpp"
+#include "../features/foryou/services/TasteProfile.hpp"
 #include "../features/profiles/ui/ProfileViewsPopup.hpp"
 #include "../features/global-icon/GlobalIconRender.hpp"
 #include "../features/global-icon/services/GlobalIconService.hpp"
 #include "../features/profiles/services/OwnProfileStats.hpp"
+#include "../features/icon-copy/IconCopyStore.hpp"
+#include "../features/icon-copy/ui/CopyIconsPopup.hpp"
+#include "../features/icon-copy/ui/IconSetPreview.hpp"
+#include <Geode/ui/BasedButtonSprite.hpp>
+#include "../core/modules/ModuleRegistry.hpp"
 
 using namespace geode::prelude;
 
-// CCScale9Sprite::create crashes if the sprite doesn't exist (it doesn't return
-// nullptr). Use paimon::SpriteHelper::safeCreateScale9() from the shared header.
+// CCScale9Sprite::create crashes on missing sprites; use safeCreateScale9().
 
-// profileimg texture cache for instant loading between popups. Uses Ref<> for
-// automatic refcount with a shutdown guard to avoid release() when CCPoolManager
-// is already destroyed.
-// (Implementation moved to features/profiles/services/ProfileImageCache.cpp)
+// The cache lives in ProfileImageCache; keep its refs out of static destruction.
 
 
-// Clear the profileimg cache during game shutdown. Static destructors run in
-// an undefined order and CCPoolManager may already be dead, so use take() to
-// extract the Ref<> without calling release().
+// Extract cached refs during shutdown; CCPoolManager may already be gone.
 
 
 
 
 
 
-    // skip MP4 video files (handled by ensureAnimatedProfileImg)
-    // ftyp box can start at different offsets, search first 12 bytes
+    // MP4 detection scans the first 12 bytes because ftyp may be offset.
 
 
 
@@ -117,16 +115,15 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     struct Fields {
         Ref<CCMenuItemSpriteExtra> m_gearBtn = nullptr;
-        Ref<CCMenuItemSpriteExtra> m_addModBtn = nullptr;       // add-moderator button (admins only)
+        Ref<CCMenuItemSpriteExtra> m_addModBtn = nullptr;
         Ref<CCMenuItemSpriteExtra> m_banBtn = nullptr;
-        Ref<CCMenuItemSpriteExtra> m_musicPauseBtn = nullptr;  // pause-music button
-        Ref<CCClippingNode> m_profileImgClip = nullptr;   // profile image clip
-        Ref<CCNode> m_profileImgBorder = nullptr;          // profile image border
+        Ref<CCMenuItemSpriteExtra> m_musicPauseBtn = nullptr;
+        Ref<CCClippingNode> m_profileImgClip = nullptr;
+        Ref<CCNode> m_profileImgBorder = nullptr;
         bool m_isApprovedMod = false;
         bool m_isAdmin = false;
-        bool m_musicPlaying = false;  // music state
-        bool m_menuMusicPaused = false; // menu music paused
-        // music fade state
+        bool m_musicPlaying = false;
+        bool m_menuMusicPaused = false;
         int m_fadeStep = 0;
         int m_fadeTotalSteps = 0;
         float m_fadeFromVol = 0.0f;
@@ -136,51 +133,52 @@ class $modify(PaimonProfilePage, ProfilePage) {
         bool m_leaveForClose = false;
         bool m_pausedForTemporaryExit = false;
         bool m_audioCleanedUp = false;
-        // WeakRef<>: GD's statsMenu can be rebuilt by other mods, leaving this
-        // label dangling. WeakRef lets us check with lock().
+        // statsMenu can be rebuilt by other mods, so don't keep a raw label pointer.
         WeakRef<CCLabelBMFont> m_thumbCountLabel;
         int64_t m_statusLastSeen = 0;
         bool m_statusOnline = false;
 
-        // PERF: cache the username-menu to avoid getChildByIDRecursive on hot
-        // paths. The profile page does ~9 lookups of the same node during init +
-        // button clicks, each a full-tree DFS (~0.1-0.5ms on large trees). WeakRef
-        // invalidates only when the node disappears (e.g. a layout reset by another mod).
-        WeakRef<CCMenu> m_usernameMenuCached = nullptr;
+        // Snapshot the icon set; m_score may be rebuilt before the copy popup opens.
+        paimon::iconcopy::IconSet m_iconSet;
+
+        // Ref is intentional: WeakRef assignment can leave this cache untracked.
+        Ref<CCMenu> m_usernameMenuCached = nullptr;
+
+        // These targets come from a tree walk; cache them until vanilla relayout.
+        // Keep strong refs because duplicate IDs can confuse WeakRef tracking.
+        Ref<GJCommentListLayer> m_commentListCached = nullptr;
+        Ref<CCNode> m_iconBackgroundCached = nullptr;
+        Ref<CCNode> m_specialBorderCached = nullptr;
+        bool m_styleTargetsResolved = false;
     };
 
-    // PERF: caches the username-menu via WeakRef. The first call does
-    // getChildByIDRecursive and stores it; later calls are refcell lookups (~5ns
-    // vs ~100us for a recursive tree DFS). If the node was removed (another mod
-    // changes layout, scene reload), WeakRef::lock returns null and we search
-    // again. typeinfo_cast guards against the ID being taken by a node of another type.
+    // Cache the recursive lookup, but discard the node if another mod rebuilt it.
     CCMenu* getUsernameMenu() {
-        if (auto cached = m_fields->m_usernameMenuCached.lock()) {
-            // Verify it's still in the ProfilePage tree; if another mod moved it
-            // out, invalidate and re-search.
+        if (auto* cached = m_fields->m_usernameMenuCached.data()) {
             if (cached->getParent() && cached->hasAncestor(this)) {
-                return cached.data();
+                return cached;
             }
+            m_fields->m_usernameMenuCached = nullptr;
         }
         auto* found = typeinfo_cast<CCMenu*>(this->getChildByIDRecursive("username-menu"));
-        if (found) {
-            m_fields->m_usernameMenuCached = found;
-        }
+        m_fields->m_usernameMenuCached = found;
         return found;
+    }
+
+    static bool paimonProfilesEnabled() {
+        return paimon::modules::isEnabled("paimbnails.paimonprofiles.profile");
     }
 
     bool canShowModerationControls() {
         return m_fields->m_isApprovedMod || m_fields->m_isAdmin;
     }
 
-    // Get the left-menu safely
     CCMenu* getLeftMenu() {
         if (!this->m_mainLayer) return nullptr;
         auto node = this->m_mainLayer->getChildByID("left-menu");
         return node ? typeinfo_cast<CCMenu*>(node) : nullptr;
     }
 
-    // Get the socials-menu safely
     CCMenu* getSocialsMenu() {
         if (!this->m_mainLayer) return nullptr;
         auto node = this->m_mainLayer->getChildByID("socials-menu");
@@ -214,7 +212,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_gearBtn = gearBtn;
     }
 
-    // Create the add-moderator button if it doesn't exist
     void ensureAddModeratorButton(CCMenu* menu) {        if (!menu || m_fields->m_addModBtn) return;
         if (menu->getChildByID("add-moderator-button"_spr)) return;
 
@@ -235,15 +232,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_addModBtn = addModBtn;
     }
 
-    // Create the reviews button if it doesn't exist (same pattern as
-    // ensureGearButton). Returns true if it created it, so the integrity checker
-    // knows to redo the layout.
     bool ensureReviewsButton(CCMenu* menu) {
         if (!menu) return false;
-        // Dedupe across the WHOLE ProfilePage tree, not just `menu`. The profile
-        // redesign relocates this button into its own bottom row; a local-only
-        // check would think it's missing and the integrity checker would keep
-        // recreating it, piling up duplicate buttons.
+        if (!paimonProfilesEnabled()) return false;
         if (this->getChildByIDRecursive("profile-reviews-btn"_spr)) return false;
         auto reviewIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_chatBtn_001.png");
         if (!reviewIcon) reviewIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plainBtn_001.png");
@@ -255,8 +246,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         return true;
     }
 
-    // Create the ban button (hidden by default) and store it in Fields.
-    // Visibility is handled by refreshBanButtonVisibility at each call site.
     void createBanButtonInto(CCMenu* menu) {
         if (!menu) return;
         auto banSpr = ButtonSprite::create("X", 40, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.6f);
@@ -268,7 +257,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_banBtn = banBtn;
     }
 
-    // Periodic button-integrity checker
     void verifyButtonIntegrity(float dt) {
         if (!this->getParent()) return;
         if (!this->m_mainLayer) return;
@@ -277,15 +265,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         bool needsLayout = false;
 
-        // 1. Ban button: visibility by rank
         if (!m_fields->m_banBtn || !m_fields->m_banBtn->getParent()) {
-            // Recreate the ban button if it was lost
             createBanButtonInto(leftMenu);
             needsLayout = true;
             log::debug("[ProfilePage] Boton de ban recreado por verificador de integridad");
         }
 
-        // Update ban visibility
         {
             bool shouldShow = !this->m_ownProfile && (m_fields->m_isApprovedMod || m_fields->m_isAdmin);
             if (m_fields->m_banBtn->isVisible() != shouldShow) {
@@ -295,13 +280,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        // 2. Reviews button
         if (ensureReviewsButton(leftMenu)) {
             needsLayout = true;
             log::debug("[ProfilePage] Boton de reviews recreado por verificador de integridad");
         }
 
-        // 3. Gear button
         if (this->m_ownProfile && (m_fields->m_isApprovedMod || m_fields->m_isAdmin)) {
             if (!m_fields->m_gearBtn || !m_fields->m_gearBtn->getParent()) {
                 m_fields->m_gearBtn = nullptr;
@@ -311,7 +294,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        // 4. Add-moderator button
         if (this->m_ownProfile && m_fields->m_isAdmin) {
             if (!m_fields->m_addModBtn || !m_fields->m_addModBtn->getParent()) {
                 m_fields->m_addModBtn = nullptr;
@@ -321,7 +303,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        // 5. Keep the status dot at the end of the username-menu (right of the name)
         if (auto* usernameMenu = getUsernameMenu()) {
             if (auto* dot = usernameMenu->getChildByID("paimon-user-status-dot"_spr)) {
                 if (dot->getParent() != usernameMenu) {
@@ -340,8 +321,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             leftMenu->updateLayout();
         }
     }
-
-    // Moderator/admin badge on the profile
 
     void onPaimonBadge(CCObject* sender) {
         if (auto node = typeinfo_cast<CCNode*>(sender)) {
@@ -363,7 +342,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         auto menu = getUsernameMenu();
         if (!menu) return;
 
-        // Avoid duplicates
         if (this->getChildByIDRecursive("paimon-moderator-badge"_spr)) return;
         if (this->getChildByIDRecursive("paimon-admin-badge"_spr)) return;
 
@@ -406,19 +384,17 @@ class $modify(PaimonProfilePage, ProfilePage) {
         auto menu = getUsernameMenu();
         if (!menu) return;
 
-        // Avoid duplicates
         if (this->getChildByIDRecursive("paimon-user-status-dot"_spr)) return;
 
-        // Circle 20% smaller, on the same row as the name/badges.
         constexpr float dotRadius = 4.0f;
         auto* dotNode = PaimonDrawNode::create();
         if (!dotNode) return;
 
         ccColor4F fillColor;
         if (online) {
-            fillColor = ccc4f(0.0f, 1.0f, 0.0f, 1.0f); // bright green
+            fillColor = ccc4f(0.0f, 1.0f, 0.0f, 1.0f);
         } else {
-            fillColor = ccc4f(0.5f, 0.5f, 0.5f, 1.0f); // gray
+            fillColor = ccc4f(0.5f, 0.5f, 0.5f, 1.0f);
         }
         dotNode->drawSolidCircle({dotRadius, dotRadius}, dotRadius, fillColor);
         dotNode->setContentSize({dotRadius * 2, dotRadius * 2});
@@ -434,8 +410,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void onUserStatusDotClicked(CCObject* sender) {
-        if (this->m_ownProfile) {
-            // Own profile: show profile views popup
+        if (this->m_ownProfile && paimonProfilesEnabled()) {
             if (auto popup = ProfileViewsPopup::create(this->m_accountID)) {
                 popup->show();
             }
@@ -455,16 +430,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void fetchAndShowUserStatus(int accountID) {
         Ref<ProfilePage> self = this;
-        // Instant presence: send heartbeat first so the server marks us online,
-        // then fetch the viewed user's status.
         paimon::forum::ForumApi::get().sendHeartbeat([self, accountID](paimon::forum::Result<bool> hbResult) {
             paimon::forum::ForumApi::get().getUserStatus(accountID,
                 [self, accountID](paimon::forum::Result<paimon::forum::UserStatus> result) {
                     Loader::get()->queueInMainThread([self, accountID, result]() {
                         if (paimon::isRuntimeShuttingDown()) return;
                         if (!self || !self->getParent()) return;
-                        // static_cast is safe here: self was captured from this (a PaimonProfilePage).
-                        // typeinfo_cast on a $modify class is forbidden by Geode.
                         auto* page = static_cast<PaimonProfilePage*>(self.data());
                         if (!page || page->m_accountID != accountID) return;
                         if (!result.ok) return;
@@ -481,7 +452,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         auto menu = getUsernameMenu();
         if (!menu) return;
 
-        // Avoid duplicates (tree-wide: the redesign relocates this badge)
         if (this->getChildByIDRecursive("paimon-custom-badge"_spr)) return;
 
         auto emoteOpt = paimon::emotes::EmoteService::get().getEmoteByName(emoteName);
@@ -515,9 +485,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         });
                     });
                 } else {
-                    // Retain the texture across the deferred task: the RAM cache may evict
-                    // and free it before this runs, leaving `tex` dangling (crash inside
-                    // CCSprite::initWithTexture on the freed vtable).
                     geode::Ref<cocos2d::CCTexture2D> texRef = tex;
                     Loader::get()->queueInMainThread([self, texRef, targetHeight]() {
                         if (paimon::isRuntimeShuttingDown()) return;
@@ -556,36 +523,29 @@ class $modify(PaimonProfilePage, ProfilePage) {
     void addThumbnailCountBadge(int uploadCount) {
         if (!this->m_mainLayer) return;
 
-        // Find the stats-menu (Geode node-ids assigns this on ProfilePage)
         auto* statsMenu = this->m_mainLayer->getChildByIDRecursive("stats-menu");
         if (!statsMenu) {
             log::debug("[ProfilePage] stats-menu not found, skipping thumbnail count badge");
             return;
         }
 
-        // Avoid duplicates across the whole tree: the redesign relocates this
-        // badge into its bottom row, so a stats-menu-only check would recreate it.
         if (this->getChildByIDRecursive("paimon-thumb-count-btn"_spr)) return;
 
-        // Only show if user has at least 1 approved thumbnail
         if (uploadCount <= 0) return;
 
         auto* statsMenuCC = typeinfo_cast<CCMenu*>(statsMenu);
         if (!statsMenuCC) return;
 
-        // Icon sprite: use the mod's thumbnail icon or a GD frame
         auto* iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_bigStar_001.png");
         if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
         if (!iconSprite) iconSprite = CCSprite::create();
         
-        // Create the count label (like SendDB's sends label)
         auto* countLabel = CCLabelBMFont::create(
             fmt::format("{}", uploadCount).c_str(),
             "bigFont.fnt"
         );
         countLabel->setScale(0.6f);
         
-        // Create a simple sprite that combines icon and text
         auto* combinedSprite = CCNode::create();
         combinedSprite->setAnchorPoint({0.5f, 0.5f});
         combinedSprite->setContentSize({50.f, 30.f});
@@ -601,14 +561,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
         countLabel->setPosition({iconSprite ? 28.f : 10.f, 15.f});
         combinedSprite->addChild(countLabel);
 
-        // Create clickable button with the combined sprite
         auto* thumbBtn = CCMenuItemSpriteExtra::create(            combinedSprite,
             this,
             menu_selector(PaimonProfilePage::onThumbnailCountClicked)
         );
         thumbBtn->setID("paimon-thumb-count-btn"_spr);
         
-        // Use same layout options as other stats items
         thumbBtn->setLayoutOptions(AxisLayoutOptions::create()
             ->setScaleLimits(0.0f, 1.0f)
         );
@@ -621,11 +579,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     std::string getViewedUsername() {
-        // direct access to GJUserScore's m_userName field
         if (this->m_score && !this->m_score->m_userName.empty()) {
             return this->m_score->m_userName;
         }
-        // fallback: read from labels if m_score isn't available yet
         if (this->m_mainLayer) {
             if (auto* lbl = typeinfo_cast<CCLabelBMFont*>(this->m_mainLayer->getChildByIDRecursive("username-label"))) {
                 if (lbl->getString()) return std::string(lbl->getString());
@@ -640,7 +596,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
     void refreshBanButtonVisibility() {
         if (!m_fields->m_banBtn) return;
 
-        // never show on your own profile
         if (this->m_ownProfile) {
             m_fields->m_banBtn->setVisible(false);
             m_fields->m_banBtn->setEnabled(false);
@@ -651,8 +606,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_banBtn->setVisible(show);
         m_fields->m_banBtn->setEnabled(show);
 
-        // if visible, also disable it when the profile is mod/admin;
-        // use /api/moderators to stay consistent
         auto targetName = getViewedUsername();
         if (show && !targetName.empty()) {
             auto targetLower = geode::utils::string::toLower(targetName);
@@ -660,14 +613,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
             int currentAccount = this->m_accountID;
             HttpClient::get().get("/api/moderators", [self, targetLower, currentAccount](bool ok, std::string const& resp) {
                 if (!ok) return;
-                // check we're still alive and on the same profile
                 if (!self || !self->getParent()) return;
                 if (self->m_accountID != currentAccount) return;
 
                 auto parsed = matjson::parse(resp);
                 if (!parsed.isOk()) return;
                 auto root = parsed.unwrap();
-                auto mods = root["moderators"]; // [{ username, currentBanner }]
+                auto mods = root["moderators"];
                 if (!mods.isArray()) return;
                 auto modsArr = mods.asArray();
                 if (!modsArr.isOk()) return;
@@ -677,7 +629,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     if (!u.isString()) continue;
                     auto nameLower = geode::utils::string::toLower(u.asString().unwrapOr(""));
                     if (nameLower == targetLower) {
-                        // already on the main thread
                         if (auto banBtn = typeinfo_cast<CCMenuItemSpriteExtra*>(self->getChildByIDRecursive("ban-user-button"))) {
                             banBtn->setEnabled(false);
                             banBtn->setOpacity(120);
@@ -710,9 +661,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     static std::shared_ptr<std::vector<uint8_t>> readProfileImgCacheBytes(int accountID) {
         auto path = getProfileImgCachePath(accountID);
-        std::error_code ec;
-        if (!std::filesystem::exists(path, ec)) return nullptr;
-
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file) return nullptr;
         auto size = file.tellg();
@@ -724,9 +672,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         return bytes;
     }
 
-    // Soft dark overlay shared by the profile-img variants (static / GIF / video
-    // / gradient). Identical except the container. Subtly darkens for
-    // username/label legibility, like ProfileImgPopup (alpha 60).
     static void addProfileImgDarkOverlay(CCNode* clip, CCSize const& imgArea) {
         if (!clip) return;
         auto overlay = CCLayerColor::create(ccc4(0, 0, 0, 60));
@@ -737,10 +682,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         clip->addChild(overlay);
     }
 
-    // Creates the clipped CCClippingNode shared by all profile-background
-    // variants (image / gif / video / gradient). `rounded` chooses rounded
-    // corners (static image / gradient) vs square (gif / video). The caller adds
-    // content before mounting.
     static CCClippingNode* makeProfileBackdropClip(CCSize const& imgArea, CCPoint const& popupCenter, bool rounded) {
         auto stencil = rounded
             ? paimon::SpriteHelper::createRoundedRectStencil(imgArea.width, imgArea.height)
@@ -753,10 +694,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
         return clip;
     }
 
-    // Mounts an already-populated clip as the profile background: dark overlay,
-    // z-order, Fields state, and re-scheduling the style tick. Shared by the
-    // image / gif / video / gradient variants.
     void mountProfileBackdropClip(CCClippingNode* clip, CCSize const& imgArea, CCNode* layer, ProfileBackdropKind kind) {
+        if (!paimonProfilesEnabled()) return;
         addProfileImgDarkOverlay(clip, imgArea);
         layer->addChild(clip, paimon::settings::profiles::profileImgZLayer());
         auto f = m_fields.self();
@@ -768,9 +707,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         this->schedule(schedule_selector(PaimonProfilePage::tickStyleBgs), 1.5f);
     }
 
-    // Clears the profile-background clip: stops any playing video before removing
-    // it (avoids stuck playback/audio when switching backgrounds) and resets the
-    // Ref<>. Shared by the video / gradient / addOrUpdate / clearProfileBgVisual variants.
     void clearProfileImgClip() {
         auto f = m_fields.self();
         if (!f->m_profileImgClip) return;
@@ -832,9 +768,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         auto clip = makeProfileBackdropClip(imgArea, popupCenter, /*rounded=*/false);
 
-        // Helper: applies scale-to-fill against the actual video dimensions.
-        // Reuses the cocos2d "cover" formula (max of axis ratios) so the video
-        // fills imgArea without leaving stripes, possibly cropping a little.
         auto applyCoverScale = [imgArea](VideoThumbnailSprite* spr) {
             if (!spr) return;
             auto sz = spr->getVideoSize();
@@ -845,42 +778,23 @@ class $modify(PaimonProfilePage, ProfilePage) {
             spr->setScale(std::max(sx, sy));
         };
 
-        // Position/anchor first; the scale is applied below either right
-        // away (if the sprite already has a real frame) or once the first
-        // visible frame arrives via setOnFirstVisibleFrame.
         video->setAnchorPoint(ccp(0.5f, 0.5f));
         video->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
 
-        // Bug-1 fix: if the sprite was just constructed and the decoder has
-        // not produced a frame yet, getContentWidth() is 1×1 (placeholder).
-        // Computing setScale against that gives an enormous scale that maps
-        // a 1×1 placeholder all over imgArea (the "small video top-left, rest
-        // distorted" symptom). Instead, only apply the scale immediately when
-        // the sprite already has its real video size; otherwise defer until
-        // the first frame arrives.
+        // Avoid scaling the 1×1 placeholder; use decoder metadata until the first frame.
         if (video->hasVisibleFrame()) {
             applyCoverScale(video);
         } else {
-            // Provisional: scale to fill assuming the encoded video size
-            // (returned by getVideoSize() reading the player metadata even
-            // before the first decoded frame). If even metadata is missing,
-            // setScale(1) avoids the 1×1 stretch artefact and waits for the
-            // callback below.
             auto sz = video->getVideoSize();
             if (sz.width > 1.f && sz.height > 1.f) {
                 applyCoverScale(video);
             } else {
                 video->setScale(1.0f);
-                video->setVisible(false); // hide until first frame to avoid the 1×1 flash
+                video->setVisible(false);
             }
         }
         clip->addChild(video);
 
-        // The callback fires on the first decoded frame: by then the sprite
-        // has real contentSize, getVideoSize() is accurate and we can apply
-        // the final cover scale. Capture both the sprite (Ref<>) and accountID
-        // so we keep the sprite alive until the callback runs and we don't
-        // race against profile switches.
         Ref<VideoThumbnailSprite> videoRef = video;
         int currentAccountID = this->m_accountID;
         video->setOnFirstVisibleFrame(
@@ -909,39 +823,22 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
     }
 
-    // Bug-2 helper: returns true when the local cache already has a
-    // GIF or video for this profile. We use it to override the cached
-    // server-side config when it disagrees with what the user just
-    // configured locally (otherwise an old "icon-gradient" config would
-    // hide a freshly uploaded video on a re-open).
     bool hasLocalAnimatedProfileMedia(int accountID) const {
         auto videoKey       = fmt::format("profileimg_video_{}", accountID);
         auto gifKey         = getProfileImgGifCacheKey(accountID);
         if (VideoThumbnailSprite::isCached(videoKey))       return true;
-        // NOTA: NO consultar "profile_video_{id}" aqui. Esa clave es el video del
-        // BANNER del perfil (cacheado por el leaderboard / score cells), no el
-        // backdrop del perfil. Tratarla como "media local del perfil" hacia que
-        // el banner se confundiera con el fondo del perfil al volver desde el
-        // leaderboard.
         if (!gifKey.empty() && AnimatedGIFSprite::isCached(gifKey)) return true;
         return false;
     }
 
-    // Includes a static image in RAM/disk besides GIF/video. Without this, a
-    // cached server config of "icon-gradient" or "none" (from an earlier mode)
-    // wipes the background a few ms after painting the local image.
     bool hasLocalProfileBackgroundAsset(int accountID) const {
         if (hasLocalAnimatedProfileMedia(accountID)) return true;
         if (getProfileImgCachedTexture(accountID)) return true;
         std::error_code ec;
-        auto path = getProfileImgCachePath(accountID);
-        if (!std::filesystem::exists(path, ec)) return false;
-        auto const fileSize = std::filesystem::file_size(path, ec);
+        auto const fileSize = std::filesystem::file_size(getProfileImgCachePath(accountID), ec);
         return !ec && fileSize > 0;
     }
 
-    // After uploading image/GIF/video, the server may still return the old
-    // backgroundType (e.g. icon-gradient). Update the config.
     struct ProfileBackdropLayout {
         cocos2d::CCSize imgArea;
         cocos2d::CCPoint popupCenter;
@@ -968,8 +865,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         return layout;
     }
 
-    // Prevents async callbacks (config bundle / downloadProfileConfig) from
-    // overwriting or clearing an already-shown image/video background.
     bool shouldBlockServerBackdropOverride(int accountID) {
         if (m_fields->m_backdropKind == ProfileBackdropKind::Media) {
             return true;
@@ -979,14 +874,18 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     bool tryShowCachedProfileMedia(int accountID) {
         if (accountID <= 0) return false;
-        if (ensureAnimatedProfileImg(accountID)) {
+        std::shared_ptr<std::vector<uint8_t>> diskBytes;
+        if (ensureAnimatedProfileImg(accountID, &diskBytes)) {
             return true;
         }
         if (auto* cachedTex = getProfileImgCachedTexture(accountID)) {
             displayProfileImg(accountID, cachedTex);
             return true;
         }
-        if (auto* diskTex = loadProfileImgFromDisk(accountID)) {
+        auto* diskTex = diskBytes
+            ? decodeProfileImgBytes(diskBytes->data(), diskBytes->size())
+            : loadProfileImgFromDisk(accountID);
+        if (diskTex) {
             cacheProfileImgTexture(accountID, diskTex);
             displayProfileImg(accountID, diskTex);
             return true;
@@ -994,9 +893,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
         return false;
     }
 
-    // ProfilePage::loadPageFromUserInfo rebuilds the layer's children; the custom
-    // background clip often loses its parent (flash: appears for an instant and disappears).
     void refreshProfileBackdropAfterVanillaLayout() {
+        if (!paimonProfilesEnabled()) return;
         if (!this->getParent() || !this->m_mainLayer) return;
         if (this->m_accountID <= 0) return;
 
@@ -1014,13 +912,15 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
 
         auto cachedCfg = ProfileThumbs::get().getProfileConfig(accountID);
+        bool const hasLocalBgAsset = hasLocalProfileBackgroundAsset(accountID);
+
         if (cachedCfg.hasConfig && cachedCfg.backgroundType == "none" &&
             !hasLocalAnimatedProfileMedia(accountID) &&
-            !hasLocalProfileBackgroundAsset(accountID)) {
+            !hasLocalBgAsset) {
             return;
         }
         if (cachedCfg.hasConfig && cachedCfg.backgroundType == "icon-gradient" &&
-            !hasLocalProfileBackgroundAsset(accountID)) {
+            !hasLocalBgAsset) {
             cocos2d::ccColor3B liveA, liveB;
             if (getLiveProfileColors(liveA, liveB)) {
                 displayProfileBgGradient(
@@ -1031,11 +931,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
             return;
         }
 
-        // Only re-show media if the config already confirmed this user uses
-        // image/video. Without a cached config, don't show, to avoid the
-        // ScoreCell thumbnail appearing as a backdrop.
         if (f->m_backdropKind == ProfileBackdropKind::Media ||
-            (hasLocalProfileBackgroundAsset(accountID) && cachedCfg.hasConfig)) {
+            (hasLocalBgAsset && cachedCfg.hasConfig)) {
             tryShowCachedProfileMedia(accountID);
         }
     }
@@ -1061,23 +958,18 @@ class $modify(PaimonProfilePage, ProfilePage) {
             });
     }
 
-    bool ensureAnimatedProfileImg(int accountID) {
+    bool ensureAnimatedProfileImg(int accountID,
+                                  std::shared_ptr<std::vector<uint8_t>>* outBytes = nullptr) {
+        if (!paimonProfilesEnabled()) return false;
+
         auto gifKey = getProfileImgGifCacheKey(accountID);
         auto videoKey = fmt::format("profileimg_video_{}", accountID);
 
-        // check for cached video first (use correct video key)
         if (VideoThumbnailSprite::isCached(videoKey)) {
             displayProfileImgVideo(videoKey);
             return true;
         }
 
-        // NOTA: NO consultar la clave legacy "profile_video_{id}". Esa clave es
-        // ahora propiedad EXCLUSIVA del banner del perfil (fondo descargado por
-        // GJScoreCell / LeaderboardsLayer via processProfileBackgroundBytes).
-        // Compartir la clave hacia que el backdrop del perfil mostrara el banner
-        // del leaderboard al volver al perfil. Si el backdrop es un video,
-        // se reconstruye abajo desde el disco (profileimg_cache/{id}.dat) bajo la
-        // clave correcta "profileimg_video_{id}".
 
         if (!gifKey.empty() && AnimatedGIFSprite::isCached(gifKey)) {
             displayProfileImgGif(gifKey);
@@ -1086,8 +978,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         auto bytes = readProfileImgCacheBytes(accountID);
         if (!bytes || bytes->empty()) return false;
+        if (outBytes) *outBytes = bytes;
 
-        // check if disk cache is MP4 (ftyp box can be at different offsets)
         bool isMp4 = false;
         if (bytes->size() > 12) {
             for (size_t i = 0; i + 3 < bytes->size() && i < 12; ++i) {
@@ -1112,9 +1004,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         ProfileImageService::get().rememberProfileImgGifKey(accountID, gifKey);
 
-        // Placeholder: static first frame while the async GIF finishes decoding.
-        // maxFrames=1 — decoding the whole GIF here runs on the main thread and
-        // stalled the frame when opening profiles with large animated backdrops.
         auto gifResult = GIFDecoder::decode(bytes->data(), bytes->size(), 1);
         if (!gifResult.frames.empty()) {
             auto& firstFrame = gifResult.frames[0];
@@ -1151,26 +1040,16 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void addOrUpdateProfileImgOnPage(int accountID, bool isSelf = false) {
+        if (!paimonProfilesEnabled()) return;
+
         auto f = m_fields.self();
         f->m_hasProfileBackdrop = false;
         f->m_backdropKind = ProfileBackdropKind::None;
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
 
-        // clear previous - stop video first to prevent stale playback
         clearProfileImgClip();
         if (f->m_profileImgBorder) { f->m_profileImgBorder->removeFromParent(); f->m_profileImgBorder = nullptr; }
 
-        // If the cached config says the user chose the icon gradient, paint it
-        // directly and skip downloading the image/GIF/video banner; no point
-        // downloading what won't show.
-        //
-        // Bug-2 fix: the cached config can say "icon-gradient" while the user
-        // already has a local profile video/GIF (uploaded on another device, or
-        // before the config re-synced from the server). Taking the gradient
-        // shortcut without checking the local cache makes the just-configured
-        // video show ONCE (on upload) then never again, because the cached server
-        // config blocks it. So check the local cache first and, if a video/GIF
-        // exists, show it: local media is the freshest source of truth.
         {
             auto cachedCfg = ProfileThumbs::get().getProfileConfig(accountID);
             bool hasLocalAnimatedMedia = hasLocalAnimatedProfileMedia(accountID);
@@ -1178,10 +1057,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
             if (cachedCfg.hasConfig && cachedCfg.backgroundType == "icon-gradient" &&
                 !hasLocalBgAsset) {
-                // LIVE colors: read from the current player (GameManager for own
-                // profile, GJUserScore for others) each render. If player data
-                // isn't here yet (m_score hasn't arrived), paint nothing and let
-                // getUserInfoFinished trigger a repaint later with the correct colors.
                 cocos2d::ccColor3B liveA, liveB;
                 if (getLiveProfileColors(liveA, liveB)) {
                     this->displayProfileBgGradient(
@@ -1189,25 +1064,16 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         cachedCfg.gradientEffect, cachedCfg.gradientSpeed
                     );
                 }
-                // Without live data we don't render: the config no longer stores
-                // a snapshot; colors come ONLY from local.
                 return;
             }
             if (cachedCfg.hasConfig && cachedCfg.backgroundType == "none" &&
                 !hasLocalAnimatedMedia) {
-                // The user reset their background: paint nothing extra.
                 return;
             }
-            // Special case: config says icon-gradient/none but local media
-            // exists. Fall through to the normal flow below, which calls
-            // ensureAnimatedProfileImg() and shows the local video/GIF.
         }
 
-        // Only show cached media immediately if the config is already available
+        // Do not show media until config is known; otherwise the ScoreCell image can flash as the backdrop.
         // (hasConfig == true and not "none"/"icon-gradient" — those were handled
-        // above). If the config isn't cached, show nothing now: downloadProfileConfig
-        // decides when it arrives, avoiding a flash where the ScoreCell thumbnail
-        // appears as a backdrop.
         auto cachedCfgForMedia = ProfileThumbs::get().getProfileConfig(accountID);
         bool configAllowsMedia = cachedCfgForMedia.hasConfig &&
             cachedCfgForMedia.backgroundType != "none" &&
@@ -1215,14 +1081,18 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         bool queuedAnimated = false;
         if (configAllowsMedia || hasLocalProfileBackgroundAsset(accountID)) {
-            queuedAnimated = ensureAnimatedProfileImg(accountID);
+            std::shared_ptr<std::vector<uint8_t>> diskBytes;
+            queuedAnimated = ensureAnimatedProfileImg(accountID, &diskBytes);
 
             if (!queuedAnimated) {
                 CCTexture2D* cachedTex = getProfileImgCachedTexture(accountID);
                 if (cachedTex) {
                     this->displayProfileImg(accountID, cachedTex);
                 } else {
-                    if (auto* diskTex = loadProfileImgFromDisk(accountID)) {
+                    auto* diskTex = diskBytes
+                        ? decodeProfileImgBytes(diskBytes->data(), diskBytes->size())
+                        : loadProfileImgFromDisk(accountID);
+                    if (diskTex) {
                         cacheProfileImgTexture(accountID, diskTex);
                         this->displayProfileImg(accountID, diskTex);
                     }
@@ -1230,9 +1100,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        // Ensure we have the config (background type) for when the user chose
-        // icon-gradient but it isn't cached yet. If the downloaded config shows
-        // icon-gradient, repaint the banner as a gradient and clear any previous image.
         WeakRef<PaimonProfilePage> cfgSelf = this;
         ThumbnailAPI::get().downloadProfileConfig(accountID,
             [cfgSelf, accountID](bool ok, ProfileConfig const& cfg) {
@@ -1244,16 +1111,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         auto page = cfgSelf.lock();
                         if (!page) return;
                         if (page->m_accountID != accountID) return;
-                        // Bug-2 fix: do not paint over a locally-configured
-                        // video/GIF. The server config can lag behind the
-                        // local media (different device, recent upload, etc.).
                         auto* selfPaimon = static_cast<PaimonProfilePage*>(page.data());
                         if (selfPaimon && selfPaimon->shouldBlockServerBackdropOverride(accountID)) {
                             return;
                         }
-                        // LIVE colors: see the comment in addOrUpdateProfileImgOnPage.
-                        // If there's no live data yet, paint nothing:
-                        // getUserInfoFinished handles it when the GJUserScore arrives.
                         cocos2d::ccColor3B liveA, liveB;
                         if (page->getLiveProfileColors(liveA, liveB)) {
                             page->displayProfileBgGradient(
@@ -1275,9 +1136,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         page->clearProfileBgVisual();
                     });
                 } else {
-                    // Config says it should show an image (thumbnail/gradient/etc).
-                    // If downloadProfileImg already cached the texture but didn't
-                    // show it (config wasn't ready), show it now.
                     Loader::get()->queueInMainThread([cfgSelf, accountID]() {
                         if (paimon::isRuntimeShuttingDown()) return;
                         auto page = cfgSelf.lock();
@@ -1291,20 +1149,15 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 }
             });
 
-        // download from the server in the background (update cache)
-        // Ref<> keeps the ProfilePage alive until the callback finishes
         Ref<ProfilePage> self = this;
         ThumbnailAPI::get().downloadProfileImg(accountID, [self, accountID](bool success, CCTexture2D* texture) {
             if (!self || !self->getParent()) return;
 
             if (success) {
-                // Ref<> retains on assignment and releases the previous one automatically
                 auto* page = static_cast<PaimonProfilePage*>(self.data());
                 if (!page) return;
                 if (self->m_accountID != accountID) return;
 
-                // If a config with a non-image backgroundType (icon-gradient /
-                // none) was cached meanwhile, respect it and don't paint the image.
                 auto cfg = ProfileThumbs::get().getProfileConfig(accountID);
                 if (cfg.hasConfig && cfg.backgroundType == "icon-gradient" &&
                     !page->shouldBlockServerBackdropOverride(accountID)) {
@@ -1319,10 +1172,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     cacheProfileImgTexture(accountID, texture);
                 }
 
-                // If the config isn't cached yet, don't show the image as a
-                // backdrop yet; downloadProfileConfig decides when it arrives.
-                // Avoids a flash where the ScoreCell image briefly appears as the
-                // profile background.
                 if (!cfg.hasConfig && !page->shouldBlockServerBackdropOverride(accountID)) {
                     return;
                 }
@@ -1342,17 +1191,14 @@ class $modify(PaimonProfilePage, ProfilePage) {
         return (c.r <= 0x60 && c.g <= 0x50 && c.b <= 0x40 && (c.r + c.g + c.b) > 0);
     }
 
-    // Tint an entire CCScale9Sprite (center + borders)
     static void tintScale9(CCScale9Sprite* s9, ccColor3B const& color, GLubyte opacity) {
         if (!s9) return;
 
-        // Enable cascade for children
         s9->setCascadeColorEnabled(true);
         s9->setCascadeOpacityEnabled(true);
         s9->setColor(color);
         s9->setOpacity(opacity);
 
-        // Tint direct children of the inner batch node
         auto s9Children = s9->getChildren();
         if (!s9Children) return;
         for (auto* batchNode : CCArrayExt<CCSpriteBatchNode*>(s9Children)) {
@@ -1368,47 +1214,45 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
     }
 
-    // Hide decorative backgrounds and add a dark panel
-    void styleProfileInternalBgs(CCNode* root) {
-        if (!root) return;
+    void styleCommentList(GJCommentListLayer* commentList) {
+        commentList->setOpacity(0);
+
+        if (auto* listChildren = commentList->getChildren()) {
+            for (auto* lc : CCArrayExt<CCNode*>(listChildren)) {
+                if (!lc) continue;
+                auto const id = lc->getID();
+                if (id == "left-border" || id == "right-border" ||
+                    id == "top-border" || id == "bottom-border") {
+                    lc->setVisible(false);
+                }
+            }
+        }
+
+        hideCommentCellBgs(commentList);
+    }
+
+    void resolveStyleTargets(CCNode* root) {
+        auto f = m_fields.self();
+        f->m_commentListCached = nullptr;
+        f->m_iconBackgroundCached = nullptr;
+        f->m_specialBorderCached = nullptr;
 
         auto walk = [&](auto const& self, CCNode* parent) -> void {
-            if (!parent) return;
             auto* children = parent->getChildren();
             if (!children) return;
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 if (!child) continue;
 
-                // Hide the decorative icon-background so the profile backdrop
-                // shows through behind the icon row.
-                if (child->getID() == "icon-background") {
-                    child->setVisible(false);
-                }
-
-                // Hide decorative border
-                if (child->getID() == "alphalaneous.happy_textures/special-border") {
-                    child->setVisible(false);
-                }
-
-                // GJCommentListLayer: opacity 0, hide borders
                 if (auto* commentList = typeinfo_cast<GJCommentListLayer*>(child)) {
-                    commentList->setOpacity(0);
+                    f->m_commentListCached = commentList;
+                    continue;
+                }
 
-                    auto* listChildren = commentList->getChildren();
-                    if (listChildren) {
-                        for (auto* lc : CCArrayExt<CCNode*>(listChildren)) {
-                            if (!lc) continue;
-                            auto id = lc->getID();
-                            // Borders with a node ID
-                            if (id == "left-border" || id == "right-border" ||
-                                id == "top-border" || id == "bottom-border") {
-                                lc->setVisible(false);
-                            }
-                        }
-                    }
-
-                    // Hide CommentCells' internal backgrounds
-                    hideCommentCellBgs(commentList);
+                auto const id = child->getID();
+                if (id == "icon-background") {
+                    f->m_iconBackgroundCached = child;
+                } else if (id == "alphalaneous.happy_textures/special-border") {
+                    f->m_specialBorderCached = child;
                 }
 
                 self(self, child);
@@ -1416,17 +1260,44 @@ class $modify(PaimonProfilePage, ProfilePage) {
         };
 
         walk(walk, root);
+        f->m_styleTargetsResolved = true;
+    }
+
+    void styleProfileInternalBgs(CCNode* root) {
+        if (!root) return;
+        auto f = m_fields.self();
+
+        auto* commentList = f->m_commentListCached.data();
+        if (!f->m_styleTargetsResolved || !commentList ||
+            !commentList->getParent() || !commentList->hasAncestor(root)) {
+            resolveStyleTargets(root);
+            commentList = f->m_commentListCached.data();
+        }
+
+        if (auto* iconBg = f->m_iconBackgroundCached.data()) {
+            iconBg->setVisible(false);
+        }
+        if (auto* border = f->m_specialBorderCached.data()) {
+            border->setVisible(false);
+        }
+        if (commentList) {
+            styleCommentList(commentList);
+        }
+    }
+
+    void invalidateStyleTargets() {
+        m_fields->m_styleTargetsResolved = false;
     }
 
     void hideCommentCellBgs(CCNode* listNode) {
         paimon::commentbg::hideCommentCellBgs(listNode);
     }
 
-    // Hook: GD finished loading user info
     $override
     void getUserInfoFinished(GJUserScore* score) {
         ProfilePage::getUserInfoFinished(score);
 
+        invalidateStyleTargets();
         refreshProfileBackdropAfterVanillaLayout();
 
         if (m_fields->m_hasProfileBackdrop) {
@@ -1435,8 +1306,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        // Now that we have the GJUserScore, if the profile chose icon-gradient,
-        // repaint with the player's LIVE colors.
         if (this->m_accountID > 0 && !shouldBlockServerBackdropOverride(this->m_accountID)) {
             auto cachedCfg = ProfileThumbs::get().getProfileConfig(this->m_accountID);
             if (cachedCfg.hasConfig && cachedCfg.backgroundType == "icon-gradient") {
@@ -1457,13 +1326,27 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
     }
 
+    void onCopyIcons(CCObject*) {
+        auto set = m_fields->m_iconSet;
+        if (set.accountID <= 0 && set.username.empty()) {
+            if (auto* score = this->m_score) set = paimon::iconcopy::snapshot(score);
+        }
+        if (set.accountID <= 0 && set.username.empty()) {
+            PaimonNotify::show("Icons aren't loaded yet", NotificationIcon::Warning);
+            return;
+        }
+        if (auto popup = paimon::iconcopy::CopyIconsPopup::create(set)) {
+            popup->show();
+        }
+    }
+
     void onFavCreator(CCObject* sender) {
         auto* item = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
         if (!item) return;
         int creatorID = item->getTag();
         if (creatorID <= 0) return;
 
-        auto& tracker = paimon::foryou::ForYouTracker::get();
+        auto& tracker = paimon::foryou::TasteProfile::get();
         if (tracker.isCreatorFavorited(creatorID)) {
             tracker.onUnfavoriteCreator(creatorID);
             if (auto spr = typeinfo_cast<CCSprite*>(item->getNormalImage())) spr->setOpacity(120);
@@ -1483,7 +1366,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void onRateProfile(CCObject*) {
-        // don't rate your own profile
         if (this->m_ownProfile) {
             PaimonNotify::create(Localization::get().getString("profile.cant_rate_own").c_str(), NotificationIcon::Warning)->show();
             return;
@@ -1497,15 +1379,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
     }
 
-    // Clear paimon buttons to avoid duplicates
     void cleanPaimonButtons(CCMenu* menu) {
         if (!menu) return;
-        // These get recreated below in loadPageFromUserInfo AND are relocated by
-        // the profile redesign into its own rails (rd-options-rail / rd-bottom-row).
-        // Remove them across the WHOLE ProfilePage tree (not just `menu`): a
-        // local-only check leaves the relocated copy in place, so on reload the
-        // ensure*/create code makes a fresh copy and the two stack up — the
-        // visible duplicate buttons after pressing the refresh button.
+// Remove relocated copies tree-wide before rebuilding the page.
         static std::string const relocatableIDs[] = {
             "profile-reviews-btn"_spr,
             "ban-user-button"_spr,
@@ -1517,9 +1393,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 btn->removeFromParent();
             }
         }
-        // fav-creator-btn is created/managed elsewhere and is not relocated by the
-        // redesign; only clear it from the local menu to avoid removing a button
-        // that this path would not recreate.
         while (auto* btn = menu->getChildByID("fav-creator-btn"_spr)) {
             btn->removeFromParent();
         }
@@ -1530,15 +1403,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void cleanPaimonSocialsButtons(CCMenu* menu) {
         if (!menu) return;
-        // Tree-wide removal (see cleanPaimonButtons): these are recreated below and
-        // relocated by the redesign, so a local-only check duplicates them on
-        // reload. (profile-music-button / add-profileimg-button are legacy ids no
-        // longer created; harmless to include.)
         static std::string const paimonSocialIDs[] = {
             "profile-settings-button"_spr,
             "profile-music-button"_spr,
             "add-profileimg-button"_spr,
             "profile-music-pause-button"_spr,
+            "copy-icons-button"_spr,
         };
         for (auto const& id : paimonSocialIDs) {
             while (auto* btn = this->getChildByIDRecursive(id)) {
@@ -1548,7 +1418,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_musicPauseBtn = nullptr;
     }
 
-    // Get the profile popup's position/size
     CCPoint getPopupCenter() {
         if (!this->m_mainLayer) {
             auto* dir = CCDirector::get();
@@ -1567,35 +1436,29 @@ class $modify(PaimonProfilePage, ProfilePage) {
         return {440.f, 290.f};
     }
 
-    // Hook: GD builds the profile icon panels
     $override
     void loadPageFromUserInfo(GJUserScore* score) {
-        // Own profile: stamp live local stats onto the score BEFORE vanilla
-        // builds labels. Without this, disabling profile redesign shows the
-        // stale cached GJUserScore (redesign was the only place that used GSM).
         if (this->m_ownProfile && score) {
             paimon::profiles::applyLiveOwnProfileStats(score);
         }
 
         ProfilePage::loadPageFromUserInfo(score);
 
-        // Defense in depth: if node-ids already built labels from an older score
-        // copy, rewrite the visible numbers (no-op when redesign hides stats-menu).
+        invalidateStyleTargets();
+
+        if (score) m_fields->m_iconSet = paimon::iconcopy::snapshot(score);
+
         if (this->m_ownProfile && score && this->m_mainLayer) {
             paimon::profiles::refreshVanillaStatsLabels(this->m_mainLayer, score);
         }
 
-        // Global Icons: if this user shares a custom icon, replace the profile's
-        // SimplePlayer with theirs (no-op if the feature doesn't apply).
         if (this->m_mainLayer) {
             int gAccountID = score ? score->m_accountID : this->m_accountID;
             paimon::globalicon::renderProfileCube(this->m_mainLayer, gAccountID);
         }
 
-        // GD rebuilds the popup layout here; re-attach the custom background.
         refreshProfileBackdropAfterVanillaLayout();
 
-        // Prefetch emote catalog for profile comment emote rendering
         if (!paimon::emotes::EmoteService::get().isLoaded() &&
             !paimon::emotes::EmoteService::get().isFetching()) {
             paimon::emotes::EmoteService::get().loadCatalogFromDisk();
@@ -1624,7 +1487,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             menu->setZOrder(10);
             this->m_mainLayer->addChild(menu);
 
-            // Only position it if we created the menu (fallback)
             float menuX = popCenter.x - popSize.width / 2 + 18.f;
             float menuY = popCenter.y;
             menu->setPosition({menuX, menuY});
@@ -1641,14 +1503,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
             );
         }
 
-        // Clear previous paimon buttons
         cleanPaimonButtons(menu);
 
-        // Clear the thumbnail-count badge on reload. Use the REAL id
-        // ("paimon-thumb-count-btn") and search the WHOLE tree: the redesign
-        // relocates this badge into its bottom row, so the old stats-menu-only
-        // cleanup (with the wrong icon/text ids) left the relocated copy in place
-        // and addThumbnailCountBadge then stacked a fresh duplicate on reload.
         while (auto* btn = this->getChildByIDRecursive("paimon-thumb-count-btn"_spr)) {
             btn->removeFromParent();
         }
@@ -1656,10 +1512,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         ensureReviewsButton(menu);
 
-        if (!this->m_ownProfile) {
+        if (!this->m_ownProfile && paimonProfilesEnabled()) {
             if (auto bottomMenu = this->m_mainLayer->getChildByIDRecursive("bottom-menu")) {
-                // Recursive check: the redesign relocates this button, so a
-                // local-only check would keep recreating duplicates.
                 if (!this->getChildByIDRecursive("rate-profile-btn"_spr)) {
                     auto bg = paimon::SpriteHelper::safeCreateScale9("GJ_button_04.png");
                     if (!bg) bg = paimon::SpriteHelper::safeCreateScale9("GJ_button_01.png");
@@ -1687,11 +1541,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        // Ban button (mods/admins)
         createBanButtonInto(menu);
         refreshBanButtonVisibility();
 
-        // Moderation buttons (own profile)
         if (this->m_ownProfile) {
             if (m_fields->m_isApprovedMod || m_fields->m_isAdmin) {
                 ensureGearButton(menu);
@@ -1703,7 +1555,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         menu->updateLayout();
 
-        // Buttons in socials-menu
         auto* socialsMenu = getSocialsMenu();
         bool createdSocialsMenu = false;
         if (!socialsMenu) {
@@ -1714,7 +1565,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             socialsMenu = newSocialsMenu;
             createdSocialsMenu = true;
 
-            // Only position it if we created the menu (fallback)
             float socialsX = popCenter.x + popSize.width / 2 - 18.f;
             float socialsY = popCenter.y;
             socialsMenu->setPosition({socialsX, socialsY});
@@ -1732,8 +1582,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
 
         cleanPaimonSocialsButtons(socialsMenu);
-
-        // Add buttons after the native ones
 
         if (this->m_ownProfile) {
             auto settingsSpr = paimon::SpriteHelper::safeCreateWithFrameName("accountBtn_settings_001.png");
@@ -1757,9 +1605,25 @@ class $modify(PaimonProfilePage, ProfilePage) {
             m_fields->m_musicPauseBtn = pauseBtn;
         }
 
+        if (paimon::iconcopy::enabled()) {
+            CCNode* copySpr = nullptr;
+            if (auto* face = paimon::iconcopy::makePreview(m_fields->m_iconSet, IconType::Cube, 26.f)) {
+                auto* circle = CircleButtonSprite::create(
+                    face, CircleBaseColor::Cyan, CircleBaseSize::Medium);
+                if (circle) circle->setTopRelativeScale(0.95f);
+                copySpr = circle;
+            }
+            if (!copySpr) copySpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_duplicateBtn_001.png");
+            if (copySpr) {
+                scaleToFit(copySpr, 30.f);
+                auto copyBtn = CCMenuItemSpriteExtra::create(copySpr, this, menu_selector(PaimonProfilePage::onCopyIcons));
+                copyBtn->setID("copy-icons-button"_spr);
+                socialsMenu->addChild(copyBtn);
+            }
+        }
+
         socialsMenu->updateLayout();
 
-        // Clear the custom badge from the username-menu on reloads
         if (auto* usernameMenu = getUsernameMenu()) {
             while (auto* old = usernameMenu->getChildByID("paimon-custom-badge"_spr))
                 old->removeFromParent();
@@ -1767,12 +1631,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 old->removeFromParent();
         }
 
-        // User status indicator (online/offline dot)
         if (this->m_accountID > 0) {
             fetchAndShowUserStatus(this->m_accountID);
         }
 
-        // Moderator/admin badge
         if (score) {
             std::string badgeUsername = score->m_userName;
 
@@ -1789,7 +1651,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 }
             }
 
-            // Authoritative role set for badges (admin/mod/vip/helper/idea).
             {
                 Ref<PaimonProfilePage> rbSelf = this;
                 std::string capturedUser = badgeUsername;
@@ -1803,8 +1664,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     });
             }
 
-            // Profile Bundle: mod status + badge + stats in 1 request
-            // Replaces individual checkUserStatus + fetchBadge + getProfileStats calls
             int viewedAccountID = this->m_accountID;
             Ref<PaimonProfilePage> bundleSelf = this;
 
@@ -1830,7 +1689,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     }
                     auto json = parsed.unwrap();
 
-                    // Mod status
                     bool isMod = json["isModerator"].asBool().unwrapOr(false);
                     std::string role = json["role"].asString().unwrapOr("");
                     bool isAdmin = (role == "admin");
@@ -1838,7 +1696,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     bool isHelper = json["isHelper"].asBool().unwrapOr(false);
                     bool isIdea = json["isIdea"].asBool().unwrapOr(false);
 
-                    // Update caches
                     moderatorCacheInsert(badgeUsername, isMod, isAdmin);
                     ModerationService::get().updateUserStatusCache(badgeUsername, isMod, isAdmin);
                     {
@@ -1851,23 +1708,17 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         paimon::roles::RoleService::get().update(badgeUsername, cacheRoles);
                     }
 
-                    // Custom badge
                     std::string emoteName;
                     if (json.contains("badge") && json["badge"].isObject() && json["badge"].contains("emote")) {
                         emoteName = json["badge"]["emote"].asString().unwrapOr("");
                     }
                     CustomBadgeService::get().updateCacheFromBundle(viewedAccountID, emoteName);
 
-                    // Stats
                     int uploadCount = 0;
                     if (json.contains("stats") && json["stats"].isObject()) {
                         uploadCount = json["stats"]["uploadCount"].asInt().unwrapOr(0);
                     }
 
-                    // Profile config from the bundle. The bundle already returns
-                    // the full config blob under "config". Cache it in
-                    // ProfileThumbs so applyVideoAudioOverride / displayProfileBg
-                    // find useVideoAudio without an extra server round-trip.
                     if (json.contains("config") && json["config"].isObject()) {
                         auto& cfgJson = json["config"];
                         ProfileConfig pcfg;
@@ -1888,31 +1739,19 @@ class $modify(PaimonProfilePage, ProfilePage) {
                             pcfg.gradientSpeed = static_cast<float>(cfgJson["gradientSpeed"].asDouble().unwrapOr(1.0));
                         if (cfgJson.contains("useVideoAudio"))
                             pcfg.useVideoAudio = cfgJson["useVideoAudio"].asBool().unwrapOr(false);
-                        // Cache on the main thread to avoid racing the render
-                        // that might be reading simultaneously.
                         Loader::get()->queueInMainThread([viewedAccountID, pcfg]() {
                             if (paimon::isRuntimeShuttingDown()) return;
                             ProfileThumbs::get().cacheProfileConfig(viewedAccountID, pcfg);
                         });
                     }
 
-                    // Determine whether this is the local user's own profile.
-                    // The profile bundle is served from a Cloudflare edge cache
-                    // that is NOT purged when the user changes their profile
-                    // music — only the dedicated /api/profile-music endpoint is
-                    // invalidated on upload/delete. So right after an upload the
-                    // bundle's "music" block can be stale and still describe the
-                    // previously configured song (old songID / old updatedAt),
-                    // which then drives both playback and the audio download
-                    // cache-buster, serving the previous clip. For our own
-                    // profile we therefore ignore the bundle music and reconcile
-                    // against the authoritative endpoint instead.
+// The edge-cached profile bundle can lag after a music change; use the
+// authoritative music endpoint for the local profile.
                     bool isOwnProfileMusic = false;
                     if (auto* am = GJAccountManager::get()) {
                         isOwnProfileMusic = (am->m_accountID == viewedAccountID);
                     }
 
-                    // Music config from the bundle
                     std::optional<ProfileMusicManager::ProfileMusicConfig> bundleMusicConfig;
                     bool hasBundleMusicConfig = json.contains("music");
                     if (hasBundleMusicConfig && json["music"].isObject()) {
@@ -1927,10 +1766,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         musicCfg.artistName = musicJson["artistName"].asString().unwrapOr("");
                         musicCfg.updatedAt = musicJson["updatedAt"].asString().unwrapOr("");
                         musicCfg.isCustom = musicJson["isCustom"].asBool().unwrapOr(false);
-                        // Only cache/trust the bundle music for other users'
-                        // profiles. For our own profile the bundle may be stale,
-                        // so we leave bundleMusicConfig empty and force the
-                        // authoritative fetch below.
                         if (!isOwnProfileMusic) {
                             ProfileMusicManager::get().injectBundleConfig(viewedAccountID, musicCfg);
                             bundleMusicConfig = musicCfg;
@@ -1942,7 +1777,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         if (!bundleSelf || !bundleSelf->getParent()) return;
                         if (bundleSelf->m_accountID != viewedAccountID) return;
 
-                        // Role badges (admin/mod/vip/helper/idea)
                         paimon::roles::UserRoles roles;
                         roles.admin = isAdmin;
                         roles.mod = isMod || isAdmin;
@@ -1953,19 +1787,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
                             bundleSelf->addRoleBadgesToProfile(roles);
                         }
 
-                        // Custom emote badge
                         if (!emoteName.empty()) {
                             bundleSelf->addCustomBadgeToProfile(emoteName);
                         }
 
-                        // Upload count badge
                         bundleSelf->addThumbnailCountBadge(uploadCount);
 
                         if (isOwnProfileMusic) {
-                            // Bundle music may be stale for our own profile right
-                            // after an upload; force the authoritative fetch so a
-                            // freshly changed/custom song is picked up instead of
-                            // re-downloading the previously configured one.
                             bundleSelf->checkAndPlayProfileMusic(viewedAccountID, std::nullopt, false, true);
                         } else {
                             bundleSelf->checkAndPlayProfileMusic(viewedAccountID, bundleMusicConfig, hasBundleMusicConfig, !hasBundleMusicConfig);
@@ -2006,7 +1834,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         mountProfileBackdropClip(clip, imgArea, layer, ProfileBackdropKind::Media);
     }
 
-    // Periodically re-apply opacity 0 to icon-background
     void tickStyleBgs(float) {
         if (!this->getParent()) return;
         if (!m_fields->m_hasProfileBackdrop) return;
@@ -2024,11 +1851,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
     bool init(int accountID, bool ownProfile) {
         if (!ProfilePage::init(accountID, ownProfile)) return false;
 
+
             m_fields->m_isApprovedMod = false;
             m_fields->m_isAdmin = false;
             PaimonDebug::log("[ProfilePage] Inicializando perfil - status moderador: false");
 
-            // Saved mod state
             bool wasVerified = Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
             bool wasAdmin = Mod::get()->getSavedValue<bool>("is-verified-admin", false);
             if (wasVerified) {
@@ -2036,7 +1863,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 m_fields->m_isAdmin = wasAdmin;
             }
 
-            // Verify with the server if it's your own profile
             if (ownProfile) {
                 auto gm = GameManager::get();
                 if (gm && !gm->m_playerName.empty()) {
@@ -2082,27 +1908,22 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 }
             }
 
-            // Mark profile open to restore the BG on close
             m_fields->m_menuMusicPaused = true;
 
             checkAndPlayProfileMusic(accountID, std::nullopt, false, false);
 
             addOrUpdateProfileImgOnPage(accountID, ownProfile);
 
-            // loadPageFromUserInfo / show can detach the clip; short retry.
             this->schedule(schedule_selector(PaimonProfilePage::refreshProfileBackdropTick), 0.12f);
 
             this->schedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity), 0.5f);
 
-            // Hide vanilla hint labels on next frame
             this->scheduleOnce(
                 schedule_selector(PaimonProfilePage::hideHintLabels), 0.f
             );
 
-            // Record a profile view (other profiles only)
-            if (!ownProfile && accountID > 0) {
+            if (!ownProfile && accountID > 0 && paimonProfilesEnabled()) {
                 paimon::forum::ForumApi::get().recordProfileView(accountID, [](paimon::forum::Result<bool>) {
-                    // silent
                 });
             }
 
@@ -2128,7 +1949,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void onAddProfileImg(CCObject*) {
-        // Only allow editing your own profile's background.
         if (!this->m_ownProfile) {
             PaimonNotify::create(
                 Localization::get().getString("profile.cant_edit_other").c_str(),
@@ -2137,13 +1957,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
             return;
         }
 
-        // Instead of opening the file picker directly, show a chooser so the user
-        // can pick uploading media, using the icon-based gradient, or resetting
-        // the background.
         auto* picker = ProfileBgPickerPopup::create(this->m_accountID);
         if (!picker) {
-            // Fallback: if the popup couldn't be created for some reason, go
-            // straight to the classic upload-media flow.
             runProfileBgMediaPicker();
             return;
         }
@@ -2164,9 +1979,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         picker->show();
     }
 
-    // Opens the effect + speed sub-popup for the player-icon-based gradient. The
-    // initial effect/speed comes from the cached config if present, so the user
-    // keeps editing what they had.
     void openProfileBgGradientChooser() {
         int accountID = this->m_accountID;
         WeakRef<PaimonProfilePage> self = this;
@@ -2200,10 +2012,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         });
     }
 
-    // Uploads ProfileConfig with backgroundType = "icon-gradient" + effect. Note:
-    // the current icon colors are NOT uploaded. Colors are always read LIVE each
-    // render (GameManager for own profile, GJUserScore for others) so cube changes
-    // are reflected without re-uploading.
     void applyProfileBgIconGradient(std::string const& effect = "none", float speed = 1.0f) {
         if (!this->m_ownProfile) {
             PaimonNotify::create(
@@ -2218,8 +2026,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         int accountID = this->m_accountID;
 
-        // Show the spinner before downloading/uploading the config so the user
-        // knows something is happening.
         auto loading = PaimonLoadingOverlay::create(
             Localization::get().getString("profilebg.gradient.uploading").c_str(),
             30.f
@@ -2227,10 +2033,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         Ref<PaimonLoadingOverlay> loadingRef = loading;
         if (loading) loading->show(this, 100);
 
-        // Recover the previous config (if any) so we don't lose other fields like
-        // blur/darkness/widthFactor/comment-bg, etc. Note we do NOT touch
-        // cfg.colorA / cfg.colorB: leave whatever was there (or its defaults).
-        // Real colors are computed each render from local.
         WeakRef<PaimonProfilePage> self = this;
         ThumbnailAPI::get().downloadProfileConfig(accountID,
             [self, accountID, normalizedEffect, normalizedSpeed, loadingRef]
@@ -2241,8 +2043,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 cfg.useGradient     = true;
                 cfg.gradientEffect  = normalizedEffect;
                 cfg.gradientSpeed   = normalizedSpeed;
-                // colorA / colorB intentionally untouched: the render always uses
-                // live colors, not the config's.
 
                 ThumbnailAPI::get().uploadProfileConfig(accountID, cfg,
                     [self, accountID, cfg, loadingRef](bool success, std::string const& msg) {
@@ -2258,8 +2058,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                             return;
                         }
 
-                        // Re-cache the updated config and drop the image cache so
-                        // the render uses the gradient.
                         ProfileThumbs::get().cacheProfileConfig(accountID, cfg);
 
                         PaimonNotify::create(
@@ -2268,10 +2066,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         )->show();
 
                         if (auto page = self.lock()) {
-                            // LIVE colors: the render always reads from the live
-                            // player, not the config (which no longer stores a
-                            // color snapshot). For your own profile GameManager is
-                            // always available, so this practically never fails.
                             cocos2d::ccColor3B liveA, liveB;
                             if (page->getLiveProfileColors(liveA, liveB)) {
                                 page->displayProfileBgGradient(
@@ -2284,11 +2078,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             });
     }
 
-    // Enables "Audio Video" mode for your own profile: makes the background
-    // video's audio play as profile music for visitors, and clears any configured
-    // music from the server. Only makes sense if the current background is a
-    // video; otherwise warn the user and do nothing to avoid leaving the config
-    // in a weird state.
     void applyProfileBgVideoAudio() {
         if (!this->m_ownProfile) {
             PaimonNotify::create(
@@ -2301,8 +2090,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         int accountID = this->m_accountID;
         WeakRef<PaimonProfilePage> self = this;
 
-        // Verify we have a cached background video: if the profile has no video,
-        // "Audio Video" adds nothing.
         bool hasVideo = false;
         {
             auto videoKey       = fmt::format("profileimg_video_{}", accountID);
@@ -2327,10 +2114,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         Ref<PaimonLoadingOverlay> loadingRef = loading;
         if (loading) loading->show(this, 100);
 
-        // Recover the previous config to preserve the rest of the fields (blur,
-        // darkness, widthFactor, comment-bg, etc.). Only change the useVideoAudio
-        // flag. Leave backgroundType as is; if the user uploaded a video it's
-        // already resolved in the render.
         ThumbnailAPI::get().downloadProfileConfig(accountID,
             [self, accountID, loadingRef]
             (bool, ProfileConfig const& existing) {
@@ -2340,11 +2123,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                 ThumbnailAPI::get().uploadProfileConfig(accountID, cfg,
                     [self, accountID, cfg, loadingRef](bool success, std::string const& msg) {
-                        // Delete configured music in parallel: even if the config
-                        // upload fails we want to remove the old music so it
-                        // doesn't compete with the video audio. We don't wait on
-                        // the callback to show the result; knowing it was
-                        // attempted is enough.
                         auto* accountManager = GJAccountManager::get();
                         std::string username = accountManager ? std::string(accountManager->m_username) : std::string();
                         ProfileMusicManager::get().deleteProfileMusic(accountID, username,
@@ -2352,12 +2130,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
                                 if (delOk) {
                                     log::info("[ProfileBg] Cleared configured music after Audio Video for account {}", accountID);
                                 } else {
-                                    // No-op if there was no configured music.
                                     log::info("[ProfileBg] deleteProfileMusic returned: {}", delMsg);
                                 }
                             });
-                        // Invalidate the local music cache so the next visit reads
-                        // the new config.
                         ProfileMusicManager::get().invalidateCache(accountID);
 
                         if (loadingRef) loadingRef->dismiss();
@@ -2382,7 +2157,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             });
     }
 
-    // Reset the profile background: clears the server config + local cache.
     void confirmProfileBgReset() {
         if (!this->m_ownProfile) {
             PaimonNotify::create(
@@ -2395,10 +2169,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         int accountID = this->m_accountID;
         WeakRef<PaimonProfilePage> self = this;
 
-        // Upload a "neutral" config with backgroundType = "none" so visitors see
-        // neither thumbnail nor gradient. The binary asset (image/GIF/video) stays
-        // on the server but the config wins at render time. Deleting it from the
-        // bucket would need a dedicated delete endpoint.
         ProfileConfig cfg;
         cfg.hasConfig      = true;
         cfg.backgroundType = "none";
@@ -2437,10 +2207,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             });
     }
 
-    // Returns the current icon colors of the viewed profile's player. For your own
-    // profile it uses GameManager (always live). For others it uses the
-    // GJUserScore's color1/color2 that GD already loaded. This lets the gradient
-    // reflect color changes without re-uploading the config.
     bool getLiveProfileColors(cocos2d::ccColor3B& outA, cocos2d::ccColor3B& outB) {
         auto* gm = GameManager::sharedState();
         if (!gm) return false;
@@ -2458,15 +2224,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
         return false;
     }
 
-    // Replaces the profile background banner with a CCLayerGradient painted in the
-    // player's icon colors. Keeps the same geometry (clipped to the popup area) as
-    // the image version so the rest of the profile styling still works. If
-    // effect != "none", animates the gradient with that effect.
     void displayProfileBgGradient(cocos2d::ccColor3B colorA,
                                   cocos2d::ccColor3B colorB,
                                   std::string const& effect = "none",
                                   float speed = 1.0f) {
-        // Clear the previous banner (image / gif / video)
         clearProfileImgClip();
 
         auto layer = this->m_mainLayer;
@@ -2478,7 +2239,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         auto clip = makeProfileBackdropClip(imgArea, popupCenter, /*rounded=*/true);
 
-        // Animated gradient in the icon colors with the requested effect.
         auto* grad = paimon::profilebg::AnimatedGradientLayer::create(colorA, colorB);
         if (grad) {
             grad->setContentSize(imgArea);
@@ -2492,7 +2252,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             );
         }
 
-        // Same soft dark overlay as the image flow, to preserve username/label contrast.
         mountProfileBackdropClip(clip, imgArea, layer, ProfileBackdropKind::Gradient);
     }
 
@@ -2504,14 +2263,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void processProfileImg(std::filesystem::path path) {
-        // Check if it's a video file first
         std::string ext = geode::utils::string::pathToString(path.extension());
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         bool isVideo = (ext == ".mp4" || ext == ".mov" || ext == ".m4v");
 
         if (isVideo) {
-            // Video: read and upload
-            auto videoData = ImageLoadHelper::readBinaryFile(path, 50); // 50MB limit for videos
+    auto videoData = ImageLoadHelper::readBinaryFile(path, 50);
             if (videoData.empty()) {
                 PaimonNotify::create(Localization::get().getString("profile.video_open_error").c_str(), NotificationIcon::Error)->show();
                 return;
@@ -2552,7 +2309,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
 
         if (ImageLoadHelper::isGIF(path)) {
-            // GIF: upload directly
             auto imgData = ImageLoadHelper::readBinaryFile(path, 25);
             if (imgData.empty()) {
                 PaimonNotify::create(Localization::get().getString("profile.image_open_error").c_str(), NotificationIcon::Error)->show();
@@ -2589,7 +2345,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         }
 
                         if (paimon::format::isGif(imgData.data(), imgData.size())) {
-                            // Only the first frame is used as a placeholder.
                             auto gifResult = GIFDecoder::decode(imgData.data(), imgData.size(), 1);
                             if (!gifResult.frames.empty()) {
                                 auto& firstFrame = gifResult.frames[0];
@@ -2621,11 +2376,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
             return;
         }
 
-        // Static image: use the helper to load and convert
         auto loaded = ImageLoadHelper::loadStaticImage(path, 25);
         if (!loaded.success) {
             std::string errKey = loaded.error;
-            // Translate the error if it's a localization key
             if (errKey == "image_open_error" || errKey == "invalid_image_data" || errKey == "texture_error") {
                 PaimonNotify::create(Localization::get().getString("profile." + errKey).c_str(), NotificationIcon::Error)->show();
             } else {
@@ -2634,10 +2387,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             return;
         }
 
-        // loadStaticImage() returns the texture with refcount=1 (the caller owns
-        // it). CapturePreviewPopup stores it in a Ref<> (retains/releases its own
-        // reference), so we do NOT retain here: we release our reference after
-        // creating the popup (see below) to avoid leaking it.
         int accountID = this->m_accountID;
         Ref<ProfilePage> previewCbRef = this;
 
@@ -2651,7 +2400,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 auto* page = static_cast<PaimonProfilePage*>(previewCbRef.data());
                 if (!page || !page->getParent()) return;
                 if (ok && buf) {
-                    // Convert RGBA to PNG in memory
                     std::vector<uint8_t> pngData;
                     if (!ImageConverter::rgbaToPngBuffer(buf.get(), w, h, pngData)) {
                         return;
@@ -2690,12 +2438,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                     CCImage finalImg;
                                 if (finalImg.initWithImageData(buf.get(), w * h * 4, CCImage::kFmtRawData, w, h)) {
-                                    // Ref::adopt takes ownership of new CCTexture2D()'s refcount=1 without an
-                                    // extra retain. Without adopt the Ref retains (refcount=2) and only
-                                    // drops to 1 on destruction -- a permanent CCTexture2D leak.
                                     auto finalTex = geode::Ref<CCTexture2D>::adopt(new CCTexture2D());
                                     if (finalTex->initWithImage(&finalImg)) {
-                                        // Ref<> retains/releases automatically
                                         cacheProfileImgTexture(accountID, finalTex);
                                         if (auto* page = static_cast<PaimonProfilePage*>(imgUploadRef.data())) {
                                             page->displayProfileImg(accountID, finalTex);
@@ -2710,13 +2454,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         );
         if (popup) popup->show();
-        // The popup already retained the texture via its Ref<> m_texture; release
-        // the caller's reference (refcount=1 from loadStaticImage). If popup is
-        // null, this frees the unused texture instead of leaking it.
         CC_SAFE_RELEASE(loaded.texture);
     }
 
-    // Profile music functions
 
     void onOpenProfileSettings(CCObject*) {        if (!this->m_ownProfile) return;
 
@@ -2749,7 +2489,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             auto page = self.lock();
             if (!page) return;
             int accID = page->m_accountID;
-            // Download config and open CommentBgSettingsPopup
             ThumbnailAPI::get().downloadProfileConfig(accID, [accID](bool success, ProfileConfig const& config) {
                 ProfileConfig effectiveConfig = success ? config : ProfileConfig();
                 auto popup = CommentBgSettingsPopup::create(accID, effectiveConfig);
@@ -2774,11 +2513,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         } else if (msg == "More Icons not installed") {
                             PaimonNotify::create(Localization::get().getString("globalicon.requires_moreicons_title").c_str(), NotificationIcon::Error)->show();
                         } else {
-                            // Show the HTTP detail for diagnosis (URL/key/etc.).
                             log::warn("[GlobalIcon] upload failed: {}", msg);
-                            std::string detail = msg.substr(0, 64);
                             PaimonNotify::create(
-                                (Localization::get().getString("globalicon.upload_failed") + ": " + detail).c_str(),
+                                paimon::globalicon::GlobalIconService::describeSyncError(msg).c_str(),
                                 NotificationIcon::Error)->show();
                         }
                     });
@@ -2797,13 +2534,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void onConfigureProfileMusic(CCObject*) {
-        // Own profile only
         if (!this->m_ownProfile) {
             PaimonNotify::create("You can only configure music on your own profile", NotificationIcon::Warning)->show();
             return;
         }
 
-        // Open the music popup
         if (auto popup = ProfileMusicPopup::create(this->m_accountID)) {
             popup->show();
         }    }
@@ -2822,7 +2557,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 updatePauseButtonSprite(false);
             }
         } else {
-            // Play if not already playing
             AudioContextCoordinator::get().activateProfile(this->m_accountID);
             m_fields->m_musicPlaying = true;
             updatePauseButtonSprite(true);
@@ -2832,7 +2566,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
     void updatePauseButtonSprite(bool isPlaying) {
         if (!m_fields->m_musicPauseBtn) return;
 
-        // Change sprite by state
         CCSprite* newSpr = nullptr;
         if (isPlaying) {
             newSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_fxOnBtn_001.png");
@@ -2856,7 +2589,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                                   std::optional<ProfileMusicManager::ProfileMusicConfig> resolvedConfig = std::nullopt,
                                   bool hasResolvedConfig = false,
                                   bool allowServerFetch = true) {
-        // Check whether profile music is enabled
         if (!ProfileMusicManager::get().isEnabled()) {
             m_fields->m_menuMusicPaused = false;
             return;
@@ -2864,9 +2596,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         auto& musicMgr = ProfileMusicManager::get();
 
-        // If the cached background ProfileConfig enables Audio Video mode, resolve
-        // the cached background .mp4 path and force that config over the profile
-        // music. It takes priority over any configured songID/isCustom.
         auto applyVideoAudioOverride = [accountID](ProfileMusicManager::ProfileMusicConfig& cfg) -> bool {
             auto bgConfig = ProfileThumbs::get().getProfileConfig(accountID);
             if (!bgConfig.hasConfig || !bgConfig.useVideoAudio) return false;
@@ -2880,20 +2609,17 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
 
             cfg.useVideoAudio = true;
-            cfg.videoAudioPath = videoPath;  // may be empty if not downloaded yet
-            cfg.enabled = true;               // force enabled even if it came off
+    cfg.videoAudioPath = videoPath;
+    cfg.enabled = true;
             return true;
         };
 
-        // Optimistic: play from cache
         ProfileMusicManager::ProfileMusicConfig cachedConfig;
         bool hasCachedConfig = musicMgr.tryGetImmediateConfig(accountID, cachedConfig);
         bool useVideoAudioOverride = applyVideoAudioOverride(cachedConfig);
         bool playableFromCache = hasCachedConfig &&
             (cachedConfig.songID > 0 || cachedConfig.isCustom || cachedConfig.useVideoAudio) &&
             cachedConfig.enabled;
-        // For useVideoAudio we don't need the standard MP3 cache; the video's WAV
-        // is resolved separately. For everything else we do.
         bool dataReady = cachedConfig.useVideoAudio
             ? !cachedConfig.videoAudioPath.empty()
             : (hasCachedConfig && musicMgr.isCached(accountID));
@@ -2915,13 +2641,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 updatePauseButtonSprite(!musicMgr.isPaused());
             }
         } else if (useVideoAudioOverride && cachedConfig.videoAudioPath.empty()) {
-            // useVideoAudio active but the video isn't cached yet. Don't play:
-            // when the video arrives, ensureAnimatedProfileImg does its job and
-            // the next checkAndPlayProfileMusic call will have the path resolved.
             log::info("[ProfilePage] useVideoAudio set but video not yet cached for {}", accountID);
         }
 
-        // Check for fresh config from the server
         Ref<ProfilePage> self = this;
         auto cachedCopy = hasCachedConfig
             ? std::optional<ProfileMusicManager::ProfileMusicConfig>(cachedConfig)
@@ -2935,8 +2657,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             auto* page = static_cast<PaimonProfilePage*>(self.data());
             if (!page || page->m_fields->m_leaveForClose) return;
 
-            // Apply the useVideoAudio override before validating. Local copy
-            // because the lambda receives the config by const reference.
             ProfileMusicManager::ProfileMusicConfig config = configIn;
             applyVideoAudioOverride(config);
 
@@ -3017,7 +2737,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_pausedForTemporaryExit = false;
     }
 
-    // Cancel all timers scheduled by the page (close / exit).
     void unscheduleProfileTimers() {
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
         this->unschedule(schedule_selector(PaimonProfilePage::refreshProfileBackdropTick));
@@ -3027,9 +2746,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     $override
     void keyBackClicked() {
-        // Android: avoid an extra hook on keyBackClicked due to a bad binding
-        // thunk on ARM64 that causes SIGILL. Audio cleanup already happens in
-        // onClose() / onExit().
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
         ProfilePage::keyBackClicked();
 #else
@@ -3070,10 +2786,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void fadeMenuMusicStep(Ref<ProfilePage> safeRef, int step, int totalSteps, float fromVol, float toVol) {
-        // Progressive fade using the Cocos2d scheduler
-        float stepDelay = 500.0f / static_cast<float>(totalSteps) / 1000.0f; // to seconds
+        float stepDelay = 500.0f / static_cast<float>(totalSteps) / 1000.0f;
 
-        // Apply the current step
         if (step >= totalSteps) {
             auto engine = FMODAudioEngine::sharedEngine();
             if (engine && engine->m_backgroundMusicChannel) {
@@ -3121,7 +2835,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             n->setVisible(false);
         if (auto* n = this->getChildByIDRecursive("my-lists-hint"))
             n->setVisible(false);
-        // Make background white (non-redesign case; redesign uses prepareInPlace)
         CCNode* bg = this->getChildByID("background");
         if (!bg && this->getChildren()) {
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {

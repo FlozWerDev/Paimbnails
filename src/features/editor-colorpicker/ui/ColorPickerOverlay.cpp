@@ -31,13 +31,12 @@ using namespace geode::prelude;
 namespace paimon::editorcp {
 
 namespace {
-    // All sizes are in Geometry Dash *points* (winSize is roughly 569x320).
+// Sizes use Geometry Dash points.
     constexpr float kHudW         = 420.f;
     constexpr float kHudH         = 66.f;
     constexpr int   kPickerZOrder = 999500;
 
-    // Touch priorities (lower value = handled earlier).
-    //   text input (default -500) -> HUD menu (-300) -> picker (-200) -> editor
+// Priority: text input, HUD menu, picker, then editor.
     constexpr int kMenuPriority = -300;
     constexpr int kPickPriority = -200;
 }
@@ -73,9 +72,7 @@ bool ColorPickerOverlay::init() {
     this->setTouchEnabled(true);
     this->setKeypadEnabled(true);
 
-    // No snapshot: the layer is transparent, so the editor keeps rendering
-    // underneath and the picked colors stay live. The framebuffer is sampled
-    // each frame in onPreSwapSample().
+// Transparent overlay; the editor remains visible while the framebuffer is sampled live.
     this->buildUI();
     this->scheduleUpdate();
     m_ready = true;
@@ -89,11 +86,8 @@ void ColorPickerOverlay::onExit() {
 
 void ColorPickerOverlay::onEnter() {
     CCLayer::onEnter();
-    // show() runs inside a touch event (the button click), so the touch
-    // dispatcher is LOCKED: the menu's freshly-registered handler is still in
-    // the pending-add queue and not findable yet. Calling setHandlerPriority
-    // now dereferences a null CCTouchHandler. Defer it to the next main-thread
-    // tick, by which point the dispatcher has committed the pending handlers.
+// show() runs inside a touch event, so defer priority changes until the
+// dispatcher commits the newly registered handler.
     if (m_priorityScheduled) return;
     m_priorityScheduled = true;
     geode::WeakRef<ColorPickerOverlay> weak = this;
@@ -105,9 +99,7 @@ void ColorPickerOverlay::onEnter() {
 }
 
 void ColorPickerOverlay::registerWithTouchDispatcher() {
-    // Picking runs AFTER the HUD menu/input but BEFORE the editor, so the
-    // overlay is modal (clicks outside the HUD pick a color, never reach the
-    // editor underneath).
+// Run after HUD input but before the editor so the overlay is modal.
     CCDirector::get()->getTouchDispatcher()->addTargetedDelegate(this, kPickPriority, true);
 }
 
@@ -125,7 +117,6 @@ void ColorPickerOverlay::buildUI() {
     m_hud->setPosition({win.width / 2.f, 8.f});
     this->addChild(m_hud, 20);
 
-    // GD's vanilla brown panel (no tint, full opacity — matches in-game UI)
     {
         auto* panel = cocos2d::extension::CCScale9Sprite::create("GJ_square01.png");
         if (panel) {
@@ -144,13 +135,8 @@ void ColorPickerOverlay::buildUI() {
     hint->setOpacity(210);
     this->addChild(hint, 21);
 
-    // Decorative GD square button as the swatch frame (a real game asset, not
-    // a draw-node frame). It has no function; it just holds the color preview.
-    // The color preview itself is a recolorable fill clipped to rounded corners
-    // and sits inside the button. Everything lives in a centered container so
-    // the pick "pop" animation scales the whole box from its center.
-    const float boxSize  = 34.f;  // decorative square game button
-    const float fillSize = 29.f;  // rounded color preview fills the button's inside
+const float boxSize  = 34.f;
+const float fillSize = 29.f;
     const float sx = 12.f, sy = 18.f;
     const float fillOff = (boxSize - fillSize) / 2.f;
 
@@ -285,8 +271,6 @@ void ColorPickerOverlay::buildUI() {
         }
     }
 
-    // Touch priority for the HUD menu is set in onEnter(): the menu only owns a
-    // registered touch handler once it (and the overlay) are in the scene.
 
     this->updateReadout();
 }
@@ -315,13 +299,12 @@ void ColorPickerOverlay::liveSample() {
     m.x = std::clamp(m.x, 0.f, win.width);
     m.y = std::clamp(m.y, 0.f, win.height);
 
-    // glReadPixels shares the cocos origin (bottom-left), so no Y flip on input.
     const int cxDev = std::clamp(static_cast<int>(std::lround(m.x * scaleX)), 0, fw - 1);
     const int cyDev = std::clamp(static_cast<int>(std::lround(m.y * scaleY)), 0, fh - 1);
 
     m_pixelBuf.resize(4);
 
-    while (glGetError() != GL_NO_ERROR) {} // drain stale errors
+while (glGetError() != GL_NO_ERROR) {}
 
     GLint origFBO = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &origFBO);
@@ -339,10 +322,7 @@ void ColorPickerOverlay::liveSample() {
 }
 
 void ColorPickerOverlay::updateReadout() {
-    // Keep tracking the LIVE color under the cursor even after a pick, so the
-    // user can keep previewing the colors they hover over. The locked selection
-    // is only shown while the cursor is over the HUD (i.e. on the way to press
-    // Copy/Save), so those actions still act on exactly what is displayed.
+// Keep sampling the live color under the cursor; lock it only while over the HUD.
     const CCPoint mouse   = geode::cocos::getMousePos();
     const bool    overHud = m_hasSelection && this->pointInHud(mouse);
     const ccColor3B c     = overHud ? m_selColor : m_liveColor;
@@ -352,14 +332,12 @@ void ColorPickerOverlay::updateReadout() {
     if (m_formatLabel) m_formatLabel->setString(formatName(m_formatIndex));
     if (m_swatchCaption) {
         m_swatchCaption->setString(overHud ? "PICKED" : "LIVE");
-        // Green for live, gold for picked — visual cue for the state.
         m_swatchCaption->setColor(overHud ? ccColor3B{255, 220, 65} : ccColor3B{100, 230, 100});
     }
 }
 
 void ColorPickerOverlay::pickAt(CCPoint /*p*/) {
-    // Live mode: the color under the cursor is sampled every frame from the
-    // framebuffer (liveSample). Committing a pick just locks in that color.
+// Live mode samples the framebuffer each frame; picking locks the current color.
     if (!m_ready) return;
     m_selColor = m_liveColor;
     m_hasSelection = true;
@@ -369,8 +347,7 @@ void ColorPickerOverlay::pickAt(CCPoint /*p*/) {
         pop->setScale(1.12f);
         pop->runAction(CCEaseBackOut::create(CCScaleTo::create(0.18f, 1.f)));
     }
-    // Auto mode: every pick (click or drag) is applied to the channel live, so
-    // the editor updates without pressing Save.
+// Auto mode applies each pick to the channel immediately.
     if (m_autoApply) this->tryAutoApply();
 }
 
@@ -381,23 +358,20 @@ std::string ColorPickerOverlay::currentValueString() const {
 
 bool ColorPickerOverlay::pointInHud(CCPoint p) const {
     if (!m_hud) return false;
-    auto pos = m_hud->getPosition(); // anchor (0.5, 0)
+    auto pos = m_hud->getPosition();
     CCRect rect{ pos.x - kHudW / 2.f, pos.y, kHudW, kHudH };
     return rect.containsPoint(p);
 }
 
 void ColorPickerOverlay::update(float) {
     if (!m_ready || m_closing) return;
-    // The live color is sampled in liveSample() (called from the pre-swap
-    // hook). Here we just refresh the HUD readout every frame so the swatch
-    // and value label track the cursor in real time.
     updateReadout();
 }
 
 bool ColorPickerOverlay::ccTouchBegan(CCTouch* touch, CCEvent*) {
     if (!m_ready || m_closing) return false;
     CCPoint p = touch->getLocation();
-    if (pointInHud(p)) return true; // consume; HUD menu/input already handled it
+    if (pointInHud(p)) return true;
     m_dragging = true;
     this->pickAt(p);
     return true;
@@ -409,7 +383,6 @@ void ColorPickerOverlay::ccTouchMoved(CCTouch* touch, CCEvent*) {
 }
 
 void ColorPickerOverlay::ccTouchEnded(CCTouch*, CCEvent*) {
-    // Auto-apply happens live inside pickAt(), so nothing to commit on release.
     m_dragging = false;
 }
 
@@ -444,8 +417,7 @@ void ColorPickerOverlay::stepColorID(int delta) {
     if (id > 9999) id = 9999;
     m_idInput->setString(std::to_string(id));
 
-    // If auto-apply is on, push the current selection to the newly selected
-    // channel right away (force a re-apply even if the color didn't change).
+// Auto-apply the current selection to a newly selected channel.
     if (m_autoApply) {
         m_hasApplied = false;
         this->tryAutoApply();
@@ -464,7 +436,7 @@ void ColorPickerOverlay::onToggleAuto(CCObject* sender) {
     Mod::get()->setSavedValue<bool>("editor-cp-auto-apply", m_autoApply);
     if (m_autoApply) {
         m_autoNoIdWarned = false;
-        this->tryAutoApply(); // push the current selection right away
+    this->tryAutoApply();
     }
 }
 
@@ -495,7 +467,7 @@ void ColorPickerOverlay::onSave(CCObject*) {
     if (channelID > 0) {
         const int       chId = channelID;
         const ccColor3B c    = col;
-        this->doClose(); // close first so GD's popup is not hidden behind us
+    this->doClose();
         Loader::get()->queueInMainThread([chId, c]() {
             if (paimon::isRuntimeShuttingDown()) return;
             auto* lel = LevelEditorLayer::get();
@@ -530,7 +502,6 @@ void ColorPickerOverlay::tryAutoApply() {
     }
 
     if (id <= 0) {
-        // Auto is on but there is no channel to push to — nudge the user once.
         if (!m_autoNoIdWarned) {
             m_autoNoIdWarned = true;
             PaimonNotify::show("Auto-apply: type a Color ID to push picks live.",
@@ -539,7 +510,6 @@ void ColorPickerOverlay::tryAutoApply() {
         return;
     }
 
-    // Skip redundant work while dragging over a uniform area.
     if (m_hasApplied &&
         m_lastApplied.r == m_selColor.r &&
         m_lastApplied.g == m_selColor.g &&
@@ -581,4 +551,4 @@ void ColorPickerOverlay::doClose() {
     this->removeFromParent();
 }
 
-} // namespace paimon::editorcp
+}

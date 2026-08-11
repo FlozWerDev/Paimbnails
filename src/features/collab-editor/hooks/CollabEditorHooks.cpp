@@ -1,11 +1,15 @@
 #include "../CollabManager.hpp"
+#include "../../../core/RuntimeLifecycle.hpp"
 #include "../CollabOverlay.hpp"
 #include "../CollabPopups.hpp"
 #include "../../editor-suite/EditorAssets.hpp"
+#include "../../editor-suite/EditorModule.hpp"
 
 #include <Geode/binding/UndoObject.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
+#include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/modify/ColorSelectPopup.hpp>
 #include <Geode/modify/EditLevelLayer.hpp>
 #include <Geode/modify/EditorPauseLayer.hpp>
 #include <Geode/modify/EditorUI.hpp>
@@ -13,15 +17,20 @@
 #include <Geode/modify/LevelEditorLayer.hpp>
 #include <Geode/modify/LevelSettingsLayer.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
+#include <Geode/ui/Notification.hpp>
 #include <Geode/ui/PopupManager.hpp>
 #include <Geode/binding/SimplePlayer.hpp>
+
+#include "../../../utils/ExtendedKeybind.hpp"
+#include "../../../framework/HookConventions.hpp"
+#include "../../editor-suite/EditorHelpers.hpp"
 
 using namespace geode::prelude;
 
 namespace {
 
 bool collabEnabled() {
-    return Mod::get()->getSettingValue<bool>("collab-enabled");
+    return paimon::editor::featureEnabled("collab-enabled");
 }
 
 void showBlocked(std::string const& name) {
@@ -34,10 +43,7 @@ void showBlocked(std::string const& name) {
     popup.showQueue();
 }
 
-// After an undo/redo, re-sync the objects the action touched: re-added objects
-// (they have a parent again) become adds/updates, removed ones become deletes.
-// The array may also hold GameObjectCopy entries (transform undos); those are
-// skipped here and picked up by the selection reconcile pass.
+// Re-sync undo/redo objects; transform copies are handled by selection reconcile.
 void syncAfterUndoRedo(cocos2d::CCArray* affected, EditorUI* ui) {
     auto& mgr = paimon::collab::CollabManager::get();
     if (!mgr.connected()) return;
@@ -55,10 +61,7 @@ void syncAfterUndoRedo(cocos2d::CCArray* affected, EditorUI* ui) {
     if (ui) mgr.reconcileObjects(ui->getSelectedObjects());
 }
 
-// Cara del boton de collab: dos cubos de jugador con colores vivos (duo) y un
-// rotulo "COLLAB" debajo, para que se entienda que abre salas entre amigos.
-// SimplePlayer tiene contentSize 0, asi que va dentro de un CCNode con tamano
-// fijo — CircleButtonSprite centra el top asumiendo un nodo medible.
+// Build the collab button from two players; SimplePlayer needs a measurable wrapper.
 CCMenuItemSpriteExtra* makeCollabButton(std::function<void()> onClick) {
     auto* wrap = CCNode::create();
     CCSize const sz{38.f, 34.f};
@@ -75,8 +78,8 @@ CCMenuItemSpriteExtra* makeCollabButton(std::function<void()> onClick) {
         p->setPosition({x, 20.f});
         wrap->addChild(p, z);
     };
-    addPlayer(13.f, 0.60f, {0, 210, 255}, {0, 90, 210}, 0);   // cubo cian atras
-    addPlayer(26.f, 0.66f, {255, 150, 40}, {255, 225, 90}, 1); // cubo naranja delante
+    addPlayer(13.f, 0.60f, {0, 210, 255}, {0, 90, 210}, 0);
+    addPlayer(26.f, 0.66f, {255, 150, 40}, {255, 225, 90}, 1);
 
     if (auto* label = CCLabelBMFont::create("COLLAB", "goldFont.fnt")) {
         label->limitLabelWidth(sz.width - 2.f, 0.4f, 0.05f);
@@ -94,7 +97,7 @@ CCMenuItemSpriteExtra* makeCollabButton(std::function<void()> onClick) {
     );
 }
 
-} // namespace
+}
 
 class $modify(PaimonCollabEditLevelLayer, EditLevelLayer) {
     $override
@@ -105,8 +108,7 @@ class $modify(PaimonCollabEditLevelLayer, EditLevelLayer) {
         auto* folderMenu = typeinfo_cast<CCMenu*>(this->getChildByID("folder-menu"));
         if (!folderMenu) return true;
 
-        // Si el mod trae un PNG propio (paim_collab.png) se respeta; si no,
-        // se compone la cara duo-de-cubos + "COLLAB" en vez del icono blanco.
+        // Prefer the custom asset; otherwise compose the duo-cube icon.
         CCMenuItemSpriteExtra* btn = nullptr;
         if (paimon::editor::assets::hasCustom(paimon::editor::assets::files::collab)) {
             btn = paimon::editor::assets::circleButton(
@@ -134,11 +136,10 @@ class $modify(PaimonCollabEditLevelLayer, EditLevelLayer) {
 
 class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
     struct Fields {
-        // Keep the actual editor pointer: LevelEditorLayer::get() already
-        // returns null while the scene is being torn down, so clearing by it
-        // would leave the manager holding a freed editor/overlay.
+        // Keep the pointer captured at init; LevelEditorLayer::get() is already null during teardown.
         LevelEditorLayer* m_self = nullptr;
         ~Fields() {
+            if (paimon::isRuntimeShuttingDown()) return;
             paimon::collab::CollabManager::get().clearEditor(m_self);
         }
     };
@@ -157,7 +158,30 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
     }
 
     void collabTick(float) {
-        paimon::collab::CollabManager::get().tick();
+        auto& mgr = paimon::collab::CollabManager::get();
+        mgr.tick();
+
+        // Middle-click ping in object-layer space.
+#if defined(GEODE_IS_WINDOWS)
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            static bool s_wasMiddle = false;
+            bool middle = paimon::keybinds::isMouseButtonHeld(paimon::keybinds::MouseButton::Middle);
+            if (middle && !s_wasMiddle) {
+                auto* director = CCDirector::get();
+                auto* glView = director ? director->getOpenGLView() : nullptr;
+                auto* layer = m_objectLayer;
+                if (glView && layer) {
+                    auto mouse = glView->getMousePosition();
+                    auto win = director->getWinSize();
+                    // GLFW y is top-down; Cocos is bottom-up.
+                    CCPoint glPos{mouse.x, win.height - mouse.y};
+                    auto world = layer->convertToNodeSpace(glPos);
+                    mgr.sendPing(world.x, world.y);
+                }
+            }
+            s_wasMiddle = middle;
+        }
+#endif
     }
 
     $override
@@ -167,16 +191,70 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
         }
         LevelEditorLayer::removeObject(object, noUndo);
     }
+
+    $override
+    void levelSettingsUpdated() {
+        LevelEditorLayer::levelSettingsUpdated();
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            mgr.sendLevelSettings(false);
+        }
+    }
+};
+
+// Color popups may skip levelSettingsUpdated; push full metadata on close.
+class $modify(PaimonCollabColorSelectPopup, ColorSelectPopup) {
+    bool init(EffectGameObject* object, CCArray* objects, ColorAction* action) {
+        if (!ColorSelectPopup::init(object, objects, action)) return false;
+        return true;
+    }
+
+    $override
+    void keyBackClicked() {
+        ColorSelectPopup::keyBackClicked();
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            mgr.sendLevelSettings(false);
+        }
+    }
+
+    $override
+    void onClose(CCObject* sender) {
+        ColorSelectPopup::onClose(sender);
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            mgr.sendLevelSettings(false);
+        }
+    }
 };
 
 class $modify(PaimonCollabEditorUI, EditorUI) {
     $override
     void keyDown(cocos2d::enumKeyCodes key, double timestamp) {
-        // Ctrl+E (Cmd+E on mac) opens the collab chat popup while in a room.
-        if (collabEnabled() && key == cocos2d::KEY_E &&
-            paimon::collab::CollabManager::get().connected()) {
+        if (collabEnabled() && paimon::collab::CollabManager::get().connected()) {
             auto* kb = CCDirector::sharedDirector()->getKeyboardDispatcher();
-            if (kb && (kb->getControlKeyPressed() || kb->getCommandKeyPressed())) {
+            bool mod = kb && (kb->getControlKeyPressed() || kb->getCommandKeyPressed() ||
+                              kb->getShiftKeyPressed() || kb->getAltKeyPressed());
+
+            // F cycles peer cameras when no modifier or text field is active.
+            if (key == cocos2d::KEY_F && !mod && !paimon::editor::focusedTextInput()) {
+                auto name = paimon::collab::CollabManager::get().cycleFollowPeer();
+                if (name.empty()) {
+                    Notification::create("Follow off", NotificationIcon::Info)->show();
+                } else {
+                    Notification::create(fmt::format("Siguiendo a {}", name), NotificationIcon::Info)->show();
+                }
+                return;
+            }
+            if (key == cocos2d::KEY_Escape &&
+                paimon::collab::CollabManager::get().followClientId() > 0) {
+                paimon::collab::CollabManager::get().clearFollow();
+                Notification::create("Follow off", NotificationIcon::Info)->show();
+                // Let pause and other Escape handlers continue.
+            }
+
+            if (key == cocos2d::KEY_E && !paimon::editor::focusedTextInput() &&
+                kb && (kb->getControlKeyPressed() || kb->getCommandKeyPressed())) {
                 auto* scene = CCDirector::sharedDirector()->getRunningScene();
                 if (!scene || !scene->getChildByID("collab-chat"_spr)) {
                     if (auto* popup = paimon::collab::CollabChatPopup::create()) popup->show();
@@ -190,7 +268,13 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     $override
     GameObject* createObject(int objectID, CCPoint position) {
         auto* object = EditorUI::createObject(objectID, position);
-        paimon::collab::CollabManager::get().sendCreatedObject(object);
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (object && !mgr.canEditObjectLayer(object)) {
+            // Keep the local placement, but do not sync across layers.
+            Notification::create("No es tu layer", NotificationIcon::Warning)->show();
+        } else {
+            mgr.sendCreatedObject(object);
+        }
         return object;
     }
 
@@ -204,7 +288,6 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     $override
     void onDuplicate(CCObject* sender) {
         EditorUI::onDuplicate(sender);
-        // Duplicates end up selected; reconcile registers any untracked copy.
         paimon::collab::CollabManager::get().reconcileObjects(this->getSelectedObjects());
     }
 
@@ -237,13 +320,14 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     $override
     void moveObject(GameObject* object, CCPoint offset) {
         EditorUI::moveObject(object, offset);
-        // Cheap remote apply path (setPosition) — alk MoveCommand style.
+        // Position-only updates use the cheap remote path.
         paimon::collab::CollabManager::get().sendMovedObject(object);
     }
 
     $override
     void transformObject(GameObject* object, EditCommand command, bool noOffset) {
         EditorUI::transformObject(object, command, noOffset);
+        // Mixed transforms use a full update.
         paimon::collab::CollabManager::get().sendUpdatedObject(object);
     }
 
@@ -256,16 +340,27 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     $override
     void scaleObjects(CCArray* objects, float scaleX, float scaleY, CCPoint pivotPoint, ObjectScaleType type, bool lockMove) {
         EditorUI::scaleObjects(objects, scaleX, scaleY, pivotPoint, type, lockMove);
-        paimon::collab::CollabManager::get().sendUpdatedObjects(objects);
+        // Scale updates set peer axes without recreating the object.
+        paimon::collab::CollabManager::get().sendScaledObjects(objects);
     }
 
     $override
     void rotateObjects(CCArray* objects, float rotation, CCPoint pivotPoint) {
         EditorUI::rotateObjects(objects, rotation, pivotPoint);
-        paimon::collab::CollabManager::get().sendUpdatedObjects(objects);
+        paimon::collab::CollabManager::get().sendRotatedObjects(objects);
     }
 
-    // --- Selection presence (alk SelectCommand + draw-selection-overlay) ---
+    $override
+    void flipObjectsX(CCArray* objects) {
+        EditorUI::flipObjectsX(objects);
+        paimon::collab::CollabManager::get().sendFlippedObjects(objects);
+    }
+
+    $override
+    void flipObjectsY(CCArray* objects) {
+        EditorUI::flipObjectsY(objects);
+        paimon::collab::CollabManager::get().sendFlippedObjects(objects);
+    }
 
     $override
     void selectObject(GameObject* object, bool ignoreFilter) {
@@ -303,8 +398,6 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
         }
     }
 
-    // --- Edits that only reconcile used to catch late (alk hook coverage) ---
-
     $override
     void onPasteColor(CCObject* sender) {
         EditorUI::onPasteColor(sender);
@@ -333,8 +426,7 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     }
 };
 
-// Green "live" dot on the level cell whose level is the active collab room, so
-// the host can spot it and pop back in after leaving the editor.
+// Mark the host's active room in the level list.
 class $modify(PaimonCollabLevelCell, LevelCell) {
     $override
     void loadFromLevel(GJGameLevel* level) {
@@ -355,6 +447,41 @@ class $modify(PaimonCollabLevelCell, LevelCell) {
 };
 
 class $modify(PaimonCollabEditorPauseLayer, EditorPauseLayer) {
+    static void onModify(auto& self) {
+        paimon::hooks::afterNodeIdsOrLate(self, "EditorPauseLayer::init");
+    }
+
+    $override
+    bool init(LevelEditorLayer* editor) {
+        if (!EditorPauseLayer::init(editor)) return false;
+        if (!collabEnabled()) return true;
+
+        auto* menu = typeinfo_cast<CCMenu*>(this->getChildByID("info-menu"));
+        if (!menu) menu = typeinfo_cast<CCMenu*>(this->getChildByID("settings-menu"));
+        if (!menu) return true;
+
+        auto* sprite = ButtonSprite::create("Sala", "goldFont.fnt", "GJ_button_05.png", 0.45f);
+        if (!sprite) return true;
+        auto* button = CCMenuItemSpriteExtra::create(
+            sprite, this, menu_selector(PaimonCollabEditorPauseLayer::onCollabRoom)
+        );
+        if (!button) return true;
+        button->setID("collab-room-button"_spr);
+        button->setScale(0.65f);
+        menu->addChild(button);
+        menu->updateLayout();
+        return true;
+    }
+
+    void onCollabRoom(CCObject*) {
+        auto* scene = CCDirector::get()->getRunningScene();
+        if (scene && scene->getChildByIDRecursive("collab-room"_spr)) return;
+        if (auto* popup = paimon::collab::CollabRoomPopup::create(
+                m_editorLayer ? m_editorLayer->m_level : nullptr)) {
+            popup->show();
+        }
+    }
+
     $override
     void onSong(CCObject* sender) {
         if (!paimon::collab::CollabManager::get().clientCanOpenSong()) {
@@ -377,7 +504,7 @@ class $modify(PaimonCollabEditorPauseLayer, EditorPauseLayer) {
 class $modify(PaimonCollabLevelSettingsLayer, LevelSettingsLayer) {
     bool collabModeBlocked() {
         if (paimon::collab::CollabManager::get().clientCanOpenLevelSettings()) return false;
-        showBlocked("mode");
+        showBlocked("mode / ajustes del nivel");
         return true;
     }
 
@@ -403,5 +530,15 @@ class $modify(PaimonCollabLevelSettingsLayer, LevelSettingsLayer) {
     void onSpeed(CCObject* sender) {
         if (collabModeBlocked()) return;
         LevelSettingsLayer::onSpeed(sender);
+    }
+
+    $override
+    void onClose(CCObject* sender) {
+        LevelSettingsLayer::onClose(sender);
+        // Song, art, and mode changes apply on close.
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (mgr.connected() && !mgr.isApplyingRemote()) {
+            mgr.sendLevelSettings(false);
+        }
     }
 };

@@ -1,6 +1,8 @@
 #include "MenuMusicAddPopup.hpp"
 
 #include "../services/MenuMusicLibrary.hpp"
+#include "../services/MenuMusicCopy.hpp"
+#include "../services/NewgroundsCatalog.hpp"
 #include "../services/YtDlpDownloader.hpp"
 #include "../services/YtDlpBootstrap.hpp"
 #include "../services/FfmpegBootstrap.hpp"
@@ -26,8 +28,9 @@ using namespace geode::prelude;
 
 namespace paimon::menumusic {
 
-MenuMusicAddPopup* MenuMusicAddPopup::create() {
+MenuMusicAddPopup* MenuMusicAddPopup::create(std::string initialUrl) {
     auto ret = new MenuMusicAddPopup();
+    ret->m_initialUrl = std::move(initialUrl);
     if (ret && ret->init(420.f, 320.f)) {
         ret->autorelease();
         return ret;
@@ -89,15 +92,14 @@ void MenuMusicAddPopup::buildUrlSection() {
     m_urlInput = TextInput::create(size.width * 0.6f, "Paste a YouTube/SoundCloud link");
     if (m_urlInput) {
         m_urlInput->setCommonFilter(geode::CommonFilter::Any);
-        // setCommonFilter(Any) doesn't include ':' '/' '?' '&' '=' in some
-        // Geode builds, so the URL reaches yt-dlp mangled. Override the
-        // inner node's m_allowedChars directly to keep URL chars intact.
+// Preserve URL punctuation that some Geode builds omit from setCommonFilter.
         if (auto* inner = m_urlInput->getInputNode()) {
             inner->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
         }
         m_urlInput->setMaxCharCount(2048);
         m_urlInput->setPosition({size.width * 0.38f, size.height * 0.73f});
         m_urlInput->setID("url-input"_spr);
+        if (!m_initialUrl.empty()) m_urlInput->setString(m_initialUrl);
         m_mainLayer->addChild(m_urlInput, 3);
     }
 
@@ -222,9 +224,8 @@ void MenuMusicAddPopup::buildLocalSection() {
 void MenuMusicAddPopup::buildProgressBar() {
     auto size = m_mainLayer->getContentSize();
 
-    // Sit in the empty band between the URL row (~0.73) and the
-    // "Import local files" separator (~0.62). Hidden until a download
-    // actually starts so the popup looks the same in its idle state.
+// Place the progress row between the URL input and local-file separator; hide
+// it until a download starts.
     const float barW = size.width - 60.f;
     const float barH = 12.f;
     const float barY = size.height * 0.66f;
@@ -270,7 +271,7 @@ void MenuMusicAddPopup::setProgressBarVisible(bool visible) {
     if (m_progressBarBg) m_progressBarBg->setVisible(visible);
     if (m_progressPercentLabel) m_progressPercentLabel->setVisible(visible);
     if (visible) {
-        // Reset to 0% on each new download.
+// Reset progress for each download.
         updateProgressBar(0.f);
     }
 }
@@ -410,6 +411,74 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
         return;
     }
 
+// Newgrounds links/IDs use GD's downloader, then register the resulting MP3.
+    if (auto songId = parseNewgroundsSongId(url); songId > 0) {
+        m_busy = true;
+        if (m_statusLabel) {
+            m_statusLabel->setString(
+                fmt::format("Looking up song #{} on GD's servers...", songId).c_str());
+            m_statusLabel->setColor({255, 220, 120});
+        }
+
+        auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
+        fetchNewgroundsSongInfo(songId,
+            [weakThis, songId](NewgroundsSongResult info) {
+                auto ref = weakThis.lock();
+                auto* self = ref
+                    ? typeinfo_cast<MenuMusicAddPopup*>(ref.data())
+                    : nullptr;
+                if (!self || !self->m_alive.load()) return;
+
+                if (!info.success) {
+                    self->m_busy = false;
+                    if (self->m_statusLabel) {
+                        self->m_statusLabel->setString(info.error.c_str());
+                        self->m_statusLabel->setColor({255, 130, 130});
+                    }
+                    Notification::create(info.error, NotificationIcon::Error, 4.f)->show();
+                    return;
+                }
+
+                if (self->m_statusLabel) {
+                    self->m_statusLabel->setString(fmt::format(
+                        "Downloading {} by {}...",
+                        info.track.title, info.track.artist).c_str());
+                    self->m_statusLabel->setColor({255, 220, 120});
+                }
+
+                downloadNewgroundsSong(songId,
+                    [weakThis, songId](NewgroundsDownloadResult result) {
+                        auto ref = weakThis.lock();
+                        auto* self = ref
+                            ? typeinfo_cast<MenuMusicAddPopup*>(ref.data())
+                            : nullptr;
+                        if (!self || !self->m_alive.load()) {
+// The service already registered the track.
+                            return;
+                        }
+
+                        self->m_busy = false;
+                        if (!result.success) {
+                            if (self->m_statusLabel) {
+                                self->m_statusLabel->setString(result.error.c_str());
+                                self->m_statusLabel->setColor({255, 130, 130});
+                            }
+                            Notification::create(result.error, NotificationIcon::Error, 4.f)->show();
+                            return;
+                        }
+
+                        if (self->m_statusLabel) {
+                            self->m_statusLabel->setString(fmt::format(
+                                "Saved as {}.mp3 - added to your library!", songId).c_str());
+                            self->m_statusLabel->setColor({140, 230, 140});
+                        }
+                        if (self->m_urlInput) self->m_urlInput->setString("");
+                        Notification::create("Track downloaded!", NotificationIcon::Success)->show();
+                    });
+            });
+        return;
+    }
+
     auto& bootstrap = YtDlpBootstrap::get();
     if (!bootstrap.exists()) {
         if (m_statusLabel) {
@@ -434,8 +503,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                     return;
                 }
 
-                // m_alive guards UI access; WeakRef avoids a dangling
-                // pointer if this popup is destroyed during install.
+// m_alive and WeakRef guard UI access during install.
                 auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
                 auto installPopup = YtDlpInstallPopup::create(
                     [weakThis](bool ok) {
@@ -460,8 +528,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
         return;
     }
 
-    // GD's audio engine can only play MP3 from YouTube-style sources;
-    // ffmpeg is required to convert AAC/Opus, which FMOD can't play.
+// ffmpeg converts AAC/Opus to MP3 for FMOD.
     auto& ffmpeg = FfmpegBootstrap::get();
     if (!ffmpeg.exists()) {
         if (m_statusLabel) {
@@ -524,7 +591,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
         m_statusLabel->setString("Starting download...");
         m_statusLabel->setColor({255, 220, 120});
     }
-    // Show the visible progress bar so users see something is happening.
+// Show progress once work starts.
     setProgressBarVisible(true);
 
     auto id = MenuMusicLibrary::get().generateId("dl");
@@ -551,7 +618,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
             auto ref = weakThis.lock();
             auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
             if (!self || !self->m_alive.load()) {
-                // popup closed: still register the track so the download isn't lost
+// Register the track even if the popup closed.
                 if (result.success) {
                     MusicTrack t;
                     t.id = result.trackId;
@@ -607,8 +674,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                 std::chrono::system_clock::now().time_since_epoch()).count();
             MenuMusicLibrary::get().addTrack(t);
 
-            // Snap to 100% briefly so the user sees the bar fully filled
-            // before it disappears, then hide it.
+// Show 100% briefly before hiding the bar.
             self->updateProgressBar(1.f);
             self->setProgressBarVisible(false);
 
@@ -624,7 +690,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
 
 void MenuMusicAddPopup::onPasteUrl(CCObject*) {
     if (!m_urlInput) return;
-    // Read the clipboard directly to bypass the input's character filter.
+// Read the clipboard directly to bypass the input filter.
     auto clip = geode::utils::clipboard::read();
     auto isSpace = [](unsigned char c) {
         return c == ' ' || c == '\t' || c == '\r' || c == '\n';
@@ -671,4 +737,4 @@ void MenuMusicAddPopup::onOpenYtDlpHelp(CCObject*) {
     PopupManager::get().alert("yt-dlp setup", msg).showInstant();
 }
 
-} // namespace paimon::menumusic
+}

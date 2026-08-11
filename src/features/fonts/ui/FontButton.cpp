@@ -1,5 +1,6 @@
 #include "FontButton.hpp"
 #include "FontPickerPopup.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
 
 using namespace geode::prelude;
@@ -7,6 +8,8 @@ using namespace cocos2d;
 using namespace paimon::fonts;
 
 FontButton* FontButton::create(CopyableFunction<void(std::string const&)> insertFn) {
+    if (!paimon::modules::isEnabled("paimbnails.fonts.social")) return nullptr;
+
     auto ret = new FontButton();
     if (ret && ret->init(std::move(insertFn))) {
         ret->autorelease();

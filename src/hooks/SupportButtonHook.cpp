@@ -25,14 +25,12 @@ public:
 };
 
 $execute {
-    // Replace the support button in the mod's popup
     static auto handle = ModPopupUIEvent().listen(
         +[](FLAlertLayer* popup, std::string_view modID, std::optional<Mod*>) -> ListenerResult {
             if (modID != Mod::get()->getID()) {
                 return ListenerResult::Propagate;
             }
 
-            // Find the button in links-container
             auto linksMenu = popup->querySelector("links-container");
             if (!linksMenu) return ListenerResult::Propagate;
 
@@ -42,7 +40,6 @@ $execute {
             auto menuItem = typeinfo_cast<CCMenuItemSpriteExtra*>(supportBtn);
             if (!menuItem) return ListenerResult::Propagate;
 
-            // Avoid duplicating the handler
             if (menuItem->getChildByID("support-handler"_spr)) {
                 return ListenerResult::Propagate;
             }

@@ -2,6 +2,7 @@
 #include <Geode/loader/Mod.hpp>
 
 #include "../../audio/services/AudioContextCoordinator.hpp"
+#include "../../../framework/HookConventions.hpp"
 
 using namespace geode::prelude;
 
@@ -11,6 +12,11 @@ class $modify(PaimonDynamicSongEditLevelLayer, EditLevelLayer) {
     struct Fields {
         bool m_audioActivated = false;
     };
+
+    bool init(GJGameLevel* level) {
+        if (!EditLevelLayer::init(level)) return false;
+        return true;
+    }
 
     $override
     void onEnterTransitionDidFinish() {

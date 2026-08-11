@@ -11,9 +11,6 @@ using namespace geode::prelude;
 
 namespace paimon::icons::garage {
 
-// Smoke test: if you don't see this in the log, colorful-icons was stripped
-// from the DLL (likely by LTO). Fix: CMakeLists.txt GLOB_RECURSE already
-// picks up these files.
 $execute {
     geode::log::debug("[paimon-icons] feature module loaded ({} v{})",
         Mod::get()->getID(), Mod::get()->getVersion().toVString(false));
@@ -24,13 +21,12 @@ namespace {
 void requestRecolor(GJGarageLayer* layer) {
     if (!layer) return;
 
-    // Recolor the kit's icon button-bar (every cached page).
+// Recolor the kit's icon button bar.
     if (auto* bar = layer->m_iconSelection) {
         IconRecolorEngine::get().recolorListBar(bar, RecolorArea::IconKit);
     }
 
-    // Walk the whole garage layer once -- covers the selected icon preview
-    // and any secondary menus added by other mods.
+// Walk the garage once to cover previews and secondary mod menus.
     IconRecolorEngine::get().recolorSubtree(layer, RecolorArea::IconKit);
 }
 
@@ -40,6 +36,28 @@ void requestVanillaRestore(GJGarageLayer* layer) {
         IconRecolorEngine::get().restoreListBar(bar);
     }
     IconRecolorEngine::get().restoreVanilla(layer);
+}
+
+void applyCurrentConfig(GJGarageLayer* layer) {
+    auto& store = IconConfigStore::get();
+    if (store.isFeatureEnabled() && store.config().apply.kit) requestRecolor(layer);
+    else requestVanillaRestore(layer);
+}
+
+GJGarageLayer* findGarageLayer(CCNode* root) {
+    if (!root) return nullptr;
+    if (auto* garage = typeinfo_cast<GJGarageLayer*>(root)) return garage;
+    if (auto* children = root->getChildren()) {
+        for (auto* child : CCArrayExt<CCNode*>(children)) {
+            if (auto* garage = findGarageLayer(child)) return garage;
+        }
+    }
+    return nullptr;
+}
+
+void refreshVisibleGarage() {
+    auto* scene = CCDirector::sharedDirector()->getRunningScene();
+    applyCurrentConfig(findGarageLayer(scene));
 }
 
 bool colorsEqual(ccColor3B a, ccColor3B b) {
@@ -52,6 +70,7 @@ public:
         auto* n = new GarageRecolorTicker();
         n->m_host = host;
         n->m_buttonIcon = buttonIcon;
+        n->m_featureEnabled = IconConfigStore::get().isFeatureEnabled();
         n->autorelease();
         n->scheduleUpdate();
         return n;
@@ -62,12 +81,16 @@ public:
 
         m_acc += dt;
         auto& store = IconConfigStore::get();
-        if (!store.isFeatureEnabled()) {
+        bool const enabled = store.isFeatureEnabled();
+        if (enabled != m_featureEnabled) {
+            m_featureEnabled = enabled;
+            applyCurrentConfig(m_host);
+        }
+        if (!enabled) {
             m_acc = 0.0f;
             return;
         }
-        // Rainbow needs constant repaints; static modes only need an
-        // occasional sweep to catch icons created behind our hooks.
+// Rainbow repaints constantly; static modes only need periodic sweeps.
         const float interval =
             store.config().mode == ColorMode::Rainbow ? 0.1f : 0.5f;
         if (m_acc < interval) return;
@@ -76,9 +99,7 @@ public:
     }
 
 private:
-    // Mirror the garage's selected icon + player colors on the gear button's
-    // mini icon. Runs every frame but only touches nodes when something
-    // actually changed.
+// Mirror the selected icon and player colors on the gear button when changed.
     void refreshButtonIcon() {
         if (!m_buttonIcon || !m_host) return;
 
@@ -108,22 +129,30 @@ private:
     GJGarageLayer* m_host = nullptr;
     Ref<SimplePlayer> m_buttonIcon;
     float m_acc = 0.0f;
+    bool m_featureEnabled = false;
     int m_lastIconID  = -1;
     int m_lastTypeRaw = -1;
     ccColor3B m_lastC1{0, 0, 0};
     ccColor3B m_lastC2{0, 0, 0};
 };
 
-// Returns the button's mini SimplePlayer so the ticker can keep it in sync
-// with the selected icon.
+constexpr float kColumnStep = 40.f;
+
+// Left-column menu used by the icon kit and other mods.
+CCMenu* colorColumnOf(GJGarageLayer* layer) {
+    auto* anchor = layer->getChildByIDRecursive("player-color-1-button");
+    if (!anchor) anchor = layer->getChildByIDRecursive("player-color-2-button");
+    if (!anchor) return nullptr;
+    return typeinfo_cast<CCMenu*>(anchor->getParent());
+}
+
+// Return the button's mini SimplePlayer for ticker updates.
 SimplePlayer* installPaimonIconsButton(GJGarageLayer* layer) {
     if (!layer) return nullptr;
     if (layer->getChildByID("paimbnails/paimon-icons-btn"_spr)) return nullptr;
 
-    // The button shows the icon you have selected, live. SimplePlayer has a
-    // zero content size, and BasedButtonSprite scales its top node by content
-    // size (zero => infinite scale, painting the whole layer), so it must go
-    // inside a wrapper with a real size.
+// Wrap SimplePlayer because its zero content size would make BasedButtonSprite
+// scale it infinitely.
     auto* mini = SimplePlayer::create(1);
     if (!mini) return nullptr;
     auto* wrap = CCNode::create();
@@ -146,54 +175,58 @@ SimplePlayer* installPaimonIconsButton(GJGarageLayer* layer) {
     btn->setID("paimbnails/paimon-icons-btn"_spr);
     btn->setScale(0.7f);
 
-    // Attach to an existing menu so the button moves with layouts.
-    // Try "category-menu" (via node-ids), then "currency-menu", then create fresh.
-    auto* host = static_cast<CCMenu*>(layer->getChildByID("category-menu"));
-    if (!host) {
-        host = static_cast<CCMenu*>(layer->getChildByID("currency-menu"));
+// Node IDs do not expose category/currency menus; place this below the color
+// buttons to avoid covering stats-menu.
+    if (auto* column = colorColumnOf(layer)) {
+        float lowestY = 1e9f;
+        float x = 0.f;
+        for (auto* child : CCArrayExt<CCNode*>(column->getChildren())) {
+            if (!child->isVisible()) continue;
+            if (child->getPositionY() < lowestY) {
+                lowestY = child->getPositionY();
+                x = child->getPositionX();
+            }
+        }
+        if (lowestY < 1e8f) {
+            CCPoint spot{x, lowestY - kColumnStep};
+// Use the lower corner if the left column is already full.
+            if (column->convertToWorldSpace(spot).y >= 24.f) {
+                btn->setPosition(spot);
+                column->addChild(btn);
+                return mini;
+            }
+        }
     }
-    if (!host) {
-        // Last resort: create our own host menu.
-        host = CCMenu::create();
-        host->setID("paimbnails/colorful-icons-host-menu"_spr);
-        host->setPosition({0, 0});
-        layer->addChild(host, 100);
 
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
-        btn->setPosition({winSize.width - 25.f, winSize.height - 25.f});
-        host->addChild(btn);
-        return mini;
-    }
-
+// Fallback menu in the lower-left, away from stats-menu.
+    auto* host = CCMenu::create();
+    host->setID("paimbnails/colorful-icons-host-menu"_spr);
+    host->setPosition({0, 0});
+    layer->addChild(host, 100);
+    btn->setPosition({26.f, 26.f});
     host->addChild(btn);
-    host->updateLayout();
     return mini;
 }
 
-// One-time registration of a config-changed listener that repaints (or
-// restores) the garage that is currently on screen.
+// Repaint or restore the visible garage after config changes.
 void ensureConfigListenerRegistered() {
     static bool registered = false;
     if (registered) return;
     registered = true;
 
     static auto listener = IconConfigChangedEvent("").listen([]() {
-        auto* scene = CCDirector::sharedDirector()->getRunningScene();
-        if (!scene) return ListenerResult::Propagate;
-        auto* garage = scene->getChildByType<GJGarageLayer>(0);
-        if (!garage) return ListenerResult::Propagate;
-        if (IconConfigStore::get().isFeatureEnabled()) {
-            requestRecolor(garage);
-        } else {
-            // Master switch turned off: put the icons back to stock right away.
-            requestVanillaRestore(garage);
-        }
+        refreshVisibleGarage();
         return ListenerResult::Propagate;
     });
     listener.leak();
+
+// Geode's settings UI bypasses IconConfigStore, so it needs this repaint path.
+    listenForSettingChanges<bool>("colorful-icons-enabled", [](bool) {
+        refreshVisibleGarage();
+    });
 }
 
-}  // anonymous namespace
+}
 
 void onGarageInit(GJGarageLayer* layer) {
     if (!layer) return;
@@ -201,9 +234,7 @@ void onGarageInit(GJGarageLayer* layer) {
     ensureConfigListenerRegistered();
     SimplePlayer* buttonIcon = installPaimonIconsButton(layer);
 
-    // Mount a low-frequency ticker that keeps icons recolored even as the
-    // user swipes pages, switches tabs, or opens sub-popups. It also mirrors
-    // the selected icon on the button in real time.
+// Periodic ticker keeps pages, tabs, sub-popups, and the button icon in sync.
     if (!layer->getChildByID("paimbnails/colorful-icons-ticker"_spr)) {
         auto* ticker = GarageRecolorTicker::create(layer, buttonIcon);
         ticker->setID("paimbnails/colorful-icons-ticker"_spr);
@@ -211,19 +242,18 @@ void onGarageInit(GJGarageLayer* layer) {
         layer->addChild(ticker, -100);
     }
 
-    // Defer the first recolor by one frame so the bar's child icons
-    // have finished initialising.
+// Defer the first recolor until bar children finish initializing.
     Ref<GJGarageLayer> ref = layer;
     Loader::get()->queueInMainThread([ref]() {
         if (paimon::isRuntimeShuttingDown()) return;
         if (!ref) return;
-        requestRecolor(ref);
+        applyCurrentConfig(ref);
     });
 }
 
 void onPlayerColorChanged(GJGarageLayer* layer) {
     if (!layer) return;
-    requestRecolor(layer);
+    applyCurrentConfig(layer);
 }
 
-}  // namespace paimon::icons::garage
+}

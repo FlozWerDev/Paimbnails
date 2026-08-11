@@ -1,4 +1,4 @@
-// Offscreen FBO level capture. Falls back to async PBO back-buffer read.
+// Offscreen level capture with an async back-buffer fallback.
 
 #include "FramebufferCapture.hpp"
 #include "SceneCapture.hpp"
@@ -8,6 +8,7 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/PlayerToggleHelper.hpp"
 #include "../../../utils/ThreadTracker.hpp"
+#include "../../../utils/Localization.hpp"
 
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -57,14 +58,8 @@ using namespace cocos2d;
 #define GL_STREAM_READ 0x88E1
 #endif
 
-// PlayLayer::flipArt (flipArt+0x29) and GJBaseGameLayer::updateCameraBGArt
-// (updateCameraBGArt+0x1a8, null read at 0x0) crash — both reached via
-// GJBaseGameLayer::updateCamera, also through Globed's updateCamera hook —
-// when updateCamera runs out-of-band during the offscreen capture render:
-// mid-drawScene, dt=0, with the cocos view retargeted to the capture
-// resolution. Both only reposition/flip background art, so they're suppressed
-// while the capture render owns the camera; the real game loop re-evaluates
-// them on the next frame.
+// Suppress background-art camera helpers while the retargeted render owns the
+// camera; they can dereference stale game-layer state mid-drawScene.
 static std::atomic<bool> s_suppressCameraArt{false};
 
 struct SuppressCameraArtGuard {
@@ -86,14 +81,8 @@ class $modify(PaimonCaptureBGArtGuard, GJBaseGameLayer) {
     }
 };
 
-// Last-resort net for the out-of-band recalc calls in renderPlayLayerToTexture:
-// vanilla updateCamera/preUpdateVisibility keep finding new null-derefs when run
-// mid-drawScene with the view retargeted (updateCameraBGArt null at 0x0,
-// preUpdateVisibility+0x363 null read at 0x1D0). Both calls are best-effort
-// repositioning/culling for the capture aspect; on an access violation the rest
-// of that call is skipped and the render continues — the real game loop
-// recomputes everything on the next frame. SEH frames can't hold C++ objects
-// with destructors, hence the raw function-pointer shape.
+// Camera/visibility recalculation is best-effort during retargeted rendering.
+// The raw function-pointer split keeps C++ destructors outside __try frames.
 #ifdef GEODE_IS_WINDOWS
 static bool sehGuardedCall(void (*fn)(PlayLayer*), PlayLayer* pl) noexcept {
     __try {
@@ -131,13 +120,11 @@ enum class Phase {
 
 std::atomic<Phase> g_phase{Phase::Idle};
 
-// Bumped on requestCapture/cancelPending; worker threads skip stale callbacks.
 std::atomic<uint64_t> g_generation{0};
 
 int g_waitingTicks = 0;
 constexpr int kMaxWaitingTicks = 6;
 
-// WeakRef to avoid UAF on short-lived nodes (CCCircleWave, notifications, etc).
 using HiddenNodeList = std::vector<std::pair<geode::WeakRef<CCNode>, bool>>;
 
 struct HiddenGameObjectState {
@@ -158,10 +145,12 @@ struct CapturePrepState {
     bool             playerVisActive = false;
     bool             playerHide1     = false;
     bool             playerHide2     = false;
+    geode::WeakRef<PlayerObject> player1Ref;
+    geode::WeakRef<PlayerObject> player2Ref;
     PlayerVisState   player1State;
     PlayerVisState   player2State;
 
-        bool      plSnapActive = false;
+    bool      plSnapActive = false;
     geode::WeakRef<cocos2d::CCNode> plRef;
     CCPoint   plPos{};
     float     plScaleX = 1.f;
@@ -171,7 +160,6 @@ struct CapturePrepState {
 
 CapturePrepState g_prep;
 
-// Inspired by cdc-sys/level-thumbs-mod
 void hideGameplayEffectNodes(PlayLayer* pl, HiddenNodeList& hidden) {
     if (!pl) return;
     auto hideNode = [&](CCNode* n) {
@@ -197,11 +185,9 @@ void hideGameplayEffectNodes(PlayLayer* pl, HiddenNodeList& hidden) {
     }
 }
 
-// Depth-first ID walk; skips batch-nodes / particles / GameObjects (no mod IDs).
 void hideKnownModNodes(PlayLayer* pl, HiddenNodeList& hidden) {
     if (!pl) return;
 
-    // Nodes the user explicitly kept visible in the layer editor are exempt.
     auto const& userShown = paimon::capture::userShownNodes();
 
     static const std::unordered_set<std::string_view> kModNodeIds = {
@@ -241,7 +227,7 @@ void hideKnownModNodes(PlayLayer* pl, HiddenNodeList& hidden) {
                     hidden.push_back({child, true});
                     child->setVisible(false);
                 }
-                continue; // matched: nothing relevant inside it
+                continue;
             }
             if (typeinfo_cast<CCSpriteBatchNode*>(child)) continue;
             if (typeinfo_cast<CCParticleSystem*>(child))  continue;
@@ -251,12 +237,8 @@ void hideKnownModNodes(PlayLayer* pl, HiddenNodeList& hidden) {
     }
 }
 
-// (4) Classifying scene-graph children reads their vtable (typeid /
-// typeinfo_cast) and members. A node another mod released but left in a
-// children array would fault when touched; sehClassify runs the classifier
-// under SEH and skips that child on an access violation instead of crashing.
-// The classifier functions must not contain __try themselves (they use C++
-// objects with destructors), hence this function-pointer split.
+// Guard scene classification against dangling nodes in the children array.
+// Raw function pointers keep C++ destructors outside __try frames.
 #ifdef GEODE_IS_WINDOWS
 bool sehClassify(bool (*fn)(void*), void* ctx, bool* faulted) noexcept {
     __try {
@@ -276,8 +258,6 @@ struct PLChildClassifyCtx {
     std::unordered_set<CCNode*>* keep;
 };
 
-// Whether a direct PlayLayer child is non-vanilla UI to hide. Mirrors the
-// original inline decision exactly.
 bool classifyPlayLayerChild(void* p) {
     auto* c = static_cast<PLChildClassifyCtx*>(p);
     CCNode* child = c->child;
@@ -335,7 +315,6 @@ bool classifyPlayLayerChild(void* p) {
 
 struct SceneChildClassifyCtx { CCNode* child; };
 
-// Whether a scene child (sibling of PlayLayer) is a popup/pause/overlay to hide.
 bool classifySceneChild(void* p) {
     CCNode* child = static_cast<SceneChildClassifyCtx*>(p)->child;
     if (!child->isVisible()) return false;
@@ -345,7 +324,7 @@ bool classifySceneChild(void* p) {
 
     if (typeinfo_cast<PauseLayer*>(child))               return true;
     if (typeinfo_cast<FLAlertLayer*>(child))             return true;
-    if (strstr(cls, "Popup"))                            return true; // Geode popups (template)
+    if (strstr(cls, "Popup"))                            return true;
     if (nid.find("pause") != std::string::npos ||
         nid.find("Pause") != std::string::npos)          return true;
     if (strstr(cls, "PauseLayer"))                       return true;
@@ -363,8 +342,6 @@ HiddenNodeList hideNonVanillaUI() {
     auto* scene = director->getRunningScene();
 
     auto hideNode = [&](CCNode* n) {
-        // Skip nodes the user explicitly chose to keep in the shot via the
-        // layer editor; force-hiding them would silently undo that choice.
         if (n && n->isVisible() && !paimon::capture::isUserShown(n)) {
             hidden.push_back({n, true});
             n->setVisible(false);
@@ -386,7 +363,6 @@ HiddenNodeList hideNonVanillaUI() {
         }
         keep.erase(nullptr);
 
-        // Protect ancestor chain up to PlayLayer (shader wrapper nodes).
         {
             std::vector<CCNode*> keepRoots(keep.begin(), keep.end());
             for (auto* n : keepRoots) {
@@ -396,11 +372,6 @@ HiddenNodeList hideNonVanillaUI() {
             }
         }
 
-        // Some PlayLayer UI member pointers can be stale or uninitialized
-        // depending on the level type / setup state (e.g. holding 0xFFFF...FF),
-        // and dereferencing them crashes. Collect the live descendants of the
-        // PlayLayer so we can validate a member is a real node before touching
-        // it. Comparing pointer values against this set never dereferences.
         std::unordered_set<CCNode*> liveNodes;
         {
             std::vector<CCNode*> stack{pl};
@@ -424,9 +395,6 @@ HiddenNodeList hideNonVanillaUI() {
         hideMember(pl->m_progressBar);
         hideMember(pl->m_debugDrawNode);
         if (pl->m_debugDrawNode && liveNodes.count(pl->m_debugDrawNode)) {
-            // The debug draw node may live inside a kept gameplay container
-            // (e.g. the object layer); hiding that parent would blank the
-            // whole level in the capture.
             auto* ddParent = pl->m_debugDrawNode->getParent();
             if (ddParent && !keep.count(ddParent)) hideNode(ddParent);
         }
@@ -437,8 +405,6 @@ HiddenNodeList hideNonVanillaUI() {
             if (!child) continue;
             if (keep.count(child)) continue;
             if (paimon::capture::isUserShown(child)) continue;
-            // (4) Vtable access (typeid/typeinfo_cast) guarded against a
-            // dangling child left in the array by another mod.
             PLChildClassifyCtx ctx{child, &keep};
             if (sehClassify(&classifyPlayLayerChild, &ctx, &plChildFaulted)) {
                 hidden.push_back({child, true});
@@ -463,7 +429,6 @@ HiddenNodeList hideNonVanillaUI() {
             if (!child) continue;
             if (pl && child == pl) continue;
             if (paimon::capture::isUserShown(child)) continue;
-            // (4) Vtable access guarded against a dangling scene sibling.
             SceneChildClassifyCtx ctx{child};
             if (sehClassify(&classifySceneChild, &ctx, &sceneFaulted)) {
                 hidden.push_back({child, true});
@@ -476,6 +441,24 @@ HiddenNodeList hideNonVanillaUI() {
         }
     }
 
+    return hidden;
+}
+
+// Plain screenshots are WYSIWYG: the scene graph stays untouched (mod layers,
+// popups and scene overlays must all show up) and only the mod's own chrome is
+// dropped. That chrome lives in the notification node (OverlayManager): custom
+// cursor, click FX, toasts and the capture card itself.
+HiddenNodeList hideCaptureChrome() {
+    HiddenNodeList hidden;
+
+    auto* director = CCDirector::get();
+    if (!director) return hidden;
+
+    auto* notif = director->getNotificationNode();
+    if (notif && notif->isVisible() && !paimon::capture::isUserShown(notif)) {
+        hidden.push_back({notif, true});
+        notif->setVisible(false);
+    }
     return hidden;
 }
 
@@ -521,7 +504,6 @@ std::vector<HiddenGameObjectState> hidePracticeAndEffectObjects() {
 void restoreHiddenState() {
     if (!g_prep.active) return;
 
-    // lock() skips nodes destroyed mid-capture (circle waves, notifications, etc).
     for (auto& [weakNode, vis] : g_prep.hiddenNodes) {
         if (auto node = weakNode.lock()) node->setVisible(vis);
     }
@@ -537,12 +519,14 @@ void restoreHiddenState() {
     }
 
     if (g_prep.playerVisActive) {
-        if (auto* pl = PlayLayer::get()) {
-            if (g_prep.playerHide1 && pl->m_player1) {
-                paimTogglePlayer(pl->m_player1, g_prep.player1State, false);
+        if (g_prep.playerHide1) {
+            if (auto player = g_prep.player1Ref.lock()) {
+                paimTogglePlayer(player.data(), g_prep.player1State, false);
             }
-            if (g_prep.playerHide2 && pl->m_player2) {
-                paimTogglePlayer(pl->m_player2, g_prep.player2State, false);
+        }
+        if (g_prep.playerHide2) {
+            if (auto player = g_prep.player2Ref.lock()) {
+                paimTogglePlayer(player.data(), g_prep.player2State, false);
             }
         }
     }
@@ -556,12 +540,9 @@ void restoreHiddenState() {
         }
     }
 
-    // Full reset.
     g_prep = {};
-    // s_isCapturing/s_captureW/s_captureH reset by FramebufferCapture private statics.
 }
 
-// Pixel helpers (content check, flip, alpha fill, Lanczos-3 resize)
 bool pixelBufferHasContent(uint8_t const* pixels, size_t bytes) {
     if (bytes < 4) return false;
     uint8_t r0 = pixels[0], g0 = pixels[1], b0 = pixels[2];
@@ -588,18 +569,18 @@ void forceAlphaOpaque(uint8_t* data, size_t bytes) {
     for (size_t i = 3; i < bytes; i += 4) data[i] = 255;
 }
 
-// Separable Lanczos-3 resize (H then V) with precomputed normalized weights.
+// Separable Lanczos-3 resize with precomputed weights.
 struct ResizeAxis {
-    std::vector<int>   starts;  // first source index per output index
-    std::vector<float> weights; // taps per output index, contiguous
+    std::vector<int>   starts;
+    std::vector<float> weights;
     int taps = 0;
 };
 
 ResizeAxis buildLanczosAxis(int srcN, int dstN) {
-    constexpr float A = 3.0f; // Lanczos lobes
+    constexpr float A = 3.0f;
     ResizeAxis ax;
-    float scale       = static_cast<float>(dstN) / srcN;       // <1 = downscale
-    float filterScale = std::max(1.0f, 1.0f / scale);          // widen kernel on minification
+    float scale       = static_cast<float>(dstN) / srcN;
+    float filterScale = std::max(1.0f, 1.0f / scale);
     float support     = A * filterScale;
     ax.taps = static_cast<int>(std::ceil(support * 2.0f)) + 1;
     ax.starts.resize(dstN);
@@ -638,7 +619,6 @@ std::shared_ptr<uint8_t> lanczosResizeRGBA(
     ResizeAxis axX = buildLanczosAxis(srcW, dstW);
     ResizeAxis axY = buildLanczosAxis(srcH, dstH);
 
-    // Pass 1: horizontal → float RGB intermediate (dstW × srcH).
     std::vector<float> mid(static_cast<size_t>(dstW) * srcH * 3);
     for (int y = 0; y < srcH; ++y) {
         uint8_t const* row = src + static_cast<size_t>(y) * srcW * 4;
@@ -660,7 +640,6 @@ std::shared_ptr<uint8_t> lanczosResizeRGBA(
         }
     }
 
-    // Pass 2: vertical → final RGBA (alpha forced opaque).
     size_t outBytes = static_cast<size_t>(dstW) * dstH * 4;
     std::shared_ptr<uint8_t> out(new uint8_t[outBytes], std::default_delete<uint8_t[]>());
     uint8_t* dst = out.get();
@@ -688,7 +667,6 @@ std::shared_ptr<uint8_t> lanczosResizeRGBA(
     return out;
 }
 
-// Returns texture with refcount=1; receivers must retain (geode::Ref<>).
 CCTexture2D* makeTextureRGBA(uint8_t const* data, int W, int H) {
     auto* tex = new CCTexture2D();
     if (!tex->initWithData(data, kCCTexture2DPixelFormat_RGBA8888, W, H,
@@ -701,7 +679,6 @@ CCTexture2D* makeTextureRGBA(uint8_t const* data, int W, int H) {
     return tex;
 }
 
-// CPU FXAA-style anti-aliasing for HDR mode (~100-200ms at 1080p).
 void applyFXAA(uint8_t* data, int W, int H) {
     if (!data || W < 3 || H < 3) return;
 
@@ -709,7 +686,6 @@ void applyFXAA(uint8_t* data, int W, int H) {
     std::vector<uint8_t> in(data, data + bytes);
 
     auto luma = [](uint8_t r, uint8_t g, uint8_t b) -> float {
-        // Rec. 709 luma. Returned in [0,255].
         return 0.2126f * r + 0.7152f * g + 0.0722f * b;
     };
 
@@ -744,9 +720,8 @@ void applyFXAA(uint8_t* data, int W, int H) {
         }
     };
 
-    // FXAA defaults scaled to 0..255 range.
     constexpr float EDGE_MIN = 0.0312f * 255.0f;
-    constexpr float EDGE_REL = 0.063f;  // moderately aggressive
+constexpr float EDGE_REL = 0.063f;
 
     for (int y = 1; y < H - 1; ++y) {
         for (int x = 1; x < W - 1; ++x) {
@@ -762,7 +737,6 @@ void applyFXAA(uint8_t* data, int W, int H) {
 
             if (range < std::max(EDGE_MIN, EDGE_REL * lMax)) continue;
 
-            // Compare 2nd-order luma differences to decide edge direction.
             float lNW = sampleLuma(x - 1, y - 1);
             float lNE = sampleLuma(x + 1, y - 1);
             float lSW = sampleLuma(x - 1, y + 1);
@@ -776,7 +750,6 @@ void applyFXAA(uint8_t* data, int W, int H) {
                        + std::abs(lNE + lSE - 2 * lE);
             bool isHorz = horz >= vert;
 
-            // Sample two bilinear taps offset along the edge axis.
             float dx = isHorz ? 0.0f : 0.5f;
             float dy = isHorz ? 0.5f : 0.0f;
 
@@ -788,14 +761,11 @@ void applyFXAA(uint8_t* data, int W, int H) {
             data[di + 0] = static_cast<uint8_t>((static_cast<int>(pa[0]) + pb[0]) / 2);
             data[di + 1] = static_cast<uint8_t>((static_cast<int>(pa[1]) + pb[1]) / 2);
             data[di + 2] = static_cast<uint8_t>((static_cast<int>(pa[2]) + pb[2]) / 2);
-            // alpha unchanged (already opaque from forceAlphaOpaque)
         }
     }
 }
 
-// Resolution helpers
 int resolveTargetWidth(int levelID, int nativeW) {
-    // Menu / generic screenshot → use native resolution (no downscale).
     if (levelID == 0) return nativeW;
 
     std::string res = Mod::get()->getSettingValue<std::string>("capture-resolution");
@@ -803,11 +773,9 @@ int resolveTargetWidth(int levelID, int nativeW) {
     if      (res == "4k")    target = 3840;
     else if (res == "1440p") target = 2560;
     else                     target = 1920;
-    // Never upscale; only affects back-buffer fallback.
     return std::min(target, nativeW);
 }
 
-// Exact 16:9 at user resolution, clamped to GPU limit. Not limited by window size.
 std::pair<int, int> resolveRenderTargetSize() {
     std::string res = Mod::get()->getSettingValue<std::string>("capture-resolution");
     int w = 1920;
@@ -818,8 +786,7 @@ std::pair<int, int> resolveRenderTargetSize() {
     return {w, h};
 }
 
-// Render PlayLayer to offscreen FBO: retargets cocos view + ShaderLayer,
-// drains GL errors, returns bottom-up RGBA pixels or nullptr (→ back-buffer fallback).
+// Render PlayLayer into an offscreen FBO; return bottom-up RGBA or fall back.
 std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     PlayLayer* pl, int W, int H)
 {
@@ -827,8 +794,6 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     auto* glView   = director ? director->getOpenGLView() : nullptr;
     if (!pl || !glView || W <= 0 || H <= 0) return nullptr;
 
-    // Suppress flipArt/updateCameraBGArt for the whole render — updateCamera(0.f)
-    // below can reach them with the view retargeted, which crashes (see guard above).
     SuppressCameraArtGuard suppressCameraArt;
 
     while (glGetError() != GL_NO_ERROR) {} // drain stale errors
@@ -839,7 +804,6 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     GLuint tex = 0, fbo = 0;
     glGenTextures(1, &tex);
     if (!tex) return nullptr;
-    // Keep cocos' texture-binding cache coherent.
     ccGLBindTexture2D(tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -860,9 +824,7 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
         return nullptr;
     }
 
-    // GL objects are torn down and the previous FBO rebound on EVERY exit path
-    // (including the mid-render aborts below), so a fault never leaks the FBO
-    // nor leaves it bound for the next real frame.
+    // Restore the previous FBO on every exit path.
     struct GLCleanupGuard {
         GLuint tex; GLuint fbo; GLint oldFBO;
         ~GLCleanupGuard() {
@@ -872,9 +834,6 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
         }
     } glCleanup{tex, fbo, oldFBO};
 
-    // (1c) Validate the retarget math before dividing: a zero/negative display
-    // factor or window size would produce inf/NaN in the viewport/projection.
-    // Bail to the back-buffer fallback instead of poisoning GL state.
     CCSize oldWinSize = director->getWinSize();
     float displayFactor = geode::utils::getDisplayFactor();
     if (displayFactor <= 0.f || oldWinSize.width <= 0.f || oldWinSize.height <= 0.f) {
@@ -889,8 +848,6 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     float  oldScaleX  = glView->m_fScaleX;
     float  oldScaleY  = glView->m_fScaleY;
 
-    // (1b) RAII net: the cocos view is always restored, even on a mid-render
-    // abort, so the next real frame is never left at the capture resolution.
     struct ViewRestoreGuard {
         CCDirector* director; CCEGLView* glView;
         CCSize oldDesign, oldScreen; float oldScaleX, oldScaleY;
@@ -929,12 +886,6 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     CCSize newWinSize  = director->getWinSize();
     bool aspectMatches = sizesMatch(oldWinSize, newWinSize);
 
-    // (2) Third-party camera hooks (e.g. Globed) run inside the out-of-band
-    // updateCamera/preUpdateVisibility recalcs below and have repeatedly
-    // null-derefed with the view retargeted. When such a mod is present, skip
-    // those best-effort recalcs entirely (they only tweak non-16:9 framing);
-    // the real game loop recomputes them next frame, and the RAII guards keep
-    // the view/GL/camera state clean regardless.
     static bool s_cameraModWarned = false;
     bool thirdPartyCameraMod = Loader::get()->isModLoaded("dankmeme.globed2");
     if (thirdPartyCameraMod && !s_cameraModWarned) {
@@ -944,8 +895,6 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     }
     bool doCameraRecalc = !aspectMatches && !thirdPartyCameraMod;
 
-    // When the window aspect differs from 16:9 the camera and UI-trigger
-    // layers are positioned for the old winSize; recalculate for the render.
     bool hadUIPos = false;
     CCPoint oldUIPos{};
     if (doCameraRecalc) {
@@ -965,7 +914,6 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
         }
     }
 
-    // Shader retarget: rebuild internal render texture at capture size.
     auto* shader = pl->m_shaderLayer;
     CCSize const captureSize{static_cast<float>(W), static_cast<float>(H)};
     bool hadShader = shader && shader->getParent()
@@ -980,9 +928,7 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
         }
     };
 
-    // (1a/1b) Shader state is always put back, even on an abort between retarget
-    // and restore. setupShader/prePixelateShader are SEH-guarded: doubling an
-    // already-large shader FBO is exactly the allocation that faults mid-capture.
+// Restore shader state even when setup or pre-pixelation aborts mid-capture.
     struct ShaderRestoreGuard {
         PlayLayer* pl; ShaderLayer* shader;
         CCSize oldScreen, oldTarget; bool pixelateHardEdges;
@@ -1008,11 +954,8 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
         if (!pixelateHardEdges) applyLinearFilter();
         sehGuardedCall(+[](PlayLayer* p) { if (p->m_shaderLayer) p->m_shaderLayer->prePixelateShader(); }, pl);
         sehGuardedCall(+[](PlayLayer* p) { p->updateShaderLayer(0.f); }, pl);
-        // setupShader recreates the shader's FBO; rebind ours for the visit.
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
-        // (1d) If setupShader left our FBO incomplete, abort cleanly instead of
-        // drawing into an invalid target. The guards restore shader/view/GL.
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
             log::warn("[FramebufferCapture] FBO incomplete after shader retarget "
                       "-> back-buffer fallback");
@@ -1026,16 +969,12 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
                   "offscreen render; skipped");
     }
 
-    // (1a) visit() drives the whole scene draw with the retargeted view; SEH
-    // guard it so a fault inside a hooked node's draw falls back to the
-    // back-buffer instead of crashing.
     if (!sehGuardedCall(+[](PlayLayer* p) { p->visit(); }, pl)) {
         log::warn("[FramebufferCapture] pl->visit() faulted during offscreen "
                   "render -> back-buffer fallback");
         return nullptr; // guards restore shader/view/GL
     }
 
-    // Drain benign GL errors from retargeted shader render.
     while (glGetError() != GL_NO_ERROR) {}
 
     auto raw = std::make_shared<std::vector<uint8_t>>(
@@ -1046,8 +985,6 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
     bool readOk = (glGetError() == GL_NO_ERROR)
                && pixelBufferHasContent(raw->data(), raw->size());
 
-    // Camera flags marked dirty for next frame; shader/view/GL are restored by
-    // the RAII guards above on scope exit.
     if (!aspectMatches) {
         pl->m_updateGroundShadows = true;
         pl->m_calculateTargetHeightOffset = true;
@@ -1064,7 +1001,6 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
 }
 
 #ifdef GEODE_IS_WINDOWS
-// Async PBO readback: avoids pipeline sync + 8-33 MB transfer stall.
 GLuint g_pbo  = 0;
 int    g_pboW = 0;
 int    g_pboH = 0;
@@ -1078,9 +1014,7 @@ void deletePboIfAny() {
     g_pboH = 0;
 }
 
-// Issue async glReadPixels into PBO; returns false so caller can fall back.
 bool issuePboRead(int W, int H) {
-    // Never leak or overwrite a live PBO handle (double-free / stale map guard).
     deletePboIfAny();
     while (glGetError() != GL_NO_ERROR) {} // drain stale errors
 
@@ -1113,11 +1047,10 @@ bool issuePboRead(int W, int H) {
     g_pboH = H;
     return true;
 }
-#endif // GEODE_IS_WINDOWS
+#endif
 
-} // namespace
+}
 
-// Public API: trivial accessors / state
 bool FramebufferCapture::isCapturing()    { return s_isCapturing; }
 void FramebufferCapture::setHDRMode(bool enabled) { s_hdrMode = enabled; }
 bool FramebufferCapture::isHDRMode()      { return s_hdrMode; }
@@ -1140,12 +1073,12 @@ CaptureValidation FramebufferCapture::validateCaptureConditions() {
     CaptureValidation result;
     if (CCDirector::get()->getContentScaleFactor() < 4.0f) {
         result.canCapture = false;
-        result.reason = "Thumbnails require High Graphics quality. Enable it in GD settings.";
+        result.reason = Localization::get().getString("capture.needs_high_graphics");
         return result;
     }
     if (GameManager::sharedState()->m_performanceMode) {
         result.canCapture = false;
-        result.reason = "Thumbnails cannot be taken with Low Detail Mode enabled. Disable it in GD settings.";
+        result.reason = Localization::get().getString("capture.needs_no_ldm");
         return result;
     }
     if (auto* pl = PlayLayer::get()) {
@@ -1155,7 +1088,7 @@ CaptureValidation FramebufferCapture::validateCaptureConditions() {
         }
         if (dead) {
             result.canCapture = false;
-            result.reason = "Cannot capture while the player is dead. Wait until respawn.";
+            result.reason = Localization::get().getString("capture.player_dead");
             return result;
         }
     }
@@ -1173,7 +1106,6 @@ void FramebufferCapture::clearCaptureFlags() {
 }
 
 namespace {
-    // Restore hidden state + clear the publish flags.
     inline void restoreCaptureState() {
         restoreHiddenState();
         FramebufferCapture::clearCaptureFlags();
@@ -1191,7 +1123,6 @@ void FramebufferCapture::requestCapture(
     log::info("[FramebufferCapture] requestCapture levelID={} hidePlayer1={} hidePlayer2={} hdr={}",
               levelID, hidePlayer1, hidePlayer2, s_hdrMode);
 
-    // Drop any in-flight request, notify callback, and start fresh.
     Phase prev = g_phase.exchange(Phase::Idle);
     if (prev != Phase::Idle) {
         log::warn("[FramebufferCapture] Replacing in-flight capture (prev phase={})", static_cast<int>(prev));
@@ -1221,7 +1152,6 @@ void FramebufferCapture::cancelPending() {
     Phase prev = g_phase.exchange(Phase::Idle);
     g_generation.fetch_add(1, std::memory_order_relaxed);
     if (prev == Phase::Idle && !s_request.active) {
-        // Nothing to cancel; still flush any deferred callbacks.
         for (auto& d : s_deferredCallbacks) if (d.texture) d.texture->release();
         s_deferredCallbacks.clear();
         return;
@@ -1248,12 +1178,9 @@ void FramebufferCapture::cancelPending() {
     s_deferredCallbacks.clear();
 }
 
-// State machine driver, called from CCEGLView pre-swap.
 void FramebufferCapture::executeIfPending() {
     Phase phase = g_phase.load();
 
-    // (3) Runtime tearing down: never touch GL, hide state or map a PBO. Reset
-    // everything to Idle so nothing is left half-armed across shutdown.
     if (paimon::isRuntimeShuttingDown()) {
         if (phase != Phase::Idle || s_request.active) {
             log::warn("[FramebufferCapture] Runtime shutting down; aborting pending capture (phase={})",
@@ -1272,9 +1199,7 @@ void FramebufferCapture::executeIfPending() {
         return;
     }
 
-    // Phase: ArmedHide — hide UI; don't read yet (back-buffer still has UI).
     if (phase == Phase::ArmedHide) {
-        // Special-case: legacy RTT node capture.
         if (s_request.nodeToCapture) {
             doCaptureNode(s_request.nodeToCapture);
             s_request.active = false;
@@ -1284,10 +1209,18 @@ void FramebufferCapture::executeIfPending() {
             return;
         }
 
+        // levelID 0 = plain screenshot; anything else is a level thumbnail and
+        // wants the aggressive UI/HUD strip.
+        bool const wysiwyg = (s_request.levelID == 0);
+
         g_prep = {};
-        g_prep.active           = true;
-        g_prep.hiddenNodes      = hideNonVanillaUI();
-        g_prep.hiddenGameObjects = hidePracticeAndEffectObjects();
+        g_prep.active = true;
+        if (wysiwyg) {
+            g_prep.hiddenNodes = hideCaptureChrome();
+        } else {
+            g_prep.hiddenNodes       = hideNonVanillaUI();
+            g_prep.hiddenGameObjects = hidePracticeAndEffectObjects();
+        }
 
         auto* pl = PlayLayer::get();
         if (pl) {
@@ -1299,17 +1232,18 @@ void FramebufferCapture::executeIfPending() {
             g_prep.plAnchor     = pl->getAnchorPoint();
 
             if (s_request.hidePlayer1 && pl->m_player1) {
+                g_prep.player1Ref = pl->m_player1;
                 paimTogglePlayer(pl->m_player1, g_prep.player1State, true);
                 g_prep.playerHide1 = true;
             }
             if (s_request.hidePlayer2 && pl->m_player2) {
+                g_prep.player2Ref = pl->m_player2;
                 paimTogglePlayer(pl->m_player2, g_prep.player2State, true);
                 g_prep.playerHide2 = true;
             }
             g_prep.playerVisActive = (g_prep.playerHide1 || g_prep.playerHide2);
         }
 
-        // Publish capture dimensions.
         auto* dir = CCDirector::get();
         auto* glView = dir ? dir->getOpenGLView() : nullptr;
         CCSize fs = glView ? glView->getFrameSize() : CCSize(0, 0);
@@ -1320,9 +1254,7 @@ void FramebufferCapture::executeIfPending() {
         log::info("[FramebufferCapture] ArmedHide: hidden {} UI nodes, {} game objects, hdr={}",
                   g_prep.hiddenNodes.size(), g_prep.hiddenGameObjects.size(), s_hdrMode);
 
-        // Level captures: offscreen render at requested resolution in one pre-swap.
         if (s_request.levelID != 0 && pl) {
-            // Player may have died between request and pre-swap (keybind captures).
             bool dead = pl->m_playerDied || (pl->m_player1 && pl->m_player1->m_isDead);
             if (!dead) {
                 dead = paimon::capture::hasRecentDeath(pl->m_gameState.m_currentProgress);
@@ -1341,19 +1273,14 @@ void FramebufferCapture::executeIfPending() {
 
             auto [targetW, targetH] = resolveRenderTargetSize();
 
-            // HDR: render supersampled and let the worker's Lanczos downscale
-            // resolve it back to the target — true SSAA instead of the CPU
-            // FXAA pass (which still covers the cases below). Skipped when a
-            // level shader is active: the shader's internal render texture is
-            // retargeted to the render size, and doubling an already-large
-            // shader FBO is the kind of allocation that fails mid-capture.
+    // HDR uses supersampling plus worker-side Lanczos; skip large shader FBOs.
             int renderW = targetW;
             int renderH = targetH;
             bool shaderActive = pl->m_shaderLayer && pl->m_shaderLayer->getParent();
             if (s_hdrMode && !shaderActive) {
                 int ssW = std::min({targetW * 2, getMaxTextureSize(), 5120});
                 ssW &= ~1;
-                if (ssW >= targetW * 5 / 4) { // only if it buys real supersampling
+                 if (ssW >= targetW * 5 / 4) {
                     renderW = ssW;
                     renderH = (ssW * 9 / 16) & ~1;
                 }
@@ -1375,15 +1302,12 @@ void FramebufferCapture::executeIfPending() {
         return;
     }
 
-    // Phase: WaitingFrame
-    // The frame just rendered (about to swap) was rendered with UI hidden.
-    // Read it, restore UI immediately, kick the heavy work to a worker.
     if (phase == Phase::WaitingFrame) {
-        // Other schedulers (e.g. PauseLayer's reShowOverlay) may have re-shown
-        // UI since our hide. Re-run the hide pass; if anything was newly visible,
-        // the read is dirty, so hide again and wait one more frame (capped).
-        auto extraNodes = hideNonVanillaUI();
-        auto extraGameObj = hidePracticeAndEffectObjects();
+        // Re-hide UI before reading in case another scheduler revealed it.
+        bool const wysiwyg = (s_request.levelID == 0);
+        auto extraNodes = wysiwyg ? hideCaptureChrome() : hideNonVanillaUI();
+        std::vector<HiddenGameObjectState> extraGameObj;
+        if (!wysiwyg) extraGameObj = hidePracticeAndEffectObjects();
 
         bool foundDirty = !extraNodes.empty() || !extraGameObj.empty();
         if (foundDirty && g_waitingTicks < kMaxWaitingTicks) {
@@ -1393,20 +1317,15 @@ void FramebufferCapture::executeIfPending() {
             log::info("[FramebufferCapture] Re-hid {} nodes + {} objs; waiting tick {}/{}",
                       extraNodes.size(), extraGameObj.size(),
                       g_waitingTicks, kMaxWaitingTicks);
-            return; // skip the read this frame; try again next swap
+             return;
         }
         if (foundDirty) {
             log::warn("[FramebufferCapture] Reached max waiting ticks ({}); reading anyway",
                       kMaxWaitingTicks);
-            // Append them so they get restored properly in restoreCaptureState().
             for (auto& p : extraNodes) g_prep.hiddenNodes.push_back(p);
             for (auto& g : extraGameObj) g_prep.hiddenGameObjects.push_back(g);
         }
 
-        // Death conditions were validated at request time, but keybind captures
-        // run during live gameplay: the player can die in the 1-2 frames between
-        // the request and this read. Abort cleanly instead of delivering a frame
-        // with the death explosion (or a missing player).
         if (s_request.levelID != 0) {
             if (auto* pl = PlayLayer::get()) {
                 bool dead = pl->m_playerDied || (pl->m_player1 && pl->m_player1->m_isDead);
@@ -1462,7 +1381,6 @@ void FramebufferCapture::executeIfPending() {
         }
 
 #ifdef GEODE_IS_WINDOWS
-        // Async PBO readback — non-stalling, maps next pre-swap.
         if (issuePboRead(W, H)) {
             restoreCaptureState();
             g_phase.store(Phase::MapPBO);
@@ -1471,7 +1389,6 @@ void FramebufferCapture::executeIfPending() {
         log::warn("[FramebufferCapture] PBO readback unavailable; using sync read");
 #endif
 
-        // Sync fallback: ensure default FBO is bound for read (some hooks leave a non-default FBO).
         GLint origFBO = 0;
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &origFBO);
         if (origFBO != 0) glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1489,7 +1406,6 @@ void FramebufferCapture::executeIfPending() {
         bool readOk = (err == GL_NO_ERROR) &&
                       pixelBufferHasContent(rawPixels->data(), rawPixels->size());
 
-        // Retry once with explicit FBO 0 bind (some ANGLE hosts use separate render target).
         if (!readOk && origFBO != 0) {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glPixelStorei(GL_PACK_ALIGNMENT, 1);
@@ -1500,7 +1416,6 @@ void FramebufferCapture::executeIfPending() {
                      pixelBufferHasContent(rawPixels->data(), rawPixels->size());
         }
 
-        // Restore UI before the swap.
         restoreCaptureState();
 
         if (!readOk) {
@@ -1519,7 +1434,6 @@ void FramebufferCapture::executeIfPending() {
     }
 
 #ifdef GEODE_IS_WINDOWS
-    // MapPBO: GPU has finished the async read from last frame — non-stalling map.
     if (phase == Phase::MapPBO) {
         if (!g_pbo) {
             log::error("[FramebufferCapture] MapPBO with no PBO");
@@ -1563,10 +1477,8 @@ void FramebufferCapture::executeIfPending() {
     }
 #endif
 
-    // Phase::Idle|Reading: nothing to do.
 }
 
-// Shared tail of both read paths: downscale + FXAA on worker, texture upload on main.
 void FramebufferCapture::dispatchProcessing(
     std::shared_ptr<std::vector<uint8_t>> rawPixels, int W, int H)
 {
@@ -1575,13 +1487,12 @@ void FramebufferCapture::dispatchProcessing(
         std::round(static_cast<double>(H) * targetW / W)));
     int levelID = s_request.levelID;
 
-    // Extract callback before worker thread to avoid dangling reference in s_request.
     auto callback = std::move(s_request.callback);
     s_request.active        = false;
     s_request.callback      = nullptr;
     s_request.nodeToCapture = nullptr;
 
-    log::info("[FramebufferCapture] Processing: native={}x{} → output={}x{} (levelID={})",
+    log::info("[FramebufferCapture] Processing: native={}x{} -> output={}x{} (levelID={})",
               W, H, targetW, targetH, levelID);
 
     g_phase.store(Phase::Reading);
@@ -1589,7 +1500,6 @@ void FramebufferCapture::dispatchProcessing(
     uint64_t gen = g_generation.load(std::memory_order_relaxed);
     bool hdrOn = s_hdrMode;
 
-    // Worker: flip + downscale + FXAA + alpha=255
     paimon::ThreadTracker::get().spawn(
         [rawPixels, W, H, targetW, targetH, gen, hdrOn,
          callback = std::move(callback)]() mutable {
@@ -1606,7 +1516,6 @@ void FramebufferCapture::dispatchProcessing(
                     rawPixels->data(), W, H, targetW, targetH);
                 outW = targetW; outH = targetH;
             } else {
-                // Alias vector storage (avoids copying 8-33 MB); aliasing shared_ptr keeps vector alive.
                 outBuf = std::shared_ptr<uint8_t>(rawPixels, rawPixels->data());
             }
 
@@ -1617,18 +1526,15 @@ void FramebufferCapture::dispatchProcessing(
                 return;
             }
 
-            // Skip FXAA when Lanczos already anti-aliased (supersampled capture); FXAA for non-supersampled cases.
             if (hdrOn && targetW >= W) {
                 applyFXAA(outBuf.get(), outW, outH);
             }
 
-            // Texture upload must be on main thread (GL context).
             Loader::get()->queueInMainThread(
                 [outBuf, outW, outH, gen,
                  callback = std::move(callback)]() mutable {
                     if (paimon::isRuntimeShuttingDown()) return;
 
-                    // Superseded by a newer request — drop stale callback.
                     if (g_generation.load(std::memory_order_relaxed) != gen) {
                         log::info("[FramebufferCapture] Worker dropped: superseded");
                         return;
@@ -1643,7 +1549,6 @@ void FramebufferCapture::dispatchProcessing(
         });
 }
 
-// Legacy path drain (async path delivers via queueInMainThread).
 void FramebufferCapture::processDeferredCallbacks() {
     if (s_deferredCallbacks.empty()) return;
     auto callbacks = std::move(s_deferredCallbacks);
@@ -1656,17 +1561,26 @@ void FramebufferCapture::processDeferredCallbacks() {
     }
 }
 
-// Editor mini-preview renderer: same hide+offscreen as capture, no flash (single frame).
-CCTexture2D* FramebufferCapture::renderPreviewTexture(int width, int height) {
+CCTexture2D* FramebufferCapture::renderPreviewTexture(
+    int width, int height, bool hidePlayer1, bool hidePlayer2)
+{
     auto* pl = PlayLayer::get();
     if (!pl || width <= 0 || height <= 0) return nullptr;
-    // Don't fight an in-flight capture over hide/restore state.
     if (g_phase.load() != Phase::Idle) return nullptr;
 
     auto hiddenNodes = hideNonVanillaUI();
     auto hiddenObjs  = hidePracticeAndEffectObjects();
 
+    PlayerVisState p1State, p2State;
+    bool const hidP1 = hidePlayer1 && pl->m_player1;
+    bool const hidP2 = hidePlayer2 && pl->m_player2;
+    if (hidP1) paimTogglePlayer(pl->m_player1, p1State, true);
+    if (hidP2) paimTogglePlayer(pl->m_player2, p2State, true);
+
     auto raw = renderPlayLayerToTexture(pl, width, height);
+
+    if (hidP1) paimTogglePlayer(pl->m_player1, p1State, false);
+    if (hidP2) paimTogglePlayer(pl->m_player2, p2State, false);
 
     for (auto& [weakNode, vis] : hiddenNodes) {
         if (auto node = weakNode.lock()) node->setVisible(vis);
@@ -1688,7 +1602,6 @@ CCTexture2D* FramebufferCapture::renderPreviewTexture(int width, int height) {
     return tex;
 }
 
-// doCaptureNode — kept for the legacy single-node RTT path.
 void FramebufferCapture::doCaptureNode(CCNode* node) {
     if (!node) {
         if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
@@ -1748,4 +1661,3 @@ void FramebufferCapture::doCaptureNode(CCNode* node) {
         tex->release();
     }
 }
-

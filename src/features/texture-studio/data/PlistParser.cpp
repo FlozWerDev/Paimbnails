@@ -348,9 +348,10 @@ geode::Result<SpriteFrameInfo> decodeFrameFormat3(std::string const& name, Value
         }
     }
     if (f.spriteW <= 0 || f.spriteH <= 0) {
-        // cocos rotated rects store the rotated footprint; the logical sprite swaps W/H.
-        if (f.rotated) { f.spriteW = f.rectH; f.spriteH = f.rectW; }
-        else           { f.spriteW = f.rectW; f.spriteH = f.rectH; }
+        // In format 3 textureRect already carries the logical size (it mirrors
+        // spriteSize); textureRotated only says how the slot is stored.
+        f.spriteW = f.rectW;
+        f.spriteH = f.rectH;
     }
 
     if (spriteOff && spriteOff->isString()) {
@@ -402,8 +403,11 @@ geode::Result<SpriteFrameInfo> decodeFrameLegacy(std::string const& name, Value 
         f.rectW = static_cast<int>(rw);
         f.rectH = static_cast<int>(rh);
         f.rotated = (rotated && rotated->isBool() && rotated->asBool());
-        f.spriteW = f.rotated ? f.rectH : f.rectW;
-        f.spriteH = f.rotated ? f.rectW : f.rectH;
+        // The legacy rect stores the packed footprint; normalise it to the
+        // logical size so rectW/rectH mean the same in every format.
+        if (f.rotated) std::swap(f.rectW, f.rectH);
+        f.spriteW = f.rectW;
+        f.spriteH = f.rectH;
         if (offsetStr && offsetStr->isString()) {
             float a, b;
             if (parseBracedTuple(offsetStr->asString(), a, b)) {

@@ -3,6 +3,7 @@
 #include <Geode/Geode.hpp>
 #include "FormatDetect.hpp"
 #include "GIFDecoder.hpp"
+#include "SoftEdgeFade.hpp"
 #include <vector>
 #include <string>
 #include <utility>
@@ -19,7 +20,7 @@
 #include <filesystem>
 #include <chrono>
 
-// Animated sprite that plays GIF frames with caching and incremental loading.
+// Animated GIF sprite with shared caching and incremental loading.
 class AnimatedGIFSprite : public cocos2d::CCSprite {
 public:
     static AnimatedGIFSprite* create(std::string const& filename);
@@ -32,7 +33,7 @@ public:
     struct SharedGIFData {
         std::vector<cocos2d::CCTexture2D*> textures;
         std::vector<float> delays;
-        std::vector<cocos2d::CCRect> frameRects; // Stores left, top, width, height
+        std::vector<cocos2d::CCRect> frameRects; // Left, top, width, height.
         int width;
         int height;
     };
@@ -40,8 +41,8 @@ public:
 protected:
     struct GIFFrame {
         cocos2d::CCTexture2D* texture = nullptr;
-        cocos2d::CCRect rect; // Position and size in canvas
-        float delay = 0.1f; // Seconds
+        cocos2d::CCRect rect; // Canvas position and size.
+        float delay = 0.1f; // Seconds.
         
         ~GIFFrame() {
             if (texture) {
@@ -53,20 +54,20 @@ protected:
     
     static std::unordered_map<std::string, SharedGIFData> s_gifCache;
     static std::list<std::string> s_lruList;
-    static std::unordered_map<std::string, std::list<std::string>::iterator> s_lruMap; // LRU O(1)
+    static std::unordered_map<std::string, std::list<std::string>::iterator> s_lruMap; // O(1) LRU.
     static std::unordered_set<std::string> s_pinnedGIFs;
-    static std::shared_mutex s_cacheMutex; // protects s_gifCache, s_lruList, s_pinnedGIFs, s_currentCacheSize
+    static std::shared_mutex s_cacheMutex; // Protects cache state.
     
     static size_t s_currentCacheSize; // Bytes
     static size_t getMaxCacheMem();
     static void pruneDiskCache();
     static std::filesystem::path getDiskCacheDir();
     
-    // central eviction: drop LRU entries until the cache is under the limit
+    // Drop LRU entries until the cache is under its limit.
     static void evictIfNeeded();
 
     std::vector<GIFFrame*> m_frames;
-    // Dominant colors per frame: {A, B}
+    // Dominant colors per frame: {A, B}.
     std::vector<std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B>> m_frameColors;
     
     unsigned int m_currentFrame = 0;
@@ -77,9 +78,9 @@ protected:
     int m_canvasWidth = 0;
     int m_canvasHeight = 0;
     
-    // Frame pending incremental load (already-decoded RGBA data)
+    // Pending incremental frame with decoded RGBA data.
     struct PendingFrame {
-        std::vector<uint8_t> pixels; // RGBA8888
+        std::vector<uint8_t> pixels; // RGBA8888.
         int left = 0;
         int top = 0;
         int width = 0;
@@ -95,15 +96,16 @@ protected:
     virtual ~AnimatedGIFSprite();
     
 public:
-    // Shader support (used by e.g. LevelCell blur)
+    // Shader support for blur effects.
     float m_intensity = 0.0f;
     float m_time = 0.0f;
     float m_brightness = 1.0f;
     cocos2d::CCSize m_texSize = {0, 0};
     cocos2d::CCSize m_screenSize = {0, 0};
+    paimon::SoftEdgeFade m_softEdgeFade;
 
-    // Perf: cached shader uniform locations to avoid string lookups every draw()
-    GLint m_locIntensity = -2; // -2 = not yet cached
+    // Cached shader uniform locations.
+    GLint m_locIntensity = -2; // -2 = not cached.
     GLint m_locTime = -2;
     GLint m_locBrightness = -2;
     GLint m_locTexSize = -2;
@@ -111,6 +113,8 @@ public:
     cocos2d::CCGLProgram* m_cachedShaderProgram = nullptr;
 
     static void clearCache();
+    // Clear GL textures after context reload without stopping the worker.
+    static void clearCacheForReload();
     static void remove(std::string const& filename);
     static bool isCached(std::string const& filename);
     static size_t currentCacheBytes() { return s_currentCacheSize; }
@@ -125,7 +129,7 @@ public:
         int width;
         int height;
         struct Frame {
-            std::vector<uint8_t> pixels; // RGBA8888
+            std::vector<uint8_t> pixels; // RGBA8888.
             float delay;
             int width;
             int height;
@@ -140,7 +144,7 @@ public:
 private:
     static constexpr auto MAX_DISK_CACHE_AGE = std::chrono::hours(24 * 21);
 
-    // Worker pool (2-3 threads desktop / 1 mobile) to decode multiple GIFs in parallel.
+    // Worker pool for parallel GIF decoding.
     struct GIFTask {
         std::string path;
         std::vector<uint8_t> data;
@@ -164,7 +168,7 @@ public:
     void play() { m_isPlaying = true; this->scheduleUpdate(); }
     void pause() {
         m_isPlaying = false;
-        // No animation work while paused — drop the per-frame schedule until play().
+        // Drop the per-frame schedule while paused.
         if (m_pendingFrames.empty()) this->unscheduleUpdate();
     }
     void stop() { 
@@ -184,7 +188,7 @@ public:
     }
 
     void onExit() override {
-        // Idle GIFs must not keep a global schedule while off-tree (list recycle).
+        // Recycled off-tree GIFs must not keep a global schedule.
         this->unscheduleUpdate();
         this->unschedule(schedule_selector(AnimatedGIFSprite::updateTextureLoading));
         CCSprite::onExit();
@@ -200,7 +204,7 @@ public:
     
     void setCurrentFrame(unsigned int frame);
 
-    // Used by the async loader to ensure frame 0 exists before layout.
+    // Ensure frame 0 exists before layout.
     bool processNextPendingFrame();
 
     std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B> getCurrentFrameColors() const {
@@ -217,7 +221,7 @@ private:
     
     void update(float dt) override;
 
-    // Override draw for shader support
+    // Manual draw for shader support.
     void draw() override;
 
 private:

@@ -8,6 +8,7 @@
 #include "../../capture/services/FramebufferCapture.hpp"
 #include "../../thumbnails/services/ThumbnailLoader.hpp"
 #include "../../thumbnails/services/LocalThumbs.hpp"
+#include "../../gameplay-performance/GameplayPerformance.hpp"
 #include "../../../utils/ActivePauseLayer.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -27,6 +28,8 @@ bool levelHasNoThumbnail(int levelID) {
 
 void attemptAutoCapture(WeakRef<PlayLayer> weak, int levelID) {
     if (paimon::isRuntimeShuttingDown()) return;
+    if (paimon::gameplayperf::isOptionEnabled(
+            paimon::gameplayperf::kAutoPreviewModuleId)) return;
 
     auto locked = weak.lock();
     if (!locked) return;
@@ -81,6 +84,8 @@ class $modify(PaimonAutoPreviewPlayLayer, PlayLayer) {
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
 
+        if (paimon::gameplayperf::isOptionEnabled(
+                paimon::gameplayperf::kAutoPreviewModuleId)) return true;
         if (!paimon::autopreview::config::enabled()) return true;
         if (!level) return true;
         int const levelID = level->m_levelID.value();

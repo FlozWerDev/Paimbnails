@@ -60,7 +60,7 @@ float runKMeans(std::vector<Point> const& pts, int k,
     outCentroids.clear();
     outCentroids.reserve(k);
 
-    // --- k-means++ seeding, weighted by w * d² ---
+// k-means++ seeding, weighted by w * d².
     {
         // First centroid: weighted random pick.
         float totalW = 0.0f;
@@ -101,7 +101,7 @@ float runKMeans(std::vector<Point> const& pts, int k,
         outCentroids.push_back({pts[pickIdx].h, pts[pickIdx].s, pts[pickIdx].v, 0.0f});
     }
 
-    // --- Lloyd iterations (weighted, circular hue means) ---
+// Lloyd iterations with weighted circular hue means.
     std::vector<int> assignment(pts.size(), 0);
     std::vector<float> sumHueX(k), sumHueY(k), sumS(k), sumV(k), sumW(k);
 

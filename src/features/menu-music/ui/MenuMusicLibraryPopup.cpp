@@ -3,21 +3,25 @@
 
 #include "../services/MenuMusicLibrary.hpp"
 #include "../services/MenuMusicPlayer.hpp"
+#include "../services/NewgroundsCatalog.hpp"
+#include "../services/SongCoverCache.hpp"
+#include "../services/YtDlpDownloader.hpp"
+#include "../../menu-loop/services/MenuLoopControl.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
-#include "../../../utils/PaimonDrawNode.hpp"
 #include "../../../utils/SpriteHelper.hpp"
-#include "../../../utils/DominantColors.hpp"
-#include "../../../utils/stb_image.h"
+#include "../../../utils/TextureBudget.hpp"
+#include "../../../utils/FileDialog.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Notification.hpp>
 #include <Geode/ui/PopupManager.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
-#include <Geode/utils/file.hpp>
 #include <algorithm>
-#include <cmath>
+#include <array>
+#include <filesystem>
 #include <fmt/format.h>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -25,155 +29,60 @@ using namespace geode::prelude;
 
 namespace paimon::menumusic {
 
-static constexpr float kPopupWidth  = 390.f;
-static constexpr float kPopupHeight = 264.f;
+static constexpr float kPopupWidth  = 430.f;
+static constexpr float kPopupHeight = 290.f;
 
-static constexpr float kCardHeight = 56.f;
-static constexpr float kCardGap    = 8.f;
-static constexpr float kCardRadius = 8.f;
-static constexpr float kThumbRadius = 6.f;
-
-static constexpr cocos2d::ccColor4B kCardBaseColor = {24, 26, 38, 210};
-
-static constexpr cocos2d::ccColor3B kFallbackDominantColor = {96, 84, 164};
+static constexpr float kCardHeight = 48.f;
+static constexpr float kCompactCardHeight = 38.f;
+static constexpr float kCardGap = 4.f;
 
 namespace {
-    struct CachedColor {
-        bool ok = false;
-        cocos2d::ccColor3B color{};
-    };
-
-    static std::unordered_map<std::string, CachedColor>& colorCache() {
-        static std::unordered_map<std::string, CachedColor> cache;
-        return cache;
+    bool isTrackAvailable(const MusicTrack& track) {
+        std::error_code ec;
+        return !track.audioPath.empty()
+            && std::filesystem::is_regular_file(track.audioPath, ec) && !ec;
     }
 
-    static std::vector<uint8_t> readBinary(const std::string& path) {
-        auto res = geode::utils::file::readBinary(path);
-        if (!res) return {};
-        return res.unwrap();
+    int geometryDashSongId(const MusicTrack& track) {
+        if (track.source != TrackSource::GeometryDash) return 0;
+
+        auto stem = geode::utils::string::pathToString(
+            std::filesystem::path(track.audioPath).stem());
+        if (auto songId = parseNewgroundsSongId(stem); songId > 0) return songId;
+
+        constexpr std::string_view prefix = "gd_";
+        if (track.id.starts_with(prefix)) {
+            return parseNewgroundsSongId(track.id.substr(prefix.size()));
+        }
+        return 0;
     }
 
-    static CachedColor extractDominant(const std::string& coverPath) {
-        auto it = colorCache().find(coverPath);
-        if (it != colorCache().end()) return it->second;
-
-        CachedColor out;
-        auto bytes = readBinary(coverPath);
-        if (bytes.empty()) {
-            colorCache().emplace(coverPath, out);
-            return out;
-        }
-
-        int w = 0, h = 0, ch = 0;
-        unsigned char* px = stbi_load_from_memory(
-            bytes.data(), static_cast<int>(bytes.size()), &w, &h, &ch, 3);
-        if (!px || w <= 0 || h <= 0) {
-            if (px) stbi_image_free(px);
-            colorCache().emplace(coverPath, out);
-            return out;
-        }
-
-        // Downsample to ~64x64 (box filter) — dominant color only needs a
-        // general impression, not pixel precision.
-        constexpr int targetDim = 64;
-        int dsW = w, dsH = h;
-        if (w > targetDim || h > targetDim) {
-            const float ratio = std::max(
-                static_cast<float>(w) / targetDim,
-                static_cast<float>(h) / targetDim);
-            dsW = std::max(1, static_cast<int>(w / ratio));
-            dsH = std::max(1, static_cast<int>(h / ratio));
-        }
-
-        std::vector<uint8_t> ds;
-        const uint8_t* rgbSrc = px;
-        if (dsW != w || dsH != h) {
-            ds.resize(static_cast<size_t>(dsW) * dsH * 3);
-            for (int y = 0; y < dsH; ++y) {
-                const int srcY = std::min(h - 1, y * h / dsH);
-                for (int x = 0; x < dsW; ++x) {
-                    const int srcX = std::min(w - 1, x * w / dsW);
-                    const uint8_t* s = px + (srcY * w + srcX) * 3;
-                    uint8_t* d = ds.data() + (y * dsW + x) * 3;
-                    d[0] = s[0]; d[1] = s[1]; d[2] = s[2];
-                }
-            }
-            rgbSrc = ds.data();
-        }
-
-        auto pair = DominantColors::extract(rgbSrc, dsW, dsH);
-        stbi_image_free(px);
-
-        out.ok = true;
-        out.color = {pair.first.r, pair.first.g, pair.first.b};
-        colorCache().emplace(coverPath, out);
-        return out;
+    bool canRedownload(const MusicTrack& track) {
+        return (track.source == TrackSource::Downloaded && !track.sourceUrl.empty())
+            || geometryDashSongId(track) > 0;
     }
 
-    // Horizontal gradient drawn as N adjacent quads with interpolated colors.
-    // Strips must share the exact same x at their boundary (no gap, no overlap):
-    // overlapping semi-transparent quads sum their alpha and produce a bright
-    // banding line.
-    static PaimonDrawNode* buildHorizontalGradient(
-        float width, float height,
-        cocos2d::ccColor4F from,
-        cocos2d::ccColor4F to,
-        float fadePivot = 0.5f
-    ) {
-        auto node = PaimonDrawNode::create();
-        if (!node) return nullptr;
-
-        const int strips = 48;
-
-        for (int i = 0; i < strips; ++i) {
-            const float x0 = static_cast<float>(i)     / strips * width;
-            const float x1 = static_cast<float>(i + 1) / strips * width;
-            const float tm = (x0 + x1) * 0.5f / width;
-
-            const float clamped = fadePivot > 0.f
-                ? std::clamp(tm / fadePivot, 0.f, 1.f)
-                : 1.f;
-            const float s = clamped * clamped * (3.f - 2.f * clamped);
-
-            cocos2d::ccColor4F c {
-                from.r + (to.r - from.r) * s,
-                from.g + (to.g - from.g) * s,
-                from.b + (to.b - from.b) * s,
-                from.a + (to.a - from.a) * s,
-            };
-
-            // 4 points counter-clockwise (cocos winding convention).
-            cocos2d::CCPoint rect[4] = {
-                {x0, 0},
-                {x1, 0},
-                {x1, height},
-                {x0, height},
-            };
-            node->drawPolygon(rect, 4, c, 0.f, ccc4f(0, 0, 0, 0));
+    std::string coverPathForTrack(const MusicTrack& track) {
+        std::error_code ec;
+        if (!track.coverPath.empty()
+            && std::filesystem::is_regular_file(track.coverPath, ec) && !ec) {
+            return track.coverPath;
         }
 
-        node->setContentSize({width, height});
-        return node;
+        const int songId = geometryDashSongId(track);
+        if (songId <= 0) return {};
+
+        auto covers = SongCoverCache::get().getCachedCoverPaths(songId);
+        return covers.empty() ? std::string{} : covers.front();
     }
 
-    static cocos2d::ccColor3B normalizeDominant(cocos2d::ccColor3B in) {
-        const int r = in.r, g = in.g, b = in.b;
-        const int maxC = std::max({r, g, b});
-        const int minC = std::min({r, g, b});
-        const int luma = (299 * r + 587 * g + 114 * b) / 1000;
-
-        if (luma < 24 || (maxC - minC) < 12) {
-            return kFallbackDominantColor;
+    const char* sourceName(TrackSource source) {
+        switch (source) {
+            case TrackSource::Downloaded:   return "downloaded";
+            case TrackSource::GeometryDash: return "Geometry Dash";
+            case TrackSource::Vanilla:      return "vanilla";
+            default:                        return "local";
         }
-        if (luma > 225) {
-            return cocos2d::ccColor3B{
-                static_cast<uint8_t>(r * 4 / 5),
-                static_cast<uint8_t>(g * 4 / 5),
-                static_cast<uint8_t>(b * 4 / 5)
-            };
-        }
-        return in;
     }
 }
 
@@ -193,6 +102,17 @@ bool MenuMusicLibraryPopup::init(float width, float height) {
     this->setTitle("My Songs");
 
     MenuMusicLibrary::get().load();
+    MenuMusicLibrary::get().syncDownloadedSongs();
+    m_sortMode = Mod::get()->getSavedValue<std::string>(
+        "menuLoopSortMode", "alphabetical");
+    m_localOnly = Mod::get()->getSavedValue<bool>(
+        "menuLoopLocalOnlyFilter", false);
+    m_favoritesOnly = Mod::get()->getSavedValue<bool>(
+        "menuLoopFavoritesOnlyFilter", false);
+    m_blacklistedOnly = Mod::get()->getSavedValue<bool>(
+        "menuLoopShowBlacklisted", false);
+    m_sortReverse = Mod::get()->getSavedValue<bool>("menuLoopSortReverse", false);
+    m_compact = Mod::get()->getSavedValue<bool>("menuLoopCompactSongList", false);
 
     buildHeader();
     buildList();
@@ -226,11 +146,11 @@ void MenuMusicLibraryPopup::onExit() {
 void MenuMusicLibraryPopup::buildHeader() {
     auto size = m_mainLayer->getContentSize();
 
-    const float headerRowY = size.height - 42.f;
+    const float headerRowY = size.height - 40.f;
 
-    m_searchBar = TextInput::create(size.width * 0.58f, "Search tracks...");
+    m_searchBar = TextInput::create(195.f, "Search songs...");
     if (m_searchBar) {
-        m_searchBar->setPosition({size.width * 0.36f, headerRowY});
+        m_searchBar->setPosition({112.f, headerRowY});
         m_searchBar->setCallback([this](const std::string& s) {
             this->onSearchChanged(s);
         });
@@ -238,24 +158,94 @@ void MenuMusicLibraryPopup::buildHeader() {
         m_mainLayer->addChild(m_searchBar, 2);
     }
 
-    auto addSpr = ButtonSprite::create("Add", 50, true, "bigFont.fnt", "GJ_button_05.png", 20.f, 0.55f);
-    if (addSpr) {
-        auto btn = CCMenuItemSpriteExtra::create(addSpr, this,
-            menu_selector(MenuMusicLibraryPopup::onAddMusic));
-        auto menu = CCMenu::create();
-        menu->setPosition({size.width * 0.85f, headerRowY});
-        menu->addChild(btn);
-        menu->setID("add-menu"_spr);
-        m_mainLayer->addChild(menu, 2);
-    }
+    auto actionMenu = CCMenu::create();
+    actionMenu->setContentSize({164.f, 24.f});
+    actionMenu->setPosition({size.width - 94.f, headerRowY});
+    auto addAction = [&](const char* text, int width, SEL_MenuHandler handler,
+                         const char* bg, const char* id) {
+        auto* spr = ButtonSprite::create(
+            text, width, true, "bigFont.fnt", bg, 18.f, 0.4f);
+        if (!spr) return;
+        if (auto* btn = CCMenuItemSpriteExtra::create(spr, this, handler)) {
+            btn->setID(id);
+            actionMenu->addChild(btn);
+        }
+    };
+    addAction("Add", 46, menu_selector(MenuMusicLibraryPopup::onAddMusic),
+        "GJ_button_01.png", "library-add-btn");
+    addAction("Folder", 58, menu_selector(MenuMusicLibraryPopup::onImportFolder),
+        "GJ_button_05.png", "library-folder-btn");
+    addAction("Sync", 46, menu_selector(MenuMusicLibraryPopup::onSyncGeometryDash),
+        "GJ_button_02.png", "library-sync-btn");
+    actionMenu->setLayout(RowLayout::create()->setGap(5.f));
+    actionMenu->updateLayout();
+    actionMenu->setID("library-actions"_spr);
+    m_mainLayer->addChild(actionMenu, 2);
+
+    auto filterMenu = CCMenu::create();
+    filterMenu->setContentSize({286.f, 22.f});
+    filterMenu->setPosition({158.f, size.height - 67.f});
+    auto addFilter = [&](const char* text, int width, SEL_MenuHandler handler,
+                         ButtonSprite** output) {
+        auto* spr = ButtonSprite::create(
+            text, width, true, "bigFont.fnt", "GJ_button_04.png", 15.f, 0.34f);
+        if (!spr) return;
+        if (auto* btn = CCMenuItemSpriteExtra::create(spr, this, handler)) {
+            filterMenu->addChild(btn);
+            *output = spr;
+        }
+    };
+    addFilter("A-Z", 44, menu_selector(MenuMusicLibraryPopup::onCycleSort), &m_sortSprite);
+    addFilter("Local", 44, menu_selector(MenuMusicLibraryPopup::onToggleLocalOnly),
+        &m_localSprite);
+    addFilter("Favs", 40, menu_selector(MenuMusicLibraryPopup::onToggleFavoritesOnly),
+        &m_favoritesSprite);
+    addFilter("Blocked", 52, menu_selector(MenuMusicLibraryPopup::onToggleBlacklistedOnly),
+        &m_blacklistedSprite);
+    addFilter("Rev", 36, menu_selector(MenuMusicLibraryPopup::onToggleSortReverse),
+        &m_reverseSprite);
+    addFilter("Compact", 50, menu_selector(MenuMusicLibraryPopup::onToggleCompact),
+        &m_compactSprite);
+    filterMenu->setLayout(RowLayout::create()->setGap(4.f));
+    filterMenu->updateLayout();
+    filterMenu->setID("library-filters"_spr);
+    m_mainLayer->addChild(filterMenu, 2);
+
+    auto navMenu = CCMenu::create();
+    navMenu->setContentSize({116.f, 22.f});
+    navMenu->setPosition({size.width - 68.f, size.height - 67.f});
+    auto addNav = [&](const char* text, int width, SEL_MenuHandler handler) {
+        auto* spr = ButtonSprite::create(
+            text, width, true, "bigFont.fnt", "GJ_button_05.png", 15.f, 0.32f);
+        if (!spr) return;
+        if (auto* btn = CCMenuItemSpriteExtra::create(spr, this, handler)) {
+            navMenu->addChild(btn);
+        }
+    };
+    addNav("Top", 34, menu_selector(MenuMusicLibraryPopup::onScrollTop));
+    addNav("Now", 40, menu_selector(MenuMusicLibraryPopup::onScrollCurrent));
+    addNav("End", 34, menu_selector(MenuMusicLibraryPopup::onScrollBottom));
+    navMenu->setLayout(RowLayout::create()->setGap(4.f));
+    navMenu->updateLayout();
+    navMenu->setID("library-navigation"_spr);
+    m_mainLayer->addChild(navMenu, 2);
+    refreshFilterButtons();
 }
 
 void MenuMusicLibraryPopup::buildList() {
     auto size = m_mainLayer->getContentSize();
-    const float scrollH = size.height - 70.f;
-    m_scroll = ScrollLayer::create({size.width - 26.f, scrollH});
+    const float scrollH = size.height - 94.f;
+    if (auto* panel = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
+        panel->setContentSize({size.width - 20.f, scrollH + 6.f});
+        panel->setPosition({size.width / 2.f, 12.f + scrollH / 2.f});
+        panel->setOpacity(220);
+        panel->setID("library-list-bg"_spr);
+        m_mainLayer->addChild(panel, 1);
+    }
+
+    m_scroll = ScrollLayer::create({size.width - 30.f, scrollH});
     if (!m_scroll) return;
-    m_scroll->setPosition({13.f, 12.f});
+    m_scroll->setPosition({15.f, 12.f});
     m_scroll->m_contentLayer->setID("library-scroll-content"_spr);
     m_mainLayer->addChild(m_scroll, 2);
 }
@@ -279,12 +269,38 @@ void MenuMusicLibraryPopup::rebuildList() {
     std::vector<std::string> orderedIds;
     orderedIds.reserve(tracks.size());
     for (const auto& t : tracks) orderedIds.push_back(t.id);
+    auto alphaLess = [&](const MusicTrack& a, const MusicTrack& b) {
+        return geode::utils::string::toLower(a.displayName) <
+               geode::utils::string::toLower(b.displayName);
+    };
+    auto fileSize = [](const MusicTrack& track) {
+        std::error_code ec;
+        auto size = std::filesystem::file_size(track.audioPath, ec);
+        return ec ? std::uintmax_t{} : size;
+    };
+    auto trackLess = [&](const MusicTrack& a, const MusicTrack& b) {
+        if (m_sortMode == "date") {
+            if (a.addedUnixMs != b.addedUnixMs) return a.addedUnixMs < b.addedUnixMs;
+        } else if (m_sortMode == "length") {
+            if (a.durationMs != b.durationMs) return a.durationMs < b.durationMs;
+        } else if (m_sortMode == "size") {
+            const auto aSize = fileSize(a);
+            const auto bSize = fileSize(b);
+            if (aSize != bSize) return aSize < bSize;
+        } else if (m_sortMode == "extension") {
+            auto aExt = geode::utils::string::toLower(
+                std::filesystem::path(a.audioPath).extension().string());
+            auto bExt = geode::utils::string::toLower(
+                std::filesystem::path(b.audioPath).extension().string());
+            if (aExt != bExt) return aExt < bExt;
+        }
+        return alphaLess(a, b);
+    };
     std::sort(orderedIds.begin(), orderedIds.end(), [&](const auto& a, const auto& b) {
         auto* ta = lib.findTrack(a);
         auto* tb = lib.findTrack(b);
         if (!ta || !tb) return false;
-        return geode::utils::string::toLower(ta->displayName) <
-               geode::utils::string::toLower(tb->displayName);
+        return m_sortReverse ? trackLess(*tb, *ta) : trackLess(*ta, *tb);
     });
 
     auto qLower = geode::utils::string::toLower(m_query);
@@ -296,19 +312,31 @@ void MenuMusicLibraryPopup::rebuildList() {
         auto* track = lib.findTrack(tid);
         if (!track) continue;
         if (!matchesQuery(*track, qLower)) continue;
+        if (m_localOnly && track->source != TrackSource::Local) continue;
+        if (m_favoritesOnly && !track->favorite) continue;
+        if (m_blacklistedOnly != track->blacklisted) {
+            if (m_blacklistedOnly || track->blacklisted) continue;
+        }
         visibleIds.push_back(tid);
     }
 
+    const float cardHeight = m_compact ? kCompactCardHeight : kCardHeight;
     const float cardW = m_scroll->getContentSize().width - 4.f;
-    float totalH = static_cast<float>(visibleIds.size()) * (kCardHeight + kCardGap);
+    float totalH = static_cast<float>(visibleIds.size()) * (cardHeight + kCardGap);
     if (totalH > 0.f) totalH -= kCardGap;
     totalH = std::max(totalH, m_scroll->getContentSize().height);
 
     if (visibleIds.empty()) {
-        auto label = CCLabelBMFont::create(
-            tracks.empty() ? "Library empty — tap 'Add' to import or download a song."
-                           : "No tracks match your search.",
-            "chatFont.fnt");
+        const bool hasLocalTracks = std::any_of(
+            tracks.begin(), tracks.end(), [](const MusicTrack& track) {
+                return track.source == TrackSource::Local;
+            });
+        const char* message = tracks.empty()
+            ? "Library empty - tap 'Add' to import or download a song."
+            : m_localOnly && !hasLocalTracks
+                ? "No local songs - tap 'Folder' to import music."
+                : "No tracks match your filters.";
+        auto label = CCLabelBMFont::create(message, "chatFont.fnt");
         if (label) {
             label->setScale(0.5f);
             label->setPosition({m_scroll->getContentSize().width / 2.f,
@@ -317,212 +345,237 @@ void MenuMusicLibraryPopup::rebuildList() {
             m_scroll->m_contentLayer->addChild(label);
         }
     } else {
-        float y = totalH - kCardHeight;
+        float y = totalH - cardHeight;
         for (const auto& tid : visibleIds) {
-            auto card = buildTrackCard(tid, cardW);
+            auto card = buildTrackCard(tid, cardW, cardHeight);
             if (!card) continue;
             card->setPosition({2.f, y});
             m_scroll->m_contentLayer->addChild(card);
-            y -= (kCardHeight + kCardGap);
+            y -= (cardHeight + kCardGap);
         }
     }
 
     m_scroll->m_contentLayer->setContentHeight(totalH);
-    m_scroll->scrollToTop();
+    if (Mod::get()->getSavedValue<bool>("menuLoopAutoScrollCurrent", true)) {
+        onScrollCurrent(nullptr);
+    } else {
+        m_scroll->scrollToTop();
+    }
 }
 
-cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(const std::string& trackId, float widthOverride) {
+cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
+    const std::string& trackId, float widthOverride, float cardHeight
+) {
     auto& lib = MenuMusicLibrary::get();
     auto* track = lib.findTrack(trackId);
     if (!track) return nullptr;
 
+    const bool available = isTrackAvailable(*track);
+    const bool downloadable = canRedownload(*track);
+    const int gdSongId = geometryDashSongId(*track);
+    const bool downloading = m_downloadingTrackIds.contains(trackId)
+        || (gdSongId > 0 && isNewgroundsSongDownloading(gdSongId));
+    const bool isPlayingNow = available
+        && MenuMusicPlayer::get().state().currentTrackId == trackId
+        && !trackId.empty();
+
     auto node = CCNode::create();
-    node->setContentSize({widthOverride, kCardHeight});
+    node->setContentSize({widthOverride, cardHeight});
     node->setAnchorPoint({0, 0});
     node->setID(fmt::format("track-card-{}", trackId).c_str());
 
-    if (auto bg = paimon::SpriteHelper::createRoundedRect(
-            widthOverride, kCardHeight, kCardRadius,
-            ccc4FFromccc4B(kCardBaseColor))) {
+    if (auto* bg = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
+        bg->setContentSize({widthOverride, cardHeight});
         bg->setAnchorPoint({0.f, 0.f});
         bg->setPosition({0.f, 0.f});
+        bg->setOpacity(available ? 235 : 180);
+        if (track->blacklisted) {
+            bg->setColor({210, 115, 105});
+        } else if (isPlayingNow) {
+            bg->setColor({145, 220, 145});
+        }
         bg->setID("card-bg"_spr);
         node->addChild(bg, 0);
     }
 
-    cocos2d::ccColor3B dominant = kFallbackDominantColor;
-    if (!track->coverPath.empty()) {
-        auto cc = extractDominant(track->coverPath);
-        if (cc.ok) dominant = cc.color;
-    }
-    dominant = normalizeDominant(dominant);
+    const float bannerHeight = cardHeight - 10.f;
+    const float bannerWidth = cardHeight * 1.42f;
+    const float bannerX = 7.f;
+    const float bannerY = (cardHeight - bannerHeight) / 2.f;
 
-    {
-        auto stencil = paimon::SpriteHelper::createRoundedRectStencil(
-            widthOverride, kCardHeight, kCardRadius);
-        auto clip = CCClippingNode::create();
-        if (stencil && clip) {
-            clip->setStencil(stencil);
-            clip->setAlphaThreshold(0.05f);
-            clip->setContentSize({widthOverride, kCardHeight});
-            clip->setAnchorPoint({0.f, 0.f});
-            clip->setPosition({0.f, 0.f});
-            clip->setID("card-gradient-clip"_spr);
-
-            cocos2d::ccColor4F from = {
-                dominant.r / 255.f,
-                dominant.g / 255.f,
-                dominant.b / 255.f,
-                150.f / 255.f
-            };
-            cocos2d::ccColor4F to = {
-                dominant.r / 255.f,
-                dominant.g / 255.f,
-                dominant.b / 255.f,
-                0.f
-            };
-
-            if (auto grad = buildHorizontalGradient(
-                    widthOverride, kCardHeight, from, to, 0.5f)) {
-                grad->setAnchorPoint({0.f, 0.f});
-                grad->setPosition({0.f, 0.f});
-                grad->setID("card-gradient"_spr);
-                clip->addChild(grad, 0);
-            }
-
-            node->addChild(clip, 1);
-        }
+    if (auto* thumbBg = paimon::SpriteHelper::safeCreateScale9("GJ_square05.png")) {
+        thumbBg->setContentSize({bannerWidth, bannerHeight});
+        thumbBg->setAnchorPoint({0.f, 0.f});
+        thumbBg->setPosition({bannerX, bannerY});
+        thumbBg->setOpacity(available ? 255 : 155);
+        thumbBg->setID("card-thumb-bg"_spr);
+        node->addChild(thumbBg, 1);
     }
 
-    const float thumbSize = kCardHeight - 10.f;
-    const float thumbX = 8.f;
-    const float thumbY = (kCardHeight - thumbSize) / 2.f;
+    bool hasCover = false;
+    auto coverPath = coverPathForTrack(*track);
+    if (!coverPath.empty()) {
+        if (auto* tex = paimon::image::loadBudgeted(coverPath)) {
+            if (auto* cover = CCSprite::createWithTexture(tex)) {
+                const float inset = 3.f;
+                const float coverWidth = bannerWidth - inset * 2.f;
+                const float coverHeight = bannerHeight - inset * 2.f;
+                auto coverSize = cover->getContentSize();
+                const float scale = std::max(
+                    coverWidth / std::max(coverSize.width, 1.f),
+                    coverHeight / std::max(coverSize.height, 1.f));
+                cover->setScale(scale);
+                cover->setPosition({coverWidth / 2.f, coverHeight / 2.f});
+                cover->setOpacity(available ? 255 : 145);
+                cover->setID("card-cover"_spr);
 
-    auto thumbStencil = paimon::SpriteHelper::createRoundedRectStencil(
-        thumbSize, thumbSize, kThumbRadius);
-    auto thumbClip = CCClippingNode::create();
-    if (thumbStencil && thumbClip) {
-        thumbClip->setStencil(thumbStencil);
-        thumbClip->setAlphaThreshold(0.05f);
-        thumbClip->setContentSize({thumbSize, thumbSize});
-        thumbClip->setAnchorPoint({0.f, 0.f});
-        thumbClip->setPosition({thumbX, thumbY});
-        thumbClip->setID("card-thumb-clip"_spr);
-        node->addChild(thumbClip, 3);
-
-        bool thumbFilled = false;
-        if (!track->coverPath.empty()) {
-            if (auto* tex = CCTextureCache::sharedTextureCache()->addImage(
-                    track->coverPath.c_str(), false)) {
-                if (auto spr = CCSprite::createWithTexture(tex)) {
-                    const CCSize sz = spr->getContentSize();
-                    const float s = thumbSize / std::min(sz.width, sz.height);
-                    spr->setScale(s);
-                    spr->setAnchorPoint({0.5f, 0.5f});
-                    spr->setPosition({thumbSize / 2, thumbSize / 2});
-                    thumbClip->addChild(spr);
-                    thumbFilled = true;
+                auto* stencil = paimon::SpriteHelper::createRoundedRectStencil(
+                    coverWidth, coverHeight, 3.f);
+                if (auto* clip = stencil ? CCClippingNode::create(stencil) : nullptr) {
+                    clip->setContentSize({coverWidth, coverHeight});
+                    clip->setAnchorPoint({0.f, 0.f});
+                    clip->setPosition({bannerX + inset, bannerY + inset});
+                    clip->setAlphaThreshold(0.05f);
+                    clip->setID("card-cover-clip"_spr);
+                    clip->addChild(cover);
+                    node->addChild(clip, 2);
+                    hasCover = true;
                 }
             }
         }
-
-        if (!thumbFilled) {
-            if (auto solid = paimon::SpriteHelper::createRoundedRect(
-                    thumbSize, thumbSize, 0.f,
-                    ccc4FFromccc4B({36, 38, 55, 255}))) {
-                solid->setAnchorPoint({0.f, 0.f});
-                solid->setPosition({0.f, 0.f});
-                thumbClip->addChild(solid, 0);
-            }
-            if (auto defSpr = CCSprite::createWithSpriteFrameName("GJ_musicOnBtn_001.png")) {
-                const float s = thumbSize * 0.55f /
-                    std::max(defSpr->getContentSize().width, 1.f);
-                defSpr->setScale(s);
-                defSpr->setAnchorPoint({0.5f, 0.5f});
-                defSpr->setPosition({thumbSize / 2, thumbSize / 2});
-                defSpr->setColor({160, 160, 180});
-                thumbClip->addChild(defSpr, 1);
-            }
+    }
+    if (!hasCover) {
+        if (auto* music = paimon::SpriteHelper::safeCreateWithFrameName(
+                "GJ_musicOnBtn_001.png")) {
+            const float scale = bannerHeight * 0.52f
+                / std::max(music->getContentSize().width, 1.f);
+            music->setScale(scale);
+            music->setPosition({bannerX + bannerWidth / 2.f, cardHeight / 2.f});
+            music->setOpacity(available ? 255 : 140);
+            node->addChild(music, 2);
         }
     }
 
-    const float textX = thumbX + thumbSize + 12.f;
-    const float textAreaW = widthOverride - textX - 110.f;
-
-    // Marcar visualmente la cancion que esta sonando ahora mismo: barra
-    // verde en el borde izquierdo + titulo en verde.
-    const bool isPlayingNow =
-        MenuMusicPlayer::get().state().currentTrackId == trackId
-        && !trackId.empty();
-
-    if (isPlayingNow) {
-        if (auto accent = paimon::SpriteHelper::createRoundedRect(
-                4.f, kCardHeight, 2.f, ccc4f(0.42f, 0.94f, 0.52f, 1.f))) {
-            accent->setAnchorPoint({0.f, 0.f});
-            accent->setPosition({0.f, 0.f});
-            accent->setID("card-playing-accent"_spr);
-            node->addChild(accent, 2);
-        }
-    }
-
+    const float textX = bannerX + bannerWidth + 9.f;
+    const float textAreaW = widthOverride - textX - 150.f;
     auto nameLbl = CCLabelBMFont::create(track->displayName.c_str(), "bigFont.fnt");
     if (nameLbl) {
         nameLbl->setAnchorPoint({0.f, 0.5f});
-        nameLbl->setColor(isPlayingNow
+        nameLbl->setColor(track->blacklisted
+            ? cocos2d::ccColor3B{255, 120, 120}
+            : track->favorite
+                ? cocos2d::ccColor3B{255, 220, 90}
+                : isPlayingNow
             ? cocos2d::ccColor3B{120, 240, 140}
             : cocos2d::ccColor3B{255, 255, 255});
-        nameLbl->limitLabelWidth(textAreaW, 0.52f, 0.28f);
-        nameLbl->setPosition({textX, kCardHeight * 0.66f});
+        nameLbl->limitLabelWidth(textAreaW, 0.48f, 0.26f);
+        nameLbl->setPosition({textX, cardHeight * 0.66f});
         nameLbl->setID("card-title"_spr);
         node->addChild(nameLbl, 4);
     }
 
-    std::string sourceStr = (track->source == TrackSource::Downloaded) ? "downloaded" : "local";
     std::string durStr = track->durationMs > 0
         ? fmt::format("{}:{:02}", track->durationMs / 60000, (track->durationMs / 1000) % 60)
-        : "—";
-    std::string subStr = fmt::format("{} • {}", sourceStr, durStr);
-    if (!track->artist.empty()) {
-        subStr = fmt::format("{} • {}", track->artist, subStr);
+        : "-";
+    std::string subStr;
+    if (!available) {
+        subStr = downloadable ? "Missing file - tap Download" : "Missing local file";
+    } else {
+        subStr = fmt::format("{} - {}", sourceName(track->source), durStr);
+        if (!track->artist.empty()) {
+            subStr = fmt::format("{} - {}", track->artist, subStr);
+        }
     }
 
     auto subLbl = CCLabelBMFont::create(subStr.c_str(), "chatFont.fnt");
     if (subLbl) {
         subLbl->setAnchorPoint({0.f, 0.5f});
-        subLbl->setColor({200, 205, 225});
-        subLbl->limitLabelWidth(textAreaW, 0.42f, 0.25f);
-        subLbl->setPosition({textX, kCardHeight * 0.30f});
+        subLbl->setColor(available ? ccColor3B{235, 210, 175} : ccColor3B{255, 205, 95});
+        subLbl->limitLabelWidth(textAreaW, 0.38f, 0.23f);
+        subLbl->setPosition({textX, cardHeight * 0.30f});
         subLbl->setID("card-subtitle"_spr);
         node->addChild(subLbl, 4);
     }
 
     auto menu = CCMenu::create();
-    menu->setContentSize({100.f, kCardHeight});
+    menu->setContentSize({146.f, cardHeight});
     menu->setAnchorPoint({1.f, 0.5f});
-    menu->setPosition({widthOverride - 6.f, kCardHeight / 2.f});
+    menu->setPosition({widthOverride - 5.f, cardHeight / 2.f});
     menu->ignoreAnchorPointForPosition(false);
 
-    auto makeIconBtn = [&](const char* frame, SEL_MenuHandler handler,
-                           float scale) -> CCMenuItemSpriteExtra* {
-        auto s = CCSprite::createWithSpriteFrameName(frame);
-        if (!s) return nullptr;
-        s->setScale(scale);
-        auto b = CCMenuItemSpriteExtra::create(s, this, handler);
-        if (b) b->setUserObject(CCString::create(trackId.c_str()));
-        return b;
+    auto makeIconBtn = [&](const char* frame, const char* fallback,
+                           SEL_MenuHandler handler, float scale,
+                           const char* id, ccColor3B tint,
+                           GLubyte opacity) -> CCMenuItemSpriteExtra* {
+        auto* sprite = paimon::SpriteHelper::safeCreateWithFrameName(frame);
+        if (!sprite && fallback) {
+            sprite = paimon::SpriteHelper::safeCreateWithFrameName(fallback);
+        }
+        if (!sprite) return nullptr;
+        sprite->setScale(scale);
+        sprite->setColor(tint);
+        sprite->setOpacity(opacity);
+        auto* button = CCMenuItemSpriteExtra::create(sprite, this, handler);
+        if (button) {
+            button->setUserObject(CCString::create(trackId.c_str()));
+            button->setID(id);
+        }
+        return button;
     };
 
-    if (auto b = makeIconBtn("GJ_playMusicBtn_001.png",
-            menu_selector(MenuMusicLibraryPopup::onPlayTrack), 0.7f)) {
-        menu->addChild(b);
+    if (downloading) {
+        if (auto* spinner = CCSprite::create("loadingCircle.png")) {
+            spinner->setScale(0.28f);
+            spinner->setBlendFunc({GL_SRC_ALPHA, GL_ONE});
+            spinner->runAction(CCRepeatForever::create(CCRotateBy::create(1.f, 360.f)));
+            menu->addChild(spinner);
+        }
+    } else if (available) {
+        if (auto* button = makeIconBtn(
+                "GJ_playMusicBtn_001.png", "GJ_playBtn2_001.png",
+                menu_selector(MenuMusicLibraryPopup::onPlayTrack), 0.58f,
+                "track-play-btn", {255, 255, 255}, 255)) {
+            menu->addChild(button);
+        }
+    } else if (downloadable) {
+        if (auto* button = makeIconBtn(
+                "GJ_downloadBtn_001.png", "GJ_downloadsIcon_001.png",
+                menu_selector(MenuMusicLibraryPopup::onDownloadTrack), 0.54f,
+                "track-download-btn", {255, 255, 255}, 255)) {
+            menu->addChild(button);
+        }
     }
-    if (auto b = makeIconBtn("GJ_plusBtn_001.png",
-            menu_selector(MenuMusicLibraryPopup::onAddToPlaylist), 0.55f)) {
-        menu->addChild(b);
+
+    if (auto* button = makeIconBtn(
+            "GJ_plusBtn_001.png", "GJ_plus2Btn_001.png",
+            menu_selector(MenuMusicLibraryPopup::onAddToPlaylist), 0.46f,
+            "track-playlist-btn", {255, 255, 255}, 255)) {
+        menu->addChild(button);
     }
-    if (auto b = makeIconBtn("GJ_deleteBtn_001.png",
-            menu_selector(MenuMusicLibraryPopup::onRemoveTrack), 0.55f)) {
-        menu->addChild(b);
+
+    if (auto* button = makeIconBtn(
+            "GJ_starBtn_001.png", "GJ_starsIcon_001.png",
+            menu_selector(MenuMusicLibraryPopup::onToggleFavorite), 0.48f,
+            "track-favorite-btn",
+            track->favorite ? ccColor3B{255, 235, 95} : ccColor3B{255, 255, 255},
+            track->favorite ? 255 : 165)) {
+        menu->addChild(button);
+    }
+
+    if (auto* button = makeIconBtn(
+            "GJ_reportBtn_001.png", "GJ_dislikeBtn_001.png",
+            menu_selector(MenuMusicLibraryPopup::onToggleBlacklist), 0.44f,
+            "track-blacklist-btn",
+            track->blacklisted ? ccColor3B{255, 110, 110} : ccColor3B{255, 255, 255},
+            track->blacklisted ? 255 : 175)) {
+        menu->addChild(button);
+    }
+
+    if (auto* button = makeIconBtn(
+            "GJ_trashBtn_001.png", "GJ_deleteIcon_001.png",
+            menu_selector(MenuMusicLibraryPopup::onRemoveTrack), 0.44f,
+            "track-remove-btn", {255, 255, 255}, 255)) {
+        menu->addChild(button);
     }
 
     menu->setLayout(RowLayout::create()
@@ -549,6 +602,84 @@ void MenuMusicLibraryPopup::onPlayTrack(CCObject* sender) {
     MenuMusicPlayer::get().playSpecific(idStr->getCString());
 }
 
+void MenuMusicLibraryPopup::onDownloadTrack(CCObject* sender) {
+    auto* button = static_cast<CCMenuItemSpriteExtra*>(sender);
+    auto* idObject = button ? typeinfo_cast<CCString*>(button->getUserObject()) : nullptr;
+    auto* track = idObject
+        ? MenuMusicLibrary::get().findTrack(idObject->getCString())
+        : nullptr;
+    if (!track || isTrackAvailable(*track) || !canRedownload(*track)) return;
+
+    const std::string id = track->id;
+    auto weakThis = WeakRef<CCNode>(this);
+
+    if (track->source == TrackSource::GeometryDash) {
+        const int songId = geometryDashSongId(*track);
+        if (songId <= 0 || isNewgroundsSongDownloading(songId)) return;
+
+        downloadNewgroundsSong(songId,
+            [weakThis, id](NewgroundsDownloadResult result) {
+                if (result.success) {
+                    auto& library = MenuMusicLibrary::get();
+                    if (auto* current = library.findTrack(id)) {
+                        auto updated = *current;
+                        updated.audioPath = result.path;
+                        library.updateTrack(updated);
+                    }
+                    Notification::create(
+                        "Song downloaded again!", NotificationIcon::Success)->show();
+                } else {
+                    Notification::create(
+                        result.error.empty() ? "Could not download this song." : result.error,
+                        NotificationIcon::Error, 4.f)->show();
+                }
+
+                auto ref = weakThis.lock();
+                auto* self = ref
+                    ? typeinfo_cast<MenuMusicLibraryPopup*>(ref.data())
+                    : nullptr;
+                if (self) self->rebuildList();
+            });
+        rebuildList();
+        return;
+    }
+
+    if (!m_downloadingTrackIds.insert(id).second) return;
+    const std::string sourceUrl = track->sourceUrl;
+    YtDlpDownloader::get().download(sourceUrl, id, {},
+        [weakThis, id, sourceUrl](YtDlpResult result) {
+            if (result.success) {
+                auto& library = MenuMusicLibrary::get();
+                if (auto* current = library.findTrack(id)) {
+                    auto updated = *current;
+                    updated.audioPath = result.audioPath;
+                    if (!result.coverPath.empty()) updated.coverPath = result.coverPath;
+                    if (!result.displayName.empty()) updated.displayName = result.displayName;
+                    if (!result.artist.empty()) updated.artist = result.artist;
+                    updated.sourceUrl = sourceUrl;
+                    updated.source = TrackSource::Downloaded;
+                    library.updateTrack(updated);
+                }
+                Notification::create(
+                    "Song downloaded again!", NotificationIcon::Success)->show();
+            } else {
+                Notification::create(
+                    result.error.empty() ? "Could not download this song." : result.error,
+                    NotificationIcon::Error, 4.f)->show();
+            }
+
+            auto ref = weakThis.lock();
+            auto* self = ref
+                ? typeinfo_cast<MenuMusicLibraryPopup*>(ref.data())
+                : nullptr;
+            if (self) {
+                self->m_downloadingTrackIds.erase(id);
+                self->rebuildList();
+            }
+        });
+    rebuildList();
+}
+
 void MenuMusicLibraryPopup::onRemoveTrack(CCObject* sender) {
     auto* btn = static_cast<CCMenuItemSpriteExtra*>(sender);
     if (!btn) return;
@@ -556,13 +687,36 @@ void MenuMusicLibraryPopup::onRemoveTrack(CCObject* sender) {
     if (!idStr) return;
     std::string id = idStr->getCString();
 
+    auto* track = MenuMusicLibrary::get().findTrack(id);
+    if (!track) return;
+    const bool keepFavorite = track->favorite
+        && isTrackAvailable(*track) && canRedownload(*track);
+
+    const char* title = keepFavorite ? "Delete Download" : "Remove Track";
+    const char* message = keepFavorite
+        ? "Delete the local audio file?\n<cg>The song stays in Favorites and can be downloaded again.</c>"
+        : track->source == TrackSource::Downloaded
+            ? "Remove this track from your library?\n<cy>Its downloaded file will also be deleted.</c>"
+            : "Remove this track from your library?\n<cy>The original audio file will stay on disk.</c>";
+
     PopupManager::get().quickPopup(
-        "Remove Track",
-        "Remove this track from your library?\n<cy>Downloaded tracks will also have their file deleted.</c>",
-        "Cancel", "Remove",
-        [id](FLAlertLayer*, bool confirm) {
+        title, message, "Cancel", keepFavorite ? "Delete" : "Remove",
+        [id, keepFavorite](FLAlertLayer*, bool confirm) {
             if (!confirm) return;
-            MenuMusicLibrary::get().removeTrack(id, /*deleteFiles=*/true);
+            auto& library = MenuMusicLibrary::get();
+            if (!keepFavorite) {
+                library.removeTrack(id, /*deleteFiles=*/true);
+                return;
+            }
+            if (library.deleteLocalAudio(id)) {
+                Notification::create(
+                    "Download deleted. It is still in Favorites.",
+                    NotificationIcon::Success)->show();
+            } else {
+                Notification::create(
+                    "Could not delete the audio file. Stop playback and try again.",
+                    NotificationIcon::Error, 4.f)->show();
+            }
         }
     ).showInstant();
 }
@@ -589,8 +743,225 @@ void MenuMusicLibraryPopup::onAddToPlaylist(CCObject* sender) {
         NotificationIcon::Success)->show();
 }
 
+void MenuMusicLibraryPopup::onToggleFavorite(CCObject* sender) {
+    auto* button = static_cast<CCMenuItemSpriteExtra*>(sender);
+    auto* id = button ? typeinfo_cast<CCString*>(button->getUserObject()) : nullptr;
+    auto* track = id ? MenuMusicLibrary::get().findTrack(id->getCString()) : nullptr;
+    if (track) MenuMusicLibrary::get().setFavorite(track->id, !track->favorite);
+}
+
+void MenuMusicLibraryPopup::onToggleBlacklist(CCObject* sender) {
+    auto* button = static_cast<CCMenuItemSpriteExtra*>(sender);
+    auto* id = button ? typeinfo_cast<CCString*>(button->getUserObject()) : nullptr;
+    auto* track = id ? MenuMusicLibrary::get().findTrack(id->getCString()) : nullptr;
+    if (track) MenuMusicLibrary::get().setBlacklisted(track->id, !track->blacklisted);
+}
+
 void MenuMusicLibraryPopup::onAddMusic(CCObject*) {
     if (auto p = MenuMusicAddPopup::create()) p->show();
+}
+
+void MenuMusicLibraryPopup::onImportFolder(CCObject*) {
+    pt::pickFolder([](Result<std::optional<std::filesystem::path>> result) {
+        auto selected = std::move(result).unwrapOr(std::nullopt);
+        if (!selected) return;
+        const auto added = MenuMusicLibrary::get().importFolder(*selected, true);
+        Notification::create(
+            fmt::format("Imported {} song{}.", added, added == 1 ? "" : "s"),
+            added ? NotificationIcon::Success : NotificationIcon::Info)->show();
+    });
+}
+
+void MenuMusicLibraryPopup::onSyncGeometryDash(CCObject*) {
+    const auto added = MenuMusicLibrary::get().syncDownloadedSongs();
+    Notification::create(
+        fmt::format("Synced {} Geometry Dash song{}.", added, added == 1 ? "" : "s"),
+        added ? NotificationIcon::Success : NotificationIcon::Info)->show();
+}
+
+void MenuMusicLibraryPopup::onCycleSort(CCObject*) {
+    static constexpr std::array modes = {
+        "alphabetical", "date", "length", "size", "extension"
+    };
+    auto it = std::find(modes.begin(), modes.end(), m_sortMode);
+    m_sortMode = it == modes.end() || ++it == modes.end() ? modes.front() : *it;
+    Mod::get()->setSavedValue("menuLoopSortMode", m_sortMode);
+    refreshFilterButtons();
+    rebuildList();
+}
+
+void MenuMusicLibraryPopup::onToggleLocalOnly(CCObject*) {
+    m_localOnly = !m_localOnly;
+    Mod::get()->setSavedValue("menuLoopLocalOnlyFilter", m_localOnly);
+    refreshFilterButtons();
+    rebuildList();
+}
+
+void MenuMusicLibraryPopup::onToggleFavoritesOnly(CCObject*) {
+    m_favoritesOnly = !m_favoritesOnly;
+    if (m_favoritesOnly) m_blacklistedOnly = false;
+    Mod::get()->setSavedValue("menuLoopFavoritesOnlyFilter", m_favoritesOnly);
+    Mod::get()->setSavedValue("menuLoopShowBlacklisted", m_blacklistedOnly);
+    refreshFilterButtons();
+    rebuildList();
+}
+
+void MenuMusicLibraryPopup::onToggleBlacklistedOnly(CCObject*) {
+    m_blacklistedOnly = !m_blacklistedOnly;
+    if (m_blacklistedOnly) m_favoritesOnly = false;
+    Mod::get()->setSavedValue("menuLoopShowBlacklisted", m_blacklistedOnly);
+    Mod::get()->setSavedValue("menuLoopFavoritesOnlyFilter", m_favoritesOnly);
+    refreshFilterButtons();
+    rebuildList();
+}
+
+void MenuMusicLibraryPopup::onToggleSortReverse(CCObject*) {
+    m_sortReverse = !m_sortReverse;
+    Mod::get()->setSavedValue("menuLoopSortReverse", m_sortReverse);
+    refreshFilterButtons();
+    rebuildList();
+}
+
+void MenuMusicLibraryPopup::onToggleCompact(CCObject*) {
+    m_compact = !m_compact;
+    Mod::get()->setSavedValue("menuLoopCompactSongList", m_compact);
+    refreshFilterButtons();
+    rebuildList();
+}
+
+void MenuMusicLibraryPopup::onScrollTop(CCObject*) {
+    if (m_scroll) m_scroll->scrollToTop();
+}
+
+void MenuMusicLibraryPopup::onScrollCurrent(CCObject*) {
+    if (!m_scroll) return;
+    const auto& currentId = MenuMusicPlayer::get().state().currentTrackId;
+    auto* card = currentId.empty()
+        ? nullptr
+        : m_scroll->m_contentLayer->getChildByID(
+            fmt::format("track-card-{}", currentId));
+    if (!card) {
+        m_scroll->scrollToTop();
+        return;
+    }
+
+    const float viewHeight = m_scroll->getContentSize().height;
+    const float contentHeight = m_scroll->m_contentLayer->getContentSize().height;
+    const float target = viewHeight / 2.f
+        - (card->getPositionY() + card->getContentSize().height / 2.f);
+    m_scroll->m_contentLayer->setPositionY(
+        std::clamp(target, std::min(0.f, viewHeight - contentHeight), 0.f));
+}
+
+void MenuMusicLibraryPopup::onScrollBottom(CCObject*) {
+    if (m_scroll) m_scroll->m_contentLayer->setPositionY(0.f);
+}
+
+void MenuMusicLibraryPopup::keyDown(enumKeyCodes key, double timestamp) {
+    if (key == enumKeyCodes::KEY_Escape) {
+        onClose(nullptr);
+        return;
+    }
+    if (key == enumKeyCodes::KEY_Home) {
+        onScrollTop(nullptr);
+        return;
+    }
+    if (key == enumKeyCodes::KEY_End) {
+        onScrollBottom(nullptr);
+        return;
+    }
+
+    if (!Mod::get()->getSettingValue<bool>("menuLoopEnableKeyboardShortcuts")) {
+        Popup::keyDown(key, timestamp);
+        return;
+    }
+
+#ifdef GEODE_IS_DESKTOP
+    auto* keyboard = CCKeyboardDispatcher::get();
+    if (!keyboard) {
+        Popup::keyDown(key, timestamp);
+        return;
+    }
+    const bool shift = keyboard->getShiftKeyPressed();
+#ifdef GEODE_IS_MACOS
+    const bool ctrl = keyboard->getCommandKeyPressed();
+    const bool favoriteModifier = keyboard->getControlKeyPressed();
+#else
+    const bool ctrl = keyboard->getControlKeyPressed();
+    const bool favoriteModifier = keyboard->getAltKeyPressed();
+#endif
+
+    if (key >= enumKeyCodes::KEY_Zero && key <= enumKeyCodes::KEY_Nine) {
+        paimon::menuloop::MenuLoopControl::setSongPercentage(
+            10 * (static_cast<int>(key) - static_cast<int>(enumKeyCodes::KEY_Zero)));
+        return;
+    }
+    if (key >= enumKeyCodes::KEY_NumPad0 && key <= enumKeyCodes::KEY_NumPad9) {
+        paimon::menuloop::MenuLoopControl::setSongPercentage(
+            10 * (static_cast<int>(key) - static_cast<int>(enumKeyCodes::KEY_NumPad0)));
+        return;
+    }
+    if ((ctrl && key == enumKeyCodes::KEY_S) || (shift && key == enumKeyCodes::KEY_N)
+        || (ctrl && (key == enumKeyCodes::KEY_Right || key == enumKeyCodes::KEY_ArrowRight))) {
+        MenuMusicPlayer::get().playNext();
+        return;
+    }
+    if ((shift && key == enumKeyCodes::KEY_P)
+        || (ctrl && (key == enumKeyCodes::KEY_Left || key == enumKeyCodes::KEY_ArrowLeft))) {
+        MenuMusicPlayer::get().playPrevious();
+        return;
+    }
+    if (ctrl && key == enumKeyCodes::KEY_R) {
+        paimon::menuloop::MenuLoopControl::setSongPercentage(0);
+        return;
+    }
+    if (ctrl && (key == enumKeyCodes::KEY_H || key == enumKeyCodes::KEY_K)) {
+        onClose(nullptr);
+        return;
+    }
+    if (shift && ctrl && key == enumKeyCodes::KEY_J) {
+        onScrollCurrent(nullptr);
+        return;
+    }
+    if (shift && favoriteModifier && key == enumKeyCodes::KEY_B) {
+        auto* track = MenuMusicPlayer::get().currentTrack();
+        if (track) MenuMusicLibrary::get().setFavorite(track->id, true);
+        return;
+    }
+#endif
+    if (key == enumKeyCodes::KEY_L || key == enumKeyCodes::KEY_Right
+        || key == enumKeyCodes::KEY_ArrowRight) {
+        paimon::menuloop::MenuLoopControl::skipForward();
+        return;
+    }
+    if (key == enumKeyCodes::KEY_J || key == enumKeyCodes::KEY_Left
+        || key == enumKeyCodes::KEY_ArrowLeft) {
+        paimon::menuloop::MenuLoopControl::skipBackward();
+        return;
+    }
+    Popup::keyDown(key, timestamp);
+}
+
+void MenuMusicLibraryPopup::refreshFilterButtons() {
+    static const std::unordered_map<std::string, const char*> labels = {
+        {"alphabetical", "A-Z"}, {"date", "Date"}, {"length", "Time"},
+        {"size", "Size"}, {"extension", "Ext"},
+    };
+    if (m_sortSprite) {
+        auto it = labels.find(m_sortMode);
+        m_sortSprite->setString(it == labels.end() ? "A-Z" : it->second);
+    }
+    auto tint = [](ButtonSprite* sprite, bool active) {
+        if (sprite && sprite->m_BGSprite) {
+            sprite->m_BGSprite->setColor(active ? ccColor3B{120, 210, 150}
+                                                : ccColor3B{190, 190, 205});
+        }
+    };
+    tint(m_localSprite, m_localOnly);
+    tint(m_favoritesSprite, m_favoritesOnly);
+    tint(m_blacklistedSprite, m_blacklistedOnly);
+    tint(m_reverseSprite, m_sortReverse);
+    tint(m_compactSprite, m_compact);
 }
 
 } // namespace paimon::menumusic

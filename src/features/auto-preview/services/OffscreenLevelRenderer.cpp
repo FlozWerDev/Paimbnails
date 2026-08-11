@@ -14,6 +14,7 @@
 #include "../AutoPreviewConfig.hpp"
 #include "../../../utils/RenderTexture.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../framework/compat/ModCompat.hpp"
 
 using namespace geode::prelude;
 
@@ -123,6 +124,24 @@ OffscreenRenderResult result;
     if (!dir || !dir->getOpenGLView()) return result;
     if (PlayLayer::get() != nullptr) return result;
     if (level->m_levelString.empty()) return result;
+
+    // PlayLayer::create below runs every mod's PlayLayer::init hook, so an
+    // offscreen render is indistinguishable from actually entering the level.
+    // Globed reacts to that hook by announcing the level to its server
+    // (GlobedGJBGL::setupPreInit -> RoomManager::joinLevel), and it only ever
+    // retracts that from PlayLayer::onQuit, which we never call here — the
+    // player would be shown in a level they never opened until they enter
+    // another one. Nothing we can do to the layer hides it from those hooks,
+    // so skip the render entirely while such a mod is present.
+    if (paimon::compat::ModCompat::isGlobedLoaded()) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            log::info("[AutoPreview] Globed loaded; skipping offscreen level render "
+                      "(it would register as joining the level online)");
+        }
+        return result;
+    }
 
     auto* gm = GameManager::get();
     PlayLayer* prevPlayLayer = gm ? gm->m_playLayer : nullptr;

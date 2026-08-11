@@ -5,6 +5,7 @@
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Layout.hpp>
@@ -71,6 +72,7 @@ MainMenuLayoutEditor* MainMenuLayoutEditor::getActive() { return s_active; }
 bool MainMenuLayoutEditor::isActive() { return s_active != nullptr; }
 
 void MainMenuLayoutEditor::open(CCNode* root) {
+    if (!paimon::modules::isEnabled("paimbnails.menulayout.menu")) return;
     if (!root || s_active) return;
     auto* scene = CCDirector::get()->getRunningScene();
     if (!scene) return;

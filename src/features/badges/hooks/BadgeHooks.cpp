@@ -26,8 +26,7 @@
 
 using namespace geode::prelude;
 
-// Compatibility with BadgeCache.hpp (legacy): these free functions are wrappers
-// that delegate to ModeratorCache so existing consumers keep compiling.
+// Legacy BadgeCache wrappers delegate to ModeratorCache.
 
 std::map<std::string, std::pair<bool, bool>> g_moderatorCache;
 std::list<std::string> g_moderatorCacheOrder;
@@ -44,20 +43,16 @@ bool moderatorCacheGet(std::string const& username, bool& isMod, bool& isAdmin) 
     return true;
 }
 
-// shared helper to show badge info; also used by ProfilePage.cpp
 void showBadgeInfoPopup(CCNode* sender) {
     paimon::badges::showRoleBadgeInfoPopup(sender);
 }
 
-// Deferred emote retry: poll until the emote catalog is ready, then re-render.
-// Forward-declared; defined after $modify (needs BadgeCommentCell).
+// Defined after $modify because it needs BadgeCommentCell.
 static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
                             std::string text, std::string font, int retries);
 
 namespace {
-// Fondo por defecto de los comentarios: mas transparente y con un tinte
-// azul-grisaceo oscuro en vez de negro puro, para que se vea el fondo del
-// perfil por detras.
+// Default comment panel: translucent dark blue-gray.
 constexpr GLubyte kCommentDarkPanelOpacity = 60;
 constexpr cocos2d::ccColor3B kCommentPanelColor = {30, 33, 48};
 constexpr float kCommentInsetX = 2.0f;
@@ -168,7 +163,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                 return;
             }
 
-            // Skip retry if custom bg is already installed (clip = image bg, panel = solid bg)
             if (commentCell->m_fields->m_commentBgClip || commentCell->m_fields->m_commentBgPanel) {
                 return;
             }
@@ -190,7 +184,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         auto layout = getCommentBackgroundLayout(cellSize);
 
         // Check config FIRST — custom bg always needs re-evaluation
-        // since the config may have changed between retries
         bool hasCustomBg = false;
         ProfileConfig config;
         if (m_comment && m_comment->m_accountID > 0) {
@@ -198,7 +191,6 @@ class $modify(BadgeCommentCell, CommentCell) {
             hasCustomBg = (config.commentBgType != "none" && config.commentBgType != "");
         }
 
-        // Early return only if panel exists, layout unchanged, AND no custom bg
         if (m_fields->m_commentBgPanel && !hasCustomBg) {
             auto oldSize = m_fields->m_commentBgPanel->getContentSize();
             auto oldPos = m_fields->m_commentBgPanel->getPosition();
@@ -230,8 +222,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         if (hasCustomBg) {
             installCustomCommentBackground(layout, config);
         } else {
-            // Default panel: tinted dark (not pure black) and semi-transparent
-            // so the profile background shows through.
             auto* panel = paimon::SpriteHelper::createColorPanel(
                 layout.size.width,
                 layout.size.height,
@@ -255,7 +245,6 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         if (config.commentBgType == "solid") {
             // Solid color background — bake color directly into vertices
-            // (createDarkPanel is black; setColor on black = black, so use createColorPanel)
             auto* panel = paimon::SpriteHelper::createColorPanel(
                 layout.size.width,
                 layout.size.height,
@@ -278,7 +267,6 @@ class $modify(BadgeCommentCell, CommentCell) {
             int token = m_fields->m_commentBgToken;
 
             if (config.commentBgType == "thumbnail" && !config.commentBgThumbnailId.empty()) {
-                // Load thumbnail by level ID (supports multi-thumbnail via position)
                 int levelId = 0;
                 auto levelIdRes = geode::utils::numFromString<int>(config.commentBgThumbnailId);
                 if (!levelIdRes) return;
@@ -287,7 +275,6 @@ class $modify(BadgeCommentCell, CommentCell) {
 
                 WeakRef<BadgeCommentCell> weakSelf = this;
 
-                // Use getThumbnails to support position selection
                 ThumbnailAPI::get().getThumbnails(levelId,
                     [weakSelf, token, accountID, layout, config, cellSize, targetPos](bool success, std::vector<ThumbnailInfo> const& thumbs) {
                         Loader::get()->queueInMainThread([weakSelf, token, accountID, layout, config, cellSize, success, thumbs, targetPos]() {
@@ -296,7 +283,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                             auto* self = static_cast<BadgeCommentCell*>(selfRef.data());
                             if (!self || !self->shouldHandleCommentProfileResult(token, accountID)) return;
                             if (success && !thumbs.empty()) {
-                                // Find the thumbnail at the target position
                                 int idx = std::clamp(targetPos, 1, static_cast<int>(thumbs.size())) - 1;
                                 auto& thumb = thumbs[idx];
 
@@ -325,7 +311,6 @@ class $modify(BadgeCommentCell, CommentCell) {
             }
             else if (config.commentBgType == "banner") {
                 if (config.commentBgBannerMode == "image") {
-                    // Load profile image (profileimg) as background
                     WeakRef<BadgeCommentCell> weakSelf = this;
                     ThumbnailAPI::get().downloadProfileImg(accountID,
                         [weakSelf, token, accountID, layout, config, cellSize](bool success, CCTexture2D* texture) {
@@ -341,7 +326,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                         }
                     );
                 } else {
-                    // Default: load profile background from cache
                     auto& thumbs = ProfileThumbs::get();
                     if (auto cached = thumbs.getCachedProfile(accountID)) {
                         if (cached->texture) {
@@ -352,7 +336,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                         return;
                     }
 
-                    // Not cached — queue load
                     std::string username = m_comment ? m_comment->m_userName : "";
                     WeakRef<BadgeCommentCell> weakSelf = this;
                     thumbs.queueLoad(accountID, username,
@@ -383,7 +366,6 @@ class $modify(BadgeCommentCell, CommentCell) {
     void installImageCommentBackground(CommentBackgroundLayout const& layout, CCTexture2D* texture, ProfileConfig const& config, CCSize const& cellSize) {
         if (!texture) return;
 
-        // Remove existing custom background nodes
         if (m_fields->m_commentBgClip) {
             m_fields->m_commentBgClip->removeFromParent();
             m_fields->m_commentBgClip = nullptr;
@@ -397,8 +379,6 @@ class $modify(BadgeCommentCell, CommentCell) {
             m_fields->m_commentBgPanel = nullptr;
         }
 
-        // Rounded-stencil clipping node created up-front (cheap); the blurred bg
-        // sprite is injected asynchronously to avoid blocking the main thread.
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(layout.size.width, layout.size.height, layout.radius);
         auto clipper = CCClippingNode::create(stencil);
         clipper->setContentSize(layout.size);
@@ -409,7 +389,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         m_fields->m_commentBgClip = clipper;
         ensureVanillaBgLayerHidden();
 
-        // Dark overlay for readability
         float darkness = config.commentBgDarkness;
         if (darkness > 0.0f) {
             auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(darkness * 255)});
@@ -421,7 +400,6 @@ class $modify(BadgeCommentCell, CommentCell) {
             m_fields->m_commentBgDarkOverlay = overlay;
         }
 
-        // Use smaller blur buffer — comment cells are small, blur is low-freq
         CCSize targetSize = layout.size;
         targetSize.width = std::max(targetSize.width, 256.f);
         targetSize.height = std::max(targetSize.height, 128.f);
@@ -434,8 +412,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         WeakRef<BadgeCommentCell> weakSelf = this;
         Ref<CCClippingNode> clipRef = clipper;
 
-        // Scale the bg node to fill the area and insert it into the clipper,
-        // checking the cell wasn't recycled meanwhile.
         auto attachBlurred = [weakSelf, token, accountID, layout, clipRef](CCNode* bgNode) {
             if (!bgNode) return;
             auto selfRef = weakSelf.lock();
@@ -454,8 +430,7 @@ class $modify(BadgeCommentCell, CommentCell) {
             clipRef->addChild(bgNode, -1);
         };
 
-        // Async GPU blur: spreads FBO passes across frames and caches (RAM + disk).
-        // The old synchronous blur ran all passes in one frame and froze on scroll.
+        // Blur asynchronously and cache the result to keep scrolling responsive.
         std::string cacheKey = fmt::format("cbg:{}:{}:{}", accountID,
             config.commentBgType == "thumbnail"
                 ? fmt::format("t{}_{}", config.commentBgThumbnailId, config.commentBgThumbnailPos)
@@ -468,8 +443,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                 attachBlurred(blurred);
                 return;
             }
-            // Fallback: plain sprite (no per-frame multi-tap blur). Async path
-            // already preferred; realtime kawase on every comment cell tanks FPS.
             auto tempSprite = CCSprite::createWithTexture(texRef.data());
             if (!tempSprite) return;
             attachBlurred(tempSprite);
@@ -485,7 +458,6 @@ class $modify(BadgeCommentCell, CommentCell) {
     void installGifCommentBackground(CommentBackgroundLayout const& layout, std::string const& gifKey, ProfileConfig const& config, CCSize const& cellSize) {
         if (gifKey.empty()) return;
 
-        // Remove existing custom background nodes
         if (m_fields->m_commentBgClip) {
             m_fields->m_commentBgClip->removeFromParent();
             m_fields->m_commentBgClip = nullptr;
@@ -501,9 +473,7 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         CCNode* bgNode = nullptr;
 
-        // Comment cells are tiny and many are on-screen at once. Realtime multi-tap
-        // blur + continuous video decode is what makes AFK on InfoLayer melt FPS as
-        // profile banners finish loading. Prefer static/first-frame + dark overlay.
+        // Prefer a static frame; per-cell realtime blur/video is too expensive.
         if (VideoThumbnailSprite::isCached(gifKey)) {
             auto bgVideo = VideoThumbnailSprite::createFromCache(gifKey);
             if (bgVideo) {
@@ -513,7 +483,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                 bgVideo->setAnchorPoint({0.5f, 0.5f});
                 bgVideo->setPosition(layout.size * 0.5f);
 
-                // Freeze on first frame — never keep a decoder running per comment.
                 if (bgVideo->hasVisibleFrame()) {
                     bgVideo->pause();
                 } else {
@@ -535,9 +504,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                 bgGif->setAnchorPoint({0.5f, 0.5f});
                 bgGif->setPosition(layout.size * 0.5f);
 
-                // Static first frame only. Many comment cells × GIF scheduleUpdate
-                // for minutes is the progressive AFK lag (allocates CCSpriteFrame
-                // every frame change). Dark overlay keeps text readable.
                 bgGif->stop();
                 bgNode = bgGif;
             }
@@ -545,7 +511,6 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         if (!bgNode) return;
 
-        // Create clipping node with rounded-rect stencil
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(layout.size.width, layout.size.height, layout.radius);
         auto clipper = CCClippingNode::create(stencil);
         clipper->setContentSize(layout.size);
@@ -557,7 +522,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         m_fields->m_commentBgClip = clipper;
         ensureVanillaBgLayerHidden();
 
-        // Dark overlay
         float darkness = config.commentBgDarkness;
         if (darkness > 0.0f) {
             auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(darkness * 255)});
@@ -618,8 +582,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         CommentCell::onExit();
     }
 
-    // GD re-shows TableViewCell::m_backgroundLayer in updateBGColor (inlined).
-    // A short burst of ticks is enough; do not run forever per visible cell.
+    // Briefly re-hide GD's background after updateBGColor().
     void hideVanillaBgLayerTick(float) {
         if (!(m_fields->m_commentBgPanel || m_fields->m_commentBgClip)) {
             this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
@@ -657,11 +620,8 @@ class $modify(BadgeCommentCell, CommentCell) {
     void loadFromComment(GJComment* comment) {
         this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
         clearCommentProfileBackground();
-        // Invalidate the "bgs-hidden" cache: the cell was recycled with a new
-        // comment, so reprocess it next tick to hide the new vanilla nodes.
         this->setUserObject("paimon-comment-bgs-hidden"_spr, nullptr);
-        // Drop previous emote overlay before GD rebuilds text — leftover GIF
-        // emotes would keep scheduleUpdate() running on recycled cells.
+        // Drop old emotes before GD rebuilds recycled text.
         if (m_mainLayer) {
             if (auto* oldEmote = m_mainLayer->getChildByID("paimon-emote-overlay"_spr)) {
                 oldEmote->removeFromParent();
@@ -672,11 +632,8 @@ class $modify(BadgeCommentCell, CommentCell) {
         if (!comment) return;
 
         installDarkCommentPanel();
-        // 1 retry (not 3): each retry recurses the whole cell, which stutters
-        // when scrolling many visible cells.
         scheduleCommentPanelRefresh(m_fields->m_commentBgToken, 1);
 
-        // Font tag + emote rendering in all comments
         {
             std::string commentText = comment->m_commentString;
             auto fontResult = paimon::fonts::parseFontTag(commentText);
@@ -688,13 +645,11 @@ class $modify(BadgeCommentCell, CommentCell) {
             if (fontResult.hasTag || hasEmotes || hasMention) {
                 this->tryRenderWithFont(fontResult.remainingText, fontResult.fontFile);
             } else if (!serviceLoaded && hasEmoteSyntax) {
-                // Emote catalog not loaded yet — schedule deferred retry
                 WeakRef<CommentCell> weakSelf = static_cast<CommentCell*>(this);
                 deferEmoteRetry(weakSelf, fontResult.remainingText, fontResult.fontFile, 10);
             }
         }
 
-        // Text selection: attach selector for copy support
         {
             std::string commentText = comment->m_commentString;
             auto fontResult = paimon::fonts::parseFontTag(commentText);
@@ -702,7 +657,6 @@ class $modify(BadgeCommentCell, CommentCell) {
             if (!textNode) textNode = m_mainLayer->getChildByID("comment-text-label");
             if (!textNode) textNode = m_mainLayer->getChildByID("paimon-emote-overlay"_spr);
 
-            // Fallback for profile comments where Geode IDs aren't assigned
             if (!textNode) {
                 auto* children = m_mainLayer->getChildren();
                 if (children) {
@@ -736,8 +690,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         std::string username = comment->m_userName;
         int accountID = comment->m_accountID;
 
-        // Role badges (admin/mod/vip/helper/idea) — resolved through RoleService,
-        // which caches and coalesces requests so scrolling doesn't spam the server.
         {
             WeakRef<BadgeCommentCell> weakSelf = this;
             std::string capturedUser = username;
@@ -751,7 +703,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                 });
         }
 
-        // Custom emote badge — always fetch (independent of mod status)
         if (accountID > 0) {
             WeakRef<BadgeCommentCell> weakSelf = this;
             CustomBadgeService::get().fetchBadge(accountID, [weakSelf, accountID](bool success, std::string const& emoteName) {
@@ -776,11 +727,9 @@ class $modify(BadgeCommentCell, CommentCell) {
     }
 
     void addBadgeToComment(bool isMod, bool isAdmin) {
-        // find the username menu
         auto menu = this->getChildByIDRecursive("username-menu");
         if (!menu) return;
         
-        // don't duplicate if it already exists
         if (menu->getChildByID("paimon-moderator-badge"_spr)) return;
         if (menu->getChildByID("paimon-admin-badge"_spr)) return;
 
@@ -797,7 +746,6 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         if (!badgeSprite) return;
 
-        // scale it down so it isn't too big
         float targetHeight = 15.5f;
         float scale = targetHeight / badgeSprite->getContentSize().height;
         badgeSprite->setScale(scale);
@@ -812,7 +760,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         auto menuNode = typeinfo_cast<CCMenu*>(menu);
         if (!menuNode) return;
 
-        // insert before the percentage if present
         if (auto percentage = this->getChildByIDRecursive("percentage-label")) {
             menuNode->insertBefore(btn, percentage);
         } else {
@@ -828,10 +775,8 @@ class $modify(BadgeCommentCell, CommentCell) {
         auto menu = this->getChildByIDRecursive("username-menu");
         if (!menu) return;
 
-        // avoid duplicates
         if (menu->getChildByID("paimon-custom-badge"_spr)) return;
 
-        // find the emote info
         auto emoteOpt = paimon::emotes::EmoteService::get().getEmoteByName(emoteName);
         if (!emoteOpt) return;
 
@@ -845,7 +790,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                 if (!tex && !(isGif && !gifData.empty())) return;
 
                 if (isGif && !gifData.empty()) {
-                    // GIF badge: dispatch to main thread then create animated sprite
                     auto dataCopy = gifData;
                     Loader::get()->queueInMainThread([weakSelf, targetHeight, emoteName, dataCopy = std::move(dataCopy)]() mutable {
                         if (paimon::isRuntimeShuttingDown()) return;
@@ -858,7 +802,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                             auto menu = typeinfo_cast<CCMenu*>(self->getChildByIDRecursive("username-menu"));
                             if (!menu) return;
                             if (menu->getChildByID("paimon-custom-badge"_spr)) return;
-                            // Static first frame — tiny looping GIFs × many cells adds up AFK.
                             gifSpr->stop();
                             float maxDim = std::max(gifSpr->getContentWidth(), gifSpr->getContentHeight());
                             if (maxDim > 0) gifSpr->setScale(targetHeight / maxDim);
@@ -873,7 +816,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                         });
                     });
                 } else {
-                    // Static badge
                     Loader::get()->queueInMainThread([weakSelf, tex, targetHeight]() {
                         if (paimon::isRuntimeShuttingDown()) return;
                         auto self = weakSelf.lock();
@@ -903,11 +845,7 @@ class $modify(BadgeCommentCell, CommentCell) {
     }
 
     void tryRenderWithFont(std::string const& commentText, std::string const& fontFile) {
-        // Use geode node-ids to find the comment text elements reliably.
-        // GD uses TextArea for multi-line comments and CCLabelBMFont for single-line.
-        // The hook runs after geode.node-ids assigns IDs.
 
-        // Already processed?
         if (m_mainLayer->getChildByID("paimon-emote-overlay"_spr)) return;
 
         CCNode* targetNode = nullptr;
@@ -917,7 +855,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         CCPoint position = {0.f, 0.f};
         CCPoint anchorPoint = {0.f, 0.5f};
 
-        // Try TextArea first (multi-line comments)
         if (auto* textArea = typeinfo_cast<TextArea*>(m_mainLayer->getChildByID("comment-text-area"))) {
             targetNode = textArea;
             position = textArea->getPosition();
@@ -925,7 +862,6 @@ class $modify(BadgeCommentCell, CommentCell) {
             maxWidth = textArea->getContentSize().width * textArea->getScaleX();
             fontSize = textArea->getScale();
 
-            // Extract color from the TextArea's label children
             if (auto* bitmapFont = textArea->m_label) {
                 auto* lines = bitmapFont->m_lines;
                 if (lines && lines->count() > 0) {
@@ -938,7 +874,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                 }
             }
         }
-        // Try CCLabelBMFont (single-line labels)
         else if (auto* label = typeinfo_cast<CCLabelBMFont*>(m_mainLayer->getChildByID("comment-text-label"))) {
             targetNode = label;
             position = label->getPosition();
@@ -950,8 +885,7 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         if (!targetNode) return;
 
-        // Adaptive font scaling for long comments (inspired by Comment Emojis Reloaded)
-        // Gradually reduce font size for comments >80 chars to fit more text.
+        // Reduce font size for long comments so emotes still fit.
         float adjustedFontSize = fontSize;
         size_t textLen = commentText.size();
         if (textLen > 80) {
@@ -959,9 +893,6 @@ class $modify(BadgeCommentCell, CommentCell) {
             adjustedFontSize = fontSize * (1.f - reduction);
         }
 
-        // Use emoteSize=0 (auto-detect from font metrics) so emotes match text height.
-        // forceRender=true when using a custom font so the renderer always produces a
-        // properly word-wrapped node even when there are no emote tokens.
         bool isCustomFont = (fontFile != "chatFont.fnt");
         auto emoteNode = paimon::emotes::EmoteRenderer::renderComment(
             commentText, 0.f, maxWidth, fontFile.c_str(), adjustedFontSize, isCustomFont,
@@ -969,16 +900,12 @@ class $modify(BadgeCommentCell, CommentCell) {
         );
         if (!emoteNode) return;
 
-        // Apply the original text color to all text labels in the emote node
         for (auto* child : CCArrayExt<CCNode*>(emoteNode->getChildren())) {
             if (auto* lbl = typeinfo_cast<CCLabelBMFont*>(child)) {
                 lbl->setColor(textColor);
             }
         }
 
-        // Compute the top-left corner of the original text node in parent coords.
-        // This gives us a fixed Y reference from GD's native layout, ensuring
-        // all custom fonts start at the same vertical position.
         auto nodeSize = targetNode->getContentSize();
         float scX = targetNode->getScaleX();
         float scY = targetNode->getScaleY();
@@ -1000,9 +927,7 @@ class $modify(BadgeCommentCell, CommentCell) {
     }
 };
 
-// Deferred emote retry: polls every 0.5s until the emote catalog loads (up to retries).
-// Validates the cell's comment hasn't changed between retries — CommentCell is recycled
-// during scroll, so applying old emotes would overwrite a newer comment.
+// Retry until emotes load, aborting if the recycled cell's text changes.
 static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
                             std::string text, std::string font, int retries) {
     paimon::scheduleMainThreadDelay(0.5f,
@@ -1010,15 +935,11 @@ static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
             auto self = weakSelf.lock();
             if (!self || !self->getParent()) return;
 
-            // Abort if the cell was recycled for a different comment.
             auto* commentCell = static_cast<BadgeCommentCell*>(self.data());
             if (!commentCell->m_comment) return;
-            // Rebuild the current comment's remaining text and compare to the captured
-            // text; if they differ, the cell was recycled — abort.
             std::string currentText = commentCell->m_comment->m_commentString;
             auto currentParse = paimon::fonts::parseFontTag(currentText);
             if (currentParse.remainingText != text) {
-                // Different comment now; don't render emotes with stale text.
                 return;
             }
 
@@ -1033,6 +954,4 @@ static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
         });
 }
 
-// BadgeProfilePage was merged into PaimonProfilePage (ProfilePage.cpp) to avoid
-// double-$modify UB on the same class.
-
+// ProfilePage owns the merged badge hook.

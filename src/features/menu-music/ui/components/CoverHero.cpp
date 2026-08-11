@@ -3,6 +3,7 @@
 
 #include "../../../../utils/PaimonDrawNode.hpp"
 #include "../../../../utils/SpriteHelper.hpp"
+#include "../../../../utils/TextureBudget.hpp"
 
 #include "../../services/MenuMusicCoverLog.hpp"
 #include <filesystem>
@@ -211,7 +212,7 @@ void CoverHero::setCoverFromPath(const std::string& absolutePath) {
         return;
     }
 
-    auto* tex = CCTextureCache::sharedTextureCache()->addImage(absolutePath.c_str(), false);
+    auto* tex = paimon::image::loadBudgeted(absolutePath);
     if (!tex) {
         coverlog::warn("[MenuMusicCover] CoverHero: CCTextureCache failed '{}'", absolutePath);
         if (m_fallback) m_fallback->setVisible(true);

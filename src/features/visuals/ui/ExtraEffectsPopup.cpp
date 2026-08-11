@@ -60,7 +60,6 @@ void ExtraEffectsPopup::rebuildRows() {
     float topY = content.height - 52.f;
     float rowH = 28.f;
 
-    // info label
     auto info = CCLabelBMFont::create("Combine up to 4 extra effects", "chatFont.fnt");
     info->setScale(0.55f);
     info->setColor({200, 200, 200});
@@ -85,14 +84,12 @@ void ExtraEffectsPopup::rebuildRows() {
     for (int i = 0; i < (int)m_indices.size(); i++) {
         float y = baseY - i * rowH;
 
-        // slot number
         auto numLabel = CCLabelBMFont::create(fmt::format("{}.", i + 1).c_str(), "bigFont.fnt");
         numLabel->setScale(0.3f);
         numLabel->setColor({180, 180, 180});
         numLabel->setPosition({cx - 95.f, y});
         m_rowContainer->addChild(numLabel);
 
-        // left arrow
         auto lSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
         lSpr->setScale(0.35f);
         auto lBtn = CCMenuItemExt::createSpriteExtra(lSpr, [this, i](CCMenuItemSpriteExtra*) {
@@ -106,7 +103,6 @@ void ExtraEffectsPopup::rebuildRows() {
         lBtn->setPosition({cx - 65.f, y});
         m_rowMenu->addChild(lBtn);
 
-        // right arrow
         auto rSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
         rSpr->setFlipX(true);
         rSpr->setScale(0.35f);
@@ -121,7 +117,6 @@ void ExtraEffectsPopup::rebuildRows() {
         rBtn->setPosition({cx + 65.f, y});
         m_rowMenu->addChild(rBtn);
 
-        // name label
         auto label = CCLabelBMFont::create(
             displayName(m_styles[m_indices[i]]).c_str(), "bigFont.fnt");
         label->setScale(0.35f);
@@ -129,7 +124,6 @@ void ExtraEffectsPopup::rebuildRows() {
         m_rowContainer->addChild(label);
         m_labels.push_back(label);
 
-        // X remove button
         auto xSpr = CCLabelBMFont::create("X", "bigFont.fnt");
         xSpr->setScale(0.55f);
         xSpr->setColor({255, 80, 80});
@@ -144,7 +138,6 @@ void ExtraEffectsPopup::rebuildRows() {
         m_rowMenu->addChild(xBtn);
     }
 
-    // add button
     if ((int)m_indices.size() < MAX_EXTRA) {
         float addY = baseY - (int)m_indices.size() * rowH;
         auto addSpr = ButtonSprite::create("+ Add Effect", "bigFont.fnt", "GJ_button_01.png", 0.7f);
@@ -165,7 +158,6 @@ void ExtraEffectsPopup::rebuildRows() {
         m_rowMenu->addChild(addBtn);
     }
 
-    // empty state hint
     if (m_indices.empty()) {
         auto hint = CCLabelBMFont::create("No extra effects added", "chatFont.fnt");
         hint->setScale(0.5f);

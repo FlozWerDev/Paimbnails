@@ -397,7 +397,8 @@ void ModerationService::claimQueueItem(int levelId, PendingCategory category,
 void ModerationService::acceptQueueItem(int levelId, PendingCategory category,
                                         std::string const& username, ActionCallback callback,
                                         std::string const& targetFilename,
-                                        std::string const& type) {
+                                        std::string const& type,
+                                        bool acceptAll) {
     if (!m_serverEnabled) {
         PendingQueue::get().accept(levelId, category);
         callback(true, "aceptado localmente");
@@ -419,7 +420,8 @@ void ModerationService::acceptQueueItem(int levelId, PendingCategory category,
         {"username", username},
         {"accountID", accountID}
     });
-    if (!targetFilename.empty()) json["targetFilename"] = targetFilename;
+    if (acceptAll) json["acceptAll"] = true;
+    else if (!targetFilename.empty()) json["targetFilename"] = targetFilename;
     if (!type.empty()) json["type"] = type;
     std::string postData = json.dump();
 
@@ -468,7 +470,8 @@ void ModerationService::acceptQueueItem(int levelId, PendingCategory category,
 void ModerationService::rejectQueueItem(int levelId, PendingCategory category,
                                         std::string const& username, std::string const& reason,
                                         ActionCallback callback,
-                                        std::string const& type) {
+                                        std::string const& type,
+                                        std::string const& targetFilename) {
     if (!m_serverEnabled) {
         PendingQueue::get().reject(levelId, category, reason);
         callback(true, "rechazado localmente");
@@ -492,6 +495,7 @@ void ModerationService::rejectQueueItem(int levelId, PendingCategory category,
         {"accountID", accountID}
     });
     if (!type.empty()) json["type"] = type;
+    if (!targetFilename.empty()) json["targetFilename"] = targetFilename;
     std::string postData = json.dump();
 
     HttpClient::get().checkModeratorAccount(username, accountID,

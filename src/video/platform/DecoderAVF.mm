@@ -227,7 +227,8 @@ void DecoderAVF::stopDecoding() {
     m_decoding.store(false, std::memory_order_relaxed);
     m_ring.wakeAll();  // unblock any cv waits ASAP
     if (m_thread.joinable() && !paimon::timedJoin(m_thread, std::chrono::seconds(3), &m_decoding)) {
-        m_decodeThreadDetached.store(true, std::memory_order_release);
+        if (!m_decodeThreadDetached.exchange(true, std::memory_order_acq_rel))
+            noteDetachedDecoder("AVFoundation");
     }
 }
 
@@ -245,8 +246,16 @@ void DecoderAVF::decodeLoop() {
         @autoreleasepool {
             CMSampleBufferRef sampleBuffer = [trackOutput copyNextSampleBuffer];
             if (!sampleBuffer) {
-                if (reader.status == AVAssetReaderStatusCompleted ||
-                    reader.status == AVAssetReaderStatusFailed) {
+                bool ended = reader.status == AVAssetReaderStatusCompleted ||
+                             reader.status == AVAssetReaderStatusFailed;
+// AVAssetReader cannot rewind, so a loop needs a fresh reader over the asset.
+                if (ended && m_looping.load(std::memory_order_relaxed) &&
+                    reader.status == AVAssetReaderStatusCompleted && buildReader(0.0)) {
+                    trackOutput = (__bridge AVAssetReaderTrackOutput*)m_trackOutput;
+                    reader      = (__bridge AVAssetReader*)m_reader;
+                    if (trackOutput && reader) continue;
+                }
+                if (ended) {
                     m_finished.store(true, std::memory_order_release);
                 }
                 break;
@@ -343,28 +352,6 @@ void DecoderAVF::decodeLoop() {
             m_ring.commitWrite();
         }
     }
-}
-
-bool DecoderAVF::consumeFrame(Frame& outFrame) {
-    auto* slot = m_ring.nextRead();
-    if (!slot) return false;
-
-    int ySize  = slot->strideY * slot->height;
-    int uvH    = (slot->height + 1) / 2;
-    int uvSize = slot->strideCb * uvH;
-
-    std::memcpy(outFrame.planeY,  slot->planeY,  ySize);
-    std::memcpy(outFrame.planeCb, slot->planeCb, uvSize);
-    std::memcpy(outFrame.planeCr, slot->planeCr, uvSize);
-    outFrame.strideY  = slot->strideY;
-    outFrame.strideCb = slot->strideCb;
-    outFrame.strideCr = slot->strideCr;
-    outFrame.width    = slot->width;
-    outFrame.height   = slot->height;
-    outFrame.pts      = slot->pts;
-
-    m_ring.commitRead();
-    return true;
 }
 
 void DecoderAVF::seekTo(double seconds) {

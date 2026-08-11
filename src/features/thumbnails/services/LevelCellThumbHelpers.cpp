@@ -125,7 +125,9 @@ PaimonAnimEffect parseAnimEffect(std::string const& s) {
 }
 
 PaimonBgType parseBgType(std::string const& s) {
-    return s == "thumbnail" ? PaimonBgType::Thumbnail : PaimonBgType::Gradient;
+    if (s == "thumbnail") return PaimonBgType::Thumbnail;
+    if (s == "legacy-gradient") return PaimonBgType::LegacyGradient;
+    return PaimonBgType::Gradient;
 }
 
 PaimonGalleryTransition parseGalleryTransition(std::string const& s) {

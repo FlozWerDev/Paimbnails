@@ -28,7 +28,9 @@ protected:
 
     geode::ScrollLayer* m_scroll = nullptr;
     geode::TextInput* m_nameInput = nullptr;
+    cocos2d::CCMenu* m_createMenu = nullptr;
     cocos2d::CCMenu* m_backMenu = nullptr;
+    cocos2d::CCLabelBMFont* m_detailTitleLabel = nullptr;
     std::string m_detailPlaylistId;
     bool m_inDetail = false;
     std::size_t m_libListenerToken = 0;

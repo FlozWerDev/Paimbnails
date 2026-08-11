@@ -22,9 +22,7 @@
 #define GL_DRAW_FRAMEBUFFER 0x8CA9
 #endif
 
-// glBlitFramebuffer is core on desktop GL and GLES3, but on Android's GLES2 it
-// only exists as the GL_NV_framebuffer_blit extension (glBlitFramebufferNV).
-// Resolve it at runtime there; if unavailable the caller disables the blur.
+// Resolve glBlitFramebuffer at runtime on Android GLES2; disable blur if absent.
 #ifndef GL_APIENTRY
 #define GL_APIENTRY
 #endif
@@ -49,8 +47,7 @@ inline bool paimonBlitFramebuffer(
     fn(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
     return true;
 #elif defined(GEODE_IS_IOS)
-    // iOS ships only the GLES2 headers (no glBlitFramebuffer, no runtime proc
-    // loader like eglGetProcAddress), so the blit-based blur is unavailable.
+// iOS lacks the blit symbol and runtime loader, so blit-based blur is unavailable.
     (void)sx0; (void)sy0; (void)sx1; (void)sy1;
     (void)dx0; (void)dy0; (void)dx1; (void)dy1; (void)mask; (void)filter;
     return false;
@@ -68,10 +65,9 @@ namespace paimon::paiblur {
 
 namespace {
 
-// Half-res blur FBO, capped to keep 4K performant.
+// Half-resolution blur FBO, capped for 4K performance.
 constexpr int kMaxBlurLongEdge = 1280;
-// Once steady at full opacity, refresh the frozen backdrop every Nth frame
-// instead of re-blurring every frame (saves the blit + horizontal pass).
+// Refresh a steady backdrop periodically instead of re-blurring every frame.
 constexpr int kSteadyRefreshInterval = 2;
 // Smoothstep intensity (0.1..10) to normalized blur radius.
 float intensityToEclipseRadius(float intensity) {
@@ -80,7 +76,6 @@ float intensityToEclipseRadius(float intensity) {
     return 0.025f + curved * 0.155f; // 0.025 .. 0.180
 }
 
-// Embedded shaders (no file I/O).
 constexpr char kVertSrc[] = R"(attribute vec2 aPosition;
 attribute vec2 aTexCoord;
 varying vec2 v_texCoord;
@@ -126,7 +121,6 @@ void main() {
 }
 )";
 
-// Shared blur program; uniform locations cached at link time.
 struct BlurProgram {
     GLuint prog = 0;
     GLint locTexSize  = -1;
@@ -175,7 +169,7 @@ bool ensureProgram() {
     GLuint prog = glCreateProgram();
     glAttachShader(prog, vs);
     glAttachShader(prog, fs);
-    // Use cocos's standard attribute slots so ccGLEnableVertexAttribs' state cache stays coherent.
+// Use Cocos attribute slots so its GL state cache stays coherent.
     glBindAttribLocation(prog, kCCVertexAttrib_Position, "aPosition");
     glBindAttribLocation(prog, kCCVertexAttrib_TexCoords, "aTexCoord");
     glLinkProgram(prog);
@@ -204,7 +198,7 @@ bool ensureProgram() {
     return true;
 }
 
-} // namespace
+}
 
 PaiblurNode* PaiblurNode::create(CCSize const& winSize, float intensity, float darkness) {
     auto* node = new PaiblurNode();
@@ -223,13 +217,12 @@ bool PaiblurNode::initWithWinSize(CCSize const& winSize, float intensity, float 
     m_intensity = std::clamp(intensity, 0.1f, 10.0f);
     m_darkness = std::clamp(darkness, 0.0f, 1.0f);
 
-    // Failure here means falling back to static blur.
+// Failure falls back to static blur.
     if (!ensureProgram()) {
-        log::warn("[Paiblur] blur shader unavailable — Paiblur disabled");
+        log::warn("[Paiblur] blur shader unavailable - Paiblur disabled");
         return false;
     }
 
-    // Fullscreen NDC quad.
     static constexpr GLfloat kQuad[] = {
         -1.f,  1.f,  0.f, 1.f,
         -1.f, -1.f,  0.f, 0.f,
@@ -245,14 +238,14 @@ bool PaiblurNode::initWithWinSize(CCSize const& winSize, float intensity, float 
     glBufferData(GL_ARRAY_BUFFER, sizeof(kQuad), kQuad, GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    // Eagerly create blur FBOs; defer via viewport if GLView reports nothing.
+// Create blur FBOs eagerly when the viewport is available.
     auto* director = CCDirector::get();
     auto* glView = director ? director->getOpenGLView() : nullptr;
     CCSize frame = glView ? glView->getFrameSize() : CCSizeZero;
     int fw = static_cast<int>(frame.width);
     int fh = static_cast<int>(frame.height);
     if (fw > 0 && fh > 0 && !ensureRenderTargets(fw, fh)) {
-        log::warn("[Paiblur] blur FBO creation failed — Paiblur disabled");
+        log::warn("[Paiblur] blur FBO creation failed - Paiblur disabled");
         return false;
     }
 
@@ -263,8 +256,7 @@ bool PaiblurNode::initWithWinSize(CCSize const& winSize, float intensity, float 
 }
 
 PaiblurNode::~PaiblurNode() {
-    // During shutdown the GL context may already be gone; deleting GL objects
-    // then is UB on some drivers.
+// During shutdown the GL context may already be gone; avoid deleting GL objects.
     if (paimon::isRuntimeShuttingDown()) return;
     releaseRenderTargets();
     if (m_vbo) {
@@ -375,12 +367,12 @@ void PaiblurNode::visit() {
     GLubyte op = getDisplayedOpacity();
     if (op == 0) return;
 
-    // Cosine-eased blur radius ramp from opacity.
+// Cosine-eased blur radius from opacity.
     float progress = static_cast<float>(op) / 255.f;
     float eased = 0.5f * (1.f - std::cos(3.14159265f * progress));
     if (eased < 0.01f) return;
 
-    // Viewport is the letterboxed window in real pixels.
+// Viewport is the letterboxed window in real pixels.
     GLint vp[4] = {0, 0, 0, 0};
     glGetIntegerv(GL_VIEWPORT, vp);
     int srcW = vp[2];
@@ -401,9 +393,8 @@ void PaiblurNode::visit() {
     float radius = intensityToEclipseRadius(m_intensity) * eased;
     bool steady = (op >= 254);
 
-    // Re-run the capture + horizontal pass only when the result would actually
-    // change (fading, radius moved, no cache yet) or on the periodic backdrop
-    // refresh. Otherwise reuse the cached m_texB and just re-composite it.
+// Re-run capture/horizontal blur only when fading, radius, or refresh requires it.
+// Otherwise reuse m_texB and re-composite.
     bool needFull = !m_hasCachedBlur || !steady || std::abs(radius - m_lastRadius) > 0.001f;
     if (!needFull) {
         if (++m_steadyFrames >= kSteadyRefreshInterval) {
@@ -414,10 +405,8 @@ void PaiblurNode::visit() {
         m_steadyFrames = 0;
     }
 
-    // Clear stale GL errors before blit.
     while (glGetError() != GL_NO_ERROR) {}
 
-    // 1) Capture scene into rtA (downsampled via GL_LINEAR).
     if (needFull) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_fboA);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
@@ -426,20 +415,19 @@ void PaiblurNode::visit() {
                                    GL_COLOR_BUFFER_BIT, GL_LINEAR)) {
             glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
             m_broken = true;
-            log::warn("[Paiblur] glBlitFramebuffer unavailable — Paiblur disabled for this popup");
+            log::warn("[Paiblur] glBlitFramebuffer unavailable - Paiblur disabled for this popup");
             return;
         }
         GLenum blitErr = glGetError();
         if (blitErr != GL_NO_ERROR) {
             glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
             m_broken = true;
-            log::warn("[Paiblur] glBlitFramebuffer failed (err=0x{:X}) — Paiblur disabled for this popup",
+            log::warn("[Paiblur] glBlitFramebuffer failed (err=0x{:X}) - Paiblur disabled for this popup",
                       static_cast<unsigned>(blitErr));
             return;
         }
     }
 
-    // Shared draw state for both passes.
     ccGLUseProgram(prg.prog);
 #if CC_TEXTURE_ATLAS_USE_VAO
     ccGLBindVAO(0);
@@ -454,7 +442,6 @@ void PaiblurNode::visit() {
     glUniform2f(prg.locTexSize, static_cast<float>(m_blurW), static_cast<float>(m_blurH));
     glUniform1f(prg.locRadius, radius);
 
-    // 2) Horizontal blur: rtA → rtB.
     if (needFull) {
         glBindFramebuffer(GL_FRAMEBUFFER, m_fboB);
         glViewport(0, 0, m_blurW, m_blurH);
@@ -468,7 +455,6 @@ void PaiblurNode::visit() {
         m_lastRadius = radius;
     }
 
-    // 3) Vertical blur + darkness: rtB → framebuffer.
     glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
     glViewport(vp[0], vp[1], vp[2], vp[3]);
     float dark = 1.f - m_darkness * eased;
@@ -487,4 +473,4 @@ void PaiblurNode::visit() {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-} // namespace paimon::paiblur
+}

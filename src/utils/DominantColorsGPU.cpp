@@ -20,7 +20,10 @@ using namespace cocos2d;
 
 namespace {
 
-// Mini K-Means on the GPU-reduced LAB data (32×32 = 1024 pixels max)
+// Shared readback FBO; kept at file scope so context reload can invalidate it.
+GLuint s_readbackFBO = 0;
+
+// K-means on GPU-reduced LAB data (32×32 = 1024 pixels max).
 
 struct LABPixel {
     float L, a, b;
@@ -34,7 +37,7 @@ static float labDistSq(LABPixel const& a, LABPixel const& b) {
 }
 
 static DCColor labToRGB(float L, float a, float b) {
-    // LAB → XYZ
+    // LAB → XYZ → linear RGB → sRGB.
     const float Xn = 0.95047f, Yn = 1.0f, Zn = 1.08883f;
     float fy = (L + 16.0f) / 116.0f;
     float fx = a / 500.0f + fy;
@@ -49,12 +52,10 @@ static DCColor labToRGB(float L, float a, float b) {
     float Y = Yn * finv(fy);
     float Z = Zn * finv(fz);
 
-    // XYZ → linear RGB
     float R = X *  3.2404542f + Y * -1.5371385f + Z * -0.4985314f;
     float G = X * -0.9692660f + Y *  1.8760108f + Z *  0.0415560f;
     float B = X *  0.0556434f + Y * -0.2040259f + Z *  1.0572252f;
 
-    // Linear → sRGB gamma
     auto gammaInv = [](float v) -> float {
         return (v <= 0.0031308f) ? (12.92f * v) : (1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f);
     };
@@ -81,7 +82,7 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
 
     const int K = std::min(5, static_cast<int>(pixels.size() / 20));
     if (K < 2) {
-        // Too few samples — average
+        // Too few samples: return the average.
         float sL = 0, sA = 0, sB = 0;
         for (auto const& p : pixels) { sL += p.L; sA += p.a; sB += p.b; }
         float n = static_cast<float>(pixels.size());
@@ -89,7 +90,6 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
         return {avg, avg};
     }
 
-    // K-Means++ initialization
     std::mt19937 rng(42);
     std::vector<Cluster> clusters(K);
 
@@ -122,7 +122,6 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
         }
     }
 
-    // K-Means iterations (max 10)
     for (int iter = 0; iter < 10; ++iter) {
         for (auto& c : clusters) { c.count = 0; c.sumL = c.sumA = c.sumB = 0; }
 
@@ -154,7 +153,7 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
 
     DCColor color1 = labToRGB(clusters[0].centroid.L, clusters[0].centroid.a, clusters[0].centroid.b);
 
-    // Find second color sufficiently different from first
+    // Prefer a second cluster with a useful perceptual distance.
     const float DELTA_THRESHOLD_SQ = 20.0f * 20.0f; // deltaE² ≈ 400
     DCColor color2 = color1;
     for (int i = 1; i < K; ++i) {
@@ -166,7 +165,6 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
         }
     }
 
-    // If all clusters too similar, pick the most different one
     if (color2.r == color1.r && color2.g == color1.g && color2.b == color1.b) {
         float maxD = 0;
         for (int i = 1; i < K; ++i) {
@@ -177,7 +175,6 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
                 color2 = labToRGB(clusters[i].centroid.L, clusters[i].centroid.a, clusters[i].centroid.b);
             }
         }
-        // Synthesize if still too similar
         if (maxD < 100.0f) {
             LABPixel lab2 = clusters[0].centroid;
             if (std::abs(lab2.a) > std::abs(lab2.b)) {
@@ -195,7 +192,7 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
     return {color1, color2};
 }
 
-// GPU render pass: texture → 32×32 LAB FBO
+// Render the texture into a 32×32 LAB FBO.
 
 static constexpr int kDownsampleSize = 32;
 
@@ -210,7 +207,6 @@ static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
 
     CCSize dstSize(static_cast<float>(kDownsampleSize), static_cast<float>(kDownsampleSize));
 
-    // Scale sprite to fill the FBO
     float sx = dstSize.width / texture->getContentSize().width;
     float sy = dstSize.height / texture->getContentSize().height;
     sprite->setScale(std::max(sx, sy));
@@ -218,10 +214,8 @@ static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
     sprite->setPosition(dstSize * 0.5f);
     sprite->setFlipY(true);
 
-    // Set the LAB conversion shader
     sprite->setShaderProgram(shader);
 
-    // Set texture params for bilinear filtering (averages nearby pixels)
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     texture->setTexParameters(&params);
 
@@ -232,11 +226,9 @@ static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
     sprite->visit();
     rt->end();
 
-    // Read back the tiny FBO (32×32×4 = 4KB — negligible)
     auto* rtSprite = rt->getSprite();
     if (!rtSprite || !rtSprite->getTexture()) return {DCColor{0, 0, 0}, DCColor{0, 0, 0}};
 
-    static GLuint s_readbackFBO = 0;
     if (s_readbackFBO == 0) {
         glGenFramebuffers(1, &s_readbackFBO);
     }
@@ -256,7 +248,6 @@ static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
 
     glBindFramebuffer(GL_FRAMEBUFFER, oldFBO);
 
-    // Decode LAB pixels from the readback data
     std::vector<LABPixel> labPixels;
     labPixels.reserve(kDownsampleSize * kDownsampleSize);
 
@@ -266,10 +257,10 @@ static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
         uint8_t b = pixels[i * 4 + 2];
         uint8_t a = pixels[i * 4 + 3];
 
-        // Alpha = 0 means filtered out (UI element / desaturated)
+        // Transparent pixels are filtered out by the shader.
         if (a < 128) continue;
 
-        // Decode LAB from [0,255] → original ranges
+        // Decode the shader's normalized LAB channels.
         float L = (r / 255.0f) * 100.0f;           // [0,1] → [0,100]
         float la = (g / 255.0f) * 255.0f - 128.0f; // [0,1] → [-128,127]
         float lb = (b / 255.0f) * 255.0f - 128.0f; // [0,1] → [-128,127]
@@ -277,7 +268,6 @@ static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
         labPixels.push_back({L, la, lb});
     }
 
-    // If too few valid samples, fall back
     if (labPixels.size() < 20) {
         return {DCColor{0, 0, 0}, DCColor{0, 0, 0}};
     }
@@ -285,7 +275,7 @@ static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
     return runMiniKMeans(labPixels);
 }
 
-} // anonymous namespace
+}
 
 namespace DominantColorsGPU {
 
@@ -304,21 +294,25 @@ bool isAvailable() {
     return cached != 0;
 }
 
+void onGLContextReload() {
+    // Delete while the old context is active; the FBO is recreated lazily.
+    if (s_readbackFBO != 0) {
+        glDeleteFramebuffers(1, &s_readbackFBO);
+        s_readbackFBO = 0;
+    }
+}
+
 std::pair<DCColor, DCColor> extractFromTexture(CCTexture2D* texture) {
     if (!texture) return {DCColor{0, 0, 0}, DCColor{0, 0, 0}};
 
     if (!isAvailable()) {
-        // Fallback: read texture pixels and use CPU path
-        // This shouldn't happen in normal operation
         return {DCColor{40, 40, 40}, DCColor{60, 60, 60}};
     }
 
     auto result = gpuExtract(texture);
 
-    // If GPU path returned black (too few samples), it's a signal to fall back
     if (result.first.r == 0 && result.first.g == 0 && result.first.b == 0 &&
         result.second.r == 0 && result.second.g == 0 && result.second.b == 0) {
-        // Can't easily fall back without raw pixel data — return neutral
         return {DCColor{40, 40, 40}, DCColor{60, 60, 60}};
     }
 
@@ -332,7 +326,7 @@ std::pair<DCColor, DCColor> extractFromRGB(const uint8_t* rgb, int width, int he
         return DominantColors::extract(rgb, width, height);
     }
 
-    // Create temporary RGBA texture for GPU processing
+    // Upload RGB as a temporary RGBA texture.
     size_t pixelCount = static_cast<size_t>(width) * height;
     std::vector<uint8_t> rgba(pixelCount * 4);
     ImageConverter::rgbToRgbaFast(rgb, rgba.data(), pixelCount);
@@ -347,7 +341,6 @@ std::pair<DCColor, DCColor> extractFromRGB(const uint8_t* rgb, int width, int he
     auto result = gpuExtract(texture);
     texture->release();
 
-    // Fallback if GPU returned empty
     if (result.first.r == 0 && result.first.g == 0 && result.first.b == 0 &&
         result.second.r == 0 && result.second.g == 0 && result.second.b == 0) {
         return DominantColors::extract(rgb, width, height);
@@ -360,7 +353,6 @@ std::pair<DCColor, DCColor> extractFromRGBA(const uint8_t* rgba, int width, int 
     if (!rgba || width <= 0 || height <= 0) return {DCColor{0, 0, 0}, DCColor{0, 0, 0}};
 
     if (!isAvailable()) {
-        // Convert to RGB for CPU fallback
         size_t pixelCount = static_cast<size_t>(width) * height;
         std::vector<uint8_t> rgb(pixelCount * 3);
         ImageConverter::rgbaToRgbFast(rgba, rgb.data(), pixelCount);
@@ -391,4 +383,4 @@ std::pair<DCColor, DCColor> extractFromRGBA(const uint8_t* rgba, int width, int 
     return result;
 }
 
-} // namespace DominantColorsGPU
+}

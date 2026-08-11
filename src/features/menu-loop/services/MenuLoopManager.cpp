@@ -1,24 +1,16 @@
 #include "MenuLoopManager.hpp"
-#include <Geode/binding/MusicDownloadManager.hpp>
-#include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
-#include <fmt/format.h>
 #include <ranges>
 
 using namespace geode::prelude;
 using namespace paimon::menuloop;
 
-// Helpers
 
 static bool isSupportedFile(const std::string_view path) {
     if (path.empty()) return false;
     auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(std::filesystem::path(path).extension()));
-    // Formats FMOD in GD can play directly.
-    // AAC (m4a) and Opus/WebM are excluded: GD's FMOD Core doesn't support AAC outside iOS
-    // and doesn't support Opus in the normal path. YtDlpDownloader uses ffmpeg to re-encode
-    // to mp3 before returning the path, so we always receive a valid .mp3.
-    static const std::array<std::string, 5> ok = {
-        ".mp3", ".wav", ".ogg", ".oga", ".flac"
+    static const std::array<std::string, 7> ok = {
+        ".mp3", ".wav", ".ogg", ".oga", ".flac", ".m4a", ".opus"
     };
     return std::ranges::find(ok, ext) != ok.end();
 }
@@ -38,7 +30,6 @@ static int randomIndex(int size) {
     return dist(gen);
 }
 
-// Song list
 
 void MenuLoopManager::addSong(const std::string& path) {
     if (std::ranges::find(m_songs, path) == m_songs.end()) {
@@ -52,9 +43,9 @@ void MenuLoopManager::removeSong(const std::string& path) {
 
 void MenuLoopManager::clearSongs() {
     m_songs.clear();
+    m_songToSongDataMap.clear();
 }
 
-// Current song
 
 void MenuLoopManager::pickRandomSong() {
     if (m_isOverride) {
@@ -62,36 +53,36 @@ void MenuLoopManager::pickRandomSong() {
         m_currentSong = m_overrideSong;
     } else if (!m_songs.empty()) {
         m_isMenuLoop = false;
-        if (m_songs.size() != 1) {
-            int randomIdx = randomIndex(static_cast<int>(m_songs.size()));
-            if (getAdvancedLogs()) log::info("entering a while loop maybe");
+        std::vector<std::string> candidates;
+        for (const auto& song : m_songs) {
             std::error_code existsEc;
-            if (!std::filesystem::exists(toProblematicString(m_songs[randomIdx]), existsEc) || existsEc) {
-                m_isMenuLoop = true;
-                m_currentSong = "menuLoop.mp3";
-                Notification::create("Unable to find song at index! Check logs.", NotificationIcon::Error, 10.f)->show();
-                return;
+            if (!std::filesystem::is_regular_file(toProblematicString(song), existsEc) || existsEc) {
+                continue;
             }
-            // Avoid same song unless it's a favorite
-            // Guard against pathological cases (e.g. only 2 songs where the
-            // other is a favorite) that would otherwise loop forever.
-            int avoidAttempts = 50;
-            while (m_songs[randomIdx] == m_currentSong &&
-                   std::ranges::find(m_favorites, m_songs[randomIdx]) == m_favorites.end() &&
-                   --avoidAttempts > 0) {
-                if (getAdvancedLogs()) log::info("avoiding shuffling into the same song");
-                randomIdx = randomIndex(static_cast<int>(m_songs.size()));
+            if (std::ranges::find(m_blacklist, song) != m_blacklist.end()) continue;
+            candidates.push_back(song);
+            if (std::ranges::find(m_favorites, song) != m_favorites.end()) {
+                candidates.push_back(song);
             }
-            m_currentSong = m_songs[randomIdx];
-            if (getAdvancedLogs()) log::info("new song: {}", m_currentSong);
+        }
+
+        const bool hasAlternative = std::ranges::any_of(candidates, [&](const std::string& song) {
+            return song != m_currentSong;
+        });
+        if (hasAlternative) std::erase(candidates, m_currentSong);
+
+        if (candidates.empty()) {
+            m_isMenuLoop = true;
+            m_currentSong = "menuLoop.mp3";
         } else {
-            m_currentSong = m_songs[0];
+            m_currentSong = candidates[randomIndex(static_cast<int>(candidates.size()))];
+            if (getAdvancedLogs()) log::info("[MenuLoop] new song: {}", m_currentSong);
         }
     } else {
         m_isMenuLoop = true;
         m_currentSong = "menuLoop.mp3";
     }
-    m_hashedCurrentSong = std::hash<std::string>{}(m_currentSong);
+    updateCurrentSongMetadata();
 }
 
 std::string MenuLoopManager::getCurrentSong() const {
@@ -105,23 +96,25 @@ void MenuLoopManager::setCurrentSong(const std::string& song) {
     if (m_currentSong != "menuLoop.mp3" && !m_currentSong.empty()) {
         m_isMenuLoop = false;
     }
-    m_hashedCurrentSong = std::hash<std::string>{}(m_currentSong);
+    updateCurrentSongMetadata();
 }
 
 void MenuLoopManager::setCurrentSongToSavedSong() {
-    if (m_isMenuLoop || !getOverrideSong().empty()) return;
+    if (!getOverrideSong().empty()) return;
     const auto lastMenuLoop = Mod::get()->getSavedValue<std::string>("lastMenuLoop");
     const auto lastMenuLoopPath = Mod::get()->getSavedValue<std::filesystem::path>("lastMenuLoopPath");
     std::error_code existsEc1, existsEc2;
-    if (std::filesystem::exists(toProblematicString(lastMenuLoop), existsEc1) && !existsEc1) {
+    if (std::ranges::find(m_songs, lastMenuLoop) != m_songs.end()
+        && std::filesystem::exists(toProblematicString(lastMenuLoop), existsEc1) && !existsEc1) {
         m_currentSong = lastMenuLoop;
-    } else if (std::filesystem::exists(lastMenuLoopPath, existsEc2) && !existsEc2) {
+    } else if (const auto normalized = toNormalizedString(lastMenuLoopPath);
+        std::ranges::find(m_songs, normalized) != m_songs.end()
+        && std::filesystem::exists(lastMenuLoopPath, existsEc2) && !existsEc2) {
         m_currentSong = toNormalizedString(lastMenuLoopPath);
     }
-    m_hashedCurrentSong = std::hash<std::string>{}(m_currentSong);
+    updateCurrentSongMetadata();
 }
 
-// Override
 
 void MenuLoopManager::setOverride(const std::string& path) {
     if (!isSupportedFile(path) && !path.empty()) {
@@ -132,11 +125,13 @@ void MenuLoopManager::setOverride(const std::string& path) {
         m_overrideSong = path;
         m_isOverride = true;
         m_isMenuLoop = false;
+        updateCurrentSongMetadata();
         if (getAdvancedLogs()) log::info("set override to true: {}", path);
         return;
     }
     m_overrideSong = "";
     m_isOverride = false;
+    updateCurrentSongMetadata();
     if (getAdvancedLogs()) log::info("set override to false");
 }
 
@@ -153,10 +148,9 @@ void MenuLoopManager::setCurrentSongToOverride() {
         return;
     }
     m_currentSong = override;
-    m_hashedCurrentSong = std::hash<std::string>{}(m_currentSong);
+    updateCurrentSongMetadata();
 }
 
-// Blacklist
 
 void MenuLoopManager::addToBlacklist(const std::string& song) {
     if (!getOverrideSong().empty()) return;
@@ -164,7 +158,12 @@ void MenuLoopManager::addToBlacklist(const std::string& song) {
         if (getAdvancedLogs()) log::info("tried to blacklist a favorited song: {}", song);
         return;
     }
-    m_blacklist.push_back(song);
+    if (std::ranges::find(m_blacklist, song) == m_blacklist.end()) {
+        m_blacklist.push_back(song);
+    }
+    if (auto it = m_songToSongDataMap.find(song); it != m_songToSongDataMap.end()) {
+        it->second.type = SongType::Blacklisted;
+    }
 }
 
 void MenuLoopManager::addToBlacklist() {
@@ -173,10 +172,9 @@ void MenuLoopManager::addToBlacklist() {
         if (getAdvancedLogs()) log::info("tried to blacklist a favorited song: {}", m_currentSong);
         return;
     }
-    m_blacklist.push_back(m_currentSong);
+    addToBlacklist(m_currentSong);
 }
 
-// Favorites
 
 void MenuLoopManager::addToFavorites(const std::string& song) {
     if (!getOverrideSong().empty()) return;
@@ -184,7 +182,12 @@ void MenuLoopManager::addToFavorites(const std::string& song) {
         if (getAdvancedLogs()) log::info("tried to favorite a blacklisted song: {}", song);
         return;
     }
-    m_favorites.push_back(song);
+    if (std::ranges::find(m_favorites, song) == m_favorites.end()) {
+        m_favorites.push_back(song);
+    }
+    if (auto it = m_songToSongDataMap.find(song); it != m_songToSongDataMap.end()) {
+        it->second.type = SongType::Favorited;
+    }
 }
 
 void MenuLoopManager::addToFavorites() {
@@ -193,14 +196,17 @@ void MenuLoopManager::addToFavorites() {
         if (getAdvancedLogs()) log::info("tried to favorite a blacklisted song: {}", m_currentSong);
         return;
     }
-    m_favorites.push_back(m_currentSong);
+    addToFavorites(m_currentSong);
 }
 
-// Held / Previous
 
 void MenuLoopManager::setHeldSong(const std::string& value) {
     if (!getOverrideSong().empty()) return;
     m_heldSong = value;
+}
+
+void MenuLoopManager::resetHeldSong() {
+    m_heldSong.clear();
 }
 
 void MenuLoopManager::setPreviousSong(const std::string& value) {
@@ -215,7 +221,6 @@ void MenuLoopManager::resetPreviousSong() {
     m_previousSong = "";
 }
 
-// Save / Load
 
 void MenuLoopManager::saveLastMenuLoop() {
     if (m_isMenuLoop || !getOverrideSong().empty()) return;
@@ -223,7 +228,6 @@ void MenuLoopManager::saveLastMenuLoop() {
     Mod::get()->setSavedValue("lastMenuLoopPath", std::filesystem::path(m_currentSong));
 }
 
-// Position restore
 
 void MenuLoopManager::restoreLastMenuLoopPosition() {
     auto* colon = getColonMenuLoopStartTime();
@@ -234,4 +238,21 @@ void MenuLoopManager::restoreLastMenuLoopPosition() {
     FMODAudioEngine::get()->setMusicTimeMS(getLastMenuLoopPosition(), false, 0);
     setShouldRestoreMenuLoopPoint(false);
     setPauseSongPositionTracking(false);
+}
+
+void MenuLoopManager::updateCurrentSongMetadata() {
+    m_isMenuLoop = m_currentSong.empty() || m_currentSong == "menuLoop.mp3";
+    m_hashedCurrentSong = std::hash<std::string>{}(m_currentSong);
+
+    if (m_isMenuLoop) {
+        m_displayName = "Original Menu Loop";
+        return;
+    }
+    if (auto it = m_songToSongDataMap.find(m_currentSong); it != m_songToSongDataMap.end()
+        && !it->second.displayName.empty()) {
+        m_displayName = it->second.displayName;
+        return;
+    }
+    m_displayName = geode::utils::string::pathToString(
+        std::filesystem::path(m_currentSong).stem());
 }

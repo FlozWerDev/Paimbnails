@@ -9,10 +9,8 @@
 
 using namespace geode::prelude;
 
-// Per-character entrance/exit animation for GD text fields. Freshly typed
-// glyphs fade + rise + pop into place; deleted ones leave a ghost that fades
-// away. Reacts live to the mod settings and stays out of Geode's own setting
-// inputs, where rebuilding the label mid-animation looks glitchy.
+// Per-character fade/rise animation for GD text fields; disabled for Geode's
+// own settings inputs to avoid rebuilding their labels mid-animation.
 namespace {
 
 constexpr int kInTag    = 0x9A11;
@@ -41,7 +39,7 @@ bool cfgAnimates(Cfg const& c) {
     return c.on && (c.fadeIn > 0.f || c.fadeOut > 0.f || c.rise > 0.f || c.pop);
 }
 
-// Frozen copy of one glyph, enough to rebuild it as a fading ghost.
+// Frozen glyph copy used for a fading deletion ghost.
 struct GlyphShot {
     CCTexture2D* tex = nullptr;
     CCRect       rect;
@@ -54,7 +52,7 @@ struct GlyphShot {
     GLubyte      opacity = 255;
 };
 
-} // namespace
+}
 
 class $modify(SmoothTextInput, CCTextInputNode) {
     struct Fields {
@@ -73,8 +71,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         return m_textLabel ? m_textLabel->getOpacity() : 255;
     }
 
-    // Sprite for raw index i. TextArea labels drop newlines from their glyph
-    // array, so we skip those when mapping raw text position to glyph slot.
+// Map a raw text index to its glyph slot; newlines have no sprite.
     CCSprite* glyphAt(std::string const& text, size_t i) {
         if (i >= text.size()) return nullptr;
 
@@ -132,7 +129,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
     void popIn(CCSprite* s, Cfg const& c) {
         s->stopActionByTag(kInTag);
 
-        // Capture rest pose AFTER createFontChars / settle — never mid-animation.
+// Capture the rest pose after createFontChars has settled.
         CCPoint dest = s->getPosition();
         float   fx = s->getScaleX(), fy = s->getScaleY();
         GLubyte full = fullOpacity();
@@ -143,9 +140,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         steps->addObject(CCFadeTo::create(dur, full));
 
         if (c.rise > 0.f) {
-            // MoveBy (not MoveTo): if the label recenters while we animate,
-            // we still finish rise-relative instead of flying back to a stale
-            // absolute destination from a previous layout.
+// MoveBy keeps the rise relative if the label recenters during animation.
             s->setPosition(dest - CCPoint(0.f, c.rise));
             steps->addObject(CCEaseSineOut::create(CCMoveBy::create(dur, CCPoint(0.f, c.rise))));
         }
@@ -217,22 +212,14 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         }
     }
 
-    // Kill in-flight entrance anims and restore rest opacity/scale.
-    // Position is left alone — callers must run this only after
-    // CCTextInputNode::refreshLabel() has rewritten layout via createFontChars.
-    //
-    // BMFont reuses letter sprites by tag and does NOT stop actions or reset
-    // scale/opacity on reuse. Typing a second character while the first is
-    // still rising left the old MoveTo/ScaleTo running, which overwrote the
-    // fresh layout and parked early letters at the wrong height until the
-    // next full edit rebuilt them.
+// Stop entrance actions and restore opacity/scale after refreshLabel rewrites
+// layout. BMFont reuses letters without clearing actions or visual state.
     void settle() {
         GLubyte full = fullOpacity();
         forEachGlyph([&](CCSprite* s) {
             s->stopActionByTag(kInTag);
             s->setOpacity(full);
-            // createFontChars never changes letter scale; residual values are
-            // always from our scale-pop animation.
+// createFontChars does not change letter scale; residual values are ours.
             s->setScaleX(1.f);
             s->setScaleY(1.f);
         });
@@ -272,8 +259,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
             return;
         }
 
-        // Shrink the change down to the run that actually differs: common
-        // prefix, common suffix, and whatever sits between them.
+// Limit animation work to the changed range using common prefix/suffix.
         size_t bound = std::min(oldStr.size(), newStr.size());
         size_t p = 0;
         while (p < bound && oldStr[p] == newStr[p]) ++p;
@@ -291,8 +277,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         CCTextInputNode::refreshLabel();
         m_fields->lastText = newStr;
 
-        // Drop leftover entrance actions on reused glyphs so the layout
-        // createFontChars just wrote is not immediately overwritten.
+// Clear entrance actions on reused glyphs after createFontChars.
         settle();
         snapshot();
 

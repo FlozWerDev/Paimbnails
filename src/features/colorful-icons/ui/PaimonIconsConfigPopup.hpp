@@ -37,6 +37,7 @@ protected:
     void buildHeader();   // master ON/OFF switch + reset button
     void buildPreview();  // panel background + "disabled" overlay
     void buildTabs();
+    void buildIconMakerSection();  // banda inferior que abre el Creador de Iconos
 
     void switchTab(Tab tab);
     void rebuildPreviewSlots();  // slots depend on the active tab

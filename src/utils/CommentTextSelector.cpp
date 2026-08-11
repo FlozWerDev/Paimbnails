@@ -191,6 +191,7 @@ bool CommentTextSelector::init(
 }
 
 void CommentTextSelector::onExit() {
+    unlockParentScroll();
     if (g_activeSelector == this) {
         g_activeSelector = nullptr;
     }
@@ -203,6 +204,7 @@ void CommentTextSelector::refresh(
     CCSize const& cellSize,
     std::string const& fontFile)
 {
+    unlockParentScroll();
     if (g_activeSelector == this) {
         g_activeSelector = nullptr;
     }
@@ -226,9 +228,30 @@ void CommentTextSelector::refresh(
 }
 
 void CommentTextSelector::registerWithTouchDispatcher() {
-    // Register WITHOUT swallowing so scroll views & buttons still receive touches
+    // Keep propagation for clickable mentions; movement is locked while selecting.
     CCDirector::get()->getTouchDispatcher()
         ->addTargetedDelegate(this, getTouchPriority(), false);
+}
+
+void CommentTextSelector::lockParentScroll() {
+    unlockParentScroll();
+
+    for (auto* parent = getParent(); parent; parent = parent->getParent()) {
+        auto* scroll = typeinfo_cast<CCScrollLayerExt*>(parent);
+        if (!scroll) continue;
+
+        m_parentScroll = scroll;
+        m_parentScrollWasDisabled = scroll->m_disableMovement;
+        scroll->m_disableMovement = true;
+        return;
+    }
+}
+
+void CommentTextSelector::unlockParentScroll() {
+    if (auto scroll = m_parentScroll.lock()) {
+        scroll->m_disableMovement = m_parentScrollWasDisabled;
+    }
+    m_parentScroll = {};
 }
 
 bool CommentTextSelector::ccTouchBegan(CCTouch* touch, CCEvent*) {
@@ -248,6 +271,7 @@ bool CommentTextSelector::ccTouchBegan(CCTouch* touch, CCEvent*) {
 
     g_activeSelector = this;
     m_selecting = true;
+    lockParentScroll();
     updateSelection(touchLocal, true);
 
     return true;
@@ -263,6 +287,7 @@ void CommentTextSelector::ccTouchEnded(CCTouch* touch, CCEvent*) {
     if (!m_selecting) return;
 
     updateSelection(this->convertTouchToNodeSpace(touch));
+    unlockParentScroll();
     m_selecting = false;
     if (g_activeSelector == this) {
         g_activeSelector = nullptr;
@@ -299,6 +324,7 @@ void CommentTextSelector::ccTouchEnded(CCTouch* touch, CCEvent*) {
 }
 
 void CommentTextSelector::ccTouchCancelled(CCTouch*, CCEvent*) {
+    unlockParentScroll();
     m_selecting = false;
     if (g_activeSelector == this) {
         g_activeSelector = nullptr;

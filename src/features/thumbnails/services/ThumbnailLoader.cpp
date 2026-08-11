@@ -35,12 +35,35 @@
 
 using namespace geode::prelude;
 
+namespace {
+
+// Read a cache file in one pass; empty means missing or invalid.
+bool readCacheFile(std::filesystem::path const& path, std::vector<uint8_t>& out) {
+    out.clear();
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) return false;
+
+    auto const size = file.tellg();
+    if (size <= 0 || static_cast<uint64_t>(size) > 64ull * 1024 * 1024) return false;
+    file.seekg(0, std::ios::beg);
+
+    out.resize(static_cast<size_t>(size));
+    file.read(reinterpret_cast<char*>(out.data()), size);
+    if (!file) {
+        out.clear();
+        return false;
+    }
+    return true;
+}
+
+}
+
 std::string ThumbnailLoader::normalizeUrlKey(std::string const& url) {
     return paimon::cache::normalizeUrlKey(url);
 }
 
 ThumbnailLoader& ThumbnailLoader::get() {
-    // Singleton intentionally leaked to avoid atexit races with late worker callbacks.
+// Leak the singleton so late worker callbacks cannot race teardown.
     static auto* instance = new ThumbnailLoader();
     return *instance;
 }
@@ -52,8 +75,10 @@ ThumbnailLoader::ThumbnailLoader() {
     m_cpuPool  = std::make_unique<paimon::ThreadPool>(2, "PaimonCPU");
 #else
     unsigned hw = std::thread::hardware_concurrency();
-    int cpuThreads  = static_cast<int>(std::clamp<unsigned>(hw ? (hw + 3u) / 4u : 2u, 2u, 6u));
-    int diskThreads = static_cast<int>(std::clamp<unsigned>(hw ? hw / 6u : 2u, 1u, 3u));
+// Keep decode around 40% of cores.
+    int cpuThreads  = static_cast<int>(std::clamp<unsigned>(hw ? hw * 2u / 5u : 2u, 2u, 6u));
+// Extra disk workers keep storage busy while decode runs.
+    int diskThreads = static_cast<int>(std::clamp<unsigned>(hw ? hw / 4u : 2u, 2u, 4u));
     m_maxConcurrentTasks = std::min(4, std::max(2, cpuThreads / 3));
     m_diskPool = std::make_unique<paimon::ThreadPool>(diskThreads, "PaimonDiskIO");
     m_cpuPool  = std::make_unique<paimon::ThreadPool>(cpuThreads,  "PaimonCPU");
@@ -75,8 +100,7 @@ ThumbnailLoader::~ThumbnailLoader() {
         paimon::cache::ThumbnailCache::get().takeAllTextures();
     }
 
-    // Clear task callbacks before member destruction: they hold WeakRef<PaimonLevelCell>
-    // whose destructor touches CCPoolManager, which may already be dead.
+// Clear callbacks before destruction; cell cleanup may touch the pool manager.
     {
         std::lock_guard<std::mutex> lock(m_pendingMutex);
         m_pendingCallbacks.clear();
@@ -142,7 +166,7 @@ void ThumbnailLoader::enqueuePendingCallback(LoadCallback cb, cocos2d::CCTexture
     if (m_shuttingDown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
         return;
     }
-    // Drop null callbacks: empty std23::function in the drain caused 0xFFFF... reads (crash).
+// Ignore null callbacks during drain.
     if (!cb) {
         return;
     }
@@ -163,12 +187,12 @@ void ThumbnailLoader::scheduleDrain() {
 
     bool expected = false;
     if (!m_drainScheduled.compare_exchange_strong(expected, true)) {
-        // Detect stale drains: if scheduled >100ms ago and never ran, re-arm or callbacks hang forever.
+// Re-arm drains stalled for over 100 ms.
         int64_t scheduledAt = m_drainScheduledAtUs.load(std::memory_order_relaxed);
         if (scheduledAt > 0 && (nowUs - scheduledAt) > 100'000) {
             bool stillScheduled = true;
             if (m_drainScheduled.compare_exchange_strong(stillScheduled, false)) {
-                log::warn("[ThumbnailLoader] drain stall detectado tras {}us — re-armando", nowUs - scheduledAt);
+                log::warn("[ThumbnailLoader] drain stall detectado tras {}us - re-armando", nowUs - scheduledAt);
                 scheduleDrain();
             }
         }
@@ -182,8 +206,6 @@ void ThumbnailLoader::scheduleDrain() {
     }
 
     m_drainScheduledAtUs.store(nowUs, std::memory_order_relaxed);
-    // WARNING: captures `this`. ThumbnailLoader is intentionally leaked (never destroyed)
-    // so this lambda is always safe. Do not copy this pattern for non-singletons.
     Loader::get()->queueInMainThread([this]() {
         drainPendingCallbacks();
     });
@@ -204,8 +226,7 @@ void ThumbnailLoader::drainPendingCallbacks() {
     {
         std::lock_guard<std::mutex> lock(m_pendingMutex);
         
-        // Do NOT coalesce callbacks by levelID: multiple cells can show the same level
-        // and each needs its own callback (coalescing left some cells without a thumbnail).
+// Keep separate requests; multiple cells may show one level.
         
         size_t pendingSize = m_pendingCallbacks.size();
         if (pendingSize == 0) {
@@ -223,8 +244,6 @@ void ThumbnailLoader::drainPendingCallbacks() {
         if (count > pendingSize) count = pendingSize;
         if (count == 0) return;
 
-        // Move first count elements in one pass: avoids assign+erase double-destroy
-        // that can leave 0xFFFF... pointers with std23::function/geode::Ref.
         batch.reserve(count);
         for (size_t i = 0; i < count; ++i) {
             batch.push_back(std::move(m_pendingCallbacks[i]));
@@ -244,15 +263,15 @@ void ThumbnailLoader::drainPendingCallbacks() {
     
     int64_t effectiveBudgetUs = isFrameLag ? 1500 : CALLBACK_FRAME_BUDGET_US;
     effectiveBudgetUs = std::min<int64_t>(effectiveBudgetUs,
-        std::max<int64_t>(1, paimon::framebudget::remainingUs()));
+        std::max<int64_t>(1, paimon::framebudget::remainingUs(
+            paimon::framebudget::Stage::Callback)));
 
     auto frameStart = std::chrono::steady_clock::now();
     std::vector<PendingCallback> deferred;
 
     for (size_t idx = 0; idx < batch.size(); ++idx) {
         auto& pc = batch[idx];
-        // On stale invalidation version, fire callback with failure=false so the cell
-        // resets and retries (not `continue`, which left ghost thumbnails until a refresh).
+// Invalidation resets the cell so it can retry.
         bool versionStale = pc.levelID > 0 &&
             pc.capturedVersion != paimon::cache::ThumbnailCache::get().getInvalidationVersion(pc.levelID);
 
@@ -268,8 +287,7 @@ void ThumbnailLoader::drainPendingCallbacks() {
         }
 
         if (pc.callback) {
-            // Move callback locally and wrap in try/catch: isolates exceptions and
-            // avoids double-free of an already-invoked function.
+// Invoke local callbacks outside the queue state.
             LoadCallback localCb = std::move(pc.callback);
             geode::Ref<cocos2d::CCTexture2D> localTex = pc.texture;
             bool localSuccess = pc.success;
@@ -287,29 +305,26 @@ void ThumbnailLoader::drainPendingCallbacks() {
         }
     }
 
-    paimon::framebudget::consume(std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now() - frameStart).count());
+    paimon::framebudget::consume(paimon::framebudget::Stage::Callback,
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - frameStart).count());
 
-    if (!deferred.empty()) {
-        std::lock_guard<std::mutex> lock(m_pendingMutex);
-        m_pendingCallbacks.insert(m_pendingCallbacks.begin(),
-            std::make_move_iterator(deferred.begin()),
-            std::make_move_iterator(deferred.end()));
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(m_pendingMutex);
-        if (!m_pendingCallbacks.empty()) {
-            scheduleDrain();
-        }
-    }
-
-    static std::atomic<int64_t> s_lastPurgeTickUs{0};
+// Reinsert deferred work and re-arm under one lock.
     size_t pendingLeft = 0;
     {
         std::lock_guard<std::mutex> lock(m_pendingMutex);
+        if (!deferred.empty()) {
+            m_pendingCallbacks.insert(m_pendingCallbacks.begin(),
+                std::make_move_iterator(deferred.begin()),
+                std::make_move_iterator(deferred.end()));
+        }
         pendingLeft = m_pendingCallbacks.size();
     }
+    if (pendingLeft > 0) {
+        scheduleDrain();
+    }
+
+    static std::atomic<int64_t> s_lastPurgeTickUs{0};
     if (pendingLeft <= static_cast<size_t>(MAX_CALLBACKS_PER_FRAME * 2)) {
         auto nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -339,8 +354,6 @@ void ThumbnailLoader::scheduleUploadDrain() {
         m_uploadDrainScheduled.store(false, std::memory_order_release);
         return;
     }
-    // WARNING: captures `this`. ThumbnailLoader is intentionally leaked (never destroyed)
-    // so this lambda is always safe. Do not copy this pattern for non-singletons.
     Loader::get()->queueInMainThread([this]() {
         drainPendingUploads();
     });
@@ -353,8 +366,7 @@ void ThumbnailLoader::drainPendingUploads() {
     std::vector<PendingUpload> batch;
     {
         std::lock_guard<std::mutex> lock(m_uploadMutex);
-        // Prioritize visible-cell uploads via partial_sort over the first
-        // MAX_UPLOADS_PER_FRAME elements: O(n log k) instead of O(n log n).
+// Prioritize visible uploads without sorting the queue.
         int count = std::min(MAX_UPLOADS_PER_FRAME, static_cast<int>(m_pendingUploads.size()));
         if (count > 0 && static_cast<int>(m_pendingUploads.size()) > count) {
             std::partial_sort(
@@ -386,7 +398,8 @@ void ThumbnailLoader::drainPendingUploads() {
     std::vector<PendingUpload> deferred;
 
     int64_t uploadBudgetUs = std::min<int64_t>(UPLOAD_FRAME_BUDGET_US,
-        std::max<int64_t>(1, paimon::framebudget::remainingUs()));
+        std::max<int64_t>(1, paimon::framebudget::remainingUs(
+            paimon::framebudget::Stage::Upload)));
 
     for (auto& pu : batch) {
         if (!pu.task || pu.task->cancelled) {
@@ -421,7 +434,6 @@ void ThumbnailLoader::drainPendingUploads() {
 
         if (pu.image) {
             ok = tex->initWithImage(pu.image);
-            // CCImage is a CCObject: release() (not delete) to respect refcount.
             pu.image->release();
             pu.image = nullptr;
         } else if (!pu.pixels.empty() && pu.width > 0 && pu.height > 0) {
@@ -443,8 +455,9 @@ void ThumbnailLoader::drainPendingUploads() {
         }
     }
 
-    paimon::framebudget::consume(std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now() - frameStart).count());
+    paimon::framebudget::consume(paimon::framebudget::Stage::Upload,
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - frameStart).count());
 
     if (!deferred.empty()) {
         std::lock_guard<std::mutex> lock(m_uploadMutex);
@@ -483,7 +496,7 @@ void ThumbnailLoader::recordDownloadFailure() {
         m_globalCooldownUntil = now + std::chrono::seconds(COOLDOWN_SECONDS);
         m_recentFailureCount.store(0, std::memory_order_relaxed);
         m_failureWindowStart = now;
-        log::warn("[ThumbnailLoader] {} fallos en {}s — cooldown global de {}s activado",
+        log::warn("[ThumbnailLoader] {} fallos en {}s - cooldown global de {}s activado",
             count, FAILURE_WINDOW_SECONDS, COOLDOWN_SECONDS);
     }
 }
@@ -494,7 +507,7 @@ bool ThumbnailLoader::isGlobalCooldownActive() const {
 }
 
 void ThumbnailLoader::triggerBackgroundRevisionCheck(int levelID) {
-    // Deprecated no-op: staleness now handled by manifest revisionToken comparison.
+// ABI compatibility; staleness now uses manifest revisions.
     (void)levelID;
 }
 
@@ -528,28 +541,22 @@ void ThumbnailLoader::applyConcurrentDownloadsSetting() {
 }
 
 bool ThumbnailLoader::isLoaded(int levelID, bool isGif) const {
-    // Historical contract (GauntletLayer / ListThumbnailCarousel / LevelListLayer):
-    // a static thumb is "loaded" if it is in the level RAM map OR reachable via the
-    // default-URL entry in the URL RAM cache. hasInRam() alone is insufficient —
-    // it skips that URL fallback and would re-request already-cached gallery/main
-    // thumbs. Decision composition lives in isLevelTextureLoadedInRam (pure);
-    // getFromRam implements the URL probe (+ promote) for the static miss path.
+// A static thumb is loaded if it is in the level map or reachable through the
+// default-URL cache; the URL hit is promoted into the level map.
     auto& cache = paimon::cache::ThumbnailCache::get();
     bool const hasLevelKey = cache.hasInRam(levelID, isGif);
     if (hasLevelKey) {
         return paimon::cache::isLevelTextureLoadedInRam(true, isGif, false);
     }
-    // GIF never falls back to the URL layer.
     if (!paimon::cache::isLevelTextureLoadedInRam(false, isGif, /*urlHit=*/true)) {
         return false;
     }
-    // Static miss on level key: getFromRam probes URL RAM (skips work if empty)
-    // and promotes a hit into the level map — same as pre-optimization isLoaded.
+// On a level-key miss, probe URL RAM and promote any hit.
     return cache.getFromRam(levelID, isGif).has_value();
 }
 
 cocos2d::CCTexture2D* ThumbnailLoader::tryGetCachedTexture(int levelID, bool isGif) {
-    // Returns a raw RAM pointer without enqueuing; caller must Ref<> it to keep it alive past this frame.
+// Raw RAM pointer; callers must Ref<> it past this frame.
     auto ramTex = paimon::cache::ThumbnailCache::get().getFromRam(levelID, isGif);
     if (!ramTex.has_value()) return nullptr;
     paimon::cache::ThumbnailCache::get().stats().ramHits.fetch_add(
@@ -598,14 +605,11 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
     int requestedMaxDim = decodeMaxDimForQuality(quality);
 
     auto ramTex = cache.getFromRam(levelID, isGif);
-    // isRamEntrySuitable re-locks; only call when we already have a hit texture.
     if (ramTex.has_value() &&
         (requestedMaxDim <= 0 || cache.isRamEntrySuitable(levelID, isGif, requestedMaxDim))) {
         cache.stats().ramHits.fetch_add(1, std::memory_order_relaxed);
 
-        // Throttle disk LRU touch to once/min per level: avoids m_manifest.mutex
-        // contention with the background flush.
-        // thread_local safe: requestLoad is only called from the main thread.
+// Touch disk LRU at most once per minute.
         static thread_local std::unordered_map<int, int64_t> s_lastTouchUs;
         int64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -719,19 +723,29 @@ void ThumbnailLoader::prefetchLevels(std::vector<int> const& levelIDs, int prior
     manifestIds.reserve(std::min(levelIDs.size(), static_cast<size_t>(maxPrefetch)));
     int queued = 0;
 
+// Recheck missing entries at most every five minutes.
+    auto const now = std::chrono::steady_clock::now();
+    constexpr auto kManifestRetryTTL = std::chrono::minutes(5);
+
     for (int levelID : levelIDs) {
         if (queued >= maxPrefetch) break;
         if (levelID <= 0 || !seen.insert(levelID).second) {
             continue;
         }
         if (!HttpClient::get().getManifestEntry(levelID).has_value()) {
-            manifestIds.push_back(levelID);
+            auto it = m_manifestRequestedAt.find(levelID);
+            if (it == m_manifestRequestedAt.end() || now - it->second >= kManifestRetryTTL) {
+                manifestIds.push_back(levelID);
+            }
         }
         this->prefetchLevelAssets(levelID, priority);
         ++queued;
     }
 
     if (manifestIds.size() > 1) {
+        for (int id : manifestIds) {
+            m_manifestRequestedAt[id] = now;
+        }
         HttpClient::get().fetchManifest(manifestIds, [](bool) { });
     }
 }
@@ -747,7 +761,6 @@ void ThumbnailLoader::cancelLoad(int levelID, bool isGif) {
 }
 
 void ThumbnailLoader::processQueue() {
-    // must be called with m_queueMutex held
     if (m_shuttingDown.load(std::memory_order_acquire)) return;
 
     if (m_batchMode && m_activeTaskCount > 0) {
@@ -816,7 +829,7 @@ void ThumbnailLoader::startTask(std::shared_ptr<Task> task) {
 void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
     PaimonDebug::log("[ThumbnailLoader] workerLoadFromDisk: key={} cancelled={}", task->levelID, task->cancelled);
 
-    // Early cancellation: with disk cache enabled, a cancelled cell isn't worth I/O for a touch.
+// Skip disk I/O for cancelled cells.
     if (task->cancelled && paimon::settings::general::enableDiskCache()) {
         if (!m_shuttingDown.load(std::memory_order_acquire) && !paimon::isRuntimeShuttingDown()) {
             Loader::get()->queueInMainThread([this, task]() {
@@ -836,44 +849,57 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
     auto& cache = paimon::cache::ThumbnailCache::get();
 
     std::filesystem::path diskPath;
+// Try candidates directly instead of stat-ing first.
+    std::vector<std::filesystem::path> candidates;
     bool wasInManifest = false;
+    bool staleRevision = false;
     {
-        bool inIndex = cache.hasDiskEntry(realID, isGif);
-        if (inIndex) {
+        auto diskEntry = cache.getDiskEntry(realID, isGif);
+        if (diskEntry) {
             diskPath = getCachePath(realID, isGif);
             wasInManifest = true;
-        } else if (!isGif && cache.hasDiskEntry(realID, true)) {
-            diskPath = getCachePath(realID, true);
-            wasInManifest = true;
+        } else if (!isGif) {
+            diskEntry = cache.getDiskEntry(realID, true);
+            if (diskEntry) {
+                diskPath = getCachePath(realID, true);
+                wasInManifest = true;
+            }
         }
 
-        if (diskPath.empty()) {
-            std::error_code ec;
-            auto tryPath = getCachePath(realID, isGif);
-            if (std::filesystem::exists(tryPath, ec)) {
-                diskPath = tryPath;
-            } else if (!isGif) {
-                auto gifPath = getCachePath(realID, true);
-                if (std::filesystem::exists(gifPath, ec)) {
-                    diskPath = gifPath;
-                }
+        if (diskEntry) {
+            auto remote = HttpClient::get().getManifestEntry(realID);
+            staleRevision = paimon::isMainLevelID(realID)
+                && remote && !remote->revisionToken.empty()
+                && diskEntry->revisionToken != remote->revisionToken;
+            if (staleRevision) {
+                PaimonDebug::log(
+                    "[ThumbnailLoader] revision changed for cached level {}",
+                    realID
+                );
+                std::error_code ec;
+                std::filesystem::remove(diskPath, ec);
+                cache.removeDisk(realID, diskEntry->isGif);
+                diskPath.clear();
             }
+        }
+
+        if (diskPath.empty() && !staleRevision) {
+            candidates.push_back(getCachePath(realID, isGif));
+            if (!isGif) {
+                candidates.push_back(getCachePath(realID, true));
+            }
+        } else if (!diskPath.empty()) {
+            candidates.push_back(diskPath);
         }
     }
 
     std::vector<uint8_t> data;
-    if (!diskPath.empty()) {
+    if (!candidates.empty()) {
         auto readStart = std::chrono::steady_clock::now();
-        {
-            std::error_code fsEc;
-            auto fileSize = std::filesystem::file_size(diskPath, fsEc);
-            if (!fsEc && fileSize > 0 && fileSize <= 64 * 1024 * 1024) {
-                std::ifstream file(diskPath, std::ios::binary);
-                if (file.is_open()) {
-                    data.resize(static_cast<size_t>(fileSize));
-                    file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(fileSize));
-                    if (!file) data.clear();
-                }
+        for (auto const& candidate : candidates) {
+            if (readCacheFile(candidate, data)) {
+                diskPath = candidate;
+                break;
             }
         }
         auto readEnd = std::chrono::steady_clock::now();
@@ -946,6 +972,9 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
             de.format = actualIsGif ? "gif" : "png";
             de.byteSize = data.size();
             de.isGif = actualIsGif;
+            if (auto remote = HttpClient::get().getManifestEntry(realID)) {
+                de.revisionToken = remote->revisionToken;
+            }
             de.touchAccess();
             de.touchValidated();
             cache.upsertDisk(std::move(de));
@@ -957,7 +986,7 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
     }
 
     if (task->cancelled) {
-        PaimonDebug::log("[ThumbnailLoader] workerLoadFromDisk: disk hit + cancelled — skip decode for {}", realID);
+        PaimonDebug::log("[ThumbnailLoader] workerLoadFromDisk: disk hit + cancelled - skip decode for {}", realID);
         if (!m_shuttingDown.load(std::memory_order_acquire) && !paimon::isRuntimeShuttingDown()) {
             Loader::get()->queueInMainThread([this, task]() {
                 finishTask(task, nullptr, false);
@@ -981,7 +1010,7 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
                     true/*fallbackToDownload*/, decoded.originalWidth, decoded.originalHeight});
             }
         } else {
-            PaimonDebug::warn("[ThumbnailLoader] fallo decode pal nivel {} — purgando entrada corrupta del disco", realID);
+            PaimonDebug::warn("[ThumbnailLoader] fallo decode pal nivel {} - purgando entrada corrupta del disco", realID);
             spawnDisk([this, task, realID, isGif, diskPath]() {
                 std::error_code ec;
                 if (!diskPath.empty()) std::filesystem::remove(diskPath, ec);
@@ -1021,7 +1050,7 @@ void ThumbnailLoader::processDownloadedData(std::shared_ptr<Task> task, std::vec
                     geode::utils::string::pathToString(path.parent_path()), dirEc.message());
             }
 
-            // Atomic write: tmp → rename to avoid corrupt files if the process dies mid-I/O.
+// Write tmp then rename so a crash cannot leave a partial cache file.
             auto tmpPath = path;
             tmpPath += ".tmp";
             bool writeOk = false;
@@ -1051,6 +1080,9 @@ void ThumbnailLoader::processDownloadedData(std::shared_ptr<Task> task, std::vec
                     de.format = dataIsGif ? "gif" : "png";
                     de.byteSize = data.size();
                     de.isGif = dataIsGif;
+                    if (auto remote = HttpClient::get().getManifestEntry(realID)) {
+                        de.revisionToken = remote->revisionToken;
+                    }
                     de.touchAccess();
                     de.touchValidated();
                     cache.upsertDisk(std::move(de));
@@ -1076,8 +1108,7 @@ void ThumbnailLoader::processDownloadedData(std::shared_ptr<Task> task, std::vec
                 }
             }
 
-            // Debounce disk index save (10s). Don't call Mod::saveData() here — it
-            // serializes all saved values (MBs) and would hitch scroll.
+// Debounce disk-index saves; Mod::saveData() would hitch scrolling.
             {
                 static std::atomic<int64_t> s_lastDiskSave{0};
                 auto now = std::chrono::duration_cast<std::chrono::seconds>(
@@ -1092,7 +1123,7 @@ void ThumbnailLoader::processDownloadedData(std::shared_ptr<Task> task, std::vec
         }
 
         if (taskCancelled || task->cancelled) {
-            PaimonDebug::log("[ThumbnailLoader] processDownloadedData: task cancelada para {} — disco guardado, skip decode/upload", realID);
+            PaimonDebug::log("[ThumbnailLoader] processDownloadedData: task cancelada para {} - disco guardado, skip decode/upload", realID);
             if (!self->m_shuttingDown.load(std::memory_order_acquire) && !paimon::isRuntimeShuttingDown()) {
                 Loader::get()->queueInMainThread([self, task]() {
                     self->finishTask(task, nullptr, false);
@@ -1195,7 +1226,7 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
         }
     }
 
-    // fire callbacks outside the lock — batched to drain max N per frame
+// Fire callbacks outside the lock, capped per frame.
     if (shouldNotify) {
         int realID = std::abs(task->levelID);
         for (auto& cb : callbacks) {
@@ -1213,6 +1244,30 @@ void ThumbnailLoader::clearCache() {
     }
 }
 
+void ThumbnailLoader::onGLContextReload() {
+    log::info("[ThumbnailLoader] onGLContextReload: soltando texturas RAM y colas pendientes");
+
+    clearPendingQueue();
+
+    {
+        std::lock_guard<std::mutex> lock(m_pendingMutex);
+        m_pendingCallbacks.clear();
+    }
+// Drop pending upload callbacks; they may target cells from the old scene.
+    {
+        std::lock_guard<std::mutex> lock(m_uploadMutex);
+        for (auto& pu : m_pendingUploads) {
+            if (pu.image) {
+                pu.image->release();
+                pu.image = nullptr;
+            }
+        }
+        m_pendingUploads.clear();
+    }
+
+    clearCache();
+}
+
 void ThumbnailLoader::clearFailedCache() {
     log::info("[ThumbnailLoader] clearFailedCache: clearing all failed entries");
     paimon::cache::ThumbnailCache::get().clearAllFailed();
@@ -1226,6 +1281,8 @@ void ThumbnailLoader::clearFailedCache() {
 void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
     int key = isGif ? -levelID : levelID;
     log::info("[ThumbnailLoader] invalidateLevel: levelID={} key={}", levelID, key);
+// Explicit invalidation allows an immediate manifest refresh.
+    m_manifestRequestedAt.erase(levelID);
 
     auto& cache = paimon::cache::ThumbnailCache::get();
     std::vector<InvalidationCallback> listeners;
@@ -1379,8 +1436,7 @@ void ThumbnailLoader::cleanup() {
         m_pendingUploads.clear();
     }
 
-    // Clear listeners before static destruction: they hold WeakRef<PaimonLevelCell>
-    // whose dtor touches CCPoolManager (dead by then → crash).
+// Clear listeners before static destruction; cell destructors touch CCPoolManager.
     {
         std::unique_lock<std::shared_mutex> lock(m_queueMutex);
         m_invalidationListeners.clear();
@@ -1484,7 +1540,6 @@ void ThumbnailLoader::requestUrlLoad(std::string const& url, LoadCallback callba
 }
 
 void ThumbnailLoader::processUrlQueue() {
-    // must be called with m_queueMutex held
     if (m_shuttingDown.load(std::memory_order_acquire)) return;
     while (m_activeUrlTaskCount < m_maxConcurrentUrlTasks) {
         std::shared_ptr<Task> bestTask = nullptr;
@@ -1540,10 +1595,7 @@ void ThumbnailLoader::workerUrlDownload(std::shared_ptr<Task> task) {
     static constexpr int MAX_URL_DOWNLOAD_RETRIES = 1;
 
     auto attemptDownload = std::make_shared<std::function<void()>>(nullptr);
-    // Weak self-ref: the closure must not own itself (that shared_ptr cycle never
-    // frees -> leaks the retry closure + Task on every URL download). The in-flight
-    // download callback below holds the only strong ref, so the closure is released
-    // once the final (non-retrying) callback is destroyed.
+// Keep the retry closure weak; the in-flight callback owns the only strong ref.
     std::weak_ptr<std::function<void()>> weakAttempt = attemptDownload;
     *attemptDownload = [this, task, url, retryCount, weakAttempt]() {
         auto strongAttempt = weakAttempt.lock();
@@ -1580,8 +1632,7 @@ void ThumbnailLoader::workerUrlDownload(std::shared_ptr<Task> task) {
                     return;
                 }
 
-                // CCTextureCache hit returns success=true with empty data; the texture
-                // already exists. Touch CCTextureCache only on the main thread.
+// Empty successful data means CCTextureCache already owns the texture.
                 if (success && data.empty()) {
                     if (!m_shuttingDown.load(std::memory_order_acquire) && !paimon::isRuntimeShuttingDown()) {
                         Loader::get()->queueInMainThread([this, task, url]() {
@@ -1670,7 +1721,6 @@ ThumbnailLoader::DecodeResult ThumbnailLoader::decodeImageData(std::vector<uint8
             result.originalHeight = result.height;
             result.success = true;
         } else {
-            // CCImage is a CCObject: release() (not delete) to respect refcount.
             img->release();
         }
     }
@@ -1789,7 +1839,6 @@ void ThumbnailLoader::flushBatchDownloads() {
 
     if (drained.empty()) return;
 
-    // Batch API only returns static PNGs; GIF tasks (negative levelID) must download individually.
     std::vector<BatchPending> gifTasks;
     std::vector<BatchPending> staticTasks;
     gifTasks.reserve(drained.size());

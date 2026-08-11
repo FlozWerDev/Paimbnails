@@ -2,7 +2,6 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/PaimonFormat.hpp"
 #include "../../../utils/DominantColors.hpp"
-#include "../../../utils/DominantColorsGPU.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/MainThread.hpp"
 #include "../../../core/QualityConfig.hpp"
@@ -27,7 +26,7 @@ LevelColors::~LevelColors() {
 }
 
 std::filesystem::path LevelColors::path() const {
-    return Mod::get()->getSaveDir() / "thumbnails" / "level_colors.paimon";
+    return Mod::get()->getSaveDir() / "thumbnails" / "level_colors_v3.paimon";
 }
 
 void LevelColors::load() const {
@@ -144,20 +143,6 @@ void LevelColors::extractFromImage(int32_t levelID, cocos2d::CCImage* image) {
     
     if (!imgData || w <= 0 || h <= 0) return;
     
-    // Mismo gate de main-thread/GL que extractFromRawData.
-    if (paimon::isMainThread() && DominantColorsGPU::isAvailable()) {
-        std::pair<DCColor, DCColor> pair;
-        if (hasAlpha) {
-            pair = DominantColorsGPU::extractFromRGBA(imgData, w, h);
-        } else {
-            pair = DominantColorsGPU::extractFromRGB(imgData, w, h);
-        }
-        cocos2d::ccColor3B colorA{pair.first.r, pair.first.g, pair.first.b};
-        cocos2d::ccColor3B colorB{pair.second.r, pair.second.g, pair.second.b};
-        this->set(levelID, colorA, colorB);
-        return;
-    }
-    
     std::vector<uint8_t> rgb24;
     const uint8_t* rgbPtr = nullptr;
     
@@ -169,7 +154,7 @@ void LevelColors::extractFromImage(int32_t levelID, cocos2d::CCImage* image) {
         rgbPtr = imgData;
     }
     
-    auto pair = DominantColors::extract(rgbPtr, w, h);
+    auto pair = DominantColors::extractReviewed(rgbPtr, w, h);
     cocos2d::ccColor3B colorA{pair.first.r, pair.first.g, pair.first.b};
     cocos2d::ccColor3B colorB{pair.second.r, pair.second.g, pair.second.b};
 
@@ -180,20 +165,6 @@ void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, in
     if (!imgData || w <= 0 || h <= 0) return;
     log::debug("[LevelColors] extractFromRawData: levelID={} {}x{} alpha={}", levelID, w, h, hasAlpha);
     
-    // CRITICAL: GL solo en main thread; los workers de fondo deben usar el CPU fallback (cocos2d-x GL no es thread-safe).
-    if (paimon::isMainThread() && DominantColorsGPU::isAvailable()) {
-        std::pair<DCColor, DCColor> pair;
-        if (hasAlpha) {
-            pair = DominantColorsGPU::extractFromRGBA(imgData, w, h);
-        } else {
-            pair = DominantColorsGPU::extractFromRGB(imgData, w, h);
-        }
-        cocos2d::ccColor3B colorA{pair.first.r, pair.first.g, pair.first.b};
-        cocos2d::ccColor3B colorB{pair.second.r, pair.second.g, pair.second.b};
-        this->set(levelID, colorA, colorB);
-        return;
-    }
-    
     std::vector<uint8_t> rgb24;
     const uint8_t* rgbPtr = nullptr;
     
@@ -205,7 +176,7 @@ void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, in
         rgbPtr = imgData;
     }
     
-    auto pair2 = DominantColors::extract(rgbPtr, w, h);
+    auto pair2 = DominantColors::extractReviewed(rgbPtr, w, h);
     cocos2d::ccColor3B colorA2{pair2.first.r, pair2.first.g, pair2.first.b};
     cocos2d::ccColor3B colorB2{pair2.second.r, pair2.second.g, pair2.second.b};
 

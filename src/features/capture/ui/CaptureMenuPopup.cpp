@@ -96,7 +96,6 @@ bool CaptureMenuPopup::initContents() {
     menu->setPosition({kCenterX, kCenterY});
     m_mainLayer->addChild(menu);
 
-    // Capture button
     auto* captureBtnSpr = ButtonSprite::create("Capturar", "goldFont.fnt", "GJ_button_01.png", .65f);
     auto* captureBtn = CCMenuItemSpriteExtra::create(
         captureBtnSpr, this, menu_selector(CaptureMenuPopup::onCapture)
@@ -104,7 +103,6 @@ bool CaptureMenuPopup::initContents() {
     captureBtn->setPosition({-74.f, kCaptureY});
     menu->addChild(captureBtn);
 
-    // Shortcuts button
     auto* shortcutsBtnSpr = ButtonSprite::create("Atajos", "bigFont.fnt", "GJ_button_04.png", .52f);
     auto* shortcutsBtn = CCMenuItemSpriteExtra::create(
         shortcutsBtnSpr, this, menu_selector(CaptureMenuPopup::onOpenShortcuts)
@@ -112,7 +110,6 @@ bool CaptureMenuPopup::initContents() {
     shortcutsBtn->setPosition({-74.f, kShortcutsY});
     menu->addChild(shortcutsBtn);
 
-    // Hold Ctrl toggle
     bool const holdCtrlOn = QuickHubManager::isHoldCtrlEnabled();
     m_holdCtrlBtnSpr = makeHoldCtrlButtonSprite(holdCtrlOn);
     auto* holdCtrlBtn = CCMenuItemSpriteExtra::create(
@@ -140,7 +137,6 @@ bool CaptureMenuPopup::initContents() {
     invLabel->limitLabelWidth(104.f, .28f, .1f);
     m_mainLayer->addChild(invLabel);
 
-    // Menu Physics toggle
     bool const physicsOn = Mod::get()->getSettingValue<bool>("menu-physics-enable");
     auto* phyOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
     auto* phyOn  = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
@@ -201,9 +197,10 @@ void CaptureMenuPopup::onExit() {
 }
 
 void CaptureMenuPopup::onCapture(CCObject*) {
-    // Hide popup and blur, then delegate to CaptureOverlay.
+    // Hide this popup and drop only its own blur; popups underneath keep theirs
+    // so they still look right in the screenshot.
     this->setVisible(false);
-    paimon::popupblur::cleanupAllActive(0.f);
+    paimon::popupblur::cleanup(this);
     CaptureOverlay::show();
     this->removeFromParent();
 }

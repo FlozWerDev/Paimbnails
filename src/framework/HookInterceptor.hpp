@@ -6,26 +6,24 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <initializer_list>
 #include <mutex>
 #include <cstdint>
+#include <string_view>
+#include <unordered_map>
 
 namespace paimon {
 
-enum class HookAction { Allow, Deny, Modify };
+enum class HookAction { Allow, Deny };
 
 struct HookResult {
     HookAction action = HookAction::Allow;
     std::string reason;
-    std::vector<uint8_t> modifiedData;  // only if action == Modify
 
-    static HookResult allow() { return {HookAction::Allow, {}, {}}; }
-    static HookResult deny(std::string reason) { return {HookAction::Deny, std::move(reason), {}}; }
-    static HookResult modify(std::vector<uint8_t> data, std::string reason = {}) {
-        return {HookAction::Modify, std::move(reason), std::move(data)};
-    }
+    static HookResult allow() { return {HookAction::Allow, {}}; }
+    static HookResult deny(std::string reason) { return {HookAction::Deny, std::move(reason)}; }
 
     bool isAllowed() const { return action != HookAction::Deny; }
-    bool isModified() const { return action == HookAction::Modify; }
 };
 
 // Context passed to each hook.
@@ -38,7 +36,6 @@ struct HookContext {
     std::vector<uint8_t> const* data = nullptr;  // payload pointer (not copied)
 };
 
-// Interceptor types
 using PreHookFn  = std::function<HookResult(HookContext const&)>;
 using PostHookFn = std::function<void(HookContext const&, bool success)>;
 
@@ -70,8 +67,7 @@ public:
         m_postHooks[action].push_back(std::move(hook));
     }
 
-    // Run all pre-hooks for the action. Returns Deny if any denies; if any
-    // modifies data, keeps the last modification.
+    // Run all pre-hooks for the action. Returns Deny if any denies.
     HookResult runPreHooks(HookContext const& ctx) {
         std::unique_lock lock(m_mutex);
         auto it = m_preHooks.find(ctx.action);
@@ -81,7 +77,6 @@ public:
         auto hooks = it->second;
         lock.unlock();
 
-        HookResult finalResult = HookResult::allow();
         for (auto const& hook : hooks) {
             auto result = hook(ctx);
             if (result.action == HookAction::Deny) {
@@ -90,11 +85,20 @@ public:
                 });
                 return result;
             }
-            if (result.action == HookAction::Modify) {
-                finalResult = std::move(result);
-            }
         }
-        return finalResult;
+        return HookResult::allow();
+    }
+
+    HookResult runPreHooks(
+        HookContext& ctx,
+        std::initializer_list<std::string_view> actions
+    ) {
+        for (auto action : actions) {
+            ctx.action = action;
+            auto result = runPreHooks(ctx);
+            if (!result.isAllowed()) return result;
+        }
+        return HookResult::allow();
     }
 
     // Run all post-hooks for the action (cannot block).

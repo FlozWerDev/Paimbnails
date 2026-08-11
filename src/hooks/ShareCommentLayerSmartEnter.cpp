@@ -1,16 +1,19 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/ShareCommentLayer.hpp>
+#include "../framework/HookConventions.hpp"
 
 using namespace geode::prelude;
 
-// Smart-enter for ShareCommentLayer. Always calls the original last so other
-// mods observing enterPressed (input translation, autocorrect, etc.) still fire.
+// Smart-enter while preserving other mods' enterPressed observers.
 class $modify(PaimonShareCommentSmartEnter, ShareCommentLayer) {
+    bool init(gd::string title, int charLimit, CommentType type, int ID, gd::string desc) {
+        if (!ShareCommentLayer::init(title, charLimit, type, ID, desc)) return false;
+        return true;
+    }
+
     $override
     void enterPressed(CCTextInputNode* node) {
-        // Call the original first so other observers get the event, then check
-        // the smart-enter condition for auto-share. Skip if the upload popup was
-        // already opened during the original call.
+    // Let the original handle observers first, then open auto-share if needed.
         ShareCommentLayer::enterPressed(node);
 
         if (node == m_commentInput

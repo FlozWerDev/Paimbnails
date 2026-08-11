@@ -1,4 +1,5 @@
 #include <Geode/modify/LevelInfoLayer.hpp>
+#include <Geode/modify/GameLevelOptionsLayer.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/LeaderboardsLayer.hpp>
 #include "../utils/PaimonButtonHighlighter.hpp"
@@ -17,9 +18,14 @@
 #include <cmath>
 #include <filesystem>
 #include <sstream>
+#include <atomic>
+#include <string_view>
 
 #include "../core/Settings.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include "../core/modules/ModuleRegistry.hpp"
+#include "../features/gameplay-performance/GameplayPerformance.hpp"
+#include "../features/gameplay-performance/ui/GameplayPerformancePopup.hpp"
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../utils/LevelMetadata.hpp"
@@ -37,7 +43,7 @@
 #include "../utils/ImageConverter.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../utils/BetaUploadWarning.hpp"
-#include "../features/foryou/services/ForYouTracker.hpp"
+#include "../features/foryou/services/TasteProfile.hpp"
 
 #include "../features/main-menu-layout/ui/MainMenuLayoutEditor.hpp"
 #include "../features/main-menu-layout/services/MainMenuLayoutManager.hpp"
@@ -56,10 +62,108 @@
 using namespace geode::prelude;
 
 namespace {
-// Active LevelInfoLayer for overlay pause (InfoLayer comments, etc.).
-// WeakRef so a destroyed layer never keeps a dangling pause target.
-geode::WeakRef<LevelInfoLayer> s_activeLevelInfoForOverlay;
+constexpr int kPerformanceToggleTag = 0x504149;
+
+CCLabelBMFont* findLabel(CCNode* root, std::string_view text) {
+    if (!root) return nullptr;
+    if (auto* label = typeinfo_cast<CCLabelBMFont*>(root);
+        label && text == label->getString()) {
+        return label;
+    }
+    if (!root->getChildren()) return nullptr;
+    for (auto* child : CCArrayExt<CCNode*>(root->getChildren())) {
+        if (auto* label = findLabel(child, text)) return label;
+    }
+    return nullptr;
+}
+}
+
+class $modify(PaimonGameplayPerformanceOptions, GameLevelOptionsLayer) {
+    void addPerformanceSettingsButton(int page, char const* labelText) {
+        auto* pageLayer = this->layerForPage(page);
+        if (!pageLayer) return;
+
+        auto* label = findLabel(pageLayer, labelText);
+        if (!label) return;
+
+        auto* sprite = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
+        if (!sprite) return;
+        sprite->setScale(0.38f);
+
+        auto* button = CCMenuItemSpriteExtra::create(
+            sprite,
+            this,
+            menu_selector(PaimonGameplayPerformanceOptions::onPerformanceSettings)
+        );
+        button->setID("performance-settings-button"_spr);
+
+        auto labelSize = label->getContentSize();
+        auto worldPosition = label->convertToWorldSpace({labelSize.width, labelSize.height / 2.f});
+        auto position = pageLayer->convertToNodeSpace(worldPosition);
+        button->setPosition({position.x + 13.f, position.y});
+
+        auto* menu = CCMenu::create();
+        menu->setPosition({0.f, 0.f});
+        menu->setID("performance-settings-menu"_spr);
+        menu->addChild(button);
+        pageLayer->addChild(menu, 20);
+    }
+
+    void onPerformanceSettings(CCObject*) {
+        if (auto* popup = paimon::gameplayperf::GameplayPerformancePopup::create()) {
+            popup->show();
+        }
+    }
+
+    $override
+    void setupOptions() {
+        GameLevelOptionsLayer::setupOptions();
+
+        auto* module = paimon::modules::find(paimon::gameplayperf::kModuleId);
+        if (!module) return;
+
+        auto* name = paimon::modules::localizedName(*module);
+        auto page = m_togglesPerPage > 0 ? m_toggleCount / m_togglesPerPage : m_page;
+        this->addToggle(
+            name,
+            kPerformanceToggleTag,
+            paimon::modules::isSelfEnabled(*module),
+            paimon::modules::localizedDescription(*module)
+        );
+        this->addPerformanceSettingsButton(page, name);
+    }
+
+    $override
+    void didToggle(int tag) {
+        if (tag != kPerformanceToggleTag) {
+            GameLevelOptionsLayer::didToggle(tag);
+            return;
+        }
+
+        auto enabled = paimon::modules::isSelfEnabled(paimon::gameplayperf::kModuleId);
+        paimon::modules::setEnabled(paimon::gameplayperf::kModuleId, !enabled);
+    }
+};
+
+namespace {
+// Raw pointer avoids WeakRefPool key reuse across sessions; clear it on exit.
+std::atomic<LevelInfoLayer*> s_activeLevelInfoForOverlay{nullptr};
 int s_levelInfoOverlayPauseDepth = 0;
+
+void setActiveLevelInfoForOverlay(LevelInfoLayer* layer) {
+    s_activeLevelInfoForOverlay.store(layer, std::memory_order_release);
+}
+
+bool clearActiveLevelInfoForOverlay(LevelInfoLayer* layer) {
+    LevelInfoLayer* expected = layer;
+    return s_activeLevelInfoForOverlay.compare_exchange_strong(
+        expected, nullptr, std::memory_order_acq_rel
+    );
+}
+
+LevelInfoLayer* getActiveLevelInfoForOverlay() {
+    return s_activeLevelInfoForOverlay.load(std::memory_order_acquire);
+}
 }
 using namespace Shaders;
 
@@ -70,11 +174,6 @@ using namespace Shaders;
 #include "../framework/HookConventions.hpp"
 using namespace paimon::levelinfo;
 
-// Applies a single-pass blur shader to a background sprite, supporting both
-// AnimatedGIFSprite (via m_intensity/m_screenSize/m_texSize fields) and a normal
-// CCSprite (via u_intensity + u_texSize/u_screenSize fallback uniforms). Shared
-// by the GIF branch of the "blur" and "paimonblur" styles (identical except the
-// source shader).
 namespace {
 void applyGifBlurShader(CCSprite* sprite, CCGLProgram* shader, int intensity, cocos2d::CCSize win) {
     if (!sprite || !shader) return;
@@ -95,19 +194,14 @@ void applyGifBlurShader(CCSprite* sprite, CCGLProgram* shader, int intensity, co
         if (szLoc != -1) shader->setUniformLocationWith2f(szLoc, win.width, win.height);
     }
 }
-} // namespace
+}
 
-// (Z-orders + makeLevelInfoBlurCacheKey moved to
-//  features/backgrounds/services/LevelInfoBgHelpers.hpp)
 
 class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     CCMenu* findLeftSideMenu() {
         if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID("left-side-menu"))) {
             return byId;
         }
-        // Robust fallback: find a CCMenu in the left half containing at least one
-        // known LevelInfoLayer button. Without that check, other mods (BetterInfo,
-        // etc.) could leave their own menus there and we'd claim them by mistake.
         static char const* const kKnownButtonIDs[] = {
             "like-button", "info-button", "rate-button",
             "high-object-button", "leaderboard-button", nullptr
@@ -128,8 +222,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 }
                 if (!candidate) candidate = menu;
             }
-            // Only return a candidate without known buttons if it has several
-            // children (heuristic: GD's menu usually has the most buttons).
             if (candidate && candidate->getChildrenCount() >= 3) {
                 return candidate;
             }
@@ -222,18 +314,15 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         bool m_fromVerificationQueue = false;
         bool m_fromLeaderboards = false;
         LeaderboardType m_leaderboardType = LeaderboardType::Default;
-        // Daily/weekly ID captured before the forced re-download, to restore it
-        // if the download (normal-level endpoint) clears it.
         int m_forcedDailyID = 0;
         LeaderboardStat m_leaderboardStat = LeaderboardStat::Stars;
         Ref<CCMenuItemSpriteExtra> m_acceptThumbBtn = nullptr;
         Ref<CCMenuItemSpriteExtra> m_editModeBtn = nullptr;
         Ref<CCMenuItemSpriteExtra> m_uploadLocalBtn = nullptr;
         Ref<CCMenu> m_extraMenu = nullptr;
-        bool m_thumbnailRequested = false; // avoids duplicate loads
-        int m_loadedInvalidationVersion = 0; // invalidation version to detect changes
+        bool m_thumbnailRequested = false;
+int m_loadedInvalidationVersion = 0;
         
-        // multi-thumb
         std::vector<ThumbnailAPI::ThumbnailInfo> m_thumbnails;
         int m_currentThumbnailIndex = 0;
         Ref<CCMenuItemSpriteExtra> m_prevBtn = nullptr;
@@ -243,62 +332,66 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         float m_cycleTimer = 0.0f;
         int m_galleryToken = 0;
         int m_bgRequestToken = 0;
-        int m_bgGuardTicks = 0; // background-visibility guard ticks
-        int m_lazyLoadIndex = 1; // next thumbnail to load in the background
-        int m_fallbackOrigin = -1; // index where loadThumbnail's fallback chain started (-1 = none); avoids an infinite async loop if all fail
+        int m_bgGuardTicks = 0;
+        int m_lazyLoadIndex = 1;
+int m_fallbackOrigin = -1;
         bool m_lazyLoadScheduled = false;
         int m_invalidationListenerId = 0;
         bool m_audioDeactivated = false;
         Ref<VideoThumbnailSprite> m_videoSprite = nullptr;
-        // Favorite buttons
         Ref<CCMenuItemSpriteExtra> m_favCreatorBtn = nullptr;
         Ref<CCMenuItemSpriteExtra> m_favLevelBtn = nullptr;
-        int m_lastDarkness = -1; // cached darkness setting to skip redundant reads
-        Ref<CCLayerColor> m_extraDarknessLayer = nullptr; // separate +0.1 extra darkness
+        int m_lastDarkness = -1;
+        Ref<CCLayerColor> m_extraDarknessLayer = nullptr;
         enum class BgNavDir : uint8_t { None, Left, Right };
-        BgNavDir m_bgNavDirection = BgNavDir::Right; // direction for bg transition
-        // PaimonAudio reactive darkness
+        BgNavDir m_bgNavDirection = BgNavDir::Right;
         bool m_paimonAudioActive = false;
         int m_paimonAudioBaseDarkness = 0;
-        // init->onEnter load state: avoids races and double-load
         enum class InitLoadState : uint8_t { Idle, Pending, Applying };
         InitLoadState m_initLoadState = InitLoadState::Idle;
-        // Cached settings — leidos una vez en init(), refrescados en onSettingsChanged
         std::string m_cachedBgStyle;
         int m_cachedEffectIntensity = 5;
         std::string m_cachedExtraStyles;
         bool m_cachedAutoCycle = false;
-        int m_loadedSettingsVersion = 0; // invalidated by listenForSettingChanges
-        // m_activeBlurJob removed — replaced by BlurSystem (synchronous FBO-based Dual Kawase)
-        // Dynamic Shaders — cursor/touch tracking
+        int m_loadedSettingsVersion = 0;
         bool m_dynamicShaders = false;
-        float m_cursorX = 0.5f; // normalized 0..1 (smoothed/delayed)
-        float m_cursorY = 0.5f; // normalized 0..1 (smoothed/delayed)
-        float m_targetCursorX = 0.5f; // raw target position
-        float m_targetCursorY = 0.5f; // raw target position
-        float m_dynamicShadersDelay = 0.0f; // 0..2 seconds
-        bool m_touchActive = false; // guards against multiple touches on mobile
-        float m_clickState = 0.0f; // animated: lerps toward m_targetClickState
-        float m_targetClickState = 0.0f; // 1.0 when pressed, 0.0 when released
-        // Perf: cached uniform locations for updateShaderTime (avoid string lookups per frame)
+        float m_cursorX = 0.5f;
+        float m_cursorY = 0.5f;
+        float m_targetCursorX = 0.5f;
+        float m_targetCursorY = 0.5f;
+        float m_dynamicShadersDelay = 0.0f;
+    bool m_touchActive = false;
+        float m_clickState = 0.0f;
+        float m_targetClickState = 0.0f;
         CCGLProgram* m_cachedMainShader = nullptr;
         GLint m_mainLocTime = -2;
         GLint m_mainLocCursor = -2;
         GLint m_mainLocClick = -2;
-        // Snapshot while a comments/info overlay is open (see LevelInfoOverlayPause)
         bool m_overlayPaused = false;
         bool m_overlayHadGallery = false;
         bool m_overlayHadShader = false;
         bool m_overlayHadAudio = false;
         bool m_overlayHadCursor = false;
         bool m_overlayHadVideo = false;
+
+// Windows does not reliably bind onExit; clean listeners/audio here too.
+        ~Fields() {
+            if (paimon::isRuntimeShuttingDown()) return;
+            if (m_invalidationListenerId != 0) {
+                ThumbnailLoader::get().removeInvalidationListener(m_invalidationListenerId);
+                m_invalidationListenerId = 0;
+            }
+            if (m_paimonAudioActive) {
+                PaimonAudio::get().deactivate();
+                m_paimonAudioActive = false;
+            }
+        }
     };
 
     void pauseHeavyWorkForOverlay() {
         if (m_fields->m_overlayPaused) return;
         m_fields->m_overlayPaused = true;
 
-        // Snapshot desired work from fields (don't rely on isScheduled).
         m_fields->m_overlayHadGallery =
             m_fields->m_cachedAutoCycle && m_fields->m_cycling &&
             m_fields->m_thumbnails.size() > 1;
@@ -313,14 +406,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::loadNextThumbnailInBackground));
         m_fields->m_lazyLoadScheduled = false;
 
-        // Freeze video decode under the popup (keep last frame visible).
         m_fields->m_overlayHadVideo = false;
         if (m_fields->m_videoSprite && m_fields->m_videoSprite->isPlaying()) {
             m_fields->m_overlayHadVideo = true;
             m_fields->m_videoSprite->pause();
         }
 
-        // Freeze animated GIF backgrounds under the popup.
         if (auto* gif = typeinfo_cast<AnimatedGIFSprite*>(m_fields->m_pixelBg.data())) {
             gif->pause();
         }
@@ -385,6 +476,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     }
 
     void applyDarknessSetting(int darknessVal, bool force = false) {
+        if (!paimon::modules::isEnabled("paimbnails.levelbackground.level")) darknessVal = 0;
         darknessVal = std::clamp(darknessVal, 0, 50);
         if (!force && darknessVal == m_fields->m_lastDarkness) return;
 
@@ -402,18 +494,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         }
     }
     
-    // Self-healing for an invisible background. The bg is installed at opacity(0)
-    // and faded in; if that fade is interrupted (re-entry of
-    // applyThumbnailBackground, the next apply's stopAllActions, a scene change
-    // mid-transition, or token churn), the node stays in the tree at opacity 0 —
-    // an "invisible background". This guard checks the sprite a few frames later
-    // and, if it's still stuck near 0 with no action running, forces full opacity.
     void scheduleBackgroundVisibilityGuard() {
-        // Cancel any previous guard and reschedule (each install resets it).
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::backgroundVisibilityGuardTick));
         m_fields->m_bgGuardTicks = 0;
-        // 0.5s after install: ample time for the fade (0.3-0.5s) to progress.
-        // Retries a few times in case the first tick lands during the scene transition.
         this->schedule(schedule_selector(PaimonLevelInfoLayer::backgroundVisibilityGuardTick), 0.5f);
     }
 
@@ -424,8 +507,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             return;
         }
 
-        // If an action is running (fade/scale/move from the transition), the bg
-        // is still animating to its final state; don't touch it.
         if (bg->numberOfRunningActions() > 0) {
             if (++m_fields->m_bgGuardTicks >= 4) {
                 this->unschedule(schedule_selector(PaimonLevelInfoLayer::backgroundVisibilityGuardTick));
@@ -433,14 +514,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             return;
         }
 
-        // No actions running: the current state is final. If it's invisible
-        // (opacity ~0 or not visible), it's an aborted fade; restore it.
         auto* rgba = typeinfo_cast<CCRGBAProtocol*>(bg);
         bool invisible = (!bg->isVisible()) || (rgba && rgba->getOpacity() < 8);
         bool collapsedScale = (bg->getScaleX() < 0.02f) || (bg->getScaleY() < 0.02f);
 
         if (invisible || collapsedScale) {
-            log::warn("[LevelInfoLayer] background invisible tras transicion (opacity/scale ~0) — forzando visible");
+            log::warn("[LevelInfoLayer] background invisible tras transicion (opacity/scale ~0) - forzando visible");
             bg->setVisible(true);
             if (rgba) rgba->setOpacity(255);
             if (collapsedScale && bg->getContentSize().width > 0 && bg->getContentSize().height > 0) {
@@ -452,51 +531,42 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
         }
 
-        // Final state resolved (visible or corrected): stop watching.
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::backgroundVisibilityGuardTick));
     }
 
     void applyThumbnailBackground(CCTexture2D* tex, int32_t levelID) {
         if (!tex) return;
+        if (!paimon::modules::isEnabled("paimbnails.levelbackground.level")) return;
 
-        // Save the current texture so InfoLayer can read it when opened
         paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID = levelID;
         paimon::ThumbnailBackgroundChangedEvent::setLastTexture(tex);
 
-        // Notify CustomSongWidget and InfoLayer to sync backgrounds
         auto subCount = paimon::EventBus::get().subscriberCount<paimon::ThumbnailBackgroundChangedEvent>();
         log::info("[LevelInfoLayer] publishing ThumbnailBackgroundChangedEvent levelID={} tex={} subscribers={}", levelID, (void*)tex, subCount);
         paimon::EventBus::get().publish(paimon::ThumbnailBackgroundChangedEvent{levelID, tex});
 
-        // BlurSystem is synchronous — no progressive job to cancel
-
-        // Initial load (init->requestLoad/refreshGalleryData) resolved
         m_fields->m_initLoadState = Fields::InitLoadState::Applying;
-        m_fields->m_fallbackOrigin = -1; // success: the fallback chain finished cleanly
+        m_fields->m_fallbackOrigin = -1;
 
         log::info("[LevelInfoLayer] Aplicando fondo del thumbnail");
         
-        // reset previous shader animation
         m_fields->m_animatedShader = false;
         m_fields->m_shaderTime = 0.0f;
         
-        // Clear previous extra-effect sprites
         for (auto& s : m_fields->m_extraBgSprites) {
             if (s) s->removeFromParent();
         }
         m_fields->m_extraBgSprites.clear();
         m_fields->m_extraUniformsCache.clear();
         
-        // Style and intensity (cached)
         auto bgStyle = m_fields->m_cachedBgStyle;
         int intensity = m_fields->m_cachedEffectIntensity;
         auto win = CCDirector::get()->getWinSize();
 
-        // Style -> shader/flags mapping table
         struct ShaderEntry {
             char const* name; char const* key; char const* glslFile;
             bool boosted; bool screenSize; bool time;
-            bool dynamicOnly; // solo disponible en modo dynamic shaders
+            bool dynamicOnly;
         };
         static ShaderEntry const kShaderTable[] = {
             {"grayscale",       "grayscale"_spr,       "grayscale.glsl",       false, false, false, false},
@@ -513,7 +583,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             {"neon-pulse",      "neon-pulse"_spr,      "neon_pulse.glsl",       true, false, true,  false},
             {"wave-distortion", "wave-distortion"_spr, "wave_distortion.glsl",  true, false, true,  false},
             {"crt",             "crt"_spr,             "crt.glsl",              true, false, true,  false},
-            // Dynamic-only shaders (only available with Dynamic Shaders ON)
             {"shockwave",       "shockwave-dyn"_spr,   "shockwave_dynamic.glsl",       true, false, true, true},
             {"vortex",          "vortex-dyn"_spr,      "vortex_dynamic.glsl",          true, false, true, true},
             {"magnetic",        "magnetic-dyn"_spr,    "magnetic_dynamic.glsl",         true, false, true, true},
@@ -537,28 +606,18 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             {"neon-trail",      "neon-trail-dyn"_spr,      "neon_trail_dynamic.glsl",      true, false, true, true},
         };
 
-        // Look up shader by name. Capture `intensity` and `this` BY VALUE: this
-        // lambda is copied into applyEffects/installBackgroundSprite and invoked
-        // from the async GIF-decode callback, which runs after this function has
-        // returned. A `[&]` capture would leave a dangling reference to the stack
-        // local `intensity` (use-after-scope) feeding garbage into the shader uniform.
         auto lookupShader = [this, intensity](std::string const& style) -> std::tuple<CCGLProgram*, float, bool, bool> {
-            // Dynamic shaders: if enabled and the shader supports cursor, use the _dynamic variant
             bool useDynamic = m_fields->m_dynamicShaders;
             for (auto& e : kShaderTable) {
                 if (style == e.name) {
-                    // Skip dynamic-only shaders when dynamic mode is off
                     if (e.dynamicOnly && !useDynamic) {
                         return {nullptr, 0.f, false, false};
                     }
                     float v = e.boosted ? (intensity / 10.0f) * 2.25f : intensity / 10.0f;
-                    // Dynamic-only shaders: load their file directly (already _dynamic.glsl)
                     if (e.dynamicOnly) {
                         return {paimon::shaders::loadShader(e.key, "cell_vertex.glsl", e.glslFile, nullptr, nullptr), v, e.screenSize, e.time};
                     }
-                    // Only animated shaders (time=true) have a dynamic variant
                     if (useDynamic && e.time) {
-                        // Build the dynamic filename: "chromatic.glsl" -> "chromatic_dynamic.glsl"
                         std::string dynFile = std::string(e.glslFile);
                         auto dotPos = dynFile.rfind('.');
                         if (dotPos != std::string::npos) {
@@ -576,12 +635,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             return {nullptr, 0.f, false, false};
         };
 
-        // Effects lambda
         auto applyEffects = [this, bgStyle, intensity, win, tex, lookupShader](CCSprite*& sprite, bool isGIF) {
             if (!sprite) return;
 
-            // "cover" scale + centering, reused by the initial sprite and the
-            // regenerated sprites of the non-GIF blur/paimonblur branches.
             auto fitCover = [win](CCSprite* s) {
                 if (!s) return;
                 float cs = std::max(win.width / s->getContentSize().width,
@@ -591,7 +647,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 s->setPosition({win.width / 2.0f, win.height / 2.0f});
             };
 
-            // Initial scale and position
             fitCover(sprite);
 
             if (bgStyle == "normal") {
@@ -690,7 +745,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                             ags->m_time = 0.0f;
                         } else {
                             shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_time"), 0.0f);
-                            // Dynamic shaders: set initial cursor position and click state
                             if (m_fields->m_dynamicShaders) {
                                 GLint cursorLoc = shader->getUniformLocationForName("u_cursor");
                                 if (cursorLoc >= 0) {
@@ -718,14 +772,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 this->schedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
             }
 
-            // Dynamic shaders: schedule mouse tracking on desktop
 #ifdef GEODE_IS_WINDOWS
             if (m_fields->m_dynamicShaders && m_fields->m_animatedShader && m_fields->m_pixelBg) {
                 this->schedule(schedule_selector(PaimonLevelInfoLayer::updateCursorFromMouse));
             }
 #endif
 
-            // PaimonAudio: activate audio-reactive darkness when paimonblur is active
             if (bgStyle == "paimonblur" && m_fields->m_pixelBg) {
                 PaimonAudio::get().activate();
                 m_fields->m_paimonAudioActive = true;
@@ -740,11 +792,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         auto installBackgroundSprite = [this, applyEffects, refreshShaderSchedule, win, bgStyle](CCSprite* sprite, bool isGIF, bool skipEffects = false) {
             if (!sprite) return;
 
-            // Hide GD's native background now that we have a real thumbnail
             if (auto vanillaBg = this->getChildByID("background")) {
                 vanillaBg->setVisible(false);
             }
-            // Hide brown decorative objects (corners / top strip)
             for (char const* artId : {
                 "bottom-left-art", "bottom-right-art",
                 "top-left-art", "top-right-art"
@@ -766,18 +816,14 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 oldBg = this->getChildByID("paimon-levelinfo-pixel-bg"_spr);
             }
 
-            // Stop the previous sprite's actions to avoid fade conflicts
             if (oldBg) oldBg->stopAllActions();
 
-            // Stop the overlay's actions so a previous animation doesn't leave an
-            // inconsistent opacity during the transition
             if (m_fields->m_pixelOverlay) m_fields->m_pixelOverlay->stopAllActions();
 
             preparedSprite->setID("paimon-levelinfo-pixel-bg"_spr);
             this->addChild(preparedSprite, kBackgroundZOrder);
             m_fields->m_pixelBg = preparedSprite;
 
-            // Create/update the extra darkness layer (+0.1) as a node separate from the bg
             {
                 if (m_fields->m_extraDarknessLayer && m_fields->m_extraDarknessLayer->getParent()) {
                     m_fields->m_extraDarknessLayer->removeFromParent();
@@ -791,14 +837,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 m_fields->m_extraDarknessLayer = extraDark;
             }
 
-            // Ensure the darkness overlay exists and sits above the background
             if (m_fields->m_pixelOverlay && m_fields->m_pixelOverlay->getParent()) {
                 m_fields->m_pixelOverlay->setZOrder(kOverlayZOrder);
             }
 
             this->applyDarknessSetting(this->getAppliedDarknessSetting(), true);
 
-            // Apply configurable background transition
             {
                 std::string bgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-bg-transition", "crossfade");
                 float dur = Mod::get()->getSavedValue<float>("levelinfo-bg-transition-duration", 0.5f);
@@ -1022,7 +1066,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                             nullptr));
 
                     } else {
-                        // Default: crossfade
                         float targetScale = preparedSprite->getScale();
                         preparedSprite->setOpacity(0);
                         preparedSprite->setScale(targetScale * 1.03f);
@@ -1039,19 +1082,16 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     if (oldBg) {
                         oldBg->removeFromParent();
                     }
-                    // First load — smooth fade in
                     preparedSprite->setOpacity(0);
                     preparedSprite->runAction(CCFadeIn::create(0.3f));
                 }
 
-                m_fields->m_bgNavDirection = Fields::BgNavDir::Right; // reset to default
+                m_fields->m_bgNavDirection = Fields::BgNavDir::Right;
             }
 
             m_fields->m_initLoadState = Fields::InitLoadState::Idle;
             refreshShaderSchedule();
 
-            // Safety net: if the fade/transition is interrupted and leaves the bg
-            // at opacity 0, this guard forces it visible a few frames later.
             this->scheduleBackgroundVisibilityGuard();
         };
 
@@ -1076,7 +1116,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     if (!layer || !layer->getParent()) {
                         return;
                     }
-                    // Token mismatch = thumbnail changed while GIF was loading
                     if (layer->m_fields->m_bgRequestToken != gifToken) return;
 
                     if (anim) {
@@ -1088,15 +1127,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 });
             }
         } else if (auto finalSprite = CCSprite::createWithTexture(tex)) {
-            // For blur/paimonblur, use ASYNC blur. Synchronous blur (4-16 FBO
-            // passes in one frame) caused a noticeable freeze when opening a level
-            // with a large thumbnail. Now the blur is spread over 2-3 frames on
-            // desktop (no freeze), and an LRU cache hit shows it the same frame for free.
+// Build blur asynchronously; cache hits stay immediate.
             if (!hasGifBackground && (bgStyle == "blur" || bgStyle == "paimonblur")) {
                 auto win = CCDirector::get()->getWinSize();
                 Ref<CCTexture2D> texRef = tex;
                 Ref<LevelInfoLayer> selfRef = this;
-                Ref<CCSprite> finalSpriteRef = finalSprite; // avoid autorelease
+                Ref<CCSprite> finalSpriteRef = finalSprite;
                 int blurToken = m_fields->m_bgRequestToken;
                 bool usePaimon = (bgStyle == "paimonblur");
                 int levelIDForBlur = m_level ? m_level->m_levelID.value() : 0;
@@ -1119,9 +1155,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                         blurredSprite->setScale(cs);
                         blurredSprite->setAnchorPoint({0.5f, 0.5f});
                         blurredSprite->setPosition({win.width / 2.0f, win.height / 2.0f});
-                        installBackgroundSprite(blurredSprite, false, true); // skipEffects=true, already blurred
+                        installBackgroundSprite(blurredSprite, false, true);
                     } else if (finalSpriteRef.data()) {
-                        // Fallback without blur
                         installBackgroundSprite(finalSpriteRef.data(), false);
                     }
                 };
@@ -1138,16 +1173,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
         }
 
-        // Multi-effect: extra layers
         std::string extraStylesRaw = m_fields->m_cachedExtraStyles;
         if (!extraStylesRaw.empty() && tex) {
-            // Parse comma-separated, max 4 extra
             std::vector<std::string> extraStyles;
             {
                 std::stringstream ss(extraStylesRaw);
                 std::string token;
                 while (std::getline(ss, token, ',') && extraStyles.size() < 4) {
-                    // Trim whitespace
                     size_t start = token.find_first_not_of(" \t");
                     size_t end = token.find_last_not_of(" \t");
                     if (start != std::string::npos) {
@@ -1170,7 +1202,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 extraSpr->setScale(std::max(sx, sy));
                 extraSpr->setPosition({win.width / 2.0f, win.height / 2.0f});
                 extraSpr->setAnchorPoint({0.5f, 0.5f});
-                extraSpr->setOpacity(180); // semi-transparent overlay
+                extraSpr->setOpacity(180);
 
                 extraSpr->setShaderProgram(eshader);
                 eshader->use();
@@ -1189,8 +1221,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
         }
 
-        // Darkness overlay is managed in init()
-        
         log::info("[LevelInfoLayer] Fondo aplicado exitosamente (estilo: {}, intensidad: {})", bgStyle, intensity);
     }
     
@@ -1198,10 +1228,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     void onEnterTransitionDidFinish() {
         LevelInfoLayer::onEnterTransitionDidFinish();
 
-        // Reset audio deactivation flag
         m_fields->m_audioDeactivated = false;
 
-        // Hide vanilla background if a thumbnail exists
         if (m_fields->m_pixelBg) {
             if (auto vanillaBg = this->getChildByID("background")) vanillaBg->setVisible(false);
             for (char const* artId : {
@@ -1211,13 +1239,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 if (auto* art = this->getChildByID(artId)) art->setVisible(false);
             }
 
-            // The bg fade-in may have started during init() (before onEnter) and
-            // been paused/lost by the scene transition, leaving the bg present but
-            // invisible. Re-validate visibility now that the transition finished.
             this->scheduleBackgroundVisibilityGuard();
         }
 
-        // Detect a thumbnail change from PauseLayer
         if (m_level && m_fields->m_thumbnailRequested) {
             int32_t levelID = m_level->m_levelID.value();
             int currentVersion = ThumbnailLoader::get().getInvalidationVersion(levelID);
@@ -1226,12 +1250,10 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 m_fields->m_loadedInvalidationVersion = currentVersion;
                 refreshGalleryData(levelID, true);
             } else if (!m_fields->m_pixelBg && m_fields->m_initLoadState == Fields::InitLoadState::Idle) {
-                // Only re-fetch if there are no pending requests
                 refreshGalleryData(levelID, true);
             }
         }
 
-        // Recreate the darkness overlay if it was destroyed
         if (!m_fields->m_pixelOverlay || !m_fields->m_pixelOverlay->getParent()) {
             auto win = cocos2d::CCDirector::get()->getWinSize();
             auto overlay = cocos2d::CCLayerColor::create({0, 0, 0, 0});
@@ -1243,13 +1265,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             m_fields->m_pixelOverlay = overlay;
         }
 
-        // Re-read on enter to fix drift
         m_fields->m_lastDarkness = -1;
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::refreshDarknessOverlay));
         refreshDarknessOverlay(0.f);
         this->schedule(schedule_selector(PaimonLevelInfoLayer::refreshDarknessOverlay), 0.5f);
 
-        // Activate dynamic song
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::forcePlayDynamic));
         this->scheduleOnce(schedule_selector(PaimonLevelInfoLayer::forcePlayDynamic), 0.0f);
     }
@@ -1260,11 +1280,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     }
 
     void refreshDarknessOverlay(float /*dt*/) {
-        // Re-cache settings if listenForSettingChanges detected a change
         uint64_t currentVersion = paimon::settings::internal::g_settingsVersion.load(std::memory_order_relaxed);
         if (m_fields->m_loadedSettingsVersion < static_cast<int>(currentVersion)) {
             m_fields->m_loadedSettingsVersion = static_cast<int>(currentVersion);
-            // Read the override (savedValue) first; it has no one-of validation
             m_fields->m_cachedBgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-background-style-override", "");
             if (m_fields->m_cachedBgStyle.empty()) {
                 m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
@@ -1283,37 +1301,29 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         if (!m_fields->m_animatedShader) return;
         m_fields->m_shaderTime += dt;
 
-        // Dynamic shaders: smooth cursor interpolation (delay)
         if (m_fields->m_dynamicShaders) {
             float delay = m_fields->m_dynamicShadersDelay;
             if (delay <= 0.001f) {
-                // No delay: instant tracking
                 m_fields->m_cursorX = m_fields->m_targetCursorX;
                 m_fields->m_cursorY = m_fields->m_targetCursorY;
             } else {
-                // Exponential lerp: factor = 1 - e^(-dt/delay). Higher delay = slower tracking.
                 float speed = dt / delay;
-                float t = std::min(speed * 3.0f, 1.0f); // cap to avoid overshoot
+                float t = std::min(speed * 3.0f, 1.0f);
                 m_fields->m_cursorX += (m_fields->m_targetCursorX - m_fields->m_cursorX) * t;
                 m_fields->m_cursorY += (m_fields->m_targetCursorY - m_fields->m_cursorY) * t;
             }
 
-            // Animated click with asymmetric lerp: expansion (press) a bit slower
-            // than contraction (release) for a "charge" feel and a soft "snap"
-            // back. Frame-rate-independent exponential lerp: t = 1 - exp(-dt / tau).
-            float tauPress   = 0.18f; // seconds to reach ~63% on press
-            float tauRelease = 0.12f; // faster on release
+            float tauPress   = 0.18f;
+            float tauRelease = 0.12f;
             float diff = m_fields->m_targetClickState - m_fields->m_clickState;
             float tau = (diff > 0.0f) ? tauPress : tauRelease;
             float ct = 1.0f - std::exp(-dt / std::max(tau, 0.001f));
             m_fields->m_clickState += diff * ct;
-            // Final snap if very close, to avoid numeric jitter
             if (std::fabs(diff) < 0.001f) {
                 m_fields->m_clickState = m_fields->m_targetClickState;
             }
         }
 
-        // Update u_time and u_cursor on the main sprite
         if (m_fields->m_pixelBg) {
             auto sprite = typeinfo_cast<CCSprite*>(static_cast<CCNode*>(m_fields->m_pixelBg));
             if (sprite) {
@@ -1323,7 +1333,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     auto shader = sprite->getShaderProgram();
                     if (shader) {
                         shader->use();
-                        // Perf: cache uniform locations per shader program
                         if (shader != m_fields->m_cachedMainShader) {
                             m_fields->m_cachedMainShader = shader;
                             m_fields->m_mainLocTime = shader->getUniformLocationForName("u_time");
@@ -1346,7 +1355,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
         }
 
-        // Update u_time and u_cursor on extra sprites (cached uniform locations)
         for (size_t idx = 0; idx < m_fields->m_extraBgSprites.size(); ++idx) {
             auto& extra = m_fields->m_extraBgSprites[idx];
             if (!extra) continue;
@@ -1354,7 +1362,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             if (!shader) continue;
             shader->use();
 
-            // Lazy-init cached uniform locations per extra sprite
             if (idx >= m_fields->m_extraUniformsCache.size()) {
                 m_fields->m_extraUniformsCache.resize(idx + 1, {-2, -2, -2});
             }
@@ -1385,7 +1392,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         int baseDark = m_fields->m_paimonAudioBaseDarkness;
         float baseAlpha = (baseDark / 50.0f) * 255.0f;
 
-        // Modulate darkness with audio
         float mod = 1.0f + pa.bass() * 0.45f - pa.beatPulse() * 0.7f + pa.energy() * 0.15f;
         mod = std::clamp(mod, 0.08f, 1.8f);
         GLubyte dynAlpha = static_cast<GLubyte>(std::clamp(baseAlpha * mod, 0.f, 255.f));
@@ -1396,12 +1402,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         }
     }
 
-    // Dynamic Shaders: cursor/touch tracking. Desktop: updateCursorFromMouse
-    // captures the mouse position each frame. Mobile: ccTouchBegan/Moved captures
-    // the last tap (multitouch guard).
+    void installInheritedHooks() {
+    }
+
     bool ccTouchBegan(CCTouch* touch, CCEvent* event) {
-        if (!m_fields->m_dynamicShaders) return false;
-        if (m_fields->m_touchActive) return false; // multitouch guard
+        bool result = LevelInfoLayer::ccTouchBegan(touch, event);
+        if (!m_fields->m_dynamicShaders) return result;
+        if (m_fields->m_touchActive) return result;
         m_fields->m_touchActive = true;
         m_fields->m_targetClickState = 1.0f;
 
@@ -1409,10 +1416,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         auto loc = touch->getLocation();
         m_fields->m_targetCursorX = std::clamp(loc.x / win.width, 0.0f, 1.0f);
         m_fields->m_targetCursorY = std::clamp(loc.y / win.height, 0.0f, 1.0f);
-        return false; // don't consume; let buttons and menus receive the touch
+        return result;
     }
 
     void ccTouchMoved(CCTouch* touch, CCEvent* event) {
+        LevelInfoLayer::ccTouchMoved(touch, event);
         if (!m_fields->m_dynamicShaders) return;
         auto win = CCDirector::get()->getWinSize();
         auto loc = touch->getLocation();
@@ -1421,26 +1429,25 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     }
 
     void ccTouchEnded(CCTouch* touch, CCEvent* event) {
+        LevelInfoLayer::ccTouchEnded(touch, event);
         if (!m_fields->m_dynamicShaders) return;
         m_fields->m_touchActive = false;
         m_fields->m_targetClickState = 0.0f;
     }
 
     void ccTouchCancelled(CCTouch* touch, CCEvent* event) {
+        LevelInfoLayer::ccTouchCancelled(touch, event);
         if (!m_fields->m_dynamicShaders) return;
         m_fields->m_touchActive = false;
         m_fields->m_targetClickState = 0.0f;
     }
 
-    // Desktop: update the cursor with the mouse position each frame
     void updateCursorFromMouse(float dt) {
 #ifdef GEODE_IS_WINDOWS
         auto win = CCDirector::get()->getWinSize();
         auto mousePos = geode::cocos::getMousePos();
-        // getMousePos() returns GL coordinates (0,0 = bottom-left)
         m_fields->m_targetCursorX = std::clamp(mousePos.x / win.width, 0.0f, 1.0f);
         m_fields->m_targetCursorY = std::clamp(mousePos.y / win.height, 0.0f, 1.0f);
-        // Detect mouse click (left button)
         m_fields->m_targetClickState = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) ? 1.0f : 0.0f;
 #endif
     }
@@ -1507,6 +1514,10 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         if (!videoSprite) {
             return;
         }
+        // Video backgrounds need their own module gate.
+        if (!paimon::modules::isEnabled("paimbnails.levelbackground.level")) {
+            return;
+        }
 
         auto win = CCDirector::get()->getWinSize();
         auto videoSize = videoSprite->getVideoSize();
@@ -1545,16 +1556,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     void onExit() {
         log::info("[LevelInfoLayer] onExit: levelID={}", m_level ? m_level->m_levelID.value() : 0);
 
-        if (auto active = s_activeLevelInfoForOverlay.lock();
-            active.data() == static_cast<LevelInfoLayer*>(this)) {
-            s_activeLevelInfoForOverlay = nullptr;
+        if (clearActiveLevelInfoForOverlay(this)) {
             s_levelInfoOverlayPauseDepth = 0;
         }
         m_fields->m_overlayPaused = false;
 
-        // Deactivate dynamic song context if this layer is being permanently removed.
-        // onBack() already handles normal navigation; this catches scene replacements
-        // and forced navigations that bypass onBack().
         if (!m_fields->m_audioDeactivated) {
             m_fields->m_audioDeactivated = true;
             AudioContextCoordinator::get().deactivateLevelInfo(false);
@@ -1568,7 +1574,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::forcePlayDynamic));
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::backgroundVisibilityGuardTick));
 
-        // PaimonAudio cleanup
         if (m_fields->m_paimonAudioActive) {
             PaimonAudio::get().deactivate();
             m_fields->m_paimonAudioActive = false;
@@ -1583,12 +1588,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         m_fields->m_lazyLoadIndex = 0;
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::loadNextThumbnailInBackground));
 
-        // BlurSystem is synchronous — no progressive job to cancel
-
         stopVideoBackgroundSprite();
 
-        // Remove paimon visual nodes from the tree to avoid accumulation on
-        // return (onEnter recreates them from scratch).
         for (auto& s : m_fields->m_extraBgSprites) {
             if (s && s->getParent()) s->removeFromParent();
         }
@@ -1604,14 +1605,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         }
         m_fields->m_extraDarknessLayer = nullptr;
 
-        // Stop the bg's actions (crossfade) before removing it
         if (m_fields->m_pixelBg && m_fields->m_pixelBg->getParent()) {
             m_fields->m_pixelBg->stopAllActions();
             m_fields->m_pixelBg->removeFromParent();
         }
         m_fields->m_pixelBg = nullptr;
 
-        // Restore the native background so something shows on return
         if (auto vanillaBg = this->getChildByID("background")) {
             vanillaBg->setVisible(true);
         }
@@ -1619,9 +1618,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         LevelInfoLayer::onExit();
     }
 
-    // Create the set daily/weekly button if it doesn't exist yet
     void addSetDailyWeeklyButton() {
-        // avoid duplicates
         if (this->getChildByIDRecursive("set-daily-weekly-button"_spr)) return;
 
         CCSprite* iconSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_timeIcon_001.png");
@@ -1660,11 +1657,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         SetDailyWeeklyPopup::create(m_level->m_levelID.value())->show();
     }
 
-    // The forced re-download for partial daily/weekly data uses the normal-level
-    // endpoint, which returns the level WITHOUT its daily/weekly ID. GD replaces
-    // m_level with that object (m_dailyID=0), so completing the level registers it
-    // as a normal level instead of a daily. Restore the ID captured in init so
-    // completion counts for the daily.
     $override
     void levelDownloadFinished(GJGameLevel* level) {
         LevelInfoLayer::levelDownloadFinished(level);
@@ -1680,9 +1672,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
         if (!LevelInfoLayer::init(level, challenge)) return false;
 
-        s_activeLevelInfoForOverlay = this;
+        installInheritedHooks();
 
-        // came from leaderboards?
+        setActiveLevelInfoForOverlay(this);
+        s_levelInfoOverlayPauseDepth = 0;
+
         if (auto scene = CCDirector::get()->getRunningScene()) {
             if (scene->getChildByType<LeaderboardsLayer>(0)) {
                 m_fields->m_fromLeaderboards = true;
@@ -1690,16 +1684,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
         }
 
-        // Daily/Weekly fix: when arriving from DailyLevelPage (challenge==true or
-        // level->m_dailyID > 0), the GJGameLevel often has only a subset of fields
-        // (name, likes, creator) because the server returns partial data for the
-        // daily/weekly endpoint. Vanilla relies on LevelInfoLayer's auto-download,
-        // but mod timing (our hook runs AfterPost of node-ids plus other
-        // LevelInfoLayer mods) sometimes means the download doesn't fire or the
-        // levelDownloadFinished callback is lost, leaving the UI showing only
-        // name+likes. Fix: force a re-download when partial data is detected; the
-        // server returns the same levelID and repopulates all fields.
-        // downloadLevel() is idempotent.
+// Daily/weekly pages may miss vanilla auto-download; reload idempotently.
         if (level) {
             bool isDailyOrWeekly = (level->m_dailyID.value() > 0) || challenge;
             bool hasPartialData = level->m_levelDesc.empty()
@@ -1707,21 +1692,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                                || level->m_creatorName.empty();
             if (isDailyOrWeekly && hasPartialData) {
                 log::info("[LevelInfoLayer] daily/weekly partial data detected (levelID={}), forcing re-download", level->m_levelID.value());
-                // The re-download uses the NORMAL-level endpoint, which doesn't
-                // return the daily/weekly ID. Without this, levelDownloadFinished
-                // replaces m_level with the normal version (m_dailyID=0) and
-                // completing the daily marks the normal level instead. Save the ID
-                // to restore it in levelDownloadFinished.
                 m_fields->m_forcedDailyID = level->m_dailyID.value();
-                // Ref<> keeps the layer alive during the server callback.
-                // queueInMainThread ensures it runs outside the init stack (avoids
-                // reentrancy with other LevelInfoLayer hooks).
                 Ref<LevelInfoLayer> safeRef = this;
                 Loader::get()->queueInMainThread([safeRef]() {
                     if (paimon::isRuntimeShuttingDown()) return;
                     if (!safeRef || !safeRef->getParent()) return;
-                    // downloadLevel() uses m_level and m_challenge internally and
-                    // re-calls setupLevelInfo on levelDownloadFinished.
                     safeRef->downloadLevel();
                 });
             }
@@ -1729,22 +1704,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
         LayerBackgroundManager::get().applyVanillaBackgroundTintFix(this);
 
-        // The native background is hidden in installBackgroundSprite when the
-        // thumbnail is ready, so levels without a thumbnail keep it.
-
-        // Darkness overlay: a single persistent sprite
         {
-            // Defensive: remove a residual overlay before creating a new one
             if (auto oldOverlay = this->getChildByID("paimon-levelinfo-pixel-overlay"_spr)) {
                 oldOverlay->removeFromParent();
             }
 
             auto win = CCDirector::get()->getWinSize();
 
-            // Create with alpha=0; refreshDarknessOverlay applies the correct
-            // value on the first tick. Avoids the bug where the first setting read
-            // returns a wrong value and leaves the screen nearly black until the
-            // user touches the slider.
             auto overlay = CCLayerColor::create({0, 0, 0, 0});
             overlay->setAnchorPoint({0, 0});
             overlay->setPosition({0, 0});
@@ -1752,13 +1718,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             overlay->setID("paimon-levelinfo-pixel-overlay"_spr);
             this->addChild(overlay, kOverlayZOrder);
             m_fields->m_pixelOverlay = overlay;
-            // m_lastDarkness stays -1 so refreshDarknessOverlay always applies the
-            // correct value on the first tick
-
-            // Apply the correct value immediately
             refreshDarknessOverlay(0.f);
 
-            // refresh opacity every 0.5s; cheaply detects setting changes
             this->schedule(schedule_selector(PaimonLevelInfoLayer::refreshDarknessOverlay), 0.5f);
         }
 
@@ -1767,7 +1728,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 return true;
             }
 
-            // Cache settings once to avoid repeated lookups
             m_fields->m_cachedBgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-background-style-override", "");
             if (m_fields->m_cachedBgStyle.empty()) {
                 m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
@@ -1779,26 +1739,20 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             m_fields->m_dynamicShaders = Mod::get()->getSavedValue<bool>("levelinfo-dynamic-shaders", false);
             m_fields->m_dynamicShadersDelay = Mod::get()->getSavedValue<float>("levelinfo-dynamic-shaders-delay", 0.0f);
 
-            // Enable touch for dynamic shaders (cursor tracking)
             if (m_fields->m_dynamicShaders) {
                 this->setTouchEnabled(true);
                 this->setTouchMode(kCCTouchesOneByOne);
-                this->setTouchPriority(-1); // high priority to capture position without blocking
+                this->setTouchPriority(-1);
             }
 
-            // Activate dynamic song during the entry transition. scheduleOnce
-            // works from init() because GD already added the node to the tree.
             this->scheduleOnce(schedule_selector(PaimonLevelInfoLayer::forcePlayDynamic), 0.0f);
 
-            // consume the "opened from thumbnail list" flag
             bool fromThumbs = paimon::SessionState::consumeFlag(paimon::SessionState::get().verification.openFromThumbs);
             m_fields->m_fromThumbsList = fromThumbs;
 
-            // opened from report?
             bool fromReport = paimon::SessionState::consumeFlag(paimon::SessionState::get().verification.openFromReport);
             m_fields->m_fromReportSection = fromReport;
             
-            // came from the verify queue?
             bool fromVerificationQueue = false;
             int verificationQueueCategory = -1;
             int verificationQueueLevelID = paimon::SessionState::get().verification.queueLevelID;
@@ -1808,10 +1762,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 verificationQueueCategory = paimon::SessionState::get().verification.queueCategory;
                 m_fields->m_fromVerificationQueue = true;
 
-                // don't clear; persist into PlayLayer
             }
 
-            // pixel thumb background
             bool isMainLevel = level->m_levelType == GJLevelType::Main;
             if (m_fields->m_invalidationListenerId == 0) {
                 WeakRef<PaimonLevelInfoLayer> safeRef = this;
@@ -1837,39 +1789,28 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                         auto* videoSprite = VideoThumbnailSprite::create(*localThumbPath);
                         if (videoSprite) {
                             this->queueVideoBackgroundSprite(videoSprite, levelID);
-                            // Don't return here; continue setting up buttons, gallery, etc.
                         }
                     }
                 }
 
-                // Don't trigger requestLoad here: refreshGalleryData (below)
-                // already loads the main thumbnail with refreshBackground=true.
-                // Launching both made them compete for m_bgRequestToken, so the
-                // second invalidated the first and the background never applied.
             }
 
-            // left menu
             auto leftMenu = findLeftSideMenu();
             if (!leftMenu) {
                 log::warn("Left side menu not found");
                 return true;
             }
 
-            // main menu ref for the button-edit overlay
             m_fields->m_extraMenu = static_cast<CCMenu*>(leftMenu);
             
-            // button icon sprite (with fallbacks)
             CCSprite* iconSprite = paimon::SpriteHelper::safeCreate("paim_BotonMostrarThumbnails.png"_spr);
             if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
             if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
             if (!iconSprite) return true;
 
-            // rotate 90
             iconSprite->setRotation(-90.0f);
-            // shrink the icon 20%
             iconSprite->setScale(0.8f);
 
-            // Green CircleButtonSprite
             auto btnSprite = CircleButtonSprite::create(
                 iconSprite,
                 CircleBaseColor::Green,
@@ -1896,14 +1837,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             PaimonButtonHighlighter::registerButton(button);
             m_fields->m_thumbnailButton = button;
 
-            // gallery thumbs (versioned URLs via the list endpoint)
-            // If a local video is already applied, don't overwrite the bg with a static image
             m_fields->m_initLoadState = Fields::InitLoadState::Pending;
             bool skipBgRefresh = m_fields->m_videoSprite != nullptr;
 
-            // Instant cache check: try to display the thumbnail immediately
-            // from RAM cache while the gallery list API call is in flight.
-            // This makes the background appear almost instantly on revisit.
             if (!skipBgRefresh) {
                 auto& cache = paimon::cache::ThumbnailCache::get();
                 int currentLevelID = level->m_levelID.value();
@@ -1921,8 +1857,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 if (!m_fields->m_pixelBg && ramTex.has_value() && ramTex.value()) {
                     log::info("[LevelInfoLayer] init: instant RAM cache hit for main thumbnail levelID={}", currentLevelID);
                     this->applyThumbnailBackground(ramTex.value(), currentLevelID);
-                    // Background is already applied — refreshGalleryData will still
-                    // call loadThumbnail(0) but it'll be a cache hit (fast re-apply).
                 } else if (!m_fields->m_pixelBg) {
                     Ref<LevelInfoLayer> safeRef = this;
                     Ref<CCNode> layerAnchor = static_cast<CCNode*>(safeRef.data());
@@ -1957,13 +1891,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
             this->refreshGalleryData(level->m_levelID.value(), !skipBgRefresh);
 
-            // add first for default layout
             leftMenu->addChild(button);
             leftMenu->updateLayout();
 
-            // admin? -> daily/weekly button
-            // Local check first: if the mod code is saved and the user is marked
-            // admin, show the button immediately without waiting on the server.
             {
                 bool localAdmin = Mod::get()->getSavedValue<bool>("is-verified-admin", false);
                 bool hasModCode = !HttpClient::get().getModCode().empty();
@@ -1972,7 +1902,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     this->addSetDailyWeeklyButton();
                 }
             }
-            // Server check (refreshes cache and may add/remove the button)
             if (auto gm = GameManager::get()) {
                 auto username = gm->m_playerName;
                 auto accountID = 0;
@@ -1990,17 +1919,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
             log::info("Thumbnail button added successfully");
 
-            // verify queue -> save category
             if (fromVerificationQueue && verificationQueueLevelID == level->m_levelID.value()) {
                 log::info("Nivel abierto desde verificacion (categoria: {}) - boton listo para usar", verificationQueueCategory);
-                // category for the thumbnail view popup
                 paimon::SessionState::get().verification.verificationCategory = verificationQueueCategory;
             }
 
-            // apply layouts to all tracked menus so custom IDs stay consistent
             applyLayoutsToEditableMenus();
-
-            // Favorite buttons removed
 
         return true;
     }
@@ -2011,7 +1935,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             return;
         }
 
-        // avoid opening multiple popups on rapid taps
         if (auto* scene = CCDirector::get()->getRunningScene()) {
             for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
                 if (geode::cast::typeinfo_cast<LocalThumbnailViewPopup*>(child)) {
@@ -2023,9 +1946,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         int32_t levelID = m_level->m_levelID.value();
         log::info("Opening thumbnail view for level ID: {}", levelID);
 
-        // use the moderator-verification utility
-        bool canAccept = false; // no server functionality
-        // popup context flag
+        bool canAccept = false;
         paimon::SessionState::get().verification.fromReportPopup = m_fields->m_fromReportSection;
         auto popup = LocalThumbnailViewPopup::create(levelID, canAccept);
         if (popup) {
@@ -2049,17 +1970,14 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             return;
         }
         
-        // level ptr before async
         auto* level = m_level;
         int32_t levelID = level->m_levelID.value();
         
-        // local thumb exists?
         if (!LocalThumbs::get().has(levelID)) {
             PaimonNotify::create(Localization::get().getString("level.no_local_thumb").c_str(), NotificationIcon::Error)->show();
             return;
         }
         
-        // get the username
         std::string username;
         int accountID = 0;
         auto* gm = GameManager::get();
@@ -2075,7 +1993,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             return;
         }
         
-        // load local -> png
         auto pathOpt = LocalThumbs::get().getThumbPath(levelID);
         if (!pathOpt) {
             PaimonNotify::create("No se pudo encontrar la miniatura", NotificationIcon::Error)->show();
@@ -2090,11 +2007,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         
         WeakRef<PaimonLevelInfoLayer> self = this;
 
-        // Collect the full level metadata (GJGameLevel bindings) to attach to the upload.
         std::string levelMeta = paimon::collectLevelMetadata(m_level);
 
         paimon::showBetaUploadWarningIfNeeded([self, levelID, pngData = std::move(pngData), username, levelMeta]() mutable {
-            // Single upload — server handles mod check + exists check + routing (live vs pending)
             PaimonNotify::show(Localization::get().getString("capture.uploading").c_str(), geode::NotificationIcon::Info);
             ThumbnailAPI::get().uploadThumbnail(levelID, pngData, username, [self, levelID, username](bool success, std::string const& msg) {
                 auto layer = self.lock();
@@ -2129,7 +2044,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     void onBack(CCObject* sender) {
         log::info("[LevelInfoLayer] onBack: levelID={} fromVerify={} fromLeaderboards={}", m_level ? m_level->m_levelID.value() : 0, m_fields->m_fromVerificationQueue, m_fields->m_fromLeaderboards);
 
-        // Check whether we return to LevelSelectLayer
         bool returnsToLevelSelect = false;
         auto scene = CCDirector::get()->getRunningScene();
         if (scene) {
@@ -2145,28 +2059,22 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         AudioContextCoordinator::get().deactivateLevelInfo(returnsToLevelSelect);
 
         if (m_fields->m_fromVerificationQueue) {
-            // clear the flags
             paimon::SessionState::get().verification.openFromQueue = false;
             paimon::SessionState::get().verification.queueLevelID  = -1;
             paimon::SessionState::get().verification.queueCategory  = -1;
             
-            // reopen popup
             paimon::SessionState::get().verification.reopenQueue = true;
             
-            // back to MenuLayer
             TransitionManager::get().replaceScene(MenuLayer::scene(false));
             return;
         }
 
-        // opened from leaderboards?
         if (m_fields->m_fromLeaderboards) {
             auto lbScene = LeaderboardsLayer::scene(m_fields->m_leaderboardType, m_fields->m_leaderboardStat);
             TransitionManager::get().replaceScene(lbScene);
             return;
         }
 
-        // no daily anim
-        
         LevelInfoLayer::onBack(sender);
     }
 
@@ -2184,7 +2092,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         auto win = CCDirector::get()->getWinSize();
         float arrowY = 210.f;
 
-        // left arrow (prev)
         auto prevSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png");
         if (prevSpr) {
             prevSpr->setScale(0.65f);
@@ -2199,7 +2106,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             m_fields->m_prevBtn = prevBtn;
         }
 
-        // right arrow (next)
         auto nextSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png");
         if (nextSpr) {
             nextSpr->setFlipX(true);
@@ -2234,7 +2140,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
             self->m_fields->m_thumbnails.clear();
             if (success) self->m_fields->m_thumbnails = thumbs;
-            // Reset lazy load state for new gallery
             self->m_fields->m_lazyLoadIndex = 1;
             self->m_fields->m_lazyLoadScheduled = false;
             log::info("[LevelInfoLayer] refreshGalleryData callback: levelID={} success={} thumbCount={}", levelID, success, thumbs.size());
@@ -2251,7 +2156,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
             bool autoCycleEnabled = self->m_fields->m_cachedAutoCycle;
             self->unschedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
-            // Don't start gallery cycle under an open comments overlay.
             if (!self->m_fields->m_overlayPaused &&
                 self->m_fields->m_thumbnails.size() > 1 && autoCycleEnabled) {
                 self->schedule(schedule_selector(PaimonLevelInfoLayer::updateGallery), 3.0f);
@@ -2266,15 +2170,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     }
     
     void onRateBtn(CCObject* sender) {
-        // RatePopup handles the rating logic.
         if (m_fields->m_currentThumbnailIndex < 0 || m_fields->m_currentThumbnailIndex >= m_fields->m_thumbnails.size()) return;
         
         auto& thumb = m_fields->m_thumbnails[m_fields->m_currentThumbnailIndex];
         if (!m_level) return;
         RatePopup::create(m_level->m_levelID.value(), thumb.id)->show();
     }
-
-    // Favorite Creator / Level
 
     void setupFavoriteButtons() {
         if (!m_level || m_level->m_levelID <= 0) return;
@@ -2287,16 +2188,14 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
         auto win = CCDirector::get()->getWinSize();
 
-        // reuse gallery-menu or create a dedicated fav-menu
         auto favMenu = CCMenu::create();
         favMenu->setID("fav-menu"_spr);
         favMenu->setPosition({0, 0});
 
         int creatorID = m_level->m_accountID;
         int levelID = m_level->m_levelID.value();
-        auto& tracker = paimon::foryou::ForYouTracker::get();
+        auto& tracker = paimon::foryou::TasteProfile::get();
 
-        // Heart button (Favorite Creator)
         {
             bool isFav = tracker.isCreatorFavorited(creatorID);
             auto heartSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_heart_01.png");
@@ -2315,7 +2214,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
         }
 
-        // Star button (Favorite Level)
         {
             bool isFav = tracker.isLevelFavorited(levelID);
             auto starSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
@@ -2340,7 +2238,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
     void updateFavoriteButtonStates() {
         if (!m_level) return;
-        auto& tracker = paimon::foryou::ForYouTracker::get();
+        auto& tracker = paimon::foryou::TasteProfile::get();
 
         if (m_fields->m_favCreatorBtn) {
             bool isFav = tracker.isCreatorFavorited(m_level->m_accountID);
@@ -2358,7 +2256,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
     void onFavCreator(CCObject*) {
         if (!m_level || m_level->m_accountID <= 0) return;
-        auto& tracker = paimon::foryou::ForYouTracker::get();
+        auto& tracker = paimon::foryou::TasteProfile::get();
         int creatorID = m_level->m_accountID;
 
         if (tracker.isCreatorFavorited(creatorID)) {
@@ -2380,7 +2278,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
     void onFavLevel(CCObject*) {
         if (!m_level || m_level->m_levelID <= 0) return;
-        auto& tracker = paimon::foryou::ForYouTracker::get();
+        auto& tracker = paimon::foryou::TasteProfile::get();
         int levelID = m_level->m_levelID.value();
 
         if (tracker.isLevelFavorited(levelID)) {
@@ -2411,7 +2309,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     void onPrevBtn(CCObject*) {
         log::info("[LevelInfoLayer] onPrevBtn: currentIndex={}", m_fields->m_currentThumbnailIndex);
         if (m_fields->m_thumbnails.empty()) return;
-        m_fields->m_cycling = false; // stop auto-cycling on interaction
+        m_fields->m_cycling = false;
         m_fields->m_bgNavDirection = Fields::BgNavDir::Left;
         m_fields->m_currentThumbnailIndex--;
         if (m_fields->m_currentThumbnailIndex < 0) m_fields->m_currentThumbnailIndex = static_cast<int>(m_fields->m_thumbnails.size()) - 1;
@@ -2434,10 +2332,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         int requestToken = ++m_fields->m_bgRequestToken;
         log::info("[LevelInfoLayer] loadThumbnail: index={}/{} thumbId={} token={}", index, m_fields->m_thumbnails.size(), thumb.id, requestToken);
 
-        // Stop the previous video if any
         stopVideoBackgroundSprite();
 
-        // If the thumbnail is video, download and play it with VideoThumbnailSprite
         if (thumb.isVideo() && !thumb.url.empty()) {
             log::info("[LevelInfoLayer] loadThumbnail: video detected for index={}", index);
             int32_t levelID = m_level ? m_level->m_levelID.value() : 0;
@@ -2454,14 +2350,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     return;
                 }
 
-                self->m_fields->m_fallbackOrigin = -1; // success: ends the fallback chain
+                self->m_fields->m_fallbackOrigin = -1;
                 self->queueVideoBackgroundSprite(videoSprite, levelID, requestToken);
                 log::info("[LevelInfoLayer] loadThumbnail: waiting for first visible video frame for index={}", index);
             });
             return;
         }
 
-        // URL version with _pv=<thumbId> for CDN invalidation
         std::string url = thumb.url;
         if (!thumb.id.empty()) {
             auto sep = (url.find('?') == std::string::npos) ? "?" : "&";
@@ -2476,17 +2371,14 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 log::info("[LevelInfoLayer] loadThumbnail callback: index={} OK", index);
                 int32_t levelID = self->m_level ? self->m_level->m_levelID.value() : 0;
                 self->applyThumbnailBackground(tex, levelID);
-                // Start lazy-loading the remaining thumbnails (one by one in the background)
                 if (index == 0 && self->m_fields->m_thumbnails.size() > 1) {
                     self->m_fields->m_lazyLoadIndex = 1;
                     self->loadNextThumbnailInBackground(0.0f);
                 }
             } else {
-                // URL download failed — try local cache fallback before giving up
                 int32_t fallbackLevelID = self->m_level ? self->m_level->m_levelID.value() : 0;
                 bool fallbackApplied = false;
 
-                // 1. Try LocalThumbs (on-disk thumbnails)
                 if (fallbackLevelID > 0) {
                     auto localPath = LocalThumbs::get().findAnyThumbnail(fallbackLevelID);
                     if (localPath) {
@@ -2502,7 +2394,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     }
                 }
 
-                // 2. Try ThumbnailLoader RAM cache (level-based key)
                 if (!fallbackApplied && fallbackLevelID > 0) {
                     auto& cache = paimon::cache::ThumbnailCache::get();
                     auto ramTex = cache.getFromRam(fallbackLevelID, false);
@@ -2522,11 +2413,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         }, ThumbnailLoader::PriorityHero);
     }
 
-    // Advance to the next thumbnail after a load failure, stopping once the whole
-    // gallery has been tried. Without this, if ALL thumbnails fail (server down,
-    // broken URLs, all uncreatable videos), the async fallback chain bounced
-    // between indices forever, emitting endless requests and leaving
-    // m_initLoadState stuck in Pending.
     void fallbackToNextThumbnail(int index) {
         int sz = static_cast<int>(m_fields->m_thumbnails.size());
         if (sz > 1) {
@@ -2537,20 +2423,15 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 return;
             }
         }
-        // 1-thumbnail gallery, or the whole gallery was tried without success: stop.
         m_fields->m_fallbackOrigin = -1;
         m_fields->m_initLoadState = Fields::InitLoadState::Idle;
     }
 
-    // Load the remaining thumbnails in the background, one by one
     void loadNextThumbnailInBackground(float /*dt*/) {
         auto total = static_cast<int>(m_fields->m_thumbnails.size());
         if (total <= 1) return;
         if (m_fields->m_lazyLoadScheduled) return;
 
-        // Skip videos (not preloaded via URL) until the next image thumbnail.
-        // Previously it returned on the first video, breaking the chain and
-        // leaving image thumbnails after the video unloaded.
         while (m_fields->m_lazyLoadIndex < total &&
                m_fields->m_thumbnails[m_fields->m_lazyLoadIndex].isVideo()) {
             m_fields->m_lazyLoadIndex++;
@@ -2583,7 +2464,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             if (self->m_fields->m_lazyLoadIndex < static_cast<int>(self->m_fields->m_thumbnails.size())) {
                 self->scheduleOnce(schedule_selector(PaimonLevelInfoLayer::loadNextThumbnailInBackground), 0.1f);
             }
-        }, 0); // Low priority for background loading
+        }, 0);
     }
 };
 
@@ -2592,8 +2473,7 @@ namespace paimon {
 void pauseLevelInfoHeavyWorkForOverlay() {
     ++s_levelInfoOverlayPauseDepth;
     if (s_levelInfoOverlayPauseDepth != 1) return;
-    auto ref = s_activeLevelInfoForOverlay.lock();
-    auto* layer = ref.data();
+    auto* layer = getActiveLevelInfoForOverlay();
     if (!layer) return;
     static_cast<PaimonLevelInfoLayer*>(layer)->pauseHeavyWorkForOverlay();
 }
@@ -2602,20 +2482,17 @@ void resumeLevelInfoHeavyWorkForOverlay() {
     if (s_levelInfoOverlayPauseDepth <= 0) return;
     --s_levelInfoOverlayPauseDepth;
     if (s_levelInfoOverlayPauseDepth != 0) return;
-    auto ref = s_activeLevelInfoForOverlay.lock();
-    auto* layer = ref.data();
+    auto* layer = getActiveLevelInfoForOverlay();
     if (!layer) return;
     static_cast<PaimonLevelInfoLayer*>(layer)->resumeHeavyWorkForOverlay();
 }
 
-} // namespace paimon
+}
 
-// onSettings implementation (needs PaimonLevelInfoLayer already defined)
 void LocalThumbnailViewPopup::onSettings(CCObject*) {
     auto popup = ThumbnailSettingsPopup::create();
     if (!popup) return;
 
-    // Ref<> keeps the texture alive while the callback exists (shared copy, not a raw ptr)
     geode::Ref<CCTexture2D> texRef = m_thumbnailTexture;
     int32_t levelID = m_levelID;
 
@@ -2627,30 +2504,22 @@ void LocalThumbnailViewPopup::onSettings(CCObject*) {
         auto layer = scene->getChildByType<LevelInfoLayer>(0);
         if (!layer) return;
 
-        // remove old backgrounds by node ID (safe)
         if (auto old = layer->getChildByID("paimon-levelinfo-pixel-bg"_spr)) {
             old->removeFromParent();
         }
-        // darkness overlay stays persistent; refreshDarknessOverlay updates it
-
         auto paimon = static_cast<PaimonLevelInfoLayer*>(layer);
 
-        // clear extra sprites that applyThumbnailBackground couldn't reach
         for (auto& s : paimon->m_fields->m_extraBgSprites) {
             if (s && s->getParent()) s->removeFromParent();
         }
         paimon->m_fields->m_extraBgSprites.clear();
 
-        // reset the internal ref to avoid a double-remove inside applyThumbnailBackground
         paimon->m_fields->m_pixelBg = nullptr;
 
-        // force an immediate opacity refresh for instant feedback
         paimon->m_fields->m_lastDarkness = -1;
         paimon->refreshDarknessOverlay(0.0f);
 
-        // re-apply with the new settings
         if (texRef) {
-            // Refresh cached settings before re-applying
             paimon->m_fields->m_cachedBgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-background-style-override", "");
             if (paimon->m_fields->m_cachedBgStyle.empty()) {
                 paimon->m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");

@@ -8,9 +8,7 @@ using namespace geode::prelude;
 
 namespace paimon::settings_ui {
 
-// Helpers internos
-
-// Touch priority for child controls (force-priority aware)
+// Touch priority for child controls.
 static int childTouchPrio() {
     return CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2;
 }
@@ -31,7 +29,7 @@ static CCLabelBMFont* makeValueLabel(const char* text) {
     return label;
 }
 
-// Fondo sutil redondeado detras de cada fila de control (lista moderna).
+// Subtle rounded row background.
 static void addRowBackground(CCNode* row, float width, float height) {
     auto bg = paimon::SpriteHelper::createRoundedRect(
         width - 4.f, height - 3.f, 5.f, {0.f, 0.f, 0.f, 0.30f}
@@ -50,9 +48,8 @@ static CCNode* makeRow(float width, float height = ROW_HEIGHT, bool withBg = tru
     return row;
 }
 
-// Toggle Row
 
-// CCObject wrapper for callback
+// CCObject callback wrapper.
 class ToggleCallback : public CCObject {
 public:
     std::function<void(bool)> m_callback;
@@ -99,7 +96,6 @@ CCNode* createToggleRow(const char* label, bool initialValue,
     return row;
 }
 
-// Slider Row
 
 class SliderCallback : public CCNode {
 public:
@@ -152,7 +148,7 @@ CCNode* createSliderRow(const char* label, float initialValue,
         slider->m_touchLogic->setTouchPriority(childTouchPrio());
     }
 
-    // Wrap slider in CCNode for correct positioning (same pattern as Geode ColorPickPopup)
+// Wrap the slider for consistent positioning.
     float sliderW = slider->m_width * 0.55f;
     auto sliderWrapper = cocos2d::CCNode::create();
     sliderWrapper->setContentSize(CCSize{sliderW, slider->m_height * 0.55f});
@@ -173,7 +169,6 @@ CCNode* createSliderRow(const char* label, float initialValue,
     return row;
 }
 
-// Int Slider Row
 
 class IntSliderCallback : public CCNode {
 public:
@@ -246,7 +241,6 @@ CCNode* createIntSliderRow(const char* label, int initialValue,
     return row;
 }
 
-// Dropdown Row
 
 class DropdownCallback : public CCObject {
 public:
@@ -301,7 +295,6 @@ CCNode* createDropdownRow(const char* label, std::string const& initialValue,
     menu->setTouchPriority(childTouchPrio());
     row->addChild(menu);
 
-    // find initial index
     int initIdx = 0;
     for (size_t i = 0; i < options.size(); i++) {
         if (options[i] == initialValue) {
@@ -315,7 +308,6 @@ CCNode* createDropdownRow(const char* label, std::string const& initialValue,
     float rightEdge = width - 12.f;
     float valueW = 84.f;
 
-    // left arrow
     auto leftSpr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
     if (!leftSpr) leftSpr = CCSprite::create();
     leftSpr->setScale(0.26f);
@@ -324,14 +316,12 @@ CCNode* createDropdownRow(const char* label, std::string const& initialValue,
     leftBtn->setPosition({rightEdge - valueW - 12.f, ROW_HEIGHT / 2.f});
     menu->addChild(leftBtn);
 
-    // current value
     auto valLabel = makeValueLabel(initialValue.c_str());
     valLabel->setPosition({rightEdge - valueW / 2.f, ROW_HEIGHT / 2.f});
     valLabel->setAnchorPoint({0.5f, 0.5f});
     row->addChild(valLabel);
     cb->m_valueLabel = valLabel;
 
-    // right arrow
     auto rightSpr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
     if (!rightSpr) rightSpr = CCSprite::create();
     rightSpr->setScale(0.26f);
@@ -344,7 +334,6 @@ CCNode* createDropdownRow(const char* label, std::string const& initialValue,
     return row;
 }
 
-// Button Row
 
 class ButtonCallback : public CCObject {
 public:
@@ -387,7 +376,6 @@ CCNode* createButtonRow(const char* label, const char* buttonText,
     return row;
 }
 
-// Link Row
 
 CCNode* createLinkRow(const char* label, std::function<void()> onOpen,
                       float width) {
@@ -415,7 +403,6 @@ CCNode* createLinkRow(const char* label, std::function<void()> onOpen,
     return row;
 }
 
-// Text Input Row
 
 CCNode* createTextInputRow(const char* label, std::string const& initialValue,
                            const char* placeholder, int maxChars,
@@ -427,7 +414,7 @@ CCNode* createTextInputRow(const char* label, std::string const& initialValue,
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
     row->addChild(lbl);
 
-    // El input ocupa la mitad derecha del row.
+// Keep the input in the right half of the row.
     float inputW = std::max(width * 0.5f, 140.f);
     auto input = geode::TextInput::create(inputW / 0.72f, placeholder ? placeholder : "", "chatFont.fnt");
     input->setCommonFilter(geode::CommonFilter::Any);
@@ -441,7 +428,6 @@ CCNode* createTextInputRow(const char* label, std::string const& initialValue,
     return row;
 }
 
-// Hint Row
 
 CCNode* createHintRow(const char* text, float width) {
     auto row = CCNode::create();
@@ -458,14 +444,12 @@ CCNode* createHintRow(const char* text, float width) {
     return row;
 }
 
-// Section Header
 
 CCNode* createSectionHeader(const char* title, float width) {
     auto row = CCNode::create();
     row->setContentSize({width, HEADER_HEIGHT});
     row->setAnchorPoint({0.f, 0.f});
 
-    // Acento dorado a la izquierda del titulo
     auto accent = paimon::SpriteHelper::createRoundedRect(
         3.f, 11.f, 1.5f, {240.f / 255.f, 194.f / 255.f, 56.f / 255.f, 1.f}
     );
@@ -480,7 +464,6 @@ CCNode* createSectionHeader(const char* title, float width) {
     lbl->setPosition({LABEL_X + 2.f, HEADER_HEIGHT / 2.f - 1.f});
     row->addChild(lbl);
 
-    // Linea separadora que corre hasta el borde derecho
     float lblW = lbl->getContentSize().width * lbl->getScale();
     float sepX = LABEL_X + 2.f + lblW + 8.f;
     if (sepX < width - 8.f) {
@@ -493,7 +476,6 @@ CCNode* createSectionHeader(const char* title, float width) {
     return row;
 }
 
-// Collapsible Header
 
 class CollapsibleCallback : public CCObject {
 public:
@@ -501,6 +483,7 @@ public:
     CCNode* m_contentContainer;
     CCLabelBMFont* m_caret;
     std::function<void()> m_onToggle;
+    float m_expandedHeight = 0.f;
 
     static CollapsibleCallback* create(CCNode* content, CCLabelBMFont* caret,
                                         bool expanded, std::function<void()> onToggle) {
@@ -509,13 +492,26 @@ public:
         ret->m_contentContainer = content;
         ret->m_caret = caret;
         ret->m_onToggle = std::move(onToggle);
+        ret->m_expandedHeight = content->getContentSize().height;
         ret->autorelease();
         return ret;
     }
 
+    void applyExpandedState() {
+        auto size = m_contentContainer->getContentSize();
+        size.height = m_expanded ? m_expandedHeight : 0.f;
+        m_contentContainer->setContentSize(size);
+
+        if (auto* children = m_contentContainer->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                child->setVisible(m_expanded);
+            }
+        }
+    }
+
     void onToggle(CCObject*) {
         m_expanded = !m_expanded;
-        m_contentContainer->setVisible(m_expanded);
+        applyExpandedState();
         m_caret->setString(m_expanded ? "v" : ">");
         if (m_onToggle) m_onToggle();
     }
@@ -528,7 +524,7 @@ CCNode* createCollapsibleHeader(const char* title, float width,
     row->setContentSize({width, HEADER_HEIGHT});
     row->setAnchorPoint({0.f, 0.f});
 
-    // Fondo sutil para que se lea como boton/cabecera
+// Subtle background for the collapsible header.
     auto bg = paimon::SpriteHelper::createRoundedRect(
         width - 4.f, HEADER_HEIGHT - 4.f, 5.f, {1.f, 1.f, 1.f, 0.06f}
     );
@@ -567,8 +563,8 @@ CCNode* createCollapsibleHeader(const char* title, float width,
     btn->setUserObject(cb);
     menu->addChild(btn);
 
-    contentContainer->setVisible(initiallyExpanded);
+    cb->applyExpandedState();
     return row;
 }
 
-} // namespace paimon::settings_ui
+}

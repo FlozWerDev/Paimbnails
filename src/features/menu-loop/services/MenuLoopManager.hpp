@@ -10,7 +10,6 @@ using namespace geode::prelude;
 
 namespace paimon::menuloop {
 
-// Song Data
 
 enum class SongType {
     Normal,
@@ -25,7 +24,6 @@ struct SongData {
     int lengthMs = 0;
 };
 
-// MenuLoopManager
 
 class MenuLoopManager {
 public:
@@ -34,7 +32,6 @@ public:
         return instance;
     }
 
-    // Song list
     std::vector<std::string>& getSongs() { return m_songs; }
     void addSong(const std::string& path);
     void removeSong(const std::string& path);
@@ -42,7 +39,6 @@ public:
     int getSongsSize() const { return static_cast<int>(m_songs.size()); }
     bool songSizeIsBad() const { return m_songs.empty() || m_songs.size() < 2; }
 
-    // Current song
     void pickRandomSong();
     std::string getCurrentSong() const;
     void setCurrentSong(const std::string& song);
@@ -50,12 +46,10 @@ public:
     void setCurrentSongToOverride();
     bool isOriginalMenuLoop() const { return m_isMenuLoop; }
 
-    // Override
     void setOverride(const std::string& path);
     std::string getOverrideSong() const;
     bool isOverride() const { return m_isOverride; }
 
-    // Blacklist / Favorites
     void addToBlacklist(const std::string& song);
     void addToBlacklist();
     std::vector<std::string>& getBlacklist() { return m_blacklist; }
@@ -63,7 +57,6 @@ public:
     void addToFavorites();
     std::vector<std::string>& getFavorites() { return m_favorites; }
 
-    // Held / Previous
     void setHeldSong(const std::string& value);
     void resetHeldSong();
     std::string getHeldSong() const { return m_heldSong; }
@@ -72,18 +65,14 @@ public:
     std::string getPreviousSong() const { return m_previousSong; }
     bool isPreviousSong() const { return m_currentSong == m_previousSong; }
 
-    // Display name
     void setCurrentSongDisplayName(const std::string& name) { m_displayName = name; }
     std::string getCurrentSongDisplayName() const { return m_displayName; }
 
-    // Shuffle mode
     void setConstantShuffleMode(bool value) { m_constantShuffleMode = value; }
     bool getConstantShuffleMode() const { return m_constantShuffleMode; }
 
-    // Song data map
     std::unordered_map<std::string, SongData>& getSongToSongDataEntries() { return m_songToSongDataMap; }
 
-    // State flags
     void setCalledOnce(bool value) { m_calledOnce = value; }
     bool getCalledOnce() const { return m_calledOnce; }
     void setFinishedCalculatingSongLengths(bool value) { m_finishedCalculatingSongLengths = value; }
@@ -96,7 +85,6 @@ public:
     void setPauseSongPositionTracking(bool value) { m_pausedSongPositionTracking = value; }
     bool getPauseSongPositionTracking() const { return m_pausedSongPositionTracking; }
 
-    // Mod compat
     void setGeodify(bool value) { m_geodify = value; }
     bool getGeodify() const { return m_geodify; }
     void setSawbladeCustomSongsFolder(bool value) { m_sawbladeCustomSongsFolder = value; }
@@ -108,17 +96,14 @@ public:
     void setVibecodedVentilla(bool value) { m_vibecodedVentilla = value; }
     bool getVibecodedVentilla() const { return m_vibecodedVentilla; }
 
-    // Config dir helpers
     std::filesystem::path getConfigDir() const { return Mod::get()->getConfigDir(); }
     void saveLastMenuLoop();
 
-    // Playlist file mode
     void setPlaylistIsEmpty(bool value) { m_playlistIsEmpty = value; }
     bool getPlaylistIsEmpty() const { return m_playlistIsEmpty; }
     void setPlaylistName(const std::string& name) { m_playlistName = name; }
     std::string getPlaylistName() const { return m_playlistName; }
 
-    // Utility
     unsigned long getHashedCurrentSong() const { return m_hashedCurrentSong; }
     void incrementTowerRepeatCount() { m_towerRepeatCount++; }
     void resetTowerRepeatCount() { m_towerRepeatCount = 0; }
@@ -129,6 +114,8 @@ private:
     ~MenuLoopManager() = default;
     MenuLoopManager(const MenuLoopManager&) = delete;
     MenuLoopManager& operator=(const MenuLoopManager&) = delete;
+
+    void updateCurrentSongMetadata();
 
     std::vector<std::string> m_songs;
     std::string m_currentSong;

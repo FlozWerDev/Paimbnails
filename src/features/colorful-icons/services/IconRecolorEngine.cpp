@@ -68,6 +68,71 @@ void collectListBarIcons(ListButtonBar* bar, std::vector<GJItemIcon*>& out) {
     }
 }
 
+// Everything vanilla changeToLockedState touched, captured right after it ran.
+// Restore replays these values instead of guessing them: vanilla hides detail
+// sprites and UFO domes and keeps its own layer colors, so a hardcoded
+// "browser gray + everything visible" rebuild turns locked icons into pale
+// white blobs.
+class LockedVanillaSnapshot : public CCObject {
+public:
+    ccColor3B first{175, 175, 175};
+    ccColor3B second{255, 255, 255};
+    unsigned char opacity = 120;
+    bool playerVisible = true;
+    bool detailVisible = false;
+    bool domeVisible = false;
+    bool robotExtraVisible = false;
+    bool spiderExtraVisible = false;
+    bool lockVisible = true;
+    ccColor3B lockColor{255, 255, 255};
+    unsigned char lockOpacity = 255;
+
+    static LockedVanillaSnapshot* capture(GJItemIcon* icon, SimplePlayer* sp) {
+        auto* s = new LockedVanillaSnapshot();
+        s->autorelease();
+        if (sp->m_firstLayer) {
+            s->first   = sp->m_firstLayer->getColor();
+            s->opacity = sp->m_firstLayer->getOpacity();
+        }
+        if (sp->m_secondLayer) s->second = sp->m_secondLayer->getColor();
+        s->playerVisible = sp->isVisible();
+        if (sp->m_detailSprite) s->detailVisible = sp->m_detailSprite->isVisible();
+        if (sp->m_birdDome)     s->domeVisible   = sp->m_birdDome->isVisible();
+        if (sp->m_robotSprite && sp->m_robotSprite->m_extraSprite) {
+            s->robotExtraVisible = sp->m_robotSprite->m_extraSprite->isVisible();
+        }
+        if (sp->m_spiderSprite && sp->m_spiderSprite->m_extraSprite) {
+            s->spiderExtraVisible = sp->m_spiderSprite->m_extraSprite->isVisible();
+        }
+        if (auto* lock = IconLockStyler::findLockSprite(icon)) {
+            s->lockVisible = lock->isVisible();
+            s->lockColor   = lock->getColor();
+            s->lockOpacity = lock->getOpacity();
+        }
+        return s;
+    }
+
+    void replay(GJItemIcon* icon, SimplePlayer* sp) const {
+        sp->setVisible(playerVisible);
+        if (sp->m_detailSprite) sp->m_detailSprite->setVisible(detailVisible);
+        if (sp->m_birdDome)     sp->m_birdDome->setVisible(domeVisible);
+        if (sp->m_robotSprite && sp->m_robotSprite->m_extraSprite) {
+            sp->m_robotSprite->m_extraSprite->setVisible(robotExtraVisible);
+        }
+        if (sp->m_spiderSprite && sp->m_spiderSprite->m_extraSprite) {
+            sp->m_spiderSprite->m_extraSprite->setVisible(spiderExtraVisible);
+        }
+        IconLockStyler::tintAllParts(sp, {255, 255, 255});
+        sp->setColors(first, second);
+        IconLockStyler::fadeAllParts(sp, opacity);
+        if (auto* lock = IconLockStyler::findLockSprite(icon)) {
+            lock->setVisible(lockVisible);
+            lock->setColor(lockColor);
+            lock->setOpacity(lockOpacity);
+        }
+    }
+};
+
 }  // anonymous namespace
 
 IconRecolorEngine& IconRecolorEngine::get() {
@@ -139,32 +204,61 @@ void IconRecolorEngine::recolorListBar(ListButtonBar* bar, RecolorArea area) {
     }
 }
 
+void IconRecolorEngine::snapshotLockedVanilla(GJItemIcon* icon) {
+    if (!icon) return;
+    if (icon->getUserObject(kIconLockSnapshotKey)) return;
+    auto* sp = typeinfo_cast<SimplePlayer*>(icon->m_player);
+    if (!sp) return;
+    icon->setUserObject(kIconLockSnapshotKey, LockedVanillaSnapshot::capture(icon, sp));
+}
+
 void IconRecolorEngine::restoreOne(GJItemIcon* icon) {
     if (!icon) return;
     auto* sp = typeinfo_cast<SimplePlayer*>(icon->m_player);
     if (!sp) return;
 
-    bool locked = icon->getUserObject(kIconLockedKey) != nullptr;
+    bool const locked = isLockedIcon(icon, sp);
+    // Icons we never touched are already vanilla; repainting them here only
+    // introduces drift from the real stock look.
     if (!locked && !icon->getUserObject(kIconRecoloredKey)) return;
 
-    // Undo any visibility changes a lock style may have made.
+    if (locked) {
+        auto* snap = typeinfo_cast<LockedVanillaSnapshot*>(
+            icon->getUserObject(kIconLockSnapshotKey));
+        if (snap) {
+            snap->replay(icon, sp);
+        } else {
+            // No snapshot (icon locked before our hook existed): best-effort
+            // vanilla, which hides detail layers and keeps the icon dimmed.
+            sp->setVisible(true);
+            if (sp->m_detailSprite) sp->m_detailSprite->setVisible(false);
+            if (sp->m_birdDome)     sp->m_birdDome->setVisible(false);
+            if (sp->m_robotSprite && sp->m_robotSprite->m_extraSprite) sp->m_robotSprite->m_extraSprite->setVisible(false);
+            if (sp->m_spiderSprite && sp->m_spiderSprite->m_extraSprite) sp->m_spiderSprite->m_extraSprite->setVisible(false);
+            IconLockStyler::tintAllParts(sp, {255, 255, 255});
+            sp->setColors({175, 175, 175}, {255, 255, 255});
+            IconLockStyler::fadeAllParts(sp, 120);
+            if (auto* lock = IconLockStyler::findLockSprite(icon)) {
+                lock->setVisible(true);
+                lock->setColor({255, 255, 255});
+                lock->setOpacity(255);
+            }
+        }
+        icon->setUserObject(kIconRecoloredKey, nullptr);
+        return;
+    }
+
+    // Unlocked browser items are gray/white with no glow in stock GD.
     sp->setVisible(true);
     if (sp->m_detailSprite) sp->m_detailSprite->setVisible(true);
     if (sp->m_birdDome)     sp->m_birdDome->setVisible(true);
     if (sp->m_robotSprite && sp->m_robotSprite->m_extraSprite) sp->m_robotSprite->m_extraSprite->setVisible(true);
     if (sp->m_spiderSprite && sp->m_spiderSprite->m_extraSprite) sp->m_spiderSprite->m_extraSprite->setVisible(true);
 
-    // Browser items are gray/white with no glow in stock GD.
     IconLockStyler::tintAllParts(sp, {255, 255, 255});
     sp->setColors({175, 175, 175}, {255, 255, 255});
     sp->disableGlowOutline();
-
-    if (auto* lock = IconLockStyler::findLockSprite(icon)) {
-        lock->setVisible(locked);
-        lock->setColor({255, 255, 255});
-        lock->setOpacity(255);
-    }
-    IconLockStyler::fadeAllParts(sp, locked ? 120 : 255);
+    IconLockStyler::fadeAllParts(sp, 255);
 
     icon->setUserObject(kIconRecoloredKey, nullptr);
 }

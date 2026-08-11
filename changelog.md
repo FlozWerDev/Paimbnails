@@ -1,17 +1,150 @@
-# v1.0.9
+# <cy>v1.1.0</c>
+
+![](flozwer.paimbnails2/paim_Paimon.png?height=32) **La actualizacion mas grande hasta ahora.** Mas de <cg>25 funciones nuevas</c>, el <cl>Collab Editor</c> abierto para todos y una tanda larga de arreglos.
+
+---
+
+## ![](frame:GJ_hammerIcon_001.png?height=18) <cy>Editor</c>
+
+- <cl>Autobuild</c> (boton en la barra o **Ctrl+B**): decoras una zona una vez y la repites donde quieras.
+- Modo <cg>Onda</c>: aprende que pieza puede ir al lado de cual y rellena bloques y decoracion de forma coherente. Modo <cg>Sellos</c>: guarda grupos enteros y suelta uno en cada sitio.
+- Construye sobre marcadores (bloques **467**, **143** y **146**), sobre la seleccion o rellenando toda el area.
+- Conserva colores, HSV, grupos, capas y orden Z del objeto original, e importa solo los canales de color que se usan.
+- Trae <cg>Otra semilla</c>, <cg>Deshacer</c> y <cg>Ver nivel</c> para probar resultados sin cerrar el panel.
+- Las plantillas son archivos sueltos en la carpeta del mod (se comparten) y acepta librerias **.tblib** de otros autobuilders.
+- <cl>Collab Editor</c>: se acaba la beta cerrada, <cg>ya esta disponible para todos</c>.
+- <cl>Collab</c>: sincronizacion rehecha para assets de miles de objetos. Envio con confirmacion y reintentos, verificacion automatica con auto-reparacion de desyncs, y las selecciones gigantes ya se sincronizan al moverlas o rotarlas.
+- <cl>Collab</c>: invitaciones de amigos con cartel para entrar de una, chat de voz tipo walkie-talkie con boton de **Mic**, y cada colaborador con su cursor personalizado.
+- <cr>Se quitaron los 57 modulos de editor tipo BetterEdit</c> (HideUI, Object Search, Reference Image, Level Backups, Grid Control, Editor History, View Panel...) porque provocaban crashes. El color picker (**Ctrl+G**), la rotacion con **Alt + click derecho**, los filtros de Mis Niveles y Autobuild siguen funcionando.
+
+---
+
+## ![](frame:GJ_garageBtn_001.png?height=18) <cy>Iconos y garage</c>
+
+- <cl>Extras del Kit</c>: un solo boton en el garage junta Iconos Copiados, Tienda, Degradados y Kit del P2. No duplica botones: se los pide prestados al garage y se los devuelve al cerrar.
+- <cl>Creador de Iconos</c>: arma tus propios iconos. Pintas cada pieza con color plano, degradado lineal o radial, o una imagen tuya, y el resultado se instala solo en More Icons.
+- <cl>Creador de Iconos</c>: galeria de proyectos, historial de cambios, paletas, editor de degradados con vista previa en vivo y opcion de compartir.
+- <cl>Tienda de Iconos</c>: iconos de la comunidad desde **iconsgallery.pages.dev**, con buscador, filtros y ficha de cada uno.
+- <cl>Icon Gradients</c>: degradados de GPU para tus iconos, en garage, partida, menu, perfiles y comentarios. Set aparte para el P2 (o colores volteados), puntos movibles con el teclado y precarga de shaders para evitar tirones.
+- <cl>Separate Dual Icons</c>: el jugador 2 con sus propios iconos, colores, estela y efecto de muerte.
+- <cl>My Icon Sets</c>: el boton de carpeta de Copied Icons guarda tu kit completo (los 9 gamemodes, colores, glow, estela y muerte) con nombre, para volver a ponerlo cuando quieras. Hasta **100** sets.
+- <cl>Copy Icons</c>: cada icono abre su ficha con zoom. Ves si lo tienes desbloqueado, el porcentaje del logro y como se consigue, con el asset de ![](frame:GJ_moonsIcon_001.png?height=13) lunas, ![](frame:GJ_starsIcon_001.png?height=13) estrellas, diamantes, monedas u orbes y la cantidad exacta.
+- <cl>Sonidos de muerte propios</c>: metes tus mp3/wav (de a uno o una carpeta entera) y suenan al morir. Al azar o en orden, sin repetir el mismo dos veces, con volumen y tono.
+
+---
+
+## ![](frame:newMusicIcon_001.png?height=18) <cy>Audio</c>
+
+- <cl>Cancion Dinamica</c>: al darle play la musica <cg>ya no se corta</c>. Se hunde bajo un filtro submarino y sigue sonando mientras se descarga el nivel; solo se apaga cuando el nivel arranca de verdad. Si cierras el popup, sale del agua sola.
+- <cl>Cancion Dinamica</c>: panel propio en **Paimon Hub > Audio**. Punto de inicio, que cancion suena si el nivel tiene varias, volumen, fundido y si suena en los niveles oficiales.
+- <cl>Cancion Dinamica</c>: el buceo trae 4 estilos (Submarino, Amortiguado, Profundo y Radio) mas modo Personalizado con corte de agudos y graves, reverb y tono, con boton de <cg>Probar</c>.
+- <cl>Volumen Dinamico</c>: mide el volumen real de cada cancion (**LUFS**) y evita el salto al pasar de una tranquila a un drop fuerte. Modos Adaptativo, Fijo y Personalizado.
+- <cl>Menu Music</c>: buscador de **Newgrounds** dentro del juego. Top 5 semanal, busqueda por nombre o artista, escuchas antes de bajar y la descarga entra directo a tu biblioteca.
+- <cl>Menu Music</c>: navegador de la musica del juego <cg>por etiquetas</c>, para buscar por estilo en vez de por ID.
+- <cl>Menu Music</c>: 8 efectos de audio (Slow + Reverb, Dreamy, Bass Boost, Nightcore, Underwater, Concert Hall y Lofi) mas <cg>audio espacial</c> con presets, movimiento en orbita o vaiven y un escenario donde mueves de donde viene el sonido.
+
+---
+
+## ![](frame:gj_twitchIcon_001.png?height=18) <cy>Level Requests</c>
+
+- Recibe pedidos de niveles desde tu <cg>pagina web</c> y desde los chats de <cg>Twitch</c>, <cg>YouTube</c>, <cg>Kick</c> y <cg>TikTok</c>. Todas las fuentes caen en la misma cola.
+- Comandos configurables (**!req**, **!request**...), limite de cola y overlay para **OBS** en `http://localhost:21680/overlay`.
+- Tu pagina es **flozwer.org/request/tu_usuario**, sacada de tu cuenta de Geometry Dash, con botones para copiar el link y abrirlo.
+- Para mandarte un nivel hay que registrarse con una cuenta de GD de verdad: Paimon da un codigo, la persona lo comenta en su perfil y el servidor lo comprueba. El nombre que ves en la cola es <cg>una cuenta real</c>.
+- Los pedidos de la web traen el recado que escribio la persona y su link de YouTube. Un boton azul abre el mensaje entero junto a quien lo mando, el nivel y su creador.
+- La linea de abajo de cada fila (el **@**, la ID y el creador) va en la fuente del juego y mas grande, con el creador en dorado, para leerla mientras transmites.
+- La pestana del navegador sale con <cg>el cubo del streamer</c>, dibujado con los sprites del propio juego, asi que varias paginas abiertas se distinguen de un vistazo.
+- El boton de la cola se movio del menu principal a la pantalla de busqueda online, junto a los demas filtros. Sigue mostrando el contador.
+- <cg>Aviso en pantalla</c> cuando llega un request nuevo, por encima de todo (jugando, en el editor y en el menu). Panel propio con vista previa donde eliges esquina, tamano, duracion, animaciones de entrada y salida, sonido y que datos ensena.
+
+---
+
+## ![](frame:GJ_starsIcon_001.png?height=18) <cy>Cursor</c>
+
+- <cl>Efectos de click</c>: nueva pestana con vista previa donde clickeas y mantienes apretado para probar al momento.
+- <cg>20 estallidos</c> al hacer click (onda, impacto, corazones, estrellas, confeti, chispas, fuego artificial, burbujas, nieve, tinta, rayos, circulo magico, pixeles, humo, monedas, notas, petalos, flor, galaxia y bola de fuego), otro distinto al soltar.
+- <cg>9 efectos</c> mientras mantienes apretado, <cg>8 reacciones</c> del propio cursor y <cg>10 sonidos</c> con volumen y tono.
+- <cg>18 presets</c> listos (Amor, Fiesta, Tormenta, Invocacion, Monedas, Volcan, Retro, Cosmos...) y engranaje propio por efecto: cada uno guarda su tamano y velocidad aparte, y los retoques se conservan aunque cambies de preset.
+- Funcionan <cg>en telefono</c>: salen donde tocas la pantalla. Ya no hace falta raton ni cursor personalizado, asi que tambien sirven en PC con el cursor normal.
+- <cl>Estela del cursor rehecha de cero</c>: 18 efectos, 6 modos de color (un color, degradado, arcoiris, arcoiris largo, al azar y por velocidad) y 30 presets. Las estelas viejas se convierten solas.
+- <cl>Tienda de cursores</c>: busca cursores de **rw-designer** y **custom-cursor.com** sin salir del juego, con vista previa e instalacion en un toque.
+
+---
+
+## ![](frame:GJ_infoIcon_001.png?height=18) <cy>Informacion y navegacion</c>
+
+- <cl>Paimon Info Suite</c>: paquete nuevo de modulos, cada uno se enciende por separado y con interruptor maestro.
+- <cg>Info extendida</c>: tus intentos, saltos, mejores runs y graficos sobre el thumbnail, mas todos los campos ocultos del nivel en pestanas, copiables al tocarlos.
+- <cg>IDs a la vista</c> en celdas, comentarios y perfiles, con color, opacidad, posicion y opcion de esconderlos hasta que aprietes **Shift**.
+- <cg>Saltar de pagina</c> pasando el tope de 999, <cg>busqueda avanzada</c> con presets guardados y <cg>seguimiento de progreso</c> con mapa de calor de muertes.
+- Perfiles de usuarios sin cuenta, herramientas de comentarios (ir a una pagina, ver IDs, estimar fecha exacta), relleno de nombres verdes en blanco y enriquecimiento opcional con **GDHistory**.
+- Los modulos que pisan a **BetterInfo** se apagan solos si lo tienes instalado.
+- <cl>Mensajes redisenados</c>: bandeja estilo GD con iconos de jugador, contador de no leidos, buscador local, respuesta rapida, atajo al perfil y seleccion de leidos para limpiar en masa.
+- <cl>For You</c>: motor de recomendaciones nuevo. Aprende de lo que juegas, te gusta y guardas, mezcla varias fuentes y te dice <cg>por que</c> te recomendo cada nivel. Panel de etiquetas para dirigirlo a mano.
+- <cl>Leaderboard Layout</c>: eliges que datos se ven en cada fila del ranking y en que orden, con presets listos.
+- <cl>Input Scroll</c>: rueda del raton sobre una casilla numerica para subir o bajar el valor. Con el modificador, decimales de a **0.10**.
+- <cl>Search History</c>: popup mas compacto (icono de dificultad, fecha y contador). Tocar una entrada busca directo.
+- <cl>Quick Hub</c> redisenado: rueda minimalista con <cg>seleccion por sector</c> (basta apuntar hacia la opcion, ya no hay que acertar el icono). La opcion apuntada crece y estrena aro de color, y el centro te dice que vas a abrir.
+- <cl>Quick Hub</c>: al hacer <cg>click derecho</c> en un boton del juego se guarda su direccion completa (ruta de node ids, pantalla, receptor del callback, texto, tag y posicion), asi que <cg>vuelve a encontrarlo aunque otros mods muevan la interfaz</c>. Si no estas en su pantalla, el radial <cg>te lleva alli y lo pulsa</c>.
+- <cl>Quick Hub</c>: los botones que no se pueden pulsar en la pantalla actual salen apagados y te dicen donde viven.
+- <cl>Quick Hub</c>: popup con pestanas <cg>Activos</c> y <cg>Anadir</c>, vista previa real de la rueda, y los botones capturados se pueden <cg>reeditar o borrar</c>. Al capturar eliges nombre, icono, forma (circulo, cuadrado o suelto) y color.
+
+---
+
+## ![](frame:GJ_sTrendingIcon_001.png?height=18) <cy>Jugabilidad y rendimiento</c>
+
+- <cl>Golden Best</c>: el porcentaje se pone <cy>dorado</c> mientras superas tu record. Tambien en practica, plataformas, start pos y modo test, con color propio si quieres.
+- <cl>Rendimiento en Gameplay</c>: panel nuevo que apaga de golpe lo que mas cuesta mientras juegas (efectos de fondo, de gameplay, del jugador, glow, gradientes, shaders, particulas, decoracion, suelo y transiciones), cada cosa por separado.
+- <cl>Smooth Level Transitions+</c>: nueva entrada y salida de los niveles con 4 estilos, duracion e intensidad propias y control de que se anima. La salida copia la entrada, tiene su propio estilo o se apaga.
+- <cl>Modulos</c>: registro central. Cada funcion del mod tiene un id fijo y un nombre visible, ordenada por donde trabaja, para prenderlas y apagarlas desde un solo sitio.
+
+---
+
+## ![](frame:GJ_colorBtn_001.png?height=18) <cy>Capturas y Texture Studio</c>
+
+- <cl>Explorador de Assets redisenado</c>: vista previa arriba a la izquierda, buscador por ID, contador de objetos ocultos y boton de contraer o expandir todo.
+- Las categorias se pliegan tocandolas (antes salian cientos de IDs de golpe), la casilla se pone <co>ambar</c> cuando solo una parte esta oculta, y cada ID trae un boton <cg>Solo</c>.
+- <cl>Editar Capas</c>: ahora es un arbol que se pliega, con contador por grupo (3/7), casilla ambar a medias, buscador de rama y vista previa en vivo al lado.
+- <cl>Texture Studio Fusion</c>: pegas tus imagenes o GIFs encima de los sprites del juego. Rellenado por color, 3 modos de mezcla, opacidad, escala, giro, espejo y ajuste pixel a pixel, con exportacion animada.
+- <cl>GIF a spritesheet</c>: convierte un GIF en un PNG en rejilla mas su JSON de tiempos.
+
+---
+
+## ![](frame:chestIcon_001.png?height=18) <cy>Extras</c>
+
+- <cl>Modly</c>: navegador dentro del juego para los mods de **modly.web.app**, con catalogo, ficha de cada mod, comentarios y perfil del autor.
+- <cl>Guia Paimon</c> (Paigorit V1.5): cobertura de todo el mod, frases de problema EN/ES, categorias Editor/Visuales, chips dinamicos y recomendaciones.
+- <cl>Guia Paimon</c>: ahora entiende las repreguntas. Si sigues hablando del mismo tema responde sobre el tema anterior en vez de empezar de cero.
+- <cl>Gradient Animations</c>: opcion <cg>Custom</c> para armar tu animacion desde cero. Hasta 4 capas con su movimiento, ritmo, fuerza, velocidad y punto de arranque, mas 6 recetas listas (Wobble, Heartbeat, Swirl, Glitch, Liquid y Vortex).
+- <cl>Codigo de moderador</c>: nuevo flujo para crearlo o rotarlo verificandolo con un comentario en tu perfil, y boton para copiarlo.
+
+---
+
+## ![](frame:GJ_optionsBtn_001.png?height=18) <cy>Correcciones</c>
+
+- <cl>Cancion Dinamica</c>: ya no se cuela un trozo de musica de menu por encima de la cancion del nivel al entrar.
+- <cl>Level Requests</c>: arreglado el descentrado de las caras de dificultad y los brillos de featured, epic, legendary y mythic en la pagina web. Los PNG venian recortados al ras, asi que la pagina perdia el margen que usa el juego. Ahora comparten lienzo y se apilan igual que en el juego, y las dificultades guardan su tamano real entre si.
+- <cl>Texture Studio</c>: arreglados los sprites descentrados en los packs exportados. Las hojas guardan algunos sprites girados 90 grados y el exportador los recortaba con el ancho y el alto cambiados. <co>Hay que volver a exportar el pack.</c>
+- <cl>Capturadora</c>: arreglada la mini vista previa de Editar Capas y del Explorador de Assets, que salia diminuta en la esquina de un recuadro negro. Ahora llena su recuadro, se refresca sola y respeta si escondiste al Jugador 1 o 2.
+- <cl>Capturadora</c>: los avisos de calidad grafica, Low Detail Mode y jugador muerto ahora salen en espanol.
+- <cl>Capturadora</c>: el boton de carpeta ya abre la carpeta cuando tu usuario de Windows lleva acentos.
+- <cl>Explorador de Assets</c>: ocultar un tipo de objeto ya no recorre el nivel entero por cada click, y abrir el panel en un nivel enorme ya no guarda una copia de todos los objetos.
+- <cl>Perfiles</c>: se elimino el cache en disco de getGJUserInfo y ahora se usa el nativo del juego. Corrige el estado de amistad viejo (no aparecer como amigo despues de aceptar).
+- <cl>Texturas rotas</c> al cambiar resolucion, pantalla completa o calidad de texturas: el juego recrea el contexto grafico y tira todas las texturas. Ahora el mod suelta las suyas antes y las rearma despues.
+- <cl>Memoria</c>: las portadas y thumbnails que mirabas se quedaban en VRAM toda la sesion. Ahora solo se mantienen las ultimas y el resto se libera.
+- <cl>Search History</c>: corregido que todas las entradas mostraran "Demon".
+
+---
+
+# <cy>v1.0.9</c>
 
 **Fix Update**
-- Guia Paimon (Paigorit V1.5): cobertura de todo el mod (collab, editor history/filters/color/rotate, song search, mentions, menu physics, smooth UI, settings panel...), frases de problema EN/ES, categorias Editor/Visuales, chips dinamicos y recomendaciones.
 - Se eliminaron varios archivos que provocaban crash.
-- Editor History: compact undo panel for Color / Groups / Layers (last change per category).
 - Collab Editor agregado en beta cerrada. Estara disponible para todos el 20 de julio de 2026 con v1.1.0.
-- Collab Editor: sincronizacion rehecha para ser confiable con assets de miles de objetos. Envio con confirmacion y reintentos (ya no se pierden objetos), verificacion automatica de estado con auto-reparacion de desyncs, y las selecciones gigantes ahora si se sincronizan al moverlas o rotarlas.
 - Editor: nuevo color picker con Ctrl + G.
 - Editor: nueva rotacion con Alt + click derecho.
-- Search History: popup redisenado mas compacto (icono de dificultad, fecha y contador). Tocar una entrada ahora busca directamente, y se corrigio que todas las entradas mostraran "Demon".
-- Perfiles: se elimino el cache en disco de getGJUserInfo; ahora se usa el cache nativo del juego. Corrige que el perfil mostrara un estado de amistad viejo (ej. no aparecer como amigo despues de aceptar la solicitud).
 
-# v1.0.8
+# <cy>v1.0.8</c>
 
 **Resumen**
 - Nuevo Paimon Hub con skin GD.
@@ -20,7 +153,7 @@
 - Perfil redisenado y mas opciones visuales.
 - Correcciones de rendimiento, audio y estabilidad.
 
-# v1.0.7
+# <cy>v1.0.7</c>
 
 **Resumen**
 - Busqueda de canciones por nombre.
@@ -28,7 +161,7 @@
 - Menu Physics agregado.
 - Nuevos ajustes para estas funciones.
 
-# v1.0.6
+# <cy>v1.0.6</c>
 
 ## English
 
@@ -70,7 +203,7 @@
 - Nueva UI de Paimbnails.
 - Editor Music (pones tu musica mientras creas en el editor).
 
-# v1.0.5
+# <cy>v1.0.5</c>
 
 ## English
 
@@ -138,7 +271,7 @@
 **Build / Toolchain**
 - Version del proyecto actualizada en CMakeLists.
 
-# v1.0.4
+# <cy>v1.0.4</c>
 
 ## English
 
@@ -194,7 +327,7 @@
 - Pase general de optimizacion en los pipelines de render, audio y assets.
 - Multiples bugs arreglados.
 
-# v1.0.1
+# <cy>v1.0.1</c>
 
 ## English
 

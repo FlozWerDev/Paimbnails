@@ -8,12 +8,12 @@ namespace paimon::gif {
 
 namespace {
 
-// LSB-first bit packer for the GIF's LZW codes.
+// LSB-first bit packer for GIF LZW codes.
 struct BitWriter {
     std::vector<uint8_t>& out;
     uint32_t bitBuffer = 0;
     int bitCount = 0;
-    std::vector<uint8_t> block; // current sub-block (max 255 bytes)
+    std::vector<uint8_t> block; // GIF sub-block (max 255 bytes)
 
     explicit BitWriter(std::vector<uint8_t>& o) : out(o) {}
 
@@ -42,11 +42,11 @@ struct BitWriter {
             bitCount = 0;
         }
         flushBlock();
-        out.push_back(0x00); // block terminator
+        out.push_back(0x00);
     }
 };
 
-// LZW-encode a frame of palette indices into a compressed GIF stream.
+// Encode palette indices as a GIF LZW stream.
 void lzwEncode(std::vector<uint8_t> const& indices, int minCodeSize,
                std::vector<uint8_t>& out) {
     int clearCode = 1 << minCodeSize;
@@ -57,7 +57,7 @@ void lzwEncode(std::vector<uint8_t> const& indices, int minCodeSize,
     out.push_back(static_cast<uint8_t>(minCodeSize));
     BitWriter writer(out);
 
-    // dictionary: key = (prefix << 8) | byte; reset after Clear
+    // Key is (prefix << 8) | byte; reset after Clear.
     std::unordered_map<uint32_t, int> dict;
     dict.reserve(4096);
 
@@ -108,7 +108,7 @@ void put16(std::vector<uint8_t>& out, uint16_t v) {
 
 struct RGB { uint8_t r, g, b; };
 
-} // namespace
+}
 
 std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alphaThreshold) {
     std::vector<uint8_t> out;
@@ -118,13 +118,12 @@ std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alph
     int H = frames[0].height;
     if (W <= 0 || H <= 0) return out;
 
-    // 1. quantization: gather colors (alpha >= threshold) by frequency. Index 0
-    // is reserved for transparency; up to 255 opaque colors.
+    // Quantize opaque colors by frequency; index 0 is transparency.
     std::unordered_map<uint32_t, uint32_t> freq;
     freq.reserve(1024);
     for (auto const& f : frames) {
         if (f.width != W || f.height != H) continue; // ignore odd sizes
-        if (f.rgba.size() < static_cast<size_t>(W) * H * 4) continue; // truncated buffer; avoid OOB
+        if (f.rgba.size() < static_cast<size_t>(W) * H * 4) continue; // avoid OOB
         size_t n = static_cast<size_t>(W) * H;
         for (size_t i = 0; i < n; ++i) {
             uint8_t a = f.rgba[i * 4 + 3];
@@ -140,9 +139,9 @@ std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alph
     std::sort(sorted.begin(), sorted.end(),
               [](auto const& a, auto const& b){ return a.second > b.second; });
 
-    // palette: index 0 = transparent (black placeholder), 1..N colors
+    // Palette index 0 is transparent; the rest hold opaque colors.
     std::vector<RGB> palette;
-    palette.push_back({0, 0, 0}); // transparent
+    palette.push_back({0, 0, 0});
     for (auto const& [key, _] : sorted) {
         if (palette.size() >= 256) break;
         palette.push_back({
@@ -152,13 +151,13 @@ std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alph
         });
     }
 
-    // GIF palette size must be a power of 2 (2..256)
+    // GIF palettes are powers of two (2..256).
     int palBits = 1;
     while ((1 << palBits) < static_cast<int>(palette.size())) palBits++;
     if (palBits < 1) palBits = 1;
     int palSize = 1 << palBits;
 
-    // exact color->index map to speed up (frames usually repeat colors)
+    // Cache exact colors; frames usually repeat them.
     std::unordered_map<uint32_t, uint8_t> colorToIdx;
     for (size_t i = 1; i < palette.size(); ++i) {
         uint32_t key = (static_cast<uint32_t>(palette[i].r) << 16)
@@ -171,7 +170,7 @@ std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alph
         uint32_t key = (static_cast<uint32_t>(r) << 16) | (static_cast<uint32_t>(g) << 8) | b;
         auto it = colorToIdx.find(key);
         if (it != colorToIdx.end()) return it->second;
-        // linear search for the nearest color (small palette, small frames)
+        // Linear search is fine for this small palette.
         int best = 1; long bestDist = LONG_MAX;
         for (size_t i = 1; i < palette.size(); ++i) {
             long dr = static_cast<long>(r) - palette[i].r;
@@ -184,17 +183,14 @@ std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alph
         return static_cast<uint8_t>(best);
     };
 
-    // 2. GIF89a header
     out.insert(out.end(), {'G','I','F','8','9','a'});
     put16(out, static_cast<uint16_t>(W));
     put16(out, static_cast<uint16_t>(H));
-    // Packed: global color table flag (1) | color res (palBits-1)<<4 | sort 0 | size (palBits-1)
     uint8_t packed = 0x80 | ((palBits - 1) << 4) | (palBits - 1);
     out.push_back(packed);
     out.push_back(0);  // background color index
     out.push_back(0);  // pixel aspect ratio
 
-    // Global color table (palSize * 3 bytes)
     for (int i = 0; i < palSize; ++i) {
         if (i < static_cast<int>(palette.size())) {
             out.push_back(palette[i].r);
@@ -205,7 +201,6 @@ std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alph
         }
     }
 
-    // 3. infinite loop (NETSCAPE2.0)
     out.insert(out.end(), {0x21, 0xFF, 0x0B});
     char const* nsle = "NETSCAPE2.0";
     out.insert(out.end(), nsle, nsle + 11);
@@ -213,35 +208,33 @@ std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alph
 
     int minCodeSize = std::max(2, palBits);
 
-    // 4. each frame
     for (auto const& f : frames) {
         if (f.width != W || f.height != H) continue;
-        if (f.rgba.size() < static_cast<size_t>(W) * H * 4) continue; // truncated buffer; avoid OOB
+        if (f.rgba.size() < static_cast<size_t>(W) * H * 4) continue; // avoid OOB
 
-        // Graphic Control Extension (delay + transparency)
+        // Graphic Control Extension.
         int delayCs = std::max(2, f.delayMs / 10); // centiseconds, min 2
         out.insert(out.end(), {0x21, 0xF9, 0x04});
-        // packed: disposal=2 (restore to bg) <<2 | transparent color flag (1)
+        // Disposal=2 and transparency enabled.
         out.push_back(static_cast<uint8_t>((2 << 2) | 0x01));
         put16(out, static_cast<uint16_t>(delayCs));
-        out.push_back(0x00); // transparent color index = 0
-        out.push_back(0x00); // block terminator
+        out.push_back(0x00);
+        out.push_back(0x00);
 
-        // Image Descriptor
         out.push_back(0x2C);
-        put16(out, 0); // left
-        put16(out, 0); // top
+        put16(out, 0);
+        put16(out, 0);
         put16(out, static_cast<uint16_t>(W));
         put16(out, static_cast<uint16_t>(H));
-        out.push_back(0x00); // no local color table
+        out.push_back(0x00);
 
-        // frame indices
+        // Frame indices.
         std::vector<uint8_t> indices(static_cast<size_t>(W) * H, 0);
         size_t n = static_cast<size_t>(W) * H;
         for (size_t i = 0; i < n; ++i) {
             uint8_t a = f.rgba[i * 4 + 3];
             if (a < alphaThreshold) {
-                indices[i] = 0; // transparent
+                indices[i] = 0;
             } else {
                 indices[i] = nearestIndex(f.rgba[i*4+0], f.rgba[i*4+1], f.rgba[i*4+2]);
             }
@@ -250,9 +243,8 @@ std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alph
         lzwEncode(indices, minCodeSize, out);
     }
 
-    // Trailer
     out.push_back(0x3B);
     return out;
 }
 
-} // namespace paimon::gif
+}

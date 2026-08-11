@@ -4,6 +4,7 @@
 #include "../utils/ListThumbnailCarousel.hpp"
 #include "TransparentListHelpers.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include "../core/modules/ModuleRegistry.hpp"
 #include <sstream>
 
 using namespace geode::prelude;
@@ -31,6 +32,8 @@ class $modify(PaimonMapPackCell, MapPackCell) {
             m_fields->m_carousel->removeFromParent();
             m_fields->m_carousel = nullptr;
         }
+
+        if (!paimon::modules::isEnabled("paimbnails.thumbnails.browser")) return;
 
         WeakRef<PaimonMapPackCell> self = this;
         Loader::get()->queueInMainThread([self]() {

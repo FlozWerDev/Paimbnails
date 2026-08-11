@@ -7,6 +7,8 @@
 #include <media/NdkMediaCodec.h>
 #include <media/NdkMediaExtractor.h>
 #include <media/NdkMediaFormat.h>
+#include <media/NdkImage.h>
+#include <media/NdkImageReader.h>
 #include <android/native_window.h>
 
 namespace paimon {
@@ -19,7 +21,6 @@ public:
     bool open(const std::string& path) override;
     void startDecoding() override;
     void stopDecoding() override;
-    bool consumeFrame(Frame& outFrame) override;
     bool skipFrame() override;
     void seekTo(double seconds) override;
     double getDuration() const override;
@@ -31,6 +32,10 @@ public:
     const Frame* peekFrame() override;
     void releaseFrame() override;
     bool isTerminal() const override { return m_decodeThreadDetached.load(std::memory_order_acquire); }
+    bool setLooping(bool loop) override {
+        m_looping.store(loop, std::memory_order_relaxed);
+        return true;
+    }
 
     // Optional: set surface for direct rendering (zero-copy)
     void setSurface(ANativeWindow* window);
@@ -45,9 +50,18 @@ private:
     // Returns true if the color format delivers YUV in semi-planar (NV12) layout.
     bool isSemiPlanar(int colorFormat) const;
 
+    // AImageReader hands back YUV_420_888 with documented per-plane strides,
+    // which sidesteps the vendor color-format guessing of the raw buffer path.
+    bool setupImageReader();
+    void releaseImageReader();
+    bool drainImageReader(int64_t presentationTimeUs);
+
     AMediaExtractor* m_extractor = nullptr;
     AMediaCodec*     m_codec     = nullptr;
     ANativeWindow*   m_surface   = nullptr; // not owned
+    AImageReader*    m_imageReader = nullptr;
+    ANativeWindow*   m_readerWindow = nullptr; // owned by m_imageReader
+    bool             m_useImageReader = false;
     int              m_trackIdx  = -1;
 
     VideoRingBuffer  m_ring;
@@ -71,6 +85,7 @@ private:
 
     std::atomic<bool> m_decoding{false};
     std::atomic<bool> m_finished{false};
+    std::atomic<bool> m_looping{false};
     std::atomic<bool> m_decodeThreadDetached{false};
     std::thread       m_thread;
 };

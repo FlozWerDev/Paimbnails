@@ -7,18 +7,17 @@ using namespace geode::prelude;
 
 namespace paimon::thumbnails {
     namespace {
-        LevelBrowserLayer* findActiveLevelBrowserLayer() {
-            auto* scene = CCDirector::get()->getRunningScene();
-            if (!scene) {
+        LevelBrowserLayer* findLevelBrowserInTree(CCNode* node) {
+            if (!node) {
                 return nullptr;
             }
 
-            if (auto* browser = scene->getChildByType<LevelBrowserLayer>(0)) {
+            if (auto* browser = typeinfo_cast<LevelBrowserLayer*>(node)) {
                 return browser;
             }
 
-            for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
-                if (auto* browser = typeinfo_cast<LevelBrowserLayer*>(child)) {
+            for (auto* child : CCArrayExt<CCNode*>(node->getChildren())) {
+                if (auto* browser = findLevelBrowserInTree(child)) {
                     return browser;
                 }
             }
@@ -26,25 +25,23 @@ namespace paimon::thumbnails {
             return nullptr;
         }
 
+        LevelBrowserLayer* findActiveLevelBrowserLayer() {
+            auto* scene = CCDirector::get()->getRunningScene();
+            return findLevelBrowserInTree(scene);
+        }
+
         void rebuildBrowserList(LevelBrowserLayer* browser) {
             if (!browser || !browser->m_searchObject) {
                 return;
             }
 
-            // Recreate the list so GD builds fresh cells with the new compact-mode type/height instead of recycling stale ones.
-            if (browser->m_list) {
-                browser->m_list->removeFromParentAndCleanup(true);
-                browser->m_list = nullptr;
-            }
-
-            if (browser->m_levels) {
-                browser->setupLevelBrowser(browser->m_levels);
-                browser->updatePageLabel();
-                browser->updateLevelsLabel();
-            } else {
-                browser->loadPage(browser->m_searchObject);
-            }
+            Ref<GJSearchObject> search = browser->m_searchObject;
+            CCDirector::get()->replaceScene(LevelBrowserLayer::scene(search));
         }
+    }
+
+    void refreshLevelBrowserForCompactToggle(LevelBrowserLayer* browser) {
+        rebuildBrowserList(browser);
     }
 
     void refreshActiveLevelBrowserForCompactToggle() {

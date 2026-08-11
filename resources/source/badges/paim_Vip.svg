@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e2a6ff"/>
+      <stop offset="0.52" stop-color="#a949e8"/>
+      <stop offset="1" stop-color="#5a188e"/>
+    </linearGradient>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="160%">
+      <feGaussianBlur stdDeviation="2.5"/>
+    </filter>
+  </defs>
+  <path d="M50 8 78 18 92 43 86 73 62 91 33 88 11 68 9 38 27 15Z" fill="#000" opacity=".62" filter="url(#shadow)" transform="translate(0 3)"/>
+  <path d="M50 4 79 15 94 41 88 73 63 93 31 90 7 69 6 36 26 12Z" fill="url(#rim)" stroke="#45106f" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M50 11 75 20 87 43 82 69 60 85 35 82 14 64 13 39 30 18Z" fill="#35133f" stroke="#f1c7ff" stroke-opacity=".55" stroke-width="2" stroke-linejoin="round"/>
+  <path d="m25 39 10-12h30l10 12-25 34Z" fill="#fff" stroke="#f2d4ff" stroke-width="2" stroke-linejoin="round"/>
+  <path d="m25 39 25 34 25-34M35 27l15 46 15-46M25 39h50" fill="none" stroke="#b653e7" stroke-width="3" stroke-linejoin="round"/>
+</svg>

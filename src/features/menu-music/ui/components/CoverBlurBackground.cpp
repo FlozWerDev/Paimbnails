@@ -1,6 +1,7 @@
 #include "CoverBlurBackground.hpp"
 #include "../../../../blur/BlurSystem.hpp"
 #include "../../../../utils/SpriteHelper.hpp"
+#include "../../../../utils/TextureBudget.hpp"
 
 #include <Geode/loader/Loader.hpp>
 #include <Geode/utils/cocos.hpp>
@@ -42,7 +43,7 @@ void CoverBlurBackground::setCoverFromPath(const std::string& absolutePath) {
         return;
     }
 
-    auto* source = CCTextureCache::sharedTextureCache()->addImage(absolutePath.c_str(), false);
+    auto* source = paimon::image::loadBudgeted(absolutePath);
     if (!source) return;
 
     std::string key = fmt::format("menumusic_cover::{}", absolutePath);

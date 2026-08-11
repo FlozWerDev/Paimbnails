@@ -13,10 +13,7 @@
 
 namespace paimon {
 
-/**
- * Fixed-size thread pool. Replaces unbounded std::async to avoid I/O thrash
- * from many concurrent threads hitting disk at once.
- */
+// Fixed-size pool to keep concurrent disk I/O bounded.
 class ThreadPool {
 public:
     struct SharedState {
@@ -62,10 +59,7 @@ public:
         state->cv.notify_one();
     }
 
-    /**
-     * Enqueue a high-priority job (front of the queue). Used for visible-cell
-     * tasks that must run before already-queued predictive prefetches.
-     */
+    // Visible-cell work runs before predictive prefetches.
     void enqueueFront(std::function<void()> job) {
         auto state = m_state;
         if (!state) return;

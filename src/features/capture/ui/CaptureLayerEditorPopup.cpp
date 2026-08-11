@@ -4,6 +4,8 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "CapturePreviewPopup.hpp"
+#include "CaptureMiniPreview.hpp"
+#include "CaptureListWidgets.hpp"
 #include "CaptureUIConstants.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
@@ -25,10 +27,19 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
+using paimon::capture::ui::ClippedMenu;
+
 // Heap-allocated to avoid destruction-order problems during game shutdown.
 static auto& s_originalVisibilities = *new std::vector<paimon::capture::VisibilityRecord>();
 
 namespace {
+    constexpr ccColor3B kAccent    {255, 215, 90};
+    constexpr ccColor3B kTextOn    {255, 255, 255};
+    constexpr ccColor3B kTextOff   {130, 130, 130};
+    constexpr ccColor3B kHeaderOn  {255, 226, 120};
+    constexpr ccColor3B kHeaderOff {120, 110, 80};
+    constexpr ccColor3B kPartial   {255, 190, 90};
+
     static std::string simplifyClassName(std::string const& cls) {
         std::string name = cls;
         for (char const* prefix : {"class ", "struct "}) {
@@ -46,6 +57,10 @@ namespace {
         return Localization::get().getLanguage() == Localization::Language::ENGLISH ? en : es;
     }
 
+    static std::string loc(char const* key) {
+        return Localization::get().getString(key);
+    }
+
     static std::string toLower(std::string s) {
         std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
             return static_cast<char>(std::tolower(c));
@@ -59,10 +74,10 @@ namespace {
         if (!id.empty()) return id;
         auto cls = simplifyClassName(typeid(*node).name());
         if (typeinfo_cast<CCParticleSystem*>(node)) {
-            return tr("Partículas", "Particles") + " (" + cls + ")";
+            return tr("Particulas", "Particles") + " (" + cls + ")";
         }
         if (typeinfo_cast<CCMenu*>(node)) {
-            return tr("Menú", "Menu") + " (" + cls + ")";
+            return tr("Menu", "Menu") + " (" + cls + ")";
         }
         return cls;
     }
@@ -83,41 +98,6 @@ namespace {
         }
         return false;
     }
-
-    // Clips touch testing to a parent ScrollLayer's visible rect.
-    class ClippedMenu : public CCMenu {
-    public:
-        static ClippedMenu* create(CCNode* clipParent) {
-            auto ret = new ClippedMenu();
-            if (ret && ret->init()) {
-                ret->m_clipParent = clipParent;
-                ret->autorelease();
-                return ret;
-            }
-            CC_SAFE_DELETE(ret);
-            return nullptr;
-        }
-
-        bool ccTouchBegan(CCTouch* touch, CCEvent* event) override {
-            if (m_clipParent) {
-                auto worldPt = touch->getLocation();
-                auto parentPos = m_clipParent->convertToWorldSpace({0.f, 0.f});
-                auto parentSize = m_clipParent->getContentSize();
-                // Use parent's world-space bounds
-                auto parentScale = m_clipParent->getScale();
-                float w = parentSize.width * parentScale;
-                float h = parentSize.height * parentScale;
-                if (worldPt.x < parentPos.x || worldPt.x > parentPos.x + w ||
-                    worldPt.y < parentPos.y || worldPt.y > parentPos.y + h) {
-                    return false;
-                }
-            }
-            return CCMenu::ccTouchBegan(touch, event);
-        }
-
-    private:
-        CCNode* m_clipParent = nullptr;
-    };
 }
 
 CaptureLayerEditorPopup* CaptureLayerEditorPopup::create(CapturePreviewPopup* previewPopup) {
@@ -147,95 +127,108 @@ void CaptureLayerEditorPopup::discardTrackedLayers() {
 
 bool CaptureLayerEditorPopup::init() {
     namespace C = paimon::capture::layers;
+    namespace E = paimon::capture::editor;
 
     if (!Popup::init(C::POPUP_WIDTH, C::POPUP_HEIGHT)) return false;
-    this->setTitle(Localization::get().getString("layers.title").c_str());
+    this->setTitle(loc("layers.title").c_str());
 
     auto content = m_mainLayer->getContentSize();
 
     populateLayers();
 
     if (m_layers.empty()) {
-        auto noLabel = CCLabelBMFont::create(
-            Localization::get().getString("layers.no_playlayer").c_str(),
-            "bigFont.fnt"
-        );
+        auto noLabel = CCLabelBMFont::create(loc("layers.no_playlayer").c_str(), "bigFont.fnt");
         noLabel->setScale(0.4f);
         noLabel->setPosition({content.width * 0.5f, content.height * 0.5f});
         m_mainLayer->addChild(noLabel);
         return true;
     }
 
-    // Mini preview
-    const float previewW = C::MINI_PREVIEW_W;
-    const float previewH = C::MINI_PREVIEW_H;
-    const float previewY = content.height - C::MINI_PREVIEW_TOP_PAD - previewH * 0.5f;
+    // Sub-branches start folded: the flat tree used to open with a hundred rows
+    // of trails and particles before the first interesting layer.
+    for (auto& entry : m_layers) {
+        if (entry.isGroup && entry.depth >= 1) entry.collapsed = true;
+    }
 
-    auto previewBg = CCLayerColor::create({0, 0, 0, 200});
-    previewBg->setContentSize({previewW + 4.f, previewH + 4.f});
-    previewBg->ignoreAnchorPointForPosition(false);
-    previewBg->setAnchorPoint({0.5f, 0.5f});
-    previewBg->setPosition({content.width * 0.5f, previewY});
-    m_mainLayer->addChild(previewBg, 0);
+    const float previewTop = content.height - E::HEADER_TOP_PAD;
+    const float previewCY  = previewTop - E::PREVIEW_H * 0.5f;
+    const float previewCX  = E::SIDE_PAD + E::PREVIEW_W * 0.5f;
 
-    m_miniPreview = CCSprite::create();
-    m_miniPreview->setContentSize({previewW, previewH});
-    m_miniPreview->setPosition({content.width * 0.5f, previewY});
-    m_mainLayer->addChild(m_miniPreview, 1);
+    m_miniPreview = paimon::capture::MiniPreview::create(E::PREVIEW_W, E::PREVIEW_H);
+    if (m_miniPreview) {
+        m_miniPreview->setPosition({previewCX, previewCY});
+        if (auto preview = m_previewPopup.lock()) {
+            m_miniPreview->setPlayersHidden(preview->isPlayer1Hidden(), preview->isPlayer2Hidden());
+        }
+        m_mainLayer->addChild(m_miniPreview, 1);
+    }
 
-    updateMiniPreview();
+    const float colX = E::SIDE_PAD + E::PREVIEW_W + E::TOOLS_GAP;
 
-    // Filter button
-    const float filterY = previewY - previewH * 0.5f - C::FILTER_GAP_BELOW_PREVIEW;
-    auto filterMenu = CCMenu::create();
-    filterMenu->setPosition({0.f, 0.f});
+    auto toolMenu = CCMenu::create();
+    toolMenu->setPosition({0.f, 0.f});
+    toolMenu->setID("tool-menu"_spr);
+    m_mainLayer->addChild(toolMenu, 3);
 
-    auto filterSpr = ButtonSprite::create(
-        (tr("Filtro: Todo", "Filter: All") + "  \xe2\x96\xbc").c_str(),
-        static_cast<int>(C::FILTER_BTN_WIDTH), true, "bigFont.fnt",
-        "GJ_button_04.png", C::FILTER_BTN_HEIGHT, 0.3f
-    );
-    m_filterLabel = filterSpr ? filterSpr->getChildByType<CCLabelBMFont>(0) : nullptr;
+    {
+        auto filterSpr = ButtonSprite::create(
+            (loc("layers.filter_all")).c_str(),
+            static_cast<int>(C::FILTER_BTN_WIDTH), true, "bigFont.fnt",
+            "GJ_button_04.png", C::FILTER_BTN_HEIGHT, 0.3f);
+        m_filterLabel = filterSpr ? filterSpr->getChildByType<CCLabelBMFont>(0) : nullptr;
 
-    auto filterBtn = CCMenuItemSpriteExtra::create(
-        filterSpr, this,
-        menu_selector(CaptureLayerEditorPopup::onFilterBtn)
-    );
-    filterBtn->setPosition({content.width * 0.5f, filterY});
-    PaimonButtonHighlighter::registerButton(filterBtn);
-    filterMenu->addChild(filterBtn);
-    m_mainLayer->addChild(filterMenu, 3);
+        auto filterBtn = CCMenuItemSpriteExtra::create(
+            filterSpr, this, menu_selector(CaptureLayerEditorPopup::onFilterBtn));
+        filterBtn->setPosition({colX + C::FILTER_BTN_WIDTH * 0.5f, previewTop - 14.f});
+        filterBtn->setID("filter-button"_spr);
+        PaimonButtonHighlighter::registerButton(filterBtn);
+        toolMenu->addChild(filterBtn);
+    }
 
-    // lista de capas
+    {
+        auto* spr = ButtonSprite::create(
+            loc("layers.collapse_all").c_str(), 96, true, "bigFont.fnt",
+            "GJ_button_04.png", 20.f, 0.3f);
+        if (spr) {
+            m_collapseLabel = spr->getChildByType<CCLabelBMFont>(0);
+            auto* btn = CCMenuItemSpriteExtra::create(
+                spr, this, menu_selector(CaptureLayerEditorPopup::onCollapseAllBtn));
+            btn->setPosition({colX + 48.f, previewTop - 44.f});
+            btn->setID("collapse-all"_spr);
+            PaimonButtonHighlighter::registerButton(btn);
+            toolMenu->addChild(btn);
+        }
+    }
+
+    {
+        auto* hint = CCLabelBMFont::create(loc("layers.hint").c_str(), "bigFont.fnt");
+        hint->setScale(0.22f);
+        hint->setAnchorPoint({0.f, 0.5f});
+        hint->setOpacity(140);
+        hint->setPosition({colX, previewTop - E::PREVIEW_H + 8.f});
+        m_mainLayer->addChild(hint, 3);
+    }
+
     buildList();
 
-    // botones inferiores
     auto btnMenu = CCMenu::create();
-    btnMenu->setPosition({content.width * 0.5f, 20.f});
+    btnMenu->setPosition({content.width * 0.5f, 19.f});
     btnMenu->setID("bottom-buttons"_spr);
 
     auto restoreSpr = ButtonSprite::create(
-        Localization::get().getString("layers.restore_all").c_str(),
-        70, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.35f
-    );
+        loc("layers.restore_all").c_str(), 70, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.35f);
     if (restoreSpr) {
         auto btn = CCMenuItemSpriteExtra::create(
-            restoreSpr, this,
-            menu_selector(CaptureLayerEditorPopup::onRestoreAllBtn)
-        );
+            restoreSpr, this, menu_selector(CaptureLayerEditorPopup::onRestoreAllBtn));
         PaimonButtonHighlighter::registerButton(btn);
         btnMenu->addChild(btn);
     }
 
     auto doneSpr = ButtonSprite::create(
-        Localization::get().getString("layers.done").c_str(),
-        70, true, "bigFont.fnt", "GJ_button_02.png", 22.f, 0.35f
-    );
+        loc("layers.done").c_str(), 70, true, "bigFont.fnt", "GJ_button_02.png", 22.f, 0.35f);
     if (doneSpr) {
         auto btn = CCMenuItemSpriteExtra::create(
-            doneSpr, this,
-            menu_selector(CaptureLayerEditorPopup::onDoneBtn)
-        );
+            doneSpr, this, menu_selector(CaptureLayerEditorPopup::onDoneBtn));
         PaimonButtonHighlighter::registerButton(btn);
         btnMenu->addChild(btn);
     }
@@ -311,7 +304,6 @@ void CaptureLayerEditorPopup::populateLayers() {
         return addEntry(node, name, false, depth, parent);
     };
 
-    // Jugadores
     auto addPlayerGroup = [&](PlayerObject* player, std::string const& playerName) {
         if (!player) return;
 
@@ -328,7 +320,7 @@ void CaptureLayerEditorPopup::populateLayers() {
         int particlesGroup = -1;
         auto addParticle = [&](CCNode* node, std::string const& name) {
             if (!node) return;
-            if (particlesGroup == -1) particlesGroup = addGroup(tr("Partículas", "Particles"), playerGroup, 1);
+            if (particlesGroup == -1) particlesGroup = addGroup(tr("Particulas", "Particles"), playerGroup, 1);
             addLeaf(node, name, particlesGroup, 2);
         };
 
@@ -337,14 +329,14 @@ void CaptureLayerEditorPopup::populateLayers() {
         addTrail(player->m_waveTrail, tr("Trazo wave", "Wave trail"));
         addTrail(player->m_ghostTrail, tr("Trazo ghost", "Ghost trail"));
 
-        addParticle(player->m_vehicleGroundParticles, tr("Polvo vehículo", "Vehicle dust"));
+        addParticle(player->m_vehicleGroundParticles, tr("Polvo vehiculo", "Vehicle dust"));
         addParticle(player->m_robotFire, tr("Fuego robot", "Robot fire"));
         addParticle(player->m_playerGroundParticles, tr("Polvo suelo", "Ground particles"));
-        addParticle(player->m_trailingParticles, tr("Partículas trail", "Trailing particles"));
+        addParticle(player->m_trailingParticles, tr("Particulas trail", "Trailing particles"));
         addParticle(player->m_shipClickParticles, tr("Click ship", "Ship click particles"));
         addParticle(player->m_ufoClickParticles, tr("Click UFO", "UFO click particles"));
-        addParticle(player->m_robotBurstParticles, tr("Explosión robot", "Robot burst"));
-        addParticle(player->m_dashParticles, tr("Partículas dash", "Dash particles"));
+        addParticle(player->m_robotBurstParticles, tr("Explosion robot", "Robot burst"));
+        addParticle(player->m_dashParticles, tr("Particulas dash", "Dash particles"));
         addParticle(player->m_swingBurstParticles1, tr("Swing burst 1", "Swing burst 1"));
         addParticle(player->m_swingBurstParticles2, tr("Swing burst 2", "Swing burst 2"));
         addParticle(player->m_landParticles0, tr("Aterrizaje 0", "Landing particles 0"));
@@ -371,10 +363,8 @@ void CaptureLayerEditorPopup::populateLayers() {
             for (auto* obj : CCArrayExt<CCObject*>(children)) {
                 auto* nd = typeinfo_cast<CCNode*>(obj);
                 if (!nd) continue;
-                // Nunca mezclar el otro jugador dentro del arbol del jugador actual.
-                // En dual o con ciertas jerarquias internas, Player 2 puede colgar de
-                // Player 1 y viceversa; si lo enumeramos como "extra", un toggle del
-                // grupo termina afectando a ambos jugadores a la vez.
+// Keep the other player out of the current player's tree; dual mode can nest
+// either player under the other and would otherwise toggle both at once.
                 if (auto* otherPlayer = typeinfo_cast<PlayerObject*>(nd)) {
                     if (otherPlayer != player) continue;
                 }
@@ -389,10 +379,9 @@ void CaptureLayerEditorPopup::populateLayers() {
         collectExtras(collectExtras, player);
     };
 
-    addPlayerGroup(pl->m_player1, Localization::get().getString("layers.player1"));
-    addPlayerGroup(pl->m_player2, Localization::get().getString("layers.player2"));
+    addPlayerGroup(pl->m_player1, loc("layers.player1"));
+    addPlayerGroup(pl->m_player2, loc("layers.player2"));
 
-    // Escenario (Background / Ground / Middleground)
     int sceneGroup = -1;
     auto ensureSceneGroup = [&]() {
         if (sceneGroup == -1) sceneGroup = addGroup(tr("Escenario", "Scenery"), -1, 0);
@@ -404,7 +393,6 @@ void CaptureLayerEditorPopup::populateLayers() {
     addLeaf(pl->m_groundLayer,  tr("Suelo 1", "Ground 1"),               ensureSceneGroup(), 1);
     addLeaf(pl->m_groundLayer2, tr("Suelo 2", "Ground 2"),               ensureSceneGroup(), 1);
 
-    // Capas de objetos (Object Layers)
     int objectGroup = -1;
     auto ensureObjectGroup = [&]() {
         if (objectGroup == -1) objectGroup = addGroup(tr("Capas de objetos", "Object layers"), -1, 0);
@@ -415,7 +403,6 @@ void CaptureLayerEditorPopup::populateLayers() {
     addLeaf(pl->m_inShaderObjectLayer,    tr("Objetos in-shader", "In-shader objects"),   ensureObjectGroup(), 1);
     addLeaf(pl->m_aboveShaderObjectLayer, tr("Objetos sobre-shader", "Above-shader objects"), ensureObjectGroup(), 1);
 
-    // Batch nodes (gameplay sprite sheets)
     if (pl->m_batchNodes) {
         int batchGroup = -1;
         for (unsigned int bi = 0; bi < pl->m_batchNodes->count(); ++bi) {
@@ -428,7 +415,6 @@ void CaptureLayerEditorPopup::populateLayers() {
         }
     }
 
-    // UI / HUD
     int uiGroup = -1;
     auto ensureUiGroup = [&]() {
         if (uiGroup == -1) uiGroup = addGroup(tr("UI / HUD", "UI / HUD"), -1, 0);
@@ -450,23 +436,20 @@ void CaptureLayerEditorPopup::populateLayers() {
     addLeaf(pl->m_attemptLabel, tr("Texto de intento", "Attempt label"), ensureUiGroup(), 1);
     addLeaf(pl->m_percentageLabel, tr("Porcentaje", "Percentage label"), ensureUiGroup(), 1);
 
-    // Efectos (Shaders / Particles)
     int effectsGroup = -1;
     auto ensureEffectsGroup = [&]() {
-        if (effectsGroup == -1) effectsGroup = addGroup(Localization::get().getString("layers.effects"), -1, 0);
+        if (effectsGroup == -1) effectsGroup = addGroup(loc("layers.effects"), -1, 0);
         return effectsGroup;
     };
 
     addLeaf(pl->m_shaderLayer, tr("Shader layer", "Shader layer"), ensureEffectsGroup(), 1);
 
-    // Mods / Overlays (nodes with '/' in ID = Geode mods)
     int modGroup = -1;
     auto ensureModGroup = [&]() {
         if (modGroup == -1) modGroup = addGroup(tr("Mods / Overlays", "Mods / Overlays"), -1, 0);
         return modGroup;
     };
 
-    // Gameplay / Escena (remaining PlayLayer children)
     int gameplayGroup = -1;
     auto ensureGameplayGroup = [&]() {
         if (gameplayGroup == -1) gameplayGroup = addGroup(tr("Gameplay / Escena", "Gameplay / Scene"), -1, 0);
@@ -483,13 +466,11 @@ void CaptureLayerEditorPopup::populateLayers() {
 
             std::string nid = obj->getID();
 
-            // Mod overlays: IDs containing '/' are from Geode mods
             if (nid.find('/') != std::string::npos) {
                 addLeaf(obj, nid.empty() ? describeNode(obj) : nid, ensureModGroup(), 1);
                 continue;
             }
 
-            // Known UI-like classes
             if (typeinfo_cast<CCMenu*>(obj) || typeinfo_cast<CCLabelBMFont*>(obj) ||
                 typeinfo_cast<CCLabelTTF*>(obj)) {
                 addLeaf(obj, describeNode(obj), ensureUiGroup(), 1);
@@ -504,7 +485,6 @@ void CaptureLayerEditorPopup::populateLayers() {
         }
     }
 
-    // Overlays de escena (scene children outside PlayLayer)
     int overlayGroup = -1;
     auto ensureOverlayGroup = [&]() {
         if (overlayGroup == -1) overlayGroup = addGroup(tr("Overlays de escena", "Scene overlays"), -1, 0);
@@ -514,7 +494,6 @@ void CaptureLayerEditorPopup::populateLayers() {
     if (scene) {
         for (auto* obj : CCArrayExt<CCNode*>(scene->getChildren())) {
             if (!obj || obj == pl || addedNodes.count(obj)) continue;
-            // Include invisible nodes too — the user might want to toggle them on
             if (typeinfo_cast<FLAlertLayer*>(obj)) continue;
             std::string cls = typeid(*obj).name();
             if (cls.find("PauseLayer") != std::string::npos) continue;
@@ -525,7 +504,6 @@ void CaptureLayerEditorPopup::populateLayers() {
             bool hasChildren = obj->getChildren() && obj->getChildren()->count() > 0;
             if (!hasVisualSize && !hasChildren) continue;
 
-            // Mod overlays at scene level
             if (nid.find('/') != std::string::npos) {
                 addLeaf(obj, nid, ensureModGroup(), 1);
             } else {
@@ -541,8 +519,7 @@ bool CaptureLayerEditorPopup::isEntryVisible(int idx) const {
     if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return false;
     auto const& entry = m_layers[idx];
 
-    // For groups: visible only if ALL children are visible
-    // This makes the group checkbox a "select all / deselect all" control
+// A group is visible only when all children are visible; its checkbox controls all.
     if (!entry.childIndices.empty()) {
         for (int child : entry.childIndices) {
             if (!isEntryVisible(child)) return false;
@@ -553,12 +530,39 @@ bool CaptureLayerEditorPopup::isEntryVisible(int idx) const {
     return entry.node ? entry.node->isVisible() : entry.currentVisibility;
 }
 
+std::pair<int, int> CaptureLayerEditorPopup::visibleLeafCount(int idx) const {
+    if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return {0, 0};
+    auto const& entry = m_layers[idx];
+
+    if (entry.childIndices.empty()) {
+        bool vis = entry.node ? entry.node->isVisible() : entry.currentVisibility;
+        return {vis ? 1 : 0, 1};
+    }
+
+    int visible = 0, total = 0;
+    for (int child : entry.childIndices) {
+        auto [v, t] = visibleLeafCount(child);
+        visible += v;
+        total   += t;
+    }
+    return {visible, total};
+}
+
+bool CaptureLayerEditorPopup::isEntryHiddenByCollapse(int idx) const {
+    if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return false;
+    int parent = m_layers[idx].parentIndex;
+    while (parent >= 0) {
+        if (m_layers[parent].collapsed) return true;
+        parent = m_layers[parent].parentIndex;
+    }
+    return false;
+}
+
 void CaptureLayerEditorPopup::setEntryVisible(int idx, bool visible, bool cascadeChildren) {
     if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return;
     auto& entry = m_layers[idx];
 
     if (entry.isGroup) {
-        // Groups have no node; just propagate to children
         entry.currentVisibility = visible;
         if (cascadeChildren) {
             for (int child : entry.childIndices) {
@@ -566,13 +570,10 @@ void CaptureLayerEditorPopup::setEntryVisible(int idx, bool visible, bool cascad
             }
         }
     } else {
-        // Always apply the explicit visibility value.
-        // The "Restore All" button handles restoring to originals.
         entry.currentVisibility = visible;
         if (entry.node) {
             entry.node->setVisible(visible);
-            // Register the explicit choice so the capture hide passes don't
-            // force-hide a node the user wants in the shot (UI, mod overlays).
+// Preserve explicit choices so capture's hide pass cannot override them.
             paimon::capture::setUserShown(entry.node, visible);
         }
         if (cascadeChildren) {
@@ -589,30 +590,53 @@ void CaptureLayerEditorPopup::refreshRowVisuals(int idx) {
 
     bool vis = isEntryVisible(idx);
 
-    // Update toggler visual without triggering callback
     if (entry.toggler) {
-        bool isCurrentlyToggled = entry.toggler->isToggled();
-        bool shouldBeToggled = vis; // toggled (checkOn shown) = layer is visible
-        if (isCurrentlyToggled != shouldBeToggled) {
-            entry.toggler->toggle(shouldBeToggled);
+        bool desired = vis;
+        if (entry.isGroup) {
+            // Half-lit groups stay checked but amber, so folding one away does
+            // not read as "everything under here is hidden".
+            auto [visibleLeaves, totalLeaves] = visibleLeafCount(idx);
+            bool const partial = visibleLeaves > 0 && visibleLeaves < totalLeaves;
+            desired = vis || partial;
+            if (auto* onButton = entry.toggler->m_onButton) {
+                if (auto* spr = typeinfo_cast<CCSprite*>(onButton->getNormalImage())) {
+                    spr->setColor(partial ? kPartial : kTextOn);
+                }
+            }
         }
+        if (entry.toggler->isToggled() != desired) entry.toggler->toggle(desired);
     }
 
-    // Update label color
+    if (entry.countLabel) {
+        auto [visibleLeaves, totalLeaves] = visibleLeafCount(idx);
+        entry.countLabel->setString(
+            (std::to_string(visibleLeaves) + "/" + std::to_string(totalLeaves)).c_str());
+        entry.countLabel->setColor(visibleLeaves == 0 ? kHeaderOff : ccColor3B{180, 220, 255});
+    }
+
     if (entry.label) {
         if (entry.isGroup) {
-            entry.label->setColor(vis ? ccColor3B{255, 226, 120} : ccColor3B{120, 110, 80});
+            auto [visibleLeaves, _] = visibleLeafCount(idx);
+            entry.label->setColor(visibleLeaves > 0 ? kHeaderOn : kHeaderOff);
         } else {
-            entry.label->setColor(vis ? ccColor3B{255, 255, 255} : ccColor3B{130, 130, 130});
+            entry.label->setColor(vis ? kTextOn : kTextOff);
         }
     }
 }
 
+void CaptureLayerEditorPopup::refreshAncestors(int idx) {
+    int parentIdx = (idx >= 0 && idx < static_cast<int>(m_layers.size()))
+        ? m_layers[idx].parentIndex : -1;
+    while (parentIdx >= 0) {
+        refreshRowVisuals(parentIdx);
+        parentIdx = m_layers[parentIdx].parentIndex;
+    }
+}
+
 bool CaptureLayerEditorPopup::entryMatchesFilter(int idx) const {
-    if (m_filterGroupIndex < 0) return true; // show all
+    if (m_filterGroupIndex < 0) return true;
     if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return false;
     if (idx == m_filterGroupIndex) return true;
-    // Check if this entry is a descendant of the selected group
     int parent = m_layers[idx].parentIndex;
     while (parent >= 0) {
         if (parent == m_filterGroupIndex) return true;
@@ -623,6 +647,14 @@ bool CaptureLayerEditorPopup::entryMatchesFilter(int idx) const {
 
 void CaptureLayerEditorPopup::buildList() {
     namespace C = paimon::capture::layers;
+    namespace E = paimon::capture::editor;
+
+    float savedScroll = 0.f;
+    bool hadScroll = false;
+    if (m_scrollView && m_scrollView->m_contentLayer) {
+        savedScroll = m_scrollView->m_contentLayer->getPositionY();
+        hadScroll = true;
+    }
 
     if (m_listRoot) {
         m_listRoot->removeFromParentAndCleanup(true);
@@ -630,28 +662,26 @@ void CaptureLayerEditorPopup::buildList() {
         m_scrollView = nullptr;
     }
 
-    // Clear stale UI refs (nodes were just destroyed)
     for (auto& entry : m_layers) {
         entry.toggler = nullptr;
         entry.label = nullptr;
+        entry.countLabel = nullptr;
     }
 
     auto content = m_mainLayer->getContentSize();
 
-    const float listW    = content.width - C::LIST_PAD_X * 2;
-    const float rowH     = C::ROW_HEIGHT;
-    const float previewH = C::MINI_PREVIEW_H;
-    const float previewY = content.height - C::MINI_PREVIEW_TOP_PAD - previewH * 0.5f;
-    const float filterY  = previewY - previewH * 0.5f - C::FILTER_GAP_BELOW_PREVIEW;
-    const float listTop  = filterY - C::LIST_GAP_BELOW_FILTER;
-    const float listBot  = C::LIST_BOT;
-    const float viewH    = listTop - listBot;
-    const float viewX    = (content.width - listW) * 0.5f;
+    const float listW   = content.width - E::SIDE_PAD * 2;
+    const float rowH    = C::ROW_HEIGHT;
+    const float listTop = content.height - E::HEADER_TOP_PAD - E::PREVIEW_H - E::LIST_GAP_BELOW_HEADER;
+    const float listBot = E::LIST_BOT;
+    const float viewH   = listTop - listBot;
+    const float viewX   = E::SIDE_PAD;
 
-    // Collect visible (filtered) entry indices
     std::vector<int> visibleIndices;
     for (int i = 0; i < static_cast<int>(m_layers.size()); ++i) {
-        if (entryMatchesFilter(i)) visibleIndices.push_back(i);
+        if (!entryMatchesFilter(i)) continue;
+        if (isEntryHiddenByCollapse(i)) continue;
+        visibleIndices.push_back(i);
     }
     int numVisible = static_cast<int>(visibleIndices.size());
 
@@ -659,14 +689,12 @@ void CaptureLayerEditorPopup::buildList() {
     m_listRoot->setID("list-root"_spr);
     m_mainLayer->addChild(m_listRoot, 2);
 
-    // Dark panel background
     auto panel = paimon::SpriteHelper::createDarkPanel(listW, viewH, 80);
     panel->setPosition({viewX, listBot});
     m_listRoot->addChild(panel, 0);
 
     float totalH = std::max(viewH, numVisible * rowH);
 
-    // ScrollLayer
     m_scrollView = ScrollLayer::create({listW, viewH});
     m_scrollView->setPosition({viewX, listBot});
     m_scrollView->m_contentLayer->setContentSize({listW, totalH});
@@ -676,116 +704,104 @@ void CaptureLayerEditorPopup::buildList() {
         auto& entry = m_layers[i];
         float y = totalH - rowH - row * rowH;
 
-        // Row container
         auto rowNode = CCNode::create();
         rowNode->setContentSize({listW, rowH});
         rowNode->setPosition({0.f, y});
         rowNode->setAnchorPoint({0.f, 0.f});
 
-        // Row background
-        if (entry.isGroup) {
-            auto bg = CCLayerColor::create({255, 215, 90, C::GROUP_BG_ALPHA});
-            bg->setContentSize({listW, rowH});
-            bg->setAnchorPoint({0.f, 0.f});
-            bg->ignoreAnchorPointForPosition(false);
-            bg->setPosition({0.f, 0.f});
-            rowNode->addChild(bg, -2);
-
-            // Accent bar
-            auto accent = CCLayerColor::create({255, 215, 90, C::GROUP_ACCENT_ALPHA});
-            accent->setContentSize({C::GROUP_ACCENT_WIDTH, rowH - 4.f});
-            accent->ignoreAnchorPointForPosition(false);
-            accent->setAnchorPoint({0.f, 0.5f});
-            accent->setPosition({4.f + entry.depth * C::DEPTH_INDENT, rowH * 0.5f});
-            rowNode->addChild(accent, -1);
-        } else if (row % 2 == 0) {
-            auto bg = CCLayerColor::create({255, 255, 255, C::ALT_ROW_ALPHA});
-            bg->setContentSize({listW, rowH});
-            bg->setAnchorPoint({0.f, 0.f});
-            bg->ignoreAnchorPointForPosition(false);
-            bg->setPosition({0.f, 0.f});
-            rowNode->addChild(bg, -1);
-        }
-
-        // Toggle menu (one per row — ClippedMenu prevents clicks outside scroll area)
         auto rowMenu = ClippedMenu::create(m_scrollView);
         rowMenu->setContentSize({listW, rowH});
         rowMenu->setPosition({0.f, 0.f});
         rowMenu->setAnchorPoint({0.f, 0.f});
 
-        // Checkbox toggler
+        float const indent = entry.depth * C::DEPTH_INDENT;
+
+        if (entry.isGroup) {
+            if (auto* bg = paimon::capture::ui::makeRowFill(
+                    listW, rowH, {kAccent.r, kAccent.g, kAccent.b, E::GROUP_BG_ALPHA})) {
+                rowNode->addChild(bg, -2);
+            }
+            if (auto* accent = paimon::capture::ui::makeRowFill(
+                    E::GROUP_ACCENT_WIDTH, rowH - 4.f,
+                    {kAccent.r, kAccent.g, kAccent.b, E::GROUP_ACCENT_ALPHA})) {
+                accent->setPosition({3.f + indent, 2.f});
+                rowNode->addChild(accent, -1);
+            }
+            if (auto* arrow = paimon::capture::ui::makeDisclosure(!entry.collapsed, E::ARROW_SCALE)) {
+                arrow->setPosition({E::ARROW_X + indent, rowH * 0.5f});
+                rowNode->addChild(arrow, 2);
+            }
+            if (auto* hit = paimon::capture::ui::makeRowHitArea(
+                    listW - 34.f, rowH, this,
+                    menu_selector(CaptureLayerEditorPopup::onToggleCollapse), i)) {
+                hit->setPosition({(listW - 34.f) * 0.5f, rowH * 0.5f});
+                rowMenu->addChild(hit);
+            }
+        } else if (row % 2 == 0) {
+            if (auto* bg = paimon::capture::ui::makeRowFill(
+                    listW, rowH, {255, 255, 255, E::ALT_ROW_ALPHA})) {
+                rowNode->addChild(bg, -1);
+            }
+        }
+
+        auto label = CCLabelBMFont::create(entry.name.c_str(), "bigFont.fnt");
+        float labelScale = entry.isGroup ? C::LABEL_SCALE_GROUP
+                         : (entry.depth >= 2 ? C::LABEL_SCALE_LEAF_D2 : C::LABEL_SCALE_LEAF_D0);
+        float const labelX = C::LABEL_X_BASE + indent;
+        // Mod node ids and shader layer names are long enough to slide under
+        // the counter and the checkbox.
+        label->limitLabelWidth(
+            listW - C::CHECK_X_FROM_RIGHT - (entry.isGroup ? 44.f : 22.f) - labelX,
+            labelScale, 0.16f);
+        label->setAnchorPoint({0.f, 0.5f});
+        label->setPosition({labelX, rowH * 0.5f});
+        rowNode->addChild(label, 2);
+        entry.label = label;
+
+        if (entry.isGroup) {
+            auto* countLabel = CCLabelBMFont::create("", "bigFont.fnt");
+            countLabel->setScale(C::COUNT_SCALE);
+            countLabel->setAnchorPoint({1.f, 0.5f});
+            countLabel->setPosition({listW - C::CHECK_X_FROM_RIGHT - 14.f, rowH * 0.5f});
+            rowNode->addChild(countLabel, 2);
+            entry.countLabel = countLabel;
+        }
+
         float checkScale = entry.isGroup ? C::CHECK_SCALE_GROUP : C::CHECK_SCALE_LEAF;
-        auto onSpr  = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-        auto offSpr = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-        if (onSpr && offSpr) {
-            onSpr->setScale(checkScale);
-            offSpr->setScale(checkScale);
-
-            auto toggler = CCMenuItemToggler::create(
-                offSpr, onSpr,
-                this, menu_selector(CaptureLayerEditorPopup::onToggleLayer)
-            );
-            toggler->setTag(i);
-
-            bool vis = isEntryVisible(i);
-            toggler->toggle(vis);
-
-            float checkX = C::CHECK_X_BASE + entry.depth * C::DEPTH_INDENT;
-            toggler->setPosition({checkX, rowH * 0.5f});
+        if (auto* toggler = paimon::capture::ui::makeCheck(
+                checkScale, this, menu_selector(CaptureLayerEditorPopup::onToggleLayer),
+                i, isEntryVisible(i))) {
+            toggler->setPosition({listW - C::CHECK_X_FROM_RIGHT, rowH * 0.5f});
             rowMenu->addChild(toggler);
-
             entry.toggler = toggler;
         }
 
-        rowNode->addChild(rowMenu, 1);
-
-        // Label
-        std::string labelText = entry.name;
-        if (!entry.isGroup) {
-            labelText = std::string(entry.depth >= 2 ? "• " : "› ") + labelText;
-        }
-
-        auto label = CCLabelBMFont::create(labelText.c_str(), "bigFont.fnt");
-        float labelScale = entry.isGroup ? C::LABEL_SCALE_GROUP
-                         : (entry.depth >= 2 ? C::LABEL_SCALE_LEAF_D2 : C::LABEL_SCALE_LEAF_D0);
-        label->setScale(labelScale);
-        label->setAnchorPoint({0.f, 0.5f});
-        label->setPosition({C::LABEL_X_BASE + entry.depth * C::DEPTH_INDENT, rowH * 0.5f});
-
-        bool vis = isEntryVisible(i);
-        if (entry.isGroup) {
-            label->setColor(vis ? ccColor3B{255, 226, 120} : ccColor3B{120, 110, 80});
-        } else if (!vis) {
-            label->setColor({130, 130, 130});
-        }
-        rowNode->addChild(label, 2);
-
-        entry.label = label;
+        rowNode->addChild(rowMenu, 3);
+        refreshRowVisuals(i);
 
         m_scrollView->m_contentLayer->addChild(rowNode);
     }
 
     m_scrollView->scrollToTop();
+    if (hadScroll && totalH > viewH) {
+        float minY = viewH - totalH;
+        m_scrollView->m_contentLayer->setPositionY(std::clamp(savedScroll, minY, 0.f));
+    }
     m_listRoot->addChild(m_scrollView, 2);
 }
 
-void CaptureLayerEditorPopup::updateMiniPreview() {
-    namespace C = paimon::capture::layers;
-    if (!m_miniPreview) return;
+void CaptureLayerEditorPopup::refreshPreview() {
+    if (m_miniPreview) m_miniPreview->requestRefresh();
+}
 
-    const int rtW = C::RT_WIDTH;
-    const int rtH = C::RT_HEIGHT;
-
-    // Uses same UI hiding + shader handling as the real capture.
-    auto* tex = FramebufferCapture::renderPreviewTexture(rtW, rtH);
-    if (!tex) return;
-
-    m_miniPreview->setTexture(tex);
-    m_miniPreview->setTextureRect(CCRect(0, 0, rtW, rtH));
-    m_miniPreview->setFlipY(true); // offscreen render is bottom-up
-
-    float scaleToFit = std::min(C::MINI_PREVIEW_W / rtW, C::MINI_PREVIEW_H / rtH);
-    m_miniPreview->setScale(scaleToFit);
+void CaptureLayerEditorPopup::rebuildListDeferred() {
+    // Rebuilding destroys the menu the touch dispatcher is still unwinding.
+    Ref<CaptureLayerEditorPopup> self = this;
+    Loader::get()->queueInMainThread([self]() {
+        if (paimon::isRuntimeShuttingDown()) return;
+        if (!self || !self->getParent()) return;
+        self->buildList();
+    });
 }
 
 void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
@@ -795,7 +811,6 @@ void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
     int idx = toggler->getTag();
     if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return;
 
-    // CCMenuItemToggler already toggled; isToggled() == onSpr = visible
     bool newVisible = toggler->isToggled();
     bool cascade = m_layers[idx].isGroup;
     setEntryVisible(idx, newVisible, cascade);
@@ -803,31 +818,48 @@ void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
     log::info("[LayerEditor] '{}' -> {}", m_layers[idx].name,
         newVisible ? "visible" : "hidden");
 
-    // Refresh visuals of this entry and related entries in-place
-    // (parent groups and children) — NO rebuild!
+// Refresh this entry and related groups in place; avoid rebuilding the list.
     refreshRowVisuals(idx);
+    refreshAncestors(idx);
 
-    // Refresh parent chain
-    int parentIdx = m_layers[idx].parentIndex;
-    while (parentIdx >= 0) {
-        refreshRowVisuals(parentIdx);
-        parentIdx = m_layers[parentIdx].parentIndex;
-    }
-
-    // Refresh children (for group toggles)
     for (int child : m_layers[idx].childIndices) {
         refreshRowVisuals(child);
-        // Also refresh grandchildren
         for (int grandchild : m_layers[child].childIndices) {
             refreshRowVisuals(grandchild);
         }
     }
 
-    updateMiniPreview();
+    refreshPreview();
+}
+
+void CaptureLayerEditorPopup::onToggleCollapse(CCObject* sender) {
+    auto* node = typeinfo_cast<CCNode*>(sender);
+    if (!node) return;
+
+    int idx = node->getTag();
+    if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return;
+    if (!m_layers[idx].isGroup) return;
+
+    m_layers[idx].collapsed = !m_layers[idx].collapsed;
+    rebuildListDeferred();
+}
+
+void CaptureLayerEditorPopup::onCollapseAllBtn(CCObject*) {
+    m_allCollapsed = !m_allCollapsed;
+    for (auto& entry : m_layers) {
+        if (entry.isGroup) entry.collapsed = m_allCollapsed;
+    }
+    if (m_collapseLabel) {
+        m_collapseLabel->setString(
+            loc(m_allCollapsed ? "layers.expand_all" : "layers.collapse_all").c_str());
+    }
+    rebuildListDeferred();
 }
 
 void CaptureLayerEditorPopup::onFilterBtn(CCObject*) {
     namespace C = paimon::capture::layers;
+    namespace E = paimon::capture::editor;
+
     if (m_filterDropdown) {
         closeFilterDropdown();
         return;
@@ -836,19 +868,15 @@ void CaptureLayerEditorPopup::onFilterBtn(CCObject*) {
     if (m_listRoot) m_listRoot->setVisible(false);
 
     auto content = m_mainLayer->getContentSize();
-    const float previewH = C::MINI_PREVIEW_H;
-    const float previewY = content.height - C::MINI_PREVIEW_TOP_PAD - previewH * 0.5f;
-    const float filterY  = previewY - previewH * 0.5f - C::FILTER_GAP_BELOW_PREVIEW;
-    const float areaTop  = filterY - C::LIST_GAP_BELOW_FILTER;
-    const float areaBot  = C::LIST_BOT;
-    const float areaH    = areaTop - areaBot;
-    const float areaW    = content.width - C::LIST_PAD_X * 2;
-    const float areaX    = C::LIST_PAD_X;
+    const float areaTop = content.height - E::HEADER_TOP_PAD - E::PREVIEW_H - E::LIST_GAP_BELOW_HEADER;
+    const float areaBot = E::LIST_BOT;
+    const float areaH   = areaTop - areaBot;
+    const float areaW   = content.width - E::SIDE_PAD * 2;
+    const float areaX   = E::SIDE_PAD;
 
-    // Gather top-level branches
     struct FilterOption { int idx; std::string name; };
     std::vector<FilterOption> opts;
-    opts.push_back({-1, tr("Todo", "All")});
+    opts.push_back({-1, loc("layers.filter_all")});
     for (int i = 0; i < static_cast<int>(m_layers.size()); ++i) {
         if (m_layers[i].depth == 0) opts.push_back({i, m_layers[i].name});
     }
@@ -878,26 +906,17 @@ void CaptureLayerEditorPopup::onFilterBtn(CCObject*) {
         rowNode->setAnchorPoint({0.f, 0.f});
 
         if (active) {
-            auto bg = CCLayerColor::create({50, 150, 60, 90});
-            bg->setContentSize({areaW, optH});
-            bg->ignoreAnchorPointForPosition(false);
-            bg->setAnchorPoint({0.f, 0.f});
-            bg->setPosition({0.f, 0.f});
-            rowNode->addChild(bg, -1);
-
-            auto accent = CCLayerColor::create({80, 220, 90, 200});
-            accent->setContentSize({3.f, optH - 4.f});
-            accent->ignoreAnchorPointForPosition(false);
-            accent->setAnchorPoint({0.f, 0.5f});
-            accent->setPosition({2.f, optH * 0.5f});
-            rowNode->addChild(accent, 0);
+            if (auto* bg = paimon::capture::ui::makeRowFill(areaW, optH, {50, 150, 60, 90})) {
+                rowNode->addChild(bg, -1);
+            }
+            if (auto* accent = paimon::capture::ui::makeRowFill(3.f, optH - 4.f, {80, 220, 90, 200})) {
+                accent->setPosition({2.f, 2.f});
+                rowNode->addChild(accent, 0);
+            }
         } else if (o % 2 == 0) {
-            auto bg = CCLayerColor::create({255, 255, 255, 8});
-            bg->setContentSize({areaW, optH});
-            bg->ignoreAnchorPointForPosition(false);
-            bg->setAnchorPoint({0.f, 0.f});
-            bg->setPosition({0.f, 0.f});
-            rowNode->addChild(bg, -1);
+            if (auto* bg = paimon::capture::ui::makeRowFill(areaW, optH, {255, 255, 255, 8})) {
+                rowNode->addChild(bg, -1);
+            }
         }
 
         auto lbl = CCLabelBMFont::create(opts[o].name.c_str(), "bigFont.fnt");
@@ -907,19 +926,17 @@ void CaptureLayerEditorPopup::onFilterBtn(CCObject*) {
         lbl->setColor(active ? ccColor3B{140, 255, 140} : ccColor3B{220, 220, 220});
         rowNode->addChild(lbl, 2);
 
-        auto rowMenu = CCMenu::create();
+        auto rowMenu = ClippedMenu::create(scroll);
         rowMenu->setContentSize({areaW, optH});
         rowMenu->setPosition({0.f, 0.f});
         rowMenu->setAnchorPoint({0.f, 0.f});
 
-        auto hitSpr = paimon::SpriteHelper::createColorPanel(areaW - 4.f, optH - 2.f, {0,0,0}, 0);
-        auto btn = CCMenuItemSpriteExtra::create(
-            hitSpr, this,
-            menu_selector(CaptureLayerEditorPopup::onFilterSelect)
-        );
-        btn->setTag(opts[o].idx);
-        btn->setPosition({areaW * 0.5f, optH * 0.5f});
-        rowMenu->addChild(btn);
+        if (auto* btn = paimon::capture::ui::makeRowHitArea(
+                areaW - 4.f, optH - 2.f, this,
+                menu_selector(CaptureLayerEditorPopup::onFilterSelect), opts[o].idx)) {
+            btn->setPosition({areaW * 0.5f, optH * 0.5f});
+            rowMenu->addChild(btn);
+        }
         rowNode->addChild(rowMenu, 3);
 
         scroll->m_contentLayer->addChild(rowNode);
@@ -939,11 +956,11 @@ void CaptureLayerEditorPopup::onFilterSelect(CCObject* sender) {
     if (m_filterLabel) {
         std::string name;
         if (m_filterGroupIndex < 0) {
-            name = tr("Filtro: Todo", "Filter: All");
+            name = loc("layers.filter_all");
         } else if (m_filterGroupIndex < static_cast<int>(m_layers.size())) {
             name = m_layers[m_filterGroupIndex].name;
         }
-        m_filterLabel->setString((name + "  \xe2\x96\xbc").c_str());
+        m_filterLabel->setString(name.c_str());
     }
 
     // Defer: destroying the filter dropdown inline kills the CCMenu while
@@ -971,7 +988,6 @@ void CaptureLayerEditorPopup::onDoneBtn(CCObject* sender) {
     auto previewRef = m_previewPopup.lock();
     this->onClose(nullptr);
 
-    // Recapture with updated layer visibility
     if (previewRef) {
         previewRef->liveRecapture(true);
     }
@@ -980,25 +996,19 @@ void CaptureLayerEditorPopup::onDoneBtn(CCObject* sender) {
 void CaptureLayerEditorPopup::onRestoreAllBtn(CCObject* sender) {
     if (!sender) return;
 
-    // Restore from instance copy (more reliable than static)
     paimon::capture::restoreVisibility(m_originalVisibilities);
-    // Also wipes user's explicit choices: captures go back to default hide.
     paimon::capture::clearUserShown();
 
     for (auto& entry : m_layers) {
         entry.currentVisibility = entry.isGroup ? true : entry.originalVisibility;
     }
 
-    // Reset filter to show all
     m_filterGroupIndex = -1;
-    if (m_filterLabel) m_filterLabel->setString((tr("Filtro: Todo", "Filter: All") + "  \xe2\x96\xbc").c_str());
+    if (m_filterLabel) m_filterLabel->setString(loc("layers.filter_all").c_str());
     closeFilterDropdown();
 
     buildList();
-    updateMiniPreview();
+    refreshPreview();
 
-    PaimonNotify::create(
-        Localization::get().getString("layers.restored").c_str(),
-        NotificationIcon::Success
-    )->show();
+    PaimonNotify::create(loc("layers.restored").c_str(), NotificationIcon::Success)->show();
 }

@@ -1,5 +1,6 @@
 #include "../SearchHistory.hpp"
 #include "../ui/SearchHistoryPopup.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/LevelSearchLayer.hpp>
@@ -19,12 +20,16 @@ class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
         return Mod::get()->getSettingValue<bool>("incognito-mode");
     }
 
+    static bool historyOn() {
+        return paimon::modules::isEnabled("paimbnails.searchhistory.browser") && !incognito();
+    }
+
     $override
     bool init(int type) {
         if (!LevelSearchLayer::init(type)) return false;
 
-        // In incognito mode: don't show the button or save anything.
-        if (!incognito()) {
+        // Module off or incognito mode: don't show the button or save anything.
+        if (historyOn()) {
             if (auto menu = this->getChildByID("search-button-menu")) {
                 // Usar el mismo estilo cuadrado que rate-profile-btn (GJ_button_04.png)
                 auto bg = CCScale9Sprite::create("GJ_button_04.png");
@@ -111,7 +116,7 @@ class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
     $override
     void onSearch(CCObject* sender) {
         LevelSearchLayer::onSearch(sender);
-        if (incognito()) return;
+        if (!historyOn()) return;
 
         std::vector<int> difficulties;
         if (this->checkDiff(0)) difficulties.push_back(-1);       // auto
@@ -136,7 +141,7 @@ class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
     $override
     void onSearchUser(CCObject* sender) {
         LevelSearchLayer::onSearchUser(sender);
-        if (incognito()) return;
+        if (!historyOn()) return;
         paimon::searchhistory::add(
             this->getSearchObject(SearchType::Users, m_searchInput->getString()), {}, {}, 2);
     }

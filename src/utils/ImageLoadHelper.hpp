@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include "FormatDetect.hpp"
@@ -9,37 +9,33 @@
 #include <algorithm>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <new>
 #include "ImageConverter.hpp"
+#include "LocalAssetStore.hpp"
 
-// stb_image: fallback for exotic formats (BMP, TGA, PSD, HDR)
+// stb_image handles formats outside CCImage's usual PNG/JPEG path.
 #include "stb_image.h"
 
-// Targeted type imports to avoid namespace pollution in headers
 using cocos2d::CCTexture2D;
 using cocos2d::CCSize;
 using cocos2d::CCImage;
 using cocos2d::ccTexParams;
 using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
 
-/**
- * Load an image from disk and prepare it for CapturePreviewPopup.
- */
-namespace ImageLoadHelper {
+    // Decoded texture plus optional retained RGBA data.
+    namespace ImageLoadHelper {
 
     struct LoadedImage {
-        CCTexture2D* texture = nullptr;     // cocos texture (retained; caller must release)
-        std::shared_ptr<uint8_t> buffer;    // RGBA buffer
+        CCTexture2D* texture = nullptr;     // Retained; caller releases.
+        std::shared_ptr<uint8_t> buffer;    // RGBA data.
         int width = 0;
         int height = 0;
         bool success = false;
         std::string error;
     };
 
-    /**
-     * Create a texture + buffer from raw RGBA data.
-     */
-    // Max dimensions: 4096x4096 = 64MB RGBA. Anything larger risks OOM.
+    // Reject dimensions above 4096² (64 MB RGBA).
     static constexpr int kMaxImageDim = 4096;
 
     inline LoadedImage createFromRGBA(uint8_t const* rgba, int w, int h, bool copyBuffer = true) {
@@ -89,24 +85,26 @@ namespace ImageLoadHelper {
         return result;
     }
 
-    /**
-     * Decode an image from memory with stb_image (JPEG, PNG, BMP, TGA, PSD, GIF,
-     * HDR, PIC). Zero-dependency — no ImagePlus needed.
-     */
+    // Decode common and exotic image formats from memory via stb_image.
     inline LoadedImage loadWithSTBFromMemory(uint8_t const* fileData, size_t fileSize, bool copyBuffer = true) {
         LoadedImage result;
 
-        // === stb_image fallback (BMP, TGA, PSD, HDR, special JPEGs) ===
-        int w = 0, h = 0, channels = 0;
-        unsigned char* data = stbi_load_from_memory(fileData, static_cast<int>(fileSize), &w, &h, &channels, 4);
-        if (!data) {
-            result.error = "image_open_error";
+        if (!fileData || fileSize == 0 || fileSize > static_cast<size_t>(std::numeric_limits<int>::max())) {
+            result.error = "invalid_image_data";
             return result;
         }
 
-        if (w <= 0 || h <= 0 || w > 4096 || h > 4096) {
-            stbi_image_free(data);
+        int w = 0, h = 0, channels = 0;
+        int const dataSize = static_cast<int>(fileSize);
+        if (!stbi_info_from_memory(fileData, dataSize, &w, &h, &channels)
+            || w <= 0 || h <= 0 || w > kMaxImageDim || h > kMaxImageDim) {
             result.error = "invalid_image_data";
+            return result;
+        }
+
+        unsigned char* data = stbi_load_from_memory(fileData, dataSize, &w, &h, &channels, 4);
+        if (!data) {
+            result.error = "image_open_error";
             return result;
         }
 
@@ -121,10 +119,7 @@ namespace ImageLoadHelper {
         return result;
     }
 
-    /**
-     * Decode an image from a file with stb_image (JPEG, PNG, BMP, TGA, PSD, GIF,
-     * HDR, PIC). Zero-dependency — no ImagePlus needed.
-     */
+    // Decode a file via stb_image.
     inline LoadedImage loadWithSTB(std::filesystem::path const& path) {
         LoadedImage result;
 
@@ -143,20 +138,19 @@ namespace ImageLoadHelper {
         return loadWithSTBFromMemory(fileData.data(), fileData.size());
     }
 
-    /**
-     * Load a static image (png/jpg/bmp/tga/psd/etc) from a path, returning a
-     * texture + RGBA buffer. Tries stb_image first, then CCImage. Zero-dependency.
-     * @param path file path
-     * @param maxSizeMB max size in MB (0 = no limit)
-     * @return LoadedImage with the data or an error
-     */
+    // Decode a static image, trying stb_image before CCImage. maxSizeMB=0 disables
+    // the file-size limit.
     inline LoadedImage loadStaticImage(std::filesystem::path const& path, size_t maxSizeMB = 10) {
         LoadedImage result;
 
         if (maxSizeMB > 0) {
             std::error_code ec;
             auto fileSize = std::filesystem::file_size(path, ec);
-            if (!ec && fileSize > maxSizeMB * 1024 * 1024) {
+            if (ec) {
+                result.error = "image_open_error";
+                return result;
+            }
+            if (fileSize > maxSizeMB * 1024 * 1024) {
                 result.error = fmt::format("Image too large (max {}MB)", maxSizeMB);
                 return result;
             }
@@ -174,20 +168,19 @@ namespace ImageLoadHelper {
             return result;
         }
 
-        // === attempt 1: stb_image (PNG, JPEG, BMP, TGA, PSD, GIF frame, HDR) ===
         {
             auto stbResult = loadWithSTBFromMemory(fileData.data(), fileData.size());
             if (stbResult.success) return stbResult;
+            if (stbResult.error == "invalid_image_data") return stbResult;
         }
 
-        // === attempt 2: CCImage fallback (standard PNG, JPEG) ===
         {
             CCImage img;
             if (img.initWithImageData(const_cast<uint8_t*>(fileData.data()), fileData.size())) {
                 int w = img.getWidth();
                 int h = img.getHeight();
                 auto raw = img.getData();
-                if (raw && w > 0 && h > 0) {
+                if (raw && w > 0 && h > 0 && w <= kMaxImageDim && h <= kMaxImageDim) {
                     int bpp = img.hasAlpha() ? 4 : 3;
 
                     size_t rgbaSize = static_cast<size_t>(w) * static_cast<size_t>(h) * 4;
@@ -205,18 +198,18 @@ namespace ImageLoadHelper {
             }
         }
 
-        // stb_image was already tried in attempt 1, don't retry
-
         result.error = "image_open_error";
         return result;
     }
 
-    /**
-     * Read a file as binary (gif, png, etc).
-     * @param maxSizeMB max size in MB
-     * @return data, or empty on failure
-     */
+    // Read a binary file, returning empty on failure or size overflow.
     inline std::vector<uint8_t> readBinaryFile(std::filesystem::path const& path, size_t maxSizeMB = 10) {
+        if (maxSizeMB > 0) {
+            std::error_code ec;
+            auto fileSize = std::filesystem::file_size(path, ec);
+            if (ec || fileSize > maxSizeMB * 1024 * 1024) return {};
+        }
+
         auto readRes = geode::utils::file::readBinary(path);
         if (readRes.isErr()) return {};
 
@@ -228,12 +221,8 @@ namespace ImageLoadHelper {
         return std::move(data);
     }
 
-    /**
-     * True if the file is a GIF/APNG (magic-byte detection; reads only the first
-     * 64 bytes, falls back to extension).
-     */
+    // Detect GIF/APNG from the first 64 bytes, then fall back to .gif.
     inline bool isGIF(std::filesystem::path const& path) {
-        // content detection: read only the first 64 bytes
         {
             std::ifstream file(path, std::ios::binary);
             if (file) {
@@ -245,42 +234,27 @@ namespace ImageLoadHelper {
                 }
             }
         }
-        // fallback to extension
         std::string ext = geode::utils::string::pathToString(path.extension());
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         return ext == ".gif";
     }
 
-    /**
-     * True if the file is an animated image (GIF, APNG), by magic-byte detection.
-     */
     inline bool isAnimatedImage(std::filesystem::path const& path) {
         return isGIF(path);
     }
 
-    /**
-     * Load an image, auto-detecting animated (GIF/APNG) vs static. Uses a
-     * callback to build the animated sprite, avoiding a circular dependency with
-     * AnimatedGIFSprite. Animated load failures fall back to loadStaticImage().
-     * @param path file path
-     * @param maxSizeMB max size in MB (0 = no limit)
-     * @param createAnimated callback taking the path string, returns CCSprite* or nullptr
-     * @return CCSprite* or nullptr
-     */
+    // Load animated images through the callback, falling back to static decode.
     inline cocos2d::CCSprite* loadAnimatedOrStatic(
         std::filesystem::path const& path,
         size_t maxSizeMB,
         std::function<cocos2d::CCSprite*(std::string const&)> const& createAnimated
     ) {
-        // try loading as animation (GIF/APNG)
         if (isAnimatedImage(path)) {
             auto pathStr = geode::utils::string::pathToString(path);
             auto* anim = createAnimated(pathStr);
             if (anim) return anim;
-            // if animated load fails, fall through to static
         }
 
-        // static load
         auto img = loadStaticImage(path, maxSizeMB);
         if (img.success && img.texture) {
             auto spr = cocos2d::CCSprite::createWithTexture(img.texture);
@@ -290,17 +264,69 @@ namespace ImageLoadHelper {
         return nullptr;
     }
 
-    /**
-     * Downsample RGBA pixels using bilinear interpolation for cache storage.
-     * NOTE: GPU-based downsampling via CCRenderTexture is preferred (faster, uses GPU linear filtering).
-     * This CPU fallback is kept for contexts where GPU rendering is not available.
-     *
-     * @param pixels  RGBA8888 pixel data
-     * @param width   original width
-     * @param height  original height
-     * @param maxDim  maximum dimension (width or height) for the output
-     * @return        pair of {downsampled_pixels, {new_width, new_height}}
-     */
+    inline LoadedImage loadStaticImage(std::string_view pathStr, size_t maxSizeMB = 10) {
+        return loadStaticImage(paimon::assets::pathFromUtf8(pathStr), maxSizeMB);
+    }
+    inline LoadedImage loadStaticImage(std::string const& pathStr, size_t maxSizeMB = 10) {
+        return loadStaticImage(paimon::assets::pathFromUtf8(pathStr), maxSizeMB);
+    }
+    inline LoadedImage loadStaticImage(char const* pathStr, size_t maxSizeMB = 10) {
+        return loadStaticImage(paimon::assets::pathFromUtf8(pathStr), maxSizeMB);
+    }
+
+    inline std::vector<uint8_t> readBinaryFile(std::string_view pathStr, size_t maxSizeMB = 10) {
+        return readBinaryFile(paimon::assets::pathFromUtf8(pathStr), maxSizeMB);
+    }
+    inline std::vector<uint8_t> readBinaryFile(std::string const& pathStr, size_t maxSizeMB = 10) {
+        return readBinaryFile(paimon::assets::pathFromUtf8(pathStr), maxSizeMB);
+    }
+    inline std::vector<uint8_t> readBinaryFile(char const* pathStr, size_t maxSizeMB = 10) {
+        return readBinaryFile(paimon::assets::pathFromUtf8(pathStr), maxSizeMB);
+    }
+
+    inline bool isGIF(std::string_view pathStr) {
+        return isGIF(paimon::assets::pathFromUtf8(pathStr));
+    }
+    inline bool isGIF(std::string const& pathStr) {
+        return isGIF(paimon::assets::pathFromUtf8(pathStr));
+    }
+    inline bool isGIF(char const* pathStr) {
+        return isGIF(paimon::assets::pathFromUtf8(pathStr));
+    }
+
+    inline bool isAnimatedImage(std::string_view pathStr) {
+        return isAnimatedImage(paimon::assets::pathFromUtf8(pathStr));
+    }
+    inline bool isAnimatedImage(std::string const& pathStr) {
+        return isAnimatedImage(paimon::assets::pathFromUtf8(pathStr));
+    }
+    inline bool isAnimatedImage(char const* pathStr) {
+        return isAnimatedImage(paimon::assets::pathFromUtf8(pathStr));
+    }
+
+    inline cocos2d::CCSprite* loadAnimatedOrStatic(
+        std::string_view pathStr,
+        size_t maxSizeMB,
+        std::function<cocos2d::CCSprite*(std::string const&)> const& createAnimated
+    ) {
+        return loadAnimatedOrStatic(paimon::assets::pathFromUtf8(pathStr), maxSizeMB, createAnimated);
+    }
+    inline cocos2d::CCSprite* loadAnimatedOrStatic(
+        std::string const& pathStr,
+        size_t maxSizeMB,
+        std::function<cocos2d::CCSprite*(std::string const&)> const& createAnimated
+    ) {
+        return loadAnimatedOrStatic(paimon::assets::pathFromUtf8(pathStr), maxSizeMB, createAnimated);
+    }
+    inline cocos2d::CCSprite* loadAnimatedOrStatic(
+        char const* pathStr,
+        size_t maxSizeMB,
+        std::function<cocos2d::CCSprite*(std::string const&)> const& createAnimated
+    ) {
+        return loadAnimatedOrStatic(paimon::assets::pathFromUtf8(pathStr), maxSizeMB, createAnimated);
+    }
+
+    // CPU bilinear fallback for cache downsampling when GPU rendering is unavailable.
     struct DownsampleResult {
         std::vector<uint8_t> pixels;
         int width = 0;
@@ -311,7 +337,6 @@ namespace ImageLoadHelper {
         uint8_t const* pixels, int width, int height, int maxDim
     ) {
         DownsampleResult result;
-        // Skip if already small enough or invalid
         if (!pixels || width <= 0 || height <= 0 || maxDim <= 0) return result;
         if (width <= maxDim && height <= maxDim) {
             result.width = width;
@@ -323,7 +348,6 @@ namespace ImageLoadHelper {
         float scale = static_cast<float>(maxDim) / std::max(width, height);
         int newW = std::max(1, static_cast<int>(width * scale));
         int newH = std::max(1, static_cast<int>(height * scale));
-        // Round to even dimensions for cleaner GPU alignment
         newW = (newW / 2) * 2;
         newH = (newH / 2) * 2;
         if (newW < 2) newW = 2;
@@ -334,7 +358,6 @@ namespace ImageLoadHelper {
         result.width = newW;
         result.height = newH;
 
-        // Bilinear interpolation
         float xRatio = static_cast<float>(width) / newW;
         float yRatio = static_cast<float>(height) / newH;
 

@@ -1,13 +1,15 @@
-﻿#pragma once
+#pragma once
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
+#include <Geode/ui/TextInput.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <vector>
-#include <unordered_set>
 #include <string>
 #include "CapturePreviewPopup.hpp"
 
 class GameObject;
+
+namespace paimon::capture { class MiniPreview; }
 
 class CaptureAssetBrowserPopup : public geode::Popup {
 public:
@@ -21,8 +23,18 @@ public:
         std::string categoryKey;
         int count = 0;
         bool visible = true;
-        bool originalVisible = true;
-        cocos2d::CCSpriteFrame* representativeFrame = nullptr; // for preview (retained, released in onExit)
+        cocos2d::CCSpriteFrame* representativeFrame = nullptr; // retained; released in dtor
+        std::vector<GameObject*> objects;                      // every instance of this ID
+        CCMenuItemToggler* toggler = nullptr;                  // rebuilt with the list
+        cocos2d::CCLabelBMFont* label = nullptr;
+    };
+
+    struct CategoryHeader {
+        std::string name;
+        bool collapsed = false;
+        std::vector<int> groupIndices; // indices into m_groups
+        CCMenuItemToggler* toggler = nullptr;
+        cocos2d::CCLabelBMFont* label = nullptr;
     };
 
 protected:
@@ -32,39 +44,58 @@ protected:
     void onExit() override;
 
 private:
+    ~CaptureAssetBrowserPopup() override;
+
+    enum class TriState { Hidden, Partial, Visible };
+
     geode::WeakRef<CapturePreviewPopup> m_previewPopup = nullptr;
-    cocos2d::CCSprite* m_miniPreview = nullptr;
+    geode::WeakRef<cocos2d::CCNode> m_scannedPlayLayer = nullptr;
+
+    paimon::capture::MiniPreview* m_miniPreview = nullptr;
     geode::ScrollLayer* m_scrollView = nullptr;
     cocos2d::CCNode* m_listRoot = nullptr;
+    geode::TextInput* m_search = nullptr;
+    cocos2d::CCLabelBMFont* m_statsLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_collapseLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_emptyLabel = nullptr;
 
-    // Object type groups indexed by objectID
     std::vector<AssetGroup> m_groups;
-
-    // Category header indices for display
-    struct CategoryHeader {
-        std::string name;
-        bool visible = true;
-        std::vector<int> groupIndices; // indices into m_groups
-    };
     std::vector<CategoryHeader> m_categories;
 
-    // Toggler references for in-place visual refresh
-    std::vector<CCMenuItemToggler*> m_groupTogglers;
+    std::string m_searchQuery;
+    bool m_allCollapsed = false;
 
-    void scanViewportObjects();
+    void scanObjects();
     void buildList();
-    void updateMiniPreview();
+    void refreshPreview();
+    void updateStats();
+    void updateRowVisuals(int groupIdx);
+    void updateCategoryVisuals(int catIdx);
 
+    [[nodiscard]] bool groupMatchesSearch(int groupIdx) const;
+    [[nodiscard]] bool categoryHasMatches(int catIdx) const;
+    [[nodiscard]] TriState categoryState(int catIdx) const;
+    [[nodiscard]] bool playLayerStillValid() const;
+
+    void snapshotGroup(int groupIdx);
     void setGroupVisible(int groupIdx, bool visible);
     void setCategoryVisible(int catIdx, bool visible);
-    void setAllObjectsVisible(bool visible);
+    void setMatchingVisible(bool visible);
+    void soloGroup(int groupIdx);
+    void refreshGroupStatesFromScene();
 
     void onToggleGroup(cocos2d::CCObject* sender);
     void onToggleCategory(cocos2d::CCObject* sender);
+    void onToggleCollapse(cocos2d::CCObject* sender);
+    void onSoloGroup(cocos2d::CCObject* sender);
+    void onCollapseAllBtn(cocos2d::CCObject* sender);
+    void onClearSearchBtn(cocos2d::CCObject* sender);
     void onDoneBtn(cocos2d::CCObject* sender);
     void onRestoreAllBtn(cocos2d::CCObject* sender);
     void onShowAllBtn(cocos2d::CCObject* sender);
     void onHideAllBtn(cocos2d::CCObject* sender);
+
+    void onSearchChanged(std::string const& text);
 
     static std::string categoryForObjectID(int objectID);
 };

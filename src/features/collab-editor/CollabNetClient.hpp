@@ -5,74 +5,76 @@
 #include <cstdint>
 #include <functional>
 #include <matjson.hpp>
+#include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace paimon::collab {
 
-// HTTP long-poll transport for the Render collab server.
-//
-// cocos2d's WebSocket header is not usable from Geode mods (it pulls in
-// libwebsockets which is not shipped), so we use the same proven HTTP path the
-// rest of the mod uses (web::WebRequest via WebHelper). A long-poll loop
-// receives server messages; ops/perms are POSTed. All callbacks run on the
-// main thread.
+// HTTP long-poll transport; callbacks are delivered on the main thread.
+// WebSockets are unavailable in Geode, so ops and permissions use HTTP POSTs.
 class CollabNetClient {
 public:
     using MessageCb = std::function<void(matjson::Value const&)>;
     using StateCb = std::function<void(ConnState, std::string const&)>;
 
+    CollabNetClient() = default;
+    ~CollabNetClient();
+    CollabNetClient(CollabNetClient const&) = delete;
+    CollabNetClient& operator=(CollabNetClient const&) = delete;
+    CollabNetClient(CollabNetClient&&) = delete;
+    CollabNetClient& operator=(CollabNetClient&&) = delete;
+
     void setCallbacks(MessageCb onMessage, StateCb onState);
 
-    // baseUrl is the https base (e.g. https://host). Tries /api/join first;
-    // if the room doesn't exist (404), automatically falls back to
-    // /api/create-room to become the host of that code.
+    // baseUrl is the HTTP(S) origin; mode explicitly chooses join or create.
     void start(std::string baseUrl, std::string roomCode, std::string username,
                PeerAppearance appearance, ConnectMode mode);
     void stop();
 
-    // Re-runs the join/create handshake for the current room keeping the same
-    // base/room/user. Used for session recovery: the host re-creates (and the
-    // server lets it reclaim its room), a peer re-joins.
+    // Re-run the handshake for the current room during session recovery.
     void restart(ConnectMode mode);
 
-    // Host-only: POST /api/close-room. The server destroys the room and
-    // notifies every joiner with { t: "room_closed" }. Local state is also
-    // torn down so any further ops are dropped.
+    // Host-only close; the server notifies joiners and local ops are dropped.
     void closeRoom();
 
-    bool isOpen() const; // joined and active
+    bool isOpen() const;
 
-    // Ask the server to re-sync us: a host clears the room and re-seeds it, a
-    // peer just gets the current snapshot re-sent. Used when re-entering the
-    // editor with the room still open.
+    // Re-send the current snapshot when re-entering an open room.
     void requestResync();
 
-    // value.t is "op_batch" or "set_perms"; routed to the matching endpoint.
+    // Route value.t ("op_batch" or "set_perms") to its endpoint.
     void sendJson(matjson::Value const& value);
 
-    // Acked op delivery: POSTs the ops array to /api/ops and reports the
-    // outcome. cb(ok, httpStatus, acceptedCount) always fires (a timeout comes
-    // back as ok=false) unless the session generation changed meanwhile, in
-    // which case the manager's epoch guard has already dropped the in-flight
-    // chunk. This is what makes op delivery reliable: the caller keeps the
-    // chunk until ok=true.
+    // Acked delivery; callers retain a chunk until cb reports ok=true.
     using OpsCb = std::function<void(bool ok, int status, int accepted)>;
     void sendOps(matjson::Value const& ops, OpsCb cb);
 
-    // Host-only: POST /api/invite. cb(ok, online, message) reports whether the
-    // invite was accepted by the server and whether the target was online.
+    // Host-only snapshot seed; faster than streaming individual ops.
+    using SeedCb = std::function<void(bool ok, int status, int accepted, int roomTotal)>;
+    void sendSeed(matjson::Value const& objects, bool finalChunk, SeedCb cb);
+
+    // Host-only invite; the callback reports acceptance and target presence.
     using InviteCb = std::function<void(bool ok, bool online, std::string const& message)>;
     void sendInvite(int accountId, std::string const& fromName, InviteCb cb);
 
 private:
+    struct PendingStateRequest {
+        std::string suffix;
+        matjson::Value body;
+    };
+
     void beginStart(std::string baseUrl, std::string roomCode, std::string username,
                     PeerAppearance appearance, ConnectMode mode, bool preserveResumeToken);
+    void stopInternal(bool notifyServer);
     void doJoin();
     void doCreate();
-    void onJoinLikeSuccess(matjson::Value value); // shared by join/create success
+    void onJoinLikeSuccess(matjson::Value value);
     void poll();
     void scheduleRetry(uint64_t gen, int ms);
     void scheduleJoinRetry(uint64_t gen, int ms);
+    void dispatchStateJson(std::string channel, std::string suffix, matjson::Value body);
     void emitError(std::string const& code, std::string const& message);
     std::string apiUrl(std::string const& suffix) const;
 
@@ -85,14 +87,20 @@ private:
     int m_clientId = 0;
     bool m_joined = false;
     bool m_active = false;
+    bool m_resyncInFlight = false;
     ConnectMode m_mode = ConnectMode::Join;
     uint64_t m_gen = 0;
-    // Join 404s are retried a few times before failing: covers the host still
-    // creating the room and the server waking from a cold start.
+    int m_pollFailures = 0;
+    // Retry join 404s while the host or server is still starting.
     int m_joinRetries = 0;
+    int m_hostReconnectRetries = 0;
+    std::unordered_set<std::string> m_stateRequestsInFlight;
+    std::unordered_map<std::string, PendingStateRequest> m_pendingStateRequests;
+    // Invalidated in the destructor so delayed callbacks cannot touch `this`.
+    std::shared_ptr<uint8_t> m_lifetime = std::make_shared<uint8_t>(0);
 
     MessageCb m_onMessage;
     StateCb m_onState;
 };
 
-} // namespace paimon::collab
+}

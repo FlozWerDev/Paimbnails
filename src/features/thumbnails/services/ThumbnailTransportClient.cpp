@@ -6,7 +6,6 @@
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
-#include "../../../video/VideoNormalizer.hpp"
 #include "../../../framework/HookInterceptor.hpp"
 #include "../../../utils/FormatDetect.hpp"
 #include <Geode/loader/Log.hpp>
@@ -154,6 +153,24 @@ cocos2d::CCTexture2D* ThumbnailTransportClient::webpToTexture(std::vector<uint8_
 cocos2d::CCTexture2D* ThumbnailTransportClient::loadFromLocal(int levelId) {
     if (!LocalThumbs::get().has(levelId)) return nullptr;
     return LocalThumbs::get().loadTexture(levelId);
+}
+
+bool ThumbnailTransportClient::beginUpload(int levelId) {
+    std::lock_guard<std::mutex> lock(m_uploadMutex);
+    auto now = std::chrono::steady_clock::now();
+    for (auto it = m_uploadsInFlight.begin(); it != m_uploadsInFlight.end();) {
+        if (now - it->second >= UPLOAD_GUARD_TIMEOUT) {
+            it = m_uploadsInFlight.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    return m_uploadsInFlight.emplace(levelId, now).second;
+}
+
+void ThumbnailTransportClient::finishUpload(int levelId) {
+    std::lock_guard<std::mutex> lock(m_uploadMutex);
+    m_uploadsInFlight.erase(levelId);
 }
 
 bool ThumbnailTransportClient::hasGalleryMetadataCached(int levelId) {
@@ -418,19 +435,20 @@ void ThumbnailTransportClient::uploadThumbnail(int levelId, std::vector<uint8_t>
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
     paimon::HookContext ctx{"upload", levelId, username, "png", pngData.size(), &pngData};
-    auto hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
+    auto hookRes = paimon::HookInterceptor::get().runPreHooks(
+        ctx, {"upload", "validate", "security-check"}
+    );
     if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    ctx.action = "validate";
-    hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    ctx.action = "security-check";
-    hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
+    if (!beginUpload(levelId)) {
+        callback(false, "Ya hay una miniatura subiendose para este nivel.");
+        return;
+    }
 
     log::info("[ThumbTransport] subiendo miniatura nivel {} ({} bytes)", levelId, pngData.size());
 
     HttpClient::get().uploadThumbnail(levelId, pngData, username,
         [this, callback, levelId, username](bool success, std::string const& message) {
+            finishUpload(levelId);
             if (success) {
                 m_uploadCount++;
                 ThumbnailLoader::get().invalidateLevel(levelId);
@@ -452,19 +470,20 @@ void ThumbnailTransportClient::uploadGIF(int levelId, std::vector<uint8_t> const
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
     paimon::HookContext ctx{"upload", levelId, username, "gif", gifData.size(), &gifData};
-    auto hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
+    auto hookRes = paimon::HookInterceptor::get().runPreHooks(
+        ctx, {"upload", "validate", "security-check"}
+    );
     if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    ctx.action = "validate";
-    hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    ctx.action = "security-check";
-    hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
+    if (!beginUpload(levelId)) {
+        callback(false, "Ya hay una miniatura subiendose para este nivel.");
+        return;
+    }
 
     log::info("[ThumbTransport] subiendo gif nivel {} ({} bytes)", levelId, gifData.size());
 
     HttpClient::get().uploadGIF(levelId, gifData, username,
         [this, callback, levelId, username](bool success, std::string const& message) {
+            finishUpload(levelId);
             if (success) {
                 m_uploadCount++;
                 ThumbnailLoader::get().invalidateLevel(levelId);
@@ -486,26 +505,20 @@ void ThumbnailTransportClient::uploadVideo(int levelId, std::vector<uint8_t> con
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
     paimon::HookContext ctx{"upload", levelId, username, "mp4", mp4Data.size(), &mp4Data};
-    auto hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
+    auto hookRes = paimon::HookInterceptor::get().runPreHooks(
+        ctx, {"upload", "validate", "security-check"}
+    );
     if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    ctx.action = "validate";
-    hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    ctx.action = "security-check";
-    hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
+    if (!beginUpload(levelId)) {
+        callback(false, "Ya hay una miniatura subiendose para este nivel.");
+        return;
+    }
 
     log::info("[ThumbTransport] subiendo video nivel {} ({} bytes)", levelId, mp4Data.size());
 
-    auto normalRes = paimon::video::VideoNormalizer::normalizeData(
-        mp4Data, fmt::format("upload_video_{}", levelId));
-    auto const& uploadData = normalRes.isOk() ? normalRes.unwrap() : mp4Data;
-    if (normalRes.isErr())
-        log::warn("[ThumbTransport] Normalization failed: {} — uploading as-is",
-                  normalRes.unwrapErr());
-
-    HttpClient::get().uploadVideo(levelId, uploadData, username,
+    HttpClient::get().uploadVideo(levelId, mp4Data, username,
         [this, callback, levelId, username](bool success, std::string const& message) {
+            finishUpload(levelId);
             if (success) {
                 m_uploadCount++;
                 ThumbnailLoader::get().invalidateLevel(levelId);

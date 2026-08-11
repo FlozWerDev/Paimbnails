@@ -11,7 +11,6 @@ using namespace geode::prelude;
 namespace paimon::ui {
 
 namespace {
-// One-step scroll duration: short enough to feel responsive, long enough to show the ease.
 constexpr float kScrollDuration = 0.28f;
 constexpr char const* kInnerMenuID = "paimon-carousel-inner";
 constexpr char const* kArrowMenuID = "paimon-carousel-arrows";
@@ -59,17 +58,14 @@ bool ButtonCarousel::init(
     m_crossSize     = crossSize;
     m_gap           = gap;
     m_arrowSize     = arrowSize;
-    // Threshold can't be below the visible count: nothing to paginate when all buttons fit.
     m_arrowThreshold = std::max(arrowThreshold, m_visibleCount + 1);
 
     this->setAnchorPoint({0.5f, 0.5f});
     this->ignoreAnchorPointForPosition(false);
 
-    // Final size (window, arrows) is decided in rebuild() since it depends on button
-    // count vs threshold; here we just create the nodes at a provisional size.
+    // Rebuild determines final size after the item count is known.
     float winCross = m_crossSize;
 
-    // Clip node (visible window).
     auto stencil = CCLayerColor::create({0, 0, 0, 255});
     stencil->setContentSize({winCross, winCross});
     m_clip = ScissorClipNode::create(stencil);
@@ -77,7 +73,6 @@ bool ButtonCarousel::init(
     m_clip->setContentSize({winCross, winCross});
     this->addChild(m_clip);
 
-    // Inner menu with the buttons (moves inside the clip).
     m_innerMenu = CCMenu::create();
     m_innerMenu->setID(kInnerMenuID);
     m_innerMenu->ignoreAnchorPointForPosition(true);
@@ -85,7 +80,6 @@ bool ButtonCarousel::init(
     m_innerMenu->setContentSize(m_clip->getContentSize());
     m_clip->addChild(m_innerMenu);
 
-    // Arrow menu (outside the clip, always visible).
     m_arrowMenu = CCMenu::create();
     m_arrowMenu->setID(kArrowMenuID);
     m_arrowMenu->ignoreAnchorPointForPosition(true);
@@ -96,11 +90,9 @@ bool ButtonCarousel::init(
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("navArrowBtn_001.png");
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png");
         if (!spr) spr = CCSprite::create();
-        // navArrowBtn_001 points left by default.
         if (m_orientation == Orientation::Horizontal) {
             spr->setFlipX(!pointsToStart); // next points right
         } else {
-            // Vertical: rotate the arrow. "start" (top) = 90, "end" = -90.
             spr->setRotation(pointsToStart ? 90.f : -90.f);
         }
         scaleToFit(spr, m_arrowSize);
@@ -119,7 +111,6 @@ bool ButtonCarousel::init(
         m_arrowMenu->addChild(m_nextArrow);
     }
 
-    // Initial layout (no buttons yet).
     relayout();
     return true;
 }
@@ -127,7 +118,6 @@ bool ButtonCarousel::init(
 int ButtonCarousel::effectiveSlots() const {
     int n = static_cast<int>(m_items.size());
     if (n <= 0) return m_visibleCount;
-    // Below the threshold, show all buttons (no pagination).
     if (n < m_arrowThreshold) return n;
     return m_visibleCount;
 }
@@ -155,7 +145,7 @@ void ButtonCarousel::relayout() {
         m_clip->setPosition({0.f, arrowReserve});
     }
 
-    // Keep the clip stencil in sync with its size (ScissorClipNode fallback under rotation/skew).
+    // Keep the stencil size synchronized with the clip.
     if (auto* stencil = m_clip->getStencil()) {
         stencil->setContentSize(m_clip->getContentSize());
     }
@@ -167,7 +157,6 @@ void ButtonCarousel::relayout() {
         m_prevArrow->setPosition({m_arrowSize * 0.5f, cs.height * 0.5f});
         m_nextArrow->setPosition({cs.width - m_arrowSize * 0.5f, cs.height * 0.5f});
     } else {
-        // In vertical mode "start" (offset 0) is the top.
         m_prevArrow->setPosition({cs.width * 0.5f, cs.height - m_arrowSize * 0.5f});
         m_nextArrow->setPosition({cs.width * 0.5f, m_arrowSize * 0.5f});
     }
@@ -184,7 +173,7 @@ float ButtonCarousel::windowMain() const {
 
 void ButtonCarousel::addButton(cocos2d::CCMenuItem* item) {
     if (!item || !m_innerMenu) return;
-    // Reparent to the inner menu, preserving refcount.
+    // Reparent to the inner menu without losing ownership.
     item->retain();
     item->removeFromParent();
     m_innerMenu->addChild(item);
@@ -201,7 +190,7 @@ void ButtonCarousel::absorbMenuItems(cocos2d::CCMenu* source) {
     auto children = source->getChildren();
     if (!children) return;
 
-    // Copy first (removeFromParent mutates the list we iterate).
+    // Copy before removing; removal mutates the source list.
     std::vector<CCMenuItem*> items;
     for (auto* node : CCArrayExt<CCNode*>(children)) {
         if (auto* item = typeinfo_cast<CCMenuItem*>(node)) {
@@ -217,35 +206,29 @@ int ButtonCarousel::maxOffset() const {
 }
 
 cocos2d::CCPoint ButtonCarousel::itemLocalPos(int index) const {
-    // Center position of item `index` within the inner menu, from the content start (no scroll offset).
     float along = m_itemSize * 0.5f + index * strideLen();
     if (m_orientation == Orientation::Horizontal) {
         return {along, m_crossSize * 0.5f};
     }
-    // Vertical: offset 0 = top; Y decreases downward.
     float winMain = windowMain();
     return {m_crossSize * 0.5f, winMain - along};
 }
 
 cocos2d::CCPoint ButtonCarousel::innerPosForOffset(int offset) const {
-    // Shift the inner menu so item `offset` sits at the start of the visible window.
     float shift = offset * strideLen();
     if (m_orientation == Orientation::Horizontal) {
         return {-shift, 0.f};
     }
-    // Vertical: scrolling down moves content up (+Y).
     return {0.f, shift};
 }
 
 void ButtonCarousel::rebuild() {
     if (!m_innerMenu) return;
 
-    // Recompute window/arrow size: depends on button count vs threshold (relayout
-    // decides whether all fit or it paginates).
+    // Recompute window and arrow size from the current item count.
     relayout();
 
-    // Inner content must span all items so scrolling has range; the inner menu is
-    // positioned manually, with no layout.
+    // Manual positioning keeps the inner menu's full scroll range.
     int n = static_cast<int>(m_items.size());
     float totalMain = n > 0 ? (n * m_itemSize + (n - 1) * m_gap) : 0.f;
 
@@ -261,7 +244,6 @@ void ButtonCarousel::rebuild() {
         item->setPosition(itemLocalPos(i));
     }
 
-    // Clamp the offset and apply without animating.
     m_offset = std::clamp(m_offset, 0, maxOffset());
     m_innerMenu->setPosition(innerPosForOffset(m_offset));
 
@@ -288,8 +270,7 @@ void ButtonCarousel::animateTo(int newOffset) {
     m_offset = newOffset;
     m_animating = true;
 
-    // During the transition, also show items one past each edge so they slide
-    // smoothly in/out of the clip.
+    // Include one item beyond each edge for smooth transitions.
     updateButtonVisibility(m_offset, 1);
 
     auto dest = innerPosForOffset(m_offset);
@@ -324,9 +305,8 @@ void ButtonCarousel::scrollToIndex(int offset, bool animated) {
 }
 
 void ButtonCarousel::updateButtonVisibility(int offset, int margin) {
-    // Items in [offset - margin, offset + slots + margin) are visible and tappable;
-    // the rest are hidden and disabled so they don't steal clicks (scissor only
-    // clips render, not touch).
+    // Only the visible range (plus margin) stays visible and tappable; scissor
+    // clipping alone would not prevent off-screen touches.
     int lo = offset - margin;
     int hi = offset + effectiveSlots() + margin;
     int n = static_cast<int>(m_items.size());
@@ -351,4 +331,4 @@ void ButtonCarousel::updateArrowState() {
     dim(m_nextArrow, m_offset < maxOffset());
 }
 
-} // namespace paimon::ui
+}

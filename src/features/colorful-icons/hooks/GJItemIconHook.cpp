@@ -1,10 +1,5 @@
-//
-// GJItemIconHook.cpp - Hook GJItemIcon::init and changeToLockedState so every
-// icon gets recolored at construction time, avoiding a per-frame ticker.
-//
-// The `ccColor3B unlockColor` parameter at the end is accepted but never read;
-// reading it has caused crashes in other mod hooks. We forward {} to the original.
-//
+// Recolor icons at construction/lock transitions without a per-frame ticker.
+// The trailing unlockColor is unsafe to read on Win64, so hooks pass {}.
 
 #include "../services/IconColorService.hpp"
 #include "../services/IconConfigStore.hpp"
@@ -30,30 +25,22 @@ class $modify(PaimonGJItemIcon, GJItemIcon) {
         paimon::hooks::afterNodeIdsOrLate(self, "GJItemIcon::changeToLockedState");
     }
 
-    // We intentionally do NOT hook GJItemIcon::init. On Win64 the init
-    // `ccColor3B` parameters are passed by hidden pointer, and
-    // GJItemIcon::createBrowserItem leaves `unlockColor` pointing at garbage
-    // (browser items have no unlock color). As the first hook in the chain our
-    // detour's prologue would materialise that by-value parameter, dereference
-    // the bad pointer and crash (EXCEPTION_ACCESS_VIOLATION) on garage entry.
-    // Recoloring is handled by the container-based IconRecolorEngine instead
-    // (PaimonIconsGarageGlue for the icon kit, the GJShopLayer glue below for
-    // shops) -- the non-brittle approach.
+    // Do not hook GJItemIcon::init: Win64 may pass its trailing ccColor3B through
+    // a dangling hidden pointer for browser items. Recolor container subtrees.
 
     $override
     void changeToLockedState(float p0) {
         GJItemIcon::changeToLockedState(p0);
-        // Durable "locked" marker: opacity-based detection breaks as soon as
-        // a lock style changes the player opacity away from vanilla's 120.
+        // Use a durable marker instead of testing vanilla opacity.
         this->setUserObject(paimon::icons::kIconLockedKey, CCBool::create(true));
+        // Snapshot vanilla locked colors before styling.
+        IconRecolorEngine::get().snapshotLockedVanilla(this);
         IconLockStyler::get().apply(this);
     }
 };
 
-// Shops had no container-based recolor path (only the now-removed brittle
-// GJItemIcon::init hook recolored their icons). Recolor the whole shop subtree
-// once the layer is built, deferred one frame so the store items exist. Safe:
-// GJShopLayer::init takes no by-value struct parameters.
+// Recolor the shop subtree after its items exist; init has no unsafe by-value
+// parameters, unlike GJItemIcon::init.
 class $modify(PaimonGJShopLayer, GJShopLayer) {
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "GJShopLayer::init");

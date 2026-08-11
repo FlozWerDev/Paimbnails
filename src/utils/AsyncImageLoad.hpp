@@ -58,7 +58,7 @@ inline void loadStaticSprite(std::filesystem::path path, size_t maxSizeMB, Sprit
         auto& fileData = readRes.unwrap();
         if (fileData.empty()) { fail(); return; }
 
-        // === CPU-only decode (no GL) ===
+// CPU-only decode; no GL calls.
         int w = 0, h = 0, channels = 0;
         unsigned char* px = stbi_load_from_memory(
             fileData.data(), static_cast<int>(fileData.size()), &w, &h, &channels, 4);
@@ -72,7 +72,7 @@ inline void loadStaticSprite(std::filesystem::path path, size_t maxSizeMB, Sprit
             px, px + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
         stbi_image_free(px);
 
-        // === GL texture creation on the main thread ===
+// GL texture creation on the main thread.
         geode::Loader::get()->queueInMainThread(
             [rgba, w, h, callback = std::move(callback)]() mutable {
                 if (paimon::isRuntimeShuttingDown()) return;

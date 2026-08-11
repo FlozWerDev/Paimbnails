@@ -25,8 +25,10 @@ using namespace geode::prelude;
 
 namespace paimon::menumusic {
 
-static constexpr float kPopupW = 380.f;
-static constexpr float kPopupH = 260.f;
+static constexpr float kPopupW = 430.f;
+static constexpr float kPopupH = 290.f;
+static constexpr float kRowHeight = 36.f;
+static constexpr float kRowGap = 3.f;
 
 ExternalSongsPopup* ExternalSongsPopup::create() {
     auto ret = new ExternalSongsPopup();
@@ -96,13 +98,14 @@ void ExternalSongsPopup::onExit() {
 
 void ExternalSongsPopup::buildHeader() {
     auto size = m_mainLayer->getContentSize();
+    const float headerY = size.height - 40.f;
 
-    m_searchBar = TextInput::create(size.width * 0.6f, "Search songs", "chatFont.fnt");
+    m_searchBar = TextInput::create(245.f, "Search songs", "chatFont.fnt");
     if (m_searchBar) {
         m_searchBar->setCallback([this](const std::string& q) {
             this->onSearchChanged(q);
         });
-        m_searchBar->setPosition({size.width / 2.f - 40.f, size.height - 38.f});
+        m_searchBar->setPosition({140.f, headerY});
         m_searchBar->setID("search-bar"_spr);
         m_mainLayer->addChild(m_searchBar, 5);
     }
@@ -113,16 +116,16 @@ void ExternalSongsPopup::buildHeader() {
         m_summaryLabel->setScale(0.5f);
         m_summaryLabel->setColor({225, 225, 240});
         m_summaryLabel->setAnchorPoint({1.f, 0.5f});
-        m_summaryLabel->setPosition({size.width - 14.f, size.height - 38.f});
+        m_summaryLabel->setPosition({size.width - 14.f, size.height - 66.f});
         m_summaryLabel->setID("summary-label"_spr);
         m_mainLayer->addChild(m_summaryLabel, 5);
     }
 
     auto menu = CCMenu::create();
-    menu->setContentSize({size.width, 34.f});
-    menu->setPosition({size.width / 2.f, 22.f});
-    if (auto spr = ButtonSprite::create("Shuffle All", 80, true, "bigFont.fnt",
-            "GJ_button_02.png", 24.f, 0.5f)) {
+    menu->setContentSize({96.f, 28.f});
+    menu->setPosition({350.f, headerY});
+    if (auto spr = ButtonSprite::create("Shuffle", 90, true, "bigFont.fnt",
+            "GJ_button_02.png", 20.f, 0.45f)) {
         auto btn = CCMenuItemSpriteExtra::create(
             spr, this, menu_selector(ExternalSongsPopup::onShuffleAll));
         if (btn) {
@@ -130,19 +133,28 @@ void ExternalSongsPopup::buildHeader() {
             menu->addChild(btn);
         }
     }
-    menu->setLayout(RowLayout::create()->setAxisAlignment(AxisAlignment::Center));
-    menu->updateLayout();
+    menu->setID("shuffle-menu"_spr);
     m_mainLayer->addChild(menu, 5);
 }
 
 void ExternalSongsPopup::buildList() {
     auto size = m_mainLayer->getContentSize();
-    const CCSize scrollSize{size.width - 24.f, size.height - 90.f};
+    const float scrollHeight = size.height - 84.f;
+    const CCSize scrollSize{size.width - 30.f, scrollHeight};
+    if (auto* panel = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
+        panel->setContentSize({size.width - 20.f, scrollHeight + 6.f});
+        panel->setPosition({size.width / 2.f, 12.f + scrollHeight / 2.f});
+        panel->setOpacity(220);
+        panel->setID("song-list-bg"_spr);
+        m_mainLayer->addChild(panel, 2);
+    }
+
     m_scroll = ScrollLayer::create(scrollSize);
     if (!m_scroll) return;
-    m_scroll->setPosition({12.f, 42.f});
+    m_scroll->setPosition({15.f, 12.f});
     m_scroll->setID("song-list-scroll"_spr);
-    m_mainLayer->addChild(m_scroll, 4);
+    m_scroll->m_contentLayer->setID("song-list-content"_spr);
+    m_mainLayer->addChild(m_scroll, 3);
 }
 
 static bool matchesQuery(const std::string& label, const std::string& q) {
@@ -155,81 +167,106 @@ void ExternalSongsPopup::rebuildList() {
     if (!m_scroll) return;
     m_scroll->m_contentLayer->removeAllChildren();
 
-    const float cellW = m_scroll->getContentSize().width;
-    const float cellH = 24.f;
-    const std::string current = paimon::menuloop::MenuLoopManager::get().getCurrentSong();
+    const float cellW = m_scroll->getContentSize().width - 4.f;
+    std::string current = paimon::menuloop::MenuLoopManager::get().getCurrentSong();
+    if (auto* track = MenuMusicPlayer::get().currentTrack()) {
+        current = track->audioPath;
+    }
 
     std::vector<Row> filtered;
     for (const auto& r : m_rows) {
         if (matchesQuery(r.label, m_query)) filtered.push_back(r);
     }
 
-    float y = std::max<float>(
-        m_scroll->getContentSize().height,
-        static_cast<float>(filtered.size()) * cellH);
-    m_scroll->m_contentLayer->setContentSize({cellW, y});
+    float contentHeight = static_cast<float>(filtered.size()) * (kRowHeight + kRowGap);
+    if (contentHeight > 0.f) contentHeight -= kRowGap;
+    contentHeight = std::max(contentHeight, m_scroll->getContentSize().height);
+    m_scroll->m_contentLayer->setContentHeight(contentHeight);
 
-    int shown = 0;
+    std::size_t shown = 0;
     for (const auto& r : filtered) {
+        const bool playing = r.path == current;
         auto row = CCNode::create();
-        row->setContentSize({cellW, cellH});
+        row->setContentSize({cellW, kRowHeight});
         row->setAnchorPoint({0.f, 0.f});
-        row->setPosition({0.f, y - (shown + 1) * cellH});
+        row->setPosition({2.f, contentHeight - (shown + 1) * kRowHeight
+            - shown * kRowGap});
+        row->setID(fmt::format("song-row-{}", shown).c_str());
 
-        auto bg = paimon::SpriteHelper::createRoundedRect(
-            cellW - 4.f, cellH - 2.f, 4.f,
-            (shown % 2 == 0)
-                ? ccc4f(0.08f, 0.08f, 0.12f, 0.65f)
-                : ccc4f(0.12f, 0.12f, 0.18f, 0.65f));
-        if (bg) {
+        if (auto* bg = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
+            bg->setContentSize({cellW, kRowHeight});
             bg->setAnchorPoint({0.f, 0.f});
-            bg->setPosition({2.f, 1.f});
+            bg->setPosition({0.f, 0.f});
+            bg->setOpacity(playing ? 245 : (shown % 2 == 0 ? 220 : 195));
+            if (playing) bg->setColor({135, 215, 145});
+            bg->setID("song-row-bg"_spr);
             row->addChild(bg, 0);
+        }
+
+        if (auto* icon = paimon::SpriteHelper::safeCreateWithFrameName(
+                "GJ_musicOnBtn_001.png")) {
+            icon->setScale(0.34f);
+            icon->setPosition({21.f, kRowHeight / 2.f});
+            icon->setOpacity(playing ? 255 : 205);
+            row->addChild(icon, 1);
         }
 
         auto label = CCLabelBMFont::create(r.label.c_str(), "bigFont.fnt");
         if (label) {
-            label->limitLabelWidth(cellW - 90.f, 0.5f, 0.25f);
+            label->limitLabelWidth(cellW - 92.f, 0.43f, 0.25f);
             label->setAnchorPoint({0.f, 0.5f});
-            label->setPosition({12.f, cellH / 2.f});
-            if (r.path == current) {
-                label->setColor({120, 255, 140});
-            } else {
-                label->setColor({235, 235, 245});
-            }
+            label->setPosition({42.f, kRowHeight * 0.65f});
+            label->setColor(playing ? ccColor3B{120, 245, 140}
+                                    : ccColor3B{255, 255, 255});
             row->addChild(label, 1);
         }
 
-        auto tag = CCLabelBMFont::create(r.source.c_str(), "chatFont.fnt");
+        const char* source = r.source == "library" ? "My Songs"
+            : r.source == "menu-loop" ? "Menu loop"
+            : "Geometry Dash";
+        auto tag = CCLabelBMFont::create(source, "chatFont.fnt");
         if (tag) {
-            tag->setScale(0.38f);
-            tag->setAnchorPoint({1.f, 0.5f});
-            tag->setPosition({cellW - 44.f, cellH / 2.f});
-            tag->setColor({195, 210, 255});
+            tag->setScale(0.34f);
+            tag->setAnchorPoint({0.f, 0.5f});
+            tag->setPosition({42.f, kRowHeight * 0.26f});
+            tag->setColor({220, 205, 175});
             row->addChild(tag, 1);
         }
 
         auto menu = CCMenu::create();
-        menu->setContentSize({30.f, cellH});
+        menu->setContentSize({38.f, kRowHeight});
         menu->setAnchorPoint({1.f, 0.5f});
-        menu->setPosition({cellW - 10.f, cellH / 2.f});
+        menu->setPosition({cellW - 5.f, kRowHeight / 2.f});
         menu->ignoreAnchorPointForPosition(false);
         if (auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_playMusicBtn_001.png")) {
-            spr->setScale(0.45f);
+            spr->setScale(0.5f);
             auto btn = CCMenuItemSpriteExtra::create(
                 spr, this, menu_selector(ExternalSongsPopup::onPlayTapped));
             if (btn) {
-                int tagIdx = static_cast<int>(shown + 1);
-                btn->setTag(tagIdx);
+                btn->setPosition({19.f, kRowHeight / 2.f});
                 btn->setUserObject(
                     std::string("song-path"), CCString::create(r.path.c_str()));
+                btn->setID("play-song-btn"_spr);
                 menu->addChild(btn);
             }
         }
         row->addChild(menu, 2);
 
         m_scroll->m_contentLayer->addChild(row);
-        shown++;
+        ++shown;
+    }
+
+    if (filtered.empty()) {
+        auto* label = CCLabelBMFont::create(
+            m_rows.empty() ? "No songs found." : "No songs match your search.",
+            "chatFont.fnt");
+        if (label) {
+            label->setScale(0.5f);
+            label->setPosition({m_scroll->getContentSize().width / 2.f,
+                                m_scroll->getContentSize().height / 2.f});
+            label->setColor({205, 205, 220});
+            m_scroll->m_contentLayer->addChild(label);
+        }
     }
 
     m_scroll->scrollToTop();
@@ -278,6 +315,8 @@ void ExternalSongsPopup::playSongPath(const std::string& path) {
         }
     }
 
+    MenuMusicLibrary::get().setMode(PlaybackMode::Disabled);
+    MenuMusicPlayer::get().forgetCurrentTrack();
     auto& loop = paimon::menuloop::MenuLoopManager::get();
     loop.setOverride(path);
     loop.setCurrentSong(path);

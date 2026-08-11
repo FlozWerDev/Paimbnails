@@ -12,9 +12,11 @@ namespace paimon::commentbg {
 inline bool shouldHideVanillaCommentBgNode(cocos2d::CCNode* node) {
     using namespace geode::prelude;
     if (!node) return false;
-    std::string nodeID = node->getID();
+    // Keep the ZStringView getID() returns instead of converting to std::string:
+    // that conversion allocated once per node, on every node of every comment cell.
+    auto const nodeID = node->getID();
     if (!nodeID.empty()) {
-        if (nodeID.find("paimon-") != std::string::npos) return false;
+        if (nodeID.view().find("paimon-") != std::string_view::npos) return false;
         if (nodeID == "background" || nodeID == "comment-background" ||
             nodeID == "left-border" || nodeID == "right-border" ||
             nodeID == "top-border" || nodeID == "bottom-border") {

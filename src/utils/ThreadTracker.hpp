@@ -22,12 +22,15 @@ public:
         return instance;
     }
 
+    /// Returns false if the thread was NOT started (shutdown in progress).
+    /// Callers that later wait on a flag the thread sets must check this, or
+    /// they will block on a completion signal that can never arrive.
     template<typename Function, typename... Args>
-    void spawn(Function&& f, Args&&... args) {
+    bool spawn(Function&& f, Args&&... args) {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_isShuttingDown) {
             geode::log::warn("[ThreadTracker] Rejecting thread spawn: shutting down.");
-            return;
+            return false;
         }
 
         // Clean up completed threads to avoid leak of descriptors
@@ -47,6 +50,7 @@ public:
         });
 
         m_threads.push_back({ std::move(t), completed });
+        return true;
     }
 
     bool isShuttingDown() const {

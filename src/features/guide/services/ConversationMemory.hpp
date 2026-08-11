@@ -5,57 +5,59 @@
 #include <optional>
 #include <ctime>
 
-// Short-term memory for the Paimon chat: detects repeated intents, enables
-// contextual follow-ups, and avoids duplicate consecutive answers. Volatile
-// (not persisted), so each session starts fresh.
+// Volatile chat memory for repeats and contextual follow-ups.
 
 namespace paimon::guide {
 
 struct ConversationTurn {
-    std::string userQuery;       // as the user typed it
-    std::string normalizedQuery; // after normalize() (no accents, lowercase)
-    std::string matchedIntentId; // empty if fallback
-    bool wasFunctional = false;  // intent kind at match time
-    double matchScore = 0.0;     // fuzzy score (0-100)
+    std::string userQuery;       // Original text.
+    std::string normalizedQuery; // Normalized text.
+    std::string matchedIntentId; // Empty for fallback.
+    std::string topicId;         // Follow-up topic.
+    bool wasFunctional = false;  // Intent kind at match time.
+    double matchScore = 0.0;     // Fuzzy score, 0..100.
     std::time_t timestamp = 0;
 };
 
 class ConversationMemory {
 public:
-    // Max stored turns (oldest discarded).
+// Maximum stored turns; oldest are discarded.
     static constexpr std::size_t kMaxTurns = 12;
 
-    // Window (seconds) for treating a turn as "recent" for repeats/follow-ups.
+// Recent-turn window for repeats/follow-ups.
     static constexpr std::time_t kRecentSecs = 60;
 
-    // Record a new turn.
+// Record a turn.
     void recordTurn(ConversationTurn turn);
 
-    // Clear all memory (e.g. when closing the chat).
+// Clear memory.
     void clear();
 
-    // Number of turns in history.
+// Number of stored turns.
     std::size_t size() const { return m_history.size(); }
 
-    // Full history (oldest first).
+// Full history, oldest first.
     std::vector<ConversationTurn> const& history() const { return m_history; }
 
-    // Last turn that matched a Functional intent, for resolving short follow-ups.
+// Last functional turn for short follow-ups.
     std::optional<ConversationTurn> lastFunctionalTurn() const;
 
-    // How many times this intent matched in the last N seconds.
+// Recent effective topic, or empty.
+    std::string lastTopicId(std::time_t withinSecs = kRecentSecs) const;
+
+// Matches for this intent in the recent window.
     int recentMatchesOf(std::string const& intentId,
                         std::time_t withinSecs = kRecentSecs) const;
 
-    // True if the intent was answered in the last N seconds.
+// Whether the intent was answered recently.
     bool hasJustAnswered(std::string const& intentId,
                          std::time_t withinSecs = kRecentSecs) const;
 
-    // Heuristic: 1-2 word query that sounds like a follow-up; caller may reuse lastFunctionalTurn().
+// Heuristic for a short follow-up query.
     static bool looksLikeFollowUp(std::string const& normalized);
 
 private:
     std::vector<ConversationTurn> m_history;
 };
 
-} // namespace paimon::guide
+}

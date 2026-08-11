@@ -13,8 +13,7 @@ using namespace cocos2d;
 
 class $modify(PaimonShareComment, ShareCommentLayer) {
     struct Fields {
-        // WeakRef<>: if another mod removes these nodes during teardown,
-        // lock() returns null instead of a dangling pointer.
+        // WeakRef avoids dangling toolbar nodes during teardown.
         WeakRef<CCMenu> m_toolMenu;
         WeakRef<CCMenuItemSpriteExtra> m_copyBtn;
         WeakRef<CCMenuItemSpriteExtra> m_pasteBtn;
@@ -60,19 +59,17 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
 
     $override
     bool init(gd::string title, int charLimit, CommentType type, int ID, gd::string desc) {
-        // Double the vanilla limit for more emotes/text. GD validates server-side,
-        // so very long comments may be truncated or rejected by RobTop.
+        // Extend the local limit; the server still validates length.
         int extendedLimit = charLimit * 2;
         if (!ShareCommentLayer::init(title, extendedLimit, type, ID, desc)) return false;
 
-        // Keep the extended limit even if the base class clamped it internally.
+
         m_charLimit = extendedLimit;
         if (m_commentInput) {
             m_commentInput->setMaxLabelLength(extendedLimit);
         }
         this->updateCharCountLabel();
 
-        // Allow special characters for emotes
         if (m_commentInput) {
             m_commentInput->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
         }
@@ -162,7 +159,6 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
             quickInsertMenu->addChild(fontBtn);
         }
 
-        // Copy/Paste toolbar
         {
             auto toolMenu = CCMenu::create();
             toolMenu->setPosition({0.f, 0.f});
@@ -190,7 +186,6 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
             layer->addChild(toolMenu, 10);
         }
 
-        // Autocomplete
         if (m_commentInput) {
             auto ac = paimon::emotes::EmoteAutocomplete::create(                m_commentInput,
                 [self](std::string const& newText) {
@@ -203,7 +198,6 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
             layer->addChild(ac, 100);
         }
 
-        // Schedule update() for dynamic button visibility
         this->scheduleUpdate();
 
         return true;
@@ -216,17 +210,14 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
         auto toolMenu = m_fields->m_toolMenu.lock();
         if (!m_commentInput || !toolMenu) return;
 
-        // Perf: only check visibility every 10 frames instead of every frame
         m_fields->m_clipboardCheckCounter++;
         if (m_fields->m_clipboardCheckCounter % 10 != 0) return;
 
-        // Show Copy when there's text
         bool hasText = !std::string(m_commentInput->getString()).empty();
         if (auto copyBtn = m_fields->m_copyBtn.lock()) {
             copyBtn->setVisible(hasText);
         }
 
-        // Check clipboard every ~30 frames
         if (m_fields->m_clipboardCheckCounter >= 30) {
             m_fields->m_clipboardCheckCounter = 0;
             m_fields->m_lastClipboardHasContent = !geode::utils::clipboard::read().empty();

@@ -3,10 +3,7 @@
 #include <vector>
 #include <cstdint>
 
-/**
- * Simple GIF decoder for extracting frames.
- * Supports basic animated GIFs without complex LZW compression.
- */
+// Lightweight GIF frame decoder for basic animated files.
 class GIFDecoder {
 public:
     struct Frame {
@@ -25,22 +22,11 @@ public:
         bool isAnimated;
     };
 
-    /**
-     * Decodes a GIF from in-memory data.
-     * @param data GIF data
-     * @param size Data size in bytes
-     * @param maxFrames stop after this many frames (0 = all). Pass 1 when only
-     *        a placeholder/thumbnail is needed — decoding every frame of a big
-     *        GIF on the main thread causes visible stutter.
-     * @return GIFData with the decoded frames, or an empty structure on failure
-     */
+    // maxFrames=1 is enough for a placeholder and avoids main-thread stutter.
     static GIFData decode(uint8_t const* data, size_t size, int maxFrames = 0);
 
     static bool isGIF(uint8_t const* data, size_t size);
 
-    /**
-     * Get the GIF dimensions without fully decoding it.
-     */
     static bool getDimensions(uint8_t const* data, size_t size, int& width, int& height);
 
 private:
@@ -53,4 +39,3 @@ private:
     
     static bool parseFrame(uint8_t const*& ptr, uint8_t const* end, RawFrame& frame, std::vector<uint8_t> const& globalPalette, int transparentIndex, bool hasTransparency);
 };
-

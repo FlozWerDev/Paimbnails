@@ -4,7 +4,6 @@
 #include "../../../core/Settings.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "ProfileImageCache.hpp"
-#include "../../../video/VideoNormalizer.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/VideoThumbnailSprite.hpp"
 #include "../../../utils/FormatDetect.hpp"
@@ -305,14 +304,7 @@ void ProfileImageService::uploadProfileVideo(int accountID, std::vector<uint8_t>
     }
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
-    auto normalRes = paimon::video::VideoNormalizer::normalizeData(
-        mp4Data, fmt::format("upload_profile_{}", accountID));
-    auto const& uploadData = normalRes.isOk() ? normalRes.unwrap() : mp4Data;
-    if (normalRes.isErr())
-        log::warn("[ProfileImageService] Normalization failed: {} — uploading as-is",
-                  normalRes.unwrapErr());
-
-    HttpClient::get().uploadProfileVideo(accountID, uploadData, username,
+    HttpClient::get().uploadProfileVideo(accountID, mp4Data, username,
         [this, callback, accountID](bool success, std::string const& message) {
             if (success) {
                 m_uploadCount++;

@@ -1,12 +1,19 @@
 #include "DynamicSongManager.hpp"
+#include "DynamicSongConfig.hpp"
+#include "DynamicSongSubmerge.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../framework/HookInterceptor.hpp"
 #include "../../audio/services/AudioContextCoordinator.hpp"
+#include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
+#include <Geode/binding/LevelInfoLayer.hpp>
+#include <Geode/binding/LevelSelectLayer.hpp>
+#include <Geode/binding/LoadingCircle.hpp>
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/LevelTools.hpp>
+#include <Geode/binding/PlayLayer.hpp>
 #include <random>
 #include <chrono>
 #include <cmath>
@@ -15,7 +22,9 @@
 
 using namespace geode::prelude;
 
-// Gets the FMOD::Channel* from the background music ChannelGroup.
+namespace dynsong = paimon::dynsong;
+using dynsong::SubmergeEffect;
+
 static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {
     if (!engine) return nullptr;
     if (auto* channel = engine->getActiveMusicChannel(0)) {
@@ -30,9 +39,6 @@ static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {
     return ch;
 }
 
-// DynSongFadeNode: per-frame volume fade via CCScheduler.
-// Registered directly with the scheduler (no scene tree required).
-// A single cancel() call stops everything.
 class DynSongFadeNode : public cocos2d::CCNode {
 public:
     static DynSongFadeNode* create() {
@@ -43,7 +49,6 @@ public:
     }
 
     void startFade(float fromVol, float toVol, float durationSec) {
-        // Cancel any running fade first.
         if (m_active) cancel();
 
         m_fromVol = fromVol;
@@ -83,7 +88,6 @@ private:
         m_elapsed += dt;
         float t = std::clamp(m_elapsed / m_duration, 0.0f, 1.0f);
 
-        // Quadratic ease-in-out
         float eT = (t < 0.5f) ? (2.f * t * t) : (1.f - std::pow(-2.f * t + 2.f, 2.f) / 2.f);
         float vol = m_fromVol + (m_toVol - m_fromVol) * eT;
 
@@ -98,7 +102,6 @@ private:
     }
 };
 
-// Singleton
 DynamicSongManager* DynamicSongManager::get() {
     static DynamicSongManager instance;
     return &instance;
@@ -108,6 +111,7 @@ DynamicSongManager::~DynamicSongManager() {
     if (paimon::isRuntimeShuttingDown()) {
         m_fadeNode = nullptr;
         m_streamPollNode = nullptr;
+        m_handoffWatchNode = nullptr;
         return;
     }
 
@@ -124,9 +128,14 @@ DynamicSongManager::~DynamicSongManager() {
         m_streamPollNode->release();
         m_streamPollNode = nullptr;
     }
+
+    if (m_handoffWatchNode) {
+        m_handoffWatchNode->unscheduleAllSelectors();
+        m_handoffWatchNode->release();
+        m_handoffWatchNode = nullptr;
+    }
 }
 
-// Layer control
 void DynamicSongManager::enterLayer(DynSongLayer layer) {
     m_currentLayer = layer;
 }
@@ -137,12 +146,25 @@ void DynamicSongManager::exitLayer(DynSongLayer layer) {
     }
 }
 
-// Fade helpers
 float DynamicSongManager::getFadeDurationSec() const {
-    if (Mod::get()->getSavedValue<bool>("profile-music-crossfade", true)) {
-        return static_cast<float>(Mod::get()->getSavedValue<double>("profile-music-fade-duration", 0.3));
+    return dynsong::config().fadeSeconds;
+}
+
+// Target volume combines the game slider and feature trim.
+float DynamicSongManager::dynamicTargetVolume() const {
+    auto* engine = FMODAudioEngine::sharedEngine();
+    float const base = engine ? engine->m_musicVolume : 1.0f;
+    return std::clamp(base * (dynsong::config().volumePct / 100.f), 0.0f, 1.0f);
+}
+
+// Streaming previews use their own channel; local songs use the shared group.
+FMOD::ChannelControl* DynamicSongManager::currentChannelControl() const {
+    if (m_streamingPreview && m_previewChannel) {
+        return static_cast<FMOD::ChannelControl*>(m_previewChannel);
     }
-    return 0.15f; // always fade, but short when crossfade is off
+    auto* engine = FMODAudioEngine::sharedEngine();
+    if (!engine) return nullptr;
+    return static_cast<FMOD::ChannelControl*>(engine->m_backgroundMusicChannel);
 }
 
 void DynamicSongManager::fadeVolume(float from, float to, float durationSec, PostFadeAction action) {
@@ -163,24 +185,24 @@ void DynamicSongManager::cancelFade() {
 
 void DynamicSongManager::onFadeComplete() {
     auto* engine = FMODAudioEngine::sharedEngine();
-    float targetVol = engine ? engine->m_musicVolume : 1.0f;
+    float menuVol = engine ? engine->m_musicVolume : 1.0f;
 
     switch (m_postFadeAction) {
     case PostFadeAction::PlayPending: {
-        // Dip-fade done: load pending song, fade in.
+// Fade complete: load the pending song and fade in.
         stopStreamingPreview();
         playOnMainChannel(m_pendingSongPath, 0.0f);
-        applyRandomSeek();
+        applyStartPosition(m_currentPlayingLevelID);
         m_activeSongPath = m_pendingSongPath;
         m_pendingSongPath.clear();
         m_state = DynState::FadingIn;
         m_lastFadeCompleteTime = std::chrono::steady_clock::now();
-        fadeVolume(0.0f, targetVol, getFadeDurationSec(), PostFadeAction::None);
+        fadeVolume(0.0f, dynamicTargetVolume(), getFadeDurationSec(), PostFadeAction::None);
         break;
     }
     case PostFadeAction::RestoreMenu: {
-        // Fade-out done: load menu, set Idle, cosmetic menu fade.
         stopStreamingPreview();
+        SubmergeEffect::get().release();
         loadMenuTrack(0.0f);
         m_activeSongPath.clear();
         m_currentPlayingLevelID = 0;
@@ -188,18 +210,16 @@ void DynamicSongManager::onFadeComplete() {
         m_state = DynState::Idle;
         paimon::setDynamicSongInteropActive(false);
         AudioContextCoordinator::get().clearDynamicAudio();
-        // Cosmetic menu fade (state is already Idle, hooks let it through).
-        fadeVolume(0.0f, targetVol, getFadeDurationSec(), PostFadeAction::None);
+        fadeVolume(0.0f, menuVol, getFadeDurationSec(), PostFadeAction::None);
         break;
     }
     case PostFadeAction::Cleanup:
-        // fadeOutForLevelStart done.
         stopStreamingPreview();
+        SubmergeEffect::get().release();
         m_state = DynState::Idle;
         break;
 
     case PostFadeAction::None:
-        // Fade-in done.
         if (m_state == DynState::FadingIn) {
             m_state = DynState::Playing;
             m_lastFadeCompleteTime = std::chrono::steady_clock::now();
@@ -210,7 +230,6 @@ void DynamicSongManager::onFadeComplete() {
     m_postFadeAction = PostFadeAction::None;
 }
 
-// Canal principal
 void DynamicSongManager::playOnMainChannel(const std::string& songPath, float startVolume) {
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine) return;
@@ -232,7 +251,6 @@ void DynamicSongManager::loadMenuTrack(float startVolume) {
     if (!engine || !gm) return;
     if (gm->getGameVariable("0122")) return;
     if (engine->m_musicVolume <= 0.0f) return;
-    // Don't restore menu music while video audio is active.
 
     std::string menuTrack = gm->getMenuMusicFile();
     s_selfPlayMusic = true;
@@ -249,7 +267,6 @@ void DynamicSongManager::loadMenuTrack(float startVolume) {
     }
 }
 
-// Seek aleatorio
 void DynamicSongManager::applyRandomSeek(FMOD::Channel* existingCh) {
     auto engine = FMODAudioEngine::sharedEngine();
     auto* bgCh = existingCh ? existingCh : getMainBgChannel(engine);
@@ -261,25 +278,81 @@ void DynamicSongManager::applyRandomSeek(FMOD::Channel* existingCh) {
 
     unsigned int lengthMs = 0;
     currentSound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
-    if (lengthMs > 10000) {
-        unsigned int minStart = static_cast<unsigned int>(lengthMs * 0.15f);
-        unsigned int maxStart = static_cast<unsigned int>(lengthMs * 0.85f);
-        if (maxStart > minStart) {
-            static std::random_device rd;
-            static std::mt19937 gen(rd());
-            std::uniform_int_distribution<unsigned int> dist(minStart, maxStart);
-            bgCh->setPosition(dist(gen), FMOD_TIMEUNIT_MS);
-        }
-    }
+    if (lengthMs <= 10000) return;
+
+    auto const& cfg = dynsong::config();
+    unsigned int minStart = static_cast<unsigned int>(lengthMs * (cfg.randomMinPct / 100.f));
+    unsigned int maxStart = static_cast<unsigned int>(lengthMs * (cfg.randomMaxPct / 100.f));
+    if (maxStart <= minStart) return;
+
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    std::uniform_int_distribution<unsigned int> dist(minStart, maxStart);
+    bgCh->setPosition(dist(gen), FMOD_TIMEUNIT_MS);
 }
 
-// Rotacion de canciones por nivel
+void DynamicSongManager::applyStartPosition(int levelID, FMOD::Channel* existingCh) {
+    auto const& cfg = dynsong::config();
+
+    switch (cfg.startMode) {
+    case dynsong::StartMode::Beginning: {
+        auto engine = FMODAudioEngine::sharedEngine();
+        auto* bgCh = existingCh ? existingCh : getMainBgChannel(engine);
+        if (bgCh) bgCh->setPosition(0, FMOD_TIMEUNIT_MS);
+        return;
+    }
+    case dynsong::StartMode::Resume: {
+        auto it = m_resumePositions.find(levelID);
+        if (it == m_resumePositions.end() || it->second == 0) {
+            applyRandomSeek(existingCh);
+            return;
+        }
+        auto engine = FMODAudioEngine::sharedEngine();
+        auto* bgCh = existingCh ? existingCh : getMainBgChannel(engine);
+        if (!bgCh) return;
+
+        FMOD::Sound* currentSound = nullptr;
+        bgCh->getCurrentSound(&currentSound);
+        unsigned int lengthMs = 0;
+        if (currentSound) currentSound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
+
+// Clamp positions saved by older versions.
+        if (lengthMs > 0 && it->second < lengthMs) {
+            bgCh->setPosition(it->second, FMOD_TIMEUNIT_MS);
+        } else {
+            applyRandomSeek(existingCh);
+        }
+        return;
+    }
+    case dynsong::StartMode::Random:
+    case dynsong::StartMode::Count:
+        break;
+    }
+    applyRandomSeek(existingCh);
+}
+
+void DynamicSongManager::rememberPosition() {
+    if (dynsong::config().startMode != dynsong::StartMode::Resume) return;
+    if (m_currentPlayingLevelID == 0 || m_streamingPreview) return;
+
+    auto* bgCh = getMainBgChannel(FMODAudioEngine::sharedEngine());
+    if (!bgCh) return;
+
+    unsigned int posMs = 0;
+    if (bgCh->getPosition(&posMs, FMOD_TIMEUNIT_MS) != FMOD_OK || posMs == 0) return;
+
+    if (m_resumePositions.size() >= MAX_RESUME_LEVELS
+        && !m_resumePositions.count(m_currentPlayingLevelID)) {
+        m_resumePositions.erase(m_resumePositions.begin());
+    }
+    m_resumePositions[m_currentPlayingLevelID] = posMs;
+}
+
 std::vector<std::string> DynamicSongManager::getAllSongPaths(GJGameLevel* level) {
     std::vector<std::string> paths;
     std::set<int> seenIds;
     auto mdm = MusicDownloadManager::sharedState();
 
-    // Primary song
     if (level->m_songID > 0) {
         if (mdm->isSongDownloaded(level->m_songID)) {
             paths.push_back(mdm->pathForSong(level->m_songID));
@@ -292,7 +365,6 @@ std::vector<std::string> DynamicSongManager::getAllSongPaths(GJGameLevel* level)
         if (!fullPath.empty()) paths.push_back(fullPath);
     }
 
-    // Additional songs (m_songIDs comma-separated)
     std::string songIdsStr = level->m_songIDs;
     if (!songIdsStr.empty()) {
         std::stringstream ss(songIdsStr);
@@ -325,6 +397,20 @@ std::string DynamicSongManager::getNextRotationSong(GJGameLevel* level) {
         return allPaths.empty() ? "" : allPaths[0];
     }
 
+    switch (dynsong::config().rotationMode) {
+    case dynsong::RotationMode::First:
+        return allPaths[0];
+    case dynsong::RotationMode::Random: {
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_int_distribution<size_t> dist(0, allPaths.size() - 1);
+        return allPaths[dist(gen)];
+    }
+    case dynsong::RotationMode::Rotate:
+    case dynsong::RotationMode::Count:
+        break;
+    }
+
     int levelId = level->m_levelID;
     auto it = m_songRotationCache.find(levelId);
     if (it == m_songRotationCache.end() || it->second.empty()) {
@@ -340,31 +426,22 @@ std::string DynamicSongManager::getNextRotationSong(GJGameLevel* level) {
     return nextSong;
 }
 
-// playSong
 void DynamicSongManager::playSong(GJGameLevel* level) {
-    // Guard chain (claw-code pattern: authorize → pre-check → execute)
 
-    // Guard 1: feature enabled
     if (!Mod::get()->getSettingValue<bool>("dynamic-song")) return;
-    // Guard 2: valid input
     if (!level) return;
-    // Guard 3: valid layer
     if (!isInValidLayer()) return;
-    // Guard 4: music not disabled by GD
+    if (m_currentLayer == DynSongLayer::LevelSelect && !dynsong::config().inLevelSelect) return;
     if (GameManager::get()->getGameVariable("0122")) return;
-    // Guard 5: video audio not blocking
     if (paimon::isVideoAudioInteropActive()) return;
-    // Guard 6: engine available
     auto* engine = FMODAudioEngine::sharedEngine();
     if (!engine || engine->m_musicVolume <= 0.0f) return;
-    // Guard 7: cooldown — prevent rapid-fire from checkPageLoop (~200ms)
     {
         auto now = std::chrono::steady_clock::now();
         auto elapsed = now - m_lastPlaySongTime;
         if (elapsed < std::chrono::milliseconds(200)) return;
         m_lastPlaySongTime = now;
     }
-    // Guard 8: HookInterceptor — extensible pre-play check
     {
         paimon::HookContext ctx;
         ctx.action = "dynamic-play";
@@ -374,7 +451,15 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
     }
 
     int levelId = level->m_levelID.value();
-    float targetVol = engine->m_musicVolume;
+    float targetVol = dynamicTargetVolume();
+
+    if (m_state == DynState::Handoff) {
+        if (levelId == m_currentPlayingLevelID) {
+            cancelGameplayHandoff();
+            return;
+        }
+        finishGameplayHandoff();
+    }
 
     if (levelId != m_currentPlayingLevelID && (m_streamingPreview || isStreamingPreviewPending() || m_awaitingDownloadOnly)) {
         cancelFade();
@@ -386,7 +471,6 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
         AudioContextCoordinator::get().clearDynamicAudio();
     }
 
-    // Guard 9: same context already active — skip without complex verification
     if (isActive() && levelId == m_currentPlayingLevelID && !m_activeSongPath.empty()) {
         if (m_state == DynState::Playing || m_state == DynState::FadingIn) {
             paimon::setDynamicSongInteropActive(true);
@@ -394,20 +478,18 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
         }
     }
 
-    // Get song path
     std::string songPath;
     if (m_state != DynState::Idle && levelId == m_currentPlayingLevelID && !m_activeSongPath.empty()) {
-        songPath = m_activeSongPath; // reuse for retry
+        songPath = m_activeSongPath;
     } else {
         songPath = getNextRotationSong(level);
     }
     if (songPath.empty()) {
-        // No local song — try streaming preview.
+        // No local song; try streaming preview.
         startStreamingPreview(level);
         return;
     }
 
-    // Clear suspension if present.
     if (m_state == DynState::Suspended) {
         m_state = DynState::Idle;
     }
@@ -419,17 +501,29 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
     paimon::setDynamicSongInteropActive(true);
 
     if (m_state == DynState::Idle) {
-        // First song: save menu position, load, fade in.
-        // Only save if we are actually on menu music (not already dynamic).
         if (engine->isMusicPlaying(0) && !isActive()) {
             m_savedMenuPos = engine->getMusicTimeMS(0);
         }
         playOnMainChannel(songPath, 0.0f);
-        applyRandomSeek();
+        applyStartPosition(levelId);
         m_state = DynState::FadingIn;
+
+        auto const& sub = dynsong::config().submerge;
+        auto const sinceGameplay = std::chrono::steady_clock::now() - m_surfaceRequestTime;
+        bool const surface = m_surfaceLevelID != 0 && m_surfaceLevelID == levelId
+                          && sinceGameplay < std::chrono::seconds(15)
+                          && sub.enabled && sub.onLevelExit;
+        m_surfaceLevelID = 0;
+        if (surface) {
+            SubmergeEffect::get().bindTarget(currentChannelControl());
+            SubmergeEffect::get().snapTo(1.0f);
+            SubmergeEffect::get().rampTo(0.0f, sub.surfaceSeconds);
+        } else {
+            SubmergeEffect::get().release();
+        }
+
         fadeVolume(0.0f, targetVol, getFadeDurationSec(), PostFadeAction::None);
     } else {
-        // Song-to-song: dip fade (lower, load new, raise).
         float currentVol = getDynamicVolume();
         m_pendingSongPath = songPath;
         m_state = DynState::FadingOut;
@@ -439,14 +533,17 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
     AudioContextCoordinator::get().claimDynamicAudio();
 }
 
-// stopSong
 void DynamicSongManager::stopSong() {
     if (!isActive()) return;
 
     cancelFade();
+    stopHandoffWatch();
+    rememberPosition();
+    m_surfaceLevelID = 0;
+    m_handoffLayer = DynSongLayer::None;
+    m_handoffLevelID = 0;
 
-    // Download-watch mode: nothing is playing on our channel (menu music is
-    // untouched), so just kill the poll and go idle — no fade needed.
+// Download-watch mode has no local channel to fade; stop polling and go idle.
     if (m_awaitingDownloadOnly) {
         stopStreamingPreview();
         m_activeSongPath.clear();
@@ -471,7 +568,7 @@ void DynamicSongManager::stopSong() {
 
     if (m_state == DynState::Suspended) {
         stopStreamingPreview();
-        // Sin audio activo, restaurar menu directo
+        SubmergeEffect::get().release();
         loadMenuTrack(FMODAudioEngine::sharedEngine()->m_musicVolume);
         m_activeSongPath.clear();
         m_currentPlayingLevelID = 0;
@@ -481,8 +578,6 @@ void DynamicSongManager::stopSong() {
         return;
     }
 
-    // Clear ownership immediately so hooks let menu music through
-    // (same pattern as fadeOutForLevelStart).
     m_activeSongPath.clear();
     m_currentPlayingLevelID = 0;
     m_currentLayer = DynSongLayer::None;
@@ -491,16 +586,19 @@ void DynamicSongManager::stopSong() {
 
     float currentVol = getDynamicVolume();
     m_state = DynState::FadingOut;
+    if (SubmergeEffect::get().isEngaged()) {
+        SubmergeEffect::get().rampTo(0.0f, getFadeDurationSec());
+    }
     fadeVolume(std::max(currentVol, 0.01f), 0.0f, getFadeDurationSec(), PostFadeAction::RestoreMenu);
 }
 
-// fadeOutForLevelStart
 void DynamicSongManager::fadeOutForLevelStart() {
     if (!isActive()) return;
 
     cancelFade();
+    rememberPosition();
 
-    // Download-watch mode: nothing playing on our channel — just kill the poll.
+// No local channel in download-watch mode; stop polling.
     if (m_awaitingDownloadOnly) {
         stopStreamingPreview();
         m_activeSongPath.clear();
@@ -523,7 +621,6 @@ void DynamicSongManager::fadeOutForLevelStart() {
         return;
     }
 
-    // Clear ownership immediately (hooks let gameplay music through).
     m_activeSongPath.clear();
     m_currentPlayingLevelID = 0;
     m_currentLayer = DynSongLayer::None;
@@ -542,19 +639,221 @@ void DynamicSongManager::fadeOutForLevelStart() {
     fadeVolume(currentVol, 0.0f, getFadeDurationSec(), PostFadeAction::Cleanup);
 }
 
-// forceKill (only hard-stop, used for gameplay and shutdown)
+// Gameplay handoff: the muffled window between pressing play and the level.
+
+namespace {
+
+// Watch for the level to start, cancellation, or leaving the screen.
+class DynHandoffWatchNode : public CCNode {
+public:
+    static DynHandoffWatchNode* create() {
+        auto* node = new DynHandoffWatchNode();
+        if (node && node->init()) return node;
+        CC_SAFE_DELETE(node);
+        return nullptr;
+    }
+
+    void start() {
+        auto* scheduler = cocos2d::CCDirector::get()->getScheduler();
+        scheduler->unscheduleSelector(schedule_selector(DynHandoffWatchNode::onTick), this);
+        scheduler->scheduleSelector(
+            schedule_selector(DynHandoffWatchNode::onTick),
+            this, 0.1f, kCCRepeatForever, 0.0f, false
+        );
+    }
+
+    void stop() {
+        auto* scheduler = cocos2d::CCDirector::get()->getScheduler();
+        scheduler->unscheduleSelector(schedule_selector(DynHandoffWatchNode::onTick), this);
+    }
+
+private:
+    void onTick(float dt) {
+        if (paimon::isRuntimeShuttingDown()) {
+            stop();
+            return;
+        }
+        DynamicSongManager::get()->handoffWatchTick(dt);
+    }
+};
+
+bool levelScreenStillShowing() {
+    auto* director = CCDirector::get();
+    if (!director) return false;
+    auto* scene = director->getRunningScene();
+    if (!scene) return false;
+    return scene->getChildByType<LevelInfoLayer>(0) != nullptr
+        || scene->getChildByType<LevelSelectLayer>(0) != nullptr;
+}
+
+// Detect modal popups and loading circles on the scene or one child level down.
+bool sceneHasBlockingLayer() {
+    auto* director = CCDirector::get();
+    if (!director) return false;
+    auto* scene = director->getRunningScene();
+    if (!scene) return false;
+
+    auto isBlocker = [](CCNode* node) {
+        if (!node->isVisible()) return false;
+        return typeinfo_cast<FLAlertLayer*>(node) != nullptr
+            || typeinfo_cast<LoadingCircle*>(node) != nullptr;
+    };
+
+    for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
+        if (isBlocker(child)) return true;
+        if (!child->getChildren()) continue;
+        for (auto* grandChild : CCArrayExt<CCNode*>(child->getChildren())) {
+            if (isBlocker(grandChild)) return true;
+        }
+    }
+    return false;
+}
+
+}
+
+void DynamicSongManager::startHandoffWatch() {
+    if (paimon::isRuntimeShuttingDown()) return;
+    if (!m_handoffWatchNode) {
+        m_handoffWatchNode = DynHandoffWatchNode::create();
+        if (!m_handoffWatchNode) return;
+        m_handoffWatchNode->retain();
+    }
+    static_cast<DynHandoffWatchNode*>(m_handoffWatchNode)->start();
+}
+
+void DynamicSongManager::stopHandoffWatch() {
+    if (!m_handoffWatchNode) return;
+    if (paimon::isRuntimeShuttingDown()) return;
+    static_cast<DynHandoffWatchNode*>(m_handoffWatchNode)->stop();
+}
+
+void DynamicSongManager::handoffWatchTick(float dt) {
+    if (paimon::isRuntimeShuttingDown() || m_state != DynState::Handoff) {
+        stopHandoffWatch();
+        return;
+    }
+
+    if (PlayLayer::get()) {
+        finishGameplayHandoff();
+        return;
+    }
+
+    m_handoffClock += dt;
+    if (m_handoffClock < dynsong::config().submerge.holdSeconds) return;
+
+    auto* director = CCDirector::get();
+    if (!director || director->getNextScene() || director->isSendCleanupToScene()) return;
+
+    if (!levelScreenStillShowing()) {
+        finishGameplayHandoff();
+        return;
+    }
+
+    if (!sceneHasBlockingLayer()) {
+        cancelGameplayHandoff();
+    }
+}
+
+void DynamicSongManager::submergeForLevelStart() {
+    auto const& sub = dynsong::config().submerge;
+
+    bool const audible = m_state == DynState::Playing
+                      || m_state == DynState::FadingIn
+                      || m_state == DynState::FadingOut;
+    if (!sub.enabled || !isActive() || !audible) {
+        fadeOutForLevelStart();
+        return;
+    }
+
+    cancelFade();
+    rememberPosition();
+
+    m_handoffLayer = m_currentLayer;
+    m_handoffLevelID = m_currentPlayingLevelID;
+    m_handoffClock = 0.f;
+    m_currentLayer = DynSongLayer::None;
+    m_pendingSongPath.clear();
+    paimon::setDynamicSongInteropActive(false);
+    AudioContextCoordinator::get().clearDynamicAudio();
+
+    setDynamicVolume(dynamicTargetVolume());
+
+    m_state = DynState::Handoff;
+
+    SubmergeEffect::get().bindTarget(currentChannelControl());
+    SubmergeEffect::get().rampTo(1.0f, sub.diveSeconds);
+    startHandoffWatch();
+
+    log::info("[DynSong] submergeForLevelStart: levelID={} dive={}s",
+              m_handoffLevelID, sub.diveSeconds);
+}
+
+void DynamicSongManager::finishGameplayHandoff(int levelID) {
+    stopHandoffWatch();
+
+    int const surfaceID = levelID != 0 ? levelID : m_handoffLevelID;
+    rememberPosition();
+
+    resetToIdle(true);
+
+    auto const& sub = dynsong::config().submerge;
+    m_surfaceLevelID = (sub.enabled && sub.onLevelExit) ? surfaceID : 0;
+    m_surfaceRequestTime = std::chrono::steady_clock::now();
+}
+
+void DynamicSongManager::cancelGameplayHandoff() {
+    if (m_state != DynState::Handoff) return;
+    stopHandoffWatch();
+
+    auto const& cfg = dynsong::config();
+
+    m_currentLayer = m_handoffLayer;
+    m_handoffLayer = DynSongLayer::None;
+    m_handoffLevelID = 0;
+    m_surfaceLevelID = 0;
+    m_state = m_activeSongPath.empty() ? DynState::Idle : DynState::Playing;
+
+    AudioContextCoordinator::get().abortGameplayTransition(m_currentLayer);
+
+    if (m_state == DynState::Idle) {
+        SubmergeEffect::get().release();
+        return;
+    }
+
+    paimon::setDynamicSongInteropActive(true);
+    AudioContextCoordinator::get().claimDynamicAudio();
+    m_lastFadeCompleteTime = std::chrono::steady_clock::now();
+
+    setDynamicVolume(dynamicTargetVolume());
+    SubmergeEffect::get().bindTarget(currentChannelControl());
+    SubmergeEffect::get().rampTo(0.0f, cfg.submerge.surfaceSeconds);
+
+    log::info("[DynSong] cancelGameplayHandoff: surfacing levelID={}", m_currentPlayingLevelID);
+}
+
 void DynamicSongManager::forceKill() {
+    resetToIdle(false);
+    m_surfaceLevelID = 0;
+}
+
+void DynamicSongManager::resetToIdle(bool stopOwnSound) {
     cancelFade();
     stopStreamingPreview();
+    stopHandoffWatch();
+    SubmergeEffect::get().release();
 
     if (m_fadeNode) {
-        m_fadeNode->cancel(); // unschedule from scheduler before release
+        m_fadeNode->cancel();
         m_fadeNode->release();
         m_fadeNode = nullptr;
     }
 
+    bool const ourSound = stopOwnSound && isOurSoundPlaying();
+
     m_state = DynState::Idle;
     m_currentLayer = DynSongLayer::None;
+    m_handoffLayer = DynSongLayer::None;
+    m_handoffLevelID = 0;
     m_activeSongPath.clear();
     m_pendingSongPath.clear();
     m_currentPlayingLevelID = 0;
@@ -565,15 +864,40 @@ void DynamicSongManager::forceKill() {
 
     auto engine = FMODAudioEngine::sharedEngine();
     if (engine && engine->m_backgroundMusicChannel) {
+        if (ourSound) engine->m_backgroundMusicChannel->stop();
         engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume);
     }
 }
 
-// Suspension/resumption for profile music
+bool DynamicSongManager::isOurSoundPlaying() const {
+    if (m_activeSongPath.empty()) return false;
+
+    auto* engine = FMODAudioEngine::sharedEngine();
+    auto* bgCh = getMainBgChannel(engine);
+    if (!bgCh) return false;
+
+    FMOD::Sound* currentSound = nullptr;
+    bgCh->getCurrentSound(&currentSound);
+    if (!currentSound) return false;
+
+    char nameBuffer[512] = {};
+    currentSound->getName(nameBuffer, sizeof(nameBuffer));
+    std::string currentName(nameBuffer);
+    if (currentName.empty()) return false;
+
+    auto fileName = [](std::string const& path) -> std::string {
+        auto pos = path.find_last_of("/\\");
+        return (pos != std::string::npos) ? path.substr(pos + 1) : path;
+    };
+    return fileName(m_activeSongPath) == fileName(currentName);
+}
+
 void DynamicSongManager::suspendPlaybackForExternalAudio() {
     cancelFade();
+    stopHandoffWatch();
+    rememberPosition();
+    SubmergeEffect::get().release();
 
-    // If streaming preview is active, stop it.
     if (m_streamingPreview || isStreamingPreviewPending() || m_awaitingDownloadOnly) {
         stopStreamingPreview();
         m_state = DynState::Idle;
@@ -607,7 +931,6 @@ void DynamicSongManager::resumeSuspendedPlayback() {
     log::info("[DynSong] resumeSuspendedPlayback: path='{}' layer={} posMs={}",
               m_activeSongPath, static_cast<int>(m_currentLayer), m_savedDynamicPosMs);
 
-    // Verify preconditions
     if (GameManager::get()->getGameVariable("0122")) {
         log::info("[DynSong] resumeSuspendedPlayback: music disabled (0122), idle");
         m_state = DynState::Idle;
@@ -634,16 +957,13 @@ void DynamicSongManager::resumeSuspendedPlayback() {
         m_activeSongPath.clear();
         paimon::setDynamicSongInteropActive(false);
         AudioContextCoordinator::get().clearDynamicAudio();
-        // Restore menu as fallback.
         loadMenuTrack(engine->m_musicVolume);
         return;
     }
 
-    // Load song and restore position.
     log::info("[DynSong] resumeSuspendedPlayback: restaurando '{}'", m_activeSongPath);
     playOnMainChannel(m_activeSongPath, 0.0f);
 
-    // Pause channel immediately to avoid audible glitch during seek.
     auto* bgCh = getMainBgChannel(engine);
     if (bgCh) {
         bgCh->setPaused(true);
@@ -651,7 +971,6 @@ void DynamicSongManager::resumeSuspendedPlayback() {
 
     paimon::setDynamicSongInteropActive(true);
     AudioContextCoordinator::get().claimDynamicAudio();
-    // Grace period: prevent verifyPlayback false positive right after resume
     m_lastFadeCompleteTime = std::chrono::steady_clock::now();
 
     if (bgCh) {
@@ -663,19 +982,17 @@ void DynamicSongManager::resumeSuspendedPlayback() {
         if (m_savedDynamicPosMs > 0 && m_savedDynamicPosMs < lengthMs) {
             bgCh->setPosition(m_savedDynamicPosMs, FMOD_TIMEUNIT_MS);
         } else {
-            applyRandomSeek(bgCh);
+            applyStartPosition(m_currentPlayingLevelID, bgCh);
         }
 
         bgCh->setPaused(false);
     }
     m_savedDynamicPosMs = 0;
 
-    float targetVol = engine->m_musicVolume;
     m_state = DynState::FadingIn;
-    fadeVolume(0.0f, targetVol, getFadeDurationSec(), PostFadeAction::None);
+    fadeVolume(0.0f, dynamicTargetVolume(), getFadeDurationSec(), PostFadeAction::None);
 }
 
-// Volumen del canal principal
 float DynamicSongManager::getDynamicVolume() const {
     if (m_streamingPreview && m_previewChannel) {
         float vol = 0.0f;
@@ -700,30 +1017,30 @@ void DynamicSongManager::setDynamicVolume(float vol) {
     }
 }
 
-// Verificacion de playback
 bool DynamicSongManager::verifyPlayback() {
     if (!isActive() || m_activeSongPath.empty()) return false;
     if (!isInValidLayer()) return false;
 
     if (isStreamingPreviewPending()) return true;
 
-    // Streaming preview always passes verification.
     if (m_streamingPreview) return true;
 
-    // Guard: skip verification during suspension — audio was paused intentionally
-    // for profile music or other external audio, not a hijack.
+    // Suspension is intentional external audio, not a hijack.
     if (m_state == DynState::Suspended) {
         return true;
     }
 
-    // Guard: skip verification during fade transitions — FMOD channel
-    // metadata is transiently inconsistent while crossfading
+    // Gameplay handoff temporarily gives ownership up while audio remains audible.
+    if (m_state == DynState::Handoff) {
+        return true;
+    }
+
+    // FMOD metadata is transient during crossfades.
     if (m_state == DynState::FadingIn || m_state == DynState::FadingOut) {
         return true;
     }
 
-    // Guard: grace period after fade completes — FMOD needs time to
-    // propagate channel metadata after the new sound starts
+    // Allow FMOD time to propagate metadata after a fade.
     auto elapsed = std::chrono::steady_clock::now() - m_lastFadeCompleteTime;
     if (elapsed < std::chrono::milliseconds(500)) {
         return true;
@@ -759,8 +1076,12 @@ bool DynamicSongManager::verifyPlayback() {
 void DynamicSongManager::onPlaybackHijacked() {
     cancelFade();
     stopStreamingPreview();
+    stopHandoffWatch();
+    SubmergeEffect::get().release();
     m_state = DynState::Idle;
     m_currentLayer = DynSongLayer::None;
+    m_handoffLayer = DynSongLayer::None;
+    m_handoffLevelID = 0;
     m_activeSongPath.clear();
     m_pendingSongPath.clear();
     m_currentPlayingLevelID = 0;
@@ -768,27 +1089,23 @@ void DynamicSongManager::onPlaybackHijacked() {
     AudioContextCoordinator::get().clearDynamicAudio();
 }
 
-// Streaming preview (canciones no descargadas)
+// Streaming preview.
 
-// Auxiliary node that polls every 0.1s to check if the song has been
-// downloaded locally and swaps to it.
+// Poll for the local download and swap to it when ready.
 class DynStreamPollNode : public CCNode {
 public:
     static DynStreamPollNode* create() {
         auto* node = new DynStreamPollNode();
         if (node && node->init()) {
-            return node; // no autorelease — se retiene manualmente
+            return node;
         }
         CC_SAFE_DELETE(node);
         return nullptr;
     }
 
     void startPolling() {
-        // The node is never added to the scene tree, so m_bRunning is false.
-        // CCNode::schedule() would register the selector as PAUSED in that
-        // case (paused = !m_bRunning), so it would never tick. Register
-        // directly with the scheduler with paused=false instead (same trick
-        // DynSongFadeNode uses).
+        // The detached node would be paused by CCNode::schedule(); register it
+        // directly with paused=false.
         auto* scheduler = cocos2d::CCDirector::get()->getScheduler();
         scheduler->unscheduleSelector(schedule_selector(DynStreamPollNode::pollTick), this);
         scheduler->scheduleSelector(
@@ -823,10 +1140,8 @@ void DynamicSongManager::startStreamingPreview(GJGameLevel* level) {
     if (!mdm || !engine || !engine->m_system) return;
     if (engine->m_musicVolume <= 0.0f) return;
 
-    // Streaming preview disabled: don't play a live stream, but still watch for
-    // the song download to finish so it auto-plays the instant it's local
-    // (instead of only after leaving and re-entering the layer).
-    if (!Mod::get()->getSavedValue<bool>("dynamic-song-stream-preview", true)) {
+    // Watch for the local download even when streaming is disabled.
+    if (!dynsong::config().streamPreview) {
         m_previewSongID = songID;
         m_currentPlayingLevelID = level->m_levelID.value();
         m_awaitingDownloadOnly = true;
@@ -904,6 +1219,8 @@ void DynamicSongManager::stopStreamingPreview() {
     }
 
     if (m_previewChannel) {
+        if (SubmergeEffect::get().isEngaged()) SubmergeEffect::get().release();
+        SubmergeEffect::get().bindTarget(nullptr);
         m_previewChannel->stop();
         m_previewChannel = nullptr;
     }
@@ -945,8 +1262,6 @@ void DynamicSongManager::checkPreviewSwap() {
         return;
     }
 
-    // Download-watch mode (streaming preview disabled): just wait until the
-    // song is downloaded locally, then start playing it like normal.
     if (m_awaitingDownloadOnly) {
         if (!isInValidLayer()) {
             resetPreviewState();
@@ -960,7 +1275,7 @@ void DynamicSongManager::checkPreviewSwap() {
         log::info("[DynSong] checkPreviewSwap: songID={} downloaded, starting playback", m_previewSongID);
 
         int levelID = m_currentPlayingLevelID;
-        stopStreamingPreview(); // clears poll node + flags
+        stopStreamingPreview();
 
         m_activeSongPath = localPath;
         m_currentPlayingLevelID = levelID;
@@ -970,13 +1285,12 @@ void DynamicSongManager::checkPreviewSwap() {
         }
 
         playOnMainChannel(localPath, 0.0f);
-        applyRandomSeek();
+        applyStartPosition(levelID);
 
         paimon::setDynamicSongInteropActive(true);
 
-        float targetVol = engine->m_musicVolume;
         m_state = DynState::FadingIn;
-        fadeVolume(0.0f, targetVol, getFadeDurationSec(), PostFadeAction::None);
+        fadeVolume(0.0f, dynamicTargetVolume(), getFadeDurationSec(), PostFadeAction::None);
         return;
     }
 
@@ -1084,9 +1398,8 @@ void DynamicSongManager::checkPreviewSwap() {
         paimon::setDynamicSongInteropActive(true);
         AudioContextCoordinator::get().claimDynamicAudio();
 
-        float targetVol = engine->m_musicVolume;
         m_state = DynState::FadingIn;
-        fadeVolume(0.0f, targetVol, getFadeDurationSec(), PostFadeAction::None);
+        fadeVolume(0.0f, dynamicTargetVolume(), getFadeDurationSec(), PostFadeAction::None);
 
         log::info("[DynSong] checkPreviewSwap: streaming started for songID={} buffered={} starving={} diskBusy={}",
                   m_previewSongID, percentBuffered, starving, diskBusy);
@@ -1100,15 +1413,12 @@ void DynamicSongManager::checkPreviewSwap() {
     std::string localPath = mdm->pathForSong(m_previewSongID);
     if (localPath.empty()) return;
 
-    // Stop stream.
     stopStreamingPreview();
 
-    // Play local file via the normal flow.
     m_activeSongPath = localPath;
     playOnMainChannel(localPath, 0.0f);
-    applyRandomSeek();
+    applyStartPosition(m_currentPlayingLevelID);
 
-    float targetVol = engine->m_musicVolume;
     m_state = DynState::FadingIn;
-    fadeVolume(0.0f, targetVol, getFadeDurationSec(), PostFadeAction::None);
+    fadeVolume(0.0f, dynamicTargetVolume(), getFadeDurationSec(), PostFadeAction::None);
 }

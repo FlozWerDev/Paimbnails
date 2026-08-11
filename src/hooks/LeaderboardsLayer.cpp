@@ -25,8 +25,9 @@
 #include "../utils/stb_image.h"
 #include "../core/RuntimeLifecycle.hpp"
 #include "../utils/ThreadTracker.hpp"
-#include "../features/scorecell/ui/ScoreCellSettingsPopup.hpp"
+#include "../features/scorecell/ui/LeaderboardLayoutPopup.hpp"
 #include "../features/scorecell/ScoreCellRefresh.hpp"
+#include "../core/modules/ModuleRegistry.hpp"
 
 using namespace geode::prelude;
 
@@ -231,7 +232,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         menu->addChild(uploadBtn);
 
         // Square gear button: opens the GJScoreCell FX settings popup.
-        {
+        if (paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) {
             constexpr float S = 30.f;
             auto gearContainer = CCNode::create();
             gearContainer->setContentSize({S, S});
@@ -266,10 +267,8 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     }
 
     void onOpenScoreCellSettings(CCObject*) {
-        auto popup = paimon::scorecell::ScoreCellSettingsPopup::create();
+        auto popup = paimon::scorecell::LeaderboardLayoutPopup::create();
         if (!popup) return;
-        // Re-apply FX to the visible cells when the popup closes so changes
-        // show without reopening the leaderboard.
         popup->setOnClose([]() {
             paimon::scorecell::refreshAllCells();
         });
@@ -277,7 +276,9 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     }
 
     void onOpenModerators(CCObject*) {
-        TransitionManager::get().pushScene(CommunityHubLayer::scene());
+        if (auto* scene = CommunityHubLayer::scene()) {
+            TransitionManager::get().pushScene(scene);
+        }
     }
 
     void onUploadBanner(CCObject*) {
@@ -455,4 +456,3 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         LeaderboardsLayer::onExit();
     }
 };
-

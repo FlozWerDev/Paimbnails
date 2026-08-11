@@ -34,7 +34,7 @@ bool ThumbnailCache::isAlive() {
 }
 
 ThumbnailCache::~ThumbnailCache() {
-    // Detach without release() to avoid crash if CCPoolManager is already dead during static destruction.
+// Detach without release() if CCPoolManager is already dead during teardown.
     takeAllTextures();
     s_cacheInstanceAlive = false;
 }
@@ -66,8 +66,7 @@ std::optional<geode::Ref<cocos2d::CCTexture2D>> ThumbnailCache::getFromRam(int l
         }
     }
     
-    // URL-fallback only when the URL cache may hold a match — skip string work
-    // and lock traffic when empty (common miss path during cold list scroll).
+// Probe the URL cache only when it can contain a match.
     if (!isGif) {
         bool urlCacheEmpty = false;
         {
@@ -108,8 +107,7 @@ bool ThumbnailCache::isRamEntrySuitable(int levelID, bool isGif, int requestedMa
     int texLong = std::max(tex->getPixelsWide(), tex->getPixelsHigh());
     int originalLong = std::max(it->second.originalWidth, it->second.originalHeight);
 
-    // Older cache entries may not know their source dimensions. Treat them as
-    // suitable so we do not churn disk/network trying to "upgrade" unknowns.
+// Unknown source dimensions remain usable; do not churn disk/network upgrading them.
     if (originalLong <= 0) return true;
 
     int targetLong = std::min(requestedMaxDim, originalLong);
@@ -179,15 +177,14 @@ void ThumbnailCache::evictRamLocked() {
             : maxBytes / 2;
     }
 
-    // Eviction LRU: partial_sort de los k mas viejos por lastAccess, evita el bucle O(k·n).
+// LRU eviction partial-sorts the k oldest entries instead of scanning O(k·n).
     if (m_ramCache.size() <= maxEntries && m_ramBytes <= effectiveMaxBytes) return;
 
     struct EvictCandidate { int key; int64_t accessUs; size_t bytes; };
     std::vector<EvictCandidate> candidates;
     candidates.reserve(m_ramCache.size());
     for (auto const& [k, e] : m_ramCache) {
-        // Main levels (1-22): PINNED — nunca se expulsan por LRU. Se precargan al arrancar
-        // y mantenerlas calientes garantiza fondo instantaneo en LevelSelectLayer.
+// Main levels 1-22 are pinned and preloaded for instant LevelSelect backgrounds.
         int id = paimon::cache::levelIdFromRamKey(k);
         if (paimon::isMainLevelID(id)) continue;
         candidates.push_back({k, e.lastAccessUs.load(std::memory_order_relaxed), e.byteSize});
@@ -226,7 +223,7 @@ void ThumbnailCache::purgeUnusedTextures() {
     int64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
         now.time_since_epoch()).count();
     int64_t lastUs = m_lastPurgeUs.load(std::memory_order_relaxed);
-    constexpr int64_t intervalUs = 2'000'000; // 2s
+constexpr int64_t intervalUs = 2'000'000; // 2 s.
     if (lastUs != 0 && nowUs - lastUs < intervalUs) {
         return;
     }
@@ -244,7 +241,7 @@ void ThumbnailCache::purgeUnusedTextures() {
             toPurge.reserve(std::min(m_ramCache.size() / 4, kMaxPurgeCandidates));
             for (auto const& [key, entry] : m_ramCache) {
                 if (toPurge.size() >= kMaxPurgeCandidates) break;
-                // Main levels (1-22): nunca se purgan; la precarga los deja calientes en RAM.
+// Main levels 1-22 are never purged after preload.
                 if (paimon::isMainLevelID(paimon::cache::levelIdFromRamKey(key))) continue;
                 if (now - entry.addedAt < PURGE_GRACE_PERIOD) continue;
                 if (entry.texture && entry.texture->retainCount() <= 1) {
@@ -257,7 +254,7 @@ void ThumbnailCache::purgeUnusedTextures() {
             for (int key : toPurge) {
                 auto it = m_ramCache.find(key);
                 if (it != m_ramCache.end()) {
-                    // Re-check bajo lock exclusivo (la entrada pudo cambiar).
+// Recheck under the exclusive lock; the entry may have changed.
                     if (now - it->second.addedAt >= PURGE_GRACE_PERIOD &&
                         it->second.texture && it->second.texture->retainCount() <= 1) {
                         if (m_ramBytes >= it->second.byteSize) m_ramBytes -= it->second.byteSize;
@@ -397,7 +394,7 @@ size_t ThumbnailCache::urlRamEntryCount() const {
 
 void ThumbnailCache::clearUrlsForLevel(int levelID) {
     if (levelID <= 0) return;
-    // Match URLs con el levelID seguido de separador (.,_,/) o como parametro de query; evita falsos positivos como /12345abc.png.
+// Match the level ID only at a URL separator/query boundary.
     std::string idStr = std::to_string(levelID);
     std::string n1 = "/" + idStr + ".";
     std::string n2 = "/" + idStr + "_";
@@ -414,12 +411,8 @@ void ThumbnailCache::clearUrlsForLevel(int levelID) {
             it->first.find(n2) != std::string::npos ||
             it->first.find(n3) != std::string::npos ||
             it->first.find(n4) != std::string::npos ||
-            // Suffix match: URL ends with "=<id>". The "=" delimiter + end anchor
-            // already prevent cross-level partial matches (e.g. "...=1234" cannot
-            // end with "=123"), so no trailing-char check is needed. The previous
-            // guard tested it->first[n5.size()] — an index from the START of the
-            // string, unrelated to the matched suffix — and wrongly rejected valid
-            // matches whenever that character happened to be a digit.
+// A suffix match ending in "=<id>" is already boundary-safe; no trailing check
+// is needed.
             (it->first.size() >= n5.size() &&
              it->first.compare(it->first.size() - n5.size(), n5.size(), n5) == 0);
 
@@ -505,7 +498,7 @@ void ThumbnailCache::loadDiskIndex() {
         m_manifest.load(cacheDir);
     }
 
-    // one-time migration desde Geode SavedValues si DiskManifest quedo vacio
+// One-time migration from Geode SavedValues when DiskManifest is empty.
     if (m_manifest.entryCount() == 0) {
         auto savedCache = Mod::get()->getSavedValue<matjson::Value>("thumbnail-disk-cache");
         if (savedCache.isObject()) {
@@ -553,7 +546,7 @@ void ThumbnailCache::saveDiskIndex(bool allowDuringShutdown) {
 }
 
 $on_mod(DataSaved) {
-    // allowDuringShutdown=true: DataSaved se dispara durante el shutdown; sin el flag perderiamos el flush pendiente.
+// allowDuringShutdown keeps the pending flush from being lost during shutdown.
     ThumbnailCache::get().saveDiskIndex(true);
 }
 
@@ -564,10 +557,10 @@ bool ThumbnailCache::isFailed(std::string const& key) const {
 
     int step = std::min(it->second.retryStep, FAILED_BACKOFF_MAX_STEP);
 
-    // backoff exponencial: el TTL crece con cada retry; el ultimo paso (5 min) no es permanente.
+// Exponential backoff grows the TTL; the 5-minute step is still temporary.
     auto ttl = std::chrono::seconds(FAILED_BACKOFF_STEPS[step]);
     if (std::chrono::steady_clock::now() - it->second.timestamp >= ttl) {
-        // TTL expirado: permitir reintento pero NO borrar, asi markFailed() escala el backoff.
+// An expired entry can retry without being erased, so markFailed() can grow backoff.
         return false;
     }
     return true;
@@ -673,7 +666,7 @@ void ThumbnailCache::clearRam() {
 
 void ThumbnailCache::clearDisk() {
     auto dir = paimon::quality::cacheDir();
-    // Preservar miniaturas de main levels (1-22) y la carpeta gifs/.
+// Preserve main-level thumbnails 1-22 and the gifs/ folder.
     auto [preserved, removed] = paimon::clearCachePreservingMainLevels(dir, {"gifs"});
     log::info("[ThumbnailCache] clearDisk: preserved {} entries, removed {}",
         preserved, removed);
@@ -691,7 +684,7 @@ void ThumbnailCache::clearAll() {
 }
 
 void ThumbnailCache::takeAllTextures() {
-    // take() sin release() para evitar crash si Cocos2d ya murio durante static destruction.
+// take() without release() if Cocos2d already died during static destruction.
     size_t levelCount = 0;
     {
         std::unique_lock lock(m_ramMutex);
@@ -719,4 +712,4 @@ void ThumbnailCache::takeAllTextures() {
     log::info("[ThumbnailCache] takeAllTextures: detached {} level textures and {} URL textures", levelCount, urlCount);
 }
 
-} // namespace paimon::cache
+}

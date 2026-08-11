@@ -21,7 +21,6 @@
 #include "MainLevelPrefetch.hpp"
 #include "Settings.hpp"
 #include "../features/paidraw/PaiDrawManager.hpp"
-#include "../video/VideoNormalizer.hpp"
 #include "../video/VideoPlayer.hpp"
 #include "../utils/Shaders.hpp"
 #include "../utils/GLSLLoader.hpp"
@@ -86,8 +85,6 @@ void bootstrap() {
     paimon::gd::GDRobTopCache::get().init();
 
     bool const clearCacheAtStartup = paimon::settings::general::clearCacheOnExit();
-
-    paimon::video::VideoNormalizer::cleanupOrphanedCache();
 
     paimon::ThreadTracker::get().spawn([clearCacheAtStartup]() {
         geode::utils::thread::setName("PaimonMigrations");

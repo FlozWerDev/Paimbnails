@@ -3,6 +3,7 @@
 #include "services/EmoteCache.hpp"
 #include "../../utils/AnimatedGIFSprite.hpp"
 #include "../../core/RuntimeLifecycle.hpp"
+#include "../../core/modules/ModuleRegistry.hpp"
 #include "../comment-mentions/MentionLink.hpp"
 #include <Geode/Geode.hpp>
 #include <cctype>
@@ -120,6 +121,8 @@ static size_t matchMention(std::string const& text, size_t i) {
 }
 
 bool EmoteRenderer::hasEmoteSyntax(std::string const& text) {
+    if (!paimon::modules::isEnabled("paimbnails.emotes.social")) return false;
+
     for (size_t i = 0; i < text.size(); ++i) {
         char c = text[i];
         if (c == ':') {
@@ -149,7 +152,8 @@ bool EmoteRenderer::hasMentionSyntax(std::string const& text) {
 std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText) {
     std::vector<CommentToken> tokens;
     auto& service = EmoteService::get();
-    bool emotesAvailable = service.isLoaded();
+    bool emotesAvailable = service.isLoaded() &&
+        paimon::modules::isEnabled("paimbnails.emotes.social");
 
     std::string text = stripGDColorCodes(rawText);
 

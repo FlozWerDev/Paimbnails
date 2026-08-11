@@ -17,7 +17,6 @@ public:
         return instance;
     }
 
-    // Configuracion persistente
 
     // Devuelve los IDs de las opciones activas en orden
     std::vector<std::string> getActiveOptions() const;
@@ -33,9 +32,10 @@ public:
     std::optional<CustomQuickButton> getCustomButton(std::string const& id) const;
     std::vector<RadialOptionDef> getAllRadialOptions() const;
     bool saveCustomButton(CustomQuickButton const& button);
+    // Borra el boton del catalogo y del orden activo.
+    bool deleteCustomButton(std::string const& id);
     std::string makeUniqueCustomId(std::string const& suggestedName);
 
-    // Estado del radial
 
     bool isRadialOpen() const { return m_radialOpen; }
     void setRadialOpen(bool open) { m_radialOpen = open; }
@@ -49,6 +49,7 @@ public:
 
 private:
     QuickHubManager() = default;
+    static void writeCustomButtons(std::vector<CustomQuickButton> const& all);
     bool m_radialOpen = false;
 
     // Key para guardar en saved values

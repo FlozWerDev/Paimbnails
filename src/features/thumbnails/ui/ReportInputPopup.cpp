@@ -19,7 +19,6 @@ bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::strin
     auto contentSize = m_mainLayer->getContentSize();
     float cx = contentSize.width / 2.f;
 
-    // level ID context
     auto idLabel = CCLabelBMFont::create(
         fmt::format("Level ID: {}", levelID).c_str(),
         "goldFont.fnt"
@@ -29,7 +28,6 @@ bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::strin
     idLabel->setColor({180, 180, 180});
     m_mainLayer->addChild(idLabel);
 
-    // reason input
     m_textInput = geode::TextInput::create(280.f, Localization::get().getString("report.placeholder").c_str(), "chatFont.fnt");
     m_textInput->setCommonFilter(geode::CommonFilter::Any);
     m_textInput->setMaxCharCount(120);
@@ -37,7 +35,6 @@ bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::strin
     m_textInput->setScale(0.9f);
     m_mainLayer->addChild(m_textInput);
 
-    // emote button
     {
         paimon::emotes::EmoteInputContext ctx;
         ctx.getText = [this]() -> std::string {
@@ -58,7 +55,6 @@ bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::strin
         m_mainLayer->addChild(emoteMenu, 5);
     }
 
-    // Autocomplete
     {
         auto ac = paimon::emotes::EmoteAutocomplete::create(
             m_textInput->getInputNode(),
@@ -70,7 +66,6 @@ bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::strin
         m_mainLayer->addChild(ac, 100);
     }
 
-    // send button
     auto sendSpr = ButtonSprite::create(
         Localization::get().getString("report.send").c_str(),
         "goldFont.fnt", "GJ_button_01.png", 0.8f

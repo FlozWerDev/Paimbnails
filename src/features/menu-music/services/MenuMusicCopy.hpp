@@ -43,11 +43,20 @@ inline std::optional<int> tryParseGDSongIdFromPath(std::string const& path) {
 inline std::optional<int> tryParseGDSongIdFromUrl(std::string const& url) {
     constexpr char const* marker = "/audio/listen/";
     auto pos = url.find(marker);
-    if (pos == std::string::npos) return std::nullopt;
+    std::string tail;
+    if (pos != std::string::npos) {
+        tail = url.substr(pos + 14);
+    } else {
+        constexpr char const* audioMarker = "audio.ngfiles.com/";
+        pos = url.find(audioMarker);
+        if (pos == std::string::npos) return std::nullopt;
+        pos = url.find('/', pos + 18);
+        if (pos == std::string::npos) return std::nullopt;
+        tail = url.substr(pos + 1);
+    }
 
-    auto tail = url.substr(pos + 14);
-    auto end = tail.find_first_of("?#/&");
-    if (end != std::string::npos) tail = tail.substr(0, end);
+    auto end = tail.find_first_not_of("0123456789");
+    if (end != std::string::npos) tail.resize(end);
 
     if (auto idRes = geode::utils::numFromString<int>(tail); idRes.isOk()) {
         int id = idRes.unwrap();

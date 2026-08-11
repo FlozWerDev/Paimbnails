@@ -20,6 +20,11 @@
 !src/
 !src/**
 
+# Keep regression tests (sources only, not compiled harnesses)
+!tests/
+!tests/**
+tests/**/*.exe
+
 # Keep resources/ and all its contents
 !resources/
 !resources/**
@@ -45,3 +50,7 @@ AGENTS.md
 CLAUDE.md
 post.md
 .kiro/
+.ai-style-rules.md
+
+# Local analysis reports, not part of the mod
+informe_memcheck.md

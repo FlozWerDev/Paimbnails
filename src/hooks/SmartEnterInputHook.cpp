@@ -11,13 +11,9 @@ namespace {
     }
 }
 
-// Always delegate to the original first. If it accepts Enter (multi-line input
-// inserts '\n' and returns true), don't fire enterPressed. If it rejects Enter
-// (single-line GD-style), fire enterPressed/textInputReturn for smart-enter.
-// Calling the original keeps other mods' Enter handling intact.
+// Let the original consume multiline Enter; only single-line inputs trigger smart-enter.
 class $modify(PaimonSmartEnterInput, CCTextInputNode) {
     static void onModify(auto& self) {
-        // Late: let standard-priority mods react to the insert first, then decide on smart-enter.
         (void)self.setHookPriorityPost("CCTextInputNode::onTextFieldInsertText", geode::Priority::Late);
     }
 

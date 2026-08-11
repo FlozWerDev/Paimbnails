@@ -8,12 +8,7 @@
 #include <cctype>
 #include <memory>
 
-/**
- * WebHelper — Centralized async web dispatch for Paimbnails.
- *
- * Uses Geode v5 native async::spawn + WebFuture for non-blocking requests.
- * The callback is guaranteed to run on the main (Cocos2d-x) thread.
- */
+// Non-blocking Geode web dispatch; callbacks run on the main thread.
 namespace WebHelper {
 
 inline std::string normalizeMethod(std::string method) {
@@ -26,15 +21,6 @@ inline std::string normalizeMethod(std::string method) {
     return method;
 }
 
-/**
- * Dispatch a web request asynchronously (fire-and-forget).
- * The callback is guaranteed to run on the main thread.
- *
- * @param req    The prepared WebRequest (moved in).
- * @param method "GET" or "POST".
- * @param url    The target URL.
- * @param cb     Callback receiving the WebResponse on the main thread.
- */
 inline void dispatch(
     geode::utils::web::WebRequest&& req,
     std::string const& method,
@@ -70,4 +56,3 @@ inline void dispatchOwned(
 }
 
 } // namespace WebHelper
-

@@ -3,8 +3,7 @@
 #include "../../../utils/Localization.hpp"
 #include "../ui/PaimonGuideChatPopup.hpp"
 
-// Popups opened as actions. Each include maps to a real popup; if one moves,
-// update its include and the matching open() lambda.
+// Keep popup includes and their open() lambdas in sync when moving entries.
 #include "../../cursor/ui/CursorConfigPopup.hpp"
 #include "../../discord-presence/ui/DiscordConfigPopup.hpp"
 #include "../../pet/ui/PetConfigPopup.hpp"
@@ -22,12 +21,22 @@
 #include "../../smooth-scroll/ui/SmoothScrollConfigPopup.hpp"
 #include "../../custom-slider/ui/CustomSliderPopup.hpp"
 #include "../../beat-shaders/ui/BeatShaderConfigLayer.hpp"
-#include "../../scorecell/ui/ScoreCellSettingsPopup.hpp"
+#include "../../scorecell/ui/LeaderboardLayoutPopup.hpp"
 #include "../../texture-studio/ui/TextureStudioLayer.hpp"
 #include "../../colorful-icons/ui/PaimonIconsConfigPopup.hpp"
 #include "../../capture/ui/CaptureMenuPopup.hpp"
 #include "../../community/ui/CommunityHubLayer.hpp"
 #include "../../editor-filters/ui/MyLevelFilterPopup.hpp"
+#include "../../death-effects/ui/DeathEffectPopup.hpp"
+#include "../../gameplay-performance/ui/GameplayPerformancePopup.hpp"
+#include "../../icon-copy/ui/MyIconSetsPopup.hpp"
+#include "../../icon-gallery/ui/IconStoreLayer.hpp"
+#include "../../icon-maker/ui/IconEditorLayer.hpp"
+#include "../../icon-maker/ui/IconGalleryLayer.hpp"
+#include "../../icon-gradients/ui/GradientLayer.hpp"
+#include "../../foryou/ui/TagPreferencesPopup.hpp"
+#include "../../settings-panel/services/SettingsPanelManager.hpp"
+#include "../../twitch-requests/ui/TwitchRequestsLayer.hpp"
 #include "../../../layers/PaiConfigLayer.hpp"
 #include "../../../layers/PaimonHubLayer.hpp"
 
@@ -92,7 +101,61 @@ std::function<void(PaimonGuideChatPopup*)> openGeodeSettings() {
     };
 }
 
-} // namespace
+std::function<void(PaimonGuideChatPopup*)> openIconMakerGallery() {
+    return [](PaimonGuideChatPopup*) {
+        paimon::icon_maker::IconGalleryLayer::open();
+    };
+}
+
+std::function<void(PaimonGuideChatPopup*)> openIconMakerEditor() {
+    return [](PaimonGuideChatPopup*) {
+        paimon::icon_maker::IconEditorLayer::open(""); // opens the editor for the current/default slot
+    };
+}
+
+std::function<void(PaimonGuideChatPopup*)> openIconStore() {
+    return [](PaimonGuideChatPopup*) {
+        paimon::icon_gallery::IconStoreLayer::open();
+    };
+}
+
+std::function<void(PaimonGuideChatPopup*)> openIconGradients() {
+    return [](PaimonGuideChatPopup*) {
+        if (auto* popup = paimon::icon_gradients::GradientLayer::create()) popup->show();
+    };
+}
+
+std::function<void(PaimonGuideChatPopup*)> openLevelRequests() {
+    return [](PaimonGuideChatPopup*) {
+        paimon::twitch::TwitchRequestsLayer::open();
+    };
+}
+
+std::function<void(PaimonGuideChatPopup*)> openDeathEffects() {
+    return [](PaimonGuideChatPopup*) {
+        if (auto* popup = paimon::death_effects::DeathEffectPopup::create()) popup->show();
+    };
+}
+
+std::function<void(PaimonGuideChatPopup*)> openGameplayPerformance() {
+    return [](PaimonGuideChatPopup*) {
+        if (auto* popup = paimon::gameplayperf::GameplayPerformancePopup::create()) popup->show();
+    };
+}
+
+std::function<void(PaimonGuideChatPopup*)> openMyIconSets() {
+    return [](PaimonGuideChatPopup*) {
+        if (auto* popup = paimon::iconcopy::MyIconSetsPopup::create()) popup->show();
+    };
+}
+
+std::function<void(PaimonGuideChatPopup*)> openSettingsPanel() {
+    return [](PaimonGuideChatPopup*) {
+        SettingsPanelManager::get().open(0);
+    };
+}
+
+}
 
 PopupRegistry& PopupRegistry::get() {
     static PopupRegistry instance;
@@ -110,12 +173,11 @@ void PopupRegistry::rebuild() {
 
 void PopupRegistry::registerAll() {
     {
-        // "profile background" should map to ProfileBgPickerPopup, but that needs
-        // an accountID, so we only describe it and point to the profile editor.
+        // Cannot open without an account ID; point users to the profile editor.
         PopupEntry e;
         e.id = "profile-background";
         e.category = PopupCategory::Profile;
-        e.weight = 130;  // high: most explicit entity
+        e.weight = 130;  // Most specific profile match.
         e.displayNameByLang["english"] = "Profile Background";
         e.displayNameByLang["spanish"] = "Fondo de Perfil";
         e.aliasesByLang["english"]     = {"profile bg", "profile wallpaper", "pfp background"};
@@ -185,7 +247,7 @@ void PopupRegistry::registerAll() {
         PopupEntry e;
         e.id = "profile-music";
         e.category = PopupCategory::Profile;
-        e.weight = 115;
+        e.weight = 95;
         e.displayNameByLang["english"] = "Profile Music";
         e.displayNameByLang["spanish"] = "Musica de Perfil";
         e.aliasesByLang["english"]     = {"profile song", "profile soundtrack", "profile track"};
@@ -206,7 +268,7 @@ void PopupRegistry::registerAll() {
         m_entries.push_back(std::move(e));
     }
     {
-        // These popups need accountID + ProfileConfig; can't open them here, only describe.
+        // Requires account ID and ProfileConfig, so it is description-only here.
         PopupEntry e;
         e.id = "comment-background";
         e.category = PopupCategory::Profile;
@@ -260,9 +322,9 @@ void PopupRegistry::registerAll() {
         e.category = PopupCategory::Profile;
         e.weight = 95;
         e.displayNameByLang["english"] = "Profile Reviews";
-        e.displayNameByLang["spanish"] = "Reseñas de Perfil";
+        e.displayNameByLang["spanish"] = "Resenas de Perfil";
         e.aliasesByLang["english"]     = {"reviews", "ratings", "feedback", "profile review"};
-        e.aliasesByLang["spanish"]     = {"resenas", "valoraciones", "reseñas", "review de perfil"};
+        e.aliasesByLang["spanish"]     = {"resenas", "valoraciones", "resenas", "review de perfil"};
         e.searchPhrasesByLang["english"] = {
             "write a review", "rate a profile", "profile feedback"
         };
@@ -273,8 +335,8 @@ void PopupRegistry::registerAll() {
             "<cy>Profile Reviews!</c> See and write reviews on profiles. "
             "Open a profile and tap the reviews icon.";
         e.descriptionByLang["spanish"] =
-            "<cy>Reseñas de Perfil!</c> Mira y escribe reseñas en perfiles. "
-            "Abre un perfil y toca el icono de reseñas.";
+            "<cy>Resenas de Perfil!</c> Mira y escribe resenas en perfiles. "
+            "Abre un perfil y toca el icono de resenas.";
         // No action: requires accountID
         m_entries.push_back(std::move(e));
     }
@@ -307,7 +369,7 @@ void PopupRegistry::registerAll() {
         PopupEntry e;
         e.id = "scene-background";
         e.category = PopupCategory::Background;
-        e.weight = 70; // lower than profile-background so that one wins when the query mentions "profile"
+        e.weight = 70; // Keep profile-background ahead of this generic match.
         e.displayNameByLang["english"] = "Scene Background";
         e.displayNameByLang["spanish"] = "Fondo de Escena";
         e.aliasesByLang["english"]     = {
@@ -333,8 +395,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Fondo de Escena!</c> Configura el fondo por pantalla "
             "(menu, busqueda, gauntlet, level select). Imagenes, gradientes, video, shaders.";
-        // Opens the full editor (PaiConfigLayer, Backgrounds tab), not the smaller
-        // BackgroundConfigPopup. PaiConfigLayer defaults to the Backgrounds tab.
+        // Background editor, opened on its Backgrounds tab.
         e.open = openPaiConfig();
         m_entries.push_back(std::move(e));
     }
@@ -347,20 +408,21 @@ void PopupRegistry::registerAll() {
         e.displayNameByLang["english"] = "Menu Music";
         e.displayNameByLang["spanish"] = "Musica del Menu";
         e.aliasesByLang["english"]     = {
-            "menu song", "menuloop", "menu loop", "vinyl",
-            "main menu music", "main menu song", "music", "song", "songs"
+            "menu song", "vinyl", "music", "song", "songs",
+            "main menu music", "main menu song"
         };
         e.aliasesByLang["spanish"]     = {
-            "musica menu", "cancion menu", "vinilo", "menuloop",
-            "musica principal", "musica", "cancion", "canciones"
+            "musica menu", "cancion menu", "vinilo", "musica", "cancion", "canciones",
+            "musica principal"
         };
         e.searchPhrasesByLang["english"] = {
             "change menu music", "custom menu song", "play music in menu",
-            "replace the menu song"
+            "replace the menu song", "music in the menu", "menu music player"
         };
         e.searchPhrasesByLang["spanish"] = {
             "cambiar musica del menu", "cancion personalizada del menu",
-            "poner musica en el menu", "reemplazar cancion del menu"
+            "poner musica en el menu", "reemplazar cancion del menu",
+            "musica en el menu", "musica del menu"
         };
         e.descriptionByLang["english"] =
             "<cy>Menu Music!</c> Library, playlists and downloads for the music in the main menu.";
@@ -467,7 +529,7 @@ void PopupRegistry::registerAll() {
         e.displayNameByLang["english"] = "Pet / Mascot";
         e.displayNameByLang["spanish"] = "Mascota";
         e.aliasesByLang["english"]     = {"pet", "mascot", "companion", "fish"};
-        e.aliasesByLang["spanish"]     = {"mascota", "pet", "compañero", "pez"};
+        e.aliasesByLang["spanish"]     = {"mascota", "pet", "companero", "pez"};
         e.searchPhrasesByLang["english"] = {
             "floating companion", "pet that follows me", "enable pet"
         };
@@ -692,6 +754,31 @@ void PopupRegistry::registerAll() {
 
     {
         PopupEntry e;
+        e.id = "foryou-tags";
+        e.category = PopupCategory::None;
+        e.weight = 80;
+        e.displayNameByLang["english"] = "For You Tags";
+        e.displayNameByLang["spanish"] = "Etiquetas Para Ti";
+        e.aliasesByLang["english"]     = {"tags", "level tags", "tag preferences", "favourite tags", "favorite tags"};
+        e.aliasesByLang["spanish"]     = {"etiquetas", "tags", "level tags", "etiquetas favoritas"};
+        e.searchPhrasesByLang["english"] = {
+            "pick the tags i like", "level tag preferences", "hide levels with a tag"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "elegir etiquetas que me gustan", "preferencias de etiquetas", "ocultar niveles con una etiqueta"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>For You Tags!</c> Pick the Level Tags you want more of and the ones "
+            "you never want to see. Needs the Level Tags mod.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Etiquetas Para Ti!</c> Elige las etiquetas que quieres ver mas y las "
+            "que no quieres ver nunca. Necesita el mod Level Tags.";
+        e.open = openSimple<paimon::foryou::TagPreferencesPopup>();
+        m_entries.push_back(std::move(e));
+    }
+
+    {
+        PopupEntry e;
         e.id = "paiconfig";
         e.category = PopupCategory::Cache;
         e.weight = 90;
@@ -773,7 +860,6 @@ void PopupRegistry::registerAll() {
         m_entries.push_back(std::move(e));
     }
 
-    // ---- Extras / visual features (openable popups) ----
     {
         PopupEntry e;
         e.id = "smooth-scroll";
@@ -852,21 +938,21 @@ void PopupRegistry::registerAll() {
         e.id = "score-cell";
         e.category = PopupCategory::Visuals;
         e.weight = 80;
-        e.displayNameByLang["english"] = "Score Cell Style";
-        e.displayNameByLang["spanish"] = "Estilo de Celda de Puntaje";
-        e.aliasesByLang["english"] = {"score cell", "scorecell", "score cell style", "cell style"};
-        e.aliasesByLang["spanish"] = {"celda de puntaje", "estilo de celda", "score cell"};
+        e.displayNameByLang["english"] = "Leaderboard Layout";
+        e.displayNameByLang["spanish"] = "Layout de Leaderboards";
+        e.aliasesByLang["english"] = {"leaderboard layout", "score cell", "scorecell", "cell modules"};
+        e.aliasesByLang["spanish"] = {"layout de leaderboard", "celda de puntaje", "modulos de ranking", "score cell"};
         e.searchPhrasesByLang["english"] = {
-            "style leaderboard cells", "score cell gradient", "hover on score cells"
+            "customize leaderboard cells", "hide leaderboard stats", "score cell presets"
         };
         e.searchPhrasesByLang["spanish"] = {
-            "estilo de celdas de ranking", "gradiente en score cells"
+            "personalizar celdas de ranking", "ocultar estadisticas del leaderboard", "presets de score cells"
         };
         e.descriptionByLang["english"] =
-            "<cy>Score Cell Style!</c> Gradient, hover and entrance effects for leaderboard score cells.";
+            "<cy>Leaderboard Layout!</c> Presets, modules and effects for RobTop leaderboard cells.";
         e.descriptionByLang["spanish"] =
-            "<cy>Estilo de Celda de Puntaje!</c> Gradiente, hover y efectos de entrada para las celdas de puntaje.";
-        e.open = openSimple<paimon::scorecell::ScoreCellSettingsPopup>();
+            "<cy>Layout de Leaderboards!</c> Presets, modulos y efectos para las celdas de RobTop.";
+        e.open = openSimple<paimon::scorecell::LeaderboardLayoutPopup>();
         m_entries.push_back(std::move(e));
     }
     {
@@ -900,8 +986,8 @@ void PopupRegistry::registerAll() {
         e.weight = 85;
         e.displayNameByLang["english"] = "Paimon Icons (Recolor)";
         e.displayNameByLang["spanish"] = "Iconos Paimon (Recolor)";
-        e.aliasesByLang["english"] = {"colorful icons", "recolor icons", "paimon icons", "icon colors", "rainbow icons", "icons", "icon recolor"};
-        e.aliasesByLang["spanish"] = {"iconos coloridos", "recolorear iconos", "iconos paimon", "colores de iconos", "iconos", "recolor de iconos"};
+        e.aliasesByLang["english"] = {"colorful icons", "recolor icons", "paimon icons", "icon colors", "rainbow icons", "icon recolor"};
+        e.aliasesByLang["spanish"] = {"iconos coloridos", "recolorear iconos", "iconos paimon", "colores de iconos", "recolor de iconos"};
         e.searchPhrasesByLang["english"] = {
             "change icon colors", "rainbow icons", "recolor my icons", "paint icons"
         };
@@ -967,7 +1053,6 @@ void PopupRegistry::registerAll() {
         m_entries.push_back(std::move(e));
     }
 
-    // ---- Update flow ----
     {
         PopupEntry e;
         e.id = "mod-updates";
@@ -993,7 +1078,6 @@ void PopupRegistry::registerAll() {
         m_entries.push_back(std::move(e));
     }
 
-    // ---- Toggle / how-to features (described; opens the right settings surface) ----
     {
         PopupEntry e;
         e.id = "profile-redesign";
@@ -1013,7 +1097,7 @@ void PopupRegistry::registerAll() {
             "<cy>Profile Redesign!</c> A modern layered-card profile page. Toggle it in "
             "<cy>Mod Settings</c> (Redesign Profile).";
         e.descriptionByLang["spanish"] =
-            "<cy>Rediseno de Perfil!</c> Una pagina de perfil moderna con tarjetas. Actívalo en "
+            "<cy>Rediseno de Perfil!</c> Una pagina de perfil moderna con tarjetas. Activalo en "
             "<cy>Ajustes del Mod</c> (Redesign Profile).";
         e.open = openGeodeSettings();
         m_entries.push_back(std::move(e));
@@ -1038,7 +1122,7 @@ void PopupRegistry::registerAll() {
             "Enable it in <cy>Mod Settings</c> (needs the More Icons mod).";
         e.descriptionByLang["spanish"] =
             "<cy>Iconos Globales!</c> Comparte tus iconos y ve los de otros en sus perfiles. "
-            "Actívalo en <cy>Ajustes del Mod</c> (requiere el mod More Icons).";
+            "Activalo en <cy>Ajustes del Mod</c> (requiere el mod More Icons).";
         e.open = openGeodeSettings();
         m_entries.push_back(std::move(e));
     }
@@ -1203,32 +1287,8 @@ void PopupRegistry::registerAll() {
             "<cy>Dynamic Song!</c> Plays the level's song while you view its info screen. Toggle it in "
             "<cy>Mod Settings</c>.";
         e.descriptionByLang["spanish"] =
-            "<cy>Cancion Dinamica!</c> Reproduce la cancion del nivel mientras ves su info. Actívala en "
+            "<cy>Cancion Dinamica!</c> Reproduce la cancion del nivel mientras ves su info. Activala en "
             "<cy>Ajustes del Mod</c>.";
-        e.open = openGeodeSettings();
-        m_entries.push_back(std::move(e));
-    }
-    {
-        PopupEntry e;
-        e.id = "editor-music";
-        e.category = PopupCategory::Music;
-        e.weight = 78;
-        e.displayNameByLang["english"] = "Editor Music";
-        e.displayNameByLang["spanish"] = "Musica del Editor";
-        e.aliasesByLang["english"] = {"editor music", "music in editor", "editor player"};
-        e.aliasesByLang["spanish"] = {"musica del editor", "musica en el editor", "reproductor del editor"};
-        e.searchPhrasesByLang["english"] = {
-            "play music while editing", "editor mini player", "listen in the editor"
-        };
-        e.searchPhrasesByLang["spanish"] = {
-            "musica mientras edito", "mini reproductor del editor", "escuchar en el editor"
-        };
-        e.descriptionByLang["english"] =
-            "<cy>Editor Music!</c> Listen to your music library inside the level editor. Enable it in "
-            "Mod Settings, then toggle the mini player with the Editor Music keybind (Ctrl+M).";
-        e.descriptionByLang["spanish"] =
-            "<cy>Musica del Editor!</c> Escucha tu biblioteca dentro del editor. Actívala en Ajustes del "
-            "Mod y muestra el mini reproductor con la tecla de Musica del Editor (Ctrl+M).";
         e.open = openGeodeSettings();
         m_entries.push_back(std::move(e));
     }
@@ -1257,36 +1317,6 @@ void PopupRegistry::registerAll() {
         m_entries.push_back(std::move(e));
     }
 
-    // ---- Editor tools (missing coverage) ----
-    {
-        PopupEntry e;
-        e.id = "editor-history";
-        e.category = PopupCategory::Editor;
-        e.weight = 88;
-        e.displayNameByLang["english"] = "Editor History";
-        e.displayNameByLang["spanish"] = "Historial del Editor";
-        e.aliasesByLang["english"] = {
-            "editor history", "undo history", "redo", "undo browser", "object history", "ctrl h"
-        };
-        e.aliasesByLang["spanish"] = {
-            "historial del editor", "historial de undo", "deshacer", "rehacer", "historial de objetos"
-        };
-        e.searchPhrasesByLang["english"] = {
-            "undo to a previous step", "see object history", "editor undo browser",
-            "non linear undo", "history in editor"
-        };
-        e.searchPhrasesByLang["spanish"] = {
-            "deshacer a un paso anterior", "ver historial de objetos", "historial de deshacer",
-            "undo no lineal", "historial en el editor"
-        };
-        e.descriptionByLang["english"] =
-            "<cy>Editor History!</c> Full undo/redo browser with filters, object preview, "
-            "focus/select and \"undo to here\". Open with <cy>Ctrl+H</c> in the editor.";
-        e.descriptionByLang["spanish"] =
-            "<cy>Historial del Editor!</c> Navegador completo de undo/redo con filtros, preview, "
-            "focus/select y \"deshacer hasta aqui\". Abrelo con <cy>Ctrl+H</c> en el editor.";
-        m_entries.push_back(std::move(e));
-    }
     {
         PopupEntry e;
         e.id = "editor-filters";
@@ -1317,6 +1347,38 @@ void PopupRegistry::registerAll() {
     }
     {
         PopupEntry e;
+        e.id = "autobuild";
+        e.category = PopupCategory::Editor;
+        e.weight = 86;
+        e.displayNameByLang["english"] = "Autobuild";
+        e.displayNameByLang["spanish"] = "Autobuild";
+        e.aliasesByLang["english"] = {
+            "autobuild", "auto build", "auto builder", "wave function collapse", "wfc",
+            "templates", "ctrl b", "decorate automatically"
+        };
+        e.aliasesByLang["spanish"] = {
+            "autobuild", "auto build", "construir solo", "plantillas", "ctrl b",
+            "decorar automatico", "onda", "sellos"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "decorate a level automatically", "repeat my decoration", "fill an area with deco",
+            "capture a template", "autobuild templates"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "decorar el nivel automatico", "repetir mi decoracion", "rellenar un area con deco",
+            "capturar una plantilla", "plantillas de autobuild"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Autobuild!</c> Capture a decorated selection as a template and rebuild it on "
+            "markers, the selection or a whole area. Open it in the editor with <cy>Ctrl+B</c>.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Autobuild!</c> Captura una zona decorada como plantilla y repitela en "
+            "marcadores, en la seleccion o en un area entera. Abrelo en el editor con "
+            "<cy>Ctrl+B</c>.";
+        m_entries.push_back(std::move(e));
+    }
+    {
+        PopupEntry e;
         e.id = "editor-colorpicker";
         e.category = PopupCategory::Editor;
         e.weight = 78;
@@ -1340,33 +1402,6 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Color Picker del Editor!</c> Selector de color avanzado en el editor. "
             "Abrelo con <cy>Ctrl+G</c>.";
-        m_entries.push_back(std::move(e));
-    }
-    {
-        PopupEntry e;
-        e.id = "editor-rotate";
-        e.category = PopupCategory::Editor;
-        e.weight = 76;
-        e.displayNameByLang["english"] = "Editor Free Rotate";
-        e.displayNameByLang["spanish"] = "Rotacion Libre del Editor";
-        e.aliasesByLang["english"] = {
-            "free rotate", "editor rotate", "rotate objects", "alt right click", "object rotation"
-        };
-        e.aliasesByLang["spanish"] = {
-            "rotacion libre", "rotar objetos", "rotacion del editor", "alt click derecho"
-        };
-        e.searchPhrasesByLang["english"] = {
-            "rotate objects freely", "free rotate in editor", "alt right click rotate"
-        };
-        e.searchPhrasesByLang["spanish"] = {
-            "rotar objetos libremente", "rotacion libre en el editor", "rotar con alt click"
-        };
-        e.descriptionByLang["english"] =
-            "<cy>Editor Free Rotate!</c> Rotate objects freely with "
-            "<cy>Alt + right click</c> drag in the editor.";
-        e.descriptionByLang["spanish"] =
-            "<cy>Rotacion Libre del Editor!</c> Rota objetos libremente con "
-            "<cy>Alt + click derecho</c> arrastrando en el editor.";
         m_entries.push_back(std::move(e));
     }
     {
@@ -1402,7 +1437,6 @@ void PopupRegistry::registerAll() {
         m_entries.push_back(std::move(e));
     }
 
-    // ---- Misc features still missing ----
     {
         PopupEntry e;
         e.id = "menu-physics";
@@ -1592,6 +1626,378 @@ void PopupRegistry::registerAll() {
         e.open = openGeodeSettings();
         m_entries.push_back(std::move(e));
     }
+
+    {
+        PopupEntry e;
+        e.id = "icon-maker";
+        e.category = PopupCategory::Visuals;
+        e.weight = 95;
+        e.displayNameByLang["english"] = "Icon Maker";
+        e.displayNameByLang["spanish"] = "Creador de Iconos";
+        e.aliasesByLang["english"] = {
+            "icon maker", "icon creator", "make icons", "create icons",
+            "custom icon editor", "draw icons", "icon editor"
+        };
+        e.aliasesByLang["spanish"] = {
+            "creador de iconos", "hacer iconos", "crear iconos",
+            "editor de iconos", "dibujar iconos", "icono personalizado"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "make my own icon", "design a custom icon", "create a new icon"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "hacer mi propio icono", "disenar un icono", "crear un icono nuevo"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Icon Maker!</c> Build and apply your own custom icons with layers, "
+            "gradients and images. Open from the garage.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Creador de Iconos!</c> Crea y aplica tus propios iconos con capas, "
+            "degradados e imagenes. Se abre desde el garage.";
+        e.open = openIconMakerGallery();
+        m_entries.push_back(std::move(e));
+    }
+    {
+        PopupEntry e;
+        e.id = "icon-gallery";
+        e.category = PopupCategory::Visuals;
+        e.weight = 90;
+        e.displayNameByLang["english"] = "Icon Gallery";
+        e.displayNameByLang["spanish"] = "Tienda de Iconos";
+        e.aliasesByLang["english"] = {
+            "icon gallery", "icon store", "icon shop", "download icons",
+            "community icons", "icons gallery"
+        };
+        e.aliasesByLang["spanish"] = {
+            "tienda de iconos", "galeria de iconos", "descargar iconos",
+            "iconos de la comunidad", "icon shop"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "download new icons", "browse community icons", "get more icons"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "descargar iconos nuevos", "ver iconos de la comunidad", "conseguir mas iconos"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Icon Gallery!</c> Download icons made by the community. "
+            "Open from the garage.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Tienda de Iconos!</c> Descarga iconos hechos por la comunidad. "
+            "Se abre desde el garage.";
+        e.open = openIconStore();
+        m_entries.push_back(std::move(e));
+    }
+    {
+        PopupEntry e;
+        e.id = "icon-gradients";
+        e.category = PopupCategory::Visuals;
+        e.weight = 88;
+        e.displayNameByLang["english"] = "Icon Gradients";
+        e.displayNameByLang["spanish"] = "Degradados de Iconos";
+        e.aliasesByLang["english"] = {
+            "icon gradients", "gradient icons", "icon gradient editor", "icon colors gradient"
+        };
+        e.aliasesByLang["spanish"] = {
+            "degradados de iconos", "iconos con degradado", "editor de degradados"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "gradient on my icons", "icon gradient editor", "add gradient to icons"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "degradado en mis iconos", "editor de degradado de iconos", "poner degradado a iconos"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Icon Gradients!</c> Custom GPU gradient fills for your icons. "
+            "Configure them with the button next to the shards in the garage.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Degradados de Iconos!</c> Rellenos de degradado GPU para tus iconos. "
+            "Configuralos con el boton junto a los fragmentos en el garage.";
+        e.open = openIconGradients();
+        m_entries.push_back(std::move(e));
+    }
+
+    {
+        PopupEntry e;
+        e.id = "separate-dual";
+        e.category = PopupCategory::None;
+        e.weight = 78;
+        e.displayNameByLang["english"] = "Separate Dual Icons";
+        e.displayNameByLang["spanish"] = "Iconos Duales Separados";
+        e.aliasesByLang["english"] = {
+            "separate dual", "dual icons", "p2 icons", "second player icons", "dual kit"
+        };
+        e.aliasesByLang["spanish"] = {
+            "dual separado", "iconos del dual", "iconos del jugador 2", "kit del dual"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "different icons for second player", "separate p2 kit", "own icons in dual mode",
+            "different icons in dual"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "iconos distintos para el jugador 2", "kit separado para el dual",
+            "iconos propios en dual", "iconos distintos en el dual"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Separate Dual Icons!</c> Give the 2nd player its own kit: icons, colors, "
+            "trails and death effect. Toggle in <cy>Mod Settings</c>.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Iconos Duales Separados!</c> Dale al jugador 2 su propio kit: iconos, colores, "
+            "estelas y efecto de muerte. Se activa en <cy>Ajustes del Mod</c>.";
+        e.open = openGeodeSettings();
+        m_entries.push_back(std::move(e));
+    }
+    {
+        PopupEntry e;
+        e.id = "golden-best";
+        e.category = PopupCategory::None;
+        e.weight = 72;
+        e.displayNameByLang["english"] = "Golden Best";
+        e.displayNameByLang["spanish"] = "Golden Best";
+        e.aliasesByLang["english"] = {
+            "golden best", "gold percentage", "new best gold", "gold percent"
+        };
+        e.aliasesByLang["spanish"] = {
+            "golden best", "porcentaje dorado", "nuevo record dorado", "oro en el record"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "gold when beating my record", "new best color", "gold percentage on record"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "dorado al batir mi record", "color de nuevo record", "porcentaje dorado en record"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Golden Best!</c> Turns the percentage gold while you beat your record. "
+            "Configure colors in <cy>Mod Settings</c>.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Golden Best!</c> Pone el porcentaje dorado mientras bates tu record. "
+            "Configura colores en <cy>Ajustes del Mod</c>.";
+        e.open = openGeodeSettings();
+        m_entries.push_back(std::move(e));
+    }
+    {
+        PopupEntry e;
+        e.id = "death-effects";
+        e.category = PopupCategory::Visuals;
+        e.weight = 80;
+        e.displayNameByLang["english"] = "Death Effects";
+        e.displayNameByLang["spanish"] = "Efectos de Muerte";
+        e.aliasesByLang["english"] = {
+            "death effects", "death effect", "custom death", "death animation",
+            "explosion effect", "death sound"
+        };
+        e.aliasesByLang["spanish"] = {
+            "efectos de muerte", "efecto de muerte", "muerte personalizada",
+            "animacion de muerte", "explosion", "sonido de muerte"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "customize my death effect", "change death animation", "import death effects"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "personalizar mi efecto de muerte", "cambiar animacion de muerte", "importar efectos de muerte"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Death Effects!</c> Custom effects and sounds when you die. "
+            "Open from the pause menu or <cy>Paimon Hub > Gameplay</c>.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Efectos de Muerte!</c> Efectos y sonidos personalizados al morir. "
+            "Se abre desde el menu de pausa o <cy>Paimon Hub > Gameplay</c>.";
+        e.open = openDeathEffects();
+        m_entries.push_back(std::move(e));
+    }
+    {
+        PopupEntry e;
+        e.id = "gameplay-performance";
+        e.category = PopupCategory::None;
+        e.weight = 78;
+        e.displayNameByLang["english"] = "Performance Mode";
+        e.displayNameByLang["spanish"] = "Modo Rendimiento";
+        e.aliasesByLang["english"] = {
+            "performance mode", "gameplay performance", "fps boost", "performance settings",
+            "reduce lag", "optimization"
+        };
+        e.aliasesByLang["spanish"] = {
+            "modo rendimiento", "rendimiento", "mejorar fps", "reducir lag",
+            "optimizacion", "rendimiento del juego"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "make the game run faster", "boost fps", "fix lag while playing",
+            "disable effects for performance"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "hacer que el juego vaya mas rapido", "subir fps", "arreglar lag jugando",
+            "desactivar efectos por rendimiento"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Performance Mode!</c> Improve FPS with configurable CPU, GPU and visual cuts. "
+            "Open it from the level info screen or <cy>Mod Settings</c>.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Modo Rendimiento!</c> Mejora los FPS con recortes de CPU, GPU y visuales. "
+            "Se abre desde la pantalla de info del nivel o <cy>Ajustes del Mod</c>.";
+        e.open = openGameplayPerformance();
+        m_entries.push_back(std::move(e));
+    }
+
+    {
+        PopupEntry e;
+        e.id = "icon-copy";
+        e.category = PopupCategory::Profile;
+        e.weight = 80;
+        e.displayNameByLang["english"] = "Copy Icons";
+        e.displayNameByLang["spanish"] = "Copiar Iconos";
+        e.aliasesByLang["english"] = {
+            "copy icons", "copy icon set", "copy someone icons", "icon sets",
+            "my icon sets", "copy player icons"
+        };
+        e.aliasesByLang["spanish"] = {
+            "copiar iconos", "copiar set de iconos", "copiar iconos de alguien",
+            "mis sets de iconos", "conjuntos de iconos"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "copy a player icon kit", "save my icon set", "use someone elses icons"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "copiar kit de iconos de un jugador", "guardar mi set de iconos", "usar iconos de otro"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Copy Icons!</c> Copy any player's icon set and wear it, or save your own "
+            "style in My Icon Sets. Open a profile and tap the folder icon.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Copiar Iconos!</c> Copia el set de iconos de cualquier jugador y ponte lo, o "
+            "guarda tu estilo en Mis Sets de Iconos. Abre un perfil y toca el icono de carpeta.";
+        e.open = openMyIconSets();
+        m_entries.push_back(std::move(e));
+    }
+
+    {
+        PopupEntry e;
+        e.id = "level-requests";
+        e.category = PopupCategory::Forum;
+        e.weight = 85;
+        e.displayNameByLang["english"] = "Level Requests";
+        e.displayNameByLang["spanish"] = "Level Requests";
+        e.aliasesByLang["english"] = {
+            "level requests", "level request", "stream requests",
+            "twitch requests", "request queue", "song requests"
+        };
+        e.aliasesByLang["spanish"] = {
+            "level requests", "pedidos de niveles", "peticiones", "solicitudes de nivel",
+            "cola de requests", "cola de pedidos", "pedidos del chat"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "view my level requests", "streamer request queue",
+            "requests from my chat", "where are my requests"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "ver mis pedidos de niveles", "cola de pedidos del stream",
+            "pedidos de mi chat", "donde estan mis pedidos"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Level Requests!</c> Accept levels from the web and live chats. "
+            "Open from the search screen or <cy>Paimon Hub > Comunidad</c>.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Level Requests!</c> Acepta niveles desde la web y chats en vivo. "
+            "Se abre desde la pantalla de busqueda o <cy>Paimon Hub > Comunidad</c>.";
+        e.open = openLevelRequests();
+        m_entries.push_back(std::move(e));
+    }
+
+    {
+        PopupEntry e;
+        e.id = "dynamic-volume";
+        e.category = PopupCategory::Music;
+        e.weight = 75;
+        e.displayNameByLang["english"] = "Dynamic Volume";
+        e.displayNameByLang["spanish"] = "Volumen Dinamico";
+        e.aliasesByLang["english"] = {
+            "dynamic volume", "auto volume", "volume leveling", "lufs", "loudness",
+            "even out song volumes", "normalize volume"
+        };
+        e.aliasesByLang["spanish"] = {
+            "volumen dinamico", "volumen automatico", "nivelacion de volumen", "lufs",
+            "igualar volumen de canciones", "normalizar volumen"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "even out song volumes", "stop volume jumps between songs", "normalize audio",
+            "songs play at different volumes"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "igualar volumen de canciones", "evitar saltos de volumen", "normalizar audio",
+            "canciones a distinto volumen"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Dynamic Volume!</c> Measures real song loudness (LUFS) and eases jumps "
+            "between quiet and loud songs. Configure in <cy>Paimon Hub > Audio</c>.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Volumen Dinamico!</c> Mide la sonoridad real (LUFS) y suaviza los saltos "
+            "entre canciones. Configuralo en <cy>Paimon Hub > Audio</c>.";
+        e.open = openHub();
+        m_entries.push_back(std::move(e));
+    }
+    {
+        PopupEntry e;
+        e.id = "menu-loop";
+        e.category = PopupCategory::Music;
+        e.weight = 78;
+        e.displayNameByLang["english"] = "Menu Loop Control";
+        e.displayNameByLang["spanish"] = "Control de Menu Loop";
+        e.aliasesByLang["english"] = {
+            "menu loop control", "menuloop", "now playing", "loop control",
+            "song controls", "now playing card"
+        };
+        e.aliasesByLang["spanish"] = {
+            "menu loop control", "control de loop", "now playing", "controles de cancion"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "loop the menu song", "now playing card", "shuffle menu music",
+            "skip menu songs"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "repetir la cancion del menu", "tarjeta now playing",
+            "aleatorio en musica del menu", "saltar canciones del menu"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Menu Loop Control!</c> Now playing card, hotkeys, shuffle and loop tools "
+            "for the menu music. Configure in <cy>Mod Settings</c>.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Control de Menu Loop!</c> Tarjeta now playing, teclas, shuffle y herramientas "
+            "de loop para la musica del menu. Configuralo en <cy>Ajustes del Mod</c>.";
+        e.open = openHub();
+        m_entries.push_back(std::move(e));
+    }
+
+    {
+        PopupEntry e;
+        e.id = "info-suite";
+        e.category = PopupCategory::None;
+        e.weight = 75;
+        e.displayNameByLang["english"] = "Info Suite";
+        e.displayNameByLang["spanish"] = "Info Suite";
+        e.aliasesByLang["english"] = {
+            "info suite", "level info", "level stats", "extended info", "visible ids",
+            "jump to page", "progress tracking", "death heatmap"
+        };
+        e.aliasesByLang["spanish"] = {
+            "info suite", "info del nivel", "estadisticas del nivel", "info extendida",
+            "ids visibles", "saltar a pagina", "seguimiento de progreso", "mapa de muertes"
+        };
+        e.searchPhrasesByLang["english"] = {
+            "see hidden level info", "jump to a page in the browser", "track my progress",
+            "see where i die most"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "ver info oculta del nivel", "saltar a una pagina del browser", "seguir mi progreso",
+            "ver donde muero mas"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Info Suite!</c> Level stats, visible ids, jump to page, search presets, "
+            "progress tracking and death heatmap. Toggle modules in <cy>Mod Settings</c>.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Info Suite!</c> Stats del nivel, ids visibles, salto de pagina, presets de "
+            "busqueda, seguimiento de progreso y mapa de muertes. Activa modulos en "
+            "<cy>Ajustes del Mod</c>.";
+        e.open = openGeodeSettings();
+        m_entries.push_back(std::move(e));
+    }
 }
 
 char const* categoryIdString(PopupCategory cat) {
@@ -1682,8 +2088,7 @@ GuideIntent PopupRegistry::toIntent(PopupEntry const& entry) {
     intent.animation = entry.animation;
     intent.categoryId = categoryIdString(entry.category);
 
-    // Intent keywords are [displayName + aliases] per language; displayName is the
-    // primary keyword since it's what the user sees on screen.
+    // Keywords combine the displayed name and aliases.
     auto buildList = [&](std::string const& lang) {
         std::vector<std::string> kws;
         auto dnIt = entry.displayNameByLang.find(lang);
@@ -1700,7 +2105,7 @@ GuideIntent PopupRegistry::toIntent(PopupEntry const& entry) {
     intent.keywordsByLang["english"] = buildList("english");
     intent.keywordsByLang["spanish"] = buildList("spanish");
 
-    // Soft search phrases (problem / how-to language).
+    // Natural-language problem and how-to phrases.
     auto copyPhrases = [&](std::string const& lang) {
         auto it = entry.searchPhrasesByLang.find(lang);
         if (it != entry.searchPhrasesByLang.end()) {
@@ -1710,7 +2115,7 @@ GuideIntent PopupRegistry::toIntent(PopupEntry const& entry) {
     copyPhrases("english");
     copyPhrases("spanish");
 
-    // Response + description corpus for coverage/desempate.
+    // Response and description text used for matching.
     if (entry.descriptionByLang.count("english")) {
         intent.responseByLang["english"] = entry.descriptionByLang.at("english");
         intent.descriptionByLang["english"] = entry.descriptionByLang.at("english");
@@ -1734,7 +2139,7 @@ std::string PopupRegistry::displayNameFor(std::string const& id,
         if (it != e.displayNameByLang.end()) return it->second;
         break;
     }
-    // Prettify the id as a last resort: "quick-hub" -> "Quick hub".
+    // Use a readable ID when no localized display name exists.
     std::string pretty = id;
     std::replace(pretty.begin(), pretty.end(), '-', ' ');
     if (!pretty.empty()) pretty[0] = static_cast<char>(std::toupper(
@@ -1768,4 +2173,4 @@ PopupEntry const* PopupRegistry::categoryLead(PopupCategory cat) const {
     return list.empty() ? nullptr : list.front();
 }
 
-} // namespace paimon::guide
+}

@@ -10,6 +10,12 @@
 using namespace cocos2d;
 using namespace geode::prelude;
 
+bool CustomTransitionScene::isActive() {
+    auto* director = CCDirector::get();
+    return typeinfo_cast<CustomTransitionScene*>(director->getRunningScene()) ||
+        typeinfo_cast<CustomTransitionScene*>(director->getNextScene());
+}
+
 CustomTransitionScene* CustomTransitionScene::create(
     CCScene* fromScene,
     CCScene* destScene,
@@ -40,8 +46,8 @@ bool CustomTransitionScene::initWithScenes(
 
     m_commands = commands;
     m_isPush = isPush;
+    m_fromScene = fromScene;
     m_destScene = destScene;
-    m_destScene->retain();
 
     auto winSize = CCDirector::get()->getWinSize();
 
@@ -164,7 +170,6 @@ bool CustomTransitionScene::initWithScenes(
         m_commands.push_back({CommandAction::FadeIn, "to", 0.15f, 0,0,0,0, 0.f, 255.f});
     }
 
-    // Ensure minimum duration
     for (auto& cmd : m_commands) {
         if (cmd.duration < 0.001f && cmd.action != CommandAction::Color)
             cmd.duration = 0.001f;
@@ -181,7 +186,13 @@ bool CustomTransitionScene::initWithScenes(
 }
 
 CustomTransitionScene::~CustomTransitionScene() {
-    CC_SAFE_RELEASE_NULL(m_destScene);
+    if (!m_started) {
+        restoreSceneChildren(m_fromContainer, m_fromScene);
+        restoreSceneChildren(m_toContainer, m_destScene);
+    } else if (m_isPush) {
+        restoreSceneChildren(m_fromContainer, m_fromScene);
+    }
+    restoreTouchDispatch();
 }
 
 void CustomTransitionScene::triggerSafeFallback(char const* where, char const* reason) {
@@ -202,10 +213,16 @@ void CustomTransitionScene::triggerSafeFallback(char const* where, char const* r
 }
 
 void CustomTransitionScene::onEnter() {
+    m_started = true;
     CCScene::onEnter();
+
+    if (auto* dispatcher = CCDirector::get()->getTouchDispatcher()) {
+        dispatcher->setDispatchEvents(false);
+        m_touchDispatchDisabled = true;
+    }
+
     this->scheduleUpdate();
 
-    // Kick off first command
     if (m_currentCommandIdx < static_cast<int>(m_commands.size())) {
         if (!beginCommandSafe(m_commands[m_currentCommandIdx])) {
             triggerSafeFallback("onEnter.beginCommand");
@@ -216,7 +233,13 @@ void CustomTransitionScene::onEnter() {
 void CustomTransitionScene::onExit() {
     this->unscheduleUpdate();
     this->unschedule(schedule_selector(CustomTransitionScene::onTransitionFinished));
+
+    if (m_isPush && !m_finished) {
+        restoreSceneChildren(m_fromContainer, m_fromScene);
+    }
+
     CCScene::onExit();
+    restoreTouchDispatch();
 }
 
 void CustomTransitionScene::update(float dt) {
@@ -352,7 +375,6 @@ void CustomTransitionScene::updateCommand(TransitionCommand const& cmd, float pr
 
     auto* target = getTarget(cmd.target);
 
-    // Easing curves
     float t = progress;
     if (cmd.action == CommandAction::EaseIn) {
         t = progress * progress * progress;
@@ -431,7 +453,6 @@ void CustomTransitionScene::finishCurrentCommand() {
     auto& cmd = m_commands[m_currentCommandIdx];
     updateCommand(cmd, 1.0f);
 
-    // Reset shake position
     if (cmd.action == CommandAction::Shake) {
         auto* target = getTarget(cmd.target);
         if (target) {
@@ -453,41 +474,11 @@ void CustomTransitionScene::finishTransition() {
     m_finished = true;
     this->unscheduleUpdate();
 
-    // Restore children back to destination scene
-    if (m_destScene && m_toContainer) {
-        CCArray* children = m_toContainer->getChildren();
-        if (children && children->count() > 0) {
-            auto copy = CCArray::createWithCapacity(children->count());
-            for (auto* obj : CCArrayExt<CCNode*>(children)) {
-                if (obj) copy->addObject(obj);
-            }
-            for (auto* node : CCArrayExt<CCNode*>(copy)) {
-                if (!node) continue;
-                node->retain();
-                node->removeFromParentAndCleanup(false);
+    restoreSceneChildren(m_toContainer, m_destScene);
 
-                // Restore original state if we saved it
-                auto it = m_originalStates.find(node);
-                if (it != m_originalStates.end()) {
-                    auto const& state = it->second;
-                    node->setPosition(state.position);
-                    node->setScale(state.scale);
-                    node->setRotation(state.rotation);
-                    node->setVisible(state.visible);
-                    if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(node)) {
-                        rgba->setOpacity(state.opacity);
-                    }
-                    m_destScene->addChild(node, state.zOrder);
-                } else {
-                    m_destScene->addChild(node, node->getZOrder());
-                }
-                node->release();
-            }
-        }
-    }
-
-    // Clean up from container
-    if (m_fromContainer) {
+    if (m_isPush) {
+        restoreSceneChildren(m_fromContainer, m_fromScene);
+    } else if (m_fromContainer) {
         m_fromContainer->removeAllChildrenWithCleanup(true);
     }
     if (m_toContainer) {
@@ -506,6 +497,46 @@ void CustomTransitionScene::finishTransition() {
 void CustomTransitionScene::onTransitionFinished(float) {
     if (!m_destScene) return;
     CCDirector::get()->replaceScene(m_destScene);
+}
+
+void CustomTransitionScene::restoreSceneChildren(CCLayerColor* container, CCScene* scene) {
+    if (!container || !scene) return;
+
+    auto* children = container->getChildren();
+    if (!children || children->count() == 0) return;
+
+    auto copy = CCArray::createWithCapacity(children->count());
+    for (auto* obj : CCArrayExt<CCNode*>(children)) {
+        if (obj) copy->addObject(obj);
+    }
+
+    for (auto* node : CCArrayExt<CCNode*>(copy)) {
+        if (!node) continue;
+        auto it = m_originalStates.find(node);
+        if (it == m_originalStates.end()) continue;
+
+        auto const& state = it->second;
+        node->retain();
+        node->removeFromParentAndCleanup(false);
+        node->setPosition(state.position);
+        node->setScale(state.scale);
+        node->setRotation(state.rotation);
+        node->setVisible(state.visible);
+        if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(node)) {
+            rgba->setOpacity(state.opacity);
+        }
+        scene->addChild(node, state.zOrder);
+        node->release();
+    }
+}
+
+void CustomTransitionScene::restoreTouchDispatch() {
+    if (!m_touchDispatchDisabled) return;
+
+    if (auto* dispatcher = CCDirector::get()->getTouchDispatcher()) {
+        dispatcher->setDispatchEvents(true);
+    }
+    m_touchDispatchDisabled = false;
 }
 
 CCLayerColor* CustomTransitionScene::getTarget(std::string const& targetName) {

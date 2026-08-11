@@ -96,7 +96,6 @@ bool MyLevelFilterPopup::init() {
     float cx = size.width / 2.f;
     auto& f = state();
 
-    // decorative GD-style corners
     if (auto cornerL = safeFrameSprite("dailyLevelCorner_001.png")) {
         cornerL->setAnchorPoint({0.f, 0.f});
         cornerL->setPosition({1.5f, 1.5f});
@@ -109,7 +108,6 @@ bool MyLevelFilterPopup::init() {
         m_mainLayer->addChild(cornerR);
     }
 
-    // --- Length section ---
     auto lengthPanel = makePanel({312.f, 56.f});
     lengthPanel->setPosition({cx, 122.f});
     m_mainLayer->addChild(lengthPanel);
@@ -132,7 +130,6 @@ bool MyLevelFilterPopup::init() {
     lengthMenu->updateLayout();
     m_mainLayer->addChild(lengthMenu);
 
-    // --- Status section (left) ---
     auto statusPanel = makePanel({154.f, 58.f});
     statusPanel->setPosition({cx - 79.f, 52.f});
     m_mainLayer->addChild(statusPanel);
@@ -152,7 +149,6 @@ bool MyLevelFilterPopup::init() {
     statusMenu->updateLayout();
     m_mainLayer->addChild(statusMenu);
 
-    // --- Song section (right) ---
     auto songPanel = makePanel({150.f, 58.f});
     songPanel->setPosition({cx + 81.f, 52.f});
     m_mainLayer->addChild(songPanel);
@@ -170,7 +166,6 @@ bool MyLevelFilterPopup::init() {
     m_songInput->setPosition({cx + 81.f, 47.f});
     m_mainLayer->addChild(m_songInput);
 
-    // --- Trash (clear filters) ---
     auto trashSpr = CCSprite::createWithSpriteFrameName("GJ_trashBtn_001.png");
     trashSpr->setScale(0.65f);
     auto trashBtn = CCMenuItemSpriteExtra::create(

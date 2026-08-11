@@ -23,6 +23,10 @@ public:
     static bool isEnabledLocally();
     static void setEnabledLocally(bool enabled);
 
+    // Turns a raw sync failure ("HTTP 401: {...}") into something a player can
+    // act on, instead of a truncated response body.
+    static std::string describeSyncError(std::string const& response);
+
 private:
     GlobalIconService() = default;
 };

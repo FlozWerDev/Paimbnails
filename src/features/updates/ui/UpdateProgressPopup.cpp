@@ -48,7 +48,6 @@ bool UpdateProgressPopup::init() {
 
     auto& checker = UpdateChecker::get();
 
-    // Linea de versiones
     std::string verLine;
     if (!checker.remoteVersion().empty()) {
         verLine = fmt::format("{} -> {}", checker.localVersion(), checker.remoteVersion());
@@ -61,7 +60,6 @@ bool UpdateProgressPopup::init() {
     versionsLbl->setColor({200, 200, 200});
     m_mainLayer->addChild(versionsLbl);
 
-    // Status label
     m_statusLabel = CCLabelBMFont::create(
         tr("pai.update.starting", "Starting...").c_str(),
         "bigFont.fnt"
@@ -70,7 +68,6 @@ bool UpdateProgressPopup::init() {
     m_statusLabel->setPosition({cx, content.height - 65.f});
     m_mainLayer->addChild(m_statusLabel);
 
-    // Barra de progreso
     float barW = 280.f;
     float barH = 16.f;
     float barY = content.height / 2.f - 5.f;
@@ -92,7 +89,6 @@ bool UpdateProgressPopup::init() {
     m_percentLabel->setPosition({cx, barY - 18.f});
     m_mainLayer->addChild(m_percentLabel);
 
-    // Botones
     m_actionMenu = CCMenu::create();
     m_actionMenu->setPosition({cx, 30.f});
     m_actionMenu->setContentSize({content.width, 40.f});

@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <Geode/Geode.hpp>
+#include <fmod.hpp>
 #include <string>
 #include <vector>
 #include <memory>
@@ -125,6 +126,8 @@ private:
 
     bool m_isPlaying = false;
     bool m_isPaused = false;
+    // Canal concreto que pausamos, para no tocar el resto de la musica.
+    FMOD::Channel* m_pausedChannel = nullptr;
     int m_currentProfileID = 0;
     uint32_t m_profileSessionToken = 0;
     std::string m_currentAudioPath;

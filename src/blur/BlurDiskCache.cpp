@@ -22,12 +22,20 @@ using namespace geode::prelude;
 namespace paimon::blur {
 
 // Dedicated 1-thread I/O pool for the blur cache; separate from ThumbnailLoader's disk pool.
-static std::unique_ptr<paimon::ThreadPool>& getBlurIOPool() {
-    static std::unique_ptr<paimon::ThreadPool> pool;
-    static std::once_flag initFlag;
-    std::call_once(initFlag, []() {
-        pool = std::make_unique<paimon::ThreadPool>(1, "PaimonBlurIO");
-    });
+//
+// Heap-leaked on purpose: a `unique_ptr` static ran ~ThreadPool during atexit,
+// after Geode had already torn down its logger and async runtime. The worker's
+// join then regularly hit the 3s timedJoin timeout, which is what made the game
+// hang for several seconds on exit. shutdownBlurIOPool() joins it during
+// $on_game(Exiting) instead, while the runtime is still healthy.
+static std::atomic<paimon::ThreadPool*> s_blurIOPool{nullptr};
+
+static paimon::ThreadPool* getBlurIOPool() {
+    static auto* pool = []() {
+        auto* p = new paimon::ThreadPool(1, "PaimonBlurIO");
+        s_blurIOPool.store(p, std::memory_order_release);
+        return p;
+    }();
     return pool;
 }
 
@@ -372,7 +380,7 @@ void BlurDiskCache::clear() {
         m_index.clear();
     }
     auto dir = cacheDir();
-    getBlurIOPool()->enqueue([dir]() {
+    auto wipe = [dir]() {
         std::error_code ec;
         for (auto const& entry : std::filesystem::directory_iterator(dir, ec)) {
             if (ec) break;
@@ -382,11 +390,26 @@ void BlurDiskCache::clear() {
                 std::filesystem::remove(entry.path(), rmEc);
             }
         }
-    });
+    };
+
+    // On exit the pool is already joined (shutdown() ran earlier in the Exiting
+    // sequence), and a stopped pool silently drops enqueued jobs — the cache
+    // would never actually be wiped. Do it inline in that case.
+    auto* pool = getBlurIOPool();
+    if (!pool || pool->isStopped()) {
+        wipe();
+        return;
+    }
+    pool->enqueue(std::move(wipe));
 }
 
 void BlurDiskCache::shutdown() {
     m_shuttingDown.store(true, std::memory_order_release);
+    // Join the I/O worker here rather than leaving it to static destruction.
+    // Only touches the pool if something actually created it.
+    if (auto* pool = s_blurIOPool.load(std::memory_order_acquire)) {
+        pool->shutdown();
+    }
 }
 
 

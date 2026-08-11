@@ -1,6 +1,7 @@
 #include "CollabPresence.hpp"
 
 #include "../../utils/WebHelper.hpp"
+#include "CollabInviteBanner.hpp"
 #include "CollabManager.hpp"
 #include "CollabPopups.hpp"
 #include "CollabTypes.hpp"
@@ -159,15 +160,8 @@ void CollabPresence::handleInvite(std::string const& room, std::string const& fr
     auto& mgr = CollabManager::get();
     if (mgr.connected() && mgr.roomCode() == room) return;
 
-    if (auto* n = AchievementNotifier::sharedState()) {
-        std::string who = fromName.empty() ? "Alguien" : fromName;
-        std::string desc = fmt::format("{} te invito a colaborar", who);
-        std::string icon = "paim_Paimon.png"_spr;
-        n->notifyAchievement("Invitacion de Collab", desc.c_str(), icon.c_str(), true);
-    }
-
     queueInMainThread([room, fromName]() {
-        if (auto* popup = CollabInvitePromptPopup::create(room, fromName)) popup->show();
+        CollabInviteBanner::present(room, fromName);
     });
 }
 

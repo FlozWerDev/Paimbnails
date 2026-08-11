@@ -77,14 +77,12 @@ void SmoothScrollConfigPopup::rebuild() {
     auto fmtTimes = [](double v) { return fmt::format("x{:.2f}", v); };
     auto fmtPlain = [](double v) { return fmt::format("{:.2f}", v); };
 
-    // Interruptor principal
     auto* hero = kit::makeHeroToggle(scrollW,
         "Scroll suave",
         "Desplaza los menus con inercia suave, como en el celular.",
         ss::enabled(),
         [](bool v) { Mod::get()->setSettingValue<bool>("smooth-scroll", v); });
 
-    // Pestanas Basico / Avanzado
     auto* tabs = kit::makeTabBar(scrollW, {"Basico", "Avanzado"}, m_tab,
         [this](int i) {
             m_tab = i;

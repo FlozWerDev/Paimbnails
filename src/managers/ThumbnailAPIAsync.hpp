@@ -10,15 +10,11 @@
 #include <unordered_map>
 #include <unordered_set>
 
-/**
- * ThumbnailAPIAsync — same operations as ThumbnailAPI, exposed as arc::Future.
- * The callback methods on ThumbnailAPI still exist; new code should use this.
- */
+// ThumbnailAPI exposed as arc::Future; new code should use these calls.
 namespace paimon::thumb_api {
 
 using namespace geode::prelude;
 
-// ThumbnailTransportClient
 arc::Future<ThumbnailGalleryResult> getThumbnails(int levelId, bool forceRefresh = false);
 arc::Future<ThumbnailApiMessageResult> getThumbnailInfo(int levelId);
 std::string getThumbnailURL(int levelId);
@@ -45,7 +41,6 @@ arc::Future<ThumbnailApiMessageResult> getTopCreators();
 arc::Future<ThumbnailApiMessageResult> getTopThumbnails();
 arc::Future<ThumbnailApiMessageResult> getUserUploads(std::string const& username);
 
-// ThumbnailSubmissionService
 arc::Future<ThumbnailApiMessageResult> uploadSuggestion(
     int levelId, std::vector<uint8_t> const& pngData, std::string const& username);
 arc::Future<ThumbnailApiMessageResult> uploadUpdate(
@@ -55,7 +50,6 @@ arc::Future<ThumbnailTextureResult> downloadSuggestionImage(std::string const& f
 arc::Future<ThumbnailTextureResult> downloadUpdate(int levelId);
 arc::Future<ThumbnailTextureResult> downloadReported(int levelId);
 
-// ModerationService
 arc::Future<ThumbnailModeratorResult> checkModerator(std::string const& username);
 arc::Future<ThumbnailModeratorResult> checkModeratorAccount(std::string const& username, int accountID);
 arc::Future<ThumbnailModeratorResult> checkUserStatus(std::string const& username);
@@ -77,7 +71,6 @@ arc::Future<ThumbnailApiMessageResult> rejectQueueItem(
 arc::Future<ThumbnailApiMessageResult> submitReport(
     int levelId, std::string const& username, std::string const& note);
 
-// ProfileImageService
 arc::Future<ThumbnailApiMessageResult> uploadProfile(
     int accountID, std::vector<uint8_t> const& pngData, std::string const& username);
 arc::Future<ThumbnailApiMessageResult> uploadProfileGIF(

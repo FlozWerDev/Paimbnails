@@ -1,4 +1,5 @@
 #include "RoleBadges.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/Localization.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -94,6 +95,7 @@ void applyRoleBadges(
     CCNode* insertBefore
 ) {
     if (!menu) return;
+    if (!paimon::modules::isEnabled("paimbnails.badges.profile")) return;
 
     std::vector<std::string> toShow;
     if (roles.admin)      toShow.push_back("admin");

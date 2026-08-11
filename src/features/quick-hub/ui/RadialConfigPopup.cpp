@@ -1,4 +1,6 @@
 #include "RadialConfigPopup.hpp"
+#include "RadialVisuals.hpp"
+#include "QuickButtonPopup.hpp"
 #include "../services/QuickHubManager.hpp"
 #include "../data/QuickHubCategories.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
@@ -7,25 +9,50 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 
 #include <Geode/Geode.hpp>
+#include <algorithm>
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
 namespace paimon::quickhub {
+namespace {
 
-// Helpers
+constexpr float kPopupW = 440.f;
+constexpr float kPopupH = 280.f;
 
-static RadialOptionDef const* findOptionById(
+constexpr float kPreviewSize = 148.f;
+constexpr float kPreviewCx   = 104.f;
+constexpr float kPreviewCy   = 158.f;
+
+constexpr float kListX = 200.f;
+constexpr float kListW = 222.f;
+constexpr float kListY = 40.f;
+constexpr float kListH = 160.f;
+
+constexpr float kRowH = 30.f;
+constexpr float kRowGap = 4.f;
+
+RadialOptionDef const* findOptionById(
     std::vector<RadialOptionDef> const& allOpts,
     std::string const& id
 ) {
-    for (auto const& opt : allOpts) {
-        if (opt.id == id) return &opt;
-    }
-    return nullptr;
+    auto found = std::ranges::find(allOpts, id, &RadialOptionDef::id);
+    return found == allOpts.end() ? nullptr : &*found;
 }
 
-// Create
+CCMenuItemSpriteExtra* makeIconButton(
+    char const* frame, float scale, std::function<void()> onPress, float rotation = 0.f
+) {
+    auto* spr = paimon::SpriteHelper::safeCreateWithFrameName(frame);
+    if (!spr) return nullptr;
+    spr->setScale(scale);
+    spr->setRotation(rotation);
+    return CCMenuItemExt::createSpriteExtra(spr, [cb = std::move(onPress)](CCMenuItemSpriteExtra*) {
+        cb();
+    });
+}
+
+} // namespace
 
 RadialConfigPopup* RadialConfigPopup::create() {
     auto ret = new RadialConfigPopup();
@@ -37,85 +64,78 @@ RadialConfigPopup* RadialConfigPopup::create() {
     return nullptr;
 }
 
-// Init
-
 bool RadialConfigPopup::init() {
-    if (!Popup::init(420.f, 280.f)) return false;
+    if (!Popup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
 
     this->setTitle("Configurar Quick Hub");
 
-    auto winSize = m_mainLayer->getContentSize();
-    float cx = winSize.width / 2.f;
-
-    // Subtitulo explicativo
-    auto subtitle = CCLabelBMFont::create(
-        "Elige que botones aparecen en el menu radial y en que orden.", "chatFont.fnt");
-    subtitle->setScale(0.5f);
-    subtitle->setColor({166, 176, 198});
-    subtitle->setPosition({cx, winSize.height - 32.f});
-    m_mainLayer->addChild(subtitle, 2);
-
-    // Cargar configuracion actual como copia de trabajo
+    auto size = m_mainLayer->getContentSize();
     m_activeIds = QuickHubManager::get().getActiveOptions();
 
-    // Preview circular (lado izquierdo)
+    auto* subtitle = CCLabelBMFont::create(
+        "Click derecho en cualquier boton del juego para anadirlo aqui.",
+        "chatFont.fnt");
+    subtitle->setColor({166, 176, 198});
+    subtitle->limitLabelWidth(size.width - 60.f, 0.45f, 0.2f);
+    subtitle->setPosition({size.width / 2.f, size.height - 38.f});
+    m_mainLayer->addChild(subtitle, 2);
+
+    // --- Columna izquierda: vista previa de la rueda ------------------------
+    if (auto* panel = paimon::SpriteHelper::createDarkPanel(
+            kPreviewSize + 8.f, kPreviewSize + 8.f, 95, 8.f)) {
+        panel->setPosition({kPreviewCx - kPreviewSize / 2.f - 4.f,
+                            kPreviewCy - kPreviewSize / 2.f - 4.f});
+        m_mainLayer->addChild(panel, 0);
+    }
+
     m_previewNode = CCNode::create();
-    m_previewNode->setPosition({cx - 80.f, winSize.height / 2.f + 5.f});
-    m_previewNode->setContentSize({160.f, 160.f});
-    m_previewNode->setAnchorPoint({0.5f, 0.5f});
-    m_mainLayer->addChild(m_previewNode, 2);
+    m_previewNode->setPosition({kPreviewCx, kPreviewCy});
+    m_mainLayer->addChild(m_previewNode, 1);
 
-    // Label "Vista previa"
-    auto previewLabel = CCLabelBMFont::create("Vista previa", "goldFont.fnt");
-    previewLabel->setScale(0.35f);
-    previewLabel->setPosition({cx - 80.f, winSize.height - 48.f});
-    m_mainLayer->addChild(previewLabel, 2);
+    m_countLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    m_countLabel->setScale(0.4f);
+    m_countLabel->setColor({166, 176, 198});
+    m_countLabel->setPosition({kPreviewCx, kPreviewCy - kPreviewSize / 2.f - 12.f});
+    m_mainLayer->addChild(m_countLabel, 2);
 
-    // Toggle: abrir el radial manteniendo Ctrl (debajo de la vista previa)
-    auto* holdRow = paimon::configkit::makeToggleRow(190.f,
+    auto* holdRow = paimon::configkit::makeToggleRow(kPreviewSize + 8.f,
         "Abrir con Ctrl",
-        "Manten Ctrl para abrirlo.",
+        "Manten Ctrl para abrirla.",
         QuickHubManager::isHoldCtrlEnabled(),
         [](bool v) { QuickHubManager::setHoldCtrlEnabled(v); });
-    holdRow->setPosition({cx - 175.f, 40.f});
+    holdRow->setPosition({kPreviewCx - (kPreviewSize + 8.f) / 2.f, 30.f});
     m_mainLayer->addChild(holdRow, 2);
 
-    // Lista scrolleable (lado derecho)
-    float listX = cx + 50.f;
-    float listW = 150.f;
-    float listH = winSize.height - 80.f;
+    // --- Columna derecha: pestanas + lista ---------------------------------
+    auto* tabs = paimon::configkit::makeTabBar(kListW, {"Activos", "Anadir"}, m_tab,
+        [this](int index) { this->setTab(index); });
+    tabs->setPosition({kListX, kListY + kListH + 6.f});
+    m_mainLayer->addChild(tabs, 2);
 
-    auto listBg = paimon::SpriteHelper::createDarkPanel(listW + 10.f, listH + 10.f, 80, 6.f);
-    listBg->setPosition({listX - listW / 2.f - 5.f, 35.f});
-    m_mainLayer->addChild(listBg, 0);
+    if (auto* listBg = paimon::SpriteHelper::createDarkPanel(kListW + 8.f, kListH + 8.f, 95, 8.f)) {
+        listBg->setPosition({kListX - 4.f, kListY - 4.f});
+        m_mainLayer->addChild(listBg, 0);
+    }
 
-    m_scrollLayer = ScrollLayer::create({listW, listH});
-    m_scrollLayer->setPosition({listX - listW / 2.f, 40.f});
+    m_scrollLayer = ScrollLayer::create({kListW, kListH});
+    m_scrollLayer->setPosition({kListX, kListY});
     m_mainLayer->addChild(m_scrollLayer, 1);
 
-    // Label "Botones del menu"
-    auto listLabel = CCLabelBMFont::create("Botones del menu", "goldFont.fnt");
-    listLabel->setScale(0.3f);
-    listLabel->setPosition({listX, winSize.height - 48.f});
-    m_mainLayer->addChild(listLabel, 2);
-
-    // Botones inferiores
-    auto saveSpr = ButtonSprite::create("Guardar", "goldFont.fnt", "GJ_button_01.png", .8f);
-    saveSpr->setScale(0.6f);
-    auto saveBtn = CCMenuItemExt::createSpriteExtra(saveSpr, [this](CCMenuItemSpriteExtra*) {
-        this->onSave(nullptr);
-    });
-    saveBtn->setPosition({cx - 40.f, -winSize.height / 2.f + 25.f});
-    m_buttonMenu->addChild(saveBtn);
-
-    auto resetSpr = ButtonSprite::create("Reset", "goldFont.fnt", "GJ_button_06.png", .8f);
+    // --- Acciones ----------------------------------------------------------
+    auto* resetSpr = ButtonSprite::create("Reset", "goldFont.fnt", "GJ_button_06.png", .8f);
     resetSpr->setScale(0.6f);
-    auto resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr, [this](CCMenuItemSpriteExtra*) {
+    auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr, [this](CCMenuItemSpriteExtra*) {
         this->onReset(nullptr);
     });
-    resetBtn->setPosition({cx + 40.f, -winSize.height / 2.f + 25.f});
-    m_buttonMenu->addChild(resetBtn);
+    m_buttonMenu->addChildAtPosition(resetBtn, Anchor::BottomRight, ccp(-138.f, 18.f));
+
+    auto* saveSpr = ButtonSprite::create("Guardar", "goldFont.fnt", "GJ_button_01.png", .8f);
+    saveSpr->setScale(0.6f);
+    auto* saveBtn = CCMenuItemExt::createSpriteExtra(saveSpr, [this](CCMenuItemSpriteExtra*) {
+        this->onSave(nullptr);
+    });
+    m_buttonMenu->addChildAtPosition(saveBtn, Anchor::BottomRight, ccp(-58.f, 18.f));
 
     rebuildList();
     rebuildPreview();
@@ -123,271 +143,236 @@ bool RadialConfigPopup::init() {
     return true;
 }
 
-// Rebuild Preview
+void RadialConfigPopup::setTab(int tab) {
+    if (m_tab == tab) return;
+    m_tab = tab;
+    rebuildList();
+}
+
+// -------------------------------------------------------------------------
+// Vista previa
+// -------------------------------------------------------------------------
 
 void RadialConfigPopup::rebuildPreview() {
     m_previewNode->removeAllChildren();
 
-    // Circulo de fondo
-    auto bgCircle = paimon::SpriteHelper::createRoundedRect(
-        130.f, 130.f, 65.f,
-        {0.1f, 0.1f, 0.15f, 0.85f},
-        {0.4f, 0.4f, 0.5f, 0.6f},
-        1.5f
-    );
-    if (bgCircle) {
-        bgCircle->setPosition({-65.f, -65.f});
-        m_previewNode->addChild(bgCircle, 0);
+    int count = static_cast<int>(m_activeIds.size());
+    if (m_countLabel) {
+        m_countLabel->setString(
+            fmt::format("{} de {} botones", count, MAX_RADIAL_OPTIONS).c_str());
     }
 
-    auto allOpts = QuickHubManager::get().getAllRadialOptions();
-    int count = static_cast<int>(m_activeIds.size());
-    if (count == 0) return;
+    // Misma geometria que la rueda real, a escala.
+    constexpr float kBadge = 24.f;
+    float radius = count > 1 ? std::clamp((kBadge + 8.f) * count / (2.f * static_cast<float>(M_PI)),
+                                          46.f, 62.f)
+                             : 46.f;
 
-    float radius = 48.f;
-    float angleStep = 360.f / static_cast<float>(count);
+    float hubRadius = std::max(18.f, radius - kBadge * 0.85f);
+    if (auto* hub = makeCircle(hubRadius, kRadialHubFill)) {
+        m_previewNode->addChild(hub, 1);
+    }
+
+    if (count == 0) {
+        auto* empty = CCLabelBMFont::create("Vacio", "chatFont.fnt");
+        empty->setScale(0.4f);
+        empty->setColor({150, 155, 170});
+        m_previewNode->addChild(empty, 3);
+        return;
+    }
+
+    auto* logo = CCLabelBMFont::create("Quick\nHub", "chatFont.fnt");
+    logo->setScale(0.36f);
+    logo->setAlignment(kCCTextAlignmentCenter);
+    logo->setColor({200, 208, 230});
+    m_previewNode->addChild(logo, 3);
+
+    auto allOpts = QuickHubManager::get().getAllRadialOptions();
+    auto customButtons = QuickHubManager::get().getCustomButtons();
 
     for (int i = 0; i < count; i++) {
         auto const* opt = findOptionById(allOpts, m_activeIds[i]);
         if (!opt) continue;
 
-        float angleDeg = -90.f + angleStep * static_cast<float>(i);
-        float angleRad = angleDeg * (static_cast<float>(M_PI) / 180.f);
-        float x = cosf(angleRad) * radius;
-        float y = sinf(angleRad) * radius;
-
-        auto icon = CCSprite::createWithSpriteFrameName(opt->icon.c_str());
-        if (!icon) {
-            icon = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
-        }
-        if (icon) {
-            icon->setScale(0.38f);
-            icon->setPosition({x, y});
-            icon->setColor(opt->color);
-            m_previewNode->addChild(icon, 1);
+        auto shape = RadialButtonShape::Circle;
+        if (opt->custom) {
+            auto saved = std::ranges::find(customButtons, opt->id, &CustomQuickButton::id);
+            if (saved != customButtons.end()) shape = saved->shape;
         }
 
-        // Numero de posicion
-        auto numLabel = CCLabelBMFont::create(
-            fmt::format("{}", i + 1).c_str(), "chatFont.fnt");
-        numLabel->setScale(0.45f);
-        numLabel->setPosition({x, y - 14.f});
-        numLabel->setColor({200, 200, 200});
-        m_previewNode->addChild(numLabel, 2);
+        float angleRad = radialAngleFor(i, count) * (static_cast<float>(M_PI) / 180.f);
+        auto badge = makeRadialBadge(*opt, shape, kBadge);
+        badge.root->setPosition({cosf(angleRad) * radius, sinf(angleRad) * radius});
+        m_previewNode->addChild(badge.root, 4);
+
+        auto* numLabel = CCLabelBMFont::create(fmt::format("{}", i + 1).c_str(), "chatFont.fnt");
+        numLabel->setScale(0.32f);
+        numLabel->setColor(opt->color);
+        numLabel->setPosition({cosf(angleRad) * (radius + kBadge * 0.85f),
+                               sinf(angleRad) * (radius + kBadge * 0.85f)});
+        m_previewNode->addChild(numLabel, 5);
     }
 }
 
-// Rebuild List
+// -------------------------------------------------------------------------
+// Lista
+// -------------------------------------------------------------------------
 
 void RadialConfigPopup::rebuildList() {
     auto* content = m_scrollLayer->m_contentLayer;
     content->removeAllChildren();
 
-    float listW = m_scrollLayer->getContentSize().width;
-    float rowH = 28.f;
-    float gap = 3.f;
-
-    // Calcular opciones no activas (disponibles para agregar)
     auto allOpts = QuickHubManager::get().getAllRadialOptions();
-    std::vector<RadialOptionDef const*> available;
-    for (auto const& opt : allOpts) {
-        bool isActive = false;
+
+    // Cada pestana muestra un conjunto: los activos en su orden, o el resto.
+    std::vector<RadialOptionDef const*> rows;
+    if (m_tab == 0) {
         for (auto const& id : m_activeIds) {
-            if (id == opt.id) { isActive = true; break; }
+            if (auto const* opt = findOptionById(allOpts, id)) rows.push_back(opt);
         }
-        if (!isActive) available.push_back(&opt);
+    } else {
+        for (auto const& opt : allOpts) {
+            if (std::ranges::find(m_activeIds, opt.id) == m_activeIds.end()) rows.push_back(&opt);
+        }
     }
 
-    // Total de filas
-    int activeCount = static_cast<int>(m_activeIds.size());
-    int availCount = static_cast<int>(available.size());
-    int totalRows = activeCount + (availCount > 0 ? 1 + availCount : 0);
-    float totalH = totalRows * (rowH + gap) + 10.f;
-    float contentH = std::max(totalH, m_scrollLayer->getContentSize().height);
-    content->setContentSize({listW, contentH});
+    float totalH = static_cast<float>(rows.size()) * (kRowH + kRowGap) + 8.f;
+    float contentH = std::max(totalH, kListH);
+    content->setContentSize({kListW, contentH});
 
-    float yPos = contentH - 5.f;
+    if (rows.empty()) {
+        auto* empty = CCLabelBMFont::create(
+            m_tab == 0 ? "Anade botones desde la otra pestana"
+                       : "Todo esta ya en la rueda",
+            "chatFont.fnt");
+        empty->setColor({150, 155, 170});
+        empty->limitLabelWidth(kListW - 24.f, 0.42f, 0.2f);
+        empty->setPosition({kListW / 2.f, contentH - 24.f});
+        content->addChild(empty, 1);
+        m_scrollLayer->moveToTop();
+        return;
+    }
 
-    // Opciones activas
-    for (int i = 0; i < activeCount; i++) {
-        auto const* opt = findOptionById(allOpts, m_activeIds[i]);
-        if (!opt) continue;
+    float yPos = contentH - 4.f;
 
-        yPos -= rowH;
+    for (int i = 0; i < static_cast<int>(rows.size()); i++) {
+        auto const* opt = rows[static_cast<size_t>(i)];
+        yPos -= kRowH;
 
-        auto row = CCNode::create();
-        row->setContentSize({listW, rowH});
+        auto* row = CCNode::create();
+        row->setContentSize({kListW, kRowH});
         row->setPosition({0.f, yPos});
         content->addChild(row);
 
-        // Fondo de fila
-        auto rowBg = paimon::SpriteHelper::createRoundedRect(
-            listW - 4.f, rowH - 2.f, 4.f,
-            {0.15f, 0.15f, 0.2f, 0.7f});
-        if (rowBg) {
+        if (auto* rowBg = paimon::SpriteHelper::createRoundedRect(
+                kListW - 4.f, kRowH - 2.f, 5.f,
+                m_tab == 0 ? ccc4f(0.11f, 0.13f, 0.20f, 0.85f)
+                           : ccc4f(0.09f, 0.11f, 0.15f, 0.7f),
+                accentColor(opt->color, 0.35f), 1.f)) {
             rowBg->setPosition({2.f, 1.f});
             row->addChild(rowBg, 0);
         }
 
-        // Numero de posicion
-        auto posLabel = CCLabelBMFont::create(
-            fmt::format("{}.", i + 1).c_str(), "chatFont.fnt");
-        posLabel->setScale(0.5f);
-        posLabel->setAnchorPoint({0.f, 0.5f});
-        posLabel->setPosition({5.f, rowH / 2.f});
-        posLabel->setColor(opt->color);
-        row->addChild(posLabel, 1);
+        float textX = 10.f;
 
-        // Icono
-        auto icon = CCSprite::createWithSpriteFrameName(opt->icon.c_str());
-        if (icon) {
-            icon->setScale(0.3f);
-            icon->setPosition({25.f, rowH / 2.f});
-            icon->setColor(opt->color);
+        if (m_tab == 0) {
+            auto* posLabel = CCLabelBMFont::create(
+                fmt::format("{}", i + 1).c_str(), "goldFont.fnt");
+            posLabel->setScale(0.36f);
+            posLabel->setAnchorPoint({0.5f, 0.5f});
+            posLabel->setPosition({14.f, kRowH / 2.f});
+            row->addChild(posLabel, 1);
+            textX = 26.f;
+        }
+
+        if (auto* icon = makeFittedIcon(opt->icon, 19.f)) {
+            icon->setPosition({textX + 10.f, kRowH / 2.f});
             row->addChild(icon, 1);
         }
 
-        // Nombre
-        auto nameLabel = CCLabelBMFont::create(opt->name.c_str(), "bigFont.fnt");
+        auto* nameLabel = CCLabelBMFont::create(opt->name.c_str(), "bigFont.fnt");
         nameLabel->setAnchorPoint({0.f, 0.5f});
-        nameLabel->limitLabelWidth(listW - 38.f - 52.f, 0.26f, 0.1f);
-        nameLabel->setPosition({38.f, rowH / 2.f});
+        nameLabel->setPosition({textX + 24.f, kRowH / 2.f});
         row->addChild(nameLabel, 1);
 
-        // Menu para botones de la fila
-        auto rowMenu = CCMenu::create();
+        auto* rowMenu = CCMenu::create();
         rowMenu->setPosition({0.f, 0.f});
-        rowMenu->setContentSize({listW, rowH});
+        rowMenu->setContentSize({kListW, kRowH});
         row->addChild(rowMenu, 2);
 
-        // Capturar indice para lambdas
-        int idx = i;
+        // Ancho libre para el nombre: depende de cuantos botones lleve la fila.
+        float controlsW = 0.f;
+        std::string id = opt->id;
 
-        // Boton subir
-        if (i > 0) {
-            auto upSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
-            if (upSpr) {
-                upSpr->setScale(0.28f);
-                upSpr->setRotation(90.f);
-                auto upBtn = CCMenuItemExt::createSpriteExtra(upSpr, [this, idx](CCMenuItemSpriteExtra*) {
-                    this->onMoveUp(idx);
-                });
-                upBtn->setPosition({listW - 42.f, rowH / 2.f});
-                rowMenu->addChild(upBtn);
+        if (m_tab == 0) {
+            int idx = i;
+            if (i > 0) {
+                if (auto* up = makeIconButton("GJ_arrow_03_001.png", 0.3f,
+                                              [this, idx] { this->onMoveUp(idx); }, 90.f)) {
+                    up->setPosition({kListW - 46.f, kRowH / 2.f});
+                    rowMenu->addChild(up);
+                }
             }
-        }
-
-        // Boton bajar
-        if (i < activeCount - 1) {
-            auto downSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
-            if (downSpr) {
-                downSpr->setScale(0.28f);
-                downSpr->setRotation(-90.f);
-                auto downBtn = CCMenuItemExt::createSpriteExtra(downSpr, [this, idx](CCMenuItemSpriteExtra*) {
-                    this->onMoveDown(idx);
-                });
-                downBtn->setPosition({listW - 28.f, rowH / 2.f});
-                rowMenu->addChild(downBtn);
+            if (i < static_cast<int>(rows.size()) - 1) {
+                if (auto* down = makeIconButton("GJ_arrow_03_001.png", 0.3f,
+                                                [this, idx] { this->onMoveDown(idx); }, -90.f)) {
+                    down->setPosition({kListW - 30.f, kRowH / 2.f});
+                    rowMenu->addChild(down);
+                }
             }
-        }
-
-        // Boton quitar (X)
-        auto removeSpr = CCSprite::createWithSpriteFrameName("GJ_deleteIcon_001.png");
-        if (removeSpr) {
-            removeSpr->setScale(0.35f);
-            auto removeBtn = CCMenuItemExt::createSpriteExtra(removeSpr, [this, idx](CCMenuItemSpriteExtra*) {
-                this->onRemoveOption(idx);
-            });
-            removeBtn->setPosition({listW - 12.f, rowH / 2.f});
-            rowMenu->addChild(removeBtn);
-        }
-
-        yPos -= gap;
-    }
-
-    // Separador "Disponibles"
-    if (availCount > 0) {
-        yPos -= rowH;
-
-        auto sepLabel = CCLabelBMFont::create("Toca + para anadir", "bigFont.fnt");
-        sepLabel->setScale(0.22f);
-        sepLabel->setColor({255, 222, 120});
-        sepLabel->setPosition({listW / 2.f, yPos + rowH / 2.f});
-        content->addChild(sepLabel, 1);
-
-        yPos -= gap;
-
-        // Opciones disponibles (no activas)
-        for (int j = 0; j < availCount; j++) {
-            auto const* opt = available[j];
-            yPos -= rowH;
-
-            auto row = CCNode::create();
-            row->setContentSize({listW, rowH});
-            row->setPosition({0.f, yPos});
-            content->addChild(row);
-
-            auto rowBg = paimon::SpriteHelper::createRoundedRect(
-                listW - 4.f, rowH - 2.f, 4.f,
-                {0.08f, 0.12f, 0.08f, 0.5f});
-            if (rowBg) {
-                rowBg->setPosition({2.f, 1.f});
-                row->addChild(rowBg, 0);
+            if (auto* remove = makeIconButton("GJ_deleteIcon_001.png", 0.36f,
+                                              [this, idx] { this->onRemoveOption(idx); })) {
+                remove->setPosition({kListW - 13.f, kRowH / 2.f});
+                rowMenu->addChild(remove);
             }
-
-            // Icono
-            auto icon = CCSprite::createWithSpriteFrameName(opt->icon.c_str());
-            if (icon) {
-                icon->setScale(0.3f);
-                icon->setPosition({15.f, rowH / 2.f});
-                icon->setColor(opt->color);
-                row->addChild(icon, 1);
-            }
-
-            // Nombre
-            auto nameLabel = CCLabelBMFont::create(opt->name.c_str(), "bigFont.fnt");
-            nameLabel->setAnchorPoint({0.f, 0.5f});
-            nameLabel->limitLabelWidth(listW - 30.f - 24.f, 0.26f, 0.1f);
-            nameLabel->setPosition({30.f, rowH / 2.f});
-            nameLabel->setColor({160, 160, 160});
-            row->addChild(nameLabel, 1);
-
-            // Menu para boton agregar
-            auto rowMenu = CCMenu::create();
-            rowMenu->setPosition({0.f, 0.f});
-            rowMenu->setContentSize({listW, rowH});
-            row->addChild(rowMenu, 2);
-
-            int availIdx = j;
-
-            // Boton agregar (+)
+            controlsW = 60.f;
+        } else {
+            float x = kListW - 13.f;
             if (static_cast<int>(m_activeIds.size()) < MAX_RADIAL_OPTIONS) {
-                auto addSpr = CCSprite::createWithSpriteFrameName("GJ_plusBtn_001.png");
-                if (addSpr) {
-                    addSpr->setScale(0.35f);
-                    auto addBtn = CCMenuItemExt::createSpriteExtra(addSpr, [this, availIdx](CCMenuItemSpriteExtra*) {
-                        this->onAddOption(availIdx);
-                    });
-                    addBtn->setPosition({listW - 15.f, rowH / 2.f});
-                    rowMenu->addChild(addBtn);
+                if (auto* add = makeIconButton("GJ_plusBtn_001.png", 0.36f,
+                                               [this, id] { this->onAddOption(id); })) {
+                    add->setPosition({x, kRowH / 2.f});
+                    rowMenu->addChild(add);
                 }
             } else {
-                // Indicador de "lleno"
-                auto fullLabel = CCLabelBMFont::create("MAX", "chatFont.fnt");
-                fullLabel->setScale(0.35f);
-                fullLabel->setColor({255, 100, 100});
-                fullLabel->setPosition({listW - 15.f, rowH / 2.f});
-                row->addChild(fullLabel, 2);
+                auto* full = CCLabelBMFont::create("MAX", "chatFont.fnt");
+                full->setScale(0.34f);
+                full->setColor({255, 110, 110});
+                full->setPosition({x, kRowH / 2.f});
+                row->addChild(full, 2);
             }
+            x -= 20.f;
+            controlsW = 26.f;
 
-            yPos -= gap;
+            // Los botones capturados se pueden reeditar y borrar del catalogo.
+            if (opt->custom) {
+                if (auto* edit = makeIconButton("GJ_optionsBtn_001.png", 0.3f,
+                                                [this, id] { this->onEditCustom(id); })) {
+                    edit->setPosition({x, kRowH / 2.f});
+                    rowMenu->addChild(edit);
+                    x -= 20.f;
+                    controlsW += 20.f;
+                }
+                if (auto* del = makeIconButton("GJ_trashBtn_001.png", 0.28f,
+                                               [this, id] { this->onDeleteCustom(id); })) {
+                    del->setPosition({x, kRowH / 2.f});
+                    rowMenu->addChild(del);
+                    controlsW += 20.f;
+                }
+            }
         }
+
+        nameLabel->limitLabelWidth(kListW - (textX + 24.f) - controlsW - 6.f, 0.34f, 0.14f);
+
+        yPos -= kRowGap;
     }
 
     m_scrollLayer->moveToTop();
 }
 
-// Actions
+// -------------------------------------------------------------------------
+// Acciones
+// -------------------------------------------------------------------------
 
 void RadialConfigPopup::onMoveUp(int idx) {
     if (idx <= 0 || idx >= static_cast<int>(m_activeIds.size())) return;
@@ -408,7 +393,6 @@ void RadialConfigPopup::onMoveDown(int idx) {
 void RadialConfigPopup::onRemoveOption(int idx) {
     if (idx < 0 || idx >= static_cast<int>(m_activeIds.size())) return;
 
-    // Minimo 1 opcion activa
     if (m_activeIds.size() <= 1) {
         PaimonNotify::create("Necesitas al menos 1 opcion.", NotificationIcon::Warning)->show();
         return;
@@ -419,30 +403,47 @@ void RadialConfigPopup::onRemoveOption(int idx) {
     rebuildPreview();
 }
 
-void RadialConfigPopup::onAddOption(int availIdx) {
-    // Recalcular disponibles para obtener el ID correcto
-    auto allOpts = QuickHubManager::get().getAllRadialOptions();
-    std::vector<RadialOptionDef const*> available;
-    for (auto const& opt : allOpts) {
-        bool isActive = false;
-        for (auto const& id : m_activeIds) {
-            if (id == opt.id) { isActive = true; break; }
-        }
-        if (!isActive) available.push_back(&opt);
-    }
-
-    if (availIdx < 0 || availIdx >= static_cast<int>(available.size())) return;
+void RadialConfigPopup::onAddOption(std::string const& id) {
+    if (std::ranges::find(m_activeIds, id) != m_activeIds.end()) return;
     if (static_cast<int>(m_activeIds.size()) >= MAX_RADIAL_OPTIONS) {
-        PaimonNotify::create(
-            fmt::format("Maximo {} opciones.", MAX_RADIAL_OPTIONS).c_str(),
-            NotificationIcon::Warning
-        )->show();
+        std::string message = fmt::format("Maximo {} opciones.", MAX_RADIAL_OPTIONS);
+        PaimonNotify::create(message.c_str(), NotificationIcon::Warning)->show();
         return;
     }
 
-    m_activeIds.push_back(available[availIdx]->id);
+    m_activeIds.push_back(id);
     rebuildList();
     rebuildPreview();
+}
+
+void RadialConfigPopup::onEditCustom(std::string const& id) {
+    auto saved = QuickHubManager::get().getCustomButton(id);
+    if (!saved) return;
+
+    auto* popup = QuickButtonPopup::create(*saved);
+    if (!popup) return;
+    popup->setOnSaved([this](std::string const&) {
+        rebuildList();
+        rebuildPreview();
+    });
+    popup->show();
+}
+
+void RadialConfigPopup::onDeleteCustom(std::string const& id) {
+    auto saved = QuickHubManager::get().getCustomButton(id);
+    if (!saved) return;
+
+    geode::createQuickPopup(
+        "Borrar boton",
+        fmt::format("Quitar <cy>{}</c> del Quick Hub para siempre?", saved->name),
+        "Cancelar", "Borrar",
+        [this, id](auto*, bool confirmed) {
+            if (!confirmed) return;
+            QuickHubManager::get().deleteCustomButton(id);
+            std::erase(m_activeIds, id);
+            rebuildList();
+            rebuildPreview();
+        });
 }
 
 void RadialConfigPopup::onSave(CCObject*) {

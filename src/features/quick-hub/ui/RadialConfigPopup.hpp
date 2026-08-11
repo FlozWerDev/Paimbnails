@@ -1,24 +1,18 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
 #include <vector>
 #include <string>
 
 namespace paimon::quickhub {
 
-// RadialConfigPopup
 // Popup para configurar que opciones aparecen en el Quick Hub Radial y en que
-// orden. Interfaz con preview del circulo + lista reordenable.
+// orden.
 //
 // Layout:
-// Configurar Quick Hub                             [Reset]
-// PREVIEW CIRCULAR        LISTA DE OPCIONES
-// (muestra como se        [↑] [Icono] Nombre [↓] [✕]
-// vera el radial)        [↑] [Icono] Nombre [↓] [✕]
-// ...
-// Disponibles
-// [+] Icono Nombre
-// [+] Icono Nombre
-// [Guardar]  [Cancelar]
+// Configurar Quick Hub
+// [ vista previa de la rueda ]   [ Activos | Anadir ]
+// [ abrir con Ctrl           ]   [ lista reordenable ]
+//                    [Reset] [Guardar]
 
 class RadialConfigPopup : public geode::Popup {
 public:
@@ -29,22 +23,26 @@ protected:
 
     // Datos de trabajo (copia editable)
     std::vector<std::string> m_activeIds;
+    int m_tab = 0;
 
-    // Nodos UI
     cocos2d::CCNode* m_previewNode = nullptr;
     geode::ScrollLayer* m_scrollLayer = nullptr;
+    cocos2d::CCLabelBMFont* m_countLabel = nullptr;
 
-    // Reconstruye la lista de opciones activas + disponibles
+    // Reconstruye la lista segun la pestana activa
     void rebuildList();
 
     // Reconstruye el preview circular
     void rebuildPreview();
 
-    // Acciones
+    void setTab(int tab);
+
     void onMoveUp(int idx);
     void onMoveDown(int idx);
     void onRemoveOption(int idx);
-    void onAddOption(int availIdx);
+    void onAddOption(std::string const& id);
+    void onEditCustom(std::string const& id);
+    void onDeleteCustom(std::string const& id);
     void onSave(cocos2d::CCObject*);
     void onReset(cocos2d::CCObject*);
 };

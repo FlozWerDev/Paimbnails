@@ -55,11 +55,14 @@ public:
     bool isFailed(int levelID, bool isGif = false) const;
     bool isNotFound(int levelID, bool isGif = false) const;
 
-    // Synchronous RAM-only fast path; nullptr on miss, never touches disk LRU or enqueues callbacks.
+    // Synchronous RAM-only fast path; no disk or callback queue on miss.
     cocos2d::CCTexture2D* tryGetCachedTexture(int levelID, bool isGif = false);
 
     void clearCache();
     void clearFailedCache();
+    // Release RAM textures and pending old-context callbacks before GL reload;
+    // disk and worker pools remain intact.
+    void onGLContextReload();
     void invalidateLevel(int levelID, bool isGif = false);
 
     void updateRemoteRevision(int levelID, std::string const& revisionToken);
@@ -79,7 +82,7 @@ public:
     static bool isTextureSane(cocos2d::CCTexture2D* tex);
     std::filesystem::path getCachePath(int levelID, bool isGif = false);
 
-    // strips _pv, _cb, ts, v, t params for a stable cache key
+    // Strip cache-busting params for a stable key.
     static std::string normalizeUrlKey(std::string const& url);
     
     void updateSessionCache(int levelID, cocos2d::CCTexture2D* texture);
@@ -138,10 +141,12 @@ private:
     std::unordered_set<int> m_revisionCheckedThisSession;
     void triggerBackgroundRevisionCheck(int levelID);
 
+    // TTL for manifest requests, including levels absent from the manifest.
+    std::unordered_map<int, std::chrono::steady_clock::time_point> m_manifestRequestedAt;
+
     bool m_batchMode = false;
 
-    // Global download cooldown: avoids hammering the server when many downloads
-    // fail in a short window (otherwise all thumbnails get marked failed).
+    // Global cooldown after a burst of failures.
     std::atomic<int> m_recentFailureCount{0};
     std::chrono::steady_clock::time_point m_failureWindowStart{};
     std::chrono::steady_clock::time_point m_globalCooldownUntil{};
@@ -166,18 +171,19 @@ private:
     std::vector<PendingCallback> m_pendingCallbacks;
     std::mutex m_pendingMutex;
     std::atomic<bool> m_drainScheduled{false};
-    // us timestamp when m_drainScheduled was set; if >100ms stale, the drain is re-armed.
+    // Timestamp used to re-arm a drain stalled over 100 ms.
     std::atomic<int64_t> m_drainScheduledAtUs{0};
+    // Per-drain cap; the frame budget remains the real limiter.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    static constexpr int MAX_CALLBACKS_PER_FRAME = 4;
+    static constexpr int MAX_CALLBACKS_PER_FRAME = 8;
 #else
-    static constexpr int MAX_CALLBACKS_PER_FRAME = 4;
+    static constexpr int MAX_CALLBACKS_PER_FRAME = 16;
 #endif
     void enqueuePendingCallback(LoadCallback cb, cocos2d::CCTexture2D* tex, bool success, int levelID = 0);
     void drainPendingCallbacks();
     void scheduleDrain();
 
-    // Mode 1 (image set): CCImage via initWithImage. Mode 2 (pixels set): raw RGBA8888 via initWithData.
+    // Pending upload uses CCImage or raw RGBA pixels.
     struct PendingUpload {
         std::shared_ptr<Task> task;
         cocos2d::CCImage* image = nullptr;
@@ -199,7 +205,7 @@ private:
     static constexpr int MAX_UPLOADS_PER_FRAME = 8;
     static constexpr int64_t UPLOAD_FRAME_BUDGET_US = 2500;
 #endif
-    // Max dim for RAM-cached thumbs; 1920 preserves 1080p (1024 downscaled captures to ~720p).
+    // Maximum dimensions for RAM-cached thumbnails.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr int RAM_CACHE_SMALL_MAX_DIM = 512;
     static constexpr int RAM_CACHE_HIGH_MAX_DIM = 1024;
@@ -246,8 +252,8 @@ private:
     void waitBackgroundWorkers();
 
     struct DecodeResult {
-        std::vector<uint8_t> pixels;        // preferred: raw RGBA for initWithData
-        cocos2d::CCImage* image = nullptr;  // fallback; owned by caller, must be deleted if unused
+        std::vector<uint8_t> pixels;        // Preferred raw RGBA.
+        cocos2d::CCImage* image = nullptr;  // Fallback; caller owns it.
         int width = 0;
         int height = 0;
         int originalWidth = 0;

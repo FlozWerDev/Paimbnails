@@ -8,6 +8,9 @@ void ConversationMemory::recordTurn(ConversationTurn turn) {
     if (turn.timestamp == 0) {
         turn.timestamp = std::time(nullptr);
     }
+    if (turn.topicId.empty()) {
+        turn.topicId = turn.matchedIntentId;
+    }
     m_history.push_back(std::move(turn));
     if (m_history.size() > kMaxTurns) {
         m_history.erase(m_history.begin(),
@@ -26,6 +29,16 @@ std::optional<ConversationTurn> ConversationMemory::lastFunctionalTurn() const {
         }
     }
     return std::nullopt;
+}
+
+std::string ConversationMemory::lastTopicId(std::time_t withinSecs) const {
+    auto now = std::time(nullptr);
+    for (auto it = m_history.rbegin(); it != m_history.rend(); ++it) {
+        if (it->topicId.empty()) continue;
+        if ((now - it->timestamp) > withinSecs) continue;
+        return it->topicId;
+    }
+    return {};
 }
 
 int ConversationMemory::recentMatchesOf(std::string const& intentId,
@@ -68,10 +81,8 @@ bool ConversationMemory::looksLikeFollowUp(std::string const& normalized) {
 
     // Small fixed set of common follow-up tokens (ES + EN).
     static char const* const kFollowUpTokens[] = {
-        // spanish
         "y", "como", "donde", "cuando", "porque", "y como", "y donde",
         "y eso", "y ahora", "mas", "otra vez", "explicame",
-        // english
         "how", "where", "when", "why", "more", "again", "explain",
         "and", "and how", "and where",
     };

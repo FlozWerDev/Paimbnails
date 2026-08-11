@@ -20,7 +20,7 @@ enum class PaimonAnimEffect : uint8_t {
     Grayscale, Invert, Blur, Glitch
 };
 
-enum class PaimonBgType : uint8_t { Gradient, Thumbnail };
+enum class PaimonBgType : uint8_t { Gradient, LegacyGradient, Thumbnail };
 
 enum class PaimonGalleryTransition : uint8_t {
     Crossfade, SlideLeft, SlideRight, SlideUp, SlideDown,

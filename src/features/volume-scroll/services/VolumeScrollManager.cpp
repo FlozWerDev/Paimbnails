@@ -10,10 +10,7 @@ using namespace cocos2d;
 
 namespace paimon::volscroll {
 
-// Two-phase overlay animation: a compact MUS/SFX chip that expands into a wider GD-style panel
-// (GJ_square01 background + a groove/thumb with a CCDrawNode volume fill) growing leftward from a
-// pinned bottom-right anchor so it never runs off the screen edge. Blue chip for music, orange for sfx.
-//
+// Bottom-right volume chip/panel hosted above scenes and popups.
 // The overlay is parented to geode::OverlayManager — the same top-most host the custom cursor
 // uses — so it renders above every scene, popup and transition (the cursor sits at INT_MAX and
 // we stay just below it).
@@ -21,46 +18,35 @@ namespace paimon::volscroll {
 namespace {
     // Dimensions — chip vs expanded.
     constexpr float kPanelHeight   =  34.f;
-    constexpr float kPanelWidthMin =  56.f;  // chip MUS/SFX
-    constexpr float kPanelWidthMax = 168.f;  // expanded
+    constexpr float kPanelWidthMin =  56.f;
+    constexpr float kPanelWidthMax = 168.f;
 
-    // On-screen position: the panel's right edge sits this far from the screen's
-    // right corner (anchor is bottom-right, so it grows leftward from here).
     constexpr float kMarginRight  = 210.f;
     constexpr float kMarginBottom =  22.f;
 
-    // Animation timings. One family of curves keeps the motion consistent:
-    // every entrance uses easeOutBack (the GD popup "pop"), every exit easeInQuad.
-    constexpr float kSlideInTime  = 0.25f; // chip slides up
-    constexpr float kExpandTime   = 0.30f; // chip widens
-    constexpr float kAutoHideTime = 1.30f; // time visible while expanded
-    constexpr float kCollapseTime = 0.20f; // collapses
-    constexpr float kSlideOutTime = 0.22f; // chip slides down
+    constexpr float kSlideInTime  = 0.25f;
+    constexpr float kExpandTime   = 0.30f;
+    constexpr float kAutoHideTime = 1.30f;
+    constexpr float kCollapseTime = 0.20f;
+    constexpr float kSlideOutTime = 0.22f;
 
-    // Vertical slide distance
     constexpr float kSlideOffset = 50.f;
 
     constexpr float kVolumeLerpSpeed = 22.f;
 
-    // Z-order inside OverlayManager: above capture/notification overlays (999000),
-    // below the custom cursor (INT_MAX).
     constexpr int kOverlayZOrder = 999500;
 
-    // Expanded layout: [ % ][ slider ][ chip ], all vertically centered.
     constexpr float kPctLeftPad  = 12.f;
-    constexpr float kBarCenterX  = 83.f;  // groove center when expanded
-    constexpr float kBarWidth    = 74.f;  // groove display width
+    constexpr float kBarCenterX  = 83.f;
+    constexpr float kBarWidth    = 74.f;
     constexpr float kChipRightPad = 10.f;
 
-    // Drawn volume bar: a rounded dark track with a colored fill on top. No groove/thumb.
-    constexpr float kTrackH   = 12.f; // dark rounded track height
-    constexpr float kBarFillH =  9.f; // colored fill height (leaves a thin dark border)
+    constexpr float kTrackH   = 12.f;
+    constexpr float kBarFillH =  9.f;
 
-    // Chip colors (also used before this redesign): blue = music, orange = sfx.
     constexpr ccColor3B kMusicColor{160, 220, 255};
     constexpr ccColor3B kSfxColor{255, 200, 140};
 
-    // Volume fill color per 25% band: red -> orange -> yellow -> green.
     constexpr ccColor3B kBandColors[4] = {
         {255,  85,  85},
         {255, 165,  60},
@@ -68,7 +54,6 @@ namespace {
         {110, 225, 110},
     };
 
-    // Easing curves.
     // easeOutBack: slight overshoot then settle — the GD popup feel. Softened
     // c1 so the slide/width never overshoots more than ~6%.
     inline float easeOutBack(float t) {
@@ -92,14 +77,12 @@ namespace {
         return 1.f - u * u * u * u * u;
     }
 
-    // easeInOutQuad: smooth symmetric transition for opacity.
     inline float easeInOutQuad(float t) {
         t = std::clamp(t, 0.f, 1.f);
         return t < 0.5f ? 2.f * t * t : 1.f - 0.5f * (2.f * t - 2.f) * (2.f * t - 2.f);
     }
 }
 
-// Singleton
 
 VolumeScrollManager& VolumeScrollManager::get() {
     static VolumeScrollManager s_instance;
@@ -115,7 +98,6 @@ void VolumeScrollManager::init() {
     m_lastUseClock = -100.f;
 }
 
-// Lazy overlay construction
 
 void VolumeScrollManager::ensureOverlayBuilt() {
     if (m_overlay) return;
@@ -128,7 +110,6 @@ void VolumeScrollManager::ensureOverlayBuilt() {
     container->setCascadeColorEnabled(true);
     container->setTouchEnabled(false);
 
-    // Background: the classic GD popup square, resized live while expanding.
     auto bg = CCScale9Sprite::create("GJ_square01.png");
     if (bg) {
         bg->setContentSize({kPanelWidthMin, kPanelHeight});
@@ -151,7 +132,6 @@ void VolumeScrollManager::ensureOverlayBuilt() {
 
     m_kindLabel = nullptr;
 
-    // The volume bar itself: a single CCDrawNode holding the rounded track + colored fill.
     auto fill = CCDrawNode::create();
     if (fill) {
         fill->setID("paimon-vs-bar-fill"_spr);
@@ -171,7 +151,6 @@ void VolumeScrollManager::ensureOverlayBuilt() {
     container->addChild(pctLabel, 2);
     m_label = pctLabel;
 
-    // Initial state: invisible
     container->setOpacity(0);
     container->setVisible(false);
 
@@ -180,7 +159,6 @@ void VolumeScrollManager::ensureOverlayBuilt() {
     redrawBar();
 }
 
-// Keep the GJ_square background matching the container's animated width.
 
 void VolumeScrollManager::redrawPill() {
     if (!m_pillNode || !m_overlay) return;
@@ -190,12 +168,10 @@ void VolumeScrollManager::redrawPill() {
     bg->setPosition({sz.width * 0.5f, sz.height * 0.5f});
 }
 
-// Sample the fill color at normalized position t in [0,1], blending the four
-// band colors so they fuse into a smooth gradient instead of hard edges. The
-// colors sit at their band centers (0.125, 0.375, 0.625, 0.875).
+// Blend the four band colors at normalized position t.
 static ccColor4F sampleBandColor(float t, float alpha) {
     t = std::clamp(t, 0.f, 1.f);
-    const float p = t * 4.f - 0.5f; // map to band-center space [-0.5 .. 3.5]
+    const float p = t * 4.f - 0.5f;
     const int i0 = std::clamp(static_cast<int>(std::floor(p)), 0, 3);
     const int i1 = std::clamp(i0 + 1, 0, 3);
     const float f = std::clamp(p - static_cast<float>(i0), 0.f, 1.f);
@@ -209,30 +185,26 @@ static ccColor4F sampleBandColor(float t, float alpha) {
     };
 }
 
-// drawSegment/drawDot don't render rounded caps reliably here, so we build the
-// rounded shapes as filled polygons (drawPolygon works) with computed arc verts.
 
 namespace {
     constexpr float kPi = 3.14159265358979f;
-    constexpr int   kArc = 10; // arc subdivisions per semicircle
+    constexpr int   kArc = 10;
 
-    // Filled horizontal capsule (rounded bar) between the two cap centers x0..x1.
     void fillCapsule(CCDrawNode* draw, float x0, float x1, float cy, float r, const ccColor4F& col) {
         if (x1 < x0) std::swap(x0, x1);
         CCPoint pts[(kArc + 1) * 2];
         int n = 0;
-        for (int i = 0; i <= kArc; ++i) {          // right cap: -90 -> +90
+        for (int i = 0; i <= kArc; ++i) {
             const float a = -kPi * 0.5f + kPi * i / kArc;
             pts[n++] = ccp(x1 + r * std::cos(a), cy + r * std::sin(a));
         }
-        for (int i = 0; i <= kArc; ++i) {          // left cap: +90 -> +270
+        for (int i = 0; i <= kArc; ++i) {
             const float a = kPi * 0.5f + kPi * i / kArc;
             pts[n++] = ccp(x0 + r * std::cos(a), cy + r * std::sin(a));
         }
         draw->drawPolygon(pts, n, col, 0.f, {0.f, 0.f, 0.f, 0.f});
     }
 
-    // Filled half-disk cap centered at (cx, cy). leftSide bulges left, else right.
     void fillHalfCap(CCDrawNode* draw, float cx, float cy, float r, bool leftSide, const ccColor4F& col) {
         CCPoint pts[kArc + 1];
         const float a0 = leftSide ? kPi * 0.5f : -kPi * 0.5f;
@@ -244,9 +216,6 @@ namespace {
     }
 }
 
-// The volume bar is fully drawn: a rounded dark track spanning the full width,
-// with a colored fill on top. The fill has rounded ends and its color flows as a
-// gradient (red -> orange -> yellow -> green) so the 25% changes blend together.
 
 void VolumeScrollManager::redrawBar() {
     if (!m_barDraw) return;
@@ -258,12 +227,11 @@ void VolumeScrollManager::redrawBar() {
 
     const float pct    = std::clamp(m_displayedVolume, 0.f, 1.f);
     const float cy     = kPanelHeight * 0.5f;
-    const float trackR = kTrackH * 0.5f;   // rounded-cap radius of the track
+    const float trackR = kTrackH * 0.5f;
     const float left   = kBarCenterX - kBarWidth * 0.5f + trackR;
     const float right  = kBarCenterX + kBarWidth * 0.5f - trackR;
     const float span   = std::max(right - left, 0.f);
 
-    // Rounded dark track.
     fillCapsule(draw, left, right, cy, trackR, {0.f, 0.f, 0.f, 0.55f * alpha});
 
     if (pct <= 0.f || span <= 0.f) return;
@@ -271,13 +239,9 @@ void VolumeScrollManager::redrawBar() {
     const float fillHalf = kBarFillH * 0.5f;
     const float fillEndX = left + span * pct;
 
-    // Rounded end caps of the fill (half-disks in the color at each end).
     fillHalfCap(draw, left,     cy, fillHalf, true,  sampleBandColor(0.f, alpha));
     fillHalfCap(draw, fillEndX, cy, fillHalf, false, sampleBandColor(pct, alpha));
 
-    // Gradient body: overlapping slices so the antialiased edges of adjacent quads
-    // never leave a seam. Each slice is tinted by the blended color at its center,
-    // so the 25% color changes fuse smoothly.
     const float step    = 2.f;
     const float overlap = 2.5f;
     for (float x = left; x < fillEndX; x += step) {
@@ -291,27 +255,20 @@ void VolumeScrollManager::redrawBar() {
     }
 }
 
-// applyExpandProgress: interpolate the container width between chip and expanded panel
-// (m_expandProgress in [0..1]) and update the chip position, extras opacity (staggered fade
-// starting ~30% in), and the slider/% layout.
 
 void VolumeScrollManager::applyExpandProgress() {
     if (!m_overlay) return;
 
     const float t = std::clamp(m_expandProgress, 0.f, 1.f);
-    // Expand pops with easeOutBack; collapse accelerates away with easeInQuad.
     const float eased = (m_state == State::Collapsing) ? easeInQuad(t) : easeOutBack(t);
 
-    // Current container width; grows leftward since the right edge is pinned (1, 0 anchor).
     const float w = kPanelWidthMin + (kPanelWidthMax - kPanelWidthMin) * eased;
     m_overlay->setContentSize({w, kPanelHeight});
 
-    // The chip stays glued to the right edge, so it's stationary on screen while the rest grows left.
     if (m_iconLabel) {
         m_iconLabel->setPosition({w - kChipRightPad, kPanelHeight * 0.5f});
     }
 
-    // Extras opacity (% + slider): they fade in once the width is ~30% expanded.
     const float extraT = std::clamp((t - 0.30f) / 0.70f, 0.f, 1.f);
     const float extraEased = easeOutQuint(extraT);
     const GLubyte extraOpacity = static_cast<GLubyte>(extraEased * 255.f);
@@ -325,7 +282,7 @@ void VolumeScrollManager::applyExpandProgress() {
     if (m_barDraw) {
         m_barDraw->setVisible(extrasVisible);
         m_barAlpha = extraEased;
-        redrawBar(); // vertex alpha is baked in, so re-emit with the new fade
+        redrawBar();
     }
 }
 
@@ -333,9 +290,6 @@ void VolumeScrollManager::attachToRunningScene() {
     ensureOverlayBuilt();
     if (!m_overlay) return;
 
-    // Prefer the global OverlayManager: it lives above every scene and popup
-    // (the custom cursor is parented there too, at INT_MAX; we stay below it),
-    // and it survives scene transitions so no re-attach churn mid-animation.
     if (auto* host = geode::OverlayManager::get()) {
         if (m_overlay->getParent() != host) {
             m_overlay->removeFromParent();
@@ -363,8 +317,6 @@ void VolumeScrollManager::detachFromScene() {
 
 void VolumeScrollManager::onSceneChange() {
     if (m_state != State::Hidden) {
-        // On OverlayManager nothing to do; re-attach only covers the
-        // fallback path where the overlay was parented to the old scene.
         if (!m_overlay || !m_overlay->getParent() || m_attachedScene) {
             attachToRunningScene();
         }
@@ -385,7 +337,6 @@ void VolumeScrollManager::releaseSharedResources() {
     m_state = State::Hidden;
 }
 
-// Volume read/write via FMODAudioEngine
 
 float VolumeScrollManager::readVolume(VolumeKind kind) const {
     auto* engine = FMODAudioEngine::sharedEngine();
@@ -413,12 +364,10 @@ void VolumeScrollManager::writeVolume(VolumeKind kind, float value) {
     }
 }
 
-// Update: advance the state machine.
 
 void VolumeScrollManager::update(float dt) {
     m_clock += dt;
 
-    // Lerp the displayed value.
     float diff = m_targetVolume - m_displayedVolume;
     m_displayedVolume += diff * std::clamp(kVolumeLerpSpeed * dt, 0.f, 1.f);
 
@@ -428,7 +377,6 @@ void VolumeScrollManager::update(float dt) {
         return;
     }
 
-    // State machine
     switch (m_state) {
         case State::SlidingIn:
             m_animProgress += dt / kSlideInTime;
@@ -477,7 +425,6 @@ void VolumeScrollManager::update(float dt) {
         default: break;
     }
 
-    // Apply width/content per expandProgress
     applyExpandProgress();
     redrawPill();
     if (m_expandProgress > 0.f) {
@@ -490,7 +437,6 @@ void VolumeScrollManager::update(float dt) {
                         ? easeInQuad(m_animProgress)
                         : easeOutBack(m_animProgress);
 
-    // Separate opacity: easeInOutQuad for a smoother fade than the slide
     const float opacity = easeInOutQuad(m_animProgress);
 
     const float y = kMarginBottom - kSlideOffset * (1.f - slide);
@@ -527,7 +473,6 @@ void VolumeScrollManager::rebuildContent() {
     }
 }
 
-// onScroll
 
 bool VolumeScrollManager::onScroll(VolumeKind kind, float delta) {
     float current = readVolume(kind);
@@ -546,7 +491,6 @@ bool VolumeScrollManager::onScroll(VolumeKind kind, float delta) {
     attachToRunningScene();
     rebuildContent();
 
-    // Small GD-style pulse on the chip so each scroll tick gives feedback.
     if (m_iconLabel && m_state != State::Hidden) {
         m_iconLabel->stopAllActions();
         m_iconLabel->runAction(CCSequence::create(
@@ -556,7 +500,6 @@ bool VolumeScrollManager::onScroll(VolumeKind kind, float delta) {
         ));
     }
 
-    // Wake the overlay based on the current state.
     switch (m_state) {
         case State::Hidden:
             m_state = State::SlidingIn;
@@ -565,7 +508,6 @@ bool VolumeScrollManager::onScroll(VolumeKind kind, float delta) {
             break;
 
         case State::SlidingOut:
-            // Re-engage slide-in from where it was; the chip expands again.
             m_state = State::SlidingIn;
             break;
 
@@ -575,13 +517,11 @@ bool VolumeScrollManager::onScroll(VolumeKind kind, float delta) {
             break;
 
         case State::Visible:
-            // Restart the auto-hide timer.
             resetAutoHideTimer();
             break;
 
         case State::SlidingIn:
         case State::Expanding:
-            // Already entering/expanding. Leave it.
             break;
     }
 
@@ -593,4 +533,4 @@ bool VolumeScrollManager::wasRecentlyUsed(float withinSeconds) const {
     return (m_clock - m_lastUseClock) < withinSeconds;
 }
 
-} // namespace paimon::volscroll
+}

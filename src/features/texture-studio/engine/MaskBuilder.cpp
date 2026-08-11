@@ -19,7 +19,7 @@ MaskBuffer makeMask(int W, int H) {
     return m;
 }
 
-// Find nearest (idx0/d0) and second-nearest (idx1/d1) cluster for a HSV point.
+// Find the nearest two clusters for a HSV point.
 void findNearestTwo(float h, float s, float v,
                     ClassifiedCluster const* clusters, int n,
                     int& idx0, float& d0,
@@ -48,8 +48,7 @@ MaskBuffer* maskPtrForRole(MaskSet& set, ClusterRole role) {
     }
 }
 
-// One pass of 3x3 grayscale morphology. useMax = dilation (max), else
-// erosion (min). Out-of-bounds neighbours count as 0.
+// One 3x3 grayscale morphology pass; useMax selects dilation vs erosion.
 void morphPass(MaskBuffer& mask, std::vector<std::uint8_t>& scratch, bool useMax) {
     int W = mask.width;
     int H = mask.height;
@@ -77,7 +76,7 @@ void morphPass(MaskBuffer& mask, std::vector<std::uint8_t>& scratch, bool useMax
     mask.data.swap(scratch);
 }
 
-// Grayscale "open": `erode` erosions then `dilate` dilations.
+// Grayscale opening: erode, then dilate.
 void morphOpen(MaskBuffer& mask, MaskMorphology const& morph,
                std::vector<std::uint8_t>& scratch) {
     if (mask.data.empty()) return;
@@ -87,10 +86,8 @@ void morphOpen(MaskBuffer& mask, MaskMorphology const& morph,
 
 constexpr int kRefineMasks = 5;
 
-// One joint-bilateral pass over all masks. Neighbour weights come from
-// RGB similarity in the source sprite (sigma ~32), so smoothing never crosses
-// a real color edge. After averaging, the masks are rescaled so their
-// sum equals the pixel alpha again (partition of the pixel is preserved).
+// Joint-bilateral smoothing follows RGB edges and restores each pixel's alpha
+// after averaging, preserving the mask partition.
 void edgeRefinePass(ImageBuffer const& sprite,
                     std::array<MaskBuffer*, kRefineMasks> const& masks,
                     int alphaCutoff,
@@ -99,7 +96,7 @@ void edgeRefinePass(ImageBuffer const& sprite,
     int H = sprite.height();
     if (W <= 0 || H <= 0) return;
 
-    // exp(-d² / (2·32²)) over squared RGB distance, quantized to 256 steps.
+// Weights use exp(-d² / (2·32²)), quantized to 256 steps.
     static const std::array<float, 256> kSimilarity = [] {
         std::array<float, 256> lut{};
         for (int i = 0; i < 256; ++i) {
@@ -138,8 +135,7 @@ void edgeRefinePass(ImageBuffer const& sprite,
                     int d2 = dr * dr + dg * dg + db * db;
                     float w = kSimilarity[std::min(d2 >> 8, 255)];
 
-                    // The neighbour's masks are normalized to ITS alpha; use
-                    // the fractional split so alpha differences don't leak.
+// Normalize the neighbour to its alpha before applying its fractional split.
                     float qa = static_cast<float>(q[3]);
                     if (qa <= 0.0f) continue;
                     std::size_t nIdx = static_cast<std::size_t>(yy) * W + xx;
@@ -151,7 +147,7 @@ void edgeRefinePass(ImageBuffer const& sprite,
             }
             if (wSum <= 0.0f) continue;
 
-            // Renormalize the smoothed fractions to this pixel's alpha.
+// Restore this pixel's alpha after smoothing.
             float fracSum = 0.0f;
             for (int m = 0; m < kRefineMasks; ++m) fracSum += acc[m];
             if (fracSum <= 1e-6f) continue;
@@ -168,10 +164,8 @@ void edgeRefinePass(ImageBuffer const& sprite,
     }
 }
 
-// Flood-fill the glow mask into connected components; a component that never
-// touches transparency or the image border is an interior bright detail (a
-// white glyph on top of the button), not the outer glow ring — move it to the
-// detail mask so the glow color leaves it alone.
+// Move enclosed bright components from the glow mask to detail; only the outer
+// ring should receive the glow color.
 void splitInteriorGlow(ImageBuffer const& sprite, MaskSet& masks, int alphaCutoff) {
     int W = sprite.width();
     int H = sprite.height();
@@ -239,7 +233,7 @@ void splitInteriorGlow(ImageBuffer const& sprite, MaskSet& masks, int alphaCutof
     }
 }
 
-}  // anonymous namespace
+}
 
 MaskBuffer&       MaskSet::get(ClusterRole r)       {
     switch (r) {
@@ -304,13 +298,10 @@ MaskSet MaskBuilder::build(ImageBuffer const& sprite,
                 continue;
             }
 
-            // Ambiguity-scaled soft assignment: the second cluster only gets
-            // a share when the pixel genuinely sits between both (d0 ≈ d1).
-            // A pixel right on its centroid (d0 → 0) stays 100% pure, which
-            // keeps flat surfaces exact instead of bleeding `softness` into
-            // them unconditionally.
+// Give the second cluster weight only when the pixel lies between both centers;
+// a pixel on its centroid stays pure.
             float ratio = (d1 > 1e-6f) ? std::clamp(d0 / d1, 0.0f, 1.0f) : 0.0f;
-            float share1 = 0.5f * softness * ratio;  // equidistant → even-ish split
+    float share1 = 0.5f * softness * ratio;
             float share0 = 1.0f - share1;
 
             int v0 = static_cast<int>(std::lround(share0 * static_cast<float>(a)));
@@ -323,14 +314,14 @@ MaskSet MaskBuilder::build(ImageBuffer const& sprite,
             if (m1 && m1 != m0) {
                 m1->data[idx] = static_cast<std::uint8_t>(std::clamp(v1, 0, 255));
             } else if (m1 == m0) {
-                // Both nearest clusters share a role: merge v1 into m0.
+// Both nearest clusters share a role; merge v1 into m0.
                 int merged = static_cast<int>(m0->data[idx]) + v1;
                 m0->data[idx] = static_cast<std::uint8_t>(std::clamp(merged, 0, 255));
             }
         }
     }
 
-    // Split BEFORE smoothing so the ring/interior decision sees crisp masks.
+// Split before smoothing so ring detection sees crisp masks.
     if (options.separateInteriorGlow) {
         splitInteriorGlow(sprite, out, alphaCutoff);
     }
@@ -356,4 +347,4 @@ MaskSet MaskBuilder::build(ImageBuffer const& sprite,
     return out;
 }
 
-}  // namespace paimon::texture_studio
+}

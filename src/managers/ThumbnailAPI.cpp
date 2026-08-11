@@ -129,11 +129,11 @@ void ThumbnailAPI::syncVerificationQueue(PendingCategory category, QueueCallback
 void ThumbnailAPI::claimQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& type) {
     ModerationService::get().claimQueueItem(levelId, category, username, std::move(callback), type);
 }
-void ThumbnailAPI::acceptQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& targetFilename, std::string const& type) {
-    ModerationService::get().acceptQueueItem(levelId, category, username, std::move(callback), targetFilename, type);
+void ThumbnailAPI::acceptQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& targetFilename, std::string const& type, bool acceptAll) {
+    ModerationService::get().acceptQueueItem(levelId, category, username, std::move(callback), targetFilename, type, acceptAll);
 }
-void ThumbnailAPI::rejectQueueItem(int levelId, PendingCategory category, std::string const& username, std::string const& reason, ActionCallback callback, std::string const& type) {
-    ModerationService::get().rejectQueueItem(levelId, category, username, reason, std::move(callback), type);
+void ThumbnailAPI::rejectQueueItem(int levelId, PendingCategory category, std::string const& username, std::string const& reason, ActionCallback callback, std::string const& type, std::string const& targetFilename) {
+    ModerationService::get().rejectQueueItem(levelId, category, username, reason, std::move(callback), type, targetFilename);
 }
 void ThumbnailAPI::submitReport(int levelId, std::string const& username, std::string const& note, ActionCallback callback) {
     log::info("[ThumbnailAPI] submitReport: levelId={} user={}", levelId, username);

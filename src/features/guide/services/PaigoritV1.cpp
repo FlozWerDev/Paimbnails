@@ -72,7 +72,7 @@ bool tokensSimilar(std::string const& a, std::string const& b) {
     return r >= 85.0;
 }
 
-} // namespace
+}
 
 PaigoritV1::KwMatch PaigoritV1::matchKeyword(
     std::string const& normalizedQuery,
@@ -82,10 +82,7 @@ PaigoritV1::KwMatch PaigoritV1::matchKeyword(
     KwMatch m;
     if (keyword.empty()) return m;
 
-    // Phrase-level: token_set + partial against the whole query. Catches keywords
-    // embedded in a sentence, but it's easy to inflate on short keywords (a 2-char
-    // alias matching inside a longer word), so it's skipped for short keywords and
-    // never anchors the match.
+    // Phrase matching catches embedded keywords but never anchors short aliases.
     if (keyword.size() >= 4) {
         double tokenSet = rapidfuzz::fuzz::token_set_ratio(normalizedQuery, keyword);
         double partial  = rapidfuzz::fuzz::partial_ratio(normalizedQuery, keyword);
@@ -95,8 +92,7 @@ PaigoritV1::KwMatch PaigoritV1::matchKeyword(
         m.score = std::max(tokenSet, partial);
     }
 
-    // Token-level: compare single-word keywords against each expanded query form.
-    // Exact/stem/synonym/typo hits here are trustworthy, so they anchor the match.
+    // Token matching uses expanded forms; exact/stem/synonym/typo hits anchor.
     auto kwTokens = tokenizeKw(keyword);
     if (kwTokens.size() == 1) {
         std::string const& kw = kwTokens[0];
@@ -120,7 +116,7 @@ PaigoritV1::KwMatch PaigoritV1::matchKeyword(
     return m;
 }
 
-// Compound matching (multi-word keyword as a contiguous run or bag-of-words)
+// Match compound keywords contiguously, then as an unordered bag of words.
 
 bool PaigoritV1::keywordAppearsAsCompound(
     std::vector<std::vector<std::string>> const& tokenForms,
@@ -128,7 +124,6 @@ bool PaigoritV1::keywordAppearsAsCompound(
 {
     if (kwTokens.size() < 2 || tokenForms.size() < kwTokens.size()) return false;
 
-    // 1) Contiguous in-order match (ideal: "profile background" -> "profile background")
     for (size_t i = 0; i + kwTokens.size() <= tokenForms.size(); ++i) {
         bool allMatch = true;
         for (size_t j = 0; j < kwTokens.size(); ++j) {
@@ -141,7 +136,6 @@ bool PaigoritV1::keywordAppearsAsCompound(
         if (allMatch) return true;
     }
 
-    // 2) Bag-of-words match: all keyword words appear in the query in any order.
     std::vector<bool> consumed(tokenForms.size(), false);
     for (auto const& kwt : kwTokens) {
         bool found = false;
@@ -186,7 +180,7 @@ void PaigoritV1::markCoveredTokens(
     }
 }
 
-// Run: the matcher core
+// Matcher core.
 
 PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
                                 std::string const& normalizedQuery,
@@ -195,11 +189,9 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
 {
     PaigoritResult result;
 
-    // 1) Drop stopwords and build expanded forms for each token.
     auto filteredTokens = LightLemmatizer::removeStopwords(queryTokens);
     auto tokenForms = buildTokenForms(filteredTokens);
 
-    // Flat list of all expanded forms (for single-word keyword matching).
     std::vector<std::string> flatForms;
     for (auto const& forms : tokenForms) {
         for (auto const& f : forms) flatForms.push_back(f);
@@ -207,7 +199,7 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
 
     int relevantCount = static_cast<int>(filteredTokens.size());
 
-    // 2) Score each intent.
+        // Score each intent.
     std::vector<ScoredIntent> all;
     all.reserve(intents.size());
 
@@ -218,7 +210,6 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
         }
         if (kwIt == intent.keywordsByLang.end()) continue;
 
-        // Normalize keywords
         std::vector<std::string> normalizedKeywords;
         normalizedKeywords.reserve(kwIt->second.size());
         for (auto const& kwRaw : kwIt->second) {
@@ -230,10 +221,9 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
         ScoredIntent scored;
         scored.intent = &intent;
 
-        // Track which query tokens this intent explains (for coverage).
         std::vector<bool> covered(tokenForms.size(), false);
 
-        // For each keyword: fuzzy/anchor score + compound/exact/coverage.
+        // Score keyword matches and mark covered query tokens.
         for (auto const& kw : normalizedKeywords) {
             if (kw == normalizedQuery) scored.hasFullExactMatch = true;
             auto km = matchKeyword(normalizedQuery, flatForms, kw);
@@ -255,8 +245,7 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
             markCoveredTokens(tokenForms, kwTokens, covered);
         }
 
-        // Soft search phrases (problem / how-to language). Cap so they never beat
-        // a strong keyword match on another intent. Can still qualify the intent.
+        // Search phrases stay below strong keyword matches but can qualify.
         auto spIt = intent.searchPhrasesByLang.find(langId);
         if (spIt == intent.searchPhrasesByLang.end()) {
             spIt = intent.searchPhrasesByLang.find("english");
@@ -279,9 +268,9 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
             }
             if (scored.bestSearchFuzzy >= kSearchPhraseFloor) {
                 scored.hasSearchPhraseMatch = true;
-                // Fold into the keyword fuzzy used for ranking, but never above the cap.
+                // Include phrase score without exceeding the cap.
                 scored.bestKeywordFuzzy = std::max(scored.bestKeywordFuzzy, scored.bestSearchFuzzy);
-                // Search phrases can anchor qualification when they are solid.
+                // Strong phrases may anchor qualification.
                 if (scored.bestSearchFuzzy >= kSearchPhraseFloor) {
                     scored.bestAnchoredFuzzy = std::max(
                         scored.bestAnchoredFuzzy,
@@ -290,7 +279,7 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
             }
         }
 
-        // Description tokens: only coverage/desempate, never qualify alone.
+        // Description tokens affect coverage only; they never qualify an intent.
         auto descIt = intent.descriptionByLang.find(langId);
         if (descIt == intent.descriptionByLang.end()) {
             descIt = intent.descriptionByLang.find("english");
@@ -321,7 +310,7 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
             scored.coverageRatio = static_cast<double>(hit) / tokenForms.size();
         }
 
-        // Pick the floor based on intent kind and query length.
+        // Pick the qualification floor from intent kind and query length.
         double floor = kMatchFloor;
         if (intent.kind == IntentKind::Conversational) {
             floor = (relevantCount >= 4)
@@ -329,19 +318,15 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
                 : kMatchFloorConversational;
         }
 
-        // Qualify on token-level evidence at the normal floor, OR on a strong
-        // phrase-level match (>= kPhraseFloor). Phrase-only weak matches are dropped.
-        // Search-phrase matches also qualify when above kSearchPhraseFloor.
+        // Qualify anchored matches, strong phrases, or high-confidence search phrases.
         bool anchoredQual = scored.bestAnchoredFuzzy >= floor;
         bool phraseQual = scored.bestKeywordFuzzy >= std::max(floor, kPhraseFloor);
         bool searchQual = scored.hasSearchPhraseMatch
                           && scored.bestSearchFuzzy >= kSearchPhraseFloor;
         scored.qualified = anchoredQual || phraseQual || searchQual;
 
-        // Match-quality tier. Token-level certainty (exact word / compound) ranks
-        // above strong-but-fuzzy phrase matches, which rank above weak ones, so a
-        // perfect match to a light intent beats a heavy intent matched by substring.
-        // Search-phrase-only hits are capped at tier 2.
+        // Exact/compound/token certainty outranks fuzzy phrases; search-only hits
+        // are capped at tier 2.
         bool keywordStrong = scored.hasFullExactMatch
             || scored.hasExactTokenMatch
             || scored.hasCompoundMatch
@@ -355,7 +340,6 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
         } else if (scored.bestAnchoredFuzzy >= 90.0 || scored.bestKeywordFuzzy >= 97.0) {
             scored.tier = 2;
         } else if (scored.hasSearchPhraseMatch && !keywordStrong) {
-            // Soft problem-phrase route: solid but not name-level certainty.
             scored.tier = (scored.bestSearchFuzzy >= 90.0) ? 2 : 1;
         } else if (scored.bestAnchoredFuzzy >= kTokenAnchor
                    || scored.bestKeywordFuzzy >= kPhraseFloor) {
@@ -364,16 +348,15 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
             scored.tier = 0;
         }
 
-        // Confidence bonus from compound / exact / high fuzzy / coverage.
+        // Add confidence from exactness, fuzziness, and coverage.
         if (scored.hasCompoundMatch) scored.confidenceBonus += 20.0;
         if (scored.hasExactTokenMatch) scored.confidenceBonus += 10.0;
         if (scored.bestKeywordFuzzy >= 95.0) scored.confidenceBonus += 5.0;
         if (scored.hasSearchPhraseMatch) scored.confidenceBonus += 6.0;
         scored.confidenceBonus += scored.coverageRatio * kCoverageBonusMax;
-        scored.confidenceBonus += scored.descriptionCoverage * 4.0; // small desempate
+        scored.confidenceBonus += scored.descriptionCoverage * 4.0;
 
-        // Quality factor scales the curated weight by match strength (used only
-        // to order intents within the same tier).
+        // Scale curated weight by match quality within the tier.
         double span = std::max(1.0, 100.0 - floor);
         double norm = std::clamp((scored.bestKeywordFuzzy - floor) / span, 0.0, 1.0);
         double qualityFactor = kQualityBase + kQualityRange * norm;
@@ -384,7 +367,7 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
         all.push_back(scored);
     }
 
-    // 3) Keep qualified intents and sort by tier, then within-tier finalScore.
+    // Keep qualified intents, ordered by tier and then finalScore.
     for (auto const& s : all) {
         if (s.qualified) result.ranking.push_back(s);
     }
@@ -399,8 +382,7 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
               });
 
     if (result.ranking.empty()) {
-        // Nothing qualified: surface the closest functional near-misses so the
-        // caller can ask "did you mean ...?" instead of a static fallback.
+        // Offer functional near-misses for a "did you mean?" fallback.
         std::vector<ScoredIntent> nearMisses;
         for (auto const& s : all) {
             if (s.intent->kind == IntentKind::Functional
@@ -450,7 +432,7 @@ std::vector<GuideIntent const*> PaigoritV1::splitTopics(
     for (auto const& t : toks) if (isConj(t)) { hasConj = true; break; }
     if (!hasConj) return {};
 
-    // Build segments split on conjunction tokens.
+    // Split the query into conjunction-separated segments.
     std::vector<std::string> segments;
     std::string cur;
     for (auto const& t : toks) {
@@ -482,4 +464,4 @@ std::vector<GuideIntent const*> PaigoritV1::splitTopics(
     return hits;
 }
 
-} // namespace paimon::guide
+}

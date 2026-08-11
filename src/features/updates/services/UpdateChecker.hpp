@@ -10,15 +10,8 @@
 
 namespace paimon::updates {
 
-// UpdateChecker — Servicio de actualizaciones de Paimbnails.
-//
-// Al arranque del mod consulta GitHub Releases (latest) y compara la version
-// remota con la version local de mod.json. Si la remota es mayor (orden
-// jerarquico semver), `hasUpdate()` devuelve true y la UI puede pintar un
-// indicador (alerta encima del boton del Hub, color celeste, etc).
-//
-// La descarga del .geode se hace bajo demanda desde el popup, exponiendo
-// progreso 0..1 + bytes para que la UI muestre la barra.
+// Checks GitHub Releases against mod.json and downloads a selected .geode with
+// main-thread progress callbacks.
 
 class UpdateChecker {
 public:
@@ -32,10 +25,10 @@ public:
 
     static UpdateChecker& get();
 
-    // Lanza la peticion a GitHub si no se ha hecho aun. Idempotente.
+    // Start the GitHub check once.
     void checkAsync();
 
-    // True si ya completamos un check exitoso y la version remota es mayor.
+    // True when a successful check found a newer version.
     bool hasUpdate() const { return m_state.load() == State::UpdateAvailable; }
     State state() const { return m_state.load(); }
 
@@ -45,32 +38,25 @@ public:
     std::string const& downloadUrl() const { return m_downloadUrl; }
     std::string const& lastError() const { return m_lastError; }
 
-    // Descarga el .geode reportando progreso. Todos los callbacks corren
-    // en el main thread. `onProgress(received, total)` puede llegar varias
-    // veces; `onDone(ok, errOrPath)` se llama una sola vez al final.
+    // Download with main-thread progress callbacks; onDone fires once.
     void downloadUpdate(
         std::function<void(uint64_t, uint64_t)> onProgress,
         std::function<void(bool, std::string)> onDone
     );
 
-    // True si ya se descargo e instalo un update en esta sesion y solo falta
-    // reiniciar para cargarlo.
+    // True when an update is installed and only restart remains.
     bool hasPendingInstall() const;
 
-    // Reinicia el juego para cargar el update ya escrito en disco.
+    // Restart to load the installed update.
     bool restartToApplyPendingUpdate() const;
 
-    // El update se escribe in-place en cuanto termina la descarga (misma
-    // tecnica que el updater de Geode), asi que al cerrar no queda nada por
-    // hacer: la nueva version se carga en el siguiente arranque.
+    // The update is written in place when the download finishes.
     bool applyPendingUpdateInPlace() const;
 
-    // Si auto-update esta habilitado y hay una actualizacion disponible,
-    // arranca la descarga en silencio. Idempotente: no re-descarga si ya
-    // hay un install pendiente o una descarga en curso.
+    // Start a silent download when auto-update is enabled and no install is pending.
     void autoDownloadIfNeeded();
 
-    // Cancela una descarga en curso (si la hay).
+    // Cancel the active download, if any.
     void cancelDownload();
 
 private:
@@ -94,4 +80,4 @@ private:
     std::atomic<bool> m_autoDownloadStarted{false};
 };
 
-} // namespace paimon::updates
+}

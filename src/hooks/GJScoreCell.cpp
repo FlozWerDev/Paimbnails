@@ -21,7 +21,9 @@ using namespace geode::prelude;
 #include "../core/RuntimeLifecycle.hpp"
 #include "../features/scorecell/ScoreCellSettings.hpp"
 #include "../features/scorecell/ScoreCellRefresh.hpp"
+#include "../features/scorecell/LeaderboardCellLayout.hpp"
 #include "../features/scorecell/fx/ScoreCellHoverWatcher.hpp"
+#include "../core/modules/ModuleRegistry.hpp"
 #include "../features/profiles/services/ProfileGradientEffects.hpp"
 #include <Geode/binding/GameManager.hpp>
 
@@ -73,10 +75,8 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
             f->m_loadingSpinner = nullptr;
         }
         
-        // 10px diameter ~ loadingCircle.png * 0.25
         auto spinner = geode::LoadingSpinner::create(10.f);
         
-        // place it on the right where the thumbnail goes
         auto cs = this->getContentSize();
         if (cs.width <= 1.f || cs.height <= 1.f) {
             cs.width = this->m_width;
@@ -119,9 +119,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
     }
 
 public:
-    // Icon-color gradient background built from this score's own icon colors
-    // (GJUserScore::m_color1 / m_color2). Clipped to the cell, sits behind
-    // everything. Idempotent: removes any previous gradient first.
+    // Built from the score's icon colors and clipped behind the cell content.
     void addIconGradientBackground(CCSize cs) {
         auto f = m_fields.self();
         if (!f) return;
@@ -166,9 +164,7 @@ public:
         pushGameColorLayersBehind(this);
     }
 
-    // Applies the score-cell visual FX (icon gradient + hover) according to the
-    // current saved settings. Safe to call repeatedly (used both on load and on
-    // a live settings refresh).
+    // Safe to call on load and during a live settings refresh.
     void paimonApplyFx() {
         if (paimon::isRuntimeShuttingDown()) return;
         auto f = m_fields.self();
@@ -182,8 +178,8 @@ public:
         }
         if (cs.width <= 1.f || cs.height <= 1.f) return;
 
-        // Gradient background
-        if (paimon::scorecell::gradientEnabled()) {
+        if (paimon::scorecell::gradientEnabled() &&
+            paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) {
             addIconGradientBackground(cs);
         } else {
             if (auto old = this->getChildByID("paimon-icon-gradient-clip"_spr)) {
@@ -192,7 +188,6 @@ public:
             f->m_iconGradient = nullptr;
         }
 
-        // Hover: rebuild the watcher + clear any leftover overlays.
         if (auto w = this->getChildByID("paimon-hover-watcher")) w->removeFromParent();
         if (auto g = this->getChildByID("paimon-hover-glow")) g->removeFromParent();
         if (auto s = this->getChildByID("paimon-hover-shine")) s->removeFromParent();
@@ -206,7 +201,6 @@ public:
             if (watcher) {
                 this->addChild(watcher);
                 f->m_hoverWatcher = watcher;
-                // If the profile banner already exists, wire the transform target.
                 if (auto clip = this->getChildByID("paimon-profile-clip"_spr)) {
                     watcher->setTransformTarget(clip, 1.f, 1.f, clip->getPosition(), 0.f);
                 }
@@ -216,9 +210,7 @@ public:
     }
 
     void addOrUpdateProfileThumb(CCTexture2D* texture) {
-        // texture may be null when gifKey is set; the GIF covers it
         
-        // critical: the cell must have a parent
             if (!this->getParent()) {
                 log::warn("[GJScoreCell] Cell has no parent, skipping addOrUpdateProfileThumb");
                 return;
@@ -239,8 +231,6 @@ public:
             
             log::debug("[GJScoreCell] Starting profile thumbnail update");
             
-            // Collect the mod's nodes and remove them in a second pass to avoid
-            // mutating the children array during iteration.
             if (auto children = this->getChildren()) {
                 std::vector<CCNode*> toRemove;
                 for (auto* node : CCArrayExt<CCNode*>(children)) {
@@ -274,7 +264,6 @@ public:
                 cs.height = this->m_height;
             }
 
-            // background logic (gradient vs blurred thumbnail)
             std::string bgType = "gradient";
             float blurIntensity = 3.0f;
             float darkness = 0.2f;
@@ -289,16 +278,13 @@ public:
             int accountID = (this->m_score) ? this->m_score->m_accountID : 0;
             auto config = ProfileThumbs::get().getProfileConfig(accountID);
 
-            // gifKey always from config (injected from cache)
             gifKey = config.gifKey;
 
             if (isCurrentUser) {
-                // Current user: use local config
                 bgType = Mod::get()->getSavedValue<std::string>("scorecell-background-type", "thumbnail");
                 blurIntensity = Mod::get()->getSavedValue<float>("scorecell-background-blur", 3.0f);
                 darkness = Mod::get()->getSavedValue<float>("scorecell-background-darkness", 0.2f);
             } else {
-                // Other users: try config from cache
                 if (config.hasConfig) {
                     bgType = config.backgroundType;
                     blurIntensity = config.blurIntensity;
@@ -307,31 +293,26 @@ public:
                     colorA = config.colorA;
                     colorB = config.colorB;
                 } else {
-                    // No config: use defaults
                     bgType = "thumbnail"; // default: blurred thumbnail
-                    // keep other defaults
                 }
             }
             
-            // Basic validation
             if (!texture && gifKey.empty()) {
                 log::error("[GJScoreCell] No texture and no GIF key available for account {}", accountID);
                 return;
             }
 
-            // Force thumbnail mode when a texture/gif exists
             if (bgType == "gradient" && (texture || !gifKey.empty())) {
                 bgType = "thumbnail";
             }
 
-            // When the icon-color gradient FX is enabled, it owns the cell
-            // background; skip the blurred-thumbnail background entirely.
-            if (paimon::scorecell::gradientEnabled()) {
+    // The gradient owns the background, so skip the blurred thumbnail.
+            if (paimon::scorecell::gradientEnabled() &&
+                paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) {
                 bgType = "none";
             }
 
             if (bgType == "none") {
-                // Keep the game background
             }
             else if (bgType == "thumbnail") {
                 CCSize targetSize = cs;
@@ -340,7 +321,6 @@ public:
 
                 CCNode* bgNode = nullptr;
 
-                // Try GIF or video first
                 if (!gifKey.empty()) {
                     if (VideoThumbnailSprite::isCached(gifKey)) {
                         auto bgVideo = VideoThumbnailSprite::createFromCache(gifKey);
@@ -362,11 +342,9 @@ public:
                         }
                     }
 
-                    // Fall back to GIF
                     if (!bgNode) {
                     auto bgGif = AnimatedGIFSprite::createFromCache(gifKey);
                     if (bgGif) {
-                        // Scale to cover the area
                         float scaleX = targetSize.width / bgGif->getContentSize().width;
                         float scaleY = targetSize.height / bgGif->getContentSize().height;
                         float scale = std::max(scaleX, scaleY);
@@ -390,12 +368,10 @@ public:
                         bgGif->setID("paimon-bg-sprite"_spr);
                         bgNode = bgGif;
                     }
-                    } // GIF fallback
+    }
                 }
                 
-                // Fall back to texture
                 if (!bgNode && texture) {
-                    // Static image: multi-pass blur
                     CCSize blurTargetSize = cs;
                     blurTargetSize.width = std::max(blurTargetSize.width, 512.f);
                     blurTargetSize.height = std::max(blurTargetSize.height, 256.f);
@@ -406,7 +382,6 @@ public:
                         blurredBg->setPosition(blurTargetSize * 0.5f);
                         bgNode = blurredBg;
                     } else {
-                        // Last resort: textured sprite with shader
                         auto tempSprite = CCSprite::createWithTexture(texture);
                         float scaleX = blurTargetSize.width / texture->getContentSize().width;
                         float scaleY = blurTargetSize.height / texture->getContentSize().height;
@@ -432,7 +407,6 @@ public:
                     clipper->setZOrder(-2);
                     clipper->setID("paimon-score-bg-clipper"_spr);
 
-                    // Scale bgNode to cell size
                     CCSize bgSize = bgNode->getContentSize();
                     if (bgSize.width > 0 && bgSize.height > 0) {
                         float scaleToFitX = cs.width / bgSize.width;
@@ -447,7 +421,6 @@ public:
                     this->addChild(clipper);
                     f->m_profileBg = clipper;
 
-                    // Dark overlay on top
                     if (darkness > 0.0f) {
                         auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(darkness * 255)});
                         overlay->setContentSize(cs);
@@ -461,11 +434,9 @@ public:
                 }
             }
 
-            // Main sprite logic
             CCNode* mainNode = nullptr;
             float contentW = 0, contentH = 0;
 
-            // Try video first
             if (!gifKey.empty() && VideoThumbnailSprite::isCached(gifKey)) {
                 auto videoSprite = VideoThumbnailSprite::createFromCache(gifKey);
                 if (videoSprite) {
@@ -477,7 +448,6 @@ public:
                 }
             }
 
-            // then try GIF
             if (!mainNode && !gifKey.empty()) {
                 log::debug("[GJScoreCell] Trying to create GIF sprite from cache key: {}", gifKey);
 
@@ -503,7 +473,6 @@ public:
                 }
             }
             
-            // No GIF: use texture
             if (!mainNode && texture) {
                 auto sprite = CCSprite::createWithTexture(texture);
                 if (sprite) {
@@ -519,7 +488,6 @@ public:
                 return;
             }
 
-        // Make sure the cell still exists
         if (!this->getParent()) {
             log::warn("[GJScoreCell] Cell was destroyed before thumbnail could be added");
             return;
@@ -551,7 +519,6 @@ public:
             mainNode->setScaleY(scaleY);
             mainNode->setScaleX(scaleX);
 
-        // Angled cut on the right side
     constexpr float angle = 18.f;
         CCSize scaledSize{ desiredWidth, contentH * scaleY };
         auto mask = paimon::SpriteHelper::createRectStencil(scaledSize.width, scaledSize.height);
@@ -563,10 +530,8 @@ public:
         clip->setStencil(mask);
         clip->setContentSize(scaledSize);
         clip->setAnchorPoint({1,0});
-        // Pinned to the right edge with offset
         clip->setPosition({ cs.width, 0.3f });
         clip->setID("paimon-profile-clip"_spr);
-    // Behind text/icons
     clip->setZOrder(-1);
 
         mainNode->setPosition(clip->getContentSize() * 0.5f);
@@ -575,8 +540,6 @@ public:
         this->addChild(clip);
         f->m_profileClip = clip;
 
-        // FX: one-shot entrance animation + register the hover transform target
-        // so scale/lift/tilt hovers act on the banner.
         {
             CCPoint clipPos = clip->getPosition();
             paimon::scorecell::applyEntrance(
@@ -588,7 +551,6 @@ public:
         
         bool isPremiumUser = false;
 
-        // Borders around the thumbnail
         constexpr float borderThickness = 2.f;
         ccColor4B borderColor = isPremiumUser ? ccc4(255, 215, 0, 200) : ccc4(0, 0, 0, 120);
 
@@ -613,7 +575,6 @@ public:
         makeBorder({scaledSize.width, borderThickness}, {cs.width, 0.3f - borderThickness}, "paimon-profile-border-bottom"_spr, angle);
         makeBorder({borderThickness, scaledSize.height + borderThickness * 2}, {cs.width, 0.3f - borderThickness}, "paimon-profile-border-right"_spr, 0.f);
 
-    // separator behind the image (fixed style)
     auto sep = CCLayerColor::create(ccc4(0, 0, 0, 50));
     sep->setScaleX(0.45f);
         sep->ignoreAnchorPointForPosition(false);
@@ -626,21 +587,19 @@ public:
         this->addChild(sep);
         f->m_profileSeparator = sep;
 
-        // background already added above
         log::debug("[GJScoreCell] Profile thumbnail added successfully");
     }
 
     $override void loadFromScore(GJUserScore* score) {
         GJScoreCell::loadFromScore(score);
         
-        // push the game's color layers behind so the gradient shows
         pushGameColorLayersBehind(this);
 
         if (!score) return;
         log::info("[GJScoreCell] loadFromScore: accountID={} user={}", score->m_accountID, std::string(score->m_userName));
 
-            // Apply the score-cell visual FX (icon gradient + hover) based on settings.
             paimonApplyFx();
+            paimon::scorecell::applyLeaderboardLayout(this);
 
             int accountID = score->m_accountID;
             if (accountID <= 0) return;
@@ -652,14 +611,12 @@ public:
                     return;
                 }
                 
-                // check cache first
                 auto cachedProfile = ProfileThumbs::get().getCachedProfile(accountID);
                 bool wantsGifProfile = cachedProfile.has_value() && !cachedProfile->gifKey.empty();
                 bool hasReadyCachedGif = wantsGifProfile && AnimatedGIFSprite::isCached(cachedProfile->gifKey);
                 bool hasReadyCachedProfile = cachedProfile.has_value() && (hasReadyCachedGif || (!wantsGifProfile && cachedProfile->texture));
                 if (hasReadyCachedProfile) {
                     log::debug("[GJScoreCell] Found cached profile for account {}", accountID);
-                    // load from cache asynchronously
                     WeakRef<PaimonGJScoreCell> safeThis = this;
                     Loader::get()->queueInMainThread([safeThis, accountID]() {
                         if (paimon::isRuntimeShuttingDown()) return;
@@ -683,7 +640,6 @@ public:
                     log::debug("[GJScoreCell] No cache for account {}, downloading...", accountID);
                 }
                 
-                // not cached: download from the server
                 log::debug("[GJScoreCell] Profile not in cache for user: {} - Downloading...", username);
                 
                 bool enableSpinners = true;
@@ -694,7 +650,6 @@ public:
                 
                 WeakRef<PaimonGJScoreCell> safeRef = this;
 
-                // use queueLoad instead of downloading directly
                 ProfileThumbs::get().queueLoad(accountID, username, [safeRef, accountID, enableSpinners](bool success, CCTexture2D* texture) {
                     auto selfRef = safeRef.lock();
                     auto* self = static_cast<PaimonGJScoreCell*>(selfRef.data());
@@ -706,9 +661,6 @@ public:
                         return;
                     }
 
-                    // GIF profiles: texture may be null but the GIF is already
-                    // cached via cacheProfileGIF; let it continue so
-                    // addOrUpdateProfileThumb detects it via gifKey.
                     if (!texture) {
                         auto cachedEntry = ProfileThumbs::get().getCachedProfile(accountID);
                         if (!cachedEntry.has_value() || cachedEntry->gifKey.empty()) {
@@ -716,10 +668,8 @@ public:
                             log::warn("[GJScoreCell] No texture and no GIF for account {}", accountID);
                             return;
                         }
-                        // GIF-only profile: continue without texture
                     }
 
-                    // Ref<> so it isn't autoreleased before the next async call
                     Ref<CCTexture2D> safeTex = texture;
 
                     ThumbnailAPI::get().downloadProfileConfig(accountID, [safeRef, accountID, safeTex, enableSpinners](bool success2, ProfileConfig const& config) {
@@ -740,7 +690,6 @@ public:
                 });
             }
 
-        // move the player's profile button (using that cache)
         auto f = m_fields.self();
         if (!f->m_buttonsMoved) {
             f->m_buttonsMoved = true;
@@ -751,18 +700,15 @@ public:
                     log::debug("[GJScoreCell] Button cache initialized with offset: {}", g_buttonCache.buttonOffset);
                 }
                 
-                // offset 0: nothing to do
                 if (g_buttonCache.buttonOffset <= 0.01f) {
                     return;
                 }
                 
-                // search and move buttons among direct children only
                 auto children = this->getChildren();
                 if (!children) return;
                 
                 bool foundButton = false;
                 
-                // limit search to the first 10 nodes (menus are usually near the start)
                 int searchCount = 0;
 
                 for (auto* child : CCArrayExt<CCNode*>(children)) {
@@ -775,7 +721,6 @@ public:
                     auto menuChildren = menu->getChildren();
                     if (!menuChildren) continue;
                     
-                    // only check the first 5 menu items
                     int menuSearchCount = 0;
 
                     for (auto* menuChild : CCArrayExt<CCNode*>(menuChildren)) {
@@ -787,12 +732,10 @@ public:
                         
                         auto btnID = btn->getID();
                         
-                        // skip the mod's own buttons (prefix check)
                         std::string btnIDStr = btnID;
                         if (btnIDStr.empty() || btnIDStr.compare(0, 7, "paimon-") != 0) {
                             auto currentPos = btn->getPosition();
                             
-                            // move only if it's at a reasonable position
                             if (currentPos.x > 50.f && currentPos.x < 400.f) {
                                 btn->setPosition({currentPos.x - g_buttonCache.buttonOffset, currentPos.y});
                                 foundButton = true;
@@ -806,7 +749,6 @@ public:
             }
         }
 
-        // ModeratorsLayer: hide rank-label in moderator-list cells (unified here to avoid a second $modify on GJScoreCell)
         if (ModeratorsLayer::s_instance && ModeratorsLayer::s_instance->isScoreInList(score)) {
             WeakRef<PaimonGJScoreCell> self = this;
             Loader::get()->queueInMainThread([self]() {
@@ -821,21 +763,22 @@ public:
         }
     }
 
-    // draw hook removed to avoid crashes
 };
 
 namespace paimon::scorecell {
 
 namespace {
-    void applyFxRecursive(cocos2d::CCNode* node) {
+    void refreshCellRecursive(cocos2d::CCNode* node) {
         if (!node) return;
         if (auto cell = geode::cast::typeinfo_cast<GJScoreCell*>(node)) {
-            static_cast<PaimonGJScoreCell*>(cell)->paimonApplyFx();
-            return; // no score cells nested inside a score cell
+            auto paimonCell = static_cast<PaimonGJScoreCell*>(cell);
+            paimonCell->paimonApplyFx();
+            applyLeaderboardLayout(cell);
+    return;
         }
         if (auto children = node->getChildren()) {
             for (auto* child : geode::cocos::CCArrayExt<cocos2d::CCNode*>(children)) {
-                applyFxRecursive(child);
+                refreshCellRecursive(child);
             }
         }
     }
@@ -845,7 +788,7 @@ void refreshAllCells() {
     if (paimon::isRuntimeShuttingDown()) return;
     auto scene = cocos2d::CCDirector::sharedDirector()->getRunningScene();
     if (!scene) return;
-    applyFxRecursive(scene);
+    refreshCellRecursive(scene);
 }
 
 } // namespace paimon::scorecell

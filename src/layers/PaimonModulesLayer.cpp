@@ -1,72 +1,19 @@
 #include "PaimonModulesLayer.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/PaimonNotification.hpp"
-#include "../features/editor-suite/EditorModuleCatalog.hpp"
+#include "../features/info-suite/InfoCompat.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
-#include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
+#include <algorithm>
 
 using namespace geode::prelude;
+namespace mods = paimon::modules;
 
 namespace {
 
-struct ModuleEntry {
-    std::string key;
-    std::string name;
-    std::string desc;
-    std::string category;
-};
-
-std::vector<ModuleEntry> getModules() {
-    std::vector<ModuleEntry> list = {
-        {"mod-previews-enable",      "Mod Previews",            "Imagenes de preview para mods de Geode.",        "General"},
-        {"realtime-search-preview",  "Busqueda en Tiempo Real", "Resultados mientras escribes en el buscador.",   "General"},
-        {"smooth-scroll",            "Smooth Scroll",           "Scroll suave con la rueda en menus y listas.",   "General"},
-        {"auto-update",              "Auto Update",             "Descarga e instala actualizaciones al cerrar.",  "General"},
-        {"incognito-mode",           "Modo Incognito",          "Oculta y deja de guardar el historial de busqueda.", "General"},
-
-        {"levelcell-hover-effects",  "Efectos Hover",           "Anima las celdas de nivel al pasar el mouse.",   "Miniaturas"},
-        {"compact-list-mode",        "Modo Compacto",           "Celdas mas cortas para ver mas niveles.",        "Miniaturas"},
-        {"auto-preview-enable",      "Auto Previews",           "Genera miniatura para niveles que no tienen.",   "Miniaturas"},
-        {"enable-thumbnail-taking",  "Boton de Captura",        "Boton para capturar thumbnails en la pausa.",    "Miniaturas"},
-
-        {"dynamic-song",             "Cancion Dinamica",        "Reproduce la cancion del nivel al ver su info.", "Nivel"},
-        {"profile-redesign-enabled", "Rediseno de Perfil",      "Layout moderno de la pagina de perfil.",         "Nivel"},
-
-        {"profile-music-enabled",    "Musica de Perfil",        "Musica custom al ver perfiles.",                 "Audio"},
-        {"menuMusicEnable",          "Reproductor de Menu",     "Boton de vinilo con biblioteca y playlists.",    "Audio"},
-        {"menuLoopConstantShuffle",  "Menu Loop Shuffle",       "Cambia el menu loop al terminar cada cancion.",  "Audio"},
-
-        {"smooth-ui-enabled",        "Smooth UI",               "Popups y movimiento de botones suaves.",         "Visual"},
-        {"colorful-icons-enabled",   "Paimon Icons",            "Recolorea los iconos con tus colores.",          "Visual"},
-        {"global-icons-enabled",     "Global Icons",            "Muestra iconos custom de otros en su perfil.",   "Visual"},
-        {"custom-slider-enabled",    "Slider Personalizado",    "Reemplaza el thumb del slider con tu icono.",    "Visual"},
-        {"dynamic-popup-enabled",    "Popups Dinamicos",        "Animaciones de entrada/salida en los popups.",   "Visual"},
-        {"popup-blur-enabled",       "Blur de Popups",          "Desenfoca el fondo detras de los popups.",       "Visual"},
-        {"custom-cursor-enable",     "Cursor Personalizado",    "Reemplaza el cursor del sistema con imagenes.",  "Visual"},
-        {"smooth-text-enabled",      "Smooth Text Input",       "Letras animadas al escribir.", "Visual"},
-        {"menu-physics-enable",      "Fisica del Menu",         "Botones con rotacion y rebotes al impactar.", "Visual"},
-
-        {"song-search-enable",       "Buscar Cancion x Nombre", "Escribe un nombre en la caja de song ID.",       "Editor"},
-        {"texture-studio-enabled",   "Texture Studio",          "Generador de texture packs en el menu.",         "Editor"},
-
-        {"mentions-enabled",         "Menciones en Comentarios","Avisa cuando te mencionan en comentarios.",      "Notificaciones"},
-        {"msgnotif-enabled",         "Notif. de Mensajes",      "Avisa de mensajes y solicitudes nuevas.",        "Notificaciones"},
-
-        {"discord-rpc-enabled",      "Discord Rich Presence",   "Muestra tu actividad en tu perfil de Discord.",  "Discord"},
-
-        {"enable-disk-cache",        "Cache en Disco",          "Guarda thumbnails en disco para no re-bajarlos.", "Rendimiento"},
-        {"gd-robtop-cache-enabled",  "Cache RobTop",            "Cachea respuestas de los servidores de GD.",     "Rendimiento"},
-    };
-
-    for (auto const& m : paimon::editor::getEditorModuleCatalog()) {
-        list.push_back({m.key, m.name, m.description, "Editor"});
-    }
-    return list;
-}
-
-constexpr float kRowH = 52.f;
-constexpr float kHeaderH = 28.f;
+constexpr float kRowH = 60.f;
+constexpr float kHeaderH = 26.f;
+constexpr float kBannerH = 52.f;
 
 namespace pal {
     constexpr ccColor4B kBgTop{112, 74, 44, 255};
@@ -79,20 +26,27 @@ namespace pal {
     constexpr GLubyte kCardOffOpacity = 215;
     constexpr ccColor3B kStateOn{150, 255, 150};
     constexpr ccColor3B kStateOff{180, 158, 130};
+    constexpr ccColor3B kStateLocked{200, 140, 120};
     constexpr ccColor3B kAccentOff{120, 92, 60};
     constexpr ccColor3B kCount{255, 236, 200};
     constexpr ccColor3B kName{255, 244, 224};
     constexpr ccColor3B kDesc{214, 190, 162};
+    constexpr ccColor3B kId{158, 132, 106};
 }
 
-ccColor3B categoryAccent(std::string const& cat) {
-    static std::pair<char const*, ccColor3B> const kMap[] = {
-        {"Miniaturas", {120, 210, 255}}, {"Nivel", {170, 190, 255}},
-        {"Audio", {255, 165, 210}}, {"Visual", {145, 240, 210}},
-        {"Editor", {255, 190, 105}}, {"Notificaciones", {255, 140, 145}},
-        {"Discord", {140, 160, 255}}, {"Rendimiento", {190, 235, 120}},
-    };
-    for (auto const& [name, col] : kMap) if (cat == name) return col;
+ccColor3B sectionAccent(mods::Section section) {
+    switch (section) {
+        case mods::Section::Editor:   return {255, 190, 105};
+        case mods::Section::Menu:     return {245, 195, 110};
+        case mods::Section::Browser:  return {120, 210, 255};
+        case mods::Section::Level:    return {170, 190, 255};
+        case mods::Section::Info:     return {130, 240, 220};
+        case mods::Section::Gameplay: return {255, 175, 130};
+        case mods::Section::Profile:  return {215, 165, 255};
+        case mods::Section::Social:   return {255, 140, 145};
+        case mods::Section::Global:   return {145, 240, 210};
+        case mods::Section::System:   return {190, 235, 120};
+    }
     return {245, 195, 110};
 }
 
@@ -147,13 +101,13 @@ bool PaimonModulesLayer::init() {
     this->addChild(m_menu, 20);
 
     auto title = CCLabelBMFont::create("Modulos", "goldFont.fnt");
-    title->setPosition({cx, panelTop - 24.f});
-    title->setScale(0.85f);
+    title->setPosition({cx, panelTop - 22.f});
+    title->setScale(0.8f);
     this->addChild(title, 10);
 
     m_countLabel = CCLabelBMFont::create("", "goldFont.fnt");
-    m_countLabel->setPosition({cx, panelTop - 46.f});
-    m_countLabel->setScale(0.4f);
+    m_countLabel->setPosition({cx, panelTop - 42.f});
+    m_countLabel->setScale(0.38f);
     m_countLabel->setColor(pal::kCount);
     this->addChild(m_countLabel, 10);
 
@@ -163,6 +117,54 @@ bool PaimonModulesLayer::init() {
     );
     backBtn->setPosition({panelLeft - 4.f, panelTop - 2.f});
     m_menu->addChild(backBtn);
+
+    // Section picker on the left, search box on the right.
+    float filterY = panelTop - 66.f;
+    float sectionW = std::min(panelW * 0.44f, 190.f);
+    float sectionCx = panelLeft + 18.f + sectionW / 2.f;
+
+    if (auto chip = paimon::SpriteHelper::createColorPanel(
+            sectionW, 24.f, pal::kInset, pal::kInsetOpacity, 6.f)) {
+        chip->setPosition({sectionCx - sectionW / 2.f, filterY - 12.f});
+        this->addChild(chip, 1);
+    }
+
+    auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
+    prevSpr->setScale(0.5f);
+    auto prevBtn = CCMenuItemSpriteExtra::create(
+        prevSpr, this, menu_selector(PaimonModulesLayer::onPrevSection));
+    prevBtn->setPosition({sectionCx - sectionW / 2.f + 12.f, filterY});
+    m_menu->addChild(prevBtn);
+
+    auto nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
+    nextSpr->setScale(0.5f);
+    nextSpr->setFlipX(true);
+    auto nextBtn = CCMenuItemSpriteExtra::create(
+        nextSpr, this, menu_selector(PaimonModulesLayer::onNextSection));
+    nextBtn->setPosition({sectionCx + sectionW / 2.f - 12.f, filterY});
+    m_menu->addChild(nextBtn);
+
+    m_sectionLabel = CCLabelBMFont::create("", "bigFont.fnt");
+    m_sectionLabel->setPosition({sectionCx, filterY});
+    m_sectionLabel->setScale(0.42f);
+    this->addChild(m_sectionLabel, 10);
+
+    float searchW = panelW - sectionW - 46.f;
+    m_searchInput = TextInput::create(searchW, "Buscar modulo o id...", "chatFont.fnt");
+    m_searchInput->setCommonFilter(CommonFilter::Any);
+    m_searchInput->setMaxCharCount(32);
+    m_searchInput->setPosition({panelLeft + panelW - 18.f - searchW / 2.f, filterY});
+    m_searchInput->setScale(0.74f);
+    // Plain `this`: the input is our own child, so it cannot outlive us. A
+    // WeakRef here keeps the layer alive through the pool and then drops the
+    // last reference from inside lock(), destroying us mid-callback.
+    m_searchInput->setCallback([this](std::string const& text) {
+        if (!this->getParent()) return;
+        m_query = text;
+        this->buildList();
+        this->refreshCount();
+    });
+    this->addChild(m_searchInput, 10);
 
     float footerY = panelBot + 28.f;
     float actionScale = panelW < 370.f ? 0.50f : 0.60f;
@@ -180,7 +182,7 @@ bool PaimonModulesLayer::init() {
     allOffBtn->setPosition({cx + actionOffset, footerY});
     m_menu->addChild(allOffBtn);
 
-    float listTop = panelTop - 58.f;
+    float listTop = panelTop - 82.f;
     float listBot = footerY + 26.f;
     float scrollW = panelW - 30.f;
     float scrollH = listTop - listBot;
@@ -196,62 +198,144 @@ bool PaimonModulesLayer::init() {
     m_scroll->setPosition({scrollX, listBot});
     this->addChild(m_scroll, 5);
 
+    updateSectionLabel();
     buildList();
     refreshCount();
     return true;
 }
 
+void PaimonModulesLayer::collectVisible() {
+    m_visible = mods::search(m_query);
+
+    if (m_sectionIndex > 0) {
+        auto wanted = mods::sections()[m_sectionIndex - 1];
+        std::erase_if(m_visible, [wanted](mods::Module const* m) { return m->section != wanted; });
+    }
+
+    // Group by section, then by group, keeping catalog order inside each group.
+    auto const& order = mods::sections();
+    auto rank = [&order](mods::Section section) {
+        auto it = std::find(order.begin(), order.end(), section);
+        return static_cast<int>(std::distance(order.begin(), it));
+    };
+    std::stable_sort(m_visible.begin(), m_visible.end(),
+        [&](mods::Module const* a, mods::Module const* b) {
+            int ra = rank(a->section), rb = rank(b->section);
+            if (ra != rb) return ra < rb;
+            // Master rows lead their section.
+            bool ma = *a->parent == '\0', mb = *b->parent == '\0';
+            if (ma != mb) return ma;
+            return std::string_view(a->group) < std::string_view(b->group);
+        });
+}
+
 void PaimonModulesLayer::buildList() {
-    auto modules = getModules();
+    collectVisible();
+
     float scrollW = m_scroll->getContentSize().width;
     float scrollH = m_scroll->getContentSize().height;
 
-    m_keys.clear();
-    m_togglers.clear();
-    m_accents.clear();
-    m_cards.clear();
-    m_stateLabels.clear();
-    m_accentColors.clear();
-
-    int headerCount = 0;
-    std::string lastCat;
-    for (auto const& m : modules) {
-        if (m.category != lastCat) { headerCount++; lastCat = m.category; }
-    }
-
-    float totalH = headerCount * kHeaderH + modules.size() * kRowH + 10.f;
-    if (totalH < scrollH) totalH = scrollH;
+    m_rows.clear();
+    m_rows.reserve(m_visible.size());
 
     auto content = m_scroll->m_contentLayer;
     content->removeAllChildren();
+
+    if (m_visible.empty()) {
+        content->setContentSize({scrollW, scrollH});
+        auto empty = CCLabelBMFont::create("Sin resultados", "bigFont.fnt");
+        empty->setScale(0.45f);
+        empty->setColor(pal::kDesc);
+        empty->setPosition({scrollW / 2.f, scrollH / 2.f});
+        content->addChild(empty, 2);
+        m_scroll->moveToTop();
+        return;
+    }
+
+    int headerCount = 0;
+    std::string lastHeader;
+    for (auto const* mod : m_visible) {
+        std::string header = fmt::format("{}  -  {}", mods::localizedSection(mod->section), mods::localizedGroup(mod->group));
+        if (header != lastHeader) { headerCount++; lastHeader = header; }
+    }
+
+    // Banner shown when another mod is holding some of the visible modules back.
+    int cededVisible = 0;
+    for (auto const* mod : m_visible) {
+        if (paimon::info::compat::isCeded(mod->key)) cededVisible++;
+    }
+    bool showBanner = cededVisible > 0;
+
+    float totalH = headerCount * kHeaderH + m_visible.size() * kRowH + 10.f;
+    if (showBanner) totalH += kBannerH;
+    if (totalH < scrollH) totalH = scrollH;
     content->setContentSize({scrollW, totalH});
 
     auto togMenu = CCMenu::create();
-    togMenu->setPosition({0, 0});
+    togMenu->setPosition({0.f, 0.f});
     togMenu->setContentSize({scrollW, totalH});
     content->addChild(togMenu, 3);
 
     float y = totalH;
-    lastCat.clear();
+    lastHeader.clear();
     int tag = 0;
 
-    for (auto const& m : modules) {
-        if (m.category != lastCat) {
-            lastCat = m.category;
+    if (showBanner) {
+        y -= kBannerH;
+        float bannerW = scrollW - 6.f;
+        float bannerH = kBannerH - 7.f;
+        float bannerX = (scrollW - bannerW) / 2.f;
+        float bannerY = y + (kBannerH - bannerH) / 2.f;
+
+        if (auto panel = paimon::SpriteHelper::createColorPanel(
+                bannerW, bannerH, {96, 52, 34}, 235, 7.f)) {
+            panel->setPosition({bannerX, bannerY});
+            content->addChild(panel, 0);
+        }
+
+        auto title = CCLabelBMFont::create("BetterInfo detectado", "bigFont.fnt");
+        title->setAnchorPoint({0.f, 0.5f});
+        title->setScale(0.42f);
+        title->setColor(pal::kStateLocked);
+        title->setPosition({bannerX + 14.f, bannerY + bannerH - 15.f});
+        content->addChild(title, 2);
+
+        auto note = CCLabelBMFont::create(
+            fmt::format("{} modulo(s) en pausa para no duplicar su UI.", cededVisible).c_str(),
+            "chatFont.fnt");
+        note->setAnchorPoint({0.f, 0.5f});
+        note->setScale(0.46f);
+        note->limitLabelWidth(bannerW - 110.f, 0.46f, 0.2f);
+        note->setColor(pal::kDesc);
+        note->setPosition({bannerX + 14.f, bannerY + 14.f});
+        content->addChild(note, 2);
+
+        auto forceSprite = ButtonSprite::create("Forzar", "bigFont.fnt", "GJ_button_04.png", 0.55f);
+        auto forceBtn = CCMenuItemSpriteExtra::create(
+            forceSprite, this, menu_selector(PaimonModulesLayer::onToggleCompatForce));
+        forceBtn->setPosition({bannerX + bannerW - 42.f, bannerY + bannerH / 2.f});
+        togMenu->addChild(forceBtn);
+    }
+
+    for (auto const* mod : m_visible) {
+        auto accentColor = sectionAccent(mod->section);
+        std::string header = fmt::format("{}  -  {}", mods::localizedSection(mod->section), mods::localizedGroup(mod->group));
+
+        if (header != lastHeader) {
+            lastHeader = header;
             y -= kHeaderH;
             float hcy = y + kHeaderH / 2.f;
-            auto accentColor = categoryAccent(m.category);
 
             auto tick = CCLayerColor::create(ccc4(accentColor.r, accentColor.g, accentColor.b, 255));
-            tick->setContentSize({4.f, kHeaderH - 14.f});
-            tick->setPosition({11.f, hcy - (kHeaderH - 14.f) / 2.f});
+            tick->setContentSize({4.f, kHeaderH - 12.f});
+            tick->setPosition({11.f, hcy - (kHeaderH - 12.f) / 2.f});
             content->addChild(tick, 2);
 
-            auto header = CCLabelBMFont::create(m.category.c_str(), "goldFont.fnt");
-            header->setAnchorPoint({0.f, 0.5f});
-            header->setScale(0.5f);
-            header->setPosition({22.f, hcy});
-            content->addChild(header, 2);
+            auto label = CCLabelBMFont::create(header.c_str(), "goldFont.fnt");
+            label->setAnchorPoint({0.f, 0.5f});
+            label->setScale(0.44f);
+            label->setPosition({22.f, hcy});
+            content->addChild(label, 2);
 
             auto line = CCLayerColor::create(ccc4(255, 255, 255, 28));
             line->setContentSize({scrollW - 24.f, 1.f});
@@ -261,8 +345,10 @@ void PaimonModulesLayer::buildList() {
 
         y -= kRowH;
         float rowCenterY = y + kRowH / 2.f;
-        bool on = Mod::get()->getSettingValue<bool>(m.key);
-        auto accentColor = categoryAccent(m.category);
+        bool ceded = paimon::info::compat::isCeded(mod->key);
+        bool available = mods::isAvailable(*mod);
+        bool selfOn = mods::isSelfEnabled(*mod);
+        bool on = selfOn && available && !ceded;
 
         float cardW = scrollW - 6.f;
         float cardH = kRowH - 7.f;
@@ -287,29 +373,42 @@ void PaimonModulesLayer::buildList() {
 
         bool showState = cardW >= 365.f;
         float rightReserve = showState ? 116.f : 76.f;
+        float textX = cardX + 24.f;
+        float textW = cardW - rightReserve;
 
-        auto name = CCLabelBMFont::create(m.name.c_str(), "bigFont.fnt");
+        auto name = CCLabelBMFont::create(mods::localizedName(*mod), "bigFont.fnt");
         name->setAnchorPoint({0.f, 0.5f});
-        name->setScale(0.43f);
-        name->limitLabelWidth(cardW - rightReserve, 0.43f, 0.2f);
+        name->setScale(0.44f);
+        name->limitLabelWidth(textW, 0.44f, 0.2f);
         name->setColor(pal::kName);
-        name->setPosition({cardX + 24.f, rowCenterY + 8.f});
+        name->setPosition({textX, rowCenterY + 15.f});
         content->addChild(name, 2);
 
-        auto desc = CCLabelBMFont::create(m.desc.c_str(), "chatFont.fnt");
+        auto desc = CCLabelBMFont::create(mods::localizedDescription(*mod), "chatFont.fnt");
         desc->setAnchorPoint({0.f, 0.5f});
-        desc->setScale(0.48f);
-        desc->limitLabelWidth(cardW - rightReserve + 8.f, 0.48f, 0.2f);
+        desc->setScale(0.46f);
+        desc->limitLabelWidth(textW + 8.f, 0.46f, 0.2f);
         desc->setColor(pal::kDesc);
-        desc->setPosition({cardX + 24.f, rowCenterY - 9.f});
+        desc->setPosition({textX, rowCenterY + 1.f});
         content->addChild(desc, 2);
+
+        auto id = CCLabelBMFont::create(mod->id, "chatFont.fnt");
+        id->setAnchorPoint({0.f, 0.5f});
+        id->setScale(0.38f);
+        id->limitLabelWidth(textW + 8.f, 0.38f, 0.18f);
+        id->setColor(pal::kId);
+        id->setPosition({textX, rowCenterY - 14.f});
+        content->addChild(id, 2);
 
         CCLabelBMFont* state = nullptr;
         if (showState) {
-            state = CCLabelBMFont::create(on ? "ON" : "OFF", "chatFont.fnt");
+            char const* text = ceded ? "EN PAUSA" : (!available ? "OFF*" : (on ? "ON" : "OFF"));
+            state = CCLabelBMFont::create(text, "chatFont.fnt");
             state->setAnchorPoint({1.f, 0.5f});
             state->setScale(0.46f);
-            state->setColor(on ? pal::kStateOn : pal::kStateOff);
+            state->setColor(ceded || !available
+                ? pal::kStateLocked
+                : (on ? pal::kStateOn : pal::kStateOff));
             state->setPosition({cardX + cardW - 47.f, rowCenterY - 1.f});
             content->addChild(state, 2);
         }
@@ -318,77 +417,129 @@ void PaimonModulesLayer::buildList() {
             this, menu_selector(PaimonModulesLayer::onToggle), 0.74f);
         toggler->setPosition({cardX + cardW - 23.f, rowCenterY});
         toggler->setTag(tag);
-        toggler->toggle(on);
+        toggler->toggle(selfOn);
+        toggler->setEnabled(available);
         togMenu->addChild(toggler);
 
-        m_keys.push_back(m.key);
-        m_togglers.push_back(toggler);
-        m_accents.push_back(accent);
-        m_cards.push_back(card);
-        m_stateLabels.push_back(state);
-        m_accentColors.push_back(accentColor);
+        m_rows.push_back({mod, toggler, accent, card, state, accentColor, ceded});
         tag++;
     }
 
     m_scroll->moveToTop();
 }
 
-void PaimonModulesLayer::refreshCount() {
-    int on = 0;
-    for (auto const& key : m_keys) {
-        if (Mod::get()->getSettingValue<bool>(key)) on++;
-    }
-    m_countLabel->setString(fmt::format("{} de {} modulos activos", on, m_keys.size()).c_str());
+void PaimonModulesLayer::updateSectionLabel() {
+    if (!m_sectionLabel) return;
+    char const* name = m_sectionIndex == 0
+        ? "Todos"
+        : mods::localizedSection(mods::sections()[m_sectionIndex - 1]);
+    m_sectionLabel->setString(name);
+    m_sectionLabel->limitLabelWidth(120.f, 0.42f, 0.2f);
+    m_sectionLabel->setColor(m_sectionIndex == 0
+        ? ccColor3B{255, 244, 224}
+        : sectionAccent(mods::sections()[m_sectionIndex - 1]));
 }
 
-void PaimonModulesLayer::refreshRowVisual(int index, bool enabled) {
-    if (index < 0 || index >= static_cast<int>(m_keys.size())) return;
+void PaimonModulesLayer::refreshCount() {
+    int on = 0;
+    for (auto const* mod : m_visible) {
+        if (mods::isEnabled(*mod) && !paimon::info::compat::isCeded(mod->key)) on++;
+    }
+    m_countLabel->setString(
+        fmt::format("{} de {} activos  ({} en total)", on, m_visible.size(), mods::all().size()).c_str());
+}
 
-    auto accentColor = index < static_cast<int>(m_accentColors.size())
-        ? m_accentColors[index] : ccColor3B{255, 255, 255};
+void PaimonModulesLayer::refreshRow(int index, bool updateToggler) {
+    if (index < 0 || index >= static_cast<int>(m_rows.size())) return;
+    auto& row = m_rows[index];
+    if (!row.mod) return;
 
-    if (index < static_cast<int>(m_accents.size()) && m_accents[index]) {
-        m_accents[index]->setColor(enabled ? accentColor : pal::kAccentOff);
+    bool available = mods::isAvailable(*row.mod);
+    bool selfOn = mods::isSelfEnabled(*row.mod);
+    bool on = selfOn && available && !row.ceded;
+
+    if (row.toggler) {
+        // The row that was just clicked already has its sprite flipped by
+        // CCMenuItemToggler's own native click handling; toggling it again
+        // here races that update and can leave the checkbox stuck showing
+        // the old state even though the label/data are correct.
+        if (updateToggler) row.toggler->toggle(selfOn);
+        row.toggler->setEnabled(available);
     }
-    if (index < static_cast<int>(m_cards.size()) && m_cards[index]) {
-        m_cards[index]->setColor(enabled ? pal::kCardOn : pal::kCardOff);
-        m_cards[index]->setOpacity(enabled ? pal::kCardOnOpacity : pal::kCardOffOpacity);
+    if (row.accent) row.accent->setColor(on ? row.accentColor : pal::kAccentOff);
+    if (row.card) {
+        row.card->setColor(on ? pal::kCardOn : pal::kCardOff);
+        row.card->setOpacity(on ? pal::kCardOnOpacity : pal::kCardOffOpacity);
     }
-    if (index < static_cast<int>(m_stateLabels.size()) && m_stateLabels[index]) {
-        m_stateLabels[index]->setString(enabled ? "ON" : "OFF");
-        m_stateLabels[index]->setColor(enabled ? pal::kStateOn : pal::kStateOff);
+    if (row.state) {
+        row.state->setString(row.ceded ? "EN PAUSA" : (!available ? "OFF*" : (on ? "ON" : "OFF")));
+        row.state->setColor(row.ceded || !available
+            ? pal::kStateLocked
+            : (on ? pal::kStateOn : pal::kStateOff));
     }
+}
+
+void PaimonModulesLayer::refreshAllRows(int skipTogglerIndex) {
+    for (int i = 0; i < static_cast<int>(m_rows.size()); i++) {
+        refreshRow(i, i != skipTogglerIndex);
+    }
+    refreshCount();
 }
 
 void PaimonModulesLayer::onToggle(CCObject* sender) {
-    auto toggler = static_cast<CCMenuItemToggler*>(sender);
-    int tag = toggler->getTag();
-    if (tag < 0 || tag >= static_cast<int>(m_keys.size())) return;
+    int tag = static_cast<CCMenuItemToggler*>(sender)->getTag();
+    if (tag < 0 || tag >= static_cast<int>(m_rows.size())) return;
 
-    bool newState = !Mod::get()->getSettingValue<bool>(m_keys[tag]);
-    Mod::get()->setSettingValue<bool>(m_keys[tag], newState);
-    refreshRowVisual(tag, newState);
+    auto const* mod = m_rows[tag].mod;
+    if (!mod) return;
+
+    mods::setEnabled(*mod, !mods::isSelfEnabled(*mod));
+    // A master flips the whole subtree, so repaint everything except the
+    // toggler that was just clicked (see refreshRow's updateToggler note).
+    refreshAllRows(tag);
+}
+
+void PaimonModulesLayer::onToggleCompatForce(CCObject*) {
+    auto* mod = Mod::get();
+    if (!mod || !mod->hasSetting("info-compat-force")) return;
+
+    bool forced = !mod->getSettingValue<bool>("info-compat-force");
+    mod->setSettingValue<bool>("info-compat-force", forced);
+
+    buildList();
     refreshCount();
+    PaimonNotify::create(
+        forced ? "Modulos de Info forzados junto a BetterInfo."
+               : "Modulos de Info en pausa mientras BetterInfo este instalado.",
+        forced ? NotificationIcon::Warning : NotificationIcon::Info)->show();
 }
 
 void PaimonModulesLayer::onAllOn(CCObject*) {
-    for (size_t i = 0; i < m_keys.size(); i++) {
-        Mod::get()->setSettingValue<bool>(m_keys[i], true);
-        refreshRowVisual(static_cast<int>(i), true);
-    }
-    for (auto* t : m_togglers) t->toggle(true);
-    refreshCount();
-    PaimonNotify::create("Todos los modulos activados.", NotificationIcon::Success)->show();
+    for (auto const* mod : m_visible) mods::setEnabled(*mod, true);
+    refreshAllRows();
+    PaimonNotify::create("Modulos de la vista activados.", NotificationIcon::Success)->show();
 }
 
 void PaimonModulesLayer::onAllOff(CCObject*) {
-    for (size_t i = 0; i < m_keys.size(); i++) {
-        Mod::get()->setSettingValue<bool>(m_keys[i], false);
-        refreshRowVisual(static_cast<int>(i), false);
-    }
-    for (auto* t : m_togglers) t->toggle(false);
+    for (auto const* mod : m_visible) mods::setEnabled(*mod, false);
+    refreshAllRows();
+    PaimonNotify::create("Modulos de la vista desactivados.", NotificationIcon::Info)->show();
+}
+
+void PaimonModulesLayer::onPrevSection(CCObject*) {
+    int count = static_cast<int>(mods::sections().size()) + 1;
+    m_sectionIndex = (m_sectionIndex - 1 + count) % count;
+    updateSectionLabel();
+    buildList();
     refreshCount();
-    PaimonNotify::create("Todos los modulos desactivados.", NotificationIcon::Info)->show();
+}
+
+void PaimonModulesLayer::onNextSection(CCObject*) {
+    int count = static_cast<int>(mods::sections().size()) + 1;
+    m_sectionIndex = (m_sectionIndex + 1) % count;
+    updateSectionLabel();
+    buildList();
+    refreshCount();
 }
 
 void PaimonModulesLayer::onBack(CCObject*) { CCDirector::get()->popScene(); }

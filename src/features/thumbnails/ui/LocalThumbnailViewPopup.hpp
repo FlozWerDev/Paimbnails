@@ -32,11 +32,7 @@ using cocos2d::CCLabelBMFont;
 using cocos2d::CCSize;
 using cocos2d::CCObject;
 
-/**
- * Popup de visualizacion de thumbnails con zoom/pan tactil y galeria.
- * Extraido de LevelInfoLayer.cpp para mantener los hooks ligeros
- * (patron BetterInfo-Geode).
- */
+// Popup de thumbnails con zoom/pan tactil y galeria; separado del hook pesado.
 class LocalThumbnailViewPopup : public geode::Popup, public FLAlertLayerProtocol {
 public:
     enum class NavDirection : uint8_t { None = 0, Left, Right };
@@ -63,7 +59,6 @@ protected:
     float m_viewWidth = 0.0f;
     float m_viewHeight = 0.0f;
 
-    // votacion
     cocos2d::CCMenu* m_ratingMenu = nullptr;
     cocos2d::CCMenu* m_buttonMenu = nullptr;
     cocos2d::CCMenu* m_settingsMenu = nullptr;
@@ -75,7 +70,6 @@ protected:
     bool m_hasRatingData = false;
     bool m_isVoting = false;
 
-    // galeria
     std::vector<ThumbnailAPI::ThumbnailInfo> m_thumbnails;
     bool m_isDownloading = false;
     bool m_refreshCooldownActive = false;
@@ -91,6 +85,7 @@ protected:
 
     std::vector<Suggestion> m_suggestions;
     int m_currentIndex = 0;
+    int m_suggestionRequestToken = 0;
     std::string m_cachedInfoId;
     CCMenuItemSpriteExtra* m_leftArrow = nullptr;
     CCMenuItemSpriteExtra* m_rightArrow = nullptr;
@@ -100,7 +95,6 @@ protected:
 
     CCMenuItemSpriteExtra* m_orderEditBtn = nullptr;
 
-    // video playback
     cocos2d::CCMenu* m_playBtnMenu = nullptr;
     CCMenuItemSpriteExtra* m_playBtn = nullptr;
     bool m_videoPlaying = false;
@@ -161,7 +155,7 @@ protected:
 
     void onRecenter(CCObject*);
 
-    // FLAlertLayerProtocol â€” handles Copy ID button in onInfo popup
+    // FLAlertLayerProtocol - handles Copy ID button in onInfo popup
     void FLAlert_Clicked(FLAlertLayer* alert, bool btn2) override;
 
     static float clamp(float value, float min, float max);
@@ -172,7 +166,6 @@ protected:
     void resetZoomGestureState();
     CCPoint getZoomFocusPoint() const;
 
-    // touch zoom/pan
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;

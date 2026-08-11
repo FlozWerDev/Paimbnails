@@ -4,12 +4,19 @@
 #include "CollabManager.hpp"
 #include "CollabPopups.hpp"
 #include "CollabVoice.hpp"
+#include "../editor-suite/EditorModule.hpp"
+#include "../editor-suite/EditorEvents.hpp"
+#include "../../utils/ImageLoadHelper.hpp"
 
+#include <Geode/binding/EditorUI.hpp>
+#include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJBaseGameLayer.hpp>
 #include <Geode/binding/LevelEditorLayer.hpp>
+#include <Geode/binding/SimplePlayer.hpp>
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <unordered_set>
 
 using namespace geode::prelude;
@@ -19,31 +26,119 @@ namespace paimon::collab {
 namespace {
 
 constexpr float kTagBaseScale = 0.45f;
-constexpr int kMaxConcurrentFlashes = 48;
+constexpr size_t kMaxConcurrentFlashes = 48;
+constexpr float kFlashLife = 0.45f;
 
-// Toast notifications (chat/system notices). They slide in from the right
-// edge so they never sit on top of the canvas center while editing.
-constexpr int   kMaxToasts      = 3;     // shown at once; extras evict the oldest
-constexpr float kToastHold      = 4.0f;  // seconds fully visible before leaving
-constexpr float kToastEnter     = 0.4f;  // slide-in duration
-constexpr float kToastExit      = 0.3f;  // slide-out duration
-constexpr float kToastGap       = 6.f;   // vertical gap between toasts
-constexpr float kToastTopMargin = 42.f;  // clears the editor pause button
-constexpr float kToastRightMargin = 8.f; // space from the right edge
-constexpr int   kToastMoveTag   = 71;    // reposition action tag
-
-// Voice chips (who's talking, top center).
+constexpr int   kMaxToasts      = 3;
+constexpr float kToastHold      = 4.0f;
+constexpr float kToastEnter     = 0.4f;
+constexpr float kToastExit      = 0.3f;
+constexpr float kToastGap       = 6.f;
+constexpr float kToastTopMargin = 42.f;
+constexpr float kToastRightMargin = 8.f;
+constexpr int   kToastMoveTag   = 71;
 constexpr float kChipHeight  = 26.f;
 constexpr float kChipGap     = 8.f;
-constexpr float kChipTopY    = 18.f; // distance from the top edge to chip center
 constexpr int   kChipMoveTag = 72;
+
+constexpr float kHudLeft       = 56.f;
+constexpr float kHudToolbarGap = 22.f;
+constexpr float kHudRowGap     = 28.f;
+constexpr float kHudStatusX    = 114.f;
+constexpr float kHudStatusH    = 22.f;
+constexpr float kDefaultToolbarHeight = 92.f;
+
+constexpr size_t kTrailMaxPts = 14;
+constexpr float kTrailMinDist = 18.f;
+constexpr float kTrailDrainEvery = 0.2f;
+constexpr float kHeatRedrawEvery = 0.35f;
+constexpr int kMaxRemoteCursorDimension = 512;
+
+// CCDrawNode blends premultiplied (CC_BLEND_SRC is GL_ONE), so full-brightness
+// rgb with a low alpha reads as additive glow instead of a soft tint — that is
+// what turned the presence rects into solid neon. Scale rgb by alpha.
+ccColor4F drawColor(ccColor3B c, float alpha) {
+    float a = std::clamp(alpha, 0.f, 1.f);
+    return {c.r / 255.f * a, c.g / 255.f * a, c.b / 255.f * a, a};
+}
+
+constexpr ccColor4F kNoFill{0.f, 0.f, 0.f, 0.f};
+
+float outlineWidth(float zoom, float px) {
+    return std::clamp(px / (zoom > 0.f ? zoom : 1.f), 0.3f, 14.f);
+}
+
+bool customCursorsEnabled() {
+    return paimon::editor::featureEnabled("collab-custom-cursors");
+}
+
+std::vector<uint8_t> decodeBase64(std::string const& input) {
+    static constexpr char kAlphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::vector<uint8_t> out;
+    if (input.empty() || input.size() > kMaxCursorDataLength) return out;
+    out.reserve(input.size() * 3 / 4);
+    uint32_t value = 0;
+    int bits = -8;
+    for (unsigned char c : input) {
+        if (c == '=') break;
+        auto* found = std::find(std::begin(kAlphabet), std::end(kAlphabet) - 1, static_cast<char>(c));
+        if (found == std::end(kAlphabet) - 1) return {};
+        value = (value << 6) | static_cast<uint32_t>(found - kAlphabet);
+        bits += 6;
+        if (bits >= 0) {
+            out.push_back(static_cast<uint8_t>((value >> bits) & 0xff));
+            bits -= 8;
+            if (out.size() > kMaxCursorAssetBytes) return {};
+        }
+    }
+    return out;
+}
+
+CCSprite* createRemoteCursor(PeerAppearance const& appearance) {
+    auto data = decodeBase64(appearance.cursorData);
+    if (data.empty()) return nullptr;
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    if (!stbi_info_from_memory(data.data(), static_cast<int>(data.size()),
+                               &width, &height, &channels) ||
+        width <= 0 || height <= 0 || width > kMaxRemoteCursorDimension ||
+        height > kMaxRemoteCursorDimension) return nullptr;
+
+    auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data.data(), data.size(), false);
+    if (!loaded.success || !loaded.texture) return nullptr;
+    auto* sprite = CCSprite::createWithTexture(loaded.texture);
+    loaded.texture->release();
+    if (!sprite) return nullptr;
+    float targetSize = std::max(4.f, 100.f * appearance.cursorScale);
+    geode::cocos::limitNodeSize(sprite, {targetSize, targetSize}, 999.f, 0.0001f);
+    sprite->setAnchorPoint({0.f, 1.f});
+    sprite->setOpacity(static_cast<GLubyte>(appearance.cursorOpacity));
+    return sprite;
+}
+
+IconType peerIconTypeLocal(int raw) {
+    switch (raw) {
+        case static_cast<int>(IconType::Ship): return IconType::Ship;
+        case static_cast<int>(IconType::Ball): return IconType::Ball;
+        case static_cast<int>(IconType::Ufo): return IconType::Ufo;
+        case static_cast<int>(IconType::Wave): return IconType::Wave;
+        case static_cast<int>(IconType::Robot): return IconType::Robot;
+        case static_cast<int>(IconType::Spider): return IconType::Spider;
+        case static_cast<int>(IconType::Swing): return IconType::Swing;
+        case static_cast<int>(IconType::Jetpack): return IconType::Jetpack;
+        default: return IconType::Cube;
+    }
+}
 
 // Fades every RGBA-capable node in the tree; plain container nodes in this
 // cocos fork don't cascade opacity, so each descendant animates itself.
 void fadeOutTree(CCNode* node, float duration) {
     if (!node) return;
     if (dynamic_cast<CCRGBAProtocol*>(node)) {
-        node->stopAllActions(); // a fade-in may still be running
+         node->stopAllActions();
         node->runAction(CCFadeOut::create(duration));
     }
     if (auto* kids = node->getChildren()) {
@@ -51,7 +146,6 @@ void fadeOutTree(CCNode* node, float duration) {
     }
 }
 
-// Fade-in to each node's own authored opacity (bg is translucent, text solid).
 void fadeInTree(CCNode* node, float duration) {
     if (!node) return;
     if (auto* rgba = dynamic_cast<CCRGBAProtocol*>(node)) {
@@ -64,7 +158,7 @@ void fadeInTree(CCNode* node, float duration) {
     }
 }
 
-} // namespace
+}
 
 CollabEditorOverlay* CollabEditorOverlay::create(LevelEditorLayer* editor) {
     auto* ret = new CollabEditorOverlay();
@@ -96,20 +190,63 @@ bool CollabEditorOverlay::init(LevelEditorLayer* editor) {
     m_voiceLayer->setZOrder(510);
     addChild(m_voiceLayer);
 
+    m_statusBg = CCLayerColor::create({20, 24, 36, 0}, 220.f, kHudStatusH);
+    m_statusBg->ignoreAnchorPointForPosition(false);
+    m_statusBg->setAnchorPoint({0.f, 0.5f});
+    m_statusBg->setZOrder(520);
+    m_statusBg->setVisible(false);
+    addChild(m_statusBg);
+
+    m_statusBanner = CCLabelBMFont::create("", "chatFont.fnt");
+    m_statusBanner->setScale(0.45f);
+    m_statusBanner->setPosition({110.f, kHudStatusH / 2.f});
+    m_statusBg->addChild(m_statusBanner);
+
+    m_controls = CCMenu::create();
+    auto* chatSprite = ButtonSprite::create("Chat", "goldFont.fnt", "GJ_button_02.png", 0.45f);
+    m_chatButton = CCMenuItemExt::createSpriteExtra(
+        chatSprite,
+        [](CCMenuItemSpriteExtra*) {
+            auto* scene = CCDirector::sharedDirector()->getRunningScene();
+            if (scene && scene->getChildByID("collab-chat"_spr)) return;
+            if (auto* popup = CollabChatPopup::create()) popup->show();
+        }
+    );
+    m_chatButton->setID("collab-chat-button"_spr);
+    m_chatButton->setVisible(CollabManager::get().connected());
+    m_controls->setContentSize({kHudStatusX - kHudLeft - 6.f, kChipHeight});
+    m_controls->ignoreAnchorPointForPosition(false);
+    m_controls->setAnchorPoint({0.f, 0.5f});
+    m_controls->addChild(m_chatButton);
+    m_controls->setLayout(
+        RowLayout::create()->setGap(6.f)->setAxisAlignment(AxisAlignment::Start)
+    );
+    m_controls->updateLayout();
+    m_controls->setZOrder(525);
+    addChild(m_controls);
+
+    layoutHudBar();
+
+    m_uiShowListener = paimon::editor::EditorUIShowEvent().listen(
+        [this](EditorUI* ui, bool shown) {
+            if (!ui || ui->m_editorLayer != m_editor) return false;
+            m_editorUiHidden = !shown;
+            applyVisibility();
+            return false;
+        }
+    );
+
     CollabManager::get().setOverlay(this);
     schedule(schedule_selector(CollabEditorOverlay::refresh), 0.1f);
-    // Voice bars animate every frame so levels rise and fall smoothly.
     schedule(schedule_selector(CollabEditorOverlay::updateVoice));
     return true;
 }
 
 CollabEditorOverlay::~CollabEditorOverlay() {
-    // Unregister first: chat/system messages can arrive at any moment (join_ok,
-    // poll) and the manager must never call into a freed overlay.
+    // Unregister before teardown; messages can arrive during playtest or polling.
+    m_uiShowListener.destroy();
     CollabManager::get().clearOverlay(this);
 
-    // Tags / selection draws are children of the object layer (not ours); drop
-    // them explicitly in case the overlay dies before the editor does.
     for (auto& [id, tag] : m_tags) {
         if (tag && tag->getParent()) tag->removeFromParent();
     }
@@ -119,6 +256,23 @@ CollabEditorOverlay::~CollabEditorOverlay() {
         if (sel.label && sel.label->getParent()) sel.label->removeFromParent();
     }
     m_selections.clear();
+    for (auto& [id, cam] : m_cameras) {
+        if (cam.ghostRoot && cam.ghostRoot->getParent()) cam.ghostRoot->removeFromParent();
+        if (cam.trail && cam.trail->getParent()) cam.trail->removeFromParent();
+        if (cam.label && cam.label->getParent()) cam.label->removeFromParent();
+    }
+    m_cameras.clear();
+    for (auto& [id, z] : m_workZones) {
+        if (z.draw && z.draw->getParent()) z.draw->removeFromParent();
+        if (z.label && z.label->getParent()) z.label->removeFromParent();
+    }
+    m_workZones.clear();
+    for (auto& flash : m_flashes) {
+        if (flash.node && flash.node->getParent()) flash.node->removeFromParent();
+    }
+    m_flashes.clear();
+    if (m_heatDraw && m_heatDraw->getParent()) m_heatDraw->removeFromParent();
+    m_heatDraw = nullptr;
 }
 
 void CollabEditorOverlay::clearSelectionNode(int clientId) {
@@ -143,18 +297,9 @@ void CollabEditorOverlay::onPeerSelection(int clientId, std::string const& name,
     }
 
     auto color = peerColor(clientId);
-    ccColor4F fill{
-        color.r / 255.f,
-        color.g / 255.f,
-        color.b / 255.f,
-        0.12f,
-    };
-    ccColor4F border{
-        color.r / 255.f,
-        color.g / 255.f,
-        color.b / 255.f,
-        0.85f,
-    };
+    float zoom = overlayZoom();
+    auto border = drawColor(color, 0.9f);
+    float lineWidth = outlineWidth(zoom, 1.6f);
 
     SelectionOverlay* slot = nullptr;
     auto it = m_selections.find(clientId);
@@ -167,6 +312,7 @@ void CollabEditorOverlay::onPeerSelection(int clientId, std::string const& name,
         overlay.draw = CCDrawNode::create();
         if (!overlay.draw) return;
         overlay.draw->setZOrder(8900);
+        overlay.draw->setVisible(m_presenceVisible);
         objectLayer->addChild(overlay.draw);
         m_selections[clientId] = std::move(overlay);
         slot = &m_selections[clientId];
@@ -178,18 +324,9 @@ void CollabEditorOverlay::onPeerSelection(int clientId, std::string const& name,
         minY = std::min(minY, r.origin.y);
         maxX = std::max(maxX, r.origin.x + r.size.width);
         maxY = std::max(maxY, r.origin.y + r.size.height);
-
-        // Polygon outline for the rect (CCDrawNode drawRect isn't always available).
-        CCPoint verts[4] = {
-            {r.origin.x, r.origin.y},
-            {r.origin.x + r.size.width, r.origin.y},
-            {r.origin.x + r.size.width, r.origin.y + r.size.height},
-            {r.origin.x, r.origin.y + r.size.height},
-        };
-        slot->draw->drawPolygon(verts, 4, fill, 1.5f, border);
+        slot->draw->drawRect(r, kNoFill, lineWidth, border, BorderAlignment::Inside);
     }
 
-    // Name tag above the union of rects.
     CCLabelBMFont* label = (slot->label && slot->label->getParent()) ? slot->label.data() : nullptr;
     if (!label) {
         label = CCLabelBMFont::create(name.c_str(), "chatFont.fnt");
@@ -203,12 +340,10 @@ void CollabEditorOverlay::onPeerSelection(int clientId, std::string const& name,
         label->setString(name.c_str());
         label->setColor(color);
         label->setOpacity(220);
-        float zoom = objectLayer->getScale();
         label->setScale(zoom > 0.f ? std::clamp(0.4f / zoom, 0.08f, 5.f) : 0.4f);
         label->setPosition({(minX + maxX) * 0.5f, maxY + 10.f});
-        label->setVisible(true);
+        label->setVisible(m_presenceVisible);
         label->stopAllActions();
-        // Soft fade if the peer stops updating selection; manager clears hard.
         label->runAction(CCSequence::create(
             CCDelayTime::create(6.f),
             CCFadeOut::create(1.5f),
@@ -217,21 +352,440 @@ void CollabEditorOverlay::onPeerSelection(int clientId, std::string const& name,
     }
 }
 
-void CollabEditorOverlay::refresh(float) {
-    // Keep attribution tags and selection labels readable at any zoom level.
+void CollabEditorOverlay::clearCameraNode(int clientId) {
+    auto it = m_cameras.find(clientId);
+    if (it == m_cameras.end()) return;
+    if (it->second.ghostRoot && it->second.ghostRoot->getParent()) it->second.ghostRoot->removeFromParent();
+    if (it->second.trail && it->second.trail->getParent()) it->second.trail->removeFromParent();
+    if (it->second.label && it->second.label->getParent()) it->second.label->removeFromParent();
+    m_cameras.erase(it);
+}
+
+void CollabEditorOverlay::onPeerCameraCleared(int clientId) {
+    clearCameraNode(clientId);
+}
+
+void CollabEditorOverlay::rebuildTrail(CameraOverlay& slot, int clientId) {
+    if (!slot.trail) return;
+    slot.trail->clear();
+    auto color = peerColor(clientId);
+    size_t n = slot.trailPts.size();
+    if (n < 2) return;
+    float zoom = overlayZoom();
+    for (size_t i = 1; i < n; ++i) {
+        float t = static_cast<float>(i) / static_cast<float>(n - 1);
+        auto c = drawColor(color, 0.05f + 0.25f * t);
+        float r = outlineWidth(zoom, 0.7f + 1.3f * t);
+        auto a0 = slot.trailPts[i - 1];
+        auto a1 = slot.trailPts[i];
+        int steps = 3;
+        for (int s = 0; s <= steps; ++s) {
+            float u = static_cast<float>(s) / static_cast<float>(steps);
+            CCPoint p{a0.x + (a1.x - a0.x) * u, a0.y + (a1.y - a0.y) * u};
+            slot.trail->drawDot(p, r, c);
+        }
+    }
+}
+
+void CollabEditorOverlay::drainTrails(float dt) {
+    for (auto& [id, cam] : m_cameras) {
+        if (cam.trailPts.empty()) continue;
+        cam.sinceMove += dt;
+        if (cam.sinceMove < kTrailDrainEvery) continue;
+        cam.sinceMove = 0.f;
+        cam.trailPts.pop_front();
+        rebuildTrail(cam, id);
+    }
+}
+
+void CollabEditorOverlay::onPeerCamera(int clientId, std::string const& name, float x, float y,
+                                       bool visible, PeerAppearance const& appearance) {
+    auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
+    if (!objectLayer) return;
+
+    auto color = peerColor(clientId);
+    bool wantsCustomCursor = customCursorsEnabled() && appearance.hasCustomCursor;
+    CameraOverlay* slot = nullptr;
+    auto it = m_cameras.find(clientId);
+    if (it != m_cameras.end() && it->second.customCursorRequested != wantsCustomCursor) {
+        clearCameraNode(clientId);
+        it = m_cameras.end();
+    }
+    if (it != m_cameras.end()) {
+        slot = &it->second;
+    } else {
+        CameraOverlay overlay;
+        overlay.customCursorRequested = wantsCustomCursor;
+        overlay.trail = CCDrawNode::create();
+        if (!overlay.trail) return;
+        overlay.trail->setZOrder(8840);
+        objectLayer->addChild(overlay.trail);
+
+        auto* root = CCNode::create();
+        root->setZOrder(8860);
+        objectLayer->addChild(root);
+        overlay.ghostRoot = root;
+
+        if (wantsCustomCursor) {
+            if (auto* cursor = createRemoteCursor(appearance)) {
+                root->addChild(cursor, 1);
+                overlay.customCursor = true;
+            }
+        }
+
+        if (!overlay.customCursor) {
+            int iconID = appearance.hasIcon ? std::max(1, appearance.iconID) : 1;
+            if (auto* player = SimplePlayer::create(iconID)) {
+                IconType type = appearance.hasIcon ? peerIconTypeLocal(appearance.iconType) : IconType::Cube;
+                if (type != IconType::Cube) player->updatePlayerFrame(iconID, type);
+                if (auto* gm = GameManager::get(); appearance.hasIcon && gm) {
+                    player->setColor(gm->colorForIdx(std::clamp(appearance.color1, 0, 1000)));
+                    player->setSecondColor(gm->colorForIdx(std::clamp(appearance.color2, 0, 1000)));
+                    if (appearance.glowEnabled) {
+                        player->setGlowOutline(gm->colorForIdx(std::clamp(appearance.glowColor, 0, 1000)));
+                    } else {
+                        player->disableGlowOutline();
+                    }
+                } else {
+                    player->setColor(color);
+                    player->setSecondColor({40, 42, 55});
+                    player->disableGlowOutline();
+                }
+                player->setOpacity(200);
+                player->setScale(0.55f);
+                player->setPosition({0.f, 0.f});
+                root->addChild(player, 1);
+            } else {
+                auto* dot = CCDrawNode::create();
+                dot->drawDot({0.f, 0.f}, 8.f, drawColor(color, 0.9f));
+                root->addChild(dot, 1);
+            }
+
+            auto* ring = CCDrawNode::create();
+            ring->drawDot({0.f, 0.f}, 14.f, drawColor(color, 0.16f));
+            root->addChild(ring, 0);
+        }
+
+        m_cameras[clientId] = std::move(overlay);
+        slot = &m_cameras[clientId];
+    }
+
+    if (visible && (slot->trailPts.empty() ||
+        std::hypot(x - slot->x, y - slot->y) >= kTrailMinDist)) {
+        slot->trailPts.push_back({x, y});
+        while (slot->trailPts.size() > kTrailMaxPts) slot->trailPts.pop_front();
+        slot->sinceMove = 0.f;
+        rebuildTrail(*slot, clientId);
+    }
+    slot->x = x;
+    slot->y = y;
+
+    if (slot->ghostRoot) {
+        slot->ghostRoot->setPosition({x, y});
+        float zoom = objectLayer->getScale();
+        float baseScale = slot->customCursor ? 1.f : 0.55f;
+        float sc = zoom > 0.f ? baseScale / zoom : baseScale;
+        slot->ghostRoot->setScale(sc);
+        slot->ghostRoot->setVisible(visible && m_presenceVisible);
+    }
+    if (slot->trail) slot->trail->setVisible(visible && m_presenceVisible);
+
+    CCLabelBMFont* label = (slot->label && slot->label->getParent()) ? slot->label.data() : nullptr;
+    if (!label) {
+        label = CCLabelBMFont::create(name.c_str(), "chatFont.fnt");
+        if (label) {
+            label->setZOrder(8861);
+            objectLayer->addChild(label);
+            slot->label = label;
+        }
+    }
+    if (label) {
+        label->setString(name.c_str());
+        label->setColor(color);
+        label->setOpacity(235);
+        float zoom = objectLayer->getScale();
+        label->setScale(zoom > 0.f ? std::clamp(0.34f / zoom, 0.08f, 4.f) : 0.34f);
+        label->setPosition({x, y + 22.f});
+        label->setVisible(visible && m_presenceVisible);
+    }
+}
+
+void CollabEditorOverlay::clearWorkZoneNode(int clientId) {
+    auto it = m_workZones.find(clientId);
+    if (it == m_workZones.end()) return;
+    if (it->second.draw && it->second.draw->getParent()) it->second.draw->removeFromParent();
+    if (it->second.label && it->second.label->getParent()) it->second.label->removeFromParent();
+    m_workZones.erase(it);
+}
+
+void CollabEditorOverlay::onPeerWorkZoneCleared(int clientId) {
+    clearWorkZoneNode(clientId);
+}
+
+void CollabEditorOverlay::onPeerWorkZone(int clientId, std::string const& name,
+                                         float x, float y, float w, float h) {
+    auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
+    if (!objectLayer || w <= 0.f || h <= 0.f) return;
+
+    auto color = peerColor(clientId);
+    WorkZoneOverlay* slot = nullptr;
+    auto it = m_workZones.find(clientId);
+    if (it != m_workZones.end() && it->second.draw && it->second.draw->getParent()) {
+        slot = &it->second;
+        slot->draw->clear();
+    } else {
+        clearWorkZoneNode(clientId);
+        WorkZoneOverlay z;
+        z.draw = CCDrawNode::create();
+        if (!z.draw) return;
+        z.draw->setZOrder(8830);
+        z.draw->setVisible(m_presenceVisible);
+        objectLayer->addChild(z.draw);
+        m_workZones[clientId] = std::move(z);
+        slot = &m_workZones[clientId];
+    }
+
+    ccColor4F border = drawColor(color, 0.55f);
+    float zoom = overlayZoom();
+    slot->draw->drawRect(CCRect{x, y, w, h}, kNoFill, outlineWidth(zoom, 1.2f), border,
+                         BorderAlignment::Inside);
+
+    CCLabelBMFont* label = (slot->label && slot->label->getParent()) ? slot->label.data() : nullptr;
+    if (!label) {
+        label = CCLabelBMFont::create("", "chatFont.fnt");
+        if (label) {
+            label->setZOrder(8831);
+            label->setAnchorPoint({0.f, 1.f});
+            objectLayer->addChild(label);
+            slot->label = label;
+        }
+    }
+    if (label) {
+        auto text = fmt::format("{} - trabajando", name);
+        label->setString(text.c_str());
+        label->setColor(color);
+        label->setOpacity(150);
+        label->setScale(zoom > 0.f ? std::clamp(0.32f / zoom, 0.07f, 3.5f) : 0.32f);
+        label->setPosition({x + 4.f, y + h - 4.f});
+        label->setVisible(m_presenceVisible);
+    }
+}
+
+void CollabEditorOverlay::onPeerPing(int clientId, std::string const& name, float x, float y) {
+    auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
+    if (!objectLayer || !m_presenceVisible) return;
+    auto color = peerColor(clientId);
+    float zoom = overlayZoom();
+    float base = zoom > 0.f ? 1.f / zoom : 1.f;
+
+    if (auto* ring = CCDrawNode::create()) {
+        ring->setZOrder(9005);
+        ring->setPosition({x, y});
+        ring->setScale(base);
+        objectLayer->addChild(ring);
+        ring->drawDot({0.f, 0.f}, 6.f, drawColor(color, 0.85f));
+        ring->drawDot({0.f, 0.f}, 18.f, drawColor(color, 0.2f));
+        ring->runAction(CCSequence::create(
+            CCScaleTo::create(0.55f, base * 2.4f),
+            CCCallFunc::create(ring, callfunc_selector(CCNode::removeFromParent)),
+            nullptr
+        ));
+    }
+    if (auto* label = CCLabelBMFont::create(
+            fmt::format("{} - mira aqui", name).c_str(), "chatFont.fnt")) {
+        label->setZOrder(9006);
+        label->setColor(color);
+        label->setPosition({x, y + 28.f});
+        label->setScale(zoom > 0.f ? std::clamp(0.4f / zoom, 0.1f, 4.f) : 0.4f);
+        objectLayer->addChild(label);
+        label->runAction(CCSequence::create(
+            CCDelayTime::create(1.6f),
+            CCFadeOut::create(0.7f),
+            CCCallFunc::create(label, callfunc_selector(CCNode::removeFromParent)),
+            nullptr
+        ));
+    }
+}
+
+void CollabEditorOverlay::redrawHeatmap() {
+    auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
+    if (!objectLayer || !m_presenceVisible) return;
+
+    if (!m_heatDraw || !m_heatDraw->getParent()) {
+        m_heatDraw = CCDrawNode::create();
+        if (!m_heatDraw) return;
+        m_heatDraw->setZOrder(8820);
+        objectLayer->addChild(m_heatDraw);
+    }
+    m_heatDraw->clear();
+    auto samples = CollabManager::get().heatmapSamples(100);
+    for (auto const& s : samples) {
+        // Warm gradient: yellow -> orange by intensity, kept as a faint haze so
+        // it never washes out the objects underneath.
+        float t = s.intensity;
+        ccColor3B warm{
+            255,
+            static_cast<GLubyte>(std::clamp(250.f - t * 120.f, 90.f, 255.f)),
+            static_cast<GLubyte>(std::clamp(110.f * (1.f - t), 0.f, 110.f)),
+        };
+        m_heatDraw->drawDot({s.x, s.y}, 10.f + 20.f * t, drawColor(warm, 0.04f + 0.1f * t));
+    }
+}
+
+float CollabEditorOverlay::overlayZoom() const {
+    auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
+    float zoom = objectLayer ? objectLayer->getScale() : 1.f;
+    return zoom > 0.f ? zoom : 1.f;
+}
+
+float CollabEditorOverlay::hudRowY() const {
+    float top = kDefaultToolbarHeight;
+    auto* ui = m_editor ? m_editor->m_editorUI : nullptr;
+    if (ui) {
+        if (ui->m_toolbarHeight > 0.f) top = ui->m_toolbarHeight;
+        if (auto* tabs = ui->m_tabsMenu; tabs && tabs->isVisible() && tabs->getChildren()) {
+            for (auto* tab : CCArrayExt<CCNode*>(tabs->getChildren())) {
+                if (!tab->isVisible()) continue;
+                auto box = tab->boundingBox();
+                top = std::max(top, tabs->convertToWorldSpace({box.getMidX(), box.getMaxY()}).y);
+            }
+        }
+    }
+    return top + kHudToolbarGap;
+}
+
+void CollabEditorOverlay::layoutHudBar() {
+    m_hudWin = CCDirector::sharedDirector()->getWinSize();
+    m_hudRowY = hudRowY();
+
+    if (m_controls) m_controls->setPosition({kHudLeft, m_hudRowY});
+    if (m_statusBg) m_statusBg->setPosition({kHudStatusX, m_hudRowY});
+    layoutVoiceChips();
+}
+
+void CollabEditorOverlay::applyVisibility() {
+    bool const playing = m_editor && m_editor->m_playbackMode == PlaybackMode::Playing;
+    bool const show = !m_editorUiHidden && !playing;
+    if (show == m_hudVisible) return;
+    m_hudVisible = show;
+    m_presenceVisible = show;
+
+    if (m_toastLayer) m_toastLayer->setVisible(show);
+    if (m_voiceLayer) m_voiceLayer->setVisible(show);
+    if (m_controls) m_controls->setVisible(show);
+    if (m_statusBg && !show) m_statusBg->setVisible(false);
+
+    if (!show) {
+        for (auto& [id, tag] : m_tags) {
+            if (tag) tag->setVisible(false);
+        }
+    }
+    for (auto& [id, sel] : m_selections) {
+        if (sel.draw) sel.draw->setVisible(show);
+        if (sel.label) sel.label->setVisible(show);
+    }
+    for (auto& [id, cam] : m_cameras) {
+        if (cam.ghostRoot) cam.ghostRoot->setVisible(show);
+        if (cam.trail) cam.trail->setVisible(show);
+        if (cam.label) cam.label->setVisible(show);
+    }
+    for (auto& [id, zone] : m_workZones) {
+        if (zone.draw) zone.draw->setVisible(show);
+        if (zone.label) zone.label->setVisible(show);
+    }
+    if (m_heatDraw) m_heatDraw->setVisible(show);
+}
+
+void CollabEditorOverlay::updateStatusBanner() {
+    if (!m_statusBg || !m_statusBanner) return;
+    auto& mgr = CollabManager::get();
+    auto st = static_cast<int>(mgr.state());
+    bool recovering = mgr.isRecovering();
+    std::string status = mgr.status();
+
+    bool show = recovering || st == static_cast<int>(ConnState::Connecting) ||
+                (st == static_cast<int>(ConnState::Connected) &&
+                 (status.find("Sincroniz") != std::string::npos ||
+                  status.find("reconect") != std::string::npos ||
+                  status.find("Reconect") != std::string::npos ||
+                  status.find("Desync") != std::string::npos ||
+                  status.find("Subiendo") != std::string::npos ||
+                  status.find("Siguiendo") != std::string::npos));
+
+    if (!show) {
+        if (m_statusBg->isVisible()) m_statusBg->setVisible(false);
+        m_lastConnState = st;
+        m_lastRecovering = recovering;
+        m_lastStatus.clear();
+        return;
+    }
+
+    if (st == m_lastConnState && recovering == m_lastRecovering && status == m_lastStatus &&
+        m_statusBg->isVisible()) {
+        return;
+    }
+    m_lastConnState = st;
+    m_lastRecovering = recovering;
+    m_lastStatus = status;
+
+    std::string text = recovering ? "Reconectando a la sala..." : status;
+    if (text.empty()) text = "Conectando...";
+    if (mgr.followClientId() > 0) text += "  -  F para soltar";
+    m_statusBanner->setString(text.c_str());
+    m_statusBanner->limitLabelWidth(220.f, 0.45f, 0.2f);
+    float w = std::max(140.f, m_statusBanner->getContentSize().width * m_statusBanner->getScale() + 24.f);
+    m_statusBg->setContentSize({w, kHudStatusH});
+    m_statusBanner->setPosition({w / 2.f, kHudStatusH / 2.f});
+    m_statusBg->setOpacity(200);
+    m_statusBg->setVisible(true);
+}
+
+void CollabEditorOverlay::refresh(float dt) {
+    if (dt <= 0.f) dt = 0.1f;
+    if (m_chatButton) m_chatButton->setVisible(CollabManager::get().connected());
+    applyVisibility();
+    sweepFlashes(dt);
+    drainTrails(dt);
+    if (!m_hudVisible) return;
+
+    if (!m_hudWin.equals(CCDirector::sharedDirector()->getWinSize()) ||
+        std::abs(hudRowY() - m_hudRowY) > 0.5f) {
+        layoutHudBar();
+    }
+    updateStatusBanner();
+
+    m_heatRedrawAge += dt;
+    if (m_heatRedrawAge >= kHeatRedrawEvery) {
+        m_heatRedrawAge = 0.f;
+        redrawHeatmap();
+    }
+
     auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
     if (objectLayer) {
         float zoom = objectLayer->getScale();
-        if (zoom > 0.f) {
+        if (zoom > 0.f && std::abs(zoom - m_lastOverlayZoom) > 0.0001f) {
+            m_lastOverlayZoom = zoom;
             float scale = std::clamp(kTagBaseScale / zoom, 0.1f, 6.f);
             for (auto& [id, tag] : m_tags) {
                 if (tag && tag->getParent() && tag->isVisible()) tag->setScale(scale);
             }
-            float selScale = std::clamp(0.4f / zoom, 0.08f, 5.f);
-            for (auto& [id, sel] : m_selections) {
-                if (sel.label && sel.label->getParent() && sel.label->isVisible()) {
-                    sel.label->setScale(selScale);
+            float camScale = std::clamp(0.34f / zoom, 0.08f, 4.f);
+            float ghostSc = std::clamp(0.55f / zoom, 0.12f, 1.4f);
+            for (auto& [id, cam] : m_cameras) {
+                if (cam.label && cam.label->getParent() && cam.label->isVisible()) {
+                    cam.label->setScale(camScale);
                 }
+                if (cam.ghostRoot && cam.ghostRoot->getParent()) {
+                    cam.ghostRoot->setScale(ghostSc);
+                }
+                rebuildTrail(cam, id);
+            }
+            auto& mgr = CollabManager::get();
+            for (auto const& [id, sel] : mgr.peerSelections()) {
+                onPeerSelection(id, sel.name, sel.rects);
+            }
+            for (auto const& [id, zone] : mgr.peerWorkZones()) {
+                onPeerWorkZone(id, zone.name, zone.x, zone.y, zone.w, zone.h);
             }
         }
     }
@@ -239,15 +793,12 @@ void CollabEditorOverlay::refresh(float) {
 
 void CollabEditorOverlay::onRemoteEdit(int clientId, std::string const& name, CCPoint worldPos, bool isDelete) {
     auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
-    if (!objectLayer) return;
+    if (!objectLayer || !m_presenceVisible) return;
 
     auto color = peerColor(clientId);
 
-    // Brief flash on the touched spot so bursts of edits are visible even when
-    // the tag has already moved on. Capped to survive 2k-object pastes.
-    if (m_flashCount < kMaxConcurrentFlashes) {
+    if (m_flashes.size() < kMaxConcurrentFlashes) {
         if (auto* flash = CCSprite::create("square02b_001.png")) {
-            ++m_flashCount;
             flash->setPosition(worldPos);
             flash->setScale(0.4f);
             flash->setColor(isDelete ? ccColor3B{255, 70, 70} : color);
@@ -255,20 +806,14 @@ void CollabEditorOverlay::onRemoteEdit(int clientId, std::string const& name, CC
             flash->setZOrder(9000);
             objectLayer->addChild(flash);
             flash->runAction(CCSequence::create(
-                CCFadeOut::create(0.45f),
+                CCFadeOut::create(kFlashLife),
                 CCCallFunc::create(flash, callfunc_selector(CCNode::removeFromParent)),
                 nullptr
             ));
-            // Track completion via a scheduled decrement on ourselves.
-            runAction(CCSequence::create(
-                CCDelayTime::create(0.5f),
-                CCCallFuncO::create(this, callfuncO_selector(CollabEditorOverlay::onFlashDone), nullptr),
-                nullptr
-            ));
+            m_flashes.push_back({flash, 0.f});
         }
     }
 
-    // Per-peer name tag jumps to the latest edit and fades out.
     auto it = m_tags.find(clientId);
     CCLabelBMFont* tag = (it != m_tags.end()) ? it->second.data() : nullptr;
     if (!tag || !tag->getParent()) {
@@ -294,8 +839,19 @@ void CollabEditorOverlay::onRemoteEdit(int clientId, std::string const& name, CC
     ));
 }
 
-void CollabEditorOverlay::onFlashDone(CCObject*) {
-    if (m_flashCount > 0) --m_flashCount;
+void CollabEditorOverlay::sweepFlashes(float dt) {
+    for (size_t i = 0; i < m_flashes.size();) {
+        auto& flash = m_flashes[i];
+        flash.age += dt;
+        auto* node = flash.node.data();
+        bool done = !node || !node->getParent() || flash.age > kFlashLife * 2.f;
+        if (done) {
+            if (node && node->getParent()) node->removeFromParent();
+            m_flashes.erase(m_flashes.begin() + static_cast<long>(i));
+        } else {
+            ++i;
+        }
+    }
 }
 
 void CollabEditorOverlay::onChat(ChatMessage const& msg) {
@@ -332,13 +888,12 @@ CCNode* CollabEditorOverlay::buildToast(ChatMessage const& msg) {
 }
 
 void CollabEditorOverlay::showToast(ChatMessage const& msg) {
-    if (!m_toastLayer) return;
+    if (!m_toastLayer || !m_hudVisible) return;
 
     auto* toast = buildToast(msg);
     if (!toast) return;
 
     auto winSize = CCDirector::sharedDirector()->getWinSize();
-    // Start just off the right edge at the top slot; layoutToasts eases it in.
     toast->setPosition({
         winSize.width + toast->getContentSize().width / 2.f + 12.f,
         winSize.height - kToastTopMargin - toast->getContentSize().height / 2.f,
@@ -347,15 +902,12 @@ void CollabEditorOverlay::showToast(ChatMessage const& msg) {
     m_toasts.emplace_back(toast);
     fadeInTree(toast, kToastEnter * 0.75f);
 
-    // Cap: evict the oldest so at most kMaxToasts remain, each leaving on its
-    // own animation.
     while (static_cast<int>(m_toasts.size()) > kMaxToasts) {
         dismissToast(m_toasts.front());
     }
 
     layoutToasts();
 
-    // Independent auto-dismiss timer for this toast.
     toast->runAction(CCSequence::create(
         CCDelayTime::create(kToastEnter + kToastHold),
         CCCallFuncO::create(this, callfuncO_selector(CollabEditorOverlay::onToastExpired), toast),
@@ -366,8 +918,6 @@ void CollabEditorOverlay::showToast(ChatMessage const& msg) {
 void CollabEditorOverlay::layoutToasts() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
-    // Newest (back of the vector) at the top, right-aligned, stacking down by
-    // each toast's real height so mixed sizes never overlap.
     float y = winSize.height - kToastTopMargin;
     for (int p = static_cast<int>(m_toasts.size()) - 1; p >= 0; --p) {
         auto* toast = m_toasts[p].data();
@@ -392,10 +942,9 @@ void CollabEditorOverlay::dismissToast(CCNode* toast) {
     if (!toast) return;
     auto it = std::find_if(m_toasts.begin(), m_toasts.end(),
         [toast](geode::Ref<CCNode> const& r) { return r.data() == toast; });
-    if (it == m_toasts.end()) return; // already leaving
+    if (it == m_toasts.end()) return;
     m_toasts.erase(it);
 
-    // Slide back out to the right and fade, then remove.
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     toast->stopAllActions();
     fadeOutTree(toast, kToastExit);
@@ -406,13 +955,9 @@ void CollabEditorOverlay::dismissToast(CCNode* toast) {
         nullptr
     ));
 
-    // Reflow the remaining toasts into their new slots.
     layoutToasts();
 }
 
-// ---------------------------------------------------------------------------
-// Voice chips
-// ---------------------------------------------------------------------------
 
 void CollabEditorOverlay::buildVoiceChip(int clientId, std::string const& name, VoiceChip& chip) {
     auto* nameLabel = CCLabelBMFont::create(name.c_str(), "chatFont.fnt");
@@ -438,7 +983,6 @@ void CollabEditorOverlay::buildVoiceChip(int clientId, std::string const& name, 
 
     auto color = clientId == 0 ? ccColor3B{140, 255, 140} : peerColor(clientId);
 
-    // Avatar: colored dot with the speaker's initial.
     auto* dot = CCDrawNode::create();
     dot->drawDot({0.f, 0.f}, 8.f, ccColor4F{color.r / 255.f, color.g / 255.f, color.b / 255.f, 1.f});
     dot->setPosition({14.f, h / 2.f});
@@ -461,7 +1005,6 @@ void CollabEditorOverlay::buildVoiceChip(int clientId, std::string const& name, 
     nameLabel->setPosition({kTextX, h - 4.f});
     root->addChild(nameLabel, 1);
 
-    // Level bar under the name: dark track + colored fill scaled by loudness.
     auto* track = CCLayerColor::create({0, 0, 0, 130}, barW, 3.5f);
     track->ignoreAnchorPointForPosition(false);
     track->setAnchorPoint({0.f, 0.f});
@@ -484,7 +1027,6 @@ void CollabEditorOverlay::updateVoice(float dt) {
     if (!m_voiceLayer) return;
     auto& voice = CollabVoice::get();
 
-    // Who should have a chip right now (local user included while transmitting).
     std::vector<SpeakingInfo> want;
     if (CollabManager::get().connected()) {
         want = voice.speakingNow();
@@ -500,7 +1042,7 @@ void CollabEditorOverlay::updateVoice(float dt) {
             VoiceChip chip;
             buildVoiceChip(s.clientId, s.name, chip);
             chip.root->setScale(0.6f);
-            chip.root->setVisible(false); // until the first layout places it
+            chip.root->setVisible(false);
             m_voiceLayer->addChild(chip.root);
             it = m_voiceChips.emplace(s.clientId, std::move(chip)).first;
             changed = true;
@@ -514,7 +1056,6 @@ void CollabEditorOverlay::updateVoice(float dt) {
         if (!active.count(it->first)) {
             chip.target = 0.f;
             chip.silent += dt;
-            // Linger briefly so pauses between words don't flicker the chip.
             if (chip.silent > 0.6f) {
                 auto* node = chip.root.data();
                 node->stopAllActions();
@@ -528,8 +1069,6 @@ void CollabEditorOverlay::updateVoice(float dt) {
                 continue;
             }
         }
-        // Fast attack, slower release: the bar jumps up with the voice and
-        // drains smoothly in silences.
         float k = chip.target > chip.shown ? 16.f : 6.f;
         chip.shown += (chip.target - chip.shown) * std::min(1.f, k * dt);
         if (chip.barFill) chip.barFill->setScaleX(std::clamp(chip.shown, 0.f, 1.f));
@@ -541,19 +1080,14 @@ void CollabEditorOverlay::updateVoice(float dt) {
 
 void CollabEditorOverlay::layoutVoiceChips() {
     if (m_voiceChips.empty()) return;
-    auto winSize = CCDirector::sharedDirector()->getWinSize();
 
-    // Stable order: you first (id 0), then peers by client id.
     std::vector<int> ids;
     ids.reserve(m_voiceChips.size());
     for (auto const& [id, chip] : m_voiceChips) ids.push_back(id);
     std::sort(ids.begin(), ids.end());
 
-    float total = -kChipGap;
-    for (int id : ids) total += m_voiceChips[id].width + kChipGap;
-
-    float x = winSize.width / 2.f - total / 2.f;
-    float y = winSize.height - kChipTopY;
+    float x = kHudLeft;
+    float y = (m_hudRowY > 0.f ? m_hudRowY : hudRowY()) + kHudRowGap;
     for (int id : ids) {
         auto& chip = m_voiceChips[id];
         float cx = x + chip.width / 2.f;
@@ -574,4 +1108,4 @@ void CollabEditorOverlay::layoutVoiceChips() {
     }
 }
 
-} // namespace paimon::collab
+}

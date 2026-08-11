@@ -1,7 +1,9 @@
 #include "PetManager.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include "../../../utils/EditorContext.hpp"
+#include "../../capture/services/FramebufferCapture.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>
 #include <fstream>
@@ -22,7 +24,6 @@ geode::Ref<CCTexture2D>& whiteTrailTexture() {
     return s_whiteTrailTex;
 }
 
-// Pet host Z: just below the cursor but above everything else.
 constexpr int kPetHostZOrder = std::numeric_limits<int>::max() - 4096;
 
 int desiredPetHostZ(CCScene* scene, CCNode* petNode) {
@@ -41,15 +42,11 @@ void ensurePetNodeIsFrontmost(CCScene* scene, CCNode* petNode) {
 
 bool layerNameMatchesNode(CCNode* node, std::string const& layerName) {
     if (!node) return false;
-    // Check node ID first (reliable).
     std::string nodeID(node->getID());
     if (!nodeID.empty() && 
         nodeID.find(layerName) != std::string::npos) return true;
-    // Use Geode's getClassName for demangled names.
     auto className = geode::cocos::getObjectName(node);
-    // Exact match preferred.
     if (className == layerName) return true;
-    // Substring match as fallback.
     return className.find(layerName) != std::string::npos;
 }
 
@@ -70,7 +67,6 @@ bool sceneMatchesAnyLayer(CCScene* scene, std::vector<std::string> const& layerO
         for (auto const& layerName : layerOptions) {
             if (layerNameMatchesNode(child, layerName)) return true;
         }
-        // Check one level deeper (transition scenes wrap the actual layer).
         if (auto* grandChildren = child->getChildren()) {
             for (auto* gc : CCArrayExt<CCNode*>(grandChildren)) {
                 if (!gc) continue;
@@ -84,7 +80,6 @@ bool sceneMatchesAnyLayer(CCScene* scene, std::vector<std::string> const& layerO
 }
 }
 
-// singleton
 
 PetManager& PetManager::get() {
     static PetManager inst;
@@ -100,7 +95,6 @@ PetManager::~PetManager() {
     m_staticTextureCache.clear();
 }
 
-// paths
 
 std::filesystem::path PetManager::configPath() const {
     return Mod::get()->getSaveDir() / "pet_config.json";
@@ -115,7 +109,6 @@ std::filesystem::path PetManager::galleryDir() const {
     return dir;
 }
 
-// config persistence
 
 void PetManager::loadConfig() {
     log::debug("[PetManager] loadConfig");
@@ -156,7 +149,6 @@ void PetManager::loadConfig() {
         m_config.offsetY         = static_cast<float>(j["offsetY"].asDouble().unwrapOr(25.0));
         m_config.showInGameplay  = j["showInGameplay"].asBool().unwrapOr(true);
 
-        // visible layers
         auto layersArr = j["visibleLayers"].asArray();
         if (layersArr.isOk()) {
             m_config.visibleLayers.clear();
@@ -168,22 +160,18 @@ void PetManager::loadConfig() {
         m_config.allLayers = hasAllLayersKey
             ? j["allLayers"].asBool().unwrapOr(true)
             : allNonGameplayLayersSelected(m_config.visibleLayers);
-        // if key not present, keep the default (all PET_LAYER_OPTIONS active)
 
-        // icon states
         m_config.idleImage  = j["idleImage"].asString().unwrapOr("");
         m_config.walkImage  = j["walkImage"].asString().unwrapOr("");
         m_config.sleepImage = j["sleepImage"].asString().unwrapOr("");
         m_config.reactImage = j["reactImage"].asString().unwrapOr("");
 
-        // shadow
         m_config.showShadow    = j["showShadow"].asBool().unwrapOr(true);
         m_config.shadowOffsetX = static_cast<float>(j["shadowOffsetX"].asDouble().unwrapOr(3.0));
         m_config.shadowOffsetY = static_cast<float>(j["shadowOffsetY"].asDouble().unwrapOr(-5.0));
         m_config.shadowOpacity = static_cast<int>(j["shadowOpacity"].asInt().unwrapOr(60));
         m_config.shadowScale   = static_cast<float>(j["shadowScale"].asDouble().unwrapOr(1.1));
 
-        // particles
         m_config.showParticles    = j["showParticles"].asBool().unwrapOr(false);
         m_config.particleType     = static_cast<int>(j["particleType"].asInt().unwrapOr(0));
         m_config.particleRate     = static_cast<float>(j["particleRate"].asDouble().unwrapOr(5.0));
@@ -199,7 +187,6 @@ void PetManager::loadConfig() {
             );
         }
 
-        // speech bubbles
         m_config.enableSpeech     = j["enableSpeech"].asBool().unwrapOr(false);
         m_config.speechInterval   = static_cast<float>(j["speechInterval"].asDouble().unwrapOr(30.0));
         m_config.speechDuration   = static_cast<float>(j["speechDuration"].asDouble().unwrapOr(3.0));
@@ -218,18 +205,15 @@ void PetManager::loadConfig() {
         loadStrArr("levelCompleteMessages", m_config.levelCompleteMessages);
         loadStrArr("deathMessages", m_config.deathMessages);
 
-        // sleep mode
         m_config.enableSleep      = j["enableSleep"].asBool().unwrapOr(true);
         m_config.sleepAfterSeconds = static_cast<float>(j["sleepAfterSeconds"].asDouble().unwrapOr(60.0));
         m_config.sleepBobAmount   = static_cast<float>(j["sleepBobAmount"].asDouble().unwrapOr(3.0));
 
-        // click interaction
         m_config.enableClickInteraction = j["enableClickInteraction"].asBool().unwrapOr(true);
         m_config.clickReactionDuration  = static_cast<float>(j["clickReactionDuration"].asDouble().unwrapOr(1.5));
         m_config.clickJumpHeight        = static_cast<float>(j["clickJumpHeight"].asDouble().unwrapOr(20.0));
         loadStrArr("clickMessages", m_config.clickMessages);
 
-        // game event reactions
         m_config.reactToLevelComplete = j["reactToLevelComplete"].asBool().unwrapOr(true);
         m_config.reactToDeath         = j["reactToDeath"].asBool().unwrapOr(true);
         m_config.reactToPracticeExit  = j["reactToPracticeExit"].asBool().unwrapOr(true);
@@ -264,27 +248,23 @@ void PetManager::saveConfig() {
         j["allLayers"]       = m_config.allLayers;
         j["showInGameplay"]  = m_config.showInGameplay;
 
-        // visible layers
         matjson::Value layers = matjson::Value::array();
         for (auto& l : m_config.visibleLayers) {
             layers.push(l);
         }
         j["visibleLayers"] = layers;
 
-        // icon states
         j["idleImage"]  = m_config.idleImage;
         j["walkImage"]  = m_config.walkImage;
         j["sleepImage"] = m_config.sleepImage;
         j["reactImage"] = m_config.reactImage;
 
-        // shadow
         j["showShadow"]    = m_config.showShadow;
         j["shadowOffsetX"] = static_cast<double>(m_config.shadowOffsetX);
         j["shadowOffsetY"] = static_cast<double>(m_config.shadowOffsetY);
         j["shadowOpacity"] = m_config.shadowOpacity;
         j["shadowScale"]   = static_cast<double>(m_config.shadowScale);
 
-        // particles
         j["showParticles"]    = m_config.showParticles;
         j["particleType"]     = m_config.particleType;
         j["particleRate"]     = static_cast<double>(m_config.particleRate);
@@ -299,7 +279,6 @@ void PetManager::saveConfig() {
             j["particleColor"] = pc;
         }
 
-        // speech bubbles
         j["enableSpeech"]      = m_config.enableSpeech;
         j["speechInterval"]    = static_cast<double>(m_config.speechInterval);
         j["speechDuration"]    = static_cast<double>(m_config.speechDuration);
@@ -320,12 +299,10 @@ void PetManager::saveConfig() {
             j["deathMessages"] = arr;
         }
 
-        // sleep mode
         j["enableSleep"]       = m_config.enableSleep;
         j["sleepAfterSeconds"] = static_cast<double>(m_config.sleepAfterSeconds);
         j["sleepBobAmount"]    = static_cast<double>(m_config.sleepBobAmount);
 
-        // click interaction
         j["enableClickInteraction"] = m_config.enableClickInteraction;
         j["clickReactionDuration"]   = static_cast<double>(m_config.clickReactionDuration);
         j["clickJumpHeight"]        = static_cast<double>(m_config.clickJumpHeight);
@@ -335,7 +312,6 @@ void PetManager::saveConfig() {
             j["clickMessages"] = arr;
         }
 
-        // game event reactions
         j["reactToLevelComplete"] = m_config.reactToLevelComplete;
         j["reactToDeath"]         = m_config.reactToDeath;
         j["reactToPracticeExit"]  = m_config.reactToPracticeExit;
@@ -351,7 +327,6 @@ void PetManager::saveConfig() {
         }
 }
 
-// layer visibility check
 
 bool PetManager::shouldShowOnCurrentScene() const {
     auto scene = CCDirector::get()->getRunningScene();
@@ -367,12 +342,10 @@ bool PetManager::shouldShowOnCurrentScene() const {
 
     if (m_config.visibleLayers.empty()) return false;
 
-    // Convert set to vector for sceneMatchesAnyLayer.
     std::vector<std::string> visibleLayersVec(m_config.visibleLayers.begin(), m_config.visibleLayers.end());
     return sceneMatchesAnyLayer(scene, visibleLayersVec);
 }
 
-// gallery
 
 std::vector<std::string> PetManager::getGalleryImages() const {
     std::vector<std::string> result;
@@ -398,7 +371,6 @@ std::string PetManager::addToGallery(std::filesystem::path const& srcPath) {
     auto dir = galleryDir();
     auto filename = geode::utils::string::pathToString(srcPath.filename());
 
-    // Avoid name collisions.
     auto dest = dir / filename;
     int counter = 1;
     std::error_code existsEc;
@@ -427,7 +399,6 @@ void PetManager::removeFromGallery(std::string const& filename) {
 
     purgeCachedImage(filename);
 
-    // Deselect if this was the active image.
     if (m_config.selectedImage == filename) {
         m_config.selectedImage = "";
     }
@@ -457,7 +428,6 @@ void PetManager::removeAllFromGallery() {
         purgeCachedImage(img);
     }
 
-    // Deselect all state images.
     m_config.selectedImage.clear();
     m_config.idleImage.clear();
     m_config.walkImage.clear();
@@ -472,11 +442,10 @@ int PetManager::cleanupInvalidImages() {
     int removed = 0;
 
     for (auto& img : images) {
-        auto path = galleryDir() / img;
+        auto path = galleryDir() / paimon::assets::pathFromUtf8(img);
         std::error_code ec;
         if (!std::filesystem::exists(path, ec)) continue;
 
-        // Read magic bytes to validate the file format.
         std::ifstream f(path, std::ios::binary);
         if (!f.is_open()) {
                 removeFromGallery(img);
@@ -530,7 +499,7 @@ int PetManager::cleanupInvalidImages() {
 }
 
 CCTexture2D* PetManager::loadGalleryThumb(std::string const& filename) const {
-    auto path = galleryDir() / filename;
+    auto path = galleryDir() / paimon::assets::pathFromUtf8(filename);
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || ec) return nullptr;
 
@@ -541,7 +510,6 @@ CCTexture2D* PetManager::loadGalleryThumb(std::string const& filename) const {
     return nullptr;
 }
 
-// init / lifecycle
 
 void PetManager::init() {
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
@@ -583,7 +551,7 @@ std::string PetManager::resolveImageFileForState(PetIconState state) const {
             continue;
         }
 
-        auto path = galleryDir() / imageFile;
+        auto path = galleryDir() / paimon::assets::pathFromUtf8(imageFile);
         std::error_code ec;
         if (std::filesystem::exists(path, ec) && !ec) {
             return imageFile;
@@ -606,7 +574,7 @@ void PetManager::purgeCachedImage(std::string const& filename) {
 CCSprite* PetManager::createSpriteForImage(std::string const& imageFile) {
     if (imageFile.empty()) return nullptr;
 
-    auto path = galleryDir() / imageFile;
+    auto path = galleryDir() / paimon::assets::pathFromUtf8(imageFile);
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || ec) return nullptr;
 
@@ -667,7 +635,6 @@ void PetManager::createPetSprite() {
 }
 
 void PetManager::reloadSprite() {
-    // remove old sprite
     if (m_petSprite && m_petNode) {
         m_petSprite->removeFromParent();
         m_petSprite = nullptr;
@@ -698,7 +665,6 @@ void PetManager::reloadSprite() {
     }
     m_activeImageFile.clear();
 
-    // Rebuild from a neutral state so state-specific overrides are resolved fresh.
     m_iconState = PetIconState::Default;
     m_sleeping = false;
     m_idleDuration = 0.f;
@@ -726,7 +692,6 @@ void PetManager::attachToScene(CCScene* scene) {
     log::debug("[PetManager] attachToScene: enabled={}", m_config.enabled);
     if (!scene) return;
 
-    // Detach entirely in the editor to avoid pipeline/shader conflicts. See EditorContext.hpp.
     if (paimon::isEditorScene()) {
         detachFromScene();
         return;
@@ -738,18 +703,16 @@ void PetManager::attachToScene(CCScene* scene) {
         return;
     }
 
-    // Detach from previous scene.
     detachFromScene();
 
     if (!m_config.enabled) return;
 
     m_petNode = CCNode::create();
     m_petNode->setID("paimon-pet-host"_spr);
-    m_petNode->setZOrder(kPetHostZOrder); // below cursor, above everything else
+    m_petNode->setZOrder(kPetHostZOrder);
     scene->addChild(m_petNode);
     m_petNode->setVisible(shouldShowOnCurrentScene());
 
-    // Initialize position to center.
     auto winSize = CCDirector::get()->getWinSize();
     m_currentPos = ccp(winSize.width / 2.f, winSize.height / 2.f);
     m_targetPos = m_currentPos;
@@ -759,7 +722,6 @@ void PetManager::attachToScene(CCScene* scene) {
 }
 
 void PetManager::detachFromScene() {
-    // Null out trail first (safe access: only removeFromParent if it has a parent).
     if (m_trail) {
         if (m_trail->getParent()) {
             m_trail->removeFromParent();
@@ -800,12 +762,17 @@ void PetManager::releaseSharedResources() {
     m_staticTextureCache.clear();
 }
 
-// update (called every frame)
+void PetManager::onGLContextReload() {
+    detachFromScene();
+    // release (no take): el contexto viejo sigue activo, el glDelete es limpio.
+    whiteTrailTexture() = nullptr;
+    m_staticTextureCache.clear();
+}
+
 
 void PetManager::update(float dt) {
     if (!m_config.enabled || !m_petNode || !m_petSprite) return;
 
-    // If petNode lost its parent (scene transition), clean up.
     if (!m_petNode->getParent()) {
         m_petNode = nullptr;
         m_petSprite = nullptr;
@@ -819,19 +786,21 @@ void PetManager::update(float dt) {
         return;
     }
 
-    // Visibility based on current scene.
+    // A capture in flight owns the pet's visibility: re-asserting it here would
+    // undo the hide pass and leak the pet into level thumbnails.
+    bool const captureOwnsVisibility =
+        FramebufferCapture::isCapturing() || FramebufferCapture::hasPendingCapture();
+
     bool shouldShow = shouldShowOnCurrentScene();
-    if (m_petNode->isVisible() != shouldShow) {
+    if (!captureOwnsVisibility && m_petNode->isVisible() != shouldShow) {
         m_petNode->setVisible(shouldShow);
     }
     if (!shouldShow) return;
 
-    // Keep pet on top.
     if (auto* scene = m_petNode->getParentByType<CCScene>()) {
         ensurePetNodeIsFrontmost(scene, m_petNode);
     }
 
-    // Cursor/touch position (Geode API).
     auto mousePos = geode::cocos::getMousePos();
     m_targetPos.x = mousePos.x + m_config.offsetX;
     m_targetPos.y = mousePos.y + m_config.offsetY;
@@ -847,7 +816,6 @@ void PetManager::update(float dt) {
         }
     }
 
-    // Smooth interpolation toward cursor position.
     float lerpFactor = 1.f - std::pow(1.f - m_config.sensitivity, dt * 60.f);
     lerpFactor = std::max(0.001f, std::min(1.f, lerpFactor));
 
@@ -860,11 +828,9 @@ void PetManager::update(float dt) {
 
     float speed = std::sqrt(m_velocity.x * m_velocity.x + m_velocity.y * m_velocity.y);
 
-    // Walking detection.
     m_wasWalking = m_walking;
     m_walking = speed > 8.f;
 
-    // Idle duration tracking.
     if (m_walking || m_reactionTimer > 0.f || m_clickReactionTimer > 0.f) {
         m_idleDuration = 0.f;
         if (m_sleeping) {
@@ -876,7 +842,6 @@ void PetManager::update(float dt) {
         m_idleDuration += dt;
     }
 
-    // Enter sleep mode after prolonged idle.
     if (m_config.enableSleep && !m_sleeping && !m_walking &&
         m_reactionTimer <= 0.f && m_clickReactionTimer <= 0.f &&
         m_idleDuration >= m_config.sleepAfterSeconds) {
@@ -885,18 +850,15 @@ void PetManager::update(float dt) {
         createSleepZzz();
     }
 
-    // Squish on stop.
     if (m_wasWalking && !m_walking && m_config.squishOnLand) {
         m_landSquishTimer = 0.2f;
     }
 
-    // Flip based on movement direction.
     if (m_config.flipOnDirection && std::abs(m_velocity.x) > 5.f) {
         m_facingRight = m_velocity.x > 0;
     }
     m_petSprite->setFlipX(!m_facingRight);
 
-    // Icon state switching.
     if (m_reactionTimer <= 0.f && m_clickReactionTimer <= 0.f) {
         PetIconState desiredState = PetIconState::Default;
         if (m_sleeping) desiredState = PetIconState::Sleep;
@@ -909,7 +871,6 @@ void PetManager::update(float dt) {
         }
     }
 
-    // Tilt based on horizontal velocity.
     float baseRotation = 0.f;
     if (m_config.rotationDamping > 0.f) {
         float targetTilt = 0.f;
@@ -922,29 +883,24 @@ void PetManager::update(float dt) {
         baseRotation = m_currentTilt;
     }
 
-    // Reaction spin override.
     if (m_reactionTimer > 0.f) {
         baseRotation += m_reactionSpinVel * (m_reactionTimer / m_config.reactionDuration);
     }
 
     m_petSprite->setRotation(baseRotation);
 
-    // Position with bounce.
     CCPoint finalPos = m_currentPos;
 
-    // Reaction jump.
     if (m_reactionTimer > 0.f) {
         m_reactionJumpVel -= 400.f * dt; // gravity
         m_reactionBaseY += m_reactionJumpVel * dt;
         finalPos.y = m_reactionBaseY;
     }
-    // Click reaction jump.
     else if (m_clickReactionTimer > 0.f) {
         m_clickJumpVel -= 400.f * dt;
         m_clickBaseY += m_clickJumpVel * dt;
         finalPos.y = m_clickBaseY;
     }
-    // Normal bounce.
     else if (m_config.bounce && m_config.bounceHeight > 0.f) {
         if (m_walking) {
             m_walkTimer += dt * m_config.bounceSpeed;
@@ -959,7 +915,6 @@ void PetManager::update(float dt) {
         finalPos.y += std::sin(m_idleTimer * 3.14159f) * 2.f;
     }
 
-    // squish effect
     if (m_landSquishTimer > 0.f) {
         m_landSquishTimer -= dt;
         float t = m_landSquishTimer / 0.2f;
@@ -968,13 +923,11 @@ void PetManager::update(float dt) {
         m_petSprite->setScaleX(m_config.scale * squishX);
         m_petSprite->setScaleY(m_config.scale * squishY);
     } else {
-        // idle breathing scale (only when not sleeping)
         if (m_config.idleAnimation && !m_walking && !m_sleeping) {
             float breath = 1.f + std::sin(m_idleTimer * 3.14159f * 2.f) * m_config.idleBreathScale;
             m_petSprite->setScaleX(m_config.scale * breath);
             m_petSprite->setScaleY(m_config.scale * (2.f - breath));
         } else if (m_sleeping) {
-            // Slow breathing while asleep.
             float breath = 1.f + std::sin(m_idleTimer * 1.5f) * m_config.idleBreathScale * 0.5f;
             m_petSprite->setScaleX(m_config.scale * breath);
             m_petSprite->setScaleY(m_config.scale * (2.f - breath));
@@ -985,31 +938,22 @@ void PetManager::update(float dt) {
 
     m_petSprite->setPosition(finalPos);
 
-    // trail
     if (m_trail) {
-        // Trail is a child of m_petNode, same space as the sprite.
         m_trail->setPosition(finalPos);
     }
 
-    // Shadow.
     updateShadow();
 
-    // Particles.
     updateParticles(dt);
 
-    // Speech bubble.
     updateSpeechBubble(dt);
 
-    // Sleep Zzz.
     updateSleepZzz(dt);
 
-    // Reaction timer.
     updateReaction(dt);
 
-    // Click reaction timer.
     updateClickReaction(dt);
 
-    // Random idle speech.
     if (m_config.enableSpeech && !m_sleeping && m_speechTimer <= 0.f &&
         m_reactionTimer <= 0.f && m_clickReactionTimer <= 0.f) {
         m_speechIdleAccum += dt;
@@ -1039,7 +983,6 @@ void PetManager::applyConfigLive() {
     updateShadow();
     if (m_particleNode) {
         m_particleNode->setVisible(m_config.showParticles);
-        // Clear existing particles so type change applies immediately.
         m_particleNode->removeAllChildren();
         m_particleAccum = 0.f;
     }
@@ -1052,7 +995,6 @@ void PetManager::applyConfigLive() {
 }
 
 void PetManager::updateTrail() {
-    // Remove old trail safely.
     if (m_trail) {
         if (m_trail->getParent()) {
             m_trail->removeFromParent();
@@ -1062,13 +1004,12 @@ void PetManager::updateTrail() {
 
     if (!m_config.showTrail || !m_petNode || !m_petSprite) return;
 
-    // Create a small white texture programmatically (2x2 RGBA white).
-    // Avoids depending on texture files that may not exist in GD.
+    // Use a generated white texture for the trail.
     auto& trailTex = whiteTrailTexture();
     if (!trailTex) {
         const int sz = 2;
         uint8_t pixels[sz * sz * 4];
-        memset(pixels, 255, sizeof(pixels)); // all white, full alpha
+        memset(pixels, 255, sizeof(pixels));
         auto* newTex = new CCTexture2D();
         if (newTex->initWithData(pixels, kCCTexture2DPixelFormat_RGBA8888, sz, sz, CCSizeMake(sz, sz))) {
             trailTex = geode::Ref<CCTexture2D>::adopt(newTex);
@@ -1080,27 +1021,24 @@ void PetManager::updateTrail() {
     if (!trailTex) return;
 
     m_trail = CCMotionStreak::create(
-        m_config.trailLength / 60.f,  // fade time
-        1.f,                           // min seg
-        m_config.trailWidth,           // stroke width
-        ccc3(255, 255, 255),           // color
-        trailTex.data()                // safe texture ptr
+         m_config.trailLength / 60.f,
+        1.f,
+        m_config.trailWidth,
+        ccc3(255, 255, 255),
+        trailTex.data()
     );
 
     if (m_trail && m_trail->getTexture()) {
         m_trail->setOpacity(static_cast<GLubyte>(m_config.opacity * 0.4f));
         ccBlendFunc blend = {GL_SRC_ALPHA, GL_ONE};
         m_trail->setBlendFunc(blend);
-        // Add trail as child of petNode so it is cleaned up together.
         m_petNode->addChild(m_trail, -1);
     } else {
-        // Trail created but has no valid texture; don't add to scene.
         m_trail = nullptr;
         log::warn("[PetManager] Failed to create trail with valid texture");
     }
 }
 
-// icon state management
 
 std::string PetManager::getIconStateImage(PetIconState state) const {
     switch (state) {
@@ -1125,7 +1063,6 @@ void PetManager::setIconStateImage(PetIconState state, std::string const& galler
         purgeCachedImage(oldFile);
     }
     saveConfig();
-    // refresh if currently in this state
     if (m_iconState == state) updateIconState();
 }
 
@@ -1149,20 +1086,16 @@ void PetManager::updateIconState() {
     }
 }
 
-// shadow
 
 void PetManager::createShadow() {
     if (!m_petNode || !m_petSprite) return;
 
-    // Shadow is a dark ellipse beneath the pet.
     m_shadowSprite = CCSprite::create();
     if (!m_shadowSprite) return;
 
-    // Create a small dark texture for the shadow.
     const int sz = 16;
     auto* pixels = new unsigned char[sz * sz * 4];
     memset(pixels, 0, sz * sz * 4);
-    // Draw a soft circle.
     for (int y = 0; y < sz; y++) {
         for (int x = 0; x < sz; x++) {
             float dx = (x - sz / 2.f) / (sz / 2.f);
@@ -1211,7 +1144,6 @@ void PetManager::updateShadow() {
     m_shadowSprite->setOpacity(static_cast<GLubyte>(m_config.shadowOpacity));
 }
 
-// particles
 
 void PetManager::createParticleNode() {
     if (!m_petNode) return;
@@ -1241,16 +1173,13 @@ void PetManager::updateParticles(float dt) {
         emitParticle();
     }
 
-    // Update existing particles (fade + move + remove).
     if (m_particleNode->getChildren()) {
         auto toRemove = std::vector<CCNode*>();
         for (auto* child : CCArrayExt<CCNode*>(m_particleNode->getChildren())) {
             if (!child) continue;
 
-            // move by stored velocity
             auto vx = static_cast<CCString*>(child->getUserObject());
             if (vx) {
-                // parse "vx|vy|life" from user object
                 std::string data = vx->getCString();
                 auto p1 = data.find('|');
                 auto p2 = data.find('|', p1 + 1);
@@ -1266,14 +1195,12 @@ void PetManager::updateParticles(float dt) {
                         velY += m_config.particleGravity * dt;
                         child->setPosition({pos.x + velX * dt, pos.y + velY * dt});
 
-                        // fade out
                         float fadeRatio = life / m_config.particleLifetime;
                         if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(child)) {
                             rgba->setOpacity(static_cast<GLubyte>(255 * fadeRatio));
                         }
                         child->setScale(m_config.particleSize / 10.f * fadeRatio);
 
-                        // update stored life
                         auto* newData = CCString::createWithFormat("%.2f|%.2f|%.3f", velX, velY, life);
                         child->setUserObject(newData);
                     }
@@ -1289,21 +1216,17 @@ void PetManager::emitParticle() {
 
     auto petPos = m_petSprite->getPosition();
 
-    // Random offset around pet center.
     float rx = (rand() % 200 - 100) / 100.f * 15.f;
     float ry = (rand() % 200 - 100) / 100.f * 10.f;
 
-    // Random velocity.
     float vx = (rand() % 200 - 100) / 100.f * 20.f;
     float vy = (rand() % 100) / 100.f * 30.f + 10.f;
 
-    // Create particle based on type.
     auto type = static_cast<PetParticleType>(m_config.particleType);
     CCSprite* particle = nullptr;
 
     switch (type) {
         case PetParticleType::Hearts: {
-            // Small heart polygon.
             auto draw = CCDrawNode::create();
             if (draw) {
                 float s = m_config.particleSize;
@@ -1322,7 +1245,6 @@ void PetManager::emitParticle() {
                 particle = CCSprite::create(); // wrapper
                 if (particle) {
                     particle->setContentSize(CCSizeMake(s, s));
-                    // just use the draw node directly
                     particle->removeFromParent();
                     draw->setPosition({petPos.x + rx, petPos.y + ry});
                     auto* data = CCString::createWithFormat("%.2f|%.2f|%.3f", vx, vy, m_config.particleLifetime);
@@ -1337,7 +1259,6 @@ void PetManager::emitParticle() {
             auto draw = CCDrawNode::create();
             if (draw) {
                 float s = m_config.particleSize;
-                // 5-point star polygon.
                 std::vector<CCPoint> starPts;
                 for (int i = 0; i < 10; i++) {
                     float angle = (i * 36.f) * 3.14159f / 180.f - 90.f * 3.14159f / 180.f;
@@ -1363,7 +1284,6 @@ void PetManager::emitParticle() {
         case PetParticleType::Bubbles:
         case PetParticleType::Sparkles:
         default: {
-            // Simple circle particle.
             auto draw = CCDrawNode::create();
             if (draw) {
                 float s = m_config.particleSize;
@@ -1386,7 +1306,6 @@ void PetManager::emitParticle() {
     }
 }
 
-// speech bubbles
 
 void PetManager::createSpeechBubbleNode() {
     if (!m_petNode) return;
@@ -1397,14 +1316,12 @@ void PetManager::createSpeechBubbleNode() {
     m_speechNode->setVisible(false);
     m_petNode->addChild(m_speechNode, 20);
 
-    // Background bubble.
     m_speechBg = CCDrawNode::create();
     if (m_speechBg) {
         m_speechBg->setVisible(false);
         m_speechNode->addChild(m_speechBg);
     }
 
-    // Text label.
     m_speechLabel = CCLabelBMFont::create("", "chatFont.fnt");
     if (m_speechLabel) {
         m_speechLabel->setScale(m_config.speechBubbleScale);
@@ -1420,7 +1337,6 @@ void PetManager::showSpeechBubble(std::string const& message) {
     m_speechLabel->setString(message.c_str());
     m_speechLabel->setVisible(true);
 
-    // Position above pet.
     auto petPos = m_petSprite->getPosition();
     float labelWidth = m_speechLabel->getContentSize().width * m_config.speechBubbleScale;
     float labelHeight = m_speechLabel->getContentSize().height * m_config.speechBubbleScale;
@@ -1432,13 +1348,11 @@ void PetManager::showSpeechBubble(std::string const& message) {
     m_speechLabel->setPosition({petPos.x, bubbleY});
     m_speechLabel->setAnchorPoint({0.5f, 0.5f});
 
-    // Draw bubble background.
     if (m_speechBg) {
         m_speechBg->clear();
         ccColor4F bgCol = {0.f, 0.f, 0.f, 0.7f};
         ccColor4F borderCol = {1.f, 1.f, 1.f, 0.5f};
 
-        // Rounded rect background.
         float w = bubbleW, h = bubbleH;
         float radius = 4.f;
         CCPoint rect[4] = {
@@ -1447,7 +1361,6 @@ void PetManager::showSpeechBubble(std::string const& message) {
         };
         m_speechBg->drawPolygon(rect, 4, bgCol, 1.f, borderCol);
 
-        // Pointer triangle.
         CCPoint tri[3] = {
             ccp(-4.f, -h/2.f), ccp(4.f, -h/2.f), ccp(0.f, -h/2.f - 5.f)
         };
@@ -1460,7 +1373,6 @@ void PetManager::showSpeechBubble(std::string const& message) {
     m_speechNode->setVisible(true);
     m_speechTimer = m_config.speechDuration;
 
-    // Pop-in animation.
     m_speechNode->setScale(0.f);
     m_speechNode->stopAllActions();
     m_speechNode->runAction(CCEaseBackOut::create(CCScaleTo::create(0.2f, 1.f)));
@@ -1477,7 +1389,6 @@ void PetManager::hideSpeechBubble() {
 
     m_speechTimer = 0.f;
 
-    // Pop-out animation.
     m_speechNode->stopAllActions();
     m_speechNode->runAction(CCSequence::create(
         CCEaseBackIn::create(CCScaleTo::create(0.15f, 0.f)),
@@ -1491,7 +1402,6 @@ void PetManager::updateSpeechBubble(float dt) {
 
     m_speechTimer -= dt;
 
-    // Follow pet position.
     if (m_petSprite && m_speechLabel && m_speechBg) {
         auto petPos = m_petSprite->getPosition();
         float labelHeight = m_speechLabel->getContentSize().height * m_config.speechBubbleScale;
@@ -1507,7 +1417,6 @@ void PetManager::updateSpeechBubble(float dt) {
     }
 }
 
-// sleep Zzz
 
 void PetManager::createSleepZzz() {
     if (!m_petNode || m_sleepZzz) return;
@@ -1516,7 +1425,6 @@ void PetManager::createSleepZzz() {
     if (!m_sleepZzz) return;
     m_sleepZzz->setID("pet-sleep-zzz"_spr);
 
-    // Create "Zzz" label.
     auto zLabel = CCLabelBMFont::create("Zzz", "goldFont.fnt");
     if (zLabel) {
         zLabel->setScale(0.3f);
@@ -1537,14 +1445,12 @@ void PetManager::updateSleepZzz(float dt) {
     m_sleepZzz->setVisible(m_sleeping);
     if (!m_sleeping || !m_petSprite) return;
 
-    // Bob above pet.
     m_sleepZzzTimer += dt;
     auto petPos = m_petSprite->getPosition();
     float baseY = petPos.y + m_petSprite->getContentSize().height * m_config.scale * 0.5f + 15.f;
     float bobY = std::sin(m_sleepZzzTimer * 2.f) * m_config.sleepBobAmount;
     m_sleepZzz->setPosition({petPos.x + 10.f, baseY + bobY});
 
-    // Gentle fade in/out on the child label (CCNode has no setOpacity).
     float alpha = 128 + 60 * std::sin(m_sleepZzzTimer * 1.5f);
     auto* zzzChildren = m_sleepZzz->getChildren();
     if (zzzChildren && zzzChildren->count() > 0) {
@@ -1554,34 +1460,28 @@ void PetManager::updateSleepZzz(float dt) {
     }
 }
 
-// game event reactions
 
 void PetManager::triggerReaction(std::string const& eventType) {
     if (!m_petSprite || !m_config.enabled) return;
 
-    // Check if this event type is enabled.
     if (eventType == "level_complete" && !m_config.reactToLevelComplete) return;
     if (eventType == "death" && !m_config.reactToDeath) return;
     if (eventType == "practice_exit" && !m_config.reactToPracticeExit) return;
 
-    // Wake up if sleeping.
     if (m_sleeping) {
         m_sleeping = false;
         m_idleDuration = 0.f;
         if (m_sleepZzz) m_sleepZzz->setVisible(false);
     }
 
-    // Switch to react icon.
     m_iconState = PetIconState::React;
     updateIconState();
 
-    // Start reaction jump and spin.
     m_reactionTimer = m_config.reactionDuration;
     m_reactionJumpVel = m_config.reactionJumpHeight * 3.f; // initial upward velocity
     m_reactionBaseY = m_currentPos.y;
     m_reactionSpinVel = m_config.reactionSpinSpeed;
 
-    // Show speech bubble for the event.
     if (m_config.enableSpeech) {
         if (eventType == "level_complete" && !m_config.levelCompleteMessages.empty()) {
             showRandomSpeech(m_config.levelCompleteMessages);
@@ -1612,32 +1512,27 @@ void PetManager::updateReaction(float dt) {
     }
 }
 
-// click interaction
 
 void PetManager::triggerClickReaction(cocos2d::CCPoint clickPos) {
     if (!m_petSprite || !m_config.enabled || !m_config.enableClickInteraction) return;
-    if (m_clickReactionTimer > 0.f) return; // already reacting to click
+    if (m_clickReactionTimer > 0.f) return;
 
-    // Check if click is near the pet.
     auto petPos = m_petSprite->getPosition();
     float dist = std::sqrt((clickPos.x - petPos.x) * (clickPos.x - petPos.x) +
                            (clickPos.y - petPos.y) * (clickPos.y - petPos.y));
     float hitRadius = m_petSprite->getContentSize().width * m_config.scale * 0.6f;
     if (dist > hitRadius) return;
 
-    // Wake up if sleeping.
     if (m_sleeping) {
         m_sleeping = false;
         m_idleDuration = 0.f;
         if (m_sleepZzz) m_sleepZzz->setVisible(false);
     }
 
-    // Start click jump.
     m_clickReactionTimer = m_config.clickReactionDuration;
     m_clickJumpVel = m_config.clickJumpHeight * 3.f;
     m_clickBaseY = m_currentPos.y;
 
-    // Show click speech bubble.
     if (m_config.enableSpeech && !m_config.clickMessages.empty()) {
         showRandomSpeech(m_config.clickMessages);
     }
@@ -1652,6 +1547,5 @@ void PetManager::updateClickReaction(float dt) {
     }
 }
 
-// Animations managed in update().
 void PetManager::updateIdleAnimation(float dt) {}
 void PetManager::updateWalkAnimation(float dt) {}

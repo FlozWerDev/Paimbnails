@@ -7,6 +7,7 @@
 #include <Geode/utils/cocos.hpp>
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/PaimonDrawNode.hpp"
+#include "../core/modules/ModuleRegistry.hpp"
 
 using namespace geode::prelude;
 
@@ -115,7 +116,6 @@ public:
         ));
     }
 
-    // Per-frame hover logic
     void update(float dt) override {
         CCNode::update(dt);
 
@@ -143,7 +143,6 @@ public:
         if (std::abs(d.hoverLerp - target) < 0.004f) d.hoverLerp = target;
         float lerp = d.hoverLerp;
 
-        // Hover timer for rotation
         if (lerp > 0.004f) d.hoverTime += dt;
         else                d.hoverTime  = 0.f;
 
@@ -154,7 +153,6 @@ public:
             }
         }
 
-        // Move non-rank content +15px
         for (auto& e : d.movable) {
             if (!e.node || !e.node->getParent()) continue;
             e.node->setPositionX(e.base.x + lerp * 15.f);
@@ -178,6 +176,8 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
     };
 
     void triggerClickFlash() {
+        if (!paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) return;
+
         CCSize cs = this->getContentSize();
         if (cs.width  <= 1.f) cs.width  = this->m_width;
         if (cs.height <= 1.f) cs.height = this->m_height;
@@ -213,7 +213,6 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
         auto f = m_fields.self();
         if (!f) return;
 
-        // Remove previous paimon nodes
         {
             std::vector<CCNode*> rem;
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
@@ -225,12 +224,13 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
         }
         f->helper = nullptr;
 
+        if (!paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) return;
+
         CCSize cs = this->getContentSize();
         if (cs.width  <= 1.f) cs.width  = this->m_width;
         if (cs.height <= 1.f) cs.height = this->m_height;
         if (cs.width <= 0.f || cs.height <= 0.f) return;
 
-        // Hide vanilla backgrounds
         for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
             if (!child) continue;
             std::string_view cid = child->getID();

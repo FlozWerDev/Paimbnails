@@ -2,6 +2,7 @@
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/utils/cocos.hpp>
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
+#include "../core/modules/ModuleRegistry.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../utils/Assets.hpp"
 #include "../utils/SpriteHelper.hpp"
@@ -27,6 +28,11 @@ class $modify(PaimonLevelPage, LevelPage) {
         int m_cycleToken = 0;
         int m_invalidationListenerId = 0;
     };
+
+    bool init(GJGameLevel* level) {
+        if (!LevelPage::init(level)) return false;
+        return true;
+    }
 
     $override
     void updateDynamicPage(GJGameLevel* level) {
@@ -57,14 +63,8 @@ class $modify(PaimonLevelPage, LevelPage) {
         if (level->m_levelID <= 0) return;
         
         if (this->m_levelDisplay) {
-            // Reset to the ORIGINAL preview every time the page is (re)populated:
-            // drop any previous thumbnail clipper (removeFromParent also cancels
-            // its pending "hide vanilla" action) and make the vanilla content
-            // visible again. The thumbnail, once its assets finish downloading,
-            // fades in on top via applyThumbnail and only then hides the vanilla
-            // underneath. This keeps the cell 100% original until there is
-            // something ready to transition to (no premature/placeholder image,
-            // no empty cell) and correctly handles recycled pages on swipe.
+// Reset to the vanilla preview before each page rebuild. The replacement fades
+// in only after its assets are ready, which also handles recycled swipe pages.
             if (m_fields->m_thumbClipper) {
                 m_fields->m_thumbClipper->removeFromParent();
                 m_fields->m_thumbClipper = nullptr;
@@ -77,6 +77,9 @@ class $modify(PaimonLevelPage, LevelPage) {
                     }
                 }
             }
+
+// Apply the feature only after restoring the vanilla preview.
+            if (!paimon::modules::isEnabled("paimbnails.thumbnails.browser")) return;
 
             int capturedLevelID = level->m_levelID;
             int token = ++m_fields->m_cycleToken;
@@ -151,8 +154,7 @@ class $modify(PaimonLevelPage, LevelPage) {
     void applyThumbnail(CCTexture2D* tex) {
         if (!tex || !m_levelDisplay) return;
 
-        // Keep the previous clipper alive until the new one has fully faded in,
-        // so gallery cycling cross-fades smoothly instead of flashing.
+// Keep the previous clipper until the new one fades in for a smooth cross-fade.
         Ref<CCNode> oldClipper = m_fields->m_thumbClipper;
 
         auto sprite = CCSprite::createWithTexture(tex);
@@ -160,7 +162,7 @@ class $modify(PaimonLevelPage, LevelPage) {
 
         CCSize boxSize = m_levelDisplay->getContentSize();
 
-            // Rounded clipping for official levels
+// Rounded clip for official levels.
         float cornerRadius = std::clamp(boxSize.height * 0.11f, 6.f, 14.f);
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(boxSize.width, boxSize.height, cornerRadius);
         if (!stencil) return;
@@ -170,31 +172,27 @@ class $modify(PaimonLevelPage, LevelPage) {
         clipper->setAnchorPoint({0.5f, 0.5f});
         clipper->setPosition(boxSize / 2);
 
-        // Fit sprite to the container
+// Fit sprite to the container.
         float scaleX = boxSize.width / sprite->getContentSize().width;
         float scaleY = boxSize.height / sprite->getContentSize().height;
         float scale = std::max(scaleX, scaleY);
 
         sprite->setScaleX(scale);
-        sprite->setScaleY(scale * 0.985f); // shrink height slightly so it doesn't overflow a pixel top/bottom
+sprite->setScaleY(scale * 0.985f); // Avoid one-pixel vertical overflow.
         sprite->setPosition(boxSize / 2);
         sprite->setColor({255, 255, 255});
-        sprite->setOpacity(0); // fade in over the original preview
+sprite->setOpacity(0); // Fade over the original preview.
 
         clipper->addChild(sprite);
 
-        // Transparent dark overlay
         auto darkOverlay = CCSprite::create();
-        darkOverlay->setTextureRect(CCRect(0, 0, boxSize.width, boxSize.height + 2.f)); // 1px taller top and bottom
+darkOverlay->setTextureRect(CCRect(0, 0, boxSize.width, boxSize.height + 2.f)); // Cover edge pixels.
         darkOverlay->setColor({0, 0, 0});
-        darkOverlay->setOpacity(0); // fade in to 45
+darkOverlay->setOpacity(0); // Fade to 45.
         darkOverlay->setPosition(boxSize / 2);
         clipper->addChild(darkOverlay, 2);
 
-        // Add the thumbnail as the cell BACKGROUND (z = -1, behind the vanilla
-        // labels/difficulty/coins — exactly like the original) and fade it in,
-        // so the level's text stays visible on top while the preview cross-fades
-        // from the original render to the thumbnail.
+// Add behind vanilla labels and fade in over the original render.
         clipper->setID("paimbnails-clipper"_spr);
         m_levelDisplay->addChild(clipper, -1);
 
@@ -205,8 +203,7 @@ class $modify(PaimonLevelPage, LevelPage) {
         m_fields->m_thumbClipper = clipper;
         m_fields->m_thumbSprite = sprite;
 
-        // Once the new thumbnail has faded in, drop the previous one so gallery
-        // cycling cross-fades instead of stacking clippers.
+// Drop the previous clipper after the new thumbnail fades in.
         if (oldClipper) {
             clipper->runAction(CCSequence::create(
                 CCDelayTime::create(kFadeDur + 0.02f),

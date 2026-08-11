@@ -13,7 +13,6 @@ protected:
     void onExit() override;
     void scrollWheel(float x, float y) override;
 
-    // galeria
     cocos2d::CCNode* m_galleryContainer = nullptr;
     cocos2d::CCMenu* m_galleryMenu = nullptr;
     cocos2d::CCSprite* m_previewSprite = nullptr;
@@ -36,7 +35,6 @@ protected:
     CCMenuItemToggler* m_showInGameplayToggle = nullptr;
     std::array<cocos2d::CCLabelBMFont*, 4> m_iconStateValueLabels{};
 
-    // pestanas
     int m_currentTab = 0; // 0 = galeria, 1 = ajustes, 2 = avanzado
     cocos2d::CCNode* m_galleryTab = nullptr;
     cocos2d::CCNode* m_settingsTab = nullptr;
@@ -48,7 +46,6 @@ protected:
     void onTabSwitch(cocos2d::CCObject* sender);
     void updateSmoothScroll(float dt);
 
-    // galeria
     void buildGalleryTab();
     void refreshGallery();
     void onAddImage(cocos2d::CCObject*);
@@ -57,7 +54,6 @@ protected:
     void onSelectImage(cocos2d::CCObject*);
     void onOpenShop(cocos2d::CCObject*);
 
-    // ajustes / avanzado
     void buildSettingsTab();
     void buildAdvancedTab();
     void openLayerPicker();

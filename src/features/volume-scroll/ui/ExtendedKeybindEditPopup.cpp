@@ -18,9 +18,7 @@ namespace {
     constexpr float kPopupW = 360.f;
     constexpr float kPopupH = 220.f;
 
-    // Modifier-only keys: si la tecla es uno de estos, la movemos a
-    // modifiers y dejamos key=KEY_None. Esto permite asignar "Ctrl" o
-    // "Shift" como hold-modifier solo.
+    // Store modifier-only keys as modifiers with KEY_None.
     bool isModifierKey(enumKeyCodes k) {
         switch (k) {
             case KEY_Control: case KEY_LeftControl: case KEY_RightContol:
@@ -80,14 +78,12 @@ bool ExtendedKeybindEditPopup::init(
 
     auto winSize = m_mainLayer->getContentSize();
 
-    // Display label (muestra el keybind actual)
     m_displayLabel = CCLabelBMFont::create("(none)", "bigFont.fnt");
     m_displayLabel->setScale(0.6f);
     m_displayLabel->setAnchorPoint({0.5f, 0.5f});
     m_displayLabel->setPosition({winSize.width / 2.f, winSize.height / 2.f + 18.f});
     m_mainLayer->addChild(m_displayLabel);
 
-    // Hint label
     auto hintText = m_allowScroll
         ? "Click 'Record' then press a key, mouse button, or scroll"
         : "Click 'Record' then press a key or mouse button";
@@ -98,7 +94,6 @@ bool ExtendedKeybindEditPopup::init(
     m_hintLabel->setOpacity(180);
     m_mainLayer->addChild(m_hintLabel);
 
-    // Bottom menu: Record / Save / Clear
     auto bottomMenu = CCMenu::create();
     bottomMenu->setContentSize({winSize.width - 30.f, 36.f});
 
@@ -124,9 +119,7 @@ bool ExtendedKeybindEditPopup::init(
     bottomMenu->setPosition({winSize.width / 2.f, 26.f});
     m_mainLayer->addChild(bottomMenu);
 
-    // Los listeners reales de teclado/mouse/scroll se registran en
-    // enterRecordingMode() para evitar capturar mientras el usuario
-    // interactua con los botones del popup.
+    // Register input listeners only while recording.
 
     this->refreshDisplay();
 
@@ -147,8 +140,7 @@ void ExtendedKeybindEditPopup::refreshDisplay() {
     if (m_pendingKeyboard.has_value() &&
         (m_pendingKeyboard->key != KEY_None || m_pendingKeyboard->modifiers != KeyboardModifier::None))
     {
-        // formatKeyboardKeybind evita que un bind solo-modificador
-        // (ej. "Ctrl") se muestre como "Ctrl+Unknown".
+    // Modifier-only binds display as "Ctrl", not "Ctrl+Unknown".
         text = paimon::keybinds::formatKeyboardKeybind(*m_pendingKeyboard);
     }
     if (!m_pendingExtended.isEmpty()) {
@@ -195,17 +187,14 @@ void ExtendedKeybindEditPopup::onSave(CCObject*) {
     this->onClose(nullptr);
 }
 
-// Recording mode — registra el captor global y marca este popup como
-// activo. Los listeners de teclado/mouse se registran UNA VEZ en
-// $execute (mas abajo) y consultan g_activeRecorder.
+    // Recording mode owns the global recorder pointer.
 
 namespace {
-    // Solo un popup en recording a la vez (los anteriores se cancelan).
+    // Only one popup records at a time.
     ExtendedKeybindEditPopup* g_activeRecorder = nullptr;
 }
 
-// Registramos los listeners GLOBALES una sola vez. Quedan vivos para
-// siempre — solo capturan eventos cuando g_activeRecorder no es null.
+    // Global listeners are installed once and stay dormant without a recorder.
 $execute {
     KeyboardInputEvent().listen(+[](KeyboardInputData& data) {
         if (g_activeRecorder == nullptr) return false;
@@ -241,15 +230,14 @@ void ExtendedKeybindEditPopup::enterRecordingMode() {
     m_isRecording = true;
     this->updateRecordButtonAppearance();
 
-    // Captor de scroll: el VolumeScrollHook lo invocara antes de procesar
-    // el scroll como cambio de volumen / trigger.
+    // VolumeScrollHook forwards scroll events here before applying the action.
     if (m_allowScroll) {
         paimon::keybinds::setScrollCaptor(
             [this](double y, KeyboardModifier mods) -> bool {
                 if (!m_isRecording) return false;
                 bool up = (y > 0.0);
                 this->captureScroll(up, mods);
-                return true; // consumir
+    return true;
             }
         );
     }
@@ -267,8 +255,6 @@ void ExtendedKeybindEditPopup::exitRecordingMode() {
 void ExtendedKeybindEditPopup::updateRecordButtonAppearance() {
     if (!m_recordButton) return;
 
-    // Mientras se graba: boton azul (GJ_button_02) y texto "Recording"
-    // para que sea evidente. En idle: rosa (GJ_button_03) con "Record".
     char const* asset = m_isRecording ? "GJ_button_02.png" : "GJ_button_03.png";
     char const* label = m_isRecording ? "Recording" : "Record";
 
@@ -276,8 +262,7 @@ void ExtendedKeybindEditPopup::updateRecordButtonAppearance() {
     if (!newSpr) return;
     m_recordButton->setNormalImage(newSpr);
 
-    // El sprite cambia de tamano (texto distinto), asi que reflujo el
-    // layout del menu padre para mantener el espaciado.
+    // Reflow the parent menu because the label changes size.
     if (auto* parent = m_recordButton->getParent()) {
         if (parent->getLayout()) {
             parent->updateLayout();
@@ -287,7 +272,7 @@ void ExtendedKeybindEditPopup::updateRecordButtonAppearance() {
 
 bool ExtendedKeybindEditPopup::captureKeyboard(enumKeyCodes key, KeyboardModifier mods) {
     if (key == KEY_Escape) {
-        // Escape cancela la grabacion sin guardar.
+    // Escape cancels without saving.
         exitRecordingMode();
         this->refreshDisplay();
         return true;
@@ -295,12 +280,11 @@ bool ExtendedKeybindEditPopup::captureKeyboard(enumKeyCodes key, KeyboardModifie
 
     Keybind kb;
     if (isModifierKey(key)) {
-        // Solo modificador — guardar como "Ctrl" hold style.
+    // Save modifier-only binds as a hold style.
         kb.key = KEY_None;
         kb.modifiers = mods;
         if (kb.modifiers == KeyboardModifier::None) {
-            // Caso raro: presiono solo "Ctrl" pero data.modifiers vino vacio.
-            // Inferimos del key code.
+    // Recover the modifier when the key event omitted its modifier flags.
             if (key == KEY_Control || key == KEY_LeftControl || key == KEY_RightContol) {
                 kb.modifiers = KeyboardModifier(KeyboardModifier::Control);
             } else if (key == KEY_Shift || key == KEY_LeftShift || key == KEY_RightShift) {
@@ -314,13 +298,13 @@ bool ExtendedKeybindEditPopup::captureKeyboard(enumKeyCodes key, KeyboardModifie
         kb.modifiers = mods;
     }
 
-    // Si terminamos con un Keybind totalmente vacio, no hacemos nada.
+    // Ignore a completely empty keyboard bind.
     if (kb.key == KEY_None && kb.modifiers == KeyboardModifier::None) {
         return false;
     }
 
     m_pendingKeyboard = kb;
-    // Limpiamos el extended porque el usuario cambio a una bind de teclado.
+    // A keyboard bind replaces the extended bind.
     m_pendingExtended = ExtendedKeybind{};
     exitRecordingMode();
     this->refreshDisplay();
@@ -334,7 +318,7 @@ bool ExtendedKeybindEditPopup::captureMouse(MouseButton btn, KeyboardModifier mo
     ext.modifiers = mods;
 
     m_pendingExtended = ext;
-    // Limpiamos el keyboard porque el usuario cambio a una bind de mouse.
+    // A mouse bind replaces the keyboard bind.
     m_pendingKeyboard.reset();
     exitRecordingMode();
     this->refreshDisplay();
@@ -355,4 +339,4 @@ bool ExtendedKeybindEditPopup::captureScroll(bool up, KeyboardModifier mods) {
     return true;
 }
 
-} // namespace paimon::volscroll
+}

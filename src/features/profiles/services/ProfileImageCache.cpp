@@ -144,11 +144,34 @@ void invalidateProfileImgCache(int accountID) {
     }
 }
 
+CCTexture2D* decodeProfileImgBytes(uint8_t const* data, size_t size) {
+    if (!data || size == 0) return nullptr;
+
+    if (paimon::format::isGif(data, size)) {
+        return nullptr;
+    }
+
+    if (size > 12) {
+        for (size_t i = 0; i + 3 < size && i < 12; ++i) {
+            if (data[i]=='f' && data[i+1]=='t' && data[i+2]=='y' && data[i+3]=='p') {
+                return nullptr;
+            }
+        }
+    }
+
+    auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data, size);
+    if (!loaded.success || !loaded.texture) {
+        return nullptr;
+    }
+    loaded.texture->autorelease();
+    return loaded.texture;
+}
+
 CCTexture2D* loadProfileImgFromDisk(int accountID) {
     auto path = getProfileImgCachePath(accountID);
-    std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) return nullptr;
 
+    // Open first and size via the stream: the separate exists() was one more
+    // main-thread stat, and a failed open covers the missing-file case anyway.
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) return nullptr;
 
@@ -160,24 +183,7 @@ CCTexture2D* loadProfileImgFromDisk(int accountID) {
     if (!file.read(reinterpret_cast<char*>(data.data()), size)) return nullptr;
     file.close();
 
-    if (paimon::format::isGif(data.data(), data.size())) {
-        return nullptr;
-    }
-
-    if (data.size() > 12) {
-        for (size_t i = 0; i + 3 < data.size() && i < 12; ++i) {
-            if (data[i]=='f' && data[i+1]=='t' && data[i+2]=='y' && data[i+3]=='p') {
-                return nullptr;
-            }
-        }
-    }
-
-    auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data.data(), data.size());
-    if (!loaded.success || !loaded.texture) {
-        return nullptr;
-    }
-    loaded.texture->autorelease();
-    return loaded.texture;
+    return decodeProfileImgBytes(data.data(), data.size());
 }
 
 void saveProfileImgToDisk(int accountID, std::vector<uint8_t> const& data) {

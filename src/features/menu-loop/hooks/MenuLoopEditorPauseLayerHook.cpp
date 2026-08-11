@@ -1,15 +1,18 @@
 #include <Geode/modify/EditorPauseLayer.hpp>
 
 #include "../../../framework/compat/ModCompat.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 #include "../services/MenuLoopManager.hpp"
 #include "../services/MenuLoopControl.hpp"
+#include "../../menu-music/services/MenuMusicPlayer.hpp"
 
 using namespace geode::prelude;
 
 class $modify(PaimonMenuLoopEditorPauseHook, EditorPauseLayer) {
     $override
     void onExitEditor(CCObject* sender) {
-        if (paimon::compat::ModCompat::isMenuLoopRandomizerLoaded()) {
+        if (!paimon::modules::isEnabled("paimbnails.menuloop.menu") ||
+            paimon::compat::ModCompat::isMenuLoopRandomizerLoaded()) {
             EditorPauseLayer::onExitEditor(sender);
             return;
         }
@@ -21,7 +24,9 @@ class $modify(PaimonMenuLoopEditorPauseHook, EditorPauseLayer) {
             "menuLoopRestoreOnEditorExit");
         if (randomize) {
             sm.setShouldRestoreMenuLoopPoint(false);
-            paimon::menuloop::MenuLoopControl::shuffleSong();
+            auto& player = paimon::menumusic::MenuMusicPlayer::get();
+            if (player.isManagingPlayback()) player.playNext();
+            else paimon::menuloop::MenuLoopControl::shuffleSong();
         } else if (restore) {
             sm.setShouldRestoreMenuLoopPoint(true);
         }

@@ -6,15 +6,11 @@
 #include <cstring>
 #include <thread>
 
-// GL sync function pointers — loaded dynamically on Windows
-// because <gl/gl.h> only declares OpenGL 1.1.
-// On macOS / iOS, <OpenGL/gl.h> provides them directly.
-// On Android / GLES2, fences require GL_OES_EGL_sync extension.
+// Load GL sync functions dynamically on Windows.
 #if defined(GEODE_IS_WINDOWS)
 #include <windows.h>
 
-// Define GL sync types locally — <gl/gl.h> only provides GL 1.1,
-// and <GL/glext.h> may conflict with Geode SDK's GL headers.
+// MSVC's GL header exposes only GL 1.1 types;
 typedef GLsync  (GLAPIENTRY* PFN_FENCESYNC)(GLenum, GLbitfield);
 typedef GLenum  (GLAPIENTRY* PFN_CLIENTWAITSYNC)(GLsync, GLbitfield, GLuint64);
 typedef void    (GLAPIENTRY* PFN_DELETESYNC)(GLsync);
@@ -28,21 +24,18 @@ static void loadGLSyncFunctions() {
     auto* dll = GetModuleHandleA("opengl32.dll");
     if (!dll) dll = GetModuleHandleA("OPENGL32.dll");
 
-    // wglGetProcAddress is the correct way to get GL extension function pointers
     pglFenceSync      = (PFN_FENCESYNC)wglGetProcAddress("glFenceSync");
     pglClientWaitSync = (PFN_CLIENTWAITSYNC)wglGetProcAddress("glClientWaitSync");
     pglDeleteSync     = (PFN_DELETESYNC)wglGetProcAddress("glDeleteSync");
 
     if (!pglFenceSync || !pglClientWaitSync || !pglDeleteSync) {
-        geode::log::warn("PBOUploader: GL sync functions not available — fence sync disabled");
+        geode::log::warn("PBOUploader: GL sync functions not available - fence sync disabled");
         pglFenceSync      = nullptr;
         pglClientWaitSync = nullptr;
         pglDeleteSync     = nullptr;
     }
 }
 
-// Define macros so the rest of the code uses the function pointers transparently
-// Undefine GLEW macros first to avoid -Wmacro-redefined warnings
 #undef glFenceSync
 #undef glClientWaitSync
 #undef glDeleteSync
@@ -55,13 +48,10 @@ static void loadGLSyncFunctions() {
 #define GL_CONDITION_SATISFIED        0x911C
 
 #elif defined(GEODE_IS_ANDROID)
-// Android: GLES2 header + manually declared GLES3 PBO symbols
-// We can't include <GLES3/gl3.h> because it conflicts with Geode's
-// CCGL.h vertex-array macros.  Instead we declare only what we need.
+// Android loads GLES3 PBO symbols at runtime.
 #include <GLES2/gl2ext.h>
 #include <EGL/egl.h>
 
-// GL constants not in GLES2 headers
 #ifndef GL_PIXEL_UNPACK_BUFFER
 #define GL_PIXEL_UNPACK_BUFFER 0x88EC
 #endif
@@ -87,9 +77,7 @@ static void loadGLSyncFunctions() {
 #define GL_CONDITION_SATISFIED 0x911C
 #endif
 
-// Function pointers for GLES3 PBO / fence sync (loaded at runtime).
-// All of these are in GLES3 core; on a GLES2 context they return nullptr
-// and the caller falls back to direct upload (see init()).
+// GLES3 PBO/fence functions loaded at runtime.
 typedef void* (*PFN_glMapBufferRange)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
 typedef GLboolean (*PFN_glUnmapBuffer)(GLenum);
 typedef GLsync (*PFN_glFenceSync)(GLenum, GLbitfield);
@@ -101,6 +89,22 @@ static PFN_glUnmapBuffer   pglUnmapBuffer      = nullptr;
 static PFN_glFenceSync     pglFenceSync        = nullptr;
 static PFN_glClientWaitSync pglClientWaitSync  = nullptr;
 static PFN_glDeleteSync    pglDeleteSync       = nullptr;
+
+// PBO uploads are GLES3-only; function pointers alone are not a reliable gate,
+// so check the actual context version.
+static bool isGLES3Context() {
+    static int cached = -1;
+    if (cached < 0) {
+        const char* ver = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+        cached = (ver && std::strstr(ver, "OpenGL ES 3")) ? 1 : 0;
+        if (cached == 0) {
+            geode::log::info("PBOUploader: GL context is not GLES3 ('{}') - "
+                             "PBO uploads disabled, using direct texture upload",
+                             ver ? ver : "null");
+        }
+    }
+    return cached == 1;
+}
 
 static void loadGLSyncFunctions() {
     if (pglMapBufferRange) return;
@@ -123,13 +127,10 @@ static void loadGLSyncFunctions() {
     }
 }
 
-// Redirect glMapBufferRange / glUnmapBuffer to our pointers
 #define glMapBufferRange pglMapBufferRange
 #undef glUnmapBuffer
 #define glUnmapBuffer    pglUnmapBuffer
 
-// Redirect fence calls — if pointers are null they return stub values that
-// make checkAndClearFence treat the slot as always ready (safe fallback).
 #undef glFenceSync
 #undef glClientWaitSync
 #undef glDeleteSync
@@ -138,9 +139,7 @@ static void loadGLSyncFunctions() {
 #define glDeleteSync      pglDeleteSync
 
 #elif defined(GEODE_IS_IOS)
-// iOS: ES2 + APPLE extension variants for sync + PBO
-// <OpenGLES/ES2/glext.h> provides the APPLE-suffixed sync functions.
-// PBO constants and glMapBufferRange are in the EXT extension.
+// iOS uses ES2 plus APPLE sync/PBO extensions.
 
 #ifndef GL_PIXEL_UNPACK_BUFFER
 #define GL_PIXEL_UNPACK_BUFFER 0x88EC
@@ -167,12 +166,11 @@ static void loadGLSyncFunctions() {
 #define GL_CONDITION_SATISFIED GL_CONDITION_SATISFIED_APPLE
 #endif
 
-// Map standard GL sync calls to APPLE variants
 #define glFenceSync(cond, flags)              glFenceSyncAPPLE(cond, flags)
 #define glClientWaitSync(sync, flags, timeout) glClientWaitSyncAPPLE(sync, flags, timeout)
 #define glDeleteSync(sync)                    glDeleteSyncAPPLE(sync)
 
-// glMapBufferRange / glUnmapBuffer — available via EXT/OES on iOS
+// iOS exposes map/unmap through EXT/OES.
 #ifndef glMapBufferRange
 #define glMapBufferRange glMapBufferRangeEXT
 #endif
@@ -180,12 +178,9 @@ static void loadGLSyncFunctions() {
 #define glUnmapBuffer glUnmapBufferOES
 #endif
 
-static void loadGLSyncFunctions() {}  // no-op — symbols available at link time
+static void loadGLSyncFunctions() {}
 
 #elif defined(GEODE_IS_MACOS)
-// macOS — <OpenGL/gl.h> provides sync natively but GL_MAP_* / glMapBufferRange
-// are GL 3.0+ and not declared in the legacy GL 2.1 headers cocos2d uses.
-// Load them dynamically via dlsym.
 #include <dlfcn.h>
 #ifndef GL_MAP_WRITE_BIT
 #define GL_MAP_WRITE_BIT 0x0002
@@ -229,21 +224,17 @@ bool PBOUploader::checkAndClearFence(int idx) {
     if (!fence) return true;
 
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID) || defined(GEODE_IS_MACOS)
-    // If sync functions aren't available, always allow reuse
     if (!glFenceSync || !glClientWaitSync || !glDeleteSync) {
         fence = nullptr;
         return true;
     }
 #endif
 
-    // Non-blocking check: timeout=0 means "return immediately"
     GLenum result = glClientWaitSync(fence, 0, 0);
     if (result == GL_TIMEOUT_EXPIRED) {
-        // GPU still reading this PBO — not safe to reuse
         return false;
     }
 
-    // Either GL_ALREADY_SIGNALED or GL_CONDITION_SATISFIED → safe to reuse
     glDeleteSync(fence);
     fence = nullptr;
     return true;
@@ -272,8 +263,20 @@ bool PBOUploader::init(int ySize, int cbSize, int crSize) {
     loadGLSyncFunctions();
     while (glGetError() != GL_NO_ERROR) {}
 
-    // Slot count scales with frame size: more slots = fewer stalls from all
-    // PBOs being busy, fewer slots at high resolution to cap memory.
+#if defined(GEODE_IS_ANDROID)
+// GLES2 PBO uploads can silently no-op and produce black textures; use direct upload.
+    if (!isGLES3Context() || !pglMapBufferRange || !pglUnmapBuffer) {
+        return false;
+    }
+#elif defined(GEODE_IS_MACOS)
+// uploadSinglePBO maps unconditionally, so reject legacy contexts here.
+    if (!pglMapBufferRange || !pglUnmapBuffer) {
+        geode::log::info("PBOUploader: glMapBufferRange unavailable on this macOS GL context - "
+                         "using direct texture upload");
+        return false;
+    }
+#endif
+
     int totalBytes = ySize + cbSize + crSize;
     if (totalBytes > 12 * 1024 * 1024) {
         m_activeSlots = 3;
@@ -313,7 +316,7 @@ bool PBOUploader::init(int ySize, int cbSize, int crSize) {
         m_slots[i].pboRGBA = 0;
         m_slots[i].fence   = nullptr;
     }
-    m_initialized = true; // from here shutdown() cleans up whatever exists
+    m_initialized = true;
 
     if (!allocPBOs(pboCb, m_activeSlots, cbSize)) { shutdown(); return false; }
     for (int i = 0; i < m_activeSlots; ++i) m_slots[i].pboCb = pboCb[i];
@@ -346,18 +349,15 @@ bool PBOUploader::init(int rgbaSize) {
     }
 
 #if defined(GEODE_IS_ANDROID)
-    // Android: only use PBO if glMapBufferRange is available (GLES3 context).
-    // GLES2 contexts can't map PBOs, so we fall back to direct upload.
-    if (!pglMapBufferRange || !pglUnmapBuffer) {
-        geode::log::info("PBOUploader: glMapBufferRange unavailable (GLES2 context) — "
+// Android requires a real GLES3 context; resolved function pointers alone are insufficient.
+    if (!isGLES3Context() || !pglMapBufferRange || !pglUnmapBuffer) {
+        geode::log::info("PBOUploader: PBO unavailable (GLES2 context) - "
                          "using direct texture upload");
         return false;
     }
 #elif defined(GEODE_IS_MACOS)
-    // macOS legacy GL 2.1 context may not expose glMapBufferRange.  If so,
-    // fall back to direct upload rather than segfaulting on a null pointer.
     if (!pglMapBufferRange || !pglUnmapBuffer) {
-        geode::log::info("PBOUploader: glMapBufferRange unavailable on this macOS GL context — "
+        geode::log::info("PBOUploader: glMapBufferRange unavailable on this macOS GL context - "
                          "using direct texture upload");
         return false;
     }
@@ -371,8 +371,7 @@ bool PBOUploader::init(int rgbaSize) {
         if (glGetError() != GL_NO_ERROR) {
             geode::log::warn("PBOUploader: glBufferData failed for RGBA PBO {}", i);
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            // m_initialized is still false here, so shutdown() would no-op and
-            // leak the names glGenBuffers just created — free them explicitly.
+// Free names created before m_initialized was set.
             glDeleteBuffers(m_activeSlots, pboRGBA);
             return false;
         }
@@ -395,14 +394,10 @@ bool PBOUploader::init(int rgbaSize) {
     return true;
 }
 
-// Shutdown — delete all PBOs + fences (must be called from GL thread)
 void PBOUploader::shutdown() {
     if (!m_initialized) return;
 
-    // gl* calls are only valid on the main thread with a live GL context. If
-    // either condition fails, "forget" the GL handles and let the OS reclaim
-    // them when the process exits. Calling glDelete* off-thread is undefined
-    // behavior on most drivers (crash on Windows, no-op on others).
+// GL deletion requires the owner thread and a live context.
     bool isMainThread = std::this_thread::get_id() == m_ownerThread;
     bool glContextAlive = cocos2d::CCDirector::get()
         && cocos2d::CCDirector::get()->getOpenGLView();
@@ -416,7 +411,6 @@ void PBOUploader::shutdown() {
         return;
     }
 
-    // If a tryBegin was never finalised with endRGBAUpload, unmap now.
     if (m_mappedSlotIdx >= 0) {
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_slots[m_mappedSlotIdx].pboRGBA);
         glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
@@ -450,11 +444,9 @@ void PBOUploader::shutdown() {
     m_initialized = false;
 }
 
-// Upload a single YUV plane via PBO (inline helper)
 void PBOUploader::uploadPlane(int slotIdx, GLuint texId, GLenum format,
                                const uint8_t* data, int stride,
                                int width, int height) {
-    // Kept for API compatibility; YUV upload() inlines this logic now.
     (void)slotIdx; (void)texId; (void)format;
     (void)data; (void)stride; (void)width; (void)height;
 }
@@ -484,7 +476,6 @@ static void uploadSinglePBO(GLuint pbo, int pboSize, GLuint texId,
             glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0,
                             static_cast<GLsizeiptr>(rowBytes) * height, data);
         }
-        // stride mismatch + map failure: extremely rare, skip
     }
 
     glBindTexture(GL_TEXTURE_2D, texId);
@@ -494,7 +485,6 @@ static void uploadSinglePBO(GLuint pbo, int pboSize, GLuint texId,
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 }
 
-// Upload full YUV frame — with fence synchronization
 bool PBOUploader::upload(GLuint texY, GLuint texCb, GLuint texCr,
                           const uint8_t* planeY,  int strideY,
                           const uint8_t* planeCb, int strideCb,
@@ -502,7 +492,6 @@ bool PBOUploader::upload(GLuint texY, GLuint texCb, GLuint texCr,
                           int width, int height) {
     if (!m_initialized) return false;
 
-    // Find a slot whose fence is signaled (non-blocking)
     int startIdx = m_uploadIdx;
     bool found = false;
     for (int attempt = 0; attempt < m_activeSlots; ++attempt) {
@@ -514,7 +503,6 @@ bool PBOUploader::upload(GLuint texY, GLuint texCb, GLuint texCr,
         }
     }
     if (!found) {
-        // All slots still in use by GPU — defer to next update()
         return false;
     }
 
@@ -528,22 +516,18 @@ bool PBOUploader::upload(GLuint texY, GLuint texCb, GLuint texCr,
     uploadSinglePBO(m_slots[m_uploadIdx].pboCr, m_crSize, texCr,
                     GL_LUMINANCE, planeCr, strideCr, uvW, uvH);
 
-    // Insert fence AFTER all glTexSubImage2D — GPU signals when done reading
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID) || defined(GEODE_IS_MACOS)
     if (glFenceSync)
 #endif
         m_slots[m_uploadIdx].fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 
-    // Rotate to next slot for next frame
     m_uploadIdx = (m_uploadIdx + 1) % m_activeSlots;
     return true;
 }
 
-// Upload RGBA frame — with fence synchronization
 bool PBOUploader::uploadRGBA(GLuint texId, const uint8_t* rgbaData, int width, int height) {
     if (!m_initialized || !m_rgbaMode) return false;
 
-    // Find a slot whose fence is signaled (non-blocking)
     int startIdx = m_uploadIdx;
     bool found = false;
     for (int attempt = 0; attempt < m_activeSlots; ++attempt) {
@@ -555,50 +539,40 @@ bool PBOUploader::uploadRGBA(GLuint texId, const uint8_t* rgbaData, int width, i
         }
     }
     if (!found) {
-        // All slots still in use by GPU — defer to next update()
         return false;
     }
 
     uploadSinglePBO(m_slots[m_uploadIdx].pboRGBA, m_rgbaSize, texId,
                     GL_RGBA, rgbaData, width * 4, width, height);
 
-    // Insert fence AFTER glTexSubImage2D — GPU signals when done reading
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID) || defined(GEODE_IS_MACOS)
     if (glFenceSync)
 #endif
         m_slots[m_uploadIdx].fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 
-    // Rotate to next slot for next frame
     m_uploadIdx = (m_uploadIdx + 1) % m_activeSlots;
     return true;
 }
 
 PBOUploader::~PBOUploader() {
-    // Note: if GL context is still active, shutdown() cleans up.
-    // If context is already destroyed, GL calls would fail —
-    // caller should call shutdown() before context teardown.
+// Call shutdown() before context teardown.
     shutdown();
 }
 
-// Zero-copy upload — map PBO, return writable pointer
 uint8_t* PBOUploader::tryBeginRGBAUpload(int width, int height) {
     if (!m_initialized || !m_rgbaMode) return nullptr;
     if (m_mappedSlotIdx >= 0) {
-        // Begin called twice without matching end — refuse to re-map.
+// Refuse nested zero-copy uploads.
         geode::log::warn("PBOUploader: tryBeginRGBAUpload called while another upload in progress");
         return nullptr;
     }
 
-    // Ensure the PBO is still big enough for the requested frame size.
-    // Use 64-bit math so width*height*4 cannot overflow into a small (or
-    // negative) positive value that would slip past the size check and let
-    // a subsequent memcpy run past the end of the PBO.
+// Keep size math 64-bit to prevent allocation overflow.
     int64_t needed64 = static_cast<int64_t>(width) * static_cast<int64_t>(height) * 4;
     if (needed64 <= 0 || needed64 > static_cast<int64_t>(m_rgbaSize)) return nullptr;
     int needed = static_cast<int>(needed64);
     (void)needed;
 
-    // Find a slot whose fence is signalled.
     int startIdx = m_uploadIdx;
     int chosen = -1;
     for (int attempt = 0; attempt < m_activeSlots; ++attempt) {
@@ -629,7 +603,6 @@ void PBOUploader::endRGBAUpload(GLuint texId, int width, int height) {
     int idx = m_mappedSlotIdx;
     m_mappedSlotIdx = -1;
 
-    // PBO is still bound from tryBegin.
     glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
     glBindTexture(GL_TEXTURE_2D, texId);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
@@ -637,7 +610,6 @@ void PBOUploader::endRGBAUpload(GLuint texId, int width, int height) {
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
-    // Fence AFTER upload — GPU signals when done reading the PBO.
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID) || defined(GEODE_IS_MACOS)
     if (glFenceSync)
 #endif
@@ -646,4 +618,4 @@ void PBOUploader::endRGBAUpload(GLuint texId, int width, int height) {
     m_uploadIdx = (idx + 1) % m_activeSlots;
 }
 
-} // namespace paimon::video
+}

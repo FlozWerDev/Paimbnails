@@ -184,6 +184,13 @@ cocos2d::CCTexture2D* AutoPreviewStore::loadTexture(int32_t levelID) {
     return tex;
 }
 
+void AutoPreviewStore::clearRamCache() {
+    std::lock_guard<std::mutex> lock(m_texMutex);
+    for (auto& [id, tex] : m_texCache) if (tex) tex->release();
+    m_texCache.clear();
+    m_texLru.clear();
+}
+
 void AutoPreviewStore::clearAll() {
     {
         std::lock_guard<std::mutex> lock(m_texMutex);

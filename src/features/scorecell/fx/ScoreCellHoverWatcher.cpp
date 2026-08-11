@@ -2,6 +2,7 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/ScissorClipNode.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 #include <Geode/utils/cocos.hpp>
 #include <algorithm>
 
@@ -20,6 +21,8 @@ namespace {
 }
 
 ScoreCellHoverWatcher* ScoreCellHoverWatcher::create(std::string const& type, float intensity) {
+    if (!paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) return nullptr;
+
     auto ret = new ScoreCellHoverWatcher();
     if (ret && ret->init(type, intensity)) {
         ret->autorelease();
@@ -196,6 +199,7 @@ void ScoreCellHoverWatcher::stopShine() {
 void applyEntrance(CCNode* node, std::string const& type,
                    CCPoint finalPos, float finalScaleX, float finalScaleY) {
     if (!node || type == "none") return;
+    if (!paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) return;
     node->stopActionByTag(kEntranceTag);
 
     CCActionInterval* act = nullptr;

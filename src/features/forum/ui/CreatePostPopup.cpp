@@ -1,4 +1,5 @@
 #include "CreatePostPopup.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -105,7 +106,7 @@ bool CreatePostPopup::init(
     plusBtn->setPosition({contentSize.width - 24.f, contentSize.height - 138.f});
     m_buttonMenu->addChild(plusBtn);
 
-    m_tagsHint = CCLabelBMFont::create("No tags — tap + to add", "bigFont.fnt");
+    m_tagsHint = CCLabelBMFont::create("No tags - tap + to add", "bigFont.fnt");
     m_tagsHint->setScale(0.26f);
     m_tagsHint->setColor({140, 140, 160});
     m_tagsHint->setPosition({cx, contentSize.height - 158.f});
@@ -278,6 +279,8 @@ CreatePostPopup* CreatePostPopup::create(
     std::vector<std::string> availableTags,
     CopyableFunction<void(Post const&)> onCreated
 ) {
+    if (!paimon::modules::isEnabled("paimbnails.forum.menu")) return nullptr;
+
     auto ret = new CreatePostPopup();
     if (ret && ret->init(std::move(availableTags), std::move(onCreated))) {
         ret->autorelease();

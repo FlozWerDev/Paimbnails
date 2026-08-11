@@ -3,6 +3,7 @@
 #include "../GlobalIconTypes.hpp"
 #include "../../../framework/compat/ModCompat.hpp"
 #include "../../../utils/Debug.hpp"
+#include "../../../utils/Localization.hpp"
 
 #include <matjson.hpp>
 #include <fstream>
@@ -67,6 +68,54 @@ bool GlobalIconService::isEnabledLocally() {
 
 void GlobalIconService::setEnabledLocally(bool enabled) {
     Mod::get()->setSavedValue<bool>("global-icon-enabled", enabled);
+}
+
+std::string GlobalIconService::describeSyncError(std::string const& response) {
+    auto const& loc = Localization::get();
+
+    // HttpClient formats failures as "HTTP <code>: <body>".
+    int status = 0;
+    if (response.rfind("HTTP ", 0) == 0) {
+        auto colon = response.find(':');
+        if (colon != std::string::npos) {
+            auto parsed = geode::utils::numFromString<int>(response.substr(5, colon - 5));
+            if (parsed.isOk()) status = parsed.unwrap();
+        }
+    }
+
+    switch (status) {
+        case 401:
+        case 403:
+            return loc.getString("globalicon.err_unauthorized");
+        case 404:
+        case 405:
+            // The route isn't there: the deployed server predates /api/icons/sync.
+            return loc.getString("globalicon.err_outdated");
+        case 413:
+            return loc.getString("globalicon.err_too_large");
+        case 500:
+        case 502:
+        case 503:
+            return loc.getString("globalicon.err_server");
+        default:
+            break;
+    }
+
+    // 400s carry the server's own validation message, which is the useful part.
+    auto brace = response.find('{');
+    if (brace != std::string::npos) {
+        auto parsed = matjson::parse(response.substr(brace));
+        if (parsed.isOk()) {
+            auto const& err = parsed.unwrap()["error"];
+            if (err.isString()) {
+                auto text = err.asString().unwrapOr("");
+                if (!text.empty()) return text;
+            }
+        }
+    }
+
+    if (status == 0) return loc.getString("globalicon.err_offline");
+    return loc.getString("globalicon.upload_failed");
 }
 
 void GlobalIconService::uploadActiveIcons(int accountID, std::string const& username, ResultCallback cb) {
@@ -138,17 +187,21 @@ void GlobalIconService::uploadActiveIcons(int accountID, std::string const& user
 
     PaimonDebug::log("[GlobalIcon] Uploading {} icon slots ({} bytes)", slots, totalBytes);
     GlobalIconClient::get().syncIcons(body.dump(matjson::NO_INDENTATION),
-        [cb = std::move(cb)](bool success, std::string const& resp) {
+        [cb = std::move(cb), accountID](bool success, std::string const& resp) {
             if (!success) {
                 log::warn("[GlobalIcon] sync failed: {}", resp);
             }
+            // The cached document is stale either way: a success replaced it,
+            // and a failure may have left the server mid-change.
+            GlobalIconClient::get().invalidate(accountID);
             if (cb) cb(success, resp);
         });
 }
 
 void GlobalIconService::clearIcons(int accountID, std::string const& username, ResultCallback cb) {
     GlobalIconClient::get().clearIcons(accountID, username,
-        [cb = std::move(cb)](bool success, std::string const& resp) {
+        [cb = std::move(cb), accountID](bool success, std::string const& resp) {
+            GlobalIconClient::get().invalidate(accountID);
             if (cb) cb(success, resp);
         });
 }

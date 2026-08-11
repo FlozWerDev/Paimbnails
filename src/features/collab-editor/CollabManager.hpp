@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <list>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -23,113 +24,134 @@ class CollabManager {
 public:
     static CollabManager& get();
 
-    // Connect to the Render server and join a room. roomCode identifies the
-    // shared level; username is the display name shown to peers. Falls back to
-    // create-room automatically when the room doesn't exist (that client
-    // becomes host).
     void connect(std::string const& roomCode, std::string const& username, ConnectMode mode, GJGameLevel* hostLevel = nullptr);
     void disconnect();
-    // Host-only: end the session for everyone. Peers receive room_closed.
     void closeRoom();
 
     ConnState state() const;
     bool connected() const;
     bool isHost() const;
     bool isApplyingRemote() const;
-    // True when we are a non-host in a room whose host enabled view-only.
     bool isViewOnly() const;
-    // Host always can; non-hosts only when the room is not view-only.
     bool canEditObjects() const;
     HostPermissions permissions() const;
     std::string status() const;
     std::string roomCode() const;
     int peerCount() const;
     int clientId() const { return m_clientId; }
-    // Peers currently in the room (including us), with display names.
     std::vector<PeerInfo> peers() const;
     std::string peerName(int clientId) const;
-    // Snapshot of our own account + icon appearance, read live from
-    // GameManager (the UI uses it so our row always shows the current icon).
     static PeerAppearance localAppearance();
 
     void setHostPermissions(HostPermissions permissions);
-    // Host-only: remove a peer from the room. They receive a "kicked" notice.
     void kickPeer(int targetClientId);
     void setEditor(LevelEditorLayer* editor);
     void clearEditor(LevelEditorLayer* editor);
     LevelEditorLayer* editor() const { return m_editor; }
-    // Level backing the active room while we host it (for UI indicators like
-    // the "live" dot on its level cell). Null when not hosting.
     GJGameLevel* hostLevel() const { return m_hostLevel.data(); }
 
-    // Editor overlay (attribution tags + chat feed). Non-owning; the overlay
-    // registers itself while it lives inside the editor scene and unregisters
-    // on destruction so the manager never calls into a freed overlay.
+    // Non-owning overlay for the current editor scene.
     void setOverlay(CollabEditorOverlay* overlay);
     void clearOverlay(CollabEditorOverlay* overlay);
 
-    // Editor hooks feed local edits here.
     void sendCreatedObject(GameObject* object);
     void sendCreatedObjects(cocos2d::CCArray* objects);
     void sendUpdatedObject(GameObject* object);
     void sendUpdatedObjects(cocos2d::CCArray* objects);
-    // Move-only path (alk MoveCommand style): still carries a full save for
-    // digest correctness, but peers apply via setPosition instead of destroy/
-    // recreate — no flicker and much cheaper on large multi-selects.
+    // Full saves feed digests; remote transforms apply in place to avoid flicker.
     void sendMovedObject(GameObject* object);
     void sendMovedObjects(cocos2d::CCArray* objects);
+    void sendRotatedObject(GameObject* object);
+    void sendRotatedObjects(cocos2d::CCArray* objects);
+    void sendScaledObject(GameObject* object);
+    void sendScaledObjects(cocos2d::CCArray* objects);
+    void sendFlippedObject(GameObject* object);
+    void sendFlippedObjects(cocos2d::CCArray* objects);
     void sendDeletedObject(GameObject* object, std::string const& beforeSave = {});
-    // Catch-all for edits made through popups/undo: re-send any object whose
-    // save string changed since we last sent it. Objects may be nullptrs.
     void reconcileObjects(cocos2d::CCArray* objects);
 
-    // Broadcast the local editor selection so peers can draw colored rects
-    // (alk SelectCommand + draw-selection-overlay). Throttled; empty clears.
     void sendSelection(cocos2d::CCArray* selected);
-    // Peer selections currently known (for the overlay to redraw).
     std::unordered_map<int, PeerSelection> const& peerSelections() const { return m_peerSelections; }
 
-    // Host-only: invite a GD account to the current room. cb reports the
-    // outcome (delivered / offline / error) so the UI can give feedback.
+    void sendCameraPresence();
+    std::unordered_map<int, PeerCamera> const& peerCameras() const { return m_peerCameras; }
+    std::unordered_map<int, PeerWorkZone> const& peerWorkZones() const { return m_peerWorkZones; }
+    std::vector<PeerPing> const& peerPings() const { return m_peerPings; }
+
+    void sendWorkZone();
+    void sendPing(float x, float y);
+    std::string cycleFollowPeer();
+    void clearFollow();
+    int followClientId() const { return m_followClientId; }
+    struct HeatSample { float x = 0.f; float y = 0.f; float intensity = 0.f; };
+    std::vector<HeatSample> heatmapSamples(size_t maxCount = 120) const;
+    void recordHeat(float x, float y, float amount = 1.f);
+
+    void sendLevelSettings(bool force = false);
+    void reconcileLevelMeta();
+
+    bool canEditObjectLayer(GameObject* object) const;
+    std::unordered_map<int, int> const& layerOwners() const { return m_layerOwners; }
+    bool isRecovering() const { return m_recovering; }
+
     using InviteCb = std::function<void(bool ok, bool online, std::string const& message)>;
     void inviteUser(int accountId, std::string const& targetName, InviteCb cb = {});
 
-    // Chat.
     void sendChat(std::string const& text);
     std::vector<ChatMessage> recentChat(size_t maxCount = 40) const;
     uint64_t chatRevision() const { return m_chatRevision; }
 
-    // Voice relay (frames produced by CollabVoice).
     void sendVoiceFrame(uint32_t seq, std::string const& b64);
 
-    // Called every editor frame: flushes outgoing ops and applies remote ones.
     void tick();
 
     bool clientCanOpenSong() const;
     bool clientCanOpenOptions() const;
     bool clientCanOpenLevelSettings() const;
+    bool clientCanEditColors() const;
 
 private:
     struct OutOp {
-        std::string kind; // add | update | delete | move
+        std::string kind;
         std::string gid;
         uint32_t version = 0;
         std::string save;
         float x = 0.f;
         float y = 0.f;
         bool hasPos = false;
+        float rot = 0.f;
+        bool hasRot = false;
+        float scaleX = 1.f;
+        float scaleY = 1.f;
+        bool hasScale = false;
+        bool flipX = false;
+        bool flipY = false;
+        bool hasFlip = false;
     };
 
     struct ApplyObj {
-        std::string kind = "add"; // add | update | delete | move
+        std::string kind = "add";
         std::string gid;
         std::string save;
         uint32_t version = 0;
-        int origin = 0;      // clientId that made the edit (0 = snapshot)
-        std::string by;      // username of the editor (may be empty)
+        int origin = 0;
+        std::string by;
         float x = 0.f;
         float y = 0.f;
         bool hasPos = false;
+        float rot = 0.f;
+        bool hasRot = false;
+        float scaleX = 1.f;
+        float scaleY = 1.f;
+        bool hasScale = false;
+        bool flipX = false;
+        bool flipY = false;
+        bool hasFlip = false;
+    };
+
+    struct DeferredEdit {
+        geode::Ref<GameObject> object;
+        LocalEditKind kind = LocalEditKind::Full;
     };
 
     CollabManager();
@@ -139,69 +161,75 @@ private:
     void onState(ConnState state, std::string const& message);
     void onMessage(matjson::Value const& msg);
     void handleMessage(matjson::Value const& msg);
+    void queueRemote(ApplyObj op);
     void handlePeerList(matjson::Value const& peersJson);
     void pushChatMessage(ChatMessage msg);
 
-    // Tears the session down locally and shows a notice. Pops the joiner's
-    // editor scene first so the alert lands on the destination scene. Used for
-    // both room_closed and a lost session (server restart / room purge).
     void teardownAndNotify(std::string const& text);
-    // Tries to transparently recover a session the server dropped (restart /
-    // timeout): the host re-creates its room with the same code (the server
-    // lets it reclaim it), a peer re-joins and rebuilds from a fresh snapshot.
-    // Rate limited; returns false when the caller should tear down instead.
     bool tryRecoverSession();
-    // Deletes the temporary level auto-created for a joiner (the canvas is the
-    // host's level; the joiner copy is just a preview).
     void discardJoinerLevel();
 
+    void enqueueOp(OutOp op);
     void enqueueOp(std::string kind, std::string const& gid, uint32_t version, std::string save,
                    float x = 0.f, float y = 0.f, bool hasPos = false);
     void flushSelectionIfNeeded();
     void handlePeerSelection(matjson::Value const& msg);
     void clearPeerSelection(int clientId);
-    // Moves the coalescing buffer into the ordered outbox and pumps it.
+    void flushCameraIfNeeded();
+    void handlePeerCamera(matjson::Value const& msg);
+    void clearPeerCamera(int clientId);
+    void flushWorkZoneIfNeeded();
+    void handlePeerWorkZone(matjson::Value const& msg);
+    void clearPeerWorkZone(int clientId);
+    void handlePeerPing(matjson::Value const& msg);
+    void tickFollow();
+    void tickHeatmap(float dt);
+    void tickPings(float dt);
+    void handleLayerOwners(matjson::Value const& msg);
+    void claimObjectLayer(GameObject* object);
+    void handleLevelSettings(matjson::Value const& msg);
+    std::string captureLevelMetaSignature() const;
+    matjson::Value buildLevelMetaPayload() const;
+    void applyLevelSettingsSave(std::string const& save);
+    void applyColorsSave(std::string const& save);
+    void applySongMeta(matjson::Value const& msg);
+    static bool isCheapKind(std::string const& kind);
     void flushOutgoing();
-    // Sends the next outbox chunk if nothing is in flight and pacing allows.
     void pumpOutbox();
-    // (Re)sends the current in-flight chunk.
     void sendInflightChunk();
-    // Ack from the server for the in-flight chunk: pop + chain on success,
-    // schedule an in-order retry on failure. Ops are never dropped.
+    // Acknowledge the in-flight chunk and retry failures in order.
     void onOpsAck(bool ok, int status);
-    // Compares the server's state digest against ours and auto-resyncs on
-    // persistent mismatch (only evaluated when fully quiescent).
     void handleDigest(matjson::Value const& msg);
-    // Safety net for edits without a hook: registers untracked editor objects
-    // as adds and tracked-but-removed objects as deletes.
     void sweepEditor();
+    void queueObjectEdit(GameObject* object, LocalEditKind kind);
+    void drainDeferredLocalEdits();
+    void sendObjectState(GameObject* object, LocalEditKind kind);
 
-    // Non-hosts are dropped straight into a fresh editor on join so the host's
-    // snapshot/ops populate a clean level (instead of merging onto whatever the
-    // user happened to have open).
     void openJoinerEditor();
-    // Drops the host into their own level's editor when they created the room
-    // from outside the editor (e.g. from the level info screen).
     void openHostEditor();
 
-    // Editor object state (gid maps, versions, pending/apply queues) is tied to
-    // a specific editor scene. Cleared when leaving the editor so re-entering a
-    // still-open room starts fresh, and rebuilt via a server resync.
     void resetEditorState();
     void wipeEditorObjects();
     void beginResync();
 
     size_t seedFromEditor();
+    void flushSeedChunk(bool finalChunk);
+    void onSeedAck(bool ok, int status, int accepted, int roomTotal, bool wasFinal, uint64_t epoch);
     void applyRemoteAdd(ApplyObj const& op);
     void applyRemoteUpdate(ApplyObj const& op);
     void applyRemoteMove(ApplyObj const& op);
+    void applyRemoteTransform(ApplyObj const& op);
     void applyRemoteDelete(ApplyObj const& op);
     void notifyOverlayEdit(ApplyObj const& op, GameObject* object);
+    static void fillApplyTransform(ApplyObj& op, matjson::Value const& item);
+    static void writeOutTransform(matjson::Value& obj, OutOp const& op);
 
     GameObject* findTrackedObject(std::string const& gid) const;
     std::string saveObject(GameObject* object) const;
     void mapGid(std::string const& gid, GameObject* object);
     void unmapGid(std::string const& gid);
+    void setWireHash(std::string const& gid, uint64_t hash);
+    void eraseWireHash(std::string const& gid);
     std::string makeLocalGid();
     bool shouldEmit() const;
 
@@ -223,100 +251,120 @@ private:
 
     HostPermissions m_permissions;
 
-    // gid <-> local object mapping. m_uniqueID is per-session (not global), so
-    // objects are addressed by gid on the wire. The Ref keeps remote-applied
-    // lookups O(1) instead of scanning m_objects.
+    // GID mapping keeps remote lookups alive and O(1).
     std::unordered_map<int, std::string> m_uidToGid;
     std::unordered_map<std::string, geode::Ref<GameObject>> m_gidToObj;
     std::unordered_map<std::string, uint32_t> m_versionByGid;
-    // Last save string we sent per gid: identical re-sends are skipped, which
-    // keeps drags/reconciles from spamming no-op updates at the server.
+    // Last wire save per GID, used to skip no-op resends.
     std::unordered_map<std::string, std::string> m_lastSentSave;
     uint64_t m_localSeq = 1;
 
-    // Outgoing batch (coalesces repeated updates per gid).
+    // Bulk hooks stage refs; saves are generated within the frame budget.
+    std::deque<geode::Ref<GameObject>> m_deferredCreates;
+    std::deque<int> m_deferredEditOrder;
+    std::unordered_map<int, DeferredEdit> m_deferredEdits;
+
     std::vector<OutOp> m_pendingOps;
     std::unordered_map<std::string, size_t> m_pendingIndexByGid;
-    // Update-only batches are throttled to ~5 flushes/s; adds and deletes
-    // flush on the next tick so placements feel instant.
+    // Throttle updates; structural edits flush on the next tick.
     float m_sinceFlush = 0.f;
     bool m_pendingStructural = false;
 
-    // Reliable ordered outbox. Ops move pendingOps -> outbox -> inflight; the
-    // inflight chunk is only discarded once the server acks it, and only one
-    // chunk is in flight at a time so arrival order matches send order. A
-    // token bucket paces sends under the server's ops/sec limit (mass pastes
-    // used to blow through it and get the whole batch 429'd and lost).
-    std::deque<OutOp> m_outbox;
+    // Ordered acknowledged outbox with token-bucket pacing.
+    std::list<OutOp> m_outbox;
+    std::unordered_map<std::string, std::list<OutOp>::iterator> m_outboxByGid;
     std::vector<OutOp> m_inflight;
-    // Bumped whenever outbox state is reset; in-flight ack callbacks compare
-    // it and drop themselves if the session/state changed under them.
+    // Invalidates stale callbacks after a reset.
     uint64_t m_sendEpoch = 0;
     float m_retryTimer = 0.f;
     int m_sendFailures = 0;
     float m_opTokens = kDefaultOpsPerSecond;
     float m_opsPerSec = kDefaultOpsPerSecond;
     size_t m_maxOpsPerRequest = kDefaultOpsPerRequest;
-    // High-water mark of a drain, for "syncing N objects" progress status.
     size_t m_syncTotal = 0;
 
-    // What we believe the server holds per gid (hash of gid|version|save as
-    // sent or received on the wire). XOR-aggregated and compared against the
-    // server's periodic digest; a persistent mismatch triggers an auto-resync.
+    // Local GID/version/save digest for periodic server comparison.
     std::unordered_map<std::string, uint64_t> m_wireHash;
+    uint64_t m_wireDigest = 0;
     int m_digestStrikes = 0;
     float m_digestCooldown = 0.f;
 
-    // Rotating cursors so huge selections/levels are covered in slices instead
-    // of being skipped (large selections used to never reconcile at all).
+    // Rotating cursors keep large updates within the frame budget.
     size_t m_reconcileCursor = 0;
     int m_sweepTicks = 0;
+    size_t m_sweepObjectCursor = 0;
+    size_t m_sweepBucketCursor = 0;
 
-    // Remote operations to apply (snapshot + op_batch), applied in arrival
-    // order and budgeted per tick. Only drained once the editor exists, so
-    // connecting before entering the editor never drops objects.
-    std::deque<ApplyObj> m_applyQueue;
+    // Ordered remote queue, drained once the editor exists.
+    std::list<ApplyObj> m_applyQueue;
+    std::unordered_map<std::string, std::list<ApplyObj>::iterator> m_queuedRemoteByGid;
     size_t m_snapshotReceived = 0;
     bool m_snapshotComplete = false;
     bool m_seeded = false;
 
-    // Seeding window: when we host an empty room we upload the level already
-    // open in the editor. Objects can stream in over several frames, so we keep
-    // seeding (skipping ones already tracked) until none appear for a while.
+    // Host snapshot seed, serialized in slices with one request in flight.
     bool m_seeding = false;
-    int m_seedIdleTicks = 0;
-    int m_seedTotalTicks = 0;
+    size_t m_seedCursor = 0;
+    size_t m_seedTotal = 0;
+    size_t m_seedUploaded = 0;
+    matjson::Value m_seedChunk = matjson::Value::array();
+    size_t m_seedChunkBytes = 0;
+    bool m_seedInflight = false;
+    bool m_seedSerializeDone = false;
+    uint64_t m_seedEpoch = 0;
 
-    // Periodic selected-object reconcile (catches popup edits, undo, etc.).
     int m_reconcileTicks = 0;
 
-    // Chat log (newest last), capped.
     std::deque<ChatMessage> m_chat;
     uint64_t m_chatRevision = 0;
 
     bool m_joinerEditorOpened = false;
     geode::Ref<GJGameLevel> m_joinerLevel;
-    // Level the host wants to collab on, captured at connect time so we can
-    // open its editor once we know we're the host.
     geode::Ref<GJGameLevel> m_hostLevel;
-    // Set when we leave the editor with the room still open, so the next editor
-    // entry triggers a resync instead of a fresh seed/snapshot.
     bool m_needsResyncOnEntry = false;
 
-    // Session recovery bookkeeping (see tryRecoverSession).
     bool m_recovering = false;
     int m_recoverAttempts = 0;
     std::chrono::steady_clock::time_point m_lastRecoverAt{};
 
-    // Peer selection presence (ephemeral). Local selection is staged then
-    // flushed on a short throttle so drag-selects don't spam the server.
     std::unordered_map<int, PeerSelection> m_peerSelections;
     matjson::Value m_pendingSelectionJson;
     bool m_selectionDirty = false;
     float m_sinceSelectionFlush = 0.f;
 
-    // Playtest edge detection for view-only sandbox reset (alk-style).
+    std::unordered_map<int, PeerCamera> m_peerCameras;
+    matjson::Value m_pendingCameraJson;
+    bool m_cameraDirty = false;
+    float m_sinceCameraFlush = 0.f;
+    float m_lastCamX = 0.f;
+    float m_lastCamY = 0.f;
+    float m_lastCamZoom = 0.f;
+    float m_lastCursorX = 0.f;
+    float m_lastCursorY = 0.f;
+    bool m_lastCursorVisible = false;
+
+    std::unordered_map<int, PeerWorkZone> m_peerWorkZones;
+    matjson::Value m_pendingWorkZoneJson;
+    bool m_workZoneDirty = false;
+    float m_sinceWorkZoneFlush = 0.f;
+    float m_lastZoneX = 0.f, m_lastZoneY = 0.f, m_lastZoneW = 0.f, m_lastZoneH = 0.f;
+    std::vector<PeerPing> m_peerPings;
+    int m_followClientId = 0;
+    struct HeatCell {
+        int gx = 0;
+        int gy = 0;
+        float heat = 0.f;
+    };
+    std::vector<HeatCell> m_heatCells;
+
+    std::unordered_map<int, int> m_layerOwners;
+
+    std::string m_lastMetaSig;
+    int m_metaReconcileTicks = 0;
+    matjson::Value m_pendingLevelMeta;
+    bool m_hasPendingLevelMeta = false;
+
     bool m_wasPlaytesting = false;
 };
 
-} // namespace paimon::collab
+}

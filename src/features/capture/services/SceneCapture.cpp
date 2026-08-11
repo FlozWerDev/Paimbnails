@@ -189,6 +189,7 @@ CCTexture2D* createTextureFromRGBA(uint8_t const* data, int width, int height, b
     }
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     tex->setTexParameters(&params);
+    tex->autorelease();
     if (retain) tex->retain();
     return tex;
 }

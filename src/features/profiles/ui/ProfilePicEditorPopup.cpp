@@ -268,7 +268,6 @@ namespace {
 }
 
 
-// ============================ Photo tab ============================
 
 CCNode* ProfilePicEditorPopup::createPhotoTab() {
     auto root = CCNode::create();
@@ -500,7 +499,6 @@ void ProfilePicEditorPopup::onResetAdjust(CCObject*) {
 }
 
 
-// ============================ Shape tab ============================
 
 CCNode* ProfilePicEditorPopup::createShapeTab() {
     auto root = CCNode::create();
@@ -638,7 +636,6 @@ void ProfilePicEditorPopup::onResetShape(CCObject*) {
 }
 
 
-// ============================ Border tab ============================
 
 CCNode* ProfilePicEditorPopup::createBorderTab() {
     auto root = CCNode::create();
@@ -781,7 +778,6 @@ void ProfilePicEditorPopup::onPickCustomBorderColor(CCObject*) {
 }
 
 
-// ============================ Deco tab ============================
 
 namespace {
     constexpr int kDecoGridCols = 6;
@@ -1233,7 +1229,6 @@ void ProfilePicEditorPopup::onClearAllDecos(CCObject*) {
 }
 
 
-// ============================ Icon tab ============================
 
 CCNode* ProfilePicEditorPopup::createIconTab() {
     auto root = CCNode::create();
@@ -1381,7 +1376,6 @@ void ProfilePicEditorPopup::onOpenIconsDetail(CCObject*) {
 }
 
 
-// ============================ Style tab ============================
 
 CCNode* ProfilePicEditorPopup::createStyleTab() {
     auto root = CCNode::create();
@@ -1647,7 +1641,6 @@ void ProfilePicEditorPopup::onResetAll(CCObject*) {
 }
 
 
-// ============================ Preview ============================
 
 void ProfilePicEditorPopup::triggerImageDownloadIfNeeded() {
     if (m_triggeredDownload) return;

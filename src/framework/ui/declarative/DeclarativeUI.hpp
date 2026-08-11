@@ -1,16 +1,7 @@
 #pragma once
 
-// DeclarativeUI.hpp — Declarative UI engine.
-//
-// Describes node trees as data (Spec or JSON) and builds them with a per-type
-// factory plus attribute appliers.
-//
-//   Spec spec{ "CCLabelBMFont", "my-label", attrs, {} };
-//   auto* node = dec::build(spec, parent);
-//
-// or from JSON:
-//
-//   auto* node = dec::build(dec::Spec::fromJson(json), parent);
+// Declarative node trees built from Spec/JSON through per-type factories and
+// attribute appliers.
 
 #include <matjson.hpp>
 #include <functional>
@@ -23,20 +14,19 @@ namespace cocos2d { class CCNode; }
 
 namespace paimon::ui::dec {
 
-// Declarative node description.
 struct Spec {
-    std::string type;                                    // "CCNode", "CCLabelBMFont", ...
-    std::string id;                                      // optional (node id)
+    std::string type;                                    // Node type.
+    std::string id;                                      // Optional node ID.
     matjson::Value attributes = matjson::Value::object();
     std::vector<Spec> children;
 
     static Spec fromJson(matjson::Value const& json);
 };
 
-// type string -> base node creator.
+// Type string -> base node creator.
 using Creator = std::function<cocos2d::CCNode*(matjson::Value const& attrs)>;
 
-// Type registry (factory pattern). Default types are registered on first use.
+// Default types register on first use.
 class Factory {
 public:
     static Factory& get();
@@ -49,17 +39,14 @@ private:
     std::unordered_map<std::string, Creator> m_creators;
 };
 
-// Apply attributes to an existing node. 'parent' is used for anchored positions
-// (anchor relative to the parent); if null, anchors to the screen.
+// Apply attributes; anchored positions use parent or the screen when null.
 void applyAttributes(cocos2d::CCNode* node, matjson::Value const& attrs,
                      cocos2d::CCNode* parent = nullptr);
 
-// Build a Spec's tree. If 'parent' != null, adds the root node to it.
+// Build a Spec tree, optionally attaching the root to parent.
 cocos2d::CCNode* build(Spec const& spec, cocos2d::CCNode* parent = nullptr);
 
-// Find a descendant by a node-ID query:
-//   "a > b"  -> direct child 'b' of child 'a'
-//   "a b"    -> recursive descendant 'b' under 'a'
+// Find a descendant by ID query: "a > b" is direct; "a b" is recursive.
 cocos2d::CCNode* query(cocos2d::CCNode* root, std::string_view path);
 
-} // namespace paimon::ui::dec
+}

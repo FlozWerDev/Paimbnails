@@ -4,7 +4,6 @@
 
 class PaimonMultiSettingsPanel : public cocos2d::CCLayer {
 protected:
-    // fondo
     cocos2d::CCSprite* m_blurBg = nullptr;
     cocos2d::CCLayerColor* m_darkOverlay = nullptr;
 
@@ -14,33 +13,27 @@ protected:
     cocos2d::CCNodeRGBA* m_titleBarBg = nullptr;
     cocos2d::CCLabelBMFont* m_titleLabel = nullptr;
 
-    // sidebar
     cocos2d::CCMenu* m_sidebarMenu = nullptr;
     cocos2d::CCNodeRGBA* m_sidebarBg = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_sidebarButtons;
     cocos2d::CCNodeRGBA* m_sidebarAccent = nullptr;
     int m_selectedCategory = 0;
 
-    // content area
     geode::ScrollLayer* m_scrollLayer = nullptr;
 
-    // search
     geode::TextInput* m_searchInput = nullptr;
     std::string m_searchQuery;
     bool m_isSearchActive = false;
 
-    // drag state
     bool m_isDragging = false;
     cocos2d::CCPoint m_dragOffset;
 
-    // animacion
     bool m_isClosing = false;
 
     // Touch priority computada dinamicamente al abrir (force priority aware)
     int m_touchPrio = -600;
     int m_childTouchPrio = -601;
 
-    // dimensiones del panel
     static constexpr float PANEL_W = 480.f;
     static constexpr float PANEL_H = 280.f;
     static constexpr float TITLE_BAR_H = 28.f;
@@ -59,13 +52,11 @@ protected:
     void relayoutContent();
     void updateSidebarAccent();
 
-    // search
     void onSearchChanged(std::string const& query);
     void buildSearchResults(std::string const& query);
 
     void runEntryAnimation();
 
-    // touch handling
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;

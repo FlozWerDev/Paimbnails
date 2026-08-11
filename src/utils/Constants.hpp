@@ -2,9 +2,7 @@
 
 #include <cstdint>
 
-/**
- * Centralized constants to eliminate magic numbers throughout the codebase.
- */
+// Shared UI and cache constants.
 namespace PaimonConstants {
     constexpr float BORDER_THICKNESS = 6.0f;
     constexpr float MIN_THUMB_WIDTH_FACTOR = 0.2f;
@@ -20,4 +18,3 @@ namespace PaimonConstants {
 
     constexpr const char* THUMBNAIL_CDN_URL = "https://api.flozwer.org/";
 }
-

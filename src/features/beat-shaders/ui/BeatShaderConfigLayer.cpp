@@ -57,7 +57,6 @@ bool BeatShaderConfigLayer::init() {
 
     rebuild();
 
-    // Boton fijo abajo: restaurar valores por defecto
     auto* resetSpr = ButtonSprite::create("Restaurar", "goldFont.fnt", "GJ_button_06.png", 0.7f);
     if (resetSpr) resetSpr->setScale(0.55f);
     auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr,
@@ -108,7 +107,6 @@ void BeatShaderConfigLayer::rebuild() {
     auto fmtPercent = [](double v) { return fmt::format("{}%", static_cast<int>(v * 100.0)); };
     auto fmtTimes   = [](double v) { return fmt::format("x{:.1f}", v); };
 
-    // Interruptor principal
     auto* hero = kit::makeHeroToggle(scrollW,
         "Fondos al ritmo",
         "El fondo del menu se mueve siguiendo la musica.",
@@ -118,7 +116,6 @@ void BeatShaderConfigLayer::rebuild() {
             persistAndRefresh(true);
         });
 
-    // Tarjeta: estilo del efecto
     std::vector<std::string> shaderNames;
     shaderNames.reserve(m_shaders.size());
     for (auto const& s : m_shaders) shaderNames.push_back(s.label);
@@ -137,8 +134,6 @@ void BeatShaderConfigLayer::rebuild() {
             persistAndRefresh(true);
         });
 
-    // Descripcion del estilo actual (se actualiza al cambiar de estilo).
-    // Nodo propio con altura fija para dos lineas.
     auto* descRow = CCNode::create();
     descRow->setAnchorPoint({0.f, 0.f});
     descRow->setContentSize({innerW, 22.f});
@@ -158,7 +153,6 @@ void BeatShaderConfigLayer::rebuild() {
     auto* styleCard = kit::makeCard(scrollW, "Estilo del efecto", {255, 140, 220},
                                     {styleRow, descRow});
 
-    // Pestanas Basico / Avanzado
     auto* tabs = kit::makeTabBar(scrollW, {"Basico", "Avanzado"}, m_tab,
         [this](int i) {
             m_tab = i;
@@ -179,7 +173,6 @@ void BeatShaderConfigLayer::rebuild() {
             "En Avanzado: reaccion por frecuencias (graves, medios, agudos) "
             "y en que pantallas se aplica."));
     } else {
-        // Ecualizador de la reaccion
         items.push_back(kit::makeCard(scrollW, "Reaccion por frecuencias", {120, 210, 255}, {
             kit::makeSliderRow(innerW,
                 "Graves", "Reaccion a los bajos y al bombo.",
@@ -199,7 +192,6 @@ void BeatShaderConfigLayer::rebuild() {
                 [this](double v) { m_cfg.beatMult = static_cast<float>(v); persistAndRefresh(false); }),
         }));
 
-        // Pantallas donde se aplica
         std::vector<CCNode*> layerRows;
         auto layers = BeatShaderManager::get().availableLayers();
         for (size_t i = 0; i < layers.size(); ++i) {
@@ -220,7 +212,6 @@ void BeatShaderConfigLayer::rebuild() {
             items.push_back(kit::makeCard(scrollW, "Donde se aplica", {130, 240, 170}, layerRows));
         }
 
-        // La tarjeta de estilo no se usa en esta pestana.
         styleCard->removeAllChildren();
         m_shaderDescLabel = nullptr;
     }

@@ -4,6 +4,10 @@
 #include "SettingsMigration.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/beat-shaders/services/BeatShaderManager.hpp"
+#include "../features/dynamic-songs/services/DynamicSongConfig.hpp"
+#include "../features/dynamic-songs/services/DynamicSongSubmerge.hpp"
+#include "../features/dynamic-volume/services/DynamicVolumeManager.hpp"
+#include "../features/menu-music/services/MenuMusicEffects.hpp"
 #include "../features/colorful-icons/services/IconConfigStore.hpp"
 #include "../features/custom-slider/services/CustomSliderManager.hpp"
 #include "../features/emotes/services/EmoteCache.hpp"
@@ -138,6 +142,23 @@ void resetBeatShaders() {
     }
 }
 
+void resetDynamicVolume() {
+    auto& mgr = paimon::dynvol::DynamicVolumeManager::get();
+    mgr.saveConfig(paimon::dynvol::DynamicVolumeConfig{});
+    mgr.setSafeDropEnabled(true);
+    mgr.resetRuntimeState();
+}
+
+void resetMenuMusicEffects() {
+    paimon::menumusic::MenuMusicEffects::get().saveConfig(
+        paimon::menumusic::MusicEffectsConfig{});
+}
+
+void resetDynamicSong() {
+    paimon::dynsong::saveConfig(paimon::dynsong::DynamicSongConfig{});
+    paimon::dynsong::SubmergeEffect::get().release();
+}
+
 void resetFeatureManagers() {
     paimon::menu_layout::MainMenuLayoutManager::get().load();
     paimon::menu_layout::MainMenuLayoutManager::get().resetAll();
@@ -188,6 +209,9 @@ void execute() {
     paimon::settings::forceResetSavedValuesToDefaults();
     resetLayerBackgrounds();
     resetBeatShaders();
+    resetDynamicVolume();
+    resetMenuMusicEffects();
+    resetDynamicSong();
     resetFeatureManagers();
 
     Localization::get().setLanguage(

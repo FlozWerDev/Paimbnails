@@ -1,7 +1,5 @@
-// LoadingLayer hook: starts the core asset preload (22 main-level thumbnails +
-// emote catalog) and shows an X/Y progress label. Downloads run in the
-// background and don't block the LoadingLayer; they continue if the user
-// reaches the menu first.
+// LoadingLayer hook: preloads the 22 main-level thumbnails before the menu.
+// The emote catalog continues in the background afterwards.
 
 #include <Geode/modify/LoadingLayer.hpp>
 
@@ -25,6 +23,7 @@ using namespace geode::prelude;
 namespace {
 
 constexpr float kProgressUpdateInterval = 0.1f;
+constexpr int kFinalGameLoadStep = 14;
 
 // Core-set preload lives in core/PreloadActions.cpp
 // (paimon::preload::startFullPreload), shared with MenuLayerPreloadFallback.cpp.
@@ -33,9 +32,10 @@ constexpr float kProgressUpdateInterval = 0.1f;
 
 class $modify(PaimonLoadingLayer, LoadingLayer) {
     struct Fields {
-        cocos2d::CCLabelBMFont* progressLabel = nullptr;
         bool updateScheduled = false;
         bool setupDone = false;
+        bool waitingForMainLevels = false;
+        bool mainLevelsFinished = false;
     };
 
     static void onModify(auto& self) {
@@ -59,26 +59,21 @@ class $modify(PaimonLoadingLayer, LoadingLayer) {
                 paimon::preload::startFullPreload();
             }
 
-            this->createProgressLabel();
             this->updateProgressLabel(0.f);
             this->scheduleProgressUpdates();
         }
 
+        int loaded = paimon::preload::g_thumbsLoaded.load(std::memory_order_acquire);
+        int total = paimon::preload::g_thumbsTotal.load(std::memory_order_acquire);
+        if (m_loadStep == kFinalGameLoadStep && !m_fields->mainLevelsFinished) {
+            if (total > 0 && loaded < total) {
+                m_fields->waitingForMainLevels = true;
+                return;
+            }
+            m_fields->mainLevelsFinished = true;
+        }
+
         LoadingLayer::loadAssets();
-    }
-
-    void createProgressLabel() {
-        if (m_fields->progressLabel) return;
-
-        auto label = cocos2d::CCLabelBMFont::create("Paimbnails: 0/0", "chatFont.fnt");
-        label->setScale(0.55f);
-        label->setOpacity(200);
-        label->setID("paimbnails-preload-progress"_spr);
-
-        auto winSize = cocos2d::CCDirector::get()->getWinSize();
-        label->setPosition({winSize.width / 2.f, 28.f});
-        this->addChild(label, 100);
-        m_fields->progressLabel = label;
     }
 
     void scheduleProgressUpdates() {
@@ -91,33 +86,35 @@ class $modify(PaimonLoadingLayer, LoadingLayer) {
     }
 
     void updateProgressLabel(float /*dt*/) {
-        if (!m_fields->progressLabel) return;
-
-        using namespace paimon::preload;
-
-        int loaded = getTotalLoaded();
-        int total = getTotalCount();
+        auto label = static_cast<cocos2d::CCLabelBMFont*>(
+            this->getChildByID("geode-small-label")
+        );
+        int loaded = paimon::preload::g_thumbsLoaded.load(std::memory_order_acquire);
+        int total = paimon::preload::g_thumbsTotal.load(std::memory_order_acquire);
 
         std::string text;
         if (total == 0) {
-            text = "Paimbnails: cargando...";
+            text = "Paimbnails: preparando miniaturas...";
         } else if (loaded < total) {
-            text = fmt::format("Paimbnails: {}/{}", loaded, total);
+            text = fmt::format("Paimbnails: cargando miniaturas... ({}/{})", loaded, total);
         } else {
-            text = fmt::format("Paimbnails: {}/{} listo!", loaded, total);
+            text = fmt::format("Paimbnails: miniaturas listas! ({}/{})", loaded, total);
             this->unschedule(schedule_selector(PaimonLoadingLayer::updateProgressLabel));
             m_fields->updateScheduled = false;
         }
-        m_fields->progressLabel->setString(text.c_str());
+        if (label) label->setString(text.c_str());
+
+        if (total > 0 && loaded >= total && m_fields->waitingForMainLevels) {
+            m_fields->waitingForMainLevels = false;
+            m_fields->mainLevelsFinished = true;
+            LoadingLayer::loadAssets();
+        }
     }
 
     $override
     void onExit() {
         this->unschedule(schedule_selector(PaimonLoadingLayer::updateProgressLabel));
         m_fields->updateScheduled = false;
-        if (m_fields->progressLabel) {
-            m_fields->progressLabel = nullptr;
-        }
         LoadingLayer::onExit();
     }
 };

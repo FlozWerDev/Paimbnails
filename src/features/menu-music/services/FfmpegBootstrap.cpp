@@ -21,8 +21,6 @@ FfmpegBootstrap& FfmpegBootstrap::get() {
     return instance;
 }
 
-// Rutas y URLs
-
 std::filesystem::path FfmpegBootstrap::bundledPath() const {
 #ifdef GEODE_IS_WINDOWS
     constexpr const char* kName = "ffmpeg.exe";
@@ -44,35 +42,28 @@ void FfmpegBootstrap::uninstall() {
 
 std::string FfmpegBootstrap::releaseUrl() {
 #ifdef GEODE_IS_WINDOWS
-    // BtbN builds — distribuyen ffmpeg.exe como single-file dentro de un zip.
-    // Usamos la build "essentials" (sin libx264, mas pequena, ~40MB).
-    // La URL "latest" apunta siempre a la ultima publicada.
+    // BtbN essentials build.
     return "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/"
            "ffmpeg-master-latest-win64-gpl.zip";
 #elif defined(GEODE_IS_MACOS)
-    // Evermeet publica el binario suelto (sin zip) — mas facil.
-    // En caso de que cambie, apuntamos al getrelease que redirige.
+    // Evermeet redirects to the latest macOS build.
     return "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip";
 #elif defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    // Mobile: no soportamos descarga autom. ffmpeg no se distribuye
-    // como binario estatico para Android/iOS de forma estandar.
+    // Mobile downloads are unsupported.
     return "";
 #else
-    // Linux: BtbN tambien tiene builds estaticas. Vienen en tar.xz pero
-    // hay un zip alternativo.
+    // BtbN Linux zip build.
     return "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/"
            "ffmpeg-master-latest-linux64-gpl.zip";
 #endif
 }
 
 bool FfmpegBootstrap::isArchive() {
-    // Todas las URLs anteriores son .zip.
     return true;
 }
 
 std::string FfmpegBootstrap::archiveEntry() {
 #ifdef GEODE_IS_WINDOWS
-    // BtbN: ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe
     return "ffmpeg.exe";
 #elif defined(GEODE_IS_MACOS)
     return "ffmpeg";
@@ -80,8 +71,6 @@ std::string FfmpegBootstrap::archiveEntry() {
     return "ffmpeg";
 #endif
 }
-
-// Ensure installed
 
 void FfmpegBootstrap::ensureInstalled(
     FfmpegBootstrapProgressCallback onProgress,
@@ -185,7 +174,7 @@ void FfmpegBootstrap::ensureInstalled(
             auto data = res.data();
             if (data.size() < 1'000'000) {
                 fail(fmt::format(
-                    "Downloaded ffmpeg archive is too small ({} bytes) — the "
+                    "Downloaded ffmpeg archive is too small ({} bytes) - the "
                     "mirror may be down.", data.size()));
                 return;
             }
@@ -196,8 +185,7 @@ void FfmpegBootstrap::ensureInstalled(
                         data.size() / 1'048'576.0)});
             }
 
-            // Guardar el zip a disco para poder extraerlo. Geode's Unzip
-            // tambien acepta ByteSpan pero el disco es mas simple.
+            // Write the archive to disk for Geode::Unzip.
             auto zipPath = destDir / "ffmpeg-download.zip";
             auto writeRes = geode::utils::file::writeBinary(zipPath, data);
             if (!writeRes) {
@@ -206,9 +194,7 @@ void FfmpegBootstrap::ensureInstalled(
                 return;
             }
 
-            // Abrir el zip y buscar la entrada que termina en
-            // "/bin/ffmpeg.exe" o "/ffmpeg.exe" (la estructura varia
-            // segun el mirror). Extraerla a destBinary.
+            // Find the binary entry; mirror layouts vary.
             auto unzipRes = geode::utils::file::Unzip::create(zipPath);
             if (!unzipRes) {
                 fail(fmt::format("Failed to open ffmpeg zip: {}",
@@ -217,21 +203,16 @@ void FfmpegBootstrap::ensureInstalled(
             }
             auto unzip = std::move(unzipRes).unwrap();
 
-            // Encontrar la entrada que coincida con el binario buscado.
-            // BtbN empaqueta dentro de "ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe".
-            // Evermeet empaqueta directamente "ffmpeg".
             std::filesystem::path entryToExtract;
             for (const auto& entry : unzip.getEntries()) {
                 auto entryStr = geode::utils::string::pathToString(entry);
                 auto entryLower = geode::utils::string::toLower(entryStr);
                 auto needle = geode::utils::string::toLower(archiveEntryName);
-                // Matcheamos si la entrada termina exactamente con el
-                // nombre buscado (insensible a mayusculas).
+                // Match the requested filename case-insensitively.
                 if (entryLower.size() >= needle.size() &&
                     entryLower.compare(entryLower.size() - needle.size(),
                                        needle.size(), needle) == 0) {
-                    // Preferimos las rutas con "/bin/" sobre las que no lo
-                    // tienen (algunos zips traen tambien ffmpeg en docs/).
+                    // Prefer /bin/ entries over documentation copies.
                     if (entryToExtract.empty() ||
                         entryLower.find("/bin/") != std::string::npos) {
                         entryToExtract = entry;
@@ -258,7 +239,6 @@ void FfmpegBootstrap::ensureInstalled(
                 return;
             }
 
-            // Borrar el zip temporal (ya no lo necesitamos).
             std::error_code rmEc;
             std::filesystem::remove(zipPath, rmEc);
 
@@ -282,4 +262,4 @@ void FfmpegBootstrap::ensureInstalled(
     );
 }
 
-} // namespace paimon::menumusic
+}

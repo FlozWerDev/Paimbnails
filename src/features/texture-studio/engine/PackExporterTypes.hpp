@@ -17,7 +17,7 @@
 
 namespace paimon::texture_studio {
 
-// Caller must ensure the pair refers to the SAME sprite sheet (matching base name + quality).
+// The plist and PNG must belong to the same sheet and quality.
 struct SheetSelection {
     std::string baseName;
     std::string qualitySuffix;
@@ -25,17 +25,15 @@ struct SheetSelection {
     std::filesystem::path sourcePng;
 };
 
-// A custom replacement image plus how to place it inside the frame.
 struct SpriteImageOverride {
     std::filesystem::path path;
     ImageTransform transform{};
-    // false = replace the sprite; true = composite on top of the base sprite.
+    // False replaces the sprite; true composites over it.
     bool overlay = false;
 };
 
-// Region-fill fusion: mask + texture applied after tint / custom image.
-// Sheets bake texture frame 0 (static fallback). Multi-frame GIFs also ship
-// as standalone .gif when exportAnimatedFusions is enabled.
+// Region fill applied after tint/image overrides. Sheets bake frame 0; animated
+// fusions can also be exported as standalone GIFs.
 struct SpriteFusionOverride {
     std::filesystem::path maskPath;
     std::filesystem::path texturePath;
@@ -54,53 +52,48 @@ struct PackExportConfig {
     int           brightness = 160;
     bool          alternativeGlowOverlay = false;
 
-    // Tinting gameplay assets breaks in-game readability; keep UI-only by default.
+    // Gameplay tinting hurts readability, so UI-only is the default.
     bool onlyTintUiSprites = true;
     TintScope tintScope = TintScope::ButtonsOnly;
 
     float maskSoftness = 0.35f;
 
-    // Segmentation / grading parameters; must match the preview path
-    // (SpritePreviewOptions) so exports look like the editor.
+    // Must match SpritePreviewOptions so exports match the editor.
     int   clusterPrecision = 5;
     int   edgeCleanup = 1;
     int   outlineProtect = 0;
     float saturation = 1.0f;
     float contrast   = 0.0f;
 
-    // spriteColors take priority over `colors` and tint even when the UI filter rejects the sprite.
+    // Per-sprite colors override the global tint and UI filter.
     std::unordered_set<std::string> spriteSkip;
     std::unordered_map<std::string, TintColors> spriteColors;
     std::unordered_map<std::string, SpriteImageOverride> spriteImages;
     std::unordered_map<std::string, SpriteFusionOverride> spriteFusions;
 
-    // Ship multi-frame fusion sprites as standalone .gif files (requires
-    // ImagePlus in-game for animation). Sheets still contain frame 0.
+    // Export animated fusions as standalone GIFs; sheets still contain frame 0.
     bool exportAnimatedFusions = true;
 
     bool includeMediumPort = false;
 
-    // Order matters: progress is reported by index.
+    // Order is used for progress reporting.
     std::vector<SheetSelection> sheets;
 
     bool transparentLists = false;
     bool colorGradientBg  = false;
     bool colorMainMenu    = false;
 
-    // --- PackGen asset-pack precision mode --------------------------------
-    // Uses Asterveila's hand-drawn overlay masks (downloaded and cached) for
-    // pixel-exact tinting; falls back to auto-clustering when offline or for
-    // sheets the pack doesn't cover.
+    // PackGen precision mode: cached hand-drawn masks, with clustering fallback.
     bool usePackGenAssets = true;
 
-    // The following only take effect when the asset pack is available:
-    bool tintGoldFont       = false;  // recolor goldFont + ship its .fnt
-    bool colorGoldTitles    = false;  // gold "quit / menu" titles → color2
-    bool colorDemonFaces    = false;  // demon difficulty faces + DIB sheets
-    bool mythicCompat       = false;  // DIB legendary/mythic + Godlike faces
-    bool includeModTextures = true;   // recolored textures for popular mods
+    // These options apply only when the asset pack is available.
+    bool tintGoldFont       = false;
+    bool colorGoldTitles    = false;
+    bool colorDemonFaces    = false;
+    bool mythicCompat       = false;
+    bool includeModTextures = true;
 
-    // Empty = use GD default loading background.
+    // Empty uses GD's default loading background.
     std::vector<std::uint8_t> customLoadingBgPng;
 };
 
@@ -123,15 +116,13 @@ struct PackExportResult {
     std::vector<SheetExportResult> sheetResults;
     std::string                 packId;
 
-    // PackGen precision-mode stats. `precisionUsed` is false when the mode
-    // was requested but the asset pack could not be fetched (offline).
+    // Precision-mode result; false means the requested pack was unavailable.
     bool precisionUsed        = false;
     int  standaloneProcessed  = 0;
     int  standaloneFailed     = 0;
     std::string precisionNote;
 
-    // Multi-frame fusion GIFs shipped for ImagePlus / Happy Textures.
     int  animatedFusionCount  = 0;
 };
 
-}  // namespace paimon::texture_studio
+}

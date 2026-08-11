@@ -4,7 +4,7 @@
 #include "CollabPopups.hpp"
 #include "CollabVoice.hpp"
 
-
+#include "../cursor/services/CursorManager.hpp"
 #include "../../utils/AccountVerifier.hpp"
 
 #include <Geode/binding/GameManager.hpp>
@@ -13,11 +13,18 @@
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/binding/EditorUI.hpp>
 #include <Geode/binding/LevelEditorLayer.hpp>
+#include <Geode/binding/LevelSettingsObject.hpp>
+#include <Geode/binding/GJEffectManager.hpp>
+#include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/ui/PopupManager.hpp>
 
+#include "../editor-suite/EditorHelpers.hpp"
+#include "../editor-suite/EditorModule.hpp"
+
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 using namespace geode::prelude;
 
@@ -25,40 +32,75 @@ namespace paimon::collab {
 
 namespace {
 
-// Max snapshot objects applied per editor tick (keeps frames smooth on join).
-constexpr size_t kSnapshotApplyPerTick = 200;
+constexpr size_t kRemoteApplyMaxPerTick = 1000;
+constexpr auto kRemoteApplyBudget = std::chrono::milliseconds(4);
+constexpr size_t kSeedMaxPerTick = 512;
+constexpr auto kSeedBudget = std::chrono::milliseconds(4);
+constexpr size_t kSeedChunkMaxObjects = 800;
+constexpr size_t kSeedChunkMaxBytes = 1'200'000;
+constexpr auto kLocalEditBudget = std::chrono::milliseconds(3);
 
-// Editor tick period (LevelEditorLayer schedules collabTick at this rate).
 constexpr float kTickInterval = 0.05f;
 
-// Update-only batches are throttled to this period (~5 flushes/s). Batches
-// containing adds/deletes flush on the next tick regardless.
 constexpr float kUpdateFlushInterval = 0.2f;
 
-// Selected-object reconcile: period in ticks and objects per pass. Catches
-// edits made through popups (colors, groups, z-order) and undo shuffles that
-// no direct hook covers, at the cost of a save-string per selected object.
-// Selections bigger than the window are covered in rotating slices.
 constexpr int kReconcileEveryTicks = 10;
 constexpr size_t kReconcileMaxObjects = 500;
 
-// Background sweep: every N ticks, register editor objects that no hook
-// caught (as adds) and tracked objects that silently left the scene (as
-// deletes). Adds are capped per pass to bound the serialization cost.
-constexpr int kSweepEveryTicks = 40; // 2s at kTickInterval
+constexpr int kSweepEveryTicks = 40;
 constexpr size_t kSweepMaxAddsPerPass = 1500;
+constexpr size_t kSweepMaxChecksPerPass = 2000;
+constexpr auto kSweepBudget = std::chrono::milliseconds(2);
 
 constexpr size_t kChatLogCap = 100;
 
-// Peer selection presence: flush local selection at most this often, drop a
-// peer's rects if they go silent this long (they left or deselected long ago).
 constexpr float kSelectionFlushInterval = 0.12f;
 constexpr float kPeerSelectionMaxAge = 8.f;
-// Cap rects per peer so a 2k-object selection doesn't flood the wire; beyond
-// this we send a single union AABB instead.
 constexpr size_t kMaxSelectionRects = 64;
 
-// World-space AABB for a GameObject (object-layer coordinates).
+constexpr float kCameraFlushInterval = 0.2f;
+constexpr float kPeerCameraMaxAge = 6.f;
+constexpr float kCameraMoveEpsilon = 6.f;
+constexpr float kCameraZoomEpsilon = 0.02f;
+constexpr float kCursorMoveEpsilon = 3.f;
+
+constexpr float kWorkZoneFlushInterval = 0.75f;
+constexpr float kPeerWorkZoneMaxAge = 8.f;
+constexpr float kWorkZoneMoveEpsilon = 18.f;
+
+constexpr float kHeatCellSize = 90.f;
+constexpr float kHeatDecayPerSec = 0.7f;
+constexpr float kHeatGain = 1.15f;
+constexpr float kMaxCellHeat = 3.f;
+constexpr size_t kMaxHeatCells = 400;
+
+constexpr int kMetaReconcileEveryTicks = 40;
+
+bool isCheapEditKind(std::string const& kind) {
+    return kind == "move" || kind == "rotate" || kind == "scale" || kind == "flip";
+}
+
+uint64_t remoteOrderKey(uint32_t version, int origin) {
+    return (static_cast<uint64_t>(version) << 32) |
+           static_cast<uint32_t>(std::max(origin, 0));
+}
+
+LocalEditKind mergeEditKind(LocalEditKind a, LocalEditKind b) {
+    if (a == LocalEditKind::Full || b == LocalEditKind::Full) return LocalEditKind::Full;
+    if (a == b) return a;
+    return LocalEditKind::Full;
+}
+
+char const* kindName(LocalEditKind kind) {
+    switch (kind) {
+        case LocalEditKind::Move: return "move";
+        case LocalEditKind::Rotate: return "rotate";
+        case LocalEditKind::Scale: return "scale";
+        case LocalEditKind::Flip: return "flip";
+        default: return "update";
+    }
+}
+
 cocos2d::CCRect objectWorldRect(GameObject* object) {
     if (!object) return {};
     auto pos = object->getPosition();
@@ -67,7 +109,6 @@ cocos2d::CCRect objectWorldRect(GameObject* object) {
     float sy = std::abs(object->getScaleY());
     float w = std::max(4.f, size.width * sx);
     float h = std::max(4.f, size.height * sy);
-    // Anchor is typically center for GameObjects.
     return cocos2d::CCRect{pos.x - w * 0.5f, pos.y - h * 0.5f, w, h};
 }
 
@@ -80,31 +121,71 @@ std::string normalizeBaseUrl(std::string base) {
     return base;
 }
 
+std::string encodeBase64(std::vector<uint8_t> const& data) {
+    static constexpr char kAlphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve(((data.size() + 2) / 3) * 4);
+    for (size_t i = 0; i < data.size(); i += 3) {
+        uint32_t n = static_cast<uint32_t>(data[i]) << 16;
+        if (i + 1 < data.size()) n |= static_cast<uint32_t>(data[i + 1]) << 8;
+        if (i + 2 < data.size()) n |= static_cast<uint32_t>(data[i + 2]);
+        out.push_back(kAlphabet[(n >> 18) & 0x3f]);
+        out.push_back(kAlphabet[(n >> 12) & 0x3f]);
+        out.push_back(i + 1 < data.size() ? kAlphabet[(n >> 6) & 0x3f] : '=');
+        out.push_back(i + 2 < data.size() ? kAlphabet[n & 0x3f] : '=');
+    }
+    return out;
+}
+
+void addLocalCursorAppearance(PeerAppearance& appearance) {
+    if (!paimon::editor::featureEnabled("collab-custom-cursors")) return;
+
+    auto& cursor = CursorManager::get();
+    auto const& config = cursor.config();
+    if (!config.enabled || config.idleImage.empty()) return;
+
+    auto path = cursor.galleryDir() / config.idleImage;
+    std::error_code ec;
+    auto fileSize = std::filesystem::file_size(path, ec);
+    if (ec || fileSize == 0 || fileSize > kMaxCursorAssetBytes) return;
+
+    auto data = file::readBinary(path);
+    if (!data || data.unwrap().empty() || data.unwrap().size() > kMaxCursorAssetBytes) return;
+
+    appearance.cursorData = encodeBase64(data.unwrap());
+    appearance.cursorScale = std::clamp(config.scale, CURSOR_SCALE_MIN, CURSOR_SCALE_MAX);
+    appearance.cursorOpacity = std::clamp(config.opacity, 0, 255);
+    appearance.hasCustomCursor = true;
+}
+
 PeerAppearance localPeerAppearance() {
     PeerAppearance appearance;
     appearance.accountID = AccountVerifier::get().getAccountID();
 
     auto* gm = GameManager::get();
-    if (!gm) return appearance;
+    if (gm) {
+        IconType iconType = gm->m_playerIconType;
+        int iconID = gm->activeIconForType(iconType);
+        if (iconID <= 0) {
+            iconType = IconType::Cube;
+            iconID = gm->m_playerFrame;
+        }
 
-    IconType iconType = gm->m_playerIconType;
-    int iconID = gm->activeIconForType(iconType);
-    if (iconID <= 0) {
-        iconType = IconType::Cube;
-        iconID = gm->m_playerFrame;
+        appearance.iconID = std::max(1, iconID);
+        appearance.iconType = static_cast<int>(iconType);
+        appearance.color1 = gm->getPlayerColor();
+        appearance.color2 = gm->getPlayerColor2();
+        appearance.glowColor = gm->m_playerGlowColor;
+        appearance.glowEnabled = gm->m_playerGlow;
+        appearance.hasIcon = true;
     }
 
-    appearance.iconID = std::max(1, iconID);
-    appearance.iconType = static_cast<int>(iconType);
-    appearance.color1 = gm->getPlayerColor();
-    appearance.color2 = gm->getPlayerColor2();
-    appearance.glowColor = gm->m_playerGlowColor;
-    appearance.glowEnabled = gm->m_playerGlow;
-    appearance.hasIcon = true;
+    addLocalCursorAppearance(appearance);
     return appearance;
 }
 
-} // namespace
+}
 
 PeerAppearance CollabManager::localAppearance() {
     return localPeerAppearance();
@@ -115,18 +196,17 @@ CollabManager& CollabManager::get() {
     return instance;
 }
 
-CollabManager::CollabManager() = default;
+CollabManager::CollabManager() {
+    listenForSettingChanges<bool>("collab-enabled", +[](bool enabled) {
+        if (!enabled) CollabManager::get().disconnect();
+    });
+}
 
 CollabManager::~CollabManager() {
     disconnect();
 }
 
 void CollabManager::connect(std::string const& roomCode, std::string const& username, ConnectMode mode, GJGameLevel* hostLevel) {
-    // Guard against a footgun: if you already host this room and try to "join"
-    // it, the disconnect() below would leave as host and the server closes the
-    // room for everyone (dropClient -> host_left). Just drop back into your
-    // host editor instead. You can't be host and peer of the same room from one
-    // client.
     if (mode == ConnectMode::Join && m_isHost && m_state == ConnState::Connected && m_roomCode == roomCode) {
         log::info("[Collab] already hosting room={}, reopening host editor instead of self-join", roomCode);
         setStatus("Ya eres el host de esta sala. Volviendo a tu editor...");
@@ -153,11 +233,15 @@ void CollabManager::connect(std::string const& roomCode, std::string const& user
     m_gidToObj.clear();
     m_versionByGid.clear();
     m_lastSentSave.clear();
+    m_deferredCreates.clear();
+    m_deferredEditOrder.clear();
+    m_deferredEdits.clear();
     m_pendingOps.clear();
     m_pendingIndexByGid.clear();
     m_sinceFlush = 0.f;
     m_pendingStructural = false;
     m_outbox.clear();
+    m_outboxByGid.clear();
     m_inflight.clear();
     ++m_sendEpoch;
     m_retryTimer = 0.f;
@@ -167,17 +251,27 @@ void CollabManager::connect(std::string const& roomCode, std::string const& user
     m_maxOpsPerRequest = kDefaultOpsPerRequest;
     m_syncTotal = 0;
     m_wireHash.clear();
+    m_wireDigest = 0;
     m_digestStrikes = 0;
     m_digestCooldown = 0.f;
     m_reconcileCursor = 0;
     m_sweepTicks = 0;
+    m_sweepObjectCursor = 0;
+    m_sweepBucketCursor = 0;
     m_applyQueue.clear();
+    m_queuedRemoteByGid.clear();
     m_snapshotReceived = 0;
     m_snapshotComplete = false;
     m_seeded = false;
     m_seeding = false;
-    m_seedIdleTicks = 0;
-    m_seedTotalTicks = 0;
+    m_seedCursor = 0;
+    m_seedTotal = 0;
+    m_seedUploaded = 0;
+    m_seedChunk = matjson::Value::array();
+    m_seedChunkBytes = 0;
+    m_seedInflight = false;
+    m_seedSerializeDone = false;
+    ++m_seedEpoch;
     m_reconcileTicks = 0;
     m_joinerEditorOpened = false;
     m_needsResyncOnEntry = false;
@@ -188,10 +282,31 @@ void CollabManager::connect(std::string const& roomCode, std::string const& user
     m_pendingSelectionJson = matjson::Value();
     m_selectionDirty = false;
     m_sinceSelectionFlush = 0.f;
+    m_peerCameras.clear();
+    m_pendingCameraJson = matjson::Value();
+    m_cameraDirty = false;
+    m_sinceCameraFlush = 0.f;
+    m_lastCamX = 0.f;
+    m_lastCamY = 0.f;
+    m_lastCamZoom = 0.f;
+    m_lastCursorX = 0.f;
+    m_lastCursorY = 0.f;
+    m_lastCursorVisible = false;
+    m_peerWorkZones.clear();
+    m_pendingWorkZoneJson = matjson::Value();
+    m_workZoneDirty = false;
+    m_sinceWorkZoneFlush = 0.f;
+    m_lastZoneX = m_lastZoneY = m_lastZoneW = m_lastZoneH = 0.f;
+    m_peerPings.clear();
+    m_followClientId = 0;
+    m_heatCells.clear();
+    m_layerOwners.clear();
+    m_lastMetaSig.clear();
+    m_metaReconcileTicks = 0;
+    m_pendingLevelMeta = matjson::Value();
+    m_hasPendingLevelMeta = false;
     m_wasPlaytesting = false;
 
-    // Server URL is fixed: pasting it into the mod settings tends to mangle the
-    // value, so we always use the known Render host.
     std::string base = normalizeBaseUrl(kServerBaseUrl);
 
     m_net.setCallbacks(
@@ -218,10 +333,15 @@ void CollabManager::disconnect() {
     m_pendingOps.clear();
     m_pendingIndexByGid.clear();
     m_pendingStructural = false;
+    m_deferredCreates.clear();
+    m_deferredEditOrder.clear();
+    m_deferredEdits.clear();
     m_outbox.clear();
+    m_outboxByGid.clear();
     m_inflight.clear();
     ++m_sendEpoch;
     m_applyQueue.clear();
+    m_queuedRemoteByGid.clear();
     discardJoinerLevel();
     m_hostLevel = nullptr;
     if (wasActive) m_status = "Collab apagado";
@@ -241,10 +361,15 @@ void CollabManager::closeRoom() {
     m_pendingOps.clear();
     m_pendingIndexByGid.clear();
     m_pendingStructural = false;
+    m_deferredCreates.clear();
+    m_deferredEditOrder.clear();
+    m_deferredEdits.clear();
     m_outbox.clear();
+    m_outboxByGid.clear();
     m_inflight.clear();
     ++m_sendEpoch;
     m_applyQueue.clear();
+    m_queuedRemoteByGid.clear();
     m_status = "Sala cerrada";
     log::info("[Collab] {}", m_status);
 }
@@ -282,14 +407,18 @@ void CollabManager::setStatus(std::string message) {
 
 void CollabManager::setEditor(LevelEditorLayer* editor) {
     m_editor = editor;
-    // Re-entering the editor with the room still open: rebuild object state
-    // from the server instead of running the first-join seed/snapshot path.
     if (editor && connected() && m_needsResyncOnEntry) {
         m_needsResyncOnEntry = false;
-        // The room now mirrors whatever level the host reopened (keeps the
-        // "live" dot on the right cell too).
         if (m_isHost && editor->m_level) m_hostLevel = editor->m_level;
         beginResync();
+    }
+    if (editor && m_hasPendingLevelMeta) {
+        m_hasPendingLevelMeta = false;
+        handleLevelSettings(m_pendingLevelMeta);
+        m_pendingLevelMeta = matjson::Value();
+    }
+    if (editor && connected() && m_isHost && m_snapshotComplete && !m_seeding) {
+        sendLevelSettings(true);
     }
 }
 
@@ -299,10 +428,7 @@ void CollabManager::clearEditor(LevelEditorLayer* editor) {
     m_overlay = nullptr;
     CollabVoice::get().stopAll();
 
-    // Joiners edit a throwaway preview level, so leaving it just drops them.
-    // The host's room stays open so they can pop back into their level; the
-    // per-editor object state (dead GameObject pointers) is reset and rebuilt
-    // on re-entry via a resync.
+    // Hosts keep the room alive outside the editor; joiners disconnect.
     if (connected() && m_isHost) {
         resetEditorState();
         m_needsResyncOnEntry = true;
@@ -317,13 +443,10 @@ void CollabManager::setOverlay(CollabEditorOverlay* overlay) {
 }
 
 void CollabManager::clearOverlay(CollabEditorOverlay* overlay) {
-    // Only clear if it's still the overlay we know about: during a scene
-    // transition a new overlay can register before the old one is destroyed.
     if (m_overlay == overlay) m_overlay = nullptr;
 }
 
 bool CollabManager::shouldEmit() const {
-    // View-only guests can still tinker locally; nothing is shared (alk mode).
     return m_state == ConnState::Connected && m_clientId > 0 && !m_applyingRemote && m_editor && canEditObjects();
 }
 
@@ -353,7 +476,23 @@ void CollabManager::unmapGid(std::string const& gid) {
         m_gidToObj.erase(it);
     }
     m_lastSentSave.erase(gid);
-    m_wireHash.erase(gid);
+    eraseWireHash(gid);
+}
+
+void CollabManager::setWireHash(std::string const& gid, uint64_t hash) {
+    auto [it, inserted] = m_wireHash.try_emplace(gid, hash);
+    if (!inserted) {
+        m_wireDigest ^= it->second;
+        it->second = hash;
+    }
+    m_wireDigest ^= hash;
+}
+
+void CollabManager::eraseWireHash(std::string const& gid) {
+    auto it = m_wireHash.find(gid);
+    if (it == m_wireHash.end()) return;
+    m_wireDigest ^= it->second;
+    m_wireHash.erase(it);
 }
 
 std::string CollabManager::saveObject(GameObject* object) const {
@@ -366,11 +505,7 @@ GameObject* CollabManager::findTrackedObject(std::string const& gid) const {
     return it != m_gidToObj.end() ? it->second.data() : nullptr;
 }
 
-} // namespace paimon::collab
-
-// ---------------------------------------------------------------------------
-// Network callbacks (main thread) + tick
-// ---------------------------------------------------------------------------
+}
 
 namespace paimon::collab {
 
@@ -385,17 +520,10 @@ void CollabManager::onState(ConnState st, std::string const& message) {
 }
 
 void CollabManager::onMessage(matjson::Value const& msg) {
-    // Callbacks run on the main thread (WebHelper guarantees it). Control
-    // messages (join_ok/peers/perms/error) are light and must be handled even
-    // before the editor exists, otherwise a joiner never learns it joined and
-    // never gets dropped into the editor. Object ops are only parsed here into
-    // m_applyQueue; the heavy createObjectsFromString work stays in tick().
     handleMessage(msg);
 }
 
 void CollabManager::tick() {
-    // 0) Reliable-sender timers: refill the pacing bucket, count down the
-    //    digest cooldown, and retry a failed in-flight chunk in order.
     m_opTokens = std::min(m_opTokens + m_opsPerSec * kTickInterval,
                           std::max(m_opsPerSec, static_cast<float>(m_maxOpsPerRequest)));
     if (m_digestCooldown > 0.f) m_digestCooldown -= kTickInterval;
@@ -406,40 +534,40 @@ void CollabManager::tick() {
                 log::info("[Collab] reintentando envio de {} op(s)", m_inflight.size());
                 sendInflightChunk();
             } else {
-                m_retryTimer = 0.5f; // session recovering; check again shortly
+                m_retryTimer = 0.5f;
             }
         }
     }
 
-    // 1) Apply remote ops only when the editor exists (so connecting before
-    //    entering the editor never drops objects). Budgeted to keep frames
-    //    smooth on large snapshots.
+    // Apply remote ops only with an editor and within the frame budget.
     if (m_editor) {
         if (m_seeding) {
-            size_t added = seedFromEditor();
-            ++m_seedTotalTicks;
-            m_seedIdleTicks = added > 0 ? 0 : m_seedIdleTicks + 1;
-            // Stop once no new objects have shown up for a while (objects can
-            // stream in over several frames), with a hard cap as a safety net.
-            if (m_seedIdleTicks >= 20 || m_seedTotalTicks >= 200) m_seeding = false;
+            seedFromEditor();
         }
+        drainDeferredLocalEdits();
+
+        auto applyDeadline = std::chrono::steady_clock::now() + kRemoteApplyBudget;
         size_t applied = 0;
-        while (!m_applyQueue.empty() && applied < kSnapshotApplyPerTick) {
-            auto op = std::move(m_applyQueue.front());
-            m_applyQueue.pop_front();
+        while (!m_applyQueue.empty() && applied < kRemoteApplyMaxPerTick &&
+               (applied == 0 || std::chrono::steady_clock::now() < applyDeadline)) {
+            auto queued = m_applyQueue.begin();
+            auto op = std::move(*queued);
+            m_queuedRemoteByGid.erase(op.gid);
+            m_applyQueue.erase(queued);
+            ++applied;
             if (op.kind == "delete") {
                 applyRemoteDelete(op);
             } else if (op.kind == "move") {
                 applyRemoteMove(op);
+            } else if (op.kind == "rotate" || op.kind == "scale" || op.kind == "flip") {
+                applyRemoteTransform(op);
             } else if (op.kind == "update") {
                 applyRemoteUpdate(op);
             } else {
                 applyRemoteAdd(op);
             }
-            ++applied;
         }
 
-        // Age peer selection overlays; drop stale ones so ghost rects don't linger.
         for (auto it = m_peerSelections.begin(); it != m_peerSelections.end();) {
             it->second.age += kTickInterval;
             if (it->second.age > kPeerSelectionMaxAge) {
@@ -450,24 +578,42 @@ void CollabManager::tick() {
             }
         }
 
-        // Playtesting moves objects around; serializing them then would sync
-        // garbage positions, so reconcile/sweep pause while playing.
+        for (auto it = m_peerCameras.begin(); it != m_peerCameras.end();) {
+            it->second.age += kTickInterval;
+            if (it->second.age > kPeerCameraMaxAge) {
+                if (m_overlay) m_overlay->onPeerCameraCleared(it->first);
+                it = m_peerCameras.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        for (auto it = m_peerWorkZones.begin(); it != m_peerWorkZones.end();) {
+            it->second.age += kTickInterval;
+            if (it->second.age > kPeerWorkZoneMaxAge) {
+                if (m_overlay) m_overlay->onPeerWorkZoneCleared(it->first);
+                it = m_peerWorkZones.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        tickPings(kTickInterval);
+        tickHeatmap(kTickInterval);
+        tickFollow();
+
         bool playtesting = m_editor->m_playbackMode == PlaybackMode::Playing;
 
-        // View-only sandbox: after playtest, discard local divergences and pull
-        // a fresh snapshot (alk: "local changes will get reset").
+        if (connected() && !playtesting) {
+            sendCameraPresence();
+            sendWorkZone();
+        }
+
         if (m_wasPlaytesting && !playtesting && isViewOnly() && connected()) {
             pushChatMessage({0, "", "Modo solo lectura: cambios locales descartados"});
-            setStatus("Solo lectura — resincronizando el nivel del host...");
+            setStatus("Solo lectura - resincronizando el nivel del host...");
             beginResync();
         }
         m_wasPlaytesting = playtesting;
 
-        // 2) Catch edits with no direct hook (edit popups, color/group changes,
-        //    undo shuffles): re-send selected objects whose save changed.
-        //    Selections larger than the window are covered in rotating slices
-        //    (they used to be skipped entirely, so transforming a freshly
-        //    pasted mega-asset never synced).
         if (connected() && !playtesting && ++m_reconcileTicks >= kReconcileEveryTicks) {
             m_reconcileTicks = 0;
             if (m_editor->m_editorUI) {
@@ -489,29 +635,40 @@ void CollabManager::tick() {
             }
         }
 
-        // 2b) Background sweep: registers objects created through unhooked
-        //     paths and deletes for tracked objects that left the scene.
         if (connected() && !playtesting && m_snapshotComplete && !m_seeding &&
             m_applyQueue.empty() && ++m_sweepTicks >= kSweepEveryTicks) {
             m_sweepTicks = 0;
             sweepEditor();
         }
+
+        if (connected() && !playtesting && m_snapshotComplete && !m_seeding &&
+            ++m_metaReconcileTicks >= kMetaReconcileEveryTicks) {
+            m_metaReconcileTicks = 0;
+            reconcileLevelMeta();
+        }
     }
 
-    // 3) Voice capture (frames are produced/relayed from here).
     CollabVoice::get().update(kTickInterval);
 
-    // 3b) Peer selection presence (ephemeral, throttled).
     if (connected() && m_selectionDirty) {
         m_sinceSelectionFlush += kTickInterval;
         if (m_sinceSelectionFlush >= kSelectionFlushInterval) {
             flushSelectionIfNeeded();
         }
     }
+    if (connected() && m_cameraDirty) {
+        m_sinceCameraFlush += kTickInterval;
+        if (m_sinceCameraFlush >= kCameraFlushInterval) {
+            flushCameraIfNeeded();
+        }
+    }
+    if (connected() && m_workZoneDirty) {
+        m_sinceWorkZoneFlush += kTickInterval;
+        if (m_sinceWorkZoneFlush >= kWorkZoneFlushInterval) {
+            flushWorkZoneIfNeeded();
+        }
+    }
 
-    // 4) Move pending edits into the outbox: instantly when something
-    //    structural (add or delete) is pending, throttled for pure update
-    //    streams (drags).
     if (connected() && !m_pendingOps.empty()) {
         m_sinceFlush += kTickInterval;
         if (m_pendingStructural || m_sinceFlush >= kUpdateFlushInterval) {
@@ -519,8 +676,6 @@ void CollabManager::tick() {
         }
     }
 
-    // 5) Keep the outbox draining: acks chain the next chunk, but this
-    //    restarts the pump after token starvation or a reconnect.
     if (connected() && m_inflight.empty() && !m_outbox.empty()) {
         pumpOutbox();
     }
@@ -537,8 +692,10 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
         m_serverSeq = static_cast<uint64_t>(msg["seq"].asInt().unwrapOr(0));
         if (msg.contains("permissions")) m_permissions = HostPermissions::fromJson(msg["permissions"]);
         if (msg.contains("peers")) handlePeerList(msg["peers"]);
-        // v3 servers advertise their real throughput limits; adopt them with
-        // some headroom. Legacy servers get the conservative defaults.
+        if (msg.contains("layerOwners")) handleLayerOwners(msg["layerOwners"]);
+        if (msg.contains("levelMeta") && msg["levelMeta"].isObject()) {
+            handleLevelSettings(msg["levelMeta"]);
+        }
         if (msg.contains("limits")) {
             auto const& lim = msg["limits"];
             auto perSec = lim["maxOpsPerSec"].asInt().unwrapOr(0);
@@ -551,8 +708,7 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
         m_snapshotComplete = false;
         m_seeded = false;
         m_seeding = false;
-        m_seedIdleTicks = 0;
-        m_seedTotalTicks = 0;
+        m_seedCursor = 0;
         if (m_isHost) {
             setStatus(fmt::format("En sala '{}' como host #{}", m_roomCode, m_clientId));
         } else if (m_permissions.viewOnly) {
@@ -569,20 +725,24 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
             if (!m_isHost && m_permissions.viewOnly) {
                 pushChatMessage({0, "", "Sala en solo lectura: tus edits no se comparten"});
             }
+            if (!m_isHost && m_permissions.strictLayers) {
+                pushChatMessage({0, "", "Layers exclusivas: cada editor reclama la layer al editar"});
+            }
         }
         m_recoverAttempts = 0;
 
         if (m_isHost) {
-            // Host doesn't receive a snapshot (create-room seeds server state
-            // from what we upload). Kick off seeding immediately; tick() waits
-            // for the editor and streams objects via op_batch.
             m_seeded = true;
             m_seeding = true;
+            m_seedCursor = 0;
+            m_seedTotal = 0;
+            m_seedUploaded = 0;
+            m_seedChunk = matjson::Value::array();
+            m_seedChunkBytes = 0;
+            m_seedInflight = false;
+            m_seedSerializeDone = false;
+            ++m_seedEpoch;
             m_snapshotComplete = true;
-            // Rooms are usually created from the level info screen, so drop the
-            // host into their own level's editor (seeding starts once it's up).
-            // Not on a recovery though: never yank the user into a new scene —
-            // if they left the editor, re-entry re-seeds via the resync path.
             log::info("[Collab] join_ok -> host path (recovered={})", wasRecovering);
             if (!wasRecovering) openHostEditor();
         } else {
@@ -604,7 +764,7 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
                     op.gid = item["gid"].asString().unwrapOr("");
                     op.save = item["save"].asString().unwrapOr("");
                     op.version = static_cast<uint32_t>(item["version"].asInt().unwrapOr(0));
-                    m_applyQueue.push_back(std::move(op));
+                    queueRemote(std::move(op));
                     ++m_snapshotReceived;
                 }
             }
@@ -614,13 +774,10 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
             if (!m_isHost && m_snapshotReceived > 0) {
                 setStatus(fmt::format("Nivel recibido: {} objetos", m_snapshotReceived));
             }
-            // If the room was empty and we are the host, seed it with our level
-            // (deferred until the editor exists; handled in tick()).
             if (m_isHost && m_snapshotReceived == 0 && !m_seeded) {
                 m_seeded = true;
                 m_seeding = true;
-                m_seedIdleTicks = 0;
-                m_seedTotalTicks = 0;
+                m_seedCursor = 0;
             }
         }
         return;
@@ -640,13 +797,9 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
                 op.save = item["save"].asString().unwrapOr("");
                 op.origin = origin;
                 op.by = by;
-                if (item.contains("x") && item.contains("y")) {
-                    op.x = static_cast<float>(item["x"].asDouble().unwrapOr(0.0));
-                    op.y = static_cast<float>(item["y"].asDouble().unwrapOr(0.0));
-                    op.hasPos = true;
-                }
+                fillApplyTransform(op, item);
                 if (op.gid.empty() || op.kind.empty()) continue;
-                m_applyQueue.push_back(std::move(op));
+                queueRemote(std::move(op));
             }
         }
         return;
@@ -657,24 +810,49 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
         return;
     }
 
+    if (t == "camera") {
+        handlePeerCamera(msg);
+        return;
+    }
+
+    if (t == "workzone") {
+        handlePeerWorkZone(msg);
+        return;
+    }
+
+    if (t == "ping") {
+        handlePeerPing(msg);
+        return;
+    }
+
+    if (t == "layer_owners") {
+        handleLayerOwners(msg);
+        return;
+    }
+
+    if (t == "level_settings") {
+        handleLevelSettings(msg);
+        return;
+    }
+
     if (t == "resync_ready") {
-        // Server cleared the room for our resync request: re-upload the level
-        // the host just re-opened (streamed from tick()).
         if (m_isHost) {
             m_seeded = true;
             m_seeding = true;
             m_snapshotComplete = true;
-            m_seedIdleTicks = 0;
-            m_seedTotalTicks = 0;
+            m_seedCursor = 0;
+            m_seedTotal = 0;
+            m_seedUploaded = 0;
+            m_seedChunk = matjson::Value::array();
+            m_seedChunkBytes = 0;
+            m_seedInflight = false;
+            m_seedSerializeDone = false;
+            ++m_seedEpoch;
         }
         return;
     }
 
     if (t == "resync") {
-        // The room's object state was rebuilt (host re-seed / server
-        // self-heal): drop every local assumption — including unsent pending
-        // ops, which target state that no longer exists — and rebuild from
-        // the ops/snapshot that follow.
         resetEditorState();
         wipeEditorObjects();
         return;
@@ -709,6 +887,7 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
     if (t == "perms") {
         bool wasViewOnly = isViewOnly();
         if (msg.contains("permissions")) m_permissions = HostPermissions::fromJson(msg["permissions"]);
+        if (!m_permissions.strictLayers) m_layerOwners.clear();
         bool nowViewOnly = isViewOnly();
         if (nowViewOnly != wasViewOnly) {
             if (nowViewOnly) {
@@ -749,11 +928,7 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
         std::string code = msg["code"].asString().unwrapOr("");
         std::string message = msg["message"].asString().unwrapOr("Error");
 
-        // Session lost: the server restarted or dropped us (common on the free
-        // tier). Try to recover transparently first — the host re-creates the
-        // room with the same code (the server lets it reclaim it) and a peer
-        // re-joins and rebuilds from a fresh snapshot. Only tear down when
-        // recovery isn't possible or keeps failing.
+        // Recover before tearing down; hosts reseed and peers rebuild.
         if (code == "not_joined") {
             if (m_state == ConnState::Disconnected) return;
             if (tryRecoverSession()) return;
@@ -766,9 +941,6 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
             code == "room_not_found" || code == "room_exists" ||
             code == "create_failed" || code == "join_failed" ||
             code == "upgrade_required" || code == "server_full") {
-            // teardownAndNotify handles every context: it pops the joiner's
-            // editor scene when a recovery attempt fails mid-session, and for
-            // a plain failed connect it just shows the alert.
             m_recovering = false;
             teardownAndNotify(message);
         }
@@ -784,7 +956,21 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
         return;
     }
 
-    // op_ack / pong: nothing to do.
+}
+
+void CollabManager::queueRemote(ApplyObj op) {
+    if (op.gid.empty()) return;
+    auto order = remoteOrderKey(op.version, op.origin);
+    auto queued = m_queuedRemoteByGid.find(op.gid);
+    if (queued != m_queuedRemoteByGid.end()) {
+        auto& current = *queued->second;
+        if (order <= remoteOrderKey(current.version, current.origin)) return;
+        current = std::move(op);
+        m_applyQueue.splice(m_applyQueue.end(), m_applyQueue, queued->second);
+        return;
+    }
+    m_applyQueue.push_back(std::move(op));
+    m_queuedRemoteByGid.emplace(m_applyQueue.back().gid, std::prev(m_applyQueue.end()));
 }
 
 void CollabManager::handlePeerList(matjson::Value const& peersJson) {
@@ -807,10 +993,20 @@ void CollabManager::handlePeerList(matjson::Value const& peersJson) {
         info.appearance.glowEnabled = item.contains("glowEnabled") &&
             item["glowEnabled"].asBool().unwrapOr(false);
         info.appearance.hasIcon = info.appearance.iconID > 0;
+        auto cursorData = item.contains("cursorData")
+            ? item["cursorData"].asString().unwrapOr("") : std::string();
+        if (cursorData.size() <= kMaxCursorDataLength) {
+            info.appearance.cursorData = std::move(cursorData);
+        }
+        info.appearance.cursorScale = std::clamp(
+            static_cast<float>(item["cursorScale"].asDouble().unwrapOr(0.3)),
+            CURSOR_SCALE_MIN, CURSOR_SCALE_MAX);
+        info.appearance.cursorOpacity = std::clamp(
+            static_cast<int>(item["cursorOpacity"].asInt().unwrapOr(255)), 0, 255);
+        info.appearance.hasCustomCursor = !info.appearance.cursorData.empty();
         if (info.clientId > 0) next[info.clientId] = info;
     }
 
-    // Join/leave notices (skip the very first list and ourselves).
     if (!m_peers.empty()) {
         for (auto const& [id, info] : next) {
             if (id != m_clientId && !m_peers.count(id)) {
@@ -822,6 +1018,9 @@ void CollabManager::handlePeerList(matjson::Value const& peersJson) {
                 pushChatMessage({0, "", fmt::format("{} salio de la sala", info.username)});
                 CollabVoice::get().dropPeer(id);
                 clearPeerSelection(id);
+                clearPeerCamera(id);
+                clearPeerWorkZone(id);
+                if (m_followClientId == id) clearFollow();
             }
         }
     }
@@ -871,15 +1070,13 @@ void CollabManager::sendVoiceFrame(uint32_t seq, std::string const& b64) {
 }
 
 bool CollabManager::tryRecoverSession() {
-    // A peer with no editor has nothing to rebuild into; the host can recover
-    // even from outside the editor (the room is reclaimed empty and re-seeded
-    // on the next editor entry through the resync path).
+    // Hosts can recover outside the editor; peers need one to rebuild.
     if (!m_isHost && !m_editor) return false;
 
     auto nowTp = std::chrono::steady_clock::now();
     if (m_lastRecoverAt.time_since_epoch().count() != 0 &&
         nowTp - m_lastRecoverAt > std::chrono::minutes(2)) {
-        m_recoverAttempts = 0; // old failures no longer count against us
+        m_recoverAttempts = 0;
     }
     if (m_recoverAttempts >= 3) return false;
     ++m_recoverAttempts;
@@ -888,9 +1085,6 @@ bool CollabManager::tryRecoverSession() {
     bool asHost = m_isHost;
     m_recovering = true;
 
-    // Object state belongs to the dead session. The host re-uploads its level
-    // once the room is back (the join_ok host path arms seeding); a peer wipes
-    // its local copy and rebuilds from the snapshot the server re-sends.
     resetEditorState();
     if (!asHost) wipeEditorObjects();
 
@@ -907,8 +1101,6 @@ void CollabManager::teardownAndNotify(std::string const& text) {
 
     setStatus(text);
 
-    // Server already dropped us; tear down without another /api/leave round-trip
-    // being needed for correctness (stop() still best-effort sends one).
     m_state = ConnState::Disconnected;
     m_clientId = 0;
     m_isHost = false;
@@ -916,26 +1108,23 @@ void CollabManager::teardownAndNotify(std::string const& text) {
     m_pendingOps.clear();
     m_pendingIndexByGid.clear();
     m_pendingStructural = false;
+    m_deferredCreates.clear();
+    m_deferredEditOrder.clear();
+    m_deferredEdits.clear();
     m_outbox.clear();
+    m_outboxByGid.clear();
     m_inflight.clear();
     ++m_sendEpoch;
     m_applyQueue.clear();
+    m_queuedRemoteByGid.clear();
     CollabVoice::get().stopAll();
     m_net.stop();
 
     queueInMainThread([text, wasJoiner]() {
-        // Pop the joiner editor scene we pushed on join, then show the notice
-        // one frame later so it lands on the destination scene (popScene only
-        // swaps at end of frame; showing the alert now would attach it to the
-        // editor scene that's about to be destroyed).
         if (wasJoiner && LevelEditorLayer::get()) {
             CCDirector::sharedDirector()->popScene();
         }
         queueInMainThread([text, wasJoiner]() {
-            // After a scene swap, a collab popup left open on the destination
-            // scene has broken touch priority; remove it before alerting. When
-            // no swap happened (plain failed connect) the popup stays open so
-            // the user keeps their typed code.
             if (wasJoiner) closeSessionPopups();
             auto popup = PopupManager::get().alert("Collab Editor", text);
             popup.setPriority(true);
@@ -949,66 +1138,124 @@ void CollabManager::discardJoinerLevel() {
     Ref<GJGameLevel> level = m_joinerLevel;
     m_joinerLevel = nullptr;
     m_joinerEditorOpened = false;
-    // The joiner's local copy is only a preview of the host's level; delete it
-    // once the editor scene is fully gone so it doesn't pile up in My Levels.
     queueInMainThread([level]() {
         queueInMainThread([level]() {
-            if (LevelEditorLayer::get()) return; // still (or again) editing
+            if (LevelEditorLayer::get()) return;
             if (auto* glm = GameLevelManager::get()) glm->deleteLevel(level);
         });
     });
 }
 
-} // namespace paimon::collab
-
-// ---------------------------------------------------------------------------
-// Outgoing edits
-// ---------------------------------------------------------------------------
+}
 
 namespace paimon::collab {
 
+bool CollabManager::isCheapKind(std::string const& kind) {
+    return isCheapEditKind(kind);
+}
+
 void CollabManager::enqueueOp(std::string kind, std::string const& gid, uint32_t version, std::string save,
                               float x, float y, bool hasPos) {
+    OutOp op;
+    op.kind = std::move(kind);
+    op.gid = gid;
+    op.version = version;
+    op.save = std::move(save);
+    op.x = x;
+    op.y = y;
+    op.hasPos = hasPos;
+    enqueueOp(std::move(op));
+}
+
+void CollabManager::enqueueOp(OutOp op) {
     if (m_pendingOps.size() >= kMaxOpsPerFlush) flushOutgoing();
 
-    // update and move coalesce the same way: only the latest state per gid matters.
-    if (kind == "update" || kind == "move") {
-        auto it = m_pendingIndexByGid.find(gid);
-        if (it != m_pendingIndexByGid.end()) {
-            auto& op = m_pendingOps[it->second];
-            if (op.kind != "delete") {
-                op.kind = kind;
-                op.version = version;
-                op.save = std::move(save);
-                op.x = x;
-                op.y = y;
-                op.hasPos = hasPos;
-                return;
-            }
+    auto pending = m_pendingIndexByGid.find(op.gid);
+    if (pending != m_pendingIndexByGid.end()) {
+        auto& existing = m_pendingOps[pending->second];
+        if (existing.kind == "add" && op.kind == "delete") {
+            existing.kind.clear();
+            m_pendingIndexByGid.erase(pending);
+            return;
         }
-        m_pendingIndexByGid[gid] = m_pendingOps.size();
-        m_pendingOps.push_back({std::move(kind), gid, version, std::move(save), x, y, hasPos});
+        if ((existing.kind == "add" || existing.kind == "delete") &&
+            (op.kind == "update" || isCheapEditKind(op.kind))) {
+            op.kind = "add";
+        }
+        if (op.kind == "add" || op.kind == "delete") m_pendingStructural = true;
+        existing = std::move(op);
         return;
     }
 
-    m_pendingStructural = true;
+    if (op.kind == "add" || op.kind == "delete") m_pendingStructural = true;
+    m_pendingIndexByGid[op.gid] = m_pendingOps.size();
+    m_pendingOps.push_back(std::move(op));
+}
 
-    if (kind == "delete") {
-        m_pendingIndexByGid.erase(gid);
-        m_pendingOps.push_back({std::move(kind), gid, version, std::move(save)});
-        return;
+void CollabManager::writeOutTransform(matjson::Value& obj, OutOp const& op) {
+    if (op.hasPos) {
+        obj["x"] = static_cast<double>(op.x);
+        obj["y"] = static_cast<double>(op.y);
     }
+    if (op.hasRot) obj["rot"] = static_cast<double>(op.rot);
+    if (op.hasScale) {
+        obj["sx"] = static_cast<double>(op.scaleX);
+        obj["sy"] = static_cast<double>(op.scaleY);
+    }
+    if (op.hasFlip) {
+        obj["fx"] = op.flipX;
+        obj["fy"] = op.flipY;
+    }
+}
 
-    // add
-    m_pendingIndexByGid[gid] = m_pendingOps.size();
-    m_pendingOps.push_back({std::move(kind), gid, version, std::move(save)});
+void CollabManager::fillApplyTransform(ApplyObj& op, matjson::Value const& item) {
+    if (item.contains("x") && item.contains("y")) {
+        op.x = static_cast<float>(item["x"].asDouble().unwrapOr(0.0));
+        op.y = static_cast<float>(item["y"].asDouble().unwrapOr(0.0));
+        op.hasPos = true;
+    }
+    if (item.contains("rot")) {
+        op.rot = static_cast<float>(item["rot"].asDouble().unwrapOr(0.0));
+        op.hasRot = true;
+    }
+    if (item.contains("sx") && item.contains("sy")) {
+        op.scaleX = static_cast<float>(item["sx"].asDouble().unwrapOr(1.0));
+        op.scaleY = static_cast<float>(item["sy"].asDouble().unwrapOr(1.0));
+        op.hasScale = true;
+    }
+    if (item.contains("fx") || item.contains("fy")) {
+        op.flipX = item.contains("fx") && item["fx"].asBool().unwrapOr(false);
+        op.flipY = item.contains("fy") && item["fy"].asBool().unwrapOr(false);
+        op.hasFlip = true;
+    }
 }
 
 void CollabManager::flushOutgoing() {
     m_sinceFlush = 0.f;
     m_pendingStructural = false;
     if (m_pendingOps.empty()) return;
-    for (auto& op : m_pendingOps) m_outbox.push_back(std::move(op));
+    for (auto& op : m_pendingOps) {
+        if (op.kind.empty()) continue;
+
+        auto queued = m_outboxByGid.find(op.gid);
+        if (queued == m_outboxByGid.end()) {
+            m_outbox.push_back(std::move(op));
+            m_outboxByGid.emplace(m_outbox.back().gid, std::prev(m_outbox.end()));
+            continue;
+        }
+
+        auto& current = *queued->second;
+        if (current.kind == "add" && op.kind == "delete") {
+            m_outbox.erase(queued->second);
+            m_outboxByGid.erase(queued);
+            continue;
+        }
+        if (current.kind == "add" && (op.kind == "update" || isCheapEditKind(op.kind))) {
+            op.kind = "add";
+        }
+        current = std::move(op);
+        m_outbox.splice(m_outbox.end(), m_outbox, queued->second);
+    }
     m_pendingOps.clear();
     m_pendingIndexByGid.clear();
     m_syncTotal = std::max(m_syncTotal, m_outbox.size() + m_inflight.size());
@@ -1017,29 +1264,31 @@ void CollabManager::flushOutgoing() {
 
 void CollabManager::pumpOutbox() {
     if (m_state != ConnState::Connected || !m_net.isOpen()) return;
-    // One chunk in flight at a time: guarantees the server receives ops in
-    // exactly the order they were produced (parallel POSTs can reorder).
+    // One in-flight chunk preserves operation order.
     if (!m_inflight.empty() || m_outbox.empty()) return;
 
-    // Token pacing: mass pastes used to blast thousands of ops in one burst,
-    // trip the server's per-second limit and lose the whole batch.
     size_t budget = static_cast<size_t>(m_opTokens);
-    if (budget == 0) return; // tokens refill each tick
+    if (budget == 0) return;
 
     size_t limit = std::min({budget, m_maxOpsPerRequest, m_outbox.size()});
     size_t taken = 0;
     size_t bytes = 0;
-    while (taken < limit) {
-        auto const& op = m_outbox[taken];
+    for (auto it = m_outbox.begin(); it != m_outbox.end() && taken < limit; ++it) {
+        auto const& op = *it;
         size_t opBytes = op.save.size() + op.gid.size() + 48;
         if (taken > 0 && bytes + opBytes > kMaxSaveBytesPerRequest) break;
         bytes += opBytes;
         ++taken;
     }
 
-    m_inflight.assign(std::make_move_iterator(m_outbox.begin()),
-                      std::make_move_iterator(m_outbox.begin() + static_cast<long>(taken)));
-    m_outbox.erase(m_outbox.begin(), m_outbox.begin() + static_cast<long>(taken));
+    m_inflight.clear();
+    m_inflight.reserve(taken);
+    for (size_t i = 0; i < taken; ++i) {
+        auto queued = m_outbox.begin();
+        m_outboxByGid.erase(queued->gid);
+        m_inflight.push_back(std::move(*queued));
+        m_outbox.erase(queued);
+    }
     m_opTokens -= static_cast<float>(taken);
 
     if (m_syncTotal > 800) {
@@ -1060,18 +1309,13 @@ void CollabManager::sendInflightChunk() {
             {"version", static_cast<int64_t>(op.version)},
             {"save", op.save},
         });
-        if (op.hasPos) {
-            obj["x"] = static_cast<double>(op.x);
-            obj["y"] = static_cast<double>(op.y);
-        }
+        writeOutTransform(obj, op);
         ops.push(std::move(obj));
     }
 
     log::info("[Collab] enviando {} op(s) ({} en cola)", m_inflight.size(), m_outbox.size());
     uint64_t epoch = m_sendEpoch;
     m_net.sendOps(ops, [this, epoch](bool ok, int status, int /*accepted*/) {
-        // Epoch mismatch = the outbox was reset (disconnect/resync/recovery)
-        // while this chunk was in the air; its fate no longer matters.
         if (epoch != m_sendEpoch) return;
         onOpsAck(ok, status);
     });
@@ -1087,13 +1331,12 @@ void CollabManager::onOpsAck(bool ok, int status) {
             }
             m_syncTotal = 0;
         } else {
-            pumpOutbox(); // chain the next chunk right away
+            pumpOutbox();
         }
         return;
     }
 
-    // Send failed (timeout / rate limit / server hiccup): the chunk stays in
-    // m_inflight and is retried in order with backoff — no op is ever lost.
+    // Keep the chunk in flight while retrying with backoff.
     ++m_sendFailures;
     float delay = 0.5f * static_cast<float>(1 << std::min(m_sendFailures - 1, 4));
     if (status == 429) delay = std::max(delay, 2.f);
@@ -1103,15 +1346,10 @@ void CollabManager::onOpsAck(bool ok, int status) {
 }
 
 void CollabManager::openJoinerEditor() {
-    // The host keeps editing whatever level they opened (it seeds the room);
-    // only joiners get pulled into a fresh editor. Guard against opening twice.
     if (m_isHost || m_joinerEditorOpened) {
         log::info("[Collab] openJoinerEditor skipped (isHost={} alreadyOpened={})", m_isHost, m_joinerEditorOpened);
         return;
     }
-    // A live editor is the only real reason not to push one. Trust the engine's
-    // LevelEditorLayer::get() here rather than m_editor, which can lag behind a
-    // scene teardown and would otherwise strand the joiner on the popup.
     if (LevelEditorLayer::get()) {
         log::info("[Collab] openJoinerEditor: editor already live, staying");
         m_joinerEditorOpened = true;
@@ -1128,7 +1366,6 @@ void CollabManager::openJoinerEditor() {
         auto* level = glm ? glm->createNewLevel() : nullptr;
         auto* scene = level ? LevelEditorLayer::scene(level, false) : nullptr;
         if (!scene) {
-            // Don't strand the joiner: let them retry and tell them what broke.
             log::error("[Collab] openJoinerEditor failed (glm={} level={} scene=null)",
                        (void*)glm, (void*)level);
             mgr.m_joinerEditorOpened = false;
@@ -1147,22 +1384,14 @@ void CollabManager::openJoinerEditor() {
         mgr.m_joinerLevel = level;
 
         log::info("[Collab] opening joiner editor for room={}", room);
-        // Close the connect popup before pushing the editor: left open, it
-        // survives in the scene below with broken touch priority (the frozen
-        // popup users hit when coming back from the room).
         closeSessionPopups();
         CCDirector::get()->pushScene(CCTransitionFade::create(0.5f, scene));
     });
 }
 
 void CollabManager::openHostEditor() {
-    // Only when we host and aren't editing yet: the room is typically created
-    // from the level info screen, so we open the level the host picked. If an
-    // editor is already up (host started collab from inside it), keep it.
     if (!m_isHost || LevelEditorLayer::get()) return;
     if (!m_hostLevel) {
-        // Room was created without a level to open (e.g. from the unlock gate):
-        // there's nothing to seed, so tell the host instead of stranding them.
         log::warn("[Collab] openHostEditor: no host level to open");
         setStatus(fmt::format("Sala '{}' creada. Abre un nivel para editar.", m_roomCode));
         return;
@@ -1177,7 +1406,7 @@ void CollabManager::openHostEditor() {
             return;
         }
         log::info("[Collab] opening host editor");
-        closeSessionPopups(); // same stale-popup guard as the joiner path
+        closeSessionPopups();
         CCDirector::get()->pushScene(CCTransitionFade::create(0.5f, scene));
     });
 }
@@ -1187,35 +1416,67 @@ void CollabManager::resetEditorState() {
     m_gidToObj.clear();
     m_versionByGid.clear();
     m_lastSentSave.clear();
+    m_deferredCreates.clear();
+    m_deferredEditOrder.clear();
+    m_deferredEdits.clear();
     m_pendingOps.clear();
     m_pendingIndexByGid.clear();
     m_pendingStructural = false;
     m_outbox.clear();
+    m_outboxByGid.clear();
     m_inflight.clear();
-    ++m_sendEpoch; // drops the ack of anything still in the air
+    ++m_sendEpoch;
     m_retryTimer = 0.f;
     m_sendFailures = 0;
     m_syncTotal = 0;
     m_wireHash.clear();
+    m_wireDigest = 0;
     m_digestStrikes = 0;
     m_applyQueue.clear();
+    m_queuedRemoteByGid.clear();
     m_sinceFlush = 0.f;
     m_seeding = false;
-    m_seedIdleTicks = 0;
-    m_seedTotalTicks = 0;
+    m_seedCursor = 0;
+    m_seedTotal = 0;
+    m_seedUploaded = 0;
+    m_seedChunk = matjson::Value::array();
+    m_seedChunkBytes = 0;
+    m_seedInflight = false;
+    m_seedSerializeDone = false;
+    ++m_seedEpoch;
     m_reconcileTicks = 0;
     m_reconcileCursor = 0;
     m_sweepTicks = 0;
+    m_sweepObjectCursor = 0;
+    m_sweepBucketCursor = 0;
     m_selectionDirty = false;
     m_sinceSelectionFlush = 0.f;
     m_pendingSelectionJson = matjson::Value();
-    // Drop peer selection overlays so they don't linger after a resync wipe.
+    m_cameraDirty = false;
+    m_sinceCameraFlush = 0.f;
+    m_pendingCameraJson = matjson::Value();
+    m_lastCamX = 0.f;
+    m_lastCamY = 0.f;
+    m_lastCamZoom = 0.f;
+    m_lastCursorX = 0.f;
+    m_lastCursorY = 0.f;
+    m_lastCursorVisible = false;
     if (m_overlay) {
         for (auto const& [id, _] : m_peerSelections) {
             m_overlay->onPeerSelectionCleared(id);
         }
+        for (auto const& [id, _] : m_peerCameras) {
+            m_overlay->onPeerCameraCleared(id);
+        }
+        for (auto const& [id, _] : m_peerWorkZones) {
+            m_overlay->onPeerWorkZoneCleared(id);
+        }
     }
     m_peerSelections.clear();
+    m_peerCameras.clear();
+    m_peerWorkZones.clear();
+    m_peerPings.clear();
+    m_followClientId = 0;
 }
 
 void CollabManager::wipeEditorObjects() {
@@ -1230,12 +1491,9 @@ void CollabManager::beginResync() {
     m_snapshotComplete = false;
     m_snapshotReceived = 0;
     if (m_isHost) {
-        // Host keeps its freshly reloaded level and re-seeds it; the server
-        // clears the room first (via /api/resync) so nothing duplicates.
         m_seeded = true;
-        m_seeding = false; // armed by the resync_ready reply
+        m_seeding = false;
     } else {
-        // Peer pulls the current snapshot again and rebuilds from scratch.
         wipeEditorObjects();
         m_seeded = false;
     }
@@ -1243,9 +1501,42 @@ void CollabManager::beginResync() {
 }
 
 size_t CollabManager::seedFromEditor() {
-    if (!m_editor || !m_editor->m_objects) return 0;
-    size_t count = 0;
-    for (auto* o : CCArrayExt<GameObject*>(m_editor->m_objects)) {
+    if (m_seedInflight) return 0;
+
+    if (!m_editor || !m_editor->m_objects) {
+        if (!m_seedSerializeDone) {
+            m_seedSerializeDone = true;
+            flushSeedChunk(true);
+        } else {
+            m_seeding = false;
+        }
+        return 0;
+    }
+
+    auto* objects = m_editor->m_objects;
+    size_t total = objects->count();
+    if (m_seedTotal == 0) m_seedTotal = total;
+
+    if (m_seedSerializeDone) {
+        if (m_seedChunk.isArray() && m_seedChunk.size() > 0) {
+            flushSeedChunk(true);
+        } else if (!m_seedInflight) {
+            m_seeding = false;
+        }
+        return 0;
+    }
+
+    auto deadline = std::chrono::steady_clock::now() + kSeedBudget;
+    size_t added = 0;
+    size_t processed = 0;
+    if (!m_seedChunk.isArray()) m_seedChunk = matjson::Value::array();
+
+    while (m_seedCursor < total && processed < kSeedMaxPerTick &&
+           (processed == 0 || std::chrono::steady_clock::now() < deadline)) {
+        auto* o = typeinfo_cast<GameObject*>(
+            objects->objectAtIndex(static_cast<unsigned int>(m_seedCursor++))
+        );
+        ++processed;
         if (!o) continue;
         if (m_uidToGid.count(o->m_uniqueID)) continue;
         std::string save = saveObject(o);
@@ -1254,60 +1545,232 @@ size_t CollabManager::seedFromEditor() {
         mapGid(gid, o);
         m_versionByGid[gid] = 1;
         m_lastSentSave[gid] = save;
-        m_wireHash[gid] = objectSyncHash(gid, 1, save);
-        enqueueOp("add", gid, 1, std::move(save));
-        ++count;
+        setWireHash(gid, objectSyncHash(gid, 1, save));
+
+        m_seedChunkBytes += save.size() + gid.size() + 48;
+        m_seedChunk.push(matjson::makeObject({
+            {"gid", gid},
+            {"save", std::move(save)},
+            {"version", static_cast<int64_t>(1)},
+        }));
+        ++added;
+
+        if (m_seedChunk.size() >= kSeedChunkMaxObjects || m_seedChunkBytes >= kSeedChunkMaxBytes) {
+            break;
+        }
     }
-    if (count > 0) setStatus(fmt::format("Subiendo {} objetos a la sala...", count));
-    return count;
+
+    bool serializeDone = m_seedCursor >= total;
+    if (serializeDone) m_seedSerializeDone = true;
+
+    size_t remaining = total > m_seedCursor ? total - m_seedCursor : 0;
+    if (added > 0 || serializeDone) {
+        setStatus(fmt::format(
+            "Subiendo nivel a la sala... {}/{} (faltan {})",
+            m_seedUploaded + m_seedChunk.size(),
+            m_seedTotal,
+            remaining
+        ));
+    }
+
+    bool chunkReady = m_seedChunk.size() >= kSeedChunkMaxObjects ||
+                      m_seedChunkBytes >= kSeedChunkMaxBytes ||
+                      (serializeDone && (m_seedChunk.size() > 0 || m_seedUploaded == 0));
+    if (chunkReady && !m_seedInflight) {
+        flushSeedChunk(serializeDone);
+    }
+    return added;
+}
+
+void CollabManager::flushSeedChunk(bool finalChunk) {
+    if (m_seedInflight) return;
+    if (!m_net.isOpen()) {
+        m_seeding = false;
+        return;
+    }
+
+    if (!m_seedChunk.isArray()) m_seedChunk = matjson::Value::array();
+    if (m_seedChunk.size() == 0 && !finalChunk) return;
+
+    m_seedInflight = true;
+    uint64_t epoch = m_seedEpoch;
+    size_t chunkCount = m_seedChunk.size();
+    auto objects = std::move(m_seedChunk);
+    m_seedChunk = matjson::Value::array();
+    m_seedChunkBytes = 0;
+
+    log::info("[Collab] seed chunk: {} objetos (final={} subidos={}/{})",
+              chunkCount, finalChunk, m_seedUploaded, m_seedTotal);
+    m_net.sendSeed(objects, finalChunk,
+        [this, epoch, finalChunk, chunkCount](bool ok, int status, int accepted, int roomTotal) {
+            onSeedAck(ok, status, accepted, roomTotal, finalChunk, epoch);
+            (void)chunkCount;
+        });
+}
+
+void CollabManager::onSeedAck(bool ok, int status, int accepted, int roomTotal, bool wasFinal, uint64_t epoch) {
+    if (epoch != m_seedEpoch) return;
+    m_seedInflight = false;
+
+    if (!ok) {
+        log::warn("[Collab] seed chunk fallo HTTP {}; resincronizando desde cero", status);
+        setStatus("Error subiendo el nivel; resincronizando desde el principio...");
+        beginResync();
+        return;
+    }
+
+    m_seedUploaded += static_cast<size_t>(std::max(0, accepted));
+    if (wasFinal) {
+        m_seeding = false;
+        m_seedCursor = 0;
+        setStatus(fmt::format("Nivel cargado en la sala ({} objetos)", roomTotal > 0 ? roomTotal : static_cast<int>(m_seedUploaded)));
+        log::info("[Collab] seed completo: roomTotal={} localMaps={}", roomTotal, m_gidToObj.size());
+        sendLevelSettings(true);
+        return;
+    }
+
+    setStatus(fmt::format(
+        "Subiendo nivel a la sala... {}/{}",
+        m_seedUploaded,
+        m_seedTotal > 0 ? m_seedTotal : m_seedUploaded
+    ));
 }
 
 void CollabManager::sendCreatedObject(GameObject* object) {
     if (!shouldEmit() || !object) return;
+    if (!canEditObjectLayer(object)) return;
     if (m_uidToGid.count(object->m_uniqueID)) return;
     std::string save = saveObject(object);
     if (save.empty()) return;
+    claimObjectLayer(object);
     std::string gid = makeLocalGid();
     mapGid(gid, object);
     m_versionByGid[gid] = 1;
     m_lastSentSave[gid] = save;
-    m_wireHash[gid] = objectSyncHash(gid, 1, save);
+    setWireHash(gid, objectSyncHash(gid, 1, save));
     enqueueOp("add", gid, 1, std::move(save));
 }
 
 void CollabManager::sendCreatedObjects(CCArray* objects) {
-    if (!objects) return;
-    for (auto* o : CCArrayExt<GameObject*>(objects)) sendCreatedObject(o);
+    if (!objects || !shouldEmit()) return;
+    for (auto* o : CCArrayExt<GameObject*>(objects)) {
+        if (o && !m_uidToGid.count(o->m_uniqueID)) m_deferredCreates.emplace_back(o);
+    }
 }
 
 void CollabManager::sendUpdatedObject(GameObject* object) {
+    queueObjectEdit(object, LocalEditKind::Full);
+}
+
+void CollabManager::sendMovedObject(GameObject* object) {
+    queueObjectEdit(object, LocalEditKind::Move);
+}
+
+void CollabManager::sendRotatedObject(GameObject* object) {
+    queueObjectEdit(object, LocalEditKind::Rotate);
+}
+
+void CollabManager::sendScaledObject(GameObject* object) {
+    queueObjectEdit(object, LocalEditKind::Scale);
+}
+
+void CollabManager::sendFlippedObject(GameObject* object) {
+    queueObjectEdit(object, LocalEditKind::Flip);
+}
+
+void CollabManager::queueObjectEdit(GameObject* object, LocalEditKind kind) {
     if (!shouldEmit() || !object) return;
+    if (!canEditObjectLayer(object)) return;
+    int uid = object->m_uniqueID;
+    auto [it, inserted] = m_deferredEdits.try_emplace(uid, DeferredEdit{object, kind});
+    if (!inserted) {
+        it->second.object = object;
+        it->second.kind = mergeEditKind(it->second.kind, kind);
+        return;
+    }
+    m_deferredEditOrder.push_back(uid);
+}
+
+void CollabManager::drainDeferredLocalEdits() {
+    auto deadline = std::chrono::steady_clock::now() + kLocalEditBudget;
+    size_t processed = 0;
+
+    while (!m_deferredCreates.empty() &&
+           (processed == 0 || std::chrono::steady_clock::now() < deadline)) {
+        auto object = std::move(m_deferredCreates.front());
+        m_deferredCreates.pop_front();
+        if (object && object->getParent()) sendCreatedObject(object.data());
+        ++processed;
+    }
+
+    while (!m_deferredEditOrder.empty() &&
+           (processed == 0 || std::chrono::steady_clock::now() < deadline)) {
+        int uid = m_deferredEditOrder.front();
+        m_deferredEditOrder.pop_front();
+        auto it = m_deferredEdits.find(uid);
+        if (it == m_deferredEdits.end()) continue;
+        auto edit = std::move(it->second);
+        m_deferredEdits.erase(it);
+        if (edit.object && edit.object->getParent()) {
+            sendObjectState(edit.object.data(), edit.kind);
+        }
+        ++processed;
+    }
+}
+
+void CollabManager::sendObjectState(GameObject* object, LocalEditKind kind) {
+    if (!shouldEmit() || !object) return;
+    if (!canEditObjectLayer(object)) return;
     std::string save = saveObject(object);
     if (save.empty()) return;
 
     auto it = m_uidToGid.find(object->m_uniqueID);
     if (it == m_uidToGid.end()) {
-        // Not tracked yet (created before joining or via an unhooked path):
-        // register it as an add.
+    // Untracked objects are registered as adds.
+        claimObjectLayer(object);
         std::string gid = makeLocalGid();
         mapGid(gid, object);
         m_versionByGid[gid] = 1;
         m_lastSentSave[gid] = save;
-        m_wireHash[gid] = objectSyncHash(gid, 1, save);
+        setWireHash(gid, objectSyncHash(gid, 1, save));
         enqueueOp("add", gid, 1, std::move(save));
         return;
     }
     std::string gid = it->second;
 
-    // No-op updates (drag callbacks and reconcile passes fire a lot more often
-    // than objects actually change) are skipped entirely.
+    // Reconcile callbacks often repeat unchanged updates; skip no-ops.
     auto last = m_lastSentSave.find(gid);
     if (last != m_lastSentSave.end() && last->second == save) return;
 
+    claimObjectLayer(object);
     uint32_t version = ++m_versionByGid[gid];
     m_lastSentSave[gid] = save;
-    m_wireHash[gid] = objectSyncHash(gid, version, save);
-    enqueueOp("update", gid, version, std::move(save));
+    setWireHash(gid, objectSyncHash(gid, version, save));
+
+    OutOp op;
+    op.kind = kindName(kind);
+    op.gid = gid;
+    op.version = version;
+    op.save = std::move(save);
+    auto pos = object->getPosition();
+    op.x = pos.x;
+    op.y = pos.y;
+    op.hasPos = true;
+    if (kind == LocalEditKind::Rotate) {
+        op.rot = object->getRotation();
+        op.hasRot = true;
+    } else if (kind == LocalEditKind::Scale) {
+        op.scaleX = object->getScaleX();
+        op.scaleY = object->getScaleY();
+        op.hasScale = true;
+    } else if (kind == LocalEditKind::Flip) {
+        op.flipX = object->isFlipX();
+        op.flipY = object->isFlipY();
+        op.hasFlip = true;
+    } else if (kind == LocalEditKind::Full) {
+    op.hasPos = false;
+    }
+    enqueueOp(std::move(op));
 }
 
 void CollabManager::sendUpdatedObjects(CCArray* objects) {
@@ -1315,32 +1778,24 @@ void CollabManager::sendUpdatedObjects(CCArray* objects) {
     for (auto* o : CCArrayExt<GameObject*>(objects)) sendUpdatedObject(o);
 }
 
-void CollabManager::sendMovedObject(GameObject* object) {
-    if (!shouldEmit() || !object) return;
-    auto pos = object->getPosition();
-    std::string save = saveObject(object);
-    if (save.empty()) return;
-
-    auto it = m_uidToGid.find(object->m_uniqueID);
-    if (it == m_uidToGid.end()) {
-        // Untracked yet: register as a full add (no cheap move path).
-        sendCreatedObject(object);
-        return;
-    }
-    std::string gid = it->second;
-
-    auto last = m_lastSentSave.find(gid);
-    if (last != m_lastSentSave.end() && last->second == save) return;
-
-    uint32_t version = ++m_versionByGid[gid];
-    m_lastSentSave[gid] = save;
-    m_wireHash[gid] = objectSyncHash(gid, version, save);
-    enqueueOp("move", gid, version, std::move(save), pos.x, pos.y, true);
-}
-
 void CollabManager::sendMovedObjects(CCArray* objects) {
     if (!objects) return;
     for (auto* o : CCArrayExt<GameObject*>(objects)) sendMovedObject(o);
+}
+
+void CollabManager::sendRotatedObjects(CCArray* objects) {
+    if (!objects) return;
+    for (auto* o : CCArrayExt<GameObject*>(objects)) sendRotatedObject(o);
+}
+
+void CollabManager::sendScaledObjects(CCArray* objects) {
+    if (!objects) return;
+    for (auto* o : CCArrayExt<GameObject*>(objects)) sendScaledObject(o);
+}
+
+void CollabManager::sendFlippedObjects(CCArray* objects) {
+    if (!objects) return;
+    for (auto* o : CCArrayExt<GameObject*>(objects)) sendFlippedObject(o);
 }
 
 void CollabManager::reconcileObjects(CCArray* objects) {
@@ -1351,8 +1806,7 @@ void CollabManager::reconcileObjects(CCArray* objects) {
 }
 
 void CollabManager::sendSelection(CCArray* selected) {
-    // Selection presence is allowed even in view-only (shows where viewers look),
-    // but not while applying remote state or disconnected.
+    // Selection presence is allowed in view-only, but not during remote apply.
     if (m_state != ConnState::Connected || m_clientId <= 0 || m_applyingRemote || !m_editor) return;
 
     auto rects = matjson::Value::array();
@@ -1380,7 +1834,7 @@ void CollabManager::sendSelection(CCArray* selected) {
             }));
         }
     } else {
-        // Huge selection: one union AABB instead of thousands of rects.
+    // Large selections use one union AABB.
         float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
         for (unsigned int i = 0; i < static_cast<unsigned int>(count); ++i) {
             auto* o = typeinfo_cast<GameObject*>(selected->objectAtIndex(i));
@@ -1455,6 +1909,7 @@ void CollabManager::clearPeerSelection(int clientId) {
 
 void CollabManager::sendDeletedObject(GameObject* object, std::string const& /*beforeSave*/) {
     if (!shouldEmit() || !object) return;
+    m_deferredEdits.erase(object->m_uniqueID);
     auto it = m_uidToGid.find(object->m_uniqueID);
     if (it == m_uidToGid.end()) return; // never synced
     std::string gid = it->second;
@@ -1466,22 +1921,45 @@ void CollabManager::sendDeletedObject(GameObject* object, std::string const& /*b
 void CollabManager::sweepEditor() {
     if (!m_editor || !m_editor->m_objects || !shouldEmit()) return;
 
-    // Objects created through a path without a hook (smart objects, other
-    // mods, exotic editor tools) get registered as adds.
+    auto started = std::chrono::steady_clock::now();
+    auto objectDeadline = started + kSweepBudget / 2;
+    auto deadline = started + kSweepBudget;
+    auto* objects = m_editor->m_objects;
+    size_t total = objects->count();
+    if (total == 0) m_sweepObjectCursor = 0;
+    else if (m_sweepObjectCursor >= total) m_sweepObjectCursor %= total;
+
     size_t adds = 0;
-    for (auto* o : CCArrayExt<GameObject*>(m_editor->m_objects)) {
+    size_t checked = 0;
+    while (total > 0 && checked < total && checked < kSweepMaxChecksPerPass &&
+           (checked == 0 || std::chrono::steady_clock::now() < objectDeadline)) {
+        size_t index = m_sweepObjectCursor;
+        m_sweepObjectCursor = (m_sweepObjectCursor + 1) % total;
+        ++checked;
+        auto* o = typeinfo_cast<GameObject*>(
+            objects->objectAtIndex(static_cast<unsigned int>(index))
+        );
         if (!o || m_uidToGid.count(o->m_uniqueID)) continue;
         sendCreatedObject(o);
         if (++adds >= kSweepMaxAddsPerPass) break;
     }
 
-    // Tracked objects that left the scene without the removeObject hook
-    // firing (bulk clears, other mods) become deletes. If one is actually
-    // alive it re-registers as an add on the next pass, so this self-heals
-    // in both directions.
     std::vector<std::string> gone;
-    for (auto const& [gid, obj] : m_gidToObj) {
-        if (!obj || !obj->getParent()) gone.push_back(gid);
+    size_t bucketCount = m_gidToObj.bucket_count();
+    size_t bucketsChecked = 0;
+    size_t trackedChecked = 0;
+    while (bucketCount > 0 && bucketsChecked < bucketCount &&
+           trackedChecked < kSweepMaxChecksPerPass &&
+           std::chrono::steady_clock::now() < deadline) {
+        size_t bucket = m_sweepBucketCursor % bucketCount;
+        m_sweepBucketCursor = (bucket + 1) % bucketCount;
+        ++bucketsChecked;
+        for (auto it = m_gidToObj.begin(bucket); it != m_gidToObj.end(bucket); ++it) {
+            ++trackedChecked;
+            if (!it->second || !it->second->getParent()) gone.push_back(it->first);
+            if (trackedChecked >= kSweepMaxChecksPerPass ||
+                std::chrono::steady_clock::now() >= deadline) break;
+        }
     }
     for (auto const& gid : gone) {
         uint32_t version = ++m_versionByGid[gid];
@@ -1495,29 +1973,25 @@ void CollabManager::sweepEditor() {
 }
 
 void CollabManager::handleDigest(matjson::Value const& msg) {
-    // Only comparable when fully quiescent: nothing pending locally, nothing
-    // left to apply, nothing in the air. Otherwise both sides legitimately
-    // hold different state for a moment.
+    // Compare digests only when both sides are quiescent.
     if (!m_editor || !connected()) return;
     if (m_seeding || !m_snapshotComplete) return;
-    if (!m_applyQueue.empty() || !m_pendingOps.empty() || !m_outbox.empty() || !m_inflight.empty()) return;
+    if (!m_applyQueue.empty() || !m_deferredCreates.empty() || !m_deferredEdits.empty() ||
+        !m_pendingOps.empty() || !m_outbox.empty() || !m_inflight.empty()) return;
     if (m_digestCooldown > 0.f) return;
 
     int64_t count = msg["count"].asInt().unwrapOr(-1);
     std::string hash = msg["hash"].asString().unwrapOr("");
     if (count < 0 || hash.empty()) return;
 
-    uint64_t agg = 0;
-    for (auto const& [gid, h] : m_wireHash) agg ^= h;
-    std::string local = fmt::format("{:016x}", agg);
+    std::string local = fmt::format("{:016x}", m_wireDigest);
 
     if (count == static_cast<int64_t>(m_wireHash.size()) && hash == local) {
         m_digestStrikes = 0;
         return;
     }
 
-    // Two mismatches in a row (with quiet checks in between) means real
-    // divergence, not in-transit edits: rebuild automatically.
+    // Two quiet mismatches indicate divergence; rebuild automatically.
     if (++m_digestStrikes < 2) return;
     m_digestStrikes = 0;
     m_digestCooldown = m_isHost ? 60.f : 20.f;
@@ -1527,13 +2001,11 @@ void CollabManager::handleDigest(matjson::Value const& msg) {
     beginResync();
 }
 
-// ---------------------------------------------------------------------------
-// Applying remote edits (Last-Write-Wins per gid)
-// ---------------------------------------------------------------------------
-
 void CollabManager::notifyOverlayEdit(ApplyObj const& op, GameObject* object) {
     std::string name = !op.by.empty() ? op.by : peerName(op.origin);
     CCPoint pos = object ? object->getPosition() : CCPoint{0.f, 0.f};
+
+    if (object) recordHeat(pos.x, pos.y, op.kind == "delete" ? 0.55f : 1.f);
 
     if (!m_overlay || op.origin <= 0 || op.origin == m_clientId) return;
     if (!object) return;
@@ -1543,14 +2015,13 @@ void CollabManager::notifyOverlayEdit(ApplyObj const& op, GameObject* object) {
 void CollabManager::applyRemoteAdd(ApplyObj const& op) {
     if (op.save.empty() || op.gid.empty()) return;
 
-    // If we already know this gid, route through update so we don't duplicate.
     if (m_gidToObj.count(op.gid)) {
         applyRemoteUpdate(op);
         return;
     }
 
     auto known = m_versionByGid.find(op.gid);
-    if (known != m_versionByGid.end() && op.version < known->second) return; // stale
+    if (known != m_versionByGid.end() && op.version < known->second) return;
 
     if (!m_editor) {
         m_versionByGid[op.gid] = op.version;
@@ -1572,10 +2043,9 @@ void CollabManager::applyRemoteAdd(ApplyObj const& op) {
 
     m_versionByGid[op.gid] = op.version;
     if (mapped) {
-        // Local re-serialization can differ textually from the wire save;
-        // storing it keeps the reconcile pass from echoing spurious updates.
+    // Keep the local form so reconcile does not echo remote edits.
         m_lastSentSave[op.gid] = saveObject(mapped);
-        m_wireHash[op.gid] = objectSyncHash(op.gid, op.version, op.save);
+        setWireHash(op.gid, objectSyncHash(op.gid, op.version, op.save));
     } else {
         log::warn("[Collab] no se pudo materializar objeto remoto gid={} ({} bytes)", op.gid, op.save.size());
     }
@@ -1586,7 +2056,7 @@ void CollabManager::applyRemoteUpdate(ApplyObj const& op) {
     if (op.save.empty() || op.gid.empty()) return;
 
     auto known = m_versionByGid.find(op.gid);
-    if (known != m_versionByGid.end() && op.version < known->second) return; // stale
+    if (known != m_versionByGid.end() && op.version < known->second) return;
 
     if (!m_editor) {
         m_versionByGid[op.gid] = op.version;
@@ -1599,9 +2069,7 @@ void CollabManager::applyRemoteUpdate(ApplyObj const& op) {
     {
         TrackerGuard guard(m_applyingRemote);
         if (existing && existing->getParent()) {
-            // Drop it from the local selection first, otherwise EditorUI keeps a
-            // freed pointer and crashes on the next edit (common when peers edit
-            // the same object at once).
+    // Drop the EditorUI pointer before freeing the object.
             if (m_editor->m_editorUI) m_editor->m_editorUI->deselectObject(existing);
             m_editor->removeObject(existing, true);
         }
@@ -1619,7 +2087,7 @@ void CollabManager::applyRemoteUpdate(ApplyObj const& op) {
     m_versionByGid[op.gid] = op.version;
     if (mapped) {
         m_lastSentSave[op.gid] = saveObject(mapped);
-        m_wireHash[op.gid] = objectSyncHash(op.gid, op.version, op.save);
+        setWireHash(op.gid, objectSyncHash(op.gid, op.version, op.save));
     } else {
         log::warn("[Collab] no se pudo materializar update remoto gid={} ({} bytes)", op.gid, op.save.size());
     }
@@ -1630,7 +2098,7 @@ void CollabManager::applyRemoteMove(ApplyObj const& op) {
     if (op.gid.empty()) return;
 
     auto known = m_versionByGid.find(op.gid);
-    if (known != m_versionByGid.end() && op.version < known->second) return; // stale
+    if (known != m_versionByGid.end() && op.version < known->second) return;
 
     if (!m_editor) {
         m_versionByGid[op.gid] = op.version;
@@ -1639,7 +2107,6 @@ void CollabManager::applyRemoteMove(ApplyObj const& op) {
 
     GameObject* existing = findTrackedObject(op.gid);
     if (!existing || !existing->getParent()) {
-        // Object missing locally: fall back to full recreate if we have a save.
         if (!op.save.empty()) {
             ApplyObj asUpdate = op;
             asUpdate.kind = "update";
@@ -1654,7 +2121,6 @@ void CollabManager::applyRemoteMove(ApplyObj const& op) {
         if (op.hasPos) {
             existing->setPosition({op.x, op.y});
         } else if (!op.save.empty()) {
-            // No coordinates on the wire (legacy peer): recreate from save.
             ApplyObj asUpdate = op;
             asUpdate.kind = "update";
             applyRemoteUpdate(asUpdate);
@@ -1664,14 +2130,70 @@ void CollabManager::applyRemoteMove(ApplyObj const& op) {
 
     m_versionByGid[op.gid] = op.version;
     if (!op.save.empty()) {
-        // Prefer the wire save for digest parity; local re-serialize is fine
-        // for reconcile no-op detection.
+    // Hash the wire save for reconcile no-op checks.
         m_lastSentSave[op.gid] = saveObject(existing);
-        m_wireHash[op.gid] = objectSyncHash(op.gid, op.version, op.save);
+        setWireHash(op.gid, objectSyncHash(op.gid, op.version, op.save));
     } else {
         std::string save = saveObject(existing);
         m_lastSentSave[op.gid] = save;
-        m_wireHash[op.gid] = objectSyncHash(op.gid, op.version, save);
+        setWireHash(op.gid, objectSyncHash(op.gid, op.version, save));
+    }
+    notifyOverlayEdit(op, existing);
+}
+
+void CollabManager::applyRemoteTransform(ApplyObj const& op) {
+    if (op.gid.empty()) return;
+
+    auto known = m_versionByGid.find(op.gid);
+    if (known != m_versionByGid.end() && op.version < known->second) return;
+
+    if (!m_editor) {
+        m_versionByGid[op.gid] = op.version;
+        return;
+    }
+
+    GameObject* existing = findTrackedObject(op.gid);
+    if (!existing || !existing->getParent()) {
+        if (!op.save.empty()) {
+            ApplyObj asUpdate = op;
+            asUpdate.kind = "update";
+            applyRemoteUpdate(asUpdate);
+        }
+        return;
+    }
+
+    bool applied = false;
+    {
+        TrackerGuard guard(m_applyingRemote);
+        if (op.hasPos) existing->setPosition({op.x, op.y});
+        if (op.kind == "rotate" && op.hasRot) {
+            existing->setRotation(op.rot);
+            applied = true;
+        } else if (op.kind == "scale" && op.hasScale) {
+            existing->setScaleX(op.scaleX);
+            existing->setScaleY(op.scaleY);
+            applied = true;
+        } else if (op.kind == "flip" && op.hasFlip) {
+            existing->setFlipX(op.flipX);
+            existing->setFlipY(op.flipY);
+            applied = true;
+        }
+        if (!applied && !op.save.empty()) {
+            ApplyObj asUpdate = op;
+            asUpdate.kind = "update";
+            applyRemoteUpdate(asUpdate);
+            return;
+        }
+    }
+
+    m_versionByGid[op.gid] = op.version;
+    if (!op.save.empty()) {
+        m_lastSentSave[op.gid] = saveObject(existing);
+        setWireHash(op.gid, objectSyncHash(op.gid, op.version, op.save));
+    } else {
+        std::string save = saveObject(existing);
+        m_lastSentSave[op.gid] = save;
+        setWireHash(op.gid, objectSyncHash(op.gid, op.version, save));
     }
     notifyOverlayEdit(op, existing);
 }
@@ -1680,7 +2202,7 @@ void CollabManager::applyRemoteDelete(ApplyObj const& op) {
     if (op.gid.empty()) return;
 
     auto known = m_versionByGid.find(op.gid);
-    if (known != m_versionByGid.end() && op.version < known->second) return; // stale
+    if (known != m_versionByGid.end() && op.version < known->second) return;
 
     GameObject* existing = findTrackedObject(op.gid);
 
@@ -1692,12 +2214,8 @@ void CollabManager::applyRemoteDelete(ApplyObj const& op) {
     }
 
     unmapGid(op.gid);
-    m_versionByGid[op.gid] = op.version; // remember so stale re-adds are rejected
+    m_versionByGid[op.gid] = op.version; // Reject stale re-adds.
 }
-
-// ---------------------------------------------------------------------------
-// Host permissions
-// ---------------------------------------------------------------------------
 
 void CollabManager::setHostPermissions(HostPermissions permissions) {
     if (!m_isHost) return;
@@ -1715,7 +2233,6 @@ void CollabManager::kickPeer(int targetClientId) {
         {"t", "kick"},
         {"target", static_cast<int64_t>(targetClientId)},
     }));
-    // Optimistic local notice; peer list refreshes when the server broadcasts.
     auto name = peerName(targetClientId);
     pushChatMessage({0, "", fmt::format("Expulsaste a {}", name.empty() ? fmt::format("#{}", targetClientId) : name)});
 }
@@ -1738,4 +2255,536 @@ bool CollabManager::clientCanOpenLevelSettings() const {
     return m_permissions.allowLevelSettings;
 }
 
-} // namespace paimon::collab
+bool CollabManager::clientCanEditColors() const {
+    if (!connected() || m_isHost) return true;
+    if (m_permissions.viewOnly) return false;
+    return m_permissions.allowColors || m_permissions.allowLevelSettings;
+}
+
+bool CollabManager::canEditObjectLayer(GameObject* object) const {
+    if (!object) return true;
+    if (!m_permissions.strictLayers || m_isHost) return true;
+    auto it = m_layerOwners.find(static_cast<int>(object->m_editorLayer));
+    if (it == m_layerOwners.end()) return true;
+    return it->second == m_clientId;
+}
+
+void CollabManager::claimObjectLayer(GameObject* object) {
+    if (!object || !m_permissions.strictLayers || m_clientId <= 0) return;
+    int layer = static_cast<int>(object->m_editorLayer);
+    auto it = m_layerOwners.find(layer);
+    if (it != m_layerOwners.end() && it->second != 0 && it->second != m_clientId) return;
+    if (it != m_layerOwners.end() && it->second == m_clientId) return;
+    m_layerOwners[layer] = m_clientId;
+    m_net.sendJson(matjson::makeObject({
+        {"t", "claim_layer"},
+        {"layer", static_cast<int64_t>(layer)},
+    }));
+}
+
+void CollabManager::handleLayerOwners(matjson::Value const& msg) {
+    matjson::Value const* src = &msg;
+    if (msg.isObject() && msg.contains("owners") && msg["owners"].isObject()) {
+        src = &msg["owners"];
+    }
+    if (!src->isObject()) return;
+
+    m_layerOwners.clear();
+    for (auto const& value : *src) {
+        auto key = value.getKey();
+        if (!key) continue;
+        int layer = 0;
+        try { layer = std::stoi(*key); } catch (...) { continue; }
+        int owner = static_cast<int>(value.asInt().unwrapOr(0));
+        if (owner > 0) m_layerOwners[layer] = owner;
+    }
+}
+
+void CollabManager::sendCameraPresence() {
+    if (m_state != ConnState::Connected || m_clientId <= 0 || !m_editor || !m_editor->m_objectLayer) return;
+    auto* layer = m_editor->m_objectLayer;
+    auto win = CCDirector::sharedDirector()->getWinSize();
+    auto cam = layer->convertToNodeSpace(win / 2.f);
+    auto mouse = geode::cocos::getMousePos();
+    bool cursorVisible = mouse.x >= 0.f && mouse.y >= 0.f &&
+        mouse.x <= win.width && mouse.y <= win.height;
+    auto cursor = layer->convertToNodeSpace(mouse);
+    float zoom = layer->getScale();
+    if (std::abs(cam.x - m_lastCamX) < kCameraMoveEpsilon &&
+        std::abs(cam.y - m_lastCamY) < kCameraMoveEpsilon &&
+        std::abs(zoom - m_lastCamZoom) < kCameraZoomEpsilon &&
+        std::abs(cursor.x - m_lastCursorX) < kCursorMoveEpsilon &&
+        std::abs(cursor.y - m_lastCursorY) < kCursorMoveEpsilon &&
+        cursorVisible == m_lastCursorVisible &&
+        !m_cameraDirty) {
+        return;
+    }
+    m_lastCamX = cam.x;
+    m_lastCamY = cam.y;
+    m_lastCamZoom = zoom;
+    m_lastCursorX = cursor.x;
+    m_lastCursorY = cursor.y;
+    m_lastCursorVisible = cursorVisible;
+    m_pendingCameraJson = matjson::makeObject({
+        {"t", "camera"},
+        {"x", static_cast<double>(cam.x)},
+        {"y", static_cast<double>(cam.y)},
+        {"z", static_cast<double>(zoom)},
+        {"mx", static_cast<double>(cursor.x)},
+        {"my", static_cast<double>(cursor.y)},
+        {"mv", cursorVisible},
+    });
+    m_cameraDirty = true;
+}
+
+void CollabManager::flushCameraIfNeeded() {
+    if (!m_cameraDirty || !connected() || !m_net.isOpen()) return;
+    m_cameraDirty = false;
+    m_sinceCameraFlush = 0.f;
+    if (m_pendingCameraJson.isObject()) {
+        m_net.sendJson(m_pendingCameraJson);
+    }
+}
+
+void CollabManager::handlePeerCamera(matjson::Value const& msg) {
+    int from = static_cast<int>(msg["from"].asInt().unwrapOr(0));
+    if (from <= 0 || from == m_clientId) return;
+
+    PeerCamera cam;
+    cam.clientId = from;
+    cam.name = msg.contains("name") ? msg["name"].asString().unwrapOr("") : peerName(from);
+    cam.x = static_cast<float>(msg["x"].asDouble().unwrapOr(0.0));
+    cam.y = static_cast<float>(msg["y"].asDouble().unwrapOr(0.0));
+    cam.zoom = static_cast<float>(msg["z"].asDouble().unwrapOr(1.0));
+    cam.cursorX = static_cast<float>(msg["mx"].asDouble().unwrapOr(cam.x));
+    cam.cursorY = static_cast<float>(msg["my"].asDouble().unwrapOr(cam.y));
+    cam.cursorVisible = !msg.contains("mv") || msg["mv"].asBool().unwrapOr(true);
+    cam.age = 0.f;
+    m_peerCameras[from] = cam;
+
+    PeerAppearance appearance;
+    if (auto it = m_peers.find(from); it != m_peers.end()) appearance = it->second.appearance;
+    if (m_overlay) {
+        m_overlay->onPeerCamera(from, cam.name, cam.cursorX, cam.cursorY,
+                                cam.cursorVisible, appearance);
+    }
+}
+
+void CollabManager::clearPeerCamera(int clientId) {
+    m_peerCameras.erase(clientId);
+    if (m_overlay) m_overlay->onPeerCameraCleared(clientId);
+}
+
+void CollabManager::sendWorkZone() {
+    if (m_state != ConnState::Connected || m_clientId <= 0 || !m_editor || !m_editor->m_objectLayer) return;
+    auto* layer = m_editor->m_objectLayer;
+    auto win = CCDirector::sharedDirector()->getWinSize();
+    auto bl = layer->convertToNodeSpace({0.f, 0.f});
+    auto tr = layer->convertToNodeSpace({win.width, win.height});
+    float x = std::min(bl.x, tr.x);
+    float y = std::min(bl.y, tr.y);
+    float w = std::abs(tr.x - bl.x);
+    float h = std::abs(tr.y - bl.y);
+    if (w < 8.f || h < 8.f) return;
+
+    if (std::abs(x - m_lastZoneX) < kWorkZoneMoveEpsilon &&
+        std::abs(y - m_lastZoneY) < kWorkZoneMoveEpsilon &&
+        std::abs(w - m_lastZoneW) < kWorkZoneMoveEpsilon * 2.f &&
+        std::abs(h - m_lastZoneH) < kWorkZoneMoveEpsilon * 2.f &&
+        !m_workZoneDirty) {
+        return;
+    }
+    m_lastZoneX = x;
+    m_lastZoneY = y;
+    m_lastZoneW = w;
+    m_lastZoneH = h;
+    m_pendingWorkZoneJson = matjson::makeObject({
+        {"t", "workzone"},
+        {"x", static_cast<double>(x)},
+        {"y", static_cast<double>(y)},
+        {"w", static_cast<double>(w)},
+        {"h", static_cast<double>(h)},
+    });
+    m_workZoneDirty = true;
+}
+
+void CollabManager::flushWorkZoneIfNeeded() {
+    if (!m_workZoneDirty || !connected() || !m_net.isOpen()) return;
+    m_workZoneDirty = false;
+    m_sinceWorkZoneFlush = 0.f;
+    if (m_pendingWorkZoneJson.isObject()) {
+        m_net.sendJson(m_pendingWorkZoneJson);
+    }
+}
+
+void CollabManager::handlePeerWorkZone(matjson::Value const& msg) {
+    int from = static_cast<int>(msg["from"].asInt().unwrapOr(0));
+    if (from <= 0 || from == m_clientId) return;
+
+    PeerWorkZone z;
+    z.clientId = from;
+    z.name = msg.contains("name") ? msg["name"].asString().unwrapOr("") : peerName(from);
+    z.x = static_cast<float>(msg["x"].asDouble().unwrapOr(0.0));
+    z.y = static_cast<float>(msg["y"].asDouble().unwrapOr(0.0));
+    z.w = static_cast<float>(msg["w"].asDouble().unwrapOr(0.0));
+    z.h = static_cast<float>(msg["h"].asDouble().unwrapOr(0.0));
+    z.age = 0.f;
+    if (z.w <= 0.f || z.h <= 0.f) {
+        clearPeerWorkZone(from);
+        return;
+    }
+    m_peerWorkZones[from] = z;
+    if (m_overlay) m_overlay->onPeerWorkZone(from, z.name, z.x, z.y, z.w, z.h);
+}
+
+void CollabManager::clearPeerWorkZone(int clientId) {
+    m_peerWorkZones.erase(clientId);
+    if (m_overlay) m_overlay->onPeerWorkZoneCleared(clientId);
+}
+
+void CollabManager::sendPing(float x, float y) {
+    if (m_state != ConnState::Connected || m_clientId <= 0 || !m_net.isOpen()) return;
+    m_net.sendJson(matjson::makeObject({
+        {"t", "ping"},
+        {"x", static_cast<double>(x)},
+        {"y", static_cast<double>(y)},
+    }));
+    PeerPing local;
+    local.clientId = m_clientId;
+    local.name = m_username.empty() ? "Tu" : m_username;
+    local.x = x;
+    local.y = y;
+    local.age = 0.f;
+    m_peerPings.push_back(local);
+    if (m_overlay) m_overlay->onPeerPing(local.clientId, local.name, x, y);
+    pushChatMessage({0, "", fmt::format("Ping en ({:.0f}, {:.0f})", x, y)});
+    recordHeat(x, y, 1.4f);
+}
+
+void CollabManager::handlePeerPing(matjson::Value const& msg) {
+    int from = static_cast<int>(msg["from"].asInt().unwrapOr(0));
+    if (from <= 0 || from == m_clientId) return;
+    PeerPing p;
+    p.clientId = from;
+    p.name = msg.contains("name") ? msg["name"].asString().unwrapOr("") : peerName(from);
+    p.x = static_cast<float>(msg["x"].asDouble().unwrapOr(0.0));
+    p.y = static_cast<float>(msg["y"].asDouble().unwrapOr(0.0));
+    p.age = 0.f;
+    m_peerPings.push_back(p);
+    if (m_overlay) m_overlay->onPeerPing(p.clientId, p.name, p.x, p.y);
+    pushChatMessage({0, "", fmt::format("{}: mira aqui ({:.0f}, {:.0f})", p.name, p.x, p.y)});
+    recordHeat(p.x, p.y, 1.2f);
+}
+
+void CollabManager::tickPings(float dt) {
+    for (size_t i = 0; i < m_peerPings.size();) {
+        m_peerPings[i].age += dt;
+        if (m_peerPings[i].age >= m_peerPings[i].life) {
+            m_peerPings.erase(m_peerPings.begin() + static_cast<long>(i));
+        } else {
+            ++i;
+        }
+    }
+    while (m_peerPings.size() > 24) m_peerPings.erase(m_peerPings.begin());
+}
+
+std::string CollabManager::cycleFollowPeer() {
+    if (!connected() || m_peers.empty()) {
+        clearFollow();
+        return {};
+    }
+    std::vector<int> ids;
+    ids.reserve(m_peers.size());
+    for (auto const& [id, info] : m_peers) {
+        if (id != m_clientId) ids.push_back(id);
+    }
+    std::sort(ids.begin(), ids.end());
+    if (ids.empty()) {
+        clearFollow();
+        return {};
+    }
+
+    int next = 0;
+    if (m_followClientId == 0) {
+        next = ids.front();
+    } else {
+        auto it = std::find(ids.begin(), ids.end(), m_followClientId);
+        if (it == ids.end() || it + 1 == ids.end()) {
+            clearFollow();
+            return {};
+        }
+        next = *(it + 1);
+    }
+    m_followClientId = next;
+    auto name = peerName(next);
+    setStatus(fmt::format("Siguiendo a {}", name.empty() ? fmt::format("#{}", next) : name));
+    return name;
+}
+
+void CollabManager::clearFollow() {
+    if (m_followClientId == 0) return;
+    m_followClientId = 0;
+    if (connected()) setStatus(fmt::format("En sala '{}' #{}", m_roomCode, m_clientId));
+}
+
+void CollabManager::tickFollow() {
+    if (m_followClientId <= 0 || !m_editor) return;
+    auto it = m_peerCameras.find(m_followClientId);
+    if (it == m_peerCameras.end()) return;
+    paimon::editor::focusCameraOnPoint(m_editor, {it->second.x, it->second.y});
+    if (m_editor->m_editorUI) m_editor->m_editorUI->updateSlider();
+}
+
+void CollabManager::recordHeat(float x, float y, float amount) {
+    int gx = static_cast<int>(std::floor(x / kHeatCellSize));
+    int gy = static_cast<int>(std::floor(y / kHeatCellSize));
+    for (auto& c : m_heatCells) {
+        if (c.gx == gx && c.gy == gy) {
+            c.heat = std::min(kMaxCellHeat, c.heat + amount * kHeatGain);
+            return;
+        }
+    }
+    if (m_heatCells.size() >= kMaxHeatCells) {
+        auto cold = std::min_element(m_heatCells.begin(), m_heatCells.end(),
+            [](HeatCell const& a, HeatCell const& b) { return a.heat < b.heat; });
+        if (cold != m_heatCells.end()) m_heatCells.erase(cold);
+    }
+    m_heatCells.push_back({gx, gy, amount * kHeatGain});
+}
+
+void CollabManager::tickHeatmap(float dt) {
+    for (auto it = m_heatCells.begin(); it != m_heatCells.end();) {
+        it->heat -= kHeatDecayPerSec * dt;
+        if (it->heat <= 0.05f) it = m_heatCells.erase(it);
+        else ++it;
+    }
+}
+
+std::vector<CollabManager::HeatSample> CollabManager::heatmapSamples(size_t maxCount) const {
+    std::vector<HeatSample> out;
+    if (m_heatCells.empty() || maxCount == 0) return out;
+    out.reserve(std::min(maxCount, m_heatCells.size()));
+    float peak = 0.01f;
+    for (auto const& c : m_heatCells) peak = std::max(peak, c.heat);
+    for (auto const& c : m_heatCells) {
+        HeatSample s;
+        s.x = (static_cast<float>(c.gx) + 0.5f) * kHeatCellSize;
+        s.y = (static_cast<float>(c.gy) + 0.5f) * kHeatCellSize;
+        s.intensity = std::clamp(c.heat / peak, 0.f, 1.f);
+        out.push_back(s);
+        if (out.size() >= maxCount) break;
+    }
+    return out;
+}
+
+std::string CollabManager::captureLevelMetaSignature() const {
+    if (!m_editor) return {};
+    std::string sig;
+    sig.reserve(256);
+    if (m_editor->m_levelSettings) {
+        sig += std::string(m_editor->m_levelSettings->getSaveString());
+    }
+    sig += '|';
+    GJEffectManager* em = nullptr;
+    if (m_editor->m_levelSettings) em = m_editor->m_levelSettings->m_effectManager;
+    if (!em) em = m_editor->m_effectManager;
+    if (em) sig += std::string(em->getSaveString());
+    sig += '|';
+    if (auto* level = m_editor->m_level) {
+        sig += std::to_string(level->m_audioTrack);
+        sig += ':';
+        sig += std::to_string(level->m_songID);
+        sig += ':';
+        sig += std::string(level->m_songIDs);
+        sig += ':';
+        sig += std::string(level->m_sfxIDs);
+    }
+    return sig;
+}
+
+matjson::Value CollabManager::buildLevelMetaPayload() const {
+    auto payload = matjson::makeObject({{"t", "level_settings"}});
+    if (!m_editor) return payload;
+
+    if (m_editor->m_levelSettings) {
+        payload["settings"] = std::string(m_editor->m_levelSettings->getSaveString());
+        auto* s = m_editor->m_levelSettings;
+        payload["startMode"] = static_cast<int64_t>(s->m_startMode);
+        payload["startSpeed"] = static_cast<int64_t>(static_cast<int>(s->m_startSpeed));
+        payload["startMini"] = s->m_startMini;
+        payload["startDual"] = s->m_startDual;
+        payload["twoPlayer"] = s->m_twoPlayerMode;
+        payload["platformer"] = s->m_platformerMode;
+        payload["songOffset"] = static_cast<double>(s->m_songOffset);
+        payload["bg"] = static_cast<int64_t>(s->m_backgroundIndex);
+        payload["gnd"] = static_cast<int64_t>(s->m_groundIndex);
+        payload["font"] = static_cast<int64_t>(s->m_fontIndex);
+        payload["mg"] = static_cast<int64_t>(s->m_middleGroundIndex);
+    }
+
+    GJEffectManager* em = nullptr;
+    if (m_editor->m_levelSettings) em = m_editor->m_levelSettings->m_effectManager;
+    if (!em) em = m_editor->m_effectManager;
+    if (em) payload["colors"] = std::string(em->getSaveString());
+
+    if (auto* level = m_editor->m_level) {
+        payload["audioTrack"] = static_cast<int64_t>(level->m_audioTrack);
+        payload["songID"] = static_cast<int64_t>(level->m_songID);
+        payload["songIDs"] = std::string(level->m_songIDs);
+        payload["sfxIDs"] = std::string(level->m_sfxIDs);
+    }
+    return payload;
+}
+
+void CollabManager::sendLevelSettings(bool force) {
+    if (m_state != ConnState::Connected || m_clientId <= 0 || m_applyingRemote) return;
+    if (!m_editor) return;
+    if (!m_isHost && m_permissions.viewOnly) return;
+    if (!m_isHost && !m_permissions.allowLevelSettings && !m_permissions.allowSong &&
+        !m_permissions.allowColors) {
+        return;
+    }
+
+    auto sig = captureLevelMetaSignature();
+    if (!force && !sig.empty() && sig == m_lastMetaSig) return;
+    m_lastMetaSig = sig;
+
+    auto payload = buildLevelMetaPayload();
+    m_net.sendJson(payload);
+    log::info("[Collab] level meta enviado (settings={} colors={} song={})",
+              payload.contains("settings"), payload.contains("colors"),
+              payload.contains("songID"));
+}
+
+void CollabManager::reconcileLevelMeta() {
+    if (!shouldEmit() || !m_editor) return;
+    if (!m_isHost && !m_permissions.allowLevelSettings && !m_permissions.allowSong &&
+        !m_permissions.allowColors) {
+        return;
+    }
+    sendLevelSettings(false);
+}
+
+void CollabManager::applyLevelSettingsSave(std::string const& save) {
+    if (save.empty() || !m_editor || !m_editor->m_levelSettings) return;
+    auto* live = m_editor->m_levelSettings;
+    auto* parsed = LevelSettingsObject::objectFromString(gd::string(save));
+    if (!parsed) return;
+
+    live->m_startMode = parsed->m_startMode;
+    live->m_startSpeed = parsed->m_startSpeed;
+    live->m_startMini = parsed->m_startMini;
+    live->m_startDual = parsed->m_startDual;
+    live->m_mirrorMode = parsed->m_mirrorMode;
+    live->m_rotateGameplay = parsed->m_rotateGameplay;
+    live->m_twoPlayerMode = parsed->m_twoPlayerMode;
+    live->m_platformerMode = parsed->m_platformerMode;
+    live->m_songOffset = parsed->m_songOffset;
+    live->m_fadeIn = parsed->m_fadeIn;
+    live->m_fadeOut = parsed->m_fadeOut;
+    live->m_dontReset = parsed->m_dontReset;
+    live->m_backgroundIndex = parsed->m_backgroundIndex;
+    live->m_groundIndex = parsed->m_groundIndex;
+    live->m_fontIndex = parsed->m_fontIndex;
+    live->m_middleGroundIndex = parsed->m_middleGroundIndex;
+    live->m_startsWithStartPos = parsed->m_startsWithStartPos;
+    live->m_isFlipped = parsed->m_isFlipped;
+    live->m_reverseGameplay = parsed->m_reverseGameplay;
+    live->m_disableStartPos = parsed->m_disableStartPos;
+    live->m_targetOrder = parsed->m_targetOrder;
+    live->m_targetChannel = parsed->m_targetChannel;
+    live->m_guidelineString = parsed->m_guidelineString;
+    live->m_guidelinesUpdated = parsed->m_guidelinesUpdated;
+    live->m_colorPage = parsed->m_colorPage;
+    live->m_groundLineIndex = parsed->m_groundLineIndex;
+    live->m_propertykA23 = parsed->m_propertykA23;
+    live->m_propertykA24 = parsed->m_propertykA24;
+    live->m_noTimePenalty = parsed->m_noTimePenalty;
+    live->m_propertykA44 = parsed->m_propertykA44;
+    live->m_nextFreeID = parsed->m_nextFreeID;
+    live->m_resetCamera = parsed->m_resetCamera;
+    live->m_spawnGroup = parsed->m_spawnGroup;
+    live->m_allowMultiRotation = parsed->m_allowMultiRotation;
+    live->m_enablePlayerSqueeze = parsed->m_enablePlayerSqueeze;
+    live->m_fixGravityBug = parsed->m_fixGravityBug;
+    live->m_fixNegativeScale = parsed->m_fixNegativeScale;
+    live->m_fixRobotJump = parsed->m_fixRobotJump;
+    live->m_dynamicLevelHeight = parsed->m_dynamicLevelHeight;
+    live->m_sortGroups = parsed->m_sortGroups;
+    live->m_fixRadiusCollision = parsed->m_fixRadiusCollision;
+    live->m_enable22Changes = parsed->m_enable22Changes;
+    live->m_allowStaticRotate = parsed->m_allowStaticRotate;
+    live->m_reverseSync = parsed->m_reverseSync;
+    live->m_decreaseBoostSlide = parsed->m_decreaseBoostSlide;
+    live->m_enableImpulseFix = parsed->m_enableImpulseFix;
+}
+
+void CollabManager::applyColorsSave(std::string const& save) {
+    if (save.empty() || !m_editor) return;
+    GJEffectManager* em = nullptr;
+    if (m_editor->m_levelSettings) em = m_editor->m_levelSettings->m_effectManager;
+    if (!em) em = m_editor->m_effectManager;
+    if (!em) return;
+    em->setupFromString(gd::string(save));
+}
+
+void CollabManager::applySongMeta(matjson::Value const& msg) {
+    if (!m_editor || !m_editor->m_level) return;
+    auto* level = m_editor->m_level;
+    if (msg.contains("audioTrack")) {
+        level->m_audioTrack = static_cast<int>(msg["audioTrack"].asInt().unwrapOr(level->m_audioTrack));
+    }
+    if (msg.contains("songID")) {
+        level->m_songID = static_cast<int>(msg["songID"].asInt().unwrapOr(level->m_songID));
+    }
+    if (msg.contains("songIDs")) {
+        level->m_songIDs = gd::string(msg["songIDs"].asString().unwrapOr(std::string(level->m_songIDs)));
+    }
+    if (msg.contains("sfxIDs")) {
+        level->m_sfxIDs = gd::string(msg["sfxIDs"].asString().unwrapOr(std::string(level->m_sfxIDs)));
+    }
+}
+
+void CollabManager::handleLevelSettings(matjson::Value const& msg) {
+    int from = static_cast<int>(msg["from"].asInt().unwrapOr(0));
+    if (from > 0 && from == m_clientId) return;
+    if (!m_editor) {
+        m_pendingLevelMeta = msg;
+        m_hasPendingLevelMeta = true;
+        return;
+    }
+
+    TrackerGuard guard(m_applyingRemote);
+
+    if (msg.contains("settings")) {
+        auto save = msg["settings"].asString().unwrapOr("");
+        if (!save.empty()) applyLevelSettingsSave(save);
+    } else if (m_editor->m_levelSettings) {
+        auto* s = m_editor->m_levelSettings;
+        if (msg.contains("startMode")) s->m_startMode = static_cast<int>(msg["startMode"].asInt().unwrapOr(s->m_startMode));
+        if (msg.contains("startSpeed")) s->m_startSpeed = static_cast<Speed>(static_cast<int>(msg["startSpeed"].asInt().unwrapOr(static_cast<int>(s->m_startSpeed))));
+        if (msg.contains("startMini")) s->m_startMini = msg["startMini"].asBool().unwrapOr(s->m_startMini);
+        if (msg.contains("startDual")) s->m_startDual = msg["startDual"].asBool().unwrapOr(s->m_startDual);
+        if (msg.contains("twoPlayer")) s->m_twoPlayerMode = msg["twoPlayer"].asBool().unwrapOr(s->m_twoPlayerMode);
+        if (msg.contains("platformer")) s->m_platformerMode = msg["platformer"].asBool().unwrapOr(s->m_platformerMode);
+        if (msg.contains("songOffset")) s->m_songOffset = static_cast<float>(msg["songOffset"].asDouble().unwrapOr(s->m_songOffset));
+        if (msg.contains("bg")) s->m_backgroundIndex = static_cast<int>(msg["bg"].asInt().unwrapOr(s->m_backgroundIndex));
+        if (msg.contains("gnd")) s->m_groundIndex = static_cast<int>(msg["gnd"].asInt().unwrapOr(s->m_groundIndex));
+        if (msg.contains("font")) s->m_fontIndex = static_cast<int>(msg["font"].asInt().unwrapOr(s->m_fontIndex));
+        if (msg.contains("mg")) s->m_middleGroundIndex = static_cast<int>(msg["mg"].asInt().unwrapOr(s->m_middleGroundIndex));
+    }
+
+    if (msg.contains("colors")) {
+        auto colors = msg["colors"].asString().unwrapOr("");
+        if (!colors.empty()) applyColorsSave(colors);
+    }
+
+    applySongMeta(msg);
+
+    if (m_editor->m_levelSettings) {
+        m_editor->levelSettingsUpdated();
+    }
+    m_lastMetaSig = captureLevelMetaSignature();
+}
+
+}

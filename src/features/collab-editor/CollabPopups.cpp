@@ -7,6 +7,7 @@
 #include "../../utils/AccountVerifier.hpp"
 #include "../emotes/ui/EmoteButton.hpp"
 
+#include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GJUserScore.hpp>
@@ -67,7 +68,6 @@ std::string randomRoomCode() {
     return out;
 }
 
-// Dark card that groups the "one thing to do" of each view.
 CCScale9Sprite* makeCard(float width, float height) {
     auto* card = CCScale9Sprite::create("square02b_001.png");
     card->setContentSize({width, height});
@@ -87,6 +87,36 @@ CCLabelBMFont* makeHint(char const* text) {
     label->setScale(0.45f);
     label->setColor({165, 165, 178});
     return label;
+}
+
+void collectRGBANodes(CCNode* root, std::vector<std::pair<CCNode*, GLubyte>>& out) {
+    if (auto* rgba = dynamic_cast<CCRGBAProtocol*>(root)) {
+        out.emplace_back(root, rgba->getOpacity());
+    }
+    for (auto* child : CCArrayExt<CCNode*>(root->getChildren())) collectRGBANodes(child, out);
+}
+
+// Fade each node from its authored opacity; capture targets before mutating parents.
+void fadeInTree(CCNode* root, float duration) {
+    std::vector<std::pair<CCNode*, GLubyte>> nodes;
+    collectRGBANodes(root, nodes);
+    for (auto& [node, target] : nodes) {
+        dynamic_cast<CCRGBAProtocol*>(node)->setOpacity(0);
+        node->runAction(CCFadeTo::create(duration, target));
+    }
+}
+
+void fadeOutTree(CCNode* root, float duration) {
+    if (auto* rgba = dynamic_cast<CCRGBAProtocol*>(root)) {
+        root->stopAllActions();
+        root->runAction(CCFadeTo::create(duration, 0));
+    }
+    for (auto* child : CCArrayExt<CCNode*>(root->getChildren())) fadeOutTree(child, duration);
+}
+
+void disableMenusIn(CCNode* root) {
+    if (auto* menu = typeinfo_cast<CCMenu*>(root)) menu->setEnabled(false);
+    for (auto* child : CCArrayExt<CCNode*>(root->getChildren())) disableMenusIn(child);
 }
 
 IconType peerIconType(int rawType) {
@@ -123,13 +153,6 @@ CCNode* makePeerAvatar(PeerInfo const& peer, ccColor3B fallbackColor, float kSiz
     root->setContentSize({kSize, kSize});
     root->setAnchorPoint({0.5f, 0.5f});
 
-    auto* ring = CCDrawNode::create();
-    ring->drawDot({kSize / 2.f, kSize / 2.f}, kSize / 2.f,
-        ccColor4F{fallbackColor.r / 255.f, fallbackColor.g / 255.f, fallbackColor.b / 255.f, 1.f});
-    ring->drawDot({kSize / 2.f, kSize / 2.f}, kSize / 2.f - 2.f,
-        ccColor4F{0.06f, 0.07f, 0.11f, 1.f});
-    root->addChild(ring);
-
     int iconID = peer.appearance.hasIcon ? std::max(1, peer.appearance.iconID) : 1;
     if (auto* player = SimplePlayer::create(iconID)) {
         IconType type = peer.appearance.hasIcon ? peerIconType(peer.appearance.iconType) : IconType::Cube;
@@ -154,7 +177,7 @@ CCNode* makePeerAvatar(PeerInfo const& peer, ccColor3B fallbackColor, float kSiz
         player->setSecondColor(secondary);
 
         float maxDim = std::max(player->getContentSize().width, player->getContentSize().height);
-        if (maxDim > 0.f) player->setScale((kSize - 11.f) / maxDim);
+        if (maxDim > 0.f) player->setScale((kSize - 8.f) / maxDim);
         player->setPosition({kSize / 2.f, kSize / 2.f});
         root->addChild(player, 1);
     }
@@ -162,7 +185,7 @@ CCNode* makePeerAvatar(PeerInfo const& peer, ccColor3B fallbackColor, float kSiz
     return root;
 }
 
-} // namespace
+}
 
 std::string defaultDisplayName() {
     std::string fromSetting = trim(Mod::get()->getSettingValue<std::string>("collab-username"));
@@ -180,19 +203,13 @@ void closeSessionPopups() {
     std::vector<Ref<FLAlertLayer>> victims;
     for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
         if (!child) continue;
-        auto const& id = child->getID();
-        if (id == "collab-room"_spr || id == "collab-gate"_spr) {
+        if (child->getID() == "collab-room"_spr) {
             if (auto* alert = typeinfo_cast<FLAlertLayer*>(child)) victims.emplace_back(alert);
         }
     }
-    // keyBackClicked routes through Popup::onClose, which unregisters touch
-    // and keyboard handlers properly (a plain removeFromParent would not).
     for (auto const& alert : victims) alert->keyBackClicked();
 }
 
-// ---------------------------------------------------------------------------
-// Room popup
-// ---------------------------------------------------------------------------
 
 CollabRoomPopup* CollabRoomPopup::create(GJGameLevel* hostLevel) {
     auto* ret = new CollabRoomPopup();
@@ -231,6 +248,9 @@ void CollabRoomPopup::captureInputs() {
 void CollabRoomPopup::rebuild() {
     captureInputs();
     m_content->removeAllChildrenWithCleanup(true);
+    m_setupPanel = nullptr;
+    m_createTabSpr = nullptr;
+    m_joinTabSpr = nullptr;
     m_codeInput = nullptr;
     m_codeLabel = nullptr;
     m_statusLabel = nullptr;
@@ -253,8 +273,7 @@ void CollabRoomPopup::rebuild() {
 }
 
 void CollabRoomPopup::scheduleRebuild() {
-    // Rebuilding destroys the button whose callback we're inside of; defer a
-    // frame so cocos never touches a freed menu item.
+    // Defer rebuilds triggered by a button callback.
     Ref<CollabRoomPopup> self = this;
     queueInMainThread([self]() {
         if (self->getParent()) self->rebuild();
@@ -262,63 +281,69 @@ void CollabRoomPopup::scheduleRebuild() {
 }
 
 void CollabRoomPopup::buildSetupView() {
-    // --- Tabs: the two things you can do, side by side ----------------------
     auto* tabs = CCMenu::create();
-    auto* createSpr = ButtonSprite::create("Crear sala", "bigFont.fnt",
+    m_createTabSpr = ButtonSprite::create("Crear sala", "bigFont.fnt",
         m_joinTab ? "GJ_button_04.png" : "GJ_button_01.png", 0.6f);
-    createSpr->setScale(0.62f);
-    auto* joinSpr = ButtonSprite::create("Unirse", "bigFont.fnt",
+    m_createTabSpr->setScale(0.62f);
+    m_joinTabSpr = ButtonSprite::create("Unirse", "bigFont.fnt",
         m_joinTab ? "GJ_button_01.png" : "GJ_button_04.png", 0.6f);
-    joinSpr->setScale(0.62f);
-    tabs->addChild(CCMenuItemSpriteExtra::create(createSpr, this, menu_selector(CollabRoomPopup::onTabCreate)));
-    tabs->addChild(CCMenuItemSpriteExtra::create(joinSpr, this, menu_selector(CollabRoomPopup::onTabJoin)));
+    m_joinTabSpr->setScale(0.62f);
+    tabs->addChild(CCMenuItemSpriteExtra::create(m_createTabSpr, this, menu_selector(CollabRoomPopup::onTabCreate)));
+    tabs->addChild(CCMenuItemSpriteExtra::create(m_joinTabSpr, this, menu_selector(CollabRoomPopup::onTabJoin)));
     tabs->setLayout(RowLayout::create()->setGap(8.f));
     tabs->updateLayout();
     m_content->addChildAtPosition(tabs, Anchor::Top, {0.f, -40.f});
 
-    // --- Card with the tab's single task ------------------------------------
-    m_content->addChildAtPosition(makeCard(304.f, 100.f), Anchor::Center, {0.f, -2.f});
+    m_setupPanel = buildSetupPanel();
+    m_content->addChildAtPosition(m_setupPanel, Anchor::Center);
+}
+
+CCNode* CollabRoomPopup::buildSetupPanel() {
+    auto* panel = CCNode::create();
+    panel->setContentSize(m_content->getContentSize());
+    panel->setAnchorPoint({0.5f, 0.5f});
+
+    panel->addChildAtPosition(makeCard(304.f, 100.f), Anchor::Center, {0.f, -2.f});
 
     if (!m_joinTab) {
-        m_content->addChildAtPosition(makeCaption("Codigo de tu sala"), Anchor::Center, {0.f, 34.f});
+        panel->addChildAtPosition(makeCaption("Codigo de tu sala"), Anchor::Center, {0.f, 34.f});
 
         m_codeLabel = CCLabelBMFont::create(m_createCode.c_str(), "bigFont.fnt");
         m_codeLabel->setScale(0.6f);
         m_codeLabel->setColor({255, 210, 90});
-        m_content->addChildAtPosition(m_codeLabel, Anchor::Center, {0.f, 12.f});
+        panel->addChildAtPosition(m_codeLabel, Anchor::Center, {0.f, 12.f});
 
         auto* codeMenu = CCMenu::create();
         codeMenu->addChild(makeButton(this, menu_selector(CollabRoomPopup::onGenerate), "Otro", "GJ_button_05.png", 0.42f));
         codeMenu->addChild(makeButton(this, menu_selector(CollabRoomPopup::onCopy), "Copiar", "GJ_button_02.png", 0.42f));
         codeMenu->setLayout(RowLayout::create()->setGap(6.f));
         codeMenu->updateLayout();
-        m_content->addChildAtPosition(codeMenu, Anchor::Center, {0.f, -16.f});
+        panel->addChildAtPosition(codeMenu, Anchor::Center, {0.f, -16.f});
 
         auto* hint = makeHint("Comparte este codigo con tus amigos para que se unan");
         hint->limitLabelWidth(290.f, 0.45f, 0.2f);
-        m_content->addChildAtPosition(hint, Anchor::Center, {0.f, -40.f});
+        panel->addChildAtPosition(hint, Anchor::Center, {0.f, -40.f});
     } else {
-        m_content->addChildAtPosition(makeCaption("Codigo del host"), Anchor::Center, {0.f, 34.f});
+        panel->addChildAtPosition(makeCaption("Codigo del host"), Anchor::Center, {0.f, 34.f});
 
         m_codeInput = TextInput::create(185.f, "PAIM-XXXX-XXXX-XXXX", "bigFont.fnt");
         m_codeInput->setFilter("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ");
         m_codeInput->setMaxCharCount(24);
         m_codeInput->setString(m_joinCode);
         m_codeInput->setScale(0.8f);
-        m_content->addChildAtPosition(m_codeInput, Anchor::Center, {-35.f, 6.f});
+        panel->addChildAtPosition(m_codeInput, Anchor::Center, {-35.f, 6.f});
 
         auto* pasteMenu = CCMenu::create();
         pasteMenu->addChild(makeButton(this, menu_selector(CollabRoomPopup::onPaste), "Pegar", "GJ_button_05.png", 0.42f));
         pasteMenu->setLayout(RowLayout::create());
         pasteMenu->updateLayout();
-        m_content->addChildAtPosition(pasteMenu, Anchor::Center, {88.f, 6.f});
+        panel->addChildAtPosition(pasteMenu, Anchor::Center, {88.f, 6.f});
 
         auto* hint = makeHint("Pega el codigo que te compartio el host de la sala");
         hint->limitLabelWidth(290.f, 0.45f, 0.2f);
-        m_content->addChildAtPosition(hint, Anchor::Center, {0.f, -40.f});
+        panel->addChildAtPosition(hint, Anchor::Center, {0.f, -40.f});
     }
 
-    // --- The one big action button; the display name is the GD account name -
     auto* actionMenu = CCMenu::create();
     auto* actionSpr = ButtonSprite::create(
         m_joinTab ? "Unirse a la sala" : "Crear la sala",
@@ -327,7 +352,9 @@ void CollabRoomPopup::buildSetupView() {
     actionMenu->addChild(CCMenuItemSpriteExtra::create(actionSpr, this, menu_selector(CollabRoomPopup::onAction)));
     actionMenu->setLayout(RowLayout::create());
     actionMenu->updateLayout();
-    m_content->addChildAtPosition(actionMenu, Anchor::Bottom, {0.f, 30.f});
+    panel->addChildAtPosition(actionMenu, Anchor::Bottom, {0.f, 30.f});
+
+    return panel;
 }
 
 void CollabRoomPopup::buildConnectingView() {
@@ -425,7 +452,7 @@ void CollabRoomPopup::refresh(float) {
                 if (peer.clientId == mgr.clientId()) names += " (tu)";
                 else if (peer.isHost) names += " (host)";
             }
-            std::string mode = mgr.isViewOnly() ? "  ·  solo lectura" : "";
+            std::string mode = mgr.isViewOnly() ? "  -  solo lectura" : "";
             m_peersLabel->setString(fmt::format("Editores ({}): {}{}", peers.size(), names, mode).c_str());
             m_peersLabel->limitLabelWidth(285.f, 0.5f, 0.2f);
         }
@@ -437,17 +464,59 @@ void CollabRoomPopup::refresh(float) {
 }
 
 void CollabRoomPopup::onTabCreate(CCObject*) {
-    if (!m_joinTab) return;
-    captureInputs();
-    m_joinTab = false;
-    scheduleRebuild();
+    switchSetupTab(false);
 }
 
 void CollabRoomPopup::onTabJoin(CCObject*) {
-    if (m_joinTab) return;
+    switchSetupTab(true);
+}
+
+void CollabRoomPopup::switchSetupTab(bool join) {
+    if (m_joinTab == join) return;
     captureInputs();
-    m_joinTab = true;
-    scheduleRebuild();
+    m_joinTab = join;
+
+    if (m_view != View::Setup || !m_setupPanel) {
+        scheduleRebuild();
+        return;
+    }
+
+    auto* selected = join ? m_joinTabSpr : m_createTabSpr;
+    auto* deselected = join ? m_createTabSpr : m_joinTabSpr;
+    if (selected) {
+        selected->updateBGImage("GJ_button_01.png");
+        selected->stopAllActions();
+        selected->runAction(CCSequence::create(
+            CCEaseSineOut::create(CCScaleTo::create(0.08f, 0.70f)),
+            CCEaseSineIn::create(CCScaleTo::create(0.12f, 0.62f)),
+            nullptr));
+    }
+    if (deselected) {
+        deselected->updateBGImage("GJ_button_04.png");
+        deselected->stopAllActions();
+        deselected->setScale(0.62f);
+    }
+
+    float dir = join ? 1.f : -1.f;
+    constexpr float kSlide = 46.f;
+    constexpr float kDur = 0.2f;
+
+    auto* oldPanel = m_setupPanel;
+    m_codeInput = nullptr;
+    m_codeLabel = nullptr;
+
+    disableMenusIn(oldPanel);
+    oldPanel->stopAllActions();
+    fadeOutTree(oldPanel, kDur * 0.75f);
+    oldPanel->runAction(CCSequence::create(
+        CCEaseSineIn::create(CCMoveBy::create(kDur * 0.75f, {-dir * kSlide, 0.f})),
+        CCRemoveSelf::create(),
+        nullptr));
+
+    m_setupPanel = buildSetupPanel();
+    m_content->addChildAtPosition(m_setupPanel, Anchor::Center, {dir * kSlide, 0.f});
+    fadeInTree(m_setupPanel, kDur);
+    m_setupPanel->runAction(CCEaseSineOut::create(CCMoveBy::create(kDur, {-dir * kSlide, 0.f})));
 }
 
 void CollabRoomPopup::onGenerate(CCObject*) {
@@ -492,7 +561,7 @@ void CollabRoomPopup::onAction(CCObject*) {
         }
         CollabManager::get().connect(room, name, ConnectMode::Create, m_hostLevel);
     }
-    scheduleRebuild(); // show the connecting view right away
+    scheduleRebuild();
 }
 
 void CollabRoomPopup::onCancel(CCObject*) {
@@ -529,9 +598,6 @@ void CollabRoomPopup::onPeers(CCObject*) {
     if (auto* popup = CollabPeersPopup::create()) popup->show();
 }
 
-// ---------------------------------------------------------------------------
-// Host options popup
-// ---------------------------------------------------------------------------
 
 HostOptionsPopup* HostOptionsPopup::create() {
     auto* ret = new HostOptionsPopup();
@@ -544,76 +610,63 @@ HostOptionsPopup* HostOptionsPopup::create() {
 }
 
 bool HostOptionsPopup::init() {
-    if (!Popup::init(300.f, 255.f)) return false;
+    constexpr float kPopupW = 300.f, kPopupH = 286.f;
+    if (!Popup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     setTitle("Permisos de la sala");
     m_permissions = CollabManager::get().permissions();
 
-    auto* hint = makeHint("Elige que pueden tocar los demas");
-    m_mainLayer->addChildAtPosition(hint, Anchor::Top, {0.f, -38.f});
+    auto* hint = makeHint("Que pueden hacer los demas editores");
+    m_mainLayer->addChildAtPosition(hint, Anchor::Top, {0.f, -34.f});
 
-    m_mainLayer->addChildAtPosition(makeCard(264.f, 140.f), Anchor::Center, {0.f, 8.f});
+    m_mainLayer->addChildAtPosition(makeCard(268.f, 168.f), Anchor::Center, {0.f, 5.f});
 
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     menu->setContentSize(m_mainLayer->getContentSize());
     m_mainLayer->addChild(menu);
 
-    auto addRow = [&](float yOff, int tag, char const* text, ButtonSprite** out) {
+    auto addRow = [&](float yOff, char const* text, bool HostPermissions::*field) {
         auto* label = CCLabelBMFont::create(text, "chatFont.fnt");
-        label->setScale(0.52f);
+        label->setScale(0.44f);
         label->setAnchorPoint({0.f, 0.5f});
+        label->limitLabelWidth(160.f, 0.44f, 0.28f);
         m_mainLayer->addChildAtPosition(label, Anchor::Center, {-118.f, yOff});
 
-        auto* spr = ButtonSprite::create("NO", "bigFont.fnt", "GJ_button_06.png", 0.8f);
-        spr->setScale(0.5f);
-        auto* btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(HostOptionsPopup::onToggle));
-        btn->setTag(tag);
+        auto* toggle = CCMenuItemExt::createTogglerWithStandardSprites(
+            0.55f,
+            [this, field](CCMenuItemToggler* tog) {
+                togglePermission(field, !tog->isToggled());
+            }
+        );
+        if (!toggle) return;
+        toggle->toggle(m_permissions.*field);
         auto size = m_mainLayer->getContentSize();
-        btn->setPosition({size.width / 2.f + 95.f, size.height / 2.f + yOff});
-        menu->addChild(btn);
-        *out = spr;
+        toggle->setPosition({size.width / 2.f + 100.f, size.height / 2.f + yOff});
+        menu->addChild(toggle);
     };
 
-    addRow(42.f, 4, "Solo lectura (viewers)", &m_viewOnlySpr);
-    addRow(14.f, 1, "Cambiar la musica", &m_songSpr);
-    addRow(-14.f, 2, "Abrir Options", &m_optionsSpr);
-    addRow(-42.f, 3, "Editar ajustes del nivel", &m_settingsSpr);
+    addRow(60.f, "Solo lectura (viewers)", &HostPermissions::viewOnly);
+    addRow(36.f, "Layers exclusivas", &HostPermissions::strictLayers);
+    addRow(12.f, "Musica / cancion", &HostPermissions::allowSong);
+    addRow(-12.f, "Colores de canales", &HostPermissions::allowColors);
+    addRow(-36.f, "Ajustes del nivel (mode/BG)", &HostPermissions::allowLevelSettings);
+    addRow(-60.f, "Abrir Options del editor", &HostPermissions::allowOptions);
 
-    auto* note = makeHint("Solo lectura: miran el nivel y editan en local,\nsin compartir. Playtest resetea sus cambios.");
-    m_mainLayer->addChildAtPosition(note, Anchor::Bottom, {0.f, 28.f});
-
-    refresh();
+    auto* note = makeHint(
+        "Los cambios se sincronizan en vivo.\n"
+        "Solo lectura: no se comparte nada del peer."
+    );
+    note->setScale(0.4f);
+    m_mainLayer->addChildAtPosition(note, Anchor::Bottom, {0.f, 18.f});
     return true;
 }
 
-void HostOptionsPopup::onToggle(CCObject* sender) {
-    switch (sender ? sender->getTag() : 0) {
-        case 1: m_permissions.allowSong = !m_permissions.allowSong; break;
-        case 2: m_permissions.allowOptions = !m_permissions.allowOptions; break;
-        case 3: m_permissions.allowLevelSettings = !m_permissions.allowLevelSettings; break;
-        case 4: m_permissions.viewOnly = !m_permissions.viewOnly; break;
-        default: break;
-    }
+void HostOptionsPopup::togglePermission(bool HostPermissions::*field, bool on) {
+    m_permissions.*field = on;
     CollabManager::get().setHostPermissions(m_permissions);
-    refresh();
 }
 
-void HostOptionsPopup::refresh() {
-    auto apply = [](ButtonSprite* spr, bool on) {
-        if (!spr) return;
-        spr->setString(on ? "SI" : "NO");
-        spr->updateBGImage(on ? "GJ_button_01.png" : "GJ_button_06.png");
-    };
-    apply(m_songSpr, m_permissions.allowSong);
-    apply(m_optionsSpr, m_permissions.allowOptions);
-    apply(m_settingsSpr, m_permissions.allowLevelSettings);
-    apply(m_viewOnlySpr, m_permissions.viewOnly);
-}
-
-// ---------------------------------------------------------------------------
-// Peers popup (list + host kick)
-// ---------------------------------------------------------------------------
 
 CollabPeersPopup* CollabPeersPopup::create() {
     auto* ret = new CollabPeersPopup();
@@ -653,7 +706,7 @@ bool CollabPeersPopup::init() {
     auto* hint = makeHint(CollabManager::get().isHost()
         ? "Toca Expulsar para echar a un editor"
         : (CollabManager::get().isViewOnly()
-            ? "Estas en solo lectura — tus edits no se comparten"
+            ? "Estas en solo lectura - tus edits no se comparten"
             : "Lista de quien esta conectado"));
     m_mainLayer->addChildAtPosition(hint, Anchor::Bottom, {0.f, 16.f});
 
@@ -678,7 +731,6 @@ void CollabPeersPopup::rebuildList() {
     auto& mgr = CollabManager::get();
     auto peers = mgr.peers();
 
-    // Stable order: host first, then by clientId.
     std::sort(peers.begin(), peers.end(), [](PeerInfo const& a, PeerInfo const& b) {
         if (a.isHost != b.isHost) return a.isHost > b.isHost;
         return a.clientId < b.clientId;
@@ -707,8 +759,6 @@ void CollabPeersPopup::rebuildList() {
     for (auto const& peer : peers) {
         bool isSelf = peer.clientId == mgr.clientId();
 
-        // Our own row always draws the icon we have equipped right now; the
-        // server copy can lag behind an icon change made mid-session.
         PeerInfo shown = peer;
         if (isSelf) shown.appearance = CollabManager::localAppearance();
 
@@ -719,31 +769,44 @@ void CollabPeersPopup::rebuildList() {
         row->setAnchorPoint({0.f, 0.f});
         row->setPosition({0.f, y});
 
+        CCSize cellSize = {kWidth - 8.f, kRowH - 4.f};
         auto* bg = CCScale9Sprite::create("square02b_001.png");
-        bg->setContentSize({kWidth - 8.f, kRowH - 4.f});
+        bg->setContentSize(cellSize);
         bg->setColor({18, 20, 29});
         bg->setOpacity(210);
         bg->setAnchorPoint({0.f, 0.f});
         bg->setPosition({4.f, 2.f});
         row->addChild(bg);
 
-        auto* accent = CCLayerColor::create({color.r, color.g, color.b, 255}, 3.f, kRowH - 12.f);
-        accent->setPosition({6.f, 6.f});
-        row->addChild(accent, 1);
+        auto* glowMask = CCScale9Sprite::create("square02b_001.png");
+        glowMask->setContentSize(cellSize);
+        glowMask->setAnchorPoint({0.f, 0.f});
+        glowMask->setPosition({0.f, 0.f});
+
+        auto* glowClip = CCClippingNode::create(glowMask);
+        glowClip->setAlphaThreshold(0.05f);
+        glowClip->setContentSize(cellSize);
+        glowClip->setPosition({4.f, 2.f});
+
+        auto* glow = CCLayerGradient::create(
+            {color.r, color.g, color.b, 90},
+            {color.r, color.g, color.b, 0},
+            {1.f, 0.f}
+        );
+        glow->setContentSize({150.f, kRowH - 4.f});
+        glowClip->addChild(glow);
+        row->addChild(glowClip, 1);
 
         bool canKick = mgr.isHost() && !peer.isHost && !isSelf;
         float identityW = canKick ? kWidth - 92.f : kWidth - 8.f;
 
-        // The identity block is drawn statically on the row; the tap zone is a
-        // separate invisible node so the press animation can never shift or
-        // scale the visible layout.
         auto* identity = CCNode::create();
         identity->setContentSize({identityW, kRowH});
         identity->setAnchorPoint({0.f, 0.f});
         identity->setPosition({4.f, 0.f});
 
-        if (auto* avatar = makePeerAvatar(shown, color, 40.f)) {
-            avatar->setPosition({29.f, kRowH / 2.f});
+        if (auto* avatar = makePeerAvatar(shown, color, 30.f)) {
+            avatar->setPosition({25.f, kRowH / 2.f});
             identity->addChild(avatar);
         }
 
@@ -752,8 +815,8 @@ void CollabPeersPopup::rebuildList() {
         name->setScale(0.46f);
         name->setAnchorPoint({0.f, 0.5f});
         name->setColor({245, 245, 250});
-        name->setPosition({56.f, kRowH / 2.f + 8.f});
-        float nameMaxW = identityW - 66.f - (peer.isHost ? 44.f : 0.f);
+        name->setPosition({48.f, kRowH / 2.f + 8.f});
+        float nameMaxW = identityW - 58.f - (peer.isHost ? 44.f : 0.f);
         name->limitLabelWidth(nameMaxW, 0.46f, 0.2f);
         identity->addChild(name);
 
@@ -762,26 +825,24 @@ void CollabPeersPopup::rebuildList() {
             badge->setScale(0.4f);
             badge->setAnchorPoint({0.f, 0.5f});
             badge->setPosition({
-                56.f + name->getScaledContentSize().width + 6.f,
+                48.f + name->getScaledContentSize().width + 6.f,
                 kRowH / 2.f + 8.f
             });
             identity->addChild(badge);
         }
 
         std::string role;
-        if (isSelf) role = "Tu cuenta — toca para ver tu perfil";
+        if (isSelf) role = "Tu cuenta - toca para ver tu perfil";
         else if (peer.appearance.accountID > 0) role = "Toca para ver su perfil";
         else role = "Perfil no disponible";
         auto* roleLabel = CCLabelBMFont::create(role.c_str(), "chatFont.fnt");
         roleLabel->setScale(0.42f);
         roleLabel->setAnchorPoint({0.f, 0.5f});
         roleLabel->setColor({160, 160, 175});
-        roleLabel->setPosition({56.f, kRowH / 2.f - 8.f});
-        roleLabel->limitLabelWidth(identityW - 66.f, 0.42f, 0.2f);
+        roleLabel->setPosition({48.f, kRowH / 2.f - 8.f});
+        roleLabel->limitLabelWidth(identityW - 58.f, 0.42f, 0.2f);
         identity->addChild(roleLabel);
 
-        // Small chevron on the far side of the identity zone as a "tappable"
-        // affordance, only when there is a profile to open.
         if (peer.appearance.accountID > 0 || isSelf) {
             if (auto* arrow = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png")) {
                 arrow->setFlipX(true);
@@ -832,8 +893,6 @@ void CollabPeersPopup::onProfile(CCObject* sender) {
     if (it == peers.end()) return;
 
     int accountID = it->appearance.accountID;
-    // Our own row can open the profile even if the server round-trip hasn't
-    // echoed our accountID back yet.
     if (accountID <= 0 && clientId == CollabManager::get().clientId()) {
         accountID = AccountVerifier::get().getAccountID();
     }
@@ -859,13 +918,9 @@ void CollabPeersPopup::onKick(CCObject* sender) {
         fmt::format("Expulsando a {}", name.empty() ? fmt::format("#{}", id) : name),
         NotificationIcon::Info
     )->show();
-    // List refreshes on next peer broadcast; rebuild optimistically.
     rebuildList();
 }
 
-// ---------------------------------------------------------------------------
-// Invite popup (host picks friends to invite)
-// ---------------------------------------------------------------------------
 
 CollabInvitePopup* CollabInvitePopup::create() {
     auto* ret = new CollabInvitePopup();
@@ -878,8 +933,6 @@ CollabInvitePopup* CollabInvitePopup::create() {
 }
 
 CollabInvitePopup::~CollabInvitePopup() {
-    // Drop ourselves as the delegate so a late GD response never calls a freed
-    // popup (GameLevelManager holds a raw pointer).
     if (auto* glm = GameLevelManager::get()) {
         if (glm->m_userListDelegate == this) glm->m_userListDelegate = nullptr;
     }
@@ -895,7 +948,6 @@ bool CollabInvitePopup::init() {
     constexpr float kScrollX = (kPopupW - kScrollW) / 2.f;
     constexpr float kScrollY = 36.f;
 
-    // Search bar: clickable magnifier + live-filter text input ------------
     const float searchY = kPopupH - 52.f;
 
     auto* searchMenu = CCMenu::create();
@@ -916,7 +968,6 @@ bool CollabInvitePopup::init() {
     m_search->setCallback([this](std::string const&) { rebuildRows(); });
     m_mainLayer->addChild(m_search, 5);
 
-    // Friend list ----------------------------------------------------------
     auto* bg = CCScale9Sprite::create("square02b_001.png");
     bg->setContentSize({kScrollW + 10.f, kScrollH + 10.f});
     bg->setColor({0, 0, 0});
@@ -1069,7 +1120,6 @@ void CollabInvitePopup::rebuildRows() {
         stripe->setPositionY(1.f);
         row->addChild(stripe);
 
-        // Avatar with the friend's real icon and colors.
         if (auto* player = SimplePlayer::create(e->iconID)) {
             IconType type = peerIconType(e->iconType);
             if (type != IconType::Cube) player->updatePlayerFrame(e->iconID, type);
@@ -1120,59 +1170,6 @@ void CollabInvitePopup::onInvite(CCObject* sender) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// Incoming invite prompt
-// ---------------------------------------------------------------------------
-
-CollabInvitePromptPopup* CollabInvitePromptPopup::create(std::string const& room, std::string const& fromName) {
-    auto* ret = new CollabInvitePromptPopup();
-    if (ret && ret->init(room, fromName)) {
-        ret->autorelease();
-        return ret;
-    }
-    delete ret;
-    return nullptr;
-}
-
-bool CollabInvitePromptPopup::init(std::string const& room, std::string const& fromName) {
-    if (!Popup::init(340.f, 190.f)) return false;
-    paimon::markDynamicPopup(this);
-    m_room = room;
-    setTitle("Invitacion a colaborar");
-
-    std::string who = fromName.empty() ? "Alguien" : fromName;
-    auto* info = CCLabelBMFont::create(
-        fmt::format("{} te invito a su sala colaborativa.", who).c_str(), "chatFont.fnt");
-    info->setScale(0.65f);
-    info->limitLabelWidth(300.f, 0.65f, 0.2f);
-    m_mainLayer->addChildAtPosition(info, Anchor::Center, {0.f, 22.f});
-
-    auto* codeLabel = CCLabelBMFont::create(fmt::format("Sala: {}", room).c_str(), "goldFont.fnt");
-    codeLabel->setScale(0.6f);
-    m_mainLayer->addChildAtPosition(codeLabel, Anchor::Center, {0.f, -6.f});
-
-    auto* menu = CCMenu::create();
-    menu->addChild(makeButton(this, menu_selector(CollabInvitePromptPopup::onReject), "Rechazar", "GJ_button_06.png", 0.7f));
-    menu->addChild(makeButton(this, menu_selector(CollabInvitePromptPopup::onAccept), "Aceptar", "GJ_button_01.png", 0.7f));
-    menu->setLayout(RowLayout::create()->setGap(14.f));
-    menu->updateLayout();
-    m_mainLayer->addChildAtPosition(menu, Anchor::Bottom, {0.f, 34.f});
-    return true;
-}
-
-void CollabInvitePromptPopup::onAccept(CCObject*) {
-    std::string room = m_room;
-    onClose(nullptr);
-    CollabManager::get().connect(room, defaultDisplayName(), ConnectMode::Join);
-}
-
-void CollabInvitePromptPopup::onReject(CCObject*) {
-    onClose(nullptr);
-}
-
-// ---------------------------------------------------------------------------
-// Chat popup
-// ---------------------------------------------------------------------------
 
 CollabChatPopup* CollabChatPopup::create() {
     auto* ret = new CollabChatPopup();
@@ -1190,14 +1187,12 @@ bool CollabChatPopup::init() {
     setID("collab-chat"_spr);
     setTitle("Chat de sala");
 
-    // --- Header: connection dot + room code + editor count ------------------
     m_statusDot = CCDrawNode::create();
-    m_mainLayer->addChild(m_statusDot, 5); // positioned next to the label on refresh
+    m_mainLayer->addChild(m_statusDot, 5);
     m_headerLabel = CCLabelBMFont::create("", "goldFont.fnt");
     m_headerLabel->setScale(0.45f);
     m_mainLayer->addChildAtPosition(m_headerLabel, Anchor::Top, {0.f, -38.f});
 
-    // --- Message history: dark card + scrollable list -----------------------
     constexpr float kChatW = 360.f, kChatH = 148.f;
     m_mainLayer->addChildAtPosition(makeCard(kChatW + 8.f, kChatH + 8.f), Anchor::Center, {0.f, 16.f});
 
@@ -1210,13 +1205,11 @@ bool CollabChatPopup::init() {
     m_mainLayer->addChildAtPosition(m_emptyLabel, Anchor::Center, {0.f, 16.f});
     m_emptyLabel->setZOrder(5);
 
-    // --- Who's talking + local mic level bar ---------------------------------
     m_speakingLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_speakingLabel->setScale(0.4f);
     m_speakingLabel->setColor({140, 255, 140});
     m_mainLayer->addChildAtPosition(m_speakingLabel, Anchor::Bottom, {-30.f, 62.f});
 
-    // Thin bar above the mic button showing your own level while you talk.
     m_micBarTrack = CCLayerColor::create({0, 0, 0, 130}, 60.f, 4.f);
     m_micBarTrack->ignoreAnchorPointForPosition(false);
     m_micBarTrack->setAnchorPoint({0.f, 0.5f});
@@ -1232,14 +1225,12 @@ bool CollabChatPopup::init() {
     m_micBarFill->setVisible(false);
     m_mainLayer->addChild(m_micBarFill, 2);
 
-    // --- Input row ------------------------------------------------------------
     m_input = TextInput::create(210.f, "Mensaje", "chatFont.fnt");
     m_input->setMaxCharCount(200);
     m_mainLayer->addChildAtPosition(m_input, Anchor::Bottom, {-65.f, 32.f});
 
     auto* menu = CCMenu::create();
 
-    // Emote picker button (reuses the mod's emote system, wired to the input).
     paimon::emotes::EmoteInputContext ctx;
     geode::Ref<cocos2d::CCNode> inputRef = m_input;
     ctx.getText = [inputRef]() -> std::string {
@@ -1268,7 +1259,6 @@ bool CollabChatPopup::init() {
 
     refresh();
     this->schedule(schedule_selector(CollabChatPopup::refresh), 0.15f);
-    // Per-frame so the mic bar rises and falls smoothly.
     this->schedule(schedule_selector(CollabChatPopup::tickVoice));
     return true;
 }
@@ -1298,7 +1288,6 @@ void CollabChatPopup::refresh(float) {
     auto& mgr = CollabManager::get();
     auto& voice = CollabVoice::get();
 
-    // Header: green dot + room info when connected, red dot otherwise.
     bool connected = mgr.connected();
     int connState = connected ? 1 : 0;
     if (m_statusDot && connState != m_connShown) {
@@ -1324,7 +1313,6 @@ void CollabChatPopup::refresh(float) {
         }
     }
 
-    // Who's talking right now (you + peers).
     if (m_speakingLabel) {
         std::string speaking;
         if (voice.transmitting()) speaking = "Tu";
@@ -1380,7 +1368,6 @@ void CollabChatPopup::rebuildMessages() {
     float contentH = std::max(total, viewH);
     content->setContentSize({width, contentH});
 
-    // Oldest at the top, newest at the bottom (chat order).
     float y = contentH - kPadY;
     for (auto const& row : rows) {
         y -= row.height;
@@ -1389,7 +1376,6 @@ void CollabChatPopup::rebuildMessages() {
         y -= kGapY;
     }
 
-    // Pin the view to the newest message.
     content->setPosition({0.f, 0.f});
 }
 
@@ -1402,11 +1388,10 @@ void CollabChatPopup::tickVoice(float dt) {
         m_micShown = 0.f;
         return;
     }
-    // Fast attack, slower release, same feel as the overlay bars.
     float target = voice.localLevel();
     float k = target > m_micShown ? 16.f : 6.f;
     m_micShown += (target - m_micShown) * std::min(1.f, k * dt);
     if (m_micBarFill) m_micBarFill->setScaleX(std::clamp(m_micShown, 0.f, 1.f));
 }
 
-} // namespace paimon::collab
+}

@@ -4,6 +4,7 @@
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -45,7 +46,11 @@ bool EmoteAutocomplete::init(
     m_menu->setVisible(false);
     this->addChild(m_menu, 1);
 
-    this->scheduleUpdate();
+    // Callers add this node without checking for null, so with the module off it
+    // just stays idle instead of polling the input.
+    if (paimon::modules::isEnabled("paimbnails.emotes.social")) {
+        this->scheduleUpdate();
+    }
     return true;
 }
 

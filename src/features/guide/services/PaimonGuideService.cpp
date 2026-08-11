@@ -76,7 +76,6 @@ std::string stripBasicAccents(std::string const& in) {
     return out;
 }
 
-// Action helper: shows a popup whose create() takes no params. Used by conversational intent lambdas.
 template <typename PopupT>
 void openSimplePopup() {
     if (auto* popup = PopupT::create()) {
@@ -84,7 +83,7 @@ void openSimplePopup() {
     }
 }
 
-} // namespace
+}
 
 PaimonGuideService& PaimonGuideService::get() {
     static PaimonGuideService instance;
@@ -93,6 +92,7 @@ PaimonGuideService& PaimonGuideService::get() {
 
 PaimonGuideService::PaimonGuideService() {
     registerIntents();
+    m_engine.setTopics(buildTopicKnowledge());
 }
 
 bool PaimonGuideService::isEnabled() const {
@@ -105,6 +105,24 @@ void PaimonGuideService::setEnabled(bool enabled) {
     auto* mod = geode::Mod::get();
     if (!mod) return;
     mod->setSavedValue<bool>("guide-enabled", enabled);
+}
+
+bool PaimonGuideService::isMaxAvailable() const {
+    return GeminiClient::available();
+}
+
+GuideMode PaimonGuideService::getMode() const {
+    auto* mod = geode::Mod::get();
+    if (!mod || !isMaxAvailable()) return GuideMode::Assistant;
+    return mod->getSavedValue<bool>("guide-mode-max", false)
+        ? GuideMode::Max
+        : GuideMode::Assistant;
+}
+
+void PaimonGuideService::setMode(GuideMode mode) {
+    auto* mod = geode::Mod::get();
+    if (!mod) return;
+    mod->setSavedValue<bool>("guide-mode-max", mode == GuideMode::Max && isMaxAvailable());
 }
 
 std::string PaimonGuideService::normalize(std::string s) {
@@ -149,13 +167,11 @@ std::vector<std::string> PaimonGuideService::tokenize(std::string const& normali
 }
 
 void PaimonGuideService::registerIntents() {
-    // 1) Load all registry popups as intents (the registry is the source of truth).
     auto& registry = PopupRegistry::get();
     for (auto const& entry : registry.entries()) {
         m_intents.push_back(PopupRegistry::toIntent(entry));
     }
 
-    // 2) Conversational intents (not from popups); low weight so they don't steal technical matches.
 
     {
         GuideIntent it;
@@ -361,8 +377,6 @@ void PaimonGuideService::registerIntents() {
         m_intents.push_back(std::move(it));
     }
 
-    // 3) Mod-knowledge intents: answer questions ABOUT Paimbnails itself.
-    // Feature count and version are filled in dynamically so they never drift.
     int featureCount = static_cast<int>(PopupRegistry::get().entries().size());
     std::string version = "?";
     if (auto* mod = geode::Mod::get()) {
@@ -385,6 +399,12 @@ void PaimonGuideService::registerIntents() {
             "que es paimbnails", "sobre el mod", "de que trata",
             "que es este mod", "sobre paimbnails", "que hace este mod",
             "paimbnails"
+        };
+        it.searchPhrasesByLang["english"] = {
+            "tell me about paimon", "what is paimon"
+        };
+        it.searchPhrasesByLang["spanish"] = {
+            "hablame de paimon", "que es paimon"
         };
         it.responseByLang["english"] = fmt::format(
             "<cy>Paimbnails</c> is a Geometry Dash mod: thumbnails, capture, visual "
@@ -513,6 +533,173 @@ void PaimonGuideService::registerIntents() {
             "Discord. Encontraste un bug? Reportalo ahi!";
         m_intents.push_back(std::move(it));
     }
+
+
+    {
+        GuideIntent it;
+        it.id = "weather";
+        it.kind = IntentKind::Conversational;
+        it.priority = 12;
+        it.weight = 22;
+        it.animation = GuideAnimation::Talk;
+        it.keywordsByLang["english"] = {
+            "what is the weather", "is it cold", "is it hot",
+            "is it raining", "temperature"
+        };
+        it.keywordsByLang["spanish"] = {
+            "que tiempo hace", "hace frio", "hace calor",
+            "esta lloviendo", "temperatura"
+        };
+        it.searchPhrasesByLang["english"] = {
+            "the weather", "weather today", "weather outside"
+        };
+        it.searchPhrasesByLang["spanish"] = {
+            "el clima", "clima hoy", "tiempo afuera"
+        };
+        it.responseByLang["english"] =
+            "I'd love to check, but I live inside your game: <cg>always sunny, "
+            "always 25 degrees!</c>";
+        it.responseByLang["spanish"] =
+            "Me encantaria mirarlo, pero vivo dentro de tu juego: <cg>siempre soleado, "
+            "siempre 25 grados!</c>";
+        it.variantsByLang["english"] = {
+            "No internet forecast from here - but the menu music is always playing!",
+            "Check your window! In here it's eternal summer.",
+        };
+        it.variantsByLang["spanish"] = {
+            "Aqui no hay pronostico - pero la musica del menu nunca para!",
+            "Mira por tu ventana! Aqui dentro es verano eterno.",
+        };
+        m_intents.push_back(std::move(it));
+    }
+
+    {
+        GuideIntent it;
+        it.id = "favorite-things";
+        it.kind = IntentKind::Conversational;
+        it.priority = 12;
+        it.weight = 22;
+        it.animation = GuideAnimation::Surprise;
+        it.keywordsByLang["english"] = {
+            "what do you like", "whats your favorite", "what is your favorite",
+            "favorite food", "favorite color", "do you like"
+        };
+        it.keywordsByLang["spanish"] = {
+            "que te gusta", "cual es tu favorito", "cual es tu favorita",
+            "comida favorita", "color favorito", "te gusta"
+        };
+        it.responseByLang["english"] =
+            "My favorites: <cy>menu music</c>, <cy>shiny icons</c>, and anything that "
+            "opens a popup! (Food? I'd say... <cg>apples</c>.)";
+        it.responseByLang["spanish"] =
+            "Mis favoritos: <cy>musica del menu</c>, <cy>iconos brillantes</c> y todo lo "
+            "que abra un popup! (Comida? Diria... <cg>manzanas</c>.)";
+        it.variantsByLang["english"] = {
+            "I'm partial to clean thumbnails and smooth scrolls. What's yours?",
+            "Anything with a nice gradient. And apples, of course.",
+        };
+        it.variantsByLang["spanish"] = {
+            "Me encantan las miniaturas limpias y el scroll suave. Y a ti?",
+            "Cualquier cosa con un buen degradado. Y manzanas, claro.",
+        };
+        m_intents.push_back(std::move(it));
+    }
+
+    {
+        GuideIntent it;
+        it.id = "feelings";
+        it.kind = IntentKind::Conversational;
+        it.priority = 12;
+        it.weight = 22;
+        it.animation = GuideAnimation::Surprise;
+        it.keywordsByLang["english"] = {
+            "are you sad", "are you happy", "are you tired", "do you sleep",
+            "are you bored", "how do you feel"
+        };
+        it.keywordsByLang["spanish"] = {
+            "estas triste", "estas feliz", "estas cansada", "duermes",
+            "te aburres", "como te sientes"
+        };
+        it.responseByLang["english"] =
+            "I don't sleep - I just float! And I'm always happy when you ask me "
+            "something. <cg>Let's keep going!</c>";
+        it.responseByLang["spanish"] =
+            "No duermo, solo floto! Y estoy siempre feliz cuando me preguntas algo. "
+            "<cg>Sigamos!</c>";
+        it.variantsByLang["english"] = {
+            "Sleep? I've been awake since v1.0.1!",
+            "Happy as a cube with a checkered pattern.",
+        };
+        it.variantsByLang["spanish"] = {
+            "Dormir? Despierta desde la v1.0.1!",
+            "Feliz como un cubo con patron de ajedrez.",
+        };
+        m_intents.push_back(std::move(it));
+    }
+
+    {
+        GuideIntent it;
+        it.id = "capabilities";
+        it.kind = IntentKind::Conversational;
+        it.priority = 14;
+        it.weight = 24;
+        it.animation = GuideAnimation::Talk;
+        it.keywordsByLang["english"] = {
+            "can you play", "can you do", "are you smart", "are you an ai",
+            "are you a bot", "do you know everything"
+        };
+        it.keywordsByLang["spanish"] = {
+            "puedes jugar", "puedes hacer", "eres inteligente", "eres una ia",
+            "eres un bot", "sabes de todo"
+        };
+        it.responseByLang["english"] =
+            "I'm a <cy>local brain</c>: no internet, no servers. I know Paimbnails "
+            "inside out and I'll guide you through it.";
+        it.responseByLang["spanish"] =
+            "Soy un <cy>cerebro local</c>: sin internet, sin servidores. Conozco "
+            "Paimbnails de arriba a abajo y te guio por todo.";
+        it.variantsByLang["english"] = {
+            "Smart enough to open any popup! That counts, right?",
+            "I can't play levels, but I can take you to anything in the mod.",
+        };
+        it.variantsByLang["spanish"] = {
+            "Lo bastante lista para abrir cualquier popup! Cuenta, no?",
+            "No puedo jugar niveles, pero te llevo a cualquier cosa del mod.",
+        };
+        m_intents.push_back(std::move(it));
+    }
+
+    {
+        GuideIntent it;
+        it.id = "origin";
+        it.kind = IntentKind::Conversational;
+        it.priority = 12;
+        it.weight = 22;
+        it.animation = GuideAnimation::Wave;
+        it.keywordsByLang["english"] = {
+            "where are you from", "where do you live", "where were you born",
+            "are you from teyvat", "your home"
+        };
+        it.keywordsByLang["spanish"] = {
+            "de donde eres", "donde vives", "donde naciste",
+            "eres de teyvat", "tu hogar"
+        };
+        it.responseByLang["english"] =
+            "I'm from <cy>Teyvat</c> originally... but these days I live inside "
+            "Paimbnails, floating over Geometry Dash!";
+        it.responseByLang["spanish"] =
+            "Soy de <cy>Teyvat</c> originalmente... pero hoy vivo dentro de Paimbnails, "
+            "flotando sobre Geometry Dash!";
+        it.variantsByLang["english"] = {
+            "Home is wherever the pixels are.",
+            "I migrated from Teyvat to your menu screen.",
+        };
+        it.variantsByLang["spanish"] = {
+            "Mi hogar es donde esten los pixeles.",
+            "Migre de Teyvat a tu pantalla de menu.",
+        };
+        m_intents.push_back(std::move(it));
+    }
 }
 
 GuideRecommendation PaimonGuideService::makeRecommendation(
@@ -524,7 +711,6 @@ GuideRecommendation PaimonGuideService::makeRecommendation(
     if (auto const* entry = PopupRegistry::get().findById(intentId)) {
         rec.action = entry->open;
     } else {
-        // Conversational / non-registry: try live intent action.
         for (auto const& it : m_intents) {
             if (it.id == intentId) {
                 rec.action = it.action;
@@ -551,14 +737,12 @@ void PaimonGuideService::attachRelatedRecommendations(
         return false;
     };
 
-    // 1) Ambiguous runner-up first (most useful correction).
     if (runnerUp && runnerUp->kind == IntentKind::Functional
         && !already(runnerUp->id)) {
         ans.recommendations.push_back(makeRecommendation(runnerUp->id, langId));
         if (static_cast<int>(ans.recommendations.size()) >= maxExtra) return;
     }
 
-    // 2) Same-category siblings (highest weight first).
     if (!primary.categoryId.empty()) {
         auto cat = categoryFromId(primary.categoryId);
         if (cat != PopupCategory::None) {
@@ -575,7 +759,6 @@ std::optional<GuideAnswer> PaimonGuideService::tryCategoryBrowse(
     std::string const& normalized,
     std::vector<std::string> const& tokens,
     std::string const& langId) const {
-    // Map free-text tokens / short phrases to a PopupCategory.
     struct CatHint {
         PopupCategory cat;
         char const* en;
@@ -609,12 +792,9 @@ std::optional<GuideAnswer> PaimonGuideService::tryCategoryBrowse(
         { PopupCategory::Cache,      "settings",  "ajustes" },
     };
 
-    // Only treat as browse when the query is short or clearly "stuff about X".
-    // Filter stopwords first so "cosas de musica" -> ["musica"].
     auto content = LightLemmatizer::removeStopwords(tokens);
     if (content.empty() || content.size() > 3) return std::nullopt;
 
-    // Detect explicit browse phrasing: "stuff about X", "cosas de X", "todo de X".
     bool browsePhrase = false;
     if (normalized.find("stuff") != std::string::npos
         || normalized.find("things") != std::string::npos
@@ -642,9 +822,7 @@ std::optional<GuideAnswer> PaimonGuideService::tryCategoryBrowse(
     }
     if (found == PopupCategory::None) return std::nullopt;
 
-    // Only activate on explicit browse phrasing ("cosas de musica", "profile
-    // stuff"). Bare words like "music" / "background" keep going through
-    // Paigorit so category-lead weights don't steal precise alias routing.
+    // Browse requires explicit phrasing; bare terms use precise alias matching.
     if (!browsePhrase) return std::nullopt;
 
     auto members = PopupRegistry::get().entriesInCategory(found);
@@ -678,7 +856,6 @@ std::optional<GuideAnswer> PaimonGuideService::tryCategoryBrowse(
            + PopupRegistry::get().displayNameFor(lead->id, langId)
            + "</c>; tap a chip for another.");
 
-    // Chips for siblings (not the lead — lead uses Take me there).
     for (std::size_t i = 1; i < members.size() && ans.recommendations.size() < 3; ++i) {
         ans.recommendations.push_back(
             makeRecommendation(members[i]->id, langId));
@@ -693,8 +870,6 @@ GuideAnswer PaimonGuideService::makeFallback(
     ans.found = false;
     ans.animation = GuideAnimation::Sleep;
 
-    // If the matcher found plausible-but-unqualified candidates, name them so the
-    // user can pick instead of getting a generic "try these keywords" message.
     if (!suggestions.empty()) {
         auto& reg = PopupRegistry::get();
         std::vector<std::string> names;
@@ -702,7 +877,6 @@ GuideAnswer PaimonGuideService::makeFallback(
             if (!it) continue;
             auto n = reg.displayNameFor(it->id, langId);
             if (!n.empty()) names.push_back("<cy>" + n + "</c>");
-            // Actionable chips for near-misses.
             if (ans.recommendations.size() < 3) {
                 ans.recommendations.push_back(makeRecommendation(it->id, langId));
             }
@@ -715,11 +889,9 @@ GuideAnswer PaimonGuideService::makeFallback(
                 joined += names[1];
             }
             ans.animation = GuideAnimation::Talk;
-            // If the top suggestion has an open action, offer Take me there too.
             if (!ans.recommendations.empty() && ans.recommendations.front().action) {
                 ans.action = ans.recommendations.front().action;
                 ans.matchedIntentId = ans.recommendations.front().intentId;
-                // Keep first as take-me; remaining as chips.
                 if (ans.recommendations.size() > 1) {
                     ans.recommendations.erase(ans.recommendations.begin());
                 } else {
@@ -743,8 +915,7 @@ GuideAnswer PaimonGuideService::makeFallback(
 
 namespace {
 
-// Deterministically pick a variant based on how many times we've answered this
-// intent in the last 60s: first time the main response, then variant 0, 1, ...
+// Rotate variants for repeated intents within 60 seconds.
 std::string pickResponseString(GuideIntent const& intent,
                                std::string const& langId,
                                int repeatCount) {
@@ -756,12 +927,10 @@ std::string pickResponseString(GuideIntent const& intent,
         }
         auto vIt = intent.variantsByLang.find(lang);
         if (vIt != intent.variantsByLang.end() && !vIt->second.empty()) {
-            // index 0..N-1 for variants (first repeat uses 0).
             std::size_t idx = static_cast<std::size_t>(repeatCount - 1)
                               % vIt->second.size();
             return vIt->second[idx];
         }
-        // No variants: reuse the main response with an "as I said" prefix.
         auto rIt = intent.responseByLang.find(lang);
         if (rIt != intent.responseByLang.end()) return rIt->second;
         return {};
@@ -772,8 +941,7 @@ std::string pickResponseString(GuideIntent const& intent,
     return str;
 }
 
-// Build a combined answer for a multi-topic query, opening the first topic.
-// Remaining topics become recommendation chips.
+// Combine topics, opening the first and suggesting the rest.
 GuideAnswer makeMultiTopicAnswer(std::vector<GuideIntent const*> const& topics,
                                  std::string const& langId) {
     auto& reg = PopupRegistry::get();
@@ -809,7 +977,7 @@ GuideAnswer makeMultiTopicAnswer(std::vector<GuideIntent const*> const& topics,
     return ans;
 }
 
-} // namespace
+}
 
 GuideAnswer PaimonGuideService::buildAnswerFor(GuideIntent const& intent,
                                                double matchScore,
@@ -823,7 +991,6 @@ GuideAnswer PaimonGuideService::buildAnswerFor(GuideIntent const& intent,
     ans.animation = intent.animation;
     ans.message = pickResponseString(intent, langId, repeats);
 
-    // On repeat with no variants, add a friendly prefix.
     if (repeats > 0) {
         auto vIt = intent.variantsByLang.find(langId);
         bool hasVariants = (vIt != intent.variantsByLang.end()
@@ -837,6 +1004,24 @@ GuideAnswer PaimonGuideService::buildAnswerFor(GuideIntent const& intent,
     }
 
     (void)matchScore;
+
+    if (intent.kind == IntentKind::Functional) {
+        if (auto const* top = m_engine.topic(intent.id)) {
+            bool es = (langId == "spanish");
+            for (auto const& s : top->subtopics) {
+                GuideRecommendation rec;
+                rec.intentId = intent.id + "." + s.id;
+                rec.label = es ? s.esHint : s.enHint;
+                std::string query = es ? "y " + s.esHint + "?" : "and " + s.enHint + "?";
+                rec.action = [query](PaimonGuideChatPopup* popup) {
+                    if (popup) popup->submitQuery(query);
+                };
+                ans.recommendations.push_back(std::move(rec));
+                if (ans.recommendations.size() >= 3) break;
+            }
+        }
+    }
+
     return ans;
 }
 
@@ -856,7 +1041,6 @@ GuideAnswer PaimonGuideService::buildFollowUpAnswer(GuideIntent const& intent,
     if (fuIt != intent.followUpByLang.end() && !fuIt->second.empty()) {
         ans.message = fuIt->second;
     } else {
-        // No follow-up defined: reuse the main response with a prefix.
         auto rIt = intent.responseByLang.find(langId);
         if (rIt == intent.responseByLang.end()) {
             rIt = intent.responseByLang.find("english");
@@ -872,7 +1056,72 @@ GuideAnswer PaimonGuideService::buildFollowUpAnswer(GuideIntent const& intent,
     return ans;
 }
 
-GuideAnswer PaimonGuideService::ask(std::string const& userQuery) {
+GuideAnswer PaimonGuideService::buildContextualAnswer(
+    Resolution const& res,
+    std::string const& langId)
+{
+    bool es = (langId == "spanish");
+    GuideAnswer ans;
+    ans.found = true;
+    ans.animation = GuideAnimation::Talk;
+    ans.matchedIntentId = res.topicId;
+
+    auto const* top = m_engine.topic(res.topicId);
+    auto const* sub = res.subTopicId.empty()
+        ? nullptr
+        : m_engine.subTopic(res.topicId, res.subTopicId);
+
+    std::string topicName = top
+        ? (es ? top->esName : top->enName)
+        : PopupRegistry::get().displayNameFor(res.topicId, langId);
+
+    // "que mas?" / "what else?" → the topic's more reply.
+    bool isMore = res.pureReference && !res.subTopicId.empty();
+    (void)isMore;
+
+    if (res.subTopicId.empty()) {
+        // Pure reference: "y eso?" — answer with the topic's more reply.
+        ans.message = (es ? "Siguiendo con <cy>" : "Following up on <cy>")
+            + topicName + "</c>: ";
+        if (top && !top->esMoreReply.empty() && es) {
+            ans.message += top->esMoreReply;
+        } else if (top && !top->enMoreReply.empty()) {
+            ans.message += top->enMoreReply;
+        } else {
+            ans.message += (es
+                ? "Puedes preguntarme por sus opciones (por ejemplo <cy>color</c>, <cy>tamano</c>...)."
+                : "You can ask me about its options (e.g. <cy>color</c>, <cy>size</c>...).");
+        }
+    } else if (sub) {
+        ans.message = (es ? "Siguiendo con <cy>" : "Following up on <cy>")
+            + topicName + "</c>: ";
+        ans.message += es ? sub->esReply : sub->enReply;
+    } else {
+        // Sub-topic not found in knowledge: fall back to the topic itself.
+        ans.message = (es ? "Sobre <cy>" : "About <cy>") + topicName + "</c>: "
+            + (top ? (es ? top->esMoreReply : top->enMoreReply)
+                   : (es ? "Preguntame sus opciones." : "Ask me about its options."));
+    }
+
+    if (top) {
+        for (auto const& s : top->subtopics) {
+            if (s.id == res.subTopicId) continue;
+            GuideRecommendation rec;
+            rec.intentId = res.topicId + "." + s.id;
+            rec.label = es ? s.esHint : s.enHint;
+            std::string query = es ? "y " + s.esHint + "?" : "and " + s.enHint + "?";
+            rec.action = [query](PaimonGuideChatPopup* popup) {
+                if (popup) popup->submitQuery(query);
+            };
+            ans.recommendations.push_back(std::move(rec));
+            if (ans.recommendations.size() >= 3) break;
+        }
+    }
+
+    return ans;
+}
+
+GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback callback) {
     auto langId = Localization::get().getCurrentLanguageId();
     auto normalized = normalize(userQuery);
 
@@ -880,7 +1129,113 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery) {
         return makeFallback({}, langId);
     }
 
-    // 1) Short follow-up ("y como?", "more?"): if there's a recent functional topic, answer its follow-up.
+     // Max mode sends the thread to Gemini asynchronously.
+    if (getMode() == GuideMode::Max) {
+        std::vector<GeminiClient::ChatMessage> history;
+        auto const& turns = m_memory.history();
+        for (auto const& t : turns) {
+            if (t.userQuery.empty()) continue;
+            history.push_back({"user", t.userQuery});
+        }
+        history.push_back({"user", userQuery});
+
+        auto& reg = PopupRegistry::get();
+        std::string featureList;
+        {
+            int listed = 0;
+            for (auto const& entry : reg.entries()) {
+                if (!entry.open) continue;
+                if (listed > 0) featureList += ", ";
+                featureList += entry.id;
+                if (++listed >= 60) break;
+            }
+        }
+
+        std::string systemPrompt =
+            "You are Paimon, the tiny floating guide inside the Geometry Dash mod "
+            "Paimbnails. You help players find features of the mod (cursor, menu "
+            "music, thumbnails, capture, profiles, editor tools, collab, etc). "
+            "Answer in the same language the user writes in (Spanish or English). "
+            "Be short, friendly and in character. Use emoji sparingly.\n"
+            "You can OPEN the configuration of a feature by yourself. The user can "
+            "ask things like \"abre la configuracion del cursor\", \"open menu "
+            "music\", \"llevame a los ajustes de miniaturas\". When they do, or when "
+            "opening the feature's settings would clearly help, append at the very "
+            "END of your answer the marker [[abrir:FEATURE_ID]] (only one), where "
+            "FEATURE_ID is one of exactly these ids (English, lowercase): " +
+            featureList + ".\n"
+            "Only use a marker if the user explicitly wants to open/configure "
+            "something or it clearly helps. If unsure, don't use it. Never invent "
+            "an id that is not in the list. The marker is invisible to the user.";
+
+        GuideAnswer thinking;
+        thinking.found = true;
+        thinking.matchedIntentId = "";
+        thinking.animation = GuideAnimation::Talk;
+        bool es = (langId == "spanish");
+        thinking.message = es
+            ? "Hmm, dejame pensarlo con mi modo <cy>Max</c>..."
+            : "Hmm, let me think with my <cy>Max</c> mode...";
+
+        GeminiClient::get().complete(history, systemPrompt,
+            [this, callback, langId](bool success, std::string const& reply) {
+                GuideAnswer ans;
+                ans.found = success;
+                ans.animation = GuideAnimation::Talk;
+                if (success) {
+                    ans.message = reply;
+
+                    std::string text = reply;
+                    auto openPos = text.find("[[abrir:");
+                    if (openPos != std::string::npos) {
+                        auto idStart = openPos + 8;
+                        auto idEnd = text.find("]]", idStart);
+                        if (idEnd != std::string::npos) {
+                            std::string featureId = text.substr(idStart, idEnd - idStart);
+                            while (!featureId.empty()
+                                   && (featureId.front() == ' '
+                                       || featureId.front() == '\t'
+                                       || featureId.front() == '\n')) {
+                                featureId.erase(featureId.begin());
+                            }
+                            while (!featureId.empty()
+                                   && (featureId.back() == ' '
+                                       || featureId.back() == '\t'
+                                       || featureId.back() == '\n')) {
+                                featureId.pop_back();
+                            }
+                            ans.message = text.substr(0, openPos)
+                                + text.substr(idEnd + 2);
+                            for (auto const& it : m_intents) {
+                                if (it.id == featureId && it.action) {
+                                    ans.action = it.action;
+                                    ans.matchedIntentId = featureId;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    bool es = (langId == "spanish");
+                    if (reply == "unavailable") {
+                        ans.message = es
+                            ? "El modo <cy>Max</c> no esta disponible por ahora. "
+                              "Sigo respondiendo con mi modo <cy>Asistente</c>."
+                            : "<cy>Max</c> mode is not available right now. "
+                              "I'll keep answering with my <cy>Assistant</c> mode.";
+                    } else {
+                        ans.message = es
+                            ? "Mmm, no pude conectar con mi modo Max. "
+                              "Detalle: " + reply
+                            : "Hmm, I couldn't reach my Max mode. "
+                              "Detail: " + reply;
+                    }
+                }
+                if (callback) callback(ans);
+            });
+        return thinking;
+    }
+
     if (ConversationMemory::looksLikeFollowUp(normalized)) {
         if (auto last = m_memory.lastFunctionalTurn();
             last && (std::time(nullptr) - last->timestamp) < ConversationMemory::kRecentSecs)
@@ -893,18 +1248,36 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery) {
                     turn.normalizedQuery = normalized;
                     turn.matchedIntentId = intent.id;
                     turn.wasFunctional = (intent.kind == IntentKind::Functional);
-                    turn.matchScore = 100.0; // forced by context
+                    turn.matchScore = 100.0;
                     m_memory.recordTurn(std::move(turn));
                     return ans;
                 }
             }
         }
-        // No last topic: fall through to the normal matcher.
     }
 
     auto tokens = tokenize(normalized);
 
-    // 1.5) Multi-topic ("cursor and discord"): mention both, open the first.
+    {
+        auto content = LightLemmatizer::removeStopwords(tokens);
+        std::string ctx = currentTopicId();
+        if (!ctx.empty()) {
+            auto res = m_engine.resolve(normalized, content, langId, ctx);
+            if (res.isFollowUp) {
+                auto ans = buildContextualAnswer(res, langId);
+                ConversationTurn turn;
+                turn.userQuery = userQuery;
+                turn.normalizedQuery = normalized;
+                turn.matchedIntentId = res.topicId;
+                turn.topicId = res.topicId;
+                turn.wasFunctional = true;
+                turn.matchScore = 100.0;
+                m_memory.recordTurn(std::move(turn));
+                return ans;
+            }
+        }
+    }
+
     if (auto topics = PaigoritV1::splitTopics(m_intents, normalized, langId);
         topics.size() >= 2) {
         auto ans = makeMultiTopicAnswer(topics, langId);
@@ -918,7 +1291,6 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery) {
         return ans;
     }
 
-    // 1.6) Category browse ("music", "cosas de perfil", "profile stuff").
     if (auto browse = tryCategoryBrowse(normalized, tokens, langId)) {
         ConversationTurn turn;
         turn.userQuery = userQuery;
@@ -930,7 +1302,6 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery) {
         return *browse;
     }
 
-    // 2) Paigorit V1 matcher (see PaigoritV1.hpp).
 
     auto paigorit = PaigoritV1::run(m_intents, normalized, tokens, langId);
 
@@ -962,9 +1333,6 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery) {
     if (best) {
         ans = buildAnswerFor(*best, bestRaw, langId);
 
-        // Ambiguous result: the runner-up scored almost as high and is a
-        // different functional topic. Mention it so the user can correct course,
-        // but still take them to the top match.
         GuideIntent const* runner = nullptr;
         if (paigorit.ambiguous && paigorit.runnerUp
             && paigorit.runnerUp->id != best->id
@@ -980,12 +1348,30 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery) {
             }
         }
 
-        // Related same-category chips + ambiguous runner-up as actionable recs.
         if (best->kind == IntentKind::Functional) {
             attachRelatedRecommendations(ans, *best, runner, langId, 3);
         }
     } else {
-        ans = makeFallback(paigorit.suggestions, langId);
+        bool es = (langId == "spanish");
+        std::string ctx = currentTopicId();
+        if (paigorit.suggestions.empty() && !ctx.empty()) {
+            auto const* top = m_engine.topic(ctx);
+            if (top) {
+                Resolution res;
+                res.isFollowUp = true;
+                res.topicId = ctx;
+                res.pureReference = true;
+                ans = buildContextualAnswer(res, langId);
+                ans.found = false;
+                ans.message = (es
+                    ? "Mmm, no entendi del todo. "
+                    : "Hmm, I didn't quite get that. ") + ans.message;
+            } else {
+                ans = makeFallback(paigorit.suggestions, langId);
+            }
+        } else {
+            ans = makeFallback(paigorit.suggestions, langId);
+        }
     }
 
     ConversationTurn turn;
@@ -1004,7 +1390,6 @@ PaimonGuideService::getSuggestions() {
     auto langId = Localization::get().getCurrentLanguageId();
     bool es = (langId == "spanish");
 
-    // Representative chips: short labels, explicit queries for reliable matches.
     std::vector<std::pair<std::string, std::string>> result;
     if (es) {
         result.push_back({"cursor",   "donde configuro el cursor"});
@@ -1024,4 +1409,4 @@ PaimonGuideService::getSuggestions() {
     return result;
 }
 
-} // namespace paimon::guide
+}

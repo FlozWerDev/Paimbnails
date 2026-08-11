@@ -1,5 +1,5 @@
 #include "CursorIcoDecoder.hpp"
-#include "ImageLoadHelper.hpp"   // for embedded PNG (stb_image)
+#include "ImageLoadHelper.hpp"
 #include "FormatDetect.hpp"
 #include <Geode/loader/Log.hpp>
 #include <cstring>
@@ -11,7 +11,7 @@ namespace paimon::cursor_ico {
 
 namespace {
 
-// safe little-endian reads (no buffer overrun)
+// Bounds-checked little-endian reads.
 inline uint16_t rd16(uint8_t const* p) {
     return static_cast<uint16_t>(p[0] | (p[1] << 8));
 }
@@ -22,15 +22,13 @@ inline int32_t rd32s(uint8_t const* p) {
     return static_cast<int32_t>(rd32(p));
 }
 
-constexpr int kMaxDim = 1024; // cursors are never large; cap abuse
+constexpr int kMaxDim = 1024; // cursors should stay small
 
-// Decode an icon entry payload. img/imgSize point to the payload start
-// (BMP DIB with AND mask, or a full PNG).
+// Decode a BMP/DIB or PNG icon payload.
 bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     if (imgSize < 8) return false;
 
-    // embedded PNG (Vista+ icons): decode directly with stb_image (no
-    // CCTexture2D) so import doesn't depend on the GL context or main thread
+// Decode embedded PNGs without CCTexture2D so import is GL-independent.
     if (paimon::format::isPng(img, imgSize)) {
         int w = 0, h = 0, channels = 0;
         unsigned char* pixels = stbi_load_from_memory(
@@ -48,8 +46,7 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
         return true;
     }
 
-    // BMP/DIB (BITMAPINFOHEADER): 40-byte header; the DIB "height" is double
-    // the real height because it includes the 1bpp AND mask stacked under the color
+// DIB height includes the color image and the 1bpp AND mask.
     if (imgSize < 40) return false;
     uint32_t headerSize = rd32(img + 0);
     if (headerSize < 40) return false;
@@ -60,9 +57,9 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     uint32_t compress = rd32(img + 16);
 
     if (w <= 0 || w > kMaxDim) return false;
-    int32_t h = hRaw / 2; // real height (color); the other half is the AND mask
+    int32_t h = hRaw / 2;
     if (h <= 0 || h > kMaxDim) return false;
-    if (compress != 0) return false; // only uncompressed BI_RGB
+    if (compress != 0) return false;
 
     size_t pixelCount = static_cast<size_t>(w) * h;
     out.width  = w;
@@ -72,8 +69,7 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     uint8_t const* p = img + headerSize;
     uint8_t const* end = img + imgSize;
 
-    // the DIB is bottom-up (first buffer row is the bottom); we write top-down
-    // into out.rgba (row 0 = top)
+// DIB rows are bottom-up; output rows are top-down.
     auto setPixel = [&](int x, int yTop, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
         size_t idx = (static_cast<size_t>(yTop) * w + x) * 4;
         out.rgba[idx + 0] = r;
@@ -83,7 +79,7 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     };
 
     if (bpp == 32) {
-        // rows are 4-byte aligned (32bpp already is); BGRA order
+// Rows are 4-byte aligned and stored as BGRA.
         size_t rowBytes = static_cast<size_t>(w) * 4;
         for (int y = 0; y < h; ++y) {
             uint8_t const* row = p + static_cast<size_t>(y) * rowBytes;
@@ -98,11 +94,10 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     }
 
     if (bpp == 24) {
-        size_t rowBytes = ((static_cast<size_t>(w) * 3 + 3) / 4) * 4; // pad to 4
-        // the AND mask follows the color block
+    size_t rowBytes = ((static_cast<size_t>(w) * 3 + 3) / 4) * 4;
         size_t colorBytes = rowBytes * h;
         uint8_t const* maskBase = p + colorBytes;
-        size_t maskRowBytes = ((static_cast<size_t>(w) + 31) / 32) * 4; // 1bpp, pad 4
+    size_t maskRowBytes = ((static_cast<size_t>(w) + 31) / 32) * 4;
         for (int y = 0; y < h; ++y) {
             uint8_t const* row = p + static_cast<size_t>(y) * rowBytes;
             if (row + rowBytes > end) break;
@@ -123,15 +118,14 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     }
 
     if (bpp == 8 || bpp == 4 || bpp == 1) {
-        // indexed palette: BITMAPINFOHEADER followed by the color table
         int paletteCount = 1 << bpp;
         uint8_t const* palette = img + headerSize;
-        size_t paletteBytes = static_cast<size_t>(paletteCount) * 4; // BGRA (reserved)
+    size_t paletteBytes = static_cast<size_t>(paletteCount) * 4;
         uint8_t const* bits = palette + paletteBytes;
         if (bits >= end) return false;
 
         size_t rowBits = static_cast<size_t>(w) * bpp;
-        size_t rowBytes = ((rowBits + 31) / 32) * 4; // pad to 4
+    size_t rowBytes = ((rowBits + 31) / 32) * 4;
         size_t colorBytes = rowBytes * h;
         uint8_t const* maskBase = bits + colorBytes;
         size_t maskRowBytes = ((static_cast<size_t>(w) + 31) / 32) * 4;
@@ -148,7 +142,7 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
                 } else if (bpp == 4) {
                     uint8_t byte = row[x / 2];
                     index = (x & 1) ? (byte & 0x0F) : (byte >> 4);
-                } else { // 1bpp
+} else {
                     uint8_t byte = row[x / 8];
                     index = (byte >> (7 - (x % 8))) & 1;
                 }
@@ -170,7 +164,7 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     return false;
 }
 
-// Decode a .ico/.cur to a single frame (the highest-resolution image).
+// Decode the highest-resolution frame from a .ico/.cur.
 bool decodeIcoInternal(uint8_t const* data, size_t size, DecodedFrame& out) {
     if (size < 6) return false;
     uint16_t reserved = rd16(data + 0);
@@ -181,7 +175,6 @@ bool decodeIcoInternal(uint8_t const* data, size_t size, DecodedFrame& out) {
     size_t dirSize = 6 + static_cast<size_t>(count) * 16;
     if (size < dirSize) return false;
 
-    // pick the largest-area entry
     int bestIdx = -1;
     long bestArea = -1;
     for (int i = 0; i < count; ++i) {
@@ -196,14 +189,13 @@ bool decodeIcoInternal(uint8_t const* data, size_t size, DecodedFrame& out) {
     uint8_t const* e = data + 6 + static_cast<size_t>(bestIdx) * 16;
     uint32_t bytesInRes  = rd32(e + 8);
     uint32_t imageOffset = rd32(e + 12);
-    // overflow-safe check: imageOffset + bytesInRes could wrap in uint32 with a
-    // corrupt/malicious file and pass, causing an out-of-buffer read
+// Reject offset + size overflow before reading the entry.
     if (bytesInRes == 0 || imageOffset > size || bytesInRes > size - imageOffset) return false;
 
     return decodeIconImage(data + imageOffset, bytesInRes, out);
 }
 
-} // namespace
+}
 
 bool isIco(uint8_t const* data, size_t size) {
     return size >= 4 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x01 && data[3] == 0x00;
@@ -235,17 +227,13 @@ DecodeResult decodeAni(uint8_t const* data, size_t size) {
     DecodeResult res;
     if (!isAni(data, size)) { res.error = "not_ani"; return res; }
 
-    // RIFF structure: "RIFF" <size> "ACON" { chunks }. Relevant chunks:
-    //   "anih": ANIHEADER (default jifRate, nFrames/nSteps)
-    //   "rate": per-step rates (jiffies = 1/60 s)
-    //   "seq ": playback order (frame indices)
-    //   "LIST" "fram" { "icon" <ico/cur> ... }: the frames themselves
-    uint32_t defaultJiffies = 6;     // ~100ms (6/60s) default
-    std::vector<DecodedFrame> icons; // decoded frames in appearance order
-    std::vector<uint32_t> rates;     // per step
-    std::vector<uint32_t> seq;       // playback order
+// Parse RIFF/ACON chunks for rates, sequence, and embedded icon frames.
+uint32_t defaultJiffies = 6;     // ~100 ms
+std::vector<DecodedFrame> icons;
+std::vector<uint32_t> rates;
+std::vector<uint32_t> seq;
 
-    auto const* p = data + 12;       // after "RIFF"<size>"ACON"
+auto const* p = data + 12;
     auto const* end = data + size;
 
     while (p + 8 <= end) {
@@ -256,7 +244,6 @@ DecodeResult decodeAni(uint8_t const* data, size_t size) {
         if (body + chunkSize > end) break;
 
         if (memcmp(id, "anih", 4) == 0 && chunkSize >= 36) {
-            // ANIHEADER: cbSize, nFrames, nSteps, ..., iDispRate (offset 28), flags(32)
             defaultJiffies = rd32(body + 28);
             if (defaultJiffies == 0) defaultJiffies = 6;
         } else if (memcmp(id, "rate", 4) == 0) {
@@ -266,7 +253,6 @@ DecodeResult decodeAni(uint8_t const* data, size_t size) {
             int n = static_cast<int>(chunkSize / 4);
             for (int i = 0; i < n; ++i) seq.push_back(rd32(body + i * 4));
         } else if (memcmp(id, "LIST", 4) == 0 && chunkSize >= 4 && memcmp(body, "fram", 4) == 0) {
-            // walk "icon" sub-chunks inside the "fram" list
             uint8_t const* lp = body + 4;
             uint8_t const* lend = body + chunkSize;
             while (lp + 8 <= lend) {
@@ -281,17 +267,15 @@ DecodeResult decodeAni(uint8_t const* data, size_t size) {
                         icons.push_back(std::move(frame));
                     }
                 }
-                // RIFF chunks are word-aligned
                 lp = sBody + sSize + (sSize & 1);
             }
         }
 
-        p = body + chunkSize + (chunkSize & 1); // word alignment
+p = body + chunkSize + (chunkSize & 1);
     }
 
     if (icons.empty()) { res.error = "ani_no_frames"; return res; }
 
-    // build the final sequence, applying "seq" and "rate" if present
     std::vector<DecodedFrame> out;
     auto jiffiesToMs = [](uint32_t j) -> int {
         if (j == 0) j = 6;
@@ -303,7 +287,7 @@ DecodeResult decodeAni(uint8_t const* data, size_t size) {
         size_t iconIdx = !seq.empty() ? seq[s] : s;
         if (iconIdx >= icons.size()) iconIdx = icons.size() - 1;
 
-        DecodedFrame f = icons[iconIdx]; // copy (frames may repeat)
+        DecodedFrame f = icons[iconIdx];
         uint32_t jiffies = (s < rates.size()) ? rates[s] : defaultJiffies;
         f.delayMs = jiffiesToMs(jiffies);
         out.push_back(std::move(f));
@@ -323,4 +307,4 @@ DecodeResult decode(uint8_t const* data, size_t size) {
     return res;
 }
 
-} // namespace paimon::cursor_ico
+}

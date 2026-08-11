@@ -1,10 +1,14 @@
 #include "MenuMusicLibrary.hpp"
 
+#include <Geode/binding/MusicDownloadManager.hpp>
+#include <Geode/binding/SongInfoObject.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>
+#include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <fmt/format.h>
 
@@ -40,7 +44,6 @@ std::filesystem::path MenuMusicLibrary::getLibraryFile() const {
     return getRootDir() / "library.json";
 }
 
-// Index
 
 void MenuMusicLibrary::rebuildTrackIndex() {
     m_trackIndex.clear();
@@ -61,7 +64,6 @@ void MenuMusicLibrary::markDirty() {
     });
 }
 
-// Tracks
 
 MusicTrack* MenuMusicLibrary::findTrack(const std::string& id) {
     auto it = m_trackIndex.find(id);
@@ -79,11 +81,176 @@ const MusicTrack* MenuMusicLibrary::findTrack(const std::string& id) const {
     return nullptr;
 }
 
+MusicTrack* MenuMusicLibrary::findTrackByAudioPath(const std::string& path) {
+    auto it = std::find_if(m_tracks.begin(), m_tracks.end(), [&](const MusicTrack& track) {
+        return track.audioPath == path;
+    });
+    return it == m_tracks.end() ? nullptr : &*it;
+}
+
+const MusicTrack* MenuMusicLibrary::findTrackByAudioPath(const std::string& path) const {
+    auto it = std::find_if(m_tracks.begin(), m_tracks.end(), [&](const MusicTrack& track) {
+        return track.audioPath == path;
+    });
+    return it == m_tracks.end() ? nullptr : &*it;
+}
+
 void MenuMusicLibrary::addTrack(const MusicTrack& track) {
+    if (auto* existing = findTrack(track.id)) {
+        bool favorite = existing->favorite;
+        bool blacklisted = existing->blacklisted;
+        *existing = track;
+        existing->favorite = favorite;
+        existing->blacklisted = blacklisted;
+        markDirty();
+        notifyChanged();
+        return;
+    }
+    if (auto* existing = findTrackByAudioPath(track.audioPath)) {
+        if (existing->displayName.empty()) existing->displayName = track.displayName;
+        if (existing->artist.empty()) existing->artist = track.artist;
+        if (existing->coverPath.empty()) existing->coverPath = track.coverPath;
+        markDirty();
+        notifyChanged();
+        return;
+    }
     m_trackIndex[track.id] = m_tracks.size();
     m_tracks.push_back(track);
     markDirty();
     notifyChanged();
+}
+
+void MenuMusicLibrary::setFavorite(const std::string& id, bool favorite) {
+    auto* track = findTrack(id);
+    if (!track || (track->favorite == favorite && (!favorite || !track->blacklisted))) return;
+    track->favorite = favorite;
+    if (favorite) track->blacklisted = false;
+    markDirty();
+    notifyChanged();
+}
+
+void MenuMusicLibrary::setBlacklisted(const std::string& id, bool blacklisted) {
+    auto* track = findTrack(id);
+    if (!track || (track->blacklisted == blacklisted && (!blacklisted || !track->favorite))) return;
+    track->blacklisted = blacklisted;
+    if (blacklisted) track->favorite = false;
+    markDirty();
+    notifyChanged();
+}
+
+std::size_t MenuMusicLibrary::importFolder(const std::filesystem::path& folder, bool recursive) {
+    std::error_code ec;
+    if (!std::filesystem::is_directory(folder, ec) || ec) return 0;
+
+    std::vector<std::filesystem::path> files;
+    auto collect = [&](const auto& entry) {
+        std::error_code typeEc;
+        if (entry.is_regular_file(typeEc) && !typeEc && isAudioExtension(entry.path())) {
+            files.push_back(entry.path());
+        }
+    };
+
+    if (recursive) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(
+                 folder, std::filesystem::directory_options::skip_permission_denied, ec)) {
+            if (ec) {
+                ec.clear();
+                continue;
+            }
+            collect(entry);
+        }
+    } else {
+        for (const auto& entry : std::filesystem::directory_iterator(
+                 folder, std::filesystem::directory_options::skip_permission_denied, ec)) {
+            if (ec) {
+                ec.clear();
+                continue;
+            }
+            collect(entry);
+        }
+    }
+
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::size_t added = 0;
+    for (const auto& path : files) {
+        auto normalized = geode::utils::string::pathToString(path);
+        if (findTrackByAudioPath(normalized)) continue;
+
+        MusicTrack track;
+        track.id = generateId("folder");
+        track.audioPath = normalized;
+        track.displayName = geode::utils::string::pathToString(path.stem());
+        track.source = TrackSource::Local;
+        track.addedUnixMs = now;
+        m_trackIndex[track.id] = m_tracks.size();
+        m_tracks.push_back(std::move(track));
+        ++added;
+    }
+
+    if (added) {
+        markDirty();
+        notifyChanged();
+    }
+    return added;
+}
+
+std::size_t MenuMusicLibrary::syncDownloadedSongs(bool force) {
+    auto* manager = MusicDownloadManager::sharedState();
+    auto* songs = manager ? manager->getDownloadedSongs() : nullptr;
+    if (!manager || !songs) return 0;
+
+    // The scan does one stat() per downloaded song, which adds up on every
+    // MenuLayer entry. Callers that only want to pick up new downloads can pass
+    // force=false to skip it while the downloaded set is unchanged.
+    const auto songCount = static_cast<std::size_t>(songs->count());
+    if (!force && m_syncedSongCount == songCount) return 0;
+    m_syncedSongCount = songCount;
+
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::size_t added = 0;
+    bool changed = false;
+    for (auto* song : CCArrayExt<SongInfoObject*>(songs)) {
+        if (!song || manager->isResourceSong(song->m_songID)) continue;
+
+        std::string audioPath = manager->pathForSong(song->m_songID);
+        std::error_code existsEc;
+        if (!isAudioExtension(audioPath) ||
+            !std::filesystem::is_regular_file(audioPath, existsEc) || existsEc) {
+            continue;
+        }
+
+        if (auto* existing = findTrackByAudioPath(audioPath)) {
+            if (existing->displayName.empty() && !song->m_songName.empty()) {
+                existing->displayName = song->m_songName;
+                changed = true;
+            }
+            if (existing->artist.empty() && !song->m_artistName.empty()) {
+                existing->artist = song->m_artistName;
+                changed = true;
+            }
+            continue;
+        }
+
+        MusicTrack track;
+        track.id = fmt::format("gd_{}", song->m_songID);
+        if (findTrack(track.id)) track.id = generateId("gd");
+        track.audioPath = audioPath;
+        track.displayName = song->m_songName;
+        track.artist = song->m_artistName;
+        track.source = TrackSource::GeometryDash;
+        track.addedUnixMs = now;
+        m_trackIndex[track.id] = m_tracks.size();
+        m_tracks.push_back(std::move(track));
+        ++added;
+    }
+
+    if (added || changed) {
+        markDirty();
+        notifyChanged();
+    }
+    return added;
 }
 
 void MenuMusicLibrary::updateTrack(const MusicTrack& track) {
@@ -92,6 +259,40 @@ void MenuMusicLibrary::updateTrack(const MusicTrack& track) {
         markDirty();
         notifyChanged();
     }
+}
+
+bool MenuMusicLibrary::deleteLocalAudio(const std::string& id) {
+    auto* track = findTrack(id);
+    if (!track || track->audioPath.empty()) return false;
+
+    std::error_code ec;
+    if (track->source == TrackSource::Downloaded) {
+        std::filesystem::remove(track->audioPath, ec);
+    } else if (track->source == TrackSource::GeometryDash) {
+        auto stem = geode::utils::string::pathToString(
+            std::filesystem::path(track->audioPath).stem());
+        int songId = 0;
+        auto [end, parseError] = std::from_chars(
+            stem.data(), stem.data() + stem.size(), songId);
+        if (parseError != std::errc{} || end != stem.data() + stem.size() || songId <= 0) {
+            return false;
+        }
+
+        if (auto* manager = MusicDownloadManager::sharedState()) {
+            manager->deleteSong(songId);
+            if (std::filesystem::is_regular_file(track->audioPath, ec) && !ec) {
+                std::filesystem::remove(track->audioPath, ec);
+            }
+        } else {
+            std::filesystem::remove(track->audioPath, ec);
+        }
+    } else {
+        return false;
+    }
+
+    if (ec) return false;
+    notifyChanged();
+    return true;
 }
 
 void MenuMusicLibrary::removeTrack(const std::string& id, bool deleteFiles) {
@@ -112,6 +313,8 @@ void MenuMusicLibrary::removeTrack(const std::string& id, bool deleteFiles) {
             pl.trackIds.end());
     }
 
+    if (m_lastTrackId == id) m_lastTrackId.clear();
+
     if (deleteFiles && copy.source == TrackSource::Downloaded) {
         std::error_code ec;
         if (!copy.audioPath.empty()) {
@@ -126,7 +329,6 @@ void MenuMusicLibrary::removeTrack(const std::string& id, bool deleteFiles) {
     notifyChanged();
 }
 
-// Playlists
 
 MusicPlaylist* MenuMusicLibrary::findPlaylist(const std::string& id) {
     for (auto& p : m_playlists) if (p.id == id) return &p;
@@ -179,7 +381,6 @@ void MenuMusicLibrary::removeTrackFromPlaylist(const std::string& playlistId, co
     }
 }
 
-// Modo
 
 void MenuMusicLibrary::setMode(PlaybackMode mode) {
     if (m_mode == mode) return;
@@ -195,7 +396,12 @@ void MenuMusicLibrary::setActivePlaylistId(const std::string& id) {
     notifyChanged();
 }
 
-// Util
+void MenuMusicLibrary::setLastTrackId(const std::string& id) {
+    if (m_lastTrackId == id) return;
+    m_lastTrackId = id;
+    markDirty();
+}
+
 
 std::string MenuMusicLibrary::generateId(const std::string& prefix) {
     m_idCounter++;
@@ -225,7 +431,6 @@ bool MenuMusicLibrary::isImageExtension(const std::filesystem::path& p) {
     return std::find(ok.begin(), ok.end(), ext) != ok.end();
 }
 
-// Listeners
 
 std::size_t MenuMusicLibrary::addListener(Listener cb) {
     auto token = m_nextListenerToken++;
@@ -248,15 +453,15 @@ void MenuMusicLibrary::notifyChanged() {
     }
 }
 
-// Serializacion
 
 void MenuMusicLibrary::save() {
     ensureDirs();
 
     auto root = matjson::Value::object();
-    root["version"] = 1;
+    root["version"] = 2;
     root["mode"] = static_cast<int>(m_mode);
     root["activePlaylistId"] = m_activePlaylistId;
+    root["lastTrackId"] = m_lastTrackId;
     root["idCounter"] = static_cast<std::int64_t>(m_idCounter);
 
     auto tracks = matjson::Value::array();
@@ -271,6 +476,8 @@ void MenuMusicLibrary::save() {
         o["source"] = static_cast<int>(t.source);
         o["addedUnixMs"] = t.addedUnixMs;
         o["durationMs"] = t.durationMs;
+        o["favorite"] = t.favorite;
+        o["blacklisted"] = t.blacklisted;
         tracks.push(o);
     }
     root["tracks"] = tracks;
@@ -311,6 +518,7 @@ void MenuMusicLibrary::load() {
 
     m_mode = static_cast<PlaybackMode>(root["mode"].asInt().unwrapOr(0));
     m_activePlaylistId = root["activePlaylistId"].asString().unwrapOr("");
+    m_lastTrackId = root["lastTrackId"].asString().unwrapOr("");
     m_idCounter = static_cast<std::uint64_t>(root["idCounter"].asInt().unwrapOr(0));
 
     m_tracks.clear();
@@ -327,6 +535,8 @@ void MenuMusicLibrary::load() {
             t.source = static_cast<TrackSource>(item["source"].asInt().unwrapOr(0));
             t.addedUnixMs = item["addedUnixMs"].asInt().unwrapOr(0);
             t.durationMs = static_cast<std::int32_t>(item["durationMs"].asInt().unwrapOr(0));
+            t.favorite = item["favorite"].asBool().unwrapOr(false);
+            t.blacklisted = item["blacklisted"].asBool().unwrapOr(false);
             m_tracks.push_back(std::move(t));
         }
     }

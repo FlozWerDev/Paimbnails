@@ -64,7 +64,12 @@ protected:
     void onSelectItem(cocos2d::CCObject* sender);
     void onOpenLevel(cocos2d::CCObject* sender);
     void onAccept(cocos2d::CCObject* sender);
+    void onAcceptAll(cocos2d::CCObject* sender);
     void onReject(cocos2d::CCObject* sender);
+    // Which entry of a level's review gallery the moderator is looking at.
+    // Empty when the level has no per-file record to act on.
+    std::string selectedSuggestionFilename(int levelID) const;
+    void runQueueAction(int levelID, bool acceptAll, bool reject);
     void onClaimLevel(cocos2d::CCObject* sender);
     void onViewReport(cocos2d::CCObject* sender);
     void onViewThumb(cocos2d::CCObject* sender);

@@ -1,6 +1,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/LevelSearchLayer.hpp>
 #include "../framework/HookConventions.hpp"
+#include "../core/modules/ModuleRegistry.hpp"
 #include "../features/community/ui/LeaderboardLayer.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
@@ -116,6 +117,7 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
         ) {
             auto scene = CCDirector::get()->getRunningScene();
             if (!down || repeat || !scene || !this->isRunning()) return;
+            if (!paimon::modules::isEnabled("paimbnails.quicksearch.browser")) return;
             if (!scene->getChildByID("LevelSearchLayer")) return;
             this->onSearch(nullptr);
         });

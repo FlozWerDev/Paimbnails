@@ -1,13 +1,10 @@
 #include "Localization.hpp"
 
 void Localization::initTranslations() {
-        // Spanish translations
         m_spanish = {
-            // Texture Studio (coming soon)
             {"texture-studio.coming.title", "Texture Studio"},
             {"texture-studio.coming.message", "Texture Studio llegara <cy>definitivamente en la v1.1.0</c>.\n\nGracias por tu paciencia!"},
 
-            // CapturePreviewPopup
             {"preview.title", "Vista previa"},
             {"preview.borders_removed", "Ya se eliminaron los bordes"},
             {"preview.no_borders", "No se detectaron bordes negros"},
@@ -23,7 +20,6 @@ void Localization::initTranslations() {
             {"preview.res_changed", "Resolucion cambiada a {}"},
             {"preview.recapturing", "Recapturando..."},
 
-            // CaptureEditPopup
             {"edit.capture_title", "Editar"},
             {"edit.toggle_player", "Ocultar jugador"},
             {"edit.hide_player1", "Ocultar P1"},
@@ -35,7 +31,6 @@ void Localization::initTranslations() {
             {"edit.download", "Descargar"},
             {"edit.edit_layers", "Editar capas"},
 
-            // CaptureLayerEditorPopup
             {"layers.title", "Editar Capas"},
             {"layers.player1", "Jugador 1"},
             {"layers.player2", "Jugador 2"},
@@ -51,12 +46,17 @@ void Localization::initTranslations() {
             {"layers.beta_message", "<cr>Esta funcion esta en beta</c> y puede tener <cy>muchos errores</c>.\nAlgunas capas pueden no funcionar correctamente.\n\nEstas seguro de que quieres continuar?"},
             {"layers.beta_confirm", "Continuar"},
             {"layers.beta_cancel", "Cancelar"},
+            {"layers.filter_all", "Filtro: Todo"},
+            {"layers.collapse_all", "Contraer todo"},
+            {"layers.expand_all", "Expandir todo"},
+            {"layers.hint", "Toca un grupo para plegarlo"},
 
-            // Keybinds
+            {"preview.mini_loading", "Cargando..."},
+            {"preview.mini_unavailable", "Sin vista previa"},
+
             {"keybind.capture_triggered", "Captura activada"},
             {"keybind.capture_paused", "No se puede capturar en pausa"},
 
-            // PlayLayer & PauseLayer
             {"capture.action_name", "Capturar Miniatura"},
             {"capture.action_desc", "Toma una captura del nivel actual"},
             {"capture.error", "Error al capturar miniatura"},
@@ -68,9 +68,11 @@ void Localization::initTranslations() {
             {"capture.upload_success", "Miniatura subida exitosamente!"},
             {"capture.suggested", "Miniatura sugerida"},
             {"capture.verifying", "Verificando permisos..."},
+            {"capture.needs_high_graphics", "Las miniaturas necesitan calidad grafica Alta. Activala en ajustes de GD."},
+            {"capture.needs_no_ldm", "No se puede capturar con Low Detail Mode activo. Desactivalo en ajustes de GD."},
+            {"capture.player_dead", "No se puede capturar con el jugador muerto. Espera al respawn."},
             {"capture.uploading_suggestion", "Subiendo sugerencia..."},
 
-            // PauseLayer specific
             {"pause.no_local_thumb", "No hay miniatura local para subir"},
             {"pause.only_moderators", "Solo moderadores pueden subir miniaturas"},
             {"pause.access_error", "Error al acceder a miniatura local"},
@@ -90,7 +92,6 @@ void Localization::initTranslations() {
             {"pause.png_invalid", "Error: Archivo PNG invalido"},
             {"pause.process_thumbnail_error", "No se pudo procesar la miniatura"},
 
-            // ProfilePage
             {"profile.username_error", "No se pudo obtener tu nombre de usuario"},
             {"profile.verified", "Verificado"},
             {"profile.verified_msg", "Eres un <cg>moderador aprobado</c>! Ahora puedes subir y verificar miniaturas."},
@@ -106,7 +107,6 @@ void Localization::initTranslations() {
             {"profile.moderators_only", "Solo los moderadores pueden acceder al centro de verificacion."},
             {"profile.cant_edit_other", "Solo puedes editar tu propio fondo de perfil."},
 
-            // ProfileBgPickerPopup
             {"profilebg.picker.title", "Fondo de Perfil"},
             {"profilebg.picker.media", "Subir Media"},
             {"profilebg.picker.icon_gradient", "Degradado Iconos"},
@@ -125,7 +125,6 @@ void Localization::initTranslations() {
             {"profilebg.reset.applied", "Fondo restablecido"},
             {"profilebg.reset.failed", "No se pudo restablecer el fondo"},
 
-            // ProfileBgGradientPopup
             {"profilebg.gradient.title", "Degradado de Iconos"},
             {"profilebg.gradient.speed", "Velocidad"},
             {"profilebg.gradient.apply", "Aplicar"},
@@ -137,7 +136,6 @@ void Localization::initTranslations() {
             {"profilebg.gradient.effect.shift",  "Cambiar"},
             {"profilebg.gradient.effect.slide",  "Deslizar"},
 
-            // LevelInfoLayer
             {"level.title", "Miniatura del nivel"},
             {"level.no_thumbnail", "No hay miniatura"},
             {"level.open_error", "Error al abrir miniatura"},
@@ -153,7 +151,6 @@ void Localization::initTranslations() {
             {"level.accept_button", "Aceptar"},
             {"level.download_button", "Descargar"},
 
-            // VerificationQueuePopup
             {"queue.title", "Centro de verificacion"},
             {"queue.verify_tab", "verificar thumbnails"},
             {"queue.update_tab", "actualizacion"},
@@ -180,7 +177,6 @@ void Localization::initTranslations() {
             {"queue.rejected", "Miniatura rechazada y sincronizada"},
             {"queue.reject_error", "Error al sincronizar rechazo"},
 
-            // AddModeratorPopup
             {"addmod.enter_username", "Ingresa un nombre de usuario"},
             {"addmod.success_title", "Agregado"},
             {"addmod.success_msg", "Moderador agregado exitosamente"},
@@ -198,7 +194,6 @@ void Localization::initTranslations() {
             {"addmod.remove_error", "No se pudo eliminar al moderador"},
             {"general.cancel", "Cancelar"},
 
-            // Role manager + badges
             {"rolemgr.title", "Gestionar Roles"},
             {"rolemgr.role.mod", "Moderador"},
             {"rolemgr.role.vip", "VIP"},
@@ -228,14 +223,12 @@ void Localization::initTranslations() {
             {"badge.idea.desc", "Un usuario <cy>Idea</c> ha aportado ideas o sugerencias que dieron forma al mod <cg>Paimbnails</c>."},
 
 
-            // BulkUploadPopup
             {"bulk.title", "Subida Masiva"},
             {"bulk.select_folder_label", "Selecciona una carpeta con thumbnails"},
             {"bulk.progress_label", "0 / 0 thumbnails"},
             {"bulk.info_text", "Los archivos deben tener el formato:\nlevelID.png (ej: 12345.png)\n\nSolo se subiran thumbnails de\nniveles que no tengan ya uno."},
             {"bulk.scanning", "Escaneando carpeta..."},
 
-            // GIFUploadPopup
             {"gif.upload.title", "GIF grabado"},
             {"gif.label", "GIF"},
             {"daily.title", "Establecer nivel destacado"},
@@ -250,10 +243,8 @@ void Localization::initTranslations() {
             {"daily.error_weekly_title", "Error"},
             {"daily.error_weekly_msg", "Fallo al establecer Weekly."},
 
-            // ThumbnailViewPopup
             {"thumbview.title", "Miniatura"},
 
-            // VerificationQueuePopup
             {"queue.banned_btn", "Baneados"},
             {"queue.level_id", "Nivel {}"},
             {"queue.claimed_by_you", "Reclamado por ti"},
@@ -274,7 +265,6 @@ void Localization::initTranslations() {
             {"queue.claimed", "Nivel reclamado"},
             {"queue.claim_error", "Error: {}"},
 
-            // ButtonEditOverlay
             {"edit.buttons_title", "Editar Botones"},
             {"edit.panel_title", "Editor de layout"},
             {"edit.showing_banner", "Mostrando: {}"},
@@ -354,14 +344,33 @@ void Localization::initTranslations() {
             {"menu_layout.lock_shapes_hint", "Fondos bloqueados para facil edicion de botones"},
             {"menu_layout.unlock_shapes_hint", "Fondos desbloqueados"},
 
-            // ForYou
             {"foryou.title", "Para Ti"},
             {"foryou.tab", "Para Ti"},
-            {"foryou.not_enough_data", "Juega mas niveles para desbloquear recomendaciones"},
-            {"foryou.no_results", "No se encontraron niveles recomendados"},
-            {"foryou.tags_prompt_title", "Level Tags"},
-            {"foryou.tags_prompt", "Instala <cy>Level Tags</c> para mejorar tus recomendaciones con tags de niveles!"},
-            {"foryou.tags_download", "Descargar"},
+            {"foryou.not_enough_data", "Juega o dale like a mas niveles para mejores recomendaciones"},
+            {"foryou.no_results", "Nada nuevo por ahora. Juega o dale like a mas niveles"},
+            {"foryou.tags_gate_title", "Level Tags"},
+            {"foryou.tags_gate_body", "Para Ti usa las etiquetas de Level Tags para saber de que trata cada nivel: su estilo, su tema y como se juega.\n\nSin el mod las recomendaciones solo pueden guiarse por dificultad y creador."},
+            {"foryou.tags_gate_install", "Instalar"},
+            {"foryou.tags_gate_later", "Ahora no"},
+            {"foryou.dismissed", "No volveremos a recomendarte ese nivel"},
+            {"foryou.reason_tag", "Porque te gustan los niveles {}"},
+            {"foryou.reason_fav_creator", "De {}, uno de tus favoritos"},
+            {"foryou.reason_creator", "Mas de {}"},
+            {"foryou.reason_song", "Usa una cancion que sueles jugar"},
+            {"foryou.reason_difficulty", "De la dificultad que sueles jugar"},
+            {"foryou.reason_discover", "Algo nuevo para descubrir"},
+            {"foryou.tags_button", "Etiquetas"},
+            {"foryou.tags_popup_title", "Etiquetas que te gustan"},
+            {"foryou.tags_popup_hint", "Toca una vez para priorizarla, dos para evitarla"},
+            {"foryou.tags_legend_love", "Priorizar"},
+            {"foryou.tags_legend_avoid", "Evitar"},
+            {"foryou.tags_legend_neutral", "Neutral"},
+            {"foryou.tags_popup_loading", "Cargando etiquetas..."},
+            {"foryou.tags_popup_unavailable", "Instala Level Tags para elegir etiquetas"},
+            {"foryou.tags_cat_style", "Estilo"},
+            {"foryou.tags_cat_theme", "Tema"},
+            {"foryou.tags_cat_meta", "Meta"},
+            {"foryou.tags_cat_gameplay", "Jugabilidad"},
             {"foryou.fav_creator_added", "Creador agregado a favoritos"},
             {"foryou.fav_creator_removed", "Creador eliminado de favoritos"},
             {"foryou.fav_level_added", "Nivel agregado a favoritos"},
@@ -369,6 +378,7 @@ void Localization::initTranslations() {
             {"foryou.prefs_title", "Que niveles te gustan?"},
             {"foryou.prefs_subtitle", "Elige tus preferencias para mejorar recomendaciones"},
             {"foryou.prefs_difficulty", "Dificultad"},
+            {"foryou.prefs_demon_hint", "Elige Demon para filtrar por subdificultad"},
             {"foryou.prefs_gamemode", "Modo de juego"},
             {"foryou.prefs_classic", "Clasico"},
             {"foryou.prefs_platformer", "Platformer"},
@@ -384,12 +394,9 @@ void Localization::initTranslations() {
             {"foryou.prefs_star_rated", "Con estrellas"},
             {"foryou.prefs_featured", "Destacados"},
             {"foryou.prefs_epic", "Epicos"},
-            {"foryou.prefs_demon_diff", "Demon dificultad"},
             {"foryou.prefs_filters", "Filtros"},
             {"foryou.info_difficulty_title", "Dificultad"},
             {"foryou.info_difficulty_desc", "Elige el nivel de <cy>dificultad</c> que prefieres.\nAfecta las recomendaciones que se muestran\nen tu feed <cg>Para Ti</c>."},
-            {"foryou.info_demon_title", "Dificultad Demon"},
-            {"foryou.info_demon_desc", "Solo aplica si seleccionaste <cy>Demon</c> arriba.\nElige la subdificultad preferida:\n<cy>Easy, Medium, Hard, Insane, Extreme</c>\no <cg>Cualquiera</c> para no filtrar."},
             {"foryou.info_mode_title", "Modo de Juego"},
             {"foryou.info_mode_desc", "<cy>Clasico</c>: niveles tradicionales.\n<cy>Platformer</c>: niveles con estilo plataforma.\n<cy>Ambos</c>: sin preferencia de modo."},
             {"foryou.info_length_title", "Duracion"},
@@ -403,11 +410,9 @@ void Localization::initTranslations() {
             {"foryou.prefs_rating_legendary", "Legendario"},
             {"foryou.prefs_rating_mythic", "Mitico"},
             {"foryou.info_rating_title", "Calidad del Nivel"},
-            {"foryou.info_rating_desc", "Toca el icono para ciclar entre tiers de calidad:\n<cy>Con estrellas</c> → <cy>Destacado</c> → <cy>Epico</c> →\n<cy>Legendario</c> → <cy>Mitico</c>.\nCada tier incluye los anteriores."},
+            {"foryou.info_rating_desc", "Toca el icono para ciclar entre tiers de calidad:\n<cy>Con estrellas</c> -> <cy>Destacado</c> -> <cy>Epico</c> ->\n<cy>Legendario</c> -> <cy>Mitico</c>.\nCada tier incluye los anteriores."},
             {"foryou.fav_levels_title", "Niveles Favoritos"},
-            {"foryou.coming_soon", "Proximamente"},
 
-            // LeaderboardsLayer
             {"leaderboard.daily", "Diario"},
             {"leaderboard.weekly", "Semanal"},
             {"leaderboard.all_time", "Global"},
@@ -422,17 +427,14 @@ void Localization::initTranslations() {
             {"leaderboard.unknown", "Desconocido"},
             {"mods.title", "Moderadores de Paimbnails"},
 
-            // CommunityHubLayer
             {"community.title", "Centro Comunitario"},
             {"community.tab_mods", "Moderadores"},
             {"community.tab_creators", "Top Creadores"},
             {"community.tab_thumbnails", "Top Miniaturas"},
             {"community.tab_compat_mods", "Mods Compat."},
             {"community.compat_mods_title", "Mods Compatibles"},
-            {"community.compat_mods_version", "Disponible para la version 1.1.0"},
             {"community.compat_mods_desc", "Lista de mods compatibles con Paimbnails"},
-            {"community.compat_mods_soon", "Mas mods proximamente..."},
-            // CommunityHub info buttons
+            {"community.compat_mods_source", "Los mods vienen de modly.web.app"},
             {"community.info_mods_title", "Moderadores"},
             {"community.info_mods_body", "Lista de los <cy>moderadores oficiales</c> de Paimbnails.\nPueden subir, verificar y gestionar miniaturas.\nLos <cr>Admins</c> tienen permisos adicionales."},
             {"community.info_creators_title", "Top Creadores"},
@@ -440,7 +442,7 @@ void Localization::initTranslations() {
             {"community.info_thumbs_title", "Top Miniaturas"},
             {"community.info_thumbs_body", "Las miniaturas mejor valoradas por la comunidad.\nPuedes votar las miniaturas desde la pantalla de nivel."},
             {"community.info_compat_title", "Mods Compatibles"},
-            {"community.info_compat_body", "Mods de Geometry Dash compatibles con Paimbnails.\nDisponible a partir de la version <cy>1.1.0</c>."},
+            {"community.info_compat_body", "Mods y resource packs de Geometry Dash publicados en <cy>modly.web.app</c>.\nToca un mod para ver su ficha, sus capturas y sus comentarios.\nToca al autor para abrir su <cg>perfil de desarrollador</c>."},
             {"community.loading", "Cargando..."},
             {"community.error", "Error al cargar datos"},
             {"community.no_data", "Sin datos disponibles"},
@@ -452,6 +454,22 @@ void Localization::initTranslations() {
             {"community.admin", "Admin"},
             {"community.mod", "Mod"},
             {"community.level", "Nivel"},
+            {"modly.by", "por"},
+            {"modly.downloads", "descargas"},
+            {"modly.download", "Descargar"},
+            {"modly.comments", "Comentarios"},
+            {"modly.comments_title", "Comentarios"},
+            {"modly.comments_empty", "Todavia no hay comentarios"},
+            {"modly.comments_error", "No se pudieron cargar los comentarios"},
+            {"modly.loading", "Cargando..."},
+            {"modly.type_mod", "Mod"},
+            {"modly.type_pack", "Pack"},
+            {"modly.unknown_author", "Anonimo"},
+            {"modly.no_description", "Este proyecto no tiene descripcion"},
+            {"modly.no_bio", "Este usuario no escribio una descripcion"},
+            {"modly.profile_title", "Perfil"},
+            {"modly.projects", "Proyectos"},
+            {"modly.no_projects", "Todavia no publico proyectos"},
             {"leaderboard.no_refreshes", "No hay mas recargas disponibles hoy!"},
             {"leaderboard.no_gamemanager", "No se pudo obtener GameManager"},
             {"leaderboard.empty_username", "Nombre de usuario vacio"},
@@ -464,15 +482,12 @@ void Localization::initTranslations() {
             {"leaderboard.unknown_error", "Error desconocido"},
             {"leaderboard.synced", "Sincronizado con el servidor!"},
 
-            // GIFRecordSettingsPopup
             {"gif.start", "Iniciar"},
 
-            // General
             {"general.error", "Error"},
             {"general.ok", "OK"},
             {"general.close", "Cerrar"},
 
-            // Missing keys added
             {"level.no_thumbnail_text", "No hay miniatura"},
             {"level.saving_mod_folder", "Guardando en carpeta del mod..."},
             {"level.error_prefix", "Error: "},
@@ -481,7 +496,7 @@ void Localization::initTranslations() {
             {"level.deleted_server", "Miniatura eliminada del servidor"},
             {"level.delete_error", "Error al borrar: "},
             {"level.accepting", "Aceptando miniatura..."},
-            {"level.accepted", "¡Miniatura aceptada!"},
+            {"level.accepted", "Miniatura aceptada!"},
             {"level.accept_error", "Error al aceptar: "},
             {"level.rejecting", "Rechazando miniatura..."},
             {"level.rejected", "Miniatura rechazada"},
@@ -497,7 +512,6 @@ void Localization::initTranslations() {
             {"level.confirm_delete_msg", "Estas seguro de que quieres borrar esta miniatura? Esto tambien eliminara los puntos de rating del creador."},
             {"level.thumbnail_deleted", "Miniatura borrada"},
 
-            // Report Popup
             {"report.title", "Reportar Miniatura"},
             {"report.cancel", "Cancelar"},
             {"report.send", "Enviar"},
@@ -506,7 +520,6 @@ void Localization::initTranslations() {
             {"report.sent_synced", "Reporte enviado y sincronizado: "},
             {"report.saved_local", "Reporte guardado localmente (sin conexion)"},
 
-            // PauseLayer
             {"pause.gif_not_supported", "Archivos GIF no soportados en esta plataforma"},
             {"pause.process_image_error", "Error: No se pudo procesar la imagen"},
             {"pause.create_texture_error", "Error: No se pudo crear textura"},
@@ -514,7 +527,6 @@ void Localization::initTranslations() {
             {"pause.username_error", "Error: No se pudo obtener nombre de usuario"},
             {"pause.gif_recording_started", "Grabacion GIF iniciada"},
 
-            // Ban System
             {"ban.list.title", "Baneados"},
             {"ban.list.loading", "Cargando..."},
             {"ban.list.empty", "Sin baneos"},
@@ -525,7 +537,7 @@ void Localization::initTranslations() {
             {"ban.info.date", "Fecha"},
             {"ban.info.title", "Detalles del Baneo"},
             {"ban.unban.title", "Desbanear Usuario"},
-            {"ban.unban.confirm", "¿Estas seguro de desbanear a <cy>{}</c>?"},
+            {"ban.unban.confirm", "Estas seguro de desbanear a <cy>{}</c>?"},
             {"ban.unban.success", "Usuario desbaneado"},
             {"ban.unban.error", "Error al desbanear"},
             {"ban.popup.title", "Banear Usuario"},
@@ -539,7 +551,6 @@ void Localization::initTranslations() {
             {"ban.profile.self_ban", "No puedes banearte"},
             {"ban.profile.read_error", "No se pudo leer el usuario"},
 
-            // Profile Music
             {"music.title", "Musica de Perfil"},
             {"music.load_song", "Cargar"},
             {"music.play_preview", "Reproducir"},
@@ -550,7 +561,7 @@ void Localization::initTranslations() {
             {"music.no_song_loaded", "Sin cancion cargada"},
             {"music.loading", "Cargando..."},
             {"music.download_song", "Descargar cancion"},
-            {"music.song_downloaded", "¡Cancion descargada!"},
+            {"music.song_downloaded", "Cancion descargada!"},
             {"music.enter_song_id", "Ingresa un ID de cancion"},
             {"music.invalid_song_id", "ID de cancion invalido"},
             {"music.load_error", "No se pudo cargar info. Verifica el ID."},
@@ -559,8 +570,8 @@ void Localization::initTranslations() {
             {"music.fragment_too_long", "El fragmento no puede exceder 20 segundos"},
             {"music.fragment_too_short", "El fragmento debe ser al menos 5 segundos"},
             {"music.save_error", "Error al guardar: {}"},
-            {"music.saved", "¡Musica de perfil guardada!"},
-            {"music.delete_confirm", "¿Eliminar musica de perfil?"},
+            {"music.saved", "Musica de perfil guardada!"},
+            {"music.delete_confirm", "Eliminar musica de perfil?"},
             {"music.deleted", "Musica de perfil eliminada"},
             {"music.own_profile_only", "Solo puedes configurar musica en tu propio perfil"},
             {"music.volume", "Volumen:"},
@@ -606,7 +617,6 @@ void Localization::initTranslations() {
             {"music.ok", "OK"},
             {"music.loading_default", "Cargando..."},
 
-            // SongSearchPopup (búsqueda de música)
             {"music.search.title", "Buscar musica"},
             {"music.search.placeholder", "Buscar por nombre o artista..."},
             {"music.search.empty", "No hay canciones que coincidan"},
@@ -614,8 +624,7 @@ void Localization::initTranslations() {
             {"music.search.results_fmt", "{} resultados"},
             {"music.search.button", "Buscar"},
 
-            // PaiConfigLayer
-            {"pai.config.title", "Configuracion de Paimon"},
+            {"pai.config.title", "Editor de Fondos"},
             {"pai.config.tab.backgrounds", "Fondos"},
             {"pai.config.tab.profile", "Perfil"},
             {"pai.config.tab.extras", "Extras"},
@@ -638,11 +647,42 @@ void Localization::initTranslations() {
             {"pai.config.background.shader", "Shader:"},
             {"pai.config.background.shader_bg", "Shader BG"},
             {"pai.config.background.blocked_message", "Level Info usa su propio\nfondo de miniatura.\n\nCambia en Mod Settings\n> Background Style."},
+            {"pai.config.screens", "Pantallas"},
+            {"pai.config.reset_screen", "Restablecer"},
+            {"pai.config.module_off", "El modulo de fondos esta APAGADO"},
+            {"pai.config.preview.show_ui", "UI del juego"},
+            {"pai.config.background.source", "Fuente"},
+            {"pai.config.background.video", "Video"},
+            {"pai.config.background.dynamic", "Dinamico"},
+            {"pai.config.background.level_id_src", "ID de nivel"},
+            {"pai.config.background.video_settings", "Ajustes de video"},
+            {"pai.config.background.src_image", "Imagen"},
+            {"pai.config.background.src_video", "Video"},
+            {"pai.config.background.src_shader", "Shader"},
+            {"pai.config.background.src_random", "Aleatorio"},
+            {"pai.config.background.src_dynamic", "Dinamico"},
+            {"pai.config.background.src_sameas", "Copiar de"},
+            {"pai.config.background.src_id", "ID nivel"},
+            {"pai.config.background.src_default", "Defecto"},
+            {"pai.config.filter", "Filtro"},
+            {"pai.config.shader_bg_list", "Fondo de shader"},
+            {"pai.config.module_on_btn", "Activar"},
+            {"pai.config.module_on_done", "Fondos activados!"},
+            {"pai.config.copy_all", "Copiar a todas"},
+            {"pai.config.copy_all_btn", "Copiar"},
+            {"pai.config.copy_all_confirm", "Todas las pantallas usaran el <cy>mismo fondo</c> que esta.\nSe sobrescribe lo que tengan ahora."},
+            {"pai.config.notify.copied_all", "Copiado a todas las pantallas!"},
             {"pai.config.status.default", "Defecto"},
             {"pai.config.status.custom_image", "Imagen personalizada"},
+            {"pai.config.status.video", "Video"},
+            {"pai.config.status.shader_bg", "Fondo de shader"},
             {"pai.config.status.random", "Aleatorio"},
             {"pai.config.status.level_id", "ID de nivel: "},
+            {"pai.config.status.same_as", "Mismo que "},
             {"pai.config.status.same_as_menu", "Mismo que Menu"},
+            {"pai.config.notify.video_set", "Fondo de video puesto!"},
+            {"pai.config.notify.shader_bg_set", "Fondo de shader puesto!"},
+            {"general.open", "Abrir"},
             {"pai.config.profile.title", "Foto de perfil"},
             {"pai.config.profile.info.title", "Perfil"},
             {"pai.config.profile.info.body", "<cy>Set Image</c>: Elige una imagen local.\n<cy>Clear</c>: Quita la imagen personalizada.\n<cy>Photo Shape</c>: Edita forma, borde y efectos.\nLa vista previa se actualiza al instante."},
@@ -686,24 +726,24 @@ void Localization::initTranslations() {
             {"pai.config.shaderbg.rings", "Anillos"},
             {"pai.config.shaderbg.waves", "Olas"},
             {"pai.config.shaderbg.hex", "Hex"},
-            {"pai.config.shaderbg.fireflies", "Luciérnagas"},
+            {"pai.config.shaderbg.fireflies", "Luciernagas"},
             {"pai.config.shaderbg.ripple", "Ondas"},
             {"pai.config.shaderbg.starfield", "Campo estelar"},
-            {"pai.config.shaderbg.tunnel", "Túnel"},
+            {"pai.config.shaderbg.tunnel", "Tunel"},
             {"pai.config.shaderbg.checker", "Cuadricula"},
             {"pai.config.shaderbg.digital_rain", "Lluvia digital"},
             {"pai.config.shaderbg.horizon", "Horizonte"},
             {"pai.config.shaderbg.fractal", "Fractal"},
             {"pai.config.shaderbg.gradient_flow", "Flujo degradado"},
             {"pai.config.shaderbg.bubbles", "Burbujas"},
-            {"pai.config.shaderbg.lightning", "Relámpago"},
-            {"pai.config.shaderbg.moire", "Moiré"},
+            {"pai.config.shaderbg.lightning", "Relampago"},
+            {"pai.config.shaderbg.moire", "Moire"},
             {"pai.config.shaderbg.crystal", "Cristal"},
             {"pai.config.shaderbg.embers", "Brasas"},
             {"pai.config.shaderbg.prism", "Prisma"},
             {"pai.config.shaderbg.soft_noise", "Ruido suave"},
             {"pai.config.shaderbg.pulse", "Pulso"},
-            {"pai.config.shaderbg.topo", "Topográfico"},
+            {"pai.config.shaderbg.topo", "Topografico"},
             {"pai.config.shaderbg.bloom_field", "Campo bloom"},
             {"pai.config.status.shader_bg", "Shader Background"},
             {"pai.config.notify.shader_bg_set", "Shader background set!"},
@@ -727,7 +767,6 @@ void Localization::initTranslations() {
             {"pai.config.clear_cache.message", "Esto <cr>eliminara todos los datos cacheados</c>:\nminiaturas, imagenes de perfil, musica de perfil,\nGIFs y configuracion de fondo de perfil.\n\nEstas seguro?"},
             {"pai.config.clear_cache.confirm", "Limpiar"},
 
-            // CaptureAssetBrowserPopup
             {"assets.title", "Explorador de Assets"},
             {"assets.no_objects", "No se encontraron objetos"},
             {"assets.no_playlayer", "PlayLayer no disponible"},
@@ -737,6 +776,13 @@ void Localization::initTranslations() {
             {"assets.show_all", "Mostrar todo"},
             {"assets.done", "Listo"},
             {"assets.count_fmt", "x{}"},
+            {"assets.search_hint", "Buscar ID"},
+            {"assets.collapse_all", "Contraer todo"},
+            {"assets.expand_all", "Expandir todo"},
+            {"assets.no_matches", "Ningun ID coincide"},
+            {"assets.solo", "Solo"},
+            {"assets.stats_hidden", "Ocultos:"},
+            {"assets.stats_matches", "Coinciden:"},
             {"assets.cat_blocks", "Bloques"},
             {"assets.cat_spikes", "Pinchos"},
             {"assets.cat_deco", "Decoracion"},
@@ -745,7 +791,6 @@ void Localization::initTranslations() {
             {"assets.cat_special", "Especial"},
             {"assets.cat_other", "Otros"},
 
-            // ProfileSettingsPopup
             {"profilesettings.title", "Ajustes de Perfil"},
             {"profilesettings.music_label", "Musica"},
             {"profilesettings.badge_label", "Insignia"},
@@ -757,7 +802,6 @@ void Localization::initTranslations() {
             {"profilesettings.comment_soon_body", "La personalizacion de comentarios estara disponible en la version <cy>1.1.0</c>."},
             {"profilesettings.info_ok", "OK"},
 
-            // Global Icons
             {"profilesettings.globalicon_label", "Icono Global"},
             {"globalicon.requires_moreicons_title", "More Icons requerido"},
             {"globalicon.requires_moreicons_body", "Esta funcion necesita el mod <cy>More Icons</c>. Instalalo para compartir y ver iconos custom."},
@@ -776,8 +820,12 @@ void Localization::initTranslations() {
             {"globalicon.downloaded", "Icono descargado!"},
             {"globalicon.download_failed", "No se pudo descargar el icono"},
             {"globalicon.no_icons", "Este usuario no comparte iconos custom"},
+            {"globalicon.err_unauthorized", "El servidor rechazo la API key (revisa PAIMON_API_KEY)"},
+            {"globalicon.err_outdated", "El servidor no tiene /api/icons/sync: falta redesplegarlo"},
+            {"globalicon.err_too_large", "Tus iconos pesan demasiado para subirlos"},
+            {"globalicon.err_server", "El servidor no pudo guardar los iconos"},
+            {"globalicon.err_offline", "No se pudo conectar al servidor de iconos"},
 
-            // PauseLayer video
             {"pause.video_open_error", "Error al abrir archivo de video"},
             {"pause.video_invalid", "Archivo de video invalido"},
             {"pause.video_too_large", "Video demasiado grande (max 50MB)"},
@@ -788,10 +836,8 @@ void Localization::initTranslations() {
             {"pause.render_error", "Failed to create render texture"},
             {"pause.render_read_error", "Failed to read rendered image"},
 
-            // ProfilePage
             {"profile.cant_rate_own", "No puedes calificar tu propio perfil!"},
 
-            // PaimonHubLayer
             {"pai.hub.title", "Paimbnails"},
             {"pai.hub.tab.home", "Inicio"},
             {"pai.hub.tab.news", "Noticias"},
@@ -832,7 +878,7 @@ void Localization::initTranslations() {
             {"pai.hub.forum.predef", "Predef"},
             {"pai.hub.forum.predef.title", "Elige Etiquetas Predefinidas"},
             {"pai.hub.forum.predef.hint", "Toca para activar/desactivar"},
-            {"pai.hub.forum.tags.empty", "Sin filtros — toca [Predef] o [+] para anadir etiquetas"},
+            {"pai.hub.forum.tags.empty", "Sin filtros - toca [Predef] o [+] para anadir etiquetas"},
             {"pai.hub.forum.cancel", "Cancelar"},
             {"pai.hub.forum.publish", "Publicar"},
             {"pai.hub.forum.tags", "Etiquetas:"},
@@ -844,7 +890,6 @@ void Localization::initTranslations() {
             {"pai.hub.forum.post", "Publicar"},
             {"pai.hub.forum.create_tag", "Crear Etiqueta Personalizada"},
             {"pai.hub.forum.new_tag", "Nombre de etiqueta"},
-            // Update system
             {"pai.hub.btn.update", "Buscar actualizacion"},
             {"pai.hub.version", "Version: {}"},
             {"pai.update.title", "Descargando actualizacion"},
@@ -857,7 +902,6 @@ void Localization::initTranslations() {
             {"pai.update.failed", "Error"},
             {"pai.update.uptodate", "Ya tienes la ultima version!"},
 
-            // Paimon Guide (Paso 1: traducciones minimas, set completo en paso 10)
             {"pai.guide.title",         "Guia de Paimon"},
             {"pai.guide.welcome",       "Hola! Soy <cy>Paimon</c>, tu guia. Pregunta donde configurar cosas como 'cursor', 'musica', 'discord'..."},
             {"pai.guide.placeholder",   "Preguntame lo que quieras..."},
@@ -872,23 +916,89 @@ void Localization::initTranslations() {
             {"pai.guide.cleared",       "Listo, chat limpio! En que te ayudo ahora?"},
             {"pai.guide.help.query",    "ayuda"},
 
-            // Startup incompatibilities
+            {"msgs.search.placeholder", "Buscar mensajes..."},
+            {"msgs.unread.count", "{} nuevos"},
+            {"msgs.unread.none", "Al dia"},
+            {"msgs.results", "{} resultados"},
+            {"msgs.selectread", "Sel. Leidos"},
+            {"msgs.selectread.none", "No hay mensajes leidos en esta pagina"},
+            {"msgs.selectread.some", "{} leidos seleccionados: usa la papelera para borrarlos"},
+            {"msgs.selectread.cleared", "Seleccion limpiada"},
+
             {"startup.incompat.title", "Mod incompatible detectado"},
             {"startup.incompat.body", "<cr>{}</c> es incompatible con Paimbnails.\n\n{}\n\n<cy>Se recomienda desactivarlo y reiniciar el juego.</c>"},
             {"startup.incompat.reason.level_thumbnails", "Se solapa con el sistema de miniaturas de Paimbnails y puede causar conflictos o comportamiento duplicado."},
             {"startup.incompat.keep_enabled", "Mantener"},
             {"startup.incompat.disable_restart", "Desactivar y reiniciar"},
             {"startup.incompat.disable_error_title", "No se pudo desactivar"},
-            {"startup.incompat.disable_error_missing", "El mod incompatible ya no esta cargado."}
+            {"startup.incompat.disable_error_missing", "El mod incompatible ya no esta cargado."},
+
+            {"garage-hub.title", "Extras del Kit"},
+            {"garage-hub.empty", "Nada por aqui"},
+            {"garage-hub.copied-icons", "Iconos Copiados"},
+            {"garage-hub.icon-store", "Tienda"},
+            {"garage-hub.gradients", "Degradados"},
+            {"garage-hub.swap-2p", "Kit del P2"},
+
+            {"icon-gallery.title", "Tienda de Iconos"},
+            {"icon-gallery.search", "Buscar por nombre o autor..."},
+            {"icon-gallery.loading", "Cargando datos del icono..."},
+            {"icon-gallery.cancel", "Cancelar"},
+            {"icon-gallery.tab.all", "Todos"},
+            {"icon-gallery.tab.installed", "Instalados"},
+            {"icon-gallery.footer.icons", "iconos"},
+            {"icon-gallery.footer.installed", "instalados"},
+            {"icon-gallery.filters.button", "Filtros"},
+            {"icon-gallery.filters.title", "Filtros"},
+            {"icon-gallery.filters.gamemode", "Gamemode"},
+            {"icon-gallery.filters.sort", "Orden"},
+            {"icon-gallery.filters.apply", "Aplicar"},
+            {"icon-gallery.filters.clear", "Limpiar"},
+            {"icon-gallery.sort.newest", "Recientes"},
+            {"icon-gallery.sort.oldest", "Antiguos"},
+            {"icon-gallery.sort.name", "Nombre"},
+            {"icon-gallery.sort.author", "Autor"},
+            {"icon-gallery.type.cube", "Cubo"},
+            {"icon-gallery.type.ship", "Nave"},
+            {"icon-gallery.type.ball", "Bola"},
+            {"icon-gallery.type.ufo", "OVNI"},
+            {"icon-gallery.type.wave", "Onda"},
+            {"icon-gallery.type.robot", "Robot"},
+            {"icon-gallery.type.spider", "Arana"},
+            {"icon-gallery.type.swing", "Swing"},
+            {"icon-gallery.type.jetpack", "Jetpack"},
+            {"icon-gallery.field.author", "Autor:"},
+            {"icon-gallery.field.type", "Gamemode:"},
+            {"icon-gallery.field.date", "Publicado:"},
+            {"icon-gallery.field.collab", "Colab:"},
+            {"icon-gallery.field.colors", "Colores:"},
+            {"icon-gallery.action.download", "Descargar"},
+            {"icon-gallery.action.equip", "Equipar"},
+            {"icon-gallery.action.equipped", "Equipado"},
+            {"icon-gallery.action.remove", "Quitar"},
+            {"icon-gallery.status.downloading", "Descargando..."},
+            {"icon-gallery.status.installed", "Icono instalado"},
+            {"icon-gallery.status.equipped", "Icono equipado"},
+            {"icon-gallery.status.equip_failed", "No se pudo equipar el icono"},
+            {"icon-gallery.status.removed", "Icono eliminado"},
+            {"icon-gallery.status.failed", "Fallo la descarga"},
+            {"icon-gallery.remove.title", "Quitar icono"},
+            {"icon-gallery.remove.body", "Se borrara del disco y de More Icons.\n\n<cy>Puedes volver a descargarlo cuando quieras.</c>"},
+            {"icon-gallery.empty.title", "Nada con esa busqueda"},
+            {"icon-gallery.empty.body", "Prueba con otras palabras, o abre los filtros y limpia el gamemode seleccionado."},
+            {"icon-gallery.empty.installed.title", "Todavia no descargaste iconos"},
+            {"icon-gallery.empty.installed.body", "Toca <cy>Todos</c> para ver la galeria completa y descargar el que te guste."},
+            {"icon-gallery.error.title", "No se pudo abrir la tienda"},
+            {"icon-gallery.moreicons.title", "Falta More Icons"},
+            {"icon-gallery.moreicons.body", "Los archivos del icono se guardaron, pero para usarlo en el juego necesitas el mod <cy>More Icons</c>.\n\nInstalalo desde el gestor de mods de Geode y vuelve a descargar el icono."},
+            {"icon-gallery.about.title", "Tienda de Iconos"},
+            {"icon-gallery.about.body", "Iconos hechos por la comunidad, servidos por <cy>iconsgallery.pages.dev</c> (galeria de Asterveila).\n\nAl descargar, el icono se instala en <cl>More Icons</c> y puedes equiparlo desde aqui o desde la garage.\n\nLas vistas previas se guardan en cache: la segunda visita abre al instante."}
         };
 
-        // English translations
         m_english = {
-            // Texture Studio (coming soon)
             {"texture-studio.coming.title", "Texture Studio"},
             {"texture-studio.coming.message", "Texture Studio will <cy>definitely arrive in v1.1.0</c>.\n\nThanks for your patience!"},
 
-            // CapturePreviewPopup
             {"preview.title", "Preview"},
             {"preview.borders_removed", "Borders already removed"},
             {"preview.no_borders", "No black borders detected"},
@@ -904,7 +1014,6 @@ void Localization::initTranslations() {
             {"preview.res_changed", "Resolution changed to {}"},
             {"preview.recapturing", "Recapturing..."},
 
-            // CaptureEditPopup
             {"edit.capture_title", "Edit"},
             {"edit.toggle_player", "Hide player"},
             {"edit.hide_player1", "Hide P1"},
@@ -916,7 +1025,6 @@ void Localization::initTranslations() {
             {"edit.download", "Download"},
             {"edit.edit_layers", "Edit layers"},
 
-            // CaptureLayerEditorPopup
             {"layers.title", "Edit Layers"},
             {"layers.player1", "Player 1"},
             {"layers.player2", "Player 2"},
@@ -932,12 +1040,17 @@ void Localization::initTranslations() {
             {"layers.beta_message", "<cr>This feature is in beta</c> and may have <cy>many bugs</c>.\nSome layers may not work correctly.\n\nAre you sure you want to continue?"},
             {"layers.beta_confirm", "Continue"},
             {"layers.beta_cancel", "Cancel"},
+            {"layers.filter_all", "Filter: All"},
+            {"layers.collapse_all", "Collapse all"},
+            {"layers.expand_all", "Expand all"},
+            {"layers.hint", "Tap a group to fold it"},
 
-            // Keybinds
+            {"preview.mini_loading", "Loading..."},
+            {"preview.mini_unavailable", "No preview"},
+
             {"keybind.capture_triggered", "Capture triggered"},
             {"keybind.capture_paused", "Cannot capture while paused"},
 
-            // PlayLayer & PauseLayer
             {"capture.action_name", "Capture Thumbnail"},
             {"capture.action_desc", "Takes a screenshot of the current level"},
             {"capture.error", "Failed to capture thumbnail"},
@@ -949,9 +1062,11 @@ void Localization::initTranslations() {
             {"capture.upload_success", "Thumbnail uploaded successfully!"},
             {"capture.suggested", "Thumbnail suggested"},
             {"capture.verifying", "Verifying permissions..."},
+            {"capture.needs_high_graphics", "Thumbnails require High Graphics quality. Enable it in GD settings."},
+            {"capture.needs_no_ldm", "Thumbnails cannot be taken with Low Detail Mode enabled. Disable it in GD settings."},
+            {"capture.player_dead", "Cannot capture while the player is dead. Wait until respawn."},
             {"capture.uploading_suggestion", "Uploading suggestion..."},
 
-            // PauseLayer specific
             {"pause.no_local_thumb", "No local thumbnail to upload"},
             {"pause.only_moderators", "Only moderators can upload thumbnails"},
             {"pause.access_error", "Failed to access local thumbnail"},
@@ -971,7 +1086,6 @@ void Localization::initTranslations() {
             {"pause.png_invalid", "Error: Invalid PNG file"},
             {"pause.process_thumbnail_error", "Failed to process thumbnail"},
 
-            // ProfilePage
             {"profile.username_error", "Could not get your username"},
             {"profile.verified", "Verified"},
             {"profile.verified_msg", "You are an <cg>approved moderator</c>! You can now upload and verify thumbnails."},
@@ -987,7 +1101,6 @@ void Localization::initTranslations() {
             {"profile.moderators_only", "Only moderators can access the verification center."},
             {"profile.cant_edit_other", "You can only edit your own profile background."},
 
-            // ProfileBgPickerPopup
             {"profilebg.picker.title", "Profile Background"},
             {"profilebg.picker.media", "Upload Media"},
             {"profilebg.picker.icon_gradient", "Icon Gradient"},
@@ -995,7 +1108,7 @@ void Localization::initTranslations() {
             {"profilebg.picker.video_audio_no_video", "You need a video background to enable Video Audio."},
             {"profilebg.picker.reset", "Reset"},
             {"profilebg.picker.info_title", "Profile Background"},
-            {"profilebg.picker.info_body", "<cg>Upload Media</c>: custom image, GIF or video.\n<cy>Icon Gradient</c>: use your player icon colors as a gradient — no upload needed.\n<cb>Video Audio</c>: use the video's audio as your profile music. Removes any configured music.\n<cr>Reset</c>: go back to the default background."},
+            {"profilebg.picker.info_body", "<cg>Upload Media</c>: custom image, GIF or video.\n<cy>Icon Gradient</c>: use your player icon colors as a gradient - no upload needed.\n<cb>Video Audio</c>: use the video's audio as your profile music. Removes any configured music.\n<cr>Reset</c>: go back to the default background."},
             {"profilebg.gradient.uploading", "Applying gradient..."},
             {"profilebg.gradient.applied", "Gradient applied to your profile"},
             {"profilebg.gradient.failed", "Could not apply gradient"},
@@ -1006,7 +1119,6 @@ void Localization::initTranslations() {
             {"profilebg.reset.applied", "Background reset"},
             {"profilebg.reset.failed", "Could not reset background"},
 
-            // ProfileBgGradientPopup
             {"profilebg.gradient.title", "Icon Gradient"},
             {"profilebg.gradient.speed", "Speed"},
             {"profilebg.gradient.apply", "Apply"},
@@ -1018,7 +1130,6 @@ void Localization::initTranslations() {
             {"profilebg.gradient.effect.shift",  "Shift"},
             {"profilebg.gradient.effect.slide",  "Slide"},
 
-            // LevelInfoLayer
             {"level.title", "Level Thumbnail"},
             {"level.no_thumbnail", "No thumbnail"},
             {"level.open_error", "Failed to open thumbnail"},
@@ -1034,7 +1145,6 @@ void Localization::initTranslations() {
             {"level.accept_button", "Accept"},
             {"level.download_button", "Download"},
 
-            // VerificationQueuePopup
             {"queue.title", "Verification center"},
             {"queue.verify_tab", "verify thumbnails"},
             {"queue.update_tab", "update"},
@@ -1061,7 +1171,6 @@ void Localization::initTranslations() {
             {"queue.rejected", "Thumbnail rejected and synced"},
             {"queue.reject_error", "Failed to sync rejection"},
 
-            // AddModeratorPopup
             {"addmod.enter_username", "Enter a username"},
             {"addmod.success_title", "Added"},
             {"addmod.success_msg", "Moderator added successfully"},
@@ -1079,7 +1188,6 @@ void Localization::initTranslations() {
             {"addmod.remove_error", "Could not remove moderator"},
             {"general.cancel", "Cancel"},
 
-            // Role manager + badges
             {"rolemgr.title", "Manage Roles"},
             {"rolemgr.role.mod", "Moderator"},
             {"rolemgr.role.vip", "VIP"},
@@ -1109,18 +1217,15 @@ void Localization::initTranslations() {
             {"badge.idea.desc", "An <cy>Idea</c> user contributed ideas or suggestions that shaped the <cg>Paimbnails</c> mod."},
 
 
-            // BulkUploadPopup
             {"bulk.title", "Bulk Upload"},
             {"bulk.select_folder_label", "Select a folder with thumbnails"},
             {"bulk.progress_label", "0 / 0 thumbnails"},
             {"bulk.info_text", "Files must follow this format:\nlevelID.png (e.g: 12345.png)\n\nOnly thumbnails for levels\nthat don't already have one will be uploaded."},
             {"bulk.scanning", "Scanning folder..."},
 
-            // GIFUploadPopup
             {"gif.upload.title", "Recorded GIF"},
             {"gif.label", "GIF"},
 
-            // SetDailyWeeklyPopup
             {"daily.title", "Set Featured Level"},
             {"daily.set_daily", "Set Daily"},
             {"daily.set_weekly", "Set Weekly"},
@@ -1133,10 +1238,8 @@ void Localization::initTranslations() {
             {"daily.error_weekly_title", "Error"},
             {"daily.error_weekly_msg", "Failed to set Weekly level."},
 
-            // ThumbnailViewPopup
             {"thumbview.title", "Thumbnail"},
 
-            // VerificationQueuePopup
             {"queue.banned_btn", "Banned"},
             {"queue.level_id", "Level {}"},
             {"queue.claimed_by_you", "Claimed by you"},
@@ -1157,7 +1260,6 @@ void Localization::initTranslations() {
             {"queue.claimed", "Level claimed"},
             {"queue.claim_error", "Error: {}"},
 
-            // ButtonEditOverlay
             {"edit.buttons_title", "Edit Buttons"},
             {"edit.panel_title", "Layout editor"},
             {"edit.showing_banner", "Showing: {}"},
@@ -1237,14 +1339,33 @@ void Localization::initTranslations() {
             {"menu_layout.lock_shapes_hint", "Background shapes locked for easy button editing"},
             {"menu_layout.unlock_shapes_hint", "Background shapes unlocked"},
 
-            // ForYou
             {"foryou.title", "For You"},
             {"foryou.tab", "For You"},
-            {"foryou.not_enough_data", "Play more levels to unlock recommendations"},
-            {"foryou.no_results", "No recommended levels found"},
-            {"foryou.tags_prompt_title", "Level Tags"},
-            {"foryou.tags_prompt", "Install <cy>Level Tags</c> to improve your recommendations with level tags!"},
-            {"foryou.tags_download", "Download"},
+            {"foryou.not_enough_data", "Play or like more levels for better recommendations"},
+            {"foryou.no_results", "Nothing new right now. Play or like a few more levels"},
+            {"foryou.tags_gate_title", "Level Tags"},
+            {"foryou.tags_gate_body", "For You uses Level Tags to know what a level actually is: its style, its theme and how it plays.\n\nWithout the mod, recommendations can only go by difficulty and creator."},
+            {"foryou.tags_gate_install", "Install"},
+            {"foryou.tags_gate_later", "Not now"},
+            {"foryou.dismissed", "We won't recommend that level again"},
+            {"foryou.reason_tag", "Because you like {} levels"},
+            {"foryou.reason_fav_creator", "From {}, one of your favourites"},
+            {"foryou.reason_creator", "More from {}"},
+            {"foryou.reason_song", "Uses a song you keep playing"},
+            {"foryou.reason_difficulty", "The difficulty you usually play"},
+            {"foryou.reason_discover", "Something new to discover"},
+            {"foryou.tags_button", "Tags"},
+            {"foryou.tags_popup_title", "Tags you like"},
+            {"foryou.tags_popup_hint", "Tap once to prioritise it, twice to avoid it"},
+            {"foryou.tags_legend_love", "Prioritise"},
+            {"foryou.tags_legend_avoid", "Avoid"},
+            {"foryou.tags_legend_neutral", "Neutral"},
+            {"foryou.tags_popup_loading", "Loading tags..."},
+            {"foryou.tags_popup_unavailable", "Install Level Tags to pick tags"},
+            {"foryou.tags_cat_style", "Style"},
+            {"foryou.tags_cat_theme", "Theme"},
+            {"foryou.tags_cat_meta", "Meta"},
+            {"foryou.tags_cat_gameplay", "Gameplay"},
             {"foryou.fav_creator_added", "Creator added to favorites"},
             {"foryou.fav_creator_removed", "Creator removed from favorites"},
             {"foryou.fav_level_added", "Level added to favorites"},
@@ -1252,6 +1373,7 @@ void Localization::initTranslations() {
             {"foryou.prefs_title", "What levels do you like?"},
             {"foryou.prefs_subtitle", "Choose your preferences to improve recommendations"},
             {"foryou.prefs_difficulty", "Difficulty"},
+            {"foryou.prefs_demon_hint", "Pick Demon to filter by sub-difficulty"},
             {"foryou.prefs_gamemode", "Game Mode"},
             {"foryou.prefs_classic", "Classic"},
             {"foryou.prefs_platformer", "Platformer"},
@@ -1267,12 +1389,9 @@ void Localization::initTranslations() {
             {"foryou.prefs_star_rated", "Star-rated"},
             {"foryou.prefs_featured", "Featured"},
             {"foryou.prefs_epic", "Epic"},
-            {"foryou.prefs_demon_diff", "Demon Diff"},
             {"foryou.prefs_filters", "Filters"},
             {"foryou.info_difficulty_title", "Difficulty"},
             {"foryou.info_difficulty_desc", "Pick the <cy>difficulty</c> you prefer.\nAffects the levels shown in your\n<cg>For You</c> feed."},
-            {"foryou.info_demon_title", "Demon Difficulty"},
-            {"foryou.info_demon_desc", "Only applies if you selected <cy>Demon</c> above.\nPick your preferred sub-difficulty:\n<cy>Easy, Medium, Hard, Insane, Extreme</c>\nor <cg>Any</c> to skip this filter."},
             {"foryou.info_mode_title", "Game Mode"},
             {"foryou.info_mode_desc", "<cy>Classic</c>: traditional levels.\n<cy>Platformer</c>: platformer-style levels.\n<cy>Both</c>: no mode preference."},
             {"foryou.info_length_title", "Length"},
@@ -1286,11 +1405,9 @@ void Localization::initTranslations() {
             {"foryou.prefs_rating_legendary", "Legendary"},
             {"foryou.prefs_rating_mythic", "Mythic"},
             {"foryou.info_rating_title", "Level Rating"},
-            {"foryou.info_rating_desc", "Tap the icon to cycle through rating tiers:\n<cy>Star-rated</c> → <cy>Featured</c> → <cy>Epic</c> →\n<cy>Legendary</c> → <cy>Mythic</c>.\nEach tier includes the ones before it."},
+            {"foryou.info_rating_desc", "Tap the icon to cycle through rating tiers:\n<cy>Star-rated</c> -> <cy>Featured</c> -> <cy>Epic</c> ->\n<cy>Legendary</c> -> <cy>Mythic</c>.\nEach tier includes the ones before it."},
             {"foryou.fav_levels_title", "Favorite Levels"},
-            {"foryou.coming_soon", "Coming soon"},
 
-            // LeaderboardsLayer
             {"leaderboard.daily", "Daily"},
             {"leaderboard.weekly", "Weekly"},
             {"leaderboard.all_time", "All Time"},
@@ -1305,17 +1422,14 @@ void Localization::initTranslations() {
             {"leaderboard.unknown", "Unknown"},
             {"mods.title", "Paimbnails Moderators"},
 
-            // CommunityHubLayer
             {"community.title", "Community Hub"},
             {"community.tab_mods", "Moderators"},
             {"community.tab_creators", "Top Creators"},
             {"community.tab_thumbnails", "Top Thumbnails"},
             {"community.tab_compat_mods", "Compat. Mods"},
             {"community.compat_mods_title", "Compatible Mods"},
-            {"community.compat_mods_version", "Available for version 1.1.0"},
             {"community.compat_mods_desc", "List of mods compatible with Paimbnails"},
-            {"community.compat_mods_soon", "More mods coming soon..."},
-            // CommunityHub info buttons
+            {"community.compat_mods_source", "Mods come from modly.web.app"},
             {"community.info_mods_title", "Moderators"},
             {"community.info_mods_body", "List of official <cy>Paimbnails moderators</c>.\nThey can upload, verify and manage thumbnails.\n<cr>Admins</c> have additional permissions."},
             {"community.info_creators_title", "Top Creators"},
@@ -1323,7 +1437,7 @@ void Localization::initTranslations() {
             {"community.info_thumbs_title", "Top Thumbnails"},
             {"community.info_thumbs_body", "The highest-rated thumbnails by the community.\nYou can vote on thumbnails from the level info screen."},
             {"community.info_compat_title", "Compatible Mods"},
-            {"community.info_compat_body", "Geometry Dash mods compatible with Paimbnails.\nAvailable starting from version <cy>1.1.0</c>."},
+            {"community.info_compat_body", "Geometry Dash mods and resource packs published on <cy>modly.web.app</c>.\nTap a mod to see its card, screenshots and comments.\nTap the author to open their <cg>developer profile</c>."},
             {"community.loading", "Loading..."},
             {"community.error", "Failed to load data"},
             {"community.no_data", "No data available"},
@@ -1335,6 +1449,22 @@ void Localization::initTranslations() {
             {"community.admin", "Admin"},
             {"community.mod", "Mod"},
             {"community.level", "Level"},
+            {"modly.by", "by"},
+            {"modly.downloads", "downloads"},
+            {"modly.download", "Download"},
+            {"modly.comments", "Comments"},
+            {"modly.comments_title", "Comments"},
+            {"modly.comments_empty", "No comments yet"},
+            {"modly.comments_error", "Could not load the comments"},
+            {"modly.loading", "Loading..."},
+            {"modly.type_mod", "Mod"},
+            {"modly.type_pack", "Pack"},
+            {"modly.unknown_author", "Anonymous"},
+            {"modly.no_description", "This project has no description"},
+            {"modly.no_bio", "This user has not written a description"},
+            {"modly.profile_title", "Profile"},
+            {"modly.projects", "Projects"},
+            {"modly.no_projects", "No projects published yet"},
             {"leaderboard.no_refreshes", "No more refreshes available today!"},
             {"leaderboard.no_gamemanager", "Could not get GameManager"},
             {"leaderboard.empty_username", "Empty username"},
@@ -1347,15 +1477,12 @@ void Localization::initTranslations() {
             {"leaderboard.unknown_error", "Unknown error"},
             {"leaderboard.synced", "Synced with server!"},
 
-            // GIFRecordSettingsPopup
             {"gif.start", "Start"},
 
-            // General
             {"general.error", "Error"},
             {"general.ok", "OK"},
             {"general.close", "Close"},
 
-            // Missing keys added
             {"level.no_thumbnail_text", "No thumbnail"},
             {"level.saving_mod_folder", "Saving to mod folder..."},
             {"level.error_prefix", "Error: "},
@@ -1380,7 +1507,6 @@ void Localization::initTranslations() {
             {"level.confirm_delete_msg", "Are you sure you want to delete this thumbnail? This will also remove the creator's rating points."},
             {"level.thumbnail_deleted", "Thumbnail deleted"},
 
-            // Report Popup
             {"report.title", "Report Thumbnail"},
             {"report.cancel", "Cancel"},
             {"report.send", "Send"},
@@ -1389,7 +1515,6 @@ void Localization::initTranslations() {
             {"report.sent_synced", "Report sent and synced: "},
             {"report.saved_local", "Report saved locally (offline)"},
 
-            // PauseLayer
             {"pause.gif_not_supported", "GIF files not supported on this platform"},
             {"pause.process_image_error", "Error: Could not process image"},
             {"pause.create_texture_error", "Error: Could not create texture"},
@@ -1397,7 +1522,6 @@ void Localization::initTranslations() {
             {"pause.username_error", "Error: Could not get username"},
             {"pause.gif_recording_started", "GIF recording started"},
 
-            // Ban System
             {"ban.list.title", "Banned Users"},
             {"ban.list.loading", "Loading..."},
             {"ban.list.empty", "No bans"},
@@ -1422,7 +1546,6 @@ void Localization::initTranslations() {
             {"ban.profile.self_ban", "You cannot ban yourself"},
             {"ban.profile.read_error", "Could not read username"},
 
-            // Profile Music
             {"music.title", "Profile Music"},
             {"music.load_song", "Load"},
             {"music.play_preview", "Play"},
@@ -1489,7 +1612,6 @@ void Localization::initTranslations() {
             {"music.ok", "OK"},
             {"music.loading_default", "Loading..."},
 
-            // SongSearchPopup (music search)
             {"music.search.title", "Search Music"},
             {"music.search.placeholder", "Search by name or artist..."},
             {"music.search.empty", "No songs match"},
@@ -1497,8 +1619,7 @@ void Localization::initTranslations() {
             {"music.search.results_fmt", "{} results"},
             {"music.search.button", "Search"},
 
-            // PaiConfigLayer
-            {"pai.config.title", "Paimon Settings"},
+            {"pai.config.title", "Background Editor"},
             {"pai.config.tab.backgrounds", "Backgrounds"},
             {"pai.config.tab.profile", "Profile"},
             {"pai.config.tab.extras", "Extras"},
@@ -1521,11 +1642,42 @@ void Localization::initTranslations() {
             {"pai.config.background.shader", "Shader:"},
             {"pai.config.background.shader_bg", "Shader BG"},
             {"pai.config.background.blocked_message", "Level Info uses its own\nthumbnail background.\n\nChange in Mod Settings\n> Background Style."},
+            {"pai.config.screens", "Screens"},
+            {"pai.config.reset_screen", "Reset"},
+            {"pai.config.module_off", "Backgrounds module is OFF"},
+            {"pai.config.preview.show_ui", "Game UI"},
+            {"pai.config.background.source", "Source"},
+            {"pai.config.background.video", "Video"},
+            {"pai.config.background.dynamic", "Dynamic"},
+            {"pai.config.background.level_id_src", "Level ID"},
+            {"pai.config.background.video_settings", "Video Settings"},
+            {"pai.config.background.src_image", "Image"},
+            {"pai.config.background.src_video", "Video"},
+            {"pai.config.background.src_shader", "Shader"},
+            {"pai.config.background.src_random", "Random"},
+            {"pai.config.background.src_dynamic", "Dynamic"},
+            {"pai.config.background.src_sameas", "Copy from"},
+            {"pai.config.background.src_id", "Level ID"},
+            {"pai.config.background.src_default", "Default"},
+            {"pai.config.filter", "Filter"},
+            {"pai.config.shader_bg_list", "Shader Background"},
+            {"pai.config.module_on_btn", "Turn on"},
+            {"pai.config.module_on_done", "Backgrounds enabled!"},
+            {"pai.config.copy_all", "Copy to all"},
+            {"pai.config.copy_all_btn", "Copy"},
+            {"pai.config.copy_all_confirm", "Every screen will use the <cy>same background</c> as this one.\nThis overwrites their current settings."},
+            {"pai.config.notify.copied_all", "Copied to every screen!"},
             {"pai.config.status.default", "Default"},
             {"pai.config.status.custom_image", "Custom Image"},
+            {"pai.config.status.video", "Video"},
+            {"pai.config.status.shader_bg", "Shader Background"},
             {"pai.config.status.random", "Random"},
             {"pai.config.status.level_id", "Level ID: "},
+            {"pai.config.status.same_as", "Same as "},
             {"pai.config.status.same_as_menu", "Same as Menu"},
+            {"pai.config.notify.video_set", "Video background set!"},
+            {"pai.config.notify.shader_bg_set", "Shader background set!"},
+            {"general.open", "Open"},
             {"pai.config.profile.title", "Profile Picture"},
             {"pai.config.profile.info.title", "Profile"},
             {"pai.config.profile.info.body", "<cy>Set Image</c>: Pick a local image.\n<cy>Clear</c>: Remove custom image.\n<cy>Photo Shape</c>: Edit shape, border, effects.\nPreview updates in real-time."},
@@ -1538,7 +1690,7 @@ void Localization::initTranslations() {
             {"pai.config.extras.custom_cursor", "Custom Cursor"},
             {"pai.config.extras.beta", "BETA"},
             {"pai.config.extras.pet_info.title", "Pet"},
-            {"pai.config.extras.pet_info.body", "A cute pet follows your cursor.\nThis feature is in <cr>BETA</c> — expect bugs!"},
+            {"pai.config.extras.pet_info.body", "A cute pet follows your cursor.\nThis feature is in <cr>BETA</c> - expect bugs!"},
             {"pai.config.extras.custom_cursor_info.title", "Custom Cursor"},
             {"pai.config.extras.custom_cursor_info.body", "Open the full custom cursor editor.\nFrom there you can add images, assign idle/move slots,\nand tweak scale, opacity, trail, and active layers."},
             {"pai.config.extras.transitions", "Transitions"},
@@ -1610,7 +1762,6 @@ void Localization::initTranslations() {
             {"pai.config.clear_cache.message", "This will <cr>delete all cached data</c>:\nthumbnails, profile images, profile music,\nGIFs, and profile background settings.\n\nAre you sure?"},
             {"pai.config.clear_cache.confirm", "Clear"},
 
-            // CaptureAssetBrowserPopup
             {"assets.title", "Asset Browser"},
             {"assets.no_objects", "No objects found"},
             {"assets.no_playlayer", "PlayLayer not available"},
@@ -1620,6 +1771,13 @@ void Localization::initTranslations() {
             {"assets.show_all", "Show all"},
             {"assets.done", "Done"},
             {"assets.count_fmt", "x{}"},
+            {"assets.search_hint", "Search ID"},
+            {"assets.collapse_all", "Collapse all"},
+            {"assets.expand_all", "Expand all"},
+            {"assets.no_matches", "No ID matches"},
+            {"assets.solo", "Solo"},
+            {"assets.stats_hidden", "Hidden:"},
+            {"assets.stats_matches", "Matches:"},
             {"assets.cat_blocks", "Blocks"},
             {"assets.cat_spikes", "Spikes"},
             {"assets.cat_deco", "Decoration"},
@@ -1628,7 +1786,6 @@ void Localization::initTranslations() {
             {"assets.cat_special", "Special"},
             {"assets.cat_other", "Other"},
 
-            // ProfileSettingsPopup
             {"profilesettings.title", "Profile Settings"},
             {"profilesettings.music_label", "Music"},
             {"profilesettings.badge_label", "Badge"},
@@ -1640,7 +1797,6 @@ void Localization::initTranslations() {
             {"profilesettings.comment_soon_body", "Comment background customization will be available in version <cy>1.1.0</c>."},
             {"profilesettings.info_ok", "OK"},
 
-            // Global Icons
             {"profilesettings.globalicon_label", "Global Icon"},
             {"globalicon.requires_moreicons_title", "More Icons required"},
             {"globalicon.requires_moreicons_body", "This feature needs the <cy>More Icons</c> mod. Install it to share and view custom icons."},
@@ -1659,8 +1815,12 @@ void Localization::initTranslations() {
             {"globalicon.downloaded", "Icon downloaded!"},
             {"globalicon.download_failed", "Could not download icon"},
             {"globalicon.no_icons", "This user doesn't share custom icons"},
+            {"globalicon.err_unauthorized", "The server rejected the API key (check PAIMON_API_KEY)"},
+            {"globalicon.err_outdated", "The server has no /api/icons/sync: it needs redeploying"},
+            {"globalicon.err_too_large", "Your icons are too large to upload"},
+            {"globalicon.err_server", "The server could not store the icons"},
+            {"globalicon.err_offline", "Could not reach the icon server"},
 
-            // PauseLayer video
             {"pause.video_open_error", "Could not open video file"},
             {"pause.video_invalid", "Invalid video file"},
             {"pause.video_too_large", "Video too large (max 50MB)"},
@@ -1671,10 +1831,8 @@ void Localization::initTranslations() {
             {"pause.render_error", "Failed to create render texture"},
             {"pause.render_read_error", "Failed to read rendered image"},
 
-            // ProfilePage
             {"profile.cant_rate_own", "You can't rate your own profile!"},
 
-            // PaimonHubLayer
             {"pai.hub.title", "Paimbnails"},
             {"pai.hub.tab.home", "Home"},
             {"pai.hub.tab.news", "News"},
@@ -1701,7 +1859,23 @@ void Localization::initTranslations() {
             {"pai.hub.news.version.title", "Version {} installed"},
             {"pai.hub.news.version.desc", "Your current version of Paimbnails."},
             {"pai.hub.forum.title", "Community Forum"},
+            {"pai.hub.forum.cancel", "Cancel"},
+            {"pai.hub.forum.subtitle", "Share guides, tips and creations with the community."},
             {"pai.hub.forum.create", "+ New Post"},
+            {"pai.hub.forum.create.cta", "+ New Post"},
+            {"pai.hub.forum.create.title", "Create New Post"},
+            {"pai.hub.forum.create.subtitle", "Pick a clear title, add details and tags."},
+            {"pai.hub.forum.create.tags", "Tags (tap to toggle)"},
+            {"pai.hub.forum.create.tags_hint", "Tap a tag above to add it to your post"},
+            {"pai.hub.forum.predef", "Predef"},
+            {"pai.hub.forum.predef.title", "Pick Predefined Tags"},
+            {"pai.hub.forum.predef.hint", "Tap to toggle"},
+            {"pai.hub.forum.sort", "Sort:"},
+            {"pai.hub.forum.sort.recent", "Recent"},
+            {"pai.hub.forum.sort.top", "Top"},
+            {"pai.hub.forum.sort.liked", "Liked"},
+            {"pai.hub.forum.publish", "Publish"},
+            {"pai.hub.forum.tags.empty", "No filters - tap [Predef] or [+] to add tags"},
             {"pai.hub.forum.tags", "Tags:"},
             {"pai.hub.forum.no_posts", "No posts yet. Be the first to create one!"},
             {"pai.hub.forum.create_post", "Create New Post"},
@@ -1711,7 +1885,6 @@ void Localization::initTranslations() {
             {"pai.hub.forum.post", "Post"},
             {"pai.hub.forum.create_tag", "Create Custom Tag"},
             {"pai.hub.forum.new_tag", "Tag name"},
-            // Update system
             {"pai.hub.btn.update", "Check for update"},
             {"pai.hub.version", "Version: {}"},
             {"pai.update.title", "Downloading update"},
@@ -1724,7 +1897,6 @@ void Localization::initTranslations() {
             {"pai.update.failed", "Error"},
             {"pai.update.uptodate", "You're up to date!"},
 
-            // Paimon Guide (Paso 1: minimal entries, full set in step 10)
             {"pai.guide.title",         "Paimon Guide"},
             {"pai.guide.welcome",       "Hi! I'm <cy>Paimon</c>, your guide. Ask me where to configure things like 'cursor', 'music', 'discord'..."},
             {"pai.guide.placeholder",   "Ask me anything..."},
@@ -1739,13 +1911,82 @@ void Localization::initTranslations() {
             {"pai.guide.cleared",       "Done, fresh chat! What can I help with now?"},
             {"pai.guide.help.query",    "help"},
 
-            // Startup incompatibilities
+            {"msgs.search.placeholder", "Search messages..."},
+            {"msgs.unread.count", "{} new"},
+            {"msgs.unread.none", "All read"},
+            {"msgs.results", "{} results"},
+            {"msgs.selectread", "Sel. Read"},
+            {"msgs.selectread.none", "No read messages on this page"},
+            {"msgs.selectread.some", "{} read messages selected: use the trash to delete them"},
+            {"msgs.selectread.cleared", "Selection cleared"},
+
             {"startup.incompat.title", "Incompatible Mod Detected"},
             {"startup.incompat.body", "<cr>{}</c> is incompatible with Paimbnails.\n\n{}\n\n<cy>It is recommended to disable it and restart the game.</c>"},
             {"startup.incompat.reason.level_thumbnails", "It overlaps with Paimbnails' thumbnail system and can cause conflicts or duplicate behavior."},
             {"startup.incompat.keep_enabled", "Keep Enabled"},
             {"startup.incompat.disable_restart", "Disable and Restart"},
             {"startup.incompat.disable_error_title", "Couldn't disable mod"},
-            {"startup.incompat.disable_error_missing", "The incompatible mod is no longer loaded."}
+            {"startup.incompat.disable_error_missing", "The incompatible mod is no longer loaded."},
+
+            {"garage-hub.title", "Icon Kit Extras"},
+            {"garage-hub.empty", "Nothing here"},
+            {"garage-hub.copied-icons", "Copied Icons"},
+            {"garage-hub.icon-store", "Icon Store"},
+            {"garage-hub.gradients", "Gradients"},
+            {"garage-hub.swap-2p", "Swap 2P Kit"},
+
+            {"icon-gallery.title", "Icon Store"},
+            {"icon-gallery.search", "Search by name or author..."},
+            {"icon-gallery.loading", "Loading icon data..."},
+            {"icon-gallery.cancel", "Cancel"},
+            {"icon-gallery.tab.all", "All"},
+            {"icon-gallery.tab.installed", "Installed"},
+            {"icon-gallery.footer.icons", "icons"},
+            {"icon-gallery.footer.installed", "installed"},
+            {"icon-gallery.filters.button", "Filters"},
+            {"icon-gallery.filters.title", "Filters"},
+            {"icon-gallery.filters.gamemode", "Gamemode"},
+            {"icon-gallery.filters.sort", "Sort by"},
+            {"icon-gallery.filters.apply", "Apply"},
+            {"icon-gallery.filters.clear", "Clear"},
+            {"icon-gallery.sort.newest", "Newest"},
+            {"icon-gallery.sort.oldest", "Oldest"},
+            {"icon-gallery.sort.name", "Name"},
+            {"icon-gallery.sort.author", "Author"},
+            {"icon-gallery.type.cube", "Cube"},
+            {"icon-gallery.type.ship", "Ship"},
+            {"icon-gallery.type.ball", "Ball"},
+            {"icon-gallery.type.ufo", "UFO"},
+            {"icon-gallery.type.wave", "Wave"},
+            {"icon-gallery.type.robot", "Robot"},
+            {"icon-gallery.type.spider", "Spider"},
+            {"icon-gallery.type.swing", "Swing"},
+            {"icon-gallery.type.jetpack", "Jetpack"},
+            {"icon-gallery.field.author", "Author:"},
+            {"icon-gallery.field.type", "Gamemode:"},
+            {"icon-gallery.field.date", "Published:"},
+            {"icon-gallery.field.collab", "Collab:"},
+            {"icon-gallery.field.colors", "Colors:"},
+            {"icon-gallery.action.download", "Download"},
+            {"icon-gallery.action.equip", "Equip"},
+            {"icon-gallery.action.equipped", "Equipped"},
+            {"icon-gallery.action.remove", "Remove"},
+            {"icon-gallery.status.downloading", "Downloading..."},
+            {"icon-gallery.status.installed", "Icon installed"},
+            {"icon-gallery.status.equipped", "Icon equipped"},
+            {"icon-gallery.status.equip_failed", "Couldn't equip the icon"},
+            {"icon-gallery.status.removed", "Icon removed"},
+            {"icon-gallery.status.failed", "Download failed"},
+            {"icon-gallery.remove.title", "Remove icon"},
+            {"icon-gallery.remove.body", "It will be deleted from disk and from More Icons.\n\n<cy>You can download it again any time.</c>"},
+            {"icon-gallery.empty.title", "Nothing matches that search"},
+            {"icon-gallery.empty.body", "Try other words, or open the filters and clear the selected gamemode."},
+            {"icon-gallery.empty.installed.title", "You haven't downloaded any icons yet"},
+            {"icon-gallery.empty.installed.body", "Tap <cy>All</c> to browse the full gallery and download the ones you like."},
+            {"icon-gallery.error.title", "Couldn't open the store"},
+            {"icon-gallery.moreicons.title", "More Icons is missing"},
+            {"icon-gallery.moreicons.body", "The icon files were saved, but to use it in game you need the <cy>More Icons</c> mod.\n\nInstall it from Geode's mod manager and download the icon again."},
+            {"icon-gallery.about.title", "Icon Store"},
+            {"icon-gallery.about.body", "Community-made icons, served by <cy>iconsgallery.pages.dev</c> (gallery by Asterveila).\n\nDownloading installs the icon into <cl>More Icons</c>, and you can equip it from here or from the garage.\n\nPreviews are cached: the second visit opens instantly."}
         };
 }

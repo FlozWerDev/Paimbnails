@@ -248,6 +248,14 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
         this->getScheduler()->scheduleSelector(schedule_selector(InfoBtnHookFLAlertLayer::checkAndAddButton), this, 0.0f, 0, 0.0f, false);
     }
 
+    $override
+    void onExit() {
+        // The selector fires one frame later; if the popup closes first the
+        // scheduler would tick into a freed layer.
+        this->unschedule(schedule_selector(InfoBtnHookFLAlertLayer::checkAndAddButton));
+        FLAlertLayer::onExit();
+    }
+
     void checkAndAddButton(float) {
         // Don't add the button on our own popup
         if (this->getID() == "simple-thumbnail-popup"_spr) return;

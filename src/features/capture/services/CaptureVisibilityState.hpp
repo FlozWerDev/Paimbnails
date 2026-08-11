@@ -26,7 +26,7 @@ namespace paimon::capture {
     }
 
     struct VisibilityRecord {
-        cocos2d::CCNode* node = nullptr;
+        geode::WeakRef<cocos2d::CCNode> node;
         bool visible = true;
     };
 
@@ -34,7 +34,8 @@ namespace paimon::capture {
         if (!node) return false;
 
         for (auto const& record : records) {
-            if (record.node == node) {
+            auto recordedNode = record.node.lock();
+            if (recordedNode.data() == node) {
                 outVisible = record.visible;
                 return true;
             }
@@ -65,7 +66,9 @@ namespace paimon::capture {
 
     inline void restoreVisibility(std::vector<VisibilityRecord> const& records) {
         for (auto const& record : records) {
-            if (record.node) record.node->setVisible(record.visible);
+            if (auto node = record.node.lock()) {
+                node->setVisible(record.visible);
+            }
         }
     }
 }

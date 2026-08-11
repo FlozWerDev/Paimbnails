@@ -8,8 +8,7 @@ using namespace cocos2d;
 #define M_PI 3.14159265358979323846
 #endif
 
-// All shapes are drawn centered in the draw area (offset = half,half). The
-// caller does NOT move the stencil node; the vertices are already positioned.
+// Shapes are centered in local draw coordinates; callers position the container.
 
 static CCDrawNode* drawRegularPolygon(float half, int sides, float radius) {
     auto draw = PaimonDrawNode::create();
@@ -72,22 +71,18 @@ static CCDrawNode* drawRoundedSquare(float size, float radius) {
     float r = std::min(radius, h * 0.5f);
     std::vector<CCPoint> verts;
     const int arcSegs = 16;
-    // bottom-right corner
     for (int i = 0; i <= arcSegs; i++) {
         float a = -M_PI / 2.0f + (M_PI / 2.0f) * i / arcSegs;
         verts.push_back(ccp(h - r + r * cosf(a), h - r + r * sinf(a)));
     }
-    // bottom-left corner
     for (int i = 0; i <= arcSegs; i++) {
         float a = -M_PI + (M_PI / 2.0f) * i / arcSegs;
         verts.push_back(ccp(r + r * cosf(a), h - r + r * sinf(a)));
     }
-    // top-left corner
     for (int i = 0; i <= arcSegs; i++) {
         float a = -3.0f * M_PI / 2.0f + (M_PI / 2.0f) * i / arcSegs;
         verts.push_back(ccp(r + r * cosf(a), size - h + r + r * sinf(a)));
     }
-    // top-right corner
     for (int i = 0; i <= arcSegs; i++) {
         float a = 0.0f + (M_PI / 2.0f) * i / arcSegs;
         verts.push_back(ccp(size - h + r + r * cosf(a), size - h + r + r * sinf(a)));
@@ -103,12 +98,10 @@ static CCDrawNode* drawPill(float half, float width, float height) {
     float hh = height * 0.5f - r;
     std::vector<CCPoint> verts;
     const int arcSegs = 24;
-    // right semicircle
     for (int i = 0; i <= arcSegs; i++) {
         float a = -M_PI / 2.0f + M_PI * i / arcSegs;
         verts.push_back(ccp(half + hw + r + r * cosf(a), half + hh + r * sinf(a)));
     }
-    // left semicircle
     for (int i = 0; i <= arcSegs; i++) {
         float a = M_PI / 2.0f + M_PI * i / arcSegs;
         verts.push_back(ccp(half + r + r * cosf(a), half + hh + r * sinf(a)));
@@ -124,7 +117,6 @@ static CCDrawNode* drawArch(float half, float size) {
     std::vector<CCPoint> outer;
     std::vector<CCPoint> inner;
     const int segs = 48;
-    // top arc
     for (int i = 0; i <= segs; i++) {
         float a = M_PI * i / segs;
         outer.push_back(ccp(half + r * cosf(a), half + r * sinf(a)));
@@ -141,12 +133,10 @@ static CCDrawNode* drawTeardrop(float half, float size) {
     float r = size * 0.4f;
     std::vector<CCPoint> verts;
     const int segs = 48;
-    // bottom semicircle
     for (int i = 0; i <= segs; i++) {
         float a = -M_PI / 2.0f + M_PI * i / segs;
         verts.push_back(ccp(half + r * cosf(a), half + r * sinf(a) - r * 0.3f));
     }
-    // top point
     verts.push_back(ccp(half, half + size * 0.45f));
     draw->drawPolygon(verts.data(), verts.size(), ccc4f(1, 1, 1, 1), 0, ccc4f(0, 0, 0, 0));
     return draw;
@@ -157,17 +147,14 @@ static CCDrawNode* drawCloud(float half, float size) {
     float r = size * 0.25f;
     std::vector<CCPoint> verts;
     const int segs = 32;
-    // left circle
     for (int i = 0; i <= segs; i++) {
         float a = M_PI * 0.6f + M_PI * 0.8f * i / segs;
         verts.push_back(ccp(half - r * 0.7f + r * cosf(a), half + r * 0.2f + r * sinf(a)));
     }
-    // right circle
     for (int i = 0; i <= segs; i++) {
         float a = -M_PI * 0.2f + M_PI * 0.8f * i / segs;
         verts.push_back(ccp(half + r * 0.7f + r * cosf(a), half + r * 0.2f + r * sinf(a)));
     }
-    // top-center circle (upper arc)
     for (int i = 0; i <= segs; i++) {
         float a = M_PI * 0.15f + M_PI * 0.7f * i / segs;
         verts.push_back(ccp(half + r * cosf(a), half + r * 0.8f + r * sinf(a)));
@@ -195,12 +182,10 @@ static CCDrawNode* drawMoon(float half, float size) {
     float offset = r * 0.4f;
     std::vector<CCPoint> verts;
     const int segs = 48;
-    // outer arc
     for (int i = 0; i <= segs; i++) {
         float a = -M_PI * 0.6f + M_PI * 1.2f * i / segs;
         verts.push_back(ccp(half + r * cosf(a), half + r * sinf(a)));
     }
-    // inner arc (curving inward)
     for (int i = segs; i >= 0; i--) {
         float a = -M_PI * 0.5f + M_PI * 1.0f * i / segs;
         float innerR = r * 0.65f;
@@ -216,17 +201,13 @@ static CCDrawNode* drawShield(float half, float size) {
     float h = size * 0.5f;
     std::vector<CCPoint> verts;
     const int segs = 24;
-    // upper-left side
     verts.push_back(ccp(half, half + h));
     verts.push_back(ccp(half - w, half + h * 0.6f));
-    // lower-left curve
     for (int i = 0; i <= segs; i++) {
         float a = M_PI + M_PI * 0.5f * i / segs;
         verts.push_back(ccp(half + w * cosf(a), half - h * 0.3f + h * 0.5f * sinf(a)));
     }
-    // bottom point
     verts.push_back(ccp(half, half - h));
-    // lower-right curve
     for (int i = 0; i <= segs; i++) {
         float a = -M_PI * 0.5f + M_PI * 0.5f * i / segs;
         verts.push_back(ccp(half + w * cosf(a), half - h * 0.3f + h * 0.5f * sinf(a)));
@@ -322,8 +303,7 @@ CCNode* createShapeStencil(std::string const& shapeName, float size) {
     }
 
     if (draw) {
-        // The draw node is centered at (0,0) with local-space vertices. Wrap it in
-        // a container with contentSize; the caller positions the container.
+    // Wrap centered local-space vertices in a positioned content-size container.
         auto container = CCNode::create();
         container->setContentSize({size, size});
         container->addChild(draw);

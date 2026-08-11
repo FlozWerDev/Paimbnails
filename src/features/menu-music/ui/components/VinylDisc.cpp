@@ -1,5 +1,6 @@
 #include "VinylDisc.hpp"
 #include "../../../../utils/PaimonDrawNode.hpp"
+#include "../../../../utils/TextureBudget.hpp"
 
 using namespace cocos2d;
 
@@ -125,7 +126,7 @@ void VinylDisc::setCoverFromPath(const std::string& absolutePath) {
     }
     if (absolutePath.empty()) return;
 
-    auto* tex = CCTextureCache::sharedTextureCache()->addImage(absolutePath.c_str(), false);
+    auto* tex = paimon::image::loadBudgeted(absolutePath);
     if (!tex) return;
 
     m_coverSprite = CCSprite::createWithTexture(tex);

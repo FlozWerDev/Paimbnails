@@ -4,9 +4,11 @@
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include "../../../utils/AudioInterop.hpp"
+#include "../../../utils/MusicChannel.hpp"
 #include "../../../framework/EventBus.hpp"
 #include "../../../framework/ModEvents.hpp"
 #include "../../backgrounds/services/LayerBackgroundManager.hpp"
+#include "../../menu-music/services/MenuMusicEffects.hpp"
 
 using namespace geode::prelude;
 
@@ -37,6 +39,7 @@ AudioContextCoordinator& AudioContextCoordinator::get() {
 }
 
 void AudioContextCoordinator::claimDynamicAudio() {
+    paimon::menumusic::MenuMusicEffects::get().deactivate();
     auto prev = m_mainAudioOwner;
     m_mainAudioOwner = MainAudioOwner::Dynamic;
     m_mainAudioOwnerToken = 0;
@@ -52,6 +55,7 @@ void AudioContextCoordinator::clearDynamicAudio() {
 }
 
 void AudioContextCoordinator::claimProfileAudio(uint32_t sessionToken) {
+    paimon::menumusic::MenuMusicEffects::get().deactivate();
     auto prev = m_mainAudioOwner;
     m_mainAudioOwner = MainAudioOwner::Profile;
     m_mainAudioOwnerToken = sessionToken;
@@ -59,6 +63,7 @@ void AudioContextCoordinator::claimProfileAudio(uint32_t sessionToken) {
 }
 
 void AudioContextCoordinator::claimPreviewAudio(uint32_t sessionToken) {
+    paimon::menumusic::MenuMusicEffects::get().deactivate();
     auto prev = m_mainAudioOwner;
     m_mainAudioOwner = MainAudioOwner::Preview;
     m_mainAudioOwnerToken = sessionToken;
@@ -109,9 +114,20 @@ void AudioContextCoordinator::deactivateLevelSelect(bool stopSong) {
         m_dynamicContextLayer = DynSongLayer::None;
     }
 
-    if (stopSong && !m_profileOpen) {
+    if (!stopSong || m_profileOpen) return;
+
+    // Leaving the screen mid-dive means the player backed out of the play they
+    // started: let the song go and give the menu its music back.
+    if (dsm->isHandingOff()) {
+        m_gameplayActive = false;
         dsm->stopSong();
+        return;
     }
+
+    // PlayLayer already owns the audio.
+    if (m_gameplayActive) return;
+
+    dsm->stopSong();
 }
 
 void AudioContextCoordinator::activateLevelInfo(GJGameLevel* level, bool playImmediately) {
@@ -142,26 +158,53 @@ void AudioContextCoordinator::deactivateLevelInfo(bool returnsToLevelSelect) {
         m_dynamicContextLayer = DynSongLayer::None;
     }
 
-    if (!m_profileOpen) {
-        if (dsm->isActive()) {
-            dsm->stopSong();
-        } else {
-            restoreMenuMusic();
-        }
+    if (m_profileOpen) return;
+
+    // Leaving the screen mid-dive means the player backed out of the play they
+    // started: let the song go and give the menu its music back.
+    if (dsm->isHandingOff()) {
+        m_gameplayActive = false;
+        dsm->stopSong();
+        return;
+    }
+
+    // The level took over already. Starting menu music here would talk over the
+    // level song for as long as it takes the game to load it.
+    if (m_gameplayActive) return;
+
+    if (dsm->isActive()) {
+        dsm->stopSong();
+    } else {
+        restoreMenuMusic();
     }
 }
 
 void AudioContextCoordinator::beginGameplayTransition() {
+    paimon::menumusic::MenuMusicEffects::get().deactivate();
     m_gameplayActive = true;
+    m_preGameplayLayer = m_dynamicContextLayer;
     m_dynamicContextLayer = DynSongLayer::None;
-    DynamicSongManager::get()->fadeOutForLevelStart();
+    // Keeps the song playing under a filter until the level is actually up, so
+    // a download or a popup does not land on dead silence.
+    DynamicSongManager::get()->submergeForLevelStart();
 }
 
-void AudioContextCoordinator::notifyGameplayStarted() {
+void AudioContextCoordinator::abortGameplayTransition(DynSongLayer restoredLayer) {
+    m_gameplayActive = false;
+    if (m_dynamicContextLayer == DynSongLayer::None) {
+        m_dynamicContextLayer = (restoredLayer != DynSongLayer::None)
+            ? restoredLayer : m_preGameplayLayer;
+    }
+    m_preGameplayLayer = DynSongLayer::None;
+}
+
+void AudioContextCoordinator::notifyGameplayStarted(GJGameLevel* level) {
+    paimon::menumusic::MenuMusicEffects::get().deactivate();
     m_gameplayActive = true;
     m_dynamicContextLayer = DynSongLayer::None;
+    m_preGameplayLayer = DynSongLayer::None;
     m_levelInfoLevel = nullptr;
-    DynamicSongManager::get()->forceKill();
+    DynamicSongManager::get()->finishGameplayHandoff(level ? level->m_levelID.value() : 0);
 }
 
 void AudioContextCoordinator::activateProfile(int accountID) {
@@ -306,6 +349,7 @@ void AudioContextCoordinator::restoreMenuMusic() {
     if (paimon::isVideoAudioInteropActive()) return;
 
     std::string menuTrack = gm->getMenuMusicFile();
+    paimon::audio::clearMusicGroupPause();
     DynamicSongManager::s_selfPlayMusic = true;
     engine->playMusic(menuTrack, true, 0.0f, 0);
     DynamicSongManager::s_selfPlayMusic = false;

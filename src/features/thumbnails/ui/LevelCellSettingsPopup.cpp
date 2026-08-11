@@ -13,6 +13,7 @@ using namespace cocos2d;
 
 std::string LevelCellSettingsPopup::getBgTypeDisplayName(std::string const& type) {
     if (type == "gradient") return "Gradient";
+    if (type == "legacy-gradient") return "Legacy Gradient";
     if (type == "thumbnail") return "Thumbnail";
     return type;
 }
@@ -57,18 +58,14 @@ std::string LevelCellSettingsPopup::getAnimEffectDisplayName(std::string const& 
 }
 
 namespace {
-// BlurAPI (thesillydoggo.blur-api) marks nodes with this user-object key.
-// malikhw47.blur-behind-popups calls BlurAPI::addBlur(popup) on every
-// FLAlertLayer — that blur is independent of our PaiblurNode and is what
-// kept the list unreadable while dragging sliders.
+// External BlurAPI marks these nodes separately from our PaiblurNode.
 constexpr char const* kBlurApiTag = "thesillydoggo.blur-api/blur-options";
 }
 
 void LevelCellSettingsPopup::onExit() {
     this->unschedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition));
     this->unschedule(schedule_selector(LevelCellSettingsPopup::checkDragState));
-    // If the popup closes mid-drag, restore blur so it can fade out cleanly
-    // with the popup (DynamicPopupHook cleanup) instead of staying at 0 opacity.
+// Restore external blur if the popup closes during a drag.
     if (m_dragHiding) {
         m_dragHiding = false;
         m_activeDragSlider = nullptr;
@@ -91,6 +88,7 @@ void LevelCellSettingsPopup::loadSettings() {
     m_currentThumbWidth = static_cast<float>(Mod::get()->getSettingValue<double>("level-thumb-width"));
     m_currentBlur = static_cast<float>(Mod::get()->getSavedValue<double>("levelcell-background-blur", 3.0));
     m_currentDarkness = static_cast<float>(Mod::get()->getSavedValue<double>("levelcell-background-darkness", 0.2));
+    m_currentEdgeBlend = static_cast<float>(paimon::settings::thumbnails::thumbnailEdgeBlend());
     m_showSeparator = Mod::get()->getSavedValue<bool>("levelcell-show-separator", true);
     m_showViewButton = Mod::get()->getSavedValue<bool>("levelcell-show-view-button", true);
     m_compactMode = Mod::get()->getSettingValue<bool>("compact-list-mode");
@@ -104,7 +102,6 @@ void LevelCellSettingsPopup::loadSettings() {
     m_mythicParticles = Mod::get()->getSavedValue<bool>("levelcell-mythic-particles", true);
     m_animatedGradient = Mod::get()->getSavedValue<bool>("levelcell-animated-gradient", true);
 
-    // Sync indices with loaded values
     for (int i = 0; i < (int)m_bgTypes.size(); i++) {
         if (m_bgTypes[i] == m_currentBgType) { m_bgTypeIndex = i; break; }
     }
@@ -117,13 +114,12 @@ void LevelCellSettingsPopup::loadSettings() {
 }
 
 void LevelCellSettingsPopup::saveSettings() {
-    // Always persist as the same types LevelCell / Settings.hpp read
-    // (double for numeric saved values) so real-time previews pick up
-    // the new values instead of falling back to defaults.
+// Persist the same types LevelCell and Settings.hpp read.
     Mod::get()->setSavedValue<std::string>("levelcell-background-type", m_currentBgType);
     Mod::get()->setSettingValue<double>("level-thumb-width", static_cast<double>(m_currentThumbWidth));
     Mod::get()->setSavedValue<double>("levelcell-background-blur", static_cast<double>(m_currentBlur));
     Mod::get()->setSavedValue<double>("levelcell-background-darkness", static_cast<double>(m_currentDarkness));
+    Mod::get()->setSavedValue<double>("levelcell-thumbnail-edge-blend", static_cast<double>(m_currentEdgeBlend));
     Mod::get()->setSavedValue<bool>("levelcell-show-separator", m_showSeparator);
     Mod::get()->setSavedValue<bool>("levelcell-show-view-button", m_showViewButton);
     Mod::get()->setSettingValue<bool>("compact-list-mode", m_compactMode);
@@ -137,8 +133,7 @@ void LevelCellSettingsPopup::saveSettings() {
     Mod::get()->setSavedValue<bool>("levelcell-mythic-particles", m_mythicParticles);
     Mod::get()->setSavedValue<bool>("levelcell-animated-gradient", m_animatedGradient);
 
-    // Bump both counters: LevelCell watches s_settingsVersion for popup
-    // changes, and g_settingsVersion invalidates the shared settings cache.
+// Invalidate both the cell watcher and shared settings cache.
     paimon::settings::internal::invalidateSettingsCache();
     s_settingsVersion++;
 
@@ -148,12 +143,10 @@ void LevelCellSettingsPopup::saveSettings() {
 void LevelCellSettingsPopup::checkScrollPosition(float dt) {
     if (!m_scrollArrow || !m_scrollLayer) return;
 
-    // ver si el scroll llego cerca del fondo
     float minY = m_scrollLayer->m_contentLayer->getContentSize().height -
                  m_scrollLayer->getContentSize().height;
     float currentY = m_scrollLayer->m_contentLayer->getPositionY();
 
-    // si el offset es cercano al minimo (abajo), ocultar la flecha
     bool nearBottom = (currentY <= -minY + 20.f);
 
     if (nearBottom) {
@@ -183,9 +176,7 @@ void LevelCellSettingsPopup::checkScrollPosition(float dt) {
     }
 }
 
-// Polls every registered slider's live-drag state each frame. Slider's
-// getLiveDragging() reflects SliderTouchLogic's touch state directly, so
-// this is a cheap, hook-free way to know when a drag starts/stops.
+// Poll slider drag state each frame without hooks.
 void LevelCellSettingsPopup::checkDragState(float dt) {
     Slider* dragging = nullptr;
     for (auto& row : m_sliderRows) {
@@ -205,9 +196,7 @@ void LevelCellSettingsPopup::checkDragState(float dt) {
     }
 }
 
-// Keeps the floating caption glued just above the thumb of the slider being
-// dragged, with live text, so the value stays readable while the rest of
-// the popup is hidden.
+// Keep the live value caption above the active slider.
 void LevelCellSettingsPopup::updateDragCaption(Slider* active) {
     if (!m_dragCaptionPill || !active) return;
 
@@ -231,7 +220,6 @@ void LevelCellSettingsPopup::updateDragCaption(Slider* active) {
     CCPoint localPos = m_mainLayer->convertToNodeSpace(worldPos);
     localPos.y += 20.f;
 
-    // clamp so the pill doesn't drift off the popup while near an edge
     auto size = m_mainLayer->getContentSize();
     float halfW = m_dragCaptionPill->getContentSize().width * 0.5f;
     localPos.x = std::clamp(localPos.x, halfW + 4.f, size.width - halfW - 4.f);
@@ -244,21 +232,16 @@ void LevelCellSettingsPopup::applyDragVisibility(Slider* active) {
     bool hiding = (active != nullptr);
     m_dragHiding = hiding;
 
-    // Plain setVisible toggling: Slider, ScrollLayer and BreakLine don't
-    // implement CCRGBAProtocol, so animating opacity on them isn't safe.
-    // setVisible is a base CCNode method and works uniformly on everything
-    // in this list, including the sliders themselves.
+// Use visibility instead of opacity; Slider, ScrollLayer, and BreakLine do not
+// implement CCRGBAProtocol.
     for (auto* node : m_hideOnDragNodes) {
         if (!node) continue;
-        if (active && node == static_cast<CCNode*>(active)) continue; // keep the active slider on screen
+    if (active && node == static_cast<CCNode*>(active)) continue;
         node->setVisible(!hiding);
     }
 
-    // FLAlertLayer (this popup's own base class) is a CCLayerColor: its solid
-    // color quad is the dark dim covering the whole screen behind the popup.
-    // Fading that away during drag lets the level list underneath act as a
-    // live preview instead of staying obscured. The original opacity is
-    // captured on first hide so it's restored exactly, whatever it was.
+// Fade the popup's dim layer during drag to preview the list beneath it;
+// restore its original opacity afterward.
     if (hiding && m_dimOriginalOpacity == 0) {
         m_dimOriginalOpacity = this->getOpacity();
         if (m_dimOriginalOpacity == 0) m_dimOriginalOpacity = 150;
@@ -268,13 +251,10 @@ void LevelCellSettingsPopup::applyDragVisibility(Slider* active) {
     dimFade->setTag(9912);
     this->runAction(dimFade);
 
-    // 1) Our PaiblurNode (if active).
     constexpr float kBlurFade = 0.22f;
     paimon::popupblur::setLivePreviewMode(this, hiding, kBlurFade);
 
-    // 2) External BlurAPI used by malikhw47.blur-behind-popups. Detach the
-    // marker so its CCNode::visit hook stops drawing blur; keep a Ref so we
-    // can put it back when the slider is released.
+// Detach external BlurAPI markers during drag and restore them afterward.
     if (hiding) {
         if (!m_savedBlurApiOptions) {
             if (auto* opts = this->getUserObject(kBlurApiTag)) {
@@ -319,7 +299,6 @@ void LevelCellSettingsPopup::registerSliderRow(Slider* slider, CCLabelBMFont* va
 }
 
 bool LevelCellSettingsPopup::init() {
-    // Standard Geode popup (default GJ_square01 brown frame).
     if (!Popup::init(280.f, 250.f)) return false;
 
     this->setTitle("LevelCell Settings");
@@ -331,7 +310,7 @@ bool LevelCellSettingsPopup::init() {
     if (m_closeBtn) m_hideOnDragNodes.push_back(m_closeBtn);
     if (m_bgSprite) m_hideOnDragNodes.push_back(m_bgSprite);
 
-    m_bgTypes = {"gradient", "thumbnail"};
+    m_bgTypes = {"gradient", "legacy-gradient", "thumbnail"};
     m_animTypes = {
         "none", "zoom-slide", "zoom", "slide", "bounce",
         "rotate", "rotate-content", "shake", "pulse", "swing"
@@ -347,21 +326,17 @@ bool LevelCellSettingsPopup::init() {
 
     float scrollW = content.width - 16.f;
     float scrollH = content.height - 42.f;
-    float totalH = 560.f;
+    float totalH = 600.f;
 
     m_scrollLayer = geode::ScrollLayer::create({scrollW, scrollH});
     m_scrollLayer->setPosition({8.f, 8.f});
     m_mainLayer->addChild(m_scrollLayer, 5);
-    // ScrollLayer is not in m_hideOnDragNodes: hiding the parent would hide
-    // the active slider. Chrome nodes inside are hidden individually.
 
     auto* scrollContent = m_scrollLayer->m_contentLayer;
     scrollContent->setContentSize({scrollW, totalH});
 
     auto navMenu = CCMenu::create();
     navMenu->setPosition({0, 0});
-    // Size menu to full scroll content so GenericContentLayer cull doesn't
-    // hide toggles/arrows when their menu bbox leaves the viewport.
     navMenu->ignoreAnchorPointForPosition(true);
     navMenu->setContentSize({scrollW, totalH});
     scrollContent->addChild(navMenu, 10);
@@ -460,7 +435,8 @@ bool LevelCellSettingsPopup::init() {
 
     addTitle("Background Style",
         "Choose how the cell background is rendered.\n"
-        "<cy>Gradient</c>: uses level colors as a gradient.\n"
+        "<cy>Gradient</c>: strongly blurs the thumbnail with Dual Kawase.\n"
+        "<cy>Legacy Gradient</c>: original two-color gradient, double-checked.\n"
         "<cy>Thumbnail</c>: shows the level thumbnail as background.");
     y -= 18.f;
     addSelector(m_bgTypeLabel, getBgTypeDisplayName(m_currentBgType),
@@ -504,6 +480,14 @@ bool LevelCellSettingsPopup::init() {
     y -= 16.f;
     addSlider(m_darknessSlider, m_darknessLabel, m_currentDarkness, 1.0f,
         menu_selector(LevelCellSettingsPopup::onDarknessChanged), "Background Darkness");
+    y -= 24.f;
+
+    addTitle("Thumbnail Edge Blend",
+        "Softly blends the diagonal thumbnail edge into the blurred background.\n"
+        "<cy>0</c> = hard cut, <cy>1</c> = blend across 75% of the thumbnail.");
+    y -= 16.f;
+    addSlider(m_edgeBlendSlider, m_edgeBlendLabel, m_currentEdgeBlend, 1.0f,
+        menu_selector(LevelCellSettingsPopup::onEdgeBlendChanged), "Thumbnail Edge Blend");
     y -= 26.f;
 
     if (auto* sep = geode::BreakLine::create(scrollW - 20.f, 1.f, {1.f, 1.f, 1.f, 0.15f})) {
@@ -518,7 +502,8 @@ bool LevelCellSettingsPopup::init() {
 
     addToggle("Show Separator Line", m_separatorToggle, m_showSeparator,
         menu_selector(LevelCellSettingsPopup::onSeparatorToggled),
-        "Thin line between cell content and the thumbnail area.");
+        "Thin line between cell content and the thumbnail area.\n"
+        "Only visible when <cy>Thumbnail Edge Blend</c> is 0.");
     y -= 20.f;
 
     addToggle("Show View Button", m_viewButtonToggle, m_showViewButton,
@@ -610,7 +595,6 @@ bool LevelCellSettingsPopup::init() {
 
     m_scrollLayer->moveToTop();
 
-    // Scroll hint arrow
     auto scrollArrow = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     if (scrollArrow) {
         scrollArrow->setRotation(-90.f);
@@ -632,7 +616,6 @@ bool LevelCellSettingsPopup::init() {
         this->schedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition), 0.2f);
     }
 
-    // Floating caption while dragging a slider
     {
         auto pill = paimon::SpriteHelper::createColorPanel(160.f, 24.f, {0, 0, 0}, 200, 6.f);
         if (pill) {
@@ -662,7 +645,6 @@ void LevelCellSettingsPopup::onBgTypePrev(CCObject*) {
     m_currentBgType = m_bgTypes[m_bgTypeIndex];
     if (m_bgTypeLabel) m_bgTypeLabel->setString(getBgTypeDisplayName(m_currentBgType).c_str());
     saveSettings();
-    // Background style swap rebuilds gradient vs thumbnail path on each cell.
 }
 
 void LevelCellSettingsPopup::onBgTypeNext(CCObject*) {
@@ -676,7 +658,6 @@ void LevelCellSettingsPopup::onBgTypeNext(CCObject*) {
 void LevelCellSettingsPopup::onThumbWidthChanged(CCObject*) {
     if (!m_thumbWidthSlider) return;
     float val = m_thumbWidthSlider->getThumb()->getValue();
-    // Map [0,1] slider to [0.2, 0.95]
     m_currentThumbWidth = 0.2f + val * (0.95f - 0.2f);
     m_currentThumbWidth = std::max(0.2f, std::min(0.95f, m_currentThumbWidth));
     if (m_thumbWidthLabel) m_thumbWidthLabel->setString(fmt::format("{:.2f}", m_currentThumbWidth).c_str());
@@ -701,10 +682,18 @@ void LevelCellSettingsPopup::onDarknessChanged(CCObject*) {
     saveSettings();
 }
 
+void LevelCellSettingsPopup::onEdgeBlendChanged(CCObject*) {
+    if (!m_edgeBlendSlider) return;
+    m_currentEdgeBlend = std::clamp(m_edgeBlendSlider->getThumb()->getValue(), 0.f, 1.f);
+    if (m_edgeBlendLabel) {
+        m_edgeBlendLabel->setString(fmt::format("{:.2f}", m_currentEdgeBlend).c_str());
+    }
+    saveSettings();
+}
+
 void LevelCellSettingsPopup::onAnimSpeedChanged(CCObject*) {
     if (!m_animSpeedSlider) return;
     float val = m_animSpeedSlider->getThumb()->getValue();
-    // Slider maps [0,1] to [0.1, 5.0]
     m_currentAnimSpeed = 0.1f + val * (5.0f - 0.1f);
     m_currentAnimSpeed = std::max(0.1f, std::min(5.0f, m_currentAnimSpeed));
     if (m_animSpeedLabel) m_animSpeedLabel->setString(fmt::format("{:.1f}", m_currentAnimSpeed).c_str());
@@ -719,8 +708,7 @@ void LevelCellSettingsPopup::onSeparatorToggled(CCObject*) {
 void LevelCellSettingsPopup::onViewButtonToggled(CCObject*) {
     m_showViewButton = !m_viewButtonToggle->isToggled();
     saveSettings();
-    // Restoring the vanilla View button (after it was made invisible) needs a
-    // full list rebuild — live cell reapply can only hide it, not un-hide it.
+// Restoring the vanilla View button requires a full list rebuild.
     paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
 }
 
@@ -738,7 +726,7 @@ void LevelCellSettingsPopup::onCompactShowToggleToggled(CCObject*) {
 void LevelCellSettingsPopup::onTransparentToggled(CCObject*) {
     m_transparentMode = !m_transparentToggle->isToggled();
     saveSettings();
-    // Transparent mode changes the base cell background structure; rebuild.
+// Transparent mode changes the cell structure; rebuild.
     paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
 }
 

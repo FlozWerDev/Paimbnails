@@ -1,0 +1,46 @@
+#pragma once
+#include <Geode/Geode.hpp>
+#include <Geode/modify/GJGarageLayer.hpp>
+
+namespace paimon::icon_gradients {
+
+using namespace geode::prelude;
+
+class $modify(GradientGarageLayer, GJGarageLayer) {
+public:
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityBeforePre("GJGarageLayer::onSelect", "flozwer.paimbnails2");
+        (void)self.setHookPriorityBeforePre("GJGarageLayer::onSelect", "hiimjustin000.more_icons");
+    }
+
+    struct Fields {
+        SEL_MenuHandler m_originalCallback = nullptr;
+
+        Ref<SimplePlayer> m_pageIcon = nullptr;
+
+        bool m_isDisabled = false;
+        bool m_isP2Disabled = false;
+        bool m_isP2Separate = false;
+        bool m_wasEmptied = false;
+    };
+
+    bool init();
+
+    IconType getType();
+
+    void updatePageIcons();
+
+    void onGradient(CCObject*);
+
+    void onSwap(CCObject*);
+
+    std::vector<SimplePlayer*> getPageIcons();
+
+    void updateGradient();
+
+    void onSelect(CCObject*);
+
+    void setupPage(int, IconType);
+};
+
+} // namespace paimon::icon_gradients

@@ -1,9 +1,7 @@
 #pragma once
 
-// Kit compartido para los popups de configuracion "amigables".
-// Filas con titulo + descripcion, valores siempre visibles y tarjetas por
-// seccion, para que cualquier popup del mod se lea igual y sea facil de
-// entender sin perder opciones.
+// Shared building blocks for configuration popups: labeled rows, visible
+// values, section cards, and consistent scrolling.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/Slider.hpp>
@@ -14,7 +12,7 @@
 
 namespace paimon::configkit {
 
-// Paleta compartida
+// Shared palette.
 constexpr cocos2d::ccColor3B kCardColor  = {14, 18, 32};
 constexpr GLubyte            kCardAlpha  = 145;
 constexpr cocos2d::ccColor3B kTitleColor = {255, 255, 255};
@@ -23,13 +21,12 @@ constexpr cocos2d::ccColor3B kValueColor = {255, 222, 120};
 constexpr cocos2d::ccColor3B kOnColor    = {120, 255, 140};
 constexpr cocos2d::ccColor3B kOffColor   = {150, 155, 170};
 
-// Ancho util de las filas dentro de una tarjeta de ancho `cardWidth`.
+// Usable row width inside a card.
 constexpr float cardInnerWidth(float cardWidth) { return cardWidth - 20.f; }
 
-// Todas las filas devuelven un CCNode con anchor {0,0} y contentSize
-// {width, alto propio}; se apilan con makeCard() / makeScrollStack().
+// Rows use anchor {0,0} and their own height.
 
-// Interruptor con titulo y descripcion opcional.
+// Toggle row with optional description.
 cocos2d::CCNode* makeToggleRow(
     float width,
     char const* title, char const* desc,
@@ -37,7 +34,7 @@ cocos2d::CCNode* makeToggleRow(
     std::function<void(bool)> onChange,
     CCMenuItemToggler** outToggle = nullptr);
 
-// Slider con el valor siempre visible encima del control.
+// Slider row with a visible value.
 cocos2d::CCNode* makeSliderRow(
     float width,
     char const* title, char const* desc,
@@ -47,34 +44,40 @@ cocos2d::CCNode* makeSliderRow(
     Slider** outSlider = nullptr,
     cocos2d::CCLabelBMFont** outValue = nullptr);
 
-// Selector `<  valor  >` que cicla entre opciones.
+// Cycling selector with an optional gear callback.
 cocos2d::CCNode* makeSelectRow(
     float width,
     char const* title, char const* desc,
     std::vector<std::string> options, int index,
     std::function<void(int)> onChange,
-    cocos2d::CCLabelBMFont** outLabel = nullptr);
+    cocos2d::CCLabelBMFont** outLabel = nullptr,
+    std::function<void()> onGear = nullptr);
 
-// Boton de accion a la derecha, con titulo y descripcion a la izquierda.
+// Action button with title and description.
 cocos2d::CCNode* makeButtonRow(
     float width,
     char const* title, char const* desc,
     char const* buttonText,
     std::function<void()> onPress);
 
-// Nota informativa (texto envuelto, gris).
+// Color row with a Geode picker and optional swatch output.
+cocos2d::CCNode* makeColorRow(
+    float width,
+    char const* title, char const* desc,
+    cocos2d::ccColor3B value,
+    std::function<void(cocos2d::ccColor3B)> onChange,
+    cocos2d::CCSprite** outSwatch = nullptr);
+
+// Wrapped informational note.
 cocos2d::CCNode* makeHint(float width, char const* text);
 
-// Tarjeta: panel redondeado con titulo de color + filas apiladas.
-// Las filas deben crearse con width = cardInnerWidth(width).
+// Rounded card with a title and stacked rows.
 cocos2d::CCNode* makeCard(
     float width,
     char const* title, cocos2d::ccColor3B accent,
     std::vector<cocos2d::CCNode*> const& rows);
 
-// Interruptor grande de encendido con estado en texto (Activado/Desactivado).
-// `outStateLabel` permite sincronizar el texto de estado si el toggle se
-// cambia por codigo (toggle() no dispara el callback).
+// Large enable toggle with a synchronized state label.
 cocos2d::CCNode* makeHeroToggle(
     float width,
     char const* title, char const* desc,
@@ -83,29 +86,23 @@ cocos2d::CCNode* makeHeroToggle(
     CCMenuItemToggler** outToggle = nullptr,
     cocos2d::CCLabelBMFont** outStateLabel = nullptr);
 
-// Actualiza el texto/color de una etiqueta de estado creada por makeHeroToggle.
+// Update a hero toggle's state label.
 void setHeroStateLabel(cocos2d::CCLabelBMFont* label, bool on);
 
-// Apila tarjetas/filas (de arriba hacia abajo) en un ScrollLayer del tamano
-// dado y hace scroll al inicio.
+// Stack cards/rows in a ScrollLayer and reset the scroll position.
 geode::ScrollLayer* makeScrollStack(
     cocos2d::CCSize size,
     std::vector<cocos2d::CCNode*> const& items,
     float gap = 8.f);
 
-// Scroll suave con la rueda del raton para un ScrollLayer.
-// queueWheelScroll: llamar desde scrollWheel(); si el cursor esta sobre el area
-// mueve el destino y devuelve true (consume el evento). `speed` controla cuanto
-// avanza por tick de rueda.
-// stepWheelScroll: llamar cada frame para acercar el contenido al destino.
+// Smooth wheel scrolling: queueWheelScroll consumes wheel input, while
+// stepWheelScroll eases toward the queued target each frame.
 bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
     float& targetY, bool& targetSet, float speed = 16.f);
 void stepWheelScroll(geode::ScrollLayer* scrollLayer,
     float& targetY, bool& targetSet, float dt);
 
-// Barra de pestanas (ej. "Basico" / "Avanzado"). Devuelve un CCNode con
-// anchor {0,0} y alto fijo (kTabBarHeight). Al pulsar una pestana se
-// re-estiliza sola y llama onSelect(indice).
+// Fixed-height tab bar that restyles itself and calls onSelect(index).
 constexpr float kTabBarHeight = 26.f;
 cocos2d::CCNode* makeTabBar(
     float width,
@@ -113,4 +110,4 @@ cocos2d::CCNode* makeTabBar(
     int selected,
     std::function<void(int)> onSelect);
 
-} // namespace paimon::configkit
+}

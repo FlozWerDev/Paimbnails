@@ -3,8 +3,8 @@
 #include <Geode/cocos/platform/CCGL.h>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/loader/Mod.hpp>
+#include "SoftEdgeFade.hpp"
 
-// Targeted type imports to avoid namespace pollution in headers
 using cocos2d::CCSprite;
 using cocos2d::CCTexture2D;
 using cocos2d::CCSize;
@@ -27,23 +27,16 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
 #define kQuadSize sizeof(ccV3F_C4B_T2F)
 #endif
 
-/**
- * Sprite with a custom shader for thumbnails. Manual draw() to dodge other mods'
- * hooks (e.g. HappyTextures). Reusable in LevelCell, GJScoreCell, etc.
- */
+// Thumbnail sprite with a custom shader and manual draw path.
 class PaimonShaderSprite : public CCSprite {
 public:
     float m_intensity = 0.0f;
     float m_time = 0.0f;
     float m_brightness = 1.0f;
     CCSize m_texSize = {0, 0};
+    paimon::SoftEdgeFade m_softEdgeFade;
 
-    // Cached uniform locations — refreshed only when the shader program
-    // changes. getUniformLocationForName() does a per-call string walk over
-    // the shader's uniform map (cocos2d does not memoize these). With many
-    // thumbnails on screen × 4 lookups per draw × 360 fps that adds up to
-    // a measurable slice of frame time. Caching here is safe because uniform
-    // locations are fixed for the lifetime of a linked shader program.
+    // Uniform locations are cached until the linked shader program changes.
     cocos2d::CCGLProgram* m_cachedProgram = nullptr;
     GLint m_locIntensity  = -2;  // -2 = uninitialized, -1 = not present
     GLint m_locTime       = -2;
@@ -67,10 +60,7 @@ public:
 
         auto* prog = getShaderProgram();
 
-        // Refresh cache when the shader program identity changes (e.g. when
-        // the user switches effects). For the steady-state case (single
-        // shader for the lifetime of the sprite) this is a single pointer
-        // compare per frame.
+        // Refresh uniform locations when the program changes.
         if (prog != m_cachedProgram) {
             m_cachedProgram = prog;
             m_locIntensity  = prog ? prog->getUniformLocationForName("u_intensity")  : -1;
@@ -98,6 +88,8 @@ public:
             prog->setUniformLocationWith2f(m_locTexSize, m_texSize.width, m_texSize.height);
         }
 
+        if (paimon::drawSoftEdgeFade(this, m_softEdgeFade)) return;
+
         ccGLBlendFunc(m_sBlendFunc.src, m_sBlendFunc.dst);
 
         if (getTexture()) {
@@ -106,7 +98,7 @@ public:
             ccGLBindTexture2D(0);
         }
 
-        // unbind the active VBO to avoid driver crashes (e.g. atio6axx.dll)
+        // Avoid driver crashes from a stale active VBO.
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
         ccGLEnableVertexAttribs(kCCVertexAttribFlag_PosColorTex);
@@ -131,10 +123,7 @@ public:
     }
 };
 
-/**
- * Custom shader gradient with per-vertex colors. Manual draw() to dodge other
- * mods' hooks.
- */
+// Custom gradient shader with per-vertex colors.
 class PaimonShaderGradient : public CCSprite {
 public:
     float m_intensity = 0.0f;
@@ -267,11 +256,7 @@ public:
     }
 };
 
-/**
- * Blur sprite for cell backgrounds, synced to an animated GIF. Uses geode::Ref<>
- * instead of a raw CCSprite* to avoid UAF if the GIF target is destroyed before
- * this blur (common during fast list scroll).
- */
+// Blur sprite synced to an animated GIF through a geode::Ref target.
 class PaimonBlurSprite : public CCSprite {
 public:
     float m_intensity = 0.0f;
@@ -296,23 +281,18 @@ public:
 
     void update(float dt) override {
         if (m_syncTarget) {
-            // AnimatedGIFSprite swaps texture via setDisplayFrame() each frame;
-            // sync the texture directly without touching rect/contentSize so the
-            // blur's scale stays correct
+            // Sync the texture without changing rect/contentSize; the blur keeps
+            // its existing scale.
             auto targetTex = m_syncTarget->getTexture();
             if (targetTex && targetTex != this->getTexture()) {
-                // save the original size so setTextureRect doesn't break it
                 auto savedSize = this->getContentSize();
                 auto savedScale = this->getScale();
 
                 this->setTexture(targetTex);
-                // update texSize so the shader uses the correct dimensions
                 m_texSize = targetTex->getContentSizeInPixels();
-                // update the rect to match the new texture
                 auto texSize = targetTex->getContentSize();
                 this->setTextureRect(CCRect(0, 0, texSize.width, texSize.height));
 
-                // restore the original size and scale to keep the layout
                 this->setContentSize(savedSize);
                 this->setScale(savedScale);
             }

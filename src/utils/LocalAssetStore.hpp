@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include <filesystem>
@@ -20,15 +20,28 @@ struct ImportResult {
     std::string error;
 };
 
+std::filesystem::path pathFromUtf8(std::filesystem::path const& path);
+std::filesystem::path pathFromUtf8(std::string_view str);
+std::filesystem::path pathFromUtf8(std::string const& str);
+std::filesystem::path pathFromUtf8(char const* str);
+
 std::filesystem::path rootDir();
 std::filesystem::path dirForBucket(std::string const& bucket);
 bool isManagedPath(std::filesystem::path const& path);
 std::filesystem::path normalizePath(std::filesystem::path const& path);
+std::filesystem::path normalizePath(std::string_view pathStr);
+std::filesystem::path normalizePath(std::string const& pathStr);
 std::string normalizePathString(std::filesystem::path const& path);
+std::string normalizePathString(std::string_view pathStr);
+std::string normalizePathString(std::string const& pathStr);
 bool exists(std::string const& path);
 ImportResult importToBucket(std::filesystem::path const& source, std::string const& bucket, Kind kind = Kind::Media);
+ImportResult importToBucket(std::string_view source, std::string const& bucket, Kind kind = Kind::Media);
+ImportResult importToBucket(std::string const& source, std::string const& bucket, Kind kind = Kind::Media);
 ImportResult importStoredPath(std::string const& storedPath, std::string const& bucket, Kind kind = Kind::Media);
 std::string importToBucketString(std::filesystem::path const& source, std::string const& bucket, Kind kind = Kind::Media);
+std::string importToBucketString(std::string_view source, std::string const& bucket, Kind kind = Kind::Media);
+std::string importToBucketString(std::string const& source, std::string const& bucket, Kind kind = Kind::Media);
 std::string importStoredPathString(std::string const& storedPath, std::string const& bucket, Kind kind = Kind::Media);
 bool cleanupBucket(std::string const& bucket);
 

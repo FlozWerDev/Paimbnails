@@ -58,7 +58,6 @@ bool scrollLayerWithWheel(ScrollLayer* scrollLayer, float x, float y) {
 #endif
 }
 
-// Sub-popup: eleccion individual de pantallas donde aparece la mascota.
 class PetLayerPickerPopup final : public geode::Popup {
 protected:
     WeakRef<PetConfigPopup> m_owner;
@@ -220,7 +219,6 @@ public:
     }
 };
 
-// Nombres e info de los estados con imagen propia.
 constexpr int kIconStateCount = 4;
 char const* kIconStateNames[kIconStateCount] = {
     "Normal", "Caminando", "Durmiendo", "Reaccionando"
@@ -229,9 +227,8 @@ PetIconState kIconStateEnums[kIconStateCount] = {
     PetIconState::Idle, PetIconState::Walk, PetIconState::Sleep, PetIconState::React
 };
 
-} // namespace
+}
 
-// create
 
 PetConfigPopup* PetConfigPopup::create() {
     auto ret = new PetConfigPopup();
@@ -243,7 +240,6 @@ PetConfigPopup* PetConfigPopup::create() {
     return nullptr;
 }
 
-// init
 
 bool PetConfigPopup::init() {
     if (!Popup::init(420.f, 290.f)) return false;
@@ -253,7 +249,6 @@ bool PetConfigPopup::init() {
 
     auto content = m_mainLayer->getContentSize();
 
-    // capas por pestana
     m_galleryTab = CCNode::create();
     m_galleryTab->setID("gallery-tab"_spr);
     m_galleryTab->setContentSize(content);
@@ -299,7 +294,6 @@ void PetConfigPopup::updateSmoothScroll(float dt) {
     kit::stepWheelScroll(m_advancedScroll, m_advancedScrollTargetY, m_advancedScrollTargetSet, dt);
 }
 
-// tabs
 
 void PetConfigPopup::createTabButtons() {
     auto content = m_mainLayer->getContentSize();
@@ -338,7 +332,6 @@ void PetConfigPopup::createTabButtons() {
     menu->addChild(tab3);
     m_tabs.push_back(tab3);
 
-    // estado inicial
     onTabSwitch(tab1);
 }
 
@@ -364,19 +357,17 @@ void PetConfigPopup::onTabSwitch(CCObject* sender) {
     }
 }
 
-// galeria
 
 void PetConfigPopup::buildGalleryTab() {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    // limpieza automatica de archivos corruptos
+// Remove corrupt gallery files automatically.
     int cleaned = PetManager::get().cleanupInvalidImages();
     if (cleaned > 0) {
         log::info("[PetConfig] Cleaned up {} invalid image files from gallery", cleaned);
     }
 
-    // zona de vista previa
     auto previewBg = paimon::SpriteHelper::createDarkPanel(80, 80, 80);
     previewBg->setPosition({cx - 40, content.height - 95.f - 40});
     m_galleryTab->addChild(previewBg);
@@ -386,7 +377,6 @@ void PetConfigPopup::buildGalleryTab() {
     m_selectedLabel->setPosition({cx, content.height - 145.f});
     m_galleryTab->addChild(m_selectedLabel);
 
-    // contenedor de la galeria
     m_galleryContainer = CCNode::create();
     m_galleryContainer->setID("gallery-container"_spr);
     m_galleryContainer->setPosition({0, 0});
@@ -397,7 +387,6 @@ void PetConfigPopup::buildGalleryTab() {
     m_galleryMenu->setPosition({0, 0});
     m_galleryTab->addChild(m_galleryMenu, 10);
 
-    // botones inferiores
     auto addSpr = ButtonSprite::create("+ Anadir", "goldFont.fnt", "GJ_button_01.png", 0.7f);
     addSpr->setScale(0.55f);
     auto addBtn = CCMenuItemSpriteExtra::create(addSpr, this, menu_selector(PetConfigPopup::onAddImage));
@@ -420,7 +409,6 @@ void PetConfigPopup::buildGalleryTab() {
 }
 
 void PetConfigPopup::refreshGallery() {
-    // limpiar celdas anteriores (se conservan los botones fijos, tag < 100)
     if (m_galleryContainer) {
         m_galleryContainer->removeAllChildren();
     }
@@ -451,7 +439,6 @@ void PetConfigPopup::refreshGallery() {
         float x = startX + col * (cellSize + padding) + cellSize / 2.f;
         float y = startY - row * (cellSize + padding);
 
-        // fondo
         bool isSelected = (images[i] == pet.config().selectedImage);
         auto bg = paimon::SpriteHelper::createColorPanel(
             cellSize, cellSize,
@@ -460,7 +447,6 @@ void PetConfigPopup::refreshGallery() {
         bg->setPosition({x - cellSize / 2, y - cellSize / 2});
         m_galleryContainer->addChild(bg);
 
-        // miniatura
         auto tex = pet.loadGalleryThumb(images[i]);
         if (tex) {
             auto thumbSpr = CCSprite::createWithTexture(tex);
@@ -470,7 +456,6 @@ void PetConfigPopup::refreshGallery() {
                 thumbSpr->setPosition({x, y});
                 m_galleryContainer->addChild(thumbSpr, 1);
 
-                // etiqueta GIF para imagenes animadas
                 auto imgPath = pet.galleryDir() / images[i];
                 if (ImageLoadHelper::isAnimatedImage(imgPath)) {
                     auto* gifLabel = CCLabelBMFont::create("GIF", "bigFont.fnt");
@@ -486,7 +471,6 @@ void PetConfigPopup::refreshGallery() {
             tex->release();
         }
 
-        // area de seleccion invisible
         auto selectArea = CCSprite::create();
         selectArea->setContentSize({cellSize, cellSize});
         selectArea->setOpacity(0);
@@ -497,7 +481,6 @@ void PetConfigPopup::refreshGallery() {
         selectBtn->setUserObject(CCString::create(images[i]));
         m_galleryMenu->addChild(selectBtn);
 
-        // boton borrar (X)
         auto xSpr = CCSprite::createWithSpriteFrameName("GJ_deleteIcon_001.png");
         if (xSpr) {
             xSpr->setScale(0.35f);
@@ -509,7 +492,6 @@ void PetConfigPopup::refreshGallery() {
         }
     }
 
-    // vista previa
     auto& cfg = pet.config();
     if (!cfg.selectedImage.empty()) {
         if (m_previewSprite) {
@@ -548,7 +530,6 @@ void PetConfigPopup::onAddImage(CCObject*) {
         auto filename = PetManager::get().addToGallery(*pathOpt);
         if (!filename.empty()) {
             PaimonNotify::create("Imagen anadida a la galeria!", NotificationIcon::Success)->show();
-            // auto-seleccionar si no hay ninguna elegida
             if (PetManager::get().config().selectedImage.empty()) {
                 PetManager::get().setImage(filename);
             }
@@ -635,7 +616,6 @@ void PetConfigPopup::onOpenShop(CCObject*) {
     if (shop) shop->show();
 }
 
-// pestana Ajustes (lo esencial)
 
 void PetConfigPopup::buildSettingsTab() {
     auto content = m_mainLayer->getContentSize();
@@ -652,7 +632,6 @@ void PetConfigPopup::buildSettingsTab() {
         return fmt::format("{}%", static_cast<int>(v / 255.0 * 100.0));
     };
 
-    // Interruptor principal
     auto* hero = kit::makeHeroToggle(scrollW,
         "Mascota en pantalla",
         "Un companero que sigue tu cursor por los menus.",
@@ -670,7 +649,6 @@ void PetConfigPopup::buildSettingsTab() {
         },
         &m_enableToggle, &m_enableStateLabel);
 
-    // Apariencia
     auto* lookCard = kit::makeCard(scrollW, "Apariencia", {120, 210, 255}, {
         kit::makeSliderRow(innerW,
             "Tamano", "Que tan grande se ve la mascota.",
@@ -689,7 +667,6 @@ void PetConfigPopup::buildSettingsTab() {
             }),
     });
 
-    // Movimiento
     auto* moveCard = kit::makeCard(scrollW, "Movimiento", {130, 240, 170}, {
         kit::makeSliderRow(innerW,
             "Velocidad de seguimiento",
@@ -731,7 +708,6 @@ void PetConfigPopup::buildSettingsTab() {
             }),
     });
 
-    // Donde aparece
     auto* whereCard = kit::makeCard(scrollW, "Donde aparece", {255, 200, 100}, {
         kit::makeToggleRow(innerW,
             "En todos los menus",
@@ -775,7 +751,6 @@ void PetConfigPopup::buildSettingsTab() {
     m_settingsTab->addChild(m_scrollLayer, 5);
 }
 
-// pestana Avanzado (todo lo demas, sin perder opciones)
 
 void PetConfigPopup::buildAdvancedTab() {
     auto content = m_mainLayer->getContentSize();
@@ -792,7 +767,6 @@ void PetConfigPopup::buildAdvancedTab() {
     auto fmtSecs  = [](double v) { return fmt::format("{:.0f}s", v); };
     auto fmtDeg   = [](double v) { return fmt::format("{:.0f} gr", v); };
 
-    // Fila propia: estado + imagen actual + boton Cambiar.
     auto makeStateRow = [this, innerW](int idx) -> CCNode* {
         auto* row = CCNode::create();
         row->setAnchorPoint({0.f, 0.f});
@@ -833,7 +807,6 @@ void PetConfigPopup::buildAdvancedTab() {
         return row;
     };
 
-    // Imagenes por estado
     auto* statesCard = kit::makeCard(scrollW, "Imagenes por estado", {255, 140, 220}, {
         kit::makeHint(innerW,
             "Usa una imagen distinta cuando la mascota camina, duerme o reacciona. "
@@ -844,7 +817,6 @@ void PetConfigPopup::buildAdvancedTab() {
         makeStateRow(3),
     });
 
-    // Animaciones extra
     auto* animCard = kit::makeCard(scrollW, "Animaciones extra", {120, 210, 255}, {
         kit::makeToggleRow(innerW,
             "Respirar en reposo",
@@ -900,7 +872,6 @@ void PetConfigPopup::buildAdvancedTab() {
             }),
     });
 
-    // Posicion respecto al cursor
     auto* offsetCard = kit::makeCard(scrollW, "Posicion respecto al cursor", {130, 240, 170}, {
         kit::makeSliderRow(innerW,
             "Desplazamiento X", "Negativo = izquierda, positivo = derecha.",
@@ -918,7 +889,6 @@ void PetConfigPopup::buildAdvancedTab() {
             }),
     });
 
-    // Estela
     auto* trailCard = kit::makeCard(scrollW, "Estela", {255, 200, 100}, {
         kit::makeToggleRow(innerW,
             "Mostrar estela",
@@ -944,7 +914,6 @@ void PetConfigPopup::buildAdvancedTab() {
             }),
     });
 
-    // Sombra
     auto* shadowCard = kit::makeCard(scrollW, "Sombra", {170, 170, 255}, {
         kit::makeToggleRow(innerW,
             "Mostrar sombra",
@@ -984,7 +953,6 @@ void PetConfigPopup::buildAdvancedTab() {
             }),
     });
 
-    // Particulas
     int particleIdx = std::max(0, std::min(4, cfg.particleType));
     auto* particleCard = kit::makeCard(scrollW, "Particulas", {255, 170, 120}, {
         kit::makeToggleRow(innerW,
@@ -1047,7 +1015,6 @@ void PetConfigPopup::buildAdvancedTab() {
             }),
     });
 
-    // Dialogos
     auto* speechCard = kit::makeCard(scrollW, "Dialogos", {170, 255, 170}, {
         kit::makeToggleRow(innerW,
             "Hablar de vez en cuando",
@@ -1080,7 +1047,6 @@ void PetConfigPopup::buildAdvancedTab() {
             }),
     });
 
-    // Sueno
     auto* sleepCard = kit::makeCard(scrollW, "Sueno", {200, 180, 255}, {
         kit::makeToggleRow(innerW,
             "Dormirse si no haces nada",
@@ -1106,7 +1072,6 @@ void PetConfigPopup::buildAdvancedTab() {
             }),
     });
 
-    // Interaccion al click
     auto* clickCard = kit::makeCard(scrollW, "Al hacerle click", {255, 220, 130}, {
         kit::makeToggleRow(innerW,
             "Reaccionar al click",
@@ -1132,7 +1097,6 @@ void PetConfigPopup::buildAdvancedTab() {
             }),
     });
 
-    // Reacciones a eventos del juego
     auto* reactCard = kit::makeCard(scrollW, "Reacciones del juego", {255, 140, 140}, {
         kit::makeToggleRow(innerW,
             "Al completar un nivel",
@@ -1188,7 +1152,6 @@ void PetConfigPopup::buildAdvancedTab() {
     m_advancedTab->addChild(m_advancedScroll, 5);
 }
 
-// helpers
 
 void PetConfigPopup::openLayerPicker() {
     auto popup = PetLayerPickerPopup::create(this);
@@ -1240,7 +1203,6 @@ void PetConfigPopup::refreshVisibleLayerControls() {
     }
 }
 
-// aplicar en vivo
 
 void PetConfigPopup::applyLive() {
     auto& pet = PetManager::get();
@@ -1248,8 +1210,7 @@ void PetConfigPopup::applyLive() {
 
     auto scene = CCDirector::get()->getRunningScene();
     if (pet.config().enabled && scene) {
-        // attachToScene es idempotente: si ya esta en esta escena solo
-        // refresca visibilidad; si no, se reengancha.
+// attachToScene is idempotent; refresh visibility when already attached.
         pet.attachToScene(scene);
     } else {
         pet.detachFromScene();

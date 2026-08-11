@@ -16,18 +16,15 @@ class CustomTransitionEditorPopup : public geode::Popup {
 protected:
     bool init(TransitionConfig* config, bool isGlobal);
 
-    // State
     TransitionConfig* m_config = nullptr;
     bool m_isGlobal = true;
     std::vector<TransitionCommand> m_commands;
     int m_selectedIdx = -1;
 
-    // UI — Command list
     geode::ScrollLayer* m_commandScroll = nullptr;
     cocos2d::CCNode* m_commandListMenu = nullptr;
     cocos2d::CCSize m_scrollSize;
 
-    // UI — Command editor panel
     cocos2d::CCNode* m_editorPanel = nullptr;
     cocos2d::CCLabelBMFont* m_actionLabel = nullptr;
     cocos2d::CCLabelBMFont* m_targetLabel = nullptr;
@@ -38,19 +35,16 @@ protected:
     cocos2d::CCLabelBMFont* m_delayLabel = nullptr;
     cocos2d::CCLabelBMFont* m_statusLabel = nullptr;
 
-    // Preview
     cocos2d::CCNode* m_previewArea = nullptr;
     cocos2d::CCLayerColor* m_previewFrom = nullptr;
     cocos2d::CCLayerColor* m_previewTo = nullptr;
 
-    // Methods
     void rebuildCommandList();
     void selectCommand(int idx);
     void updateEditorPanel();
     void updatePreviewArea();
     void refreshDisplay();
 
-    // Callbacks
     void onAddCommand(cocos2d::CCObject*);
     void onRemoveCommand(cocos2d::CCObject*);
     void onMoveUp(cocos2d::CCObject*);
@@ -88,7 +82,6 @@ protected:
     void showPresetPicker();
     void loadPreset(int presetId);
 
-    // Helpers
     static std::string actionDisplayName(CommandAction a);
     static std::vector<CommandAction> const& allActions();
     static int validateAndSanitizeForSave(std::vector<TransitionCommand>& commands);

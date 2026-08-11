@@ -18,13 +18,9 @@ void ThumbnailSubmissionService::uploadSuggestion(int levelId,
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
     paimon::HookContext ctx{"upload", levelId, username, "png", pngData.size(), &pngData};
-    auto hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    ctx.action = "validate";
-    hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    ctx.action = "security-check";
-    hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
+    auto hookRes = paimon::HookInterceptor::get().runPreHooks(
+        ctx, {"upload", "validate", "security-check"}
+    );
     if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
 
     HttpClient::get().uploadSuggestion(levelId, pngData, username,
@@ -46,13 +42,9 @@ void ThumbnailSubmissionService::uploadUpdate(int levelId,
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
     paimon::HookContext ctx{"upload", levelId, username, "png", pngData.size(), &pngData};
-    auto hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    ctx.action = "validate";
-    hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    ctx.action = "security-check";
-    hookRes = paimon::HookInterceptor::get().runPreHooks(ctx);
+    auto hookRes = paimon::HookInterceptor::get().runPreHooks(
+        ctx, {"upload", "validate", "security-check"}
+    );
     if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
 
     HttpClient::get().uploadUpdate(levelId, pngData, username,
@@ -81,7 +73,7 @@ void ThumbnailSubmissionService::downloadSuggestionImage(std::string const& file
                                                          DownloadCallback callback) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
-    std::string url = HttpClient::get().getServerURL() + "/" + filename;
+    std::string url = HttpClient::get().buildAssetURL(filename, "suggestions");
     HttpClient::get().downloadFromUrl(url,
         [callback](bool success, std::vector<uint8_t> const& data, int, int) {
             if (!success || data.empty()) { callback(false, nullptr); return; }

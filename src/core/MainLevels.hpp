@@ -100,9 +100,16 @@ inline bool tryClaimMainLevelsPrefetch() {
     return g_mainLevelsPrefetched.compare_exchange_strong(expected, true);
 }
 
-// 14-day cache window for the main-level manifest.
-inline constexpr int64_t kMainLevelsCacheTTLSeconds = 14LL * 24 * 60 * 60;
+inline constexpr int64_t kMainLevelsCacheTTLSeconds = 30LL * 24 * 60 * 60;
 inline constexpr char const* kMainLevelsCachedAtKey = "main-levels-cached-at";
+
+inline constexpr bool isMainLevelsCacheAgeFresh(int64_t cachedAt, int64_t now) {
+    return cachedAt > 0 && now >= cachedAt
+        && now - cachedAt < kMainLevelsCacheTTLSeconds;
+}
+
+static_assert(isMainLevelsCacheAgeFresh(1, kMainLevelsCacheTTLSeconds));
+static_assert(!isMainLevelsCacheAgeFresh(1, kMainLevelsCacheTTLSeconds + 1));
 
 inline int64_t mainLevelsNowEpoch() {
     return std::chrono::duration_cast<std::chrono::seconds>(
@@ -129,9 +136,7 @@ inline void markMainLevelsCached() {
 
 inline bool areMainLevelsFreshlyCached() {
     int64_t cachedAt = mainLevelsCachedAtEpoch();
-    if (cachedAt <= 0) return false;
-    int64_t age = mainLevelsNowEpoch() - cachedAt;
-    if (age < 0 || age > kMainLevelsCacheTTLSeconds) return false;
+    if (!isMainLevelsCacheAgeFresh(cachedAt, mainLevelsNowEpoch())) return false;
     return allMainLevelThumbnailsOnDisk();
 }
 

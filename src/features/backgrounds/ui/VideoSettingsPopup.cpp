@@ -29,7 +29,7 @@ bool VideoSettingsPopup::init() {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    // Restore indices from saved values
+    // Restore saved enum indices.
 
     int currentFps = paimon::settings::video::fpsLimit();
     m_fpsIndex = 2;
@@ -67,7 +67,6 @@ bool VideoSettingsPopup::init() {
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu, 10);
 
-    // helper lambdas for arrow buttons
     auto makeArrowL = [&](float x, float y, SEL_MenuHandler sel) {
         auto spr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
         spr->setFlipX(true);
@@ -84,10 +83,6 @@ bool VideoSettingsPopup::init() {
         menu->addChild(btn);
     };
 
-    // Two-column layout
-    //  Left column: Playback (FPS, Quality, Audio)
-    //  Right column: Filters (Blur Type, Blur Intensity)
-    //  Bottom row: Cache (Clear RAM, Clear Cache, RAM label)
 
     const float colSpacing = 170.f;
     float leftCX  = cx - colSpacing / 2.f;
@@ -105,11 +100,9 @@ bool VideoSettingsPopup::init() {
         return std::make_tuple(titleX, prevX, valX, nextX, toggleX);
     };
 
-    // LEFT COLUMN: Playback
     {
         auto [titleX, prevX, valX, nextX, toggleX] = colLayout(leftCX);
 
-        // Section header
         auto header = CCLabelBMFont::create("Playback", "bigFont.fnt");
         header->setScale(0.35f);
         header->setColor({255, 220, 100});
@@ -120,7 +113,6 @@ bool VideoSettingsPopup::init() {
         float qualityY = fpsY - rowSpacing;
         float audioY   = qualityY - rowSpacing;
 
-        // FPS
         auto fpsTitle = CCLabelBMFont::create("FPS:", "bigFont.fnt");
         fpsTitle->setScale(0.30f);
         fpsTitle->setPosition({titleX, fpsY});
@@ -134,7 +126,6 @@ bool VideoSettingsPopup::init() {
         makeArrowR(nextX, fpsY, menu_selector(VideoSettingsPopup::onFpsNext));
         updateFpsLabel();
 
-        // Quality
         auto qualityTitle = CCLabelBMFont::create("Quality:", "bigFont.fnt");
         qualityTitle->setScale(0.30f);
         qualityTitle->setPosition({titleX, qualityY});
@@ -148,7 +139,6 @@ bool VideoSettingsPopup::init() {
         makeArrowR(nextX, qualityY, menu_selector(VideoSettingsPopup::onQualityNext));
         updateQualityLabel();
 
-        // Audio toggle
         auto audioTitle = CCLabelBMFont::create("Audio:", "bigFont.fnt");
         audioTitle->setScale(0.30f);
         audioTitle->setPosition({titleX, audioY});
@@ -160,11 +150,9 @@ bool VideoSettingsPopup::init() {
         menu->addChild(m_audioToggle);
     }
 
-    // RIGHT COLUMN: Filters
     {
         auto [titleX, prevX, valX, nextX, toggleX] = colLayout(rightCX);
 
-        // Section header
         auto header = CCLabelBMFont::create("Filters", "bigFont.fnt");
         header->setScale(0.35f);
         header->setColor({255, 160, 255});
@@ -174,7 +162,6 @@ bool VideoSettingsPopup::init() {
         float blurTypeY = topY - rowSpacing;
         float blurIntY  = blurTypeY - rowSpacing;
 
-        // Blur Type
         auto blurTitle = CCLabelBMFont::create("Blur:", "bigFont.fnt");
         blurTitle->setScale(0.30f);
         blurTitle->setPosition({titleX, blurTypeY});
@@ -188,7 +175,6 @@ bool VideoSettingsPopup::init() {
         makeArrowR(nextX, blurTypeY, menu_selector(VideoSettingsPopup::onBlurTypeNext));
         updateBlurTypeLabel();
 
-        // Blur Intensity (hidden when blur = "none")
         m_blurIntensityTitleLabel = CCLabelBMFont::create("Intensity:", "bigFont.fnt");
         m_blurIntensityTitleLabel->setScale(0.30f);
         m_blurIntensityTitleLabel->setPosition({titleX, blurIntY});
@@ -221,7 +207,6 @@ bool VideoSettingsPopup::init() {
         updateBlurIntensityLabel();
         updateBlurIntensityVisibility();
 
-        // Rotation
         float rotationY = blurIntY - rowSpacing;
         auto rotTitle = CCLabelBMFont::create("Rotation:", "bigFont.fnt");
         rotTitle->setScale(0.30f);
@@ -237,7 +222,6 @@ bool VideoSettingsPopup::init() {
         updateRotationLabel();
     }
 
-    // BOTTOM ROW: Cache
     float cacheY = topY - rowSpacing * 3.f - 14.f - 28.f;
 
     auto ramBtnSpr = ButtonSprite::create("Clear RAM", 0.32f);
@@ -270,7 +254,6 @@ bool VideoSettingsPopup::init() {
     return true;
 }
 
-// FPS
 
 void VideoSettingsPopup::onFpsPrev(CCObject*) {
     if (--m_fpsIndex < 0) m_fpsIndex = (int)FPS_OPTIONS.size() - 1;
@@ -297,13 +280,11 @@ void VideoSettingsPopup::updateFpsLabel() {
     m_fpsLabel->setString(fmt::format("{}", FPS_OPTIONS[m_fpsIndex]).c_str());
 }
 
-// Quality
 
 void VideoSettingsPopup::onQualityPrev(CCObject*) {
     if (--m_qualityIndex < 0) m_qualityIndex = (int)QUALITY_OPTIONS.size() - 1;
     Mod::get()->setSavedValue("video-quality", QUALITY_OPTIONS[m_qualityIndex]);
-    // Invalidate videoMaxDecodeDimension + adaptive FPS snapshots so the next
-    // decoder open / sprite slot acquire sees the new quality/FPS immediately.
+        // Invalidate decode/FPS snapshots so new slots see changes immediately.
     paimon::settings::internal::invalidateSettingsCache();
     paimon::requestDeferredModSave();
     updateQualityLabel();
@@ -328,7 +309,6 @@ void VideoSettingsPopup::updateQualityLabel() {
     }
 }
 
-// Audio
 
 void VideoSettingsPopup::onAudioToggle(CCObject* sender) {
     auto toggle = typeinfo_cast<CCMenuItemToggler*>(sender);
@@ -338,7 +318,6 @@ void VideoSettingsPopup::onAudioToggle(CCObject* sender) {
     paimon::requestDeferredModSave();
 }
 
-// Blur Type
 
 void VideoSettingsPopup::onBlurTypePrev(CCObject*) {
     if (--m_blurTypeIndex < 0) m_blurTypeIndex = (int)BLUR_TYPE_OPTIONS.size() - 1;
@@ -373,7 +352,6 @@ void VideoSettingsPopup::updateBlurIntensityVisibility() {
     if (m_blurIntensityTitleLabel) m_blurIntensityTitleLabel->setVisible(show);
 }
 
-// Blur Intensity
 
 void VideoSettingsPopup::onBlurIntensityPrev(CCObject*) {
     if (--m_blurIntensityIndex < 0) m_blurIntensityIndex = (int)BLUR_INTENSITY_OPTIONS.size() - 1;
@@ -394,7 +372,6 @@ void VideoSettingsPopup::updateBlurIntensityLabel() {
     m_blurIntensityLabel->setString(BLUR_INTENSITY_NAMES[m_blurIntensityIndex]);
 }
 
-// Rotation
 
 void VideoSettingsPopup::onRotationPrev(CCObject*) {
     if (--m_rotationIndex < 0) m_rotationIndex = (int)ROTATION_OPTIONS.size() - 1;
@@ -402,7 +379,6 @@ void VideoSettingsPopup::onRotationPrev(CCObject*) {
     Mod::get()->setSavedValue("video-rotation", newRot);
     paimon::requestDeferredModSave();
     updateRotationLabel();
-    // Apply rotation to existing video backgrounds immediately
     LayerBackgroundManager::get().broadcastRotationUpdate(newRot);
 }
 
@@ -417,7 +393,7 @@ void VideoSettingsPopup::onRotationNext(CCObject*) {
 
 void VideoSettingsPopup::updateRotationLabel() {
     if (!m_rotationLabel) return;
-    m_rotationLabel->setString(fmt::format("{}°", ROTATION_OPTIONS[m_rotationIndex]).c_str());
+    m_rotationLabel->setString(fmt::format("{} deg", ROTATION_OPTIONS[m_rotationIndex]).c_str());
     if (m_rotationIndex == 0) {
         m_rotationLabel->setColor({100, 255, 200});
     } else {
@@ -425,7 +401,6 @@ void VideoSettingsPopup::updateRotationLabel() {
     }
 }
 
-// Clear RAM
 
 void VideoSettingsPopup::onClearRAM(CCObject*) {
     LayerBackgroundManager::get().releaseAllSharedVideos();
@@ -449,7 +424,6 @@ void VideoSettingsPopup::updateRAMLabel() {
     }
 }
 
-// Clear Disk Cache
 
 void VideoSettingsPopup::onClearDiskCache(CCObject*) {
     int removed = paimon::video::VideoDiskCache::deleteAllCaches();

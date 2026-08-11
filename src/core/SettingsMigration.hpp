@@ -7,9 +7,7 @@ namespace paimon::settings {
 
 namespace internal {
 
-// Single source of truth for every saved-value default. Applied either as
-// set-if-missing (migration on startup) or force-set (factory reset), so the
-// two paths can never drift apart.
+// Single source for saved-value defaults, used by startup migration and reset.
 inline void applyDefaults(bool force) {
     auto* mod = geode::Mod::get();
 
@@ -36,6 +34,7 @@ inline void applyDefaults(bool force) {
     setS("discord-rpc-large-text", "");
     setS("discord-rpc-large-image-key", "");
     setS("discord-rpc-small-image-key", "");
+    setS("discord-rpc-small-text", "");
     setS("discord-rpc-activity-type", "Playing");
     setB("discord-rpc-show-timestamp", true);
     setB("discord-rpc-override-details", false);
@@ -54,6 +53,7 @@ inline void applyDefaults(bool force) {
     setS("levelcell-background-type", "thumbnail");
     setD("levelcell-background-blur", 3.0);
     setD("levelcell-background-darkness", 0.2);
+    setD("levelcell-thumbnail-edge-blend", 0.65);
     setB("levelcell-show-separator", true);
     setB("levelcell-show-view-button", true);
     setB("compact-list-show-toggle", true);
@@ -78,6 +78,19 @@ inline void applyDefaults(bool force) {
     setI("levelinfo-effect-intensity", 4);
     setI("levelinfo-bg-darkness", 27);
     setB("dynamic-song-stream-preview", true);
+    setS("dynsong-start-mode", "random");
+    setI("dynsong-random-min-pct", 15);
+    setI("dynsong-random-max-pct", 85);
+    setS("dynsong-rotation-mode", "rotate");
+    setI("dynsong-volume-pct", 100);
+    setF("dynsong-fade-seconds", 0.35f);
+    setB("dynsong-in-level-select", true);
+    setB("dynsong-submerge-enabled", true);
+    setS("dynsong-submerge-preset", "underwater");
+    setF("dynsong-submerge-dive-seconds", 0.55f);
+    setF("dynsong-submerge-surface-seconds", 1.10f);
+    setB("dynsong-submerge-on-level-exit", true);
+    setF("dynsong-submerge-hold-seconds", 0.7f);
 
     setB("profile-music-crossfade", true);
     setD("profile-music-fade-duration", 0.3);
@@ -105,9 +118,12 @@ inline void applyDefaults(bool force) {
     setD("popup-blur-fade-duration", 0.18);
     setB("popup-blur-show-placeholder", true);
 
-    setB("enable-for-you", false);
-    setI("for-you-min-levels", 5);
     setB("for-you-use-tags", true);
+    setI("for-you-feed-size", 12);
+// Searches per refresh: tag lookups first, GD search for the rest.
+    setI("for-you-query-budget", 6);
+// Feed share reserved for uncertain recommendations.
+    setD("for-you-exploration", 0.2);
 
     setD("custom-cursor-scale", 0.3);
     setB("custom-cursor-trail", false);
@@ -142,6 +158,8 @@ inline void applyDefaults(bool force) {
     setB("menuLoopSongIndicators", true);
     setB("menuLoopCompactSongList", false);
     setB("menuLoopFavoritesOnlyFilter", false);
+    setB("menuLoopShowBlacklisted", false);
+    setB("menuLoopAutoScrollCurrent", true);
     setS("menuLoopSortMode", "alphabetical");
     setB("menuLoopSortReverse", false);
 
@@ -164,18 +182,15 @@ inline void applyDefaults(bool force) {
     setB("zoom-auto-show-menu", true);
     setB("zoom-alt-disables-scroll", true);
 
-    // Default -1: profile background sits behind the comment list (z=0). A
-    // value of 1 once put it above the comments and hid them.
+// -1 keeps profile backgrounds behind the comment list.
     setI("profile-img-zlayer", -1);
 }
 
-// One-shot data migrations that rewrite existing values rather than just filling
-// in defaults. Idempotent and guarded by their own flags where needed.
+// Idempotent migrations that rewrite existing values, guarded when needed.
 inline void runOneShotMigrations() {
     auto* mod = geode::Mod::get();
 
-    // Rewrite saved URLs still pointing at retired/placeholder hosts so existing
-    // installs converge on the Render endpoint.
+// Move saved URLs from retired hosts to the Render endpoint.
     {
         constexpr const char* NEW_URL = "https://paimbnailsbot.onrender.com";
         const char* legacyHosts[] = {
@@ -199,7 +214,7 @@ inline void runOneShotMigrations() {
         }
     }
 
-    // Convert obsolete popup blur styles to the lightweight default.
+// Convert obsolete popup blur styles to the lightweight default.
     if (!mod->hasSavedValue("popup-blur-style-migrated-to-paimonblur")) {
         auto const style = mod->getSavedValue<std::string>("popup-blur-style");
         if (style == "gaussian" || style == "paimonblur-dynamic") {
@@ -208,9 +223,7 @@ inline void runOneShotMigrations() {
         mod->setSavedValue<bool>("popup-blur-style-migrated-to-paimonblur", true);
     }
 
-    // The old default ("paimonblur") snapshots and blurs the whole scene when a
-    // popup opens. Move existing installs to the dynamic style; users can still
-    // pick the static styles manually from the settings UI.
+// Migrate the old full-scene "paimonblur" default to the dynamic style.
     if (!mod->hasSavedValue("popup-blur-style-migrated-to-paiblur")) {
         auto const style = mod->getSavedValue<std::string>("popup-blur-style", "paiblur");
         if (style == "gaussian" || style == "paimonblur" || style == "paimonblur-dynamic") {
@@ -219,7 +232,7 @@ inline void runOneShotMigrations() {
         mod->setSavedValue<bool>("popup-blur-style-migrated-to-paiblur", true);
     }
 
-    // A migration default of 1 once put the profile background above the comments.
+// Keep migrated profile backgrounds behind comments.
     if (!mod->hasSavedValue("profile-img-zlayer-fixed-default")) {
         if (mod->getSavedValue<int>("profile-img-zlayer", -1) == 1) {
             mod->setSavedValue<int>("profile-img-zlayer", -1);
@@ -228,25 +241,24 @@ inline void runOneShotMigrations() {
     }
 }
 
-} // namespace internal
+}
 
 inline void migrateToSavedValues() {
     internal::applyDefaults(false);
     internal::runOneShotMigrations();
 }
 
-// Force all saved values back to clean-install defaults (factory reset).
+// Restore clean-install defaults.
 inline void forceResetSavedValuesToDefaults() {
     auto* mod = geode::Mod::get();
 
     internal::applyDefaults(true);
 
-    // Legacy underscore variant of the server URL plus the one-shot flags, so a
-    // reset install matches a freshly migrated one.
+// Also reset the legacy server URL key and one-shot migration flags.
     mod->setSavedValue<std::string>("paidraw_server_url", "https://paimbnailsbot.onrender.com");
     mod->setSavedValue<bool>("popup-blur-style-migrated-to-paimonblur", true);
     mod->setSavedValue<bool>("popup-blur-style-migrated-to-paiblur", true);
     mod->setSavedValue<bool>("profile-img-zlayer-fixed-default", true);
 }
 
-} // namespace paimon::settings
+}

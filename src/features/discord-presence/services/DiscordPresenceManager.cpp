@@ -73,6 +73,23 @@ std::string trimAssetKey(std::string value) {
     return safeUtf8Truncate(std::move(value), 128);
 }
 
+bool isExternalImageUrl(std::string const& v) {
+    return v.rfind("https://", 0) == 0 || v.rfind("http://", 0) == 0 || v.rfind("mp:", 0) == 0;
+}
+
+std::string trimExternalUrl(std::string value) {
+    auto isWhitespace = [](unsigned char ch) {
+        return std::isspace(ch) != 0;
+    };
+    while (!value.empty() && isWhitespace(static_cast<unsigned char>(value.front()))) {
+        value.erase(value.begin());
+    }
+    while (!value.empty() && isWhitespace(static_cast<unsigned char>(value.back()))) {
+        value.pop_back();
+    }
+    return safeUtf8Truncate(std::move(value), 256);
+}
+
 }
 
 DiscordPresenceManager& DiscordPresenceManager::get() {
@@ -525,18 +542,53 @@ PresencePayload DiscordPresenceManager::buildScenePayload() {
 }
 
 PresencePayload DiscordPresenceManager::applyAssetFallbacks(PresencePayload payload) {
-    auto customLargeImage = trimAssetKey(paimon::settings::discord_rpc::largeImageKey());
-    auto customSmallImage = trimAssetKey(paimon::settings::discord_rpc::smallImageKey());
+    // Large image: allow either a Discord asset key (max 128) or an external https:// URL (max 256 -> Discord mp:external)
+    auto rawLarge = paimon::settings::discord_rpc::largeImageKey();
+    std::string customLargeImage;
+    bool largeIsExternal = false;
+    {
+        std::string trimmed = trimExternalUrl(rawLarge);
+        if (isExternalImageUrl(trimmed)) {
+            customLargeImage = std::move(trimmed);
+            largeIsExternal = true;
+        } else {
+            customLargeImage = trimAssetKey(std::move(trimmed));
+        }
+    }
 
-    payload.largeImage = customLargeImage.empty() ? kDefaultLargeImage : customLargeImage;
+    // Small image: same — asset key or external URL for per-user custom image
+    auto rawSmall = paimon::settings::discord_rpc::smallImageKey();
+    std::string customSmallImage;
+    bool smallIsExternal = false;
+    {
+        std::string trimmed = trimExternalUrl(rawSmall);
+        if (isExternalImageUrl(trimmed)) {
+            customSmallImage = std::move(trimmed);
+            smallIsExternal = true;
+        } else {
+            customSmallImage = trimAssetKey(std::move(trimmed));
+        }
+    }
+
+    if (largeIsExternal) {
+        payload.largeImage = customLargeImage;
+    } else {
+        payload.largeImage = customLargeImage.empty() ? kDefaultLargeImage : customLargeImage;
+    }
     if (!customSmallImage.empty()) {
+        // External URLs and asset keys both override the scene small image.
+        // For per-user local images, the popup uploads to catbox and stores the https:// URL here.
         payload.smallImage = customSmallImage;
     }
     payload.largeImageText = "Paimbnails Rich Presence";
     auto customText = paimon::settings::discord_rpc::largeText();
     if (!customText.empty()) {
-        if (customText.size() > 128) customText.resize(128);
-        payload.largeImageText = customText;
+        payload.largeImageText = safeUtf8Truncate(std::move(customText), 128);
+    }
+    // Small image hover text is now fully customizable independently from scene.
+    auto customSmallText = paimon::settings::discord_rpc::smallText();
+    if (!customSmallText.empty()) {
+        payload.smallImageText = safeUtf8Truncate(std::move(customSmallText), 128);
     }
 
     return payload;

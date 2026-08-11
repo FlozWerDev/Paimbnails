@@ -5,19 +5,18 @@
 
 #if defined(GEODE_IS_WINDOWS)
 #include <gl/gl.h>
-// GLsync is GL 3.2+ — may not be in <gl/gl.h> (GL 1.1 only on MSVC)
+// MSVC's GL header may omit GLsync.
 #ifndef GL_SYNC_GPU_COMMANDS_COMPLETE
 typedef struct __GLsync* GLsync;
 #endif
 #elif defined(GEODE_IS_ANDROID)
 #include <GLES2/gl2.h>
-// GLES2 doesn't have GLsync — define as opaque pointer
+// GLES2 has no GLsync type.
 typedef struct __GLsync* GLsync;
 #elif defined(GEODE_IS_IOS)
 #include <OpenGLES/ES2/gl.h>
 #include <OpenGLES/ES2/glext.h>
-// GLsync is provided by the APPLE extension in glext.h
-// but define fallback just in case
+// Fall back if the Apple extension header omits GLsync.
 #ifndef GL_SYNC_GPU_COMMANDS_COMPLETE
 typedef struct __GLsync* GLsync;
 #endif
@@ -27,17 +26,8 @@ typedef struct __GLsync* GLsync;
 
 namespace paimon::video {
 
-// PBOUploader — async GPU upload via Pixel Buffer Objects
-//
-// Uses 3 PBOSlots in rotation so that glTexSubImage2D never
-// stalls the pipeline.  Each slot carries a GLsync fence that
-// prevents re-use until the GPU has finished reading the PBO.
-//
-// Fence policy: glClientWaitSync with timeout=0 (non-blocking).
-// If the fence is not signaled, the slot is skipped and the
-// upload is deferred to the next update() call.
-//
-// MUST be used exclusively from the GL/main thread.
+// Async PBO uploads use fenced rotating slots. Busy slots are skipped and the
+// upload is deferred; all methods run on the GL thread.
 
 struct PBOSlot {
     GLuint pboY    = 0;
@@ -69,26 +59,15 @@ public:
 
     bool uploadRGBA(GLuint texId, const uint8_t* rgbaData, int width, int height);
 
-    // Zero-copy upload pattern — see implementation for contract details
-    // 1) Call tryBeginRGBAUpload(w, h): returns a writable mapped pointer of
-    //    w*h*4 bytes, or nullptr if all PBO slots are busy (caller should
-    //    fall back to uploadRGBA with a staging buffer on next frame).
-    // 2) Fill the returned pointer with RGBA bytes (e.g. via yuvToRgba).
-    // 3) Call endRGBAUpload(texId, w, h) to unmap and upload to the texture.
-    //
-    // Between tryBeginRGBAUpload and endRGBAUpload no other PBOUploader
-    // method may be called.  If tryBeginRGBAUpload returns nullptr, do NOT
-    // call endRGBAUpload.
-    //
-    // This is not available when PBO mapping is unsupported (GLES2, older
-    // macOS).  In that case tryBeginRGBAUpload returns nullptr and the
-    // caller must use uploadRGBA instead.
+    // Zero-copy contract: tryBeginRGBAUpload → fill mapped RGBA bytes →
+    // endRGBAUpload. Do not call other methods between them; nullptr means
+    // use uploadRGBA. Mapping is unavailable on GLES2 and older macOS.
     uint8_t* tryBeginRGBAUpload(int width, int height);
     void endRGBAUpload(GLuint texId, int width, int height);
 
     bool isInitialized() const { return m_initialized; }
 
-    // Clear all pending fences — needed when restarting video after seek
+    // Clear pending fences, e.g. after a seek.
     void clearFences() { deleteAllFences(); }
 
 private:
@@ -99,8 +78,7 @@ private:
     void uploadPlane(int slotIdx, GLuint texId, GLenum format,
                      const uint8_t* data, int stride, int width, int height);
 
-    // Max PBO slots used at runtime (720p uses 6, 1080p uses 5, 4K+ uses 3).
-    // m_activeSlots is the live count (<= kPBOCount).
+    // Runtime slot count is capped by kPBOCount.
     static constexpr int kPBOCount = 6;
 
     PBOSlot m_slots[kPBOCount];
@@ -111,16 +89,15 @@ private:
     int m_crSize = 0;
     int m_rgbaSize = 0;
 
-    bool m_rgbaMode = false;  // true = single RGBA plane, false = YUV 3-plane
+    bool m_rgbaMode = false;  // single RGBA vs. three-plane YUV
 
-    int m_uploadIdx = 0;  // rotates 0..(m_activeSlots-1) each upload
-    // Index of the slot currently in a tryBegin→end sequence (-1 = none).
+    int m_uploadIdx = 0;
+    // Slot currently in a tryBegin→end sequence (-1 = none).
     int m_mappedSlotIdx = -1;
     bool m_initialized = false;
 
-    // Thread that called init() — captured so shutdown() can refuse to call
-    // gl* from a different thread (UB on most drivers).
+    // Owner thread; shutdown refuses GL calls from another thread.
     std::thread::id m_ownerThread{};
 };
 
-} // namespace paimon::video
+}

@@ -184,7 +184,7 @@ void YtDlpInstallPopup::finishSuccess() {
     }
     if (m_percentLabel) m_percentLabel->setString("100%");
     if (m_statusLabel) {
-        m_statusLabel->setString("yt-dlp installed — starting download...");
+        m_statusLabel->setString("yt-dlp installed - starting download...");
         m_statusLabel->setColor({150, 255, 150});
     }
 

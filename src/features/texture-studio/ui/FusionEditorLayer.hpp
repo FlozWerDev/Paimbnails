@@ -22,9 +22,11 @@ class ImageBuffer;
 class ParamSliderRow;
 
 // Dedicated full-screen Fusion layer (own scene — not a tab inside the pack
-// editor). Layout: large Original | large Result | right tools column.
-// Paint-bucket fill on ORIGINAL colours; texture/GIF is never recolored by
-// pack tint. Arrow keys / drag move the stamp in whole pixels.
+// editor). Layout: asset browser (left) | Original + Result | tools (right).
+// The mask can be painted before a texture is picked; the painted region is
+// shown as a green highlight until a texture is loaded. Paint-bucket fill on
+// ORIGINAL colours; texture/GIF is never recolored by pack tint. Arrow keys /
+// drag move the stamp in whole pixels.
 class FusionEditorLayer : public cocos2d::CCLayer {
 public:
     static FusionEditorLayer* create(std::string slotId, std::string frameName = {});
@@ -46,11 +48,11 @@ protected:
 
     void buildBackground();
     void buildHeader();
+    void buildBrowser();
     void buildPreviews();
     void buildTools();
-    void buildSpriteStrip();
     void refreshToolsUi();
-    void refreshSpriteStrip();
+    void refreshTextureThumb();
     void setStatus(std::string const& text);
 
     struct Entry {
@@ -59,6 +61,14 @@ protected:
         SpriteKind kind = SpriteKind::Other;
     };
     void buildEntries();
+    void applyBrowserFilter();
+    void rebuildBrowser();
+    void requestThumbnails(std::vector<Entry> entries, int generation);
+    void applyThumbnail(int slot, int generation,
+                        std::shared_ptr<ImageBuffer> image);
+    void highlightBrowserSelection();
+    void refreshBrowserBadges();
+
     void selectFrame(std::string const& frameName);
     void loadPixelsForSelection();
     void loadFusionForSelection();
@@ -101,17 +111,25 @@ private:
     std::string m_slotId;
     TextureProject m_project;
     std::vector<Entry> m_entries;
+    std::vector<int> m_filtered;
+    std::string m_search;
+    int m_page = 0;
+    int m_browserCols = 2;
+    int m_browserRows = 4;
     bool m_hasSelection = false;
     Entry m_selected;
+
+    cocos2d::CCNode* m_browserHost = nullptr;
+    cocos2d::CCMenu* m_browserMenu = nullptr;
+    cocos2d::CCLabelBMFont* m_pageLbl = nullptr;
 
     cocos2d::CCNode* m_originalHost = nullptr;
     cocos2d::CCNode* m_resultHost = nullptr;
     cocos2d::CCSprite* m_originalSpr = nullptr;
     cocos2d::CCSprite* m_resultSpr = nullptr;
     cocos2d::CCLabelBMFont* m_statusLbl = nullptr;
-    cocos2d::CCLabelBMFont* m_titleLbl = nullptr;
     cocos2d::CCLabelBMFont* m_frameLbl = nullptr;
-    cocos2d::CCNode* m_stripHost = nullptr;
+    cocos2d::CCNode* m_texThumbHost = nullptr;
 
     std::shared_ptr<ImageBuffer> m_pixels;
     SpriteFrameInfo m_frameInfo;
@@ -166,6 +184,8 @@ private:
     std::shared_ptr<std::atomic<int>> m_loadGen
         = std::make_shared<std::atomic<int>>(0);
     std::shared_ptr<std::atomic<int>> m_renderGen
+        = std::make_shared<std::atomic<int>>(0);
+    std::shared_ptr<std::atomic<int>> m_thumbGen
         = std::make_shared<std::atomic<int>>(0);
 };
 

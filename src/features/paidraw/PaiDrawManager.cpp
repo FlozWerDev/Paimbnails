@@ -6,6 +6,7 @@
 #include "../../utils/JsonHelper.hpp"
 #include "../../utils/MainThreadDelay.hpp"
 #include "../../core/RuntimeLifecycle.hpp"
+#include "../../core/modules/ModuleRegistry.hpp"
 #include "../../utils/PaimonNotification.hpp"
 #include "../../utils/WebHelper.hpp"
 #include <Geode/loader/Loader.hpp>
@@ -160,6 +161,7 @@ PaiDrawManager::~PaiDrawManager() {
 
 void PaiDrawManager::init() {
     if (m_initialized) return;
+    if (!paimon::modules::isEnabled("paimbnails.paidraw.menu")) return;
     m_initialized = true;
 
     {

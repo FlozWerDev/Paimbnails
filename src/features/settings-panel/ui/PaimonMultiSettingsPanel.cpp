@@ -14,7 +14,6 @@ using namespace cocos2d;
 using namespace geode::prelude;
 
 namespace {
-// Fixed sidebar button scale — no grow on select/click
 constexpr float kSidebarBtnScale = 0.46f;
 }
 
@@ -34,7 +33,6 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
     this->setID("paimon-multisettings-panel"_spr);
     auto winSize = CCDirector::get()->getWinSize();
 
-    // 1. fondo blur (fullscreen)
     if (blurBg) {
         m_blurBg = blurBg;
         m_blurBg->setPosition(winSize * 0.5f);
@@ -42,22 +40,19 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
         this->addChild(m_blurBg, -2);
     }
 
-    // 2. overlay oscuro
     m_darkOverlay = CCLayerColor::create(ccc4(0, 0, 0, 0));
     m_darkOverlay->setContentSize(winSize);
     this->addChild(m_darkOverlay, -1);
 
-    // 3. contenedor del panel (draggable)
     m_panelContainer = CCNode::create();
     m_panelContainer->setContentSize({PANEL_W, PANEL_H});
     m_panelContainer->setAnchorPoint({0.5f, 0.5f});
     m_panelContainer->setPosition(winSize * 0.5f);
     this->addChild(m_panelContainer, 1);
 
-    // 4. Panel background — dark blue tinted GD popup
     m_panelBg = paimon::SpriteHelper::safeCreateScale9("GJ_square06.png");
     if (!m_panelBg) {
-        // Fallback: solid panel
+        // Fallback when the GD panel texture is unavailable.
         m_panelBg = paimon::SpriteHelper::createColorPanel(
             PANEL_W, PANEL_H, cocos2d::ccColor3B{255, 255, 255}, 255, CORNER_RADIUS
         );
@@ -66,7 +61,6 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
         m_panelBg->setContentSize({PANEL_W, PANEL_H});
         m_panelBg->setAnchorPoint({0.f, 0.f});
         m_panelBg->setPosition({0.f, 0.f});
-        // Navy blue tone
         m_panelBg->setColor({34, 46, 96});
         m_panelBg->setOpacity(255);
         m_panelContainer->addChild(m_panelBg, 0);
@@ -76,7 +70,6 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
     buildSidebar();
     buildContentArea();
 
-    // select initial category
     auto const& groups = paimon::settings_ui::getAllGroups();
     int clampedCategory = initialCategory;
     if (clampedCategory < 0 || clampedCategory >= static_cast<int>(groups.size())) {
@@ -84,7 +77,6 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
     }
     selectCategory(clampedCategory);
 
-    // 7. Touch handling — participate in GD's force priority system
     auto* dispatcher = CCDirector::get()->getTouchDispatcher();
     int basePrio = dispatcher->getTargetPrio();
     m_touchPrio = basePrio - 1;
@@ -101,17 +93,14 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
 }
 
 void PaimonMultiSettingsPanel::buildTitleBar() {
-    // Title bar with gold title, search bar, and close button
     m_titleBarBg = nullptr;
 
-    // title
     m_titleLabel = CCLabelBMFont::create("Paimon Settings", "goldFont.fnt");
     m_titleLabel->setScale(0.45f);
     m_titleLabel->setAnchorPoint({0.f, 0.5f});
     m_titleLabel->setPosition({14.f, PANEL_H - TITLE_BAR_H / 2.f});
     m_panelContainer->addChild(m_titleLabel, 2);
 
-    // search bar
     m_searchInput = geode::TextInput::create(150.f, "Search...");
     m_searchInput->setScale(0.55f);
     m_searchInput->setAnchorPoint({0.5f, 0.5f});
@@ -123,7 +112,6 @@ void PaimonMultiSettingsPanel::buildTitleBar() {
     );
     m_panelContainer->addChild(m_searchInput, 2);
 
-    // close button
     auto closeMenu = CCMenu::create();
     closeMenu->setPosition({0.f, 0.f});
     closeMenu->setTouchPriority(m_childTouchPrio);
@@ -138,7 +126,6 @@ void PaimonMultiSettingsPanel::buildTitleBar() {
 }
 
 void PaimonMultiSettingsPanel::buildSidebar() {
-    // Sidebar: column of GD circular buttons, one per category, with dark separator cells
     m_sidebarBg = nullptr;
     m_sidebarAccent = nullptr;
 
@@ -151,26 +138,24 @@ void PaimonMultiSettingsPanel::buildSidebar() {
     float startY = CONTENT_H - 22.f;
     float spacing = 28.f;
 
-    // One base color per category
+    // Keep this order aligned with the settings groups.
     static const CircleBaseColor catColors[] = {
-        CircleBaseColor::Gray,       // General
-        CircleBaseColor::Blue,       // Thumbnails
-        CircleBaseColor::Cyan,       // Level Info
-        CircleBaseColor::Pink,       // Audio
-        CircleBaseColor::Green,      // Backgrounds
-        CircleBaseColor::DarkPurple, // Pet & More
-        CircleBaseColor::DarkAqua,   // Discord
+        CircleBaseColor::Gray,
+        CircleBaseColor::Blue,
+        CircleBaseColor::Cyan,
+        CircleBaseColor::Pink,
+        CircleBaseColor::Green,
+        CircleBaseColor::DarkPurple,
+        CircleBaseColor::DarkAqua,
     };
     constexpr int kCatColorCount = 7;
 
-    // Cell/separator size behind each button
     constexpr float kCellW = SIDEBAR_W - 6.f;
     constexpr float kCellH = 26.f;
 
     for (size_t i = 0; i < groups.size(); i++) {
         float y = startY - static_cast<float>(i) * spacing;
 
-        // Separador oscuro semi-transparente (CCDrawNode) detras del boton.
         auto cell = paimon::SpriteHelper::createRoundedRect(
             kCellW, kCellH, 7.f, {0.f, 0.f, 0.f, 0.42f}
         );
@@ -179,24 +164,21 @@ void PaimonMultiSettingsPanel::buildSidebar() {
             m_panelContainer->addChild(cell, 1);
         }
 
-        // first letter of category name as button content
         auto letter = CCLabelBMFont::create(
             groups[i].name.substr(0, 1).c_str(), "bigFont.fnt"
         );
         letter->setScale(0.8f);
 
-        // GD native circular button
         CCNode* topNode = CircleButtonSprite::create(
             letter, catColors[i % kCatColorCount], CircleBaseSize::Medium
         );
-        if (!topNode) topNode = letter; // fallback defensivo
+        if (!topNode) topNode = letter;
 
         auto btn = CCMenuItemExt::createSpriteExtra(topNode, [this, idx = static_cast<int>(i)](CCMenuItemSpriteExtra*) {
             selectCategory(idx);
         });
         btn->setPosition({SIDEBAR_W / 2.f, y});
         btn->setScale(kSidebarBtnScale);
-        // Keep fixed size — no grow animation (user-reported fix)
         btn->m_scaleMultiplier = 1.f;
 
         m_sidebarMenu->addChild(btn);
@@ -221,7 +203,6 @@ void PaimonMultiSettingsPanel::selectCategory(int index) {
 
     m_selectedCategory = index;
 
-    // limpiar busqueda al cambiar categoria
     if (m_searchInput) m_searchInput->setString("");
     m_searchQuery.clear();
     m_isSearchActive = false;
@@ -286,7 +267,7 @@ void PaimonMultiSettingsPanel::rebuildContent() {
     }
 
     float contentH = std::max(totalH, CONTENT_H);
-    contentLayer->setContentSize({CONTENT_W, contentH});
+    m_scrollLayer->setContentLayerSize({CONTENT_W, contentH});
 
     float currentY = contentH;
     for (auto* row : allRows) {
@@ -308,26 +289,22 @@ void PaimonMultiSettingsPanel::relayoutContent() {
     auto children = contentLayer->getChildren();
     if (!children) return;
 
-    // calcular altura total visible
+    // Virtualized children may be hidden, so use their content sizes directly.
     float totalH = 0.f;
     for (auto* child : CCArrayExt<CCNode*>(children)) {
-        if (child->isVisible()) {
-            totalH += child->getContentSize().height;
-        }
+        totalH += child->getContentSize().height;
     }
 
     float contentH = std::max(totalH, CONTENT_H);
-    contentLayer->setContentSize({CONTENT_W, contentH});
+    m_scrollLayer->setContentLayerSize({CONTENT_W, contentH});
 
-    // reposicionar solo los visibles
     float currentY = contentH;
     for (auto* child : CCArrayExt<CCNode*>(children)) {
-        if (child->isVisible()) {
-            float h = child->getContentSize().height;
-            currentY -= h;
-            child->setPosition({0.f, currentY});
-        }
+        float h = child->getContentSize().height;
+        currentY -= h;
+        child->setPosition({0.f, currentY});
     }
+    m_scrollLayer->doConstraintContent(true);
 }
 
 void PaimonMultiSettingsPanel::relayoutScrollContent() {
@@ -339,7 +316,6 @@ void PaimonMultiSettingsPanel::setSelectedCategory(int index) {
 }
 
 void PaimonMultiSettingsPanel::updateSidebarAccent() {
-    // Highlight active category by dimming others — no size change
     if (m_selectedCategory < 0 || m_selectedCategory >= static_cast<int>(m_sidebarButtons.size())) return;
 
     for (size_t i = 0; i < m_sidebarButtons.size(); i++) {
@@ -356,8 +332,6 @@ void PaimonMultiSettingsPanel::updateSidebarAccent() {
         }
     }
 }
-
-// Search
 
 void PaimonMultiSettingsPanel::onSearchChanged(std::string const& query) {
     m_searchQuery = query;
@@ -394,7 +368,6 @@ void PaimonMultiSettingsPanel::buildSearchResults(std::string const& query) {
             std::vector<CCNode*> toExtract;
             for (auto* child : CCArrayExt<CCNode*>(children)) {
 
-                // find CCLabelBMFont in row children
                 bool matches = false;
                 auto rowChildren = child->getChildren();
                 if (rowChildren) {
@@ -427,7 +400,7 @@ void PaimonMultiSettingsPanel::buildSearchResults(std::string const& query) {
     for (auto* row : matchingRows) totalH += row->getContentSize().height;
 
     float contentH = std::max(totalH, CONTENT_H);
-    contentLayer->setContentSize({CONTENT_W, contentH});
+    m_scrollLayer->setContentLayerSize({CONTENT_W, contentH});
 
     float currentY = contentH;
     for (auto* row : matchingRows) {
@@ -440,8 +413,6 @@ void PaimonMultiSettingsPanel::buildSearchResults(std::string const& query) {
 
     m_scrollLayer->moveToTop();
 }
-
-// Animations
 
 void PaimonMultiSettingsPanel::runEntryAnimation() {
     auto cfg = paimon::popupblur::getConfig();
@@ -504,8 +475,6 @@ void PaimonMultiSettingsPanel::onExit() {
     CCLayer::onExit();
 }
 
-// Touch handling
-
 bool PaimonMultiSettingsPanel::isTouchInTitleBar(CCPoint const& worldPos) {
     if (!m_panelContainer) return false;
     auto panelWorldPos = m_panelContainer->convertToWorldSpace({0.f, PANEL_H - TITLE_BAR_H});
@@ -537,19 +506,16 @@ bool PaimonMultiSettingsPanel::ccTouchBegan(CCTouch* touch, CCEvent* event) {
 
     auto touchPos = touch->getLocation();
 
-    // title bar -> drag
     if (isTouchInTitleBar(touchPos) && !isTouchInSearchInput(touchPos)) {
         m_isDragging = true;
         m_dragOffset = ccpSub(m_panelContainer->getPosition(), touchPos);
         return true;
     }
 
-    // inside panel -> consume touch to prevent filter to background buttons
     if (isTouchInPanel(touchPos)) {
         return true;
     }
 
-    // fuera del panel -> cerrar
     animateClose();
     return true;
 }

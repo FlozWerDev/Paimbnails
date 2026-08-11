@@ -28,26 +28,21 @@ static std::string const& blurNodeIdKey() {
 }
 
 struct RegistryEntry {
-    CCNode* popupPtr = nullptr;    // identity only, never dereferenced
+    CCNode* popupPtr = nullptr;    // identity only
     Ref<CCNode> blurRef;
-    WeakRef<CCNode> blurWeak;       // liveness oracle for the blur node
-    CCNode* parentPtr = nullptr;    // parent snapshot at register time
-    WeakRef<CCNode> parentWeak;     // liveness oracle for the parent
+    WeakRef<CCNode> blurWeak;       // liveness oracle
+    CCNode* parentPtr = nullptr;    // registration snapshot
+    WeakRef<CCNode> parentWeak;     // liveness oracle
     float ageSeconds = 0.f;
     bool fadingOut = false;
 };
 
-// Returns the blur node only if it is still a live object. A freed node (even
-// one a stale strong Ref still points to) yields nullptr, so callers never
-// invoke methods on corrupted memory.
+// Return the blur only while its WeakRef proves it is alive.
 static CCNode* liveBlur(RegistryEntry const& e) {
     return e.blurWeak.lock().data();
 }
 
-// True while the blur node's recorded parent is still alive. When false the
-// node's m_pParent is dangling and must never be dereferenced (getParent,
-// removeFromParent, walking the parent chain); dropping the strong Ref is then
-// the only safe disposal.
+// Parent liveness guard: never walk or detach a node after its parent dies.
 static bool parentAlive(RegistryEntry const& e) {
     return e.parentWeak.valid();
 }
@@ -316,12 +311,12 @@ static void cleanupImpl(CCNode* popup, float fadeDuration) {
     auto it = reg.find(popup);
     if (it == reg.end()) return;
 
-    // Move the entry out before erasing so its strong Ref stays valid here.
+    // Move the entry out before erasing so its Ref stays valid.
     RegistryEntry entry = std::move(it->second);
     reg.erase(it);
     unscheduleWatchdogIfIdle();
 
-    // Restore any sibling blurs we had hidden behind this one.
+    // Restore sibling blurs hidden behind this one.
     for (auto& [key, other] : reg) {
         CCNode* prevBlur = liveBlur(other);
         if (prevBlur && !prevBlur->isVisible() && !other.fadingOut) {
@@ -330,9 +325,7 @@ static void cleanupImpl(CCNode* popup, float fadeDuration) {
     }
 
     CCNode* blurNode = liveBlur(entry);
-    // Already freed, or orphaned with a dangling parent: dropping entry's Ref
-    // (when it goes out of scope) disposes of it safely without touching freed
-    // memory. Never call getParent/removeFromParent on an orphaned node.
+    // Drop freed/orphaned nodes without touching their dangling parent.
     if (!blurNode || !parentAlive(entry) || !blurNode->getParent()) return;
 
     if (fadeDuration <= 0.01f) {
@@ -366,8 +359,7 @@ void cleanupAllActive(float fadeDuration) {
     auto& reg = blurRegistry();
     if (reg.empty()) return;
 
-    // Only fade out blurs whose parent is still alive; orphaned/freed nodes are
-    // disposed safely when reg.clear() drops their strong Ref.
+    // Fade only live parents; reg.clear() disposes orphaned entries safely.
     std::vector<Ref<CCNode>> toFade;
     toFade.reserve(reg.size());
     for (auto& [_, entry] : reg) {
@@ -389,9 +381,7 @@ static void fadeBlurNode(CCNode* blur, bool hide, float duration) {
     GLubyte target = hide ? 0 : 255;
     float dur = std::max(0.f, duration);
 
-    // Prefer opacity fade (PaiblurNode ramps radius with opacity). Avoid
-    // dynamic_cast — GD builds often disable RTTI. CCNodeRGBA is reachable
-    // via the CCRGBAProtocol cast helpers / direct setOpacity if present.
+    // Fade opacity; PaiblurNode derives blur radius from it. Avoid dynamic_cast.
     if (auto* rgba = typeinfo_cast<CCNodeRGBA*>(blur)) {
         rgba->stopAllActions();
         if (dur <= 0.01f) {
@@ -404,14 +394,12 @@ static void fadeBlurNode(CCNode* blur, bool hide, float duration) {
         return;
     }
 
-    // Non-RGBA blur nodes: hard hide/show.
     blur->setVisible(!hide);
 }
 
 void setLivePreviewMode(CCNode* popup, bool active, float duration) {
     if (!popup) return;
 
-    // 1) Our registry entry for this popup.
     auto& reg = blurRegistry();
     auto it = reg.find(popup);
     if (it != reg.end() && !it->second.fadingOut) {
@@ -422,9 +410,7 @@ void setLivePreviewMode(CCNode* popup, bool active, float duration) {
         }
     }
 
-    // 2) Also hunt siblings / scene children for leftover paimon blur nodes
-    // (covers re-parent races and external paths that used registerExternalBlur
-    // under a different key).
+    // Also hunt sibling/scene children to cover reparent races and external keys.
     auto fadeMatching = [&](CCNode* parent) {
         if (!parent) return;
         auto* kids = parent->getChildren();
@@ -445,4 +431,4 @@ void setLivePreviewMode(CCNode* popup, bool active, float duration) {
     }
 }
 
-} // namespace paimon::popupblur
+}

@@ -10,29 +10,16 @@ namespace geode { class TextInput; }
 
 namespace paimon::editorcp {
 
-// Full-screen eyedropper overlay used inside the level editor.
-//
-// Flow (live eyedropper, no magnifier):
-//   1. On show() the overlay opens transparently — the editor keeps rendering
-//      underneath, so the picked colors track the scene in real time.
-//   2. The HUD swatch shows the LIVE color under the cursor in real time.
-//      The value label updates every frame too.
-//   3. Clicking locks in the current live color as the selection ("PICKED").
-//   4. Copy  -> copies the value to the clipboard (stays open).
-//      Save  -> copies + (if a Color ID is set) opens GD's native color popup
-//               for that channel seeded with the picked color, then closes.
-//      Cancel/Esc -> closes without committing.
-//
-// Real-time sampling: every frame, just before the buffer swap, the single
-// pixel under the cursor is read back from the framebuffer (see onPreSwapSample).
-// The HUD lives at the bottom so it never contaminates the sampled pixel.
+// Live eyedropper for the level editor. Samples one framebuffer pixel before
+// swap; the HUD stays at the bottom so it cannot contaminate the sample.
+// Click locks the color, Copy keeps the overlay open, Save applies it when a
+// Color ID is set, and Cancel/Esc closes without committing.
 class ColorPickerOverlay : public cocos2d::CCLayer {
 public:
-    static void show();        // toggles: opens, or closes if already open
-    static void hideOverlay(); // closes if open
+    static void show();
+    static void hideOverlay();
 
-    // Called from the CCEGLView swap-buffers hook (pre-swap, before the custom
-    // cursor is drawn) to sample the live framebuffer around the cursor.
+    // Called by the pre-swap hook before the custom cursor is drawn.
     static void onPreSwapSample();
 
     bool init() override;
@@ -52,37 +39,33 @@ public:
 private:
     static ColorPickerOverlay* s_instance;
 
-    // Live framebuffer sampling
-    std::vector<uint8_t>             m_pixelBuf;        // RGBA readback for 1 pixel
+    std::vector<uint8_t>             m_pixelBuf;        // RGBA readback
     bool m_ready    = false;
     bool m_closing  = false;
     bool m_dragging = false;
-    bool m_priorityScheduled = false; // menu touch priority deferred once
+    bool m_priorityScheduled = false;
 
-    // Scene nodes
     cocos2d::CCNode*      m_hud            = nullptr;
     cocos2d::CCMenu*      m_controlsMenu   = nullptr;
-    cocos2d::CCNode*      m_swatchBox      = nullptr; // decorative frame + clip (pop target)
+    cocos2d::CCNode*      m_swatchBox      = nullptr;
     cocos2d::CCLayerColor* m_selSwatch     = nullptr;
     cocos2d::CCLabelBMFont* m_valueLabel   = nullptr;
     cocos2d::CCLabelBMFont* m_formatLabel  = nullptr;
-    cocos2d::CCLabelBMFont* m_swatchCaption = nullptr; // "LIVE" / "PICKED"
+    cocos2d::CCLabelBMFont* m_swatchCaption = nullptr;
     geode::TextInput*     m_idInput        = nullptr;
 
-    // State
     cocos2d::ccColor3B m_liveColor{255, 255, 255};
     cocos2d::ccColor3B m_selColor{255, 255, 255};
     bool m_hasSelection = false;
     int  m_formatIndex  = 0;
     bool m_autoApply    = false;
 
-    // Auto-apply bookkeeping
     cocos2d::ccColor3B m_lastApplied{0, 0, 0};
-    bool m_hasApplied     = false; // a color was pushed to the channel at least once
-    bool m_autoNoIdWarned = false; // "enter a Color ID" hint shown once this session
+    bool m_hasApplied     = false;
+    bool m_autoNoIdWarned = false;
 
     void buildUI();
-    void liveSample();         // pre-swap: read the pixel under the cursor (GL)
+    void liveSample();
     void updateReadout();
     void pickAt(cocos2d::CCPoint glPos);
     bool pointInHud(cocos2d::CCPoint p) const;
@@ -98,10 +81,10 @@ private:
     void onToggleAuto(cocos2d::CCObject*);
     void onNoop(cocos2d::CCObject*) {}
     void applyColorToChannel(cocos2d::ccColor3B col, int channelID);
-    void tryAutoApply(); // push the current selection to the Color ID channel (live)
+    void tryAutoApply();
 
     std::string currentValueString() const;
     void doClose();
 };
 
-} // namespace paimon::editorcp
+}

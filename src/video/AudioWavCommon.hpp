@@ -11,8 +11,9 @@
 namespace paimon::video::detail {
 
 // Serialises concurrent extractions (VideoPlayers can be created off the main
-// thread) and protects the OS media stacks from re-entrancy.
-std::mutex& audioExtractorMutex();
+// thread) and protects the OS media stacks from re-entrancy. Recursive because
+// extractAudioToWav wraps extractAudioToPcm.
+std::recursive_mutex& audioExtractorMutex();
 
 // Temp WAV path for a given source video. Stable hash of the video path.
 std::string makeWavPath(const std::string& videoPath);

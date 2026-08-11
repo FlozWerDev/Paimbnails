@@ -18,9 +18,8 @@ inline float rgbDist(std::uint8_t const* a, std::uint8_t r, std::uint8_t g,
     return std::sqrt(dr * dr + dg * dg + db * db);
 }
 
-// Luminance-tolerant colour distance: light/dark shades of the same hue
-// (pale lime ↔ deeper green on GD buttons) stay closer than pure Euclidean RGB.
-// Chroma is still strict so white rings / BPM glyphs stay out.
+// Luminance-tolerant distance keeps same-hue shades together while strict chroma
+// excludes white rings and glyphs.
 inline float colorDist(std::uint8_t const* p,
                        std::uint8_t sr, std::uint8_t sg, std::uint8_t sb) {
     float dr = static_cast<float>(p[0]) - static_cast<float>(sr);
@@ -30,14 +29,13 @@ inline float colorDist(std::uint8_t const* p,
     float cr = dr - dL;
     float cg = dg - dL;
     float cb = db - dL;
-    // Higher = gradients (top light / bottom dark) join more easily.
+// Higher values bridge larger luminance gradients.
     constexpr float kLumaScale = 3.6f;
     return std::sqrt(
         (dL * dL) / (kLumaScale * kLumaScale) + cr * cr + cg * cg + cb * cb);
 }
 
-// Soft match for flood-fill: base distance, plus a gradient bridge that allows
-// more luminance swing when chroma is still close (same family of greens).
+// Flood-fill match adds a luminance bridge when chroma remains close.
 inline bool colorMatches(std::uint8_t const* p,
                          std::uint8_t sr, std::uint8_t sg, std::uint8_t sb,
                          float limit) {
@@ -53,7 +51,7 @@ inline bool colorMatches(std::uint8_t const* p,
     float d = std::sqrt((dL * dL) / (kLumaScale * kLumaScale) + chromaSq);
     if (d <= limit) return true;
     float chroma = std::sqrt(chromaSq);
-    // Same-hue gradient bridge: keep white/text out via chroma ceiling.
+// Same-hue bridge with a chroma ceiling for white/text.
     if (chroma <= limit * 0.70f && std::fabs(dL) <= limit * 3.0f) return true;
     return false;
 }
@@ -133,7 +131,7 @@ void sealInteriorHoles(MaskBuffer& mask, ImageBuffer const& sprite, int alphaCut
     }
 }
 
-}  // namespace
+}
 
 std::vector<float> FusionEngine::softCoverage(MaskBuffer const& mask) {
     int W = mask.width;
@@ -172,8 +170,7 @@ ImageBuffer FusionEngine::buildStampCanvas(ImageBuffer const& texture,
                                            int pixelOffsetY) {
     if (texture.empty() || frameW <= 0 || frameH <= 0) return ImageBuffer();
     transform.opacity = 255;
-    // Fusion defaults to Fill so the texture covers the painted region
-    // instead of letterboxing (Fit) and leaving the original colour visible.
+// Default to Fill so the texture covers the painted region.
     if (transform.isDefault()) {
         transform.fitMode = ImageFitMode::Fill;
     }
@@ -183,7 +180,7 @@ ImageBuffer FusionEngine::buildStampCanvas(ImageBuffer const& texture,
         && mask->width == frameW && mask->height == frameH) {
         int mx = 0, my = 0, mw = 0, mh = 0;
         if (maskBounds(*mask, mx, my, mw, mh) && mw > 0 && mh > 0) {
-            // 1px pad so soft coverage / AA at the mask edge still has texels.
+// One-pixel padding preserves soft AA at mask edges.
             constexpr int kPad = 1;
             bx = std::max(0, mx - kPad);
             by = std::max(0, my - kPad);
@@ -194,9 +191,7 @@ ImageBuffer FusionEngine::buildStampCanvas(ImageBuffer const& texture,
         }
     }
 
-    // Fit/Fill/Stretch relative to the painted region (mask AABB), not the
-    // full sprite canvas — avoids "cropped" texture when only part of the
-    // button is filled.
+// Fit/Fill/Stretch use the mask AABB, not the full sprite canvas.
     ImageBuffer patch = SpritePreviewRenderer::renderCustomImage(
         texture, bw, bh, transform,
         static_cast<float>(pixelOffsetX), static_cast<float>(pixelOffsetY));
@@ -239,7 +234,7 @@ void FusionEngine::applyCached(ImageBuffer& base,
         auto* bp = baseData + i * ImageBuffer::kBytesPerPixel;
         if (bp[3] == 0) continue;
 
-        // Sample stamp with pixel shift (nearest). Out-of-bounds = transparent.
+// Sample with integer pixel shift; out-of-bounds is transparent.
         int x = static_cast<int>(i % static_cast<std::size_t>(fw));
         int y = static_cast<int>(i / static_cast<std::size_t>(fw));
         int sx = x - offX;
@@ -311,7 +306,7 @@ MaskBuffer FusionEngine::floodFill(ImageBuffer const& sprite,
     }
 
     std::uint8_t sr = seedPx[0], sg = seedPx[1], sb = seedPx[2];
-    // UI radius 0..255. Soft band ~55% wider to absorb AA + gradient fringes.
+// UI radius 0..255; soft band absorbs AA and gradient fringes.
     float tol = static_cast<float>(std::clamp(colorRadius, 0, 255));
     float softTol = tol * 1.55f;
 
@@ -371,8 +366,7 @@ MaskBuffer FusionEngine::floodFill(ImageBuffer const& sprite,
     }
 
     sealInteriorHoles(out, sprite, aCut);
-    // Expand only into same-colour neighbours (soft band), never white rings
-    // or glyphs that fail the colour test.
+// Expand only into same-color neighbors; reject rings and glyphs.
     expandMask(out, sprite, expandRadius, sr, sg, sb,
                static_cast<int>(std::lround(softTol)), aCut);
     return out;
@@ -408,7 +402,7 @@ void FusionEngine::expandMask(MaskBuffer& mask,
                 }
                 auto const* p = px + i * ImageBuffer::kBytesPerPixel;
                 if (p[3] < static_cast<std::uint8_t>(aCut)) continue;
-                // Reject white outline / letters / other hues.
+// Reject white outlines, letters, and other hues.
                 if (colorDist(p, seedR, seedG, seedB) > limit) continue;
 
                 bool neighbour = false;
@@ -486,8 +480,7 @@ void FusionEngine::apply(ImageBuffer& base,
     if (local.isDefault()) {
         local.fitMode = ImageFitMode::Fill;
     }
-    // Bake integer placement into the source sampling pass. Shifting a
-    // pre-rendered canvas would lose pixels clipped by the mask bounds.
+// Bake integer placement into source sampling so masked edge pixels are preserved.
     auto stamp = buildStampCanvas(texture, base.width(), base.height(), local, &mask,
                                   options.pixelOffsetX, options.pixelOffsetY);
     if (stamp.empty()) return;
@@ -507,4 +500,4 @@ ImageBuffer FusionEngine::applyCopy(ImageBuffer const& base,
     return out;
 }
 
-}  // namespace paimon::texture_studio
+}

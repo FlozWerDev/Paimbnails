@@ -123,7 +123,7 @@ void ProfileViewsPopup::loadViews() {
                 if (result.error.find("not available") != std::string::npos) {
                     msg = "Profile views not available";
                 } else if (result.error.find("Rate limited") != std::string::npos) {
-                    msg = "Rate limited — try again later";
+                    msg = "Rate limited - try again later";
                 }
                 if (popup->m_countLabel) popup->m_countLabel->setString(msg.c_str());
                 return;

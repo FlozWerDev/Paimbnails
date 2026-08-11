@@ -71,6 +71,28 @@ std::string makeUniqueFilename(std::filesystem::path const& source, std::string 
 
 } // namespace
 
+std::filesystem::path pathFromUtf8(std::filesystem::path const& path) {
+    return path;
+}
+
+std::filesystem::path pathFromUtf8(std::string_view str) {
+    if (str.empty()) return {};
+#ifdef GEODE_IS_WINDOWS
+    return std::filesystem::path(geode::utils::string::utf8ToWide(str));
+#else
+    return std::filesystem::path(str);
+#endif
+}
+
+std::filesystem::path pathFromUtf8(std::string const& str) {
+    return pathFromUtf8(std::string_view(str));
+}
+
+std::filesystem::path pathFromUtf8(char const* str) {
+    if (!str) return {};
+    return pathFromUtf8(std::string_view(str));
+}
+
 std::filesystem::path rootDir() {
     auto dir = Mod::get()->getSaveDir() / "local_assets";
     std::error_code ec;
@@ -101,15 +123,32 @@ std::filesystem::path normalizePath(std::filesystem::path const& path) {
     return abs.lexically_normal();
 }
 
+std::filesystem::path normalizePath(std::string_view pathStr) {
+    if (pathStr.empty()) return {};
+    return normalizePath(pathFromUtf8(pathStr));
+}
+
+std::filesystem::path normalizePath(std::string const& pathStr) {
+    return normalizePath(std::string_view(pathStr));
+}
+
 std::string normalizePathString(std::filesystem::path const& path) {
     return geode::utils::string::replace(
         geode::utils::string::pathToString(normalizePath(path)), "\\", "/");
 }
 
+std::string normalizePathString(std::string_view pathStr) {
+    return normalizePathString(pathFromUtf8(pathStr));
+}
+
+std::string normalizePathString(std::string const& pathStr) {
+    return normalizePathString(std::string_view(pathStr));
+}
+
 bool exists(std::string const& path) {
     if (path.empty()) return false;
     std::error_code ec;
-    return std::filesystem::exists(normalizePath(path), ec) && !ec;
+    return std::filesystem::exists(normalizePath(pathFromUtf8(path)), ec) && !ec;
 }
 
 ImportResult importToBucket(std::filesystem::path const& source, std::string const& bucket, Kind kind) {
@@ -155,19 +194,35 @@ ImportResult importToBucket(std::filesystem::path const& source, std::string con
     return result;
 }
 
+ImportResult importToBucket(std::string_view source, std::string const& bucket, Kind kind) {
+    return importToBucket(pathFromUtf8(source), bucket, kind);
+}
+
+ImportResult importToBucket(std::string const& source, std::string const& bucket, Kind kind) {
+    return importToBucket(pathFromUtf8(source), bucket, kind);
+}
+
 ImportResult importStoredPath(std::string const& storedPath, std::string const& bucket, Kind kind) {
     if (storedPath.empty()) {
         ImportResult result;
         result.success = true;
         return result;
     }
-    return importToBucket(std::filesystem::path(storedPath), bucket, kind);
+    return importToBucket(pathFromUtf8(storedPath), bucket, kind);
 }
 
 std::string importToBucketString(std::filesystem::path const& source, std::string const& bucket, Kind kind) {
     auto result = importToBucket(source, bucket, kind);
     if (!result.success || result.path.empty()) return "";
     return normalizePathString(result.path);
+}
+
+std::string importToBucketString(std::string_view source, std::string const& bucket, Kind kind) {
+    return importToBucketString(pathFromUtf8(source), bucket, kind);
+}
+
+std::string importToBucketString(std::string const& source, std::string const& bucket, Kind kind) {
+    return importToBucketString(pathFromUtf8(source), bucket, kind);
 }
 
 std::string importStoredPathString(std::string const& storedPath, std::string const& bucket, Kind kind) {

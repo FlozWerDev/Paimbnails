@@ -1,16 +1,6 @@
-// Anonymous-namespace body extracted from hooks/LevelSearchLayer.cpp. Include
-// once from that hook only; it depends on the hook's context.
+// Anonymous-namespace body for hooks/LevelSearchLayer.cpp; it depends on that hook's context.
 
 namespace {
-    // (releaseSearchInputFocus + BoundedTouchMenu moved to features/level-search/services/LevelSearchHelpers.*)
-
-        // 3. Tell the wrapper to deselect — this clears the visual cursor
-
-
-        // input region. The menu does not retain it — the caller must keep
-
-
-
     // Keep this preview scoped to normal level search. List search uses
     // different result objects and should continue using GD's normal flow.
     bool kEnableRealtimeSearchPreview() {
@@ -369,10 +359,8 @@ namespace {
             return true;
         }
 
-        // Remove the CustomListView (which holds a delegate pointer back to us) before
-        // children are destroyed, to avoid a dangling-pointer crash during purgeDirector.
+        // Remove the delegate-owning list before children are destroyed.
         ~RealtimeLevelSearchPreview() override {
-            // Guard: if shutdown already ran, list is already gone.
             if (!m_shuttingDown) {
                 m_shuttingDown = true;
                 cancelPendingSearch();
@@ -383,13 +371,11 @@ namespace {
         }
 
         void cleanup() override {
-            // cleanup() can fire during scene transitions; only clear the delegate, don't shut down.
             clearDelegate();
             CCNode::cleanup();
         }
 
         void onExit() override {
-            // onExit/onEnter fire during transitions; only clear the delegate, don't shut down.
             this->unschedule(schedule_selector(RealtimeLevelSearchPreview::firePendingSearch));
             clearDelegate();
             CCNode::onExit();
@@ -397,7 +383,6 @@ namespace {
 
         void onEnter() override {
             CCNode::onEnter();
-            // Re-show quick-search content if there's no list (e.g. after returning from LevelInfoLayer).
             if (!m_nativeList && m_pendingQuery.empty() && !m_refreshOnEnter) {
                 setQuickSearchContentVisible(true);
             }
@@ -525,7 +510,7 @@ namespace {
             m_activeQuery.clear();
             m_lastRequestFailed = false;
 
-            // Remove the list first; it holds a delegate pointer back to us and would crash on a dangling call.
+            // Remove the delegate-owning list first.
             removeList();
 
             if (removeChildren) {
@@ -846,11 +831,7 @@ namespace {
             auto scene = CCScene::create();
             scene->addChild(layer);
 
-            // Release the search input focus and freeze callbacks BEFORE
-            // pushing the new scene. See the matching method in
-            // RealtimeSearchBrowserPreview for the full rationale — short
-            // version: without this the search input keeps capturing keys
-            // in the next scene (gameplay), so ESC/arrows/etc are eaten.
+            // Release IME focus and freeze callbacks before changing scenes.
             releaseSearchInputFocus(m_owner);
             m_shuttingDown = true;
             cancelPendingSearch();
@@ -2038,21 +2019,8 @@ namespace {
             auto scene = CCScene::create();
             scene->addChild(layer);
 
-            // Release the search input focus and mark the preview as shutting
-            // down BEFORE pushing the new scene. We cannot fully destroy the
-            // preview synchronously here because we are inside a touch
-            // handler — the CCMenuItemSpriteExtra that fired this callback
-            // is still on the stack and removing it now would crash on
-            // return. Instead we:
-            //   1. Detach the IME / clear the input focus immediately, so no
-            //      keystrokes typed in the next scene leak into the search
-            //      input.
-            //   2. Set m_shuttingDown so any pending callbacks (network
-            //      delegate, scheduled search) become no-ops.
-            //   3. Cancel the pending search and clear the delegate so the
-            //      GameLevelManager doesn't call back into a stale preview.
-            // The actual node removal happens via the LevelSearchLayer
-            // cleanup chain when the scene transition finishes.
+            // Release IME focus and freeze callbacks before changing scenes;
+            // defer node removal until the touch handler unwinds.
             prepareForSceneTransition();
 
             TransitionManager::get().pushScene(scene);
@@ -2085,21 +2053,11 @@ namespace {
             }
         }
 
-        // Detaches the search input from the IME and freezes the preview so
-        // it stops emitting any callbacks during the upcoming scene
-        // transition. Safe to call from inside a touch handler — does NOT
-        // remove the node or its children. Final node cleanup happens when
-        // the LevelSearchLayer is destroyed.
+        // Detach IME and freeze callbacks without removing nodes from a touch handler.
         void prepareForSceneTransition() {
-            // 1. Release the search input. This is THE fix for the reported
-            //    bug: without it, the CCTextFieldTTF inside m_searchInput
-            //    keeps its IME delegate registered, and any key typed in
-            //    the next scene (LevelInfoLayer / PlayLayer) is captured by
-            //    the input that stayed alive in the previous layer.
+            // Release IME focus so the next scene cannot receive keys through this input.
             releaseSearchInputFocus(m_owner);
 
-            // 2. Freeze our state so no callback re-attaches the input or
-            //    triggers a re-render after we've started the transition.
             m_shuttingDown = true;
             cancelPendingSearch();
             clearDelegate();
@@ -2117,11 +2075,8 @@ namespace {
         void addRowOpenButton(CCNode* wrapper, int index, float width, float height) {
             if (!wrapper) return;
 
-            // Use a BoundedTouchMenu instead of a plain CCMenu so that touches
-            // outside the visible clip rect are rejected. Without this, rows
-            // that the scroll has pushed above/below the visible region still
-            // capture touches at their world-space position (CCClippingNode
-            // does not filter input, only rendering).
+        // BoundedTouchMenu rejects touches outside the visible clip rect;
+        // CCClippingNode only clips rendering.
             auto menu = BoundedTouchMenu::create();
             menu->setBoundsNode(m_resultsClip);
             menu->setPosition({0.f, 0.f});

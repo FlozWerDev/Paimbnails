@@ -15,7 +15,6 @@ protected:
     geode::LoadingSpinner* m_loadingSpinner = nullptr;
     float m_waitForImageTime = 0.0f;
 
-    // Animation State
     cocos2d::CCRect m_panStartRect;
     cocos2d::CCRect m_panEndRect;
     float m_panElapsed = 0.0f;

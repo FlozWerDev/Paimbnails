@@ -7,47 +7,83 @@
 
 namespace paimon::framebudget {
 
-// Per-frame microsecond budget shared by ALL main-thread thumbnail/LevelCell
-// work (GPU uploads, load callbacks, deferred per-cell gradient/extras setup).
-// It caps total thumbnail work per frame so loading many thumbnails at once
-// doesn't pile up >5ms and tank the FPS; leftover work spreads across following
-// frames. Main thread only; the frame key is CCDirector::getTotalFrames(), so
-// the budget resets automatically each frame without an explicit frame hook.
+// Per-frame microsecond budget for main-thread thumbnail/LevelCell work.
+// It limits total work per frame; unused capacity carries no state forward.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
 inline constexpr int64_t kFrameBudgetUs = 900;
 #else
-// ~2ms per frame: enough to make progress without piling up >5ms of thumbnail
-// work when the queue is large (list scroll, preload, etc.).
+// ~2 ms per frame keeps large queues from stalling the game.
 inline constexpr int64_t kFrameBudgetUs = 2000;
 #endif
 
+// Each stage has a reserved slice plus unused shared capacity, so uploads,
+// callbacks, and GIF frames all advance within the same total budget.
+enum class Stage : int {
+    Upload = 0,  // thumbnail GPU texture uploads
+    Callback,    // per-cell thumbnail load callbacks
+    GifFrame,    // animated GIF frame uploads
+    Count
+};
+
+inline constexpr int kStageCount = static_cast<int>(Stage::Count);
+
+// Reservations sum below 100%; the remainder is shared. GIFs reserve least
+// because playback can fill in after the first frames.
+inline constexpr int kStageReservePct[kStageCount] = { 30, 30, 10 };
+
 inline int64_t& usedUsRef() { static int64_t v = 0; return v; }
 inline int64_t& frameKeyRef() { static int64_t v = -1; return v; }
+inline int64_t* stageUsedUs() { static int64_t v[kStageCount] = {}; return v; }
 
-// reset the counter when entering a new frame
 inline void refresh() {
     auto* dir = cocos2d::CCDirector::sharedDirector();
     int64_t visual = dir ? static_cast<int64_t>(dir->getTotalFrames()) : 0;
     if (visual != frameKeyRef()) {
         frameKeyRef() = visual;
         usedUsRef() = 0;
+        auto* staged = stageUsedUs();
+        for (int i = 0; i < kStageCount; ++i) staged[i] = 0;
     }
 }
 
-// microseconds left in the thumbnail budget for this frame
+inline constexpr int64_t stageReserveUs(Stage stage) {
+    return kFrameBudgetUs * kStageReservePct[static_cast<int>(stage)] / 100;
+}
+
+// Total microseconds left this frame; callers use it as a busy signal.
 inline int64_t remainingUs() {
     refresh();
     return std::max<int64_t>(0, kFrameBudgetUs - usedUsRef());
+}
+
+// Capacity available to this stage: its reservation plus genuinely free budget.
+inline int64_t remainingUs(Stage stage) {
+    refresh();
+    auto const* staged = stageUsedUs();
+    int const idx = static_cast<int>(stage);
+
+    int64_t const ownUnused = std::max<int64_t>(0, stageReserveUs(stage) - staged[idx]);
+
+    int64_t othersUnused = 0;
+    for (int i = 0; i < kStageCount; ++i) {
+        if (i == idx) continue;
+        othersUnused += std::max<int64_t>(
+            0, stageReserveUs(static_cast<Stage>(i)) - staged[i]);
+    }
+
+    int64_t const globalLeft = std::max<int64_t>(0, kFrameBudgetUs - usedUsRef());
+    return std::max<int64_t>(ownUnused, globalLeft - othersUnused);
 }
 
 inline bool hasBudget() {
     return remainingUs() > 0;
 }
 
-// record microseconds consumed by thumbnail work this frame
-inline void consume(int64_t us) {
+inline void consume(Stage stage, int64_t us) {
     refresh();
-    if (us > 0) usedUsRef() += us;
+    if (us <= 0) return;
+    usedUsRef() += us;
+    stageUsedUs()[static_cast<int>(stage)] += us;
 }
 
-} // namespace paimon::framebudget
+}

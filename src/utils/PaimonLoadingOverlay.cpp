@@ -1,4 +1,5 @@
 #include "PaimonLoadingOverlay.hpp"
+#include "SheetAnimSprite.hpp"
 #include "SpriteHelper.hpp"
 #include <algorithm>
 #include <cmath>
@@ -74,11 +75,16 @@ bool PaimonLoadingOverlay::init(std::string const& statusText, float spinnerSize
         m_badge->addChild(ring, 0);
     }
 
+    // Random mascot: static paim_Paimon.png or the sheetsplit GIF animation.
     bool hasMascot = false;
-    if (auto emote = paimon::SpriteHelper::safeCreate("paim_Paimon.png"_spr)) {
+    static thread_local std::mt19937 mascotRng(std::random_device{}());
+    bool preferSheet = std::uniform_int_distribution<int>(0, 1)(mascotRng) == 0;
+
+    auto addStaticMascot = [&]() -> bool {
+        auto emote = paimon::SpriteHelper::safeCreate("paim_Paimon.png"_spr);
+        if (!emote) return false;
         float h = emote->getContentSize().height;
         if (h > 1.f) emote->setScale(spinnerSize * 1.1f / h);
-        // gentle float + sway
         emote->runAction(CCRepeatForever::create(CCSequence::create(
             CCEaseSineInOut::create(CCMoveBy::create(0.8f, {0.f, 5.f})),
             CCEaseSineInOut::create(CCMoveBy::create(0.8f, {0.f, -5.f})),
@@ -90,7 +96,23 @@ bool PaimonLoadingOverlay::init(std::string const& statusText, float spinnerSize
             nullptr
         )));
         m_badge->addChild(emote, 1);
-        hasMascot = true;
+        return true;
+    };
+
+    auto addSheetMascot = [&]() -> bool {
+        auto* anim = SheetAnimSprite::createPaimonMascot();
+        if (!anim) return false;
+        float h = anim->getContentSize().height;
+        if (h > 1.f) anim->setScale(spinnerSize * 1.1f / h);
+        anim->setID("paimon-loading-mascot-sheet"_spr);
+        m_badge->addChild(anim, 1);
+        return true;
+    };
+
+    if (preferSheet) {
+        hasMascot = addSheetMascot() || addStaticMascot();
+    } else {
+        hasMascot = addStaticMascot() || addSheetMascot();
     }
 
     // Fallback when both textures are missing (aggressive texture packs).

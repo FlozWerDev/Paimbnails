@@ -1,4 +1,5 @@
 #include "MainMenuLayoutManager.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 
 #include "../ui/MainMenuDrawShapeNode.hpp"
 
@@ -260,7 +261,6 @@ namespace {
     bool shouldSkipDecorNode(CCNode* node) {
         if (!node) return true;
         auto id = std::string(node->getID());
-        // Paimbnails fullscreen backgrounds/overlays
         if (id.find("paimon-levelinfo-pixel-bg") != std::string::npos) return true;
         if (id.find("paimon-levelinfo-pixel-overlay") != std::string::npos) return true;
         if (id.find("paimon-levelinfo-extra-darkness") != std::string::npos) return true;
@@ -286,8 +286,7 @@ namespace {
                           std::unordered_set<CCNode*> const& claimed) {
         if (!node) return;
 
-        // Skip the main-menu animated icon layer (player icon that runs across
-        // the menu, ground, etc.) so it can't be edited.
+    // Skip the animated player layer; it is not editable.
         if (node != root && typeinfo_cast<MenuGameLayer*>(node)) return;
 
         if (node != root && !shouldSkipDecorNode(node) && !claimed.count(node)) {
@@ -308,7 +307,7 @@ namespace {
         }
     }
 
-    /// Groups adjacent BMFont labels by shared parent (horizontal, same line).
+/// Group adjacent BMFont labels sharing a parent and line.
     void emitGroupedDecorLabels(CCNode* root, std::vector<EditableMenuButton>& out, int& decorCount,
                                 std::unordered_set<CCNode*> const& claimed) {
         if (!root) return;
@@ -384,16 +383,15 @@ namespace {
                                       std::unordered_set<CCNode*> const& claimed) {
         if (!node || decorCount >= 300) return;
 
-        // Skip the main-menu animated icon layer (player icon that runs across
-        // the menu, ground, etc.) so it can't be edited.
+    // Skip the animated player layer; it is not editable.
         if (node != root && typeinfo_cast<MenuGameLayer*>(node)) return;
 
-        // CCLabelBMFont children are per-glyph sprites; skip to avoid one entry per letter.
+    // Skip per-glyph BMFont children.
         if (typeinfo_cast<CCLabelBMFont*>(node)) {
             return;
         }
 
-        // CCSpriteBatchNode children are batched sprites (glyphs/particles); don't recurse.
+    // Do not recurse into batched sprites.
         bool isBatchNode = typeinfo_cast<CCSpriteBatchNode*>(node) != nullptr;
 
         if (node != root && !shouldSkipDecorNode(node) && !claimed.count(node)) {
@@ -439,8 +437,7 @@ namespace {
         }
     }
 
-    // Stable-ID collection (LevelInfoLayer): only nodes with non-empty getID(),
-    // so saved layouts map to the same logical node across level changes.
+    // LevelInfo layouts use non-empty IDs so entries survive level changes.
     void collectStableRecursive(CCNode* node, CCNode* root, std::vector<EditableMenuButton>& out, std::unordered_set<std::string>& keys) {
         if (!node) return;
 
@@ -478,7 +475,6 @@ namespace {
             }
         }
 
-        // Don't recurse into CCLabelBMFont (children are per-glyph batched sprites).
         if (typeinfo_cast<CCLabelBMFont*>(node)) return;
 
         if (auto* children = node->getChildren()) {
@@ -715,7 +711,7 @@ std::vector<EditableMenuButton> MainMenuLayoutManager::collectButtons(CCNode* ro
     std::vector<EditableMenuButton> buttons;
     if (!root) return buttons;
 
-    // LevelInfoLayer varies per level: use only stable IDs so saved layouts stay accurate.
+    // LevelInfo varies by level; use stable IDs only.
     if (rootClassName(root) == "LevelInfoLayer") {
         std::unordered_set<std::string> keys;
         collectStableRecursive(root, root, buttons, keys);
@@ -726,9 +722,7 @@ std::vector<EditableMenuButton> MainMenuLayoutManager::collectButtons(CCNode* ro
     addStandaloneNode(root, buttons, "main-title", "Geometry Dash Title");
     addStandaloneNode(root, buttons, "player-username", "Profile Username");
 
-    // Nodes already represented as buttons/standalone items are claimed so the
-    // decor collectors below don't create a second editable item for the same
-    // node (which would fight the user's edits and snap it back on re-apply).
+    // Claim existing buttons so decoration collectors cannot duplicate them.
     std::unordered_set<CCNode*> claimed;
     claimed.reserve(buttons.size() * 2);
     for (auto const& b : buttons) {
@@ -767,15 +761,14 @@ std::vector<EditableMenuButton> MainMenuLayoutManager::collectShapeNodes(CCNode*
 }
 
 void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
+    if (!paimon::modules::isEnabled("paimbnails.menulayout.menu")) return;
     this->ensureLoaded();
     if (!root) return;
 
     auto buttons = this->collectButtons(root);
     bool changed = false;
 
-    // Capture each button's real (pre-custom) position once per session,
-    // before applying any custom layout. Used by Reset to return to the
-    // current vanilla state even if stored defaults are stale.
+    // Capture vanilla button positions once per session for Reset.
     for (auto const& button : buttons) {
         if (!button.node) continue;
         if (m_sessionDefaults.find(button.key) == m_sessionDefaults.end()) {
@@ -783,8 +776,7 @@ void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
         }
     }
 
-    // The layout editor only operates on MenuLayer and PauseLayer, which have
-    // stable layouts across sessions — no need for the "dynamic scene" path.
+    // MenuLayer and PauseLayer are stable; no dynamic-scene path is needed.
 
     for (auto const& button : buttons) {
         if (!button.node) continue;
@@ -825,8 +817,7 @@ void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
         this->save();
     }
 
-    // Disable AxisLayout on menus with custom-positioned buttons before applying.
-    // Without this, any later updateLayout() call would reset the custom positions.
+    // Disable AxisLayout or later updateLayout() calls will reset custom positions.
     std::unordered_set<CCMenu*> menusWithCustom;
     for (auto const& button : buttons) {
         if (!button.node) continue;
@@ -852,7 +843,7 @@ void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
         MainMenuLayoutManager::applyLayout(button, effective);
     }
 
-    // Don't sync shapes in LevelInfoLayer; shapes are a MenuLayer/PauseLayer decoration.
+    // Shapes belong to MenuLayer/PauseLayer, not LevelInfoLayer.
     if (rootClassName(root) != "LevelInfoLayer") {
         this->syncShapes(root, m_shapes);
     }
@@ -937,8 +928,7 @@ void MainMenuLayoutManager::commit(std::vector<EditableMenuButton> const& button
             continue;
         }
 
-        // The editor only operates on stable scenes (MenuLayer, PauseLayer),
-        // so store the live position directly.
+    // Stable scenes can store the live position directly.
         MenuButtonLayout toStore = current;
 
         if (approximatelyEqual(toStore, defaultIt->second)) {
@@ -1135,9 +1125,7 @@ void MainMenuLayoutManager::applyLayout(CCNode* node, MenuButtonLayout const& la
 
     auto opacityByte = static_cast<GLubyte>(std::clamp(layout.opacity, 0.f, 1.f) * 255.f);
 
-    // Recursively set opacity on the node and all CCRGBAProtocol children.
-    // Needed for complex buttons (e.g. Paimbnails profile with image) whose
-    // child sprites don't inherit opacity automatically.
+    // Propagate opacity through composite buttons whose children do not inherit it.
     std::function<void(CCNode*, GLubyte)> setOpacityRecursive = [&](CCNode* n, GLubyte opacity) {
         if (!n) return;
         if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(n)) {
@@ -1155,15 +1143,12 @@ void MainMenuLayoutManager::applyLayout(CCNode* node, MenuButtonLayout const& la
         if (layout.hasColor) {
             rgba->setColor(layout.color);
         }
-        // Propagate to children for composite nodes
         if (auto* children = node->getChildren()) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 setOpacityRecursive(child, opacityByte);
             }
         }
     } else {
-        // Node itself is not CCRGBAProtocol (e.g. CCMenuItemSpriteExtra wrapper).
-        // Propagate opacity to all children recursively.
         setOpacityRecursive(node, opacityByte);
         if (layout.hasColor) {
             if (auto* menuSprite = typeinfo_cast<CCMenuItemSprite*>(node)) {
@@ -1308,4 +1293,4 @@ std::string MainMenuLayoutManager::rootClassName(CCNode* root) {
     return demangleTypeName(typeid(*root).name());
 }
 
-} // namespace paimon::menu_layout
+}

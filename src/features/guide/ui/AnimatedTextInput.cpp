@@ -112,11 +112,9 @@ void AnimatedTextInput::clear() {
 }
 
 void AnimatedTextInput::onTextChanged(std::string const& text) {
-    // Pulse the glow while typing
     startGlowPulse();
     playTypingPulse();
 
-    // Forward to the user callback
     if (m_userCallback) m_userCallback(text);
 }
 
@@ -154,7 +152,6 @@ void AnimatedTextInput::playTypingPulse() {
 void AnimatedTextInput::playSendSweep() {
     if (!m_glow) return;
 
-    // Intense glow on send
     m_glow->stopActionByTag(kGlowPulseTag);
     auto big = CCSequence::create(
         CCFadeTo::create(0.05f, 200),

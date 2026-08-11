@@ -2,9 +2,7 @@
 #include <cstdint>
 #include <cstddef>
 
-/**
- * Image format detection by magic bytes. Inline, zero-overhead, no external deps.
- */
+// Image format detection by magic bytes; inline and dependency-free.
 namespace paimon::format {
 
 enum class ImageFormat {
@@ -20,9 +18,7 @@ enum class ImageFormat {
     APNG    // animated PNG (detected as PNG first)
 };
 
-/**
- * Detect the image format from magic bytes. Needs only the first 12 bytes.
- */
+// Needs at most the first 12 bytes.
 inline ImageFormat detect(uint8_t const* data, size_t size) {
     if (!data || size < 4) return ImageFormat::Unknown;
 

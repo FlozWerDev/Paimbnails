@@ -11,6 +11,8 @@
 #include <thread>
 #include "../../../core/QualityConfig.hpp"
 #include "../../../utils/ImageConverter.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 
 using namespace geode::prelude;
 
@@ -75,18 +77,23 @@ LocalThumbs& LocalThumbs::get() {
     });
     std::call_once(initFlag, [&]() {
         LocalThumbs* self = inst;
-        paimon::ThreadTracker::get().spawn([self]() {
+        bool started = paimon::ThreadTracker::get().spawn([self]() {
             geode::utils::thread::setName("PaimonLocalThumbs");
             self->initCache();
         });
+        // Spawn is rejected once ThreadTracker is shutting down (e.g. the first
+        // get() of the session happens inside the exit sequence). Nobody will
+        // ever set m_cacheInitialized then, so mark it here or shutdown() burns
+        // its full timeout waiting on a thread that never ran.
+        if (!started) {
+            self->m_cacheInitialized.store(true, std::memory_order_release);
+        }
     });
     return *inst;
 }
 
-std::string LocalThumbs::dir() const {
-    auto save = Mod::get()->getSaveDir();
-    std::filesystem::path base(geode::utils::string::pathToString(save));
-    auto d = base / "thumbnails";
+std::filesystem::path LocalThumbs::dir() const {
+    auto d = Mod::get()->getSaveDir() / "thumbnails";
     std::error_code ec;
     std::error_code ecDir;
     if (!std::filesystem::exists(d, ecDir)) {
@@ -97,7 +104,7 @@ std::string LocalThumbs::dir() const {
             log::debug("carpeta thumbnails lista en: {}", geode::utils::string::pathToString(d));
         }
     }
-    return geode::utils::string::pathToString(d);
+    return d;
 }
 
 std::optional<std::string> LocalThumbs::getThumbPath(int32_t levelID) const {
@@ -114,7 +121,7 @@ std::optional<std::string> LocalThumbs::getThumbPath(int32_t levelID) const {
     int maxIdx = -1;
     std::error_code ec;
     for (int i = 0; i < MAX_THUMBS_PER_LEVEL; ++i) {
-        auto p = std::filesystem::path(d) / (std::to_string(levelID) + "_" + std::to_string(i) + ".rgb");
+        auto p = d / (std::to_string(levelID) + "_" + std::to_string(i) + ".rgb");
         if (std::filesystem::exists(p, ec)) {
             maxIdx = i;
         } else {
@@ -123,11 +130,11 @@ std::optional<std::string> LocalThumbs::getThumbPath(int32_t levelID) const {
     }
 
     if (maxIdx >= 0) {
-        auto p = std::filesystem::path(d) / (std::to_string(levelID) + "_" + std::to_string(maxIdx) + ".rgb");
+        auto p = d / (std::to_string(levelID) + "_" + std::to_string(maxIdx) + ".rgb");
         return geode::utils::string::pathToString(p);
     }
 
-    auto legacyPath = std::filesystem::path(d) / (std::to_string(levelID) + ".rgb");
+    auto legacyPath = d / (std::to_string(levelID) + ".rgb");
     if (std::filesystem::exists(legacyPath, ec)) {
         return geode::utils::string::pathToString(legacyPath);
     }
@@ -137,7 +144,7 @@ std::optional<std::string> LocalThumbs::getThumbPath(int32_t levelID) const {
 
 std::optional<std::string> LocalThumbs::getThumbPathByIndex(int32_t levelID, int index) const {
     if (index < 0 || index >= MAX_THUMBS_PER_LEVEL) return std::nullopt;
-    auto p = std::filesystem::path(dir()) / (std::to_string(levelID) + "_" + std::to_string(index) + ".rgb");
+    auto p = dir() / (std::to_string(levelID) + "_" + std::to_string(index) + ".rgb");
     std::error_code ec;
     if (std::filesystem::exists(p, ec)) {
         return geode::utils::string::pathToString(p);
@@ -150,7 +157,7 @@ std::vector<std::string> LocalThumbs::getAllThumbPaths(int32_t levelID) const {
     auto d = dir();
     std::error_code ec;
     for (int i = 0; i < MAX_THUMBS_PER_LEVEL; ++i) {
-        auto p = std::filesystem::path(d) / (std::to_string(levelID) + "_" + std::to_string(i) + ".rgb");
+        auto p = d / (std::to_string(levelID) + "_" + std::to_string(i) + ".rgb");
         if (std::filesystem::exists(p, ec)) {
             paths.push_back(geode::utils::string::pathToString(p));
         } else {
@@ -195,7 +202,7 @@ std::optional<std::string> LocalThumbs::findAnyThumbnail(int32_t levelID) const 
     std::error_code ecFind;
 
     if (!skipThumbDir) {
-        auto thumbDir = std::filesystem::path(dir());
+        auto thumbDir = dir();
         for (auto const& ext : exts) {
             auto p = thumbDir / (std::to_string(levelID) + ext);
             if (std::filesystem::exists(p, ecFind)) return store(geode::utils::string::pathToString(p));
@@ -229,7 +236,7 @@ LocalThumbs::LoadResult LocalThumbs::loadAsRGBA(int32_t levelID) const {
     auto localPath = findAnyThumbnail(levelID);
     if (!localPath) return result;
 
-    std::filesystem::path fsPath(*localPath);
+    auto fsPath = paimon::assets::pathFromUtf8(*localPath);
     bool isRgbFormat = (fsPath.extension() == ".rgb");
 
     if (isRgbFormat) {
@@ -339,6 +346,10 @@ void LocalThumbs::cacheTexture(int32_t levelID, CCTexture2D* tex) const {
     }
 }
 
+void LocalThumbs::clearTextureCache() {
+    invalidateTexture(0);
+}
+
 void LocalThumbs::invalidateTexture(int32_t levelID) const {
     std::lock_guard<std::mutex> lock(m_texCacheMutex);
     if (levelID == 0) {
@@ -413,11 +424,11 @@ CCTexture2D* LocalThumbs::loadTexture(int32_t levelID) const {
             auto p = baseDir / (std::to_string(levelID) + ext);
             std::error_code extEc;
             if (std::filesystem::exists(p, extEc) && !extEc) {
-                std::string pathStr = geode::utils::string::pathToString(p);
-                log::debug("cargando imagen: {}", pathStr);
-                auto tex = CCTextureCache::sharedTextureCache()->addImage(pathStr.c_str(), false);
-                if (tex) {
-                    return tex;
+                log::debug("cargando imagen: {}", geode::utils::string::pathToString(p));
+                auto loaded = ImageLoadHelper::loadStaticImage(p, 32);
+                if (loaded.success && loaded.texture) {
+                    loaded.texture->autorelease();
+                    return loaded.texture;
                 }
             }
         }
@@ -504,7 +515,7 @@ bool LocalThumbs::saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, 
         return false;
     }
 
-    auto p = std::filesystem::path(dir()) / (std::to_string(levelID) + "_" + std::to_string(idx) + ".rgb");
+    auto p = dir() / (std::to_string(levelID) + "_" + std::to_string(idx) + ".rgb");
     auto tmp = p;
     tmp += ".tmp";
     log::debug("escribiendo en: {}", geode::utils::string::pathToString(p));
@@ -567,8 +578,8 @@ bool LocalThumbs::saveFromRGBA(int32_t levelID, const uint8_t* data, uint32_t wi
     return saveRGB(levelID, rgbData.data(), width, height);
 }
 
-std::string LocalThumbs::mappingFile() const {
-    return geode::utils::string::pathToString(std::filesystem::path(dir()) / "filename_mapping.txt");
+std::filesystem::path LocalThumbs::mappingFile() const {
+    return dir() / "filename_mapping.txt";
 }
 
 void LocalThumbs::storeFileMapping(int32_t levelID, std::string const& fileName) {
@@ -617,7 +628,8 @@ void LocalThumbs::saveMappings() {
     }
     auto res = file::writeString(mappingFile(), content);
     if (!res) {
-        log::error("error guardando mappings en {}: {}", mappingFile(), res.unwrapErr());
+        log::error("error guardando mappings en {}: {}",
+            geode::utils::string::pathToString(mappingFile()), res.unwrapErr());
         return;
     }
     log::debug("se guardaron {} mappings", m_fileMapping.size());
@@ -626,18 +638,21 @@ void LocalThumbs::saveMappings() {
 void LocalThumbs::shutdown() {
     log::info("[LocalThumbs] shutdown");
     m_shuttingDown.store(true, std::memory_order_release);
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    // initCache() polls m_shuttingDown inside its directory walk, so it bails
+    // within one entry. 1s is plenty; the old 3s only ever mattered when the
+    // flag could never be set at all (see get()).
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
     while (!m_cacheInitialized.load(std::memory_order_acquire)) {
         if (std::chrono::steady_clock::now() >= deadline) {
             log::warn("[LocalThumbs] initCache still running after timeout");
             break;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 }
 
 void LocalThumbs::migrateLegacyFile(int32_t levelID, std::filesystem::path const& legacyPath) {
-    auto newPath = std::filesystem::path(dir()) / (std::to_string(levelID) + "_0.rgb");
+    auto newPath = dir() / (std::to_string(levelID) + "_0.rgb");
     std::error_code ec;
     if (std::filesystem::exists(newPath, ec)) {
         std::filesystem::remove(legacyPath, ec);
@@ -655,7 +670,7 @@ int LocalThumbs::nextIndex(int32_t levelID) const {
     auto d = dir();
     std::error_code ec;
     for (int i = 0; i < MAX_THUMBS_PER_LEVEL; ++i) {
-        auto p = std::filesystem::path(d) / (std::to_string(levelID) + "_" + std::to_string(i) + ".rgb");
+        auto p = d / (std::to_string(levelID) + "_" + std::to_string(i) + ".rgb");
         if (!std::filesystem::exists(p, ec)) {
             return i;
         }
@@ -671,7 +686,7 @@ bool LocalThumbs::removeThumb(int32_t levelID, int index) {
         return false;
     }
 
-    auto target = std::filesystem::path(d) / (std::to_string(levelID) + "_" + std::to_string(index) + ".rgb");
+    auto target = d / (std::to_string(levelID) + "_" + std::to_string(index) + ".rgb");
     std::error_code ec;
     std::filesystem::remove(target, ec);
     if (ec) {
@@ -680,8 +695,8 @@ bool LocalThumbs::removeThumb(int32_t levelID, int index) {
     }
 
     for (int i = index + 1; i < count; ++i) {
-        auto from = std::filesystem::path(d) / (std::to_string(levelID) + "_" + std::to_string(i) + ".rgb");
-        auto to = std::filesystem::path(d) / (std::to_string(levelID) + "_" + std::to_string(i - 1) + ".rgb");
+        auto from = d / (std::to_string(levelID) + "_" + std::to_string(i) + ".rgb");
+        auto to = d / (std::to_string(levelID) + "_" + std::to_string(i - 1) + ".rgb");
         ec.clear();
         std::filesystem::rename(from, to, ec);
         if (ec) {
@@ -703,7 +718,7 @@ CCTexture2D* LocalThumbs::loadTextureByIndex(int32_t levelID, int index) const {
     auto pathOpt = getThumbPathByIndex(levelID, index);
     if (!pathOpt) return nullptr;
 
-    auto rgbPath = std::filesystem::path(*pathOpt);
+    auto rgbPath = paimon::assets::pathFromUtf8(*pathOpt);
     std::ifstream in(rgbPath, std::ios::binary);
     if (!in) return nullptr;
 

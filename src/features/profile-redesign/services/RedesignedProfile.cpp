@@ -21,6 +21,7 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GJCommentListLayer.hpp>
 #include <Geode/binding/CommentCell.hpp>
+#include <Geode/modify/CommentCell.hpp>
 #include <Geode/binding/GJComment.hpp>
 #include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/binding/GJAccountSettingsLayer.hpp>
@@ -509,9 +510,7 @@ static void collectNodesByID(CCNode* root, std::string const& id, std::vector<CC
     }
 }
 
-// Every node ID that buildInPlace() adopts into one of its rd-* containers.
-// Kept in sync with the relocate() calls below; needsSettlePass() uses it to
-// decide whether a rebuild is actually needed.
+// IDs adopted by buildInPlace(); needsSettlePass() uses the same set.
 static std::vector<std::string> relocatableIDs(bool ownProfile) {
     std::vector<std::string> ids = {
         "close-button", "refresh-button",
@@ -523,6 +522,7 @@ static std::vector<std::string> relocatableIDs(bool ownProfile) {
         "paimon-custom-badge"_spr, "paimon-user-status-dot"_spr,
         "profile-reviews-btn"_spr, "rate-profile-btn"_spr,
         "paimon-thumb-count-btn"_spr, "profile-music-pause-button"_spr,
+        "copy-icons-button"_spr,
     };
     if (ownProfile) {
         ids.insert(ids.end(), {"settings-button", "requests-button", "comment-button"});
@@ -532,8 +532,26 @@ static std::vector<std::string> relocatableIDs(bool ownProfile) {
     return ids;
 }
 
+// The icon row has its own GJCommentListLayer; hide only the account-comments list.
+static GJCommentListLayer* asVanillaCommentList(cocos2d::CCNode* node) {
+    auto* list = typeinfo_cast<GJCommentListLayer*>(node);
+    if (!list || list->getID() == "icon-background") return nullptr;
+    return list;
+}
+
+static bool hasVisibleVanillaCommentList(cocos2d::CCLayer* layer) {
+    if (!layer || !layer->getChildren()) return false;
+    for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
+        auto* list = asVanillaCommentList(child);
+        if (list && list->isVisible()) return true;
+    }
+    return false;
+}
+
 bool needsSettlePass(cocos2d::CCLayer* layer, cocos2d::CCNode* buttonMenu, bool ownProfile) {
     if (!layer) return false;
+// Vanilla refresh rebuilds comments and invalidates the previous layout.
+    if (hasVisibleVanillaCommentList(layer)) return true;
     auto const ids = relocatableIDs(ownProfile);
     std::string const rdPrefix = "rd-"_spr;
     bool needs = false;
@@ -543,7 +561,6 @@ bool needsSettlePass(cocos2d::CCLayer* layer, cocos2d::CCNode* buttonMenu, bool 
         auto const id = std::string(node->getID());
         bool const rd = insideRd || id.rfind(rdPrefix, 0) == 0;
         if (!id.empty() && std::find(ids.begin(), ids.end(), id) != ids.end()) {
-            // Un-adopted latecomer, or a duplicate of an already-adopted node.
             if (!rd || !seen.insert(id).second) { needs = true; return; }
         }
         if (auto* kids = node->getChildren()) {
@@ -617,8 +634,57 @@ static CommentCell* makeAccountCommentCell(GJComment* comment, float width, floa
 #endif
     cell->autorelease();
     cell->m_accountComment = true;
+    cell->setUserFlag("paimbnails/profile-like-probe"_spr, true);
     cell->loadFromComment(comment);
     return cell;
+}
+
+class $modify(PaimonProfileLikeProbe, CommentCell) {
+    void onLike(CCObject* sender) {
+        if (this->getUserFlag("paimbnails/profile-like-probe"_spr)) {
+            geode::log::info("[paim-redesign] profile comment like button reached CommentCell::onLike");
+            return;
+        }
+        CommentCell::onLike(sender);
+    }
+};
+
+static void setMenuTouchPriority(CCNode* root, int priority) {
+    if (!root) return;
+    if (auto* menu = typeinfo_cast<CCMenu*>(root)) {
+        menu->setTouchPriority(priority);
+    }
+    if (auto* children = root->getChildren()) {
+        for (auto* child : CCArrayExt<CCNode*>(children)) {
+            setMenuTouchPriority(child, priority);
+        }
+    }
+}
+
+static void logCommentMenus(CCNode* root) {
+    if (!root) return;
+    if (auto* menu = typeinfo_cast<CCMenu*>(root)) {
+        geode::log::info(
+            "[paim-redesign] comment menu id='{}' pos=({}, {}) size=({}, {}) visible={} touch={} children={}",
+            menu->getID(), menu->getPositionX(), menu->getPositionY(),
+            menu->getContentWidth(), menu->getContentHeight(), menu->isVisible(),
+            menu->isTouchEnabled(), menu->getChildrenCount());
+        if (auto* children = menu->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                auto* item = typeinfo_cast<CCMenuItem*>(child);
+                if (!item) continue;
+                auto center = item->convertToWorldSpace(item->getContentSize() / 2.f);
+                geode::log::info(
+                    "[paim-redesign] comment item id='{}' pos=({}, {}) size=({}, {}) world-center=({}, {}) visible={} enabled={}",
+                    item->getID(), item->getPositionX(), item->getPositionY(),
+                    item->getContentWidth(), item->getContentHeight(), center.x, center.y,
+                    item->isVisible(), item->isEnabled());
+            }
+        }
+    }
+    if (auto* children = root->getChildren()) {
+        for (auto* child : CCArrayExt<CCNode*>(children)) logCommentMenus(child);
+    }
 }
 
 static void styleAccountCommentCell(CommentCell* cell, float w, float h) {
@@ -789,31 +855,21 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     const float commentsRightW = (contentW - commentsGap) * 0.42f;
     const float commentsLeftX = contentLeft + commentsLeftW * 0.5f;
     const float commentsRightX = contentRight - commentsRightW * 0.5f;
-    // node. Every build that moved it into a clip left its cells present in the
-    // node tree but invisible (the list's internal scroll/clip state breaks when
-    // it is re-parented and scaled). The only build that ever rendered comments    // locate it, then scale/position/lock it below. Drop any stale clip left by
-    // older versions of the redesign.
+// Remove stale clips from older builds; they broke vanilla scroll state.
     removeByID(layer, "rd-comments-clip"_spr);
-    if (commentList && commentList->getID() == "icon-background") {
-        commentList = nullptr;
-    }
-    if (!commentList) {
-        for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
-            auto* candidate = typeinfo_cast<GJCommentListLayer*>(child);
-            if (!candidate || candidate->getID() == "icon-background") continue;
-            commentList = candidate;
-            break;
-        }
-    }
-
-    CCScrollLayerExt* commentScroller = nullptr;
-    (void)commentScroller;
-    if (commentList) {
-        if (auto* scroller = findScroller(commentList)) {
+// Refresh can leave old lists behind; hide every account-comments list.
+    auto hideCommentList = [](GJCommentListLayer* list) {
+        if (!list) return;
+        if (auto* scroller = findScroller(list)) {
             scroller->setTouchEnabled(false);
             scroller->setMouseEnabled(false);
         }
-        commentList->setVisible(false);
+        list->setVisible(false);
+    };
+    hideCommentList(asVanillaCommentList(commentList));
+    for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
+        auto* candidate = asVanillaCommentList(child);
+        if (candidate && candidate != commentList) hideCommentList(candidate);
     }
 
     for (auto const& id : {
@@ -887,11 +943,8 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
 
     auto relocate = [&](CCMenu* destination, std::string const& id) -> bool {
         if (!destination) return false;
-        // A vanilla reload (refresh button) recreates its buttons with the same
-        // ID while the copy we relocated on a previous build is still parked in
-        // a rail. Collect every match, keep exactly one (prefer the freshly
-        // created one under buttonMenu / the vanilla menus, which are walked
-        // first), and delete the stale copies so they can't pile up.
+// Reloads recreate buttons with the same IDs; keep the fresh match and remove
+// stale relocated copies.
         std::vector<CCNode*> matches;
         if (buttonMenu) collectNodesByID(buttonMenu, id, matches);
         {
@@ -912,25 +965,19 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             destination->addChild(node);
             node->release();
         }
-        // Do NOT force visibility/enabled here: buttons like the ban button are
-        // hidden by their owning feature until it decides they apply (mod-only,
-        // etc.). Forcing them on made them flash and then vanish again.
+// Do not force visibility; owning features may hide buttons until applicable.
         node->setLayoutOptions(AxisLayoutOptions::create()->setScaleLimits(0.45f, 1.f));
         return true;
     };
 
-    // Shrinks a vertical rail (and its dark backing panel) so it hugs the
-    // buttons it actually holds, instead of always spanning the full popup
-    // height. This keeps the panels from looking empty when a profile only
-    // has a couple of buttons.
+// Size each rail to its buttons instead of the full popup height.
     auto fitRail = [&](CCMenu* menu, std::string const& id, CCPoint center, float maxH) {
         if (!menu) return;
         auto* bg = layer->getChildByID(id + "-bg");
-        // Only count visible children: hidden buttons (e.g. the ban button on
-        // profiles where it doesn't apply) are ignored by the layout too.
+// Hidden buttons do not contribute to rail layout.
         int n = 0;
         constexpr float gap = 5.f;
-        constexpr float innerPad = 8.f; // breathing room above/below buttons
+    constexpr float innerPad = 8.f;
         float content = 0.f;
         for (auto* ch : CCArrayExt<CCNode*>(menu->getChildren())) {
             if (!ch->isVisible()) continue;
@@ -948,9 +995,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
 
         float h = std::clamp(content + innerPad, 40.f, maxH);
         const float w = menu->getContentSize().width;
-        // Anchor the rail to where the top of the full-height rail used to be,
-        // so buttons start from the top and grow downward instead of sitting
-        // centered in the middle of the popup.
+// Keep the rail top-aligned so buttons grow downward.
         const float topY = center.y + maxH * 0.5f;
         const CCPoint anchored = {center.x, topY - h * 0.5f};
         menu->setContentSize({w, h});
@@ -971,9 +1016,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     closeMenu->updateLayout();
     swapMenu->updateLayout();
 
-    // Hide the whole vanilla button menu instead of hiding children one by one:
-    // buttons that other features create asynchronously land here and used to
-    // flash at their vanilla position until the next rebuild hid them.
+// Hide the whole vanilla menu so asynchronously added buttons cannot flash.
     if (buttonMenu) buttonMenu->setVisible(false);
     const CCSize railSize = {34.f, sz.height - 88.f};
     const float railY = c.y - 12.f;
@@ -1001,6 +1044,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     fitRail(optionsRail, "rd-options-rail"_spr, {railXLeft, railY}, railSize.height);
     auto* socialsRail = makeRail({railXRight, railY}, railSize, "rd-socials-rail"_spr);
     removeGeneratedChildren(socialsRail);
+    relocate(socialsRail, "flozwer.paimbnails2/copy-icons-button");
     auto addSocial = [&](gd::string const& url, char const* frame, std::string const& base) {
         std::string u = std::string(url);
         if (u.empty()) return;
@@ -1046,6 +1090,8 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             scroll->setID("rd-comment-content"_spr);
             scroll->ignoreAnchorPointForPosition(false);
             scroll->setAnchorPoint({0.5f, 0.5f});
+            scroll->setStealingTouches(true);
+            scroll->setUserFlag("alk.better-touch-prio/steals-touch", true);
             scroll->setMouseEnabled(false);
             layer->addChild(scroll);
         }
@@ -1098,6 +1144,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
                     auto* cell = makeAccountCommentCell(comment, naturalW, naturalH);
                     if (!cell) continue;
                     styleAccountCommentCell(cell, naturalW, naturalH);
+                    setMenuTouchPriority(cell, scroll->getTouchPriority() - 1);
                     cell->ignoreAnchorPointForPosition(false);
                     cell->setAnchorPoint({0.f, 0.f});
                     cell->setPosition({0.f, 0.f});
@@ -1111,6 +1158,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
                     holder->setPosition({0.f, y});
                     holder->addChild(cell);
                     scroll->m_contentLayer->addChild(holder);
+                    logCommentMenus(cell);
                 }
             }
             scroll->scrollToTop();
@@ -1214,8 +1262,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             chip->setContentSize({std::max(cursor, 1.f), kChipH});
             menu->addChild(chip);
         };
-        // Own profile: prefer live local stats (ProfilePage also stamps these onto
-        // score before load, but re-apply here so rebuilds after async settle stay correct).
+// Prefer live local stats so async rebuilds keep the own profile current.
         if (ownProfile) {
             paimon::profiles::applyLiveOwnProfileStats(score);
         }
@@ -1358,8 +1405,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         relocate(row, "flozwer.paimbnails2/profile-music-pause-button");
 
         row->updateLayout();
-        // Adapt the bottom dark panel width to the buttons it actually holds,
-        // so it hugs the row instead of always spanning the full content width.
+// Size the bottom panel to the buttons it holds.
         if (auto* bg = layer->getChildByID("rd-bottom-row-bg"_spr)) {
             int n = 0;
             constexpr float gap = 7.f;

@@ -197,7 +197,6 @@ void SmoothUIConfigPopup::rebuild() {
     auto fmtPlain = [](double v) { return fmt::format("{:.2f}", v); };
     auto fmtSecs  = [](double v) { return fmt::format("{:.2f}s", v); };
 
-    // Interruptor principal
     auto* hero = kit::makeHeroToggle(scrollW,
         "Animaciones suaves",
         "Popups, botones y scroll con movimiento fluido.",
@@ -219,7 +218,6 @@ void SmoothUIConfigPopup::rebuild() {
             }),
     });
 
-    // Pestanas Basico / Avanzado
     auto* tabs = kit::makeTabBar(scrollW, {"Basico", "Avanzado"}, m_tab,
         [this](int i) {
             m_tab = i;
@@ -250,7 +248,6 @@ void SmoothUIConfigPopup::rebuild() {
             "Con el preset y estos tres ajustes basta para la mayoria. "
             "En Avanzado puedes afinar popups, botones, scroll y blur."));
     } else {
-        // Popups
         items.push_back(kit::makeCard(scrollW, "Popups", {120, 210, 255}, {
             kit::makeToggleRow(innerW,
                 "Animar al abrir",
@@ -300,7 +297,6 @@ void SmoothUIConfigPopup::rebuild() {
                 [](double v) { ssaved<double>("dynamic-exit-speed", v); }),
         }));
 
-        // Botones
         items.push_back(kit::makeCard(scrollW, "Botones", {130, 240, 170}, {
             kit::makeToggleRow(innerW,
                 "Animar botones",
@@ -333,7 +329,6 @@ void SmoothUIConfigPopup::rebuild() {
                 [](bool v) { ssaved<bool>("smooth-ui-button-release-bounce", v); }),
         }));
 
-        // Scroll y zoom
         items.push_back(kit::makeCard(scrollW, "Scroll y zoom del editor", {255, 170, 120}, {
             kit::makeToggleRow(innerW,
                 "Scroll suave",
@@ -359,7 +354,6 @@ void SmoothUIConfigPopup::rebuild() {
                 [](double v) { ssaved<double>("smooth-scroll-editor-zoom-smoothness", v); }),
         }));
 
-        // Blur y transiciones
         items.push_back(kit::makeCard(scrollW, "Blur y transiciones", {200, 180, 255}, {
             kit::makeToggleRow(innerW,
                 "Desenfocar el fondo",

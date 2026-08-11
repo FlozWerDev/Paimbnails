@@ -27,6 +27,9 @@ using namespace geode::prelude;
 using namespace Shaders;
 
 namespace {
+    // Separate fade actions from the persistent slow zoom.
+    constexpr int kBgFadeActionTag = 0x50A1;
+
     inline void restoreMenuLoopPositionIfNeeded() {
         auto& sm = paimon::menuloop::MenuLoopManager::get();
         if (sm.isOriginalMenuLoop() || sm.isOverride()) return;
@@ -52,9 +55,7 @@ namespace {
     }
 }
 
-// Prevent GameManager from overriding dynamic/profile songs. Priority::Late
-// (not Last) so other mods can still observe/decide after us (VeryLate/Last),
-// keeping coordination cooperative.
+// Keep GameManager from overriding dynamic/profile songs while allowing later observers.
 class $modify(PaimonGameManager, GameManager) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre("GameManager::fadeInMenuMusic", geode::Priority::Late);
@@ -71,8 +72,6 @@ class $modify(PaimonGameManager, GameManager) {
 
         auto* dsm = DynamicSongManager::get();
 
-        // Notify other mods that we're taking over audio so they can react
-        // (e.g. an external music mod can pause).
         auto notifyBlocked = [](char const* reason) {
             paimon::EventBus::get().publish(paimon::AudioOwnerChangedEvent{
                 "menu", reason, 0
@@ -153,12 +152,13 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     }
 
     struct Fields {
-        // Persistent sprites: created once, only the texture is swapped
-        // (no per-swipe create/destroy).
         Ref<CCSprite> m_bgSprite = nullptr;
         Ref<CCSprite> m_sharpBgSprite = nullptr;
+        Ref<CCSprite> m_fadeOverlay = nullptr;
         Ref<CCNode> m_bottomGradient = nullptr;
+        Ref<CCNodeRGBA> m_pageSlider = nullptr;
         Ref<CCNode> m_pageSliderThumb = nullptr;
+        WeakRef<CCNode> m_soundtrackButton;
         float m_sliderBgWidth = 0.f;
         float m_sliderStartX = 0.f;
         float m_sliderThumbWidth = 0.f;
@@ -171,16 +171,12 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         bool m_cachedDynamicSong = false;
         int m_meteringFrameCounter = 0;
         bool m_transitionFinished = false;
+        bool m_exitAnimated = false;
+        bool m_waitingForSoundtrack = false;
         float m_transitionFallbackTime = 0.f;
-        // True once we've faded the vanilla GD background out (one-shot, after
-        // the level thumbnail finished loading post entry-transition).
         bool m_vanillaHidden = false;
-        // Texture cache: original texture and precomputed blur per levelID.
-        // Main levels (1-22) never change, so the blur is computed once and
-        // reused on every swipe.
         std::unordered_map<int, Ref<CCTexture2D>> m_blurCache;
         std::unordered_map<int, Ref<CCTexture2D>> m_texCache;
-        // Last applied levelID, to skip redundant work
         int m_appliedLevelID = 0;
     };
 
@@ -188,11 +184,15 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     bool init(int p0) {
         if (!LevelSelectLayer::init(p0)) return false;
 
+
         auto win = CCDirector::get()->getWinSize();
 
-        // page 0 = level 1 (Stereo Madness)
         int levelID = p0 + 1;
         m_fields->m_currentLevelID = levelID;
+
+        auto* soundtrackButton = this->getChildByIDRecursive("download-soundtrack-button");
+        m_fields->m_soundtrackButton = soundtrackButton;
+        m_fields->m_waitingForSoundtrack = this->isVisibleInTree(soundtrackButton);
         
         // level background — keep GD's ORIGINAL background and ground visible
         // for now. We only fade the vanilla background out once the level's
@@ -201,53 +201,23 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         // until there is a thumbnail ready to transition to.
         this->updateThumbnailBackground(levelID);
 
-        // hide BoomScrollLayer dots and replace with a slider
         if (m_scrollLayer) {
             m_scrollLayer->togglePageIndicators(false);
 
-            // hide the original page-buttons (left/right arrows) by known ID only;
-            // a position heuristic would hide other mods' bottom menus (BetterInfo,
-            // More Icons, etc.). node-ids standardizes these IDs.
-            static constexpr char const* kArrowMenuIDs[] = {
-                "page-buttons", "prev-page-menu", "next-page-menu",
-                "prev-next-menu", "arrow-menu", " arrows-menu",
-                "prev-btn", "next-btn", "prev-arrow", "next-arrow"
-            };
-            auto isArrowMenuID = [](std::string const& id) {
-                for (auto* candidate : kArrowMenuIDs) {
-                    if (id == candidate) return true;
-                }
-                return false;
-            };
-
-            for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
-                if (!child) continue;
-                if (isArrowMenuID(child->getID())) {
-                    child->setVisible(false);
-                }
-            }
-            // recurse through all children in case the menu is nested;
-            // still only hide recognizable IDs.
-            std::function<void(CCNode*)> hideArrowMenus = [&](CCNode* node) {
-                if (!node) return;
-                for (auto* child : CCArrayExt<CCNode*>(node->getChildren())) {
-                    if (!child) continue;
-                    if (isArrowMenuID(child->getID())) {
-                        child->setVisible(false);
-                        continue;
-                    }
-                    hideArrowMenus(child);
-                }
-            };
-            hideArrowMenus(this);
-
-            // horizontal slider reflecting the page position
             float sliderW = win.width * 0.6f;
             float sliderH = 6.f;
             float sliderLeftX = 115.f;
             float sliderY = 32.f;
 
-            // slider background (left-center anchor)
+            auto slider = CCNodeRGBA::create();
+            slider->setID("paimon-page-slider"_spr);
+            slider->setCascadeOpacityEnabled(true);
+            float sliderTargetY = m_fields->m_waitingForSoundtrack ? -10.f : 0.f;
+            slider->setPositionY(sliderTargetY - 4.f);
+            slider->setOpacity(0);
+            this->addChild(slider, 50);
+            m_fields->m_pageSlider = slider;
+
             auto sliderBg = paimon::SpriteHelper::createRoundedRect(
                 sliderW, sliderH, sliderH * 0.5f,
                 {0.1f, 0.1f, 0.1f, 0.6f}
@@ -255,12 +225,10 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             if (sliderBg) {
                 sliderBg->setAnchorPoint({0.f, 0.5f});
                 sliderBg->setPosition({sliderLeftX, sliderY});
-                sliderBg->setZOrder(50);
-                this->addChild(sliderBg);
+                slider->addChild(sliderBg);
             }
 
-            // slider thumb (active bar)
-            const int totalPages = 24; // 22 levels + 2 empty sections
+            const int totalPages = 24;
             float thumbW = std::max(sliderW / totalPages, 10.f);
             auto thumb = paimon::SpriteHelper::createRoundedRect(
                 thumbW, sliderH, sliderH * 0.5f,
@@ -269,19 +237,26 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             if (thumb) {
                 thumb->setID("paimon-slider-thumb"_spr);
                 thumb->setAnchorPoint({0.5f, 0.5f});
-                thumb->setZOrder(51);
-                // initial position: centered at the left of the slider
                 float thumbStartX = sliderLeftX + thumbW / 2;
                 thumb->setPosition({thumbStartX, sliderY});
-                this->addChild(thumb);
+                slider->addChild(thumb, 1);
                 m_fields->m_pageSliderThumb = thumb;
                 m_fields->m_sliderBgWidth = sliderW;
                 m_fields->m_sliderStartX = sliderLeftX + thumbW / 2;
                 m_fields->m_sliderThumbWidth = thumbW;
             }
+
+            slider->runAction(CCSequence::create(
+                CCDelayTime::create(0.08f),
+                CCSpawn::create(
+                    CCFadeTo::create(0.24f, 255),
+                    CCEaseSineOut::create(CCMoveTo::create(0.3f, {0.f, sliderTargetY})),
+                    nullptr
+                ),
+                nullptr
+            ));
         }
 
-        // bottom gradient for text/UI legibility
         {
             float gradH = win.height * 0.2f;
             auto grad = CCLayerGradient::create(
@@ -299,17 +274,12 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             }
         }
 
-        // Style the levels-list: dark borders + 1px taller top and bottom.
-        // Only touch the first vanilla CCScale9Sprite matching the expected
-        // geometry with no custom ID; if another mod (or node-ids) already
-        // assigned an ID, leave it alone to avoid tinting mods like BetterInfo
-        // or alternate themes.
+        // Style only the first unclaimed vanilla list border.
         {
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
                 if (!child) continue;
                 auto* s9 = typeinfo_cast<cocos2d::extension::CCScale9Sprite*>(child);
                 if (!s9) continue;
-                // If it has an ID, assume it's "marked" (by node-ids or another mod); leave it.
                 if (!std::string(s9->getID()).empty()) continue;
 
                 auto size = s9->getContentSize();
@@ -317,21 +287,18 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                 if (size.width <= win.width * 0.5f) continue;
                 if (pos.y <= win.height * 0.2f || pos.y >= win.height * 0.8f) continue;
 
-                // 1px taller top and bottom
                 s9->setContentSize({size.width, size.height + 2.f});
                 s9->setPosition({pos.x, pos.y - 1.f});
-                // dark borders; mark it so re-init doesn't reprocess
                 s9->setColor({30, 30, 30});
                 s9->setOpacity(200);
                 s9->setID("paimon-levels-list-bg"_spr);
-                break; // only the first match
+                break;
             }
         }
         
         this->scheduleOnce(schedule_selector(PaimonLevelSelectLayer::forcePlayMusic), 0.0f);
         this->schedule(schedule_selector(PaimonLevelSelectLayer::checkPageLoop));
 
-        // Perf: cache dynamic-song setting once at init
         m_fields->m_cachedDynamicSong = Mod::get()->getSettingValue<bool>("dynamic-song");
         
         return true;
@@ -350,9 +317,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     $override
     void onEnterTransitionDidFinish() {
         LevelSelectLayer::onEnterTransitionDidFinish();
-        // Transition finished: safe to render the blur FBO now. (Re)apply the
-        // current level's background; if the thumbnail is in RAM it shows
-        // instantly, otherwise an async load applies it later.
+        // Render blur only after the transition; RAM hits apply immediately.
         m_fields->m_transitionFinished = true;
         this->updateThumbnailBackground(m_fields->m_currentLevelID);
     }
@@ -416,12 +381,40 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
          this->syncLevelSelectSong(true);
     }
 
+    bool isVisibleInTree(CCNode* node) const {
+        if (!node || !node->getParent()) return false;
+
+        for (auto* current = node; current; current = current->getParent()) {
+            if (!current->isVisible()) return false;
+            if (current == this) return true;
+        }
+        return false;
+    }
+
+    void centerPageSlider() {
+        auto slider = m_fields->m_pageSlider;
+        if (!slider) return;
+
+        slider->stopAllActions();
+        slider->runAction(CCSpawn::create(
+            CCFadeTo::create(0.24f, 255),
+            CCEaseSineOut::create(CCMoveTo::create(0.3f, {0.f, 0.f})),
+            nullptr
+        ));
+    }
+
     void checkPageLoop(float dt) {
         if (!m_scrollLayer) return;
 
-        // Safety net: if onEnterTransitionDidFinish never fired (no-transition
-        // paths), enable background render after ~0.7s (past the typical 0.5s
-        // fade) so we're never left without a background.
+        if (m_fields->m_waitingForSoundtrack) {
+            auto soundtrackButton = m_fields->m_soundtrackButton.lock();
+            if (!this->isVisibleInTree(soundtrackButton)) {
+                m_fields->m_waitingForSoundtrack = false;
+                this->centerPageSlider();
+            }
+        }
+
+        // Recover background rendering on paths that skip the enter callback.
         if (!m_fields->m_transitionFinished) {
             m_fields->m_transitionFallbackTime += dt;
             if (m_fields->m_transitionFallbackTime >= 0.7f) {
@@ -443,20 +436,26 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             }
         }
 
-        // update slider thumb position (loop-aware)
-        if (m_fields->m_pageSliderThumb && m_scrollLayer) {
+        if (m_fields->m_pageSliderThumb && m_scrollLayer && m_scrollLayer->m_extendedLayer) {
             const int totalPages = 24;
             float pageWidth = m_scrollLayer->getContentSize().width;
             if (pageWidth > 0.f) {
                 float scrollX = -m_scrollLayer->m_extendedLayer->getPositionX();
-                int rawPage = static_cast<int>(std::round(scrollX / pageWidth));
-                // loop: scrolling is cyclic, so the slider wraps to the start
-                int loopedPage = ((rawPage % totalPages) + totalPages) % totalPages;
-                float progress = static_cast<float>(loopedPage) / static_cast<float>(totalPages - 1);
-                // centered thumb: from sliderStartX to sliderStartX + sliderBgWidth - thumbWidth
+                float exactPage = scrollX / pageWidth;
+                float looped = std::fmod(std::fmod(exactPage, static_cast<float>(totalPages)) + totalPages, static_cast<float>(totalPages));
+                float progress = looped / static_cast<float>(totalPages - 1);
+                if (progress > 1.f) progress = 1.f;
                 float maxTravel = m_fields->m_sliderBgWidth - m_fields->m_sliderThumbWidth;
-                float thumbX = m_fields->m_sliderStartX + progress * maxTravel;
-                m_fields->m_pageSliderThumb->setPosition({thumbX, m_fields->m_pageSliderThumb->getPosition().y});
+                float targetX = m_fields->m_sliderStartX + progress * maxTravel;
+                auto* thumb = m_fields->m_pageSliderThumb.data();
+                float curX = thumb->getPositionX();
+                float newX;
+                if (std::fabs(targetX - curX) > maxTravel * 0.5f) {
+                    newX = targetX;
+                } else {
+                    newX = curX + (targetX - curX) * std::min(1.f, dt * 14.f);
+                }
+                thumb->setPositionX(newX);
             }
         }
 
@@ -466,12 +465,9 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             this->syncLevelSelectSong();
         }
 
-        // music "pulse" effect logic
         if (m_fields->m_bgSprite && m_fields->m_cachedDynamicSong) {
-             // Perf: throttle FMOD metering to every 3 frames
              if (++m_fields->m_meteringFrameCounter < 3) return;
              m_fields->m_meteringFrameCounter = 0;
-             // master channel group to read peaks
               auto engine = FMODAudioEngine::sharedEngine();
               if (engine && engine->m_system) {
                  FMOD::ChannelGroup* masterGroup = nullptr;
@@ -497,18 +493,15 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                              }
                          }
                          
-                         // smoothing: fast attack, slow decay
                          if (peak > m_fields->m_smoothedPeak) {
                              m_fields->m_smoothedPeak = peak;
                          } else {
-                             m_fields->m_smoothedPeak -= dt * 1.5f; // decay speed
+                              m_fields->m_smoothedPeak -= dt * 1.5f;
                              if (m_fields->m_smoothedPeak < 0.f) m_fields->m_smoothedPeak = 0.f;
                          }
                          
-                         // reduce sensitivity by 30%
                          float val = m_fields->m_smoothedPeak * 0.7f;
 
-                         // brightness: 80 base -> 255 at peak
                          float brightnessVal = 80.f + (val * 175.f);
                          if (brightnessVal > 255.f) brightnessVal = 255.f;
                          GLubyte cVal = static_cast<GLubyte>(brightnessVal);
@@ -529,7 +522,6 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     
 
     void updateThumbnailBackground(int levelID) {
-        // Skip redundant work if this level is already showing
         if (levelID == m_fields->m_appliedLevelID && m_fields->m_bgSprite) return;
 
         bool isMainLevel = (levelID >= 1 && levelID <= 22);
@@ -539,21 +531,18 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
              return;
         }
 
-        // Fast path 1: texture already cached locally (from a previous swipe)
         auto localIt = m_fields->m_texCache.find(levelID);
         if (localIt != m_fields->m_texCache.end() && localIt->second) {
             this->applyBackground(localIt->second.data(), levelID);
             return;
         }
 
-        // Fast path 2: texture in ThumbnailLoader's global RAM cache
         if (auto* cached = ThumbnailLoader::get().tryGetCachedTexture(levelID, false)) {
             m_fields->m_texCache[levelID] = cached;
             this->applyBackground(cached, levelID);
             return;
         }
 
-        // Async path: request load, then cache and apply on arrival
         std::string fileName = fmt::format("{}.png", levelID);
         Ref<LevelSelectLayer> self = this;
 
@@ -570,18 +559,71 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     }
     
     
+    // Fade an outgoing snapshot over the incoming background.
+    void showFadeOverlayFrom(CCSprite* src) {
+        auto* tex = src->getTexture();
+        if (!tex) return;
+        auto win = CCDirector::get()->getWinSize();
+        auto texSize = tex->getContentSize();
+
+        auto overlay = m_fields->m_fadeOverlay;
+        if (!overlay) {
+            overlay = CCSprite::createWithTexture(tex);
+            if (!overlay) return;
+            overlay->setPosition(win / 2);
+            overlay->setZOrder(-9);
+            this->addChild(overlay);
+            m_fields->m_fadeOverlay = overlay;
+        } else {
+            overlay->setTexture(tex);
+            overlay->setTextureRect(CCRect{0, 0, texSize.width, texSize.height});
+        }
+        overlay->setScale(src->getScale());
+        overlay->setColor(src->getColor());
+        overlay->stopAllActions();
+        overlay->setVisible(true);
+        overlay->setOpacity(src->getOpacity());
+        overlay->runAction(CCSequence::create(
+            CCEaseSineOut::create(CCFadeTo::create(0.35f, 0)),
+            CCHide::create(),
+            nullptr
+        ));
+    }
+
     void applyBackground(CCTexture2D* tex, int levelID = -1) {
         auto win = CCDirector::get()->getWinSize();
+
+        int prevLevelID = m_fields->m_appliedLevelID;
         m_fields->m_appliedLevelID = levelID;
 
-        // No texture = empty sections; hide sprites
+        // Capture the outgoing background except on the first application.
+        if (levelID != prevLevelID && prevLevelID != 0 && m_fields->m_transitionFinished) {
+            CCSprite* fadeSrc = nullptr;
+            if (auto* b = m_fields->m_bgSprite.data(); b && b->isVisible() && b->getOpacity() > 0) {
+                fadeSrc = b;
+            } else if (auto* s = m_fields->m_sharpBgSprite.data(); s && s->isVisible() && s->getOpacity() > 0) {
+                fadeSrc = s;
+            }
+            if (fadeSrc) this->showFadeOverlayFrom(fadeSrc);
+        }
+
         if (!tex) {
-            if (m_fields->m_sharpBgSprite) m_fields->m_sharpBgSprite->setVisible(false);
-            if (m_fields->m_bgSprite) m_fields->m_bgSprite->setVisible(false);
+            auto fadeHide = [](CCSprite* s) {
+                if (!s || !s->isVisible()) return;
+                s->stopActionByTag(kBgFadeActionTag);
+                auto* seq = CCSequence::create(
+                    CCFadeTo::create(0.25f, 0),
+                    CCHide::create(),
+                    nullptr
+                );
+                seq->setTag(kBgFadeActionTag);
+                s->runAction(seq);
+            };
+            fadeHide(m_fields->m_sharpBgSprite.data());
+            fadeHide(m_fields->m_bgSprite.data());
             return;
         }
 
-        // Resolve the blur texture (cached or new)
         CCTexture2D* blurTex = nullptr;
         if (m_fields->m_transitionFinished && levelID > 0) {
             auto blurIt = m_fields->m_blurCache.find(levelID);
@@ -596,13 +638,11 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             }
         }
 
-        // Compute cover-fill scale
         auto texSize = tex->getContentSize();
         float scaleX = win.width / texSize.width;
         float scaleY = win.height / texSize.height;
         float scale = std::max(scaleX, scaleY);
 
-        // Sharp sprite (always visible, even during the transition)
         if (!m_fields->m_sharpBgSprite) {
             auto spr = CCSprite::createWithTexture(tex);
             spr->setPosition(win / 2);
@@ -610,22 +650,20 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             spr->setColor({80, 80, 80});
             this->addChild(spr);
             m_fields->m_sharpBgSprite = spr;
-            // slow zoom animation (applied once, runs forever)
             spr->runAction(CCRepeatForever::create(CCSequence::create(
                 CCScaleTo::create(10.0f, scale * 1.3f),
                 CCScaleTo::create(10.0f, scale),
                 nullptr
             )));
         } else {
-            // Just swap the texture, zero allocation
             m_fields->m_sharpBgSprite->setTexture(tex);
             m_fields->m_sharpBgSprite->setTextureRect(CCRect{0, 0, texSize.width, texSize.height});
         }
+        m_fields->m_sharpBgSprite->stopActionByTag(kBgFadeActionTag);
         m_fields->m_sharpBgSprite->setScale(scale);
         m_fields->m_sharpBgSprite->setVisible(true);
         m_fields->m_sharpBgSprite->setOpacity(255);
 
-        // Blur sprite (post-transition only, needs a working FBO)
         if (blurTex && m_fields->m_transitionFinished) {
             auto blurSize = blurTex->getContentSize();
             float bScaleX = win.width / blurSize.width;
@@ -647,6 +685,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                 m_fields->m_bgSprite->setTexture(blurTex);
                 m_fields->m_bgSprite->setTextureRect(CCRect{0, 0, blurSize.width, blurSize.height});
             }
+            m_fields->m_bgSprite->stopActionByTag(kBgFadeActionTag);
             m_fields->m_bgSprite->setScale(bScale);
             m_fields->m_bgSprite->setVisible(true);
             m_fields->m_bgSprite->setOpacity(255);
@@ -654,17 +693,13 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             m_fields->m_bgSprite->setVisible(false);
         }
 
-        // Now that a real thumbnail is actually on screen (and the entry
-        // transition is over), smoothly fade the vanilla GD background out to
-        // reveal it. Until this point everything stayed 100% original.
+        // Hide vanilla background only after a real thumbnail is visible.
         if (tex && m_fields->m_transitionFinished) {
             this->hideVanillaBackgroundWithFade();
         }
     }
 
-    // Fade the vanilla GD background/ground out (one-shot) to smoothly reveal
-    // the level thumbnail sitting behind them. Leaves our own thumbnail/blur/
-    // gradient nodes and other mods' nodes untouched.
+    // Fade vanilla background nodes without touching our or other mods' nodes.
     void hideVanillaBackgroundWithFade() {
         if (m_fields->m_vanillaHidden) return;
         m_fields->m_vanillaHidden = true;
@@ -672,7 +707,6 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         auto fadeAndHide = [](CCNode* node, float dur) {
             if (!node || !node->isVisible()) return;
             node->stopAllActions();
-            // setCascadeOpacityEnabled / opacity only exist on RGBA nodes.
             bool canFade = false;
             if (auto* rgba = typeinfo_cast<CCNodeRGBA*>(node)) {
                 rgba->setCascadeOpacityEnabled(true);
@@ -687,8 +721,6 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                     CCHide::create(),
                     nullptr));
             } else {
-                // Can't fade this node's opacity; just hide it once the fade
-                // window has elapsed so it disappears together with the rest.
                 node->runAction(CCSequence::create(
                     CCDelayTime::create(dur),
                     CCHide::create(),
@@ -697,16 +729,15 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         };
 
         constexpr float kDur = 0.5f;
-        CCNode* mySharp = m_fields->m_sharpBgSprite.data();
-        CCNode* myBlur  = m_fields->m_bgSprite.data();
-        CCNode* myGrad  = m_fields->m_bottomGradient.data();
+        CCNode* mySharp   = m_fields->m_sharpBgSprite.data();
+        CCNode* myBlur    = m_fields->m_bgSprite.data();
+        CCNode* myGrad    = m_fields->m_bottomGradient.data();
+        CCNode* myOverlay = m_fields->m_fadeOverlay.data();
 
         if (auto* children = this->getChildren()) {
             for (auto* node : CCArrayExt<CCNode*>(children)) {
                 if (!node) continue;
-                // Never touch our own background nodes...
-                if (node == mySharp || node == myBlur || node == myGrad) continue;
-                // ...nor other mods' background nodes.
+                if (node == mySharp || node == myBlur || node == myGrad || node == myOverlay) continue;
                 if (paimon::compat::LevelSelectLocator::isForeignModNode(node)) continue;
 
                 bool isVanillaBg = node->getZOrder() < -1;
@@ -716,7 +747,6 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                 }
             }
         }
-        // Explicitly handle GD's known members in case they sit at z >= -1.
         fadeAndHide(m_backgroundSprite, kDur);
         fadeAndHide(m_groundLayer, kDur);
     }
@@ -728,15 +758,51 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         AudioContextCoordinator::get().deactivateLevelSelect(true);
     }
 
+    // Ease our UI out with GD's outgoing scene transition.
+    void animateExit() {
+        if (m_fields->m_exitAnimated) return;
+        m_fields->m_exitAnimated = true;
+
+        if (auto* slider = m_fields->m_pageSlider.data()) {
+            slider->stopAllActions();
+            slider->runAction(CCSpawn::create(
+                CCFadeTo::create(0.2f, 0),
+                CCEaseSineIn::create(CCMoveTo::create(0.25f, {0.f, -12.f})),
+                nullptr
+            ));
+        }
+
+        if (auto* grad = m_fields->m_bottomGradient.data()) {
+            grad->stopAllActions();
+            grad->runAction(CCFadeTo::create(0.25f, 0));
+        }
+
+        auto fadeBg = [](CCSprite* s) {
+            if (!s || !s->isVisible()) return;
+            s->stopActionByTag(kBgFadeActionTag);
+            auto* fade = CCEaseSineIn::create(CCFadeTo::create(0.35f, 0));
+            fade->setTag(kBgFadeActionTag);
+            s->runAction(fade);
+        };
+        fadeBg(m_fields->m_bgSprite.data());
+        fadeBg(m_fields->m_sharpBgSprite.data());
+        if (auto* overlay = m_fields->m_fadeOverlay.data(); overlay && overlay->isVisible()) {
+            overlay->stopAllActions();
+            overlay->runAction(CCFadeTo::create(0.25f, 0));
+        }
+    }
+
     $override
     void onBack(CCObject* sender) {
         cleanupDynamicSong();
+        animateExit();
         LevelSelectLayer::onBack(sender);
     }
-    
+
     $override
     void keyBackClicked() {
         cleanupDynamicSong();
+        animateExit();
         LevelSelectLayer::keyBackClicked();
     }
 };

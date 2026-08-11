@@ -18,8 +18,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Slider helpers
-
 namespace {
 float readSliderRange(Slider* s, float minV, float maxV) {
     if (!s || !s->getThumb()) return minV;
@@ -57,8 +55,7 @@ std::string shortPath(std::string const& p) {
     return name;
 }
 
-// Wrapper that opens the standard ColorPickPopup with `current` and
-// invokes `cb` with the picked RGB. Encapsulates the boilerplate.
+// Open the standard color picker and return its RGB result.
 template<class Cb>
 void openColorPicker(ccColor3B current, Cb&& cb) {
     auto* popup = geode::ColorPickPopup::create(
@@ -69,9 +66,7 @@ void openColorPicker(ccColor3B current, Cb&& cb) {
     });
     popup->show();
 }
-} // namespace
-
-// Factory + lifecycle
+}
 
 ProgressBarConfigPopup* ProgressBarConfigPopup::create() {
     auto* ret = new ProgressBarConfigPopup();
@@ -123,8 +118,6 @@ void ProgressBarConfigPopup::onExit() {
 void ProgressBarConfigPopup::applyAndSave() {
     ProgressBarManager::get().saveConfig();
 }
-
-// Tabs
 
 void ProgressBarConfigPopup::createTabButtons() {
     auto content = m_mainLayer->getContentSize();
@@ -180,7 +173,6 @@ void ProgressBarConfigPopup::onTabSwitch(CCObject* sender) {
     }
 }
 
-// General tab
 
 void ProgressBarConfigPopup::buildGeneralTab() {
     auto content = m_mainLayer->getContentSize();
@@ -240,7 +232,6 @@ void ProgressBarConfigPopup::buildGeneralTab() {
     menu->addChild(centerBtn);
 }
 
-// Position tab
 
 void ProgressBarConfigPopup::buildPositionTab() {
     auto content = m_mainLayer->getContentSize();
@@ -248,7 +239,7 @@ void ProgressBarConfigPopup::buildPositionTab() {
     auto& cfg = ProgressBarManager::get().config();
     auto winSize = CCDirector::get()->getWinSize();
 
-    // Default custom pos if zero (so user-friendly first-edit).
+    // Default the first custom position to the center.
     if (cfg.posX <= 0.f && cfg.posY <= 0.f) {
         cfg.posX = winSize.width / 2.f;
         cfg.posY = winSize.height - 20.f;
@@ -298,7 +289,6 @@ void ProgressBarConfigPopup::buildPositionTab() {
         menu_selector(ProgressBarConfigPopup::onOpacityChanged), "{:.0f}");
 }
 
-// Colors tab
 
 void ProgressBarConfigPopup::buildColorsTab() {
     auto content = m_mainLayer->getContentSize();
@@ -356,7 +346,6 @@ void ProgressBarConfigPopup::buildColorsTab() {
     m_colorsTab->addChild(info);
 }
 
-// Label tab
 
 void ProgressBarConfigPopup::buildLabelTab() {
     auto content = m_mainLayer->getContentSize();
@@ -369,7 +358,6 @@ void ProgressBarConfigPopup::buildLabelTab() {
 
     float y = content.height - 75.f;
 
-    // Show percentage toggle
     {
         auto lbl = CCLabelBMFont::create("Show Percentage", "bigFont.fnt");
         lbl->setScale(0.45f);
@@ -384,7 +372,6 @@ void ProgressBarConfigPopup::buildLabelTab() {
         y -= 30.f;
     }
 
-    // Custom color row
     {
         auto lbl = CCLabelBMFont::create("Custom Color", "bigFont.fnt");
         lbl->setScale(0.45f);
@@ -409,7 +396,6 @@ void ProgressBarConfigPopup::buildLabelTab() {
         y -= 32.f;
     }
 
-    // Font picker row
     {
         auto fontLbl = CCLabelBMFont::create("Font", "bigFont.fnt");
         fontLbl->setScale(0.45f);
@@ -428,7 +414,6 @@ void ProgressBarConfigPopup::buildLabelTab() {
         y -= 32.f;
     }
 
-    // Sliders
     auto addSlider = [&](char const* text, Slider*& slider, CCLabelBMFont*& valLabel,
                          float val, float minV, float maxV,
                          SEL_MenuHandler cb, char const* fmt_str) {
@@ -461,7 +446,6 @@ void ProgressBarConfigPopup::buildLabelTab() {
         menu_selector(ProgressBarConfigPopup::onPctOffYChanged), "{:.0f}");
 }
 
-// FX tab
 
 void ProgressBarConfigPopup::buildFxTab() {
     auto content = m_mainLayer->getContentSize();
@@ -517,7 +501,6 @@ void ProgressBarConfigPopup::buildFxTab() {
                menu_selector(ProgressBarConfigPopup::onCyclePctMode),
                menu_selector(ProgressBarConfigPopup::onPickPctColor2));
 
-    // Animation speed slider.
     y -= 6.f;
     auto speedLbl = CCLabelBMFont::create("Anim Speed", "bigFont.fnt");
     speedLbl->setScale(0.4f);
@@ -539,7 +522,6 @@ void ProgressBarConfigPopup::buildFxTab() {
 
     y -= 34.f;
 
-    // Custom Textures
     auto hdr = CCLabelBMFont::create("Custom Textures (PNG/JPG/GIF)", "goldFont.fnt");
     hdr->setScale(0.5f);
     hdr->setPosition({cx, y});
@@ -619,7 +601,6 @@ void ProgressBarConfigPopup::refreshFxTab() {
     if (m_bgTexPathLabel)    m_bgTexPathLabel->setString(shortPath(cfg.bgTexturePath).c_str());
 }
 
-// Toggle / button callbacks
 
 void ProgressBarConfigPopup::onEnableToggled(CCObject*) {
     ProgressBarManager::get().config().enabled = !m_enableToggle->isToggled();
@@ -641,7 +622,7 @@ void ProgressBarConfigPopup::onFreeDragToggled(CCObject*) {
         cfg.useCustomPosition = true;
         if (m_enableToggle) m_enableToggle->toggle(true);
         if (m_useCustomPosToggle) m_useCustomPosToggle->toggle(true);
-        PaimonNotify::create("Free Drag enabled — drag the bar in pause", NotificationIcon::Info)->show();
+        PaimonNotify::create("Free Drag enabled - drag the bar in pause", NotificationIcon::Info)->show();
     }
     applyAndSave();
 }
@@ -717,16 +698,14 @@ void ProgressBarConfigPopup::onPickPctColor(CCObject*) {
 void ProgressBarConfigPopup::onResetDefaults(CCObject*) {
     ProgressBarManager::get().resetToDefaults();
     PaimonNotify::create("Progress bar reset", NotificationIcon::Success)->show();
-    // Close the popup so the UI rebuilds with default values next open.
+    // Rebuild the UI with defaults on the next open.
     this->onClose(nullptr);
 }
 
 void ProgressBarConfigPopup::onPickFont(CCObject*) {
     auto* picker = paimon::fonts::FontPickerPopup::create(
         [](std::string const& fontTag) {
-            // FontPickerPopup hands us an already-formatted tag like
-            // "<f:big> ", or "" for the None button. Re-wrapping it
-            // would double-nest, so pass it straight to parseFontTag.
+            // FontPickerPopup already formats the tag; pass it through unchanged.
             auto res = paimon::fonts::parseFontTag(fontTag);
             std::string fntFile = res.hasTag ? res.fontFile : std::string("bigFont.fnt");
             ProgressBarManager::get().config().percentageFont = fntFile;
@@ -761,7 +740,6 @@ void ProgressBarConfigPopup::onCenterPosition(CCObject*) {
     applyAndSave();
 }
 
-// Slider callbacks
 
 void ProgressBarConfigPopup::onPosXChanged(CCObject*) {
     if (!m_posXSlider) return;
@@ -818,7 +796,6 @@ void ProgressBarConfigPopup::onPctOffYChanged(CCObject*) {
     if (m_pctOffYLabel) m_pctOffYLabel->setString(fmt::format("{:.0f}", c.percentageOffsetY).c_str());
 }
 
-// FX callbacks
 
 void ProgressBarConfigPopup::onCycleFillMode(CCObject*) {
     auto& c = ProgressBarManager::get().config();
@@ -884,7 +861,6 @@ void ProgressBarConfigPopup::onColorAnimSpeedChanged(CCObject*) {
         m_colorAnimSpeedLabel->setString(fmt::format("{:.2f}", c.colorAnimSpeed).c_str());
 }
 
-// Texture toggles + pickers
 
 void ProgressBarConfigPopup::onUseFillTextureToggled(CCObject*) {
     auto& c = ProgressBarManager::get().config();

@@ -56,30 +56,9 @@ public:
         m_decoding.store(false, std::memory_order_relaxed);
         m_ring.wakeAll();  // unblock any waiter immediately
         if (m_thread.joinable() && !paimon::timedJoin(m_thread, std::chrono::seconds(3))) {
-            m_decodeThreadDetached.store(true, std::memory_order_release);
+            if (!m_decodeThreadDetached.exchange(true, std::memory_order_acq_rel))
+                noteDetachedDecoder("pl_mpeg");
         }
-    }
-
-    bool consumeFrame(Frame& outFrame) override {
-        auto* slot = m_ring.nextRead();
-        if (!slot) return false;
-
-        int ySize  = slot->strideY * slot->height;
-        int uvH    = (slot->height + 1) / 2;
-        int uvSize = slot->strideCb * uvH;
-
-        std::memcpy(outFrame.planeY,  slot->planeY,  ySize);
-        std::memcpy(outFrame.planeCb, slot->planeCb, uvSize);
-        std::memcpy(outFrame.planeCr, slot->planeCr, uvSize);
-        outFrame.strideY  = slot->strideY;
-        outFrame.strideCb = slot->strideCb;
-        outFrame.strideCr = slot->strideCr;
-        outFrame.width    = slot->width;
-        outFrame.height   = slot->height;
-        outFrame.pts      = slot->pts;
-
-        m_ring.commitRead();
-        return true;
     }
 
     bool skipFrame() override {
@@ -129,6 +108,11 @@ public:
         return m_decodeThreadDetached.load(std::memory_order_acquire);
     }
 
+    bool setLooping(bool loop) override {
+        m_looping.store(loop, std::memory_order_relaxed);
+        return true;
+    }
+
 private:
     void decodeLoop() {
         plm_set_video_decode_callback(m_plm, nullptr, nullptr);
@@ -142,8 +126,16 @@ private:
 
             plm_frame_t* frame = plm_decode_video(m_plm);
             if (!frame) {
-                m_finished.store(true, std::memory_order_release);
-                break;
+                if (!m_looping.load(std::memory_order_relaxed)) {
+                    m_finished.store(true, std::memory_order_release);
+                    break;
+                }
+                plm_seek(m_plm, 0.0, false);
+                frame = plm_decode_video(m_plm);
+                if (!frame) {
+                    m_finished.store(true, std::memory_order_release);
+                    break;
+                }
             }
 
             auto* slot = m_ring.nextWrite();
@@ -199,6 +191,7 @@ private:
     double              m_duration = 0.0;
     std::atomic<bool>   m_decoding{false};
     std::atomic<bool>   m_finished{false};
+    std::atomic<bool>   m_looping{false};
     std::atomic<bool>   m_decodeThreadDetached{false};
     std::thread         m_thread;
 };

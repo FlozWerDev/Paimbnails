@@ -9,32 +9,43 @@
 #include "GuideIntents.hpp"
 #include "ConversationMemory.hpp"
 #include "PopupRegistry.hpp"
+#include "ConversationalEngine.hpp"
+#include "GuideTopicKnowledge.hpp"
+#include "GeminiClient.hpp"
 
-// Singleton that owns all GuideIntents and answers user questions fully locally
-// (no network, no external AI). Keeps a ConversationMemory for contextual
-// answers: detects repeats and short follow-ups and avoids repeating itself.
-// Also exposes getSuggestions(), isEnabled()/setEnabled(), and resetMemory().
+// Local guide service with conversation memory and an optional Gemini mode.
 
 namespace paimon::guide {
+
+// Assistant uses the local matcher; Max uses Gemini.
+enum class GuideMode {
+    Assistant,
+    Max,
+};
 
 class PaimonGuideService {
 public:
     static PaimonGuideService& get();
 
-    // Main entry: called when the user hits Send. Empty/unmatched queries return a found=false fallback.
-    GuideAnswer ask(std::string const& userQuery);
+    // Returns immediately in Assistant mode; Max completes through callback.
+    using AskCallback = geode::CopyableFunction<void(GuideAnswer const&)>;
+    GuideAnswer ask(std::string const& userQuery, AskCallback callback = nullptr);
 
-    // Up to 6 suggestions in the active language: {chip text, query to inject}.
+    GuideMode getMode() const;
+    void setMode(GuideMode mode);
+
+    // False keeps the guide on Assistant no matter what the saved mode says.
+    bool isMaxAvailable() const;
+
+    // Up to six {chip text, query} pairs in the active language.
     std::vector<std::pair<std::string, std::string>> getSuggestions();
 
-    // Saved-value "guide-enabled".
     bool isEnabled() const;
     void setEnabled(bool enabled);
 
-    // For tests / internal debug.
     std::size_t intentCount() const { return m_intents.size(); }
 
-    // Conversation memory; the popup clears it on close.
+    // The popup clears this memory on close.
     ConversationMemory& memory() { return m_memory; }
     void resetMemory() { m_memory.clear(); }
 
@@ -42,35 +53,38 @@ private:
     PaimonGuideService();
     void registerIntents();
 
-    // Normalize a string: lowercase, collapse spaces, strip common ES/PT/FR accents (not full Unicode).
+    // Lowercase, collapse spaces, and strip common ES/PT/FR accents.
     static std::string normalize(std::string s);
 
-    // Tokenize the normalized string on whitespace and basic ASCII punctuation.
+    // Split normalized text on whitespace and basic ASCII punctuation.
     static std::vector<std::string> tokenize(std::string const& normalized);
 
-    // Build a "didn't understand" GuideAnswer in the active language. When the
-    // matcher found close-but-unqualified candidates, names them as suggestions
-    // and fills actionable recommendations when possible.
+    // Build a localized fallback with close matches and recommendations.
     GuideAnswer makeFallback(std::vector<GuideIntent const*> const& suggestions,
                              std::string const& langId) const;
 
-    // Build a response for an intent, varying the message on repeats (variants).
+    // Build a response, varying its text on repeats.
     GuideAnswer buildAnswerFor(GuideIntent const& intent,
                                double matchScore,
                                std::string const& langId);
 
-    // Build a follow-up response reusing the last functional intent.
+    // Reuse the last functional intent for a follow-up.
     GuideAnswer buildFollowUpAnswer(GuideIntent const& intent,
                                     std::string const& langId);
 
-    // Category browse: "music stuff", "cosas de perfil", bare category words.
-    // Returns nullopt if the query is not a category browse.
+    // Resolve sub-topic, "more", or reference follow-ups with chips.
+    GuideAnswer buildContextualAnswer(Resolution const& res,
+                                      std::string const& langId);
+
+    std::string currentTopicId() const { return m_memory.lastTopicId(); }
+
+    // Handle category browsing; returns nullopt for normal questions.
     std::optional<GuideAnswer> tryCategoryBrowse(
         std::string const& normalized,
         std::vector<std::string> const& tokens,
         std::string const& langId) const;
 
-    // Attach related same-category (or runner-up) recommendations to an answer.
+    // Add same-category or runner-up recommendations.
     void attachRelatedRecommendations(
         GuideAnswer& ans,
         GuideIntent const& primary,
@@ -78,13 +92,14 @@ private:
         std::string const& langId,
         int maxExtra = 2) const;
 
-    // Build a GuideRecommendation from an intent id (uses registry for label/action).
+    // Build a recommendation from an intent ID.
     GuideRecommendation makeRecommendation(
         std::string const& intentId,
         std::string const& langId) const;
 
     std::vector<GuideIntent> m_intents;
     ConversationMemory m_memory;
+    ConversationalEngine m_engine;
 };
 
-} // namespace paimon::guide
+}

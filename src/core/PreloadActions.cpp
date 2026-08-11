@@ -10,6 +10,7 @@
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/emotes/services/EmoteService.hpp"
 #include "../features/emotes/services/EmoteCache.hpp"
+#include "../features/global-icon/services/GlobalIconStorage.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../utils/MainThreadDelay.hpp"
 
@@ -32,24 +33,24 @@ void schedulePrefetchMainLevels() {
     g_thumbsTotal.store(static_cast<int>(mainLevels.size()), std::memory_order_release);
     g_thumbsLoaded.store(0, std::memory_order_release);
 
-    paimon::preload::fetchMainLevelManifestWithCache(mainLevels, "Preload");
+    paimon::preload::fetchMainLevelManifestWithCache(mainLevels, "Preload", [] {
+        auto& loader = ThumbnailLoader::get();
+        paimon::preload::staggerMainLevelThumbnailLoads([&loader](int levelID) {
+            loader.requestLoad(
+                levelID,
+                fmt::format("{}.png", levelID),
+                [](cocos2d::CCTexture2D*, bool /*success*/) {
+                    paimon::preload::g_thumbsLoaded.fetch_add(1, std::memory_order_acq_rel);
+                },
+                ThumbnailLoader::PriorityBootstrap
+            );
+        }, 4, 0.06f);
 
-    auto& loader = ThumbnailLoader::get();
-    paimon::preload::staggerMainLevelThumbnailLoads([&loader](int levelID) {
-        loader.requestLoad(
-            levelID,
-            fmt::format("{}.png", levelID),
-            [](cocos2d::CCTexture2D*, bool /*success*/) {
-                paimon::preload::g_thumbsLoaded.fetch_add(1, std::memory_order_acq_rel);
-            },
-            ThumbnailLoader::PriorityBootstrap
+        log::info(
+            "[Paimbnails Preload] Stagger-queued {} main level thumbnails",
+            paimon::kMainLevelMaxID - paimon::kMainLevelMinID + 1
         );
-    }, 4, 0.06f);
-
-    log::info(
-        "[Paimbnails Preload] Stagger-queued {} main level thumbnails",
-        mainLevels.size()
-    );
+    });
 }
 
 void startEmotePreloadIfReady() {
@@ -63,7 +64,7 @@ void startEmotePreloadIfReady() {
     g_emotesCatalogReady.store(true, std::memory_order_release);
 
     if (emotes.empty()) {
-        log::info("[Paimbnails Preload] Emote catalog vacío — preload omitido");
+        log::info("[Paimbnails Preload] Emote catalog vacio - preload omitido");
         return;
     }
 
@@ -73,7 +74,7 @@ void startEmotePreloadIfReady() {
         [](size_t downloaded, size_t skipped, size_t total) {
             if (paimon::isRuntimeShuttingDown()) return;
             log::info(
-                "[Paimbnails Preload] Emote preload terminó: {} descargados, {} ya en cache, {} totales",
+                "[Paimbnails Preload] Emote preload termino: {} descargados, {} ya en cache, {} totales",
                 downloaded, skipped, total
             );
         },
@@ -101,15 +102,15 @@ void schedulePrefetchEmotes() {
     }
 
     if (service.isFetching()) {
-        log::info("[Paimbnails Preload] EmoteService ya está fetcheando catálogo; esperaremos al callback");
+        log::info("[Paimbnails Preload] EmoteService ya esta fetcheando catalogo; esperaremos al callback");
         return;
     }
 
-    log::info("[Paimbnails Preload] Catálogo de emotes no disponible — pidiendo al server");
+    log::info("[Paimbnails Preload] Catalogo de emotes no disponible - pidiendo al server");
     service.fetchAllEmotes([](bool success) {
         if (paimon::isRuntimeShuttingDown()) return;
         if (!success) {
-            log::warn("[Paimbnails Preload] Fetch de catálogo de emotes falló");
+            log::warn("[Paimbnails Preload] Fetch de catalogo de emotes fallo");
             // Mark ready even on failure so the label doesn't wait forever.
             paimon::preload::g_emotesCatalogReady.store(true, std::memory_order_release);
             return;
@@ -127,6 +128,12 @@ void startFullPreload() {
     paimon::scheduleMainThreadDelay(14.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         schedulePrefetchEmotes();
+    });
+    // Downloaded global icons pile up one directory per visited profile; trim
+    // the oldest once the startup rush is over.
+    paimon::scheduleMainThreadDelay(20.0f, []() {
+        if (paimon::isRuntimeShuttingDown()) return;
+        paimon::globalicon::GlobalIconStorage::get().pruneCache();
     });
 }
 

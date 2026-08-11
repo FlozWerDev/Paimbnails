@@ -17,10 +17,8 @@ namespace paimon {
 
 namespace {
 
-// Retry loop for opening the clipboard: other apps (clipboard managers,
-// antivirus, RDP) may hold it briefly, making OpenClipboard fail with
-// ACCESS_DENIED. Exponential backoff (~150ms worst case). Thread-safe;
-// only called from workers (see CaptureOverlay.cpp).
+// Retry OpenClipboard briefly; clipboard managers, antivirus, or RDP may hold it.
+// Called from workers and protected by the process-wide clipboard mutex.
 bool openClipboardWithRetry(HWND owner) {
     static constexpr int kBackoffMs[] = {2, 4, 8, 16, 30, 30, 30, 30};
     static constexpr int kAttempts = sizeof(kBackoffMs) / sizeof(kBackoffMs[0]);
@@ -31,9 +29,7 @@ bool openClipboardWithRetry(HWND owner) {
     return false;
 }
 
-// Allocate a movable global block, copy `data` into it, return the HGLOBAL.
-// The caller transfers ownership to the clipboard via SetClipboardData; on
-// failure it frees the block.
+// Allocate a movable block for SetClipboardData; the caller owns failure cleanup.
 HGLOBAL allocAndFill(void const* data, size_t size) {
     HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, size);
     if (!hMem) return nullptr;
@@ -47,8 +43,7 @@ HGLOBAL allocAndFill(void const* data, size_t size) {
     return hMem;
 }
 
-// Build a CF_DIBV5 buffer: BITMAPV5HEADER + BGRA top-down pixel data.
-// BI_BITFIELDS with explicit masks lets modern apps read the alpha channel.
+// Build a CF_DIBV5 buffer with top-down BGRA and explicit alpha masks.
 std::vector<uint8_t> buildDIBV5(uint8_t const* rgba, int width, int height) {
     size_t const pixelBytes = static_cast<size_t>(width) * height * 4;
     std::vector<uint8_t> buf(sizeof(BITMAPV5HEADER) + pixelBytes);
@@ -68,7 +63,7 @@ std::vector<uint8_t> buildDIBV5(uint8_t const* rgba, int width, int height) {
     h->bV5CSType      = LCS_sRGB;
     h->bV5Intent      = LCS_GM_GRAPHICS;
 
-    // convert RGBA -> BGRA into the destination
+    // Convert RGBA to BGRA.
     uint8_t* dst = buf.data() + sizeof(BITMAPV5HEADER);
     for (int y = 0; y < height; ++y) {
         uint8_t const* srcRow = rgba + static_cast<size_t>(y) * width * 4;
@@ -76,17 +71,16 @@ std::vector<uint8_t> buildDIBV5(uint8_t const* rgba, int width, int height) {
         for (int x = 0; x < width; ++x) {
             uint8_t const* s = srcRow + x * 4;
             uint8_t* d       = dstRow + x * 4;
-            d[0] = s[2]; // B
-            d[1] = s[1]; // G
-            d[2] = s[0]; // R
-            d[3] = s[3]; // A
+    d[0] = s[2];
+    d[1] = s[1];
+    d[2] = s[0];
+    d[3] = s[3];
         }
     }
     return buf;
 }
 
-// Build a classic CF_DIB buffer: BITMAPINFOHEADER + 24bpp BGR bottom-up.
-// Understood by Paint, Office, and any reader assuming legacy DIB.
+// Build a legacy CF_DIB buffer: 24bpp bottom-up BGR for broad compatibility.
 std::vector<uint8_t> buildDIBClassic(uint8_t const* rgba, int width, int height) {
     int const rowStride = ((width * 3 + 3) & ~3); // pad to 4 bytes
     size_t const pixelBytes = static_cast<size_t>(rowStride) * height;
@@ -110,15 +104,15 @@ std::vector<uint8_t> buildDIBClassic(uint8_t const* rgba, int width, int height)
         for (int x = 0; x < width; ++x) {
             uint8_t const* s = srcRow + x * 4;
             uint8_t* d       = dstRow + x * 3;
-            d[0] = s[2]; // B
-            d[1] = s[1]; // G
-            d[2] = s[0]; // R
+    d[0] = s[2];
+    d[1] = s[1];
+    d[2] = s[0];
         }
     }
     return buf;
 }
 
-} // namespace
+}
 
 bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
     if (!rgba || width <= 0 || height <= 0) {
@@ -127,7 +121,6 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
         return false;
     }
 
-    // 1. build all buffers before locking the clipboard to minimize lock time
 
     auto dibv5Buf  = buildDIBV5(rgba, width, height);
     auto dibClassicBuf = buildDIBClassic(rgba, width, height);
@@ -140,7 +133,6 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
         pngBuf
     );
 
-    // 2. allocate a global block per format; the clipboard takes ownership of each
 
     HGLOBAL hDIBV5    = allocAndFill(dibv5Buf.data(),     dibv5Buf.size());
     HGLOBAL hDIB      = allocAndFill(dibClassicBuf.data(), dibClassicBuf.size());
@@ -156,11 +148,10 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
         return false;
     }
 
-    // 3. register the custom "PNG" format (Discord/browsers read it)
+    // Register a custom PNG format for Discord and browsers.
 
     UINT const cfPng = RegisterClipboardFormatA("PNG");
 
-    // 4. open clipboard, empty, set the formats
     HWND owner = GetForegroundWindow();
     if (!openClipboardWithRetry(owner)) {
         geode::log::warn("[ClipboardImage] OpenClipboard fallo (GetLastError={})",
@@ -213,7 +204,6 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
 
     CloseClipboard();
 
-    // 5. free whatever wasn't transferred to the clipboard
     if (hDIBV5) GlobalFree(hDIBV5);
     if (hDIB)   GlobalFree(hDIB);
     if (hPNG)   GlobalFree(hPNG);
@@ -239,4 +229,4 @@ bool copyRGBAToClipboard(uint8_t const* /*rgba*/, int /*width*/, int /*height*/)
 
 #endif
 
-} // namespace paimon
+}

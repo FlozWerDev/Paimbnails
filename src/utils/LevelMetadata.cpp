@@ -18,7 +18,6 @@ std::string collectLevelMetadata(GJGameLevel* level) {
 
     auto j = matjson::Value::object();
 
-    // --- Identity ---
     j["levelID"]        = level->m_levelID.value();
     j["levelName"]      = s(level->m_levelName);
     j["creatorName"]    = s(level->m_creatorName);
@@ -27,11 +26,9 @@ std::string collectLevelMetadata(GJGameLevel* level) {
     j["originalLevel"]  = level->m_originalLevel.value();
     j["levelType"]      = static_cast<int>(level->m_levelType);
 
-    // --- Description (raw + unpacked) ---
     j["levelDesc"]          = s(level->m_levelDesc);
     j["levelDescUnpacked"]  = s(level->getUnpackedLevelDescription());
 
-    // --- Difficulty / rating ---
     j["difficulty"]        = static_cast<int>(level->m_difficulty);
     j["averageDifficulty"] = level->getAverageDifficulty();
     j["demon"]             = level->m_demon.value();
@@ -52,12 +49,10 @@ std::string collectLevelMetadata(GJGameLevel* level) {
     j["rateFeature"]       = level->m_rateFeature;
     j["rateUser"]          = s(level->m_rateUser);
 
-    // --- Engagement / community ---
     j["downloads"]   = level->m_downloads;
     j["likes"]       = level->m_likes;
     j["dislikes"]    = level->m_dislikes;
 
-    // --- Length / size / version ---
     j["levelLength"]    = level->m_levelLength;
     j["isPlatformer"]   = level->isPlatformer();
     j["objectCount"]    = level->m_objectCount.value();
@@ -67,7 +62,6 @@ std::string collectLevelMetadata(GJGameLevel* level) {
     j["levelIndex"]     = level->m_levelIndex;
     j["levelStringLength"] = static_cast<int64_t>(level->m_levelString.size());
 
-    // --- Song / audio ---
     j["songID"]         = level->m_songID;
     j["audioTrack"]     = level->m_audioTrack;
     j["songName"]       = s(level->getSongName());
@@ -76,7 +70,6 @@ std::string collectLevelMetadata(GJGameLevel* level) {
     j["sfxIDs"]         = s(level->m_sfxIDs);
     j["songSize"]       = level->m_songSize;
 
-    // --- Coins ---
     j["coins"]              = level->m_coins;
     j["coinsVerified"]      = level->m_coinsVerified.value();
     j["firstCoinVerified"]  = level->m_firstCoinVerified.value();
@@ -84,12 +77,10 @@ std::string collectLevelMetadata(GJGameLevel* level) {
     j["thirdCoinVerified"]  = level->m_thirdCoinVerified.value();
     j["requiredCoins"]      = level->m_requiredCoins;
 
-    // --- Dates / timestamps ---
     j["uploadDate"]  = s(level->m_uploadDate);
     j["updateDate"]  = s(level->m_updateDate);
     j["timestamp"]   = level->m_timestamp;
 
-    // --- Player progress / records ---
     j["normalPercent"]      = level->m_normalPercent.value();
     j["newNormalPercent2"]  = level->m_newNormalPercent2.value();
     j["practicePercent"]    = level->m_practicePercent;
@@ -102,13 +93,11 @@ std::string collectLevelMetadata(GJGameLevel* level) {
     j["bestPoints"]         = level->m_bestPoints;
     j["recordString"]       = s(level->m_recordString);
 
-    // --- Daily / weekly / gauntlet ---
     j["dailyID"]        = level->m_dailyID.value();
     j["gauntletLevel"]  = level->m_gauntletLevel;
     j["gauntletLevel2"] = level->m_gauntletLevel2;
     j["listPosition"]   = level->m_listPosition;
 
-    // --- Flags / state ---
     j["unlisted"]               = level->m_unlisted;
     j["friendsOnly"]            = level->m_friendsOnly;
     j["isEditable"]             = level->m_isEditable;

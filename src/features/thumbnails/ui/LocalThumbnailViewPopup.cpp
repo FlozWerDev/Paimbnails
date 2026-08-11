@@ -105,15 +105,12 @@ void LocalThumbnailViewPopup::replaceRemoteThumbnails(std::vector<ThumbnailAPI::
 void LocalThumbnailViewPopup::ensureOrderControls(float /*contentWidth*/) {
     if (!m_isAdmin || !m_buttonMenu || m_verificationCategory >= 0 || m_orderEditBtn) return;
 
-    // Use the same ButtonSprite style as the Report button so they match in size,
-    // but with the blue (GJ_button_03.png) background to distinguish it.
     auto orderSpr = ButtonSprite::create("Order", 80, true, "bigFont.fnt", "GJ_button_03.png", 30.f, 0.5f);
     orderSpr->setScale(0.6f);
     if (orderSpr) {
         m_orderEditBtn = CCMenuItemSpriteExtra::create(orderSpr, this, menu_selector(LocalThumbnailViewPopup::onOrderEdit));
         m_orderEditBtn->setID("thumbnail-order-edit-btn"_spr);
 
-        // Use z=-1 so Order sorts before Report (z=0) in the RowLayout.
         m_buttonMenu->addChild(m_orderEditBtn, -1);
         m_buttonMenu->updateLayout();
     }
@@ -206,7 +203,6 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
     if (m_thumbnailTexture) {
         resStr = fmt::format("{} x {}", m_thumbnailTexture->getPixelsWide(), m_thumbnailTexture->getPixelsHigh());
     } else if (auto* sprite = typeinfo_cast<CCSprite*>(m_thumbnailSprite)) {
-        // Fallback para GIF/AnimatedGIFSprite y otros sprites con textura
         if (auto* tex = sprite->getTexture()) {
             resStr = fmt::format("{} x {}", tex->getPixelsWide(), tex->getPixelsHigh());
         }
@@ -231,7 +227,7 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
          if (!item.creator.empty()) creator = item.creator;
          if (!item.date.empty()) date = item.date;
 
-        // fecha desde id si parece timestamp
+// Derive a date when the id looks like a timestamp.
         if (date == "Unknown" && id.length() >= 13) {
             auto numResult = geode::utils::numFromString<long long>(id);
             if (numResult.isOk()) {
@@ -254,7 +250,6 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
             }
         }
 
-         // yyyy-mm-dd -> dd/mm/aa
          if (date.length() >= 10 && date[4] == '-' && date[7] == '-') {
              std::string year = date.substr(2, 2);
              std::string month = date.substr(5, 2);
@@ -279,7 +274,6 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
         id, type, format, resStr, creator, date
     );
 
-    // Store ID for copy functionality
     m_cachedInfoId = id;
 
     auto* alert = FLAlertLayer::create(
@@ -294,8 +288,6 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
 }
 
 void LocalThumbnailViewPopup::FLAlert_Clicked(FLAlertLayer* alert, bool btn2) {
-    // btn2 = true means second button ("Copy ID") was clicked
-    // btn2 = false means first button ("OK") was clicked or alert dismissed
     if (btn2 && m_cachedInfoId != "Unknown" && !m_cachedInfoId.empty()) {
         geode::utils::clipboard::write(m_cachedInfoId);
         PaimonNotify::show("ID copied to clipboard!", geode::NotificationIcon::Success);
@@ -382,7 +374,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     int requestToken = ++m_galleryRequestToken;
     auto& thumb = m_thumbnails[index];
 
-    // URL estable para cache: solo _pv=thumbId (sin requestToken)
+// Cache by thumbnail id, not request token.
     std::string url = thumb.url;
     if (!thumb.id.empty()) {
         auto sep = (url.find('?') == std::string::npos) ? "?" : "&";
@@ -401,7 +393,6 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
 
     Ref<LocalThumbnailViewPopup> self = this;
 
-    // Si el thumbnail es video, descargar y reproducir con VideoThumbnailSprite
     if (thumb.isVideo() && !thumb.url.empty()) {
         log::info("[ThumbnailViewPopup] loadThumbnailAt: video detected for index={}", index);
         std::string videoToken = thumb.id.empty() ? thumb.url : thumb.id;
@@ -423,7 +414,6 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
             float maxWidth = content.width - 40.f;
             float maxHeight = content.height - 80.f;
 
-            // displayVideoThumbnail handles play/pause state and shows play button
             self->displayVideoThumbnail(videoSprite, maxWidth, maxHeight, content);
 
             log::info("[ThumbnailViewPopup] loadThumbnailAt: video ready for index={}", index);
@@ -431,8 +421,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
         return;
     }
 
-    // Instant RAM cache check: if the URL is already cached, display immediately
-    // without waiting for the async callback. This makes navigation feel instant.
+// Show RAM hits immediately; otherwise wait for the callback.
     {
         auto& cache = paimon::cache::ThumbnailCache::get();
         auto ramTex = cache.getUrlFromRam(url);
@@ -444,7 +433,6 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
             float maxHeight = content.height - 80.f;
             displayThumbnail(ramTex.value(), maxWidth, maxHeight, content, false);
 
-            // Prefetch adjacent thumbnails para navegacion instantanea
             int count = static_cast<int>(m_thumbnails.size());
             if (count > 1) {
                 auto prefetch = [&thumbs = m_thumbnails, count](int idx) {
@@ -465,8 +453,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
         }
     }
 
-    // Si la URL estaba marcada como fallida, limpiar failed-cache para que
-    // el usuario al abrir el popup force un reintento silencioso.
+// A manual open clears the failure marker and allows a retry.
     {
         auto& cache = paimon::cache::ThumbnailCache::get();
         std::string normalizedUrl = ThumbnailLoader::normalizeUrlKey(url);
@@ -477,7 +464,6 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
         }
     }
 
-    // Usar requestUrlLoad (con cache RAM de URLs) en vez de downloadFromUrl (sin cache)
     ThumbnailLoader::get().requestUrlLoad(url, [self, requestToken, index](CCTexture2D* tex, bool success) {
         if (!self->isUiAlive()) return;
         if (requestToken != self->m_galleryRequestToken) return;
@@ -490,26 +476,23 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
             float maxHeight = content.height - 80.f;
             self->displayThumbnail(tex, maxWidth, maxHeight, content, false);
 
-            // Prefetch adjacent thumbnails para navegacion instantanea
             int count = static_cast<int>(self->m_thumbnails.size());
             if (count > 1) {
                 auto prefetch = [&thumbs = self->m_thumbnails, count](int idx) {
                     idx = ((idx % count) + count) % count;
                     auto& t = thumbs[idx];
-                    if (t.isVideo()) return; // no prefetchar videos
+                    if (t.isVideo()) return;
                     std::string purl = t.url;
                     if (!t.id.empty()) {
                         auto s = (purl.find('?') == std::string::npos) ? "?" : "&";
                         purl += fmt::format("{}_pv={}", s, t.id);
                     }
-                    // Prefetch usando requestUrlLoad para que quede en cache RAM
                     ThumbnailLoader::get().requestUrlLoad(purl, [](CCTexture2D*, bool) {}, 0);
                 };
                 prefetch(index + 1);
                 prefetch(index - 1);
             }
         } else {
-            // Fallback chain antes de rendirse: local thumbs -> RAM cache por levelID
             bool fallbackApplied = false;
             if (self->m_levelID > 0) {
                 auto localTex = LocalThumbs::get().loadTexture(self->m_levelID);
@@ -570,22 +553,26 @@ void LocalThumbnailViewPopup::loadCurrentSuggestion() {
     if (m_leftArrow) m_leftArrow->setVisible(m_suggestions.size() > 1);
     if (m_rightArrow) m_rightArrow->setVisible(m_suggestions.size() > 1);
 
-    std::string url = std::string(PaimonConstants::THUMBNAIL_CDN_URL) + suggestion.filename;
+    std::string url = HttpClient::get().buildAssetURL(suggestion.filename, "suggestions");
+    int requestToken = ++m_suggestionRequestToken;
+    int requestedIndex = m_currentIndex;
 
     Ref<LocalThumbnailViewPopup> safeRef = this;
 
-    ThumbnailAPI::get().downloadFromUrl(url, [safeRef](bool success, CCTexture2D* tex) {
-         if (!safeRef->isUiAlive()) {
-             return;
-         }
+    ThumbnailAPI::get().downloadFromUrl(url, [safeRef, requestToken, requestedIndex](bool success, CCTexture2D* tex) {
+        if (!safeRef->isUiAlive()) return;
+        if (requestToken != safeRef->m_suggestionRequestToken
+            || requestedIndex != safeRef->m_currentIndex) return;
 
-         if (success && tex) {
-             auto content = safeRef->m_mainLayer->getContentSize();
-             float maxWidth = content.width - 40.f;
-             float maxHeight = content.height - 80.f;
+        auto content = safeRef->m_mainLayer->getContentSize();
+        if (success && tex) {
+            float maxWidth = content.width - 40.f;
+            float maxHeight = content.height - 80.f;
 
-             safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, false);
-         }
+            safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, false);
+        } else {
+            safeRef->showNoThumbnail(content);
+        }
     });
 }
 
@@ -639,7 +626,6 @@ void LocalThumbnailViewPopup::onExit() {
     m_rightArrow = nullptr;
     m_orderEditBtn = nullptr;
 
-    // Stop video playback before clearing
     if (m_thumbnailSprite) {
         if (auto* videoSprite = geode::cast::typeinfo_cast<VideoThumbnailSprite*>(m_thumbnailSprite)) {
             videoSprite->stop();
@@ -648,7 +634,6 @@ void LocalThumbnailViewPopup::onExit() {
     m_thumbnailSprite = nullptr;
     m_clippingNode = nullptr;
 
-    // Stop video playback and clean up play button
     m_videoPlaying = false;
     if (m_playBtnMenu) {
         m_playBtnMenu->removeFromParent();
@@ -708,7 +693,6 @@ void LocalThumbnailViewPopup::onRate(CCObject* sender) {
     popup->show();
 }
 
-// Init / Setup
 
 bool LocalThumbnailViewPopup::init(float width, float height) {
      if (!Popup::init(width, height)) return false;
@@ -727,8 +711,7 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     int  verificationCategory = paimon::SessionState::consumeInt(vctx.verificationCategory);
     m_verificationCategory = verificationCategory;
 
-    // â”€â”€ NEW: If not opened from verification queue, check if user is mod and
-    // there are pending thumbnails for this level in the local queue â”€â”€
+    // When opened outside verification, restore pending moderator suggestions.
     if (verificationCategory < 0) {
         std::string modCode = geode::Mod::get()->getSavedValue<std::string>("mod-code", "");
         if (!modCode.empty()) {
@@ -736,7 +719,7 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
             for (auto const& item : pendingItems) {
                 if (item.levelID == m_levelID && item.status == PendingStatus::Open && !item.suggestions.empty()) {
                     log::info("[ThumbnailViewPopup] Found pending thumbnail for level {} in local queue ({} suggestion(s))", m_levelID, item.suggestions.size());
-                    m_verificationCategory = 0; // Verify
+                    m_verificationCategory = 0;
                     m_suggestions = item.suggestions;
                     verificationCategory = 0;
                     break;
@@ -827,7 +810,6 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
         this->m_mainLayer->addChild(border, 2);
     }
 
-    // flechas galeria
     auto menu = CCMenu::create();
     menu->setPosition({0, 0});
     this->m_mainLayer->addChild(menu, 10);
@@ -873,8 +855,7 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
         WeakRef<LocalThumbnailViewPopup> self = this;
         ThumbnailAPI::get().getThumbnails(m_levelID, [self](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
             auto popup = self.lock();
-            // Nota: no usar isUiAlive() aqui porque getThumbnails puede resolver
-            // sincronamente desde cache durante setup(), cuando getParent() aun es null.
+            // Cached results may resolve before the popup is attached.
             if (!popup || popup->m_isExiting || !popup->m_mainLayer) return;
 
             log::info("[ThumbnailViewPopup] getThumbnails callback: levelID={}, success={}, count={}", 
@@ -895,7 +876,6 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
 }
 
 
-// Carga desde multiples fuentes
 
 void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category, float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
     log::info("[ThumbnailViewPopup] Cargando desde cola de verificacion - Categoria: {}", static_cast<int>(category));
@@ -903,8 +883,7 @@ void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category
     Ref<LocalThumbnailViewPopup> safeRef = this;
 
     if (category == PendingCategory::Verify) {
-        // If suggestions are populated (e.g., from local pending queue with filename),
-        // use loadCurrentSuggestion which uses the actual filename URL
+        // Suggestions already contain their file URLs.
         if (!m_suggestions.empty()) {
             m_currentIndex = 0;
             loadCurrentSuggestion();
@@ -918,10 +897,10 @@ void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category
             }
 
             if (success && tex) {
-                log::info("[ThumbnailViewPopup] âœ“ Suggestion cargada");
+                log::info("[ThumbnailViewPopup] [OK] Suggestion cargada");
                 safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
             } else {
-                log::warn("[ThumbnailViewPopup] âœ— No se pudo cargar suggestion");
+                log::warn("[ThumbnailViewPopup] [FAIL] No se pudo cargar suggestion");
                 safeRef->showNoThumbnail(content);
             }
         });
@@ -933,10 +912,10 @@ void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category
             }
 
             if (success && tex) {
-                log::info("[ThumbnailViewPopup] âœ“ Update cargada");
+                log::info("[ThumbnailViewPopup] [OK] Update cargada");
                 safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
             } else {
-                log::warn("[ThumbnailViewPopup] âœ— No se pudo cargar update");
+                log::warn("[ThumbnailViewPopup] [FAIL] No se pudo cargar update");
                 safeRef->showNoThumbnail(content);
             }
         });
@@ -948,10 +927,10 @@ void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category
             }
 
             if (success && tex) {
-                log::info("[ThumbnailViewPopup] âœ“ Reported cargada");
+                log::info("[ThumbnailViewPopup] [OK] Reported cargada");
                 safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
             } else {
-                log::warn("[ThumbnailViewPopup] âœ— No se pudo cargar reported");
+                log::warn("[ThumbnailViewPopup] [FAIL] No se pudo cargar reported");
                 safeRef->showNoThumbnail(content);
             }
         });
@@ -962,21 +941,19 @@ void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category
 }
 
 void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
-    // Cargar todos los thumbnails locales para galeria
     m_localThumbPaths = LocalThumbs::get().getAllThumbPaths(m_levelID);
     int localCount = static_cast<int>(m_localThumbPaths.size());
 
     if (localCount > 0) {
         log::info("[ThumbnailViewPopup] {} thumbnails locales encontrados para nivel {}", localCount, m_levelID);
         m_viewingLocal = true;
-        m_localCurrentIndex = localCount - 1; // mostrar el mas reciente
+        m_localCurrentIndex = localCount - 1;
 
         auto tex = LocalThumbs::get().loadTextureByIndex(m_levelID, m_localCurrentIndex);
         if (tex) {
             log::info("[ThumbnailViewPopup] Textura cargada desde LocalThumbs indice {}", m_localCurrentIndex);
             this->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
 
-            // mostrar UI de galeria si hay multiples
             if (localCount > 1) {
                 if (m_leftArrow) m_leftArrow->setVisible(true);
                 if (m_rightArrow) m_rightArrow->setVisible(true);
@@ -990,14 +967,12 @@ void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float m
         log::warn("[ThumbnailViewPopup] LocalThumbs fallo al cargar textura indice {}", m_localCurrentIndex);
     }
 
-    // fallback: buscar cualquier thumbnail local (png/jpg only â€” skip MP4,
-    // videos are handled by the gallery API via loadThumbnailAt to avoid
-    // showing a buggy flash that gets overwritten by the API callback)
+    // Local PNG/JPG fallback; videos go through the gallery API to avoid a flash.
     auto localPath = LocalThumbs::get().findAnyThumbnail(m_levelID);
     if (localPath) {
         auto lowerPath = geode::utils::string::toLower(*localPath);
         if (lowerPath.ends_with(".mp4")) {
-            log::info("[ThumbnailViewPopup] LocalThumbs es MP4, skipping â€” gallery API will handle it");
+            log::info("[ThumbnailViewPopup] LocalThumbs es MP4, skipping - gallery API will handle it");
         } else {
             log::info("[ThumbnailViewPopup] Fuente 1: LocalThumbs ENCONTRADO (fallback)");
             auto tex = LocalThumbs::get().loadTexture(m_levelID);
@@ -1014,8 +989,7 @@ void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float m
 
     m_viewingLocal = false;
 
-    // Fuente 1.5: URL-based RAM cache â€” LevelCell stores thumbnails here via requestUrlLoad.
-    // The level-based RAM cache (tryLoadFromCache) may miss them since LevelCell uses URL keys.
+    // Check the URL-keyed RAM cache used by LevelCell.
     {
         auto& cache = paimon::cache::ThumbnailCache::get();
         std::string mainUrl = ThumbnailAPI::get().getThumbnailURL(m_levelID);
@@ -1027,20 +1001,17 @@ void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float m
         }
     }
 
-    // Fuente 2: ThumbnailLoader (revisa RAM cache, luego disco, luego descarga)
     loadFromThumbnailLoader(maxWidth, maxHeight, content, openedFromReport);
 }
 
 bool LocalThumbnailViewPopup::tryLoadFromCache(float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
-    // Buscar en el cache de disco real (cache/{id}.png o .gif) via ThumbnailLoader
-    // ThumbnailLoader ya maneja esta logica internamente, asi que delegamos a el
-    // para evitar rutas desincronizadas. Verificamos solo RAM hit rapido.
+    // ThumbnailLoader owns the disk-cache path.
     auto ramTex = paimon::cache::ThumbnailCache::get().getFromRam(m_levelID, false);
     if (!ramTex.has_value()) {
         ramTex = paimon::cache::ThumbnailCache::get().getFromRam(m_levelID, true);
     }
     if (ramTex.has_value() && ramTex.value()) {
-        log::info("[ThumbnailViewPopup] âœ“ RAM cache hit directo para nivel {}", m_levelID);
+        log::info("[ThumbnailViewPopup] [OK] RAM cache hit directo para nivel {}", m_levelID);
         this->displayThumbnail(ramTex.value(), maxWidth, maxHeight, content, openedFromReport);
         return true;
     }
@@ -1062,11 +1033,11 @@ void LocalThumbnailViewPopup::loadFromThumbnailLoader(float maxWidth, float maxH
         }
 
         if (tex) {
-            log::info("[ThumbnailViewPopup] âœ“ Textura recibida ({}x{})",
+            log::info("[ThumbnailViewPopup] [OK] Textura recibida ({}x{})",
                 tex->getPixelsWide(), tex->getPixelsHigh());
             safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
         } else {
-            log::warn("[ThumbnailViewPopup] âœ— ThumbnailLoader fallo, intentando descarga directa del servidor");
+            log::warn("[ThumbnailViewPopup] [FAIL] ThumbnailLoader fallo, intentando descarga directa del servidor");
             safeRef->tryDirectServerDownload(maxWidth, maxHeight, content, openedFromReport);
         }
     }, 10, false, ThumbnailLoader::Quality::High);
@@ -1084,27 +1055,26 @@ void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxH
         }
 
         if (success && !data.empty()) {
-            log::info("[ThumbnailViewPopup] âœ“ Datos descargados del servidor ({} bytes)", data.size());
+            log::info("[ThumbnailViewPopup] [OK] Datos descargados del servidor ({} bytes)", data.size());
 
-            // Detectar si los datos son MP4 (ftyp box at offset 4)
+            // Detect MP4 data via the ftyp box at offset 4.
             bool isMp4 = data.size() >= 8 && data[4] == 'f' && data[5] == 't' && data[6] == 'y' && data[7] == 'p';
             if (isMp4) {
-                log::info("[ThumbnailViewPopup] âœ“ Datos detectados como MP4, usando VideoThumbnailSprite");
+                log::info("[ThumbnailViewPopup] [OK] Datos detectados como MP4, usando VideoThumbnailSprite");
                 std::string cacheKey = fmt::format("direct_video_{}", safeRef->m_levelID);
                 auto* videoSprite = VideoThumbnailSprite::createFromData(
                     std::vector<uint8_t>(data.begin(), data.end()), cacheKey);
                 if (videoSprite) {
-                    // displayVideoThumbnail handles play/pause state and shows play button
                     safeRef->displayVideoThumbnail(videoSprite, maxWidth, maxHeight, content);
                     return;
                 }
-                log::warn("[ThumbnailViewPopup] âœ— VideoThumbnailSprite fallo para MP4");
+                log::warn("[ThumbnailViewPopup] [FAIL] VideoThumbnailSprite fallo para MP4");
             } else {
                 auto image = new CCImage();
                 if (image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
                     auto tex = new CCTexture2D();
                     if (tex->initWithImage(image)) {
-                        log::info("[ThumbnailViewPopup] âœ“ Textura creada desde servidor ({}x{})",
+                        log::info("[ThumbnailViewPopup] [OK] Textura creada desde servidor ({}x{})",
                             tex->getPixelsWide(), tex->getPixelsHigh());
                         safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
                         tex->release();
@@ -1114,10 +1084,10 @@ void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxH
                     tex->release();
                 }
                 image->release();
-                log::error("[ThumbnailViewPopup] âœ— Error creando textura desde datos del servidor");
+                log::error("[ThumbnailViewPopup] [FAIL] Error creando textura desde datos del servidor");
             }
         } else {
-            log::warn("[ThumbnailViewPopup] âœ— Descarga del servidor fallo");
+            log::warn("[ThumbnailViewPopup] [FAIL] Descarga del servidor fallo");
         }
 
         log::info("[ThumbnailViewPopup] === TODAS LAS FUENTES FALLARON ===");
@@ -1127,7 +1097,6 @@ void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxH
 }
 
 
-// Display / UI
 
 void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoSprite, float maxWidth, float maxHeight, CCSize content) {
     if (!m_mainLayer || !videoSprite) {
@@ -1136,7 +1105,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
 
     clearGalleryDisplay();
 
-    // Keep video invisible until first frame is decoded â€” the 1x1 placeholder
+    // Keep video invisible until first frame is decoded - the 1x1 placeholder
     // texture stretched to video dimensions causes glitchy rendering artifacts
     m_videoPlaying = false;
     videoSprite->setVisible(false);
@@ -1164,7 +1133,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
     m_thumbnailTexture = nullptr;
     resetZoomGestureState();
 
-    // Play muted to start decoding â€” first frame callback will pause and apply scale
+    // Play muted to start decoding - first frame callback will pause and apply scale
     videoSprite->play();
 
     Ref<LocalThumbnailViewPopup> safeRef = this;
@@ -1178,8 +1147,6 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
 
         safeRef->m_thumbnailTexture = readySprite->getTexture();
 
-        // Calculate scale the same way displayThumbnail does â€” using getContentWidth/Height
-        // (in points), not raw pixel dimensions. This matches how CCSprite renders.
         float cw = readySprite->getContentWidth();
         float ch = readySprite->getContentHeight();
         if (cw < 1.f) cw = 1.f;
@@ -1198,12 +1165,11 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
         readySprite->setVisible(true);
         readySprite->setOpacity(255);
 
-        // First frame decoded â€” pause video so play button overlay works
+        // First frame decoded - pause video so play button overlay works
         if (!safeRef->m_videoPlaying) {
             readySprite->pause();
         }
 
-        // Position play button at center of video area
         if (safeRef->m_playBtn) {
             if (safeRef->m_clippingNode) {
                 safeRef->m_playBtn->setPosition({maxWidth / 2.f, maxHeight / 2.f});
@@ -1236,7 +1202,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
         playIcon->setOpacity(200);
         btnSprite = playIcon;
     } else {
-        auto btnSpr = ButtonSprite::create("â–¶", 32, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.7f);
+        auto btnSpr = ButtonSprite::create(">", 32, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.7f);
         btnSpr->setScale(0.8f);
         btnSpr->setOpacity(200);
         btnSprite = btnSpr;
@@ -1263,12 +1229,10 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         return;
     }
 
-    // Save old sprite for crossfade (don't nuke clipping node)
     CCNode* oldSprite = m_thumbnailSprite;
     m_thumbnailSprite = nullptr;
     m_thumbnailTexture = nullptr;
 
-    // Remove play button when switching to static thumbnail
     m_videoPlaying = false;
     if (m_playBtnMenu) {
         m_playBtnMenu->removeFromParent();
@@ -1276,7 +1240,6 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         m_playBtn = nullptr;
     }
 
-    // Remove "no thumbnail" container if present
     if (m_mainLayer) {
         if (auto node = m_mainLayer->getChildByID("nothumb-container"_spr)) {
             node->removeFromParent();
@@ -1391,16 +1354,14 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
 
     sprite->setVisible(true);
 
-    // Apply the configured gallery transition (directional-elastic, crossfade, etc.)
     applyPopupTransition(sprite, oldSprite, maxWidth);
 
-    log::info("[ThumbnailViewPopup] âœ“ Thumbnail agregado a mainLayer");
+    log::info("[ThumbnailViewPopup] [OK] Thumbnail agregado a mainLayer");
     log::info("[ThumbnailViewPopup] Posicion: ({},{}), Scale: {}, Tamano final: {}x{}",
         centerX, centerY, scale, sprite->getContentWidth() * scale, sprite->getContentHeight() * scale);
     log::info("[ThumbnailViewPopup] Parent: {}, Visible: {}, Opacity: {}, Z-Order: {}",
         (void*)sprite->getParent(), sprite->isVisible(), sprite->getOpacity(), sprite->getZOrder());
 
-    // flechas + contador
     if (!m_suggestions.empty()) {
         auto menu = CCMenu::create();
         menu->setPosition({0, 0});
@@ -1430,7 +1391,6 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         if (m_rightArrow) m_rightArrow->setVisible(m_suggestions.size() > 1);
     }
 
-    // menu botones
     m_buttonMenu = CCMenu::create();
     auto buttonMenu = m_buttonMenu;
 
@@ -1485,7 +1445,6 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
 
     buttonMenu->addChild(downloadBtn);
 
-    // YouTube button
     if (auto ytSpr = paimon::SpriteHelper::safeCreateWithFrameName("gj_ytIcon_001.png")) {
         ytSpr->setScale(0.7f);
         auto ytBtn = CCMenuItemSpriteExtra::create(ytSpr, this, menu_selector(LocalThumbnailViewPopup::onYouTubeBtn));
@@ -1493,7 +1452,6 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         buttonMenu->addChild(ytBtn);
     }
 
-    // btn eliminar (mods)
     auto gm = GameManager::get();
     if (gm) {
         auto username = gm->m_playerName;
@@ -1550,7 +1508,6 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
 
     this->m_mainLayer->addChild(buttonMenu, 10);
 
-    // btn engranaje settings
     m_settingsMenu = CCMenu::create();
     auto settingsMenu = m_settingsMenu;
     settingsMenu->setPosition({0, 0});
@@ -1566,7 +1523,6 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         settingsMenu->addChild(gearBtn);
     }
 
-    // btn actualizar miniatura
     if (m_verificationCategory < 0) {
         auto refreshSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_updateBtn_001.png");
         if (!refreshSpr) refreshSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_replayBtn_001.png");
@@ -1582,7 +1538,6 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
 
     ensureOrderControls(content.width);
 
-    // Ensure gallery arrows remain visible when there are multiple thumbnails
     if (m_suggestions.empty() && m_thumbnails.size() > 1) {
         if (m_leftArrow) m_leftArrow->setVisible(true);
         if (m_rightArrow) m_rightArrow->setVisible(true);
@@ -1599,7 +1554,6 @@ void LocalThumbnailViewPopup::clearGalleryDisplay() {
     if (!m_mainLayer) return;
 
     if (m_thumbnailSprite) {
-        // Stop video playback before removing
         if (auto* videoSprite = geode::cast::typeinfo_cast<VideoThumbnailSprite*>(m_thumbnailSprite)) {
             videoSprite->stop();
         }
@@ -1608,10 +1562,10 @@ void LocalThumbnailViewPopup::clearGalleryDisplay() {
     }
     m_thumbnailTexture = nullptr;
 
-    // keep m_clippingNode alive â€” only clear children (sprites) inside it
+    // Keep the clip node; only replace its sprites.
     if (m_clippingNode) {
         m_clippingNode->removeAllChildren();
-        // re-add the semi-transparent background inside the clip
+        // Restore the clip background.
         auto content = m_clippingNode->getContentSize();
         auto clippingBg = CCLayerColor::create({0, 0, 0, 255});
         clippingBg->setOpacity(25);
@@ -1626,7 +1580,6 @@ void LocalThumbnailViewPopup::clearGalleryDisplay() {
         node->removeFromParent();
     }
 
-    // Reset video playback state and remove play button
     m_videoPlaying = false;
     if (m_playBtnMenu) {
         m_playBtnMenu->removeFromParent();
@@ -1638,10 +1591,8 @@ void LocalThumbnailViewPopup::clearGalleryDisplay() {
 void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldNode, float maxWidth) {
     if (!newNode) return;
 
-    // These are always CCSprite* in practice â€” cast for opacity access
     auto* newSpr = static_cast<CCSprite*>(newNode);
 
-    // First load (no old sprite): run a beautiful transition!
     if (!oldNode || !oldNode->getParent()) {
         if (oldNode) oldNode->removeFromParent();
         
@@ -1671,18 +1622,12 @@ void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldN
     float sx = newNode->getScaleX();
     float sy = newNode->getScaleY();
 
-    // Directional: determine slide direction based on navigation
     bool goRight = (m_navDirection == NavDirection::Right);
     bool goLeft = (m_navDirection == NavDirection::Left);
-    // For non-directional transitions, default to right
     bool slideFromRight = goRight || (!goLeft);
 
     if (style == "directional-elastic") {
-        // Directional elastic: slow start, then fast â€” like an elastic snap
-        // in the direction of navigation.  The new image starts offscreen
-        // on the side we're navigating toward, and snaps into place.
         {
-            // Old: slide out opposite direction with back-ease + fade
             float oldTargetX = goLeft ? (targetPos.x + maxWidth) : (targetPos.x - maxWidth);
             oldNode->runAction(CCSequence::create(
                 CCSpawn::create(
@@ -1692,7 +1637,6 @@ void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldN
                 CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)),
                 nullptr));
         }
-        // New: start offscreen on the incoming side, elastic snap to center
         float startX = goLeft ? (targetPos.x - maxWidth) : (targetPos.x + maxWidth);
         newNode->setPosition({startX, targetPos.y});
         newSpr->setOpacity(255);
@@ -1700,7 +1644,6 @@ void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldN
             CCMoveTo::create(dur * 1.1f, targetPos), 0.35f));
 
     } else if (style == "elastic-slide") {
-        // Always from right with elastic ease
         oldNode->runAction(CCSequence::create(
             CCSpawn::create(
                 CCEaseBackIn::create(CCMoveTo::create(dur * 0.7f, {targetPos.x - maxWidth, targetPos.y})),
@@ -1878,7 +1821,6 @@ void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldN
         ));
 
     } else if (style == "dissolve") {
-        // Pixelated dissolve: scale down old + scale up new with opacity
         newNode->setScaleX(sx * 0.8f);
         newNode->setScaleY(sy * 0.8f);
         newSpr->setOpacity(0);
@@ -1895,7 +1837,6 @@ void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldN
             nullptr));
 
     } else {
-        // Default: crossfade
         newSpr->setOpacity(0);
         newSpr->runAction(CCFadeTo::create(dur, 255));
         oldNode->runAction(CCSequence::create(
@@ -1904,7 +1845,6 @@ void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldN
             nullptr));
     }
 
-    // Reset nav direction after transition is kicked off
     m_navDirection = NavDirection::None;
 }
 
@@ -1943,18 +1883,15 @@ void LocalThumbnailViewPopup::showNoThumbnail(CCSize content) {
     this->m_mainLayer->addChild(container, 1);
 }
 
-// Acciones de botones
 
 void LocalThumbnailViewPopup::onPlayVideo(CCObject*) {
     auto* videoSprite = geode::cast::typeinfo_cast<VideoThumbnailSprite*>(m_thumbnailSprite);
     if (!videoSprite) return;
 
     if (m_videoPlaying) {
-        // Pause
         m_videoPlaying = false;
         videoSprite->pause();
     } else {
-        // Play with audio
         m_videoPlaying = true;
         videoSprite->setVolume(1.0f);
         videoSprite->play();
@@ -1967,7 +1904,6 @@ void LocalThumbnailViewPopup::updatePlayButton() {
     if (!m_playBtn) return;
 
     if (m_videoPlaying) {
-        // Fade out play button when video starts playing
         m_playBtn->stopAllActions();
         m_playBtn->runAction(CCSequence::create(
             CCFadeTo::create(0.3f, 0),
@@ -1975,7 +1911,6 @@ void LocalThumbnailViewPopup::updatePlayButton() {
             nullptr
         ));
     } else {
-        // Fade in play button when video is paused
         m_playBtn->stopAllActions();
         m_playBtn->setVisible(true);
         m_playBtn->setOpacity(0);
@@ -1984,10 +1919,7 @@ void LocalThumbnailViewPopup::updatePlayButton() {
 }
 
 void LocalThumbnailViewPopup::onYouTubeBtn(CCObject*) {
-    // Query the /api/ytlinks endpoint for a linked YouTube video.
-    // The base URL is shared with PaiDraw / EmoteService (same Render host),
-    // and is overridable at runtime via the `paimon-emote-server-url` saved
-    // value so users can point at a private server in development.
+    // Query the user-overridable ytlinks endpoint.
     std::string serverUrl;
     if (auto* mod = Mod::get()) {
         serverUrl = mod->getSavedValue<std::string>("paimon-emote-server-url", "");
@@ -2007,9 +1939,7 @@ void LocalThumbnailViewPopup::onYouTubeBtn(CCObject*) {
 
     WeakRef<LocalThumbnailViewPopup> self = this;
 
-    // Use dispatchOwned so the request handle is kept alive by the popup.
-    // dispatch() (fire-and-forget) can lose the callback on Geode 5.4+ when
-    // the TaskHandle is destroyed before the response arrives.
+    // Keep the request handle alive until completion.
     WebHelper::dispatchOwned(m_ytRequestHolder, std::move(req), "GET", url, [self, levelID = m_levelID](geode::utils::web::WebResponse res) {
         auto popup = self.lock();
         if (!popup || !popup->getParent()) {
@@ -2018,7 +1948,6 @@ void LocalThumbnailViewPopup::onYouTubeBtn(CCObject*) {
         }
 
         if (res.code() == 404) {
-            // No YouTube link registered
             PaimonNotify::show("No se registro un link de YouTube para este nivel", geode::NotificationIcon::Info);
             return;
         }
@@ -2029,7 +1958,6 @@ void LocalThumbnailViewPopup::onYouTubeBtn(CCObject*) {
             return;
         }
 
-        // Use Geode's built-in json() for more reliable body parsing
         auto jsonRes = res.json();
         if (!jsonRes.isOk()) {
             geode::log::error("[YTLinks] JSON parse error for level {}: {}", levelID, jsonRes.unwrapErr());
@@ -2062,12 +1990,10 @@ void LocalThumbnailViewPopup::onRefreshBtn(CCObject*) {
 
     log::info("[ThumbnailViewPopup] Refresh button pressed for level {}", m_levelID);
 
-    // 1. Invalidar toda la cache del nivel
     ThumbnailLoader::get().invalidateLevel(m_levelID, false);
     ThumbnailLoader::get().invalidateLevel(m_levelID, true);
     ThumbnailTransportClient::get().invalidateGalleryMetadata(m_levelID);
 
-    // 2. Limpiar display actual
     clearGalleryDisplay();
     m_thumbnails.clear();
     m_currentIndex = 0;
@@ -2077,12 +2003,10 @@ void LocalThumbnailViewPopup::onRefreshBtn(CCObject*) {
     if (m_counterLabel) m_counterLabel->setVisible(false);
     updateOrderUiState();
 
-    // 3. Mostrar spinner de carga
     auto content = m_mainLayer->getContentSize();
     auto spinner = PaimonLoadingOverlay::create("Loading...", 40.f);
     spinner->show(m_mainLayer, 5);
 
-    // 4. Re-descargar galeria desde el servidor (forceRefresh via invalidacion previa)
     float maxWidth = content.width - 40.f;
     float maxHeight = content.height - 80.f;
 
@@ -2094,7 +2018,6 @@ void LocalThumbnailViewPopup::onRefreshBtn(CCObject*) {
         if (!popup || popup->m_isExiting || !popup->m_mainLayer) return;
         if (requestToken != popup->m_galleryRequestToken) return;
 
-        // Quitar spinner
         if (auto sp = popup->m_mainLayer->getChildByID("paimon-loading-overlay"_spr)) {
             if (auto overlay = typeinfo_cast<PaimonLoadingOverlay*>(sp)) {
                 overlay->dismiss();
@@ -2110,7 +2033,6 @@ void LocalThumbnailViewPopup::onRefreshBtn(CCObject*) {
             popup->setupRating();
             PaimonNotify::show("Miniaturas actualizadas", geode::NotificationIcon::Success);
         } else {
-            // Galeria vacia: intentar cargar miniatura principal directamente
             popup->loadFromThumbnailLoader(maxWidth, maxHeight, content, false);
             PaimonNotify::show("No se encontraron miniaturas en la galeria", geode::NotificationIcon::Info);
         }
@@ -2171,7 +2093,7 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
     auto doSave = [safeRef, weakRef, levelID, notifyResult](std::filesystem::path savePath) {
         log::debug("Save path chosen: {}", geode::utils::string::pathToString(savePath));
 
-        // 1) findAnyThumbnail incluye .rgb, .png, .webp en thumb y cache; 2) fallback getCachePath (.png/.gif)
+        // Prefer existing thumb/cache files.
         std::optional<std::string> pathStr = LocalThumbs::get().findAnyThumbnail(levelID);
         bool fromCache = false;
         if (!pathStr) {
@@ -2242,7 +2164,7 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
             return;
         }
 
-        // Sin ruta en disco: intentar guardar desde la textura mostrada (fallback)
+        // No disk path: save the displayed texture.
         if (safeRef->m_thumbnailTexture && safeRef->m_thumbnailTexture->getPixelsWide() > 0 && safeRef->m_thumbnailTexture->getPixelsHigh() > 0) {
             int w = safeRef->m_thumbnailTexture->getPixelsWide();
             int h = safeRef->m_thumbnailTexture->getPixelsHigh();
@@ -2298,7 +2220,7 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                 return;
             }
         }
-        // DiÃ¡logo cancelado, error o no soportado: guardar en carpeta del mod
+        // Picker canceled or unsupported: save in the mod folder.
         auto saveDir = Mod::get()->getSaveDir() / "saved_thumbnails";
         std::error_code ec;
         if (!std::filesystem::exists(saveDir, ec)) {
@@ -2359,7 +2281,7 @@ void LocalThumbnailViewPopup::onDeleteReportedThumb(CCObject*) {
                 PaimonNotify::create(Localization::get().getString("level.deleted_server").c_str(), NotificationIcon::Success)->show();
                 log::info("[ThumbnailViewPopup] Miniatura {} eliminada del servidor", levelID);
 
-                // Invalidar cache y refrescar galeria
+                 // Invalidate cache and refresh the gallery.
                 ThumbnailTransportClient::get().invalidateGalleryMetadata(levelID);
                 ThumbnailLoader::get().invalidateLevel(levelID);
 
@@ -2421,7 +2343,7 @@ void LocalThumbnailViewPopup::onAcceptThumbBtn(CCObject*) {
                     PaimonNotify::create(Localization::get().getString("level.accepted").c_str(), NotificationIcon::Success)->show();
                     log::info("[ThumbnailViewPopup] Miniatura aceptada para nivel {}", levelID);
 
-                    // Invalidar cache para que se actualice al volver
+                     // Invalidate cache so the gallery reloads on return.
                     ThumbnailTransportClient::get().invalidateGalleryMetadata(levelID);
                     ThumbnailLoader::get().invalidateLevel(levelID);
                 } else {
@@ -2534,12 +2456,10 @@ void LocalThumbnailViewPopup::onDeleteLocalThumb(CCObject*) {
         return;
     }
 
-    // recargar lista
     m_localThumbPaths = LocalThumbs::get().getAllThumbPaths(m_levelID);
     int newCount = static_cast<int>(m_localThumbPaths.size());
 
     if (newCount == 0) {
-        // ya no hay locales, mostrar "sin thumbnail"
         m_viewingLocal = false;
         if (m_leftArrow) m_leftArrow->setVisible(false);
         if (m_rightArrow) m_rightArrow->setVisible(false);
@@ -2550,7 +2470,6 @@ void LocalThumbnailViewPopup::onDeleteLocalThumb(CCObject*) {
         return;
     }
 
-    // ajustar indice si quedo fuera de rango
     if (m_localCurrentIndex >= newCount) {
         m_localCurrentIndex = newCount - 1;
     }
@@ -2630,7 +2549,6 @@ void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
                             if (success) {
                                 PaimonNotify::create(Localization::get().getString("level.thumbnail_deleted"), NotificationIcon::Success)->show();
 
-                                // Invalidar cache de galeria y nivel
                                 ThumbnailTransportClient::get().invalidateGalleryMetadata(levelID);
                                 ThumbnailLoader::get().invalidateLevel(levelID);
 
@@ -2661,9 +2579,6 @@ void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
     });
 }
 
-// ====================================================================
-// Recentrar, Clamp, Touch
-// ====================================================================
 
 void LocalThumbnailViewPopup::onRecenter(CCObject*) {
     if (!m_thumbnailSprite) return;
@@ -2887,7 +2802,6 @@ void LocalThumbnailViewPopup::clampSpritePositionAnimated() {
 bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     if (!this->isVisible()) return false;
 
-    // Helper: buscar item tocado en un menu
     auto findTouchedItem = [](CCMenu* menu, CCTouch* touch) -> CCMenuItem* {
         if (!menu || !menu->isVisible()) return nullptr;
         auto point = menu->convertTouchToNodeSpace(touch);
@@ -2902,17 +2816,14 @@ bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         return nullptr;
     };
 
-    // Buscar en todos los menus del popup
     CCMenuItem* hit = nullptr;
     if (!hit) hit = findTouchedItem(m_playBtnMenu, touch);
     if (!hit) hit = findTouchedItem(m_buttonMenu, touch);
     if (!hit) hit = findTouchedItem(m_ratingMenu, touch);
     if (!hit) hit = findTouchedItem(m_settingsMenu, touch);
-    // Gallery arrows menu
     if (!hit && m_leftArrow) {
         hit = findTouchedItem(static_cast<CCMenu*>(m_leftArrow->getParent()), touch);
     }
-    // Close button menu
     if (!hit && m_closeBtn) {
         hit = findTouchedItem(static_cast<CCMenu*>(m_closeBtn->getParent()), touch);
     }
@@ -2923,11 +2834,10 @@ bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         return true;
     }
 
-    // If video is playing, a single tap on the video area should pause it
+    // A tap on the video area toggles playback.
     if (m_videoPlaying && m_thumbnailSprite) {
         auto* videoSprite = geode::cast::typeinfo_cast<VideoThumbnailSprite*>(m_thumbnailSprite);
         if (videoSprite) {
-            // Check if the touch is inside the clipping area (video area)
             if (m_clippingNode) {
                 auto local = m_clippingNode->convertTouchToNodeSpace(touch);
                 auto clipSize = m_clippingNode->getContentSize();
@@ -2950,8 +2860,6 @@ bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         }
     }
 
-    // Solo aceptar toques dentro del area del popup para zoom/pan.
-    // Toques fuera se dejan pasar a otras capas/mods.
     if (m_bgSprite) {
         auto local = m_bgSprite->convertTouchToNodeSpace(touch);
         auto size = m_bgSprite->getContentSize();
@@ -2960,7 +2868,6 @@ bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         }
     }
 
-    // Zoom/pan: track touch
     if (m_touches.size() == 1) {
         auto firstTouch = *m_touches.begin();
         if (firstTouch == touch) return true;
@@ -2972,7 +2879,6 @@ bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
 }
 
 void LocalThumbnailViewPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
-    // Si estamos rastreando un menu item, verificar si el dedo sigue encima
     if (m_activatedItem) {
         auto menu = static_cast<CCMenu*>(m_activatedItem->getParent());
         if (menu) {
@@ -3017,7 +2923,6 @@ void LocalThumbnailViewPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
 }
 
 void LocalThumbnailViewPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
-    // Si estamos rastreando un menu item, activarlo
     if (m_activatedItem) {
         m_activatedItem->unselected();
         m_activatedItem->activate();
@@ -3092,9 +2997,6 @@ void LocalThumbnailViewPopup::ccTouchCancelled(CCTouch* touch, CCEvent* event) {
     resetZoomGestureState();
 }
 
-// ====================================================================
-// Factory
-// ====================================================================
 
 LocalThumbnailViewPopup* LocalThumbnailViewPopup::create(int32_t levelID, bool canAcceptUpload) {
     auto ret = new LocalThumbnailViewPopup();
@@ -3115,5 +3017,4 @@ CCNode* createThumbnailViewPopup(int32_t levelID, bool canAcceptUpload, std::vec
     return ret;
 }
 
-// NOTE: onSettings() is implemented in src/hooks/LevelInfoLayer.cpp
-// because it needs access to PaimonLevelInfoLayer ($modify type).
+// onSettings() lives in LevelInfoLayer.cpp because it needs the $modify type.

@@ -11,11 +11,11 @@ class $modify(PaimonMenuLoopFMODHook, FMODAudioEngine) {
     static void onModify(auto& self) {
         // stopAllMusic is non-virtual (hooked by address); a GD offset change would silently leave it unhooked.
         if (auto h = self.getHook("FMODAudioEngine::stopAllMusic"); !h) {
-            log::warn("[MenuLoop] failed to install hook on FMODAudioEngine::stopAllMusic — "
+            log::warn("[MenuLoop] failed to install hook on FMODAudioEngine::stopAllMusic - "
                       "seek pause-tracking will be inactive ({})", h.unwrapErr());
         }
         if (auto h = self.getHook("FMODAudioEngine::update"); !h) {
-            log::warn("[MenuLoop] failed to install hook on FMODAudioEngine::update — "
+            log::warn("[MenuLoop] failed to install hook on FMODAudioEngine::update - "
                       "seek/shuffle tracking will be inactive ({})", h.unwrapErr());
         }
     }
@@ -70,7 +70,7 @@ class $modify(PaimonMenuLoopFMODHook, FMODAudioEngine) {
         sound->getLength(&length, FMOD_TIMEUNIT_MS);
 
         if (length > 100 && (length - 100) < position) {
-            log::info("[MenuLoop] song finished — constant shuffle fires");
+            log::info("[MenuLoop] song finished - constant shuffle fires");
             paimon::menuloop::MenuLoopControl::constantShuffleModeNewSong();
         }
     }

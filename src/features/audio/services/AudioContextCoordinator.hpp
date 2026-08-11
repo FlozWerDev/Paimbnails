@@ -23,7 +23,8 @@ public:
     void deactivateLevelInfo(bool returnsToLevelSelect);
 
     void beginGameplayTransition();
-    void notifyGameplayStarted();
+    void abortGameplayTransition(DynSongLayer restoredLayer = DynSongLayer::None);
+    void notifyGameplayStarted(GJGameLevel* level = nullptr);
 
     void activateProfile(int accountID);
     void activateProfile(int accountID, ProfileMusicManager::ProfileMusicConfig const& config);
@@ -52,6 +53,8 @@ private:
     int m_levelSelectLevelID = 0;
     geode::Ref<GJGameLevel> m_levelInfoLevel = nullptr;
     DynSongLayer m_dynamicContextLayer = DynSongLayer::None;
+    // Layer to restore if a play never reaches gameplay.
+    DynSongLayer m_preGameplayLayer = DynSongLayer::None;
     bool m_profileOpen = false;
     int m_profileAccountID = 0;
     uint32_t m_profileSessionToken = 0;

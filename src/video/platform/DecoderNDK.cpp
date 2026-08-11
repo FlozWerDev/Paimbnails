@@ -4,20 +4,77 @@
 
 #include <Geode/loader/Log.hpp>
 #include "../../utils/TimedJoin.hpp"
+#include <libyuv/planar_functions.h>
 #include <cstring>
 #include <chrono>
 #include <algorithm>
-
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-#include <arm_neon.h>
-#define PAIMON_HAVE_NEON 1
-#endif
+#include <dlfcn.h>
+#include <thread>
 
 namespace paimon {
 
-// Android color-format constants (from OMX_IVCommon.h / MediaCodecInfo.java)
-// We can't rely on <OMX_IVCommon.h> being on the NDK include path, so we
-// redeclare just the formats we care about.
+namespace {
+
+// AImageReader is API 24 but Geode targets minSdk 23, so bind at runtime
+// instead of link time.
+struct ImageReaderApi {
+    media_status_t (*newReader)(int32_t, int32_t, int32_t, int32_t, AImageReader**) = nullptr;
+    void           (*deleteReader)(AImageReader*) = nullptr;
+    media_status_t (*getWindow)(AImageReader*, ANativeWindow**) = nullptr;
+    media_status_t (*acquireNext)(AImageReader*, AImage**) = nullptr;
+    void           (*imageDelete)(AImage*) = nullptr;
+    media_status_t (*planeData)(const AImage*, int, uint8_t**, int*) = nullptr;
+    media_status_t (*planeRowStride)(const AImage*, int, int32_t*) = nullptr;
+    media_status_t (*planePixelStride)(const AImage*, int, int32_t*) = nullptr;
+    bool ok = false;
+};
+
+const ImageReaderApi& imageReaderApi() {
+    static ImageReaderApi api = []() {
+        ImageReaderApi a;
+        void* lib = dlopen("libmediandk.so", RTLD_NOW | RTLD_LOCAL);
+        if (!lib) return a;
+        auto sym = [lib](const char* name) { return dlsym(lib, name); };
+        a.newReader        = reinterpret_cast<decltype(a.newReader)>(sym("AImageReader_new"));
+        a.deleteReader     = reinterpret_cast<decltype(a.deleteReader)>(sym("AImageReader_delete"));
+        a.getWindow        = reinterpret_cast<decltype(a.getWindow)>(sym("AImageReader_getWindow"));
+        a.acquireNext      = reinterpret_cast<decltype(a.acquireNext)>(sym("AImageReader_acquireNextImage"));
+        a.imageDelete      = reinterpret_cast<decltype(a.imageDelete)>(sym("AImage_delete"));
+        a.planeData        = reinterpret_cast<decltype(a.planeData)>(sym("AImage_getPlaneData"));
+        a.planeRowStride   = reinterpret_cast<decltype(a.planeRowStride)>(sym("AImage_getPlaneRowStride"));
+        a.planePixelStride = reinterpret_cast<decltype(a.planePixelStride)>(sym("AImage_getPlanePixelStride"));
+        a.ok = a.newReader && a.deleteReader && a.getWindow && a.acquireNext &&
+               a.imageDelete && a.planeData && a.planeRowStride && a.planePixelStride;
+        if (!a.ok) {
+            geode::log::info("DecoderNDK: AImageReader unavailable, using raw output buffers");
+        }
+        return a;
+    }();
+    return api;
+}
+
+// Copy one chroma plane honouring AImage's pixel stride: 1 is planar, 2 means
+// the U/V samples are interleaved in a shared NV12 buffer.
+void copyChromaPlane(const uint8_t* src, int rowStride, int pixelStride,
+                     uint8_t* dst, int dstStride, int w, int h) {
+    if (pixelStride == 1) {
+        for (int r = 0; r < h; ++r) {
+            std::memcpy(dst + r * dstStride, src + static_cast<size_t>(r) * rowStride, w);
+        }
+        return;
+    }
+    for (int r = 0; r < h; ++r) {
+        const uint8_t* srcRow = src + static_cast<size_t>(r) * rowStride;
+        uint8_t* dstRow = dst + r * dstStride;
+        for (int c = 0; c < w; ++c) {
+            dstRow[c] = srcRow[c * pixelStride];
+        }
+    }
+}
+
+}
+
+// Local copies of OMX color formats; the NDK header is not available everywhere.
 static constexpr int kCF_YUV420Planar           = 19;   // OMX_COLOR_FormatYUV420Planar (I420)
 static constexpr int kCF_YUV420SemiPlanar       = 21;   // OMX_COLOR_FormatYUV420SemiPlanar (NV12)
 static constexpr int kCF_YUV420PackedPlanar     = 20;   // OMX_COLOR_FormatYUV420PackedPlanar
@@ -58,8 +115,6 @@ bool DecoderNDK::isReadableColorFormat(int colorFormat) const {
         case kCF_AndroidOpaque:     // opaque — would need GL reading
             return false;
         default:
-            // Unknown: assume unreadable; caller should bail out rather than
-            // scribbling random bytes into frame planes.
             return false;
     }
 }
@@ -74,7 +129,7 @@ void DecoderNDK::updateOutputFormat() {
     m_outputColorFormat = cf;
     m_outputFormatValid.store(true, std::memory_order_release);
 
-    geode::log::info("DecoderNDK: output format — {}x{} stride={} slice={} color-format=0x{:X}",
+    geode::log::info("DecoderNDK: output format - {}x{} stride={} slice={} color-format=0x{:X}",
                      m_width, m_height, m_outputStride, m_outputSliceHeight,
                      static_cast<unsigned>(cf));
 
@@ -125,25 +180,23 @@ bool DecoderNDK::open(const std::string& path) {
         return false;
     }
 
-    // Request a CPU-readable output color format explicitly.
-    // Without this request, some HW codecs default to kCF_AndroidOpaque which
-    // cannot be mapped for CPU reads and causes segfaults in decodeLoop().
-    if (!m_surface || !m_useSurface) {
+// Prefer AImageReader; it normalises the output layout across vendors.
+    m_useImageReader = !(m_surface && m_useSurface) && setupImageReader();
+
+    ANativeWindow* target = nullptr;
+    if (m_surface && m_useSurface)      target = m_surface;
+    else if (m_useImageReader)          target = m_readerWindow;
+
+// Avoid opaque output: the raw-buffer path needs CPU-readable planes.
+    if (!target) {
         AMediaFormat_setInt32(trackFmt, "color-format", kCF_YUV420Flexible);
     }
 
-    // Configure: with or without surface
-    media_status_t status;
-    if (m_surface && m_useSurface) {
-        status = AMediaCodec_configure(m_codec, trackFmt, m_surface, nullptr, 0);
-    } else {
-        status = AMediaCodec_configure(m_codec, trackFmt, nullptr, nullptr, 0);
-    }
+    media_status_t status = AMediaCodec_configure(m_codec, trackFmt, target, nullptr, 0);
     AMediaFormat_delete(trackFmt);
 
     if (status != AMEDIA_OK) {
         geode::log::warn("DecoderNDK: configure failed ({})", static_cast<int>(status));
-        // Codec was created but not configured — release directly, don't call stop.
         AMediaCodec_delete(m_codec);
         m_codec = nullptr;
         closeInternal();
@@ -160,9 +213,6 @@ bool DecoderNDK::open(const std::string& path) {
     m_codecStarted = true;
 
     AMediaExtractor_selectTrack(m_extractor, m_trackIdx);
-    // Don't call updateOutputFormat here — before the first decoded frame
-    // the driver may return a generic format. We'll update lazily from the
-    // decode loop when we see AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED.
     m_outputStride = m_width;
     m_outputSliceHeight = m_height;
     m_outputColorFormat = 0;
@@ -175,6 +225,103 @@ bool DecoderNDK::open(const std::string& path) {
 
     m_finished.store(false, std::memory_order_relaxed);
     m_decoding.store(false, std::memory_order_relaxed);
+    return true;
+}
+
+bool DecoderNDK::setupImageReader() {
+    const auto& api = imageReaderApi();
+    if (!api.ok || m_width <= 0 || m_height <= 0) return false;
+
+    // Four slots: enough for the codec to stay ahead without holding the ring.
+    if (api.newReader(m_width, m_height, AIMAGE_FORMAT_YUV_420_888, 4, &m_imageReader) != AMEDIA_OK
+        || !m_imageReader) {
+        m_imageReader = nullptr;
+        return false;
+    }
+
+    if (api.getWindow(m_imageReader, &m_readerWindow) != AMEDIA_OK || !m_readerWindow) {
+        releaseImageReader();
+        return false;
+    }
+
+    geode::log::info("DecoderNDK: using AImageReader ({}x{}, YUV_420_888)", m_width, m_height);
+    return true;
+}
+
+void DecoderNDK::releaseImageReader() {
+    const auto& api = imageReaderApi();
+    if (m_imageReader && api.deleteReader) {
+        api.deleteReader(m_imageReader);
+    }
+    m_imageReader = nullptr;
+    m_readerWindow = nullptr;
+    m_useImageReader = false;
+}
+
+bool DecoderNDK::drainImageReader(int64_t presentationTimeUs) {
+    const auto& api = imageReaderApi();
+    if (!m_imageReader) return false;
+
+    AImage* image = nullptr;
+    // The buffer lands a moment after releaseOutputBuffer; give it a few tries.
+    for (int attempt = 0; attempt < 8 && !image; ++attempt) {
+        if (api.acquireNext(m_imageReader, &image) == AMEDIA_OK && image) break;
+        image = nullptr;
+        if (!m_decoding.load(std::memory_order_relaxed)) return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (!image) return false;
+
+    auto* slot = m_ring.nextWrite();
+    if (!slot) {
+        api.imageDelete(image);
+        return false;
+    }
+
+    uint8_t* yData = nullptr;
+    uint8_t* uData = nullptr;
+    uint8_t* vData = nullptr;
+    int yLen = 0, uLen = 0, vLen = 0;
+    int32_t yRow = 0, uRow = 0, vRow = 0;
+    int32_t uPix = 1, vPix = 1;
+
+    bool ok = api.planeData(image, 0, &yData, &yLen) == AMEDIA_OK &&
+              api.planeData(image, 1, &uData, &uLen) == AMEDIA_OK &&
+              api.planeData(image, 2, &vData, &vLen) == AMEDIA_OK &&
+              api.planeRowStride(image, 0, &yRow) == AMEDIA_OK &&
+              api.planeRowStride(image, 1, &uRow) == AMEDIA_OK &&
+              api.planeRowStride(image, 2, &vRow) == AMEDIA_OK &&
+              api.planePixelStride(image, 1, &uPix) == AMEDIA_OK &&
+              api.planePixelStride(image, 2, &vPix) == AMEDIA_OK;
+
+    if (!ok || !yData || !uData || !vData) {
+        api.imageDelete(image);
+        return false;
+    }
+
+    int uvW = (m_width + 1) / 2;
+    int uvH = (m_height + 1) / 2;
+
+    int yCopy = std::min(m_width, yRow);
+    for (int r = 0; r < m_height; ++r) {
+        std::memcpy(slot->planeY + r * slot->strideY,
+                    yData + static_cast<size_t>(r) * yRow, yCopy);
+    }
+
+    // NV12-backed images expose V as U+1 in one buffer; libyuv splits that fast.
+    if (uPix == 2 && vPix == 2 && vData == uData + 1) {
+        libyuv::SplitUVPlane(uData, uRow,
+                             slot->planeCb, slot->strideCb,
+                             slot->planeCr, slot->strideCr,
+                             uvW, uvH);
+    } else {
+        copyChromaPlane(uData, uRow, uPix, slot->planeCb, slot->strideCb, uvW, uvH);
+        copyChromaPlane(vData, vRow, vPix, slot->planeCr, slot->strideCr, uvW, uvH);
+    }
+
+    slot->pts = static_cast<double>(presentationTimeUs) / 1000000.0;
+    m_ring.commitWrite();
+    api.imageDelete(image);
     return true;
 }
 
@@ -205,28 +352,6 @@ bool DecoderNDK::findVideoTrack() {
     return false;
 }
 
-// NEON-optimized NV12 deinterleave
-static inline void deinterleaveNV12Row(const uint8_t* uv, uint8_t* cb, uint8_t* cr, int uvW) {
-#if PAIMON_HAVE_NEON
-    int c = 0;
-    int vecEnd = uvW & ~15;  // 16-pixel blocks
-    for (; c < vecEnd; c += 16) {
-        uint8x16x2_t d = vld2q_u8(uv + c * 2);
-        vst1q_u8(cb + c, d.val[0]);
-        vst1q_u8(cr + c, d.val[1]);
-    }
-    for (; c < uvW; ++c) {
-        cb[c] = uv[c * 2];
-        cr[c] = uv[c * 2 + 1];
-    }
-#else
-    for (int c = 0; c < uvW; ++c) {
-        cb[c] = uv[c * 2];
-        cr[c] = uv[c * 2 + 1];
-    }
-#endif
-}
-
 void DecoderNDK::startDecoding() {
     // A detached worker (its join timed out) may still be running decodeLoop;
     // spawning a second thread would put two producers on the SPSC ring and call
@@ -247,7 +372,8 @@ void DecoderNDK::stopDecoding() {
     if (m_thread.joinable()) {
         // If the codec is stuck, detach rather than block the main thread.
         if (!paimon::timedJoin(m_thread, std::chrono::seconds(3), &m_decoding)) {
-            m_decodeThreadDetached.store(true, std::memory_order_release);
+            if (!m_decodeThreadDetached.exchange(true, std::memory_order_acq_rel))
+                noteDetachedDecoder("MediaNDK");
         }
     }
 }
@@ -258,7 +384,6 @@ void DecoderNDK::decodeLoop() {
     int skippedBeforeFormat = 0;  // count buffers skipped waiting for format change
 
     while (m_decoding.load(std::memory_order_relaxed)) {
-        // Feed input
         if (!inputDone) {
             ssize_t inputIdx = AMediaCodec_dequeueInputBuffer(m_codec, 5000);
             if (inputIdx >= 0) {
@@ -266,6 +391,12 @@ void DecoderNDK::decodeLoop() {
                 uint8_t* inputBuf = AMediaCodec_getInputBuffer(m_codec, inputIdx, &bufSize);
                 if (inputBuf) {
                     int sampleSize = AMediaExtractor_readSampleData(m_extractor, inputBuf, bufSize);
+                    if (sampleSize < 0 && m_looping.load(std::memory_order_relaxed)) {
+// Rewind the demuxer instead of draining: PTS restarts at 0 and the ring
+// stays fed across the loop point.
+                        AMediaExtractor_seekTo(m_extractor, 0, AMEDIAEXTRACTOR_SEEK_CLOSEST_SYNC);
+                        sampleSize = AMediaExtractor_readSampleData(m_extractor, inputBuf, bufSize);
+                    }
                     if (sampleSize < 0) {
                         AMediaCodec_queueInputBuffer(m_codec, inputIdx, 0, 0, 0,
                                                      AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
@@ -280,7 +411,6 @@ void DecoderNDK::decodeLoop() {
             }
         }
 
-        // Drain output
         if (m_ring.isFull()) {
             m_ring.waitForWritable(50, &m_decoding);
             continue;
@@ -297,43 +427,45 @@ void DecoderNDK::decodeLoop() {
             }
 
             if (m_surface && m_useSurface) {
-                // Surface mode: render directly, no CPU copy
                 AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, true);
                 continue;
             }
 
-            // Buffer mode — require a valid color format before touching data.
-            // If we never saw INFO_OUTPUT_FORMAT_CHANGED, we still don't know
-            // the real layout; refuse to read random bytes.
+            if (m_useImageReader) {
+                int64_t pts = info.presentationTimeUs;
+                AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, true);
+                if (drainImageReader(pts)) {
+                    ++frameCount;
+                    if (frameCount == 1) {
+                        geode::log::info("DecoderNDK: first frame via AImageReader ({}x{})",
+                                         m_width, m_height);
+                    }
+                }
+                continue;
+            }
+
+// Do not touch buffers until the output layout is known.
             if (!m_outputFormatValid.load(std::memory_order_acquire)) {
                 ++skippedBeforeFormat;
-                // Some devices (Samsung Exynos, older Qualcomm) never emit
-                // INFO_OUTPUT_FORMAT_CHANGED.  After skipping a few buffers,
-                // force-query the output format so we can start decoding.
+// Some drivers omit INFO_OUTPUT_FORMAT_CHANGED; query after a few buffers.
                 if (skippedBeforeFormat >= 3) {
                     geode::log::info("DecoderNDK: no FORMAT_CHANGED after {} buffers, "
                                      "force-querying output format", skippedBeforeFormat);
                     updateOutputFormat();
                     if (!m_outputFormatValid.load(std::memory_order_acquire)) {
-                        // Still invalid — give up
                         geode::log::warn("DecoderNDK: forced format query still invalid, aborting");
                         AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
                         m_finished.store(true, std::memory_order_release);
                         break;
                     }
-                    // Format is now valid — fall through to process this buffer
                 } else {
-                    // Treat first output buffers before format-change as setup:
-                    // release them and let the codec emit OUTPUT_FORMAT_CHANGED.
                     AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
                     continue;
                 }
             }
 
             if (!isReadableColorFormat(m_outputColorFormat)) {
-                // Opaque / tiled / unknown format — we can't read this on CPU.
-                // Release the buffer and abort decoding; the caller will fall
-                // back to software decode (pl_mpeg) or fail gracefully.
+// Opaque, tiled, or unknown formats are not CPU-readable.
                 geode::log::warn("DecoderNDK: unreadable color-format 0x{:X}, stopping",
                                  static_cast<unsigned>(m_outputColorFormat));
                 AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
@@ -367,7 +499,6 @@ void DecoderNDK::decodeLoop() {
             int planarUvStride = std::max(uvW, stride / 2);
             size_t neededPlanar = yPlaneBytes + static_cast<size_t>(planarUvStride) * uvH * 2;
 
-            // Buffer too small to even contain Y plane — skip.
             if (outSize < minYBytes) {
                 geode::log::warn("DecoderNDK: output buffer too small ({} < {})",
                                  outSize, minYBytes);
@@ -375,8 +506,7 @@ void DecoderNDK::decodeLoop() {
                 continue;
             }
 
-            // If the color-format says semi-planar but the buffer is sized for
-            // planar (some Samsung/Mali drivers lie), switch layout.
+// Some Samsung/Mali drivers report semi-planar for planar-sized buffers.
             if (semiPlanar && outSize < neededSemi && outSize >= neededPlanar) {
                 semiPlanar = false;
             }
@@ -393,18 +523,12 @@ void DecoderNDK::decodeLoop() {
             }
 
             if (semiPlanar && outSize >= neededSemi) {
-                // NV12: interleaved UV plane — deinterleave row by row.
-                const uint8_t* uvStart = outBuf + yPlaneBytes;
-                for (int r = 0; r < uvH; ++r) {
-                    deinterleaveNV12Row(uvStart + static_cast<size_t>(r) * stride,
-                                        slot->planeCb + r * slot->strideCb,
-                                        slot->planeCr + r * slot->strideCr,
-                                        uvW);
-                }
+                libyuv::SplitUVPlane(outBuf + yPlaneBytes, stride,
+                                     slot->planeCb, slot->strideCb,
+                                     slot->planeCr, slot->strideCr,
+                                     uvW, uvH);
             } else if (outSize >= neededPlanar) {
-                // I420 / YV12: two separate planes.
-                // We default to I420 order (Y→Cb→Cr).  Format 0x13 (YUV420Planar)
-                // is I420 on all documented devices.
+// Planar formats use I420 order (Y, Cb, Cr).
                 const uint8_t* uStart = outBuf + yPlaneBytes;
                 const uint8_t* vStart = uStart + static_cast<size_t>(planarUvStride) * uvH;
                 for (int r = 0; r < uvH; ++r) {
@@ -416,7 +540,6 @@ void DecoderNDK::decodeLoop() {
                                 uvW);
                 }
             } else {
-                // Buffer size mismatch — skip rather than scribble.
                 AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
                 continue;
             }
@@ -434,30 +557,7 @@ void DecoderNDK::decodeLoop() {
         } else if (outputIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
             updateOutputFormat();
         }
-        // AMEDIACODEC_INFO_TRY_AGAIN_LATER / BUFFERS_CHANGED: just loop
     }
-}
-
-bool DecoderNDK::consumeFrame(Frame& outFrame) {
-    auto* slot = m_ring.nextRead();
-    if (!slot) return false;
-
-    int ySize  = slot->strideY * slot->height;
-    int uvH    = (slot->height + 1) / 2;
-    int uvSize = slot->strideCb * uvH;
-
-    std::memcpy(outFrame.planeY,  slot->planeY,  ySize);
-    std::memcpy(outFrame.planeCb, slot->planeCb, uvSize);
-    std::memcpy(outFrame.planeCr, slot->planeCr, uvSize);
-    outFrame.strideY  = slot->strideY;
-    outFrame.strideCb = slot->strideCb;
-    outFrame.strideCr = slot->strideCr;
-    outFrame.width    = slot->width;
-    outFrame.height   = slot->height;
-    outFrame.pts      = slot->pts;
-
-    m_ring.commitRead();
-    return true;
 }
 
 void DecoderNDK::seekTo(double seconds) {
@@ -477,9 +577,7 @@ void DecoderNDK::seekTo(double seconds) {
         AMediaCodec_flush(m_codec);
     }
     m_finished.store(false, std::memory_order_relaxed);
-    // Output format should remain valid across a flush, but clear the flag
-    // to force revalidation in case the driver emits a new format-change.
-    // (Conservative — avoids reading stale stride if the driver changes format.)
+// Revalidate after flush in case the driver changes stride or layout.
 
     if (wasDecoding) startDecoding();
 }
@@ -519,12 +617,14 @@ void DecoderNDK::setSurface(ANativeWindow* window) {
 void DecoderNDK::closeInternal() {
     stopDecoding();
 
-    // Detached thread may still be in AMediaCodec_* calls; leak to avoid UAF.
     if (m_decodeThreadDetached.load(std::memory_order_acquire)) {
         geode::log::warn("DecoderNDK: closeInternal: decode thread detached, "
                          "leaking codec/extractor to avoid UAF");
         m_codec = nullptr;
         m_extractor = nullptr;
+        m_imageReader = nullptr;
+        m_readerWindow = nullptr;
+        m_useImageReader = false;
         m_codecConfigured = false;
         m_codecStarted = false;
         m_trackIdx = -1;
@@ -532,9 +632,7 @@ void DecoderNDK::closeInternal() {
     }
 
     if (m_codec) {
-        // Only call stop() if the codec was actually started.  Calling stop()
-        // on a configured-but-not-started (or unconfigured) codec crashes on
-        // some Mali/PowerVR/Adreno drivers.
+// Some drivers crash if stop() is called before the codec starts.
         if (m_codecStarted) {
             AMediaCodec_stop(m_codec);
         }
@@ -545,12 +643,13 @@ void DecoderNDK::closeInternal() {
         AMediaExtractor_delete(m_extractor);
         m_extractor = nullptr;
     }
+    releaseImageReader();
     m_codecConfigured = false;
     m_codecStarted = false;
     m_trackIdx = -1;
     m_outputFormatValid.store(false, std::memory_order_release);
 }
 
-} // namespace paimon
+}
 
-#endif // USE_MEDIA_NDK
+#endif

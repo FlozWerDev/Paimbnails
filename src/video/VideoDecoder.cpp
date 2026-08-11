@@ -20,6 +20,23 @@
 
 namespace paimon {
 
+namespace {
+std::atomic<int> g_detachedDecoders{0};
+}
+
+void noteDetachedDecoder(const char* backend) {
+    int total = g_detachedDecoders.fetch_add(1, std::memory_order_relaxed) + 1;
+    geode::log::warn("[Video] {} decode thread detached; codec leaked (total {})", backend, total);
+    if (total >= 4) {
+        geode::log::error("[Video] {} decoders leaked this session - the platform "
+                          "codec pool may be exhausted", total);
+    }
+}
+
+int detachedDecoderCount() {
+    return g_detachedDecoders.load(std::memory_order_relaxed);
+}
+
 static bool endsWith(std::string const& str, std::string const& suffix) {
     if (suffix.size() > str.size()) return false;
     return std::equal(suffix.rbegin(), suffix.rend(), str.rbegin(),

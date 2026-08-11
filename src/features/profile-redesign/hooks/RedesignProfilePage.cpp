@@ -96,6 +96,16 @@ class $modify(RedesignProfilePage, ProfilePage) {
         scheduleRedesign();
     }
 
+    // Every path that rebuilds the vanilla comment list lands here, the refresh
+    // button included. The fresh list comes back visible, so without a rebuild
+    // the raw comments render behind the redesign cards.
+    $override
+    void setupCommentsBrowser(CCArray* comments) {
+        ProfilePage::setupCommentsBrowser(comments);
+        if (!paimon::settings::profiles::redesignEnabled()) return;
+        scheduleRedesign();
+    }
+
     $override
     void loadCommentsFailed(char const* key) {
         ProfilePage::loadCommentsFailed(key);

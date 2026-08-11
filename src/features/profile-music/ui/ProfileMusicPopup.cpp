@@ -29,15 +29,14 @@ namespace {
         return Localization::get().getString(key);
     }
 
-    // Format milliseconds as a "m:ss" clock string for the conversion labels.
+// Format milliseconds as m:ss.
     std::string formatMsClock(int ms) {
         if (ms < 0) ms = 0;
         int totalSec = ms / 1000;
         return fmt::format("{}:{:02d}", totalSec / 60, totalSec % 60);
     }
 
-    // Format milliseconds as a (possibly fractional) second count for the input
-    // boxes, e.g. 120000 -> "120", 120520 -> "120.52".
+// Format milliseconds as seconds for the editable inputs.
     std::string formatSeconds(int ms) {
         if (ms < 0) ms = 0;
         if (ms % 1000 == 0) {
@@ -49,9 +48,7 @@ namespace {
         return out;
     }
 
-    // Parse user input into milliseconds. Accepts "m:ss", ":ss", "m:" and plain
-    // second counts with optional decimals ("125", "120.52"). Returns nullopt
-    // when the text isn't a valid time.
+// Parse m:ss, :ss, m:, or decimal seconds into milliseconds.
     std::optional<int> parseClockToMs(std::string const& raw) {
         if (raw.empty()) return std::nullopt;
 
@@ -91,9 +88,7 @@ namespace {
         auto destDir = Mod::get()->getSaveDir() / "profile-music-import";
         std::filesystem::create_directories(destDir, ec);
 
-        // Best-effort prune of previously staged imports. A file may still be locked
-        // by FMOD while a preview is streaming; those removals just fail and are
-        // ignored, so at most a couple of stale files linger.
+// Best-effort cleanup; FMOD-locked preview files are left for later.
         std::error_code iterEc;
         if (std::filesystem::is_directory(destDir, iterEc)) {
             for (auto const& entry : std::filesystem::directory_iterator(destDir, iterEc)) {
@@ -150,16 +145,13 @@ cocos2d::CCNode* ProfileMusicPopup::createHandleVisual(float height, cocos2d::cc
     cocos2d::ccColor4F c     = { color.r / 255.f, color.g / 255.f, color.b / 255.f, 1.00f };
     cocos2d::ccColor4F cSoft = { color.r / 255.f, color.g / 255.f, color.b / 255.f, 0.28f };
 
-    // Soft glow + crisp core line marking the exact cut position.
     draw->drawSegment(ccp(0, 0), ccp(0, height), 5.0f, cSoft);
     draw->drawSegment(ccp(0, 0), ccp(0, height), 2.0f, c);
 
-    // Caps top and bottom so the edge reads as a solid bracket.
     float capDir = isStart ? 5.f : -5.f;
     draw->drawSegment(ccp(0, height), ccp(capDir, height), 2.0f, c);
     draw->drawSegment(ccp(0, 0.f),    ccp(capDir, 0.f),    2.0f, c);
 
-    // Central grab knob — a rounded pill the user can clearly aim at.
     float knobH = 18.f;
     float knobY = height * 0.5f;
     cocos2d::ccColor4F knobFill = { color.r / 255.f, color.g / 255.f, color.b / 255.f, 1.00f };
@@ -172,7 +164,6 @@ cocos2d::CCNode* ProfileMusicPopup::createHandleVisual(float height, cocos2d::cc
     };
     draw->drawPolygon(knob, 4, knobFill, 0.8f, knobEdge);
 
-    // Two grip lines on the knob for an obvious "draggable" affordance.
     cocos2d::ccColor4F grip = { 1.f, 1.f, 1.f, 0.75f };
     draw->drawSegment(ccp(-1.f, knobY - 4.f), ccp(-1.f, knobY + 4.f), 0.8f, grip);
     draw->drawSegment(ccp( 1.f, knobY - 4.f), ccp( 1.f, knobY + 4.f), 0.8f, grip);
@@ -187,7 +178,6 @@ bool ProfileMusicPopup::init(int accountID) {
     m_accountID = accountID;
 
     this->setTitle(tr("music.popup_title").c_str());
-    // The default title is large and crowds the ID row; trim it down a touch.
     if (m_title) {
         m_title->setScale(m_title->getScale() * 0.82f);
     }
@@ -333,11 +323,10 @@ void ProfileMusicPopup::createTimeEditor() {
     auto winSize = m_mainLayer->getContentSize();
 
     m_timeEditorY = m_waveformY - 46.f;
-    const float groupOffset = 106.f;   // distance of each group from center
-    const float labelYOff   = 27.f;    // caption sits clear above the input box
+const float groupOffset = 106.f;
+const float labelYOff   = 27.f;
 
-    // Builds a [ − | input | + ] group. `baseTag` is the nudge tag for "−"
-    // (baseTag + 1 is the "+" tag).
+// Build a [− | input | +] group.
     auto buildGroup = [this](geode::TextInput** inputOut, int minusTag, int plusTag) -> CCMenu* {
         auto group = CCMenu::create();
         group->setContentSize({110.f, 30.f});
@@ -379,7 +368,6 @@ void ProfileMusicPopup::createTimeEditor() {
         return group;
     };
 
-    // Start group (green) on the left, end group (red) on the right.
     auto startGroup = buildGroup(&m_startTimeInput, 1, 2);
     startGroup->setID("start-time-group"_spr);
     startGroup->setPosition({winSize.width / 2.f - groupOffset - 20.f, m_timeEditorY});
@@ -397,7 +385,6 @@ void ProfileMusicPopup::createTimeEditor() {
         paimon::ui::safeTextInputCallback<ProfileMusicPopup>(
             this, &ProfileMusicPopup::onEndTimeChanged));
 
-    // "Inicio" / "Fin" captions above each group.
     auto startCap = CCLabelBMFont::create(tr("music.start_label").c_str(), "bigFont.fnt");
     startCap->setScale(0.34f);
     startCap->setColor({90, 230, 130});
@@ -410,7 +397,6 @@ void ProfileMusicPopup::createTimeEditor() {
     endCap->setPosition({winSize.width / 2.f + groupOffset, m_timeEditorY + labelYOff});
     m_mainLayer->addChild(endCap, 5);
 
-    // Central duration badge, centred between the two time groups.
     const float badgeCenterX = winSize.width / 2.f;
     float badgeW = 80.f, badgeH = 22.f;
     auto selBg = paimon::SpriteHelper::createColorPanel(
@@ -423,9 +409,7 @@ void ProfileMusicPopup::createTimeEditor() {
     m_selectionLabel->setPosition({badgeCenterX, m_timeEditorY});
     m_mainLayer->addChild(m_selectionLabel, 5);
 
-    // Live "seconds -> m:ss" conversion shown under each input box. These sit on
-    // the same line as the centred song-duration label but far out to the sides,
-    // so they add no extra height.
+// Show live seconds → m:ss conversion beneath each input.
     m_startConvLabel = CCLabelBMFont::create("0:00", "goldFont.fnt");
     m_startConvLabel->setScale(0.30f);
     m_startConvLabel->setColor({150, 190, 220});
@@ -438,7 +422,6 @@ void ProfileMusicPopup::createTimeEditor() {
     m_endConvLabel->setPosition({winSize.width / 2.f + groupOffset, m_timeEditorY - 28.f});
     m_mainLayer->addChild(m_endConvLabel, 5);
 
-    // Total song duration, centred between the two conversion labels.
     m_durationLabel = CCLabelBMFont::create(tr("music.duration_unknown").c_str(), "bigFont.fnt");
     m_durationLabel->setScale(0.28f);
     m_durationLabel->setColor({155, 170, 185});
@@ -970,8 +953,7 @@ void ProfileMusicPopup::updateSelectionLabel() {
         m_selectionLabel->setColor({120, 230, 150});
     }
 
-    // Keep the editable inputs in sync with the current selection, unless the
-    // user is actively typing in one of them (handled in the change callbacks).
+// Sync inputs unless the user is actively typing.
     if (!m_editingTimeInput) {
         syncTimeInputsFromSelection();
     }
@@ -1015,8 +997,7 @@ void ProfileMusicPopup::applyStartMs(int newStartMs) {
     if (newStartMs > m_songDurationMs) newStartMs = m_songDurationMs;
 
     if (newStartMs > m_endMs - MIN_FRAGMENT_MS) {
-        // Collided with the end handle: instead of stopping, push the end
-        // along so both handles slide together (like a normal trimmer).
+// Push the end handle when the start collides with it.
         m_startMs = newStartMs;
         m_endMs   = newStartMs + MIN_FRAGMENT_MS;
         if (m_endMs > m_songDurationMs) {
@@ -1024,8 +1005,7 @@ void ProfileMusicPopup::applyStartMs(int newStartMs) {
             m_startMs = std::max(0, m_endMs - MIN_FRAGMENT_MS);
         }
     } else if (m_endMs - newStartMs > MAX_FRAGMENT_MS) {
-        // Dragging the start further left would exceed the max length: drag
-        // the end along to keep the window at the maximum size.
+// Move the end with the start when the maximum window length is reached.
         m_startMs = newStartMs;
         m_endMs   = newStartMs + MAX_FRAGMENT_MS;
         if (m_endMs > m_songDurationMs) {
@@ -1044,8 +1024,7 @@ void ProfileMusicPopup::applyEndMs(int newEndMs) {
     if (newEndMs < 0) newEndMs = 0;
 
     if (newEndMs < m_startMs + MIN_FRAGMENT_MS) {
-        // Collided with the start handle: push the start along so both slide
-        // together towards the left.
+// Push the start handle when the end collides with it.
         m_endMs   = newEndMs;
         m_startMs = newEndMs - MIN_FRAGMENT_MS;
         if (m_startMs < 0) {
@@ -1068,8 +1047,7 @@ void ProfileMusicPopup::syncTimeInputsFromSelection() {
     if (!m_startTimeInput || !m_endTimeInput) return;
 
     m_suppressTimeInput = true;
-    // Boxes hold the raw second count (with decimals when needed); the m:ss form
-    // is shown in the conversion label below each one.
+// Inputs hold seconds; the conversion label shows m:ss.
     m_startTimeInput->setString(formatSeconds(m_startMs));
     m_endTimeInput->setString(formatSeconds(m_endMs));
     m_suppressTimeInput = false;
@@ -1088,7 +1066,7 @@ void ProfileMusicPopup::onNudgeTime(CCObject* sender) {
     auto* node = static_cast<CCNode*>(sender);
     if (!node) return;
 
-    const int step = 1000;  // one second per tap
+const int step = 1000;
     switch (node->getTag()) {
         case 1: applyStartMs(m_startMs - step); break;
         case 2: applyStartMs(m_startMs + step); break;
@@ -1115,14 +1093,12 @@ void ProfileMusicPopup::onStartTimeChanged(std::string const& text) {
     updateSelectionLabel();
     updateConversionLabels();
 
-    // Always reflect the (possibly pushed) end field.
     if (m_endTimeInput) {
         m_suppressTimeInput = true;
         m_endTimeInput->setString(formatSeconds(m_endMs));
         m_suppressTimeInput = false;
     }
-    // If the typed value had to be clamped (e.g. past the song end), correct
-    // the start field too so it never shows an impossible value.
+// Correct the start field when the typed end is clamped.
     if (m_startTimeInput && m_startMs != requested) {
         m_suppressTimeInput = true;
         m_startTimeInput->setString(formatSeconds(m_startMs));

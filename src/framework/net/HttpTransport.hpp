@@ -1,9 +1,6 @@
 ﻿#pragma once
 
-// Low-level HTTP transport layer. Extracts HttpClient's communication
-// primitives so each feature's services can use them without the full facade.
-// HttpClient.cpp still exists and delegates here; newer services can call
-// HttpTransport directly.
+// Low-level HTTP transport shared by HttpClient and newer feature services.
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/web.hpp>
@@ -30,7 +27,6 @@ public:
         return instance;
     }
 
-    // Configuration
     std::string const& serverURL()  const { return m_serverURL; }
     std::string const& modCode()    const { return m_modCode; }
     std::string const& apiKey()     const { return m_apiKey; }
@@ -47,7 +43,7 @@ public:
         geode::Mod::get()->setSavedValue("mod-code", code);
     }
 
-    // GET/POST with a text response.
+    // GET/POST with a text response and optional mod-code header.
     void request(
         std::string const& url,
         std::string const& method,
@@ -82,7 +78,7 @@ public:
             });
     }
 
-    // Binary GET with image magic-byte validation.
+    // Binary GET; optionally reject non-image payloads.
     void requestBinary(
         std::string const& url,
         std::vector<std::string> const& headers,
@@ -106,7 +102,6 @@ public:
                 std::vector<uint8_t> data = ok ? res.data() : std::vector<uint8_t>{};
 
                 if (ok && !data.empty()) {
-                    // Reject JSON/HTML disguised as binary
                     auto ct = res.header("Content-Type");
                     std::string contentType = ct.has_value() ? std::string(ct.value()) : "";
                     if (contentType.find("application/json") != std::string::npos ||
@@ -115,7 +110,6 @@ public:
                         data.clear();
                     }
 
-                    // Validate magic bytes
                     if (validateImage && ok && data.size() >= 4) {
                         if (!hasImageMagicBytes(data)) {
                             ok = false;
@@ -128,7 +122,6 @@ public:
             });
     }
 
-    // Multipart upload.
     void upload(
         std::string const& url,
         std::string const& fieldName,
@@ -168,7 +161,7 @@ public:
             });
     }
 
-    // URL-encode a query parameter.
+    // Percent-encode a query parameter.
     static std::string encodeQueryParam(std::string const& value) {
         std::ostringstream encoded;
         encoded << std::uppercase << std::hex;
@@ -182,24 +175,23 @@ public:
         return encoded.str();
     }
 
-    // Validate that a URL is safe (prevents SSRF).
+    // Allow HTTP(S) URLs while blocking SSRF targets.
     static bool isUrlSafe(std::string const& url) {
         if (url.empty()) return false;
 
         std::string lower = url;
         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
-        // HTTPS only (reject plain HTTP and any other scheme).
+        // Reject schemes other than HTTP(S).
         bool isHttps = lower.starts_with("https://");
         bool isHttp  = lower.starts_with("http://");
         if (!isHttps && !isHttp) return false;
 
-        // Extract host: find the first "://", then the next '/'.
         size_t schemeEnd = lower.find("://");
         if (schemeEnd == std::string::npos) return false;
         size_t hostStart = schemeEnd + 3;
 
-        // Reject credentials in the URL.
+        // Credentials can hide the real host.
         size_t at = lower.find('@', hostStart);
         size_t slash = lower.find('/', hostStart);
         if (at != std::string::npos && (slash == std::string::npos || at < slash)) return false;
@@ -234,20 +226,15 @@ public:
         return true;
     }
 
-    // Check whether the first bytes match a known image format.
+    // Check common image signatures.
     static bool hasImageMagicBytes(std::vector<uint8_t> const& data) {
         if (data.size() < 4) return false;
-        // PNG
         if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47) return true;
-        // JPEG
         if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) return true;
-        // GIF
         if (data[0] == 'G' && data[1] == 'I' && data[2] == 'F' && data[3] == '8') return true;
-        // WEBP
         if (data.size() >= 12 &&
             data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F' &&
             data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P') return true;
-        // BMP
         if (data[0] == 'B' && data[1] == 'M') return true;
         return false;
     }
@@ -262,7 +249,7 @@ private:
     HttpTransport(HttpTransport const&) = delete;
     HttpTransport& operator=(HttpTransport const&) = delete;
 
-    // Apply "Key: Value" headers to a WebRequest.
+    // Apply "Key: Value" headers and detect an explicit mod-code header.
     static void applyHeaders(geode::utils::web::WebRequest& req,
                              std::vector<std::string> const& headers,
                              bool* outHasModCode = nullptr) {
@@ -285,4 +272,4 @@ private:
     std::string m_modCode;
 };
 
-} // namespace paimon::net
+}

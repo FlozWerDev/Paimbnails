@@ -1,7 +1,6 @@
 ﻿#pragma once
 
-// Centralized per-scene node locators. Each function wraps the fallback chain
-// (ID -> type -> heuristic) so compatibility fixes live in one place.
+// Centralized scene locators using ID -> type -> heuristic fallbacks.
 
 #include <Geode/Geode.hpp>
 
@@ -9,11 +8,8 @@ using namespace geode::prelude;
 
 namespace paimon::compat {
 
-// LevelBrowserLocator: for LevelListLayer, LevelSearchLayer and similar
-// search layers.
-
 struct LevelBrowserLocator {
-    // Chain: getChildByID("search-menu") -> first CCMenu with Y > 70% of screen.
+    // ID search-menu, then the uppermost CCMenu.
     static cocos2d::CCMenu* findSearchMenu(cocos2d::CCNode* layer) {
         if (!layer) return nullptr;
 
@@ -32,7 +28,7 @@ struct LevelBrowserLocator {
         return nullptr;
     }
 
-    // Chain: getChildByID("background") -> first CCScale9Sprite child.
+    // ID background, then the first CCScale9Sprite.
     static cocos2d::CCNode* findBackground(cocos2d::CCNode* layer) {
         if (!layer) return nullptr;
 
@@ -47,10 +43,8 @@ struct LevelBrowserLocator {
     }
 };
 
-// GauntletLocator: for GauntletLayer.
-
 struct GauntletLocator {
-    // Chain: getChildByID("background") -> first direct child.
+    // ID background, then the first direct child.
     static cocos2d::CCNode* findBackground(cocos2d::CCNode* layer) {
         if (!layer) return nullptr;
 
@@ -62,8 +56,6 @@ struct GauntletLocator {
     }
 };
 
-// InfoLayerLocator: for InfoLayer (level info popup).
-
 struct InfoLayerLocator {
     struct PopupGeometry {
         cocos2d::CCSize  size   = cocos2d::CCSize(440.f, 290.f);
@@ -71,7 +63,7 @@ struct InfoLayerLocator {
         bool found = false;
     };
 
-    // Chain: getChildByID("background") -> first CCScale9Sprite child.
+    // ID background, then the first CCScale9Sprite.
     static PopupGeometry findPopupGeometry(cocos2d::CCNode* mainLayer) {
         if (!mainLayer) return {};
 
@@ -100,20 +92,14 @@ struct InfoLayerLocator {
     }
 };
 
-// LevelSelectLocator: for LevelSelectLayer (the main levels).
-
 struct LevelSelectLocator {
-    // Whether a node belongs to another mod, by ID. IDs are prefixed with the
-    // mod ID + '/' (the _spr literal format). If we recognize another mod's
-    // prefix (texture-loader, happy textures, imageplus, etc.) we don't hide
-    // it; that mod knows what it's doing.
+    // Recognize foreign mod nodes by their _spr-prefixed IDs so they stay visible.
     static bool isForeignModNode(cocos2d::CCNode* node) {
         if (!node) return false;
         std::string id = node->getID();
         if (id.empty()) return false;
 
-        // Known mod prefixes whose background we don't want to stomp; we match
-        // the prefix followed by '/'.
+        // Foreign prefixes whose backgrounds must not be hidden.
         static char const* const kForeignPrefixes[] = {
             "alphalaneous.",       // happy_textures, etc.
             "geode.texture-loader/",
@@ -134,8 +120,7 @@ struct LevelSelectLocator {
         return false;
     }
 
-    // Hide vanilla background nodes (zOrder < -1) and GJGroundLayer; leave other
-    // mods' nodes alone even if they match.
+    // Hide vanilla backgrounds and GJGroundLayer, but leave other mods alone.
     static void hideVanillaBackground(cocos2d::CCNode* layer) {
         if (!layer) return;
 
@@ -144,7 +129,7 @@ struct LevelSelectLocator {
 
         for (auto* node : CCArrayExt<cocos2d::CCNode*>(children)) {
             if (!node) continue;
-            // Don't touch other mods' nodes.
+            // Do not touch other mods' nodes.
             if (isForeignModNode(node)) continue;
             if (node->getZOrder() < -1) {
                 node->setVisible(false);
@@ -156,4 +141,4 @@ struct LevelSelectLocator {
     }
 };
 
-} // namespace paimon::compat
+}

@@ -1,4 +1,5 @@
 #include "FontTag.hpp"
+#include "../../core/modules/ModuleRegistry.hpp"
 #include <Geode/Geode.hpp>
 #include <cctype>
 
@@ -12,7 +13,6 @@ static constexpr const char* DEFAULT_FONT = "chatFont.fnt";
 static std::string resolveId(std::string const& id) {
     if (id.empty()) return DEFAULT_FONT;
 
-    // Named aliases
     if (id == "big") return "bigFont.fnt";
     if (id == "chat") return "chatFont.fnt";
     if (id == "gold") return "goldFont.fnt";

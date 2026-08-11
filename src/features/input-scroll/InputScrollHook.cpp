@@ -15,12 +15,8 @@
 #include <limits>
 #include <string>
 
-// Numeric text-input scroll wheel: hovering (or focusing) a numeric input and
-// rolling the wheel bumps its value by 1 per tick. Holding the configured
-// modifier (Shift by default; "Fn" isn't reachable from software on Windows)
-// on a decimal input steps by a small fractional amount instead. The
-// CCMouseDispatcher::dispatchScrollMSG binding is inline on macOS/iOS so this
-// is Windows-only, like volume-scroll.
+// Windows-only numeric input wheel control: integer fields step by one; decimal
+// fields use a small modifier step.
 
 #if defined(GEODE_IS_WINDOWS)
 
@@ -31,9 +27,7 @@ using namespace cocos2d;
 
 namespace {
 
-// GD/cocos convention on Windows: CCEGLView negates GLFW's yoffset, so
-// dispatchScrollMSG receives y>0 when the physical wheel goes DOWN and y<0
-// when it goes UP.
+// CCEGLView negates GLFW yoffset: positive means physical wheel down.
 int scrollDirection(float y) {
     if (y < 0.f) return +1;
     if (y > 0.f) return -1;
@@ -61,7 +55,6 @@ NumericProfile classifyInput(CCTextInputNode* input) {
         } else if (c == '.' || c == ',') {
             p.floating = true;
         } else if (c == '+' || c == ' ') {
-            // tolerated
         } else {
             return {};
         }
@@ -143,18 +136,17 @@ bool decimalModifierHeld() {
     std::string mod = paimon::settings::input_scroll::decimalModifier();
     if (mod == "ctrl")  return kb->getControlKeyPressed();
     if (mod == "alt")   return kb->getAltKeyPressed();
-    return kb->getShiftKeyPressed(); // default
+return kb->getShiftKeyPressed(); // Default modifier.
 }
 
-// Format a double with a fixed number of decimal places, trimming any final
-// negative zero that snprintf might emit for tiny magnitudes.
+// Format a fixed-precision value and remove negative zero.
 std::string formatFloat(double value, int places) {
     if (std::abs(value) < std::pow(10.0, -(places + 3))) value = 0.0;
     char buf[64];
     std::snprintf(buf, sizeof(buf), "%.*f", places, value);
     std::string s = buf;
     if (s.size() >= 2 && s[0] == '-' && s[1] == '0') {
-        // Strip "-0.000" style negatives.
+// Strip negative-zero output.
         bool onlyZeros = true;
         for (size_t i = 1; i < s.size(); ++i) {
             char c = s[i];
@@ -198,7 +190,7 @@ bool parseCurrentInt(CCTextInputNode* input, long long& out) {
 bool parseCurrentFloat(CCTextInputNode* input, double& out) {
     std::string s(input->getString().c_str());
     if (s.empty()) { out = 0.0; return true; }
-    // Accept "," as decimal separator too.
+// Accept comma decimal separators.
     for (auto& c : s) if (c == ',') c = '.';
     try {
         size_t idx = 0;
@@ -231,7 +223,7 @@ bool respectsMaxLen(CCTextInputNode* input, std::string const& newStr,
     }
     if (!paimon::settings::input_scroll::wrap()) return false;
 
-    // Wrap only makes sense for pure integers; if the string has a dot, give up.
+// Wrap only pure integers; decimals are left unchanged.
     if (newStr.find('.') != std::string::npos) return false;
 
     bool neg = !newStr.empty() && newStr[0] == '-';
@@ -267,7 +259,7 @@ bool tryHandleInputScroll(float y) {
     if (!paimon::settings::input_scroll::enabled()) return false;
     if (y == 0.f) return false;
 
-    // Never fire on smooth-scroll's own replay ticks.
+// Ignore smooth-scroll replay ticks.
     if (paimon::smoothscroll::SmoothScrollController::get().isReplaying()) {
         return false;
     }
@@ -281,13 +273,14 @@ bool tryHandleInputScroll(float y) {
     auto profile = classifyInput(target);
     if (!profile.numeric) return false;
 
-    bool decimalMode = profile.floating && decimalModifierHeld();
-
-    if (decimalMode) {
+    if (profile.floating) {
         double base = 0.0;
         if (!parseCurrentFloat(target, base)) return false;
-        double step = paimon::settings::input_scroll::decimalStep();
-        if (step <= 0.0) step = 0.1;
+        double step = static_cast<double>(std::max(1, paimon::settings::input_scroll::intStep()));
+        if (decimalModifierHeld()) {
+            step = paimon::settings::input_scroll::decimalStep();
+            if (step <= 0.0) step = 0.1;
+        }
         writeFloat(target, base + dir * step, profile);
     } else {
         long long base = 0;
@@ -298,13 +291,11 @@ bool tryHandleInputScroll(float y) {
     return true;
 }
 
-} // namespace
+}
 
 class $modify(PaimonInputScrollDispatcher, CCMouseDispatcher) {
     static void onModify(auto& self) {
-        // VeryEarly so we run before smooth-scroll (Early) and volume-scroll
-        // (Early). Consuming here prevents smoothing from replaying the tick
-        // and prevents the volume hook from firing on scrolls we own.
+// Run before volume/smooth scroll and consume owned ticks.
         (void)self.setHookPriorityPre("cocos2d::CCMouseDispatcher::dispatchScrollMSG",
                                        geode::Priority::VeryEarly);
     }

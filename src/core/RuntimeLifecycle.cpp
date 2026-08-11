@@ -2,10 +2,12 @@
 #include "../features/profiles/services/ProfileThumbs.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
+#include "../features/dynamic-songs/services/DynamicSongSubmerge.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/pet/services/PetManager.hpp"
 #include "../features/cursor/services/CursorManager.hpp"
 #include "../features/menu-music/services/SongCoverCache.hpp"
+#include "../features/menu-music/services/MenuMusicEffects.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/thumbnails/services/ThumbnailCache.hpp"
 #include "../blur/BlurSystem.hpp"
@@ -14,18 +16,18 @@
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../features/emotes/services/EmoteCache.hpp"
-#include "../features/foryou/services/ForYouTracker.hpp"
+#include "../features/foryou/services/TasteProfile.hpp"
 #include "../features/updates/services/UpdateChecker.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/VideoThumbnailSprite.hpp"
 #include "../utils/HttpClient.hpp"
-#include "../video/VideoNormalizer.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "QualityConfig.hpp"
 #include "MainLevels.hpp"
 #include "Settings.hpp"
 #include "../features/discord-presence/services/DiscordPresenceManager.hpp"
 #include "../features/beat-shaders/services/BeatShaderManager.hpp"
+#include "../features/dynamic-volume/services/DynamicVolumeManager.hpp"
 #include "../framework/ModEvents.hpp"
 #include "../framework/EventBus.hpp"
 #include "../utils/ThreadTracker.hpp"
@@ -125,9 +127,9 @@ $on_game(Exiting) {
     });
 
     safeShutdownStep("foryou-save", []() {
-        paimon::foryou::ForYouTracker::get().save();
+        paimon::foryou::TasteProfile::get().save();
     });
-    log::info("[SHUTDOWN] 1/14 ForYouTracker saved");
+    log::info("[SHUTDOWN] 1/14 TasteProfile saved");
 
     safeShutdownStep("http-clean-tasks", []() {
         HttpClient::get().cleanTasks(false);
@@ -155,10 +157,6 @@ $on_game(Exiting) {
         ThumbnailLoader::get().cleanup();
     });
     log::info("[SHUTDOWN] 4/14 ThumbnailLoader cleanup DONE");
-    safeShutdownStep("video-normalizer-shutdown", []() {
-        paimon::video::VideoNormalizer::shutdownAsyncWork();
-    });
-
     safeShutdownStep("blur-disk-cache-shutdown", []() {
         paimon::blur::BlurDiskCache::get().shutdown();
     });
@@ -230,8 +228,19 @@ $on_game(Exiting) {
     safeShutdownStep("dynamic-song-kill", []() {
         DynamicSongManager::get()->forceKill();
     });
+    // Before the FMOD engine goes away: releases the dive filter's DSPs.
+    safeShutdownStep("dynamic-song-submerge-shutdown", []() {
+        paimon::dynsong::SubmergeEffect::get().shutdown();
+    });
     safeShutdownStep("beat-shader-shutdown", []() {
         paimon::beat_shaders::BeatShaderManager::get().shutdown();
+    });
+    safeShutdownStep("menu-music-effects-shutdown", []() {
+        paimon::menumusic::MenuMusicEffects::get().shutdown();
+    });
+    // Before the FMOD engine goes away: releases our fader/meter DSPs.
+    safeShutdownStep("dynamic-volume-shutdown", []() {
+        paimon::dynvol::DynamicVolumeManager::get().shutdown();
     });
     safeShutdownStep("profile-music-stop", []() {
         ProfileMusicManager::get().forceStop();

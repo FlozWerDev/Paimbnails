@@ -1,6 +1,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/DailyLevelNode.hpp>
 #include "../framework/HookConventions.hpp"
+#include "../core/modules/ModuleRegistry.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../utils/Shaders.hpp"
 #include "../blur/BlurSystem.hpp"
@@ -47,20 +48,20 @@ public:
         constexpr float rampDur = 1.5f;
 
         switch (m_state) {
-            case 0: // hold blur max
+            case 0:
                 m_intensity = maxBlur;
                 if (m_timer > 0.5f) { m_state = 1; m_timer = 0.0f; }
                 break;
-            case 1: { // ramp down
+            case 1: {
                 float p = std::min(m_timer / rampDur, 1.0f);
                 m_intensity = maxBlur * (1.0f - smootherstep(p));
                 if (p >= 1.0f) { m_intensity = 0.0f; m_state = 2; m_timer = 0.0f; }
             } break;
-            case 2: // hold no blur
+            case 2:
                 m_intensity = 0.0f;
                 if (m_timer > 2.0f) { m_state = 3; m_timer = 0.0f; }
                 break;
-            case 3: { // ramp up
+            case 3: {
                 float p = std::min(m_timer / rampDur, 1.0f);
                 m_intensity = maxBlur * smootherstep(p);
                 if (p >= 1.0f) { m_intensity = maxBlur; m_state = 0; m_timer = 0.0f; }
@@ -80,7 +81,7 @@ public:
             prog->use();
             prog->setUniformsForBuiltins();
             prog->setUniformLocationWith1f(prog->getUniformLocationForName("u_intensity"), m_intensity);
-            // Try u_texSize first (.glsl shader from BlurSystem), then u_screenSize (inline fallback)
+            // Support both shader uniform names.
             GLint sizeLoc = prog->getUniformLocationForName("u_texSize");
             if (sizeLoc == -1) sizeLoc = prog->getUniformLocationForName("u_screenSize");
             if (sizeLoc != -1) {
@@ -106,6 +107,8 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
     $override
     bool init(GJGameLevel* level, DailyLevelPage* page, bool isTime) {
         if (!DailyLevelNode::init(level, page, isTime)) return false;
+
+        if (!paimon::modules::isEnabled("paimbnails.thumbnails.browser")) return true;
 
         if (!level) return true;
         m_fields->m_levelID = level->m_levelID;
@@ -137,7 +140,6 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
             clipPos  = ccp(0.f, 0.f);
         }
 
-        // Subtract padding to avoid edges
         CCSize imgArea = CCSize(clipSize.width - padding * 2.f,
                                 clipSize.height - padding * 2.f);
 
@@ -148,7 +150,6 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         m_fields->m_paimonClipper->setPosition(clipPos);
         m_fields->m_paimonClipper->setID("paimon-thumbnail-clipper"_spr);
 
-        // Rounded stencil to avoid conflicts with mods
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(imgArea.width, imgArea.height);
         m_fields->m_paimonClipper->setStencil(stencil);
 
@@ -162,21 +163,17 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         int levelID = level->m_levelID;
         std::string fileName = fmt::format("{}.png", levelID);
         
-        // Ref<> keeps the node alive
         log::info("[DailyLevelNode] requesting thumbnail: levelID={}", levelID);
         Ref<DailyLevelNode> self = this;
         ThumbnailLoader::get().requestLoad(levelID, fileName, [self, levelID](CCTexture2D* tex, bool success) {
             auto* node = static_cast<PaimonDailyLevelNode*>(self.data());
             if (!node) return;
             auto* fields = node->m_fields.self();
-            // Check the clipper is alive, not getParent(): a RAM cache hit can
-            // fire before the parent calls addChild. Ref<> keeps the clipper
-            // alive, so the sprite is in place by the time the node enters the tree.
+            // A cache hit can fire before addChild; the Ref keeps the clipper alive.
             if (!fields || !fields->m_paimonClipper) {
                 log::debug("[DailyLevelNode] callback levelID={}: clipper destroyed, skipping", levelID);
                 return;
             }
-            // Check levelID didn't change (DailyLevelNode recycled)
             if (fields->m_levelID != levelID) {
                 log::debug("[DailyLevelNode] callback levelID={}: level changed to {}, skipping", levelID, fields->m_levelID);
                 return;
@@ -206,7 +203,7 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
                 CCSize containerSize = fields->m_paimonClipper->getContentSize();
                 float sx = containerSize.width / sprite->getContentWidth();
                 float sy = containerSize.height / sprite->getContentHeight();
-                float scale = std::max(sx, sy); // aspect fill: cover the whole area
+                float scale = std::max(sx, sy);
 
                 sprite->setScale(scale);
                 sprite->setPosition(containerSize / 2);

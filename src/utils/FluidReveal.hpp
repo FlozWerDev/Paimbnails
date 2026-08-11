@@ -1,13 +1,6 @@
 #pragma once
 
-// FluidReveal — sequential fade-in for UI. Nodes created in the same frame
-// would pop in all at once; this hides them immediately (opacity 0) and reveals
-// them with a staggered fade-in so the appearance feels fluid.
-//
-// Usage:
-//   paimon::fluid::revealSequential({ title, menu, content }); // staggered
-//   paimon::fluid::revealNode(panel);                          // one node
-//   paimon::fluid::revealChildren(scrollContent);              // direct children
+// Sequentially hide and fade in nodes created in the same frame.
 
 #include <Geode/Geode.hpp>
 #include "MainThreadDelay.hpp"
@@ -17,19 +10,18 @@
 namespace paimon::fluid {
 
 struct RevealOpts {
-    float fadeDuration = 0.18f;  // fade-in duration per node
-    float startDelay   = 0.0f;   // global delay before the first node
-    float stagger      = 0.05f;  // time gap between nodes (the "sequential" part)
-    bool  recurse      = true;   // if the node has no opacity, animate its RGBA children
+    float fadeDuration = 0.18f;  // Per-node fade.
+    float startDelay   = 0.0f;   // Delay before the first node.
+    float stagger      = 0.05f;  // Gap between nodes.
+    bool  recurse      = true;   // Animate RGBA descendants when needed.
 };
 
 namespace detail {
 
-// tag to avoid stacking multiple fades on the same node ('FADE')
+// Tag used to avoid stacking fades on one node.
 inline constexpr int kFadeActionTag = 0x46414445;
 
-// Hide immediately (opacity 0). If the node isn't CCRGBAProtocol, recurse to the
-// first RGBA descendant.
+// Hide immediately, recursing to the first RGBA descendant when needed.
 inline void prehide(cocos2d::CCNode* node, bool recurse, int depth) {
     if (!node || depth > 10) return;
 
@@ -49,7 +41,7 @@ inline void prehide(cocos2d::CCNode* node, bool recurse, int depth) {
     }
 }
 
-// Start the fade-in (opacity -> 255). Mirrors prehide()'s recursion.
+// Start the fade-in, mirroring prehide()'s recursion.
 inline void fadeIn(cocos2d::CCNode* node, float duration, bool recurse, int depth) {
     if (!node || depth > 10) return;
 
@@ -73,8 +65,7 @@ inline void fadeIn(cocos2d::CCNode* node, float duration, bool recurse, int dept
 
 } // namespace detail
 
-// Reveal a single node with fade-in: hides it this frame and starts the fade
-// after startDelay.
+// Hide one node now and fade it after startDelay.
 inline void revealNode(cocos2d::CCNode* node, RevealOpts opts = {}) {
     if (!node || paimon::isRuntimeShuttingDown()) return;
 
@@ -89,8 +80,7 @@ inline void revealNode(cocos2d::CCNode* node, RevealOpts opts = {}) {
     });
 }
 
-// Reveal a list of nodes in sequence (staggered by opts.stagger). All hide
-// immediately, then each fades in turn.
+// Hide nodes now, then fade them in sequence.
 inline void revealSequential(std::vector<cocos2d::CCNode*> nodes, RevealOpts opts = {}) {
     if (paimon::isRuntimeShuttingDown()) return;
 
@@ -111,7 +101,7 @@ inline void revealSequential(std::vector<cocos2d::CCNode*> nodes, RevealOpts opt
     }
 }
 
-// Convenience: reveal a container's direct children, in order.
+// Reveal a container's direct children in order.
 inline void revealChildren(cocos2d::CCNode* container, RevealOpts opts = {}) {
     if (!container || paimon::isRuntimeShuttingDown()) return;
     auto* children = container->getChildren();
@@ -126,4 +116,4 @@ inline void revealChildren(cocos2d::CCNode* container, RevealOpts opts = {}) {
     revealSequential(std::move(nodes), opts);
 }
 
-} // namespace paimon::fluid
+}

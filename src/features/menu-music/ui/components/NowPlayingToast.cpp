@@ -333,10 +333,11 @@ void NowPlayingToast::showForCurrent(CCNode* parent) {
     switch (track->source) {
         case TrackSource::Downloaded: subtitle = "downloaded"; break;
         case TrackSource::Local:      subtitle = "local"; break;
+        case TrackSource::GeometryDash: subtitle = "Geometry Dash"; break;
         default: break;
     }
     if (!track->artist.empty()) {
-        subtitle = subtitle.empty() ? track->artist : fmt::format("{} • {}", subtitle, track->artist);
+        subtitle = subtitle.empty() ? track->artist : fmt::format("{} - {}", subtitle, track->artist);
     }
 
     auto toast = new NowPlayingToast();

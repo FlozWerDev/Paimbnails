@@ -55,6 +55,13 @@ gfile::FilePickOptions::Filter pngFilter() {
     return f;
 }
 
+gfile::FilePickOptions::Filter gifFilter() {
+    gfile::FilePickOptions::Filter f;
+    f.description = "GIF Animation (*.gif)";
+    f.files = {"*.gif"};
+    return f;
+}
+
 gfile::FilePickOptions::Filter cursorAssetFilter() {
     gfile::FilePickOptions::Filter f;
     f.description = "Cursors & Packs (*.png, *.gif, *.cur, *.ani, *.ico, *.zip ...)";
@@ -64,6 +71,13 @@ gfile::FilePickOptions::Filter cursorAssetFilter() {
         "*.cur", "*.ani", "*.ico",
         "*.zip"
     };
+    return f;
+}
+
+gfile::FilePickOptions::Filter buildTemplateFilter() {
+    gfile::FilePickOptions::Filter f;
+    f.description = "Autobuild Templates (*.pab, *.tblib)";
+    f.files = {"*.pab", "*.tblib"};
     return f;
 }
 
@@ -77,6 +91,20 @@ void pickImage(FilePickCallback cb) {
 void pickCursorAsset(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {cursorAssetFilter()}}),
+        std::move(cb)
+    );
+}
+
+void pickGif(FilePickCallback cb) {
+    s_filePickHolder.spawn("Paimbnails FilePicker",
+        gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {gifFilter()}}),
+        std::move(cb)
+    );
+}
+
+void pickBuildTemplate(FilePickCallback cb) {
+    s_filePickHolder.spawn("Paimbnails FilePicker",
+        gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {buildTemplateFilter()}}),
         std::move(cb)
     );
 }

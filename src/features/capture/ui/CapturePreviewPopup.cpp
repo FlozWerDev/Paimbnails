@@ -7,11 +7,13 @@
 #include "CaptureLayerEditorPopup.hpp"
 #include "CaptureAssetBrowserPopup.hpp"
 #include "CaptureUIConstants.hpp"
+#include "../../smooth-scroll/services/SmoothScrollController.hpp"
 #include "../../thumbnails/services/LocalThumbs.hpp"
 #include "../../thumbnails/services/ThumbnailLoader.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../services/FramebufferCapture.hpp"
 #include <Geode/ui/GeodeUI.hpp>
+#include <Geode/utils/file.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
@@ -32,6 +34,7 @@
 #include <iomanip>
 #include <sstream>
 #include <algorithm>
+#include <cmath>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -62,6 +65,10 @@ float computePreviewScale(CCSprite* sprite, float viewWidth, float viewHeight, b
     float scale = fillMode ? std::max(scaleX, scaleY) : std::min(scaleX, scaleY);
     if (scale <= 0.f) return 1.f;
     return std::clamp(scale, 0.01f, 64.0f);
+}
+
+std::filesystem::path downloadedThumbnailsDir() {
+    return Mod::get()->getSaveDir() / "downloaded_thumbnails";
 }
 }
 
@@ -147,7 +154,6 @@ void CapturePreviewPopup::updateContent(CCTexture2D* texture,
             ccp(m_clippingNode->getContentSize().width / 2,
                 m_clippingNode->getContentSize().height / 2));
         m_clippingNode->addChild(m_previewSprite, 10);
-        // Reset zoom/anchor state on content update
         m_wasZooming = false;
         m_activeTouches.clear();
         updatePreviewScale();
@@ -169,13 +175,12 @@ bool CapturePreviewPopup::init() {
 
     if (!m_texture) return false;
 
-    // Preview area
     float maxWidth  = content.width  - C::PREVIEW_PAD_X * 2;
     float maxHeight = content.height - C::PREVIEW_PAD_TOP - C::PREVIEW_PAD_BOT;
     m_viewWidth  = maxWidth;
     m_viewHeight = maxHeight;
 
-    // Geometric stencil avoids conflicts with HappyTextures/TextureLdr
+// Use a geometric stencil to avoid conflicts with HappyTextures/TextureLdr.
     auto stencil = PaimonDrawNode::create();
     CCPoint rect[4] = { ccp(0,0), ccp(maxWidth,0), ccp(maxWidth,maxHeight), ccp(0,maxHeight) };
     ccColor4F white = {1,1,1,1};
@@ -188,7 +193,6 @@ bool CapturePreviewPopup::init() {
     m_clippingNode->setID("preview-clip"_spr);
     m_mainLayer->addChild(m_clippingNode, 1);
 
-    // Dark background inside the clipping node
     auto clippingBg = CCLayerColor::create(ccc4(0, 0, 0, C::CLIP_BG_ALPHA));
     clippingBg->setContentSize({maxWidth, maxHeight});
     clippingBg->ignoreAnchorPointForPosition(false);
@@ -196,7 +200,6 @@ bool CapturePreviewPopup::init() {
     clippingBg->setPosition(ccp(maxWidth / 2, maxHeight / 2));
     m_clippingNode->addChild(clippingBg, -1);
 
-    // Decorative border
     auto border = CCScale9Sprite::create("GJ_square07.png");
     if (border) {
         border->setContentSize({maxWidth + C::BORDER_MARGIN, maxHeight + C::BORDER_MARGIN});
@@ -205,7 +208,6 @@ bool CapturePreviewPopup::init() {
         m_mainLayer->addChild(border, 2);
     }
 
-    // Preview sprite
     m_previewSprite = CCSprite::createWithTexture(m_texture);
     if (!m_previewSprite) return false;
 
@@ -220,7 +222,6 @@ bool CapturePreviewPopup::init() {
     m_clippingNode->addChild(m_previewSprite, 10);
     updatePreviewScale();
 
-    // Resolution badge (top-right of preview area)
     {
         float badgeX = content.width / 2 + maxWidth / 2 - 4.f;
         float badgeY = content.height / 2 + C::PREVIEW_OFFSET_Y + maxHeight / 2 - 4.f;
@@ -235,7 +236,6 @@ bool CapturePreviewPopup::init() {
         m_resBadge = nullptr;
         updateResBadge();
 
-        // Clickable badge — cycle resolution
         auto badgeMenu = CCMenu::create();
         badgeMenu->setPosition(CCPointZero);
         badgeMenu->setID("res-badge-menu"_spr);
@@ -253,7 +253,6 @@ bool CapturePreviewPopup::init() {
         m_mainLayer->addChild(badgeMenu, 17);
     }
 
-    // X button — reposition to preview edge
     if (m_closeBtn) {
         float topY  = (content.height / 2 + C::PREVIEW_OFFSET_Y) + (maxHeight / 2);
         float leftX = (content.width - maxWidth) / 2;
@@ -267,11 +266,9 @@ bool CapturePreviewPopup::init() {
         if (maxDim > 0.f) spr->setScale(targetSize / maxDim);
     };
 
-    // Toolbar: edit controls (left) + action buttons (right)
     const float toolbarW = content.width - C::PREVIEW_PAD_X * 2;
     const float toolbarY = C::TOOLBAR_Y + 33.f;
 
-    // Edit controls (left)
     m_editMenu = CCMenu::create();
     m_editMenu->setID("edit-menu"_spr);
 
@@ -279,7 +276,6 @@ bool CapturePreviewPopup::init() {
         auto* gm = GameManager::sharedState();
         if (!gm) return nullptr;
 
-        // Detect current gamemode from PlayLayer player object
         int iconID = gm->m_playerFrame;
         IconType iconType = IconType::Cube;
 
@@ -344,7 +340,6 @@ bool CapturePreviewPopup::init() {
         return bg;
     };
 
-    // P1 toggle button — SimplePlayer inside button asset
     {
         auto* p1Player = createPlayerSpr(false);
         auto bg = CCSprite::createWithSpriteFrameName("GJ_plainBtn_001.png");
@@ -363,7 +358,6 @@ bool CapturePreviewPopup::init() {
         m_editMenu->addChild(m_p1Btn);
     }
 
-    // P2 toggle button — SimplePlayer inside button asset
     {
         auto* p2Player = createPlayerSpr(true);
         auto bg = CCSprite::createWithSpriteFrameName("GJ_plainBtn_001.png");
@@ -382,7 +376,6 @@ bool CapturePreviewPopup::init() {
         m_editMenu->addChild(m_p2Btn);
     }
 
-    // Crop button — GJ_backBtn_001.png (already a button asset)
     {
         auto cropSpr = CCSprite::createWithSpriteFrameName("GJ_backBtn_001.png");
         if (!cropSpr) cropSpr = paimon::SpriteHelper::safeCreateWithFrameName("edit_addCBtn_001.png");
@@ -393,9 +386,7 @@ bool CapturePreviewPopup::init() {
         m_editMenu->addChild(cropBtn);
     }
 
-    // HDR (supersampling) toggle button — higher quality, same resolution.
-    // Renders the capture at a higher internal resolution and downscales it,
-    // producing a crisper, anti-aliased thumbnail without enlarging the output.
+// HDR supersamples internally, then downsamples to the same output size.
     {
         m_hdrMode = FramebufferCapture::isHDRMode();
         auto bg = CCSprite::createWithSpriteFrameName("GJ_plainBtn_001.png");
@@ -419,7 +410,6 @@ bool CapturePreviewPopup::init() {
         m_editMenu->addChild(m_hdrBtn);
     }
 
-    // Layer Editor button
     {
         auto innerLayer = paimon::SpriteHelper::safeCreateWithFrameName("GJ_editBtn_001.png");
         auto layerSpr = wrapInCircle(innerLayer, 0.55f);
@@ -429,7 +419,6 @@ bool CapturePreviewPopup::init() {
         m_editMenu->addChild(layerBtn);
     }
 
-    // Asset Browser button
     {
         auto assetBg = paimon::SpriteHelper::safeCreateWithFrameName("GJ_longBtn06_001.png");
         if (!assetBg) assetBg = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plainBtn_001.png");
@@ -455,11 +444,9 @@ bool CapturePreviewPopup::init() {
     m_editMenu->updateLayout();
     m_mainLayer->addChild(m_editMenu, 10);
 
-    // Action buttons (right)
     m_actionMenu = CCMenu::create();
     m_actionMenu->setID("action-menu"_spr);
 
-    // Cancel button — GJ_deleteBtn_001.png
     auto cancelSpr = CCSprite::createWithSpriteFrameName("GJ_deleteBtn_001.png");
     if (!cancelSpr) cancelSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_deleteIcon_001.png");
     normalizeSprite(cancelSpr, C::BTN_TARGET_SIZE);
@@ -468,7 +455,6 @@ bool CapturePreviewPopup::init() {
     cancelBtn->setID("cancel-button"_spr);
     m_actionMenu->addChild(cancelBtn);
 
-    // Download button — GJ_downloadBtn_001.png
     auto downloadSpr = CCSprite::createWithSpriteFrameName("GJ_downloadBtn_001.png");
     if (!downloadSpr) downloadSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png");
     normalizeSprite(downloadSpr, C::BTN_TARGET_SIZE);
@@ -477,7 +463,13 @@ bool CapturePreviewPopup::init() {
     downloadBtn->setID("download-button"_spr);
     m_actionMenu->addChild(downloadBtn);
 
-    // Recenter button — GJ_zoomInBtn_001.png is already a button asset, no wrapping
+    auto folderInner = paimon::SpriteHelper::safeCreateWithFrameName("gj_folderBtn_001.png");
+    auto folderSpr = wrapInCircle(folderInner, 0.55f);
+    auto folderBtn = CCMenuItemSpriteExtra::create(
+        folderSpr, this, menu_selector(CapturePreviewPopup::onOpenDownloadsFolder));
+    folderBtn->setID("downloads-folder-button"_spr);
+    m_actionMenu->addChild(folderBtn);
+
     auto recenterSpr = CCSprite::createWithSpriteFrameName("GJ_zoomInBtn_001.png");
     if (!recenterSpr) recenterSpr = paimon::SpriteHelper::safeCreateWithFrameName("gj_findBtnOff_001.png");
     normalizeSprite(recenterSpr, C::BTN_TARGET_SIZE);
@@ -486,7 +478,6 @@ bool CapturePreviewPopup::init() {
     recenterBtn->setID("recenter-button"_spr);
     m_actionMenu->addChild(recenterBtn);
 
-    // Accept button — green check inside GJ_plainBtn_001.png (30% larger)
     {
         constexpr float acceptSize = C::BTN_TARGET_SIZE * 1.3f;
         auto okBg = CCSprite::createWithSpriteFrameName("GJ_plainBtn_001.png");
@@ -522,7 +513,6 @@ bool CapturePreviewPopup::init() {
     m_actionMenu->updateLayout();
     m_mainLayer->addChild(m_actionMenu, 10);
 
-    // activate touch/scroll
     this->setTouchEnabled(true);
 #if defined(GEODE_IS_WINDOWS)
     this->setMouseEnabled(true);
@@ -558,13 +548,11 @@ void CapturePreviewPopup::updatePlayerBtnVisual(CCMenuItemSpriteExtra* btn, bool
     auto* node = btn->getNormalImage();
     if (!node) return;
     if (isHidden) {
-        node->setVisible(true); // ensure visible even when toggled
-        // Tint red when hidden
+    node->setVisible(true);
         if (auto* spr = typeinfo_cast<CCSprite*>(node)) {
             spr->setColor({200, 70, 70});
             spr->setOpacity(160);
         }
-        // Also dim child SimplePlayer
         auto* children = node->getChildren();
         if (children) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
@@ -622,11 +610,9 @@ void CapturePreviewPopup::updateHDRBtnVisual(CCMenuItemSpriteExtra* btn, bool on
     auto* spr = typeinfo_cast<CCSprite*>(node);
     if (!spr) return;
     if (on) {
-        // Green = HDR on
         spr->setColor({120, 255, 140});
         spr->setOpacity(255);
     } else {
-        // Dim = HDR off
         spr->setColor({255, 255, 255});
         spr->setOpacity(150);
     }
@@ -638,9 +624,7 @@ void CapturePreviewPopup::onToggleHDRBtn(CCObject* sender) {
     FramebufferCapture::setHDRMode(m_hdrMode);
     updateHDRBtnVisual(m_hdrBtn, m_hdrMode);
 
-    // No notification here: the HDR button visual is sufficient feedback.
 
-    // Recapture so the preview reflects the new quality.
     if (PlayLayer::get()) {
         recapture();
     } else if (m_recaptureCallback) {
@@ -670,10 +654,10 @@ void CapturePreviewPopup::onClose(CCObject* sender) {
     CaptureLayerEditorPopup::restoreAllLayers();
     CaptureAssetBrowserPopup::restoreAllAssets();
 
-    // Cancel any pending recapture to avoid callbacks targeting a destroyed popup
+    // Cancel pending recapture callbacks before closing.
     FramebufferCapture::cancelPending();
 
-    // Resume music only if we paused it (keybind capture).
+    // Resume music only if keybind capture paused it.
     if (m_pausedMusic) {
         if (auto* engine = FMODAudioEngine::sharedEngine()) {
             if (engine->m_backgroundMusicChannel) {
@@ -684,9 +668,7 @@ void CapturePreviewPopup::onClose(CCObject* sender) {
 
     m_activeTouches.clear();
 
-    // setTouchEnabled(true) + registerWithTouchDispatcher() are cleaned up
-    // automatically via Popup::onClose → setTouchEnabled(false) → removeDelegate.
-    // No manual delegate cleanup needed.
+    // Popup::onClose removes the touch delegate.
 
     if (!m_callbackExecuted && m_callback) {
         m_callback(false, m_levelID, m_buffer, m_width, m_height, "", "");
@@ -847,9 +829,8 @@ void CapturePreviewPopup::onAcceptBtn(CCObject* sender) {
     m_callbackExecuted = true;
     ThumbnailLoader::get().invalidateLevel(m_levelID);
 
-    // Cache the accepted thumbnail in the session so LevelInfoLayer can
-    // display it immediately after returning from gameplay, before the
-    // server propagates the upload.
+    // Cache the accepted thumbnail so LevelInfoLayer can show it before upload
+    // propagation reaches the server.
     if (m_buffer && m_width > 0 && m_height > 0) {
         auto* tex = new CCTexture2D();
         if (tex->initWithData(m_buffer.get(), kCCTexture2DPixelFormat_RGBA8888,
@@ -898,16 +879,15 @@ void CapturePreviewPopup::updateResBadge() {
 
     if (res == "4k") {
         label = "4K";
-        color = {255, 200, 80}; // gold
+        color = {255, 200, 80};
     } else if (res == "1440p") {
         label = "1440p";
-        color = {120, 220, 255}; // light blue
+        color = {120, 220, 255};
     } else {
         label = "1080p";
-        color = {200, 255, 200}; // light green
+        color = {200, 255, 200};
     }
 
-    // Append capture dimensions
     if (m_width > 0 && m_height > 0) {
         label += "  " + std::to_string(m_width) + "x" + std::to_string(m_height);
     }
@@ -919,7 +899,6 @@ void CapturePreviewPopup::updateResBadge() {
     float bgW = labelSize.width + 8.f;
     float bgH = labelSize.height + 5.f;
 
-    // Recalculate badge position
     auto content = m_mainLayer->getContentSize();
     namespace C = paimon::capture::preview;
     float maxWidth  = content.width  - C::PREVIEW_PAD_X * 2;
@@ -941,7 +920,6 @@ void CapturePreviewPopup::updateResBadge() {
         m_resBadge = badgeBg;
     }
 
-    // Ajustar hitbox del boton clickable al tamaño real del badge
     if (auto* menu = m_mainLayer->getChildByID("res-badge-menu"_spr)) {
         if (auto* btn = menu->getChildByID("res-cycle-btn"_spr)) {
             btn->setContentSize({bgW, bgH});
@@ -960,18 +938,14 @@ void CapturePreviewPopup::onCycleResolution(CCObject* sender) {
 
     geode::Mod::get()->setSettingValue<std::string>("capture-resolution", next);
 
-    // Update badge immediately
     updateResBadge();
 
-    // Notify user
     auto& loc = Localization::get();
     std::string msg = loc.getString("preview.res_changed");
-    // Replace {} with the resolution name
     auto pos = msg.find("{}");
     if (pos != std::string::npos) msg.replace(pos, 2, next);
     PaimonNotify::create(msg.c_str(), NotificationIcon::Info)->show();
 
-    // Trigger recapture at new resolution
     liveRecapture(true);
 }
 
@@ -1078,7 +1052,7 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
         return;
     }
 
-    auto downloadDir = Mod::get()->getSaveDir() / "downloaded_thumbnails";
+    auto downloadDir = downloadedThumbnailsDir();
     std::error_code ec;
     if (!std::filesystem::exists(downloadDir, ec)) {
         std::filesystem::create_directory(downloadDir, ec);
@@ -1095,14 +1069,14 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     ss << "thumbnail_" << m_levelID << "_" << std::put_time(&tmBuf, "%Y%m%d_%H%M%S") << ".png";
     auto filePath = downloadDir / ss.str();
 
-    // Copiamos el buffer para el hilo de fondo
+    // Copy the buffer before handing it to the worker thread.
     size_t dataSize = static_cast<size_t>(m_width) * m_height * 4;
     std::shared_ptr<uint8_t> bufCopy(new uint8_t[dataSize], std::default_delete<uint8_t[]>());
     std::memcpy(bufCopy.get(), m_buffer.get(), dataSize);
     int w = m_width, h = m_height;
     int levelID = m_levelID;
 
-    // ImageConverter::saveRGBAToPNG (imageplus + stb fallback) + std::ofstream(path) = Unicode-safe en Windows
+    // ImageConverter and std::ofstream keep Windows paths Unicode-safe.
     paimon::ThreadTracker::get().spawn([bufCopy, w, h, filePath, levelID]() {
         if (ImageConverter::saveRGBAToPNG(bufCopy.get(), w, h, filePath)) {
             geode::Loader::get()->queueInMainThread([filePath, levelID]() {
@@ -1119,6 +1093,16 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
             });
         }
     });
+}
+
+void CapturePreviewPopup::onOpenDownloadsFolder(CCObject*) {
+    auto downloadDir = downloadedThumbnailsDir();
+    std::error_code ec;
+    std::filesystem::create_directories(downloadDir, ec);
+    if (ec || !geode::utils::file::openFolder(downloadDir)) {
+        PaimonNotify::create(Localization::get().getString("preview.folder_error").c_str(),
+            NotificationIcon::Error)->show();
+    }
 }
 
 void CapturePreviewPopup::clampSpritePosition() {
@@ -1194,7 +1178,6 @@ void CapturePreviewPopup::clampSpritePositionAnimated() {
 bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     if (!this->isVisible()) return false;
 
-    // Buscar si el toque cae sobre algun item de los menus del popup
     auto findTouchedItem = [](CCMenu* menu, CCTouch* t) -> CCMenuItem* {
         if (!menu || !menu->isVisible()) return nullptr;
         auto point = menu->convertTouchToNodeSpace(t);
@@ -1207,7 +1190,6 @@ bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         return nullptr;
     };
 
-    // Si toca un item de menu, activarlo manualmente y tragar el toque
     if (auto* item = findTouchedItem(m_editMenu, touch)) {
         m_activatedItem = item;
         item->selected();
@@ -1219,7 +1201,6 @@ bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         return true;
     }
 
-    // Dejar que m_buttonMenu (close btn) maneje por su propia prioridad
     if (m_buttonMenu && m_buttonMenu->isVisible()) {
         auto point = m_buttonMenu->convertTouchToNodeSpace(touch);
         for (auto* obj : CCArrayExt<CCObject*>(m_buttonMenu->getChildren())) {
@@ -1233,12 +1214,10 @@ bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         }
     }
 
-    // Toques fuera del contenido del popup se tragan para bloquear fondo
     auto nodePos = m_mainLayer->convertToNodeSpace(touch->getLocation());
     auto size    = m_mainLayer->getContentSize();
     if (!CCRect(0, 0, size.width, size.height).containsPoint(nodePos)) return true;
 
-    // Segundo dedo → pinch zoom
     if (m_activeTouches.size() == 1) {
         auto firstTouch = *m_activeTouches.begin();
         if (firstTouch == touch) return true;
@@ -1267,7 +1246,6 @@ bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
 }
 
 void CapturePreviewPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
-    // Si estamos rastreando un item de menu, cancelar si el dedo se mueve lejos
     if (m_activatedItem) {
         auto* parent = m_activatedItem->getParent();
         if (auto* menu = typeinfo_cast<CCMenu*>(parent)) {
@@ -1311,7 +1289,6 @@ void CapturePreviewPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
 }
 
 void CapturePreviewPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
-    // Si habia un item de menu activado, dispararlo
     if (m_activatedItem) {
         m_activatedItem->unselected();
         m_activatedItem->activate();
@@ -1348,8 +1325,12 @@ void CapturePreviewPopup::scrollWheel(float x, float y) {
 
     float scrollAmount = y;
     if (std::abs(y) < 0.001f) scrollAmount = -x;
+    if (std::abs(scrollAmount) < 0.001f) return;
 
     float zoomFactor  = scrollAmount > 0 ? C::SCROLL_ZOOM_IN : C::SCROLL_ZOOM_OUT;
+    if (paimon::smoothscroll::SmoothScrollController::get().isReplaying()) {
+        zoomFactor = std::pow(zoomFactor, std::abs(scrollAmount) * C::SMOOTH_SCROLL_ZOOM_SCALE);
+    }
     float curScale    = m_previewSprite->getScale();
     float newScale    = clampF(curScale * zoomFactor, m_minScale, m_maxScale);
     if (std::abs(newScale - curScale) < 0.001f) return;

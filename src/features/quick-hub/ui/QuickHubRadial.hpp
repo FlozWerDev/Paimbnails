@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
 #include <vector>
 #include <string>
@@ -6,7 +6,8 @@
 namespace paimon::quickhub {
 
 // QuickHubRadial — Menu radial circular que aparece al mantener Ctrl 1.5s.
-// Muestra las opciones configuradas en un circulo con hover glow y click.
+// La seleccion es por sector angular: basta apuntar hacia una opcion, no hace
+// falta acertar dentro de su icono. El centro cancela.
 
 class QuickHubRadial : public cocos2d::CCLayer {
 public:
@@ -20,7 +21,6 @@ protected:
     void onExit() override;
     void update(float dt) override;
 
-    // Touch
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
@@ -31,19 +31,28 @@ protected:
 private:
     struct RadialItem {
         std::string id;
-        cocos2d::CCNode* node = nullptr;       // contenedor: maneja posicion + open/close
-        cocos2d::CCNode* inner = nullptr;      // hijo: maneja la escala de hover (no conflicta con open/close)
-        cocos2d::CCNode* glowNode = nullptr;
+        std::string name;
+        std::string hint;                      // aviso cuando no se puede pulsar aqui
+        cocos2d::ccColor3B color{255, 255, 255};
+        cocos2d::CCNode* node = nullptr;       // contenedor: posicion + open/close
+        cocos2d::CCNode* inner = nullptr;      // hijo: escala de hover
+        cocos2d::CCNode* ring = nullptr;       // aro de acento: solo al apuntar
         cocos2d::CCPoint position;
         float angle = 0.f;
+        bool reachable = true;
     };
 
     std::vector<RadialItem> m_items;
-    cocos2d::CCNode* m_centerLabel = nullptr;
-    cocos2d::CCSprite* m_blurBg = nullptr;
-    cocos2d::CCLayerColor* m_darkOverlay = nullptr;
+    cocos2d::CCNode* m_hub = nullptr;
+    cocos2d::CCLabelBMFont* m_nameLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_hintLabel = nullptr;
+    cocos2d::CCPoint m_center;
+    float m_radius = 96.f;
+    float m_badgeSize = 46.f;
+    float m_deadZone = 40.f;  // radio del centro: dentro no hay seleccion
     int m_hoveredIndex = -1;
 
+    void buildBackdrop();
     void buildRadialItems();
     void animateOpen();
     void animateClose();

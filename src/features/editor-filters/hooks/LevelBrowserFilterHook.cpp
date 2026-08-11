@@ -6,13 +6,14 @@
 
 #include "../services/MyLevelFilters.hpp"
 #include "../ui/MyLevelFilterPopup.hpp"
+#include "../../editor-suite/EditorModule.hpp"
 #include "../../../framework/HookConventions.hpp"
 
 using namespace geode::prelude;
 
 namespace {
     inline bool filtersEnabled() {
-        return Mod::get()->getSettingValue<bool>("editor-filters-enable");
+        return paimon::editor::featureEnabled("editor-filters-enable");
     }
 
     bool isMyLevels(GJSearchObject* obj) {
@@ -34,6 +35,51 @@ namespace {
 }
 
 class $modify(PaimonMyLevelsFilterBrowser, LevelBrowserLayer) {
+    void updateFilterButton() {
+        auto icon = typeinfo_cast<CCSprite*>(
+            this->getChildByIDRecursive("paim-mylevels-filter-icon"_spr));
+        if (!icon) return;
+
+        icon->setColor(paimon::editorfilters::anyActive()
+            ? ccColor3B{0, 255, 127}
+            : ccColor3B{255, 255, 255});
+    }
+
+    void updateEmptyState(bool show) {
+        if (auto old = this->getChildByID("paim-mylevels-filter-empty"_spr)) {
+            old->removeFromParent();
+        }
+        if (!show) return;
+
+        auto size = this->getContentSize();
+        auto panel = CCScale9Sprite::create("square02b_001.png");
+        panel->setID("paim-mylevels-filter-empty"_spr);
+        panel->setContentSize({360.f, 72.f});
+        panel->setColor({0, 0, 0});
+        panel->setOpacity(255);
+        panel->setPosition({size.width / 2.f, size.height / 2.f});
+
+        auto title = CCLabelBMFont::create("NO LEVELS MATCH", "bigFont.fnt");
+        title->setScale(0.52f);
+        title->setPosition({180.f, 54.f});
+        panel->addChild(title);
+
+        auto hint = CCLabelBMFont::create("Adjust or clear the active filters", "chatFont.fnt");
+        hint->setScale(0.6f);
+        hint->setPosition({180.f, 36.f});
+        panel->addChild(hint);
+
+        auto button = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("CHANGE FILTERS", "goldFont.fnt", "GJ_button_01.png", 0.55f),
+            this, menu_selector(PaimonMyLevelsFilterBrowser::onFilter));
+        auto menu = CCMenu::create();
+        menu->setPosition({180.f, 15.f});
+        menu->addChild(button);
+        panel->addChild(menu);
+
+        this->addChild(panel, 100);
+    }
+
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "LevelBrowserLayer::init");
     }
@@ -48,16 +94,19 @@ class $modify(PaimonMyLevelsFilterBrowser, LevelBrowserLayer) {
 
         auto spr = CCSprite::createWithSpriteFrameName("GJ_filterIcon_001.png");
         if (spr) spr->setScale(0.9f);
+        spr->setID("paim-mylevels-filter-icon"_spr);
         auto btn = CCMenuItemSpriteExtra::create(
             spr, this, menu_selector(PaimonMyLevelsFilterBrowser::onFilter));
         btn->setID("paim-mylevels-filter-btn"_spr);
         pageMenu->addChild(btn);
         pageMenu->updateLayout();
+        updateFilterButton();
 
         return true;
     }
 
     void onFilter(CCObject*) {
+        if (!filtersEnabled()) return;
         paimon::editorfilters::MyLevelFilterPopup::create()->show();
     }
 
@@ -75,10 +124,14 @@ class $modify(PaimonMyLevelsFilterBrowser, LevelBrowserLayer) {
                 }
                 LocalLevelSwap swap(llm, original, filtered);
                 LevelBrowserLayer::loadPage(searchObj);
+                updateFilterButton();
+                updateEmptyState(filtered->count() == 0);
                 return;
             }
         }
 
         LevelBrowserLayer::loadPage(searchObj);
+        updateFilterButton();
+        updateEmptyState(false);
     }
 };

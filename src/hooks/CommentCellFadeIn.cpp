@@ -1,6 +1,4 @@
-// Fades in comment cells as they load. CommentCell is recycled on scroll
-// (loadFromComment fires per cell entering view), so a per-cell debounce
-// avoids re-triggering the fade during fast scrolling.
+// Debounce recycled cells so fast scrolling does not restart the fade.
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CommentCell.hpp>
@@ -13,7 +11,6 @@ using namespace geode::prelude;
 
 class $modify(PaimonCommentFadeIn, CommentCell) {
     static void onModify(auto& self) {
-        // Run after node-ids and other setup (incl. the badge hook) have populated the cell.
         paimon::hooks::afterNodeIdsOrLate(self, "CommentCell::loadFromComment");
     }
 
@@ -27,8 +24,7 @@ class $modify(PaimonCommentFadeIn, CommentCell) {
 
         if (!comment || paimon::isRuntimeShuttingDown()) return;
 
-        // Per-cell debounce: 0.35s exceeds the typical recycle interval during
-        // flick-scroll but is imperceptible when opening the list.
+// The debounce covers a typical recycle interval without delaying initial display.
         auto now = std::chrono::steady_clock::now();
         if (m_fields->m_faded) {
             auto elapsed = std::chrono::duration<float>(now - m_fields->m_lastFade).count();
@@ -37,7 +33,7 @@ class $modify(PaimonCommentFadeIn, CommentCell) {
         m_fields->m_lastFade = now;
         m_fields->m_faded = true;
 
-        // CommentCell (TableViewCell) isn't CCRGBAProtocol; revealNode recurses into RGBA descendants.
+// CommentCell is not CCRGBAProtocol; revealNode fades its RGBA descendants.
         paimon::fluid::revealNode(this, {.fadeDuration = 0.14f});
     }
 };

@@ -3,6 +3,8 @@
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/Debug.hpp"
 
+#include <ctime>
+
 using namespace geode::prelude;
 
 namespace paimon::globalicon {
@@ -16,6 +18,16 @@ namespace {
     }
     bool jBool(matjson::Value const& v, bool def = false) {
         return v.isBool() ? v.asBool().unwrapOr(def) : def;
+    }
+
+    int64_t nowSeconds() {
+        return static_cast<int64_t>(std::time(nullptr));
+    }
+
+    // HttpClient reports non-2xx as success=false with the status baked into
+    // the body, so "not sharing" has to be recovered from the message.
+    bool isNotFound(std::string const& response) {
+        return response.rfind("HTTP 404", 0) == 0;
     }
 }
 
@@ -51,6 +63,7 @@ GlobalIconMeta parseMetaJson(matjson::Value const& v) {
             slot.jsonFile  = jStr(s["jsonFile"]);
             slot.jsonUrl   = jStr(s["jsonUrl"]);
             slot.bytes     = jInt(s["bytes"]);
+            if (slot.name.empty() || slot.pngUrl.empty()) continue; // unusable slot
             meta.icons[typeName] = std::move(slot);
         }
     }
@@ -70,46 +83,120 @@ std::string GlobalIconClient::baseUrl() const {
     return base;
 }
 
+bool GlobalIconClient::lookup(int accountID, CacheEntry& out) const {
+    auto it = m_cache.find(accountID);
+    if (it == m_cache.end()) return false;
+    int64_t ttl = it->second.found ? kPositiveTtlSeconds : kNegativeTtlSeconds;
+    if (nowSeconds() - it->second.fetchedAt > ttl) return false;
+    out = it->second;
+    return true;
+}
+
+void GlobalIconClient::store(int accountID, GlobalIconMeta const& meta, bool found) {
+    if (m_cache.size() >= kMaxCacheEntries && !m_cache.count(accountID)) {
+        // Cheap bound: drop everything already past its TTL, and if that frees
+        // nothing, clear outright rather than grow without limit.
+        int64_t now = nowSeconds();
+        for (auto it = m_cache.begin(); it != m_cache.end();) {
+            int64_t ttl = it->second.found ? kPositiveTtlSeconds : kNegativeTtlSeconds;
+            it = (now - it->second.fetchedAt > ttl) ? m_cache.erase(it) : std::next(it);
+        }
+        if (m_cache.size() >= kMaxCacheEntries) m_cache.clear();
+    }
+    m_cache[accountID] = CacheEntry{meta, found, nowSeconds()};
+}
+
+void GlobalIconClient::invalidate(int accountID) {
+    m_cache.erase(accountID);
+}
+
+void GlobalIconClient::invalidateAll() {
+    m_cache.clear();
+}
+
 void GlobalIconClient::getMetadata(int accountID, MetaCallback cb) {
     if (accountID <= 0) {
         if (cb) cb(false, false, GlobalIconMeta{});
         return;
     }
+
+    CacheEntry cached;
+    if (lookup(accountID, cached)) {
+        if (cb) cb(true, cached.found, cached.meta);
+        return;
+    }
+
+    // A request is already in flight for this account: ride along with it.
+    auto inflightIt = m_inflight.find(accountID);
+    if (inflightIt != m_inflight.end()) {
+        if (cb) inflightIt->second.push_back(std::move(cb));
+        return;
+    }
+
+    auto& waiters = m_inflight[accountID];
+    if (cb) waiters.push_back(std::move(cb));
+
     std::string url = baseUrl() + "/api/icons/" + std::to_string(accountID);
-    HttpClient::get().get(url, [cb = std::move(cb)](bool success, std::string const& resp) {
-        if (!success) {
-    if (cb) cb(false, false, GlobalIconMeta{});
-            return;
+    HttpClient::get().get(url, [accountID](bool success, std::string const& resp) {
+        auto& self = GlobalIconClient::get();
+
+        bool found = false;
+        GlobalIconMeta meta;
+        if (success) {
+            auto parsed = matjson::parse(resp);
+            if (parsed.isOk()) {
+                meta = parseMetaJson(parsed.unwrap());
+                found = meta.enabled && !meta.icons.empty();
+            } else {
+                success = false;
+            }
+        } else if (isNotFound(resp)) {
+            // Definitive "not sharing": cache it so we stop asking.
+            success = true;
         }
-        auto parsed = matjson::parse(resp);
-        if (!parsed.isOk()) {
-            if (cb) cb(false, false, GlobalIconMeta{});
-            return;
+
+        if (success) self.store(accountID, meta, found);
+
+        auto node = self.m_inflight.extract(accountID);
+        if (node.empty()) return;
+        for (auto& waiter : node.mapped()) {
+            if (waiter) waiter(success, found, meta);
         }
-        auto meta = parseMetaJson(parsed.unwrap());
-        if (cb) cb(true, true, meta);
     });
 }
 
 void GlobalIconClient::getMetadataBatch(std::vector<int> const& accountIDs, BatchCallback cb) {
-    std::unordered_map<int, GlobalIconMeta> empty;
+    std::unordered_map<int, GlobalIconMeta> result;
     if (accountIDs.empty()) {
-        if (cb) cb(true, empty);
+        if (cb) cb(true, result);
         return;
     }
+
+    // Only ask for what isn't cached; a page of comments from familiar players
+    // usually resolves without any request at all.
     matjson::Value ids = matjson::Value::array();
     int count = 0;
     for (int id : accountIDs) {
         if (id <= 0) continue;
+        CacheEntry cached;
+        if (lookup(id, cached)) {
+            if (cached.found) result[id] = cached.meta;
+            continue;
+        }
         ids.push(id);
         if (++count >= 64) break; // server cap
     }
-    matjson::Value body = matjson::makeObject({ {"accountIDs", ids} });
 
+    if (count == 0) {
+        if (cb) cb(true, result);
+        return;
+    }
+
+    matjson::Value body = matjson::makeObject({ {"accountIDs", ids} });
     std::string url = baseUrl() + "/api/icons/batch";
+
     HttpClient::get().post(url, body.dump(matjson::NO_INDENTATION),
-        [cb = std::move(cb)](bool success, std::string const& resp) {
-            std::unordered_map<int, GlobalIconMeta> result;
+        [cb = std::move(cb), result = std::move(result)](bool success, std::string const& resp) mutable {
             if (!success) {
                 if (cb) cb(false, result);
                 return;
@@ -119,14 +206,27 @@ void GlobalIconClient::getMetadataBatch(std::vector<int> const& accountIDs, Batc
                 if (cb) cb(false, result);
                 return;
             }
+            auto& self = GlobalIconClient::get();
             auto root = parsed.unwrap();
             auto const& metaObj = root["metadata"];
+
             paimon::json::forEachInArray(root["found"], [&](matjson::Value const& idVal) {
                 int id = static_cast<int>(idVal.isNumber() ? idVal.asDouble().unwrapOr(0.0) : 0.0);
                 if (id <= 0) return;
                 auto const& mv = metaObj[std::to_string(id)];
-                if (mv.isObject()) result[id] = parseMetaJson(mv);
+                if (!mv.isObject()) return;
+                auto meta = parseMetaJson(mv);
+                bool found = meta.enabled && !meta.icons.empty();
+                self.store(id, meta, found);
+                if (found) result[id] = std::move(meta);
             });
+
+            // Remember the misses too, so the next page doesn't re-ask for them.
+            paimon::json::forEachInArray(root["missing"], [&](matjson::Value const& idVal) {
+                int id = static_cast<int>(idVal.isNumber() ? idVal.asDouble().unwrapOr(0.0) : 0.0);
+                if (id > 0) self.store(id, GlobalIconMeta{}, false);
+            });
+
             if (cb) cb(true, result);
         });
 }

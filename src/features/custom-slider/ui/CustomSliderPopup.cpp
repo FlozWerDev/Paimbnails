@@ -1,20 +1,15 @@
 #include "CustomSliderPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../hooks/SliderThumbHook.hpp"
 #include "../services/CustomSliderManager.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
 #include "../../../utils/FileDialog.hpp"
-#include "../../../utils/AnimatedGIFSprite.hpp"
-#include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/ShapeStencil.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../icon-gradients/GradientCache.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
-#include <Geode/binding/CCMenuItemToggler.hpp>
-#include <Geode/binding/SimplePlayer.hpp>
-#include <Geode/binding/GameManager.hpp>
-#include <Geode/binding/SliderThumb.hpp>
 #include <fmt/format.h>
-#include <functional>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -48,7 +43,6 @@ bool CustomSliderPopup::init() {
 
     auto content = m_mainLayer->getContentSize();
 
-    // Vista previa fija arriba a la derecha (siempre visible al ajustar).
     {
         float px = content.width - 30.f, py = content.height - 26.f;
         auto* bg = paimon::SpriteHelper::createDarkPanel(34.f, 34.f, 80, 4.f);
@@ -68,12 +62,12 @@ bool CustomSliderPopup::init() {
 
     rebuild();
 
-    // Boton fijo abajo: restaurar valores por defecto
     auto* resetSpr = ButtonSprite::create("Restaurar", "goldFont.fnt", "GJ_button_06.png", 0.7f);
     if (resetSpr) resetSpr->setScale(0.5f);
     auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr,
         [this](CCMenuItemSpriteExtra*) {
             CustomSliderManager::get().resetToDefaults();
+            reapplyAllSliders();
             scheduleRebuild();
         });
     resetBtn->setPosition({content.width / 2.f, 18.f});
@@ -83,6 +77,10 @@ bool CustomSliderPopup::init() {
 }
 
 void CustomSliderPopup::onExit() {
+    if (m_sliderRefreshPending) {
+        this->unschedule(schedule_selector(CustomSliderPopup::applySliderRefresh));
+        reapplyAllSliders();
+    }
     CustomSliderManager::get().saveConfig();
     Popup::onExit();
 }
@@ -92,6 +90,17 @@ void CustomSliderPopup::scheduleRebuild() {
     Loader::get()->queueInMainThread([self] {
         if (self && self->getParent()) self->rebuild();
     });
+}
+
+void CustomSliderPopup::scheduleSliderRefresh() {
+    m_sliderRefreshPending = true;
+    this->unschedule(schedule_selector(CustomSliderPopup::applySliderRefresh));
+    this->scheduleOnce(schedule_selector(CustomSliderPopup::applySliderRefresh), 0.08f);
+}
+
+void CustomSliderPopup::applySliderRefresh(float) {
+    m_sliderRefreshPending = false;
+    reapplyAllSliders();
 }
 
 void CustomSliderPopup::rebuild() {
@@ -108,7 +117,6 @@ void CustomSliderPopup::rebuild() {
 
     auto& cfg = CustomSliderManager::get().config();
 
-    // Interruptor principal
     auto* hero = kit::makeHeroToggle(scrollW,
         "Slider personalizado",
         "Cambia el puntero de las barras deslizantes del juego.",
@@ -119,7 +127,6 @@ void CustomSliderPopup::rebuild() {
             reapplyAllSliders();
         });
 
-    // Tarjeta: que se muestra como puntero
     std::vector<CCNode*> styleRows;
     styleRows.push_back(kit::makeSelectRow(innerW,
         "Tipo de puntero",
@@ -163,6 +170,19 @@ void CustomSliderPopup::rebuild() {
                 refreshPreview();
                 reapplyAllSliders();
             }));
+
+        bool gradientsReady = paimon::icon_gradients::moduleEnabled();
+        styleRows.push_back(kit::makeToggleRow(innerW,
+            "Usar gradientes",
+            gradientsReady
+                ? "Pinta el puntero con los gradientes de tus iconos."
+                : "Activa Icon Gradients para usar esta opcion.",
+            cfg.useGradients,
+            [this](bool v) {
+                CustomSliderManager::get().config().useGradients = v;
+                refreshPreview();
+                reapplyAllSliders();
+            }));
     } else {
         std::string fileName = cfg.customImagePath.empty()
             ? "Ningun archivo elegido"
@@ -196,7 +216,6 @@ void CustomSliderPopup::rebuild() {
                     reapplyAllSliders();
                 }));
 
-            // Fila propia: rejilla de formas (2 filas de 10)
             {
                 constexpr float kCell    = 18.f;
                 constexpr int   kCols    = 10;
@@ -240,14 +259,12 @@ void CustomSliderPopup::rebuild() {
 
     auto* styleCard = kit::makeCard(scrollW, "Estilo del puntero", {120, 210, 255}, styleRows);
 
-    // Pestanas Basico / Avanzado
     auto* tabs = kit::makeTabBar(scrollW, {"Basico", "Avanzado"}, m_tab,
         [this](int i) {
             m_tab = i;
             scheduleRebuild();
         });
 
-    // Tarjeta: tamano
     auto* sizeCard = kit::makeCard(scrollW, "Tamano", {255, 200, 100}, {
         kit::makeSliderRow(innerW,
             "Tamano del puntero", "Que tan grande se ve sobre la barra.",
@@ -255,12 +272,11 @@ void CustomSliderPopup::rebuild() {
             [](double v) { return fmt::format("x{:.2f}", v); },
             [this](double v) {
                 CustomSliderManager::get().config().iconScale = static_cast<float>(v);
-                refreshPreview();
-                reapplyAllSliders();
+                updatePreviewScale();
+                scheduleSliderRefresh();
             }),
     });
 
-    // Tarjeta: animacion al arrastrar
     auto* animCard = kit::makeCard(scrollW, "Animacion al arrastrar", {255, 140, 220}, {
         kit::makeToggleRow(innerW,
             "Animar",
@@ -289,24 +305,35 @@ void CustomSliderPopup::rebuild() {
             [](double v) { CustomSliderManager::get().config().animRotateDeg = static_cast<float>(v); }),
     });
 
-    // Tarjeta: donde se aplica
     auto* targetsCard = kit::makeCard(scrollW, "Donde se aplica", {130, 240, 170}, {
         kit::makeToggleRow(innerW,
             "Opciones y volumen", "Barras del menu de opciones y del volumen.",
             cfg.targets.optionsSliders,
-            [](bool v) { CustomSliderManager::get().config().targets.optionsSliders = v; }),
+            [this](bool v) {
+                CustomSliderManager::get().config().targets.optionsSliders = v;
+                reapplyAllSliders();
+            }),
         kit::makeToggleRow(innerW,
             "Editor", "Barras dentro del editor de niveles.",
             cfg.targets.editorSliders,
-            [](bool v) { CustomSliderManager::get().config().targets.editorSliders = v; }),
+            [this](bool v) {
+                CustomSliderManager::get().config().targets.editorSliders = v;
+                reapplyAllSliders();
+            }),
         kit::makeToggleRow(innerW,
             "Selector de color", "Barras de los selectores de color.",
             cfg.targets.colorSliders,
-            [](bool v) { CustomSliderManager::get().config().targets.colorSliders = v; }),
+            [this](bool v) {
+                CustomSliderManager::get().config().targets.colorSliders = v;
+                reapplyAllSliders();
+            }),
         kit::makeToggleRow(innerW,
             "Garage", "Barras de la pantalla de iconos.",
             cfg.targets.garageSliders,
-            [](bool v) { CustomSliderManager::get().config().targets.garageSliders = v; }),
+            [this](bool v) {
+                CustomSliderManager::get().config().targets.garageSliders = v;
+                reapplyAllSliders();
+            }),
     });
 
     std::vector<CCNode*> items = {hero, tabs};
@@ -315,13 +342,11 @@ void CustomSliderPopup::rebuild() {
         items.push_back(sizeCard);
         items.push_back(kit::makeHint(scrollW,
             "En Avanzado: animacion al arrastrar y en que barras se aplica."));
-        // no usados en esta pestana
         animCard->removeAllChildren();
         targetsCard->removeAllChildren();
     } else {
         items.push_back(animCard);
         items.push_back(targetsCard);
-        // no usados en esta pestana
         styleCard->removeAllChildren();
         sizeCard->removeAllChildren();
         m_shapeGridMenu = nullptr;
@@ -383,6 +408,7 @@ void CustomSliderPopup::onPickImage() {
         std::error_code ec;
         std::filesystem::copy_file(path, dest, std::filesystem::copy_options::overwrite_existing, ec);
         cfg.customImagePath = ec ? geode::utils::string::pathToString(path) : geode::utils::string::pathToString(dest);
+        CustomSliderManager::get().invalidateImageCache();
         auto* p = static_cast<CustomSliderPopup*>(popup.data());
         p->reapplyAllSliders();
         p->rebuild(); // refresca el nombre de archivo y la vista previa
@@ -392,6 +418,7 @@ void CustomSliderPopup::onPickImage() {
 void CustomSliderPopup::refreshPreview() {
     if (!m_previewNode) return;
     m_previewNode->removeAllChildren();
+    m_previewContent = nullptr;
 
     auto& cfg = CustomSliderManager::get().config();
     if (!cfg.enabled) {
@@ -400,158 +427,29 @@ void CustomSliderPopup::refreshPreview() {
         m_previewNode->addChild(lbl); return;
     }
 
-    switch (cfg.thumbMode) {
-        case SliderThumbMode::Image:
-        case SliderThumbMode::Gif: {
-            if (!cfg.customImagePath.empty()) {
-                CCNode* raw = nullptr;
-                if (cfg.thumbMode == SliderThumbMode::Gif) {
-                    raw = AnimatedGIFSprite::create(cfg.customImagePath);
-                }
-                if (!raw) {
-                    auto* tex = CCTextureCache::sharedTextureCache()->addImage(cfg.customImagePath.c_str(), false);
-                    if (tex) raw = CCSprite::createWithTexture(tex);
-                }
-                if (!raw) {
-                    auto* lbl = CCLabelBMFont::create("?", "bigFont.fnt");
-                    lbl->setScale(0.5f); lbl->setColor({150, 150, 150});
-                    m_previewNode->addChild(lbl); break;
-                }
-
-                if (cfg.containerEnabled) {
-                constexpr float kSize = 28.f;
-                    std::string shape = cfg.containerShape.empty() ? "circle" : cfg.containerShape;
-
-                    auto* stencil = createShapeStencil(shape, kSize);
-                    if (!stencil) stencil = createShapeStencil("circle", kSize);
-
-                    auto* clipper = CCClippingNode::create();
-                    clipper->setStencil(stencil);
-                    clipper->setAlphaThreshold(-1.0f);
-                    clipper->setContentSize({kSize, kSize});
-                    clipper->setAnchorPoint({0.5f, 0.5f});
-                    clipper->ignoreAnchorPointForPosition(false);
-                    clipper->setPosition({0, 0});
-
-                    float iw = std::max(raw->getContentWidth(), 1.f);
-                    float ih = std::max(raw->getContentHeight(), 1.f);
-                    raw->setScale(std::max(kSize / iw, kSize / ih));
-                    raw->setAnchorPoint({0.5f, 0.5f});
-                    raw->ignoreAnchorPointForPosition(false);
-                    raw->setPosition({kSize / 2.f, kSize / 2.f});
-                    clipper->addChild(raw);
-                    m_previewNode->addChild(clipper);
-
-                    if (cfg.containerBorderEnabled) {
-                        float thick = std::clamp(cfg.containerBorderThickness, 0.5f, 8.f);
-                        if (auto* border = createShapeBorder(shape, kSize + thick * 2.f, thick, cfg.containerBorderColor, 255)) {
-                            border->setAnchorPoint({0.5f, 0.5f});
-                            border->setPosition({0, 0});
-                            m_previewNode->addChild(border, 5);
-                        }
-                    }
-                } else {
-                    float mx = std::max(raw->getContentSize().width, raw->getContentSize().height);
-                    if (mx > 0.f) raw->setScale(28.f / mx);
-                    m_previewNode->addChild(raw);
-                }
-                return;
-            }
-            auto* lbl = CCLabelBMFont::create("?", "bigFont.fnt");
-            lbl->setScale(0.5f); lbl->setColor({150, 150, 150});
-            m_previewNode->addChild(lbl); break;
-        }
-        default: {
-            auto* gm = GameManager::get(); if (!gm) return;
-            int iconId = cfg.usePlayerIcon ? getPlayerIconId(cfg.iconType) : cfg.customIconId;
-            auto* player = SimplePlayer::create(iconId);
-            if (!player) return;
-            player->updatePlayerFrame(iconId, toGDIconType(cfg.iconType));
-            if (cfg.usePlayerColors) {
-                player->setColor(gm->colorForIdx(gm->getPlayerColor()));
-                player->setSecondColor(gm->colorForIdx(gm->getPlayerColor2()));
-                if (gm->getPlayerGlow()) player->setGlowOutline(gm->colorForIdx(gm->getPlayerGlowColor()));
-                else player->disableGlowOutline();
-            } else {
-                player->setColor(cfg.color1); player->setSecondColor(cfg.color2);
-                if (cfg.enableGlow) player->setGlowOutline(cfg.color2); else player->disableGlowOutline();
-            }
-            player->setScale(std::min(cfg.iconScale * 1.5f, 1.0f));
-            m_previewNode->addChild(player); break;
-        }
+    auto* content = CustomSliderManager::get().createThumbNode();
+    if (!content) {
+        auto* lbl = CCLabelBMFont::create("?", "bigFont.fnt");
+        lbl->setScale(0.5f);
+        lbl->setColor({150, 150, 150});
+        m_previewNode->addChild(lbl);
+        return;
     }
+
+    content->setPosition({0.f, 0.f});
+    m_previewNode->addChild(content);
+    m_previewContent = content;
+    m_previewScalePerUnit = content->getScale() / std::max(cfg.iconScale, 0.01f);
 }
 
-int CustomSliderPopup::getPlayerIconId(SliderIconType type) {
-    auto* gm = GameManager::get();
-    switch (type) {
-        case SliderIconType::Cube:   return gm->getPlayerFrame();
-        case SliderIconType::Ship:   return gm->getPlayerShip();
-        case SliderIconType::Ball:   return gm->getPlayerBall();
-        case SliderIconType::Ufo:    return gm->getPlayerBird();
-        case SliderIconType::Wave:   return gm->getPlayerDart();
-        case SliderIconType::Robot:  return gm->getPlayerRobot();
-        case SliderIconType::Spider: return gm->getPlayerSpider();
-        case SliderIconType::Swing:  return gm->getPlayerSwing();
-    }
-    return gm->getPlayerFrame();
-}
-
-IconType CustomSliderPopup::toGDIconType(SliderIconType type) {
-    switch (type) {
-        case SliderIconType::Cube:   return IconType::Cube;
-        case SliderIconType::Ship:   return IconType::Ship;
-        case SliderIconType::Ball:   return IconType::Ball;
-        case SliderIconType::Ufo:    return IconType::Ufo;
-        case SliderIconType::Wave:   return IconType::Wave;
-        case SliderIconType::Robot:  return IconType::Robot;
-        case SliderIconType::Spider: return IconType::Spider;
-        case SliderIconType::Swing:  return IconType::Swing;
-    }
-    return IconType::Cube;
+void CustomSliderPopup::updatePreviewScale() {
+    if (!m_previewContent) return;
+    m_previewContent->setScale(
+        m_previewScalePerUnit * CustomSliderManager::get().config().iconScale);
 }
 
 void CustomSliderPopup::reapplyAllSliders() {
     auto* scene = CCDirector::get()->getRunningScene();
     if (!scene) return;
-
-    auto& mgr = CustomSliderManager::get();
-    if (!mgr.config().enabled) return;
-
-    // Depth-limited traversal (sliders are never more than 8 levels deep)
-    std::function<void(CCNode*, int)> findSliders = [&](CCNode* node, int depth) {
-        if (!node || depth > 8) return;
-        if (auto* slider = typeinfo_cast<Slider*>(node)) {
-            if (auto* thumb = slider->getThumb()) {
-                auto thumbSize = thumb->getContentSize();
-
-                auto* normalBase = CCSprite::create();
-                normalBase->setContentSize(thumbSize);
-                auto* normalNode = CCSprite::create();
-                normalNode->setScale(0.9f);
-                normalBase->addChild(normalNode);
-                normalNode->setPosition(thumbSize / 2.f);
-                mgr.addIconToNode(normalNode, false);
-
-                auto* selectedBase = CCSprite::create();
-                selectedBase->setContentSize(thumbSize);
-                auto* selectedNode = CCSprite::create();
-                selectedNode->setScale(0.9f);
-                selectedBase->addChild(selectedNode);
-                selectedNode->setPosition(thumbSize / 2.f);
-                mgr.addIconToNode(selectedNode, true);
-
-                thumb->setNormalImage(normalBase);
-                thumb->setSelectedImage(selectedBase);
-            }
-            return;
-        }
-        if (auto* children = node->getChildren()) {
-            for (auto* child : CCArrayExt<CCNode*>(children)) {
-                findSliders(child, depth + 1);
-            }
-        }
-    };
-
-    findSliders(scene, 0);
+    refreshCustomSliders(scene);
 }

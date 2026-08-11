@@ -1,5 +1,6 @@
 #include "SettingsPanelManager.hpp"
 #include "../ui/PaimonMultiSettingsPanel.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 #include <Geode/Geode.hpp>
 
 using namespace cocos2d;
@@ -14,6 +15,8 @@ void SettingsPanelManager::toggle(int initialCategory) {
 }
 
 void SettingsPanelManager::open(int initialCategory) {
+    if (!paimon::modules::isEnabled("paimbnails.settingspanel.menu")) return;
+
     if (m_panel) {
         showCategory(initialCategory);
         return;

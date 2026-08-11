@@ -19,8 +19,10 @@ ImageBuffer SpritesheetReader::extractFrame(ImageBuffer const& atlas, SpriteFram
         return atlas.subRect(f.rectX, f.rectY, f.rectW, f.rectH);
     }
 
-    // cocos packs rotated sprites 90° CW; a single CCW90 of the raw rect recovers logical orientation.
-    auto rotated = atlas.subRect(f.rectX, f.rectY, f.rectW, f.rectH);
+    // rectW/rectH are the logical (un-rotated) size, so the slot the frame
+    // actually occupies in the atlas is its transpose. Crop that slot, then a
+    // single CCW90 undoes the 90° CW packing rotation.
+    auto rotated = atlas.subRect(f.rectX, f.rectY, f.rectH, f.rectW);
     rotated.rotateCCW90();
     return rotated;
 }

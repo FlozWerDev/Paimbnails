@@ -1,6 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/EndLevelLayer.hpp>
-#include "../features/foryou/services/ForYouTracker.hpp"
+#include "../features/foryou/services/TasteProfile.hpp"
 #include "../framework/HookConventions.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 
@@ -31,7 +31,7 @@ class $modify(ForYouEndLevelLayer, EndLevelLayer) {
             auto* pl = PlayLayer::get();
             if (!pl || !pl->m_level) return;
             if (pl->m_level->m_levelID.value() != levelID) return;
-            paimon::foryou::ForYouTracker::get().onLevelComplete(pl->m_level);
+            paimon::foryou::TasteProfile::get().onLevelComplete(pl->m_level);
         });
     }
 };

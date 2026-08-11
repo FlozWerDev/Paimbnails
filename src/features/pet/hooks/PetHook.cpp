@@ -3,6 +3,7 @@
 #include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/PauseLayer.hpp>
 #include "../services/PetManager.hpp"
+#include "../../gameplay-performance/GameplayPerformance.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 
 using namespace geode::prelude;
@@ -30,6 +31,12 @@ public:
 
     void update(float dt) override {
         auto& pet = PetManager::get();
+
+        if (paimon::gameplayperf::isOptionActive(
+                paimon::gameplayperf::kModVisualsModuleId)) {
+            if (pet.isAttached()) pet.detachFromScene();
+            return;
+        }
 
         if (pet.isAttached()) {
             pet.update(dt);
@@ -104,7 +111,6 @@ class $modify(PetPlayLayerHook, PlayLayer) {
     }
 };
 
-// Player death
 class $modify(PetPlayerObjectHook, PlayerObject) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPost("PlayerObject::playerDestroyed", geode::Priority::Late);

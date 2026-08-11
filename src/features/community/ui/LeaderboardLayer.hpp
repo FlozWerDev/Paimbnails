@@ -8,7 +8,7 @@ class PaimonLoadingOverlay;
 #include <Geode/ui/ScrollLayer.hpp>
 #include <fmod.hpp>
 
-#include "../../foryou/services/ForYouEngine.hpp"
+#include "../../foryou/services/RecommendationEngine.hpp"
 #include <cstdint>
 
 class LeaderboardLayer : public cocos2d::CCLayer, public LevelManagerDelegate {
@@ -26,16 +26,22 @@ protected:
     
     void onBack(cocos2d::CCObject* sender);
     void onTab(cocos2d::CCObject* sender);
+    void showLoading();
+    void dismissLoading();
     void loadLeaderboard(std::string type);
     void createList(std::string type);
     void onViewLevel(cocos2d::CCObject* sender);
     
     void loadForYou();
+    void startForYouQueries();
     void fireNextForYouQuery();
+    // Called once every planned query has answered: ranks what came back.
+    void finishForYouQueries();
     void createForYouList();
     void onForYouPlayLevel(cocos2d::CCObject* sender);
     void onForYouRefresh(cocos2d::CCObject* sender);
     void onForYouPreferences(cocos2d::CCObject* sender);
+    void onForYouDismiss(cocos2d::CCObject* sender);
     
     void loadLevelsFinished(cocos2d::CCArray* levels, char const* key) override;
     void loadLevelsFailed(char const* key) override;
@@ -66,10 +72,14 @@ protected:
     uint32_t m_pendingLevelGeneration = 0;
 
     bool m_forYouActive = false;
-    std::vector<geode::Ref<GJGameLevel>> m_forYouResults;
-    std::vector<paimon::foryou::ForYouQuery> m_forYouQueryQueue;
+    // Everything the planned queries returned, before scoring.
+    std::vector<geode::Ref<GJGameLevel>> m_forYouCandidates;
+    // The ranked feed actually rendered.
+    std::vector<paimon::foryou::Recommendation> m_forYouFeed;
+    std::vector<paimon::foryou::FeedQuery> m_forYouQueryQueue;
     int m_forYouQueryIndex = 0;
-    bool m_forYouTagsPromptShown = false;
+    // Guards against a second load while planning or ranking is in flight.
+    bool m_forYouBusy = false;
 
     cocos2d::CCSprite* m_bgSprite = nullptr;
     cocos2d::CCLayerColor* m_bgOverlay = nullptr;

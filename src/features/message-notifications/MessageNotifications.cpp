@@ -109,6 +109,15 @@ public:
         if (m_started) return;
         m_started = true;
 
+        listenForSettingChanges<bool>("msgnotif-enabled", [](bool enabled) {
+            if (enabled) MessageWatcher::get().pollOnce();
+        });
+
+        // Seed immediately when the feature is already enabled. Waiting for the
+        // first timer tick could make the first genuinely new message become the
+        // baseline and suppress its notification.
+        pollOnce();
+
         paimon::ThreadTracker::get().spawn([] {
             geode::utils::thread::setName("PaimonMsgNotif");
             while (!shuttingDown()) {
@@ -187,7 +196,7 @@ private:
         std::string gjp2(acc->m_GJP2);
         if (gjp2.empty()) return;
 
-        std::string body = fmt::format("accountID={}&gjp2={}&secret={}",
+        std::string body = fmt::format("accountID={}&gjp2={}&page=0&total=0&getSent=0&secret={}",
                                        acc->m_accountID, gjp2, GD_SECRET);
 
         if (!sBool("msgnotif-stop-messages")) {

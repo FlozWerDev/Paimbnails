@@ -6,7 +6,7 @@
     "mac": "2.2081",
     "ios": "2.2081"
   },
-  "version": "v1.0.9",
+  "version": "v1.1.0",
   "id": "flozwer.paimbnails2",
   "name": "Paimbnails",
   "developer": "FlozWer",
@@ -17,15 +17,31 @@
     "source": "https://github.com/FlozWerDev/Paimbnails"
   },
 
+
   "resources": {
-    "sprites": ["resources/*.png", "resources/editor/*.png", "Logo.png"],
-    "files": ["resources/shaders/*.glsl"]
+    "sprites": ["resources/*.png", "Logo.png"],
+    "files": [
+      "resources/shaders/*.glsl",
+      "resources/shaders/*.fsh",
+      "resources/shaders/*.vert"
+    ]
   },
   "settings": {
     "general-title": {
       "name": "General",
       "description": "General mod settings",
       "type": "title"
+    },
+    "separate-dual-title": {
+      "name": "Separate Dual Icons",
+      "description": "Customize the 2nd player's icons, colors, trails and death effect",
+      "type": "title"
+    },
+    "separate-dual-exit-switch": {
+      "type": "bool",
+      "name": "Switch On Dual Exit",
+      "description": "Swap your P2 kit to the main kit when dual mode is exited.",
+      "default": false
     },
     "language": {
       "type": "string",
@@ -80,13 +96,15 @@
     "discord-rpc-title": {
       "name": "Discord Rich Presence",
       "description": "Discord status integration",
-      "type": "title"
+      "type": "title",
+      "platforms": ["win", "mac"]
     },
     "discord-rpc-enabled": {
       "type": "bool",
       "name": "Enable Discord Rich Presence",
       "description": "Show your activity on Discord. Configure details in Paimon Hub > Discord.",
-      "default": true
+      "default": true,
+      "platforms": ["win", "mac"]
     },
     "level-thumbs-title": {
       "name": "Level Thumbnails",
@@ -198,7 +216,7 @@
     "dynamic-song": {
       "type": "bool",
       "name": "Dynamic Song",
-      "description": "Play the level song at a random position when viewing level info.",
+      "description": "Play the level song when viewing level info. Pressing play sinks it under an underwater filter instead of cutting it, and coming back from the level lets it surface again. Start point, rotation, volume and the whole dive effect are configurable from the Audio section of the Paimon hub.",
       "default": true
     },
     "profile-page-title": {
@@ -241,46 +259,6 @@
       "buttons": {
         "run": "Open"
       }
-    },
-    "editorMusicEnable": {
-      "type": "bool",
-      "name": "Enable Editor Music",
-      "description": "Listen to your music library inside the level editor on a separate audio channel. Toggle the mini player with the Editor Music keybind.",
-      "default": false
-    },
-    "editorMusicToggleKeybind": {
-      "type": "keybind",
-      "name": "Toggle Editor Music",
-      "description": "Show/hide the editor music mini player (only works inside the level editor).",
-      "default": "Ctrl+M",
-      "category": "editor",
-      "allow-in-text-inputs": false
-    },
-    "editor-rotate-title": {
-      "name": "Editor Canvas Rotate",
-      "description": "Rotate the whole editor view to build at an angle.",
-      "type": "title"
-    },
-    "editor-rotate-enable": {
-      "type": "bool",
-      "name": "Editor Canvas Rotate",
-      "description": "Hold Alt and drag with the right mouse button in the level editor to rotate the whole canvas around the center of the screen (uses the game's native camera angle, so objects, grid and background all turn). Snaps to 45-degree steps. Building and dragging keep working while rotated.",
-      "default": false
-    },
-    "editor-rotate-slider-thumb": {
-      "type": "bool",
-      "name": "Rotate Slider Thumb",
-      "description": "Rotate the editor's position-slider thumb to match the current canvas angle, so you can read the rotation at a glance.",
-      "default": true,
-      "enable-if": "editor-rotate-enable"
-    },
-    "editor-rotate-reset-keybind": {
-      "type": "keybind",
-      "name": "Reset Editor Rotation",
-      "description": "Snap the editor canvas back to upright (0 degrees).",
-      "default": [],
-      "category": "editor",
-      "allow-in-text-inputs": false
     },
     "menuLoopConstantShuffle": {
       "type": "bool",
@@ -376,6 +354,91 @@
       "description": "Recolor every icon in the icon kit and shops: your colors, fixed colors, gradient, rainbow, random and more. Everything is configured from the round cube button in the garage, with a live preview.",
       "default": true
     },
+    "icon-gradients-title": {
+      "name": "Icon Gradients",
+      "description": "GPU gradient fills for your icons, configured from the garage.",
+      "type": "title"
+    },
+    "icon-gradients-enabled": {
+      "type": "bool",
+      "name": "Icon Gradients",
+      "description": "Applies your gradient presets to your icons in the garage, gameplay, menu, profiles and comments. Configure them with the new button next to the shards in the garage.",
+      "default": true
+    },
+    "icon-gradients-flip-2p": {
+      "type": "bool",
+      "name": "Flip Second Player Colors",
+      "description": "Flip colors for second player like vanilla gd does.",
+      "default": true,
+      "enable-if": "!icon-gradients-separate-2p && !icon-gradients-disable-2p"
+    },
+    "icon-gradients-separate-2p": {
+      "type": "bool",
+      "name": "Separate Second Player Gradient",
+      "description": "Makes the second player use a separate set of gradients.",
+      "default": true,
+      "enable-if": "!icon-gradients-disable-2p"
+    },
+    "icon-gradients-disable-2p": {
+      "type": "bool",
+      "name": "Disable Second Player Gradient",
+      "description": "Makes second player not have gradient.",
+      "default": false
+    },
+    "icon-gradients-menu": {
+      "type": "bool",
+      "name": "Gradients in Menu",
+      "description": "Makes players in the main menu have your gradients.",
+      "default": false
+    },
+    "icon-gradients-hide-on-move": {
+      "type": "bool",
+      "name": "Hide Points on Move",
+      "description": "Hides all points when moving one.",
+      "default": true
+    },
+    "icon-gradients-point-opacity": {
+      "type": "int",
+      "name": "Point Opacity",
+      "description": "The opacity the points will be when not hidden (0 - 255).",
+      "default": 255,
+      "min": 0,
+      "max": 255
+    },
+    "icon-gradients-point-scale": {
+      "type": "float",
+      "name": "Point Scale",
+      "description": "The scale the points will have.",
+      "default": 1.0,
+      "min": 0.01,
+      "max": 3
+    },
+    "icon-gradients-disable-keys": {
+      "type": "bool",
+      "name": "Disable Keyboard Shortcuts",
+      "description": "Disables the gradient editor keyboard shortcuts.",
+      "default": false
+    },
+    "icon-gradients-move-step": {
+      "type": "float",
+      "name": "Move Step Length",
+      "description": "How much the points move when using arrow keys.",
+      "default": 1.0,
+      "max": 50.0,
+      "min": 0.001,
+      "platforms": ["win", "mac"]
+    },
+    "icon-gradients-preload-shaders": {
+      "type": "bool",
+      "name": "Preload Shaders",
+      "description": "Preloads shaders on game open to prevent lagspikes mid gameplay.",
+      "default": true
+    },
+    "icon-gradients-increase-tolerance": {
+      "type": "bool",
+      "name": "Increase Line Shader Tolerance",
+      "default": false
+    },
     "global-icons-enabled": {
       "type": "bool",
       "name": "Global Icons",
@@ -424,24 +487,6 @@
       "name": "Custom Cursor",
       "description": "Replace the OS cursor with a custom image.",
       "default": false
-    },
-    "touch-prio-title": {
-      "name": "Touch Priority",
-      "description": "Route touches by on-screen depth (Z order) instead of GD's touch-priority value.",
-      "type": "title"
-    },
-    "touch-prio-enable": {
-      "type": "bool",
-      "name": "Z-Order Touch",
-      "description": "Decide which node gets a touch by what's visually on top (Z order + order of arrival) instead of the raw touch-priority value. Fixes pressing buttons behind popups and touch layers leaking through. Automatically disabled if the standalone 'Better Touch Prio' mod is installed.",
-      "default": true
-    },
-    "touch-prio-debug-logs": {
-      "type": "bool",
-      "name": "Touch Priority: Debug Logs",
-      "description": "Log which node claims each touch and warn about leaked handlers. For troubleshooting only.",
-      "default": false,
-      "enable-if": "touch-prio-enable"
     },
     "smooth-text-enabled": {
       "type": "bool",
@@ -531,6 +576,52 @@
       "name": "Open Capture Menu with Right-Click",
       "description": "When enabled, right-click opens the capture menu (default behavior). Disable it if you prefer to use only the 'Open Capture Menu' keybind above.",
       "default": true
+    },
+    "golden-best-title": {
+      "name": "Golden Best",
+      "description": "Golden Best integration",
+      "type": "title"
+    },
+    "golden-best-enabled": {
+      "type": "bool",
+      "name": "Golden Best",
+      "description": "Turns the percentage gold while you are beating your record.",
+      "default": true
+    },
+    "golden-best-practice-mode": {
+      "type": "bool",
+      "name": "Show in Practice Mode",
+      "description": "Also turn the percentage gold while playing in practice mode.",
+      "default": false,
+      "enable-if": "golden-best-enabled"
+    },
+    "golden-best-platformer-mode": {
+      "type": "bool",
+      "name": "Show in Platformer Mode",
+      "description": "Turn the time gold on platformer levels while beating your best time.",
+      "default": false,
+      "enable-if": "golden-best-enabled"
+    },
+    "golden-best-test-mode": {
+      "type": "bool",
+      "name": "Show in Startpos/Test Mode",
+      "description": "Also turn the percentage gold while playing from a start position or in test mode.",
+      "default": false,
+      "enable-if": "golden-best-enabled"
+    },
+    "golden-best-enable-colors": {
+      "type": "bool",
+      "name": "Enable Custom Colors",
+      "description": "Tint the label with a custom color instead of the golden font. Needs a level restart to apply.",
+      "default": false,
+      "enable-if": "golden-best-enabled"
+    },
+    "golden-best-custom-color": {
+      "type": "color",
+      "name": "New Best Color",
+      "description": "Color of the percentage while beating your record.",
+      "default": "#FFDD44",
+      "enable-if": "golden-best-enable-colors"
     },
     "pause-zoom-title": {
       "name": "Pause Zoom",
@@ -653,6 +744,49 @@
         "run": "Open"
       }
     },
+    "maintenance-title": {
+      "name": "Moderation Maintenance",
+      "description": "Moderator verification and maintenance actions",
+      "type": "title"
+    },
+    "maintenance-refresh-mod-code": {
+      "type": "button",
+      "name": "Secure Mod Code",
+      "description": "Set up or rotate moderator authentication by verifying a code on your Geometry Dash profile.",
+      "buttons": {
+        "run": "Setup"
+      }
+    },
+    "maintenance-copy-mod-code": {
+      "type": "button",
+      "name": "Copy Mod Code",
+      "description": "Copy your current moderator authentication code to the clipboard.",
+      "buttons": {
+        "run": "Copy"
+      }
+    },
+    "icon-maker-title": {
+      "name": "Creador de Iconos",
+      "description": "Crea y edita tus propios iconos con degradados e imagenes",
+      "type": "title"
+    },
+    "icon-maker-enabled": {
+      "type": "bool",
+      "name": "Activar Creador de Iconos",
+      "description": "Muestra el boton del Creador de Iconos en el garage.",
+      "default": true
+    },
+    "icon-gallery-title": {
+      "name": "Tienda de Iconos",
+      "description": "Descarga iconos de la comunidad desde iconsgallery.pages.dev",
+      "type": "title"
+    },
+    "icon-gallery-enabled": {
+      "type": "bool",
+      "name": "Activar Tienda de Iconos",
+      "description": "Muestra el boton de la Tienda de Iconos en el garage. Los iconos descargados se instalan en More Icons.",
+      "default": true
+    },
     "texture-studio-title": {
       "name": "Texture Studio",
       "description": "Algorithmic texture pack generator",
@@ -773,6 +907,17 @@
       "name": "Hidden Words",
       "description": "Comma separated words; comments containing any of them are ignored. Leave empty to disable filtering.",
       "default": ""
+    },
+    "messages-title": {
+      "name": "Messages",
+      "description": "Inbox redesign and message tools",
+      "type": "title"
+    },
+    "messages-redesign-enabled": {
+      "type": "bool",
+      "name": "Redesign Messages",
+      "description": "GD-style inbox with player icons from the native friend cache, unread counter, local search, quick reply, profile shortcuts and one-tap select-read for bulk cleanup.",
+      "default": true
     },
     "msgnotif-title": {
       "name": "Message Notifications",
@@ -926,712 +1071,40 @@
       "category": "editor",
       "allow-in-text-inputs": false
     },
-    "editor-history-title": {
-      "name": "Editor Undo (Color / Groups / Layers)",
-      "description": "Simple undo for color, group and editor-layer changes only.",
+    "autobuild-title": {
+      "name": "Autobuild",
+      "description": "Learns a decorated area and rebuilds it wherever you point.",
       "type": "title"
     },
-    "editor-history-enable": {
+    "autobuild-enable": {
       "type": "bool",
-      "name": "Editor Undo (Color / Groups / Layers)",
-      "description": "Adds a button to the editor toolbar. Pick Color, Groups or Layers and undo the last change of that type. Does not track move/rotate/create/delete.",
+      "name": "Enable Autobuild",
+      "description": "Adds the Autobuild button to the editor toolbar. Capture a decorated area as a template, then fill markers, the current selection or a whole area with it. Templates live in the mod config folder and .tblib libraries can be imported.",
       "default": true
     },
-    "editor-suite-title": {
-      "name": "Paimon Editor Suite",
-      "description": "Modular editor improvements inspired by Tinker and BetterEdit. Toggle each module independently in Módulos or here. Master switch only gates editor-mod-* features.",
-      "type": "title"
-    },
-    "editor-suite-enable": {
-      "type": "bool",
-      "name": "Editor Suite (Master)",
-      "description": "Master switch for all new editor-mod-* modules. Pre-existing features (rotate, color picker, history, collab, music) keep their own toggles.",
-      "default": true
-    },
-    "editor-mod-scroll-zoom": {
-      "type": "bool",
-      "name": "Smooth Scroll & Zoom",
-      "description": "Better editor pan/zoom. Ctrl+wheel zooms (to cursor), Shift+wheel pans horizontally.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-scroll-zoom-to-cursor": {
-      "type": "bool",
-      "name": "Zoom to Cursor",
-      "description": "Keep the point under the mouse fixed while zooming.",
-      "default": true,
-      "enable-if": "editor-mod-scroll-zoom"
-    },
-    "editor-mod-scroll-multiplier": {
-      "type": "float",
-      "name": "Scroll Multiplier",
-      "default": 12.0,
-      "min": 1.0,
-      "max": 50.0,
-      "enable-if": "editor-mod-scroll-zoom"
-    },
-    "editor-mod-zoom-multiplier": {
-      "type": "float",
-      "name": "Zoom Multiplier",
-      "default": 12.0,
-      "min": 1.0,
-      "max": 50.0,
-      "enable-if": "editor-mod-scroll-zoom"
-    },
-    "editor-mod-zoom-min": {
-      "type": "float",
-      "name": "Minimum Zoom",
-      "default": 0.1,
-      "min": 0.05,
-      "max": 2.0,
-      "enable-if": "editor-mod-scroll-zoom"
-    },
-    "editor-mod-zoom-max": {
-      "type": "float",
-      "name": "Maximum Zoom",
-      "default": 10000000.0,
-      "min": 2.0,
-      "max": 10000000.0,
-      "enable-if": "editor-mod-scroll-zoom"
-    },
-    "editor-mod-scroll-invert-v": {
-      "type": "bool",
-      "name": "Invert Vertical Scroll",
-      "default": false,
-      "enable-if": "editor-mod-scroll-zoom"
-    },
-    "editor-mod-scroll-invert-h": {
-      "type": "bool",
-      "name": "Invert Horizontal Scroll",
-      "default": false,
-      "enable-if": "editor-mod-scroll-zoom"
-    },
-    "editor-mod-scroll-invert-z": {
-      "type": "bool",
-      "name": "Invert Zoom Scroll",
-      "default": false,
-      "enable-if": "editor-mod-scroll-zoom"
-    },
-    "editor-mod-scroll-delegate-vanilla": {
-      "type": "bool",
-      "name": "Delegate Scroll to Vanilla",
-      "description": "Pass scroll to vanilla EditorUI::scrollWheel (better DevTools compat, worse with other scroll mods).",
-      "default": false,
-      "enable-if": "editor-mod-scroll-zoom"
-    },
-    "editor-mod-pinch-to-zoom": {
-      "type": "bool",
-      "name": "Pinch to Zoom",
-      "description": "Two-finger pinch zoom on mobile.",
-      "default": true,
-      "enable-if": "editor-mod-scroll-zoom",
-      "platforms": ["android", "ios"]
-    },
-    "editor-mod-zoom-text": {
-      "type": "bool",
-      "name": "Zoom Level Text",
-      "description": "Flash the current zoom percentage when zooming.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-grid-control": {
-      "type": "bool",
-      "name": "Grid Controls",
-      "description": "Change editor grid size with +/- and a free input.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-grid-show-on-change": {
-      "type": "bool",
-      "name": "Show Grid on Size Change",
-      "default": true,
-      "enable-if": "editor-mod-grid-control"
-    },
-    "editor-mod-hide-ui": {
-      "type": "bool",
-      "name": "Hide UI Toggle",
-      "description": "Button next to undo to hide/show the editor UI.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-length-display": {
-      "type": "bool",
-      "name": "Length Display",
-      "description": "Show estimated level length and object count in the editor HUD.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-object-tooltips": {
-      "type": "bool",
-      "name": "Object Tooltips",
-      "description": "Show object ID tooltips when hovering build-tab buttons.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-tooltips-show-id": {
-      "type": "bool",
-      "name": "Tooltips Show Object ID",
-      "default": true,
-      "enable-if": "editor-mod-object-tooltips"
-    },
-    "editor-mod-tooltips-scale": {
-      "type": "float",
-      "name": "Tooltip Scale",
-      "default": 1.0,
-      "min": 0.5,
-      "max": 2.0,
-      "enable-if": "editor-mod-object-tooltips"
-    },
-    "editor-mod-repeating-buttons": {
-      "type": "bool",
-      "name": "Repeating Buttons",
-      "description": "Hold edit-tab buttons to auto-repeat them.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-repeat-delay-ms": {
-      "type": "int",
-      "name": "Repeat Delay (ms)",
-      "default": 500,
-      "min": 50,
-      "max": 10000,
-      "enable-if": "editor-mod-repeating-buttons"
-    },
-    "editor-mod-repeat-rate-ms": {
-      "type": "int",
-      "name": "Repeat Rate (ms)",
-      "default": 100,
-      "min": 5,
-      "max": 2000,
-      "enable-if": "editor-mod-repeating-buttons"
-    },
-    "editor-mod-camera-tools": {
-      "type": "bool",
-      "name": "Camera Tools",
-      "description": "Buttons and keys N/M: center camera on selection / move selection to camera.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-single-deselect": {
-      "type": "bool",
-      "name": "Single Deselect",
-      "description": "Hold Alt and click a selected object to deselect only that object.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-copy-string": {
-      "type": "bool",
-      "name": "Copy Object String",
-      "description": "Also copy the object string to the system clipboard when copying in the editor.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-paste-warnings": {
-      "type": "bool",
-      "name": "Paste Warnings",
-      "description": "Confirm before paste state / paste color on multi-selection.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-paste-warn-state": {
-      "type": "bool",
-      "name": "Warn on Paste State",
-      "default": true,
-      "enable-if": "editor-mod-paste-warnings"
-    },
-    "editor-mod-paste-warn-color": {
-      "type": "bool",
-      "name": "Warn on Paste Color",
-      "default": true,
-      "enable-if": "editor-mod-paste-warnings"
-    },
-    "editor-mod-paste-warn-min-objects": {
-      "type": "int",
-      "name": "Paste Warn Min Objects",
-      "default": 2,
-      "min": 1,
-      "max": 9999,
-      "enable-if": "editor-mod-paste-warnings"
-    },
-    "editor-mod-fixes-pack": {
-      "type": "bool",
-      "name": "Editor Fixes Pack",
-      "description": "Slider length fix, centered create buttons, link control touch fix, NaN position crash guard.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-ldm-count": {
-      "type": "bool",
-      "name": "LDM Object Count",
-      "description": "Show high-detail object count on the editor pause screen.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-wave-ignore-damage": {
-      "type": "bool",
-      "name": "Wave Ignore Damage Fix",
-      "description": "Fixes wave treating all slopes as if they have D blocks when ignore damage is enabled.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-negate-input": {
-      "type": "bool",
-      "name": "Negate Input",
-      "description": "Press N while a number field is focused to negate it.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-scale-rotate": {
-      "type": "bool",
-      "name": "Improved Scale/Rotate",
-      "description": "Numeric scale/rotation inputs and Shift-to-snap while dragging controls.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-scale-snap": {
-      "type": "float",
-      "name": "Scale Snap Step",
-      "default": 0.25,
-      "min": 0.05,
-      "max": 1.0,
-      "enable-if": "editor-mod-scale-rotate"
-    },
-    "editor-mod-rotate-snap": {
-      "type": "float",
-      "name": "Rotation Snap Degrees",
-      "default": 15.0,
-      "min": 1.0,
-      "max": 90.0,
-      "enable-if": "editor-mod-scale-rotate"
-    },
-    "editor-mod-type-in-layer": {
-      "type": "bool",
-      "name": "Type-in Layer",
-      "description": "Type the editor layer number, jump to next free layer, improved lock control.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-next-free-offset": {
-      "type": "bool",
-      "name": "Next Free Offset",
-      "description": "Next Free group ID starts searching from a saved offset instead of 1.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-start-pos": {
-      "type": "bool",
-      "name": "Start Pos Tools",
-      "description": "Prev/next start position switcher (Q/E) and playtest without start pos.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-auto-build-helper": {
-      "type": "bool",
-      "name": "Auto Build Helper",
-      "description": "When enabled, automatically run Build Helper after paste.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-object-summary": {
-      "type": "bool",
-      "name": "Object Summary",
-      "description": "Button on editor pause listing counts of each object ID.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-multi-text": {
-      "type": "bool",
-      "name": "Multi Text Edit",
-      "description": "When changing one text object, apply the same string to all selected text objects.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-ui-scale": {
-      "type": "bool",
-      "name": "Editor UI Scale",
-      "description": "Scale the editor HUD. Re-enter the editor after changing the scale.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-ui-scale-factor": {
-      "type": "float",
-      "name": "UI Scale Factor",
-      "default": 0.9,
-      "min": 0.5,
-      "max": 1.0,
-      "enable-if": "editor-mod-ui-scale"
-    },
-    "editor-mod-button-rows": {
-      "type": "bool",
-      "name": "Button Rows Bypass",
-      "description": "Raise the limits for button rows and buttons per row in editor options.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-move-keybinds": {
-      "type": "bool",
-      "name": "Move Fractions Keybinds",
-      "description": "Ctrl+Alt+WASD = half block, Alt+WASD = quarter block moves.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-extra-keybinds": {
-      "type": "bool",
-      "name": "Extra Editor Keybinds",
-      "description": "Ctrl+E edit object, Ctrl+G groups, R restart playtest, Ctrl+Shift+R rotate 45, etc.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-group-view": {
-      "type": "bool",
-      "name": "Improved Group View",
-      "description": "Show a scrollable full group list when many groups are used.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-object-search": {
-      "type": "bool",
-      "name": "Object Search",
-      "description": "Search objects by ID or name (Ctrl+Space) and select them in the build tab.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-view-panel": {
-      "type": "bool",
-      "name": "View Toggles Panel",
-      "description": "Floating panel with quick toggles for grid, ground, hitboxes, hide LDM, effect lines.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-trigger-lines": {
-      "type": "bool",
-      "name": "Trigger Indicators",
-      "description": "Draw lines from selected triggers to objects in their target group.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-trigger-lines-all": {
-      "type": "bool",
-      "name": "Show All Trigger Lines",
-      "description": "Also draw lines for unselected triggers (heavier).",
-      "default": false,
-      "enable-if": "editor-mod-trigger-lines"
-    },
-    "editor-mod-playtest-confirm": {
-      "type": "bool",
-      "name": "Playtest Confirmation",
-      "description": "Show a confirmation popup before playtesting.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-hide-level-ids": {
-      "type": "bool",
-      "name": "Hide Level IDs",
-      "description": "Hide IDs on the Edit Level screen unless Shift is held.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-duration-info": {
-      "type": "bool",
-      "name": "Duration HUD",
-      "description": "Show the duration of the selected trigger near the object info.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-live-colors": {
-      "type": "bool",
-      "name": "Live Color Strip",
-      "description": "Show a strip of the level's main color channels at the bottom of the editor.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-native-tabs": {
-      "type": "bool",
-      "name": "Native Editor Tabs",
-      "description": "Show View / Search / Favs as Paimon side tabs (hides the duplicate floating View button).",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-object-favorites": {
-      "type": "bool",
-      "name": "Object Favorites",
-      "description": "Right-click an object in the build bar to favorite it. Open favorites with the Favs button (next to Search).",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-edit-mixed": {
-      "type": "bool",
-      "name": "Edit Mixed Values",
-      "description": "Show min-max ranges for mixed layer/Z values and apply typed values to all selected objects.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-trigger-lines-arrows": {
-      "type": "bool",
-      "name": "Trigger Line Arrows",
-      "description": "Draw arrow heads on trigger indicator lines.",
-      "default": true,
-      "enable-if": "editor-mod-trigger-lines"
-    },
-    "editor-mod-trigger-lines-cluster": {
-      "type": "bool",
-      "name": "Cluster Trigger Targets",
-      "description": "Merge nearby target objects into one line endpoint.",
-      "default": true,
-      "enable-if": "editor-mod-trigger-lines"
-    },
-    "editor-mod-scrollable-objects": {
-      "type": "bool",
-      "name": "Scrollable Object Bar",
-      "description": "Scroll the mouse wheel over the build bar to change object pages.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-preview-object-colors": {
-      "type": "bool",
-      "name": "Preview Object Colors",
-      "description": "Tint create-tab object icons using the level object color channel.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-reference-image": {
-      "type": "bool",
-      "name": "Reference Image",
-      "description": "Import a translucent reference image into the editor (button on undo menu).",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-group-summary": {
-      "type": "bool",
-      "name": "Group Summary",
-      "description": "List used group IDs from the pause menu or Ctrl+Shift+U.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-quick-save": {
-      "type": "bool",
-      "name": "Quick Save Backup",
-      "description": "Button on the undo menu that writes a level-string backup under the mod save folder.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-auto-save": {
-      "type": "bool",
-      "name": "Auto Save Backup",
-      "description": "Periodically write level-string backups while in the editor.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-auto-save-minutes": {
-      "type": "int",
-      "name": "Auto Save Interval (min)",
-      "description": "Minutes between auto-save backups.",
-      "default": 5,
-      "min": 1,
-      "max": 60,
-      "enable-if": "editor-mod-auto-save"
-    },
-    "editor-mod-backups": {
-      "type": "bool",
-      "name": "Backups Browser",
-      "description": "Open a list of backups from the editor pause menu.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-better-color-menu": {
-      "type": "bool",
-      "name": "Better Color Menu",
-      "description": "Show a strip of color channels on Color Select for quick picking.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-better-font-select": {
-      "type": "bool",
-      "name": "Better Font Select",
-      "description": "Scrollable font grid in the font select popup.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-move-menu": {
-      "type": "bool",
-      "name": "Fractional Move Pad",
-      "description": "Half and quarter step move buttons on the right side of the editor. Off by default to keep the HUD clean (use Alt/Ctrl+Alt+WASD keybinds instead).",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-quick-extras": {
-      "type": "bool",
-      "name": "Quick Extras",
-      "description": "Undo-menu button that opens Edit Special for the selection.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-relocate-build-tools": {
-      "type": "bool",
-      "name": "Relocate Build Tools",
-      "description": "Build Helper, Align X/Y and Create Loop buttons on the editor HUD.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-grid-colors": {
-      "type": "bool",
-      "name": "Custom Grid Color",
-      "description": "Draw the editor grid in a color of your choice (solid or gradient), over the vanilla grid. Aligned to the current grid size.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-grid-color-a": {
-      "type": "string",
-      "name": "Grid Color",
-      "description": "Grid color as 'r,g,b' (0-255). This is the solid color, or the first color of the gradient.",
-      "default": "0,200,255",
-      "filter": "0123456789, ",
-      "enable-if": "editor-mod-grid-colors"
-    },
-    "editor-mod-grid-gradient": {
-      "type": "bool",
-      "name": "Grid Gradient",
-      "description": "Blend the grid between two colors across the visible area.",
-      "default": false,
-      "enable-if": "editor-mod-grid-colors"
-    },
-    "editor-mod-grid-color-b": {
-      "type": "string",
-      "name": "Grid Color (Gradient End)",
-      "description": "Second gradient color as 'r,g,b' (0-255).",
-      "default": "255,60,200",
-      "filter": "0123456789, ",
-      "enable-if": "editor-mod-grid-gradient"
-    },
-    "editor-mod-grid-alpha": {
-      "type": "int",
-      "name": "Grid Opacity",
-      "description": "Opacity of the custom grid lines (0 = invisible, 255 = solid).",
-      "default": 90,
-      "min": 0,
-      "max": 255,
-      "control": { "slider": true },
-      "enable-if": "editor-mod-grid-colors"
-    },
-    "editor-mod-grid-line-width": {
-      "type": "float",
-      "name": "Grid Line Width",
-      "description": "Thickness of the custom grid lines.",
-      "default": 1.0,
-      "min": 0.5,
-      "max": 4.0,
-      "control": { "slider": true },
-      "enable-if": "editor-mod-grid-colors"
-    },
-    "editor-mod-toolbar-colors": {
-      "type": "bool",
-      "name": "Toolbar Color Tint",
-      "description": "Tint bottom toolbar panels using saved paim-toolbar-color (r,g,b).",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-joystick-nav": {
-      "type": "bool",
-      "name": "Alt+WASD Camera Pan",
-      "description": "Hold Alt and WASD/arrows to pan the editor canvas.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-joystick-speed": {
-      "type": "float",
-      "name": "Camera Pan Speed",
-      "description": "Pan speed for Alt+WASD navigation.",
-      "default": 12.0,
-      "min": 2.0,
-      "max": 40.0,
-      "enable-if": "editor-mod-joystick-nav"
-    },
-    "editor-mod-old-color-triggers": {
-      "type": "bool",
-      "name": "Old Color Trigger Look",
-      "description": "Prefer classic tint-button frames for common color triggers (Tinker-style).",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-select-direction": {
-      "type": "bool",
-      "name": "Select All Left/Right",
-      "description": "Ctrl+Shift+Left/Right selects all objects in that direction (vanilla API).",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-editor-percentage": {
-      "type": "bool",
-      "name": "Editor Percentage",
-      "description": "Show approximate camera X as a percentage of level length at the top of the editor.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-next-free-color": {
-      "type": "bool",
-      "name": "Next Free Color Offset",
-      "description": "Show an offset field and improve next-free color channel picking in Color Select.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-rotate-lock-pos": {
-      "type": "bool",
-      "name": "Lock Position While Rotating",
-      "description": "Keep the selection center fixed while dragging the rotation control (BetterEdit-style).",
-      "default": false,
-      "enable-if": "editor-mod-scale-rotate"
-    },
-    "editor-mod-back-to-content": {
-      "type": "bool",
-      "name": "Back To Content",
-      "description": "Undo-menu button that centers the camera on the selection (or level content).",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-paste-object-string": {
-      "type": "bool",
-      "name": "Paste Object String",
-      "description": "Ctrl+Shift+P pastes objects from the system clipboard (object string).",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-duration-drag": {
-      "type": "bool",
-      "name": "Duration Drag",
-      "description": "Hold Shift and drag horizontally on a selected duration trigger to change its duration.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-dash-portal-lines": {
-      "type": "bool",
-      "name": "Dash & Portal Guides",
-      "description": "Draw guide lines for selected dash orbs and portals in the editor.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-hide-trigger-ui": {
-      "type": "bool",
-      "name": "Hide Trigger UI on Slider",
-      "description": "Dim the trigger popup while dragging sliders so you can see the level.",
-      "default": false,
-      "enable-if": "editor-suite-enable"
-    },
-    "editor-mod-hsv-preview": {
-      "type": "bool",
-      "name": "HSV Preview Swatch",
-      "description": "Show a color swatch on the HSV configure widget.",
-      "default": true,
-      "enable-if": "editor-suite-enable"
+    "autobuild-keybind": {
+      "type": "keybind",
+      "name": "Open Autobuild (Editor)",
+      "description": "Opens the Autobuild panel. Only works inside the level editor.",
+      "default": "Ctrl+B",
+      "category": "editor",
+      "allow-in-text-inputs": false
     },
     "collab-title": {
       "name": "Collab Editor",
-      "description": "Real-time collaborative level editing over a Render server.",
+      "description": "Real-time collaborative level editing over a dedicated server.",
       "type": "title"
     },
     "collab-enabled": {
       "type": "bool",
       "name": "Enable Collab Editor",
-      "description": "Show the Collab button in the editor. Requires the access code the first time.",
+      "description": "Show the Collab button in the editor and enable real-time collaborative sessions.",
+      "default": true
+    },
+    "collab-custom-cursors": {
+      "type": "bool",
+      "name": "Collab Custom Cursors",
+      "description": "Show each collaborator's custom cursor in the editor when they have one configured.",
       "default": true
     },
     "collab-username": {
@@ -1728,6 +1201,245 @@
       "default": false,
       "enable-if": "input-scroll-enable"
     },
+    "twitch-requests-title": {
+      "name": "Level Requests (Web / Twitch / YouTube / Kick / TikTok)",
+      "description": "Receive level requests from your public web page and configurable live chats. Every enabled source feeds the same local queue.",
+      "type": "title"
+    },
+    "twitch-requests-enabled": {
+      "type": "bool",
+      "name": "Enable Level Requests",
+      "description": "Show the Level Requests button on the online search screen and connect every enabled request source.",
+      "default": false
+    },
+    "twitch-requests-web-enabled": {
+      "type": "bool",
+      "name": "Enable Web Requests",
+      "description": "Create flozwer.org/request/<your GD username> and send accepted levels directly to your local queue.",
+      "default": false,
+      "enable-if": "twitch-requests-enabled"
+    },
+    "twitch-requests-obs-enabled": {
+      "type": "bool",
+      "name": "OBS Stream Overlay",
+      "description": "Serve the current level and request queue at http://localhost:21680/overlay for an OBS Browser Source.",
+      "default": false,
+      "enable-if": "twitch-requests-enabled"
+    },
+    "twitch-requests-channel": {
+      "type": "string",
+      "name": "Twitch Channel",
+      "description": "Your Twitch username. Empty means Twitch is not read.",
+      "default": "",
+      "enable-if": "twitch-requests-enabled"
+    },
+    "twitch-requests-youtube-channel": {
+      "type": "string",
+      "name": "YouTube Channel",
+      "description": "Your YouTube handle (@yourchannel) or a link to the live stream. Empty means YouTube is not read.",
+      "default": "",
+      "enable-if": "twitch-requests-enabled"
+    },
+    "twitch-requests-kick-channel": {
+      "type": "string",
+      "name": "Kick Channel",
+      "description": "Your Kick channel name. Empty means Kick is not read.",
+      "default": "",
+      "enable-if": "twitch-requests-enabled"
+    },
+    "twitch-requests-tiktok-channel": {
+      "type": "string",
+      "name": "TikTok User",
+      "description": "Your TikTok @user, or the numeric room id. Empty means TikTok is not read.",
+      "default": "",
+      "enable-if": "twitch-requests-enabled"
+    },
+    "twitch-requests-commands": {
+      "type": "string",
+      "name": "Request Commands",
+      "description": "Commands separated by commas, for example: !req,!request,!sr. Shared by every platform.",
+      "default": "!req,!request",
+      "enable-if": "twitch-requests-enabled"
+    },
+    "twitch-requests-max-queue": {
+      "type": "int",
+      "name": "Maximum Queue Size",
+      "description": "New requests are ignored while the queue is full. Shared by every platform.",
+      "default": 100,
+      "min": 1,
+      "max": 500,
+      "enable-if": "twitch-requests-enabled"
+    },
+    "twitch-requests-tiktok-relay": {
+      "type": "string",
+      "name": "TikTok Relay",
+      "description": "TikTok refuses unsigned requests, so its chat is read through a public relay that returns the raw webcast data. Change this only if the default stops working; leave it empty to use the default.",
+      "default": "https://tiktok.eulerstream.com/webcast/fetch",
+      "enable-if": "twitch-requests-enabled"
+    },
+    "info-suite-title": {
+      "name": "Paimon Info Suite",
+      "description": "Level info, ids, advanced search, progress tracking and history browsers. Toggle each module independently in Modulos or here. The master switch below disables every info module at once.",
+      "type": "title"
+    },
+    "info-suite-enable": {
+      "type": "bool",
+      "name": "Info Suite (Master)",
+      "description": "Master switch for ALL info-mod-* modules. Turning this off disables all of them; their individual toggles are remembered.",
+      "default": true
+    },
+    "info-mod-extended": {
+      "type": "bool",
+      "name": "Extended Level Info",
+      "description": "Replaces the level's two info alerts: the stats button opens a compact popup with your attempts, jumps, best runs and charts over the level thumbnail, and the comments 'i' opens every hidden field of the level, split into tabs. Tap any row to copy it.",
+      "default": true,
+      "enable-if": "info-suite-enable"
+    },
+    "info-mod-ids": {
+      "type": "bool",
+      "name": "Visible IDs",
+      "description": "Shows level, list, comment and user ids directly on cells and profiles.",
+      "default": true,
+      "enable-if": "info-suite-enable"
+    },
+    "info-ids-levels": {
+      "type": "bool",
+      "name": "IDs on Level Cells",
+      "description": "Show the level id on level and list cells in the browser.",
+      "default": true,
+      "enable-if": "info-mod-ids"
+    },
+    "info-ids-comments": {
+      "type": "bool",
+      "name": "IDs on Comments",
+      "description": "Show the comment id on every comment cell.",
+      "default": true,
+      "enable-if": "info-mod-ids"
+    },
+    "info-ids-users": {
+      "type": "bool",
+      "name": "IDs on Profiles",
+      "description": "Show the user id and account id on the profile page.",
+      "default": true,
+      "enable-if": "info-mod-ids"
+    },
+    "info-ids-position": {
+      "type": "string",
+      "name": "ID Placement",
+      "description": "'inline' puts the id right after the level name, 'corner' pins it to the bottom right of the cell.",
+      "default": "inline",
+      "one-of": ["inline", "corner"],
+      "enable-if": "info-mod-ids"
+    },
+    "info-ids-shift-reveal": {
+      "type": "bool",
+      "name": "Hold Shift To Reveal",
+      "description": "Keeps ids hidden until you hold Shift. Useful when recording or streaming.",
+      "default": false,
+      "enable-if": "info-mod-ids"
+    },
+    "info-ids-color": {
+      "type": "rgb",
+      "name": "ID Color",
+      "description": "Color of the id text drawn on cells and profiles.",
+      "default": [255, 255, 255],
+      "enable-if": "info-mod-ids"
+    },
+    "info-ids-opacity": {
+      "type": "int",
+      "name": "ID Opacity",
+      "description": "How visible the id text is.",
+      "default": 190,
+      "min": 40,
+      "max": 255,
+      "enable-if": "info-mod-ids"
+    },
+    "info-mod-jump-page": {
+      "type": "bool",
+      "name": "Jump To Page",
+      "description": "Tap the page counter in the level browser to jump anywhere, past the vanilla 999 page cap.",
+      "default": true,
+      "enable-if": "info-suite-enable"
+    },
+    "info-jump-remember-page": {
+      "type": "bool",
+      "name": "Remember Last Page",
+      "description": "Reopening the same search returns to the page you left off on.",
+      "default": true,
+      "enable-if": "info-mod-jump-page"
+    },
+    "info-mod-advanced-search": {
+      "type": "bool",
+      "name": "Advanced Search",
+      "description": "Extra filters on the search screen: id range, game version, object count, completion state and more.",
+      "default": true,
+      "enable-if": "info-suite-enable"
+    },
+    "info-mod-search-presets": {
+      "type": "bool",
+      "name": "Search Presets",
+      "description": "Save named filter sets and reload them in one tap.",
+      "default": true,
+      "enable-if": "info-mod-advanced-search"
+    },
+    "info-mod-progress": {
+      "type": "bool",
+      "name": "Progress Tracking",
+      "description": "Records attempts, jumps and where you die on each level, keeping practice and normal runs separate.",
+      "default": true,
+      "enable-if": "info-suite-enable"
+    },
+    "info-mod-death-heatmap": {
+      "type": "bool",
+      "name": "Death Heatmap",
+      "description": "Draws a bar on the level screen showing where you die most.",
+      "default": true,
+      "enable-if": "info-mod-progress"
+    },
+    "info-progress-max-levels": {
+      "type": "int",
+      "name": "Levels Tracked",
+      "description": "How many levels keep progress records. Once past this, the ones you have not played in longest are dropped.",
+      "default": 500,
+      "min": 50,
+      "max": 5000,
+      "enable-if": "info-mod-progress"
+    },
+    "info-mod-unreg-profiles": {
+      "type": "bool",
+      "name": "Unregistered Profiles",
+      "description": "Opens a profile for green users who have no account, showing their levels and stats.",
+      "default": true,
+      "enable-if": "info-suite-enable"
+    },
+    "info-mod-comment-tools": {
+      "type": "bool",
+      "name": "Comment Tools",
+      "description": "Jump to a comment page, show comment ids and estimate exact comment dates.",
+      "default": true,
+      "enable-if": "info-suite-enable"
+    },
+    "info-mod-green-users": {
+      "type": "bool",
+      "name": "Fix Green Usernames",
+      "description": "Remembers usernames the mod has seen and fills in the ones the game shows as blank green names.",
+      "default": true,
+      "enable-if": "info-suite-enable"
+    },
+    "info-mod-gdhistory": {
+      "type": "bool",
+      "name": "GDHistory Enrichment",
+      "description": "Opt-in. Asks history.geometrydash.eu for exact upload dates, unknown usernames and a level's recorded upload/version history. Everything else works without it. Skipped on private servers.",
+      "default": false,
+      "enable-if": "info-suite-enable"
+    },
+    "info-compat-force": {
+      "type": "bool",
+      "name": "Force Modules With BetterInfo",
+      "description": "By default the modules that duplicate BetterInfo's UI turn themselves off while BetterInfo is installed. Enable this to run both anyway.",
+      "default": false,
+      "enable-if": "info-suite-enable"
+    },
     "debug-title": {
       "name": "Debug",
       "description": "Developer options",
@@ -1745,6 +1457,30 @@
       "version": ">=v1.23.0",
       "required": true
     },
+    "alphalaneous.editortab_api": {
+      "version": ">=v2.1.11",
+      "required": true
+    },
+    "alphalaneous.level-storage-api": {
+      "version": ">=v1.0.0",
+      "required": true
+    },
+    "alphalaneous.good_grid": {
+      "version": ">=v1.2.0",
+      "required": true
+    },
+    "alk.better-touch-prio": {
+      "version": ">=v1.0.16",
+      "required": true
+    },
+    "hjfod.gmd-api": {
+      "version": ">=v1.5.0",
+      "required": true
+    },
+    "cvolton.level-id-api": {
+      "version": ">=v2.0.0",
+      "required": true
+    },
     "prevter.imageplus": {
       "version": ">=v1.1.0",
       "required": false
@@ -1755,6 +1491,10 @@
     },
     "hiimjustin000.more_icons": {
       "version": ">=v2.0.0",
+      "required": false
+    },
+    "kampwski.level_tags": {
+      "version": ">=v0.4.0-alpha",
       "required": false
     }
   },

@@ -17,6 +17,11 @@ inline constexpr char const* kIconRecoloredKey = "paimbnails/icon-recolored";
 // detection breaks as soon as a lock style changes the opacity, so the flag
 // is the durable source of truth.
 inline constexpr char const* kIconLockedKey = "paimbnails/locked-icon";
+// Snapshot of the stock locked look, captured right after vanilla
+// changeToLockedState runs. Restoring replays it verbatim; rebuilding the
+// look from hardcoded constants washed locked icons out to white blobs
+// (vanilla hides detail sprites/UFO domes and keeps its own colors).
+inline constexpr char const* kIconLockSnapshotKey = "paimbnails/locked-vanilla-snapshot";
 
 // Areas where we recolor. Only areas with an actual hook exist here.
 enum class RecolorArea {
@@ -34,6 +39,10 @@ public:
     void recolorListBar(ListButtonBar* bar, RecolorArea area);
 
     bool recolorOne(GJItemIcon* icon, int displayIndex, int totalCount, RecolorArea area);
+
+    // Call right after vanilla changeToLockedState (before any lock style is
+    // applied) so restore can replay the exact stock locked look.
+    void snapshotLockedVanilla(GJItemIcon* icon);
 
     // Put every icon we touched back to its stock look (master switch off).
     void restoreVanilla(cocos2d::CCNode* root);

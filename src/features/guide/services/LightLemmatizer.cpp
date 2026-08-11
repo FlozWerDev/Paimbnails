@@ -4,51 +4,41 @@
 
 namespace paimon::guide {
 
-// Shared EN/ES stopwords (normalized: lowercase, no accents)
+// Shared normalized EN/ES stopwords.
 
 std::unordered_set<std::string> const& LightLemmatizer::stopwords() {
     static const std::unordered_set<std::string> kStopwords = {
-        // Articles / pronouns / prepositions (EN)
         "the", "a", "an", "is", "are", "be", "to", "of", "in", "on",
         "at", "by", "for", "with", "and", "or", "but", "i", "you",
         "we", "it", "this", "that", "those", "these", "do", "does",
         "did", "can", "should", "would", "could", "will", "shall",
-        // Question words (EN)
         "what", "where", "when", "how", "who", "why", "which",
-        // Articles / pronouns / prepositions (ES)
         "el", "la", "los", "las", "un", "una", "unos", "unas",
         "de", "del", "al", "a", "en", "con", "por", "para",
         "sin", "sobre", "y", "o", "u", "e", "ni", "pero", "yo",
         "tu", "el", "ella", "nosotros", "vosotros", "ellos", "ellas",
         "es", "esta", "estan", "ser", "estar", "esto", "eso", "aquello",
         "ese", "esa", "este", "esa", "aquel",
-        // Question words (ES)
         "donde", "que", "quien", "cuando", "como", "porque", "cual",
         "cuanto", "cuantos", "cuanta", "cuantas",
-        // Common auxiliary verbs with no info
         "hay", "tiene", "tengo", "tienes", "puedo", "puede", "puedes",
         "sabes", "quiero", "quieres", "necesito", "ayuda",
-        // Generic action verbs that carry no topic info (EN). Note: deliberately
-        // NOT including registry alias words like "config", "capture", "update".
+        // Keep topic-bearing registry aliases out of this generic list.
         "configure", "change", "set", "enable", "disable", "open", "find",
         "use", "want", "need", "show", "make", "give", "tell",
-        // Generic action verbs (ES)
         "configurar", "cambiar", "poner", "activar", "desactivar", "abrir",
         "encontrar", "usar", "mostrar", "dame", "dime", "hacer",
-        // Filler EN
         "please", "me", "my", "your", "any", "stuff", "things", "thing",
-        // Filler ES
         "porfavor", "por favor", "mi", "tu", "su", "alguno", "algun",
         "cosas", "cosa",
     };
     return kStopwords;
 }
 
-// Common synonyms / aliases
+// Canonical synonym map.
 
 std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() {
     static const std::unordered_map<std::string, std::string> kSyn = {
-        // EN abbreviations
         {"pic",     "picture"},
         {"pfp",     "profile"},
         {"avatar",  "profile"},
@@ -58,7 +48,6 @@ std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() 
         {"qh",      "quickhub"},
         {"thumb",   "thumbnail"},
         {"thumbs",  "thumbnail"},
-        // EN variants
         {"song",       "music"},
         {"songs",      "music"},
         {"musics",     "music"},
@@ -77,11 +66,10 @@ std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() 
         {"pointer",    "cursor"},
         {"mascot",     "pet"},
         {"companion",  "pet"},
-        // ES abbreviations and variants
         {"perfilar",   "perfil"},
         {"perfiles",   "perfil"},
         {"fondos",     "fondo"},
-        {"fondo",      "background"}, // collapse to the EN canonical to unify cross-lingual matching
+        {"fondo",      "background"}, // unify cross-lingual matching
         {"musica",     "music"},
         {"musicas",    "music"},
         {"cancion",    "music"},
@@ -94,7 +82,7 @@ std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() 
         {"imagenes",   "picture"},
         {"raton",      "cursor"},
         {"puntero",    "cursor"},
-        {"ayuda",      "help"},   // also a stopword, so this won't be hit (see isStopword)
+        {"ayuda",      "help"},   // stopword, kept for completeness
         {"mascota",    "pet"},
         {"foro",       "forum"},
         {"comunidad",  "forum"},
@@ -110,14 +98,13 @@ std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() 
         {"capturar",   "capture"},
         {"captura",    "capture"},
         {"vinilo",     "menumusic"},
-        {"papel",      "background"},  // "papel tapiz" / "papel de pantalla"
+        {"papel",      "background"},
         {"tapiz",      "background"},
         {"companero",  "pet"},
         {"rueda",      "quickhub"},
         {"radial",     "quickhub"},
         {"playlists",  "playlist"},
         {"barra",      "progressbar"},
-        // Domain / problem language (EN)
         {"blur",       "background"},
         {"blurry",     "background"},
         {"lag",        "smooth"},
@@ -132,7 +119,6 @@ std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() 
         {"screenshot", "capture"},
         {"snap",       "capture"},
         {"previews",   "thumbnail"},
-        // Editor / collab
         {"collab",     "collab"},
         {"collaboration", "collab"},
         {"multiplayer","collab"},
@@ -167,7 +153,6 @@ std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() 
         {"canvas",     "paidraw"},
         {"drawing",    "paidraw"},
         {"draw",       "paidraw"},
-        // Domain / problem language (ES)
         {"borroso",    "background"},
         {"borrosa",    "background"},
         {"desenfoque", "background"},
@@ -211,6 +196,56 @@ std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() 
         {"dibujar",    "paidraw"},
         {"dibujo",     "paidraw"},
         {"lienzo",     "paidraw"},
+        {"iconmaker",  "iconmaker"},
+        {"creador",    "iconmaker"},
+        {"creator",    "iconmaker"},
+        {"galeria",    "gallery"},
+        {"galery",     "gallery"},
+        {"store",      "gallery"},
+        {"tienda",     "gallery"},
+        {"shop",       "gallery"},
+        {"gradient",   "gradients"},
+        {"gradients",  "gradients"},
+        {"degradado",  "gradients"},
+        {"degradados", "gradients"},
+        {"dual",       "separatedual"},
+        {"p2",         "separatedual"},
+        {"separado",   "separatedual"},
+        {"separate",   "separatedual"},
+        {"gold",       "golden"},
+        {"golden",     "golden"},
+        {"record",     "golden"},
+        {"dorado",     "golden"},
+        {"death",      "deatheffects"},
+        {"deaths",     "deatheffects"},
+        {"explosion",  "deatheffects"},
+        {"explode",    "deatheffects"},
+        {"muerte",     "deatheffects"},
+        {"morir",      "deatheffects"},
+        {"performance","performance"},
+        {"optimize",   "performance"},
+        {"optimizar",  "performance"},
+        {"rendimiento","performance"},
+        {"copy",       "iconcopy"},
+        {"copiar",     "iconcopy"},
+        {"sets",       "iconsets"},
+        {"estilos",    "iconsets"},
+        {"request",    "requests"},
+        {"requests",   "requests"},
+        {"queue",      "requests"},
+        {"cola",       "requests"},
+        {"pedidos",    "requests"},
+        {"twitch",     "requests"},
+        {"stream",     "requests"},
+        {"loudness",   "dynamicvolume"},
+        {"loud",       "dynamicvolume"},
+        {"sonoridad",  "dynamicvolume"},
+        {"loop",       "menuloop"},
+        {"nowplaying", "menuloop"},
+        {"stats",      "infosuite"},
+        {"statistics", "infosuite"},
+        {"statistic",  "infosuite"},
+        {"heatmap",    "infosuite"},
     };
     return kSyn;
 }
@@ -219,8 +254,7 @@ bool LightLemmatizer::isStopword(std::string const& tokenLower) {
     return stopwords().contains(tokenLower);
 }
 
-// Light stemming: trims one common EN/ES suffix (first rule that matches) to avoid over-stemming.
-// Covers ~80% of the variants users type in short queries; not a full Porter stemmer.
+// Trim one common EN/ES suffix; this is intentionally lighter than a full stemmer.
 std::string LightLemmatizer::stem(std::string const& t) {
     if (t.size() < 4) return t;
 
@@ -257,7 +291,6 @@ std::vector<std::string> LightLemmatizer::expand(std::string const& token) {
     add(token);
     add(stem(token));
 
-    // synonym (if any)
     auto const& syn = synonyms();
     auto it = syn.find(token);
     if (it != syn.end()) {
@@ -265,7 +298,7 @@ std::vector<std::string> LightLemmatizer::expand(std::string const& token) {
         add(stem(it->second));
     }
 
-    // Also try the stem as a synonym key (e.g. "musicas" -> "musica" -> "music").
+    // Also resolve the stem as a synonym key.
     auto stemmed = stem(token);
     if (stemmed != token) {
         auto it2 = syn.find(stemmed);
@@ -308,4 +341,4 @@ std::vector<std::string> LightLemmatizer::tokenizeNoStopwords(
     return tokens;
 }
 
-} // namespace paimon::guide
+}

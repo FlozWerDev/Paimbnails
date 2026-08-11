@@ -1,23 +1,8 @@
 #pragma once
 
-// ButtonCarousel.hpp — Button carousel with navigation arrows.
-//
-// When a menu accumulates many buttons in one row/column (GD's plus those added
-// by mods), this shows only N at a time inside a clipped window with prev/next
-// arrows. Each click scrolls exactly one button with an ease in-out animation.
-//
-// Usage:
-//   auto carousel = paimon::ui::ButtonCarousel::wrapMenu(
-//       leftMenu, Orientation::Vertical, /*visible*/ 3,
-//       /*itemSize*/ 30.f, /*crossSize*/ 30.f);
-//   parent->addChild(carousel);
-//
-// Compatibility notes:
-//  - CCMenuItems must stay children of a CCMenu to receive clicks; the carousel
-//    reparents them to its own inner CCMenu.
-//  - Clipping uses ScissorClipNode (GL scissor) to avoid breaking batching.
-//  - Buttons outside the visible window are disabled and hidden so they don't
-//    steal clicks (scissor only clips render).
+// Clips a CCMenu to N visible items and moves one item per arrow click.
+// Items remain in a CCMenu for input; scissor clipping handles rendering, while
+// hidden/disabled off-screen items cannot steal clicks.
 
 #include <Geode/Geode.hpp>
 #include <vector>
@@ -28,7 +13,6 @@ class ButtonCarousel : public cocos2d::CCNode {
 public:
     enum class Orientation { Horizontal, Vertical };
 
-    // arrowThreshold: minimum buttons before arrows appear (default 4; below that, all show without arrows).
     static ButtonCarousel* create(
         Orientation orientation,
         int visibleCount,
@@ -39,22 +23,20 @@ public:
         int arrowThreshold = 4
     );
 
-    // Add a button (must be a CCMenuItem to receive clicks). Call rebuild() after adding all.
+    // Add CCMenuItems, then call rebuild().
     void addButton(cocos2d::CCMenuItem* item);
     void addButtons(std::vector<cocos2d::CCMenuItem*> const& items);
 
-    // Move all CCMenuItem children of `source` into this carousel, preserving order.
+    // Move source items into this carousel, preserving order.
     void absorbMenuItems(cocos2d::CCMenu* source);
 
-    // Recompute positions, clip window, and arrow state.
     void rebuild();
 
     int buttonCount() const { return static_cast<int>(m_items.size()); }
     int maxOffset() const;
     void scrollToIndex(int offset, bool animated = true);
 
-    // Convenience: create a carousel pre-populated with `source`'s items.
-    // Caller must add the carousel where the menu was.
+    // Create a carousel pre-populated from source.
     static ButtonCarousel* wrapMenu(
         cocos2d::CCMenu* source,
         Orientation orientation,
@@ -78,14 +60,14 @@ protected:
     void animateTo(int newOffset);
     void updateArrowState();
     void updateButtonVisibility(int offset, int margin);
-    void relayout();          // recompute window/arrows from button count
-    int  effectiveSlots() const;  // effective visible buttons (all if below threshold)
-    bool needsArrows() const;     // true if there are >= threshold buttons
+    void relayout();
+    int  effectiveSlots() const;
+    bool needsArrows() const;
 
     float strideLen() const { return m_itemSize + m_gap; }
-    float windowMain() const;                       // window length along the axis
+    float windowMain() const;
     cocos2d::CCPoint innerPosForOffset(int offset) const;
-    cocos2d::CCPoint itemLocalPos(int index) const; // center pos of item i
+    cocos2d::CCPoint itemLocalPos(int index) const;
 
     static void scaleToFit(cocos2d::CCNode* node, float target);
 
@@ -100,12 +82,12 @@ protected:
     int   m_offset    = 0;
     bool  m_animating = false;
 
-    cocos2d::CCClippingNode*   m_clip      = nullptr; // ScissorClipNode
-    cocos2d::CCMenu*           m_innerMenu = nullptr; // holds the buttons
-    cocos2d::CCMenu*           m_arrowMenu = nullptr; // holds the arrows
-    CCMenuItemSpriteExtra*     m_prevArrow = nullptr; // global namespace (binding GD)
+    cocos2d::CCClippingNode*   m_clip      = nullptr;
+    cocos2d::CCMenu*           m_innerMenu = nullptr;
+    cocos2d::CCMenu*           m_arrowMenu = nullptr;
+    CCMenuItemSpriteExtra*     m_prevArrow = nullptr;
     CCMenuItemSpriteExtra*     m_nextArrow = nullptr;
     std::vector<cocos2d::CCMenuItem*> m_items;
 };
 
-} // namespace paimon::ui
+}

@@ -78,7 +78,6 @@ protected:
     void onImgFlipY(cocos2d::CCObject* sender);
     void onResetAdjust(cocos2d::CCObject* sender);
 
-    // Shape tab
     cocos2d::CCNode* createShapeTab();
     void onScaleXChanged(cocos2d::CCObject* sender);
     void onScaleYChanged(cocos2d::CCObject* sender);
@@ -87,7 +86,6 @@ protected:
     void onStencilSelect(cocos2d::CCObject* sender);
     void onResetShape(cocos2d::CCObject* sender);
 
-    // Border tab
     cocos2d::CCNode* createBorderTab();
     void onFrameToggle(cocos2d::CCObject* sender);
     void onThicknessChanged(cocos2d::CCObject* sender);
@@ -95,7 +93,6 @@ protected:
     void onBorderColorSelect(cocos2d::CCObject* sender);
     void onPickCustomBorderColor(cocos2d::CCObject* sender);
 
-    // Deco tab
     cocos2d::CCNode* createDecoTab();
     void onCategorySelect(cocos2d::CCObject* sender);
     void onAddDeco(cocos2d::CCObject* sender);
@@ -115,13 +112,11 @@ protected:
     void onDecoPickColor(cocos2d::CCObject* sender);
     void onClearAllDecos(cocos2d::CCObject* sender);
 
-    // Icon tab
     cocos2d::CCNode* createIconTab();
     void onOnlyIconToggle(cocos2d::CCObject* sender);
     void onGameIconSelect(cocos2d::CCObject* sender);
     void onOpenIconsDetail(cocos2d::CCObject* sender);
 
-    // Style tab
     cocos2d::CCNode* createStyleTab();
     void onFontSelect(cocos2d::CCObject* sender);
     void onPreset(cocos2d::CCObject* sender);

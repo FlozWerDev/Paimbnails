@@ -2,36 +2,24 @@
 
 namespace paimon::ui::constants {
 
+// PaiConfigLayer (editor de fondos). Todo se mide desde los bordes de la
+// pantalla para que aguante 16:9 y 4:3 sin tocar nada mas.
 namespace config {
-    constexpr float CONTENT_TOP_OFFSET  = 64.f;
-    constexpr float CONTENT_BOT         = 42.f;
+    constexpr float HEADER_Y       = 17.f;  // desde arriba: titulo / back / info
+    constexpr float TAB_Y          = 47.f;  // desde arriba: barra de pestanas
+    constexpr float TAB_WIDTH      = 118.f;
 
-    constexpr float TAB_Y_OFFSET        = 46.f;
-    constexpr float TAB_SEP_BELOW       = 14.f;
-    constexpr float TAB_WIDTH           = 120.f;
-    constexpr float APPLY_BTN_Y         = 20.f;
+    constexpr float CONTENT_TOP    = 67.f;  // desde arriba: inicio del contenido
+    constexpr float CONTENT_BOTTOM = 42.f;  // desde abajo: fin del contenido
+    constexpr float FOOTER_Y       = 20.f;  // botones de la barra inferior
 
-    constexpr float SIDEBAR_WIDTH       = 95.f;
-    constexpr float SIDEBAR_PAD         = 8.f;
-    constexpr float SIDEBAR_SEP_X       = 12.f;
+    constexpr float EDGE_PAD       = 6.f;   // margen lateral de las tarjetas
+    constexpr float GUTTER         = 6.f;   // separacion entre tarjetas
 
-    constexpr float CTRL_PANEL_H        = 80.f;
-    constexpr float CTRL_PANEL_TOP_PAD  = 2.f;
-    constexpr float CTRL_ROW_SPACING    = 22.f;
-    constexpr float CTRL_ROW3_OFFSET    = 18.f;
-    constexpr float PREVIEW_GAP         = 12.f;
+    constexpr float LIST_BOTTOM    = 12.f;  // desde abajo de la tarjeta: base de la lista
+    constexpr float LIST_HINT_Y    = 6.f;   // flecha de "hay mas abajo", bajo la lista
 
-    constexpr float INPUT_BG_WIDTH      = 65.f;
-    constexpr float INPUT_BG_HEIGHT     = 20.f;
-
-    constexpr float PROFILE_PANEL_W     = 420.f;
-    constexpr float PROFILE_PANEL_H     = 150.f;
-    constexpr float PROFILE_THUMB_SIZE  = 70.f;
-    constexpr float PROFILE_BTN_SPACING = 30.f;
-
-    constexpr float EXTRAS_PANEL_W      = 320.f;
-    constexpr float EXTRAS_PANEL_H      = 210.f;
-    constexpr float EXTRAS_BTN_GAP      = 40.f;
+    constexpr float PROFILE_THUMB_SIZE = 70.f;
 }
 
 namespace editor {

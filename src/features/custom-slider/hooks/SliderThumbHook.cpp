@@ -1,4 +1,5 @@
-#include <Geode/Geode.hpp>
+#include "SliderThumbHook.hpp"
+
 #include <Geode/modify/Slider.hpp>
 #include <Geode/modify/SliderTouchLogic.hpp>
 
@@ -19,13 +20,17 @@ public:
 };
 
 class $modify(PaimonSlider, Slider) {
+public:
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "Slider::init");
     }
 
     struct Fields {
         bool m_isAffected = false;
+        bool m_savedOriginalImages = false;
         float m_oldValue = 0.f;
+        Ref<CCNode> m_originalNormalNode = nullptr;
+        Ref<CCNode> m_originalSelectedNode = nullptr;
         Ref<CCNode> m_normalNode = nullptr;
         Ref<CCNode> m_selectedNode = nullptr;
     };
@@ -39,6 +44,7 @@ class $modify(PaimonSlider, Slider) {
 
         auto& mgr = CustomSliderManager::get();
         if (!mgr.config().enabled) return true;
+
 
         // Schedule for next frame so the slider is fully parented
         this->scheduleOnce(
@@ -55,25 +61,46 @@ class $modify(PaimonSlider, Slider) {
 
     void applyIconDeferred(float) {
         if (paimon::isRuntimeShuttingDown()) return;
+        refreshThumb();
+    }
+
+    void refreshThumb() {
+        auto* thumb = this->getThumb();
+        if (!thumb) return;
+
+        if (!m_fields->m_savedOriginalImages) {
+            m_fields->m_originalNormalNode = thumb->getNormalImage();
+            m_fields->m_originalSelectedNode = thumb->getSelectedImage();
+            m_fields->m_savedOriginalImages = true;
+        }
+
         auto& mgr = CustomSliderManager::get();
-        if (!mgr.config().enabled) return;
+        if (!mgr.config().enabled || !mgr.shouldAffectSlider(this)) {
+            restoreSlider(thumb);
+            return;
+        }
 
-        if (!mgr.shouldAffectSlider(this)) return;
-
-        auto* thumbNode = this->getThumb();
-        if (!thumbNode) return;
-
+        thumb->setUserObject(PAIMON_SLIDER_KEY, new PaimonSliderRef(this));
+        upgradeSlider(thumb);
         m_fields->m_isAffected = true;
+    }
 
-        thumbNode->setUserObject(PAIMON_SLIDER_KEY, new PaimonSliderRef(this));
+    void restoreSlider(SliderThumb* thumb) {
+        if (!m_fields->m_isAffected) return;
 
-        upgradeSlider(thumbNode);
+        thumb->setNormalImage(m_fields->m_originalNormalNode.data());
+        thumb->setSelectedImage(m_fields->m_originalSelectedNode.data());
+        m_fields->m_normalNode = nullptr;
+        m_fields->m_selectedNode = nullptr;
+        m_fields->m_isAffected = false;
     }
 
     void upgradeSlider(SliderThumb* thumb) {
         auto& mgr = CustomSliderManager::get();
-        auto& cfg = mgr.config();
         auto thumbSize = thumb->getContentSize();
+
+        if (m_fields->m_normalNode) m_fields->m_normalNode->stopAllActions();
+        if (m_fields->m_selectedNode) m_fields->m_selectedNode->stopAllActions();
 
         auto* normalBase = CCSprite::create();
         normalBase->setContentSize(thumbSize);
@@ -101,11 +128,6 @@ class $modify(PaimonSlider, Slider) {
         m_fields->m_selectedNode = selectedNode;
     }
 
-    $override
-    void setValue(float value) {
-        Slider::setValue(value);
-    }
-
     void onDragBegin() {
         auto& cfg = CustomSliderManager::get().config();
         if (!cfg.animateOnDrag) return;
@@ -113,8 +135,9 @@ class $modify(PaimonSlider, Slider) {
         auto* node = m_fields->m_selectedNode.data();
         if (!node) return;
 
+        node->stopAllActions();
+
         if (cfg.animType == SliderAnimType::Bounce || cfg.animType == SliderAnimType::BounceRotate) {
-            node->stopAllActions();
             float targetScale = 0.9f * cfg.animBounceScale;
             node->runAction(CCEaseBackOut::create(
                 CCScaleTo::create(cfg.animDuration * 0.5f, targetScale)));
@@ -139,17 +162,7 @@ class $modify(PaimonSlider, Slider) {
             int sign = speed >= 0 ? 1 : -1;
             float maxAngle = cfg.animRotateDeg;
             float angle = sign * maxAngle * std::min(1.f, std::abs(speed) * 50.f);
-
-            float dur = cfg.animDuration * 0.3f;
-            node->runAction(CCSequence::create(
-                CCRotateTo::create(dur, angle), nullptr));
-
-            node->stopActionByTag(42);
-            auto* resetAction = CCSequence::create(
-                CCDelayTime::create(dur),
-                CCRotateTo::create(dur * 2.f, 0.f), nullptr);
-            resetAction->setTag(42);
-            node->runAction(resetAction);
+            node->setRotation(angle);
         }
 
         m_fields->m_oldValue = this->getValue();
@@ -162,14 +175,14 @@ class $modify(PaimonSlider, Slider) {
         auto* node = m_fields->m_selectedNode.data();
         if (!node) return;
 
+        node->stopAllActions();
+
         if (cfg.animType == SliderAnimType::Bounce || cfg.animType == SliderAnimType::BounceRotate) {
-            node->stopAllActions();
             node->runAction(CCEaseBackOut::create(
                 CCScaleTo::create(cfg.animDuration, 0.9f)));
         }
 
         if (cfg.animType == SliderAnimType::Rotate || cfg.animType == SliderAnimType::BounceRotate) {
-            node->stopActionByTag(42);
             node->runAction(CCEaseBackOut::create(
                 CCRotateTo::create(cfg.animDuration, 0.f)));
         }
@@ -187,12 +200,37 @@ class $modify(PaimonSlider, Slider) {
     }
 };
 
+void paimon::slider::refreshCustomSliders(CCNode* root) {
+    if (!root || paimon::isRuntimeShuttingDown()) return;
+
+    std::vector<CCNode*> pending = {root};
+    while (!pending.empty()) {
+        auto* node = pending.back();
+        pending.pop_back();
+
+        if (auto* slider = typeinfo_cast<Slider*>(node)) {
+            static_cast<PaimonSlider*>(slider)->refreshThumb();
+            continue;
+        }
+
+        if (auto* children = node->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                if (child) pending.push_back(child);
+            }
+        }
+    }
+}
+
 class $modify(PaimonSliderTouch, SliderTouchLogic) {
     PaimonSlider* getMySlider() {
         if (!m_thumb) return nullptr;
         auto* ref = static_cast<PaimonSliderRef*>(m_thumb->getUserObject(PAIMON_SLIDER_KEY));
         if (!ref || !ref->m_slider) return nullptr;
         return static_cast<PaimonSlider*>(ref->m_slider);
+    }
+
+    void registerWithTouchDispatcher() {
+        SliderTouchLogic::registerWithTouchDispatcher();
     }
 
     $override

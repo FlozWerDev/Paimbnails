@@ -12,7 +12,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Local helpers
 
 namespace {
 
@@ -22,7 +21,7 @@ CCNode* findChildByIDDeep(CCNode* root, char const* id) {
     return nullptr;
 }
 
-// Fallback: finds bar by ID substring (used when geode.node-ids isn't loaded).
+// Fallback when geode.node-ids is unavailable.
 CCNode* findProgressBarFallback(CCNode* root) {
     if (!root) return nullptr;
     auto* children = root->getChildren();
@@ -38,7 +37,6 @@ CCNode* findProgressBarFallback(CCNode* root) {
 
 int clampColor(int c) { return std::clamp(c, 0, 255); }
 
-// Linear interpolation between two RGB colors.
 ccColor3B lerpColor(ccColor3B const& a, ccColor3B const& b, float t) {
     t = std::clamp(t, 0.f, 1.f);
     auto mix = [&](GLubyte x, GLubyte y) {
@@ -47,9 +45,8 @@ ccColor3B lerpColor(ccColor3B const& a, ccColor3B const& b, float t) {
     return { mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b) };
 }
 
-// HSV → RGB. h in [0,1), s,v in [0,1].
 ccColor3B hsvToRgb(float h, float s, float v) {
-    h = h - std::floor(h); // wrap to 0..1
+    h = h - std::floor(h);
     float i = std::floor(h * 6.f);
     float f = h * 6.f - i;
     float p = v * (1.f - s);
@@ -71,7 +68,7 @@ ccColor3B hsvToRgb(float h, float s, float v) {
     };
 }
 
-// Compute animated color: Solid→c1, Pulse→sine-blend c1↔c2, Rainbow→HSV cycle.
+// Resolve Solid, Pulse, and Rainbow animation colors.
 ccColor3B resolveAnimatedColor(BarColorMode mode, ccColor3B const& c1,
                                 ccColor3B const& c2, float animTime, float speed) {
     switch (mode) {
@@ -80,7 +77,7 @@ ccColor3B resolveAnimatedColor(BarColorMode mode, ccColor3B const& c1,
             return lerpColor(c1, c2, t);
         }
         case BarColorMode::Rainbow: {
-            float hue = animTime * speed * 0.25f; // 0.25 → 1 rotation per 4s at speed=1
+    float hue = animTime * speed * 0.25f;
             return hsvToRgb(hue, 1.f, 1.f);
         }
         case BarColorMode::Solid:
@@ -114,10 +111,9 @@ SpriteSlots collectBarSprites(CCNode* bar) {
     return out;
 }
 
-// Spawns a sprite or AnimatedGIFSprite for a decoration path.
 CCNode* createDecorationSprite(std::string const& path) {
     if (path.empty()) return nullptr;
-    std::filesystem::path fsPath(path);
+    std::filesystem::path fsPath = paimon::assets::pathFromUtf8(path);
     std::error_code ec;
     if (!std::filesystem::exists(fsPath, ec)) return nullptr;
     if (ImageLoadHelper::isAnimatedImage(fsPath)) {
@@ -130,9 +126,8 @@ CCNode* createDecorationSprite(std::string const& path) {
     return spr;
 }
 
-} // namespace
+}
 
-// Singleton + persistence
 
 ProgressBarManager& ProgressBarManager::get() {
     static ProgressBarManager inst;
@@ -235,7 +230,7 @@ void ProgressBarManager::loadConfig() {
         }
     }
 
-    // Re-import any stored asset paths that point to legacy locations.
+// Migrate stored asset paths from legacy locations.
     bool migrated = false;
     auto migratePath = [&](std::string& path, std::string const& bucket) {
         if (path.empty()) return;
@@ -358,7 +353,6 @@ void ProgressBarManager::sanitizeConfig() {
     c.bgColorMode   = modeClamp(c.bgColorMode);
     c.pctColorMode  = modeClamp(c.pctColorMode);
 
-    // Drop empty-path decorations.
     c.decorations.erase(
         std::remove_if(c.decorations.begin(), c.decorations.end(),
             [](BarDecoration const& d) { return d.path.empty(); }),
@@ -368,7 +362,6 @@ void ProgressBarManager::sanitizeConfig() {
     }
 }
 
-// Free-drag helpers
 
 bool ProgressBarManager::isFreeDragActive() const {
     return m_config.enabled && m_config.freeDragMode;
@@ -393,7 +386,6 @@ void ProgressBarManager::endDrag() {
     saveConfig();
 }
 
-// Custom textures (static + GIF)
 
 void ProgressBarManager::captureSpriteBaseline(CCSprite* spr, TextureBaseline& tb) {
     if (!spr || tb.captured) return;
@@ -421,11 +413,9 @@ CCTexture2D* ProgressBarManager::resolveCustomTexture(
         slot = {};
         return nullptr;
     }
-    // Already loaded for this path? Use cache.
     if (slot.path == path) {
         slot.justChanged = false;
         if (slot.animHost) {
-            // GIF: return current frame.
             if (auto* gif = typeinfo_cast<AnimatedGIFSprite*>(slot.animHost))
                 return gif->getTexture();
             return nullptr;
@@ -433,7 +423,6 @@ CCTexture2D* ProgressBarManager::resolveCustomTexture(
         return slot.staticTex.data();
     }
 
-    // Different path → drop old host.
     if (slot.animHost && slot.animHost->getParent())
         slot.animHost->removeFromParent();
     slot.animHost = nullptr;
@@ -441,14 +430,14 @@ CCTexture2D* ProgressBarManager::resolveCustomTexture(
     slot.path = path;
     slot.justChanged = true;
 
-    std::filesystem::path fsPath(path);
+    std::filesystem::path fsPath = paimon::assets::pathFromUtf8(path);
     std::error_code ec;
     if (!std::filesystem::exists(fsPath, ec)) {
         log::warn("[ProgressBar] Custom texture not found: {}", path);
         return nullptr;
     }
 
-    // GIF/APNG → AnimatedGIFSprite as invisible child of PlayLayer root so its update keeps ticking.
+// Keep GIF/APNG animation ticking as an invisible PlayLayer child.
     if (ImageLoadHelper::isAnimatedImage(fsPath)) {
         auto* anim = AnimatedGIFSprite::create(path);
         if (!anim) {
@@ -456,20 +445,19 @@ CCTexture2D* ProgressBarManager::resolveCustomTexture(
             return nullptr;
         }
         anim->setVisible(false);
-        anim->setPosition({-9999.f, -9999.f}); // off-screen
+    anim->setPosition({-9999.f, -9999.f});
         if (host) host->addChild(anim, -1);
-        slot.animHost = anim;  // PlayLayer owns it
+    slot.animHost = anim;
         return anim->getTexture();
     }
 
-    // Static image.
     auto img = ImageLoadHelper::loadStaticImage(fsPath, /*maxSizeMB*/ 16);
     if (!img.success || !img.texture) {
         log::warn("[ProgressBar] Failed to load image: {}", path);
         return nullptr;
     }
     slot.staticTex = img.texture;
-    img.texture->release(); // Ref<> retained above
+    img.texture->release();
     return slot.staticTex.data();
 }
 
@@ -483,7 +471,6 @@ void ProgressBarManager::releaseCustomTextures() {
     m_fillBaselineTex = {};
     m_bgBaselineTex = {};
 
-    // Also drop live decoration nodes; they'll respawn next tick.
     for (auto* d : m_liveDecorations) {
         if (d && d->getParent()) d->removeFromParent();
     }
@@ -491,7 +478,6 @@ void ProgressBarManager::releaseCustomTextures() {
     m_liveDecorationPaths.clear();
 }
 
-// Decoration management
 
 int ProgressBarManager::addDecoration(BarDecoration const& d) {
     if (d.path.empty()) return -1;
@@ -521,7 +507,6 @@ CCNode* ProgressBarManager::getDecorationNode(int index) {
     return m_liveDecorations[index];
 }
 
-// Apply helpers
 
 CCNode* ProgressBarManager::findBarNode(CCNode* root) {
     if (!root) return nullptr;
@@ -583,7 +568,7 @@ void ProgressBarManager::restoreVanillaState(CCNode* bar, CCNode* label) {
         }
     }
     m_wasActive = false;
-    // Force baseline re-sample on next enable in case GD shifted it.
+// Re-sample the baseline after GD shifts the bar.
     m_baselineCaptured = false;
     m_labelBaselineCaptured = false;
 }
@@ -598,13 +583,12 @@ void ProgressBarManager::tickAnimClock() {
     }
     float dt = static_cast<float>(now_ns - m_lastTickNs) / 1e9f;
     m_lastTickNs = now_ns;
-    dt = std::clamp(dt, 0.f, 0.1f); // cap to avoid huge jumps
+    dt = std::clamp(dt, 0.f, 0.1f);
     m_animTime += dt;
 }
 
 void ProgressBarManager::applyTransform(CCNode* bar) {
-    // Position. posX/posY are stored in world-space pixels so sliders and
-    // the free-edit drag use the same frame of reference.
+// Positions are stored in world-space pixels for sliders and free dragging.
     if (m_config.useCustomPosition) {
         CCPoint world = ccp(m_config.posX, m_config.posY);
         auto* parent = bar->getParent();
@@ -612,11 +596,10 @@ void ProgressBarManager::applyTransform(CCNode* bar) {
     } else {
         bar->setPosition(m_baselinePos);
     }
-    // Scale: scaleLength acts along the bar axis; scaleThickness is perpendicular.
+// scaleLength follows the bar axis; scaleThickness is perpendicular.
     bar->setScaleX(m_baselineScaleX * m_config.scaleLength);
     bar->setScaleY(m_baselineScaleY * m_config.scaleThickness);
 
-    // Orientation + user rotation (vertical replaces baseline rotation).
     float rot = (m_config.vertical ? -90.f : m_baselineRotation) + m_config.userRotation;
     bar->setRotation(rot);
 }
@@ -635,7 +618,6 @@ void ProgressBarManager::applySprites(CCNode* bar, CCNode* playLayerRoot) {
 
     int op = std::clamp(m_config.opacity, 0, 255);
 
-    // Resolve animated colors once per frame.
     ccColor3B fillCol = m_config.useCustomFillColor
         ? resolveAnimatedColor(m_config.fillColorMode,
                                m_config.fillColor, m_config.fillColor2,
@@ -647,7 +629,6 @@ void ProgressBarManager::applySprites(CCNode* bar, CCNode* playLayerRoot) {
                                m_animTime, m_config.colorAnimSpeed)
         : ccc3(255, 255, 255);
 
-    // Resolve textures only if requested. justChanged flag prevents re-setting the rect every frame.
     CCTexture2D* fillTex = nullptr;
     CCTexture2D* bgTex   = nullptr;
     if (m_config.useFillTexture)
@@ -655,7 +636,7 @@ void ProgressBarManager::applySprites(CCNode* bar, CCNode* playLayerRoot) {
     if (m_config.useBgTexture)
         bgTex = resolveCustomTexture(playLayerRoot, m_bgCustom, m_config.bgTexturePath);
 
-    // Restore vanilla textures when the user turns off the toggle.
+// Restore vanilla textures when disabled.
     if (!m_config.useFillTexture && m_fillBaselineTex.captured) {
         for (auto* s : slots.all) {
             if (s != slots.bg) { restoreSpriteBaseline(s, m_fillBaselineTex); break; }
@@ -681,15 +662,13 @@ void ProgressBarManager::applySprites(CCNode* bar, CCNode* playLayerRoot) {
                 bool firstApply = !m_bgBaselineTex.captured;
                 if (firstApply) captureSpriteBaseline(spr, m_bgBaselineTex);
                 spr->setTexture(bgTex);
-                // Bg sprite isn't animated by GD, so it's fine to set
-                // the rect to the full texture every frame (cheap).
+// GD does not animate the background, so use its full texture rect.
                 spr->setTextureRect({0, 0,
                     bgTex->getContentSize().width,
                     bgTex->getContentSize().height});
             }
         } else {
-            // Fill sprite: GD updates its texture rect every frame to animate the %.
-            // Only set the rect when we just swapped textures; after that GD owns it.
+// GD owns the fill rect after the first texture swap.
             spr->setColor(fillCol);
             if (m_config.useFillTexture && fillTex) {
                 bool firstApply = !m_fillBaselineTex.captured;
@@ -701,7 +680,6 @@ void ProgressBarManager::applySprites(CCNode* bar, CCNode* playLayerRoot) {
                         fillTex->getContentSize().height});
                     m_fillCustom.justChanged = false;
                 } else if (spr->getTexture() != fillTex) {
-                    // GIF advanced to new frame: swap texture pointer, keep GD's animated rect.
                     auto curRect = spr->getTextureRect();
                     spr->setTexture(fillTex);
                     spr->setTextureRect(curRect);
@@ -728,7 +706,6 @@ void ProgressBarManager::applyLabel(CCNode* label, CCNode* bar) {
             ? labelParent->convertToNodeSpace(world)
             : world);
     } else if (m_config.useCustomPosition && bar && bar->getParent()) {
-        // Bar moved but label not: keep label at vanilla offset relative to bar.
         CCPoint barWorld = bar->getParent()->convertToWorldSpace(bar->getPosition());
         CCPoint baselineBarWorld = bar->getParent()->convertToWorldSpace(m_baselinePos);
         CCPoint baselineLabelWorld = (labelParent && m_labelBaselineCaptured)
@@ -757,7 +734,7 @@ void ProgressBarManager::applyLabel(CCNode* label, CCNode* bar) {
             : ccc3(255, 255, 255);
         lb->setColor(pctCol);
         if (!m_config.percentageFont.empty()) {
-            // Validate font exists; Cocos2d crashes on a missing .fnt.
+// Validate the font; Cocos2d crashes on a missing .fnt.
             auto resolved = CCFileUtils::sharedFileUtils()
                 ->fullPathForFilename(m_config.percentageFont.c_str(), false);
             if (!resolved.empty() && resolved != m_config.percentageFont) {
@@ -771,7 +748,6 @@ void ProgressBarManager::applyDecorations(CCNode* playLayerRoot) {
     if (!playLayerRoot) return;
     size_t N = m_config.decorations.size();
 
-    // Trim live vector to match config.
     while (m_liveDecorations.size() > N) {
         auto* back = m_liveDecorations.back();
         if (back && back->getParent()) back->removeFromParent();
@@ -796,7 +772,6 @@ void ProgressBarManager::applyDecorations(CCNode* playLayerRoot) {
         }
         if (!live) continue;
 
-        // Convert stored world-space pos to PlayLayer's local space.
         CCPoint world = ccp(cfg.posX, cfg.posY);        live->setPosition(playLayerRoot->convertToNodeSpace(world));
         live->setScale(std::max(0.05f, cfg.scale));
         live->setRotation(cfg.rotation);
@@ -806,16 +781,23 @@ void ProgressBarManager::applyDecorations(CCNode* playLayerRoot) {
 void ProgressBarManager::applyToPlayLayer(CCNode* playLayerRoot) {
     if (!playLayerRoot) return;
 
-    // Cache bar/label nodes to avoid getChildByIDRecursive every frame.
+// Skip node lookup while disabled; it is the expensive part of the update.
+    if (!m_config.enabled && !m_wasActive) return;
+
+// Cache bar/label nodes instead of searching every frame.
     if (m_cachedPlayLayer != playLayerRoot) {
         m_cachedPlayLayer = playLayerRoot;
         m_cachedBar = findBarNode(playLayerRoot);
         m_cachedLabel = findLabelNode(playLayerRoot);
+        m_barSearchCooldown = 0;
     }
     auto* bar   = m_cachedBar;
     auto* label = m_cachedLabel;
     if (!bar || !bar->getParent()) {
-        // Re-search if bar was removed.
+// Throttle retries because findBarNode walks the whole PlayLayer tree; some
+// levels never contain a progress bar.
+        if (--m_barSearchCooldown > 0) return;
+        m_barSearchCooldown = kBarSearchInterval;
         m_cachedBar = findBarNode(playLayerRoot);
         m_cachedLabel = findLabelNode(playLayerRoot);
         bar = m_cachedBar;
@@ -824,12 +806,11 @@ void ProgressBarManager::applyToPlayLayer(CCNode* playLayerRoot) {
     if (!bar) return;
 
     if (!m_config.enabled) {
-        // Restore vanilla once, then leave the bar alone.
+// Restore vanilla once, then stop touching the bar.
         if (m_wasActive) restoreVanillaState(bar, label);
         return;
     }
 
-    // Capture vanilla state on the first active frame.
     captureBaselineIfNeeded(bar, label);
     m_wasActive = true;
 

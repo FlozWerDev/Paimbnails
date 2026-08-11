@@ -4,7 +4,6 @@
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <memory>
 #include <unordered_set>
-#include "../../../utils/PlayerToggleHelper.hpp"
 
 class PauseLayer;
 
@@ -66,9 +65,6 @@ private:
     bool m_touchDelegateRegistered = false;
     bool m_pausedMusic = false;
 
-    PlayerVisState m_p1SavedState;
-    PlayerVisState m_p2SavedState;
-    
     cocos2d::CCSprite* m_previewSprite = nullptr;
     cocos2d::CCClippingNode* m_clippingNode = nullptr;
 
@@ -111,13 +107,13 @@ private:
 
     void onAcceptBtn(cocos2d::CCObject*);
     void onCancelBtn(cocos2d::CCObject*);
+    void onOpenDownloadsFolder(cocos2d::CCObject*);
     void onLayerEditorBtn(cocos2d::CCObject*);
     void onAssetBrowserBtn(cocos2d::CCObject*);
     void onRecenterBtn(cocos2d::CCObject*);
     void onCycleResolution(cocos2d::CCObject*);
     void updateResBadge();
 
-    // Resolution badge
     cocos2d::CCLabelBMFont* m_resBadgeLabel = nullptr;
     cocos2d::CCNode* m_resBadge = nullptr;
 

@@ -1,6 +1,7 @@
 #include "NowPlayingCard.hpp"
 #include "../services/MenuLoopManager.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/utils/string.hpp>
@@ -44,7 +45,6 @@ bool NowPlayingCard::init(const std::string& text) {
         this->addChild(bg);
     }
 
-    // Text label
     auto label = CCLabelBMFont::create(text.c_str(), "chatFont.fnt");
     label->setScale(0.55f);
     label->setColor({255, 255, 255});
@@ -57,7 +57,6 @@ bool NowPlayingCard::init(const std::string& text) {
     this->setID("now-playing"_spr);
     this->setZOrder(200);
 
-    // Animate in and out
     auto posx = screenSize.width / 2.f;
     auto posy = screenSize.height;
 
@@ -111,12 +110,12 @@ static std::string buildDisplayName() {
 void NowPlayingCard::showForCurrentSong(cocos2d::CCNode* parent) {
     if (!parent) return;
 
-    // Remove old card
     if (auto old = parent->getChildByIDRecursive("now-playing"_spr)) {
         old->removeMeAndCleanup();
     }
 
     auto& sm = MenuLoopManager::get();
+    if (!paimon::modules::isEnabled("paimbnails.menuloop.menu")) return;
     if (!Mod::get()->getSettingValue<bool>("menuLoopEnableNotification")) return;
 
     std::string prefix;

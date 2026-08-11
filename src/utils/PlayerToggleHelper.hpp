@@ -61,7 +61,6 @@ inline void paimTogglePlayer(PlayerObject* p, PlayerVisState& state, bool hide) 
             visibleStateVar = streak->isVisible();
             drawStateVar = streak->m_drawStreak;
             streak->stopStroke();
-            streak->reset();
             streak->setVisible(false);
         } else {
             streak->setVisible(visibleStateVar);
@@ -85,7 +84,6 @@ inline void paimTogglePlayer(PlayerObject* p, PlayerVisState& state, bool hide) 
             visibleStateVar = streak->isVisible();
             drawStateVar = streak->m_bStroke;
             streak->stopStroke();
-            streak->reset();
             streak->setVisible(false);
         } else {
             streak->setVisible(visibleStateVar);

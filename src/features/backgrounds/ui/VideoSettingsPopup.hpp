@@ -3,24 +3,19 @@
 
 class VideoSettingsPopup : public geode::Popup {
 protected:
-    // Playback
     CCMenuItemToggler* m_audioToggle = nullptr;
     cocos2d::CCLabelBMFont* m_fpsLabel = nullptr;
     cocos2d::CCLabelBMFont* m_qualityLabel = nullptr;
 
-    // Filters
     cocos2d::CCLabelBMFont* m_blurTypeLabel = nullptr;
     cocos2d::CCLabelBMFont* m_blurIntensityLabel = nullptr;
     cocos2d::CCMenu*        m_blurIntensityMenu = nullptr;
     cocos2d::CCLabelBMFont* m_blurIntensityTitleLabel = nullptr;
 
-    // Rotation
     cocos2d::CCLabelBMFont* m_rotationLabel = nullptr;
 
-    // Cache
     cocos2d::CCLabelBMFont* m_ramLabel = nullptr;
 
-    // Indices
     int m_fpsIndex = 0;
     int m_qualityIndex = 0;
     int m_blurTypeIndex = 0;
@@ -29,28 +24,23 @@ protected:
 
     bool init() override;
 
-    // Playback handlers
     void onFpsPrev(cocos2d::CCObject*);
     void onFpsNext(cocos2d::CCObject*);
     void onQualityPrev(cocos2d::CCObject*);
     void onQualityNext(cocos2d::CCObject*);
     void onAudioToggle(cocos2d::CCObject*);
 
-    // Filter handlers
     void onBlurTypePrev(cocos2d::CCObject*);
     void onBlurTypeNext(cocos2d::CCObject*);
     void onBlurIntensityPrev(cocos2d::CCObject*);
     void onBlurIntensityNext(cocos2d::CCObject*);
 
-    // Rotation handlers
     void onRotationPrev(cocos2d::CCObject*);
     void onRotationNext(cocos2d::CCObject*);
 
-    // Cache handlers
     void onClearRAM(cocos2d::CCObject*);
     void onClearDiskCache(cocos2d::CCObject*);
 
-    // Label updaters
     void updateFpsLabel();
     void updateQualityLabel();
     void updateBlurTypeLabel();
@@ -59,7 +49,6 @@ protected:
     void updateRotationLabel();
     void updateRAMLabel();
 
-    // Option lists
     static inline std::vector<int> FPS_OPTIONS     = {15, 24, 30, 60, 90, 120};
     static inline std::vector<int> QUALITY_OPTIONS = {0, 50, 75, 100};
     static inline std::vector<const char*> QUALITY_NAMES = {"Auto", "Low", "Medium", "High"};

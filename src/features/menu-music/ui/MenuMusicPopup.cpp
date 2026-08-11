@@ -3,9 +3,13 @@
 #include "components/VinylDisc.hpp"
 #include "components/CoverBlurBackground.hpp"
 #include "components/CoverHero.hpp"
+#include "components/NowPlayingToast.hpp"
 #include "MenuMusicLibraryPopup.hpp"
 #include "MenuMusicAddPopup.hpp"
 #include "MenuMusicPlaylistsPopup.hpp"
+#include "ExternalSongsPopup.hpp"
+#include "MusicTagsPopup.hpp"
+#include "MenuMusicSettingsPopup.hpp"
 
 #include "../services/MenuMusicCopy.hpp"
 #include "../services/MenuMusicLibrary.hpp"
@@ -15,10 +19,12 @@
 
 #include "../../menu-loop/services/MenuLoopManager.hpp"
 #include "../../menu-loop/services/MenuLoopControl.hpp"
+#include "../../menu-loop/ui/NowPlayingCard.hpp"
 
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/TextureBudget.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
 #include "../../../blur/BlurSystem.hpp"
 
@@ -33,12 +39,11 @@
 #include <Geode/binding/SliderTouchLogic.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/Notification.hpp>
-#include <Geode/ui/GeodeUI.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
-#include <Geode/loader/Dirs.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <system_error>
 
@@ -51,7 +56,7 @@ static constexpr float kPopupH = 225.f;
 static constexpr float kHeroWidthRatio = 0.44f;
 static constexpr float kHeroSkew = 20.f;
 
-// Si ninguno existe, genera un fallback geometrico para que el boton nunca quede 0x0.
+// Use a geometric fallback so the button never has a 0x0 size.
 static CCSprite* createIconSpriteWithFallback(
     std::initializer_list<const char*> frames,
     float fallbackSize,
@@ -105,6 +110,7 @@ bool MenuMusicPopup::init(float width, float height) {
     paimon::markDynamicPopup(this);
 
     MenuMusicLibrary::get().load();
+    MenuMusicLibrary::get().syncDownloadedSongs();
 
     buildFullscreenBackdrop();
 
@@ -116,9 +122,10 @@ bool MenuMusicPopup::init(float width, float height) {
     buildModeSelector();
     buildTransport();
     buildSeekBar();
+    buildActions();
     buildBottomBar();
 
-    coverlog::info("[MenuMusicCover] popup opened — log file: {}",
+    coverlog::info("[MenuMusicCover] popup opened - log file: {}",
         geode::utils::string::pathToString(coverlog::logFilePath()));
     refreshFromState();
 
@@ -187,7 +194,6 @@ void MenuMusicPopup::onExit() {
 }
 
 void MenuMusicPopup::buildFullBackground() {
-    // intencionalmente vacio (no-op para conservar la firma del .hpp).
 }
 
 void MenuMusicPopup::buildContentClipper() {
@@ -236,7 +242,7 @@ void MenuMusicPopup::buildFullscreenBackdrop() {
 void MenuMusicPopup::applyFullscreenCover(const std::string& coverPath) {
     if (!m_fullscreenBackdrop) return;
 
-    // Invalida jobs de blur async aun en vuelo.
+    // Invalidate in-flight blur jobs.
     m_fullscreenBlurGen++;
     auto gen = m_fullscreenBlurGen;
 
@@ -252,7 +258,7 @@ void MenuMusicPopup::applyFullscreenCover(const std::string& coverPath) {
     if (coverPath == m_lastCoverPath && m_fullscreenBlur) return;
     m_lastCoverPath = coverPath;
 
-    auto* source = CCTextureCache::sharedTextureCache()->addImage(coverPath.c_str(), false);
+    auto* source = paimon::image::loadBudgeted(coverPath);
     if (!source) return;
 
     auto winSize = CCDirector::get()->getWinSize();
@@ -264,8 +270,7 @@ void MenuMusicPopup::applyFullscreenCover(const std::string& coverPath) {
         static_cast<int>(winSize.width),
         static_cast<int>(winSize.height));
 
-    // gen + existencia del backdrop descartan callbacks obsoletos cuando
-    // el popup ya se destruyo o la portada cambio de nuevo.
+    // Generation and backdrop existence reject stale callbacks.
     BlurSystem::getInstance()->buildPaimonBlurPriority(
         source, winSize, intensity, cacheKey,
         [this, gen](CCSprite* blurred) {
@@ -312,20 +317,14 @@ void MenuMusicPopup::buildTopBar() {
     topMenu->ignoreAnchorPointForPosition(false);
     topMenu->setPosition({size.width - 8.f, size.height - 18.f});
 
-    // Info/FAQ: explica el flujo completo en 3 pasos, sin jerga.
     {
         auto infoBtn = InfoAlertButton::create(
             "How Menu Music works",
-            "<cj>1.</c> Press <cg>Add Music</c> to add songs: paste a link "
-            "(YouTube, SoundCloud...) or import a file from your PC.\n"
-            "<cj>2.</c> Pick a <cy>mode</c>:\n"
-            "<cl>Off</c> = GD's normal menu music\n"
-            "<cl>All Songs</c> = shuffle everything you added\n"
-            "<cl>Playlist</c> = shuffle only the active playlist\n"
-            "<cj>3.</c> Open <cg>My Songs</c> and press play on any song to "
-            "hear it right away.\n\n"
-            "<cy>Hotkeys:</c> <cj>0-9</c> jump | <cj>Ctrl+Left/Right</c> "
-            "prev/next | <cj>J / L</c> seek | <cj>Ctrl+K</c> My Songs",
+            "<cj>1.</c> <cg>Add Music</c>: link (YouTube...) or file.\n"
+            "<cj>2.</c> <cy>Mode</c>: <cl>Off</c>=vanilla | <cl>All Songs</c>=all | <cl>Playlist</c>=active\n"
+            "<cj>3.</c> <cg>My Songs</c> > play any. <cg>Folder</c>=bulk import, <cg>GD</c>=sync GD songs.\n\n"
+            "<cy>Actions:</c> hold, fav, block, copy, +List, replay toast.\n"
+            "<cy>Hotkeys:</c> <cj>0-9</c> jump | <cj>Ctrl+Left/Right</c> prev/next | <cj>J/L</c> seek | <cj>Ctrl+K</c> songs | <cj>Ctrl+H</c> hold",
             0.6f);
         if (infoBtn) {
             infoBtn->setID("mm-info-btn"_spr);
@@ -333,7 +332,6 @@ void MenuMusicPopup::buildTopBar() {
         }
     }
 
-    // Settings del mod (igual que el boton de settings del control panel de MLR).
     {
         auto spr = createIconSpriteWithFallback(
             {"GJ_optionsBtn02_001.png", "GJ_optionsBtn_001.png"},
@@ -343,6 +341,20 @@ void MenuMusicPopup::buildTopBar() {
             if (auto btn = CCMenuItemSpriteExtra::create(
                     spr, this, menu_selector(MenuMusicPopup::onOpenSettings))) {
                 btn->setID("mm-settings-btn"_spr);
+                topMenu->addChild(btn);
+            }
+        }
+    }
+
+    {
+        auto spr = createIconSpriteWithFallback(
+            {"GJ_reloadBtn_001.png", "GJ_updateBtn_001.png"},
+            22.f, ccc4f(1.f, 1.f, 1.f, 1.f));
+        if (spr) {
+            spr->setScale(0.55f);
+            if (auto btn = CCMenuItemSpriteExtra::create(
+                    spr, this, menu_selector(MenuMusicPopup::onReplayToast))) {
+                btn->setID("mm-replay-toast-btn"_spr);
                 topMenu->addChild(btn);
             }
         }
@@ -358,7 +370,9 @@ void MenuMusicPopup::buildTopBar() {
 }
 
 void MenuMusicPopup::onOpenSettings(cocos2d::CCObject*) {
-    geode::openSettingsPopup(Mod::get());
+    if (auto* popup = MenuMusicSettingsPopup::create()) {
+        popup->show();
+    }
 }
 
 void MenuMusicPopup::buildVinyl() {
@@ -375,8 +389,7 @@ void MenuMusicPopup::buildVinyl() {
     m_hero->setID("music-hero"_spr);
     m_contentClip->addChild(m_hero, 5);
 
-    // CCMenu no recibe touch desde dentro de un CCClippingNode, asi que el
-    // boton play/pause del disco vive en un menu fuera del clipper.
+    // Keep the play/pause menu outside CCClippingNode so it receives touches.
     if (auto* disc = m_hero->getDisc()) {
         auto dummy = cocos2d::CCSprite::create();
         if (dummy) {
@@ -482,7 +495,7 @@ void MenuMusicPopup::buildTransport() {
             {"GJ_playBtn2_001.png", "GJ_playBtn_001.png"},
             30.f, ccc4f(1.f, 1.f, 1.f, 1.f), /*triangle*/true);
         if (!m_playSprite) m_playSprite = CCSprite::create();
-        const float playBaseScale = m_playSprite->getContentSize().width > 10.f ? 0.8f : 1.f;
+        const float playBaseScale = m_playSprite->getContentSize().width > 10.f ? 0.7f : 1.f;
         m_playSprite->setScale(playBaseScale);
 
         const cocos2d::CCSize playVisual = {
@@ -591,8 +604,7 @@ void MenuMusicPopup::buildSeekBar() {
         m_seekSlider->setPosition({sliderZoneX + sliderZoneW / 2.f, barY});
         m_seekSlider->setValue(0.f);
         m_seekSlider->setID("seek-slider"_spr);
-        // Sin esto el slider no recibe touch dentro del popup: prioridad
-        // mas alta que el close button y el menu principal.
+ // Give the slider priority over the close button and main menu.
         m_seekSlider->setTouchEnabled(true);
         if (m_seekSlider->m_touchLogic) {
             m_seekSlider->m_touchLogic->setTouchPriority(-600);
@@ -661,9 +673,50 @@ void MenuMusicPopup::buildSeekBar() {
     m_seekRow->addChild(skipMenu, 3);
 }
 
-// Selector de modo: reemplaza la antigua fila de 7 iconos sin etiqueta.
-// Tres botones con texto que dicen exactamente que suena; el activo se
-// resalta y los inactivos quedan atenuados (ver updateModeSelector).
+void MenuMusicPopup::buildActions() {
+    auto size = m_mainLayer->getContentSize();
+    const float heroW = size.width * kHeroWidthRatio;
+    const float colX = heroW + 14.f;
+    const float colW = size.width - colX - 14.f;
+
+    auto menu = CCMenu::create();
+    if (!menu) return;
+    menu->setContentSize({colW, 20.f});
+    menu->setPosition({colX + colW / 2.f, size.height * 0.225f});
+    menu->setID("quick-actions-menu"_spr);
+
+    auto addAction = [&](const char* text, const char* bg, SEL_MenuHandler handler,
+                         const char* id, ButtonSprite** out = nullptr) {
+        auto* spr = ButtonSprite::create(text, 42, true, "bigFont.fnt", bg, 14.f, 0.32f);
+        if (!spr) return;
+        auto* btn = CCMenuItemSpriteExtra::create(spr, this, handler);
+        if (!btn) return;
+        btn->setID(id);
+        menu->addChild(btn);
+        if (out) *out = spr;
+    };
+
+    addAction("Hold", "GJ_button_04.png", menu_selector(MenuMusicPopup::onHold),
+        "hold-action-btn", &m_holdActionSpr);
+    addAction("Fav", "GJ_button_05.png", menu_selector(MenuMusicPopup::onFavorite),
+        "favorite-action-btn", &m_favoriteActionSpr);
+    addAction("Block", "GJ_button_06.png", menu_selector(MenuMusicPopup::onBlacklist),
+        "blacklist-action-btn", &m_blacklistActionSpr);
+    addAction("Copy", "GJ_button_01.png", menu_selector(MenuMusicPopup::onCopy),
+        "copy-action-btn");
+    addAction("+ List", "GJ_button_02.png", menu_selector(MenuMusicPopup::onAddCurrentToPlaylist),
+        "playlist-add-action-btn");
+
+    menu->setLayout(RowLayout::create()
+        ->setGap(4.f)
+        ->setAxisAlignment(AxisAlignment::Center)
+        ->setCrossAxisAlignment(AxisAlignment::Center)
+        ->setDefaultScaleLimits(0.45f, 1.f));
+    menu->updateLayout();
+    m_mainLayer->addChild(menu, 6);
+}
+
+ // Text mode selector replacing the old unlabeled icon row.
 void MenuMusicPopup::buildModeSelector() {
     auto size = m_mainLayer->getContentSize();
     const float heroW = size.width * kHeroWidthRatio;
@@ -674,7 +727,7 @@ void MenuMusicPopup::buildModeSelector() {
     if (!menu) return;
     menu->setContentSize({colW, 22.f});
     menu->setAnchorPoint({0.5f, 0.5f});
-    menu->setPosition({colX + colW / 2.f, size.height * 0.62f});
+    menu->setPosition({colX + colW / 2.f, size.height * 0.64f});
     menu->setID("mode-selector-menu"_spr);
 
     auto makeModeBtn = [&](const char* text, int width, SEL_MenuHandler handler,
@@ -719,8 +772,7 @@ void MenuMusicPopup::updateModeSelector() {
         if (spr->m_label) spr->m_label->setColor(c);
     };
 
-    // Queue (track elegido a mano) cuenta como musica custom activa, asi que
-    // se muestra como "All Songs" para no dejar el selector sin seleccion.
+ // A manual queue counts as active custom music and displays as "All Songs".
     tint(m_modeOffSpr, mode == PlaybackMode::Disabled);
     tint(m_modeAllSpr, mode == PlaybackMode::Library || mode == PlaybackMode::Queue);
     tint(m_modePlaylistSpr, mode == PlaybackMode::Playlist);
@@ -745,6 +797,12 @@ void MenuMusicPopup::buildBottomBar() {
     if (auto b = makeBtn("Playlists", "GJ_button_04.png", menu_selector(MenuMusicPopup::onOpenPlaylists))) {
         b->setID("pl-btn"_spr); menu->addChild(b);
     }
+    if (auto b = makeBtn("Folders", "GJ_button_02.png", menu_selector(MenuMusicPopup::onOpenExternalSongs))) {
+        b->setID("external-btn"_spr); menu->addChild(b);
+    }
+    if (auto b = makeBtn("Tags", "GJ_button_04.png", menu_selector(MenuMusicPopup::onOpenTags))) {
+        b->setID("tags-btn"_spr); menu->addChild(b);
+    }
     if (auto b = makeBtn("Add Music", "GJ_button_05.png", menu_selector(MenuMusicPopup::onOpenAdd))) {
         b->setID("add-btn"_spr); menu->addChild(b);
     }
@@ -758,7 +816,7 @@ void MenuMusicPopup::buildBottomBar() {
     m_mainLayer->addChild(menu, 6);
 }
 
-MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong() const {
+MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong(bool logResult) const {
     DetectedSong out;
 
     auto& player = MenuMusicPlayer::get();
@@ -777,7 +835,7 @@ MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong() const {
         if (out.songID <= 0) {
             if (auto songId = resolveGDSongId(t->audioPath, t->sourceUrl)) {
                 out.songID = *songId;
-            } else {
+            } else if (logResult) {
                 coverlog::warn("[MenuMusicCover] could not resolve songID from paimon track path='{}' sourceUrl='{}'",
                     t->audioPath, t->sourceUrl);
             }
@@ -786,8 +844,10 @@ MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong() const {
             out.coverPaths = SongCoverCache::get().getCachedCoverPaths(out.songID);
             if (!out.coverPaths.empty()) out.coverPath = out.coverPaths.front();
         }
-        coverlog::info("[MenuMusicCover] detectActiveSong (paimon) songID={} covers={} path='{}'",
-            out.songID, out.coverPaths.size(), out.audioPath);
+        if (logResult) {
+            coverlog::info("[MenuMusicCover] detectActiveSong (paimon) songID={} covers={} path='{}'",
+                out.songID, out.coverPaths.size(), out.audioPath);
+        }
         if (out.songID > 0) {
             if (auto* mdm = MusicDownloadManager::sharedState()) {
                 if (auto* info = mdm->getSongInfoObject(out.songID)) {
@@ -812,7 +872,9 @@ MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong() const {
             out.displayName = "Menu Loop (vanilla)";
             out.artist = "by RobTop";
             out.hasAnything = false;
-            coverlog::info("[MenuMusicCover] detectActiveSong: vanilla menu loop");
+            if (logResult) {
+                coverlog::info("[MenuMusicCover] detectActiveSong: vanilla menu loop");
+            }
             return out;
         }
         current = loop.getCurrentSong();
@@ -825,7 +887,7 @@ MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong() const {
     if (out.songID <= 0) {
         if (auto songId = resolveGDSongId(current)) {
             out.songID = *songId;
-        } else {
+        } else if (logResult) {
             coverlog::warn("[MenuMusicCover] could not resolve songID from menu path='{}'", current);
         }
     }
@@ -833,8 +895,10 @@ MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong() const {
         out.coverPaths = SongCoverCache::get().getCachedCoverPaths(out.songID);
         if (!out.coverPaths.empty()) out.coverPath = out.coverPaths.front();
     }
-    coverlog::info("[MenuMusicCover] detectActiveSong (external) songID={} covers={} path='{}'",
-        out.songID, out.coverPaths.size(), out.audioPath);
+    if (logResult) {
+        coverlog::info("[MenuMusicCover] detectActiveSong (external) songID={} covers={} path='{}'",
+            out.songID, out.coverPaths.size(), out.audioPath);
+    }
     if (out.songID > 0) {
         if (auto* mdm = MusicDownloadManager::sharedState()) {
             if (auto* info = mdm->getSongInfoObject(out.songID)) {
@@ -867,6 +931,9 @@ void MenuMusicPopup::refreshFromState() {
     updateModeSelector();
 
     auto detected = detectActiveSong();
+    if (detected.audioPath != m_lastDetectedPath) {
+        m_failedSongCoverID = 0;
+    }
 
     const std::string displayTitle = detected.displayName.empty()
         ? "No track selected" : detected.displayName;
@@ -928,7 +995,8 @@ void MenuMusicPopup::refreshFromState() {
     }
 
     if (coverPaths.empty() && detected.songID > 0) {
-        if (m_pendingSongCoverID != detected.songID) {
+        if (m_pendingSongCoverID != detected.songID &&
+            m_failedSongCoverID != detected.songID) {
             m_pendingSongCoverID = detected.songID;
             Ref<MenuMusicPopup> self = this;
             const int requestedSongID = detected.songID;
@@ -942,6 +1010,7 @@ void MenuMusicPopup::refreshFromState() {
                         return;
                     }
                     if (success && !paths.empty()) {
+                        self->m_failedSongCoverID = 0;
                         coverlog::info("[MenuMusicCover] covers ready songID={} count={}",
                             requestedSongID, paths.size());
                         self->refreshFromState();
@@ -952,6 +1021,7 @@ void MenuMusicPopup::refreshFromState() {
                     if (self->m_pendingSongCoverID == requestedSongID) {
                         self->m_pendingSongCoverID = 0;
                     }
+                    self->m_failedSongCoverID = requestedSongID;
                 });
         } else {
             coverlog::info("[MenuMusicCover] cover request already pending songID={}", detected.songID);
@@ -963,7 +1033,9 @@ void MenuMusicPopup::refreshFromState() {
             coverlog::warn("[MenuMusicCover] active track has no songID path='{}'", detected.audioPath);
         }
         m_pendingSongCoverID = 0;
+        m_failedSongCoverID = 0;
     } else if (!coverPaths.empty()) {
+        m_failedSongCoverID = 0;
         coverlog::info("[MenuMusicCover] using {} local covers songID={}",
             coverPaths.size(), detected.songID);
     }
@@ -987,6 +1059,19 @@ void MenuMusicPopup::refreshFromState() {
     const bool showPause = detected.hasAnything && !player.isPaused();
     if (m_playSprite) m_playSprite->setVisible(!showPause);
     if (m_pauseSprite) m_pauseSprite->setVisible(showPause);
+
+    auto tintAction = [](ButtonSprite* spr, ccColor3B color) {
+        if (!spr) return;
+        if (spr->m_BGSprite) spr->m_BGSprite->setColor(color);
+        if (spr->m_label) spr->m_label->setColor(color);
+    };
+    auto* track = player.currentTrack();
+    tintAction(m_holdActionSpr, player.heldTrackId().empty()
+        ? ccColor3B{180, 180, 190} : ccColor3B{130, 210, 255});
+    tintAction(m_favoriteActionSpr, track && track->favorite
+        ? ccColor3B{255, 220, 80} : ccColor3B{190, 190, 200});
+    tintAction(m_blacklistActionSpr, track && track->blacklisted
+        ? ccColor3B{255, 105, 105} : ccColor3B{190, 190, 200});
 }
 
 void MenuMusicPopup::applyCovers(std::vector<std::string> const& coverPaths) {
@@ -1022,10 +1107,11 @@ void MenuMusicPopup::onTrackChanged(const std::string&) { refreshFromState(); }
 void MenuMusicPopup::onLibraryChanged() { refreshFromState(); }
 
 void MenuMusicPopup::pollExternalSong(float) {
-    auto detected = detectActiveSong();
+    auto detected = detectActiveSong(false);
     if (detected.audioPath == m_lastDetectedPath) {
         if (!detected.coverPaths.empty() || detected.songID <= 0) return;
         if (m_pendingSongCoverID == detected.songID) return;
+        if (m_failedSongCoverID == detected.songID) return;
     }
 
     refreshFromState();
@@ -1034,6 +1120,13 @@ void MenuMusicPopup::pollExternalSong(float) {
 void MenuMusicPopup::onPlayPause(CCObject*) {
     auto& player = MenuMusicPlayer::get();
     if (!player.currentTrack()) {
+        auto detected = detectActiveSong();
+        if (detected.hasAnything) {
+            if (player.isPaused()) player.resume();
+            else player.pause();
+            refreshFromState();
+            return;
+        }
         auto& lib = MenuMusicLibrary::get();
         if (!lib.hasTracks()) {
             Notification::create("Your music library is empty - use 'Add Music' first.",
@@ -1050,19 +1143,26 @@ void MenuMusicPopup::onPlayPause(CCObject*) {
 }
 
 void MenuMusicPopup::onPrev(CCObject*) {
-    if (!MenuMusicPlayer::get().playPrevious()) {
+    auto& player = MenuMusicPlayer::get();
+    if (player.isManagingPlayback()) {
+        if (player.playPrevious()) return;
         Notification::create("No previous track in history.", NotificationIcon::Info)->show();
+        return;
     }
+    paimon::menuloop::MenuLoopControl::previousSong();
+    refreshFromState();
 }
 
 void MenuMusicPopup::onNext(CCObject*) {
     auto& lib = MenuMusicLibrary::get();
-    if (!lib.hasTracks()) {
-        Notification::create("Library is empty.", NotificationIcon::Warning)->show();
+    if (lib.mode() == PlaybackMode::Disabled) {
+        paimon::menuloop::MenuLoopControl::shuffleSong();
+        refreshFromState();
         return;
     }
-    if (lib.mode() == PlaybackMode::Disabled) lib.setMode(PlaybackMode::Library);
-    MenuMusicPlayer::get().playNext();
+    if (!MenuMusicPlayer::get().playNext()) {
+        Notification::create("No available songs in this mode.", NotificationIcon::Warning)->show();
+    }
 }
 
 void MenuMusicPopup::onShuffle(CCObject*) {
@@ -1103,8 +1203,118 @@ void MenuMusicPopup::onOpenLibrary(CCObject*) {
 void MenuMusicPopup::onOpenPlaylists(CCObject*) {
     if (auto p = MenuMusicPlaylistsPopup::create()) p->show();
 }
+void MenuMusicPopup::onOpenExternalSongs(CCObject*) {
+    if (auto* popup = ExternalSongsPopup::create()) popup->show();
+}
+void MenuMusicPopup::onOpenTags(CCObject*) {
+    if (auto* popup = MusicTagsPopup::create()) popup->show();
+}
 void MenuMusicPopup::onOpenAdd(CCObject*) {
     if (auto p = MenuMusicAddPopup::create()) p->show();
+}
+
+void MenuMusicPopup::onHold(CCObject*) {
+    auto& player = MenuMusicPlayer::get();
+    if (player.isManagingPlayback()) {
+        const bool hadHeldTrack = !player.heldTrackId().empty();
+        if (!player.swapHeldTrack()) {
+            Notification::create("Hold needs another available song.", NotificationIcon::Info)->show();
+        } else {
+            Notification::create(
+                hadHeldTrack ? "Song swapped with the held track."
+                             : "Song held. Playing another one.",
+                NotificationIcon::Success)->show();
+        }
+    } else {
+        paimon::menuloop::MenuLoopControl::holdSong();
+    }
+    refreshFromState();
+}
+
+void MenuMusicPopup::onFavorite(CCObject*) {
+    auto& player = MenuMusicPlayer::get();
+    if (auto* track = player.currentTrack()) {
+        const bool favorite = !track->favorite;
+        const std::string name = track->displayName;
+        MenuMusicLibrary::get().setFavorite(track->id, favorite);
+        Notification::create(
+            fmt::format("{} {}", favorite ? "Favorited" : "Unfavorited", name),
+            favorite ? NotificationIcon::Success : NotificationIcon::Info)->show();
+    } else {
+        paimon::menuloop::MenuLoopControl::favoriteSong();
+    }
+    refreshFromState();
+}
+
+void MenuMusicPopup::onBlacklist(CCObject*) {
+    auto& player = MenuMusicPlayer::get();
+    if (auto* track = player.currentTrack()) {
+        const std::string id = track->id;
+        const std::string name = track->displayName;
+        MenuMusicLibrary::get().setBlacklisted(id, true);
+        if (!player.playNext()) player.setMode(PlaybackMode::Disabled, false);
+        Notification::create(fmt::format("Blocked {}", name), NotificationIcon::Success)->show();
+    } else {
+        paimon::menuloop::MenuLoopControl::blacklistSong();
+    }
+    refreshFromState();
+}
+
+void MenuMusicPopup::onCopy(CCObject*) {
+    paimon::menuloop::MenuLoopControl::copySong();
+}
+
+void MenuMusicPopup::onAddCurrentToPlaylist(CCObject*) {
+    auto& lib = MenuMusicLibrary::get();
+    if (lib.playlists().empty()) {
+        Notification::create("Create a playlist first.", NotificationIcon::Info)->show();
+        if (auto* popup = MenuMusicPlaylistsPopup::create()) popup->show();
+        return;
+    }
+
+    std::string trackId;
+    if (auto* track = MenuMusicPlayer::get().currentTrack()) {
+        trackId = track->id;
+    } else {
+        auto path = resolveActiveMenuMusicPath();
+        if (path.empty()) {
+            Notification::create("No custom song is playing.", NotificationIcon::Info)->show();
+            return;
+        }
+        if (auto* existing = lib.findTrackByAudioPath(path)) {
+            trackId = existing->id;
+        } else {
+            MusicTrack track;
+            track.id = lib.generateId("active");
+            track.audioPath = path;
+            track.displayName = fallbackPathLabel(
+                path, paimon::menuloop::MenuLoopManager::get().getCurrentSongDisplayName());
+            track.source = TrackSource::Local;
+            track.addedUnixMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            trackId = track.id;
+            lib.addTrack(track);
+        }
+    }
+
+    const std::string playlistId = lib.activePlaylistId().empty()
+        ? lib.playlists().front().id
+        : lib.activePlaylistId();
+    lib.addTrackToPlaylist(playlistId, trackId);
+    auto* playlist = lib.findPlaylist(playlistId);
+    Notification::create(
+        fmt::format("Added to {}", playlist ? playlist->name : "playlist"),
+        NotificationIcon::Success)->show();
+}
+
+void MenuMusicPopup::onReplayToast(CCObject*) {
+    auto* scene = CCDirector::get()->getRunningScene();
+    if (!scene) return;
+    if (MenuMusicPlayer::get().currentTrack()) {
+        NowPlayingToast::showForCurrent(scene);
+    } else {
+        paimon::menuloop::NowPlayingCard::showForCurrentSong(scene);
+    }
 }
 
 void MenuMusicPopup::onSeekBackward(CCObject*) {
@@ -1129,8 +1339,7 @@ void MenuMusicPopup::onSeekSliderChanged(CCObject*) {
     paimon::menuloop::MenuLoopControl::setSongPercentage(pct);
 }
 
-// Mantener presionado -/+ repite el seek: tras 0.5s de hold se re-dispara
-// cada tick de 0.125s (mismo comportamiento que el control panel de MLR).
+ // Hold -/+ to repeat seek after 0.5 s, then every 0.125 s.
 void MenuMusicPopup::pressAndHoldSeek(float dt) {
     m_seekHoldTime += dt;
     if (!m_seekFwrdBtn || !m_seekBkwdBtn) {
@@ -1169,7 +1378,7 @@ void MenuMusicPopup::tickSeekUpdate(float) {
 
     if (fmod->getActiveMusic(0) != current) { resetVisuals(); return; }
 
-    const int pos = loop.getLastMenuLoopPosition();
+    const int pos = static_cast<int>(fmod->getMusicTimeMS(0));
     const int total = fmod->getMusicLengthMS(0);
     if (total <= 0) { resetVisuals(); return; }
 
@@ -1194,6 +1403,13 @@ void MenuMusicPopup::tickSeekUpdate(float) {
     };
     if (m_seekCurLabel) m_seekCurLabel->setString(fmtTime(pos).c_str());
     if (m_seekTotalLabel) m_seekTotalLabel->setString(fmtTime(total).c_str());
+
+    if (auto* track = MenuMusicPlayer::get().currentTrack();
+        track && total > 0 && track->durationMs != total) {
+        auto updated = *track;
+        updated.durationMs = total;
+        MenuMusicLibrary::get().updateTrack(updated);
+    }
 }
 
 void MenuMusicPopup::keyDown(cocos2d::enumKeyCodes key, double p1) {
@@ -1232,18 +1448,30 @@ void MenuMusicPopup::keyDown(cocos2d::enumKeyCodes key, double p1) {
     if ((ctrlOrCmd && key == enumKeyCodes::KEY_S) ||
         (isShift && key == enumKeyCodes::KEY_N) ||
         (ctrlOrCmd && (key == enumKeyCodes::KEY_ArrowRight || key == enumKeyCodes::KEY_Right))) {
-        paimon::menuloop::MenuLoopControl::shuffleSong();
+        onShuffle(nullptr);
         refreshFromState();
         return;
     }
     if ((isShift && key == enumKeyCodes::KEY_P) ||
         (ctrlOrCmd && (key == enumKeyCodes::KEY_ArrowLeft || key == enumKeyCodes::KEY_Left))) {
-        paimon::menuloop::MenuLoopControl::previousSong();
+        onPrev(nullptr);
         refreshFromState();
         return;
     }
     if (ctrlOrCmd && key == enumKeyCodes::KEY_K) {
         this->onOpenLibrary(nullptr);
+        return;
+    }
+    if (ctrlOrCmd && key == enumKeyCodes::KEY_H) {
+        onHold(nullptr);
+        return;
+    }
+    if (ctrlOrCmd && key == enumKeyCodes::KEY_C) {
+        onCopy(nullptr);
+        return;
+    }
+    if (isShift && key == enumKeyCodes::KEY_B) {
+        onFavorite(nullptr);
         return;
     }
 #else
@@ -1264,4 +1492,4 @@ void MenuMusicPopup::keyDown(cocos2d::enumKeyCodes key, double p1) {
     Popup::keyDown(key, p1);
 }
 
-} // namespace paimon::menumusic
+}

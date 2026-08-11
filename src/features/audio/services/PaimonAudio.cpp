@@ -50,7 +50,7 @@ void PaimonAudio::activate() {
 
     resetValues();
     m_active = true;
-    log::info("[PaimonAudio] Activated — FFT DSP attached to background music channel");
+    log::info("[PaimonAudio] Activated - FFT DSP attached to background music channel");
 }
 
 void PaimonAudio::deactivate() {
@@ -67,7 +67,7 @@ void PaimonAudio::deactivate() {
 
     resetValues();
     m_active = false;
-    log::info("[PaimonAudio] Deactivated — FFT DSP released");
+    log::info("[PaimonAudio] Deactivated - FFT DSP released");
 }
 
 void PaimonAudio::update(float dt) {
@@ -76,7 +76,6 @@ void PaimonAudio::update(float dt) {
         return;
     }
 
-    // read FFT spectrum data
     FMOD_DSP_PARAMETER_FFT* fftData = nullptr;
     FMOD_RESULT res = m_fftDSP->getParameterData(
         FMOD_DSP_FFT_SPECTRUMDATA, (void**)&fftData, nullptr, nullptr, 0);
@@ -94,7 +93,6 @@ void PaimonAudio::update(float dt) {
     int numBins = fftData->length;
     float const* spectrum = fftData->spectrum[0];
 
-    // Extract 3 frequency bands
 
     // Bass: bins 0-8 (~0-350 Hz)
     float bassSum = 0.f;
@@ -132,7 +130,6 @@ void PaimonAudio::update(float dt) {
     float normMid    = rawMid    / m_peakMid;
     float normTreble = rawTreble / m_peakTreble;
 
-    // Exponential smoothing
     m_smoothBass   += (normBass - m_smoothBass)     * std::min(1.f, dt * 10.f);
     m_smoothMid    += (normMid - m_smoothMid)       * std::min(1.f, dt * 12.f);
     m_smoothTreble += (normTreble - m_smoothTreble) * std::min(1.f, dt * 14.f);
@@ -146,6 +143,5 @@ void PaimonAudio::update(float dt) {
     }
     m_beatPulse = std::max(0.f, m_beatPulse - dt * 4.0f);
 
-    // Combined energy
     m_energy = m_smoothBass * 0.5f + m_smoothMid * 0.3f + m_smoothTreble * 0.2f;
 }

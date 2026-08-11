@@ -1,5 +1,6 @@
 #include "BeatShaderManager.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 
 #include "../../audio/services/PaimonAudio.hpp"
 #include "../../backgrounds/services/LayerBackgroundManager.hpp"
@@ -24,24 +25,23 @@ constexpr char const* kKeyTrebleMult = "beat-shaders-treble-mult";
 constexpr char const* kKeyBeatMult   = "beat-shaders-beat-mult";
 constexpr char const* kKeyEnergyMult = "beat-shaders-energy-mult";
 
-// Tag value used to mark sprites whose shader we hijacked so we can clean
-// them up when the feature is disabled or the layer changes.
-constexpr int kHijackedSpriteTag = 0x4245415; // 'BEAS' (custom magic)
+constexpr int kHijackedSpriteTag = 0x4245415;
 
 std::string layerEnabledKey(std::string const& layer) {
     return std::string("beat-shaders-layer-") + layer;
 }
 
-// BeatShaderVanillaSwap — for default backgrounds: swaps each fullscreen vanilla
-// CCSprite with a ShaderBgSprite running the beat shader, hiding the originals
-// (kept as Refs) and restoring them on detach. Avoids CCRenderTexture, which gave
-// viewport-mismatch artifacts across scenes. Restored in the destructor or when off.
+bool featureEnabled(BeatShaderConfig const& cfg) {
+    return cfg.enabled && paimon::modules::isEnabled("paimbnails.beatshaders.global");
+}
+
+// Swaps fullscreen vanilla sprites for ShaderBgSprite and restores them on detach.
 class BeatShaderVanillaSwap : public CCNode {
 public:
     struct SwappedSprite {
-        Ref<cocos2d::CCSprite>           original;     // hidden
-        Ref<Shaders::ShaderBgSprite>     replacement;  // visible, runs shader
-        Ref<cocos2d::CCNode>             parent;       // where replacement was added
+        Ref<cocos2d::CCSprite>           original;
+        Ref<Shaders::ShaderBgSprite>     replacement;
+        Ref<cocos2d::CCNode>             parent;
         int                              originalZOrder = 0;
     };
 
@@ -59,8 +59,6 @@ public:
         if (!layer) return nullptr;
         auto* node = new BeatShaderVanillaSwap();
         if (!node) return nullptr;
-        // Autorelease BEFORE initSwap so a failed init still releases via the normal
-        // ref-counted path (a direct delete left dangling scheduler entries → use-after-free).
         node->autorelease();
         if (!node->initSwap(layer, shaderName, cfg)) {
             return nullptr;
@@ -77,27 +75,21 @@ public:
         m_targetLayer = layer;
         this->setID("paimon-beat-vanilla-swap"_spr);
         this->setContentSize({0, 0});
-        this->setVisible(false); // tick-only, never draws itself
-        // Don't scheduleUpdate() here: no update() override, and it would retain
-        // this in the scheduler hash.
+        this->setVisible(false);
 
         swapFullscreenSprites(layer);
-        // Also reach across the scene for siblings (MenuGameLayer's sprites).
         if (auto* parent = layer->getParent()) {
             swapSiblingSprites(parent, layer);
         }
 
-        // Fail if nothing was swapped so the caller doesn't keep a dead node.
         return !m_swaps.empty();
     }
 
-    // Swap any fullscreen textured CCSprite child (excludes paimon-* and small UI sprites).
     void swapFullscreenSprites(CCNode* parent) {
         if (!parent) return;
         auto* children = parent->getChildren();
         if (!children) return;
 
-        // Snapshot first — we'll mutate the parent's children below.
         std::vector<cocos2d::CCNode*> snapshot;
         snapshot.reserve(children->count());
         for (int i = 0; i < children->count(); ++i) {
@@ -114,15 +106,11 @@ public:
             auto cs = spr->getContentSize();
             if (cs.width < m_winSize.width * 0.5f) continue;
             if (cs.height < m_winSize.height * 0.5f) continue;
-            // Skip hidden sprites (don't undo a custom-bg hide).
             if (!spr->isVisible()) continue;
             performSwap(spr, parent);
         }
     }
 
-    // Swap fullscreen sprites in sibling trees (e.g. MenuGameLayer's bg/ground).
-    // Conservative: skip siblings with touch input (popups/overlays) to avoid
-    // dangling touch handlers when they close.
     void swapSiblingSprites(CCNode* parent, cocos2d::CCNode* targetLayer) {
         if (!parent) return;
         auto* siblings = parent->getChildren();
@@ -132,26 +120,22 @@ public:
             if (!sibling || sibling == targetLayer) continue;
             auto id = std::string(sibling->getID());
             if (!id.empty() && id.rfind("paimon-", 0) == 0) continue;
-            // Skip touch-enabled CCLayer siblings (popups/overlays); hijacking
-            // their sprites dangles touch handlers.
             if (auto* siblingLayer = typeinfo_cast<cocos2d::CCLayer*>(sibling)) {
                 if (siblingLayer->isTouchEnabled() || siblingLayer->isKeypadEnabled()) {
                     continue;
                 }
             }
-            // Skip popup-ish containers (detected via known bg IDs).
             if (sibling->getChildByID("geode.loader/alert-bg")
                 || sibling->getChildByID("paimon-popup-blur"_spr)) {
                 continue;
             }
-            // Descend into the remaining sibling tree.
             walkAndSwap(sibling, /*depth*/0);
         }
     }
 
     void walkAndSwap(cocos2d::CCNode* node, int depth) {
         if (!node) return;
-        if (depth > 3) return; // bound recursion
+        if (depth > 3) return;
         auto id = std::string(node->getID());
         if (!id.empty() && id.rfind("paimon-", 0) == 0) return;
 
@@ -188,8 +172,6 @@ public:
         auto* shaderSpr = Shaders::ShaderBgSprite::createWithTexture(tex);
         if (!shaderSpr) return;
 
-        // Match original sprite's rect, transform, and color so the swap
-        // is visually invisible without the shader.
         shaderSpr->setTextureRect(rect);
         shaderSpr->setAnchorPoint(original->getAnchorPoint());
         shaderSpr->setPosition(original->getPosition());
@@ -227,7 +209,6 @@ public:
         swap.parent         = parent;
         swap.originalZOrder = originalZ;
 
-        // Hide the original and add the replacement at the same zOrder to keep composition.
         original->setVisible(false);
         parent->addChild(shaderSpr, originalZ);
 
@@ -239,14 +220,12 @@ public:
     void restoreAll() {
         for (auto& swap : m_swaps) {
             if (auto* repl = swap.replacement.data()) {
-                // Detach from scheduler explicitly (idempotent) in case onExit never ran.
                 repl->unscheduleAllSelectors();
                 if (repl->getParent()) {
                     repl->removeFromParent();
                 }
             }
             if (auto* orig = swap.original.data()) {
-                // Only restore visibility if the original is still in the tree.
                 if (orig->getParent()) {
                     orig->setVisible(true);
                 }
@@ -259,8 +238,6 @@ public:
         restoreAll();
     }
 
-    // Apply live config changes to all replacement sprites without
-    // recreating them.
     void updateConfig(BeatShaderConfig const& cfg) {
         m_cfg = cfg;
         for (auto& swap : m_swaps) {
@@ -276,7 +253,6 @@ public:
         }
     }
 
-    // Replace the running shader program on every replacement sprite.
     void setShader(std::string const& shaderName) {
         if (m_shaderName == shaderName) return;
         m_shaderName = shaderName;
@@ -290,8 +266,6 @@ public:
     }
 };
 
-// VanillaBgWrapper — ticks per-frame uniform pushes onto a vanilla CCSprite
-// (e.g. main-menu-bg) to keep u_time/audio uniforms current without reparenting it.
 class VanillaBgWrapper : public CCNode {
 public:
     cocos2d::CCSprite* m_target = nullptr;
@@ -300,7 +274,6 @@ public:
 
     static VanillaBgWrapper* attach(cocos2d::CCSprite* target) {
         if (!target) return nullptr;
-        // Reuse existing wrapper if already attached.
         if (auto* prev = target->getChildByID("paimon-beat-vanilla-tick"_spr)) {
             return static_cast<VanillaBgWrapper*>(prev);
         }
@@ -309,7 +282,7 @@ public:
         w->autorelease();
         w->m_target = target;
         w->setID("paimon-beat-vanilla-tick"_spr);
-        w->setVisible(false); // tick-only node, draws nothing
+        w->setVisible(false);
         target->addChild(w);
         w->m_screenSize = cocos2d::CCDirector::get()->getWinSize();
         w->scheduleUpdate();
@@ -337,9 +310,6 @@ void pushUniformsForVanillaSprite(cocos2d::CCSprite* sprite, BeatShaderConfig co
     if (!sprite) return;
     auto* shader = sprite->getShaderProgram();
     if (!shader) return;
-    // Can't override a vanilla sprite's draw() without a hook, so push the uniforms
-    // here; they persist on the program for the next draw. Cocos samples u_time each
-    // draw via setUniformsForBuiltins, so we just bump uniforms on apply for live feedback.
     shader->use();
     GLint loc;
 
@@ -351,8 +321,6 @@ void pushUniformsForVanillaSprite(cocos2d::CCSprite* sprite, BeatShaderConfig co
     if (loc != -1) shader->setUniformLocationWith2f(loc, winSize.width, winSize.height);
 }
 
-// Find the vanilla GD background sprite for a given layer key. Returns the
-// CCSprite that we can attach a shader program to.
 cocos2d::CCSprite* findVanillaBgSprite(cocos2d::CCLayer* layer) {
     if (!layer) return nullptr;
     static char const* ids[] = {"main-menu-bg", "background", "bg", "bg-texture", nullptr};
@@ -361,7 +329,6 @@ cocos2d::CCSprite* findVanillaBgSprite(cocos2d::CCLayer* layer) {
             if (auto* spr = typeinfo_cast<cocos2d::CCSprite*>(node)) return spr;
         }
     }
-    // Fallback: largest fullscreen-sized child sprite.
     auto* children = layer->getChildren();
     if (!children) return nullptr;
     auto ws = cocos2d::CCDirector::get()->getWinSize();
@@ -378,7 +345,6 @@ cocos2d::CCSprite* findVanillaBgSprite(cocos2d::CCLayer* layer) {
     return nullptr;
 }
 
-// Recursively walk a node tree and collect every ShaderBgSprite child.
 void collectShaderSprites(CCNode* node, std::vector<Shaders::ShaderBgSprite*>& out) {
     if (!node) return;
     if (auto* spr = typeinfo_cast<Shaders::ShaderBgSprite*>(node)) {
@@ -419,7 +385,7 @@ CCLayer* findLayerByKey(std::string const& key) {
     return nullptr;
 }
 
-} // anonymous namespace
+}
 
 BeatShaderManager& BeatShaderManager::get() {
     static BeatShaderManager instance;
@@ -438,8 +404,6 @@ BeatShaderConfig BeatShaderManager::getConfig() const {
     cfg.beatMult   = static_cast<float>(mod->getSavedValue<double>(kKeyBeatMult, 1.0));
     cfg.energyMult = static_cast<float>(mod->getSavedValue<double>(kKeyEnergyMult, 1.0));
 
-    // Migration: map legacy overlay shader IDs (beat-bars, etc.) onto a postprocess
-    // equivalent, since those procedural shaders don't accept u_texture.
     static auto const isLegacy = [](std::string const& s) {
         return s == "beat-bars" || s == "beat-circles" || s == "beat-grid"
             || s == "freq-spectrum" || s == "beat-tunnel" || s == "audio-aurora";
@@ -461,11 +425,10 @@ void BeatShaderManager::saveConfig(BeatShaderConfig const& cfg) {
     mod->setSavedValue<double>(kKeyBeatMult, static_cast<double>(cfg.beatMult));
     mod->setSavedValue<double>(kKeyEnergyMult, static_cast<double>(cfg.energyMult));
 
-    // Flip the global gate so any ShaderBgSprite pushing uniforms picks up
-    // the new state immediately (used by all bg sprites, not just ours).
-    Shaders::ShaderBgSpriteAudioGate::setEnabled(cfg.enabled);
+    bool on = featureEnabled(cfg);
+    Shaders::ShaderBgSpriteAudioGate::setEnabled(on);
 
-    if (cfg.enabled) activateAudioIfNeeded();
+    if (on) activateAudioIfNeeded();
     else deactivateAudioIfUnused();
 }
 
@@ -517,17 +480,14 @@ void BeatShaderManager::applyToLayer(CCLayer* layer, std::string const& layerKey
     log::info("[BeatShaders] applyToLayer key='{}' enabled={} shader='{}' layerEnabled={}",
         layerKey, cfg.enabled, cfg.shaderName, isLayerEnabled(layerKey));
 
-    bool layerActive = cfg.enabled && isLayerEnabled(layerKey);
+    bool layerActive = featureEnabled(cfg) && isLayerEnabled(layerKey);
 
     auto& bgMgr = LayerBackgroundManager::get();
     auto bgCfg = bgMgr.getConfig(layerKey);
 
     if (layerActive) {
-        // Force the beat shader on this layer's bg config so any ShaderBgSprite
-        // (image/GIF/video) created by LayerBackgroundManager runs it.
         bgCfg.shader = cfg.shaderName;
     } else {
-        // Clear only OUR shader IDs — preserve any user-picked filter.
         std::string s = bgCfg.shader;
         if (s == "glitch-beat" || s == "wave-beat" || s == "chromatic-beat"
             || s == "pixelate-beat" || s == "shockwave-beat" || s == "rgb-split-beat"
@@ -539,41 +499,29 @@ void BeatShaderManager::applyToLayer(CCLayer* layer, std::string const& layerKey
     }
     bgMgr.saveConfig(layerKey, bgCfg);
 
-    // Make sure FMOD FFT is hot.
     if (layerActive) activateAudioIfNeeded();
 
     if (!layer) {
-        // No layer to mutate yet — saved-value side is enough.
         return;
     }
 
-    // Re-apply via LayerBackgroundManager. Skip MenuLayer: it owns its own wallpaper
-    // path, and applyBackground there duplicates containers.
     if (layerKey != "menu") {
         bgMgr.applyBackground(layer, layerKey);
     }
 
-    // Default bg path: applyBackground creates no ShaderBgSprite, so swap each
-    // fullscreen vanilla sprite with one running the beat shader (originals hidden,
-    // restored on detach).
-    bool isDefaultBg = (bgCfg.type == "default");
+    bool isDefaultBg = bgCfg.type == "default"
+        || !paimon::modules::isEnabled("paimbnails.backgrounds.global");
     auto* existingSwap = static_cast<BeatShaderVanillaSwap*>(
         layer->getChildByID("paimon-beat-vanilla-swap"_spr));
 
     if (layerActive && isDefaultBg) {
         if (existingSwap) {
-            // Already swapped — just refresh shader / config in place.
             existingSwap->setShader(cfg.shaderName);
             existingSwap->updateConfig(cfg);
         } else {
-            // Skip popup-style (FLAlertLayer-derived) layers: they have no fullscreen
-            // vanilla bg, and swapping their siblings crashed on close. Their custom
-            // bg still gets the shader via LayerBackgroundManager above.
             if (typeinfo_cast<FLAlertLayer*>(layer)) {
                 log::info("[BeatShaders] Skipping vanilla swap on popup layer '{}'", layerKey);
             } else {
-                // Defer swap to the next tick: init() runs before the layer is added
-                // to a scene, so siblings can't be walked yet.
                 Ref<CCLayer> layerRef = layer;
                 std::string keyCopy = layerKey;
                 BeatShaderConfig cfgCopy = cfg;
@@ -583,10 +531,8 @@ void BeatShaderManager::applyToLayer(CCLayer* layer, std::string const& layerKey
                     auto* l = layerRef.data();
                     if (!l) return;
                     if (!l->getParent()) {
-                        // Layer never added to a scene, or removed before deferred work ran.
                         return;
                     }
-                    // Re-check for an existing swap (applyToLayer may have run again).
                     if (l->getChildByID("paimon-beat-vanilla-swap"_spr)) return;
                     if (auto* swapNode = BeatShaderVanillaSwap::createForLayer(
                             l, cfgCopy.shaderName, cfgCopy)) {
@@ -599,8 +545,6 @@ void BeatShaderManager::applyToLayer(CCLayer* layer, std::string const& layerKey
             }
         }
     } else {
-        // Feature off OR a custom background is in use → remove our swap
-        // so vanilla rendering takes over.
         if (existingSwap) {
             existingSwap->removeFromParent();
             log::info("[BeatShaders] Removed vanilla-swap from '{}'", layerKey);
@@ -616,7 +560,7 @@ void BeatShaderManager::refreshLiveSpriteUniforms() {
     if (!scene) return;
 
     auto cfg = getConfig();
-    float gate = cfg.enabled ? 1.0f : 0.0f;
+    float gate = featureEnabled(cfg) ? 1.0f : 0.0f;
 
     std::vector<Shaders::ShaderBgSprite*> sprites;
     collectShaderSprites(scene, sprites);
@@ -631,7 +575,6 @@ void BeatShaderManager::refreshLiveSpriteUniforms() {
         spr->m_shaderIntensity = cfg.intensity;
     }
 
-    // Also update active vanilla-bg swap nodes (updateConfig refreshes shader name/program too).
     std::vector<BeatShaderVanillaSwap*> swaps;
     std::function<void(CCNode*)> walk = [&](CCNode* node) {
         if (!node) return;
@@ -656,8 +599,6 @@ void BeatShaderManager::refreshLiveSpriteUniforms() {
 
 void BeatShaderManager::rebuildBackgrounds() {
     if (m_shuttingDown || paimon::isRuntimeShuttingDown()) return;
-    // Re-apply the beat shader on every supported layer in the running scene
-    // (rebuilds custom-bg sprites and re-creates the vanilla-bg ShaderBgSprite).
     for (auto const& [key, _] : availableLayers()) {
         if (auto* layer = findLayerByKey(key)) {
             applyToLayer(layer, key);
@@ -668,8 +609,9 @@ void BeatShaderManager::rebuildBackgrounds() {
 
 void BeatShaderManager::init() {
     auto cfg = getConfig();
-    Shaders::ShaderBgSpriteAudioGate::setEnabled(cfg.enabled);
-    if (cfg.enabled) activateAudioIfNeeded();
+    bool on = featureEnabled(cfg);
+    Shaders::ShaderBgSpriteAudioGate::setEnabled(on);
+    if (on) activateAudioIfNeeded();
 }
 
 void BeatShaderManager::shutdown() {
@@ -689,4 +631,4 @@ void BeatShaderManager::deactivateAudioIfUnused() {
     m_audioActive = false;
 }
 
-} // namespace paimon::beat_shaders
+}

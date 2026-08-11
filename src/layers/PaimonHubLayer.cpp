@@ -8,7 +8,6 @@
 #include "../features/paidraw/PaiDrawUI.hpp"
 #include "../features/profiles/ui/ProfilePicEditorPopup.hpp"
 #include "../features/profiles/ui/ProfileSettingsPopup.hpp"
-#include "../features/backgrounds/ui/BackgroundConfigPopup.hpp"
 #include "../features/transitions/ui/TransitionConfigPopup.hpp"
 #include "../features/cursor/ui/CursorConfigPopup.hpp"
 #include "../features/pet/ui/PetConfigPopup.hpp"
@@ -19,6 +18,8 @@
 #include "../features/discord-presence/ui/DiscordConfigPopup.hpp"
 #include "../features/discord-presence/services/DiscordPresenceManager.hpp"
 #include "../features/beat-shaders/ui/BeatShaderConfigLayer.hpp"
+#include "../features/dynamic-songs/ui/DynamicSongPopup.hpp"
+#include "../features/dynamic-volume/ui/DynamicVolumePopup.hpp"
 #include "../features/settings-panel/services/SettingsPanelManager.hpp"
 #include "../features/settings-panel/ui/SettingsCategoryBuilder.hpp"
 #include "../features/settings-panel/ui/SettingsControls.hpp"
@@ -26,6 +27,7 @@
 #include "../features/forum/services/ForumApi.hpp"
 #include "../features/forum/ui/CreatePostPopup.hpp"
 #include "../features/forum/ui/PostDetailPopup.hpp"
+#include "../features/dev-tools/ui/GifToSheetPopup.hpp"
 #include "../features/updates/services/UpdateChecker.hpp"
 #include "../features/updates/ui/UpdateProgressPopup.hpp"
 #include "../ui/FeatureInfoPopup.hpp"
@@ -165,6 +167,11 @@ void eraseOne(std::vector<T>& v, T const& x) {
     auto it = std::find(v.begin(), v.end(), x);
     if (it != v.end()) v.erase(it);
 }
+
+// 8+ sidebar rows must clear the shortcuts row at the bottom of the panel.
+float sidebarRowSpacing(size_t categoryCount) {
+    return categoryCount > 7 ? 24.f : 27.f;
+}
 } // namespace
 
 namespace paimon::hubdata {
@@ -178,6 +185,7 @@ std::vector<HubCategoryMeta> getHubCategories() {
         {"Fondos", "Fondos por capa, video y transiciones.", {140, 245, 200}, paimon::ui::getBackgroundsInfo},
         {"Extras", "Mascota, cursor, popups y rendimiento.", {255, 140, 140}, paimon::ui::getExtrasInfo},
         {"Discord", "Rich Presence completa.", {140, 160, 255}, paimon::ui::getDiscordInfo},
+        {"Dev", "Herramientas para crear assets del mod.", {255, 210, 100}, paimon::ui::getDevInfo},
     };
 }
 
@@ -218,12 +226,21 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                         PaimonNotify::create("Necesitas iniciar sesion.", NotificationIcon::Warning)->show();
                     }
                 }, 3, "Tu cancion en tu perfil"},
+                {"Volumen Dinamico", "GJ_button_05.png", [](PaimonHubLayer*) {
+                    if (auto popup = paimon::dynvol::DynamicVolumePopup::create()) {
+                        popup->show();
+                    }
+                }, 3, "Iguala el salto entre canciones"},
+                {"Cancion Dinamica", "GJ_button_01.png", [](PaimonHubLayer*) {
+                    if (auto popup = paimon::dynsong::DynamicSongPopup::create()) {
+                        popup->show();
+                    }
+                }, 3, "La cancion del nivel y su buceo"},
             };
         case 4: // Backgrounds
             return {
-                {"Editor Fondos", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenBackgrounds(nullptr); }, 4, "Fondo por pantalla"},
+                {"Editor Fondos", "GJ_button_01.png", [](PaimonHubLayer* self) { self->onOpenConfig(nullptr); }, 4, "Fondo por pantalla, en vivo"},
                 {"Transiciones", "GJ_button_04.png", [](PaimonHubLayer*) { if (auto popup = TransitionConfigPopup::create()) popup->show(); }, 4, "Animaciones entre escenas"},
-                {"Config Full", "GJ_button_01.png", [](PaimonHubLayer* self) { self->onOpenConfig(nullptr); }, 4, "Panel completo de fondos"},
             };
         case 5: // Extras
             return {
@@ -290,6 +307,12 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                 {"Configurar", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = paimon::discord::DiscordConfigPopup::create()) popup->show(); }, 6, "Rich Presence a tu gusto"},
                 {"Refrescar", "GJ_button_05.png", [](PaimonHubLayer*) { paimon::discord::DiscordPresenceManager::get().refreshSoon(); PaimonNotify::create("Rich Presence actualizada.", NotificationIcon::Success)->show(); }, 6, "Fuerza la actualizacion"},
             };
+        case 7: // Dev
+            return {
+                {"GIF a Sheet", "GJ_button_04.png", [](PaimonHubLayer*) {
+                    if (auto popup = paimon::dev::GifToSheetPopup::create()) popup->show();
+                }, 7, "Convierte GIF en spritesheet"},
+            };
         default:
             return {};
     }
@@ -299,53 +322,53 @@ std::vector<GranularSettingMeta> getGranularSettings() {
     return {
         {"Language / Idioma", "Idioma / Language", 0},
         {"Auto Update", "Auto Actualizar", 0},
-        {"Quick Search Key", "Tecla de Búsqueda Rápida", 0},
+        {"Quick Search Key", "Tecla de Busqueda Rapida", 0},
         {"Realtime Search Preview", "Vista Previa en Tiempo Real", 0},
         {"Settings Panel Keybind", "Tecla de Panel de Ajustes", 0},
         {"Layout Editor Keybind", "Tecla de Editor de Layout", 0},
-        {"Debug Logs", "Registros de Depuración", 0},
+        {"Debug Logs", "Registros de Depuracion", 0},
 
-        {"Thumbnail Size", "Tamaño de Miniatura", 1},
+        {"Thumbnail Size", "Tamano de Miniatura", 1},
         {"Background Style (Cell)", "Estilo de Fondo de Celda", 1},
         {"Background Blur (Cell)", "Desenfoque de Fondo de Celda", 1},
         {"Darkness (Cell)", "Oscuridad de Celda", 1},
         {"Show Separator", "Mostrar Separador", 1},
-        {"Show View Button", "Mostrar Botón de Ver", 1},
+        {"Show View Button", "Mostrar Boton de Ver", 1},
         {"Compact Mode", "Modo Compacto", 1},
-        {"Show Compact Toggle", "Mostrar Botón de Modo Compacto", 1},
-        {"Auto-Cycle Gallery", "Auto-Ciclo de Galería", 1},
-        {"Transition Type", "Tipo de Transición", 1},
-        {"Transition Duration", "Duración de Transición", 1},
+        {"Show Compact Toggle", "Mostrar Boton de Modo Compacto", 1},
+        {"Auto-Cycle Gallery", "Auto-Ciclo de Galeria", 1},
+        {"Transition Type", "Tipo de Transicion", 1},
+        {"Transition Duration", "Duracion de Transicion", 1},
         {"Hover Effects", "Efectos al pasar el mouse", 1},
-        {"Animation Type", "Tipo de Animación", 1},
-        {"Animation Speed", "Velocidad de Animación", 1},
+        {"Animation Type", "Tipo de Animacion", 1},
+        {"Animation Speed", "Velocidad de Animacion", 1},
         {"Color Effect", "Efecto de Color", 1},
         {"Effect on Background", "Efecto en Fondo", 1},
-        {"Enable Capture Button", "Activar Botón de Captura", 1},
+        {"Enable Capture Button", "Activar Boton de Captura", 1},
         {"Capture Thumbnail Key", "Tecla de Capturar Miniatura", 1},
 
         {"Background Style (Level)", "Estilo de Fondo de Nivel", 2},
-        {"Dynamic Song", "Canción Dinámica", 2},
+        {"Dynamic Song", "Cancion Dinamica", 2},
         {"Progress Bar", "Barra de Progreso", 2},
 
-        {"Enable Profile Music", "Activar Música de Perfil", 3},
-        {"Enable Menu Music Player", "Activar Reproductor de Música de Menú", 3},
-        {"Menu Loop Shuffle", "Mezclar Bucles de Menú", 3},
-        {"Now Playing Notifications", "Notificaciones de Reproducción", 3},
-        {"Notification Duration", "Duración de la Notificación", 3},
-        {"Notification Prefix", "Prefijo de Notificación", 3},
-        {"Seek Step (ms)", "Paso de Búsqueda (ms)", 3},
-        {"Show Playback Progress", "Mostrar Progreso de Reproducción", 3},
-        {"Menu Music Hotkeys", "Teclas Rápidas de Música", 3},
-        {"Remember Last Menu Loop", "Recordar Último Bucle de Menú", 3},
+        {"Enable Profile Music", "Activar Musica de Perfil", 3},
+        {"Enable Menu Music Player", "Activar Reproductor de Musica de Menu", 3},
+        {"Menu Loop Shuffle", "Mezclar Bucles de Menu", 3},
+        {"Now Playing Notifications", "Notificaciones de Reproduccion", 3},
+        {"Notification Duration", "Duracion de la Notificacion", 3},
+        {"Notification Prefix", "Prefijo de Notificacion", 3},
+        {"Seek Step (ms)", "Paso de Busqueda (ms)", 3},
+        {"Show Playback Progress", "Mostrar Progreso de Reproduccion", 3},
+        {"Menu Music Hotkeys", "Teclas Rapidas de Musica", 3},
+        {"Remember Last Menu Loop", "Recordar Ultimo Bucle de Menu", 3},
         {"Randomize on Level Exit", "Aleatorio al Salir del Nivel", 3},
-        {"Restore Position on Level Exit", "Restaurar Posición al Salir de Nivel", 3},
+        {"Restore Position on Level Exit", "Restaurar Posicion al Salir de Nivel", 3},
         {"Randomize on Editor Exit", "Aleatorio al Salir del Editor", 3},
-        {"Restore Position on Editor Exit", "Restaurar Posición al Salir del Editor", 3},
+        {"Restore Position on Editor Exit", "Restaurar Posicion al Salir del Editor", 3},
 
         {"Editor Fondos", "Editor de Fondos", 4},
         {"Transiciones de Fondos", "Transiciones de Fondos", 4},
-        {"Configuración Completa", "Configuración Completa", 4},
+        {"Configuracion Completa", "Configuracion Completa", 4},
 
         {"Smooth UI", "Smooth UI", 5},
         {"Smooth Popups", "Popups Suaves", 5},
@@ -359,14 +382,14 @@ std::vector<GranularSettingMeta> getGranularSettings() {
         {"Custom Cursor", "Cursor Personalizado", 5},
         {"Cursor Trail", "Estela de Cursor", 5},
         {"Cursor Scale", "Escala de Cursor", 5},
-        {"Score Cell Style", "Estilo de Celda de Puntuación", 5},
+        {"Score Cell Style", "Estilo de Celda de Puntuacion", 5},
         {"Custom Slider Thumb", "Barra de Desplazamiento Personalizada", 5},
-        {"Dynamic Popups", "Popups Dinámicos", 5},
-        {"Dynamic Popup Exit", "Salida de Popup Dinámica", 5},
+        {"Dynamic Popups", "Popups Dinamicos", 5},
+        {"Dynamic Popup Exit", "Salida de Popup Dinamica", 5},
         {"Popup Blur", "Desenfoque de Popup", 5},
         {"Download Threads", "Hilos de Descarga / Hilos de Red", 5},
-        {"Disk Cache", "Caché de Disco", 5},
-        {"Clear Cache on Exit", "Limpiar Caché al Salir", 5},
+        {"Disk Cache", "Cache de Disco", 5},
+        {"Clear Cache on Exit", "Limpiar Cache al Salir", 5},
         {"Open Thumbnails Folder", "Abrir Carpeta de Miniaturas", 5},
 
         {"Enable Discord Rich Presence", "Activar Discord Rich Presence", 6},
@@ -544,7 +567,9 @@ void PaimonHubLayer::onToggleUIStyle(CCObject*) {
 
 void PaimonHubLayer::onTabSwitch(CCObject* sender) {
     int idx = static_cast<CCNode*>(sender)->getTag();
-    if (idx >= 100 && idx <= 106) {
+    // Sidebar category buttons are tagged 100+i; switchHomeCategory validates
+    // the index against the live category list.
+    if (idx >= 100) {
         switchHomeCategory(idx - 100);
         return;
     }
@@ -620,7 +645,7 @@ void PaimonHubLayer::buildHomeTab() {
     m_sidebarLabels.clear();
 
     for (size_t i = 0; i < categories.size(); i++) {
-        float yPos = 241.f - i * 27.f;
+        float yPos = 241.f - i * sidebarRowSpacing(categories.size());
         auto label = CCLabelBMFont::create(categories[i].title.c_str(), "bigFont.fnt");
         label->setAnchorPoint({0.5f, 0.5f});
         label->setPosition({20.f + 125.f / 2.f, yPos});
@@ -806,7 +831,7 @@ void PaimonHubLayer::refreshHomeCategorySelector() {
     auto categories = getHubCategories();
     if (m_homeSelectedCategory < 0 || m_homeSelectedCategory >= static_cast<int>(categories.size())) return;
 
-    float targetY = 241.f - m_homeSelectedCategory * 27.f;
+    float targetY = 241.f - m_homeSelectedCategory * sidebarRowSpacing(categories.size());
     if (m_sidebarHighlight) {
         auto c = categories[m_homeSelectedCategory].color;
         m_sidebarHighlight->stopAllActions();
@@ -1397,7 +1422,7 @@ void PaimonHubLayer::buildForumTab() {
 
     m_emptyTagsHint = CCLabelBMFont::create(
         tr("pai.hub.forum.tags.empty",
-           "No active filter — tap [Predef] or [+] to add tags").c_str(),
+           "No active filter - tap [Predef] or [+] to add tags").c_str(),
         "bigFont.fnt"
     );
     m_emptyTagsHint->setScale(0.24f);
@@ -1415,7 +1440,7 @@ void PaimonHubLayer::buildForumTab() {
 
     m_noPostsLabel = CCLabelBMFont::create(
         tr("pai.hub.forum.no_posts",
-           "No posts here yet — tap +New Post to start the conversation.").c_str(),
+           "No posts here yet - tap +New Post to start the conversation.").c_str(),
         "bigFont.fnt"
     );
     m_noPostsLabel->setScale(0.30f);
@@ -1555,7 +1580,8 @@ void PaimonHubLayer::onOpenProfiles(CCObject*) {
 }
 
 void PaimonHubLayer::onOpenBackgrounds(CCObject*) {
-    if (auto popup = BackgroundConfigPopup::create()) popup->show();
+    // El editor de fondos ya es PaiConfigLayer; esto queda por compatibilidad.
+    onOpenConfig(nullptr);
 }
 
 void PaimonHubLayer::onOpenPaiDraw(CCObject*) {

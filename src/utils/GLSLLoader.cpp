@@ -10,6 +10,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <system_error>
 
 using namespace cocos2d;
@@ -89,6 +90,38 @@ void clearShaderFileCache() {
     sourceCache().contents.clear();
 }
 
+namespace {
+
+// Keys del mod dentro de CCShaderCache. Main thread only (igual que loadShader).
+// Heap-allocated por la misma razón que sourceCache().
+std::unordered_set<std::string>& trackedShaderKeys() {
+    static auto* keys = new std::unordered_set<std::string>();
+    return *keys;
+}
+
+} // namespace
+
+void trackShaderKey(std::string const& key) {
+    trackedShaderKeys().insert(key);
+}
+
+void purgeTrackedShaders() {
+    auto* shaderCache = CCShaderCache::sharedShaderCache();
+    if (!shaderCache || !shaderCache->m_pPrograms) {
+        trackedShaderKeys().clear();
+        return;
+    }
+    size_t removed = 0;
+    for (auto const& key : trackedShaderKeys()) {
+        if (shaderCache->m_pPrograms->objectForKey(key)) {
+            shaderCache->m_pPrograms->removeObjectForKey(key);
+            ++removed;
+        }
+    }
+    trackedShaderKeys().clear();
+    geode::log::info("[GLSLLoader] purgeTrackedShaders: {} programas removidos de CCShaderCache", removed);
+}
+
 CCGLProgram* loadShader(
     std::string_view cacheKey,
     std::string_view vertexFile,
@@ -158,6 +191,7 @@ CCGLProgram* loadShader(
     program->updateUniforms();
     shaderCache->addProgram(program, keyStr.c_str());
     program->release();
+    trackShaderKey(keyStr);
     return shaderCache->programForKey(keyStr.c_str());
 }
 

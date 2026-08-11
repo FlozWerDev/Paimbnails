@@ -12,36 +12,23 @@
 #include <chrono>
 #include <atomic>
 
-/**
- * VideoThumbnailSprite — CCSprite wrapper around VideoPlayer.
- *
- * Autoplay, muted, infinite loop. Integrates with Cocos2d-x scene graph.
- * Uses VideoPlayer's pre-allocated texture (glTexSubImage2D, zero alloc).
- * Suitable for LevelCell, GJScoreCell, ProfilePage, LayerBackgroundManager, etc.
- */
+// CCSprite wrapper around VideoPlayer with muted autoplay and zero-allocation
+// frame uploads.
 class VideoThumbnailSprite : public cocos2d::CCSprite {
 public:
     using FrameReadyCallback = std::function<void(VideoThumbnailSprite*)>;
 
-    // Create from local file path
     static VideoThumbnailSprite* create(std::string const& filePath);
 
-    // Create from raw MP4 data (writes to temp file, then plays)
     static VideoThumbnailSprite* createFromData(std::vector<uint8_t> const& data, std::string const& cacheKey);
 
-    // Check if a cacheKey has a cached temp file on disk
     static bool isCached(std::string const& cacheKey);
 
-    // Returns the on-disk path for a cached video by key, or empty string if
-    // the cache is missing.  Used by features that need to read the source
-    // .mp4 directly (e.g. extracting audio for "Audio Video" profile mode).
-    // Thread-safe: takes the same internal mutex used by isCached().
+    // Returns a cached MP4 path, or empty when missing. Thread-safe.
     static std::string getCachedPathForKey(std::string const& cacheKey);
 
-    // Recreate a VideoThumbnailSprite from a previously cached temp file
     static VideoThumbnailSprite* createFromCache(std::string const& cacheKey);
 
-    // Async create from URL — downloads mp4 then creates on main thread
     using AsyncCallback = std::function<void(VideoThumbnailSprite*)>;
     static void createAsync(std::string const& url, std::string const& cacheKey, AsyncCallback callback);
 
@@ -56,15 +43,14 @@ public:
     cocos2d::CCSize getVideoSize() const;
     void setOnFirstVisibleFrame(FrameReadyCallback callback);
 
-    // Cleanup all cached temp files (call on shutdown)
     static void clearCache();
 
-    // Remove cached video files for a specific level
+    // Release GL players before reload; keep temp files for lazy recreation.
+    static void onGLContextReload();
+
     static void removeForLevel(int levelID);
 
-    // Remove cached video file for a specific cacheKey. Used when the user
-    // explicitly switches a profile away from video to gradient/none so the
-    // local cache no longer overrides the server-side config.
+    // Remove a cache when a profile switches away from video.
     static void removeForCacheKey(std::string const& cacheKey);
 
     void onEnter() override;
@@ -105,7 +91,10 @@ private:
     static void pruneRecentFailuresLocked(std::chrono::steady_clock::time_point now);
     static void pumpAsyncQueues();
     static void handleDownloadResponse(std::string requestKey, geode::utils::web::WebResponse&& response);
+    // Opens the decoder off the main thread, then hands the player to finishCreateJob.
     static void handleCreateJob(CreateJob job);
+    // Main thread: wraps the player in a sprite and settles the queue bookkeeping.
+    static void finishCreateJob(CreateJob job, std::unique_ptr<paimon::video::VideoPlayer> player);
     void dispatchFirstVisibleFrame();
 
     std::unique_ptr<paimon::video::VideoPlayer> m_player;
@@ -115,15 +104,13 @@ private:
     bool m_firstFrameSavedToCache = false;
     FrameReadyCallback m_onFirstVisibleFrame;
 
-    // First-frame disk cache: saves/loads the first decoded frame as raw RGBA
-    // for instant display on game restart (avoids waiting for full decode).
+    // Raw RGBA first-frame cache for instant display after restart.
     static std::string getFirstFrameCachePath(std::string const& videoPath);
     void saveFirstFrameToCache();
     bool loadFirstFrameFromCache(std::string const& videoPath);
 
-    // Temp file cache for data-based creation
     static std::mutex s_cacheMutex;
-    static std::unordered_map<std::string, std::string> s_tempFiles; // cacheKey -> filePath
+    static std::unordered_map<std::string, std::string> s_tempFiles; // cacheKey → path
     static std::unordered_map<std::string, std::shared_ptr<DownloadRequest>> s_downloadRequests;
     static std::deque<std::string> s_downloadQueue;
     static std::deque<CreateJob> s_createQueue;
@@ -134,35 +121,28 @@ private:
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr int MAX_CONCURRENT_DOWNLOADS = 1;
     static constexpr int MAX_CONCURRENT_CREATES = 1;
-    static constexpr int MAX_CACHED_PLAYERS = 2;  // warm players across list cells
-    // Disk cache hard caps (mobile is tighter on space).
+    static constexpr int MAX_CACHED_PLAYERS = 2;
     static constexpr int  MAX_TEMP_FILES = 30;
-    static constexpr size_t MAX_TEMP_FILES_BYTES = 80ULL * 1024 * 1024;   // 80 MB
-    static constexpr size_t MAX_FIRST_FRAME_BYTES = 30ULL * 1024 * 1024;  // 30 MB
+    static constexpr size_t MAX_TEMP_FILES_BYTES = 80ULL * 1024 * 1024;
+    static constexpr size_t MAX_FIRST_FRAME_BYTES = 30ULL * 1024 * 1024;
 #else
     static constexpr int MAX_CONCURRENT_DOWNLOADS = 2;
-    // Disk-hit creates are decoder opens; 2 avoids serializing a list of
-    // already-cached MP4s behind a single main-thread create job.
+    // Disk hits are decoder opens, so allow two in parallel.
     static constexpr int MAX_CONCURRENT_CREATES = 2;
-    static constexpr int MAX_CACHED_PLAYERS = 3;  // warm players across layer transitions
-    // Disk cache hard caps for desktop.
+    static constexpr int MAX_CACHED_PLAYERS = 3;
     static constexpr int  MAX_TEMP_FILES = 80;
-    static constexpr size_t MAX_TEMP_FILES_BYTES = 256ULL * 1024 * 1024;  // 256 MB
-    static constexpr size_t MAX_FIRST_FRAME_BYTES = 96ULL * 1024 * 1024;  // 96 MB
+    static constexpr size_t MAX_TEMP_FILES_BYTES = 256ULL * 1024 * 1024;
+    static constexpr size_t MAX_FIRST_FRAME_BYTES = 96ULL * 1024 * 1024;
 #endif
     static constexpr auto FAILED_REQUEST_TTL = std::chrono::minutes(2);
     static std::string getTempPath(std::string const& cacheKey);
 
-    // Enforce MAX_TEMP_FILES / MAX_TEMP_FILES_BYTES on the on-disk MP4 cache.
-    // Caller must hold s_cacheMutex.
+    // Enforce the MP4 count/size budget; caller holds s_cacheMutex.
     static void enforceTempFilesBudgetLocked();
 
-    // Best-effort cleanup of orphaned ff_*.raw and video_*.mp4 files in the
-    // runtime directory that aren't referenced by s_tempFiles. Runs at most
-    // once per session to avoid I/O thrash. Caller must NOT hold mutexes.
+    // Remove unreferenced runtime cache files once per session; do not hold locks.
     static void cleanupOrphanedDiskFiles();
     
-    // VideoPlayer cache to avoid re-decoding when switching layers
     struct CachedPlayer {
         std::unique_ptr<paimon::video::VideoPlayer> player;
         std::string cacheKey;
@@ -175,12 +155,8 @@ private:
     static void returnPlayerToCache(std::string const& cacheKey, std::unique_ptr<paimon::video::VideoPlayer> player);
     static void clearPlayerCache();
 
-    // Active-sprite budget (multi-sprite scenes like LevelCell lists)
-    //
-    // Hard cap on how many VideoThumbnailSprites may decode simultaneously.
-    // When a sprite enters update() and would push the count over this cap,
-    // it pauses its decoder until enough older sprites release the slot.
-    // This avoids 20+ concurrent decoders in a full level list.
+    // Bound concurrent decoders in multi-sprite scenes; excess sprites pause
+    // until an active slot is released.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr int MAX_ACTIVE_SPRITES = 3;
 #else
@@ -190,21 +166,16 @@ private:
     static std::mutex s_activeSpritesMutex;
     static int s_activeSpriteCount;
 
-    // Returns the per-sprite target FPS given how many sprites are currently
-    // decoding. Mirrors the LayerBackgroundManager adaptive-FPS scheme so
-    // total frame budget stays bounded as more sprites become visible.
+    // Keep total decode frame budget bounded as visible sprite count grows.
     static int adaptiveSpriteFPS(int activeCount);
 
-    // Try to claim one slot of the active-sprite budget. Returns true on
-    // success; false if the budget is full.
+    // Claim one active-sprite slot, if available.
     bool tryAcquireActiveSlot();
     void releaseActiveSlot();
 
-    // Whether this sprite currently holds an active slot.
     bool m_holdsActiveSlot = false;
 
-    // Tracks how long the sprite has been off-screen so we can pause its
-    // decoder rather than just skipping the frame upload.
+    // Pause decoding after this sprite stays off-screen long enough.
     float m_offscreenAccumulator = 0.0f;
     static constexpr float kOffscreenPauseThreshold = 0.5f; // seconds
 };

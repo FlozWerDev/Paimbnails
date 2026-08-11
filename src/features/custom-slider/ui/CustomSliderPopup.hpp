@@ -17,21 +17,25 @@ protected:
 
     geode::ScrollLayer*     m_scroll         = nullptr;
     cocos2d::CCNode*        m_previewNode    = nullptr;
+    cocos2d::CCNode*        m_previewContent = nullptr;
     cocos2d::CCMenu*        m_shapeGridMenu  = nullptr;
     int                     m_tab            = 0; // 0 = Basico, 1 = Avanzado
+    float                   m_previewScalePerUnit = 1.f;
+    bool                    m_sliderRefreshPending = false;
 
     // Reconstruye el contenido scrolleable (cambios de modo/marco).
     void rebuild();
     // Igual que rebuild() pero diferido al siguiente tick, para no mutar la
     // escena dentro del touch dispatcher.
     void scheduleRebuild();
+    void scheduleSliderRefresh();
+    void applySliderRefresh(float);
 
     void refreshPreview();
+    void updatePreviewScale();
     void reapplyAllSliders();
     void rebuildShapeGrid();
     void onPickImage();
-    static int getPlayerIconId(SliderIconType type);
-    static IconType toGDIconType(SliderIconType type);
 };
 
 } // namespace paimon::slider

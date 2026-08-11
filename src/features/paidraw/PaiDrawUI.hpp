@@ -135,8 +135,12 @@ private:
     cocos2d::CCMenu* m_menu = nullptr;
     cocos2d::CCLabelBMFont* m_roomTitle = nullptr;
     cocos2d::CCLabelBMFont* m_roomMeta = nullptr;
+    CCMenuItemSpriteExtra* m_readyButton = nullptr;
+    CCMenuItemSpriteExtra* m_startButton = nullptr;
+    CCMenuItemSpriteExtra* m_settingsButton = nullptr;
     paimon::SubscriptionHandle m_roomSub = 0;
     paimon::SubscriptionHandle m_chatSub = 0;
+    bool m_enteringGame = false;
 };
 
 class PaiDrawCanvasNode : public cocos2d::CCLayer {
@@ -218,16 +222,8 @@ public:
     void onColor(cocos2d::CCObject* sender);
     void onBrush(cocos2d::CCObject* sender);
     void onTool(cocos2d::CCObject* sender);
-    void onEraser(cocos2d::CCObject* sender);
     void onClearCanvas(cocos2d::CCObject* sender);
-    void onZoom(cocos2d::CCObject* sender);
-    void onUndo(cocos2d::CCObject* sender);
-    void onRedo(cocos2d::CCObject* sender);
-    void onBrushSlider(cocos2d::CCObject* sender);
-    void onOpacitySlider(cocos2d::CCObject* sender);
     void refreshState();
-    // Per-frame tick (0.1s interval) that interpolates the countdown locally
-    // so the timer is smooth between server snapshots.
     void tickLocalTimer(float dt);
 
 private:
@@ -235,39 +231,30 @@ private:
     void rebuildScoreboard();
     void rebuildChat();
     void refreshHeader();
-    void applyCanvasZoom();
     void refreshToolButtons();
     void refreshPalette();
-    void updateBrushPreview();
+    bool localCanDraw() const;
     cocos2d::CCNode* createScoreRow(PlayerInfo const& player, float width, float height);
 
     PaiDrawCanvasNode* m_canvas = nullptr;
-    cocos2d::CCNode* m_canvasContainer = nullptr;
-    cocos2d::CCClippingNode* m_canvasClipper = nullptr;
     geode::ScrollLayer* m_scoreScroll = nullptr;
     geode::ScrollLayer* m_chatScroll = nullptr;
     geode::TextInput* m_guessInput = nullptr;
+    CCMenuItemSpriteExtra* m_guessButton = nullptr;
     cocos2d::CCLabelBMFont* m_header = nullptr;
     cocos2d::CCLabelBMFont* m_wordLabel = nullptr;
     cocos2d::CCLabelBMFont* m_timerLabel = nullptr;
-    cocos2d::CCLabelBMFont* m_zoomLabel = nullptr;
-    cocos2d::CCLabelBMFont* m_brushSizeLabel = nullptr;
-    cocos2d::CCLabelBMFont* m_opacityLabel = nullptr;
-    PaimonDrawNode* m_brushPreview = nullptr;
     cocos2d::CCMenu* m_menu = nullptr;
-    cocos2d::CCRect m_canvasFrameRect = {0.f, 0.f, 0.f, 0.f};
-    cocos2d::CCPoint m_canvasAnchor = {0.f, 0.f};
-    float m_canvasBaseScale = 1.f;
-    float m_canvasZoom = 1.f;
-    Slider* m_brushSlider = nullptr;
-    Slider* m_opacitySlider = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_colorButtons;
     std::vector<CCMenuItemSpriteExtra*> m_brushButtons;
     std::vector<CCMenuItemSpriteExtra*> m_toolButtons;
+    std::vector<CCMenuItemSpriteExtra*> m_drawButtons;
     paimon::SubscriptionHandle m_roomSub = 0;
     paimon::SubscriptionHandle m_chatSub = 0;
     paimon::SubscriptionHandle m_roundSub = 0;
     paimon::SubscriptionHandle m_strokeSub = 0;
+    bool m_seenActiveRound = false;
+    bool m_showingResults = false;
 };
 
 class PaiDrawResultsLayer : public cocos2d::CCLayer {
@@ -276,6 +263,7 @@ public:
     static cocos2d::CCScene* scene();
 
     bool init() override;
+    void onExit() override;
     void keyBackClicked() override;
     void onBackLobby(cocos2d::CCObject*);
     void onPlayAgain(cocos2d::CCObject*);
@@ -286,6 +274,7 @@ private:
     void rebuildTable();
 
     geode::ScrollLayer* m_tableScroll = nullptr;
+    cocos2d::CCNode* m_podiumLayer = nullptr;
     cocos2d::CCLabelBMFont* m_statsLabel = nullptr;
     paimon::SubscriptionHandle m_resultsSub = 0;
 };

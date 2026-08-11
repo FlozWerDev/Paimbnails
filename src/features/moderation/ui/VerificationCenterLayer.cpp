@@ -1,4 +1,5 @@
 #include "VerificationCenterLayer.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../framework/state/SessionState.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/ui/LoadingSpinner.hpp>
@@ -44,6 +45,7 @@ VerificationCenterLayer* VerificationCenterLayer::create() {
 }
 
 CCScene* VerificationCenterLayer::scene() {
+    if (!paimon::modules::isEnabled("paimbnails.moderation.system")) return nullptr;
     auto scene = CCScene::create();
     scene->addChild(VerificationCenterLayer::create());
     return scene;
@@ -500,6 +502,20 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         btnX -= btnGap;
     }
 
+    // Several people can submit a thumbnail for the same level. Approving
+    // them one by one is the common case, so "ALL" only shows up when there
+    // is actually a gallery to approve in bulk.
+    if (m_current == PendingCategory::Verify && item.suggestions.size() > 1) {
+        auto spr = ButtonSprite::create("ALL", 30, true, "bigFont.fnt", "GJ_button_02.png", 22.f, 0.5f);
+        spr->setScale(0.55f);
+        auto btn = CCMenuItemSpriteExtra::create(spr, this,
+            menu_selector(VerificationCenterLayer::onAcceptAll));
+        btn->setTag(item.levelID);
+        setupBtn(btn, spr);
+        btn->setPosition({btnX, btnY});
+        btnX -= btnGap + 4.f;
+    }
+
     if (m_current == PendingCategory::Report) {
         auto spr = ButtonSprite::create("?", 22, true, "bigFont.fnt", "GJ_button_05.png", 22.f, 0.5f);
         spr->setScale(0.55f);
@@ -725,7 +741,7 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
         int sugIdx = m_currentSuggestionIndex;
         if (sugIdx < 0 || sugIdx >= (int)item.suggestions.size()) sugIdx = 0;
         if (!item.suggestions.empty() && !item.suggestions[sugIdx].filename.empty()) {
-            std::string url = HttpClient::get().getServerURL() + "/" + item.suggestions[sugIdx].filename;
+            std::string url = HttpClient::get().buildAssetURL(item.suggestions[sugIdx].filename, "suggestions");
             HttpClient::get().downloadFromUrl(url, onRawLoaded);
         } else {
             HttpClient::get().downloadSuggestion(itemID, onRawLoaded);
@@ -829,24 +845,25 @@ void VerificationCenterLayer::checkLevelDownloaded(float dt) {
         LevelInfoLayer::scene(level, false));
 }
 
-void VerificationCenterLayer::onAccept(CCObject* sender) {
-    int lvl = static_cast<CCNode*>(sender)->getTag();
-
-    std::string targetFilename;
+std::string VerificationCenterLayer::selectedSuggestionFilename(int levelID) const {
     for (auto const& it : m_items) {
-        if (it.levelID == lvl) {
-            int sugIdx = 0;
-            if (m_selectedIndex >= 0 && m_selectedIndex < (int)m_items.size()
-                && m_items[m_selectedIndex].levelID == lvl) {
-                sugIdx = m_currentSuggestionIndex;
-            }
-            if (sugIdx >= 0 && sugIdx < (int)it.suggestions.size()) {
-                targetFilename = it.suggestions[sugIdx].filename;
-            }
-            break;
+        if (it.levelID != levelID) continue;
+        int sugIdx = 0;
+        if (m_selectedIndex >= 0 && m_selectedIndex < (int)m_items.size()
+            && m_items[m_selectedIndex].levelID == levelID) {
+            sugIdx = m_currentSuggestionIndex;
         }
+        if (sugIdx >= 0 && sugIdx < (int)it.suggestions.size()) {
+            return it.suggestions[sugIdx].filename;
+        }
+        break;
     }
+    return {};
+}
 
+// Accept one, accept the level's whole review gallery, or reject one — all
+// three do the same auth dance and the same reload, so they share a body.
+void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool reject) {
     std::string username;
     int accountID = 0;
     if (auto gm = GameManager::get()) {
@@ -858,47 +875,17 @@ void VerificationCenterLayer::onAccept(CCObject* sender) {
         return;
     }
 
-    auto spinner = PaimonLoadingOverlay::create("Loading...", 30.f);
-    spinner->showLocal(m_previewPanel, 100);
-    Ref<PaimonLoadingOverlay> loading = spinner;
-
-    WeakRef<VerificationCenterLayer> self = this;
-    auto cat = m_current;
-
-    ThumbnailAPI::get().checkModeratorAccount(username, accountID, [self, lvl, username, loading, cat, targetFilename](bool isMod, bool isAdmin) {
-        auto layer = self.lock();
-        if (!layer) return;
-
-        if (!(isMod || isAdmin)) {
-            if (loading) loading->dismiss();
-            PaimonNotify::create(Localization::get().getString("queue.accept_error").c_str(), NotificationIcon::Error)->show();
-            return;
-        }
-
-        ThumbnailAPI::get().acceptQueueItem(lvl, cat, username, [self, lvl, loading, cat](bool success, std::string const& message) {
-            auto layer = self.lock();
-            if (loading) loading->dismiss();
-            if (!layer) return;
-
-            if (success) {
-                PaimonNotify::create(Localization::get().getString("queue.accepted").c_str(), NotificationIcon::Success)->show();
-                if (layer->getParent()) layer->switchTo(cat);
-            } else {
-                PaimonNotify::create(Localization::get().getString("queue.accept_error").c_str(), NotificationIcon::Error)->show();
-            }
-        }, targetFilename);
-    });
-}
-
-void VerificationCenterLayer::onReject(CCObject* sender) {
-    int lvl = static_cast<CCNode*>(sender)->getTag();
-
-    std::string username;
-    if (auto gm = GameManager::get()) username = gm->m_playerName;
+    // Only the verify queue keeps a per-file gallery. acceptAll deliberately
+    // carries no filename — the server publishes the whole gallery when it
+    // sees the flag.
+    std::string targetFilename;
+    if (!acceptAll && m_current == PendingCategory::Verify) {
+        targetFilename = selectedSuggestionFilename(levelID);
+    }
 
     std::string itemType;
     for (auto const& it : m_items) {
-        if (it.levelID == lvl && it.type == "user") { itemType = "user"; break; }
+        if (it.levelID == levelID && it.type == "user") { itemType = "user"; break; }
     }
 
     auto spinner = PaimonLoadingOverlay::create("Loading...", 30.f);
@@ -907,30 +894,57 @@ void VerificationCenterLayer::onReject(CCObject* sender) {
 
     WeakRef<VerificationCenterLayer> self = this;
     auto cat = m_current;
+    char const* errorKey = reject ? "queue.reject_error" : "queue.accept_error";
+    char const* okKey = reject ? "queue.rejected" : "queue.accepted";
+    auto okIcon = reject ? NotificationIcon::Warning : NotificationIcon::Success;
 
-    ThumbnailAPI::get().checkModerator(username, [self, lvl, cat, username, loading, itemType](bool isMod, bool isAdmin) {
+    ThumbnailAPI::get().checkModeratorAccount(username, accountID,
+        [self, levelID, username, loading, cat, targetFilename, itemType, acceptAll, reject,
+         errorKey, okKey, okIcon](bool isMod, bool isAdmin) {
         auto layer = self.lock();
         if (!layer) return;
 
         if (!(isMod || isAdmin)) {
             if (loading) loading->dismiss();
-            PaimonNotify::create(Localization::get().getString("queue.reject_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString(errorKey).c_str(), NotificationIcon::Error)->show();
             return;
         }
 
-        ThumbnailAPI::get().rejectQueueItem(lvl, cat, username, "Rechazado por moderador", [self, loading, cat](bool success, std::string const& message) {
+        auto done = [self, loading, cat, errorKey, okKey, okIcon](bool success, std::string const&) {
             auto layer = self.lock();
             if (loading) loading->dismiss();
             if (!layer) return;
 
             if (success) {
-                PaimonNotify::create(Localization::get().getString("queue.rejected").c_str(), NotificationIcon::Warning)->show();
+                PaimonNotify::create(Localization::get().getString(okKey).c_str(), okIcon)->show();
+                // Reload from the server: a level whose gallery still holds
+                // other submissions must stay in the list.
                 if (layer->getParent()) layer->switchTo(cat);
             } else {
-                PaimonNotify::create(Localization::get().getString("queue.reject_error").c_str(), NotificationIcon::Error)->show();
+                PaimonNotify::create(Localization::get().getString(errorKey).c_str(), NotificationIcon::Error)->show();
             }
-        }, itemType);
+        };
+
+        if (reject) {
+            ThumbnailAPI::get().rejectQueueItem(levelID, cat, username, "Rechazado por moderador",
+                                                done, itemType, targetFilename);
+        } else {
+            ThumbnailAPI::get().acceptQueueItem(levelID, cat, username, done,
+                                                targetFilename, itemType, acceptAll);
+        }
     });
+}
+
+void VerificationCenterLayer::onAccept(CCObject* sender) {
+    runQueueAction(static_cast<CCNode*>(sender)->getTag(), /*acceptAll=*/false, /*reject=*/false);
+}
+
+void VerificationCenterLayer::onAcceptAll(CCObject* sender) {
+    runQueueAction(static_cast<CCNode*>(sender)->getTag(), /*acceptAll=*/true, /*reject=*/false);
+}
+
+void VerificationCenterLayer::onReject(CCObject* sender) {
+    runQueueAction(static_cast<CCNode*>(sender)->getTag(), /*acceptAll=*/false, /*reject=*/true);
 }
 
 void VerificationCenterLayer::onClaimLevel(CCObject* sender) {

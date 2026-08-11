@@ -7,7 +7,7 @@
 
 using namespace geode::prelude;
 
-// Invisible list background (color only; keeps frames/borders)
+// Hide the list fill while keeping its frame.
 class $modify(PaimonGJListLayer, GJListLayer) {
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "GJListLayer::init");
@@ -26,8 +26,6 @@ class $modify(PaimonGJListLayer, GJListLayer) {
     }
 };
 
-// LevelCell handled in LevelCell.cpp (PaimonLevelCell::applyTransparentMode)
-// MapPackCell: carousel + transparency unified in MapPackCell.cpp (no ODR).
 
 class $modify(PaimonTransparentLevelListCell, LevelListCell) {
     void loadFromList(GJLevelList* list) {

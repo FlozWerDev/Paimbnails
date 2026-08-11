@@ -40,6 +40,8 @@ void renderSceneGraph(cocos2d::CCNode* scene);
 bool readBoundFramebufferRGBA(std::vector<uint8_t>& pixels, int& outWidth, int& outHeight);
 
 /// RGBA buffer, rows in Cocos2d orientation with flipY applied.
+/// Returns an autoreleased texture; pass retain = true to take ownership of it,
+/// in which case the caller is the one that has to release it.
 cocos2d::CCTexture2D* createTextureFromRGBA(
     uint8_t const* data, int width, int height, bool retain = true
 );

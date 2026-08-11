@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Geode/loader/Mod.hpp>
+#include "../../core/modules/ModuleRegistry.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <string>
@@ -9,7 +10,7 @@ namespace paimon::autopreview::config {
 
 // Master switch. When off, nothing in the feature runs.
 inline bool enabled() {
-    return geode::Mod::get()->getSettingValue<bool>("auto-preview-enable");
+    return paimon::modules::isEnabled("paimbnails.autopreview.browser");
 }
 // heavy/experimental path: it must download + fully instantiate the level
 // offscreen. Forced OFF on mobile regardless of the stored value.

@@ -13,8 +13,7 @@
 
 namespace paimon::texture_studio {
 
-// Re-opening a slot must work even if GD moved; the UI re-resolves paths
-// via GdResourcesLocator and warns on mismatch.
+// Re-open slots after GD moves resources by re-resolving paths.
 struct ProjectSheetRef {
     std::string baseName;
     std::string qualitySuffix;
@@ -32,7 +31,7 @@ struct ManualOverrideRef {
 
 struct AutoCacheRef {
     std::string  spriteName;
-    std::uint64_t spriteHash = 0;  // FNV-1a of the source sprite's RGBA bytes
+    std::uint64_t spriteHash = 0;  // FNV-1a of source RGBA.
     int          clusterCount = 0;
 };
 
@@ -45,32 +44,25 @@ struct SpriteSetting {
     cocos2d::ccColor3B colorGlow{255, 255, 255};
     cocos2d::ccColor3B colorDetail{255, 255, 255};
 
-    // Placement of the custom image inside the frame (only meaningful when
-    // hasCustomImage is set).
+    // Placement used when hasCustomImage is set.
     ImageTransform imageTransform{};
 
-    // false = the image replaces the sprite entirely; true = the image is
-    // composited on top of the (tinted or vanilla) sprite.
+    // False replaces the sprite; true composites over it.
     bool imageOverlay = false;
 
-    // Fusion: region-fill a texture (PNG/GIF) into a click-selected area.
-    // Mask + texture live under SlotPaths::fusionsDir; this flag only tracks
-    // presence so the UI / export know to load them.
-    // The fusion texture is NEVER recolored by pack colors (always stamped).
+    // Fusion region-fill; mask/texture live under SlotPaths::fusionsDir and are
+    // stamped without pack recoloring.
     bool hasFusion = false;
     bool fusionAnimated = false;
-    // Replace = keep texture colours pure. Luma/Overlay are optional styles.
+    // Replace keeps texture colors pure; Luma/Overlay are optional.
     FusionBlendMode fusionBlend = FusionBlendMode::Replace;
-    // Colour radius for paint-bucket (luminance-tolerant). Higher = more
-    // shades of the same colour (light yellow + darker yellow) join together.
-    // Lower if the fill eats the white ring / letters. Typical sweet spot 90–140.
+    // Paint-bucket color radius; typical range 90–140.
     int   fusionTolerance = 110;
-    // Grow fill by N px into SAME-COLOUR neighbours only (AA fringes).
-    // 0 = off. 1 is usually enough; high values still cannot cross white borders.
+    // Grow into same-color neighbors to cover AA fringes; 0 disables it.
     int   fusionExpandRadius = 1;
     float fusionOpacity = 1.0f;
     ImageTransform fusionTransform{};
-    // Fine placement in whole pixels (arrow keys). +Y = down.
+    // Pixel placement; +Y is down.
     int fusionPixelX = 0;
     int fusionPixelY = 0;
 
@@ -95,11 +87,11 @@ struct TextureProject {
     cocos2d::ccColor3B color1{149, 226, 3};
     cocos2d::ccColor3B color2{28, 233, 255};
     cocos2d::ccColor3B colorGlow{255, 255, 255};
-    // Interior white glyphs; pure white = keep vanilla.
+    // Interior glyph color; pure white keeps vanilla.
     cocos2d::ccColor3B colorDetail{255, 255, 255};
     int  brightness = 160;
 
-    // Tint engine tuning (see SpritePreviewOptions for semantics).
+    // Tint engine parameters; see SpritePreviewOptions.
     float maskSoftness     = 0.35f;
     int   clusterPrecision = 5;
     int   edgeCleanup      = 1;
@@ -113,14 +105,14 @@ struct TextureProject {
     bool colorGradientBg         = false;
     bool colorMainMenu           = false;
 
-    // PackGen asset-pack precision mode (see PackExportConfig).
+    // PackGen precision-mode options; see PackExportConfig.
     bool usePackGenAssets   = true;
     bool tintGoldFont       = false;
     bool colorGoldTitles    = false;
     bool colorDemonFaces    = false;
     bool mythicCompat       = false;
     bool includeModTextures = true;
-    // Export animated fusion GIFs (ImagePlus) alongside static sheets.
+    // Export animated fusion GIFs alongside static sheets.
     bool exportAnimatedFusions = true;
 
     std::map<std::string, ManualOverrideRef> overrides;
@@ -137,7 +129,7 @@ struct TextureProject {
 
 std::int64_t nowUnixMs();
 
-// Returns false only when no selected plist contains a usable UI sprite.
+// False only when no selected plist contains a usable UI sprite.
 bool ensureRepresentativeFrame(TextureProject& project);
 
-}  // namespace paimon::texture_studio
+}

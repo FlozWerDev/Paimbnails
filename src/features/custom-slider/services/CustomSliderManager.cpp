@@ -1,17 +1,57 @@
 #include "CustomSliderManager.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/SimplePlayer.hpp>
-#include <Geode/binding/SliderThumb.hpp>
 #include <Geode/utils/file.hpp>
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/ShapeStencil.hpp"
 #include "../../../utils/EditorContext.hpp"
+#include "../../icon-gradients/GradientUtils.hpp"
+
+#include <climits>
 
 using namespace geode::prelude;
 using namespace cocos2d;
 using namespace paimon::slider;
+
+namespace {
+constexpr int kMaxThumbTextureSize = 256;
+
+// Shader cache namespace for the slider thumbs. Gradient programs are keyed by
+// this value, so thumbs never share uniforms with the garage or item icons.
+constexpr int kGradientExtra = 909;
+
+ImageLoadHelper::LoadedImage loadThumbTexture(std::filesystem::path const& path) {
+    auto read = file::readBinary(path);
+    if (!read || read.unwrap().empty() || read.unwrap().size() > static_cast<size_t>(INT_MAX)) {
+        return {};
+    }
+
+    auto const& bytes = read.unwrap();
+    int width = 0;
+    int height = 0;
+    auto* pixels = stbi_load_from_memory(
+        bytes.data(), static_cast<int>(bytes.size()), &width, &height, nullptr, 4);
+    if (!pixels) return {};
+
+    ImageLoadHelper::LoadedImage result;
+    if (width > kMaxThumbTextureSize || height > kMaxThumbTextureSize) {
+        auto resized = ImageLoadHelper::downsampleForCache(
+            pixels, width, height, kMaxThumbTextureSize);
+        if (!resized.pixels.empty()) {
+            result = ImageLoadHelper::createFromRGBA(
+                resized.pixels.data(), resized.width, resized.height, false);
+        }
+    } else {
+        result = ImageLoadHelper::createFromRGBA(pixels, width, height, false);
+    }
+
+    stbi_image_free(pixels);
+    return result;
+}
+}
 
 CustomSliderManager& CustomSliderManager::get() {
     static CustomSliderManager instance;
@@ -30,6 +70,8 @@ std::filesystem::path CustomSliderManager::imagesDir() const {
 }
 
 void CustomSliderManager::loadConfig() {
+    invalidateImageCache();
+
     auto path = configPath();
     auto res = file::readFromJson<matjson::Value>(path);
     if (!res) return;
@@ -46,6 +88,7 @@ void CustomSliderManager::loadConfig() {
     m_config.iconOpacity     = json["iconOpacity"].asInt().unwrapOr(255);
     m_config.usePlayerColors = json["usePlayerColors"].asBool().unwrapOr(true);
     m_config.enableGlow      = json["enableGlow"].asBool().unwrapOr(false);
+    m_config.useGradients    = json["useGradients"].asBool().unwrapOr(false);
     m_config.customImagePath = json["customImagePath"].asString().unwrapOr("");
     m_config.containerEnabled = json["containerEnabled"].asBool().unwrapOr(true);
     m_config.containerShape = json["containerShape"].asString().unwrapOr("circle");
@@ -120,6 +163,7 @@ void CustomSliderManager::saveConfig() {
     json["iconOpacity"]     = m_config.iconOpacity;
     json["usePlayerColors"] = m_config.usePlayerColors;
     json["enableGlow"]      = m_config.enableGlow;
+    json["useGradients"]    = m_config.useGradients;
     json["customImagePath"] = m_config.customImagePath;
     json["containerEnabled"] = m_config.containerEnabled;
     json["containerShape"] = m_config.containerShape;
@@ -160,11 +204,25 @@ void CustomSliderManager::saveConfig() {
 }
 
 void CustomSliderManager::resetToDefaults() {
+    invalidateImageCache();
     m_config = CustomSliderConfig{};
     saveConfig();
 }
 
-CCNode* CustomSliderManager::createIconNode() {
+void CustomSliderManager::invalidateImageCache() {
+    auto clearPath = [](std::string const& path) {
+        if (path.empty()) return;
+        CCTextureCache::sharedTextureCache()->removeTextureForKey(path.c_str());
+        AnimatedGIFSprite::remove(path);
+    };
+
+    clearPath(m_imageTexturePath);
+    if (m_config.customImagePath != m_imageTexturePath) clearPath(m_config.customImagePath);
+    m_imageTexture = nullptr;
+    m_imageTexturePath.clear();
+}
+
+CCNode* CustomSliderManager::createIconNode(bool isSelected) {
     auto* gm = GameManager::get();
     if (!gm) return nullptr;
 
@@ -200,24 +258,48 @@ CCNode* CustomSliderManager::createIconNode() {
 
     player->updatePlayerFrame(iconId, gdIconType);
 
+    ccColor3B color1;
+    ccColor3B color2;
     if (m_config.usePlayerColors) {
-        auto col1 = gm->colorForIdx(gm->getPlayerColor());
-        auto col2 = gm->colorForIdx(gm->getPlayerColor2());
-        player->setColor(col1);
-        player->setSecondColor(col2);
+        color1 = gm->colorForIdx(gm->getPlayerColor());
+        color2 = gm->colorForIdx(gm->getPlayerColor2());
+    } else {
+        color1 = m_config.color1;
+        color2 = m_config.color2;
+    }
+
+    if (isSelected) {
+        auto lighten = [](ccColor3B color) {
+            color.r = std::min(255, static_cast<int>(color.r) * 3 / 4 + 80);
+            color.g = std::min(255, static_cast<int>(color.g) * 3 / 4 + 80);
+            color.b = std::min(255, static_cast<int>(color.b) * 3 / 4 + 80);
+            return color;
+        };
+        color1 = lighten(color1);
+        color2 = lighten(color2);
+    }
+
+    player->setColor(color1);
+    player->setSecondColor(color2);
+
+    if (m_config.usePlayerColors) {
         if (gm->getPlayerGlow()) {
             player->setGlowOutline(gm->colorForIdx(gm->getPlayerGlowColor()));
         } else {
             player->disableGlowOutline();
         }
     } else {
-        player->setColor(m_config.color1);
-        player->setSecondColor(m_config.color2);
         if (m_config.enableGlow) {
-            player->setGlowOutline(m_config.color2);
+            player->setGlowOutline(color2);
         } else {
             player->disableGlowOutline();
         }
+    }
+
+    if (m_config.useGradients && paimon::icon_gradients::moduleEnabled()) {
+        using namespace paimon::icon_gradients;
+        GradientUtils::applyGradient(
+            player, GradientUtils::getGradient(gdIconType, false), false, false, kGradientExtra);
     }
 
     player->setScale(m_config.iconScale);
@@ -279,43 +361,49 @@ static cocos2d::CCNode* wrapInShapeContainer(
         }
     }
 
-    // Apply user-facing scale/rotation/opacity to the wrapper, not the inner image
     container->setScale(cfg.iconScale);
     container->setRotation(cfg.iconRotation);
     return container;
 }
 
-CCNode* CustomSliderManager::createImageNode() {
+CCTexture2D* CustomSliderManager::imageTexture() {
     if (m_config.customImagePath.empty()) return nullptr;
 
-    std::filesystem::path imgPath(m_config.customImagePath);
+    std::filesystem::path imgPath = paimon::assets::pathFromUtf8(m_config.customImagePath);
     std::error_code ec;
     if (!std::filesystem::exists(imgPath, ec)) return nullptr;
 
     std::string pathStr = geode::utils::string::pathToString(imgPath);
-
-    CCTextureCache::sharedTextureCache()->removeTextureForKey(pathStr.c_str());
-    auto* tex = CCTextureCache::sharedTextureCache()->addImage(pathStr.c_str(), false);
-
-    if (!tex) {
-        // Fallback: try STB loader
-        auto stbResult = ImageLoadHelper::loadWithSTB(imgPath);
-        if (!stbResult.success || !stbResult.texture) return nullptr;
-        tex = stbResult.texture;
+    if (pathStr != m_imageTexturePath) {
+        invalidateImageCache();
+        m_imageTexturePath = pathStr;
     }
+    if (m_imageTexture) return m_imageTexture.data();
 
-    auto* spr = CCSprite::createWithTexture(tex);
+    auto loaded = loadThumbTexture(imgPath);
+    if (loaded.success && loaded.texture) {
+        m_imageTexture = loaded.texture;
+        loaded.texture->release();
+    } else {
+        m_imageTexture = CCTextureCache::sharedTextureCache()->addImage(pathStr.c_str(), false);
+    }
+    return m_imageTexture.data();
+}
+
+CCNode* CustomSliderManager::createImageNode() {
+    auto* texture = imageTexture();
+    if (!texture) return nullptr;
+
+    auto* spr = CCSprite::createWithTexture(texture);
     if (!spr) return nullptr;
 
     if (m_config.containerEnabled) {
-        // Reset scale/rotation: the wrapper handles them on the container
         spr->setScale(1.f);
         spr->setRotation(0.f);
         spr->setOpacity(static_cast<GLubyte>(m_config.iconOpacity));
         return wrapInShapeContainer(spr, m_config);
     }
 
-    // Legacy "raw" mode (no container): scale to ~30 px and apply user tweaks
     float maxDim = std::max(spr->getContentSize().width, spr->getContentSize().height);
     float targetSize = 30.f;
     float baseScale = targetSize / maxDim;
@@ -326,10 +414,12 @@ CCNode* CustomSliderManager::createImageNode() {
     return spr;
 }
 
-CCNode* CustomSliderManager::createGifNode() {
+CCNode* CustomSliderManager::createGifNode(bool isSelected) {
     if (m_config.customImagePath.empty()) return nullptr;
 
-    std::filesystem::path gifPath(m_config.customImagePath);
+    if (isSelected) return createImageNode();
+
+    std::filesystem::path gifPath = paimon::assets::pathFromUtf8(m_config.customImagePath);
     std::error_code ec;
     if (!std::filesystem::exists(gifPath, ec)) return nullptr;
 
@@ -346,7 +436,6 @@ CCNode* CustomSliderManager::createGifNode() {
         return wrapInShapeContainer(gifSpr, m_config);
     }
 
-    // Scale to fit within thumb size
     float maxDim = std::max(gifSpr->getContentSize().width, gifSpr->getContentSize().height);
     if (maxDim > 0.f) {
         float targetSize = 30.f;
@@ -361,15 +450,15 @@ CCNode* CustomSliderManager::createGifNode() {
     return gifSpr;
 }
 
-CCNode* CustomSliderManager::createThumbNode() {
+CCNode* CustomSliderManager::createThumbNode(bool isSelected) {
     switch (m_config.thumbMode) {
         case SliderThumbMode::Image:
             return createImageNode();
         case SliderThumbMode::Gif:
-            return createGifNode();
+            return createGifNode(isSelected);
         case SliderThumbMode::Icon:
         default:
-            return createIconNode();
+            return createIconNode(isSelected);
     }
 }
 
@@ -377,17 +466,9 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
     if (!slider) return false;
     if (!slider->getParent()) return false;
 
-    // EDITOR ISOLATION (single source of truth, anti-crash)
-    // While the editor is active, the mod must NOT touch ANY native sliders
-    // (color/HSV in ColorSelectPopup/CustomizeObjectLayer, trigger sliders,
-    // EditorUI sliders, etc.). Replacing setNormalImage/setSelectedImage on
-    // their SliderThumb corrupts the state GD reads later in
-    // CustomizeObjectLayer::updateColorSprite when the popup closes -> crash.
-    //
-    // This guard is based on the running SCENE, not parent typeid: when another
-    // mod $modifies ColorSelectPopup/CustomizeObjectLayer the typeid name no
-    // longer contains "ColorSelect"/"CustomizeObject" and string exclusion fails.
-    // The only exception is the mod's own CustomSliderPopup, which should be skinned.
+    // Never skin native editor sliders: GD rebuilds color state on close and
+    // replacing their thumbs can corrupt internal pointers. Scene detection is
+    // used because other mods may change the parent type name.
     if (paimon::isEditorScene()) {
         for (auto* p = slider->getParent(); p; p = p->getParent()) {
             if (std::string(typeid(*p).name()).find("CustomSliderPopup") != std::string::npos) {
@@ -397,16 +478,7 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
         return false;
     }
 
-    // HARD EXCLUSION (anti-crash)
-    // Never touch native color-editor sliders: ColorSelectPopup,
-    // CustomizeObjectLayer, and HSV widgets (ConfigureHSVWidget/HSVWidgetPopup).
-    // When those popups close, GD rebuilds color state in
-    // CustomizeObjectLayer::updateColorSprite reading internal pointers.
-    // Replacing setNormalImage/setSelectedImage in that context is high-risk
-    // and matches the known crash chain (ColorSelectPopup::closeColorSelect ->
-    // CustomizeObjectLayer::updateColorSprite, with betteredit hooking in
-    // between). These sliders are always excluded, even under the fallback
-    // "all targets active" path below.
+    // Always exclude native color/HSV editors, including fallback target mode.
     for (auto* p = slider->getParent(); p; p = p->getParent()) {
         auto cn = std::string(typeid(*p).name());
         if (cn.find("CustomizeObject") != std::string::npos ||
@@ -443,11 +515,7 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
             }
         }
 
-        // NOTE: the `colorSliders` target intentionally has no effect.
-        // Color/HSV sliders in the editor (ColorSelectPopup,
-        // CustomizeObjectLayer, HSV widgets) are always hard-excluded at
-        // the top of this function — see "HARD EXCLUSION (anti-crash)" above.
-        // The field is kept in the config only for compatibility with existing saves.
+        // colorSliders is kept for config compatibility; editor color controls stay excluded.
 
         if (m_config.targets.garageSliders) {
             if (className.find("GJGarageLayer") != std::string::npos ||
@@ -459,7 +527,6 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
         parent = parent->getParent();
     }
 
-    // If all targets are enabled, affect all sliders as fallback
     if (m_config.targets.optionsSliders &&
         m_config.targets.editorSliders &&
         m_config.targets.colorSliders &&
@@ -470,190 +537,7 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
     return false;
 }
 
-static const char* kCustomIconID = "paimon-slider-icon";
-
-bool CustomSliderManager::applyCustomThumb(CCNode* sliderThumb) {
-    if (!m_config.enabled) return false;
-    if (!sliderThumb) return false;
-
-    if (sliderThumb->getChildByID("paimon-slider-icon"_spr)) {
-        auto* existing = sliderThumb->getChildByID("paimon-slider-icon"_spr);
-        existing->setScale(m_config.iconScale);
-        existing->setRotation(m_config.iconRotation);
-        return true;
-    }
-
-    if (!shouldAffectSlider(sliderThumb)) return false;
-
-    auto* thumbNode = createThumbNode();
-    if (!thumbNode) return false;
-
-    thumbNode->setID("paimon-slider-icon"_spr);
-
-    auto thumbSize = sliderThumb->getContentSize();
-    thumbNode->setPosition({thumbSize.width / 2.f, thumbSize.height / 2.f});
-    thumbNode->setAnchorPoint({0.5f, 0.5f});
-
-    // CRITICAL FIX: hide original slider thumb (zero-size sprite + existing children)
-    if (auto* thumbSprite = typeinfo_cast<CCSprite*>(sliderThumb)) {
-        thumbSprite->setOpacity(0);
-        if (auto* menuItem = typeinfo_cast<CCMenuItemSprite*>(sliderThumb)) {
-            if (auto* normalImg = menuItem->getNormalImage()) {
-                normalImg->setVisible(false);
-            }
-            if (auto* selImg = menuItem->getSelectedImage()) {
-                selImg->setVisible(false);
-            }
-        }
-    }
-
-    if (auto* children = sliderThumb->getChildren()) {
-        for (auto* child : CCArrayExt<CCNode*>(children)) {
-            if (child && child->getID() != "paimon-slider-icon"_spr) {
-                child->setVisible(false);
-            }
-        }
-    }
-
-    sliderThumb->addChild(thumbNode, 10);
-    return true;
-}
-
-void CustomSliderManager::restoreOriginalThumb(CCNode* sliderThumb) {
-    if (!sliderThumb) return;
-
-    // Remove our custom icon
-    auto* icon = sliderThumb->getChildByID("paimon-slider-icon"_spr);
-    if (icon) {
-        icon->removeFromParent();
-    }
-
-    // Restore the original sprite opacity
-    if (auto* thumbSprite = typeinfo_cast<CCSprite*>(sliderThumb)) {
-        thumbSprite->setOpacity(255);
-
-        if (auto* menuItem = typeinfo_cast<CCMenuItemSprite*>(sliderThumb)) {
-            if (auto* normalImg = menuItem->getNormalImage()) {
-                normalImg->setVisible(true);
-            }
-            if (auto* selImg = menuItem->getSelectedImage()) {
-                selImg->setVisible(true);
-            }
-        }
-    }
-
-    if (auto* children = sliderThumb->getChildren()) {
-        for (auto* child : CCArrayExt<CCNode*>(children)) {
-            if (child) {
-                child->setVisible(true);
-            }
-        }
-    }
-}
-
-void CustomSliderManager::startDragAnimation(CCNode* sliderThumb) {
-    // Deprecated — animation is now handled directly in the hook
-    (void)sliderThumb;
-}
-
-void CustomSliderManager::stopDragAnimation(CCNode* sliderThumb) {
-    // Deprecated — animation is now handled directly in the hook
-    (void)sliderThumb;
-}
-
 void CustomSliderManager::addIconToNode(CCNode* baseNode, bool isSelected) {
     if (!baseNode) return;
-
-    switch (m_config.thumbMode) {
-        case SliderThumbMode::Image: {
-            auto* node = createImageNode();
-            if (node) baseNode->addChild(node);
-            break;
-        }
-        case SliderThumbMode::Gif: {
-            auto* node = createGifNode();
-            if (node) baseNode->addChild(node);
-            break;
-        }
-        case SliderThumbMode::Icon:
-        default: {
-            // Create SimplePlayer icon (same approach as RazoomGD's mod)
-            auto* gm = GameManager::get();
-            if (!gm) return;
-
-            int iconId = m_config.customIconId;
-            IconType gdIconType = IconType::Cube;
-
-            switch (m_config.iconType) {
-                case SliderIconType::Cube:   gdIconType = IconType::Cube;   break;
-                case SliderIconType::Ship:   gdIconType = IconType::Ship;   break;
-                case SliderIconType::Ball:   gdIconType = IconType::Ball;   break;
-                case SliderIconType::Ufo:    gdIconType = IconType::Ufo;    break;
-                case SliderIconType::Wave:   gdIconType = IconType::Wave;   break;
-                case SliderIconType::Robot:  gdIconType = IconType::Robot;  break;
-                case SliderIconType::Spider: gdIconType = IconType::Spider; break;
-                case SliderIconType::Swing:  gdIconType = IconType::Swing;  break;
-            }
-
-            if (m_config.usePlayerIcon) {
-                switch (m_config.iconType) {
-                    case SliderIconType::Cube:   iconId = gm->getPlayerFrame();  break;
-                    case SliderIconType::Ship:   iconId = gm->getPlayerShip();   break;
-                    case SliderIconType::Ball:   iconId = gm->getPlayerBall();   break;
-                    case SliderIconType::Ufo:    iconId = gm->getPlayerBird();   break;
-                    case SliderIconType::Wave:   iconId = gm->getPlayerDart();   break;
-                    case SliderIconType::Robot:  iconId = gm->getPlayerRobot();  break;
-                    case SliderIconType::Spider: iconId = gm->getPlayerSpider(); break;
-                    case SliderIconType::Swing:  iconId = gm->getPlayerSwing();  break;
-                }
-            }
-
-            auto* player = SimplePlayer::create(iconId);
-            if (!player) return;
-
-            player->updatePlayerFrame(iconId, gdIconType);
-
-            ccColor3B col1, col2;
-            if (m_config.usePlayerColors) {
-                col1 = gm->colorForIdx(gm->getPlayerColor());
-                col2 = gm->colorForIdx(gm->getPlayerColor2());
-            } else {
-                col1 = m_config.color1;
-                col2 = m_config.color2;
-            }
-
-            // Lighten colors for selected state (pressed)
-            if (isSelected) {
-                auto lighten = [](ccColor3B& c) {
-                    const float add = 80.f, mul = 0.25f;
-                    c.r = std::min(255, (int)c.r - (int)(c.r * mul) + (int)add);
-                    c.g = std::min(255, (int)c.g - (int)(c.g * mul) + (int)add);
-                    c.b = std::min(255, (int)c.b - (int)(c.b * mul) + (int)add);
-                };
-                lighten(col1);
-                lighten(col2);
-            }
-
-            player->setColor(col1);
-            player->setSecondColor(col2);
-
-            if (m_config.usePlayerColors) {
-                if (gm->getPlayerGlow()) {
-                    player->setGlowOutline(gm->colorForIdx(gm->getPlayerGlowColor()));
-                } else {
-                    player->disableGlowOutline();
-                }
-            } else {
-                if (m_config.enableGlow) {
-                    player->setGlowOutline(col2);
-                } else {
-                    player->disableGlowOutline();
-                }
-            }
-
-            player->setScale(m_config.iconScale);
-            baseNode->addChild(player);
-            break;
-        }
-    }
+    if (auto* node = createThumbNode(isSelected)) baseNode->addChild(node);
 }

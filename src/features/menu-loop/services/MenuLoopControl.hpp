@@ -9,13 +9,20 @@
 
 namespace paimon::menuloop {
 
-// VANILLA_GD_MENU_LOOP_DISABLED: true if user disabled menu music in GD settings
+// True when GD's menu music is disabled.
 inline bool isVanillaMenuLoopDisabled() {
     auto* gm = GameManager::get();
     return gm && gm->getGameVariable("0122");
 }
 
 namespace MenuLoopControl {
+
+    inline void stopMenuMusic() {
+        auto* fmod = FMODAudioEngine::get();
+        if (fmod && fmod->m_backgroundMusicChannel) {
+            fmod->m_backgroundMusicChannel->stop();
+        }
+    }
 
     inline void woahThereBuddy(const std::string& reason) {
         PopupManager::get().quickPopup(
@@ -28,7 +35,6 @@ namespace MenuLoopControl {
         ).showInstant();
     }
 
-    // Shuffle
     inline void shuffleSong() {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
@@ -40,12 +46,12 @@ namespace MenuLoopControl {
             woahThereBuddy("You're currently playing a menu loop <cy>override</c>. Check your settings.");
             return;
         }
-        if (sm.songSizeIsBad()) {
-            woahThereBuddy("You don't have enough songs. Visit the config directory through mod settings.");
+        if (sm.getSongs().empty()) {
+            woahThereBuddy("You don't have any available songs. Add music from the main Menu Music popup.");
             return;
         }
 
-        FMODAudioEngine::get()->m_backgroundMusicChannel->stop();
+        stopMenuMusic();
         const std::string& songToBeStored = sm.getCurrentSong();
         if (!songToBeStored.empty()) {
             if (sm.getSongToSongDataEntries().contains(songToBeStored) &&
@@ -58,21 +64,21 @@ namespace MenuLoopControl {
         GameManager::sharedState()->playMenuMusic();
     }
 
-    // Constant Shuffle (auto-advance when song ends)
     inline void constantShuffleModeNewSong() {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
         if (!sm.getConstantShuffleMode()) return shuffleSong();
 
         auto* fmod = FMODAudioEngine::get();
+        if (!fmod || !fmod->m_backgroundMusicChannel) return;
         float vol = 0.f;
         auto res = fmod->m_backgroundMusicChannel->getVolume(&vol);
         if (fmod->m_musicVolume <= 0.0f || fmod->getBackgroundMusicVolume() <= 0.0f || vol <= 0.0f) {
-            if (sm.getAdvancedLogs()) log::info("MISSION ABORT — volume is 0");
+            if (sm.getAdvancedLogs()) log::info("MISSION ABORT - volume is 0");
             return;
         }
 
-        fmod->m_backgroundMusicChannel->stop();
+        stopMenuMusic();
         const std::string& songToBeStored = sm.getCurrentSong();
         if (!songToBeStored.empty()) {
             if (sm.getSongToSongDataEntries().contains(songToBeStored) &&
@@ -92,7 +98,6 @@ namespace MenuLoopControl {
         sm.setCalledOnce(true);
     }
 
-    // Previous
     inline void previousSong() {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
@@ -117,12 +122,11 @@ namespace MenuLoopControl {
             Notification::create("There's no previous song to go back to! :(", NotificationIcon::Info)->show();
             return;
         }
-        FMODAudioEngine::get()->m_backgroundMusicChannel->stop();
+        stopMenuMusic();
         sm.setCurrentSong(prev);
         GameManager::sharedState()->playMenuMusic();
     }
 
-    // Hold
     inline void holdSong() {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
@@ -146,7 +150,7 @@ namespace MenuLoopControl {
         }
         sm.setHeldSong(current);
         if (!formerHeld.empty()) {
-            FMODAudioEngine::get()->m_backgroundMusicChannel->stop();
+            stopMenuMusic();
             sm.setCurrentSong(formerHeld);
             GameManager::sharedState()->playMenuMusic();
             return;
@@ -155,7 +159,6 @@ namespace MenuLoopControl {
         else constantShuffleModeNewSong();
     }
 
-    // Favorite
     inline void favoriteSong() {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
@@ -183,7 +186,6 @@ namespace MenuLoopControl {
         log::info("favoriting: {}", current);
         sm.addToFavorites();
 
-        // Write to favorites.txt
         auto favPath = sm.getConfigDir() / "favorites.txt";
         {
             auto existing = geode::utils::file::readString(favPath).unwrapOr("");
@@ -193,7 +195,6 @@ namespace MenuLoopControl {
         Notification::create(fmt::format("Favorited {}!", sm.getCurrentSongDisplayName()), NotificationIcon::Success)->show();
     }
 
-    // Blacklist
     inline void blacklistSong() {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
@@ -210,6 +211,7 @@ namespace MenuLoopControl {
             return;
         }
         const std::string& current = sm.getCurrentSong();
+        const std::string oldDisplayName = sm.getCurrentSongDisplayName();
         if (std::ranges::find(sm.getBlacklist(), current) != sm.getBlacklist().end()) {
             woahThereBuddy("You've already blacklisted this song. Check your blacklist again.");
             return;
@@ -222,31 +224,27 @@ namespace MenuLoopControl {
         sm.addToBlacklist();
         sm.removeSong(current);
 
-        // Write to blacklist.txt
         auto blPath = sm.getConfigDir() / "blacklist.txt";
         {
             auto existing = geode::utils::file::readString(blPath).unwrapOr("");
             (void)geode::utils::file::writeString(blPath, existing + fmt::format("{}\n", current));
         }
 
-        // Pick new song
-        if (!sm.getConstantShuffleMode()) shuffleSong();
-        else constantShuffleModeNewSong();
+        stopMenuMusic();
+        sm.pickRandomSong();
+        Mod::get()->setSavedValue<std::string>("lastMenuLoop", sm.getCurrentSong());
+        GameManager::sharedState()->playMenuMusic();
 
-        Notification::create(fmt::format("Blacklisted {}. New song picked!", sm.getCurrentSongDisplayName()), NotificationIcon::Success)->show();
+        Notification::create(fmt::format("Blacklisted {}. New song picked!", oldDisplayName), NotificationIcon::Success)->show();
     }
 
-    // Copy Song
     inline void copySong() {
         auto toCopy = paimon::menumusic::resolveActiveMenuMusicCopyValue();
         geode::utils::clipboard::write(toCopy);
         Notification::create(fmt::format("Copied: {}", toCopy), NotificationIcon::Success)->show();
     }
 
-    // Playback progress (seek)
-    //
-    // Jump amount in milliseconds. If SHIFT is held, doubles;
-    // CTRL+SHIFT triples (mimicking the reference mod).
+// Seek by the configured milliseconds; Shift doubles and Ctrl+Shift triples.
     inline int getJumpAmountMs() {
         int base = static_cast<int>(Mod::get()->getSettingValue<int64_t>("menuLoopSeekAmountMs"));
         if (base < 100) base = 100;
@@ -266,7 +264,7 @@ namespace MenuLoopControl {
         return base;
     }
 
-    // Jump active music channel to percentage (0..100).
+// Seek the active music channel to a percentage.
     inline void setSongPercentage(int percentage) {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
@@ -290,8 +288,7 @@ namespace MenuLoopControl {
         sm.setPauseSongPositionTracking(false);
     }
 
-    // Skip backward by the configured amount. Wraps or clamps
-    // depending on constant shuffle mode.
+// Seek backward, wrapping or clamping according to constant shuffle mode.
     inline void skipBackward() {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
@@ -315,7 +312,7 @@ namespace MenuLoopControl {
                 newPos = 0;
                 ch->setPosition(newPos, FMOD_TIMEUNIT_MS);
             } else {
-                // Wrap modulo fullLength to go back from the end.
+// Wrap modulo fullLength when seeking backward from the end.
                 newPos = (((lastPos - jump) % fullLength) + fullLength) % fullLength;
                 ch->setPosition(newPos, FMOD_TIMEUNIT_MS);
             }
@@ -327,8 +324,7 @@ namespace MenuLoopControl {
         sm.setPauseSongPositionTracking(false);
     }
 
-    // Skip forward by the configured amount. Shuffles if past end
-    // in constant shuffle mode, wraps otherwise.
+// Seek forward; shuffle past the end in constant-shuffle mode.
     inline void skipForward() {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
@@ -363,7 +359,7 @@ namespace MenuLoopControl {
         sm.setPauseSongPositionTracking(false);
     }
 
-    // Add current song to the configured playlist file
+// Add the current song to the configured playlist file.
     inline void addCurrentSongToPlaylistFile() {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
@@ -401,6 +397,6 @@ namespace MenuLoopControl {
             NotificationIcon::Success)->show();
     }
 
-} // namespace MenuLoopControl
+}
 
-} // namespace paimon::menuloop
+}

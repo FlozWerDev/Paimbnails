@@ -2,6 +2,7 @@
 
 #include "../model/MenuMusicTypes.hpp"
 #include <Geode/Geode.hpp>
+#include <fmod.hpp>
 #include <deque>
 #include <functional>
 #include <string>
@@ -19,10 +20,14 @@ public:
 
     bool playSpecific(const std::string& trackId);
 
+    bool swapHeldTrack();
+    const std::string& heldTrackId() const { return m_heldTrackId; }
+    bool isManagingPlayback() const;
+
     void pause();
     void resume();
     void toggleVanillaFallback();
-    bool isPaused() const { return m_paused; }
+    bool isPaused() const;
 
     void setMode(PlaybackMode mode, bool playNow = true);
 
@@ -46,13 +51,16 @@ private:
     MenuMusicPlayer& operator=(const MenuMusicPlayer&) = delete;
 
     std::string pickRandomExcept(const std::string& exceptId) const;
-    void applyOverrideAndPlay(const std::string& trackId, const std::string& audioPath);
+    bool applyOverrideAndPlay(const std::string& trackId, const std::string& audioPath);
     void notifyChanged();
 
     PlaybackState m_state;
     bool m_paused = false;
+    // Canal concreto que pausamos, para no tocar el resto de la musica.
+    FMOD::Channel* m_pausedChannel = nullptr;
 
     std::deque<std::string> m_history;
+    std::string m_heldTrackId;
     static constexpr std::size_t kMaxHistory = 32;
 
     std::vector<std::pair<std::size_t, TrackChangedListener>> m_listeners;

@@ -16,7 +16,10 @@ namespace {
 
 class $modify(PaimonSmoothScrollDispatcher, CCMouseDispatcher) {
     static void onModify(auto& self) {
-        (void)self.setHookPriority("cocos2d::CCMouseDispatcher::dispatchScrollMSG", geode::Priority::Early);
+        (void)self.setHookPriority(
+            "cocos2d::CCMouseDispatcher::dispatchScrollMSG",
+            geode::Priority::Normal
+        );
     }
 
     void tickSmoothScroll(float dt) {

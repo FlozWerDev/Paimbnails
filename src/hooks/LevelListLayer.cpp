@@ -8,7 +8,9 @@
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/thumbnails/ui/LevelCellSettingsPopup.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
+#include "../core/modules/ModuleRegistry.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../utils/Debug.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../utils/PaimonNotification.hpp"
 #include "../managers/ThumbnailAPI.hpp"
@@ -91,9 +93,7 @@ std::vector<int> buildPredictiveWindow(LevelCellScanResult const& scan, size_t l
     return predictive;
 }
 
-// Insert btn into the search-menu, respecting its layout if it has one;
-// otherwise place it to the right of the rightmost item. Shared by the
-// settings gear and refresh buttons.
+// Insert a button into the search menu, falling back to the rightmost slot.
 void appendButtonToSearchMenu(CCMenu* searchMenu, CCNode* btn) {
     if (!searchMenu || !btn) return;
 
@@ -117,7 +117,6 @@ void appendButtonToSearchMenu(CCMenu* searchMenu, CCNode* btn) {
 
 class $modify(PaimonLevelListLayer, LevelListLayer) {
     static void onModify(auto& self) {
-        // Capture the list ID before init
         (void)self.setHookPriorityPre("LevelListLayer::init", geode::Priority::Normal);
     }
 
@@ -147,7 +146,6 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
     }
 
     struct Fields {
-        // IDs whose manifest was already requested
         std::unordered_set<int> m_manifestFetchedIds;
         Ref<CCSprite> m_compactButton = nullptr;
         float m_prefetchInterval = 1.0f;
@@ -167,7 +165,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         Mod::get()->setSettingValue<bool>("compact-list-mode", enabled);
         LevelCellSettingsPopup::s_settingsVersion++;
         setCompactButtonColor();
-        paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
+        paimon::thumbnails::refreshLevelBrowserForCompactToggle(this);
     }
 
     void addCompactToggleButton() {
@@ -212,9 +210,9 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
 
     $override
     bool init(GJSearchObject* p0) {
-        // Clear the context on entering search
         paimon::SessionState::get().currentListID = 0;
         if (!LevelBrowserLayer::init(p0)) return false;
+
 
         LayerBackgroundManager::get().applyBackground(this, "browser");
 
@@ -235,12 +233,17 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
     void onEnter() {
         LevelBrowserLayer::onEnter();
         setCompactButtonColor();
+    // Re-arm prefetch after custom transitions or back navigation.
+        this->unschedule(schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells));
+        this->schedule(
+            schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells),
+            m_fields->m_prefetchInterval
+        );
     }
 
     $override
     void setupLevelBrowser(CCArray* array) {
-        // Suppress compact mode for MyLevels and for LevelListLayer (lists).
-        // LevelListLayer derives from LevelBrowserLayer, so this runs for both.
+    // Lists and MyLevels use vanilla compact behavior.
         bool isLevelList = typeinfo_cast<LevelListLayer*>(this) != nullptr;
         bool suppressCompactForThisBrowser =
             isLevelList ||
@@ -277,8 +280,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         return btn;
     }
 
-    // Locate the top search-menu: by ID first, then heuristically (a child menu
-    // in the top third of the screen). Shared by the settings and refresh buttons.
+    // Find the top search menu by ID, then by its screen position.
     CCMenu* findTopSearchMenu() {
         if (auto node = this->getChildByID("search-menu")) {
             if (auto* menu = typeinfo_cast<CCMenu*>(node)) return menu;
@@ -320,13 +322,15 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         if (!popup) return;
 
         popup->setOnSettingsChanged([]() {
-            log::info("[LevelBrowserLayer] LevelCell settings changed, will apply on next cell load");
+            PaimonDebug::log("[LevelBrowserLayer] LevelCell settings changed, will apply on next cell load");
         });
 
         popup->show();
     }
 
     void addRefreshButton() {
+        if (!paimon::modules::isEnabled("paimbnails.thumbnails.browser")) return;
+
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_updateBtn_001.png");
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_replayBtn_001.png");
         if (!spr) return;
@@ -338,7 +342,6 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         if (auto* searchMenu = findTopSearchMenu()) {
             appendButtonToSearchMenu(searchMenu, btn);
         } else {
-            // Own menu in the top-right corner
             auto winSize = CCDirector::get()->getWinSize();
             auto menu = CCMenu::create();
             menu->setPosition({0, 0});
@@ -360,18 +363,15 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
 
         auto& loader = ThumbnailLoader::get();
 
-        // Invalidate each level in the list
         for (int levelID : scan.orderedLevelIDs) {
             loader.invalidateLevel(levelID, false);
             loader.invalidateLevel(levelID, true);
         }
 
-        // Clear manifest tracking
         for (int levelID : scan.orderedLevelIDs) {
             m_fields->m_manifestFetchedIds.erase(levelID);
         }
 
-        // Re-request manifest and re-download
         HttpClient::get().fetchManifest(scan.orderedLevelIDs, nullptr);
         loader.prefetchLevels(scan.orderedLevelIDs, ThumbnailLoader::PriorityVisibleCell);
 
@@ -381,6 +381,20 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
     }
 
     void prefetchVisibleLevelCells(float) {
+        if (!paimon::modules::isEnabled("paimbnails.thumbnails.browser")) {
+            this->unschedule(schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells));
+            return;
+        }
+
+    // Stop the 1 s tick when detached; Windows may not call onExit here.
+        auto* running = CCDirector::get()->getRunningScene();
+        CCNode* root = this;
+        while (root->getParent()) root = root->getParent();
+        if (!running || root != static_cast<CCNode*>(running)) {
+            this->unschedule(schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells));
+            return;
+        }
+
         auto& loader = ThumbnailLoader::get();
         if (loader.getActiveTaskCount() >= loader.getMaxConcurrentTasks()) {
             m_fields->m_prefetchInterval = std::min(m_fields->m_prefetchInterval + 0.25f, 2.0f);
@@ -413,7 +427,6 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
 
         auto predictiveIDs = buildPredictiveWindow(scan, 2, 5);
 
-        // Collect IDs without a manifest for prefetch
         std::vector<int> newManifestIds;
         for (int id : levelIDs) {
             if (m_fields->m_manifestFetchedIds.find(id) == m_fields->m_manifestFetchedIds.end()) {
@@ -427,12 +440,10 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         }
 
         if (!newManifestIds.empty()) {
-            // Mark as requested to avoid duplicates
             for (int id : newManifestIds) {
                 m_fields->m_manifestFetchedIds.insert(id);
             }
 
-            // Request the manifest once for all visible levels
             HttpClient::get().fetchManifest(newManifestIds, nullptr);
         }
 
@@ -441,10 +452,11 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
             loader.prefetchLevels(predictiveIDs, ThumbnailLoader::PriorityPredictivePrefetch);
         }
 
-        // Warm the hero URL only if the cell thumb isn't in RAM yet (LevelInfo
-        // uses tryGetCachedTexture; avoids duplicate decode/upload in m_urlTasks).
+    // Warm the hero URL only when the cell cache misses.
         for (int levelID : levelIDs) {
             if (loader.isLoaded(levelID, false)) continue;
+    // Without a manifest, warming the URL would create a repeated 404.
+            if (!HttpClient::get().getManifestEntry(levelID).has_value()) continue;
             std::string url = ThumbnailAPI::get().getThumbnailURL(levelID);
             if (url.empty()) continue;
             loader.requestUrlLoad(
@@ -456,5 +468,3 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
     }
 
 };
-
-// NOTE: current-list-id cleanup is in MenuLayer::init

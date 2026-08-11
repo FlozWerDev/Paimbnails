@@ -11,7 +11,7 @@ endif()
 
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
-project(Paimbnails VERSION 1.0.9)
+project(Paimbnails VERSION 1.1.0)
 
 # CPM
 set(CPM_DOWNLOAD_VERSION 0.40.2)
@@ -27,11 +27,11 @@ endif()
 
 include(${CPM_DOWNLOAD_LOCATION})
 
-# pl_mpeg — header-only video decoder fallback
+# pl_mpeg — header-only MPEG-1 decoder (.mpg/.mpeg only)
 CPMAddPackage(
     NAME pl_mpeg
     GITHUB_REPOSITORY phoboslab/pl_mpeg
-    GIT_TAG master
+    GIT_TAG c871f2be022ece7ef4f64230b4fb8e1fb9eb6023
     DOWNLOAD_ONLY YES
 )
 
@@ -53,6 +53,32 @@ if (rapidfuzz_ADDED)
     target_include_directories(rapidfuzz INTERFACE ${rapidfuzz_SOURCE_DIR})
 endif()
 
+# libyuv — SIMD YUV conversion and scaling (BSD-3)
+CPMAddPackage(
+    NAME libyuv
+    GIT_REPOSITORY https://chromium.googlesource.com/libyuv/libyuv
+    GIT_TAG 9c5d5c1e55e8956d6bcd9cabddace4541abde2d3
+    DOWNLOAD_ONLY YES
+)
+
+if (libyuv_ADDED)
+    file(GLOB LIBYUV_SOURCES ${libyuv_SOURCE_DIR}/source/*.cc)
+    add_library(yuv STATIC ${LIBYUV_SOURCES})
+    target_include_directories(yuv PUBLIC ${libyuv_SOURCE_DIR}/include)
+    # No libjpeg here, and SME/SVE need toolchains newer than the Android NDK's.
+    target_compile_definitions(yuv PUBLIC
+        LIBYUV_DISABLE_JPEG
+        LIBYUV_DISABLE_SME
+        LIBYUV_DISABLE_SVE
+    )
+    set_target_properties(yuv PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    if (MSVC)
+        target_compile_options(yuv PRIVATE /w)
+    else()
+        target_compile_options(yuv PRIVATE -w)
+    endif()
+endif()
+
 # Sources
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.cpp)
 if (APPLE)
@@ -61,11 +87,6 @@ if (APPLE)
 endif()
 
 add_library(${PROJECT_NAME} SHARED ${SOURCES})
-
-# Public Editor API headers (paimon/editor/*) for this target + dependents.
-target_include_directories(${PROJECT_NAME} PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
 
 # Optimizaciones
 if (MSVC)
@@ -96,9 +117,6 @@ if (MSVC)
             src/features/discord-presence/services/DiscordPresenceManager.cpp
             src/features/discord-presence/ui/DiscordConfigPopup.cpp
             src/features/dynamic-songs/services/DynamicSongManager.cpp
-            src/features/editor-music/hooks/EditorMusicEditorHook.cpp
-            src/features/editor-music/services/EditorMusicPlayer.cpp
-            src/features/editor-music/ui/EditorMusicCell.cpp
             src/features/emotes/EmoteRenderer.cpp
             src/features/emotes/services/EmoteCache.cpp
             PROPERTIES COMPILE_OPTIONS "/O1"
@@ -146,6 +164,7 @@ if (WIN32)
         shell32.lib
         ws2_32.lib
         winmm.lib
+        winhttp.lib
         opengl32.lib
     )
 elseif (ANDROID)
@@ -184,11 +203,14 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} pl_mpeg)
 target_link_libraries(${PROJECT_NAME} rapidfuzz)
+target_link_libraries(${PROJECT_NAME} yuv)
 
 # Discord Rich Presence uses our own self-contained IPC client
 # (src/features/discord-presence/services/DiscordIpcClient.*), so there's no
 # external dependency to fetch. Enabled on desktop platforms only.
-if (WIN32 OR APPLE)
+# APPLE is also true for iOS, where there is no Discord client to open the
+# local IPC socket to, so the desktop check has to exclude it explicitly.
+if (WIN32 OR (APPLE AND NOT IOS))
     target_compile_definitions(${PROJECT_NAME} PRIVATE PAIMON_HAS_DISCORD_RPC=1)
 endif()
 

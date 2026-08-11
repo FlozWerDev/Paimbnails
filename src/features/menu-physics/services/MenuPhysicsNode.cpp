@@ -40,7 +40,6 @@ namespace {
         cfg.airDrag = static_cast<float>(mod->getSettingValue<double>("menu-physics-air-drag"));
         cfg.angularDrag = static_cast<float>(mod->getSettingValue<double>("menu-physics-angular-drag"));
         cfg.removeCeiling = mod->getSettingValue<bool>("menu-physics-remove-ceiling");
-        cfg.pushPower = static_cast<float>(mod->getSettingValue<double>("menu-physics-push-power"));
         cfg.massBySize = mod->getSettingValue<bool>("menu-physics-mass-by-size");
         return cfg;
     }

@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <Geode/Geode.hpp>
+#include <Geode/binding/CCScrollLayerExt.hpp>
 #include <string>
 #include <vector>
 
@@ -29,14 +30,14 @@ protected:
     std::string m_fontFile = "chatFont.fnt";
     cocos2d::CCNode* m_textNode = nullptr;       // the emote overlay or TextArea/label
 
-    // Selection state
     bool m_selecting = false;
     cocos2d::CCPoint m_startPos{0.f, 0.f};
     cocos2d::CCPoint m_endPos{0.f, 0.f};
     size_t m_startIndex = 0;
     size_t m_endIndex = 0;
+    geode::WeakRef<CCScrollLayerExt> m_parentScroll;
+    bool m_parentScrollWasDisabled = false;
 
-    // Visual
     cocos2d::CCDrawNode* m_highlight = nullptr;
     cocos2d::CCMenu* m_copyMenu = nullptr;
 
@@ -58,6 +59,8 @@ protected:
 
     void refresh(std::string const& text, cocos2d::CCNode* textNode,
                  cocos2d::CCSize const& cellSize, std::string const& fontFile);
+    void lockParentScroll();
+    void unlockParentScroll();
     void rebuildLayoutCache();
     cocos2d::CCRect getExpandedTextRect() const;
     cocos2d::CCPoint clampToTextRect(cocos2d::CCPoint const& point) const;

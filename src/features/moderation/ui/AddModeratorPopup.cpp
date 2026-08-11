@@ -48,7 +48,6 @@ bool AddModeratorPopup::init(geode::CopyableFunction<void(bool, std::string cons
 
     buildRoleTabs();
 
-    // Member list panel
     float panelW = content.width - 30.f;
     float panelH = 120.f;
     float panelY = content.height / 2.f + 8.f;
@@ -79,7 +78,7 @@ bool AddModeratorPopup::init(geode::CopyableFunction<void(bool, std::string cons
 
     m_usernameInput = TextInput::create(content.width - 130.f, Localization::get().getString("rolemgr.enter_username"));
     m_usernameInput->setPosition({cx - 28.f, content.height / 2.f - 86.f});
-    m_usernameInput->setCommonFilter(CommonFilter::ID);
+    m_usernameInput->setFilter("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.");
     m_usernameInput->setMaxCharCount(20);
     m_usernameInput->setID("username-input"_spr);
     m_mainLayer->addChild(m_usernameInput, 11);

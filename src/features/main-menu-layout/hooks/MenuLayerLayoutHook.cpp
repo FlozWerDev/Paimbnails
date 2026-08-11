@@ -1,5 +1,6 @@
 #include "../services/MainMenuLayoutManager.hpp"
 #include "LayoutEditorKeybind.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 
 #include <Geode/modify/MenuLayer.hpp>
 #include "../../../framework/HookConventions.hpp"
@@ -17,6 +18,9 @@ class $modify(PaimonMainMenuLayoutHook, MenuLayer) {
         if (!MenuLayer::init()) {
             return false;
         }
+
+        if (!paimon::modules::isEnabled("paimbnails.menulayout.menu")) return true;
+
 
         paimon::menu_layout::MainMenuLayoutManager::get().load();
 

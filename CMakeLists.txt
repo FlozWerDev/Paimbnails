@@ -77,6 +77,37 @@ if (libyuv_ADDED)
     else()
         target_compile_options(yuv PRIVATE -w)
     endif()
+
+    # row_neon64.cc and compare_neon64.cc use sdot/udot/usdot, which the
+    # assembler rejects unless dotprod and i8mm are enabled. Upstream builds the
+    # *_neon64.cc files as their own object library with these flags; we glob
+    # every source into one target, so they have to be set per file instead.
+    # ThinLTO defers inline asm to the link, which is where iOS reports it.
+    if (ANDROID)
+        if (ANDROID_ABI STREQUAL "arm64-v8a")
+            set(LIBYUV_NEON64_FLAGS -march=armv8.2-a+dotprod+i8mm)
+        endif()
+    elseif (APPLE)
+        if (CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
+            # mac builds both slices in one clang pass, so the flag has to be
+            # scoped to arm64 or the Intel one fails to parse it.
+            set(LIBYUV_NEON64_FLAGS -Xarch_arm64 -march=armv8.2-a+dotprod+i8mm)
+        else()
+            set(LIBYUV_NEON64_FLAGS -march=armv8.2-a+dotprod+i8mm)
+        endif()
+    elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+        set(LIBYUV_NEON64_FLAGS -march=armv8.2-a+dotprod+i8mm)
+    endif()
+
+    if (DEFINED LIBYUV_NEON64_FLAGS)
+        set_source_files_properties(
+            ${libyuv_SOURCE_DIR}/source/compare_neon64.cc
+            ${libyuv_SOURCE_DIR}/source/rotate_neon64.cc
+            ${libyuv_SOURCE_DIR}/source/row_neon64.cc
+            ${libyuv_SOURCE_DIR}/source/scale_neon64.cc
+            PROPERTIES COMPILE_OPTIONS "${LIBYUV_NEON64_FLAGS}"
+        )
+    endif()
 endif()
 
 # Sources

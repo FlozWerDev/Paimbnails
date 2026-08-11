@@ -1457,29 +1457,9 @@
       "version": ">=v1.23.0",
       "required": true
     },
-    "alphalaneous.editortab_api": {
-      "version": ">=v2.1.11",
-      "required": true
-    },
-    "alphalaneous.level-storage-api": {
-      "version": ">=v1.0.0",
-      "required": true
-    },
-    "alphalaneous.good_grid": {
-      "version": ">=v1.2.0",
-      "required": true
-    },
     "alk.better-touch-prio": {
       "version": ">=v1.0.16",
-      "required": true
-    },
-    "hjfod.gmd-api": {
-      "version": ">=v1.5.0",
-      "required": true
-    },
-    "cvolton.level-id-api": {
-      "version": ">=v2.0.0",
-      "required": true
+      "required": false
     },
     "prevter.imageplus": {
       "version": ">=v1.1.0",

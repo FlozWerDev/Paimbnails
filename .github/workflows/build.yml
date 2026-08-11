@@ -1,8 +1,12 @@
 name: Build Geode Mod
 
-# CI build disabled for now — run manually from Actions when needed.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
 
 jobs:
   build:
@@ -33,17 +37,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # With combine: true the action uploads the unfinished per-target binary
+      # itself; the package job merges them into the final .geode.
       - name: Build the mod
         uses: geode-sdk/build-geode-mod@main
         with:
           combine: true
           target: ${{ matrix.config.target }}
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.config.name }}-geode-build
-          path: build\flozwer.paimbnails2.geode
 
   build-installer:
     name: Build Windows Installer

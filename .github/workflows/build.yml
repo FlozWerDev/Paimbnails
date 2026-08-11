@@ -182,22 +182,62 @@ jobs:
       contents: write
 
     steps:
-      - name: Download all artifacts
+      - uses: actions/checkout@v4
+
+      # Download the finished artifacts by name. Downloading everything would
+      # also pull the per-target geode-build-* artifacts, which hold unfinished
+      # binaries meant only for the combine step.
+      - name: Download combined .geode
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: Build Output
+          path: release
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: Paimbnails-Windows-Installer
+          path: release
+
+      - name: Download macOS package
+        uses: actions/download-artifact@v4
+        with:
+          name: Paimbnails-macOS-Package
+          path: release
+
+      - name: Download Linux package
+        uses: actions/download-artifact@v4
+        with:
+          name: Paimbnails-Linux-Package
+          path: release
+
+      - name: Build release notes
+        run: |
+          {
+            echo "## Descargas"
+            echo ""
+            echo "- \`flozwer.paimbnails2.geode\` — instalalo desde Geode, o copialo a la carpeta \`geode/mods\`."
+            echo "- \`Paimbnails-Installer.exe\` — instalador para Windows."
+            echo "- \`Paimbnails-macOS.zip\` — paquete para macOS."
+            echo "- \`Paimbnails-Linux.tar.gz\` — paquete para Linux."
+            echo ""
+          } > notes.md
+          # Top changelog section, with the Geode colour and image markup
+          # stripped. Its heading is dropped since the release title repeats it.
+          awk 'NR == 1 {next} /^# /{exit} {print}' changelog.md \
+            | sed -E 's/<c[a-z]>//g; s|</c>||g; s/!\[\]\([^)]*\)//g' >> notes.md
+
+      - name: List release files
+        run: ls -lh release
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          name: Paimbnails ${{ github.ref_name }}
+          body_path: notes.md
           draft: false
           prerelease: false
-          fail_on_unmatched_files: false
-          files: |
-            artifacts/**/*.geode
-            artifacts/**/*.exe
-            artifacts/**/*.zip
-            artifacts/**/*.tar.gz
+          fail_on_unmatched_files: true
+          files: release/*
 

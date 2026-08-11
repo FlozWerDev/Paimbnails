@@ -666,7 +666,7 @@ bool DiscordConfigPopup::init() {
 
             std::string key = isLarge ? "discord-rpc-large-image-key" : "discord-rpc-small-image-key";
             TextInput* targetInput = isLarge ? self->m_largeImageKeyInput : self->m_smallImageKeyInput;
-            std::string prevVal = targetInput ? targetInput->getString() : gset<std::string>(key.c_str());
+            std::string prevVal = targetInput ? std::string(targetInput->getString()) : gset<std::string>(key.c_str());
             if (prevVal == "subiendo...") prevVal = gset<std::string>(key.c_str());
 
             if (targetInput) targetInput->setString("subiendo...");

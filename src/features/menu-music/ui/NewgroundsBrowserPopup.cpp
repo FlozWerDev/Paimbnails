@@ -143,7 +143,7 @@ void NewgroundsBrowserPopup::loadWeekly() {
 }
 
 void NewgroundsBrowserPopup::runSearch() {
-    auto query = m_searchInput ? m_searchInput->getString() : std::string();
+    auto query = m_searchInput ? std::string(m_searchInput->getString()) : std::string();
     if (query.empty()) {
         loadWeekly();
         return;

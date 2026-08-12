@@ -6,6 +6,7 @@
 
 ## ![](frame:GJ_hammerIcon_001.png?height=18) <cy>Editor</c>
 
+- <cl>Musica del Editor</c> (**Ctrl+M**): panel chico arriba a la izquierda para escuchar tu musica mientras construyes. Reproduce, pausa, cambia de cancion, busca en la barra, controla el volumen y arrastra el panel donde quieras. Se calla solo al probar el nivel y vuelve donde iba al salir del playtest. Usa la misma biblioteca que la Musica del Menu.
 - <cl>Autobuild</c> (boton en la barra o **Ctrl+B**): decoras una zona una vez y la repites donde quieras.
 - Modo <cg>Onda</c>: aprende que pieza puede ir al lado de cual y rellena bloques y decoracion de forma coherente. Modo <cg>Sellos</c>: guarda grupos enteros y suelta uno en cada sitio.
 - Construye sobre marcadores (bloques **467**, **143** y **146**), sobre la seleccion o rellenando toda el area.
@@ -73,6 +74,9 @@
 
 ## ![](frame:GJ_infoIcon_001.png?height=18) <cy>Informacion y navegacion</c>
 
+- <cl>Avisos de Miniaturas Nuevas</c>: cuando alguien publica una miniatura, te entra una tarjeta con los datos del nivel (cara de dificultad, estrellas, monedas, likes y descargas) dibujados <cg>encima de la miniatura recien subida</c>, que hace de fondo. Tocarla abre el nivel.
+- <cl>Avisos de Miniaturas Nuevas</c>: <cg>feed en vivo</c>. El juego mantiene una conexion abierta con el servidor, asi que la tarjeta entra <cg>en el momento</c> en que alguien publica, no en la siguiente consulta. Si se cae, reconecta sola y la consulta periodica recupera lo que se haya perdido. Al subir tu una miniatura, la tarjeta sale al instante con la propia respuesta del servidor.
+- <cl>Avisos de Miniaturas Nuevas</c>: **11 animaciones de entrada** (deslizar, elastica, espiral, desplegar, voltear, caer, zoom...), **9 de salida** y **4 de reposo**, mas sitio en pantalla, tamano, duracion, oscurecido del fondo, zoom lento de la miniatura, barra de tiempo, brillo, sonido y boton de <cg>Preview</c> para verlo al momento.
 - <cl>Paimon Info Suite</c>: paquete nuevo de modulos, cada uno se enciende por separado y con interruptor maestro.
 - <cg>Info extendida</c>: tus intentos, saltos, mejores runs y graficos sobre el thumbnail, mas todos los campos ocultos del nivel en pestanas, copiables al tocarlos.
 - <cg>IDs a la vista</c> en celdas, comentarios y perfiles, con color, opacidad, posicion y opcion de esconderlos hasta que aprietes **Shift**.

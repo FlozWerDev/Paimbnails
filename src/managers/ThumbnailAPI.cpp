@@ -1,10 +1,29 @@
 #include "ThumbnailAPI.hpp"
 #include <Geode/loader/Log.hpp>
 #include "../features/profiles/services/ProfileThumbs.hpp"
+#include "../features/thumb-alerts/ThumbAlerts.hpp"
 
 using namespace geode::prelude;
 
 // Compatibility facade; each method delegates to its per-domain service.
+
+namespace {
+
+// The upload reply is the one moment this client knows about a thumbnail
+// before the feed does, so the uploader's card comes straight off it.
+ThumbnailAPI::UploadCallback withAlert(int levelId, std::string username,
+                                       std::string levelMeta,
+                                       ThumbnailAPI::UploadCallback callback) {
+    return [levelId, username = std::move(username), levelMeta = std::move(levelMeta),
+            callback = std::move(callback)](bool success, std::string const& message) {
+        if (success) {
+            paimon::thumbalerts::showThumbAlertForUpload(levelId, username, levelMeta, message);
+        }
+        if (callback) callback(success, message);
+    };
+}
+
+} // namespace
 
 ThumbnailAPI::ThumbnailAPI() {
     m_serverEnabled = true;
@@ -32,13 +51,16 @@ std::string ThumbnailAPI::getThumbnailURL(int levelId) {
 }
 void ThumbnailAPI::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     log::info("[ThumbnailAPI] uploadThumbnail: levelId={} user={} bytes={}", levelId, username, pngData.size());
-    ThumbnailTransportClient::get().uploadThumbnail(levelId, pngData, username, std::move(callback), levelMeta);
+    ThumbnailTransportClient::get().uploadThumbnail(levelId, pngData, username,
+        withAlert(levelId, username, levelMeta, std::move(callback)), levelMeta);
 }
 void ThumbnailAPI::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
-    ThumbnailTransportClient::get().uploadGIF(levelId, gifData, username, std::move(callback), levelMeta);
+    ThumbnailTransportClient::get().uploadGIF(levelId, gifData, username,
+        withAlert(levelId, username, levelMeta, std::move(callback)), levelMeta);
 }
 void ThumbnailAPI::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
-    ThumbnailTransportClient::get().uploadVideo(levelId, mp4Data, username, std::move(callback), levelMeta);
+    ThumbnailTransportClient::get().uploadVideo(levelId, mp4Data, username,
+        withAlert(levelId, username, levelMeta, std::move(callback)), levelMeta);
 }
 void ThumbnailAPI::downloadThumbnail(int levelId, DownloadCallback callback, bool isGif) {
     log::info("[ThumbnailAPI] downloadThumbnail: levelId={} isGif={}", levelId, isGif);

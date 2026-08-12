@@ -963,6 +963,239 @@
       "description": "Don't check while playing levels.",
       "default": false
     },
+    "thumbalert-title": {
+      "name": "New Thumbnail Alerts",
+      "description": "A card slides in when a new thumbnail goes live on the Paimbnails server, showing the level data over the thumbnail itself.",
+      "type": "title"
+    },
+    "thumbalert-enabled": {
+      "type": "bool",
+      "name": "Enable New Thumbnail Alerts",
+      "description": "Check the server every few minutes and announce thumbnails that just went live.",
+      "default": true
+    },
+    "thumbalert-live": {
+      "type": "bool",
+      "name": "Live Feed",
+      "description": "Hold a connection open to the server so a new thumbnail arrives the moment it is published instead of at the next check. Windows only; everywhere else the periodic check below is used on its own.",
+      "default": true,
+      "enable-if": "thumbalert-enabled",
+      "platforms": ["win"]
+    },
+    "thumbalert-interval": {
+      "type": "int",
+      "name": "Check Interval (s)",
+      "description": "How often the server is asked for the latest uploads. This is the catch-up path: it also covers whatever the live feed missed while it was disconnected.",
+      "default": 300,
+      "min": 60,
+      "max": 3600,
+      "control": { "slider": true },
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-preview": {
+      "type": "button",
+      "name": "Preview Card",
+      "description": "Show a sample alert right now with your current animation settings.",
+      "buttons": {
+        "run": "Preview"
+      }
+    },
+    "thumbalert-check-now": {
+      "type": "button",
+      "name": "Check Now",
+      "description": "Ask the server for new thumbnails immediately instead of waiting for the next check.",
+      "buttons": {
+        "run": "Check"
+      }
+    },
+    "thumbalert-position": {
+      "type": "string",
+      "name": "Position",
+      "description": "Corner or edge of the screen the card rests on.",
+      "default": "top-right",
+      "one-of": [
+        "top-left", "top-center", "top-right",
+        "mid-left", "mid-right",
+        "bottom-left", "bottom-center", "bottom-right"
+      ],
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-offset-x": {
+      "type": "float",
+      "name": "Offset X",
+      "description": "Fine horizontal nudge from the chosen position, in pixels.",
+      "default": 0.0,
+      "min": -160.0,
+      "max": 160.0,
+      "control": { "slider": true },
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-offset-y": {
+      "type": "float",
+      "name": "Offset Y",
+      "description": "Fine vertical nudge from the chosen position, in pixels.",
+      "default": 0.0,
+      "min": -110.0,
+      "max": 110.0,
+      "control": { "slider": true },
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-anim-in": {
+      "type": "string",
+      "name": "Entry Animation",
+      "description": "How the card arrives. 'slide' comes from the nearest edge, 'elastic' overshoots it, 'spiral' spins in from nothing, 'unfold' opens vertically, 'flip' opens like a card.",
+      "default": "slide",
+      "one-of": [
+        "none", "slide", "fade", "pop", "drop", "flip", "zoom", "elastic",
+        "unfold", "swing", "spiral"
+      ],
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-anim-out": {
+      "type": "string",
+      "name": "Exit Animation",
+      "description": "How the card leaves. 'fall' drops it off the screen, 'spin' throws it away, 'fold' closes it vertically.",
+      "default": "slide",
+      "one-of": [
+        "none", "slide", "fade", "shrink", "fall", "flip", "zoom", "spin", "fold"
+      ],
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-anim-idle": {
+      "type": "string",
+      "name": "Idle Animation",
+      "description": "Small motion while the card waits on screen.",
+      "default": "float",
+      "one-of": ["none", "float", "pulse", "sway", "tilt"],
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-anim-in-time": {
+      "type": "float",
+      "name": "Entry Duration (s)",
+      "description": "How long the entry animation takes.",
+      "default": 0.55,
+      "min": 0.1,
+      "max": 2.0,
+      "control": { "slider": true },
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-anim-out-time": {
+      "type": "float",
+      "name": "Exit Duration (s)",
+      "description": "How long the exit animation takes.",
+      "default": 0.4,
+      "min": 0.1,
+      "max": 2.0,
+      "control": { "slider": true },
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-duration": {
+      "type": "float",
+      "name": "Time On Screen (s)",
+      "description": "How long the card stays after it finishes entering.",
+      "default": 5.0,
+      "min": 1.0,
+      "max": 15.0,
+      "control": { "slider": true },
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-scale": {
+      "type": "float",
+      "name": "Card Size",
+      "description": "Scale of the whole card.",
+      "default": 1.0,
+      "min": 0.6,
+      "max": 1.6,
+      "control": { "slider": true },
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-dim": {
+      "type": "int",
+      "name": "Thumbnail Dimming",
+      "description": "How much the thumbnail behind the text is darkened. Lower shows more artwork, higher makes the text easier to read.",
+      "default": 120,
+      "min": 0,
+      "max": 255,
+      "control": { "slider": true },
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-kenburns": {
+      "type": "bool",
+      "name": "Thumbnail Zoom",
+      "description": "Slowly pans and zooms the thumbnail behind the card while it is on screen.",
+      "default": true,
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-shine": {
+      "type": "bool",
+      "name": "Shine Sweep",
+      "description": "A light sweeps across the card every few seconds.",
+      "default": true,
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-progress": {
+      "type": "bool",
+      "name": "Progress Bar",
+      "description": "Draining bar along the bottom showing how long the card has left.",
+      "default": true,
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-stats": {
+      "type": "bool",
+      "name": "Show Level Stats",
+      "description": "Likes, downloads and coins in the bottom right of the card.",
+      "default": true,
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-click": {
+      "type": "bool",
+      "name": "Click To Open Level",
+      "description": "Tapping the card opens the level's info screen.",
+      "default": true,
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-sound": {
+      "type": "string",
+      "name": "Alert Sound",
+      "description": "Sound played when a card appears.",
+      "default": "soft",
+      "one-of": ["none", "soft", "coin", "crystal", "achievement"],
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-max-batch": {
+      "type": "int",
+      "name": "Max Cards Per Check",
+      "description": "If more thumbnails than this went live since the last check, only the newest ones are announced.",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "control": { "slider": true },
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-gap": {
+      "type": "float",
+      "name": "Gap Between Cards (s)",
+      "description": "Pause between one card leaving and the next arriving.",
+      "default": 0.6,
+      "min": 0.0,
+      "max": 5.0,
+      "control": { "slider": true },
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-while-playing": {
+      "type": "bool",
+      "name": "Show While Playing",
+      "description": "Also show cards during gameplay.",
+      "default": false,
+      "enable-if": "thumbalert-enabled"
+    },
+    "thumbalert-while-editing": {
+      "type": "bool",
+      "name": "Show While Editing",
+      "description": "Also show cards inside the level editor.",
+      "default": false,
+      "enable-if": "thumbalert-enabled"
+    },
     "v107-title": {
       "name": "New Features (v1.0.7)",
       "description": "Song search by name, My Levels filters, and menu physics.",
@@ -1087,6 +1320,63 @@
       "name": "Open Autobuild (Editor)",
       "description": "Opens the Autobuild panel. Only works inside the level editor.",
       "default": "Ctrl+B",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "gif-import-title": {
+      "name": "GIF to Objects",
+      "description": "Import animated GIFs into the editor as optimized native objects.",
+      "type": "title"
+    },
+    "gif-import-enable": {
+      "type": "bool",
+      "name": "Enable GIF to Objects",
+      "description": "Adds a GIF importer to the editor. It can remove the background, reduce resolution and colors to a chosen object budget, merge equal pixels into scaled rectangles, and animate the result with native groups and triggers.",
+      "default": true
+    },
+    "gif-import-keybind": {
+      "type": "keybind",
+      "name": "Open GIF Importer (Editor)",
+      "description": "Opens the GIF to Objects preview and optimizer inside the level editor.",
+      "default": "Ctrl+Shift+G",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "editor-physics-title": {
+      "name": "Physics Lab",
+      "description": "Simulate object groups and bake the result into native Geometry Dash triggers.",
+      "type": "title"
+    },
+    "editor-physics-enable": {
+      "type": "bool",
+      "name": "Enable Physics Lab",
+      "description": "Adds a physics simulator to the editor. Selected objects become compound bodies with gravity, mass, bounce, friction and multi-body collisions; the final path is emitted as vanilla Move, Rotate and Spawn triggers.",
+      "default": true
+    },
+    "editor-physics-keybind": {
+      "type": "keybind",
+      "name": "Open Physics Lab (Editor)",
+      "description": "Opens the physics simulator and captures pending A/B selections.",
+      "default": "Ctrl+Shift+P",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "editor-music-title": {
+      "name": "Editor Music",
+      "description": "Background music player inside the level editor.",
+      "type": "title"
+    },
+    "editor-music-enable": {
+      "type": "bool",
+      "name": "Enable Editor Music",
+      "description": "Adds a small music player to the top left of the level editor. It plays anything in your Menu Music library, and pauses itself while you playtest the level so only the level song is heard.",
+      "default": true
+    },
+    "editor-music-keybind": {
+      "type": "keybind",
+      "name": "Open Music Player (Editor)",
+      "description": "Shows or hides the editor music player. Only works inside the level editor.",
+      "default": "Ctrl+M",
       "category": "editor",
       "allow-in-text-inputs": false
     },

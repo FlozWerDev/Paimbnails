@@ -801,9 +801,15 @@ private:
         auto profile = styleProfile(m_config.style, m_config.intensity);
         float motionDuration = m_config.staggerObjects ? m_fDuration * .55f : m_fDuration;
         float delayWindow = m_config.staggerObjects ? m_fDuration - motionDuration : 0.f;
+        auto* objects = m_playLayer->m_objects;
+        if (!objects) return;
 
         for (size_t i = 0; i < count; ++i) {
-            auto* object = m_playLayer->m_activeObjects[i];
+            auto* candidate = reinterpret_cast<CCObject*>(m_playLayer->m_activeObjects[i]);
+            // Active slots outlive their objects during exit teardown; m_objects is the owning list.
+            if (!candidate || !objects->containsObject(candidate)) continue;
+
+            auto* object = typeinfo_cast<GameObject*>(candidate);
             if (!object || !object->getParent()) continue;
 
             capture(object);

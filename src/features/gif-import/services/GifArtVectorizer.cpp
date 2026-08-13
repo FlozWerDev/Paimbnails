@@ -322,57 +322,181 @@ std::vector<Primitive> packBlocks(
     std::vector<int> const& positions,
     int width,
     int height,
-    int color
+    int color,
+    std::vector<std::uint8_t> const& spare
 ) {
-    std::vector<std::uint8_t> cells(static_cast<std::size_t>(width) * height, 0);
+    if (positions.empty() || width <= 0 || height <= 0) return {};
+
+    auto const box = bounds(positions, width);
+    int const localWidth = box[2] - box[0] + 1;
+    int const localHeight = box[3] - box[1] + 1;
+    std::vector<std::uint8_t> source(
+        static_cast<std::size_t>(localWidth) * localHeight, 0);
     for (int position : positions) {
-        if (position >= 0 && position < width * height) {
-            cells[static_cast<std::size_t>(position)] = 1;
+        if (position < 0 || position >= width * height) continue;
+        int const x = position % width - box[0];
+        int const y = position / width - box[1];
+        source[static_cast<std::size_t>(y) * localWidth + x] = 1;
+    }
+    // 1 es celda que hay que cubrir, 2 es celda que se puede pisar de paso.
+    bool const hasSpare = spare.size() == static_cast<std::size_t>(width) * height;
+    if (hasSpare) {
+        for (int y = 0; y < localHeight; ++y) {
+            for (int x = 0; x < localWidth; ++x) {
+                auto& cell = source[static_cast<std::size_t>(y) * localWidth + x];
+                if (cell) continue;
+                auto const global =
+                    static_cast<std::size_t>(y + box[1]) * width + x + box[0];
+                if (spare[global]) cell = 2;
+            }
         }
     }
 
-    std::vector<Primitive> objects;
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            if (!cells[static_cast<std::size_t>(y) * width + x]) continue;
-            int maxWidth = 0;
-            while (x + maxWidth < width &&
-                   cells[static_cast<std::size_t>(y) * width + x + maxWidth]) {
-                ++maxWidth;
+    struct Rect {
+        int x = 0;
+        int y = 0;
+        int width = 0;
+        int height = 0;
+    };
+    // Se busca el rectangulo que tape mas celdas pendientes, no el de mas area:
+    // atravesar celdas de paso solo compensa si de camino se lleva trabajo por
+    // delante. A igual cantidad gana el mas grande, que deja menos costuras.
+    auto sweep = [](std::vector<std::uint8_t> cells, int gridWidth, int gridHeight) {
+        std::vector<int> rowSum(
+            static_cast<std::size_t>(gridHeight) * (gridWidth + 1), 0);
+        auto rebuildRow = [&](int y) {
+            auto* row = &rowSum[static_cast<std::size_t>(y) * (gridWidth + 1)];
+            for (int x = 0; x < gridWidth; ++x) {
+                row[x + 1] = row[x] +
+                    (cells[static_cast<std::size_t>(y) * gridWidth + x] == 1 ? 1 : 0);
             }
-            int bestWidth = maxWidth;
-            int bestHeight = 1;
-            int bestArea = maxWidth;
-            int runningWidth = maxWidth;
-            for (int yy = y + 1; yy < height && runningWidth > 0; ++yy) {
-                int rowWidth = 0;
-                while (rowWidth < runningWidth &&
-                       cells[static_cast<std::size_t>(yy) * width + x + rowWidth]) {
-                    ++rowWidth;
+        };
+        for (int y = 0; y < gridHeight; ++y) rebuildRow(y);
+        auto pending = [&](int y, int from, int to) {
+            auto const* row = &rowSum[static_cast<std::size_t>(y) * (gridWidth + 1)];
+            return row[to] - row[from];
+        };
+
+        std::vector<Rect> rectangles;
+        for (int y = 0; y < gridHeight; ++y) {
+            for (int x = 0; x < gridWidth; ++x) {
+                if (cells[static_cast<std::size_t>(y) * gridWidth + x] != 1) continue;
+                int maxWidth = 0;
+                while (x + maxWidth < gridWidth &&
+                       cells[static_cast<std::size_t>(y) * gridWidth + x + maxWidth]) {
+                    ++maxWidth;
                 }
-                runningWidth = std::min(runningWidth, rowWidth);
-                int const area = runningWidth * (yy - y + 1);
-                if (area > bestArea) {
-                    bestArea = area;
-                    bestWidth = runningWidth;
-                    bestHeight = yy - y + 1;
+                int bestWidth = maxWidth;
+                int bestHeight = 1;
+                int bestArea = maxWidth;
+                int bestCovered = pending(y, x, x + maxWidth);
+                int runningWidth = maxWidth;
+                int covered = bestCovered;
+                for (int yy = y + 1; yy < gridHeight; ++yy) {
+                    int rowWidth = 0;
+                    while (rowWidth < runningWidth &&
+                           cells[static_cast<std::size_t>(yy) * gridWidth + x + rowWidth]) {
+                        ++rowWidth;
+                    }
+                    if (rowWidth == 0) break;
+                    if (rowWidth < runningWidth) {
+                        runningWidth = rowWidth;
+                        covered = 0;
+                        for (int row = y; row < yy; ++row) {
+                            covered += pending(row, x, x + runningWidth);
+                        }
+                    }
+                    covered += pending(yy, x, x + runningWidth);
+                    int const area = runningWidth * (yy - y + 1);
+                    if (covered > bestCovered ||
+                        (covered == bestCovered && area > bestArea)) {
+                        bestCovered = covered;
+                        bestArea = area;
+                        bestWidth = runningWidth;
+                        bestHeight = yy - y + 1;
+                    }
                 }
+                for (int yy = y; yy < y + bestHeight; ++yy) {
+                    for (int xx = x; xx < x + bestWidth; ++xx) {
+                        auto& cell = cells[static_cast<std::size_t>(yy) * gridWidth + xx];
+                        if (cell == 1) cell = 2;
+                    }
+                    rebuildRow(yy);
+                }
+                rectangles.push_back({x, y, bestWidth, bestHeight});
             }
-            for (int yy = y; yy < y + bestHeight; ++yy) {
-                for (int xx = x; xx < x + bestWidth; ++xx) {
-                    cells[static_cast<std::size_t>(yy) * width + xx] = 0;
-                }
-            }
-            objects.push_back({
-                x + bestWidth * 0.5f,
-                y + bestHeight * 0.5f,
-                static_cast<float>(bestWidth),
-                static_cast<float>(bestHeight),
-                0.f,
-                static_cast<std::uint16_t>(color),
-                PrimitiveKind::Block
-            });
         }
+        return rectangles;
+    };
+
+    std::vector<Rect> best;
+    // The greedy sweep is directional, so try every mirrored and transposed view.
+    for (int transform = 0; transform < 8; ++transform) {
+        bool const transpose = transform >= 4;
+        bool const flipX = (transform & 1) != 0;
+        bool const flipY = (transform & 2) != 0;
+        int const transformedWidth = transpose ? localHeight : localWidth;
+        int const transformedHeight = transpose ? localWidth : localHeight;
+        std::vector<std::uint8_t> cells(
+            static_cast<std::size_t>(transformedWidth) * transformedHeight, 0);
+        for (int y = 0; y < localHeight; ++y) {
+            for (int x = 0; x < localWidth; ++x) {
+                auto const value = source[static_cast<std::size_t>(y) * localWidth + x];
+                if (!value) continue;
+                int xx = transpose ? y : x;
+                int yy = transpose ? x : y;
+                if (flipX) xx = transformedWidth - 1 - xx;
+                if (flipY) yy = transformedHeight - 1 - yy;
+                cells[static_cast<std::size_t>(yy) * transformedWidth + xx] = value;
+            }
+        }
+
+        auto transformed = sweep(
+            std::move(cells), transformedWidth, transformedHeight);
+        std::vector<Rect> candidate;
+        candidate.reserve(transformed.size());
+        for (auto const& rectangle : transformed) {
+            int minX = localWidth;
+            int minY = localHeight;
+            int maxX = -1;
+            int maxY = -1;
+            for (auto const [tx, ty] : std::array<std::pair<int, int>, 4>{
+                     std::pair{rectangle.x, rectangle.y},
+                     std::pair{rectangle.x + rectangle.width - 1, rectangle.y},
+                     std::pair{rectangle.x, rectangle.y + rectangle.height - 1},
+                     std::pair{rectangle.x + rectangle.width - 1,
+                               rectangle.y + rectangle.height - 1}}) {
+                int xx = flipX ? transformedWidth - 1 - tx : tx;
+                int yy = flipY ? transformedHeight - 1 - ty : ty;
+                int const x = transpose ? yy : xx;
+                int const y = transpose ? xx : yy;
+                minX = std::min(minX, x);
+                minY = std::min(minY, y);
+                maxX = std::max(maxX, x);
+                maxY = std::max(maxY, y);
+            }
+            int const rectangleWidth = maxX - minX + 1;
+            int const rectangleHeight = maxY - minY + 1;
+            candidate.push_back({minX, minY, rectangleWidth, rectangleHeight});
+        }
+        if (best.empty() || candidate.size() < best.size()) {
+            best = std::move(candidate);
+        }
+        if (best.size() == 1) break;
+    }
+
+    std::vector<Primitive> objects;
+    objects.reserve(best.size());
+    for (auto const& rectangle : best) {
+        objects.push_back({
+            box[0] + rectangle.x + rectangle.width * 0.5f,
+            box[1] + rectangle.y + rectangle.height * 0.5f,
+            static_cast<float>(rectangle.width),
+            static_cast<float>(rectangle.height),
+            0.f,
+            static_cast<std::uint16_t>(color),
+            PrimitiveKind::Block
+        });
     }
     return objects;
 }
@@ -470,15 +594,21 @@ std::vector<std::uint8_t> renderPlanFrame(ImportPlan const& plan, int frame, int
         }
     };
 
-    for (auto const& object : plan.staticObjects) draw(object);
+    std::vector<Primitive const*> visible;
+    visible.reserve(plan.staticObjects.size());
+    for (auto const& object : plan.staticObjects) visible.push_back(&object);
     for (auto const& track : plan.tracks) {
         if (track.mask.empty() ||
             (track.mask[static_cast<std::size_t>(frame / 64)] &
              (std::uint64_t{1} << (frame % 64))) == 0) {
             continue;
         }
-        for (auto const& object : track.objects) draw(object);
+        for (auto const& object : track.objects) visible.push_back(&object);
     }
+    std::stable_sort(visible.begin(), visible.end(), [](auto* left, auto* right) {
+        return left->layer < right->layer;
+    });
+    for (auto const* object : visible) draw(*object);
     return pixels;
 }
 

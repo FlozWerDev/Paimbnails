@@ -1,3 +1,69 @@
+# <cy>v1.1.1</c>
+
+![](flozwer.paimbnails2/paim_Paimon.png?height=32) Actualizacion centrada en el <cl>editor</c>: modos <cg>Pintura</c> y <cg>Render</c> de GIF a Objetos, el <cl>Simulador de Fisicas</c> con el arte y las formas reales de cada objeto, <cl>Autobuild</c> adaptable, y una tanda larga de arreglos.
+
+---
+
+## ![](frame:GJ_hammerIcon_001.png?height=18) <cy>Editor</c>
+
+- <cl>GIF a Objetos</c>: modo <cg>Pintura</c>, un tercer modo en el boton <cg>Modo</c> que dibuja como se hace el art a mano. Saca el contorno de cada mancha de color, lo suaviza y lo traza con rectangulos finos rotados; los circulos quedan para extremos realmente redondos. Junta motas y trazos alineados, cierra huecos con una base compacta por detras, descarta objetos tapados y exige al menos 95% de similitud en cada frame.
+- <cl>GIF a Objetos</c>: nuevo modo <cg>Render</c>. Prueba el dibujo en varias resoluciones, compara tanto la forma general como el detalle fino y se queda con el resultado mas claro sin disparar el numero de objetos. Todos los modos muestran su avance; con <cg>Run background</c> el analisis sigue fuera del panel y los objetos aparecen por lotes mientras puedes continuar editando.
+- <cl>GIF a Objetos</c>: ahora tambien acepta <cg>imagenes fijas</c> (**PNG**, **JPG**, **WEBP**, **BMP**, **TGA**...), no solo GIFs.
+- <cl>GIF a Objetos</c>: en <cg>Pintura</c> el circulo es el unico objeto que GD no ordena junto a los cuadrados, asi que <cr>se colaba por encima del dibujo</c> (se veian manchas gigantes tapando todo). Ahora solo se usa donde nada se pinta encima y el resto sale con cuadrados girados, que si respetan el orden.
+- <cl>GIF a Objetos</c>: contornos mas limpios en <cg>Pintura</c>. Cada tramo se alarga solo lo justo para cerrar la esquina (antes sobresalia siempre y dejaba pinchos) y el borde exterior ya no pinta un halo alrededor de la silueta.
+- <cl>GIF a Objetos</c>: las <cg>imagenes fijas</c> llegan hasta **320 px** de resolucion (los GIFs siguen en 160 para no tardar minutos), con el paso del boton mas grande a medida que subes.
+- <cl>GIF a Objetos</c>: se acabaron los <cr>picos en el borde</c> del modo <cg>Pintura</c>. Las celdas sueltas se remataban con un cuadrado girado que asomaba media celda por cada punta; ahora van con un cuadrado justo, y ninguna figura puede asomar sobre un color que quede debajo. Los remates de punta tampoco clavan un rombo: la linea se alarga sola.
+- <cl>GIF a Objetos</c>: la <cr>orla de pixeles</c> que dejaba el suavizado del dibujo original ya no se dibuja. Cuando una hebra fina es la mezcla de los dos colores que separa (o sea, antialias y no dibujo de verdad) se va al mas parecido de los dos, asi que el borde queda de una tinta y no de ocho.
+- <cl>GIF a Objetos</c>: optimizador de objetos mucho mas fino en <cg>Pintura</c>. Se descarta todo objeto que no cambie el dibujo (antes solo los tapados del todo), los cuadrados de una misma mancha se empaquetan juntos aunque salgan de pasadas distintas y los que comparten un lado se fusionan en uno. En pruebas: **174 -> 73** y **80 -> 44** objetos con el dibujo identico.
+- <cl>GIF a Objetos</c>: arreglado que <cr>media imagen se volviera transparente</c> pasando de **181 px** de resolucion. La rejilla guardaba el numero de celda en un hueco de 16 bits, y de 32768 celdas en adelante el numero daba la vuelta y esa mitad se perdia; a **320 px** encima reaparecia descolocada.
+- <cl>GIF a Objetos</c>: quitada la limpieza a color entero que corria por encima de **80 px** en <cg>Pintura</c>. Difuminaba el dibujo antes de elegir la paleta, y de ahi salia el resultado emborronado con los pixeles a la vista. A **240 px**: **5449 -> 2819** objetos y mas parecido al original.
+- <cl>GIF a Objetos</c>: la paleta de <cg>Pintura</c> ahora se la llevan los colores del dibujo y no la orla del antialias. Cada celda pesa por lo plana que es su vecindad, y las cajas se parten por donde mas variedad de color hay en vez de por tamano, asi que ya no salen cuatro azules identicos y sin hueco para el detalle chico.
+- <cl>GIF a Objetos</c>: las celdas sueltas rodeadas de otro color se funden con el vecino. No se veian y costaban un objeto cada una: a **200 px** eran la mitad del total.
+- <cl>GIF a Objetos</c>: la revision de <cg>Pintura</c> ahora se mide contra la imagen tal cual, no contra la version ya limpia, asi que el porcentaje dice de verdad lo que se parece. Y cuando no llega al 95% ya <cr>no encoge el dibujo</c> hasta que pase: el parecido no mejora al encoger, asi que se queda a la resolucion que pediste y el porcentaje te lo dice.
+- <cl>GIF a Objetos</c>: en <cg>Pintura</c> los rectangulos ahora <cg>cruzan por encima de lo que otra capa tapa despues</c>. Un color no tiene que rodear al que va por encima: pasa por debajo de una tirada y el de arriba lo tapa. Donde antes iba un reguero de cuadraditos de una celda ahora va un rectangulo entero.
+- <cl>GIF a Objetos</c>: <cr>el trazo del dibujo salia hecho una banda gorda</c> en <cg>Pintura</c> cuando compartia color con una zona rellena (el contorno de un personaje que nace de un mechon macizo, por ejemplo). El grosor se media en la mancha entera y mandaba el del mechon; ahora se mide tramo a tramo, y la parte maciza y el trazo se separan para que cada uno lleve lo suyo: rectangulos grandes la maciza, tiras y circulos el trazo.
+- <cl>GIF a Objetos</c>: el eje de un trazo ya no se recorta mas de lo que el trazo mide de ancho. Una linea ondulada <cr>se aplanaba entera</c> y luego hacian falta docenas de parches de una celda para devolverle la forma.
+- <cl>GIF a Objetos</c>: las <cg>motas que flotan sueltas</c> (la trama de puntos del fondo de un dibujo, por ejemplo) ya no se dibujan, y el limite de lo que se considera mota va con el tamano del dibujo en vez de con su lado. El limite va corto a proposito: en un dibujo hecho a pixel el detalle chico esta puesto adrede y no se puede tocar.
+- <cl>GIF a Objetos</c>: <cr>a baja resolucion el dibujo salia deformado</c> en <cg>Pintura</c>. Una mancha compacta no tiene eje, asi que trazarla como si fuera una linea daba una losa girada atravesada en mitad del dibujo; ahora solo se traza como linea lo que de verdad da varias anchuras de largo, y lo demas va por su contorno. La figura girada tampoco se admite si su caja ocupa mucho mas que las celdas que tiene que tapar, y asomar sobre lo que otra capa tapa despues ya no sale gratis al elegir figura. A **48 px** el parecido sube de **84%** a **93%**.
+- <cl>GIF a Objetos</c>: en total, a **96 px**: **846 -> 709** y **1719 -> 1344** objetos, y con mas parecido al original que antes en las dos.
+- <cl>GIF a Objetos</c>: arreglado un <cr>crash al cerrar el panel mientras procesaba</c>. El aviso que llega del hilo de trabajo cogia el panel y soltaba la referencia en la misma linea, antes de usarlo: si el panel ya estaba cerrado, esa referencia era lo unico que lo mantenia vivo y se borraba justo antes. Pasaba lo mismo al terminar de decodificar un GIF, una imagen o al elegir archivo.
+- <cl>Simulador de Fisicas</c>: la vista previa ahora sale con el <cg>fondo y el piso del nivel</c>, con los mismos colores que tenga el editor. Antes se pedian como si fueran trozos de un spritesheet y GD nunca los devolvia, asi que <cr>el recuadro quedaba en negro</c>. El piso va donde va de verdad (**y = 0**) y se mueve con la camara, para que se note si un cuerpo va a caer por debajo.
+- <cl>Simulador de Fisicas</c>: cada objeto se dibuja con <cg>su propio arte</c>. Se reconstruye el objeto por su ID con su color, detalle, escala, giro y espejo, en vez de estirar su primer frame sobre la caja de colision: si pones un cubo sale ese cubo, y si pones otro sale el otro.
+- <cl>Simulador de Fisicas</c>: <cg>detecta la forma de cada objeto</c>. Los orbes, anillos y monedas colisionan como circulos con el radio que usa GD, las rampas como el triangulo que de verdad ocupan (antes te frenaban como un cuadrado) y lo que este girado fuera de los 90 grados usa sus esquinas reales. La vista previa dibuja el contorno de cada forma y el estado te dice cuantos bloques, rampas y redondos entraron.
+- <cl>Simulador de Fisicas</c>: <cr>los orbes y anillos no se podian capturar</c>. El filtro descartaba toda la familia de objetos con efecto para quitar los triggers, y en GD los orbes son de esa familia; ahora solo se saltan los triggers de verdad.
+- <cl>Simulador de Fisicas</c>: <cg>zoom y arrastre</c> en la vista previa. Rueda del raton o los botones de lupa (hasta **x12**), arrastra dentro del recuadro para mirar otra zona y el boton de reset vuelve al encuadre automatico. El zoom actual sale arriba junto a la vista.
+- <cl>Simulador de Fisicas</c>: al abrirlo ya se ven los cuerpos capturados en su sitio, sin tener que pulsar <cg>Previsualizar</c> primero.
+- <cl>Autobuild</c>: modo <cg>Onda</c> con <cg>plantilla adaptable</c>. Cada pieza se elige mirando sus <cg>ocho vecinos</c> (tambien las diagonales), como el Auto-Build nativo, en vez de solo los cuatro lados. La plantilla guarda ademas como estaba armada la muestra, asi que aprende de la disposicion original y no solo de pares sueltos.
+- <cl>Autobuild</c>: reutiliza una misma pieza <cg>girada y reflejada</c>. Una esquina capturada una vez sirve para las cuatro orientaciones, con interruptores propios de <cg>Rotar referencias</c> y <cg>Reflejar referencias</c> (apaga el espejo para texto o arte asimetrico) y <cg>Evitar repetir</c> para no clavar la misma variante dos veces seguidas.
+- <cl>Autobuild</c>: <cg>Reglas estrictas</c> ahora conserva vecindades, diagonales y costuras aprendidas; al apagarlo conecta piezas con bordes parecidos en vez de rendirse. El solver aguanta el triple de vuelta atras (**400 -> 1200**), asi que rellena zonas grandes sin dejar huecos forzados.
+
+---
+
+## ![](frame:GJ_infoIcon_001.png?height=18) <cy>Imagenes importadas</c>
+
+- <cl>Marca de agua invisible</c>: las imagenes y GIFs que importas al editor se firman siempre <cg>dentro de su propia geometria</c>, partiendo trazos reales en pares redundantes. No se anade ningun logo ni objeto visible de mas, y la firma no se puede desactivar.
+- <cl>Advertencia de imagen</c>: al abrir un nivel descargado que lleva una imagen o GIF convertido a objetos sale un aviso, para que sepas por que el nivel puede ir pesado. Solo el aviso es opcional: se apaga en <cg>Ajustes > Image Object Warning</c> o desde Modulos.
+
+---
+
+## ![](frame:chestIcon_001.png?height=18) <cy>Extras</c>
+
+- <cl>Reporte de crasheos</c>: si el juego crashea, al siguiente arranque se manda el crashlog de Geode junto con el log de esa sesion, para que se vea donde revento. El nombre de usuario que aparece en las rutas se reemplaza antes de mandarlo, se manda una sola vez por crasheo y se apaga en <cg>Ajustes > General > Send Crash Reports</c>.
+
+---
+
+## ![](frame:GJ_optionsBtn_001.png?height=18) <cy>Correcciones</c>
+
+- <cl>Perfil redisenado</c>: los datos de la tira de estadisticas <cr>ya no eran clickeables</c>. Ahora cada uno vuelve a abrir su desglose nativo (estrellas y lunas los niveles completados, demons el desglose por dificultad), reenviando el toque al boton original del juego.
+- <cl>Perfil</c>: las celdas de nivel del perfil salian en compacto pero <cr>con el layout de RobTop sin ajustar</c>, asi que los textos se pisaban. Ahora se ajustan igual que en el buscador.
+- <cl>Editor de layout</c>: el cuadrado de escalado <cr>se comia la esquina del boton</c> y no se podia mover. Su zona de toque se ajusto a lo que se dibuja y va justo donde aparece el cuadrado.
+- <cl>Paimon del menu</c>: el globo de texto salia <cr>inclinado</c> siguiendo al boton, y la Paimon escondida se giraba dos veces. El texto se lee siempre en horizontal.
+- <cl>Guia Paimon</c>: la version salia con la <cr>v doble</c> (vv1.1.0).
+- <cl>Modulos</c>: el buscador tambien busca sobre los nombres y descripciones <cg>traducidos</c>, asi que buscar en espanol encuentra el modulo aunque su nombre interno este en ingles.
+- <cl>Capturadora</c>: el boton de carpeta <cr>daba error aunque la carpeta si se abriera</c>. Windows devuelve fallo cuando otro mod ya tomo el subsistema COM, y eso no significa que no haya abierto nada.
+- <cl>Texture Studio</c>: <cr>las texturas de Geode salian deformadas</c> en los packs generados. Las hojas de Geode y de otros mods se guardan sin plist para no pisar el del mod instalado, pero la copia que sirve PackGen es de una version concreta: con un Geode mas nuevo su plist apunta a un atlas de otro tamano y cada sprite se recorta donde no toca. Ahora cada hoja se recoloca al atlas que tienes instalado antes de guardarla, y los sprites que tu version anadio se quedan sin colorear en vez de romperse. <co>Hay que volver a exportar el pack.</c>
+
+
 # <cy>v1.1.0</c>
 
 ![](flozwer.paimbnails2/paim_Paimon.png?height=32) **La actualizacion mas grande hasta ahora.** Mas de <cg>25 funciones nuevas</c>, el <cl>Collab Editor</c> abierto para todos y una tanda larga de arreglos.

@@ -380,7 +380,8 @@ void PaimonGuideService::registerIntents() {
     int featureCount = static_cast<int>(PopupRegistry::get().entries().size());
     std::string version = "?";
     if (auto* mod = geode::Mod::get()) {
-        version = mod->getVersion().toVString(false);
+        // toNonVString: las respuestas ya escriben la "v" delante.
+        version = mod->getVersion().toNonVString(false);
     }
 
     {

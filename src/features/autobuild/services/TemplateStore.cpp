@@ -18,7 +18,7 @@ namespace paimon::autobuild {
 
 namespace {
 
-constexpr char const* kHeader = "PAIMAB 1";
+constexpr char const* kHeader = "PAIMAB 2";
 constexpr char const* kSelectedKey = "autobuild-selected";
 constexpr char const* kExtension = ".pab";
 constexpr size_t kMaxFileBytes = 64u * 1024u * 1024u;
@@ -248,7 +248,57 @@ Result<Template> parseTblib(std::string const& text) {
 
 } // namespace
 
-std::string serialize(Template const& tpl) {
+Result<std::string> serialize(Template const& tpl) {
+    if (tpl.pieces.size() > static_cast<size_t>(kMaxImportObjects)) {
+        return Err("Demasiadas piezas para guardar.");
+    }
+    if (tpl.mode == Mode::Wave && tpl.links.size() != tpl.pieces.size()) {
+        return Err("La cantidad de reglas no coincide con las piezas.");
+    }
+    long long objectCount = 0;
+    for (auto const& piece : tpl.pieces) {
+        if (piece.objects.empty()) return Err("No se puede guardar una pieza vacia.");
+        objectCount += static_cast<long long>(piece.objects.size());
+        if (objectCount > kMaxImportObjects) return Err("Demasiados objetos para guardar.");
+        for (auto const& object : piece.objects) {
+            if (object.save.empty() || object.save.find_first_of("\r\n") != std::string::npos) {
+                return Err("Una pieza contiene un objeto invalido.");
+            }
+        }
+    }
+    if (tpl.name.find_first_of("\r\n") != std::string::npos ||
+        tpl.colors.find_first_of("\r\n") != std::string::npos) {
+        return Err("El nombre o los colores contienen saltos de linea.");
+    }
+    for (auto const& link : tpl.links) {
+        for (auto const& side : link.side) {
+            for (int piece : side) {
+                if (piece < 0 || piece >= static_cast<int>(tpl.pieces.size())) {
+                    return Err("Una regla apunta a una pieza inexistente.");
+                }
+            }
+        }
+    }
+    if (tpl.grids.size() > static_cast<size_t>(kMaxTemplateGrids)) {
+        return Err("Demasiadas muestras para guardar.");
+    }
+    long long gridCells = 0;
+    for (auto const& grid : tpl.grids) {
+        if (grid.width <= 0 || grid.height <= 0) return Err("Muestra invalida.");
+        long long const area = static_cast<long long>(grid.width) * grid.height;
+        if (grid.cells.size() > static_cast<size_t>(area)) return Err("Muestra invalida.");
+        for (auto const& cell : grid.cells) {
+            if (cell.x < 0 || cell.x >= grid.width || cell.y < 0 || cell.y >= grid.height ||
+                cell.piece < 0 || cell.piece >= static_cast<int>(tpl.pieces.size())) {
+                return Err("Celda de muestra fuera de rango.");
+            }
+        }
+        gridCells += area;
+        if (gridCells > kMaxTemplateGridCells) {
+            return Err("Demasiadas celdas de muestra para guardar.");
+        }
+    }
+
     std::string out;
     out.reserve(static_cast<size_t>(tpl.objectCount()) * 64 + 256);
     out += kHeader;
@@ -269,15 +319,27 @@ std::string serialize(Template const& tpl) {
         out += fmt::format("LINKS {}\n", tpl.links.size());
         for (auto const& link : tpl.links) {
             int mask = 0;
-            for (int d = 0; d < 4; ++d) {
+            for (int d = 0; d < kNeighbourDirections; ++d) {
                 if (link.open[d]) mask |= 1 << d;
             }
-            out += fmt::format("L {}|{}|{}|{}|{}\n", mask, joinIds(link.side[0]),
-                               joinIds(link.side[1]), joinIds(link.side[2]),
-                               joinIds(link.side[3]));
+            out += fmt::format("L {}", mask);
+            for (int d = 0; d < kNeighbourDirections; ++d) {
+                out += '|';
+                out += joinIds(link.side[d]);
+            }
+            out += '\n';
+        }
+
+        out += fmt::format("GRIDS {}\n", tpl.grids.size());
+        for (auto const& grid : tpl.grids) {
+            out += fmt::format("G {} {} {}\n", grid.width, grid.height, grid.cells.size());
+            for (auto const& cell : grid.cells) {
+                out += fmt::format("{}|{}|{}\n", cell.x, cell.y, cell.piece);
+            }
         }
     }
-    return out;
+    if (out.size() > kMaxFileBytes) return Err("La plantilla es demasiado grande para guardar.");
+    return Ok(std::move(out));
 }
 
 Result<Template> deserialize(std::string const& text) {
@@ -286,8 +348,14 @@ Result<Template> deserialize(std::string const& text) {
     if (!std::getline(in, line)) return Err("El archivo esta vacio.");
     stripCr(line);
     if (!startsWith(line, "PAIMAB")) return parseTblib(text);
+    bool const version2 = line == kHeader;
+    if (!version2 && line != "PAIMAB 1") {
+        return Err(fmt::format("Version de plantilla no compatible: {}.", line));
+    }
 
     Template tpl;
+    int totalObjects = 0;
+    int totalGridCells = 0;
     while (std::getline(in, line)) {
         stripCr(line);
         if (line.empty()) continue;
@@ -303,23 +371,31 @@ Result<Template> deserialize(std::string const& text) {
         } else if (startsWith(line, "COLORS")) {
             tpl.colors = line.size() > 7 ? line.substr(7) : std::string{};
         } else if (startsWith(line, "PIECES ")) {
-            int count = toInt(line.substr(7), 0);
-            tpl.pieces.reserve(std::max(0, count));
+            int count = toInt(line.substr(7), -1);
+            if (count < 0 || count > kMaxImportObjects) return Err("Demasiadas piezas.");
+            tpl.pieces.reserve(count);
             for (int p = 0; p < count; ++p) {
-                if (!std::getline(in, line)) break;
+                if (!std::getline(in, line)) return Err("Archivo truncado al leer piezas.");
                 stripCr(line);
-                if (!startsWith(line, "P ")) break;
+                if (!startsWith(line, "P ")) return Err("Cabecera de pieza invalida.");
                 std::istringstream headerIn(line.substr(2));
                 Piece piece;
                 int objectCount = 0;
-                headerIn >> piece.weight >> objectCount;
+                if (!(headerIn >> piece.weight >> objectCount)) return Err("Pieza invalida.");
+                if (objectCount <= 0) return Err("Pieza sin objetos.");
+                if (objectCount > kMaxImportObjects - totalObjects) {
+                    return Err("Demasiados objetos en la plantilla.");
+                }
+                totalObjects += objectCount;
                 piece.weight = std::max(1, piece.weight);
                 piece.objects.reserve(std::max(0, objectCount));
                 for (int o = 0; o < objectCount; ++o) {
-                    if (!std::getline(in, line)) break;
+                    if (!std::getline(in, line)) {
+                        return Err("Archivo truncado al leer objetos.");
+                    }
                     stripCr(line);
                     auto fields = splitFields(line, 3);
-                    if (fields.size() < 3 || fields[2].empty()) continue;
+                    if (fields.size() < 3 || fields[2].empty()) return Err("Objeto invalido.");
                     CapturedObject object;
                     object.dx = toFloat(fields[0], 0.f);
                     object.dy = toFloat(fields[1], 0.f);
@@ -327,24 +403,71 @@ Result<Template> deserialize(std::string const& text) {
                     object.objectId = objectIdOf(object.save);
                     piece.objects.push_back(std::move(object));
                 }
-                if (!piece.objects.empty()) tpl.pieces.push_back(std::move(piece));
+                measurePiece(piece);
+                tpl.pieces.push_back(std::move(piece));
             }
         } else if (startsWith(line, "LINKS ")) {
-            int count = toInt(line.substr(6), 0);
-            tpl.links.reserve(std::max(0, count));
+            int count = toInt(line.substr(6), -1);
+            if (count < 0 || count > kMaxImportObjects) return Err("Demasiadas reglas.");
+            tpl.links.reserve(count);
             for (int i = 0; i < count; ++i) {
-                if (!std::getline(in, line)) break;
+                if (!std::getline(in, line)) return Err("Archivo truncado al leer reglas.");
                 stripCr(line);
-                if (!startsWith(line, "L ")) break;
-                auto fields = splitFields(line.substr(2), 5);
-                if (fields.size() < 5) continue;
+                if (!startsWith(line, "L ")) return Err("Regla invalida.");
+                auto fields = splitFields(line.substr(2), kNeighbourDirections + 1);
+                size_t const requiredFields = version2 ? kNeighbourDirections + 1 : 5;
+                if (fields.size() < requiredFields) return Err("Regla incompleta.");
                 Links link;
                 int mask = toInt(fields[0], 0);
-                for (int d = 0; d < 4; ++d) {
+                int directions = version2 ? kNeighbourDirections : kCardinalDirections;
+                for (int d = 0; d < directions; ++d) {
                     link.open[d] = (mask >> d) & 1;
                     link.side[d] = splitIds(fields[d + 1]);
                 }
                 tpl.links.push_back(std::move(link));
+            }
+        } else if (startsWith(line, "GRIDS ")) {
+            int count = toInt(line.substr(6), -1);
+            if (count < 0 || count > kMaxTemplateGrids) return Err("Demasiadas muestras.");
+            tpl.grids.reserve(count);
+            for (int i = 0; i < count; ++i) {
+                if (!std::getline(in, line)) return Err("Archivo truncado al leer muestras.");
+                stripCr(line);
+                if (!startsWith(line, "G ")) return Err("Cabecera de muestra invalida.");
+
+                SampleGrid grid;
+                int cellCount = 0;
+                std::istringstream headerIn(line.substr(2));
+                if (!(headerIn >> grid.width >> grid.height >> cellCount) ||
+                    grid.width <= 0 || grid.height <= 0) {
+                    return Err("Muestra invalida.");
+                }
+                long long const area = static_cast<long long>(grid.width) * grid.height;
+                if (cellCount < 0 || cellCount > area ||
+                    area > kMaxTemplateGridCells - totalGridCells) {
+                    return Err("Demasiadas celdas de muestra.");
+                }
+                totalGridCells += static_cast<int>(area);
+                grid.cells.reserve(cellCount);
+                for (int cell = 0; cell < cellCount; ++cell) {
+                    if (!std::getline(in, line)) {
+                        return Err("Archivo truncado al leer celdas de muestra.");
+                    }
+                    stripCr(line);
+                    auto fields = splitFields(line, 3);
+                    if (fields.size() < 3) return Err("Celda de muestra invalida.");
+                    SampleCell value;
+                    value.x = toInt(fields[0], -1);
+                    value.y = toInt(fields[1], -1);
+                    value.piece = toInt(fields[2], -1);
+                    if (value.x < 0 || value.x >= grid.width ||
+                        value.y < 0 || value.y >= grid.height ||
+                        value.piece < 0 || value.piece >= static_cast<int>(tpl.pieces.size())) {
+                        return Err("Celda de muestra fuera de rango.");
+                    }
+                    grid.cells.push_back(value);
+                }
+                if (!grid.cells.empty()) tpl.grids.push_back(std::move(grid));
             }
         }
     }
@@ -352,6 +475,15 @@ Result<Template> deserialize(std::string const& text) {
     if (!tpl.valid()) return Err("La plantilla no trae piezas.");
     if (tpl.mode == Mode::Wave && tpl.links.size() != tpl.pieces.size()) {
         tpl.links.resize(tpl.pieces.size());
+    }
+    for (auto const& link : tpl.links) {
+        for (auto const& side : link.side) {
+            for (int piece : side) {
+                if (piece < 0 || piece >= static_cast<int>(tpl.pieces.size())) {
+                    return Err("Una regla apunta a una pieza inexistente.");
+                }
+            }
+        }
     }
     return Ok(std::move(tpl));
 }
@@ -377,6 +509,12 @@ void TemplateStore::load() {
 
     for (auto const& path : entries.unwrap()) {
         if (path.extension() != kExtension) continue;
+        std::error_code ec;
+        auto const size = std::filesystem::file_size(path, ec);
+        if (!ec && size > kMaxFileBytes) {
+            log::warn("[Autobuild] {} supera el limite de tamano", path.filename().string());
+            continue;
+        }
         auto text = utils::file::readString(path);
         if (text.isErr()) continue;
         auto tpl = deserialize(text.unwrap());
@@ -468,7 +606,12 @@ void TemplateStore::persist(int index) {
     if (index < 0 || index >= static_cast<int>(m_items.size())) return;
     auto& tpl = m_items[index];
     if (tpl.file.empty()) tpl.file = slug(tpl.name) + kExtension;
-    auto result = utils::file::writeString(directory() / tpl.file, serialize(tpl));
+    auto text = serialize(tpl);
+    if (text.isErr()) {
+        log::warn("[Autobuild] no se pudo guardar {}: {}", tpl.file, text.unwrapErr());
+        return;
+    }
+    auto result = utils::file::writeString(directory() / tpl.file, text.unwrap());
     if (result.isErr()) {
         log::warn("[Autobuild] no se pudo guardar {}: {}", tpl.file, result.unwrapErr());
     }

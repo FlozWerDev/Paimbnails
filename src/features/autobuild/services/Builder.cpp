@@ -107,7 +107,8 @@ std::vector<GameObject*> markersIn(std::vector<GameObject*> const& objects, Opti
 }
 
 Target targetFrom(GameObject* obj) {
-    return Target{obj->getPosition()};
+    auto const pos = obj->getPosition();
+    return Target{{pos.x, pos.y}};
 }
 
 Result<BuildReport> paste(EditorUI* ui, Template const& tpl, Options const& opts,
@@ -118,9 +119,27 @@ Result<BuildReport> paste(EditorUI* ui, Template const& tpl, Options const& opts
     SolveStats stats;
     auto placements = tpl.mode == Mode::Wave ? solveWave(tpl, opts, targets, seed, stats)
                                              : solveStamps(tpl, opts, targets, seed, stats);
+    if (tpl.mode == Mode::Wave) {
+        log::info("[Autobuild] onda: {} celdas, {} llenas, {} huecos, {} forzadas, "
+                  "{} retrocesos, {} ms{}",
+                  stats.cells, stats.filled, stats.gaps, stats.forced, stats.backtracks,
+                  stats.ms, stats.budgetExceeded ? " (presupuesto agotado)" : "");
+        if (stats.smartExact + stats.smartRemapped + stats.smartSimplified > 0) {
+            log::info("[Autobuild] plantilla adaptable: {} exactas, {} remapeadas, "
+                      "{} aproximadas",
+                      stats.smartExact, stats.smartRemapped, stats.smartSimplified);
+        }
+    } else {
+        log::info("[Autobuild] sellos: {} destinos, {} colocados, {} saltados, {} ms",
+                  stats.cells, stats.filled, stats.gaps, stats.ms);
+    }
+    if (stats.budgetExceeded) {
+        return Err("Autobuild agoto el presupuesto de calculo sin encontrar una solucion. "
+                   "Prueba con un area menor, otra semilla o reglas flexibles.");
+    }
     if (placements.empty()) {
         return Err("La plantilla no pudo colocar nada aqui. Prueba con otra semilla "
-                   "o permite huecos.");
+                   "o permite huecos o reglas flexibles.");
     }
 
     IdShift shift{opts.shiftColors, opts.shiftGroups, opts.shiftLayers, opts.shiftZOrder,
@@ -129,9 +148,19 @@ Result<BuildReport> paste(EditorUI* ui, Template const& tpl, Options const& opts
     std::string payload;
     payload.reserve(static_cast<size_t>(placements.size()) * 128);
 
+    struct TransformBatch {
+        unsigned first = 0;
+        unsigned count = 0;
+        Point pivot;
+        PieceTransform transform;
+    };
+    std::vector<TransformBatch> transforms;
+
     BuildReport report;
     for (auto const& placement : placements) {
         if (placement.piece < 0 || placement.piece >= static_cast<int>(tpl.pieces.size())) continue;
+        TransformBatch batch{static_cast<unsigned>(report.objects), 0, placement.pos,
+                             placement.transform};
         for (auto const& object : tpl.pieces[placement.piece].objects) {
             if (isMarkerId(object.objectId)) continue;
             if (report.objects >= opts.maxObjects) {
@@ -142,7 +171,9 @@ Result<BuildReport> paste(EditorUI* ui, Template const& tpl, Options const& opts
                                 placement.pos.y + object.dy, shift);
             if (opts.copyColors) collectColorIds(object.save, usedColors);
             report.objects++;
+            batch.count++;
         }
+        if (batch.count > 0 && !batch.transform.identity()) transforms.push_back(batch);
         if (report.truncated) break;
     }
     if (payload.empty()) return Err("Las piezas de la plantilla no tienen objetos validos.");
@@ -160,6 +191,40 @@ Result<BuildReport> paste(EditorUI* ui, Template const& tpl, Options const& opts
     }
 
     CCArray* created = lel->createObjectsFromString(payload, false, true);
+    if (created) {
+        for (auto const& batch : transforms) {
+            if (batch.first >= created->count()) continue;
+            auto* objects = CCArray::createWithCapacity(batch.count);
+            GameObject* firstObject = nullptr;
+            unsigned const end = std::min(created->count(), batch.first + batch.count);
+            for (unsigned index = batch.first; index < end; ++index) {
+                if (auto* object = typeinfo_cast<GameObject*>(created->objectAtIndex(index))) {
+                    if (!firstObject) firstObject = object;
+                    objects->addObject(object);
+                }
+            }
+            if (!firstObject) continue;
+
+            CCPoint const pivot{batch.pivot.x, batch.pivot.y};
+            if (batch.transform.quarterTurns != 0) {
+                ui->rotateObjects(objects, 90.f * (batch.transform.quarterTurns % 4), pivot);
+            }
+            if (batch.transform.flipX) {
+                float const before = firstObject->getPositionX();
+                ui->flipObjectsX(objects);
+                float const correction = 2.f * pivot.x - before - firstObject->getPositionX();
+                if (std::abs(correction) > 0.001f) {
+                    CCPoint const offset{correction, 0.f};
+                    for (unsigned index = 0; index < objects->count(); ++index) {
+                        if (auto* object =
+                                typeinfo_cast<GameObject*>(objects->objectAtIndex(index))) {
+                            ui->moveObject(object, offset);
+                        }
+                    }
+                }
+            }
+        }
+    }
     if (created) lel->updateObjectColors(created);
 
     if (opts.copyColors) {
@@ -259,7 +324,7 @@ Result<BuildPlan> planBuild(EditorUI* ui, Options const& opts, float cell) {
             for (int gx = x0; gx <= x1; ++gx) {
                 for (int gy = y0; gy <= y1; ++gy) {
                     Target target = base;
-                    target.pos = CCPoint{gx * step, gy * step};
+                    target.pos = Point{gx * step, gy * step};
                     targets.push_back(target);
                 }
             }

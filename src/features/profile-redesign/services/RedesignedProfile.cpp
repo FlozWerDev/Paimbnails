@@ -21,7 +21,6 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GJCommentListLayer.hpp>
 #include <Geode/binding/CommentCell.hpp>
-#include <Geode/modify/CommentCell.hpp>
 #include <Geode/binding/GJComment.hpp>
 #include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/binding/GJAccountSettingsLayer.hpp>
@@ -510,6 +509,19 @@ static void collectNodesByID(CCNode* root, std::string const& id, std::vector<CC
     }
 }
 
+// In the native page every stat icon inside "stats-menu" is a menu item that
+// opens its own breakdown (completed levels for stars, demon counts for
+// demons). The redesign hides that menu, so its chips forward the tap to the
+// original item instead of losing the feature.
+static CCMenuItem* findVanillaStatButton(CCNode* layer, char const* statID) {
+    if (!layer || !statID) return nullptr;
+    auto* icon = layer->getChildByIDRecursive(fmt::format("{}-icon", statID));
+    for (CCNode* node = icon; node; node = node->getParent()) {
+        if (auto* item = typeinfo_cast<CCMenuItem*>(node)) return item;
+    }
+    return nullptr;
+}
+
 // IDs adopted by buildInPlace(); needsSettlePass() uses the same set.
 static std::vector<std::string> relocatableIDs(bool ownProfile) {
     std::vector<std::string> ids = {
@@ -634,20 +646,9 @@ static CommentCell* makeAccountCommentCell(GJComment* comment, float width, floa
 #endif
     cell->autorelease();
     cell->m_accountComment = true;
-    cell->setUserFlag("paimbnails/profile-like-probe"_spr, true);
     cell->loadFromComment(comment);
     return cell;
 }
-
-class $modify(PaimonProfileLikeProbe, CommentCell) {
-    void onLike(CCObject* sender) {
-        if (this->getUserFlag("paimbnails/profile-like-probe"_spr)) {
-            geode::log::info("[paim-redesign] profile comment like button reached CommentCell::onLike");
-            return;
-        }
-        CommentCell::onLike(sender);
-    }
-};
 
 static void setMenuTouchPriority(CCNode* root, int priority) {
     if (!root) return;
@@ -658,32 +659,6 @@ static void setMenuTouchPriority(CCNode* root, int priority) {
         for (auto* child : CCArrayExt<CCNode*>(children)) {
             setMenuTouchPriority(child, priority);
         }
-    }
-}
-
-static void logCommentMenus(CCNode* root) {
-    if (!root) return;
-    if (auto* menu = typeinfo_cast<CCMenu*>(root)) {
-        geode::log::info(
-            "[paim-redesign] comment menu id='{}' pos=({}, {}) size=({}, {}) visible={} touch={} children={}",
-            menu->getID(), menu->getPositionX(), menu->getPositionY(),
-            menu->getContentWidth(), menu->getContentHeight(), menu->isVisible(),
-            menu->isTouchEnabled(), menu->getChildrenCount());
-        if (auto* children = menu->getChildren()) {
-            for (auto* child : CCArrayExt<CCNode*>(children)) {
-                auto* item = typeinfo_cast<CCMenuItem*>(child);
-                if (!item) continue;
-                auto center = item->convertToWorldSpace(item->getContentSize() / 2.f);
-                geode::log::info(
-                    "[paim-redesign] comment item id='{}' pos=({}, {}) size=({}, {}) world-center=({}, {}) visible={} enabled={}",
-                    item->getID(), item->getPositionX(), item->getPositionY(),
-                    item->getContentWidth(), item->getContentHeight(), center.x, center.y,
-                    item->isVisible(), item->isEnabled());
-            }
-        }
-    }
-    if (auto* children = root->getChildren()) {
-        for (auto* child : CCArrayExt<CCNode*>(children)) logCommentMenus(child);
     }
 }
 
@@ -1138,13 +1113,19 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
                 const float totalH = std::max(innerH, count * (scaledH + gap));
                 scroll->m_contentLayer->setContentSize({innerW, totalH});
                 float y = totalH;
+// The like button only fires if the cell menus are dispatched before both the
+// scroller and the popup's own menu.
+                int cellPrio = scroll->getTouchPriority() - 1;
+                if (auto* vanillaMenu = typeinfo_cast<CCMenu*>(buttonMenu)) {
+                    cellPrio = std::min(cellPrio, vanillaMenu->getTouchPriority() - 1);
+                }
                 for (auto* obj : CCArrayExt<CCObject*>(comments)) {
                     auto* comment = typeinfo_cast<GJComment*>(obj);
                     if (!comment) continue;
                     auto* cell = makeAccountCommentCell(comment, naturalW, naturalH);
                     if (!cell) continue;
                     styleAccountCommentCell(cell, naturalW, naturalH);
-                    setMenuTouchPriority(cell, scroll->getTouchPriority() - 1);
+                    setMenuTouchPriority(cell, cellPrio);
                     cell->ignoreAnchorPointForPosition(false);
                     cell->setAnchorPoint({0.f, 0.f});
                     cell->setPosition({0.f, 0.f});
@@ -1158,7 +1139,6 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
                     holder->setPosition({0.f, y});
                     holder->addChild(cell);
                     scroll->m_contentLayer->addChild(holder);
-                    logCommentMenus(cell);
                 }
             }
             scroll->scrollToTop();
@@ -1237,10 +1217,11 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             ->setGap(9.f)->setCrossAxisOverflow(false)->setAutoScale(true));
 
         int statIndex = 0;
-        auto addStat = [&](int value, char const* iconFrame, ccColor3B color) {
+        auto addStat = [&](int value, char const* iconFrame, ccColor3B color,
+                           char const* statID) {
             constexpr float kChipH = 16.f;
+            auto const chipID = fmt::format("{}rd-generated-stat-{}", ""_spr, statIndex++);
             auto chip = CCNode::create();
-            chip->setID(fmt::format("{}rd-generated-stat-{}", ""_spr, statIndex++));
             chip->setAnchorPoint({0.5f, 0.5f});
 
             float cursor = 0.f;
@@ -1260,6 +1241,21 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             cursor += label->getContentWidth() * 0.4f;
 
             chip->setContentSize({std::max(cursor, 1.f), kChipH});
+
+            if (auto* vanilla = findVanillaStatButton(layer, statID)) {
+                Ref<CCMenuItem> target = vanilla;
+                if (auto* btn = CCMenuItemExt::createSpriteExtra(chip,
+                        [target](CCMenuItemSpriteExtra*) {
+                            if (target && target->getParent() && target->isEnabled()) {
+                                target->activate();
+                            }
+                        })) {
+                    btn->setID(chipID);
+                    menu->addChild(btn);
+                    return;
+                }
+            }
+            chip->setID(chipID);
             menu->addChild(chip);
         };
 // Prefer live local stats so async rebuilds keep the own profile current.
@@ -1272,15 +1268,16 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         int const demons = score->m_demons;
         int const userCoins = score->m_userCoins;
         int const secretCoins = score->m_secretCoins;
-        addStat(stars, "GJ_starsIcon_001.png", {233, 253, 113});
-        addStat(moons, "GJ_moonsIcon_001.png", {109, 215, 249});
+        addStat(stars, "GJ_starsIcon_001.png", {233, 253, 113}, "stars");
+        addStat(moons, "GJ_moonsIcon_001.png", {109, 215, 249}, "moons");
         if (diamonds > 0)
-            addStat(diamonds, "GJ_diamondsIcon_001.png", {90, 245, 255});
-        addStat(demons, "GJ_demonIcon_001.png", {240, 140, 140});
+            addStat(diamonds, "GJ_diamondsIcon_001.png", {90, 245, 255}, "diamonds");
+        addStat(demons, "GJ_demonIcon_001.png", {240, 140, 140}, "demons");
         if (score->m_creatorPoints > 0)
-            addStat(score->m_creatorPoints, "GJ_hammerIcon_001.png", {182, 186, 186});
-        addStat(userCoins, "GJ_coinsIcon2_001.png", {255, 255, 255});
-        addStat(secretCoins, "GJ_coinsIcon_001.png", {248, 138, 0});
+            addStat(score->m_creatorPoints, "GJ_hammerIcon_001.png", {182, 186, 186},
+                    "creator-points");
+        addStat(userCoins, "GJ_coinsIcon2_001.png", {255, 255, 255}, "user-coins");
+        addStat(secretCoins, "GJ_coinsIcon_001.png", {248, 138, 0}, "coins");
         menu->updateLayout();
     }
     {

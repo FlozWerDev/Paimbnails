@@ -5,6 +5,7 @@
 #include "MediumPort.hpp"
 #include "OverlayTinter.hpp"
 #include "PackMetadataBuilder.hpp"
+#include "SheetRetarget.hpp"
 #include "SheetTinter.hpp"
 #include "../services/PackGenAssets.hpp"
 
@@ -439,6 +440,25 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
         auto out = std::move(outRes).unwrap();
 
+        // The installed plist stays authoritative, so the PNG must use its
+        // layout; PackGen's snapshot can be a different version of the sheet.
+        auto conformed = SheetRetarget::conform(out.pngBytes, req.sourcePlist, autoSheet.pngRel);
+        bool layoutDrifted = false;
+        if (!conformed.message.empty()) logMessages.push_back(conformed.message);
+        switch (conformed.status) {
+            case RetargetOutcome::Status::Retargeted:
+                out.pngBytes  = std::move(conformed.pngBytes);
+                layoutDrifted = true;
+                break;
+            case RetargetOutcome::Status::Failed:
+                // A mismatched atlas deforms every frame, so ship nothing.
+                ++result.standaloneFailed;
+                continue;
+            case RetargetOutcome::Status::NotInstalled:
+            case RetargetOutcome::Status::LayoutMatches:
+                break;
+        }
+
         // PNG only: the installed mod/Geode plist stays authoritative.
         if (auto r = addSheetPngToZip(zip, zipFolders, autoSheet.baseName, "-uhd", out); !r) {
             ++result.standaloneFailed;
@@ -447,7 +467,11 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
         ++result.standaloneProcessed;
 
-        if (cfg.includeMediumPort) {
+        if (cfg.includeMediumPort && layoutDrifted) {
+            // The port ships the snapshot's plist, which would hide the frames
+            // the installed version added.
+            logMessages.push_back(autoSheet.pngRel + " (hd): skipped, snapshot is out of date");
+        } else if (cfg.includeMediumPort) {
             // The -hd port re-packs the atlas, so it needs its own plist.
             if (auto hdOutRes = MediumPort::generate(req)) {
                 auto hdOut = std::move(hdOutRes).unwrap();

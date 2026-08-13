@@ -4,6 +4,8 @@
 
 #include <Geode/Geode.hpp>
 
+#include <memory>
+
 class EditorUI;
 
 namespace paimon::gifimport {
@@ -19,6 +21,13 @@ geode::Result<EmitReport> emitToEditor(
     ImportPlan const& plan,
     Options const& options,
     cocos2d::CCPoint origin
+);
+
+geode::Result<> startBackgroundImport(
+    EditorUI* ui,
+    std::shared_ptr<SourceAnimation> source,
+    Options const& options,
+    cocos2d::CCPoint center
 );
 
 } // namespace paimon::gifimport

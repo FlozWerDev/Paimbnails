@@ -3,7 +3,6 @@
 #include "../../../core/modules/ModuleRegistry.hpp"
 
 #include <Geode/binding/EditorUI.hpp>
-#include <Geode/binding/EffectGameObject.hpp>
 #include <Geode/binding/GameObject.hpp>
 #include <Geode/binding/LevelEditorLayer.hpp>
 
@@ -21,6 +20,13 @@ namespace {
 
 constexpr float kDegreesToRadians = 0.01745329251994329577f;
 
+// Orbs, rings, pads and portals are all EffectGameObject subclasses, so filtering
+// by class used to throw out every one of them along with the triggers. GD marks
+// the actual triggers, and only those are excluded.
+bool isPhysicalObject(GameObject* object) {
+    return object && !object->m_isTrigger;
+}
+
 std::vector<GameObject*> selectionOf(EditorUI* ui) {
     std::vector<GameObject*> objects;
     if (!ui) return objects;
@@ -28,12 +34,11 @@ std::vector<GameObject*> selectionOf(EditorUI* ui) {
         objects.reserve(selected->count());
         for (auto* item : CCArrayExt<CCObject*>(selected)) {
             auto* object = typeinfo_cast<GameObject*>(item);
-            if (!object || typeinfo_cast<EffectGameObject*>(object)) continue;
+            if (!isPhysicalObject(object)) continue;
             objects.push_back(object);
         }
     }
-    if (objects.empty() && ui->m_selectedObject &&
-        !typeinfo_cast<EffectGameObject*>(ui->m_selectedObject)) {
+    if (objects.empty() && isPhysicalObject(ui->m_selectedObject)) {
         objects.push_back(ui->m_selectedObject);
     }
     std::sort(objects.begin(), objects.end());
@@ -186,6 +191,8 @@ Result<std::vector<ResolvedBody>> PhysicsWorkspace::resolve(
         body.spec.restitution = config.restitution;
         body.spec.friction = config.friction;
 
+        std::vector<ObjectShape> shapes;
+        shapes.reserve(captured.objects.size());
         float minX = std::numeric_limits<float>::max();
         float minY = std::numeric_limits<float>::max();
         float maxX = std::numeric_limits<float>::lowest();
@@ -195,11 +202,12 @@ Result<std::vector<ResolvedBody>> PhysicsWorkspace::resolve(
             if (!object || !object->getParent()) {
                 return Err("Uno de los objetos capturados ya no existe en el nivel.");
             }
-            auto const rect = ui->m_editorLayer->getObjectRect(object.data(), true, false);
-            minX = std::min(minX, rect.getMinX());
-            minY = std::min(minY, rect.getMinY());
-            maxX = std::max(maxX, rect.getMaxX());
-            maxY = std::max(maxY, rect.getMaxY());
+            auto const shape = shapeOf(ui->m_editorLayer, object.data());
+            minX = std::min(minX, shape.center.x - shape.halfSize.x);
+            minY = std::min(minY, shape.center.y - shape.halfSize.y);
+            maxX = std::max(maxX, shape.center.x + shape.halfSize.x);
+            maxY = std::max(maxY, shape.center.y + shape.halfSize.y);
+            shapes.push_back(shape);
             body.objects.push_back(object.data());
         }
         if (body.objects.empty() || !std::isfinite(minX) || !std::isfinite(minY) ||
@@ -210,19 +218,46 @@ Result<std::vector<ResolvedBody>> PhysicsWorkspace::resolve(
         body.spec.position = {(minX + maxX) * 0.5f, (minY + maxY) * 0.5f};
         float area = 0.f;
         body.spec.fixtures.reserve(body.objects.size());
-        for (auto* object : body.objects) {
-            auto const rect = ui->m_editorLayer->getObjectRect(object, true, false);
-            float const width = std::max(rect.size.width, 1.f);
-            float const height = std::max(rect.size.height, 1.f);
-            Vec2 const center{rect.getMidX(), rect.getMidY()};
-            body.spec.fixtures.push_back({
-                {
-                    center.x - body.spec.position.x,
-                    center.y - body.spec.position.y,
-                },
-                {width * 0.5f, height * 0.5f},
-            });
-            area += width * height;
+        body.visuals.reserve(body.objects.size());
+        for (std::size_t index = 0; index < body.objects.size(); ++index) {
+            auto* object = body.objects[index];
+            auto const& shape = shapes[index];
+            body.spec.fixtures.push_back(fixtureFrom(shape, body.spec.position));
+
+            BodyVisual visual;
+            visual.object = object;
+            visual.objectID = object->m_objectID;
+            // The art hangs off the object's own position, not off its hitbox
+            // centre, which are different things for slopes and extended blocks.
+            visual.offset = {
+                object->getPositionX() - body.spec.position.x,
+                object->getPositionY() - body.spec.position.y,
+            };
+            visual.size = {shape.halfSize.x * 2.f, shape.halfSize.y * 2.f};
+            visual.rotation = object->getRotation();
+            visual.scaleX = object->m_scaleX;
+            visual.scaleY = object->m_scaleY;
+            visual.flipX = object->isFlipX();
+            visual.flipY = object->isFlipY();
+            visual.zOrder = object->getZOrder();
+            visual.baseColor = object->getColor();
+            visual.baseOpacity = object->getOpacity();
+            if (auto* detail = object->m_colorSprite) {
+                visual.detailColor = detail->getColor();
+                visual.detailOpacity = detail->getOpacity();
+            } else {
+                visual.detailColor = visual.baseColor;
+                visual.detailOpacity = visual.baseOpacity;
+            }
+            visual.kind = shape.kind;
+            body.visuals.push_back(visual);
+
+            switch (shape.kind) {
+                case ShapeKind::Ramp: ++body.shapes.ramps; break;
+                case ShapeKind::Round: ++body.shapes.rounds; break;
+                case ShapeKind::Box: ++body.shapes.boxes; break;
+            }
+            area += shape.halfSize.x * shape.halfSize.y * 4.f;
         }
         body.spec.mass = std::clamp(area / 900.f, 0.1f, 1000.f);
         body.preferredGroup = exactGroup(ui->m_editorLayer, body.objects);

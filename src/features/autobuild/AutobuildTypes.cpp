@@ -4,6 +4,7 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <limits>
 
 using namespace geode::prelude;
 
@@ -19,6 +20,9 @@ constexpr char const* kRemove       = "autobuild-remove-markers";
 constexpr char const* kColors       = "autobuild-copy-colors";
 constexpr char const* kGaps         = "autobuild-allow-gaps";
 constexpr char const* kStrict       = "autobuild-strict-rules";
+constexpr char const* kSmart        = "autobuild-smart-templates";
+constexpr char const* kRotate       = "autobuild-rotate-variants";
+constexpr char const* kFlip         = "autobuild-flip-variants";
 constexpr char const* kRepeats      = "autobuild-avoid-repeats";
 constexpr char const* kOverlap      = "autobuild-avoid-overlap";
 constexpr char const* kSeed         = "autobuild-seed";
@@ -33,6 +37,27 @@ constexpr char const* kClusterRad   = "autobuild-cluster-radius";
 constexpr char const* kBacktracks   = "autobuild-backtracks";
 
 } // namespace
+
+void measurePiece(Piece& piece) {
+    if (piece.objects.empty()) {
+        piece.width = 0.f;
+        piece.height = 0.f;
+        return;
+    }
+
+    float minX = std::numeric_limits<float>::max();
+    float minY = std::numeric_limits<float>::max();
+    float maxX = std::numeric_limits<float>::lowest();
+    float maxY = std::numeric_limits<float>::lowest();
+    for (auto const& obj : piece.objects) {
+        minX = std::min(minX, obj.dx);
+        minY = std::min(minY, obj.dy);
+        maxX = std::max(maxX, obj.dx);
+        maxY = std::max(maxY, obj.dy);
+    }
+    piece.width = maxX - minX;
+    piece.height = maxY - minY;
+}
 
 int Template::objectCount() const {
     int total = 0;
@@ -58,6 +83,9 @@ Options Options::load() {
     o.copyColors    = mod->getSavedValue<bool>(kColors, o.copyColors);
     o.allowGaps     = mod->getSavedValue<bool>(kGaps, o.allowGaps);
     o.strictRules   = mod->getSavedValue<bool>(kStrict, o.strictRules);
+    o.smartTemplates = mod->getSavedValue<bool>(kSmart, o.smartTemplates);
+    o.rotateVariants = mod->getSavedValue<bool>(kRotate, o.rotateVariants);
+    o.flipVariants  = mod->getSavedValue<bool>(kFlip, o.flipVariants);
     o.avoidRepeats  = mod->getSavedValue<bool>(kRepeats, o.avoidRepeats);
     o.avoidOverlap  = mod->getSavedValue<bool>(kOverlap, o.avoidOverlap);
     o.seed          = mod->getSavedValue<int>(kSeed, o.seed);
@@ -88,6 +116,9 @@ void Options::save() const {
     mod->setSavedValue(kColors, copyColors);
     mod->setSavedValue(kGaps, allowGaps);
     mod->setSavedValue(kStrict, strictRules);
+    mod->setSavedValue(kSmart, smartTemplates);
+    mod->setSavedValue(kRotate, rotateVariants);
+    mod->setSavedValue(kFlip, flipVariants);
     mod->setSavedValue(kRepeats, avoidRepeats);
     mod->setSavedValue(kOverlap, avoidOverlap);
     mod->setSavedValue(kSeed, seed);

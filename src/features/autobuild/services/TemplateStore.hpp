@@ -41,7 +41,7 @@ private:
     bool m_loaded = false;
 };
 
-std::string serialize(Template const& tpl);
+geode::Result<std::string> serialize(Template const& tpl);
 geode::Result<Template> deserialize(std::string const& text);
 
 } // namespace paimon::autobuild

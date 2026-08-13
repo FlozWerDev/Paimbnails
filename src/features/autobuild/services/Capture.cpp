@@ -22,9 +22,6 @@ namespace paimon::autobuild {
 
 namespace {
 
-constexpr int DX[4] = {0, 0, 1, -1};
-constexpr int DY[4] = {1, -1, 0, 0};
-
 std::uint64_t packCell(int gx, int gy) {
     return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(gx)) << 32) |
            static_cast<std::uint32_t>(gy);
@@ -44,22 +41,6 @@ struct RawCluster {
     int gy = 0;
     Piece piece;
 };
-
-void measure(Piece& piece) {
-    if (piece.objects.empty()) return;
-    float minX = std::numeric_limits<float>::max();
-    float minY = std::numeric_limits<float>::max();
-    float maxX = std::numeric_limits<float>::lowest();
-    float maxY = std::numeric_limits<float>::lowest();
-    for (auto const& obj : piece.objects) {
-        minX = std::min(minX, obj.dx);
-        minY = std::min(minY, obj.dy);
-        maxX = std::max(maxX, obj.dx);
-        maxY = std::max(maxY, obj.dy);
-    }
-    piece.width = maxX - minX;
-    piece.height = maxY - minY;
-}
 
 // kS38 holds the colour channels as "chan|chan|chan"; the settings string keeps
 // going with other kA keys afterwards, so the value ends at the next separator.
@@ -151,7 +132,7 @@ Template waveFromObjects(std::vector<CapturedObject> objects, float cell) {
     std::unordered_map<std::string, int> bySignature;
     std::vector<int> cellPiece(cells.size(), 0);
     for (size_t i = 0; i < cells.size(); ++i) {
-        measure(cells[i].piece);
+        measurePiece(cells[i].piece);
         auto signature = pieceSignature(cells[i].piece);
         auto found = bySignature.find(signature);
         if (found == bySignature.end()) {
@@ -165,11 +146,12 @@ Template waveFromObjects(std::vector<CapturedObject> objects, float cell) {
     }
 
     tpl.links.resize(tpl.pieces.size());
-    std::vector<std::array<std::set<int>, 4>> sides(tpl.pieces.size());
+    std::vector<std::array<std::set<int>, kNeighbourDirections>> sides(tpl.pieces.size());
     for (size_t i = 0; i < cells.size(); ++i) {
         int piece = cellPiece[i];
-        for (int d = 0; d < 4; ++d) {
-            auto neighbour = byCell.find(packCell(cells[i].gx + DX[d], cells[i].gy + DY[d]));
+        for (int d = 0; d < kNeighbourDirections; ++d) {
+            auto neighbour = byCell.find(packCell(cells[i].gx + kDirectionX[d],
+                                                  cells[i].gy + kDirectionY[d]));
             if (neighbour == byCell.end()) {
                 tpl.links[piece].open[d] = true;
             } else {
@@ -178,10 +160,32 @@ Template waveFromObjects(std::vector<CapturedObject> objects, float cell) {
         }
     }
     for (size_t p = 0; p < tpl.pieces.size(); ++p) {
-        for (int d = 0; d < 4; ++d) {
+        for (int d = 0; d < kNeighbourDirections; ++d) {
             tpl.links[p].side[d].assign(sides[p][d].begin(), sides[p][d].end());
         }
     }
+
+    int minX = cells.front().gx;
+    int minY = cells.front().gy;
+    int maxX = minX;
+    int maxY = minY;
+    for (auto const& entry : cells) {
+        minX = std::min(minX, entry.gx);
+        minY = std::min(minY, entry.gy);
+        maxX = std::max(maxX, entry.gx);
+        maxY = std::max(maxY, entry.gy);
+    }
+
+    SampleGrid grid;
+    grid.width = maxX - minX + 1;
+    grid.height = maxY - minY + 1;
+    long long const area = static_cast<long long>(grid.width) * grid.height;
+    if (area > kMaxTemplateGridCells) return tpl;
+    grid.cells.reserve(cells.size());
+    for (size_t i = 0; i < cells.size(); ++i) {
+        grid.cells.push_back({cells[i].gx - minX, cells[i].gy - minY, cellPiece[i]});
+    }
+    tpl.grids.push_back(std::move(grid));
 
     log::info("[Autobuild] onda: {} celdas -> {} piezas (celda {:.0f})",
               cells.size(), tpl.pieces.size(), tpl.cell);
@@ -230,6 +234,10 @@ Result<Template> captureWave(EditorUI* ui, Options const& opts) {
     if (objects.empty()) return Err("No se pudo leer ningun objeto de la seleccion.");
 
     auto tpl = waveFromObjects(std::move(objects), std::clamp(opts.captureCell, 5.f, 300.f));
+    if (tpl.grids.empty()) {
+        return Err("La muestra abarca demasiadas celdas. Usa una celda mayor o "
+                   "reduce la distancia entre sus extremos.");
+    }
     tpl.colors = levelColors(ui);
     return Ok(std::move(tpl));
 }
@@ -330,7 +338,7 @@ Result<Template> captureStamps(EditorUI* ui, Options const& opts) {
             piece.objects.push_back(std::move(captured));
         }
         if (piece.objects.empty()) continue;
-        measure(piece);
+        measurePiece(piece);
 
         auto signature = pieceSignature(piece);
         auto found = bySignature.find(signature);
@@ -364,6 +372,22 @@ Result<> accumulate(Template& target, Template const& sample) {
         return Err(fmt::format("La plantilla usa celdas de {:.0f} y la muestra de {:.0f}.",
                                target.cell, sample.cell));
     }
+    if (target.mode == Mode::Wave) {
+        if (target.grids.size() + sample.grids.size() >
+            static_cast<size_t>(kMaxTemplateGrids)) {
+            return Err("La plantilla alcanzo el limite de muestras guardadas.");
+        }
+        long long cells = 0;
+        for (auto const& grid : target.grids) {
+            cells += static_cast<long long>(grid.width) * grid.height;
+        }
+        for (auto const& grid : sample.grids) {
+            cells += static_cast<long long>(grid.width) * grid.height;
+        }
+        if (cells > kMaxTemplateGridCells) {
+            return Err("La plantilla alcanzo el limite de celdas de muestra guardadas.");
+        }
+    }
 
     std::unordered_map<std::string, int> bySignature;
     for (size_t i = 0; i < target.pieces.size(); ++i) {
@@ -390,7 +414,7 @@ Result<> accumulate(Template& target, Template const& sample) {
     if (target.mode == Mode::Wave) {
         for (size_t i = 0; i < sample.links.size() && i < remap.size(); ++i) {
             auto& into = target.links[remap[i]];
-            for (int d = 0; d < 4; ++d) {
+            for (int d = 0; d < kNeighbourDirections; ++d) {
                 if (sample.links[i].open[d]) into.open[d] = true;
                 for (int neighbour : sample.links[i].side[d]) {
                     if (neighbour < 0 || neighbour >= static_cast<int>(remap.size())) continue;
@@ -404,8 +428,20 @@ Result<> accumulate(Template& target, Template const& sample) {
         }
     }
 
+    for (auto const& grid : sample.grids) {
+        SampleGrid mapped;
+        mapped.width = grid.width;
+        mapped.height = grid.height;
+        mapped.cells.reserve(grid.cells.size());
+        for (auto const& cell : grid.cells) {
+            if (cell.piece < 0 || cell.piece >= static_cast<int>(remap.size())) continue;
+            mapped.cells.push_back({cell.x, cell.y, remap[cell.piece]});
+        }
+        if (!mapped.cells.empty()) target.grids.push_back(std::move(mapped));
+    }
+
     if (target.colors.empty()) target.colors = sample.colors;
-    target.samples++;
+    target.samples += std::max(1, sample.samples);
     return Ok();
 }
 

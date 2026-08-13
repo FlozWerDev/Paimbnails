@@ -256,6 +256,14 @@ void AnimatedPaimon::showBubble(std::string const& text, float duration) {
     holder->setScale(0.f);
     holder->setID("paimon-bubble"_spr);
 
+    // La Paimon del menu cuelga de un boton inclinado al azar. El texto se lee
+    // en horizontal siempre, asi que se deshace la rotacion de toda la cadena.
+    float chainRotation = 0.f;
+    for (CCNode* node = this; node; node = node->getParent()) {
+        chainRotation += node->getRotation();
+    }
+    if (chainRotation != 0.f) holder->setRotation(-chainRotation);
+
     // Appear (back-out) and exit (fade + scale) animation.
     auto popIn = CCEaseBackOut::create(CCScaleTo::create(0.18f, 1.f));
     auto stay  = CCDelayTime::create(duration);

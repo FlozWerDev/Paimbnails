@@ -131,6 +131,16 @@ public:
 
     void submitReport(int levelId, std::string const& username, std::string const& note, GenericCallback callback);
 
+    struct CrashReport {
+        std::string crashedAt;
+        std::string crashlogName;
+        std::string geodeVersion;
+        std::string gameVersion;
+        std::string crashlog;
+        std::string geodeLog;
+    };
+    void uploadCrashLog(CrashReport const& report, GenericCallback callback);
+
     void getBanList(BanListCallback callback);
 
     // Startup ban check for the current user.

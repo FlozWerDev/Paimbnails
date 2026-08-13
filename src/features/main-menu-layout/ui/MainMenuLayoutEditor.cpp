@@ -27,7 +27,9 @@ namespace {
     constexpr float kMinHit = 26.f;
     constexpr float kOutlinePad = 6.f;
     constexpr float kGripSize = 18.f;
-    constexpr float kGripHit = 22.f;
+    // Poco mas que el cuadrado dibujado (18/2 = 9), lo justo para el dedo. Con
+    // 22 la zona de escalado se comia la esquina del boton y no se podia mover.
+    constexpr float kGripHit = 12.f;
     constexpr float kCanvasBottom = 84.f;
     constexpr std::size_t kHistoryLimit = 50;
 
@@ -286,6 +288,20 @@ CCRect MainMenuLayoutEditor::itemRect(Item const& item) const {
     return rect;
 }
 
+CCRect MainMenuLayoutEditor::outlineRect(Item const& item) const {
+    auto r = this->itemRect(item);
+    r.origin.x -= kOutlinePad;
+    r.origin.y -= kOutlinePad;
+    r.size.width += kOutlinePad * 2.f;
+    r.size.height += kOutlinePad * 2.f;
+    return r;
+}
+
+CCPoint MainMenuLayoutEditor::gripPos(Item const& item) const {
+    auto r = this->outlineRect(item);
+    return { r.getMaxX(), r.getMinY() };
+}
+
 bool MainMenuLayoutEditor::isBackgroundItem(Item const& item) const {
     if (!item.target.node || !item.target.node->getParent()) return false;
     auto win = CCDirector::get()->getWinSize();
@@ -447,15 +463,10 @@ void MainMenuLayoutEditor::redraw() {
     }
 
     if (sel && sel->target.node && sel->target.node->getParent()) {
-        auto r = this->itemRect(*sel);
-        r.origin.x -= kOutlinePad;
-        r.origin.y -= kOutlinePad;
-        r.size.width += kOutlinePad * 2.f;
-        r.size.height += kOutlinePad * 2.f;
-        strokeRect(m_outline, r, { 0.4f, 1.f, 0.55f, 0.95f }, 2.f);
+        strokeRect(m_outline, this->outlineRect(*sel), { 0.4f, 1.f, 0.55f, 0.95f }, 2.f);
 
         // single scale grip at bottom-right
-        CCPoint g{ r.getMaxX(), r.getMinY() };
+        CCPoint g = this->gripPos(*sel);
         float h = kGripSize / 2.f;
         CCPoint pts[4] = { { g.x - h, g.y - h }, { g.x + h, g.y - h }, { g.x + h, g.y + h }, { g.x - h, g.y + h } };
         m_grip->drawPolygon(pts, 4, { 0.27f, 1.f, 0.51f, 1.f }, 1.f, { 1.f, 1.f, 1.f, 0.9f });
@@ -494,7 +505,7 @@ bool MainMenuLayoutEditor::ccTouchBegan(CCTouch* touch, CCEvent*) {
     if (auto* sel = this->selectedItem()) {
         if (sel->target.node && sel->target.node->getParent()) {
             auto r = this->itemRect(*sel);
-            CCPoint grip{ r.getMaxX(), r.getMinY() };
+            CCPoint grip = this->gripPos(*sel);
             if (ccpDistanceSQ(wp, grip) <= kGripHit * kGripHit) {
                 m_drag = DragMode::Scale;
                 m_dragChanged = false;

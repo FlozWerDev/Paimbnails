@@ -3,22 +3,26 @@
 // Choosing which piece goes where. Pure computation: it never touches the
 // editor, so it can be reasoned about (and re-run with another seed) on its own.
 
-#include <cocos2d.h>
-
 #include <vector>
 
 #include "../AutobuildTypes.hpp"
 
 namespace paimon::autobuild {
 
+struct Point {
+    float x = 0.f;
+    float y = 0.f;
+};
+
 // One place the build may fill: a marker, a selected object or a cell of an area.
 struct Target {
-    cocos2d::CCPoint pos = {0.f, 0.f};
+    Point pos;
 };
 
 struct Placement {
     int piece = -1;
-    cocos2d::CCPoint pos = {0.f, 0.f};
+    Point pos;
+    PieceTransform transform;
 };
 
 struct SolveStats {
@@ -27,8 +31,11 @@ struct SolveStats {
     int gaps = 0;       // cells the wave left empty on purpose
     int forced = 0;     // cells no tile fit, filled with the closest match
     int backtracks = 0;
+    int smartExact = 0;
+    int smartRemapped = 0;
+    int smartSimplified = 0;
     long long ms = 0;
-    bool timedOut = false;
+    bool budgetExceeded = false;
 };
 
 std::vector<Placement> solveWave(Template const& tpl, Options const& opts,

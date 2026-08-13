@@ -205,6 +205,9 @@ std::vector<Module> buildCatalog() {
         setting("paimbnails.dynamicsong.level", "Dynamic Song",
                 "Plays the level song while browsing its info.",
                 "dynamic-song", "Audio", S::Level, true),
+        setting("paimbnails.imagewarning.level", "Image Object Warning",
+                "Warns when a level contains a watermarked image or GIF made from objects.",
+                "image-watermark-warning-enable", "Safety", S::Level, true),
 
         // Info Suite — master first
         setting(kInfoSuite, "Info Suite",
@@ -367,6 +370,10 @@ std::vector<Module> buildCatalog() {
         setting("paimbnails.gifimport.editor", "GIF to Objects",
                 "Imports GIF animations as optimized native objects and triggers.",
                 "gif-import-enable", "Tools", S::Editor, true),
+        setting("paimbnails.gifrender.editor", "Render Import",
+                "Refines curves in repeated passes and builds objects in the background.",
+                "gif-render-enable", "Tools", S::Editor, true,
+                "paimbnails.gifimport.editor"),
         setting("paimbnails.physics.editor", "Physics Lab",
                 "Simulates compound bodies and bakes their motion into native triggers.",
                 "editor-physics-enable", "Tools", S::Editor, true),
@@ -409,6 +416,9 @@ std::vector<Module> buildCatalog() {
         setting("paimbnails.debuglogs.system", "Debug Logs",
                 "Verbose logging for troubleshooting.",
                 "enable-debug-logs", "Diagnostics", S::System, false),
+        setting("paimbnails.crashreports.system", "Crash Reports",
+                "Sends the Geode crash log to the developers after a crash.",
+                "crash-reports-enable", "Diagnostics", S::System, true),
     };
 }
 

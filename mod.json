@@ -6,7 +6,7 @@
     "mac": "2.2081",
     "ios": "2.2081"
   },
-  "version": "v1.1.0",
+  "version": "v1.1.1",
   "id": "flozwer.paimbnails2",
   "name": "Paimbnails",
   "developer": "FlozWer",
@@ -217,6 +217,12 @@
       "type": "bool",
       "name": "Dynamic Song",
       "description": "Play the level song when viewing level info. Pressing play sinks it under an underwater filter instead of cutting it, and coming back from the level lets it surface again. Start point, rotation, volume and the whole dive effect are configurable from the Audio section of the Paimon hub.",
+      "default": true
+    },
+    "image-watermark-warning-enable": {
+      "type": "bool",
+      "name": "Image Object Warning",
+      "description": "Warn when a downloaded level contains an image or GIF carrying the Paimbnails object watermark.",
       "default": true
     },
     "profile-page-title": {
@@ -1334,6 +1340,12 @@
       "description": "Adds a GIF importer to the editor. It can remove the background, reduce resolution and colors to a chosen object budget, merge equal pixels into scaled rectangles, and animate the result with native groups and triggers.",
       "default": true
     },
+    "gif-render-enable": {
+      "type": "bool",
+      "name": "Render Mode and Background Build",
+      "description": "Adds iterative curve-aware rendering and a non-blocking background builder to GIF to Objects.",
+      "default": true
+    },
     "gif-import-keybind": {
       "type": "keybind",
       "name": "Open GIF Importer (Editor)",
@@ -1740,6 +1752,12 @@
       "name": "Debug Logs",
       "description": "Show detailed mod logs in Geode console.",
       "default": false
+    },
+    "crash-reports-enable": {
+      "type": "bool",
+      "name": "Send Crash Reports",
+      "description": "After a crash, sends the Geode crash log and the session log to the Paimbnails server so the developers can see what broke. Paths are stripped of your Windows user name.",
+      "default": true
     }
   },
   "dependencies": {

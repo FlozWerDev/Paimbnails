@@ -136,7 +136,8 @@ bool PaimonGuideChatPopup::init() {
     {
         int featureCount = static_cast<int>(PopupRegistry::get().entries().size());
         std::string version = "?";
-        if (auto* mod = Mod::get()) version = mod->getVersion().toVString(false);
+        // toNonVString: el formato de abajo ya pone la "v", toVString daria "vv1.1.0".
+        if (auto* mod = Mod::get()) version = mod->getVersion().toNonVString(false);
 
         auto featuresWord = tr("pai.guide.subtitle", "features");
         auto subtitle = fmt::format("{} {}\nv{}", featureCount, featuresWord, version);

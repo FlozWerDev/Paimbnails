@@ -3638,6 +3638,12 @@ return;
         if (paimon::hooks::g_suppressLevelCellEnhancements) {
             return;
         }
+        // Igual que loadCustomLevelCell: sin esto la celda queda en compacto
+        // pero con el layout de RobTop sin ajustar, que es lo que rompe las
+        // celdas del ProfilePage (siempre entran por aqui, con m_cellMode 0).
+        if (!isInsideLevelListLayerContext()) {
+            applyCompactLayoutAdjustments();
+        }
         applyTransparentMode();
         PaimonDebug::log("[LevelCell] loadFromLevel levelID={} compact={}", level ? level->m_levelID.value() : 0, m_compactView);
         tryLoadThumbnail();

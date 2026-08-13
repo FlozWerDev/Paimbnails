@@ -17,6 +17,33 @@ BodySpec box(Motion motion, Vec2 position, Vec2 halfSize) {
     return body;
 }
 
+BodySpec circle(Motion motion, Vec2 position, float radius) {
+    BodySpec body;
+    body.motion = motion;
+    body.position = position;
+    Fixture fixture;
+    fixture.halfSize = {radius, radius};
+    fixture.radius = radius;
+    body.fixtures.push_back(fixture);
+    return body;
+}
+
+// A right triangle filling the given box, with the walkable surface running from
+// the bottom-left up to the top-right, like GD's slope 289.
+BodySpec ramp(Motion motion, Vec2 position, Vec2 halfSize) {
+    BodySpec body;
+    body.motion = motion;
+    body.position = position;
+    Fixture fixture;
+    fixture.halfSize = halfSize;
+    fixture.vertexCount = 3;
+    fixture.vertices[0] = {-halfSize.x, -halfSize.y};
+    fixture.vertices[1] = {halfSize.x, -halfSize.y};
+    fixture.vertices[2] = {halfSize.x, halfSize.y};
+    body.fixtures.push_back(fixture);
+    return body;
+}
+
 SimulationOptions options(float duration = 2.f) {
     SimulationOptions value;
     value.duration = duration;
@@ -191,6 +218,88 @@ bool spinKeepsAccumulating() {
     return pass;
 }
 
+bool rampSlidesInsteadOfBlocking() {
+    auto falling = box(Motion::Dynamic, {0.f, 120.f}, {8.f, 8.f});
+    falling.restitution = 0.f;
+    falling.friction = 0.05f;
+    auto slope = ramp(Motion::Static, {0.f, 0.f}, {120.f, 60.f});
+    slope.restitution = 0.f;
+    slope.friction = 0.05f;
+    auto trace = simulate({falling, slope}, options(0.7f));
+    auto const& pose = trace.frames.back().poses.front();
+    // The hypotenuse runs y = x/2, so a body riding it stays near that line and
+    // drifts to the left. An axis-aligned box would have parked it at y=68.
+    float const surface = pose.position.x * 0.5f;
+    bool const pass = trace.impacts > 0 && pose.position.x < -10.f &&
+        std::abs(pose.position.y - surface) < 20.f;
+    std::cout << "ramp: x=" << pose.position.x << " y=" << pose.position.y
+              << " surface=" << surface << '\n';
+    return pass;
+}
+
+bool rampKeepsItsEmptyCornerEmpty() {
+    // Sitting inside the missing corner of the triangle: a box hitbox would have
+    // pushed this body out, a triangle leaves it where it is.
+    auto inside = box(Motion::Dynamic, {-40.f, 40.f}, {6.f, 6.f});
+    inside.gravityScale = 0.f;
+    auto slope = ramp(Motion::Static, {0.f, 0.f}, {60.f, 60.f});
+    auto config = options(0.5f);
+    config.airDrag = 0.f;
+    auto trace = simulate({inside, slope}, config);
+    auto const& pose = trace.frames.back().poses.front();
+    bool const pass = trace.impacts == 0 &&
+        std::abs(pose.position.x + 40.f) < 0.01f && std::abs(pose.position.y - 40.f) < 0.01f;
+    std::cout << "ramp-gap: x=" << pose.position.x << " y=" << pose.position.y
+              << " impacts=" << trace.impacts << '\n';
+    return pass;
+}
+
+bool circleRestsOnItsRadius() {
+    auto ball = circle(Motion::Dynamic, {0.f, 90.f}, 12.f);
+    ball.restitution = 0.f;
+    ball.friction = 0.5f;
+    auto floor = box(Motion::Static, {0.f, 0.f}, {120.f, 10.f});
+    floor.restitution = 0.f;
+    floor.friction = 0.5f;
+    auto trace = simulate({ball, floor}, options(2.f));
+    float const y = trace.frames.back().poses.front().position.y;
+    bool const pass = trace.impacts > 0 && y > 20.f && y < 24.f;
+    std::cout << "circle: y=" << y << '\n';
+    return pass;
+}
+
+bool circlesPushEachOtherApart() {
+    auto left = circle(Motion::Dynamic, {-30.f, 0.f}, 12.f);
+    left.velocity = {150.f, 0.f};
+    left.restitution = 1.f;
+    auto right = circle(Motion::Dynamic, {0.f, 0.f}, 12.f);
+    right.restitution = 1.f;
+    auto config = options(0.5f);
+    config.gravity = {};
+    config.airDrag = 0.f;
+    auto trace = simulate({left, right}, config);
+    float const rightX = trace.frames.back().poses[1].position.x;
+    bool const pass = trace.impacts > 0 && rightX > 25.f;
+    std::cout << "circle-pair: right-x=" << rightX << '\n';
+    return pass;
+}
+
+bool circleRollsOffAnOrb() {
+    // Dropped just off-centre onto a static orb: a round hitbox deflects it
+    // sideways, a square one would have balanced it on a flat top.
+    auto ball = circle(Motion::Dynamic, {4.f, 80.f}, 10.f);
+    ball.restitution = 0.2f;
+    ball.friction = 0.2f;
+    auto orb = circle(Motion::Static, {0.f, 0.f}, 15.f);
+    orb.restitution = 0.2f;
+    orb.friction = 0.2f;
+    auto trace = simulate({ball, orb}, options(1.5f));
+    auto const& pose = trace.frames.back().poses.front();
+    bool const pass = trace.impacts > 0 && pose.position.x > 20.f && pose.position.y < 0.f;
+    std::cout << "orb-roll: x=" << pose.position.x << " y=" << pose.position.y << '\n';
+    return pass;
+}
+
 } // namespace
 
 int main() {
@@ -205,7 +314,17 @@ int main() {
     bool const rotated = tiltedBoxTipsFlat();
     bool const settle = restingBodyStopsBouncing();
     bool const spin = spinKeepsAccumulating();
+    bool const rampSlide = rampSlidesInsteadOfBlocking();
+    bool const rampGap = rampKeepsItsEmptyCornerEmpty();
+    bool const ball = circleRestsOnItsRadius();
+    bool const ballPair = circlesPushEachOtherApart();
+    bool const ballRoll = circleRollsOffAnOrb();
 
+    if (!rampSlide) std::cerr << "FAIL: slope does not act as a ramp\n";
+    if (!rampGap) std::cerr << "FAIL: slope collides inside its empty corner\n";
+    if (!ball) std::cerr << "FAIL: circle resting height\n";
+    if (!ballPair) std::cerr << "FAIL: circle against circle\n";
+    if (!ballRoll) std::cerr << "FAIL: circle does not roll off a round hitbox\n";
     if (!tunnel) std::cerr << "FAIL: fast body tunnels through static geometry\n";
     if (!rotated) std::cerr << "FAIL: tilted box does not tip flat\n";
     if (!settle) std::cerr << "FAIL: resting body never settles\n";
@@ -218,5 +337,6 @@ int main() {
     if (!gravityScale) std::cerr << "FAIL: per-body gravity\n";
     if (!reactive) std::cerr << "FAIL: reactive body impact\n";
     return gravity && floor && bounce && compound && multiple && gravityScale && reactive &&
-        tunnel && rotated && settle && spin ? 0 : 1;
+        tunnel && rotated && settle && spin && rampSlide && rampGap && ball && ballPair &&
+        ballRoll ? 0 : 1;
 }

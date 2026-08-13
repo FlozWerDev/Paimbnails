@@ -87,13 +87,15 @@ struct State {
     float boundingRadius = 0.f;
 };
 
-// An oriented box. The previous solver approximated rotated fixtures with an
-// enlarged axis-aligned box, which made spinning bodies collide with thin air.
-struct Obb {
+// A fixture placed in the world: a convex polygon of `count` vertices, or a
+// circle when `count` is zero. The solver never looks at the axis-aligned size
+// again from here on, so a rotated block collides on its real corners and a
+// slope on its real hypotenuse.
+struct Shape {
     Vec2 center;
-    Vec2 axisX;
-    Vec2 axisY;
-    Vec2 halfSize;
+    Vec2 points[4];
+    int count = 0;
+    float radius = 0.f;
 };
 
 struct Manifold {
@@ -103,48 +105,81 @@ struct Manifold {
     int count = 0;
 };
 
-Obb worldFixture(State const& state, Fixture const& fixture) {
-    float const cosine = std::cos(state.angle);
-    float const sine = std::sin(state.angle);
-    return {
-        state.position + rotate(fixture.offset, state.angle),
-        {cosine, sine},
-        {-sine, cosine},
-        fixture.halfSize,
-    };
-}
-
-float projectedRadius(Obb const& box, Vec2 axis) {
-    return std::abs(dot(box.axisX, axis)) * box.halfSize.x +
-        std::abs(dot(box.axisY, axis)) * box.halfSize.y;
-}
-
-void cornersOf(Obb const& box, Vec2 out[4]) {
-    Vec2 const ex = box.axisX * box.halfSize.x;
-    Vec2 const ey = box.axisY * box.halfSize.y;
-    out[0] = box.center - ex - ey;
-    out[1] = box.center + ex - ey;
-    out[2] = box.center + ex + ey;
-    out[3] = box.center - ex + ey;
-}
-
 Vec2 edgeNormal(Vec2 from, Vec2 to) {
     Vec2 const edge = to - from;
     return normalized({edge.y, -edge.x});
 }
 
-int faceMatching(Vec2 const corners[4], Vec2 direction, bool maximize) {
+Vec2 faceNormalOf(Shape const& shape, int face) {
+    return edgeNormal(shape.points[face], shape.points[(face + 1) % shape.count]);
+}
+
+Shape worldFixture(State const& state, Fixture const& fixture) {
+    Shape shape;
+    shape.center = state.position + rotate(fixture.offset, state.angle);
+    if (fixture.radius > 0.f) {
+        shape.radius = fixture.radius;
+        return shape;
+    }
+    if (fixture.vertexCount >= 3) {
+        shape.count = std::min(fixture.vertexCount, 4);
+        for (int i = 0; i < shape.count; ++i) {
+            shape.points[i] = shape.center + rotate(fixture.vertices[i], state.angle);
+        }
+        return shape;
+    }
+    Vec2 const ex = rotate({fixture.halfSize.x, 0.f}, state.angle);
+    Vec2 const ey = rotate({0.f, fixture.halfSize.y}, state.angle);
+    shape.count = 4;
+    shape.points[0] = shape.center - ex - ey;
+    shape.points[1] = shape.center + ex - ey;
+    shape.points[2] = shape.center + ex + ey;
+    shape.points[3] = shape.center - ex + ey;
+    return shape;
+}
+
+// Deepest overlap along the edge normals of `shape`, in the separating-axis
+// sense: positive means the two are apart along that axis.
+struct FaceQuery {
+    float separation = -std::numeric_limits<float>::max();
+    int face = 0;
+};
+
+FaceQuery deepestFace(Shape const& shape, Shape const& other) {
+    FaceQuery best;
+    for (int i = 0; i < shape.count; ++i) {
+        Vec2 const normal = faceNormalOf(shape, i);
+        float separation = std::numeric_limits<float>::max();
+        for (int j = 0; j < other.count; ++j) {
+            separation = std::min(separation, dot(normal, other.points[j] - shape.points[i]));
+        }
+        if (separation > best.separation) {
+            best.separation = separation;
+            best.face = i;
+        }
+    }
+    return best;
+}
+
+int incidentFace(Shape const& shape, Vec2 referenceNormal) {
     int best = 0;
-    float bestDot = maximize ? -std::numeric_limits<float>::max()
-                             : std::numeric_limits<float>::max();
-    for (int i = 0; i < 4; ++i) {
-        float const value = dot(edgeNormal(corners[i], corners[(i + 1) % 4]), direction);
-        if (maximize ? value > bestDot : value < bestDot) {
+    float bestDot = std::numeric_limits<float>::max();
+    for (int i = 0; i < shape.count; ++i) {
+        float const value = dot(faceNormalOf(shape, i), referenceNormal);
+        if (value < bestDot) {
             bestDot = value;
             best = i;
         }
     }
     return best;
+}
+
+Vec2 closestPointOnSegment(Vec2 from, Vec2 to, Vec2 point) {
+    Vec2 const edge = to - from;
+    float const lengthSq = lengthSquared(edge);
+    if (lengthSq < 0.00001f) return from;
+    float const along = std::clamp(dot(point - from, edge) / lengthSq, 0.f, 1.f);
+    return from + edge * along;
 }
 
 int clipSegment(Vec2 const in[2], Vec2 normal, float limit, Vec2 out[2]) {
@@ -161,50 +196,37 @@ int clipSegment(Vec2 const in[2], Vec2 normal, float limit, Vec2 out[2]) {
 
 // Separating axis test followed by reference/incident face clipping, so a box
 // resting flat reports both of its corners instead of rocking on a single point.
-bool buildManifold(Obb const& a, Obb const& b, Manifold& manifold) {
-    Vec2 const delta = b.center - a.center;
-    Vec2 const axes[4] = {a.axisX, a.axisY, b.axisX, b.axisY};
-    float bestDepth = std::numeric_limits<float>::max();
-    int bestAxis = 0;
-    for (int i = 0; i < 4; ++i) {
-        float const depth = projectedRadius(a, axes[i]) + projectedRadius(b, axes[i]) -
-            std::abs(dot(delta, axes[i]));
-        if (depth <= 0.f) return false;
-        if (depth < bestDepth) {
-            bestDepth = depth;
-            bestAxis = i;
-        }
-    }
+// The manifold normal always points from `a` towards `b`.
+bool collidePolygons(Shape const& a, Shape const& b, Manifold& manifold) {
+    FaceQuery const queryA = deepestFace(a, b);
+    if (queryA.separation > 0.f) return false;
+    FaceQuery const queryB = deepestFace(b, a);
+    if (queryB.separation > 0.f) return false;
 
-    Vec2 normal = axes[bestAxis];
-    if (dot(delta, normal) < 0.f) normal = normal * -1.f;
+    // Ties go to A so a body sliding along a flat floor keeps the same reference
+    // face frame by frame instead of flickering between the two.
+    bool const referenceIsB = queryB.separation > queryA.separation + 0.001f;
+    Shape const& reference = referenceIsB ? b : a;
+    Shape const& incident = referenceIsB ? a : b;
+    int const referenceFace = referenceIsB ? queryB.face : queryA.face;
 
-    bool const referenceIsA = bestAxis < 2;
-    Obb const& reference = referenceIsA ? a : b;
-    Obb const& incident = referenceIsA ? b : a;
-    Vec2 const referenceNormal = referenceIsA ? normal : normal * -1.f;
-
-    Vec2 referenceCorners[4];
-    Vec2 incidentCorners[4];
-    cornersOf(reference, referenceCorners);
-    cornersOf(incident, incidentCorners);
-
-    int const referenceFace = faceMatching(referenceCorners, referenceNormal, true);
-    int const incidentFace = faceMatching(incidentCorners, referenceNormal, false);
-
-    Vec2 const start = referenceCorners[referenceFace];
-    Vec2 const end = referenceCorners[(referenceFace + 1) % 4];
+    Vec2 const start = reference.points[referenceFace];
+    Vec2 const end = reference.points[(referenceFace + 1) % reference.count];
     Vec2 const faceNormal = edgeNormal(start, end);
     Vec2 const tangent = normalized(end - start);
 
-    Vec2 segment[2] = {incidentCorners[incidentFace], incidentCorners[(incidentFace + 1) % 4]};
+    int const clipFace = incidentFace(incident, faceNormal);
+    Vec2 segment[2] = {
+        incident.points[clipFace],
+        incident.points[(clipFace + 1) % incident.count],
+    };
     Vec2 clipped[2];
     if (clipSegment(segment, tangent * -1.f, dot(start, tangent * -1.f), clipped) < 2) return false;
     segment[0] = clipped[0];
     segment[1] = clipped[1];
     if (clipSegment(segment, tangent, dot(end, tangent), clipped) < 2) return false;
 
-    manifold.normal = normal;
+    manifold.normal = referenceIsB ? faceNormal * -1.f : faceNormal;
     manifold.count = 0;
     float const plane = dot(start, faceNormal);
     for (int i = 0; i < 2; ++i) {
@@ -216,10 +238,72 @@ bool buildManifold(Obb const& a, Obb const& b, Manifold& manifold) {
     }
     if (manifold.count == 0) {
         manifold.points[0] = (a.center + b.center) * 0.5f;
-        manifold.penetration[0] = bestDepth;
+        manifold.penetration[0] = -std::max(queryA.separation, queryB.separation);
         manifold.count = 1;
     }
     return true;
+}
+
+bool collideCirclePolygon(
+    Shape const& circle,
+    Shape const& polygon,
+    bool circleIsFirst,
+    Manifold& manifold
+) {
+    int deepest = 0;
+    float separation = -std::numeric_limits<float>::max();
+    for (int i = 0; i < polygon.count; ++i) {
+        float const value = dot(faceNormalOf(polygon, i), circle.center - polygon.points[i]);
+        if (value > separation) {
+            separation = value;
+            deepest = i;
+        }
+    }
+    if (separation > circle.radius) return false;
+
+    Vec2 const from = polygon.points[deepest];
+    Vec2 const to = polygon.points[(deepest + 1) % polygon.count];
+    Vec2 const contact = closestPointOnSegment(from, to, circle.center);
+    // Once the centre is inside the polygon the closest edge point is the only
+    // stable direction left; pushing along the face normal keeps a sunken orb
+    // from popping out of the wrong side.
+    Vec2 normal = faceNormalOf(polygon, deepest);
+    float penetration = circle.radius - separation;
+    if (separation >= 0.f) {
+        Vec2 const away = circle.center - contact;
+        float const distance = length(away);
+        if (distance > circle.radius) return false;
+        if (distance > 0.00001f) normal = away / distance;
+        penetration = circle.radius - distance;
+    }
+
+    manifold.normal = circleIsFirst ? normal * -1.f : normal;
+    manifold.points[0] = contact;
+    manifold.penetration[0] = std::max(penetration, 0.f);
+    manifold.count = 1;
+    return true;
+}
+
+bool collideCircles(Shape const& a, Shape const& b, Manifold& manifold) {
+    Vec2 const delta = b.center - a.center;
+    float const distance = length(delta);
+    float const reach = a.radius + b.radius;
+    if (distance >= reach) return false;
+    Vec2 const normal = distance > 0.00001f ? delta / distance : Vec2{0.f, 1.f};
+    manifold.normal = normal;
+    manifold.points[0] = a.center + normal * (a.radius - (reach - distance) * 0.5f);
+    manifold.penetration[0] = reach - distance;
+    manifold.count = 1;
+    return true;
+}
+
+bool buildManifold(Shape const& a, Shape const& b, Manifold& manifold) {
+    bool const circleA = a.count == 0;
+    bool const circleB = b.count == 0;
+    if (circleA && circleB) return collideCircles(a, b, manifold);
+    if (circleA) return collideCirclePolygon(a, b, true, manifold);
+    if (circleB) return collideCirclePolygon(b, a, false, manifold);
+    return collidePolygons(a, b, manifold);
 }
 
 float bodyInertia(BodySpec const& body, float mass) {
@@ -242,10 +326,20 @@ float bodyInertia(BodySpec const& body, float mass) {
     return std::max(inertia, 0.001f);
 }
 
+float fixtureReach(Fixture const& fixture) {
+    if (fixture.radius > 0.f) return fixture.radius;
+    if (fixture.vertexCount < 3) return length(fixture.halfSize);
+    float reach = 0.f;
+    for (int i = 0; i < std::min(fixture.vertexCount, 4); ++i) {
+        reach = std::max(reach, length(fixture.vertices[i]));
+    }
+    return reach;
+}
+
 float boundingRadius(BodySpec const& body) {
     float radius = 0.f;
     for (auto const& fixture : body.fixtures) {
-        radius = std::max(radius, length(fixture.offset) + length(fixture.halfSize));
+        radius = std::max(radius, length(fixture.offset) + fixtureReach(fixture));
     }
     return radius;
 }
@@ -401,7 +495,9 @@ SimulationTrace simulate(
             state.inverseInertia = 1.f / bodyInertia(body, mass);
         }
         for (auto const& fixture : body.fixtures) {
-            thinnest = std::min(thinnest, std::min(fixture.halfSize.x, fixture.halfSize.y));
+            thinnest = std::min(thinnest, fixture.radius > 0.f
+                ? fixture.radius
+                : std::min(fixture.halfSize.x, fixture.halfSize.y));
         }
         states.push_back(state);
     }
@@ -457,11 +553,11 @@ SimulationTrace simulate(
                     }
 
                     for (auto const& fixtureA : bodies[i].fixtures) {
-                        Obb const boxA = worldFixture(states[i], fixtureA);
+                        Shape const shapeA = worldFixture(states[i], fixtureA);
                         for (auto const& fixtureB : bodies[j].fixtures) {
-                            Obb const boxB = worldFixture(states[j], fixtureB);
+                            Shape const shapeB = worldFixture(states[j], fixtureB);
                             Manifold manifold;
-                            if (!buildManifold(boxA, boxB, manifold)) continue;
+                            if (!buildManifold(shapeA, shapeB, manifold)) continue;
 
                             Constraint constraint;
                             constraint.a = i;

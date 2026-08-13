@@ -1984,6 +1984,31 @@ void HttpClient::submitReport(int levelId, std::string const& username, std::str
     performRequest(url, "POST", json.dump(), headers, callback);
 }
 
+void HttpClient::uploadCrashLog(CrashReport const& report, GenericCallback callback) {
+    PaimonDebug::log("[HttpClient] Uploading crash log {} ({} + {} bytes)",
+        report.crashlogName, report.crashlog.size(), report.geodeLog.size());
+
+    std::string url = m_serverURL + "/api/crashlogs/report";
+    matjson::Value json = matjson::makeObject({
+        {"username", getSafeAccountUsername()},
+        {"accountID", getSafeAccountID()},
+        {"modVersion", Mod::get()->getVersion().toVString()},
+        {"geodeVersion", report.geodeVersion},
+        {"gameVersion", report.gameVersion},
+        {"platform", GEODE_PLATFORM_NAME},
+        {"crashedAt", report.crashedAt},
+        {"crashlogName", report.crashlogName},
+        {"crashlog", report.crashlog},
+        {"geodeLog", report.geodeLog}
+    });
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Content-Type: application/json",
+        "Accept: application/json"
+    };
+    performRequest(url, "POST", json.dump(), headers, callback);
+}
+
 void HttpClient::getRating(int levelId, std::string const& username, std::string const& thumbnailId, GenericCallback callback) {
     std::string url = m_serverURL + "/api/v2/ratings/" + std::to_string(levelId) + "?username=" + encodeQueryParam(username);
     if (!thumbnailId.empty()) url += "&thumbnailId=" + encodeQueryParam(thumbnailId);

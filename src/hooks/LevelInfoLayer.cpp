@@ -44,6 +44,7 @@
 #include "../utils/HttpClient.hpp"
 #include "../utils/BetaUploadWarning.hpp"
 #include "../features/foryou/services/TasteProfile.hpp"
+#include "../features/gif-import/services/ImageWatermark.hpp"
 
 #include "../features/main-menu-layout/ui/MainMenuLayoutEditor.hpp"
 #include "../features/main-menu-layout/services/MainMenuLayoutManager.hpp"
@@ -233,6 +234,48 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         paimon::menu_layout::MainMenuLayoutManager::get().captureDefaultsAndApply(this);
     }
 
+    void showImageWarningIfNeeded(GJGameLevel* level) {
+        if (!paimon::modules::isEnabled(paimon::gifimport::kImageWarningModule) ||
+            m_fields->m_imageWarningQueued || !level || level->m_levelString.empty()) {
+            return;
+        }
+
+        std::string_view const levelString{
+            level->m_levelString.c_str(), level->m_levelString.size()};
+        gd::string unpacked;
+        if (levelString.find(';') == std::string_view::npos) {
+            unpacked = cocos2d::ZipUtils::decompressString(
+                level->m_levelString, false, 0);
+        }
+        std::string_view const unpackedLevelString{
+            unpacked.c_str(), unpacked.size()};
+        auto const evidence = paimon::gifimport::inspectStoredImageWatermark(
+            levelString, unpackedLevelString);
+        if (!evidence.detected()) return;
+
+        m_fields->m_imageWarningQueued = true;
+        log::info(
+            "[ImageWatermark] level {} detected ({} pairs, {} turns)",
+            level->m_levelID.value(), evidence.geometryPairs, evidence.rotationMarks);
+        WeakRef<PaimonLevelInfoLayer> safeRef = this;
+        Loader::get()->queueInMainThread([safeRef] {
+            auto selfRef = safeRef.lock();
+            if (!selfRef || !selfRef->getParent() ||
+                !paimon::modules::isEnabled(paimon::gifimport::kImageWarningModule)) {
+                return;
+            }
+            auto* self = static_cast<PaimonLevelInfoLayer*>(selfRef.data());
+            auto* alert = FLAlertLayer::create(
+                "Advertencia de imagen",
+                "Este nivel contiene una <cy>imagen o GIF convertido a objetos</c>.\n"
+                "Puede usar muchos objetos y afectar el rendimiento.",
+                "Entendido");
+            if (!alert) return;
+            alert->m_scene = self;
+            alert->show();
+        });
+    }
+
     void createUtilityButtons(CCMenu* leftMenu) {
         if (!leftMenu) return;
 
@@ -321,6 +364,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         Ref<CCMenuItemSpriteExtra> m_uploadLocalBtn = nullptr;
         Ref<CCMenu> m_extraMenu = nullptr;
         bool m_thumbnailRequested = false;
+        bool m_imageWarningQueued = false;
 int m_loadedInvalidationVersion = 0;
         
         std::vector<ThumbnailAPI::ThumbnailInfo> m_thumbnails;
@@ -1664,6 +1708,7 @@ int m_fallbackOrigin = -1;
             log::info("[LevelInfoLayer] restaurando dailyID={} tras re-download", m_fields->m_forcedDailyID);
             m_level->m_dailyID = m_fields->m_forcedDailyID;
         }
+        showImageWarningIfNeeded(m_level ? m_level : level);
     }
 
     $override
@@ -1676,6 +1721,7 @@ int m_fallbackOrigin = -1;
 
         setActiveLevelInfoForOverlay(this);
         s_levelInfoOverlayPauseDepth = 0;
+        showImageWarningIfNeeded(level);
 
         if (auto scene = CCDirector::get()->getRunningScene()) {
             if (scene->getChildByType<LeaderboardsLayer>(0)) {

@@ -14,6 +14,7 @@
 #include "../services/FramebufferCapture.hpp"
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/utils/file.hpp>
+#include <Geode/utils/string.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
@@ -1054,13 +1055,11 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
 
     auto downloadDir = downloadedThumbnailsDir();
     std::error_code ec;
-    if (!std::filesystem::exists(downloadDir, ec)) {
-        std::filesystem::create_directory(downloadDir, ec);
-        if (ec) {
-            PaimonNotify::create(Localization::get().getString("preview.folder_error").c_str(),
-                NotificationIcon::Error)->show();
-            return;
-        }
+    std::filesystem::create_directories(downloadDir, ec);
+    if (!std::filesystem::is_directory(downloadDir, ec)) {
+        PaimonNotify::create(Localization::get().getString("preview.folder_error").c_str(),
+            NotificationIcon::Error)->show();
+        return;
     }
 
     auto now = asp::time::SystemTime::now();
@@ -1099,9 +1098,18 @@ void CapturePreviewPopup::onOpenDownloadsFolder(CCObject*) {
     auto downloadDir = downloadedThumbnailsDir();
     std::error_code ec;
     std::filesystem::create_directories(downloadDir, ec);
-    if (ec || !geode::utils::file::openFolder(downloadDir)) {
+    if (!std::filesystem::is_directory(downloadDir, ec)) {
         PaimonNotify::create(Localization::get().getString("preview.folder_error").c_str(),
             NotificationIcon::Error)->show();
+        return;
+    }
+
+    // openFolder reporta false cuando CoInitializeEx ya esta tomado por otro mod
+    // o cuando SHOpenFolderAndSelectItems devuelve S_FALSE, aunque el explorador
+    // si abra la carpeta. No se muestra error por eso.
+    if (!geode::utils::file::openFolder(downloadDir)) {
+        log::warn("[CapturePreview] openFolder devolvio false para {}",
+            geode::utils::string::pathToString(downloadDir));
     }
 }
 

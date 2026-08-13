@@ -6,6 +6,7 @@
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/stb_image.h"
 #include "../services/GifArtVectorizer.hpp"
 #include "../services/GifImportPipeline.hpp"
 #include "../services/GifObjectEmitter.hpp"
@@ -17,12 +18,36 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
+#include <mutex>
+#include <optional>
 #include <thread>
 
 using namespace geode::prelude;
 
 namespace paimon::gifimport {
+
+// Workers only keep these C++ mailboxes; tick applies results on the Cocos thread.
+struct ProcessingProgress {
+    std::atomic<float> value = 0.f;
+    std::atomic<int> stage = static_cast<int>(BuildStage::Preparing);
+    std::atomic<int> pass = 0;
+    std::atomic<int> passes = 0;
+    std::mutex mutex;
+    std::optional<BuildResult> result;
+};
+
+struct LoadedSource {
+    std::filesystem::path path;
+    std::shared_ptr<SourceAnimation> source;
+    std::string error;
+};
+
+struct SourceLoadState {
+    std::mutex mutex;
+    std::optional<LoadedSource> result;
+};
 
 namespace {
 
@@ -30,6 +55,24 @@ constexpr float kPopupWidth = 500.f;
 constexpr float kPopupHeight = 320.f;
 constexpr std::size_t kMaxFileBytes = 128 * 1024 * 1024;
 constexpr std::size_t kDecodeMemory = 128 * 1024 * 1024;
+constexpr int kMaxImageDimension = 8192;
+
+bool renderEnabled() {
+    return paimon::modules::isEnabled("paimbnails.gifrender.editor");
+}
+
+char const* buildStageText(BuildStage stage) {
+    switch (stage) {
+        case BuildStage::Preparing: return "Preparando";
+        case BuildStage::Resizing: return "Revisando imagen";
+        case BuildStage::Palette: return "Ajustando colores";
+        case BuildStage::Geometry: return "Trazando curvas";
+        case BuildStage::Reviewing: return "Comparando resultado";
+        case BuildStage::Refining: return "Refinando";
+        case BuildStage::Done: return "Listo";
+    }
+    return "Procesando";
+}
 
 CCLabelBMFont* valueLabel(CCNode* parent, CCPoint position) {
     auto* label = CCLabelBMFont::create("-", "goldFont.fnt");
@@ -55,14 +98,14 @@ GifImportPopup* GifImportPopup::create() {
 bool GifImportPopup::init() {
     if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
     setID("gif-import-popup"_spr);
-    setTitle("GIF a Objetos");
+    setTitle("GIF o Imagen a Objetos");
     loadOptions();
 
     auto* previewPanel = paimon::SpriteHelper::createDarkPanel(214.f, 178.f, 220, 6.f);
     previewPanel->setPosition({18.f, 82.f});
     m_mainLayer->addChild(previewPanel);
 
-    auto* previewHint = CCLabelBMFont::create("Elige un GIF", "bigFont.fnt");
+    auto* previewHint = CCLabelBMFont::create("Elige un GIF o imagen", "bigFont.fnt");
     previewHint->setID("preview-hint");
     previewHint->setScale(0.34f);
     previewHint->setColor({125, 135, 160});
@@ -79,6 +122,21 @@ bool GifImportPopup::init() {
     m_statsLabel->setColor({165, 180, 210});
     m_statsLabel->setPosition({125.f, 69.f});
     m_mainLayer->addChild(m_statsLabel);
+
+    m_progressTrack = CCLayerColor::create({0, 0, 0, 150}, 214.f, 4.f);
+    m_progressTrack->ignoreAnchorPointForPosition(false);
+    m_progressTrack->setAnchorPoint({0.f, 0.f});
+    m_progressTrack->setPosition({18.f, 77.f});
+    m_progressTrack->setVisible(false);
+    m_mainLayer->addChild(m_progressTrack, 2);
+
+    m_progressFill = CCLayerColor::create({90, 225, 150, 255}, 214.f, 4.f);
+    m_progressFill->ignoreAnchorPointForPosition(false);
+    m_progressFill->setAnchorPoint({0.f, 0.f});
+    m_progressFill->setPosition({18.f, 77.f});
+    m_progressFill->setScaleX(0.f);
+    m_progressFill->setVisible(false);
+    m_mainLayer->addChild(m_progressFill, 3);
 
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
@@ -159,21 +217,36 @@ bool GifImportPopup::init() {
     loopButton->setPosition({449.f, 62.f});
     menu->addChild(loopButton);
 
-    auto* pickSprite = ButtonSprite::create("Elegir GIF", "goldFont.fnt", "GJ_button_01.png", 0.7f);
+    bool const hasRender = renderEnabled();
+    auto* pickSprite = ButtonSprite::create("Elegir archivo", "goldFont.fnt", "GJ_button_01.png", 0.65f);
     auto* pickButton = CCMenuItemExt::createSpriteExtra(
         pickSprite, [self](CCMenuItemSpriteExtra*) {
-            if (auto* popup = self.lock().data()) popup->pickGif();
+            if (auto* popup = self.lock().data()) popup->pickSource();
         });
-    pickButton->setPosition({125.f, 31.f});
+    pickButton->setPosition({hasRender ? 79.f : 125.f, 31.f});
     menu->addChild(pickButton);
 
-    auto* importSprite = ButtonSprite::create("Importar objetos", "goldFont.fnt", "GJ_button_02.png", 0.7f);
+    auto* importSprite = ButtonSprite::create(
+        hasRender ? "Importar" : "Importar objetos",
+        "goldFont.fnt", "GJ_button_02.png", 0.65f);
     auto* importButton = CCMenuItemExt::createSpriteExtra(
         importSprite, [self](CCMenuItemSpriteExtra*) {
             if (auto* popup = self.lock().data()) popup->importObjects();
         });
-    importButton->setPosition({375.f, 31.f});
+    importButton->setPosition({hasRender ? 248.f : 375.f, 31.f});
     menu->addChild(importButton);
+
+    if (hasRender) {
+        auto* backgroundSprite = ButtonSprite::create(
+            "Run background", 112, true, "goldFont.fnt", "GJ_button_04.png", 30.f, 0.55f);
+        backgroundSprite->setScale(0.88f);
+        auto* backgroundButton = CCMenuItemExt::createSpriteExtra(
+            backgroundSprite, [self](CCMenuItemSpriteExtra*) {
+                if (auto* popup = self.lock().data()) popup->runBackground();
+            });
+        backgroundButton->setPosition({414.f, 31.f});
+        menu->addChild(backgroundButton);
+    }
 
     refreshControls();
     schedule(schedule_selector(GifImportPopup::tick));
@@ -193,8 +266,12 @@ void GifImportPopup::loadOptions() {
         mod->getSavedValue<int64_t>("gif-import-bg-tolerance", 28));
     m_options.sampling = mod->getSavedValue<bool>("gif-import-smooth", true)
         ? SamplingMode::Smooth : SamplingMode::Pixel;
-    m_options.mode = mod->getSavedValue<bool>("gif-import-art-mode", false)
-        ? ImportMode::Art : ImportMode::Blocks;
+    int const savedMode = static_cast<int>(mod->getSavedValue<int64_t>(
+        "gif-import-mode", mod->getSavedValue<bool>("gif-import-art-mode", false) ? 1 : 0));
+    m_options.mode = savedMode == 3
+        ? (renderEnabled() ? ImportMode::Render : ImportMode::Paint)
+        : savedMode == 2 ? ImportMode::Paint
+        : savedMode == 1 ? ImportMode::Art : ImportMode::Blocks;
     m_options.dither = mod->getSavedValue<bool>("gif-import-dither", false);
     m_options.loop = mod->getSavedValue<bool>("gif-import-loop", true);
 }
@@ -209,38 +286,48 @@ void GifImportPopup::saveOptions() const {
     mod->setSavedValue<bool>("gif-import-remove-bg", m_options.background == BackgroundMode::AutoBorder);
     mod->setSavedValue<int64_t>("gif-import-bg-tolerance", m_options.backgroundTolerance);
     mod->setSavedValue<bool>("gif-import-smooth", m_options.sampling == SamplingMode::Smooth);
-    mod->setSavedValue<bool>("gif-import-art-mode", m_options.mode == ImportMode::Art);
+    mod->setSavedValue<int64_t>("gif-import-mode", static_cast<int64_t>(m_options.mode));
     mod->setSavedValue<bool>("gif-import-dither", m_options.dither);
     mod->setSavedValue<bool>("gif-import-loop", m_options.loop);
 }
 
-void GifImportPopup::pickGif() {
+void GifImportPopup::pickSource() {
     if (m_busyOverlay) return;
     WeakRef<GifImportPopup> self = this;
-    pt::pickGif([self](Result<std::optional<std::filesystem::path>> result) {
-        auto* popup = self.lock().data();
+    pt::pickImage([self](Result<std::optional<std::filesystem::path>> result) {
+        auto popup = self.lock();
         if (!popup || !popup->getParent()) return;
         if (result.isErr()) {
             PaimonNotify::show("No se pudo abrir el selector de archivos.", NotificationIcon::Error);
             return;
         }
         auto path = result.unwrap();
-        if (path) popup->loadGif(*path);
+        if (path) popup->loadSource(*path);
     });
 }
 
-void GifImportPopup::loadGif(std::filesystem::path const& path) {
+void GifImportPopup::loadSource(std::filesystem::path const& path) {
     auto bytesResult = utils::file::readBinary(path);
     if (bytesResult.isErr()) {
-        PaimonNotify::show("No se pudo leer el GIF.", NotificationIcon::Error);
+        PaimonNotify::show("No se pudo leer el archivo.", NotificationIcon::Error);
         return;
     }
     auto bytes = std::make_shared<std::vector<std::uint8_t>>(bytesResult.unwrap());
-    if (bytes->empty() || bytes->size() > kMaxFileBytes || !GIFDecoder::isGIF(bytes->data(), bytes->size())) {
-        PaimonNotify::show("El archivo no es un GIF valido o es demasiado grande.", NotificationIcon::Warning);
+    if (bytes->empty() || bytes->size() > kMaxFileBytes) {
+        PaimonNotify::show("El archivo esta vacio o es demasiado grande.", NotificationIcon::Warning);
         return;
     }
+    if (GIFDecoder::isGIF(bytes->data(), bytes->size())) {
+        loadAnimated(path, std::move(bytes));
+        return;
+    }
+    loadStill(path, std::move(bytes));
+}
 
+void GifImportPopup::loadAnimated(
+    std::filesystem::path const& path,
+    std::shared_ptr<std::vector<std::uint8_t>> bytes
+) {
     int width = 0;
     int height = 0;
     if (!GIFDecoder::getDimensions(bytes->data(), bytes->size(), width, height)) {
@@ -252,8 +339,9 @@ void GifImportPopup::loadGif(std::filesystem::path const& path) {
         kDecodeMemory / std::max<std::size_t>(frameBytes, 1), 1, 120));
 
     showBusy("Decodificando GIF");
-    WeakRef<GifImportPopup> self = this;
-    std::thread([self, bytes, path, safeFrames] {
+    m_sourceLoad = std::make_shared<SourceLoadState>();
+    auto state = m_sourceLoad;
+    std::thread([state, bytes, path, safeFrames] {
         auto gif = GIFDecoder::decode(bytes->data(), bytes->size(), safeFrames);
         auto source = std::make_shared<SourceAnimation>();
         source->width = gif.width;
@@ -262,16 +350,59 @@ void GifImportPopup::loadGif(std::filesystem::path const& path) {
         for (auto& frame : gif.frames) {
             source->frames.push_back({frame.delayMs, std::move(frame.pixels)});
         }
-        Loader::get()->queueInMainThread([self, path, source] {
-            auto* popup = self.lock().data();
-            if (!popup) return;
-            popup->hideBusy();
-            if (source->frames.empty()) {
-                PaimonNotify::show("No se pudo decodificar ningun frame.", NotificationIcon::Error);
-                return;
-            }
-            popup->applySource(path, source);
-        });
+        LoadedSource loaded{path, source, {}};
+        if (source->frames.empty()) loaded.error = "No se pudo decodificar ningun frame.";
+        std::lock_guard lock(state->mutex);
+        state->result = std::move(loaded);
+    }).detach();
+}
+
+void GifImportPopup::loadStill(
+    std::filesystem::path const& path,
+    std::shared_ptr<std::vector<std::uint8_t>> bytes
+) {
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    if (!stbi_info_from_memory(
+            bytes->data(), static_cast<int>(bytes->size()), &width, &height, &channels) ||
+        width <= 0 || height <= 0) {
+        PaimonNotify::show("El archivo no es una imagen valida.", NotificationIcon::Warning);
+        return;
+    }
+    if (width > kMaxImageDimension || height > kMaxImageDimension) {
+        PaimonNotify::show(
+            fmt::format("La imagen es demasiado grande (max {} px).", kMaxImageDimension),
+            NotificationIcon::Warning);
+        return;
+    }
+
+    showBusy("Decodificando imagen");
+    m_sourceLoad = std::make_shared<SourceLoadState>();
+    auto state = m_sourceLoad;
+    std::thread([state, bytes, path] {
+        int decodedWidth = 0;
+        int decodedHeight = 0;
+        int decodedChannels = 0;
+        auto* pixels = stbi_load_from_memory(
+            bytes->data(), static_cast<int>(bytes->size()),
+            &decodedWidth, &decodedHeight, &decodedChannels, 4);
+        auto source = std::make_shared<SourceAnimation>();
+        if (pixels) {
+            source->width = decodedWidth;
+            source->height = decodedHeight;
+            source->frames.push_back({
+                0,
+                std::vector<std::uint8_t>(
+                    pixels,
+                    pixels + static_cast<std::size_t>(decodedWidth) * decodedHeight * 4)
+            });
+            stbi_image_free(pixels);
+        }
+        LoadedSource loaded{path, source, {}};
+        if (source->frames.empty()) loaded.error = "No se pudo decodificar la imagen.";
+        std::lock_guard lock(state->mutex);
+        state->result = std::move(loaded);
     }).detach();
 }
 
@@ -291,6 +422,9 @@ void GifImportPopup::applySource(
 }
 
 void GifImportPopup::requestProcess() {
+    if (m_options.mode == ImportMode::Render && !renderEnabled()) {
+        m_options.mode = ImportMode::Paint;
+    }
     saveOptions();
     refreshControls();
     if (!m_source) return;
@@ -305,17 +439,25 @@ void GifImportPopup::startProcess() {
     if (!m_source) return;
     m_processing = true;
     m_reprocess = false;
+    m_progress = std::make_shared<ProcessingProgress>();
+    m_progressTrack->setVisible(true);
+    m_progressFill->setScaleX(0.f);
+    m_progressFill->setVisible(true);
     m_statsLabel->setColor({255, 205, 105});
     m_statsLabel->setString("Procesando y optimizando...");
 
     auto source = m_source;
     Options const options = m_options;
-    WeakRef<GifImportPopup> self = this;
-    std::thread([self, source, options] {
-        auto result = buildPlan(*source, options);
-        Loader::get()->queueInMainThread([self, result = std::move(result)]() mutable {
-            if (auto* popup = self.lock().data()) popup->applyProcessed(std::move(result));
+    auto progress = m_progress;
+    std::thread([source, options, progress] {
+        auto result = buildPlan(*source, options, [progress](BuildProgress const& update) {
+            progress->value.store(update.value, std::memory_order_relaxed);
+            progress->stage.store(static_cast<int>(update.stage), std::memory_order_relaxed);
+            progress->pass.store(update.pass, std::memory_order_relaxed);
+            progress->passes.store(update.passes, std::memory_order_relaxed);
         });
+        std::lock_guard lock(progress->mutex);
+        progress->result = std::move(result);
     }).detach();
 }
 
@@ -325,6 +467,9 @@ void GifImportPopup::applyProcessed(BuildResult result) {
         startProcess();
         return;
     }
+    m_progress.reset();
+    m_progressTrack->setVisible(false);
+    m_progressFill->setVisible(false);
     if (!result) {
         m_plan.reset();
         m_statsLabel->setColor({255, 120, 120});
@@ -347,23 +492,35 @@ void GifImportPopup::refreshControls() {
     m_backgroundValue->setString(
         m_options.background == BackgroundMode::AutoBorder ? "Auto" : "Conservar");
     m_toleranceValue->setString(std::to_string(m_options.backgroundTolerance).c_str());
-    bool const art = m_options.mode == ImportMode::Art;
-    m_modeSprite->setString(art ? "Modo: Art" : "Modo: Bloques");
-    m_samplingSprite->setString(art
+    bool const vector = m_options.mode != ImportMode::Blocks;
+    m_modeSprite->setString(
+        m_options.mode == ImportMode::Render ? "Modo: Render"
+        : m_options.mode == ImportMode::Paint ? "Modo: Pintura"
+        : m_options.mode == ImportMode::Art ? "Modo: Art"
+        : "Modo: Bloques");
+    m_samplingSprite->setString(vector
         ? "Suave: fijo"
         : (m_options.sampling == SamplingMode::Smooth ? "Suave" : "Pixel"));
-    m_ditherSprite->setString(art
+    m_ditherSprite->setString(vector
         ? "Dither: no"
         : (m_options.dither ? "Dither: si" : "Dither: no"));
     m_loopSprite->setString(m_options.loop ? "Loop: si" : "Loop: no");
 
     if (!m_plan || m_processing) return;
     m_statsLabel->setColor({135, 230, 170});
+    std::string review;
+    if (m_plan->mode == ImportMode::Render) {
+        review = fmt::format(
+            "\nfid {:.1f}% | detalle {:.1f}% | {} pasadas",
+            m_plan->similarity, m_plan->detailSimilarity, m_plan->renderPasses);
+    } else if (usesPaintGeometry(m_plan->mode)) {
+        review = fmt::format(" | fidelidad {:.1f}%", m_plan->similarity);
+    }
     m_statsLabel->setString(fmt::format(
-        "{}x{} | {} frames | {} colores | {}\n"
+        "{}x{} | {} frames | {} colores | {}{}\n"
         "{} formas ({} blq, {} traz, {} circ, {} tri) + {} triggers = {}{}",
         m_plan->width, m_plan->height, m_plan->frames.size(), m_plan->palette.size(),
-        m_plan->strategy,
+        m_plan->strategy, review,
         m_plan->visualObjects, m_plan->blockObjects, m_plan->strokeObjects,
         m_plan->circleObjects, m_plan->triangleObjects,
         m_plan->triggerObjects, m_plan->totalObjects,
@@ -371,10 +528,54 @@ void GifImportPopup::refreshControls() {
     ).c_str());
 }
 
+void GifImportPopup::pollSourceLoad() {
+    if (!m_sourceLoad) return;
+    std::optional<LoadedSource> loaded;
+    {
+        std::lock_guard lock(m_sourceLoad->mutex);
+        if (!m_sourceLoad->result) return;
+        loaded = std::move(m_sourceLoad->result);
+    }
+    m_sourceLoad.reset();
+    hideBusy();
+    if (!loaded->error.empty()) {
+        PaimonNotify::show(loaded->error, NotificationIcon::Error);
+        return;
+    }
+    applySource(loaded->path, std::move(loaded->source));
+}
+
+void GifImportPopup::pollProcessing() {
+    if (!m_progress) return;
+    std::optional<BuildResult> result;
+    {
+        std::lock_guard lock(m_progress->mutex);
+        if (!m_progress->result) return;
+        result = std::move(m_progress->result);
+    }
+    applyProcessed(std::move(*result));
+}
+
+void GifImportPopup::refreshProgress() {
+    if (!m_progress) return;
+    float const value = std::clamp(
+        m_progress->value.load(std::memory_order_relaxed), 0.f, 1.f);
+    auto const stage = static_cast<BuildStage>(
+        m_progress->stage.load(std::memory_order_relaxed));
+    int const pass = m_progress->pass.load(std::memory_order_relaxed);
+    int const passes = m_progress->passes.load(std::memory_order_relaxed);
+    m_progressFill->setScaleX(value);
+    auto const text = passes > 1
+        ? fmt::format("Render {}/{} | {} | {:.0f}%", pass, passes,
+                      buildStageText(stage), value * 100.f)
+        : fmt::format("{} | {:.0f}%", buildStageText(stage), value * 100.f);
+    m_statsLabel->setString(text.c_str());
+}
+
 void GifImportPopup::refreshPreview() {
     if (!m_plan || m_plan->frames.empty()) return;
     m_previewFrame = std::clamp(m_previewFrame, 0, static_cast<int>(m_plan->frames.size()) - 1);
-    int const previewScale = m_plan->mode == ImportMode::Art ? 4 : 1;
+    int const previewScale = m_plan->mode == ImportMode::Blocks ? 1 : 4;
     int const previewWidth = m_plan->width * previewScale;
     int const previewHeight = m_plan->height * previewScale;
     auto pixels = renderPlanFrame(*m_plan, m_previewFrame, previewScale);
@@ -401,7 +602,13 @@ void GifImportPopup::refreshPreview() {
 }
 
 void GifImportPopup::tick(float dt) {
-    if (!m_plan || m_plan->frames.size() < 2 || m_processing) return;
+    pollSourceLoad();
+    if (m_processing) {
+        refreshProgress();
+        pollProcessing();
+        return;
+    }
+    if (!m_plan || m_plan->frames.size() < 2) return;
     m_previewElapsed += dt * 1000.f;
     int guard = 0;
     while (guard++ < static_cast<int>(m_plan->frames.size())) {
@@ -421,13 +628,9 @@ void GifImportPopup::tick(float dt) {
     }
 }
 
-void GifImportPopup::importObjects() {
-    if (m_processing) {
-        PaimonNotify::show("Espera a que termine la optimizacion.", NotificationIcon::Info);
-        return;
-    }
-    if (!m_plan) {
-        PaimonNotify::show("Primero elige y procesa un GIF.", NotificationIcon::Warning);
+void GifImportPopup::runBackground() {
+    if (!m_source) {
+        PaimonNotify::show("Primero elige un GIF o una imagen.", NotificationIcon::Warning);
         return;
     }
     auto* editor = LevelEditorLayer::get();
@@ -437,10 +640,43 @@ void GifImportPopup::importObjects() {
         return;
     }
 
-    auto const center = editor->m_objectLayer->convertToNodeSpace(CCDirector::get()->getWinSize() / 2.f);
+    saveOptions();
+    auto const winSize = CCDirector::get()->getWinSize();
+    CCPoint const workspaceCenter{winSize.width * 0.5f, winSize.height * 0.4f};
+    auto const center = editor->m_objectLayer->convertToNodeSpace(workspaceCenter);
+    auto result = startBackgroundImport(ui, m_source, m_options, center);
+    if (result.isErr()) {
+        PaimonNotify::show(result.unwrapErr(), NotificationIcon::Error);
+        return;
+    }
+    PaimonNotify::show(
+        "Dibujo ejecutandose en segundo plano.", NotificationIcon::Info);
+    onClose(nullptr);
+}
+
+void GifImportPopup::importObjects() {
+    if (m_processing) {
+        PaimonNotify::show("Espera a que termine la optimizacion.", NotificationIcon::Info);
+        return;
+    }
+    if (!m_plan) {
+        PaimonNotify::show("Primero elige y procesa un archivo.", NotificationIcon::Warning);
+        return;
+    }
+    auto* editor = LevelEditorLayer::get();
+    auto* ui = editor ? editor->m_editorUI : nullptr;
+    if (!ui || !editor->m_objectLayer) {
+        PaimonNotify::show("El editor ya no esta disponible.", NotificationIcon::Error);
+        return;
+    }
+
+    auto const winSize = CCDirector::get()->getWinSize();
+    CCPoint const workspaceCenter{winSize.width * 0.5f, winSize.height * 0.4f};
+    auto const center = editor->m_objectLayer->convertToNodeSpace(workspaceCenter);
+    float const margin = m_options.pixelSize;
     CCPoint const origin{
-        center.x - m_plan->width * m_options.pixelSize * 0.5f,
-        center.y - m_plan->height * m_options.pixelSize * 0.5f
+        center.x - (m_plan->width * m_options.pixelSize + margin) * 0.5f,
+        center.y - (m_plan->height * m_options.pixelSize + margin) * 0.5f
     };
     showBusy("Creando objetos");
     WeakRef<GifImportPopup> self = this;
@@ -469,7 +705,7 @@ void GifImportPopup::importObjects() {
         }
         auto const report = result.unwrap();
         PaimonNotify::show(
-            fmt::format("GIF importado: {} objetos, {} colores, {} grupos",
+            fmt::format("Importado: {} objetos, {} colores, {} grupos",
                         report.objects, report.colors, report.groups),
             NotificationIcon::Success
         );
@@ -478,7 +714,9 @@ void GifImportPopup::importObjects() {
 }
 
 void GifImportPopup::adjustResolution(int direction) {
-    m_options.maxDimension = std::clamp(m_options.maxDimension + direction * 4, 4, 160);
+    int const from = direction < 0 ? m_options.maxDimension - 1 : m_options.maxDimension;
+    int const step = from >= 160 ? 16 : from >= 64 ? 8 : 4;
+    m_options.maxDimension = std::clamp(m_options.maxDimension + direction * step, 4, 320);
     requestProcess();
 }
 
@@ -509,8 +747,10 @@ void GifImportPopup::adjustTolerance(int direction) {
 }
 
 void GifImportPopup::toggleMode() {
-    m_options.mode = m_options.mode == ImportMode::Blocks
-        ? ImportMode::Art : ImportMode::Blocks;
+    m_options.mode = m_options.mode == ImportMode::Blocks ? ImportMode::Art
+        : m_options.mode == ImportMode::Art ? ImportMode::Paint
+        : m_options.mode == ImportMode::Paint && renderEnabled() ? ImportMode::Render
+        : ImportMode::Blocks;
     requestProcess();
 }
 
@@ -521,14 +761,14 @@ void GifImportPopup::toggleBackground() {
 }
 
 void GifImportPopup::toggleSampling() {
-    if (m_options.mode == ImportMode::Art) return;
+    if (m_options.mode != ImportMode::Blocks) return;
     m_options.sampling = m_options.sampling == SamplingMode::Smooth
         ? SamplingMode::Pixel : SamplingMode::Smooth;
     requestProcess();
 }
 
 void GifImportPopup::toggleDither() {
-    if (m_options.mode == ImportMode::Art) return;
+    if (m_options.mode != ImportMode::Blocks) return;
     m_options.dither = !m_options.dither;
     requestProcess();
 }

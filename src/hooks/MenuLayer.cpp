@@ -276,7 +276,8 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                     if (animated) {
                         animated->setLively(true);
                         animated->play(paimon::guide::AnimatedPaimon::Animation::Idle);
-                        animated->setRotation(rot);
+                        // Sin setRotation: es hijo de paimonBtn, que ya lleva rot.
+                        // Ponerlo aqui tambien duplicaba el angulo.
                         animated->setAnchorPoint({0.5f, 0.5f});
                         animated->setPosition(paimonBtn->getContentSize() * 0.5f);
                         animated->setID("paimon-hidden-animated"_spr);

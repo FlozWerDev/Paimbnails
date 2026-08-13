@@ -435,14 +435,36 @@ std::vector<CCNode*> AutobuildPopup::buildTab(float width, float inner) {
         [this](bool value) { m_options.copyColors = value; m_options.save(); }));
     if (tpl->mode == Mode::Wave) {
         tuning.push_back(kit::makeToggleRow(inner, "Reglas estrictas",
-            "Solo repite vecindades que viste en la muestra. Apagalo si el sitio "
-            "es mucho mas grande y quieres que improvise.",
+            "Conserva vecindades, diagonales y costuras aprendidas. Apagalo si "
+            "quieres que conecte piezas con bordes parecidos.",
             m_options.strictRules,
             [this](bool value) { m_options.strictRules = value; m_options.save(); }));
         tuning.push_back(kit::makeToggleRow(inner, "Permitir huecos",
             "Deja celdas vacias cuando encajan mejor que forzar una pieza.",
             m_options.allowGaps,
             [this](bool value) { m_options.allowGaps = value; m_options.save(); }));
+        tuning.push_back(kit::makeToggleRow(inner, "Plantilla adaptable",
+            "Elige cada pieza por sus ocho vecinos, como el Auto-Build nativo.",
+            m_options.smartTemplates,
+            [this](bool value) {
+                m_options.smartTemplates = value;
+                m_options.save();
+                scheduleRebuild();
+            }));
+        if (m_options.smartTemplates) {
+            tuning.push_back(kit::makeToggleRow(inner, "Rotar referencias",
+                "Reutiliza una esquina o borde en las otras orientaciones.",
+                m_options.rotateVariants,
+                [this](bool value) { m_options.rotateVariants = value; m_options.save(); }));
+            tuning.push_back(kit::makeToggleRow(inner, "Reflejar referencias",
+                "Cubre variantes espejo. Apagalo para texto o arte asimetrico.",
+                m_options.flipVariants,
+                [this](bool value) { m_options.flipVariants = value; m_options.save(); }));
+            tuning.push_back(kit::makeToggleRow(inner, "Evitar repetir",
+                "Evita la misma variante dos veces seguidas cuando hay alternativas.",
+                m_options.avoidRepeats,
+                [this](bool value) { m_options.avoidRepeats = value; m_options.save(); }));
+        }
     } else {
         tuning.push_back(kit::makeToggleRow(inner, "Evitar repetir",
             "No usa la misma pieza dos veces seguidas.", m_options.avoidRepeats,
@@ -609,8 +631,8 @@ std::vector<CCNode*> AutobuildPopup::settingsTab(float width, float inner) {
                 m_options.save();
             }),
         kit::makeSliderRow(inner, "Reintentos",
-            "Cuanto insiste la onda antes de forzar una pieza.",
-            m_options.backtracks, 0.0, 2000.0,
+            "Cuanto insiste la onda antes de abandonar o usar el mejor encaje.",
+            m_options.backtracks, 0.0, 5000.0,
             [](double v) { return fmt::format("{:.0f}", v); },
             [this](double v) {
                 m_options.backtracks = static_cast<int>(std::round(v));
@@ -768,8 +790,10 @@ void AutobuildPopup::showHelp() {
         "<cg>2.</c> Marca donde quieres construir: bloques <co>467 / 143 / 146</c>, "
         "la propia seleccion o un area.\n"
         "<cg>3.</c> Vuelve a <cy>Construir</c> y pulsa Construir.\n\n"
-        "<cl>Onda</c> aprende que pieza puede ir al lado de cual y rellena rejillas "
-        "coherentes. <cl>Sellos</c> guarda grupos enteros y suelta uno en cada sitio.\n\n"
+        "<cl>Onda</c> conserva el patron 2D y, con <cy>Plantilla adaptable</c>, clasifica "
+        "cada pieza por sus ocho vecinos. Puede rotar o reflejar una referencia y, si "
+        "falta una combinacion, ignora esquinas o busca el contexto mas cercano. "
+        "<cl>Sellos</c> guarda grupos enteros y suelta uno en cada sitio.\n\n"
         "<cy>Otra semilla</c> rehace el mismo sitio con otro resultado y "
         "<cr>Deshacer</c> borra lo generado y devuelve los marcadores.\n\n"
         "Las plantillas se guardan en <cp>config/autobuild</c> y puedes importar "

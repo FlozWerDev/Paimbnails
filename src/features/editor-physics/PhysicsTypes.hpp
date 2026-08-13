@@ -10,9 +10,18 @@ struct Vec2 {
     float y = 0.f;
 };
 
+// A fixture is a box unless it says otherwise: `radius` turns it into a circle
+// (orbs, rings, coins) and `vertices` into a convex polygon (slopes, and any
+// object the editor rotated off the axes). `halfSize` always holds the local
+// bounding half extents, because mass, inertia and substepping only need that.
+// Polygon vertices are relative to `offset` and wound counter-clockwise, which
+// is what makes the solver's edge normals point outwards.
 struct Fixture {
     Vec2 offset;
     Vec2 halfSize;
+    float radius = 0.f;
+    int vertexCount = 0;
+    Vec2 vertices[4]{};
 };
 
 enum class Motion {

@@ -55,6 +55,9 @@ private:
     Item* selectedItem();
     void selectIndex(int index);
     cocos2d::CCRect itemRect(Item const& item) const;
+    // itemRect con el margen del contorno: es donde se dibuja el grip.
+    cocos2d::CCRect outlineRect(Item const& item) const;
+    cocos2d::CCPoint gripPos(Item const& item) const;
     Item* findItemAt(cocos2d::CCPoint worldPos);
     bool isBackgroundItem(Item const& item) const;
 

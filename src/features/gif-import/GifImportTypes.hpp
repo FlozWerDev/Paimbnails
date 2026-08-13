@@ -21,6 +21,28 @@ enum class ImportMode {
     Blocks,
     Art,
     Paint,
+    Render,
+};
+
+inline bool usesPaintGeometry(ImportMode mode) {
+    return mode == ImportMode::Paint || mode == ImportMode::Render;
+}
+
+enum class BuildStage {
+    Preparing,
+    Resizing,
+    Palette,
+    Geometry,
+    Reviewing,
+    Refining,
+    Done,
+};
+
+struct BuildProgress {
+    BuildStage stage = BuildStage::Preparing;
+    float value = 0.f;
+    int pass = 0;
+    int passes = 0;
 };
 
 struct Options {
@@ -63,9 +85,10 @@ struct Color {
     bool operator==(Color const&) const = default;
 };
 
+// Cada celda es un indice de la paleta, o -1 si ahi no hay nada que pintar.
 struct GridFrame {
     int delayMs = 100;
-    std::vector<std::int16_t> cells;
+    std::vector<std::int32_t> cells;
 };
 
 enum class PrimitiveKind {
@@ -111,6 +134,10 @@ struct ImportPlan {
     std::size_t strokeObjects = 0;
     std::size_t circleObjects = 0;
     std::size_t triangleObjects = 0;
+    float similarity = 100.f;
+    float geometrySimilarity = 100.f;
+    float detailSimilarity = 100.f;
+    int renderPasses = 0;
 
     bool animated() const { return frames.size() > 1; }
 };

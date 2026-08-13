@@ -74,6 +74,11 @@ void buildGeneral(CCNode* c, float w) {
         [](bool v){ sset<bool>("enable-debug-logs", v); },
         w));
 
+    c->addChild(createToggleRow("Send Crash Reports",
+        gset<bool>("crash-reports-enable"),
+        [](bool v){ sset<bool>("crash-reports-enable", v); },
+        w));
+
     c->addChild(createSectionHeader("Settings Panel", w));
 
     c->addChild(createLinkRow("Configure Panel Keybind (Geode)",

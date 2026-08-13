@@ -138,12 +138,21 @@ std::vector<Module const*> inSection(Section section) {
 std::vector<Module const*> search(std::string_view query) {
     auto needle = lower(query);
     std::vector<Module const*> out;
+    auto hit = [&needle](char const* field) {
+        return field && lower(field).find(needle) != std::string::npos;
+    };
     for (auto const& mod : all()) {
+        // Se busca tambien sobre los textos traducidos: la lista muestra el
+        // nombre localizado, asi que "dinamico" tiene que encontrar el modulo
+        // que en ingles se llama "Dynamic Volume".
         if (needle.empty()
-            || lower(mod.id).find(needle) != std::string::npos
-            || lower(mod.name).find(needle) != std::string::npos
-            || lower(mod.description).find(needle) != std::string::npos
-            || lower(mod.group).find(needle) != std::string::npos) {
+            || hit(mod.id)
+            || hit(mod.name)
+            || hit(mod.description)
+            || hit(mod.group)
+            || hit(localizedName(mod))
+            || hit(localizedDescription(mod))
+            || hit(localizedGroup(mod.group))) {
             out.push_back(&mod);
         }
     }

@@ -12,6 +12,9 @@ class PaimonLoadingOverlay;
 
 namespace paimon::gifimport {
 
+struct ProcessingProgress;
+struct SourceLoadState;
+
 class GifImportPopup : public geode::Popup {
 public:
     static GifImportPopup* create();
@@ -19,13 +22,20 @@ public:
 private:
     bool init() override;
 
-    void pickGif();
-    void loadGif(std::filesystem::path const& path);
+    void pickSource();
+    void loadSource(std::filesystem::path const& path);
+    void loadAnimated(
+        std::filesystem::path const& path,
+        std::shared_ptr<std::vector<std::uint8_t>> bytes);
+    void loadStill(
+        std::filesystem::path const& path,
+        std::shared_ptr<std::vector<std::uint8_t>> bytes);
     void applySource(std::filesystem::path const& path, std::shared_ptr<SourceAnimation> source);
     void requestProcess();
     void startProcess();
     void applyProcessed(BuildResult result);
     void importObjects();
+    void runBackground();
 
     void adjustResolution(int direction);
     void adjustColors(int direction);
@@ -42,6 +52,9 @@ private:
     void loadOptions();
     void saveOptions() const;
     void refreshControls();
+    void pollSourceLoad();
+    void pollProcessing();
+    void refreshProgress();
     void refreshPreview();
     void tick(float dt);
     void showBusy(std::string const& text);
@@ -51,6 +64,8 @@ private:
     std::filesystem::path m_path;
     std::shared_ptr<SourceAnimation> m_source;
     std::shared_ptr<ImportPlan> m_plan;
+    std::shared_ptr<SourceLoadState> m_sourceLoad;
+    std::shared_ptr<ProcessingProgress> m_progress;
     bool m_processing = false;
     bool m_reprocess = false;
     int m_previewFrame = 0;
@@ -65,6 +80,8 @@ private:
     cocos2d::CCLabelBMFont* m_pixelSizeValue = nullptr;
     cocos2d::CCLabelBMFont* m_backgroundValue = nullptr;
     cocos2d::CCLabelBMFont* m_toleranceValue = nullptr;
+    cocos2d::CCLayerColor* m_progressTrack = nullptr;
+    cocos2d::CCLayerColor* m_progressFill = nullptr;
     cocos2d::CCSprite* m_previewSprite = nullptr;
     ButtonSprite* m_modeSprite = nullptr;
     ButtonSprite* m_samplingSprite = nullptr;

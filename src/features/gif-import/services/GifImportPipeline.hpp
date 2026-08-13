@@ -2,8 +2,16 @@
 
 #include "../GifImportTypes.hpp"
 
+#include <functional>
+
 namespace paimon::gifimport {
 
-BuildResult buildPlan(SourceAnimation const& source, Options const& options);
+using BuildProgressCallback = std::function<void(BuildProgress const&)>;
+
+BuildResult buildPlan(
+    SourceAnimation const& source,
+    Options const& options,
+    BuildProgressCallback progress = {}
+);
 
 } // namespace paimon::gifimport

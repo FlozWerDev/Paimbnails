@@ -12,6 +12,7 @@
 #include "../features/progressbar/services/ProgressBarManager.hpp"
 #include "../features/custom-slider/services/CustomSliderManager.hpp"
 #include "../features/updates/services/UpdateChecker.hpp"
+#include "../features/crash-reports/services/CrashReporter.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "StartupIncompatibilityCheck.hpp"
 #include "ModCompatWarnings.hpp"
@@ -213,6 +214,11 @@ void bootstrap() {
     paimon::scheduleMainThreadDelay(8.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         paimon::updates::UpdateChecker::get().checkAsync();
+    });
+
+    paimon::scheduleMainThreadDelay(15.0f, []() {
+        if (paimon::isRuntimeShuttingDown()) return;
+        paimon::crash::reportPendingCrashes();
     });
 }
 

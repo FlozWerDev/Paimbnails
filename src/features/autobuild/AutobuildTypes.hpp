@@ -16,6 +16,25 @@ enum class Mode { Wave, Stamp };
 // Where the generated objects go.
 enum class TargetMode { Markers, Selection, Area };
 
+struct PieceTransform {
+    unsigned char quarterTurns = 0;
+    bool flipX = false;
+
+    bool identity() const { return quarterTurns == 0 && !flipX; }
+};
+
+constexpr int kCardinalDirections = 4;
+constexpr int kNeighbourDirections = 8;
+constexpr int kUpDirection = 0;
+constexpr int kDownDirection = 1;
+constexpr int kRightDirection = 2;
+constexpr int kLeftDirection = 3;
+constexpr int kDirectionX[kNeighbourDirections] = {0, 0, 1, -1, 1, -1, 1, -1};
+constexpr int kDirectionY[kNeighbourDirections] = {1, -1, 0, 0, 1, -1, -1, 1};
+constexpr int kOppositeDirection[kNeighbourDirections] = {1, 0, 3, 2, 5, 4, 7, 6};
+constexpr int kMaxTemplateGrids = 2048;
+constexpr int kMaxTemplateGridCells = 120000;
+
 struct CapturedObject {
     int objectId = 0;
     float dx = 0.f;
@@ -30,11 +49,25 @@ struct Piece {
     float height = 0.f;
 };
 
+void measurePiece(Piece& piece);
+
 // Wave adjacency of one piece. `open[d]` means the piece was captured with
 // nothing on that side, so it is allowed to sit on the border of a fill.
 struct Links {
-    std::vector<int> side[4];
-    bool open[4] = {false, false, false, false};
+    std::vector<int> side[kNeighbourDirections];
+    bool open[kNeighbourDirections] = {};
+};
+
+struct SampleCell {
+    int x = 0;
+    int y = 0;
+    int piece = -1;
+};
+
+struct SampleGrid {
+    int width = 0;
+    int height = 0;
+    std::vector<SampleCell> cells;
 };
 
 struct Template {
@@ -44,6 +77,7 @@ struct Template {
     int samples = 1;
     std::vector<Piece> pieces;
     std::vector<Links> links;  // wave only, parallel to pieces
+    std::vector<SampleGrid> grids;  // original wave layouts, with piece ids remapped
     std::string colors;        // kS38 body captured with the sample
     std::string file;          // file name on disk, empty until saved
 
@@ -61,7 +95,10 @@ struct Options {
     bool copyColors = true;
     bool allowGaps = false;
     bool strictRules = true;  // wave: only reuse neighbour pairs the sample showed
-    bool avoidRepeats = true;   // stamp: don't reuse the previous target's piece
+    bool smartTemplates = true;
+    bool rotateVariants = true;
+    bool flipVariants = true;
+    bool avoidRepeats = true;
     bool avoidOverlap = false;  // stamp: skip a piece that would land on another
     int seed = 0;               // 0 = a new random seed on every run
     int shiftColors = 0;
@@ -72,7 +109,7 @@ struct Options {
     int maxObjects = 40000;
     float captureCell = 30.f;
     float clusterRadius = 60.f;
-    int backtracks = 400;
+    int backtracks = 1200;
 
     static Options load();
     void save() const;

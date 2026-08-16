@@ -1785,11 +1785,5 @@
       "version": ">=v0.4.0-alpha",
       "required": false
     }
-  },
-  "incompatibilities": {
-    "cdc.level_thumbnails": {
-      "version": "*",
-      "breaking": false
-    }
   }
 }

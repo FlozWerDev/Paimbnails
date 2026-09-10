@@ -11,7 +11,7 @@ on:
 jobs:
   build:
     name: Windows
-    runs-on: windows-latest
+    runs-on: depot-windows-2022
 
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +49,7 @@ jobs:
 
   build-installer:
     name: Build Windows Installer
-    runs-on: windows-latest
+    runs-on: depot-windows-2022
     needs: build
 
     steps:
@@ -86,7 +86,7 @@ jobs:
 
   beta:
     name: Publish beta release
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     needs: ['build', 'build-installer']
     # Tag pushes go to the real release job below; everything else that builds
     # gets a numbered beta so there is a record of every compilation.
@@ -182,7 +182,7 @@ jobs:
 
   release:
     name: Create Release
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     needs: ['build', 'build-installer']
     if: startsWith(github.ref, 'refs/tags/v')
 

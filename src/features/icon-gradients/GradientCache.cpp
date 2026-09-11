@@ -2,6 +2,7 @@
 #include "GradientUtils.hpp"
 #include "services/GradientAnimationManager.hpp"
 #include "../../core/RuntimeLifecycle.hpp"
+#include "../../core/BackgroundPreload.hpp"
 #include "../../utils/MainThreadDelay.hpp"
 
 #include <Geode/loader/Event.hpp>
@@ -179,7 +180,7 @@ namespace {
 // main thread for over a minute on low-end machines. Instead it runs after the
 // game is up, spread across frames with a soft time budget so it never freezes
 // the menu waiting for it.
-constexpr auto kPrewarmFrameBudget = std::chrono::milliseconds(6);
+constexpr auto kPrewarmFrameBudget = std::chrono::milliseconds(2);
 
 void runGradientPrewarm(std::vector<std::function<void()>> steps) {
     if (steps.empty()) return;
@@ -195,6 +196,15 @@ void runGradientPrewarm(std::vector<std::function<void()>> steps) {
     std::weak_ptr<std::function<void()>> weakTick = tick;
     *tick = [state, weakTick]() {
         if (paimon::isRuntimeShuttingDown()) return;
+
+        if (GradientCache::isModDisabled()
+            || !Mod::get()->getSettingValue<bool>(kSettingPreloadShaders)) return;
+        if (!paimon::preload::canRunBackgroundPreload()) {
+            if (auto strong = weakTick.lock()) {
+                paimon::scheduleMainThreadDelay(0.5f, [strong]() { (*strong)(); });
+            }
+            return;
+        }
 
         auto deadline = std::chrono::steady_clock::now() + kPrewarmFrameBudget;
         while (state->index < state->steps.size()

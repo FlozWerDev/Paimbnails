@@ -38,6 +38,7 @@ template<class T> using CopyableFunction = std::function<T>;
 namespace paimon {
 ${ids.join("\n")}
 bool shuttingDown = false;
+bool idle = true;
 bool isRuntimeShuttingDown() { return shuttingDown; }
 struct Task {
     float delay;
@@ -54,6 +55,7 @@ void tick() {
     task.callback();
 }
 namespace preload {
+bool canRunBackgroundPreload() { return idle; }
 ${prefetch.slice(start, end)}
 }
 }
@@ -61,6 +63,40 @@ ${prefetch.slice(start, end)}
 int main() {
     using namespace paimon;
     using preload::staggerMainLevelThumbnailLoads;
+    // Loading/gameplay/editor must defer work, then resume without skipping IDs.
+    idle = false;
+    std::vector<int> deferred;
+    staggerMainLevelThumbnailLoads([&](int id) { deferred.push_back(id); });
+    for (int i = 0; i < 3; ++i) {
+        assert(deferred.empty());
+        assert(tasks.size() == 1 && tasks.front().delay == 0.5f);
+        tick();
+    }
+    idle = true;
+    while (!tasks.empty()) tick();
+    assert(deferred.size() == 22);
+    for (int i = 0; i < 22; ++i) assert(deferred[i] == i + 1);
+
+    deferred.clear();
+    staggerMainLevelThumbnailLoads([&](int id) { deferred.push_back(id); });
+    assert(deferred.size() == 4);
+    idle = false;
+    tick();
+    assert(deferred.size() == 4 && tasks.front().delay == 0.5f);
+    idle = true;
+    while (!tasks.empty()) tick();
+    for (int i = 0; i < 22; ++i) assert(deferred[i] == i + 1);
+
+    idle = false;
+    auto pausedCapture = std::make_shared<int>(1);
+    std::weak_ptr<int> pausedWeak = pausedCapture;
+    staggerMainLevelThumbnailLoads([pausedCapture](int) { assert(false); });
+    pausedCapture.reset();
+    shuttingDown = true;
+    tick();
+    assert(tasks.empty() && pausedWeak.expired());
+    shuttingDown = false;
+    idle = true;
     struct Case { int batch; float delay; int expectedBatch; float expectedDelay; };
     for (auto test : {Case{4, 0.06f, 4, 0.06f}, Case{0, 0.0f, 1, 0.03f},
                      Case{-3, -1.0f, 1, 0.03f}, Case{1, 0.03f, 1, 0.03f},

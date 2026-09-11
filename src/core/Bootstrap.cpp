@@ -22,6 +22,7 @@
 #include "MainLevels.hpp"
 #include "MainLevelPrefetch.hpp"
 #include "PreloadProgress.hpp"
+#include "PreloadActions.hpp"
 #include "Settings.hpp"
 #include "../features/paidraw/PaiDrawManager.hpp"
 #include "../video/VideoPlayer.hpp"
@@ -119,29 +120,8 @@ void bootstrap() {
         LevelColors::get().preloadIndexFromDisk();
     });
 
-    log::info("[PaimonThumbnails] Queueing main level thumbnails...");
-
-    std::vector<int> mainLevels;
-    for (int i = paimon::kMainLevelMinID; i <= paimon::kMainLevelMaxID; i++) {
-        mainLevels.push_back(i);
-    }
-
-    if (paimon::tryClaimMainLevelsPrefetch()) {
-        paimon::preload::fetchMainLevelManifestWithCache(mainLevels, "Bootstrap");
-
-        paimon::scheduleMainThreadDelay(0.25f, []() {
-            if (paimon::isRuntimeShuttingDown()) return;
-
-            auto& loader = ThumbnailLoader::get();
-            paimon::preload::staggerMainLevelThumbnailLoads([&loader](int levelID) {
-                loader.requestLoad(
-                    levelID, fmt::format("{}.png", levelID), nullptr,
-                    ThumbnailLoader::PriorityBootstrap);
-            });
-            log::info("[PaimonThumbnails] (Bootstrap) main level thumbnails stagger-enqueued");
-        });
-    } else {
-        log::info("[PaimonThumbnails] Main level prefetch already kicked off by LoadingLayer");
+    if (paimon::preload::tryClaimPreload()) {
+        paimon::preload::startFullPreload();
     }
 
     std::string langStr = paimon::settings::general::language();

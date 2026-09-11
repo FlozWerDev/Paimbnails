@@ -3,6 +3,7 @@
 #include "../features/audio/services/PaimonAudio.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include "../core/BackgroundPreload.hpp"
 #include "../utils/MainThreadDelay.hpp"
 #include <Geode/Geode.hpp>
 #include <algorithm>
@@ -628,6 +629,13 @@ void runStaggeredPrewarm(
     std::weak_ptr<std::function<void()>> weakTick = tick;
     *tick = [state, label, weakTick]() {
         if (paimon::isRuntimeShuttingDown()) return;
+
+        if (!paimon::preload::canRunBackgroundPreload()) {
+            if (auto strong = weakTick.lock()) {
+                paimon::scheduleMainThreadDelay(0.5f, [strong]() { (*strong)(); });
+            }
+            return;
+        }
 
         size_t done = 0;
         while (state->index < state->steps.size() && done < state->perTick) {

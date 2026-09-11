@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MainLevels.hpp"
+#include "BackgroundPreload.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "../utils/MainThreadDelay.hpp"
 #include "../utils/HttpClient.hpp"
@@ -33,6 +34,13 @@ void staggerMainLevelThumbnailLoads(LoadFn&& loadFn, int batchSize = 4, float ba
     std::weak_ptr<std::function<void()>> weakStep = step;
     *step = [ctx, weakStep]() {
         if (isRuntimeShuttingDown()) return;
+
+        if (!canRunBackgroundPreload()) {
+            if (auto next = weakStep.lock()) {
+                scheduleMainThreadDelay(0.5f, [next]() { (*next)(); });
+            }
+            return;
+        }
 
         int enqueued = 0;
         while (ctx->nextId <= kMainLevelMaxID && enqueued < ctx->batch) {

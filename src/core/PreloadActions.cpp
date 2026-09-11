@@ -24,6 +24,7 @@ namespace {
 // The loading screen can stay up for a long time on a slow machine; starting
 // the emote download there would fight the game for disk and bandwidth.
 void scheduleAfterGameLoaded(float delay, std::function<void()> fn) {
+    if (paimon::isRuntimeShuttingDown()) return;
     if (paimon::preload::g_gameLoaded.load(std::memory_order_acquire)) {
         paimon::scheduleMainThreadDelay(delay, [fn]() { fn(); });
         return;
@@ -37,8 +38,8 @@ void scheduleAfterGameLoaded(float delay, std::function<void()> fn) {
 void schedulePrefetchMainLevels() {
     using namespace paimon::preload;
 
-    // Claim Bootstrap's flag so its fallback won't re-queue the same 22 tasks.
-    (void)paimon::tryClaimMainLevelsPrefetch();
+    // All startup entry points share this claim, including late mod loading.
+    if (!paimon::tryClaimMainLevelsPrefetch()) return;
 
     std::vector<int> mainLevels;
     mainLevels.reserve(paimon::kMainLevelMaxID - paimon::kMainLevelMinID + 1);
@@ -60,7 +61,7 @@ void schedulePrefetchMainLevels() {
                 },
                 ThumbnailLoader::PriorityBootstrap
             );
-        }, 4, 0.06f);
+        }, 1, 0.1f);
 
         log::info(
             "[Paimbnails Preload] Stagger-queued {} main level thumbnails",
@@ -140,7 +141,14 @@ void schedulePrefetchEmotes() {
 namespace paimon::preload {
 
 void startFullPreload() {
-    schedulePrefetchMainLevels();
+    // No cache stats, HTTP client construction or texture uploads while Geode
+    // is loading binaries/resources. Publish the total now for the menu label.
+    g_thumbsTotal.store(paimon::kMainLevelMaxID - paimon::kMainLevelMinID + 1,
+        std::memory_order_release);
+    scheduleAfterGameLoaded(1.0f, []() {
+        if (paimon::isRuntimeShuttingDown()) return;
+        schedulePrefetchMainLevels();
+    });
     scheduleAfterGameLoaded(14.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         schedulePrefetchEmotes();

@@ -1,183 +1,127 @@
 #include "MenuLoopManager.hpp"
 #include "MenuLoopControl.hpp"
-#include <Geode/loader/Loader.hpp>
+#include "MenuLoopScan.hpp"
+#include "../../../utils/MainThreadDelay.hpp"
+#include "../../../utils/ThreadTracker.hpp"
+#include <Geode/binding/MenuLayer.hpp>
 #include <Geode/utils/file.hpp>
-#include <Geode/utils/string.hpp>
-#include <fmt/format.h>
+#include <chrono>
 
 using namespace geode::prelude;
 using namespace paimon::menuloop;
 
 namespace {
 
-static bool isAudioFile(const std::filesystem::path& p) {
-    auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(p.extension()));
-    static const std::array<std::string, 7> ok = {
-        ".mp3", ".ogg", ".wav", ".flac", ".oga", ".m4a", ".opus"
-    };
-    return std::ranges::find(ok, ext) != ok.end();
-}
-
-static void ensureFileExists(const std::filesystem::path& path, const std::string& content) {
+void ensureFileExists(std::filesystem::path const& path, std::string const& content) {
     std::error_code ec;
-    if (!std::filesystem::exists(path, ec) || ec) {
+    if (!std::filesystem::exists(path, ec) && !ec)
         (void)geode::utils::file::writeString(path, content);
-    }
 }
 
-static void scanAndLoadSongs() {
-    auto& sm = MenuLoopManager::get();
-    auto configDir = sm.getConfigDir();
+void startSongScan() {
+    auto* mod = Mod::get();
+    MenuLoopScanInput input;
+    input.configDir = mod->getConfigDir();
+    input.extraFolder = menuLoopUtf8Path(mod->getSavedValue<std::string>("menuLoopAdditionalFolder", ""));
+    input.playlistFile = menuLoopUtf8Path(mod->getSavedValue<std::string>("menuLoopPlaylistFile", ""));
+    input.usePlaylist = mod->getSavedValue<bool>("menuLoopLoadPlaylistFile", false);
+    input.restoreSaved = mod->getSettingValue<bool>("menuLoopSaveSongOnGameClose");
+    input.savedSong = mod->getSavedValue<std::string>("lastMenuLoop", "");
+    input.savedPath = menuLoopPathString(mod->getSavedValue<std::filesystem::path>("lastMenuLoopPath"));
 
-    sm.clearSongs();
-    sm.getBlacklist().clear();
-    sm.getFavorites().clear();
-    const bool loadPlaylist = Mod::get()->getSavedValue<bool>(
-        "menuLoopLoadPlaylistFile", false);
-
-    std::error_code ec;
-    if (!loadPlaylist) {
-        for (auto const& entry : std::filesystem::recursive_directory_iterator(
-                 configDir, std::filesystem::directory_options::skip_permission_denied, ec)) {
-            if (ec) {
-                ec.clear();
-                continue;
+    auto& manager = MenuLoopManager::get();
+    // Opening Menu Music before/during this task must never lose live edits.
+    if (!manager.getSongs().empty()) {
+        manager.setFinishedCalculatingSongLengths(true);
+        return;
+    }
+    auto initialSong = manager.getCurrentSong();
+    auto initialBlacklist = manager.getBlacklist();
+    auto initialFavorites = manager.getFavorites();
+    bool started = paimon::ThreadTracker::get().spawn(
+        [input = std::move(input), initialSong, initialBlacklist, initialFavorites]() {
+        geode::utils::thread::setName("PaimonMenuLoopScan");
+        auto start = std::chrono::steady_clock::now();
+        MenuLoopScanResult result;
+        try {
+            if (paimon::isRuntimeShuttingDown()) return;
+            for (auto name : {"playlistOne.txt", "playlistTwo.txt", "playlistThree.txt",
+                              "blacklist.txt", "favorites.txt"}) {
+                ensureFileExists(input.configDir / name, "# Menu Loop: one song path per line\n");
             }
-            if (!entry.is_regular_file()) continue;
-            auto path = entry.path();
-            if (isAudioFile(path)) {
-                sm.addSong(geode::utils::string::pathToString(path));
-            }
+            result = scanMenuLoopSongs(input, paimon::isRuntimeShuttingDown);
+        } catch (std::exception const& e) {
+            log::warn("[MenuLoop] Song scan failed: {}", e.what());
         }
+        if (paimon::isRuntimeShuttingDown()) return;
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start).count();
+        geode::queueInMainThread([result = std::move(result), initialSong,
+                                 initialBlacklist, initialFavorites, elapsed]() mutable {
+            if (paimon::isRuntimeShuttingDown()) return;
+            auto& sm = MenuLoopManager::get();
+            sm.setFinishedCalculatingSongLengths(true);
+            if (!sm.getSongs().empty() || sm.getBlacklist() != initialBlacklist
+                || sm.getFavorites() != initialFavorites) return;
 
-        auto extraFolder = std::filesystem::path(
-            Mod::get()->getSavedValue<std::string>("menuLoopAdditionalFolder", ""));
-        if (!extraFolder.empty() && std::filesystem::exists(extraFolder, ec) && !ec) {
-            for (auto const& entry : std::filesystem::recursive_directory_iterator(
-                     extraFolder, std::filesystem::directory_options::skip_permission_denied, ec)) {
-                if (ec) {
-                    ec.clear();
-                    continue;
-                }
-                if (!entry.is_regular_file()) continue;
-                auto path = entry.path();
-                if (isAudioFile(path)) {
-                    sm.addSong(geode::utils::string::pathToString(path));
-                }
+            sm.getSongs() = std::move(result.songs);
+            sm.getBlacklist() = std::move(result.blacklist);
+            sm.getFavorites() = std::move(result.favorites);
+            std::unordered_set<std::string> favorites(sm.getFavorites().begin(), sm.getFavorites().end());
+            auto& metadata = sm.getSongToSongDataEntries();
+            metadata.reserve(sm.getSongs().size());
+            for (auto const& song : sm.getSongs()) {
+                metadata.emplace(song, SongData{song,
+                    menuLoopPathString(menuLoopUtf8Path(song).stem()),
+                    favorites.contains(song) ? SongType::Favorited : SongType::Normal});
             }
-        }
-    }
+            bool selectSong = !sm.isOverride() && sm.getCurrentSong() == initialSong;
+            if (selectSong) sm.setCurrentSong(result.selectedSong);
+            log::info("[MenuLoop] Scanned {} songs in {} ms off the main thread",
+                sm.getSongsSize(), elapsed);
 
-    if (loadPlaylist) {
-        auto playlistPath = std::filesystem::path(Mod::get()->getSavedValue<std::string>("menuLoopPlaylistFile", ""));
-    if (playlistPath.empty()) playlistPath = configDir / "playlistOne.txt";
-        if (std::filesystem::exists(playlistPath, ec) && !ec) {
-            auto content = geode::utils::file::readString(playlistPath);
-            if (content.isOk()) {
-                std::istringstream stream(content.unwrap());
-                std::string line;
-                while (std::getline(stream, line)) {
-                    if (line.empty() || line[0] == '#') continue;
-                    auto trimmed = line;
-                    auto start = trimmed.find_first_not_of(" \t\r\n");
-                    if (start == std::string::npos) continue;
-                    auto end = trimmed.find_last_not_of(" \t\r\n");
-                    trimmed = trimmed.substr(start, end - start + 1);
-                    if (!trimmed.empty() && std::filesystem::exists(trimmed, ec)) {
-                        sm.addSong(trimmed);
-                    }
-                }
+            // Only switch audio if the user is still at the menu. Gameplay and
+            // editor music must not be interrupted by a late disk scan.
+            auto* scene = CCDirector::get()->getRunningScene();
+            if (selectSong && result.selectedSong != "menuLoop.mp3"
+                && scene && scene->getChildByType<MenuLayer>(0)
+                && !isVanillaMenuLoopDisabled() && !sm.getGeodify() && !sm.getVibecodedVentilla()) {
+                MenuLoopControl::stopMenuMusic();
+                GameManager::get()->playMenuMusic();
             }
-        }
-    }
-
-    auto blPath = configDir / "blacklist.txt";
-    if (std::filesystem::exists(blPath, ec) && !ec) {
-        auto content = geode::utils::file::readString(blPath);
-        if (content.isOk()) {
-            std::istringstream stream(content.unwrap());
-            std::string line;
-            while (std::getline(stream, line)) {
-                if (line.empty() || line[0] == '#') continue;
-                sm.addToBlacklist(line);
-            }
-        }
-    }
-
-    auto favPath = configDir / "favorites.txt";
-    if (std::filesystem::exists(favPath, ec) && !ec) {
-        auto content = geode::utils::file::readString(favPath);
-        if (content.isOk()) {
-            std::istringstream stream(content.unwrap());
-            std::string line;
-            while (std::getline(stream, line)) {
-                if (line.empty() || line[0] == '#') continue;
-                sm.addToFavorites(line);
-            }
-        }
-    }
-
-    for (const auto& bl : sm.getBlacklist()) {
-        sm.removeSong(bl);
-    }
-
-    auto& songData = sm.getSongToSongDataEntries();
-    for (const auto& song : sm.getSongs()) {
-        auto path = std::filesystem::path(song);
-        SongData data;
-        data.path = song;
-        data.displayName = geode::utils::string::pathToString(path.stem());
-        data.type = std::ranges::find(sm.getFavorites(), song) != sm.getFavorites().end()
-            ? SongType::Favorited
-            : SongType::Normal;
-        songData.emplace(song, std::move(data));
-    }
-
-    if (Mod::get()->getSettingValue<bool>("menuLoopSaveSongOnGameClose")) {
-        sm.setCurrentSongToSavedSong();
-    } else {
-        sm.pickRandomSong();
-    }
-
-    sm.setFinishedCalculatingSongLengths(true);
-
-    log::info("[MenuLoop] Loaded {} songs, blacklist: {}, favorites: {}",
-        sm.getSongsSize(), sm.getBlacklist().size(), sm.getFavorites().size());
+        });
+    });
+    if (!started) manager.setFinishedCalculatingSongLengths(true);
 }
 
 } // namespace
 
 $on_mod(Loaded) {
     auto& sm = MenuLoopManager::get();
+    // Menu Music can autoplay before the async scan completes. Its filters
+    // must already be available; only these two small lists are read here.
     auto configDir = sm.getConfigDir();
-
-    ensureFileExists(configDir / "playlistOne.txt", "# Menu Loop Playlist 1\n");
-    ensureFileExists(configDir / "playlistTwo.txt", "# Menu Loop Playlist 2\n");
-    ensureFileExists(configDir / "playlistThree.txt", "# Menu Loop Playlist 3\n");
-    ensureFileExists(configDir / "blacklist.txt",
-        "# Menu Loop Blacklist\n"
-        "# Add song paths (one per line) to blacklist them\n"
-    );
-    ensureFileExists(configDir / "favorites.txt",
-        "# Menu Loop Favorites\n"
-        "# Add song paths (one per line) to favorite them\n"
-    );
-
-    // Initialize state from settings
+    std::unordered_set<std::string> blocked, favorites;
+    readMenuLoopList(configDir / "blacklist.txt", paimon::isRuntimeShuttingDown,
+        [&](std::string song) {
+            if (blocked.insert(song).second) sm.getBlacklist().push_back(std::move(song));
+        });
+    readMenuLoopList(configDir / "favorites.txt", paimon::isRuntimeShuttingDown,
+        [&](std::string song) {
+            if (!blocked.contains(song) && favorites.insert(song).second)
+                sm.getFavorites().push_back(std::move(song));
+        });
     sm.setConstantShuffleMode(Mod::get()->getSettingValue<bool>("menuLoopConstantShuffle"));
-    sm.setLastMenuLoopPosition(0);
     sm.setShouldRestoreMenuLoopPoint(true);
-    sm.setFinishedCalculatingSongLengths(false);
     sm.setAdvancedLogs(Mod::get()->getSavedValue<bool>("menuLoopAdvancedLogs", false));
-    sm.setPlaylistIsEmpty(true);
-    sm.setCalledOnce(false);
-
-    auto* loader = Loader::get();
-    sm.setVibecodedVentilla(loader->isModLoaded("joseii.ventilla"));
-
-    scanAndLoadSongs();
-
+    sm.setVibecodedVentilla(Loader::get()->isModLoaded("joseii.ventilla"));
     listenForSettingChanges<bool>("menuLoopConstantShuffle", [](bool enabled) {
         MenuLoopManager::get().setConstantShuffleMode(enabled);
+    });
+}
+
+$on_game(Loaded) {
+    paimon::scheduleMainThreadDelay(0.5f, [] {
+        if (!paimon::isRuntimeShuttingDown()) startSongScan();
     });
 }

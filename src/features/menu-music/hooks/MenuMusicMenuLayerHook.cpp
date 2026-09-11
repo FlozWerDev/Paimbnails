@@ -38,7 +38,6 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
 
         auto& lib = MenuMusicLibrary::get();
         lib.load();
-        lib.syncDownloadedSongs(/*force=*/false);
         auto& player = MenuMusicPlayer::get();
         if (!s_restoredSessionPlayback) {
             s_restoredSessionPlayback = true;
@@ -48,6 +47,9 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
                 "menuMusicAutoplayOnBoot", false);
             if (lib.mode() != paimon::menumusic::PlaybackMode::Disabled
                 && (remember || autoplay)) {
+                // Sync only when startup playback needs candidates. Opening
+                // Menu Music also syncs; an unused player needs no disk scan.
+                lib.syncDownloadedSongs(/*force=*/false);
                 if (!remember || lib.lastTrackId().empty()
                     || !player.playSpecific(lib.lastTrackId())) {
                     player.playNext();

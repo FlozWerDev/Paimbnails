@@ -1,7 +1,5 @@
-// Fallback that starts the preload and shows the X/Y label even if the
-// LoadingLayer hook never intercepted anything (e.g. an early-load:false mod
-// that finished loading after LoadingLayer::loadAssets). Only claims the
-// preload/label if LoadingLayer didn't (tryClaimPreload), so it isn't duplicated.
+// Reserve the deferred preload on first menu entry and show its progress.
+// Bootstrap shares the claim, so re-entry never duplicates the work.
 
 #include <Geode/modify/MenuLayer.hpp>
 
@@ -26,7 +24,7 @@ namespace {
 constexpr float kProgressUpdateInterval = 0.1f;
 
 // Core-set preload (main-level thumbnails + emotes) lives in
-// core/PreloadActions.cpp (paimon::preload::startFullPreload), shared with LoadingLayer.cpp.
+// core/PreloadActions.cpp (paimon::preload::startFullPreload), shared with Bootstrap.cpp.
 
 } // namespace
 
@@ -38,7 +36,7 @@ class $modify(PaimonMenuLayerPreload, MenuLayer) {
     struct Fields {
         cocos2d::CCLabelBMFont* progressLabel = nullptr;
         bool updateScheduled = false;
-        // True if this instance started the preload. If false (LoadingLayer
+        // True if this instance started the preload. If false (Bootstrap
         // already started it), still show the label unless it finished.
         bool ownsPreload = false;
     };
@@ -49,7 +47,7 @@ class $modify(PaimonMenuLayerPreload, MenuLayer) {
         }
 
 
-        // If nobody claimed it yet (LoadingLayer hook never ran), start it here;
+        // If nobody claimed it yet, reserve the deferred work here;
         // otherwise just observe the counters.
         if (paimon::preload::tryClaimPreload()) {
             m_fields->ownsPreload = true;

@@ -16,6 +16,8 @@ private:
     CCPoint m_relativePos = {0, 0};
 
     ccColor3B m_color = ccc3(255, 255, 255);
+    std::string m_imagePath;
+    CCLabelBMFont* m_imageLabel = nullptr;
 
     bool m_isHovered = false;
     bool m_isSelected = false;
@@ -31,6 +33,8 @@ public:
     static ColorNode* create(bool, int = 255);
 
     void setColor(const ccColor3B&, float = 0.f);
+    void setImagePath(std::string const&);
+    std::string const& getImagePath() const { return m_imagePath; }
     void setOpacity(int);
     void setSelected(bool);
     void setHovered(bool);

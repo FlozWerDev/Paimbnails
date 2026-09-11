@@ -86,13 +86,12 @@ int64_t currentIconID(IconType type) {
 } // namespace
 
 bool GradientConfig::isEmpty(ColorType colorType, bool secondPlayer) {
-    if (!imagePath.empty()) return false;
     if (points.empty()) return true;
 
     ccColor3B color = GradientUtils::getPlayerColor(colorType, secondPlayer);
 
     for (const SimplePoint& point : points)
-        if (point.color != color)
+        if (!point.imagePath.empty() || point.color != color)
             return false;
 
     return true;
@@ -279,13 +278,13 @@ matjson::Value GradientUtils::getSaveObject(GradientConfig config) {
         object["color"]["r"] = point.color.r;
         object["color"]["g"] = point.color.g;
         object["color"]["b"] = point.color.b;
+        if (!point.imagePath.empty()) object["image"] = point.imagePath;
 
         pointsObject.push(object);
     }
 
     ret["points"] = pointsObject;
     ret["linear"] = config.isLinear;
-    ret["image"] = config.imagePath;
 
     return ret;
 }
@@ -318,7 +317,6 @@ GradientConfig GradientUtils::configFromObject(const matjson::Value& object) {
     GradientConfig config;
 
     config.isLinear = object["linear"].asBool().unwrapOr(true);
-    config.imagePath = object["image"].asString().unwrapOr("");
 
     for (const matjson::Value& point : object["points"])
         config.points.push_back({
@@ -330,7 +328,8 @@ GradientConfig GradientUtils::configFromObject(const matjson::Value& object) {
                 point["color"]["r"].asInt().unwrapOr(0),
                 point["color"]["g"].asInt().unwrapOr(0),
                 point["color"]["b"].asInt().unwrapOr(0)
-            )
+            ),
+            point["image"].asString().unwrapOr(object["image"].asString().unwrapOr(""))
         });
 
     return config;
@@ -791,12 +790,10 @@ CCGLProgram* GradientUtils::createShader(const std::string& key, bool linear, bo
 void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconType iconType, ColorType colorType, int id, bool blend, bool secondPlayer, bool playerObject, int extra, bool line) {
     if (!sprite) return;
 
-    CCTexture2D* image = nullptr;
-    if (!config.imagePath.empty()) {
-        image = CCTextureCache::sharedTextureCache()->addImage(config.imagePath.c_str(), false);
-        if (!image) config.imagePath.clear();
-    }
-    if (!image) setGradientImage(sprite, nullptr);
+    if (config.points.size() > 24) config.points.resize(24);
+    auto atlas = getGradientImageAtlas(config.points);
+    bool image = atlas && atlas->texture;
+    if (!atlas) setGradientImage(sprite, nullptr);
 
     if (config.isEmpty(colorType, secondPlayer))
         return sprite->setShaderProgram(
@@ -832,10 +829,11 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
     }
 
     sprite->setShaderProgram(program);
-    setGradientImage(sprite, image);
+    setGradientImage(sprite, atlas);
 
     program->use();
     program->setUniformsForBuiltins();
+    program->setUniformLocationWith1i(program->getUniformLocationForName("u_imageMode"), image ? 1 : 0);
 
     if (extra != -4732) {
         GradientAnimationManager::get().track(program);
@@ -883,13 +881,19 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
         glUniform1f(locThreshold, threshold);
     }
 
-    if (image) return;
-
     std::vector<ccColor4F> colors;
+    std::vector<GLfloat> imageSlots;
     int stopAt = config.points.size();
 
-    for (const SimplePoint& point : config.points)
+    for (const SimplePoint& point : config.points) {
         colors.push_back(ccc4FFromccc3B(point.color));
+        float imageSlot = -1.f;
+        if (image) {
+            if (auto slot = atlas->slots.find(point.imagePath); slot != atlas->slots.end())
+                imageSlot = static_cast<float>(slot->second);
+        }
+        imageSlots.push_back(imageSlot);
+    }
 
     if (config.isLinear) {
         CCPoint startPoint = ccp(0, 0);
@@ -919,13 +923,14 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
         distance = ccpDistance(startPoint, endPoint);
 
         for (const SimplePoint& point : config.points)
-            stops.push_back(ccpDistance(point.pos, startPoint) / distance);
+            stops.push_back(distance > 0.f ? ccpDistance(point.pos, startPoint) / distance : 0.f);
 
         for (size_t i = 0; i < stops.size(); ++i)
             for (size_t j = i + 1; j < stops.size(); ++j)
                 if (stops[i] > stops[j]) {
                     std::swap(stops[i], stops[j]);
                     std::swap(colors[i], colors[j]);
+                    std::swap(imageSlots[i], imageSlots[j]);
                 }
 
         GLint startPointLoc = glGetUniformLocation(program->getProgram(), "startPoint");
@@ -966,6 +971,7 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
 
     GLint colorsLoc = glGetUniformLocation(program->getProgram(), "colors");
     glUniform4fv(colorsLoc, stopAt, colorsData.data());
+    glUniform1fv(program->getUniformLocationForName("u_imageSlots"), stopAt, imageSlots.data());
 }
 
 void GradientUtils::patchBatchNode(CCSpriteBatchNode* node) {

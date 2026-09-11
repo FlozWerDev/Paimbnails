@@ -76,6 +76,7 @@ private:
 
     void onTypeToggle(CCObject*);
     void onImage(CCObject*);
+    void onPointColor(CCObject*);
     void onLockToggle(CCObject*);
     void onColorToggle(CCObject*);
     void onHideToggle(CCObject*);

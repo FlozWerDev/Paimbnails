@@ -32,10 +32,11 @@ enum ColorType {
 struct SimplePoint {
     CCPoint pos;
     ccColor3B color;
+    std::string imagePath;
 
     bool operator==(const SimplePoint& other) const {
         return pos.equals(other.pos) && color.r == other.color.r &&
-               color.g == other.color.g && color.b == other.color.b;
+               color.g == other.color.g && color.b == other.color.b && imagePath == other.imagePath;
     }
 };
 
@@ -43,10 +44,9 @@ struct GradientConfig {
 
     std::vector<SimplePoint> points;
     bool isLinear = true;
-    std::string imagePath;
 
     bool operator==(const GradientConfig& other) const {
-        return isLinear == other.isLinear && points == other.points && imagePath == other.imagePath;
+        return isLinear == other.isLinear && points == other.points;
     }
 
     bool isEmpty(ColorType, bool);
@@ -87,7 +87,7 @@ namespace std {
         size_t operator()(const paimon::icon_gradients::SimplePoint& point) const {
             return hash<float>()(point.pos.x) ^ hash<float>()(point.pos.y) ^
                    hash<int>()(point.color.r) ^ hash<int>()(point.color.g) ^
-                   hash<int>()(point.color.b);
+                   hash<int>()(point.color.b) ^ hash<string>()(point.imagePath);
         }
     };
 }

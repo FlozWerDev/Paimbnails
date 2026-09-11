@@ -7,6 +7,7 @@ varying vec2 v_texCoord;
 uniform sampler2D u_texture;
 uniform sampler2D u_image;
 uniform int u_imageMode;
+uniform float u_imageSlots[24];
 uniform vec2 u_imageOrigin;
 uniform vec2 u_imageU;
 uniform vec2 u_imageV;
@@ -138,6 +139,20 @@ vec2 animateGradient(vec2 uv)
     return uv;
 }
 
+// Each point can supply a flat color or a full image. The usual gradient
+// weights blend these samples, allowing image/color and image/image fades.
+vec4 pointColor(int index) {
+    if (u_imageMode == 0 || u_imageSlots[index] < 0.0) return colors[index];
+    vec2 delta = v_texCoord - u_imageOrigin;
+    vec2 uv = vec2(abs(u_imageU.x) > 0.0 ? delta.x / u_imageU.x : delta.y / u_imageU.y,
+                   abs(u_imageV.y) > 0.0 ? delta.y / u_imageV.y : delta.x / u_imageV.x);
+    uv = clamp(animateGradient(uv), 0.0, 1.0);
+    float slot = u_imageSlots[index];
+    vec2 tile = vec2(mod(slot, 4.0), floor(slot / 4.0));
+    // Half-texel inset avoids bleeding between adjacent 256px images.
+    return texture2D(u_image, (tile * 256.0 + 0.5 + uv * 255.0) / vec2(1024.0, 1536.0));
+}
+
 void main() {
     float closeBlack = 1.0;
     for (int x = -1; x < 2; x++) {
@@ -152,18 +167,8 @@ void main() {
     float mask = (1.0 - max(max(texColor.r, texColor.g), texColor.b)) * pow(2.0, closeBlack * u_threshold);
     texColor = vec4(texColor.a * mask);
 
-    if (u_imageMode == 1) {
-        vec2 delta = v_texCoord - u_imageOrigin;
-        vec2 uv = vec2(abs(u_imageU.x) > 0.0 ? delta.x / u_imageU.x : delta.y / u_imageU.y,
-                       abs(u_imageV.y) > 0.0 ? delta.y / u_imageV.y : delta.x / u_imageV.x);
-        uv = clamp(animateGradient(uv), 0.0, 1.0);
-        vec4 fill = texture2D(u_image, uv);
-        gl_FragColor = texColor * fill;
-        return;
-    }
-
     if (stopAt <= 1) {
-        gl_FragColor = texColor * colors[0];
+        gl_FragColor = texColor * pointColor(0);
         return;
     }
 
@@ -171,7 +176,7 @@ void main() {
 
     float len = length(dir);
     if (len < 1e-6) {
-        gl_FragColor = texColor * colors[0];
+        gl_FragColor = texColor * pointColor(0);
         return;
     }
 
@@ -181,7 +186,7 @@ void main() {
     float t = clamp(proj / len, 0.0, 1.0);
 
     if (t <= stops[0]) {
-        gl_FragColor = texColor * colors[0];
+        gl_FragColor = texColor * pointColor(0);
         return;
     }
 
@@ -191,10 +196,10 @@ void main() {
         float b = stops[i + 1];
         if (t <= b) {
             float localT = (t - a) / (b - a);
-            gl_FragColor = texColor * mix(colors[i], colors[i + 1], localT);
+            gl_FragColor = texColor * mix(pointColor(i), pointColor(i + 1), localT);
             return;
         }
     }
 
-    gl_FragColor = texColor * colors[stopAt - 1];
+    gl_FragColor = texColor * pointColor(stopAt - 1);
 }

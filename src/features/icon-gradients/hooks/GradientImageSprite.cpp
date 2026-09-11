@@ -7,7 +7,7 @@ namespace {
 constexpr auto imageStateKey = "gradient-image-state"_spr;
 class ImageState : public CCObject {
 public:
-    Ref<CCTexture2D> image;
+    std::shared_ptr<paimon::icon_gradients::GradientImageAtlas> atlas;
     Ref<CCGLProgram> program;
 };
 }
@@ -15,12 +15,11 @@ public:
 class $modify(GradientImageSprite, CCSprite) {
     void draw() {
         auto fields = static_cast<ImageState*>(getUserObject(imageStateKey));
-        if (fields && fields->image && fields->program == getShaderProgram()) {
+        if (fields && fields->atlas->texture && fields->program == getShaderProgram()) {
             auto program = getShaderProgram();
             program->use();
-            ccGLBindTexture2DN(1, fields->image->getName());
+            ccGLBindTexture2DN(1, fields->atlas->texture->getName());
             program->setUniformLocationWith1i(program->getUniformLocationForName("u_image"), 1);
-            program->setUniformLocationWith1i(program->getUniformLocationForName("u_imageMode"), 1);
             // Use the actual quad so packed rotation and flipped frames map
             // the image consistently, without allocating a sprite frame.
             auto quad = getQuad();
@@ -36,9 +35,9 @@ class $modify(GradientImageSprite, CCSprite) {
     }
 };
 
-void paimon::icon_gradients::setGradientImage(CCSprite* sprite, CCTexture2D* image) {
+void paimon::icon_gradients::setGradientImage(CCSprite* sprite, std::shared_ptr<GradientImageAtlas> atlas) {
     auto fields = static_cast<ImageState*>(sprite->getUserObject(imageStateKey));
-    if (!image) {
+    if (!atlas) {
         if (fields) sprite->setUserObject(imageStateKey, nullptr);
         return;
     }
@@ -47,6 +46,6 @@ void paimon::icon_gradients::setGradientImage(CCSprite* sprite, CCTexture2D* ima
         sprite->setUserObject(imageStateKey, fields);
         fields->release();
     }
-    fields->image = image;
-    fields->program = image ? sprite->getShaderProgram() : nullptr;
+    fields->atlas = std::move(atlas);
+    fields->program = sprite->getShaderProgram();
 }

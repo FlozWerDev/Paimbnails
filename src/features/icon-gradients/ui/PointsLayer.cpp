@@ -85,6 +85,7 @@ void PointsLayer::removeSelected() {
 }
 
 void PointsLayer::moveSelected(const CCPoint& move) {
+    if (!m_selectedPoint) return;
     CCPoint pos = m_selectedPoint->getPosition() + move;
 
     pos.x = std::max(0.f, std::min(pos.x, getContentSize().width));
@@ -246,7 +247,8 @@ std::vector<SimplePoint> PointsLayer::getPoints() {
     for (ColorNode* point : m_points) {
         ret.push_back({
             getRelativePos(point),
-            point->getColor()
+            point->getColor(),
+            point->getImagePath()
         });
     }
 
@@ -388,6 +390,7 @@ void PointsLayer::loadPoints(GradientConfig config, bool animate) {
         ccColor3B color = m_currentConfig.points[i].color;
 
         points[i]->setColor(color, 0.2f);
+        points[i]->setImagePath(m_currentConfig.points[i].imagePath);
         points[i]->runAction(CCEaseSineOut::create(CCMoveTo::create(0.1f, pos)));
 
         movedPoints.insert(points[i]);
@@ -409,6 +412,7 @@ void PointsLayer::loadPoints(GradientConfig config, bool animate) {
 
         m_points.back()->setColor(point.color);
         m_points.back()->setHidden(false, 0.1f);
+        m_points.back()->setImagePath(point.imagePath);
 
         movedPoints.insert(m_points.back());
     }
@@ -456,6 +460,8 @@ void PointsLayer::onAnimationEnded() {
         addPoint(pos);
 
         m_points.back()->setColor(point.color);
+
+        m_points.back()->setImagePath(point.imagePath);
 
         if (std::abs(pos.x - selectPos.x) < 0.001f && std::abs(pos.y - selectPos.y) < 0.001f) {
             m_points.back()->setSelected(true);

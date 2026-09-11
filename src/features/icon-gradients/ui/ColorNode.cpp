@@ -45,6 +45,13 @@ bool ColorNode::init(bool invis) {
     addChild(m_select);
     addChild(m_circle);
 
+    m_imageLabel = CCLabelBMFont::create("I", "bigFont.fnt");
+    m_imageLabel->setScale(0.35f);
+    m_imageLabel->setPosition(getContentSize() / 2.f);
+    m_imageLabel->setVisible(false);
+    m_dot->addChild(m_imageLabel);
+    m_dot->setCascadeOpacityEnabled(true);
+
     return true;
 }
 
@@ -99,6 +106,11 @@ void ColorNode::setColor(const ccColor3B& color, float time) {
     m_color = color;
 
     setHovered(m_isHovered);
+}
+
+void ColorNode::setImagePath(std::string const& path) {
+    m_imagePath = path;
+    m_imageLabel->setVisible(!path.empty());
 }
 
 void ColorNode::setOpacity(int opacity) {

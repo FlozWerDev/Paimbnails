@@ -833,7 +833,7 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
 
     program->use();
     program->setUniformsForBuiltins();
-    program->setUniformLocationWith1i(program->getUniformLocationForName("u_imageMode"), image ? 1 : 0);
+    glUniform1i(glGetUniformLocation(program->getProgram(), "u_imageMode"), image ? 1 : 0);
 
     if (extra != -4732) {
         GradientAnimationManager::get().track(program);

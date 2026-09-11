@@ -1,4 +1,4 @@
-﻿#include "GifImportPipeline.hpp"
+#include "GifImportPipeline.hpp"
 #include "ColorSpace.hpp"
 #include "GifArtVectorizer.hpp"
 #include "GifCircleVectorizer.hpp"
@@ -1313,6 +1313,79 @@ void compactPaintSpeckles(
             }
             return increase <= static_cast<long long>(component.size()) * maxErrorIncrease;
         };
+        // Los huecos se cierran primero para que una linea discontinua o con
+        // antialias vuelva a ser un trazo continuo antes de medir areas: si se
+        // limpian las motas primero, cada trozo de la linea mide pocas celdas y se
+        // disuelve como si fuera basura suelta.
+        constexpr std::array<std::pair<int, int>, 4> gapDirections{
+            std::pair{1, 0}, std::pair{0, 1}, std::pair{1, 1}, std::pair{1, -1}
+        };
+        auto bridged = frame.cells;
+        if (smallPalette) {
+            for (int start = 0; start < width * height; ++start) {
+                int const color = frame.cells[static_cast<std::size_t>(start)];
+                if (color < 0) continue;
+                int const startX = start % width;
+                int const startY = start / width;
+                for (auto const [dx, dy] : gapDirections) {
+                    int const endX = startX + dx * 2;
+                    int const endY = startY + dy * 2;
+                    if (endX < 0 || endY < 0 || endX >= width || endY >= height) continue;
+                    int const end = endY * width + endX;
+                    if (frame.cells[static_cast<std::size_t>(end)] != color) continue;
+                    int const gap = (startY + dy) * width + startX + dx;
+                    int const gapColor = frame.cells[static_cast<std::size_t>(gap)];
+                    if (gapColor >= 0 && colorDistanceSq(
+                            palette[static_cast<std::size_t>(gapColor)],
+                            palette[static_cast<std::size_t>(color)]) >
+                            maxColorDistanceSq) {
+                        continue;
+                    }
+                    bridged[static_cast<std::size_t>(gap)] =
+                        static_cast<std::int32_t>(color);
+                }
+            }
+        }
+        frame.cells = std::move(bridged);
+        bridged = frame.cells;
+        for (int position = 0; position < width * height; ++position) {
+            int const current = frame.cells[static_cast<std::size_t>(position)];
+            int const x = position % width;
+            int const y = position / width;
+            int replacement = current;
+            int bestDistance = maxColorDistanceSq + 1;
+            for (auto const [dx, dy] : gapDirections) {
+                int const x0 = x - dx;
+                int const y0 = y - dy;
+                int const x1 = x + dx;
+                int const y1 = y + dy;
+                if (x0 < 0 || y0 < 0 || x1 < 0 || y1 < 0 ||
+                    x0 >= width || y0 >= height || x1 >= width || y1 >= height) {
+                    continue;
+                }
+                int const first = frame.cells[static_cast<std::size_t>(y0) * width + x0];
+                int const second = frame.cells[static_cast<std::size_t>(y1) * width + x1];
+                if (first < 0 || first != second || first == current) continue;
+                if (current < 0) {
+                    replacement = first;
+                    break;
+                }
+                int const distance = colorDistanceSq(
+                    palette[static_cast<std::size_t>(current)],
+                    palette[static_cast<std::size_t>(first)]);
+                if (distance <= maxColorDistanceSq && distance < bestDistance &&
+                    pixelReplacementFits(position, current, first)) {
+                    replacement = first;
+                    bestDistance = distance;
+                }
+            }
+            if (replacement != current) {
+                bridged[static_cast<std::size_t>(position)] =
+                    static_cast<std::int32_t>(replacement);
+            }
+        }
+        frame.cells = std::move(bridged);
+
         // El antialias no deja una hebra sino una rampa de varias, una encima de
         // otra, asi que hacen falta varias pasadas: cada una se come la de fuera y
         // deja al descubierto la siguiente.
@@ -1416,73 +1489,6 @@ void compactPaintSpeckles(
             frame.cells = std::move(next);
             if (!changed) break;
         }
-
-        constexpr std::array<std::pair<int, int>, 4> gapDirections{
-            std::pair{1, 0}, std::pair{0, 1}, std::pair{1, 1}, std::pair{1, -1}
-        };
-        auto bridged = frame.cells;
-        if (smallPalette) {
-            for (int start = 0; start < width * height; ++start) {
-                int const color = frame.cells[static_cast<std::size_t>(start)];
-                if (color < 0) continue;
-                int const startX = start % width;
-                int const startY = start / width;
-                for (auto const [dx, dy] : gapDirections) {
-                    int const endX = startX + dx * 2;
-                    int const endY = startY + dy * 2;
-                    if (endX < 0 || endY < 0 || endX >= width || endY >= height) continue;
-                    int const end = endY * width + endX;
-                    if (frame.cells[static_cast<std::size_t>(end)] != color) continue;
-                    int const gap = (startY + dy) * width + startX + dx;
-                    int const gapColor = frame.cells[static_cast<std::size_t>(gap)];
-                    if (gapColor >= 0 && colorDistanceSq(
-                            palette[static_cast<std::size_t>(gapColor)],
-                            palette[static_cast<std::size_t>(color)]) >
-                            maxColorDistanceSq) {
-                        continue;
-                    }
-                    bridged[static_cast<std::size_t>(gap)] =
-                        static_cast<std::int32_t>(color);
-                }
-            }
-        }
-        frame.cells = std::move(bridged);
-        bridged = frame.cells;
-        for (int position = 0; position < width * height; ++position) {
-            int const current = frame.cells[static_cast<std::size_t>(position)];
-            int const x = position % width;
-            int const y = position / width;
-            int replacement = current;
-            int bestDistance = maxColorDistanceSq + 1;
-            for (auto const [dx, dy] : gapDirections) {
-                int const x0 = x - dx;
-                int const y0 = y - dy;
-                int const x1 = x + dx;
-                int const y1 = y + dy;
-                if (x0 < 0 || y0 < 0 || x1 < 0 || y1 < 0 ||
-                    x0 >= width || y0 >= height || x1 >= width || y1 >= height) {
-                    continue;
-                }
-                int const first = frame.cells[static_cast<std::size_t>(y0) * width + x0];
-                int const second = frame.cells[static_cast<std::size_t>(y1) * width + x1];
-                if (first < 0 || first != second || first == current) continue;
-                if (current < 0) {
-                    replacement = first;
-                    break;
-                }
-                int const distance = colorDistanceSq(
-                    palette[static_cast<std::size_t>(current)],
-                    palette[static_cast<std::size_t>(first)]);
-                if (distance <= maxColorDistanceSq && distance < bestDistance &&
-                    pixelReplacementFits(position, current, first)) {
-                    replacement = first;
-                    bestDistance = distance;
-                }
-            }
-            bridged[static_cast<std::size_t>(position)] =
-                static_cast<std::int32_t>(replacement);
-        }
-        frame.cells = std::move(bridged);
     }
 }
 
@@ -2027,7 +2033,7 @@ BuildResult buildAt(
         // detalle chico esta puesto a proposito y se lo llevaba por delante. A poca
         // resolucion no llega ni a una celda y no se toca nada.
         dissolveSpecks(
-            frames, palette, width, height, width * height / 4000);
+            frames, palette, width, height, std::min(width * height / 4000, 2));
         if (compactSpeckles) {
             compactPaintSpeckles(frames, reduced, palette, width, height);
         }
@@ -2338,7 +2344,8 @@ BuildResult buildRegularPlan(
         }
         if (planFits(result.plan, options)) {
             if (!matchesGridExactly(options.mode) ||
-                result.plan.geometrySimilarity >= kPaintReviewGate) {
+                result.plan.geometrySimilarity >= kPaintReviewGate ||
+                (attempt == 0 && result.plan.geometrySimilarity >= 90.f)) {
                 finishProgress(progress);
                 return result;
             }

@@ -7,38 +7,26 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <numeric>
 
 namespace paimon::gifimport {
 
 namespace {
 
-// Giros que se prueban al estirar la elipse. Doce reparten media vuelta en
-// quince grados, y a la rejilla a la que se trabaja el siguiente ya no se
-// distingue.
-constexpr int kAngles = 12;
-// Lo que se estrecha la elipse para poder estirarse mas. Con el radio entero sale
-// un circulo; con un tercio, un ovalo largo que sigue el trazo. Probar los cuatro
-// y quedarse con el que mas celdas se lleve es lo que hace que el mismo dibujo
-// tenga discos donde es macizo y husos donde es una linea.
-constexpr std::array<float, 4> kWaists{1.f, 0.72f, 0.48f, 0.3f};
+// Giros que se prueban al estirar la elipse. Dieciseis reparten media vuelta con
+// mayor precision angular, alineandose mucho mejor con trazos en diagonal.
+constexpr int kAngles = 16;
+// Cinturas probadas: desde circulo entero hasta huso fino de 0.22 para lineas delgadas.
+constexpr std::array<float, 6> kWaists{1.f, 0.82f, 0.65f, 0.48f, 0.35f, 0.22f};
 // Con que paso se camina el eje al medir hasta donde llega la elipse.
 constexpr float kWalk = 0.5f;
-// Hasta donde se camina. Mas alla de esto la elipse ya no es un adorno sino una
-// losa que cruza el dibujo.
+// Hasta donde se camina.
 constexpr float kReach = 64.f;
-// Radio menor de la elipse mas pequena. Media celda pinta el centro de su celda,
-// que es lo que hace falta para que ahi no se vea el color de debajo.
+// Radio menor de la elipse mas pequena.
 constexpr float kMinRadius = 0.5f;
-// Aire que se le da a la elipse ya elegida, de mas a menos. Metida a presion se
-// queda justo dentro de la mancha, y a la escala a la que se dibuja eso deja el
-// borde en lunares sueltos; con media celda las vecinas se tocan y la fila de
-// lunares vuelve a ser un trazo. Se comprueba una a una, asi que nunca acaba
-// pintando sobre un color que se vea.
-constexpr std::array<float, 3> kBleeds{0.5f, 0.3f, 0.15f};
-// Cuanto puede asomar una elipse sobre un color que se ve. Una fila de elipses
-// finas sobre una diagonal se pasa siempre por las esquinas de las celdas de al
-// lado —redondo no hay forma de encajarlo en una rejilla—, y prohibirlo del todo
-// deja el contorno del dibujo en lunares de una celda.
+// Aire que se le da a la elipse ya elegida, de mas a menos.
+constexpr std::array<float, 4> kBleeds{0.5f, 0.35f, 0.2f, 0.1f};
+// Cuanto puede asomar una elipse sobre un color que se ve.
 constexpr float kSpill = 0.14f;
 
 struct Field {
@@ -159,6 +147,74 @@ Primitive stretch(
         major, minor, angle, color, layer);
 }
 
+void pruneCircles(
+    std::vector<Primitive>& objects,
+    std::vector<std::uint8_t> const& target,
+    int width,
+    int height
+) {
+    if (objects.size() <= 1) return;
+    std::size_t const cells = static_cast<std::size_t>(width) * height;
+    std::vector<int> count(cells, 0);
+
+    for (auto const& object : objects) {
+        auto const placed = xformOf(object);
+        auto const box = xformBox(placed, width, height);
+        for (int y = box[1]; y <= box[3]; ++y) {
+            for (int x = box[0]; x <= box[2]; ++x) {
+                std::size_t const index = static_cast<std::size_t>(y) * width + x;
+                if (target[index] && placed.contains(x + 0.5f, y + 0.5f)) {
+                    ++count[index];
+                }
+            }
+        }
+    }
+
+    std::vector<std::size_t> order(objects.size());
+    for (std::size_t i = 0; i < objects.size(); ++i) order[i] = i;
+    std::sort(order.begin(), order.end(), [&](std::size_t left, std::size_t right) {
+        return (objects[left].width * objects[left].height) <
+               (objects[right].width * objects[right].height);
+    });
+
+    std::vector<std::uint8_t> removed(objects.size(), 0);
+    for (std::size_t idx : order) {
+        auto const placed = xformOf(objects[idx]);
+        auto const box = xformBox(placed, width, height);
+        bool canDrop = true;
+        for (int y = box[1]; y <= box[3]; ++y) {
+            for (int x = box[0]; x <= box[2]; ++x) {
+                std::size_t const index = static_cast<std::size_t>(y) * width + x;
+                if (target[index] && placed.contains(x + 0.5f, y + 0.5f)) {
+                    if (count[index] <= 1) {
+                        canDrop = false;
+                        break;
+                    }
+                }
+            }
+            if (!canDrop) break;
+        }
+        if (canDrop) {
+            removed[idx] = 1;
+            for (int y = box[1]; y <= box[3]; ++y) {
+                for (int x = box[0]; x <= box[2]; ++x) {
+                    std::size_t const index = static_cast<std::size_t>(y) * width + x;
+                    if (target[index] && placed.contains(x + 0.5f, y + 0.5f)) {
+                        --count[index];
+                    }
+                }
+            }
+        }
+    }
+
+    std::vector<Primitive> kept;
+    kept.reserve(objects.size());
+    for (std::size_t i = 0; i < objects.size(); ++i) {
+        if (!removed[i]) kept.push_back(objects[i]);
+    }
+    objects = std::move(kept);
+}
+
 } // namespace
 
 std::vector<Primitive> vectorizeCircles(
@@ -207,6 +263,34 @@ std::vector<Primitive> vectorizeCircles(
 
     std::vector<std::uint8_t> remaining = target;
     for (auto const& component : connectedComponents(positions, width, height)) {
+        if (component.size() >= 4) {
+            auto const box = bounds(component, width);
+            float const boxW = static_cast<float>(box[2] - box[0] + 1);
+            float const boxH = static_cast<float>(box[3] - box[1] + 1);
+            float const aspect = std::max(boxW, boxH) / std::min(boxW, boxH);
+            if (boxW >= 3.f && boxH >= 3.f && aspect <= 1.6f) {
+                Point const center{
+                    (box[0] + box[2] + 1) * 0.5f,
+                    (box[1] + box[3] + 1) * 0.5f
+                };
+                Primitive const wholeCircle = ellipse(
+                    center, boxW * 0.5f, boxH * 0.5f, 0.f, color, layer);
+                Gain const gain = measure(wholeCircle, remaining, target, width, height);
+                if (gain.fresh >= static_cast<int>(component.size() * 0.90f) &&
+                    shapeSpill(wholeCircle, permitted, width, height) <= kSpill) {
+                    consume(wholeCircle, remaining, width, height);
+                    output.push_back(wholeCircle);
+                    bool allDone = true;
+                    for (int pos : component) {
+                        if (remaining[static_cast<std::size_t>(pos)]) {
+                            allDone = false;
+                            break;
+                        }
+                    }
+                    if (allDone) continue;
+                }
+            }
+        }
         std::vector<int> pending = component;
         while (!pending.empty()) {
             // Se empieza siempre por donde la mancha es mas gorda: ahi cabe la
@@ -272,6 +356,7 @@ std::vector<Primitive> vectorizeCircles(
             output.push_back(best);
         }
     }
+    pruneCircles(output, target, width, height);
     return output;
 }
 

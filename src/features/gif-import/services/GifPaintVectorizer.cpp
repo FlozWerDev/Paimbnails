@@ -1,4 +1,4 @@
-﻿#include "GifPaintVectorizer.hpp"
+#include "GifPaintVectorizer.hpp"
 
 #include "GifArtVectorizer.hpp"
 #include "GifShapeRaster.hpp"
@@ -661,7 +661,39 @@ bool appendChain(
                 static_cast<float>(position / skeleton.width + skeleton.offsetY) + 0.5f
             });
         }
-        auto reduced = simplify(smoothPath(points, 1), tolerance);
+        auto raycast = [&](Point start, Point dir) -> float {
+            float dist = 0.f;
+            while (dist < radius * 2.5f) {
+                dist += 0.25f;
+                float const px = start.x + dir.x * dist - static_cast<float>(region.offsetX);
+                float const py = start.y + dir.y * dist - static_cast<float>(region.offsetY);
+                int const ix = static_cast<int>(std::floor(px));
+                int const iy = static_cast<int>(std::floor(py));
+                if (ix < 0 || iy < 0 || ix >= region.width || iy >= region.height ||
+                    !region.cells[static_cast<std::size_t>(iy) * region.width + ix]) {
+                    return dist - 0.125f;
+                }
+            }
+            return dist;
+        };
+
+        std::vector<Point> centered = points;
+        for (std::size_t i = 0; i < points.size(); ++i) {
+            Point const prev = (i > 0) ? points[i - 1] : points[i];
+            Point const next = (i + 1 < points.size()) ? points[i + 1] : points[i];
+            float const tx = next.x - prev.x;
+            float const ty = next.y - prev.y;
+            float const len = std::hypot(tx, ty);
+            if (len < 0.001f) continue;
+            Point const normal{-ty / len, tx / len};
+            float const dPlus = raycast(points[i], normal);
+            float const dMinus = raycast(points[i], {-normal.x, -normal.y});
+            float const shift = (dPlus - dMinus) * 0.5f;
+            centered[i].x = points[i].x + normal.x * shift;
+            centered[i].y = points[i].y + normal.y * shift;
+        }
+
+        auto reduced = simplify(centered, tolerance);
         if (reduced.size() < 2) continue;
         float length = 0.f;
         for (std::size_t i = 1; i < reduced.size(); ++i) {
@@ -881,9 +913,28 @@ bool appendCircle(
     float const aspect = std::max(boxWidth, boxHeight) / std::min(boxWidth, boxHeight);
     if (aspect > 1.8f) return false;
 
+    float sumX = 0.f;
+    float sumY = 0.f;
+    int filledCount = 0;
+    for (int y = 0; y < region.height; ++y) {
+        for (int x = 0; x < region.width; ++x) {
+            if (region.filled(x, y)) {
+                sumX += static_cast<float>(x + region.offsetX) + 0.5f;
+                sumY += static_cast<float>(y + region.offsetY) + 0.5f;
+                ++filledCount;
+            }
+        }
+    }
+    float const cX = filledCount > 0
+        ? sumX / static_cast<float>(filledCount)
+        : static_cast<float>(region.offsetX) + kPadding + boxWidth * 0.5f;
+    float const cY = filledCount > 0
+        ? sumY / static_cast<float>(filledCount)
+        : static_cast<float>(region.offsetY) + kPadding + boxHeight * 0.5f;
+
     Primitive const circle{
-        static_cast<float>(region.offsetX) + kPadding + boxWidth * 0.5f,
-        static_cast<float>(region.offsetY) + kPadding + boxHeight * 0.5f,
+        cX,
+        cY,
         boxWidth,
         boxHeight,
         0.f,
@@ -915,7 +966,7 @@ bool appendCircle(
             if (!region.filled(x, y)) ++spilled;
         }
     }
-    float const limit = static_cast<float>(area) * 0.05f;
+    float const limit = static_cast<float>(area) * 0.10f;
     if (static_cast<float>(spilled) > limit || static_cast<float>(missing) > limit) return false;
     output.push_back(circle);
     return true;
@@ -2359,6 +2410,8 @@ void prunePaintObjectsByVisibility(
         // los mismos frames no son un cuadrado.
         mergePaintBlocks(tracks[track].objects);
         mergePaintRects(tracks[track].objects);
+        absorbPaintRects(tracks[track].objects, width, height);
+        dropRedundantObjects(tracks[track].objects, width, height);
     }
 
     // Los fijos si pueden crecer, pero las pistas se dibujan encima en los frames

@@ -6,6 +6,11 @@ varying vec2 v_texCoord;
 varying vec4 v_fragmentColor;
 
 uniform sampler2D u_texture;
+uniform sampler2D u_image;
+uniform int u_imageMode;
+uniform vec2 u_imageOrigin;
+uniform vec2 u_imageU;
+uniform vec2 u_imageV;
 
 uniform int stopAt;
 uniform vec2 positions[24];
@@ -131,6 +136,16 @@ vec2 animateGradient(vec2 uv)
 void main()
 {
     vec4 texColor = texture2D(u_texture, v_texCoord);
+
+    if (u_imageMode == 1) {
+        vec2 delta = v_texCoord - u_imageOrigin;
+        vec2 uv = vec2(abs(u_imageU.x) > 0.0 ? delta.x / u_imageU.x : delta.y / u_imageU.y,
+                       abs(u_imageV.y) > 0.0 ? delta.y / u_imageV.y : delta.x / u_imageV.x);
+        uv = clamp(animateGradient(uv), 0.0, 1.0);
+        vec4 fill = texture2D(u_image, uv);
+        gl_FragColor = texColor * fill * v_fragmentColor;
+        return;
+    }
 
     vec4 finalColor = vec4(0.0);
     float totalWeight = 0.0;

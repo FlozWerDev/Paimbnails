@@ -75,6 +75,7 @@ private:
     bool init() override;
 
     void onTypeToggle(CCObject*);
+    void onImage(CCObject*);
     void onLockToggle(CCObject*);
     void onColorToggle(CCObject*);
     void onHideToggle(CCObject*);

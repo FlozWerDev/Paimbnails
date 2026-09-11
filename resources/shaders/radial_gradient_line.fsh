@@ -5,6 +5,11 @@ precision mediump float;
 varying vec2 v_texCoord;
 
 uniform sampler2D u_texture;
+uniform sampler2D u_image;
+uniform int u_imageMode;
+uniform vec2 u_imageOrigin;
+uniform vec2 u_imageU;
+uniform vec2 u_imageV;
 
 uniform int stopAt;
 uniform vec2 positions[24];
@@ -143,6 +148,16 @@ void main() {
     vec4 texColor = texture2D(u_texture, v_texCoord);
     float mask = (1.0 - max(max(texColor.r, texColor.g), texColor.b)) * pow(2.0, closeBlack * u_threshold);
     texColor = vec4(texColor.a * mask);
+
+    if (u_imageMode == 1) {
+        vec2 delta = v_texCoord - u_imageOrigin;
+        vec2 uv = vec2(abs(u_imageU.x) > 0.0 ? delta.x / u_imageU.x : delta.y / u_imageU.y,
+                       abs(u_imageV.y) > 0.0 ? delta.y / u_imageV.y : delta.x / u_imageV.x);
+        uv = clamp(animateGradient(uv), 0.0, 1.0);
+        vec4 fill = texture2D(u_image, uv);
+        gl_FragColor = texColor * fill;
+        return;
+    }
 
     vec4 finalColor = vec4(0.0);
     float totalWeight = 0.0;

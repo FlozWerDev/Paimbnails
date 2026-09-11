@@ -6,6 +6,8 @@
 
 #include "../GradientCache.hpp"
 #include "../GradientUtils.hpp"
+#include "../../../utils/FileDialog.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 #include "../../smooth-scroll/services/SmoothScrollController.hpp"
 
 #include <Geode/loader/Dispatch.hpp>
@@ -274,8 +276,9 @@ void GradientLayer::updateCountLabel() {
 void GradientLayer::updateUI() {
     m_currentConfig = GradientUtils::getSavedConfig(m_selectedButton->getType(), m_currentColor, m_isSecondPlayer);
 
-    bool hasPoints = m_currentConfig.points.size() > 0;
-    bool canAddPoints = m_currentConfig.points.size() < 24;
+    bool imageMode = !m_currentConfig.imagePath.empty();
+    bool hasPoints = !imageMode && !m_currentConfig.points.empty();
+    bool canAddPoints = !imageMode && m_currentConfig.points.size() < 24;
 
     m_addButton->setEnabled(canAddPoints);
     m_addButton->setOpacity(canAddPoints ? 255 : 140);
@@ -283,17 +286,19 @@ void GradientLayer::updateUI() {
     m_removeButton->setEnabled(hasPoints);
     m_removeButton->setOpacity(hasPoints ? 255 : 140);
 
-    m_copyButton->setEnabled(hasPoints);
-    m_copyButton->setOpacity(hasPoints ? 255 : 140);
+    m_copyButton->setEnabled(hasPoints || imageMode);
+    m_copyButton->setOpacity(hasPoints || imageMode ? 255 : 140);
 
-    m_saveButton->setEnabled(hasPoints);
-    m_saveButton->setOpacity(hasPoints ? 255 : 140);
+    m_saveButton->setEnabled(hasPoints || imageMode);
+    m_saveButton->setOpacity(hasPoints || imageMode ? 255 : 140);
 
     m_hideToggle->setEnabled(hasPoints);
     m_hideToggle->setOpacity(hasPoints ? 255 : 110);
 
-    m_pasteButton->setEnabled(!GradientCache::getCopiedConfig().points.empty());
-    m_pasteButton->setOpacity(!GradientCache::getCopiedConfig().points.empty() ? 255 : 140);
+    auto copied = GradientCache::getCopiedConfig();
+    bool canPaste = !copied.points.empty() || !copied.imagePath.empty();
+    m_pasteButton->setEnabled(canPaste);
+    m_pasteButton->setOpacity(canPaste ? 255 : 140);
 
     m_colorSelector->setEnabled(hasPoints);
     m_picker->setEnabled(hasPoints);
@@ -301,13 +306,15 @@ void GradientLayer::updateUI() {
     m_gInput->setEnabled(hasPoints);
     m_bInput->setEnabled(hasPoints);
 
-    m_pointsLayer->setPointsHidden(m_pointsHidden, 0.f);
+    m_pointsLayer->setPointsHidden(m_pointsHidden || imageMode, 0.f);
 
     updateCountLabel();
+    if (imageMode) m_countLabel->setString("IMAGE");
     updateWhiteToggle();
 }
 
 void GradientLayer::onAddPoint(CCObject*) {
+    if (!m_currentConfig.imagePath.empty()) return;
     GameManager* gm = GameManager::get();
 
     m_pointsLayer->addPoint();
@@ -332,6 +339,7 @@ void GradientLayer::onAddPoint(CCObject*) {
 }
 
 void GradientLayer::onRemovePoint(CCObject*) {
+    if (!m_currentConfig.imagePath.empty()) return;
     m_pointsLayer->removeSelected();
     m_pointsLayer->selectLast();
 
@@ -355,7 +363,8 @@ void GradientLayer::onAnimations(CCObject*) {
 void GradientLayer::onCopy(CCObject*) {
     GradientCache::setCopiedConfig({
         m_pointsLayer->getPoints(),
-        m_currentConfig.isLinear
+        m_currentConfig.isLinear,
+        m_currentConfig.imagePath
     });
 
     updateUI();
@@ -366,7 +375,7 @@ void GradientLayer::onPaste(CCObject*) {
 }
 
 void GradientLayer::load(GradientConfig config) {
-    if (config.points.empty()) return;
+    if (config.points.empty() && config.imagePath.empty()) return;
 
     save(config, m_currentColor);
     load(m_selectedButton->getType(), m_currentColor, true, true, true);
@@ -405,8 +414,8 @@ void GradientLayer::load(IconType type, ColorType colorType, bool force, bool al
     updateUI();
     updateGradient(force, all, transition);
 
-    m_linearToggle->toggle(m_currentConfig.isLinear);
-    m_radialToggle->toggle(!m_currentConfig.isLinear);
+    m_linearToggle->toggle(m_currentConfig.imagePath.empty() && m_currentConfig.isLinear);
+    m_radialToggle->toggle(m_currentConfig.imagePath.empty() && !m_currentConfig.isLinear);
     m_dotToggle->toggle(m_selectedButton->isLocked());
 }
 
@@ -455,7 +464,7 @@ void GradientLayer::onTypeToggle(CCObject* sender) {
 
     bool isLinear = toggler == m_linearToggle;
 
-    if (isLinear == m_currentConfig.isLinear) {
+    if (m_currentConfig.imagePath.empty() && isLinear == m_currentConfig.isLinear) {
         return toggler->toggle(!toggler->isToggled());
     }
 
@@ -463,6 +472,7 @@ void GradientLayer::onTypeToggle(CCObject* sender) {
     m_radialToggle->toggle(false);
 
     m_currentConfig.isLinear = isLinear;
+    m_currentConfig.imagePath.clear();
 
     Loader::get()->queueInMainThread([self = Ref(this)] {
         self->m_linearToggle->toggle(self->m_currentConfig.isLinear);
@@ -471,6 +481,38 @@ void GradientLayer::onTypeToggle(CCObject* sender) {
 
     save();
     updateGradient(true, false, true);
+    updateUI();
+}
+
+void GradientLayer::onImage(CCObject*) {
+    WeakRef<GradientLayer> self = this;
+    auto type = m_selectedButton->getType();
+    auto color = m_currentColor;
+    auto secondPlayer = m_isSecondPlayer;
+    pt::pickImage([self, type, color, secondPlayer](Result<std::optional<std::filesystem::path>> result) {
+        if (result.isErr()) {
+            Notification::create("Could not open image", NotificationIcon::Error)->show();
+            return;
+        }
+        auto path = std::move(result).unwrapOr(std::nullopt);
+        auto popup = self.lock();
+        if (!popup || !path) return;
+        if (popup->m_selectedButton->getType() != type || popup->m_currentColor != color ||
+            popup->m_isSecondPlayer != secondPlayer) return;
+        auto imported = paimon::assets::importToBucket(*path, "icon-gradients", paimon::assets::Kind::Image);
+        if (!imported.success || imported.path.empty()) {
+            Notification::create("Could not import image", NotificationIcon::Error)->show();
+            return;
+        }
+        auto imagePath = paimon::assets::normalizePathString(imported.path);
+        if (!CCTextureCache::sharedTextureCache()->addImage(imagePath.c_str(), false)) {
+            Notification::create("Unsupported image. Try PNG or JPG", NotificationIcon::Error)->show();
+            return;
+        }
+        popup->m_currentConfig.imagePath = imagePath;
+        popup->save();
+        popup->load(type, color, true, true, false);
+    });
 }
 
 void GradientLayer::onLockToggle(CCObject* sender) {
@@ -536,6 +578,7 @@ void GradientLayer::onPlayerToggle(PlayerToggle* toggle) {
 }
 
 void GradientLayer::onHideToggle(CCObject* sender) {
+    if (!m_currentConfig.imagePath.empty()) return;
     m_pointsHidden = !m_hideToggle->isToggled();
     m_pointsLayer->setPointsHidden(m_pointsHidden, 0.15f);
 }
@@ -756,6 +799,13 @@ bool GradientLayer::init() {
     settingsButton->setPosition({418.f, 281.f});
     settingsButton->setID("animation-button");
     m_buttonMenu->addChild(settingsButton);
+
+    auto imageSprite = ButtonSprite::create("Image", 60, true, "bigFont.fnt", "GJ_button_04.png", 24.f, 0.45f);
+    imageSprite->setScale(0.7f);
+    auto imageButton = CCMenuItemSpriteExtra::create(imageSprite, this, menu_selector(GradientLayer::onImage));
+    imageButton->setPosition({52.f, 281.f});
+    imageButton->setID("image-fill-button");
+    m_buttonMenu->addChild(imageButton);
 
     for (size_t i = 0; i < 9; ++i) {
         IconType type = static_cast<IconType>(i);

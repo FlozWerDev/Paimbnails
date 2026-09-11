@@ -2,6 +2,7 @@
 
 #include "hooks/GradientSimplePlayer.hpp"
 #include "services/GradientAnimationManager.hpp"
+#include "services/GradientImage.hpp"
 
 #include "../../utils/GLSLLoader.hpp"
 
@@ -85,6 +86,7 @@ int64_t currentIconID(IconType type) {
 } // namespace
 
 bool GradientConfig::isEmpty(ColorType colorType, bool secondPlayer) {
+    if (!imagePath.empty()) return false;
     if (points.empty()) return true;
 
     ccColor3B color = GradientUtils::getPlayerColor(colorType, secondPlayer);
@@ -283,6 +285,7 @@ matjson::Value GradientUtils::getSaveObject(GradientConfig config) {
 
     ret["points"] = pointsObject;
     ret["linear"] = config.isLinear;
+    ret["image"] = config.imagePath;
 
     return ret;
 }
@@ -315,6 +318,7 @@ GradientConfig GradientUtils::configFromObject(const matjson::Value& object) {
     GradientConfig config;
 
     config.isLinear = object["linear"].asBool().unwrapOr(true);
+    config.imagePath = object["image"].asString().unwrapOr("");
 
     for (const matjson::Value& point : object["points"])
         config.points.push_back({
@@ -787,6 +791,13 @@ CCGLProgram* GradientUtils::createShader(const std::string& key, bool linear, bo
 void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconType iconType, ColorType colorType, int id, bool blend, bool secondPlayer, bool playerObject, int extra, bool line) {
     if (!sprite) return;
 
+    CCTexture2D* image = nullptr;
+    if (!config.imagePath.empty()) {
+        image = CCTextureCache::sharedTextureCache()->addImage(config.imagePath.c_str(), false);
+        if (!image) config.imagePath.clear();
+    }
+    if (!image) setGradientImage(sprite, nullptr);
+
     if (config.isEmpty(colorType, secondPlayer))
         return sprite->setShaderProgram(
             CCShaderCache::sharedShaderCache()->programForKey(kCCShader_PositionTextureColor)
@@ -807,6 +818,7 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
             extra
         );
 
+        if (image) key += "-image";
         program = createShader(key, config.isLinear, blend, line);
     } else {
         program = createShader("", config.isLinear, blend, line);
@@ -820,6 +832,7 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
     }
 
     sprite->setShaderProgram(program);
+    setGradientImage(sprite, image);
 
     program->use();
     program->setUniformsForBuiltins();
@@ -869,6 +882,8 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
         GLint locThreshold = glGetUniformLocation(program->getProgram(), "u_threshold");
         glUniform1f(locThreshold, threshold);
     }
+
+    if (image) return;
 
     std::vector<ccColor4F> colors;
     int stopAt = config.points.size();

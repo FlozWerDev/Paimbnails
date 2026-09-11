@@ -43,9 +43,10 @@ struct GradientConfig {
 
     std::vector<SimplePoint> points;
     bool isLinear = true;
+    std::string imagePath;
 
     bool operator==(const GradientConfig& other) const {
-        return isLinear == other.isLinear && points == other.points;
+        return isLinear == other.isLinear && points == other.points && imagePath == other.imagePath;
     }
 
     bool isEmpty(ColorType, bool);

@@ -1,5 +1,6 @@
 #include "../services/DeathEffectManager.hpp"
 #include "../ui/DeathEffectPopup.hpp"
+#include "../visuals/DeathAnimation.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../gameplay-performance/GameplayPerformance.hpp"
 #include "../../../framework/HookConventions.hpp"
@@ -9,6 +10,7 @@
 #include <Geode/modify/FMODAudioEngine.hpp>
 #include <Geode/modify/PauseLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
+#include <Geode/modify/PlayerObject.hpp>
 #include <Geode/utils/string.hpp>
 
 #include <algorithm>
@@ -68,6 +70,16 @@ class $modify(PaimonDeathEffectsPauseLayer, PauseLayer) {
         auto* menu = typeinfo_cast<CCMenu*>(this->getChildByID("left-button-menu"));
         if (!menu || menu->getChildByID("death-effects-button"_spr)) return;
 
+        if (!menu->getChildByID("death-animation-button"_spr)) {
+            auto visual = ButtonSprite::create("VFX", "bigFont.fnt", "GJ_button_01.png", 0.7f);
+            visual->setScale(0.5f);
+            auto item = CCMenuItemSpriteExtra::create(visual, this,
+                menu_selector(PaimonDeathEffectsPauseLayer::onDeathAnimation));
+            item->setID("death-animation-button"_spr);
+            menu->addChild(item);
+            menu->updateLayout();
+        }
+
         auto* sprite = createDeathEffectsIcon();
         if (!sprite) return;
 
@@ -81,6 +93,10 @@ class $modify(PaimonDeathEffectsPauseLayer, PauseLayer) {
         button->setID("death-effects-button"_spr);
         menu->addChild(button);
         menu->updateLayout();
+    }
+
+    void onDeathAnimation(CCObject*) {
+        if (auto popup = paimon::death_effects::DeathAnimationPopup::create()) popup->show();
     }
 
     void onDeathEffects(CCObject*) {
@@ -112,12 +128,37 @@ class $modify(PaimonDeathEffectsPlayLayer, PlayLayer) {
                 paimon::gameplayperf::kModVisualsModuleId)) {
             paimon::death_effects::DeathEffectManager::get().handleLevelReset();
         }
+        paimon::death_effects::clearAnimations(m_objectLayer);
         PlayLayer::resetLevel();
+        if (paimon::modules::isEnabled("paimbnails.deatheffects.gameplay") &&
+            !paimon::gameplayperf::isOptionActive(paimon::gameplayperf::kModVisualsModuleId)) {
+            paimon::death_effects::prewarmAnimation();
+        }
     }
 
     $override
     void onExit() {
+        paimon::death_effects::clearAnimations(m_objectLayer);
         paimon::death_effects::DeathEffectManager::get().handleLevelExit();
         PlayLayer::onExit();
+    }
+};
+
+// Hook the visual emission itself: cancelled collisions (noclip) never emit it.
+class $modify(PaimonDeathAnimationPlayer, PlayerObject) {
+    void playDeathEffect() {
+        auto play = PlayLayer::get();
+        if (play && (this == play->m_player1 || this == play->m_player2) &&
+            play->m_objectLayer && getParent() &&
+            paimon::modules::isEnabled("paimbnails.deatheffects.gameplay") &&
+            !paimon::gameplayperf::isOptionActive(paimon::gameplayperf::kModVisualsModuleId)) {
+            int style = paimon::death_effects::resolveAnimation(
+                paimon::death_effects::selectedAnimation());
+            auto position = play->m_objectLayer->convertToNodeSpace(
+                getParent()->convertToWorldSpace(getPosition()));
+            if (paimon::death_effects::spawnAnimation(
+                    play->m_objectLayer, position, style, getColor())) return;
+        }
+        PlayerObject::playDeathEffect();
     }
 };

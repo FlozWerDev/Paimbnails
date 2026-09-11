@@ -1,6 +1,9 @@
 #include "GalleryInstaller.hpp"
 
 #include "GalleryStore.hpp"
+#include "../../texture-studio/data/PlistBuilder.hpp"
+#include "../../texture-studio/data/RectPacker.hpp"
+#include "../../texture-studio/data/SpritesheetReader.hpp"
 #include "../../../framework/compat/ModCompat.hpp"
 
 #define MORE_ICONS_EVENTS
@@ -10,6 +13,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <cmath>
 
 using namespace geode::prelude;
 
@@ -62,6 +66,71 @@ struct SheetPaths {
 SheetPaths pathsFor(std::string const& slug, std::string const& stem) {
     auto dir = GalleryStore::installDirFor(slug);
     return {dir / (stem + ".png"), dir / (stem + ".plist")};
+}
+
+// More Icons reads frame coordinates at the director's content scale; its
+// quality flag does not resize an atlas supplied through addIcon. Keep the
+// downloaded original and repack individual frames for the current quality.
+Result<SheetPaths> prepareSheet(SheetPaths const& source) {
+    namespace ts = paimon::texture_studio;
+    auto quality = qualityFromName(source.plist.filename().string());
+    float sourceScale = quality == kTextureQualityHigh ? 4.f
+        : quality == kTextureQualityMedium ? 2.f : 1.f;
+    float targetScale = CCDirector::sharedDirector()->getContentScaleFactor();
+    if (targetScale == sourceScale) return Ok(source);
+    float ratio = targetScale / sourceScale;
+
+    auto loaded = ts::SpritesheetReader::loadFromPaths(source.plist, source.png);
+    if (!loaded) return Err("{}", loaded.unwrapErr());
+    auto sheet = std::move(loaded.unwrap());
+    if (sheet.frames.empty()) return Err("La hoja no contiene frames");
+
+    std::vector<ts::RectPackInput> inputs;
+    for (std::size_t i = 0; i < sheet.frames.size(); ++i) {
+        auto& frame = sheet.frames[i];
+        int w = std::max(1, static_cast<int>(std::lround(frame.pixels.width() * ratio)));
+        int h = std::max(1, static_cast<int>(std::lround(frame.pixels.height() * ratio)));
+        frame.pixels = frame.pixels.resizedBilinear(w, h);
+        frame.info.spriteW = frame.info.rectW = w;
+        frame.info.spriteH = frame.info.rectH = h;
+        frame.info.sourceW = std::max(w, static_cast<int>(std::lround(frame.info.sourceW * ratio)));
+        frame.info.sourceH = std::max(h, static_cast<int>(std::lround(frame.info.sourceH * ratio)));
+        frame.info.offsetX *= ratio;
+        frame.info.offsetY *= ratio;
+        frame.info.rotated = false;
+        inputs.push_back({std::to_string(i), w, h});
+    }
+    auto packed = ts::RectPacker::pack(std::move(inputs));
+    if (packed.sheetWidth <= 0 || packed.sheetHeight <= 0)
+        return Err("No se pudo adaptar la hoja del icono");
+
+    auto suffix = targetScale >= 4.f ? "-uhd" : targetScale >= 2.f ? "-hd" : "";
+    auto dir = source.png.parent_path() / "runtime";
+    SheetPaths output{dir / (std::string("icon") + suffix + ".png"),
+                      dir / (std::string("icon") + suffix + ".plist")};
+    ts::ImageBuffer atlas(packed.sheetWidth, packed.sheetHeight);
+    ts::ParsedSpritesheet result;
+    result.metadata = sheet.metadata;
+    result.metadata.format = 3;
+    result.metadata.sizeW = packed.sheetWidth;
+    result.metadata.sizeH = packed.sheetHeight;
+    result.metadata.textureFileName = output.png.filename().string();
+    result.metadata.realTextureFileName = result.metadata.textureFileName;
+    result.metadata.smartUpdate.clear();
+    for (auto const& placement : packed.placements) {
+        auto& frame = sheet.frames[std::stoul(placement.id)];
+        atlas.blitOverwrite(placement.x, placement.y, frame.pixels);
+        frame.info.rectX = placement.x;
+        frame.info.rectY = placement.y;
+        result.frames.push_back(std::move(frame.info));
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) return Err("No se pudo crear la carpeta del icono: {}", ec.message());
+    if (auto saved = atlas.saveToPng(output.png); !saved) return Err("{}", saved.unwrapErr());
+    if (auto saved = ts::PlistBuilder::buildFile(result, output.plist); !saved)
+        return Err("{}", saved.unwrapErr());
+    return Ok(output);
 }
 
 // Busca en installed/<slug>/ el par png+plist que se escribio al instalar.
@@ -170,11 +239,16 @@ Result<> GalleryInstaller::install(GalleryPackage const& pkg) {
 
     auto const& slug = pkg.meta.slug;
     auto stem = sheetStem(pkg);
-    auto paths = pathsFor(slug, stem);
+    auto prepared = prepareSheet(pathsFor(slug, stem));
+    if (!prepared) return Err("{}", prepared.unwrapErr());
+    auto paths = std::move(prepared.unwrap());
     auto regName = registeredName(slug);
 
     more_icons::preRefreshIcons();
     if (auto* existing = more_icons::getIcon(regName, pkg.meta.type)) {
+        existing->setTexture(paths.png);
+        existing->setSheet(paths.plist);
+        existing->setQuality(qualityFromName(paths.plist.filename().string()));
         more_icons::updateIcon(existing);
         more_icons::refreshIcons();
         GalleryStore::get().markInstalled(slug, true);
@@ -184,7 +258,7 @@ Result<> GalleryInstaller::install(GalleryPackage const& pkg) {
     auto* info = more_icons::addIcon(
         regName, pkg.meta.displayName(), pkg.meta.type,
         paths.png, paths.plist,
-        qualityFromName(pkg.plistName),
+        qualityFromName(paths.plist.filename().string()),
         "flozwer.paimbnails2", "Icon Gallery");
     more_icons::refreshIcons();
 
@@ -258,6 +332,12 @@ void GalleryInstaller::registerAllInstalled() {
         SheetPaths paths;
         std::string stem;
         if (!findInstalledSheet(slug, paths, stem)) continue;
+        auto prepared = prepareSheet(paths);
+        if (!prepared) {
+            log::warn("[icon-gallery] no se pudo adaptar '{}': {}", slug, prepared.unwrapErr());
+            continue;
+        }
+        paths = std::move(prepared.unwrap());
 
         if (!touched) {
             more_icons::preRefreshIcons();

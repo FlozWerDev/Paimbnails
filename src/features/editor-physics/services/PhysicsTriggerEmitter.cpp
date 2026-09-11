@@ -476,10 +476,20 @@ Result<EmitReport> emitToEditor(
         }
     }
     if (!bakedBodies.empty()) {
+        if (trace.exhausted) return Err("La simulacion esta incompleta; vuelve a generar la vista previa.");
         if (trace.frames.size() < 2) return Err("La simulacion no tiene trayectoria para keyframes.");
+        float previousTime = -1.f;
         for (auto const& frame : trace.frames) {
+            if (!std::isfinite(frame.time) || frame.time <= previousTime) {
+                return Err("La trayectoria contiene tiempos invalidos.");
+            }
+            previousTime = frame.time;
             if (frame.poses.size() != bodies.size()) {
                 return Err("La trayectoria no coincide con los cuerpos.");
+            }
+            for (auto const& pose : frame.poses) {
+                if (!std::isfinite(pose.position.x) || !std::isfinite(pose.position.y) ||
+                    !std::isfinite(pose.angle)) return Err("La trayectoria contiene posiciones invalidas.");
             }
         }
     }
@@ -515,14 +525,11 @@ Result<EmitReport> emitToEditor(
     // there instead of spending a keyframe per sample on a still scene.
     std::size_t samples = trace.frames.size();
     if (!bakedBodies.empty() && trace.settleTime >= 0.f && samples > 2) {
-        float const span = trace.frames.back().time / static_cast<float>(samples - 1);
-        if (span > 0.f) {
-            samples = std::clamp<std::size_t>(
-                static_cast<std::size_t>(std::ceil(trace.settleTime / span)) + 1,
-                2,
-                samples
-            );
-        }
+        auto const settled = std::lower_bound(
+            trace.frames.begin(), trace.frames.end(), trace.settleTime,
+            [](Frame const& frame, float time) { return frame.time < time; }
+        );
+        samples = std::clamp<std::size_t>(settled - trace.frames.begin() + 1, 2, samples);
     }
     std::size_t newTargets = 0;
     for (auto index : dynamicBodies) {
@@ -671,12 +678,6 @@ Result<EmitReport> emitToEditor(
     }
     editor->recreateGroups();
 
-    // The solver samples on a fixed grid, so every keyframe carries the same slice of
-    // the timeline. Uniform slices keep the bake independent of whether GD reads a
-    // keyframe's duration as the segment reaching it or the one leaving it.
-    float const step = bakedBodies.empty()
-        ? 0.f
-        : trace.frames.back().time / static_cast<float>(trace.frames.size() - 1);
     std::vector<int> animations;
     animations.reserve(bakedBodies.size());
     EmitReport report;
@@ -725,8 +726,8 @@ Result<EmitReport> emitToEditor(
             float const degrees = -pose.angle * kRadiansToDegrees;
             spins = spins || std::abs(degrees) > 0.002f;
 
-            float const cosine = std::cos(pose.angle);
-            float const sine = std::sin(pose.angle);
+            float const cosine = std::cos(pose.angle - bodies[index].spec.angle);
+            float const sine = std::sin(pose.angle - bodies[index].spec.angle);
             CCPoint const position{
                 pose.position.x + arm.x * cosine - arm.y * sine,
                 pose.position.y + arm.x * sine + arm.y * cosine,
@@ -741,11 +742,16 @@ Result<EmitReport> emitToEditor(
             // position goes back over it.
             keyframe->setPosition(position);
             keyframe->setRotation(degrees);
-            keyframe->addToGroup(animGroups[index]);
+            keyframe->setScaleX(1.f);
+            keyframe->setScaleY(1.f);
+            if (sample == 0) keyframe->addToGroup(animGroups[index]);
             keyframe->m_keyframeGroup = animationID;
             keyframe->m_keyframeIndex = static_cast<int>(sample);
             keyframe->m_targetGroupID = targetGroups[index];
-            keyframe->m_duration = step;
+            // GD stores the duration of the segment LEAVING this keyframe.
+            // Keep the actual timestamps, including a shorter final segment.
+            keyframe->m_duration = sample + 1 < samples
+                ? trace.frames[sample + 1].time - trace.frames[sample].time : 0.f;
             keyframe->m_spawnDelay = 0.f;
             keyframe->m_timeMode = 0;
             keyframe->m_curve = false;
@@ -782,7 +788,8 @@ Result<EmitReport> emitToEditor(
         animTrigger->m_animationID = animGroups[index];
         // The animation lasts what the baked slice lasted. Left at whatever a fresh
         // trigger carries, the whole fall replayed in a fraction of the time.
-        animTrigger->m_duration = step * static_cast<float>(samples - 1);
+        animTrigger->m_duration = trace.frames[samples - 1].time - trace.frames.front().time;
+        animTrigger->m_centerGroupID = 0;
         animTrigger->m_easingType = EasingType::None;
         animTrigger->m_easingRate = 2.f;
         animTrigger->m_timeMod = 1.f;

@@ -74,7 +74,7 @@ SimulationOptions simulationOptions(LabConfig const& rawConfig) {
     options.airDrag = config.airDrag;
     options.fixedRate = 120;
     options.sampleRate = config.sampleRate;
-    options.solverIterations = 5;
+    options.solverIterations = 8;
     options.timeBudget = 2.f;
     return options;
 }

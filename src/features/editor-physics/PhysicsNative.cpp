@@ -59,6 +59,11 @@ Vec2 triggerPosition(NativeLayout const& layout, std::size_t& slot) {
 }
 
 void addNode(TriggerGraph& graph, NativeLayout const& layout, NativeNode node) {
+    // Position-triggered nodes must start on the same player crossing. The
+    // display grid is only safe for nodes activated through Spawn/Collision.
+    if (node.kind != NativeNodeKind::CollisionBlock && !node.spawnTriggered) {
+        node.position.x = layout.triggerOrigin.x;
+    }
     addManifestGroup(node, layout.manifestGroup);
     graph.nodes.push_back(std::move(node));
 }

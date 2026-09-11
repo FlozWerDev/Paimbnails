@@ -13,7 +13,7 @@ struct LabConfig {
     float velocityX = 0.f;
     float velocityY = 0.f;
     float spinDegrees = 0.f;
-    int sampleRate = 20;
+    int sampleRate = 40;
 };
 
 LabConfig loadConfig();

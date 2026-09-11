@@ -302,7 +302,33 @@ bool circleRollsOffAnOrb() {
 
 } // namespace
 
+bool samplesKeepTheirActualTime() {
+    auto body = box(Motion::Dynamic, {10.f, 20.f}, {5.f, 5.f});
+    body.velocity = {37.f, -11.f};
+    body.angularVelocity = 20.f;
+    auto config = options(0.73f);
+    config.gravity = {};
+    config.airDrag = 0.f;
+    config.angularDrag = 0.f;
+    config.fixedRate = 120;
+    config.sampleRate = 37;
+    auto const trace = simulate({body}, config);
+    for (std::size_t i = 0; i < trace.frames.size(); ++i) {
+        auto const& frame = trace.frames[i];
+        float const expectedTime = i + 1 == trace.frames.size()
+            ? config.duration : static_cast<float>(i) / config.sampleRate;
+        if (std::abs(frame.time - expectedTime) > 0.00001f ||
+            std::abs(frame.poses[0].position.x - (10.f + 37.f * expectedTime)) > 0.001f ||
+            std::abs(frame.poses[0].angle - 20.f * expectedTime) > 0.001f) return false;
+    }
+    return trace.frames.size() == 29;
+}
+
 int main() {
+    if (!samplesKeepTheirActualTime()) {
+        std::cerr << "FAIL: samples drift from their timestamps\n";
+        return 1;
+    }
     bool const gravity = gravityMovesDynamicBody();
     bool const floor = staticFloorStopsFall();
     bool const bounce = restitutionBounces();

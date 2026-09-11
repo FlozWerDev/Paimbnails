@@ -1079,7 +1079,7 @@ void PhysicsPopup::drawPreview(float time, float dt) {
                 a.position.x + (b.position.x - a.position.x) * alpha,
                 a.position.y + (b.position.y - a.position.y) * alpha,
             };
-            angle = a.angle + std::remainder(b.angle - a.angle, kTwoPi) * alpha;
+            angle = a.angle + (b.angle - a.angle) * alpha;
         }
 
         auto* container = m_bodyContainers[i];

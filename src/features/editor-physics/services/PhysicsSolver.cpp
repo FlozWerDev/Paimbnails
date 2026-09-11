@@ -1781,6 +1781,7 @@ SimulationTrace simulate(
         float const elapsedBefore = stepIndex * fixedStep;
         float const dt = std::min(fixedStep, options.duration - elapsedBefore);
         if (!(dt > 0.f)) break;
+        Frame const before = world.snapshot();
         world.step(dt);
 
         for (auto const& event : world.contacts()) {
@@ -1791,7 +1792,16 @@ SimulationTrace simulate(
 
         float const elapsed = std::min((stepIndex + 1) * fixedStep, options.duration);
         while (elapsed + 0.0001f >= nextSample && nextSample < options.duration) {
-            trace.frames.push_back(world.snapshot());
+            Frame sample = world.snapshot();
+            float const alpha = std::clamp((nextSample - elapsedBefore) / dt, 0.f, 1.f);
+            sample.time = nextSample;
+            for (std::size_t i = 0; i < sample.poses.size(); ++i) {
+                auto& pose = sample.poses[i];
+                auto const& previous = before.poses[i];
+                pose.position = previous.position + (pose.position - previous.position) * alpha;
+                pose.angle = previous.angle + (pose.angle - previous.angle) * alpha;
+            }
+            trace.frames.push_back(std::move(sample));
             nextSample += sampleStep;
         }
         if (elapsed >= options.duration - 0.0001f) break;
@@ -1801,12 +1811,13 @@ SimulationTrace simulate(
         }
     }
 
-    if (trace.frames.empty() || trace.frames.back().time < options.duration - 0.0001f) {
+    float const endTime = trace.exhausted ? world.time() : options.duration;
+    if (trace.frames.empty() || trace.frames.back().time < endTime - 0.0001f) {
         Frame finalFrame = world.snapshot();
-        finalFrame.time = options.duration;
+        finalFrame.time = endTime;
         trace.frames.push_back(finalFrame);
     } else {
-        trace.frames.back().time = options.duration;
+        trace.frames.back().time = endTime;
     }
     trace.impacts = world.impacts();
     trace.peakImpulse = world.peakImpulse();

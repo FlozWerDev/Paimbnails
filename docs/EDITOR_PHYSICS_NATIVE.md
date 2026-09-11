@@ -17,6 +17,11 @@ Cada cuerpo dinamico elige su modo por separado. Esto permite, por ejemplo,
 hornear una pieza decorativa y dejar una caja interactiva en tiempo real dentro
 de la misma compilacion.
 
+Los cuerpos nuevos usan **Keyframes** por defecto para conservar el movimiento
+simulado. **Triggers** se elige explicitamente cuando se necesita interaccion
+con el jugador. Los ajustes guardados de muestreo se conservan; sin un ajuste
+previo se usan 40 muestras por segundo y ocho iteraciones de colision.
+
 ## La vista previa dibuja el backend de cada cuerpo
 
 `NativePreview.cpp` corre el mismo modelo que arma el grafo, y `PhysicsPopup`
@@ -72,6 +77,11 @@ Triggered`. Los Collision Trigger disparan esos subgrupos al entrar en contacto.
 La gravedad usa un bucle Spawn con una espera minima de 0.02 s y Edit Advanced
 Follow en modo aditivo.
 
+Todos los triggers activados por posicion comparten la misma X de inicio.
+Separarlos en columnas adelantaba o retrasaba la gravedad y los sensores
+respecto de Advanced Follow. Solo los triggers activados por otros triggers
+pueden distribuirse horizontalmente sin cambiar el momento de activacion.
+
 El planificador usa namespaces separados para Group ID, Block ID y Control ID,
 respeta el limite de diez grupos por objeto y rechaza grafos de mas de 8000
 objetos. Si GD no reconoce una clase nativa, falta un ID o falla una asignacion,
@@ -102,9 +112,16 @@ los dos.
 Las poses del solver son del centro de masa del cuerpo, pero GD mueve un grupo
 alrededor de un solo objeto: su group parent. Por eso el emisor elige ese
 objeto (el que ya fuera parent, o el mas cercano al centro de masa), escribe
-los keyframes sobre su recorrido -- `centro + R(angulo) * brazo` -- y registra
+los keyframes sobre su recorrido -- `centro + R(angulo - anguloInicial) * brazo` -- y registra
 el parent cuando el cuerpo tiene mas de un objeto. Con el centro de masa a
 secas, un cuerpo que giraba caia en la partida en otro sitio que en la vista.
+
+Cada keyframe guarda el tiempo real hasta la muestra siguiente, incluido el
+ultimo tramo si es mas corto. El muestreo interpola entre pasos del solver
+cuando la frecuencia elegida no divide 120 Hz. La vista previa conserva los
+angulos acumulados al interpolar, sin sustituir las vueltas por el giro corto.
+Solo el primer punto lleva el grupo que activa la animacion y todos los puntos
+usan escala unitaria para conservar el tamano del cuerpo.
 
 La animacion se corta en cuanto todos los cuerpos dinamicos se duermen
 (`SimulationTrace::settleTime`), porque los keyframes que siguen no mueven nada
@@ -127,9 +144,13 @@ grafo nativo y de la vista previa, y despues compila el mod con la accion de
 Geode. La comprobacion
 manual recomendada es:
 
-1. Crear una caja dinamica y un suelo fijo; compilar `Empujable` con P1 y P2.
+1. Crear una caja dinamica y un suelo fijo; elegir `Triggers` y compilar
+   `Empujable` con P1 y P2.
 2. Jugar y verificar empuje desde los cuatro lados, gravedad y rebote.
 3. Repetir con `Iman`, `Pendulo` y un cuerpo de tres objetos en `Explosion`.
 4. Guardar, salir del editor y jugar otra vez con el mod desactivado para
    confirmar que la salida sigue funcionando como contenido nativo.
 5. Recompilar la misma seleccion y usar `Quitar ultimo` para revisar el rollback.
+6. En `Keyframes`, comparar la vista previa y el nivel con un cuerpo compuesto
+   asimetrico, giro inicial, 37 muestras/s y una duracion que deje un ultimo
+   tramo parcial. Revisar tiempos, trayectoria, rotacion y escala tras guardar.

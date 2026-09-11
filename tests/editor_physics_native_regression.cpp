@@ -42,11 +42,13 @@ bool containsDirection(
 
 bool pushableBuildsPlayerAndWorldSensors() {
     NativeBodyInput dynamic;
+    dynamic.settings.backend = PhysicsBackend::Reactive;
     dynamic.spec = box(Motion::Dynamic, {0.f, 80.f}, {15.f, 15.f});
     dynamic.objectCount = 1;
     dynamic.settings.preset = NativePreset::Pushable;
 
     NativeBodyInput floor;
+    floor.settings.backend = PhysicsBackend::Reactive;
     floor.spec = box(Motion::Static, {0.f, 0.f}, {150.f, 10.f});
     floor.objectCount = 1;
 
@@ -67,7 +69,11 @@ bool pushableBuildsPlayerAndWorldSensors() {
     auto requirements = estimateNativeRequirements(bodies, -900.f);
     auto graph = buildNativeTriggerGraph(bodies, layout, -900.f);
     auto validation = validateNativeTriggerGraph(graph, bodies);
-    bool const pass = validation.ok() &&
+    bool const synchronized = std::ranges::all_of(graph.nodes, [&](NativeNode const& node) {
+        return node.spawnTriggered || node.kind == NativeNodeKind::CollisionBlock ||
+            node.position.x == layout.triggerOrigin.x;
+    });
+    bool const pass = synchronized && validation.ok() &&
         requirements.groups == 11 && requirements.blocks == 5 &&
         requirements.controls == 1 &&
         requirements.estimatedObjects == graph.nodes.size() &&
@@ -84,6 +90,7 @@ bool pushableBuildsPlayerAndWorldSensors() {
 
 bool explosionCreatesIndependentFragmentGroups() {
     NativeBodyInput debris;
+    debris.settings.backend = PhysicsBackend::Reactive;
     debris.spec = box(Motion::Dynamic, {40.f, 60.f}, {30.f, 20.f});
     debris.objectCount = 3;
     debris.objectOffsets = {{-20.f, 0.f}, {20.f, 0.f}, {0.f, 15.f}};
@@ -121,6 +128,7 @@ bool explosionCreatesIndependentFragmentGroups() {
 
 bool invalidMagnetNeedsPlayerTarget() {
     NativeBodyInput magnet;
+    magnet.settings.backend = PhysicsBackend::Reactive;
     magnet.spec = box(Motion::Dynamic, {0.f, 0.f}, {15.f, 15.f});
     magnet.objectCount = 1;
     magnet.settings.preset = NativePreset::Magnet;
@@ -143,6 +151,7 @@ bool invalidMagnetNeedsPlayerTarget() {
 
 bool pendulumBuildsNativeAnchor() {
     NativeBodyInput pendulum;
+    pendulum.settings.backend = PhysicsBackend::Reactive;
     pendulum.spec = box(Motion::Dynamic, {30.f, 40.f}, {15.f, 15.f});
     pendulum.objectCount = 1;
     pendulum.settings.preset = NativePreset::Pendulum;
@@ -172,6 +181,7 @@ bool pendulumBuildsNativeAnchor() {
 
 bool disabledPlayersDoNotAllocateSensors() {
     NativeBodyInput body;
+    body.settings.backend = PhysicsBackend::Reactive;
     body.spec = box(Motion::Dynamic, {0.f, 0.f}, {15.f, 15.f});
     body.objectCount = 1;
     body.settings.preset = NativePreset::Pushable;
@@ -200,6 +210,7 @@ bool materialParametersReachNativeProfile() {
 
 bool negativeGravityScalePointsUp() {
     NativeBodyInput body;
+    body.settings.backend = PhysicsBackend::Reactive;
     body.spec = box(Motion::Dynamic, {0.f, 0.f}, {15.f, 15.f});
     body.spec.gravityScale = -1.f;
     body.objectCount = 1;
@@ -223,6 +234,7 @@ bool negativeGravityScalePointsUp() {
 
 bool nativeSpinMatchesCocosDirection() {
     NativeBodyInput body;
+    body.settings.backend = PhysicsBackend::Reactive;
     body.spec = box(Motion::Dynamic, {0.f, 0.f}, {15.f, 15.f});
     body.spec.gravityScale = 0.f;
     body.spec.angularVelocity = 3.14159265358979323846f;
@@ -248,6 +260,7 @@ bool nativeSpinMatchesCocosDirection() {
 
 bool rejectsUnsafeSpawnCycle() {
     NativeBodyInput body;
+    body.settings.backend = PhysicsBackend::Reactive;
     body.spec = box(Motion::Dynamic, {0.f, 0.f}, {15.f, 15.f});
     body.objectCount = 1;
     TriggerGraph graph;

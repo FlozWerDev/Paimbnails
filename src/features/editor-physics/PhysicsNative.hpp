@@ -33,7 +33,7 @@ enum class NativePreset {
 };
 
 struct NativeBodySettings {
-    PhysicsBackend backend = PhysicsBackend::Reactive;
+    PhysicsBackend backend = PhysicsBackend::Baked;
     NativePreset preset = NativePreset::Pushable;
     float strength = 1.f;
     float sensorPadding = 6.f;

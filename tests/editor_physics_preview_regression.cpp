@@ -46,8 +46,19 @@ bool bakedBodyKeepsTheSolverPath() {
     auto const bodies = fallingOntoFloor();
     auto const solver = simulate(bodies, options());
     auto const mixed = simulateWorkspace(
-        bodies, {backend(PhysicsBackend::Baked), {}}, options()
+        bodies, {{}, {}}, options()
     );
+    if (NativeBodySettings{}.backend != PhysicsBackend::Baked ||
+        solver.frames.size() != mixed.frames.size()) return false;
+    for (std::size_t f = 0; f < solver.frames.size(); ++f) {
+        if (solver.frames[f].time != mixed.frames[f].time) return false;
+        for (std::size_t b = 0; b < bodies.size(); ++b) {
+            auto const& a = solver.frames[f].poses[b];
+            auto const& c = mixed.frames[f].poses[b];
+            if (a.position.x != c.position.x || a.position.y != c.position.y ||
+                a.angle != c.angle) return false;
+        }
+    }
     float const drift = std::abs(
         mixed.frames.back().poses.front().position.y -
         solver.frames.back().poses.front().position.y
@@ -104,6 +115,7 @@ bool magnetHoldsStillWithoutAPlayer() {
 
 bool launchSpeedReachesFollowUnits() {
     NativeBodyInput body;
+    body.settings.backend = PhysicsBackend::Reactive;
     body.spec = box(Motion::Dynamic, {0.f, 0.f}, {15.f, 15.f});
     body.spec.velocity = {900.f, 0.f};
     body.objectCount = 1;

@@ -1,11 +1,9 @@
 // Tests de regresion para el modo pintura y el modo circulos del convertidor de
 // imagen a objetos de GD.
 //
-// Enfoque: El modo circulos dibuja con circulos/elipses exclusivamente. En el
-// juego, los circulos viven en una hoja de sprites distinta a la de los cuadrados,
-// asi que mezclarlos rompe el orden Z. Las curvas en pintura usan cuadrados
-// (bloques o trazos axis-aligned) y no rectangulos girados porque el borde girado
-// deja picos de subpixel entre los objetos cuando la curva pasa por muchas celdas.
+// Pintura combina bloques, diagonales y circulos cuando respetan las fronteras
+// de color. Los parches deben mantener los bordes suaves sin dejar huecos ni
+// tapar capas superiores con circulos de otra hoja de sprites.
 //
 // Cada prueba es una funcion bool que devuelve true si pasa. main() las ejecuta
 // todas y devuelve 0 si pasan o 1 si alguna falla.
@@ -1080,6 +1078,107 @@ bool circleVectorizerHandlesDisconnectedComponents() {
 //     como una pieza girada, no como 50 bloques axis-aligned. El modo
 //     pintura debe detectar el angulo principal por la envolvente convexa.
 // -------------------------------------------------------------------------
+// Un fondo opaco tambien debe permitir lados diagonales, sin reconstruir la
+// escalera con parches. Se mide el resultado del pipeline, incluidas costuras.
+bool paintPrunesBoundaryTeeth() {
+    std::vector<Primitive> objects{
+        {16.f, 16.f, 20.f, 20.f, 0.f, 0, PrimitiveKind::Circle, 0},
+        {23.5f, 22.5f, 1.f, 1.f, 0.f, 0, PrimitiveKind::Block, 1}
+    };
+    prunePaintObjects(objects, 32, 32);
+    std::cout << "paint-boundary-teeth: objects=" << objects.size() << '\n';
+    if (objects.size() != 1 || objects.front().kind != PrimitiveKind::Circle) return false;
+    // Un detalle de otro color en el mismo punto debe conservarse.
+    objects.push_back({23.5f, 22.5f, 1.f, 1.f, 0.f, 1, PrimitiveKind::Block, 2});
+    prunePaintObjects(objects, 32, 32);
+    return objects.size() == 2;
+}
+
+bool paintSeparateDiscsStayRound() {
+    auto source = animation(64, 40, 1, 20, 40, 70);
+    for (int y = 0; y < 40; ++y) {
+        for (int x = 0; x < 64; ++x) {
+            float const dy = y + 0.5f - 20.f;
+            float const dx = x + 0.5f - (x < 32 ? 16.f : 48.f);
+            if (dx * dx + dy * dy <= 121.f) {
+                setPixel(source, 0, x, y, 220, 80, 60);
+            }
+        }
+    }
+    auto result = buildPlan(source, paintOptions(64));
+    if (!result) return false;
+    auto const objects = unmarked(result.plan);
+    auto const stats = countPrimitives(objects);
+    auto const coverage = measureCoverage(result.plan, 8);
+    std::cout << "paint-separate-discs: circles=" << stats.circles
+              << " objects=" << objects.size() << '\n';
+    return stats.circles == 2 && objects.size() <= 3 &&
+        coverage.missing == 0 && coverage.interiorHoles == 0;
+}
+
+bool paintRepairsKeepLongDiagonal() {
+    constexpr int size = 32;
+    std::vector<int> positions;
+    std::vector<int> allowed;
+    std::vector<std::uint8_t> permitted(size * size, 0);
+    for (int i = 5; i < 27; ++i) {
+        positions.push_back(i * size + i);
+        for (int dx = -1; dx <= 1; ++dx) {
+            allowed.push_back(i * size + i + dx);
+            permitted[i * size + i + dx] = 1;
+        }
+    }
+    std::vector<Primitive> objects;
+    appendRepairs(objects, positions, size, size, 0, 0, {}, allowed);
+    int missing = 0;
+    for (int position : positions) {
+        bool covered = false;
+        for (auto const& object : objects) {
+            covered |= xformOf(object).contains(position % size + 0.5f,
+                                                position / size + 0.5f);
+        }
+        missing += !covered;
+    }
+    int invaded = 0;
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            if (permitted[y * size + x]) continue;
+            for (auto const& object : objects) {
+                invaded += xformOf(object).contains(x + 0.5f, y + 0.5f);
+            }
+        }
+    }
+    std::cout << "paint-diagonal-repairs: objects=" << objects.size()
+              << " missing=" << missing << " invaded=" << invaded << '\n';
+    return objects.size() <= 4 && missing == 0 && invaded == 0;
+}
+
+bool paintModeSmoothDiamondOverBackground() {
+    auto source = animation(64, 64, 1, 30, 60, 110);
+    for (int y = 0; y < 64; ++y) {
+        for (int x = 0; x < 64; ++x) {
+            if (std::abs(x - 32) + std::abs(y - 32) <= 22) {
+                setPixel(source, 0, x, y, 230, 50, 90);
+            }
+        }
+    }
+    auto result = buildPlan(source, paintOptions(64));
+    if (!result) return false;
+    auto const objects = unmarked(result.plan);
+    int diagonals = 0;
+    for (auto const& object : objects) {
+        float const angle = std::fmod(std::abs(object.rotation), 90.f);
+        diagonals += object.kind == PrimitiveKind::Stroke &&
+            angle > 10.f && angle < 80.f && object.width > 20.f;
+    }
+    auto const coverage = measureCoverage(result.plan, 8);
+    std::cout << "paint-diamond-background: objects=" << objects.size()
+              << " diagonals=" << diagonals << " holes=" << coverage.interiorHoles << '\n';
+    return diagonals > 0 && objects.size() <= 8 &&
+        coverage.missing == 0 && coverage.interiorHoles == 0 &&
+        result.plan.similarity >= 97.f;
+}
+
 bool paintModeFitsDiamondAsTiltedBox() {
     auto source = animation(40, 40, 1, 0, 0, 0, 0);
     for (int y = 0; y < 40; ++y) {
@@ -1256,6 +1355,10 @@ int main() {
     bool const p09 = paintModeFitsDiamondAsTiltedBox();
     bool const p10 = paintModeSineWaveCoverage();
     bool const p11 = paintModeMulticolorCurvesNoGaps();
+    bool const p15 = paintPrunesBoundaryTeeth();
+    bool const p14 = paintSeparateDiscsStayRound();
+    bool const p13 = paintRepairsKeepLongDiagonal();
+    bool const p12 = paintModeSmoothDiamondOverBackground();
 
     if (!c01) std::cerr << "FAIL: circleModeNeverEmitsSquares\n";
     if (!c02) std::cerr << "FAIL: circleModeCoversAllCells\n";
@@ -1287,11 +1390,15 @@ int main() {
     if (!p09) std::cerr << "FAIL: paintModeFitsDiamondAsTiltedBox\n";
     if (!p10) std::cerr << "FAIL: paintModeSineWaveCoverage\n";
     if (!p11) std::cerr << "FAIL: paintModeMulticolorCurvesNoGaps\n";
+    if (!p15) std::cerr << "FAIL: paintPrunesBoundaryTeeth\n";
+    if (!p14) std::cerr << "FAIL: paintSeparateDiscsStayRound\n";
+    if (!p13) std::cerr << "FAIL: paintRepairsKeepLongDiagonal\n";
+    if (!p12) std::cerr << "FAIL: paintModeSmoothDiamondOverBackground\n";
 
     bool const pass =
         c01 && c02 && c03 && c04 && c05 && c06 && c07 && c08 && c09 &&
         c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 &&
         p01 && p02 && p03 && p04 && p05 && p06 && p07 && p08 && p09 &&
-        p10 && p11;
+        p10 && p11 && p12 && p13 && p14 && p15;
     return pass ? 0 : 1;
 }

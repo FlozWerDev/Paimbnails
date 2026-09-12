@@ -43,7 +43,7 @@ constexpr float kRoundCapDiameter = 1.8f;
 // girada. Por debajo de siete grados las dos pintan casi lo mismo y la recta gana:
 // su borde cae en la rejilla y ademas se funde con los rectangulos de al lado.
 constexpr float kBoxTilt = 0.12f;
-constexpr int kRepairReach = 3;
+constexpr int kRepairReach = 8;
 constexpr int kPadding = 2;
 // Cuanto hueco puede tragarse la caja comun de dos rectangulos que se funden,
 // contado sobre lo que los dos ya ocupaban. Aunque el hueco sea invisible, una
@@ -199,6 +199,31 @@ std::vector<std::vector<int>> splitByThickness(
 
 std::array<int, 4> shapeBox(Primitive const& shape, int width, int height) {
     return xformBox(xformOf(shape), width, height);
+}
+
+// Un borde vectorial cruza las esquinas de los pixeles de la silueta. Exigir
+// cero cobertura ahi convierte otra vez cada diagonal en una escalera. Dejamos
+// esa franja subpixel, pero protegemos el centro de cada celda ajena y limitamos
+// el area total que puede sobresalir, tambien en los parches del borde.
+bool fitsPaintBoundary(
+    Primitive const& shape,
+    std::vector<std::uint8_t> const& permitted,
+    int width,
+    int height
+) {
+    auto const placed = xformOf(shape);
+    auto const box = xformBox(placed, width, height);
+    for (int y = box[1]; y <= box[3]; ++y) {
+        for (int x = box[0]; x <= box[2]; ++x) {
+            if (permitted[static_cast<std::size_t>(y) * width + x]) continue;
+            for (float dy : {0.4f, 0.5f, 0.6f}) {
+                for (float dx : {0.4f, 0.5f, 0.6f}) {
+                    if (placed.contains(x + dx, y + dy)) return false;
+                }
+            }
+        }
+    }
+    return shapeSpill(shape, permitted, width, height) <= kChainSpill;
 }
 
 // Un objeto redondo solo puede ir donde nada se pinte encima: GD lo dibuja en
@@ -1174,21 +1199,15 @@ bool appendCapsule(
     constexpr std::array<float, 4> kWidthPadding{0.f, 0.2f, 0.4f, 0.6f};
     float bestSimilarity = 0.f;
     std::vector<Primitive> best;
-    // La caja de un rombo apoya un lado entero contra el borde en escalera de la
-    // mancha, asi que lo parte celda a celda de punta a punta, y el parecido
-    // apenas lo nota porque cada celda partida es un acierto menos sobre un area
-    // enorme. Contra el hueco esas medias celdas no son de nadie y el borde queda
-    // recto y limpio; contra otro color, ese color se las reclama despues con un
-    // cuadradito por celda y la caja acaba costando mas que la escalera que venia
-    // a quitar. A la capsula larga no se le pide esto: se sale solo por las dos
-    // puntas y el parecido ya la mide bien.
+    // Tambien sobre un fondo de color la caja puede cortar las esquinas de los
+    // pixeles, conservando sus centros: asi el rombo mantiene sus cuatro lados.
     auto consider = [&](std::vector<Primitive> const& shapes, bool tight) {
         float const similarity = fitSimilarity(
             positions, target, width, height, shapes, blocked);
         if (similarity <= bestSimilarity) return;
         if (tight && std::any_of(shapes.begin(), shapes.end(),
                                  [&](Primitive const& shape) {
-                                     return !shapeStaysInside(
+                                     return !fitsPaintBoundary(
                                          shape, unclaimed, width, height);
                                  })) {
             return;
@@ -1548,13 +1567,13 @@ bool appendSmallPatch(
             static_cast<std::int16_t>(layer)
         };
         if (!coversBlocked(round, width, height, blocked) &&
-            shapeStaysInside(round, permitted, width, height)) {
+            fitsPaintBoundary(round, permitted, width, height)) {
             output.push_back(round);
             return true;
         }
     }
 
-    if (!shapeStaysInside(patch, permitted, width, height)) return false;
+    if (!fitsPaintBoundary(patch, permitted, width, height)) return false;
     output.push_back(patch);
     return true;
 }
@@ -1647,7 +1666,8 @@ bool anySample(Primitive const& object, int width, int height, Test test) {
 // que ya hay pintado debajo, y el que solo repite ese mismo color no aporta nada:
 // ahi caen los cuadrados de relleno que el trazo del mismo color ya tapaba, que
 // eran casi la mitad de los objetos. De arriba abajo caen los que quedan
-// enterrados del todo. Las dos pasadas dejan el dibujo identico.
+// enterrados del todo. En el borde tambien se descartan esquinas pequenas
+// redundantes para que el relleno no reconstruya la escalera sobre una curva.
 void markUsefulObjects(std::vector<PruneEntry> entries, int width, int height) {
     std::stable_sort(entries.begin(), entries.end(), [](auto const& left, auto const& right) {
         return left.object->layer < right.object->layer;
@@ -1655,6 +1675,41 @@ void markUsefulObjects(std::vector<PruneEntry> entries, int width, int height) {
     std::size_t const samples =
         static_cast<std::size_t>(width) * height * kPruneScale * kPruneScale;
 
+    // La cobertura exacta conserva hasta la esquina de un pixel: un bloque
+    // sobre una diagonal ya completa sigue siendo "util" solo por ese diente.
+    // Permitimos quitar aportes menores de media celda en el borde, pero nunca
+    // un centro ni una muestra interior. El limite se acumula por celda para
+    // que varios parches descartados no borren juntos un detalle.
+    std::size_t const cells = static_cast<std::size_t>(width) * height;
+    std::vector<std::int16_t> expected(cells, -1);
+    std::vector<std::int16_t> centers(cells, -1);
+    auto visitCenters = [&](Primitive const& object, auto visit) {
+        auto const shape = xformOf(object);
+        auto const box = xformBox(shape, width, height);
+        for (int y = box[1]; y <= box[3]; ++y) {
+            for (int x = box[0]; x <= box[2]; ++x) {
+                if (shape.contains(x + 0.5f, y + 0.5f)) {
+                    visit(static_cast<std::size_t>(y) * width + x);
+                }
+            }
+        }
+    };
+    for (auto const& entry : entries) {
+        visitCenters(*entry.object, [&](std::size_t cell) {
+            expected[cell] = static_cast<std::int16_t>(entry.object->color);
+        });
+    }
+    std::vector<std::uint8_t> interior(cells, 0);
+    for (int y = 1; y + 1 < height; ++y) {
+        for (int x = 1; x + 1 < width; ++x) {
+            auto const cell = static_cast<std::size_t>(y) * width + x;
+            auto const color = expected[cell];
+            interior[cell] = color >= 0 && expected[cell - 1] == color &&
+                expected[cell + 1] == color && expected[cell - width] == color &&
+                expected[cell + width] == color;
+        }
+    }
+    std::vector<std::uint8_t> discarded(cells, 0);
     std::vector<std::int16_t> painted(samples, -1);
     std::vector<std::uint8_t> useful(entries.size(), 0);
     for (std::size_t index = 0; index < entries.size(); ++index) {
@@ -1665,7 +1720,29 @@ void markUsefulObjects(std::vector<PruneEntry> entries, int width, int height) {
             })) {
             continue;
         }
+        bool needsCenter = false;
+        visitCenters(object, [&](std::size_t cell) {
+            needsCenter |= centers[cell] != color;
+        });
+        if (!needsCenter) {
+            std::map<std::size_t, int> contribution;
+            bool significant = false;
+            anySample(object, width, height, [&](std::size_t sample) {
+                if (painted[sample] == color) return false;
+                auto const x = sample % (width * kPruneScale) / kPruneScale;
+                auto const y = sample / (width * kPruneScale) / kPruneScale;
+                auto const cell = y * width + x;
+                significant |= interior[cell] ||
+                    ++contribution[cell] + discarded[cell] > kPruneScale * kPruneScale / 2;
+                return significant;
+            });
+            if (!significant) {
+                for (auto const& [cell, count] : contribution) discarded[cell] += count;
+                continue;
+            }
+        }
         useful[index] = 1;
+        visitCenters(object, [&](std::size_t cell) { centers[cell] = color; });
         anySample(object, width, height, [&](std::size_t sample) {
             painted[sample] = color;
             return false;
@@ -2082,7 +2159,7 @@ void appendRepairs(
     }
 
     // Una escalera en diagonal no se puede empaquetar: cada peldano seria su propio
-    // rectangulo. La tira girada se lleva tres o cuatro celdas de una tirada, y como
+    // rectangulo. La tira girada une varios peldanos con un borde continuo, y como
     // busca pareja por todo el color de una vez tambien enlaza peldanos de manchas
     // distintas. Lo que se quede sin pareja acaba de rectangulo.
     auto diagonalStrokes = [&](std::vector<int> const& group) {
@@ -2109,7 +2186,7 @@ void appendRepairs(
                         static_cast<float>(x - firstX), static_cast<float>(y - firstY));
                     if (length > kRepairReach) continue;
                     auto const candidate = repairStroke(first, second, width, color, layer);
-                    if (!shapeStaysInside(candidate, permitted, width, height)) continue;
+                    if (!fitsPaintBoundary(candidate, permitted, width, height)) continue;
                     int const count = coveredRepairs(candidate, remaining, width, height);
                     if (count > bestCount || (count == bestCount && length < bestLength)) {
                         best = candidate;
@@ -2441,6 +2518,7 @@ std::vector<int> paintOrder(
         int color = 0;
         float depth = 0.f;
         std::size_t area = 0;
+        bool background = false;
     };
     std::vector<Entry> entries;
     entries.reserve(static_cast<std::size_t>(colors));
@@ -2465,19 +2543,29 @@ std::vector<int> paintOrder(
         }
         auto const region = buildRegion(positions, width);
         double total = 0.0;
+        int border = 0;
         for (int position : positions) {
             int const x = position % width - region.offsetX;
             int const y = position / width - region.offsetY;
             total += region.distance[static_cast<std::size_t>(y) * region.width + x];
+            int const sourceX = position % width;
+            int const sourceY = position / width;
+            border += sourceX == 0 || sourceY == 0 ||
+                sourceX == width - 1 || sourceY == height - 1;
         }
         entries.push_back({
             color,
             static_cast<float>(total / static_cast<double>(positions.size())),
-            positions.size()
+            positions.size(),
+            border > width + height - 2
         });
     }
 
     std::sort(entries.begin(), entries.end(), [](Entry const& left, Entry const& right) {
+        // El color que rodea el lienzo va debajo, aunque el objeto central sea
+        // mas grueso. Si va encima hay que recortar un agujero en el fondo y
+        // sus escalones tapan las diagonales/circulos que acabamos de ajustar.
+        if (left.background != right.background) return left.background;
         if (std::abs(left.depth - right.depth) > 0.001f) return left.depth > right.depth;
         if (left.area != right.area) return left.area > right.area;
         return left.color < right.color;
@@ -2540,6 +2628,24 @@ std::vector<Primitive> vectorizePaint(
     }
     std::vector<std::vector<int>> pieces;
     for (auto const& whole : connectedComponents(positions, width, height)) {
+        // Ajustar cada silueta antes de separar su centro grueso del borde.
+        // Dos discos del mismo color no forman una elipse juntos; separarlos
+        // por grosor primero destruye ambos contornos y produce muchos parches.
+        if (whole.size() >= 8 && whole.size() != positions.size()) {
+            auto const region = buildRegion(whole, width);
+            std::vector<Primitive> fitted;
+            if (appendCircle(fitted, region, whole.size(), color, base,
+                             width, height, blocked) ||
+                appendCapsule(fitted, whole, width, height, color, base + 1,
+                              blocked, empty)) {
+                appendRepairs(fitted,
+                    selectCells(region, width, coverageMask(region, fitted, false),
+                                {}, true, 0.f),
+                    width, height, color, base + 2, blocked, positions, empty);
+                output.insert(output.end(), fitted.begin(), fitted.end());
+                continue;
+            }
+        }
         for (auto& piece : splitByThickness(whole, width, height, kThickSpan)) {
             pieces.push_back(std::move(piece));
         }
@@ -2624,14 +2730,11 @@ std::vector<Primitive> vectorizePaint(
                         outline, region, contour, band, color, base + 1,
                         width, height, blocked);
                 }
-                // El contorno se simplifica y se redondea, asi que sus tiras no
-                // siguen la silueta celda a celda: donde el recorte se sale, la
-                // tira pinta este color sobre el de al lado y esa mordida no la
-                // arregla nadie despues, porque va por encima. La que se pase se
-                // cae y el hueco lo recoge el empaquetado, que no asoma.
+                // Conservar diagonales que solo cruzan esquinas subpixel;
+                // descartar las que invaden el interior del color vecino.
                 outline.erase(std::remove_if(outline.begin(), outline.end(),
                     [&](Primitive const& stroke) {
-                        return !shapeStaysInside(stroke, permitted, width, height);
+                        return !fitsPaintBoundary(stroke, permitted, width, height);
                     }), outline.end());
                 inside = insideContours(region, refined);
                 // El contorno suavizado se sale de la silueta en las curvas, y el

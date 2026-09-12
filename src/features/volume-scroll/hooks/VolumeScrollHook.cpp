@@ -5,7 +5,6 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CCMouseDispatcher.hpp>
-#include <Geode/modify/CCKeyboardDispatcher.hpp>
 #include <Geode/loader/SettingV3.hpp>
 #include <Geode/utils/Keyboard.hpp>
 

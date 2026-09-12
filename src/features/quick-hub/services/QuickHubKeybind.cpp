@@ -3,7 +3,6 @@
 #include "../../../core/modules/ModuleRegistry.hpp"
 
 #include <Geode/Geode.hpp>
-#include <Geode/modify/CCKeyboardDispatcher.hpp>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -175,13 +174,18 @@ namespace paimon::volscroll {
     void onModifierKeysChanged(bool shft, bool ctrl, bool alt, bool cmd);
 }
 
-class $modify(QuickHubModifierHook, CCKeyboardDispatcher) {
-    void updateModifierKeys(bool shft, bool ctrl, bool alt, bool cmd) {
-        CCKeyboardDispatcher::updateModifierKeys(shft, ctrl, alt, cmd);
-
+$execute {
+    // Geode's input event works on every target and avoids the generated
+    // CCKeyboardDispatcher modify header, which is not valid on iOS.
+    KeyboardInputEvent().listen(+[](KeyboardInputData& data) {
+        auto const modifiers = data.modifiers.value;
+        bool shft = (modifiers & uint8_t(KeyboardModifier::Shift)) != 0;
+        bool ctrl = (modifiers & uint8_t(KeyboardModifier::Control)) != 0;
+        bool alt = (modifiers & uint8_t(KeyboardModifier::Alt)) != 0;
+        bool cmd = (modifiers & uint8_t(KeyboardModifier::Super)) != 0;
         paimon::volscroll::onModifierKeysChanged(shft, ctrl, alt, cmd);
 
-        // Raw flags make Cmd start the hold on macOS too.
+        // Super represents Cmd on Apple platforms.
         bool ctrlOrCmd = ctrl || cmd;
 
         if (!paimon::modules::isEnabled("paimbnails.quickhub.global") ||
@@ -189,7 +193,7 @@ class $modify(QuickHubModifierHook, CCKeyboardDispatcher) {
             if (s_hold.ctrlDown || s_hold.radialOpened) {
                 paimon::quickhub::QuickHubManager::abortActiveHold();
             }
-            return;
+            return false;
         }
 
         if (ctrlOrCmd && !s_hold.ctrlDown) {
@@ -208,20 +212,15 @@ class $modify(QuickHubModifierHook, CCKeyboardDispatcher) {
                 syncHoldTicking();
             }
         }
-    }
-};
 
-class $modify(QuickHubKeyHook, CCKeyboardDispatcher) {
-    bool dispatchKeyboardMSG(enumKeyCodes key, bool down, bool repeat, double timestamp) {
-        if (!paimon::quickhub::QuickHubManager::isHoldCtrlEnabled()) {
-            return CCKeyboardDispatcher::dispatchKeyboardMSG(key, down, repeat, timestamp);
-        }
-
-        if (down && !repeat && s_hold.ctrlDown && !s_hold.radialOpened) {
+        if (data.action == KeyboardInputData::Action::Press &&
+            s_hold.ctrlDown && !s_hold.radialOpened) {
             bool isModifier =
-                key == KEY_Control || key == KEY_LeftControl || key == KEY_RightContol ||
-                key == KEY_Shift   || key == KEY_LeftShift   || key == KEY_RightShift   ||
-                key == KEY_Alt     || key == KEY_LeftMenu    || key == KEY_RightMenu;
+                data.key == KEY_Control || data.key == KEY_LeftControl ||
+                data.key == KEY_RightContol || data.key == KEY_Shift ||
+                data.key == KEY_LeftShift || data.key == KEY_RightShift ||
+                data.key == KEY_Alt || data.key == KEY_LeftMenu ||
+                data.key == KEY_RightMenu;
 
             if (!isModifier) {
                 s_hold.cancelledByOtherKey = true;
@@ -230,6 +229,6 @@ class $modify(QuickHubKeyHook, CCKeyboardDispatcher) {
             }
         }
 
-        return CCKeyboardDispatcher::dispatchKeyboardMSG(key, down, repeat, timestamp);
-    }
-};
+        return false;
+    }).leak();
+}

@@ -1,6 +1,5 @@
 #include "IdBadge.hpp"
 #include "../InfoModule.hpp"
-#include <Geode/modify/CCKeyboardDispatcher.hpp>
 #include <algorithm>
 #include <vector>
 
@@ -84,19 +83,22 @@ void applyAdaptiveIdBadgeContrast(CCLabelBMFont* label) {
 
 } // namespace paimon::info
 
-// Shift tracking for the reveal mode. dispatchKeyboardMSG is enough here: we
-// only care about the Shift key itself, which always arrives as its own event.
-class $modify(PaimonIdBadgeKeyboard, CCKeyboardDispatcher) {
-    bool dispatchKeyboardMSG(enumKeyCodes key, bool down, bool repeat, double timestamp) {
-        switch (key) {
+// Use Geode's portable input event instead of modifying CCKeyboardDispatcher.
+// The generated dispatcher modify header has no constructor/destructor address
+// on iOS, so merely including it makes the arm64 build fail.
+$execute {
+    KeyboardInputEvent().listen(+[](KeyboardInputData& data) {
+        switch (data.key) {
             case KEY_Shift:
             case KEY_LeftShift:
             case KEY_RightShift:
-                paimon::info::setShiftHeld(down);
+                paimon::info::setShiftHeld(
+                    data.action != KeyboardInputData::Action::Release
+                );
                 break;
             default:
                 break;
         }
-        return CCKeyboardDispatcher::dispatchKeyboardMSG(key, down, repeat, timestamp);
-    }
-};
+        return false;
+    }).leak();
+}

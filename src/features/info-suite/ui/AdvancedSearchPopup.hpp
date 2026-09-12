@@ -18,7 +18,7 @@ public:
     static AdvancedSearchPopup* create();
 
 protected:
-    bool init();
+    bool init() override;
     void onClose(cocos2d::CCObject* sender) override;
 
     void buildTabs(float centerX, float y);

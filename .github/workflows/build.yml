@@ -10,37 +10,70 @@ on:
 
 jobs:
   build:
-    name: Windows
-    runs-on: depot-windows-2022
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: Windows
+            os: windows-latest
+            target: Win64
+          - name: macOS
+            os: macos-latest
+            target: MacOS
+          - name: iOS
+            os: macos-latest
+            target: iOS
+          - name: Android32
+            os: ubuntu-latest
+            target: Android32
+          - name: Android64
+            os: ubuntu-latest
+            target: Android64
 
     steps:
       - uses: actions/checkout@v4
 
+      # The host-side regression tests are Windows-only and do not apply to
+      # the cross-platform Geode package builds below.
       - name: Set up MSVC environment
+        if: matrix.config.target == 'Win64'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Test editor physics solver
+        if: matrix.config.target == 'Win64'
         shell: pwsh
         run: ./tests/run_editor_physics_regression.ps1
 
       - name: Test native physics trigger graph
+        if: matrix.config.target == 'Win64'
         shell: pwsh
         run: ./tests/run_editor_physics_native_regression.ps1
 
       - name: Test physics preview backends
+        if: matrix.config.target == 'Win64'
         shell: pwsh
         run: ./tests/run_editor_physics_preview_regression.ps1
 
-      # Windows is the only target, so there is nothing for the combine action
-      # to merge: it would pull the artifact back onto a second runner just to
-      # copy the single .geode through. The build already leaves a finished one
-      # in build-output, so it goes straight to the artifact the installer and
-      # release jobs read.
       - name: Build the mod
-        id: build
         uses: geode-sdk/build-geode-mod@main
+        with:
+          sdk: given
+          target: ${{ matrix.config.target }}
+          combine: true
 
-      - name: Upload build output
+  package:
+    name: Package all platforms
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Combine platform builds
+        id: build
+        uses: geode-sdk/build-geode-mod/combine@main
+
+      - name: Upload combined mod
         uses: actions/upload-artifact@v4
         with:
           name: Build Output
@@ -49,33 +82,39 @@ jobs:
 
   build-installer:
     name: Build Windows Installer
-    runs-on: depot-windows-2022
-    needs: build
+    runs-on: windows-latest
+    needs: package
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download the build output
+      - name: Download the combined mod
         uses: actions/download-artifact@v4
         with:
           name: Build Output
           path: build
 
       - name: Prepare .geode for installer
+        shell: pwsh
         run: |
-          $file = Get-ChildItem -Path build -Filter "*.geode" | Select-Object -First 1
+          $file = Get-ChildItem -Path build -Filter "*.geode" -File | Select-Object -First 1
+          if (-not $file) {
+            throw "No .geode file was produced by the package job."
+          }
           if ($file.Name -ne "flozwer.paimbnails2.geode") {
             Copy-Item $file.FullName -Destination "build\flozwer.paimbnails2.geode" -Force
           }
 
       - name: Install NSIS
+        shell: pwsh
         run: |
           choco install nsis -y
-          echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
+          "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
 
       - name: Build NSIS installer
+        shell: pwsh
         run: |
-          cd installer
+          Set-Location installer
           & "C:\Program Files (x86)\NSIS\makensis.exe" /V4 installer.nsi
 
       - name: Upload installer artifact
@@ -83,116 +122,20 @@ jobs:
         with:
           name: Paimbnails-Windows-Installer
           path: installer\Paimbnails-Installer.exe
-
-  beta:
-    name: Publish beta release
-    runs-on: depot-ubuntu-24.04
-    needs: ['build', 'build-installer']
-    # Tag pushes go to the real release job below; everything else that builds
-    # gets a numbered beta so there is a record of every compilation.
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-
-    permissions:
-      contents: write
-
-    # One at a time, otherwise two runs finishing together would both claim the
-    # same beta number.
-    concurrency:
-      group: beta-release
-      cancel-in-progress: false
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download the .geode
-        uses: actions/download-artifact@v4
-        with:
-          name: Build Output
-          path: release
-
-      - name: Download Windows installer
-        uses: actions/download-artifact@v4
-        with:
-          name: Paimbnails-Windows-Installer
-          path: release
-
-      # The counter restarts on every mod.json version bump, so betas read as
-      # "1.1.2 #1, #2, #3..." instead of following the global run number.
-      - name: Work out the beta number
-        id: beta
-        run: |
-          version=$(jq -r .version mod.json)
-          version=${version#v}
-          prefix="beta-v${version}-"
-          escaped=${prefix//./\\.}
-          last=$(git ls-remote --tags origin \
-            | sed -E 's#.*refs/tags/##; s/\^\{\}$//' \
-            | grep -E "^${escaped}[0-9]+$" \
-            | sed -E "s/^${escaped}//" \
-            | sort -n | tail -n1 || true)
-          number=$(( ${last:-0} + 1 ))
-          {
-            echo "version=${version}"
-            echo "number=${number}"
-            echo "tag=${prefix}${number}"
-            echo "title=Paimbnails Beta ${version} #${number}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Build release notes
-        run: |
-          # head_commit is missing on workflow_dispatch, so read the subject
-          # from the checkout instead.
-          title=$(git log -1 --pretty=%s)
-          {
-            echo "> Beta automatica de \`${{ github.ref_name }}\`. Sin probar, puede romper cosas."
-            echo ""
-            echo "## Descargas"
-            echo ""
-            echo "- \`flozwer.paimbnails2.geode\` — instalalo desde Geode, o copialo a la carpeta \`geode/mods\`."
-            echo "- \`Paimbnails-Installer.exe\` — instalador para Windows."
-            echo ""
-            echo "## Esta build"
-            echo ""
-            echo "- Commit: [\`${GITHUB_SHA:0:7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) — ${title}"
-            echo "- Rama: \`${{ github.ref_name }}\`"
-            echo "- Run: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-            echo ""
-            echo "## Cambios de v${{ steps.beta.outputs.version }} hasta ahora"
-            echo ""
-          } > notes.md
-          # Top changelog section, with the Geode colour and image markup
-          # stripped. Its heading is dropped since the release title repeats it.
-          awk 'NR == 1 {next} /^# /{exit} {print}' changelog.md \
-            | sed -E 's/<c[a-z]>//g; s|</c>||g; s/!\[\]\([^)]*\)//g' >> notes.md
-
-      - name: List release files
-        run: ls -lh release
-
-      - name: Create GitHub prerelease
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.beta.outputs.tag }}
-          name: ${{ steps.beta.outputs.title }}
-          body_path: notes.md
-          draft: false
-          prerelease: true
-          make_latest: false
-          fail_on_unmatched_files: true
-          files: release/*
+          if-no-files-found: error
 
   release:
-    name: Create Release
-    runs-on: depot-ubuntu-24.04
-    needs: ['build', 'build-installer']
+    name: Create official release
+    runs-on: ubuntu-latest
+    needs: [package, build-installer]
     if: startsWith(github.ref, 'refs/tags/v')
-
     permissions:
       contents: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download the .geode
+      - name: Download the combined mod
         uses: actions/download-artifact@v4
         with:
           name: Build Output
@@ -205,6 +148,7 @@ jobs:
           path: release
 
       - name: Build release notes
+        shell: bash
         run: |
           {
             echo "## Descargas"
@@ -213,15 +157,14 @@ jobs:
             echo "- \`Paimbnails-Installer.exe\` — instalador para Windows."
             echo ""
           } > notes.md
-          # Top changelog section, with the Geode colour and image markup
-          # stripped. Its heading is dropped since the release title repeats it.
+          # Keep the first changelog section as the official release notes.
           awk 'NR == 1 {next} /^# /{exit} {print}' changelog.md \
             | sed -E 's/<c[a-z]>//g; s|</c>||g; s/!\[\]\([^)]*\)//g' >> notes.md
 
       - name: List release files
         run: ls -lh release
 
-      - name: Create GitHub Release
+      - name: Create official GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -229,5 +172,6 @@ jobs:
           body_path: notes.md
           draft: false
           prerelease: false
+          make_latest: true
           fail_on_unmatched_files: true
           files: release/*

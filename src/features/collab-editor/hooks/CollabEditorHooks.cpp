@@ -5,7 +5,6 @@
 #include "../../editor-suite/EditorAssets.hpp"
 #include "../../editor-suite/EditorModule.hpp"
 
-#include <Geode/binding/UndoObject.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -33,6 +32,12 @@ bool collabEnabled() {
     return paimon::editor::featureEnabled("collab-enabled");
 }
 
+bool collabActive() {
+    return collabEnabled() &&
+           paimon::collab::CollabManager::get().connected() &&
+           !paimon::isRuntimeShuttingDown();
+}
+
 void showBlocked(std::string const& name) {
     auto popup = PopupManager::get().alertFormat(
         "Collab Editor",
@@ -41,24 +46,6 @@ void showBlocked(std::string const& name) {
     );
     popup.setPriority(true);
     popup.showQueue();
-}
-
-// Re-sync undo/redo objects; transform copies are handled by selection reconcile.
-void syncAfterUndoRedo(cocos2d::CCArray* affected, EditorUI* ui) {
-    auto& mgr = paimon::collab::CollabManager::get();
-    if (!mgr.connected()) return;
-    if (affected) {
-        for (auto* item : CCArrayExt<CCObject*>(affected)) {
-            auto* o = typeinfo_cast<GameObject*>(item);
-            if (!o) continue;
-            if (o->getParent()) {
-                mgr.sendUpdatedObject(o);
-            } else {
-                mgr.sendDeletedObject(o);
-            }
-        }
-    }
-    if (ui) mgr.reconcileObjects(ui->getSelectedObjects());
 }
 
 // Build the collab button from two players; SimplePlayer needs a measurable wrapper.
@@ -186,7 +173,8 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
 
     $override
     void removeObject(GameObject* object, bool noUndo) {
-        if (object && !paimon::collab::CollabManager::get().isApplyingRemote()) {
+        if (object && collabActive() &&
+            !paimon::collab::CollabManager::get().isApplyingRemote()) {
             paimon::collab::CollabManager::get().sendDeletedObject(object);
         }
         LevelEditorLayer::removeObject(object, noUndo);
@@ -196,7 +184,7 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
     void levelSettingsUpdated() {
         LevelEditorLayer::levelSettingsUpdated();
         auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && !mgr.isApplyingRemote()) {
+        if (collabActive() && !mgr.isApplyingRemote()) {
             mgr.sendLevelSettings(false);
         }
     }
@@ -213,7 +201,7 @@ class $modify(PaimonCollabColorSelectPopup, ColorSelectPopup) {
     void keyBackClicked() {
         ColorSelectPopup::keyBackClicked();
         auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && !mgr.isApplyingRemote()) {
+        if (collabActive() && !mgr.isApplyingRemote()) {
             mgr.sendLevelSettings(false);
         }
     }
@@ -222,7 +210,7 @@ class $modify(PaimonCollabColorSelectPopup, ColorSelectPopup) {
     void onClose(CCObject* sender) {
         ColorSelectPopup::onClose(sender);
         auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && !mgr.isApplyingRemote()) {
+        if (collabActive() && !mgr.isApplyingRemote()) {
             mgr.sendLevelSettings(false);
         }
     }
@@ -268,6 +256,7 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     $override
     GameObject* createObject(int objectID, CCPoint position) {
         auto* object = EditorUI::createObject(objectID, position);
+        if (!collabActive()) return object;
         auto& mgr = paimon::collab::CollabManager::get();
         if (object && !mgr.canEditObjectLayer(object)) {
             // Keep the local placement, but do not sync across layers.
@@ -281,128 +270,70 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     $override
     CCArray* pasteObjects(gd::string str, bool withColor, bool noUndo) {
         auto* objects = EditorUI::pasteObjects(str, withColor, noUndo);
-        paimon::collab::CollabManager::get().sendCreatedObjects(objects);
+        if (collabActive()) {
+            paimon::collab::CollabManager::get().sendCreatedObjects(objects);
+        }
         return objects;
     }
 
     $override
     void onDuplicate(CCObject* sender) {
         EditorUI::onDuplicate(sender);
-        paimon::collab::CollabManager::get().reconcileObjects(this->getSelectedObjects());
-    }
-
-    $override
-    void undoLastAction(CCObject* sender) {
-        Ref<CCArray> affected;
-        auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && m_editorLayer && m_editorLayer->m_undoObjects && m_editorLayer->m_undoObjects->count() > 0) {
-            if (auto* undo = typeinfo_cast<UndoObject*>(m_editorLayer->m_undoObjects->lastObject())) {
-                affected = undo->m_objects;
-            }
+        if (collabActive()) {
+            paimon::collab::CollabManager::get().reconcileObjects(this->getSelectedObjects());
         }
-        EditorUI::undoLastAction(sender);
-        syncAfterUndoRedo(affected, this);
-    }
-
-    $override
-    void redoLastAction(CCObject* sender) {
-        Ref<CCArray> affected;
-        auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && m_editorLayer && m_editorLayer->m_redoObjects && m_editorLayer->m_redoObjects->count() > 0) {
-            if (auto* redo = typeinfo_cast<UndoObject*>(m_editorLayer->m_redoObjects->lastObject())) {
-                affected = redo->m_objects;
-            }
-        }
-        EditorUI::redoLastAction(sender);
-        syncAfterUndoRedo(affected, this);
     }
 
     $override
     void moveObject(GameObject* object, CCPoint offset) {
         EditorUI::moveObject(object, offset);
         // Position-only updates use the cheap remote path.
-        paimon::collab::CollabManager::get().sendMovedObject(object);
+        if (collabActive()) paimon::collab::CollabManager::get().sendMovedObject(object);
     }
 
     $override
     void transformObject(GameObject* object, EditCommand command, bool noOffset) {
         EditorUI::transformObject(object, command, noOffset);
         // Mixed transforms use a full update.
-        paimon::collab::CollabManager::get().sendUpdatedObject(object);
+        if (collabActive()) paimon::collab::CollabManager::get().sendUpdatedObject(object);
     }
 
     $override
     void transformObjects(CCArray* objects, CCPoint anchor, float scaleX, float scaleY, float rotateX, float rotateY, float warpX, float warpY) {
         EditorUI::transformObjects(objects, anchor, scaleX, scaleY, rotateX, rotateY, warpX, warpY);
-        paimon::collab::CollabManager::get().sendUpdatedObjects(objects);
+        if (collabActive()) paimon::collab::CollabManager::get().sendUpdatedObjects(objects);
     }
 
     $override
     void scaleObjects(CCArray* objects, float scaleX, float scaleY, CCPoint pivotPoint, ObjectScaleType type, bool lockMove) {
         EditorUI::scaleObjects(objects, scaleX, scaleY, pivotPoint, type, lockMove);
         // Scale updates set peer axes without recreating the object.
-        paimon::collab::CollabManager::get().sendScaledObjects(objects);
+        if (collabActive()) paimon::collab::CollabManager::get().sendScaledObjects(objects);
     }
 
     $override
     void rotateObjects(CCArray* objects, float rotation, CCPoint pivotPoint) {
         EditorUI::rotateObjects(objects, rotation, pivotPoint);
-        paimon::collab::CollabManager::get().sendRotatedObjects(objects);
+        if (collabActive()) paimon::collab::CollabManager::get().sendRotatedObjects(objects);
     }
 
     $override
     void flipObjectsX(CCArray* objects) {
         EditorUI::flipObjectsX(objects);
-        paimon::collab::CollabManager::get().sendFlippedObjects(objects);
+        if (collabActive()) paimon::collab::CollabManager::get().sendFlippedObjects(objects);
     }
 
     $override
     void flipObjectsY(CCArray* objects) {
         EditorUI::flipObjectsY(objects);
-        paimon::collab::CollabManager::get().sendFlippedObjects(objects);
-    }
-
-    $override
-    void selectObject(GameObject* object, bool ignoreFilter) {
-        EditorUI::selectObject(object, ignoreFilter);
-        auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && !mgr.isApplyingRemote()) {
-            mgr.sendSelection(this->getSelectedObjects());
-        }
-    }
-
-    $override
-    void selectObjects(CCArray* objects, bool ignoreFilter) {
-        EditorUI::selectObjects(objects, ignoreFilter);
-        auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && !mgr.isApplyingRemote()) {
-            mgr.sendSelection(this->getSelectedObjects());
-        }
-    }
-
-    $override
-    void deselectAll() {
-        EditorUI::deselectAll();
-        auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && !mgr.isApplyingRemote()) {
-            mgr.sendSelection(nullptr);
-        }
-    }
-
-    $override
-    void deselectObject(GameObject* object) {
-        EditorUI::deselectObject(object);
-        auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && !mgr.isApplyingRemote()) {
-            mgr.sendSelection(this->getSelectedObjects());
-        }
+        if (collabActive()) paimon::collab::CollabManager::get().sendFlippedObjects(objects);
     }
 
     $override
     void onPasteColor(CCObject* sender) {
         EditorUI::onPasteColor(sender);
         auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && !mgr.isApplyingRemote()) {
+        if (collabActive() && !mgr.isApplyingRemote()) {
             mgr.reconcileObjects(this->getSelectedObjects());
         }
     }
@@ -411,7 +342,7 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     void assignNewGroups(bool groupY) {
         EditorUI::assignNewGroups(groupY);
         auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && !mgr.isApplyingRemote()) {
+        if (collabActive() && !mgr.isApplyingRemote()) {
             mgr.reconcileObjects(this->getSelectedObjects());
         }
     }
@@ -420,7 +351,7 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     void onGroupSticky(CCObject* sender) {
         EditorUI::onGroupSticky(sender);
         auto& mgr = paimon::collab::CollabManager::get();
-        if (mgr.connected() && !mgr.isApplyingRemote()) {
+        if (collabActive() && !mgr.isApplyingRemote()) {
             mgr.reconcileObjects(this->getSelectedObjects());
         }
     }

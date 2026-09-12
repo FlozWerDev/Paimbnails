@@ -21,6 +21,10 @@
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/VideoThumbnailSprite.hpp"
 #include "../utils/HttpClient.hpp"
+#include "../utils/FileDialog.hpp"
+#include "../utils/MainThreadDelay.hpp"
+#include "../features/icon-maker/services/IconShare.hpp"
+#include "../features/collab-editor/CollabManager.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "QualityConfig.hpp"
 #include "MainLevels.hpp"
@@ -112,6 +116,12 @@ $on_game(Exiting) {
     paimon::EventBus::get().beginShutdown();
 
     paimon::markRuntimeShuttingDown();
+    // Release scheduled callbacks and Geode async handles while their owning
+    // runtimes (CCScheduler, WeakRefPool and arc) are still valid.
+    paimon::cancelAllMainThreadDelays();
+    pt::cancelPendingFilePick();
+    paimon::icon_maker::IconShare::cancelPendingPick();
+    paimon::collab::CollabManager::get().disconnect();
     FramebufferCapture::cancelPending();
     paimon::ThreadTracker::get().shutdown();
     log::info("[SHUTDOWN] === BEGIN EXIT SEQUENCE ===");
@@ -126,6 +136,9 @@ $on_game(Exiting) {
                 }
             }
         }
+    });
+    safeShutdownStep("update-checker-shutdown", []() {
+        paimon::updates::UpdateChecker::get().shutdown();
     });
 
     safeShutdownStep("foryou-save", []() {

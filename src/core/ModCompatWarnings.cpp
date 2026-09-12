@@ -50,4 +50,20 @@ void PaimonLogModCompatWarnings() {
             "[Paimbnails] Globed/EclipseMenu detectado: popups dinamicos usan prioridad Late."
         );
     }
+
+
+    if (ModCompat::needsConservativeGameplayCapture()) {
+        log::info(
+            "[Paimbnails] Renderer/capturador externo detectado: las capturas de gameplay "
+            "usan el back-buffer compatible y evitan reentrar PlayLayer::visit."
+        );
+    }
+
+    if (ModCompat::isBetterEditLoaded() || ModCompat::isEditorTabApiLoaded() ||
+        ModCompat::isEditorCollabLoaded() || ModCompat::isTinkerLoaded()) {
+        log::info(
+            "[Paimbnails] Ecosistema de editor externo detectado: los hooks de Collab "
+            "permanecen pasivos fuera de una sala conectada."
+        );
+    }
 }

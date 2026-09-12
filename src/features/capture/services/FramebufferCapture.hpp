@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Geode/utils/function.hpp>
+#include <Geode/utils/cocos.hpp>
 #include <vector>
 #include <cstdint>
 #include <memory>
@@ -61,7 +62,9 @@ private:
     struct CaptureRequest {
         int levelID;
         geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*, std::shared_ptr<uint8_t>, int, int)> callback;
-        cocos2d::CCNode* nodeToCapture = nullptr;
+        // Keep a one-frame ownership token so another mod cannot remove and
+        // destroy the requested node between the UI event and pre-swap.
+        geode::Ref<cocos2d::CCNode> nodeToCapture;
         bool hidePlayer1 = false;
         bool hidePlayer2 = false;
         bool active = false;

@@ -1,4 +1,5 @@
 #include "CollabNetClient.hpp"
+#include "../../core/RuntimeLifecycle.hpp"
 
 #include "../../utils/WebHelper.hpp"
 #include "../../utils/ThreadTracker.hpp"
@@ -121,7 +122,8 @@ void CollabNetClient::stopInternal(bool notifyServer) {
     ++m_gen; // Invalidate in-flight callbacks.
 
     // Best-effort leave so the server frees the slot promptly.
-    if (notifyServer && wasJoined && clientId > 0 && !base.empty()) {
+    if (notifyServer && !paimon::isRuntimeShuttingDown() &&
+        wasJoined && clientId > 0 && !base.empty()) {
         auto body = matjson::makeObject({
             {"room", room},
             {"client", static_cast<int64_t>(clientId)},

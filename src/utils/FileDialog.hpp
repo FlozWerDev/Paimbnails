@@ -32,6 +32,6 @@ namespace pt {
     void saveImage(std::string const& defaultName, FilePickCallback callback);
     void pickFolder(FilePickCallback callback);
     void pickFolder(std::filesystem::path const& defaultPath, FilePickCallback callback);
+    void cancelPendingFilePick();
 
 }
-

@@ -11,8 +11,13 @@ namespace gfile = geode::utils::file;
 // the pending file-pick operation before the OS dialog returns.
 // Only one native file dialog can be open at a time, so a single holder
 // is enough (a new pick replaces the previous one).
-static geode::async::TaskHolder<Result<std::optional<std::filesystem::path>>>
-    s_filePickHolder;
+using FilePickHolder =
+    geode::async::TaskHolder<Result<std::optional<std::filesystem::path>>>;
+
+// The holder itself is process-lifetime. A normal global TaskHolder destructor
+// may run after geode::async::runtime during CRT teardown and abort a stale
+// handle through an already-destroyed runtime.
+static FilePickHolder& s_filePickHolder = *new FilePickHolder();
 
 namespace pt {
 
@@ -156,6 +161,10 @@ void pickFolder(std::filesystem::path const& defaultPath, FilePickCallback cb) {
         gfile::pick(gfile::PickMode::OpenFolder, {defPath, {}}),
         std::move(cb)
     );
+}
+
+void cancelPendingFilePick() {
+    s_filePickHolder.cancel();
 }
 
 } // namespace pt

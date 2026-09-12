@@ -24,9 +24,12 @@ namespace paimon::cache {
 static std::atomic<bool> s_cacheInstanceAlive{false};
 
 ThumbnailCache& ThumbnailCache::get() {
-    static ThumbnailCache instance;
+    // RuntimeLifecycle/ThumbnailLoader clear this explicitly while Cocos is
+    // alive. Do not run the destructor after Geode has shut down its logger,
+    // async runtime and object pools (two Bunny reports end on that boundary).
+    static auto* instance = new ThumbnailCache();
     s_cacheInstanceAlive = true;
-    return instance;
+    return *instance;
 }
 
 bool ThumbnailCache::isAlive() {

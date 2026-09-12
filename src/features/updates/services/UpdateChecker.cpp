@@ -453,4 +453,13 @@ void UpdateChecker::cancelDownload() {
     m_downloadCancelled.store(true);
 }
 
+void UpdateChecker::shutdown() {
+    m_downloadCancelled.store(true, std::memory_order_release);
+    m_checkTask.cancel();
+    m_releasesTask.cancel();
+    m_downloadTask.cancel();
+    m_releaseWaiters.clear();
+    m_releasesLoading = false;
+}
+
 } // namespace paimon::updates

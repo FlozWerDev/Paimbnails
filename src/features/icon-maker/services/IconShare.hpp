@@ -22,6 +22,9 @@ public:
     // The callback receives the new slot id on success.
     static void pickAndImport(std::function<void(geode::Result<std::string>)> callback);
 
+    // Cancel before Geode's async runtime begins process teardown.
+    static void cancelPendingPick();
+
 private:
     IconShare() = delete;
 };

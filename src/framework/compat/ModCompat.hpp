@@ -71,6 +71,37 @@ struct ModCompat {
                geode::Loader::get()->isModLoaded("dankmeme.globed");
     }
 
+// These mods can render or capture the gameplay scene from their own hooks.
+// Re-visiting PlayLayer into our temporary FBO can re-enter those hooks with a
+// foreign viewport. The normal back-buffer path composes with them safely.
+    static bool isTinkerLoaded() {
+        return geode::Loader::get()->isModLoaded("alphalaneous.tinker");
+    }
+
+    static bool isMegaHackLoaded() {
+        return geode::Loader::get()->isModLoaded("absolllute.megahack");
+    }
+
+    static bool needsConservativeGameplayCapture() {
+        return isGlobedLoaded() || isCDCLevelThumbnailsLoaded() ||
+               isEclipseMenuLoaded() || isTinkerLoaded() || isMegaHackLoaded();
+    }
+
+// Editor UI owners seen in the crash corpus. Detection is centralized so hook
+// code can stay a no-op unless Paimbnails truly owns an active operation.
+    static bool isBetterEditLoaded() {
+        return geode::Loader::get()->isModLoaded("hjfod.betteredit");
+    }
+
+    static bool isEditorTabApiLoaded() {
+        return geode::Loader::get()->isModLoaded("alphalaneous.editortab_api");
+    }
+
+    static bool isEditorCollabLoaded() {
+        return geode::Loader::get()->isModLoaded("alk.editor-collab") ||
+               geode::Loader::get()->isModLoaded("alk.editor-collab-ui");
+    }
+
 // Menu Loop Randomizer overlaps with Menu Music.
     static bool isMenuLoopRandomizerLoaded() {
         return geode::Loader::get()->isModLoaded("fleym.menuloop_randomizer");

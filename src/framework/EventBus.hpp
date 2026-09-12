@@ -9,6 +9,7 @@
 #include <typeinfo>
 #include <memory>
 #include <cstdint>
+#include <atomic>
 
 namespace paimon {
 
@@ -78,6 +79,7 @@ public:
     template <typename Event>
     SubscriptionHandle subscribe(std::function<void(Event const&)> callback) {
         std::lock_guard lock(m_mutex);
+        if (m_shuttingDown.load(std::memory_order_acquire)) return 0;
         auto& list = getOrCreate<Event>();
         SubscriptionHandle h = ++m_nextGlobalHandle;
         list.add(std::move(callback), h);
@@ -98,7 +100,7 @@ public:
 
     void beginShutdown() {
         std::lock_guard lock(m_mutex);
-        m_shuttingDown = true;
+        m_shuttingDown.store(true, std::memory_order_release);
         // Destroy all subscribers now, while Cocos2d is still alive. Their
         // lambdas capture WeakRef<CCNode>; destroying them during atexit
         // (EventBus dtor) hits an invalid WeakRefPool -> crash. Safe here since
@@ -109,12 +111,12 @@ public:
 
     template <typename Event>
     void publish(Event const& event) {
-        if (m_shuttingDown) return;
+        if (m_shuttingDown.load(std::memory_order_acquire)) return;
         std::shared_ptr<ISubscriberList> kept;
         SubscriberList<Event>* list = nullptr;
         {
             std::lock_guard lock(m_mutex);
-            if (m_shuttingDown) return;
+            if (m_shuttingDown.load(std::memory_order_acquire)) return;
             auto it = m_subscribers.find(std::type_index(typeid(Event)));
             if (it == m_subscribers.end()) return;
             kept = it->second;
@@ -151,7 +153,7 @@ private:
     }
 
     std::mutex m_mutex;
-    bool m_shuttingDown = false;
+    std::atomic<bool> m_shuttingDown{false};
     SubscriptionHandle m_nextGlobalHandle = 0;
     std::unordered_map<std::type_index, std::shared_ptr<ISubscriberList>> m_subscribers;
     std::unordered_map<SubscriptionHandle, std::type_index> m_handleToType;

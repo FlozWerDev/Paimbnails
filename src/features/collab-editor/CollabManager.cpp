@@ -195,8 +195,10 @@ PeerAppearance CollabManager::localAppearance() {
 }
 
 CollabManager& CollabManager::get() {
-    static CollabManager instance;
-    return instance;
+    // Explicitly disconnected by RuntimeLifecycle. A CRT destructor would
+    // otherwise stop networking after Geode's async runtime is gone.
+    static auto* instance = new CollabManager();
+    return *instance;
 }
 
 CollabManager::CollabManager() {
@@ -285,6 +287,8 @@ void CollabManager::connect(std::string const& roomCode, std::string const& user
     m_pendingSelectionJson = matjson::Value();
     m_selectionDirty = false;
     m_sinceSelectionFlush = 0.f;
+    m_selectionFingerprint = 0;
+    m_selectionPollTicks = 0;
     m_peerCameras.clear();
     m_pendingCameraJson = matjson::Value();
     m_cameraDirty = false;
@@ -410,6 +414,8 @@ void CollabManager::setStatus(std::string message) {
 
 void CollabManager::setEditor(LevelEditorLayer* editor) {
     m_editor = editor;
+    m_selectionFingerprint = 0;
+    m_selectionPollTicks = 0;
     if (editor && connected() && m_needsResyncOnEntry) {
         m_needsResyncOnEntry = false;
         if (m_isHost && editor->m_level) m_hostLevel = editor->m_level;
@@ -608,6 +614,7 @@ void CollabManager::tick() {
         bool playtesting = m_editor->m_playbackMode == PlaybackMode::Playing;
 
         if (connected() && !playtesting) {
+            pollLocalSelection();
             sendCameraPresence();
             sendWorkZone();
         }
@@ -1865,6 +1872,38 @@ void CollabManager::sendSelection(CCArray* selected) {
         {"rects", std::move(rects)},
     });
     m_selectionDirty = true;
+}
+
+void CollabManager::pollLocalSelection() {
+    if (!connected() || m_applyingRemote || !m_editor || !m_editor->m_editorUI) return;
+    // Polling avoids hooks on EditorUI::select/deselect/undo, which are common
+    // hook-chain collision points for BetterEdit, Tinker and editor-tab mods.
+    if (++m_selectionPollTicks < 2) return;
+    m_selectionPollTicks = 0;
+
+    auto* selected = m_editor->m_editorUI->getSelectedObjects();
+    uint64_t hash = 1469598103934665603ull;
+    auto mix = [&hash](uint64_t value) {
+        hash ^= value;
+        hash *= 1099511628211ull;
+    };
+
+    unsigned int const count = selected ? selected->count() : 0;
+    mix(count);
+    for (unsigned int i = 0; i < count; ++i) {
+        auto* object = typeinfo_cast<GameObject*>(selected->objectAtIndex(i));
+        if (!object) continue;
+        auto const rect = objectWorldRect(object);
+        mix(reinterpret_cast<uintptr_t>(object));
+        mix(static_cast<uint64_t>(std::llround(rect.origin.x * 4.f)));
+        mix(static_cast<uint64_t>(std::llround(rect.origin.y * 4.f)));
+        mix(static_cast<uint64_t>(std::llround(rect.size.width * 4.f)));
+        mix(static_cast<uint64_t>(std::llround(rect.size.height * 4.f)));
+    }
+
+    if (hash == m_selectionFingerprint) return;
+    m_selectionFingerprint = hash;
+    sendSelection(selected);
 }
 
 void CollabManager::flushSelectionIfNeeded() {

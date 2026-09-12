@@ -11,6 +11,7 @@
 #include "../../../utils/RenderTexture.hpp"
 #include "../../../utils/ThreadTracker.hpp"
 #include "../../../utils/Localization.hpp"
+#include "../../../framework/compat/ModCompat.hpp"
 
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -49,6 +50,8 @@
 
 using namespace geode::prelude;
 using namespace cocos2d;
+
+using paimon::compat::ModCompat;
 
 #ifndef GL_FRAMEBUFFER_BINDING
 #define GL_FRAMEBUFFER_BINDING 0x8CA6
@@ -1202,16 +1205,17 @@ void FramebufferCapture::finishPendingFailure() {
     deletePboIfAny();
 #endif
 
-    for (auto& d : s_deferredCallbacks) if (d.texture) d.texture->release();
-    s_deferredCallbacks.clear();
-
+    // Do not re-enter capture callers from inside the state machine. A caller
+    // may open/close layers or request another capture from its failure path.
     if (requestCallback) {
-        requestCallback(false, nullptr, nullptr, 0, 0);
-        requestCallback = nullptr;
+        s_deferredCallbacks.push_back(
+            {std::move(requestCallback), false, nullptr, nullptr, 0, 0}
+        );
     }
     if (processingCallback) {
-        processingCallback(false, nullptr, nullptr, 0, 0);
-        processingCallback = nullptr;
+        s_deferredCallbacks.push_back(
+            {std::move(processingCallback), false, nullptr, nullptr, 0, 0}
+        );
     }
 }
 
@@ -1230,6 +1234,8 @@ void FramebufferCapture::requestCapture(
     bool hidePlayer1,
     bool hidePlayer2)
 {
+    if (paimon::isRuntimeShuttingDown()) return;
+
     log::info("[FramebufferCapture] requestCapture levelID={} hidePlayer1={} hidePlayer2={} hdr={}",
               levelID, hidePlayer1, hidePlayer2, s_hdrMode);
 
@@ -1251,8 +1257,6 @@ void FramebufferCapture::requestCapture(
 #ifdef GEODE_IS_WINDOWS
         deletePboIfAny();
 #endif
-        for (auto& d : s_deferredCallbacks) if (d.texture) d.texture->release();
-        s_deferredCallbacks.clear();
     }
 
     g_generation.fetch_add(1, std::memory_order_relaxed);
@@ -1265,13 +1269,17 @@ void FramebufferCapture::requestCapture(
     g_waitingTicks = 0;
     g_phase.store(Phase::ArmedHide);
 
+    // Replacement used to invoke the displaced callback synchronously after
+    // arming the new request. That allowed the old UI to mutate this new state.
     if (previousRequestCallback) {
-        previousRequestCallback(false, nullptr, nullptr, 0, 0);
-        previousRequestCallback = nullptr;
+        s_deferredCallbacks.push_back(
+            {std::move(previousRequestCallback), false, nullptr, nullptr, 0, 0}
+        );
     }
     if (previousProcessingCallback) {
-        previousProcessingCallback(false, nullptr, nullptr, 0, 0);
-        previousProcessingCallback = nullptr;
+        s_deferredCallbacks.push_back(
+            {std::move(previousProcessingCallback), false, nullptr, nullptr, 0, 0}
+        );
     }
 }
 
@@ -1279,8 +1287,10 @@ void FramebufferCapture::cancelPending() {
     Phase prev = g_phase.exchange(Phase::Idle);
     g_generation.fetch_add(1, std::memory_order_relaxed);
     if (prev == Phase::Idle && !s_request.active && !s_processingCallback) {
-        for (auto& d : s_deferredCallbacks) if (d.texture) d.texture->release();
-        s_deferredCallbacks.clear();
+        if (paimon::isRuntimeShuttingDown()) {
+            for (auto& d : s_deferredCallbacks) if (d.texture) d.texture->release();
+            s_deferredCallbacks.clear();
+        }
         return;
     }
 
@@ -1301,16 +1311,20 @@ void FramebufferCapture::cancelPending() {
     deletePboIfAny();
 #endif
 
-    for (auto& d : s_deferredCallbacks) if (d.texture) d.texture->release();
-    s_deferredCallbacks.clear();
-
-    if (requestCallback) {
-        requestCallback(false, nullptr, nullptr, 0, 0);
-        requestCallback = nullptr;
-    }
-    if (processingCallback) {
-        processingCallback(false, nullptr, nullptr, 0, 0);
-        processingCallback = nullptr;
+    if (paimon::isRuntimeShuttingDown()) {
+        for (auto& d : s_deferredCallbacks) if (d.texture) d.texture->release();
+        s_deferredCallbacks.clear();
+    } else {
+        if (requestCallback) {
+            s_deferredCallbacks.push_back(
+                {std::move(requestCallback), false, nullptr, nullptr, 0, 0}
+            );
+        }
+        if (processingCallback) {
+            s_deferredCallbacks.push_back(
+                {std::move(processingCallback), false, nullptr, nullptr, 0, 0}
+            );
+        }
     }
 }
 
@@ -1328,7 +1342,7 @@ void FramebufferCapture::executeIfPending() {
 
     if (phase == Phase::ArmedHide) {
         if (s_request.nodeToCapture) {
-            doCaptureNode(s_request.nodeToCapture);
+            doCaptureNode(s_request.nodeToCapture.data());
             return;
         }
 
@@ -1405,12 +1419,24 @@ void FramebufferCapture::executeIfPending() {
 
             s_captureW = targetW;
             s_captureH = targetH;
-            if (auto raw = renderPlayLayerToTextureV2(pl, renderW, renderH)) {
-                restoreCaptureState();
-                dispatchProcessing(std::move(raw), renderW, renderH);
-                return;
+            bool const conservativeCapture = ModCompat::needsConservativeGameplayCapture();
+            if (!conservativeCapture) {
+                if (auto raw = renderPlayLayerToTextureV2(pl, renderW, renderH)) {
+                    restoreCaptureState();
+                    dispatchProcessing(std::move(raw), renderW, renderH);
+                    return;
+                }
+            } else {
+                static bool s_loggedConservativeCapture = false;
+                if (!s_loggedConservativeCapture) {
+                    s_loggedConservativeCapture = true;
+                    log::info("[FramebufferCapture] External gameplay renderer detected; "
+                              "using composited back-buffer capture");
+                }
             }
-            log::warn("[FramebufferCapture] Offscreen render failed; falling back to back-buffer capture");
+            if (!conservativeCapture) {
+                log::warn("[FramebufferCapture] Offscreen render failed; falling back to back-buffer capture");
+            }
             s_captureW = std::max(1, static_cast<int>(fs.width));
             s_captureH = std::max(1, static_cast<int>(fs.height));
         }
@@ -1669,10 +1695,11 @@ void FramebufferCapture::processDeferredCallbacks() {
     auto callbacks = std::move(s_deferredCallbacks);
     s_deferredCallbacks.clear();
     for (auto& d : callbacks) {
-        if (d.callback) {
+        if (!paimon::isRuntimeShuttingDown() && d.callback) {
             d.callback(d.success, d.texture, d.rgbaData, d.width, d.height);
             d.callback = nullptr;
         }
+        d.callback = nullptr;
         if (d.texture) d.texture->release();
     }
 }

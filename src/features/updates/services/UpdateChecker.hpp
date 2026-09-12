@@ -89,6 +89,9 @@ public:
     // Cancel the active download, if any.
     void cancelDownload();
 
+    // Cancel every async handle and release callbacks before Geode teardown.
+    void shutdown();
+
     // >0 when other is newer than base, 0 when equal, <0 when older.
     static int compareVersions(std::string const& base, std::string const& other);
 

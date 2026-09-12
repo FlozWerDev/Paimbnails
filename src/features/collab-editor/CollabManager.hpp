@@ -175,6 +175,7 @@ private:
     void enqueueOp(std::string kind, std::string const& gid, uint32_t version, std::string save,
                    float x = 0.f, float y = 0.f, bool hasPos = false);
     void flushSelectionIfNeeded();
+    void pollLocalSelection();
     void handlePeerSelection(matjson::Value const& msg);
     void clearPeerSelection(int clientId);
     void flushCameraIfNeeded();
@@ -332,6 +333,8 @@ private:
     matjson::Value m_pendingSelectionJson;
     bool m_selectionDirty = false;
     float m_sinceSelectionFlush = 0.f;
+    uint64_t m_selectionFingerprint = 0;
+    int m_selectionPollTicks = 0;
 
     std::unordered_map<int, PeerCamera> m_peerCameras;
     matjson::Value m_pendingCameraJson;

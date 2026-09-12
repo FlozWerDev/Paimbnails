@@ -3,9 +3,12 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cerrno>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <string>
 #include <string_view>
 
 namespace paimon::gifimport {
@@ -107,8 +110,18 @@ bool parseInt(std::string_view token, int& value) {
 }
 
 bool parseFloat(std::string_view token, float& value) {
-    auto const result = std::from_chars(token.data(), token.data() + token.size(), value);
-    return result.ec == std::errc{} && result.ptr == token.data() + token.size();
+    if (token.empty()) return false;
+
+    // libc++ only exposes floating-point from_chars starting with iOS 26,
+    // while Paimbnails targets iOS 14. strtof is available on every supported
+    // target; the copied string supplies its required null terminator.
+    std::string const owned(token);
+    char* end = nullptr;
+    errno = 0;
+    float const parsed = std::strtof(owned.c_str(), &end);
+    if (end != owned.c_str() + owned.size() || errno == ERANGE) return false;
+    value = parsed;
+    return true;
 }
 
 bool parseObject(std::string_view save, SavedObject& object) {

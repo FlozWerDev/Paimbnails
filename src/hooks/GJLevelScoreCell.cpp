@@ -8,6 +8,7 @@
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/PaimonDrawNode.hpp"
 #include "../core/modules/ModuleRegistry.hpp"
+#include "../features/scorecell/fx/ScoreGradientLayer.hpp"
 
 using namespace geode::prelude;
 
@@ -224,7 +225,8 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
         }
         f->helper = nullptr;
 
-        if (!paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) return;
+        bool scoreGradient = paimon::scorecell::scoreGradientEnabled();
+        if (!scoreGradient && !paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) return;
 
         CCSize cs = this->getContentSize();
         if (cs.width  <= 1.f) cs.width  = this->m_width;
@@ -237,6 +239,15 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
             if (cid.starts_with("paimon-")) continue;
             if (typeinfo_cast<CCLayerColor*>(child) != nullptr)
                 child->setVisible(false);
+        }
+
+        if (scoreGradient) {
+            auto* gm = GameManager::sharedState();
+            if (auto* gradient = paimon::scorecell::ScoreGradientLayer::create(
+                    cs, gm->colorForIdx(score->m_color1), gm->colorForIdx(score->m_color2))) {
+                this->addChild(gradient, -1);
+            }
+            return;
         }
 
         // Color-to-transparent gradient

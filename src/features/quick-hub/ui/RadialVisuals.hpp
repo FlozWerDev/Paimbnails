@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <system_error>
 
 namespace paimon::quickhub {
 
@@ -35,7 +37,40 @@ inline cocos2d::CCSprite* makeFittedIcon(std::string const& frame, float box) {
     return icon;
 }
 
-// Circulo relleno, centrado en el (0,0) del padre.
+// Icono del badge: archivo custom si existe, si no frame del juego.
+// Carga via TextureCache (cachea solo) sin registrar frames nuevos.
+inline cocos2d::CCSprite* makeBadgeIcon(RadialOptionDef const& def, float box) {
+    if (!def.imagePath.empty()) {
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(def.imagePath, ec) && !ec) {
+            auto* tex = cocos2d::CCTextureCache::sharedTextureCache()->addImage(
+                def.imagePath.c_str(), false);
+            if (tex) {
+                auto px = tex->getContentSizeInPixels();
+                if (px.width > 2.f || px.height > 2.f) {
+                    if (auto* spr = cocos2d::CCSprite::createWithTexture(tex)) {
+                        auto size = spr->getContentSize();
+                        float longest = std::max(size.width, size.height);
+                        spr->setScale(longest > 0.f ? box / longest : 1.f);
+                        spr->setAnchorPoint({0.5f, 0.5f});
+                        return spr;
+                    }
+                }
+            }
+        }
+    }
+    return makeFittedIcon(def.icon, box);
+}
+
+inline float clampBadgeScale(float v) {
+    return std::clamp(v, 0.2f, 3.f);
+}
+
+inline float wrapBadgeRotation(float v) {
+    while (v > 180.f) v -= 360.f;
+    while (v < -180.f) v += 360.f;
+    return v;
+}
 //
 // Se arma con createRoundedRect (un poligono convexo recorrido por el borde) y
 // no con un abanico desde el centro: CCDrawNode extruye cada vertice segun las
@@ -95,9 +130,13 @@ inline RadialBadge makeRadialBadge(
         }
     }
 
-    if (auto* icon = makeFittedIcon(def.icon, size * 0.58f)) {
+    if (auto* icon = makeBadgeIcon(def, size * 0.58f)) {
         icon->setPosition({0.f, 0.f});
         icon->setOpacity(dimmed ? 130 : 235);
+        icon->setScale(icon->getScale() * clampBadgeScale(def.imageScale));
+        icon->setRotation(wrapBadgeRotation(def.imageRotation));
+        icon->setFlipX(def.imageFlipX);
+        icon->setFlipY(def.imageFlipY);
         badge.root->addChild(icon, 2);
     }
 

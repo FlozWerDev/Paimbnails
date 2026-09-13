@@ -92,7 +92,8 @@ CCRenderTexture* renderPass(
     int width,
     int height,
     bool flipped,
-    CCGLProgram* shader
+    CCGLProgram* shader,
+    CCPoint tapStep = {1.f, 1.f}
 ) {
     auto* canvas = CCRenderTexture::create(
         width, height, kCCTexture2DPixelFormat_RGBA8888);
@@ -117,7 +118,7 @@ CCRenderTexture* renderPass(
     GLint const texel = shader->getUniformLocationForName("u_texel");
     if (texel != -1) {
         shader->setUniformLocationWith2f(
-            texel, 1.f / sourceSize.width, 1.f / sourceSize.height);
+            texel, tapStep.x / sourceSize.width, tapStep.y / sourceSize.height);
     }
 
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
@@ -203,18 +204,90 @@ bool reduceOnGpu(
     return true;
 }
 
+std::shared_ptr<SourceAnimation> blurSource(
+    std::shared_ptr<SourceAnimation> source, float radius
+) {
+    auto target = std::make_shared<SourceAnimation>(*source);
+    auto* director = CCDirector::get();
+    auto* shader = director && director->getOpenGLView()
+        ? paimon::shaders::getGifBlurShader() : nullptr;
+    CCSize const size{static_cast<float>(source->width), static_cast<float>(source->height)};
+    bool gpu = shader != nullptr;
+    if (gpu) for (std::size_t index = 0; index < source->frames.size(); ++index) {
+        FramePool const pool;
+        auto* texture = new CCTexture2D();
+        if (!texture->initWithData(source->frames[index].rgba.data(),
+            kCCTexture2DPixelFormat_RGBA8888, source->width, source->height, size)) {
+            texture->release(); gpu = false; break;
+        }
+        auto* horizontal = renderPass(texture, size, source->width, source->height,
+            false, shader, {radius, 0.f});
+        auto* vertical = horizontal ? renderPass(horizontal->getSprite()->getTexture(),
+            size, source->width, source->height, true, shader, {0.f, radius}) : nullptr;
+        auto* image = vertical ? vertical->newCCImage(true) : nullptr;
+        texture->release();
+        if (!image) { gpu = false; break; }
+        gpu = image->getData() && image->getWidth() >= source->width && image->getHeight() >= source->height;
+        if (gpu) for (int y = 0; y < source->height; ++y) {
+            std::memcpy(target->frames[index].rgba.data() + static_cast<std::size_t>(y) * source->width * 4,
+                image->getData() + static_cast<std::size_t>(y) * image->getWidth() * 4,
+                static_cast<std::size_t>(source->width) * 4);
+        }
+        image->release();
+        if (!gpu) break;
+    }
+    if (gpu && (!hasVisibleAlpha(*source) || hasVisibleAlpha(*target))) return target;
+    // Same kernel and clamp-to-edge sampling if GL is unavailable.
+    parallelFor(source->frames.size(), [&](std::size_t index) {
+        auto input = source->frames[index].rgba;
+        auto& output = target->frames[index].rgba;
+        constexpr float weights[]{1.f, 4.f, 6.f, 4.f, 1.f};
+        for (int axis = 0; axis < 2; ++axis) {
+            for (int y = 0; y < source->height; ++y) for (int x = 0; x < source->width; ++x) {
+                float sum[4]{};
+                for (int tap = -2; tap <= 2; ++tap) {
+                    float const offset = (axis == 0 ? x : y) + tap * radius;
+                    int const limit = (axis == 0 ? source->width : source->height) - 1;
+                    float const clamped = std::clamp(offset, 0.f, static_cast<float>(limit));
+                    int const lo = static_cast<int>(clamped), hi = std::min(lo + 1, limit);
+                    float const fraction = clamped - lo;
+                    auto const a = (static_cast<std::size_t>(axis == 0 ? y : lo) * source->width + (axis == 0 ? lo : x)) * 4;
+                    auto const b = (static_cast<std::size_t>(axis == 0 ? y : hi) * source->width + (axis == 0 ? hi : x)) * 4;
+                    float const alpha = input[a + 3] * (1.f - fraction) + input[b + 3] * fraction;
+                    float const weight = weights[tap + 2];
+                    sum[3] += alpha * weight;
+                    for (int c = 0; c < 3; ++c) sum[c] +=
+                        (input[a + c] * (1.f - fraction) + input[b + c] * fraction) * alpha * weight;
+                }
+                auto const at = (static_cast<std::size_t>(y) * source->width + x) * 4;
+                for (int c = 0; c < 3; ++c) output[at + c] = static_cast<std::uint8_t>(
+                    std::clamp(sum[3] > 0.f ? sum[c] / sum[3] : 0.f, 0.f, 255.f));
+                output[at + 3] = static_cast<std::uint8_t>(std::clamp(sum[3] / 16.f, 0.f, 255.f));
+            }
+            if (axis == 0) input = output;
+        }
+    });
+    return target;
+}
+
 } // namespace
 
 std::shared_ptr<SourceAnimation> prescaleSource(
     std::shared_ptr<SourceAnimation> source,
-    int maxDimension
+    int maxDimension,
+    float blurRadius
 ) {
     if (!source || source->frames.empty() || source->width <= 0 || source->height <= 0) {
         return source;
     }
     int const working = std::max(kMinWorking, maxDimension * kWorkingFactor);
     int const longest = std::max(source->width, source->height);
-    if (longest <= working) return source;
+    auto filter = [&](std::shared_ptr<SourceAnimation> image) {
+        return blurRadius > 0.f ? blurSource(image,
+            std::clamp(blurRadius, 0.35f, 2.f) * std::max(image->width, image->height) /
+                std::max(maxDimension, 1)) : image;
+    };
+    if (longest <= working) return filter(source);
 
     auto reduced = std::make_shared<SourceAnimation>();
     reduced->width = source->width >= source->height
@@ -241,7 +314,7 @@ std::shared_ptr<SourceAnimation> prescaleSource(
         "[GifImport] Fuente reducida de {}x{} a {}x{} ({} frames)",
         source->width, source->height, reduced->width, reduced->height,
         reduced->frames.size());
-    return reduced;
+    return filter(reduced);
 }
 
 } // namespace paimon::gifimport

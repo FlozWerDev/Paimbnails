@@ -1494,6 +1494,7 @@ void compactPaintSpeckles(
 
 struct GeometryContext {
     ImportMode mode = ImportMode::Blocks;
+    bool quarterGlow = false;
     std::vector<std::vector<std::uint8_t>> obstacles;
     std::vector<int> ranks;
     std::vector<std::uint8_t> empty;
@@ -1506,6 +1507,46 @@ std::vector<Primitive> buildGeometry(
     int color,
     GeometryContext const& context
 ) {
+    if (usesSoftGeometry(context.mode)) {
+        std::vector<Primitive> objects;
+        if (context.mode == ImportMode::Vert) {
+            auto sorted = positions;
+            std::sort(sorted.begin(), sorted.end());
+            for (std::size_t i = 0; i < sorted.size();) {
+                int const first = sorted[i];
+                int const row = first / width;
+                std::size_t end = i + 1;
+                while (end < sorted.size() && sorted[end] / width == row &&
+                    sorted[end] == sorted[end - 1] + 1) ++end;
+                float const span = static_cast<float>(end - i);
+                float const x = first % width + span * 0.5f;
+                float const y = row + 0.5f;
+                // Facing ramps interpolate rows; equal horizontal runs share a pair.
+                objects.push_back({x, y + 0.5f, span, 1.f, 0.f,
+                    static_cast<std::uint16_t>(color), PrimitiveKind::Stamp, 0, 1});
+                objects.push_back({x, y - 0.5f, span, 1.f, 0.f,
+                    static_cast<std::uint16_t>(color), PrimitiveKind::Stamp, 0, 2});
+                i = end;
+            }
+        } else {
+            objects.reserve(positions.size() * (context.quarterGlow ? 4 : 1));
+            for (int position : positions) {
+                float const x = position % width + 0.5f;
+                float const y = position / width + 0.5f;
+                if (context.quarterGlow) {
+                    constexpr float dx[]{-1.f, 1.f, 1.f, -1.f};
+                    constexpr float dy[]{-1.f, -1.f, 1.f, 1.f};
+                    for (int q = 0; q < 4; ++q) objects.push_back({x + dx[q], y + dy[q],
+                        2.f, 2.f, 0.f, static_cast<std::uint16_t>(color),
+                        PrimitiveKind::Stamp, 0, static_cast<std::uint16_t>(3 + q)});
+                } else {
+                    objects.push_back({x, y, 4.f, 4.f, 0.f,
+                        static_cast<std::uint16_t>(color), PrimitiveKind::Stamp, 0, 0});
+                }
+            }
+        }
+        return objects;
+    }
     switch (context.mode) {
         case ImportMode::Art:
             return vectorizeArt(
@@ -1530,6 +1571,8 @@ std::vector<Primitive> buildGeometry(
                 context.ranks[static_cast<std::size_t>(color)],
                 context.obstacles[static_cast<std::size_t>(color)],
                 context.empty);
+        case ImportMode::Blur:
+        case ImportMode::Vert:
         case ImportMode::Blocks:
             break;
     }
@@ -2047,6 +2090,8 @@ BuildResult buildAt(
     auto const referenceFrames = frames;
     GeometryContext context;
     context.mode = options.mode;
+    context.quarterGlow = options.mode == ImportMode::Blur &&
+        options.softStamps.size() == 7 && !options.softStamps[0].objectId;
     context.obstacles.assign(palette.size(), {});
     context.ranks.assign(palette.size(), 0);
     if (options.mode == ImportMode::Art) {
@@ -2135,7 +2180,29 @@ BuildResult buildAt(
     plan.motionTracks = std::move(chosen.motionTracks);
     plan.strategy = std::move(chosen.strategy);
     applyImageWatermark(plan, options.objectBudget);
-    collectStamps(plan);
+    if (usesSoftGeometry(options.mode)) {
+        plan.stamps = options.softStamps;
+        plan.glowPaletteStart = 0;
+        plan.glowOpacity = 1.f;
+        if (options.mode == ImportMode::Blur) {
+            auto const& mask = plan.stamps[context.quarterGlow ? 3 : 0].mask;
+            double sum = 0.;
+            for (auto alpha : mask.coverage) sum += alpha / 255.;
+            // Preserve the brightness of a flat field despite overlapping glows.
+            plan.glowOpacity = static_cast<float>(std::min(1.,
+                mask.coverage.size() / std::max(16. * sum, 1.)));
+        }
+        if (options.softBackdrop) {
+            plan.softBackdropColor = static_cast<int>(plan.palette.size());
+            plan.palette.push_back({0, 0, 0});
+            plan.staticObjects.insert(plan.staticObjects.begin(), {
+                width * 0.5f, height * 0.5f, static_cast<float>(width), static_cast<float>(height),
+                0.f, static_cast<std::uint16_t>(plan.softBackdropColor), PrimitiveKind::Block, -999});
+        }
+        plan.strategy = (options.mode == ImportMode::Blur ? "blur/" : "vert/") + plan.strategy;
+    } else {
+        collectStamps(plan);
+    }
     plan.visualObjects = plan.staticObjects.size();
     for (auto const& track : plan.tracks) plan.visualObjects += track.objects.size();
     for (auto const& track : plan.motionTracks) plan.visualObjects += track.objects.size();
@@ -2443,6 +2510,23 @@ BuildResult buildPlan(
     }
 
     Options const options = sanitize(rawOptions, source.frames.size());
+    if (usesSoftGeometry(options.mode)) {
+        auto validStamp = [&](std::size_t index) {
+            if (index >= options.softStamps.size()) return false;
+            auto const& stamp = options.softStamps[index];
+            return stamp.objectId > 0 && stamp.baseWidth > 0.f && stamp.baseHeight > 0.f &&
+                stamp.mask.width > 0 && stamp.mask.height > 0 &&
+                stamp.mask.coverage.size() == static_cast<std::size_t>(stamp.mask.width) * stamp.mask.height;
+        };
+        bool const valid = options.softStamps.size() == 7 && (options.mode == ImportMode::Blur
+            ? (options.softStamps[0].objectId > 0 ? validStamp(0)
+                : (validStamp(3) && validStamp(4) && validStamp(5) && validStamp(6)))
+            : (validStamp(1) && validStamp(2)));
+        if (!valid) {
+            finishProgress(progress);
+            return {{}, "No se encontro el glow o gradiente nativo en los recursos de GD."};
+        }
+    }
     int frameLimit = std::min(options.maxFrames, static_cast<int>(source.frames.size()));
     Options searchOptions = options;
     searchOptions.motion = false;
@@ -2453,7 +2537,7 @@ BuildResult buildPlan(
     // El glow va despues de elegir el plan a proposito: si entrase en la busqueda
     // de resolucion, el halo contaria como diferencia contra el original y la
     // busqueda responderia bajando la rejilla para compensar algo que es de adorno.
-    if (result) {
+    if (result && !usesSoftGeometry(options.mode)) {
         applyGlow(
             result.plan, options.glow, static_cast<std::size_t>(options.objectBudget));
     }

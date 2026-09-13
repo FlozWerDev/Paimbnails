@@ -76,6 +76,21 @@ std::vector<CustomQuickButton> QuickHubManager::getCustomButtons() const {
         b.relY          = static_cast<float>(v["relY"].asDouble().unwrapOr(-1.0));
         b.tag           = static_cast<int>(v["tag"].asInt().unwrapOr(0));
         b.shape         = static_cast<RadialButtonShape>(static_cast<int>(v["shape"].asInt().unwrapOr(0)));
+        // Skin/SFX: claves ausentes = defaults del comportamiento viejo.
+        b.imagePath     = v["imagePath"].asString().unwrapOr("");
+        b.imageScale    = static_cast<float>(v["imageScale"].asDouble().unwrapOr(1.0));
+        b.imageRotation = static_cast<float>(v["imageRotation"].asDouble().unwrapOr(0.0));
+        b.imageFlipX    = v["imageFlipX"].asBool().unwrapOr(false);
+        b.imageFlipY    = v["imageFlipY"].asBool().unwrapOr(false);
+        b.sfxKind       = static_cast<int>(v["sfxKind"].asInt().unwrapOr(0));
+        b.sfxPath       = v["sfxPath"].asString().unwrapOr("");
+        b.sfxId         = static_cast<int>(v["sfxId"].asInt().unwrapOr(0));
+        b.sfxVolume     = static_cast<float>(v["sfxVolume"].asDouble().unwrapOr(1.0));
+        b.sfxSpeed      = static_cast<float>(v["sfxSpeed"].asDouble().unwrapOr(1.0));
+        b.sfxStartMs    = static_cast<int>(v["sfxStartMs"].asInt().unwrapOr(0));
+        b.sfxEndMs      = static_cast<int>(v["sfxEndMs"].asInt().unwrapOr(0));
+        b.sfxFadeInMs   = static_cast<int>(v["sfxFadeInMs"].asInt().unwrapOr(0));
+        b.sfxFadeOutMs  = static_cast<int>(v["sfxFadeOutMs"].asInt().unwrapOr(0));
         b.color.r       = static_cast<GLubyte>(v["colorR"].asInt().unwrapOr(120));
         b.color.g       = static_cast<GLubyte>(v["colorG"].asInt().unwrapOr(200));
         b.color.b       = static_cast<GLubyte>(v["colorB"].asInt().unwrapOr(255));
@@ -111,13 +126,7 @@ std::vector<RadialOptionDef> QuickHubManager::getAllRadialOptions() const {
     options.reserve(options.size() + customButtons.size());
 
     for (auto const& button : customButtons) {
-        options.push_back({
-            button.id,
-            button.name.empty() ? "Boton rapido" : button.name,
-            button.icon.empty() ? "GJ_optionsBtn_001.png" : button.icon,
-            button.color,
-            true,
-        });
+        options.push_back(toRadialDef(button));
     }
     return options;
 }
@@ -140,6 +149,20 @@ void QuickHubManager::writeCustomButtons(std::vector<CustomQuickButton> const& a
         o["relY"]          = b.relY;
         o["tag"]           = b.tag;
         o["shape"]         = static_cast<int>(b.shape);
+        o["imagePath"]     = b.imagePath;
+        o["imageScale"]    = b.imageScale;
+        o["imageRotation"] = b.imageRotation;
+        o["imageFlipX"]    = b.imageFlipX;
+        o["imageFlipY"]    = b.imageFlipY;
+        o["sfxKind"]       = b.sfxKind;
+        o["sfxPath"]       = b.sfxPath;
+        o["sfxId"]         = b.sfxId;
+        o["sfxVolume"]     = b.sfxVolume;
+        o["sfxSpeed"]      = b.sfxSpeed;
+        o["sfxStartMs"]    = b.sfxStartMs;
+        o["sfxEndMs"]      = b.sfxEndMs;
+        o["sfxFadeInMs"]   = b.sfxFadeInMs;
+        o["sfxFadeOutMs"]  = b.sfxFadeOutMs;
         o["colorR"]        = static_cast<int>(b.color.r);
         o["colorG"]        = static_cast<int>(b.color.g);
         o["colorB"]        = static_cast<int>(b.color.b);
@@ -182,15 +205,7 @@ bool QuickHubManager::deleteCustomButton(std::string const& id) {
 }
 
 std::string QuickHubManager::makeUniqueCustomId(std::string const& suggestedName) {
-    std::string base = "custom:";
-    for (char c : suggestedName) {
-        if (std::isalnum(static_cast<unsigned char>(c))) {
-            base.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-        } else if (c == ' ' || c == '-' || c == '_') {
-            base.push_back('-');
-        }
-    }
-    if (base == "custom:") base += "button";
+    std::string base = "custom:" + slugify(suggestedName);
     std::string candidate = base;
     int n = 1;
     while (getCustomButton(candidate).has_value()) {

@@ -24,6 +24,8 @@ enum class ImportMode {
     Render,
     Free,
     Circles,
+    Blur,
+    Vert,
 };
 
 enum class GlowMode {
@@ -61,24 +63,6 @@ struct BuildProgress {
     float value = 0.f;
     int pass = 0;
     int passes = 0;
-};
-
-struct Options {
-    int maxDimension = 48;
-    int minDimension = 6;
-    int maxColors = 16;
-    int maxFrames = 60;
-    int objectBudget = 12000;
-    int alphaThreshold = 96;
-    int backgroundTolerance = 28;
-    float pixelSize = 6.f;
-    BackgroundMode background = BackgroundMode::AutoBorder;
-    SamplingMode sampling = SamplingMode::Smooth;
-    ImportMode mode = ImportMode::Blocks;
-    GlowMode glow = GlowMode::Off;
-    bool dither = false;
-    bool loop = true;
-    bool motion = true;
 };
 
 inline std::size_t animationEventGroupCount(std::size_t frames, bool loop) {
@@ -139,6 +123,32 @@ struct PlanStamp {
     bool flipX = false;
     StampMask mask;
 };
+
+struct Options {
+    int maxDimension = 48;
+    int minDimension = 6;
+    int maxColors = 16;
+    int maxFrames = 60;
+    int objectBudget = 12000;
+    int alphaThreshold = 96;
+    int backgroundTolerance = 28;
+    float pixelSize = 6.f;
+    BackgroundMode background = BackgroundMode::AutoBorder;
+    SamplingMode sampling = SamplingMode::Smooth;
+    ImportMode mode = ImportMode::Blocks;
+    GlowMode glow = GlowMode::Off;
+    bool dither = false;
+    bool loop = true;
+    bool motion = true;
+    float blurRadius = 1.f;
+    bool softBackdrop = true;
+    // Snapshot of native alpha masks, prepared on the GL thread.
+    std::vector<PlanStamp> softStamps;
+};
+
+inline bool usesSoftGeometry(ImportMode mode) {
+    return mode == ImportMode::Blur || mode == ImportMode::Vert;
+}
 
 enum class PrimitiveKind {
     Block,
@@ -203,6 +213,7 @@ struct ImportPlan {
     // Desde aqui la paleta son canales de glow: mezclados y a media opacidad.
     std::size_t glowPaletteStart = static_cast<std::size_t>(-1);
     float glowOpacity = 1.f;
+    int softBackdropColor = -1;
     std::size_t visualObjects = 0;
     std::size_t triggerObjects = 0;
     std::size_t totalObjects = 0;

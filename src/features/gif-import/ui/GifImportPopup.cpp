@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cmath>
 #include <mutex>
 #include <optional>
 
@@ -280,7 +281,9 @@ void GifImportPopup::loadOptions() {
         ? SamplingMode::Smooth : SamplingMode::Pixel;
     int const savedMode = static_cast<int>(mod->getSavedValue<int64_t>(
         "gif-import-mode", mod->getSavedValue<bool>("gif-import-art-mode", false) ? 1 : 0));
-    m_options.mode = savedMode == 5 ? ImportMode::Circles
+    m_options.mode = savedMode == 7 ? ImportMode::Vert
+        : savedMode == 6 ? ImportMode::Blur
+        : savedMode == 5 ? ImportMode::Circles
         : savedMode == 4 ? ImportMode::Free
         : savedMode == 3
             ? (renderEnabled() ? ImportMode::Render : ImportMode::Paint)
@@ -291,6 +294,10 @@ void GifImportPopup::loadOptions() {
     m_options.glow = static_cast<GlowMode>(std::clamp<int>(
         static_cast<int>(mod->getSavedValue<int64_t>("gif-import-glow", 0)), 0, 2));
     m_options.motion = mod->getSavedValue<bool>("gif-import-motion", true);
+    m_options.softBackdrop = mod->getSavedValue<bool>("gif-import-soft-backdrop", true);
+    m_options.blurRadius = static_cast<float>(mod->getSavedValue<double>("gif-import-blur-radius", 1.0));
+    if (!std::isfinite(m_options.blurRadius)) m_options.blurRadius = 1.f;
+    m_options.blurRadius = std::clamp(m_options.blurRadius, 0.f, 1.6f);
 }
 
 void GifImportPopup::saveOptions() const {
@@ -308,6 +315,8 @@ void GifImportPopup::saveOptions() const {
     mod->setSavedValue<bool>("gif-import-loop", m_options.loop);
     mod->setSavedValue<int64_t>("gif-import-glow", static_cast<int64_t>(m_options.glow));
     mod->setSavedValue<bool>("gif-import-motion", m_options.motion);
+    mod->setSavedValue<double>("gif-import-blur-radius", m_options.blurRadius);
+    mod->setSavedValue<bool>("gif-import-soft-backdrop", m_options.softBackdrop);
 }
 
 void GifImportPopup::pickSource() {
@@ -507,9 +516,12 @@ void GifImportPopup::startProcess() {
     if (m_options.mode == ImportMode::Free && !stampLibraryReady()) buildStampLibrary();
     // La reduccion toca GL, asi que se hace aqui y no dentro del hilo. Se guarda
     // porque cambiar colores o presupuesto no cambia la resolucion de trabajo.
-    if (!m_scaled || m_scaledFor != m_options.maxDimension) {
-        m_scaled = prescaleSource(m_source, m_options.maxDimension);
+    if (usesSoftGeometry(m_options.mode)) m_options.softStamps = buildSoftStampLibrary();
+    float const blur = m_options.mode == ImportMode::Blur ? m_options.blurRadius : 0.f;
+    if (!m_scaled || m_scaledFor != m_options.maxDimension || m_scaledBlur != blur) {
+        m_scaled = prescaleSource(m_source, m_options.maxDimension, blur);
         m_scaledFor = m_options.maxDimension;
+        m_scaledBlur = blur;
     }
     auto source = m_scaled;
     Options const options = m_options;
@@ -572,16 +584,25 @@ void GifImportPopup::refreshControls() {
         : m_options.mode == ImportMode::Art ? "Modo: Art"
         : m_options.mode == ImportMode::Free ? "Modo: Libre"
         : m_options.mode == ImportMode::Circles ? "Modo: Circulos"
+        : m_options.mode == ImportMode::Blur ? "Modo: Blur"
+        : m_options.mode == ImportMode::Vert ? "Modo: Vert"
         : "Modo: Bloques");
     m_samplingSprite->setString(vector
         ? "Suave: fijo"
         : (m_options.sampling == SamplingMode::Smooth ? "Suave" : "Pixel"));
-    m_ditherSprite->setString(vector
+    m_ditherSprite->setString(usesSoftGeometry(m_options.mode)
+        ? (m_options.softBackdrop ? "Base: negra" : "Base: nivel")
+        : vector
         ? "Dither: no"
         : (m_options.dither ? "Dither: si" : "Dither: no"));
     m_loopSprite->setString(m_options.loop ? "Loop: si" : "Loop: no");
     m_glowSprite->setString(
-        m_options.glow == GlowMode::Strong ? "Glow: alto"
+        m_options.mode == ImportMode::Blur
+            ? (m_options.blurRadius == 0.f ? "Filtro: no"
+                : m_options.blurRadius < 0.8f ? "Blur: fino"
+                : m_options.blurRadius < 1.3f ? "Blur: suave" : "Blur: alto")
+        : m_options.mode == ImportMode::Vert ? "Grad. vertical"
+        : m_options.glow == GlowMode::Strong ? "Glow: alto"
         : m_options.glow == GlowMode::Soft ? "Glow: suave"
         : "Glow: no");
 
@@ -733,9 +754,12 @@ void GifImportPopup::runBackground() {
     auto const winSize = CCDirector::get()->getWinSize();
     CCPoint const workspaceCenter{winSize.width * 0.5f, winSize.height * 0.4f};
     auto const center = editor->m_objectLayer->convertToNodeSpace(workspaceCenter);
-    if (!m_scaled || m_scaledFor != m_options.maxDimension) {
-        m_scaled = prescaleSource(m_source, m_options.maxDimension);
+    if (usesSoftGeometry(m_options.mode)) m_options.softStamps = buildSoftStampLibrary();
+    float const blur = m_options.mode == ImportMode::Blur ? m_options.blurRadius : 0.f;
+    if (!m_scaled || m_scaledFor != m_options.maxDimension || m_scaledBlur != blur) {
+        m_scaled = prescaleSource(m_source, m_options.maxDimension, blur);
         m_scaledFor = m_options.maxDimension;
+        m_scaledBlur = blur;
     }
     auto result = startBackgroundImport(ui, m_scaled, m_options, center);
     if (result.isErr()) {
@@ -844,7 +868,9 @@ void GifImportPopup::toggleMode() {
         : m_options.mode == ImportMode::Art ? ImportMode::Paint
         : m_options.mode == ImportMode::Paint && renderEnabled() ? ImportMode::Render
         : m_options.mode == ImportMode::Free ? ImportMode::Circles
-        : m_options.mode == ImportMode::Circles ? ImportMode::Blocks
+        : m_options.mode == ImportMode::Circles ? ImportMode::Blur
+        : m_options.mode == ImportMode::Blur ? ImportMode::Vert
+        : m_options.mode == ImportMode::Vert ? ImportMode::Blocks
         : ImportMode::Free;
     // Rasterizar la decoracion de GD toca GL y tarda un momento, asi que se hace
     // una vez aqui y con el aviso ya puesto. Con un plan a medio trazar se deja
@@ -879,6 +905,11 @@ void GifImportPopup::toggleSampling() {
 }
 
 void GifImportPopup::toggleDither() {
+    if (usesSoftGeometry(m_options.mode)) {
+        m_options.softBackdrop = !m_options.softBackdrop;
+        requestProcess();
+        return;
+    }
     if (m_options.mode != ImportMode::Blocks) return;
     m_options.dither = !m_options.dither;
     requestProcess();
@@ -890,6 +921,14 @@ void GifImportPopup::toggleLoop() {
 }
 
 void GifImportPopup::toggleGlow() {
+    if (m_options.mode == ImportMode::Vert) return;
+    if (m_options.mode == ImportMode::Blur) {
+        m_options.blurRadius = m_options.blurRadius == 0.f ? 0.6f
+            : m_options.blurRadius < 0.8f ? 1.f
+            : m_options.blurRadius < 1.3f ? 1.6f : 0.f;
+        requestProcess();
+        return;
+    }
     m_options.glow = m_options.glow == GlowMode::Off ? GlowMode::Soft
         : m_options.glow == GlowMode::Soft ? GlowMode::Strong
         : GlowMode::Off;

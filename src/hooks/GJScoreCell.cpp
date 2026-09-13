@@ -23,6 +23,7 @@ using namespace geode::prelude;
 #include "../features/scorecell/ScoreCellRefresh.hpp"
 #include "../features/scorecell/LeaderboardCellLayout.hpp"
 #include "../features/scorecell/fx/ScoreCellHoverWatcher.hpp"
+#include "../features/scorecell/fx/ScoreGradientLayer.hpp"
 #include "../core/modules/ModuleRegistry.hpp"
 #include "../features/profiles/services/ProfileGradientEffects.hpp"
 #include <Geode/binding/GameManager.hpp>
@@ -169,8 +170,6 @@ public:
         if (paimon::isRuntimeShuttingDown()) return;
         auto f = m_fields.self();
         if (!f || f->m_isBeingDestroyed) return;
-        if (!this->getParent()) return;
-
         auto cs = this->getContentSize();
         if (cs.width <= 1.f || cs.height <= 1.f) {
             cs.width = this->m_width;
@@ -178,7 +177,20 @@ public:
         }
         if (cs.width <= 1.f || cs.height <= 1.f) return;
 
-        if (paimon::scorecell::gradientEnabled() &&
+        if (auto old = getChildByID("paimon-score-gradient")) old->removeFromParent();
+        bool scoreGradient = paimon::scorecell::scoreGradientEnabled();
+        if (scoreGradient && m_score) {
+            auto* gm = GameManager::sharedState();
+            if (auto* gradient = paimon::scorecell::ScoreGradientLayer::create(
+                    cs, gm->colorForIdx(m_score->m_color1), gm->colorForIdx(m_score->m_color2))) {
+                addChild(gradient, -15);
+                pushGameColorLayersBehind(this);
+            }
+        }
+        if (f->m_profileBg) f->m_profileBg->setVisible(!scoreGradient);
+        if (f->m_darkOverlay) f->m_darkOverlay->setVisible(!scoreGradient);
+
+        if (!scoreGradient && paimon::scorecell::gradientEnabled() &&
             paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) {
             addIconGradientBackground(cs);
         } else {
@@ -194,7 +206,7 @@ public:
         f->m_hoverWatcher = nullptr;
 
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
-        if (paimon::scorecell::hoverEnabled()) {
+        if (!scoreGradient && paimon::scorecell::hoverEnabled()) {
             auto watcher = paimon::scorecell::ScoreCellHoverWatcher::create(
                 paimon::scorecell::normalizeHoverType(paimon::scorecell::hoverType()),
                 paimon::scorecell::hoverIntensity());
@@ -307,8 +319,9 @@ public:
             }
 
     // The gradient owns the background, so skip the blurred thumbnail.
-            if (paimon::scorecell::gradientEnabled() &&
-                paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) {
+            if (paimon::scorecell::scoreGradientEnabled() ||
+                (paimon::scorecell::gradientEnabled() &&
+                 paimon::modules::isEnabled("paimbnails.leaderboardcells.browser"))) {
                 bgType = "none";
             }
 
@@ -592,6 +605,7 @@ public:
 
     $override void loadFromScore(GJUserScore* score) {
         GJScoreCell::loadFromScore(score);
+        m_fields->m_isBeingDestroyed = false;
         
         pushGameColorLayersBehind(this);
 

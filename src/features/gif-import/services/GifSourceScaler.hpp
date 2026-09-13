@@ -16,7 +16,8 @@ namespace paimon::gifimport {
 // recortar.
 std::shared_ptr<SourceAnimation> prescaleSource(
     std::shared_ptr<SourceAnimation> source,
-    int maxDimension
+    int maxDimension,
+    float blurRadius = 0.f
 );
 
 } // namespace paimon::gifimport

@@ -278,7 +278,7 @@ bool resolveShapes(LevelEditorLayer* editor, ImportMode mode, ShapeTable& shapes
     if (!measureShape(editor, shapes[shapeIndex(PrimitiveKind::Block)])) return false;
     shapes[shapeIndex(PrimitiveKind::Stroke)] = shapes[shapeIndex(PrimitiveKind::Block)];
     shapes[shapeIndex(PrimitiveKind::Glow)] = shapes[shapeIndex(PrimitiveKind::Block)];
-    if (mode == ImportMode::Blocks) return true;
+    if (mode == ImportMode::Blocks || usesSoftGeometry(mode)) return true;
 
     for (auto kind : {PrimitiveKind::Circle, PrimitiveKind::Triangle,
                       PrimitiveKind::WideTriangle}) {
@@ -356,7 +356,7 @@ Result<PreparedImport> prepareImport(
 
     float const moveScale = plan.motionTracks.empty() ? 3.f : moveUnitScale(editor);
 
-    bool const layered = usesPaintGeometry(plan.mode);
+    bool const layered = usesPaintGeometry(plan.mode) || usesSoftGeometry(plan.mode);
     int const zLayer = layered ? sharedZLayer(shapes, !plan.stamps.empty()) : 0;
     std::string payload;
     payload.reserve(plan.totalObjects * 112);
@@ -499,7 +499,8 @@ Result<> installPalette(
 ) {
     for (std::size_t i = 0; i < plan.palette.size(); ++i) {
         auto const& color = plan.palette[i];
-        bool const glow = i >= plan.glowPaletteStart;
+        bool const glow = i >= plan.glowPaletteStart &&
+            static_cast<int>(i) != plan.softBackdropColor;
         float const opacity = glow ? plan.glowOpacity : 1.f;
         ccColor3B const gdColor{color.r, color.g, color.b};
         auto* action = ColorAction::create(gdColor, glow, 0);

@@ -539,10 +539,40 @@ std::vector<std::uint8_t> renderPlanFrame(ImportPlan const& plan, int frame, int
         static_cast<std::size_t>(outputWidth) * outputHeight * 4, 0);
     frame = std::clamp(frame, 0, std::max(static_cast<int>(plan.frames.size()) - 1, 0));
 
+    std::vector<float> light;
+    if (usesSoftGeometry(plan.mode)) light.assign(pixels.size(), 0.f);
+
     auto draw = [&](Primitive const& object) {
         if (object.color >= plan.palette.size()) return;
         auto const& color = plan.palette[object.color];
         float const opacity = object.color >= plan.glowPaletteStart ? plan.glowOpacity : 1.f;
+        if (usesSoftGeometry(plan.mode) && object.kind == PrimitiveKind::Stamp &&
+            object.stamp < plan.stamps.size()) {
+            auto const& mask = plan.stamps[object.stamp].mask;
+            if (mask.empty()) return;
+            int const left = std::max(0, static_cast<int>(std::floor((object.x - object.width * 0.5f) * scale)));
+            int const right = std::min(outputWidth, static_cast<int>(std::ceil((object.x + object.width * 0.5f) * scale)));
+            int const top = std::max(0, static_cast<int>(std::floor((object.y - object.height * 0.5f) * scale)));
+            int const bottom = std::min(outputHeight, static_cast<int>(std::ceil((object.y + object.height * 0.5f) * scale)));
+            for (int y = top; y < bottom; ++y) for (int x = left; x < right; ++x) {
+                float const u = ((x + 0.5f) / scale - object.x) / object.width + 0.5f;
+                float const v = ((y + 0.5f) / scale - object.y) / object.height + 0.5f;
+                if (u < 0.f || v < 0.f || u >= 1.f || v >= 1.f) continue;
+                float const mx = std::clamp(u * mask.width - 0.5f, 0.f, mask.width - 1.f);
+                float const my = std::clamp(v * mask.height - 0.5f, 0.f, mask.height - 1.f);
+                int const x0 = static_cast<int>(mx), y0 = static_cast<int>(my);
+                int const x1 = std::min(x0 + 1, mask.width - 1), y1 = std::min(y0 + 1, mask.height - 1);
+                auto at = [&](int sx, int sy) { return mask.coverage[sy * mask.width + sx] / 255.f; };
+                float const a = ((at(x0, y0) * (1.f - mx + x0) + at(x1, y0) * (mx - x0)) * (1.f - my + y0) +
+                    (at(x0, y1) * (1.f - mx + x0) + at(x1, y1) * (mx - x0)) * (my - y0)) * opacity;
+                std::size_t const index = (static_cast<std::size_t>(y) * outputWidth + x) * 4;
+                light[index] += color.r * a;
+                light[index + 1] += color.g * a;
+                light[index + 2] += color.b * a;
+                light[index + 3] += a;
+            }
+            return;
+        }
         auto const shape = xformOf(object, plan.stamps);
         forEachSample(shape, plan.width, plan.height, scale, [&](int x, int y) {
             std::size_t const index = (static_cast<std::size_t>(y) * outputWidth + x) * 4;
@@ -587,6 +617,15 @@ std::vector<std::uint8_t> renderPlanFrame(ImportPlan const& plan, int frame, int
         return left->layer < right->layer;
     });
     for (auto const* object : visible) draw(*object);
+    if (usesSoftGeometry(plan.mode)) {
+        for (std::size_t i = 0; i < pixels.size(); i += 4) {
+            float const alpha = plan.softBackdropColor >= 0 ? 1.f : std::min(1.f, light[i + 3]);
+            if (alpha <= 0.f) continue;
+            pixels[i + 3] = static_cast<std::uint8_t>(std::lround(alpha * 255.f));
+            for (int c = 0; c < 3; ++c) pixels[i + c] = static_cast<std::uint8_t>(
+                std::lround(std::clamp(light[i + c] / alpha, 0.f, 255.f)));
+        }
+    }
     return pixels;
 }
 

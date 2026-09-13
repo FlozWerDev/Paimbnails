@@ -86,6 +86,13 @@ gfile::FilePickOptions::Filter buildTemplateFilter() {
     return f;
 }
 
+gfile::FilePickOptions::Filter gmdFilter() {
+    gfile::FilePickOptions::Filter f;
+    f.description = "Geometry Dash Levels (*.gmd)";
+    f.files = {"*.gmd"};
+    return f;
+}
+
 void pickImage(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {imageFilter()}}),
@@ -110,6 +117,13 @@ void pickGif(FilePickCallback cb) {
 void pickBuildTemplate(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {buildTemplateFilter()}}),
+        std::move(cb)
+    );
+}
+
+void pickGmd(FilePickCallback cb) {
+    s_filePickHolder.spawn("Paimbnails FilePicker",
+        gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {gmdFilter()}}),
         std::move(cb)
     );
 }

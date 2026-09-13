@@ -1,14 +1,21 @@
 #include "QuickButtonPopup.hpp"
 
+#include "QuickButtonEditKit.hpp"
+#include "QuickButtonImagePopup.hpp"
+#include "QuickButtonSfxPopup.hpp"
 #include "RadialVisuals.hpp"
+#include "../services/QuickButtonSfx.hpp"
 #include "../services/QuickHubManager.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 
 #include <Geode/ui/ScrollLayer.hpp>
+#include <Geode/utils/string.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <filesystem>
 #include <functional>
 #include <vector>
 
@@ -18,7 +25,7 @@ namespace paimon::quickhub {
 namespace {
 
 constexpr float kPopupW = 400.f;
-constexpr float kPopupH = 250.f;
+constexpr float kPopupH = 312.f;
 
 // Los frames se validan al construir la lista, asi que un texture pack que
 // borre alguno simplemente lo omite en vez de dejar un hueco roto.
@@ -159,6 +166,9 @@ protected:
     }
 };
 
+// Editor de imagen + transform del boton. Edita *m_target en vivo y avisa
+// con m_onChanged para que el padre refresque su preview.
+
 } // namespace
 
 QuickButtonPopup* QuickButtonPopup::s_instance = nullptr;
@@ -188,7 +198,7 @@ bool QuickButtonPopup::init() {
 
     // --- Columna izquierda: vista previa viva -------------------------------
     constexpr float kPreviewCx = 78.f;
-    constexpr float kPreviewCy = 158.f;
+    constexpr float kPreviewCy = 220.f;
 
     if (auto* panel = paimon::SpriteHelper::createDarkPanel(104.f, 104.f, 95, 8.f)) {
         panel->setPosition({kPreviewCx - 52.f, kPreviewCy - 52.f});
@@ -219,31 +229,54 @@ bool QuickButtonPopup::init() {
         m_mainLayer->addChild(label, 2);
     };
 
-    addFieldLabel("Nombre", 205.f);
+    addFieldLabel("Nombre", 267.f);
 
     m_nameInput = TextInput::create(kFieldW / 0.8f, "Nombre del acceso", "chatFont.fnt");
     m_nameInput->setCommonFilter(CommonFilter::Any);
     m_nameInput->setMaxCharCount(32);
     m_nameInput->setString(m_candidate.name);
     m_nameInput->setScale(0.8f);
-    m_nameInput->setPosition({kFieldX + kFieldW / 2.f, 185.f});
+    m_nameInput->setPosition({kFieldX + kFieldW / 2.f, 247.f});
     m_mainLayer->addChild(m_nameInput, 2);
 
-    addFieldLabel("Forma", 157.f);
+    addFieldLabel("Forma", 219.f);
 
     // Los menus centran sus hijos en su propia y: separarlos de la etiqueta lo
     // justo para que los botones no la tapen.
     m_shapeMenu = CCMenu::create();
-    m_shapeMenu->setPosition({kFieldX, 134.f});
+    m_shapeMenu->setPosition({kFieldX, 196.f});
     m_shapeMenu->setContentSize({kFieldW, 26.f});
     m_mainLayer->addChild(m_shapeMenu, 2);
 
-    addFieldLabel("Color", 105.f);
+    addFieldLabel("Color", 167.f);
 
     m_colorMenu = CCMenu::create();
-    m_colorMenu->setPosition({kFieldX, 84.f});
+    m_colorMenu->setPosition({kFieldX, 146.f});
     m_colorMenu->setContentSize({kFieldW, 22.f});
     m_mainLayer->addChild(m_colorMenu, 2);
+
+    // --- Fila Imagen / Sonido + estado --------------------------------------
+    auto* metaMenu = CCMenu::create();
+    metaMenu->setPosition({kFieldX, 118.f});
+    metaMenu->setContentSize({kFieldW, 26.f});
+    m_mainLayer->addChild(metaMenu, 2);
+
+    auto* imageButton = makeMiniButton("Imagen", false, [this] { this->onPickImage(nullptr); });
+    imageButton->setPosition({55.f, 0.f});
+    metaMenu->addChild(imageButton);
+
+    auto* sfxButton = makeMiniButton("Sonido", false, [this] { this->onEditSfx(nullptr); });
+    sfxButton->setPosition({165.f, 0.f});
+    metaMenu->addChild(sfxButton);
+
+    auto addStatus = [&](CCLabelBMFont*& slot, float y) {
+        slot = CCLabelBMFont::create("", "chatFont.fnt");
+        slot->setAnchorPoint({0.f, 0.5f});
+        slot->setPosition({kFieldX, y});
+        m_mainLayer->addChild(slot, 2);
+    };
+    addStatus(m_imageStatus, 100.f);
+    addStatus(m_sfxStatus, 86.f);
 
     buildTargetInfo();
 
@@ -257,10 +290,12 @@ bool QuickButtonPopup::init() {
     rebuildPreview();
     rebuildShapeButtons();
     rebuildColorSwatches();
+    refreshMetaLabels();
     return true;
 }
 
 void QuickButtonPopup::onExit() {
+    stopQuickButtonSfx();
     if (s_instance == this) s_instance = nullptr;
     Popup::onExit();
 }
@@ -330,6 +365,52 @@ void QuickButtonPopup::onChangeIcon(CCObject*) {
     }
 }
 
+void QuickButtonPopup::onPickImage(CCObject*) {
+    if (auto* editor = QuickButtonImagePopup::create(&m_candidate, [this] {
+            this->rebuildPreview();
+            this->refreshMetaLabels();
+        })) {
+        editor->show();
+    }
+}
+
+void QuickButtonPopup::onEditSfx(CCObject*) {
+    if (auto* editor = QuickButtonSfxPopup::create(&m_candidate, [this] {
+            this->refreshMetaLabels();
+        })) {
+        editor->show();
+    }
+}
+
+void QuickButtonPopup::refreshMetaLabels() {
+    if (m_imageStatus) {
+        std::string text;
+        if (m_candidate.imagePath.empty()) {
+            text = "Imagen: frame del juego";
+        } else {
+            text = fmt::format(
+                "Imagen: {} ({}%, {} deg)",
+                fileNameOf(m_candidate.imagePath),
+                static_cast<int>(std::round(m_candidate.imageScale * 100.f)),
+                static_cast<int>(std::round(m_candidate.imageRotation)));
+        }
+        m_imageStatus->setString(text.c_str());
+        m_imageStatus->limitLabelWidth(226.f, 0.36f, 0.16f);
+    }
+    if (m_sfxStatus) {
+        std::string text = "Sonido: original";
+        auto kind = static_cast<QuickButtonSfxKind>(m_candidate.sfxKind);
+        if (kind != QuickButtonSfxKind::None) {
+            std::string src = m_candidate.sfxPath;
+            if (kind == QuickButtonSfxKind::File) src = fileNameOf(m_candidate.sfxPath);
+            if (kind == QuickButtonSfxKind::Online) src = fmt::format("#{}", m_candidate.sfxId);
+            text = fmt::format("Sonido: {} {}", sfxKindName(m_candidate.sfxKind), src);
+        }
+        m_sfxStatus->setString(text.c_str());
+        m_sfxStatus->limitLabelWidth(226.f, 0.36f, 0.16f);
+    }
+}
+
 void QuickButtonPopup::rebuildShapeButtons() {
     if (!m_shapeMenu) return;
     m_shapeMenu->removeAllChildren();
@@ -396,13 +477,7 @@ void QuickButtonPopup::rebuildPreview() {
     if (!m_preview) return;
     m_preview->removeAllChildren();
 
-    RadialOptionDef def;
-    def.id = m_candidate.id;
-    def.name = m_candidate.name;
-    def.icon = m_candidate.icon.empty() ? "GJ_optionsBtn_001.png" : m_candidate.icon;
-    def.color = m_candidate.color;
-
-    auto badge = makeRadialBadge(def, m_candidate.shape, 58.f);
+    auto badge = makeRadialBadge(toRadialDef(m_candidate), m_candidate.shape, 58.f);
     // En la vista previa el aro es el punto: se ensena siempre.
     if (badge.ring) badge.ring->setVisible(true);
     m_preview->addChild(badge.root);
@@ -413,6 +488,31 @@ void QuickButtonPopup::onSave(CCObject*) {
     if (name.empty()) {
         PaimonNotify::create("Ponle un nombre al acceso.", NotificationIcon::Warning)->show();
         return;
+    }
+
+    // Sanea lo que llega de los sub-editores antes de persistir.
+    m_candidate.imageScale = std::clamp(m_candidate.imageScale, 0.2f, 3.f);
+    while (m_candidate.imageRotation > 180.f) m_candidate.imageRotation -= 360.f;
+    while (m_candidate.imageRotation < -180.f) m_candidate.imageRotation += 360.f;
+    if (!m_candidate.imagePath.empty()) {
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(m_candidate.imagePath, ec) || ec) {
+            m_candidate.imagePath.clear();
+            PaimonNotify::create(
+                "La imagen ya no existe: se usa el frame del juego.", NotificationIcon::Warning)->show();
+        }
+    }
+    if (m_candidate.sfxKind < 0 || m_candidate.sfxKind > 3) m_candidate.sfxKind = 0;
+    m_candidate.sfxVolume = std::clamp(m_candidate.sfxVolume, 0.f, 1.f);
+    m_candidate.sfxSpeed = std::clamp(m_candidate.sfxSpeed, 0.4f, 2.5f);
+    m_candidate.sfxStartMs = std::max(0, m_candidate.sfxStartMs);
+    m_candidate.sfxEndMs = std::max(0, m_candidate.sfxEndMs);
+    m_candidate.sfxFadeInMs = std::max(0, m_candidate.sfxFadeInMs);
+    m_candidate.sfxFadeOutMs = std::max(0, m_candidate.sfxFadeOutMs);
+    if (m_candidate.sfxEndMs != 0 && m_candidate.sfxEndMs <= m_candidate.sfxStartMs) {
+        m_candidate.sfxEndMs = 0;
+        PaimonNotify::create(
+            "El fin era menor que el inicio: suena entero.", NotificationIcon::Warning)->show();
     }
 
     // El id se deriva del nombre solo al crearlo; al editar se conserva para no

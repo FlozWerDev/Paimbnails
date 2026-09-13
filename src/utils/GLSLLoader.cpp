@@ -349,4 +349,8 @@ CCGLProgram* getGifDownscaleShader() {
     );
 }
 
+CCGLProgram* getGifBlurShader() {
+    return loadShader("paimon-gif-blur-v1", "cell_vertex.glsl", "gif_blur.glsl", nullptr, nullptr);
+}
+
 } // namespace paimon::shaders

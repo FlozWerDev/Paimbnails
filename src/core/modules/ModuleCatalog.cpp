@@ -202,6 +202,9 @@ std::vector<Module> buildCatalog() {
         saved("paimbnails.leaderboardcells.browser", "Leaderboard Cells",
               "Custom layout and effects on score cells.",
               "module-scorecell", "Layout", S::Browser, true),
+        saved("paimbnails.scoregradient.browser", "Score Gradient",
+              "Icon-colored gradients on score cells with smooth hover animation.",
+              "module-score-gradient", "Layout", S::Browser, false),
         setting("paimbnails.searchpreview.browser", "Realtime Search",
                 "Results while you type in the search box.",
                 "realtime-search-preview", "Search", S::Browser, false),
@@ -231,6 +234,9 @@ std::vector<Module> buildCatalog() {
         setting("paimbnails.imagewarning.level", "Image Object Warning",
                 "Warns when a level contains a watermarked image or GIF made from objects.",
                 "image-watermark-warning-enable", "Safety", S::Level, true),
+        saved("paimbnails.officialslots.level", "Official Slots",
+              "Editable cosmetic levels in the official list: any id or .gmd, painted difficulty and stars.",
+              "module-official-slots", "Visual", S::Level, true),
 
         // Info Suite — master first
         setting(kInfoSuite, "Info Suite",

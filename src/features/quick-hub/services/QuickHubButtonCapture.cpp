@@ -1,5 +1,6 @@
 #include "QuickHubButtonCapture.hpp"
 
+#include "QuickButtonSfx.hpp"
 #include "QuickHubManager.hpp"
 #include "../ui/QuickButtonPopup.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -556,7 +557,7 @@ private:
 
         if (auto* item = locateButton(m_def)) {
             setTicking(false);
-            item->activate();
+            activateItemWithQuickButtonSfx(item, m_def);
             return;
         }
 
@@ -645,7 +646,7 @@ bool activateCustomQuickButton(std::string const& id) {
     if (!director || !director->getRunningScene() || paimon::isRuntimeShuttingDown()) return true;
 
     if (auto* item = locateButton(*definition)) {
-        item->activate();
+        activateItemWithQuickButtonSfx(item, *definition);
         return true;
     }
 

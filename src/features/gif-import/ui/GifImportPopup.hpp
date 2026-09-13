@@ -72,6 +72,7 @@ private:
     bool m_processing = false;
     bool m_reprocess = false;
     int m_scaledFor = 0;
+    float m_scaledBlur = -1.f;
     int m_previewFrame = 0;
     float m_previewElapsed = 0.f;
 

@@ -7,6 +7,9 @@
 #include <Geode/binding/ObjectToolbox.hpp>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <string>
 #include <vector>
 
 using namespace geode::prelude;
@@ -154,6 +157,116 @@ void drawBatch(
 }
 
 } // namespace
+
+std::vector<PlanStamp> buildSoftStampLibrary() {
+    static std::vector<PlanStamp> cached;
+    if (!cached.empty()) return cached;
+    auto* toolbox = ObjectToolbox::sharedState();
+    if (!toolbox) return {};
+    constexpr int side = 32;
+    std::vector<PlanStamp> best(7);
+    std::array<double, 3> errors{0.012, 0.025, 0.025};
+    // The bindings expose the runtime key/frame map, not a fixed glow ID.
+    // Match the actual alpha field, including texture packs and sprite quality.
+    for (auto const& [id, name] : toolbox->m_allKeys) {
+        std::string const frameName(name.c_str());
+        if (frameName.find("light") == std::string::npos &&
+            frameName.find("glow") == std::string::npos &&
+            frameName.find("gradient") == std::string::npos &&
+            frameName.find("particle") == std::string::npos) continue;
+        BatchPool const pool;
+        auto* object = GameObject::createWithKey(id);
+        if (!usableObject(object)) continue;
+        auto* frame = object->displayFrame();
+        if (!frame) continue;
+        auto* sprite = CCSprite::createWithSpriteFrame(frame);
+        auto* canvas = CCRenderTexture::create(side, side, kCCTexture2DPixelFormat_RGBA8888);
+        if (!sprite || !canvas) continue;
+        auto const size = sprite->getContentSize();
+        sprite->setScaleX(side / size.width);
+        sprite->setScaleY(side / size.height);
+        sprite->setPosition({side * 0.5f, side * 0.5f});
+        sprite->setBlendFunc({GL_ONE, GL_ZERO});
+        canvas->beginWithClear(0.f, 0.f, 0.f, 0.f);
+        sprite->visit();
+        canvas->end();
+        auto* image = canvas->newCCImage(true);
+        if (!image) continue;
+        if (!image->getData() || image->getWidth() < side || image->getHeight() < side) {
+            image->release();
+            continue;
+        }
+        StampMask original{side, side, std::vector<std::uint8_t>(side * side)};
+        for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
+            original.coverage[y * side + x] = image->getData()[
+                (y * image->getWidth() + x) * 4 + 3];
+        }
+        image->release();
+        for (int quarter = 0; quarter < 4; ++quarter) {
+            StampMask mask = original;
+            for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
+                int sx = x, sy = y;
+                if (quarter == 1) { sx = y; sy = side - 1 - x; }
+                if (quarter == 2) { sx = side - 1 - x; sy = side - 1 - y; }
+                if (quarter == 3) { sx = side - 1 - y; sy = x; }
+                mask.coverage[y * side + x] = original.coverage[sy * side + sx];
+            }
+            double radialError = 0., verticalError = 0., quarterError = 0.;
+            for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
+                float const u = (x + 0.5f) / side;
+                float const v = (y + 0.5f) / side;
+                float const radius2 = 4.f * ((u - 0.5f) * (u - 0.5f) +
+                    (v - 0.5f) * (v - 0.5f));
+                float const alpha = mask.coverage[y * side + x] / 255.f;
+                float const radial = std::max(0.f, (std::exp(-4.f * radius2) -
+                    std::exp(-4.f)) / (1.f - std::exp(-4.f)));
+                float const corner = std::pow(std::max(0.f, 1.f -
+                    std::sqrt((1.f - u) * (1.f - u) + (1.f - v) * (1.f - v))), 1.3f);
+                quarterError += (alpha - corner) * (alpha - corner);
+                radialError += (alpha - radial) * (alpha - radial);
+                verticalError += (alpha - (1.f - v)) * (alpha - (1.f - v));
+            }
+            std::array<double, 3> const scores{
+                radialError / (side * side), verticalError / (side * side), quarterError / (side * side)};
+            for (int kind = 0; kind < 3; ++kind) {
+                if (scores[kind] >= errors[kind]) continue;
+                errors[kind] = scores[kind];
+                auto& stamp = best[kind == 2 ? 3 : kind];
+                stamp.objectId = id;
+                auto const content = object->getContentSize();
+                stamp.baseWidth = quarter % 2 ? content.height : content.width;
+                stamp.baseHeight = quarter % 2 ? content.width : content.height;
+                stamp.rotation = quarter * 90.f;
+                stamp.mask = mask;
+            }
+        }
+    }
+    if (best[1].objectId) {
+        best[2] = best[1];
+        best[2].rotation = std::fmod(best[1].rotation + 180.f, 360.f);
+        std::reverse(best[2].mask.coverage.begin(), best[2].mask.coverage.end());
+    }
+    // Some GD catalogs expose the radial glow as four quarter-circle pieces.
+    // Assemble those native pieces around one centre, without a solid stand-in.
+    if (best[3].objectId) for (int q = 1; q < 4; ++q) {
+        best[3 + q] = best[3];
+        auto& stamp = best[3 + q];
+        stamp.rotation = std::fmod(best[3].rotation + q * 90.f, 360.f);
+        if (q % 2) std::swap(stamp.baseWidth, stamp.baseHeight);
+        for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
+            int sx = x, sy = y;
+            if (q == 1) { sx = y; sy = side - 1 - x; }
+            if (q == 2) { sx = side - 1 - x; sy = side - 1 - y; }
+            if (q == 3) { sx = side - 1 - y; sy = x; }
+            stamp.mask.coverage[y * side + x] = best[3].mask.coverage[sy * side + sx];
+        }
+    }
+    log::info("[GifImport] Native soft shapes: round={} ({}), vert={} ({}), quarter={} ({})",
+        best[0].objectId, errors[0], best[1].objectId, errors[1], best[3].objectId, errors[2]);
+    // Retry if resources were not ready when the popup first opened.
+    if ((best[0].objectId || best[3].objectId) && best[1].objectId) cached = best;
+    return best;
+}
 
 bool stampLibraryReady() {
     return g_ready;

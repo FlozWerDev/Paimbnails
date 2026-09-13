@@ -107,4 +107,21 @@ std::optional<GmdInfo> readGmdInfo(std::filesystem::path const& path) {
     return info;
 }
 
+std::string readGmdLevelString(std::filesystem::path const& path) {
+    auto contents = utils::file::readString(path);
+    if (!contents) {
+        log::warn("[OfficialSlots] Could not read the .gmd for its level string: {}",
+                  contents.unwrapErr());
+        return {};
+    }
+
+    // Same <s>text</s> pair as every other key; k4 is just much longer.
+    auto raw = stringValue(contents.unwrap(), "k4");
+    if (!raw || raw->empty()) return {};
+
+    // Base64 carries no entities, but decoding is harmless and keeps .gmd files
+    // with a raw (uncompressed) level string working too.
+    return decodeEntities(*raw);
+}
+
 } // namespace paimon::officialslots

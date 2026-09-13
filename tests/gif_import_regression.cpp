@@ -1310,6 +1310,80 @@ bool renderAnimationStaysIncrementalSized() {
     return pass;
 }
 
+// Runtime IDs are deliberately synthetic: the planner must use the supplied
+// masks, never silently replace missing glow assets with a square.
+std::vector<PlanStamp> softFixtures(bool quarters) {
+    std::vector<PlanStamp> stamps(7);
+    for (int i = 0; i < 7; ++i) {
+        auto& stamp = stamps[i];
+        stamp.objectId = 7000 + i;
+        stamp.mask = {32, 32, std::vector<std::uint8_t>(1024)};
+        for (int y = 0; y < 32; ++y) for (int x = 0; x < 32; ++x) {
+            float u = (x + 0.5f) / 32.f, v = (y + 0.5f) / 32.f;
+            float a = 0.f;
+            if (i == 0) {
+                float r2 = 4.f * ((u - 0.5f) * (u - 0.5f) + (v - 0.5f) * (v - 0.5f));
+                a = std::max(0.f, (std::exp(-4.f * r2) - std::exp(-4.f)) / (1.f - std::exp(-4.f)));
+            } else if (i < 3) {
+                a = i == 1 ? 1.f - v : v;
+            } else {
+                if (i == 4 || i == 5) u = 1.f - u;
+                if (i == 5 || i == 6) v = 1.f - v;
+                a = std::pow(std::max(0.f, 1.f - std::hypot(1.f - u, 1.f - v)), 1.3f);
+            }
+            stamp.mask.coverage[y * 32 + x] = static_cast<std::uint8_t>(std::lround(a * 255.f));
+        }
+    }
+    if (quarters) stamps[0].objectId = 0;
+    return stamps;
+}
+
+bool softModesPreserveLightAndBudget() {
+    for (auto mode : {ImportMode::Blur, ImportMode::Vert}) {
+        for (bool quarters : {false, true}) {
+            auto options = exactOptions(16);
+            options.mode = mode;
+            options.motion = false;
+            options.softStamps = softFixtures(quarters);
+            auto source = animation(16, 16, 1, 80, 120, 160);
+            auto result = buildPlan(source, options);
+            if (!result || result.plan.softBackdropColor < 0) return false;
+            auto pixels = renderPlanFrame(result.plan, 0, 4);
+            std::size_t const center = (32 * 64 + 32) * 4;
+            for (int c = 0; c < 3; ++c) {
+                if (std::abs(static_cast<int>(pixels[center + c]) - (80 + 40 * c)) > 10) return false;
+            }
+            if (pixels[center + 3] != 255) return false;
+            if (mode == ImportMode::Vert && result.plan.visualObjects != 33) return false;
+            options.softBackdrop = false;
+            result = buildPlan(source, options);
+            if (!result || result.plan.softBackdropColor != -1) return false;
+            pixels = renderPlanFrame(result.plan, 0, 4);
+            if (pixels[3] == 0 || pixels[3] == 255) return false;
+            options.objectBudget = 300;
+            source = animation(16, 16, 2, 80, 120, 160);
+            for (int y = 0; y < 16; ++y) for (int x = 8; x < 16; ++x)
+                setPixel(source, 1, x, y, 240, 20, 30);
+            result = buildPlan(source, options);
+            if (!result || !result.plan.animated() || result.plan.tracks.empty() ||
+                result.plan.totalObjects > 300) return false;
+            auto valid = [&](std::vector<Primitive> const& objects) {
+                for (auto const& object : objects) {
+                    if (object.kind != PrimitiveKind::Stamp) continue;
+                    if (object.stamp >= result.plan.stamps.size() ||
+                        !result.plan.stamps[object.stamp].objectId) return false;
+                }
+                return true;
+            };
+            if (!valid(result.plan.staticObjects)) return false;
+            for (auto const& track : result.plan.tracks) if (!valid(track.objects)) return false;
+            options.softStamps.clear();
+            if (buildPlan(source, options)) return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 SourceAnimation slidingSprite(int frames) {
@@ -1386,6 +1460,8 @@ bool glowAddsBlendedHalos() {
 }
 
 int main() {
+    bool const softModes = softModesPreserveLightAndBudget();
+    if (!softModes) std::cerr << "FAIL: soft modes lost light, native masks or object budget\n";
     bool const solid = solidAreaBecomesOneRect();
     bool const watermark = imageWatermarkIsDistributedAndDetectable();
     bool const blockSweeps = blockPackingAvoidsDirectionBias();
@@ -1479,7 +1555,7 @@ int main() {
     if (!render) std::cerr << "FAIL: render mode did not refine within its object budget\n";
     if (!renderBalance) std::cerr << "FAIL: render mode kept adding objects after reaching its target\n";
     if (!renderAnimation) std::cerr << "FAIL: render animation exceeded its object budget\n";
-    return solid && watermark && blockSweeps && background && backgroundSolid && temporal && duplicates && schedule && noLoop && playback &&
+    return softModes && solid && watermark && blockSweeps && background && backgroundSolid && temporal && duplicates && schedule && noLoop && playback &&
         budget && circle && stroke && triangle && curve && colors && artAnimation &&
         motion && motionFrames && glow &&
         paintCoverage && paintStrokes && paintRepairs && paintSolidRect && paintMergedRects &&

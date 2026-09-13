@@ -63,5 +63,6 @@ cocos2d::CCGLProgram* getDominantColorsDownsampleShader();
 
 /// Halve a frame with an alpha-weighted box filter for the GIF importer.
 cocos2d::CCGLProgram* getGifDownscaleShader();
+cocos2d::CCGLProgram* getGifBlurShader();
 
 }

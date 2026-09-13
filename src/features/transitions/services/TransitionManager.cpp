@@ -849,9 +849,9 @@ std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(Transitio
         case TransitionType::SlideOverDown:
         case TransitionType::WaveSlide: {
             CCPoint offset{size.width, 0};
-            if (type == TransitionType::SlideOverRight) offset = {-size.width, 0};
-            if (type == TransitionType::SlideOverUp) offset = {0, -size.height};
-            if (type == TransitionType::SlideOverDown) offset = {0, size.height};
+            if (type == TransitionType::SlideOverRight) offset = CCPoint{-size.width, 0};
+            if (type == TransitionType::SlideOverUp) offset = CCPoint{0, -size.height};
+            if (type == TransitionType::SlideOverDown) offset = CCPoint{0, size.height};
             if (type == TransitionType::WaveSlide) offset.y = 30;
             spawn(3);
             value(CommandAction::FadeIn, "to", dur, 255, 255);

@@ -2505,14 +2505,6 @@ namespace {
             }
         }
 
-        void clearDelegate() {
-            auto manager = GameLevelManager::get();
-            if (manager && manager->m_levelManagerDelegate == this) {
-                manager->m_levelManagerDelegate = nullptr;
-            }
-            m_pendingKey.clear();
-        }
-
         void onPrevMode(CCObject*) { cyclePrimaryMode(-1); }
         void onNextMode(CCObject*) { cyclePrimaryMode(1); }
         void onPrevPreset(CCObject*) { cycleLevelPreset(-1); }

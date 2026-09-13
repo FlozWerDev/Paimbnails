@@ -57,11 +57,27 @@ jobs:
         run: ./tests/run_editor_physics_preview_regression.ps1
 
       - name: Build the mod
+        id: geode-build
+        continue-on-error: true
         uses: geode-sdk/build-geode-mod@main
         with:
           sdk: given
           target: ${{ matrix.config.target }}
           combine: true
+
+      - name: Report compiler diagnostics
+        if: steps.geode-build.outcome == 'failure'
+        shell: bash
+        run: |
+          cmake --build build --config Release --parallel 1 > build-diagnostics.log 2>&1 || true
+          {
+            echo "### Compiler diagnostics (${{ matrix.config.name }})"
+            echo '```text'
+            tail -n 250 build-diagnostics.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat build-diagnostics.log
+          exit 1
 
   package:
     name: Package all platforms

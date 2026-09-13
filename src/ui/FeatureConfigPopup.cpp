@@ -1,3 +1,4 @@
+#include "../features/custom-hover/CustomHover.hpp"
 #include "FeatureConfigPopup.hpp"
 #include "SmoothUIConfigPopup.hpp"
 
@@ -916,6 +917,9 @@ GranularRoute routeForGranular(std::string const& englishName) {
         englishName == "Cursor Trail" ||
         englishName == "Cursor Scale") {
         return {{}, []() { if (auto* p = CursorConfigPopup::create()) p->show(); }};
+    }
+    if (englishName == "Custom Hover") {
+        return {{}, [] { paimon::hover::open(); }};
     }
     if (englishName == "Custom Slider Thumb") {
         return {{}, []() {

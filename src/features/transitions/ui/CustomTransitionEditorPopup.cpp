@@ -42,6 +42,7 @@ std::vector<CommandAction> const& CustomTransitionEditorPopup::allActions() {
         CommandAction::Bounce,
         CommandAction::Shake,
         CommandAction::Image,
+        CommandAction::Spawn,
     };
     return actions;
 }
@@ -70,9 +71,9 @@ std::string CustomTransitionEditorPopup::actionDisplayName(CommandAction a) {
 }
 
 
-CustomTransitionEditorPopup* CustomTransitionEditorPopup::create(TransitionConfig* config, bool isGlobal) {
+CustomTransitionEditorPopup* CustomTransitionEditorPopup::create(TransitionConfig config, bool isGlobal, std::function<void(TransitionConfig)> save) {
     auto ret = new CustomTransitionEditorPopup();
-    if (ret && ret->init(config, isGlobal)) {
+    if (ret && ret->init(std::move(config), isGlobal, std::move(save))) {
         ret->autorelease();
         return ret;
     }
@@ -80,12 +81,13 @@ CustomTransitionEditorPopup* CustomTransitionEditorPopup::create(TransitionConfi
     return nullptr;
 }
 
-bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) {
+bool CustomTransitionEditorPopup::init(TransitionConfig config, bool isGlobal, std::function<void(TransitionConfig)> save) {
     if (!Popup::init(520.f, 340.f)) return false;
 
-    m_config = config;
+    m_config = std::move(config);
+    m_save = std::move(save);
     m_isGlobal = isGlobal;
-    m_commands = config->commands;
+    m_commands = m_config.commands;
 
     this->setTitle("Custom Transition Editor");
 
@@ -597,6 +599,12 @@ void CustomTransitionEditorPopup::updateEditorPanel() {
             m_extraLabel->setString(buf);
             break;
         }
+        case CommandAction::Spawn: {
+            m_fromLabel->setString(std::to_string(cmd.spawnCount).c_str());
+            m_toLabel->setString("-");
+            m_extraLabel->setString("From +/-: next N commands in parallel");
+            break;
+        }
         case CommandAction::Wait: {
             m_fromLabel->setString("-");
             m_toLabel->setString("-");
@@ -649,6 +657,7 @@ void CustomTransitionEditorPopup::refreshDisplay() {
 
 
 void CustomTransitionEditorPopup::onAddCommand(CCObject*) {
+    if (m_importing) { m_statusLabel->setString("Wait for the media import to finish"); return; }
     TransitionCommand cmd;
     cmd.action = CommandAction::FadeIn;
     cmd.target = "to";
@@ -666,6 +675,7 @@ void CustomTransitionEditorPopup::onAddCommand(CCObject*) {
 }
 
 void CustomTransitionEditorPopup::onRemoveCommand(CCObject*) {
+    if (m_importing) { m_statusLabel->setString("Wait for the media import to finish"); return; }
     if (m_selectedIdx < 0 || m_selectedIdx >= static_cast<int>(m_commands.size())) return;
     if (m_commands.size() <= 1) {
         m_statusLabel->setString("Need at least 1 command");
@@ -678,6 +688,7 @@ void CustomTransitionEditorPopup::onRemoveCommand(CCObject*) {
 }
 
 void CustomTransitionEditorPopup::onMoveUp(CCObject*) {
+    if (m_importing) { m_statusLabel->setString("Wait for the media import to finish"); return; }
     if (m_selectedIdx <= 0) return;
     std::swap(m_commands[m_selectedIdx], m_commands[m_selectedIdx - 1]);
     m_selectedIdx--;
@@ -685,6 +696,7 @@ void CustomTransitionEditorPopup::onMoveUp(CCObject*) {
 }
 
 void CustomTransitionEditorPopup::onMoveDown(CCObject*) {
+    if (m_importing) { m_statusLabel->setString("Wait for the media import to finish"); return; }
     if (m_selectedIdx < 0 || m_selectedIdx >= static_cast<int>(m_commands.size()) - 1) return;
     std::swap(m_commands[m_selectedIdx], m_commands[m_selectedIdx + 1]);
     m_selectedIdx++;
@@ -692,6 +704,7 @@ void CustomTransitionEditorPopup::onMoveDown(CCObject*) {
 }
 
 void CustomTransitionEditorPopup::onDuplicateCommand(CCObject*) {
+    if (m_importing) { m_statusLabel->setString("Wait for the media import to finish"); return; }
     if (m_selectedIdx < 0 || m_selectedIdx >= static_cast<int>(m_commands.size())) return;
     auto copy = m_commands[m_selectedIdx];
     m_commands.insert(m_commands.begin() + m_selectedIdx + 1, copy);
@@ -714,6 +727,7 @@ void CustomTransitionEditorPopup::onNextCommand(CCObject*) {
 
 
 void CustomTransitionEditorPopup::onActionPrev(CCObject*) {
+    if (m_importing) { m_statusLabel->setString("Wait for the media import to finish"); return; }
     if (m_selectedIdx < 0) return;
     auto& actions = allActions();
     auto& cmd = selectedCmd();
@@ -730,12 +744,14 @@ void CustomTransitionEditorPopup::onActionPrev(CCObject*) {
         case CommandAction::Scale:   cmd.fromVal = 1; cmd.toVal = 1; break;
         case CommandAction::Rotate:  cmd.fromVal = 0; cmd.toVal = 360; break;
         case CommandAction::Shake:   cmd.intensity = 5; break;
+        case CommandAction::Spawn:   cmd.spawnCount = 2; break;
         default: break;
     }
     refreshDisplay();
 }
 
 void CustomTransitionEditorPopup::onActionNext(CCObject*) {
+    if (m_importing) { m_statusLabel->setString("Wait for the media import to finish"); return; }
     if (m_selectedIdx < 0) return;
     auto& actions = allActions();
     auto& cmd = selectedCmd();
@@ -752,6 +768,7 @@ void CustomTransitionEditorPopup::onActionNext(CCObject*) {
         case CommandAction::Scale:   cmd.fromVal = 1; cmd.toVal = 1; break;
         case CommandAction::Rotate:  cmd.fromVal = 0; cmd.toVal = 360; break;
         case CommandAction::Shake:   cmd.intensity = 5; break;
+        case CommandAction::Spawn:   cmd.spawnCount = 2; break;
         default: break;
     }
     refreshDisplay();
@@ -792,6 +809,7 @@ void CustomTransitionEditorPopup::onDelayUp(CCObject*) {
 void CustomTransitionEditorPopup::onFromValDown(CCObject*) {
     if (m_selectedIdx < 0) return;
     auto& cmd = selectedCmd();
+    if (cmd.action == CommandAction::Spawn) { cmd.spawnCount = std::clamp(cmd.spawnCount - 1, 0, 16); updateEditorPanel(); return; }
     float step = (cmd.action == CommandAction::Scale) ? 0.1f : 10.f;
     cmd.fromVal -= step;
     updateEditorPanel();
@@ -800,6 +818,7 @@ void CustomTransitionEditorPopup::onFromValDown(CCObject*) {
 void CustomTransitionEditorPopup::onFromValUp(CCObject*) {
     if (m_selectedIdx < 0) return;
     auto& cmd = selectedCmd();
+    if (cmd.action == CommandAction::Spawn) { cmd.spawnCount = std::clamp(cmd.spawnCount + 1, 0, 16); updateEditorPanel(); return; }
     float step = (cmd.action == CommandAction::Scale) ? 0.1f : 10.f;
     cmd.fromVal += step;
     updateEditorPanel();
@@ -859,39 +878,35 @@ void CustomTransitionEditorPopup::onIntensityUp(CCObject*) {
 
 
 void CustomTransitionEditorPopup::onSelectImage(CCObject*) {
-    if (m_selectedIdx < 0) {
-        m_statusLabel->setString("Select an Image command first");
-        return;
+    if (m_importing || m_selectedIdx < 0) return;
+    if (selectedCmd().action != CommandAction::Image) {
+        m_statusLabel->setString("Change action to Image first"); return;
     }
-
-    auto& cmd = selectedCmd();
-    if (cmd.action != CommandAction::Image) {
-        m_statusLabel->setString("Change action to Image first");
-        return;
-    }
-
+    m_importing = true;
+    int index = m_selectedIdx;
     WeakRef<CustomTransitionEditorPopup> self = this;
-    pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> result) {
-        auto pathOpt = std::move(result).unwrapOr(std::nullopt);
-        if (!pathOpt) return;
-        auto popup = self.lock();
-        if (!popup) return;
-        auto imported = paimon::assets::importToBucket(*pathOpt, "transitions", paimon::assets::Kind::Image);
-        if (!imported.success || imported.path.empty()) {
-            popup->m_statusLabel->setString("Failed to import image");
-            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
-            return;
-        }
-        if (popup->m_selectedIdx >= 0 && popup->m_selectedIdx < static_cast<int>(popup->m_commands.size())) {
-            popup->m_commands[popup->m_selectedIdx].imagePath = paimon::assets::normalizePathString(imported.path);
-            popup->m_statusLabel->setString("Image set!");
-            popup->updateEditorPanel();
-        }
+    pt::pickMedia([self, index](Result<std::optional<std::filesystem::path>> result) {
+        auto popup = self.lock(); if (!popup) return;
+        auto path = std::move(result).unwrapOr(std::nullopt);
+        if (!path) { popup->m_importing = false; return; }
+        popup->m_statusLabel->setString("Preparing media sheets...");
+        paimon::transitions::prepareTransitionMedia(utils::string::pathToString(*path), [self, index](auto media, auto error) {
+            auto popup = self.lock(); if (!popup) return;
+            popup->m_importing = false;
+            if (media && index >= 0 && index < static_cast<int>(popup->m_commands.size())) {
+                popup->m_commands[index].imagePath = media->manifest;
+                popup->m_statusLabel->setString("Media prepared!"); popup->updateEditorPanel();
+            } else {
+                popup->m_statusLabel->setString("Media import failed");
+                PaimonNotify::create(error, NotificationIcon::Error)->show();
+            }
+        });
     });
 }
 
 
 void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
+    if (m_importing) { m_statusLabel->setString("Wait for the media import to finish"); return; }
     if (m_commands.empty()) {
         m_statusLabel->setString("Add commands first!");
         return;
@@ -919,78 +934,59 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     auto previewCommands = m_commands;
     validateAndSanitizeForSave(previewCommands);
 
-    float totalDur = 0.f;
-    for (auto const& cmd : previewCommands) totalDur += cmd.duration + cmd.delay;
-
     class ReturnNode : public CCNode {
     public:
-        static ReturnNode* create(float d) {
-            auto r = new ReturnNode();
-            if (r && r->init()) { r->autorelease(); r->scheduleOnce(schedule_selector(ReturnNode::doReturn), d); return r; }
-            CC_SAFE_DELETE(r); return nullptr;
+        static ReturnNode* create() {
+            auto* node = new ReturnNode();
+            if (node->init()) { node->autorelease(); return node; }
+            delete node; return nullptr;
+        }
+        void onEnterTransitionDidFinish() override {
+            CCNode::onEnterTransitionDidFinish();
+            scheduleOnce(schedule_selector(ReturnNode::doReturn), 1.5f);
         }
         void onExit() override {
-            this->unschedule(schedule_selector(ReturnNode::doReturn));
+            unschedule(schedule_selector(ReturnNode::doReturn));
             CCNode::onExit();
         }
-        void doReturn(float) {
-            auto ms = CCScene::create();
-            ms->addChild(MenuLayer::create());
-            bool w = TransitionManager::get().isEnabled();
-            TransitionManager::get().setEnabled(false);
-            CCDirector::get()->replaceScene(CCTransitionFade::create(0.3f, ms));
-            TransitionManager::get().setEnabled(w);
-        }
+        void doReturn(float) { CCDirector::get()->popScene(); }
     };
-
-    auto rn = ReturnNode::create(totalDur + 1.5f);
-    if (rn) destScene->addChild(rn);
+    if (auto* node = ReturnNode::create()) destScene->addChild(node);
 
     auto fromScene = director->getRunningScene();
     CustomTransitionScene* transScene = nullptr;
     if (fromScene && destScene && !previewCommands.empty()) {
-        transScene = CustomTransitionScene::create(fromScene, destScene, previewCommands, false);
+        transScene = CustomTransitionScene::create(fromScene, destScene, previewCommands, true);
     }
     if (!transScene) {
-        log::warn("[CustomTransitionEditorPopup] Preview failed: create returned nullptr");
+        m_statusLabel->setString("Media loading or timeline exceeds 30 seconds. Retry preview.");
+        return;
     }
-
-// Keep the popup alive while onClose callbacks run.
-    [[maybe_unused]] Ref<CustomTransitionEditorPopup> safeSelf = this;
-    this->onClose(nullptr);
-
-    bool wasEnabled = TransitionManager::get().isEnabled();
-    TransitionManager::get().setEnabled(false);
-    director->replaceScene(transScene ? static_cast<CCScene*>(transScene) : destScene);
-    TransitionManager::get().setEnabled(wasEnabled);
+    director->pushScene(transScene);
 }
 
 
 void CustomTransitionEditorPopup::onSave(CCObject*) {
-    if (!m_config) return;
+    if (m_importing) { m_statusLabel->setString("Wait for the media import to finish"); return; }
 
     auto safeCommands = m_commands;
     int fixes = validateAndSanitizeForSave(safeCommands);
 
-    m_config->commands = safeCommands;
-    m_config->type = TransitionType::Custom;
+    m_config.commands = safeCommands;
+    m_config.type = TransitionType::Custom;
 
-    auto& tm = TransitionManager::get();
-    if (m_isGlobal) {
-        tm.setGlobalConfig(*m_config);
-    } else {
-        tm.setLevelEntryConfig(*m_config);
-    }
-    tm.saveConfig();
+    auto timeline = paimon::transitions::compileTimeline(safeCommands, [](auto const& c) { return c.action == CommandAction::Spawn; });
+    if (timeline.duration > 30.f) { m_statusLabel->setString("Timeline exceeds 30 seconds"); return; }
+    if (m_save) m_save(m_config);
 
     if (fixes > 0) {
         char msg[80];
-        snprintf(msg, sizeof(msg), "Saved with %d safety fixes", fixes);
+        snprintf(msg, sizeof(msg), "Applied with %d safety fixes", fixes);
         m_statusLabel->setString(msg);
         PaimonNotify::create(msg, NotificationIcon::Warning)->show();
     } else {
-        m_statusLabel->setString("Saved!");
-        PaimonNotify::create("Custom transition saved!", NotificationIcon::Success)->show();
+        m_statusLabel->setString("Applied. Save in the Transitions window.");
+        PaimonNotify::create("Applied. Save in the Transitions window.", NotificationIcon::Success)->show();
     }
 
 // Keep the editor state in sync with the sanitized persisted values.
@@ -1000,6 +996,7 @@ void CustomTransitionEditorPopup::onSave(CCObject*) {
 
 
 void CustomTransitionEditorPopup::onLoadPreset(CCObject*) {
+    if (m_importing) { m_statusLabel->setString("Wait for the media import to finish"); return; }
     PopupManager::get().quickPopup(
         "Load Preset",
         "Select a preset to load:\n\n"
@@ -1126,6 +1123,7 @@ void CustomTransitionEditorPopup::showPresetPicker() {
 }
 
 void CustomTransitionEditorPopup::loadPreset(int presetId) {
+    if (m_importing) return;
     m_commands.clear();
 
     auto ws = cocos2d::CCDirector::get()->getWinSize();

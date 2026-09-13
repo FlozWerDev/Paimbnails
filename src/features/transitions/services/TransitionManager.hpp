@@ -1,8 +1,9 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
 #include <string>
 #include <vector>
 #include <optional>
+#include "TransitionMedia.hpp"
 
 // TransitionManager — sistema de transiciones personalizables
 //
@@ -71,6 +72,7 @@ enum class TransitionType {
     Random,
 
     Custom,
+    Stinger,
     None
 };
 
@@ -114,6 +116,8 @@ struct TransitionConfig {
     std::vector<std::string> imageList;
     std::vector<TransitionCommand> commands;
     std::string scriptPath;
+    std::string mediaPath; // prepared .pttransition manifest
+    float cutPoint = .5f; // normalized time, independent of media duration
 };
 
 class TransitionManager {
@@ -165,6 +169,9 @@ public:
 
 private:
     TransitionManager();
+    void warmMedia();
+    unsigned m_mediaGeneration = 0;
+    std::vector<std::shared_ptr<paimon::transitions::TransitionMedia>> m_preloadedMedia;
 
     std::vector<TransitionCommand> parseScriptFile(std::string const& path) const;
     std::filesystem::path getConfigPath() const;

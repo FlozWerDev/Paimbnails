@@ -27,20 +27,35 @@ static CCScene* unwrapTransition(CCTransitionScene* trans) {
     return nullptr;
 }
 
-// Stock transitions contain "cocos2d::CCTransition" in their type name.
+// Compare exact dynamic types. A third-party subclass is never ours to replace.
 static bool isVanillaTransition(CCTransitionScene* trans) {
     if (!trans) return false;
-    char const* name = typeid(*trans).name();
-    if (!name) return false;
-    std::string_view sv(name);
-    return sv.find("cocos2d") != std::string_view::npos &&
-           sv.find("CCTransition") != std::string_view::npos;
+    auto const& type = typeid(*trans);
+    return type == typeid(CCTransitionScene) || type == typeid(CCTransitionFade) ||
+        type == typeid(CCTransitionCrossFade) || type == typeid(CCTransitionMoveInL) ||
+        type == typeid(CCTransitionMoveInR) || type == typeid(CCTransitionMoveInT) ||
+        type == typeid(CCTransitionMoveInB) || type == typeid(CCTransitionSlideInL) ||
+        type == typeid(CCTransitionSlideInR) || type == typeid(CCTransitionSlideInT) ||
+        type == typeid(CCTransitionSlideInB) || type == typeid(CCTransitionShrinkGrow) ||
+        type == typeid(CCTransitionRotoZoom) || type == typeid(CCTransitionJumpZoom) ||
+        type == typeid(CCTransitionFlipX) || type == typeid(CCTransitionFlipY) ||
+        type == typeid(CCTransitionFlipAngular) || type == typeid(CCTransitionZoomFlipX) ||
+        type == typeid(CCTransitionZoomFlipY) || type == typeid(CCTransitionZoomFlipAngular) ||
+        type == typeid(CCTransitionFadeTR) || type == typeid(CCTransitionFadeBL) ||
+        type == typeid(CCTransitionFadeUp) || type == typeid(CCTransitionFadeDown) ||
+        type == typeid(CCTransitionTurnOffTiles) || type == typeid(CCTransitionSplitCols) ||
+        type == typeid(CCTransitionSplitRows) || type == typeid(CCTransitionPageTurn) ||
+        type == typeid(CCTransitionProgressRadialCW) || type == typeid(CCTransitionProgressRadialCCW) ||
+        type == typeid(CCTransitionProgressInOut) || type == typeid(CCTransitionProgressOutIn) ||
+        type == typeid(CCTransitionProgressHorizontal) || type == typeid(CCTransitionProgressVertical);
 }
 
 static bool canIntercept() {
     if (s_applying) return false;
     if (!s_gameReady) return false;
-    if (CustomTransitionScene::isActive()) return false;
+    auto* director = CCDirector::get();
+    if (typeinfo_cast<CCTransitionScene*>(director->getRunningScene())) return false;
+    if (director->getNextScene()) return false;
     return true;
 }
 
@@ -63,7 +78,8 @@ static CCScene* createTransitionSafe(
     bool isPush = false)
 {
     auto& tm = TransitionManager::get();
-    if (!realDest || tm.isCustomSafeModeTripped()) {
+    if (!realDest) return nullptr;
+    if (tm.isCustomSafeModeTripped()) {
         auto fallbackCfg = cfg;
         fallbackCfg.type = TransitionType::Fade;
         auto* fallback = tm.createNativeTransition(fallbackCfg, realDest);
@@ -130,13 +146,14 @@ class $modify(PaimonDirector, CCDirector) {
 
     // Only replace transitions already wrapped in CCTransitionScene.
         auto* nativeTrans = typeinfo_cast<CCTransitionScene*>(scene);
-        if (!nativeTrans) return CCDirector::replaceScene(scene);
+        if (!nativeTrans || !isVanillaTransition(nativeTrans)) return CCDirector::replaceScene(scene);
 
         CCScene* realDest = unwrapTransition(nativeTrans);
         if (!realDest) return CCDirector::replaceScene(scene);
 
         Ref<CCScene> safeDest = realDest;
         if (destContainsPlayLayer(realDest) &&
+            !(TransitionManager::get().isEnabled() && TransitionManager::get().hasLevelEntryConfig()) &&
             paimon::transitions::shouldUseLevelEntryTransition()) {
             ApplyingGuard guard;
             if (auto* levelTransition =
@@ -180,13 +197,14 @@ class $modify(PaimonDirector, CCDirector) {
         if (typeinfo_cast<CustomTransitionScene*>(scene)) return CCDirector::pushScene(scene);
 
         auto* nativeTrans = typeinfo_cast<CCTransitionScene*>(scene);
-        if (!nativeTrans) return CCDirector::pushScene(scene);
+        if (!nativeTrans || !isVanillaTransition(nativeTrans)) return CCDirector::pushScene(scene);
 
         CCScene* realDest = unwrapTransition(nativeTrans);
         if (!realDest) return CCDirector::pushScene(scene);
 
         Ref<CCScene> safeDest = realDest;
         if (destContainsPlayLayer(realDest) &&
+            !(TransitionManager::get().isEnabled() && TransitionManager::get().hasLevelEntryConfig()) &&
             paimon::transitions::shouldUseLevelEntryTransition()) {
             ApplyingGuard guard;
             if (auto* levelTransition =
@@ -244,24 +262,17 @@ class $modify(PaimonDirector, CCDirector) {
         auto cfg = selectConfig(destScene);
 
         ApplyingGuard guard;
-        CCDirector::popScene();
-
-    // Temporarily restore m_pRunningScene so createTransitionSafe sees the source.
-        auto* savedRunning = m_pRunningScene;
-        m_pRunningScene = fromScene;
-
+        // Construct while the outgoing scene is still the director's source.
+        // Native initialization retains both scenes before pop edits the stack.
         CCScene* ourTrans = useLevelExit
             ? static_cast<CCScene*>(paimon::transitions::createLevelExitTransition(destScene))
             : createTransitionSafe(destScene, cfg);
-
-        m_pRunningScene = savedRunning;
+        Ref<CCScene> safeTransition = ourTrans;
+        CCDirector::popScene();
 
         return CCDirector::replaceScene(ourTrans ? ourTrans : destScene);
     }
 
-    void popScene() {
-        CCDirector::popScene();
-    }
 };
 
 class $modify(PaimonTransitionGameManager, GameManager) {

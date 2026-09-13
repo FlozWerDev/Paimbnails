@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
 #include "../services/TransitionManager.hpp"
 
@@ -14,9 +14,11 @@
 
 class CustomTransitionEditorPopup : public geode::Popup {
 protected:
-    bool init(TransitionConfig* config, bool isGlobal);
+    bool init(TransitionConfig config, bool isGlobal, std::function<void(TransitionConfig)> save);
 
-    TransitionConfig* m_config = nullptr;
+    TransitionConfig m_config;
+    std::function<void(TransitionConfig)> m_save;
+    bool m_importing = false;
     bool m_isGlobal = true;
     std::vector<TransitionCommand> m_commands;
     int m_selectedIdx = -1;
@@ -88,5 +90,5 @@ protected:
     TransitionCommand& selectedCmd();
 
 public:
-    static CustomTransitionEditorPopup* create(TransitionConfig* config, bool isGlobal);
+    static CustomTransitionEditorPopup* create(TransitionConfig config, bool isGlobal, std::function<void(TransitionConfig)> save);
 };

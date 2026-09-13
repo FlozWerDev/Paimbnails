@@ -15,7 +15,8 @@ bool isVideoFile(std::filesystem::path const& path);
 std::shared_ptr<SourceAnimation> decodeVideo(
     std::filesystem::path const& path,
     int maxFrames,
-    std::string& error
+    std::string& error,
+    double maxDurationSeconds = 0.0
 );
 
 } // namespace paimon::gifimport

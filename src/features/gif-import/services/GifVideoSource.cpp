@@ -9,6 +9,7 @@
 #include <libyuv/scale.h>
 
 #include <algorithm>
+#include <bit>
 #include <array>
 #include <cctype>
 #include <chrono>
@@ -78,7 +79,8 @@ bool isVideoFile(std::filesystem::path const& path) {
 std::shared_ptr<SourceAnimation> decodeVideo(
     std::filesystem::path const& path,
     int maxFrames,
-    std::string& error
+    std::string& error,
+    double maxDurationSeconds
 ) {
     auto decoder = IVideoDecoder::create(geode::utils::string::pathToString(path));
     if (!decoder) {
@@ -86,6 +88,13 @@ std::shared_ptr<SourceAnimation> decodeVideo(
         return nullptr;
     }
 
+    double const duration = decoder->getDuration();
+    bool const finiteDuration = (std::bit_cast<std::uint64_t>(duration) & 0x7ff0000000000000ull) != 0x7ff0000000000000ull;
+    if (maxDurationSeconds > 0.0 &&
+        (!finiteDuration || !(duration > 0.0) || duration > maxDurationSeconds)) {
+        error = "El video debe tener duracion conocida y no superar 30 segundos.";
+        return nullptr;
+    }
     int const sourceWidth = decoder->getWidth();
     int const sourceHeight = decoder->getHeight();
     if (sourceWidth <= 0 || sourceHeight <= 0) {
@@ -103,7 +112,6 @@ std::shared_ptr<SourceAnimation> decodeVideo(
 
     bool const wideGamut = sourceWidth >= 1280 || sourceHeight >= 720;
     int const wanted = std::clamp(maxFrames, 1, 120);
-    double const duration = decoder->getDuration();
     double const step = duration > 0.1 ? duration / wanted : 0.0;
 
     auto animation = std::make_shared<SourceAnimation>();
@@ -114,15 +122,23 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     decoder->startDecoding();
     double nextWanted = 0.0;
     auto lastFrame = std::chrono::steady_clock::now();
+    auto deadline = lastFrame + std::chrono::seconds(45);
+    bool stalled = false;
     while (static_cast<int>(animation->frames.size()) < wanted) {
+        if (maxDurationSeconds > 0.0 && std::chrono::steady_clock::now() > deadline) { stalled = true; break; }
         auto const* frame = decoder->peekFrame();
         if (!frame) {
             if (decoder->isFinished() || decoder->isTerminal()) break;
-            if (std::chrono::steady_clock::now() - lastFrame > kStallTimeout) break;
+            if (std::chrono::steady_clock::now() - lastFrame > kStallTimeout) { stalled = true; break; }
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
             continue;
         }
         lastFrame = std::chrono::steady_clock::now();
+        if (maxDurationSeconds > 0.0 &&
+            ((std::bit_cast<std::uint64_t>(frame->pts) & 0x7ff0000000000000ull) == 0x7ff0000000000000ull ||
+             frame->pts < 0.0 || frame->pts > duration + 1.0)) {
+            decoder->releaseFrame(); stalled = true; break;
+        }
         if (frame->pts + 1e-6 >= nextWanted) {
             SourceFrame captured;
             convertFrame(*frame, outputWidth, outputHeight, wideGamut, captured.rgba);
@@ -132,7 +148,12 @@ std::shared_ptr<SourceAnimation> decodeVideo(
         }
         decoder->releaseFrame();
     }
+    bool terminal = decoder->isTerminal();
     decoder->stopDecoding();
+    if (maxDurationSeconds > 0.0 && (stalled || terminal)) {
+        error = "El decodificador no pudo completar el video.";
+        return nullptr;
+    }
 
     if (animation->frames.empty()) {
         error = "No se pudo decodificar ningun fotograma del video.";
@@ -144,9 +165,17 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     for (std::size_t i = 0; i < animation->frames.size(); ++i) {
         double const next = i + 1 < stamps.size()
             ? stamps[i + 1] - stamps[i]
-            : (step > 0.0 ? step : 0.04);
-        animation->frames[i].delayMs = std::clamp(
-            static_cast<int>(std::lround(next * 1000.0)), 20, 2000);
+            : (maxDurationSeconds > 0.0 ? std::max(.001, duration - stamps[i]) : (step > 0.0 ? step : 0.04));
+        if (maxDurationSeconds > 0.0) {
+            // Round cumulative timestamps, not each interval: 60fps must not
+            // turn into 50fps through the editor importer's 20ms clamp.
+            long const startMs = i == 0 ? 0 : std::lround(stamps[i] * 1000.0);
+            long const endMs = std::lround((i + 1 < stamps.size() ? stamps[i + 1] : duration) * 1000.0);
+            animation->frames[i].delayMs = static_cast<int>(std::clamp(endMs - startMs, 1L, 30000L));
+        } else {
+            animation->frames[i].delayMs = std::clamp(
+                static_cast<int>(std::lround(next * 1000.0)), 20, 2000);
+        }
     }
     geode::log::info(
         "[GifImport] video {}x{} -> {} frames de {}x{}",

@@ -2,6 +2,12 @@
 
 ![](flozwer.paimbnails2/paim_Paimon.png?height=32) Llega <cl>Paimon RTX</c>: trazado de rayos en tiempo real sobre todo el juego, y la <cl>Interpolacion de Fotogramas</c>, que dibuja entre pasos de fisica para quitar los micro-tirones. Llegan tambien los <cl>Niveles de Perfil</c>: XP, rangos e insignias calculados con las estadisticas publicas de cualquier jugador. Ademas, <cl>Level Thumbnails</c> deja de ser incompatible y se puede tener puesto a la vez. Y abre <cl>Paimon Versus</c>: duelos 1v1 con rango propio, sobre el boton Versus que el juego tenia sin usar.
 
+- <cg>Transiciones rehechas desde cero</c> sobre el ciclo de vida nativo de Cocos, sin mover los nodos de las escenas ni escribir el puntero interno de escena de GD. El editor admite una linea de tiempo determinista, grupos de comandos simultaneos y previews que regresan al editor conservando los cambios.
+- Nuevo modo <cg>Stinger al estilo OBS</c>: importa imagenes, GIF o videos, los prepara como spritesheets paginados y permite elegir por separado la duracion y el punto exacto en que cambia la escena. GIF y PNG conservan transparencia; el backend de video actual reproduce imagen sin audio ni alpha.
+- La importacion de medios se hace fuera del hilo de juego, con cache persistente, precarga de los perfiles elegidos y limites de memoria. Durante una transicion solo se cambia el rectangulo del spritesheet; no se decodifica ni se suben texturas por fotograma.
+- Nuevo <cg>Custom Hover</c> para animar botones al pasar el cursor o tocarlos, con presets, configuracion por boton y una opcion para vincular todos los botones.
+- Corregida la compilacion de macOS/iOS que impidio publicar inicialmente esta version: el seguimiento del teclado usa ahora el evento portable de Geode en vez de modificar `CCKeyboardDispatcher` en plataformas donde ese binding no se puede modificar.
+
 ---
 
 ## ![](frame:GJ_starBtn_001.png?height=18) <cy>Paimon Versus</c>

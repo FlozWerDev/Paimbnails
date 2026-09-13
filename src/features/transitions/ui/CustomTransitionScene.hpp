@@ -1,68 +1,38 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
-#include <vector>
-#include <unordered_map>
 #include "../services/TransitionManager.hpp"
+#include "../services/TransitionTimeline.hpp"
+#include "../services/TransitionMedia.hpp"
 
-// Scene that executes a scripted custom transition,
-// keeping both source and destination layers alive simultaneously.
-struct NodeState {
-    cocos2d::CCPoint position;
-    float scale = 1.f;
-    float rotation = 0.f;
-    GLubyte opacity = 255;
-    int zOrder = 0;
-    bool visible = true;
-};
-
-class CustomTransitionScene : public cocos2d::CCScene {
+// Native scene lifecycle, private render surfaces, no reparenting of GD nodes.
+class CustomTransitionScene : public cocos2d::CCTransitionScene {
 public:
     static bool isActive();
-
-    static CustomTransitionScene* create(
-        cocos2d::CCScene* fromScene,
-        cocos2d::CCScene* destScene,
-        std::vector<TransitionCommand> const& commands,
-        bool isPush);
-
-    bool initWithScenes(
-        cocos2d::CCScene* fromScene,
-        cocos2d::CCScene* destScene,
-        std::vector<TransitionCommand> const& commands,
-        bool isPush);
-
-    void update(float dt) override;
+    static CustomTransitionScene* create(cocos2d::CCScene* from, cocos2d::CCScene* to,
+        std::vector<TransitionCommand> const& commands, bool isPush);
+    static CustomTransitionScene* createStinger(cocos2d::CCScene* to,
+        std::shared_ptr<paimon::transitions::TransitionMedia> media, float duration, float cutPoint);
     void onEnter() override;
     void onExit() override;
-    ~CustomTransitionScene();
-
+    void draw() override;
+    void update(float dt) override;
 private:
-    void triggerSafeFallback(char const* where, char const* reason = nullptr);
-    void beginCommand(TransitionCommand const& cmd);
-    bool beginCommandSafe(TransitionCommand const& cmd);
-    void updateCommand(TransitionCommand const& cmd, float progress);
-    bool updateCommandSafe(TransitionCommand const& cmd, float progress);
-    void finishCurrentCommand();
-    void finishTransition();
-    void onTransitionFinished(float dt);
-    void restoreSceneChildren(cocos2d::CCLayerColor* container, cocos2d::CCScene* scene);
-    void restoreTouchDispatch();
-    cocos2d::CCLayerColor* getTarget(std::string const& targetName);
-
-    cocos2d::CCLayerColor* m_fromContainer = nullptr;
-    cocos2d::CCLayerColor* m_toContainer = nullptr;
-    geode::Ref<cocos2d::CCScene> m_fromScene;
-    geode::Ref<cocos2d::CCScene> m_destScene;
-
+    bool initialize(cocos2d::CCScene* to, std::vector<TransitionCommand> commands);
+    bool capture(cocos2d::CCScene* scene, geode::Ref<cocos2d::CCRenderTexture>& surface,
+        cocos2d::CCLayerRGBA*& container);
+    void apply(std::size_t clip, float progress, float elapsed);
+    void complete();
     std::vector<TransitionCommand> m_commands;
-    int m_currentCommandIdx = 0;
-    float m_commandElapsed = 0.f;
-    float m_globalElapsed = 0.f;
-    float m_totalDuration = 0.f;
-    bool m_isPush = false;
-    bool m_finished = false;
-    bool m_started = false;
-    bool m_touchDispatchDisabled = false;
-
-    std::unordered_map<cocos2d::CCNode*, NodeState> m_originalStates;
+    paimon::transitions::Timeline m_timeline;
+    std::vector<bool> m_done, m_started;
+    std::vector<cocos2d::CCPoint> m_origins;
+    std::vector<cocos2d::CCSprite*> m_overlays;
+    std::vector<std::shared_ptr<paimon::transitions::TransitionMedia>> m_media;
+    geode::Ref<cocos2d::CCRenderTexture> m_fromSurface, m_toSurface;
+    cocos2d::CCLayerRGBA* m_from = nullptr;
+    cocos2d::CCLayerRGBA* m_to = nullptr;
+    cocos2d::CCSprite* m_stingerSprite = nullptr;
+    std::shared_ptr<paimon::transitions::TransitionMedia> m_stinger;
+    float m_elapsed = 0.f, m_cutPoint = .5f;
+    bool m_finished = false, m_captured = false;
 };

@@ -1,3 +1,4 @@
+#include "../features/custom-hover/CustomHover.hpp"
 #include "PaimonHubLayer.hpp"
 #include "PaimonHubData.hpp"
 #include "PaiConfigLayer.hpp"
@@ -263,6 +264,7 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                 }, 5, "Animaciones suaves"},
                 {"Mascota", "GJ_button_03.png", [](PaimonHubLayer*) { if (auto popup = PetConfigPopup::create()) popup->show(); }, 5, "Companero en pantalla"},
                 {"Cursor", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = CursorConfigPopup::create()) popup->show(); }, 5, "Cursor personalizado"},
+                {"Hover", "GJ_button_01.png", [](PaimonHubLayer*) { paimon::hover::open(); }, 5, "Animaciones al pasar cursor o touch"},
                 {"Slider", "GJ_button_01.png", [](PaimonHubLayer*) { if (auto popup = paimon::slider::CustomSliderPopup::create()) popup->show(); }, 5, "Barra de scroll custom"},
                 {"Scroll", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = paimon::smoothscroll::SmoothScrollConfigPopup::create()) popup->show(); }, 5, "Desplazamiento suave"},
                 {"Beat Shaders", "GJ_button_04.png", [](PaimonHubLayer*) {
@@ -358,6 +360,7 @@ std::vector<GranularSettingMeta> getGranularSettings() {
         {"Cursor Trail", "Estela de Cursor", 5},
         {"Cursor Scale", "Escala de Cursor", 5},
         {"Score Cell Style", "Estilo de Celda de Puntuacion", 5},
+        {"Custom Hover", "Animaciones Hover", 5},
         {"Custom Slider Thumb", "Barra de Desplazamiento Personalizada", 5},
         {"Dynamic Popups", "Popups Dinamicos", 5},
         {"Dynamic Popup Exit", "Salida de Popup Dinamica", 5},

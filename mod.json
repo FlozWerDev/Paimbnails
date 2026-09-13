@@ -457,6 +457,12 @@
       "description": "Base URL of your deployed Global Icon server (Vercel). Must match the server whose PAIMON_API_KEY equals the mod's API key.",
       "default": "https://global-icons.vercel.app"
     },
+    "custom-hover-enabled": {
+      "type": "bool",
+      "name": "Custom Hover",
+      "description": "Animate buttons on hover or touch. Ctrl+click to configure; Ctrl+D to link all buttons. Open Custom Hover in the hub for presets and mobile selection.",
+      "default": false
+    },
     "custom-slider-enabled": {
       "type": "bool",
       "name": "Custom Slider Thumb",

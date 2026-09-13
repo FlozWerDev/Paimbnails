@@ -1,3 +1,4 @@
+#include "StingerConfigPopup.hpp"
 #include "TransitionConfigPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../layers/PaimonInfoPopup.hpp"
@@ -301,13 +302,13 @@ void TransitionConfigPopup::updateLevelDisplay() {
 
 void TransitionConfigPopup::updateConditionalButtons() {
     bool gShowColor = (m_editingGlobal.type == TransitionType::FadeColor);
-    bool gShowCustom = (m_editingGlobal.type == TransitionType::Custom);
+    bool gShowCustom = (m_editingGlobal.type == TransitionType::Custom || m_editingGlobal.type == TransitionType::Stinger);
     m_globalColorBtn->setVisible(gShowColor);
     m_globalColorSwatch->setVisible(gShowColor);
     m_globalCustomBtn->setVisible(gShowCustom);
 
     bool lShowColor = (m_editingLevel.type == TransitionType::FadeColor);
-    bool lShowCustom = (m_editingLevel.type == TransitionType::Custom);
+    bool lShowCustom = (m_editingLevel.type == TransitionType::Custom || m_editingLevel.type == TransitionType::Stinger);
     m_levelColorBtn->setVisible(lShowColor);
     m_levelColorSwatch->setVisible(lShowColor);
     m_levelCustomBtn->setVisible(lShowCustom);
@@ -334,9 +335,9 @@ void TransitionConfigPopup::onLevelNextType(CCObject*)  { cycleType(m_editingLev
 
 
 void TransitionConfigPopup::onGlobalDurDown(CCObject*) { m_editingGlobal.duration = std::max(0.05f, m_editingGlobal.duration - 0.05f); updateGlobalDisplay(); }
-void TransitionConfigPopup::onGlobalDurUp(CCObject*)   { m_editingGlobal.duration = std::min(3.0f,  m_editingGlobal.duration + 0.05f); updateGlobalDisplay(); }
+void TransitionConfigPopup::onGlobalDurUp(CCObject*)   { m_editingGlobal.duration = std::min(30.0f, m_editingGlobal.duration + 0.05f); updateGlobalDisplay(); }
 void TransitionConfigPopup::onLevelDurDown(CCObject*)  { m_editingLevel.duration  = std::max(0.05f, m_editingLevel.duration  - 0.05f); updateLevelDisplay(); }
-void TransitionConfigPopup::onLevelDurUp(CCObject*)    { m_editingLevel.duration  = std::min(3.0f,  m_editingLevel.duration  + 0.05f); updateLevelDisplay(); }
+void TransitionConfigPopup::onLevelDurUp(CCObject*)    { m_editingLevel.duration  = std::min(30.0f, m_editingLevel.duration  + 0.05f); updateLevelDisplay(); }
 
 
 static void cycleColor(TransitionConfig& cfg) {
@@ -370,14 +371,34 @@ void TransitionConfigPopup::onLevelColor(CCObject*) {
 
 
 void TransitionConfigPopup::onGlobalCustom(CCObject*) {
+    if (m_editingGlobal.type == TransitionType::Stinger) {
+        WeakRef<TransitionConfigPopup> self = this;
+        if (auto* popup = StingerConfigPopup::create(m_editingGlobal, [self](auto config) {
+            if (auto p = self.lock()) { p->m_editingGlobal = std::move(config); p->updateGlobalDisplay(); }
+        })) popup->show();
+        return;
+    }
     m_editingIsGlobal = true;
-    auto popup = CustomTransitionEditorPopup::create(&m_editingGlobal, true);
+    WeakRef<TransitionConfigPopup> self = this;
+    auto popup = CustomTransitionEditorPopup::create(m_editingGlobal, true, [self](auto config) {
+        if (auto p = self.lock()) { p->m_editingGlobal = std::move(config); p->updateGlobalDisplay(); }
+    });
     if (popup) popup->show();
 }
 
 void TransitionConfigPopup::onLevelCustom(CCObject*) {
+    if (m_editingLevel.type == TransitionType::Stinger) {
+        WeakRef<TransitionConfigPopup> self = this;
+        if (auto* popup = StingerConfigPopup::create(m_editingLevel, [self](auto config) {
+            if (auto p = self.lock()) { p->m_editingLevel = std::move(config); p->updateLevelDisplay(); }
+        })) popup->show();
+        return;
+    }
     m_editingIsGlobal = false;
-    auto popup = CustomTransitionEditorPopup::create(&m_editingLevel, false);
+    WeakRef<TransitionConfigPopup> self = this;
+    auto popup = CustomTransitionEditorPopup::create(m_editingLevel, false, [self](auto config) {
+        if (auto p = self.lock()) { p->m_editingLevel = std::move(config); p->updateLevelDisplay(); }
+    });
     if (popup) popup->show();
 }
 
@@ -417,7 +438,8 @@ void TransitionConfigPopup::onInfoType(CCObject*) {
         "<cy>Pages:</c> Book page curl effect.\n"
         "<cy>Creative:</c> Spin, Glitch, Wave, Flash + more!\n"
         "<cy>Random:</c> A different effect every time!\n"
-        "<cy>Custom:</c> Your own DSL script commands!\n"
+        "<cy>Custom:</c> Commands, media and parallel groups.\n"
+        "<cy>Stinger:</c> Image/GIF/video overlay with a scene cut.\n"
         "<cy>None:</c> Instant, no animation."
     )->show();
 }

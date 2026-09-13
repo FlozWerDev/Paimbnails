@@ -1,3 +1,4 @@
+#include "../features/custom-hover/CustomHover.hpp"
 #include "FactoryResetActions.hpp"
 #include <Geode/utils/string.hpp>
 #include "Settings.hpp"
@@ -169,6 +170,7 @@ void resetFeatureManagers() {
 
     paimon::slider::CustomSliderManager::get().loadConfig();
     paimon::slider::CustomSliderManager::get().resetToDefaults();
+    paimon::hover::reset();
 
     paimon::icons::IconConfigStore::get().resetToDefaults();
 

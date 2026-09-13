@@ -1,4 +1,5 @@
 #include "TransitionManager.hpp"
+#include "TransitionTimeline.hpp"
 #include "../ui/CustomTransitionScene.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -119,6 +120,7 @@ std::vector<TransitionType> const& TransitionManager::allTypes() {
         TransitionType::WaveSlide,
         TransitionType::Random,
         TransitionType::Custom,
+        TransitionType::Stinger,
         TransitionType::None,
     };
     return types;
@@ -181,6 +183,7 @@ TransitionType TransitionManager::typeFromString(std::string const& s) {
     if (s == "heart_iris")       return TransitionType::HeartIris;
     if (s == "wave_slide")       return TransitionType::WaveSlide;
     if (s == "random")           return TransitionType::Random;
+    if (s == "stinger") return TransitionType::Stinger;
     if (s == "custom")           return TransitionType::Custom;
     if (s == "none")             return TransitionType::None;
     return TransitionType::Fade;
@@ -244,6 +247,7 @@ std::string TransitionManager::typeToString(TransitionType t) {
         case TransitionType::HeartIris:         return "heart_iris";
         case TransitionType::WaveSlide:         return "wave_slide";
         case TransitionType::Random:            return "random";
+        case TransitionType::Stinger:           return "stinger";
         case TransitionType::Custom:            return "custom";
         case TransitionType::None:              return "none";
     }
@@ -252,6 +256,7 @@ std::string TransitionManager::typeToString(TransitionType t) {
 
 std::string TransitionManager::typeDisplayName(TransitionType t) {
     switch (t) {
+        case TransitionType::Stinger: return "Stinger (OBS)";
         case TransitionType::Fade:              return "Fade (Black)";
         case TransitionType::FadeWhite:         return "Fade (White)";
         case TransitionType::FadeColor:         return "Fade (Color)";
@@ -316,6 +321,7 @@ std::string TransitionManager::typeDisplayName(TransitionType t) {
 
 std::string TransitionManager::typeDescription(TransitionType t) {
     switch (t) {
+        case TransitionType::Stinger: return "Image, GIF or video overlay with a configurable scene cut";
         case TransitionType::Fade:              return "Fades to black, then reveals the new screen.";
         case TransitionType::FadeWhite:         return "Fades to white, then reveals the new screen.";
         case TransitionType::FadeColor:         return "Fades to a color you pick, then reveals.";
@@ -422,7 +428,7 @@ int TransitionManager::sanitizeCommand(TransitionCommand& cmd) {
     int fixes = 0;
 
     auto sanitizeFloat = [&fixes](float& value, float fallback) {
-        if (!std::isfinite(value)) {
+        if (!paimon::transitions::finite(value)) {
             value = fallback;
             fixes++;
         }
@@ -507,6 +513,7 @@ int TransitionManager::sanitizeCommand(TransitionCommand& cmd) {
 
 int TransitionManager::sanitizeCommands(std::vector<TransitionCommand>& commands) {
     int fixes = 0;
+    if (commands.size() > 256) { commands.resize(256); ++fixes; }
     for (auto& cmd : commands) {
         fixes += sanitizeCommand(cmd);
     }
@@ -520,8 +527,9 @@ int TransitionManager::sanitizeCommands(std::vector<TransitionCommand>& commands
 }
 
 int TransitionManager::sanitizeConfig(TransitionConfig& cfg) {
+    cfg.cutPoint = paimon::transitions::bounded(cfg.cutPoint, .5f, 0.f, 1.f);
     int fixes = 0;
-    if (!std::isfinite(cfg.duration) || cfg.duration < 0.01f) {
+    if (!paimon::transitions::finite(cfg.duration) || cfg.duration < 0.01f) {
         cfg.duration = 0.5f;
         fixes++;
     } else if (cfg.duration > 30.f) {
@@ -585,6 +593,8 @@ static TransitionConfig parseConfig(matjson::Value const& obj) {
         }
     }
     if (obj.contains("image"))    cfg.imagePath  = obj["image"].asString().unwrapOr("");
+    cfg.mediaPath = obj["media"].asString().unwrapOr("");
+    cfg.cutPoint = static_cast<float>(obj["cut_point"].asDouble().unwrapOr(.5));
     if (obj.contains("script"))   cfg.scriptPath = obj["script"].asString().unwrapOr("");
     if (obj.contains("images") && obj["images"].isArray()) {
         for (auto const& v : obj["images"].asArray().unwrapOr(std::vector<matjson::Value>{})) {
@@ -626,7 +636,7 @@ static bool migrateConfigImages(TransitionConfig& cfg) {
     }
 
     for (auto& cmd : cfg.commands) {
-        if (cmd.imagePath.empty()) continue;
+        if (cmd.imagePath.empty() || std::filesystem::path(cmd.imagePath).extension() == ".pttransition") continue;
         auto imported = paimon::assets::importStoredPath(cmd.imagePath, "transitions", paimon::assets::Kind::Image);
         if (imported.success && !imported.path.empty()) {
             auto normalized = paimon::assets::normalizePathString(imported.path);
@@ -676,6 +686,8 @@ static matjson::Value commandToJson(TransitionCommand const& cmd) {
 static matjson::Value configToJson(TransitionConfig const& cfg) {
     matjson::Value obj = matjson::makeObject({});
     obj.set("type", TransitionManager::typeToString(cfg.type));
+    obj.set("media", cfg.mediaPath);
+    obj.set("cut_point", static_cast<double>(cfg.cutPoint));
     obj.set("duration", static_cast<double>(cfg.duration));
     auto colorArr = matjson::Value::array();
     colorArr.push(cfg.colorR); colorArr.push(cfg.colorG); colorArr.push(cfg.colorB);
@@ -716,6 +728,7 @@ void TransitionManager::loadConfig() {
     auto root = parseRes.unwrap();
     if (!root.isObject()) {
         m_loaded = true;
+        warmMedia();
         log::warn("[TransitionManager] Invalid config root type, using defaults");
         return;
     }
@@ -755,6 +768,7 @@ void TransitionManager::loadConfig() {
     }
 
     m_loaded = true;
+    warmMedia();
     if (migratedImages) {
         saveConfig();
     }
@@ -767,6 +781,7 @@ void TransitionManager::saveConfig() {
         migrateConfigImages(m_levelEntryConfig);
     }
 
+    warmMedia();
     matjson::Value root = matjson::makeObject({});
     root.set("enabled", m_enabled);
     root.set("global", configToJson(m_globalConfig));
@@ -788,12 +803,14 @@ TransitionConfig TransitionManager::getLevelEntryConfig() const {
 void TransitionManager::setGlobalConfig(TransitionConfig const& cfg) {
     log::info("[TransitionManager] setGlobalConfig: type={} dur={}", typeToString(cfg.type), cfg.duration);
     m_globalConfig = cfg;
+    sanitizeConfig(m_globalConfig);
     migrateConfigImages(m_globalConfig);
 }
 
 void TransitionManager::setLevelEntryConfig(TransitionConfig const& cfg) {
     log::info("[TransitionManager] setLevelEntryConfig: type={} dur={}", typeToString(cfg.type), cfg.duration);
     m_levelEntryConfig = cfg;
+    sanitizeConfig(m_levelEntryConfig);
     migrateConfigImages(m_levelEntryConfig);
     m_hasLevelEntryConfig = true;
 }
@@ -804,208 +821,83 @@ void TransitionManager::clearLevelEntryConfig() {
     m_levelEntryConfig = TransitionConfig{};
 }
 
-// Convert any transition type to DSL commands for consistent previews.
-
+// Presets compile through the same timeline as the command editor. Independent
+// tracks run together and the total time matches the configured duration.
 std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(TransitionType type, float dur) const {
-    std::vector<TransitionCommand> cmds;
-    float half = dur * 0.5f;
-    float third = dur * 0.33f;
-    float quarter = dur * 0.25f;
-    auto winSize = CCDirector::get()->getWinSize();
-    float w = winSize.width;
-    float h = winSize.height;
-    float cx = w / 2.f;
-    float cy = h / 2.f;
-
+    dur = paimon::transitions::bounded(dur, .5f, .05f, 30.f);
+    float half = dur * .5f;
+    auto size = CCDirector::get()->getWinSize();
+    float cx = size.width * .5f, cy = size.height * .5f;
+    std::vector<TransitionCommand> commands;
+    auto spawn = [&](int count) {
+        TransitionCommand c; c.action = CommandAction::Spawn; c.spawnCount = count;
+        commands.push_back(c);
+    };
+    auto value = [&](CommandAction action, char const* target, float time, float from, float to) {
+        TransitionCommand c; c.action = action; c.target = target; c.duration = time;
+        c.fromVal = from; c.toVal = to; commands.push_back(c);
+    };
+    auto move = [&](char const* target, CCPoint from, CCPoint to) {
+        TransitionCommand c; c.action = CommandAction::Move; c.target = target; c.duration = dur;
+        c.fromX = from.x; c.fromY = from.y; c.toX = to.x; c.toY = to.y;
+        commands.push_back(c);
+    };
     switch (type) {
-        case TransitionType::Fade:
-        case TransitionType::FadeWhite:
-        case TransitionType::FadeColor:
-        case TransitionType::CrossFade:
-        case TransitionType::PixelateFade:
-        case TransitionType::DiamondWipe:
-        case TransitionType::DoubleDoor:
-        case TransitionType::Blinds:
-        case TransitionType::HeartIris:
-        case TransitionType::CinematicBars:
-        case TransitionType::FlashWhite:
-        case TransitionType::FadeTR:
-        case TransitionType::FadeBL:
-        case TransitionType::FadeUp:
-        case TransitionType::FadeDown:
-        case TransitionType::TurnOffTiles:
-        case TransitionType::SplitCols:
-        case TransitionType::SplitRows:
-        case TransitionType::ProgressRadialCW:
-        case TransitionType::ProgressRadialCCW:
-        case TransitionType::ProgressInOut:
-        case TransitionType::ProgressOutIn:
-        case TransitionType::ProgressHorizontal:
-        case TransitionType::ProgressVertical:
-        case TransitionType::PageForward:
-        case TransitionType::PageBackward:
-            cmds.push_back({CommandAction::FadeOut, "from", dur, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::FadeIn, "to", dur, 0,0,0,0, 0.f, 255.f});
-            break;
-
-        case TransitionType::SlideLeft:
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "from", dur, cx, cy, -w/2, cy, 1.f, 1.f});
-            cmds.push_back({CommandAction::Move, "to", dur, w + w/2, cy, cx, cy, 1.f, 1.f});
-            break;
-        case TransitionType::SlideRight:
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "from", dur, cx, cy, w + w/2, cy, 1.f, 1.f});
-            cmds.push_back({CommandAction::Move, "to", dur, -w/2, cy, cx, cy, 1.f, 1.f});
-            break;
-        case TransitionType::SlideUp:
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "from", dur, cx, cy, cx, h + h/2, 1.f, 1.f});
-            cmds.push_back({CommandAction::Move, "to", dur, cx, -h/2, cx, cy, 1.f, 1.f});
-            break;
-        case TransitionType::SlideDown:
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "from", dur, cx, cy, cx, -h/2, 1.f, 1.f});
-            cmds.push_back({CommandAction::Move, "to", dur, cx, h + h/2, cx, cy, 1.f, 1.f});
-            break;
-
-        case TransitionType::MoveInLeft:
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "to", dur, -w/2, cy, cx, cy, 1.f, 1.f});
-            break;
-        case TransitionType::MoveInRight:
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "to", dur, w + w/2, cy, cx, cy, 1.f, 1.f});
-            break;
-        case TransitionType::MoveInTop:
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "to", dur, cx, h + h/2, cx, cy, 1.f, 1.f});
-            break;
-        case TransitionType::MoveInBottom:
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "to", dur, cx, -h/2, cx, cy, 1.f, 1.f});
-            break;
-
-        case TransitionType::ZoomIn:
-        case TransitionType::ZoomOut:
-        case TransitionType::ZoomFlipYUp:
-        case TransitionType::ZoomFlipYDown:
-            cmds.push_back({CommandAction::Scale, "from", dur, 0,0,0,0, 1.f, 0.01f});
-            cmds.push_back({CommandAction::FadeOut, "from", dur * 0.7f, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Scale, "to", dur, 0,0,0,0, 1.5f, 1.f});
-            break;
-        case TransitionType::FlipX:
-        case TransitionType::FlipY:
-        case TransitionType::FlipAngular:
-            cmds.push_back({CommandAction::Rotate, "from", dur, 0,0,0,0, 0.f, 90.f});
-            cmds.push_back({CommandAction::FadeOut, "from", dur * 0.5f, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Rotate, "to", dur, 0,0,0,0, -90.f, 0.f});
-            break;
-        case TransitionType::ShrinkGrow:
-            cmds.push_back({CommandAction::Scale, "from", dur, 0,0,0,0, 1.f, 0.01f});
-            cmds.push_back({CommandAction::FadeOut, "from", dur * 0.5f, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Scale, "to", dur, 0,0,0,0, 0.01f, 1.f});
-            break;
-        case TransitionType::RotoZoom:
-        case TransitionType::JumpZoom:
-            cmds.push_back({CommandAction::Rotate, "from", dur, 0,0,0,0, 0.f, 360.f});
-            cmds.push_back({CommandAction::Scale, "from", dur, 0,0,0,0, 1.f, 0.01f});
-            cmds.push_back({CommandAction::FadeOut, "from", dur * 0.7f, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Scale, "to", dur, 0,0,0,0, 0.01f, 1.f});
-            break;
-
-        case TransitionType::FadeBounce: {
-            cmds.push_back({CommandAction::FadeOut, "from", half, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::Bounce, "to", half, 0,0,0,0, 0.f, 255.f});
+        case TransitionType::SlideOverLeft:
+        case TransitionType::SlideOverRight:
+        case TransitionType::SlideOverUp:
+        case TransitionType::SlideOverDown:
+        case TransitionType::WaveSlide: {
+            CCPoint offset{size.width, 0};
+            if (type == TransitionType::SlideOverRight) offset = {-size.width, 0};
+            if (type == TransitionType::SlideOverUp) offset = {0, -size.height};
+            if (type == TransitionType::SlideOverDown) offset = {0, size.height};
+            if (type == TransitionType::WaveSlide) offset.y = 30;
+            spawn(3);
+            value(CommandAction::FadeIn, "to", dur, 255, 255);
+            move("from", {cx, cy}, CCPoint{cx, cy} - offset);
+            move("to", CCPoint{cx, cy} + offset, {cx, cy});
             break;
         }
-        case TransitionType::SlideOverLeft: {
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "from", dur, cx, cy, -w/2, cy, 1.f, 1.f});
-            cmds.push_back({CommandAction::Move, "to", dur, w + w/2, cy, cx, cy, 1.f, 1.f});
-            break;
-        }
-        case TransitionType::SlideOverRight: {
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "from", dur, cx, cy, w + w/2, cy, 1.f, 1.f});
-            cmds.push_back({CommandAction::Move, "to", dur, -w/2, cy, cx, cy, 1.f, 1.f});
-            break;
-        }
-        case TransitionType::SlideOverUp: {
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "from", dur, cx, cy, cx, h + h/2, 1.f, 1.f});
-            cmds.push_back({CommandAction::Move, "to", dur, cx, -h/2, cx, cy, 1.f, 1.f});
-            break;
-        }
-        case TransitionType::SlideOverDown: {
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "from", dur, cx, cy, cx, -h/2, 1.f, 1.f});
-            cmds.push_back({CommandAction::Move, "to", dur, cx, h + h/2, cx, cy, 1.f, 1.f});
-            break;
-        }
-        case TransitionType::ZoomShrinkFade: {
-            cmds.push_back({CommandAction::Scale, "from", half, 0,0,0,0, 1.f, 0.3f});
-            cmds.push_back({CommandAction::FadeOut, "from", quarter, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::Scale, "to", half, 0,0,0,0, 1.5f, 1.f});
-            cmds.push_back({CommandAction::FadeIn, "to", half, 0,0,0,0, 0.f, 255.f});
-            break;
-        }
-        case TransitionType::SpinCW: {
-            cmds.push_back({CommandAction::Rotate, "from", dur, 0,0,0,0, 0.f, 180.f});
-            cmds.push_back({CommandAction::FadeOut, "from", half, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::Scale, "from", dur, 0,0,0,0, 1.f, 0.2f});
-            cmds.push_back({CommandAction::FadeIn, "to", half, 0,0,0,0, 0.f, 255.f});
-            break;
-        }
-        case TransitionType::SpinCCW: {
-            cmds.push_back({CommandAction::Rotate, "from", dur, 0,0,0,0, 0.f, -180.f});
-            cmds.push_back({CommandAction::FadeOut, "from", half, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::Scale, "from", dur, 0,0,0,0, 1.f, 0.2f});
-            cmds.push_back({CommandAction::FadeIn, "to", half, 0,0,0,0, 0.f, 255.f});
-            break;
-        }
+        case TransitionType::ZoomShrinkFade:
+        case TransitionType::SpinCW:
+        case TransitionType::SpinCCW:
         case TransitionType::Swirl: {
-            cmds.push_back({CommandAction::Rotate, "from", dur, 0,0,0,0, 0.f, 360.f});
-            cmds.push_back({CommandAction::Scale, "from", dur, 0,0,0,0, 1.f, 0.01f});
-            cmds.push_back({CommandAction::FadeOut, "from", dur * 0.8f, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::FadeIn, "to", third, 0,0,0,0, 0.f, 255.f});
+            bool rotate = type != TransitionType::ZoomShrinkFade;
+            spawn(rotate ? 3 : 2);
+            value(CommandAction::Scale, "from", half, 1, .1f);
+            value(CommandAction::FadeOut, "from", half, 255, 0);
+            if (rotate) value(CommandAction::Rotate, "from", half, 0,
+                type == TransitionType::SpinCCW ? -180.f : type == TransitionType::Swirl ? 360.f : 180.f);
+            spawn(2);
+            value(CommandAction::Scale, "to", half, 1.2f, 1);
+            value(CommandAction::FadeIn, "to", half, 0, 255);
             break;
         }
         case TransitionType::Glitch: {
-            float shakeDur = dur * 0.3f;
-            float fadeDur = dur * 0.7f;
-            TransitionCommand shakeCmd;
-            shakeCmd.action = CommandAction::Shake;
-            shakeCmd.target = "from";
-            shakeCmd.duration = shakeDur;
-            shakeCmd.intensity = 12.f;
-            cmds.push_back(shakeCmd);
-            cmds.push_back({CommandAction::FadeOut, "from", fadeDur * 0.4f, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::FadeIn, "to", fadeDur * 0.6f, 0,0,0,0, 0.f, 255.f});
+            spawn(2);
+            TransitionCommand shake; shake.action = CommandAction::Shake;
+            shake.duration = half; shake.intensity = 12;
+            commands.push_back(shake);
+            value(CommandAction::FadeOut, "from", half, 255, 0);
+            value(CommandAction::FadeIn, "to", half, 0, 255);
             break;
         }
-        case TransitionType::WaveSlide: {
-            cmds.push_back({CommandAction::FadeIn, "to", 0.01f, 0,0,0,0, 0.f, 255.f});
-            cmds.push_back({CommandAction::Move, "to", dur, w + w/3, cy + 30, cx, cy, 1.f, 1.f});
-            cmds.push_back({CommandAction::FadeOut, "from", dur * 0.6f, 0,0,0,0, 255.f, 0.f});
+        case TransitionType::CrossFade:
+            spawn(2);
+            value(CommandAction::FadeOut, "from", dur, 255, 0);
+            value(CommandAction::FadeIn, "to", dur, 0, 255);
             break;
-        }
-
         case TransitionType::Custom:
+        case TransitionType::Stinger:
+        case TransitionType::None:
             break;
-
-        default: {
-            cmds.push_back({CommandAction::FadeOut, "from", half, 0,0,0,0, 255.f, 0.f});
-            cmds.push_back({CommandAction::FadeIn, "to", half, 0,0,0,0, 0.f, 255.f});
+        default:
+            value(CommandAction::FadeOut, "from", half, 255, 0);
+            value(type == TransitionType::FadeBounce ? CommandAction::Bounce : CommandAction::FadeIn, "to", half, 0, 255);
             break;
-        }
     }
-
-    return cmds;
+    return commands;
 }
 
 
@@ -1015,19 +907,20 @@ CCScene* TransitionManager::createTransition(
     bool isPush)
 {
     if (!m_loaded) loadConfig();
+    if (!dest) return nullptr;
+    if (dest == CCDirector::get()->getRunningScene()) return dest;
 
     if (cfg.type == TransitionType::None) return dest;
     if (CustomTransitionScene::isActive()) return dest;
 
     TransitionConfig safeCfg = cfg;
-    migrateConfigImages(safeCfg);
     sanitizeConfig(safeCfg);
 
     if (safeCfg.type == TransitionType::Random) {
         auto const& types = allTypes();
         std::vector<TransitionType> eligible;
         for (auto t : types) {
-            if (t != TransitionType::Random && t != TransitionType::Custom && t != TransitionType::None)
+            if (t != TransitionType::Random && t != TransitionType::Custom && t != TransitionType::Stinger && t != TransitionType::None)
                 eligible.push_back(t);
         }
         if (!eligible.empty()) {
@@ -1037,6 +930,14 @@ CCScene* TransitionManager::createTransition(
         } else {
             safeCfg.type = TransitionType::Fade;
         }
+    }
+
+    if (safeCfg.type == TransitionType::Stinger) {
+        auto media = paimon::transitions::findTransitionMedia(safeCfg.mediaPath);
+        if (media) {
+            if (auto* scene = CustomTransitionScene::createStinger(dest, media, safeCfg.duration, safeCfg.cutPoint)) return scene;
+        } else paimon::transitions::prepareTransitionMedia(safeCfg.mediaPath);
+        return CCTransitionFade::create(safeCfg.duration, dest);
     }
 
     if (safeCfg.type == TransitionType::Custom) {
@@ -1054,7 +955,7 @@ CCScene* TransitionManager::createTransition(
             auto* transScene = CustomTransitionScene::create(fromScene, dest, commands, isPush);
             if (transScene) return transScene;
         }
-        tripCustomSafeMode("createTransition returned nullptr");
+        log::debug("[Transitions] Custom media not ready or timeline invalid; using fade");
         return CCTransitionFade::create(safeCfg.duration, dest);
     }
 
@@ -1127,11 +1028,12 @@ void TransitionManager::pushScene(CCScene* dest) {
 }
 
 CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig const& cfg, CCScene* dest) const {
-    float dur = cfg.duration;
+    if (!dest) return nullptr;
+    float dur = paimon::transitions::bounded(cfg.duration, .5f, .01f, 30.f);
     ccColor3B col = {
-        static_cast<GLubyte>(cfg.colorR),
-        static_cast<GLubyte>(cfg.colorG),
-        static_cast<GLubyte>(cfg.colorB)
+        static_cast<GLubyte>(std::clamp(cfg.colorR, 0, 255)),
+        static_cast<GLubyte>(std::clamp(cfg.colorG, 0, 255)),
+        static_cast<GLubyte>(std::clamp(cfg.colorB, 0, 255))
     };
 
     switch (cfg.type) {
@@ -1255,4 +1157,22 @@ std::vector<TransitionCommand> TransitionManager::parseScriptFile(std::string co
         commands.push_back(cmd);
     }
     return commands;
+}
+
+void TransitionManager::warmMedia() {
+    auto generation = ++m_mediaGeneration;
+    m_preloadedMedia.clear();
+    auto prepare = [this, generation](std::string const& path) {
+        if (path.empty()) return;
+        paimon::transitions::prepareTransitionMedia(path, [this, generation](auto media, auto) {
+            if (generation == m_mediaGeneration && media) m_preloadedMedia.push_back(std::move(media));
+        });
+    };
+    for (auto const* cfg : {&m_globalConfig, &m_levelEntryConfig}) {
+        if (cfg == &m_levelEntryConfig && !m_hasLevelEntryConfig) continue;
+        if (cfg->type == TransitionType::Stinger) prepare(cfg->mediaPath);
+        if (cfg->type == TransitionType::Custom) {
+            for (auto const& command : cfg->commands) if (command.action == CommandAction::Image) prepare(command.imagePath);
+        }
+    }
 }

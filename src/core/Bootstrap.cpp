@@ -1,3 +1,4 @@
+#include "../features/custom-hover/CustomHover.hpp"
 #include <Geode/Geode.hpp>
 #include "../features/versus/VersusInit.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
@@ -97,6 +98,7 @@ void bootstrap() {
     TransitionManager::get().loadConfig();
     ProgressBarManager::get().loadConfig();
     paimon::slider::CustomSliderManager::get().loadConfig();
+    paimon::hover::init();
 
     bool const clearCacheAtStartup = paimon::settings::general::clearCacheOnExit();
 

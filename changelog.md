@@ -1,3 +1,51 @@
+# <cy>v1.1.3</c>
+
+![](flozwer.paimbnails2/paim_Paimon.png?height=32) Llegan los <cl>Slots Oficiales</c>: niveles editables sobre la lista oficial, con importacion por ID o <cg>.gmd</c>. Los botones del <cl>Quick Hub</c> se visten con <cg>imagen y sonido propios</c>, <cl>GIF a Objetos</c> suma los modos <cg>Blur</c> y <cg>Vert</c>, las celdas de puntuacion se pintan con <cg>tus colores</c> y la <cl>busqueda en vivo</c> deja de pegar al servidor a cada tecla.
+
+---
+
+## ![](frame:GJ_starBtn_001.png?height=18) <cy>Slots Oficiales</c>
+
+- La pantalla de niveles oficiales gana botones para <cg>Anadir</c>, <cg>Editar</c> y abrir la lista. Los slots son <cg>pura estetica</c>: repintan la pagina sin tocar el guardado ni las monedas, asi que acabar uno <cr>nunca da estrellas, orbes ni progreso</c>. Se apaga desde <cg>Modulos</c>.
+- El gestor <cg>Slots oficiales</c> trae boton <cg>+ Anadir</c> y una fila por slot con vista previa, nombre, origen y acciones <cg>Probar</c>, <cg>Editar</c> y borrado con confirmacion. Se pueden <cg>reordenar</c>, activar y desactivar con su interruptor, y hay una seccion de <cg>Oficiales ocultos</c> con boton <cg>Restaurar</c>.
+- El editor (<cg>Nuevo slot</c> / <cg>Editor de slot</c> / <cg>Reemplazar</c>) acepta origen por <cg>ID de nivel</c> con boton <cg>Importar</c>, o <cg>Archivo .gmd</c> con boton <cg>Examinar...</c> (el dialogo ya filtra <cg>Geometry Dash Levels (*.gmd)</c>). Campos de <cg>Nombre</c> y <cg>Autor</c>, fila de <cg>Dificultad</c> con las 12 caras vainilla, <cg>Categoria</c> de Rate a Mythic, <cg>Estrellas</c> con stepper y slider mas chip de <cg>Monedas</c>, panel de <cg>Vista previa</c> en vivo y pie con <cg>Sorprendeme</c>, <cg>Probar</c> y <cg>Guardar</c>. Todo en espanol e ingles.
+- En la lista, cada reemplazo repinta su pagina oficial en su sitio, con la cara, las estrellas y las monedas dibujadas con los assets del juego. Un oficial oculto se ve <cg>atenuado con cinta OCULTO</c> y al intentar jugarlo avisa que lo restaures desde la lista.
+
+---
+
+## ![](frame:GJ_infoIcon_001.png?height=18) <cy>Quick Hub</c>
+
+- El editor del boton capturado suma filas de <cg>Imagen</c> y <cg>Sonido</c>, cada una diciendo lo que lleva puesto.
+- <cg>Imagen del boton</c>: <cg>Elegir PNG/JPG</c> o <cg>Frame del juego</c>, con <cg>Tamano</c> de 0.2 a 3.0, <cg>Giro</c>, <cg>FlipX / FlipY</c>, boton <cg>Cero</c> para resetear y <cg>Quitar</c> para volver al icono original. La rueda la encaja a tamano fijo.
+- <cg>Sonido del boton</c>: <cg>Original</c>, <cg>Juego</c> (nombre del ogg), <cg>Online</c> (ID de SFX de la libreria, con <cg>Probar</c>) o <cg>Archivo</c> (mp3, ogg, wav o flac). Con <cg>Volumen</c>, <cg>Velocidad</c> de 0.4 a 2.5x, <cg>Inicio</c> y <cg>Fin</c> en ms y fundidos de entrada y salida. Al sonar el custom se suprime el efecto original del juego.
+- El radial <cr>ya no se abre sobre gameplay real ni durante el playtest del editor</c>, ni con la tecla ni con el gesto tactil. En tactil, el hold de un dedo ignora los toques que un menu ya reclamo y se cancela si te mueves, sueltas antes o cambias de escena, con su barra de progreso arriba.
+
+---
+
+## ![](frame:GJ_hammerIcon_001.png?height=18) <cy>GIF a Objetos</c>
+
+- El boton <cg>Modo</c> suma <cg>Blur</c> y <cg>Vert</c> despues de Circulos. Los ajustes se guardan y la vista previa ya usa las mascaras alfa reales de los objetos elegidos.
+- <cg>Blur</c> filtra la fuente con un shader gaussiano separable ponderado por alfa (con ruta CPU si no hay GL) y construye con <cg>glow circular nativo</c>. El boton de Glow pasa a controlar el <cg>Filtro</c>: no, fino, suave o alto. Si el catalogo solo trae el glow en cuartos, los monta orientados alrededor del centro; <cr>nunca lo sustituye por un cuadrado</c>.
+- <cg>Vert</c> reconstruye las filas con <cg>pares de degradados verticales nativos enfrentados</c>, y los tramos horizontales del mismo color comparten objetos.
+- El boton de Dither pasa a ser <cg>Base: negra / Base: nivel</c>: conserva los tonos oscuros sobre fondo negro (cuesta un objeto y un canal extra, dentro del presupuesto) o mezcla la luz con el escenario. Si faltan el glow o el gradiente nativo en los recursos de GD, avisa en vez de importar mal. GIF y video conservan el planificador de frames y el presupuesto sigue bajando la resolucion cuando hace falta.
+
+---
+
+## ![](frame:GJ_sTrendingIcon_001.png?height=18) <cy>Celdas de puntuacion</c>
+
+- Nuevo modulo <cg>Score Gradient</c> (apagado por defecto): pinta en las celdas de nivel y de puntuacion un <cg>degradado con los colores de tu icono</c>, solo de fondo, sin tocar textos ni botones. En PC anima al pasar el cursor y respeta el scroll. Sin el modulo, las celdas quedan como estaban.
+
+---
+
+## ![](frame:GJ_starsIcon_001.png?height=18) <cy>Busqueda en vivo</c>
+
+- La vista previa de busqueda va <cg>mas rapida y pega menos al servidor</c>: cache compartida con expiracion, nada de peticiones duplicadas en vuelo e intervalo minimo entre envios. Reescribir o paginar atras ya no repite la descarga y salir con Back limpia la cache.
+- Con menos de 3 caracteres (los IDs numericos estan exentos) ya no se queda el spinner eterno: muestra <cg>Keep typing...</c>. Al buscar sale <cg>Searching...</c> y el debounce por defecto sube de 350 a 450 ms.
+- Las busquedas con comodin (<cg>*</c>) traen 2 variantes por delante y el resto llega al hacer scroll hasta el fondo, sin doble carga.
+- <cr>Corregida la lista atascada en cargando al abrir un resultado</c>: la busqueda ya no le roba el delegado al juego y lo restaura al terminar.
+
+---
+
 # <cy>v1.1.2</c>
 
 ![](flozwer.paimbnails2/paim_Paimon.png?height=32) Llega <cl>Paimon RTX</c>: trazado de rayos en tiempo real sobre todo el juego, y la <cl>Interpolacion de Fotogramas</c>, que dibuja entre pasos de fisica para quitar los micro-tirones. Llegan tambien los <cl>Niveles de Perfil</c>: XP, rangos e insignias calculados con las estadisticas publicas de cualquier jugador. Ademas, <cl>Level Thumbnails</c> deja de ser incompatible y se puede tener puesto a la vez. Y abre <cl>Paimon Versus</c>: duelos 1v1 con rango propio, sobre el boton Versus que el juego tenia sin usar.

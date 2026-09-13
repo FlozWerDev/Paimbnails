@@ -47,7 +47,7 @@ class ScoreGradientLayer : public cocos2d::CCLayerGradient {
         m_hover += (target - m_hover) * (1.f - std::exp(-10.f * std::max(dt, 0.f)));
         if (std::abs(m_hover - target) < 0.001f) m_hover = target;
         setOpacity(static_cast<GLubyte>(125.f + 70.f * m_hover));
-        setVector(cocos2d::ccp(1.f, -0.15f - 0.7f * m_hover));
+        setVector(ccp(1.f, -0.15f - 0.7f * m_hover));
     }
 
 public:
@@ -56,7 +56,7 @@ public:
         auto* layer = new ScoreGradientLayer();
         if (!layer->initWithColor(cocos2d::ccc4(first.r, first.g, first.b, 255),
                                   cocos2d::ccc4(second.r, second.g, second.b, 255),
-                                  cocos2d::ccp(1.f, -0.15f))) {
+                                  ccp(1.f, -0.15f))) {
             delete layer;
             return nullptr;
         }

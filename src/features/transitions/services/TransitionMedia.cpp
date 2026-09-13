@@ -97,7 +97,11 @@ bool loadManifest(std::filesystem::path const& path, Decoded& out) {
 }
 Decoded importMedia(std::string const& source, std::filesystem::path const& root) {
     Decoded out;
-    auto path = std::filesystem::u8path(source);
+#if defined(GEODE_IS_WINDOWS)
+    auto path = std::filesystem::path(utils::string::utf8ToWide(source));
+#else
+    auto path = std::filesystem::path(source);
+#endif
     if (path.extension() == ".pttransition") {
         if (!loadManifest(path, out)) { out = {}; out.error = "Sheet invalido o incompleto. Importa el original de nuevo."; }
         return out;
@@ -107,7 +111,8 @@ Decoded importMedia(std::string const& source, std::filesystem::path const& root
     if (ec || size > kBudget) { out.error = "Archivo ausente o mayor de 96 MB."; return out; }
     auto stamp = std::filesystem::last_write_time(path, ec);
     if (ec) { out.error = "No se pudo leer el archivo."; return out; }
-    auto identity = source + std::to_string(size) + std::to_string(stamp.time_since_epoch().count()) + "sheet-export-v2";
+    auto identity = source + std::to_string(static_cast<unsigned long long>(size)) +
+        std::to_string(static_cast<long long>(stamp.time_since_epoch().count())) + "sheet-export-v2";
     std::uint64_t hash = 14695981039346656037ull;
     for (unsigned char c : identity) { hash ^= c; hash *= 1099511628211ull; }
     auto dir = root / fmt::format("{:016x}", hash);

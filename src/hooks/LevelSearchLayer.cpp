@@ -22,6 +22,7 @@
 using namespace geode::prelude;
 
 #include "../features/level-search/services/LevelSearchHelpers.hpp"
+#include "../features/level-search/services/SearchRequestCoordinator.hpp"
 using namespace paimon::levelsearch;
 
 #include "../features/level-search/services/LevelSearchInternal.hpp"
@@ -187,20 +188,12 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     void destroyRealtimePreviewNow() {
         // Grab the node before suspending callbacks: getRealtimePreviewNodeSafe()
         // returns null once m_previewCallbacksSuspended is set, which would turn
-        // this teardown into a no-op and leave the preview's debounced search and
-        // GameLevelManager delegate alive. A late firePendingSearch would then
-        // steal m_levelManagerDelegate from the LevelBrowserLayer we're opening,
-        // leaving the results layer stuck loading forever.
+        // this teardown into a no-op and leave the preview's debounced search
+        // alive.
         auto* node = this->getChildByID("paimon-realtime-search-preview"_spr);
 
         m_fields->m_previewCallbacksSuspended = true;
         releaseSearchInputFocus(this);
-
-        if (auto preview = typeinfo_cast<RealtimeLevelSearchPreview*>(node)) {
-            preview->shutdown(true);
-            preview->removeFromParentAndCleanup(true);
-            return;
-        }
 
         if (auto preview = typeinfo_cast<RealtimeSearchBrowserPreview*>(node)) {
             preview->shutdown(true);
@@ -216,13 +209,6 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
             return;
         }
 
-        if (auto preview = typeinfo_cast<RealtimeLevelSearchPreview*>(
-            getRealtimePreviewNodeSafe()
-        )) {
-            preview->handleTextChanged(node);
-            return;
-        }
-
         if (auto preview = typeinfo_cast<RealtimeSearchBrowserPreview*>(
             getRealtimePreviewNodeSafe()
         )) {
@@ -232,13 +218,6 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
 
     void refreshRealtimePreview(bool force) {
         if (m_fields->m_previewCallbacksSuspended || paimon::isRuntimeShuttingDown()) {
-            return;
-        }
-
-        if (auto preview = typeinfo_cast<RealtimeLevelSearchPreview*>(
-            getRealtimePreviewNodeSafe()
-        )) {
-            preview->refreshFromCurrentInput(force);
             return;
         }
 
@@ -292,12 +271,16 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     $override
     void keyBackClicked() {
         destroyRealtimePreviewNow();
+        // Leaving the search UI entirely: release the cached result pages so
+        // they do not outlive the session that needed them.
+        paimon::levelsearch::SearchRequestCoordinator::get().reset();
         LevelSearchLayer::keyBackClicked();
     }
 
     $override
     void onBack(CCObject* sender) {
         destroyRealtimePreviewNow();
+        paimon::levelsearch::SearchRequestCoordinator::get().reset();
         LevelSearchLayer::onBack(sender);
     }
 

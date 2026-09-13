@@ -1,0 +1,119 @@
+#include "SlotVisuals.hpp"
+
+#include "../../../utils/SpriteHelper.hpp"
+
+#include <Geode/binding/GJDifficultySprite.hpp>
+
+#include <fmt/format.h>
+
+#include <algorithm>
+
+using namespace geode::prelude;
+using namespace cocos2d;
+
+namespace paimon::officialslots::ui {
+
+namespace {
+
+GJFeatureState featureStateOf(Tier tier) {
+    switch (tier) {
+        case Tier::Featured:  return GJFeatureState::Featured;
+        case Tier::Epic:      return GJFeatureState::Epic;
+        case Tier::Legendary: return GJFeatureState::Legendary;
+        case Tier::Mythic:    return GJFeatureState::Mythic;
+        case Tier::None:      return GJFeatureState::None;
+    }
+    return GJFeatureState::None;
+}
+
+} // namespace
+
+CCNode* createDifficultyBadge(Difficulty difficulty, Tier tier, float scale) {
+    // GJDifficultySprite carries its own rate glow, so the tier goes through
+    // updateFeatureState instead of a coin mounted beside it. Doing it by hand
+    // is what left the glow at twice the size of the face in the request list.
+    auto* face = GJDifficultySprite::create(difficultyFace(difficulty), GJDifficultyName::Short);
+    if (!face) return nullptr;
+
+    face->updateFeatureState(featureStateOf(tier));
+    face->setScale(scale);
+    return face;
+}
+
+CCNode* createStarBadge(int stars, bool platformer, float scale) {
+    char const* frame = platformer ? "moonsIcon_001.png" : "GJ_starsIcon_001.png";
+    auto* icon = paimon::SpriteHelper::safeCreateWithFrameName(frame);
+    if (!icon && platformer) {
+        // Older texture packs ship no moon icon; the star reads fine there.
+        icon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
+    }
+    if (!icon) return nullptr;
+
+    auto* node = CCNode::create();
+    auto* label = CCLabelBMFont::create(fmt::format("{}", stars).c_str(), "bigFont.fnt");
+    label->setScale(scale * 0.5f);
+
+    icon->setScale(scale * 0.8f);
+
+    constexpr float kGap = 3.f;
+    float const labelW = label->getScaledContentSize().width;
+    float const iconW = icon->getScaledContentSize().width;
+    float const height = std::max(label->getScaledContentSize().height,
+                                 icon->getScaledContentSize().height);
+
+    node->setContentSize({labelW + kGap + iconW, height});
+    node->setAnchorPoint({0.5f, 0.5f});
+
+    label->setAnchorPoint({0.f, 0.5f});
+    label->setPosition({0.f, height / 2.f});
+    node->addChild(label);
+
+    icon->setPosition({labelW + kGap + iconW / 2.f, height / 2.f});
+    node->addChild(icon);
+    return node;
+}
+
+CCNode* createCoinRow(float scale) {
+    auto* node = CCNode::create();
+
+    constexpr float kGap = 2.f;
+    float width = 0.f;
+    float height = 0.f;
+
+    for (int i = 0; i < 3; i++) {
+        auto* coin = paimon::SpriteHelper::safeCreateWithFrameName("secretCoin_001.png");
+        if (!coin) continue;
+
+        coin->setScale(scale);
+        auto const size = coin->getScaledContentSize();
+        coin->setPosition({width + size.width / 2.f, size.height / 2.f});
+        node->addChild(coin);
+
+        width += size.width + (i < 2 ? kGap : 0.f);
+        height = std::max(height, size.height);
+    }
+
+    if (width <= 0.f) return nullptr;
+
+    node->setContentSize({width, height});
+    node->setAnchorPoint({0.5f, 0.5f});
+    return node;
+}
+
+CCNode* createCardBackground(CCSize size, bool highlighted) {
+    auto const fill = highlighted
+        ? ccc4f(0.15f, 0.42f, 0.24f, 0.55f)
+        : ccc4f(0.f, 0.f, 0.f, 0.42f);
+
+    auto* panel = paimon::SpriteHelper::createRoundedRect(
+        size.width, size.height, 6.f, fill,
+        highlighted ? ccc4f(0.42f, 0.88f, 0.55f, 0.85f) : ccc4f(1.f, 1.f, 1.f, 0.14f),
+        0.75f
+    );
+    if (!panel) return nullptr;
+
+    panel->setContentSize(size);
+    return panel;
+}
+
+} // namespace paimon::officialslots::ui

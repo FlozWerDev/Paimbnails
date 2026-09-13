@@ -27,13 +27,17 @@ void Manager::load() {
     auto j=Mod::get()->getSavedValue<matjson::Value>("custom-hover-v1",matjson::Value::object());
     global=decode(j["global"]); linked=j["linked"].asBool().unwrapOr(false);
     buttons.clear(); saved.clear(); picking=false;
-    for (auto const& entry : j["buttons"].asArray().unwrapOr(std::vector<matjson::Value>{})) {
-        auto key=entry["key"].asString().unwrapOr("");
-        if (!key.empty() && buttons.size()<2048) buttons[key]=decode(entry["config"]);
+    if (auto entries = j["buttons"].asArray()) {
+        for (auto const& entry : entries.unwrap()) {
+            auto key=entry["key"].asString().unwrapOr("");
+            if (!key.empty() && buttons.size()<2048) buttons[key]=decode(entry["config"]);
+        }
     }
-    for (auto const& entry : j["presets"].asArray().unwrapOr(std::vector<matjson::Value>{})) {
-        auto name=entry["key"].asString().unwrapOr("");
-        if (!name.empty() && saved.size()<100) saved[name.substr(0,24)]=decode(entry["config"]);
+    if (auto entries = j["presets"].asArray()) {
+        for (auto const& entry : entries.unwrap()) {
+            auto name=entry["key"].asString().unwrapOr("");
+            if (!name.empty() && saved.size()<100) saved[name.substr(0,24)]=decode(entry["config"]);
+        }
     }
 }
 void Manager::save() {

@@ -118,7 +118,7 @@ void init() {
     auto* t=new Ticker(); t->init(); ticker=t; t->release();
     CCDirector::get()->getScheduler()->scheduleUpdateForTarget(ticker.data(),0,false);
     KeyboardInputEvent().listen(+[](KeyboardInputData& data) {
-        if(!allowed() || data.action!=KeyboardInputData::Action::Press || data.key!=KeyboardKey::D ||
+        if(!allowed() || data.action!=KeyboardInputData::Action::Press || data.key!=KEY_D ||
            !(data.modifiers.value & uint8_t(KeyboardModifier::Control))) return false;
         if(popupOpen()) { groupFromPopup(); return true; }
         if(auto* item=under(geode::cocos::getMousePos())) {
@@ -141,7 +141,8 @@ $on_game(Exiting) {
 class $modify(PaimonHoverTouch, CCTouchDispatcher) {
     void touchesBegan(CCSet* touches, CCEvent* event) {
         auto* pass=CCSet::create();
-        for(auto* obj:CCSetExt<CCObject*>(touches)) {
+        for(auto it=touches->begin(); it!=touches->end(); ++it) {
+            auto* obj=*it;
             auto* touch=static_cast<CCTouch*>(obj); int id=touch->getID();
             touchPoint=touch->getLocation(); activeTouches.insert(id);
             auto* kb=CCDirector::get()->getKeyboardDispatcher();
@@ -159,7 +160,8 @@ class $modify(PaimonHoverTouch, CCTouchDispatcher) {
     }
     CCSet* forward(CCSet* touches, bool end) {
         auto* pass=CCSet::create();
-        for(auto* obj:CCSetExt<CCObject*>(touches)) {
+        for(auto it=touches->begin(); it!=touches->end(); ++it) {
+            auto* obj=*it;
             auto* t=static_cast<CCTouch*>(obj); touchPoint=t->getLocation();
             if(!swallowed.count(t->getID())) pass->addObject(obj);
             if(end) { activeTouches.erase(t->getID()); swallowed.erase(t->getID()); }

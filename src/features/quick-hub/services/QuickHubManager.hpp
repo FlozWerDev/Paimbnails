@@ -44,6 +44,10 @@ public:
     static bool isHoldCtrlEnabled();
     static void setHoldCtrlEnabled(bool enabled);
 
+    // El radial es una herramienta de navegacion: nunca debe aparecer sobre
+    // gameplay real ni durante el playtest del editor.
+    static bool canOpenInCurrentContext();
+
     // Cancela un hold de Ctrl en curso y cierra el radial si estaba abierto.
     static void abortActiveHold();
 

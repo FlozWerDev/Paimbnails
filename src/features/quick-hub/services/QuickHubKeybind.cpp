@@ -122,6 +122,11 @@ public:
         if (s_hold.radialOpened) return;
         if (s_hold.cancelledByOtherKey) return;
 
+        if (!paimon::quickhub::QuickHubManager::canOpenInCurrentContext()) {
+            resetHold();
+            return;
+        }
+
         s_hold.elapsed += dt;
 
         if (s_hold.elapsed < kDeadZone) return;
@@ -189,7 +194,8 @@ $execute {
         bool ctrlOrCmd = ctrl || cmd;
 
         if (!paimon::modules::isEnabled("paimbnails.quickhub.global") ||
-            !paimon::quickhub::QuickHubManager::isHoldCtrlEnabled()) {
+            !paimon::quickhub::QuickHubManager::isHoldCtrlEnabled() ||
+            !paimon::quickhub::QuickHubManager::canOpenInCurrentContext()) {
             if (s_hold.ctrlDown || s_hold.radialOpened) {
                 paimon::quickhub::QuickHubManager::abortActiveHold();
             }

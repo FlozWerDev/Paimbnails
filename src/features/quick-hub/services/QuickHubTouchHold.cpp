@@ -29,6 +29,7 @@ struct TouchHoldState {
     bool barVisible = false;
     bool completed = false;
     CCPoint startPos = CCPointZero;
+    CCScene* startScene = nullptr;
     CCNode* progressBar = nullptr;
     CCNode* progressFill = nullptr;
 };
@@ -51,8 +52,37 @@ void resetTouch() {
     s_touch.fingerCount = 0;
     s_touch.elapsed = 0.f;
     s_touch.completed = false;
+    s_touch.startScene = nullptr;
     cleanupBar();
     syncTouchTicking();
+}
+
+// handleTouchesBegin dispatches to Cocos before reaching this hook. A menu
+// that claimed the touch is therefore already tracking it. Treat that as an
+// intentional UI interaction instead of starting the global hold gesture.
+bool hasTrackingMenu(CCNode* node) {
+    if (!node || !node->isVisible()) return false;
+
+    if (auto* menu = typeinfo_cast<CCMenu*>(node)) {
+        if (menu->isEnabled() &&
+            (menu->m_eState == kCCMenuStateTrackingTouch || menu->m_pSelectedItem)) {
+            return true;
+        }
+    }
+
+    auto* children = node->getChildren();
+    if (!children) return false;
+    for (auto* object : CCArrayExt<CCObject*>(children)) {
+        if (hasTrackingMenu(typeinfo_cast<CCNode*>(object))) return true;
+    }
+    return false;
+}
+
+bool gestureContextIsStillValid() {
+    auto* director = CCDirector::get();
+    auto* scene = director ? director->getRunningScene() : nullptr;
+    return scene && scene == s_touch.startScene &&
+           paimon::quickhub::QuickHubManager::canOpenInCurrentContext();
 }
 
 void createBar() {
@@ -123,6 +153,11 @@ public:
     void onUpdate(float dt) {
         if (!s_touch.active) return;
         if (s_touch.completed) return;
+
+        if (!gestureContextIsStillValid()) {
+            resetTouch();
+            return;
+        }
 
         s_touch.elapsed += dt;
 
@@ -199,12 +234,23 @@ class $modify(TouchHoldView, CCEGLViewProtocol) {
         if (paimon::quickhub::QuickHubRadial::isOpen()) return;
         if (paimon::menu_layout::MainMenuLayoutEditor::isActive()) return;
 
+        auto* director = CCDirector::get();
+        auto* scene = director ? director->getRunningScene() : nullptr;
+        bool const isUiInteraction = scene && hasTrackingMenu(scene);
+        if (!scene ||
+            !paimon::quickhub::QuickHubManager::canOpenInCurrentContext() ||
+            isUiInteraction) {
+            if (s_touch.active) resetTouch();
+            return;
+        }
+
         if (!s_touch.active) {
             s_touch.active = true;
             s_touch.fingerCount = num;
             s_touch.elapsed = 0.f;
             s_touch.completed = false;
             s_touch.barVisible = false;
+            s_touch.startScene = scene;
             if (num > 0) {
                 s_touch.startPos = ccp(xs[0], ys[0]);
             }

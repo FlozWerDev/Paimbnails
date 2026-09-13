@@ -207,4 +207,21 @@ void QuickHubManager::setHoldCtrlEnabled(bool enabled) {
     Mod::get()->setSavedValue<bool>(kHoldCtrlKey, enabled);
 }
 
+bool QuickHubManager::canOpenInCurrentContext() {
+    auto* director = cocos2d::CCDirector::get();
+    if (!director || !director->getRunningScene()) return false;
+
+    // A PauseLayer, EndLevelLayer or another overlay does not make the scene a
+    // safe navigation screen: PlayLayer still owns the player's touches below.
+    if (PlayLayer::get()) return false;
+
+    // The editor remains the same layer while playtesting, so its playback
+    // state is the reliable distinction between editing and actual gameplay.
+    if (auto* editor = LevelEditorLayer::get()) {
+        return editor->m_playbackMode == PlaybackMode::Not;
+    }
+
+    return true;
+}
+
 } // namespace paimon::quickhub

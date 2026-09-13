@@ -42,6 +42,7 @@ bool QuickHubRadial::isOpen() {
 
 void QuickHubRadial::openRadial() {
     if (!paimon::modules::isEnabled("paimbnails.quickhub.global")) return;
+    if (!QuickHubManager::canOpenInCurrentContext()) return;
     if (s_instance) return;
 
     auto scene = CCDirector::get()->getRunningScene();

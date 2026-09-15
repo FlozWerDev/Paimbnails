@@ -261,11 +261,11 @@ bool fitsPaintBoundary(
 // que una tira cruce el dibujo de lado a lado.
 std::vector<std::uint8_t> nearCells(
     std::vector<int> const& positions, int width, int height) {
-    std::vector<std::uint8_t> near(
+    std::vector<std::uint8_t> nearMask(
         static_cast<std::size_t>(width) * height, 0);
     for (int position : positions) {
         if (position < 0 ||
-            position >= static_cast<int>(near.size())) {
+            position >= static_cast<int>(nearMask.size())) {
             continue;
         }
         int const x = position % width;
@@ -275,11 +275,11 @@ std::vector<std::uint8_t> nearCells(
                 int const xx = x + dx;
                 int const yy = y + dy;
                 if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue;
-                near[static_cast<std::size_t>(yy) * width + xx] = 1;
+                nearMask[static_cast<std::size_t>(yy) * width + xx] = 1;
             }
         }
     }
-    return near;
+    return nearMask;
 }
 
 // Fraccion de la figura que cae fuera de lo permitido Y fuera de la orla: lo
@@ -288,7 +288,7 @@ std::vector<std::uint8_t> nearCells(
 float shapeFarSpill(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
-    std::vector<std::uint8_t> const& near,
+    std::vector<std::uint8_t> const& nearMask,
     int width,
     int height
 ) {
@@ -302,7 +302,7 @@ float shapeFarSpill(
             std::size_t const index = static_cast<std::size_t>(y) * width + x;
             bool const forgiven =
                 (index < permitted.size() && permitted[index]) ||
-                (index < near.size() && near[index]);
+                (index < nearMask.size() && nearMask[index]);
             for (int sampleY = 0; sampleY < kSamples; ++sampleY) {
                 for (int sampleX = 0; sampleX < kSamples; ++sampleX) {
                     if (!placed.contains(
@@ -330,7 +330,7 @@ float shapeFarSpill(
 bool fitsPaintNear(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
-    std::vector<std::uint8_t> const& near,
+    std::vector<std::uint8_t> const& nearMask,
     int width,
     int height
 ) {
@@ -340,7 +340,7 @@ bool fitsPaintNear(
         for (int x = box[0]; x <= box[2]; ++x) {
             std::size_t const index = static_cast<std::size_t>(y) * width + x;
             if ((index < permitted.size() && permitted[index]) ||
-                (index < near.size() && near[index])) {
+                (index < nearMask.size() && nearMask[index])) {
                 continue;
             }
             for (float dy : {0.4f, 0.5f, 0.6f}) {
@@ -350,7 +350,7 @@ bool fitsPaintNear(
             }
         }
     }
-    return shapeFarSpill(shape, permitted, near, width, height) <= kChainSpill;
+    return shapeFarSpill(shape, permitted, nearMask, width, height) <= kChainSpill;
 }
 
 // Puerta del contorno de la banda: perdona la orla solo en tiras de verdad
@@ -363,14 +363,14 @@ bool fitsPaintNear(
 bool fitsPaintOutline(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
-    std::vector<std::uint8_t> const& near,
+    std::vector<std::uint8_t> const& nearMask,
     int width,
     int height
 ) {
     float folded = std::fmod(std::abs(shape.rotation), 90.f);
     folded = std::min(folded, 90.f - folded);
     if (folded <= 7.f) return fitsPaintBoundary(shape, permitted, width, height);
-    return fitsPaintNear(shape, permitted, near, width, height);
+    return fitsPaintNear(shape, permitted, nearMask, width, height);
 }
 
 // Un objeto redondo solo puede ir donde nada se pinte encima: GD lo dibuja en
@@ -1051,7 +1051,7 @@ bool appendChain(
     }
     if (lines.empty()) return false;
     // Orla de la pieza: la tira que la abraza puede pisarla sin cruzar nada.
-    auto const near = nearCells(component, sourceWidth, sourceHeight);
+    auto const nearMask = nearCells(component, sourceWidth, sourceHeight);
 
     for (std::size_t first = 0; first < lines.size(); ++first) {
         for (std::size_t second = first + 1; second < lines.size(); ++second) {
@@ -1282,7 +1282,7 @@ bool appendChain(
             PrimitiveKind::Circle, static_cast<std::int16_t>(layer)
         };
         if (coversBlocked(cap, sourceWidth, sourceHeight, blocked)) continue;
-        if (shapeFarSpill(cap, permitted, near, sourceWidth, sourceHeight) >
+        if (shapeFarSpill(cap, permitted, nearMask, sourceWidth, sourceHeight) >
             kChainSpill) {
             continue;
         }
@@ -1368,7 +1368,7 @@ bool appendChain(
     strokes.erase(std::remove_if(strokes.begin(), strokes.end(),
         [&](Primitive const& stroke) {
             return shapeFarSpill(
-                       stroke, permitted, near, sourceWidth, sourceHeight) >
+                       stroke, permitted, nearMask, sourceWidth, sourceHeight) >
                 kChainSpill;
         }), strokes.end());
     if (strokes.empty()) return false;
@@ -1629,13 +1629,13 @@ float fitSimilarity(
         longSpan >= kLongSpan;
     float spilled = 0.f;
     bool const hasBlocked = blocked.size() == target.size();
-    std::vector<std::uint8_t> near;
-    if (thinPiece) near = nearCells(positions, width, height);
+    std::vector<std::uint8_t> nearMask;
+    if (thinPiece) nearMask = nearCells(positions, width, height);
     for (int y = minY; y <= maxY; ++y) {
         for (int x = minX; x <= maxX; ++x) {
             std::size_t const index = static_cast<std::size_t>(y) * width + x;
             if (target[index] || !covered(x + 0.5f, y + 0.5f)) continue;
-            if (thinPiece && index < near.size() && near[index]) continue;
+            if (thinPiece && index < nearMask.size() && nearMask[index]) continue;
             spilled += hasBlocked && blocked[index] ? kCoveredSpill : 1.f;
         }
     }
@@ -2655,7 +2655,7 @@ void appendRepairs(
         std::vector<std::uint8_t> remaining(cells, 0);
         for (int position : group) remaining[static_cast<std::size_t>(position)] = 1;
         // Orla del reguero: la tira que lo abraza puede pisarla sin cruzar nada.
-        auto const near = nearCells(group, width, height);
+        auto const nearMask = nearCells(group, width, height);
         for (int first : group) {
             if (!remaining[static_cast<std::size_t>(first)]) continue;
             int const firstX = first % width;
@@ -2696,11 +2696,11 @@ void appendRepairs(
                             static_cast<std::int16_t>(layer)
                         };
                         if (!coversBlocked(round, width, height, blocked) &&
-                            fitsPaintNear(round, permitted, near, width, height)) {
+                            fitsPaintNear(round, permitted, nearMask, width, height)) {
                             candidate = round;
                         }
                     }
-                    if (!fitsPaintNear(candidate, permitted, near, width, height)) continue;
+                    if (!fitsPaintNear(candidate, permitted, nearMask, width, height)) continue;
                     int const count = coveredRepairs(candidate, remaining, width, height);
                     if (count > bestCount || (count == bestCount && length < bestLength)) {
                         best = candidate;
@@ -2853,7 +2853,7 @@ void roundExposedStrokeEnds(
             targetMask[static_cast<std::size_t>(position)] = 1;
         }
     }
-    auto const near = nearCells(target, width, height);
+    auto const nearMask = nearCells(target, width, height);
     auto targetGap = [&](Point point) {
         int const centerX = static_cast<int>(std::floor(point.x));
         int const centerY = static_cast<int>(std::floor(point.y));
@@ -2973,7 +2973,7 @@ void roundExposedStrokeEnds(
                 object.layer
             };
             if (coversBlocked(cap, width, height, blocked) ||
-                !fitsPaintNear(cap, permitted, near, width, height)) {
+                !fitsPaintNear(cap, permitted, nearMask, width, height)) {
                 continue;
             }
             capAt[end] = true;
@@ -3716,10 +3716,10 @@ std::vector<Primitive> vectorizePaint(
                 // descartar las que invaden el interior del color vecino. La
                 // orla solo se perdona en tiras giradas: en tramos rectos los
                 // bloques ya son perfectos y perdonar ahi solo suma derrame.
-                auto const near = nearCells(component, width, height);
+                auto const nearMask = nearCells(component, width, height);
                 outline.erase(std::remove_if(outline.begin(), outline.end(),
                     [&](Primitive const& stroke) {
-                        return !fitsPaintOutline(stroke, permitted, near, width, height);
+                        return !fitsPaintOutline(stroke, permitted, nearMask, width, height);
                     }), outline.end());
                 inside = insideContours(region, refined);
                 // El contorno suavizado se sale de la silueta en las curvas, y el

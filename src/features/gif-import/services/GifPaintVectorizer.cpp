@@ -24,6 +24,11 @@ constexpr float kThinRadius = 4.25f;
 // Medio lado del cuadrado que separa una zona maciza de un trazo, en celdas: por
 // encima de nueve celdas de ancho la mancha ya no es una linea del dibujo.
 constexpr int kThickSpan = 5;
+// Lo largo que tiene que ser un trazo fino para que la losa lo cubra de una
+// pieza: los fragmentos cortos van por cadena o por reparos, que son tiras
+// acotadas; darles losa perdonada cambia que celdas sobran y el apaño en
+// cascada pinta de mas (imagen-3: la barra azul crece y le sale una gemela).
+constexpr int kLongSpan = 16;
 // Cuanto puede sobrar alrededor de una mancha metida en su caja girada. Una tira
 // en diagonal llena su caja y cabe; una mancha en ele o en ese deja media caja
 // vacia, y esa media caja se pinta encima de lo que hubiera debajo.
@@ -230,6 +235,105 @@ bool fitsPaintBoundary(
         }
     }
     return shapeSpill(shape, permitted, width, height) <= kChainSpill;
+}
+
+// Celdas a un paso de la mancha, ella incluida. Una tira que abraza la mancha
+// pisa como mucho esa orla de dientes de sierra: plantarse ahi mueve el borde
+// media celda como mucho, que es el suavizado que se busca en una diagonal.
+// Mas alla de la orla sigue prohibido igual que antes, que es lo que impide
+// que una tira cruce el dibujo de lado a lado.
+std::vector<std::uint8_t> nearCells(
+    std::vector<int> const& positions, int width, int height) {
+    std::vector<std::uint8_t> near(
+        static_cast<std::size_t>(width) * height, 0);
+    for (int position : positions) {
+        if (position < 0 ||
+            position >= static_cast<int>(near.size())) {
+            continue;
+        }
+        int const x = position % width;
+        int const y = position / width;
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                int const xx = x + dx;
+                int const yy = y + dy;
+                if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue;
+                near[static_cast<std::size_t>(yy) * width + xx] = 1;
+            }
+        }
+    }
+    return near;
+}
+
+// Fraccion de la figura que cae fuera de lo permitido Y fuera de la orla: lo
+// que de verdad invade otro color. El derrame sobre la orla es borde
+// suavizado, no invasion.
+float shapeFarSpill(
+    Primitive const& shape,
+    std::vector<std::uint8_t> const& permitted,
+    std::vector<std::uint8_t> const& near,
+    int width,
+    int height
+) {
+    constexpr int kSamples = 4;
+    auto const placed = xformOf(shape);
+    auto const box = xformBox(placed, width, height);
+    int covered = 0;
+    int spilled = 0;
+    for (int y = box[1]; y <= box[3]; ++y) {
+        for (int x = box[0]; x <= box[2]; ++x) {
+            std::size_t const index = static_cast<std::size_t>(y) * width + x;
+            bool const forgiven =
+                (index < permitted.size() && permitted[index]) ||
+                (index < near.size() && near[index]);
+            for (int sampleY = 0; sampleY < kSamples; ++sampleY) {
+                for (int sampleX = 0; sampleX < kSamples; ++sampleX) {
+                    if (!placed.contains(
+                            static_cast<float>(x) +
+                                (sampleX + 0.5f) / kSamples,
+                            static_cast<float>(y) +
+                                (sampleY + 0.5f) / kSamples)) {
+                        continue;
+                    }
+                    ++covered;
+                    spilled += !forgiven;
+                }
+            }
+        }
+    }
+    return covered > 0 ? static_cast<float>(spilled) / covered : 0.f;
+}
+
+// Como fitsPaintBoundary pero la orla cuenta como casa para los CENTROS: una
+// tira corta que abraza la mancha pisa como mucho un par de centros pegados
+// al borde, que es el suavizado de la diagonal. La capsula no usa esta
+// puerta (su ajuste cuenta centros enteros y una losa grande tragandose la
+// orla si se come el dibujo: arco grueso, barra fina). Aqui solo llegan tiras
+// de pocos pixeles de cadena, banda y reparos, asi que lo tragado no escala.
+bool fitsPaintNear(
+    Primitive const& shape,
+    std::vector<std::uint8_t> const& permitted,
+    std::vector<std::uint8_t> const& near,
+    int width,
+    int height
+) {
+    auto const placed = xformOf(shape);
+    auto const box = xformBox(placed, width, height);
+    for (int y = box[1]; y <= box[3]; ++y) {
+        for (int x = box[0]; x <= box[2]; ++x) {
+            std::size_t const index = static_cast<std::size_t>(y) * width + x;
+            if ((index < permitted.size() && permitted[index]) ||
+                (index < near.size() && near[index])) {
+                continue;
+            }
+            for (float dy : {0.4f, 0.5f, 0.6f}) {
+                for (float dx : {0.4f, 0.5f, 0.6f}) {
+                    if (placed.contains(x + dx, y + dy)) return false;
+                }
+            }
+        }
+    }
+    return shapeFarSpill(shape, permitted, near, width, height) <= kChainSpill;
 }
 
 // Un objeto redondo solo puede ir donde nada se pinte encima: GD lo dibuja en
@@ -907,6 +1011,8 @@ bool appendChain(
         });
     }
     if (lines.empty()) return false;
+    // Orla de la pieza: la tira que la abraza puede pisarla sin cruzar nada.
+    auto const near = nearCells(component, sourceWidth, sourceHeight);
 
     for (std::size_t first = 0; first < lines.size(); ++first) {
         for (std::size_t second = first + 1; second < lines.size(); ++second) {
@@ -1133,7 +1239,8 @@ bool appendChain(
             PrimitiveKind::Circle, static_cast<std::int16_t>(layer)
         };
         if (coversBlocked(cap, sourceWidth, sourceHeight, blocked)) continue;
-        if (shapeSpill(cap, permitted, sourceWidth, sourceHeight) > kChainSpill) {
+        if (shapeFarSpill(cap, permitted, near, sourceWidth, sourceHeight) >
+            kChainSpill) {
             continue;
         }
         jointKept[index] = 1;
@@ -1213,10 +1320,13 @@ bool appendChain(
     // Se cae la tira que se sale, no la cadena entera: lo que deje sin tapar lo
     // recoge la pasada de parches, que empaqueta rectangulos rectos y esos no
     // asoman. Tirar la cadena entera mandaba la mancha al contorno, que se pasa
-    // igual y encima gasta mas objetos.
+    // igual y encima gasta mas objetos. La que abraza la mancha pisando solo su
+    // orla se queda: es el borde suavizado, no una tira cruzando el dibujo.
     strokes.erase(std::remove_if(strokes.begin(), strokes.end(),
         [&](Primitive const& stroke) {
-            return shapeSpill(stroke, permitted, sourceWidth, sourceHeight) > kChainSpill;
+            return shapeFarSpill(
+                       stroke, permitted, near, sourceWidth, sourceHeight) >
+                kChainSpill;
         }), strokes.end());
     if (strokes.empty()) return false;
     output.insert(output.end(), strokes.begin(), strokes.end());
@@ -1447,13 +1557,42 @@ float fitSimilarity(
     // Asomar sobre lo que otra capa tapa despues sale barato, pero no gratis: si
     // fuera gratis una capsula podria tragarse media imagen y seguir puntuando
     // perfecto, y luego el color de arriba no llega a taparla del todo y lo que
-    // queda es una losa torcida atravesada en el dibujo.
+    // queda es una losa torcida atravesada en el dibujo. La orla (celdas pegadas
+    // a la mancha) distingue los dos casos segun el grosor y el largo de la
+    // pieza: una diagonal larga de 1-2px vive rodeada de orla y cualquier
+    // cobertura lisa pisa el anillo vecino, asi que ahi perdonar esos centros
+    // es suavizado; en una mancha gruesa o en un fragmento corto ese mismo
+    // perdon deja que la losa se coma el dibujo de al lado (la barra de
+    // imagen-3: 30 vecinas visibles sobre 266 propias puntuando 1.0), asi que
+    // ahi cada centro ajeno cuenta como siempre. El corte de grosor es el mismo
+    // que separa trazo de mancha en el resto del archivo.
+    int pieceMinX = width;
+    int pieceMinY = height;
+    int pieceMaxX = -1;
+    int pieceMaxY = -1;
+    for (int position : positions) {
+        int const x = position % width;
+        int const y = position / width;
+        pieceMinX = std::min(pieceMinX, x);
+        pieceMaxX = std::max(pieceMaxX, x);
+        pieceMinY = std::min(pieceMinY, y);
+        pieceMaxY = std::max(pieceMaxY, y);
+    }
+    int const longSpan = std::max(
+        pieceMaxX - pieceMinX + 1, pieceMaxY - pieceMinY + 1);
+    bool const thinPiece = longSpan > 0 &&
+        static_cast<float>(positions.size()) / static_cast<float>(longSpan) <=
+            static_cast<float>(kThickSpan) &&
+        longSpan >= kLongSpan;
     float spilled = 0.f;
     bool const hasBlocked = blocked.size() == target.size();
+    std::vector<std::uint8_t> near;
+    if (thinPiece) near = nearCells(positions, width, height);
     for (int y = minY; y <= maxY; ++y) {
         for (int x = minX; x <= maxX; ++x) {
             std::size_t const index = static_cast<std::size_t>(y) * width + x;
             if (target[index] || !covered(x + 0.5f, y + 0.5f)) continue;
+            if (thinPiece && index < near.size() && near[index]) continue;
             spilled += hasBlocked && blocked[index] ? kCoveredSpill : 1.f;
         }
     }
@@ -2472,6 +2611,8 @@ void appendRepairs(
         std::vector<int> unpaired;
         std::vector<std::uint8_t> remaining(cells, 0);
         for (int position : group) remaining[static_cast<std::size_t>(position)] = 1;
+        // Orla del reguero: la tira que lo abraza puede pisarla sin cruzar nada.
+        auto const near = nearCells(group, width, height);
         for (int first : group) {
             if (!remaining[static_cast<std::size_t>(first)]) continue;
             int const firstX = first % width;
@@ -2491,7 +2632,7 @@ void appendRepairs(
                         static_cast<float>(x - firstX), static_cast<float>(y - firstY));
                     if (length > kRepairReach) continue;
                     auto const candidate = repairStroke(first, second, width, color, layer);
-                    if (!fitsPaintBoundary(candidate, permitted, width, height)) continue;
+                    if (!fitsPaintNear(candidate, permitted, near, width, height)) continue;
                     int const count = coveredRepairs(candidate, remaining, width, height);
                     if (count > bestCount || (count == bestCount && length < bestLength)) {
                         best = candidate;

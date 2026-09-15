@@ -125,7 +125,10 @@ struct PlanStamp {
 };
 
 struct Options {
-    int maxDimension = 48;
+    // Pintura necesita una rejilla mas fina para conservar ojos, remates y
+    // diagonales del original. 96 sigue dentro del presupuesto normal y deja
+    // que el usuario baje la resolucion cuando priorice velocidad.
+    int maxDimension = 96;
     int minDimension = 6;
     int maxColors = 16;
     int maxFrames = 60;

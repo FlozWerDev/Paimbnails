@@ -550,10 +550,6 @@ int main() {
         {"make icons", "english", {"icon-maker"}, "newfeat9"},
         {"creador de iconos", "spanish", {"icon-maker"}, "newfeat9"},
         {"hacer iconos", "spanish", {"icon-maker"}, "newfeat9"},
-        {"icon gallery", "english", {"icon-gallery"}, "newfeat9"},
-        {"icon store", "english", {"icon-gallery"}, "newfeat9"},
-        {"download icons", "english", {"icon-gallery"}, "newfeat9"},
-        {"tienda de iconos", "spanish", {"icon-gallery"}, "newfeat9"},
         {"icon gradients", "english", {"icon-gradients"}, "newfeat9"},
         {"gradient icons", "english", {"icon-gradients"}, "newfeat9"},
         {"degradados de iconos", "spanish", {"icon-gradients"}, "newfeat9"},
@@ -589,7 +585,6 @@ int main() {
         // natural phrasing for new features
         {"how do i make my own icon", "english", {"icon-maker"}, "newfeat9-nat"},
         {"quiero un icono personalizado", "spanish", {"icon-maker"}, "newfeat9-nat"},
-        {"donde esta la tienda de iconos", "spanish", {"icon-gallery"}, "newfeat9-nat"},
         {"can i have different icons for the second player", "english", {"separate-dual"}, "newfeat9-nat"},
         {"como pongo iconos distintos en el dual", "spanish", {"separate-dual"}, "newfeat9-nat"},
         {"my percentage should be gold on new best", "english", {"golden-best"}, "newfeat9-nat"},

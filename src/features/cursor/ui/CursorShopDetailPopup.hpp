@@ -80,6 +80,9 @@ private:
     void onInstallAssign(cocos2d::CCObject*);
     void onInstallAll(cocos2d::CCObject*);
     void onAnimate(cocos2d::CCObject*);
+    // Abre la pagina original del set/pack en el navegador para dar credito y
+    // visitas a la tienda y al autor.
+    void onViewSource(cocos2d::CCObject*);
 
     // Baja el .ani, lo decodifica y lo reproduce en la vista previa.
     void playAnimation(std::string const& url);

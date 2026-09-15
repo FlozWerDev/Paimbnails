@@ -1,6 +1,13 @@
 #pragma once
-// Cursor shop: inspired by rw-designer and custom-cursor.
-// No official API, so HTML is parsed. All callbacks return on main thread.
+// Cursor shop browser for rw-designer.com and custom-cursor.com.
+// The storefronts and every cursor artwork belong to those sites and their
+// respective authors: listings link back to the original pages ("Ver original"
+// button in the detail popup), thumbnails are only previewed, and files are
+// downloaded exclusively when the user explicitly installs something — the
+// catalogue is never bulk-scraped. The click-state tracking idea is inspired
+// by Ecuet's "Custom Cursor" mod (Geode mod index); all networking, HTML
+// parsing and install logic here is an independent implementation written from
+// scratch for Paimbnails. All callbacks return on main thread.
 
 #include <Geode/Geode.hpp>
 #include "CursorManager.hpp"
@@ -71,6 +78,9 @@ struct Detail {
     std::string name;
     std::string author;
     std::string description;
+    // Canonical page this detail was read from (empty when unknown). The UI
+    // offers it as "Ver original" so authors get the visit.
+    std::string sourceUrl;
     std::vector<DetailCursor> cursors;
 };
 

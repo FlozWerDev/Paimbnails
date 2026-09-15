@@ -9,6 +9,7 @@
 #include "../../../utils/CursorIcoDecoder.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/utils/web.hpp>
 #include <algorithm>
 
 using namespace geode::prelude;
@@ -248,6 +249,17 @@ void CursorShopDetailPopup::buildBody() {
         m_sideMenu->addChild(allBtn);
     }
 
+    // Enlace a la pagina original: el contenido es de la tienda y su autor.
+    if (!m_detail.sourceUrl.empty()) {
+        auto* srcSpr = ButtonSprite::create(
+            "Ver original", "goldFont.fnt", "GJ_button_04.png", 0.7f);
+        srcSpr->setScale(0.5f);
+        auto* srcBtn = CCMenuItemSpriteExtra::create(
+            srcSpr, this, menu_selector(CursorShopDetailPopup::onViewSource));
+        srcBtn->setPosition({content.width - 68.f, 26.f});
+        m_sideMenu->addChild(srcBtn);
+    }
+
     rebuildGrid();
     updateSelection();
 }
@@ -368,6 +380,11 @@ void CursorShopDetailPopup::onAnimate(CCObject*) {
         return;
     }
     playAnimation(cursor.downloadUrl);
+}
+
+void CursorShopDetailPopup::onViewSource(CCObject*) {
+    if (m_detail.sourceUrl.empty()) return;
+    geode::utils::web::openLinkInBrowser(m_detail.sourceUrl);
 }
 
 void CursorShopDetailPopup::playAnimation(std::string const& url) {

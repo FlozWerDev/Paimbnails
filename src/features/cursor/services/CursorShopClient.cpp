@@ -738,6 +738,11 @@ void ShopClient::fetchDetail(Listing const& listing, DetailCallback cb) {
     if (listing.single && !listing.directUrl.empty()) {
         Detail detail;
         detail.name = listing.name;
+        // Los cursores sueltos no tienen ficha propia: enlazar a la
+        // seccion de la tienda para que el autor reciba la visita.
+        detail.sourceUrl = listing.store == Store::CustomCursor
+            ? std::string(kCcBase)
+            : std::string(kRwBase) + "/cursor-library";
         DetailCursor cursor;
         cursor.name = listing.name;
         cursor.previewUrl = listing.thumbUrl;
@@ -750,8 +755,9 @@ void ShopClient::fetchDetail(Listing const& listing, DetailCallback cb) {
 
     if (listing.store == Store::RwDesigner) {
         auto slug = listing.id;
-        fetchHtml(std::string(kRwBase) + "/cursor-set/" + slug, 25,
-                  [cb, slug](Result<std::string> res) mutable {
+        auto sourceUrl = std::string(kRwBase) + "/cursor-set/" + slug;
+        fetchHtml(sourceUrl, 25,
+                  [cb, slug, sourceUrl](Result<std::string> res) mutable {
             if (!res) {
                 cb(Err("{}", res.unwrapErr()));
                 return;
@@ -761,14 +767,16 @@ void ShopClient::fetchDetail(Listing const& listing, DetailCallback cb) {
                 cb(Err("Ese set no trae cursores descargables"));
                 return;
             }
+            detail.sourceUrl = std::move(sourceUrl);
             cb(Ok(std::move(detail)));
         });
         return;
     }
 
     auto name = listing.name;
-    fetchHtml(std::string(kCcBase) + listing.id, 25,
-              [cb, name](Result<std::string> res) mutable {
+    auto sourceUrl = std::string(kCcBase) + listing.id;
+    fetchHtml(sourceUrl, 25,
+              [cb, name, sourceUrl](Result<std::string> res) mutable {
         if (!res) {
             cb(Err("{}", res.unwrapErr()));
             return;
@@ -778,6 +786,7 @@ void ShopClient::fetchDetail(Listing const& listing, DetailCallback cb) {
             cb(Err("Ese pack no trae imagenes"));
             return;
         }
+        detail.sourceUrl = std::move(sourceUrl);
         cb(Ok(std::move(detail)));
     });
 }

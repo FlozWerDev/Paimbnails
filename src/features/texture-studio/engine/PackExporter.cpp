@@ -7,7 +7,7 @@
 #include "PackMetadataBuilder.hpp"
 #include "SheetRetarget.hpp"
 #include "SheetTinter.hpp"
-#include "../services/PackGenAssets.hpp"
+#include "../services/LocalBasePack.hpp"
 
 #include <Geode/utils/file.hpp>
 
@@ -21,7 +21,12 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Gate lists ported verbatim from PackGen's script.js.
+// Compatibility gates for well-known third-party mod assets (DIB demon
+// sheets, Godlike faces, GaragePlus icons, gold-title sheets). The recoloring
+// approach used here was pioneered by Asterveila's "PackGen" (building on
+// ravexcode's TexturePackWeb); the lists below were curated independently
+// for Paimbnails. Base sheets are sourced locally from the installed game
+// and mods. No code was copied from either project.
 constexpr std::string_view kDibBaseFiles[] = {
     "hiimjustin000.demons_in_between/DIB_IconSheet-uhd.png",
     "hiimjustin000.demons_in_between/DIB_IconSheet-uhd.plist",
@@ -129,7 +134,7 @@ geode::Result<> addSheetPngToZip(file::Zip& zip,
 
 ImageBuffer loadOptionalOverlay(std::string const& relativePath,
                                 std::vector<std::string>& logMessages) {
-    auto res = PackGenAssets::get().ensureOptionalFile(relativePath);
+    auto res = LocalBasePack::get().ensureOptionalFile(relativePath);
     if (!res) {
         logMessages.push_back(relativePath + ": " + res.unwrapErr());
         return ImageBuffer();
@@ -145,25 +150,18 @@ ImageBuffer loadOptionalOverlay(std::string const& relativePath,
     return std::move(img).unwrap();
 }
 
-// Collect overlay layers for pngRel under the active options.
-std::shared_ptr<SheetOverlaySources const> buildOverlaySources(
-    std::string const& pngRel,
-    PackExportConfig const& cfg,
-    std::vector<std::string>& logMessages) {
-
-    auto src = std::make_shared<SheetOverlaySources>();
-    src->overlay1 = loadOptionalOverlay(packgen_suffix::overlay1(pngRel), logMessages);
-    src->overlay2 = loadOptionalOverlay(packgen_suffix::overlay2(pngRel), logMessages);
-    src->glow     = loadOptionalOverlay(packgen_suffix::glow(pngRel), logMessages);
-
-    if (cfg.colorGoldTitles && inList(kGoldTitleTargets, pngRel)) {
-        src->gold = loadOptionalOverlay(packgen_suffix::gold(pngRel), logMessages);
+// Split "Base-uhd.png" / "modid/Base-hd.png" into (entryBase, qualitySuffix).
+// The entry base keeps any modid/ prefix so mod sheets land in their folder.
+std::pair<std::string, std::string> splitSheetRel(std::string const& pngRel) {
+    std::string noExt = endsWith(pngRel, ".png")
+        ? pngRel.substr(0, pngRel.size() - 4)
+        : pngRel;
+    for (auto suf : {"-uhd", "-hd"}) {
+        if (endsWith(noExt, suf)) {
+            return {noExt.substr(0, noExt.size() - 4), suf};
+        }
     }
-    if (cfg.colorDemonFaces && pngRel == "GJ_GameSheet03-uhd.png") {
-        src->demon1 = loadOptionalOverlay(packgen_suffix::demonFaces1(pngRel), logMessages);
-        src->demon2 = loadOptionalOverlay(packgen_suffix::demonFaces2(pngRel), logMessages);
-    }
-    return src;
+    return {noExt, std::string()};
 }
 
 // PackGen inclusion rules for files not explicitly selected. geode.loader/*
@@ -221,15 +219,15 @@ geode::Result<PackExportResult> PackExporter::exportPack(
     std::set<std::string> zipFolders;
     std::vector<std::string> logMessages;
 
-    PackGenManifest manifest;
+    LocalBaseManifest manifest;
     bool precision = false;
     if (cfg.usePackGenAssets) {
-        if (auto r = PackGenAssets::get().ensureManifest(); r) {
-            manifest  = PackGenAssets::get().manifest();
+        if (auto r = LocalBasePack::get().ensureManifest(); r) {
+            manifest  = LocalBasePack::get().manifest();
             precision = !manifest.empty();
         } else {
             result.precisionNote =
-                std::string("PackGen assets unavailable, used auto-detection: ")
+                std::string("Local base sheets unavailable, using project sheets only: ")
                 + r.unwrapErr();
             logMessages.push_back(result.precisionNote);
             log::warn("[texture-studio] {}", result.precisionNote);
@@ -239,6 +237,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
 
     struct AutoSheet {
         std::string baseName;   // may contain a modid/ prefix
+        std::string qualitySuffix;
         std::string pngRel;
         std::string plistRel;
     };
@@ -269,9 +268,9 @@ geode::Result<PackExportResult> PackExporter::exportPack(
             AutoSheet s;
             s.pngRel   = pngRel;
             s.plistRel = rel;
-            s.baseName = endsWith(pngRel, "-uhd.png")
-                ? pngRel.substr(0, pngRel.size() - 8)
-                : pngRel.substr(0, pngRel.size() - 4);
+            auto [base, suffix] = splitSheetRel(pngRel);
+            s.baseName      = std::move(base);
+            s.qualitySuffix = suffix.empty() ? "-uhd" : suffix;
             autoSheets.push_back(std::move(s));
         }
 
@@ -322,19 +321,26 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.resizeScale               = 1.0f;
         req.preserveOffsetForTableSide = true;
 
-        // Use the asset-pack copy so hand-drawn overlays match its atlas.
+        // Use the local base-pack copy so all sheets share one atlas layout.
         if (precision) {
             std::string pngRel   = sel.baseName + sel.qualitySuffix + ".png";
             std::string plistRel = sel.baseName + sel.qualitySuffix + ".plist";
             if (manifest.contains(pngRel) && manifest.contains(plistRel)) {
-                auto pngPath   = PackGenAssets::get().ensureFile(pngRel);
-                auto plistPath = PackGenAssets::get().ensureFile(plistRel);
+                auto pngPath   = LocalBasePack::get().ensureFile(pngRel);
+                auto plistPath = LocalBasePack::get().ensureFile(plistRel);
                 if (pngPath && plistPath) {
                     req.sourcePng      = pngPath.unwrap();
                     req.sourcePlist    = plistPath.unwrap();
-                    req.overlaySources = buildOverlaySources(pngRel, cfg, logMessages);
+                    // No overlay masks ship locally: null selects the
+                    // clustering fallback inside SheetTinter.
+                    req.overlaySources = nullptr;
+                    // Prefer live pixels captured on the main thread
+                    // (already-remapped sheets) over the disk file.
+                    if (auto snap = LocalBasePack::get().snapshotFor(pngRel)) {
+                        req.sourcePng = *snap;
+                    }
                 } else {
-                    logMessages.push_back(pngRel + ": asset fetch failed, using local sheet");
+                    logMessages.push_back(pngRel + ": local sheet missing, using project sheet");
                 }
             }
         }
@@ -398,11 +404,11 @@ geode::Result<PackExportResult> PackExporter::exportPack(
     for (auto const& autoSheet : autoSheets) {
         if (progress) progress(workIndex++, totalWork, autoSheet.baseName);
 
-        auto pngPath   = PackGenAssets::get().ensureFile(autoSheet.pngRel);
-        auto plistPath = PackGenAssets::get().ensureFile(autoSheet.plistRel);
+        auto pngPath   = LocalBasePack::get().ensureFile(autoSheet.pngRel);
+        auto plistPath = LocalBasePack::get().ensureFile(autoSheet.plistRel);
         if (!pngPath || !plistPath) {
             ++result.standaloneFailed;
-            logMessages.push_back(autoSheet.pngRel + ": download failed");
+            logMessages.push_back(autoSheet.pngRel + ": local file missing");
             continue;
         }
 
@@ -410,27 +416,24 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.sourcePng               = pngPath.unwrap();
         req.sourcePlist             = plistPath.unwrap();
         req.outputBaseName          = autoSheet.baseName;
-        req.outputQualitySuffix     = "-uhd";
+        req.outputQualitySuffix     = autoSheet.qualitySuffix;
         req.colors                  = cfg.colors;
         req.brightness              = cfg.brightness;
         req.alternativeGlowOverlay  = cfg.alternativeGlowOverlay;
-        // Overlay ink decides coverage; name-based classification misses mod sprites.
-        req.onlyTintUiSprites       = false;
+        // UI-only like project sheets: only Button/Menu UI frames are
+        // tinted, so unselected gameplay sheets stay vanilla. (Mod sheets
+        // cannot be classified reliably by name; their frames fall back to
+        // Other and stay vanilla unless overridden per sprite.)
+        req.onlyTintUiSprites       = cfg.onlyTintUiSprites;
+        req.tintScope               = cfg.tintScope;
         req.saturation              = cfg.saturation;
         req.contrast                = cfg.contrast;
         req.spriteSkip              = cfg.spriteSkip;
         req.spriteImages            = cfg.spriteImages;
         req.spriteFusions           = cfg.spriteFusions;
-        req.overlaySources          = buildOverlaySources(autoSheet.pngRel, cfg, logMessages);
-
-        if (!req.overlaySources->any()) {
-            // No mask means no tint; a vanilla copy would only bloat the zip.
-            if (!inList(kDibBaseFiles, autoSheet.pngRel) &&
-                !inList(kMythicFiles, autoSheet.pngRel)) {
-                continue;
-            }
-            // DIB/Godlike sheets replace demon faces missing from the base game.
-        }
+        // No overlay masks ship locally: null selects the clustering
+        // fallback, so every local sheet is tinted.
+        req.overlaySources          = nullptr;
 
         auto outRes = SheetTinter::process(req);
         if (!outRes) {
@@ -441,7 +444,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         auto out = std::move(outRes).unwrap();
 
         // The installed plist stays authoritative, so the PNG must use its
-        // layout; PackGen's snapshot can be a different version of the sheet.
+        // layout; the local source can be a different version of the sheet.
         auto conformed = SheetRetarget::conform(out.pngBytes, req.sourcePlist, autoSheet.pngRel);
         bool layoutDrifted = false;
         if (!conformed.message.empty()) logMessages.push_back(conformed.message);
@@ -460,7 +463,8 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
 
         // PNG only: the installed mod/Geode plist stays authoritative.
-        if (auto r = addSheetPngToZip(zip, zipFolders, autoSheet.baseName, "-uhd", out); !r) {
+        if (auto r = addSheetPngToZip(zip, zipFolders, autoSheet.baseName,
+                                      autoSheet.qualitySuffix, out); !r) {
             ++result.standaloneFailed;
             logMessages.push_back(autoSheet.pngRel + ": " + r.unwrapErr());
             continue;
@@ -468,10 +472,10 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         ++result.standaloneProcessed;
 
         if (cfg.includeMediumPort && layoutDrifted) {
-            // The port ships the snapshot's plist, which would hide the frames
+            // The port ships the source's plist, which would hide the frames
             // the installed version added.
-            logMessages.push_back(autoSheet.pngRel + " (hd): skipped, snapshot is out of date");
-        } else if (cfg.includeMediumPort) {
+            logMessages.push_back(autoSheet.pngRel + " (hd): skipped, sheet is out of date");
+        } else if (cfg.includeMediumPort && autoSheet.qualitySuffix == "-uhd") {
             // The -hd port re-packs the atlas, so it needs its own plist.
             if (auto hdOutRes = MediumPort::generate(req)) {
                 auto hdOut = std::move(hdOutRes).unwrap();
@@ -487,10 +491,10 @@ geode::Result<PackExportResult> PackExporter::exportPack(
     for (auto const& rel : standalonePngs) {
         if (progress) progress(workIndex++, totalWork, rel);
 
-        auto basePath = PackGenAssets::get().ensureFile(rel);
+        auto basePath = LocalBasePack::get().ensureFile(rel);
         if (!basePath) {
             ++result.standaloneFailed;
-            logMessages.push_back(rel + ": download failed: " + basePath.unwrapErr());
+            logMessages.push_back(rel + ": local file missing: " + basePath.unwrapErr());
             continue;
         }
         auto baseImg = ImageBuffer::loadFromFile(basePath.unwrap());
@@ -500,6 +504,18 @@ geode::Result<PackExportResult> PackExporter::exportPack(
             continue;
         }
         auto base = std::move(baseImg).unwrap();
+
+        // UI-only: vanilla loose textures tint only Button/Menu UI sprites
+        // (e.g. GJ_button_01-uhd.png); other loose art stays vanilla. Mod
+        // files keep their own opt-in (includeModTextures): name-based
+        // classification cannot tell mod gameplay apart from mod UI.
+        if (cfg.onlyTintUiSprites && rel.find('/') == std::string::npos) {
+            auto kind = UiSpriteCatalog::classify(rel, "");
+            if (!UiSpriteCatalog::shouldTint(kind, cfg.tintScope)) {
+                logMessages.push_back(rel + ": not a UI sprite, skipped");
+                continue;
+            }
+        }
 
         OverlayImages ov;
         ov.overlay1 = loadOptionalOverlay(packgen_suffix::overlay1(rel), logMessages);
@@ -557,9 +573,9 @@ geode::Result<PackExportResult> PackExporter::exportPack(
             : (cfg.includeModTextures && rel.find('/') != std::string::npos);
         if (!wanted) continue;
 
-        auto path = PackGenAssets::get().ensureFile(rel);
+        auto path = LocalBasePack::get().ensureFile(rel);
         if (!path) {
-            logMessages.push_back(rel + ": download failed");
+            logMessages.push_back(rel + ": local file missing");
             continue;
         }
         auto bytes = file::readBinary(path.unwrap());
@@ -680,15 +696,16 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         "- Brightness: {}\n"
         "- Transparent Lists: {}\n"
         "- Medium (HD) Port: {}\n"
-        "- Precision overlays: {}\n\n"
+        "- Local extras: {}\n\n"
         "Generated with Paimon Texture Studio (Paimbnails).\n"
-        "Precision overlay masks by Asterveila (PackGen): https://packgenweb.pages.dev/\n",
+        "Recoloring approach pioneered by Asterveila (PackGen, building on\n"
+        "ravexcode's TexturePackWeb). All base sheets sourced locally.\n",
         cfg.packName, cfg.packName,
         fmtColor(cfg.colors.color1), fmtColor(cfg.colors.color2),
         fmtColor(cfg.colors.glow), cfg.brightness,
         cfg.transparentLists ? "Yes" : "No",
         cfg.includeMediumPort ? "Yes" : "No",
-        precision ? "Yes" : "No (auto-detection)");
+        precision ? "Yes" : "No (project sheets only)");
     if (auto r = zip.add("README.md", readme); !r) {
         log::warn("[texture-studio] README add failed: {}", r.unwrapErr());
     }
@@ -697,7 +714,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         "Paimon Texture Studio generation log\n"
         "=====================================\n\n"
         "Sheets: {}  |  Extra sheets: {}  |  Standalone files ok: {}  |  failed: {}\n"
-        "Precision overlays: {}\n\n",
+        "Local extras: {}\n\n",
         totalSheets, autoSheets.size(),
         result.standaloneProcessed, result.standaloneFailed,
         precision ? "active" : "inactive");
@@ -736,7 +753,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
     if (progress) progress(totalWork, totalWork, std::string());
 
     log::info("[texture-studio] export OK: {} ({} bytes), {}/{} sheets, "
-              "{} standalone (+{} failed), precision={}",
+              "{} standalone (+{} failed), localExtras={}",
         geode::utils::string::pathToString(outputZipPath), result.outputZipSizeBytes,
         std::count_if(result.sheetResults.begin(), result.sheetResults.end(),
                       [](auto const& s) { return s.success; }),

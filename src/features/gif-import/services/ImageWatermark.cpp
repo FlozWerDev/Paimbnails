@@ -19,13 +19,29 @@ constexpr float kPi = 3.14159265358979323846f;
 constexpr float kSolidObjectSize = 30.f;
 constexpr float kSplitA = 0.381966f;
 constexpr float kSplitB = 0.438447f;
+// El marcado parte rectangulos en dos. En una tira girada corta de una curva,
+// esa operacion convertia una pieza valida en dos astillas de menos de 1.6
+// celdas; cada una mostraba un pico en la previsualizacion y hacia mas dificil
+// auditar el resultado. Las piezas largas siguen marcandose igual.
+constexpr float kMinimumMarkedPart = 1.6f;
 constexpr float kTurnsA = 2160.f;
 constexpr float kTurnsB = 3960.f;
 constexpr std::size_t kMaxPairs = 32;
 
 bool canSplit(Primitive const& object) {
-    return (object.kind == PrimitiveKind::Block || object.kind == PrimitiveKind::Stroke) &&
-        object.width > 0.01f && object.height > 0.01f;
+    if ((object.kind != PrimitiveKind::Block && object.kind != PrimitiveKind::Stroke) ||
+        object.width <= 0.01f || object.height <= 0.01f) {
+        return false;
+    }
+    if (object.kind != PrimitiveKind::Stroke) return true;
+    float folded = std::fmod(std::abs(object.rotation), 90.f);
+    folded = std::min(folded, 90.f - folded);
+    if (folded <= 7.f) return true;
+    // splitPrimitive elige el eje mayor (y en un cuadrado el hash decide). El
+    // factor menor de las dos proporciones es kSplitA, por eso este umbral
+    // garantiza que ninguna mitad marcada queda como una astilla.
+    return std::max(object.width, object.height) * kSplitA >=
+        kMinimumMarkedPart;
 }
 
 bool imageShape(int id) {

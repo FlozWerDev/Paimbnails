@@ -47,9 +47,26 @@ constexpr float kChainSpill = 0.06f;
 // grosor sobre el vertice y el disco la deja en medio grosor pelao: en un giro
 // suave la diferencia son centesimas de celda y el disco solo anadiria bulto
 // donde antes no habia nada, asi que el codo sigue con bisel.
+// Una curva de dos celdas ya muestra la esquina del inglete: con 0.5 celdas
+// de exceso basta para que el disco redondee el codo sin inflar la silueta.
 constexpr float kRoundJointExcess = 0.5f;
+// Los trazos de una celda no tienen margen para un inglete: una esquina de
+// media celda ya se lee como aguja. En ellos se permite el disco antes, pero
+// sólo en curvas finas; las manchas gruesas mantienen el liston conservador.
+constexpr float kThinRoundJointExcess = 0.3f;
 constexpr float kRepairDiameter = 1.f;
-constexpr float kRoundCapDiameter = 1.8f;
+// Incluso una linea de una celda necesita remate redondo: el cuadrado girado
+// termina en una punta visible al ampliar la rejilla. El disco de una celda
+// mantiene el trazo fino sin convertir el extremo en una aguja.
+constexpr float kRoundCapDiameter = 1.f;
+// Un trazo subpixel no siempre llega a una celda entera de ancho. Por debajo de
+// este umbral el circulo no conserva ningun centro y el parche recto es mas fiel;
+// por encima, dejar el cuadrado girado abierto vuelve a sacar una aguja.
+constexpr float kRoundCapMinThickness = 0.65f;
+// Margen minimo para considerar que una esquina de un extremo queda expuesta.
+// El liston anterior de 1.2 dejaba pasar puntas de lineas finas que solo
+// sobresalian entre 0.7 y 1.1 celdas.
+constexpr float kExposedCapGap = 0.65f;
 // A partir de que giro vale la pena cambiar el empaquetado recto por una caja
 // girada. Por debajo de siete grados las dos pintan casi lo mismo y la recta gana:
 // su borde cae en la rejilla y ademas se funde con los rectangulos de al lado.
@@ -336,6 +353,26 @@ bool fitsPaintNear(
     return shapeFarSpill(shape, permitted, near, width, height) <= kChainSpill;
 }
 
+// Puerta del contorno de la banda: perdona la orla solo en tiras de verdad
+// giradas. En un tramo recto los bloques rectos ya son pixel-perfectos y una
+// tira perdonada ahi solo suma derrame (y objetos: la tira no desplaza al
+// bloque, coverageMask exige 16/16 subpixeles para dar la celda por tapada).
+// En una diagonal en cambio la tira ES el suavizado, con el mismo liston que
+// las tiras de cadena. El corte de 7 grados es el que separa recta de girada
+// en el resto del archivo.
+bool fitsPaintOutline(
+    Primitive const& shape,
+    std::vector<std::uint8_t> const& permitted,
+    std::vector<std::uint8_t> const& near,
+    int width,
+    int height
+) {
+    float folded = std::fmod(std::abs(shape.rotation), 90.f);
+    folded = std::min(folded, 90.f - folded);
+    if (folded <= 7.f) return fitsPaintBoundary(shape, permitted, width, height);
+    return fitsPaintNear(shape, permitted, near, width, height);
+}
+
 // Un objeto redondo solo puede ir donde nada se pinte encima: GD lo dibuja en
 // otra hoja de sprites y ninguna capa Z lo devuelve detras de los cuadrados.
 bool coversBlocked(
@@ -538,13 +575,13 @@ float miterExtension(float dot, float thickness, float limit) {
 // esquina del bisel cae a medio grosor sobre coseno(mitad del giro) del
 // vertice, y el disco llega a medio grosor pelao. Por debajo de ese liston el
 // disco sobresaldria mas que el pico que viene a quitar.
-bool needsRoundJoint(float dot, float thickness) {
+bool needsRoundJoint(float dot, float thickness, float excess = kRoundJointExcess) {
     if (thickness <= 0.f) return false;
     float const clamped = std::clamp(dot, -1.f, 1.f);
     if (clamped >= 1.f) return false;
     float const cosHalf =
         std::max(std::cos(std::acos(clamped) * 0.5f), 0.05f);
-    return thickness * 0.5f * (1.f / cosHalf - 1.f) >= kRoundJointExcess;
+    return thickness * 0.5f * (1.f / cosHalf - 1.f) >= excess;
 }
 
 // El remate redondo solo cabe si es lo bastante grande para que se note y si no
@@ -754,7 +791,9 @@ void appendBand(
         }
         float const dot = directionDot(
             measured[previous].direction, measured[next].direction);
-        if (!needsRoundJoint(dot, diameter)) {
+        float const jointExcess = diameter <= 1.6f
+            ? kThinRoundJointExcess : kRoundJointExcess;
+        if (!needsRoundJoint(dot, diameter, jointExcess)) {
             return;
         }
         auto const& before = geoms[previous];
@@ -1198,11 +1237,13 @@ bool appendChain(
             }
             float const diameter = std::max(
                 thicknessOf[slot][vertex - 1], thicknessOf[slot][vertex]);
+            float const jointExcess = diameter <= 1.6f
+                ? kThinRoundJointExcess : kRoundJointExcess;
             if (!needsRoundJoint(
                     directionDot(
                         measured[vertex - 1].direction,
                         measured[vertex].direction),
-                    diameter)) {
+                    diameter, jointExcess)) {
                 continue;
             }
             bidJoint(reduced[vertex], diameter, slot, vertex - 1, false);
@@ -1222,7 +1263,9 @@ bool appendChain(
             float const known =
                 line.jointDot[static_cast<std::size_t>(end)];
             if (known < -0.999f) continue;
-            if (!needsRoundJoint(known, thicknessOf[slot][segment])) {
+            float const jointExcess = thicknessOf[slot][segment] <= 1.6f
+                ? kThinRoundJointExcess : kRoundJointExcess;
+            if (!needsRoundJoint(known, thicknessOf[slot][segment], jointExcess)) {
                 continue;
             }
             bidJoint(
@@ -2631,7 +2674,32 @@ void appendRepairs(
                     float const length = std::hypot(
                         static_cast<float>(x - firstX), static_cast<float>(y - firstY));
                     if (length > kRepairReach) continue;
-                    auto const candidate = repairStroke(first, second, width, color, layer);
+                    Primitive candidate = repairStroke(first, second, width, color, layer);
+                    // Dos celdas diagonales forman una sola mota redondeada. La
+                    // tira de 2.4x1 que salia antes tiene cuatro esquinas y cada
+                    // una se ve como una aguja al ampliar la rejilla. Un disco
+                    // pequeño cubre los dos centros sin escalera; los trazos
+                    // horizontales/verticales y las diagonales largas conservan
+                    // su tira para no disparar el numero de objetos.
+                    if (firstX != x && firstY != y && length <= 1.5f) {
+                        // A escala 8 el centro de la muestra cae a 0.5625 de
+                        // la celda; 1.5 dejaba fuera la segunda diagonal por
+                        // unas centesimas. 1.8 cubre ambos centros y sigue
+                        // dentro de la orla permitida.
+                        float const diameter = 1.8f;
+                        Primitive round{
+                            (static_cast<float>(firstX + x) + 1.f) * 0.5f,
+                            (static_cast<float>(firstY + y) + 1.f) * 0.5f,
+                            diameter, diameter, 0.f,
+                            static_cast<std::uint16_t>(color),
+                            PrimitiveKind::Circle,
+                            static_cast<std::int16_t>(layer)
+                        };
+                        if (!coversBlocked(round, width, height, blocked) &&
+                            fitsPaintNear(round, permitted, near, width, height)) {
+                            candidate = round;
+                        }
+                    }
                     if (!fitsPaintNear(candidate, permitted, near, width, height)) continue;
                     int const count = coveredRepairs(candidate, remaining, width, height);
                     if (count > bestCount || (count == bestCount && length < bestLength)) {
@@ -2676,6 +2744,290 @@ void appendRepairs(
     } else {
         output.insert(output.end(), plain.begin(), plain.end());
     }
+}
+
+// Una figura girada de menos de dos celdas es una astilla: el cuadrado que la
+// representa deja una punta en cada esquina cuando cae sobre la rejilla. En
+// curvas esas astillas aparecen al final de una simplificacion y son justo lo
+// que se ve como un pico. Se intenta conservar su cobertura con un disco del
+// mismo diametro; si el disco no puede respetar una capa posterior, se usa un
+// rectangulo recto mas pequeño. Cuando tampoco cabe, se devuelve la celda para
+// que el empaquetado de reparos la cubra sin giro. Esto tambien cubre triangulos
+// diminutos, que de otro modo podrian conservar una rotacion de 45 grados.
+std::vector<int> normalizePaintSpikes(
+    std::vector<Primitive>& objects,
+    std::vector<int> const& target,
+    int width,
+    int height,
+    int color,
+    std::vector<std::uint8_t> const& blocked,
+    std::vector<std::uint8_t> const& permitted
+) {
+    constexpr float kMaxSpikeSide = 1.6f;
+    constexpr float kStraightAngle = 7.f;
+    std::vector<int> repairs;
+    std::vector<Primitive> normalized;
+    normalized.reserve(objects.size());
+    auto const inTarget = [&](Primitive const& shape, int position) {
+        return xformOf(shape).contains(
+            static_cast<float>(position % width) + 0.5f,
+            static_cast<float>(position / width) + 0.5f);
+    };
+    for (auto const& object : objects) {
+        float folded = std::fmod(std::abs(object.rotation), 90.f);
+        folded = std::min(folded, 90.f - folded);
+        bool const isRotatedStroke = object.kind == PrimitiveKind::Stroke;
+        bool const isRotatedTriangle =
+            object.kind == PrimitiveKind::Triangle ||
+            object.kind == PrimitiveKind::WideTriangle;
+        if ((!isRotatedStroke && !isRotatedTriangle) ||
+            folded <= kStraightAngle || object.width > kMaxSpikeSide ||
+            object.height > kMaxSpikeSide) {
+            normalized.push_back(object);
+            continue;
+        }
+
+        bool replaced = false;
+        float const diameter = std::min(object.width, object.height);
+        if (diameter >= 0.75f) {
+            Primitive circle{
+                object.x, object.y, diameter, diameter, 0.f,
+                static_cast<std::uint16_t>(color), PrimitiveKind::Circle,
+                object.layer};
+            if (!coversBlocked(circle, width, height, blocked) &&
+                fitsPaintBoundary(circle, permitted, width, height)) {
+                normalized.push_back(circle);
+                replaced = true;
+            }
+        }
+        if (!replaced) {
+            // Probar varios tamaños evita que el centro de una astilla pegada a
+            // una frontera fuerce un cuadrado que se sale por la esquina.
+            for (float scale : {1.f, 0.9f, 0.75f, 0.6f}) {
+                Primitive block{
+                    object.x, object.y, object.width * scale,
+                    object.height * scale, 0.f,
+                    static_cast<std::uint16_t>(color), PrimitiveKind::Block,
+                    object.layer};
+                if (!fitsPaintBoundary(block, permitted, width, height)) continue;
+                normalized.push_back(block);
+                replaced = true;
+                break;
+            }
+        }
+        if (replaced) continue;
+
+        // No se pierde el centro que la tira cubria: el llamado siguiente lo
+        // vuelve a empaquetar como bloque o como otra reparacion recta.
+        for (int position : target) {
+            if (inTarget(object, position)) repairs.push_back(position);
+        }
+    }
+    objects = std::move(normalized);
+    std::sort(repairs.begin(), repairs.end());
+    repairs.erase(std::unique(repairs.begin(), repairs.end()), repairs.end());
+    return repairs;
+}
+
+// Redondea solo las puntas que de verdad quedan libres. Una tira larga puede
+// tener una esquina fuera de la rejilla sin que sea un pico: si el siguiente
+// tramo continua ahi, esa esquina queda escondida por el propio trazo. En una
+// punta abierta, en cambio, el rectangulo girado termina en diagonal y la
+// esquina se ve. Se acorta la tira hasta el centro del disco y se añade un
+// circulo del mismo grosor; los tramos unidos siguen siendo rectangulos y no
+// reciben discos en cada union.
+void roundExposedStrokeEnds(
+    std::vector<Primitive>& objects,
+    std::vector<int> const& target,
+    int width,
+    int height,
+    int color,
+    std::vector<std::uint8_t> const& blocked,
+    std::vector<std::uint8_t> const& permitted
+) {
+    if (objects.empty() || target.empty()) return;
+    std::vector<std::uint8_t> targetMask(
+        static_cast<std::size_t>(width) * height, 0);
+    for (int position : target) {
+        if (position >= 0 && position < width * height) {
+            targetMask[static_cast<std::size_t>(position)] = 1;
+        }
+    }
+    auto const near = nearCells(target, width, height);
+    auto targetGap = [&](Point point) {
+        int const centerX = static_cast<int>(std::floor(point.x));
+        int const centerY = static_cast<int>(std::floor(point.y));
+        float best = 1e9f;
+        for (int y = centerY - 3; y <= centerY + 3; ++y) {
+            for (int x = centerX - 3; x <= centerX + 3; ++x) {
+                if (x < 0 || y < 0 || x >= width || y >= height ||
+                    !targetMask[static_cast<std::size_t>(y) * width + x]) {
+                    continue;
+                }
+                float const dx = point.x < x ? static_cast<float>(x) - point.x
+                    : point.x > x + 1.f ? point.x - static_cast<float>(x + 1) : 0.f;
+                float const dy = point.y < y ? static_cast<float>(y) - point.y
+                    : point.y > y + 1.f ? point.y - static_cast<float>(y + 1) : 0.f;
+                best = std::min(best, std::hypot(dx, dy));
+            }
+        }
+        return best;
+    };
+    auto continuesAlong = [&](Point center, Point direction, float thickness) {
+        int const centerX = static_cast<int>(std::floor(center.x));
+        int const centerY = static_cast<int>(std::floor(center.y));
+        int const reach = std::max(2, static_cast<int>(std::ceil(thickness)) + 1);
+        for (int dy = -reach; dy <= reach; ++dy) {
+            for (int dx = -reach; dx <= reach; ++dx) {
+                int const x = centerX + dx;
+                int const y = centerY + dy;
+                if (x < 0 || y < 0 || x >= width || y >= height ||
+                    !targetMask[static_cast<std::size_t>(y) * width + x]) {
+                    continue;
+                }
+                Point const relative{
+                    static_cast<float>(x) + 0.5f - center.x,
+                    static_cast<float>(y) + 0.5f - center.y
+                };
+                float const along = relative.x * direction.x +
+                    relative.y * direction.y;
+                float const across = std::abs(
+                    relative.x * direction.y - relative.y * direction.x);
+                float const minimumAlong = std::max(thickness * 0.45f, 0.35f);
+                float const maximumAcross = std::max(thickness * 0.85f, 0.65f);
+                if (along > minimumAlong && across <= maximumAcross) return true;
+            }
+        }
+        return false;
+    };
+
+    std::vector<Primitive> rounded;
+    rounded.reserve(objects.size() + objects.size() / 3);
+    for (auto const& object : objects) {
+        if (object.kind != PrimitiveKind::Stroke || object.color != color) {
+            rounded.push_back(object);
+            continue;
+        }
+        float folded = std::fmod(std::abs(object.rotation), 90.f);
+        folded = std::min(folded, 90.f - folded);
+        float const thickness = std::min(object.width, object.height);
+        float const length = std::max(object.width, object.height);
+        // Una tira casi cuadrada no gana nada con un disco, y una tira muy
+        // corta ya pasa por normalizePaintSpikes. Aqui llegan tambien bandas
+        // anchas de curvas: si tienen un poco de longitud extra, su remate
+        // ingleteado sigue siendo visible aunque el audit de astillas no lo
+        // marque.
+        if (folded <= 10.f || thickness < kRoundCapMinThickness ||
+            length <= thickness * 1.35f) {
+            rounded.push_back(object);
+            continue;
+        }
+
+        float const angle = object.rotation * kPi / 180.f;
+        Point const direction{std::cos(angle), std::sin(angle)};
+        bool capAt[2] = {false, false};
+        Point capCenter[2];
+        for (int end = 0; end < 2; ++end) {
+            float const sign = end == 0 ? -1.f : 1.f;
+            capCenter[end] = {
+                object.x + direction.x * sign * (length * 0.5f - thickness * 0.5f),
+                object.y + direction.y * sign * (length * 0.5f - thickness * 0.5f)
+            };
+            // Si hay una celda del mismo color delante de la punta, es una
+            // continuacion y la esquina queda cubierta por el siguiente tramo.
+            if (continuesAlong(capCenter[end],
+                              {direction.x * (end == 0 ? -1.f : 1.f),
+                               direction.y * (end == 0 ? -1.f : 1.f)},
+                              thickness)) {
+                continue;
+            }
+            Point const normal{-direction.y, direction.x};
+            Point const edge{
+                object.x + direction.x * sign * length * 0.5f,
+                object.y + direction.y * sign * length * 0.5f
+            };
+            float const cornerGap = std::max(
+                targetGap({edge.x + normal.x * thickness * 0.5f,
+                           edge.y + normal.y * thickness * 0.5f}),
+                targetGap({edge.x - normal.x * thickness * 0.5f,
+                           edge.y - normal.y * thickness * 0.5f}));
+            // El remate solo compensa un pico que se separa claramente de la
+            // mancha. En una curva pixelada los bordes pueden quedar a unas
+            // decimas fuera y el rectangulo sigue siendo el acabado mas limpio.
+            float const gapThreshold = thickness <= 1.6f
+                ? kExposedCapGap : 0.9f;
+            if (cornerGap < gapThreshold) continue;
+
+            bool const alreadyRound = std::any_of(
+                objects.begin(), objects.end(), [&](Primitive const& other) {
+                    return &other != &object && other.kind == PrimitiveKind::Circle &&
+                        other.color == color &&
+                        pointDistance({other.x, other.y}, capCenter[end]) <
+                            std::min(other.width, thickness) * 0.55f;
+                });
+            if (alreadyRound) continue;
+            Primitive const cap{
+                capCenter[end].x, capCenter[end].y,
+                thickness, thickness, 0.f,
+                static_cast<std::uint16_t>(color), PrimitiveKind::Circle,
+                object.layer
+            };
+            if (coversBlocked(cap, width, height, blocked) ||
+                !fitsPaintNear(cap, permitted, near, width, height)) {
+                continue;
+            }
+            capAt[end] = true;
+        }
+        if (!capAt[0] && !capAt[1]) {
+            rounded.push_back(object);
+            continue;
+        }
+
+        Primitive center = object;
+        if (capAt[0] && capAt[1]) {
+            center.width = std::max(length - thickness, 0.05f);
+            center.height = thickness;
+        } else {
+            center.width = std::max(length - thickness * 0.5f, 0.05f);
+            center.height = thickness;
+            float const shift = (capAt[0] ? 1.f : -1.f) * thickness * 0.25f;
+            center.x += direction.x * shift;
+            center.y += direction.y * shift;
+        }
+        std::vector<Primitive> replacement{center};
+        for (int end = 0; end < 2; ++end) {
+            if (!capAt[end]) continue;
+            replacement.push_back({
+                capCenter[end].x, capCenter[end].y,
+                thickness, thickness, 0.f,
+                static_cast<std::uint16_t>(color),
+                PrimitiveKind::Circle,
+                object.layer
+            });
+        }
+        // El suavizado no puede quitar el centro de ninguna celda que la tira
+        // original cubria. Si el disco no cabe por una frontera, se conserva la
+        // pieza entera y la reparacion posterior mantiene la cobertura.
+        bool preservesCenters = true;
+        auto const original = xformOf(object);
+        for (int position : target) {
+            float const px = static_cast<float>(position % width) + 0.5f;
+            float const py = static_cast<float>(position / width) + 0.5f;
+            if (!original.contains(px, py)) continue;
+            if (std::none_of(replacement.begin(), replacement.end(), [&](Primitive const& shape) {
+                    return xformOf(shape).contains(px, py);
+                })) {
+                preservesCenters = false;
+                break;
+            }
+        }
+        if (!preservesCenters) {
+            rounded.push_back(object);
+            continue;
+        }
+        rounded.insert(rounded.end(), replacement.begin(), replacement.end());
+    }
+    objects = std::move(rounded);
 }
 
 // La criba de utilidad mira cada objeto contra lo que hay pintado en su momento,
@@ -2748,6 +3100,16 @@ std::vector<Primitive> paintSeamRepairs(
         cells.size() != static_cast<std::size_t>(width) * height || ranks.empty()) {
         return repairs;
     }
+    std::vector<int> targets;
+    targets.reserve(cells.size());
+    for (int position = 0; position < width * height; ++position) {
+        int const color = cells[static_cast<std::size_t>(position)];
+        if (color >= 0 && color < static_cast<int>(ranks.size())) {
+            targets.push_back(position);
+        }
+    }
+    if (targets.empty()) return repairs;
+
     std::vector<int> interior;
     for (int y = 1; y + 1 < height; ++y) {
         for (int x = 1; x + 1 < width; ++x) {
@@ -2763,9 +3125,26 @@ std::vector<Primitive> paintSeamRepairs(
             interior.push_back(position);
         }
     }
-    if (interior.empty()) return repairs;
-
-    auto problemCells = [&](std::vector<Primitive> const& visible, int scale) {
+    std::vector<std::uint8_t> isInterior(cells.size(), 0);
+    for (int position : interior) {
+        isInterior[static_cast<std::size_t>(position)] = 1;
+    }
+    // En una mancha de un solo color el contorno curvo pertenece a la figura
+    // principal; forzar cada centro subpixel con bloques volveria a dibujar una
+    // escalera alrededor del circulo. Las comprobaciones de borde son para
+    // fronteras entre colores, donde si puede quedar una costura real.
+    std::vector<int> repairTargets;
+    repairTargets.reserve(targets.size());
+    for (int position : targets) {
+        if (isInterior[static_cast<std::size_t>(position)] || ranks.size() > 1) {
+            repairTargets.push_back(position);
+        }
+    }
+    auto problemCells = [&](
+        std::vector<Primitive> const& visible,
+        int scale,
+        std::vector<int> const& candidates
+    ) {
         int const scaledWidth = width * scale;
         int const scaledHeight = height * scale;
         std::vector<std::int16_t> ownerColor(
@@ -2788,16 +3167,23 @@ std::vector<Primitive> paintSeamRepairs(
         }
 
         std::vector<std::vector<int>> problems(ranks.size());
-        for (int position : interior) {
+        for (int position : candidates) {
             int const x = position % width;
             int const y = position / width;
             int const expected = cells[static_cast<std::size_t>(position)];
             bool problem = false;
-            for (int sampleY = 0; sampleY < scale && !problem; ++sampleY) {
-                for (int sampleX = 0; sampleX < scale; ++sampleX) {
-                    std::size_t const sample =
-                        static_cast<std::size_t>(y * scale + sampleY) * scaledWidth +
-                        x * scale + sampleX;
+            int const firstSampleX = isInterior[static_cast<std::size_t>(position)]
+                ? 0 : scale / 2;
+            int const lastSampleX = isInterior[static_cast<std::size_t>(position)]
+                ? scale : firstSampleX + 1;
+            int const firstSampleY = isInterior[static_cast<std::size_t>(position)]
+                ? 0 : scale / 2;
+            int const lastSampleY = isInterior[static_cast<std::size_t>(position)]
+                ? scale : firstSampleY + 1;
+            for (int sampleY = firstSampleY; sampleY < lastSampleY && !problem; ++sampleY) {
+                for (int sampleX = firstSampleX; sampleX < lastSampleX; ++sampleX) {
+                    std::size_t const sample = static_cast<std::size_t>(
+                        y * scale + sampleY) * scaledWidth + x * scale + sampleX;
                     if (ownerColor[sample] < 0 ||
                         (ownerLayer[sample] < 0 && ownerColor[sample] != expected)) {
                         problem = true;
@@ -2811,7 +3197,7 @@ std::vector<Primitive> paintSeamRepairs(
     };
 
     std::vector<Primitive> working = objects;
-    auto problems = problemCells(working, 8);
+    auto problems = problemCells(working, 8, repairTargets);
     bool const hasProblem = std::any_of(
         problems.begin(), problems.end(), [](auto const& positions) {
             return !positions.empty();
@@ -2850,12 +3236,33 @@ std::vector<Primitive> paintSeamRepairs(
         }
         repairs.insert(repairs.end(), underpaint.begin(), underpaint.end());
         working.insert(working.end(), underpaint.begin(), underpaint.end());
-        problems = problemCells(working, 12);
+        problems = problemCells(working, 12, repairTargets);
     }
 
     for (int color = 0; color < static_cast<int>(problems.size()); ++color) {
-        auto patches = packBlocks(
-            problems[static_cast<std::size_t>(color)], width, height, color);
+        std::vector<int> blockPositions;
+        blockPositions.reserve(problems[static_cast<std::size_t>(color)].size());
+        for (int position : problems[static_cast<std::size_t>(color)]) {
+            if (isInterior[static_cast<std::size_t>(position)]) {
+                blockPositions.push_back(position);
+                continue;
+            }
+            // Un parche redondo mantiene el contorno; un bloque de 1x1 es
+            // dividido por la marca de agua y reaparece como dos astillas.
+            Primitive patch{
+                position % width + 0.5f,
+                position / width + 0.5f,
+                1.f,
+                1.f,
+                0.f,
+                static_cast<std::uint16_t>(color),
+                PrimitiveKind::Circle,
+                static_cast<std::int16_t>(
+                    ranks[static_cast<std::size_t>(color)] * kPaintSublayers + 2)
+            };
+            repairs.push_back(patch);
+        }
+        auto patches = packBlocks(blockPositions, width, height, color);
         for (auto& patch : patches) {
             patch.layer = static_cast<std::int16_t>(
                 ranks[static_cast<std::size_t>(color)] * kPaintSublayers + 2);
@@ -2981,6 +3388,70 @@ std::vector<int> paintOrder(
         }
     }
 
+    // El grosor es un buen desempate para manchas que se pisan en un borde, pero
+    // no describe una oclusion dentro de otra mancha. Un brillo blanco encerrado
+    // en el azul de un ojo, por ejemplo, no puede ir debajo del azul aunque el azul
+    // tenga mas area y sea mas grueso: en ese caso el color interior debe pintarse
+    // despues del color que lo rodea. La relacion se calcula por componente para
+    // no confundir dos manchas del mismo color separadas en el lienzo.
+    //
+    // En una animacion una celda puede cambiar de color; esas celdas ambiguas no
+    // participan en restricciones de anidamiento, porque imponerles una relacion
+    // global podria arreglar un frame y romper otro.
+    std::vector<std::int16_t> owner(static_cast<std::size_t>(width) * height, -1);
+    for (int color = 0; color < colors; ++color) {
+        for (int position : masks[static_cast<std::size_t>(color)]) {
+            auto& cell = owner[static_cast<std::size_t>(position)];
+            if (cell == -1) {
+                cell = static_cast<std::int16_t>(color);
+            } else if (cell >= 0 && cell != color) {
+                cell = -2;
+            }
+        }
+    }
+    std::vector<std::vector<std::uint8_t>> mustPrecede(
+        static_cast<std::size_t>(colors),
+        std::vector<std::uint8_t>(static_cast<std::size_t>(colors), 0));
+    auto addEnclosureRelations = [&](int color) {
+        for (auto const& component : connectedComponents(
+                 masks[static_cast<std::size_t>(color)], width, height)) {
+            if (component.empty()) continue;
+            bool touchesOutside = false;
+            std::vector<std::uint8_t> neighbors(static_cast<std::size_t>(colors), 0);
+            for (int position : component) {
+                int const x = position % width;
+                int const y = position / width;
+                if (x == 0 || y == 0 || x + 1 == width || y + 1 == height) {
+                    touchesOutside = true;
+                    break;
+                }
+                for (auto const [dx, dy] : std::array<std::pair<int, int>, 4>{
+                         std::pair{-1, 0}, std::pair{1, 0},
+                         std::pair{0, -1}, std::pair{0, 1}}) {
+                    int const xx = x + dx;
+                    int const yy = y + dy;
+                    auto const adjacent = owner[static_cast<std::size_t>(yy) * width + xx];
+                    if (adjacent == -2) {
+                        touchesOutside = true;
+                    } else if (adjacent >= 0 && adjacent != color) {
+                        neighbors[static_cast<std::size_t>(adjacent)] = 1;
+                    } else if (adjacent < 0) {
+                        // -1 es transparencia/exterior; -2 es mezcla temporal.
+                        touchesOutside = true;
+                    }
+                }
+            }
+            if (touchesOutside) continue;
+            for (int outer = 0; outer < colors; ++outer) {
+                if (neighbors[static_cast<std::size_t>(outer)] != 0) {
+                    mustPrecede[static_cast<std::size_t>(outer)]
+                                [static_cast<std::size_t>(color)] = 1;
+                }
+            }
+        }
+    };
+    for (int color = 0; color < colors; ++color) addEnclosureRelations(color);
+
     for (int color = 0; color < colors; ++color) {
         auto const& positions = masks[static_cast<std::size_t>(color)];
         if (positions.empty()) {
@@ -3007,15 +3478,61 @@ std::vector<int> paintOrder(
         });
     }
 
+    // Primero conservamos el orden heuristico como prioridad y despues lo
+    // convertimos en un orden topologico que respeta los huecos encerrados. Si
+    // distintos frames generan un ciclo, se corta con esa prioridad estable.
     std::sort(entries.begin(), entries.end(), [](Entry const& left, Entry const& right) {
-        // El color que rodea el lienzo va debajo, aunque el objeto central sea
-        // mas grueso. Si va encima hay que recortar un agujero en el fondo y
-        // sus escalones tapan las diagonales/circulos que acabamos de ajustar.
         if (left.background != right.background) return left.background;
         if (std::abs(left.depth - right.depth) > 0.001f) return left.depth > right.depth;
         if (left.area != right.area) return left.area > right.area;
         return left.color < right.color;
     });
+    auto const baseOrder = [&](int color) {
+        return std::find_if(entries.begin(), entries.end(), [&](Entry const& entry) {
+            return entry.color == color;
+        }) - entries.begin();
+    };
+    std::vector<int> indegree(static_cast<std::size_t>(colors), 0);
+    for (int below = 0; below < colors; ++below) {
+        for (int above = 0; above < colors; ++above) {
+            if (mustPrecede[static_cast<std::size_t>(below)]
+                           [static_cast<std::size_t>(above)] != 0) {
+                ++indegree[static_cast<std::size_t>(above)];
+            }
+        }
+    }
+    std::vector<Entry> ordered;
+    ordered.reserve(entries.size());
+    std::vector<std::uint8_t> emitted(static_cast<std::size_t>(colors), 0);
+    while (ordered.size() < entries.size()) {
+        int chosen = -1;
+        for (auto const& entry : entries) {
+            int const color = entry.color;
+            if (emitted[static_cast<std::size_t>(color)] != 0 ||
+                indegree[static_cast<std::size_t>(color)] != 0) {
+                continue;
+            }
+            if (chosen < 0 || baseOrder(color) < baseOrder(chosen)) chosen = color;
+        }
+        if (chosen < 0) {
+            for (auto const& entry : entries) {
+                int const color = entry.color;
+                if (emitted[static_cast<std::size_t>(color)] == 0 &&
+                    (chosen < 0 || baseOrder(color) < baseOrder(chosen))) {
+                    chosen = color;
+                }
+            }
+        }
+        emitted[static_cast<std::size_t>(chosen)] = 1;
+        ordered.push_back(entries[static_cast<std::size_t>(baseOrder(chosen))]);
+        for (int above = 0; above < colors; ++above) {
+            if (mustPrecede[static_cast<std::size_t>(chosen)]
+                           [static_cast<std::size_t>(above)] != 0) {
+                --indegree[static_cast<std::size_t>(above)];
+            }
+        }
+    }
+    entries = std::move(ordered);
     for (std::size_t i = 0; i < entries.size(); ++i) {
         ranks[static_cast<std::size_t>(entries[i].color)] = static_cast<int>(i);
     }
@@ -3069,6 +3586,15 @@ std::vector<Primitive> vectorizePaint(
                 selectCells(
                     region, width, coverageMask(region, output, false), {}, true, 0.f),
                 width, height, color, base + 2, blocked, positions, empty);
+            roundExposedStrokeEnds(
+                output, positions, width, height, color, blocked, permitted);
+            auto spikeRepairs = normalizePaintSpikes(
+                output, positions, width, height, color, blocked, permitted);
+            if (!spikeRepairs.empty()) {
+                appendRepairs(
+                    output, spikeRepairs, width, height, color, base + 2,
+                    blocked, spikeRepairs, empty);
+            }
             return output;
         }
     }
@@ -3082,12 +3608,22 @@ std::vector<Primitive> vectorizePaint(
             std::vector<Primitive> fitted;
             if (appendCircle(fitted, region, whole.size(), color, base,
                              width, height, blocked) ||
+                appendTriangle(fitted, whole, width, height, color, base, blocked) ||
                 appendCapsule(fitted, whole, width, height, color, base + 1,
                               blocked, empty)) {
                 appendRepairs(fitted,
                     selectCells(region, width, coverageMask(region, fitted, false),
                                 {}, true, 0.f),
                     width, height, color, base + 2, blocked, positions, empty);
+                roundExposedStrokeEnds(
+                    fitted, whole, width, height, color, blocked, permitted);
+                auto spikeRepairs = normalizePaintSpikes(
+                    fitted, whole, width, height, color, blocked, permitted);
+                if (!spikeRepairs.empty()) {
+                    appendRepairs(
+                        fitted, spikeRepairs, width, height, color, base + 2,
+                        blocked, spikeRepairs, empty);
+                }
                 output.insert(output.end(), fitted.begin(), fitted.end());
                 continue;
             }
@@ -3177,10 +3713,13 @@ std::vector<Primitive> vectorizePaint(
                         width, height, blocked, permitted);
                 }
                 // Conservar diagonales que solo cruzan esquinas subpixel;
-                // descartar las que invaden el interior del color vecino.
+                // descartar las que invaden el interior del color vecino. La
+                // orla solo se perdona en tiras giradas: en tramos rectos los
+                // bloques ya son perfectos y perdonar ahi solo suma derrame.
+                auto const near = nearCells(component, width, height);
                 outline.erase(std::remove_if(outline.begin(), outline.end(),
                     [&](Primitive const& stroke) {
-                        return !fitsPaintBoundary(stroke, permitted, width, height);
+                        return !fitsPaintOutline(stroke, permitted, near, width, height);
                     }), outline.end());
                 inside = insideContours(region, refined);
                 // El contorno suavizado se sale de la silueta en las curvas, y el
@@ -3236,6 +3775,26 @@ std::vector<Primitive> vectorizePaint(
 
     appendRepairs(
         output, repairs, width, height, color, base + 2, blocked, positions, empty);
+
+    // Ultima barrera contra astillas: las reparaciones se generan despues de la
+    // geometria principal y tambien pueden producir una tira diagonal diminuta.
+    // Normalizar aqui deja curvas compuestas solo por rectangulos y circulos.
+    roundExposedStrokeEnds(
+        output, positions, width, height, color, blocked, permitted);
+    auto spikeRepairs = normalizePaintSpikes(
+        output, positions, width, height, color, blocked, permitted);
+    if (!spikeRepairs.empty()) {
+        appendRepairs(
+            output, spikeRepairs, width, height, color, base + 2,
+            blocked, spikeRepairs, empty);
+        // appendRepairs puede encontrar otra pareja de dos celdas. La segunda
+        // pasada es barata y hace idempotente la garantia para curvas pequenas.
+        auto leftover = normalizePaintSpikes(
+            output, spikeRepairs, width, height, color, blocked, permitted);
+        if (!leftover.empty()) {
+            appendBlocks(output, leftover, width, height, color, base + 2);
+        }
+    }
 
     std::stable_sort(output.begin(), output.end(), [](Primitive const& left, Primitive const& right) {
         return left.layer < right.layer;

@@ -25,7 +25,10 @@ PackExportConfig TextureProject::toExportConfig() const {
     cfg.brightness             = brightness;
     cfg.alternativeGlowOverlay = alternativeGlowOverlay;
     cfg.tintScope              = tintScope;
-    cfg.onlyTintUiSprites      = tintScope != TintScope::Everything;
+    // UI-only is now unconditional: TintScope::Everything is legacy and
+    // UiSpriteCatalog::shouldTint already maps it to menu/button UI, so the
+    // filter flag stays on even for a legacy in-memory value.
+    cfg.onlyTintUiSprites      = true;
     cfg.maskSoftness           = maskSoftness;
     cfg.clusterPrecision       = clusterPrecision;
     cfg.edgeCleanup            = edgeCleanup;

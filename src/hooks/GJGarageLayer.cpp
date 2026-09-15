@@ -4,7 +4,6 @@
 #include "../features/colorful-icons/hooks/PaimonIconsGarageGlue.hpp"
 #include "../features/garage-hub/GarageButtonHub.hpp"
 #include "../features/icon-copy/hooks/IconCopyGarageGlue.hpp"
-#include "../features/icon-gallery/hooks/IconStoreGarageGlue.hpp"
 #include "../features/icon-maker/hooks/IconMakerGarageGlue.hpp"
 
 using namespace geode::prelude;
@@ -36,7 +35,6 @@ class $modify(PaimonGJGarageLayer, GJGarageLayer) {
         // popup, asi que no necesita boton propio aqui.
         paimon::icons::garage::onGarageInit(this);
         paimon::iconcopy::garage::onGarageInit(this);
-        paimon::icon_gallery::garage::onGarageInit(this);
         // Los accesos de arriba ya no se apilan en la columna: cuelgan del hub,
         // y este es el unico boton que se ve.
         paimon::garage_hub::installHubButton(this);

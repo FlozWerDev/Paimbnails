@@ -104,8 +104,8 @@ void initCursorTicker() {
         s_cursorTicker.data(), 0, false
     );
 
-    // Global click hold tracking drives the Click cursor state (inspired by
-    // Ecuet/Custom-Cursor) and the click effects. A single leaked listener is
+    // Global click hold tracking drives the Click cursor state (idea inspired
+    // by Ecuet's "Custom Cursor" mod, Geode mod index) and the click effects. A single leaked listener is
     // fine: it mirrors only two bools into CursorManager and lives for the whole
     // session.
     if (!s_mouseListenerRegistered) {

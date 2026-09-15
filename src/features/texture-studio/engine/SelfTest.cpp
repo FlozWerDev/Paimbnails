@@ -6,6 +6,7 @@
 #include "MaskBuilder.hpp"
 #include "OverlayTinter.hpp"
 #include "../data/ImageBuffer.hpp"
+#include "../packgen/SelfCheck.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -238,6 +239,19 @@ bool engineSelfTest() {
         if (bare.r != 10 || bare.g != 10 || bare.b != 10 || bare.a != 255) {
             log::error("[texture-studio] selfTest FAIL: uncovered pixel changed");
             ok = false;
+        }
+    }
+
+    // PackGen v2 pure core self-check (headless, millisecond-scale): tint
+    // kernel values, alpha LUT, packer invariants, cache/graph roundtrip.
+    {
+        auto core = packgen::runSelfCheck();
+        if (!core.ok) {
+            log::error("[texture-studio] selfTest FAIL: packgen core '{}' {}",
+                core.failedStep, core.detail);
+            ok = false;
+        } else {
+            log::info("[texture-studio] selfTest: packgen core PASS");
         }
     }
 

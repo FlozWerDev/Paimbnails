@@ -23,7 +23,6 @@
 #include "../features/progressbar/services/ProgressBarManager.hpp"
 #include "../features/rtx/services/RTXRenderer.hpp"
 #include "../features/icon-maker/services/IconApplier.hpp"
-#include "../features/icon-gallery/services/GalleryStore.hpp"
 #include "../features/icon-maker/services/IconThumbs.hpp"
 
 using namespace geode::prelude;
@@ -66,9 +65,6 @@ void onBeforeGameReload() {
     // Iconos creados con el Icon Maker (texturas + frames registrados).
     paimon::icon_maker::IconApplier::get().onGLContextReload();
     paimon::icon_maker::IconThumbs::get().onGLContextReload();
-
-    // Vistas previas de la tienda de iconos (texturas creadas desde PNG en RAM).
-    paimon::icon_gallery::GalleryStore::get().onGLContextReload();
 
     // Estáticos sueltos.
     paimon::ThumbnailBackgroundChangedEvent::setLastTexture(nullptr);

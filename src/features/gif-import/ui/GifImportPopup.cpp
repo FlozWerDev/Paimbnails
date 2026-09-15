@@ -268,7 +268,7 @@ bool GifImportPopup::init() {
 
 void GifImportPopup::loadOptions() {
     auto* mod = Mod::get();
-    m_options.maxDimension = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-resolution", 48));
+    m_options.maxDimension = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-resolution", 96));
     m_options.maxColors = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-colors", 16));
     m_options.objectBudget = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-budget", 12000));
     m_options.maxFrames = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-frames", 60));

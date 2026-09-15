@@ -8,27 +8,43 @@
 #include <string>
 #include <vector>
 
-// Shows a thumbnail strip on mod popups whose repo has previews.
-// Inspired by Alphalaneous's Mod-Previews.
+// Shows a thumbnail ribbon on mod popups whose repo carries previews.
+// Thumbnail-strip idea inspired by "Mod Previews" by Alphalaneous
+// (https://github.com/Alphalaneous/Mod-Previews, Geode id
+// alphalaneous.mod_previews). The ribbon below is an independent
+// implementation for Paimbnails; only the public conventions it
+// interoperates with are reused: the `previews/preview-<n>.png` path
+// inside mod repos and the `main`-then-`master` default-branch probe
+// (uncopyrightable interop facts). Preview images belong to each mod's
+// own repository authors and are only displayed, never redistributed.
+// No endorsement by the original author. See THIRD-PARTY-NOTICES.md.
 
 using namespace geode::prelude;
 using namespace paimon::mod_previews;
 
 namespace {
 
-// Horizontal thumbnail strip. Child of "description-container", so its
-// visibility follows the active tab automatically.
-class ModPreviewStrip : public CCNode {
-public:
-    std::string m_urlBase;
-    int m_loaded = 0;
-    CCMenu* m_list = nullptr;
-    std::vector<Ref<LazySprite>> m_pending;
-    std::map<int, Ref<CCMenuItemSpriteExtra>> m_buttons;
+// How many preview slots get probed per popup.
+constexpr int kProbeMax = 10;
+// Thumbnail row geometry (own layout).
+constexpr float kRibbonH = 62.f;
+constexpr float kThumbH = 46.f;
+constexpr float kCellGap = 6.f;
+constexpr float kEdgePad = 6.f;
 
-    static ModPreviewStrip* create(std::string const& urlBase, float width) {
-        auto ret = new ModPreviewStrip();
-        if (ret->init(urlBase, width)) {
+// Horizontal thumbnail ribbon. Child of "description-container", so its
+// visibility follows the active tab automatically.
+class PreviewRibbon : public CCNode {
+public:
+    std::string m_prefix; // ".../previews/preview-" without "<n>.png"
+    int m_top = 0;        // highest probe index that finished loading
+    CCMenu* m_row = nullptr;
+    std::vector<Ref<LazySprite>> m_slots;
+    std::map<int, Ref<CCMenuItemSpriteExtra>> m_cells;
+
+    static PreviewRibbon* create(std::string const& prefix, float width) {
+        auto ret = new PreviewRibbon();
+        if (ret->init(prefix, width)) {
             ret->autorelease();
             return ret;
         }
@@ -36,83 +52,83 @@ public:
         return nullptr;
     }
 
-    bool init(std::string const& urlBase, float width) {
+    bool init(std::string const& prefix, float width) {
         if (!CCNode::init()) return false;
-        m_urlBase = urlBase;
-        this->setID("previews-strip"_spr);
-        this->setContentSize({width, 56});
+        m_prefix = prefix;
+        this->setID("mod-image-ribbon"_spr);
+        this->setContentSize({width, kRibbonH});
         this->setAnchorPoint({0.5f, 0.5f});
 
-        auto bg = CCScale9Sprite::create("square02b_001.png");
-        bg->setContentSize(this->getContentSize() / 0.5f);
-        bg->setScale(0.5f);
-        bg->setColor({0, 0, 0});
-        bg->setOpacity(120);
-        this->addChildAtPosition(bg, Anchor::Center);
+        auto shade = CCScale9Sprite::create("square02b_001.png");
+        shade->setContentSize(this->getContentSize() / 0.5f);
+        shade->setScale(0.5f);
+        shade->setColor({0, 0, 0});
+        shade->setOpacity(140);
+        this->addChildAtPosition(shade, Anchor::Center);
 
-        m_list = CCMenu::create();
-        m_list->setContentSize(this->getContentSize());
-        m_list->ignoreAnchorPointForPosition(false);
-        m_list->setAnchorPoint({0.5f, 0.5f});
-        this->addChildAtPosition(m_list, Anchor::Center);
+        m_row = CCMenu::create();
+        m_row->setContentSize(this->getContentSize());
+        m_row->ignoreAnchorPointForPosition(false);
+        m_row->setAnchorPoint({0.5f, 0.5f});
+        this->addChildAtPosition(m_row, Anchor::Center);
 
-        for (int i = 1; i <= 10; i++) {
-            auto spr = LazySprite::create({100, 54}, false);
-            m_pending.push_back(spr);
-            int idx = i;
-            spr->setLoadCallback([this, idx, spr](Result<> res) {
-                if (res.isOk()) this->onLoaded(idx, spr);
+        for (int i = 1; i <= kProbeMax; i++) {
+            auto slot = LazySprite::create({110, 60}, false);
+            m_slots.push_back(slot);
+            int probe = i;
+            slot->setLoadCallback([this, probe, slot](Result<> res) {
+                if (res.isOk()) this->onCell(probe, slot);
             });
-            spr->loadFromUrl(m_urlBase + std::to_string(i) + ".png");
+            slot->loadFromUrl(m_prefix + std::to_string(i) + ".png");
         }
         return true;
     }
 
-    void onLoaded(int idx, LazySprite* spr) {
-        if (m_buttons.contains(idx)) return;
-        m_loaded++;
+    void onCell(int probe, LazySprite* slot) {
+        if (m_cells.contains(probe)) return;
+        m_top = std::max(m_top, probe);
 
-        auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ModPreviewStrip::onThumb));
-        float scale = (btn->getContentHeight() > 0) ? 50.f / btn->getContentHeight() : 1.f;
-        btn->setScale(scale);
-        btn->m_baseScale = scale;
-        btn->setTag(idx);
-        m_buttons[idx] = btn;
-        relayout();
+        auto pick = CCMenuItemSpriteExtra::create(slot, this, menu_selector(PreviewRibbon::onPick));
+        float fit = (pick->getContentHeight() > 0) ? kThumbH / pick->getContentHeight() : 1.f;
+        pick->setScale(fit);
+        pick->m_baseScale = fit;
+        pick->setTag(probe);
+        m_cells[probe] = pick;
+        refreshRow();
     }
 
-    void relayout() {
-        m_list->removeAllChildren();
-        float x = 4.f;
-        float const gap = 3.f;
-        float const maxW = this->getContentWidth() - 4.f;
-        for (auto& [idx, btn] : m_buttons) {
-            float w = btn->getContentWidth() * btn->getScaleX();
-            if (x + w > maxW) break;
-            btn->setAnchorPoint({0.f, 0.5f});
-            btn->setPosition({x, this->getContentHeight() / 2});
-            m_list->addChild(btn);
-            x += w + gap;
+    void refreshRow() {
+        m_row->removeAllChildren();
+        float x = kEdgePad;
+        float const limit = this->getContentWidth() - kEdgePad;
+        for (auto& [probe, cell] : m_cells) {
+            float w = cell->getContentWidth() * cell->getScaleX();
+            if (x + w > limit) break;
+            cell->setAnchorPoint({0.f, 0.5f});
+            cell->setPosition({x, this->getContentHeight() / 2});
+            m_row->addChild(cell);
+            x += w + kCellGap;
         }
     }
 
-    void onThumb(CCObject* sender) {
-        if (auto popup = ModPreviewGalleryPopup::create(static_cast<CCNode*>(sender)->getTag(), m_loaded, m_urlBase)) {
-            popup->show();
+    void onPick(CCObject* sender) {
+        int probe = static_cast<CCNode*>(sender)->getTag();
+        if (auto gallery = ModPreviewGalleryPopup::create(probe, std::max(m_top, 1), m_prefix)) {
+            gallery->show();
         }
     }
 };
 
-void buildStrip(Ref<FLAlertLayer> popup, std::string urlBase) {
+void attachRibbon(Ref<FLAlertLayer> popup, std::string prefix) {
     if (!popup) return;
     auto desc = popup->getChildByIDRecursive("description-container");
     if (!desc) return;
-    if (desc->getChildByID("previews-strip"_spr)) return;
+    if (desc->getChildByID("mod-image-ribbon"_spr)) return;
 
-    auto strip = ModPreviewStrip::create(urlBase, desc->getContentWidth() - 10.f);
-    if (!strip) return;
-    strip->setZOrder(10);
-    desc->addChildAtPosition(strip, Anchor::Bottom, {0, 6});
+    auto ribbon = PreviewRibbon::create(prefix, desc->getContentWidth() - 12.f);
+    if (!ribbon) return;
+    ribbon->setZOrder(10);
+    desc->addChildAtPosition(ribbon, Anchor::Bottom, {0, 10});
 }
 
 void handleModPopup(FLAlertLayer* popup) {
@@ -120,27 +136,28 @@ void handleModPopup(FLAlertLayer* popup) {
     if (!Mod::get()->getSettingValue<bool>("mod-previews-enable")) return;
 
     // Event fires multiple times per popup; dedupe with a marker.
-    if (popup->getUserObject("previews-init"_spr)) return;
+    if (popup->getUserObject("mod-images-init"_spr)) return;
 
-    auto githubBtn = popup->getChildByIDRecursive("github");
-    if (!githubBtn) return;
-    auto urlObj = typeinfo_cast<CCString*>(githubBtn->getUserObject("url"));
+    auto siteBtn = popup->getChildByIDRecursive("github");
+    if (!siteBtn) return;
+    auto urlObj = typeinfo_cast<CCString*>(siteBtn->getUserObject("url"));
     if (!urlObj) return;
 
-    std::string source = urlObj->getCString();
-    if (source.empty()) return;
+    std::string page = urlObj->getCString();
+    if (page.empty()) return;
 
-    auto repo = getRepoData(source);
-    if (!repo.valid) return;
+    auto source = resolvePreviewSource(page);
+    if (!source.ok) return;
 
-    popup->setUserObject("previews-init"_spr, CCBool::create(true));
+    popup->setUserObject("mod-images-init"_spr, CCBool::create(true));
 
+    // Default-branch probe: most repos use "main", older ones "master".
     Ref<FLAlertLayer> popupRef = popup;
-    std::string rawURL = repo.rawURL;
-    WebHelper::dispatch(web::WebRequest(), "GET", rawURL + "/main/mod.json",
-        [popupRef, rawURL](web::WebResponse res) {
+    std::string assetBase = source.assetBase;
+    WebHelper::dispatch(web::WebRequest(), "GET", assetBase + "/main/mod.json",
+        [popupRef, assetBase](web::WebResponse res) {
             std::string branch = res.ok() ? "main" : "master";
-            buildStrip(popupRef, rawURL + "/" + branch + "/previews/preview-");
+            attachRibbon(popupRef, assetBase + "/" + branch + "/previews/preview-");
         });
 }
 

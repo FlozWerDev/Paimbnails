@@ -1,87 +1,103 @@
 #include "ModPreviewGalleryPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/Geode.hpp>
-#include <algorithm>
 
 using namespace geode::prelude;
 
 namespace paimon::mod_previews {
 
-bool ModPreviewGalleryPopup::init(int page, int count, std::string urlBase) {
-    if (!Popup::init(380.f, 250.f)) return false;
+namespace {
+
+// Viewer geometry (own layout, not derived from any other mod).
+constexpr float kViewW = 400.f;
+constexpr float kViewH = 260.f;
+constexpr float kPhotoW = 360.f;
+constexpr float kPhotoH = 200.f;
+
+} // namespace
+
+bool ModPreviewGalleryPopup::init(int index, int total, std::string base) {
+    if (!Popup::init(kViewW, kViewH)) return false;
     paimon::markDynamicPopup(this);
 
-    m_page = page;
-    m_count = std::max(count, 1);
-    m_urlBase = std::move(urlBase);
+    m_index = std::clamp(index, 1, std::max(total, 1));
+    m_total = std::max(total, 1);
+    m_base = std::move(base);
 
-    this->setTitle("Preview");
+    this->setTitle("Mod Images");
 
-    auto nav = CCMenu::create();
-    nav->setContentSize(m_mainLayer->getContentSize());
-    nav->ignoreAnchorPointForPosition(false);
-    nav->setAnchorPoint({0.5f, 0.5f});
-    m_mainLayer->addChildAtPosition(nav, Anchor::Center);
+    m_sprite = LazySprite::create({120, 60});
+    m_mainLayer->addChildAtPosition(m_sprite, Anchor::Center, {0, 12});
 
-    auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
-    auto prevBtn = CCMenuItemSpriteExtra::create(prevSpr, this, menu_selector(ModPreviewGalleryPopup::onPrev));
-    nav->addChildAtPosition(prevBtn, Anchor::Left, {16, 0});
+    m_caption = CCLabelBMFont::create("", "bigFont.fnt");
+    m_caption->setScale(0.5f);
+    m_mainLayer->addChildAtPosition(m_caption, Anchor::Bottom, {0, 30});
 
-    auto nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
-    nextSpr->setFlipX(true);
-    auto nextBtn = CCMenuItemSpriteExtra::create(nextSpr, this, menu_selector(ModPreviewGalleryPopup::onNext));
-    nav->addChildAtPosition(nextBtn, Anchor::Right, {-16, 0});
+    auto bar = CCMenu::create();
+    bar->setContentSize({kViewW, 40.f});
+    bar->ignoreAnchorPointForPosition(false);
+    bar->setAnchorPoint({0.5f, 0.5f});
+    m_mainLayer->addChildAtPosition(bar, Anchor::Bottom, {0, 14});
 
-    m_label = CCLabelBMFont::create("", "goldFont.fnt");
-    m_label->setAnchorPoint({1.f, 1.f});
-    m_label->setScale(0.4f);
-    m_mainLayer->addChildAtPosition(m_label, Anchor::TopRight, {-8, -8});
+    auto mkArrow = [this, bar](bool flip) {
+        auto spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+        if (flip) spr->setFlipX(true);
+        auto btn = CCMenuItemSpriteExtra::create(
+            spr, this, flip ? menu_selector(ModPreviewGalleryPopup::onFwd)
+                            : menu_selector(ModPreviewGalleryPopup::onBack));
+        btn->setScale(0.8f);
+        return btn;
+    };
+    m_backBtn = mkArrow(false);
+    m_fwdBtn = mkArrow(true);
+    bar->addChildAtPosition(m_backBtn, Anchor::Left, {30, 0});
+    bar->addChildAtPosition(m_fwdBtn, Anchor::Right, {-30, 0});
 
-    showImage(m_page);
+    openIndex(m_index);
     return true;
 }
 
-void ModPreviewGalleryPopup::showImage(int page) {
-    if (m_current) m_current->setVisible(false);
+void ModPreviewGalleryPopup::openIndex(int index) {
+    m_index = std::clamp(index, 1, m_total);
+    m_gen++;
+    int gen = m_gen;
 
-    LazySprite* spr;
-    if (auto it = m_cache.find(page); it != m_cache.end()) {
-        spr = it->second;
+    if (m_sprite->isLoading()) m_sprite->cancelLoad();
+    m_sprite->setVisible(false);
+    m_sprite->setLoadCallback([this, gen](Result<> res) {
+        if (gen != m_gen || res.isErr()) return;
+        auto spr = m_sprite;
+        float w = spr->getContentWidth();
+        float h = spr->getContentHeight();
+        if (w > 0.f && h > 0.f) {
+            float fit = std::min(kPhotoW / w, kPhotoH / h);
+            if (fit > 0.f && fit < 10.f) spr->setScale(fit);
+        }
         spr->setVisible(true);
-        onLoad(spr);
-    } else {
-        spr = LazySprite::create({100, 50});
-        m_cache[page] = spr;
-        m_mainLayer->addChildAtPosition(spr, Anchor::Center, {0, -10});
-        spr->setLoadCallback([this, spr](Result<> res) {
-            if (res.isOk()) this->onLoad(spr);
-        });
-        spr->loadFromUrl(m_urlBase + std::to_string(page) + ".png");
-    }
-
-    m_current = spr;
-    m_label->setString(fmt::format("Image {}/{}", page, m_count).c_str());
+    });
+    m_sprite->loadFromUrl(m_base + std::to_string(m_index) + ".png");
+    refreshChrome();
 }
 
-void ModPreviewGalleryPopup::onLoad(LazySprite* spr) {
-    float scale = std::min(340.f / spr->getContentWidth(), 210.f / spr->getContentHeight());
-    spr->setScale(scale);
-    spr->setVisible(spr == m_current);
+void ModPreviewGalleryPopup::refreshChrome() {
+    m_caption->setString(fmt::format("Photo {} of {}", m_index, m_total).c_str());
+    m_backBtn->setEnabled(m_index > 1);
+    m_fwdBtn->setEnabled(m_index < m_total);
+    m_backBtn->setOpacity(m_index > 1 ? 255 : 100);
+    m_fwdBtn->setOpacity(m_index < m_total ? 255 : 100);
 }
 
-void ModPreviewGalleryPopup::onPrev(CCObject*) {
-    m_page = (m_page <= 1) ? m_count : m_page - 1;
-    showImage(m_page);
+void ModPreviewGalleryPopup::onBack(CCObject*) {
+    if (m_index > 1) openIndex(m_index - 1);
 }
 
-void ModPreviewGalleryPopup::onNext(CCObject*) {
-    m_page = (m_page >= m_count) ? 1 : m_page + 1;
-    showImage(m_page);
+void ModPreviewGalleryPopup::onFwd(CCObject*) {
+    if (m_index < m_total) openIndex(m_index + 1);
 }
 
-ModPreviewGalleryPopup* ModPreviewGalleryPopup::create(int page, int count, std::string urlBase) {
+ModPreviewGalleryPopup* ModPreviewGalleryPopup::create(int index, int total, std::string base) {
     auto ret = new ModPreviewGalleryPopup();
-    if (ret->init(page, count, std::move(urlBase))) {
+    if (ret->init(index, total, std::move(base))) {
         ret->autorelease();
         return ret;
     }

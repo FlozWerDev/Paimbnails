@@ -9,6 +9,10 @@
 
 using namespace geode::prelude;
 
+// Capture/restore of search filters ported from "Search History" by
+// hiimjasmine00 (MIT, Copyright (c) 2024-2026 hiimjasmine00).
+// See SearchHistory.hpp and THIRD-PARTY-NOTICES.md.
+
 // Separate hook from main LevelSearchLayer.cpp. Geode chains both $modify over the same class without conflict.
 class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
     static void onModify(auto& self) {

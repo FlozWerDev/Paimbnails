@@ -321,12 +321,6 @@ inline std::vector<GuideIntent> makeIntents() {
         "visuals",
         {"make my own icon", "design a custom icon", "create a new icon"},
         {"hacer mi propio icono", "disenar un icono", "crear un icono nuevo"}));
-    v.push_back(func("icon-gallery", 90,
-        "Icon Gallery", {"icon gallery", "icon store", "icon shop", "download icons", "community icons", "icons gallery"},
-        "Tienda de Iconos", {"tienda de iconos", "galeria de iconos", "descargar iconos", "iconos de la comunidad", "icon shop"},
-        "visuals",
-        {"download new icons", "browse community icons", "get more icons"},
-        {"descargar iconos nuevos", "ver iconos de la comunidad", "conseguir mas iconos"}));
     v.push_back(func("icon-gradients", 88,
         "Icon Gradients", {"icon gradients", "gradient icons", "icon gradient editor", "icon colors gradient"},
         "Degradados de Iconos", {"degradados de iconos", "iconos con degradado", "editor de degradados"},

@@ -27,22 +27,25 @@ int nearestCluster(float h, float s, float v,
     return best;
 }
 
-}  // anonymous namespace
+// Border ratios for every cluster in a single image pass. The nearest
+// assignment per pixel is computed once instead of once per cluster, so
+// classify() drops from k full passes (each re-running toHSV + nearest over
+// every pixel) to one. Values are identical: same per-pixel math, same
+// integer counts, same final division — and clusters the clusterer marked
+// empty still report 0, exactly like the per-cluster early-out did.
+std::vector<float> computeAllBorderRatios(ImageBuffer const& sprite,
+                                          ColorCluster const* allClusters,
+                                          int clusterCount) {
+    std::vector<float> ratios;
+    ratios.assign(static_cast<std::size_t>(std::max(0, clusterCount)), 0.0f);
+    if (sprite.empty() || !allClusters || clusterCount <= 0) return ratios;
 
-float ClusterClassifier::computeBorderRatio(ImageBuffer const& sprite,
-                                            ColorCluster const& cluster,
-                                            ColorCluster const* allClusters,
-                                            int clusterCount,
-                                            int targetIndex) {
-    if (sprite.empty() || cluster.pixelCount == 0 || clusterCount == 0) {
-        return 0.0f;
-    }
     int W = sprite.width();
     int H = sprite.height();
     constexpr int kAlphaCutoff = 16;
 
-    int countInCluster = 0;
-    int countOnBorder  = 0;
+    std::vector<int> inCluster(static_cast<std::size_t>(clusterCount), 0);
+    std::vector<int> onBorder(static_cast<std::size_t>(clusterCount), 0);
 
     auto isTransparent = [&](int x, int y) {
         if (x < 0 || y < 0 || x >= W || y >= H) return true;
@@ -56,18 +59,40 @@ float ClusterClassifier::computeBorderRatio(ImageBuffer const& sprite,
             if (p[3] < kAlphaCutoff) continue;
             auto hsv = paimon::icons::math::toHSV(cocos2d::ccColor3B{p[0], p[1], p[2]});
             int idx = nearestCluster(hsv.h, hsv.s, hsv.v, allClusters, clusterCount);
-            if (idx != targetIndex) continue;
-
-            ++countInCluster;
+            if (idx < 0 || idx >= clusterCount) continue;
+            ++inCluster[static_cast<std::size_t>(idx)];
             if (isTransparent(x - 1, y) || isTransparent(x + 1, y) ||
                 isTransparent(x, y - 1) || isTransparent(x, y + 1)) {
-                ++countOnBorder;
+                ++onBorder[static_cast<std::size_t>(idx)];
             }
         }
     }
 
-    if (countInCluster == 0) return 0.0f;
-    return static_cast<float>(countOnBorder) / static_cast<float>(countInCluster);
+    for (int i = 0; i < clusterCount; ++i) {
+        std::size_t k = static_cast<std::size_t>(i);
+        if (allClusters[i].pixelCount == 0 || inCluster[k] == 0) {
+            ratios[k] = 0.0f;
+        } else {
+            ratios[k] = static_cast<float>(onBorder[k]) /
+                        static_cast<float>(inCluster[k]);
+        }
+    }
+    return ratios;
+}
+
+}  // anonymous namespace
+
+float ClusterClassifier::computeBorderRatio(ImageBuffer const& sprite,
+                                            ColorCluster const& cluster,
+                                            ColorCluster const* allClusters,
+                                            int clusterCount,
+                                            int targetIndex) {
+    if (sprite.empty() || cluster.pixelCount == 0 || clusterCount <= 0 || !allClusters) {
+        return 0.0f;
+    }
+    if (targetIndex < 0 || targetIndex >= clusterCount) return 0.0f;
+    return computeAllBorderRatios(sprite, allClusters, clusterCount)[
+        static_cast<std::size_t>(targetIndex)];
 }
 
 ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer const& sprite) {
@@ -77,14 +102,15 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         return out;
     }
 
-    // Step 1: copy clusters and compute border ratios.
+    // Step 1: copy clusters and compute border ratios in a single shared
+    // pass (identical values to one computeBorderRatio call per cluster).
     int n = static_cast<int>(set.clusters.size());
+    auto ratios = computeAllBorderRatios(sprite, set.clusters.data(), n);
     out.clusters.reserve(n);
     for (int i = 0; i < n; ++i) {
         ClassifiedCluster c;
         c.source = set.clusters[i];
-        c.source.borderRatio = computeBorderRatio(sprite, c.source,
-            set.clusters.data(), n, i);
+        c.source.borderRatio = ratios[static_cast<std::size_t>(i)];
         c.role = ClusterRole::Unassigned;
         out.clusters.push_back(c);
     }

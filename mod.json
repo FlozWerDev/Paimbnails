@@ -34,7 +34,7 @@
     },
     "separate-dual-title": {
       "name": "Separate Dual Icons",
-      "description": "Customize the 2nd player's icons, colors, trails and death effect",
+      "description": "Customize the 2nd player's icons, colors, trails and death effect. Idea inspired by Weebify's Separate Dual Icons mod; implemented independently.",
       "type": "title"
     },
     "separate-dual-exit-switch": {
@@ -59,7 +59,7 @@
     "mod-previews-enable": {
       "type": "bool",
       "name": "Mod Previews",
-      "description": "Show preview images for Geode mods whose repository has a 'previews' folder (preview-1.png ... preview-10.png).",
+      "description": "Show preview images for Geode mods whose repository has a 'previews' folder (preview-1.png ... preview-10.png). Idea inspired by Alphalaneous's Mod Previews mod; implemented independently.",
       "default": true
     },
     "level-search-enter": {
@@ -84,7 +84,7 @@
     },
     "search-history-title": {
       "name": "Search History",
-      "description": "Save and re-run your recent level searches.",
+      "description": "Save and re-run your recent level searches. Based on Search History by hiimjasmine00 (MIT License); see THIRD-PARTY-NOTICES.md.",
       "type": "title"
     },
     "incognito-mode": {
@@ -497,7 +497,7 @@
     "custom-cursor-enable": {
       "type": "bool",
       "name": "Custom Cursor",
-      "description": "Replace the OS cursor with a custom image.",
+      "description": "Replace the OS cursor with a custom image. Click-state tracking idea inspired by Ecuet's Custom Cursor mod; implemented independently. The cursor shop browses rw-designer.com and custom-cursor.com with credit to each store and author; files download only when you install them.",
       "default": false
     },
     "smooth-text-enabled": {
@@ -804,20 +804,9 @@
       "description": "Muestra el boton del Creador de Iconos en el garage.",
       "default": true
     },
-    "icon-gallery-title": {
-      "name": "Tienda de Iconos",
-      "description": "Descarga iconos de la comunidad desde iconsgallery.pages.dev",
-      "type": "title"
-    },
-    "icon-gallery-enabled": {
-      "type": "bool",
-      "name": "Activar Tienda de Iconos",
-      "description": "Muestra el boton de la Tienda de Iconos en el garage. Los iconos descargados se instalan en More Icons.",
-      "default": true
-    },
     "texture-studio-title": {
       "name": "Texture Studio",
-      "description": "Algorithmic texture pack generator",
+      "description": "Algorithmic texture pack generator. Recoloring idea inspired by PackGen by Asterveila (building on ravexcode's TexturePackWeb); fully self-contained, works offline, no downloads.",
       "type": "title"
     },
     "texture-studio-enabled": {
@@ -949,7 +938,7 @@
     },
     "msgnotif-title": {
       "name": "Message Notifications",
-      "description": "Get notified when you receive a new message or friend request. Polls the Geometry Dash servers while logged in.",
+      "description": "Get notified when you receive a new message or friend request. Polls the Geometry Dash servers while logged in. Idea inspired by BlueToadMaker's Message-Notification mod; implemented independently.",
       "type": "title"
     },
     "msgnotif-enabled": {

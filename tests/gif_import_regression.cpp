@@ -908,7 +908,8 @@ bool paintModeLeavesNoSpikes() {
     std::vector<std::uint8_t> used(result.plan.palette.size(), 0);
     for (auto const& object : objects) {
         used[object.color] = 1;
-        float const angle = std::fmod(std::abs(object.rotation), 90.f);
+        float angle = std::fmod(std::abs(object.rotation), 90.f);
+        angle = std::min(angle, 90.f - angle);
         if (angle > 5.f && angle < 85.f && object.width <= 1.6f && object.height <= 1.6f) {
             ++spikes;
         }
@@ -932,6 +933,43 @@ bool paintModeOrdersLayersBackToFront() {
     }
     std::cout << "paint-layers: " << (ordered ? "sorted" : "unsorted") << '\n';
     return ordered;
+}
+
+bool paintModeKeepsEnclosedHighlightsAboveFill() {
+    auto source = animation(32, 32, 1, 20, 180, 200);
+    for (int y = 8; y < 24; ++y) {
+        for (int x = 10; x < 22; ++x) setPixel(source, 0, x, y, 10, 20, 60);
+    }
+    // Un brillo pequeño completamente rodeado por el relleno oscuro. Su color
+    // debe quedar encima aunque el relleno tenga mas area y profundidad media.
+    for (int y = 12; y <= 16; ++y) {
+        for (int x = 14; x <= 18; ++x) {
+            if (std::abs(x - 16) <= (y == 14 ? 2 : 1)) {
+                setPixel(source, 0, x, y, 250, 250, 250);
+            }
+        }
+    }
+    auto options = paintOptions(32);
+    options.maxColors = 3;
+    options.background = BackgroundMode::Keep;
+    auto result = buildPlan(source, options);
+    if (!result) return false;
+    auto const preview = renderPlanFrame(result.plan, 0, 1);
+    bool visible = true;
+    int white = 0;
+    for (int y = 12; y <= 16; ++y) {
+        for (int x = 14; x <= 18; ++x) {
+            if (std::abs(x - 16) > (y == 14 ? 2 : 1)) continue;
+            auto const offset = (static_cast<std::size_t>(y) * result.plan.width + x) * 4;
+            visible = visible && preview[offset + 3] != 0 &&
+                preview[offset] > 220 && preview[offset + 1] > 220 &&
+                preview[offset + 2] > 220;
+            white += preview[offset] > 220 && preview[offset + 1] > 220 &&
+                preview[offset + 2] > 220;
+        }
+    }
+    std::cout << "paint-enclosed: white=" << white << '\n';
+    return visible;
 }
 
 bool paintModeBeatsBlocksOnCurves() {
@@ -1181,6 +1219,14 @@ bool imageWatermarkIsDistributedAndDetectable() {
     applyImageWatermark(gif, 12000);
     auto const gifEvidence = inspectImageWatermark(watermarkPayload(gif, true, true));
 
+    ImportPlan shortStroke;
+    shortStroke.width = 8;
+    shortStroke.height = 8;
+    shortStroke.staticObjects.push_back({
+        4.f, 4.f, 1.5f, 1.f, 30.f, 0, PrimitiveKind::Stroke, 0});
+    applyImageWatermark(shortStroke, 12000);
+    bool const shortStrokeStable = shortStroke.staticObjects.size() == 1;
+
     std::string ordinary;
     for (int i = 0; i < 3; ++i) {
         float const x = 100.f + i * 30.f;
@@ -1212,9 +1258,11 @@ bool imageWatermarkIsDistributedAndDetectable() {
         storedEvidence.detected() &&
         curveEvidence.signedRotationMarks == 1 && curveEvidence.detected() &&
         gifEvidence.detected() && !ordinaryEvidence.detected() && !loneTurn.detected() &&
+        shortStrokeStable &&
         budgetResult && budgetResult.plan.totalObjects <= 100 && budgetEvidence.detected();
     std::cout << "watermark: pairs=" << signedEvidence.geometryPairs
-              << " unsigned=" << geometricEvidence.geometryPairs << '\n';
+              << " unsigned=" << geometricEvidence.geometryPairs
+              << " short-stroke=" << (shortStrokeStable ? "stable" : "split") << '\n';
     return pass;
 }
 
@@ -1497,6 +1545,7 @@ int main() {
     bool const paintSpikes = paintModeLeavesNoSpikes();
     bool const paintDarkLines = paintModeKeepsDarkLineColors();
     bool const paintLayers = paintModeOrdersLayersBackToFront();
+    bool const paintEnclosed = paintModeKeepsEnclosedHighlightsAboveFill();
     bool const paintCurve = paintModeBeatsBlocksOnCurves();
     bool const paintAnimation = paintAnimationStaysInBudget();
     bool const paintSimilarity = paintModeMatchesReferenceImages();
@@ -1544,6 +1593,7 @@ int main() {
     if (!paintSpikes) std::cerr << "FAIL: paint mode left spikes along an antialiased edge\n";
     if (!paintDarkLines) std::cerr << "FAIL: paint palette discarded a dark line color\n";
     if (!paintLayers) std::cerr << "FAIL: paint mode did not order shapes back to front\n";
+    if (!paintEnclosed) std::cerr << "FAIL: paint mode hid an enclosed highlight below its fill\n";
     if (!paintCurve) std::cerr << "FAIL: paint mode did not beat blocks on a curved shape\n";
     if (!paintAnimation) std::cerr << "FAIL: paint animation exceeded the object budget\n";
     if (!paintSimilarity) std::cerr << "FAIL: paint mode fell below 95% visual similarity\n";
@@ -1561,7 +1611,7 @@ int main() {
         paintCoverage && paintStrokes && paintRepairs && paintSolidRect && paintMergedRects &&
         paintDetails && paintRepairRuns &&
         paintJoins && paintSpeckles && paintGaps && paintPinholes && paintSeams &&
-        paintSpikes && paintDarkLines && paintLayers && paintCurve && paintAnimation &&
+        paintSpikes && paintDarkLines && paintLayers && paintEnclosed && paintCurve && paintAnimation &&
         paintSimilarity && paintRotatedBox && circleMode &&
         freeCost && freeStamps && progress && render &&
         renderBalance && renderAnimation ? 0 : 1;

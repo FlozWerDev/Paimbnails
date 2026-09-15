@@ -1,6 +1,6 @@
 #include "OverlayTinter.hpp"
 
-#include "TintMath.hpp"
+#include "../packgen/TintEngine.hpp"
 
 #include <algorithm>
 
@@ -21,32 +21,20 @@ void applyOne(ImageBuffer& dst, ImageBuffer const& overlay,
 
     int W = std::min(dst.width(), overlay.width());
     int H = std::min(dst.height(), overlay.height());
+    if (W <= 0 || H <= 0) return;
 
     auto* d = dst.data();
     auto const* o = overlay.data();
+    if (!d || !o) return;
 
-    for (int y = 0; y < H; ++y) {
-        std::size_t dRow = static_cast<std::size_t>(y) * dst.width();
-        std::size_t oRow = static_cast<std::size_t>(y) * overlay.width();
-        for (int x = 0; x < W; ++x) {
-            std::size_t doff = (dRow + x) * 4;
-            std::size_t ooff = (oRow + x) * 4;
-            std::uint8_t oa = o[ooff + 3];
-            if (oa == 0) continue;
+    auto spec = packgen::PrecomputedTint::make(
+        color.r, color.g, color.b, brightness, saturation, contrast);
+    static const packgen::AlphaLut kLut = packgen::AlphaLut::make();
 
-            std::uint8_t tR, tG, tB;
-            tintmath::tintByLuminance(o[ooff], o[ooff + 1], o[ooff + 2],
-                                      color, brightness, saturation, contrast,
-                                      tR, tG, tB);
-            if (replace) {
-                tintmath::replacePixel(d[doff], d[doff + 1], d[doff + 2], d[doff + 3],
-                                       tR, tG, tB, oa);
-            } else {
-                tintmath::overlayPixel(d[doff], d[doff + 1], d[doff + 2], d[doff + 3],
-                                       tR, tG, tB, oa);
-            }
-        }
-    }
+    // Same top-left overlap rule and float op order as the old loop; the
+    // per-pixel parameter re-clamping is hoisted into `spec`.
+    packgen::applyOverlayBand(d, dst.width(), o, overlay.width(),
+                              0, H, W, spec, kLut, replace);
 }
 
 }  // namespace

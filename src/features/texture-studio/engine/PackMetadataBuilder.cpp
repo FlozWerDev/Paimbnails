@@ -91,7 +91,10 @@ std::string PackMetadataBuilder::buildPackJson(std::string_view packName,
 }
 
 // UI colors.
-// Inspired by PackGen.
+// JSON layout compatible with PackGen by Asterveila (packgenweb.pages.dev,
+// building on ravexcode's TexturePackWeb) so generated packs stay
+// interchangeable; the builder code itself is an independent implementation
+// written from scratch for Paimbnails.
 std::string PackMetadataBuilder::buildUiColorsJson(PackExportConfig const& cfg) {
     auto primary   = cfg.colors.color1;
     auto secondary = cfg.colors.color2;
@@ -160,7 +163,10 @@ std::string PackMetadataBuilder::buildUiColorsJson(PackExportConfig const& cfg) 
 }
 
 // Mods layer json.
-// Inspired by PackGen.
+// JSON layout compatible with PackGen by Asterveila (packgenweb.pages.dev,
+// building on ravexcode's TexturePackWeb) so generated packs stay
+// interchangeable; the builder code itself is an independent implementation
+// written from scratch for Paimbnails.
 std::string PackMetadataBuilder::buildModsLayerJson(PackExportConfig const& cfg) {
     auto frameBg = matjson::Value::object();
     {
@@ -201,7 +207,10 @@ std::string PackMetadataBuilder::buildModsLayerJson(PackExportConfig const& cfg)
 }
 
 // Loading layer json.
-// Inspired by PackGen.
+// JSON layout compatible with PackGen by Asterveila (packgenweb.pages.dev,
+// building on ravexcode's TexturePackWeb) so generated packs stay
+// interchangeable; the builder code itself is an independent implementation
+// written from scratch for Paimbnails.
 std::string PackMetadataBuilder::buildLoadingLayerJson(PackExportConfig const& cfg) {
     auto bgTexture = matjson::Value::object();
     auto attrs = matjson::Value::object();

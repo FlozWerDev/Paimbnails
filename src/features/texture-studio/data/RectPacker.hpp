@@ -29,6 +29,11 @@ struct PackResult {
 struct PackerOptions {
     int gap      = 2;
     int maxWidth = 4096;  // sheet width budget (cocos2d / GL hard limit)
+
+    // Opt-in MaxRects (BSSF) layout: tighter atlases than the default shelf
+    // at the cost of a different frame arrangement. Off by default so
+    // exports stay byte-identical with PackGen's shelf layout.
+    bool bestFit = false;
 };
 
 class RectPacker final {

@@ -3,7 +3,8 @@ param(
     [string] $Mode = 'paint',
     [int] $Dimension = 64,
     [int] $Colors = 16,
-    [int] $Top = 0
+    [int] $Top = 0,
+    [string] $Dump = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,6 +30,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $arguments = @($Images, '--mode', $Mode, '--dim', $Dimension, '--colors', $Colors)
 if ($Top -gt 0) { $arguments += @('--top', $Top) }
+if ($Dump) { $arguments += @('--dump', $Dump) }
 
 & $output @arguments
 exit $LASTEXITCODE

@@ -689,23 +689,30 @@ bool paintModeCurvesUseBlocksNotRotatedSlivers() {
     }
     auto result = buildPlan(source, paintOptions(48));
     if (!result) return false;
-    auto const objects = unmarked(result.plan);
-    // Contar picos: objetos girados mas pequenos que 1.6 celdas.
-    int spikes = 0;
-    for (auto const& object : objects) {
-        float const angle = std::fmod(std::abs(object.rotation), 90.f);
-        if (angle > 5.f && angle < 85.f &&
-            object.width <= 1.6f && object.height <= 1.6f) {
-            ++spikes;
+    auto countSpikes = [](std::vector<Primitive> const& objects) {
+        int spikes = 0;
+        for (auto const& object : objects) {
+            float angle = std::fmod(std::abs(object.rotation), 90.f);
+            angle = std::min(angle, 90.f - angle);
+            if (angle > 5.f && angle < 85.f &&
+                object.width <= 1.6f && object.height <= 1.6f) {
+                ++spikes;
+            }
         }
-    }
-    std::cout << "paint-curve-blocks: spikes=" << spikes
+        return spikes;
+    };
+    int const rawSpikes = countSpikes(result.plan.staticObjects);
+    auto const objects = unmarked(result.plan);
+    // Contar picos: objetos girados mas pequeños que 1.6 celdas.
+    int const spikes = countSpikes(objects);
+    std::cout << "paint-curve-blocks: raw=" << rawSpikes
+              << " spikes=" << spikes
               << " objects=" << objects.size()
               << " review=" << result.plan.similarity << "%\n";
-    // En un arco grueso de 48 celdas se tolera hasta 2 picos: un par de
-    // astillas en el borde exterior no son una regresion visible.
-    if (spikes > 2) std::cerr << "FAIL: paint mode left " << spikes << " spikes on a curve\n";
-    return spikes <= 2 && result.plan.similarity >= 93.f;
+    if (rawSpikes > 0 || spikes > 0) {
+        std::cerr << "FAIL: paint mode left spikes on a curve\n";
+    }
+    return rawSpikes == 0 && spikes == 0 && result.plan.similarity >= 93.f;
 }
 
 // -------------------------------------------------------------------------
@@ -982,7 +989,8 @@ bool paintModeSineWaveCoverage() {
     auto const objects = unmarked(result.plan);
     int spikes = 0;
     for (auto const& object : objects) {
-        float const angle = std::fmod(std::abs(object.rotation), 90.f);
+        float angle = std::fmod(std::abs(object.rotation), 90.f);
+        angle = std::min(angle, 90.f - angle);
         if (angle > 5.f && angle < 85.f &&
             object.width <= 1.6f && object.height <= 1.6f) {
             ++spikes;
@@ -1263,6 +1271,7 @@ bool paintModeMulticolorCurvesNoGaps() {
     constexpr int scale = 8;
     auto const preview = renderPlanFrame(result.plan, 0, scale);
     int holes = 0;
+    std::vector<int> holeCells;
     auto const& cells = result.plan.frames.front().cells;
     for (std::size_t position = 0; position < cells.size(); ++position) {
         if (cells[position] < 0) continue;
@@ -1272,15 +1281,23 @@ bool paintModeMulticolorCurvesNoGaps() {
         std::size_t const pixel =
             (static_cast<std::size_t>(cy * scale + scale / 2) * result.plan.width * scale +
              cx * scale + scale / 2) * 4;
-        if (preview[pixel + 3] == 0) ++holes;
+        if (preview[pixel + 3] == 0) {
+            ++holes;
+            holeCells.push_back(cy * result.plan.width + cx);
+        }
     }
     std::cout << "paint-multicolor-curves: holes=" << holes
               << " objects=" << result.plan.visualObjects
               << " review=" << result.plan.similarity << "%\n";
-    // En un punto donde tres colores se encuentran es normal tener 2-3
-    // celdas sin cubrir en el centro exacto de la celda.
-    if (holes > 4) std::cerr << "FAIL: multicolor curves left " << holes << " center-pixel holes\n";
-    return holes <= 4 && result.plan.similarity >= 90.f;
+    if (!holeCells.empty()) {
+        std::cerr << "FAIL: multicolor curves left " << holes << " center-pixel holes at";
+        for (int position : holeCells) {
+            std::cerr << ' ' << (position % result.plan.width)
+                      << ',' << (position / result.plan.width);
+        }
+        std::cerr << '\n';
+    }
+    return holes == 0 && result.plan.similarity >= 90.f;
 }
 
 // =========================================================================

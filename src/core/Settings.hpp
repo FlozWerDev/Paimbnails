@@ -406,12 +406,6 @@ namespace icon_maker {
     }
 }
 
-namespace icon_gallery {
-    inline bool enabled() {
-        return geode::Mod::get()->getSettingValue<bool>("icon-gallery-enabled");
-    }
-}
-
 namespace cursor {
     inline bool hideInGameplay() {
         return geode::Mod::get()->getSavedValue<bool>("custom-cursor-hide-in-gameplay", true);

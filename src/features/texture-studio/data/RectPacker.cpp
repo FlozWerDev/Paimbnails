@@ -1,9 +1,57 @@
 #include "RectPacker.hpp"
 
+#include "../packgen/MaxRectsPacker.hpp"
+
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace paimon::texture_studio {
+
+namespace {
+
+// Opt-in MaxRects path (PackerOptions::bestFit). Orientation is kept
+// shelf-compatible (no rotation); only the arrangement changes.
+PackResult packBestFit(std::vector<RectPackInput> const& rects,
+                       PackerOptions const& options) {
+    using packgen::MaxRectsPacker;
+    using packgen::PackRect;
+    MaxRectsPacker::Options mopts;
+    mopts.maxSize = std::max(1, options.maxWidth);
+    mopts.padding = std::max(0, options.gap);
+    mopts.allowRotate = false;
+    MaxRectsPacker packer(mopts);
+
+    std::vector<PackRect> in;
+    in.reserve(rects.size());
+    for (std::size_t i = 0; i < rects.size(); ++i) {
+        if (rects[i].width <= 0 || rects[i].height <= 0) continue;
+        PackRect r;
+        r.w = rects[i].width;
+        r.h = rects[i].height;
+        r.id = static_cast<int>(i);
+        in.push_back(r);
+    }
+    auto res = packer.pack(in);
+
+    PackResult out;
+    out.sheetWidth  = res.atlasW;
+    out.sheetHeight = res.atlasH;
+    out.placements.reserve(res.placements.size());
+    for (auto const& p : res.placements) {
+        Placement q;
+        q.id = rects[static_cast<std::size_t>(p.id)].id;
+        q.x = p.x;
+        q.y = p.y;
+        q.w = p.w;
+        q.h = p.h;
+        out.placements.push_back(std::move(q));
+    }
+    return out;
+}
+
+}  // namespace
 
 PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions options) {
     PackResult result;
@@ -11,10 +59,18 @@ PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions opti
         return result;
     }
 
-    std::sort(rects.begin(), rects.end(),
-        [](RectPackInput const& a, RectPackInput const& b) {
-            if (a.height != b.height) return a.height > b.height;
-            return a.id < b.id;
+    if (options.bestFit) {
+        return packBestFit(rects, options);
+    }
+
+    // Sort indices instead of moving the (string-heavy) inputs; the visit
+    // order — and therefore every placement — is unchanged.
+    std::vector<std::size_t> order(rects.size());
+    for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::sort(order.begin(), order.end(),
+        [&rects](std::size_t a, std::size_t b) {
+            if (rects[a].height != rects[b].height) return rects[a].height > rects[b].height;
+            return rects[a].id < rects[b].id;
         });
 
     // Shelf layout matching PackGen.
@@ -32,7 +88,8 @@ PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions opti
 
     auto frameWithGap = [gap](int v) { return v + gap; };
 
-    for (auto const& r : rects) {
+    for (std::size_t oi : order) {
+        auto const& r = rects[oi];
         if (r.width <= 0 || r.height <= 0) {
             continue;
         }

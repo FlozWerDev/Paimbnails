@@ -13,9 +13,10 @@ namespace {
 // asi que no cuesta nada y quita cualquier duda con los bordes.
 constexpr float kSpanSlack = 0.002f;
 
-// Con cuatro muestras por lado se ve cualquier asomo de mas de un cuarto de celda,
-// que es justo lo que se nota en pantalla.
-constexpr int kFitSamples = 4;
+// El preview y la auditoria fina trabajan a 8 muestras por celda. Validar los
+// contornos con solo cuatro dejaba pasar una esquina de hasta un cuarto de celda
+// que luego aparecia como pico al ampliar.
+constexpr int kFitSamples = 8;
 
 } // namespace
 

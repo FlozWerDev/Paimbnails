@@ -1,5 +1,11 @@
 // Notifies on new messages and friend requests.
-// Inspired by BlueToadMaker's Message-Notification mod.
+// Idea inspired by BlueToadMaker's "Message-Notification" mod, available on
+// the Geode mod index (mods.geode-sdk.org).
+// This is an independent implementation written from scratch for Paimbnails:
+// it polls RobTop's own public endpoints (getGJMessages20.php /
+// getGJFriendRequests20.php, the same ones the game client uses) and shows the
+// result through the game's AchievementNotifier. No code was copied from the
+// original mod.
 //
 // Polling timer runs on a background thread (sleep + fire only);
 // GD server requests are dispatched on the main thread via WebHelper,

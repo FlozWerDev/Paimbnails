@@ -83,10 +83,12 @@ struct PackExportConfig {
     bool colorGradientBg  = false;
     bool colorMainMenu    = false;
 
-    // PackGen precision mode: cached hand-drawn masks, with clustering fallback.
+    // Local-extras mode: also export unselected local sheets, with the
+    // clustering fallback (no overlay masks ship locally). The field name is
+    // deprecated but kept so old projects still parse.
     bool usePackGenAssets = true;
 
-    // These options apply only when the asset pack is available.
+    // These options apply only when local extras are enabled.
     bool tintGoldFont       = false;
     bool colorGoldTitles    = false;
     bool colorDemonFaces    = false;
@@ -116,7 +118,7 @@ struct PackExportResult {
     std::vector<SheetExportResult> sheetResults;
     std::string                 packId;
 
-    // Precision-mode result; false means the requested pack was unavailable.
+    // Local-extras result; false means only project sheets were exported.
     bool precisionUsed        = false;
     int  standaloneProcessed  = 0;
     int  standaloneFailed     = 0;

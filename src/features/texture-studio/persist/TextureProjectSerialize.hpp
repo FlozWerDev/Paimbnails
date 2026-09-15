@@ -9,6 +9,10 @@
 
 namespace paimon::texture_studio::serial {
 
+// v2 removed the network base-pack mirror: base sheets are detected locally.
+// v1 projects referenced mirror downloads, so they are refused below.
+inline constexpr int kCurrentSchemaVersion = 2;
+
 inline matjson::Value colorToJson(cocos2d::ccColor3B c) {
     auto arr = matjson::Value::array();
     arr.push(static_cast<int>(c.r));
@@ -208,7 +212,7 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
     static matjson::Value toJson(paimon::texture_studio::TextureProject const& p) {
         using namespace paimon::texture_studio;
         auto obj = matjson::Value::object();
-        obj["schemaVersion"] = p.schemaVersion;
+        obj["schemaVersion"] = serial::kCurrentSchemaVersion;
         obj["id"]            = p.id;
         obj["name"]          = p.name;
         obj["author"]        = p.author;
@@ -275,7 +279,15 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
         matjson::Value const& v) {
         using namespace paimon::texture_studio;
         TextureProject p;
-        p.schemaVersion = static_cast<int>(v["schemaVersion"].asInt().unwrapOr(1));
+        int fileVersion = static_cast<int>(
+            v["schemaVersion"].asInt().unwrapOr(1));
+        if (fileVersion < serial::kCurrentSchemaVersion) {
+            return geode::Err(
+                "This project was made with the old mirror-based Texture Studio "
+                "and can't be opened. Create a new project: base sheets are "
+                "detected locally now, nothing is downloaded.");
+        }
+        p.schemaVersion = fileVersion;
         p.id            = v["id"].asString().unwrapOr("");
         p.name          = v["name"].asString().unwrapOr("");
         p.author        = v["author"].asString().unwrapOr("");
@@ -358,8 +370,11 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
                 }
             }
         }
+        // TintScope::Everything (2) is legacy: it used to paint the whole
+        // game, now it maps to ButtonsAndMenuUi, so clamp stored values to
+        // 0..1 on load.
         p.tintScope = static_cast<TintScope>(std::clamp<std::int64_t>(
-            v["tintScope"].asInt().unwrapOr(0), 0, 2));
+            v["tintScope"].asInt().unwrapOr(0), 0, 1));
 
         p.hasBuiltOnce   = v["hasBuiltOnce"].asBool().unwrapOr(false);
         p.lastBuiltAt    = static_cast<std::int64_t>(v["lastBuiltAt"].asInt().unwrapOr(0));

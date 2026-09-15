@@ -1,6 +1,11 @@
 #pragma once
 // Search history data model and persistence.
-// Inspired by hiimjasmine00's mod.
+// Based on "Search History" by hiimjasmine00
+// (https://github.com/hiimjasmine00/SearchHistory, Geode id
+// hiimjustin000.search_history) under the MIT License.
+// Copyright (c) 2024-2026 hiimjasmine00. See THIRD-PARTY-NOTICES.md.
+// Local port retains the upstream capture/restore logic with Paimbnails
+// UI and persistence.
 
 #include <matjson.hpp>
 #include <cstdint>

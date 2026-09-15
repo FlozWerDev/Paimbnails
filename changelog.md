@@ -335,7 +335,7 @@
 - <cl>Extras del Kit</c>: un solo boton en el garage junta Iconos Copiados, Tienda, Degradados y Kit del P2. No duplica botones: se los pide prestados al garage y se los devuelve al cerrar.
 - <cl>Creador de Iconos</c>: arma tus propios iconos. Pintas cada pieza con color plano, degradado lineal o radial, o una imagen tuya, y el resultado se instala solo en More Icons.
 - <cl>Creador de Iconos</c>: galeria de proyectos, historial de cambios, paletas, editor de degradados con vista previa en vivo y opcion de compartir.
-- <cl>Tienda de Iconos</c>: iconos de la comunidad desde **iconsgallery.pages.dev**, con buscador, filtros y ficha de cada uno.
+- <cr>Tienda de Iconos (eliminada)</c>: la galeria de iconos de la comunidad se quito del mod.
 - <cl>Icon Gradients</c>: degradados de GPU para tus iconos, en garage, partida, menu, perfiles y comentarios. Set aparte para el P2 (o colores volteados), puntos movibles con el teclado y precarga de shaders para evitar tirones.
 - <cl>Separate Dual Icons</c>: el jugador 2 con sus propios iconos, colores, estela y efecto de muerte.
 - <cl>My Icon Sets</c>: el boton de carpeta de Copied Icons guarda tu kit completo (los 9 gamemodes, colores, glow, estela y muerte) con nombre, para volver a ponerlo cuando quieras. Hasta **100** sets.

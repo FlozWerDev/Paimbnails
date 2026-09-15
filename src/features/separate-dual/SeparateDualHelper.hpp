@@ -1,7 +1,11 @@
 #pragma once
 
 // Separate 2nd player's kit from your own.
-// Inspired by Weebify's mod.
+// Idea inspired by Weebify's "Separate Dual Icons" mod, available on the
+// Geode mod index (mods.geode-sdk.org).
+// Independent implementation written from scratch for Paimbnails: kit storage,
+// seeding from GameManager and all hooks below are original code. No code was
+// copied from the original mod.
 
 #include <Geode/Geode.hpp>
 #include "../../core/modules/ModuleRegistry.hpp"

@@ -72,7 +72,7 @@ struct SpriteSetting {
 };
 
 struct TextureProject {
-    int schemaVersion = 1;
+    int schemaVersion = 2;
 
     std::string id;
     std::string name;
@@ -105,7 +105,8 @@ struct TextureProject {
     bool colorGradientBg         = false;
     bool colorMainMenu           = false;
 
-    // PackGen precision-mode options; see PackExportConfig.
+    // Local-extras options; usePackGenAssets is a deprecated name kept so
+    // old projects still parse. See PackExportConfig.
     bool usePackGenAssets   = true;
     bool tintGoldFont       = false;
     bool colorGoldTitles    = false;

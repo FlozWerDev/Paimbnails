@@ -32,7 +32,6 @@
 #include "../../gameplay-performance/ui/GameplayPerformancePopup.hpp"
 #include "../../frame-interp/ui/FrameInterpPopup.hpp"
 #include "../../icon-copy/ui/MyIconSetsPopup.hpp"
-#include "../../icon-gallery/ui/IconStoreLayer.hpp"
 #include "../../icon-maker/ui/IconEditorLayer.hpp"
 #include "../../icon-maker/ui/IconGalleryLayer.hpp"
 #include "../../icon-gradients/ui/GradientLayer.hpp"
@@ -112,12 +111,6 @@ std::function<void(PaimonGuideChatPopup*)> openIconMakerGallery() {
 std::function<void(PaimonGuideChatPopup*)> openIconMakerEditor() {
     return [](PaimonGuideChatPopup*) {
         paimon::icon_maker::IconEditorLayer::open(""); // opens the editor for the current/default slot
-    };
-}
-
-std::function<void(PaimonGuideChatPopup*)> openIconStore() {
-    return [](PaimonGuideChatPopup*) {
-        paimon::icon_gallery::IconStoreLayer::open();
     };
 }
 
@@ -1665,36 +1658,6 @@ void PopupRegistry::registerAll() {
             "<cy>Creador de Iconos!</c> Crea y aplica tus propios iconos con capas, "
             "degradados e imagenes. Se abre desde el garage.";
         e.open = openIconMakerGallery();
-        m_entries.push_back(std::move(e));
-    }
-    {
-        PopupEntry e;
-        e.id = "icon-gallery";
-        e.category = PopupCategory::Visuals;
-        e.weight = 90;
-        e.displayNameByLang["english"] = "Icon Gallery";
-        e.displayNameByLang["spanish"] = "Tienda de Iconos";
-        e.aliasesByLang["english"] = {
-            "icon gallery", "icon store", "icon shop", "download icons",
-            "community icons", "icons gallery"
-        };
-        e.aliasesByLang["spanish"] = {
-            "tienda de iconos", "galeria de iconos", "descargar iconos",
-            "iconos de la comunidad", "icon shop"
-        };
-        e.searchPhrasesByLang["english"] = {
-            "download new icons", "browse community icons", "get more icons"
-        };
-        e.searchPhrasesByLang["spanish"] = {
-            "descargar iconos nuevos", "ver iconos de la comunidad", "conseguir mas iconos"
-        };
-        e.descriptionByLang["english"] =
-            "<cy>Icon Gallery!</c> Download icons made by the community. "
-            "Open from the garage.";
-        e.descriptionByLang["spanish"] =
-            "<cy>Tienda de Iconos!</c> Descarga iconos hechos por la comunidad. "
-            "Se abre desde el garage.";
-        e.open = openIconStore();
         m_entries.push_back(std::move(e));
     }
     {

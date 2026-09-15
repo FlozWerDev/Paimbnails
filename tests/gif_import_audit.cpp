@@ -8,12 +8,13 @@
 //
 //   g++ -std=c++23 -O2 -o audit tests/gif_import_audit.cpp
 //   ./audit <carpeta-o-imagen> [--mode paint|render|art|blocks] [--dim 64]
-//           [--colors 16] [--budget 12000] [--top 8]
+//           [--colors 16] [--budget 12000] [--top 8] [--dump /tmp/previews]
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -47,6 +48,25 @@ namespace {
 // usa la criba del vectorizador, para que lo que aqui salga sobrando sea de
 // verdad algo que la criba dejo pasar y no un desacuerdo de resolucion.
 constexpr int kAuditScale = 8;
+
+void writePreview(
+    fs::path const& path,
+    std::vector<std::uint8_t> const& rgba,
+    int width,
+    int height
+) {
+    std::ofstream file(path, std::ios::binary);
+    if (!file) return;
+    file << "P6\n" << width << ' ' << height << "\n255\n";
+    for (std::size_t index = 0; index + 3 < rgba.size(); index += 4) {
+        // Transparent pixels are exported as black so ImageMagick and simple
+        // viewers can inspect the geometry without needing an alpha-aware UI.
+        auto const alpha = rgba[index + 3] / 255.f;
+        file.put(static_cast<char>(rgba[index] * alpha));
+        file.put(static_cast<char>(rgba[index + 1] * alpha));
+        file.put(static_cast<char>(rgba[index + 2] * alpha));
+    }
+}
 
 struct Loaded {
     SourceAnimation source;
@@ -221,6 +241,7 @@ struct PlanAudit {
     std::size_t dead = 0;
     std::size_t repeats = 0;
     std::size_t slivers = 0;
+    std::size_t rotatedSpikes = 0;
     std::size_t mergeable = 0;
     std::size_t absorbable = 0;
     std::size_t layers = 0;
@@ -367,6 +388,11 @@ PlanAudit audit(
         report.dead += entry.dead;
         report.repeats += entry.repeats;
         report.slivers += entry.sliver;
+        auto const& object = objects[index];
+        float folded = std::fmod(std::abs(object.rotation), 90.f);
+        folded = std::min(folded, 90.f - folded);
+        report.rotatedSpikes += folded > 5.f && folded < 85.f &&
+            object.width <= 1.6f && object.height <= 1.6f;
     }
 
     for (std::size_t i = 0; i < objects.size(); ++i) {
@@ -487,6 +513,7 @@ int main(int argc, char** argv) {
     options.background = BackgroundMode::Keep;
     options.sampling = SamplingMode::Smooth;
     int top = 0;
+    fs::path dumpDir;
 
     for (int i = 2; i + 1 < argc; i += 2) {
         std::string const key = argv[i];
@@ -496,6 +523,7 @@ int main(int argc, char** argv) {
         else if (key == "--colors") options.maxColors = std::stoi(value);
         else if (key == "--budget") options.objectBudget = std::stoi(value);
         else if (key == "--top") top = std::stoi(value);
+        else if (key == "--dump") dumpDir = value;
     }
 
     std::vector<fs::path> inputs;
@@ -519,21 +547,25 @@ int main(int argc, char** argv) {
     std::cout << "modo=" << modeName(options.mode) << " dim=" << options.maxDimension
               << " colores=" << options.maxColors << "\n\n";
     std::cout << std::left << std::setw(24) << "imagen"
-              << std::right << std::setw(8) << "objetos"
-              << std::setw(7) << "marca"
-              << std::setw(8) << "muertos"
-              << std::setw(8) << "repite"
-              << std::setw(8) << "astilla"
-              << std::setw(8) << "fusion"
-              << std::setw(9) << "absorbe"
-              << std::setw(9) << "relleno"
-              << std::setw(7) << "trazo"
-              << std::setw(8) << "parche"
-              << std::setw(7) << "capas"
-              << std::setw(8) << "empate"
-              << std::setw(9) << "invers." << '\n';
+              << std::right << std::setw(9) << "objetos"
+              << std::setw(9) << "calidad"
+              << std::setw(9) << "geometr."
+              << std::setw(8) << "marca"
+              << std::setw(9) << "muertos"
+              << std::setw(9) << "repite"
+              << std::setw(9) << "astilla"
+              << std::setw(8) << "picos"
+              << std::setw(9) << "fusion"
+              << std::setw(10) << "absorbe"
+              << std::setw(10) << "relleno"
+              << std::setw(8) << "trazo"
+              << std::setw(9) << "parche"
+              << std::setw(8) << "capas"
+              << std::setw(9) << "empate"
+              << std::setw(10) << "invers." << '\n';
 
     std::size_t totals[12]{};
+    std::size_t totalSpikes = 0;
     std::size_t kinds[kPrimitiveKinds]{};
     double totalDensity = 0.0;
     int counted = 0;
@@ -552,6 +584,14 @@ int main(int argc, char** argv) {
             continue;
         }
         auto const& plan = result.plan;
+        if (!dumpDir.empty()) {
+            std::error_code error;
+            fs::create_directories(dumpDir, error);
+            auto const preview = renderPlanFrame(plan, 0, 8);
+            writePreview(
+                dumpDir / (input.stem().string() + "_preview.ppm"),
+                preview, plan.width * 8, plan.height * 8);
+        }
 
         std::vector<Primitive> objects = plan.staticObjects;
         for (auto const& track : plan.tracks) {
@@ -589,19 +629,23 @@ int main(int argc, char** argv) {
             : 0.0;
 
         std::cout << std::left << std::setw(24) << input.filename().string()
-                  << std::right << std::setw(8) << before
-                  << std::setw(7) << rejoined
-                  << std::setw(8) << report.dead
-                  << std::setw(8) << report.repeats
-                  << std::setw(8) << report.slivers
-                  << std::setw(8) << report.mergeable
-                  << std::setw(9) << report.absorbable
-                  << std::setw(9) << report.bySublayer[0]
-                  << std::setw(7) << report.bySublayer[1]
-                  << std::setw(8) << report.bySublayer[2]
-                  << std::setw(7) << report.layers
-                  << std::setw(8) << report.ties
-                  << std::setw(9) << report.inversions << '\n';
+                  << std::right << std::setw(9) << before
+                  << std::setw(9) << std::fixed << std::setprecision(1)
+                  << plan.similarity
+                  << std::setw(9) << plan.geometrySimilarity
+                  << std::setw(8) << rejoined
+                  << std::setw(9) << report.dead
+                  << std::setw(9) << report.repeats
+                  << std::setw(9) << report.slivers
+                  << std::setw(8) << report.rotatedSpikes
+                  << std::setw(9) << report.mergeable
+                  << std::setw(10) << report.absorbable
+                  << std::setw(10) << report.bySublayer[0]
+                  << std::setw(8) << report.bySublayer[1]
+                  << std::setw(9) << report.bySublayer[2]
+                  << std::setw(8) << report.layers
+                  << std::setw(9) << report.ties
+                  << std::setw(10) << report.inversions << '\n';
 
         totals[0] += before;
         totals[1] += rejoined;
@@ -615,6 +659,7 @@ int main(int argc, char** argv) {
         totals[9] += report.bySublayer[0];
         totals[10] += report.bySublayer[1];
         totals[11] += report.bySublayer[2];
+        totalSpikes += report.rotatedSpikes;
         for (std::size_t kind = 0; kind < kPrimitiveKinds; ++kind) {
             kinds[kind] += report.byKind[kind];
         }
@@ -655,6 +700,7 @@ int main(int argc, char** argv) {
                   << " muertos=" << totals[2]
                   << " repite=" << totals[3]
                   << " astillas=" << totals[4]
+                  << " picos=" << totalSpikes
                   << " fusionables=" << totals[5]
                   << " absorbibles=" << totals[8]
                   << " empates=" << totals[6]

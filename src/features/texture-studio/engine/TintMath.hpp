@@ -1,5 +1,9 @@
 #pragma once
-// Luminance-based tinting, inspired by PackGen.
+// Luminance-based tinting. The recoloring approach (per-pixel luminance
+// tinting) was pioneered by Asterveila's "PackGen" (packgenweb.pages.dev),
+// building on ravexcode's TexturePackWeb; this header is an independent
+// implementation written from scratch for Paimbnails using the standard
+// Rec.601 luma weights. No code was copied from either project.
 
 #include <Geode/cocos/include/ccTypes.h>
 

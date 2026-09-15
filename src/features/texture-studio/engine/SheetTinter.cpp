@@ -6,6 +6,7 @@
 #include "../data/RectPacker.hpp"
 #include "../data/SpritesheetReader.hpp"
 #include "../persist/FusionStore.hpp"
+#include "../packgen/PackScheduler.hpp"
 #include "ClusterClassifier.hpp"
 #include "ColorClustering.hpp"
 #include "FusionAsset.hpp"
@@ -309,6 +310,83 @@ geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
                        needsReviewCount);
 }
 
+// Phase-2 unit for processRepack: everything a frame needs, plus its
+// outputs. `frameColors` is a copy (12 bytes) so workers never touch the
+// request maps; `tintedDelta`/`reviewDelta` reproduce the exact counter
+// semantics of the old inline loop and are folded in serially afterwards.
+struct RepackJob {
+    SpriteFrameInfo info;
+    ImageBuffer origPixels;
+    ImageBuffer customCanvas;
+    TintColors frameColors;
+    bool hasColorOverride = false;
+    bool tintThisFrame = false;
+    bool useOverlayPath = false;
+    bool imageOverlay = false;
+    ImageBuffer recolored;
+    int tintedDelta = 0;
+    int reviewDelta = 0;
+};
+
+// Pure recolor compute for one frame: no I/O, no logging, no shared state
+// (reads only its job + req, both const alive for the whole call), so jobs
+// run safely on the PackScheduler pool.
+void computeRepackJob(RepackJob& job, SheetTinterRequest const& req) {
+    if (!job.customCanvas.empty() && !job.imageOverlay) {
+        job.recolored = std::move(job.customCanvas);
+        job.tintedDelta = 1;
+    } else if (job.useOverlayPath) {
+        auto const& src = *req.overlaySources;
+        auto crop = [&](ImageBuffer const& sheet) {
+            return sheet.empty()
+                ? ImageBuffer()
+                : SpritesheetReader::extractFrame(sheet, job.info);
+        };
+        OverlayImages ov;
+        ov.overlay1 = crop(src.overlay1);
+        ov.overlay2 = crop(src.overlay2);
+        ov.gold     = crop(src.gold);
+        ov.demon1   = crop(src.demon1);
+        ov.demon2   = crop(src.demon2);
+        ov.glow     = crop(src.glow);
+
+        auto hasInk = [](ImageBuffer const& img) {
+            auto const* p = img.data();
+            for (std::size_t i = 0, n = img.pixelCount(); i < n; ++i) {
+                if (p[i * 4 + 3] != 0) return true;
+            }
+            return false;
+        };
+        bool anyInk = hasInk(ov.overlay1) || hasInk(ov.overlay2)
+                   || hasInk(ov.gold)     || hasInk(ov.demon1)
+                   || hasInk(ov.demon2)   || hasInk(ov.glow);
+
+        if (anyInk && ov.anyUsable(job.origPixels.width(), job.origPixels.height())) {
+            job.recolored = OverlayTinter::apply(job.origPixels, ov, req.colors,
+                                                 makeTintOptions(req));
+            job.tintedDelta = 1;
+        } else {
+            job.recolored = job.origPixels;
+        }
+        if (!job.customCanvas.empty()) {
+            SpritePreviewRenderer::compositeOver(job.recolored, job.customCanvas);
+        }
+    } else if (job.tintThisFrame) {
+        job.recolored = clusterTintFrame(job.origPixels, req, job.frameColors,
+                                         job.reviewDelta);
+        if (!job.customCanvas.empty()) {
+            SpritePreviewRenderer::compositeOver(job.recolored, job.customCanvas);
+        }
+        job.tintedDelta = 1;
+    } else {
+        job.recolored = job.origPixels;
+        if (!job.customCanvas.empty()) {
+            SpritePreviewRenderer::compositeOver(job.recolored, job.customCanvas);
+            job.tintedDelta = 1;
+        }
+    }
+}
+
 // HD port: downscale and re-pack each frame; only the optional half-res copy changes layout.
 geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
                                                ParsedSpritesheet const& parsed,
@@ -323,6 +401,11 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
     };
     std::vector<Tinted> tinted;
     tinted.reserve(parsed.frames.size());
+
+    // Phase 1 (serial, frame order): extract pixels, resolve flags, and do
+    // the custom-canvas file I/O — warnings keep their original order.
+    std::vector<RepackJob> jobs;
+    jobs.reserve(parsed.frames.size());
 
     for (auto const& info : parsed.frames) {
         ImageBuffer origPixels = SpritesheetReader::extractFrame(atlas, info);
@@ -346,72 +429,49 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
         ImageBuffer customCanvas =
             loadCustomCanvas(req, info.name, origPixels.width(), origPixels.height(), imageOverlay);
 
-        ImageBuffer recolored;
-        if (!customCanvas.empty() && !imageOverlay) {
-            recolored = std::move(customCanvas);
-            ++tintedCount;
-        } else if (useOverlayPath) {
-            auto const& src = *req.overlaySources;
-            auto crop = [&](ImageBuffer const& sheet) {
-                return sheet.empty()
-                    ? ImageBuffer()
-                    : SpritesheetReader::extractFrame(sheet, info);
-            };
-            OverlayImages ov;
-            ov.overlay1 = crop(src.overlay1);
-            ov.overlay2 = crop(src.overlay2);
-            ov.gold     = crop(src.gold);
-            ov.demon1   = crop(src.demon1);
-            ov.demon2   = crop(src.demon2);
-            ov.glow     = crop(src.glow);
+        RepackJob job;
+        job.info = info;
+        job.origPixels = std::move(origPixels);
+        job.customCanvas = std::move(customCanvas);
+        job.frameColors = hasColorOverride ? colorsIt->second : req.colors;
+        job.hasColorOverride = hasColorOverride;
+        job.tintThisFrame = tintThisFrame;
+        job.useOverlayPath = useOverlayPath;
+        job.imageOverlay = imageOverlay;
+        jobs.push_back(std::move(job));
+    }
 
-            auto hasInk = [](ImageBuffer const& img) {
-                auto const* p = img.data();
-                for (std::size_t i = 0, n = img.pixelCount(); i < n; ++i) {
-                    if (p[i * 4 + 3] != 0) return true;
-                }
-                return false;
-            };
-            bool anyInk = hasInk(ov.overlay1) || hasInk(ov.overlay2)
-                       || hasInk(ov.gold)     || hasInk(ov.demon1)
-                       || hasInk(ov.demon2)   || hasInk(ov.glow);
+    // Phase 2 (parallel): pure recolor compute. The pool is owned by this
+    // call and joined before return, so Geode unload never strands threads.
+    if (jobs.size() == 1) {
+        computeRepackJob(jobs.front(), req);
+    } else if (!jobs.empty()) {
+        packgen::PackScheduler sched;
+        sched.parallelFor<std::size_t>(0, jobs.size(), [&](std::size_t i) {
+            computeRepackJob(jobs[i], req);
+        });
+    }
 
-            if (anyInk && ov.anyUsable(origPixels.width(), origPixels.height())) {
-                recolored = OverlayTinter::apply(origPixels, ov, req.colors, makeTintOptions(req));
-                ++tintedCount;
-            } else {
-                recolored = origPixels;
-            }
-            if (!customCanvas.empty()) SpritePreviewRenderer::compositeOver(recolored, customCanvas);
-        } else if (tintThisFrame) {
-            TintColors const& frameColors =
-                hasColorOverride ? colorsIt->second : req.colors;
-            recolored = clusterTintFrame(origPixels, req, frameColors, needsReviewCount);
-            if (!customCanvas.empty()) SpritePreviewRenderer::compositeOver(recolored, customCanvas);
-            ++tintedCount;
-        } else {
-            recolored = origPixels;
-            if (!customCanvas.empty()) {
-                SpritePreviewRenderer::compositeOver(recolored, customCanvas);
-                ++tintedCount;
-            }
+    // Phase 3 (serial, frame order): fusion I/O, resize, assemble. Counter
+    // semantics match the old inline loop exactly.
+    for (auto& job : jobs) {
+        if (applyFusionIfAny(req, job.info.name, job.recolored)) {
+            ++job.tintedDelta;
         }
 
-        if (applyFusionIfAny(req, info.name, recolored)) {
-            ++tintedCount;
-        }
-
-        recolored = resizeImage(recolored, req.resizeScale);
+        job.recolored = resizeImage(job.recolored, req.resizeScale);
+        tintedCount += job.tintedDelta;
+        needsReviewCount += job.reviewDelta;
 
         Tinted t;
-        t.name   = info.name;
-        t.info   = info;
+        t.name   = job.info.name;
+        t.info   = job.info;
 
-        int origSourceW = (info.sourceW > 0) ? info.sourceW : info.spriteW;
-        int origSourceH = (info.sourceH > 0) ? info.sourceH : info.spriteH;
+        int origSourceW = (job.info.sourceW > 0) ? job.info.sourceW : job.info.spriteW;
+        int origSourceH = (job.info.sourceH > 0) ? job.info.sourceH : job.info.spriteH;
 
-        t.info.spriteW = recolored.width();
-        t.info.spriteH = recolored.height();
+        t.info.spriteW = job.recolored.width();
+        t.info.spriteH = job.recolored.height();
 
         if (req.resizeScale > 0.0f) {
             t.info.sourceW = std::max(1,
@@ -434,7 +494,7 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
         }
         t.info.rotated = false;
 
-        t.pixels = std::move(recolored);
+        t.pixels = std::move(job.recolored);
         tinted.push_back(std::move(t));
     }
 

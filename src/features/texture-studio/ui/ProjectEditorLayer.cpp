@@ -13,6 +13,7 @@
 #include "../persist/SlotPaths.hpp"
 #include "../persist/SlotStore.hpp"
 #include "../services/FramePixelCache.hpp"
+#include "../services/LocalBasePack.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/ThreadTracker.hpp"
@@ -769,18 +770,13 @@ void ProjectEditorLayer::buildPackTab(CCNode* tab, float w, float h) {
                     PopupManager::get().quickPopup(
                         "Credits",
                         "Texture Studio uses the recoloring approach pioneered by\n"
-                        "<cy>PackGen</c> by <cl>Asterveila</c>:\n"
-                        "  packgenweb.pages.dev\n\n"
+                        "<cy>PackGen</c> by <cl>Asterveila</c> (building on\n"
+                        "ravexcode's TexturePackWeb).\n\n"
+                        "All base sheets are detected locally from your installed\n"
+                        "game and mods — nothing is downloaded.\n\n"
                         "Algorithm: per-pixel <cj>luminance tinting</c> guided by\n"
-                        "alpha-weighted segmentation with edge-aware masks.\n\n"
-                        "Open the PackGen website in your browser?",
-                        "Close", "Open Site",
-                        [](FLAlertLayer*, bool yes) {
-                            if (yes) {
-                                geode::utils::web::openLinkInBrowser(
-                                    "https://packgenweb.pages.dev/");
-                            }
-                        }).showInstant();
+                        "alpha-weighted segmentation with edge-aware masks.",
+                        "Close").showInstant();
                 })) {
             creditsBtn->setPosition({w * 0.72f, y});
             menu->addChild(creditsBtn);
@@ -874,7 +870,7 @@ void ProjectEditorLayer::buildExtraTab(CCNode* tab, float w, float h) {
          [](ProjectEditorLayer* s, bool v) { s->m_project.colorMainMenu = v; }, false},
         {"HD port", m_project.includeMediumPort,
          [](ProjectEditorLayer* s, bool v) { s->m_project.includeMediumPort = v; }, false},
-        {"Precision", m_project.usePackGenAssets,
+        {"Extra sheets", m_project.usePackGenAssets,
          [](ProjectEditorLayer* s, bool v) { s->m_project.usePackGenAssets = v; }, false},
         {"Gold font", m_project.tintGoldFont,
          [](ProjectEditorLayer* s, bool v) { s->m_project.tintGoldFont = v; }, false},
@@ -932,7 +928,9 @@ void ProjectEditorLayer::buildExtraTab(CCNode* tab, float w, float h) {
                                               "bigFont.fnt", "GJ_button_04.png", 0.28f)) {
         if (auto* scopeBtn = CCMenuItemExt::createSpriteExtra(scopeSpr,
                 [this](CCMenuItemSpriteExtra* btn) {
-                    int next = (static_cast<int>(m_project.tintScope) + 1) % 3;
+                    // Only UI scopes: ButtonsOnly (0) and ButtonsAndMenuUi (1).
+                    // Everything (2) is legacy and no longer offered.
+                    int next = (static_cast<int>(m_project.tintScope) + 1) % 2;
                     m_project.tintScope = static_cast<TintScope>(next);
                     if (auto* spr = typeinfo_cast<ButtonSprite*>(btn->getNormalImage())) {
                         spr->setString(scopeLabel(m_project.tintScope));
@@ -2239,6 +2237,18 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
     auto outPath = SlotPaths::outputZipFile(m_project.id);
     setStatus("Generating...");
 
+    // Snapshot already-loaded sheet textures now: the render-texture
+    // roundtrip needs the main thread, and the export thread below prefers
+    // these live pixels over disk files.
+    {
+        std::vector<std::string> pngRels;
+        pngRels.reserve(cfg.sheets.size());
+        for (auto const& s : cfg.sheets) {
+            pngRels.push_back(s.baseName + s.qualitySuffix + ".png");
+        }
+        (void)LocalBasePack::get().captureLoadedSnapshots(pngRels);
+    }
+
     m_generating->store(true, std::memory_order_release);
     setBusy(true);
 
@@ -2257,7 +2267,7 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
             return;
         }
 
-         // Keep packing and encoding off the UI thread; downloads can be large.
+         // Keep packing and encoding off the UI thread.
         auto progressCb = [weakSelf](int idx, int total, std::string const& name) {
             if (paimon::isRuntimeShuttingDown()) return;
             std::string label = name.empty()
@@ -2330,7 +2340,7 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
                     : ""));
             if (!exportRes.precisionNote.empty()) {
                 Notification::create(
-                    "Pack generated with auto-detection (PackGen assets offline).",
+                    "Pack generated without extra sheets (local base scan unavailable).",
                     NotificationIcon::Warning, 4.0f)->show();
             } else if (exportRes.animatedFusionCount > 0) {
                 Notification::create(

@@ -2127,6 +2127,9 @@ BuildResult buildAt(
         if (usesPaintGeometry(context.mode)) {
             prunePaintObjects(chosen.staticObjects, width, height);
             if (matchesGridExactly(context.mode)) {
+                // La primera reparacion puede introducir relleno auxiliar; se
+                // poda a resolucion nativa y luego se repone solo lo que siga
+                // faltando en el preview ampliado.
                 repairPaintSeams(
                     chosen.staticObjects, frames.front().cells, context.ranks,
                     width, height);
@@ -2134,9 +2137,6 @@ BuildResult buildAt(
                 repairPaintSeams(
                     chosen.staticObjects, frames.front().cells, context.ranks,
                     width, height);
-                // La secuencia acababa en parches, asi que los ultimos no pasaban
-                // por ninguna criba y algunos no cambiaban nada del dibujo.
-                prunePaintObjects(chosen.staticObjects, width, height);
             }
         }
     } else {

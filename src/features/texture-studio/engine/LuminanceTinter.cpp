@@ -1,16 +1,11 @@
 #include "LuminanceTinter.hpp"
 
-#include "TintMath.hpp"
+#include "../packgen/TintEngine.hpp"
 
 #include <algorithm>
 #include <cmath>
 
 namespace paimon::texture_studio {
-
-using tintmath::luminance601;
-using tintmath::overlayPixel;
-using tintmath::replacePixel;
-using tintmath::tintByLuminance;
 
 ImageBuffer LuminanceTinter::apply(ImageBuffer const& source,
                                    MaskSet const& masks,
@@ -41,78 +36,44 @@ ImageBuffer LuminanceTinter::apply(ImageBuffer const& source,
     float saturation = std::clamp(options.saturation, 0.0f, 3.0f);
     float contrast   = std::clamp(options.contrast, -1.0f, 1.0f);
 
+    auto const* src = source.data();
     auto* dst = out.data();
+    // Fail soft on malformed buffers (dims set, no pixels); the old loop
+    // would have dereferenced null here.
+    if (!src || !dst) return out;
 
-    for (int y = 0; y < H; ++y) {
-        for (int x = 0; x < W; ++x) {
-            std::size_t pixelOffset = (static_cast<std::size_t>(y) * static_cast<std::size_t>(W) + x) * 4;
-            std::size_t maskOffset  = static_cast<std::size_t>(y) * static_cast<std::size_t>(W) + x;
+    auto maskPtr = [](MaskBuffer const& m, bool has) -> std::uint8_t const* {
+        return has ? m.data.data() : nullptr;
+    };
 
-            std::uint8_t srcA = dst[pixelOffset + 3];
-            if (srcA == 0) continue;
+    using packgen::PrecomputedTint;
+    PrecomputedTint c1 = PrecomputedTint::make(
+        colors.color1.r, colors.color1.g, colors.color1.b,
+        brightness, saturation, contrast);
+    PrecomputedTint c2 = PrecomputedTint::make(
+        colors.color2.r, colors.color2.g, colors.color2.b,
+        brightness, saturation, contrast);
+    PrecomputedTint detail = PrecomputedTint::make(
+        colors.detail.r, colors.detail.g, colors.detail.b,
+        brightness, saturation, contrast);
+    PrecomputedTint glow = PrecomputedTint::make(
+        colors.glow.r, colors.glow.g, colors.glow.b,
+        brightness, saturation, contrast);
 
-            std::uint8_t srcR = dst[pixelOffset + 0];
-            std::uint8_t srcG = dst[pixelOffset + 1];
-            std::uint8_t srcB = dst[pixelOffset + 2];
+    // Shared read-only table; magic-static init is thread-safe.
+    static const packgen::AlphaLut kLut = packgen::AlphaLut::make();
 
-            if (options.darkOutlineThreshold > 0 &&
-                luminance601(srcR, srcG, srcB) <
-                    static_cast<float>(options.darkOutlineThreshold)) {
-                continue;
-            }
-
-            std::uint8_t baseR = srcR, baseG = srcG, baseB = srcB, baseA = srcA;
-
-            if (hasC1) {
-                std::uint8_t mC1 = masks.color1.data[maskOffset];
-                if (mC1 > 0) {
-                    std::uint8_t tR, tG, tB;
-                    tintByLuminance(srcR, srcG, srcB, colors.color1, brightness,
-                                    saturation, contrast, tR, tG, tB);
-                    overlayPixel(baseR, baseG, baseB, baseA, tR, tG, tB, mC1);
-                }
-            }
-
-            if (hasC2) {
-                std::uint8_t mC2 = masks.color2.data[maskOffset];
-                if (mC2 > 0) {
-                    std::uint8_t tR, tG, tB;
-                    tintByLuminance(srcR, srcG, srcB, colors.color2, brightness,
-                                    saturation, contrast, tR, tG, tB);
-                    overlayPixel(baseR, baseG, baseB, baseA, tR, tG, tB, mC2);
-                }
-            }
-
-            if (hasDetail) {
-                std::uint8_t mD = masks.detail.data[maskOffset];
-                if (mD > 0) {
-                    std::uint8_t tR, tG, tB;
-                    tintByLuminance(srcR, srcG, srcB, colors.detail, brightness,
-                                    saturation, contrast, tR, tG, tB);
-                    overlayPixel(baseR, baseG, baseB, baseA, tR, tG, tB, mD);
-                }
-            }
-
-            if (hasGlow) {
-                std::uint8_t mG = masks.glow.data[maskOffset];
-                if (mG > 0) {
-                    std::uint8_t tR, tG, tB;
-                    tintByLuminance(srcR, srcG, srcB, colors.glow, brightness,
-                                    saturation, contrast, tR, tG, tB);
-                    if (options.alternativeGlowOverlay) {
-                        replacePixel(baseR, baseG, baseB, baseA, tR, tG, tB, mG);
-                    } else {
-                        overlayPixel(baseR, baseG, baseB, baseA, tR, tG, tB, mG);
-                    }
-                }
-            }
-
-            dst[pixelOffset + 0] = baseR;
-            dst[pixelOffset + 1] = baseG;
-            dst[pixelOffset + 2] = baseB;
-            dst[pixelOffset + 3] = baseA;
-        }
-    }
+    // Bit-exact with the old per-pixel loop (same float op order, same
+    // clamps): outline and unmasked pixels were already copied verbatim by
+    // the initial copy above, and the kernel only touches masked pixels.
+    packgen::tintStackImage(src, dst, W, H,
+                            maskPtr(masks.color1, hasC1),
+                            maskPtr(masks.color2, hasC2),
+                            maskPtr(masks.detail, hasDetail),
+                            maskPtr(masks.glow, hasGlow),
+                            c1, c2, detail, glow,
+                            hasDetail, options.alternativeGlowOverlay,
+                            options.darkOutlineThreshold, kLut);
 
     return out;
 }

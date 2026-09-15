@@ -1283,6 +1283,185 @@ bool paintModeMulticolorCurvesNoGaps() {
     return holes <= 4 && result.plan.similarity >= 90.f;
 }
 
+// =========================================================================
+//  TESTS DE CODOS EN REDONDO (round joints del modo pintura)
+// =========================================================================
+//
+// Las tiras que giran con angulo se cortan a tope en el vertice y un disco
+// del grosor del trazo tapa el pico de fuera. Sin el disco, la esquina del
+// bisel asoma (hasta medio grosor sobre el vertice); en un giro suave, en
+// cambio, el disco sobresaldria mas que el pico y el codo sigue con bisel.
+
+// Esquina exterior maxima de tiras y discos fuera de la mancha, en celdas.
+float maxPaintSpike(
+    std::vector<Primitive> const& objects,
+    std::vector<std::uint8_t> const& mask,
+    int width,
+    int height
+) {
+    constexpr float pi = 3.14159265358979323846f;
+    auto outside = [&](float x, float y) {
+        int const ix = static_cast<int>(std::floor(x));
+        int const iy = static_cast<int>(std::floor(y));
+        if (ix >= 0 && iy >= 0 && ix < width && iy < height &&
+            mask[static_cast<std::size_t>(iy) * width + ix] != 0) {
+            return 0.f;
+        }
+        float best = 1e9f;
+        for (int cy = 0; cy < height; ++cy) {
+            for (int cx = 0; cx < width; ++cx) {
+                if (mask[static_cast<std::size_t>(cy) * width + cx] == 0) continue;
+                float const dx = x < cx ? cx - x : (x > cx + 1 ? x - (cx + 1) : 0.f);
+                float const dy = y < cy ? cy - y : (y > cy + 1 ? y - (cy + 1) : 0.f);
+                best = std::min(best, std::hypot(dx, dy));
+            }
+        }
+        return best;
+    };
+    float worst = 0.f;
+    for (auto const& object : objects) {
+        if (object.kind == PrimitiveKind::Circle) {
+            for (int s = 0; s < 32; ++s) {
+                float const a = s * 2.f * pi / 32.f;
+                worst = std::max(worst, outside(
+                    object.x + std::cos(a) * object.width * 0.5f,
+                    object.y + std::sin(a) * object.height * 0.5f));
+            }
+            continue;
+        }
+        if (object.kind != PrimitiveKind::Stroke) continue;
+        float const a = object.rotation * pi / 180.f;
+        float const ca = std::cos(a);
+        float const sa = std::sin(a);
+        for (float sx : {-0.5f, 0.5f}) {
+            for (float sy : {-0.5f, 0.5f}) {
+                worst = std::max(worst, outside(
+                    object.x + (ca * object.width * sx - sa * object.height * sy),
+                    object.y + (sa * object.width * sx + ca * object.height * sy)));
+            }
+        }
+    }
+    return worst;
+}
+
+// Celdas de la mancha cuyo centro no tapa ningun objeto.
+int paintMissingCells(
+    std::vector<Primitive> const& objects,
+    std::vector<int> const& positions,
+    int width
+) {
+    int missing = 0;
+    for (int position : positions) {
+        float const x = static_cast<float>(position % width) + 0.5f;
+        float const y = static_cast<float>(position / width) + 0.5f;
+        bool covered = false;
+        for (auto const& object : objects) {
+            if (xformOf(object).contains(x, y)) {
+                covered = true;
+                break;
+            }
+        }
+        missing += !covered;
+    }
+    return missing;
+}
+
+std::vector<Primitive> paintCells(std::vector<int> const& cells, int size) {
+    std::vector<std::uint8_t> empty(
+        static_cast<std::size_t>(size) * size, 1);
+    for (int position : cells) empty[static_cast<std::size_t>(position)] = 0;
+    return vectorizePaint(cells, size, size, 0, 0, {}, empty);
+}
+
+std::vector<std::uint8_t> paintMask(std::vector<int> const& cells, int size) {
+    std::vector<std::uint8_t> mask(static_cast<std::size_t>(size) * size, 0);
+    for (int position : cells) mask[static_cast<std::size_t>(position)] = 1;
+    return mask;
+}
+
+// -------------------------------------------------------------------------
+// 31. Un codo de 90 grados lleva disco y el pico exterior baja de 1 celda
+//     (sin disco pasa de 1.4), sin dejar huecos ni disparar los objetos.
+// -------------------------------------------------------------------------
+bool paintRoundJointCapsElbow() {
+    constexpr int size = 40;
+    std::vector<int> cells;
+    for (int y = 17; y <= 20; ++y) {
+        for (int x = 6; x <= 33; ++x) cells.push_back(y * size + x);
+    }
+    for (int y = 6; y <= 33; ++y) {
+        for (int x = 6; x <= 9; ++x) cells.push_back(y * size + x);
+    }
+    auto const objects = paintCells(cells, size);
+    auto const stats = countPrimitives(objects);
+    float const spike = maxPaintSpike(objects, paintMask(cells, size), size, size);
+    int const missing = paintMissingCells(objects, cells, size);
+    std::cout << "paint-elbow-joint: objects=" << objects.size()
+              << " circles=" << stats.circles
+              << " spike=" << spike << " missing=" << missing << '\n';
+    bool const pass = stats.circles >= 1 && spike < 1.f && missing == 0 &&
+        objects.size() <= 15;
+    if (!pass) std::cerr << "FAIL: elbow did not get a round joint cap\n";
+    return pass;
+}
+
+// -------------------------------------------------------------------------
+// 32. Una curva suave (anillo) no lleva ningun disco: los empalmes de
+//     trazado son continuaciones, no horquillas, y el remate cuadrado las
+//     tapa. Cualquier disco aqui seria bulto sobre la curva.
+// -------------------------------------------------------------------------
+bool paintRoundJointLeavesRingClean() {
+    constexpr int size = 40;
+    std::vector<int> cells;
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            float const d = std::hypot(x + 0.5f - 20.f, y + 0.5f - 20.f);
+            if (d >= 10.f && d <= 14.f) cells.push_back(y * size + x);
+        }
+    }
+    auto const objects = paintCells(cells, size);
+    auto const stats = countPrimitives(objects);
+    float const spike = maxPaintSpike(objects, paintMask(cells, size), size, size);
+    int const missing = paintMissingCells(objects, cells, size);
+    std::cout << "paint-ring-joint: objects=" << objects.size()
+              << " circles=" << stats.circles
+              << " spike=" << spike << " missing=" << missing << '\n';
+    bool const pass = stats.circles == 0 && spike < 0.6f && missing == 0;
+    if (!pass) std::cerr << "FAIL: smooth ring grew joint discs\n";
+    return pass;
+}
+
+// -------------------------------------------------------------------------
+// 33. Un zigzag de codos de 90 pone discos en los codos y el pico maximo
+//     baja, sin dejar huecos. Los empalmes con angulo conocido tambien
+//     licitan aunque el punto sea muy agudo.
+// -------------------------------------------------------------------------
+bool paintRoundJointCoversZigzag() {
+    constexpr int size = 40;
+    std::vector<int> cells;
+    auto bar = [&](int x0, int x1, int y0, int y1) {
+        for (int y = y0; y <= y1; ++y) {
+            for (int x = x0; x <= x1; ++x) cells.push_back(y * size + x);
+        }
+    };
+    bar(6, 9, 22, 33);
+    bar(6, 17, 19, 22);
+    bar(14, 17, 11, 22);
+    bar(14, 25, 11, 14);
+    bar(22, 25, 6, 14);
+    auto const objects = paintCells(cells, size);
+    auto const stats = countPrimitives(objects);
+    float const spike = maxPaintSpike(objects, paintMask(cells, size), size, size);
+    int const missing = paintMissingCells(objects, cells, size);
+    std::cout << "paint-zigzag-joint: objects=" << objects.size()
+              << " circles=" << stats.circles
+              << " spike=" << spike << " missing=" << missing << '\n';
+    bool const pass = stats.circles >= 3 && spike < 1.6f && missing == 0 &&
+        objects.size() <= 30;
+    if (!pass) std::cerr << "FAIL: zigzag elbows did not get round joints\n";
+    return pass;
+}
+
 // -------------------------------------------------------------------------
 // 30. Modo circulos: el tamaño total de objetos debe ser razonable. Un
 //     circulo simple de ~14 celdas de diametro no necesita cientos de
@@ -1356,6 +1535,9 @@ int main() {
     bool const p10 = paintModeSineWaveCoverage();
     bool const p11 = paintModeMulticolorCurvesNoGaps();
     bool const p15 = paintPrunesBoundaryTeeth();
+    bool const p16 = paintRoundJointCapsElbow();
+    bool const p17 = paintRoundJointLeavesRingClean();
+    bool const p18 = paintRoundJointCoversZigzag();
     bool const p14 = paintSeparateDiscsStayRound();
     bool const p13 = paintRepairsKeepLongDiagonal();
     bool const p12 = paintModeSmoothDiamondOverBackground();
@@ -1391,6 +1573,9 @@ int main() {
     if (!p10) std::cerr << "FAIL: paintModeSineWaveCoverage\n";
     if (!p11) std::cerr << "FAIL: paintModeMulticolorCurvesNoGaps\n";
     if (!p15) std::cerr << "FAIL: paintPrunesBoundaryTeeth\n";
+    if (!p16) std::cerr << "FAIL: paintRoundJointCapsElbow\n";
+    if (!p17) std::cerr << "FAIL: paintRoundJointLeavesRingClean\n";
+    if (!p18) std::cerr << "FAIL: paintRoundJointCoversZigzag\n";
     if (!p14) std::cerr << "FAIL: paintSeparateDiscsStayRound\n";
     if (!p13) std::cerr << "FAIL: paintRepairsKeepLongDiagonal\n";
     if (!p12) std::cerr << "FAIL: paintModeSmoothDiamondOverBackground\n";
@@ -1399,6 +1584,6 @@ int main() {
         c01 && c02 && c03 && c04 && c05 && c06 && c07 && c08 && c09 &&
         c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 &&
         p01 && p02 && p03 && p04 && p05 && p06 && p07 && p08 && p09 &&
-        p10 && p11 && p12 && p13 && p14 && p15;
+        p10 && p11 && p12 && p13 && p14 && p15 && p16 && p17 && p18;
     return pass ? 0 : 1;
 }

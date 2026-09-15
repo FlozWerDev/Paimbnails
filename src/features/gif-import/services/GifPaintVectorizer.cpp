@@ -37,6 +37,12 @@ constexpr float kCoveredSpill = 0.35f;
 constexpr float kChainSlenderness = 3.f;
 // Cuanto puede asomar una tira de la cadena fuera de la mancha antes de tirarla.
 constexpr float kChainSpill = 0.06f;
+// Cuanto tiene que asomar el pico del bisel sobre el disco que lo taparia para
+// que el disco valga su objeto. El bisel saca la esquina de fuera hasta medio
+// grosor sobre el vertice y el disco la deja en medio grosor pelao: en un giro
+// suave la diferencia son centesimas de celda y el disco solo anadiria bulto
+// donde antes no habia nada, asi que el codo sigue con bisel.
+constexpr float kRoundJointExcess = 0.5f;
 constexpr float kRepairDiameter = 1.f;
 constexpr float kRoundCapDiameter = 1.8f;
 // A partir de que giro vale la pena cambiar el empaquetado recto por una caja
@@ -422,6 +428,21 @@ float miterExtension(float dot, float thickness, float limit) {
     return std::min(limit, thickness * 0.5f * std::tan(std::acos(dot) * 0.5f));
 }
 
+// Dice si un codo se remata en redondo: las dos tiras se cortan a tope en el
+// vertice y el hueco de fuera lo tapa un disco del grosor del trazo. Solo vale
+// cuando el pico del bisel asoma de verdad sobre lo que el disco taparia: la
+// esquina del bisel cae a medio grosor sobre coseno(mitad del giro) del
+// vertice, y el disco llega a medio grosor pelao. Por debajo de ese liston el
+// disco sobresaldria mas que el pico que viene a quitar.
+bool needsRoundJoint(float dot, float thickness) {
+    if (thickness <= 0.f) return false;
+    float const clamped = std::clamp(dot, -1.f, 1.f);
+    if (clamped >= 1.f) return false;
+    float const cosHalf =
+        std::max(std::cos(std::acos(clamped) * 0.5f), 0.05f);
+    return thickness * 0.5f * (1.f / cosHalf - 1.f) >= kRoundJointExcess;
+}
+
 // El remate redondo solo cabe si es lo bastante grande para que se note y si no
 // tiene que quedar debajo de otro color. Cuando no cabe no se pone nada: el
 // llamante alarga el trazo, porque un cuadrado girado en la punta se ve como un
@@ -536,7 +557,8 @@ void appendBand(
     int layer,
     int sourceWidth,
     int sourceHeight,
-    std::vector<std::uint8_t> const& blocked
+    std::vector<std::uint8_t> const& blocked,
+    std::vector<std::uint8_t> const& permitted
 ) {
     auto const& loop = contour.points;
     if (loop.size() < 2) return;
@@ -574,6 +596,14 @@ void appendBand(
         return true;
     };
 
+    struct BandGeom {
+        float thickness = 1.f;
+        float inwardX = 0.f;
+        float inwardY = 0.f;
+        float offset = 0.f;
+    };
+    std::vector<BandGeom> geoms(segments);
+    std::vector<std::uint8_t> geomValid(segments, 0);
     for (std::size_t i = 0; i < segments; ++i) {
         auto const& segment = measured[i];
         if (segment.length <= 0.05f) continue;
@@ -593,6 +623,151 @@ void appendBand(
         // contorno de fuera y otra por el de dentro.
         float const thickness = std::max(
             inwardThickness(region, midX, midY, inwardX, inwardY, band), 1.f);
+        float const overshoot = std::min(
+            coveredAlong(first, second, inwardX, inwardY)
+                ? kOvershoot : kFreeOvershoot,
+            thickness * 0.35f);
+        geoms[i] = {thickness, inwardX, inwardY, thickness * 0.5f - overshoot};
+        geomValid[i] = 1;
+    }
+
+    // Codos redondos como en la cadena: donde el contorno se dobla de verdad el
+    // vertice lleva un disco y las dos tiras se cortan a tope en el, en vez de
+    // alargar el bisel y sacar la esquina como un pico sobre la curva.
+    std::vector<int> bandStartJoint(segments, -1);
+    std::vector<int> bandEndJoint(segments, -1);
+    std::vector<Primitive> bandDiscs;
+    auto considerBandJoint = [&](std::size_t vertex, std::size_t previous,
+                                 std::size_t next) {
+        if (!geomValid[previous] || !geomValid[next]) return;
+        float const diameter =
+            std::max(geoms[previous].thickness, geoms[next].thickness);
+        // Los giros entre tramos de una o dos celdas son el escalon del pixel,
+        // no una esquina: el inglete corto lo tapa bien y el disco solo
+        // anadiria derrame sobre la curva suave (arco grueso: p03).
+        if (measured[previous].length < 2.f || measured[next].length < 2.f) {
+            return;
+        }
+        float const dot = directionDot(
+            measured[previous].direction, measured[next].direction);
+        if (!needsRoundJoint(dot, diameter)) {
+            return;
+        }
+        auto const& before = geoms[previous];
+        auto const& after = geoms[next];
+        // Si el pico del bisel cae entero sobre lo permitido (este mismo color,
+        // lo que otra capa tapa o el hueco), el inglete no se ve y el disco sobra:
+        // peor aun, cortar las tiras a tope destapa la costura entre piezas del
+        // mismo color (arco grueso: p03). Solo se puja cuando alguna esquina de
+        // fuera del bisel asoma donde se notaria.
+        {
+            float const prevExtent =
+                miterExtension(dot, before.thickness, kBandMiter);
+            float const nextExtent =
+                miterExtension(dot, after.thickness, kBandMiter);
+            float const a0x = loop[vertex].x +
+                before.inwardX * (before.offset - before.thickness * 0.5f);
+            float const a0y = loop[vertex].y +
+                before.inwardY * (before.offset - before.thickness * 0.5f);
+            float const a1x = loop[vertex].x +
+                after.inwardX * (after.offset - after.thickness * 0.5f);
+            float const a1y = loop[vertex].y +
+                after.inwardY * (after.offset - after.thickness * 0.5f);
+            Point const& d0 = measured[previous].direction;
+            Point const& d1 = measured[next].direction;
+            float const c0x = a0x + d0.x * prevExtent;
+            float const c0y = a0y + d0.y * prevExtent;
+            float const c1x = a1x - d1.x * nextExtent;
+            float const c1y = a1y - d1.y * nextExtent;
+            float tipX = (c0x + c1x) * 0.5f;
+            float tipY = (c0y + c1y) * 0.5f;
+            float const cross = d0.x * d1.y - d0.y * d1.x;
+            if (std::abs(cross) >= 1e-4f) {
+                float const s =
+                    ((a1x - a0x) * d1.y - (a1y - a0y) * d1.x) / cross;
+                tipX = a0x + d0.x * s;
+                tipY = a0y + d0.y * s;
+            }
+            auto insidePermitted = [&](float x, float y) {
+                int const cellX =
+                    static_cast<int>(std::floor(x)) + region.offsetX;
+                int const cellY =
+                    static_cast<int>(std::floor(y)) + region.offsetY;
+                // Fuera del lienzo no hay nada que ensuciar.
+                if (cellX < 0 || cellY < 0 || cellX >= sourceWidth ||
+                    cellY >= sourceHeight) {
+                    return true;
+                }
+                if (permitted.size() !=
+                    static_cast<std::size_t>(sourceWidth) * sourceHeight) {
+                    return false;
+                }
+                return permitted[static_cast<std::size_t>(cellY) * sourceWidth +
+                                 cellX] != 0;
+            };
+            if (insidePermitted(c0x, c0y) && insidePermitted(c1x, c1y) &&
+                insidePermitted(tipX, tipY)) {
+                return;
+            }
+        }
+        float inwardX = before.inwardX + after.inwardX;
+        float inwardY = before.inwardY + after.inwardY;
+        float const inwardLength = std::hypot(inwardX, inwardY);
+        float const offset = (before.offset + after.offset) * 0.5f;
+        Point center = loop[vertex];
+        if (inwardLength > 0.01f) {
+            center.x += inwardX / inwardLength * offset;
+            center.y += inwardY / inwardLength * offset;
+        }
+        for (std::size_t index = 0; index < bandDiscs.size(); ++index) {
+            auto const& known = bandDiscs[index];
+            if (std::hypot(
+                    known.x - center.x - static_cast<float>(region.offsetX),
+                    known.y - center.y - static_cast<float>(region.offsetY)) <
+                std::min(known.width, diameter) * 0.5f) {
+                float const grown = std::max(known.width, diameter);
+                bandDiscs[index].width = grown;
+                bandDiscs[index].height = grown;
+                bandEndJoint[previous] = static_cast<int>(index);
+                bandStartJoint[next] = static_cast<int>(index);
+                return;
+            }
+        }
+        Primitive const cap{
+            center.x + static_cast<float>(region.offsetX),
+            center.y + static_cast<float>(region.offsetY),
+            diameter, diameter, 0.f,
+            static_cast<std::uint16_t>(color),
+            PrimitiveKind::Circle, static_cast<std::int16_t>(layer)
+        };
+        if (coversBlocked(cap, sourceWidth, sourceHeight, blocked)) return;
+        if (!fitsPaintBoundary(cap, permitted, sourceWidth, sourceHeight)) return;
+        int const index = static_cast<int>(bandDiscs.size());
+        bandDiscs.push_back(cap);
+        bandEndJoint[previous] = index;
+        bandStartJoint[next] = index;
+    };
+    if (contour.closed) {
+        for (std::size_t vertex = 0; vertex < loop.size(); ++vertex) {
+            considerBandJoint(
+                vertex, (vertex + segments - 1) % segments, vertex % segments);
+        }
+    } else if (loop.size() > 2) {
+        for (std::size_t vertex = 1; vertex + 1 < loop.size(); ++vertex) {
+            considerBandJoint(vertex, vertex - 1, vertex);
+        }
+    }
+
+    for (std::size_t i = 0; i < segments; ++i) {
+        auto const& segment = measured[i];
+        if (segment.length <= 0.05f) continue;
+        auto const& first = loop[i];
+        auto const& second = loop[(i + 1) % loop.size()];
+        float const midX = (first.x + second.x) * 0.5f;
+        float const midY = (first.y + second.y) * 0.5f;
+        float const inwardX = geoms[i].inwardX;
+        float const inwardY = geoms[i].inwardY;
+        float const thickness = geoms[i].thickness;
 
         bool const hasPrevious = contour.closed || i > 0;
         bool const hasNext = contour.closed || i + 1 < segments;
@@ -602,19 +777,19 @@ void appendBand(
         float const endDot = hasNext
             ? directionDot(segment.direction, measured[(i + 1) % segments].direction)
             : 1.f;
-        float const startExtent = hasPrevious
+        float const startExtent = bandStartJoint[i] >= 0
+            ? 0.f
+            : hasPrevious
             ? miterExtension(startDot, thickness, kBandMiter) : thickness * 0.5f;
-        float const endExtent = hasNext
+        float const endExtent = bandEndJoint[i] >= 0
+            ? 0.f
+            : hasNext
             ? miterExtension(endDot, thickness, kBandMiter) : thickness * 0.5f;
 
         float const shift = (endExtent - startExtent) * 0.5f;
         // Pasarse nunca puede llegar a medio grosor: en una linea fina eso dejaria
         // la tira entera fuera de la mancha.
-        float const overshoot = std::min(
-            coveredAlong(first, second, inwardX, inwardY)
-                ? kOvershoot : kFreeOvershoot,
-            thickness * 0.35f);
-        float const offset = thickness * 0.5f - overshoot;
+        float const offset = geoms[i].offset;
         output.push_back({
             midX + segment.direction.x * shift + inwardX * offset +
                 static_cast<float>(region.offsetX),
@@ -629,6 +804,7 @@ void appendBand(
         });
 
     }
+    output.insert(output.end(), bandDiscs.begin(), bandDiscs.end());
 }
 
 // Devuelve false cuando la mancha no es un trazo y no se dibuja nada: el llamante
@@ -847,7 +1023,129 @@ bool appendChain(
         return thickness * 0.5f;
     };
 
-    for (auto const& line : lines) {
+    // Grosor por segmento, con la misma formula de la emision: hace falta antes
+    // de emitir para decidir que codos llevan disco.
+    std::vector<std::vector<float>> thicknessOf(lines.size());
+    for (std::size_t slot = 0; slot < lines.size(); ++slot) {
+        auto const& reduced = lines[slot].points;
+        std::size_t const segments = reduced.size() - 1;
+        thicknessOf[slot].assign(segments, 1.f);
+        for (std::size_t i = 0; i < segments; ++i) {
+            auto const& first = reduced[i];
+            auto const& second = reduced[i + 1];
+            float const midX = (first.x + second.x) * 0.5f;
+            float const midY = (first.y + second.y) * 0.5f;
+            float const local = region.distanceAt(
+                midX - static_cast<float>(region.offsetX),
+                midY - static_cast<float>(region.offsetY));
+            float const thicknessScale = radius <= 1.5f ? 1.f : 0.95f;
+            float const minimumThickness = radius <= 1.5f ? 0.9f : 0.8f;
+            thicknessOf[slot][i] = std::clamp(
+                local * 2.f, nominal * 0.8f,
+                std::max(nominal * thicknessScale, minimumThickness));
+        }
+    }
+
+    // Codos redondos: donde la polilinea se dobla de verdad el vertice lleva un
+    // disco del grosor del trazo y las dos tiras se cortan a tope en el. El
+    // disco solo entra si no tiene que quedar debajo de otro color y si no se
+    // sale de lo permitido, con el mismo liston que las tiras; si no entra, el
+    // codo sigue con bisel como antes.
+    std::vector<std::vector<int>> startJoint(lines.size());
+    std::vector<std::vector<int>> endJoint(lines.size());
+    for (std::size_t slot = 0; slot < lines.size(); ++slot) {
+        std::size_t const segments = lines[slot].points.size() - 1;
+        startJoint[slot].assign(segments, -1);
+        endJoint[slot].assign(segments, -1);
+    }
+    struct JointBid {
+        std::size_t line = 0;
+        std::size_t segment = 0;
+        bool start = false;
+    };
+    std::vector<Point> jointPoints;
+    std::vector<float> jointDiameters;
+    std::vector<std::vector<JointBid>> jointBids;
+    auto bidJoint = [&](Point point, float diameter, std::size_t line,
+                        std::size_t segment, bool start) {
+        for (std::size_t index = 0; index < jointPoints.size(); ++index) {
+            if (pointDistance(jointPoints[index], point) <
+                std::min(jointDiameters[index], diameter) * 0.5f) {
+                jointDiameters[index] = std::max(jointDiameters[index], diameter);
+                jointBids[index].push_back({line, segment, start});
+                return;
+            }
+        }
+        jointPoints.push_back(point);
+        jointDiameters.push_back(diameter);
+        jointBids.push_back({{line, segment, start}});
+    };
+    for (std::size_t slot = 0; slot < lines.size(); ++slot) {
+        auto const& line = lines[slot];
+        auto const& reduced = line.points;
+        std::size_t const segments = reduced.size() - 1;
+        auto const measured = measure(reduced, segments);
+        for (std::size_t vertex = 1; vertex + 1 < reduced.size(); ++vertex) {
+            if (measured[vertex - 1].length <= 0.05f ||
+                measured[vertex].length <= 0.05f) {
+                continue;
+            }
+            float const diameter = std::max(
+                thicknessOf[slot][vertex - 1], thicknessOf[slot][vertex]);
+            if (!needsRoundJoint(
+                    directionDot(
+                        measured[vertex - 1].direction,
+                        measured[vertex].direction),
+                    diameter)) {
+                continue;
+            }
+            bidJoint(reduced[vertex], diameter, slot, vertex - 1, false);
+            bidJoint(reduced[vertex], diameter, slot, vertex, true);
+        }
+        for (int end = 0; end < 2; ++end) {
+            if (!line.joined[static_cast<std::size_t>(end)]) continue;
+            std::size_t const segment = end ? segments - 1 : 0;
+            std::size_t const vertex = end ? reduced.size() - 1 : 0;
+            // Sin angulo conocido no se licita: el empalmador par a par une
+            // con punto real todo cruce con angulo (|det| >= 0.05 deja todo
+            // punto calculado por encima de -0.9987), asi que -1 pelao es el
+            // centinela de continuacion suave y el remate cuadrado de medio
+            // grosor ya la tapa. (Se probo licitar horquillas por grado del
+            // esqueleto: en curvas suaves solo anadia discos sobre escalones
+            // del adelgazado.)
+            float const known =
+                line.jointDot[static_cast<std::size_t>(end)];
+            if (known < -0.999f) continue;
+            if (!needsRoundJoint(known, thicknessOf[slot][segment])) {
+                continue;
+            }
+            bidJoint(
+                reduced[vertex], thicknessOf[slot][segment], slot, segment,
+                end == 0);
+        }
+    }
+    std::vector<std::uint8_t> jointKept(jointPoints.size(), 0);
+    for (std::size_t index = 0; index < jointPoints.size(); ++index) {
+        Primitive const cap{
+            jointPoints[index].x, jointPoints[index].y,
+            jointDiameters[index], jointDiameters[index],
+            0.f, static_cast<std::uint16_t>(color),
+            PrimitiveKind::Circle, static_cast<std::int16_t>(layer)
+        };
+        if (coversBlocked(cap, sourceWidth, sourceHeight, blocked)) continue;
+        if (shapeSpill(cap, permitted, sourceWidth, sourceHeight) > kChainSpill) {
+            continue;
+        }
+        jointKept[index] = 1;
+        for (auto const& bid : jointBids[index]) {
+            (bid.start ? startJoint[bid.line][bid.segment]
+                       : endJoint[bid.line][bid.segment]) =
+                static_cast<int>(index);
+        }
+    }
+
+    for (std::size_t slot = 0; slot < lines.size(); ++slot) {
+        auto const& line = lines[slot];
         auto const& reduced = line.points;
         std::size_t const segments = reduced.size() - 1;
         auto const measured = measure(reduced, segments);
@@ -861,26 +1159,24 @@ bool appendChain(
             // El grosor sale de lo que mide la mancha a lo largo del tramo, no
             // solo en el centro; se toma por lo bajo para no salirse donde se
             // estrecha, pero sin hacer caso al peor mordisco del borde.
-            float const local = region.distanceAt(
-                midX - static_cast<float>(region.offsetX),
-                midY - static_cast<float>(region.offsetY));
-            float const thicknessScale = radius <= 1.5f ? 1.f : 0.95f;
-            float const minimumThickness = radius <= 1.5f ? 0.9f : 0.8f;
-            float const thickness = std::clamp(
-                local * 2.f, nominal * 0.8f,
-                std::max(nominal * thicknessScale, minimumThickness));
-            // Aqui el vertice cae en el centro del trazo, asi que el bisel se
-            // queda dentro de la mancha y puede ir al tope entero: acortarlo
-            // abriria una muesca en mitad de la linea.
+            float const thickness = thicknessOf[slot][i];
+            // En el codo redondo la tira se corta a tope: el disco ya tapa el
+            // hueco de fuera, y alargar el bisel solo sacaria la esquina por
+            // encima del disco. En el tramo recto el bisel sigue al tope, que
+            // ahi si se queda dentro de la mancha.
             float const miter = thickness * 0.5f;
-            float const startExtension = i > 0
+            float const startExtension = startJoint[slot][i] >= 0
+                ? 0.f
+                : i > 0
                 ? miterExtension(
                       directionDot(measured[i - 1].direction, segment.direction),
                       thickness, miter)
                 : line.joined[0]
                     ? miterExtension(line.jointDot[0], thickness, miter)
                     : terminalExtension(first, thickness);
-            float const endExtension = i + 1 < segments
+            float const endExtension = endJoint[slot][i] >= 0
+                ? 0.f
+                : i + 1 < segments
                 ? miterExtension(
                       directionDot(segment.direction, measured[i + 1].direction),
                       thickness, miter)
@@ -899,6 +1195,15 @@ bool appendChain(
                 static_cast<std::int16_t>(layer)
             });
         }
+    }
+    for (std::size_t index = 0; index < jointPoints.size(); ++index) {
+        if (!jointKept[index]) continue;
+        strokes.push_back({
+            jointPoints[index].x, jointPoints[index].y,
+            jointDiameters[index], jointDiameters[index],
+            0.f, static_cast<std::uint16_t>(color),
+            PrimitiveKind::Circle, static_cast<std::int16_t>(layer)
+        });
     }
     if (strokes.empty()) return false;
     // Aqui es donde se comprueba lo de arriba. El grosor sale del adelgazado y
@@ -2728,7 +3033,7 @@ std::vector<Primitive> vectorizePaint(
                 for (auto const& contour : refined) {
                     appendBand(
                         outline, region, contour, band, color, base + 1,
-                        width, height, blocked);
+                        width, height, blocked, permitted);
                 }
                 // Conservar diagonales que solo cruzan esquinas subpixel;
                 // descartar las que invaden el interior del color vecino.

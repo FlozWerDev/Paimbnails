@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <map>
 #include <mutex>
@@ -114,8 +115,17 @@ Options sanitize(Options options, std::size_t frames) {
     options.alphaThreshold = std::clamp(options.alphaThreshold, 1, 254);
     options.backgroundTolerance = std::clamp(options.backgroundTolerance, 0, 120);
     options.pixelSize = std::clamp(options.pixelSize, 1.f, 30.f);
-    if (options.mode != ImportMode::Blocks) {
+    // En pintura se respeta el conmutador Suave/Pixel del popup: el muestreo
+    // por pixel clasifica cada celda por su centro y coloca los bordes en su
+    // sitio real en vez de desplazarlos media celda con el promedio del area.
+    // El defecto sigue en Suave; solo quien elige Pixel en el popup lo recibe.
+    // El dither se fuerza apagado: reparte el error entre celdas vecinas con
+    // Floyd-Steinberg pero por ese camino se pierde el analisis a resolucion
+    // de origen (medido 128/24: parecido 34.57 -> 37.94 y +3% objetos).
+    if (options.mode != ImportMode::Blocks && options.mode != ImportMode::Paint) {
         options.sampling = SamplingMode::Smooth;
+        options.dither = false;
+    } else if (options.mode != ImportMode::Blocks) {
         options.dither = false;
     }
     return options;
@@ -281,8 +291,12 @@ Pixel sampleNearest(
     int height,
     int alphaThreshold
 ) {
-    int const sx = std::min(sourceWidth - 1, (2 * x + 1) * sourceWidth / (2 * width));
-    int const sy = std::min(sourceHeight - 1, (2 * y + 1) * sourceHeight / (2 * height));
+    int const sx = std::min(
+        sourceWidth - 1,
+        static_cast<int>((2 * x + 1) * sourceWidth / (2 * width)));
+    int const sy = std::min(
+        sourceHeight - 1,
+        static_cast<int>((2 * y + 1) * sourceHeight / (2 * height)));
     std::size_t const index = static_cast<std::size_t>(sy) * sourceWidth + sx;
     if (removed[index]) return {};
     auto pixel = sourcePixel(frame, index);
@@ -301,10 +315,14 @@ Pixel sampleArea(
     int height,
     int alphaThreshold
 ) {
-    int const x0 = x * sourceWidth / width;
-    int const x1 = std::max(x0 + 1, ((x + 1) * sourceWidth + width - 1) / width);
-    int const y0 = y * sourceHeight / height;
-    int const y1 = std::max(y0 + 1, ((y + 1) * sourceHeight + height - 1) / height);
+    int const x0 = static_cast<int>(x * sourceWidth / width);
+    int const x1 = std::max(
+        x0 + 1,
+        static_cast<int>(((x + 1) * sourceWidth + width - 1) / width));
+    int const y0 = static_cast<int>(y * sourceHeight / height);
+    int const y1 = std::max(
+        y0 + 1,
+        static_cast<int>(((y + 1) * sourceHeight + height - 1) / height));
 
     std::uint64_t sumA = 0;
     std::uint64_t sumR = 0;
@@ -2523,8 +2541,36 @@ BuildResult buildPlan(
                 : (validStamp(3) && validStamp(4) && validStamp(5) && validStamp(6)))
             : (validStamp(1) && validStamp(2)));
         if (!valid) {
+            // Degradado: la biblioteca ya trae nativos o repuesto analitico, asi
+            // que aqui solo se llega sin toolbox (vacia) o sin ni uno ni otro.
+            std::string missing;
+            auto const flag = [&](std::size_t index, char const* label) {
+                if (!validStamp(index)) {
+                    if (!missing.empty()) missing += ", ";
+                    missing += label;
+                }
+            };
+            if (options.softStamps.size() != 7) {
+                missing = "biblioteca vacia (toolbox no disponible)";
+            } else if (options.mode == ImportMode::Blur) {
+                if (options.softStamps[0].objectId > 0) flag(0, "0/radial");
+                else {
+                    flag(3, "3/cuarto-sup-izq"); flag(4, "4/cuarto-sup-der");
+                    flag(5, "5/cuarto-inf-der"); flag(6, "6/cuarto-inf-izq");
+                }
+            } else {
+                flag(1, "1/rampa-desc"); flag(2, "2/rampa-asc");
+            }
+            char detail[256];
+            std::snprintf(detail, sizeof(detail),
+                " (errores nativos radial=%.4f vertical=%.4f cuartos=%.4f; "
+                "ver 'Native soft shapes' en el log)",
+                options.softMatchErrors[0], options.softMatchErrors[1],
+                options.softMatchErrors[2]);
             finishProgress(progress);
-            return {{}, "No se encontro el glow o gradiente nativo en los recursos de GD."};
+            return {{}, "No se encontro ni glow/gradiente nativo ni repuesto para el modo " +
+                std::string(options.mode == ImportMode::Blur ? "Blur" : "Vert") +
+                ": faltan " + missing + detail};
         }
     }
     int frameLimit = std::min(options.maxFrames, static_cast<int>(source.frames.size()));

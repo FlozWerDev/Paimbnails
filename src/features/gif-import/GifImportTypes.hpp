@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -121,17 +122,21 @@ struct PlanStamp {
     float offsetY = 0.f;
     float rotation = 0.f;
     bool flipX = false;
+    // Moldes de repuesto generados por codigo (gaussiana/rampa analitica) porque
+    // no habia glow nativo: se emiten con el mismo blending y opacidad que los
+    // nativos, pero el halo lo aproxima el blending y no la textura del objeto.
+    bool analyticFallback = false;
     StampMask mask;
 };
 
 struct Options {
     // Pintura necesita una rejilla mas fina para conservar ojos, remates y
-    // diagonales del original. 96 sigue dentro del presupuesto normal y deja
+    // diagonales del original. 128 sigue dentro del presupuesto normal y deja
     // que el usuario baje la resolucion cuando priorice velocidad.
-    int maxDimension = 96;
+    int maxDimension = 128;
     int minDimension = 6;
-    int maxColors = 16;
-    int maxFrames = 60;
+    int maxColors = 24;
+    int maxFrames = 90;
     int objectBudget = 12000;
     int alphaThreshold = 96;
     int backgroundTolerance = 28;
@@ -147,6 +152,10 @@ struct Options {
     bool softBackdrop = true;
     // Snapshot of native alpha masks, prepared on the GL thread.
     std::vector<PlanStamp> softStamps;
+    // Best native match errors (radial, vertical, quarter) from the last
+    // buildSoftStampLibrary() run. Only used to explain a soft-mode failure;
+    // see the 'Native soft shapes' log line for the live values.
+    std::array<double, 3> softMatchErrors{1.0, 1.0, 1.0};
 };
 
 inline bool usesSoftGeometry(ImportMode mode) {

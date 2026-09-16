@@ -27,6 +27,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 using namespace geode::prelude;
@@ -289,6 +290,38 @@ bool resolveShapes(LevelEditorLayer* editor, ImportMode mode, ShapeTable& shapes
     return true;
 }
 
+// La pasada relajada de la biblioteca acepta decoracion sin exigir tinte, asi
+// que se verifica aqui: el blending sale del canal de color (toda la paleta
+// suave es glow con glowPaletteStart=0) y vale igual para nativos y repuesto,
+// pero un objeto que no acepta tinte pintaria su color original.
+void verifySoftStamps(LevelEditorLayer* editor, ImportPlan const& plan) {
+    if (!usesSoftGeometry(plan.mode) || plan.stamps.empty()) return;
+    if (plan.glowPaletteStart != 0) {
+        log::warn("[GifImport] Soft mode without glow palette start; blending may be off.");
+    }
+    std::unordered_set<int> seen;
+    for (auto const& stamp : plan.stamps) {
+        if (stamp.objectId <= 0 || !seen.insert(stamp.objectId).second) continue;
+        auto* probe = editor->createObject(stamp.objectId, {-10000.f, -10000.f}, true);
+        if (!probe) {
+            log::warn("[GifImport] Soft stamp {} no longer spawns; import may show gaps.",
+                stamp.objectId);
+            continue;
+        }
+        bool const tintable =
+            probe->m_isSolidColorBlock || probe->canChangeMainColor();
+        if (!tintable) {
+            log::warn("[GifImport] Soft stamp {} ignores tint; its cells keep the editor color.",
+                stamp.objectId);
+        }
+        if (stamp.analyticFallback) {
+            log::info("[GifImport] Fallback stamp {} emits with blending at glowOpacity {}.",
+                stamp.objectId, plan.glowOpacity);
+        }
+        editor->removeObject(probe, true);
+    }
+}
+
 Result<PreparedImport> prepareImport(
     EditorUI* ui,
     ImportPlan const& plan,
@@ -324,6 +357,7 @@ Result<PreparedImport> prepareImport(
     if (!resolveShapes(editor, plan.mode, shapes)) {
         return Err("Esta version de GD no expone las figuras de color esperadas.");
     }
+    verifySoftStamps(editor, plan);
 
     auto channels = freeColorChannels(effects, plan.palette.size());
     if (channels.size() != plan.palette.size()) {

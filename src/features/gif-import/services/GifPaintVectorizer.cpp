@@ -16,7 +16,12 @@ namespace paimon::gifimport {
 namespace {
 
 constexpr float kBandWidth = 3.f;
-constexpr float kBandMiter = 0.6f;
+// Punta maxima del inglete de banda por lado, en celdas. Barrido con banco
+// (11 imagenes) + conteo de picos: 0.6->0.3->0.15 mejora geometria y baja
+// picos en todas; 0.0 sube un poco la rejilla pero devuelve +10 picos (las
+// juntas sin extension dejan celdas que vuelven como tiras de reparo).
+// Punto de operacion: 0.15.
+constexpr float kBandMiter = 0.15f;
 constexpr float kOvershoot = 0.72f;
 constexpr float kFreeOvershoot = 0.2f;
 constexpr float kSmoothTolerance = 0.9f;
@@ -42,6 +47,14 @@ constexpr float kCoveredSpill = 0.35f;
 constexpr float kChainSlenderness = 3.f;
 // Cuanto puede asomar una tira de la cadena fuera de la mancha antes de tirarla.
 constexpr float kChainSpill = 0.06f;
+// Tope del borrado final de cadena (proporcion de area fuera de mancha+orla).
+// El 6% global diluye la punta del bisel en tiras largas (poca area frente al
+// total) y la perdona; lo que cae aqui lo recogen los parches (rectangulos
+// rectos, sin escalera). Barrido 0.06->0.03->0.015->0.007->0.0 con banco:
+// la geometria sube monotona y los objetos no se mueven; los picos tocan
+// minimo en 0.007 (0.0 devuelve +3: alguna junta sin nada vuelve como reparo).
+// Solo este borrado: kChainSpill sigue valiendo para disco, orla y borde.
+constexpr float kChainEraseSpill = 0.007f;
 // Cuanto tiene que asomar el pico del bisel sobre el disco que lo taparia para
 // que el disco valga su objeto. El bisel saca la esquina de fuera hasta medio
 // grosor sobre el vertice y el disco la deja en medio grosor pelao: en un giro
@@ -71,7 +84,11 @@ constexpr float kExposedCapGap = 0.65f;
 // girada. Por debajo de siete grados las dos pintan casi lo mismo y la recta gana:
 // su borde cae en la rejilla y ademas se funde con los rectangulos de al lado.
 constexpr float kBoxTilt = 0.12f;
-constexpr int kRepairReach = 8;
+// Alcance maximo buscando pareja para tiras de reparo, en celdas. Barrido
+// con banco (11 imagenes): 8->5->4 baja picos y sube geometria en todas;
+// 3 rompe paint-details (pierde cobertura en diagonales de 2 celdas) aunque
+// el banco mejore. Punto de operacion: 4.
+constexpr int kRepairReach = 4;
 constexpr int kPadding = 2;
 // Cuanto hueco puede tragarse la caja comun de dos rectangulos que se funden,
 // contado sobre lo que los dos ya ocupaban. Aunque el hueco sea invisible, una
@@ -1369,7 +1386,7 @@ bool appendChain(
         [&](Primitive const& stroke) {
             return shapeFarSpill(
                        stroke, permitted, nearMask, sourceWidth, sourceHeight) >
-                kChainSpill;
+                kChainEraseSpill;
         }), strokes.end());
     if (strokes.empty()) return false;
     output.insert(output.end(), strokes.begin(), strokes.end());
@@ -2763,7 +2780,10 @@ std::vector<int> normalizePaintSpikes(
     std::vector<std::uint8_t> const& blocked,
     std::vector<std::uint8_t> const& permitted
 ) {
-    constexpr float kMaxSpikeSide = 1.6f;
+    // Barrido 960 evaluaciones sobre 8 imagenes de Descargas (side x angle x
+    // diaMin): side=3.0 quita 240 picos con 0.00 de perdida de rejilla en
+    // todas; side=4.0 quita 308 a cambio de +0.42. Punto de operacion: 3.0.
+    constexpr float kMaxSpikeSide = 3.0f;
     constexpr float kStraightAngle = 7.f;
     std::vector<int> repairs;
     std::vector<Primitive> normalized;

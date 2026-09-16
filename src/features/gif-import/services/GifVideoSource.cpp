@@ -21,8 +21,9 @@ namespace paimon::gifimport {
 namespace {
 
 // El importador nunca pasa de 320 celdas de lado, asi que traer el video a mas
-// resolucion solo gasta memoria: sesenta capturas de un 1080p son medio giga.
-constexpr int kMaxVideoSide = 512;
+// resolucion solo gasta memoria: sesenta capturas de un 1080p a 768 de lado
+// son unos 80 MB. 768 conserva el borde fino sin pedir el 1080p entero.
+constexpr int kMaxVideoSide = 768;
 constexpr auto kStallTimeout = std::chrono::seconds(12);
 
 std::string extensionOf(std::filesystem::path const& path) {

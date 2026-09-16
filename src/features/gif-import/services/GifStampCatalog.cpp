@@ -173,6 +173,63 @@ std::vector<CatalogEntry> builtinStampCatalog() {
     return entries;
 }
 
+StampMask analyticRadialGlowMask() {
+    StampMask mask;
+    mask.width = kStampMaskSide;
+    mask.height = kStampMaskSide;
+    mask.coverage.assign(
+        static_cast<std::size_t>(kStampMaskSide) * kStampMaskSide, 0);
+    float const falloff = 1.f - std::exp(-4.f);
+    for (int y = 0; y < kStampMaskSide; ++y) {
+        for (int x = 0; x < kStampMaskSide; ++x) {
+            float const u = (x + 0.5f) / kStampMaskSide;
+            float const v = (y + 0.5f) / kStampMaskSide;
+            float const radius2 = 4.f * ((u - 0.5f) * (u - 0.5f) +
+                (v - 0.5f) * (v - 0.5f));
+            float const alpha = std::max(0.f,
+                (std::exp(-4.f * radius2) - std::exp(-4.f)) / falloff);
+            mask.coverage[static_cast<std::size_t>(y) * kStampMaskSide + x] =
+                static_cast<std::uint8_t>(std::lround(alpha * 255.f));
+        }
+    }
+    return mask;
+}
+
+StampMask analyticVerticalGradientMask() {
+    StampMask mask;
+    mask.width = kStampMaskSide;
+    mask.height = kStampMaskSide;
+    mask.coverage.assign(
+        static_cast<std::size_t>(kStampMaskSide) * kStampMaskSide, 0);
+    for (int y = 0; y < kStampMaskSide; ++y) {
+        for (int x = 0; x < kStampMaskSide; ++x) {
+            float const v = (y + 0.5f) / kStampMaskSide;
+            mask.coverage[static_cast<std::size_t>(y) * kStampMaskSide + x] =
+                static_cast<std::uint8_t>(std::lround((1.f - v) * 255.f));
+        }
+    }
+    return mask;
+}
+
+StampMask analyticQuarterGlowMask() {
+    StampMask mask;
+    mask.width = kStampMaskSide;
+    mask.height = kStampMaskSide;
+    mask.coverage.assign(
+        static_cast<std::size_t>(kStampMaskSide) * kStampMaskSide, 0);
+    for (int y = 0; y < kStampMaskSide; ++y) {
+        for (int x = 0; x < kStampMaskSide; ++x) {
+            float const u = (x + 0.5f) / kStampMaskSide;
+            float const v = (y + 0.5f) / kStampMaskSide;
+            float const alpha = std::pow(std::max(0.f, 1.f -
+                std::sqrt((1.f - u) * (1.f - u) + (1.f - v) * (1.f - v))), 1.3f);
+            mask.coverage[static_cast<std::size_t>(y) * kStampMaskSide + x] =
+                static_cast<std::uint8_t>(std::lround(alpha * 255.f));
+        }
+    }
+    return mask;
+}
+
 void setStampCatalog(std::vector<CatalogEntry> entries) {
     g_fromGame = !entries.empty();
     g_variants = buildVariants(g_fromGame ? entries : builtinStampCatalog());

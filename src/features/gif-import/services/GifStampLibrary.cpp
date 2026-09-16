@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 using namespace geode::prelude;
@@ -29,6 +30,13 @@ constexpr unsigned char kAlphaFloor = 96;
 // Por debajo de esto el objeto es un contorno o una chispa: como molde solo sabe
 // dejar huecos, y el trazado de pintura ya cubre ese tamano mejor.
 constexpr float kMinCoverage = 0.12f;
+// Umbrales de aceptacion directa por forma (radial, vertical, cuartos). Por
+// encima el mejor sigue quedando como degradado antes que el repuesto.
+constexpr std::array<double, 3> kSoftThresholds{0.05, 0.08, 0.08};
+// Repuesto determinista: circulo con blending como glow, bloque solo si el
+// circulo no existe en esta version de GD.
+constexpr int kFallbackGlowCircle = 3637;
+constexpr int kFallbackBlock = 211;
 
 bool g_ready = false;
 
@@ -45,10 +53,15 @@ struct Pending {
     CCSize content{30.f, 30.f};
 };
 
-bool usableObject(GameObject* object) {
+bool usableObject(GameObject* object, bool strict = true) {
     if (!object) return false;
     if (object->m_objectType != GameObjectType::Decoration) return false;
-    if (!object->m_isSolidColorBlock && !object->canChangeMainColor()) return false;
+    // En la pasada de repuesto el tinte no filtra: un nativo parecido aunque no
+    // acepte color sigue dibujando mejor que el repuesto, y el emisor avisa si
+    // el tinte no entra.
+    if (strict && !object->m_isSolidColorBlock && !object->canChangeMainColor()) {
+        return false;
+    }
     auto const size = object->getContentSize();
     return size.width > 4.f && size.height > 4.f &&
         size.width < 512.f && size.height < 512.f;
@@ -158,31 +171,49 @@ void drawBatch(
 
 } // namespace
 
-std::vector<PlanStamp> buildSoftStampLibrary() {
-    static std::vector<PlanStamp> cached;
-    if (!cached.empty()) return cached;
+SoftStampLibrary buildSoftStampLibrary() {
+    static SoftStampLibrary cached;
+    if (!cached.stamps.empty()) return cached;
+    SoftStampLibrary library;
     auto* toolbox = ObjectToolbox::sharedState();
-    if (!toolbox) return {};
+    if (!toolbox) return library;
     constexpr int side = 32;
-    std::vector<PlanStamp> best(7);
-    std::array<double, 3> errors{0.012, 0.025, 0.025};
-    // The bindings expose the runtime key/frame map, not a fixed glow ID.
-    // Match the actual alpha field, including texture packs and sprite quality.
-    for (auto const& [id, name] : toolbox->m_allKeys) {
-        std::string const frameName(name.c_str());
-        if (frameName.find("light") == std::string::npos &&
-            frameName.find("glow") == std::string::npos &&
-            frameName.find("gradient") == std::string::npos &&
-            frameName.find("particle") == std::string::npos) continue;
+    library.stamps.assign(7, PlanStamp{});
+    auto& best = library.stamps;
+    auto& errors = library.errors;
+    std::array<double, 3> accepted{kSoftThresholds[0], kSoftThresholds[1], kSoftThresholds[2]};
+    struct Overall {
+        double score = 1.0;
+        int id = 0;
+        int quarter = 0;
+        StampMask mask;
+        CCSize content{30.f, 30.f};
+    };
+    std::array<Overall, 3> overall;
+
+    auto install = [&](int kind, int id, int quarter, StampMask mask, CCSize content) {
+        auto& stamp = best[kind == 2 ? 3 : kind];
+        stamp.objectId = id;
+        stamp.baseWidth = quarter % 2 ? content.height : content.width;
+        stamp.baseHeight = quarter % 2 ? content.width : content.height;
+        stamp.rotation = quarter * 90.f;
+        stamp.mask = std::move(mask);
+    };
+
+    // Puntua un objeto contra las tres formas ideales. Devuelve si llego a
+    // medirse: el tinte no cambia el alfa, asi que lo estricto solo decide si el
+    // objeto se considera, no como sale su molde.
+    auto scanObject = [&](int id, bool relaxed) {
         BatchPool const pool;
         auto* object = GameObject::createWithKey(id);
-        if (!usableObject(object)) continue;
+        if (!usableObject(object, !relaxed)) return false;
         auto* frame = object->displayFrame();
-        if (!frame) continue;
+        if (!frame) return false;
         auto* sprite = CCSprite::createWithSpriteFrame(frame);
         auto* canvas = CCRenderTexture::create(side, side, kCCTexture2DPixelFormat_RGBA8888);
-        if (!sprite || !canvas) continue;
+        if (!sprite || !canvas) return false;
         auto const size = sprite->getContentSize();
+        if (size.width < 1.f || size.height < 1.f) return false;
         sprite->setScaleX(side / size.width);
         sprite->setScaleY(side / size.height);
         sprite->setPosition({side * 0.5f, side * 0.5f});
@@ -191,10 +222,10 @@ std::vector<PlanStamp> buildSoftStampLibrary() {
         sprite->visit();
         canvas->end();
         auto* image = canvas->newCCImage(true);
-        if (!image) continue;
+        if (!image) return false;
         if (!image->getData() || image->getWidth() < side || image->getHeight() < side) {
             image->release();
-            continue;
+            return false;
         }
         StampMask original{side, side, std::vector<std::uint8_t>(side * side)};
         for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
@@ -202,6 +233,7 @@ std::vector<PlanStamp> buildSoftStampLibrary() {
                 (y * image->getWidth() + x) * 4 + 3];
         }
         image->release();
+        auto const content = object->getContentSize();
         for (int quarter = 0; quarter < 4; ++quarter) {
             StampMask mask = original;
             for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
@@ -229,17 +261,51 @@ std::vector<PlanStamp> buildSoftStampLibrary() {
             std::array<double, 3> const scores{
                 radialError / (side * side), verticalError / (side * side), quarterError / (side * side)};
             for (int kind = 0; kind < 3; ++kind) {
-                if (scores[kind] >= errors[kind]) continue;
-                errors[kind] = scores[kind];
-                auto& stamp = best[kind == 2 ? 3 : kind];
-                stamp.objectId = id;
-                auto const content = object->getContentSize();
-                stamp.baseWidth = quarter % 2 ? content.height : content.width;
-                stamp.baseHeight = quarter % 2 ? content.width : content.height;
-                stamp.rotation = quarter * 90.f;
-                stamp.mask = mask;
+                if (scores[kind] < errors[kind]) errors[kind] = scores[kind];
+                if (scores[kind] < overall[kind].score) {
+                    overall[kind] = {scores[kind], id, quarter, mask, content};
+                }
+                if (scores[kind] >= accepted[kind]) continue;
+                accepted[kind] = scores[kind];
+                install(kind, id, quarter, mask, content);
             }
         }
+        return true;
+    };
+
+    auto nameMatches = [](std::string const& frameName) {
+        // The bindings expose the runtime key/frame map, not a fixed glow ID.
+        // Match the actual alpha field, including texture packs and sprite quality.
+        return frameName.find("light") != std::string::npos ||
+            frameName.find("glow") != std::string::npos ||
+            frameName.find("gradient") != std::string::npos ||
+            frameName.find("particle") != std::string::npos;
+    };
+    std::unordered_set<int> considered;
+    for (auto const& [id, name] : toolbox->m_allKeys) {
+        std::string const frameName(name.c_str());
+        if (!nameMatches(frameName)) continue;
+        if (scanObject(id, false)) considered.insert(id);
+    }
+    bool const found =
+        best[0].objectId || best[1].objectId || best[3].objectId;
+    // Segunda pasada exhaustiva sobre TODA la decoracion si el filtro no
+    // encontro nada: el nombre del frame no es fiable entre packs de texturas
+    // y versiones de GD, y el tinte ya no filtra aqui.
+    if (!found) {
+        for (auto const& [id, name] : toolbox->m_allKeys) {
+            (void)name;
+            if (considered.count(id)) continue;
+            scanObject(id, true);
+        }
+    }
+    // El mejor se queda aunque supere el umbral, como degradado: un nativo
+    // parecido sigue dibujando mejor que el repuesto analitico.
+    for (int kind = 0; kind < 3; ++kind) {
+        int const slot = kind == 2 ? 3 : kind;
+        if (best[slot].objectId || !overall[kind].id) continue;
+        install(kind, overall[kind].id, overall[kind].quarter,
+            std::move(overall[kind].mask), overall[kind].content);
     }
     if (best[1].objectId) {
         best[2] = best[1];
@@ -261,11 +327,79 @@ std::vector<PlanStamp> buildSoftStampLibrary() {
             stamp.mask.coverage[y * side + x] = best[3].mask.coverage[sy * side + sx];
         }
     }
-    log::info("[GifImport] Native soft shapes: round={} ({}), vert={} ({}), quarter={} ({})",
-        best[0].objectId, errors[0], best[1].objectId, errors[1], best[3].objectId, errors[2]);
-    // Retry if resources were not ready when the popup first opened.
-    if ((best[0].objectId || best[3].objectId) && best[1].objectId) cached = best;
-    return best;
+    // Repuesto determinista con IDs fijos del editor cuando siga sin haber
+    // nativo. El circulo con blending hace de glow y el bloque solo entra si el
+    // circulo no existe en esta version de GD. La mascara analitica manda en el
+    // trazado y en el preview; en el nivel el halo lo aproxima el blending a
+    // glowOpacity, igual que los nativos.
+    //
+    // Alternativa futura sin bloquear el import: el Gradient trigger nativo
+    // (ID 2903, GradientTriggerObject en GeometryDash.bro + SetupGradientPopup)
+    // pintaria el degradado vertical de verdad en vez de aproximarlo con
+    // stamps. Hoy el import solo suelta decoracion y triggers de animacion,
+    // asi que el trigger queda documentado para cuando Vert quiera usarlo.
+    {
+        int fallbackId = 0;
+        CCSize fallbackSize{50.f, 50.f};
+        for (int candidate : {kFallbackGlowCircle, kFallbackBlock}) {
+            BatchPool const pool;
+            auto* object = GameObject::createWithKey(candidate);
+            auto* frame = object ? object->displayFrame() : nullptr;
+            if (!frame) continue;
+            fallbackId = candidate;
+            auto const size = object->getContentSize();
+            fallbackSize = size.width > 4.f && size.width < 512.f &&
+                    size.height > 4.f && size.height < 512.f
+                ? size
+                : (candidate == kFallbackGlowCircle ? CCSize{50.f, 50.f}
+                                                   : CCSize{30.f, 30.f});
+            break;
+        }
+        if (fallbackId) {
+            auto makeFallback = [&](int slot, StampMask mask, float rotation) {
+                auto& stamp = best[slot];
+                if (stamp.objectId) return;
+                stamp.objectId = fallbackId;
+                bool const swapped =
+                    std::abs(std::fmod(std::abs(rotation), 180.f) - 90.f) < 0.5f;
+                stamp.baseWidth = swapped ? fallbackSize.height : fallbackSize.width;
+                stamp.baseHeight = swapped ? fallbackSize.width : fallbackSize.height;
+                stamp.rotation = rotation;
+                stamp.analyticFallback = true;
+                stamp.mask = std::move(mask);
+            };
+            makeFallback(0, analyticRadialGlowMask(), 0.f);
+            auto ramp = analyticVerticalGradientMask();
+            auto mirrored = ramp;
+            std::reverse(mirrored.coverage.begin(), mirrored.coverage.end());
+            makeFallback(1, std::move(ramp), 0.f);
+            makeFallback(2, std::move(mirrored), 180.f);
+            auto quarter = analyticQuarterGlowMask();
+            for (int q = 0; q < 4; ++q) {
+                StampMask rotated{side, side, std::vector<std::uint8_t>(side * side)};
+                for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
+                    int sx = x, sy = y;
+                    if (q == 1) { sx = y; sy = side - 1 - x; }
+                    if (q == 2) { sx = side - 1 - x; sy = side - 1 - y; }
+                    if (q == 3) { sx = side - 1 - y; sy = x; }
+                    rotated.coverage[y * side + x] = quarter.coverage[sy * side + sx];
+                }
+                makeFallback(3 + q, std::move(rotated), q * 90.f);
+            }
+        }
+    }
+    bool fallbackUsed = false;
+    for (auto const& stamp : best) fallbackUsed = fallbackUsed || stamp.analyticFallback;
+    log::info("[GifImport] Native soft shapes: round={} ({}), vert={} ({}), quarter={} ({}){}",
+        best[0].objectId, errors[0], best[1].objectId, errors[1], best[3].objectId, errors[2],
+        fallbackUsed ? " +repuesto analitico" : "");
+    // Se cachea solo si quedo completa (nativos + repuesto): si GL o el
+    // toolbox aun no estaban listos se reintenta en el proximo procesado,
+    // como antes.
+    bool complete = best.size() == 7;
+    for (auto const& stamp : best) complete = complete && stamp.objectId > 0;
+    if (complete) cached = library;
+    return library;
 }
 
 bool stampLibraryReady() {

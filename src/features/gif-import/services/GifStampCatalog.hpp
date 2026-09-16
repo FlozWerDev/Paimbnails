@@ -39,6 +39,14 @@ void setStampCatalog(std::vector<CatalogEntry> entries);
 std::vector<StampVariant> const& stampVariants();
 bool hasStampCatalog();
 
+// Repuestos analiticos para la biblioteca suave (Blur/Vert) cuando GD no expone
+// glow o gradiente nativo. Usan las mismas formulas que el ajuste de
+// buildSoftStampLibrary: gaussiana radial normalizada, rampa 1-v y caida de
+// esquina, en celdas de kStampMaskSide.
+StampMask analyticRadialGlowMask();
+StampMask analyticVerticalGradientMask();
+StampMask analyticQuarterGlowMask();
+
 // Las cuatro figuras de siempre, para cuando el juego todavia no ha mirado su
 // biblioteca: asi el modo libre nunca se queda sin nada que soltar.
 std::vector<CatalogEntry> builtinStampCatalog();

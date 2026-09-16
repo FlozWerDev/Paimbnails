@@ -268,10 +268,10 @@ bool GifImportPopup::init() {
 
 void GifImportPopup::loadOptions() {
     auto* mod = Mod::get();
-    m_options.maxDimension = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-resolution", 96));
-    m_options.maxColors = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-colors", 16));
+    m_options.maxDimension = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-resolution", 128));
+    m_options.maxColors = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-colors", 24));
     m_options.objectBudget = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-budget", 12000));
-    m_options.maxFrames = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-frames", 60));
+    m_options.maxFrames = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-frames", 90));
     m_options.pixelSize = static_cast<float>(mod->getSavedValue<double>("gif-import-pixel-size", 6.0));
     m_options.background = mod->getSavedValue<bool>("gif-import-remove-bg", true)
         ? BackgroundMode::AutoBorder : BackgroundMode::Keep;
@@ -458,7 +458,9 @@ void GifImportPopup::loadVideo(std::filesystem::path const& path) {
     bool const started = paimon::ThreadTracker::get().spawn([state, path, frames] {
         geode::utils::thread::setName("Paimon GIF Video Decode");
         LoadedSource loaded{path, nullptr, {}};
-        loaded.source = decodeVideo(path, frames, loaded.error);
+        // Con limite real el muestreo usa marcas acumuladas (sin deriva a 50fps)
+        // y los videos largos fallan con mensaje en vez de salir a 2fps.
+        loaded.source = decodeVideo(path, frames, loaded.error, 30.0);
         if (!loaded.source) loaded.source = std::make_shared<SourceAnimation>();
         std::lock_guard lock(state->mutex);
         state->result = std::move(loaded);
@@ -516,7 +518,11 @@ void GifImportPopup::startProcess() {
     if (m_options.mode == ImportMode::Free && !stampLibraryReady()) buildStampLibrary();
     // La reduccion toca GL, asi que se hace aqui y no dentro del hilo. Se guarda
     // porque cambiar colores o presupuesto no cambia la resolucion de trabajo.
-    if (usesSoftGeometry(m_options.mode)) m_options.softStamps = buildSoftStampLibrary();
+    if (usesSoftGeometry(m_options.mode)) {
+        auto library = buildSoftStampLibrary();
+        m_options.softStamps = std::move(library.stamps);
+        m_options.softMatchErrors = library.errors;
+    }
     float const blur = m_options.mode == ImportMode::Blur ? m_options.blurRadius : 0.f;
     if (!m_scaled || m_scaledFor != m_options.maxDimension || m_scaledBlur != blur) {
         m_scaled = prescaleSource(m_source, m_options.maxDimension, blur);
@@ -608,6 +614,14 @@ void GifImportPopup::refreshControls() {
 
     if (!m_plan || m_processing) return;
     m_statsLabel->setColor({135, 230, 170});
+    // El fps sale de los delays reales tras diezmar/fusionar: si un video largo
+    // reparte 30 s en 90 frames, aqui se lee ~3fps y no hay que adivinarlo.
+    double fps = 0.0;
+    if (m_plan->frames.size() > 1) {
+        double totalMs = 0.0;
+        for (auto const& frame : m_plan->frames) totalMs += std::max(frame.delayMs, 1);
+        if (totalMs > 0.0) fps = m_plan->frames.size() * 1000.0 / totalMs;
+    }
     std::string review;
     if (m_plan->mode == ImportMode::Render) {
         review = fmt::format(
@@ -627,9 +641,11 @@ void GifImportPopup::refreshControls() {
                              m_plan->moveTriggers, m_plan->motionTracks.size());
     }
     m_statsLabel->setString(fmt::format(
-        "{}x{} | {} frames | {} colores | {}{}\n"
+        "{}x{} | {} frames{} | {} colores | {}{}\n"
         "{} formas ({} blq, {} traz, {} circ, {} tri{}) + {} triggers = {}{}",
-        m_plan->width, m_plan->height, m_plan->frames.size(), m_plan->palette.size(),
+        m_plan->width, m_plan->height, m_plan->frames.size(),
+        fps > 0.0 ? fmt::format(" ({:.1f} fps)", fps) : "",
+        m_plan->palette.size(),
         m_plan->strategy, review,
         m_plan->visualObjects, m_plan->blockObjects, m_plan->strokeObjects,
         m_plan->circleObjects, m_plan->triangleObjects, extra,
@@ -754,7 +770,11 @@ void GifImportPopup::runBackground() {
     auto const winSize = CCDirector::get()->getWinSize();
     CCPoint const workspaceCenter{winSize.width * 0.5f, winSize.height * 0.4f};
     auto const center = editor->m_objectLayer->convertToNodeSpace(workspaceCenter);
-    if (usesSoftGeometry(m_options.mode)) m_options.softStamps = buildSoftStampLibrary();
+    if (usesSoftGeometry(m_options.mode)) {
+        auto library = buildSoftStampLibrary();
+        m_options.softStamps = std::move(library.stamps);
+        m_options.softMatchErrors = library.errors;
+    }
     float const blur = m_options.mode == ImportMode::Blur ? m_options.blurRadius : 0.f;
     if (!m_scaled || m_scaledFor != m_options.maxDimension || m_scaledBlur != blur) {
         m_scaled = prescaleSource(m_source, m_options.maxDimension, blur);

@@ -44,6 +44,11 @@ struct SpritePreviewResult {
     SpritePreviewStats stats;
 };
 
+struct MaskBuildResult {
+    MaskSet masks;
+    SpritePreviewStats stats;
+};
+
 class SpritePreviewRenderer final {
 public:
     static ImageBuffer renderTinted(ImageBuffer const& framePixels,
@@ -52,6 +57,16 @@ public:
     static SpritePreviewResult renderTintedWithStats(
         ImageBuffer const& framePixels,
         SpritePreviewOptions const& options);
+
+    // Segmentation without the tint: same clustering + masks + coverage as
+    // renderTintedWithStats, so the GPU preview and the CPU bake agree on
+    // which pixel belongs to which role.
+    static MaskBuildResult renderMasks(ImageBuffer const& framePixels,
+                                       SpritePreviewOptions const& options);
+
+    // Packs role weights into RGBA (R=C1 G=C2 B=detail A=glow) for GPU
+    // upload; empty when no mask carries dimensions.
+    static ImageBuffer renderRoleMask(MaskSet const& masks);
 
     // Composites the user image into a frameW×frameH canvas honoring the
     // transform (fit mode, scale, offset, rotation, opacity, flips) with

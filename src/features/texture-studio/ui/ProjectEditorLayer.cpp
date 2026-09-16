@@ -7,6 +7,8 @@
 #include "../engine/PackExporter.hpp"
 #include "../engine/SelfTest.hpp"
 #include "../engine/AutoTuner.hpp"
+#include "../engine/TintPreviewSprite.hpp"
+#include "../packgen/ContentHash.hpp"
 #include "../data/PlistParser.hpp"
 #include "../data/SpritesheetReader.hpp"
 #include "../persist/FusionStore.hpp"
@@ -16,6 +18,7 @@
 #include "../services/LocalBasePack.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/FileDialog.hpp"
+#include "../../../utils/GLSLLoader.hpp"
 #include "../../../utils/ThreadTracker.hpp"
 #include "ParamSliderRow.hpp"
 
@@ -2007,11 +2010,72 @@ void ProjectEditorLayer::startSelectionPixelLoad() {
 }
 
 void ProjectEditorLayer::refreshPreviewTint() {
+    // Color/grade-only edit while the GPU card is current: push uniforms now,
+    // no worker, no debounce. Anything else falls through to the slow path.
+    if (m_gpuAttached && m_resultSpr && m_previewPixels && !m_previewPixels->empty()
+        && m_previewPixels == m_gpuPixels) {
+        SpriteSetting setting = currentSetting();
+        bool globalWouldTint = !m_hasSelection ||
+            UiSpriteCatalog::shouldTint(m_selected.kind, m_project.tintScope);
+        if (gpuPreviewWanted(setting, globalWouldTint) &&
+            maskFingerprint(makePreviewOptions()) == m_gpuMaskFp) {
+            applyGpuTintParams(setting);
+            return;
+        }
+    }
     this->unschedule(schedule_selector(ProjectEditorLayer::renderPreviewAfterDelay));
     if (m_previewPixels && !m_previewPixels->empty()) {
         this->scheduleOnce(
             schedule_selector(ProjectEditorLayer::renderPreviewAfterDelay), 0.1f);
     }
+}
+
+bool ProjectEditorLayer::gpuPreviewWanted(SpriteSetting const& setting,
+                                           bool globalWouldTint) const {
+    if (paimon::shaders::getTintPreviewShader() == nullptr) return false;
+    if (!m_hasSelection) return globalWouldTint;
+    if (setting.skip) return false;
+    bool wantImage = setting.hasCustomImage &&
+                     m_customImage && !m_customImage->empty();
+    if (wantImage && !setting.imageOverlay) return false;
+    if (!setting.useCustomColors && !globalWouldTint) return false;
+    if (wantImage && setting.imageOverlay) return false;
+    if (setting.hasFusion && m_fusionMask && !m_fusionMask->empty() &&
+        m_fusionAsset && !m_fusionAsset->empty()) return false;
+    return true;
+}
+
+void ProjectEditorLayer::applyGpuTintParams(SpriteSetting const& setting) {
+    auto* node = static_cast<TintPreviewSprite*>(m_resultSpr);
+    if (!node) return;
+    SpritePreviewOptions opts = makePreviewOptions();
+    TintColors colors = opts.colors;
+    if (m_hasSelection && setting.useCustomColors) {
+        colors.color1 = setting.color1;
+        colors.color2 = setting.color2;
+        colors.glow   = setting.colorGlow;
+        colors.detail = setting.colorDetail;
+    }
+    node->setTint(colors, opts.brightness, opts.saturation, opts.contrast,
+                  opts.alternativeGlowOverlay, m_gpuHasDetail,
+                  opts.outlineProtect);
+}
+
+std::uint64_t ProjectEditorLayer::maskFingerprint(SpritePreviewOptions const& opts) {
+    std::uint64_t h = packgen::kFnvOffsetBasis;
+    h = packgen::hashCombine(h, static_cast<std::uint64_t>(opts.clusterPrecision));
+    h = packgen::hashFloat(opts.maskSoftness, h);
+    h = packgen::hashCombine(h, static_cast<std::uint64_t>(opts.edgeCleanup));
+    return h;
+}
+
+namespace {
+struct GpuPreviewPayload {
+    SpritePreviewStats stats;
+    ImageBuffer base;
+    ImageBuffer mask;
+    bool hasDetail = false;
+};
 }
 
 void ProjectEditorLayer::renderPreviewAfterDelay(float) {
@@ -2036,13 +2100,74 @@ void ProjectEditorLayer::renderPreviewAfterDelay(float) {
         globalWouldTint = UiSpriteCatalog::shouldTint(m_selected.kind, m_project.tintScope);
     }
 
+    TintColors effColors = opts.colors;
+    if (hasSelection && setting.useCustomColors) {
+        effColors.color1 = setting.color1;
+        effColors.color2 = setting.color2;
+        effColors.glow   = setting.colorGlow;
+        effColors.detail = setting.colorDetail;
+    }
+    bool wantGpu = gpuPreviewWanted(setting, globalWouldTint);
+    std::uint64_t maskFp = maskFingerprint(opts);
+
     WeakRef<ProjectEditorLayer> weakSelf(this);
     paimon::ThreadTracker::get().spawn(
         [weakSelf, renderGeneration, closed, generation, pixels, customImg,
          frameInfo, opts, setting, hasSelection, globalWouldTint,
-         fusionMask, fusionAsset, fusionFrame, fusionOpts]() {
+         fusionMask, fusionAsset, fusionFrame, fusionOpts,
+         wantGpu, effColors, maskFp]() {
         if (paimon::isRuntimeShuttingDown() ||
             closed->load(std::memory_order_acquire)) return;
+
+        if (wantGpu) {
+            auto built = SpritePreviewRenderer::renderMasks(*pixels, opts);
+            auto packed = SpritePreviewRenderer::renderRoleMask(built.masks);
+            auto payload = std::make_shared<GpuPreviewPayload>();
+            payload->stats = built.stats;
+            payload->base = SpritesheetReader::composeLogicalFrame(*pixels, frameInfo);
+            if (!packed.empty()) {
+                payload->mask = SpritesheetReader::composeLogicalFrame(packed, frameInfo);
+            }
+            // Same white-detail rule as LuminanceTinter::apply.
+            payload->hasDetail =
+                !(effColors.detail.r == 255 && effColors.detail.g == 255 &&
+                  effColors.detail.b == 255) &&
+                built.masks.detail.width == pixels->width() &&
+                built.masks.detail.height == pixels->height() &&
+                !built.masks.detail.data.empty();
+            Loader::get()->queueInMainThread(
+                [weakSelf, renderGeneration, closed, generation,
+                 payload, effColors, opts, pixels, maskFp]() {
+                if (paimon::isRuntimeShuttingDown() ||
+                    closed->load(std::memory_order_acquire) ||
+                    renderGeneration->load(std::memory_order_acquire) != generation) {
+                    return;
+                }
+                auto self = weakSelf.lock();
+                if (!self || !self->getParent()) return;
+                auto* baseTex = SpritePreviewRenderer::createTexture(payload->base);
+                auto* maskTex = SpritePreviewRenderer::createTexture(payload->mask);
+                auto* node = (baseTex && maskTex)
+                    ? TintPreviewSprite::create(baseTex, maskTex) : nullptr;
+                if (!node) return;
+                node->setTint(effColors, opts.brightness, opts.saturation,
+                              opts.contrast, opts.alternativeGlowOverlay,
+                              payload->hasDetail, opts.outlineProtect);
+                self->setResultSprite(node);
+                self->m_gpuAttached = true;
+                self->m_gpuMaskFp = maskFp;
+                self->m_gpuPixels = pixels;
+                self->m_gpuHasDetail = payload->hasDetail;
+                if (self->m_coverageLbl) {
+                    auto const& s = payload->stats;
+                    self->m_coverageLbl->setString(fmt::format(
+                        "C1 {:.0f}%  C2 {:.0f}%  Glow {:.0f}%{}",
+                        s.color1Coverage * 100.f, s.color2Coverage * 100.f,
+                        s.glowCoverage * 100.f, s.needsReview ? "  !" : "").c_str());
+                }
+            });
+            return;
+        }
 
         SpritePreviewResult preview;
         bool tinted = false;
@@ -2106,6 +2231,7 @@ void ProjectEditorLayer::renderPreviewAfterDelay(float) {
             if (auto* spr = SpritePreviewRenderer::createSprite(result->image)) {
                 self->setResultSprite(spr);
             }
+            self->m_gpuAttached = false;
             if (self->m_coverageLbl) {
                 if (fused) {
                     self->m_coverageLbl->setString(setting.fusionAnimated

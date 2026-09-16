@@ -13,6 +13,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -73,6 +74,16 @@ protected:
     void setOriginalSprite(cocos2d::CCSprite* spr);
     void setResultSprite(cocos2d::CCSprite* spr);
 
+    // True when the result can be a GPU-tinted node: plain global/custom
+    // tint with the shader available. Custom images, fusions and skips keep
+    // the CPU compose path.
+    bool gpuPreviewWanted(SpriteSetting const& setting,
+                          bool globalWouldTint) const;
+    // Pushes the current colors/grades to the live GPU node; no re-upload.
+    void applyGpuTintParams(SpriteSetting const& setting);
+    // Identity of the segmentation inputs; color/grade changes keep it.
+    static std::uint64_t maskFingerprint(SpritePreviewOptions const& opts);
+
     SpriteSetting currentSetting() const;
     void storeSetting(SpriteSetting const& s);
     void refreshSpriteTabUi();
@@ -126,6 +137,13 @@ private:
     std::shared_ptr<ImageBuffer> m_previewPixels;
     std::shared_ptr<ImageBuffer> m_customImage;
     SpriteFrameInfo m_previewFrameInfo;
+
+    // GPU live preview: base pixels and mask identity currently on the card.
+    // Color-only edits hit the uniforms fast path while both still match.
+    std::shared_ptr<ImageBuffer> m_gpuPixels;
+    std::uint64_t m_gpuMaskFp = 0;
+    bool m_gpuAttached = false;
+    bool m_gpuHasDetail = false;
 
     std::shared_ptr<FusionAsset> m_fusionAsset;
     std::shared_ptr<MaskBuffer>  m_fusionMask;

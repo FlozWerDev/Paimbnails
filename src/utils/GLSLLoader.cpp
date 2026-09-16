@@ -353,4 +353,14 @@ CCGLProgram* getGifBlurShader() {
     return loadShader("paimon-gif-blur-v1", "cell_vertex.glsl", "gif_blur.glsl", nullptr, nullptr);
 }
 
+CCGLProgram* getTintPreviewShader() {
+    return loadShader(
+        "paimon-tint-preview-v1",
+        "cell_vertex.glsl",
+        "tint_preview.glsl",
+        nullptr,
+        nullptr
+    );
+}
+
 } // namespace paimon::shaders

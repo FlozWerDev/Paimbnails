@@ -23,6 +23,26 @@ SpritePreviewResult SpritePreviewRenderer::renderTintedWithStats(
     SpritePreviewResult result;
     if (framePixels.empty()) return result;
 
+    auto built = renderMasks(framePixels, options);
+
+    TinterOptions topts;
+    topts.brightness             = options.brightness;
+    topts.alternativeGlowOverlay = options.alternativeGlowOverlay;
+    topts.darkOutlineThreshold   = std::clamp(options.outlineProtect, 0, 255);
+    topts.saturation             = options.saturation;
+    topts.contrast               = options.contrast;
+    result.image = LuminanceTinter::apply(framePixels, built.masks, options.colors, topts);
+    result.stats = built.stats;
+    return result;
+}
+
+MaskBuildResult SpritePreviewRenderer::renderMasks(
+    ImageBuffer const& framePixels,
+    SpritePreviewOptions const& options) {
+
+    MaskBuildResult result;
+    if (framePixels.empty()) return result;
+
     ClusteringOptions copts;
     copts.k = std::clamp(options.clusterPrecision, 2, 10);
     auto clusters   = ColorClustering::compute(framePixels, copts);
@@ -31,15 +51,7 @@ SpritePreviewResult SpritePreviewRenderer::renderTintedWithStats(
     MaskBuilderOptions mopts;
     mopts.softness   = options.maskSoftness;
     mopts.edgeRefine = std::clamp(options.edgeCleanup, 0, 4);
-    auto masks = MaskBuilder::build(framePixels, classified, mopts);
-
-    TinterOptions topts;
-    topts.brightness             = options.brightness;
-    topts.alternativeGlowOverlay = options.alternativeGlowOverlay;
-    topts.darkOutlineThreshold   = std::clamp(options.outlineProtect, 0, 255);
-    topts.saturation             = options.saturation;
-    topts.contrast               = options.contrast;
-    result.image = LuminanceTinter::apply(framePixels, masks, options.colors, topts);
+    result.masks = MaskBuilder::build(framePixels, classified, mopts);
     result.stats.needsReview = classified.needsReview;
 
     std::size_t visiblePixels = 0;
@@ -54,16 +66,43 @@ SpritePreviewResult SpritePreviewRenderer::renderTintedWithStats(
         for (auto value : mask.data) weighted += static_cast<double>(value) / 255.0;
         return static_cast<float>(weighted / static_cast<double>(visiblePixels));
     };
-    result.stats.color1Coverage = coverage(masks.color1);
-    result.stats.color2Coverage = coverage(masks.color2);
-    result.stats.glowCoverage = coverage(masks.glow);
-    result.stats.outlineCoverage = coverage(masks.outline);
+    result.stats.color1Coverage = coverage(result.masks.color1);
+    result.stats.color2Coverage = coverage(result.masks.color2);
+    result.stats.glowCoverage = coverage(result.masks.glow);
+    result.stats.outlineCoverage = coverage(result.masks.outline);
 
     // Flag tiny Color1 coverage for review even when the classifier was confident.
     if (visiblePixels > 0 && result.stats.color1Coverage < 0.01f) {
         result.stats.needsReview = true;
     }
     return result;
+}
+
+ImageBuffer SpritePreviewRenderer::renderRoleMask(MaskSet const& masks) {
+    MaskBuffer const* roles[4] = {
+        &masks.color1, &masks.color2, &masks.detail, &masks.glow};
+    int W = 0, H = 0;
+    for (auto const* role : roles) {
+        if (!role->data.empty() && role->width > 0 && role->height > 0) {
+            W = role->width;
+            H = role->height;
+            break;
+        }
+    }
+    if (W <= 0 || H <= 0) return ImageBuffer();
+
+    ImageBuffer packed(W, H);
+    auto* dst = packed.data();
+    std::size_t n = static_cast<std::size_t>(W) * static_cast<std::size_t>(H);
+    for (int ch = 0; ch < 4; ++ch) {
+        auto const* role = roles[ch];
+        bool matches = role->width == W && role->height == H && !role->data.empty();
+        for (std::size_t i = 0; i < n; ++i) {
+            dst[i * ImageBuffer::kBytesPerPixel + ch] =
+                matches ? role->data[i] : 0;
+        }
+    }
+    return packed;
 }
 
 ImageBuffer SpritePreviewRenderer::renderCustomImage(ImageBuffer const& userImage,

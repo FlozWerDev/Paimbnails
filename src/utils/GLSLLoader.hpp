@@ -65,4 +65,9 @@ cocos2d::CCGLProgram* getDominantColorsDownsampleShader();
 cocos2d::CCGLProgram* getGifDownscaleShader();
 cocos2d::CCGLProgram* getGifBlurShader();
 
+/// Live PackGen tint for the texture-studio preview (base + packed role
+/// masks, colors as uniforms). Null when tint_preview.glsl is missing; the
+/// editor falls back to the CPU render path.
+cocos2d::CCGLProgram* getTintPreviewShader();
+
 }

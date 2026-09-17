@@ -2,6 +2,7 @@
 #include "../framework/HookConventions.hpp"
 #include <Geode/binding/PlayLayer.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
+#include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
 #include <Geode/loader/Event.hpp>
@@ -10,12 +11,15 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <sstream>
 
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/capture/ui/CapturePreviewPopup.hpp"
 #include "../features/thumbnails/services/ThumbsRegistry.hpp"
 #include "../features/capture/services/FramebufferCapture.hpp"
+#include "../features/twitch-requests/TwitchRequestManager.hpp"
+#include "../features/twitch-requests/ui/WebFeedbackPopup.hpp"
 #include "../utils/DominantColors.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../utils/Localization.hpp"
@@ -43,6 +47,15 @@
 using namespace geode::prelude;
 
 namespace {
+std::optional<paimon::twitch::LevelRequest> feedbackRequestForLevel(int levelID) {
+    for (auto const& request : paimon::twitch::TwitchRequestManager::get().requests()) {
+        if (request.levelID == levelID && request.platform == paimon::twitch::Platform::Web
+            && request.requesterVerified && request.requesterAccountID > 0
+            && !request.webRequestID.empty()) return request;
+    }
+    return std::nullopt;
+}
+
 void agentLog347Pause(char const* loc, char const* msg, char const* hid, std::string const& data) {
 #ifdef PAIMON_DEBUG_AGENT347
     std::ofstream f("debug-347aef.log", std::ios::app);
@@ -145,6 +158,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     struct Fields {
         bool m_fileDialogOpen = false;
         bool m_captureInProgress = false;
+        bool m_feedbackCaptureInProgress = false;
     };
     $override
     void customSetup() {
@@ -216,6 +230,19 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         if (!rightMenu) {
             log::error("Right button menu not found in PauseLayer (including fallback)");
             return;
+        }
+
+        if (feedbackRequestForLevel(playLayer->m_level->m_levelID)
+            && !rightMenu->getChildByID("web-request-feedback-button"_spr)) {
+            auto* sprite = ButtonSprite::create("Feedback", "goldFont.fnt", "GJ_button_01.png", .8f);
+            if (sprite) {
+                sprite->setScale(.45f);
+                auto* button = CCMenuItemSpriteExtra::create(sprite, this,
+                    menu_selector(PaimonPauseLayer::onWebRequestFeedback));
+                button->setID("web-request-feedback-button"_spr);
+                rightMenu->addChild(button);
+                rightMenu->updateLayout();
+            }
         }
 
         if (!Mod::get()->getSettingValue<bool>("enable-thumbnail-taking")) {
@@ -317,6 +344,77 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     }
 
     // PlayLayer's CCNode hook filters this layer because PauseLayer has no visit hook.
+
+    void onWebRequestFeedback(CCObject*) {
+        auto* play = PlayLayer::get();
+        auto request = play && play->m_level
+            ? feedbackRequestForLevel(play->m_level->m_levelID) : std::nullopt;
+        if (!request || m_fields->m_feedbackCaptureInProgress || m_fields->m_captureInProgress
+            || paimon::isCaptureInProgress()) return;
+        auto validation = FramebufferCapture::validateCaptureConditions();
+        if (!validation.canCapture) {
+            PaimonNotify::create(validation.reason.c_str(), NotificationIcon::Warning)->show();
+            return;
+        }
+        m_fields->m_feedbackCaptureInProgress = true;
+        paimon::setCaptureInProgress(true);
+        setVisible(false);
+        showLoadingOverlay();
+        scheduleOnce(schedule_selector(PaimonPauseLayer::performWebRequestCapture), .05f);
+        scheduleOnce(schedule_selector(PaimonPauseLayer::webRequestCaptureTimeout), 8.f);
+    }
+
+    void webRequestCaptureTimeout(float) {
+        if (!m_fields->m_feedbackCaptureInProgress) return;
+        m_fields->m_feedbackCaptureInProgress = false;
+        paimon::setCaptureInProgress(false);
+        if (getParent()) setVisible(true);
+        removeLoadingOverlay();
+        PaimonNotify::create("La captura no respondio", NotificationIcon::Warning)->show();
+    }
+
+    void performWebRequestCapture(float) {
+        auto* play = PlayLayer::get();
+        auto request = play && play->m_level
+            ? feedbackRequestForLevel(play->m_level->m_levelID) : std::nullopt;
+        if (!m_fields->m_feedbackCaptureInProgress || !getParent() || !request) {
+            webRequestCaptureTimeout(0.f);
+            return;
+        }
+        if (auto* scene = CCDirector::get()->getRunningScene()) {
+            if (auto* overlay = scene->getChildByID("paimon-loading-overlay"_spr))
+                overlay->setVisible(false);
+        }
+        geode::WeakRef<PauseLayer> weak = this;
+        FramebufferCapture::requestCapture(request->levelID,
+            [weak, request = *request](bool success, CCTexture2D* texture,
+                std::shared_ptr<uint8_t> rgba, int width, int height) mutable {
+                Ref<CCTexture2D> held = texture;
+                Loader::get()->queueInMainThread([weak, request = std::move(request), success,
+                    held, rgba, width, height]() mutable {
+                    if (paimon::isRuntimeShuttingDown()) return;
+                    auto locked = weak.lock();
+                    if (!locked) {
+                        paimon::setCaptureInProgress(false);
+                        return;
+                    }
+                    auto* self = static_cast<PaimonPauseLayer*>(locked.data());
+                    if (!self->m_fields->m_feedbackCaptureInProgress) return;
+                    self->m_fields->m_feedbackCaptureInProgress = false;
+                    self->unschedule(schedule_selector(PaimonPauseLayer::webRequestCaptureTimeout));
+                    paimon::setCaptureInProgress(false);
+                    self->removeLoadingOverlay();
+                    if (self->getParent()) self->setVisible(true);
+                    if (!success || !held || !rgba || !self->getParent()) {
+                        PaimonNotify::create("No se pudo capturar el nivel", NotificationIcon::Error)->show();
+                        return;
+                    }
+                    auto* popup = paimon::twitch::WebFeedbackPopup::create(
+                        std::move(request), held.data(), rgba, width, height);
+                    if (popup) popup->show();
+                });
+            });
+    }
 
     void onScreenshot(CCObject*) {
         log::info("[PauseLayer] Capture button pressed; hiding pause menu");

@@ -556,7 +556,9 @@ std::string TwitchRequestManager::addWebRequest(WebRequest incoming) {
         std::move(incoming.requester),
         std::move(incoming.message),
         std::move(parsed),
-        incoming.requesterVerified
+        incoming.requesterVerified,
+        std::move(incoming.requestID),
+        incoming.requesterAccountID
     );
 }
 
@@ -565,7 +567,9 @@ std::string TwitchRequestManager::enqueueRequest(
     std::string requester,
     std::string message,
     ParsedRequest parsed,
-    bool requesterVerified
+    bool requesterVerified,
+    std::string webRequestID,
+    int requesterAccountID
 ) {
     if (!m_accepting) return "paused";
 
@@ -609,6 +613,8 @@ std::string TwitchRequestManager::enqueueRequest(
 
     LevelRequest request;
     request.levelID = parsed.levelID;
+    request.webRequestID = std::move(webRequestID);
+    request.requesterAccountID = requesterVerified ? requesterAccountID : 0;
     request.requester = std::move(requester);
     request.requesterVerified = requesterVerified;
     request.message = std::move(message);
@@ -730,6 +736,16 @@ void TwitchRequestManager::setPercent(size_t index, int percent) {
     saveQueue();
 }
 
+bool TwitchRequestManager::sendWebFeedback(LevelRequest const& request,
+    std::string decision, int percent, std::string note, std::string reason,
+    std::string image, std::function<void(bool, std::string)> callback) {
+    if (request.platform != Platform::Web || !request.requesterVerified
+        || request.requesterAccountID <= 0 || request.webRequestID.empty() || !m_webSource) return false;
+    return m_webSource->sendFeedback(request.webRequestID, request.levelID,
+        std::move(decision), percent, std::move(note), std::move(reason),
+        std::move(image), std::move(callback));
+}
+
 void TwitchRequestManager::remove(size_t index) {
     if (index >= m_requests.size()) return;
     m_requests.erase(m_requests.begin() + static_cast<std::ptrdiff_t>(index));
@@ -773,6 +789,8 @@ void TwitchRequestManager::loadQueue() {
         if (levelID <= 0 || levelID > INT_MAX) continue;
         LevelRequest request;
         request.levelID = static_cast<int>(levelID);
+        request.webRequestID = item["webRequestID"].asString().unwrapOr("");
+        request.requesterAccountID = static_cast<int>(std::clamp<int64_t>(item["requesterAccountID"].asInt().unwrapOr(0), 0, INT_MAX));
         request.requester = item["requester"].asString().unwrapOr("Chat");
         request.requesterVerified = item["requesterVerified"].asBool().unwrapOr(false);
         request.message = item["message"].asString().unwrapOr("");
@@ -800,6 +818,8 @@ void TwitchRequestManager::saveQueue() {
     for (auto const& request : m_requests) {
         array.push(matjson::makeObject({
             {"levelID", request.levelID},
+            {"webRequestID", request.webRequestID},
+            {"requesterAccountID", request.requesterAccountID},
             {"requester", request.requester},
             {"requesterVerified", request.requesterVerified},
             {"message", request.message},

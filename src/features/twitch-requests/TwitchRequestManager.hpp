@@ -20,6 +20,8 @@ struct ParsedRequest;
 
 struct LevelRequest {
     int levelID = 0;
+    std::string webRequestID;
+    int requesterAccountID = 0;
     std::string requester;
     bool requesterVerified = false;
     std::string message;
@@ -104,6 +106,9 @@ public:
     std::optional<size_t> nextPendingIndex() const;
     void markPlayed(size_t index, int percent);
     void setPercent(size_t index, int percent);
+    bool sendWebFeedback(LevelRequest const& request, std::string decision, int percent,
+        std::string note, std::string reason, std::string image,
+        std::function<void(bool, std::string)> callback);
 
     void remove(size_t index);
     void moveToFront(size_t index);
@@ -144,7 +149,9 @@ private:
         std::string requester,
         std::string message,
         ParsedRequest parsed,
-        bool requesterVerified = false
+        bool requesterVerified = false,
+        std::string webRequestID = {},
+        int requesterAccountID = 0
     );
 
     void loadQueue();

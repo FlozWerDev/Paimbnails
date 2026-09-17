@@ -9,6 +9,7 @@
 #include <Geode/Geode.hpp>
 
 #include <cctype>
+#include <algorithm>
 #include <chrono>
 #include <climits>
 #include <optional>
@@ -104,6 +105,31 @@ void WebRequestSource::stop() {
 
 bool WebRequestSource::isOpen() const {
     return m_open && m_socket && m_socket->isOpen();
+}
+
+bool WebRequestSource::sendFeedback(std::string const& requestID, int levelID,
+    std::string decision, int percent, std::string note, std::string reason,
+    std::string image, std::function<void(bool, std::string)> callback) {
+    auto token = savedToken();
+    if (m_stopped || m_slug.empty() || token.empty() || requestID.empty()) return false;
+    auto body = matjson::makeObject({
+        {"requestId", requestID}, {"levelId", levelID}, {"decision", decision},
+        {"percent", percent}, {"note", note}, {"reason", reason}, {"image", image}
+    });
+    web::WebRequest request;
+    request.header("Content-Type", "application/json")
+        .header("X-API-Key", HttpClient::get().getApiKey())
+        .header("X-Request-Host", m_slug)
+        .header("Authorization", "Bearer " + token)
+        .timeout(std::chrono::seconds(30))
+        .bodyString(body.dump(matjson::NO_INDENTATION));
+    WebHelper::dispatch(std::move(request), "POST", m_serverBase + "/api/request-host/feedback",
+        [callback = std::move(callback)](web::WebResponse response) mutable {
+            auto parsed = matjson::parse(response.string().unwrapOr(""));
+            std::string error = parsed ? parsed.unwrap()["error"].asString().unwrapOr("") : "";
+            if (callback) callback(response.ok(), error.empty() ? "No se pudo enviar el feedback" : error);
+        });
+    return true;
 }
 
 std::string WebRequestSource::savedToken() const {
@@ -238,8 +264,10 @@ void WebRequestSource::handleMessage(std::string message) {
     if (requestID.empty() || levelID <= 0 || levelID > INT_MAX) return;
 
     WebRequest incoming;
+    incoming.requestID = requestID;
     incoming.requester = body["requester"].asString().unwrapOr("Web");
     incoming.requesterVerified = body["requesterVerified"].asBool().unwrapOr(false);
+    incoming.requesterAccountID = static_cast<int>(std::clamp<int64_t>(body["requesterAccountID"].asInt().unwrapOr(0), 0, INT_MAX));
     incoming.levelID = static_cast<int>(levelID);
     incoming.message = body["message"].asString().unwrapOr("");
     incoming.video = body["video"].asString().unwrapOr("");

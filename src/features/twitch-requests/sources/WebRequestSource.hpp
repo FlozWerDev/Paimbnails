@@ -11,8 +11,10 @@ namespace paimon::twitch {
 
 // The server decides whether the requester's GD identity was verified.
 struct WebRequest {
+    std::string requestID;
     std::string requester;
     bool requesterVerified = false;
+    int requesterAccountID = 0;
     int levelID = 0;
     std::string message;
     std::string video;
@@ -35,6 +37,9 @@ public:
     void start();
     void stop();
     bool isOpen() const;
+    bool sendFeedback(std::string const& requestID, int levelID, std::string decision,
+        int percent, std::string note, std::string reason, std::string image,
+        std::function<void(bool, std::string)> callback);
 
 private:
     std::string savedToken() const;

@@ -119,13 +119,15 @@ Options sanitize(Options options, std::size_t frames) {
     // por pixel clasifica cada celda por su centro y coloca los bordes en su
     // sitio real en vez de desplazarlos media celda con el promedio del area.
     // El defecto sigue en Suave; solo quien elige Pixel en el popup lo recibe.
+    // Render y Libre comparten geometría paint y heredan el mismo conmutador.
     // El dither se fuerza apagado: reparte el error entre celdas vecinas con
     // Floyd-Steinberg pero por ese camino se pierde el analisis a resolucion
     // de origen (medido 128/24: parecido 34.57 -> 37.94 y +3% objetos).
-    if (options.mode != ImportMode::Blocks && options.mode != ImportMode::Paint) {
-        options.sampling = SamplingMode::Smooth;
+    if (options.mode == ImportMode::Paint || options.mode == ImportMode::Render ||
+        options.mode == ImportMode::Free) {
         options.dither = false;
     } else if (options.mode != ImportMode::Blocks) {
+        options.sampling = SamplingMode::Smooth;
         options.dither = false;
     }
     return options;
@@ -1513,10 +1515,22 @@ void compactPaintSpeckles(
 struct GeometryContext {
     ImportMode mode = ImportMode::Blocks;
     bool quarterGlow = false;
+    // Fase 1 del split Pintura/Píxel: selecciona camino grid-exact (Píxel,
+    // conducta actual) frente a continuo (Pintura-Suave, Fase 2). Se calcula
+    // una vez en buildAt desde mode+sampling; de momento se propaga sin
+    // cambiar conducta.
+    bool gridExact = true;
     std::vector<std::vector<std::uint8_t>> obstacles;
     std::vector<int> ranks;
     std::vector<std::uint8_t> empty;
 };
+
+// Camino grid-exact = Bloques siempre, o geometría paint con muestreo Píxel.
+// Pintura-Suave (Paint/Render/Free + Smooth) va por el camino continuo.
+inline bool paintPathIsGridExact(ImportMode mode, SamplingMode sampling) {
+    if (mode == ImportMode::Blocks) return true;
+    return usesPaintGeometry(mode) && sampling == SamplingMode::Pixel;
+}
 
 std::vector<Primitive> buildGeometry(
     std::vector<int> const& positions,
@@ -1576,7 +1590,7 @@ std::vector<Primitive> buildGeometry(
                 positions, width, height, color,
                 context.ranks[static_cast<std::size_t>(color)],
                 context.obstacles[static_cast<std::size_t>(color)],
-                context.empty);
+                context.empty, context.gridExact);
         case ImportMode::Circles:
             return vectorizeCircles(
                 positions, width, height, color,
@@ -1588,7 +1602,7 @@ std::vector<Primitive> buildGeometry(
                 positions, width, height, color,
                 context.ranks[static_cast<std::size_t>(color)],
                 context.obstacles[static_cast<std::size_t>(color)],
-                context.empty);
+                context.empty, context.gridExact);
         case ImportMode::Blur:
         case ImportMode::Vert:
         case ImportMode::Blocks:
@@ -1609,9 +1623,10 @@ void repairPaintSeams(
     std::vector<std::int32_t> const& cells,
     std::vector<int> const& ranks,
     int width,
-    int height
+    int height,
+    bool gridExact = true
 ) {
-    auto repairs = paintSeamRepairs(objects, cells, ranks, width, height);
+    auto repairs = paintSeamRepairs(objects, cells, ranks, width, height, gridExact);
     if (repairs.empty()) return;
     objects.insert(objects.end(), repairs.begin(), repairs.end());
     sortByLayer(objects);
@@ -2108,6 +2123,7 @@ BuildResult buildAt(
     auto const referenceFrames = frames;
     GeometryContext context;
     context.mode = options.mode;
+    context.gridExact = paintPathIsGridExact(options.mode, options.sampling);
     context.quarterGlow = options.mode == ImportMode::Blur &&
         options.softStamps.size() == 7 && !options.softStamps[0].objectId;
     context.obstacles.assign(palette.size(), {});
@@ -2150,11 +2166,14 @@ BuildResult buildAt(
                 // faltando en el preview ampliado.
                 repairPaintSeams(
                     chosen.staticObjects, frames.front().cells, context.ranks,
-                    width, height);
+                    width, height, context.gridExact);
                 prunePaintObjects(chosen.staticObjects, width, height);
                 repairPaintSeams(
                     chosen.staticObjects, frames.front().cells, context.ranks,
-                    width, height);
+                    width, height, context.gridExact);
+                // Lo cosido al final tambien se puede fusionar: los remates
+                // quedan pegados a sus tiras y ya no pasa otra poda por aqui.
+                mergePaintSolids(chosen.staticObjects);
             }
         }
     } else {

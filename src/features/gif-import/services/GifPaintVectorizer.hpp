@@ -16,8 +16,13 @@ std::vector<int> paintOrder(
 void prunePaintObjects(
     std::vector<Primitive>& objects,
     int width,
-    int height
+    int height,
+    bool gridExact = true
 );
+
+// Solo las fusiones exactas (bloques y rectangulos cuya union no pinta ni un
+// pixel nuevo): lo que cose `repairPaintSeams` despues de la ultima poda.
+void mergePaintSolids(std::vector<Primitive>& objects, bool gridExact = true);
 
 void prunePaintObjectsByVisibility(
     std::vector<Primitive>& staticObjects,
@@ -32,7 +37,8 @@ std::vector<Primitive> paintSeamRepairs(
     std::vector<std::int32_t> const& cells,
     std::vector<int> const& ranks,
     int width,
-    int height
+    int height,
+    bool gridExact = true
 );
 
 std::vector<Primitive> vectorizePaint(
@@ -42,7 +48,8 @@ std::vector<Primitive> vectorizePaint(
     int color,
     int rank,
     std::vector<std::uint8_t> const& blocked = {},
-    std::vector<std::uint8_t> const& empty = {}
+    std::vector<std::uint8_t> const& empty = {},
+    bool gridExact = true
 );
 
 } // namespace paimon::gifimport

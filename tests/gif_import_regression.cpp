@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <tuple>
 #include <vector>
 
 #include "../src/features/gif-import/services/GifImportPipeline.hpp"
@@ -697,26 +698,36 @@ bool paintRepairsMergeLongRuns() {
     std::vector<int> positions;
     for (int i = 3; i < 21; ++i) positions.push_back(i * size + i);
 
-    std::vector<Primitive> repairs;
-    appendRepairs(
-        repairs, positions, size, size, 0, 2, {}, {},
-        emptyOutside(positions, size * size));
-    bool covered = true;
-    bool spilled = false;
-    for (int y = 0; y < size; ++y) {
-        for (int x = 0; x < size; ++x) {
-            bool const painted = std::any_of(
-                repairs.begin(), repairs.end(), [&](Primitive const& object) {
-                    return xformOf(object).contains(x + 0.5f, y + 0.5f);
-                });
-            bool const target = x == y && x >= 3 && x < 21;
-            if (target && !painted) covered = false;
-            if (!target && painted) spilled = true;
+    // Suave relaja el vacio para el borde continuo, Pixel no perdona: dos
+    // caminos, dos expectativas.
+    auto runRepairs = [&](bool gridExact) {
+        std::vector<Primitive> repairs;
+        appendRepairs(
+            repairs, positions, size, size, 0, 2, {}, {},
+            emptyOutside(positions, size * size), gridExact);
+        bool covered = true;
+        bool spilled = false;
+        for (int y = 0; y < size; ++y) {
+            for (int x = 0; x < size; ++x) {
+                bool const painted = std::any_of(
+                    repairs.begin(), repairs.end(), [&](Primitive const& object) {
+                        return xformOf(object).contains(x + 0.5f, y + 0.5f);
+                    });
+                bool const target = x == y && x >= 3 && x < 21;
+                if (target && !painted) covered = false;
+                if (!target && painted) spilled = true;
+            }
         }
-    }
-    std::cout << "paint-repair-runs: objects=" << repairs.size()
-              << " covered=" << covered << " spilled=" << spilled << '\n';
-    return repairs.size() == 1 && covered && !spilled;
+        std::cout << "paint-repair-runs"
+                  << (gridExact ? "-pixel" : "-smooth")
+                  << ": objects=" << repairs.size()
+                  << " covered=" << covered << " spilled=" << spilled << '\n';
+        return std::tuple{repairs.size(), covered, spilled};
+    };
+    auto const [smoothObjects, smoothCovered, smoothSpilled] = runRepairs(false);
+    auto const [pixelObjects, pixelCovered, pixelSpilled] = runRepairs(true);
+    return smoothObjects == 1 && smoothCovered && !smoothSpilled &&
+        pixelObjects == 18 && pixelCovered && !pixelSpilled;
 }
 
 bool paintModeDoesNotDotEveryJoin() {
@@ -728,18 +739,28 @@ bool paintModeDoesNotDotEveryJoin() {
             positions.push_back((y + offset) * 40 + x);
         }
     }
-    auto objects = vectorizePaint(
-        positions, 40, 24, 0, 0, {}, emptyOutside(positions, 40 * 24));
-    prunePaintObjects(objects, 40, 24);
-    int strokes = 0;
-    int circles = 0;
-    for (auto const& object : objects) {
-        strokes += object.kind == PrimitiveKind::Stroke;
-        circles += object.kind == PrimitiveKind::Circle;
-    }
-    std::cout << "paint-joins: objects=" << objects.size()
-              << " circles=" << circles << '\n';
-    return strokes > 0 && circles <= 2 && objects.size() <= 18;
+    auto runJoins = [&](bool gridExact) {
+        auto objects = vectorizePaint(
+            positions, 40, 24, 0, 0, {}, emptyOutside(positions, 40 * 24),
+            gridExact);
+        prunePaintObjects(objects, 40, 24);
+        int strokes = 0;
+        int circles = 0;
+        for (auto const& object : objects) {
+            strokes += object.kind == PrimitiveKind::Stroke;
+            circles += object.kind == PrimitiveKind::Circle;
+        }
+        std::cout << "paint-joins" << (gridExact ? "-pixel" : "-smooth")
+                  << ": objects=" << objects.size()
+                  << " strokes=" << strokes << " circles=" << circles << '\n';
+        return std::tuple{objects.size(), strokes, circles};
+    };
+    // Suave cose la ola con tiras giradas, Pixel la deja en bloques grid-exact.
+    auto const [smoothObjects, smoothStrokes, smoothCircles] = runJoins(false);
+    auto const [pixelObjects, pixelStrokes, pixelCircles] = runJoins(true);
+    (void)pixelStrokes;
+    return smoothStrokes > 0 && smoothCircles <= 2 && smoothObjects <= 18 &&
+        pixelCircles == 0 && pixelObjects == 38;
 }
 
 bool paintModeCompactsSimilarSpeckles() {

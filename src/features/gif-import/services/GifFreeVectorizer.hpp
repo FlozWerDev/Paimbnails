@@ -18,7 +18,8 @@ std::vector<Primitive> vectorizeFree(
     int color,
     int rank,
     std::vector<std::uint8_t> const& blocked = {},
-    std::vector<std::uint8_t> const& empty = {}
+    std::vector<std::uint8_t> const& empty = {},
+    bool gridExact = true
 );
 
 } // namespace paimon::gifimport

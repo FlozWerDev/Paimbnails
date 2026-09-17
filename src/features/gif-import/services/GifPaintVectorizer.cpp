@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -47,6 +48,11 @@ constexpr float kCoveredSpill = 0.35f;
 constexpr float kChainSlenderness = 3.f;
 // Cuanto puede asomar una tira de la cadena fuera de la mancha antes de tirarla.
 constexpr float kChainSpill = 0.06f;
+// Pintura-Suave: el borde continuo puede pisar media celda del vecino, asi que
+// el liston de derrame sube al 15% y el corte recta/girada de 7 a 14 grados.
+// Solo camino Suave; Pixel sigue con kChainSpill y 7.
+constexpr float kSmoothSpill = 0.15f;
+constexpr float kSmoothStraightAngle = 14.f;
 // Tope del borrado final de cadena (proporcion de area fuera de mancha+orla).
 // El 6% global diluye la punta del bisel en tiras largas (poca area frente al
 // total) y la perdona; lo que cae aqui lo recogen los parches (rectangulos
@@ -246,6 +252,11 @@ std::array<int, 4> shapeBox(Primitive const& shape, int width, int height) {
     return xformBox(xformOf(shape), width, height);
 }
 
+// Las nueve muestras del centro de la celda (3x3) que deciden si una figura
+// pisa un pixel ajeno. Una sola tabla evita reconstruir el par de rangos en
+// cada celda de cada puerta.
+constexpr float kCenterOffsets[3] = {0.4f, 0.5f, 0.6f};
+
 // Un borde vectorial cruza las esquinas de los pixeles de la silueta. Exigir
 // cero cobertura ahi convierte otra vez cada diagonal en una escalera. Dejamos
 // esa franja subpixel, pero protegemos el centro de cada celda ajena y limitamos
@@ -254,21 +265,25 @@ bool fitsPaintBoundary(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
     int width,
-    int height
+    int height,
+    bool gridExact = true
 ) {
     auto const placed = xformOf(shape);
     auto const box = xformBox(placed, width, height);
+    // La figura cae entera fuera del lienzo: nada que comprobar.
+    if (box[2] < box[0] || box[3] < box[1]) return true;
     for (int y = box[1]; y <= box[3]; ++y) {
         for (int x = box[0]; x <= box[2]; ++x) {
             if (permitted[static_cast<std::size_t>(y) * width + x]) continue;
-            for (float dy : {0.4f, 0.5f, 0.6f}) {
-                for (float dx : {0.4f, 0.5f, 0.6f}) {
+            for (float dy : kCenterOffsets) {
+                for (float dx : kCenterOffsets) {
                     if (placed.contains(x + dx, y + dy)) return false;
                 }
             }
         }
     }
-    return shapeSpill(shape, permitted, width, height) <= kChainSpill;
+    return shapeSpill(shape, permitted, width, height) <=
+        (gridExact ? kChainSpill : kSmoothSpill);
 }
 
 // Celdas a un paso de la mancha, ella incluida. Una tira que abraza la mancha
@@ -299,6 +314,19 @@ std::vector<std::uint8_t> nearCells(
     return nearMask;
 }
 
+// La orla no perdona el vacio: con fondo transparente cubrir ahi pinta celdas
+// enteras de mas (tira del marco sobre el fondo). La orla sobre otro color
+// sigue perdonada, que es el suavizado de la diagonal.
+void maskVoid(
+    std::vector<std::uint8_t>& mask,
+    std::vector<std::uint8_t> const& empty
+) {
+    if (mask.size() != empty.size()) return;
+    for (std::size_t i = 0; i < mask.size(); ++i) {
+        if (empty[i]) mask[i] = 0;
+    }
+}
+
 // Fraccion de la figura que cae fuera de lo permitido Y fuera de la orla: lo
 // que de verdad invade otro color. El derrame sobre la orla es borde
 // suavizado, no invasion.
@@ -312,6 +340,7 @@ float shapeFarSpill(
     constexpr int kSamples = 4;
     auto const placed = xformOf(shape);
     auto const box = xformBox(placed, width, height);
+    if (box[2] < box[0] || box[3] < box[1]) return 0.f;
     int covered = 0;
     int spilled = 0;
     for (int y = box[1]; y <= box[3]; ++y) {
@@ -349,10 +378,12 @@ bool fitsPaintNear(
     std::vector<std::uint8_t> const& permitted,
     std::vector<std::uint8_t> const& nearMask,
     int width,
-    int height
+    int height,
+    bool gridExact = true
 ) {
     auto const placed = xformOf(shape);
     auto const box = xformBox(placed, width, height);
+    if (box[2] < box[0] || box[3] < box[1]) return true;
     for (int y = box[1]; y <= box[3]; ++y) {
         for (int x = box[0]; x <= box[2]; ++x) {
             std::size_t const index = static_cast<std::size_t>(y) * width + x;
@@ -360,14 +391,15 @@ bool fitsPaintNear(
                 (index < nearMask.size() && nearMask[index])) {
                 continue;
             }
-            for (float dy : {0.4f, 0.5f, 0.6f}) {
-                for (float dx : {0.4f, 0.5f, 0.6f}) {
+            for (float dy : kCenterOffsets) {
+                for (float dx : kCenterOffsets) {
                     if (placed.contains(x + dx, y + dy)) return false;
                 }
             }
         }
     }
-    return shapeFarSpill(shape, permitted, nearMask, width, height) <= kChainSpill;
+    return shapeFarSpill(shape, permitted, nearMask, width, height) <=
+        (gridExact ? kChainSpill : kSmoothSpill);
 }
 
 // Puerta del contorno de la banda: perdona la orla solo en tiras de verdad
@@ -382,12 +414,16 @@ bool fitsPaintOutline(
     std::vector<std::uint8_t> const& permitted,
     std::vector<std::uint8_t> const& nearMask,
     int width,
-    int height
+    int height,
+    bool gridExact = true
 ) {
     float folded = std::fmod(std::abs(shape.rotation), 90.f);
     folded = std::min(folded, 90.f - folded);
-    if (folded <= 7.f) return fitsPaintBoundary(shape, permitted, width, height);
-    return fitsPaintNear(shape, permitted, nearMask, width, height);
+    float const straightAngle = gridExact ? 7.f : kSmoothStraightAngle;
+    if (folded <= straightAngle) {
+        return fitsPaintBoundary(shape, permitted, width, height, gridExact);
+    }
+    return fitsPaintNear(shape, permitted, nearMask, width, height, gridExact);
 }
 
 // Un objeto redondo solo puede ir donde nada se pinte encima: GD lo dibuja en
@@ -646,9 +682,25 @@ float inwardThickness(
     float y,
     float inwardX,
     float inwardY,
-    float limit
+    float limit,
+    bool gridExact = true
 ) {
     constexpr float kStep = 0.25f;
+    // Pintura-Suave: el contorno suavizado cae hasta media celda fuera de la
+    // silueta en las diagonales (el punto medio ya esta en la celda vecina y la
+    // primera muestra sale vacia), asi que el grosor medido colapsaba a 1 y la
+    // tira salia fina dejando bloques de relleno: los micro-picos. Se avanza el
+    // arranque hasta la primera muestra pintada (como mucho 1 celda, lo que se
+    // desplaza el suavizado) y se mide ahi. En Pixel el arranque manda como hoy.
+    if (!gridExact) {
+        float skipped = 0.f;
+        while (skipped < 1.f && !region.filledAt(x, y)) {
+            x += inwardX * kStep;
+            y += inwardY * kStep;
+            skipped += kStep;
+        }
+        if (!region.filledAt(x, y)) return 0.f;
+    }
     float depth = 0.f;
     while (depth < limit &&
            region.filledAt(
@@ -678,7 +730,8 @@ std::vector<Segment> measure(std::vector<Point> const& points, std::size_t segme
 // bulto suelto no mande. Marca hasta donde se puede recortar el contorno al
 // simplificarlo: en una linea de dos celdas, cortar una esquina por casi una
 // celda es lo que dejaba los picos y las mordidas.
-float contourThickness(Region const& region, Contour const& contour, float limit) {
+float contourThickness(Region const& region, Contour const& contour, float limit,
+                         bool gridExact = true) {
     auto const& loop = contour.points;
     std::size_t const segments = contour.closed ? loop.size() : loop.size() - 1;
     if (segments == 0) return limit;
@@ -698,7 +751,7 @@ float contourThickness(Region const& region, Contour const& contour, float limit
             inwardY = -inwardY;
         }
         depths.push_back(
-            inwardThickness(region, midX, midY, inwardX, inwardY, limit));
+            inwardThickness(region, midX, midY, inwardX, inwardY, limit, gridExact));
     }
     if (depths.empty()) return limit;
     auto const middle = depths.begin() + static_cast<std::ptrdiff_t>(depths.size() / 2);
@@ -716,7 +769,8 @@ void appendBand(
     int sourceWidth,
     int sourceHeight,
     std::vector<std::uint8_t> const& blocked,
-    std::vector<std::uint8_t> const& permitted
+    std::vector<std::uint8_t> const& permitted,
+    bool gridExact = true
 ) {
     auto const& loop = contour.points;
     if (loop.size() < 2) return;
@@ -779,8 +833,9 @@ void appendBand(
         // de la parte mas gorda de la mancha engordaba el trazo del dibujo hasta
         // comerse el color de al lado, y encima lo pintaba dos veces: una por el
         // contorno de fuera y otra por el de dentro.
-        float const thickness = std::max(
-            inwardThickness(region, midX, midY, inwardX, inwardY, band), 1.f);
+        float const rawThick =
+            inwardThickness(region, midX, midY, inwardX, inwardY, band, gridExact);
+        float const thickness = std::max(rawThick, 1.f);
         float const overshoot = std::min(
             coveredAlong(first, second, inwardX, inwardY)
                 ? kOvershoot : kFreeOvershoot,
@@ -979,7 +1034,9 @@ bool appendChain(
     int color,
     int layer,
     std::vector<std::uint8_t> const& blocked,
-    std::vector<std::uint8_t> const& permitted
+    std::vector<std::uint8_t> const& permitted,
+    std::vector<std::uint8_t> const& empty = {},
+    bool gridExact = true
 ) {
     auto const skeleton = thin(component, sourceWidth);
     auto const paths = skeletonPaths(skeleton);
@@ -1067,8 +1124,11 @@ bool appendChain(
         });
     }
     if (lines.empty()) return false;
-    // Orla de la pieza: la tira que la abraza puede pisarla sin cruzar nada.
-    auto const nearMask = nearCells(component, sourceWidth, sourceHeight);
+    // Orla de la pieza: la tira que la abraza puede pisarla sin cruzar nada,
+    // salvo sobre el vacio (maskVoid).
+    auto nearMask = nearCells(component, sourceWidth, sourceHeight);
+    // Pintura-Suave relaja el vacio para el borde continuo; en Pixel no perdona.
+    if (gridExact) maskVoid(nearMask, empty);
 
     for (std::size_t first = 0; first < lines.size(); ++first) {
         for (std::size_t second = first + 1; second < lines.size(); ++second) {
@@ -1896,7 +1956,8 @@ std::vector<std::uint8_t> insideContours(
 std::vector<std::uint8_t> coverageMask(
     Region const& region,
     std::vector<Primitive> const& objects,
-    bool whole
+    bool whole,
+    bool gridExact = true
 ) {
     constexpr std::array<Point, 16> kWholeSamples{
         Point{0.2f, 0.2f}, Point{0.4f, 0.2f}, Point{0.6f, 0.2f}, Point{0.8f, 0.2f},
@@ -1936,7 +1997,13 @@ std::vector<std::uint8_t> coverageMask(
     }
     std::vector<std::uint8_t> covered(samples.size(), 0);
     for (std::size_t i = 0; i < samples.size(); ++i) {
-        covered[i] = samples[i] == full;
+        if (!whole || gridExact) {
+            covered[i] = samples[i] == full;
+            continue;
+        }
+        // Suave: basta la mitad. Una diagonal por el centro de la celda tapa
+        // 8/16 muestras; exigir 16/16 dejaba sus bordes como bloques sueltos.
+        covered[i] = std::popcount(samples[i]) >= 8;
     }
     return covered;
 }
@@ -1988,7 +2055,8 @@ bool appendSmallPatch(
     int color,
     int layer,
     std::vector<std::uint8_t> const& permitted,
-    std::vector<std::uint8_t> const& blocked
+    std::vector<std::uint8_t> const& blocked,
+    bool gridExact = true
 ) {
     if (positions.size() < 2) return false;
     float meanX = 0.f;
@@ -2071,13 +2139,13 @@ bool appendSmallPatch(
             static_cast<std::int16_t>(layer)
         };
         if (!coversBlocked(round, width, height, blocked) &&
-            fitsPaintBoundary(round, permitted, width, height)) {
+            fitsPaintBoundary(round, permitted, width, height, gridExact)) {
             output.push_back(round);
             return true;
         }
     }
 
-    if (!fitsPaintBoundary(patch, permitted, width, height)) return false;
+    if (!fitsPaintBoundary(patch, permitted, width, height, gridExact)) return false;
     output.push_back(patch);
     return true;
 }
@@ -2115,6 +2183,7 @@ int coveredRepairs(
 ) {
     auto const placed = xformOf(object);
     auto const box = xformBox(placed, width, height);
+    if (box[2] < box[0] || box[3] < box[1]) return 0;
     int count = 0;
     for (int y = box[1]; y <= box[3]; ++y) {
         for (int x = box[0]; x <= box[2]; ++x) {
@@ -2136,6 +2205,7 @@ void consumeRepairs(
 ) {
     auto const placed = xformOf(object);
     auto const box = xformBox(placed, width, height);
+    if (box[2] < box[0] || box[3] < box[1]) return;
     for (int y = box[1]; y <= box[3]; ++y) {
         for (int x = box[0]; x <= box[2]; ++x) {
             int const position = y * width + x;
@@ -2176,6 +2246,11 @@ void markUsefulObjects(std::vector<PruneEntry> entries, int width, int height) {
     std::stable_sort(entries.begin(), entries.end(), [](auto const& left, auto const& right) {
         return left.object->layer < right.object->layer;
     });
+    // Cada objeto se visita varias veces (centros + muestras) y su
+    // coseno/seno no cambia: las formas se resuelven una vez por llamada.
+    std::vector<ShapeXform> forms;
+    forms.reserve(entries.size());
+    for (auto const& entry : entries) forms.push_back(xformOf(*entry.object));
     std::size_t const samples =
         static_cast<std::size_t>(width) * height * kPruneScale * kPruneScale;
 
@@ -2187,8 +2262,7 @@ void markUsefulObjects(std::vector<PruneEntry> entries, int width, int height) {
     std::size_t const cells = static_cast<std::size_t>(width) * height;
     std::vector<std::int16_t> expected(cells, -1);
     std::vector<std::int16_t> centers(cells, -1);
-    auto visitCenters = [&](Primitive const& object, auto visit) {
-        auto const shape = xformOf(object);
+    auto visitCenters = [&](ShapeXform const& shape, auto visit) {
         auto const box = xformBox(shape, width, height);
         for (int y = box[1]; y <= box[3]; ++y) {
             for (int x = box[0]; x <= box[2]; ++x) {
@@ -2198,9 +2272,10 @@ void markUsefulObjects(std::vector<PruneEntry> entries, int width, int height) {
             }
         }
     };
-    for (auto const& entry : entries) {
-        visitCenters(*entry.object, [&](std::size_t cell) {
-            expected[cell] = static_cast<std::int16_t>(entry.object->color);
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+        visitCenters(forms[index], [&](std::size_t cell) {
+            expected[cell] =
+                static_cast<std::int16_t>(entries[index].object->color);
         });
     }
     std::vector<std::uint8_t> interior(cells, 0);
@@ -2219,19 +2294,19 @@ void markUsefulObjects(std::vector<PruneEntry> entries, int width, int height) {
     for (std::size_t index = 0; index < entries.size(); ++index) {
         auto const& object = *entries[index].object;
         auto const color = static_cast<std::int16_t>(object.color);
-        if (!anySample(object, width, height, [&](std::size_t sample) {
+        if (!anySample(forms[index], width, height, [&](std::size_t sample) {
                 return painted[sample] != color;
             })) {
             continue;
         }
         bool needsCenter = false;
-        visitCenters(object, [&](std::size_t cell) {
+        visitCenters(forms[index], [&](std::size_t cell) {
             needsCenter |= centers[cell] != color;
         });
         if (!needsCenter) {
             std::map<std::size_t, int> contribution;
             bool significant = false;
-            anySample(object, width, height, [&](std::size_t sample) {
+            anySample(forms[index], width, height, [&](std::size_t sample) {
                 if (painted[sample] == color) return false;
                 auto const x = sample % (width * kPruneScale) / kPruneScale;
                 auto const y = sample / (width * kPruneScale) / kPruneScale;
@@ -2246,8 +2321,8 @@ void markUsefulObjects(std::vector<PruneEntry> entries, int width, int height) {
             }
         }
         useful[index] = 1;
-        visitCenters(object, [&](std::size_t cell) { centers[cell] = color; });
-        anySample(object, width, height, [&](std::size_t sample) {
+        visitCenters(forms[index], [&](std::size_t cell) { centers[cell] = color; });
+        anySample(forms[index], width, height, [&](std::size_t sample) {
             painted[sample] = color;
             return false;
         });
@@ -2257,13 +2332,13 @@ void markUsefulObjects(std::vector<PruneEntry> entries, int width, int height) {
     for (std::size_t index = entries.size(); index-- > 0;) {
         if (!useful[index]) continue;
         auto const& object = *entries[index].object;
-        if (!anySample(object, width, height, [&](std::size_t sample) {
+        if (!anySample(forms[index], width, height, [&](std::size_t sample) {
                 return covered[sample] == 0;
             })) {
             continue;
         }
         *entries[index].keep = 1;
-        anySample(object, width, height, [&](std::size_t sample) {
+        anySample(forms[index], width, height, [&](std::size_t sample) {
             covered[sample] = 1;
             return false;
         });
@@ -2460,25 +2535,47 @@ bool unitedRect(
     return true;
 }
 
-bool mergeRectPair(Primitive const& first, Primitive const& second, Primitive& result) {
-    if (first.color != second.color || first.layer != second.layer ||
-        !rectPairShapes(first, second)) {
+// Como cada color tiene su propio tramo de capas (`rank * kPaintSublayers`),
+// dos rectangulos del mismo color nunca se intercalan con otro color: juntarlos
+// en la capa mas baja no cambia ni un pixel aunque vengan de rondas distintas
+// (relleno en base+0, tiras en base+1, remates en base+2). La excepcion es la
+// capa de fondo (capas negativas, por debajo de todo a proposito): bajar una
+// tira hasta ahi la meteria debajo de otros colores. Como `mergePaintBlocks`,
+// solo se juntan del mismo lado de esa frontera.
+// Es el mismo argumento que `mergePaintBlocks` usa para los cuadrados rectos,
+// extendido a tiras.
+bool mergeRectPair(
+    Primitive const& first, Primitive const& second, Primitive& result,
+    bool exactOnly = false
+) {
+    if (first.color != second.color || !rectPairShapes(first, second)) {
         return false;
     }
+    if ((first.layer < 0) != (second.layer < 0)) return false;
     float extra = 0.f;
     float covered = 0.f;
     if (!unitedRect(first, second, result, extra, covered)) return false;
-    return extra <= std::max(0.01f, covered * 0.002f);
+    // En la misma capa vale el sobrante de siempre; entre capas solo la union
+    // exacta: sin mapa de muestras que la avale, pintar de mas es derrame.
+    // Y del todo exacta cuando despues ya no hay quien lo repare.
+    float const slack = exactOnly ? 0.01f
+        : first.layer == second.layer ? std::max(0.01f, covered * 0.002f)
+                                      : 0.01f;
+    if (extra > slack) return false;
+    result.layer = std::min(first.layer, second.layer);
+    return true;
 }
 
-void mergePaintRects(std::vector<Primitive>& objects) {
+void mergePaintRects(std::vector<Primitive>& objects, bool exactOnly = false) {
     bool merged = true;
     while (merged) {
         merged = false;
         for (std::size_t first = 0; first < objects.size() && !merged; ++first) {
             for (std::size_t second = first + 1; second < objects.size(); ++second) {
                 Primitive replacement;
-                if (!mergeRectPair(objects[first], objects[second], replacement)) continue;
+                if (!mergeRectPair(objects[first], objects[second], replacement, exactOnly)) {
+                    continue;
+                }
                 objects[first] = replacement;
                 objects.erase(objects.begin() + static_cast<std::ptrdiff_t>(second));
                 merged = true;
@@ -2528,8 +2625,11 @@ void absorbPaintRects(
                          });
 
         std::vector<std::int32_t> top(samples, -1);
+        // El orden de esta ronda ya esta fijo: una forma por objeto vale para
+        // todo el barrido de `top`.
+        auto const forms = xformsOf(objects);
         for (std::size_t index = 0; index < objects.size(); ++index) {
-            anySample(objects[index], width, height, [&](std::size_t sample) {
+            anySample(forms[index], width, height, [&](std::size_t sample) {
                 top[sample] = static_cast<std::int32_t>(index);
                 return false;
             });
@@ -2569,7 +2669,10 @@ void absorbPaintRects(
                     // dibujo: o manda ya este color, o manda uno de los dos que se
                     // funden, o lo que manda va por encima de donde queda la union.
                     bool safe = true;
-                    anySample(candidate, width, height, [&](std::size_t sample) {
+                    // El candidato no cambia durante su chequeo: una forma
+                    // para todas las muestras.
+                    auto const candidateForm = xformOf(candidate);
+                    anySample(candidateForm, width, height, [&](std::size_t sample) {
                         auto const owner = top[sample];
                         if (owner < 0) {
                             safe = false;
@@ -2630,7 +2733,8 @@ void appendRepairs(
     int layer,
     std::vector<std::uint8_t> const& blocked,
     std::vector<int> const& allowed = {},
-    std::vector<std::uint8_t> const& empty = {}
+    std::vector<std::uint8_t> const& empty = {},
+    bool gridExact = true
 ) {
     if (positions.empty()) return;
     std::size_t const cells = static_cast<std::size_t>(width) * height;
@@ -2641,13 +2745,21 @@ void appendRepairs(
         permitted[static_cast<std::size_t>(position)] = 1;
         target[static_cast<std::size_t>(position)] = 1;
     }
-    // Asomar sobre un color que otra capa tapa despues no se ve, y sobre el hueco
-    // tampoco hay nada que ensuciar: ahi es donde una diagonal puede rematarse
-    // girada. Que no se estire por el hueco lo cuida el tope de tamano del parche.
-    for (auto const* mask : {&blocked, &empty}) {
+    // Asomar sobre un color que otra capa tapa despues no se ve. Sobre el hueco
+    // en cambio si se ve con fondo transparente: en Pixel el vacio no perdona
+    // centros (la orla sobre vacio tampoco, ver maskVoid). Que no se estire por
+    // el hueco lo cuida el tope de tamano del parche. Pintura-Suave relaja el
+    // vacio para el borde continuo: ahi es donde una diagonal puede rematarse
+    // girada porque asomar no ensucia ningun color.
+    for (auto const* mask : {&blocked}) {
         if (mask->size() != cells) continue;
         for (std::size_t position = 0; position < cells; ++position) {
             permitted[position] |= (*mask)[position];
+        }
+    }
+    if (!gridExact && empty.size() == cells) {
+        for (std::size_t position = 0; position < cells; ++position) {
+            permitted[position] |= empty[position];
         }
     }
 
@@ -2671,8 +2783,11 @@ void appendRepairs(
         std::vector<int> unpaired;
         std::vector<std::uint8_t> remaining(cells, 0);
         for (int position : group) remaining[static_cast<std::size_t>(position)] = 1;
-        // Orla del reguero: la tira que lo abraza puede pisarla sin cruzar nada.
-        auto const nearMask = nearCells(group, width, height);
+        // Orla del reguero: la tira que lo abraza puede pisarla sin cruzar nada,
+        // salvo sobre el vacio (maskVoid).
+        auto nearMask = nearCells(group, width, height);
+        // Pintura-Suave relaja el vacio para el borde continuo; en Pixel no perdona.
+        if (gridExact) maskVoid(nearMask, empty);
         for (int first : group) {
             if (!remaining[static_cast<std::size_t>(first)]) continue;
             int const firstX = first % width;
@@ -2713,11 +2828,15 @@ void appendRepairs(
                             static_cast<std::int16_t>(layer)
                         };
                         if (!coversBlocked(round, width, height, blocked) &&
-                            fitsPaintNear(round, permitted, nearMask, width, height)) {
+                            fitsPaintNear(
+                                round, permitted, nearMask, width, height, gridExact)) {
                             candidate = round;
                         }
                     }
-                    if (!fitsPaintNear(candidate, permitted, nearMask, width, height)) continue;
+                    if (!fitsPaintNear(
+                            candidate, permitted, nearMask, width, height, gridExact)) {
+                        continue;
+                    }
                     int const count = coveredRepairs(candidate, remaining, width, height);
                     if (count > bestCount || (count == bestCount && length < bestLength)) {
                         best = candidate;
@@ -2747,7 +2866,8 @@ void appendRepairs(
         // Girada cabe de una pieza: vale la pena cuando recta harian falta varias.
         if (rectangle.size() >= 2 && component.size() >= 4 &&
             appendSmallPatch(
-                output, component, width, height, color, layer, permitted, blocked)) {
+                output, component, width, height, color, layer, permitted, blocked,
+                gridExact)) {
             continue;
         }
         leftover.insert(leftover.end(), component.begin(), component.end());
@@ -2778,7 +2898,8 @@ std::vector<int> normalizePaintSpikes(
     int height,
     int color,
     std::vector<std::uint8_t> const& blocked,
-    std::vector<std::uint8_t> const& permitted
+    std::vector<std::uint8_t> const& permitted,
+    bool gridExact = true
 ) {
     // Barrido 960 evaluaciones sobre 8 imagenes de Descargas (side x angle x
     // diaMin): side=3.0 quita 240 picos con 0.00 de perdida de rejilla en
@@ -2788,11 +2909,10 @@ std::vector<int> normalizePaintSpikes(
     std::vector<int> repairs;
     std::vector<Primitive> normalized;
     normalized.reserve(objects.size());
-    auto const inTarget = [&](Primitive const& shape, int position) {
-        return xformOf(shape).contains(
-            static_cast<float>(position % width) + 0.5f,
-            static_cast<float>(position / width) + 0.5f);
-    };
+    // Orla para la puerta Suave de abajo: se construye una vez porque solo la
+    // usan las candidatas giradas en camino continuo.
+    std::vector<std::uint8_t> smoothNear;
+    if (!gridExact) smoothNear = nearCells(target, width, height);
     for (auto const& object : objects) {
         float folded = std::fmod(std::abs(object.rotation), 90.f);
         folded = std::min(folded, 90.f - folded);
@@ -2806,6 +2926,19 @@ std::vector<int> normalizePaintSpikes(
             normalized.push_back(object);
             continue;
         }
+        // En Suave la banda de borde admitida por el outline se queda como
+        // rectangulo girado: es el borde continuo, no un pico. Misma puerta
+        // que la admitio (Near con orla) en vez del centro estricto, y suelo
+        // de 2 celdas para que las astillas de p03 (<=1.6) sigan
+        // triturandose. Solo se tritura lo que de verdad invade otro color.
+        constexpr float kSmoothKeepSide = 2.f;
+        if (!gridExact &&
+            std::max(object.width, object.height) >= kSmoothKeepSide &&
+            fitsPaintOutline(object, permitted, smoothNear, width, height,
+                             gridExact)) {
+            normalized.push_back(object);
+            continue;
+        }
 
         bool replaced = false;
         float const diameter = std::min(object.width, object.height);
@@ -2815,7 +2948,7 @@ std::vector<int> normalizePaintSpikes(
                 static_cast<std::uint16_t>(color), PrimitiveKind::Circle,
                 object.layer};
             if (!coversBlocked(circle, width, height, blocked) &&
-                fitsPaintBoundary(circle, permitted, width, height)) {
+                fitsPaintBoundary(circle, permitted, width, height, gridExact)) {
                 normalized.push_back(circle);
                 replaced = true;
             }
@@ -2829,7 +2962,9 @@ std::vector<int> normalizePaintSpikes(
                     object.height * scale, 0.f,
                     static_cast<std::uint16_t>(color), PrimitiveKind::Block,
                     object.layer};
-                if (!fitsPaintBoundary(block, permitted, width, height)) continue;
+                if (!fitsPaintBoundary(block, permitted, width, height, gridExact)) {
+                    continue;
+                }
                 normalized.push_back(block);
                 replaced = true;
                 break;
@@ -2839,8 +2974,13 @@ std::vector<int> normalizePaintSpikes(
 
         // No se pierde el centro que la tira cubria: el llamado siguiente lo
         // vuelve a empaquetar como bloque o como otra reparacion recta.
+        // La forma se resuelve una vez: antes se repetia el coseno/seno en
+        // cada celda del objetivo.
+        auto const targetForm = xformOf(object);
         for (int position : target) {
-            if (inTarget(object, position)) repairs.push_back(position);
+            float const px = static_cast<float>(position % width) + 0.5f;
+            float const py = static_cast<float>(position / width) + 0.5f;
+            if (targetForm.contains(px, py)) repairs.push_back(position);
         }
     }
     objects = std::move(normalized);
@@ -2863,7 +3003,9 @@ void roundExposedStrokeEnds(
     int height,
     int color,
     std::vector<std::uint8_t> const& blocked,
-    std::vector<std::uint8_t> const& permitted
+    std::vector<std::uint8_t> const& permitted,
+    std::vector<std::uint8_t> const& empty = {},
+    bool gridExact = true
 ) {
     if (objects.empty() || target.empty()) return;
     std::vector<std::uint8_t> targetMask(
@@ -2873,7 +3015,9 @@ void roundExposedStrokeEnds(
             targetMask[static_cast<std::size_t>(position)] = 1;
         }
     }
-    auto const nearMask = nearCells(target, width, height);
+    auto nearMask = nearCells(target, width, height);
+    // Pintura-Suave relaja el vacio para el borde continuo; en Pixel no perdona.
+    if (gridExact) maskVoid(nearMask, empty);
     auto targetGap = [&](Point point) {
         int const centerX = static_cast<int>(std::floor(point.x));
         int const centerY = static_cast<int>(std::floor(point.y));
@@ -2993,7 +3137,7 @@ void roundExposedStrokeEnds(
                 object.layer
             };
             if (coversBlocked(cap, width, height, blocked) ||
-                !fitsPaintNear(cap, permitted, nearMask, width, height)) {
+                !fitsPaintNear(cap, permitted, nearMask, width, height, gridExact)) {
                 continue;
             }
             capAt[end] = true;
@@ -3030,12 +3174,15 @@ void roundExposedStrokeEnds(
         // pieza entera y la reparacion posterior mantiene la cobertura.
         bool preservesCenters = true;
         auto const original = xformOf(object);
+        // Los repuestos no cambian durante el chequeo: una forma por pieza
+        // en vez de una por celda.
+        auto const substitutes = xformsOf(replacement);
         for (int position : target) {
             float const px = static_cast<float>(position % width) + 0.5f;
             float const py = static_cast<float>(position / width) + 0.5f;
             if (!original.contains(px, py)) continue;
-            if (std::none_of(replacement.begin(), replacement.end(), [&](Primitive const& shape) {
-                    return xformOf(shape).contains(px, py);
+            if (std::none_of(substitutes.begin(), substitutes.end(), [&](ShapeXform const& shape) {
+                    return shape.contains(px, py);
                 })) {
                 preservesCenters = false;
                 break;
@@ -3073,8 +3220,12 @@ void dropRedundantObjects(std::vector<Primitive>& objects, int width, int height
 
         std::vector<std::int32_t> top(samples, -1);
         std::vector<std::int32_t> below(samples, -1);
+        // El orden de esta pasada ya esta fijo: una forma por objeto.
+        std::vector<ShapeXform> passForms;
+        passForms.reserve(ordered.size());
+        for (auto const* entry : ordered) passForms.push_back(xformOf(*entry));
         for (std::size_t slot = 0; slot < ordered.size(); ++slot) {
-            anySample(*ordered[slot], width, height, [&](std::size_t sample) {
+            anySample(passForms[slot], width, height, [&](std::size_t sample) {
                 below[sample] = top[sample];
                 top[sample] = static_cast<std::int32_t>(slot);
                 return false;
@@ -3113,8 +3264,10 @@ std::vector<Primitive> paintSeamRepairs(
     std::vector<std::int32_t> const& cells,
     std::vector<int> const& ranks,
     int width,
-    int height
+    int height,
+    bool gridExact
 ) {
+    (void)gridExact;
     std::vector<Primitive> repairs;
     if (width < 3 || height < 3 ||
         cells.size() != static_cast<std::size_t>(width) * height || ranks.empty()) {
@@ -3295,7 +3448,21 @@ std::vector<Primitive> paintSeamRepairs(
     return repairs;
 }
 
-void prunePaintObjects(std::vector<Primitive>& objects, int width, int height) {
+// Lo que `repairPaintSeams` cose despues de la ultima poda: remates pegados a
+// las tiras que ya estaban, del mismo color y giro, cuya union vuelve a ser un
+// rectangulo. Solo fusiones exactas (sin sobrante que pintar): la union no
+// pinta ni un pixel nuevo y el tramo de capas por color hace que el orden
+// entre capas del mismo color no cambie el dibujo. Sin mapas de muestras, es
+// la parte barata de la poda y deja la lista lista para medir.
+void mergePaintSolids(std::vector<Primitive>& objects, bool gridExact) {
+    (void)gridExact;
+    if (objects.size() < 2) return;
+    mergePaintBlocks(objects);
+    mergePaintRects(objects, true);
+}
+
+void prunePaintObjects(std::vector<Primitive>& objects, int width, int height, bool gridExact) {
+    (void)gridExact;
     if (objects.size() < 2) return;
     std::vector<std::uint8_t> keep(objects.size(), 0);
     std::vector<PruneEntry> entries;
@@ -3566,7 +3733,8 @@ std::vector<Primitive> vectorizePaint(
     int color,
     int rank,
     std::vector<std::uint8_t> const& blocked,
-    std::vector<std::uint8_t> const& empty
+    std::vector<std::uint8_t> const& empty,
+    bool gridExact
 ) {
     std::vector<Primitive> output;
     int const base = rank * kPaintSublayers;
@@ -3585,9 +3753,14 @@ std::vector<Primitive> vectorizePaint(
         }
     }
     // Por donde una figura de este color puede asomar sin que se note: sus propias
-    // celdas, las que otra capa tapa despues y el hueco que ningun frame pinta.
+    // celdas y las que otra capa tapa despues. En Pixel el hueco que ningun
+    // frame pinta NO perdona centros: con fondo transparente asomar ahi pinta
+    // celdas enteras de mas (tira del marco sobre el fondo). El suavizado
+    // subpixel sobre el vacio sigue vivo por la puerta de area
+    // (shapeSpill <= kChainSpill). Pintura-Suave relaja el vacio para el borde
+    // continuo: rematarse sobre el hueco no ensucia ningun color.
     std::vector<std::uint8_t> permitted = spare;
-    if (empty.size() == cells) {
+    if (!gridExact && empty.size() == cells) {
         for (std::size_t position = 0; position < cells; ++position) {
             permitted[position] |= empty[position];
         }
@@ -3605,15 +3778,17 @@ std::vector<Primitive> vectorizePaint(
                 output,
                 selectCells(
                     region, width, coverageMask(region, output, false), {}, true, 0.f),
-                width, height, color, base + 2, blocked, positions, empty);
+                width, height, color, base + 2, blocked, positions, empty, gridExact);
             roundExposedStrokeEnds(
-                output, positions, width, height, color, blocked, permitted);
+                output, positions, width, height, color, blocked, permitted, empty,
+                gridExact);
             auto spikeRepairs = normalizePaintSpikes(
-                output, positions, width, height, color, blocked, permitted);
+                output, positions, width, height, color, blocked, permitted,
+                gridExact);
             if (!spikeRepairs.empty()) {
                 appendRepairs(
                     output, spikeRepairs, width, height, color, base + 2,
-                    blocked, spikeRepairs, empty);
+                    blocked, spikeRepairs, empty, gridExact);
             }
             return output;
         }
@@ -3634,15 +3809,17 @@ std::vector<Primitive> vectorizePaint(
                 appendRepairs(fitted,
                     selectCells(region, width, coverageMask(region, fitted, false),
                                 {}, true, 0.f),
-                    width, height, color, base + 2, blocked, positions, empty);
+                    width, height, color, base + 2, blocked, positions, empty, gridExact);
                 roundExposedStrokeEnds(
-                    fitted, whole, width, height, color, blocked, permitted);
+                    fitted, whole, width, height, color, blocked, permitted, empty,
+                    gridExact);
                 auto spikeRepairs = normalizePaintSpikes(
-                    fitted, whole, width, height, color, blocked, permitted);
+                    fitted, whole, width, height, color, blocked, permitted,
+                    gridExact);
                 if (!spikeRepairs.empty()) {
                     appendRepairs(
                         fitted, spikeRepairs, width, height, color, base + 2,
-                        blocked, spikeRepairs, empty);
+                        blocked, spikeRepairs, empty, gridExact);
                 }
                 output.insert(output.end(), fitted.begin(), fitted.end());
                 continue;
@@ -3712,7 +3889,7 @@ std::vector<Primitive> vectorizePaint(
             chained = radius <= kThinRadius &&
                 appendChain(
                     shapes, region, component, width, height, radius, color, base + 1,
-                    blocked, permitted);
+                    blocked, permitted, empty, gridExact);
             if (!chained) {
                 float const band = std::clamp(radius * 1.4f, 1.4f, kBandWidth);
                 std::vector<Contour> refined;
@@ -3721,7 +3898,8 @@ std::vector<Primitive> vectorizePaint(
                     // Cuanto mas fina es la tira menos se la puede redondear: en
                     // una linea de dos celdas media celda de recorte ya es un
                     // cuarto del trazo y se ve como un pico.
-                    float const local = contourThickness(region, contour, band);
+                    float const local =
+                        contourThickness(region, contour, band, gridExact);
                     refined.push_back(refineContour(
                         contour, local <= 2.5f ? 1 : 2,
                         std::clamp(local * 0.3f, 0.3f, kSmoothTolerance)));
@@ -3730,16 +3908,19 @@ std::vector<Primitive> vectorizePaint(
                 for (auto const& contour : refined) {
                     appendBand(
                         outline, region, contour, band, color, base + 1,
-                        width, height, blocked, permitted);
+                        width, height, blocked, permitted, gridExact);
                 }
                 // Conservar diagonales que solo cruzan esquinas subpixel;
                 // descartar las que invaden el interior del color vecino. La
                 // orla solo se perdona en tiras giradas: en tramos rectos los
                 // bloques ya son perfectos y perdonar ahi solo suma derrame.
-                auto const nearMask = nearCells(component, width, height);
+                auto nearMask = nearCells(component, width, height);
+                // Pintura-Suave relaja el vacio para el borde continuo; en Pixel no perdona.
+                if (gridExact) maskVoid(nearMask, empty);
                 outline.erase(std::remove_if(outline.begin(), outline.end(),
                     [&](Primitive const& stroke) {
-                        return !fitsPaintOutline(stroke, permitted, nearMask, width, height);
+                        return !fitsPaintOutline(
+                            stroke, permitted, nearMask, width, height, gridExact);
                     }), outline.end());
                 inside = insideContours(region, refined);
                 // El contorno suavizado se sale de la silueta en las curvas, y el
@@ -3766,7 +3947,9 @@ std::vector<Primitive> vectorizePaint(
                         if (!coverable) inside[index] = 0;
                     }
                 }
-                collectPlain(coverageMask(region, outline, true), inside, false, 0.f);
+                collectPlain(
+                    coverageMask(region, outline, true, gridExact), inside, false,
+                    0.f);
                 shapes.insert(shapes.end(), outline.begin(), outline.end());
             }
         }
@@ -3778,7 +3961,10 @@ std::vector<Primitive> vectorizePaint(
         // para no salirse y ya cubren la mancha, asi que lo unico que dejaba era
         // un cuadrado por celda debajo de un trazo del mismo color. Lo que quede
         // suelto lo recoge igual la pasada de parches de mas abajo.
-        if (!chained) collectPlain(coverageMask(region, shapes, true), {}, true, 1.01f);
+        if (!chained) {
+            collectPlain(
+                coverageMask(region, shapes, true, gridExact), {}, true, 1.01f);
+        }
         appendBlocks(shapes, plain, width, height, color, base, spare);
         // Ni una celda suelta se puede dejar sin tapar: ahora el color de debajo
         // se estira por encima de las celdas que este tapa, asi que un hueco aqui
@@ -3794,23 +3980,25 @@ std::vector<Primitive> vectorizePaint(
     }
 
     appendRepairs(
-        output, repairs, width, height, color, base + 2, blocked, positions, empty);
+        output, repairs, width, height, color, base + 2, blocked, positions, empty,
+        gridExact);
 
     // Ultima barrera contra astillas: las reparaciones se generan despues de la
     // geometria principal y tambien pueden producir una tira diagonal diminuta.
     // Normalizar aqui deja curvas compuestas solo por rectangulos y circulos.
     roundExposedStrokeEnds(
-        output, positions, width, height, color, blocked, permitted);
+        output, positions, width, height, color, blocked, permitted, empty, gridExact);
     auto spikeRepairs = normalizePaintSpikes(
-        output, positions, width, height, color, blocked, permitted);
+        output, positions, width, height, color, blocked, permitted, gridExact);
     if (!spikeRepairs.empty()) {
         appendRepairs(
             output, spikeRepairs, width, height, color, base + 2,
-            blocked, spikeRepairs, empty);
+            blocked, spikeRepairs, empty, gridExact);
         // appendRepairs puede encontrar otra pareja de dos celdas. La segunda
         // pasada es barata y hace idempotente la garantia para curvas pequenas.
         auto leftover = normalizePaintSpikes(
-            output, spikeRepairs, width, height, color, blocked, permitted);
+            output, spikeRepairs, width, height, color, blocked, permitted,
+            gridExact);
         if (!leftover.empty()) {
             appendBlocks(output, leftover, width, height, color, base + 2);
         }

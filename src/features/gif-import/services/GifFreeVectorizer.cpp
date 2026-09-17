@@ -268,9 +268,10 @@ std::vector<Primitive> vectorizeFree(
     int color,
     int rank,
     std::vector<std::uint8_t> const& blocked,
-    std::vector<std::uint8_t> const& empty
+    std::vector<std::uint8_t> const& empty,
+    bool gridExact
 ) {
-    auto plain = vectorizePaint(positions, width, height, color, rank, blocked, empty);
+    auto plain = vectorizePaint(positions, width, height, color, rank, blocked, empty, gridExact);
     if (positions.empty() || stampVariants().empty()) return plain;
 
     std::size_t const cells = static_cast<std::size_t>(width) * height;

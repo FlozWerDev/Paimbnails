@@ -593,9 +593,11 @@ void GifImportPopup::refreshControls() {
         : m_options.mode == ImportMode::Blur ? "Modo: Blur"
         : m_options.mode == ImportMode::Vert ? "Modo: Vert"
         : "Modo: Bloques");
-    m_samplingSprite->setString(vector
-        ? "Suave: fijo"
-        : (m_options.sampling == SamplingMode::Smooth ? "Suave" : "Pixel"));
+    m_samplingSprite->setString((m_options.mode == ImportMode::Blocks ||
+        m_options.mode == ImportMode::Paint || m_options.mode == ImportMode::Render ||
+        m_options.mode == ImportMode::Free)
+        ? (m_options.sampling == SamplingMode::Smooth ? "Suave" : "Pixel")
+        : "Suave: fijo");
     m_ditherSprite->setString(usesSoftGeometry(m_options.mode)
         ? (m_options.softBackdrop ? "Base: negra" : "Base: nivel")
         : vector
@@ -918,7 +920,10 @@ void GifImportPopup::toggleBackground() {
 }
 
 void GifImportPopup::toggleSampling() {
-    if (m_options.mode != ImportMode::Blocks) return;
+    if (m_options.mode != ImportMode::Blocks &&
+        m_options.mode != ImportMode::Paint &&
+        m_options.mode != ImportMode::Render &&
+        m_options.mode != ImportMode::Free) return;
     m_options.sampling = m_options.sampling == SamplingMode::Smooth
         ? SamplingMode::Pixel : SamplingMode::Smooth;
     requestProcess();

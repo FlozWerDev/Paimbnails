@@ -25,6 +25,10 @@ constexpr uint8_t kRgb[][3] = {
     {255, 41, 41}, {255, 219, 38}, {31, 235, 255}
 };
 
+int childTouchPrio() {
+    return CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2;
+}
+
 void addButton(CCMenu* menu, char const* label, CCPoint position,
     std::function<void()> action, float scale = .62f) {
     auto* sprite = ButtonSprite::create(label, "goldFont.fnt", "GJ_button_01.png", .8f);
@@ -179,7 +183,7 @@ bool WebFeedbackPopup::pointOnImage(CCPoint world, CCPoint& normalized) const {
     auto point = m_image->convertToNodeSpace(world);
     auto size = m_image->getContentSize();
     if (point.x < 0 || point.y < 0 || point.x > size.width || point.y > size.height) return false;
-    normalized = {point.x / size.width, point.y / size.height};
+    normalized = ccp(point.x / size.width, point.y / size.height);
     return true;
 }
 

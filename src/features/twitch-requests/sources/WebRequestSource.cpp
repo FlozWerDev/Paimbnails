@@ -152,6 +152,12 @@ void WebRequestSource::registerHost() {
         .timeout(std::chrono::seconds(12))
         .bodyString(body.dump(matjson::NO_INDENTATION));
     if (!token.empty()) request.header("Authorization", "Bearer " + token);
+    // Prueba de propiedad de la cuenta: si el token guardado se perdio, el
+    // servidor solo crea uno nuevo cuando esto demuestra que la cuenta es tuya.
+    auto modCode = HttpClient::get().getModCode();
+    if (!modCode.empty()) request.header("X-Mod-Code", modCode);
+    auto viewerToken = HttpClient::get().getViewerToken();
+    if (!viewerToken.empty()) request.header("X-Viewer-Token", viewerToken);
 
     std::weak_ptr<uint8_t> life = m_life;
     WebHelper::dispatch(std::move(request), "POST", m_serverBase + "/api/request-host/register",
@@ -173,12 +179,19 @@ void WebRequestSource::registerHost() {
             if (!slug.empty()) m_slug = std::move(slug);
             Mod::get()->setSavedValue<std::string>(tokenKey(m_accountID), newToken);
             paimon::requestDeferredModSave();
+            if (parsed.unwrap()["rotated"].asBool().unwrapOr(false)) {
+                log::info("[WebRequests] el servidor creo un acceso nuevo para la pagina");
+                if (m_callbacks.onStatus)
+                    m_callbacks.onStatus("Se creo un acceso nuevo para tu pagina; conectando...");
+            }
             connectSocket(std::move(newToken));
         });
 }
 
 // Un token guardado que el servidor ya no reconoce se tira y se vuelve a pedir
-// una vez: si no, reinstalar el mod dejaria la pagina inservible para siempre.
+// una vez mandando la prueba de propiedad (mod code o viewer token): si la
+// cuenta es tuya, el servidor rota a un token nuevo solo. Si ni asi pasa,
+// reinstalar el mod dejaria la pagina inservible para siempre.
 void WebRequestSource::handleRegisterError(int status, std::string code) {
     if (code == "TOKEN_REQUIRED" && !m_retriedWithoutToken) {
         m_retriedWithoutToken = true;
@@ -191,7 +204,7 @@ void WebRequestSource::handleRegisterError(int status, std::string code) {
 
     std::string error = "No pudimos registrar tu pagina de requests";
     if (code == "TOKEN_REQUIRED") {
-        error = "Esta pagina ya esta registrada; restablece su acceso en el servidor";
+        error = "Esta pagina ya esta registrada en otro lugar; verifica tu cuenta de GD para crear un acceso nuevo";
     } else if (code == "USERNAME_TAKEN") {
         error = "Otra cuenta de GD ya registro esa direccion";
     } else if (code == "ACCOUNT_MISMATCH" || code == "USERNAME_MISMATCH"

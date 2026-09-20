@@ -36,9 +36,10 @@ class $modify(PaimonLiveSlotTextures, CCTextureCache) {
         return texture;
     }
 
-    void addImageAsyncCallBack(float dt) {
-        CCTextureCache::addImageAsyncCallBack(dt);
+    CCTexture2D* addUIImage(CCImage* image, char const* key) {
+        auto* texture = CCTextureCache::addUIImage(image, key);
         LiveSlotRuntime::get().refreshTextures();
+        return texture;
     }
 };
 

@@ -164,6 +164,11 @@ bool isMenuUiFrame(std::string const& lower) {
         "noteicon",
         "timeicon",
         "extendedicon",
+        // Neutral browser/editor chrome missed by the icon allowlist above.
+        "deletefilter_",
+        "edit_vline",
+        "hearton", "heartoff",
+        "storeitemicon",
     });
 }
 

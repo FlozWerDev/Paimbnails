@@ -251,4 +251,12 @@ struct BuildResult {
     explicit operator bool() const { return error.empty(); }
 };
 
+// Un frame ya rasterizado para la vista previa progresiva: lo produce el
+// worker y el popup solo lo sube a textura.
+struct PreviewImage {
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint8_t> rgba;
+};
+
 } // namespace paimon::gifimport

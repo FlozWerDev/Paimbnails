@@ -3,6 +3,7 @@
 // "bottom-menu" string ID is reliably present.
 
 #include "../ui/TextureStudioLayer.hpp"
+#include "../services/LiveSlotRuntime.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/MenuLayer.hpp>
@@ -27,6 +28,7 @@ class $modify(PaimonTextureStudioMenuHook, MenuLayer) {
 
     bool init() {
         if (!MenuLayer::init()) return false;
+        paimon::texture_studio::LiveSlotRuntime::get().start();
 
         if (!textureStudioEnabled()) return true;
 

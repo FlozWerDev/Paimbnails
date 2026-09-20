@@ -1,12 +1,12 @@
 #include "TextureStudioLayer.hpp"
 
 #include "../../../utils/FileDialog.hpp"
-#include "../engine/TextureLoaderInstaller.hpp"
+#include "../services/LiveSlotRuntime.hpp"
 #include "../persist/ProjectShare.hpp"
 #include "../persist/SlotPaths.hpp"
 #include "../persist/SlotStore.hpp"
 #include "NewProjectPopup.hpp"
-#include "ProjectEditorLayer.hpp"
+#include "LiveSlotEditor.hpp"
 #include "SlotsGridView.hpp"
 
 #include <Geode/Geode.hpp>
@@ -50,13 +50,13 @@ bool TextureStudioLayer::init() {
 
     buildBackground();
 
-    if (auto* title = CCLabelBMFont::create("Texture Studio", "bigFont.fnt")) {
+    if (auto* title = CCLabelBMFont::create("Pack Gen", "bigFont.fnt")) {
         title->setScale(0.75f);
         title->setPosition({winSize.width / 2.f, winSize.height - 22.f});
         this->addChild(title, 5);
     }
     if (auto* subtitle = CCLabelBMFont::create(
-            "Recolor GD's UI with your own palette and images", "chatFont.fnt")) {
+            "Color slots applied live to the game", "chatFont.fnt")) {
         subtitle->setScale(0.55f);
         subtitle->setColor({185, 190, 200});
         subtitle->setPosition({winSize.width / 2.f, winSize.height - 40.f});
@@ -75,7 +75,7 @@ bool TextureStudioLayer::init() {
         }
     }
 
-    if (auto* newSpr = ButtonSprite::create("+ New Pack", "bigFont.fnt", "GJ_button_01.png", 0.42f)) {
+    if (auto* newSpr = ButtonSprite::create("+ New Slot", "bigFont.fnt", "GJ_button_01.png", 0.42f)) {
         if (auto* newBtn = CCMenuItemExt::createSpriteExtra(newSpr,
                 [this](CCMenuItemSpriteExtra*) { this->onNewPack(nullptr); })) {
             newBtn->setPosition({winSize.width - 60.f, winSize.height - 24.f});
@@ -171,10 +171,9 @@ void TextureStudioLayer::onBack(CCObject*) {
 void TextureStudioLayer::onNewPack(CCObject*) {
     auto* popup = NewProjectPopup::create([this](std::string const& slotId) {
         log::info("[texture-studio] new slot created: {}", slotId);
-        SlotStore::get().setActiveSlot(slotId);
         if (m_grid) m_grid->refresh();
         this->refreshFooter();
-        ProjectEditorLayer::open(slotId);
+        LiveSlotEditor::open(slotId);
     });
     if (popup) popup->show();
 }
@@ -199,7 +198,6 @@ void TextureStudioLayer::onImportJson(CCObject*) {
         Loader::get()->queueInMainThread([weakSelf, slotId]() {
             auto self = weakSelf.lock();
             if (!self || !self->getParent()) return;
-            SlotStore::get().setActiveSlot(slotId);
             if (self->m_grid) self->m_grid->refresh();
             self->refreshFooter();
         });
@@ -207,55 +205,36 @@ void TextureStudioLayer::onImportJson(CCObject*) {
 }
 
 void TextureStudioLayer::onApplySlot(std::string const& slotId) {
-    SlotStore::get().setActiveSlot(slotId);
+    auto& store = SlotStore::get();
+    if (store.activeSlotId() == slotId) {
+        auto result = LiveSlotRuntime::get().disable();
+        if (!result) {
+            Notification::create(result.unwrapErr(), NotificationIcon::Error)->show();
+            return;
+        }
+    } else {
+        auto loaded = store.loadSlot(slotId);
+        if (!loaded) {
+            Notification::create(loaded.unwrapErr(), NotificationIcon::Error)->show();
+            return;
+        }
+        auto project = loaded.unwrap();
+        if (!project.liveRendering) {
+            LiveSlotEditor::open(slotId);
+            return;
+        }
+        auto result = LiveSlotRuntime::get().activate(project);
+        if (!result) {
+            Notification::create(result.unwrapErr(), NotificationIcon::Error)->show();
+            return;
+        }
+    }
+    if (m_grid) m_grid->refresh();
     refreshFooter();
-
-    if (!TextureLoaderInstaller::isInstalled()) {
-        PopupManager::get().quickPopup(
-            "Texture Loader Required",
-            "Install <cy>Texture Loader</c> to apply packs.\n"
-            "Open the Geode mod browser?",
-            "Cancel", "Open Index",
-            [](FLAlertLayer*, bool yes) {
-                if (yes) {
-                    web::openLinkInBrowser(
-                        "https://geode-sdk.org/mods/geode.texture-loader");
-                }
-            }).showInstant();
-        return;
-    }
-
-    auto loaded = SlotStore::get().loadSlot(slotId);
-    if (!loaded) {
-        Notification::create(("Slot load failed: " + loaded.unwrapErr()).c_str(),
-            NotificationIcon::Error, 3.0f)->show();
-        return;
-    }
-    auto const& project = loaded.unwrap();
-    if (!project.hasBuiltOnce) {
-        Notification::create("Generate the pack first (Edit -> Generate).",
-            NotificationIcon::Warning, 2.5f)->show();
-        return;
-    }
-
-    auto sourceZip = SlotPaths::outputZipFile(slotId);
-    auto installRes = TextureLoaderInstaller::install(sourceZip, project.id);
-    if (!installRes) {
-        Notification::create(("Apply failed: " + installRes.unwrapErr()).c_str(),
-            NotificationIcon::Error, 3.0f)->show();
-        return;
-    }
-
-    PopupManager::get().quickPopup(
-        "Applied!",
-        "Pack copied to Texture Loader.\n"
-        "<cy>Reload the game</c> to see the changes.",
-        "OK", nullptr,
-        [](FLAlertLayer*, bool) {}).showInstant();
 }
 
 void TextureStudioLayer::onEditSlot(std::string const& slotId) {
-    ProjectEditorLayer::open(slotId);
+    LiveSlotEditor::open(slotId);
 }
 
 void TextureStudioLayer::onDeleteSlot(std::string const& slotId) {
@@ -272,6 +251,7 @@ void TextureStudioLayer::onDeleteSlot(std::string const& slotId) {
                     NotificationIcon::Error, 3.0f)->show();
                 return;
             }
+            LiveSlotRuntime::get().restoreSaved();
             if (m_grid) m_grid->refresh();
             refreshFooter();
             Notification::create("Slot deleted.", NotificationIcon::Success, 1.5f)->show();

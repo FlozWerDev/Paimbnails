@@ -4,6 +4,7 @@
 #include "SlotStore.hpp"
 #include "TextureProjectSerialize.hpp"
 #include "../services/LocalBasePack.hpp"
+#include "../services/LiveSlotRuntime.hpp"
 
 #include <Geode/utils/file.hpp>
 #include <matjson.hpp>
@@ -47,6 +48,15 @@ geode::Result<std::string> ProjectShare::importFrom(
         return Err("not a Texture Studio pack: {}", parsed.unwrapErr());
     }
     auto project = parsed.unwrap();
+
+    if (project.liveRendering) {
+        LiveSlotRuntime::normalize(project);
+        project.sheets.clear();
+        project.representativeFrame.clear();
+        project.representativeSheetIndex = -1;
+        project.createdAt = project.modifiedAt = nowUnixMs();
+        return SlotStore::get().createSlot(project);
+    }
 
     // Foreign file: drop build state, re-resolve sheets locally.
     project.hasBuiltOnce = false;

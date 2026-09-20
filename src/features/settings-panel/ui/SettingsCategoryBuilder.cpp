@@ -901,21 +901,11 @@ void buildAutoPreview(CCNode* c, float w) {
 
 
 void buildTextureStudio(CCNode* c, float w) {
-    c->addChild(createSectionHeader("Texture Studio", w));
+    c->addChild(createSectionHeader("Pack Gen", w));
 
-    c->addChild(createToggleRow("Show Texture Studio Button",
+    c->addChild(createToggleRow("Enable Pack Gen",
         gset<bool>("texture-studio-enabled"),
         [](bool v){ sset<bool>("texture-studio-enabled", v); },
-        w));
-
-    c->addChild(createToggleRow("Auto-apply on Generate",
-        gset<bool>("texture-studio-auto-apply"),
-        [](bool v){ sset<bool>("texture-studio-auto-apply", v); },
-        w));
-
-    c->addChild(createToggleRow("Include Medium Quality Port",
-        gset<bool>("texture-studio-medium-port"),
-        [](bool v){ sset<bool>("texture-studio-medium-port", v); },
         w));
 }
 
@@ -1002,7 +992,7 @@ std::vector<SettingsGroup> const& getAllGroups() {
         { "features", "Features", {
             { "profileredesign", "Profile Redesign", buildProfileRedesign },
             { "autopreview",     "Auto Previews",    buildAutoPreview     },
-            { "texturestudio",   "Texture Studio",   buildTextureStudio   },
+            { "texturestudio",   "Pack Gen",   buildTextureStudio   },
             { "songsearch",      "Song Search",      buildSongSearch      },
         }},
         { "editor", "Editor", {
@@ -1040,7 +1030,7 @@ std::vector<SettingsCategory> const& getAllCategories() {
         { "menuphysics",   "Menu Physics",  "", buildMenuPhysics    },
         { "profileredesign","Profile Redesign","", buildProfileRedesign },
         { "autopreview",   "Auto Previews", "", buildAutoPreview    },
-        { "texturestudio", "Texture Studio","", buildTextureStudio  },
+        { "texturestudio", "Pack Gen","", buildTextureStudio  },
         { "songsearch",    "Song Search",   "", buildSongSearch     },
         { "scorecells",    "Score Cells",   "", buildScoreCells     },
         { "globalmusic",   "Music Layers",  "", buildGlobalMusic    },

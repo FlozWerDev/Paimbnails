@@ -16,26 +16,12 @@ public:
 protected:
     bool init(SlotCreatedCallback cb);
 
-    void refreshSheetsList();
-    void setAllChecked(bool checked);
-
     void onCreateClicked(cocos2d::CCObject*);
 
 private:
     SlotCreatedCallback m_onCreated;
 
-    geode::TextInput* m_nameInput   = nullptr;
-    geode::TextInput* m_authorInput = nullptr;
-    cocos2d::CCNode*  m_sheetsListContainer = nullptr;
-
-    struct SheetRow {
-        std::string baseName;
-        std::string qualitySuffix;
-        std::string plistPath;
-        std::string pngPath;
-        bool checked = true;
-    };
-    std::vector<SheetRow> m_rows;
+    geode::TextInput* m_nameInput = nullptr;
 };
 
 }  // namespace paimon::texture_studio

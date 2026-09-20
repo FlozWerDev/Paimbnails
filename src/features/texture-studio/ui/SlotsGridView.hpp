@@ -12,8 +12,6 @@
 
 namespace paimon::texture_studio {
 
-class ImageBuffer;
-
 class SlotsGridView : public cocos2d::CCNode {
 public:
     using SlotActionCallback = std::function<void(std::string const& slotId)>;
@@ -36,13 +34,10 @@ protected:
 private:
     cocos2d::CCNode* makeSlotCard(std::string const& id,
                                   std::string const& name,
-                                  std::int64_t modifiedAt,
-                                  bool hasBuiltOnce);
+                                  std::int64_t modifiedAt);
     cocos2d::CCNode* makeNewPackCard();
     void requestThumbnails(std::vector<std::pair<int, TextureProject>> jobs,
                            int generation);
-    void applyThumbnail(int cardTag, int generation,
-                        std::shared_ptr<ImageBuffer> image);
 
     SlotActionCallback     m_onApply;
     SlotActionCallback     m_onEdit;

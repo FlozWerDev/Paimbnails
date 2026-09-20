@@ -1,11 +1,6 @@
 #include "SlotsGridView.hpp"
 
 #include "../persist/SlotStore.hpp"
-#include "../data/SpritesheetReader.hpp"
-#include "../engine/SpritePreviewRenderer.hpp"
-#include "../services/FramePixelCache.hpp"
-#include "../../../core/RuntimeLifecycle.hpp"
-#include "../../../utils/ThreadTracker.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -111,7 +106,7 @@ void SlotsGridView::refresh() {
     int i = 0;
     std::vector<std::pair<int, TextureProject>> thumbnailJobs;
     for (auto const& entry : list) {
-        if (auto* card = makeSlotCard(entry.id, entry.name, entry.modifiedAt, entry.hasBuiltOnce)) {
+        if (auto* card = makeSlotCard(entry.id, entry.name, entry.modifiedAt)) {
             int cardTag = 1000 + i;
             card->setTag(cardTag);
             placeCard(card, i++);
@@ -130,8 +125,7 @@ void SlotsGridView::refresh() {
 
 CCNode* SlotsGridView::makeSlotCard(std::string const& id,
                                     std::string const& name,
-                                    std::int64_t modifiedAt,
-                                    bool hasBuiltOnce) {
+                                    std::int64_t modifiedAt) {
     auto* card = CCNode::create();
     if (!card) return nullptr;
     card->setContentSize({kCardW, kCardH});
@@ -149,10 +143,10 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
     }
 
     if (auto* metaLbl = CCLabelBMFont::create(
-            (formatRelativeTime(modifiedAt) + (hasBuiltOnce ? "   Built" : "   Draft")).c_str(),
+            (formatRelativeTime(modifiedAt) + (SlotStore::get().activeSlotId() == id ? "   Active" : "   Saved")).c_str(),
             "bigFont.fnt")) {
         metaLbl->setScale(0.32f);
-        metaLbl->setColor(hasBuiltOnce ? ccColor3B{120, 210, 130} : ccColor3B{170, 170, 178});
+        metaLbl->setColor(SlotStore::get().activeSlotId() == id ? ccColor3B{120, 210, 130} : ccColor3B{170, 170, 178});
         card->addChildAtPosition(metaLbl, Anchor::Top, {18.f, -34.f});
     }
 
@@ -179,7 +173,7 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
     // Local Y of the card's bottom edge, relative to the menu centre.
     constexpr float kBottom = -kCardH * 0.5f;
 
-    if (auto* applySpr = ButtonSprite::create("Apply", "goldFont.fnt", "GJ_button_01.png", 0.42f)) {
+    if (auto* applySpr = ButtonSprite::create(SlotStore::get().activeSlotId() == id ? "Disable" : "Apply", "goldFont.fnt", "GJ_button_01.png", 0.42f)) {
         if (auto* applyBtn = CCMenuItemExt::createSpriteExtra(applySpr,
                 [this, id](CCMenuItemSpriteExtra*) { if (m_onApply) m_onApply(id); })) {
             applyBtn->setPosition({0.f, kBottom + 50.f});
@@ -213,65 +207,18 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
 
 void SlotsGridView::requestThumbnails(
     std::vector<std::pair<int, TextureProject>> jobs, int generation) {
-    if (jobs.empty()) return;
-    WeakRef<SlotsGridView> weakSelf(this);
-    auto currentGeneration = m_thumbnailGeneration;
-    paimon::ThreadTracker::get().spawn(
-        [weakSelf, currentGeneration, generation, jobs = std::move(jobs)]() mutable {
-        for (auto& [cardTag, project] : jobs) {
-            if (paimon::isRuntimeShuttingDown() ||
-                currentGeneration->load(std::memory_order_acquire) != generation) return;
-            if (!ensureRepresentativeFrame(project)) continue;
-            int sheetIndex = project.representativeSheetIndex;
-            if (sheetIndex < 0 || sheetIndex >= static_cast<int>(project.sheets.size())) continue;
-            auto const& sheet = project.sheets[sheetIndex];
-            auto data = FramePixelCache::get().frameData(
-                std::filesystem::path(sheet.sourcePlistPath),
-                std::filesystem::path(sheet.sourcePngPath), project.representativeFrame);
-            if (!data) continue;
-            auto frame = std::move(data).unwrap();
-            SpritePreviewOptions options;
-            options.colors.color1 = project.color1;
-            options.colors.color2 = project.color2;
-            options.colors.glow = project.colorGlow;
-            options.brightness = project.brightness;
-            options.alternativeGlowOverlay = project.alternativeGlowOverlay;
-            options.maskSoftness     = project.maskSoftness;
-            options.clusterPrecision = project.clusterPrecision;
-            options.edgeCleanup      = project.edgeCleanup;
-            options.outlineProtect   = project.outlineProtect;
-            options.saturation       = project.saturation;
-            options.contrast         = project.contrast;
-            auto tinted = SpritePreviewRenderer::renderTinted(frame.pixels, options);
-            auto image = std::make_shared<ImageBuffer>(
-                SpritesheetReader::composeLogicalFrame(tinted, frame.info));
-            Loader::get()->queueInMainThread(
-                [weakSelf, currentGeneration, generation, cardTag, image]() {
-                if (paimon::isRuntimeShuttingDown() ||
-                    currentGeneration->load(std::memory_order_acquire) != generation) return;
-                auto self = weakSelf.lock();
-                if (!self || !self->getParent()) return;
-                self->applyThumbnail(cardTag, generation, image);
-            });
+    if (!m_contentLayer || generation != m_thumbnailGeneration->load()) return;
+    for (auto const& [cardTag, project] : jobs) {
+        auto* card = m_contentLayer->getChildByTag(cardTag);
+        auto* host = card ? card->getChildByTag(200) : nullptr;
+        if (!host) continue;
+        host->removeAllChildren();
+        ccColor3B colors[] = {project.color1, project.color2, project.colorGlow, project.colorDetail};
+        for (int i = 0; i < 4; ++i) {
+            auto* swatch = CCLayerColor::create({colors[i].r, colors[i].g, colors[i].b, 255}, 15.f, 15.f);
+            swatch->setPosition({3.f + (i % 2) * 17.f, 3.f + (i / 2) * 17.f});
+            host->addChild(swatch);
         }
-    });
-}
-
-void SlotsGridView::applyThumbnail(int cardTag, int generation,
-                                   std::shared_ptr<ImageBuffer> image) {
-    if (!image || image->empty() || !m_contentLayer ||
-        m_thumbnailGeneration->load(std::memory_order_acquire) != generation) return;
-    auto* card = m_contentLayer->getChildByTag(cardTag);
-    auto* host = card ? card->getChildByTag(200) : nullptr;
-    if (!host) return;
-    if (auto* placeholder = host->getChildByTag(201)) placeholder->removeFromParent();
-    if (auto* sprite = SpritePreviewRenderer::createSprite(*image)) {
-        auto size = sprite->getContentSize();
-        if (size.width > 0.f && size.height > 0.f) {
-            sprite->setScale(std::min({34.f / size.width, 34.f / size.height, 2.f}));
-        }
-        sprite->setTag(201);
-        host->addChildAtPosition(sprite, Anchor::Center);
     }
 }
 
@@ -299,7 +246,7 @@ CCNode* SlotsGridView::makeNewPackCard() {
         plusLbl->setColor({150, 220, 150});
         card->addChildAtPosition(plusLbl, Anchor::Center, {0.f, 14.f});
     }
-    if (auto* tlbl = CCLabelBMFont::create("New Pack", "bigFont.fnt")) {
+    if (auto* tlbl = CCLabelBMFont::create("New Slot", "bigFont.fnt")) {
         tlbl->setScale(0.42f);
         tlbl->setColor({170, 230, 170});
         card->addChildAtPosition(tlbl, Anchor::Center, {0.f, -24.f});

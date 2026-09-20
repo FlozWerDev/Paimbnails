@@ -113,7 +113,7 @@ CASES = [
 ]
 
 
-def run():
+def run(fragment_name="tint_preview.glsl", extra_uniforms=None, reference_pixel=reference):
     display = api(egl, "eglGetDisplay", Pointer, Pointer)(None)
     assert api(egl, "eglInitialize", UInt, Pointer, Pointer, Pointer)(display, None, None)
     attributes = (Int * 13)(0x3033, 1, 0x3040, 4, 0x3024, 8, 0x3023, 8,
@@ -134,7 +134,7 @@ def run():
     directory = Path(__file__).resolve().parents[1] / "resources" / "shaders"
     vertex = shader(0x8B31, "uniform mat4 CC_MVPMatrix;\n" +
                     (directory / "cell_vertex.glsl").read_text())
-    fragment = shader(0x8B30, (directory / "tint_preview.glsl").read_text())
+    fragment = shader(0x8B30, (directory / fragment_name).read_text())
     program = api(gl, "glCreateProgram", UInt)()
     attach = api(gl, "glAttachShader", None, UInt, UInt)
     attach(program, vertex)
@@ -159,6 +159,10 @@ def run():
                  b"u_saturation", b"u_contrast", b"u_darkThreshold",
                  b"u_glowReplace", b"u_applyDetail", b"CC_MVPMatrix"]:
         assert location(program, name) != -1, name
+    for name, value in (extra_uniforms or {}).items():
+        loc = location(program, name.encode())
+        assert loc != -1, name
+        uniform1f(loc, value)
     identity = (Float * 16)(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
     api(gl, "glUniformMatrix4fv", None, Int, Int, UInt, Pointer)(
         location(program, b"CC_MVPMatrix"), 1, 0, identity
@@ -223,7 +227,7 @@ def run():
         for y in range(W):
             for x in range(W):
                 got = raw[(y * W + x) * 4:(y * W + x) * 4 + 4]
-                want = list(reference(BASE[y][x], MASK[y][x], colors, bright,
+                want = list(reference_pixel(BASE[y][x], MASK[y][x], colors, bright,
                                       sat, con, thresh, replace, apply_detail))
                 if BASE[y][x] == want:
                     assert got == want, (name, x, y, got, want)
@@ -238,7 +242,7 @@ def run():
     api(egl, "eglDestroySurface", UInt, Pointer, Pointer)(display, surface)
     api(egl, "eglDestroyContext", UInt, Pointer, Pointer)(display, context)
     api(egl, "eglTerminate", UInt, Pointer)(display)
-    print(f"PASS: tint_preview compiles/links and passes {checked} pixel checks "
+    print(f"PASS: {fragment_name} compiles/links and passes {checked} pixel checks "
           f"across {len(CASES)} uniform cases.")
 
 

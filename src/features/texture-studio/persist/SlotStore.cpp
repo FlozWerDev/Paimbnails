@@ -15,6 +15,14 @@ namespace paimon::texture_studio {
 
 namespace {
 
+geode::Result<> ensureProjectDirectory(TextureProject const& project) {
+    if (!project.liveRendering) return SlotPaths::ensureSlotDirs(project.id);
+    std::error_code ec;
+    std::filesystem::create_directories(SlotPaths::slotDir(project.id), ec);
+    if (ec) return Err("create slot directory: {}", ec.message());
+    return Ok();
+}
+
 matjson::Value indexEntryToJson(SlotIndexEntry const& e) {
     auto obj = matjson::Value::object();
     obj["id"]            = e.id;
@@ -97,12 +105,17 @@ geode::Result<> SlotStore::saveIndex() {
     return Ok();
 }
 
-void SlotStore::setActiveSlot(std::string id) {
-    if (m_activeSlotId == id) return;
+geode::Result<> SlotStore::setActiveSlot(std::string id) {
+    loadIndex();
+    if (!id.empty() && !exists(id)) return Err("Slot does not exist");
+    if (m_activeSlotId == id) return Ok();
+    auto previous = m_activeSlotId;
     m_activeSlotId = std::move(id);
     if (auto r = saveIndex(); !r) {
-        log::warn("[texture-studio] saveIndex (setActiveSlot): {}", r.unwrapErr());
+        m_activeSlotId = std::move(previous);
+        return r;
     }
+    return Ok();
 }
 
 bool SlotStore::exists(std::string_view id) const {
@@ -135,7 +148,7 @@ geode::Result<std::string> SlotStore::createSlot(TextureProject seed) {
     if (seed.createdAt  == 0) seed.createdAt  = now;
     if (seed.modifiedAt == 0) seed.modifiedAt = now;
 
-    if (auto r = SlotPaths::ensureSlotDirs(finalId); !r) {
+    if (auto r = ensureProjectDirectory(seed); !r) {
         return Err("createSlot dir setup: {}", r.unwrapErr());
     }
 
@@ -155,7 +168,7 @@ geode::Result<std::string> SlotStore::createSlot(TextureProject seed) {
     m_index.insert(m_index.begin(), e);
 
     if (auto r = saveIndex(); !r) {
-        log::warn("[texture-studio] saveIndex (createSlot): {}", r.unwrapErr());
+        return Err("Slot saved, but index write failed: {}", r.unwrapErr());
     }
 
     return Ok(finalId);
@@ -192,7 +205,7 @@ geode::Result<> SlotStore::saveSlot(TextureProject const& project) {
 
     if (project.id.empty()) return Err("saveSlot: id is empty");
 
-    if (auto r = SlotPaths::ensureSlotDirs(project.id); !r) {
+    if (auto r = ensureProjectDirectory(project); !r) {
         return Err("saveSlot dir setup: {}", r.unwrapErr());
     }
 
@@ -226,37 +239,26 @@ geode::Result<> SlotStore::saveSlot(TextureProject const& project) {
     }
     rebuildIndexCache();
     if (auto r = saveIndex(); !r) {
-        log::warn("[texture-studio] saveIndex (saveSlot): {}", r.unwrapErr());
+        return Err("Slot saved, but index write failed: {}", r.unwrapErr());
     }
     return Ok();
 }
 
 geode::Result<> SlotStore::deleteSlot(std::string_view id) {
     loadIndex();
-
-    m_projects.erase(std::string(id));
-
-    m_index.erase(
-        std::remove_if(m_index.begin(), m_index.end(),
-            [&](SlotIndexEntry const& e) { return e.id == id; }),
-        m_index.end());
-
+    auto previousIndex = m_index;
+    auto previousActive = m_activeSlotId;
+    std::erase_if(m_index, [&](SlotIndexEntry const& entry) { return entry.id == id; });
     if (m_activeSlotId == id) m_activeSlotId.clear();
-
-    // Tolerate failure (e.g. file held open); next saveIndex forgets it anyway.
-    auto dir = SlotPaths::slotDir(id);
+    if (auto result = saveIndex(); !result) {
+        m_index = std::move(previousIndex);
+        m_activeSlotId = std::move(previousActive);
+        return result;
+    }
+    m_projects.erase(std::string(id));
     std::error_code ec;
-    if (std::filesystem::exists(dir, ec)) {
-        std::filesystem::remove_all(dir, ec);
-        if (ec) {
-            log::warn("[texture-studio] remove_all '{}': {}",
-                geode::utils::string::pathToString(dir), ec.message());
-        }
-    }
-
-    if (auto r = saveIndex(); !r) {
-        log::warn("[texture-studio] saveIndex (deleteSlot): {}", r.unwrapErr());
-    }
+    std::filesystem::remove_all(SlotPaths::slotDir(id), ec);
+    if (ec) log::warn("[texture-studio] delete slot '{}': {}", id, ec.message());
     return Ok();
 }
 

@@ -224,10 +224,12 @@ void GradientPlayerObject::updateAnimSprite(IconType type, Gradient const& gradi
 
 // Robot and spider share the whole refresh dance; only the icon kind differs.
 void GradientPlayerObject::refreshMech(IconType type) {
-    auto paint = [this, type] {
+    GJBaseGameLayer* layer = m_gameLayer ? m_gameLayer : GJBaseGameLayer::get();
+    if (!layer || (this != layer->m_player1 && this != layer->m_player2)) return;
+    auto paint = [this, type, layer] {
         if (getTag() == 0xCB04) return;
         if (shouldReturn(GJBaseGameLayer::get())) return;
-        updateAnimSprite(type, GradientUtils::getGradient(type, this == m_gameLayer->m_player2), m_fields.self());
+        updateAnimSprite(type, GradientUtils::getGradient(type, this == layer->m_player2), m_fields.self());
     };
     if (!m_fields->m_animSpritesInitialized) {
         Loader::get()->queueInMainThread([paint, this] {
@@ -240,7 +242,10 @@ void GradientPlayerObject::refreshMech(IconType type) {
 }
 
 void GradientPlayerObject::updateGradient() {
-    if (shouldReturn(GJBaseGameLayer::get())) return;
+    GJBaseGameLayer* layer = GJBaseGameLayer::get();
+    if (shouldReturn(layer)) return;
+    // Remote multiplayer dolls are PlayerObjects too; only the local pair wears this kit.
+    if (layer && this != layer->m_player1 && this != layer->m_player2) return;
     auto f = m_fields.self();
 
     if (f->m_swingFlipLoaded)

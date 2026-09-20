@@ -496,11 +496,8 @@ GradientConfig GradientUtils::getSavedConfig(IconType type, ColorType colorType,
     if (!isSettingEnabled(P2_SEPARATE)) secondPlayer = false;
 
     std::string id = getConfigKey(type, secondPlayer);
-    if (!Mod::get()->hasSavedValue(id)) {
-        id = getConfigKey(static_cast<IconType>(-1), secondPlayer);
-        if (!Mod::get()->hasSavedValue(id))
-            return getDefaultConfig(colorType, secondPlayer);
-    }
+    if (!Mod::get()->hasSavedValue(id))
+        return getDefaultConfig(colorType, secondPlayer);
 
     matjson::Value stored = Mod::get()->getSavedValue<matjson::Value>(id);
     std::string color = "color" + std::to_string(colorType);
@@ -598,6 +595,20 @@ void GradientUtils::migrateLegacyStorage() {
             if (iconID > 0)
                 mod->setSavedValue<int64_t>(legacyKey, iconID);
         }
+    }
+
+    for (bool secondPlayer : {false, true}) {
+        std::string globalKey = getConfigKey(static_cast<IconType>(-1), secondPlayer);
+        if (!mod->hasSavedValue(globalKey)) continue;
+        matjson::Value global = mod->getSavedValue<matjson::Value>(globalKey);
+        if (!isGradientContainer(global)) continue;
+        // The old shared kit becomes each icon's own starting point; later edits stay per icon.
+        for (size_t i = 1; i < types.size(); ++i) {
+            std::string key = getConfigKey(types[i], secondPlayer);
+            if (!mod->hasSavedValue(key))
+                mod->setSavedValue(key, global);
+        }
+        mod->getSaveContainer().erase(globalKey);
     }
 
     if (!mod->hasSavedValue(kSavedGradientsKey) && mod->hasSavedValue("saved-gradients")) {

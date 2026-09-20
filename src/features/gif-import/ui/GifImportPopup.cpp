@@ -40,6 +40,10 @@ struct ProcessingProgress {
     std::atomic<int> passes = 0;
     std::mutex mutex;
     std::optional<BuildResult> result;
+    // El dibujo a medias llega en pixeles; el hilo principal solo lo sube a textura.
+    std::mutex previewMutex;
+    std::optional<PreviewImage> preview;
+    std::uint64_t previewVersion = 0;
 };
 
 struct LoadedSource {
@@ -504,6 +508,7 @@ void GifImportPopup::startProcess() {
     if (!m_source) return;
     m_processing = true;
     m_reprocess = false;
+    m_previewVersion = 0;
     m_progress = std::make_shared<ProcessingProgress>();
     m_progressTrack->setVisible(true);
     m_progressFill->setScaleX(0.f);
@@ -528,6 +533,7 @@ void GifImportPopup::startProcess() {
     auto source = m_scaled;
     Options const options = m_options;
     auto progress = m_progress;
+    displaySource();
     bool const started = paimon::ThreadTracker::get().spawn([source, options, progress] {
         geode::utils::thread::setName("Paimon GIF Plan");
         auto result = buildPlan(*source, options, [progress](BuildProgress const& update) {
@@ -535,6 +541,10 @@ void GifImportPopup::startProcess() {
             progress->stage.store(static_cast<int>(update.stage), std::memory_order_relaxed);
             progress->pass.store(update.pass, std::memory_order_relaxed);
             progress->passes.store(update.passes, std::memory_order_relaxed);
+        }, [progress](PreviewImage image) {
+            std::lock_guard lock(progress->previewMutex);
+            progress->preview = std::move(image);
+            ++progress->previewVersion;
         });
         std::lock_guard lock(progress->mutex);
         progress->result = std::move(result);
@@ -695,14 +705,11 @@ void GifImportPopup::refreshProgress() {
     m_statsLabel->setString(text.c_str());
 }
 
-void GifImportPopup::refreshPreview() {
-    if (!m_plan || m_plan->frames.empty()) return;
-    m_previewFrame = std::clamp(m_previewFrame, 0, static_cast<int>(m_plan->frames.size()) - 1);
-    int const previewScale = m_plan->mode == ImportMode::Blocks ? 1 : 4;
-    int const previewWidth = m_plan->width * previewScale;
-    int const previewHeight = m_plan->height * previewScale;
-    auto pixels = renderPlanFrame(*m_plan, m_previewFrame, previewScale, true);
-
+void GifImportPopup::displayPixels(
+    std::vector<std::uint8_t> const& pixels, int width, int height, bool alias
+) {
+    if (width <= 0 || height <= 0 ||
+        pixels.size() < static_cast<std::size_t>(width) * height * 4) return;
     if (m_previewSprite) {
         m_previewSprite->removeFromParent();
         m_previewSprite = nullptr;
@@ -710,13 +717,13 @@ void GifImportPopup::refreshPreview() {
     auto* texture = new CCTexture2D();
     if (texture->initWithData(
         pixels.data(), kCCTexture2DPixelFormat_RGBA8888,
-        previewWidth, previewHeight,
-        {static_cast<float>(previewWidth), static_cast<float>(previewHeight)}
+        width, height,
+        {static_cast<float>(width), static_cast<float>(height)}
     )) {
-        if (m_plan->mode == ImportMode::Blocks) texture->setAliasTexParameters();
+        if (alias) texture->setAliasTexParameters();
         else texture->setAntiAliasTexParameters();
         m_previewSprite = CCSprite::createWithTexture(texture);
-        float const scale = std::min(198.f / previewWidth, 162.f / previewHeight);
+        float const scale = std::min(198.f / width, 162.f / height);
         m_previewSprite->setScale(scale);
         m_previewSprite->setPosition({125.f, 171.f});
         m_mainLayer->addChild(m_previewSprite, 3);
@@ -725,10 +732,59 @@ void GifImportPopup::refreshPreview() {
     texture->release();
 }
 
+void GifImportPopup::displaySource() {
+    if (!m_scaled || m_scaled->frames.empty()) return;
+    int const width = m_scaled->width;
+    int const height = m_scaled->height;
+    auto const& rgba = m_scaled->frames.front().rgba;
+    if (width <= 0 || height <= 0 ||
+        rgba.size() < static_cast<std::size_t>(width) * height * 4) return;
+    // La fuente puede ser enorme; basta una miniatura para el primer destello.
+    int const stride = std::max(1, std::max(width, height) / 192);
+    int const previewWidth = (width + stride - 1) / stride;
+    int const previewHeight = (height + stride - 1) / stride;
+    std::vector<std::uint8_t> pixels(
+        static_cast<std::size_t>(previewWidth) * previewHeight * 4);
+    for (int y = 0; y < previewHeight; ++y) {
+        for (int x = 0; x < previewWidth; ++x) {
+            std::size_t const from =
+                (static_cast<std::size_t>(y * stride) * width + x * stride) * 4;
+            std::size_t const to =
+                (static_cast<std::size_t>(y) * previewWidth + x) * 4;
+            for (int c = 0; c < 4; ++c) pixels[to + c] = rgba[from + c];
+        }
+    }
+    displayPixels(pixels, previewWidth, previewHeight, m_options.mode == ImportMode::Blocks);
+}
+
+void GifImportPopup::refreshPreview() {
+    if (!m_plan || m_plan->frames.empty()) return;
+    m_previewFrame = std::clamp(m_previewFrame, 0, static_cast<int>(m_plan->frames.size()) - 1);
+    int const previewScale = m_plan->mode == ImportMode::Blocks ? 1 : 4;
+    int const previewWidth = m_plan->width * previewScale;
+    int const previewHeight = m_plan->height * previewScale;
+    auto pixels = renderPlanFrame(*m_plan, m_previewFrame, previewScale, true);
+    displayPixels(pixels, previewWidth, previewHeight, m_plan->mode == ImportMode::Blocks);
+}
+
+void GifImportPopup::pollPreview() {
+    if (!m_progress) return;
+    std::optional<PreviewImage> image;
+    {
+        std::lock_guard lock(m_progress->previewMutex);
+        if (m_progress->previewVersion == m_previewVersion || !m_progress->preview) return;
+        m_previewVersion = m_progress->previewVersion;
+        image = m_progress->preview;
+    }
+    displayPixels(
+        image->rgba, image->width, image->height, m_options.mode == ImportMode::Blocks);
+}
+
 void GifImportPopup::tick(float dt) {
     pollSourceLoad();
     if (m_processing) {
         refreshProgress();
+        pollPreview();
         pollProcessing();
         return;
     }

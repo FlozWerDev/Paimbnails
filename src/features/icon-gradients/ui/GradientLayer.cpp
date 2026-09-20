@@ -385,10 +385,7 @@ void GradientLayer::save() {
 void GradientLayer::save(GradientConfig config, ColorType colorType) {
     if (!m_selectedButton) return;
 
-    IconType type = m_selectedButton->isLocked()
-        ? m_selectedButton->getType()
-        : static_cast<IconType>(-1);
-    std::string id = GradientUtils::getConfigKey(type, m_isSecondPlayer);
+    std::string id = GradientUtils::getConfigKey(m_selectedButton->getType(), m_isSecondPlayer);
 
     std::string color = "color" + std::to_string(colorType);
 
@@ -491,12 +488,8 @@ void GradientLayer::onPointColor(CCObject*) {
 void GradientLayer::onLockToggle(CCObject*) {
     if (!m_selectedButton) return;
 
-    // The first lock snapshots every channel; later locks reuse them.
     if (!m_selectedButton->isLocked()) {
-        m_selectedButton->setLocked(!m_selectedButton->isLocked());
-
-        for (ColorType type : {ColorType::Main, ColorType::Secondary, ColorType::Glow, ColorType::White, ColorType::Line})
-            save(GradientUtils::getSavedConfig(static_cast<IconType>(-1), type, m_isSecondPlayer), type);
+        m_selectedButton->setLocked(true);
     } else {
         std::string id = GradientUtils::getConfigKey(m_selectedButton->getType(), m_isSecondPlayer);
 
@@ -506,7 +499,7 @@ void GradientLayer::onLockToggle(CCObject*) {
 
         m_selectedButton->setLocked(locked);
 
-        load(static_cast<IconType>(-1), m_currentColor, true, true, true);
+        load(m_selectedButton->getType(), m_currentColor, true, true, true);
 
         Loader::get()->queueInMainThread([self = Ref(this), locked] { self->m_dotToggle->toggle(locked); });
     }

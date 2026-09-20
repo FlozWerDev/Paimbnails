@@ -24,12 +24,14 @@
 #include "../features/rtx/services/RTXRenderer.hpp"
 #include "../features/icon-maker/services/IconApplier.hpp"
 #include "../features/icon-maker/services/IconThumbs.hpp"
+#include "../features/texture-studio/services/LiveSlotRuntime.hpp"
 
 using namespace geode::prelude;
 
 namespace paimon::glreload {
 
 void onBeforeGameReload() {
+    paimon::texture_studio::LiveSlotRuntime::get().onGLContextReload();
     log::info("[GLContextReload] GameManager::reloadAll - soltando texturas y "
               "shaders del mod antes de que se recree el contexto GL");
 

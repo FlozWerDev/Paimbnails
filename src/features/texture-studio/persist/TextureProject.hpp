@@ -73,6 +73,9 @@ struct SpriteSetting {
 
 struct TextureProject {
     int schemaVersion = 2;
+    bool liveRendering = false;
+    float tintStrength = 1.f;
+    float glowStrength = 1.f;
 
     std::string id;
     std::string name;

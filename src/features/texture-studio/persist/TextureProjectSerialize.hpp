@@ -213,19 +213,24 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
         using namespace paimon::texture_studio;
         auto obj = matjson::Value::object();
         obj["schemaVersion"] = serial::kCurrentSchemaVersion;
+        obj["liveRendering"] = p.liveRendering;
+        obj["tintStrength"] = p.tintStrength;
+        obj["glowStrength"] = p.glowStrength;
         obj["id"]            = p.id;
         obj["name"]          = p.name;
         obj["author"]        = p.author;
         obj["createdAt"]     = p.createdAt;
         obj["modifiedAt"]    = p.modifiedAt;
 
-        auto sheets = matjson::Value::array();
-        for (auto const& s : p.sheets) {
-            sheets.push(matjson::Value(s));
+        if (!p.liveRendering) {
+            auto sheets = matjson::Value::array();
+            for (auto const& s : p.sheets) {
+                sheets.push(matjson::Value(s));
+            }
+            obj["sheets"] = sheets;
+            obj["representativeFrame"] = p.representativeFrame;
+            obj["representativeSheetIndex"] = p.representativeSheetIndex;
         }
-        obj["sheets"] = sheets;
-        obj["representativeFrame"] = p.representativeFrame;
-        obj["representativeSheetIndex"] = p.representativeSheetIndex;
 
         obj["color1"]    = serial::colorToJson(p.color1);
         obj["color2"]    = serial::colorToJson(p.color2);
@@ -239,6 +244,12 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
         obj["outlineProtect"]   = p.outlineProtect;
         obj["saturation"]       = p.saturation;
         obj["contrast"]         = p.contrast;
+
+        if (p.liveRendering) {
+            obj["alternativeGlowOverlay"] = p.alternativeGlowOverlay;
+            obj["tintScope"] = static_cast<int>(p.tintScope);
+            return obj;
+        }
 
         obj["includeMediumPort"]     = p.includeMediumPort;
         obj["alternativeGlowOverlay"]= p.alternativeGlowOverlay;
@@ -288,6 +299,9 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
                 "detected locally now, nothing is downloaded.");
         }
         p.schemaVersion = fileVersion;
+        p.liveRendering = v["liveRendering"].asBool().unwrapOr(false);
+        p.tintStrength = static_cast<float>(std::clamp(v["tintStrength"].asDouble().unwrapOr(1.0), 0.0, 1.0));
+        p.glowStrength = static_cast<float>(std::clamp(v["glowStrength"].asDouble().unwrapOr(1.0), 0.0, 1.0));
         p.id            = v["id"].asString().unwrapOr("");
         p.name          = v["name"].asString().unwrapOr("");
         p.author        = v["author"].asString().unwrapOr("");

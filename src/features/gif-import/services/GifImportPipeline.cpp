@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -54,6 +55,57 @@ StageProgress progressRange(
 
 void finishProgress(BuildProgressCallback const& progress, int pass = 0, int passes = 0) {
     if (progress) progress({BuildStage::Done, 1.f, pass, passes});
+}
+
+constexpr int kPreviewScale = 2;
+constexpr long long kPreviewIntervalMs = 250;
+
+// El trazado avisa con el dibujo a medias; el popup solo sube la textura.
+// Sin espera: si otro hilo ya esta publicando, este aviso se salta.
+struct PreviewThrottle {
+    explicit PreviewThrottle(BuildPreviewCallback preview = {})
+        : callback(std::move(preview)) {}
+
+    BuildPreviewCallback callback;
+
+    std::unique_lock<std::mutex> claim() {
+        if (!callback) return {};
+        std::unique_lock<std::mutex> lock(mutex, std::try_to_lock);
+        if (!lock.owns_lock()) return {};
+        auto const now = std::chrono::steady_clock::now();
+        if (now - last < std::chrono::milliseconds(kPreviewIntervalMs)) return {};
+        last = now;
+        return lock;
+    }
+
+    void publish(PreviewImage image) {
+        if (!image.rgba.empty()) callback(std::move(image));
+    }
+
+private:
+    std::mutex mutex;
+    std::chrono::steady_clock::time_point last{};
+};
+
+PreviewImage gridPreviewImage(
+    std::vector<std::int32_t> const& cells,
+    std::vector<Color> const& palette,
+    int width,
+    int height
+) {
+    PreviewImage out{width, height,
+        std::vector<std::uint8_t>(static_cast<std::size_t>(width) * height * 4, 0)};
+    for (int i = 0; i < width * height; ++i) {
+        int const color = cells[static_cast<std::size_t>(i)];
+        if (color < 0 || color >= static_cast<int>(palette.size())) continue;
+        auto const& chosen = palette[static_cast<std::size_t>(color)];
+        std::size_t const pixel = static_cast<std::size_t>(i) * 4;
+        out.rgba[pixel] = chosen.r;
+        out.rgba[pixel + 1] = chosen.g;
+        out.rgba[pixel + 2] = chosen.b;
+        out.rgba[pixel + 3] = 255;
+    }
+    return out;
 }
 
 struct Pixel {
@@ -1650,7 +1702,10 @@ Candidate temporalCandidate(
     int width,
     int height,
     bool loop,
-    GeometryContext const& context
+    GeometryContext const& context,
+    std::vector<Color> const& palette,
+    ImportMode mode,
+    PreviewThrottle* preview = nullptr
 ) {
     int const frameCount = static_cast<int>(frames.size());
     int const words = (frameCount + 63) / 64;
@@ -1673,9 +1728,36 @@ Candidate temporalCandidate(
     entries.reserve(buckets.size());
     for (auto const& entry : buckets) entries.emplace_back(&entry.first, &entry.second);
     std::vector<std::vector<Primitive>> traced(entries.size());
+    std::vector<std::atomic<bool>> tracedDone(entries.size());
+    for (auto& flag : tracedDone) flag.store(false, std::memory_order_relaxed);
     parallelFor(entries.size(), [&](std::size_t index) {
         traced[index] = buildGeometry(
             *entries[index].second, width, height, entries[index].first->color, context);
+        tracedDone[index].store(true, std::memory_order_release);
+        // Los modos suaves leen sus moldes del plan final; a medias saldrian en blanco.
+        if (!preview || usesSoftGeometry(mode)) return;
+        auto claim = preview->claim();
+        if (!claim.owns_lock()) return;
+        ImportPlan partial;
+        partial.width = width;
+        partial.height = height;
+        partial.mode = mode;
+        partial.palette = palette;
+        partial.frames = {frames.front()};
+        VisibilityTrack visible;
+        visible.mask.assign(static_cast<std::size_t>(words), 0);
+        visible.mask[0] = 1;
+        for (std::size_t done = 0; done < entries.size(); ++done) {
+            if (!tracedDone[done].load(std::memory_order_acquire)) continue;
+            auto const& key = *entries[done].first;
+            auto& target = allFrames(key.mask, frameCount)
+                ? partial.staticObjects : visible.objects;
+            target.insert(target.end(), traced[done].begin(), traced[done].end());
+        }
+        if (!visible.objects.empty()) partial.tracks.push_back(std::move(visible));
+        auto pixels = renderPlanFrame(partial, 0, kPreviewScale, false);
+        claim.unlock();
+        preview->publish({width * kPreviewScale, height * kPreviewScale, std::move(pixels)});
     });
 
     Candidate candidate;
@@ -1711,7 +1793,10 @@ Candidate frameCandidate(
     int height,
     int colors,
     bool loop,
-    GeometryContext const& context
+    GeometryContext const& context,
+    std::vector<Color> const& palette,
+    ImportMode mode,
+    PreviewThrottle* preview = nullptr
 ) {
     int const frameCount = static_cast<int>(frames.size());
     int const words = (frameCount + 63) / 64;
@@ -1737,9 +1822,29 @@ Candidate frameCandidate(
         }
     }
     std::vector<std::vector<Primitive>> byColor(static_cast<std::size_t>(colors));
+    std::vector<std::atomic<bool>> colorDone(static_cast<std::size_t>(colors));
+    for (auto& flag : colorDone) flag.store(false, std::memory_order_relaxed);
     parallelFor(static_cast<std::size_t>(colors), [&](std::size_t color) {
         byColor[color] = buildGeometry(
             staticPositions[color], width, height, static_cast<int>(color), context);
+        colorDone[color].store(true, std::memory_order_release);
+        if (!preview || usesSoftGeometry(mode)) return;
+        auto claim = preview->claim();
+        if (!claim.owns_lock()) return;
+        ImportPlan partial;
+        partial.width = width;
+        partial.height = height;
+        partial.mode = mode;
+        partial.palette = palette;
+        partial.frames = {frames.front()};
+        for (std::size_t done = 0; done < byColor.size(); ++done) {
+            if (!colorDone[done].load(std::memory_order_acquire)) continue;
+            partial.staticObjects.insert(
+                partial.staticObjects.end(), byColor[done].begin(), byColor[done].end());
+        }
+        auto pixels = renderPlanFrame(partial, 0, kPreviewScale, false);
+        claim.unlock();
+        preview->publish({width * kPreviewScale, height * kPreviewScale, std::move(pixels)});
     });
     for (auto const& objects : byColor) {
         candidate.staticObjects.insert(
@@ -1748,6 +1853,8 @@ Candidate frameCandidate(
     sortByLayer(candidate.staticObjects);
 
     std::vector<VisibilityTrack> perFrame(static_cast<std::size_t>(frameCount));
+    std::vector<std::atomic<bool>> frameDone(static_cast<std::size_t>(frameCount));
+    for (auto& flag : frameDone) flag.store(false, std::memory_order_relaxed);
     parallelFor(static_cast<std::size_t>(frameCount), [&](std::size_t index) {
         int const frame = static_cast<int>(index);
         VisibilityTrack track;
@@ -1767,6 +1874,25 @@ Candidate frameCandidate(
         }
         sortByLayer(track.objects);
         perFrame[index] = std::move(track);
+        frameDone[index].store(true, std::memory_order_release);
+        if (!preview || usesSoftGeometry(mode)) return;
+        if (!frameDone[0].load(std::memory_order_acquire)) return;
+        auto claim = preview->claim();
+        if (!claim.owns_lock()) return;
+        ImportPlan partial;
+        partial.width = width;
+        partial.height = height;
+        partial.mode = mode;
+        partial.palette = palette;
+        partial.frames = {frames.front()};
+        for (auto const& objects : byColor) {
+            partial.staticObjects.insert(
+                partial.staticObjects.end(), objects.begin(), objects.end());
+        }
+        partial.tracks.push_back(perFrame[0]);
+        auto pixels = renderPlanFrame(partial, 0, kPreviewScale, false);
+        claim.unlock();
+        preview->publish({width * kPreviewScale, height * kPreviewScale, std::move(pixels)});
     });
     for (auto& track : perFrame) {
         if (!track.objects.empty()) candidate.tracks.push_back(std::move(track));
@@ -1957,7 +2083,8 @@ BuildResult buildAt(
     int dimension,
     int frameLimit,
     bool compactSpeckles,
-    StageProgress const& progress = {}
+    StageProgress const& progress = {},
+    PreviewThrottle* preview = nullptr
 ) {
     report(progress, BuildStage::Preparing, 0.f);
     int width = dimension;
@@ -1997,6 +2124,9 @@ BuildResult buildAt(
         }
     }
     // Geometria se revisa contra rejilla limpia, no contra previa.
+    if (preview) {
+        preview->publish(gridPreviewImage(frames.front().cells, palette, width, height));
+    }
     auto const referenceFrames = frames;
     GeometryContext context;
     context.mode = options.mode;
@@ -2026,9 +2156,29 @@ BuildResult buildAt(
         }
         chosen.strategy = "estatico";
         std::vector<std::vector<Primitive>> byColor(palette.size());
+        std::vector<std::atomic<bool>> colorDone(palette.size());
+        for (auto& flag : colorDone) flag.store(false, std::memory_order_relaxed);
         parallelFor(palette.size(), [&](std::size_t color) {
             byColor[color] = buildGeometry(
                 positions[color], width, height, static_cast<int>(color), context);
+            colorDone[color].store(true, std::memory_order_release);
+            if (!preview || usesSoftGeometry(options.mode)) return;
+            auto claim = preview->claim();
+            if (!claim.owns_lock()) return;
+            ImportPlan partial;
+            partial.width = width;
+            partial.height = height;
+            partial.mode = options.mode;
+            partial.palette = palette;
+            partial.frames = {frames.front()};
+            for (std::size_t done = 0; done < byColor.size(); ++done) {
+                if (!colorDone[done].load(std::memory_order_acquire)) continue;
+                partial.staticObjects.insert(
+                    partial.staticObjects.end(), byColor[done].begin(), byColor[done].end());
+            }
+            auto pixels = renderPlanFrame(partial, 0, kPreviewScale, false);
+            claim.unlock();
+            preview->publish({width * kPreviewScale, height * kPreviewScale, std::move(pixels)});
         });
         for (auto const& objects : byColor) {
             chosen.staticObjects.insert(
@@ -2052,10 +2202,12 @@ BuildResult buildAt(
         }
     } else {
         auto plan = [&](std::vector<GridFrame> const& source) {
-            auto temporal = temporalCandidate(source, width, height, options.loop, context);
+            auto temporal = temporalCandidate(
+                source, width, height, options.loop, context,
+                palette, options.mode, preview);
             auto perFrame = frameCandidate(
                 source, width, height, static_cast<int>(palette.size()),
-                options.loop, context);
+                options.loop, context, palette, options.mode, preview);
             return chooseCandidate(
                 std::move(temporal), std::move(perFrame), options.objectBudget);
         };
@@ -2138,6 +2290,12 @@ BuildResult buildAt(
     for (auto const& track : plan.motionTracks) {
         for (auto const& object : track.objects) countShape(object);
     }
+    // La revision compara frame a frame y tarda; el dibujo ya esta listo.
+    if (preview) {
+        auto pixels = renderPlanFrame(plan, 0, kPreviewScale, false);
+        preview->publish({
+            plan.width * kPreviewScale, plan.height * kPreviewScale, std::move(pixels)});
+    }
     if (usesPaintGeometry(plan.mode)) {
         report(progress, BuildStage::Reviewing, 0.9f);
         plan.geometrySimilarity = paintPlanSimilarity(plan, referenceFrames, {});
@@ -2207,7 +2365,8 @@ BuildResult buildRenderPlan(
     SourceAnimation const& source,
     Options const& options,
     int frameLimit,
-    BuildProgressCallback const& progress
+    BuildProgressCallback const& progress,
+    PreviewThrottle* preview = nullptr
 ) {
     auto const dimensions = renderDimensions(options);
     int const passes = static_cast<int>(dimensions.size());
@@ -2240,9 +2399,9 @@ BuildResult buildRenderPlan(
             shares[index].store(value, std::memory_order_relaxed);
             publish();
         };
-        auto result = buildAt(source, options, dimension, frameLimit, true, share);
+        auto result = buildAt(source, options, dimension, frameLimit, true, share, preview);
         if (result && result.plan.geometrySimilarity < kPaintReviewGate) {
-            auto plain = buildAt(source, options, dimension, frameLimit, false, share);
+            auto plain = buildAt(source, options, dimension, frameLimit, false, share, preview);
             if (plain && plain.plan.geometrySimilarity > result.plan.geometrySimilarity) {
                 result = std::move(plain);
             }
@@ -2283,7 +2442,8 @@ BuildResult buildRegularPlan(
     SourceAnimation const& source,
     Options const& options,
     int frameLimit,
-    BuildProgressCallback const& progress
+    BuildProgressCallback const& progress,
+    PreviewThrottle* preview = nullptr
 ) {
     int dimension = options.maxDimension;
     BuildResult result;
@@ -2297,7 +2457,7 @@ BuildResult buildRegularPlan(
         float const length = attempt == 0 ? 0.74f : 0.23f / 19.f;
         auto compactProgress = progressRange(progress, start, length * 0.68f);
         result = buildAt(
-            source, options, dimension, frameLimit, true, compactProgress);
+            source, options, dimension, frameLimit, true, compactProgress, preview);
         if (!result) {
             finishProgress(progress);
             return result;
@@ -2308,7 +2468,7 @@ BuildResult buildRegularPlan(
             auto plainProgress = progressRange(
                 progress, start + length * 0.68f, length * 0.3f);
             auto plain = buildAt(
-                source, options, dimension, frameLimit, false, plainProgress);
+                source, options, dimension, frameLimit, false, plainProgress, preview);
             if (plain && plain.plan.geometrySimilarity > result.plan.geometrySimilarity) {
                 result = std::move(plain);
                 result.plan.requestedDimension = options.maxDimension;
@@ -2392,7 +2552,8 @@ BuildResult tryMotionPlan(
 BuildResult buildPlan(
     SourceAnimation const& source,
     Options const& rawOptions,
-    BuildProgressCallback progress
+    BuildProgressCallback progress,
+    BuildPreviewCallback preview
 ) {
     if (progress) progress({BuildStage::Preparing, 0.f, 0, 0});
     if (source.width <= 0 || source.height <= 0 || source.frames.empty()) {
@@ -2459,9 +2620,12 @@ BuildResult buildPlan(
     int frameLimit = std::min(options.maxFrames, static_cast<int>(source.frames.size()));
     Options searchOptions = options;
     searchOptions.motion = false;
+    PreviewThrottle throttle{std::move(preview)};
+    // Sin callback no hay a quien avisar: se pasa nulo y se ahorra el raster.
+    PreviewThrottle* previewPtr = throttle.callback ? &throttle : nullptr;
     auto result = options.mode == ImportMode::Render
-        ? buildRenderPlan(source, searchOptions, frameLimit, progress)
-        : buildRegularPlan(source, searchOptions, frameLimit, progress);
+        ? buildRenderPlan(source, searchOptions, frameLimit, progress, previewPtr)
+        : buildRegularPlan(source, searchOptions, frameLimit, progress, previewPtr);
     if (options.motion) result = tryMotionPlan(source, options, std::move(result));
     // Glow despues: el halo no debe bajar la rejilla.
     if (result && !usesSoftGeometry(options.mode)) {

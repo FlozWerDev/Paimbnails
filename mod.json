@@ -805,27 +805,15 @@
       "default": true
     },
     "texture-studio-title": {
-      "name": "Texture Studio",
-      "description": "Algorithmic texture pack generator. Recoloring idea inspired by PackGen by Asterveila (building on ravexcode's TexturePackWeb); fully self-contained, works offline, no downloads.",
+      "name": "Pack Gen",
+      "description": "Live color slots for the game UI. Recoloring inspired by PackGen by Asterveila and ravexcode. Works locally with GPU rendering.",
       "type": "title"
     },
     "texture-studio-enabled": {
       "type": "bool",
-      "name": "Enable Texture Studio Button",
-      "description": "Show the Texture Studio button in the main menu.",
+      "name": "Enable Pack Gen",
+      "description": "Enable live color slots and show Pack Gen in the main menu.",
       "default": true
-    },
-    "texture-studio-auto-apply": {
-      "type": "bool",
-      "name": "Auto-apply on Generate",
-      "description": "Automatically copy generated packs to Texture Loader's packs folder.",
-      "default": true
-    },
-    "texture-studio-medium-port": {
-      "type": "bool",
-      "name": "Always include Medium Quality Port",
-      "description": "Generate -hd files alongside -uhd by default.",
-      "default": false
     },
     "comment-mentions-title": {
       "name": "Comment Mentions",

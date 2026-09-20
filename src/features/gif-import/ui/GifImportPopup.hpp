@@ -4,8 +4,10 @@
 
 #include <Geode/Geode.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <vector>
 
 class ButtonSprite;
 class PaimonLoadingOverlay;
@@ -56,6 +58,9 @@ private:
     void refreshControls();
     void pollSourceLoad();
     void pollProcessing();
+    void pollPreview();
+    void displayPixels(std::vector<std::uint8_t> const& pixels, int width, int height, bool alias);
+    void displaySource();
     void refreshProgress();
     void refreshPreview();
     void tick(float dt);
@@ -75,6 +80,7 @@ private:
     float m_scaledBlur = -1.f;
     int m_previewFrame = 0;
     float m_previewElapsed = 0.f;
+    std::uint64_t m_previewVersion = 0;
 
     cocos2d::CCLabelBMFont* m_fileLabel = nullptr;
     cocos2d::CCLabelBMFont* m_statsLabel = nullptr;

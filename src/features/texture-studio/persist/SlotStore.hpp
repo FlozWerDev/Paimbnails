@@ -38,7 +38,7 @@ public:
     std::vector<SlotIndexEntry> const& list() const { return m_index; }
 
     std::string const& activeSlotId() const { return m_activeSlotId; }
-    void setActiveSlot(std::string id);
+    geode::Result<> setActiveSlot(std::string id);
 
     // Returns the assigned id (derived from name, made unique on collision).
     geode::Result<std::string> createSlot(TextureProject seed);

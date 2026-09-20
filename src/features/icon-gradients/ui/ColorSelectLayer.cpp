@@ -1,28 +1,67 @@
+// Color-grid popup for the gradient editor: every GD color index as a
+// tappable swatch, arranged in the same blocks the game itself uses.
+//
+// Idea credit: "Icon Gradients" by zilko
+// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
+// all rights reserved). Independent implementation: same layout and
+// behavior, own expression.
+
 #include "ColorSelectLayer.hpp"
 #include "GradientLayer.hpp"
 
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
 
+namespace {
+
+// The grid is four blocks of four columns: 24px steps inside a block,
+// 36px across the gutter between blocks.
+float columnX(int col) {
+    return 17.f + 24.f * col + 12.f * (col / 4);
+}
+
+constexpr float kRowY[] = {
+    217.f, 193.f, 169.f, 135.4f, 111.399994f, 87.399994f,
+};
+
+constexpr int kColorRows[][16] = {
+    {51, 19, 48, 9, 62, 63, 10, 29, 70, 42, 11, 27, 72, 73, 0, 1},
+    {37, 53, 54, 55, 26, 59, 60, 61, 71, 14, 31, 45, 105, 28, 32, 20},
+    {25, 56, 57, 58, 30, 64, 65, 66, 46, 67, 68, 69, 2, 38, 79, 80},
+    {74, 75, 44, 3, 83, 16, 4, 5, 52, 41, 6, 35, 98, 8, 36, 103},
+    {40, 76, 77, 78, 22, 39, 84, 50, 47, 23, 92, 93, 7, 13, 24, 104},
+    {33, 21, 81, 82, 34, 85, 86, 87, 49, 95, 96, 97, 43, 99, 100, 101},
+};
+
+// Ragged bottom row: four slots aligned with the second block, then a
+// tail of seven shifted right.
+constexpr int kBottomRow[] = {106, 88, 89, 90};
+constexpr float kBottomRowY = 63.399994f;
+constexpr int kBottomTail[] = {12, 91, 17, 102, 18, 94, 15};
+constexpr float kBottomTailX = 269.f;
+constexpr float kBottomTailY = 53.799988f;
+
+} // namespace
+
 ColorSelectLayer* ColorSelectLayer::create(GradientLayer* layer) {
-    ColorSelectLayer* ret = new ColorSelectLayer();
+    auto ret = new ColorSelectLayer();
 
     ret->m_layer = layer;
 
-    if (ret->init()) {
-        ret->autorelease();
-        return ret;
+    if (!ret->init()) {
+        delete ret;
+        return nullptr;
     }
 
-    delete ret;
-    return nullptr;
+    ret->autorelease();
+    return ret;
 }
 
 void ColorSelectLayer::onColor(CCObject* sender) {
     if (m_layer) {
-        m_layer->colorSelected(
-            static_cast<CCSprite*>(static_cast<CCMenuItemSpriteExtra*>(sender)->getNormalImage())->getColor()
-        );
+        auto item = static_cast<CCMenuItemSpriteExtra*>(sender);
+        auto image = static_cast<CCSprite*>(item->getNormalImage());
+        m_layer->colorSelected(image->getColor());
     }
 
     onClose(nullptr);
@@ -33,7 +72,7 @@ void ColorSelectLayer::createButton(int color, const CCPoint& pos) {
     spr->setColor(GameManager::get()->colorForIdx(color));
     spr->setScale(0.65f);
 
-    CCMenuItemSpriteExtra* btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ColorSelectLayer::onColor));
+    auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ColorSelectLayer::onColor));
     btn->setPosition(pos + ccp(10, -23));
     m_buttonMenu->addChild(btn);
 }
@@ -43,113 +82,16 @@ bool ColorSelectLayer::init() {
 
     setTitle("Select Color");
 
-    createButton(51, ccp(17, 217));
-    createButton(19, ccp(41, 217));
-    createButton(48, ccp(65, 217));
-    createButton(9, ccp(89, 217));
-    createButton(62, ccp(125, 217));
-    createButton(63, ccp(149, 217));
-    createButton(10, ccp(173, 217));
-    createButton(29, ccp(197, 217));
-    createButton(70, ccp(233, 217));
-    createButton(42, ccp(257, 217));
-    createButton(11, ccp(281, 217));
-    createButton(27, ccp(305, 217));
-    createButton(72, ccp(341, 217));
-    createButton(73, ccp(365, 217));
-    createButton(0, ccp(389, 217));
-    createButton(1, ccp(413, 217));
-    createButton(37, ccp(17, 193));
-    createButton(53, ccp(41, 193));
-    createButton(54, ccp(65, 193));
-    createButton(55, ccp(89, 193));
-    createButton(26, ccp(125, 193));
-    createButton(59, ccp(149, 193));
-    createButton(60, ccp(173, 193));
-    createButton(61, ccp(197, 193));
-    createButton(71, ccp(233, 193));
-    createButton(14, ccp(257, 193));
-    createButton(31, ccp(281, 193));
-    createButton(45, ccp(305, 193));
-    createButton(105, ccp(341, 193));
-    createButton(28, ccp(365, 193));
-    createButton(32, ccp(389, 193));
-    createButton(20, ccp(413, 193));
-    createButton(25, ccp(17, 169));
-    createButton(56, ccp(41, 169));
-    createButton(57, ccp(65, 169));
-    createButton(58, ccp(89, 169));
-    createButton(30, ccp(125, 169));
-    createButton(64, ccp(149, 169));
-    createButton(65, ccp(173, 169));
-    createButton(66, ccp(197, 169));
-    createButton(46, ccp(233, 169));
-    createButton(67, ccp(257, 169));
-    createButton(68, ccp(281, 169));
-    createButton(69, ccp(305, 169));
-    createButton(2, ccp(341, 169));
-    createButton(38, ccp(365, 169));
-    createButton(79, ccp(389, 169));
-    createButton(80, ccp(413, 169));
-    createButton(74, ccp(17, 135.4));
-    createButton(75, ccp(41, 135.4));
-    createButton(44, ccp(65, 135.4));
-    createButton(3, ccp(89, 135.4));
-    createButton(83, ccp(125, 135.4));
-    createButton(16, ccp(149, 135.4));
-    createButton(4, ccp(173, 135.4));
-    createButton(5, ccp(197, 135.4));
-    createButton(52, ccp(233, 135.4));
-    createButton(41, ccp(257, 135.4));
-    createButton(6, ccp(281, 135.4));
-    createButton(35, ccp(305, 135.4));
-    createButton(98, ccp(341, 135.4));
-    createButton(8, ccp(365, 135.4));
-    createButton(36, ccp(389, 135.4));
-    createButton(103, ccp(413, 135.4));
-    createButton(40, ccp(17, 111.399994));
-    createButton(76, ccp(41, 111.399994));
-    createButton(77, ccp(65, 111.399994));
-    createButton(78, ccp(89, 111.399994));
-    createButton(22, ccp(125, 111.399994));
-    createButton(39, ccp(149, 111.399994));
-    createButton(84, ccp(173, 111.399994));
-    createButton(50, ccp(197, 111.399994));
-    createButton(47, ccp(233, 111.399994));
-    createButton(23, ccp(257, 111.399994));
-    createButton(92, ccp(281, 111.399994));
-    createButton(93, ccp(305, 111.399994));
-    createButton(7, ccp(341, 111.399994));
-    createButton(13, ccp(365, 111.399994));
-    createButton(24, ccp(389, 111.399994));
-    createButton(104, ccp(413, 111.399994));
-    createButton(33, ccp(17, 87.399994));
-    createButton(21, ccp(41, 87.399994));
-    createButton(81, ccp(65, 87.399994));
-    createButton(82, ccp(89, 87.399994));
-    createButton(34, ccp(125, 87.399994));
-    createButton(85, ccp(149, 87.399994));
-    createButton(86, ccp(173, 87.399994));
-    createButton(87, ccp(197, 87.399994));
-    createButton(49, ccp(233, 87.399994));
-    createButton(95, ccp(257, 87.399994));
-    createButton(96, ccp(281, 87.399994));
-    createButton(97, ccp(305, 87.399994));
-    createButton(43, ccp(341, 87.399994));
-    createButton(99, ccp(365, 87.399994));
-    createButton(100, ccp(389, 87.399994));
-    createButton(101, ccp(413, 87.399994));
-    createButton(106, ccp(125, 63.399994));
-    createButton(88, ccp(149, 63.399994));
-    createButton(89, ccp(173, 63.399994));
-    createButton(90, ccp(197, 63.399994));
-    createButton(12, ccp(269, 53.799988));
-    createButton(91, ccp(293, 53.799988));
-    createButton(17, ccp(317, 53.799988));
-    createButton(102, ccp(341, 53.799988));
-    createButton(18, ccp(365, 53.799988));
-    createButton(94, ccp(389, 53.799988));
-    createButton(15, ccp(413, 53.799988));
+    for (int row = 0; row < 6; ++row) {
+        for (int col = 0; col < 16; ++col)
+            createButton(kColorRows[row][col], ccp(columnX(col), kRowY[row]));
+    }
+
+    for (int col = 0; col < 4; ++col)
+        createButton(kBottomRow[col], ccp(columnX(col + 4), kBottomRowY));
+
+    for (int k = 0; k < 7; ++k)
+        createButton(kBottomTail[k], ccp(kBottomTailX + 24.f * k, kBottomTailY));
 
     return true;
 }

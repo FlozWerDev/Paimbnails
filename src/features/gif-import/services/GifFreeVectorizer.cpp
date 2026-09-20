@@ -14,18 +14,13 @@ namespace paimon::gifimport {
 
 namespace {
 
-// Por debajo de esto un molde no llega ni a mirarse: la firma es gruesa y no
-// merece la pena revisar celda a celda algo que deja media mancha sin pintar.
+// Firma gruesa: por debajo no compensa revisar celda a celda.
 constexpr float kStampFloor = 0.5f;
-// Una mancha que llena casi toda su caja es un rectangulo, y un rectangulo lo
-// hace mejor el trazado de pintura, que ademas lo funde con sus vecinos.
+// Casi llena: lo hace mejor pintura y funde vecinos.
 constexpr float kRectCoverage = 0.93f;
-// Cuantas variantes se revisan celda a celda. La firma de 64 bits ordena, pero
-// es gruesa y la primera no siempre aguanta la revision fina.
+// La firma ordena pero es gruesa: no basta la primera.
 constexpr int kExactTries = 6;
-// Un molde tiene que ahorrar mas de un objeto para entrar. Con ahorrar uno no
-// basta: la cuenta se hace mancha a mancha y no ve las fusiones que la criba del
-// plan hace despues entre rectangulos, que un molde ya no permite.
+// Debe ahorrar 2: no ve fusiones de rectangulos del plan.
 constexpr std::size_t kStampSaving = 2;
 constexpr int kSplitDepth = 5;
 constexpr std::size_t kMinStampCells = 8;
@@ -43,9 +38,6 @@ struct FreeContext {
     std::vector<std::uint8_t> const* empty = nullptr;
 };
 
-// Lo que costaria pintar estas celdas sin moldes. Es la unica vara de medir
-// honesta que hay: se le pregunta al mismo trazado que se usaria si el molde no
-// existiese, en vez de adivinar por el area o por la forma de la caja.
 std::size_t paintCost(FreeContext const& context, std::vector<int> const& cells) {
     if (cells.empty()) return 0;
     return vectorizePaint(
@@ -92,9 +84,7 @@ struct Evaluation {
     bool clean = true;
 };
 
-// Cuenta lo que el molde acierta de verdad y lo descarta en cuanto asoma sobre
-// una celda que se ve. La firma de 64 bits no llega a esto: una punta que se
-// sale media celda no mueve ni un bit y en el nivel canta.
+// La firma no ve puntas de media celda: descarta si asoma.
 Evaluation evaluate(FreeContext const& context, ShapeXform const& shape) {
     Evaluation result;
     auto const box = xformBox(shape, context.width, context.height);
@@ -205,9 +195,7 @@ void fitBlob(
         auto const evaluation = evaluate(context, shape);
         if (!evaluation.clean || evaluation.covered <= 0) continue;
 
-        // El molde solo entra si lo que deja sin pintar, mas el, cuestan menos
-        // que la mancha entera a pinceladas. Sin esta cuenta el modo libre suelta
-        // una figura bonita y luego paga los remates, que es peor que no ponerla.
+        // Solo entra si molde + resto cuesta menos que pintar todo.
         auto const shadow = coveredCells(context, shape);
         std::vector<int> rest;
         rest.reserve(cells.size());
@@ -235,9 +223,7 @@ void fitBlob(
         return;
     }
 
-    // Ningun molde salia a cuenta entero: se corta por el lado largo y cada mitad
-    // vuelve a buscar. Las figuras grandes salen de una pieza y el detalle se
-    // resuelve abajo, que es como se decora a mano.
+    // Sin molde rentable: parte por el lado largo y reintenta.
     std::vector<int> first;
     std::vector<int> second;
     if (boxWidth >= boxHeight) {
@@ -308,12 +294,11 @@ std::vector<Primitive> vectorizeFree(
 
     auto leftover = stillMissing(context, positions);
     if (!leftover.empty()) {
-        auto rest = vectorizePaint(leftover, width, height, color, rank, blocked, empty);
+        auto rest = vectorizePaint(
+            leftover, width, height, color, rank, blocked, empty, gridExact);
         output.insert(output.end(), rest.begin(), rest.end());
     }
-    // El molde compite con la pincelada, no la sustituye: si la biblioteca no
-    // aporta nada para este color se queda lo de siempre, asi que el modo libre
-    // nunca puede salir mas caro que el de pintura.
+    // El modo libre nunca sale mas caro que pintura.
     return output.size() < plain.size() ? output : plain;
 }
 

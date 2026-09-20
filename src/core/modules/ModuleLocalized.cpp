@@ -153,7 +153,7 @@ Map const& spanishDescs() {
         {"paimbnails.customslider.global", "Usa tu icono como el pulgar del slider."},
         {"paimbnails.paimonicons.global", "Recolorea los iconos del juego con tu paleta."},
         {"paimbnails.transitions.global", "Transiciones personalizadas entre escenas."},
-        {"paimbnails.volumescroll.global", "Mantiene un modificador y usa la rueda para cambiar el volumen."},
+        {"paimbnails.volumescroll.global", "Mantiene un modificador y usa la rueda para cambiar el volumen. En tactil, arrastra con tres dedos."},
         {"paimbnails.dynamicvolume.global", "Ecualiza una cancion fuerte al nivel de la anterior, o mantiene todas al mismo nivel."},
         {"paimbnails.safedrop.global", "Evita picos de efecto y volumen antes de que lleguen."},
         {"paimbnails.backgrounds.global", "Imagenes, videos y shaders como fondo de capa."},

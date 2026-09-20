@@ -111,7 +111,6 @@ static bool sehGuardedCall(void (*fn)(PlayLayer*), PlayLayer* pl) {
 FramebufferCapture::CaptureRequest FramebufferCapture::s_request;
 geode::CopyableFunction<void(bool, CCTexture2D*, std::shared_ptr<uint8_t>, int, int)>
     FramebufferCapture::s_processingCallback;
-uint64_t FramebufferCapture::s_processingGeneration = 0;
 std::vector<FramebufferCapture::DeferredCallback> FramebufferCapture::s_deferredCallbacks;
 bool FramebufferCapture::s_isCapturing  = false;
 int  FramebufferCapture::s_captureW     = 0;
@@ -203,8 +202,6 @@ void hideGameplayEffectNodes(PlayLayer* pl, HiddenNodeList& hidden) {
 void hideKnownModNodes(PlayLayer* pl, HiddenNodeList& hidden) {
     if (!pl) return;
 
-    auto const& userShown = paimon::capture::userShownNodes();
-
     static const std::unordered_set<std::string_view> kModNodeIds = {
         "mat.run-info/RunInfoWidget",
         "cheeseworks.speedruntimer/timer",
@@ -238,7 +235,7 @@ void hideKnownModNodes(PlayLayer* pl, HiddenNodeList& hidden) {
             if (!id.empty()
                 && (kModNodeIds.contains(std::string_view{id})
                     || std::string_view{id}.starts_with(kGlobedPrefix))) {
-                if (child->isVisible() && !userShown.count(child)) {
+                if (child->isVisible() && !paimon::capture::isUserShown(child)) {
                     hidden.push_back({child, true});
                     child->setVisible(false);
                 }
@@ -701,220 +698,6 @@ std::pair<int, int> resolveRenderTargetSize() {
     return {w, h};
 }
 
-// Render PlayLayer into an offscreen FBO; return bottom-up RGBA or fall back.
-std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTexture(
-    PlayLayer* pl, int W, int H)
-{
-    auto* director = CCDirector::get();
-    auto* glView   = director ? director->getOpenGLView() : nullptr;
-    if (!pl || !glView || W <= 0 || H <= 0) return nullptr;
-
-    SuppressCameraArtGuard suppressCameraArt;
-
-    while (glGetError() != GL_NO_ERROR) {} // drain stale errors
-
-    GLint oldFBO = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &oldFBO);
-
-    GLuint tex = 0, fbo = 0;
-    glGenTextures(1, &tex);
-    if (!tex) return nullptr;
-    ccGLBindTexture2D(tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-
-    glGenFramebuffers(1, &fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE
-        || glGetError() != GL_NO_ERROR) {
-        log::warn("[FramebufferCapture] Offscreen FBO incomplete at {}x{}", W, H);
-        glBindFramebuffer(GL_FRAMEBUFFER, oldFBO);
-        if (fbo) glDeleteFramebuffers(1, &fbo);
-        glDeleteTextures(1, &tex);
-        return nullptr;
-    }
-
-    // Restore the previous FBO on every exit path.
-    struct GLCleanupGuard {
-        GLuint tex; GLuint fbo; GLint oldFBO;
-        ~GLCleanupGuard() {
-            glBindFramebuffer(GL_FRAMEBUFFER, oldFBO);
-            if (fbo) glDeleteFramebuffers(1, &fbo);
-            if (tex) glDeleteTextures(1, &tex);
-        }
-    } glCleanup{tex, fbo, oldFBO};
-
-    CCSize oldWinSize = director->getWinSize();
-    float displayFactor = geode::utils::getDisplayFactor();
-    if (displayFactor <= 0.f || oldWinSize.width <= 0.f || oldWinSize.height <= 0.f) {
-        log::warn("[FramebufferCapture] Bad view metrics (displayFactor={}, winSize={}x{}); "
-                  "skipping offscreen render -> back-buffer fallback",
-                  displayFactor, oldWinSize.width, oldWinSize.height);
-        return nullptr; // glCleanup restores GL
-    }
-
-    CCSize oldDesign  = glView->getDesignResolutionSize();
-    CCSize oldScreen  = glView->m_obScreenSize;
-    float  oldScaleX  = glView->m_fScaleX;
-    float  oldScaleY  = glView->m_fScaleY;
-
-    struct ViewRestoreGuard {
-        CCDirector* director; CCEGLView* glView;
-        CCSize oldDesign, oldScreen; float oldScaleX, oldScaleY;
-        bool armed = false;
-        ~ViewRestoreGuard() {
-            if (!armed) return;
-            glView->m_fScaleX = oldScaleX;
-            glView->m_fScaleY = oldScaleY;
-            director->m_obWinSizeInPoints = oldDesign;
-            glView->m_obScreenSize = oldScreen;
-            glView->setDesignResolutionSize(oldDesign.width, oldDesign.height, kResolutionExactFit);
-            director->setViewport();
-        }
-    } viewGuard{director, glView, oldDesign, oldScreen, oldScaleX, oldScaleY};
-
-    glView->m_fScaleX = static_cast<float>(W) / oldWinSize.width  / displayFactor;
-    glView->m_fScaleY = static_cast<float>(H) / oldWinSize.height / displayFactor;
-
-    float aspect = static_cast<float>(W) / H;
-    CCSize newRes{std::round(320.f * aspect), 320.f};
-    director->m_obWinSizeInPoints = newRes;
-    glView->m_obScreenSize = CCSize{static_cast<float>(W), static_cast<float>(H)};
-    glView->setDesignResolutionSize(newRes.width, newRes.height, kResolutionExactFit);
-    viewGuard.armed = true;
-
-    glViewport(0, 0, W, H);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    auto sizesMatch = [](CCSize const& a, CCSize const& b) {
-        constexpr float EPS = 0.1f;
-        return std::abs(a.width - b.width) < EPS
-            && std::abs(a.height - b.height) < EPS;
-    };
-
-    CCSize newWinSize  = director->getWinSize();
-    bool aspectMatches = sizesMatch(oldWinSize, newWinSize);
-
-    static bool s_cameraModWarned = false;
-    bool thirdPartyCameraMod = Loader::get()->isModLoaded("dankmeme.globed2");
-    if (thirdPartyCameraMod && !s_cameraModWarned) {
-        s_cameraModWarned = true;
-        log::warn("[FramebufferCapture] Third-party camera mod detected; skipping "
-                  "out-of-band camera recalc during offscreen render for safety");
-    }
-    bool doCameraRecalc = !aspectMatches && !thirdPartyCameraMod;
-
-    bool hadUIPos = false;
-    CCPoint oldUIPos{};
-    if (doCameraRecalc) {
-        pl->m_calculateTargetHeightOffset = true;
-        pl->m_updateGroundShadows = true;
-        if (!sehGuardedCall(+[](PlayLayer* p) { p->updateCamera(0.f); }, pl)) {
-            log::warn("[FramebufferCapture] updateCamera faulted during offscreen "
-                      "render; continuing with previous camera");
-        }
-        if (auto* uiTrigger = pl->m_uiTriggerUI;
-            uiTrigger && uiTrigger->getChildrenCount() > 0) {
-            oldUIPos = uiTrigger->getPosition();
-            hadUIPos = true;
-            uiTrigger->setPosition(oldUIPos + ccp(
-                newWinSize.width - oldWinSize.width,
-                newWinSize.height - oldWinSize.height));
-        }
-    }
-
-    auto* shader = pl->m_shaderLayer;
-    CCSize const captureSize{static_cast<float>(W), static_cast<float>(H)};
-    bool hadShader = shader && shader->getParent()
-                  && !sizesMatch(shader->m_targetTextureSize, captureSize);
-    CCSize oldShaderScreen = hadShader ? shader->m_screenSize : CCSize{};
-    CCSize oldShaderTarget = hadShader ? shader->m_targetTextureSize : CCSize{};
-    bool pixelateHardEdges = hadShader ? shader->m_state.m_pixelateHardEdges : false;
-    auto applyLinearFilter = [&]() {
-        if (shader && shader->m_sprite && shader->m_sprite->getTexture()) {
-            ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
-            shader->m_sprite->getTexture()->setTexParameters(&params);
-        }
-    };
-
-// Restore shader state even when setup or pre-pixelation aborts mid-capture.
-    struct ShaderRestoreGuard {
-        PlayLayer* pl; ShaderLayer* shader;
-        CCSize oldScreen, oldTarget; bool pixelateHardEdges;
-        bool armed = false;
-        ~ShaderRestoreGuard() {
-            if (!armed || !shader) return;
-            shader->m_screenSize        = oldScreen;
-            shader->m_targetTextureSize = oldTarget;
-            sehGuardedCall(+[](PlayLayer* p) { if (p->m_shaderLayer) p->m_shaderLayer->setupShader(false); }, pl);
-            if (!pixelateHardEdges && shader->m_sprite && shader->m_sprite->getTexture()) {
-                ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
-                shader->m_sprite->getTexture()->setTexParameters(&params);
-            }
-            sehGuardedCall(+[](PlayLayer* p) { if (p->m_shaderLayer) p->m_shaderLayer->prePixelateShader(); }, pl);
-        }
-    } shaderGuard{pl, hadShader ? shader : nullptr,
-                  oldShaderScreen, oldShaderTarget, pixelateHardEdges, hadShader};
-
-    if (hadShader) {
-        shader->m_screenSize        = newWinSize;
-        shader->m_targetTextureSize = captureSize;
-        sehGuardedCall(+[](PlayLayer* p) { if (p->m_shaderLayer) p->m_shaderLayer->setupShader(false); }, pl);
-        if (!pixelateHardEdges) applyLinearFilter();
-        sehGuardedCall(+[](PlayLayer* p) { if (p->m_shaderLayer) p->m_shaderLayer->prePixelateShader(); }, pl);
-        sehGuardedCall(+[](PlayLayer* p) { p->updateShaderLayer(0.f); }, pl);
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-            log::warn("[FramebufferCapture] FBO incomplete after shader retarget "
-                      "-> back-buffer fallback");
-            return nullptr;
-        }
-    }
-
-    if (doCameraRecalc
-        && !sehGuardedCall(+[](PlayLayer* p) { p->preUpdateVisibility(0.f); }, pl)) {
-        log::warn("[FramebufferCapture] preUpdateVisibility faulted during "
-                  "offscreen render; skipped");
-    }
-
-    if (!sehGuardedCall(+[](PlayLayer* p) { p->visit(); }, pl)) {
-        log::warn("[FramebufferCapture] pl->visit() faulted during offscreen "
-                  "render -> back-buffer fallback");
-        return nullptr; // guards restore shader/view/GL
-    }
-
-    while (glGetError() != GL_NO_ERROR) {}
-
-    auto raw = std::make_shared<std::vector<uint8_t>>(
-        static_cast<size_t>(W) * H * 4);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, raw->data());
-    glPixelStorei(GL_PACK_ALIGNMENT, 4);
-    bool readOk = (glGetError() == GL_NO_ERROR)
-               && pixelBufferHasContent(raw->data(), raw->size());
-
-    if (!aspectMatches) {
-        pl->m_updateGroundShadows = true;
-        pl->m_calculateTargetHeightOffset = true;
-        if (hadUIPos && pl->m_uiTriggerUI) {
-            pl->m_uiTriggerUI->setPosition(oldUIPos);
-        }
-    }
-
-    if (!readOk) {
-        log::warn("[FramebufferCapture] Offscreen render returned empty content");
-        return nullptr;
-    }
-    return raw;
-}
-
 // The capture path deliberately uses the same depth/stencil-capable helper as
 // the auto-preview renderer. The legacy implementation above is retained only
 // as a reference while older drivers are being compared during development;
@@ -1151,12 +934,27 @@ int FramebufferCapture::getMaxTextureSize() {
 
 CaptureValidation FramebufferCapture::validateCaptureConditions() {
     CaptureValidation result;
-    if (CCDirector::get()->getContentScaleFactor() < 4.0f) {
+#if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_ANDROID)
+    // No swapBuffers hook drives the capture state machine on this platform;
+    // an armed request would never execute. Fail here so callers show a
+    // reason instead of hanging with the busy flag set.
+    result.canCapture = false;
+    result.reason = Localization::get().getString("capture.unsupported_platform");
+    return result;
+#endif
+    auto* director = CCDirector::get();
+    if (!director) {
+        result.canCapture = false;
+        result.reason = Localization::get().getString("pause.capture_error");
+        return result;
+    }
+    if (director->getContentScaleFactor() < 4.0f) {
         result.canCapture = false;
         result.reason = Localization::get().getString("capture.needs_high_graphics");
         return result;
     }
-    if (GameManager::sharedState()->m_performanceMode) {
+    auto* gm = GameManager::sharedState();
+    if (gm && gm->m_performanceMode) {
         result.canCapture = false;
         result.reason = Localization::get().getString("capture.needs_no_ldm");
         return result;
@@ -1193,7 +991,6 @@ void FramebufferCapture::finishPendingFailure() {
     auto processingCallback = std::move(s_processingCallback);
     s_request.callback = nullptr;
     s_processingCallback = nullptr;
-    s_processingGeneration = 0;
     s_request.active        = false;
     s_request.nodeToCapture = nullptr;
     s_request.hidePlayer1   = false;
@@ -1236,6 +1033,14 @@ void FramebufferCapture::requestCapture(
 {
     if (paimon::isRuntimeShuttingDown()) return;
 
+#if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_ANDROID)
+    // No swapBuffers hook pumps the state machine here; fail synchronously
+    // (same convention as the other early-failure paths below) so callers
+    // release their busy flags instead of hanging.
+    if (callback) callback(false, nullptr, nullptr, 0, 0);
+    return;
+#endif
+
     log::info("[FramebufferCapture] requestCapture levelID={} hidePlayer1={} hidePlayer2={} hdr={}",
               levelID, hidePlayer1, hidePlayer2, s_hdrMode);
 
@@ -1244,7 +1049,6 @@ void FramebufferCapture::requestCapture(
     auto previousProcessingCallback = std::move(s_processingCallback);
     s_request.callback = nullptr;
     s_processingCallback = nullptr;
-    s_processingGeneration = 0;
     bool const hadPreviousRequest = s_request.active;
 
     if (prev != Phase::Idle || hadPreviousRequest || previousRequestCallback || previousProcessingCallback) {
@@ -1300,7 +1104,6 @@ void FramebufferCapture::cancelPending() {
     auto processingCallback = std::move(s_processingCallback);
     s_request.callback = nullptr;
     s_processingCallback = nullptr;
-    s_processingGeneration = 0;
     s_request.active        = false;
     s_request.nodeToCapture = nullptr;
     s_request.hidePlayer1   = false;
@@ -1608,7 +1411,6 @@ void FramebufferCapture::dispatchProcessing(
     g_phase.store(Phase::Reading);
 
     uint64_t gen = g_generation.load(std::memory_order_relaxed);
-    s_processingGeneration = gen;
     bool hdrOn = s_hdrMode;
 
     bool const started = paimon::ThreadTracker::get().spawn(
@@ -1649,7 +1451,6 @@ void FramebufferCapture::dispatchProcessing(
 
                     auto callback = std::move(FramebufferCapture::s_processingCallback);
                     FramebufferCapture::s_processingCallback = nullptr;
-                    FramebufferCapture::s_processingGeneration = 0;
                     g_phase.store(Phase::Idle);
 
                     if (paimon::isRuntimeShuttingDown()) {
@@ -1681,7 +1482,6 @@ void FramebufferCapture::dispatchProcessing(
     if (!started) {
         auto callback = std::move(s_processingCallback);
         s_processingCallback = nullptr;
-        s_processingGeneration = 0;
         g_phase.store(Phase::Idle);
         if (callback) {
             callback(false, nullptr, nullptr, 0, 0);

@@ -1,12 +1,6 @@
 #pragma once
 
-// Postproceso de pantalla completa de Paimon RTX.
-//
-// Corre desde CCEGLView::swapBuffers, con el fotograma ya rasterizado en el back
-// buffer: lo copia a una textura, traza la luz sobre ella a resolucion reducida,
-// filtra el ruido, monta el bloom y vuelve a pintar el resultado encima. Todo el
-// GL es propio (FBOs crudos) porque a esa altura del fotograma ya no queda grafo
-// de nodos donde colgarse.
+// Postproceso RTX: copia el frame, traza, filtra y compone encima.
 
 #include <Geode/cocos/platform/CCGL.h>
 
@@ -55,6 +49,12 @@ private:
     void drawInto(Target const& t);
     void updateAdaptiveScale(RTXConfig const& cfg);
 
+    // Efectivos sin tocar config; degrada escala>rayos>atrous>bloom>cadencia.
+    void syncGovernorEffectives(RTXConfig const& cfg);
+    void clampGovernorToConfig(RTXConfig const& cfg);
+    bool governorStepDown(float budget);
+    bool governorStepUp(RTXConfig const& cfg);
+
     void runTrace(RTXConfig const& cfg);
     void runFilter(RTXConfig const& cfg);
     void runBloom(RTXConfig const& cfg);
@@ -91,6 +91,9 @@ private:
         GLint reprojNow   = -1;
         GLint reprojPrev  = -1;
         GLint reprojScale = -1;
+        GLint histVar      = -1;
+        GLint historyValid = -1;
+        GLint outVariance  = -1;
     };
 
     struct AtrousProgram {
@@ -98,6 +101,7 @@ private:
         GLint texel  = -1;
         GLint stride = -1;
         GLint phi    = -1;
+        GLint wide   = -1;
     };
 
     struct BloomProgram {
@@ -116,11 +120,13 @@ private:
         GLint hdrRange   = -1;
         GLint giMix      = -1;
         GLint adaptRate  = -1;
+        GLint frame      = -1;
     };
 
     struct CompositeProgram {
         GLuint id = 0;
         GLint texel         = -1;
+        GLint giTexel       = -1;
         GLint time          = -1;
         GLint mixAmount     = -1;
         GLint giStrength    = -1;
@@ -156,6 +162,8 @@ private:
     Target m_traceSrc;
     Target m_traceRT;
     Target m_history[2];
+    // m_variance[i] es la varianza de m_history[i].
+    Target m_variance[2];
     Target m_atrous[2];
     Target m_bloomDown[kBloomLevels];
     Target m_bloomUp[kBloomLevels];
@@ -169,13 +177,11 @@ private:
     GLuint m_bloomResultTex = 0;
     GLuint m_giResultTex = 0;
 
-    // Sin objetivos de coma flotante la expansion a rango alto se recorta en 1 y
-    // el bloom vuelve a ser el de antes, asi que en ese caso se deja plano.
+    // Sin FBO flotante el HDR se recorta: se deja plano.
     bool m_hdr = true;
     bool m_hasExposure = false;
 
-    // Transformada de la capa de objetos del fotograma trazado anterior, para
-    // reproyectar el historial. Solo se actualiza en los fotogramas que trazan.
+    // Camara anterior para reproyectar; solo se actualiza al trazar.
     float m_prevCamX = 0.f;
     float m_prevCamY = 0.f;
     float m_prevCamScale = 1.f;
@@ -186,6 +192,11 @@ private:
     int m_adaptTicks = 0;
     int m_upTicks = 0;
     float m_activeScale = 0.5f;
+    int m_effRayCount = 3;
+    int m_effRaySteps = 14;
+    int m_effAtrous = 3;
+    int m_effBloom = 4;
+    int m_effSkip = 0;
     float m_frameMs = 0.f;
     float m_shaderTime = 0.f;
     bool m_wasActive = false;

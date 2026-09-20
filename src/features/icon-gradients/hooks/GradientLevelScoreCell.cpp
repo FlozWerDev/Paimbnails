@@ -1,3 +1,10 @@
+// Own-icon shading on level score cells, rethought for Paimbnails.
+//
+// Idea credit: "Icon Gradients" by zilko
+// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
+// all rights reserved). Independent implementation: same behavior (shade
+// the player's own icon on score cells), own expression.
+
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GJLevelScoreCell.hpp>
 
@@ -13,12 +20,7 @@ class $modify(GradientLevelScoreCell, GJLevelScoreCell) {
 
         if (!moduleEnabled() || score->m_accountID != GJAccountManager::get()->m_accountID) return;
 
-        if (SimplePlayer* icon = m_mainLayer->getChildByType<SimplePlayer>(0)) {
-            IconType type = GradientUtils::getIconType(icon);
-
-            Gradient gradient = GradientUtils::getGradient(type, false);
-
-            GradientUtils::applyGradient(icon, gradient, false, false, 2);
-        }
+        if (SimplePlayer* icon = m_mainLayer->getChildByType<SimplePlayer>(0))
+            GradientUtils::paintMenuIcon(icon, false, 2);
     }
 };

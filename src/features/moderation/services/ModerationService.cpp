@@ -3,110 +3,36 @@
 #include <Geode/loader/Log.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/binding/GameManager.hpp>
-#include <fstream>
+#include "../../../core/ModAuthFlow.hpp"
 
 using namespace geode::prelude;
 
-bool ModerationService::tryModCache(ModeratorCallback& callback) {
-    if (!m_modCache.has_value()) return false;
-    auto elapsed = std::chrono::steady_clock::now() - m_modCache->timestamp;
-    if (std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() < MOD_CACHE_TTL_SECONDS) {
-        callback(m_modCache->isMod, m_modCache->isAdmin);
-        return true;
-    }
-    m_modCache.reset();
-    return false;
-}
-
-void ModerationService::updateModCache(bool isMod, bool isAdmin) {
-    m_modCache = ModCacheEntry{isMod || isAdmin, isAdmin, std::chrono::steady_clock::now()};
-}
-
 void ModerationService::checkModerator(std::string const& username, ModeratorCallback callback) {
-    log::info("[ModService] checkModerator: user={}", username);
-    if (!m_serverEnabled) { callback(false, false); return; }
-    if (tryModCache(callback)) return;
-
-    auto* accountManager = GJAccountManager::get();
-    if (!accountManager) {
-        log::warn("[ModService] GJAccountManager no disponible, chequeo denegado");
-        callback(false, false);
-        return;
-    }
-
-    int currentAccountID = accountManager->m_accountID;
-    if (currentAccountID <= 0) {
-        log::warn("[ModService] usuario '{}' no logueado, chequeo denegado", username);
-        callback(false, false);
-        return;
-    }
-
-    HttpClient::get().checkModeratorAccount(username, currentAccountID,
-        [this, callback, username](bool isMod, bool isAdmin) {
-            bool effectiveMod = isMod || isAdmin;
-            updateModCache(effectiveMod, isAdmin);
-            if (isAdmin) {
-                Mod::get()->setSavedValue<bool>("is-verified-admin", true);
-                auto path = Mod::get()->getSaveDir() / "admin_verification.dat";
-                std::ofstream f(path, std::ios::binary | std::ios::trunc);
-                if (f) {
-                    time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-                    f.write(reinterpret_cast<char const*>(&now), sizeof(now));
-                }
-            }
-            if (effectiveMod) {
-                Mod::get()->setSavedValue<bool>("is-verified-moderator", true);
-                auto path = Mod::get()->getSaveDir() / "moderator_verification.dat";
-                std::ofstream f(path, std::ios::binary | std::ios::trunc);
-                if (f) {
-                    time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-                    f.write(reinterpret_cast<char const*>(&now), sizeof(now));
-                }
-            }
-            callback(effectiveMod, isAdmin);
-        });
+    auto* account = GJAccountManager::get();
+    checkModeratorAccount(username, account ? account->m_accountID : 0, std::move(callback));
 }
 
 void ModerationService::checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback) {
     if (!m_serverEnabled) { callback(false, false); return; }
-    if (tryModCache(callback)) return;
-
-    auto* accountManager = GJAccountManager::get();
-    if (!accountManager) {
-        log::warn("[ModService] GJAccountManager no disponible, chequeo denegado");
-        callback(false, false);
-        return;
-    }
-
-    int currentAccountID = accountManager->m_accountID;
-    if (currentAccountID <= 0) {
-        log::warn("[ModService] usuario '{}' no logueado, chequeo denegado", username);
-        callback(false, false);
-        return;
-    }
-
-    HttpClient::get().checkModeratorAccount(username, currentAccountID,
-        [this, callback](bool isMod, bool isAdmin) {
-            bool effectiveMod = isMod || isAdmin;
-            updateModCache(effectiveMod, isAdmin);
-            if (isAdmin) Mod::get()->setSavedValue<bool>("is-verified-admin", true);
-            if (effectiveMod) Mod::get()->setSavedValue<bool>("is-verified-moderator", true);
-            callback(effectiveMod, isAdmin);
-        });
+    HttpClient::get().checkModeratorAccount(username, accountID, std::move(callback));
 }
 
 bool ModerationService::tryUserStatusCache(std::string const& username, ModeratorCallback& callback) {
     std::string key = geode::utils::string::toLower(username);
-    std::lock_guard<std::mutex> lock(m_userStatusMutex);
-    auto it = m_userStatusCache.find(key);
-    if (it == m_userStatusCache.end()) return false;
-    auto elapsed = std::chrono::steady_clock::now() - it->second.cachedAt;
-    if (std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() < USER_STATUS_CACHE_TTL_SECONDS) {
-        callback(it->second.isMod, it->second.isAdmin);
-        return true;
+    std::optional<UserStatusCacheEntry> cached;
+    {
+        std::lock_guard<std::mutex> lock(m_userStatusMutex);
+        auto it = m_userStatusCache.find(key);
+        if (it == m_userStatusCache.end()) return false;
+        if (std::chrono::steady_clock::now() - it->second.cachedAt >=
+            std::chrono::seconds(USER_STATUS_CACHE_TTL_SECONDS)) {
+            m_userStatusCache.erase(it);
+            return false;
+        }
+        cached = it->second;
     }
-    m_userStatusCache.erase(it);
-    return false;
+    callback(cached->isMod, cached->isAdmin);
+    return true;
 }
 
 void ModerationService::updateUserStatusCache(std::string const& username, bool isMod, bool isAdmin) {
@@ -133,16 +59,16 @@ void ModerationService::checkUserStatus(std::string const& username, ModeratorCa
         return;
     }
 
-    // Without a valid accountID the server always returns 401, wasting a request and spamming errors.
-    auto* accountManager = GJAccountManager::get();
-    if (!accountManager || accountManager->m_accountID <= 0) {
-        log::debug("[ModService] checkUserStatus: no logged-in account, skipping server check for user={}", username);
-        callback(false, false);
-        return;
-    }
-
-    HttpClient::get().checkModeratorAccount(username, accountManager->m_accountID,
-        [this, username, callback](bool isMod, bool isAdmin) {
+    HttpClient::get().get("/api/moderator/check?username=" + HttpClient::encodeQueryParam(username),
+        [this, username, callback](bool success, std::string const& response) {
+            auto parsed = matjson::parse(response);
+            if (!success || !parsed.isOk() || !parsed.unwrap().isObject()) {
+                callback(false, false);
+                return;
+            }
+            auto const& json = parsed.unwrap();
+            bool isAdmin = json["isAdmin"].asBool().unwrapOr(false);
+            bool isMod = isAdmin || json["isModerator"].asBool().unwrapOr(false);
             updateUserStatusCache(username, isMod, isAdmin);
             callback(isMod, isAdmin);
         });
@@ -193,7 +119,7 @@ void ModerationService::removeModerator(std::string const& username, std::string
 void ModerationService::syncVerificationQueue(PendingCategory category, QueueCallback callback) {
     log::debug("[ModService] syncVerificationQueue: category={}", static_cast<int>(category));
     if (!m_serverEnabled) {
-        callback(true, PendingQueue::get().list(category));
+        callback(false, {});
         return;
     }
 
@@ -216,19 +142,19 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
     }
 
     HttpClient::get().get(endpoint, [callback, category, endpoint](bool success, std::string const& response) {
-        log::info("[ModService] syncVerificationQueue: server response - success={}, response={}", success, response.substr(0, 500));
-        if (!success) { callback(true, PendingQueue::get().list(category)); return; }
+
+        if (!success) { callback(false, {}); return; }
 
         auto jsonRes = matjson::parse(response);
-        if (!jsonRes.isOk()) { callback(true, PendingQueue::get().list(category)); return; }
+        if (!jsonRes.isOk()) { callback(false, {}); return; }
         auto json = jsonRes.unwrap();
 
         if (!json.contains("items") || !json["items"].isArray()) {
-            callback(true, PendingQueue::get().list(category));
+            callback(false, {});
             return;
         }
         auto itemsRes = json["items"].asArray();
-        if (!itemsRes) { callback(true, PendingQueue::get().list(category)); return; }
+        if (!itemsRes) { callback(false, {}); return; }
 
         std::vector<PendingItem> items;
         log::info("[ModService] syncVerificationQueue: parsing {} items from server", itemsRes.unwrap().size());
@@ -259,7 +185,7 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
                     }
                 }
             }
-            
+
             log::debug("[ModService] Parsed item: levelID={}, category={}", it.levelID, static_cast<int>(category));
 
             it.category = category;
@@ -360,37 +286,11 @@ void ModerationService::claimQueueItem(int levelId, PendingCategory category,
     if (!type.empty()) json["type"] = type;
     std::string postData = json.dump();
 
-    HttpClient::get().checkModeratorAccount(username, accountID,
-        [this, callback, levelId, username, accountID, endpoint, postData](bool isMod, bool isAdmin) {
-            if (!(isMod || isAdmin)) { callback(false, "No tienes permisos de moderador"); return; }
+    HttpClient::get().postWithAuth(endpoint, postData,
+        [callback](bool success, std::string const& response) {
+            if (!success) paimon::modauth::clearVerifiedSession();
 
-            HttpClient::get().postWithAuth(endpoint, postData,
-                [this, callback, levelId, username, accountID, endpoint, postData](bool success, std::string const& response) {
-                    if (success) { callback(true, response); return; }
-
-                    bool authFailed = response.find("403") != std::string::npos ||
-                                     response.find("needsModCode") != std::string::npos ||
-                                     response.find("invalidCode") != std::string::npos ||
-                                     response.find("Moderator auth required") != std::string::npos;
-                    if (!authFailed) { callback(false, response); return; }
-
-                    m_modCache.reset();
-                    HttpClient::get().checkModeratorAccount(username, accountID,
-                        [callback, endpoint, postData](bool isMod2, bool isAdmin2) {
-                            if (!(isMod2 || isAdmin2)) { callback(false, "Mod Code invalido. Genera uno nuevo en ajustes."); return; }
-
-                            HttpClient::get().postWithAuth(endpoint, postData,
-                                [callback](bool retryOk, std::string const& retryResp) {
-                                    if (retryOk) { callback(true, retryResp); return; }
-                                    if (retryResp.find("needsModCode") != std::string::npos)
-                                        callback(false, "Configura tu Mod Code en ajustes de Paimbnails");
-                                    else if (retryResp.find("invalidCode") != std::string::npos)
-                                        callback(false, "Mod Code invalido o expirado. Actualiza en ajustes.");
-                                    else
-                                        callback(false, retryResp);
-                                });
-                        });
-                });
+            callback(success, response);
         });
 }
 
@@ -400,8 +300,7 @@ void ModerationService::acceptQueueItem(int levelId, PendingCategory category,
                                         std::string const& type,
                                         bool acceptAll) {
     if (!m_serverEnabled) {
-        PendingQueue::get().accept(levelId, category);
-        callback(true, "aceptado localmente");
+        callback(false, "servidor desactivado");
         return;
     }
 
@@ -425,45 +324,11 @@ void ModerationService::acceptQueueItem(int levelId, PendingCategory category,
     if (!type.empty()) json["type"] = type;
     std::string postData = json.dump();
 
-    HttpClient::get().checkModeratorAccount(username, accountID,
-        [this, callback, levelId, category, username, accountID, endpoint, postData](bool isMod, bool isAdmin) {
-            if (!(isMod || isAdmin)) { callback(false, "No tienes permisos de moderador"); return; }
-
-            HttpClient::get().postWithAuth(endpoint, postData,
-                [this, callback, levelId, category, username, accountID, endpoint, postData](bool success, std::string const& response) {
-                    if (success) {
-                        PendingQueue::get().accept(levelId, category);
-                        callback(true, response);
-                        return;
-                    }
-
-                    bool authFailed = response.find("403") != std::string::npos ||
-                                     response.find("needsModCode") != std::string::npos ||
-                                     response.find("invalidCode") != std::string::npos ||
-                                     response.find("Moderator auth required") != std::string::npos;
-                    if (!authFailed) { callback(false, response); return; }
-
-                    m_modCache.reset();
-                    HttpClient::get().checkModeratorAccount(username, accountID,
-                        [callback, levelId, category, endpoint, postData](bool isMod2, bool isAdmin2) {
-                            if (!(isMod2 || isAdmin2)) { callback(false, "Mod Code invalido. Genera uno nuevo en ajustes."); return; }
-
-                            HttpClient::get().postWithAuth(endpoint, postData,
-                                [callback, levelId, category](bool retryOk, std::string const& retryResp) {
-                                    if (retryOk) {
-                                        PendingQueue::get().accept(levelId, category);
-                                        callback(true, retryResp);
-                                    } else {
-                                        if (retryResp.find("needsModCode") != std::string::npos)
-                                            callback(false, "Configura tu Mod Code en ajustes de Paimbnails");
-                                        else if (retryResp.find("invalidCode") != std::string::npos)
-                                            callback(false, "Mod Code invalido o expirado. Actualiza en ajustes.");
-                                        else
-                                            callback(false, retryResp);
-                                    }
-                                });
-                        });
-                });
+    HttpClient::get().postWithAuth(endpoint, postData,
+        [callback, levelId, category](bool success, std::string const& response) {
+            if (!success) paimon::modauth::clearVerifiedSession();
+            if (success) PendingQueue::get().accept(levelId, category);
+            callback(success, response);
         });
 }
 
@@ -473,8 +338,7 @@ void ModerationService::rejectQueueItem(int levelId, PendingCategory category,
                                         std::string const& type,
                                         std::string const& targetFilename) {
     if (!m_serverEnabled) {
-        PendingQueue::get().reject(levelId, category, reason);
-        callback(true, "rechazado localmente");
+        callback(false, "servidor desactivado");
         return;
     }
 
@@ -498,45 +362,11 @@ void ModerationService::rejectQueueItem(int levelId, PendingCategory category,
     if (!targetFilename.empty()) json["targetFilename"] = targetFilename;
     std::string postData = json.dump();
 
-    HttpClient::get().checkModeratorAccount(username, accountID,
-        [this, callback, levelId, category, reason, username, accountID, endpoint, postData](bool isMod, bool isAdmin) {
-            if (!(isMod || isAdmin)) { callback(false, "No tienes permisos de moderador"); return; }
-
-            HttpClient::get().postWithAuth(endpoint, postData,
-                [this, callback, levelId, category, reason, username, accountID, endpoint, postData](bool success, std::string const& response) {
-                    if (success) {
-                        PendingQueue::get().reject(levelId, category, reason);
-                        callback(true, response);
-                        return;
-                    }
-
-                    bool authFailed = response.find("403") != std::string::npos ||
-                                     response.find("needsModCode") != std::string::npos ||
-                                     response.find("invalidCode") != std::string::npos ||
-                                     response.find("Moderator auth required") != std::string::npos;
-                    if (!authFailed) { callback(false, response); return; }
-
-                    m_modCache.reset();
-                    HttpClient::get().checkModeratorAccount(username, accountID,
-                        [callback, levelId, category, reason, endpoint, postData](bool isMod2, bool isAdmin2) {
-                            if (!(isMod2 || isAdmin2)) { callback(false, "Mod Code invalido. Genera uno nuevo en ajustes."); return; }
-
-                            HttpClient::get().postWithAuth(endpoint, postData,
-                                [callback, levelId, category, reason](bool retryOk, std::string const& retryResp) {
-                                    if (retryOk) {
-                                        PendingQueue::get().reject(levelId, category, reason);
-                                        callback(true, retryResp);
-                                    } else {
-                                        if (retryResp.find("needsModCode") != std::string::npos)
-                                            callback(false, "Configura tu Mod Code en ajustes de Paimbnails");
-                                        else if (retryResp.find("invalidCode") != std::string::npos)
-                                            callback(false, "Mod Code invalido o expirado. Actualiza en ajustes.");
-                                        else
-                                            callback(false, retryResp);
-                                    }
-                                });
-                        });
-                });
+    HttpClient::get().postWithAuth(endpoint, postData,
+        [callback, levelId, category, reason](bool success, std::string const& response) {
+            if (!success) paimon::modauth::clearVerifiedSession();
+            if (success) PendingQueue::get().reject(levelId, category, reason);
+            callback(success, response);
         });
 }
 
@@ -553,4 +383,8 @@ void ModerationService::submitReport(int levelId, std::string const& username,
             if (success) PendingQueue::get().addOrBump(levelId, PendingCategory::Report, username, note);
             callback(success, response);
         });
+}
+
+void ModerationService::resetModCache() {
+    paimon::modauth::clearVerifiedSession();
 }

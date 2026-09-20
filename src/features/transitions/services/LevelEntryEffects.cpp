@@ -108,6 +108,7 @@ struct StyleProfile {
     float playerScale;
     float playerRotation;
     float backgroundDelay;
+    CCPoint pause;
 };
 
 StyleProfile styleProfile(LevelEntryStyle style, float intensity) {
@@ -117,18 +118,21 @@ StyleProfile styleProfile(LevelEntryStyle style, float intensity) {
                 {0.f, -90.f * intensity}, {0.f, -90.f * intensity},
                 {0.f, -180.f * intensity}, {0.f, -85.f * intensity},
                 18.f * intensity, .3f, .55f, .72f, 35.f, 0.f,
+                {0.f, -130.f * intensity},
             };
         case LevelEntryStyle::Soft:
             return {
                 {0.f, -28.f * intensity}, {0.f, 28.f * intensity},
                 {45.f * intensity, 0.f}, {22.f * intensity, -18.f * intensity},
                 0.f, .88f, .94f, .9f, 0.f, 0.f,
+                {0.f, -70.f * intensity},
             };
         case LevelEntryStyle::Impact:
             return {
                 {-220.f * intensity, 0.f}, {220.f * intensity, 0.f},
                 {-700.f * intensity, 0.f}, {145.f * intensity, 0.f},
                 110.f * intensity, 1.45f, 1.4f, 1.45f, 180.f, .62f,
+                {260.f * intensity, 0.f},
             };
         case LevelEntryStyle::SmoothPlus:
         default:
@@ -136,6 +140,7 @@ StyleProfile styleProfile(LevelEntryStyle style, float intensity) {
                 {0.f, -120.f * intensity}, {0.f, 120.f * intensity},
                 {500.f * intensity, 0.f}, {50.f * intensity, -100.f * intensity},
                 50.f * intensity, 0.f, 0.f, .72f, 90.f, .5f,
+                {0.f, -170.f * intensity},
             };
     }
 }
@@ -223,25 +228,6 @@ CCActionInterval* styleEaseIn(CCActionInterval* action, LevelEntryStyle style) {
     }
 }
 
-void moveNodes(ActionTracker& actions, CCNode* layer,
-               std::initializer_list<char const*> ids, CCPoint delta, float duration) {
-    if (!layer) return;
-    for (auto const* id : ids) {
-        if (auto* node = layer->getChildByID(id)) {
-            actions.run(node, CCEaseExponentialIn::create(CCMoveBy::create(duration, delta)));
-        }
-    }
-}
-
-void scaleNodeOut(ActionTracker& actions, CCNode* layer, char const* id, float duration) {
-    if (!layer) return;
-    if (auto* node = layer->getChildByID(id)) {
-        actions.run(node, CCEaseExponentialIn::create(
-            CCScaleBy::create(duration, 1.5f, 1.5f)
-        ));
-    }
-}
-
 void centerMenu(CCNode* menu, bool useScreenCenter = true) {
     if (!menu) return;
 
@@ -259,63 +245,6 @@ void centerMenu(CCNode* menu, bool useScreenCenter = true) {
     size_t index = 0;
     for (auto* child : CCArrayExt<CCNode*>(menu->getChildren())) {
         child->setPosition(menu->convertToNodeSpace(childPositions[index++]));
-    }
-}
-
-void animateOutScene(ActionTracker& actions, CCScene* scene, float duration, float intensity) {
-    if (!scene) return;
-
-    float distance = 150.f * intensity;
-    if (auto* layer = scene->getChildByType<LevelInfoLayer>(0)) {
-        moveNodes(actions, layer, {
-            "back-menu", "left-side-menu", "bottom-left-art", "difficulty-sprite",
-            "stars-icon", "stars-label", "diamond-icon", "diamond-label",
-            "coin-icon-1", "coin-icon-2", "coin-icon-3"
-        }, {-distance, 0.f}, duration);
-        moveNodes(actions, layer, {
-            "right-side-menu", "bottom-right-art", "downloads-icon", "downloads-label",
-            "likes-icon", "likes-label", "orbs-icon", "orbs-label", "length-icon",
-            "length-label", "exact-length-label"
-        }, {distance, 0.f}, duration);
-        moveNodes(actions, layer, {
-            "copy-indicator", "title-label", "creator-info-menu", "garage-menu",
-            "high-object-indicator"
-        }, {0.f, distance}, duration);
-        moveNodes(actions, layer, {
-            "settings-menu", "custom-songs-widget", "normal-mode-bar", "practice-mode-bar",
-            "normal-mode-percentage", "practice-mode-percentage", "normal-mode-label",
-            "practice-mode-label"
-        }, {0.f, -distance}, duration);
-        scaleNodeOut(actions, layer, "play-menu", duration);
-        scaleNodeOut(actions, layer, "other-menu", duration);
-        centerMenu(layer->getChildByID("play-menu"));
-    } else if (auto* layer = scene->getChildByType<EditLevelLayer>(0)) {
-        moveNodes(actions, layer, {
-            "back-menu", "description-menu", "folder-menu", "bottom-left-art"
-        }, {-distance, 0.f}, duration);
-        moveNodes(actions, layer, {"level-actions-menu", "bottom-right-art"}, {distance, 0.f}, duration);
-        moveNodes(actions, layer, {
-            "level-name-background", "description-background", "level-name-input",
-            "description-input"
-        }, {0.f, distance}, duration);
-        moveNodes(actions, layer, {
-            "level-length", "level-song", "level-verified", "version-label", "level-id-label"
-        }, {0.f, -distance}, duration);
-        scaleNodeOut(actions, layer, "level-edit-menu", duration);
-        scaleNodeOut(actions, layer, "info-button-menu", duration);
-        centerMenu(layer->getChildByID("info-button-menu"));
-    } else if (auto* layer = scene->getChildByType<LevelSelectLayer>(0)) {
-        moveNodes(actions, layer, {"back-menu", "bottom-left-corner"}, {-distance, 0.f}, duration);
-        moveNodes(actions, layer, {"info-menu", "bottom-right-corner"}, {distance, 0.f}, duration);
-        moveNodes(actions, layer, {"top-bar-sprite"}, {0.f, distance}, duration);
-        moveNodes(actions, layer, {"ground-layer", "bottom-center-menu"}, {0.f, -distance}, duration);
-        scaleNodeOut(actions, layer, "levels-list", duration);
-        scaleNodeOut(actions, layer, "arrows-menu", duration);
-        centerMenu(layer->getChildByID("arrows-menu"));
-    } else if (auto* layer = scene->getChildByType<LevelAreaInnerLayer>(0)) {
-        scaleNodeOut(actions, layer, "main-node", duration);
-        scaleNodeOut(actions, layer, "back-menu", duration);
-        centerMenu(layer->getChildByID("back-menu"));
     }
 }
 
@@ -390,8 +319,14 @@ public:
 
         m_playLayer->setVisible(true);
         animatePlayLayer();
-        if (m_direction == TransitionDirection::Enter && m_config.animatePage) {
-            animateOutScene(m_actions, m_pOutScene, m_fDuration, m_config.intensity);
+        if (m_config.animatePage) {
+            if (m_direction == TransitionDirection::Enter) {
+                animatePageScene(m_pOutScene, false);
+            } else {
+                animatePageScene(m_pInScene, true);
+                animateOverlayMenu(m_pOutScene->getChildByType<PauseLayer>(0));
+                animateOverlayMenu(m_pOutScene->getChildByType<EndLevelLayer>(0));
+            }
         }
 
         m_playLayer->updateShaderLayer(.01f);
@@ -965,6 +900,138 @@ private:
         for (auto [_, gradient] : CCDictionaryExt<int, GJGradientLayer>(
                  m_playLayer->m_gradientLayers)) {
             fadeNode(gradient, m_fDuration);
+        }
+    }
+
+    // The outgoing page scatters while the level appears; on the way out the
+    // same elements settle into the destination page. Capture only matters for
+    // the incoming side: the outgoing scene dies with the transition.
+    void moveNodes(CCNode* layer, std::initializer_list<char const*> ids,
+                   CCPoint delta, bool incoming) {
+        if (!layer) return;
+        for (auto const* id : ids) {
+            auto* node = layer->getChildByID(id);
+            if (!node) continue;
+            if (incoming) {
+                capture(node);
+                node->setPosition(node->getPosition() + delta);
+                m_actions.run(node, CCEaseExponentialOut::create(
+                    CCMoveBy::create(m_fDuration, -delta)
+                ));
+            } else {
+                m_actions.run(node, CCEaseExponentialIn::create(
+                    CCMoveBy::create(m_fDuration, delta)
+                ));
+            }
+        }
+    }
+
+    void scalePageNode(CCNode* layer, char const* id, bool incoming) {
+        if (!layer) return;
+        auto* node = layer->getChildByID(id);
+        if (!node) return;
+        if (incoming) {
+            capture(node);
+            auto scaleX = node->getScaleX();
+            auto scaleY = node->getScaleY();
+            node->setScaleX(scaleX / 1.5f);
+            node->setScaleY(scaleY / 1.5f);
+            m_actions.run(node, CCEaseExponentialOut::create(
+                CCScaleTo::create(m_fDuration, scaleX, scaleY)
+            ));
+        } else {
+            m_actions.run(node, CCEaseExponentialIn::create(
+                CCScaleBy::create(m_fDuration, 1.5f, 1.5f)
+            ));
+        }
+    }
+
+    void animatePageScene(CCScene* page, bool incoming) {
+        if (!page) return;
+
+        float distance = 150.f * m_config.intensity;
+        if (auto* layer = page->getChildByType<LevelInfoLayer>(0)) {
+            moveNodes(layer, {
+                "back-menu", "left-side-menu", "bottom-left-art", "difficulty-sprite",
+                "stars-icon", "stars-label", "diamond-icon", "diamond-label",
+                "coin-icon-1", "coin-icon-2", "coin-icon-3"
+            }, {-distance, 0.f}, incoming);
+            moveNodes(layer, {
+                "right-side-menu", "bottom-right-art", "downloads-icon", "downloads-label",
+                "likes-icon", "likes-label", "orbs-icon", "orbs-label", "length-icon",
+                "length-label", "exact-length-label"
+            }, {distance, 0.f}, incoming);
+            moveNodes(layer, {
+                "copy-indicator", "title-label", "creator-info-menu", "garage-menu",
+                "high-object-indicator"
+            }, {0.f, distance}, incoming);
+            moveNodes(layer, {
+                "settings-menu", "custom-songs-widget", "normal-mode-bar", "practice-mode-bar",
+                "normal-mode-percentage", "practice-mode-percentage", "normal-mode-label",
+                "practice-mode-label"
+            }, {0.f, -distance}, incoming);
+            if (incoming) centerMenu(layer->getChildByID("play-menu"));
+            scalePageNode(layer, "play-menu", incoming);
+            scalePageNode(layer, "other-menu", incoming);
+            if (!incoming) centerMenu(layer->getChildByID("play-menu"));
+        } else if (auto* layer = page->getChildByType<EditLevelLayer>(0)) {
+            moveNodes(layer, {
+                "back-menu", "description-menu", "folder-menu", "bottom-left-art"
+            }, {-distance, 0.f}, incoming);
+            moveNodes(layer, {"level-actions-menu", "bottom-right-art"}, {distance, 0.f}, incoming);
+            moveNodes(layer, {
+                "level-name-background", "description-background", "level-name-input",
+                "description-input"
+            }, {0.f, distance}, incoming);
+            moveNodes(layer, {
+                "level-length", "level-song", "level-verified", "version-label", "level-id-label"
+            }, {0.f, -distance}, incoming);
+            if (incoming) centerMenu(layer->getChildByID("info-button-menu"));
+            scalePageNode(layer, "level-edit-menu", incoming);
+            scalePageNode(layer, "info-button-menu", incoming);
+            if (!incoming) centerMenu(layer->getChildByID("info-button-menu"));
+        } else if (auto* layer = page->getChildByType<LevelSelectLayer>(0)) {
+            moveNodes(layer, {"back-menu", "bottom-left-corner"}, {-distance, 0.f}, incoming);
+            moveNodes(layer, {"info-menu", "bottom-right-corner"}, {distance, 0.f}, incoming);
+            moveNodes(layer, {"top-bar-sprite"}, {0.f, distance}, incoming);
+            moveNodes(layer, {"ground-layer", "bottom-center-menu"}, {0.f, -distance}, incoming);
+            if (incoming) centerMenu(layer->getChildByID("arrows-menu"));
+            scalePageNode(layer, "levels-list", incoming);
+            scalePageNode(layer, "arrows-menu", incoming);
+            if (!incoming) centerMenu(layer->getChildByID("arrows-menu"));
+        } else if (auto* layer = page->getChildByType<LevelAreaInnerLayer>(0)) {
+            if (incoming) centerMenu(layer->getChildByID("back-menu"));
+            scalePageNode(layer, "main-node", incoming);
+            scalePageNode(layer, "back-menu", incoming);
+            if (!incoming) centerMenu(layer->getChildByID("back-menu"));
+        }
+    }
+
+    // Pause and end-screen menus float above the frozen level and hard-cut with
+    // it. The dim is the layer itself and cascade opacity is not guaranteed on
+    // GD's layers, so the layer and each child fade on their own while the
+    // content slides off in the style's direction.
+    void animateOverlayMenu(CCNode* overlay) {
+        if (!overlay) return;
+        auto profile = styleProfile(m_config.style, m_config.intensity);
+        if (typeinfo_cast<CCRGBAProtocol*>(overlay)) {
+            m_actions.run(overlay, styleEaseIn(
+                CCFadeTo::create(m_fDuration, 0), m_config.style
+            ));
+        }
+        for (auto* child : CCArrayExt<CCNode*>(overlay->getChildren())) {
+            auto* slide = styleEaseIn(
+                CCMoveBy::create(m_fDuration, profile.pause), m_config.style
+            );
+            if (typeinfo_cast<CCRGBAProtocol*>(child)) {
+                m_actions.run(child, CCSpawn::create(
+                    slide,
+                    styleEaseIn(CCFadeTo::create(m_fDuration, 0), m_config.style),
+                    nullptr
+                ));
+            } else {
+                m_actions.run(child, slide);
+            }
         }
     }
 

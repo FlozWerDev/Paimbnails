@@ -6,186 +6,188 @@ using namespace geode::prelude;
 using namespace paimon::icon_gradients;
 
 LoadLayer* LoadLayer::create(GradientLayer* layer) {
-    LoadLayer* ret = new LoadLayer();
+    auto ret = new LoadLayer();
 
     ret->m_layer = layer;
 
-    if (ret->init()) {
-        ret->autorelease();
-        return ret;
+    if (!ret->init()) {
+        delete ret;
+        return nullptr;
     }
 
-    delete ret;
-    return nullptr;
+    ret->autorelease();
+    return ret;
 }
 
-void LoadLayer::updateGradient(float dt) {
+void LoadLayer::updateGradient(float) {
     if (m_updatedIndex >= m_toggles.size()) {
-        return unscheduleAllSelectors();
+        unscheduleAllSelectors();
+        return;
     }
 
     for (int i = 0; i < 10; i++) {
         if (m_updatedIndex >= m_toggles.size()) {
-            return unscheduleAllSelectors();
+            unscheduleAllSelectors();
+            return;
         }
 
-        ColorToggle* toggle = m_toggles[m_updatedIndex];
+        ColorToggle* toggle = m_toggles[m_updatedIndex++];
 
-        if (m_toggleGradients.contains(toggle)) {
-            toggle->applyGradient(m_toggleGradients.at(toggle), false, false);
-        }
-
-        m_updatedIndex++;
+        // Single lookup instead of contains() + at().
+        auto it = m_toggleGradients.find(toggle);
+        if (it != m_toggleGradients.end())
+            toggle->applyGradient(it->second, false, false);
     }
 }
 
 void LoadLayer::onSelect(CCObject* sender) {
-    ColorToggle* toggle = static_cast<ColorToggle*>(sender);
+    auto toggle = static_cast<ColorToggle*>(sender);
 
     if (toggle == m_selected) return;
 
-    if (m_selected) {
-        m_selected->setSelected(false);
-    }
-
-    toggle->setSelected(true);
+    if (m_selected) m_selected->setSelected(false);
 
     m_selected = toggle;
+    m_selected->setSelected(true);
 }
 
 void LoadLayer::onLoad(CCObject*) {
-    if (m_toggleGradients.contains(m_selected) && m_selected) {
-        m_layer->load(m_toggleGradients.at(m_selected));
-    }
+    auto it = m_toggleGradients.find(m_selected);
+
+    if (it != m_toggleGradients.end() && m_selected)
+        m_layer->load(it->second);
 
     onClose(nullptr);
 
-    Notification::create("Gradient Loaded", NotificationIcon::Success, 0.1f)->show();
+    auto toast = Notification::create("Gradient Loaded", NotificationIcon::Success, 0.1f);
+    toast->show();
 }
 
 void LoadLayer::onDelete(CCObject*) {
-    if (!m_toggleGradients.contains(m_selected)) return;
+    auto it = m_toggleGradients.find(m_selected);
 
-    GradientUtils::removeSavedGradient(m_toggleGradients.at(m_selected));
+    if (it == m_toggleGradients.end()) return;
 
-    m_selected->getParent()->removeFromParent();
+    GradientUtils::removeSavedGradient(it->second);
+
+    ColorToggle* doomed = m_selected;
+    doomed->getParent()->removeFromParent();
     m_scrollLayer->m_contentLayer->updateLayout();
 
-    m_toggles.erase(std::remove(m_toggles.begin(), m_toggles.end(), m_selected), m_toggles.end());
+    m_toggles.erase(std::remove(m_toggles.begin(), m_toggles.end(), doomed), m_toggles.end());
     m_selected = nullptr;
 
     if (!m_toggles.empty()) {
         onSelect(m_toggles.front());
-    } else {
-        onClose(nullptr);
-
-        LoadLayer* newLayer = create(m_layer);
-        newLayer->m_noElasticity = true;
-
-        newLayer->show();
+        return;
     }
+
+    onClose(nullptr);
+
+    auto fresh = create(m_layer);
+    fresh->m_noElasticity = true;
+
+    fresh->show();
+}
+
+// Bottom-bar action button, dimmed when there is nothing to load.
+CCMenuItemSpriteExtra* LoadLayer::makeActionButton(const char* label, SEL_MenuHandler callback, const CCPoint& pos, bool usable) {
+    auto sprite = ButtonSprite::create(label);
+    sprite->setScale(0.625f);
+    sprite->setCascadeOpacityEnabled(true);
+    sprite->setOpacity(usable ? 255 : 120);
+
+    auto button = CCMenuItemSpriteExtra::create(sprite, this, callback);
+    button->setPosition(pos);
+    button->setCascadeOpacityEnabled(true);
+    button->setEnabled(usable);
+
+    m_buttonMenu->addChild(button);
+    return button;
 }
 
 bool LoadLayer::init() {
     Popup::init(246, 233);
 
     std::vector<GradientConfig> gradients = GradientUtils::getSavedGradients();
+    bool usable = !gradients.empty();
 
     setTitle("Load Gradient");
 
-    NineSlice* bg = NineSlice::create("square02b_001.png");
+    auto bg = NineSlice::create("square02b_001.png");
     bg->setColor({0, 0, 0});
     bg->setOpacity(49);
     bg->setContentSize({204, 159});
 
-    Border* border = Border::create(bg, {0, 0, 0}, {204, 159}, {0, 0});
+    auto border = Border::create(bg, {0, 0, 0}, {204, 159}, {0, 0});
     border->setPosition(m_size / 2.f + ccp(0, 1.5f) - bg->getContentSize() / 2.f);
 
     m_mainLayer->addChild(border);
 
-    ButtonSprite* btnSpr = ButtonSprite::create("Load");
-    btnSpr->setScale(0.625f);
-    btnSpr->setCascadeOpacityEnabled(true);
-    btnSpr->setOpacity(!gradients.empty() ? 255 : 120);
+    makeActionButton("Load", menu_selector(LoadLayer::onLoad), {211, 21}, usable);
+    makeActionButton("Delete", menu_selector(LoadLayer::onDelete), {141, 21}, usable);
 
-    CCMenuItemSpriteExtra* btn = CCMenuItemSpriteExtra::create(btnSpr, this, menu_selector(LoadLayer::onLoad));
-    btn->setPosition({211, 21});
-    btn->setCascadeOpacityEnabled(true);
-    btn->setEnabled(!gradients.empty());
-
-    m_buttonMenu->addChild(btn);
-
-    btnSpr = ButtonSprite::create("Delete");
-    btnSpr->setScale(0.625f);
-    btnSpr->setCascadeOpacityEnabled(true);
-    btnSpr->setOpacity(!gradients.empty() ? 255 : 120);
-
-    btn = CCMenuItemSpriteExtra::create(btnSpr, this, menu_selector(LoadLayer::onDelete));
-    btn->setPosition({141, 21});
-    btn->setCascadeOpacityEnabled(true);
-    btn->setEnabled(!gradients.empty());
-
-    m_buttonMenu->addChild(btn);
-
-    CCLabelBMFont* lbl = CCLabelBMFont::create("No Gradients", "bigFont.fnt");
+    auto lbl = CCLabelBMFont::create("No Gradients", "bigFont.fnt");
     lbl->setPosition(border->getPosition() + bg->getContentSize() / 2.f);
     lbl->setScale(0.6f);
-    lbl->setOpacity(!gradients.empty() ? 0 : 140);
+    lbl->setOpacity(usable ? 0 : 140);
 
     m_mainLayer->addChild(lbl);
 
     m_scrollLayer = ScrollLayer::create({204, 159, 204, 159}, true, true);
     m_scrollLayer->setPosition(border->getPosition());
 
-    m_scrollLayer->m_contentLayer->setLayout(
-        RowLayout::create()
-            ->setGrowCrossAxis(true)
-            ->setAxisAlignment(AxisAlignment::Start)
-            ->setGap(1.1f)
-    );
+    auto rows = RowLayout::create();
+    rows->setGrowCrossAxis(true);
+    rows->setAxisAlignment(AxisAlignment::Start);
+    rows->setGap(1.1f);
+    m_scrollLayer->m_contentLayer->setLayout(rows);
 
     m_mainLayer->addChild(m_scrollLayer);
 
     CCSize size = {30, 30};
     float scale = 1.1f;
 
-    for (int i = 0; i < gradients.size(); i++) {
-        ColorToggle* toggle = ColorToggle::create(this, menu_selector(LoadLayer::onSelect), ColorType::Main, m_layer, false, scale, false);
+    // The first entries paint eagerly; the rest follow lazily on a timer.
+    int eager = 0;
+    for (auto const& gradient : gradients) {
+        auto toggle = ColorToggle::create(this, menu_selector(LoadLayer::onSelect), ColorType::Main, m_layer, false, scale, false);
         toggle->setPosition(size * scale * 0.5f);
 
-        if (i < 100) {
-            toggle->applyGradient(gradients[i], false, false);
+        if (eager++ < 100) {
+            toggle->applyGradient(gradient, false, false);
         }
 
-        CCMenu* container = CCMenu::create();
+        auto container = CCMenu::create();
         container->addChild(toggle);
         container->setContentSize(size * scale);
 
         m_scrollLayer->m_contentLayer->addChild(container);
 
-        if (!m_selected) {
+        if (m_selected == nullptr) {
             toggle->setSelected(true);
             m_selected = toggle;
         }
 
-        m_toggles.push_back(toggle);
-        m_toggleGradients[toggle] = gradients[i];
+        m_toggles.emplace_back(toggle);
+        m_toggleGradients[toggle] = gradient;
     }
 
     m_scrollLayer->m_contentLayer->updateLayout();
     m_scrollLayer->moveToTop();
 
-    if (!gradients.empty()) {
+    if (usable) {
         Scrollbar* scrollbar = Scrollbar::create(m_scrollLayer);
         scrollbar->setPosition({233, m_size.height / 2.f});
-        scrollbar->setVisible(!gradients.empty());
+        scrollbar->setVisible(usable);
 
         m_mainLayer->addChild(scrollbar);
     }
 
-    if (m_toggles.size() > 100) {
+    // Beyond the eager batch, entries paint a few per frame.
+    bool lazy = m_toggles.size() > 100;
+    if (lazy)
         schedule(schedule_selector(LoadLayer::updateGradient), 0, kCCRepeatForever, 0);
-    }
 
     return true;
 }

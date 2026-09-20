@@ -6,6 +6,7 @@
 namespace paimon::discord {
 
 struct PresencePayload {
+// Excludes activity type/buttons; operator== covers only these fields.
     std::string state;
     std::string details;
     std::string largeImage;

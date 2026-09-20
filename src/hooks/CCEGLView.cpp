@@ -13,6 +13,7 @@
 #include "../features/rtx/services/RTXRenderer.hpp"
 #include "../blur/BlurSystem.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include "../framework/HookConventions.hpp"
 
 using namespace geode::prelude;
 
@@ -34,7 +35,7 @@ $execute {
             return true;
         }
 
-        // Outside play, right-click opens the capture menu; Alt+right-click stays with the editor.
+        // Alt+right-click stays with the editor.
         if (isPress && !(data.modifiers & KeyboardModifier::Alt)
             && (!pl || pl->m_isPaused)
             && Mod::get()->getSettingValue<bool>("capture-menu-rightclick")) {
@@ -51,7 +52,6 @@ $execute {
     }).leak();
 }
 
-// The keybind mirrors right-click and is disabled during active play.
 $execute {
     KeybindSettingPressedEventV3(Mod::get(), "capture-menu-keybind").listen(
         +[](Keybind const&, bool down, bool repeat, double) -> void {
@@ -68,7 +68,8 @@ $execute {
     ).leak();
 }
 
-// This hook exists only on Windows/Android; macOS/iOS use different view classes.
+// swapBuffers lives on CCEGLView, whose overrides only ship on Windows/Android
+// (macOS/iOS use other view classes), so the capture hook stays narrow.
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID)
 
 class $modify(CaptureView, CCEGLView) {
@@ -86,11 +87,10 @@ class $modify(CaptureView, CCEGLView) {
             paimon::editorcp::ColorPickerOverlay::onPreSwapSample();
         }
 
-        // El back buffer ya tiene el fotograma completo: aqui es donde Paimon RTX
-        // lo relee y lo repinta. Va antes del cursor para no postprocesarlo.
+        // RTX repinta el frame antes del cursor.
         paimon::rtx::RTXRenderer::get().renderFrame();
 
-        // Revisit the cursor after ImGui and after capture so it stays visible but screenshots remain cursor-free.
+        // Cursor last: visible but out of screenshots.
         CursorManager::get().renderOverlay();
 
         CCEGLView::swapBuffers();
@@ -106,8 +106,17 @@ class $modify(CaptureView, CCEGLView) {
 
 };
 
-// handleTouchesBegin is declared on CCEGLViewProtocol, so it needs a separate $modify.
+// Pet clicks ride on CCEGLViewProtocol::handleTouchesBegin, which has real
+// addresses on Android AND iOS alike, so this runs on all of mobile.
+// Separate $modify: declared on CCEGLViewProtocol, runs after quick-hub.
+#endif // defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID)
+#if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MOBILE)
+
 class $modify(CaptureTouchView, CCEGLViewProtocol) {
+    static void onModify(auto& self) {
+        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "CCEGLViewProtocol::handleTouchesBegin");
+    }
+
     void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesBegin(num, ids, xs, ys, timestamp);
 
@@ -121,4 +130,4 @@ class $modify(CaptureTouchView, CCEGLViewProtocol) {
     }
 };
 
-#endif // defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID)
+#endif // defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MOBILE)

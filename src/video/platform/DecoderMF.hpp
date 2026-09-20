@@ -30,6 +30,9 @@ public:
     double getDuration() const override;
     int getWidth() const override;
     int getHeight() const override;
+    // Real codificado; getWidth/Height devuelven salida reducida.
+    int getNativeWidth() const override;
+    int getNativeHeight() const override;
     bool isFinished() const override;
     double peekNextPTS() const override;
     double peekSecondPTS() const override;
@@ -48,12 +51,13 @@ private:
     bool setupReader(const std::string& path);
     bool setOutputFormat();
     void refreshLinearStride();
-    void copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, size_t bufferSize = 0);
-    void copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot);
+    // False si el buffer no trae planos validos: se descarta el frame.
+    bool copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, size_t bufferSize = 0);
+    bool copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot);
     bool createStagingTexture();
     bool copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresource, Frame& slot);
     bool fallbackToSoftwareDecode(const std::string& path);
-    // Box-average downscale of the native scratch frame into a smaller ring slot.
+    // Downscale por promedio al slot reducido.
     void downscalePlanes(const Frame& src, Frame& dst, int factor);
     IMFSourceReader*   m_reader     = nullptr;
     IMFDXGIDeviceManager* m_dxgiMgr = nullptr;
@@ -66,10 +70,7 @@ private:
     bool               m_dxvaEnabled = false;
     int                m_dxvaReadbackFailures = 0;
     UINT               m_resetToken = 0;
-    /// True when m_d3dDevice / m_d3dCtx point to the process-wide shared
-    /// device (created via acquireSharedD3D11()).  In that case we MUST
-    /// NOT call Release() on those pointers in closeInternal() — only
-    /// drop our ref via releaseSharedD3D11().
+    // Si es compartido no hacer Release, solo releaseSharedD3D11().
     bool               m_sharedD3D = false;
     std::mutex         m_d3dCtxMutex;  // serialises context ops vs DXVA decode (AMD fix)
 
@@ -77,16 +78,13 @@ private:
     std::string        m_videoPath;
     int                m_width  = 0;
     int                m_height = 0;
-    // Output (post-downscale) dimensions reported via getWidth/getHeight and
-    // used to size the ring + every downstream GPU buffer. Equal to m_width/
-    // m_height when m_downscaleFactor == 1.
+    // Salida post-downscale; igual a m_width/height si factor == 1.
     int                m_outWidth  = 0;
     int                m_outHeight = 0;
     int                m_downscaleFactor = 1;
-    // Row stride the reader declares for system-memory samples; MF pads it
-    // (854 -> 856) and those buffers carry no stride of their own.
+    // Stride de MF con relleno (854 -> 856) sin stride propio.
     int                m_linearStride = 0;
-    // Native-sized scratch frame; only allocated when downscaling is active.
+    // Scratch nativo; solo si hay downscale.
     Frame              m_scratch;
     double             m_duration = 0.0;
     GUID               m_subType  = GUID_NULL;
@@ -95,10 +93,7 @@ private:
     std::atomic<bool>  m_decoding{false};
     std::atomic<bool>  m_finished{false};
     std::atomic<bool>  m_looping{false};
-    /// Set to true if timedJoin() detached the decode thread due to a timeout.
-    /// When this flag is set, closeInternal() must NOT call Release() on any
-    /// COM/D3D object the thread may still be accessing — null out pointers
-    /// instead and let the OS reclaim them at process exit.
+    // Hilo separado: no liberar COM/D3D, solo anular punteros.
     std::atomic<bool>  m_decodeThreadDetached{false};
     std::thread        m_thread;
 };

@@ -16,14 +16,14 @@
 namespace paimon {
 
 namespace {
-// One shared D3D11 device avoids concurrent creation and per-player startup cost.
+// Shared device: avoids per-player startup cost.
 std::mutex g_d3d11Mutex;
 ID3D11Device*        g_sharedD3DDevice = nullptr;
 ID3D11DeviceContext* g_sharedD3DCtx    = nullptr;
-int                  g_sharedD3DRefs   = 0;     // Active decoder references.
-bool                 g_sharedD3DBroken = false; // Device creation/loss is sticky.
+int                  g_sharedD3DRefs   = 0;
+bool                 g_sharedD3DBroken = false; // Sticky on creation failure.
 
-// Fail closed after a device-creation error; software decode is the fallback.
+// Fail closed; software decode is the fallback.
 bool acquireSharedD3D11(ID3D11Device*& outDevice, ID3D11DeviceContext*& outCtx) {
     std::lock_guard lk(g_d3d11Mutex);
     if (g_sharedD3DBroken) return false;
@@ -40,7 +40,7 @@ bool acquireSharedD3D11(ID3D11Device*& outDevice, ID3D11DeviceContext*& outCtx) 
 
     HRESULT hr = D3D11CreateDevice(
         nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-        D3D11_CREATE_DEVICE_VIDEO_SUPPORT,  // Required for DXVA.
+        D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
         levels, 2, D3D11_SDK_VERSION,
         &g_sharedD3DDevice, &outLevel, &g_sharedD3DCtx);
 
@@ -180,7 +180,6 @@ bool DecoderMF::setupD3D11() {
 }
 
 bool DecoderMF::setupReader(const std::string& path) {
-// Use DXVA when available; copy frames through a staging texture.
     IMFAttributes* attrs = nullptr;
     HRESULT hr = MFCreateAttributes(&attrs, 3);
     if (FAILED(hr)) return false;
@@ -190,7 +189,6 @@ bool DecoderMF::setupReader(const std::string& path) {
         geode::log::warn("DecoderMF: failed to set MF_LOW_LATENCY");
     }
 
-// The decode loop accepts both D3D11 surfaces and system memory.
     if (m_dxvaEnabled && m_dxgiMgr) {
         hr = attrs->SetUnknown(MF_SOURCE_READER_D3D_MANAGER, m_dxgiMgr);
         if (FAILED(hr)) {
@@ -250,8 +248,7 @@ bool DecoderMF::setupReader(const std::string& path) {
     m_height = static_cast<int>(h);
     refreshLinearStride();
 
-    // Apply the quality cap to reduce ring-buffer, texture, PBO, and FBO memory.
-    // Integer scaling preserves aspect ratio and even 4:2:0 dimensions.
+    // Quality cap: integer scale keeps aspect and even 4:2:0 dims.
     m_outWidth  = m_width;
     m_outHeight = m_height;
     m_downscaleFactor = 1;
@@ -286,9 +283,9 @@ bool DecoderMF::setupReader(const std::string& path) {
 
 bool DecoderMF::setOutputFormat() {
     const GUID formatsToTry[] = {
-        MFVideoFormat_NV12,  // Native MF format, interleaved CbCr.
-        MFVideoFormat_I420,  // Y→Cb→Cr.
-        MFVideoFormat_YV12,  // Y→Cr→Cb; swap required.
+        MFVideoFormat_NV12,
+        MFVideoFormat_I420,
+        MFVideoFormat_YV12,  // Y->Cr->Cb; swap required.
     };
 
     for (const auto& fmt : formatsToTry) {
@@ -317,7 +314,7 @@ bool DecoderMF::setOutputFormat() {
     return false;
 }
 
-// Derive padded Y rows from the buffer size instead of codec alignment guesses.
+// Derive padded Y rows from buffer size, not codec alignment guesses.
 static int deriveYPlaneRows(size_t bufferSize, int stride, int visibleHeight) {
     int heuristic = (visibleHeight + 15) & ~15;
     if (bufferSize == 0 || stride <= 0 || visibleHeight <= 0) return heuristic;
@@ -331,7 +328,33 @@ static int deriveYPlaneRows(size_t bufferSize, int stride, int visibleHeight) {
     return heuristic;
 }
 
-void DecoderMF::copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, size_t bufferSize) {
+// NV12 needs same room as Cb+Cr apart.
+static long long planar420Size(int srcStride, int alignedH) {
+    long long const uvStride = (static_cast<long long>(srcStride) + 1) / 2;
+    long long const alignedUvH = (static_cast<long long>(alignedH) + 1) / 2;
+    return static_cast<long long>(srcStride) * alignedH + 2 * uvStride * alignedUvH;
+}
+
+// Probe strides from sample size; keep hint if it fits.
+static int detectLinearStride(size_t bufLen, int width, int visibleHeight, int hintedStride) {
+    auto const fits = [&](int stride) {
+        if (stride < width || bufLen == 0) return false;
+        return planar420Size(stride, deriveYPlaneRows(bufLen, stride, visibleHeight)) ==
+            static_cast<long long>(bufLen);
+    };
+    if (hintedStride >= width && fits(hintedStride)) return hintedStride;
+    for (int stride = width; stride <= width + 64; ++stride) {
+        if (stride != hintedStride && fits(stride)) {
+            geode::log::info("DecoderMF: linear stride autodetected as {} for {} px rows",
+                stride, width);
+            return stride;
+        }
+    }
+    return hintedStride >= width ? hintedStride : width;
+}
+
+bool DecoderMF::copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, size_t bufferSize) {
+    if (!scanline0 || lStride == 0) return false;
     // Normalize bottom-up frames.
     if (lStride < 0) {
         scanline0 = scanline0 + static_cast<ptrdiff_t>(lStride) * (m_height - 1);
@@ -340,10 +363,30 @@ void DecoderMF::copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, s
 
     int uvW = (m_width + 1) / 2;
     int uvH = (m_height + 1) / 2;
-    int uvSrcStride = (lStride + 1) / 2;  // Planar chroma stride.
+    int uvSrcStride = (lStride + 1) / 2;
 
     int alignedH = deriveYPlaneRows(bufferSize, static_cast<int>(lStride), m_height);
     int alignedUvH = (alignedH + 1) / 2;
+
+    // Drop truncated samples; never commit recycled chroma.
+    if (bufferSize > 0) {
+        BYTE const* const bufEnd = scanline0 + bufferSize;
+        auto const inside = [&](BYTE const* p) { return p >= scanline0 && p < bufEnd; };
+        BYTE const* const yLastRow = scanline0 + static_cast<ptrdiff_t>(lStride) * (m_height - 1);
+        BYTE const* const uvStart = scanline0 + static_cast<ptrdiff_t>(lStride) * alignedH;
+        if (!inside(yLastRow) ||
+            static_cast<size_t>(bufEnd - yLastRow) < static_cast<size_t>(m_width) ||
+            !inside(uvStart)) {
+            return false;
+        }
+        if (m_pixelFormat == MFVideoFormat_NV12) {
+            size_t const uvBytes = static_cast<size_t>(lStride) * alignedUvH;
+            if (static_cast<size_t>(bufEnd - uvStart) < uvBytes) return false;
+        } else {
+            BYTE const* const second = uvStart + static_cast<ptrdiff_t>(uvSrcStride) * alignedUvH;
+            if (!inside(second)) return false;
+        }
+    }
 
     int yCopyBytes = std::min(slot.strideY, static_cast<int>(lStride));
     if (slot.strideY == lStride && slot.strideY >= m_width) {
@@ -388,7 +431,6 @@ void DecoderMF::copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, s
             }
         }
     } else if (m_pixelFormat == MFVideoFormat_NV12) {
-        // NV12 stores interleaved Cb/Cr.
         BYTE* uvStart = scanline0 + lStride * alignedH;
         libyuv::SplitUVPlane(uvStart, lStride,
                              slot.planeCb, slot.strideCb,
@@ -401,13 +443,12 @@ void DecoderMF::copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, s
             geode::log::warn("DecoderMF: unhandled pixel format (not NV12/I420/YV12) - "
                              "chroma not extracted, video may render green");
         }
+        return false;
     }
+    return true;
 }
 
-// A system-memory sample carries no stride of its own and MF pads the row
-// (854 px of picture in 856 bytes), so reading it as m_width slides every row
-// sideways and lands the chroma planes short. Wine's readers never expose
-// IMF2DBuffer, which leaves that path as the only one they take.
+// Wine hides IMF2DBuffer; padded rows need stride detect.
 void DecoderMF::refreshLinearStride() {
     m_linearStride = m_width;
     if (!m_reader) return;
@@ -435,22 +476,52 @@ void DecoderMF::refreshLinearStride() {
     }
 }
 
-void DecoderMF::copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot) {
+bool DecoderMF::copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot) {
+    if (!data || bufLen == 0) return false;
     int uvW    = (m_width + 1) / 2;
     int uvH    = (m_height + 1) / 2;
 
-    // A declared stride that does not divide the buffer would walk the rows off
-    // the end, so the tight layout stays as the fallback.
-    int srcStride = m_linearStride > m_width ? m_linearStride : m_width;
-    int alignedH = deriveYPlaneRows(static_cast<size_t>(bufLen), srcStride, m_height);
+    // Fall back to tight layout if stride overruns buffer.
+    int hinted = m_linearStride > m_width ? m_linearStride : m_width;
+    size_t const bufSize = static_cast<size_t>(bufLen);
+    int srcStride = detectLinearStride(bufSize, m_width, m_height, hinted);
+    if (srcStride != m_linearStride) m_linearStride = srcStride;
+    int alignedH = deriveYPlaneRows(bufSize, srcStride, m_height);
     if (static_cast<size_t>(srcStride) * alignedH * 3 / 2 > bufLen) {
         srcStride = m_width;
-        alignedH = deriveYPlaneRows(static_cast<size_t>(bufLen), srcStride, m_height);
+        alignedH = deriveYPlaneRows(bufSize, srcStride, m_height);
     }
     int uvSrcStride = (srcStride + 1) / 2;
     int alignedUvH = (alignedH + 1) / 2;
     int ySize  = srcStride * alignedH;
     int uvSize = uvSrcStride * alignedUvH;
+
+    {
+        BYTE const* const bufEnd = data + bufSize;
+        auto const inside = [&](BYTE const* p) { return p >= data && p < bufEnd; };
+        BYTE const* const yLastRow = data + static_cast<ptrdiff_t>(srcStride) * (m_height - 1);
+        BYTE const* const uvStart = data + ySize;
+        if (!inside(yLastRow) ||
+            static_cast<size_t>(bufEnd - yLastRow) < static_cast<size_t>(m_width) ||
+            !inside(uvStart)) {
+            return false;
+        }
+        if (m_pixelFormat == MFVideoFormat_NV12) {
+            size_t const uvBytes = static_cast<size_t>(srcStride) * alignedUvH;
+            if (static_cast<size_t>(bufEnd - uvStart) < uvBytes) return false;
+        } else if (m_pixelFormat == MFVideoFormat_I420 || m_pixelFormat == MFVideoFormat_YV12) {
+            BYTE const* const second = uvStart + uvSize;
+            if (!inside(second)) return false;
+        } else {
+            static bool s_warnedLinearFmt = false;
+            if (!s_warnedLinearFmt) {
+                s_warnedLinearFmt = true;
+                geode::log::warn("DecoderMF: unhandled pixel format (not NV12/I420/YV12) - "
+                                 "chroma not extracted, video may render green");
+            }
+            return false;
+        }
+    }
 
     if (slot.strideY == srcStride) {
         std::memcpy(slot.planeY, data, static_cast<size_t>(srcStride) * m_height);
@@ -486,13 +557,13 @@ void DecoderMF::copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot) {
             }
         }
     } else if (m_pixelFormat == MFVideoFormat_NV12) {
-        // NV12 stores interleaved Cb/Cr.
         BYTE* uvStart = data + ySize;
         libyuv::SplitUVPlane(uvStart, srcStride,
                              slot.planeCb, slot.strideCb,
                              slot.planeCr, slot.strideCr,
                              uvW, uvH);
     }
+    return true;
 }
 
 bool DecoderMF::createStagingTexture() {
@@ -567,6 +638,7 @@ bool DecoderMF::copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresourc
     }
 
     // Serialize DXVA and copy paths for driver safety.
+    bool ok = false;
     {
         std::lock_guard<std::mutex> ctxLk(m_d3dCtxMutex);
 
@@ -583,11 +655,11 @@ bool DecoderMF::copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresourc
         LONG lStride = static_cast<LONG>(mapped.RowPitch);
 
         size_t mappedSize = static_cast<size_t>(mapped.RowPitch) * m_stagingHeight * 3 / 2;
-        copyPlanesToSlot2D(scanline0, lStride, slot, mappedSize);
+        ok = copyPlanesToSlot2D(scanline0, lStride, slot, mappedSize);
 
         m_d3dCtx->Unmap(m_stagingTex, 0);
     }
-    return true;
+    return ok;
 }
 
 void DecoderMF::startDecoding() {
@@ -662,7 +734,7 @@ void DecoderMF::decodeLoop() {
         if (flags & MF_SOURCE_READERF_ENDOFSTREAM) {
             if (sample) sample->Release();
             if (m_looping.load(std::memory_order_relaxed)) {
-// Rewind in-thread: PTS restarts at 0 and the ring stays fed across the loop.
+                // Rewind in-thread; PTS restarts at 0.
                 PROPVARIANT pos;
                 PropVariantInit(&pos);
                 pos.vt = VT_I8;
@@ -740,8 +812,7 @@ void DecoderMF::decodeLoop() {
                                        &scanline0, &lStride,
                                        nullptr, &cbBuffer);
                 if (SUCCEEDED(hr)) {
-                    copyPlanesToSlot2D(scanline0, lStride, *dst, static_cast<size_t>(cbBuffer));
-                    copied = true;
+                    copied = copyPlanesToSlot2D(scanline0, lStride, *dst, static_cast<size_t>(cbBuffer));
                     buf2d->Unlock2D();
                 }
                 buf2d->Release();
@@ -752,8 +823,7 @@ void DecoderMF::decodeLoop() {
             BYTE* data = nullptr;
             hr = buf->Lock(&data, nullptr, &bufLen);
             if (SUCCEEDED(hr) && data) {
-                copyPlanesToSlotLinear(data, bufLen, *dst);
-                copied = true;
+                copied = copyPlanesToSlotLinear(data, bufLen, *dst);
                 buf->Unlock();
             }
         }
@@ -794,7 +864,7 @@ void DecoderMF::decodeLoop() {
 }
 
 
-// Recreate the reader without DXVA after repeated readback failures.
+// Retry without DXVA after repeated readback failures.
 bool DecoderMF::fallbackToSoftwareDecode(const std::string& path) {
     m_dxvaEnabled = false;
     m_dxvaReadbackFailures = 0;
@@ -875,7 +945,6 @@ void DecoderMF::seekTo(double seconds) {
     if (wasDecoding) startDecoding();
 }
 
-// Box-average one 8-bit plane; clamp edge blocks to source bounds.
 void DecoderMF::downscalePlanes(const Frame& src, Frame& dst, int) {
     libyuv::ScalePlane(src.planeY, src.strideY, m_width, m_height,
                        dst.planeY, dst.strideY, m_outWidth, m_outHeight,
@@ -897,6 +966,8 @@ bool DecoderMF::skipFrame() {
 double DecoderMF::getDuration() const { return m_duration; }
 int DecoderMF::getWidth()  const { return m_outWidth  > 0 ? m_outWidth  : m_width; }
 int DecoderMF::getHeight() const { return m_outHeight > 0 ? m_outHeight : m_height; }
+int DecoderMF::getNativeWidth()  const { return m_width; }
+int DecoderMF::getNativeHeight() const { return m_height; }
 bool DecoderMF::isFinished() const {
     return m_finished.load(std::memory_order_acquire);
 }
@@ -920,7 +991,7 @@ void DecoderMF::releaseFrame() {
 void DecoderMF::closeInternal() {
     stopDecoding();
 
-    // A detached worker may still hold MF/D3D references; release under SEH.
+    // Detached worker may still hold refs; release under SEH.
     if (m_decodeThreadDetached.load(std::memory_order_acquire)) {
         geode::log::warn("[DecoderMF] closeInternal: decode thread was detached; "
                          "forcing COM/D3D release under SEH.");
@@ -946,7 +1017,7 @@ void DecoderMF::closeInternal() {
         return;
     }
 
-    // Keep shared device/context ownership in the process-wide cache.
+    // Keep shared device in process-wide cache.
     {
         std::lock_guard lk(g_d3d11Mutex);
         if (m_dxgiMgr) {
@@ -972,9 +1043,8 @@ void DecoderMF::closeInternal() {
         m_sharedD3D = false;
     }
 
-    // MF may already be unloaded during force close; release pointers under SEH.
+    // No MFShutdown: process-wide; SEH covers unload race.
     releaseMfObjectsSafely(m_stagingTex, m_reader);
-    // Do not call MFShutdown here; it is process-wide.
     m_dxvaEnabled = false;
     m_dxvaReadbackFailures = 0;
     m_stagingFormat = DXGI_FORMAT_UNKNOWN;

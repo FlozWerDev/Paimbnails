@@ -21,7 +21,10 @@ struct CaptureValidation {
 class FramebufferCapture {
 public:
     // Callback: (success, texture, rgbaData, width, height).
-    // Texture is autoreleased; keepers must retain it (geode::Ref<>).
+    // Texture carries a +1 that the service releases when the callback
+    // returns (NOT autoreleased); keepers must retain it (geode::Ref<>)
+    // inside the callback. May fire synchronously on early failure and may
+    // run off the main thread — marshal to main before touching UI.
     static void requestCapture(
         int levelID,
         geode::CopyableFunction<void(bool success, cocos2d::CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height)> callback,
@@ -84,7 +87,8 @@ private:
     // can still complete the caller exactly once.
     static geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*, std::shared_ptr<uint8_t>, int, int)>
         s_processingCallback;
-    static uint64_t s_processingGeneration;
+    // Supersede detection uses the g_generation counter captured in the worker
+    // lambda; no separate generation member is kept.
     static std::vector<DeferredCallback> s_deferredCallbacks;
     static bool s_isCapturing;
     static int  s_captureW;

@@ -1,24 +1,4 @@
-// Paimon RTX - cadena de bloom, rayos volumetricos y adaptacion de luz.
-//
-// Un solo programa con cinco modos para no compilar cinco: 0 prepara la fuente
-// (lleva la escena a rango alto, le suma la luz trazada y recorta por umbral),
-// 1 baja de resolucion, 2 sube y mezcla con el nivel fino, 3 marcha desde el
-// foco para los god rays y 4 mide el brillo medio de la pantalla.
-//
-// Los dos filtros de la piramide son los de Jimenez (Call of Duty: Advanced
-// Warfare, SIGGRAPH 2014): 13 muestras al bajar y carpa de 9 al subir. Un box
-// de 4 como el que habia aqui deja el bloom latiendo, porque cada nivel se come
-// tres cuartas partes de los pixeles y basta que un brillo cruce medio texel
-// para que aparezca y desaparezca entre fotogramas.
-//
-// El primer nivel promedia ademas por Karis (peso 1/(1+brillo) por grupo de
-// cuatro): sin eso, un solo pixel muy brillante domina el promedio y sale
-// parpadeando como una luciernaga por toda la cadena.
-//
-// Al subir no se acumula, se interpola. Sumar hacia arriba multiplica la energia
-// por el numero de niveles, asi que la misma "fuerza" daba un halo cinco veces
-// mas fuerte con cinco pases que con uno; con la mezcla el peso total siempre
-// vale 1 y el numero de pases solo cambia la anchura.
+// Bloom: 5 modos (prefilter/down/up/god rays/brillo) con filtros Jimenez.
 
 varying vec2 v_texCoord;
 
@@ -38,14 +18,16 @@ uniform float u_tonemap;
 uniform float u_hdrRange;
 uniform float u_giMix;
 uniform float u_adaptRate;
+uniform float u_frame;
 
 const int kRaySamples = 24;
+// Sombra aproximada por luma, sin G-buffer.
+const float kVolBlock = 0.35;
 
-// prefilter: la fuente es el back buffer en sRGB y hay que expandirla; en el
-// resto de niveles ya viene en luz lineal y se lee tal cual.
+// Nivel 0 viene en sRGB; el resto ya en lineal.
 vec3 tap(vec2 uv, float prefilter) {
     vec3 c = texture2D(u_src, uv).rgb;
-    if (prefilter > 0.5) c = min(tonemapInverse(toLinear(c), u_tonemap), vec3(u_hdrRange));
+    if (prefilter > 0.5) c = min(tonemapInverse(toLinear(c), u_tonemap), vec3(max(u_hdrRange, 1.0)));
     return c;
 }
 
@@ -92,13 +74,19 @@ vec3 tent9(vec2 uv, vec2 t) {
     return c / 16.0;
 }
 
-// Rodilla suave de Unity: por debajo del umbral no entra nada, por encima entra
-// entero y en medio hay una parabola. Con el corte duro que habia, el borde
-// entre lo que brilla y lo que no salia como una linea dura, y cualquier cosa
-// que oscilase alrededor del umbral aparecia y desaparecia de golpe.
-//
-// El umbral llega en brillo de pantalla, asi que pasa por la misma expansion
-// que la imagen antes de comparar con ella.
+// Ruido barato sin texturas para volumetricos.
+float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash12(i);
+    float b = hash12(i + vec2(1.0, 0.0));
+    float c = hash12(i + vec2(0.0, 1.0));
+    float d = hash12(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// Rodilla suave: el corte duro deja linea y parpadeo.
 vec3 knee(vec3 c) {
     float thr = tonemapInverse(vec3(u_threshold * u_threshold), u_tonemap).r;
     float br = max(max(c.r, c.g), c.b);
@@ -113,22 +101,42 @@ void main() {
     vec3 outColor;
 
     if (u_mode > 3.5) {
-        // Media de toda la pantalla leyendo el mip mas alto de la escena.
         float lum = max(luma(toLinear(texture2D(u_src, vec2(0.5), 14.0).rgb)), 0.0005);
         outColor = vec3(mix(texture2D(u_add, vec2(0.5)).r, lum, u_adaptRate));
     } else if (u_mode > 2.5) {
-        // El jitter rompe las bandas concentricas que deja marchar todos los
-        // pixeles desde el mismo punto de partida.
+        // Jitter temporal: sin el, la marcha deja bandas concentricas.
         vec2 delta = (uv - u_lightPos) * u_density / float(kRaySamples);
-        vec2 p = uv - delta * hash12(gl_FragCoord.xy);
+        // mod 64: evita degradar el hash por precision.
+        float frameIx = mod(u_frame, 64.0);
+        float j0 = fract(hash12(gl_FragCoord.xy) + halton(frameIx, 2.0));
+        vec2 p = uv - delta * j0;
         float illum = 1.0;
+        float trans = 1.0;
+        float wsum = 0.0;
+        float decay = clamp(u_decay, 0.0, 0.999);
         vec3 acc = vec3(0.0);
         for (int i = 0; i < kRaySamples; i++) {
             p -= delta;
-            acc += texture2D(u_src, clamp(p, 0.0, 1.0)).rgb * illum;
-            illum *= u_decay;
+            if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) break;
+            vec3 s = texture2D(u_src, p).rgb;
+            if (!all(equal(s, s))) s = vec3(0.0);
+            s = max(s, vec3(0.0));
+            // La luma densa absorbe; pesa igual que el decaimiento.
+            float w = illum * trans;
+            acc += s * w;
+            wsum += w;
+            trans *= exp(-min(luma(s), 8.0) * kVolBlock);
+            illum *= decay;
         }
-        outColor = acc / float(kRaySamples);
+        // Ruido polar de 2 octavas modula la densidad.
+        vec2 rel = uv - u_lightPos;
+        float rad = length(rel);
+        float ang = 0.0;
+        if (rad > 0.0001) ang = atan(rel.y, rel.x);
+        vec2 npc = vec2(ang * 1.5 + frameIx * 0.02, rad * 6.0 - frameIx * 0.05);
+        float vn = vnoise(npc * 3.0) * 0.65 + vnoise(npc * 7.0 + 13.7) * 0.35;
+        float dens = mix(0.75, 1.25, clamp(vn, 0.0, 1.0));
+        outColor = acc / max(wsum, 0.0001) * dens;
     } else if (u_mode > 1.5) {
         vec2 spread = u_texel * u_radius * vec2(1.0 + u_anamorphic * 3.0, 1.0);
         outColor = mix(texture2D(u_add, uv).rgb, tent9(uv, spread), u_blend);

@@ -1856,8 +1856,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
             m_fields->m_isAdmin = false;
             PaimonDebug::log("[ProfilePage] Inicializando perfil - status moderador: false");
 
-            bool wasVerified = Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
-            bool wasAdmin = Mod::get()->getSavedValue<bool>("is-verified-admin", false);
+            bool wasVerified = paimon::modauth::isVerified();
+            bool wasAdmin = paimon::modauth::isVerified(true);
             if (wasVerified) {
                 m_fields->m_isApprovedMod = true;
                 m_fields->m_isAdmin = wasAdmin;
@@ -1877,20 +1877,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                             bool effectiveMod = isApproved || isAdmin;
                             page->m_fields->m_isApprovedMod = effectiveMod;
                             page->m_fields->m_isAdmin = isAdmin;
-
-                            Mod::get()->setSavedValue("is-verified-moderator", effectiveMod);
-                            Mod::get()->setSavedValue("is-verified-admin", isAdmin);
-
-                            if (effectiveMod) {
-                                auto modDataPath = Mod::get()->getSaveDir() / "moderator_verification.dat";
-                                std::ofstream modFile(modDataPath, std::ios::binary);
-                                if (modFile) {
-                                    auto now = std::chrono::system_clock::now();
-                                    auto timestamp = std::chrono::system_clock::to_time_t(now);
-                                    modFile.write(reinterpret_cast<char const*>(&timestamp), sizeof(timestamp));
-                                    modFile.close();
-                                }
-                            }
 
                             page->refreshBanButtonVisibility();
 
@@ -1935,17 +1921,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void onOpenThumbsCenter(CCObject*) {
-        if (!m_fields->m_isApprovedMod && !m_fields->m_isAdmin) {
-            log::warn("[ProfilePage] Usuario NO es moderador ni admin, bloqueando acceso al centro de verificacion");
-            PopupManager::get().alert(Localization::get().getString("profile.access_denied"), Localization::get().getString("profile.moderators_only"), Localization::get().getString("general.ok")).showInstant();
-            return;
-        }
-        
-        log::info("[ProfilePage] Abriendo centro de verificacion para moderador");
-        auto scene = VerificationCenterLayer::scene();
-        if (scene) {
-            TransitionManager::get().pushScene(scene);
-        }
+        paimon::modauth::showPanel();
     }
 
     void onAddProfileImg(CCObject*) {

@@ -155,6 +155,28 @@ bool ScrollKeybindsPopup::init() {
     addRow(makeKeybindRow(kMusicEditorKey, "Music Volume", scrollW, /*allowScroll=*/false));
     addRow(makeKeybindRow(kSFXEditorKey,   "SFX Volume",   scrollW, /*allowScroll=*/false));
 
+#if defined(GEODE_IS_MOBILE)
+    // No wheel on touch screens: remind that the three-finger drag replaces it.
+    {
+        auto hintRow = CCNode::create();
+        hintRow->setAnchorPoint({0.f, 0.f});
+        hintRow->setContentSize({scrollW, kRowH});
+        auto hintBg = CCLayerColor::create({255, 255, 255, 12});
+        hintBg->setContentSize({scrollW - 6.f, kRowH - 4.f});
+        hintBg->setPosition({3.f, 2.f});
+        hintRow->addChild(hintBg, 0);
+        auto hint = CCLabelBMFont::create(
+            "En tactil: arrastra con 3 dedos (vertical = musica, horizontal = SFX)",
+            "chatFont.fnt");
+        hint->setScale(0.42f);
+        hint->setAnchorPoint({0.5f, 0.5f});
+        hint->setPosition({scrollW / 2.f, kRowH / 2.f});
+        hint->limitLabelWidth(scrollW - 16.f, 0.42f, 0.2f);
+        hintRow->addChild(hint, 1);
+        addRow(hintRow);
+    }
+#endif
+
     addRow(makeSectionHeader("Captura", scrollW));
     addRow(makeKeybindRow("capture-keybind", "Capturar", scrollW, /*allowScroll=*/true));
     addRow(makeKeybindRow("capture-menu-keybind", "Abrir Menu Captura", scrollW, /*allowScroll=*/true));

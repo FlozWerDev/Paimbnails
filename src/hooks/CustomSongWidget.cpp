@@ -21,7 +21,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 namespace {
-// Keep the vanilla 9-slice as the frame; the blur fills only its inner area.
+// Vanilla frame kept; blur fills inner area.
 constexpr float kPlateBorderInset = 2.5f;
 constexpr float kPlateInnerRadius = 5.f;
 }
@@ -29,7 +29,7 @@ constexpr float kPlateInnerRadius = 5.f;
 class $modify(PaimonCustomSongWidget, CustomSongWidget) {
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "CustomSongWidget::init");
-        // Run after compact-pause-menu/node-ids without claiming Last.
+        // After node-ids, without claiming Last.
         paimon::hooks::afterModOrElseNodeIdsLate(
             self, "CustomSongWidget::updateSongInfo", "prevter.compact-pause-menu"
         );
@@ -48,8 +48,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
         ~Fields() {
             if (!m_owner) return;
-            // Fields teardown runs after the node's user object is released; do not
-            // access m_fields or call back into the widget here.
+            // Teardown runs after release; no widget access here.
             if (paimon::isRuntimeShuttingDown()) {
                 m_owner = nullptr;
                 return;
@@ -83,18 +82,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         if (m_isMusicLibrary || m_isInCell) return true;
         if (isUnderEditorHierarchy()) return true;
         return false;
-    }
-
-    void invalidateAsyncWork() {
-        ++m_fields->m_callbackGeneration;
-        m_fields->m_levelID = 0;
-    }
-
-    void cleanupSubscriptions() {
-        if (m_fields->m_bgEventHandle != 0) {
-            paimon::EventBus::get().unsubscribe(m_fields->m_bgEventHandle);
-            m_fields->m_bgEventHandle = 0;
-        }
     }
 
     LevelInfoLayer* findLevelInfoLayer() {
@@ -169,7 +156,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         return clip;
     }
 
-    // m_bgSpr is recreated during init/update, so verify it is still mounted.
+    // m_bgSpr is recreated; verify it is still mounted.
     bool isValidChild(CCNode* child) {
         if (!child) return false;
         auto* children = this->getChildren();
@@ -215,7 +202,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             return false;
         }
 
-        // Keep the vanilla plate as the frame while blur loads.
         CCPoint bgOrigin = {
             bgPos.x - bgAnchor.x * bgSz.width,
             bgPos.y - bgAnchor.y * bgSz.height
@@ -275,7 +261,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         m_fields->m_clipper->addChild(blurred, 1);
         blurred->runAction(CCFadeTo::create(0.3f, 255));
 
-        // Keep the song text readable over the blur.
+        // Dark overlay keeps text readable.
         if (!m_fields->m_clipper->getChildByID("paimon-song-dark-overlay"_spr)) {
             auto* dark = CCLayerColor::create(ccc4(0, 0, 0, 110));
             if (dark) {
@@ -288,7 +274,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         }
     }
 
-    // Run blur asynchronously so opening the widget does not stall a frame.
+    // Async blur to avoid stalling a frame.
     void applyBlurredThumbnail(CCTexture2D* texture) {
         if (!texture) {
             log::warn("[PaimonCSW] applyBlur: texture is null");
@@ -362,7 +348,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
         log::info("[PaimonCSW] tryApplyBlur: requesting thumbnail for levelID={}", levelID);
 
-        // Match the texture currently shown by LevelInfoLayer.
+        // Reuse LevelInfoLayer texture to stay in sync.
         if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID) {
             if (auto* lastTex = paimon::ThumbnailBackgroundChangedEvent::getLastTexture()) {
                 log::info("[PaimonCSW] using LevelInfoLayer last texture for {}", levelID);
@@ -489,38 +475,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
     }
 
     $override
-    void onEnter() {
-        CustomSongWidget::onEnter();
-        if (isPassthroughMode()) return;
-
-        if (!shouldManageBlur()) return;
-
-        log::info("[PaimonCSW] onEnter");
-
-        ensureClipper();
-
-        tryApplyBlur();
-        requestSongMetadataIfNeeded();
-
-        if (m_fields->m_levelID <= 0 && !m_fields->m_retryScheduled) {
-            m_fields->m_retryScheduled = true;
-            this->scheduleOnce(
-                schedule_selector(PaimonCustomSongWidget::retryBlur), 0.1f);
-        }
-    }
-
-    $override
-    void onExit() {
-        if (!isPassthroughMode()) {
-            this->unschedule(schedule_selector(PaimonCustomSongWidget::retryBlur));
-            m_fields->m_retryScheduled = false;
-            invalidateAsyncWork();
-            cleanupSubscriptions();
-        }
-        CustomSongWidget::onExit();
-    }
-
-    $override
     void loadSongInfoFinished(SongInfoObject* object) {
         CustomSongWidget::loadSongInfoFinished(object);
         if (isPassthroughMode()) return;
@@ -560,7 +514,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             return;
         }
 
-        // GD calls updateSongInfo() from init() before the widget has a parent.
+        // GD calls this from init() before parenting.
         CustomSongWidget::updateSongInfo();
 
         auto* widget = asBase();
@@ -592,5 +546,12 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         }
 
         tryApplyBlur();
+
+        // Retry lives here, not in onEnter().
+        if (m_fields->m_levelID <= 0 && !m_fields->m_retryScheduled) {
+            m_fields->m_retryScheduled = true;
+            this->scheduleOnce(
+                schedule_selector(PaimonCustomSongWidget::retryBlur), 0.1f);
+        }
     }
 };

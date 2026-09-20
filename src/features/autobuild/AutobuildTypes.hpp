@@ -1,8 +1,6 @@
 #pragma once
 
-// Data model for the editor autobuilder: what a template stores and the options
-// a generation run uses. Everything here is plain data so the solver can run
-// without touching the editor.
+// Plain data so the solver runs without touching the editor.
 
 #include <algorithm>
 #include <limits>
@@ -11,11 +9,9 @@
 
 namespace paimon::autobuild {
 
-// Wave learns a grid of tiles plus which tile may sit next to which; Stamp
-// keeps whole clusters and drops one on each target.
+// Wave learns tiles; Stamp drops whole clusters.
 enum class Mode { Wave, Stamp };
 
-// Where the generated objects go.
 enum class TargetMode { Markers, Selection, Area };
 
 struct PieceTransform {
@@ -72,8 +68,7 @@ inline void measurePiece(Piece& piece) {
     piece.height = maxY - minY;
 }
 
-// Wave adjacency of one piece. `open[d]` means the piece was captured with
-// nothing on that side, so it is allowed to sit on the border of a fill.
+// Wave adjacency; open[d] allows sitting on fill border.
 struct Links {
     std::vector<int> side[kNeighbourDirections];
     bool open[kNeighbourDirections] = {};
@@ -136,6 +131,10 @@ struct Options {
     float captureCell = 30.f;
     float clusterRadius = 60.f;
     int backtracks = 1200;
+    // 0 fiel, 1 mezcla, 2 atrevido.
+    int invention = 0;
+    // Seeds tried per build, best wins; 1 = classic.
+    int refineTries = 3;
 
     static Options load();
     void save() const;

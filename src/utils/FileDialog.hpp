@@ -5,7 +5,6 @@
 
 namespace pt {
 
-    /// Callback type — receives the raw Result.
     using FilePickCallback =
         std::function<void(geode::Result<std::optional<std::filesystem::path>>)>;
 
@@ -21,18 +20,21 @@ namespace pt {
     geode::utils::file::FilePickOptions::Filter buildTemplateFilter();
     // Geometry Dash level exports for the official slots.
     geode::utils::file::FilePickOptions::Filter gmdFilter();
+    // Texture Studio shared packs.
+    geode::utils::file::FilePickOptions::Filter jsonFilter();
 
-    // pickers (fire-and-forget, same pattern as reference mods)
+    // Fire-and-forget pickers.
     void pickImage(FilePickCallback callback);
-    // Picker for the cursor gallery: accepts images, Windows cursors, and .zip.
     void pickCursorAsset(FilePickCallback callback);
     void pickGif(FilePickCallback callback);
     void pickBuildTemplate(FilePickCallback callback);
     void pickGmd(FilePickCallback callback);
+    void pickJson(FilePickCallback callback);
     void pickAudio(FilePickCallback callback);
     void pickVideo(FilePickCallback callback);
     void pickMedia(FilePickCallback callback);
     void saveImage(std::string const& defaultName, FilePickCallback callback);
+    void saveJson(std::string const& defaultName, FilePickCallback callback);
     void pickFolder(FilePickCallback callback);
     void pickFolder(std::filesystem::path const& defaultPath, FilePickCallback callback);
     void cancelPendingFilePick();

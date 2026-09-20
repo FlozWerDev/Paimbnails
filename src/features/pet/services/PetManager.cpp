@@ -4,6 +4,7 @@
 #include "../../../utils/LocalAssetStore.hpp"
 #include "../../../utils/EditorContext.hpp"
 #include "../../capture/services/FramebufferCapture.hpp"
+#include "../../cursor/services/CursorManager.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>
 #include <fstream>
@@ -802,6 +803,14 @@ void PetManager::update(float dt) {
     }
 
     auto mousePos = geode::cocos::getMousePos();
+#if defined(GEODE_IS_MOBILE)
+    // No mouse on touch screens: the cursor service tracks the finger via the
+    // touch dispatcher hook, so the pet keeps following continuously. Negative
+    // means no finger has landed yet: keep the spawn target instead of flying
+    // offscreen.
+    CCPoint touchPos = CursorManager::get().pointerPos();
+    if (touchPos.x >= 0.f && touchPos.y >= 0.f) mousePos = touchPos;
+#endif
     m_targetPos.x = mousePos.x + m_config.offsetX;
     m_targetPos.y = mousePos.y + m_config.offsetY;
 

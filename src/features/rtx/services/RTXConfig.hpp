@@ -1,7 +1,6 @@
 #pragma once
 
-// Configuracion de Paimon RTX. Vive en un JSON propio (rtx_config.json) porque
-// son demasiados campos para un saved value por cada uno.
+// JSON propio (rtx_config.json): demasiados campos para saved values.
 
 #include <string>
 
@@ -24,15 +23,16 @@ enum class Tonemap : int {
 };
 
 struct RTXConfig {
+    // Defaults = preset Balanced (no un hibrido sin nombre).
     bool  enabled          = false;
     float intensity        = 1.00f;
 
     int   preset           = static_cast<int>(Preset::Balanced);
     float renderScale      = 0.50f;
-    int   rayCount         = 4;
-    int   raySteps         = 12;
+    int   rayCount         = 3;
+    int   raySteps         = 14;
     float rayDistance      = 0.28f;
-    float stepGrowth       = 1.25f;
+    float stepGrowth       = 1.28f;
     bool  adaptive         = true;
     int   targetFps        = 60;
     int   frameSkip        = 0;
@@ -70,7 +70,7 @@ struct RTXConfig {
     float godRayX          = 0.50f;
     float godRayY          = 0.82f;
 
-    float denoise          = 1.60f;
+    float denoise          = 2.00f;
     int   atrousPasses     = 3;
     float temporal         = 0.88f;
     bool  ghostClamp       = true;
@@ -99,8 +99,7 @@ struct RTXConfig {
     bool  skipWhenPaused   = false;
 };
 
-// Sobrescribe solo los campos de coste (resolucion, rayos, pases); el resto del
-// look que el usuario haya tocado se conserva. Custom no toca nada.
+// Solo toca campos de coste; conserva el resto. Custom no toca nada.
 void applyPreset(RTXConfig& cfg, Preset preset);
 
 char const* presetName(int preset);

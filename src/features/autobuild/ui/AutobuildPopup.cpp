@@ -37,6 +37,7 @@ constexpr ccColor3B kError = {255, 120, 120};
 
 std::vector<std::string> const kTargetNames = {"Marcadores", "Seleccion", "Area"};
 std::vector<std::string> const kModeNames = {"Onda", "Sellos"};
+std::vector<std::string> const kInventionNames = {"Fiel", "Mezcla", "Atrevido"};
 
 char const* targetHelp(paimon::autobuild::TargetMode target) {
     using TM = paimon::autobuild::TargetMode;
@@ -49,6 +50,19 @@ char const* targetHelp(paimon::autobuild::TargetMode target) {
             return "Rellena todo el rectangulo que ocupa la seleccion, sin colocar marcadores.";
     }
     return "";
+}
+
+char const* inventionHelp(int invention) {
+    switch (invention) {
+        case 1:
+            return "Mezcla fragmentos de tus referencias en combinaciones nuevas. "
+                   "Cada semilla distinta, todas con el mismo estilo.";
+        case 2:
+            return "Como Mezcla, mas motivos raros y pequenas variaciones de "
+                   "posicion en la decoracion. El gameplay queda intacto.";
+        default:
+            return "Recombina solo lo que mostraste, sin inventar nada nuevo.";
+    }
 }
 
 int newSeed() {
@@ -133,7 +147,6 @@ void AutobuildPopup::rebuild() {
     float const inner = kit::cardInnerWidth(width);
 
     if (m_compact) {
-        // Only the build controls stay on screen, on a small strip of their own.
         auto* strip = SpriteHelper::createColorPanel(width, 52.f, {10, 14, 26}, 205, 8.f);
         if (strip) {
             strip->setAnchorPoint({0.f, 0.f});
@@ -388,7 +401,6 @@ std::vector<CCNode*> AutobuildPopup::buildTab(float width, float inner) {
         info->setPosition({10.f, 30.f});
         summary->addChild(info);
 
-        // What the current selection would fill, checked before building.
         std::string preview;
         ccColor3B previewColor = kOk;
         auto plan = planBuild(editor(), m_options, tpl->cell);
@@ -432,6 +444,12 @@ std::vector<CCNode*> AutobuildPopup::buildTab(float width, float inner) {
     items.push_back(kit::makeCard(width, "Destino", {130, 240, 170}, destination));
 
     std::vector<CCNode*> tuning;
+    tuning.push_back(kit::makeSelectRow(inner, "Invencion", inventionHelp(m_options.invention),
+        kInventionNames, std::clamp(m_options.invention, 0, 2),
+        [this](int index) {
+            m_options.invention = std::clamp(index, 0, 2);
+            m_options.save();
+        }));
     tuning.push_back(kit::makeToggleRow(inner, "Copiar colores",
         "Importa solo los canales de color que usan las piezas colocadas.",
         m_options.copyColors,
@@ -494,6 +512,15 @@ std::vector<CCNode*> AutobuildPopup::buildTab(float width, float inner) {
                 scheduleRebuild();
             }));
     }
+    tuning.push_back(kit::makeSliderRow(inner, "Refinar (mejor de N)",
+        "Prueba varias semillas y se queda con el diseno mejor puntuado. "
+        "Mas intentos, mejor resultado y mas espera.",
+        m_options.refineTries, 1.0, 12.0,
+        [](double v) { return fmt::format("{:.0f}", v); },
+        [this](double v) {
+            m_options.refineTries = std::clamp(static_cast<int>(std::round(v)), 1, 12);
+            m_options.save();
+        }));
     items.push_back(kit::makeCard(width, "Resultado", {170, 190, 255}, tuning));
 
     return items;
@@ -668,8 +695,7 @@ void AutobuildPopup::runCapture(bool asSample) {
 
     auto sample = result.unwrap();
     if (asSample) {
-        // The button was built with the selection of an earlier frame, and a
-        // delete queued in between leaves nothing selected by the time it fires.
+        // La seleccion puede vaciarse antes de pulsar el boton.
         auto const* chosen = store.selected();
         if (!chosen) {
             setStatus("Elige una plantilla antes de anadirle una muestra.", kError);

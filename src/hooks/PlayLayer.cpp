@@ -44,6 +44,7 @@
 #include "../features/smooth-scroll/services/SmoothScrollController.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include "../utils/ActivePauseLayer.hpp"
+#include "../utils/ExtendedKeybind.hpp"
 #include "../utils/ThreadTracker.hpp"
 #include <algorithm>
 #include <cstring>
@@ -80,7 +81,13 @@ namespace {
 #endif
     }
 
-    std::atomic_bool gCaptureInProgress{false};
+    // Flow guard for the PlayLayer keybind capture: true from the keypress
+    // until its preview popup closes (the popup owns the pixels by then).
+    // Distinct from paimon::isCaptureInProgress(), which only covers the GPU
+    // capture in flight — the popup clears that global flag once pixels land.
+    // Both are checked on acquire because PauseLayer/overlay are independent
+    // producers of the global flag.
+    std::atomic_bool s_captureFlowActive{false};
     constexpr float kPauseZoomStep = 0.18f;
     constexpr float kPauseZoomMin = 1.0f;
     constexpr float kPauseZoomMax = 4.0f;
@@ -280,8 +287,13 @@ namespace {
             m_lastMousePos = mousePos;
             m_isPanning = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
 #else
-            m_deltaMousePos = CCPointZero;
-            m_isPanning = false;
+            auto mousePos = cocos::getMousePos();
+            m_deltaMousePos = ccp(mousePos.x - m_lastMousePos.x, mousePos.y - m_lastMousePos.y);
+            m_lastMousePos = mousePos;
+            // No GetAsyncKeyState outside Windows; the keybind tracker keeps
+            // OS-resynced button state on every platform (stays false on
+            // touch screens, where middle-drag pan has no meaning).
+            m_isPanning = paimon::keybinds::isMouseButtonHeld(paimon::keybinds::MouseButton::Middle);
 #endif
 
             if (m_isPanning && playLayer->getScale() > 1.0f) {
@@ -614,71 +626,6 @@ namespace {
         playLayer->setPosition(pos);
     }
 
-    bool isNonGameplayOverlay(CCNode* node, bool checkZ) {
-        if (!node) return false;
-
-        if (typeinfo_cast<PlayerObject*>(node)) return false;
-
-        if (checkZ && node->getZOrder() >= 10) return true;
-
-        if (typeinfo_cast<UILayer*>(node)) return true;
-        if (typeinfo_cast<PauseLayer*>(node)) return true;
-        if (typeinfo_cast<CCMenu*>(node)) return true;
-        if (typeinfo_cast<FLAlertLayer*>(node)) return true;
-        if (typeinfo_cast<EditorPauseLayer*>(node)) return true;
-        if (typeinfo_cast<CCLabelBMFont*>(node)) {
-            if (checkZ && node->getZOrder() >= 10) return true;
-        }
-
-        std::string_view id = node->getID();
-        if (!id.empty()) {
-            static constexpr std::string_view patterns[] = {
-                "ui", "uilayer", "pause", "menu", "dialog", "popup", "editor",
-                "notification", "btn", "button", "overlay", "checkpoint",
-                "fps", "debug", "attempt", "percent", "progress", "bar",
-                "score", "practice", "hitbox", "trajectory", "status"
-            };
-            auto containsCI = [](std::string_view haystack, std::string_view needle) {
-                return std::search(haystack.begin(), haystack.end(),
-                    needle.begin(), needle.end(),
-                    [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; }
-                ) != haystack.end();
-            };
-            for (auto p : patterns) {
-                if (containsCI(id, p)) return true;
-            }
-        }
-
-        return false;
-    }
-
-    void hideNonGameplayDescendants(CCNode* root, std::vector<CCNode*>& hidden, bool checkZ, PlayLayer* pl) {
-        if (!root) return;
-        auto* children = root->getChildren();
-        if (!children) return;
-
-        for (auto* obj : CCArrayExt<CCObject*>(children)) {
-            auto* node = typeinfo_cast<CCNode*>(obj);
-            if (!node) continue;
-
-            if (pl) {
-                if (node == pl->m_player1 || node == pl->m_player2) continue;
-            }
-
-            if (node->isVisible() && isNonGameplayOverlay(node, checkZ)) {
-                node->setVisible(false);
-                hidden.push_back(node);
-            }
-            else {
-                std::string cls = typeid(*node).name();
-                if (cls.find("CCNode") != std::string::npos || cls.find("Layer") != std::string::npos) {
-                    if (cls.find("GameLayer") == std::string::npos) {
-                        hideNonGameplayDescendants(node, hidden, false, pl);
-                    }
-                }
-            }
-        }
-    }
 }
 
 namespace paimon {
@@ -926,18 +873,18 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                     if (!this->m_level || this->m_level->m_levelID <= 0) return;
 
                     bool expected = false;
-                    if (!gCaptureInProgress.compare_exchange_strong(expected, true)) return;
+                    if (!s_captureFlowActive.compare_exchange_strong(expected, true)) return;
 
     // Button and keybind capture share one guard.
                     if (paimon::isCaptureInProgress()) {
-                        gCaptureInProgress.store(false);
+                        s_captureFlowActive.store(false);
                         return;
                     }
                     paimon::setCaptureInProgress(true);
 
                     auto validation = FramebufferCapture::validateCaptureConditions();
                     if (!validation.canCapture) {
-                        gCaptureInProgress.store(false);
+                        s_captureFlowActive.store(false);
                         paimon::setCaptureInProgress(false);
                         Notification::create(validation.reason, NotificationIcon::Warning)->show();
                         return;
@@ -955,7 +902,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                         Ref<CCTexture2D> texRef = texture;
                         Loader::get()->queueInMainThread([weakRef, success, texRef, rgbaData, width, height, levelID]() {
                             if (paimon::isRuntimeShuttingDown()) {
-                                gCaptureInProgress.store(false);
+                                s_captureFlowActive.store(false);
                                 paimon::setCaptureInProgress(false);
                                 if (auto* engine = FMODAudioEngine::sharedEngine()) {
                                     if (engine->m_backgroundMusicChannel) engine->m_backgroundMusicChannel->setPaused(false);
@@ -965,7 +912,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                             CCTexture2D* texture = texRef.data();
     // Restore capture state on every early exit.
                             auto cleanup = []() {
-                                gCaptureInProgress.store(false);
+                                s_captureFlowActive.store(false);
                                 paimon::setCaptureInProgress(false);
                                 if (auto* engine = FMODAudioEngine::sharedEngine()) {
                                     if (engine->m_backgroundMusicChannel) engine->m_backgroundMusicChannel->setPaused(false);
@@ -1007,7 +954,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                             auto* popup = CapturePreviewPopup::create(
                                 texture, levelID, rgbaData, width, height,
                                 [levelID, pausedByPopup](bool okSave, int levelIDAccepted, std::shared_ptr<uint8_t> buf, int W, int H, std::string mode, std::string replaceId){
-                                    gCaptureInProgress.store(false);
+                                    s_captureFlowActive.store(false);
                                     if (pausedByPopup) {
                                         geode::Loader::get()->queueInMainThread([levelID]() {
                                             if (paimon::isRuntimeShuttingDown()) return;
@@ -1043,7 +990,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                 [weakRef](bool hideP1, bool hideP2, CapturePreviewPopup* popup) {
                                     s_hideP1ForCapture = hideP1; s_hideP2ForCapture = hideP2;
                                     if (popup) popup->setVisible(false);
-                                    gCaptureInProgress.store(false);
+                                    s_captureFlowActive.store(false);
     // The popup may close before the queued callback; keep only a WeakRef.
                                     WeakRef<CapturePreviewPopup> weakPopup = popup;
                                     Loader::get()->queueInMainThread([weakRef, weakPopup]() {
@@ -1061,7 +1008,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                 s_hideP1ForCapture, s_hideP2ForCapture
                             );
                             if (popup) { popup->setPausedMusic(true); popup->show(); }
-                            else { gCaptureInProgress.store(false); }
+                            else { s_captureFlowActive.store(false); }
                         });
                     });
                 }
@@ -1135,7 +1082,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
         FramebufferCapture::cancelPending();
         CaptureLayerEditorPopup::discardTrackedLayers();
         CaptureAssetBrowserPopup::discardTrackedAssets();
-        gCaptureInProgress.store(false);
+        s_captureFlowActive.store(false);
 
         paimon::foryou::TasteProfile::get().onLevelExit(this->m_level);
 
@@ -1180,7 +1127,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
     }
 
     void captureScreenshot(CapturePreviewPopup* existingPopup = nullptr) {
-        if (gCaptureInProgress.load()) return;
+        if (s_captureFlowActive.load()) return;
         if (!this->m_level || this->m_level->m_levelID <= 0) return;
 
         auto validation = FramebufferCapture::validateCaptureConditions();
@@ -1190,7 +1137,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
             return;
         }
 
-        gCaptureInProgress.store(true);
+        s_captureFlowActive.store(true);
         paimon::setCaptureInProgress(true);
 
         int const levelID = this->m_level->m_levelID;
@@ -1205,7 +1152,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                 Ref<CCTexture2D> texRef = texture;
                 Loader::get()->queueInMainThread([self, weakPopup, success, texRef, rgbaData, width, height, levelID, hideP1, hideP2]() {
                     auto cleanup = []() {
-                        gCaptureInProgress.store(false);
+                        s_captureFlowActive.store(false);
                         paimon::setCaptureInProgress(false);
                     };
 
@@ -1258,7 +1205,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                     auto* popup = CapturePreviewPopup::create(
                         texRef.data(), levelID, rgbaData, width, height,
                         [levelID, pausedByPopup](bool okSave, int levelIDAccepted, std::shared_ptr<uint8_t> buf, int W, int H, std::string mode, std::string replaceId) {
-                            gCaptureInProgress.store(false);
+                            s_captureFlowActive.store(false);
                             if (pausedByPopup) {
                                 Loader::get()->queueInMainThread([]() {
                                     if (paimon::isRuntimeShuttingDown()) return;
@@ -1289,7 +1236,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                             s_hideP1ForCapture.store(hideP1);
                             s_hideP2ForCapture.store(hideP2);
                             if (popup) popup->setVisible(false);
-                            gCaptureInProgress.store(false);
+                            s_captureFlowActive.store(false);
                             WeakRef<CapturePreviewPopup> popupWeak = popup;
                             Loader::get()->queueInMainThread([self, popupWeak]() {
                                 if (paimon::isRuntimeShuttingDown()) return;

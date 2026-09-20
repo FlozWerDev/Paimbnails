@@ -40,6 +40,7 @@
 #include "../features/profiles/ui/RatePopup.hpp"
 
 #include "../utils/Localization.hpp"
+#include "../utils/ExtendedKeybind.hpp"
 #include "../utils/ImageConverter.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../utils/BetaUploadWarning.hpp"
@@ -1487,12 +1488,25 @@ int m_fallbackOrigin = -1;
     }
 
     void updateCursorFromMouse(float dt) {
-#ifdef GEODE_IS_WINDOWS
+        // Touch callbacks (ccTouchBegan/Moved/Ended above) already drive the
+        // cursor on mobile; polling the mouse here would clobber it with a
+        // stale position, so never fight an active touch.
+        if (m_fields->m_touchActive) return;
+#if defined(GEODE_IS_MOBILE)
+        return;
+#else
         auto win = CCDirector::get()->getWinSize();
         auto mousePos = geode::cocos::getMousePos();
         m_fields->m_targetCursorX = std::clamp(mousePos.x / win.width, 0.0f, 1.0f);
         m_fields->m_targetCursorY = std::clamp(mousePos.y / win.height, 0.0f, 1.0f);
+#ifdef GEODE_IS_WINDOWS
         m_fields->m_targetClickState = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) ? 1.0f : 0.0f;
+#else
+        // Mac has a real mouse but no GetAsyncKeyState; the keybind tracker
+        // keeps OS-resynced button state on every platform.
+        m_fields->m_targetClickState =
+            paimon::keybinds::isMouseButtonHeld(paimon::keybinds::MouseButton::Left) ? 1.0f : 0.0f;
+#endif
 #endif
     }
 
@@ -1941,7 +1955,7 @@ int m_fallbackOrigin = -1;
             leftMenu->updateLayout();
 
             {
-                bool localAdmin = Mod::get()->getSavedValue<bool>("is-verified-admin", false);
+                bool localAdmin = paimon::modauth::isVerified(true);
                 bool hasModCode = !HttpClient::get().getModCode().empty();
 
                 if (localAdmin && hasModCode) {

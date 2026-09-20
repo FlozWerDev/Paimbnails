@@ -36,7 +36,9 @@ private:
     bool m_allCollapsed = false;
 
     struct LayerEntry {
-        cocos2d::CCNode* node = nullptr;
+        // WeakRef: the level can die while the popup is open (exit to menu);
+        // every read locks first instead of trusting a raw pointer.
+        geode::WeakRef<cocos2d::CCNode> node;
         std::string name;
         bool currentVisibility = true;
         bool originalVisibility = true;
@@ -52,14 +54,12 @@ private:
 
     std::vector<LayerEntry> m_layers;
 
-    // Instance-level original visibilities (was static, now per-popup)
-    std::vector<paimon::capture::VisibilityRecord> m_originalVisibilities;
-
     void populateLayers();
     void buildList();
     void refreshPreview();
     void refreshRowVisuals(int idx);
     void refreshAncestors(int idx);
+    void refreshSubtree(int idx);
     [[nodiscard]] bool isEntryVisible(int idx) const;
     [[nodiscard]] bool entryMatchesFilter(int idx) const;
     [[nodiscard]] bool isEntryHiddenByCollapse(int idx) const;

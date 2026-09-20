@@ -71,6 +71,7 @@ void Localization::initTranslations() {
             {"capture.needs_high_graphics", "Las miniaturas necesitan calidad grafica Alta. Activala en ajustes de GD."},
             {"capture.needs_no_ldm", "No se puede capturar con Low Detail Mode activo. Desactivalo en ajustes de GD."},
             {"capture.player_dead", "No se puede capturar con el jugador muerto. Espera al respawn."},
+            {"capture.unsupported_platform", "La captura no esta disponible en esta plataforma."},
             {"capture.uploading_suggestion", "Subiendo sugerencia..."},
 
             {"pause.no_local_thumb", "No hay miniatura local para subir"},
@@ -1262,6 +1263,7 @@ void Localization::initTranslations() {
             {"versus.challenge-sent", "Reto enviado"},
             {"versus.challenge-failed", "No se pudo enviar el reto"},
             {"versus.hand.locked", "Cartas bloqueadas"},
+            {"versus.hand.tap", "Toca una carta para jugarla"},
             {"versus.season.title", "Temporada"},
             {"versus.season.ends", "Termina en {} dias"},
             {"versus.season.reset", "Al cerrar, el Elo se acerca a 1000 y hay tres duelos de recolocacion."},
@@ -1342,6 +1344,7 @@ void Localization::initTranslations() {
             {"capture.needs_high_graphics", "Thumbnails require High Graphics quality. Enable it in GD settings."},
             {"capture.needs_no_ldm", "Thumbnails cannot be taken with Low Detail Mode enabled. Disable it in GD settings."},
             {"capture.player_dead", "Cannot capture while the player is dead. Wait until respawn."},
+            {"capture.unsupported_platform", "Capture is not available on this platform."},
             {"capture.uploading_suggestion", "Uploading suggestion..."},
 
             {"pause.no_local_thumb", "No local thumbnail to upload"},
@@ -2534,6 +2537,7 @@ void Localization::initTranslations() {
             {"versus.challenge-sent", "Challenge sent"},
             {"versus.challenge-failed", "Could not send the challenge"},
             {"versus.hand.locked", "Cards locked"},
+            {"versus.hand.tap", "Tap a card to play it"},
             {"versus.season.title", "Season"},
             {"versus.season.ends", "Ends in {} days"},
             {"versus.season.reset", "At the close, Elo moves back toward 1000 and three placement duels follow."},

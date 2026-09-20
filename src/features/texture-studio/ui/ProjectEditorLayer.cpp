@@ -12,6 +12,7 @@
 #include "../data/PlistParser.hpp"
 #include "../data/SpritesheetReader.hpp"
 #include "../persist/FusionStore.hpp"
+#include "../persist/ProjectShare.hpp"
 #include "../persist/SlotPaths.hpp"
 #include "../persist/SlotStore.hpp"
 #include "../services/FramePixelCache.hpp"
@@ -56,7 +57,6 @@ constexpr cocos2d::ccColor3B kCardFill   { 23,  19,  33};
 constexpr cocos2d::ccColor3B kBarFill    { 33,  26,  50};
 constexpr cocos2d::ccColor3B kInsetFill  { 30,  27,  40};
 
-// Derived helpers — keep call sites readable.
 inline float panelTopY(cocos2d::CCSize const& win) {
     return win.height - kHeaderH - kColGap;
 }
@@ -397,6 +397,12 @@ void ProjectEditorLayer::buildFooter() {
             m_saveBtn = saveBtn;
         }
     }
+    if (auto* exportSpr = ButtonSprite::create("Export", "goldFont.fnt", "GJ_button_05.png", 0.34f)) {
+        if (auto* exportBtn = CCMenuItemExt::createSpriteExtra(exportSpr,
+                [this](CCMenuItemSpriteExtra*) { this->onExportJson(nullptr); })) {
+            placeRight(exportBtn);
+        }
+    }
 }
 
 void ProjectEditorLayer::buildPreviewPanel() {
@@ -446,7 +452,6 @@ void ProjectEditorLayer::buildPreviewPanel() {
         return host;
     };
 
-    // Original → Result top-to-bottom (before / after comparison).
     const float origCy = contentTop - 14.f - kBox * 0.5f;
     const float resultCy = origCy - kBox - kGap;
     m_originalHost = makeBox(origCy, "Original");
@@ -528,7 +533,6 @@ void ProjectEditorLayer::buildBrowserPanel() {
     this->addChild(gridHost, 5);
     m_gridHost = gridHost;
 
-    // Pagination: ◀  page  |  count  ▶  centered under the grid.
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     this->addChild(menu, 10);
@@ -652,7 +656,6 @@ void ProjectEditorLayer::buildPackTab(CCNode* tab, float w, float h) {
     menu->setContentSize({w, h});
     tab->addChild(menu);
 
-    // Compact top-to-bottom stack: title → swatches → brightness → hints → actions.
     float y = h - 12.f;
 
     if (auto* caption = CCLabelBMFont::create("Pack colors", "goldFont.fnt")) {
@@ -741,7 +744,6 @@ void ProjectEditorLayer::buildPackTab(CCNode* tab, float w, float h) {
     }
     y -= 28.f;
 
-    // Secondary actions side-by-side — no lone button stuck at the bottom.
     if (auto* presetSpr = ButtonSprite::create("Next Preset", "bigFont.fnt", "GJ_button_05.png", 0.28f)) {
         if (auto* presetBtn = CCMenuItemExt::createSpriteExtra(presetSpr,
                 [this](CCMenuItemSpriteExtra*) {
@@ -931,8 +933,7 @@ void ProjectEditorLayer::buildExtraTab(CCNode* tab, float w, float h) {
                                               "bigFont.fnt", "GJ_button_04.png", 0.28f)) {
         if (auto* scopeBtn = CCMenuItemExt::createSpriteExtra(scopeSpr,
                 [this](CCMenuItemSpriteExtra* btn) {
-                    // Only UI scopes: ButtonsOnly (0) and ButtonsAndMenuUi (1).
-                    // Everything (2) is legacy and no longer offered.
+                    // Everything scope is legacy, cycle 0/1 only.
                     int next = (static_cast<int>(m_project.tintScope) + 1) % 2;
                     m_project.tintScope = static_cast<TintScope>(next);
                     if (auto* spr = typeinfo_cast<ButtonSprite*>(btn->getNormalImage())) {
@@ -1152,7 +1153,7 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
         m_imageStateLbl = stateLbl;
     }
 
-    // Flip row: Flip X / Flip Y (custom image only — fusion has its own tab).
+    // Flip applies to custom image only.
     auto* flipRow = CCMenu::create();
     flipRow->setContentSize({w - 16.f, 20.f});
     flipRow->setAnchorPoint({0.5f, 0.5f});
@@ -1324,6 +1325,8 @@ void ProjectEditorLayer::refreshSpriteTabUi() {
         if (auto* spr = typeinfo_cast<ButtonSprite*>(m_imgModeBtn->getNormalImage())) {
             spr->setString(setting.imageOverlay ? "Overlay" : "Replace");
         }
+        m_imgModeBtn->setVisible(false);
+        m_imgModeBtn->setEnabled(false);
     }
     if (m_imageRow) m_imageRow->updateLayout();
     auto syncToggle = [](CCMenuItemToggler* tog, bool v) {
@@ -1425,8 +1428,7 @@ void ProjectEditorLayer::onClearImage() {
 
 FusionApplyOptions ProjectEditorLayer::makeFusionOptions(SpriteSetting const& s) const {
     FusionApplyOptions opts;
-    // Always stamp pure texture colours by default (Replace). Pack tint
-    // must never recolor the user GIF/PNG — only Luma mode multiplies lighting.
+    // Pack tint must not recolor user GIF/PNG, only Luma multiplies.
     opts.blendMode = s.fusionBlend;
     opts.opacity   = s.fusionOpacity;
     opts.transform = s.fusionTransform;
@@ -2010,8 +2012,7 @@ void ProjectEditorLayer::startSelectionPixelLoad() {
 }
 
 void ProjectEditorLayer::refreshPreviewTint() {
-    // Color/grade-only edit while the GPU card is current: push uniforms now,
-    // no worker, no debounce. Anything else falls through to the slow path.
+    // Color-only edit with live GPU card: push uniforms, skip worker.
     if (m_gpuAttached && m_resultSpr && m_previewPixels && !m_previewPixels->empty()
         && m_previewPixels == m_gpuPixels) {
         SpriteSetting setting = currentSetting();
@@ -2207,8 +2208,7 @@ void ProjectEditorLayer::renderPreviewAfterDelay(float) {
         bool wantFusion = hasSelection && setting.hasFusion
             && fusionMask && !fusionMask->empty()
             && fusionAsset && !fusionAsset->empty();
-        // On Fusion tab, also show live stamp after texture pick even before
-        // a mask exists? No — need a mask. After paint, stamp pure colours.
+        // Fusion stamp needs a mask.
         if (wantFusion) {
             FusionEngine::apply(preview.image, *fusionMask,
                 fusionAsset->frameAt(fusionFrame), fusionOpts);
@@ -2334,6 +2334,31 @@ void ProjectEditorLayer::onSave(CCObject*) {
     Notification::create("Slot saved.", NotificationIcon::Success, 1.5f)->show();
 }
 
+void ProjectEditorLayer::onExportJson(CCObject*) {
+    auto defaultName = SlotPaths::sanitizeFilename(
+        m_project.name.empty() ? "pack" : m_project.name);
+    defaultName += ".json";
+
+    WeakRef<ProjectEditorLayer> weakSelf(this);
+    pt::saveJson(defaultName, [weakSelf](
+            geode::Result<std::optional<std::filesystem::path>> result) {
+        auto self = weakSelf.lock();
+        if (!self) return;
+        auto pathOpt = std::move(result).unwrapOr(std::nullopt);
+        if (!pathOpt || pathOpt->empty()) return;
+
+        auto exported = ProjectShare::exportTo(*pathOpt, self->m_project);
+        if (!exported) {
+            Notification::create(("Export failed: " + exported.unwrapErr()).c_str(),
+                NotificationIcon::Error, 4.0f)->show();
+            return;
+        }
+        self->setStatus("Config exported.");
+        Notification::create("Pack config exported.",
+            NotificationIcon::Success, 2.f)->show();
+    });
+}
+
 void ProjectEditorLayer::setBusy(bool busy) {
     auto disableBtn = [busy](CCMenuItemSpriteExtra* btn) {
         if (!btn) return;
@@ -2363,9 +2388,7 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
     auto outPath = SlotPaths::outputZipFile(m_project.id);
     setStatus("Generating...");
 
-    // Snapshot already-loaded sheet textures now: the render-texture
-    // roundtrip needs the main thread, and the export thread below prefers
-    // these live pixels over disk files.
+    // Snapshot on main thread, export thread reuses live pixels.
     {
         std::vector<std::string> pngRels;
         pngRels.reserve(cfg.sheets.size());
@@ -2378,11 +2401,9 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
     m_generating->store(true, std::memory_order_release);
     setBusy(true);
 
-    // Capture everything the thread needs by value; nothing here touches
-    // `this`. We return to the UI via WeakRef + queueInMainThread; if the
-    // layer is popped mid-export we just lose the callback (the zip still writes).
+    // Capture by value, layer may be gone when export finishes.
     WeakRef<ProjectEditorLayer> weakSelf(this);
-    auto generating = m_generating;  // shared_ptr copied for the thread
+    auto generating = m_generating;
     std::string projectId = m_project.id;
     PackExportConfig cfgCopy = cfg;
     std::filesystem::path outPathCopy = outPath;
@@ -2393,7 +2414,6 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
             return;
         }
 
-         // Keep packing and encoding off the UI thread.
         auto progressCb = [weakSelf](int idx, int total, std::string const& name) {
             if (paimon::isRuntimeShuttingDown()) return;
             std::string label = name.empty()

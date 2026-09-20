@@ -1,4 +1,4 @@
-// Prevent getHighestChildZ from underflowing while a scene is empty.
+// Avoid underflow on empty scene.
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CCScene.hpp>
@@ -19,9 +19,9 @@ class $modify(PaimonSafeCCScene, CCScene) {
         return CCScene::getHighestChildZ();
     }
 
-// Clean orphaned popup blurs when a scene is destroyed without normal close hooks.
+// No fades during destruction.
     void destructor() {
-        paimon::popupblur::cleanupAllActive(0.15f);
+        paimon::popupblur::cleanupAllActive(0.0f);
         CCScene::~CCScene();
     }
 };

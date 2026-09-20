@@ -1,13 +1,15 @@
 #include "ModAuthFlow.hpp"
 
 #include <Geode/Geode.hpp>
-#include <Geode/ui/OverlayManager.hpp>
+#include <Geode/ui/GeodeUI.hpp>
+#include <Geode/utils/string.hpp>
 
 #include "RuntimeLifecycle.hpp"
 #include "modules/ModuleRegistry.hpp"
 #include "../utils/HttpClient.hpp"
-#include "../utils/MainThreadDelay.hpp"
-#include "../utils/PaimonLoadingOverlay.hpp"
+#include "../features/moderation/ui/VerificationCenterLayer.hpp"
+#include "../features/transitions/services/TransitionManager.hpp"
+
 #include "../utils/PaimonNotification.hpp"
 
 #include <chrono>
@@ -28,15 +30,19 @@ constexpr auto kCredentialExpiresAt = "mod-code-expires-at";
 std::chrono::steady_clock::time_point s_requestStarted;
 uint64_t s_requestGeneration = 0;
 
-struct AutoConfirmState {
-    Ref<PaimonLoadingOverlay> overlay;
-    int attempts = 0;
-    int maxAttempts = 0;
-};
+std::string s_verifiedUser;
+std::string s_verifiedCredential;
+int s_verifiedAccount = 0;
+bool s_verifiedMod = false;
+bool s_verifiedAdmin = false;
+std::chrono::steady_clock::time_point s_verifiedAt;
 
-// Kept alive while the auto-confirm polling loop is running so the raw pointer
-// passed into the async callbacks never dangles.
-std::shared_ptr<AutoConfirmState> s_autoState;
+bool matchesAccount(std::string const& username, int accountID) {
+    auto* account = GJAccountManager::get();
+    auto* game = GameManager::get();
+    return account && game && accountID > 0 && account->m_accountID == accountID &&
+        geode::utils::string::toLower(game->m_playerName) == geode::utils::string::toLower(username);
+}
 
 bool requestInFlight() {
     if (s_requestStarted == std::chrono::steady_clock::time_point()) return false;
@@ -60,6 +66,7 @@ std::optional<matjson::Value> parseResponse(std::string const& response) {
 
     auto parsed = matjson::parse(response.substr(jsonStart));
     if (!parsed.isOk()) return std::nullopt;
+    if (!parsed.unwrap().isObject()) return std::nullopt;
     return parsed.unwrap();
 }
 
@@ -83,8 +90,8 @@ void showInstructions(std::string const& code) {
         fmt::format(
             "Se copio <cy>{}</c> al portapapeles.\n\n"
             "Publicalo como comentario en tu perfil de Geometry Dash y "
-            "vuelve a pulsar <cg>Secure Mod Code</c>: detectare el comentario "
-            "automaticamente con el Paimon loading y lo confirmare.",
+            "pulsa <cg>Conectar / Confirmar</c> en el panel de moderacion. "
+            "Este codigo es publico; tu credencial de acceso nunca se copia.",
             code
         ),
         "OK"
@@ -149,7 +156,7 @@ void begin(std::string const& username, int accountID) {
     HttpClient::get().startModCodeSetup(username, accountID, [username, accountID, generation](bool ok, std::string const& response) {
         queueInMainThread([username, accountID, generation, ok, response] {
             if (!finishRequest(generation)) return;
-            if (paimon::isRuntimeShuttingDown()) return;
+            if (paimon::isRuntimeShuttingDown() || !matchesAccount(username, accountID)) return;
 
             auto parsed = parseResponse(response);
             if (!ok || !parsed) {
@@ -174,84 +181,129 @@ void begin(std::string const& username, int accountID) {
     });
 }
 
-void complete(std::string const& challengeToken, std::shared_ptr<AutoConfirmState> const& autoState) {
+void complete(std::string const& token, std::string const& username, int accountID) {
     auto generation = beginRequest();
-    if (autoState) {
-        autoState->attempts++;
-        autoState->overlay->updateText(fmt::format(
-            "Esperando el comentario... (intento {})", autoState->attempts
-        ));
-    }
-
-    HttpClient::get().completeModCodeSetup(challengeToken, [generation, autoState, challengeToken](bool ok, std::string const& response) {
-        queueInMainThread([generation, ok, response, autoState, challengeToken] {
-            if (!finishRequest(generation)) return;
-            if (paimon::isRuntimeShuttingDown()) return;
-
+    PaimonNotify::create("Verificando el comentario...", NotificationIcon::Info)->show();
+    HttpClient::get().completeModCodeSetup(token, [generation, username, accountID](bool ok, std::string const& response) {
+        queueInMainThread([generation, username, accountID, ok, response] {
+            if (!finishRequest(generation) || paimon::isRuntimeShuttingDown() ||
+                !matchesAccount(username, accountID)) return;
             auto parsed = parseResponse(response);
             if (!ok || !parsed) {
-                if (autoState) {
-                    // PROFILE_CODE_NOT_FOUND / retryable: keep polling until the
-                    // comment shows up on the GD profile, or the challenge expires.
-                    auto code = parsed ? stringField(*parsed, "code") : std::string();
-                    // Keep polling while the user might still be posting the
-                    // comment. A stale challenge, though, is a dead end — the
-                    // user must generate a new one.
-                    bool retryable = code == "PROFILE_CODE_NOT_FOUND"
-                        || code == "GD_COMMENTS_UNAVAILABLE"
-                        || code == "MOD_AUTH_RATE_LIMITED";
-                    if (retryable && autoState->overlay->getParent()) {
-                        if (autoState->attempts >= autoState->maxAttempts) {
-                            s_autoState.reset();
-                            autoState->overlay->dismiss();
-                            showRequestError(response, true);
-                            return;
-                        }
-                        // Space out retries ~3s so we don't hammer the comments
-                        // endpoint / get rate limited while the user posts the code.
-                        paimon::scheduleMainThreadDelay(3.f, [challengeToken, autoState]() {
-                            if (paimon::isRuntimeShuttingDown()) return;
-                            if (!autoState->overlay->getParent()) return;
-                            complete(challengeToken, autoState);
-                        });
-                        return;
-                    }
-                    s_autoState.reset();
-                    autoState->overlay->dismiss();
-                    showRequestError(response, true);
-                    return;
-                }
                 showRequestError(response, true);
                 return;
             }
-
             auto credential = stringField(*parsed, "modCode");
-            if (credential.size() != 50 || !credential.starts_with("pmc_v2_")) {
-                if (autoState) {
-                    s_autoState.reset();
-                    autoState->overlay->dismiss();
-                }
-                PaimonNotify::create("El servidor devolvio una credencial invalida.", NotificationIcon::Error)->show();
+            auto expiresAt = (*parsed)["expiresAt"].asInt().unwrapOr(0);
+            auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            if (!(*parsed)["success"].asBool().unwrapOr(false) || credential.size() != 50 ||
+                !credential.starts_with("pmc_v2_") || expiresAt <= now) {
+                PaimonNotify::create("Respuesta de autenticacion invalida.", NotificationIcon::Error)->show();
                 return;
             }
-
             HttpClient::get().setModCode(credential);
             auto* mod = Mod::get();
-            mod->setSavedValue<bool>("is-verified-moderator", true);
-            mod->setSavedValue<bool>("is-verified-admin", (*parsed)["isAdmin"].asBool().unwrapOr(false));
-            mod->setSavedValue<int64_t>(
-                kCredentialExpiresAt,
-                static_cast<int64_t>((*parsed)["expiresAt"].asDouble().unwrapOr(0.0))
-            );
+            mod->setSavedValue<int64_t>(kCredentialExpiresAt, expiresAt);
+            mod->setSavedValue<int64_t>("mod-credential-account", accountID);
+            mod->setSavedValue("mod-credential-user", username);
             clearChallenge();
-            if (autoState) {
-                s_autoState.reset();
-                autoState->overlay->dismiss();
-            }
-            PaimonNotify::create("Mod Code seguro activado y sincronizado.", NotificationIcon::Success)->show();
+            HttpClient::get().checkModeratorAccount(username, accountID, [](bool isMod, bool isAdmin) {
+                PaimonNotify::create(isMod || isAdmin ? "Cuenta conectada y permisos verificados." :
+                    "Credencial guardada. Vuelve a verificar el estado.",
+                    isMod || isAdmin ? NotificationIcon::Success : NotificationIcon::Warning)->show();
+            });
         });
     });
 }
+
+class ModerationPanel : public Popup {
+    CCLabelBMFont* m_status = nullptr;
+    CCMenuItemSpriteExtra* m_verify = nullptr;
+    bool m_checking = false;
+
+    bool init() override {
+        if (!Popup::init(390.f, 270.f)) return false;
+        setTitle("Moderacion");
+        auto size = m_mainLayer->getContentSize();
+        auto* game = GameManager::get();
+        auto* account = GJAccountManager::get();
+        auto identity = fmt::format("{}  #{}", game->m_playerName, account->m_accountID);
+        auto label = CCLabelBMFont::create(identity.c_str(), "goldFont.fnt");
+        label->limitLabelWidth(340.f, 0.6f, 0.25f);
+        label->setPosition({size.width / 2, 218.f});
+        m_mainLayer->addChild(label);
+        m_status = CCLabelBMFont::create("Estado sin verificar", "bigFont.fnt");
+        m_status->setScale(0.45f);
+        m_status->setPosition({size.width / 2, 184.f});
+        m_status->setID("moderation-session-status"_spr);
+        m_mainLayer->addChild(m_status);
+        auto menu = CCMenu::create();
+        menu->setPosition({0, 0});
+        m_mainLayer->addChild(menu);
+        auto button = [&](char const* text, float y, SEL_MenuHandler selector) {
+            auto sprite = ButtonSprite::create(text, 260, true, "bigFont.fnt", "GJ_button_01.png", 30.f, 0.5f);
+            auto item = CCMenuItemSpriteExtra::create(sprite, this, selector);
+            item->setPosition({size.width / 2, y});
+            menu->addChild(item);
+            return item;
+        };
+        m_verify = button("Verificar estado", 147.f, menu_selector(ModerationPanel::onVerify));
+        button("Conectar / Confirmar", 109.f, menu_selector(ModerationPanel::onConnect));
+        button("Centro de moderacion", 71.f, menu_selector(ModerationPanel::onOpen));
+        button("Cerrar sesion local", 33.f, menu_selector(ModerationPanel::onDisconnect));
+        return true;
+    }
+
+    void onVerify(CCObject*) {
+        if (m_checking) return;
+        m_checking = true;
+        m_verify->setEnabled(false);
+        m_status->setString("Consultando servidor...");
+        WeakRef<ModerationPanel> self = this;
+        HttpClient::get().checkModeratorAccount(GameManager::get()->m_playerName,
+            GJAccountManager::get()->m_accountID, [self](bool isMod, bool isAdmin) {
+                auto panel = self.lock();
+                if (!panel) return;
+                panel->m_checking = false;
+                panel->m_verify->setEnabled(true);
+                panel->m_status->setString(isAdmin ? "Administrador verificado" :
+                    isMod ? "Moderador verificado" : "Sin acceso verificado. Conecta o reintenta.");
+                panel->m_status->limitLabelWidth(350.f, 0.45f, 0.25f);
+                panel->m_status->setColor(isMod || isAdmin ? ccc3(110, 240, 150) : ccc3(255, 195, 110));
+            });
+    }
+
+    void onConnect(CCObject*) { startOrComplete(); }
+
+    void onOpen(CCObject*) {
+        if (!isVerified()) { onVerify(nullptr); return; }
+        auto scene = VerificationCenterLayer::scene();
+        if (!scene) return;
+        onClose(nullptr);
+        TransitionManager::get().pushScene(scene);
+    }
+
+    void onDisconnect(CCObject*) {
+        ++s_requestGeneration;
+        s_requestStarted = {};
+        clearChallenge();
+        HttpClient::get().setModCode("");
+        Mod::get()->setSavedValue<int64_t>(kCredentialExpiresAt, 0);
+        Mod::get()->setSavedValue<int64_t>("mod-credential-account", 0);
+        Mod::get()->setSavedValue("mod-credential-user", std::string());
+        m_status->setString("Sesion cerrada en este dispositivo");
+        m_status->limitLabelWidth(350.f, 0.45f, 0.25f);
+    }
+
+public:
+    static ModerationPanel* create() {
+        auto ret = new ModerationPanel();
+        if (ret->init()) { ret->autorelease(); return ret; }
+        delete ret;
+        return nullptr;
+    }
+};
 
 }
 
@@ -279,35 +331,47 @@ void startOrComplete() {
     auto challengeUser = mod->getSavedValue<std::string>(kChallengeUser, "");
     auto challengeAccount = mod->getSavedValue<int64_t>(kChallengeAccount, 0);
     if (!token.empty() && challengeUser == username && challengeAccount == accountID) {
-        // Challenge pending: show the Paimon loading overlay and poll
-        // /api/mod-auth/complete until the profile comment shows up. The user
-        // just needs to post PAI-MOD-XXXX and wait — no need to tap again.
-        //
-        // Parent the overlay to geode::OverlayManager — the same top-most host
-        // the custom cursor uses (z INT_MAX) — with a z-order just below it, so
-        // the loading screen renders above every scene, popup and transition
-        // while never covering the custom cursor.
-        auto* overlay = PaimonLoadingOverlay::create("Esperando el comentario...", 40.f);
-        overlay->setID("paimon-modauth-overlay"_spr);
-        constexpr int kModAuthOverlayZOrder = 999500;
-        if (auto* host = geode::OverlayManager::get()) {
-            overlay->show(host, kModAuthOverlayZOrder);
-        } else if (auto* scene = CCDirector::get()->getRunningScene()) {
-            overlay->show(scene, 300);
-        }
-
-        auto state = std::make_shared<AutoConfirmState>();
-        state->overlay = overlay;
-        // Challenge TTL is 15 min; poll ~45 times with the 4s cadence before
-        // giving up (each complete() round-trip also takes ~1s).
-        state->maxAttempts = 45;
-        s_autoState = state;
-        complete(token, state);
+        complete(token, username, accountID);
         return;
     }
 
     if (!token.empty()) clearChallenge();
     begin(username, accountID);
+}
+
+void clearVerifiedSession() {
+    s_verifiedAccount = 0;
+    s_verifiedUser.clear();
+    s_verifiedCredential.clear();
+    s_verifiedMod = false;
+    s_verifiedAdmin = false;
+    Mod::get()->setSavedValue("is-verified-moderator", false);
+    Mod::get()->setSavedValue("is-verified-admin", false);
+}
+
+void setVerifiedSession(std::string const& username, int accountID, bool moderator, bool admin) {
+    clearVerifiedSession();
+    if (!matchesAccount(username, accountID)) return;
+    s_verifiedUser = username;
+    s_verifiedAccount = accountID;
+    s_verifiedCredential = HttpClient::get().getModCode();
+    s_verifiedMod = moderator || admin;
+    s_verifiedAdmin = admin;
+    s_verifiedAt = std::chrono::steady_clock::now();
+}
+
+bool isVerified(bool admin) {
+    return (admin ? s_verifiedAdmin : s_verifiedMod) && matchesAccount(s_verifiedUser, s_verifiedAccount) &&
+        !s_verifiedCredential.empty() && s_verifiedCredential == HttpClient::get().getModCode() &&
+        std::chrono::steady_clock::now() - s_verifiedAt < std::chrono::minutes(2);
+}
+
+void showPanel() {
+    if (!paimon::modules::isEnabled("paimbnails.modauth.system")) {
+        PaimonNotify::create("Activa la autenticacion de moderacion en Modulos.", NotificationIcon::Warning)->show();
+        return;
+    }
+    if (auto panel = ModerationPanel::create()) panel->show();
 }
 
 }

@@ -1,3 +1,11 @@
+// Garage shading orchestration, rethought for Paimbnails.
+//
+// Idea credit: "Icon Gradients" by zilko
+// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
+// all rights reserved). Independent implementation: same behavior (shade
+// the garage doll, the 2P doll and the page dolls; clear everything while
+// the module is off), own expression.
+
 #include "GradientGarageLayer.hpp"
 #include "../GradientCache.hpp"
 #include "../GradientUtils.hpp"
@@ -5,58 +13,94 @@
 #include "../../garage-hub/GarageButtonHub.hpp"
 #include "../../../utils/Localization.hpp"
 
+#include <utility>
+
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
+
+namespace {
+
+// One gradient channel: which config slot it lives in and which color
+// kind its emptiness is tested against.
+struct GradientLane {
+    GradientConfig Gradient::* config;
+    ColorType color;
+};
+
+constexpr GradientLane kGradientLanes[] = {
+    {&Gradient::main, ColorType::Main},
+    {&Gradient::secondary, ColorType::Secondary},
+    {&Gradient::glow, ColorType::Glow},
+    {&Gradient::white, ColorType::White},
+    {&Gradient::line, ColorType::Line},
+};
+
+// Wipe a doll back to its plain colors.
+void clearDoll(SimplePlayer* doll) {
+    GradientUtils::applyGradient(doll, Gradient{}, false, false, 0);
+}
+
+// Paint every doll in a page with the same gradient.
+void paintEach(std::vector<SimplePlayer*> const& dolls, Gradient const& gradient, bool second, int tag) {
+    for (SimplePlayer* doll : dolls)
+        GradientUtils::applyGradient(doll, gradient, false, second, tag);
+}
+
+// Dolls hidden inside a preview (opacity-gated) must not be painted.
+bool dollShown(SimplePlayer* doll) {
+    CCSprite* spr = doll->getChildByType<CCSprite>(0);
+    return spr && spr->getOpacity() > 120;
+}
+
+bool pageSlotDisabled(bool second) {
+    return second && GradientCache::is2PDisabled();
+}
+
+} // namespace
 
 void GradientGarageLayer::onGradient(CCObject*) {
     GradientLayer::create()->show();
 }
 
 void GradientGarageLayer::onSwap(CCObject* sender) {
-    if (!m_fields->m_originalCallback) return;
+    auto callback = m_fields->m_originalCallback;
+    if (!callback) return;
 
-    (this->*m_fields->m_originalCallback)(sender);
+    (this->*callback)(sender);
 
     updateGradient();
 }
 
 std::vector<SimplePlayer*> GradientGarageLayer::getPageIcons() {
-    std::vector<SimplePlayer*> ret;
+    std::vector<SimplePlayer*> dolls;
 
-    if (!paimon::modules::isEnabled("paimbnails.paimonicons.global")) return ret;
+    if (!paimon::modules::isEnabled("paimbnails.paimonicons.global")) return dolls;
 
-    if (CCMenu* menu = static_cast<CCNode*>(m_iconSelection->m_pages->firstObject())->getChildByType<CCMenu>(0)) {
-        for (CCNode* node : menu->getChildrenExt()) {
-            if (GJItemIcon* item = node->getChildByType<GJItemIcon>(0)) {
-                if (SimplePlayer* icon = item->getChildByType<SimplePlayer>(0)) {
-                    ret.push_back(icon);
-                }
-            }
-        }
+    CCNode* page = static_cast<CCNode*>(m_iconSelection->m_pages->firstObject());
+    CCMenu* menu = page ? page->getChildByType<CCMenu>(0) : nullptr;
+    if (!menu) return dolls;
+
+    for (CCNode* node : menu->getChildrenExt()) {
+        GJItemIcon* item = node->getChildByType<GJItemIcon>(0);
+        SimplePlayer* doll = item ? item->getChildByType<SimplePlayer>(0) : nullptr;
+        if (doll) dolls.push_back(doll);
     }
 
-    return ret;
+    return dolls;
 }
 
 IconType GradientGarageLayer::getType() {
-    auto f = m_fields.self();
-
-    if (!f->m_pageIcon) return IconType::Cube;
-
-    return GradientUtils::getIconType(f->m_pageIcon);
+    SimplePlayer* pageIcon = m_fields->m_pageIcon;
+    return pageIcon ? GradientUtils::getIconType(pageIcon) : IconType::Cube;
 }
 
 void GradientGarageLayer::updatePageIcons() {
     bool p2 = sdiSaved<bool>("2pselected", false);
+    if (pageSlotDisabled(p2)) return;
 
-    if (!p2 || !GradientCache::is2PDisabled()) {
-        IconType type = getPageIcons().empty() ? IconType::Cube : GradientUtils::getIconType(getPageIcons().front());
-        Gradient gradient = GradientUtils::getGradient(type, p2);
-
-        for (SimplePlayer* icon : getPageIcons()) {
-            GradientUtils::applyGradient(icon, gradient, false, p2, 66);
-        }
-    }
+    auto dolls = getPageIcons();
+    IconType kind = dolls.empty() ? IconType::Cube : GradientUtils::getIconType(dolls.front());
+    paintEach(dolls, GradientUtils::getGradient(kind, p2), p2, 66);
 }
 
 void GradientGarageLayer::updateGradient() {
@@ -67,19 +111,14 @@ void GradientGarageLayer::updateGradient() {
 
         f->m_isDisabled = true;
 
-        Gradient emptyGradient = {};
-
-        GradientUtils::applyGradient(m_playerObject, emptyGradient, false, false, 0);
+        clearDoll(m_playerObject);
 
         if (sdiEnabled()) {
-            if (SimplePlayer* icon = typeinfo_cast<SimplePlayer*>(getChildByID("player2-icon"))) {
-                GradientUtils::applyGradient(icon, emptyGradient, false, false, 0);
-            }
+            if (SimplePlayer* doll = typeinfo_cast<SimplePlayer*>(getChildByID("player2-icon")))
+                clearDoll(doll);
         }
 
-        for (SimplePlayer* icon : getPageIcons()) {
-            GradientUtils::applyGradient(icon, emptyGradient, false, false, 0);
-        }
+        paintEach(getPageIcons(), Gradient{}, false, 0);
 
         return;
     }
@@ -90,94 +129,66 @@ void GradientGarageLayer::updateGradient() {
         updatePageIcons();
     }
 
-    if (GradientCache::is2PDisabled()) {
+    bool noP2 = GradientCache::is2PDisabled();
+
+    if (noP2) {
         f->m_isP2Disabled = true;
 
         if (sdiEnabled()) {
-            Gradient emptyGradient = {};
+            if (SimplePlayer* doll = typeinfo_cast<SimplePlayer*>(getChildByID("player2-icon")))
+                clearDoll(doll);
 
-            if (SimplePlayer* icon = typeinfo_cast<SimplePlayer*>(getChildByID("player2-icon"))) {
-                GradientUtils::applyGradient(icon, emptyGradient, false, false, 0);
-            }
-
-            if (sdiSaved<bool>("2pselected", false)) {
-                for (SimplePlayer* icon : getPageIcons()) {
-                    GradientUtils::applyGradient(icon, emptyGradient, false, false, 0);
-                }
-            }
+            if (sdiSaved<bool>("2pselected", false))
+                paintEach(getPageIcons(), Gradient{}, false, 0);
         }
-    }
-
-    if (f->m_isP2Disabled && !GradientCache::is2PDisabled()) {
+    } else if (f->m_isP2Disabled) {
         f->m_isP2Disabled = false;
 
         if (sdiEnabled() && sdiSaved<bool>("2pselected", false)) {
-            IconType type = getPageIcons().empty() ? IconType::Cube : GradientUtils::getIconType(getPageIcons().front());
-            Gradient gradient = GradientUtils::getGradient(type, true);
-
-            for (SimplePlayer* icon : getPageIcons()) {
-                GradientUtils::applyGradient(icon, gradient, false, true, 66);
-            }
+            auto dolls = getPageIcons();
+            IconType kind = dolls.empty() ? IconType::Cube : GradientUtils::getIconType(dolls.front());
+            paintEach(dolls, GradientUtils::getGradient(kind, true), true, 66);
         }
     }
 
-    if (f->m_isDisabled) {
-        f->m_isDisabled = false;
-
+    // One-shot re-enable: the module just came back on, repaint the page.
+    if (std::exchange(f->m_isDisabled, false))
         updatePageIcons();
-    }
 
     Loader::get()->queueInMainThread([self = Ref(this)] {
         if (!self->m_playerObject) return;
 
         bool p2 = sdiSaved<bool>("2pselected", false);
 
-        GradientUtils::applyGradient(self->m_playerObject, GradientUtils::getGradient(GradientUtils::getIconType(self->m_playerObject), false), false, false, 201);
+        GradientUtils::paintMenuIcon(self->m_playerObject, false, 201);
 
         if (sdiEnabled() && !GradientCache::is2PDisabled()) {
-            if (SimplePlayer* icon = typeinfo_cast<SimplePlayer*>(self->getChildByID("player2-icon"))) {
-                Gradient gradient = GradientUtils::getGradient(GradientUtils::getIconType(icon), true);
-                GradientUtils::applyGradient(icon, gradient, false, true, 202);
+            if (SimplePlayer* doll = typeinfo_cast<SimplePlayer*>(self->getChildByID("player2-icon")))
+                GradientUtils::paintMenuIcon(doll, true, 202);
+        }
+
+        if (pageSlotDisabled(p2) || !paimon::modules::isEnabled("paimbnails.paimonicons.global")) return;
+
+        SimplePlayer* pageIcon = self->m_fields->m_pageIcon;
+        if (!pageIcon) return;
+
+        Gradient current = GradientUtils::getGradient(GradientUtils::getIconType(pageIcon), p2);
+
+        bool emptyNow = false;
+        for (auto& lane : kGradientLanes)
+            emptyNow = emptyNow || (current.*lane.config).isEmpty(lane.color, p2);
+
+        if (self->m_fields->m_wasEmptied || emptyNow) {
+            self->m_fields->m_wasEmptied = emptyNow;
+
+            for (SimplePlayer* doll : self->getPageIcons()) {
+                if (dollShown(doll))
+                    GradientUtils::applyGradient(doll, current, false, p2, 66);
             }
         }
 
-        if ((!p2 || !GradientCache::is2PDisabled()) && paimon::modules::isEnabled("paimbnails.paimonicons.global")) {
-            auto f = self->m_fields.self();
-
-            if (f->m_pageIcon) {
-                Gradient gradient = GradientUtils::getGradient(GradientUtils::getIconType(f->m_pageIcon), p2);
-                GradientConfig emptyConfig = {};
-
-                if (
-                    f->m_wasEmptied
-                    || gradient.main.isEmpty(ColorType::Main, p2)
-                    || gradient.secondary.isEmpty(ColorType::Secondary, p2)
-                    || gradient.glow.isEmpty(ColorType::Glow, p2)
-                    || gradient.white.isEmpty(ColorType::White, p2)
-                    || gradient.line.isEmpty(ColorType::Line, p2)
-                ) {
-                    f->m_wasEmptied = gradient.main.isEmpty(ColorType::Main, p2)
-                        || gradient.secondary.isEmpty(ColorType::Secondary, p2)
-                        || gradient.glow.isEmpty(ColorType::Glow, p2)
-                        || gradient.white.isEmpty(ColorType::White, p2)
-                        || gradient.line.isEmpty(ColorType::Line, p2);
-
-                    for (SimplePlayer* icon : self->getPageIcons()) {
-                        if (CCSprite* spr = icon->getChildByType<CCSprite>(0)) {
-                            if (spr->getOpacity() > 120) {
-                                GradientUtils::applyGradient(icon, gradient, false, p2, 66);
-                            }
-                        }
-                    }
-                }
-
-                if (CCSprite* spr = f->m_pageIcon->getChildByType<CCSprite>(0)) {
-                    if (spr->getOpacity() > 120) {
-                        GradientUtils::applyGradient(f->m_pageIcon, gradient, false, p2, 66);
-                    }
-                }
-            }
-        }
+        if (dollShown(pageIcon))
+            GradientUtils::paintMenuIcon(pageIcon, p2, 66);
     });
 }
 
@@ -200,18 +211,16 @@ bool GradientGarageLayer::init() {
         paimon::garage_hub::addButton(
             self, btn, Localization::get().getString("garage-hub.gradients"), 30);
 
-        if (sdiEnabled()) {
-            // El boton de swap tambien vive en el hub, y se cuelga en el init de
-            // separate-dual, o sea antes que esta pasada diferida.
-            if (CCNode* menu = paimon::garage_hub::rail(self)) {
-                if (CCNode* buttonNode = menu->getChildByID("swap-2p-button")) {
-                    CCMenuItemSpriteExtra* button = static_cast<CCMenuItemSpriteExtra*>(buttonNode);
+        if (!sdiEnabled()) return;
 
-                    self->m_fields->m_originalCallback = button->m_pfnSelector;
-                    button->m_pfnSelector = menu_selector(GradientGarageLayer::onSwap);
-                }
-            }
-        }
+        // The 2P swap button lives in the hub rail, hung during the
+        // separate-dual init, i.e. before this deferred pass.
+        CCNode* menu = paimon::garage_hub::rail(self);
+        auto swap = menu ? static_cast<CCMenuItemSpriteExtra*>(menu->getChildByID("swap-2p-button")) : nullptr;
+        if (!swap) return;
+
+        self->m_fields->m_originalCallback = swap->m_pfnSelector;
+        swap->m_pfnSelector = menu_selector(GradientGarageLayer::onSwap);
     });
 
     return true;
@@ -226,14 +235,16 @@ void GradientGarageLayer::setupPage(int p0, IconType p1) {
     GJGarageLayer::setupPage(p0, p1);
 
     Loader::get()->queueInMainThread([self = Ref(this)] {
-        if (CCMenu* menu = static_cast<CCNode*>(self->m_iconSelection->m_pages->firstObject())->getChildByType<CCMenu>(0)) {
+        CCNode* page = static_cast<CCNode*>(self->m_iconSelection->m_pages->firstObject());
+        CCMenu* menu = page ? page->getChildByType<CCMenu>(0) : nullptr;
+
+        if (menu) {
             for (CCNode* node : menu->getChildrenExt()) {
-                if (GJItemIcon* item = node->getChildByType<GJItemIcon>(0)) {
-                    if (SimplePlayer* icon = item->getChildByType<SimplePlayer>(0)) {
-                        self->m_fields->m_pageIcon = icon;
-                        break;
-                    }
-                }
+                GJItemIcon* item = node->getChildByType<GJItemIcon>(0);
+                SimplePlayer* doll = item ? item->getChildByType<SimplePlayer>(0) : nullptr;
+                if (!doll) continue;
+                self->m_fields->m_pageIcon = doll;
+                break;
             }
         }
 

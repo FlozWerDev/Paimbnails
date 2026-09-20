@@ -88,12 +88,24 @@ bool containsVisibleLayerMatch(CCNode* node, std::set<std::string> const& filter
 
 bool sampleCursorPosition(CCPoint& outPos, bool& outInsideWindow) {
     auto winSize = CCDirector::get()->getWinSize();
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    // No hay raton en movil: el sprite sigue al dedo via el hook de
+    // CCTouchDispatcher (CursorHook.cpp -> setTouchPoint). Sin esto el cursor
+    // quedaba clavado en la ultima posicion de getMousePos().
+    auto touchPos = CursorManager::get().pointerPos();
+    outInsideWindow = touchPos.x >= 0.f && touchPos.y >= 0.f &&
+        touchPos.x <= winSize.width && touchPos.y <= winSize.height;
+    outPos.x = std::clamp(touchPos.x, 0.f, winSize.width);
+    outPos.y = std::clamp(touchPos.y, 0.f, winSize.height);
+    return true;
+#else
     auto mousePos = geode::cocos::getMousePos();
     outInsideWindow = mousePos.x >= 0.f && mousePos.y >= 0.f &&
         mousePos.x <= winSize.width && mousePos.y <= winSize.height;
     outPos.x = std::clamp(mousePos.x, 0.f, winSize.width);
     outPos.y = std::clamp(mousePos.y, 0.f, winSize.height);
     return true;
+#endif
 }
 
 float clampCursorScale(float scale) {

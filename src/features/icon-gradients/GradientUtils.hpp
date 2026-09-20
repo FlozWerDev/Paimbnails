@@ -61,6 +61,10 @@ public:
     static void applyGradient(SimplePlayer*, GradientConfig, ColorType, bool, bool, int);
     static void applyGradient(CCSprite*, GradientConfig, IconType, ColorType, int, bool, bool, bool, int, bool = false);
 
+    // One-call menu-doll paint: resolves the icon's kind, fetches its
+    // gradient and shades it. `extra` selects the shader variant.
+    static void paintMenuIcon(SimplePlayer*, bool, int);
+
     static CCGLProgram* createShader(const std::string&, bool, bool, bool);
 
     static void patchBatchNode(CCSpriteBatchNode*);

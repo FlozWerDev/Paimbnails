@@ -23,6 +23,7 @@ using namespace geode::prelude;
 #include "../features/scorecell/ScoreCellRefresh.hpp"
 #include "../features/scorecell/LeaderboardCellLayout.hpp"
 #include "../features/scorecell/fx/ScoreCellHoverWatcher.hpp"
+#include "../features/scorecell/fx/ScoreGradientDesign.hpp"
 #include "../features/scorecell/fx/ScoreGradientLayer.hpp"
 #include "../core/modules/ModuleRegistry.hpp"
 #include "../features/profiles/services/ProfileGradientEffects.hpp"
@@ -103,7 +104,9 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
     void pushGameColorLayersBehind(CCNode* node, int maxDepth = 3) {
         if (!node || maxDepth <= 0) return;
         std::string_view id = node->getID();
-        if (!id.empty() && id.starts_with("paimon-")) return;
+        // NOTE: match with find(), not starts_with(): IDs set via "_spr"
+        // expand to "<mod-id>/paimon-...", so a prefix check never matches.
+        if (!id.empty() && id.find("paimon-") != std::string_view::npos) return;
 
         bool isBackground = false;
         if (geode::cast::typeinfo_cast<CCLayerColor*>(node) != nullptr) isBackground = true;
@@ -140,6 +143,13 @@ public:
             a = gm->colorForIdx(gm->getPlayerColor());
             b = gm->colorForIdx(gm->getPlayerColor2());
         }
+        // Harmonize once so neon pairs don't burn and lights don't wash out.
+        // Hue stays the player's own; only saturation/lightness are parked.
+        {
+            auto tuned = paimon::scorecell::detail::harmonizePair(a, b);
+            a = tuned.first;
+            b = tuned.second;
+        }
 
         auto grad = paimon::profilebg::AnimatedGradientLayer::create(a, b);
         if (!grad) return;
@@ -150,15 +160,19 @@ public:
         grad->setOpacity(static_cast<GLubyte>(paimon::scorecell::gradientOpacity()));
         grad->setEffect(paimon::scorecell::gradientEffect(), paimon::scorecell::gradientSpeed());
 
-        auto stencil = paimon::SpriteHelper::createRectStencil(cs.width, cs.height);
-        auto clip = paimon::ScissorClipNode::create(stencil);
+        auto stencil = paimon::SpriteHelper::createRoundedRectStencil(cs.width, cs.height, 7.f);
+        auto clip = cocos2d::CCClippingNode::create(stencil);
         if (!clip) return;
         clip->setContentSize(cs);
         clip->setAnchorPoint({0.f, 0.f});
         clip->setPosition({0.f, 0.f});
+        clip->setAlphaThreshold(0.05f);
         clip->setZOrder(-15); // above the game's flat bg (-20), behind content
         clip->setID("paimon-icon-gradient-clip"_spr);
         clip->addChild(grad);
+        // Dark-left scrim keeps the name/rank readable over saturated pairs,
+        // plus a faint top sheen against 8-bit banding.
+        paimon::scorecell::attachCellOverlays(clip, cs);
         this->addChild(clip);
         f->m_iconGradient = clip;
 
@@ -178,12 +192,35 @@ public:
         if (cs.width <= 1.f || cs.height <= 1.f) return;
 
         if (auto old = getChildByID("paimon-score-gradient")) old->removeFromParent();
+        if (auto oldClip = getChildByID("paimon-score-gradient-clip"_spr)) oldClip->removeFromParent();
         bool scoreGradient = paimon::scorecell::scoreGradientEnabled();
         if (scoreGradient && m_score) {
             auto* gm = GameManager::sharedState();
             if (auto* gradient = paimon::scorecell::ScoreGradientLayer::create(
                     cs, gm->colorForIdx(m_score->m_color1), gm->colorForIdx(m_score->m_color2))) {
-                addChild(gradient, -15);
+                gradient->setAnchorPoint({0.f, 0.f});
+                gradient->setPosition({0.f, 0.f});
+                gradient->setBaseOpacity(static_cast<GLubyte>(paimon::scorecell::gradientOpacity()));
+                gradient->setIdleSpeed(paimon::scorecell::gradientSpeed());
+                auto stencil = paimon::SpriteHelper::createRoundedRectStencil(cs.width, cs.height, 7.f);
+                auto clip = cocos2d::CCClippingNode::create(stencil);
+                if (clip) {
+                    clip->setContentSize(cs);
+                    clip->setAnchorPoint({0.f, 0.f});
+                    clip->setPosition({0.f, 0.f});
+                    clip->setAlphaThreshold(0.05f);
+                    clip->setZOrder(-15);
+                    clip->setID("paimon-score-gradient-clip"_spr);
+                    clip->addChild(gradient);
+                    // Same readability scrim + anti-banding sheen as the
+                    // icon-gradient path, so text survives saturated pairs.
+                    paimon::scorecell::attachCellOverlays(clip, cs);
+                    addChild(clip);
+                    // Keep the legacy id so refresh logic finds the layer.
+                    gradient->setID("paimon-score-gradient");
+                } else {
+                    addChild(gradient, -15);
+                }
                 pushGameColorLayersBehind(this);
             }
         }
@@ -206,7 +243,9 @@ public:
         f->m_hoverWatcher = nullptr;
 
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
-        if (!scoreGradient && paimon::scorecell::hoverEnabled()) {
+        // The score gradient animates its own hover burst internally; the
+        // watcher still adds glow/shine on top, so keep it for both paths.
+        if (paimon::scorecell::hoverEnabled()) {
             auto watcher = paimon::scorecell::ScoreCellHoverWatcher::create(
                 paimon::scorecell::normalizeHoverType(paimon::scorecell::hoverType()),
                 paimon::scorecell::hoverIntensity());

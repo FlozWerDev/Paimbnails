@@ -19,7 +19,6 @@ namespace paimon::autobuild {
 
 namespace {
 
-// Tile 0 means "leave this cell empty"; the rest are learned pattern states.
 constexpr int kEmpty = 0;
 constexpr size_t kMaxWaveDomainBytes = 256u * 1024u * 1024u;
 constexpr std::uint64_t kMaxPropagationWork = 250'000'000;
@@ -49,8 +48,6 @@ int gridIndex(float value, float cell) {
     return static_cast<int>(std::floor(value / cell + 0.5f));
 }
 
-// The wave keeps one bitset per cell with the tiles still possible there, plus
-// the running weight sums the entropy heuristic needs.
 struct Wave {
     int cellCount = 0;
     int tiles = 0;
@@ -141,8 +138,7 @@ struct Wave {
         }
     }
 
-    // Pin a cell to one tile outside the trail: used when nothing fits and the
-    // build has to move on instead of unwinding forever.
+    // Fallback pin outside trail when nothing fits.
     void pin(int cell, int tile) {
         Word* bits = bitsOf(cell);
         for (int w = 0; w < words; ++w) bits[w] = 0;
@@ -190,7 +186,7 @@ void buildAllowed(Wave& wave, RuleSet const& rules, bool relaxed) {
             }
             if (pieceLinks.open[d]) {
                 add(d, tile, kEmpty);
-                // Mirror: an empty cell accepts every piece that may border it.
+                // Empty mirrors pieces with open border.
                 add(kOppositeDirection[d], kEmpty, tile);
             }
 
@@ -231,17 +227,35 @@ std::vector<Placement> solveWave(Template const& tpl, Options const& opts,
     struct Cell {
         int gx = 0;
         int gy = 0;
+        // Mean pos keeps exact marker spot, avoids grid snap.
+        double repX = 0.0;
+        double repY = 0.0;
+        int count = 0;
     };
     std::unordered_map<std::uint64_t, int> byCell;
     std::vector<Cell> cells;
     cells.reserve(targets.size());
+    // Anchor to selection min to avoid fill drift.
+    float originX = targets.front().pos.x;
+    float originY = targets.front().pos.y;
     for (auto const& target : targets) {
-        int gx = gridIndex(target.pos.x, cell);
-        int gy = gridIndex(target.pos.y, cell);
+        originX = std::min(originX, target.pos.x);
+        originY = std::min(originY, target.pos.y);
+    }
+    for (auto const& target : targets) {
+        int gx = gridIndex(target.pos.x - originX, cell);
+        int gy = gridIndex(target.pos.y - originY, cell);
         auto key = packCell(gx, gy);
-        if (byCell.find(key) != byCell.end()) continue;
+        auto found = byCell.find(key);
+        if (found != byCell.end()) {
+            auto& cellEntry = cells[found->second];
+            cellEntry.repX += target.pos.x;
+            cellEntry.repY += target.pos.y;
+            cellEntry.count++;
+            continue;
+        }
         byCell.emplace(key, static_cast<int>(cells.size()));
-        cells.push_back({gx, gy});
+        cells.push_back({gx, gy, target.pos.x, target.pos.y, 1});
     }
 
     auto const rules = inferRules(tpl);
@@ -427,8 +441,7 @@ std::vector<Placement> solveWave(Template const& tpl, Options const& opts,
         return true;
     };
 
-    // Lowest entropy first, kept in a lazy heap: stale entries are cheaper to
-    // re-push than rescanning every cell on each collapse.
+    // Lazy heap: re-push stale entries, no rescan.
     struct Candidate {
         double entropy;
         int cell;
@@ -442,7 +455,6 @@ std::vector<Placement> solveWave(Template const& tpl, Options const& opts,
     };
     for (int c = 0; c < wave.cellCount; ++c) pushCell(c);
 
-    // Cells whose domain changed since the last push go back in the heap.
     std::vector<int> touchedAt(wave.cellCount, 0);
     int touchGeneration = 0;
     auto pushTouched = [&](size_t mark) {
@@ -498,8 +510,6 @@ std::vector<Placement> solveWave(Template const& tpl, Options const& opts,
         return chosen;
     };
 
-    // Nothing fits here: take the tile that agrees with the most already placed
-    // neighbours, heaviest first on a tie.
     auto bestFit = [&](int c) {
         int best = selectableTiles.front();
         double bestScore = -1.0;
@@ -677,7 +687,9 @@ std::vector<Placement> solveWave(Template const& tpl, Options const& opts,
 
         Placement placement;
         placement.piece = choice.piece;
-        placement.pos = Point{cells[c].gx * cell, cells[c].gy * cell};
+        placement.pos = Point{
+            static_cast<float>(cells[c].repX / cells[c].count),
+            static_cast<float>(cells[c].repY / cells[c].count)};
         placement.transform = choice.transform;
         out.push_back(placement);
         previousPiece = choice.piece;

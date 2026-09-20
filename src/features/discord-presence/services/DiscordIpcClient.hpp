@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 
@@ -26,27 +27,22 @@ struct DiscordActivity {
     std::string button2Label, button2Url;
 };
 
-// Minimal, self-contained Discord Rich Presence client. Talks to the local
-// Discord IPC endpoint directly (named pipe on Windows, unix socket on macOS),
-// so we don't depend on any external discord-rpc library.
-//
-// All methods are cheap and safe to call from the main thread. Connection is
-// lazy and best-effort: if Discord isn't running the calls just no-op and a
-// reconnect is retried later.
+// Best-effort IPC client: lazy connect, no-ops if Discord is absent.
 class DiscordIpcClient {
 public:
     static DiscordIpcClient& get();
 
     void setClientID(std::string id) { m_clientID = std::move(id); }
 
-    // Sends the activity, connecting/handshaking first if needed.
+    // Connects if needed, then sends.
     void update(DiscordActivity const& activity);
-    // Clears the presence (keeps the connection open).
+    // Clears presence, keeps connection.
     void clear();
-    // Closes the IPC connection.
     void close();
 
     bool isConnected() const { return m_connected; }
+    // Bumped on (re)connect/teardown; lets manager detect reconnects.
+    uint64_t connectionGeneration() const { return m_connectionGeneration; }
 
 private:
     DiscordIpcClient() = default;
@@ -57,15 +53,17 @@ private:
     bool ensureConnected();
     bool tryConnect();
     bool writeFrame(uint32_t opcode, std::string const& payload);
-    void drainReads();
+    // False if peer closed or sent ERROR/CLOSE (caller disconnects).
+    bool drainReads();
     void handleDisconnect();
 
     std::string m_clientID;
     bool m_connected = false;
     uint32_t m_nonce = 0;
-    int64_t m_lastConnectAttempt = 0;
+    std::chrono::steady_clock::time_point m_lastConnectAttempt{};
+    uint64_t m_connectionGeneration = 0;
 
-#ifdef _WIN32
+#ifdef GEODE_IS_WINDOWS
     void* m_pipe = nullptr; // HANDLE
 #else
     int m_socket = -1;

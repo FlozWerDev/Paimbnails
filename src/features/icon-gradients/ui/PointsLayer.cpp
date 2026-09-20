@@ -3,6 +3,9 @@
 #include "../GradientCache.hpp"
 #include "../GradientUtils.hpp"
 
+#include <algorithm>
+#include <utility>
+
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
 
@@ -11,7 +14,7 @@ constexpr float kPointDisplayScale = 0.6f;
 }
 
 PointsLayer* PointsLayer::create(const CCSize& size, GradientLayer* layer, CCPoint previewCenter) {
-    PointsLayer* ret = new PointsLayer();
+    auto ret = new PointsLayer();
 
     ret->m_layer = layer;
 
@@ -44,16 +47,15 @@ bool PointsLayer::init(CCSize size, CCPoint previewCenter) {
 
     setContentSize(size);
     setAnchorPoint({0, 0});
-    setTouchEnabled(true);
-    registerWithTouchDispatcher();
+
+    // Single-finger dragging only.
+    setTouchEnabled(true); registerWithTouchDispatcher();
     setTouchMode(kCCTouchesOneByOne);
 
     return true;
 }
 
-int PointsLayer::getPointCount() {
-    return m_points.size();
-}
+int PointsLayer::getPointCount() { return m_points.size(); }
 
 void PointsLayer::removeSelected() {
     if (!m_selectedPoint) selectLast();
@@ -62,11 +64,13 @@ void PointsLayer::removeSelected() {
     if (!m_pointsHidden) {
         addPoint(m_selectedPoint->getPosition());
 
-        m_removingPoints.push_back(m_points.back());
-        m_removingPoints.back()->setColor(m_selectedPoint->getColor());
-        m_removingPoints.back()->setHidden(true, 0.3f);
-
+        ColorNode* ghost = m_points.back();
         m_points.pop_back();
+
+        ghost->setColor(m_selectedPoint->getColor());
+        ghost->setHidden(true, 0.3f);
+
+        m_removingPoints.push_back(ghost);
     }
 
     std::vector<ColorNode*> newPoints;
@@ -84,14 +88,16 @@ void PointsLayer::removeSelected() {
     m_selectedPoint = nullptr;
 }
 
-void PointsLayer::moveSelected(const CCPoint& move) {
-    if (!m_selectedPoint) return;
-    CCPoint pos = m_selectedPoint->getPosition() + move;
-
+CCPoint PointsLayer::clampPos(CCPoint pos) {
     pos.x = std::max(0.f, std::min(pos.x, getContentSize().width));
     pos.y = std::max(0.f, std::min(pos.y, getContentSize().height));
+    return pos;
+}
 
-    m_selectedPoint->setPosition(pos);
+void PointsLayer::moveSelected(const CCPoint& move) {
+    if (!m_selectedPoint) return;
+
+    m_selectedPoint->setPosition(clampPos(m_selectedPoint->getPosition() + move));
     m_layer->pointMoved();
 }
 
@@ -99,32 +105,24 @@ void PointsLayer::addPoint() {
     CCSize size = m_icon->getContentSize() * m_icon->getScale();
     CCPoint position = m_icon->getPosition();
 
-    std::vector<CCPoint> corners = {
-        {position.x - size.width / 2, position.y + size.height / 2},
-        {position.x + size.width / 2, position.y + size.height / 2},
-        {position.x - size.width / 2, position.y - size.height / 2},
-        {position.x + size.width / 2, position.y - size.height / 2}
-    };
+    // First free icon corner, scanned top row first.
+    std::vector<CCPoint> corners;
+    for (float dy : {1.f, -1.f})
+        for (float dx : {-1.f, 1.f})
+            corners.push_back({position.x + dx * size.width / 2, position.y + dy * size.height / 2});
 
     CCPoint pos = {0, 0};
 
     for (const CCPoint& corner : corners) {
-        bool taken = false;
+        bool taken = std::any_of(m_points.begin(), m_points.end(), [&](ColorNode* point) {
+            return static_cast<int>(point->getPosition().x) == static_cast<int>(corner.x)
+                && static_cast<int>(point->getPosition().y) == static_cast<int>(corner.y);
+        });
 
-        for (ColorNode* point : m_points) {
-            if (
-                static_cast<int>(point->getPosition().x) == static_cast<int>(corner.x)
-                && static_cast<int>(point->getPosition().y) == static_cast<int>(corner.y)
-            ) {
-                taken = true;
-                break;
-            }
-        }
+        if (taken) continue;
 
-        if (!taken) {
-            pos = corner;
-            break;
-        }
+        pos = corner;
+        break;
     }
 
     if (pos == ccp(0, 0)) {
@@ -152,11 +150,10 @@ ColorNode* PointsLayer::getNodeForPos(CCPoint pos) {
     float closest = getContentSize().width * 2;
 
     for (ColorNode* point : m_points) {
+        float reach = point->getContentSize().width * 0.5f * point->getScale();
         float distance = ccpDistance(pos, point->getPosition());
-        if (distance < closest && distance < point->getContentSize().width * 0.5f * point->getScale()) {
-            closest = distance;
-            ret = point;
-        }
+
+        if (distance < closest && distance < reach) { closest = distance; ret = point; }
     }
 
     return ret;
@@ -179,9 +176,7 @@ void PointsLayer::selectPoint(ColorNode* point) {
 
     point->setSelected(true);
 
-    if (m_selectedPoint && m_selectedPoint != point) {
-        m_selectedPoint->setSelected(false);
-    }
+    if (m_selectedPoint && m_selectedPoint != point) m_selectedPoint->setSelected(false);
 
     m_selectedPoint = point;
 
@@ -193,11 +188,15 @@ bool PointsLayer::ccTouchBegan(CCTouch* touch, CCEvent* event) {
 
     CCPoint pos = touch->getLocation();
 
-    for (int i = 0; i < m_removingPoints.size(); i++) {
-        if (!m_removingPoints[i]->isAnimating()) {
-            m_removingPoints[i]->removeFromParentAndCleanup(true);
-            m_removingPoints.erase(m_removingPoints.begin() + i);
-        }
+    // Reap finished ghosts; the index only advances past live ones so no
+    // entry is skipped after an erase.
+    for (size_t i = 0; i < m_removingPoints.size();) {
+        ColorNode* ghost = m_removingPoints[i];
+
+        if (ghost->isAnimating()) { i++; continue; }
+
+        ghost->removeFromParentAndCleanup(true);
+        m_removingPoints.erase(m_removingPoints.begin() + i);
     }
 
     if (ColorNode* point = getNodeForPos(pos)) {
@@ -226,18 +225,14 @@ void PointsLayer::ccTouchMoved(CCTouch* touch, CCEvent* event) {
     if (m_isMoving && m_selectedPoint) {
         CCPoint pos = convertToNodeSpace(touch->getLocation()) + m_moveOffset;
 
-        pos.x = std::max(0.f, std::min(pos.x, getContentSize().width));
-        pos.y = std::max(0.f, std::min(pos.y, getContentSize().height));
-
-        m_selectedPoint->setPosition(pos);
+        m_selectedPoint->setPosition(clampPos(pos));
 
         m_layer->pointMoved();
     }
 }
 
 void PointsLayer::ccTouchEnded(CCTouch* touch, CCEvent* event) {
-    m_isMoving = false;
-    setPointsHidden(m_pointsHidden, 0.3f);
+    m_isMoving = false; setPointsHidden(m_pointsHidden, 0.3f);
     m_layer->pointReleased();
 }
 
@@ -255,9 +250,7 @@ std::vector<SimplePoint> PointsLayer::getPoints() {
     return ret;
 }
 
-IconType PointsLayer::getType() {
-    return m_type;
-}
+IconType PointsLayer::getType() { return m_type; }
 
 void PointsLayer::updateHover(const CCPoint& pos) {
     if (ColorNode* point = getNodeForPos(pos)) {
@@ -269,15 +262,12 @@ void PointsLayer::updateHover(const CCPoint& pos) {
 
         m_hoveredPoint = point;
     } else if (m_hoveredPoint) {
-        m_hoveredPoint->setHovered(false);
-        m_hoveredPoint = nullptr;
+        std::exchange(m_hoveredPoint, nullptr)->setHovered(false);
     }
 }
 
 void PointsLayer::updatePointOpacity(int value) {
-    for (ColorNode* point : m_points) {
-        point->setOpacity(value);
-    }
+    for (ColorNode* point : m_points) point->setOpacity(value);
 }
 
 void PointsLayer::updatePointScale(float value) {
@@ -298,37 +288,24 @@ void PointsLayer::updateGradient(float) {}
 
 void PointsLayer::updateCenter() {
     m_icon->setContentSize(m_icon->m_firstLayer->getContentSize());
-    m_icon->m_firstLayer->setPosition(
-        m_icon->getContentSize() / 2.f
-        - ccp(0, m_type == IconType::Ufo ? 8.f : 0.f)
-    );
 
-    if (m_icon->m_robotSprite) {
-        m_icon->m_robotSprite->setPosition(m_icon->getContentSize() / 2.f);
-    }
+    CCPoint center = m_icon->getContentSize() / 2.f;
+    m_icon->m_firstLayer->setPosition(center - ccp(0, m_type == IconType::Ufo ? 8.f : 0.f));
 
-    if (m_icon->m_spiderSprite) {
-        m_icon->m_spiderSprite->setPosition(m_icon->getContentSize() / 2.f);
-    }
+    if (m_icon->m_robotSprite) m_icon->m_robotSprite->setPosition(center);
+    if (m_icon->m_spiderSprite) m_icon->m_spiderSprite->setPosition(center);
 
     GradientUtils::setIconColors(m_icon, m_currentColor, false, m_layer->isSecondPlayer());
 }
 
-ColorNode* PointsLayer::getSelectedPoint() {
-    return m_selectedPoint;
-}
-
-SimplePlayer* PointsLayer::getIcon() {
-    return m_icon;
-}
+ColorNode* PointsLayer::getSelectedPoint() { return m_selectedPoint; }
+SimplePlayer* PointsLayer::getIcon() { return m_icon; }
 
 void PointsLayer::setPlayerFrame(IconType type) {
     m_type = type;
 
-    m_icon->updatePlayerFrame(
-        GradientUtils::getIconID(type, m_layer->isSecondPlayer()),
-        type
-    );
+    int frame = GradientUtils::getIconID(type, m_layer->isSecondPlayer());
+    m_icon->updatePlayerFrame(frame, type);
 
     updateCenter();
 }
@@ -351,10 +328,7 @@ CCPoint PointsLayer::getRelativePos(ColorNode* point) {
     CCSize iconSize = ccp(30.5f, 30) * m_icon->getScale();
     CCPoint realPos = point->getPosition() + m_pointOffset - (m_icon->getPosition() - iconSize * m_icon->getAnchorPoint());
 
-    return {
-        realPos.x / iconSize.width,
-        realPos.y / iconSize.height
-    };
+    return {realPos.x / iconSize.width, realPos.y / iconSize.height};
 }
 
 void PointsLayer::loadPoints(GradientConfig config, bool animate) {
@@ -403,18 +377,20 @@ void PointsLayer::loadPoints(GradientConfig config, bool animate) {
 
         addPoint(bottomLeft + point.pos * iconSize, true);
 
-        if (!m_selectedPoint && !config.points.empty() && !addedSelected) {
-            m_points.back()->setSelected(true);
+        ColorNode* fresh = m_points.back();
 
-            m_selectedPoint = m_points.back();
+        if (!m_selectedPoint && !config.points.empty() && !addedSelected) {
+            fresh->setSelected(true);
+
+            m_selectedPoint = fresh;
             addedSelected = true;
         }
 
-        m_points.back()->setColor(point.color);
-        m_points.back()->setHidden(false, 0.1f);
-        m_points.back()->setImagePath(point.imagePath);
+        fresh->setColor(point.color);
+        fresh->setHidden(false, 0.1f);
+        fresh->setImagePath(point.imagePath);
 
-        movedPoints.insert(m_points.back());
+        movedPoints.insert(fresh);
     }
 
     for (ColorNode* point : m_points) {
@@ -423,24 +399,18 @@ void PointsLayer::loadPoints(GradientConfig config, bool animate) {
         }
     }
 
-    runAction(CCSequence::create(
-        CCDelayTime::create(0.1f),
-        CCCallFunc::create(this, callfunc_selector(PointsLayer::onAnimationEnded)),
-        nullptr
-    ));
+    auto wait = CCDelayTime::create(0.1f);
+    auto done = CCCallFunc::create(this, callfunc_selector(PointsLayer::onAnimationEnded));
+    runAction(CCSequence::create(wait, done, nullptr));
 }
 
 void PointsLayer::onAnimationEnded() {
     CCSize iconSize = ccp(30.5f, 30) * m_icon->getScale();
-    CCPoint bottomLeft = m_icon->getPosition() - iconSize / 2.f;
+    CCPoint bottomLeft = m_icon->getPosition() - iconSize * 0.5f;
     CCPoint selectPos = {0, 0};
 
-    for (ColorNode* point : m_points) {
-        if (point->isSelected()) {
-            selectPos = point->getPosition();
-            break;
-        }
-    }
+    for (ColorNode* point : m_points)
+        if (point->isSelected()) { selectPos = point->getPosition(); break; }
 
     for (ColorNode* point : m_points) {
         point->removeFromParentAndCleanup(true);
@@ -459,15 +429,15 @@ void PointsLayer::onAnimationEnded() {
 
         addPoint(pos);
 
-        m_points.back()->setColor(point.color);
-
-        m_points.back()->setImagePath(point.imagePath);
+        ColorNode* fresh = m_points.back();
+        fresh->setColor(point.color);
+        fresh->setImagePath(point.imagePath);
 
         if (std::abs(pos.x - selectPos.x) < 0.001f && std::abs(pos.y - selectPos.y) < 0.001f) {
-            m_points.back()->setSelected(true);
+            fresh->setSelected(true);
 
-            realSelectedPoint = m_points.back();
-            selectPos = ccp(0, 0);
+            realSelectedPoint = fresh;
+            selectPos.setPoint(0, 0);
         }
     }
 

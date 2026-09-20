@@ -124,6 +124,8 @@ private:
     cocos2d::CCLayerColor* m_statusBg = nullptr;
     geode::Ref<cocos2d::CCMenu> m_controls;
     geode::Ref<cocos2d::CCNode> m_chatButton;
+    geode::Ref<cocos2d::CCNode> m_pingButton;
+    void onPingButton();
     geode::ListenerHandle m_uiShowListener;
     int m_lastConnState = -1;
     bool m_lastRecovering = false;

@@ -36,7 +36,14 @@ namespace paimon::thumbnails {
             }
 
             Ref<GJSearchObject> search = browser->m_searchObject;
-            CCDirector::get()->replaceScene(LevelBrowserLayer::scene(search));
+
+            // Fade like GD; transition hook overrides when enabled.
+            auto* scene = LevelBrowserLayer::scene(search);
+            if (!scene) {
+                return;
+            }
+            CCDirector::get()->replaceScene(
+                CCTransitionFade::create(0.5f, scene));
         }
     }
 

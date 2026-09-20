@@ -52,6 +52,12 @@ void ssaved(const char* key, T val) {
 
 using namespace paimon::settings_ui;
 
+// Solo escritorio: en movil el setting no existe y leerlo fallaria.
+bool discordSupported() {
+    if (auto* mod = Mod::get()) return mod->hasSetting("discord-rpc-enabled");
+    return false;
+}
+
 void openNativeModSettingsPopup() {
     SettingsPanelManager::get().close();
     paimon::scheduleMainThreadDelay(0.18f, []() {
@@ -368,8 +374,6 @@ void buildInterface(CCNode* c, float w) {
         w));
 }
 
-// CATEGORIA 8: Custom Backgrounds
-
 void buildBackgrounds(CCNode* c, float w) {
     c->addChild(createSectionHeader("Per-Layer Backgrounds", w));
 
@@ -446,7 +450,6 @@ void buildBackgrounds(CCNode* c, float w) {
 
     c->addChild(createLinkRow("Full Background Editor",
         [](){
-    // Close this panel before opening the fullscreen editor.
             SettingsPanelManager::get().close();
             auto scene = CCDirector::get()->getRunningScene();
             if (!scene) return;
@@ -1009,7 +1012,15 @@ std::vector<SettingsGroup> const& getAllGroups() {
             { "discord", "Rich Presence", buildDiscord },
         }},
     };
-    return s_groups;
+    // Discord es el ultimo grupo: filtrarlo no desplaza indices 0..7.
+    static const std::vector<SettingsGroup> s_groupsNoDiscord = []{
+        std::vector<SettingsGroup> v;
+        for (auto const& g : s_groups) {
+            if (g.id != "discord") v.push_back(g);
+        }
+        return v;
+    }();
+    return discordSupported() ? s_groups : s_groupsNoDiscord;
 }
 
 std::vector<SettingsCategory> const& getAllCategories() {
@@ -1036,7 +1047,15 @@ std::vector<SettingsCategory> const& getAllCategories() {
         { "discord",       "Discord RPC",   "", buildDiscord        },
         { "maintenance",   "Maintenance",   "", buildMaintenance    },
     };
-    return s_categories;
+    // Lista legacy sin usos por indice; filtrar por id es seguro.
+    static const std::vector<SettingsCategory> s_categoriesNoDiscord = []{
+        std::vector<SettingsCategory> v;
+        for (auto const& c : s_categories) {
+            if (c.id != "discord") v.push_back(c);
+        }
+        return v;
+    }();
+    return discordSupported() ? s_categories : s_categoriesNoDiscord;
 }
 
 }

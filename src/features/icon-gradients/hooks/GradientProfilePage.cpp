@@ -1,3 +1,11 @@
+// Profile icon shading, rethought for Paimbnails.
+//
+// Idea credit: "Icon Gradients" by zilko
+// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
+// all rights reserved). Independent implementation: same behavior (shade
+// each icon slot on your own profile by slot index, Ship slot doubling
+// as Jetpack, re-shade on 1P/2P toggle), own expression.
+
 #include "GradientProfilePage.hpp"
 #include "../GradientCache.hpp"
 #include "../GradientUtils.hpp"
@@ -5,41 +13,34 @@
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
 
+// Slot index -> icon kind. Slot 1 shows the Ship doll, or the Jetpack
+// one while the Ship toggle is off.
+static IconType slotKind(int slot, bool shipOn) {
+    return (slot == 1 && !shipOn) ? IconType::Jetpack : static_cast<IconType>(slot);
+}
+
 void GradientProfilePage::onSwap(CCObject* sender) {
     (this->*m_fields->m_originalCallback)(sender);
 
     m_fields->m_isSecondPlayer = !m_fields->m_isSecondPlayer;
 
-    Loader::get()->queueInMainThread([self = Ref(this)] {
-        self->updateGradient();
-    });
+    Loader::get()->queueInMainThread([self = Ref(this)] { self->updateGradient(); });
 }
 
 void GradientProfilePage::updateGradient() {
     if (!m_ownProfile || !moduleEnabled()) return;
 
     CCNode* menu = m_mainLayer->getChildByID("player-menu");
-
     if (!menu) return;
 
-    CCArrayExt<CCNode*> array = menu->getChildrenExt();
+    bool p2 = m_fields->m_isSecondPlayer;
+    bool shipOn = m_fields->m_isShip;
 
-    for (int i = 0; i < array.size(); i++) {
-        SimplePlayer* child = array[i]->getChildByType<SimplePlayer>(0);
-
-        if (!child) continue;
-
-        IconType type = static_cast<IconType>(i);
-
-        if (type == IconType::Ship) {
-            if (!m_fields->m_isShip) {
-                type = IconType::Jetpack;
-            }
-        }
-
-        Gradient gradient = GradientUtils::getGradient(type, m_fields->m_isSecondPlayer);
-
-        GradientUtils::applyGradient(child, gradient, false, m_fields->m_isSecondPlayer, 99);
+    int slot = 0;
+    for (CCNode* entry : menu->getChildrenExt<CCNode*>()) {
+        if (SimplePlayer* doll = entry->getChildByType<SimplePlayer>(0))
+            GradientUtils::applyGradient(doll, GradientUtils::getGradient(slotKind(slot, shipOn), p2), false, p2, 99);
+        slot++;
     }
 }
 
@@ -49,16 +50,13 @@ void GradientProfilePage::getUserInfoFinished(GJUserScore* p0) {
     updateGradient();
 
     Loader::get()->queueInMainThread([self = Ref(this)] {
-        if (sdiEnabled()) {
-            if (CCNode* menu = self->m_mainLayer->getChildByID("left-menu")) {
-                if (CCNode* toggleNode = menu->getChildByID("2p-toggler")) {
-                    CCMenuItemToggler* toggle = static_cast<CCMenuItemToggler*>(toggleNode);
-
-                    self->m_fields->m_originalCallback = toggle->m_pfnSelector;
-                    toggle->m_pfnSelector = menu_selector(GradientProfilePage::onSwap);
-                }
-            }
-        }
+        if (!sdiEnabled()) return;
+        CCNode* menu = self->m_mainLayer->getChildByID("left-menu");
+        CCNode* node = menu ? menu->getChildByID("2p-toggler") : nullptr;
+        if (!node) return;
+        auto toggle = static_cast<CCMenuItemToggler*>(node);
+        self->m_fields->m_originalCallback = toggle->m_pfnSelector;
+        toggle->m_pfnSelector = menu_selector(GradientProfilePage::onSwap);
     });
 }
 

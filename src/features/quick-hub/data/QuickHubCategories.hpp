@@ -7,68 +7,69 @@
 
 namespace paimon::quickhub {
 
+// Discord RPC solo en escritorio; en movil se ocultan sin romper ids.
+inline bool discordSupported() {
+    auto* mod = geode::Mod::get();
+    return mod && mod->hasSetting("discord-rpc-enabled");
+}
+
 struct RadialOptionDef {
-    std::string id;          // identificador unico persistente
-    std::string name;        // nombre corto mostrado en hover
-    std::string icon;        // sprite frame name del icono
-    cocos2d::ccColor3B color; // color del glow en hover
-    bool custom = false;     // capturado de la UI del juego
-    // La accion se resuelve en runtime por id
-    // Skin visual extendida (solo customs; builtins usan defaults).
-    std::string imagePath;   // "" = usar frame icon. Ruta absoluta en config.
-    float imageScale = 1.f;  // multiplicador sobre caja fitted. clamp 0.2..3.0
-    float imageRotation = 0.f; // grados Z. clamp -180..180
+    std::string id;
+    std::string name;
+    std::string icon;
+    cocos2d::ccColor3B color; // glow en hover
+    bool custom = false;     // de la UI del juego
+    // Accion resuelta en runtime por id.
+    std::string imagePath;   // "" = usar icon
+    float imageScale = 1.f;  // clamp 0.2..3.0
+    float imageRotation = 0.f; // clamp -180..180
     bool imageFlipX = false;
     bool imageFlipY = false;
 };
 
 enum class RadialButtonShape { Circle, Square, Icon };
 
-// Fuente del SFX por boton. int en disco para unwrapOr trivial.
+// int en disco para unwrapOr trivial.
 enum class QuickButtonSfxKind : int { None = 0, Game = 1, File = 2, Online = 3 };
 
-// Boton personalizado capturado de la UI del juego y anadible al radial.
-// Guarda toda la "direccion" del boton original para poder reencontrarlo:
-// ruta de node ids, clase de la pantalla, clase del receptor del callback,
-// texto, tag y posicion normalizada en pantalla.
+// Direccion del boton original para reencontrarlo.
 struct CustomQuickButton {
     std::string id;
     std::string name;
-    std::string icon;          // sprite frame del icono
-    std::string labelText;     // texto de identificacion del boton original
-    std::string targetNodeId;  // node id del boton original
-    std::string parentId;      // node id del padre
-    std::vector<int> nodePath; // ruta de indices hasta el nodo (ultimo recurso)
-    std::vector<std::string> idPath; // ruta de node ids desde la escena
-    std::string ownerClass;    // capa que contiene el boton (MenuLayer, LevelInfoLayer...)
-    std::string sceneClass;    // capa principal de la escena al capturarlo
-    std::string itemClass;     // clase del CCMenuItem
-    std::string listenerClass; // clase que recibe el callback del boton
-    float relX = -1.f;         // posicion normalizada 0..1 al capturarlo
+    std::string icon;
+    std::string labelText;
+    std::string targetNodeId;
+    std::string parentId;
+    std::vector<int> nodePath; // fallback si no hay ids
+    std::vector<std::string> idPath;
+    std::string ownerClass;
+    std::string sceneClass;
+    std::string itemClass;
+    std::string listenerClass;
+    float relX = -1.f;         // normalizada 0..1
     float relY = -1.f;
     int tag = 0;
     cocos2d::ccColor3B color{120, 200, 255};
     RadialButtonShape shape = RadialButtonShape::Circle;
-    // --- Skin visual extendida (defaults = comportamiento viejo) ---
-    std::string imagePath;              // "" = usar frame icon
+    // Defaults = comportamiento anterior
+    std::string imagePath;              // "" = usar icon
     float imageScale = 1.f;             // 0.2..3.0
-    float imageRotation = 0.f;          // -180..180 grados Z
+    float imageRotation = 0.f;          // -180..180
     bool imageFlipX = false;
     bool imageFlipY = false;
-    // --- SFX por boton (0 = ninguno, sin supresion) ---
-    int sfxKind = 0;                    // QuickButtonSfxKind como int
-    std::string sfxPath;                // kind Game: "explode_11.ogg". kind File: ruta abs config. kind Online: "" (usar sfxId)
-    int sfxId = 0;                      // kind Online: id libreria SFX
+    // 0 = sin SFX
+    int sfxKind = 0;
+    std::string sfxPath;                // Game: nombre; File: ruta; Online: usar sfxId
+    int sfxId = 0;
     float sfxVolume = 1.f;              // 0..1
-    float sfxSpeed = 1.f;               // pitch/speed 0.4..2.5
-    int sfxStartMs = 0;                 // >=0
+    float sfxSpeed = 1.f;               // 0.4..2.5
+    int sfxStartMs = 0;
     int sfxEndMs = 0;                   // 0 = hasta el fin
-    int sfxFadeInMs = 0;                // >=0
-    int sfxFadeOutMs = 0;               // >=0
+    int sfxFadeInMs = 0;
+    int sfxFadeOutMs = 0;
 };
 
-// "Mi Boton!" -> "mi-boton". Vacio o sin alfanumericos -> "button".
-// Vive aqui (y no en ui/) porque el manager lo usa para derivar ids.
+// "Mi Boton!" -> "mi-boton"; vacio -> "button".
 inline std::string slugify(std::string const& id) {
     std::string stem;
     for (char c : id) {
@@ -85,8 +86,7 @@ inline std::string slugify(std::string const& id) {
     return stem;
 }
 
-// Vista de dibujo de un CustomQuickButton: copia nombre/icono/color + skin.
-// Punto unico de conversion para la rueda, previews y persistencia.
+// Punto unico de conversion.
 inline RadialOptionDef toRadialDef(CustomQuickButton const& b) {
     RadialOptionDef def;
     def.id = b.id;
@@ -102,7 +102,6 @@ inline RadialOptionDef toRadialDef(CustomQuickButton const& b) {
     return def;
 }
 
-// Nombre legible de las pantallas de GD mas comunes.
 inline std::string friendlyScreenName(std::string const& cls) {
     if (cls.empty()) return "esta pantalla";
     if (cls == "MenuLayer")           return "Menu principal";
@@ -124,27 +123,32 @@ inline std::string friendlyScreenName(std::string const& cls) {
     return cls;
 }
 
-// Pantallas a las que el radial sabe navegar por su cuenta.
 inline bool isNavigableScreen(std::string const& cls) {
     return cls == "MenuLayer" || cls == "CreatorLayer" || cls == "GJGarageLayer" ||
            cls == "LevelSelectLayer" || cls == "GauntletSelectLayer";
 }
 
-// All available options (full pool). New options appear automatically in RadialConfigPopup.
+// Nuevas opciones aparecen solas en el config.
 inline std::vector<RadialOptionDef> getAllAvailableOptions() {
-    return {
-        // Settings panel: una entrada por categoria
+    std::vector<RadialOptionDef> opts = {
         {"settings-general",     "General",          "GJ_optionsBtn_001.png",     {120, 255, 120}},
         {"settings-thumbnails",  "Miniaturas",       "GJ_hammerIcon_001.png",     {100, 200, 255}},
         {"settings-levelinfo",   "Nivel",            "GJ_infoBtn_001.png",        {180, 220, 255}},
         {"settings-audio",       "Audio",            "GJ_musicOnBtn_001.png",     {255, 170, 220}},
         {"settings-backgrounds", "Fondos",           "GJ_paintBtn_001.png",       {180, 255, 140}},
         {"settings-extras",      "Extras",           "GJ_starBtn_001.png",        {255, 120, 120}},
-        {"settings-discord",     "Discord",          "GJ_chatBtn_001.png",        {110, 150, 255}},
+    };
+    if (discordSupported()) {
+        opts.push_back({"settings-discord",     "Discord",          "GJ_chatBtn_001.png",        {110, 150, 255}});
+    }
 
-        // Popups de configuracion directa
+    opts.insert(opts.end(), {
         {"transitions",          "Transiciones",     "GJ_replayBtn_001.png",      {200, 160, 255}},
-        {"discord-config",       "Discord Config",   "GJ_chatBtn_001.png",        {110, 150, 255}},
+    });
+    if (discordSupported()) {
+        opts.push_back({"discord-config",       "Discord Config",   "GJ_chatBtn_001.png",        {110, 150, 255}});
+    }
+    opts.insert(opts.end(), {
         {"pet-config",           "Mascota",          "gj_heartOn_001.png",        {255, 180, 200}},
         {"cursor-config",        "Cursor",           "GJ_searchBtn_001.png",      {255, 200, 120}},
         {"slider-config",        "Slider",           "GJ_optionsBtn_001.png",     {160, 255, 220}},
@@ -162,24 +166,27 @@ inline std::vector<RadialOptionDef> getAllAvailableOptions() {
         {"paidraw",              "PaiDraw",          "GJ_creatorBtn_001.png",     {255, 200, 160}},
         {"support",              "Soporte",          "GJ_infoBtn_001.png",        {255, 180, 120}},
         {"full-config",          "Editor Fondos",    "GJ_paintBtn_001.png",       {180, 255, 140}},
-    };
+    });
+    return opts;
 }
 
-// Configuracion por defecto: las opciones mas usadas en orden razonable.
 inline std::vector<std::string> getDefaultRadialOrder() {
-    return {
+    std::vector<std::string> order = {
         "settings-general",
         "settings-thumbnails",
         "settings-audio",
         "full-config",
         "transitions",
         "pet-config",
-        "discord-config",
-        "hub",
     };
+    if (discordSupported()) {
+        order.push_back("discord-config");
+    }
+    order.push_back("hub");
+    return order;
 }
 
-// Max simultaneous radial options (16). Circular layout auto-distributes by angle.
+// Layout circular reparte por angulo.
 constexpr int MAX_RADIAL_OPTIONS = 16;
 
 } // namespace paimon::quickhub

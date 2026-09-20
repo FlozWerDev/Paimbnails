@@ -1,5 +1,7 @@
 #include "ScoreCellSettingsPopup.hpp"
 #include "../ScoreCellSettings.hpp"
+#include "../fx/ScoreGradientDesign.hpp"
+#include "../fx/ScoreGradientLayer.hpp"
 #include "../../profiles/services/ProfileGradientEffects.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -204,7 +206,7 @@ void ScoreCellSettingsPopup::rebuildPreview() {
     ccColor3B a = gm ? gm->colorForIdx(gm->getPlayerColor())  : ccColor3B{255, 80, 80};
     ccColor3B b = gm ? gm->colorForIdx(gm->getPlayerColor2()) : ccColor3B{80, 80, 255};
 
-    auto stencil = paimon::SpriteHelper::createRectStencil(sz.width, sz.height);
+    auto stencil = paimon::SpriteHelper::createRoundedRectStencil(sz.width, sz.height, 7.f);
     auto clip = CCClippingNode::create();
     clip->setStencil(stencil);
     clip->setAlphaThreshold(0.05f);
@@ -213,18 +215,40 @@ void ScoreCellSettingsPopup::rebuildPreview() {
     clip->setPosition({0.f, 0.f});
     m_previewContainer->addChild(clip);
 
-    auto* grad = paimon::profilebg::AnimatedGradientLayer::create(a, b);
-    if (grad) {
-        grad->setContentSize(sz);
-        grad->setAnchorPoint({0.5f, 0.5f});
-        grad->ignoreAnchorPointForPosition(false);
-        grad->setPosition({sz.width * 0.5f, sz.height * 0.5f});
-        grad->setOpacity(static_cast<GLubyte>(gradientOpacity()));
-        clip->addChild(grad);
-        grad->setEffect(gradientEffect(), gradientSpeed());
+    if (scoreGradientEnabled()) {
+        // The score-gradient module paints ScoreGradientLayer (fixed idle
+        // sway + own hover lift, Effect setting N/A): preview that exact
+        // layer so the popup is WYSIWYG. It harmonizes internally.
+        if (auto* grad = paimon::scorecell::ScoreGradientLayer::create(sz, a, b)) {
+            grad->setAnchorPoint({0.f, 0.f});
+            grad->setPosition({0.f, 0.f});
+            grad->setBaseOpacity(static_cast<GLubyte>(gradientOpacity()));
+            grad->setIdleSpeed(gradientSpeed());
+            clip->addChild(grad);
+            attachCellOverlays(clip, sz);
+        }
+    } else {
+        // Preview what the legacy path actually paints (harmonized pair).
+        {
+            auto tuned = detail::harmonizePair(a, b);
+            a = tuned.first;
+            b = tuned.second;
+        }
+
+        auto* grad = paimon::profilebg::AnimatedGradientLayer::create(a, b);
+        if (grad) {
+            grad->setContentSize(sz);
+            grad->setAnchorPoint({0.5f, 0.5f});
+            grad->ignoreAnchorPointForPosition(false);
+            grad->setPosition({sz.width * 0.5f, sz.height * 0.5f});
+            grad->setOpacity(static_cast<GLubyte>(gradientOpacity()));
+            clip->addChild(grad);
+            grad->setEffect(gradientEffect(), gradientSpeed());
+            attachCellOverlays(clip, sz);
+        }
     }
 
-    if (!gradientEnabled()) {
+    if (!gradientEnabled() && !scoreGradientEnabled()) {
         auto hint = CCLabelBMFont::create("gradient off", "bigFont.fnt");
         hint->setScale(0.3f);
         hint->setOpacity(150);

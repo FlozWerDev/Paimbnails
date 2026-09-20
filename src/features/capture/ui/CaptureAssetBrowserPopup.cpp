@@ -20,6 +20,7 @@
 #include <Geode/binding/FLAlertLayer.hpp>
 #include "../services/FramebufferCapture.hpp"
 #include <algorithm>
+#include <cctype>
 #include <unordered_map>
 #include <unordered_set>
 #include <cstring>
@@ -39,12 +40,7 @@ static auto& s_originalAssetVisibilities = *new std::vector<paimon::capture::Vis
 static auto& s_snapshottedIDs = *new std::unordered_set<int>();
 
 namespace {
-    constexpr ccColor3B kAccent      {255, 215, 90};
-    constexpr ccColor3B kTextOn      {255, 255, 255};
-    constexpr ccColor3B kTextOff     {130, 130, 130};
-    constexpr ccColor3B kHeaderOn    {255, 226, 120};
-    constexpr ccColor3B kHeaderOff   {120, 110, 80};
-    constexpr ccColor3B kPartialTint {255, 190, 90};
+    using namespace paimon::capture::theme;
 
     std::string loc(char const* key) {
         return Localization::get().getString(key);
@@ -209,8 +205,9 @@ bool CaptureAssetBrowserPopup::init() {
 
     m_search = TextInput::create(C::SEARCH_WIDTH, loc("assets.search_hint").c_str(), "bigFont.fnt");
     if (m_search) {
-        m_search->setCommonFilter(CommonFilter::Uint);
-        m_search->setMaxCharCount(4);
+        // Alphanumeric: numeric queries still match by object ID, text also
+        // matches the localized category name (e.g. "spike", "pincho").
+        m_search->setMaxCharCount(12);
         m_search->setTextAlign(TextInputAlign::Left);
         m_search->setScale(C::SEARCH_SCALE);
         m_search->setAnchorPoint({0.5f, 0.5f});
@@ -391,7 +388,17 @@ void CaptureAssetBrowserPopup::scanObjects() {
 bool CaptureAssetBrowserPopup::groupMatchesSearch(int groupIdx) const {
     if (m_searchQuery.empty()) return true;
     if (groupIdx < 0 || groupIdx >= static_cast<int>(m_groups.size())) return false;
-    return std::to_string(m_groups[groupIdx].objectID).find(m_searchQuery) != std::string::npos;
+    auto const& group = m_groups[groupIdx];
+    // Numeric query: substring of the object ID (previous behavior).
+    if (std::to_string(group.objectID).find(m_searchQuery) != std::string::npos) return true;
+    // Text query: substring of the localized category name, case-insensitive.
+    auto lowered = m_searchQuery;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    auto catName = Localization::get().getString(group.categoryKey);
+    std::transform(catName.begin(), catName.end(), catName.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return catName.find(lowered) != std::string::npos;
 }
 
 bool CaptureAssetBrowserPopup::categoryHasMatches(int catIdx) const {
@@ -405,9 +412,13 @@ bool CaptureAssetBrowserPopup::categoryHasMatches(int catIdx) const {
 CaptureAssetBrowserPopup::TriState CaptureAssetBrowserPopup::categoryState(int catIdx) const {
     if (catIdx < 0 || catIdx >= static_cast<int>(m_categories.size())) return TriState::Visible;
 
+    // While searching, the header reflects only the matching groups — the same
+    // set its toggle actually affects (setCategoryVisible skips misses).
+    bool const filtering = !m_searchQuery.empty();
     bool anyVisible = false;
     bool anyHidden  = false;
     for (int gi : m_categories[catIdx].groupIndices) {
+        if (filtering && !groupMatchesSearch(gi)) continue;
         if (m_groups[gi].visible) anyVisible = true;
         else                      anyHidden  = true;
     }
@@ -540,7 +551,7 @@ void CaptureAssetBrowserPopup::buildList() {
                     C::CHECK_SCALE_HEADER, this,
                     menu_selector(CaptureAssetBrowserPopup::onToggleCategory),
                     catIdx, state != TriState::Hidden,
-                    state == TriState::Partial ? kPartialTint : kTextOn)) {
+                    state == TriState::Partial ? kPartial : kTextOn)) {
                 toggler->setPosition({listW - C::CHECK_X_FROM_RIGHT, rowH * 0.5f});
                 rowMenu->addChild(toggler);
                 cat.toggler = toggler;
@@ -673,7 +684,7 @@ void CaptureAssetBrowserPopup::updateCategoryVisuals(int catIdx) {
         if (cat.toggler->isToggled() != shouldBeOn) cat.toggler->toggle(shouldBeOn);
         if (auto* onButton = cat.toggler->m_onButton) {
             if (auto* spr = typeinfo_cast<CCSprite*>(onButton->getNormalImage())) {
-                spr->setColor(state == TriState::Partial ? kPartialTint : kTextOn);
+                spr->setColor(state == TriState::Partial ? kPartial : kTextOn);
             }
         }
     }
@@ -698,8 +709,8 @@ void CaptureAssetBrowserPopup::snapshotGroup(int groupIdx) {
 
     s_originalAssetVisibilities.reserve(
         s_originalAssetVisibilities.size() + group.objects.size());
-    for (auto* obj : group.objects) {
-        if (obj) s_originalAssetVisibilities.push_back({obj, obj->isVisible()});
+    for (auto const& weak : group.objects) {
+        if (auto obj = weak.lock()) s_originalAssetVisibilities.push_back({obj.data(), obj->isVisible()});
     }
 }
 
@@ -711,8 +722,8 @@ void CaptureAssetBrowserPopup::setGroupVisible(int groupIdx, bool visible) {
 
     auto& group = m_groups[groupIdx];
     group.visible = visible;
-    for (auto* obj : group.objects) {
-        if (obj) obj->setVisible(visible);
+    for (auto const& weak : group.objects) {
+        if (auto obj = weak.lock()) obj->setVisible(visible);
     }
 }
 
@@ -740,6 +751,7 @@ void CaptureAssetBrowserPopup::setMatchingVisible(bool visible) {
 
 void CaptureAssetBrowserPopup::soloGroup(int groupIdx) {
     if (groupIdx < 0 || groupIdx >= static_cast<int>(m_groups.size())) return;
+    if (!playLayerStillValid()) return;
 
     // Solo again on the only visible type means "bring everything back".
     bool alreadySolo = m_groups[groupIdx].visible;
@@ -761,8 +773,10 @@ void CaptureAssetBrowserPopup::refreshGroupStatesFromScene() {
 
     for (auto& group : m_groups) {
         bool anyVisible = false;
-        for (auto* obj : group.objects) {
-            if (obj && obj->isVisible()) { anyVisible = true; break; }
+        for (auto const& weak : group.objects) {
+            if (auto obj = weak.lock()) {
+                if (obj->isVisible()) { anyVisible = true; break; }
+            }
         }
         group.visible = anyVisible;
     }
@@ -852,6 +866,9 @@ void CaptureAssetBrowserPopup::onCollapseAllBtn(CCObject*) {
 
 void CaptureAssetBrowserPopup::onClearSearchBtn(CCObject*) {
     if (m_search) m_search->setString("");
+    this->unschedule(schedule_selector(CaptureAssetBrowserPopup::onSearchDebounced));
+    m_searchScheduled = false;
+    m_pendingSearch.clear();
     if (m_searchQuery.empty()) return;
     m_searchQuery.clear();
     buildList();
@@ -859,8 +876,24 @@ void CaptureAssetBrowserPopup::onClearSearchBtn(CCObject*) {
 }
 
 void CaptureAssetBrowserPopup::onSearchChanged(std::string const& text) {
-    if (text == m_searchQuery) return;
-    m_searchQuery = text;
+    // Debounced: rebuilding the whole list per keystroke drops frames on big
+    // levels. The pending query applies 150ms after the last keystroke.
+    std::string query = text;
+    query.erase(0, query.find_first_not_of(" \t"));
+    query.erase(query.find_last_not_of(" \t") + 1);
+    if (query == m_pendingSearch && query == m_searchQuery) return;
+    m_pendingSearch = std::move(query);
+    if (!m_searchScheduled) {
+        m_searchScheduled = true;
+        this->scheduleOnce(schedule_selector(CaptureAssetBrowserPopup::onSearchDebounced), 0.15f);
+    }
+}
+
+void CaptureAssetBrowserPopup::onSearchDebounced(float) {
+    m_searchScheduled = false;
+    if (m_pendingSearch == m_searchQuery) return;
+    m_searchQuery = m_pendingSearch;
+    if (!this->getParent()) return;
     buildList();
     updateStats();
 }

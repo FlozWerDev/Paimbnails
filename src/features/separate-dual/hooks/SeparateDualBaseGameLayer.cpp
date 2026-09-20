@@ -3,34 +3,83 @@
 #include <Geode/modify/GJBaseGameLayer.hpp>
 
 using namespace geode::prelude;
-using paimon::separate_dual::Helper;
+using paimon::separate_dual::DualKitVault;
+using paimon::separate_dual::IconSlot;
+using paimon::separate_dual::Side;
 using paimon::separate_dual::moduleEnabled;
 
 class $modify(PaimonSeparateDualBase, GJBaseGameLayer) {
+    // Dress both live fighters from their own side of the vault.
+    void refreshFighters() {
+        auto vault = DualKitVault::get();
+        vault->dressFighter(m_player1, Side::Primary);
+        vault->dressFighter(m_player2, Side::Secondary);
+    }
+
+    // Refresh the dual-exit preview doll for the fighter that just left.
+    void refreshExitDoll(PlayerObject* fighter) {
+        auto vault = DualKitVault::get();
+        auto doll = findFirstChildRecursive<SimplePlayer>(
+            this, [](SimplePlayer* node) { return node->getZOrder() == 100; });
+        if (!doll) return;
+
+        IconSlot form = IconSlot::Cube;
+        if (fighter->m_isShip) {
+            form = fighter->m_isPlatformer ? IconSlot::Jetpack : IconSlot::Ship;
+        } else if (fighter->m_isBall) {
+            form = IconSlot::Ball;
+        } else if (fighter->m_isBird) {
+            form = IconSlot::Bird;
+        } else if (fighter->m_isDart) {
+            form = IconSlot::Dart;
+        } else if (fighter->m_isRobot) {
+            form = IconSlot::Robot;
+        } else if (fighter->m_isSpider) {
+            form = IconSlot::Spider;
+        } else if (fighter->m_isSwing) {
+            form = IconSlot::Swing;
+        }
+
+        IconType dollType = IconType::Cube;
+        switch (form) {
+            case IconSlot::Ship: dollType = IconType::Ship; break;
+            case IconSlot::Ball: dollType = IconType::Ball; break;
+            case IconSlot::Bird: dollType = IconType::Ufo; break;
+            case IconSlot::Dart: dollType = IconType::Wave; break;
+            case IconSlot::Robot: dollType = IconType::Robot; break;
+            case IconSlot::Spider: dollType = IconType::Spider; break;
+            case IconSlot::Swing: dollType = IconType::Swing; break;
+            case IconSlot::Jetpack: dollType = IconType::Jetpack; break;
+            default: break;
+        }
+        doll->updatePlayerFrame(vault->slotIcon(form, Side::Secondary), dollType);
+    }
+
     void resetPlayer() {
         if (!moduleEnabled()) return GJBaseGameLayer::resetPlayer();
         if (!this->m_isPracticeMode) {
-            Helper::get()->reset();
+            DualKitVault::get()->resetRunState();
         }
         GJBaseGameLayer::resetPlayer();
-        Helper::get()->setPlayerInfo(this->m_player1, false);
-        Helper::get()->setPlayerInfo(this->m_player2, true);
+        refreshFighters();
     }
 
     bool init() {
         if (!moduleEnabled()) return GJBaseGameLayer::init();
-        Helper::get()->reset();
-        Helper::get()->loadDeathTextures(Helper::get()->getDeathEffect(true));
+        DualKitVault::get()->resetRunState();
+        DualKitVault::get()->ensureBurstArt(
+            DualKitVault::get()->slotIcon(IconSlot::Death, Side::Secondary));
         return GJBaseGameLayer::init();
     }
 
     void onExit() {
         GJBaseGameLayer::onExit();
         if (!moduleEnabled()) return;
-        Helper::get()->reset();
-        Helper::get()->unloadDeathTextures(Helper::get()->getDeathEffect(true));
-        Helper::get()->m_p1ShipFire = nullptr;
-        Helper::get()->m_p2ShipFire = nullptr;
+        DualKitVault::get()->resetRunState();
+        DualKitVault::get()->releaseBurstArt(
+            DualKitVault::get()->slotIcon(IconSlot::Death, Side::Secondary));
+        DualKitVault::get()->m_exhaustMain = nullptr;
+        DualKitVault::get()->m_exhaustSecond = nullptr;
     }
 
     void playExitDualEffect(PlayerObject* p0) {
@@ -38,68 +87,19 @@ class $modify(PaimonSeparateDualBase, GJBaseGameLayer) {
         if (!moduleEnabled()) return;
         if (!p0 || (p0 != m_player1 && p0 != m_player2)) return;
 
-        auto GM = GameManager::get();
-        auto SDI = Helper::get();
-
-        if (p0 == m_player1) {
-            if (Mod::get()->getSettingValue<bool>("separate-dual-exit-switch") && SDI->m_shouldSwap) {
-                SDI->swapAll();
-                SDI->setPlayerInfo(m_player1, false);
-                SDI->setPlayerInfo(m_player2, true);
-            }
-
-            if (auto player = findFirstChildRecursive<SimplePlayer>(this, [](SimplePlayer* node) { return node->getZOrder() == 100; })) {
-                if (m_player1->m_isShip) {
-                    if (m_player1->m_isPlatformer)
-                        player->updatePlayerFrame(SDI->getJetpack(true), IconType::Jetpack);
-                    else
-                        player->updatePlayerFrame(SDI->getShip(true), IconType::Ship);
-                } else if (m_player1->m_isBall) {
-                    player->updatePlayerFrame(SDI->getBall(true), IconType::Ball);
-                } else if (m_player1->m_isBird) {
-                    player->updatePlayerFrame(SDI->getUFO(true), IconType::Ufo);
-                } else if (m_player1->m_isDart) {
-                    player->updatePlayerFrame(SDI->getWave(true), IconType::Wave);
-                } else if (m_player1->m_isRobot) {
-                    player->updatePlayerFrame(SDI->getRobot(true), IconType::Robot);
-                } else if (m_player1->m_isSpider) {
-                    player->updatePlayerFrame(SDI->getSpider(true), IconType::Spider);
-                } else if (m_player1->m_isSwing) {
-                    player->updatePlayerFrame(SDI->getSwing(true), IconType::Swing);
-                } else {
-                    player->updatePlayerFrame(SDI->getCube(true), IconType::Cube);
-                }
-            }
-        } else if (p0 == m_player2) {
-            if (auto player = findFirstChildRecursive<SimplePlayer>(this, [](SimplePlayer* node) { return node->getZOrder() == 100; })) {
-                if (m_player2->m_isShip) {
-                    if (m_player2->m_isPlatformer)
-                        player->updatePlayerFrame(SDI->getJetpack(true), IconType::Jetpack);
-                    else
-                        player->updatePlayerFrame(SDI->getShip(true), IconType::Ship);
-                } else if (m_player2->m_isBall) {
-                    player->updatePlayerFrame(SDI->getBall(true), IconType::Ball);
-                } else if (m_player2->m_isBird) {
-                    player->updatePlayerFrame(SDI->getUFO(true), IconType::Ufo);
-                } else if (m_player2->m_isDart) {
-                    player->updatePlayerFrame(SDI->getWave(true), IconType::Wave);
-                } else if (m_player2->m_isRobot) {
-                    player->updatePlayerFrame(SDI->getRobot(true), IconType::Robot);
-                } else if (m_player2->m_isSpider) {
-                    player->updatePlayerFrame(SDI->getSpider(true), IconType::Spider);
-                } else if (m_player2->m_isSwing) {
-                    player->updatePlayerFrame(SDI->getSwing(true), IconType::Swing);
-                } else {
-                    player->updatePlayerFrame(SDI->getCube(true), IconType::Cube);
-                }
-            }
+        auto vault = DualKitVault::get();
+        if (p0 == m_player1 && Mod::get()->getSettingValue<bool>("separate-dual-exit-switch")
+            && vault->exitSwapArmed()) {
+            vault->flipLead();
+            refreshFighters();
         }
+        refreshExitDoll(p0);
     }
 
     void createPlayer() {
         if (!moduleEnabled()) return GJBaseGameLayer::createPlayer();
-        Helper::get()->m_insideCreatePlayer = true;
+        DualKitVault::get()->setSpawning(true);
         GJBaseGameLayer::createPlayer();
-        Helper::get()->m_insideCreatePlayer = false;
+        DualKitVault::get()->setSpawning(false);
     }
 };

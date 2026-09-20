@@ -34,6 +34,8 @@ constexpr char const* kMaxObjects   = "autobuild-max-objects";
 constexpr char const* kCaptureCell  = "autobuild-capture-cell";
 constexpr char const* kClusterRad   = "autobuild-cluster-radius";
 constexpr char const* kBacktracks   = "autobuild-backtracks";
+constexpr char const* kInvention    = "autobuild-invention";
+constexpr char const* kRefine      = "autobuild-refine-tries";
 
 } // namespace
 
@@ -70,11 +72,15 @@ Options Options::load() {
     o.captureCell   = mod->getSavedValue<float>(kCaptureCell, o.captureCell);
     o.clusterRadius = mod->getSavedValue<float>(kClusterRad, o.clusterRadius);
     o.backtracks    = mod->getSavedValue<int>(kBacktracks, o.backtracks);
+    o.invention     = mod->getSavedValue<int>(kInvention, o.invention);
+    o.refineTries   = mod->getSavedValue<int>(kRefine, o.refineTries);
 
     o.captureCell   = std::clamp(o.captureCell, 5.f, 300.f);
     o.clusterRadius = std::clamp(o.clusterRadius, 15.f, 480.f);
     o.maxObjects    = std::clamp(o.maxObjects, 500, 200000);
     o.backtracks    = std::clamp(o.backtracks, 0, 20000);
+    o.invention     = std::clamp(o.invention, 0, 2);
+    o.refineTries   = std::clamp(o.refineTries, 1, 12);
     return o;
 }
 
@@ -103,6 +109,8 @@ void Options::save() const {
     mod->setSavedValue(kCaptureCell, captureCell);
     mod->setSavedValue(kClusterRad, clusterRadius);
     mod->setSavedValue(kBacktracks, backtracks);
+    mod->setSavedValue(kInvention, invention);
+    mod->setSavedValue(kRefine, refineTries);
 }
 
 char const* modeName(Mode mode) {

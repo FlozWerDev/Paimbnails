@@ -713,12 +713,16 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         // Cover exits that skip onResume() before the ticker runs again.
         paimon::notifyPauseClosing();
         paimon::clearActivePauseLayer(this);
-        paimon::setCaptureInProgress(false);
         paimon::setPauseZoomHidden(false);
-        m_fields->m_captureInProgress = false;
         m_fields->m_fileDialogOpen = false;
 
-        FramebufferCapture::cancelPending();
+        // Only tear down a capture this layer started: an unrelated flow
+        // (PlayLayer keybind, overlay) may own the global flag right now.
+        if (m_fields->m_captureInProgress) {
+            m_fields->m_captureInProgress = false;
+            paimon::setCaptureInProgress(false);
+            FramebufferCapture::cancelPending();
+        }
 
         // Cancel capture work and unschedule selectors before destruction.
         if (auto* director = CCDirector::get()) {

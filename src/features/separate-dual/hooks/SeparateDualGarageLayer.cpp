@@ -8,10 +8,40 @@
 #include "../../../utils/SpriteHelper.hpp"
 
 using namespace geode::prelude;
-using paimon::separate_dual::Helper;
+using paimon::separate_dual::DualKitVault;
+using paimon::separate_dual::IconSlot;
+using paimon::separate_dual::LastPicked;
+using paimon::separate_dual::Side;
 using paimon::separate_dual::moduleEnabled;
+namespace save_key = paimon::separate_dual::save_key;
 
 namespace {
+
+// One garage page (or sub-button) that can store a pick for player 2.
+struct GaragePickRow {
+    IconType page;
+    IconSlot slot;
+    LastPicked code;
+    int mode; // lastmode to record alongside, -1 keeps the previous one
+    UnlockType unlock;
+    float dollScale; // second-doll scale to apply, 0 keeps the current one
+};
+
+constexpr GaragePickRow kGaragePicks[] = {
+    {IconType::Cube, IconSlot::Cube, LastPicked::kLastCube, 0, UnlockType::Cube, 1.6f},
+    {IconType::Ship, IconSlot::Ship, LastPicked::kLastShip, 1, UnlockType::Ship, 1.6f},
+    {IconType::Ball, IconSlot::Ball, LastPicked::kLastBall, 2, UnlockType::Ball, 1.6f},
+    {IconType::Ufo, IconSlot::Bird, LastPicked::kLastUfo, 3, UnlockType::Bird, 1.6f},
+    {IconType::Wave, IconSlot::Dart, LastPicked::kLastWave, 4, UnlockType::Dart, 1.6f},
+    {IconType::Robot, IconSlot::Robot, LastPicked::kLastRobot, 5, UnlockType::Robot, 1.6f},
+    {IconType::Spider, IconSlot::Spider, LastPicked::kLastSpider, 6, UnlockType::Spider, 1.6f},
+    {IconType::Swing, IconSlot::Swing, LastPicked::kLastSwing, 7, UnlockType::Swing, 1.6f},
+    {IconType::Jetpack, IconSlot::Jetpack, LastPicked::kLastJetpack, 8, UnlockType::Jetpack, 1.5f},
+    {IconType::Special, IconSlot::Trail, LastPicked::kLastTrail, -1, UnlockType::Streak, 0.0f},
+    {IconType::ShipFire, IconSlot::ShipFire, LastPicked::kLastShipFire, -1, UnlockType::ShipFire, 0.0f},
+    {IconType::DeathEffect, IconSlot::Death, LastPicked::kLastDeath, -1, UnlockType::Death, 0.0f},
+};
+
 constexpr int kSelectionTransitionTag = 2401;
 constexpr float kSelectionTransitionDuration = 0.2f;
 
@@ -34,16 +64,17 @@ CircleButtonSprite* makeSwapSprite() {
     auto* text = CCLabelBMFont::create("2P", "bigFont.fnt");
     return CircleButtonSprite::create(text, CircleBaseColor::Green, CircleBaseSize::Medium);
 }
-}
+
+} // namespace
 
 class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
     struct Fields {
         Ref<CCSprite> arrow1 = nullptr;
         Ref<CCSprite> arrow2 = nullptr;
-        Ref<SimplePlayer> player2 = nullptr;
+        Ref<SimplePlayer> secondDoll = nullptr;
 
-        Ref<CCSprite> m_cursor3 = nullptr;
-        Ref<CCSprite> m_cursor4 = nullptr;
+        Ref<CCSprite> cursorSecond = nullptr;
+        Ref<CCSprite> cursorSecondAlt = nullptr;
         Ref<CCLabelBMFont> player1Label = nullptr;
         Ref<CCLabelBMFont> player2Label = nullptr;
     };
@@ -54,13 +85,13 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
         (void)self.setHookPriorityPre("GJGarageLayer::onSpecial", Priority::Replace);
     }
 
-    CCMenu* getPageMenu() {
+    CCMenu* iconPageMenu() {
         if (!m_iconSelection || !m_iconSelection->m_pages) return nullptr;
         auto page = typeinfo_cast<CCNode*>(m_iconSelection->m_pages->firstObject());
         return page ? page->getChildByType<CCMenu>(0) : nullptr;
     }
 
-    CCMenu* getSpecialPageMenu() {
+    CCMenu* trailPageMenu() {
         if (!m_iconSelection || m_iconType != IconType::Special) return nullptr;
         auto bar = m_iconSelection->getChildByType<ListButtonBar>(0);
         if (!bar || !bar->m_pages) return nullptr;
@@ -68,7 +99,7 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
         return page ? page->getChildByType<CCMenu>(0) : nullptr;
     }
 
-    void placeCursor(CCSprite* cursor, CCNode* item) {
+    void moveCursorTo(CCSprite* cursor, CCNode* item) {
         if (!cursor) return;
         auto parent = item ? item->getParent() : nullptr;
         if (!parent) {
@@ -80,11 +111,11 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
         cursor->setVisible(true);
     }
 
-    void animateSelectionNode(CCNode* node, float scale, GLubyte opacity) {
+    void playSelectPulse(CCNode* node, float scale, GLubyte opacity) {
         if (!node) return;
 
         node->stopActionByTag(kSelectionTransitionTag);
-        auto scaleAction = CCSequence::create(
+        auto pop = CCSequence::create(
             CCEaseSineOut::create(CCScaleTo::create(
                 kSelectionTransitionDuration * 0.45f,
                 scale * 1.04f
@@ -95,25 +126,25 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
             )),
             nullptr
         );
-        auto transition = CCSpawn::create(
-            scaleAction,
+        auto pulse = CCSpawn::create(
+            pop,
             CCEaseSineInOut::create(CCFadeTo::create(
                 kSelectionTransitionDuration,
                 opacity
             )),
             nullptr
         );
-        transition->setTag(kSelectionTransitionTag);
-        node->runAction(transition);
+        pulse->setTag(kSelectionTransitionTag);
+        node->runAction(pulse);
     }
 
-    void updateSelectionVisuals(bool p2, bool animate) {
-        auto updateLabel = [&](CCLabelBMFont* label, bool selected) {
+    void refreshSideEmphasis(bool secondActive, bool animate) {
+        auto paintLabel = [&](CCLabelBMFont* label, bool selected) {
             if (!label) return;
             auto scale = selected ? 0.42f : 0.34f;
             auto opacity = selected ? 255 : 150;
             if (animate) {
-                animateSelectionNode(label, scale, opacity);
+                playSelectPulse(label, scale, opacity);
             } else {
                 label->stopActionByTag(kSelectionTransitionTag);
                 label->setScale(scale);
@@ -121,11 +152,11 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
             }
         };
 
-        auto updateArrow = [&](CCSprite* arrow, bool selected) {
+        auto paintArrow = [&](CCSprite* arrow, bool selected) {
             if (!arrow) return;
             if (animate) {
                 arrow->setVisible(true);
-                animateSelectionNode(arrow, selected ? 0.44f : 0.4f, selected ? 255 : 0);
+                playSelectPulse(arrow, selected ? 0.44f : 0.4f, selected ? 255 : 0);
             } else {
                 arrow->stopActionByTag(kSelectionTransitionTag);
                 arrow->setVisible(selected);
@@ -134,17 +165,17 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
             }
         };
 
-        updateLabel(m_fields->player1Label, !p2);
-        updateLabel(m_fields->player2Label, p2);
-        updateArrow(m_fields->arrow1, !p2);
-        updateArrow(m_fields->arrow2, p2);
+        paintLabel(m_fields->player1Label, !secondActive);
+        paintLabel(m_fields->player2Label, secondActive);
+        paintArrow(m_fields->arrow1, !secondActive);
+        paintArrow(m_fields->arrow2, secondActive);
 
         if (m_playerObject) {
             m_playerObject->stopActionByTag(kSelectionTransitionTag);
             if (animate) {
                 auto fade = CCEaseSineInOut::create(CCFadeTo::create(
                     kSelectionTransitionDuration,
-                    p2 ? 205 : 255
+                    secondActive ? 205 : 255
                 ));
                 fade->setTag(kSelectionTransitionTag);
                 m_playerObject->runAction(fade);
@@ -152,52 +183,52 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
                 m_playerObject->setOpacity(255);
             }
         }
-        if (m_fields->player2) {
-            m_fields->player2->stopActionByTag(kSelectionTransitionTag);
+        if (m_fields->secondDoll) {
+            m_fields->secondDoll->stopActionByTag(kSelectionTransitionTag);
             if (animate) {
                 auto fade = CCEaseSineInOut::create(CCFadeTo::create(
                     kSelectionTransitionDuration,
-                    p2 ? 255 : 205
+                    secondActive ? 255 : 205
                 ));
                 fade->setTag(kSelectionTransitionTag);
-                m_fields->player2->runAction(fade);
+                m_fields->secondDoll->runAction(fade);
             } else {
-                m_fields->player2->setOpacity(255);
+                m_fields->secondDoll->setOpacity(255);
             }
         }
     }
 
-    void updateCursors(bool animateSelection = false) {
-        auto SDI = Helper::get();
-        auto menu = getPageMenu();
-        auto menu2 = getSpecialPageMenu();
+    void refreshCursors(bool animateSide = false) {
+        auto vault = DualKitVault::get();
+        auto menu = iconPageMenu();
+        auto trailMenu = trailPageMenu();
 
-        auto updateGroup = [&](bool p2, CCSprite* cursor, CCSprite* cursor2) {
+        auto placePair = [&](bool second, CCSprite* cursor, CCSprite* altCursor) {
+            Side side = second ? Side::Secondary : Side::Primary;
             if (menu) {
-                auto item = menu->getChildByTag(SDI->getIconID(m_iconType, p2));
-                placeCursor(cursor, item);
+                moveCursorTo(cursor, menu->getChildByTag(vault->slotIconForPreview(m_iconType, side)));
             } else if (cursor) {
                 cursor->setVisible(false);
             }
 
-            if (menu2) {
-                auto item = menu2->getChildByTag(SDI->getIconID(IconType::ShipFire, p2));
-                placeCursor(cursor2, item);
-            } else if (cursor2) {
-                cursor2->setVisible(false);
+            if (trailMenu) {
+                moveCursorTo(altCursor, trailMenu->getChildByTag(
+                    vault->slotIcon(IconSlot::ShipFire, side)));
+            } else if (altCursor) {
+                altCursor->setVisible(false);
             }
         };
 
-        updateGroup(false, m_cursor1, m_cursor2);
-        updateGroup(true, m_fields->m_cursor3, m_fields->m_cursor4);
+        placePair(false, m_cursor1, m_cursor2);
+        placePair(true, m_fields->cursorSecond, m_fields->cursorSecondAlt);
 
-        bool p2 = SDI->isP2Selected();
-        updateSelectionVisuals(p2, animateSelection);
+        bool second = vault->sideActiveIsSecondary();
+        refreshSideEmphasis(second, animateSide);
 
         if (m_iconType == IconType::DeathEffect) {
             if (auto page = m_iconSelection ? m_iconSelection->getChildByType<CCMenu>(0) : nullptr) {
                 if (auto toggler = page->getChildByType<CCMenuItemToggler>(0)) {
-                    toggler->toggle(!SDI->getDeathExplode(p2));
+                    toggler->toggle(!vault->burstEnabled(second ? Side::Secondary : Side::Primary));
                 }
             }
         }
@@ -205,115 +236,134 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
 
     void on2PToggle(CCObject* sender) {
         if (!moduleEnabled()) return;
-        auto SDI = Helper::get();
         auto node = typeinfo_cast<CCNode*>(sender);
-        bool p2 = node && node->getID() == "player2-button";
-        bool changed = SDI->isP2Selected() != p2;
-        SDI->setP2Selected(p2);
-        updateCursors(changed);
+        bool second = node && node->getID() == "player2-button";
+        bool changed = DualKitVault::get()->sideActiveIsSecondary() != second;
+        DualKitVault::get()->chooseSide(second);
+        refreshCursors(changed);
     }
 
-    void swap2PKit(CCObject*) {
+    void swapSecondKit(CCObject*) {
         if (!moduleEnabled()) return;
-        auto GM = GameManager::get();
-        auto SDI = Helper::get();
-        SDI->swapSavedKitWithGame();
+        auto vault = DualKitVault::get();
+        vault->exchangeWithGame();
 
-        SDI->setSimplePlayerInfo(m_playerObject, GM->m_playerIconType, false);
-        SDI->setSimplePlayerInfo(
-            m_fields->player2,
-            static_cast<IconType>(SDI->getSaved<int64_t>("lastmode", 0)),
-            true
+        vault->dressDoll(m_playerObject, GameManager::get()->m_playerIconType, Side::Primary);
+        vault->dressDoll(
+            m_fields->secondDoll,
+            static_cast<IconType>(vault->load<int64_t>(save_key::kLastMode, 0)),
+            Side::Secondary
         );
-        updateCursors();
+        refreshCursors();
     }
 
     void onSpecial(CCObject* sender) {
         if (!moduleEnabled()) return GJGarageLayer::onSpecial(sender);
-        auto SDI = Helper::get();
-        if (SDI->isP2Selected()) {
-            SDI->setSaved<bool>("deathexplode", static_cast<CCMenuItemToggler*>(sender)->isOn());
+        if (DualKitVault::get()->sideActiveIsSecondary()) {
+            DualKitVault::get()->storeBurstEnabled(static_cast<CCMenuItemToggler*>(sender)->isOn());
         } else {
             GJGarageLayer::onSpecial(sender);
         }
     }
 
+    // Stores a player-2 pick from the table above. Shows the vanilla unlock
+    // popup and returns false when there is nothing new to store. Kinds with
+    // no table row (the old switch's default) are a no-op that still lets the
+    // caller refresh the doll.
+    bool storeSecondPick(IconType kind, int picked) {
+        auto vault = DualKitVault::get();
+        GaragePickRow const* row = nullptr;
+        for (auto const& candidate : kGaragePicks) {
+            if (candidate.page == kind) {
+                row = &candidate;
+                break;
+            }
+        }
+        if (!row) return true;
+        // Trail and ship-fire share one page with vanilla icons, so their
+        // unlock state still has to be checked per button.
+        if ((kind == IconType::Special || kind == IconType::ShipFire)
+            && !GameManager::get()->isIconUnlocked(picked, kind)) {
+            GJGarageLayer::showUnlockPopup(picked, row->unlock);
+            return false;
+        }
+        if (vault->load<int64_t>(save_key::kLastType, 0) == static_cast<int64_t>(row->code)
+            && vault->slotIcon(row->slot, Side::Secondary) == picked) {
+            GJGarageLayer::showUnlockPopup(picked, row->unlock);
+            return false;
+        }
+        vault->storeSlot(row->slot, picked);
+        vault->save<int64_t>(save_key::kLastType, static_cast<int64_t>(row->code));
+        if (row->mode >= 0) {
+            vault->save<int64_t>(save_key::kLastMode, row->mode);
+        }
+        if (row->dollScale > 0.0f && m_fields->secondDoll) {
+            m_fields->secondDoll->setScale(row->dollScale);
+        }
+        return true;
+    }
+
     bool init() {
         if (!moduleEnabled()) return GJGarageLayer::init();
-        auto SDI = Helper::get();
-        SDI->setP2Selected(false);
-        m_fields->m_cursor3 = CCSprite::createWithSpriteFrameName("GJ_select_001.png");
-        m_fields->m_cursor3->setScale(0.85f);
-        m_fields->m_cursor3->setID("cursor-3");
-        m_fields->m_cursor3->setVisible(false);
+        auto vault = DualKitVault::get();
+        vault->chooseSide(false);
 
-        m_fields->m_cursor4 = CCSprite::createWithSpriteFrameName("GJ_select_001.png");
-        m_fields->m_cursor4->setScale(0.85f);
-        m_fields->m_cursor4->setID("cursor-4");
-        m_fields->m_cursor4->setVisible(false);
+        auto makeCursor = [](char const* id) {
+            auto cursor = CCSprite::createWithSpriteFrameName("GJ_select_001.png");
+            cursor->setScale(0.85f);
+            cursor->setID(id);
+            cursor->setVisible(false);
+            return cursor;
+        };
+        m_fields->cursorSecond = makeCursor("cursor-3");
+        m_fields->cursorSecondAlt = makeCursor("cursor-4");
 
         if (!GJGarageLayer::init()) return false;
 
-        auto GM = GameManager::get();
         auto winSize = CCDirector::get()->getWinSize();
 
         m_cursor1->setZOrder(101);
         m_cursor2->setZOrder(101);
-        this->addChild(m_fields->m_cursor3, 101);
-        this->addChild(m_fields->m_cursor4, 101);
+        this->addChild(m_fields->cursorSecond, 101);
+        this->addChild(m_fields->cursorSecondAlt, 101);
 
-        auto c1Label = CCLabelBMFont::create("P1", "bigFont.fnt");
-        c1Label->setScale(0.3f);
-        c1Label->setAnchorPoint({0.f, 1.f});
-        c1Label->setColor({255, 255, 0});
-        c1Label->setID("c1-player-label");
-        m_cursor1->addChild(c1Label);
-        c1Label->setPosition({2.5f, m_cursor1->getContentHeight() - 1.f});
+        auto tagCursor = [](CCSprite* cursor, char const* text, ccColor3B color,
+                            float anchorX, char const* id, float insetX) {
+            auto tag = CCLabelBMFont::create(text, "bigFont.fnt");
+            tag->setScale(0.3f);
+            tag->setAnchorPoint({anchorX, 1.f});
+            tag->setColor(color);
+            tag->setID(id);
+            cursor->addChild(tag);
+            tag->setPosition({insetX, cursor->getContentHeight() - 1.f});
+        };
+        tagCursor(m_cursor1, "P1", {255, 255, 0}, 0.f, "c1-player-label", 2.5f);
+        tagCursor(m_cursor2, "P1", {255, 255, 0}, 0.f, "c2-player-label", 2.5f);
+        tagCursor(m_fields->cursorSecond, "P2", {0, 255, 255}, 1.f, "c3-player-label",
+            m_fields->cursorSecond->getContentWidth() - 2.5f);
+        tagCursor(m_fields->cursorSecondAlt, "P2", {0, 255, 255}, 1.f, "c4-player-label",
+            m_fields->cursorSecondAlt->getContentWidth() - 2.5f);
 
-        auto c2Label = CCLabelBMFont::create("P1", "bigFont.fnt");
-        c2Label->setScale(0.3f);
-        c2Label->setAnchorPoint({0.f, 1.f});
-        c2Label->setColor({255, 255, 0});
-        c2Label->setID("c2-player-label");
-        m_cursor2->addChild(c2Label);
-        c2Label->setPosition({2.5f, m_cursor2->getContentHeight() - 1.f});
+        m_playerObject->setPositionX(m_playerObject->getPositionX() - winSize.width / 12);
 
-        auto c3Label = CCLabelBMFont::create("P2", "bigFont.fnt");
-        c3Label->setScale(0.3f);
-        c3Label->setAnchorPoint({1.f, 1.f});
-        c3Label->setColor({0, 255, 255});
-        c3Label->setID("c3-player-label");
-        m_fields->m_cursor3->addChild(c3Label);
-        c3Label->setPosition({m_fields->m_cursor3->getContentWidth() - 2.5f, m_fields->m_cursor3->getContentHeight() - 1.f});
+        m_fields->secondDoll = SimplePlayer::create(0);
+        m_fields->secondDoll->setID("player2-icon");
+        m_fields->secondDoll->setScale(1.6f);
+        m_fields->secondDoll->setPosition(m_playerObject->getPosition());
+        m_fields->secondDoll->setPositionX(m_fields->secondDoll->getPositionX() + winSize.width / 6);
 
-        auto c4Label = CCLabelBMFont::create("P2", "bigFont.fnt");
-        c4Label->setScale(0.3f);
-        c4Label->setAnchorPoint({1.f, 1.f});
-        c4Label->setColor({0, 255, 255});
-        c4Label->setID("c4-player-label");
-        m_fields->m_cursor4->addChild(c4Label);
-        c4Label->setPosition({m_fields->m_cursor4->getContentWidth() - 2.5f, m_fields->m_cursor4->getContentHeight() - 1.f});
-
-        m_playerObject->setPositionX(m_playerObject->getPositionX() - winSize.width/12);
-
-        m_fields->player2 = SimplePlayer::create(0);
-        m_fields->player2->setID("player2-icon");
-        m_fields->player2->setScale(1.6f);
-        m_fields->player2->setPosition(m_playerObject->getPosition());
-        m_fields->player2->setPositionX(m_fields->player2->getPositionX() + winSize.width/6);
-
-        if (SDI->getSaved<int64_t>("lasttype", 0) < 90
-        && SDI->getSaved<int64_t>("lastmode", 0) == 0) {
-            SDI->setSaved<int64_t>("lasttype", 0);
+        if (vault->load<int64_t>(save_key::kLastType, 0) < 90
+            && vault->load<int64_t>(save_key::kLastMode, 0) == 0) {
+            vault->save<int64_t>(save_key::kLastType, 0);
         }
-        SDI->setSimplePlayerInfo(
-            m_fields->player2,
-            static_cast<IconType>(SDI->getSaved<int64_t>("lastmode", 0)),
-            true
+        vault->dressDoll(
+            m_fields->secondDoll,
+            static_cast<IconType>(vault->load<int64_t>(save_key::kLastMode, 0)),
+            Side::Secondary
         );
-        this->addChild(m_fields->player2);
+        this->addChild(m_fields->secondDoll);
 
-        auto makePlayerLabel = [](char const* text, ccColor3B color, char const* id) {
+        auto makeSideLabel = [](char const* text, ccColor3B color, char const* id) {
             auto label = CCLabelBMFont::create(text, "bigFont.fnt");
             label->setScale(0.35f);
             label->setColor(color);
@@ -321,12 +371,12 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
             return label;
         };
 
-        m_fields->player1Label = makePlayerLabel("P1", {255, 255, 0}, "player1-label");
+        m_fields->player1Label = makeSideLabel("P1", {255, 255, 0}, "player1-label");
         m_fields->player1Label->setPosition({m_playerObject->getPositionX(), m_playerObject->getPositionY() - 30.f});
         this->addChild(m_fields->player1Label, 102);
 
-        m_fields->player2Label = makePlayerLabel("P2", {0, 255, 255}, "player2-label");
-        m_fields->player2Label->setPosition({m_fields->player2->getPositionX(), m_fields->player2->getPositionY() - 30.f});
+        m_fields->player2Label = makeSideLabel("P2", {0, 255, 255}, "player2-label");
+        m_fields->player2Label->setPosition({m_fields->secondDoll->getPositionX(), m_fields->secondDoll->getPositionY() - 30.f});
         this->addChild(m_fields->player2Label, 102);
 
         auto playerMenu = CCMenu::create();
@@ -335,55 +385,53 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
         playerMenu->setID("player-buttons-menu");
         this->addChild(playerMenu);
 
-        auto sprite = CCSprite::create("GJ_button_01.png");
-        sprite->setOpacity(0);
-        auto button1 = CCMenuItemSpriteExtra::create(sprite, this, menu_selector(PaimonSeparateDualGarage::on2PToggle));
-        auto button2 = CCMenuItemSpriteExtra::create(sprite, this, menu_selector(PaimonSeparateDualGarage::on2PToggle));
+        auto hitArea = CCSprite::create("GJ_button_01.png");
+        hitArea->setOpacity(0);
+        auto pickFirst = CCMenuItemSpriteExtra::create(hitArea, this, menu_selector(PaimonSeparateDualGarage::on2PToggle));
+        auto pickSecond = CCMenuItemSpriteExtra::create(hitArea, this, menu_selector(PaimonSeparateDualGarage::on2PToggle));
 
-        button1->setPosition(m_playerObject->getPosition());
-        button2->setPosition(m_fields->player2->getPosition());
-        button1->setContentSize({70.f, 50.f});
-        button1->setID("player1-button");
-        button2->setContentSize({70.f, 50.f});
-        button2->setID("player2-button");
+        pickFirst->setPosition(m_playerObject->getPosition());
+        pickSecond->setPosition(m_fields->secondDoll->getPosition());
+        pickFirst->setContentSize({70.f, 50.f});
+        pickFirst->setID("player1-button");
+        pickSecond->setContentSize({70.f, 50.f});
+        pickSecond->setID("player2-button");
 
-        playerMenu->addChild(button1);
-        playerMenu->addChild(button2);
-
+        playerMenu->addChild(pickFirst);
+        playerMenu->addChild(pickSecond);
 
         m_fields->arrow1 = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
         m_fields->arrow2 = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
 
         m_fields->arrow1->setScale(0.4f);
-        m_fields->arrow1->setPosition({m_playerObject->getPositionX() - winSize.width/12, m_playerObject->getPositionY()});
+        m_fields->arrow1->setPosition({m_playerObject->getPositionX() - winSize.width / 12, m_playerObject->getPositionY()});
         m_fields->arrow1->setID("arrow-1");
 
         m_fields->arrow2->setScale(0.4f);
         m_fields->arrow2->setFlipX(true);
-        m_fields->arrow2->setPosition({m_fields->player2->getPositionX() + winSize.width/12, m_fields->player2->getPositionY()});
+        m_fields->arrow2->setPosition({m_fields->secondDoll->getPositionX() + winSize.width / 12, m_fields->secondDoll->getPositionY()});
         m_fields->arrow2->setID("arrow-2");
 
-        auto actions1 = CCArray::create();
-        actions1->addObject(CCMoveBy::create(0.5, {5, 0}));
-        actions1->addObject(CCMoveBy::create(0.5, {-5, 0}));
+        auto driftRight = CCArray::create();
+        driftRight->addObject(CCMoveBy::create(0.5, {5, 0}));
+        driftRight->addObject(CCMoveBy::create(0.5, {-5, 0}));
 
-        auto actions2 = CCArray::create();
-        actions2->addObject(CCMoveBy::create(0.5, {-5, 0}));
-        actions2->addObject(CCMoveBy::create(0.5, {5, 0}));
+        auto driftLeft = CCArray::create();
+        driftLeft->addObject(CCMoveBy::create(0.5, {-5, 0}));
+        driftLeft->addObject(CCMoveBy::create(0.5, {5, 0}));
 
-        m_fields->arrow1->runAction(CCRepeatForever::create(CCSequence::create(actions1)));
-        m_fields->arrow2->runAction(CCRepeatForever::create(CCSequence::create(actions2)));
+        m_fields->arrow1->runAction(CCRepeatForever::create(CCSequence::create(driftRight)));
+        m_fields->arrow2->runAction(CCRepeatForever::create(CCSequence::create(driftLeft)));
 
         this->addChild(m_fields->arrow1);
         this->addChild(m_fields->arrow2);
 
-
-        auto swapBtn = CCMenuItemSpriteExtra::create(makeSwapSprite(), this, menu_selector(PaimonSeparateDualGarage::swap2PKit));
+        auto swapBtn = CCMenuItemSpriteExtra::create(makeSwapSprite(), this, menu_selector(PaimonSeparateDualGarage::swapSecondKit));
         swapBtn->setID("swap-2p-button");
         paimon::garage_hub::addButton(
             this, swapBtn, Localization::get().getString("garage-hub.swap-2p"), 40);
 
-        updateCursors();
+        refreshCursors();
 
         return true;
     }
@@ -391,172 +439,43 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
     void setupPage(int p1, IconType p2) {
         GJGarageLayer::setupPage(p1, p2);
         if (!moduleEnabled()) return;
-        updateCursors();
+        refreshCursors();
     }
 
     void onSelect(CCObject* sender) {
         if (!moduleEnabled()) return GJGarageLayer::onSelect(sender);
-        auto SDI = Helper::get();
-        auto GM = GameManager::get();
+        auto vault = DualKitVault::get();
 
-        int n = sender->getTag();
-        bool isUnlocked = GM->isIconUnlocked(n, m_iconType);
-        if (m_iconType == IconType::Special)
-            isUnlocked = true;
+        int picked = sender->getTag();
+        bool unlocked = GameManager::get()->isIconUnlocked(picked, m_iconType);
+        if (m_iconType == IconType::Special) unlocked = true;
 
-        if (SDI->isP2Selected() && isUnlocked) {
-            switch (m_iconType) {
-                case IconType::Cube:
-                    if (SDI->getSaved<int64_t>("lasttype", 0) != 0 || SDI->getSaved<int64_t>("cube", 1) != n) {
-                        SDI->setSaved<int64_t>("cube", n);
-                        SDI->setSaved<int64_t>("lasttype", 0);
-                        SDI->setSaved<int64_t>("lastmode", 0);
-                        m_fields->player2->setScale(1.6f);
-                    } else {
-                        GJGarageLayer::showUnlockPopup(n, UnlockType::Cube);
-                        return;
-                    }
-                    break;
-                case IconType::Ship:
-                    if (SDI->getSaved<int64_t>("lasttype", 0) != 1 || SDI->getSaved<int64_t>("ship", 1) != n) {
-                        SDI->setSaved<int64_t>("ship", n);
-                        SDI->setSaved<int64_t>("lasttype", 1);
-                        SDI->setSaved<int64_t>("lastmode", 1);
-                        m_fields->player2->setScale(1.6f);
-                    } else {
-                        GJGarageLayer::showUnlockPopup(n, UnlockType::Ship);
-                        return;
-                    }
-                    break;
-                case IconType::Ball:
-                    if (SDI->getSaved<int64_t>("lasttype", 0) != 2 || SDI->getSaved<int64_t>("roll", 1) != n) {
-                        SDI->setSaved<int64_t>("roll", n);
-                        SDI->setSaved<int64_t>("lasttype", 2);
-                        SDI->setSaved<int64_t>("lastmode", 2);
-                        m_fields->player2->setScale(1.6f);
-                    } else {
-                        GJGarageLayer::showUnlockPopup(n, UnlockType::Ball);
-                        return;
-                    }
-                    break;
-                case IconType::Ufo:
-                    if (SDI->getSaved<int64_t>("lasttype", 0) != 3 || SDI->getSaved<int64_t>("bird", 1) != n) {
-                        SDI->setSaved<int64_t>("bird", n);
-                        SDI->setSaved<int64_t>("lasttype", 3);
-                        SDI->setSaved<int64_t>("lastmode", 3);
-                        m_fields->player2->setScale(1.6f);
-                    } else {
-                        GJGarageLayer::showUnlockPopup(n, UnlockType::Bird);
-                        return;
-                    }
-                    break;
-                case IconType::Wave:
-                    if (SDI->getSaved<int64_t>("lasttype", 0) != 4 || SDI->getSaved<int64_t>("dart", 1) != n) {
-                        SDI->setSaved<int64_t>("dart", n);
-                        SDI->setSaved<int64_t>("lasttype", 4);
-                        SDI->setSaved<int64_t>("lastmode", 4);
-                        m_fields->player2->setScale(1.6f);
-                    } else {
-                        GJGarageLayer::showUnlockPopup(n, UnlockType::Dart);
-                        return;
-                    }
-                    break;
-                case IconType::Robot:
-                    if (SDI->getSaved<int64_t>("lasttype", 0) != 5 || SDI->getSaved<int64_t>("robot", 1) != n) {
-                        SDI->setSaved<int64_t>("robot", n);
-                        SDI->setSaved<int64_t>("lasttype", 5);
-                        SDI->setSaved<int64_t>("lastmode", 5);
-                        m_fields->player2->setScale(1.6f);
-                    } else {
-                        GJGarageLayer::showUnlockPopup(n, UnlockType::Robot);
-                        return;
-                    }
-                    break;
-                case IconType::Spider:
-                    if (SDI->getSaved<int64_t>("lasttype", 0) != 6 || SDI->getSaved<int64_t>("spider", 1) != n) {
-                        SDI->setSaved<int64_t>("spider", n);
-                        SDI->setSaved<int64_t>("lasttype", 6);
-                        SDI->setSaved<int64_t>("lastmode", 6);
-                        m_fields->player2->setScale(1.6f);
-                    } else {
-                        GJGarageLayer::showUnlockPopup(n, UnlockType::Spider);
-                        return;
-                    }
-                    break;
-                case IconType::Swing:
-                    if (SDI->getSaved<int64_t>("lasttype", 0) != 7 || SDI->getSaved<int64_t>("swing", 1) != n) {
-                        SDI->setSaved<int64_t>("swing", n);
-                        SDI->setSaved<int64_t>("lasttype", 7);
-                        SDI->setSaved<int64_t>("lastmode", 7);
-                        m_fields->player2->setScale(1.6f);
-                    } else {
-                        GJGarageLayer::showUnlockPopup(n, UnlockType::Swing);
-                        return;
-                    }
-                    break;
-                case IconType::Jetpack:
-                    if (SDI->getSaved<int64_t>("lasttype", 0) != 8 || SDI->getSaved<int64_t>("jetpack", 1) != n) {
-                        SDI->setSaved<int64_t>("jetpack", n);
-                        SDI->setSaved<int64_t>("lasttype", 8);
-                        SDI->setSaved<int64_t>("lastmode", 8);
-                        m_fields->player2->setScale(1.5f);
-                    } else {
-                        GJGarageLayer::showUnlockPopup(n, UnlockType::Jetpack);
-                        return;
-                    }
-                    break;
-                case IconType::Special:
-                    if (static_cast<CCMenuItemSpriteExtra*>(sender)->m_iconType == IconType::Special) {
-                        if (GM->isIconUnlocked(n, IconType::Special) && (SDI->getSaved<int64_t>("lasttype", 0) != 99 || SDI->getSaved<int64_t>("trail", 1) != n)) {
-                            SDI->setSaved<int64_t>("trail", n);
-                            SDI->setSaved<int64_t>("lasttype", 99);
-                        } else {
-                            GJGarageLayer::showUnlockPopup(n, UnlockType::Streak);
-                            return;
-                        }
-                    } else if (static_cast<CCMenuItemSpriteExtra*>(sender)->m_iconType == IconType::ShipFire) {
-                        if (GM->isIconUnlocked(n, IconType::ShipFire) && (SDI->getSaved<int64_t>("lasttype", 0) != 101 || SDI->getSaved<int64_t>("shiptrail", 1) != n)) {
-                            SDI->setSaved<int64_t>("shiptrail", n);
-                            SDI->setSaved<int64_t>("lasttype", 101);
-                        } else {
-                            GJGarageLayer::showUnlockPopup(n, UnlockType::ShipFire);
-                            return;
-                        }
-                    }
-                    break;
-                case IconType::DeathEffect:
-                    if (SDI->getSaved<int64_t>("lasttype", 0) != 98 || SDI->getSaved<int64_t>("death", 1) != n) {
-                        SDI->setSaved<int64_t>("death", n);
-                        SDI->setSaved<int64_t>("lasttype", 98);
-                    } else {
-                        GJGarageLayer::showUnlockPopup(n, UnlockType::Death);
-                        return;
-                    }
-                    break;
-                default:
-                    break;
-            }
-
-            if (static_cast<int>(m_iconType) < 10) {
-                SDI->setSimplePlayerInfo(m_fields->player2, m_iconType, true);
-            }
-            updateCursors();
-
-        } else {
-            GJGarageLayer::onSelect(sender);
+        if (!vault->sideActiveIsSecondary() || !unlocked) {
+            return GJGarageLayer::onSelect(sender);
         }
+
+        IconType kind = m_iconType;
+        if (m_iconType == IconType::Special) {
+            kind = static_cast<CCMenuItemSpriteExtra*>(sender)->m_iconType;
+        }
+        if (!storeSecondPick(kind, picked)) return;
+
+        if (static_cast<int>(m_iconType) < 10) {
+            vault->dressDoll(m_fields->secondDoll, m_iconType, Side::Secondary);
+        }
+        refreshCursors();
     }
 
     void updatePlayerColors() {
         GJGarageLayer::updatePlayerColors();
         if (!moduleEnabled()) return;
-        auto SDI = Helper::get();
+        auto vault = DualKitVault::get();
 
-        if (SDI->isP2Selected()) {
-            SDI->setSimplePlayerInfo(
-                m_fields->player2,
-                static_cast<IconType>(SDI->getSaved<int64_t>("lastmode", 0)),
-                true
+        if (vault->sideActiveIsSecondary()) {
+            vault->dressDoll(
+                m_fields->secondDoll,
+                static_cast<IconType>(vault->load<int64_t>(save_key::kLastMode, 0)),
+                Side::Secondary
             );
         }
     }

@@ -76,7 +76,7 @@ std::vector<Module> buildCatalog() {
         custom("paimbnails.transitions.global", "Scene Transitions",
                "Custom transitions between scenes.", "Motion", S::Global, true),
         saved("paimbnails.volumescroll.global", "Volume Scroll",
-              "Hold a modifier and scroll to change volume.",
+              "Hold a modifier and scroll to change volume. On touch screens, drag with three fingers instead.",
               "module-volume-scroll", "Input", S::Global, true),
         saved("paimbnails.dynamicvolume.global", "Dynamic Volume",
               "Eases a loud song in at the previous track's level, or holds every song at one level.",

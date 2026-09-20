@@ -10,10 +10,11 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Android hold gestures: one finger opens the radial menu, two open the layout
-// editor. Movement, early release, or an active popup cancels the gesture.
+// 1 finger opens radial, 2 open layout editor; move/release cancels.
+// handleTouches* has real addresses on Android and iOS alike (see bindings),
+// so the opener works on both mobile platforms.
 
-#if defined(GEODE_IS_ANDROID)
+#if defined(GEODE_IS_MOBILE)
 
 namespace {
 
@@ -57,9 +58,7 @@ void resetTouch() {
     syncTouchTicking();
 }
 
-// handleTouchesBegin dispatches to Cocos before reaching this hook. A menu
-// that claimed the touch is therefore already tracking it. Treat that as an
-// intentional UI interaction instead of starting the global hold gesture.
+// Cocos runs first, so a tracking menu means an intentional UI touch.
 bool hasTrackingMenu(CCNode* node) {
     if (!node || !node->isVisible()) return false;
 
@@ -131,8 +130,6 @@ public:
         return s_instance;
     }
 
-    // Registered only while a touch hold is in progress; outside that window the
-    // tick has nothing to advance.
     static void setTicking(bool on) {
         auto* self = get();
         if (self->m_ticking == on) return;
@@ -187,10 +184,8 @@ private:
     void openLayoutEditor() {
         using namespace paimon::menu_layout;
 
-    // Do not open another popup while one is active.
         if (MainMenuLayoutEditor::isActive()) return;
 
-    // Find the top-most interactive layer in the scene.
         auto* scene = CCDirector::get()->getRunningScene();
         if (!scene) return;
 
@@ -220,14 +215,21 @@ void syncTouchTicking() {
 
 }
 
-// Hooks CCEGLViewProtocol: handleTouches* is declared there, not on CCEGLView.
+// handleTouches* lives on CCEGLViewProtocol, not CCEGLView.
 #include <Geode/modify/CCEGLViewProtocol.hpp>
 
 class $modify(TouchHoldView, CCEGLViewProtocol) {
+    static void onModify(auto& self) {
+        // Gestures first, pet clicks after.
+        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesBegin", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesMove", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesEnd", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesCancel", geode::Priority::Normal);
+    }
+
     void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesBegin(num, ids, xs, ys, timestamp);
 
-    // Both gestures are gated features.
         if (!paimon::modules::isEnabled("paimbnails.quickhub.global") &&
             !paimon::modules::isEnabled("paimbnails.menulayout.menu")) return;
 

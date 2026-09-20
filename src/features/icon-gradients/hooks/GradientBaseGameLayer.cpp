@@ -1,3 +1,10 @@
+// Dual-exit doll shading, rethought for Paimbnails.
+//
+// Idea credit: "Icon Gradients" by zilko
+// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
+// all rights reserved). Independent implementation: same behavior (re-shade
+// the stashed dual doll when the dual effect plays), own expression.
+
 #include "GradientBaseGameLayer.hpp"
 #include "GradientSimplePlayer.hpp"
 #include "../GradientCache.hpp"
@@ -7,26 +14,20 @@ using namespace geode::prelude;
 using namespace paimon::icon_gradients;
 
 void GradientBaseGameLayer::playExitDualEffect(PlayerObject* p0) {
+    bool second = p0 == m_player2;
+    auto f = m_fields.self();
+
     if (!p0->isVanillaPlayer() || !moduleEnabled()) {
         GJBaseGameLayer::playExitDualEffect(p0);
         return;
     }
 
-    auto f = m_fields.self();
-
     f->isExitingDual = true;
 
     GJBaseGameLayer::playExitDualEffect(p0);
 
-    if (auto icon = static_cast<GradientSimplePlayer*>(f->dualSimplePlayer)) {
-        GradientUtils::applyGradient(
-            icon,
-            GradientUtils::getGradient(icon->m_fields->m_type, p0 == m_player2),
-            false,
-            p0 == m_player2,
-            1000
-        );
-    }
+    if (auto icon = static_cast<GradientSimplePlayer*>(f->dualSimplePlayer))
+        GradientUtils::paintMenuIcon(icon, second, 1000);
 
     f->isExitingDual = false;
     f->dualSimplePlayer = nullptr;

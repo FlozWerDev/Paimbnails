@@ -2,6 +2,9 @@
 
 #include <Geode/Geode.hpp>
 
+#include <string>
+#include <vector>
+
 namespace paimon::discord {
 
 class DiscordConfigPopup : public geode::Popup {
@@ -36,6 +39,10 @@ protected:
     geode::ScrollLayer* m_scroll = nullptr;
     float m_scrollTargetY = 0.f;
     bool m_scrollTargetSet = false;
+    bool m_destroyed = false;
+    std::vector<CCMenuItemToggler*> m_settingTogglers;
+    std::vector<std::string> m_settingToggleKeys;
+    cocos2d::CCObject* m_activityCycle = nullptr;
 };
 
 } // namespace paimon::discord

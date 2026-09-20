@@ -12,21 +12,18 @@ using namespace geode::prelude;
 
 namespace paimon::rtx {
 
-// Sube cuando cambia el significado de un campo guardado, no cuando se anade
-// uno nuevo (los nuevos ya entran con su valor por defecto).
+// Solo si cambia el sentido de un campo guardado.
 constexpr int kConfigSchema = 3;
 
 void applyPreset(RTXConfig& cfg, Preset preset) {
-    // El escalon de arriba sube muestras Y filtrado a la vez. Al reves (mas
-    // rayos con menos denoise, que es lo intuitivo) el preset caro sale mas
-    // ruidoso que el barato: 8 rayos siguen siendo muy pocos para integrar la
-    // luz por fuerza bruta, asi que la calidad la pone el filtro.
+    // El preset caro sube filtro a la vez: 8 rayos no bastan solos.
     switch (preset) {
         case Preset::Performance:
             cfg.renderScale = 0.35f; cfg.rayCount = 2; cfg.raySteps = 10;
             cfg.rayDistance = 0.24f; cfg.stepGrowth = 1.35f; cfg.bloomPasses = 3;
             cfg.denoise = 2.60f; cfg.atrousPasses = 2;
-            cfg.temporal = 0.90f; cfg.frameSkip = 1;
+            // Temporal bajo: con frameSkip=1 el 0.90 dejaba estelas.
+            cfg.temporal = 0.85f; cfg.frameSkip = 1;
             break;
         case Preset::Balanced:
             cfg.renderScale = 0.50f; cfg.rayCount = 3; cfg.raySteps = 14;
@@ -94,7 +91,15 @@ void RTXManager::init() {
 void RTXManager::loadConfig() {
     auto path = configPath();
     std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) return;
+    if (!std::filesystem::exists(path, ec)) {
+#if defined(GEODE_IS_MOBILE)
+        // Fresh install on a phone: start from the Performance preset so the
+        // first enable doesn't melt the GPU. HDR itself is probed at runtime
+        // and falls back to LDR where float targets are incomplete.
+        applyPreset(m_config, Preset::Performance);
+#endif
+        return;
+    }
 
     auto rawRes = file::readString(path);
     if (!rawRes) {
@@ -194,19 +199,12 @@ void RTXManager::loadConfig() {
 
     int const schema = getInt("schema", 1);
 
-    // El esquema 1 guardaba presets con realimentacion temporal baja y casi sin
-    // filtro espacial, que es de donde salia el ruido; ahora significan lo
-    // contrario. Se reaplica el preset guardado salvo en Personalizado, donde
-    // los valores son eleccion del usuario y no se tocan.
+    // Esquema 1 invertia el filtro: se reaplica el preset guardado.
     if (schema < 2 && c.preset != static_cast<int>(Preset::Custom)) {
         applyPreset(c, static_cast<Preset>(c.preset));
     }
 
-    // El esquema 3 movio la cadena entera a luz lineal con expansion de rango,
-    // y el bloom dejo de acumular niveles para interpolarlos. Las fuerzas y el
-    // color guardados eran numeros de otro espacio: reusarlos deja la imagen
-    // lavada o el halo cinco veces mas fuerte. Se vuelve al look por defecto y
-    // se conservan coste, ruido y ambito, que siguen queriendo decir lo mismo.
+    // Esquema 3 paso a luz lineal: se restaura el look por defecto.
     if (schema < 3) {
         RTXConfig const fresh{};
         c.giStrength      = fresh.giStrength;
@@ -413,8 +411,7 @@ void RTXManager::setEnabled(bool enabled) {
 }
 
 bool RTXManager::shouldRender() const {
-    // El interruptor del modulo paimbnails.rtx.global es este mismo bool: el
-    // registro lo lee por accessor, asi que no hay que consultarlo aparte.
+    // Este bool es el interruptor global: se lee por accessor.
     if (!m_config.enabled) return false;
     if (m_config.intensity <= 0.001f) return false;
 

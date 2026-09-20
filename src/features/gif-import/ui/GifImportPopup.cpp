@@ -32,7 +32,7 @@ using namespace geode::prelude;
 
 namespace paimon::gifimport {
 
-// Workers only keep these C++ mailboxes; tick applies results on the Cocos thread.
+// Workers fill mailboxes; tick applies them on Cocos thread.
 struct ProcessingProgress {
     std::atomic<float> value = 0.f;
     std::atomic<int> stage = static_cast<int>(BuildStage::Preparing);
@@ -335,8 +335,7 @@ void GifImportPopup::pickSource() {
 }
 
 void GifImportPopup::loadSource(std::filesystem::path const& path) {
-    // El video no se lee entero a memoria: el decodificador trabaja sobre el
-    // archivo y un mp4 de un minuto se pasa del limite del resto de formatos.
+    // Video se decodifica desde archivo, no desde memoria.
     if (isVideoFile(path)) {
         loadVideo(path);
         return;
@@ -458,8 +457,7 @@ void GifImportPopup::loadVideo(std::filesystem::path const& path) {
     bool const started = paimon::ThreadTracker::get().spawn([state, path, frames] {
         geode::utils::thread::setName("Paimon GIF Video Decode");
         LoadedSource loaded{path, nullptr, {}};
-        // Con limite real el muestreo usa marcas acumuladas (sin deriva a 50fps)
-        // y los videos largos fallan con mensaje en vez de salir a 2fps.
+        // Muestreo con marcas acumuladas; videos largos fallan con mensaje.
         loaded.source = decodeVideo(path, frames, loaded.error, 30.0);
         if (!loaded.source) loaded.source = std::make_shared<SourceAnimation>();
         std::lock_guard lock(state->mutex);
@@ -513,11 +511,9 @@ void GifImportPopup::startProcess() {
     m_statsLabel->setColor({255, 205, 105});
     m_statsLabel->setString("Procesando y optimizando...");
 
-    // Al reabrir el popup el modo libre puede venir guardado sin que nadie haya
-    // pasado por el boton, y la biblioteca solo se puede leer desde aqui.
+    // Modo libre puede venir guardado sin pasar por el boton.
     if (m_options.mode == ImportMode::Free && !stampLibraryReady()) buildStampLibrary();
-    // La reduccion toca GL, asi que se hace aqui y no dentro del hilo. Se guarda
-    // porque cambiar colores o presupuesto no cambia la resolucion de trabajo.
+    // La reduccion toca GL: aqui, no en el hilo.
     if (usesSoftGeometry(m_options.mode)) {
         auto library = buildSoftStampLibrary();
         m_options.softStamps = std::move(library.stamps);
@@ -616,8 +612,7 @@ void GifImportPopup::refreshControls() {
 
     if (!m_plan || m_processing) return;
     m_statsLabel->setColor({135, 230, 170});
-    // El fps sale de los delays reales tras diezmar/fusionar: si un video largo
-    // reparte 30 s en 90 frames, aqui se lee ~3fps y no hay que adivinarlo.
+    // Fps desde delays reales tras diezmar/fusionar.
     double fps = 0.0;
     if (m_plan->frames.size() > 1) {
         double totalMs = 0.0;
@@ -706,7 +701,7 @@ void GifImportPopup::refreshPreview() {
     int const previewScale = m_plan->mode == ImportMode::Blocks ? 1 : 4;
     int const previewWidth = m_plan->width * previewScale;
     int const previewHeight = m_plan->height * previewScale;
-    auto pixels = renderPlanFrame(*m_plan, m_previewFrame, previewScale);
+    auto pixels = renderPlanFrame(*m_plan, m_previewFrame, previewScale, true);
 
     if (m_previewSprite) {
         m_previewSprite->removeFromParent();
@@ -719,6 +714,7 @@ void GifImportPopup::refreshPreview() {
         {static_cast<float>(previewWidth), static_cast<float>(previewHeight)}
     )) {
         if (m_plan->mode == ImportMode::Blocks) texture->setAliasTexParameters();
+        else texture->setAntiAliasTexParameters();
         m_previewSprite = CCSprite::createWithTexture(texture);
         float const scale = std::min(198.f / previewWidth, 162.f / previewHeight);
         m_previewSprite->setScale(scale);
@@ -894,9 +890,7 @@ void GifImportPopup::toggleMode() {
         : m_options.mode == ImportMode::Blur ? ImportMode::Vert
         : m_options.mode == ImportMode::Vert ? ImportMode::Blocks
         : ImportMode::Free;
-    // Rasterizar la decoracion de GD toca GL y tarda un momento, asi que se hace
-    // una vez aqui y con el aviso ya puesto. Con un plan a medio trazar se deja
-    // para startProcess: la biblioteca la estan leyendo sus hilos.
+    // Decoracion toca GL: con aviso; si hay plan activo, va en startProcess.
     if (m_options.mode == ImportMode::Free && !stampLibraryReady() && !m_processing) {
         refreshControls();
         showBusy("Leyendo la decoracion de GD");

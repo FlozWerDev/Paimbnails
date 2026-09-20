@@ -7,7 +7,7 @@ namespace paimon::icon_gradients {
 class $modify(GradientMenuGameLayer, MenuGameLayer) {
 public:
     struct Fields {
-        PlayerObject* m_realPlayerObject = nullptr;
+        PlayerObject* m_menuPlayer = nullptr;
     };
 
     bool init();

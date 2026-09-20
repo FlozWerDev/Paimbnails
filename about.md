@@ -82,12 +82,12 @@ Decorate once, build everywhere. <co>**Capture**</c> any decorated selection as 
 
 ## Inspirations & Third-Party Credits
 
-Some Paimbnails features were inspired by ideas from other creators. Each one below is an <cb>independent implementation written from scratch</c> — no code was copied — but the idea deserves credit. The only exception is <cb>Search History</c>, which ports logic from the MIT-licensed original (see below and THIRD-PARTY-NOTICES.md). Paimbnails also interoperates with third-party services and mods, credited at the end of the list.
+Some Paimbnails features were inspired by ideas from other creators. Each one below is an <cb>independent implementation written from scratch</c> — no code was copied — but the idea deserves credit. There is one stated exception: <cb>Search History</c>, which ports logic from the MIT-licensed original (see below and THIRD-PARTY-NOTICES.md). <cb>Separate Dual Icons</c> was also audited against its unlicensed original and rewritten from its behavior spec the same day; see THIRD-PARTY-NOTICES.md. Paimbnails also interoperates with third-party services and mods, credited at the end of the list.
 
 * <cb>Mod Previews</c>: inspired by <cb>Alphalaneous</c>. Preview images belong to each mod's own repository authors and are only displayed, never redistributed.
 * <cb>Message Notifications</c>: inspired by <cb>BlueToadMaker</c>. It queries RobTop's own public endpoints, the same ones the game client uses.
 * <cb>Search History</c>: based on <cb>Search History</c> by <cb>hiimjasmine00</c> (MIT License, Copyright (c) 2024-2026 hiimjasmine00), with Paimbnails UI and persistence.
-* <cb>Separate Dual Icons</c>: inspired by <cb>Weebify</c>.
+* <cb>Separate Dual Icons</c>: inspired by <cb>Weebify</c>. Independently rewritten from the behavior spec (2026-09-20); see THIRD-PARTY-NOTICES.md.
 * <cb>Custom Cursor</c> (click-state tracking): inspired by <cb>Ecuet</c>. The cursor shop browses <cb>rw-designer.com</c> and <cb>custom-cursor.com</c>: every artwork belongs to those sites and their authors, listings link back to the original pages, and files download only when you explicitly install them.
 * <cb>Texture Studio</c> recoloring idea inspired by <cb>PackGen</c> by <cb>Asterveila</c>, building on <cb>ravexcode</c>'s TexturePackWeb. Independent implementation, fully self-contained: no external downloads or mirror. See THIRD-PARTY-NOTICES.md for details.
 

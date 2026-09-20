@@ -49,7 +49,7 @@ struct GradientConfig {
         return isLinear == other.isLinear && points == other.points;
     }
 
-    bool isEmpty(ColorType, bool);
+    bool isEmpty(ColorType, bool) const;
 
 };
 

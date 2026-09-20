@@ -333,9 +333,7 @@ std::vector<Primitive> packBlocks(
         int width = 0;
         int height = 0;
     };
-    // Se busca el rectangulo que tape mas celdas pendientes, no el de mas area:
-    // atravesar celdas de paso solo compensa si de camino se lleva trabajo por
-    // delante. A igual cantidad gana el mas grande, que deja menos costuras.
+    // Prioriza cubrir celdas pendientes, no area; a igual cobertura gana el mayor.
     auto sweep = [](std::vector<std::uint8_t> cells, int gridWidth, int gridHeight) {
         std::vector<int> rowSum(
             static_cast<std::size_t>(gridHeight) * (gridWidth + 1), 0);
@@ -531,7 +529,20 @@ std::vector<Primitive> vectorizeArt(
     return output;
 }
 
-std::vector<std::uint8_t> renderPlanFrame(ImportPlan const& plan, int frame, int scale) {
+std::vector<std::uint8_t> renderPlanFrame(
+    ImportPlan const& plan,
+    int frame,
+    int scale
+) {
+    return renderPlanFrame(plan, frame, scale, false);
+}
+
+std::vector<std::uint8_t> renderPlanFrame(
+    ImportPlan const& plan,
+    int frame,
+    int scale,
+    bool antialias
+) {
     scale = std::clamp(scale, 1, 8);
     int const outputWidth = plan.width * scale;
     int const outputHeight = plan.height * scale;
@@ -542,6 +553,8 @@ std::vector<std::uint8_t> renderPlanFrame(ImportPlan const& plan, int frame, int
     std::vector<float> light;
     if (usesSoftGeometry(plan.mode)) light.assign(pixels.size(), 0.f);
 
+    // Reutiliza el scratch de cobertura entre primitivas del preview.
+    std::vector<std::uint8_t> previewCoverage;
     auto draw = [&](Primitive const& object) {
         if (object.color >= plan.palette.size()) return;
         auto const& color = plan.palette[object.color];
@@ -574,18 +587,86 @@ std::vector<std::uint8_t> renderPlanFrame(ImportPlan const& plan, int frame, int
             return;
         }
         auto const shape = xformOf(object, plan.stamps);
-        forEachSample(shape, plan.width, plan.height, scale, [&](int x, int y) {
-            std::size_t const index = (static_cast<std::size_t>(y) * outputWidth + x) * 4;
-            auto mix = [&](std::uint8_t channel, std::uint8_t over) {
-                return static_cast<std::uint8_t>(over * opacity + channel * (1.f - opacity));
-            };
-            pixels[index] = mix(pixels[index], color.r);
-            pixels[index + 1] = mix(pixels[index + 1], color.g);
-            pixels[index + 2] = mix(pixels[index + 2], color.b);
-            pixels[index + 3] = std::max<std::uint8_t>(
-                pixels[index + 3], static_cast<std::uint8_t>(255.f * opacity));
+        // Preview con supersampling; el renderer normal usa mascara binaria.
+        bool const smoothPreview = antialias && usesPaintGeometry(plan.mode);
+        if (!smoothPreview) {
+            forEachSample(shape, plan.width, plan.height, scale, [&](int x, int y) {
+                std::size_t const index =
+                    (static_cast<std::size_t>(y) * outputWidth + x) * 4;
+                auto mix = [&](std::uint8_t channel, std::uint8_t over) {
+                    return static_cast<std::uint8_t>(
+                        over * opacity + channel * (1.f - opacity));
+                };
+                pixels[index] = mix(pixels[index], color.r);
+                pixels[index + 1] = mix(pixels[index + 1], color.g);
+                pixels[index + 2] = mix(pixels[index + 2], color.b);
+                pixels[index + 3] = std::max<std::uint8_t>(
+                    pixels[index + 3], static_cast<std::uint8_t>(255.f * opacity));
+                return false;
+            });
+            return;
+        }
+
+        constexpr int kPreviewSamples = 2;
+        int const sampleScale = scale * kPreviewSamples;
+        auto const box = xformBox(shape, plan.width, plan.height);
+        if (box[2] < box[0] || box[3] < box[1]) return;
+        int const minX = std::max(0, box[0] * scale);
+        int const minY = std::max(0, box[1] * scale);
+        int const maxX = std::min(outputWidth - 1, (box[2] + 1) * scale - 1);
+        int const maxY = std::min(outputHeight - 1, (box[3] + 1) * scale - 1);
+        int const localWidth = maxX - minX + 1;
+        int const localHeight = maxY - minY + 1;
+        if (localWidth <= 0 || localHeight <= 0) return;
+        previewCoverage.assign(
+            static_cast<std::size_t>(localWidth) * localHeight, 0);
+        forEachSample(shape, plan.width, plan.height, sampleScale, [&](int x, int y) {
+            int const outputX = x / kPreviewSamples;
+            int const outputY = y / kPreviewSamples;
+            if (outputX < minX || outputY < minY ||
+                outputX > maxX || outputY > maxY) return false;
+            auto& count = previewCoverage[
+                static_cast<std::size_t>(outputY - minY) * localWidth +
+                (outputX - minX)];
+            count = static_cast<std::uint8_t>(
+                std::min<int>(kPreviewSamples * kPreviewSamples, count + 1));
             return false;
         });
+        float const opacityScale = std::clamp(opacity, 0.f, 1.f);
+        for (int y = minY; y <= maxY; ++y) {
+            for (int x = minX; x <= maxX; ++x) {
+                auto const count = previewCoverage[
+                    static_cast<std::size_t>(y - minY) * localWidth + (x - minX)];
+                if (count == 0) continue;
+                float const sourceAlpha =
+                    (static_cast<float>(count) /
+                     static_cast<float>(kPreviewSamples * kPreviewSamples)) *
+                    opacityScale;
+                std::size_t const index =
+                    (static_cast<std::size_t>(y) * outputWidth + x) * 4;
+                float const destinationAlpha = pixels[index + 3] / 255.f;
+                float const outputAlpha = sourceAlpha +
+                    destinationAlpha * (1.f - sourceAlpha);
+                if (outputAlpha <= 0.f) continue;
+                pixels[index] = static_cast<std::uint8_t>(std::lround(std::clamp(
+                    (color.r * sourceAlpha +
+                     pixels[index] * destinationAlpha * (1.f - sourceAlpha)) /
+                        outputAlpha,
+                    0.f, 255.f)));
+                pixels[index + 1] = static_cast<std::uint8_t>(std::lround(std::clamp(
+                    (color.g * sourceAlpha +
+                     pixels[index + 1] * destinationAlpha * (1.f - sourceAlpha)) /
+                        outputAlpha,
+                    0.f, 255.f)));
+                pixels[index + 2] = static_cast<std::uint8_t>(std::lround(std::clamp(
+                    (color.b * sourceAlpha +
+                     pixels[index + 2] * destinationAlpha * (1.f - sourceAlpha)) /
+                        outputAlpha,
+                    0.f, 255.f)));
+                pixels[index + 3] = static_cast<std::uint8_t>(
+                    std::lround(outputAlpha * 255.f));
+            }
+        }
     };
 
     std::vector<Primitive> moved;

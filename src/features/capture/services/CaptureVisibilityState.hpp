@@ -2,23 +2,44 @@
 
 #include <Geode/Geode.hpp>
 #include <vector>
-#include <unordered_set>
+#include <algorithm>
 
 namespace paimon::capture {
     // Nodes user-set VISIBLE in layer editor; capture must not hide these.
-    inline std::unordered_set<cocos2d::CCNode*>& userShownNodes() {
-        static auto& s = *new std::unordered_set<cocos2d::CCNode*>();
+    // WeakRefs + prune on write: raw pointers here went stale when the level
+    // was exited while the editor popup stayed alive.
+    inline std::vector<geode::WeakRef<cocos2d::CCNode>>& userShownNodes() {
+        static auto& s = *new std::vector<geode::WeakRef<cocos2d::CCNode>>();
         return s;
+    }
+
+    inline void pruneUserShown() {
+        auto& v = userShownNodes();
+        v.erase(std::remove_if(v.begin(), v.end(),
+            [](auto const& w) { return !w.lock(); }), v.end());
     }
 
     inline void setUserShown(cocos2d::CCNode* node, bool shown) {
         if (!node) return;
-        if (shown) userShownNodes().insert(node);
-        else       userShownNodes().erase(node);
+        pruneUserShown();
+        auto& v = userShownNodes();
+        if (shown) {
+            for (auto const& w : v) {
+                if (w.lock().data() == node) return;
+            }
+            v.emplace_back(node);
+        } else {
+            v.erase(std::remove_if(v.begin(), v.end(),
+                [node](auto const& w) { return w.lock().data() == node; }), v.end());
+        }
     }
 
     inline bool isUserShown(cocos2d::CCNode* node) {
-        return node && userShownNodes().count(node) > 0;
+        if (!node) return false;
+        for (auto const& w : userShownNodes()) {
+            if (w.lock().data() == node) return true;
+        }
+        return false;
     }
 
     inline void clearUserShown() {

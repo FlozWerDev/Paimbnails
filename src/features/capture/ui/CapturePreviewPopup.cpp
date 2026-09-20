@@ -678,6 +678,8 @@ void CapturePreviewPopup::onClose(CCObject* sender) {
     }
 
     m_activeTouches.clear();
+    m_activatedItem = nullptr;
+    m_wasZooming = false;
 
     // Popup::onClose removes the touch delegate.
 
@@ -741,7 +743,7 @@ void CapturePreviewPopup::recapture() {
         }
     }
 
-    if (pauseLayer) {
+    if (pauseLayer && !m_recaptureHidPause) {
         m_recapturePauseLayer = pauseLayer;
         m_recapturePauseWasVisible = pauseLayer->isVisible();
         m_recaptureZoomWasHidden = paimon::isPauseZoomHidden();
@@ -957,13 +959,21 @@ void CapturePreviewPopup::onCycleResolution(CCObject* sender) {
     if (pos != std::string::npos) msg.replace(pos, 2, next);
     PaimonNotify::create(msg.c_str(), NotificationIcon::Info)->show();
 
-    liveRecapture(true);
+// Same routing as the player/HDR toggles: inside the level recapture, outside
+// it the owner (editor thumbnail flow) re-renders, otherwise render locally.
+    if (PlayLayer::get()) {
+        recapture();
+    } else if (m_recaptureCallback) {
+        m_recaptureCallback(m_isPlayer1Hidden, m_isPlayer2Hidden, this);
+    } else {
+        liveRecapture(true);
+    }
 }
 
 void CapturePreviewPopup::onCancelBtn(CCObject* sender) {
     if (!sender) return;
-    m_callbackExecuted = true;
-    if (m_callback) m_callback(false, m_levelID, m_buffer, m_width, m_height, "", "");
+// onClose already fires the cancel callback exactly once, after restoring
+// layers/assets and resuming music: cleanup runs before the caller resumes.
     this->onClose(nullptr);
 }
 
@@ -1031,6 +1041,9 @@ CapturePreviewPopup::CropRect CapturePreviewPopup::detectBlackBorders() {
 }
 
 void CapturePreviewPopup::applyCrop(const CropRect& rect) {
+    if (!m_buffer || m_width <= 0 || m_height <= 0) return;
+    if (rect.width <= 0 || rect.height <= 0 || rect.x < 0 || rect.y < 0 ||
+        rect.x + rect.width > m_width || rect.y + rect.height > m_height) return;
     size_t newSize = static_cast<size_t>(rect.width) * rect.height * 4;
     std::shared_ptr<uint8_t> croppedBuffer(new uint8_t[newSize], std::default_delete<uint8_t[]>());
     const uint8_t* srcData = m_buffer.get();
@@ -1078,10 +1091,10 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     ss << "thumbnail_" << m_levelID << "_" << std::put_time(&tmBuf, "%Y%m%d_%H%M%S") << ".png";
     auto filePath = downloadDir / ss.str();
 
-    // Copy the buffer before handing it to the worker thread.
-    size_t dataSize = static_cast<size_t>(m_width) * m_height * 4;
-    std::shared_ptr<uint8_t> bufCopy(new uint8_t[dataSize], std::default_delete<uint8_t[]>());
-    std::memcpy(bufCopy.get(), m_buffer.get(), dataSize);
+    // The buffer is never mutated in place (updateContent replaces the
+    // shared_ptr), so the worker can share ownership instead of copying
+    // 8-33MB on the main thread.
+    std::shared_ptr<uint8_t> bufCopy = m_buffer;
     int w = m_width, h = m_height;
     int levelID = m_levelID;
 
@@ -1194,7 +1207,9 @@ void CapturePreviewPopup::clampSpritePositionAnimated() {
 }
 
 bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
-    if (!this->isVisible()) return false;
+    // Invisible only while a recapture hides the popup: swallow the touch so
+    // it does not fall through to the game/pause underneath mid-capture.
+    if (!this->isVisible()) return m_recapturePending;
 
     auto findTouchedItem = [](CCMenu* menu, CCTouch* t) -> CCMenuItem* {
         if (!menu || !menu->isVisible()) return nullptr;
@@ -1217,6 +1232,15 @@ bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         m_activatedItem = item;
         item->selected();
         return true;
+    }
+
+// The resolution badge menu lives on m_mainLayer, not in the toolbars.
+    if (auto* badgeMenu = typeinfo_cast<CCMenu*>(m_mainLayer->getChildByID("res-badge-menu"_spr))) {
+        if (auto* item = findTouchedItem(badgeMenu, touch)) {
+            m_activatedItem = item;
+            item->selected();
+            return true;
+        }
     }
 
     if (m_buttonMenu && m_buttonMenu->isVisible()) {
@@ -1335,6 +1359,7 @@ void CapturePreviewPopup::ccTouchCancelled(CCTouch* touch, CCEvent* event) {
     }
     m_activeTouches.erase(touch);
     m_wasZooming = false;
+    if (m_activeTouches.empty()) clampSpritePosition();
 }
 
 void CapturePreviewPopup::scrollWheel(float x, float y) {

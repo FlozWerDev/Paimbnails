@@ -34,7 +34,7 @@
     },
     "separate-dual-title": {
       "name": "Separate Dual Icons",
-      "description": "Customize the 2nd player's icons, colors, trails and death effect. Idea inspired by Weebify's Separate Dual Icons mod; implemented independently.",
+      "description": "Customize the 2nd player's icons, colors, trails and death effect. Idea inspired by Weebify's Separate Dual Icons mod.",
       "type": "title"
     },
     "separate-dual-exit-switch": {
@@ -698,7 +698,7 @@
     },
     "volume-scroll-title": {
       "name": "Volume Scroll",
-      "description": "Modifier + scroll wheel to change volume in-game and in the editor.",
+      "description": "Modifier + scroll wheel to change volume in-game and in the editor. On touch screens, drag with three fingers.",
       "type": "title"
     },
     "volume-music-mod-game": {
@@ -779,18 +779,18 @@
     },
     "maintenance-refresh-mod-code": {
       "type": "button",
-      "name": "Secure Mod Code",
-      "description": "Set up or rotate moderator authentication by verifying a code on your Geometry Dash profile.",
+      "name": "Moderation Security",
+      "description": "Verify your session with the server, connect your Geometry Dash account and open the moderation center.",
       "buttons": {
-        "run": "Setup"
+        "run": "Open"
       }
     },
     "maintenance-copy-mod-code": {
       "type": "button",
-      "name": "Copy Mod Code",
-      "description": "Copy your current moderator authentication code to the clipboard.",
+      "name": "Moderation Session",
+      "description": "Manage your session without exposing your private credential.",
       "buttons": {
-        "run": "Copy"
+        "run": "Manage"
       }
     },
     "icon-maker-title": {

@@ -18,7 +18,7 @@
 #include <ctime>
 #include <thread>
 #include "../../../utils/ThreadTracker.hpp"
-#include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../utils/ActivePauseLayer.hpp"
 
 #ifdef PAIMON_HAS_DISCORD_RPC
 #include "DiscordIpcClient.hpp"
@@ -59,22 +59,18 @@ std::string trimOrDefault(std::string value, std::string const& fallback) {
     return safeUtf8Truncate(std::move(value), 120);
 }
 
-std::string trimAssetKey(std::string value) {
-    auto isWhitespace = [](unsigned char ch) {
-        return std::isspace(ch) != 0;
-    };
-
-    while (!value.empty() && isWhitespace(static_cast<unsigned char>(value.front()))) {
-        value.erase(value.begin());
+bool isValidAssetKey(std::string const& v) {
+    if (v.size() < 2 || v.size() > 32) return false;
+    for (auto ch : v) {
+        auto uch = static_cast<unsigned char>(ch);
+        bool ok = (uch >= 'a' && uch <= 'z') || (uch >= '0' && uch <= '9') || uch == '_';
+        if (!ok) return false;
     }
-    while (!value.empty() && isWhitespace(static_cast<unsigned char>(value.back()))) {
-        value.pop_back();
-    }
-    return safeUtf8Truncate(std::move(value), 128);
+    return true;
 }
 
 bool isExternalImageUrl(std::string const& v) {
-    return v.rfind("https://", 0) == 0 || v.rfind("http://", 0) == 0 || v.rfind("mp:", 0) == 0;
+    return v.rfind("https://", 0) == 0 || v.rfind("mp:", 0) == 0;
 }
 
 std::string trimExternalUrl(std::string value) {
@@ -93,27 +89,24 @@ std::string trimExternalUrl(std::string value) {
 }
 
 DiscordPresenceManager& DiscordPresenceManager::get() {
-    // RPC worker can outlive Cocos teardown; never-freed instance avoids an atexit race.
+    // Never freed: worker can outlive Cocos teardown.
     static auto* instance = new DiscordPresenceManager();
     return *instance;
 }
 
-void DiscordPresenceManager::init() {
-    if (m_initialized || m_shutdown) return;
-    m_startTimestamp = static_cast<int64_t>(std::time(nullptr));
-
+bool DiscordPresenceManager::isSupported() {
 #ifdef PAIMON_HAS_DISCORD_RPC
-    DiscordIpcClient::get().setClientID(kApplicationID);
+    auto* mod = geode::Mod::get();
+    return mod && mod->hasSetting("discord-rpc-enabled");
+#else
+    return false;
 #endif
+}
 
-    static bool s_listenersRegistered = false;
-    if (!s_listenersRegistered) {
-        s_listenersRegistered = true;
-        geode::listenForSettingChanges<bool>("discord-rpc-enabled", +[](bool) {
-            DiscordPresenceManager::get().refreshSoon();
-        });
-    }
-
+void DiscordPresenceManager::ensureWorker() {
+#ifdef PAIMON_HAS_DISCORD_RPC
+    if (m_shutdown || paimon::isRuntimeShuttingDown()) return;
+    if (m_workerToken && m_workerToken->load(std::memory_order_acquire)) return;
     m_workerToken = std::make_shared<std::atomic<bool>>(true);
     paimon::ThreadTracker::get().spawn([token = m_workerToken]() {
         geode::utils::thread::setName("Paimon Discord RPC");
@@ -130,6 +123,34 @@ void DiscordPresenceManager::init() {
             }
         }
     });
+#endif
+}
+
+void DiscordPresenceManager::init() {
+    if (m_initialized || m_shutdown) return;
+    m_startTimestamp = static_cast<int64_t>(std::time(nullptr));
+
+    if (!isSupported()) {
+        m_initialized = true;
+        return;
+    }
+
+#ifdef PAIMON_HAS_DISCORD_RPC
+    DiscordIpcClient::get().setClientID(kApplicationID);
+#endif
+
+    static bool s_listenersRegistered = false;
+    if (!s_listenersRegistered) {
+        s_listenersRegistered = true;
+        geode::listenForSettingChanges<bool>("discord-rpc-enabled", +[](bool enabled) {
+            if (enabled) DiscordPresenceManager::get().ensureWorker();
+            DiscordPresenceManager::get().refreshSoon();
+        });
+    }
+
+    if (paimon::settings::discord_rpc::enabled()) {
+        ensureWorker();
+    }
 
     m_initialized = true;
     refreshSoon();
@@ -144,13 +165,13 @@ void DiscordPresenceManager::shutdown() {
     }
 
 #ifdef PAIMON_HAS_DISCORD_RPC
-    DiscordIpcClient::get().clear();
     DiscordIpcClient::get().close();
 #endif
 }
 
 void DiscordPresenceManager::refreshSoon() {
     if (m_shutdown || paimon::isRuntimeShuttingDown()) return;
+    if (!isSupported()) return;
     if (!m_initialized) init();
     if (m_refreshScheduled) return;
     m_refreshScheduled = true;
@@ -163,11 +184,12 @@ void DiscordPresenceManager::refreshSoon() {
 }
 
 void DiscordPresenceManager::setTemporaryContext(std::string const& key, std::string const& state, std::string const& details) {
-    PresencePayload payload;
-    payload.state = state;
-    payload.details = details;
-    payload.startTimestamp = m_startTimestamp;
-    m_temporaryContexts[key] = payload;
+    TemporaryEntry entry;
+    entry.payload.state = safeUtf8Truncate(state, 128);
+    entry.payload.details = safeUtf8Truncate(details, 128);
+    entry.payload.startTimestamp = m_startTimestamp;
+    entry.seq = ++m_tempSeq;
+    m_temporaryContexts[key] = entry;
     refreshSoon();
 }
 
@@ -176,57 +198,77 @@ void DiscordPresenceManager::clearTemporaryContext(std::string const& key) {
     refreshSoon();
 }
 
-void DiscordPresenceManager::refreshNow() {
-    if (m_shutdown || !m_initialized || paimon::isRuntimeShuttingDown()) return;
+void DiscordPresenceManager::refreshNow(bool force) {
+    try {
+        if (m_shutdown || !m_initialized || paimon::isRuntimeShuttingDown()) return;
 
 #ifndef PAIMON_HAS_DISCORD_RPC
-    return;
+        return;
 #else
-    if (!paimon::settings::discord_rpc::enabled()) {
-        DiscordIpcClient::get().clear();
-        return;
-    }
+        if (!isSupported() || !paimon::settings::discord_rpc::enabled()) {
+            if (!m_presenceCleared) {
+                DiscordIpcClient::get().clear();
+                m_presenceCleared = true;
+                m_lastPayload = PresencePayload{};
+            }
+            return;
+        }
 
-    auto payload = applyAssetFallbacks(buildPayload());
-    if (payload == m_lastPayload) {
-        return;
-    }
-    m_lastPayload = payload;
+        auto payload = applyAssetFallbacks(buildPayload());
+        auto activityType = paimon::settings::discord_rpc::activityType();
+        auto showTimestamp = paimon::settings::discord_rpc::showTimestamp();
+        auto generation = DiscordIpcClient::get().connectionGeneration();
+        if (!force && payload == m_lastPayload && activityType == m_lastActivityType &&
+            showTimestamp == m_lastShowTimestamp && generation == m_seenGeneration) {
+            return;
+        }
+        m_lastPayload = payload;
+        m_lastActivityType = activityType;
+        m_lastShowTimestamp = showTimestamp;
+        m_seenGeneration = generation;
+        m_presenceCleared = false;
 
-    DiscordActivity activity;
-    activity.state = payload.state;
-    activity.details = payload.details;
-    activity.largeImage = payload.largeImage;
-    activity.largeText = payload.largeImageText;
-    activity.smallImage = payload.smallImage;
-    activity.smallText = payload.smallImageText;
+        DiscordActivity activity;
+        activity.state = payload.state;
+        activity.details = payload.details;
+        activity.largeImage = payload.largeImage;
+        activity.largeText = payload.largeImageText;
+        activity.smallImage = payload.smallImage;
+        activity.smallText = payload.smallImageText;
 
-    {
-        auto type = paimon::settings::discord_rpc::activityType();
-        activity.type = DiscordActivityType::Playing;
-        if (type == "Listening") activity.type = DiscordActivityType::Listening;
-        else if (type == "Watching") activity.type = DiscordActivityType::Watching;
-        else if (type == "Competing") activity.type = DiscordActivityType::Competing;
-    }
+        {
+            activity.type = DiscordActivityType::Playing;
+            if (activityType == "Listening") activity.type = DiscordActivityType::Listening;
+            else if (activityType == "Watching") activity.type = DiscordActivityType::Watching;
+            else if (activityType == "Competing") activity.type = DiscordActivityType::Competing;
+        }
 
-    if (paimon::settings::discord_rpc::showTimestamp()) {
-        activity.startTimestamp = payload.startTimestamp ? payload.startTimestamp : m_startTimestamp;
-    }
+        if (showTimestamp) {
+            activity.startTimestamp = payload.startTimestamp ? payload.startTimestamp : m_startTimestamp;
+        }
 
-    activity.button1Label = "Paimbnails Page";
-    activity.button1Url = "https://github.com/FlozWerDev/Paimbnails";
-    activity.button2Label = "Paimbnails Discord";
-    activity.button2Url = "https://discord.gg/5N5vpSfZwY";
+        activity.button1Label = "Paimbnails Page";
+        activity.button1Url = "https://github.com/FlozWerDev/Paimbnails";
+        activity.button2Label = "Paimbnails Discord";
+        activity.button2Url = "https://discord.gg/5N5vpSfZwY";
 
-    DiscordIpcClient::get().update(activity);
+        DiscordIpcClient::get().update(activity);
 #endif
+    } catch (std::exception const& e) {
+        geode::log::warn("[DiscordPresence] refreshNow failed: {}", e.what());
+    } catch (...) {
+        geode::log::warn("[DiscordPresence] refreshNow failed with unknown error");
+    }
 }
 
 PresencePayload DiscordPresenceManager::buildPayload() {
     PresencePayload payload;
+    uint64_t bestSeq = 0;
     for (auto const& [_, ctx] : m_temporaryContexts) {
-        payload = ctx;
-        break;
+        if (ctx.seq > bestSeq) {
+            bestSeq = ctx.seq;
+            payload = ctx.payload;
+        }
     }
 
     if (payload.state.empty() && payload.details.empty()) {
@@ -239,11 +281,11 @@ PresencePayload DiscordPresenceManager::buildPayload() {
         return safeUtf8Truncate(std::move(value), 128);
     };
 
-    if (paimon::settings::discord_rpc::overrideDetails()) {
+    if (!paimon::settings::discord_rpc::privateMode() && paimon::settings::discord_rpc::overrideDetails()) {
         auto custom = paimon::settings::discord_rpc::customDetails();
         if (!custom.empty()) payload.details = capField(custom);
     }
-    if (paimon::settings::discord_rpc::overrideState()) {
+    if (!paimon::settings::discord_rpc::privateMode() && paimon::settings::discord_rpc::overrideState()) {
         auto custom = paimon::settings::discord_rpc::customState();
         if (!custom.empty()) payload.state = capField(custom);
     }
@@ -342,6 +384,9 @@ PresencePayload DiscordPresenceManager::buildScenePayload() {
         if (level && level->isPlatformer()) {
             state = layer->m_isPracticeMode ? "Practicing a platformer" : "Playing a platformer";
         }
+        if (layer->m_isPaused || paimon::hasPauseLayerInScene()) {
+            state = "Paused in a level";
+        }
 
         std::string details = "In gameplay";
         if (level) {
@@ -386,8 +431,10 @@ PresencePayload DiscordPresenceManager::buildScenePayload() {
         payload.state = "Viewing a profile";
         if (paimon::settings::discord_rpc::privateMode()) {
             payload.details = "Browsing community profiles";
+        } else if (layer->m_score && !layer->m_score->m_userName.empty()) {
+            payload.details = fmt::format("Viewing {}", std::string(layer->m_score->m_userName));
         } else {
-            payload.details = fmt::format("Account {}", layer->m_accountID);
+            payload.details = "Viewing a profile";
         }
         payload.smallImage = "profile";
         payload.smallImageText = "Profile page";
@@ -542,50 +589,41 @@ PresencePayload DiscordPresenceManager::buildScenePayload() {
 }
 
 PresencePayload DiscordPresenceManager::applyAssetFallbacks(PresencePayload payload) {
-    // Large image: allow either a Discord asset key (max 128) or an external https:// URL (max 256 -> Discord mp:external)
-    auto rawLarge = paimon::settings::discord_rpc::largeImageKey();
-    std::string customLargeImage;
-    bool largeIsExternal = false;
-    {
-        std::string trimmed = trimExternalUrl(rawLarge);
-        if (isExternalImageUrl(trimmed)) {
-            customLargeImage = std::move(trimmed);
-            largeIsExternal = true;
-        } else {
-            customLargeImage = trimAssetKey(std::move(trimmed));
+    auto normalizeImageSetting = [](std::string raw) {
+        std::string trimmed = trimExternalUrl(std::move(raw));
+        if (trimmed.rfind("http://", 0) == 0) {
+            trimmed.replace(0, 7, "https://");
         }
-    }
+        return trimmed;
+    };
 
-    // Small image: same — asset key or external URL for per-user custom image
-    auto rawSmall = paimon::settings::discord_rpc::smallImageKey();
-    std::string customSmallImage;
-    bool smallIsExternal = false;
-    {
-        std::string trimmed = trimExternalUrl(rawSmall);
-        if (isExternalImageUrl(trimmed)) {
-            customSmallImage = std::move(trimmed);
-            smallIsExternal = true;
-        } else {
-            customSmallImage = trimAssetKey(std::move(trimmed));
-        }
-    }
-
-    if (largeIsExternal) {
+    auto customLargeImage = normalizeImageSetting(paimon::settings::discord_rpc::largeImageKey());
+    if (isExternalImageUrl(customLargeImage)) {
+        payload.largeImage = customLargeImage;
+    } else if (customLargeImage.empty()) {
+        payload.largeImage = kDefaultLargeImage;
+    } else if (isValidAssetKey(customLargeImage)) {
         payload.largeImage = customLargeImage;
     } else {
-        payload.largeImage = customLargeImage.empty() ? kDefaultLargeImage : customLargeImage;
+        geode::log::warn("[DiscordPresence] invalid large image key '{}', falling back to default", customLargeImage);
+        payload.largeImage = kDefaultLargeImage;
     }
-    if (!customSmallImage.empty()) {
-        // External URLs and asset keys both override the scene small image.
-        // For per-user local images, the popup uploads to catbox and stores the https:// URL here.
+
+    auto customSmallImage = normalizeImageSetting(paimon::settings::discord_rpc::smallImageKey());
+    if (isExternalImageUrl(customSmallImage)) {
         payload.smallImage = customSmallImage;
+    } else if (!customSmallImage.empty()) {
+        if (isValidAssetKey(customSmallImage)) {
+            payload.smallImage = customSmallImage;
+        } else {
+            geode::log::warn("[DiscordPresence] invalid small image key '{}', keeping scene image", customSmallImage);
+        }
     }
     payload.largeImageText = "Paimbnails Rich Presence";
     auto customText = paimon::settings::discord_rpc::largeText();
     if (!customText.empty()) {
         payload.largeImageText = safeUtf8Truncate(std::move(customText), 128);
     }
-    // Small image hover text is now fully customizable independently from scene.
     auto customSmallText = paimon::settings::discord_rpc::smallText();
     if (!customSmallText.empty()) {
         payload.smallImageText = safeUtf8Truncate(std::move(customSmallText), 128);
@@ -606,6 +644,7 @@ bool DiscordPresenceManager::isFocused() const {
     GetWindowThreadProcessId(hwnd, &pid);
     return pid == GetCurrentProcessId();
 #else
+    // Windows-only check: other platforms always report focused.
     return true;
 #endif
 }

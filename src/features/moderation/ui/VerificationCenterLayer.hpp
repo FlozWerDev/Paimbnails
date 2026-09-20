@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 
@@ -32,6 +32,9 @@ protected:
     std::vector<PendingItem> m_allItems;
 
     CCMenuItemSpriteExtra* m_refreshBtn = nullptr;
+    unsigned m_queueGeneration = 0;
+    bool m_actionPending = false;
+    void onSession(cocos2d::CCObject*);
 
     std::vector<PendingItem> m_items;
     int m_selectedIndex = -1;

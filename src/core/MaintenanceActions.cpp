@@ -207,20 +207,13 @@ $execute {
 
     ButtonSettingPressedEventV3(Mod::get(), "maintenance-refresh-mod-code").listen([](auto buttonKey) {
         if (buttonKey != "run") return;
-        paimon::modauth::startOrComplete();
+        paimon::modauth::showPanel();
     }).leak();
 
     ButtonSettingPressedEventV3(Mod::get(), "maintenance-copy-mod-code").listen([](auto buttonKey) {
         if (buttonKey != "run") return;
 
-        std::string code = HttpClient::get().getModCode();
-        if (code.empty()) {
-            PaimonNotify::create("No tienes un mod code generado. Usa 'Fetch Mod Code' primero.", NotificationIcon::Info)->show();
-            return;
-        }
-
-        PlatformToolbox::copyToClipboard(code);
-        PaimonNotify::create("Mod code copiado al portapapeles.", NotificationIcon::Success)->show();
+        paimon::modauth::showPanel();
     }).leak();
 
     ButtonSettingPressedEventV3(Mod::get(), "open-menu-music-folder").listen([](auto buttonKey) {

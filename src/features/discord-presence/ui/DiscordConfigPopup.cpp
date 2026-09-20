@@ -8,6 +8,7 @@
 #include "../../../utils/LocalAssetStore.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/WebHelper.hpp"
+#include "../../../utils/Localization.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/loader/SettingV3.hpp>
@@ -17,6 +18,7 @@
 #include "../../../ui/PaiConfigKit.hpp"
 
 #include <cctype>
+#include <algorithm>
 #include <filesystem>
 
 using namespace cocos2d;
@@ -60,11 +62,37 @@ int childTouchPrio() {
     return CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2;
 }
 
-bool isExternalUrl(std::string const& v) {
-    return v.rfind("https://", 0) == 0 || v.rfind("http://", 0) == 0 || v.rfind("mp:", 0) == 0;
+std::string tr(char const* key, char const* fallback = "") {
+    auto value = Localization::get().getString(key);
+    if (value == key && fallback && fallback[0] != '\0') return fallback;
+    return value;
 }
 
-// Upload anonymously with an HTTP/1.1 retry; fall back to 0x0.st on failure.
+// Only https:// and mp: count; http:// auto-upgrades.
+bool isExternalUrl(std::string const& v) {
+    return v.rfind("https://", 0) == 0 || v.rfind("mp:", 0) == 0;
+}
+
+// Asset keys: ^[a-z0-9_]{2,32}$ (no regex).
+bool isValidAssetKey(std::string const& v) {
+    if (v.size() < 2 || v.size() > 32) return false;
+    for (auto ch : v) {
+        auto c = static_cast<unsigned char>(ch);
+        bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+        if (!ok) return false;
+    }
+    return true;
+}
+
+// Releases pre-async retain on scope exit.
+struct RetainGuard {
+    CCObject* m_target;
+    explicit RetainGuard(CCObject* t) : m_target(t) {}
+    ~RetainGuard() { if (m_target) m_target->release(); }
+    RetainGuard(RetainGuard const&) = delete;
+    RetainGuard& operator=(RetainGuard const&) = delete;
+};
+
 void uploadToCatbox(std::vector<uint8_t> const& data, std::string const& filename,
                     std::function<void(bool, std::string)> cb) {
     if (data.empty()) {
@@ -232,7 +260,8 @@ public:
 };
 
 CCNode* makeToggleRow(const char* title, const char* desc, bool value,
-                      std::function<void(bool)> onChange, float width) {
+                      std::function<void(bool)> onChange, float width,
+                      CCMenuItemToggler** outToggler = nullptr) {
     auto row = CCNode::create();
     row->setContentSize({width, kToggleRowH});
     row->setAnchorPoint({0.f, 0.f});
@@ -265,6 +294,7 @@ CCNode* makeToggleRow(const char* title, const char* desc, bool value,
     toggler->setUserObject(cb);
     menu->addChild(toggler);
 
+    if (outToggler) *outToggler = toggler;
     return row;
 }
 
@@ -272,7 +302,7 @@ CCNode* makeCycleRow(const char* title, const char* desc,
                      std::string const& initialValue,
                      std::vector<std::string> const& options,
                      std::function<void(std::string const&)> onChange,
-                     float width) {
+                     float width, CCObject** outCycle = nullptr) {
     auto row = CCNode::create();
     row->setContentSize({width, kToggleRowH});
     row->setAnchorPoint({0.f, 0.f});
@@ -301,6 +331,7 @@ CCNode* makeCycleRow(const char* title, const char* desc,
         if (options[i] == initialValue) { initIdx = static_cast<int>(i); break; }
     }
     auto cb = CycleCallback::create(std::move(onChange), options, initIdx);
+    if (outCycle) *outCycle = cb;
 
     float rightEdge = width - 6.f;
     float valueW = 68.f;
@@ -361,7 +392,7 @@ CCNode* makeInputRow(const char* title, const char* placeholder,
     return row;
 }
 
-// Let each user import a local image and upload it as a Discord external asset.
+// Local image -> Discord external asset.
 CCNode* makeImagePickerRow(const char* title, const char* placeholder,
                            std::string const& value, int maxChars,
                            std::function<void(std::string const&)> onChange,
@@ -491,13 +522,12 @@ DiscordConfigPopup* DiscordConfigPopup::create() {
 bool DiscordConfigPopup::init() {
     if (!Popup::init(kPopupW, kPopupH)) return false;
 
-    this->setTitle("Discord Rich Presence");
+    this->setTitle(tr("discord.title", "Discord Rich Presence").c_str());
     this->setMouseEnabled(true);
 
     auto content = m_mainLayer->getContentSize();
     float w = content.width - 30.f;
 
-// Touch persists, pushes to Discord, and refreshes the preview.
     auto touch = [this] { kick(); this->updatePreview(); };
 
     float previewH = 46.f;
@@ -568,7 +598,7 @@ bool DiscordConfigPopup::init() {
         m_prevSmall->setVisible(false);
         card->addChild(m_prevSmall);
 
-        auto tag = CCLabelBMFont::create("PREVIEW", "bigFont.fnt");
+        auto tag = CCLabelBMFont::create(tr("discord.preview_tag", "PREVIEW").c_str(), "bigFont.fnt");
         tag->setScale(0.18f);
         tag->setColor({120, 128, 145});
         tag->setAnchorPoint({1.f, 0.5f});
@@ -580,69 +610,106 @@ bool DiscordConfigPopup::init() {
 
     std::vector<CCNode*> cards;
 
-    cards.push_back(makeCard("General", {
-        makeToggleRow("Enable Rich Presence",
-            "Show your GD activity on your Discord profile",
-            gset<bool>("discord-rpc-enabled"),
-            [touch](bool v) { sset<bool>("discord-rpc-enabled", v); touch(); }, iw),
-        makeToggleRow("Private Mode",
-            "Hide level names and details, keep it minimal",
-            gset<bool>("discord-rpc-private-mode"),
-            [touch](bool v) { sset<bool>("discord-rpc-private-mode", v); touch(); }, iw),
-        makeToggleRow("Idle When Unfocused",
-            "Switch to idle when the game loses focus",
-            gset<bool>("discord-rpc-idle-when-unfocused"),
-            [touch](bool v) { sset<bool>("discord-rpc-idle-when-unfocused", v); touch(); }, iw),
-    }, w));
+    // Idle detection is Windows-only.
+    std::string idleDesc = tr("discord.idle_desc", "Switch to idle when the game loses focus")
+        + " " + tr("discord.windows_only", "(Windows only)");
 
-    cards.push_back(makeCard("Display", {
-        makeToggleRow("Show Elapsed Time",
-            "Display how long you have been playing",
+    CCMenuItemToggler* tEnabled = nullptr;
+    CCMenuItemToggler* tPrivate = nullptr;
+    CCMenuItemToggler* tIdle = nullptr;
+    cards.push_back(makeCard(tr("discord.card_general", "General").c_str(), {
+        makeToggleRow(tr("discord.enable_title", "Enable Rich Presence").c_str(),
+            tr("discord.enable_desc", "Show your GD activity on your Discord profile").c_str(),
+            gset<bool>("discord-rpc-enabled"),
+            [touch](bool v) { sset<bool>("discord-rpc-enabled", v); touch(); }, iw, &tEnabled),
+        makeToggleRow(tr("discord.private_title", "Private Mode").c_str(),
+            tr("discord.private_desc", "Hide level names and details, keep it minimal").c_str(),
+            gset<bool>("discord-rpc-private-mode"),
+            [touch](bool v) { sset<bool>("discord-rpc-private-mode", v); touch(); }, iw, &tPrivate),
+        makeToggleRow(tr("discord.idle_title", "Idle When Unfocused").c_str(),
+            idleDesc.c_str(),
+            gset<bool>("discord-rpc-idle-when-unfocused"),
+            [touch](bool v) { sset<bool>("discord-rpc-idle-when-unfocused", v); touch(); }, iw, &tIdle),
+    }, w));
+    m_settingTogglers.push_back(tEnabled);
+    m_settingToggleKeys.push_back("discord-rpc-enabled");
+    m_settingTogglers.push_back(tPrivate);
+    m_settingToggleKeys.push_back("discord-rpc-private-mode");
+    m_settingTogglers.push_back(tIdle);
+    m_settingToggleKeys.push_back("discord-rpc-idle-when-unfocused");
+
+    // Normalize saved value.
+    {
+        auto savedType = gset<std::string>("discord-rpc-activity-type");
+        if (savedType != "Playing" && savedType != "Listening"
+            && savedType != "Watching" && savedType != "Competing") {
+            sset<std::string>("discord-rpc-activity-type", "Playing");
+        }
+    }
+
+    CCMenuItemToggler* tTimestamp = nullptr;
+    CCMenuItemToggler* tProgress = nullptr;
+    CCMenuItemToggler* tFeatures = nullptr;
+    cards.push_back(makeCard(tr("discord.card_display", "Display").c_str(), {
+        makeToggleRow(tr("discord.timestamp_title", "Show Elapsed Time").c_str(),
+            tr("discord.timestamp_desc", "Display how long you have been playing").c_str(),
             gset<bool>("discord-rpc-show-timestamp"),
-            [touch](bool v) { sset<bool>("discord-rpc-show-timestamp", v); touch(); }, iw),
-        makeToggleRow("Show Level Progress",
-            "Include percent and attempts while in a level",
+            [touch](bool v) { sset<bool>("discord-rpc-show-timestamp", v); touch(); }, iw, &tTimestamp),
+        makeToggleRow(tr("discord.progress_title", "Show Level Progress").c_str(),
+            tr("discord.progress_desc", "Include percent and attempts while in a level").c_str(),
             gset<bool>("discord-rpc-show-progress"),
-            [touch](bool v) { sset<bool>("discord-rpc-show-progress", v); touch(); }, iw),
-        makeToggleRow("Include Paimbnails Features",
-            "Mention Paimbnails screens like the hub or editor",
+            [touch](bool v) { sset<bool>("discord-rpc-show-progress", v); touch(); }, iw, &tProgress),
+        makeToggleRow(tr("discord.features_title", "Include Paimbnails Features").c_str(),
+            tr("discord.features_desc", "Mention Paimbnails screens like the hub or editor").c_str(),
             gset<bool>("discord-rpc-include-paimbnails-features"),
-            [touch](bool v) { sset<bool>("discord-rpc-include-paimbnails-features", v); touch(); }, iw),
-        makeCycleRow("Activity Type",
-            "How the first line reads on your profile",
+            [touch](bool v) { sset<bool>("discord-rpc-include-paimbnails-features", v); touch(); }, iw, &tFeatures),
+        makeCycleRow(tr("discord.activity_title", "Activity Type").c_str(),
+            tr("discord.activity_desc", "How the first line reads on your profile").c_str(),
             gset<std::string>("discord-rpc-activity-type"),
             {"Playing", "Listening", "Watching", "Competing"},
-            [touch](std::string const& v) { sset<std::string>("discord-rpc-activity-type", v); touch(); }, iw),
+            [touch](std::string const& v) { sset<std::string>("discord-rpc-activity-type", v); touch(); }, iw, &m_activityCycle),
     }, w));
+    m_settingTogglers.push_back(tTimestamp);
+    m_settingToggleKeys.push_back("discord-rpc-show-timestamp");
+    m_settingTogglers.push_back(tProgress);
+    m_settingToggleKeys.push_back("discord-rpc-show-progress");
+    m_settingTogglers.push_back(tFeatures);
+    m_settingToggleKeys.push_back("discord-rpc-include-paimbnails-features");
 
-    cards.push_back(makeCard("Custom Text", {
-        makeToggleRow("Override Details Line",
-            "Replace the first text line with your own",
+    CCMenuItemToggler* tOverrideDetails = nullptr;
+    CCMenuItemToggler* tOverrideState = nullptr;
+    cards.push_back(makeCard(tr("discord.card_custom", "Custom Text").c_str(), {
+        makeToggleRow(tr("discord.override_details_title", "Override Details Line").c_str(),
+            tr("discord.override_details_desc", "Replace the first text line with your own").c_str(),
             gset<bool>("discord-rpc-override-details"),
-            [touch](bool v) { sset<bool>("discord-rpc-override-details", v); touch(); }, iw),
-        makeInputRow("Details", "Playing my own way",
+            [touch](bool v) { sset<bool>("discord-rpc-override-details", v); touch(); }, iw, &tOverrideDetails),
+        makeInputRow(tr("discord.details_title", "Details").c_str(), tr("discord.details_hint", "Playing my own way").c_str(),
             gset<std::string>("discord-rpc-custom-details"), 128,
             [touch](std::string const& v) { sset<std::string>("discord-rpc-custom-details", v); touch(); },
             iw, &m_detailsInput),
-        makeToggleRow("Override State Line",
-            "Replace the second text line with your own",
+        makeToggleRow(tr("discord.override_state_title", "Override State Line").c_str(),
+            tr("discord.override_state_desc", "Replace the second text line with your own").c_str(),
             gset<bool>("discord-rpc-override-state"),
-            [touch](bool v) { sset<bool>("discord-rpc-override-state", v); touch(); }, iw),
-        makeInputRow("State", "With Paimon by my side",
+            [touch](bool v) { sset<bool>("discord-rpc-override-state", v); touch(); }, iw, &tOverrideState),
+        makeInputRow(tr("discord.state_title", "State").c_str(), tr("discord.state_hint", "With Paimon by my side").c_str(),
             gset<std::string>("discord-rpc-custom-state"), 128,
             [touch](std::string const& v) { sset<std::string>("discord-rpc-custom-state", v); touch(); },
             iw, &m_stateInput),
     }, w));
+    m_settingTogglers.push_back(tOverrideDetails);
+    m_settingToggleKeys.push_back("discord-rpc-override-details");
+    m_settingTogglers.push_back(tOverrideState);
+    m_settingToggleKeys.push_back("discord-rpc-override-state");
 
-// Pick a local image and upload it as a per-user custom Discord asset.
     auto makePickHandler = [this, touch](bool isLarge) {
-    // Capture weakly so the popup may close before completion.
+    // Keep popup alive during async pick.
+        this->retain();
         auto* self = this;
-    // Keep the popup alive through the callback.
         pt::pickImage([self, isLarge, touch](geode::Result<std::optional<std::filesystem::path>> result) {
-            if (!self) return;
+            RetainGuard guard(self);
+            if (self->m_destroyed) return;
             if (result.isErr()) {
-                PaimonNotify::create("No se pudo abrir el selector", NotificationIcon::Error)->show();
+                PaimonNotify::create(tr("discord.pick_open_fail", "No se pudo abrir el selector"), NotificationIcon::Error)->show();
                 return;
             }
             auto opt = result.unwrap();
@@ -654,13 +721,13 @@ bool DiscordConfigPopup::init() {
 
             auto imported = paimon::assets::importToBucket(srcPath, "discord_rpc", paimon::assets::Kind::Image);
             if (!imported.success) {
-                PaimonNotify::create("No se pudo importar: " + imported.error, NotificationIcon::Error)->show();
+                PaimonNotify::create(tr("discord.import_fail", "No se pudo importar: ") + imported.error, NotificationIcon::Error)->show();
                 return;
             }
 
             auto data = ImageLoadHelper::readBinaryFile(imported.path, 8);
             if (data.empty()) {
-                PaimonNotify::create("Archivo vacio o muy grande (>8MB)", NotificationIcon::Error)->show();
+                PaimonNotify::create(tr("discord.file_empty", "Archivo vacio o muy grande (>8MB)"), NotificationIcon::Error)->show();
                 return;
             }
 
@@ -670,53 +737,55 @@ bool DiscordConfigPopup::init() {
             if (prevVal == "subiendo...") prevVal = gset<std::string>(key.c_str());
 
             if (targetInput) targetInput->setString("subiendo...");
-            PaimonNotify::create("Subiendo imagen...", NotificationIcon::Info)->show();
+            PaimonNotify::create(tr("discord.uploading", "Subiendo imagen..."), NotificationIcon::Info)->show();
 
+            self->retain();
             uploadToCatbox(data, fname, [self, key, targetInput, touch, prevVal](bool ok, std::string urlOrErr) {
-                if (!self) return;
+                RetainGuard uploadGuard(self);
+                if (self->m_destroyed) return;
                 if (!ok) {
                     std::string msg = urlOrErr;
                     if (msg.size() > 220) msg.resize(220);
-                    PaimonNotify::create("Error al subir: " + msg, NotificationIcon::Error)->show();
+                    PaimonNotify::create(tr("discord.upload_fail", "Error al subir: ") + msg, NotificationIcon::Error)->show();
                     if (targetInput) {
-    // Restore the previous URL on failure so presence keeps working.
+                        // Restore previous URL on failure.
                         if (!prevVal.empty() && prevVal != "subiendo...") targetInput->setString(prevVal);
                         else targetInput->setString("");
                     }
                     return;
                 }
-    // Discord fetches the stored HTTPS URL as a per-user external image.
+                // Discord fetches this HTTPS URL as external image.
                 sset<std::string>(key.c_str(), urlOrErr);
                 if (targetInput) targetInput->setString(urlOrErr);
                 touch();
-                PaimonNotify::create("Imagen subida! Visible para todos en Discord.", NotificationIcon::Success)->show();
+                PaimonNotify::create(tr("discord.upload_ok", "Imagen subida! Visible para todos en Discord."), NotificationIcon::Success)->show();
             });
         });
     };
 
-    cards.push_back(makeCard("Images", {
-        makeImagePickerRow("Large image", "paimbnails / https://...",
+    cards.push_back(makeCard(tr("discord.card_images", "Images").c_str(), {
+        makeImagePickerRow(tr("discord.large_image_title", "Large image").c_str(), tr("discord.large_image_hint", "paimbnails / https://...").c_str(),
             gset<std::string>("discord-rpc-large-image-key"), 256,
             [touch](std::string const& v) { sset<std::string>("discord-rpc-large-image-key", v); touch(); },
             [makePickHandler]() { makePickHandler(true); },
             iw, &m_largeImageKeyInput),
-        makeInputRow("Large hover", "Paimbnails Rich Presence",
+        makeInputRow(tr("discord.large_hover_title", "Large hover").c_str(), tr("discord.large_hover_hint", "Paimbnails Rich Presence").c_str(),
             gset<std::string>("discord-rpc-large-text"), 128,
             [touch](std::string const& v) { sset<std::string>("discord-rpc-large-text", v); touch(); },
             iw, &m_largeTextInput),
-        makeImagePickerRow("Small image", "auto / https://... / key",
+        makeImagePickerRow(tr("discord.small_image_title", "Small image").c_str(), tr("discord.small_image_hint", "auto / https://... / key").c_str(),
             gset<std::string>("discord-rpc-small-image-key"), 256,
             [touch](std::string const& v) { sset<std::string>("discord-rpc-small-image-key", v); touch(); },
             [makePickHandler]() { makePickHandler(false); },
             iw, &m_smallImageKeyInput),
-        makeInputRow("Small hover", "auto",
+        makeInputRow(tr("discord.small_hover_title", "Small hover").c_str(), tr("discord.small_hover_hint", "auto").c_str(),
             gset<std::string>("discord-rpc-small-text"), 128,
             [touch](std::string const& v) { sset<std::string>("discord-rpc-small-text", v); touch(); },
             iw, &m_smallTextInput),
     }, w));
 
     {
-        auto hint = CCLabelBMFont::create("Tip: usa el boton carpeta para elegir imagen local.", "chatFont.fnt");
+        auto hint = CCLabelBMFont::create(tr("discord.hint_pick", "Tip: usa el boton carpeta para elegir imagen local.").c_str(), "chatFont.fnt");
         hint->setScale(0.30f);
         hint->setColor({140, 155, 175});
         hint->setAnchorPoint({0.f, 0.5f});
@@ -725,7 +794,7 @@ bool DiscordConfigPopup::init() {
         hint->setPosition({4.f, 5.f});
         hintCard->addChild(hint);
 
-        auto hint2 = CCLabelBMFont::create("Cada usuario sube la suya (catbox) -> visible en Discord.", "chatFont.fnt");
+        auto hint2 = CCLabelBMFont::create(tr("discord.hint_catbox", "Cada usuario sube la suya (catbox) -> visible en Discord.").c_str(), "chatFont.fnt");
         hint2->setScale(0.28f);
         hint2->setColor({110, 140, 160});
         hint2->setAnchorPoint({0.f, 0.5f});
@@ -766,21 +835,21 @@ bool DiscordConfigPopup::init() {
         footer->setPosition({0.f, 0.f});
         m_mainLayer->addChild(footer, 20);
 
-        auto resetSpr = ButtonSprite::create("Reset", "bigFont.fnt", "GJ_button_06.png", 0.8f);
+        auto resetSpr = ButtonSprite::create(tr("discord.btn_reset", "Reset").c_str(), "bigFont.fnt", "GJ_button_06.png", 0.8f);
         resetSpr->setScale(0.38f);
         auto resetBtn = CCMenuItemSpriteExtra::create(
             resetSpr, this, menu_selector(DiscordConfigPopup::onResetDefaults));
         resetBtn->setPosition({40.f, 16.f});
         footer->addChild(resetBtn);
 
-        auto refreshSpr = ButtonSprite::create("Refresh", "bigFont.fnt", "GJ_button_05.png", 0.8f);
+        auto refreshSpr = ButtonSprite::create(tr("discord.btn_refresh", "Refresh").c_str(), "bigFont.fnt", "GJ_button_05.png", 0.8f);
         refreshSpr->setScale(0.38f);
         auto refreshBtn = CCMenuItemSpriteExtra::create(
             refreshSpr, this, menu_selector(DiscordConfigPopup::onRefreshPresence));
         refreshBtn->setPosition({content.width / 2.f, 16.f});
         footer->addChild(refreshBtn);
 
-        auto geodeSpr = ButtonSprite::create("Geode", "bigFont.fnt", "GJ_button_04.png", 0.8f);
+        auto geodeSpr = ButtonSprite::create(tr("discord.btn_geode", "Geode").c_str(), "bigFont.fnt", "GJ_button_04.png", 0.8f);
         geodeSpr->setScale(0.38f);
         auto geodeBtn = CCMenuItemSpriteExtra::create(
             geodeSpr, this, menu_selector(DiscordConfigPopup::onOpenGeodeSettings));
@@ -807,21 +876,23 @@ void DiscordConfigPopup::updatePreview() {
     std::string details;
     std::string state;
     if (!enabled) {
-        details = "Rich Presence is disabled";
+        details = tr("discord.preview_disabled", "Rich Presence is disabled");
     } else if (priv) {
-        details = "Playing Geometry Dash";
-        state = "(private mode: no extra info)";
+        // Private mode runs before overrides (mirrors manager).
+        details = tr("discord.preview_private", "Playing Geometry Dash");
+        state = tr("discord.preview_private_state", "(private mode: no extra info)");
     } else {
         if (gset<bool>("discord-rpc-override-details")) {
             details = gset<std::string>("discord-rpc-custom-details");
         }
-        if (details.empty()) details = "Browsing the menus";
+        if (details.empty()) details = tr("discord.preview_browsing", "Browsing the menus");
 
         if (gset<bool>("discord-rpc-override-state")) {
             state = gset<std::string>("discord-rpc-custom-state");
         }
         if (state.empty() && gset<bool>("discord-rpc-show-progress")) {
-            state = "Stereo Madness (34%, 12 attempts)";
+        // Static example: only best % is sent, never attempts.
+            state = "Stereo Madness (Best 34%)";
         }
     }
     m_prevDetails->setString(details.c_str());
@@ -833,7 +904,6 @@ void DiscordConfigPopup::updatePreview() {
     if (m_prevSmall) {
         auto smallTxt = gset<std::string>("discord-rpc-small-text");
         auto smallKey = gset<std::string>("discord-rpc-small-image-key");
-// Show only the final path component for long HTTPS URLs.
         std::string displayKey = smallKey;
         if (isExternalUrl(displayKey)) {
             auto lastSlash = displayKey.rfind('/');
@@ -867,13 +937,14 @@ void DiscordConfigPopup::updatePreview() {
 }
 
 void DiscordConfigPopup::onExit() {
+    m_destroyed = true;
     this->unschedule(schedule_selector(DiscordConfigPopup::updateSmoothScroll));
     DiscordPresenceManager::get().refreshSoon();
     Popup::onExit();
 }
 
 void DiscordConfigPopup::scrollWheel(float x, float y) {
-// Use the shared helper at a lower speed so global smooth scroll does not amplify it.
+    // Lower speed so global smooth scroll doesn't amplify it.
     if (paimon::configkit::queueWheelScroll(m_scroll, x, y, m_scrollTargetY, m_scrollTargetSet, 12.f)) return;
 }
 
@@ -886,14 +957,38 @@ void DiscordConfigPopup::onOpenGeodeSettings(CCObject*) {
 }
 
 void DiscordConfigPopup::onRefreshPresence(CCObject*) {
-    DiscordPresenceManager::get().refreshSoon();
-    PaimonNotify::create("Rich Presence refreshed.", NotificationIcon::Success)->show();
+    bool warned = false;
+    std::string imageKeys[2] = {
+        gset<std::string>("discord-rpc-large-image-key"),
+        gset<std::string>("discord-rpc-small-image-key"),
+    };
+    for (int i = 0; i < 2 && !warned; i++) {
+        auto const& v = imageKeys[i];
+        if (v.empty()) continue;
+        if (v.rfind("http://", 0) == 0) {
+            PaimonNotify::create(
+                tr("discord.warn_http_upgraded", "Image URLs starting with http:// will be auto-upgraded to https."),
+                NotificationIcon::Info)->show();
+            warned = true;
+        } else if (!isExternalUrl(v) && !isValidAssetKey(v)) {
+            PaimonNotify::create(
+                tr(i == 0 ? "discord.warn_bad_large_key" : "discord.warn_bad_small_key",
+                   i == 0 ? "Large image key is invalid, a fallback will be used."
+                          : "Small image key is invalid, a fallback will be used."),
+                NotificationIcon::Warning)->show();
+            warned = true;
+        }
+    }
+    DiscordPresenceManager::get().refreshNow(true);
+    if (!warned) {
+        PaimonNotify::create(tr("discord.refreshed", "Rich Presence refreshed."), NotificationIcon::Success)->show();
+    }
 }
 
 void DiscordConfigPopup::onResetDefaults(CCObject*) {
-    PopupManager::get().quickPopup("Reset Discord RPC",
-        "Reset all Discord RPC settings to their defaults?",
-        "Cancel", "Reset",
+    PopupManager::get().quickPopup(tr("discord.reset_title", "Reset Discord RPC").c_str(),
+        tr("discord.reset_body", "Reset all Discord RPC settings to their defaults?").c_str(),
+        tr("discord.reset_cancel", "Cancel").c_str(), tr("discord.reset_confirm", "Reset").c_str(),
         [this](auto, bool btn2) {
             if (!btn2) return;
             if (auto setting = Mod::get()->getSetting("discord-rpc-enabled")) setting->reset();
@@ -921,9 +1016,29 @@ void DiscordConfigPopup::onResetDefaults(CCObject*) {
             if (m_smallImageKeyInput) m_smallImageKeyInput->setString("");
             if (m_smallTextInput) m_smallTextInput->setString("");
 
+    // Sync widgets to defaults; toggle() only flips visual state.
+            auto defaultFor = [](std::string const& key) {
+                if (key == "discord-rpc-private-mode") return false;
+                if (key == "discord-rpc-override-details") return false;
+                if (key == "discord-rpc-override-state") return false;
+                return true;
+            };
+            size_t n = std::min(m_settingTogglers.size(), m_settingToggleKeys.size());
+            for (size_t i = 0; i < n; i++) {
+                if (m_settingTogglers[i]) m_settingTogglers[i]->toggle(defaultFor(m_settingToggleKeys[i]));
+            }
+            if (m_activityCycle) {
+                if (auto* cyc = static_cast<CycleCallback*>(m_activityCycle)) {
+                    cyc->m_currentIndex = 0;
+                    if (cyc->m_valueLabel && !cyc->m_options.empty()) {
+                        cyc->m_valueLabel->setString(cyc->m_options[0].c_str());
+                    }
+                }
+            }
+
             DiscordPresenceManager::get().refreshSoon();
             this->updatePreview();
-            PaimonNotify::create("Discord RPC reset to defaults.", NotificationIcon::Success)->show();
+            PaimonNotify::create(tr("discord.reset_done", "Discord RPC reset to defaults."), NotificationIcon::Success)->show();
         }).showInstant();
 }
 

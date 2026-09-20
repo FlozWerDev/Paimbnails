@@ -186,7 +186,9 @@ private:
     bool m_mouseDown = false;
     bool m_rightDown = false;
     bool m_fxHeld = false;
-    cocos2d::CCPoint m_touchPoint{};
+    // Offscreen until the first touch: on mobile there is no pointer before
+    // a finger lands, and (0,0) would fake a bottom-left hover/cursor on boot.
+    cocos2d::CCPoint m_touchPoint{-10000.f, -10000.f};
     bool m_sceneVisible = false;
     int  m_sceneVisibleCooldown = 0;
     int  m_clickModuleCooldown = 0;

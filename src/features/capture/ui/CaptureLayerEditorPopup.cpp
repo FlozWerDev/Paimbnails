@@ -33,12 +33,7 @@ using paimon::capture::ui::ClippedMenu;
 static auto& s_originalVisibilities = *new std::vector<paimon::capture::VisibilityRecord>();
 
 namespace {
-    constexpr ccColor3B kAccent    {255, 215, 90};
-    constexpr ccColor3B kTextOn    {255, 255, 255};
-    constexpr ccColor3B kTextOff   {130, 130, 130};
-    constexpr ccColor3B kHeaderOn  {255, 226, 120};
-    constexpr ccColor3B kHeaderOff {120, 110, 80};
-    constexpr ccColor3B kPartial   {255, 190, 90};
+    using namespace paimon::capture::theme;
 
     static std::string simplifyClassName(std::string const& cls) {
         std::string name = cls;
@@ -290,7 +285,7 @@ void CaptureLayerEditorPopup::populateLayers() {
 
         if (!isGroup && node) {
             addedNodes.insert(node);
-            paimon::capture::recordVisibility(m_originalVisibilities, node, m_layers[idx].originalVisibility);
+            paimon::capture::recordVisibility(s_originalVisibilities, node, m_layers[idx].originalVisibility);
         }
         return idx;
     };
@@ -527,7 +522,8 @@ bool CaptureLayerEditorPopup::isEntryVisible(int idx) const {
         return true;
     }
 
-    return entry.node ? entry.node->isVisible() : entry.currentVisibility;
+    if (auto locked = entry.node.lock()) return locked->isVisible();
+    return entry.currentVisibility;
 }
 
 std::pair<int, int> CaptureLayerEditorPopup::visibleLeafCount(int idx) const {
@@ -535,7 +531,8 @@ std::pair<int, int> CaptureLayerEditorPopup::visibleLeafCount(int idx) const {
     auto const& entry = m_layers[idx];
 
     if (entry.childIndices.empty()) {
-        bool vis = entry.node ? entry.node->isVisible() : entry.currentVisibility;
+        bool vis = entry.currentVisibility;
+        if (auto locked = entry.node.lock()) vis = locked->isVisible();
         return {vis ? 1 : 0, 1};
     }
 
@@ -571,10 +568,10 @@ void CaptureLayerEditorPopup::setEntryVisible(int idx, bool visible, bool cascad
         }
     } else {
         entry.currentVisibility = visible;
-        if (entry.node) {
-            entry.node->setVisible(visible);
+        if (auto locked = entry.node.lock()) {
+            locked->setVisible(visible);
 // Preserve explicit choices so capture's hide pass cannot override them.
-            paimon::capture::setUserShown(entry.node, visible);
+            paimon::capture::setUserShown(locked.data(), visible);
         }
         if (cascadeChildren) {
             for (int child : entry.childIndices) {
@@ -589,13 +586,14 @@ void CaptureLayerEditorPopup::refreshRowVisuals(int idx) {
     auto& entry = m_layers[idx];
 
     bool vis = isEntryVisible(idx);
+// Single leaf-count pass feeds the toggler, the counter and the label.
+    auto [visibleLeaves, totalLeaves] = visibleLeafCount(idx);
 
     if (entry.toggler) {
         bool desired = vis;
         if (entry.isGroup) {
             // Half-lit groups stay checked but amber, so folding one away does
             // not read as "everything under here is hidden".
-            auto [visibleLeaves, totalLeaves] = visibleLeafCount(idx);
             bool const partial = visibleLeaves > 0 && visibleLeaves < totalLeaves;
             desired = vis || partial;
             if (auto* onButton = entry.toggler->m_onButton) {
@@ -608,7 +606,6 @@ void CaptureLayerEditorPopup::refreshRowVisuals(int idx) {
     }
 
     if (entry.countLabel) {
-        auto [visibleLeaves, totalLeaves] = visibleLeafCount(idx);
         entry.countLabel->setString(
             (std::to_string(visibleLeaves) + "/" + std::to_string(totalLeaves)).c_str());
         entry.countLabel->setColor(visibleLeaves == 0 ? kHeaderOff : ccColor3B{180, 220, 255});
@@ -616,7 +613,6 @@ void CaptureLayerEditorPopup::refreshRowVisuals(int idx) {
 
     if (entry.label) {
         if (entry.isGroup) {
-            auto [visibleLeaves, _] = visibleLeafCount(idx);
             entry.label->setColor(visibleLeaves > 0 ? kHeaderOn : kHeaderOff);
         } else {
             entry.label->setColor(vis ? kTextOn : kTextOff);
@@ -630,6 +626,14 @@ void CaptureLayerEditorPopup::refreshAncestors(int idx) {
     while (parentIdx >= 0) {
         refreshRowVisuals(parentIdx);
         parentIdx = m_layers[parentIdx].parentIndex;
+    }
+}
+
+void CaptureLayerEditorPopup::refreshSubtree(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return;
+    for (int child : m_layers[idx].childIndices) {
+        refreshRowVisuals(child);
+        refreshSubtree(child);
     }
 }
 
@@ -821,13 +825,7 @@ void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
 // Refresh this entry and related groups in place; avoid rebuilding the list.
     refreshRowVisuals(idx);
     refreshAncestors(idx);
-
-    for (int child : m_layers[idx].childIndices) {
-        refreshRowVisuals(child);
-        for (int grandchild : m_layers[child].childIndices) {
-            refreshRowVisuals(grandchild);
-        }
-    }
+    refreshSubtree(idx);
 
     refreshPreview();
 }
@@ -996,7 +994,9 @@ void CaptureLayerEditorPopup::onDoneBtn(CCObject* sender) {
 void CaptureLayerEditorPopup::onRestoreAllBtn(CCObject* sender) {
     if (!sender) return;
 
-    paimon::capture::restoreVisibility(m_originalVisibilities);
+// The baseline lives in s_originalVisibilities (filled by populateLayers);
+// restoreVisibility is WeakRef-safe, so dead level nodes are just skipped.
+    paimon::capture::restoreVisibility(s_originalVisibilities);
     paimon::capture::clearUserShown();
 
     for (auto& entry : m_layers) {

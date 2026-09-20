@@ -3,6 +3,7 @@
 #include "../../../utils/ScissorClipNode.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
+#include "../../cursor/services/CursorManager.hpp"
 #include <Geode/utils/cocos.hpp>
 #include <algorithm>
 
@@ -63,7 +64,14 @@ void ScoreCellHoverWatcher::update(float) {
     CCRect rect = cell->boundingBox();
     rect.origin = cellParent->convertToWorldSpace(rect.origin);
 
+#if defined(GEODE_IS_MOBILE)
+    // No mouse on touch screens: the cursor service tracks the finger via the
+    // touch dispatcher hook, so taps highlight cells. The highlight sticks on
+    // the last-tapped cell, which doubles as selection feedback.
+    bool inside = rect.containsPoint(CursorManager::get().pointerPos());
+#else
     bool inside = rect.containsPoint(geode::cocos::getMousePos());
+#endif
     if (inside == m_hovered) return;
 
     m_hovered = inside;
@@ -132,19 +140,30 @@ void ScoreCellHoverWatcher::applyTransformHover(bool on) {
 void ScoreCellHoverWatcher::ensureGlow() {
     auto* cell = this->getParent();
     if (!cell) return;
-    if (m_glow && m_glow->getParent() == cell) return;
+    if (m_glow && m_glow->getParent()) return;
 
     auto cs = cell->getContentSize();
     if (cs.width <= 1.f || cs.height <= 1.f) return;
+
+    // Rounded clip matching the cell gradient: a square overlay would flash
+    // white corners over the rounded background on every hover.
+    auto stencil = paimon::SpriteHelper::createRoundedRectStencil(cs.width, cs.height, 7.f);
+    if (!stencil) return;
+    auto clip = CCClippingNode::create(stencil);
+    if (!clip) return;
+    clip->setContentSize(cs);
+    clip->setPosition({0.f, 0.f});
+    clip->setAlphaThreshold(0.05f);
+    clip->setZOrder(2);
+    clip->setID("paimon-hover-glow");
 
     auto glow = CCLayerColor::create(ccc4(255, 255, 255, 0));
     if (!glow) return;
     glow->setContentSize(cs);
     glow->setPosition({0.f, 0.f});
-    glow->setZOrder(2);
     glow->setBlendFunc(additiveBlend());
-    glow->setID("paimon-hover-glow");
-    cell->addChild(glow);
+    clip->addChild(glow);
+    cell->addChild(clip);
     m_glow = glow;
 }
 
@@ -156,11 +175,15 @@ void ScoreCellHoverWatcher::startShine() {
 
     stopShine();
 
-    auto stencil = paimon::SpriteHelper::createRectStencil(cs.width, cs.height);
-    auto clip = paimon::ScissorClipNode::create(stencil);
+    auto stencil = paimon::SpriteHelper::createRoundedRectStencil(cs.width, cs.height, 7.f);
+    if (!stencil) return;
+    // Plain CCClippingNode: ScissorClipNode would take its scissor fast-path
+    // (axis-aligned rect) and ignore the rounded stencil.
+    auto clip = CCClippingNode::create(stencil);
     if (!clip) return;
     clip->setContentSize(cs);
     clip->setPosition({0.f, 0.f});
+    clip->setAlphaThreshold(0.05f);
     clip->setZOrder(3);
     clip->setID("paimon-hover-shine");
 

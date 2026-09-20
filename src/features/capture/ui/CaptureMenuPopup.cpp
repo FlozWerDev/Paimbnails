@@ -4,6 +4,8 @@
 #include "../../quick-hub/services/QuickHubManager.hpp"
 #include "../../menu-physics/services/MenuPhysicsManager.hpp"
 #include "../../smooth-scroll/ui/SmoothScrollConfigPopup.hpp"
+#include "../../../utils/ActivePauseLayer.hpp"
+#include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../blur/PopupBlurService.hpp"
@@ -197,6 +199,12 @@ void CaptureMenuPopup::onExit() {
 }
 
 void CaptureMenuPopup::onCapture(CCObject*) {
+    if (paimon::isCaptureInProgress()) {
+        PaimonNotify::create(
+            Localization::get().getString("pause.capture_busy").c_str(),
+            NotificationIcon::Info)->show();
+        return;
+    }
     // Hide this popup and drop only its own blur; popups underneath keep theirs
     // so they still look right in the screenshot.
     this->setVisible(false);

@@ -33,7 +33,7 @@ struct VideoFrame {
     double   pts      = 0.0;
     std::atomic<bool> ready{false};
 
-    // 32-byte aligned plane allocation for SIMD copies.
+    // 32-byte aligned for SIMD.
     static size_t alignedSize(int w, int h) {
         int alignedStride = ((w + 31) / 32) * 32;
         return static_cast<size_t>(alignedStride) * h;
@@ -71,9 +71,7 @@ struct VideoFrame {
     }
 };
 
-// A decode worker that outlived its join timeout leaks its OS handles on
-// purpose (releasing them would race the running thread). Android caps
-// concurrent MediaCodec instances device-wide, so track the bleed.
+// Intentional leak on join timeout; Android caps MediaCodec instances.
 void noteDetachedDecoder(const char* backend);
 int detachedDecoderCount();
 
@@ -92,31 +90,31 @@ public:
     virtual int getHeight() const = 0;
     virtual bool isFinished() const = 0;
 
-    // Skip the next frame without copying it.
+    // Coded size before backend downscale; picks BT.709 vs BT.601.
+    virtual int getNativeWidth() const { return getWidth(); }
+    virtual int getNativeHeight() const { return getHeight(); }
+
     virtual bool skipFrame() = 0;
 
     virtual double peekNextPTS() const = 0;
 
-    // Peek at the second frame; returns DBL_MAX when unavailable.
+    // Second frame PTS or DBL_MAX if none.
     virtual double peekSecondPTS() const { return 1e300; /* ~DBL_MAX */ }
 
     // Borrowed until releaseFrame(); no consuming/seek/stop calls in between.
     virtual const Frame* peekFrame() { return nullptr; }
 
-    // Release a frame borrowed from peekFrame().
     virtual void releaseFrame() {}
 
     virtual bool isTerminal() const { return false; }
 
-    // Rewind inside the decode loop at end of stream so the ring never drains.
-    // PTS restarts at 0; callers must handle the backwards jump. Returns false
-    // when the backend cannot do it and the caller must seek instead.
+    // Loops in decode thread; PTS restarts at 0, false = must seek.
     virtual bool setLooping(bool) { return false; }
 
     static std::unique_ptr<IVideoDecoder> create(const std::string& path);
 };
 
-// Lock-free single-producer/single-consumer ring buffer with adaptive capacity.
+// Lock-free SPSC ring with adaptive capacity.
 class VideoRingBuffer {
 public:
     using Frame = VideoFrame;
@@ -214,7 +212,7 @@ public:
         return m_slots[r].pts;
     }
 
-    // Peek at the second readable PTS; returns DBL_MAX when unavailable.
+    // Second readable PTS or DBL_MAX if none.
     double peekSecondPTS() const {
         int r = m_readIdx.load(std::memory_order_acquire);
         int w = m_writeIdx.load(std::memory_order_acquire);
@@ -247,7 +245,6 @@ public:
         return !isFull();
     }
 
-    // Wait for a readable frame or shutdown.
     template <typename Clock = std::chrono::steady_clock>
     bool waitForReadable(int timeoutMs, const std::atomic<bool>* aliveFlag = nullptr) {
         if (!isEmpty()) return true;

@@ -15,10 +15,11 @@
 #include <limits>
 #include <string>
 
-// Windows-only numeric input wheel control: integer fields step by one; decimal
-// fields use a small modifier step.
+// Desktop-only numeric input wheel control: integer fields step by one; decimal
+// fields use a small modifier step. (Needs a mouse wheel, and hooks
+// CCMouseDispatcher::dispatchScrollMSG like smooth-scroll does.)
 
-#if defined(GEODE_IS_WINDOWS)
+#if defined(GEODE_IS_DESKTOP)
 
 #include <Geode/modify/CCMouseDispatcher.hpp>
 
@@ -304,4 +305,4 @@ class $modify(PaimonInputScrollDispatcher, CCMouseDispatcher) {
     }
 };
 
-#endif // GEODE_IS_WINDOWS
+#endif // GEODE_IS_DESKTOP

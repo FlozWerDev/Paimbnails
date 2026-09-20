@@ -1,10 +1,15 @@
 #pragma once
 #include <Geode/loader/Mod.hpp>
+#include "../../core/modules/ModuleRegistry.hpp"
 #include <algorithm>
 #include <string>
 #include <vector>
 
 namespace paimon::scorecell {
+
+inline bool scoreGradientEnabled() {
+    return paimon::modules::isEnabled("paimbnails.scoregradient.browser");
+}
 
 
 inline bool gradientEnabled() {

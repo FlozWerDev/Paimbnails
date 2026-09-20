@@ -1,6 +1,7 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
+#include "ModAuthFlow.hpp"
 #include <string>
 #include <atomic>
 #include <cstdint>
@@ -252,10 +253,10 @@ namespace profiles {
 
 namespace moderation {
     inline bool isVerifiedModerator() {
-        return geode::Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
+        return paimon::modauth::isVerified();
     }
     inline bool isVerifiedAdmin() {
-        return geode::Mod::get()->getSavedValue<bool>("is-verified-admin", false);
+        return paimon::modauth::isVerified(true);
     }
     inline bool isVerifiedVip() {
         return geode::Mod::get()->getSavedValue<bool>("is-verified-vip", false);

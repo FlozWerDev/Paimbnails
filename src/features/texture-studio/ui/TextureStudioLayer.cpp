@@ -1,6 +1,8 @@
 #include "TextureStudioLayer.hpp"
 
+#include "../../../utils/FileDialog.hpp"
 #include "../engine/TextureLoaderInstaller.hpp"
+#include "../persist/ProjectShare.hpp"
 #include "../persist/SlotPaths.hpp"
 #include "../persist/SlotStore.hpp"
 #include "NewProjectPopup.hpp"
@@ -80,6 +82,13 @@ bool TextureStudioLayer::init() {
             menu->addChild(newBtn);
         }
     }
+    if (auto* importSpr = ButtonSprite::create("Import JSON", "bigFont.fnt", "GJ_button_05.png", 0.36f)) {
+        if (auto* importBtn = CCMenuItemExt::createSpriteExtra(importSpr,
+                [this](CCMenuItemSpriteExtra*) { this->onImportJson(nullptr); })) {
+            importBtn->setPosition({winSize.width - 210.f, winSize.height - 24.f});
+            menu->addChild(importBtn);
+        }
+    }
     if (auto* folderSpr = ButtonSprite::create("Folder", "bigFont.fnt", "GJ_button_05.png", 0.4f)) {
         if (auto* folderBtn = CCMenuItemExt::createSpriteExtra(folderSpr,
                 [this](CCMenuItemSpriteExtra*) { this->onOpenFolder(nullptr); })) {
@@ -143,8 +152,7 @@ void TextureStudioLayer::buildBackground() {
 
 void TextureStudioLayer::onEnter() {
     CCLayer::onEnter();
-    // Coming back from the editor scene: the project (or its built state)
-    // may have changed while we were away.
+    // Refresh on return: project may have changed in editor.
     if (m_enteredOnce) {
         if (m_grid) m_grid->refresh();
         refreshFooter();
@@ -169,6 +177,33 @@ void TextureStudioLayer::onNewPack(CCObject*) {
         ProjectEditorLayer::open(slotId);
     });
     if (popup) popup->show();
+}
+
+void TextureStudioLayer::onImportJson(CCObject*) {
+    WeakRef<TextureStudioLayer> weakSelf(this);
+    pt::pickJson([weakSelf](
+            geode::Result<std::optional<std::filesystem::path>> result) {
+        auto pathOpt = std::move(result).unwrapOr(std::nullopt);
+        if (!pathOpt || pathOpt->empty()) return;
+
+        auto imported = ProjectShare::importFrom(*pathOpt);
+        if (!imported) {
+            Notification::create(("Import failed: " + imported.unwrapErr()).c_str(),
+                NotificationIcon::Error, 4.0f)->show();
+            return;
+        }
+        auto slotId = imported.unwrap();
+        log::info("[texture-studio] imported pack json as slot '{}'", slotId);
+        Notification::create("Pack imported.", NotificationIcon::Success, 2.f)->show();
+
+        Loader::get()->queueInMainThread([weakSelf, slotId]() {
+            auto self = weakSelf.lock();
+            if (!self || !self->getParent()) return;
+            SlotStore::get().setActiveSlot(slotId);
+            if (self->m_grid) self->m_grid->refresh();
+            self->refreshFooter();
+        });
+    });
 }
 
 void TextureStudioLayer::onApplySlot(std::string const& slotId) {

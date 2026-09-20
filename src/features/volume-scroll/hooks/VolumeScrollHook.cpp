@@ -8,6 +8,7 @@
 #include <Geode/loader/SettingV3.hpp>
 #include <Geode/utils/Keyboard.hpp>
 
+#include <cmath>
 #include <unordered_set>
 
 #ifdef GEODE_IS_WINDOWS
@@ -207,9 +208,11 @@ $execute {
     }).leak();
 }
 
-// Windows-only dispatchScrollMSG hook; macOS/iOS inline this path.
+// dispatchScrollMSG is hookable on desktop (Windows + macOS: both have real
+// addresses in bindings). Only iOS has it inlined, so touch gestures below
+// cover mobile instead.
 
-#ifdef GEODE_IS_WINDOWS
+#if defined(GEODE_IS_DESKTOP)
 class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre("cocos2d::CCMouseDispatcher::dispatchScrollMSG",
@@ -307,6 +310,142 @@ class $modify(PaimonPauseZoomMouseHook, CCMouseDispatcher) {
     }
 };
 #endif
+
+// Mobile has no scroll wheel: a three-finger drag replaces the wheel gesture.
+// Vertical drag adjusts music, horizontal drag adjusts SFX. The game keeps
+// receiving every touch (Post priority, never consumed); the gesture stays
+// out of unpaused gameplay so it can never fight jump inputs.
+#if defined(GEODE_IS_MOBILE)
+#include <Geode/modify/CCEGLViewProtocol.hpp>
+
+namespace {
+// Raw handleTouches coords are view pixels with y pointing down, so dragging
+// UP on screen decreases the average y.
+constexpr float kTouchDeadzonePx = 36.f; // drift before the first step
+constexpr float kTouchStepPx     = 28.f; // pixels per volume step
+constexpr int   kGestureFingers  = 3;
+
+struct VolumeTouchState {
+    int fingerCount = 0;
+    bool baselineValid = false;
+    float lastAvgX = 0.f;
+    float lastAvgY = 0.f;
+    float accUp = 0.f;    // > 0 = dragged up
+    float accRight = 0.f; // > 0 = dragged right
+};
+
+VolumeTouchState g_volTouch;
+
+bool volumeTouchAllowed() {
+    if (!paimon::modules::isEnabled("paimbnails.volumescroll.global")) return false;
+    if (auto* pl = PlayLayer::get()) {
+        if (!pl->m_isPaused) return false;
+    }
+    return true;
+}
+
+void volumeTouchReset() {
+    g_volTouch.fingerCount = 0;
+    g_volTouch.baselineValid = false;
+    g_volTouch.accUp = 0.f;
+    g_volTouch.accRight = 0.f;
+}
+
+void volumeTouchSyncCount() {
+    if (g_volTouch.fingerCount != kGestureFingers) {
+        g_volTouch.baselineValid = false;
+        g_volTouch.accUp = 0.f;
+        g_volTouch.accRight = 0.f;
+    }
+}
+
+// Feed one axis: deadzone first, then one kVolumeStep per kTouchStepPx.
+void volumeTouchPush(VolumeKind kind, float deltaPixels, float& acc) {
+    acc += deltaPixels;
+    float sign = (acc < 0.f) ? -1.f : 1.f;
+    float over = std::fabs(acc) - kTouchDeadzonePx;
+    if (over < kTouchStepPx) return;
+    float steps = std::floor(over / kTouchStepPx);
+    VolumeScrollManager::get().onScroll(kind, sign * steps * kVolumeStep);
+    acc = sign * (kTouchDeadzonePx + (over - steps * kTouchStepPx));
+}
+
+float touchAvg(float const* v, int n) {
+    float sum = 0.f;
+    for (int i = 0; i < n; ++i) sum += v[i];
+    return n > 0 ? sum / static_cast<float>(n) : 0.f;
+}
+}
+
+class $modify(VolumeScrollTouchView, CCEGLViewProtocol) {
+    static void onModify(auto& self) {
+        // Gameplay first: touches are observed, never consumed.
+        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesBegin", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesMove", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesEnd", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesCancel", geode::Priority::Normal);
+    }
+
+    void trackBegin(int num, float xs[], float ys[]) {
+        g_volTouch.fingerCount += num;
+        volumeTouchSyncCount();
+        if (g_volTouch.fingerCount == kGestureFingers && volumeTouchAllowed()) {
+            g_volTouch.baselineValid = true;
+            g_volTouch.lastAvgX = touchAvg(xs, num);
+            g_volTouch.lastAvgY = touchAvg(ys, num);
+        } else {
+            g_volTouch.baselineValid = false;
+        }
+    }
+
+    void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {
+        CCEGLViewProtocol::handleTouchesBegin(num, ids, xs, ys, timestamp);
+        trackBegin(num, xs, ys);
+    }
+
+    void handleTouchesMove(int num, int ids[], float xs[], float ys[], double timestamp) {
+        CCEGLViewProtocol::handleTouchesMove(num, ids, xs, ys, timestamp);
+
+        if (g_volTouch.fingerCount != kGestureFingers) return;
+        if (!volumeTouchAllowed()) {
+            volumeTouchReset();
+            return;
+        }
+        // Only feed full-set moves: partial subsets would skew the average.
+        if (num != kGestureFingers) {
+            g_volTouch.baselineValid = false;
+            return;
+        }
+        float avgX = touchAvg(xs, num);
+        float avgY = touchAvg(ys, num);
+        if (!g_volTouch.baselineValid) {
+            g_volTouch.baselineValid = true;
+            g_volTouch.lastAvgX = avgX;
+            g_volTouch.lastAvgY = avgY;
+            return;
+        }
+        float dx = avgX - g_volTouch.lastAvgX;
+        float dy = avgY - g_volTouch.lastAvgY;
+        g_volTouch.lastAvgX = avgX;
+        g_volTouch.lastAvgY = avgY;
+        volumeTouchPush(VolumeKind::Music, -dy, g_volTouch.accUp);
+        volumeTouchPush(VolumeKind::SFX, dx, g_volTouch.accRight);
+    }
+
+    void handleTouchesEnd(int num, int ids[], float xs[], float ys[], double timestamp) {
+        CCEGLViewProtocol::handleTouchesEnd(num, ids, xs, ys, timestamp);
+        g_volTouch.fingerCount -= num;
+        if (g_volTouch.fingerCount < 0) g_volTouch.fingerCount = 0;
+        volumeTouchSyncCount();
+        g_volTouch.baselineValid = false;
+    }
+
+    void handleTouchesCancel(int num, int ids[], float xs[], float ys[], double timestamp) {
+        CCEGLViewProtocol::handleTouchesCancel(num, ids, xs, ys, timestamp);
+        volumeTouchReset();
+    }
+};
+#endif // defined(GEODE_IS_MOBILE)
 
 
 class VolumeScrollTickerNode : public CCNode {

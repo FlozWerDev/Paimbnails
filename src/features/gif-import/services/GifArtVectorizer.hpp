@@ -4,9 +4,7 @@
 
 namespace paimon::gifimport {
 
-// Las celdas de `spare` se pueden pisar pero no hace falta cubrirlas: son las que
-// otra capa tapa despues. Dejar que el rectangulo las atraviese es lo que convierte
-// un reguero de cuadrados de una celda en un rectangulo entero.
+// `spare` puede pisarse: otra capa lo tapa y permite fusionar en rectangulos.
 std::vector<Primitive> packBlocks(
     std::vector<int> const& positions,
     int width,
@@ -27,6 +25,13 @@ std::vector<std::uint8_t> renderPlanFrame(
     ImportPlan const& plan,
     int frame,
     int scale
+);
+
+std::vector<std::uint8_t> renderPlanFrame(
+    ImportPlan const& plan,
+    int frame,
+    int scale,
+    bool antialias
 );
 
 } // namespace paimon::gifimport

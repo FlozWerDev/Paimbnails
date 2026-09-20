@@ -108,6 +108,13 @@ void MiniPreview::refreshNow() {
     namespace C = paimon::capture::preview;
     if (!m_sprite) return;
 
+    // renderPreviewTexture needs a live PlayLayer; without one (or detached
+    // from the scene) retries would just spin, so fail fast.
+    if (!this->getParent() || !PlayLayer::get()) {
+        showStatus(Localization::get().getString("preview.mini_unavailable").c_str());
+        return;
+    }
+
     auto* tex = FramebufferCapture::renderPreviewTexture(
         C::MINI_RT_WIDTH, C::MINI_RT_HEIGHT, m_hideP1, m_hideP2);
 

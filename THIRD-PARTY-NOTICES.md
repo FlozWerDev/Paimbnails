@@ -1,9 +1,11 @@
 # Third-Party Notices — Paimbnails
 
 All features listed below are **independent implementations written from
-scratch for Paimbnails**, with one stated exception: **Search History
+scratch for Paimbnails**, with two stated exceptions: **Search History
 (§1)**, which ports logic from its MIT-licensed original and says so in
-its section. Otherwise no third-party code was copied. The credits exist
+its section, and **Separate Dual Icons (§3)**, inspired by an unlicensed
+original and rewritten from its behavior spec (see its section). Otherwise no
+third-party code was copied. The credits exist
 because the *idea* was inspired by another creator, or because the feature
 interoperates with third-party content that remains owned by its publishers.
 
@@ -294,23 +296,37 @@ no SPDX identifier, no license headers found in the repository snapshots
 reviewed; Ecuet's repository license status is still unconfirmed, so it is
 treated the same way). Default exclusive copyright applies, so Paimbnails
 does **not** copy their code — the implementations below are clean-room,
-idea-only recreations. The credits are a courtesy, not a license grant,
+idea-only recreations, including Separate Dual Icons, whose rewrite is
+documented in its entry below. The credits are a courtesy, not a license
+grant,
 and grant no trademark rights.
 
 - **Separate Dual Icons** by **Weebify**
   (`weebify.separate_dual_icons`, source:
   https://github.com/Weebifying/separate-dual-icons-geode), itself derived
   from the original 2.1-era SeparateDualIcons by **Alphalaneous**.
-  Paimbnails feature: `src/features/separate-dual/` (own kit storage seeded
-  from GameManager, own hooks and garage UI).
+  STATUS (2026-09-20): a source-level audit found that the Paimbnails
+  feature in `src/features/separate-dual/` still carried expression
+  ported from this unlicensed original, so it was **rewritten from the
+  behavior spec the same day** (same user-visible behavior; own
+  architecture: slot-table storage, snapshot kit exchange, data-table
+  trail/ship-fire tuning, table-driven garage picks). No code from the
+  original remains. Deliberately preserved: the on-disk save schema (key
+  names and lasttype codes, so existing P2 kits keep working), the Geode
+  hook signatures and node IDs the feature interoperates with, and GD
+  facts no one owns (API names, asset filenames, numeric tuning).
+  Residual note: behavior-compatible hooks inevitably make the same GD
+  API calls in a similar order — that is functional convergence, not
+  copied expression.
 - **Mod Previews** by **Alphalaneous** (`alphalaneous.mod_previews`,
   source: https://github.com/Alphalaneous/Mod-Previews). Paimbnails feature:
   `src/features/mod-previews/` (own URL parsing, branch probing and gallery;
   only the uncopyrightable `previews/preview-N.png` convention is shared).
   Preview images belong to each mod's own repository authors and are only
-  displayed, never redistributed. Note: an unrelated later mod with the same
-  name by Cheeseworks is GPL-3.0 — Paimbnails copies nothing from it, so no
-  copyleft applies.
+  displayed, never redistributed. A 2026-09-20 source audit confirmed no
+  copied code (verified against the live upstream). Note: an unrelated
+  later mod with the same name by Cheeseworks is GPL-3.0 — Paimbnails
+  copies nothing from it, so no copyleft applies.
 - **Custom Cursor** by **Ecuet** (`ecuet.custom-cursor`, source:
   https://github.com/Ecuet/Custom-Cursor; no LICENSE/LICENSE.md on main
   or master (checked 2026-09-15; API rate-limited), so treated as all
@@ -318,8 +334,9 @@ and grant no trademark rights.
   click-state tracking idea (`src/features/cursor/hooks/CursorHook.cpp`,
   `src/features/cursor/services/CursorShopClient.hpp`); the shop client
   was written against the store sites' own pages, and no Ecuet code was
-  knowingly reused. A source diff against the upstream commit is still
-  pending network access.
+  knowingly reused. A source diff against the upstream was performed on
+  2026-09-20 and confirmed idea-only reuse (no shared identifiers,
+  blocks or assets).
 
 ---
 

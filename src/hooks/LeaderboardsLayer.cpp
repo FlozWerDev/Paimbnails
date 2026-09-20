@@ -1,4 +1,5 @@
 #include <Geode/modify/LeaderboardsLayer.hpp>
+#include "../core/ModAuthFlow.hpp"
 #include "../framework/HookConventions.hpp"
 #include "../utils/DynamicPopupRegistry.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -284,8 +285,8 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     void onUploadBanner(CCObject*) {
         log::info("[LeaderboardsLayer] onUploadBanner");
         bool canUploadGIF = Mod::get()->getSavedValue<bool>("is-verified-vip", false)
-                         || Mod::get()->getSavedValue<bool>("is-verified-moderator", false)
-                         || Mod::get()->getSavedValue<bool>("is-verified-admin", false);
+                         || paimon::modauth::isVerified()
+                         || paimon::modauth::isVerified(true);
 
         WeakRef<PaimonLeaderboardsLayer> self = this;
         pt::pickImage([self, canUploadGIF](geode::Result<std::optional<std::filesystem::path>> result) {

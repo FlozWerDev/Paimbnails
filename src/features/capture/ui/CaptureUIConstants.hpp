@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Geode/cocos/include/ccTypes.h>
+
 namespace paimon::capture {
 
 namespace preview {
@@ -45,6 +47,16 @@ namespace preview {
 // Shared chrome for the two editor popups (layer editor / asset browser): a
 // header band with the live preview on the left and tools on the right, then a
 // full-width list, then the action row.
+namespace theme {
+    // Single palette for both editor popups (was copy-pasted per file).
+    constexpr cocos2d::ccColor3B kAccent    {255, 215, 90};
+    constexpr cocos2d::ccColor3B kTextOn    {255, 255, 255};
+    constexpr cocos2d::ccColor3B kTextOff   {130, 130, 130};
+    constexpr cocos2d::ccColor3B kHeaderOn  {255, 226, 120};
+    constexpr cocos2d::ccColor3B kHeaderOff {120, 110, 80};
+    constexpr cocos2d::ccColor3B kPartial   {255, 190, 90};
+}
+
 namespace editor {
     // The popup title sits ~20pt from the top and is ~20pt tall, so the header
     // band starts below that. PREVIEW_W/H keep the 16:9 framing of the capture.

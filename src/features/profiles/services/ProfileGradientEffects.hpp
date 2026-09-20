@@ -1,18 +1,35 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
 #include <Geode/cocos/layers_scenes_transitions_nodes/CCLayer.h>
 #include <Geode/cocos/actions/CCActionInterval.h>
 #include <Geode/cocos/actions/CCActionInstant.h>
 #include <Geode/cocos/cocoa/CCGeometry.h>
+#include <Geode/utils/cocos.hpp>
 #include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
+#include "../../../core/RuntimeLifecycle.hpp"
 
 namespace paimon::profilebg {
 
+// Animated gradient background.
+//
+// Design rules (all effects are vector/opacity-only):
+// - The node transform is NEVER animated. Past revisions rotated, scaled
+//   or slid the whole quad, which uncovered cell corners, made the cell
+//   look like it was breathing in size, and accumulated offsets when the
+//   effect was switched. Only the gradient direction (vector), the stop
+//   colors and the opacity move, so the quad always covers its clip.
+// - All motion is periodic with a continuous derivative (cosine-based), so
+//   there are no hard stops or mirror pops at loop points.
+// - Hover (desktop): a smooth lift plus a retriggered burst on every
+//   mouse-enter rising edge, so each pass over the cell plays its own
+//   animation. Vector/opacity-only, like everything else here.
 class AnimatedGradientLayer : public cocos2d::CCLayerGradient {
 public:
+    static constexpr float kDiagY = -0.35f;
+
     static AnimatedGradientLayer* create(
         cocos2d::ccColor3B a,
         cocos2d::ccColor3B b
@@ -24,9 +41,10 @@ public:
             )) {
             node->m_baseA = a;
             node->m_baseB = b;
+            node->m_baseOpacity = node->getOpacity();
             node->setStartColor(a);
             node->setEndColor(b);
-            node->setVector({1.f, 0.f});
+            node->setVector({1.f, kDiagY});
             node->autorelease();
             return node;
         }
@@ -40,64 +58,31 @@ public:
     void setEffect(std::string const& effect, float speed) {
         m_effect  = effect;
         m_speed   = std::clamp(speed, 0.1f, 5.0f);
-        m_time    = 0.f;
+        m_time    = 0.0;
 
+        // Full reset: no transform or color drift may survive a switch.
         this->stopAllActions();
+        if (!m_hasBase) {
+            m_basePos = this->getPosition();
+            m_hasBase = true;
+        } else {
+            this->setPosition(m_basePos);
+        }
         this->setRotation(0.f);
         this->setScale(1.f);
         this->setStartColor(m_baseA);
         this->setEndColor(m_baseB);
-        this->setVector({1.f, 0.f});
+        this->setVector({1.f, kDiagY});
 
-        if (m_effect == "none") {
-            this->unscheduleUpdate();
-            return;
-        }
-
-        auto sz = this->getContentSize();
-        if (m_effect == "rotate") {
-            float oversize = std::sqrt(sz.width * sz.width + sz.height * sz.height);
-            float scale = oversize / std::max(1.f, std::min(sz.width, sz.height));
-            this->setScale(std::max(scale, 1.5f));
-
-            float duration = std::max(0.5f, 8.0f / m_speed);
-            this->runAction(cocos2d::CCRepeatForever::create(
-                cocos2d::CCRotateBy::create(duration, 360.f)
-            ));
-            this->unscheduleUpdate();
-        }
-        else if (m_effect == "pulse") {
-            float duration = std::max(0.2f, 1.2f / m_speed);
-            auto seq = cocos2d::CCSequence::create(
-                cocos2d::CCEaseInOut::create(cocos2d::CCScaleTo::create(duration, 1.08f), 2.f),
-                cocos2d::CCEaseInOut::create(cocos2d::CCScaleTo::create(duration, 1.0f),  2.f),
-                nullptr
-            );
-            this->runAction(cocos2d::CCRepeatForever::create(seq));
-            this->unscheduleUpdate();
-        }
-        else if (m_effect == "slide") {
-            this->setScaleX(1.6f);
-            float distance = sz.width * 0.25f;
-            float duration = std::max(0.3f, 2.0f / m_speed);
-            auto seq = cocos2d::CCSequence::create(
-                cocos2d::CCEaseInOut::create(
-                    cocos2d::CCMoveBy::create(duration, ccp( distance, 0)), 2.f),
-                cocos2d::CCEaseInOut::create(
-                    cocos2d::CCMoveBy::create(duration, ccp(-distance * 2.f, 0)), 2.f),
-                cocos2d::CCEaseInOut::create(
-                    cocos2d::CCMoveBy::create(duration, ccp( distance, 0)), 2.f),
-                nullptr
-            );
-            this->runAction(cocos2d::CCRepeatForever::create(seq));
-            this->unscheduleUpdate();
-        }
-        else if (m_effect == "shift") {
-            this->scheduleUpdate();
-        }
-        else {
-            this->unscheduleUpdate();
-        }
+        // Snapshot the live opacity (callers setOpacity before setEffect):
+        // pulse/hover breathe around the real value, not init-time 255.
+        m_baseOpacity = this->getOpacity();
+        m_hover = 0.f;
+        m_burst = 0.f;
+        m_wasHovered = false;
+        // Always update-driven, even for "none": the hover burst must fire
+        // on every mouse-enter regardless of the idle effect.
+        this->scheduleUpdate();
     }
 
     std::string const& effect() const { return m_effect; }
@@ -105,43 +90,109 @@ public:
 
     virtual void update(float dt) override {
         cocos2d::CCLayerGradient::update(dt);
-        if (m_effect != "shift") return;
+        if (paimon::isRuntimeShuttingDown()) return;
+        if (dt <= 0.f) return;
 
-        float halfPeriod = std::max(0.3f, 1.5f / m_speed);
-        m_time += dt;
-        float local = std::fmod(m_time, halfPeriod * 2.f);
+        constexpr double kTwoPi = 6.283185307179586;
+        m_time += static_cast<double>(dt) * m_speed;
 
-        float t;
-        cocos2d::ccColor3B from, to;
-        if (local < halfPeriod) {
-            t = local / halfPeriod;
-            from = m_baseA;
-            to   = m_baseB;
-        } else {
-            t = (local - halfPeriod) / halfPeriod;
-            from = m_baseB;
-            to   = m_baseA;
+        // Hover state (desktop only): smooth lift + retriggered burst on
+        // every rising edge, so each pass over the cell animates.
+        bool hovered = false;
+#if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
+        if (auto* cell = getParent()) {
+            auto mouse = geode::cocos::getMousePos();
+            auto size = getContentSize();
+            auto local = cell->convertToNodeSpace(mouse);
+            hovered = cocos2d::CCRect(0.f, 0.f, size.width, size.height).containsPoint(local);
+            for (auto* node = cell; node && hovered; node = node->getParent()) {
+                if (!node->isVisible()) {
+                    hovered = false;
+                    break;
+                }
+                // Respect the viewport of scrollable leaderboard lists.
+                if (geode::cast::typeinfo_cast<cocos2d::CCLayer*>(node) && node != cell) {
+                    auto bounds = node->getContentSize();
+                    if (bounds.width > 0.f && bounds.height > 0.f) {
+                        auto point = node->convertToNodeSpace(mouse);
+                        hovered = cocos2d::CCRect(0.f, 0.f, bounds.width, bounds.height)
+                                      .containsPoint(point);
+                    }
+                }
+            }
+        }
+#endif
+        float target = hovered ? 1.f : 0.f;
+        m_hover += (target - m_hover) * (1.f - std::exp(-10.f * dt));
+        if (std::abs(m_hover - target) < 0.001f) m_hover = target;
+        if (hovered && !m_wasHovered) m_burst = 1.f;
+        m_wasHovered = hovered;
+        m_burst *= std::exp(-3.2f * dt);
+        if (m_burst < 0.01f) m_burst = 0.f;
+
+        float lift = 60.f * m_hover + 35.f * m_burst;
+        float kick = -0.55f * m_hover - 0.25f * m_burst;
+        auto hoveredOpacity = [&](float base) -> GLubyte {
+            return static_cast<GLubyte>(std::clamp(base + lift, 0.f, 255.f));
+        };
+
+        if (m_effect == "none") {
+            // Static gradient, but the hover burst still plays.
+            this->setOpacity(hoveredOpacity(static_cast<float>(m_baseOpacity)));
+            this->setVector({1.f, kDiagY + kick});
+            return;
         }
 
-        auto lerp = [](GLubyte a, GLubyte b, float k) -> GLubyte {
-            float v = (float)a + ((float)b - (float)a) * k;
-            v = std::clamp(v, 0.f, 255.f);
-            return (GLubyte)v;
-        };
+        if (m_effect == "rotate") {
+            // Sweep the gradient direction instead of rotating the quad:
+            // corners can never be uncovered.
+            double ang = m_time * 0.55;
+            this->setVector({static_cast<float>(std::cos(ang)),
+                             static_cast<float>(std::sin(ang)) + kick});
+            this->setOpacity(hoveredOpacity(static_cast<float>(m_baseOpacity)));
+        }
+        else if (m_effect == "pulse") {
+            // Breathe in brightness, not in size.
+            double ph = std::fmod(m_time * kTwoPi / 2.4, kTwoPi);
+            float k = static_cast<float>(0.5 - 0.5 * std::cos(ph));
+            this->setOpacity(hoveredOpacity(
+                static_cast<float>(m_baseOpacity) - 22.f + 44.f * k));
+            this->setVector({1.f, kDiagY + 0.10f * (k - 0.5f) + kick});
+        }
+        else if (m_effect == "slide") {
+            // Flowing sheen: sway direction + shimmer, quad stays put.
+            double ph = std::fmod(m_time * kTwoPi / 3.2, kTwoPi);
+            float s = static_cast<float>(std::sin(ph));
+            this->setVector({1.f, kDiagY + 0.55f * s + kick});
+            this->setOpacity(hoveredOpacity(
+                static_cast<float>(m_baseOpacity) + 12.f * s));
+        }
+        else if (m_effect == "shift") {
+            // Cosine ping-pong A->B->A: smooth at the mirrors, and the
+            // period wrap keeps m_time bounded (no fmod precision decay).
+            double period = 3.0;
+            double ph = std::fmod(m_time * kTwoPi / period, kTwoPi);
+            float k = static_cast<float>(0.5 - 0.5 * std::cos(ph));
 
-        cocos2d::ccColor3B startCol = {
-            lerp(from.r, to.r, t),
-            lerp(from.g, to.g, t),
-            lerp(from.b, to.b, t)
-        };
-        cocos2d::ccColor3B endCol = {
-            lerp(to.r, from.r, t),
-            lerp(to.g, from.g, t),
-            lerp(to.b, from.b, t)
-        };
+            auto lerp = [](GLubyte a, GLubyte b, float t) -> GLubyte {
+                float v = static_cast<float>(a) +
+                          (static_cast<float>(b) - static_cast<float>(a)) * t;
+                return static_cast<GLubyte>(std::clamp(v, 0.f, 255.f));
+            };
 
-        this->setStartColor(startCol);
-        this->setEndColor(endCol);
+            this->setStartColor({
+                lerp(m_baseA.r, m_baseB.r, k),
+                lerp(m_baseA.g, m_baseB.g, k),
+                lerp(m_baseA.b, m_baseB.b, k)
+            });
+            this->setEndColor({
+                lerp(m_baseB.r, m_baseA.r, k),
+                lerp(m_baseB.g, m_baseA.g, k),
+                lerp(m_baseB.b, m_baseA.b, k)
+            });
+            this->setOpacity(hoveredOpacity(static_cast<float>(m_baseOpacity)));
+            this->setVector({1.f, kDiagY + kick});
+        }
     }
 
 protected:
@@ -149,7 +200,13 @@ protected:
     cocos2d::ccColor3B m_baseB{255,255,255};
     std::string m_effect = "none";
     float       m_speed  = 1.0f;
-    float       m_time   = 0.0f;
+    double      m_time   = 0.0;
+    GLubyte     m_baseOpacity = 255;
+    float m_hover = 0.f;
+    float m_burst = 0.f;
+    bool m_wasHovered = false;
+    cocos2d::CCPoint m_basePos{0.f, 0.f};
+    bool m_hasBase = false;
 };
 
 inline std::vector<std::string> const& availableEffects() {

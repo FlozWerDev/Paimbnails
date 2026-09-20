@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 
+#include "../src/features/autobuild/services/Invention.hpp"
 #include "../src/features/autobuild/services/RuleInference.hpp"
 #include "../src/features/autobuild/services/Solver.hpp"
 #include "../src/features/autobuild/services/SmartTemplateEngine.hpp"
@@ -635,6 +636,50 @@ bool stampRepeatIsSoft() {
     return pass;
 }
 
+CapturedObject probeObject(int id, char const* save) {
+    CapturedObject object;
+    object.objectId = id;
+    object.save = save;
+    return object;
+}
+
+bool inventionLocksGameplay() {
+    bool pass = true;
+    // Gameplay ids always locked.
+    for (int id : {1, 8, 10, 35, 36, 29}) {
+        pass = pass && isGameplayLocked(probeObject(id, "1,1,2,0,3,0"));
+    }
+    // Trigger keys imply trigger.
+    pass = pass && isGameplayLocked(probeObject(99999, "1,99999,2,0,3,0,51,7"));
+    pass = pass && !isGameplayLocked(probeObject(99999, "1,99999,2,0,3,0"));
+    pass = pass && !isGameplayLocked(probeObject(1888, "1,1888,2,100,3,200"));
+    std::cout << "invention-guard: pass=" << pass << '\n';
+    return pass;
+}
+
+bool inventionLevelsGate() {
+    bool pass = inventionAllows(0, 0) && !inventionAllows(0, 1) &&
+                !inventionAllows(0, 2) && inventionAllows(1, 0) &&
+                inventionAllows(1, 1) && !inventionAllows(1, 2) &&
+                inventionAllows(2, 2);
+    // Out-of-range defaults to Fiel.
+    pass = pass && inventionAllows(-5, 0) && !inventionAllows(-5, 1) &&
+           inventionAllows(99, 2);
+    pass = pass && std::string(inventionName(0)) == "Fiel" &&
+           std::string(inventionName(1)) == "Mezcla" &&
+           std::string(inventionName(2)) == "Atrevido";
+    std::cout << "invention-levels: pass=" << pass << '\n';
+    return pass;
+}
+
+bool inventionSeedsAreStable() {
+    bool pass = deriveSeed(1234, 7) == deriveSeed(1234, 7) &&
+                deriveSeed(1234, 7) != deriveSeed(1234, 8) &&
+                deriveSeed(1234, 7) != deriveSeed(4321, 7);
+    std::cout << "invention-seeds: pass=" << pass << '\n';
+    return pass;
+}
+
 } // namespace
 
 int main() {
@@ -665,5 +710,8 @@ int main() {
     pass = smartLargeVocabularyStaysFast() && pass;
     pass = smartWaveRotatesSparseReferences() && pass;
     pass = stampRepeatIsSoft() && pass;
+    pass = inventionLocksGameplay() && pass;
+    pass = inventionLevelsGate() && pass;
+    pass = inventionSeedsAreStable() && pass;
     return pass ? 0 : 1;
 }

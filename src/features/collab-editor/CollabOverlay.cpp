@@ -218,6 +218,16 @@ bool CollabEditorOverlay::init(LevelEditorLayer* editor) {
     );
     m_chatButton->setID("collab-chat-button"_spr);
     m_chatButton->setVisible(CollabManager::get().connected());
+    // Touch-friendly ping: middle-mouse doesn't exist on mobile, and this
+    // helps desktop trackpads too. Pings the center of the current view.
+    auto* pingSprite = ButtonSprite::create("Ping", "goldFont.fnt", "GJ_button_02.png", 0.45f);
+    m_pingButton = CCMenuItemExt::createSpriteExtra(
+        pingSprite,
+        [this](CCMenuItemSpriteExtra*) { this->onPingButton(); }
+    );
+    m_pingButton->setID("collab-ping-button"_spr);
+    m_pingButton->setVisible(CollabManager::get().connected());
+    m_controls->addChild(m_pingButton);
     m_controls->setContentSize({kHudStatusX - kHudLeft - 6.f, kChipHeight});
     m_controls->ignoreAnchorPointForPosition(false);
     m_controls->setAnchorPoint({0.f, 0.5f});
@@ -821,9 +831,20 @@ void CollabEditorOverlay::updateStatusBanner() {
     m_statusBg->setVisible(true);
 }
 
+void CollabEditorOverlay::onPingButton() {
+    auto& mgr = CollabManager::get();
+    if (!mgr.connected() || mgr.isApplyingRemote()) return;
+    auto* layer = m_editor ? m_editor->m_objectLayer : nullptr;
+    if (!layer) return;
+    auto win = CCDirector::sharedDirector()->getWinSize();
+    CCPoint world = layer->convertToNodeSpace(ccp(win.width / 2.f, win.height / 2.f));
+    mgr.sendPing(world.x, world.y);
+}
+
 void CollabEditorOverlay::refresh(float dt) {
     if (dt <= 0.f) dt = 0.1f;
     if (m_chatButton) m_chatButton->setVisible(CollabManager::get().connected());
+    if (m_pingButton) m_pingButton->setVisible(CollabManager::get().connected());
     applyVisibility();
     sweepFlashes(dt);
     drainTrails(dt);

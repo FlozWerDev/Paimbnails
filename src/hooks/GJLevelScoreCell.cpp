@@ -8,6 +8,8 @@
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/PaimonDrawNode.hpp"
 #include "../core/modules/ModuleRegistry.hpp"
+#include "../features/scorecell/ScoreCellSettings.hpp"
+#include "../features/scorecell/fx/ScoreGradientDesign.hpp"
 #include "../features/scorecell/fx/ScoreGradientLayer.hpp"
 
 using namespace geode::prelude;
@@ -73,13 +75,13 @@ public:
         shine->setID("paimon-lls-shine"_spr);
         shine->setZOrder(50);
 
-        // Subtle diagonal parallelogram
-        constexpr float kW    = 18.f;
-        constexpr float kSkew = 14.f;
-        constexpr float kEdge = 9.f;
+        // Subtle diagonal sheen, retriggered on every mouse-enter.
+        constexpr float kW    = 28.f;
+        constexpr float kSkew = 20.f;
+        constexpr float kEdge = 12.f;
 
-        ccColor4F bright = {0.30f, 0.30f, 0.30f, 0.30f};
-        ccColor4F faded  = {0.f,   0.f,   0.f,   0.f  };
+        ccColor4F bright = {1.f, 1.f, 1.f, 0.20f};
+        ccColor4F faded  = {1.f, 1.f, 1.f, 0.f  };
 
         CCPoint center[4] = {
             ccp(kSkew,       cs.height),
@@ -110,8 +112,13 @@ public:
         m_cell->addChild(shine);
 
         float travel = cs.width + kW + kSkew + kEdge * 2.f;
+        auto move = CCEaseSineOut::create(CCMoveBy::create(0.50f, ccp(travel, 0.f)));
+        auto fade = CCSequence::create(
+            CCDelayTime::create(0.30f),
+            CCFadeTo::create(0.20f, 0),
+            nullptr);
         shine->runAction(CCSequence::create(
-            CCEaseSineOut::create(CCMoveBy::create(0.40f, ccp(travel, 0.f))),
+            CCSpawn::create(move, fade, nullptr),
             CCRemoveSelf::create(),
             nullptr
         ));
@@ -149,19 +156,20 @@ public:
 
         if (d.gradient && d.gradient->getParent()) {
             if (auto* grad = typeinfo_cast<CCLayerGradient*>(d.gradient.data())) {
-                GLubyte alpha = static_cast<GLubyte>(60.f + lerp * 170.f);
+                GLubyte alpha = static_cast<GLubyte>(110.f + lerp * 70.f);
                 grad->setStartOpacity(alpha);
+                grad->setVector(ccp(1.f, -0.10f - 0.30f * lerp));
             }
         }
 
         for (auto& e : d.movable) {
             if (!e.node || !e.node->getParent()) continue;
-            e.node->setPositionX(e.base.x + lerp * 15.f);
+            e.node->setPositionX(e.base.x + lerp * 6.f);
         }
 
         if (d.cubeNode && d.cubeNode->getParent()) {
-            d.cubeNode->setScale(d.cubeBaseScale * (1.f + lerp * 0.15f));
-            d.cubeNode->setRotation(std::sinf(d.hoverTime * 5.f) * 5.f * lerp);
+            d.cubeNode->setScale(d.cubeBaseScale * (1.f + lerp * 0.07f));
+            d.cubeNode->setRotation(std::sinf(d.hoverTime * 4.f) * 2.f * lerp);
         }
     }
 };
@@ -219,7 +227,10 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
                 if (!child) continue;
                 std::string_view cid = child->getID();
-                if (cid.starts_with("paimon-")) rem.push_back(child);
+                // find(), not starts_with(): "_spr" IDs expand to
+                // "<mod-id>/paimon-...", so a prefix check never matches and
+                // reused cells would pile up stale gradient nodes.
+                if (cid.find("paimon-") != std::string_view::npos) rem.push_back(child);
             }
             for (auto* n : rem) n->removeFromParent();
         }
@@ -236,7 +247,7 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
         for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
             if (!child) continue;
             std::string_view cid = child->getID();
-            if (cid.starts_with("paimon-")) continue;
+            if (cid.find("paimon-") != std::string_view::npos) continue;
             if (typeinfo_cast<CCLayerColor*>(child) != nullptr)
                 child->setVisible(false);
         }
@@ -245,27 +256,71 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
             auto* gm = GameManager::sharedState();
             if (auto* gradient = paimon::scorecell::ScoreGradientLayer::create(
                     cs, gm->colorForIdx(score->m_color1), gm->colorForIdx(score->m_color2))) {
-                this->addChild(gradient, -1);
+                gradient->setAnchorPoint({0.f, 0.f});
+                gradient->setPosition({0.f, 0.f});
+                gradient->setBaseOpacity(static_cast<GLubyte>(paimon::scorecell::gradientOpacity()));
+                gradient->setIdleSpeed(paimon::scorecell::gradientSpeed());
+                auto stencil = paimon::SpriteHelper::createRoundedRectStencil(cs.width, cs.height, 7.f);
+                if (auto clip = cocos2d::CCClippingNode::create(stencil)) {
+                    clip->setContentSize(cs);
+                    clip->setAnchorPoint({0.f, 0.f});
+                    clip->setPosition({0.f, 0.f});
+                    clip->setAlphaThreshold(0.05f);
+                    clip->setZOrder(-1);
+                    clip->setID("paimon-lls-gradient-clip"_spr);
+                    clip->addChild(gradient);
+                    paimon::scorecell::attachCellOverlays(clip, cs);
+                    this->addChild(clip);
+                    gradient->setID("paimon-lls-gradient"_spr);
+                } else {
+                    gradient->setZOrder(-1);
+                    gradient->setID("paimon-lls-gradient"_spr);
+                    this->addChild(gradient);
+                }
             }
             return;
         }
 
-        // Color-to-transparent gradient
+        // Color-to-transparent tint from the icon's primary color. Harmonized
+        // like the full gradient (hue preserved, neon/clalk parked) and laid
+        // on a real diagonal so wide cells show a blend, not a hard step.
+        // Wrapped in the same rounded clip as the full gradient.
         ccColor3B iconColor = {100, 150, 255};
         if (auto* gm = GameManager::get())
             iconColor = gm->colorForIdx(score->m_color1);
+        {
+            auto tuned = paimon::scorecell::designScoreGradient(iconColor, iconColor);
+            iconColor = tuned.first;
+        }
 
         auto* gradient = CCLayerGradient::create(
             ccc4(iconColor.r, iconColor.g, iconColor.b, 255),  // left: subtle base
             ccc4(iconColor.r, iconColor.g, iconColor.b, 0),    // right: transparent
-            ccp(1.f, 0.f)
+            ccp(1.f, -0.35f)
         );
         gradient->setContentSize(cs);
         gradient->setAnchorPoint({0.f, 0.f});
         gradient->setPosition({0.f, 0.f});
-        gradient->setZOrder(-1);
+        gradient->setStartOpacity(110);
         gradient->setID("paimon-lls-gradient"_spr);
-        this->addChild(gradient);
+        if (auto stencil = paimon::SpriteHelper::createRoundedRectStencil(cs.width, cs.height, 7.f)) {
+            if (auto clip = cocos2d::CCClippingNode::create(stencil)) {
+                clip->setContentSize(cs);
+                clip->setAnchorPoint({0.f, 0.f});
+                clip->setPosition({0.f, 0.f});
+                clip->setAlphaThreshold(0.05f);
+                clip->setZOrder(-1);
+                clip->setID("paimon-lls-gradient-clip"_spr);
+                clip->addChild(gradient);
+                this->addChild(clip);
+            } else {
+                gradient->setZOrder(-1);
+                this->addChild(gradient);
+            }
+        } else {
+            gradient->setZOrder(-1);
+            this->addChild(gradient);
+        }
 
         // Create helper and fill hover data
         auto* helper = PaimonLevelScoreCellHelper::create(this);
@@ -289,7 +344,7 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
             if (!child) continue;
             std::string_view id = child->getID();
 
-            if (id.starts_with("paimon-")) continue;
+            if (id.find("paimon-") != std::string_view::npos) continue;
             if (typeinfo_cast<CCLayerColor*>(child) != nullptr) continue;
 
             bool isRank = false;

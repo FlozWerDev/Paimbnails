@@ -21,6 +21,7 @@
 #include "../features/quick-hub/services/QuickHubManager.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
+#include "../features/discord-presence/services/DiscordPresenceManager.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../utils/Localization.hpp"
@@ -131,8 +132,7 @@ void resetLayerBackgrounds() {
     mod->setSavedValue("video-max-chunk-memory-mb", 512);
     mod->setSavedValue("video-max-concurrent", 4);
 #endif
-    // Drop videoMaxDecodeDimension / adaptiveSpriteFPS snapshots so the next
-    // decoder open sees factory-reset quality/FPS instead of pre-reset values.
+    // Drop decoder snapshots so next open uses factory defaults.
     paimon::settings::internal::invalidateSettingsCache();
 
     mod->setSavedValue("thumbnail-disk-cache", matjson::Value::object());
@@ -230,6 +230,9 @@ void execute() {
     }
 
     refreshMenuIfVisible();
+
+    // Refresh presence to reflect restored defaults.
+    paimon::discord::DiscordPresenceManager::get().refreshSoon();
 
     log::info("[FactoryReset] Completed");
     PaimonNotify::create(

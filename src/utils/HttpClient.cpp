@@ -4,6 +4,7 @@
 #include "ThreadTracker.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../core/Settings.hpp"
+#include "../core/ModAuthFlow.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/utils/web.hpp>
@@ -164,6 +165,7 @@ std::string HttpClient::encodeQueryParam(std::string const& value) {
 }
 
 void HttpClient::setModCode(std::string const& code) {
+    paimon::modauth::clearVerifiedSession();
     m_modCode = code;
     Mod::get()->setSavedValue("mod-code", code);
     PaimonDebug::log("[HttpClient] Mod code updated.");
@@ -453,7 +455,7 @@ void HttpClient::performUpload(
     for (auto const& field : formFields) {
         form.param(field.first, field.second);
     }
-    
+
     form.file(fieldName, std::span<uint8_t const>(data), filename, fileContentType);
 
     auto req = web::WebRequest();
@@ -732,7 +734,7 @@ void HttpClient::downloadProfileImg(int accountID, DownloadCallback callback, bo
 
 void HttpClient::uploadProfileConfig(int accountID, std::string const& jsonConfig, GenericCallback callback) {
     PaimonDebug::log("[HttpClient] Uploading profile config for account {}", accountID);
-    
+
     std::string url = m_serverURL + "/api/profiles/config/upload";
 
     web::MultipartForm form;
@@ -776,7 +778,7 @@ void HttpClient::downloadProfileConfig(int accountID, GenericCallback callback) 
         url = m_serverURL + "/api/profiles/config/" + std::to_string(accountID) + ".json";
         headers = { "X-API-Key: " + m_apiKey };
     }
-    
+
     performRequest(url, "GET", "", headers, [callback = std::move(callback)](bool success, std::string const& response) {
         callback(success, response);
     });
@@ -807,7 +809,7 @@ void HttpClient::downloadProfile(int accountID, std::string const& username, Dow
 
 
     std::string url = m_serverURL + "/profilebackground/" + std::to_string(accountID);
-    
+
     performBinaryRequest(url, headers, [callback = std::move(callback), accountID](bool success, std::vector<uint8_t> const& data) {
         if (success && !data.empty()) {
             PaimonDebug::log("[HttpClient] Profile downloaded for account {}: {} bytes", accountID, data.size());
@@ -844,10 +846,10 @@ void HttpClient::batchCheckProfiles(std::vector<int> const& accountIDs, GenericC
 
 void HttpClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     PaimonDebug::log("[HttpClient] Uploading thumbnail as PNG for level {}, size: {} bytes", levelId, pngData.size());
-    
+
     std::string url = m_serverURL + "/mod/upload";
-    std::string filename = std::to_string(levelId) + ".png"; 
-    
+    std::string filename = std::to_string(levelId) + ".png";
+
     auto account = AccountVerifier::get().verify();
 
     std::vector<std::pair<std::string, std::string>> formFields = {
@@ -873,7 +875,7 @@ void HttpClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngDat
         filename,
         pngData,
         formFields,
-        headers, 
+        headers,
         [callback = std::move(callback), levelId](bool success, std::string const& response) {
             if (success) {
                 PaimonDebug::log("[HttpClient] Upload successful for level {}", levelId);
@@ -895,10 +897,10 @@ void HttpClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngDat
 
 void HttpClient::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     PaimonDebug::log("[HttpClient] Uploading GIF for level {}, size: {} bytes", levelId, gifData.size());
-    
+
     std::string url = m_serverURL + "/mod/upload-gif";
     std::string filename = std::to_string(levelId) + ".gif";
-    
+
     auto account = AccountVerifier::get().verify();
 
     std::vector<std::pair<std::string, std::string>> formFields = {
@@ -916,8 +918,8 @@ void HttpClient::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std
     if (!m_modCode.empty()) {
         headers.push_back("X-Mod-Code: " + m_modCode);
     }
-    
-    performUpload(url, "image", filename, gifData, formFields, headers, 
+
+    performUpload(url, "image", filename, gifData, formFields, headers,
         [callback = std::move(callback), levelId](bool success, std::string const& response) {
             if (success) {
                 std::string message = "Upload successful";
@@ -938,10 +940,10 @@ void HttpClient::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std
 
 void HttpClient::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     PaimonDebug::log("[HttpClient] Uploading video for level {}, size: {} bytes", levelId, mp4Data.size());
-    
+
     std::string url = m_serverURL + "/mod/upload-video";
     std::string filename = std::to_string(levelId) + ".mp4";
-    
+
     auto account = AccountVerifier::get().verify();
 
     std::vector<std::pair<std::string, std::string>> formFields = {
@@ -959,8 +961,8 @@ void HttpClient::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, s
     if (!m_modCode.empty()) {
         headers.push_back("X-Mod-Code: " + m_modCode);
     }
-    
-    performUpload(url, "image", filename, mp4Data, formFields, headers, 
+
+    performUpload(url, "image", filename, mp4Data, formFields, headers,
         [callback = std::move(callback), levelId](bool success, std::string const& response) {
             if (success) {
                 std::string message = "Upload successful";
@@ -984,7 +986,7 @@ void HttpClient::getThumbnails(int levelId, GenericCallback callback) {
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
     };
-    
+
     performRequest(url, "GET", "", headers, [callback = std::move(callback)](bool success, std::string const& response) {
         callback(success, response);
     }, false);
@@ -997,10 +999,10 @@ void HttpClient::getThumbnailInfo(int levelId, GenericCallback callback) {
 
 void HttpClient::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     PaimonDebug::log("[HttpClient] Uploading suggestion for level {}, size: {} bytes", levelId, pngData.size());
-    
+
     std::string url = m_serverURL + "/api/suggestions/upload";
     std::string filename = std::to_string(levelId) + ".webp";
-    
+
     int accountID = getSafeAccountID();
 
     std::vector<std::pair<std::string, std::string>> formFields = {
@@ -1010,12 +1012,12 @@ void HttpClient::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngDa
         {"accountID", std::to_string(accountID)}
     };
     if (!levelMeta.empty()) formFields.push_back({"levelMeta", levelMeta});
-    
+
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
     };
-    
-    performUpload(url, "image", filename, pngData, formFields, headers, 
+
+    performUpload(url, "image", filename, pngData, formFields, headers,
         [callback = std::move(callback), levelId](bool success, std::string const& response) {
             if (success) {
                 PaimonDebug::log("[HttpClient] Suggestion upload successful for level {}", levelId);
@@ -1031,10 +1033,10 @@ void HttpClient::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngDa
 
 void HttpClient::uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     PaimonDebug::log("[HttpClient] Uploading update for level {}, size: {} bytes", levelId, pngData.size());
-    
+
     std::string url = m_serverURL + "/api/updates/upload";
     std::string filename = std::to_string(levelId) + ".webp";
-    
+
     int accountID = getSafeAccountID();
 
     std::vector<std::pair<std::string, std::string>> formFields = {
@@ -1044,12 +1046,12 @@ void HttpClient::uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, 
         {"accountID", std::to_string(accountID)}
     };
     if (!levelMeta.empty()) formFields.push_back({"levelMeta", levelMeta});
-    
+
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
     };
-    
-    performUpload(url, "image", filename, pngData, formFields, headers, 
+
+    performUpload(url, "image", filename, pngData, formFields, headers,
         [callback = std::move(callback), levelId](bool success, std::string const& response) {
             if (success) {
                 PaimonDebug::log("[HttpClient] Update upload successful for level {}", levelId);
@@ -1085,7 +1087,7 @@ void HttpClient::downloadSuggestion(int levelId, DownloadCallback callback) {
     };
 
     std::string url = m_serverURL + "/suggestions/" + std::to_string(levelId) + ".webp";
-    
+
     performBinaryRequest(url, headers, [callback = std::move(callback), levelId](bool success, std::vector<uint8_t> const& data) {
         if (success && !data.empty()) {
             PaimonDebug::log("[HttpClient] Suggestion downloaded for level {}: {} bytes", levelId, data.size());
@@ -1119,7 +1121,7 @@ void HttpClient::downloadUpdate(int levelId, DownloadCallback callback) {
     };
 
     std::string url = m_serverURL + "/updates/" + std::to_string(levelId) + ".webp";
-    
+
     performBinaryRequest(url, headers, [callback = std::move(callback), levelId](bool success, std::vector<uint8_t> const& data) {
         if (success && !data.empty()) {
             PaimonDebug::log("[HttpClient] Update downloaded for level {}: {} bytes", levelId, data.size());
@@ -1664,17 +1666,17 @@ void HttpClient::checkThumbnailExists(int levelId, CheckCallback callback) {
         callback(false);
         return;
     }
-    
+
     std::string url = m_serverURL + "/api/exists?levelId=" + std::to_string(levelId) + "&path=thumbnails";
     std::vector<std::string> headers = { "X-API-Key: " + m_apiKey };
-    
+
     performRequest(url, "GET", "", headers, [this, callback, levelId, now](bool success, std::string const& response) {
         if (paimon::isRuntimeShuttingDown()) {
             callback(false);
             return;
         }
         if (success) {
-            bool exists = response.find("\"exists\":true") != std::string::npos || 
+            bool exists = response.find("\"exists\":true") != std::string::npos ||
                           response.find("\"exists\": true") != std::string::npos;
             {
                 std::lock_guard<std::mutex> lock(m_existsCacheMutex);
@@ -1725,110 +1727,48 @@ void HttpClient::checkModerator(std::string const& username, ModeratorCallback c
 }
 
 void HttpClient::checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback) {
-    PaimonDebug::log("[HttpClient] Checking moderator status for user: {} id:{}", username, accountID);
+    auto* account = GJAccountManager::get();
+    auto* game = GameManager::get();
+    if (!account || !game || accountID <= 0 || account->m_accountID != accountID ||
+        geode::utils::string::toLower(game->m_playerName) != geode::utils::string::toLower(username)) {
+        callback(false, false);
+        return;
+    }
 
-    // Coalesce concurrent checks for the same user.
-    std::string key = username + "#" + std::to_string(accountID);
+    auto credential = m_modCode;
+    std::string key = username + "#" + std::to_string(accountID) + "#" + credential;
     {
         std::lock_guard<std::mutex> lock(m_inflightModMutex);
         auto it = m_inflightModChecks.find(key);
         if (it != m_inflightModChecks.end()) {
-            PaimonDebug::log("[HttpClient] Moderator check already in-flight for {}, coalescing callback", key);
             it->second.push_back(std::move(callback));
             return;
         }
         m_inflightModChecks[key].push_back(std::move(callback));
     }
 
-    std::string url = m_serverURL + "/api/moderator/check?username=" + encodeQueryParam(username);
-    if (accountID > 0) url += "&accountID=" + std::to_string(accountID);
-
-    PaimonDebug::log("[HttpClient] Moderator check URL: {}", url);
-
-    std::vector<std::string> headers = {
-        "X-API-Key: " + m_apiKey,
-        "Accept: application/json"
-    };
-
-    performRequest(url, "GET", "", headers, [this, key, username, accountID](bool success, std::string const& response) {
-        if (paimon::isRuntimeShuttingDown()) {
-            resolveModCheckInflight(key, false, false);
-            return;
-        }
+    auto endpoint = "/api/moderator/check?username=" + encodeQueryParam(username)
+        + "&accountID=" + std::to_string(accountID);
+    get(endpoint, [this, key, username, accountID, credential](bool success, std::string const& response) {
         bool isMod = false;
         bool isAdmin = false;
-        bool isVip = false;
-
-        if (success) {
-            auto jsonRes = matjson::parse(response);
-            if (jsonRes.isOk()) {
-                auto json = jsonRes.unwrap();
-                if (json.contains("isModerator")) {
-                    isMod = json["isModerator"].asBool().unwrapOr(false);
-                }
-                if (json.contains("isAdmin")) {
+        auto parsed = matjson::parse(response);
+        auto* account = GJAccountManager::get();
+        auto* game = GameManager::get();
+        bool sameAccount = account && game && account->m_accountID == accountID &&
+            geode::utils::string::toLower(game->m_playerName) == geode::utils::string::toLower(username) &&
+            m_modCode == credential;
+        if (!paimon::isRuntimeShuttingDown() && sameAccount) {
+            if (success && parsed.isOk() && parsed.unwrap().isObject()) {
+                auto const& json = parsed.unwrap();
+                if (!credential.empty() && json["authenticated"].asBool().unwrapOr(false) &&
+                    json["accountID"].asInt().unwrapOr(0) == accountID) {
                     isAdmin = json["isAdmin"].asBool().unwrapOr(false);
+                    isMod = isAdmin || json["isModerator"].asBool().unwrapOr(false);
                 }
-                if (json.contains("isVip")) {
-                    isVip = json["isVip"].asBool().unwrapOr(false);
-                }
-                Mod::get()->setSavedValue<bool>("gd-verification-failed", false);
-                if (json.contains("newModCode")) {
-                    std::string newCode = json["newModCode"].asString().unwrapOr("");
-                    if (!newCode.empty()) {
-                        HttpClient::get().setModCode(newCode);
-                        PaimonDebug::log("[HttpClient] Received and saved new moderator code (prefijo: {}...)", newCode.substr(0, 8));
-                    } else {
-                        log::warn("[HttpClient] Server respondio newModCode vacio para {}#{}", username, accountID);
-                    }
-                } else if (isMod || isAdmin) {
-                    bool gdFailed = false;
-                    if (json.contains("gdVerificationFailed")) {
-                        gdFailed = json["gdVerificationFailed"].asBool().unwrapOr(false);
-                    }
-                    if (gdFailed) {
-                        log::warn("[HttpClient] Mod/admin {}#{} verificado pero GDBrowser fallo - no se pudo generar mod-code. Reintenta mas tarde.", username, accountID);
-                        Mod::get()->setSavedValue<bool>("gd-verification-failed", true);
-                    } else {
-                        log::warn("[HttpClient] Server NO devolvio newModCode para mod/admin {}#{}. El mod-code actual puede estar desactualizado.", username, accountID);
-                        Mod::get()->setSavedValue<bool>("gd-verification-failed", false);
-                    }
-                }
-            } else {
-                PaimonDebug::warn("[HttpClient] JSON parse failed in moderator check, falling back to string search");
-                isMod = response.find("\"isModerator\":true") != std::string::npos || response.find("\"isModerator\": true") != std::string::npos;
-                isAdmin = response.find("\"isAdmin\":true") != std::string::npos || response.find("\"isAdmin\": true") != std::string::npos;
-                isVip = response.find("\"isVip\":true") != std::string::npos || response.find("\"isVip\": true") != std::string::npos;
             }
-
-            if (isAdmin) {
-                isMod = true;
-            }
-
-            Mod::get()->setSavedValue<bool>("is-verified-vip", isVip);
-            PaimonDebug::log("[HttpClient] User {}#{} => moderator: {}, admin: {}, vip: {}", username, accountID, isMod, isAdmin, isVip);
-        } else {
-            log::error("[HttpClient] Failed secure moderator check for {}#{}: {}", username, accountID, response);
-            log::error("[HttpClient] Server URL: {}", m_serverURL);
-            if (response.find("401") != std::string::npos) {
-                log::error("[HttpClient] HTTP 401 = API key mismatch. Expected key may differ from server.");
-            }
-            if (response.find("429") != std::string::npos) {
-                int retryAfter = 0;
-                auto pos = response.find("\"retryAfter\":");
-                if (pos != std::string::npos) {
-                    auto numStart = pos + 13;
-                    auto numEnd = response.find_first_not_of("0123456789", numStart);
-                    if (numEnd != numStart) {
-                        auto parsed = geode::utils::numFromString<int>(response.substr(numStart, numEnd - numStart));
-                        if (parsed.isOk()) retryAfter = parsed.unwrap();
-                    }
-                }
-                int backoff = std::max(retryAfter, 10);
-                PaimonDebug::warn("[HttpClient] Moderator check rate-limited, backing off {}s", backoff);
-            }
+            paimon::modauth::setVerifiedSession(username, accountID, isMod, isAdmin);
         }
-
         resolveModCheckInflight(key, isMod, isAdmin);
     });
 }
@@ -1843,7 +1783,7 @@ void HttpClient::resolveModCheckInflight(std::string const& key, bool isMod, boo
             m_inflightModChecks.erase(it);
         }
     }
-    PaimonDebug::log("[HttpClient] resolveModCheckInflight {}: {} callbacks", key, callbacks.size());
+
     for (auto& cb : callbacks) {
         cb(isMod, isAdmin);
     }
@@ -1905,7 +1845,7 @@ void HttpClient::banUser(std::string const& username, std::string const& reason,
         {"adminUser", adminUser},
         {"accountID", accountID}
     });
-    
+
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
         "X-Mod-Code: " + m_modCode,
@@ -1927,7 +1867,7 @@ void HttpClient::unbanUser(std::string const& username, BanUserCallback callback
         {"adminUser", adminUser},
         {"accountID", accountID}
     });
-    
+
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
         "X-Mod-Code: " + m_modCode,
@@ -1950,7 +1890,7 @@ void HttpClient::getModerators(ModeratorsListCallback callback) {
         url = m_serverURL + "/api/moderators";
         headers = { "X-API-Key: " + m_apiKey };
     }
-    
+
     performRequest(url, "GET", "", headers, [callback = std::move(callback)](bool success, std::string const& response) {
         if (!success) {
             callback(false, {});
@@ -2261,7 +2201,7 @@ void HttpClient::get(std::string const& endpoint, GenericCallback callback) {
     };
     if (!m_modCode.empty()) {
         headers.push_back("X-Mod-Code: " + m_modCode);
-        PaimonDebug::log("[HttpClient] get with mod-code (prefijo: {}...)", m_modCode.substr(0, 8));
+
     }
     performRequest(url, "GET", "", headers, callback, false);
 }
@@ -2359,10 +2299,7 @@ void HttpClient::fetchInit(std::string const& username, int accountID, std::vect
             if (result.isAdmin) result.isModerator = true;
         }
 
-        if (!result.newModCode.empty()) {
-            HttpClient::get().setModCode(result.newModCode);
-            PaimonDebug::log("[HttpClient] Init: received new mod code (prefix: {}...)", result.newModCode.substr(0, 8));
-        }
+
 
         if (json.contains("manifest") && json["manifest"].isObject()) {
             matjson::Value manifestPayload = json["manifest"];
@@ -2571,14 +2508,36 @@ void HttpClient::postWithAuth(std::string const& endpoint, std::string const& da
         "Content-Type: application/json",
         "Accept: application/json"
     };
-    // Do not send an empty X-Mod-Code; let the server use its fallback.
-    if (!m_modCode.empty()) {
-        headers.push_back("X-Mod-Code: " + m_modCode);
-        PaimonDebug::log("[HttpClient] postWithAuth con mod-code (prefijo: {}...)", m_modCode.substr(0, 8));
-    } else {
-        log::warn("[HttpClient] postWithAuth SIN mod-code (vacio). Server usara fallback GDBrowser.");
+    bool moderationAction = endpoint.starts_with("/api/queue/") || endpoint.starts_with("/api/admin/") ||
+        endpoint == "/api/daily/set" || endpoint == "/api/weekly/set";
+    if (moderationAction) {
+        auto parsed = matjson::parse(data);
+        if (m_modCode.empty() || !parsed.isOk() || !parsed.unwrap().isObject()) {
+            callback(false, "Verifica tu cuenta en el panel de moderacion.");
+            return;
+        }
+        auto const& body = parsed.unwrap();
+        auto actor = body["adminUser"].asString().unwrapOr("");
+        if (actor.empty()) actor = body["moderator"].asString().unwrapOr("");
+        if (actor.empty()) actor = body["actor"].asString().unwrapOr("");
+        if (actor.empty()) actor = body["username"].asString().unwrapOr("");
+        auto* account = GJAccountManager::get();
+        auto* game = GameManager::get();
+        if (!account || !game || account->m_accountID <= 0 ||
+            body["accountID"].asInt().unwrapOr(0) != account->m_accountID ||
+            geode::utils::string::toLower(actor) != geode::utils::string::toLower(game->m_playerName)) {
+            callback(false, "La cuenta cambio. Verifica la sesion antes de continuar.");
+            return;
+        }
     }
-    performRequest(url, "POST", data, headers, callback);
+    if (!m_modCode.empty()) headers.push_back("X-Mod-Code: " + m_modCode);
+    performRequest(url, "POST", data, headers, [callback](bool success, std::string const& response) {
+        auto parsed = matjson::parse(response);
+        if (success && parsed.isOk() && parsed.unwrap().isObject() && parsed.unwrap().contains("success")) {
+            success = parsed.unwrap()["success"].asBool().unwrapOr(false);
+        }
+        callback(success, response);
+    }, false);
 }
 
 void HttpClient::postWithoutModCode(std::string const& endpoint, std::string const& data, GenericCallback callback) {

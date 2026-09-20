@@ -114,19 +114,49 @@ void VersusHandNode::refresh() {
 void VersusHandNode::rebuildHand() {
     m_slots->removeAllChildren();
 
+    // Touch menu wrapping the cards: on mobile there are no Q/E keybinds,
+    // so tapping the card itself is the only way to play it. On desktop the
+    // keybinds keep working and the tap is an extra path.
+    auto* menu = CCMenu::create();
+    menu->setPosition({0.f, 0.f});
+    menu->setID("versus-hand-touch-menu"_spr);
+    m_slots->addChild(menu, 30);
+
     for (size_t i = 0; i < m_drawn.size(); i++) {
         auto* card = VersusCardNode::create(m_drawn[i], kCardW);
         if (!card) continue;
         card->setPosition({-static_cast<float>(i) * kSlotGap, 0.f});
         card->playDraw(0.f);
-        m_slots->addChild(card, static_cast<int>(10 - i));
 
+        auto* item = CCMenuItemSpriteExtra::create(
+            card, this, menu_selector(VersusHandNode::onPlayCard));
+        item->setTag(static_cast<int>(i));
+        item->setPosition(card->getPosition());
+        menu->addChild(item);
+
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+        if (i == 0) {
+            auto* hint = CCLabelBMFont::create(
+                Localization::get().getString("versus.hand.tap").c_str(), "bigFont.fnt");
+            hint->setScale(0.30f);
+            hint->setOpacity(150);
+            hint->setPosition({-kSlotGap / 2.f, -kCardW * 0.86f - 10.f});
+            m_slots->addChild(hint, 20);
+        }
+#else
         auto* key = CCLabelBMFont::create(i == 0 ? "Q" : "E", "bigFont.fnt");
         key->setScale(0.34f);
         key->setOpacity(190);
         key->setPosition({-static_cast<float>(i) * kSlotGap, -kCardW * 0.86f});
         m_slots->addChild(key, 20);
+#endif
     }
+}
+
+void VersusHandNode::onPlayCard(CCObject* sender) {
+    auto* item = geode::cast::typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+    if (!item) return;
+    VersusSession::get().playCard(item->getTag());
 }
 
 void VersusHandNode::rebuildRivalHand() {

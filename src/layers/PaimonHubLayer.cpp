@@ -173,7 +173,7 @@ void eraseOne(std::vector<T>& v, T const& x) {
     if (it != v.end()) v.erase(it);
 }
 
-// 8+ sidebar rows must clear the shortcuts row at the bottom of the panel.
+// Narrow spacing when 8+ rows would hit shortcuts.
 float sidebarRowSpacing(size_t categoryCount) {
     return categoryCount > 7 ? 24.f : 27.f;
 }
@@ -181,22 +181,41 @@ float sidebarRowSpacing(size_t categoryCount) {
 
 namespace paimon::hubdata {
 
+// Mobile lacks the setting; hasSetting is the safe check.
+bool discordSupported() {
+    auto* mod = geode::Mod::get();
+    return mod && mod->hasSetting("discord-rpc-enabled");
+}
+
 std::vector<HubCategoryMeta> getHubCategories() {
-    return {
+    std::vector<HubCategoryMeta> cats = {
         {"General", "Idioma, updates y mantenimiento.", {130, 240, 170}, paimon::ui::getGeneralInfo},
         {"Miniaturas", "Layout, galeria, efectos y captura.", {120, 210, 255}, paimon::ui::getThumbnailsInfo},
         {"Nivel", "Pantalla de info, fondo y transiciones.", {170, 190, 255}, paimon::ui::getLevelInfoScreenInfo},
         {"Audio", "Profile music, menu music y capas.", {255, 165, 210}, paimon::ui::getAudioInfo},
         {"Fondos", "Fondos por capa, video y transiciones.", {140, 245, 200}, paimon::ui::getBackgroundsInfo},
         {"Extras", "Mascota, cursor, popups y rendimiento.", {255, 140, 140}, paimon::ui::getExtrasInfo},
-        {"Discord", "Rich Presence completa.", {140, 160, 255}, paimon::ui::getDiscordInfo},
-        {"Dev", "Herramientas para crear assets del mod.", {255, 210, 100}, paimon::ui::getDevInfo},
     };
+    if (discordSupported()) {
+        cats.push_back({"Discord", "Rich Presence completa.", {140, 160, 255}, paimon::ui::getDiscordInfo});
+    }
+    cats.push_back({"Dev", "Herramientas para crear assets del mod.", {255, 210, 100}, paimon::ui::getDevInfo});
+    return cats;
 }
 
 std::vector<HubActionMeta> getHubActions(int categoryIndex) {
+    // Dev index shifts without Discord; resolve it dynamically.
+    const bool discord = discordSupported();
+    const int devIndex = discord ? 7 : 6;
+    if (categoryIndex == devIndex) {
+        return {
+            {"GIF a Sheet", "GJ_button_04.png", [](PaimonHubLayer*) {
+                if (auto popup = paimon::dev::GifToSheetPopup::create()) popup->show();
+            }, devIndex, "Convierte GIF en spritesheet"},
+        };
+    }
     switch (categoryIndex) {
-        case 0: // General
+        case 0:
             return {
                 {"Modulos", "GJ_button_03.png", [](PaimonHubLayer*) {
                     auto scene = PaimonModulesLayer::scene();
@@ -212,7 +231,7 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                     paimon::factory_reset::requestWithConfirmation();
                 }, 0, "Restaura todo por defecto"},
             };
-        case 1: { // Thumbnails
+        case 1: {
             std::vector<HubActionMeta> actions = {
                 {"Configurar", "GJ_button_02.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(1); }, 1, "Tamano y estilo de celdas"},
                 {"Efectos", "GJ_button_03.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(2); }, 1, "Animaciones y transiciones"},
@@ -224,12 +243,12 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
             }
             return actions;
         }
-        case 2: // Level
+        case 2:
             return {
                 {"Configurar", "GJ_button_01.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(3); }, 2, "Fondo y efectos del nivel"},
                 {"Barra Progreso", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = ProgressBarConfigPopup::create()) popup->show(); }, 2, "Personaliza la barra"},
             };
-        case 3: // Audio
+        case 3:
             return {
                 {"Configurar", "GJ_button_04.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(4); }, 3, "Musica de menu y capas"},
                 {"Musica Perfil", "GJ_button_02.png", [](PaimonHubLayer*) {
@@ -252,12 +271,12 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                     }
                 }, 3, "La cancion del nivel y su buceo"},
             };
-        case 4: // Backgrounds
+        case 4:
             return {
                 {"Editor Fondos", "GJ_button_01.png", [](PaimonHubLayer* self) { self->onOpenConfig(nullptr); }, 4, "Fondo por pantalla, en vivo"},
                 {"Transiciones", "GJ_button_04.png", [](PaimonHubLayer*) { if (auto popup = TransitionConfigPopup::create()) popup->show(); }, 4, "Animaciones entre escenas"},
             };
-        case 5: // Extras
+        case 5:
             return {
                 {"Smooth UI", "GJ_button_05.png", [](PaimonHubLayer*) {
                     if (auto popup = paimon::ui::SmoothUIConfigPopup::create()) popup->show();
@@ -279,16 +298,11 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                 }, 5, "Luz trazada en todo el juego"},
                 {"Perfil", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenProfiles(nullptr); }, 5, "Editor de foto de perfil"},
             };
-        case 6: // Discord
+        case 6: // Unreachable without Discord.
+            if (!discord) return {};
             return {
                 {"Configurar", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = paimon::discord::DiscordConfigPopup::create()) popup->show(); }, 6, "Rich Presence a tu gusto"},
                 {"Refrescar", "GJ_button_05.png", [](PaimonHubLayer*) { paimon::discord::DiscordPresenceManager::get().refreshSoon(); PaimonNotify::create("Rich Presence actualizada.", NotificationIcon::Success)->show(); }, 6, "Fuerza la actualizacion"},
-            };
-        case 7: // Dev
-            return {
-                {"GIF a Sheet", "GJ_button_04.png", [](PaimonHubLayer*) {
-                    if (auto popup = paimon::dev::GifToSheetPopup::create()) popup->show();
-                }, 7, "Convierte GIF en spritesheet"},
             };
         default:
             return {};
@@ -296,7 +310,7 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
 }
 
 std::vector<GranularSettingMeta> getGranularSettings() {
-    return {
+    std::vector<GranularSettingMeta> settings = {
         {"Language / Idioma", "Idioma / Language", 0},
         {"Auto Update", "Auto Actualizar", 0},
         {"Quick Search Key", "Tecla de Busqueda Rapida", 0},
@@ -370,10 +384,14 @@ std::vector<GranularSettingMeta> getGranularSettings() {
         {"Clear Cache on Exit", "Limpiar Cache al Salir", 5},
         {"Open Thumbnails Folder", "Abrir Carpeta de Miniaturas", 5},
 
-        {"Enable Discord Rich Presence", "Activar Discord Rich Presence", 6},
-        {"Configure Discord RPC", "Configurar Discord RPC", 6},
-        {"Refresh Discord Status", "Refrescar Estado de Discord", 6}
     };
+    // Hide Discord rows on mobile to keep indices stable.
+    if (discordSupported()) {
+        settings.push_back({"Enable Discord Rich Presence", "Activar Discord Rich Presence", 6});
+        settings.push_back({"Configure Discord RPC", "Configurar Discord RPC", 6});
+        settings.push_back({"Refresh Discord Status", "Refrescar Estado de Discord", 6});
+    }
+    return settings;
 }
 
 } // namespace paimon::hubdata
@@ -540,7 +558,7 @@ void PaimonHubLayer::keyBackClicked() {
             return;
         }
     }
-    // MenuLayer::scene(false) full setup — manual scene left black on Escape
+    // scene(false) avoids black screen on Escape.
     CCDirector::get()->replaceScene(MenuLayer::scene(false));
 }
 
@@ -554,8 +572,7 @@ void PaimonHubLayer::onToggleUIStyle(CCObject*) {
 
 void PaimonHubLayer::onTabSwitch(CCObject* sender) {
     int idx = static_cast<CCNode*>(sender)->getTag();
-    // Sidebar category buttons are tagged 100+i; switchHomeCategory validates
-    // the index against the live category list.
+    // Sidebar buttons use tag 100+i.
     if (idx >= 100) {
         switchHomeCategory(idx - 100);
         return;
@@ -662,13 +679,15 @@ void PaimonHubLayer::buildHomeTab() {
                 ->setCrossAxisAlignment(AxisAlignment::Center)
         );
 
-        auto* discordBg = makeShortcutBg({110, 150, 255});
-        addCenteredLabel(discordBg, "RPC", 0.26f);
-        auto* discordBtn = CCMenuItemExt::createSpriteExtra(discordBg, [self = WeakRef<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
-            if (auto* hub = self.lock().data(); hub && hub->getParent()) hub->onOpenDiscordConfig(nullptr);
-        });
-        discordBtn->setID("discord-sidebar-btn"_spr);
-        shortcutsRow->addChild(discordBtn);
+        if (discordSupported()) {
+            auto* discordBg = makeShortcutBg({110, 150, 255});
+            addCenteredLabel(discordBg, "RPC", 0.26f);
+            auto* discordBtn = CCMenuItemExt::createSpriteExtra(discordBg, [self = WeakRef<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
+                if (auto* hub = self.lock().data(); hub && hub->getParent()) hub->onOpenDiscordConfig(nullptr);
+            });
+            discordBtn->setID("discord-sidebar-btn"_spr);
+            shortcutsRow->addChild(discordBtn);
+        }
 
         auto* qhBg = makeShortcutBg({255, 200, 80});
         addCenteredLabel(qhBg, "QH", 0.26f);
@@ -1563,7 +1582,7 @@ void PaimonHubLayer::buildForumTab() {
 }
 
 void PaimonHubLayer::onOpenConfig(CCObject*) {
-    // pushScene without TransitionManager — avoids black screen on return
+    // No transition avoids black screen on return.
     if (auto scene = PaiConfigLayer::scene()) CCDirector::get()->pushScene(scene);
 }
 
@@ -1572,7 +1591,7 @@ void PaimonHubLayer::onOpenProfiles(CCObject*) {
 }
 
 void PaimonHubLayer::onOpenBackgrounds(CCObject*) {
-    // El editor de fondos ya es PaiConfigLayer; esto queda por compatibilidad.
+    // Kept for compatibility; backgrounds use PaiConfigLayer.
     onOpenConfig(nullptr);
 }
 
@@ -1586,7 +1605,7 @@ void PaimonHubLayer::onOpenExtras(CCObject*) {
 }
 
 void PaimonHubLayer::onOpenSupport(CCObject*) {
-    // stack so pop restores without black screen
+    // pushScene keeps back-stack to avoid black screen.
     if (auto scene = PaimonSupportLayer::scene()) CCDirector::get()->pushScene(scene);
 }
 

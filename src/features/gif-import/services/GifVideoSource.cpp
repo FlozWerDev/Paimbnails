@@ -20,9 +20,7 @@ namespace paimon::gifimport {
 
 namespace {
 
-// El importador nunca pasa de 320 celdas de lado, asi que traer el video a mas
-// resolucion solo gasta memoria: sesenta capturas de un 1080p a 768 de lado
-// son unos 80 MB. 768 conserva el borde fino sin pedir el 1080p entero.
+// 768 conserva el borde fino; mas resolucion solo gasta memoria.
 constexpr int kMaxVideoSide = 768;
 constexpr auto kStallTimeout = std::chrono::seconds(12);
 
@@ -40,8 +38,7 @@ void convertFrame(
     bool wideGamut,
     std::vector<std::uint8_t>& rgba
 ) {
-    // El reproductor ya trata la alta definicion como BT.709; leerla como BT.601
-    // vira los verdes y apaga los rojos, y la paleta sale de estos pixeles.
+    // HD es BT.709; leerla como BT.601 vira los colores.
     auto const convert = wideGamut ? libyuv::H420ToABGR : libyuv::I420ToABGR;
     rgba.assign(static_cast<std::size_t>(outputWidth) * outputHeight * 4, 0);
     if (frame.width == outputWidth && frame.height == outputHeight) {
@@ -106,12 +103,15 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     int const longest = std::max(sourceWidth, sourceHeight);
     double const shrink = longest > kMaxVideoSide
         ? static_cast<double>(kMaxVideoSide) / longest : 1.0;
-    // Los planos de croma van de dos en dos pixeles, asi que un lado impar deja
-    // media columna sin color y libyuv se sale del buffer al escalar.
+    // Croma va de 2 en 2: un lado impar rompe el escalado en libyuv.
     int const outputWidth = std::max(2, static_cast<int>(std::lround(sourceWidth * shrink)) & ~1);
     int const outputHeight = std::max(2, static_cast<int>(std::lround(sourceHeight * shrink)) & ~1);
 
-    bool const wideGamut = sourceWidth >= 1280 || sourceHeight >= 720;
+    // La matriz se mide en nativo: el decoder puede venir reducido.
+    int const nativeWidth = decoder->getNativeWidth();
+    int const nativeHeight = decoder->getNativeHeight();
+    bool const wideGamut = (nativeWidth > 0 ? nativeWidth : sourceWidth) >= 1280 ||
+        (nativeHeight > 0 ? nativeHeight : sourceHeight) >= 720;
     int const wanted = std::clamp(maxFrames, 1, 120);
     double const step = duration > 0.1 ? duration / wanted : 0.0;
 
@@ -125,6 +125,9 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     auto lastFrame = std::chrono::steady_clock::now();
     auto deadline = lastFrame + std::chrono::seconds(45);
     bool stalled = false;
+    // PTS corrupto se salta; el tope evita girar sin fin.
+    int badPtsStreak = 0;
+    constexpr int kMaxBadPtsStreak = 600;
     while (static_cast<int>(animation->frames.size()) < wanted) {
         if (maxDurationSeconds > 0.0 && std::chrono::steady_clock::now() > deadline) { stalled = true; break; }
         auto const* frame = decoder->peekFrame();
@@ -138,8 +141,11 @@ std::shared_ptr<SourceAnimation> decodeVideo(
         if (maxDurationSeconds > 0.0 &&
             ((std::bit_cast<std::uint64_t>(frame->pts) & 0x7ff0000000000000ull) == 0x7ff0000000000000ull ||
              frame->pts < 0.0 || frame->pts > duration + 1.0)) {
-            decoder->releaseFrame(); stalled = true; break;
+            decoder->releaseFrame();
+            if (++badPtsStreak > kMaxBadPtsStreak) { stalled = true; break; }
+            continue;
         }
+        badPtsStreak = 0;
         if (frame->pts + 1e-6 >= nextWanted) {
             SourceFrame captured;
             convertFrame(*frame, outputWidth, outputHeight, wideGamut, captured.rgba);
@@ -151,25 +157,28 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     }
     bool terminal = decoder->isTerminal();
     decoder->stopDecoding();
-    if (maxDurationSeconds > 0.0 && (stalled || terminal)) {
-        error = "El decodificador no pudo completar el video.";
-        return nullptr;
-    }
-
     if (animation->frames.empty()) {
-        error = "No se pudo decodificar ningun fotograma del video.";
+        if (maxDurationSeconds > 0.0 && (stalled || terminal)) {
+            error = "El decodificador no pudo completar el video.";
+        } else {
+            error = "No se pudo decodificar ningun fotograma del video.";
+        }
         return nullptr;
     }
+    if (maxDurationSeconds > 0.0 && (stalled || terminal)) {
+        // Corte tardio: se devuelve lo capturado con aviso.
+        geode::log::warn(
+            "[GifImport] video parcial: {} frames antes del corte (stalled={}, terminal={})",
+            animation->frames.size(), stalled, terminal);
+    }
 
-    // El ritmo sale de las marcas de tiempo reales, que es lo unico que sabe si el
-    // video venia a 24, a 30 o con fotogramas repetidos.
+    // El ritmo sale de los timestamps reales.
     for (std::size_t i = 0; i < animation->frames.size(); ++i) {
         double const next = i + 1 < stamps.size()
             ? stamps[i + 1] - stamps[i]
             : (maxDurationSeconds > 0.0 ? std::max(.001, duration - stamps[i]) : (step > 0.0 ? step : 0.04));
         if (maxDurationSeconds > 0.0) {
-            // Round cumulative timestamps, not each interval: 60fps must not
-            // turn into 50fps through the editor importer's 20ms clamp.
+            // Redondear acumulado: evita que 60fps degrade a 50fps por el clamp.
             long const startMs = i == 0 ? 0 : std::lround(stamps[i] * 1000.0);
             long const endMs = std::lround((i + 1 < stamps.size() ? stamps[i + 1] : duration) * 1000.0);
             animation->frames[i].delayMs = static_cast<int>(std::clamp(endMs - startMs, 1L, 30000L));

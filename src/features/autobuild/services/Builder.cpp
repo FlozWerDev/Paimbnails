@@ -1,6 +1,8 @@
 #include "Builder.hpp"
 
 #include "Capture.hpp"
+#include "DesignCritic.hpp"
+#include "Invention.hpp"
 #include "SaveString.hpp"
 
 #include <Geode/binding/ColorAction.hpp>
@@ -25,8 +27,7 @@ namespace {
 
 constexpr int kMaxAreaCells = 6000;
 
-// What the last build did, so it can be undone or re-rolled without asking the
-// user to select everything again.
+// Ultimo build para deshacer o regenerar sin reseleccionar.
 struct Session {
     LevelEditorLayer* editor = nullptr;
     std::vector<Target> targets;
@@ -53,7 +54,6 @@ unsigned randomSeed() {
     return device();
 }
 
-// Delete the objects the last run created, leaving markers alone.
 int removeCreated(EditorUI* ui) {
     auto& state = session();
     auto* lel = ui->m_editorLayer;
@@ -116,9 +116,31 @@ Result<BuildReport> paste(EditorUI* ui, Template const& tpl, Options const& opts
                           unsigned seed) {
     auto* lel = ui->m_editorLayer;
 
+    // Prueba varias semillas y conserva el mejor diseno.
     SolveStats stats;
-    auto placements = tpl.mode == Mode::Wave ? solveWave(tpl, opts, targets, seed, stats)
-                                             : solveStamps(tpl, opts, targets, seed, stats);
+    std::vector<Placement> placements;
+    DesignScore design;
+    int const tries = std::clamp(opts.refineTries, 1, 12);
+    for (int i = 0; i < tries; ++i) {
+        unsigned attempt = i == 0 ? seed : deriveSeed(seed, 101u + static_cast<unsigned>(i));
+        SolveStats attemptStats;
+        auto attemptPlacements =
+            tpl.mode == Mode::Wave ? solveWave(tpl, opts, targets, attempt, attemptStats)
+                                   : solveStamps(tpl, opts, targets, attempt, attemptStats);
+        if (i == 0) {
+            stats = attemptStats;
+            placements = std::move(attemptPlacements);
+            design = scoreDesign(tpl, placements, stats, opts);
+            continue;
+        }
+        if (attemptPlacements.empty() || attemptStats.budgetExceeded) continue;
+        auto attemptScore = scoreDesign(tpl, attemptPlacements, attemptStats, opts);
+        if (placements.empty() || stats.budgetExceeded || isBetter(attemptScore, design)) {
+            stats = attemptStats;
+            placements = std::move(attemptPlacements);
+            design = attemptScore;
+        }
+    }
     if (tpl.mode == Mode::Wave) {
         log::info("[Autobuild] onda: {} celdas, {} llenas, {} huecos, {} forzadas, "
                   "{} retrocesos, {} ms{}",
@@ -132,6 +154,10 @@ Result<BuildReport> paste(EditorUI* ui, Template const& tpl, Options const& opts
     } else {
         log::info("[Autobuild] sellos: {} destinos, {} colocados, {} saltados, {} ms",
                   stats.cells, stats.filled, stats.gaps, stats.ms);
+    }
+    if (tries > 1) {
+        log::info("[Autobuild] refinado: mejor de {} intentos, diseno {:.0f}/100",
+                  tries, design.total);
     }
     if (stats.budgetExceeded) {
         return Err("Autobuild agoto el presupuesto de calculo sin encontrar una solucion. "
@@ -178,8 +204,7 @@ Result<BuildReport> paste(EditorUI* ui, Template const& tpl, Options const& opts
     }
     if (payload.empty()) return Err("Las piezas de la plantilla no tienen objetos validos.");
 
-    // Markers are consumed by the build; their strings are kept so undo can put
-    // them back exactly where they were.
+    // Guarda marcadores para restaurarlos al deshacer.
     std::vector<std::string> markerSaves;
     ui->deselectAll();
     if (opts.removeMarkers) {
@@ -309,22 +334,21 @@ Result<BuildPlan> planBuild(EditorUI* ui, Options const& opts, float cell) {
                 maxX = std::max(maxX, pos.x);
                 maxY = std::max(maxY, pos.y);
             }
+            // Ancla la rejilla al minimo de la seleccion, no al origen.
             float step = cell > 0.f ? cell : 30.f;
-            int x0 = static_cast<int>(std::floor(minX / step + 0.5f));
-            int x1 = static_cast<int>(std::floor(maxX / step + 0.5f));
-            int y0 = static_cast<int>(std::floor(minY / step + 0.5f));
-            int y1 = static_cast<int>(std::floor(maxY / step + 0.5f));
-            long long total = static_cast<long long>(x1 - x0 + 1) * (y1 - y0 + 1);
+            int nx = static_cast<int>(std::floor((maxX - minX) / step + 0.5f)) + 1;
+            int ny = static_cast<int>(std::floor((maxY - minY) / step + 0.5f)) + 1;
+            nx = std::max(1, nx);
+            ny = std::max(1, ny);
+            long long total = static_cast<long long>(nx) * ny;
             if (total > kMaxAreaCells) {
                 return Err(fmt::format("El area pedida son {} celdas. Reduce la seleccion "
                                        "o usa una celda mas grande.", total));
             }
-            Target base = targetFrom(objects.front());
             targets.reserve(static_cast<size_t>(total));
-            for (int gx = x0; gx <= x1; ++gx) {
-                for (int gy = y0; gy <= y1; ++gy) {
-                    Target target = base;
-                    target.pos = Point{gx * step, gy * step};
+            for (int ix = 0; ix < nx; ++ix) {
+                for (int iy = 0; iy < ny; ++iy) {
+                    Target target{{minX + ix * step, minY + iy * step}};
                     targets.push_back(target);
                 }
             }
@@ -351,9 +375,7 @@ Result<BuildReport> generate(EditorUI* ui, Template const& tpl, Options const& o
 Result<BuildReport> regenerate(EditorUI* ui, Template const& tpl, Options const& opts) {
     if (!canUndo(ui)) return generate(ui, tpl, opts);
 
-    // Same cells, new seed. The markers are already gone from the first run, so
-    // only the generated objects are cleared; their strings travel to the new
-    // session so a later undo still restores them.
+    // Mismas celdas con nueva semilla; conserva marcadores para undo.
     auto targets = session().targets;
     auto markerSaves = session().markerSaves;
     removeCreated(ui);

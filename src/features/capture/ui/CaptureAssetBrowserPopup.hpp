@@ -24,7 +24,8 @@ public:
         int count = 0;
         bool visible = true;
         cocos2d::CCSpriteFrame* representativeFrame = nullptr; // retained; released in dtor
-        std::vector<GameObject*> objects;                      // every instance of this ID
+        // WeakRefs: objects can be removed mid-level while the popup is open.
+        std::vector<geode::WeakRef<GameObject>> objects;      // every instance of this ID
         CCMenuItemToggler* toggler = nullptr;                  // rebuilt with the list
         cocos2d::CCLabelBMFont* label = nullptr;
     };
@@ -63,6 +64,8 @@ private:
     std::vector<CategoryHeader> m_categories;
 
     std::string m_searchQuery;
+    std::string m_pendingSearch;
+    bool m_searchScheduled = false;
     bool m_allCollapsed = false;
 
     void scanObjects();
@@ -96,6 +99,7 @@ private:
     void onHideAllBtn(cocos2d::CCObject* sender);
 
     void onSearchChanged(std::string const& text);
+    void onSearchDebounced(float);
 
     static std::string categoryForObjectID(int objectID);
 };

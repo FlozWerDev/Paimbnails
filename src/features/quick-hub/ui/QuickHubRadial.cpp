@@ -54,10 +54,8 @@ void QuickHubRadial::openRadial() {
     scene->addChild(radial, 99998);
     s_instance = radial;
 
-    // Reuse the popup blur effect.
     bool blurApplied = paimon::popupblur::captureAndApply(radial);
 
-    // Keep a dark fallback when blur is disabled.
     if (!blurApplied) {
         auto winSize = CCDirector::get()->getWinSize();
         auto fallback = CCLayerColor::create({8, 10, 18, 0});
@@ -107,7 +105,6 @@ bool QuickHubRadial::init() {
 }
 
 void QuickHubRadial::onExit() {
-    // Clean up blur on an abrupt removal.
     paimon::popupblur::cleanup(this);
 
     CCLayer::onExit();
@@ -120,8 +117,7 @@ void QuickHubRadial::onExit() {
 
 void QuickHubRadial::update(float dt) {
 #ifdef GEODE_IS_DESKTOP
-    // Geode converts the mouse to design-space coordinates, matching item hit tests
-    // across window and design resolutions.
+    // getMousePos ya viene en design-space.
     updateHover(getHoveredIndex(geode::cocos::getMousePos()));
 #endif
 }
@@ -176,8 +172,7 @@ void QuickHubRadial::buildRadialItems() {
         this->addChild(itemNode, 5);
         item.node = itemNode;
 
-        // La escala del hover vive en un hijo para que no cancele el movimiento
-        // de apertura, que corre sobre el contenedor.
+        // Hover escala el hijo para no cortar la animacion del contenedor.
         auto badge = makeRadialBadge(*def, shape, m_badgeSize, !item.reachable);
         badge.root->setScale(0.f);
         itemNode->addChild(badge.root);
@@ -188,8 +183,7 @@ void QuickHubRadial::buildRadialItems() {
     }
 }
 
-// Sin plato ni corona: el desenfoque de fondo ya separa la rueda de la escena.
-// Solo queda un disco discreto que sostiene el texto del centro.
+// Sin plato: el blur ya separa la rueda.
 void QuickHubRadial::buildBackdrop() {
     if (m_items.empty()) return;
 
@@ -225,8 +219,7 @@ void QuickHubRadial::animateOpen() {
         m_hub->runAction(CCEaseBackOut::create(CCScaleTo::create(0.28f, 1.f)));
     }
 
-    // El desplazamiento va en el contenedor y la escala en el hijo, para que el
-    // hover no pueda interrumpir la apertura.
+    // Mover contenedor y escalar hijo: el hover no interrumpe la apertura.
     for (size_t i = 0; i < m_items.size(); i++) {
         auto& item = m_items[i];
         float delay = 0.025f * static_cast<float>(i);
@@ -291,7 +284,7 @@ void QuickHubRadial::animateClose() {
     ));
 }
 
-    // Actions run on ccTouchEnded; dragging over items does not activate them.
+    // Solo ccTouchEnded activa opciones.
 
 bool QuickHubRadial::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     return true;
@@ -310,7 +303,6 @@ void QuickHubRadial::ccTouchEnded(CCTouch* touch, CCEvent* event) {
     if (hovered >= 0) {
         executeOption(hovered);
     } else {
-    // Close when clicking outside every item.
         animateClose();
     }
 }
@@ -348,7 +340,6 @@ void QuickHubRadial::updateHover(int index) {
     if (index == m_hoveredIndex) return;
     m_hoveredIndex = index;
 
-    // La opcion apuntada crece y estrena aro; el resto se queda plano.
     for (size_t i = 0; i < m_items.size(); i++) {
         auto& item = m_items[i];
         if (!item.inner) continue;
@@ -400,7 +391,7 @@ void QuickHubRadial::executeOption(int index) {
         if (id == "settings-audio")            { SettingsPanelManager::get().open(3); return; }
         if (id == "settings-backgrounds")      { SettingsPanelManager::get().open(4); return; }
         if (id == "settings-extras")           { SettingsPanelManager::get().open(5); return; }
-        if (id == "settings-discord")          { SettingsPanelManager::get().open(6); return; }
+        if (id == "settings-discord")          { if (!discordSupported()) return; SettingsPanelManager::get().open(6); return; }
 
         if (id == "general")      { SettingsPanelManager::get().open(0); return; }
         if (id == "thumbnails")   { SettingsPanelManager::get().open(1); return; }
@@ -415,6 +406,8 @@ void QuickHubRadial::executeOption(int index) {
             return;
         }
         if (id == "discord")      {
+            // Un radial guardado en escritorio puede aun referenciar este id en movil.
+            if (!discordSupported()) return;
             if (auto popup = paimon::discord::DiscordConfigPopup::create()) popup->show();
             return;
         }
@@ -430,6 +423,8 @@ void QuickHubRadial::executeOption(int index) {
             return;
         }
         if (id == "discord-config") {
+            // Un radial guardado en escritorio puede aun referenciar este id en movil.
+            if (!discordSupported()) return;
             if (auto popup = paimon::discord::DiscordConfigPopup::create()) popup->show();
             return;
         }

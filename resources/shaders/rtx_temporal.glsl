@@ -1,51 +1,96 @@
-// Paimon RTX - acumulacion temporal del trazado.
-//
-// Reproyecta el fotograma anterior con el movimiento real de la camara: la capa
-// de objetos del juego solo se traslada y escala, asi que su transformada da la
-// correspondencia exacta pixel a pixel y no hace falta un buffer de velocidad.
-// Sin esto habria que dejar la realimentacion baja para que no arrastrase, y es
-// justo la realimentacion alta lo que quita el ruido del trazado.
-//
-// El historial se recorta contra media +- k*desviacion del vecindario (variance
-// clipping) en vez de contra su minimo y maximo: con entrada ruidosa el rango
-// min/max es tan ancho que no recorta nada, y las estelas pasan igual.
+// Acumulacion temporal SVGF-lite con reproyeccion por transformada de capa.
+// Clipping contra AABB 3x3 + media +- k*sigma; feedback adaptado a velocidad.
+// Pase varianza (u_outVariance): error actual vs historia sin recortar.
 
 varying vec2 v_texCoord;
 
 uniform sampler2D u_current;
 uniform sampler2D u_history;
+uniform sampler2D u_histVar;
 uniform vec2  u_texel;
 uniform float u_temporal;
 uniform float u_clampSigma;
 uniform vec2  u_reprojNow;
 uniform vec2  u_reprojPrev;
 uniform float u_reprojScale;
+// 0 = historia invalida, 1 = reproyeccion valida.
+uniform float u_historyValid;
+// 0 = color, 1 = escribe varianza en R.
+uniform float u_outVariance;
+
+// Techo LDR y reset sobre ruido convergido.
+const float kVarMax   = 4.0;
+const float kVarReset = 1.0;
+
+// NaN se detecta con equal(c,c); el if no propaga NaN como mix.
+vec3 sanitizeColor(vec3 c) {
+    if (!all(equal(c, c))) return vec3(0.0);
+    return clamp(c, vec3(0.0), vec3(kVarMax));
+}
+
+float sanitizeVar(float v) {
+    if (!(v == v)) return 0.0;
+    return clamp(v, 0.0, kVarMax);
+}
 
 void main() {
     vec2 uv = v_texCoord;
     vec4 current = texture2D(u_current, uv);
 
+    vec2 histUV = (uv - u_reprojNow) * u_reprojScale + u_reprojPrev;
+    bool varPass = u_outVariance > 0.5;
+    if (histUV.x < 0.0 || histUV.x > 1.0 || histUV.y < 0.0 || histUV.y > 1.0) {
+        // Sin historia: usa actual y resetea varianza.
+        if (varPass) {
+            gl_FragColor = vec4(kVarReset, 0.0, 0.0, 1.0);
+        } else {
+            gl_FragColor = current;
+        }
+        return;
+    }
+    if (varPass && u_historyValid < 0.5) {
+        gl_FragColor = vec4(kVarReset, 0.0, 0.0, 1.0);
+        return;
+    }
+
+    vec4 histRaw = texture2D(u_history, histUV);
+
+    vec2 vpx = (histUV - uv) / max(u_texel, vec2(0.0000001));
+    float adapt = exp(-length(vpx) * 0.12);
+    float fb = clamp(u_temporal, 0.0, 0.97) * mix(0.30, 1.0, adapt);
+
+    if (varPass) {
+        vec3 d = sanitizeColor(current.rgb) - sanitizeColor(histRaw.rgb);
+        float dist2 = min(dot(d, d) * 0.3333333, kVarMax);
+        float hv = sanitizeVar(texture2D(u_histVar, histUV).r);
+        gl_FragColor = vec4(mix(dist2, hv, fb), 0.0, 0.0, 1.0);
+        return;
+    }
+
     vec4 m1 = vec4(0.0);
     vec4 m2 = vec4(0.0);
+    vec4 mn = current;
+    vec4 mx = current;
     for (int y = -1; y <= 1; y++) {
         for (int x = -1; x <= 1; x++) {
             vec4 s = texture2D(u_current, uv + vec2(float(x), float(y)) * u_texel);
             m1 += s;
             m2 += s * s;
+            mn = min(mn, s);
+            mx = max(mx, s);
         }
     }
     m1 /= 9.0;
     m2 /= 9.0;
     vec4 sigma = sqrt(max(m2 - m1 * m1, vec4(0.0)));
 
-    vec2 histUV = (uv - u_reprojNow) * u_reprojScale + u_reprojPrev;
-    float valid = (histUV.x < 0.0 || histUV.x > 1.0 || histUV.y < 0.0 || histUV.y > 1.0)
-        ? 0.0 : 1.0;
-
-    vec4 hist = texture2D(u_history, clamp(histUV, 0.0, 1.0));
+    vec4 hist = histRaw;
     if (u_clampSigma > 0.0) {
-        hist = clamp(hist, m1 - sigma * u_clampSigma, m1 + sigma * u_clampSigma);
+        // Interseccion nunca vacia: mn <= m1 <= mx.
+        vec4 lo = max(mn, m1 - sigma * u_clampSigma);
+        vec4 hi = min(mx, m1 + sigma * u_clampSigma);
+        hist = clamp(hist, lo, hi);
     }
 
-    gl_FragColor = mix(current, hist, u_temporal * valid);
+    gl_FragColor = mix(current, hist, fb);
 }

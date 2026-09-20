@@ -7,16 +7,11 @@
 using namespace geode::prelude;
 namespace gfile = geode::utils::file;
 
-// Keep the TaskHolder alive so that Geode 5.4+ doesn't garbage-collect
-// the pending file-pick operation before the OS dialog returns.
-// Only one native file dialog can be open at a time, so a single holder
-// is enough (a new pick replaces the previous one).
+// Holder keeps pending pick alive; only one dialog at a time.
 using FilePickHolder =
     geode::async::TaskHolder<Result<std::optional<std::filesystem::path>>>;
 
-// The holder itself is process-lifetime. A normal global TaskHolder destructor
-// may run after geode::async::runtime during CRT teardown and abort a stale
-// handle through an already-destroyed runtime.
+// Leaked on purpose: avoids teardown order issue with async runtime.
 static FilePickHolder& s_filePickHolder = *new FilePickHolder();
 
 namespace pt {
@@ -93,6 +88,13 @@ gfile::FilePickOptions::Filter gmdFilter() {
     return f;
 }
 
+gfile::FilePickOptions::Filter jsonFilter() {
+    gfile::FilePickOptions::Filter f;
+    f.description = "Texture Studio Pack (*.json)";
+    f.files = {"*.json"};
+    return f;
+}
+
 void pickImage(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {imageFilter()}}),
@@ -128,6 +130,13 @@ void pickGmd(FilePickCallback cb) {
     );
 }
 
+void pickJson(FilePickCallback cb) {
+    s_filePickHolder.spawn("Paimbnails FilePicker",
+        gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {jsonFilter()}}),
+        std::move(cb)
+    );
+}
+
 void pickAudio(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {audioFilter()}}),
@@ -152,6 +161,13 @@ void pickMedia(FilePickCallback cb) {
 void saveImage(std::string const& defaultName, FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::SaveFile, {std::filesystem::path(defaultName), {pngFilter()}}),
+        std::move(cb)
+    );
+}
+
+void saveJson(std::string const& defaultName, FilePickCallback cb) {
+    s_filePickHolder.spawn("Paimbnails FilePicker",
+        gfile::pick(gfile::PickMode::SaveFile, {std::filesystem::path(defaultName), {jsonFilter()}}),
         std::move(cb)
     );
 }

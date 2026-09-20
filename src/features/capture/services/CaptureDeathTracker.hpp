@@ -21,8 +21,10 @@ inline void clearDeathTick() {
     lastDeathTickRef().store(-1, std::memory_order_relaxed);
 }
 
-// ~10 ticks ≈ 40ms at 240 physics steps/s
-inline bool hasRecentDeath(uint32_t currentTick, uint32_t window = 10) {
+// Deaths at 240 physics steps/s can sit a few rendering frames behind the
+// capture read; keep ~28 ticks so a level restarted right after dying still
+// rejects the stale frame instead of thumbnailing the death pose.
+inline bool hasRecentDeath(uint32_t currentTick, uint32_t window = 28) {
     int64_t recorded = lastDeathTickRef().load(std::memory_order_relaxed);
     if (recorded < 0) return false;
     auto r = static_cast<uint64_t>(recorded);

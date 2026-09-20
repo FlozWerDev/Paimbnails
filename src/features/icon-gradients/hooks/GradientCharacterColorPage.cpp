@@ -1,3 +1,11 @@
+// Color-page icon shading, rethought for Paimbnails.
+//
+// Idea credit: "Icon Gradients" by zilko
+// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
+// all rights reserved). Independent implementation: same behavior (shade
+// each doll on the color page by its slot index, with the Ship slot
+// doubling as Jetpack), own expression.
+
 #include "GradientCharacterColorPage.hpp"
 #include "GradientGarageLayer.hpp"
 #include "../GradientCache.hpp"
@@ -9,22 +17,17 @@ using namespace paimon::icon_gradients;
 void GradientCharacterColorPage::updateGradient() {
     if (!moduleEnabled()) return;
 
-    bool p2Selected = sdiSaved<bool>("2pselected", false);
+    bool p2 = sdiSaved<bool>("2pselected", false);
 
-    Loader::get()->queueInMainThread([self = Ref(this), p2Selected] {
-        CCArrayExt<SimplePlayer*> array = CCArrayExt<SimplePlayer*>(self->m_playerObjects);
+    Loader::get()->queueInMainThread([self = Ref(this), p2] {
+        CCArrayExt<SimplePlayer*> dolls = CCArrayExt<SimplePlayer*>(self->m_playerObjects);
 
-        for (int i = 0; i < array.size(); i++) {
-            IconType type = static_cast<IconType>(i);
-
-            if (type == IconType::Ship) {
-                if (!self->m_fields->m_isShip) {
-                    type = IconType::Jetpack;
-                }
-            }
-
-            Gradient gradient = GradientUtils::getGradient(type, p2Selected);
-            GradientUtils::applyGradient(array[i], gradient, false, p2Selected, 372);
+        for (int i = 0; i < dolls.size(); i++) {
+            // Slot 1 is the Ship doll, or the Jetpack one when toggled.
+            IconType kind = (i == 1 && !self->m_fields->m_isShip)
+                ? IconType::Jetpack
+                : static_cast<IconType>(i);
+            GradientUtils::applyGradient(dolls[i], GradientUtils::getGradient(kind, p2), false, p2, 372);
         }
     });
 }
@@ -52,7 +55,7 @@ void GradientCharacterColorPage::onPlayerColor(CCObject* sender) {
 }
 
 void GradientCharacterColorPage::onClose(CCObject* sender) {
-    GradientGarageLayer* garage = static_cast<GradientGarageLayer*>(getParent());
+    auto garage = static_cast<GradientGarageLayer*>(getParent());
 
     CharacterColorPage::onClose(sender);
 
@@ -60,7 +63,7 @@ void GradientCharacterColorPage::onClose(CCObject* sender) {
 }
 
 void GradientCharacterColorPage::keyBackClicked() {
-    GradientGarageLayer* garage = static_cast<GradientGarageLayer*>(getParent());
+    auto garage = static_cast<GradientGarageLayer*>(getParent());
 
     CharacterColorPage::keyBackClicked();
 

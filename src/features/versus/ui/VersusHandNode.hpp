@@ -23,6 +23,8 @@ protected:
     void update(float dt) override;
     void rebuildHand();
     void rebuildRivalHand();
+    // Touch/click path for playing a card (mobile has no Q/E keybinds).
+    void onPlayCard(cocos2d::CCObject* sender);
     // Takes the list refresh() already holds, so the rings line up with the
     // glyphs they were built from.
     void rebuildEffects(std::vector<ActiveEffect> const& active);

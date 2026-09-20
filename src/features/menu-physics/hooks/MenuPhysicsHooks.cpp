@@ -20,11 +20,11 @@ namespace {
 class $modify(PaimonMenuPhysicsMenuLayer, MenuLayer) {
     bool init() {
         if (!MenuLayer::init()) return false;
+        this->scheduleOnce(schedule_selector(PaimonMenuPhysicsMenuLayer::deferredApply), 0.f);
         return true;
     }
 
-    void onEnterTransitionDidFinish() {
-        MenuLayer::onEnterTransitionDidFinish();
+    void deferredApply(float) {
         apply(this);
     }
 };
@@ -32,11 +32,11 @@ class $modify(PaimonMenuPhysicsMenuLayer, MenuLayer) {
 class $modify(PaimonMenuPhysicsCreatorLayer, CreatorLayer) {
     bool init() {
         if (!CreatorLayer::init()) return false;
+        this->scheduleOnce(schedule_selector(PaimonMenuPhysicsCreatorLayer::deferredApply), 0.f);
         return true;
     }
 
-    void onEnterTransitionDidFinish() {
-        CreatorLayer::onEnterTransitionDidFinish();
+    void deferredApply(float) {
         apply(this);
     }
 };
@@ -44,11 +44,11 @@ class $modify(PaimonMenuPhysicsCreatorLayer, CreatorLayer) {
 class $modify(PaimonMenuPhysicsLevelSelectLayer, LevelSelectLayer) {
     bool init(int page) {
         if (!LevelSelectLayer::init(page)) return false;
+        this->scheduleOnce(schedule_selector(PaimonMenuPhysicsLevelSelectLayer::deferredApply), 0.f);
         return true;
     }
 
-    void onEnterTransitionDidFinish() {
-        LevelSelectLayer::onEnterTransitionDidFinish();
+    void deferredApply(float) {
         apply(this);
     }
 };
@@ -56,11 +56,11 @@ class $modify(PaimonMenuPhysicsLevelSelectLayer, LevelSelectLayer) {
 class $modify(PaimonMenuPhysicsGarageLayer, GJGarageLayer) {
     bool init() {
         if (!GJGarageLayer::init()) return false;
+        this->scheduleOnce(schedule_selector(PaimonMenuPhysicsGarageLayer::deferredApply), 0.f);
         return true;
     }
 
-    void onEnterTransitionDidFinish() {
-        GJGarageLayer::onEnterTransitionDidFinish();
+    void deferredApply(float) {
         apply(this);
     }
 };
@@ -75,11 +75,11 @@ class $modify(PaimonMenuPhysicsBrowserLayer, LevelBrowserLayer) {
 class $modify(PaimonMenuPhysicsLeaderboardsLayer, LeaderboardsLayer) {
     bool init(LeaderboardType type, LeaderboardStat stat) {
         if (!LeaderboardsLayer::init(type, stat)) return false;
+        this->scheduleOnce(schedule_selector(PaimonMenuPhysicsLeaderboardsLayer::deferredApply), 0.f);
         return true;
     }
 
-    void onEnterTransitionDidFinish() {
-        LeaderboardsLayer::onEnterTransitionDidFinish();
+    void deferredApply(float) {
         apply(this);
     }
 };

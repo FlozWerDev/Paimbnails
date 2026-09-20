@@ -81,12 +81,21 @@ Template waveFromObjects(std::vector<CapturedObject> objects, float cell) {
     Template tpl;
     tpl.mode = Mode::Wave;
     tpl.cell = cell > 0.f ? cell : 30.f;
+    if (objects.empty()) return tpl;
+
+    // Anchor grid to sample min corner to avoid phase shift.
+    float originX = objects.front().dx;
+    float originY = objects.front().dy;
+    for (auto const& object : objects) {
+        originX = std::min(originX, object.dx);
+        originY = std::min(originY, object.dy);
+    }
 
     std::unordered_map<std::uint64_t, int> byCell;
     std::vector<RawCluster> cells;
     for (auto& object : objects) {
-        int gx = gridIndex(object.dx, tpl.cell);
-        int gy = gridIndex(object.dy, tpl.cell);
+        int gx = gridIndex(object.dx - originX, tpl.cell);
+        int gy = gridIndex(object.dy - originY, tpl.cell);
         auto key = packCell(gx, gy);
 
         auto found = byCell.find(key);
@@ -94,11 +103,10 @@ Template waveFromObjects(std::vector<CapturedObject> objects, float cell) {
             found = byCell.emplace(key, static_cast<int>(cells.size())).first;
             cells.push_back({gx, gy, {}});
         }
-        object.dx -= gx * tpl.cell;
-        object.dy -= gy * tpl.cell;
+        object.dx -= originX + gx * tpl.cell;
+        object.dy -= originY + gy * tpl.cell;
         cells[found->second].piece.objects.push_back(std::move(object));
     }
-    if (cells.empty()) return tpl;
 
     std::unordered_map<std::string, int> bySignature;
     std::vector<int> cellPiece(cells.size(), 0);

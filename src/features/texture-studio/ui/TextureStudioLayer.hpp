@@ -8,14 +8,12 @@ namespace paimon::texture_studio {
 
 class SlotsGridView;
 
-// Full-screen pack manager: grid of pack slots with apply/edit/delete,
-// pushed as its own scene (no longer a popup).
+// Full-screen pack manager, pushed as its own scene.
 class TextureStudioLayer : public cocos2d::CCLayer {
 public:
     static TextureStudioLayer* create();
     static cocos2d::CCScene* scene();
 
-    // Push the studio scene with a fade transition.
     static void open();
 
 protected:
@@ -25,6 +23,7 @@ protected:
 
     void onBack(cocos2d::CCObject*);
     void onNewPack(cocos2d::CCObject*);
+    void onImportJson(cocos2d::CCObject*);
     void onApplySlot(std::string const& slotId);
     void onEditSlot(std::string const& slotId);
     void onDeleteSlot(std::string const& slotId);

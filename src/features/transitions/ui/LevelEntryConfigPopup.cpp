@@ -199,7 +199,7 @@ void LevelEntryConfigPopup::rebuild() {
         kit::makeToggleRow(
             innerW,
             "Pantalla anterior",
-            "Saca controles y decoraciones mientras aparece el nivel.",
+            "Saca controles y decoraciones al entrar, y recibe el pause y la pagina de destino al salir.",
             config.animatePage,
             [](bool value) {
                 auto next = getLevelEntryEffectsConfig();
@@ -303,8 +303,9 @@ void LevelEntryConfigPopup::rebuild() {
     items.push_back(kit::makeHint(
         scrollW,
         "La entrada mantiene la fisica detenida hasta terminar. Reflejar entrada reproduce la misma "
-        "personalidad en sentido inverso al abandonar el nivel. Al desactivar la coreografia, vuelve "
-        "a usarse el tipo de transicion seleccionado en la pantalla anterior."
+        "personalidad en sentido inverso al abandonar el nivel: el pause o la pantalla de final se "
+        "despiden con el nivel y la pagina de destino se arma detras. Al desactivar la coreografia, "
+        "vuelve a usarse el tipo de transicion seleccionado en la pantalla anterior."
     ));
 
     m_scroll = kit::makeScrollStack({scrollW, scrollH}, items);

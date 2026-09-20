@@ -39,10 +39,10 @@ protected:
     GradientConfig m_copiedConfig;
 
     bool m_disabled = false;
+    bool m_menuGradients = false;
     bool m_p2disabled = false;
     bool m_p2separate = false;
     bool m_p2flip = false;
-    bool m_menuGradients = false;
 
 public:
 
@@ -54,6 +54,31 @@ public:
     // never blocks the loading screen (see GradientCache.cpp).
     static void prewarmShaders();
 
+    // Master switch.
+    static void setModDisabled(bool);
+
+    static bool isModDisabled();
+
+    // Menu-doll shading.
+    static void setMenuGradientsEnabled(bool);
+
+    static bool isMenuGradientsEnabled();
+
+    // Second-player handling; separate only sticks while neither the
+    // module nor the 2P doll is disabled.
+    static void set2PDisabled(bool);
+
+    static bool is2PDisabled();
+
+    static void set2PSeparate(bool);
+
+    static bool is2PSeparate();
+
+    static void set2PFlip(bool);
+
+    static bool is2PFlip();
+
+    // Editor popup state.
     static IconType getLastSelected();
 
     static void setLastSelected(IconType);
@@ -61,26 +86,6 @@ public:
     static GradientConfig getCopiedConfig();
 
     static void setCopiedConfig(GradientConfig);
-
-    static void setModDisabled(bool);
-
-    static bool isModDisabled();
-
-    static void set2PFlip(bool);
-
-    static bool is2PFlip();
-
-    static void set2PSeparate(bool);
-
-    static bool is2PSeparate();
-
-    static void set2PDisabled(bool);
-
-    static bool is2PDisabled();
-
-    static void setMenuGradientsEnabled(bool);
-
-    static bool isMenuGradientsEnabled();
 
 };
 

@@ -6,8 +6,7 @@
 
 using namespace geode::prelude;
 
-// Plays the level's song on the EditLevelLayer info screen, reusing the same
-// LevelInfo audio context that already drives dynamic songs everywhere else.
+// Reuse LevelInfo audio context for dynamic song.
 class $modify(PaimonDynamicSongEditLevelLayer, EditLevelLayer) {
     struct Fields {
         bool m_audioActivated = false;
@@ -15,14 +14,8 @@ class $modify(PaimonDynamicSongEditLevelLayer, EditLevelLayer) {
 
     bool init(GJGameLevel* level) {
         if (!EditLevelLayer::init(level)) return false;
-        return true;
-    }
-
-    $override
-    void onEnterTransitionDidFinish() {
-        EditLevelLayer::onEnterTransitionDidFinish();
-        this->unschedule(schedule_selector(PaimonDynamicSongEditLevelLayer::forcePlayDynamic));
         this->scheduleOnce(schedule_selector(PaimonDynamicSongEditLevelLayer::forcePlayDynamic), 0.f);
+        return true;
     }
 
     void forcePlayDynamic(float) {
@@ -33,13 +26,23 @@ class $modify(PaimonDynamicSongEditLevelLayer, EditLevelLayer) {
         AudioContextCoordinator::get().activateLevelInfo(m_level, true);
     }
 
-    $override
-    void onExit() {
+    void deactivateDynamic() {
         this->unschedule(schedule_selector(PaimonDynamicSongEditLevelLayer::forcePlayDynamic));
         if (m_fields->m_audioActivated) {
             m_fields->m_audioActivated = false;
             AudioContextCoordinator::get().deactivateLevelInfo(false);
         }
-        EditLevelLayer::onExit();
+    }
+
+    $override
+    void onBack(CCObject* sender) {
+        deactivateDynamic();
+        EditLevelLayer::onBack(sender);
+    }
+
+    $override
+    void onPlay(CCObject* sender) {
+        deactivateDynamic();
+        EditLevelLayer::onPlay(sender);
     }
 };

@@ -23,8 +23,7 @@ namespace paimon::texture_studio {
 class ImageBuffer;
 class ParamSliderRow;
 
-// Pack editor: Pack / Tune / Extra / Sprite tabs.
-// Fusion editing lives in its own full-screen FusionEditorLayer.
+// Pack/Tune/Extra/Sprite tabs; fusion lives in FusionEditorLayer.
 class ProjectEditorLayer : public cocos2d::CCLayer {
 public:
     static ProjectEditorLayer* create(std::string slotId);
@@ -74,12 +73,10 @@ protected:
     void setOriginalSprite(cocos2d::CCSprite* spr);
     void setResultSprite(cocos2d::CCSprite* spr);
 
-    // True when the result can be a GPU-tinted node: plain global/custom
-    // tint with the shader available. Custom images, fusions and skips keep
-    // the CPU compose path.
+    // Plain tint with shader only; images/fusions/skips use CPU.
     bool gpuPreviewWanted(SpriteSetting const& setting,
                           bool globalWouldTint) const;
-    // Pushes the current colors/grades to the live GPU node; no re-upload.
+    // Updates live GPU uniforms without re-upload.
     void applyGpuTintParams(SpriteSetting const& setting);
     // Identity of the segmentation inputs; color/grade changes keep it.
     static std::uint64_t maskFingerprint(SpritePreviewOptions const& opts);
@@ -91,12 +88,12 @@ protected:
     void onClearImage();
     void onResetSprite();
 
-    // Fusion data for previews/thumbnails only (editing is FusionEditorLayer).
     void loadFusionForSelection();
     void unloadFusion();
     FusionApplyOptions makeFusionOptions(SpriteSetting const& s) const;
 
     void onSave(cocos2d::CCObject*);
+    void onExportJson(cocos2d::CCObject*);
     void onGenerate(cocos2d::CCObject*);
     void onAutoTune(cocos2d::CCObject*);
     void markEdited(bool affectsPreview);
@@ -138,8 +135,7 @@ private:
     std::shared_ptr<ImageBuffer> m_customImage;
     SpriteFrameInfo m_previewFrameInfo;
 
-    // GPU live preview: base pixels and mask identity currently on the card.
-    // Color-only edits hit the uniforms fast path while both still match.
+    // Live GPU base pixels + mask id for the uniforms fast path.
     std::shared_ptr<ImageBuffer> m_gpuPixels;
     std::uint64_t m_gpuMaskFp = 0;
     bool m_gpuAttached = false;

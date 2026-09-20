@@ -29,17 +29,17 @@ bool isEditorContextActive() {
 }
 }
 
-// Capture before activate(), which may destroy the popup.
+// Capture before activate() (may destroy popup).
 class $modify(PaimonButtonOriginCapture, CCMenuItemSpriteExtra) {
     static void onModify(auto& self) {
-        // VeryEarly preserves the original button position.
+        // VeryEarly keeps original button position.
         (void)self.setHookPriorityPre("CCMenuItemSpriteExtra::selected", geode::Priority::VeryEarly);
     }
 
     $override
     void selected() {
         if (!isEditorContextActive()) {
-            // Cache this setting; the callback runs on every press.
+            // Cache setting; runs on every press.
             static bool s_enabled = Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
             static auto s_listener = []{
                 geode::listenForSettingChanges<bool>("dynamic-popup-enabled", [](bool v){
@@ -69,13 +69,27 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         CCPoint m_finalPos= {0.f, 0.f};
         Ref<FLAlertLayer> m_exitGuard = nullptr;
         Ref<CCNode> m_blurNode = nullptr;
+        FLAlertLayer* m_self = nullptr;
+
+        // Blur cleanup here: onExit not bound on FLAlertLayer.
+        ~Fields() {
+            if (paimon::isRuntimeShuttingDown()) return;
+            if (Ref<CCNode> blur = m_blurNode) {
+                geode::Loader::get()->queueInMainThread([blur]() {
+                    if (auto* node = blur.data(); node && node->getParent()) {
+                        node->removeFromParent();
+                    }
+                });
+            }
+            m_blurNode = nullptr;
+            if (m_self) paimon::popupblur::cleanup(m_self);
+        }
     };
 
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "FLAlertLayer::show");
         paimon::hooks::afterNodeIdsOrLate(self, "FLAlertLayer::keyBackClicked");
         paimon::hooks::afterNodeIdsOrLate(self, "FLAlertLayer::removeFromParentAndCleanup");
-        paimon::hooks::afterNodeIdsOrLate(self, "FLAlertLayer::removeFromParent");
     }
 
     bool isPaimonPopup() {
@@ -97,7 +111,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         return shouldAnimatePopup() && Mod::get()->getSettingValue<bool>("dynamic-exit-enabled");
     }
 
-    // Blur only popups owned by this mod.
     bool shouldApplyPopupBlur() {
         return isPaimonPopup() && paimon::popupblur::getConfig().enabled && !isEditorContextActive();
     }
@@ -134,20 +147,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         return Mod::get()->getSavedValue<std::string>("dynamic-popup-style", "paimonUI");
     }
 
-    void removePopupBlurNode() {
-        // Defer removal until detachChild finishes iterating the parent.
-        if (Ref<CCNode> blur = m_fields->m_blurNode) {
-            geode::Loader::get()->queueInMainThread([blur]() {
-                if (auto* node = blur.data(); node && node->getParent()) {
-                    node->removeFromParent();
-                }
-            });
-        }
-        m_fields->m_blurNode = nullptr;
-        paimon::popupblur::cleanup(this);
-    }
-
-    // Unregister immediately; the fade sequence removes the node.
+    // Unregister now; fade removes the node later.
     void fadeOutAndRemoveBlur(float duration) {
         paimon::popupblur::cleanupWithFade(this, duration);
 
@@ -176,10 +176,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
             CCCallFunc::create(node, callfunc_selector(CCNode::removeFromParent)),
             nullptr
         ));
-    }
-
-    void clearPopupBlurState() {
-        removePopupBlurNode();
     }
 
     CCPoint worldToMLParent(CCPoint wp) {
@@ -588,7 +584,8 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
     $override
     void show() {
-    // Do not VMT-hook inherited virtuals; the copied table follows the base size.
+    // No VMT hook on inherited virtuals; table follows base size.
+        m_fields->m_self = this;
         FLAlertLayer::show();
 
         if (shouldApplyPopupBlur()) {
@@ -597,17 +594,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         if (shouldAnimatePopup()) {
             runEntryAnimation();
         }
-    }
-
-    void draw() {
-    // Blur is a sibling at popupZ-1; keep the popup draw even if blur fails.
-        FLAlertLayer::draw();
-    }
-
-    $override
-    void removeFromParent() {
-        paimon::popupblur::cleanup(this);
-        FLAlertLayer::removeFromParent();
     }
 
     $override
@@ -626,7 +612,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     $override
     void removeFromParentAndCleanup(bool cleanup) {
         if (!shouldAnimateExit() || m_fields->m_exiting) {
-            // Use the configured fade when the popup has no animation.
             float fadeDur = std::clamp(
                 static_cast<float>(paimon::settings::popupblur::fadeDuration()),
                 0.0f, 1.0f);
@@ -648,26 +633,10 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
         runExitAnimation();
     }
-
-    // onExit covers scene changes and direct removals.
-    $override
-    void onExit() {
-        this->unschedule(schedule_selector(PaimonDynamicPopupHook::deferredClose));
-        if (m_fields->m_blurNode) {
-            removePopupBlurNode();
-        }
-        paimon::popupblur::cleanup(this);
-        FLAlertLayer::onExit();
-    }
-
-    ~PaimonDynamicPopupHook() {
-        clearPopupBlurState();
-    }
 };
 
 
-    // Direct show() hooks cover classes that bypass FLAlertLayer::show; respect
-    // SetupShaderEffectPopup and explicit blur opt-outs.
+    // show() hooks cover classes bypassing FLAlertLayer::show.
 
 #include <Geode/binding/SetupShaderEffectPopup.hpp>
 
@@ -696,12 +665,6 @@ class $modify(PaimonProfilePageBlur, ProfilePage) {
         paimon::popupblur::cleanupWithFade(this, fadeDur);
         ProfilePage::keyBackClicked();
     }
-
-    $override
-    void onExit() {
-        paimon::popupblur::cleanup(this);
-        ProfilePage::onExit();
-    }
 };
 
 class $modify(PaimonSetupTriggerPopupBlur, SetupTriggerPopup) {
@@ -721,11 +684,5 @@ class $modify(PaimonSetupTriggerPopupBlur, SetupTriggerPopup) {
             0.0f, 0.6f);
         paimon::popupblur::cleanupWithFade(this, fadeDur);
         SetupTriggerPopup::keyBackClicked();
-    }
-
-    $override
-    void onExit() {
-        paimon::popupblur::cleanup(this);
-        SetupTriggerPopup::onExit();
     }
 };

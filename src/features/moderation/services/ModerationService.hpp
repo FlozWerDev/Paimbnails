@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include "PendingQueue.hpp"
@@ -48,7 +48,7 @@ public:
     void submitReport(int levelId, std::string const& username,
                       std::string const& note, ActionCallback callback);
 
-    void resetModCache() { m_modCache.reset(); }
+    void resetModCache();
     void resetUserStatusCache();
     void resetUserStatusCache(std::string const& username);
     void updateUserStatusCache(std::string const& username, bool isMod, bool isAdmin);
@@ -59,17 +59,6 @@ private:
     ModerationService& operator=(ModerationService const&) = delete;
 
     bool m_serverEnabled = true;
-
-    struct ModCacheEntry {
-        bool isMod   = false;
-        bool isAdmin = false;
-        std::chrono::steady_clock::time_point timestamp;
-    };
-    std::optional<ModCacheEntry> m_modCache;
-    static constexpr int MOD_CACHE_TTL_SECONDS = 1800;
-
-    bool tryModCache(ModeratorCallback& callback);
-    void updateModCache(bool isMod, bool isAdmin);
 
     struct UserStatusCacheEntry {
         bool isMod   = false;

@@ -34,9 +34,11 @@ using namespace geode::prelude;
 CaptureOverlay* CaptureOverlay::s_instance = nullptr;
 
 void CaptureOverlay::show() {
+// A second capture while the old card is still on screen replaces it: close
+// the old overlay synchronously (its in-flight capture callback is
+// WeakRef-guarded and becomes a no-op) instead of dropping the new request.
     if (s_instance) {
-    s_instance->onClose(nullptr);
-        return;
+        s_instance->finishClose();
     }
 
     auto* overlay = CaptureOverlay::create();
@@ -135,7 +137,7 @@ void CaptureOverlay::onAutoDismiss(float) {
 }
 
 namespace {
-void collectVisibleAlerts(cocos2d::CCScene* scene, std::vector<CCNode*>& out) {
+void collectVisibleAlerts(cocos2d::CCScene* scene, std::vector<geode::WeakRef<cocos2d::CCNode>>& out) {
     if (!scene) return;
     for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
         if (!child) continue;
@@ -149,8 +151,8 @@ void CaptureOverlay::checkSceneChanged(float) {
     auto* director = CCDirector::get();
     if (!director) return;
     auto* running = director->getRunningScene();
-// Compare pointer identity; the old scene may already be freed.
-    if (running != m_ownerScene) {
+// WeakRef comparison: the old scene may already be freed, never touch it.
+    if (running != m_ownerScene.lock().data()) {
         m_isClosing = true;
         this->removeFromParent();
         return;
@@ -158,11 +160,14 @@ void CaptureOverlay::checkSceneChanged(float) {
 
 // Yield to a popup opened after the card docks.
     if (m_docked && !m_isClosing) {
-        std::vector<CCNode*> alerts;
+        std::vector<geode::WeakRef<cocos2d::CCNode>> alerts;
         collectVisibleAlerts(running, alerts);
-        for (auto* a : alerts) {
-            if (std::find(m_alertsAtDock.begin(), m_alertsAtDock.end(), a)
-                    == m_alertsAtDock.end()) {
+        for (auto const& a : alerts) {
+            bool known = false;
+            for (auto const& docked : m_alertsAtDock) {
+                if (docked.lock().data() == a.lock().data()) { known = true; break; }
+            }
+            if (!known) {
                 this->onClose(nullptr);
                 return;
             }
@@ -176,6 +181,9 @@ void CaptureOverlay::registerWithTouchDispatcher() {
 
 bool CaptureOverlay::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     if (m_isClosing) return false;
+// Before the capture lands the overlay is invisible: never swallow touches
+// meant for the game or the pause menu underneath.
+    if (!this->isVisible()) return false;
     auto touchPos = touch->getLocation();
 
     if (m_previewCard && m_previewCard->isVisible()) {
@@ -189,7 +197,7 @@ bool CaptureOverlay::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         }
         return true;
     }
-    return true;
+    return false;
 }
 
 void CaptureOverlay::onClose(CCObject* sender) {
@@ -257,7 +265,10 @@ void CaptureOverlay::triggerCaptureProcess(float) {
         0,
         [weakSelf](bool success, cocos2d::CCTexture2D* texture, std::shared_ptr<uint8_t> rgba, int w, int h) {
             auto self = weakSelf.lock();
-    if (!self) return;
+            if (!self) return;
+// The overlay may have been replaced (second capture) or removed (scene
+// change) while the capture was in flight: never resurrect it.
+            if (self->m_isClosing || !self->getParent()) return;
             self->setVisible(true);
 
             if (success && texture) {

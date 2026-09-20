@@ -3,6 +3,7 @@
 #include <Geode/modify/PlayerObject.hpp>
 
 #include "../GradientTypes.hpp"
+#include "../../../framework/HookConventions.hpp"
 
 namespace paimon::icon_gradients {
 
@@ -11,15 +12,15 @@ using namespace geode::prelude;
 class $modify(GradientPlayerObject, PlayerObject) {
 public:
     static void onModify(auto& self) {
-        (void)self.setHookPriorityPost("PlayerObject::updatePlayerFrame", Priority::Last + 21903809);
-        (void)self.setHookPriorityPost("PlayerObject::updatePlayerShipFrame", Priority::Last + 21903809);
-        (void)self.setHookPriorityPost("PlayerObject::updatePlayerRollFrame", Priority::Last + 21903809);
-        (void)self.setHookPriorityPost("PlayerObject::updatePlayerBirdFrame", Priority::Last + 21903809);
-        (void)self.setHookPriorityPost("PlayerObject::updatePlayerDartFrame", Priority::Last + 21903809);
-        (void)self.setHookPriorityPost("PlayerObject::createRobot", Priority::Last + 21903809);
-        (void)self.setHookPriorityPost("PlayerObject::createSpider", Priority::Last + 21903809);
-        (void)self.setHookPriorityPost("PlayerObject::updatePlayerSwingFrame", Priority::Last + 21903809);
-        (void)self.setHookPriorityPost("PlayerObject::updatePlayerJetpackFrame", Priority::Last + 21903809);
+        paimon::hooks::afterNodeIdsOrLate(self, "PlayerObject::updatePlayerFrame");
+        paimon::hooks::afterNodeIdsOrLate(self, "PlayerObject::updatePlayerShipFrame");
+        paimon::hooks::afterNodeIdsOrLate(self, "PlayerObject::updatePlayerRollFrame");
+        paimon::hooks::afterNodeIdsOrLate(self, "PlayerObject::updatePlayerBirdFrame");
+        paimon::hooks::afterNodeIdsOrLate(self, "PlayerObject::updatePlayerDartFrame");
+        paimon::hooks::afterNodeIdsOrLate(self, "PlayerObject::createRobot");
+        paimon::hooks::afterNodeIdsOrLate(self, "PlayerObject::createSpider");
+        paimon::hooks::afterNodeIdsOrLate(self, "PlayerObject::updatePlayerSwingFrame");
+        paimon::hooks::afterNodeIdsOrLate(self, "PlayerObject::updatePlayerJetpackFrame");
     }
 
     struct Fields {
@@ -43,11 +44,31 @@ public:
         std::vector<Ref<CCSprite>> m_animSprites;
         std::unordered_map<CCSprite*, Ref<CCSprite>> m_animSpriteParents;
 
-        bool m_thatOneUfoShipAndCubeModIsLoaded = false;
+        // Compat with the "Custom UFO N Ship Cube" doll-replacement mod:
+        // while it is loaded the menu doll needs its shaded copies shown.
+        bool m_menuDollPatchLoaded = false;
         bool m_separateDualIconsIsLoaded = false;
         bool m_swingFlipLoaded = false;
 
         bool m_animSpritesInitialized = false;
+    };
+
+    // One gradient overlay plus the live sprite it shadows: `copy` is the
+    // painted duplicate, `source` the live sprite it follows for flip and
+    // opacity, `live` the sprite that gets its shader restored when the
+    // overlay is gone, `config` the gradient slot, `color` its channel and
+    // `seed` the shader variant.
+    struct MirrorLane {
+        Ref<CCSprite> Fields::* copy;
+        CCSprite* PlayerObject::* source;
+    };
+
+    struct PaintLane {
+        CCSprite* PlayerObject::* live;
+        Ref<CCSprite> Fields::* copy;
+        GradientConfig Gradient::* config;
+        ColorType color;
+        int seed;
     };
 
     bool shouldReturn(GJBaseGameLayer*, bool = false);
@@ -62,11 +83,17 @@ public:
 
     void updateSprite(CCSprite*, Ref<CCSprite>&, SpriteType, ColorType);
 
-    void updateIconSprite(Gradient, auto);
+    void paintSet(Gradient const&, SpriteType, int, PaintLane const*, size_t, auto);
 
-    void updateVehicleSprite(Gradient, auto);
+    void updateIconSprite(Gradient const&, auto);
 
-    void updateAnimSprite(IconType, Gradient, auto);
+    void updateVehicleSprite(Gradient const&, auto);
+
+    void shadeAnimSection(auto&&, GradientConfig const&, IconType, ColorType, int, bool, bool, auto);
+
+    void updateAnimSprite(IconType, Gradient const&, auto);
+
+    void refreshMech(IconType);
 
     void updateGradient();
 

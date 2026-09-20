@@ -1,4 +1,5 @@
 #include "VerificationCenterLayer.hpp"
+#include "../../../core/ModAuthFlow.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../framework/state/SessionState.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -46,6 +47,10 @@ VerificationCenterLayer* VerificationCenterLayer::create() {
 
 CCScene* VerificationCenterLayer::scene() {
     if (!paimon::modules::isEnabled("paimbnails.moderation.system")) return nullptr;
+    if (!paimon::modauth::isVerified()) {
+        paimon::modauth::showPanel();
+        return nullptr;
+    }
     auto scene = CCScene::create();
     scene->addChild(VerificationCenterLayer::create());
     return scene;
@@ -267,6 +272,12 @@ bool VerificationCenterLayer::init() {
         m_refreshBtn->setPosition({listX + 110.f, listY - 12.f});
         filterMenu->addChild(m_refreshBtn);
 
+        auto sessionSpr = ButtonSprite::create("Sesion", 70, true, "bigFont.fnt", "GJ_button_04.png", 22.f, 0.5f);
+        sessionSpr->setScale(0.6f);
+        auto sessionBtn = CCMenuItemSpriteExtra::create(sessionSpr, this,
+            menu_selector(VerificationCenterLayer::onSession));
+        sessionBtn->setPosition({listX + 180.f, listY - 12.f});
+        filterMenu->addChild(sessionBtn);
         this->addChild(filterMenu, 5);
     }
 
@@ -297,6 +308,9 @@ void VerificationCenterLayer::onTabProfileBackground(CCObject*) { switchTo(Pendi
 void VerificationCenterLayer::onTabProfileImg(CCObject*) { switchTo(PendingCategory::ProfileImg); }
 
 void VerificationCenterLayer::switchTo(PendingCategory cat) {
+    auto generation = ++m_queueGeneration;
+    m_allItems.clear();
+    m_items.clear();
     m_current = cat;
     m_selectedIndex = -1;
     clearPreview();
@@ -319,13 +333,13 @@ void VerificationCenterLayer::switchTo(PendingCategory cat) {
     content->addChild(loadLbl);
 
     WeakRef<VerificationCenterLayer> self = this;
-    ThumbnailAPI::get().syncVerificationQueue(cat, [self, cat](bool success, std::vector<PendingItem> const& items) {
+    ThumbnailAPI::get().syncVerificationQueue(cat, [self, cat, generation](bool success, std::vector<PendingItem> const& items) {
         auto layer = self.lock();
-        if (!layer) return;
+        if (!layer || layer->m_queueGeneration != generation || layer->m_current != cat) return;
 
         if (!success) {
-            log::warn("[VerificationCenter] Failed to sync from server, using local");
-            layer->m_allItems = PendingQueue::get().list(cat);
+            layer->m_allItems.clear();
+            PaimonNotify::create("No se pudo cargar la cola. Verifica la sesion y reintenta.", NotificationIcon::Warning)->show();
         } else {
             layer->m_allItems = items;
         }
@@ -864,6 +878,9 @@ std::string VerificationCenterLayer::selectedSuggestionFilename(int levelID) con
 // Accept one, accept the level's whole review gallery, or reject one — all
 // three do the same auth dance and the same reload, so they share a body.
 void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool reject) {
+    if (m_actionPending) return;
+    if (!paimon::modauth::isVerified()) { paimon::modauth::showPanel(); return; }
+    m_actionPending = true;
     std::string username;
     int accountID = 0;
     if (auto gm = GameManager::get()) {
@@ -871,6 +888,7 @@ void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool r
         if (auto* am = GJAccountManager::get()) accountID = am->m_accountID;
     }
     if (accountID <= 0) {
+        m_actionPending = false;
         PaimonNotify::create("Tienes que tener cuenta para subir", NotificationIcon::Error)->show();
         return;
     }
@@ -905,6 +923,7 @@ void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool r
         if (!layer) return;
 
         if (!(isMod || isAdmin)) {
+            layer->m_actionPending = false;
             if (loading) loading->dismiss();
             PaimonNotify::create(Localization::get().getString(errorKey).c_str(), NotificationIcon::Error)->show();
             return;
@@ -914,6 +933,7 @@ void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool r
             auto layer = self.lock();
             if (loading) loading->dismiss();
             if (!layer) return;
+            layer->m_actionPending = false;
 
             if (success) {
                 PaimonNotify::create(Localization::get().getString(okKey).c_str(), okIcon)->show();
@@ -1225,72 +1245,14 @@ void VerificationCenterLayer::applyFilter() {
     }
 }
 
+void VerificationCenterLayer::onSession(CCObject*) {
+    paimon::modauth::showPanel();
+}
+
 void VerificationCenterLayer::onRefresh(CCObject*) {
-    if (m_refreshBtn) {
-        m_refreshBtn->setEnabled(false);
-        m_refreshBtn->setColor({128, 128, 128});
-    }
-
-    WeakRef<VerificationCenterLayer> self = this;
-    auto cat = m_current;
-
-    ThumbnailAPI::get().syncVerificationQueue(cat, [self, cat](bool success, std::vector<PendingItem> const& items) {
-        auto layer = self.lock();
-        if (!layer || !layer->getParent()) return;
-
-        if (layer->m_refreshBtn) {
-            layer->m_refreshBtn->setEnabled(true);
-            layer->m_refreshBtn->setColor({255, 255, 255});
-        }
-
-        if (!success || layer->m_current != cat) return;
-
-        int selectedLevelID = -1;
-        if (layer->m_selectedIndex >= 0 && layer->m_selectedIndex < (int)layer->m_items.size()) {
-            selectedLevelID = layer->m_items[layer->m_selectedIndex].levelID;
-        }
-
-        layer->m_allItems = items;
-        layer->applyFilter();
-        layer->rebuildList();
-
-        if (selectedLevelID > 0) {
-            for (int i = 0; i < (int)layer->m_items.size(); i++) {
-                if (layer->m_items[i].levelID == selectedLevelID) {
-                    layer->m_selectedIndex = i;
-                    layer->highlightRow(i);
-                    break;
-                }
-            }
-        }
-    });
+    switchTo(m_current);
 }
 
 void VerificationCenterLayer::autoRefreshClaims(float dt) {
-    WeakRef<VerificationCenterLayer> self = this;
-    auto cat = m_current;
-
-    ThumbnailAPI::get().syncVerificationQueue(cat, [self, cat](bool success, std::vector<PendingItem> const& items) {
-        auto layer = self.lock();
-        if (!layer || !layer->getParent() || layer->m_current != cat || !success) return;
-
-        int selectedLevelID = -1;
-        if (layer->m_selectedIndex >= 0 && layer->m_selectedIndex < (int)layer->m_items.size()) {
-            selectedLevelID = layer->m_items[layer->m_selectedIndex].levelID;
-        }
-
-        layer->m_allItems = items;
-        layer->applyFilter();
-        layer->rebuildList();
-
-        if (selectedLevelID > 0) {
-            for (int i = 0; i < (int)layer->m_items.size(); i++) {
-                if (layer->m_items[i].levelID == selectedLevelID) {
-                    layer->m_selectedIndex = i;
-                    layer->highlightRow(i);
-                    break;
-                }
-            }
-        }
-    });
+    if (!m_actionPending) switchTo(m_current);
 }

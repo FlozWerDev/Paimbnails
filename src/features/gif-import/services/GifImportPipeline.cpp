@@ -104,8 +104,7 @@ struct BucketKey {
     }
 };
 
-// Una imagen fija puede pagar el detalle de 320 px; una animacion multiplica ese
-// costo por frame, asi que se queda donde el trazado tarda segundos y no minutos.
+// Fija a 320 px; animada a 160 px porque el costo va por frame.
 Options sanitize(Options options, std::size_t frames) {
     options.maxDimension = std::clamp(options.maxDimension, 4, frames > 1 ? 160 : 320);
     options.minDimension = std::clamp(options.minDimension, 4, options.maxDimension);
@@ -115,14 +114,8 @@ Options sanitize(Options options, std::size_t frames) {
     options.alphaThreshold = std::clamp(options.alphaThreshold, 1, 254);
     options.backgroundTolerance = std::clamp(options.backgroundTolerance, 0, 120);
     options.pixelSize = std::clamp(options.pixelSize, 1.f, 30.f);
-    // En pintura se respeta el conmutador Suave/Pixel del popup: el muestreo
-    // por pixel clasifica cada celda por su centro y coloca los bordes en su
-    // sitio real en vez de desplazarlos media celda con el promedio del area.
-    // El defecto sigue en Suave; solo quien elige Pixel en el popup lo recibe.
-    // Render y Libre comparten geometría paint y heredan el mismo conmutador.
-    // El dither se fuerza apagado: reparte el error entre celdas vecinas con
-    // Floyd-Steinberg pero por ese camino se pierde el analisis a resolucion
-    // de origen (medido 128/24: parecido 34.57 -> 37.94 y +3% objetos).
+    // Pixel respeta Suave/Pixel del popup; defecto Suave.
+    // Dither apagado: pierde analisis a resolucion de origen.
     if (options.mode == ImportMode::Paint || options.mode == ImportMode::Render ||
         options.mode == ImportMode::Free) {
         options.dither = false;
@@ -216,9 +209,7 @@ std::vector<std::uint8_t> backgroundMask(
         return a.count < b.count;
     });
     if (best == bins.end() || best->count == 0) return removed;
-    // Un fondo plano se lleva casi todo el borde. En una foto o en un fotograma
-    // de video el tono mas repetido no llega ni a un tercio, y el relleno se
-    // comia media imagen dejando agujeros distintos en cada frame.
+    // Solo fondo plano: en fotos el tono top no llega a 1/3 del borde.
     if (best->count * 3 < borderSamples) return removed;
 
     Pixel background{
@@ -262,12 +253,7 @@ std::vector<std::uint8_t> backgroundMask(
         if (y + 1 < height) tryPush(x, y + 1);
     }
 
-    // A flat image has the same colour on every border pixel, so the automatic
-    // detector quite correctly identifies the whole canvas as background. It
-    // must not turn a valid solid image into the "completely transparent"
-    // error, though. Keep the original pixels when the mask removed every
-    // visible pixel; genuinely empty images still remain empty and are rejected
-    // by the palette stage.
+    // No vaciar una imagen solida detectada como fondo.
     std::size_t visible = 0;
     std::size_t kept = 0;
     for (std::size_t index = 0; index < removed.size(); ++index) {
@@ -354,11 +340,7 @@ Pixel sampleArea(
     };
 }
 
-// Cuantos pixeles del origen se miran como mucho por frame. Analizar a la
-// resolucion de verdad es lo que evita que un detalle chico se pierda en la media
-// de su celda antes de que nadie lo haya mirado, pero en una imagen enorme no
-// hace falta verlos todos: se recorre en rejilla. Aun con el paso mas grande se
-// mira dos ordenes de magnitud mas de lo que se veia mirando la imagen reducida.
+// Analiza a resolucion real con tope de muestras por frame.
 constexpr std::size_t kMaxAnalysisSamples = 4u << 20;
 
 int analysisStride(int width, int height) {
@@ -450,13 +432,7 @@ int colorDistanceSq(Pixel const& pixel, Color const& color) {
 
 constexpr int kFlatColorDistance = 20;
 
-// El dibujo esta hecho de manchas planas, pero el antialias deja pegada a cada
-// borde una rampa de tonos intermedios que no es ningun color del dibujo. Si esa
-// rampa entra en la paleta se lleva la mitad de las entradas, deja los colores de
-// verdad mal representados y ademas cada tono de la rampa es una hebra de una
-// celda de ancho que cuesta un objeto por cada dos celdas. Contar cuantos vecinos
-// llevan el mismo color separa las dos cosas sin mirar el color en si: el interior
-// de una mancha plana los tiene todos y la orla no tiene ninguno.
+// La orla no es color real: pesa por vecindad plana.
 template <typename Sample>
 std::uint64_t flatnessWeight(Sample const& sample, int x, int y, int width, int height) {
     Color center;
@@ -501,11 +477,7 @@ std::vector<Color> medianCut(Histogram const& histogram, int maxColors) {
     auto channel = [](Color const& color, int index) {
         return index == 0 ? color.r : index == 1 ? color.g : color.b;
     };
-    // Se parte la caja que peor representa a los colores que lleva dentro, medido
-    // como lo que se desvia cada uno de la media de la caja. Repartir por peso
-    // partia en dos la mancha mas grande aunque ya fuera de un solo color, y de
-    // ahi salian paletas con cuatro azules identicos y ningun hueco para el
-    // detalle pequeno.
+    // Parte por error, no por peso: evita duplicar el color dominante.
     struct Spread {
         double error = 0.0;
         double weight = 0.0;
@@ -556,8 +528,7 @@ std::vector<Color> medianCut(Histogram const& histogram, int maxColors) {
         for (int i = 0; i < static_cast<int>(boxes.size()); ++i) {
             if (boxes[static_cast<std::size_t>(i)].entries.size() < 2) continue;
             auto const s = spread(boxes[static_cast<std::size_t>(i)]);
-            // Una caja que no llega ni al milesimo de la imagen no merece una
-            // entrada suya: seria gastarla en una mota.
+            // Bajo 0.1% de la imagen no merece entrada propia.
             if (s.weight < totalHistogramWeight * 0.001) continue;
             if (s.error > bestError) {
                 bestError = s.error;
@@ -609,12 +580,7 @@ std::vector<Color> medianCut(Histogram const& histogram, int maxColors) {
     return palette;
 }
 
-// El median cut deja cada entrada como la media de su caja, que no es ningun
-// color de la imagen: cae en la rampa del antialias entre dos manchas planas y
-// pinta media silueta de un tono que no existe. Cada entrada se lleva al color
-// mas repetido de los que le tocan, que es el de la mancha plana. Despues se
-// fusionan las entradas que a la distancia a la que se ve el nivel son el mismo
-// color: cada entrada que sobra es una familia entera de objetos que no hace falta.
+// Lleva cada entrada al tono plano mas repetido y fusiona iguales.
 std::vector<Color> refinePalette(Histogram const& histogram, std::vector<Color> palette) {
     if (palette.size() < 2) return palette;
 
@@ -659,7 +625,6 @@ std::vector<Color> refinePalette(Histogram const& histogram, std::vector<Color> 
         if (center.peak > 0.0) center.lab = center.peakLab;
     }
 
-    // Centros sin nada asignado y pares indistinguibles se funden en uno.
     bool merged = true;
     while (merged) {
         merged = false;
@@ -722,9 +687,7 @@ int nearestColor(float r, float g, float b, std::vector<OkLab> const& paletteLab
     return best;
 }
 
-// Un indice de paleta por cada caja de 5 bits por canal. Se paga una vez y
-// convierte el cuantizado de cada pixel del origen en una consulta de tabla, que
-// es lo que hace viable mirarlos todos.
+// Tabla unica para cuantizar cada pixel del origen.
 std::vector<std::int16_t> paletteLookup(std::vector<Color> const& palette) {
     std::vector<OkLab> labs;
     labs.reserve(palette.size());
@@ -751,13 +714,7 @@ std::vector<std::int16_t> paletteLookup(std::vector<Color> const& palette) {
     return lookup;
 }
 
-// La celda se queda con el color que mas manda en su trozo de imagen original, no
-// con la media. La media de un borde entre dos manchas planas es un tercer tono
-// que no esta en el dibujo, y ese tono inventado se comia una entrada de la paleta
-// y ademas dejaba una hebra de una celda de ancho a lo largo de cada silueta. El
-// voto conserva el borde limpio y deja pasar un detalle chico si de verdad domina
-// su celda. El alfa se sigue promediando, asi que lo que era transparente lo sigue
-// siendo igual que antes.
+// Vota el color dominante; la media inventa tonos en los bordes.
 std::vector<GridFrame> quantizeFromSource(
     SourceAnimation const& source,
     std::vector<SelectedFrame> const& selected,
@@ -799,7 +756,6 @@ std::vector<GridFrame> quantizeFromSource(
                         if (pixel.a < options.alphaThreshold) continue;
                         int const key = (pixel.r >> 3) << 10 | (pixel.g >> 3) << 5 |
                             (pixel.b >> 3);
-                        // Un pixel translucido manda menos que uno opaco.
                         votes[static_cast<std::size_t>(
                             lookup[static_cast<std::size_t>(key)])] += pixel.a;
                     }
@@ -891,11 +847,7 @@ std::vector<GridFrame> quantize(
     return output;
 }
 
-// El histograma sale de los pixeles del origen, no de la imagen ya reducida: a 48
-// celdas de lado esta veia dos mil muestras de un millon, y con tan pocas un color
-// que ocupa poco pero importa (un brillo, un iris) no llegaba a la paleta. En modo
-// Pintura cada muestra pesa ademas por lo plana que es su vecindad, para que la
-// paleta se la lleven los colores del dibujo y no la orla del antialias.
+// Histograma del origen; en Pintura pesa lo plano, no la orla.
 std::vector<Color> buildPalette(
     SourceAnimation const& source,
     std::vector<SelectedFrame> const& selected,
@@ -907,12 +859,7 @@ std::vector<Color> buildPalette(
     bool flat
 ) {
     int const stride = analysisStride(source.width, source.height);
-    // Lo plano se mide a la escala de la celda de salida, no a la del pixel de
-    // origen. A resolucion de origen la rampa del antialias tiene muchos pixeles
-    // de ancho y cada uno se parece a su vecino, asi que salia tan plana como una
-    // mancha de verdad y se llevaba media paleta. Preguntando de celda en celda,
-    // que es la escala a la que va a existir el dibujo, la rampa vuelve a ser lo
-    // que es: el sitio donde el color cambia.
+    // Lo plano se mide a escala de celda, no de pixel.
     int const flatX = std::max(1, source.width / std::max(gridWidth, 1));
     int const flatY = std::max(1, source.height / std::max(gridHeight, 1));
     int const flatWidth = (source.width + flatX - 1) / flatX;
@@ -968,25 +915,12 @@ std::vector<Color> buildPalette(
 constexpr int kSpeckleColorDistance = 50;
 constexpr int kSmallPaletteSpeckleDistance = 65;
 
-// Lo que puede costar fundir una mancha chica con la de al lado. De lejos el ojo
-// promedia, asi que lo que una mancha equivocada mete en la media es su distancia
-// por su area: eso es lo que se compara con el presupuesto. Una celda suelta
-// admite un salto grande y una mancha de doce casi ninguno, que es justo lo que
-// hace falta: las celdas sueltas son el ruido del JPEG y la rampa del antialias,
-// y las manchas de cuatro o cinco celdas son los ojos y los brillos. Pesando por
-// la raiz del area salian los mismos objetos pero se comia las caras.
+// Coste = distancia por area: funde ruido y conserva detalle.
 constexpr float kSpeckBudget = 0.25f;
-// Por encima de esto la mancha ya es parte del dibujo y no se toca. El tope va
-// por area y no por forma a proposito: una linea de una celda de ancho pero larga
-// se pasa del area y sobrevive entera, que es lo que hace falta para que los
-// trazos finos no se los lleve esta pasada.
+// Tope por area: las lineas finas largas sobreviven.
 constexpr int kSpeckArea = 12;
 
-// A la distancia a la que se mira un nivel, una mancha de pocas celdas no es un
-// detalle sino un punto de color. Cada una cuesta un objeto entero y ademas parte
-// en dos la mancha del vecino, que tiene que rodearla, asi que salen mas caras de
-// lo que ocupan. Se funden con la vecina con la que mas borde comparten mientras
-// el cambio no llegue a notarse.
+// Mancha chica cara: cuesta un objeto y parte al vecino; se funde.
 void mergeFaintSpecks(
     std::vector<GridFrame>& frames,
     std::vector<Color> const& palette,
@@ -1003,8 +937,7 @@ void mergeFaintSpecks(
         std::pair{-1, 0}, std::pair{1, 0}, std::pair{0, -1}, std::pair{0, 1}
     };
     for (auto& frame : frames) {
-        // El antialias no deja una mota sino una rampa de varias, una encima de
-        // otra: cada pasada se come la de fuera y descubre la siguiente.
+        // La rampa sale por capas: cada pasada come la exterior.
         for (int pass = 0; pass < 8; ++pass) {
             std::vector<std::uint8_t> visited(cells, 0);
             bool changed = false;
@@ -1028,17 +961,10 @@ void mergeFaintSpecks(
                         component.push_back(neighbor);
                     }
                 }
-                // La mancha se recorre entera aunque ya se sepa que se pasa de
-                // tamano: cortando el recorrido a la mitad, el resto se quedaba sin
-                // visitar y volvia a entrar como si fuera otra mancha chica, y una
-                // mancha grande acababa fundiendose a trozos.
+                // Recorre la mancha entera aunque exceda el tope.
                 if (static_cast<int>(component.size()) > kSpeckArea) continue;
 
-                // Un agujero transparente encerrado dentro de una mancha no es el
-                // fondo: es lo que deja el antialias o el JPEG donde el alfa se
-                // quedo corto. Se cierra con el color que lo rodea. Solo si esta
-                // encerrado del todo, que si toca el borde del lienzo o el hueco
-                // de fuera entonces si es fondo.
+                // Hueco encerrado: es alfa corto, no fondo; se cierra.
                 if (color < 0) {
                     bool enclosed = true;
                     for (int position : component) {
@@ -1071,9 +997,6 @@ void mergeFaintSpecks(
                 if (*winner == 0) continue;
                 auto const replacement = static_cast<std::int32_t>(
                     std::distance(border.begin(), winner));
-                // El agujero encerrado no se mide contra ningun color: no hay
-                // distancia entre el hueco y un tono, y dejarlo abierto siempre es
-                // peor que cerrarlo.
                 if (color >= 0) {
                     float const cost = oklabDistance(
                         labs[static_cast<std::size_t>(color)],
@@ -1091,11 +1014,7 @@ void mergeFaintSpecks(
     }
 }
 
-// Una celda suelta de un color no dibuja nada: a la escala a la que se ve el
-// nivel es un punto, pero cuesta un objeto entero y ademas rompe en dos la mancha
-// del vecino, que tiene que rodearla. Se funde con el color que mas la rodea sin
-// mirar si se parece, porque a este tamano no hay detalle que perder. Solo caen
-// las que estan rodeadas del todo: una mota pegada al borde del dibujo si se ve.
+// Solo cae lo rodeado del todo; el borde del dibujo se ve.
 void dissolveSpecks(
     std::vector<GridFrame>& frames,
     std::vector<Color> const& palette,
@@ -1188,10 +1107,7 @@ void dissolveSpecks(
                         }
                     }
                 }
-                // Una mota flotando sola en el vacio no la presencia nadie: a la
-                // escala a la que se ve el nivel es un punto suelto, y ademas es la
-                // trama de puntos del fondo del dibujo, que no es ningun detalle.
-                // Se borra entera en vez de fundirla, que no hay con que fundirla.
+                // Mota flotando en vacio: trama de fondo, se borra.
                 if (touching == 0) {
                     if (exposed == 0) continue;
                     for (int position : component) {
@@ -1216,8 +1132,7 @@ void dissolveSpecks(
     }
 }
 
-// El vecino mas pegado a la mancha, siempre que sea un color casi igual: una mota
-// de ese tamano no dibuja nada que el vecino no dibuje.
+// Funde la mota con el vecino casi igual mas presente.
 int nearbyReplacement(
     std::vector<int> const& votes,
     std::vector<Color> const& palette,
@@ -1246,13 +1161,7 @@ int nearbyReplacement(
     return replacement;
 }
 
-// La orla que deja el antialias es una hebra cuyo color cae justo en la recta
-// entre los dos colores que separa, porque es la mezcla de ambos. Un detalle de
-// verdad, una linea de un pixel, no cumple eso: su color se sale de la recta. Solo
-// cuando la mezcla se confirma la hebra se va al mas parecido de los dos lados,
-// que es lo que haria un dibujante a mano y de paso deja de costar un objeto por
-// pixel. La distancia va sin elevar al cuadrado porque lo que se compara es si un
-// lado mas el otro suman lo que mide el salto entero.
+// Solo funde si el color cae en la recta entre sus vecinos.
 int blendReplacement(
     std::vector<int> const& votes,
     std::vector<Color> const& palette,
@@ -1333,10 +1242,7 @@ void compactPaintSpeckles(
             }
             return increase <= static_cast<long long>(component.size()) * maxErrorIncrease;
         };
-        // Los huecos se cierran primero para que una linea discontinua o con
-        // antialias vuelva a ser un trazo continuo antes de medir areas: si se
-        // limpian las motas primero, cada trozo de la linea mide pocas celdas y se
-        // disuelve como si fuera basura suelta.
+        // Cierra huecos antes de medir areas para no romper trazos.
         constexpr std::array<std::pair<int, int>, 4> gapDirections{
             std::pair{1, 0}, std::pair{0, 1}, std::pair{1, 1}, std::pair{1, -1}
         };
@@ -1406,9 +1312,7 @@ void compactPaintSpeckles(
         }
         frame.cells = std::move(bridged);
 
-        // El antialias no deja una hebra sino una rampa de varias, una encima de
-        // otra, asi que hacen falta varias pasadas: cada una se come la de fuera y
-        // deja al descubierto la siguiente.
+        // Cada pasada come la hebra exterior y descubre la siguiente.
         for (int pass = 0; pass < passes; ++pass) {
             std::vector<std::uint8_t> visited(cells, 0);
             auto next = frame.cells;
@@ -1441,8 +1345,7 @@ void compactPaintSpeckles(
                         }
                     }
                 }
-                // Una hebra es una mancha de una o dos celdas de ancho: no tiene
-                // ninguna celda rodeada de su propio color por los cuatro lados.
+                // Hebra: sin celdas rodeadas por los cuatro lados.
                 bool filament = true;
                 for (int position : component) {
                     int const x = position % width;
@@ -1515,21 +1418,16 @@ void compactPaintSpeckles(
 struct GeometryContext {
     ImportMode mode = ImportMode::Blocks;
     bool quarterGlow = false;
-    // Fase 1 del split Pintura/Píxel: selecciona camino grid-exact (Píxel,
-    // conducta actual) frente a continuo (Pintura-Suave, Fase 2). Se calcula
-    // una vez en buildAt desde mode+sampling; de momento se propaga sin
-    // cambiar conducta.
+    // Muestreo da color; no convierte Pintura en salida pixel.
     bool gridExact = true;
     std::vector<std::vector<std::uint8_t>> obstacles;
     std::vector<int> ranks;
     std::vector<std::uint8_t> empty;
 };
 
-// Camino grid-exact = Bloques siempre, o geometría paint con muestreo Píxel.
-// Pintura-Suave (Paint/Render/Free + Smooth) va por el camino continuo.
 inline bool paintPathIsGridExact(ImportMode mode, SamplingMode sampling) {
-    if (mode == ImportMode::Blocks) return true;
-    return usesPaintGeometry(mode) && sampling == SamplingMode::Pixel;
+    (void)sampling;
+    return mode == ImportMode::Blocks;
 }
 
 std::vector<Primitive> buildGeometry(
@@ -1553,7 +1451,7 @@ std::vector<Primitive> buildGeometry(
                 float const span = static_cast<float>(end - i);
                 float const x = first % width + span * 0.5f;
                 float const y = row + 0.5f;
-                // Facing ramps interpolate rows; equal horizontal runs share a pair.
+                // Rampas enfrentadas comparten par por tramo horizontal.
                 objects.push_back({x, y + 0.5f, span, 1.f, 0.f,
                     static_cast<std::uint16_t>(color), PrimitiveKind::Stamp, 0, 1});
                 objects.push_back({x, y - 0.5f, span, 1.f, 0.f,
@@ -1696,9 +1594,7 @@ std::vector<std::vector<std::uint8_t>> paintObstacles(
     return result;
 }
 
-// Celda que ningun frame pinta. Una figura puede asomar ahi sin ensuciar nada,
-// que es lo que deja rematar en diagonal los detalles sueltos sin dejar picos
-// sobre otro color.
+// Celda libre en todo frame: deja rematar en diagonal sin picos.
 std::vector<std::uint8_t> paintVoid(std::vector<GridFrame> const& frames, int cells) {
     std::vector<std::uint8_t> empty(static_cast<std::size_t>(cells), 1);
     for (auto const& frame : frames) {
@@ -1800,9 +1696,7 @@ Candidate temporalCandidate(
     }
     sortByLayer(candidate.staticObjects);
     for (auto& track : candidate.tracks) sortByLayer(track.objects);
-    // Podar cada pista por su cuenta no ve lo que hay debajo: un objeto que solo
-    // repite el color que ya pintan los fijos se salvaba porque en su pista era
-    // el unico que tocaba esa celda. Se miran juntos, frame a frame.
+    // Poda conjunta: una pista sola no ve lo que hay debajo.
     if (usesPaintGeometry(context.mode)) {
         prunePaintObjectsByVisibility(
             candidate.staticObjects, candidate.tracks, frameCount, width, height);
@@ -1885,8 +1779,7 @@ Candidate frameCandidate(
     return candidate;
 }
 
-// El fondo ya sale de la rejilla sin la silueta, asi que lo que se traza aqui es
-// solo la silueta en su pose de partida: los triggers Move la llevan al resto.
+// Solo traza la pose inicial; los Move llevan al resto.
 std::vector<MotionTrack> buildMotionTracks(
     std::vector<MotionGroup> const& groups,
     int width,
@@ -1916,9 +1809,7 @@ std::vector<MotionTrack> buildMotionTracks(
     return tracks;
 }
 
-// Un trigger tambien es un objeto del nivel, asi que lo que decide si compensa
-// mover una silueta es el total: si baja de verdad y la reproduccion sigue por
-// debajo del tope de triggers, sale mas barata movida que repetida.
+// Mover compensa si baja el total bajo el tope de triggers.
 bool worthMoving(Candidate const& plain, Candidate const& moved, std::size_t objectBudget) {
     if (moved.triggers > kPlaybackTriggerLimit) return false;
     if (moved.total() > objectBudget) return false;
@@ -1949,13 +1840,9 @@ Candidate chooseCandidate(Candidate temporal, Candidate perFrame, std::size_t ob
     return temporal.total() <= perFrame.total() ? std::move(temporal) : std::move(perFrame);
 }
 
-// Mientras se traza, un molde se apunta por su sitio en la biblioteca, que tiene
-// miles de entradas. El plan se queda solo con los que aparecen —para no
-// arrastrar la biblioteca entera hasta el editor— y reindexa las figuras.
+// Reindexa moldes usados para no arrastrar la biblioteca.
 void collectStamps(ImportPlan& plan) {
-    // Solo el modo libre suelta moldes, y la biblioteca es global: preguntarla
-    // desde los demas modos seria tocar sin motivo algo que el juego rellena
-    // mientras tanto desde el hilo principal.
+    // Solo Free usa moldes; la biblioteca es global.
     if (plan.mode != ImportMode::Free) return;
     auto const& variants = stampVariants();
     std::map<std::uint16_t, std::uint16_t> slots;
@@ -2093,9 +1980,7 @@ BuildResult buildAt(
         usesPaintGeometry(options.mode));
     if (palette.empty()) return {{}, "El GIF quedo completamente transparente con estos ajustes."};
     report(progress, BuildStage::Palette, 0.4f);
-    // El difuminado reparte el error de una celda entre sus vecinas, asi que
-    // necesita la imagen ya reducida; sin el, cada celda se decide mirando su
-    // trozo del original entero.
+    // Con dither usa reducida; sin el, decide del original.
     auto frames = options.dither
         ? quantize(reduced, palette, width, height, true)
         : quantizeFromSource(
@@ -2104,22 +1989,14 @@ BuildResult buildAt(
     report(progress, BuildStage::Geometry, 0.5f);
     mergeFaintSpecks(frames, palette, width, height);
     if (usesPaintGeometry(options.mode)) {
-        // Una mota es lo que no llega a la cuatromilesima parte del dibujo. Con el
-        // umbral mas alto se ahorraban objetos, pero en un dibujo hecho a pixel el
-        // detalle chico esta puesto a proposito y se lo llevaba por delante. A poca
-        // resolucion no llega ni a una celda y no se toca nada.
+        // Mota bajo 1/4000 del dibujo; a poca rejilla no se toca.
         dissolveSpecks(
             frames, palette, width, height, std::min(width * height / 4000, 2));
         if (compactSpeckles) {
             compactPaintSpeckles(frames, reduced, palette, width, height);
         }
     }
-    // La revision de la geometria se mide contra la rejilla que se le manda
-    // pintar, ya limpia de motas, no contra la recien cuantizada: es lo unico que
-    // la geometria puede reproducir. Midiendola contra la de antes, la limpieza se
-    // penalizaba a si misma y la busqueda de resolucion respondia bajando la
-    // rejilla, que es justo lo contrario de lo que hace falta. Lo que vigila que
-    // la limpieza no se pase es `similarity`, que va contra los pixeles de origen.
+    // Geometria se revisa contra rejilla limpia, no contra previa.
     auto const referenceFrames = frames;
     GeometryContext context;
     context.mode = options.mode;
@@ -2161,9 +2038,7 @@ BuildResult buildAt(
         if (usesPaintGeometry(context.mode)) {
             prunePaintObjects(chosen.staticObjects, width, height);
             if (matchesGridExactly(context.mode)) {
-                // La primera reparacion puede introducir relleno auxiliar; se
-                // poda a resolucion nativa y luego se repone solo lo que siga
-                // faltando en el preview ampliado.
+                // La reparacion mete relleno: poda y repara de nuevo.
                 repairPaintSeams(
                     chosen.staticObjects, frames.front().cells, context.ranks,
                     width, height, context.gridExact);
@@ -2171,8 +2046,7 @@ BuildResult buildAt(
                 repairPaintSeams(
                     chosen.staticObjects, frames.front().cells, context.ranks,
                     width, height, context.gridExact);
-                // Lo cosido al final tambien se puede fusionar: los remates
-                // quedan pegados a sus tiras y ya no pasa otra poda por aqui.
+                // Lo cosido tambien se fusiona con sus tiras.
                 mergePaintSolids(chosen.staticObjects);
             }
         }
@@ -2189,9 +2063,7 @@ BuildResult buildAt(
 
         MotionAnalysis motion;
         if (options.motion) motion = analyzeMotion(frames, width, height);
-        // Seguir una silueta sale a deber cuando lo que se ahorra en copias no
-        // paga los triggers que la mueven, asi que el plan con movimiento compite
-        // con el de siempre en vez de sustituirlo.
+        // El plan movido compite; no sustituye al fijo.
         if (!motion.groups.empty()) {
             auto moved = plan(motion.residual);
             moved.motionTracks = buildMotionTracks(motion.groups, width, height, context);
@@ -2225,7 +2097,7 @@ BuildResult buildAt(
             auto const& mask = plan.stamps[context.quarterGlow ? 3 : 0].mask;
             double sum = 0.;
             for (auto alpha : mask.coverage) sum += alpha / 255.;
-            // Preserve the brightness of a flat field despite overlapping glows.
+            // Conserva brillo con glows solapados.
             plan.glowOpacity = static_cast<float>(std::min(1.,
                 mask.coverage.size() / std::max(16. * sum, 1.)));
         }
@@ -2342,17 +2214,13 @@ BuildResult buildRenderPlan(
     std::size_t const softLimit = std::min<std::size_t>(
         options.objectBudget, source.frames.size() > 1 ? 6000 : 2500);
 
-    // Los pases son independientes entre si —cada uno traza la imagen entera a
-    // una rejilla distinta— asi que van a la vez y la eleccion se hace despues,
-    // en orden, para que el plan que sale no dependa de quien acabe primero.
+    // Pases independientes en paralelo; eleccion ordenada despues.
     std::vector<BuildResult> results(static_cast<std::size_t>(passes));
     std::vector<std::atomic<float>> shares(static_cast<std::size_t>(passes));
     std::atomic<int> done{0};
     std::mutex reporting;
     float published = 0.f;
-    // La barra no puede bajar, y aqui varios pases la empujan a la vez: se suma
-    // y se compara dentro del candado, y el segundo intento de un pase parte de
-    // donde lo dejo el primero.
+    // La barra no baja: suma bajo candado.
     auto publish = [&] {
         if (!progress) return;
         std::lock_guard<std::mutex> lock(reporting);
@@ -2493,10 +2361,7 @@ BuildResult buildRegularPlan(
     return {{}, "No cabe en el presupuesto ni con la resolucion y frames minimos."};
 }
 
-// El plan con movimiento se prueba al final y no dentro de la busqueda de
-// resolucion. La silueta que se mueve deja su borde en el fondo, y esa diferencia
-// metida en la busqueda se leia como que la rejilla iba grande: bajaba la
-// resolucion para arreglar algo que no era la resolucion.
+// Movimiento al final: su borde falsearia la busqueda.
 BuildResult tryMotionPlan(
     SourceAnimation const& source,
     Options const& options,
@@ -2560,8 +2425,7 @@ BuildResult buildPlan(
                 : (validStamp(3) && validStamp(4) && validStamp(5) && validStamp(6)))
             : (validStamp(1) && validStamp(2)));
         if (!valid) {
-            // Degradado: la biblioteca ya trae nativos o repuesto analitico, asi
-            // que aqui solo se llega sin toolbox (vacia) o sin ni uno ni otro.
+            // Solo se llega sin toolbox o sin nativo ni repuesto.
             std::string missing;
             auto const flag = [&](std::size_t index, char const* label) {
                 if (!validStamp(index)) {
@@ -2599,9 +2463,7 @@ BuildResult buildPlan(
         ? buildRenderPlan(source, searchOptions, frameLimit, progress)
         : buildRegularPlan(source, searchOptions, frameLimit, progress);
     if (options.motion) result = tryMotionPlan(source, options, std::move(result));
-    // El glow va despues de elegir el plan a proposito: si entrase en la busqueda
-    // de resolucion, el halo contaria como diferencia contra el original y la
-    // busqueda responderia bajando la rejilla para compensar algo que es de adorno.
+    // Glow despues: el halo no debe bajar la rejilla.
     if (result && !usesSoftGeometry(options.mode)) {
         applyGlow(
             result.plan, options.glow, static_cast<std::size_t>(options.objectBudget));

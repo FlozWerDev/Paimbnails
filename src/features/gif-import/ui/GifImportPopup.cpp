@@ -285,7 +285,8 @@ void GifImportPopup::loadOptions() {
         ? SamplingMode::Smooth : SamplingMode::Pixel;
     int const savedMode = static_cast<int>(mod->getSavedValue<int64_t>(
         "gif-import-mode", mod->getSavedValue<bool>("gif-import-art-mode", false) ? 1 : 0));
-    m_options.mode = savedMode == 7 ? ImportMode::Vert
+    m_options.mode = savedMode == 8 ? ImportMode::VertX
+        : savedMode == 7 ? ImportMode::Vert
         : savedMode == 6 ? ImportMode::Blur
         : savedMode == 5 ? ImportMode::Circles
         : savedMode == 4 ? ImportMode::Free
@@ -302,6 +303,11 @@ void GifImportPopup::loadOptions() {
     m_options.blurRadius = static_cast<float>(mod->getSavedValue<double>("gif-import-blur-radius", 1.0));
     if (!std::isfinite(m_options.blurRadius)) m_options.blurRadius = 1.f;
     m_options.blurRadius = std::clamp(m_options.blurRadius, 0.f, 1.6f);
+    m_options.blurGlowDiameter = static_cast<float>(
+        mod->getSavedValue<double>("gif-import-blur-scale", 4.0));
+    if (!std::isfinite(m_options.blurGlowDiameter)) m_options.blurGlowDiameter = 4.f;
+    m_options.blurGlowDiameter = std::clamp(m_options.blurGlowDiameter, 2.f, 20.f);
+    m_options.gradientWash = mod->getSavedValue<bool>("gif-import-gradient-wash", true);
 }
 
 void GifImportPopup::saveOptions() const {
@@ -320,7 +326,9 @@ void GifImportPopup::saveOptions() const {
     mod->setSavedValue<int64_t>("gif-import-glow", static_cast<int64_t>(m_options.glow));
     mod->setSavedValue<bool>("gif-import-motion", m_options.motion);
     mod->setSavedValue<double>("gif-import-blur-radius", m_options.blurRadius);
+    mod->setSavedValue<double>("gif-import-blur-scale", m_options.blurGlowDiameter);
     mod->setSavedValue<bool>("gif-import-soft-backdrop", m_options.softBackdrop);
+    mod->setSavedValue<bool>("gif-import-gradient-wash", m_options.gradientWash);
 }
 
 void GifImportPopup::pickSource() {
@@ -598,11 +606,16 @@ void GifImportPopup::refreshControls() {
         : m_options.mode == ImportMode::Circles ? "Modo: Circulos"
         : m_options.mode == ImportMode::Blur ? "Modo: Blur"
         : m_options.mode == ImportMode::Vert ? "Modo: Vert"
+        : m_options.mode == ImportMode::VertX ? "Modo: VertX"
         : "Modo: Bloques");
     m_samplingSprite->setString((m_options.mode == ImportMode::Blocks ||
         m_options.mode == ImportMode::Paint || m_options.mode == ImportMode::Render ||
         m_options.mode == ImportMode::Free)
         ? (m_options.sampling == SamplingMode::Smooth ? "Suave" : "Pixel")
+        : m_options.mode == ImportMode::Blur
+        ? (m_options.blurRadius == 0.f ? "Filtro: no"
+            : m_options.blurRadius < 0.8f ? "Blur: fino"
+            : m_options.blurRadius < 1.3f ? "Blur: suave" : "Blur: alto")
         : "Suave: fijo");
     m_ditherSprite->setString(usesSoftGeometry(m_options.mode)
         ? (m_options.softBackdrop ? "Base: negra" : "Base: nivel")
@@ -612,10 +625,11 @@ void GifImportPopup::refreshControls() {
     m_loopSprite->setString(m_options.loop ? "Loop: si" : "Loop: no");
     m_glowSprite->setString(
         m_options.mode == ImportMode::Blur
-            ? (m_options.blurRadius == 0.f ? "Filtro: no"
-                : m_options.blurRadius < 0.8f ? "Blur: fino"
-                : m_options.blurRadius < 1.3f ? "Blur: suave" : "Blur: alto")
+            ? fmt::format("Glow: {}x",
+                static_cast<int>(m_options.blurGlowDiameter)).c_str()
         : m_options.mode == ImportMode::Vert ? "Grad. vertical"
+        : m_options.mode == ImportMode::VertX
+        ? (m_options.gradientWash ? "Grad: 2903" : "Grad: no")
         : m_options.glow == GlowMode::Strong ? "Glow: alto"
         : m_options.glow == GlowMode::Soft ? "Glow: suave"
         : "Glow: no");
@@ -944,7 +958,8 @@ void GifImportPopup::toggleMode() {
         : m_options.mode == ImportMode::Free ? ImportMode::Circles
         : m_options.mode == ImportMode::Circles ? ImportMode::Blur
         : m_options.mode == ImportMode::Blur ? ImportMode::Vert
-        : m_options.mode == ImportMode::Vert ? ImportMode::Blocks
+        : m_options.mode == ImportMode::Vert ? ImportMode::VertX
+        : m_options.mode == ImportMode::VertX ? ImportMode::Blocks
         : ImportMode::Free;
     // Decoracion toca GL: con aviso; si hay plan activo, va en startProcess.
     if (m_options.mode == ImportMode::Free && !stampLibraryReady() && !m_processing) {
@@ -970,6 +985,13 @@ void GifImportPopup::toggleBackground() {
 }
 
 void GifImportPopup::toggleSampling() {
+    if (m_options.mode == ImportMode::Blur) {
+        m_options.blurRadius = m_options.blurRadius == 0.f ? 0.6f
+            : m_options.blurRadius < 0.8f ? 1.f
+            : m_options.blurRadius < 1.3f ? 1.6f : 0.f;
+        requestProcess();
+        return;
+    }
     if (m_options.mode != ImportMode::Blocks &&
         m_options.mode != ImportMode::Paint &&
         m_options.mode != ImportMode::Render &&
@@ -997,10 +1019,18 @@ void GifImportPopup::toggleLoop() {
 
 void GifImportPopup::toggleGlow() {
     if (m_options.mode == ImportMode::Vert) return;
+    if (m_options.mode == ImportMode::VertX) {
+        m_options.gradientWash = !m_options.gradientWash;
+        requestProcess();
+        return;
+    }
     if (m_options.mode == ImportMode::Blur) {
-        m_options.blurRadius = m_options.blurRadius == 0.f ? 0.6f
-            : m_options.blurRadius < 0.8f ? 1.f
-            : m_options.blurRadius < 1.3f ? 1.6f : 0.f;
+        m_options.blurGlowDiameter = m_options.blurGlowDiameter == 2.f ? 4.f
+            : m_options.blurGlowDiameter == 4.f ? 6.f
+            : m_options.blurGlowDiameter == 6.f ? 10.f
+            : m_options.blurGlowDiameter == 10.f ? 16.f
+            : m_options.blurGlowDiameter == 16.f ? 20.f
+            : m_options.blurGlowDiameter == 20.f ? 2.f : 4.f;
         requestProcess();
         return;
     }

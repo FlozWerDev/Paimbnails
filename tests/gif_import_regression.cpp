@@ -1408,7 +1408,7 @@ std::vector<PlanStamp> softFixtures(bool quarters) {
 }
 
 bool softModesPreserveLightAndBudget() {
-    for (auto mode : {ImportMode::Blur, ImportMode::Vert}) {
+    for (auto mode : {ImportMode::Blur, ImportMode::Vert, ImportMode::VertX}) {
         for (bool quarters : {false, true}) {
             auto options = exactOptions(16);
             options.mode = mode;
@@ -1423,7 +1423,7 @@ bool softModesPreserveLightAndBudget() {
                 if (std::abs(static_cast<int>(pixels[center + c]) - (80 + 40 * c)) > 10) return false;
             }
             if (pixels[center + 3] != 255) return false;
-            if (mode == ImportMode::Vert && result.plan.visualObjects != 33) return false;
+            if (mode != ImportMode::Blur && result.plan.visualObjects != 33) return false;
             options.softBackdrop = false;
             result = buildPlan(source, options);
             if (!result || result.plan.softBackdropColor != -1) return false;

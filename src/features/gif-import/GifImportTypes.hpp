@@ -27,6 +27,7 @@ enum class ImportMode {
     Circles,
     Blur,
     Vert,
+    VertX,
 };
 
 enum class GlowMode {
@@ -149,7 +150,10 @@ struct Options {
     bool loop = true;
     bool motion = true;
     float blurRadius = 1.f;
+    float blurGlowDiameter = 4.f;
     bool softBackdrop = true;
+    // VertX suelta un wash 2903 con el flujo vertical de la imagen.
+    bool gradientWash = true;
     // Snapshot of native alpha masks, prepared on the GL thread.
     std::vector<PlanStamp> softStamps;
     // Best native match errors (radial, vertical, quarter) from the last
@@ -159,7 +163,8 @@ struct Options {
 };
 
 inline bool usesSoftGeometry(ImportMode mode) {
-    return mode == ImportMode::Blur || mode == ImportMode::Vert;
+    return mode == ImportMode::Blur || mode == ImportMode::Vert ||
+        mode == ImportMode::VertX;
 }
 
 enum class PrimitiveKind {
@@ -226,6 +231,10 @@ struct ImportPlan {
     std::size_t glowPaletteStart = static_cast<std::size_t>(-1);
     float glowOpacity = 1.f;
     int softBackdropColor = -1;
+    // Wash 2903 de VertX: indices de paleta para arriba y abajo.
+    bool gradientWash = false;
+    int washTop = -1;
+    int washBottom = -1;
     std::size_t visualObjects = 0;
     std::size_t triggerObjects = 0;
     std::size_t totalObjects = 0;

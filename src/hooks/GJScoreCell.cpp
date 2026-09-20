@@ -240,6 +240,7 @@ public:
         if (auto w = this->getChildByID("paimon-hover-watcher")) w->removeFromParent();
         if (auto g = this->getChildByID("paimon-hover-glow")) g->removeFromParent();
         if (auto s = this->getChildByID("paimon-hover-shine")) s->removeFromParent();
+        if (auto i = this->getChildByID("paimon-hover-icon")) i->removeFromParent();
         f->m_hoverWatcher = nullptr;
 
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)

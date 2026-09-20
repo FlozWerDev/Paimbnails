@@ -6,8 +6,8 @@
 // apilados donde tendria que haber uno gordo.
 //
 //   g++ -std=c++23 -O2 -o bench tests/gif_import_bench.cpp
-//   ./bench <carpeta-o-imagen> [--mode paint|render|art|blocks|free] [--dim 64]
-//           [--colors 16] [--budget 12000] [--dump <carpeta>]
+//   ./bench <carpeta-o-imagen> [--mode paint|render|art|blocks|free|blur|vert|vertx] [--dim 64]
+//           [--colors 16] [--budget 12000] [--glow-scale 4] [--dump <carpeta>]
 
 #include <algorithm>
 #include <cmath>
@@ -265,6 +265,9 @@ ImportMode parseMode(std::string const& name) {
     if (name == "render") return ImportMode::Render;
     if (name == "free") return ImportMode::Free;
     if (name == "circles") return ImportMode::Circles;
+    if (name == "blur") return ImportMode::Blur;
+    if (name == "vert") return ImportMode::Vert;
+    if (name == "vertx") return ImportMode::VertX;
     return ImportMode::Paint;
 }
 
@@ -276,6 +279,9 @@ char const* modeName(ImportMode mode) {
         case ImportMode::Render: return "render";
         case ImportMode::Free: return "free";
         case ImportMode::Circles: return "circles";
+        case ImportMode::Blur: return "blur";
+        case ImportMode::Vert: return "vert";
+        case ImportMode::VertX: return "vertx";
     }
     return "?";
 }
@@ -322,12 +328,49 @@ std::vector<CatalogEntry> syntheticCatalog() {
     return entries;
 }
 
+// Los modos suaves necesitan sus 7 moldes: aqui son las mascaras analiticas de
+// verdad (gaussiana/rampa), asi que el banco mide el trazado, no la emision.
+std::vector<PlanStamp> syntheticSoftStamps() {
+    std::vector<PlanStamp> stamps(7);
+    auto fill = [&](std::size_t slot, StampMask mask, float rotation) {
+        PlanStamp stamp;
+        stamp.objectId = static_cast<int>(9100 + slot);
+        stamp.baseWidth = 30.f;
+        stamp.baseHeight = 30.f;
+        stamp.rotation = rotation;
+        stamp.mask = std::move(mask);
+        stamps[slot] = std::move(stamp);
+    };
+    fill(0, analyticRadialGlowMask(), 0.f);
+    auto ramp = analyticVerticalGradientMask();
+    auto mirrored = ramp;
+    std::reverse(mirrored.coverage.begin(), mirrored.coverage.end());
+    fill(1, std::move(ramp), 0.f);
+    fill(2, std::move(mirrored), 180.f);
+    auto quarter = analyticQuarterGlowMask();
+    int const side = quarter.width;
+    for (int q = 0; q < 4; ++q) {
+        StampMask rotated{side, side, std::vector<std::uint8_t>(
+            static_cast<std::size_t>(side) * side)};
+        for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
+            int sx = x, sy = y;
+            if (q == 1) { sx = y; sy = side - 1 - x; }
+            if (q == 2) { sx = side - 1 - x; sy = side - 1 - y; }
+            if (q == 3) { sx = side - 1 - y; sy = x; }
+            rotated.coverage[static_cast<std::size_t>(y) * side + x] =
+                quarter.coverage[static_cast<std::size_t>(sy) * side + sx];
+        }
+        fill(static_cast<std::size_t>(3 + q), std::move(rotated), q * 90.f);
+    }
+    return stamps;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::cerr << "uso: bench <carpeta-o-imagen> [--mode paint] [--dim 64]"
-                     " [--colors 16] [--budget 12000] [--dump carpeta]\n";
+                     " [--colors 16] [--budget 12000] [--glow-scale 4] [--dump carpeta]\n";
         return 2;
     }
 
@@ -348,12 +391,14 @@ int main(int argc, char** argv) {
         else if (key == "--dim") options.maxDimension = std::stoi(value);
         else if (key == "--colors") options.maxColors = std::stoi(value);
         else if (key == "--budget") options.objectBudget = std::stoi(value);
+        else if (key == "--glow-scale") options.blurGlowDiameter = std::stof(value);
         else if (key == "--dump") dump = value;
         else if (key == "--stamps" && value == "sinteticos") {
             setStampCatalog(syntheticCatalog());
         }
     }
     if (!dump.empty()) fs::create_directories(dump);
+    if (usesSoftGeometry(options.mode)) options.softStamps = syntheticSoftStamps();
 
     std::vector<fs::path> inputs;
     if (fs::is_directory(target)) {
@@ -438,6 +483,10 @@ int main(int argc, char** argv) {
                   << std::setw(9) << strokes.mergeable
                   << std::setw(8) << strokes.strokes
                   << std::setw(8) << plan.stampObjects << '\n';
+        if (plan.gradientWash) {
+            std::cout << std::string(26, ' ') << "  wash 2903 arriba="
+                      << plan.washTop << " abajo=" << plan.washBottom << '\n';
+        }
 
         totalNear += near;
         totalFar += far;

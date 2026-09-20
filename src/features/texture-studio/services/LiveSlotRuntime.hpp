@@ -20,6 +20,7 @@ public:
     geode::Result<> disable();
     void onTextureLoaded(char const* path, cocos2d::CCTexture2D* texture, bool skipSuffix);
     void refreshTextures();
+    bool cellColor(int row, cocos2d::ccColor3B* out);
     cocos2d::CCGLProgram* prepareDraw(cocos2d::CCTexture2D* texture,
                                      cocos2d::CCGLProgram* original);
     void onGLContextReload();

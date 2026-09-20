@@ -166,6 +166,7 @@ Options sanitize(Options options, std::size_t frames) {
     options.alphaThreshold = std::clamp(options.alphaThreshold, 1, 254);
     options.backgroundTolerance = std::clamp(options.backgroundTolerance, 0, 120);
     options.pixelSize = std::clamp(options.pixelSize, 1.f, 30.f);
+    options.blurGlowDiameter = std::clamp(options.blurGlowDiameter, 2.f, 20.f);
     // Pixel respeta Suave/Pixel del popup; defecto Suave.
     // Dither apagado: pierde analisis a resolucion de origen.
     if (options.mode == ImportMode::Paint || options.mode == ImportMode::Render ||
@@ -969,6 +970,9 @@ constexpr int kSmallPaletteSpeckleDistance = 65;
 
 // Coste = distancia por area: funde ruido y conserva detalle.
 constexpr float kSpeckBudget = 0.25f;
+// El glow funde celdas vecinas: Vert traga motas que en plano se verian.
+// A x4 se come ojos; x2 recorta sin tocarlos.
+constexpr float kVertSpeckScale = 2.f;
 // Tope por area: las lineas finas largas sobreviven.
 constexpr int kSpeckArea = 12;
 
@@ -977,7 +981,8 @@ void mergeFaintSpecks(
     std::vector<GridFrame>& frames,
     std::vector<Color> const& palette,
     int width,
-    int height
+    int height,
+    float budget
 ) {
     if (palette.empty()) return;
     std::vector<OkLab> labs;
@@ -1054,7 +1059,7 @@ void mergeFaintSpecks(
                         labs[static_cast<std::size_t>(color)],
                         labs[static_cast<std::size_t>(replacement)]) *
                         static_cast<float>(component.size());
-                    if (cost > kSpeckBudget) continue;
+                    if (cost > budget) continue;
                 }
                 for (int position : component) {
                     frame.cells[static_cast<std::size_t>(position)] = replacement;
@@ -1470,6 +1475,7 @@ void compactPaintSpeckles(
 struct GeometryContext {
     ImportMode mode = ImportMode::Blocks;
     bool quarterGlow = false;
+    float glowDiameter = 4.f;
     // Muestreo da color; no convierte Pintura en salida pixel.
     bool gridExact = true;
     std::vector<std::vector<std::uint8_t>> obstacles;
@@ -1491,7 +1497,7 @@ std::vector<Primitive> buildGeometry(
 ) {
     if (usesSoftGeometry(context.mode)) {
         std::vector<Primitive> objects;
-        if (context.mode == ImportMode::Vert) {
+        if (context.mode != ImportMode::Blur) {
             auto sorted = positions;
             std::sort(sorted.begin(), sorted.end());
             for (std::size_t i = 0; i < sorted.size();) {
@@ -1511,18 +1517,21 @@ std::vector<Primitive> buildGeometry(
                 i = end;
             }
         } else {
+            float const size = context.glowDiameter;
             objects.reserve(positions.size() * (context.quarterGlow ? 4 : 1));
             for (int position : positions) {
                 float const x = position % width + 0.5f;
                 float const y = position / width + 0.5f;
                 if (context.quarterGlow) {
+                    float const half = size * 0.5f;
+                    float const off = half * 0.5f;
                     constexpr float dx[]{-1.f, 1.f, 1.f, -1.f};
                     constexpr float dy[]{-1.f, -1.f, 1.f, 1.f};
-                    for (int q = 0; q < 4; ++q) objects.push_back({x + dx[q], y + dy[q],
-                        2.f, 2.f, 0.f, static_cast<std::uint16_t>(color),
+                    for (int q = 0; q < 4; ++q) objects.push_back({x + dx[q] * off, y + dy[q] * off,
+                        half, half, 0.f, static_cast<std::uint16_t>(color),
                         PrimitiveKind::Stamp, 0, static_cast<std::uint16_t>(3 + q)});
                 } else {
-                    objects.push_back({x, y, 4.f, 4.f, 0.f,
+                    objects.push_back({x, y, size, size, 0.f,
                         static_cast<std::uint16_t>(color), PrimitiveKind::Stamp, 0, 0});
                 }
             }
@@ -1555,6 +1564,7 @@ std::vector<Primitive> buildGeometry(
                 context.empty, context.gridExact);
         case ImportMode::Blur:
         case ImportMode::Vert:
+        case ImportMode::VertX:
         case ImportMode::Blocks:
             break;
     }
@@ -2114,7 +2124,9 @@ BuildResult buildAt(
               source, selected, masks, palette, width, height, options);
     if (frames.empty()) return {{}, "No quedaron frames validos despues de procesar el GIF."};
     report(progress, BuildStage::Geometry, 0.5f);
-    mergeFaintSpecks(frames, palette, width, height);
+    mergeFaintSpecks(frames, palette, width, height,
+        options.mode == ImportMode::Vert || options.mode == ImportMode::VertX
+            ? kSpeckBudget * kVertSpeckScale : kSpeckBudget);
     if (usesPaintGeometry(options.mode)) {
         // Mota bajo 1/4000 del dibujo; a poca rejilla no se toca.
         dissolveSpecks(
@@ -2133,6 +2145,7 @@ BuildResult buildAt(
     context.gridExact = paintPathIsGridExact(options.mode, options.sampling);
     context.quarterGlow = options.mode == ImportMode::Blur &&
         options.softStamps.size() == 7 && !options.softStamps[0].objectId;
+    context.glowDiameter = options.blurGlowDiameter;
     context.obstacles.assign(palette.size(), {});
     context.ranks.assign(palette.size(), 0);
     if (options.mode == ImportMode::Art) {
@@ -2249,9 +2262,48 @@ BuildResult buildAt(
             auto const& mask = plan.stamps[context.quarterGlow ? 3 : 0].mask;
             double sum = 0.;
             for (auto alpha : mask.coverage) sum += alpha / 255.;
-            // Conserva brillo con glows solapados.
+            // El brillo total no crece con el diametro: se compensa por area.
+            float const glowArea = context.glowDiameter * context.glowDiameter;
             plan.glowOpacity = static_cast<float>(std::min(1.,
-                mask.coverage.size() / std::max(16. * sum, 1.)));
+                mask.coverage.size() / std::max(glowArea * sum, 1.)));
+        }
+        // El wash lleva el flujo vertical de la imagen: promedios arriba/abajo
+        // resueltos a la paleta para no gastar canales nuevos.
+        if (options.mode == ImportMode::VertX && options.gradientWash) {
+            auto washIndex = [&](bool top) {
+                int sumR = 0, sumG = 0, sumB = 0, count = 0;
+                int const y0 = top ? 0 : plan.height * 3 / 4;
+                int const y1 = top ? (plan.height + 3) / 4 : plan.height;
+                for (int y = y0; y < y1; ++y) for (int x = 0; x < plan.width; ++x) {
+                    int const index = plan.frames.front().cells[
+                        static_cast<std::size_t>(y) * static_cast<std::size_t>(plan.width) + x];
+                    if (index < 0 || index >= static_cast<int>(plan.palette.size())) continue;
+                    auto const& color = plan.palette[static_cast<std::size_t>(index)];
+                    sumR += color.r; sumG += color.g; sumB += color.b; ++count;
+                }
+                if (!count) return -1;
+                Color const average{
+                    static_cast<std::uint8_t>(sumR / count),
+                    static_cast<std::uint8_t>(sumG / count),
+                    static_cast<std::uint8_t>(sumB / count)};
+                int best = -1, bestDist = std::numeric_limits<int>::max();
+                for (std::size_t i = 0; i < plan.palette.size(); ++i) {
+                    int const dist = colorDistanceSq(average, plan.palette[i]);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        best = static_cast<int>(i);
+                    }
+                }
+                return best;
+            };
+            int const top = washIndex(true);
+            int const bottom = washIndex(false);
+            if (top >= 0 && bottom >= 0) {
+                plan.gradientWash = true;
+                plan.washTop = top;
+                plan.washBottom = bottom;
+                ++chosen.triggers;
+            }
         }
         if (options.softBackdrop) {
             plan.softBackdropColor = static_cast<int>(plan.palette.size());
@@ -2260,7 +2312,15 @@ BuildResult buildAt(
                 width * 0.5f, height * 0.5f, static_cast<float>(width), static_cast<float>(height),
                 0.f, static_cast<std::uint16_t>(plan.softBackdropColor), PrimitiveKind::Block, -999});
         }
-        plan.strategy = (options.mode == ImportMode::Blur ? "blur/" : "vert/") + plan.strategy;
+        // El diametro queda en la estrategia para comparar duelos del banco.
+        char glowTag[16] = "vert/";
+        if (options.mode == ImportMode::Blur) {
+            std::snprintf(glowTag, sizeof(glowTag), "blur/%dx/",
+                static_cast<int>(context.glowDiameter));
+        } else if (options.mode == ImportMode::VertX) {
+            std::snprintf(glowTag, sizeof(glowTag), "vertx/");
+        }
+        plan.strategy = glowTag + plan.strategy;
     } else {
         collectStamps(plan);
     }
@@ -2584,7 +2644,8 @@ BuildResult buildPlan(
         bool const valid = options.softStamps.size() == 7 && (options.mode == ImportMode::Blur
             ? (options.softStamps[0].objectId > 0 ? validStamp(0)
                 : (validStamp(3) && validStamp(4) && validStamp(5) && validStamp(6)))
-            : (validStamp(1) && validStamp(2)));
+            : (validStamp(1) && validStamp(2) && !options.softStamps[1].analyticFallback &&
+                !options.softStamps[2].analyticFallback));
         if (!valid) {
             // Solo se llega sin toolbox o sin nativo ni repuesto.
             std::string missing;
@@ -2612,8 +2673,18 @@ BuildResult buildPlan(
                 options.softMatchErrors[0], options.softMatchErrors[1],
                 options.softMatchErrors[2]);
             finishProgress(progress);
+            if ((options.mode == ImportMode::Vert || options.mode == ImportMode::VertX) &&
+                options.softStamps.size() == 7 &&
+                (options.softStamps[1].analyticFallback || options.softStamps[2].analyticFallback)) {
+                // El repuesto 3637 estirado a tramo x 1 pinta discos, no rampas.
+                return {{}, "El modo " +
+                    std::string(options.mode == ImportMode::VertX ? "VertX" : "Vert") +
+                    " necesita rampas nativas (slots 1/2): esta instalacion "
+                    "solo ofrece el repuesto analitico" + std::string(detail)};
+            }
             return {{}, "No se encontro ni glow/gradiente nativo ni repuesto para el modo " +
-                std::string(options.mode == ImportMode::Blur ? "Blur" : "Vert") +
+                std::string(options.mode == ImportMode::Blur ? "Blur"
+                    : options.mode == ImportMode::VertX ? "VertX" : "Vert") +
                 ": faltan " + missing + detail};
         }
     }

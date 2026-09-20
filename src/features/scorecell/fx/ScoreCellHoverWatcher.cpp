@@ -4,8 +4,13 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../cursor/services/CursorManager.hpp"
+#include <Geode/binding/GJScoreCell.hpp>
+#include <Geode/binding/GJUserScore.hpp>
+#include <Geode/binding/GameManager.hpp>
+#include <Geode/binding/SimplePlayer.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <algorithm>
+#include <cmath>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -18,6 +23,18 @@ namespace {
 
     ccBlendFunc additiveBlend() {
         return ccBlendFunc{GL_SRC_ALPHA, GL_ONE};
+    }
+
+    constexpr float kIconSlidePx = 42.f;
+
+    // SimplePlayer nests its parts, so fading the root alone leaves the body
+    // opaque. Walk the subtree and fade every RGBA node directly instead.
+    void setSubtreeOpacity(CCNode* node, GLubyte alpha) {
+        if (!node) return;
+        if (auto* rgba = geode::cast::typeinfo_cast<CCNodeRGBA*>(node)) rgba->setOpacity(alpha);
+        if (auto* children = node->getChildren()) {
+            for (auto* child : geode::cocos::CCArrayExt<CCNode*>(children)) setSubtreeOpacity(child, alpha);
+        }
     }
 }
 
@@ -53,7 +70,7 @@ void ScoreCellHoverWatcher::setTransformTarget(CCNode* target,
     m_baseRot = baseRot;
 }
 
-void ScoreCellHoverWatcher::update(float) {
+void ScoreCellHoverWatcher::update(float dt) {
     if (paimon::isRuntimeShuttingDown()) return;
 
     auto* cell = this->getParent();
@@ -72,11 +89,15 @@ void ScoreCellHoverWatcher::update(float) {
 #else
     bool inside = rect.containsPoint(geode::cocos::getMousePos());
 #endif
-    if (inside == m_hovered) return;
+    if (inside == m_hovered) {
+        updateIcon(dt);
+        return;
+    }
 
     m_hovered = inside;
     if (inside) enterHover();
     else exitHover();
+    updateIcon(dt);
 }
 
 void ScoreCellHoverWatcher::enterHover() {
@@ -217,6 +238,88 @@ void ScoreCellHoverWatcher::stopShine() {
         if (m_shine->getParent()) m_shine->removeFromParent();
         m_shine = nullptr;
     }
+}
+
+void ScoreCellHoverWatcher::ensureIconBackdrop() {
+    auto* cell = this->getParent();
+    if (!cell) return;
+    auto cs = cell->getContentSize();
+    if (cs.width <= 1.f || cs.height <= 1.f) return;
+    if (m_iconClip && m_iconClip->getParent()) {
+        auto cur = m_iconClip->getContentSize();
+        if (std::fabs(cur.width - cs.width) < 1.f && std::fabs(cur.height - cs.height) < 1.f) return;
+        m_iconClip->removeFromParent();
+        m_iconClip = nullptr;
+        m_icon = nullptr;
+        m_appliedMix = -1.f;
+    }
+
+    auto* scoreCell = geode::cast::typeinfo_cast<GJScoreCell*>(cell);
+    if (!scoreCell || !scoreCell->m_score) return;
+    auto* score = scoreCell->m_score;
+    auto* gm = GameManager::sharedState();
+    if (!gm) return;
+
+    int iconID = score->m_iconID > 0 ? score->m_iconID : std::max(score->m_playerCube, 1);
+    auto* player = SimplePlayer::create(iconID);
+    if (!player) return;
+    player->updatePlayerFrame(iconID, score->m_iconType);
+    player->setColor(gm->colorForIdx(score->m_color1));
+    player->setSecondColor(gm->colorForIdx(score->m_color2));
+    if (score->m_glowEnabled) player->setGlowOutline(gm->colorForIdx(score->m_color3 > 0 ? score->m_color3 : score->m_color2));
+    else player->disableGlowOutline();
+
+    float dim = std::max(player->getContentSize().width, player->getContentSize().height);
+    if (dim <= 0.f) return;
+    player->setScale(cs.height * 1.7f / dim);
+    CCPoint home = {cs.width * 0.80f, cs.height * 0.5f};
+    player->setPosition(home);
+    setSubtreeOpacity(player, 0);
+
+    auto stencil = paimon::SpriteHelper::createRoundedRectStencil(cs.width, cs.height, 7.f);
+    if (!stencil) return;
+    auto clip = CCClippingNode::create(stencil);
+    if (!clip) return;
+    clip->setContentSize(cs);
+    clip->setPosition({0.f, 0.f});
+    clip->setAlphaThreshold(0.05f);
+    clip->setZOrder(-10);
+    clip->setID("paimon-hover-icon");
+    clip->addChild(player);
+    // Left fade melts the icon into the background so only its right side reads.
+    if (auto* fade = CCLayerGradient::create(ccc4(0, 0, 0, 120), ccc4(0, 0, 0, 0), ccp(1.f, 0.f))) {
+        fade->setContentSize(cs);
+        fade->setAnchorPoint({0.5f, 0.5f});
+        fade->ignoreAnchorPointForPosition(false);
+        fade->setPosition({cs.width / 2.f, cs.height / 2.f});
+        fade->setID("paimon-hover-icon-fade");
+        clip->addChild(fade, 1);
+    }
+    cell->addChild(clip);
+    m_iconClip = clip;
+    m_icon = player;
+    m_iconHome = home;
+    clip->setVisible(m_iconMix > 0.01f);
+}
+
+void ScoreCellHoverWatcher::updateIcon(float dt) {
+    if (!m_hovered && m_iconMix <= 0.f) return;
+    if (m_hovered) ensureIconBackdrop();
+    auto* icon = static_cast<SimplePlayer*>(m_icon.data());
+    if (!m_iconClip || !icon || !m_iconClip->getParent()) return;
+    if (dt < 0.f) dt = 0.f;
+
+    float target = m_hovered ? 1.f : 0.f;
+    float speed = m_hovered ? 8.f : 6.5f;
+    m_iconMix += (target - m_iconMix) * (1.f - std::exp(-speed * dt));
+    if (std::fabs(m_iconMix - target) < 0.002f) m_iconMix = target;
+    if (m_iconMix == m_appliedMix) return;
+    m_appliedMix = m_iconMix;
+
+    float e = 1.f - (1.f - m_iconMix) * (1.f - m_iconMix) * (1.f - m_iconMix);
+    icon->setPosition({m_iconHome.x + (1.f - e) * kIconSlidePx, m_iconHome.y});
+    setSubtreeOpacity(icon, static_cast<GLubyte>(m_iconMix * (40.f + 90.f * m_intensity)));
+    m_iconClip->setVisible(m_iconMix > 0.01f);
 }
 
 void applyEntrance(CCNode* node, std::string const& type,

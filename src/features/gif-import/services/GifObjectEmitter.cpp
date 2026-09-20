@@ -43,6 +43,7 @@ constexpr int kWideTriangleObject = 694;
 constexpr int kAlphaTrigger = 1007;
 constexpr int kSpawnTrigger = 1268;
 constexpr int kMoveTrigger = 901;
+constexpr int kGradientTrigger = 2903;
 
 struct ObjectShape {
     int id = kSolidColorObject;
@@ -198,6 +199,23 @@ void appendMove(
     if (eventGroup > 0) payload += ",62,1";
     appendGroups(payload, eventGroup);
     payload += ';';
+}
+
+// Wash a pantalla completa del VertX en modo normal (207 ausente): las
+// esquinas van duplicadas arriba/abajo y la rampa sale vertical sin depender
+// de como interprete el juego el vertexMode.
+void appendGradient(
+    std::string& payload,
+    float x,
+    float y,
+    int gradientID,
+    int topChannel,
+    int bottomChannel
+) {
+    payload += fmt::format(
+        "1,{},2,{:.3f},3,{:.3f},203,{},204,{},205,{},206,{},209,{};",
+        kGradientTrigger, x, y, bottomChannel, bottomChannel,
+        topChannel, topChannel, gradientID);
 }
 
 std::vector<int> freeColorChannels(GJEffectManager* effects, std::size_t count) {
@@ -412,6 +430,16 @@ Result<PreparedImport> prepareImport(
                 payload, object, shapes, plan.stamps, channels, options.pixelSize, origin,
                 plan.height, motionGroups[i], layered, zLayer);
         }
+    }
+
+    if (plan.gradientWash) {
+        gd::unordered_set<int> exclude;
+        int const gradientID = editor->getNextFreeGradientID(exclude);
+        appendGradient(payload, origin.x, origin.y - 60.f, gradientID,
+            channels[static_cast<std::size_t>(plan.washTop)],
+            channels[static_cast<std::size_t>(plan.washBottom)]);
+        log::info("[GifImport] VertX wash: gradientID={} top={} bottom={}.",
+            gradientID, plan.washTop, plan.washBottom);
     }
 
     if (hasAnimation) {

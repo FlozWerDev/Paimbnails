@@ -332,12 +332,10 @@ SoftStampLibrary buildSoftStampLibrary() {
     // circulo no existe en esta version de GD. La mascara analitica manda en el
     // trazado y en el preview; en el nivel el halo lo aproxima el blending a
     // glowOpacity, igual que los nativos.
-    //
-    // Alternativa futura sin bloquear el import: el Gradient trigger nativo
-    // (ID 2903, GradientTriggerObject en GeometryDash.bro + SetupGradientPopup)
-    // pintaria el degradado vertical de verdad en vez de aproximarlo con
-    // stamps. Hoy el import solo suelta decoracion y triggers de animacion,
-    // asi que el trigger queda documentado para cuando Vert quiera usarlo.
+    // El trigger Gradient nativo (ID 2903) no sirve por tramo: GJGradientLayer
+    // es un quad a pantalla completa cuya posicion solo dice CUANDO dispara,
+    // asi que Vert exige rampas nativas y Blur se queda con el disco radial.
+    // El 2903 queda reservado para un lavado global opcional, nunca por celda.
     {
         int fallbackId = 0;
         CCSize fallbackSize{50.f, 50.f};

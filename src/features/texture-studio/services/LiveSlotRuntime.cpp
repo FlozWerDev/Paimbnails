@@ -157,6 +157,13 @@ void LiveSlotRuntime::refreshTextures() {
     }
 }
 
+bool LiveSlotRuntime::cellColor(int row, ccColor3B* out) {
+    if (!m_enabled || !out || paimon::isRuntimeShuttingDown()) return false;
+    if (m_project.tintScope != TintScope::ButtonsAndMenuUi) return false;
+    *out = (row & 1) ? m_project.color2 : m_project.color1;
+    return true;
+}
+
 void LiveSlotRuntime::onTextureLoaded(char const* path, CCTexture2D* texture, bool skipSuffix) {
     if (!path || !texture || m_sources.empty()) return;
     std::string resolved = CCFileUtils::sharedFileUtils()->fullPathForFilename(path, skipSuffix);

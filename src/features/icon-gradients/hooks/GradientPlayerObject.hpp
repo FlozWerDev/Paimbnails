@@ -83,15 +83,15 @@ public:
 
     void updateSprite(CCSprite*, Ref<CCSprite>&, SpriteType, ColorType);
 
-    void paintSet(Gradient const&, SpriteType, int, PaintLane const*, size_t, auto);
+    void paintSet(Gradient const&, SpriteType, int, PaintLane const*, size_t, Fields*);
 
-    void updateIconSprite(Gradient const&, auto);
+    void updateIconSprite(Gradient const&, Fields*);
 
-    void updateVehicleSprite(Gradient const&, auto);
+    void updateVehicleSprite(Gradient const&, Fields*);
 
-    void shadeAnimSection(auto&&, GradientConfig const&, IconType, ColorType, int, bool, bool, auto);
+    void shadeAnimSection(auto&&, GradientConfig const&, IconType, ColorType, int, bool, bool, Fields*);
 
-    void updateAnimSprite(IconType, Gradient const&, auto);
+    void updateAnimSprite(IconType, Gradient const&, Fields*);
 
     void refreshMech(IconType);
 

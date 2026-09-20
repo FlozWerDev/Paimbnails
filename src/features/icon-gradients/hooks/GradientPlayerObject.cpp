@@ -119,7 +119,7 @@ void GradientPlayerObject::updateSprite(CCSprite* live, Ref<CCSprite>& copy, Spr
 // stock shader whenever no visible overlay covers it (line art never
 // needs that restore — it draws on top of a visible host).
 void GradientPlayerObject::paintSet(Gradient const& gradient, SpriteType kind, int extra,
-        PaintLane const* lanes, size_t count, auto f) {
+        PaintLane const* lanes, size_t count, Fields* f) {
     IconType type = getIconType();
     auto* stock = CCShaderCache::sharedShaderCache()->programForKey(kCCShader_PositionTextureColor);
     for (size_t i = 0; i < count; ++i) {
@@ -140,7 +140,7 @@ void GradientPlayerObject::paintSet(Gradient const& gradient, SpriteType kind, i
     }
 }
 
-void GradientPlayerObject::updateIconSprite(Gradient const& gradient, auto f) {
+void GradientPlayerObject::updateIconSprite(Gradient const& gradient, Fields* f) {
     static constexpr PaintLane kLanes[] = {
         {&PlayerObject::m_iconSprite, &Fields::m_iconSprite, &Gradient::main, ColorType::Main, 105},
         {&PlayerObject::m_iconSpriteSecondary, &Fields::m_iconSpriteSecondary, &Gradient::secondary, ColorType::Secondary, 205},
@@ -153,7 +153,7 @@ void GradientPlayerObject::updateIconSprite(Gradient const& gradient, auto f) {
     paintSet(gradient, SpriteType::Icon, 2, kLanes, std::size(kLanes), f);
 }
 
-void GradientPlayerObject::updateVehicleSprite(Gradient const& gradient, auto f) {
+void GradientPlayerObject::updateVehicleSprite(Gradient const& gradient, Fields* f) {
     static constexpr PaintLane kLanes[] = {
         {&PlayerObject::m_vehicleSprite, &Fields::m_vehicleSprite, &Gradient::main, ColorType::Main, 104},
         {&PlayerObject::m_vehicleSpriteSecondary, &Fields::m_vehicleSpriteSecondary, &Gradient::secondary, ColorType::Secondary, 204},
@@ -171,7 +171,7 @@ void GradientPlayerObject::updateVehicleSprite(Gradient const& gradient, auto f)
 // tracked for opacity, then shaded. `single` sections keep a fixed seed
 // and fixed node id; lists count up from the base seed.
 void GradientPlayerObject::shadeAnimSection(auto&& hosts, GradientConfig const& config, IconType type,
-        ColorType color, int seedBase, bool line, bool single, auto f) {
+        ColorType color, int seedBase, bool line, bool single, Fields* f) {
     if (config.isEmpty(color, m_isSecondPlayer)) return;
     std::string kind = GradientUtils::getTypeID(SpriteType::Animation);
     bool outline = Loader::get()->isModLoaded("alphalaneous.fine_outline");
@@ -202,7 +202,7 @@ void GradientPlayerObject::shadeAnimSection(auto&& hosts, GradientConfig const& 
     }
 }
 
-void GradientPlayerObject::updateAnimSprite(IconType type, Gradient const& gradient, auto f) {
+void GradientPlayerObject::updateAnimSprite(IconType type, Gradient const& gradient, Fields* f) {
     GJRobotSprite* mech = type == IconType::Robot ? m_robotSprite : m_spiderSprite;
     if (!mech || !mech->m_paSprite) return;
     GradientUtils::patchBatchNode(type == IconType::Robot ? m_robotBatchNode : m_spiderBatchNode);

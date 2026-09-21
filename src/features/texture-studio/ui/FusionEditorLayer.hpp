@@ -21,12 +21,8 @@ namespace paimon::texture_studio {
 class ImageBuffer;
 class ParamSliderRow;
 
-// Dedicated full-screen Fusion layer (own scene — not a tab inside the pack
-// editor). Layout: asset browser (left) | Original + Result | tools (right).
-// The mask can be painted before a texture is picked; the painted region is
-// shown as a green highlight until a texture is loaded. Paint-bucket fill on
-// ORIGINAL colours; texture/GIF is never recolored by pack tint. Arrow keys /
-// drag move the stamp in whole pixels.
+// Own scene (not a pack-editor tab). Mask paints before a texture is picked;
+// fill runs on ORIGINAL colours — the texture is never recolored by pack tint.
 class FusionEditorLayer : public cocos2d::CCLayer {
 public:
     static FusionEditorLayer* create(std::string slotId, std::string frameName = {});

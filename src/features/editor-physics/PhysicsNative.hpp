@@ -10,9 +10,8 @@
 
 namespace paimon::editorphysics {
 
-// Physics Studio is only an authoring tool. Both backends below compile to
-// vanilla Geometry Dash objects: Baked uses keyframes, while Reactive builds a
-// trigger graph that keeps running after the player reaches it.
+// Both backends below compile to vanilla Geometry Dash objects, with no
+// custom runtime.
 enum class PhysicsBackend {
     Baked,
     Reactive,
@@ -81,13 +80,6 @@ NativeProfile nativeProfile(
     float worldGravity,
     float airDrag = 0.f
 );
-
-enum class SensorSide : std::size_t {
-    Left = 0,
-    Right = 1,
-    Bottom = 2,
-    Top = 3,
-};
 
 enum class NativeNodeKind {
     AdvancedFollow,

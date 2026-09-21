@@ -2,7 +2,6 @@
 #include <Geode/loader/Mod.hpp>
 
 #include "../../audio/services/AudioContextCoordinator.hpp"
-#include "../../../framework/HookConventions.hpp"
 
 using namespace geode::prelude;
 

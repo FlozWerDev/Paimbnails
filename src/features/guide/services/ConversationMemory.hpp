@@ -11,11 +11,9 @@ namespace paimon::guide {
 
 struct ConversationTurn {
     std::string userQuery;       // Original text.
-    std::string normalizedQuery; // Normalized text.
     std::string matchedIntentId; // Empty for fallback.
     std::string topicId;         // Follow-up topic.
     bool wasFunctional = false;  // Intent kind at match time.
-    double matchScore = 0.0;     // Fuzzy score, 0..100.
     std::time_t timestamp = 0;
 };
 
@@ -48,10 +46,6 @@ public:
 // Matches for this intent in the recent window.
     int recentMatchesOf(std::string const& intentId,
                         std::time_t withinSecs = kRecentSecs) const;
-
-// Whether the intent was answered recently.
-    bool hasJustAnswered(std::string const& intentId,
-                         std::time_t withinSecs = kRecentSecs) const;
 
 // Heuristic for a short follow-up query.
     static bool looksLikeFollowUp(std::string const& normalized);

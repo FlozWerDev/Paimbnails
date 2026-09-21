@@ -12,9 +12,8 @@ class ChannelGroup;
 
 namespace paimon::video {
 
-// One video's audio on its own FMOD channel. Several tracks can play at once
-// and GD's background-music channel is never touched, so level music and
-// dynamic songs keep working alongside video sound.
+// Own FMOD channel per video; GD's music channel is never touched, so level
+// music keeps working alongside video sound.
 class VideoAudioTrack {
 public:
     // Decodes the audio track; returns nullptr when the file has none.

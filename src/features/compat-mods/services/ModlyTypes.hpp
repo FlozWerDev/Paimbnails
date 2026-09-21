@@ -4,15 +4,12 @@
 #include <string>
 #include <vector>
 
-// Mirror of the Firestore model behind https://modly.web.app (project "mods-web").
-// The site keeps logos, previews, avatars and banners as base64 data-URLs inside
-// the documents; the worker strips them out and re-serves them as plain PNG URLs,
-// so everything here is small enough to hold in memory.
+// Mirror of the Firestore model; the worker strips base64 blobs into PNG URLs,
+// so everything here stays small enough to hold in memory.
 
 namespace paimon::compat_mods {
 
 struct ModlyComment {
-    std::string id;
     std::string text;
     std::string authorUid;
     std::string authorName;

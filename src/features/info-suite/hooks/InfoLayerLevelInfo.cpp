@@ -1,10 +1,5 @@
-// The comments layer's "i" button opens the vanilla "Level Info" alert: the
-// description plus upload date, update date, stars requested and original id.
-// With Extended Level Info on, that alert is replaced by the popup, which shows
-// the same fields and every other one the game hides.
-//
-// Only the level flavour of InfoLayer is touched: the same layer also serves
-// lists and profiles, and those keep the vanilla alert.
+// Replaces the level flavour of InfoLayer's "i" alert with the popup (same + hidden fields).
+// Lists and profiles keep the vanilla alert.
 
 #include "../InfoModule.hpp"
 #include "../ui/ExtendedInfoPopup.hpp"

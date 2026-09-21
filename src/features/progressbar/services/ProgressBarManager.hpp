@@ -90,7 +90,6 @@ public:
     void beginDrag(cocos2d::CCPoint startWorld);
     void updateDrag(cocos2d::CCPoint currentWorld);
     void endDrag();
-    bool isDragging() const { return m_dragging; }
 
     void invalidateBaseline() {
         m_baselineCaptured = false;

@@ -1,10 +1,8 @@
 #include "ExtendedKeybindEditPopup.hpp"
 
-#include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 
 #include <Geode/Geode.hpp>
-#include <Geode/loader/SettingV3.hpp>
 
 using namespace cocos2d;
 using namespace geode::prelude;
@@ -56,7 +54,7 @@ ExtendedKeybindEditPopup* ExtendedKeybindEditPopup::create(
 }
 
 bool ExtendedKeybindEditPopup::init(
-    std::string settingKey,
+    std::string /*settingKey*/,
     std::string title,
     std::optional<Keybind> currentKeyboard,
     ExtendedKeybind currentExtended,
@@ -66,7 +64,6 @@ bool ExtendedKeybindEditPopup::init(
     if (!Popup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
 
-    m_settingKey = std::move(settingKey);
     m_title = std::move(title);
     m_pendingKeyboard = std::move(currentKeyboard);
     m_pendingExtended = std::move(currentExtended);
@@ -118,8 +115,6 @@ bool ExtendedKeybindEditPopup::init(
     bottomMenu->setLayout(RowLayout::create()->setGap(10.f));
     bottomMenu->setPosition({winSize.width / 2.f, 26.f});
     m_mainLayer->addChild(bottomMenu);
-
-    // Register input listeners only while recording.
 
     this->refreshDisplay();
 
@@ -272,7 +267,7 @@ void ExtendedKeybindEditPopup::updateRecordButtonAppearance() {
 
 bool ExtendedKeybindEditPopup::captureKeyboard(enumKeyCodes key, KeyboardModifier mods) {
     if (key == KEY_Escape) {
-    // Escape cancels without saving.
+    // Escape leaves recording mode; pending edits survive until Save.
         exitRecordingMode();
         this->refreshDisplay();
         return true;

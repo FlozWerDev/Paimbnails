@@ -46,6 +46,7 @@
 #include "../features/thumbnails/services/LevelCellVideoLoad.hpp"
 #include "../features/thumbnails/services/LevelCellLoadPipeline.hpp"
 #include "../features/thumbnails/services/LevelCellMaintenance.hpp"
+#include "../features/auto-preview/services/AutoPreviewQueue.hpp"
 #include "../core/modules/ModuleRegistry.hpp"
 #include "../framework/HookConventions.hpp"
 
@@ -63,11 +64,6 @@ class $modify(PaimonLevelCell, LevelCell) {
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "LevelCell::loadFromLevel");
         paimon::hooks::afterNodeIdsOrLate(self, "LevelCell::loadCustomLevelCell");
-    }
-
-    bool init() {
-        if (!LevelCell::init()) return false;
-        return true;
     }
 
     struct Fields {
@@ -3283,6 +3279,8 @@ return;
                     if (f && f->m_loadedInvalidationVersion != capturedVersion) return;
                 }
                 if (!success || !tex) {
+                    // No thumbnail anywhere: let Tier-1 generate one in the background.
+                    if (cell->m_level) paimon::autopreview::AutoPreviewQueue::get().enqueueIfEligible(cell->m_level);
                     auto f = cell->m_fields.self();
                     if (f && f->m_thumbnailFailed) {
                         log::debug(

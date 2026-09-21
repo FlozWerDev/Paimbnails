@@ -1,14 +1,7 @@
 #pragma once
 
-// Optional enrichment from history.geometrydash.eu.
-//
-// Off by default, and nothing in the Info Suite depends on it: the daily and
-// weekly history comes from RobTop's own servers, and comment dates are
-// interpolated locally. This only sharpens two things the game genuinely does
-// not know — a level's real upload date, and the name behind a user id we have
-// never seen.
-//
-// Every result is cached in InfoStore, so an id is fetched at most once.
+// Optional history.geometrydash.eu enrichment; nothing depends on it.
+// Cached in InfoStore, one fetch per id.
 
 #include <functional>
 #include <matjson.hpp>

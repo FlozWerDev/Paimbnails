@@ -1,11 +1,6 @@
 #pragma once
 
-// EditorContext.hpp — single source of truth for detecting the editor.
-//
-// The mod must fully isolate itself from the editor: no broad hook (button
-// position capture, popup animations/blur, slider skin, etc.) should change
-// behavior while the editor is active. We detect the editor by the running
-// scene, not parent typeid (fragile when other mods $modify editor classes).
+// Editor isolation switch: detect by running scene, not typeid (fragile with $modify).
 
 #include <Geode/Geode.hpp>
 

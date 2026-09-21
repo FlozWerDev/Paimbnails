@@ -4,12 +4,8 @@
 #include <functional>
 #include <string>
 
-// Visual wrapper over geode::TextInput with animated feedback: a pulsing glow
-// halo while typing, a "typing dot" that reacts to input, and a send sweep that
-// crosses the input on submit. TextInput has no native Enter callback, so this
-// wrapper interposes a relay TextInputDelegate on the inner CCTextInputNode:
-// every delegate call is forwarded to geode's original delegate, and
-// enterPressed additionally fires the onSubmit callback (set via setOnSubmit).
+// Animated wrapper over geode::TextInput (glow, typing dot, send sweep).
+// No native Enter callback: a relay delegate forwards to geode's and fires onSubmit.
 
 namespace paimon::guide {
 
@@ -39,7 +35,6 @@ protected:
 
     void onTextChanged(std::string const& text);
     void startGlowPulse();
-    void stopGlowPulse();
 
     static constexpr int kGlowPulseTag = 2001;
     static constexpr int kSweepTag     = 2002;

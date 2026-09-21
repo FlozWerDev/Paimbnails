@@ -5,9 +5,8 @@
 
 namespace paimon::quickhub {
 
-// QuickHubRadial — Menu radial circular que aparece al mantener Ctrl 1.5s.
-// La seleccion es por sector angular: basta apuntar hacia una opcion, no hace
-// falta acertar dentro de su icono. El centro cancela.
+// Menu radial que aparece al mantener Ctrl. La seleccion es por sector angular
+// y el centro cancela.
 
 class QuickHubRadial : public cocos2d::CCLayer {
 public:

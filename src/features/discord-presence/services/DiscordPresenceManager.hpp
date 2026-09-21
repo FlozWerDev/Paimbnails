@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <unordered_map>
 
 class GJGameLevel;
 
@@ -21,8 +20,6 @@ public:
     void shutdown();
     void refreshSoon();
     void refreshNow(bool force = false);
-    void setTemporaryContext(std::string const& key, std::string const& state, std::string const& details = "");
-    void clearTemporaryContext(std::string const& key);
 
 private:
     DiscordPresenceManager() = default;
@@ -37,11 +34,6 @@ private:
     std::string sanitizeCreatorName(std::string const& name) const;
 
 private:
-    struct TemporaryEntry {
-        PresencePayload payload;
-        uint64_t seq = 0;
-    };
-
     bool m_initialized = false;
     bool m_shutdown = false;
     bool m_refreshScheduled = false;
@@ -51,8 +43,6 @@ private:
     std::string m_lastActivityType;
     bool m_lastShowTimestamp = false;
     uint64_t m_seenGeneration = 0;
-    uint64_t m_tempSeq = 0;
-    std::unordered_map<std::string, TemporaryEntry> m_temporaryContexts;
     std::shared_ptr<std::atomic<bool>> m_workerToken;
 };
 

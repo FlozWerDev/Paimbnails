@@ -10,8 +10,6 @@ bool ExtraEffectsPopup::init() {
 
     this->setTitle("Extra Effects");
 
-    auto content = m_mainLayer->getContentSize();
-
     m_styles = {
         "normal", "pixel", "blur", "paimonblur", "grayscale", "sepia",
         "vignette", "scanlines", "bloom", "chromatic",
@@ -19,8 +17,7 @@ bool ExtraEffectsPopup::init() {
         "rain", "matrix", "neon-pulse", "wave-distortion", "crt"
     };
 
-    // Load saved extra styles.
-    std::string raw = Mod::get()->getSettingValue<std::string>("levelinfo-extra-styles");
+    std::string raw = Mod::get()->getSavedValue<std::string>("levelinfo-extra-styles", "");
     if (!raw.empty()) {
         std::stringstream ss(raw);
         std::string token;
@@ -93,7 +90,7 @@ void ExtraEffectsPopup::rebuildRows() {
         auto lSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
         lSpr->setScale(0.35f);
         auto lBtn = CCMenuItemExt::createSpriteExtra(lSpr, [this, i](CCMenuItemSpriteExtra*) {
-            if (i < 0 || i >= (int)m_indices.size()) return;
+            if (i >= (int)m_indices.size()) return;
             m_indices[i]--;
             if (m_indices[i] < 0) m_indices[i] = (int)m_styles.size() - 1;
             if (i < (int)m_labels.size() && m_labels[i])
@@ -107,7 +104,7 @@ void ExtraEffectsPopup::rebuildRows() {
         rSpr->setFlipX(true);
         rSpr->setScale(0.35f);
         auto rBtn = CCMenuItemExt::createSpriteExtra(rSpr, [this, i](CCMenuItemSpriteExtra*) {
-            if (i < 0 || i >= (int)m_indices.size()) return;
+            if (i >= (int)m_indices.size()) return;
             m_indices[i]++;
             if (m_indices[i] >= (int)m_styles.size()) m_indices[i] = 0;
             if (i < (int)m_labels.size() && m_labels[i])
@@ -128,7 +125,7 @@ void ExtraEffectsPopup::rebuildRows() {
         xSpr->setScale(0.55f);
         xSpr->setColor({255, 80, 80});
         auto xBtn = CCMenuItemExt::createSpriteExtra(xSpr, [this, i](CCMenuItemSpriteExtra*) {
-            if (i >= 0 && i < (int)m_indices.size()) {
+            if (i < (int)m_indices.size()) {
                 m_indices.erase(m_indices.begin() + i);
                 rebuildRows();
                 save();
@@ -181,6 +178,7 @@ std::string ExtraEffectsPopup::displayName(std::string const& s) {
     if (s == "normal") return "Normal";
     if (s == "pixel") return "Pixel";
     if (s == "blur") return "Blur";
+    if (s == "paimonblur") return "Paimon Blur";
     if (s == "grayscale") return "Grayscale";
     if (s == "sepia") return "Sepia";
     if (s == "vignette") return "Vignette";

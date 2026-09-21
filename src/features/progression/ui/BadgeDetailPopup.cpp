@@ -4,9 +4,6 @@
 #include "../data/ProgressionStats.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
-#include "../../../utils/SpriteHelper.hpp"
-
-#include <algorithm>
 
 using namespace geode::prelude;
 using namespace cocos2d;

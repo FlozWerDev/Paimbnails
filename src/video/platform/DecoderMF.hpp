@@ -33,6 +33,9 @@ public:
     // Real codificado; getWidth/Height devuelven salida reducida.
     int getNativeWidth() const override;
     int getNativeHeight() const override;
+    VideoColorMatrix getColorMatrix() const override { return m_colorMatrix; }
+    bool isFullRange() const override { return m_fullRange; }
+    int getRotationDegrees() const override { return m_rotation; }
     bool isFinished() const override;
     double peekNextPTS() const override;
     double peekSecondPTS() const override;
@@ -84,10 +87,12 @@ private:
     int                m_downscaleFactor = 1;
     // Stride de MF con relleno (854 -> 856) sin stride propio.
     int                m_linearStride = 0;
+    VideoColorMatrix   m_colorMatrix = VideoColorMatrix::Auto;
+    bool               m_fullRange = false;
+    int                m_rotation = 0;
     // Scratch nativo; solo si hay downscale.
     Frame              m_scratch;
     double             m_duration = 0.0;
-    GUID               m_subType  = GUID_NULL;
     GUID               m_pixelFormat = GUID_NULL;
 
     std::atomic<bool>  m_decoding{false};

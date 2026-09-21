@@ -166,9 +166,7 @@ bool matchesFilters(
         for (auto const& rule : filters.videoRules) {
             if (rule.mode == ModeFilter::Classic && platformer) continue;
             if (rule.mode == ModeFilter::Platformer && !platformer) continue;
-            // As with the main difficulty selector, an empty mask means all.
-            // This also keeps old or partially-written saved rules from being
-            // displayed as "Todas" while silently requiring nothing.
+            // Mascara vacia == todo: asi las reglas viejas no exigen nada en silencio.
             uint32_t const mask = rule.difficulties & kAllDifficulties;
             if (mask == 0 || (mask & bit)) return false;
         }
@@ -184,9 +182,8 @@ std::optional<bool> requestPasses(int levelID, bool hasVideo) {
     auto& cache = TwitchLevelBriefCache::get();
     auto const* brief = cache.peek(levelID);
     if (!brief) {
-        // Filters must also resolve requests received while their UI and the
-        // OBS overlay are closed; otherwise video requirements would not take
-        // effect until the streamer happened to open the queue.
+        // Los filtros tambien resuelven con la UI cerrada: si no, el video no
+        // filtraria hasta que el streamer abriera la cola.
         cache.request(levelID);
         return std::nullopt;
     }

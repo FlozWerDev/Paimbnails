@@ -48,12 +48,10 @@ private:
 
     std::deque<SongSearchRowWidget*> m_rowPool;
     float m_yScroll = 0.f;
-    float m_prevYScroll = 0.f;
 
     int m_currentPreviewSongID = 0;
 
     static constexpr int   kVisibleRows  = 5;
-    static constexpr float kRowWidth     = 320.f;
     static constexpr float kRowHeight    = 36.f;
     static constexpr float kRowSpacing   = 4.f;
 };

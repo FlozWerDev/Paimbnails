@@ -146,9 +146,6 @@ namespace popupblur {
     inline bool showPlaceholder() {
         return geode::Mod::get()->getSavedValue<bool>("popup-blur-show-placeholder", true);
     }
-    inline std::string uiTheme() {
-        return geode::Mod::get()->getSettingValue<std::string>("popup-ui-theme");
-    }
 }
 
 namespace video {
@@ -169,20 +166,23 @@ namespace video {
 // Decode-time scaling also reduces ring-buffer, GL texture, PBO, and FBO memory.
     inline int videoMaxDecodeDimension() {
 // Snapshot quality per settings version; decoders reuse it across opens.
-        static int s_cachedDim = -1;
-        static uint64_t s_ver = UINT64_MAX;
+// Atomics with dim-published-before-version so concurrent opens never race.
+        static std::atomic<int> s_cachedDim{-1};
+        static std::atomic<uint64_t> s_ver{UINT64_MAX};
         uint64_t ver = internal::g_settingsVersion.load(std::memory_order_relaxed);
-        if (s_cachedDim >= 0 && ver == s_ver) return s_cachedDim;
-        s_ver = ver;
+        if (ver == s_ver.load(std::memory_order_acquire)) return s_cachedDim.load(std::memory_order_relaxed);
 // Keep the mapping local to avoid a Settings.hpp/video include cycle.
         int q = videoQuality();
+        int dim = 1920;
         switch (q) {
-            case 100: s_cachedDim = 0; break;
-            case 75:  s_cachedDim = 1280; break;
-            case 50:  s_cachedDim = 854; break;
-            default:  s_cachedDim = 1920; break;
+            case 100: dim = 0; break;
+            case 75:  dim = 1280; break;
+            case 50:  dim = 854; break;
+            default:  break;
         }
-        return s_cachedDim;
+        s_cachedDim.store(dim, std::memory_order_relaxed);
+        s_ver.store(ver, std::memory_order_release);
+        return dim;
     }
     inline std::string videoBlurType() {
         return geode::Mod::get()->getSavedValue<std::string>("video-blur-type", "none");

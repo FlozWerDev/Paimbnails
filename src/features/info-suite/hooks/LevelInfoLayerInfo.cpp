@@ -1,10 +1,5 @@
-// Extended Level Info is merged into the level screen's own info button: no
-// extra button is added, tapping the vanilla one opens the compact stats popup
-// instead of the small "Level Stats" alert. Turning the module off restores the
-// original.
-//
-// The method is onLevelInfo, not onInfo — onInfo is the comments button, which
-// pushes InfoLayer (see hooks/InfoLayerLevelInfo.cpp for that side).
+// Merged into the level screen's own info button: no extra button, off restores the original.
+// onLevelInfo, not onInfo — onInfo is the comments button (see InfoLayerLevelInfo.cpp).
 
 #include "../InfoModule.hpp"
 #include "../services/ProgressTracker.hpp"

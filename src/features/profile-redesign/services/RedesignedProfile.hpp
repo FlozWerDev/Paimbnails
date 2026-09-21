@@ -25,9 +25,8 @@ void buildInPlace(
     bool commentsLoaded
 );
 
-// True when some relocatable button/badge exists outside the redesign's rd-*
-// containers (a latecomer created asynchronously by another feature) or is
-// duplicated. Cheap tree walk; used to rebuild only when actually needed.
+// True when a relocatable button/badge sits outside the rd-* containers;
+// cheap check to rebuild only when actually needed.
 bool needsSettlePass(
     cocos2d::CCLayer* mainLayer,
     cocos2d::CCNode* buttonMenu,

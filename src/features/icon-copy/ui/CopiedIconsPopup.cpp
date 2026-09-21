@@ -13,7 +13,6 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ProfilePage.hpp>
-#include <Geode/ui/BasedButtonSprite.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
 
 #include <algorithm>
@@ -183,8 +182,7 @@ void CopiedIconsPopup::use(IconSet const& set) {
 }
 
 void CopiedIconsPopup::showIcons(IconSet const& set) {
-    WeakRef<CopiedIconsPopup> self = this;
-    Loader::get()->queueInMainThread([self, set] {
+    Loader::get()->queueInMainThread([set] {
         if (paimon::isRuntimeShuttingDown()) return;
         if (auto* popup = CopyIconsPopup::create(set, true)) popup->show();
     });

@@ -615,19 +615,8 @@ void LocalThumbnailViewPopup::onExit() {
         m_invalidationListenerId = 0;
     }
 
-    if (m_mainLayer) {
-        m_mainLayer->removeAllChildren();
-    }
-    m_ratingMenu = nullptr;
-    m_buttonMenu = nullptr;
-    m_settingsMenu = nullptr;
-    m_refreshBtn = nullptr;
-    m_ratingLabel = nullptr;
-    m_counterLabel = nullptr;
-    m_leftArrow = nullptr;
-    m_rightArrow = nullptr;
-    m_orderEditBtn = nullptr;
-
+    // Stop the video and detach menus BEFORE removeAllChildren: they live
+    // under m_mainLayer, which would free them and leave these derefs dangling.
     if (m_thumbnailSprite) {
         if (auto* videoSprite = geode::cast::typeinfo_cast<VideoThumbnailSprite*>(m_thumbnailSprite)) {
             videoSprite->stop();
@@ -642,6 +631,19 @@ void LocalThumbnailViewPopup::onExit() {
         m_playBtnMenu = nullptr;
         m_playBtn = nullptr;
     }
+
+    if (m_mainLayer) {
+        m_mainLayer->removeAllChildren();
+    }
+    m_ratingMenu = nullptr;
+    m_buttonMenu = nullptr;
+    m_settingsMenu = nullptr;
+    m_refreshBtn = nullptr;
+    m_ratingLabel = nullptr;
+    m_counterLabel = nullptr;
+    m_leftArrow = nullptr;
+    m_rightArrow = nullptr;
+    m_orderEditBtn = nullptr;
 
     log::info("[ThumbnailViewPopup] Llamando a parent onExit");
     Popup::onExit();

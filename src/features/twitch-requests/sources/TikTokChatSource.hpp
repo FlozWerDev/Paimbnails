@@ -8,10 +8,8 @@
 
 namespace paimon::twitch {
 
-// TikTok's own webcast endpoints refuse anything unsigned, so the chat comes
-// from a public relay that returns the raw WebcastResponse protobuf. The room id
-// is still resolved against tiktok.com, and the relay url is a setting so it can
-// be swapped when it breaks.
+// TikTok solo firma su webcast propio: el chat sale de un relay publico con la
+// protobuf cruda; la URL es ajuste por si cae.
 class TikTokChatSource final : public ChatSourceBase {
 public:
     TikTokChatSource(std::string channel, ChatCallbacks callbacks);

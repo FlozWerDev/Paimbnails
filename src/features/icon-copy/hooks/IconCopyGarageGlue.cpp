@@ -11,7 +11,6 @@
 #include <Geode/binding/GJGarageLayer.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/SimplePlayer.hpp>
-#include <Geode/ui/BasedButtonSprite.hpp>
 
 #include <algorithm>
 

@@ -69,6 +69,7 @@ bool FrameInterpPopup::init() {
     m_buttonMenu->addChild(resetBtn);
 
     m_statsLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    m_statsLabel->setID("frame-interp-stats"_spr);
     m_statsLabel->setAnchorPoint({0.f, 0.5f});
     m_statsLabel->setScale(0.42f);
     m_statsLabel->setColor(kit::kDescColor);
@@ -230,6 +231,7 @@ void FrameInterpPopup::rebuild() {
            "en los rebotes.")));
 
     m_scroll = kit::makeScrollStack({scrollW, scrollH}, items);
+    m_scroll->setID("frame-interp-scroll"_spr);
     m_scroll->setPosition({12.f, 38.f});
     m_mainLayer->addChild(m_scroll);
 }

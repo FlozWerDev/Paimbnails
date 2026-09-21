@@ -12,6 +12,8 @@
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/LevelInfoLayer.hpp>
 
+#include <optional>
+
 using namespace geode::prelude;
 
 namespace paimon::twitch {
@@ -63,9 +65,8 @@ void openRequestedLevel(int levelID, bool replaceScene) {
         pushLevelInfo(level, replaceScene);
     });
 
-    // Fuera de la lista de pedidos nadie llama a tick(), asi que aqui movemos
-    // nosotros el reloj del cache para que una busqueda colgada no deje el
-    // boton bloqueado.
+    // Sin la cola nadie llama a tick(): se mueve el reloj a mano para que una
+    // busqueda colgada no bloquee el boton.
     paimon::scheduleMainThreadDelay(13.f, [] {
         if (paimon::isRuntimeShuttingDown()) return;
         TwitchLevelBriefCache::get().tick();

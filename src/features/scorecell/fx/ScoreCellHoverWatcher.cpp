@@ -63,7 +63,6 @@ void ScoreCellHoverWatcher::setTransformTarget(CCNode* target,
                                                float baseScaleX, float baseScaleY,
                                                CCPoint basePos, float baseRot) {
     m_target = target;
-    m_hasTarget = target != nullptr;
     m_baseScaleX = baseScaleX;
     m_baseScaleY = baseScaleY;
     m_basePos = basePos;
@@ -82,9 +81,8 @@ void ScoreCellHoverWatcher::update(float dt) {
     rect.origin = cellParent->convertToWorldSpace(rect.origin);
 
 #if defined(GEODE_IS_MOBILE)
-    // No mouse on touch screens: the cursor service tracks the finger via the
-    // touch dispatcher hook, so taps highlight cells. The highlight sticks on
-    // the last-tapped cell, which doubles as selection feedback.
+    // No mouse on touch screens: taps highlight via the cursor service, and the
+    // highlight sticks on the last-tapped cell as selection feedback.
     bool inside = rect.containsPoint(CursorManager::get().pointerPos());
 #else
     bool inside = rect.containsPoint(geode::cocos::getMousePos());

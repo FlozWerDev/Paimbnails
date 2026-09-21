@@ -280,14 +280,4 @@ void sendState(StateMsg const& state) {
 #endif
 }
 
-void sendTaunt(uint8_t emote) {
-#ifdef PAIMON_VERSUS_GLOBED
-    if (!gl::inSession() || s_rival == 0) return;
-    if (!spend()) return;
-    VsTaunt(emote).send(optionsFor(false, false));
-#else
-    (void) emote;
-#endif
-}
-
 } // namespace paimon::versus::net

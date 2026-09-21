@@ -60,18 +60,13 @@ void ProfilePicCustomizer::save() {
     root["imageOpacity"] = m_config.imageOpacity;
     root["frameEnabled"] = m_config.frameEnabled;
     root["stencilSprite"] = m_config.stencilSprite;
-    root["offsetX"] = m_config.offsetX;
-    root["offsetY"] = m_config.offsetY;
 
     matjson::Value frameObj;
-    frameObj["spriteFrame"] = m_config.frame.spriteFrame;
     frameObj["colorR"] = static_cast<int>(m_config.frame.color.r);
     frameObj["colorG"] = static_cast<int>(m_config.frame.color.g);
     frameObj["colorB"] = static_cast<int>(m_config.frame.color.b);
     frameObj["opacity"] = m_config.frame.opacity;
     frameObj["thickness"] = m_config.frame.thickness;
-    frameObj["offsetX"] = m_config.frame.offsetX;
-    frameObj["offsetY"] = m_config.frame.offsetY;
     root["frame"] = frameObj;
 
     matjson::Value decoArray = matjson::Value::array();
@@ -117,7 +112,6 @@ void ProfilePicCustomizer::save() {
     iconObj["animationAmount"] = m_config.iconConfig.animationAmount;
     iconObj["iconImageEnabled"] = m_config.iconConfig.iconImageEnabled;
     iconObj["iconImagePath"] = m_config.iconConfig.iconImagePath;
-    iconObj["iconImageScale"] = m_config.iconConfig.iconImageScale;
     root["iconConfig"] = iconObj;
 
     matjson::Value customIconsArray = matjson::Value::array();
@@ -168,19 +162,14 @@ void ProfilePicCustomizer::load() {
     if (root.contains("imageOpacity")) m_config.imageOpacity = root["imageOpacity"].asDouble().unwrapOr(255.0);
     if (root.contains("frameEnabled")) m_config.frameEnabled = root["frameEnabled"].asBool().unwrapOr(false);
     if (root.contains("stencilSprite")) m_config.stencilSprite = root["stencilSprite"].asString().unwrapOr("circle");
-    if (root.contains("offsetX")) m_config.offsetX = root["offsetX"].asDouble().unwrapOr(0.0);
-    if (root.contains("offsetY")) m_config.offsetY = root["offsetY"].asDouble().unwrapOr(0.0);
 
     if (root.contains("frame")) {
         auto& f = root["frame"];
-        if (f.contains("spriteFrame")) m_config.frame.spriteFrame = f["spriteFrame"].asString().unwrapOr("");
         if (f.contains("colorR")) m_config.frame.color.r = f["colorR"].asInt().unwrapOr(255);
         if (f.contains("colorG")) m_config.frame.color.g = f["colorG"].asInt().unwrapOr(255);
         if (f.contains("colorB")) m_config.frame.color.b = f["colorB"].asInt().unwrapOr(255);
         if (f.contains("opacity")) m_config.frame.opacity = f["opacity"].asDouble().unwrapOr(255.0);
         if (f.contains("thickness")) m_config.frame.thickness = f["thickness"].asDouble().unwrapOr(4.0);
-        if (f.contains("offsetX")) m_config.frame.offsetX = f["offsetX"].asDouble().unwrapOr(0.0);
-        if (f.contains("offsetY")) m_config.frame.offsetY = f["offsetY"].asDouble().unwrapOr(0.0);
     }
 
     if (root.contains("decorations") && root["decorations"].isArray()) {
@@ -233,7 +222,6 @@ void ProfilePicCustomizer::load() {
         if (ic.contains("animationAmount")) m_config.iconConfig.animationAmount = ic["animationAmount"].asDouble().unwrapOr(1.0);
         if (ic.contains("iconImageEnabled")) m_config.iconConfig.iconImageEnabled = ic["iconImageEnabled"].asBool().unwrapOr(false);
         if (ic.contains("iconImagePath")) m_config.iconConfig.iconImagePath = ic["iconImagePath"].asString().unwrapOr("");
-        if (ic.contains("iconImageScale")) m_config.iconConfig.iconImageScale = ic["iconImageScale"].asDouble().unwrapOr(1.0);
     }
 
     if (root.contains("customIcons") && root["customIcons"].isArray()) {
@@ -254,25 +242,6 @@ void ProfilePicCustomizer::load() {
     if (root.contains("selectedCustomIconIndex")) m_config.selectedCustomIconIndex = root["selectedCustomIconIndex"].asInt().unwrapOr(-1);
 
     log::info("[ProfilePicCustomizer] Config loaded ({} decorations)", m_config.decorations.size());
-}
-
-std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getAvailableFrames() {
-    return {
-        {"GJ_square01.png", "Square"},
-        {"GJ_square02.png", "Square Dark"},
-        {"GJ_square03.png", "Square Blue"},
-        {"GJ_square04.png", "Square Green"},
-        {"GJ_square05.png", "Square Purple"},
-        {"GJ_square06.png", "Square Brown"},
-        {"GJ_square07.png", "Square Pink"},
-        {"square02b_001.png", "Rounded"},
-        {"GJ_button_01.png", "Green Button"},
-        {"GJ_button_02.png", "Pink Button"},
-        {"GJ_button_03.png", "Blue Button"},
-        {"GJ_button_04.png", "Gray Button"},
-        {"GJ_button_05.png", "Red Button"},
-        {"GJ_button_06.png", "Cyan Button"},
-    };
 }
 
 std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getAvailableStencils() {
@@ -298,63 +267,6 @@ std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getAvaila
         {"star6", "Star 6"},
         {"heart", "Heart"},
     };
-}
-
-std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getAvailableDecorations() {
-    std::vector<std::pair<std::string, std::string>> decorations;
-    decorations.reserve(31);
-
-    addDecorationIfAvailable(decorations, "star_small01_001", "Star Small");
-    addDecorationIfAvailable(decorations, "star_small02_001", "Star Small 2");
-    addDecorationIfAvailable(decorations, "star_small03_001", "Star Small 3");
-    addDecorationIfAvailable(decorations, "GJ_bigStar_001", "Big Star");
-    addDecorationIfAvailable(decorations, "GJ_sStar_001", "Small Star");
-    addDecorationIfAvailable(decorations, "diamond_small01_001", "Diamond");
-    addDecorationIfAvailable(decorations, "diamond_small02_001", "Diamond 2");
-    addDecorationIfAvailable(decorations, "currencyDiamondIcon_001", "Gem Diamond");
-    addDecorationIfAvailable(decorations, "currencyOrbIcon_001", "Orb");
-
-    addDecorationIfAvailable(decorations, "GJ_sRecentIcon_001", "Recent");
-    addDecorationIfAvailable(decorations, "GJ_sTrendingIcon_001", "Trending");
-    addDecorationIfAvailable(decorations, "GJ_sMagicIcon_001", "Magic");
-    addDecorationIfAvailable(decorations, "GJ_sAwardedIcon_001", "Awarded");
-    addDecorationIfAvailable(decorations, "GJ_sFeaturedIcon_001", "Featured");
-    addDecorationIfAvailable(decorations, "GJ_sHallOfFameIcon_001", "Hall of Fame");
-
-    addDecorationIfAvailable(decorations, "GJ_arrow_01_001", "Arrow Right");
-    addDecorationIfAvailable(decorations, "GJ_arrow_02_001", "Arrow Left");
-    addDecorationIfAvailable(decorations, "GJ_arrow_03_001", "Arrow Up");
-
-    addDecorationIfAvailable(decorations, "modBadge_01_001", "Mod Badge");
-    addDecorationIfAvailable(decorations, "modBadge_02_001", "Elder Mod Badge");
-    addDecorationIfAvailable(decorations, "modBadge_03_001", "Leaderboard Badge");
-
-    addDecorationIfAvailable(decorations, "particle_01_001", "Particle Circle");
-    addDecorationIfAvailable(decorations, "particle_02_001", "Particle Square");
-    addDecorationIfAvailable(decorations, "particle_03_001", "Particle Triangle");
-    addDecorationIfAvailable(decorations, "fireEffect_01_001", "Fire");
-
-    addDecorationIfAvailable(decorations, "diffIcon_01_btn_001", "Easy");
-    addDecorationIfAvailable(decorations, "diffIcon_02_btn_001", "Normal");
-    addDecorationIfAvailable(decorations, "diffIcon_03_btn_001", "Hard");
-    addDecorationIfAvailable(decorations, "diffIcon_04_btn_001", "Harder");
-    addDecorationIfAvailable(decorations, "diffIcon_05_btn_001", "Insane");
-    addDecorationIfAvailable(decorations, "diffIcon_06_btn_001", "Demon");
-
-    addDecorationIfAvailable(decorations, "GJ_lock_001", "Lock");
-    addDecorationIfAvailable(decorations, "GJ_completesIcon_001", "Complete");
-    addDecorationIfAvailable(decorations, "GJ_deleteIcon_001", "Delete");
-
-    addDecorationIfAvailable(decorations, "GJ_heart_01", "Heart");
-    addDecorationIfAvailable(decorations, "gj_heartOn_001", "Heart On");
-
-    addDecorationIfAvailable(decorations, "GJ_infoIcon_001", "Info");
-    addDecorationIfAvailable(decorations, "GJ_playBtn2_001", "Play");
-    addDecorationIfAvailable(decorations, "GJ_pauseBtn_001", "Pause");
-    addDecorationIfAvailable(decorations, "edit_eRotateBtn_001", "Rotate");
-    addDecorationIfAvailable(decorations, "edit_eScaleBtn_001", "Scale");
-
-    return decorations;
 }
 
 std::vector<DecorationCategory> ProfilePicCustomizer::getDecorationCategories() {
@@ -663,31 +575,6 @@ std::vector<ProfilePicPreset> ProfilePicCustomizer::getPresets() {
     }
 
     return presets;
-}
-
-std::vector<std::pair<int, std::string>> ProfilePicCustomizer::getAvailableGameIcons() {
-    return {
-        {0, "Cube"},
-        {1, "Ship"},
-        {2, "Ball"},
-        {3, "UFO"},
-        {4, "Wave"},
-        {5, "Robot"},
-        {6, "Spider"},
-        {7, "Swing"},
-        {8, "Jetpack"},
-        {9, "Explosion"},
-        {10, "Cube Green"},
-        {11, "Ship Purple"},
-        {12, "Ball Blue"},
-        {13, "UFO Orange"},
-        {14, "Wave Pink"},
-        {15, "Robot Red"},
-        {16, "Spider Cyan"},
-        {17, "Swing Yellow"},
-        {18, "Jetpack Gray"},
-        {19, "Explosion White"},
-    };
 }
 
 std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getAvailableFonts() {

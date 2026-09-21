@@ -256,8 +256,31 @@ class $modify(PaimonMessagesPage, MessagesProfilePage) {
         return contains(msg->m_title) || contains(msg->m_username);
     }
 
+    // The setting can flip while the page is open; the box follows it instead of
+    // staying orphaned from init.
+    void syncSearchBox() {
+        if (redesignOn()) {
+            if (!m_fields->m_search) buildPaimonInbox();
+            return;
+        }
+        if (auto* search = m_fields->m_search.data()) {
+            if (!m_fields->m_searchDetached) {
+                paimon::ui::detachGeodeTextInput(m_fields->m_search);
+            }
+            search->removeFromParent();
+            m_fields->m_search = nullptr;
+            m_fields->m_searchDetached = false;
+        }
+        if (m_buttonMenu) {
+            if (auto* btn = m_buttonMenu->getChildByID("paimon-msgs-selectread"_spr)) {
+                btn->removeFromParent();
+            }
+        }
+    }
+
     $override
     void setupCommentsBrowser(CCArray* messages) {
+        syncSearchBox();
         if (!redesignOn()) {
             MessagesProfilePage::setupCommentsBrowser(messages);
             return;
@@ -533,9 +556,7 @@ class $modify(PaimonMessageCell, GJMessageCell) {
         }
         float const replyCx = std::max(W * 0.55f, rightClusterLeft - 16.f);
 
-        // Shift the vanilla left content (subject / from / date) to make room
-        // for the avatar. No-op when already shifted (cell reuse) since the
-        // labels then start past contentLeft.
+        // Cell reuse: labels already past contentLeft are shifted, so this is a no-op.
         std::vector<CCLabelBMFont*> leftLabels;
         float leftEdge = W;
         if (auto* children = main->getChildren()) {

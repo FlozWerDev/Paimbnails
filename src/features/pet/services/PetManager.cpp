@@ -27,17 +27,10 @@ geode::Ref<CCTexture2D>& whiteTrailTexture() {
 
 constexpr int kPetHostZOrder = std::numeric_limits<int>::max() - 4096;
 
-int desiredPetHostZ(CCScene* scene, CCNode* petNode) {
-    (void)scene;
-    (void)petNode;
-    return kPetHostZOrder;
-}
-
 void ensurePetNodeIsFrontmost(CCScene* scene, CCNode* petNode) {
     if (!scene || !petNode || petNode->getParent() != scene) return;
-    auto targetZ = desiredPetHostZ(scene, petNode);
-    if (petNode->getZOrder() != targetZ) {
-        scene->reorderChild(petNode, targetZ);
+    if (petNode->getZOrder() != kPetHostZOrder) {
+        scene->reorderChild(petNode, kPetHostZOrder);
     }
 }
 
@@ -1075,11 +1068,6 @@ void PetManager::setIconStateImage(PetIconState state, std::string const& galler
     if (m_iconState == state) updateIconState();
 }
 
-void PetManager::switchToIconState(PetIconState state) {
-    m_iconState = state;
-    updateIconState();
-}
-
 void PetManager::updateIconState() {
     if (!m_petNode) return;
 
@@ -1232,7 +1220,6 @@ void PetManager::emitParticle() {
     float vy = (rand() % 100) / 100.f * 30.f + 10.f;
 
     auto type = static_cast<PetParticleType>(m_config.particleType);
-    CCSprite* particle = nullptr;
 
     switch (type) {
         case PetParticleType::Hearts: {
@@ -1251,16 +1238,11 @@ void PetManager::emitParticle() {
                 draw->drawPolygon(pts, 6, col, 0, col);
                 draw->setContentSize(CCSizeMake(s, s));
                 draw->setAnchorPoint({0.5f, 0.5f});
-                particle = CCSprite::create(); // wrapper
-                if (particle) {
-                    particle->setContentSize(CCSizeMake(s, s));
-                    particle->removeFromParent();
-                    draw->setPosition({petPos.x + rx, petPos.y + ry});
-                    auto* data = CCString::createWithFormat("%.2f|%.2f|%.3f", vx, vy, m_config.particleLifetime);
-                    draw->setUserObject(data);
-                    m_particleNode->addChild(draw);
-                    return;
-                }
+                draw->setPosition({petPos.x + rx, petPos.y + ry});
+                auto* data = CCString::createWithFormat("%.2f|%.2f|%.3f", vx, vy, m_config.particleLifetime);
+                draw->setUserObject(data);
+                m_particleNode->addChild(draw);
+                return;
             }
             break;
         }
@@ -1555,6 +1537,3 @@ void PetManager::updateClickReaction(float dt) {
         m_clickReactionTimer = 0.f;
     }
 }
-
-void PetManager::updateIdleAnimation(float dt) {}
-void PetManager::updateWalkAnimation(float dt) {}

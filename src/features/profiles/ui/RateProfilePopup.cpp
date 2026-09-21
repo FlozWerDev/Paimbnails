@@ -78,11 +78,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     starPanel->setPosition({centerX - 120.f, contentSize.height - 152.f});
     m_mainLayer->addChild(starPanel, 1);
 
-    m_starHighlight = CCNode::create();
-    m_starHighlight->setPosition({centerX, contentSize.height - 130.f});
-    m_starHighlight->setVisible(false);
-    m_mainLayer->addChild(m_starHighlight, 1);
-
     auto starMenu = CCMenu::create();
     starMenu->setID("stars-menu"_spr);
     starMenu->setPosition({centerX, contentSize.height - 130.f});
@@ -318,9 +313,6 @@ void RateProfilePopup::loadExistingRating() {
 
         if (root["average"].isNumber()) avg = static_cast<float>(root["average"].asDouble().unwrapOr(0.0));
         if (root["count"].isNumber()) count = static_cast<int>(root["count"].asInt().unwrapOr(0));
-
-        popup->m_currentAverage = avg;
-        popup->m_totalVotes = count;
 
         if (popup->m_averageLabel) {
             popup->m_averageLabel->setString(fmt::format("{:.1f}/5", avg).c_str());

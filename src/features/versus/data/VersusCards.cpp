@@ -52,13 +52,6 @@ CardDef const& cardAt(CardId id) {
     return kCards[std::min<size_t>(static_cast<size_t>(id), kCardCount - 1)];
 }
 
-CardDef const* findCard(std::string const& key) {
-    for (auto const& def : kCards) {
-        if (key == def.key) return &def;
-    }
-    return nullptr;
-}
-
 std::vector<CardDef const*> cardsOfRarity(Rarity rarity) {
     std::vector<CardDef const*> out;
     for (auto const& def : kCards) {

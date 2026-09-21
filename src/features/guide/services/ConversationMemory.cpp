@@ -55,11 +55,6 @@ int ConversationMemory::recentMatchesOf(std::string const& intentId,
     return count;
 }
 
-bool ConversationMemory::hasJustAnswered(std::string const& intentId,
-                                         std::time_t withinSecs) const {
-    return recentMatchesOf(intentId, withinSecs) > 0;
-}
-
 bool ConversationMemory::looksLikeFollowUp(std::string const& normalized) {
     if (normalized.empty()) return false;
 

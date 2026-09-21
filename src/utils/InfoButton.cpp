@@ -11,12 +11,8 @@ Ref<PaimonInfoTarget> s_infoTarget = nullptr;
 
 constexpr float kAlertWidth = 340.f;
 
-// FLAlertLayer builds its TextArea to wrap at (2 * width) font units and then
-// scales the whole thing by textScale, but the popup frame is only about
-// (1.33 * width) wide. So a full-width line fits only while
-//     2 * width * textScale <= 1.33 * width,  i.e. textScale <= 0.66.
-// The width cancels out: anything above ~0.65 spills past the frame no matter
-// how wide the popup is. 0.6 keeps a 10% margin.
+// TextArea wraps at 2 * width but the frame fits ~1.33 * width, so 0.6
+// keeps a 10% margin below the 0.66 spill point.
 constexpr float kTextScale    = 0.6f;
 constexpr float kScrollHeight = 170.f;
 
@@ -25,14 +21,11 @@ constexpr float kScrollHeight = 170.f;
 // auto-sized popup that would run off the top.
 constexpr float kMaxTextHeight = 185.f;
 
-// chatFont.fnt metrics: ~7.3 units of advance per character on prose, 18 units
-// per line.
+// chatFont.fnt metrics.
 constexpr float kAvgAdvance = 7.3f;
 constexpr float kLineHeight = 18.f;
 
-// Height the TextArea ends up taking, counting word wrap. Colour tags are
-// skipped because they are markup, not glyphs. This only picks between
-// auto-height and the scroller, so an approximation is enough.
+// Approximation is enough: it only picks auto-height vs scroller.
 float measureTextHeight(std::string const& desc) {
     // Wrapping happens before the scale is applied, so the column count comes
     // from the raw (2 * width) font units and does not depend on kTextScale.
@@ -71,9 +64,7 @@ void PaimonInfoTarget::onInfo(CCObject* sender) {
     std::string title = (sep != std::string::npos) ? raw.substr(0, sep) : "Info";
     std::string desc = (sep != std::string::npos) ? raw.substr(sep + 5) : raw;
 
-    // Auto-height sizes the popup to the text, so short infos no longer sit in
-    // a half-empty scroller with their last lines clipped below the fold. Only
-    // texts that would overflow the screen get the scroller.
+    // Short infos fit the popup; only overflowing texts get the scroller.
     bool const scroll = measureTextHeight(desc) > kMaxTextHeight;
 
     auto* alert = FLAlertLayer::create(

@@ -1,8 +1,7 @@
 #pragma once
 
-// On-screen card when a new thumbnail goes live on the server. It carries the
-// level data the same way the GDUtils rate notifications do, except the card's
-// own background is the thumbnail that was just uploaded.
+// On-screen card for a new live thumbnail. Carries level data like the GDUtils
+// rate notifications, with the uploaded thumbnail as its background.
 
 #include <Geode/DefaultInclude.hpp>
 #include <string>
@@ -83,10 +82,8 @@ bool alertsAllowedHere(Config const& config);
 // carries its background when it slides in.
 void showThumbAlert(NewThumb item);
 
-// The uploader's own card, built from the upload response. This is the only
-// path that can be instant: an HTTP reply reaches the caller and nobody else,
-// so every other player still learns about it from the next poll.
-// `levelMeta` is the JSON collectLevelMetadata() already sends with the upload.
+// The uploader's own card, built from the upload response: the only instant
+// path, since an HTTP reply reaches just its caller. `levelMeta` is the upload JSON.
 void showThumbAlertForUpload(int levelId, std::string const& uploader,
                              std::string const& levelMeta,
                              std::string const& serverMessage);

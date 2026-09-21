@@ -1,19 +1,7 @@
 #pragma once
 
-// Cosmetic slots layered over RobTop's official level list.
-//
-// The whole point of this feature is that it is *decorative*. A slot never
-// touches GameStatsManager, GJAccountManager or the vanilla save: it only
-// describes how a page in the official list should be drawn. That is why the
-// star count here is an int we paint next to a star sprite and never a value
-// handed to the game's currency code — collecting a slot's stars is impossible
-// by construction, not by a check we could forget somewhere.
-//
-// Two kinds of entry live in the same list:
-//   - Added slots: a custom level (by id, or imported from a .gmd) shown as if
-//     it were an official one.
-//   - Hidden officials: an id in [1, 22] the user does not want to see. The
-//     level itself is untouched, we just skip drawing its page.
+// Cosmetic slots layered over RobTop's official level list: paint-only
+// descriptions, never handed to currency code, so misses grant nothing.
 
 #include <Geode/DefaultInclude.hpp>
 
@@ -85,10 +73,6 @@ struct Slot {
 // Difficulty <-> the value GJDifficultySprite wants. Kept as a function instead
 // of a cast so the Auto = -1 hole stays in one place.
 int difficultyFace(Difficulty difficulty);
-
-// Display name, for labels and the difficulty picker.
-char const* difficultyName(Difficulty difficulty);
-char const* tierName(Tier tier);
 
 // Every difficulty in picker order.
 std::vector<Difficulty> const& allDifficulties();

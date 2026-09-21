@@ -58,9 +58,8 @@ void terminateModProcesses() {
     HttpClient::get().cleanTasks(false);
 }
 
-// Shows the banned popup ignoring the shutdown flag. scheduleMainThreadDelay
-// drops callbacks once the runtime is shutting down, which is exactly the state
-// we set when enforcing a ban, so we need our own task here.
+// scheduleMainThreadDelay drops callbacks during shutdown — exactly the state
+// a ban sets — so the banned popup needs its own task here.
 void showBannedPopupForced(std::string const& reason, float delay) {
     auto* director = CCDirector::get();
     if (!director) return;
@@ -116,9 +115,8 @@ bool runStartupBanGate() {
         return false;
     }
 
-    // No cache or cache older than 7 days: revalidate with the server. The mod
-    // runs during this short window (same as a first launch). If the stale cache
-    // said banned and we can't reach the server, we fail closed and keep the ban.
+    // No cache or older than 7 days: revalidate with the server. The mod runs
+    // meanwhile; a stale ban plus unreachable server fails closed (ban stays).
     bool staleBanned = haveCache && cachedBanned;
     std::string staleReason = cachedReason;
 

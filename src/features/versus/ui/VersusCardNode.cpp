@@ -29,16 +29,6 @@ VersusCardNode* VersusCardNode::create(CardId id, float width) {
     return nullptr;
 }
 
-VersusCardNode* VersusCardNode::createBack(float width) {
-    auto ret = new VersusCardNode();
-    if (ret && ret->init(CardId::Fog, width, true)) {
-        ret->autorelease();
-        return ret;
-    }
-    CC_SAFE_DELETE(ret);
-    return nullptr;
-}
-
 bool VersusCardNode::init(CardId id, float width, bool faceDown) {
     if (!CCNode::init()) return false;
 
@@ -103,17 +93,6 @@ void VersusCardNode::rebuild() {
     name->setScale(std::min(m_width * 0.0075f, m_width * 0.80f / std::max(1.f, name->getContentSize().width)));
     name->setPositionY(-m_width * 0.50f);
     m_content->addChild(name, 3);
-}
-
-void VersusCardNode::flipToFace(CardId id) {
-    m_content->stopAllActions();
-    m_content->runAction(CCSequence::create(
-        CCScaleTo::create(0.10f, 0.f, 1.f),
-        CCCallFunc::create(this, callfunc_selector(VersusCardNode::rebuild)),
-        CCScaleTo::create(0.14f, 1.f, 1.f),
-        nullptr));
-    m_card = id;
-    m_faceDown = false;
 }
 
 void VersusCardNode::playDraw(float delay) {

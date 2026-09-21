@@ -4,7 +4,6 @@
 #include "../../../managers/ThumbnailAPI.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../thumbnails/services/ThumbnailTransportClient.hpp"
-#include <list>
 #include <mutex>
 #include <algorithm>
 #include "../../moderation/services/ModeratorCache.hpp"
@@ -26,10 +25,7 @@
 
 using namespace geode::prelude;
 
-// Legacy BadgeCache wrappers delegate to ModeratorCache.
-
-std::map<std::string, std::pair<bool, bool>> g_moderatorCache;
-std::list<std::string> g_moderatorCacheOrder;
+// Wrappers used by ProfilePage/RoleService; storage lives in ModeratorCache.
 
 void moderatorCacheInsert(std::string const& username, bool isMod, bool isAdmin) {
     ModeratorCache::get().insert(username, isMod, isAdmin);
@@ -52,7 +48,7 @@ static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
                             std::string text, std::string font, int retries);
 
 namespace {
-// Default comment panel: translucent dark blue-gray.
+// Default comment panel metrics.
 constexpr GLubyte kCommentDarkPanelOpacity = 60;
 constexpr cocos2d::ccColor3B kCommentPanelColor = {30, 33, 48};
 constexpr float kCommentInsetX = 2.0f;
@@ -89,13 +85,11 @@ class $modify(BadgeCommentCell, CommentCell) {
         Ref<CCClippingNode> m_commentBgClip = nullptr;
         Ref<CCLayerColor> m_commentBgDarkOverlay = nullptr;
         int m_commentBgToken = 0;
-        int m_commentBgAccountID = 0;
         int m_vanillaBgHideTicks = 0;
     };
 
     void clearCommentProfileBackground() {
         ++m_fields->m_commentBgToken;
-        m_fields->m_commentBgAccountID = 0;
 
         if (m_fields->m_commentBgPanel) {
             m_fields->m_commentBgPanel->removeFromParent();
@@ -544,7 +538,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         int token = m_fields->m_commentBgToken;
         std::string username = comment->m_userName;
 
-        m_fields->m_commentBgAccountID = accountID;
         thumbs.notifyVisible(accountID);
 
         if (auto cached = thumbs.getCachedProfile(accountID)) {
@@ -726,49 +719,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         );
     }
 
-    void addBadgeToComment(bool isMod, bool isAdmin) {
-        auto menu = this->getChildByIDRecursive("username-menu");
-        if (!menu) return;
-        
-        if (menu->getChildByID("paimon-moderator-badge"_spr)) return;
-        if (menu->getChildByID("paimon-admin-badge"_spr)) return;
-
-        CCSprite* badgeSprite = nullptr;
-        std::string badgeID;
-
-        if (isAdmin) {
-            badgeSprite = CCSprite::create("paim_Admin.png"_spr);
-            badgeID = "paimon-admin-badge"_spr;
-        } else if (isMod) {
-            badgeSprite = CCSprite::create("paim_Moderador.png"_spr);
-            badgeID = "paimon-moderator-badge"_spr;
-        }
-
-        if (!badgeSprite) return;
-
-        float targetHeight = 15.5f;
-        float scale = targetHeight / badgeSprite->getContentSize().height;
-        badgeSprite->setScale(scale);
-
-        auto btn = CCMenuItemSpriteExtra::create(
-            badgeSprite,
-            this,
-            menu_selector(BadgeCommentCell::onPaimonBadge)
-        );
-        btn->setID(badgeID);
-        
-        auto menuNode = typeinfo_cast<CCMenu*>(menu);
-        if (!menuNode) return;
-
-        if (auto percentage = this->getChildByIDRecursive("percentage-label")) {
-            menuNode->insertBefore(btn, percentage);
-        } else {
-            menuNode->addChild(btn);
-        }
-
-        menuNode->updateLayout();
-    }
-
     void addCustomBadgeToComment(std::string const& emoteName) {
         if (emoteName.empty()) return;
 
@@ -838,10 +788,6 @@ class $modify(BadgeCommentCell, CommentCell) {
                     });
                 }
             });
-    }
-
-    void tryRenderEmotes(std::string const& commentText) {
-        tryRenderWithFont(commentText, "chatFont.fnt");
     }
 
     void tryRenderWithFont(std::string const& commentText, std::string const& fontFile) {

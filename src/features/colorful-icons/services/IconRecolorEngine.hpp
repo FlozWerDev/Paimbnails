@@ -13,14 +13,11 @@ namespace paimon::icons {
 
 // UserObject keys stamped on icons we touch.
 inline constexpr char const* kIconRecoloredKey = "paimbnails/icon-recolored";
-// Set by the GJItemIcon::changeToLockedState hook. Opacity-based lock
-// detection breaks as soon as a lock style changes the opacity, so the flag
-// is the durable source of truth.
+// Lock flag stamped by the changeToLockedState hook; opacity-based detection
+// breaks as soon as a lock style changes the opacity.
 inline constexpr char const* kIconLockedKey = "paimbnails/locked-icon";
-// Snapshot of the stock locked look, captured right after vanilla
-// changeToLockedState runs. Restoring replays it verbatim; rebuilding the
-// look from hardcoded constants washed locked icons out to white blobs
-// (vanilla hides detail sprites/UFO domes and keeps its own colors).
+// Stock locked look captured right after vanilla runs; replayed verbatim on
+// restore (rebuilding from constants washed locked icons out to white).
 inline constexpr char const* kIconLockSnapshotKey = "paimbnails/locked-vanilla-snapshot";
 
 // Areas where we recolor. Only areas with an actual hook exist here.

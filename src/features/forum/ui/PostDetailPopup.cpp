@@ -98,11 +98,7 @@ void PostDetailPopup::rebuild() {
         for (auto* c : toRemove) c->removeFromParent();
     }
 
-    // m_replyInput and m_cooldownLabel are "rebuild-block" children freed just
-    // above; they are only recreated in the !locked branch below. Null them now
-    // so that when a thread is locked (branch skipped) they don't dangle — the
-    // per-frame update()->updateCooldownLabel() and onSubmitReply/onReplyToReply
-    // all null-check these pointers.
+    // Freed above and only recreated when unlocked; null them so update()/submit don't dangle.
     m_replyInput = nullptr;
     m_cooldownLabel = nullptr;
 
@@ -402,7 +398,6 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w, int index) {
     int myId = acc ? acc->m_accountID : 0;
     bool isMine = myId > 0 && myId == r.author.accountID;
 
-    // vanilla GD list row: alternating browns + hairline separator
     auto bg = CCLayerColor::create(index % 2 == 0 ? kRowLight : kRowDark);
     bg->setContentSize({w, h});
     bg->setPosition({0.f, 0.f});
@@ -415,7 +410,6 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w, int index) {
         card->addChild(line, 3);
     }
 
-    // green edge marker on your own replies
     if (isMine) {
         auto marker = CCLayerColor::create({140, 255, 140, 200});
         marker->setContentSize({3.f, h});

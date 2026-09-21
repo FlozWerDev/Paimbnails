@@ -612,9 +612,8 @@ void CollabNetClient::sendJson(matjson::Value const& value) {
     }
 
     auto req = web::WebRequest();
-    // Voice frames are perishable: time them out fast so a slow connection
-    // doesn't pile up 15s-long in-flight requests. Discrete pings and layer
-    // claims use the same short timeout; state presence is coalesced above.
+    // Voice/pings/claims are perishable: short timeout so a slow connection
+    // doesn't pile up 15s-long in-flight requests.
     bool ephemeral = (t == "voice" || t == "ping" || t == "claim_layer");
     req.timeout(std::chrono::seconds(ephemeral ? 6 : 15));
     req.header("Content-Type", "application/json");

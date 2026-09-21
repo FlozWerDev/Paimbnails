@@ -327,7 +327,6 @@ void paintFormFrame(PlayerObject* player, IconSlot form, int iconId) {
         case IconSlot::Robot: player->updatePlayerRobotFrame(iconId); break;
         case IconSlot::Spider: player->updatePlayerSpiderFrame(iconId); break;
         case IconSlot::Swing: player->updatePlayerSwingFrame(iconId); break;
-        case IconSlot::Jetpack: player->updatePlayerJetpackFrame(iconId); break;
         default: player->updatePlayerFrame(iconId); break;
     }
 }
@@ -363,7 +362,6 @@ void DualKitVault::dressFighter(PlayerObject* player, Side side) {
         player->updatePlayerShipFrame(slotIcon(IconSlot::Ship, side));
         player->updatePlayerFrame(slotIcon(IconSlot::Cube, side));
     } else if (player->m_isBird) {
-        // Bird pairs its vehicle frame with the cube frame.
         player->updatePlayerBirdFrame(slotIcon(IconSlot::Bird, side));
         player->updatePlayerFrame(slotIcon(IconSlot::Cube, side));
     } else {

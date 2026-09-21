@@ -1,7 +1,6 @@
 #pragma once
-// Profile side of the icon clipboard: shows the set you are about to take and
-// splits the two things you may want into their own buttons. Every icon in the
-// strip opens its own card telling you where that icon comes from.
+// Profile side of the icon clipboard: preview the set before taking it.
+// Each icon in the strip opens its source card.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>

@@ -63,7 +63,6 @@ static char const* g_fragmentShaderDualKawase = R"(
 
 class GauntletThumbnailNode : public CCNode {
     std::vector<int> m_levelIDs;
-    std::vector<Ref<CCTexture2D>> m_loadedTextures;
     int m_currentIndex = 0;
     float m_timer = 0.f;
     
@@ -280,12 +279,8 @@ class $modify(PaimonGauntletLayer, GauntletLayer) {
         }
 
         // Hide default background
-        if (auto bg = this->getChildByID("background")) {
+        if (auto* bg = this->m_backgroundSprite) {
             bg->setVisible(false);
-        } else {
-            // Fallback: first child = background
-            if (auto firstChild = this->getChildByType<CCNode>(0)) {                 firstChild->setVisible(false);
-            }
         }
 
         auto levelManager = GameLevelManager::sharedState();

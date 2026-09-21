@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <fstream>
-#include <functional>
 
 using namespace geode::prelude;
 
@@ -166,7 +165,13 @@ std::filesystem::path LevelThumbsClient::entryPath(int levelID, Quality quality)
 }
 
 void LevelThumbsClient::fetchThumbnail(int levelID, Quality quality, DataCallback callback) {
-    if (levelID <= 0 || !callback) return;
+    if (!callback) return;
+    if (levelID <= 0) {
+        Loader::get()->queueInMainThread([callback = std::move(callback)]() mutable {
+            callback(false, {});
+        });
+        return;
+    }
 
     if (paimon::isRuntimeShuttingDown() || isNotFound(levelID)) {
         Loader::get()->queueInMainThread([callback = std::move(callback)]() mutable {
@@ -219,13 +224,19 @@ void LevelThumbsClient::startRequest(std::shared_ptr<Request> request) {
     }
 
     pool().enqueue([this, request, path, url]() {
-        if (paimon::isRuntimeShuttingDown()) return;
+        if (paimon::isRuntimeShuttingDown()) {
+            Loader::get()->queueInMainThread([this, request]() { finish(request, false, {}); });
+            return;
+        }
 
         std::vector<uint8_t> cached;
         bool const hit = readCacheFile(path, cached) && !cached.empty();
 
         Loader::get()->queueInMainThread([this, request, path, url, hit, cached = std::move(cached)]() mutable {
-            if (paimon::isRuntimeShuttingDown()) return;
+            if (paimon::isRuntimeShuttingDown()) {
+                finish(request, false, {});
+                return;
+            }
 
             if (hit) {
                 finish(request, true, cached);
@@ -240,10 +251,12 @@ void LevelThumbsClient::download(std::shared_ptr<Request> request, std::string c
                                  std::filesystem::path const& path) {
     PaimonDebug::log("[LevelThumbs] fetching {} for level {}", url, request->levelID);
 
-    HttpClient::get().downloadFromUrlRaw(url,
-        [this, request, path](bool success, std::vector<uint8_t> const& data, int, int) {
+    // The status tells "no thumbnail" (404/410, worth caching) apart from a
+    // dropped connection (worth retrying next time).
+    HttpClient::get().performBinaryRequestEx(url, {},
+        [this, request, path](bool success, std::vector<uint8_t> const& data, int status) {
             if (!success || data.empty()) {
-                markNotFound(request->levelID);
+                if (status == 404 || status == 410) markNotFound(request->levelID);
                 finish(request, false, {});
                 return;
             }

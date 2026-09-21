@@ -13,19 +13,8 @@
 
 namespace paimon::profilebg {
 
-// Animated gradient background.
-//
-// Design rules (all effects are vector/opacity-only):
-// - The node transform is NEVER animated. Past revisions rotated, scaled
-//   or slid the whole quad, which uncovered cell corners, made the cell
-//   look like it was breathing in size, and accumulated offsets when the
-//   effect was switched. Only the gradient direction (vector), the stop
-//   colors and the opacity move, so the quad always covers its clip.
-// - All motion is periodic with a continuous derivative (cosine-based), so
-//   there are no hard stops or mirror pops at loop points.
-// - Hover (desktop): a smooth lift plus a retriggered burst on every
-//   mouse-enter rising edge, so each pass over the cell plays its own
-//   animation. Vector/opacity-only, like everything else here.
+// Vector/opacity-only: animating the transform uncovered cell corners and
+// accumulated offsets when switching effects, so only direction/color move.
 class AnimatedGradientLayer : public cocos2d::CCLayerGradient {
 public:
     static constexpr float kDiagY = -0.35f;

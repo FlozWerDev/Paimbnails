@@ -8,27 +8,21 @@
 #include "CaptureAssetBrowserPopup.hpp"
 #include "CaptureUIConstants.hpp"
 #include "../../smooth-scroll/services/SmoothScrollController.hpp"
-#include "../../thumbnails/services/LocalThumbs.hpp"
 #include "../../thumbnails/services/ThumbnailLoader.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../services/FramebufferCapture.hpp"
-#include <Geode/ui/GeodeUI.hpp>
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
-#include <Geode/binding/ButtonSprite.hpp>
-#include <Geode/ui/BasedButtonSprite.hpp>
 #include <Geode/binding/SimplePlayer.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/PlayLayer.hpp>
 #include <Geode/binding/PauseLayer.hpp>
 #include "../../../utils/ActivePauseLayer.hpp"
-#include "../../../utils/PaimonButtonHighlighter.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/ThreadTracker.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
-#include "../../../managers/ThumbnailAPI.hpp"
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <filesystem>
 #include <chrono>
@@ -538,7 +532,7 @@ void CapturePreviewPopup::updatePreviewScale() {
     namespace C = paimon::capture::preview;
     if (!m_previewSprite || m_viewWidth < 1.f || m_viewHeight < 1.f) return;
 
-    float scale = computePreviewScale(m_previewSprite, m_viewWidth, m_viewHeight, m_fillMode);
+    float scale = computePreviewScale(m_previewSprite, m_viewWidth, m_viewHeight, true);
 
     m_previewSprite->setScale(scale);
     m_previewSprite->setAnchorPoint({0.5f, 0.5f});
@@ -598,7 +592,7 @@ void CapturePreviewPopup::onTogglePlayer1Btn(CCObject* sender) {
     } else if (m_recaptureCallback) {
         m_recaptureCallback(m_isPlayer1Hidden, m_isPlayer2Hidden, this);
     } else {
-        liveRecapture(true);
+        liveRecapture();
     }
 }
 
@@ -611,7 +605,7 @@ void CapturePreviewPopup::onTogglePlayer2Btn(CCObject* sender) {
     } else if (m_recaptureCallback) {
         m_recaptureCallback(m_isPlayer1Hidden, m_isPlayer2Hidden, this);
     } else {
-        liveRecapture(true);
+        liveRecapture();
     }
 }
 
@@ -827,14 +821,12 @@ void CapturePreviewPopup::onRecaptureTimeout(float) {
     PaimonNotify::create(Localization::get().getString("layers.recapture_error").c_str(), NotificationIcon::Warning)->show();
 }
 
-void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
+void CapturePreviewPopup::liveRecapture() {
     auto* pl = PlayLayer::get();
     if (pl) {
         recapture();
         return;
     }
-
-    if (!updateBuffer) return;
 }
 
 void CapturePreviewPopup::onAcceptBtn(CCObject* sender) {
@@ -966,7 +958,7 @@ void CapturePreviewPopup::onCycleResolution(CCObject* sender) {
     } else if (m_recaptureCallback) {
         m_recaptureCallback(m_isPlayer1Hidden, m_isPlayer2Hidden, this);
     } else {
-        liveRecapture(true);
+        liveRecapture();
     }
 }
 
@@ -1127,9 +1119,7 @@ void CapturePreviewPopup::onOpenDownloadsFolder(CCObject*) {
         return;
     }
 
-    // openFolder reporta false cuando CoInitializeEx ya esta tomado por otro mod
-    // o cuando SHOpenFolderAndSelectItems devuelve S_FALSE, aunque el explorador
-    // si abra la carpeta. No se muestra error por eso.
+    // openFolder puede devolver false aunque la carpeta si se abra; por eso no se muestra error.
     if (!geode::utils::file::openFolder(downloadDir)) {
         log::warn("[CapturePreview] openFolder devolvio false para {}",
             geode::utils::string::pathToString(downloadDir));

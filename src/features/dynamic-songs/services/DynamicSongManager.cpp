@@ -170,6 +170,7 @@ FMOD::ChannelControl* DynamicSongManager::currentChannelControl() const {
 void DynamicSongManager::fadeVolume(float from, float to, float durationSec, PostFadeAction action) {
     if (!m_fadeNode) {
         m_fadeNode = DynSongFadeNode::create();
+        if (!m_fadeNode) return;
         m_fadeNode->retain();
     }
     m_postFadeAction = action;
@@ -189,7 +190,6 @@ void DynamicSongManager::onFadeComplete() {
 
     switch (m_postFadeAction) {
     case PostFadeAction::PlayPending: {
-// Fade complete: load the pending song and fade in.
         stopStreamingPreview();
         playOnMainChannel(m_pendingSongPath, 0.0f);
         applyStartPosition(m_currentPlayingLevelID);
@@ -661,7 +661,7 @@ class DynHandoffWatchNode : public CCNode {
 public:
     static DynHandoffWatchNode* create() {
         auto* node = new DynHandoffWatchNode();
-        if (node && node->init()) return node;
+        if (node && node->init()) { node->autorelease(); return node; }
         CC_SAFE_DELETE(node);
         return nullptr;
     }
@@ -1086,22 +1086,6 @@ bool DynamicSongManager::verifyPlayback() {
     return getFileName(m_activeSongPath) == getFileName(currentName);
 }
 
-void DynamicSongManager::onPlaybackHijacked() {
-    cancelFade();
-    stopStreamingPreview();
-    stopHandoffWatch();
-    SubmergeEffect::get().release();
-    m_state = DynState::Idle;
-    m_currentLayer = DynSongLayer::None;
-    m_handoffLayer = DynSongLayer::None;
-    m_handoffLevelID = 0;
-    m_activeSongPath.clear();
-    m_pendingSongPath.clear();
-    m_currentPlayingLevelID = 0;
-    paimon::setDynamicSongInteropActive(false);
-    AudioContextCoordinator::get().clearDynamicAudio();
-}
-
 // Streaming preview.
 
 // Poll for the local download and swap to it when ready.
@@ -1110,6 +1094,7 @@ public:
     static DynStreamPollNode* create() {
         auto* node = new DynStreamPollNode();
         if (node && node->init()) {
+            node->autorelease();
             return node;
         }
         CC_SAFE_DELETE(node);

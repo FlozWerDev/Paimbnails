@@ -1,13 +1,7 @@
 #pragma once
 
-// The level info popup. It replaces the vanilla "Level Info" alert of the
-// comments layer, so the description GD used to show is here too, on the first
-// tab.
-//
-// Tab 0 is a visual dashboard (thumbnail banner, difficulty face, rating badge,
-// coins, stat tiles, like bar, song). The remaining tabs are the raw field
-// lists, where tapping a row copies it. Your own attempts and jumps are not
-// here: those live in LevelStatsPopup.
+// Replaces the vanilla "Level Info" alert, so GD's description stays on the first tab.
+// Tab 0 is the dashboard; the rest are raw fields, tapping a row copies it.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJGameLevel.hpp>

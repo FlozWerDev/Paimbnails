@@ -9,9 +9,8 @@
 
 namespace paimon::thumbalerts {
 
-// Level data drawn over the level's own thumbnail, inside a popup style frame.
-// One tick drives position, scale, rotation and opacity together, so the
-// clipped thumbnail, the scrims and the labels never drift apart mid-animation.
+// Level data over the level's own thumbnail in a popup frame. One tick drives
+// position, scale, rotation and opacity together so nothing drifts mid-animation.
 class ThumbAlertCard : public cocos2d::CCNodeRGBA {
 public:
     static ThumbAlertCard* create(NewThumb const& item, Config const& config,

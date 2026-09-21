@@ -6,10 +6,8 @@
 
 namespace paimon::editorphysics {
 
-// A reactive body never runs the solver inside GD: it runs the Advanced Follow
-// graph the emitter writes. Showing it in the lab with the rigid trajectory is
-// what made the preview and the level disagree, so every body is traced on the
-// backend it will actually compile to, and only the baked ones keep the solver.
+// Every body is traced on the backend it will compile to, and only the baked
+// ones keep the solver, so the preview and the level agree.
 SimulationTrace simulateWorkspace(
     std::vector<BodySpec> const& bodies,
     std::vector<NativeBodySettings> const& settings,

@@ -8,7 +8,6 @@
 #include <hiimjustin000.more_icons/include/MoreIcons.hpp>
 
 #include <algorithm>
-#include <cmath>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -97,7 +96,6 @@ bool GlobalIconViewPopup::init(int accountID, std::string const& username, Globa
     if (!Popup::init(kPopupWidth, height)) return false;
 
     m_accountID = accountID;
-    m_username = username;
 
     std::string title = Localization::get().getString("globalicon.view_title");
     if (auto pos = title.find("{}"); pos != std::string::npos) {
@@ -199,7 +197,6 @@ void GlobalIconViewPopup::buildGrid(CCMenu* menu, std::vector<GlobalIconSlot> co
                 placeholder->setPosition({kCellSize / 2.f, kCellSize / 2.f + 5.f});
                 placeholder->setScale(0.7f);
                 container->addChild(placeholder, 1);
-                cell.placeholder = placeholder;
             }
         }
 

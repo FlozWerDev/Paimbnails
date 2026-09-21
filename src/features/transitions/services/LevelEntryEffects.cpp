@@ -30,11 +30,8 @@ enum class TransitionDirection {
 
 class LevelEffectsTransitionScene;
 
-// This ticker intentionally does not belong to either scene. GD can pause the
-// transition scene while swapping between an editor and its play scene, which
-// also pauses the action / selector that normally completes the transition.
-// A scheduler target that is not parented to a scene remains alive and can
-// recover that otherwise permanent transition lock.
+// Not parented to either scene on purpose: GD can pause the transition scene
+// itself, freezing the completing selector into a permanent lock.
 class LevelTransitionWatchdog final : public CCNode {
 public:
     static LevelTransitionWatchdog* get() {
@@ -176,10 +173,8 @@ public:
         if (!node || !action) return;
         action->setTag(m_tag);
         node->runAction(action);
-        // On level exit the PlayLayer is paused, so its objects are paused
-        // targets in the action manager. A paused target also pauses newly
-        // added actions, which would freeze the exit animation. Resume the
-        // target so our action always advances (no-op when not paused).
+        // Paused targets freeze newly added actions; resume so the exit
+        // animation advances (no-op when not paused).
         if (auto* manager = node->getActionManager()) manager->resumeTarget(node);
         m_actions.push_back({node, action});
     }
@@ -200,6 +195,8 @@ private:
     std::vector<TrackedAction> m_actions;
 };
 
+// Enter fakes running instead of calling onEnter: nodes attached mid-transition
+// must enter, while the scene itself enters for real at the deferred switch.
 void setRunningRecursive(CCNode* node, bool running) {
     if (!node) return;
     node->m_bRunning = running;
@@ -249,6 +246,8 @@ void centerMenu(CCNode* menu, bool useScreenCenter = true) {
 }
 
 class LevelEffectsTransitionScene final : public CCTransitionScene {
+// Manual handoff instead of CCTransitionScene's: the switch is deferred to
+// switchToIncoming (replaceScene drives the real enter), so base enter/exit are skipped.
 public:
     static LevelEffectsTransitionScene* create(
         CCScene* destination,
@@ -337,11 +336,8 @@ public:
             nullptr
         ));
 
-        // Entering the destination scene (esp. on exit, e.g. LevelInfoLayer) can
-        // stall a frame while it loads. That stall lands as a huge dt on the next
-        // tick, which would fast-forward every action here and snap the transition
-        // straight to the end. Drop that accumulated time so the animation starts
-        // from a clean frame.
+        // Entering the destination can stall a frame; that huge dt would
+        // fast-forward every action, so drop the accumulated time.
         CCDirector::get()->setNextDeltaTimeZero(true);
     }
 
@@ -409,9 +405,6 @@ private:
             m_direction == TransitionDirection::Enter ? "entry" : "exit"
         );
 
-        // finishTransition restores every node and prepares the exact same
-        // destination as the normal path. Bypass only the selector that failed
-        // to run, then ask CCDirector to switch scenes immediately.
         if (!m_finished) finishTransition();
         unschedule(schedule_selector(LevelEffectsTransitionScene::switchToIncoming));
         switchToIncoming(0.f);
@@ -903,9 +896,6 @@ private:
         }
     }
 
-    // The outgoing page scatters while the level appears; on the way out the
-    // same elements settle into the destination page. Capture only matters for
-    // the incoming side: the outgoing scene dies with the transition.
     void moveNodes(CCNode* layer, std::initializer_list<char const*> ids,
                    CCPoint delta, bool incoming) {
         if (!layer) return;
@@ -1007,10 +997,8 @@ private:
         }
     }
 
-    // Pause and end-screen menus float above the frozen level and hard-cut with
-    // it. The dim is the layer itself and cascade opacity is not guaranteed on
-    // GD's layers, so the layer and each child fade on their own while the
-    // content slides off in the style's direction.
+    // Cascade opacity is not guaranteed on GD's layers, so the layer and each
+    // child fade on their own.
     void animateOverlayMenu(CCNode* overlay) {
         if (!overlay) return;
         auto profile = styleProfile(m_config.style, m_config.intensity);
@@ -1314,6 +1302,10 @@ void endLevelExitTransition() {
 
 bool isLevelExitTransitionPending() {
     return s_levelExitPending.load();
+}
+
+void shutdownLevelTransitionWatchdog() {
+    LevelTransitionWatchdog::get()->disarm(nullptr);
 }
 
 } // namespace paimon::transitions

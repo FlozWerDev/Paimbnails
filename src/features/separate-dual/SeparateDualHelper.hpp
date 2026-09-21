@@ -1,17 +1,7 @@
 #pragma once
 
-// Separate 2nd player's kit from your own.
-// Idea inspired by Weebify's "Separate Dual Icons" mod, available on the
-// Geode mod index (mods.geode-sdk.org).
-//
-// Rewritten for Paimbnails from the behavior spec (2026-09-20): same
-// user-visible behavior, own architecture and code. Icon storage is a
-// slot table instead of per-icon accessors, kit swaps go through a flat
-// snapshot, and trail/ship-fire tuning comes from data tables. The on-disk
-// save schema (key names) is intentionally preserved so existing
-// second-player kits keep working, and the node IDs "player2-icon",
-// "swap-2p-button" and "2p-toggler" are kept because icon-gradients reads
-// them. No code from the original mod remains.
+// Rewritten from the behavior spec (no original code remains); save keys and
+// node IDs stay compatible so existing kits and icon-gradients keep working.
 
 #include <Geode/Geode.hpp>
 #include "../../core/modules/ModuleRegistry.hpp"
@@ -47,10 +37,7 @@ enum class IconSlot : int {
     Count,
 };
 
-// Save keys shared with already-shipped versions: do not rename. The odd
-// historical names ("roll" for ball, "bird" for ufo, ...) and the lasttype
-// codes below are part of the on-disk schema, as is the "2pselected" flag
-// that icon-gradients reads.
+// Save keys match already-shipped versions: do not rename (on-disk schema).
 namespace save_key {
 constexpr char const* kSeeded = "sdi-seeded";
 constexpr char const* kSidePicked = "2pselected";

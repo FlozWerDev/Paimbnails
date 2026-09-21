@@ -27,12 +27,8 @@ int nearestCluster(float h, float s, float v,
     return best;
 }
 
-// Border ratios for every cluster in a single image pass. The nearest
-// assignment per pixel is computed once instead of once per cluster, so
-// classify() drops from k full passes (each re-running toHSV + nearest over
-// every pixel) to one. Values are identical: same per-pixel math, same
-// integer counts, same final division — and clusters the clusterer marked
-// empty still report 0, exactly like the per-cluster early-out did.
+// Single-pass border ratios for all clusters; values identical to k passes
+// (same math, same counts — empty clusters still report 0).
 std::vector<float> computeAllBorderRatios(ImageBuffer const& sprite,
                                           ColorCluster const* allClusters,
                                           int clusterCount) {

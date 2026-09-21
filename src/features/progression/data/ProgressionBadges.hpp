@@ -72,8 +72,6 @@ BadgeContext makeContext(PlayerStats const& stats);
 
 std::vector<BadgeDef> const& allBadges();
 std::vector<BadgeCategory> const& allCategories();
-std::vector<BadgeDef const*> badgesInCategory(std::string_view category);
-BadgeDef const* findBadge(std::string_view id);
 
 // Global rank counts down, everything else counts up.
 bool metricIsInverted(BadgeMetric metric);
@@ -82,9 +80,6 @@ int64_t metricValue(BadgeContext const& ctx, BadgeMetric metric);
 bool isUnlocked(BadgeDef const& badge, BadgeContext const& ctx);
 float badgeProgress(BadgeDef const& badge, BadgeContext const& ctx);
 int unlockedCount(BadgeContext const& ctx);
-
-// Highest-rarity unlocked badge, used for the profile chip's accent.
-BadgeDef const* highestUnlocked(BadgeContext const& ctx);
 
 cocos2d::ccColor3B rarityColor(BadgeRarity rarity);
 // Rarity paints the frame, the category paints the face behind the glyph.

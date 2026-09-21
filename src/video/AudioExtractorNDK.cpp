@@ -13,9 +13,8 @@
 
 namespace paimon::video {
 
-// Decode the first audio track of a media file to interleaved 16-bit PCM via
-// MediaCodec and write it to a cached WAV. MediaCodec audio decoders output
-// ENCODING_PCM_16BIT by default, so the WAV is always 16-bit.
+// Decode the first audio track to interleaved 16-bit PCM via MediaCodec;
+// output is ENCODING_PCM_16BIT by default, so the WAV is always 16-bit.
 AudioPcm extractAudioToPcm(const std::string& videoPath) {
     std::lock_guard lock(detail::audioExtractorMutex());
 

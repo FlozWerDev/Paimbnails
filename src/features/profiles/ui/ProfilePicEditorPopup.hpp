@@ -56,8 +56,6 @@ protected:
 
     geode::Ref<cocos2d::CCTexture2D> m_previewTexture;
 
-    bool m_triggeredDownload = false;
-
     bool init();
 
     void createTabs();
@@ -125,7 +123,6 @@ protected:
     void onResetAll(cocos2d::CCObject* sender);
 
     void rebuildPreview();
-    void triggerImageDownloadIfNeeded();
 
     void onSave(cocos2d::CCObject* sender);
 

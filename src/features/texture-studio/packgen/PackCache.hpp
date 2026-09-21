@@ -1,16 +1,6 @@
 #pragma once
-// PackCache: byte-budgeted LRU blob cache for PackGen v2.
-//
-// Two tiers:
-//   - memory: unordered_map<NodeKey, Blob> + LRU list, bounded by byte budget.
-//   - disk: optional directory of files named <hexhash>_v<version>.bin plus a
-//     tiny index kept in memory. Disk entries are validated by (hash,version,
-//     schema) before use so stale caches never poison a build.
-//
-// Pure C++17 (filesystem). No Geode, no logging, no threads inside: the
-// scheduler serializes access, or the caller holds an external mutex.
-// All I/O errors are reported as false/empty, never thrown, so the legacy
-// engine can treat a cache miss exactly like "recompute".
+// PackCache: byte-budgeted LRU blob cache (memory + disk). Entries validate
+// by (hash, version, schema), so stale caches read as misses, never poison.
 
 #include <cstddef>
 #include <cstdint>

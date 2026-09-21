@@ -12,11 +12,8 @@ namespace paimon::versus {
 class VersusCardNode : public cocos2d::CCNode {
 public:
     static VersusCardNode* create(CardId id, float width);
-    // Face down, for a card still travelling to the hand.
-    static VersusCardNode* createBack(float width);
 
     void setCard(CardId id);
-    void flipToFace(CardId id);
     void playDraw(float delay);
 
     CardId card() const { return m_card; }

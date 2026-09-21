@@ -80,9 +80,8 @@ bool BanListPopup::init() {
                     }
                 }
 
-                // Only iterate when 'details' is actually an object: matjson's
-                // begin()/end() extract a std::vector<Value> and throw on a
-                // non-container, so a missing/scalar 'details' would crash here.
+                // matjson iterators throw on non-containers, so guard 'details':
+                // a missing/scalar value would crash here.
                 if (root["details"].isObject()) {
                     for (auto const& val : root["details"]) {
                         if (!val.isObject()) continue;

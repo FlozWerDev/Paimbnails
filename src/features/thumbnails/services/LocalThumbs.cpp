@@ -13,6 +13,7 @@
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
+#include "../../auto-preview/services/AutoPreviewStore.hpp"
 
 using namespace geode::prelude;
 
@@ -81,10 +82,8 @@ LocalThumbs& LocalThumbs::get() {
             geode::utils::thread::setName("PaimonLocalThumbs");
             self->initCache();
         });
-        // Spawn is rejected once ThreadTracker is shutting down (e.g. the first
-        // get() of the session happens inside the exit sequence). Nobody will
-        // ever set m_cacheInitialized then, so mark it here or shutdown() burns
-        // its full timeout waiting on a thread that never ran.
+        // Spawn rechazado en shutdown: nadie marcaria m_cacheInitialized y
+        // shutdown() quemaria su timeout esperando un hilo que nunca corrio.
         if (!started) {
             self->m_cacheInitialized.store(true, std::memory_order_release);
         }
@@ -105,6 +104,11 @@ std::filesystem::path LocalThumbs::dir() const {
         }
     }
     return d;
+}
+
+bool LocalThumbs::has(int32_t levelID) const {
+    if (getThumbPath(levelID).has_value()) return true;
+    return paimon::autopreview::AutoPreviewStore::get().has(levelID);
 }
 
 std::optional<std::string> LocalThumbs::getThumbPath(int32_t levelID) const {
@@ -214,6 +218,10 @@ std::optional<std::string> LocalThumbs::findAnyThumbnail(int32_t levelID) const 
         auto p = qualityCacheDir / (std::to_string(levelID) + ext);
         if (std::filesystem::exists(p, ecFind)) return store(geode::utils::string::pathToString(p));
     }
+
+    // Generated browser previews live in the auto-preview store, same .rgb format.
+    auto previewPath = paimon::autopreview::AutoPreviewStore::get().dir() / (std::to_string(levelID) + ".rgb");
+    if (std::filesystem::exists(previewPath, ecFind)) return store(geode::utils::string::pathToString(previewPath));
 
     return store(std::nullopt);
 }
@@ -445,6 +453,12 @@ CCTexture2D* LocalThumbs::loadTexture(int32_t levelID) const {
         return tex;
     }
 
+    // Same store as above, via its own reader + RAM cache.
+    if (auto tex = paimon::autopreview::AutoPreviewStore::get().loadTexture(levelID)) {
+        cacheTexture(levelID, tex);
+        return tex;
+    }
+
     log::debug("[LocalThumbs] loadTexture: not found levelID={}", levelID);
     return nullptr;
 }
@@ -563,37 +577,8 @@ bool LocalThumbs::saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, 
     return true;
 }
 
-bool LocalThumbs::saveFromRGBA(int32_t levelID, const uint8_t* data, uint32_t width, uint32_t height) {
-    if (!data || width == 0 || height == 0) return false;
-
-    size_t pixelCount = static_cast<size_t>(width) * height;
-    std::vector<uint8_t> rgbData(pixelCount * 3);
-
-    for (size_t i = 0; i < pixelCount; ++i) {
-        rgbData[i * 3 + 0] = data[i * 4 + 0];
-        rgbData[i * 3 + 1] = data[i * 4 + 1];
-        rgbData[i * 3 + 2] = data[i * 4 + 2];
-    }
-
-    return saveRGB(levelID, rgbData.data(), width, height);
-}
-
 std::filesystem::path LocalThumbs::mappingFile() const {
     return dir() / "filename_mapping.txt";
-}
-
-void LocalThumbs::storeFileMapping(int32_t levelID, std::string const& fileName) {
-    m_fileMapping[levelID] = fileName;
-    saveMappings();
-    log::info("mapping guardado: {} -> {}", levelID, fileName);
-}
-
-std::optional<std::string> LocalThumbs::getFileName(int32_t levelID) const {
-    auto it = m_fileMapping.find(levelID);
-    if (it != m_fileMapping.end()) {
-        return it->second;
-    }
-    return std::nullopt;
 }
 
 void LocalThumbs::loadMappings() {
@@ -619,20 +604,6 @@ void LocalThumbs::loadMappings() {
         }
     }
     log::info("se cargaron {} mappings", count);
-}
-
-void LocalThumbs::saveMappings() {
-    std::string content;
-    for (auto const& [levelID, fileName] : m_fileMapping) {
-        content += fmt::format("{} {}\n", levelID, fileName);
-    }
-    auto res = file::writeString(mappingFile(), content);
-    if (!res) {
-        log::error("error guardando mappings en {}: {}",
-            geode::utils::string::pathToString(mappingFile()), res.unwrapErr());
-        return;
-    }
-    log::debug("se guardaron {} mappings", m_fileMapping.size());
 }
 
 void LocalThumbs::shutdown() {

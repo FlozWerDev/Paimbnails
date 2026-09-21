@@ -81,12 +81,8 @@ namespace {
 #endif
     }
 
-    // Flow guard for the PlayLayer keybind capture: true from the keypress
-    // until its preview popup closes (the popup owns the pixels by then).
-    // Distinct from paimon::isCaptureInProgress(), which only covers the GPU
-    // capture in flight — the popup clears that global flag once pixels land.
-    // Both are checked on acquire because PauseLayer/overlay are independent
-    // producers of the global flag.
+    // Keybind-capture flow guard (keypress until popup close), distinct from
+    // isCaptureInProgress() (GPU flight only); both are checked on acquire.
     std::atomic_bool s_captureFlowActive{false};
     constexpr float kPauseZoomStep = 0.18f;
     constexpr float kPauseZoomMin = 1.0f;

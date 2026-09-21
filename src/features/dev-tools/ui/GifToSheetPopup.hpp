@@ -37,7 +37,6 @@ protected:
     cocos2d::CCLabelBMFont* m_infoLabel = nullptr;
     cocos2d::CCLabelBMFont* m_previewHint = nullptr;
     geode::TextInput* m_colsInput = nullptr;
-    cocos2d::CCNode* m_previewBox = nullptr;
     cocos2d::CCSprite* m_previewSprite = nullptr;
     PaimonLoadingOverlay* m_busyOverlay = nullptr;
 };

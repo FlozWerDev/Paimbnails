@@ -52,11 +52,14 @@ void CoverBlurBackground::setCoverFromPath(const std::string& absolutePath) {
         Mod::get()->getSavedValue<double>("menuMusicBlurIntensity", 5.0));
     if (intensity <= 0.f) intensity = 6.f;
 
-    auto callback = [this, gen](CCSprite* blurred) {
+    auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
+    auto callback = [weakThis, gen](CCSprite* blurred) {
         if (!blurred) return;
-        // gen distinto => llego otro setCoverFromPath: descartar callback obsoleto.
-        if (gen != m_generation) return;
-        applyBlurFromTexture(blurred->getTexture(), gen);
+        auto ref = weakThis.lock();
+        auto* self = ref ? typeinfo_cast<CoverBlurBackground*>(ref.data()) : nullptr;
+        // Nodo destruido u otro setCoverFromPath posterior => blur obsoleto.
+        if (!self || gen != self->m_generation) return;
+        self->applyBlurFromTexture(blurred->getTexture(), gen);
     };
 
     BlurSystem::getInstance()->buildPaimonBlurPriority(

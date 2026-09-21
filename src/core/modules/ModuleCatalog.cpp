@@ -1,8 +1,7 @@
 #include "ModuleRegistry.hpp"
 
-// The full Paimbnails module catalog. Ids are canonical and user visible:
-// paimbnails.<feature>.<section>. Keys are whatever storage the feature already
-// had, so toggling from here is the same as toggling from mod.json settings.
+// Full module catalog: canonical user-visible ids over each feature's existing
+// storage, so toggling here equals toggling in mod.json settings.
 
 namespace paimon::modules {
 

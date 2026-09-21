@@ -7,15 +7,10 @@ class ProgressBarEditOverlay : public cocos2d::CCLayer {
 public:
     static ProgressBarEditOverlay* create();
 
-    // Activates edit mode. Detaches every non-gameplay node from
-    // the scene so only PlayLayer stays visible, then installs
-    // this overlay as a direct child.
     static void enterEditMode();
 
     // Deactivates edit mode, restoring previously-detached nodes.
     static void exitEditMode();
-
-    static bool isActive();
 
     // Which element the user is currently interacting with.
     enum class Target {
@@ -58,9 +53,6 @@ protected:
     // additive (delta-based) rather than absolute.
     void storeOrigValues();
 
-    // Validate that m_selected* / m_drag* still reference valid
-    // decorations; clears them if they don't. Called every frame and
-    // when a decoration removal event fires.
     void validateSelection();
 
     // Which element is currently selected (shows native GD buttons).
@@ -69,7 +61,6 @@ protected:
 
     // Container for selection outline + native GD button handles.
     cocos2d::CCNode* m_selContainer = nullptr;
-    cocos2d::CCRect  m_selRect;         // world-space AABB of selected element
 
     // Active drag state (body or a handle was grabbed).
     Target m_dragTarget = Target::None;

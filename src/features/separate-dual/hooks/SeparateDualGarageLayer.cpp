@@ -45,10 +45,7 @@ constexpr GaragePickRow kGaragePicks[] = {
 constexpr int kSelectionTransitionTag = 2401;
 constexpr float kSelectionTransitionDuration = 0.2f;
 
-// GJ_2PSwapBtn.png nunca se llego a empaquetar con el mod, y sin el el boton
-// salia como el cuadro rosa de textura perdida. La cadena baja al glifo de las
-// dos flechas en circulo, que es el icono de intercambio de toda la vida y
-// ademas llena bien el boton redondo.
+// GJ_2PSwapBtn.png nunca se empaqueto: se baja al glifo vanilla de intercambio.
 CircleButtonSprite* makeSwapSprite() {
     if (auto* own = paimon::SpriteHelper::safeCreate("GJ_2PSwapBtn.png"_spr)) {
         return CircleButtonSprite::create(own, CircleBaseColor::Green, CircleBaseSize::Medium);
@@ -266,10 +263,7 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
         }
     }
 
-    // Stores a player-2 pick from the table above. Shows the vanilla unlock
-    // popup and returns false when there is nothing new to store. Kinds with
-    // no table row (the old switch's default) are a no-op that still lets the
-    // caller refresh the doll.
+    // Stores a player-2 pick; false means vanilla already showed the unlock popup.
     bool storeSecondPick(IconType kind, int picked) {
         auto vault = DualKitVault::get();
         GaragePickRow const* row = nullptr;
@@ -385,10 +379,13 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
         playerMenu->setID("player-buttons-menu");
         this->addChild(playerMenu);
 
-        auto hitArea = CCSprite::create("GJ_button_01.png");
-        hitArea->setOpacity(0);
-        auto pickFirst = CCMenuItemSpriteExtra::create(hitArea, this, menu_selector(PaimonSeparateDualGarage::on2PToggle));
-        auto pickSecond = CCMenuItemSpriteExtra::create(hitArea, this, menu_selector(PaimonSeparateDualGarage::on2PToggle));
+        auto hitAreaFor = [] {
+            auto hit = CCSprite::create("GJ_button_01.png");
+            hit->setOpacity(0);
+            return hit;
+        };
+        auto pickFirst = CCMenuItemSpriteExtra::create(hitAreaFor(), this, menu_selector(PaimonSeparateDualGarage::on2PToggle));
+        auto pickSecond = CCMenuItemSpriteExtra::create(hitAreaFor(), this, menu_selector(PaimonSeparateDualGarage::on2PToggle));
 
         pickFirst->setPosition(m_playerObject->getPosition());
         pickSecond->setPosition(m_fields->secondDoll->getPosition());

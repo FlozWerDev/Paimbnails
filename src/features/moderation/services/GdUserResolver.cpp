@@ -42,9 +42,7 @@ void resolveUsername(
                 return;
             }
 
-            // Response is "user1|user2|...". The search is ranked, so the first
-            // entry is the best match. Pick an exact (case-insensitive) name
-            // match if present, otherwise the first result.
+            // Ranked search: prefer an exact name match, else the first result.
             auto entries = geode::utils::string::split(response, "|");
             std::string wantLower = geode::utils::string::toLower(trimmed);
 

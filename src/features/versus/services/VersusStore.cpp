@@ -18,7 +18,6 @@ constexpr char const* kModeKey    = "versus-mode";
 constexpr char const* kFormatKeyC = "versus-format-classic";
 constexpr char const* kFormatKeyP = "versus-format-platformer";
 constexpr char const* kHudKey     = "versus-hud";
-constexpr char const* kMuteKey    = "versus-mute-taunts";
 constexpr char const* kFriendsKey = "versus-friends-only";
 
 int64_t intField(matjson::Value const& v, char const* key, int64_t fallback = 0) {
@@ -108,7 +107,6 @@ void VersusStore::load() {
     m_classicFormat = formatFromId(mod->getSavedValue<std::string>(kFormatKeyC, "race"));
     m_platformerFormat = formatFromId(mod->getSavedValue<std::string>(kFormatKeyP, "race"));
     m_hud = mod->getSavedValue<bool>(kHudKey, true);
-    m_mutedTaunts = mod->getSavedValue<bool>(kMuteKey, false);
     m_friendsOnly = mod->getSavedValue<bool>(kFriendsKey, false);
 }
 
@@ -196,11 +194,6 @@ void VersusStore::setPreferredFormat(Mode mode, Format format) {
 void VersusStore::setHudEnabled(bool enabled) {
     m_hud = enabled;
     Mod::get()->setSavedValue<bool>(kHudKey, enabled);
-}
-
-void VersusStore::setTauntsMuted(bool muted) {
-    m_mutedTaunts = muted;
-    Mod::get()->setSavedValue<bool>(kMuteKey, muted);
 }
 
 void VersusStore::setFriendsOnly(bool value) {

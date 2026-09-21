@@ -233,12 +233,14 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         snapshot();
     }
 
+    $override
     void setString(gd::string text) {
         m_fields->programmatic = true;
         CCTextInputNode::setString(text);
         m_fields->programmatic = false;
     }
 
+    $override
     void refreshLabel() {
         if (m_fields->programmatic || !m_selected || getParentByType<SettingNodeV3>(0)) {
             plainRefresh();
@@ -277,7 +279,6 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         CCTextInputNode::refreshLabel();
         m_fields->lastText = newStr;
 
-// Clear entrance actions on reused glyphs after createFontChars.
         settle();
         snapshot();
 

@@ -42,9 +42,6 @@ public:
         );
     }
 
-    // Authorize against the tier declared by a registered feature.
-    AuthResult authorizeFeature(std::string const& featureName) const;
-
     static std::string tierName(PermissionTier tier) {
         switch (tier) {
             case PermissionTier::Viewer:      return "Viewer";

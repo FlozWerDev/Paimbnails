@@ -1,8 +1,7 @@
 #pragma once
 
 // Estado compartido de Paimon RTX: carga/guarda la config y decide si el
-// postproceso debe correr en la escena actual. El renderer lo consulta una vez
-// por fotograma desde swapBuffers.
+// postproceso corre en la escena actual (el renderer lo consulta por fotograma).
 
 #include "RTXConfig.hpp"
 

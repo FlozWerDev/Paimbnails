@@ -16,7 +16,6 @@ inline constexpr char const* collab = "paim_collab.png";
 // True if the mod ships a usable custom PNG for this basename.
 bool hasCustom(char const* preferredPaim);
 
-// Boton circular con click.
 CCMenuItemSpriteExtra* circleButton(
     char const* preferredPaim,
     std::initializer_list<char const*> fallbacks,

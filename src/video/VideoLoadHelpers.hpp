@@ -8,9 +8,8 @@
 
 namespace paimon::video {
 
-// Pure mapping: saved "video-quality" (0=Auto, 50=Low, 75=Medium, 100=High)
-// → longest-side decode cap in px (0 = native / no cap).
-// Shared by Settings::videoMaxDecodeDimension and unit tests.
+// Saved "video-quality" (0=Auto, 50=Low, 75=Medium, 100=High) → longest-side
+// decode cap in px (0 = native). Shared with Settings and unit tests.
 inline int maxDecodeDimensionForQuality(int quality) {
     switch (quality) {
         case 100: return 0;     // High: native
@@ -20,9 +19,8 @@ inline int maxDecodeDimensionForQuality(int quality) {
     }
 }
 
-// Stable async download key. Prefer cacheKey when present (identity of the
-// asset); otherwise fall back to a normalized URL so query cache-busters
-// don't spawn duplicate downloads.
+// Stable async download key: cacheKey when present, else normalized URL so
+// query cache-busters don't spawn duplicate downloads.
 inline std::string makeVideoRequestKey(std::string_view url, std::string_view cacheKey) {
     if (!cacheKey.empty()) {
         return std::string("cache:") + std::string(cacheKey);
@@ -59,9 +57,8 @@ inline std::string playerCacheStoreKey(std::string_view filePath, std::string_vi
     return std::string(logicalKey);
 }
 
-// Pure model of the version-gated settings snapshot used by
-// videoMaxDecodeDimension() / adaptiveSpriteFPS(). When `version` advances
-// (invalidateSettingsCache), the next call re-evaluates quality.
+// Version-gated snapshot for videoMaxDecodeDimension()/adaptiveSpriteFPS():
+// when version advances the next call re-evaluates quality.
 struct DecodeDimSnapshot {
     int cachedDim = -1;
     uint64_t cachedVer = UINT64_MAX;

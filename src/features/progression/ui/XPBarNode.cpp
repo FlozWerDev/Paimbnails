@@ -58,10 +58,6 @@ void XPBarNode::setTier(Tier const& tier) {
     if (m_bar) m_bar->setFillColor(tier.base);
 }
 
-void XPBarNode::setLabelVisible(bool visible) {
-    if (m_label) m_label->setVisible(visible);
-}
-
 void XPBarNode::setLevelUpCallback(std::function<void(int)> callback) {
     m_onLevelUp = std::move(callback);
 }

@@ -80,7 +80,6 @@ class $modify(PaimonMenuLoopMenuLayer, MenuLayer) {
         if (auto* geodify = loader->getLoadedMod("omgrod.geodify")) {
             sm.setGeodify(geodify->getSettingValue<bool>("menu-loop"));
         }
-        sm.setSawbladeCustomSongsFolder(loader->isModLoaded("sawblade.custom_song_folder"));
         if (auto* colonStartTime = loader->getLoadedMod("colon.menu_loop_start_time")) {
             sm.setColonMenuLoopStartTime(colonStartTime);
         }

@@ -20,4 +20,5 @@ using MediaCallback = std::function<void(std::shared_ptr<TransitionMedia>, std::
 // uploads and callbacks run on the main thread, never inside a scene hook.
 void prepareTransitionMedia(std::string const& path, MediaCallback callback = {});
 std::shared_ptr<TransitionMedia> findTransitionMedia(std::string const& path);
+void shutdownTransitionMedia();
 } // namespace paimon::transitions

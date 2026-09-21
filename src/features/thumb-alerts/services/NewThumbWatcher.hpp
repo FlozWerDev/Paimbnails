@@ -9,9 +9,8 @@
 
 namespace paimon::thumbalerts {
 
-// Polls /api/latest-uploads and hands whatever is new to the alert queue. The
-// ids already announced live in the save file, so reopening the game does not
-// replay the same cards.
+// Polls /api/latest-uploads and hands new items to the alert queue. Announced
+// ids persist in the save file, so reopening the game replays nothing.
 class NewThumbWatcher {
 public:
     static NewThumbWatcher& get();

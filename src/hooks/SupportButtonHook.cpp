@@ -3,6 +3,8 @@
 #include "../layers/PaimonSupportLayer.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 
+#include <optional>
+
 using namespace geode::prelude;
 
 class SupportButtonHandler : public CCNode {

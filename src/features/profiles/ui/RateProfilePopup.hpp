@@ -9,8 +9,6 @@ protected:
     int m_accountID;
     std::string m_targetUsername;
     float m_rating = 0.f;
-    float m_currentAverage = 0.f;
-    int m_totalVotes = 0;
     std::vector<CCMenuItemSpriteExtra*> m_starBtns;
     std::vector<cocos2d::CCNode*> m_starFillClips;
     float m_starWidth = 0.f;
@@ -19,7 +17,6 @@ protected:
     cocos2d::CCLabelBMFont* m_averageLabel = nullptr;
     cocos2d::CCLabelBMFont* m_countLabel = nullptr;
     cocos2d::CCLabelBMFont* m_selectedLabel = nullptr;
-    cocos2d::CCNode* m_starHighlight = nullptr;
     PaimonLoadingOverlay* m_loadingSpinner = nullptr;
 
     bool init(int accountID, std::string const& targetUsername);

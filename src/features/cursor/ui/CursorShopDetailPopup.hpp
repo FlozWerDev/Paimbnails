@@ -1,10 +1,6 @@
 #pragma once
 
-// Ficha de un set/pack de la tienda: rejilla con todos sus cursores, vista
-// previa grande del seleccionado e instalacion (uno suelto o el set entero).
-//
-// Las descargas salen de aqui, nunca del listado: los dos sitios piden que no
-// se rastreen sus rutas de fichero, asi que solo se baja lo que el usuario pide.
+// Ficha del set/pack: las descargas salen de aqui, nunca del listado (las tiendas piden no rastrear).
 
 #include <Geode/Geode.hpp>
 #include "../services/CursorShopClient.hpp"

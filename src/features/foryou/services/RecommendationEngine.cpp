@@ -174,7 +174,7 @@ std::vector<FeedQuery> RecommendationEngine::buildTagQueries(
     // Type19 ignores filters; request every supplied ID for scoring.
     auto obj = makeSearchObject(SearchType::Type19, ids, "-1", "-1", 0,
                                 false, false, false, 0, false, 0);
-    if (obj) queries.push_back({source, obj, "Tags"});
+    if (obj) queries.push_back({obj});
     return queries;
 }
 
@@ -190,7 +190,7 @@ FeedQuery RecommendationEngine::buildDifficultyMatch(TasteSnapshot const& taste)
         taste.epicRatio >= 0.4f,
         0, false,
         demonFilter(taste.preferredDifficulty, taste.preferredDemonDifficulty));
-    return {FeedSource::DifficultyMatch, obj, "Difficulty"};
+    return {obj};
 }
 
 FeedQuery RecommendationEngine::buildFeatured(TasteSnapshot const& taste) {
@@ -204,7 +204,7 @@ FeedQuery RecommendationEngine::buildFeatured(TasteSnapshot const& taste) {
         taste.epicRatio >= 0.4f,
         0, false,
         demonFilter(taste.preferredDifficulty, taste.preferredDemonDifficulty));
-    return {FeedSource::Featured, obj, "Featured"};
+    return {obj};
 }
 
 FeedQuery RecommendationEngine::buildTrending(TasteSnapshot const& taste) {
@@ -218,7 +218,7 @@ FeedQuery RecommendationEngine::buildTrending(TasteSnapshot const& taste) {
         taste.featuredRatio >= 0.7f, false,
         0, false,
         demonFilter(taste.preferredDifficulty, taste.preferredDemonDifficulty));
-    return {FeedSource::Trending, obj, "Trending"};
+    return {obj};
 }
 
 FeedQuery RecommendationEngine::buildSimilar(TasteSnapshot const&) {
@@ -227,7 +227,7 @@ FeedQuery RecommendationEngine::buildSimilar(TasteSnapshot const&) {
 
     auto obj = makeSearchObject(SearchType::Similar, std::to_string(seedLevel),
                                 "-1", "-1", 0, false, false, false, 0, false, 0);
-    return {FeedSource::Similar, obj, "Similar"};
+    return {obj};
 }
 
 FeedQuery RecommendationEngine::buildFavoriteCreator(TasteSnapshot const& taste) {
@@ -238,7 +238,7 @@ FeedQuery RecommendationEngine::buildFavoriteCreator(TasteSnapshot const& taste)
 
     auto obj = makeSearchObject(SearchType::UsersLevels, std::to_string(creatorID),
                                 "-1", "-1", 0, false, false, false, 0, false, 0);
-    return {FeedSource::FavoriteCreator, obj, "Favourite creator"};
+    return {obj};
 }
 
 FeedQuery RecommendationEngine::buildTopCreator(TasteSnapshot const& taste) {
@@ -249,7 +249,7 @@ FeedQuery RecommendationEngine::buildTopCreator(TasteSnapshot const& taste) {
 
     auto obj = makeSearchObject(SearchType::UsersLevels, std::to_string(creatorID),
                                 "-1", "-1", 0, false, false, false, 0, false, 0);
-    return {FeedSource::TopCreator, obj, "Creator"};
+    return {obj};
 }
 
 FeedQuery RecommendationEngine::buildSongMatch(TasteSnapshot const& taste) {
@@ -263,7 +263,7 @@ FeedQuery RecommendationEngine::buildSongMatch(TasteSnapshot const& taste) {
         SearchType::Search, "",
         difficultyFilter(taste.preferredDifficulty), "-1", 0,
         false, false, false, songID, true, 0);
-    return {FeedSource::SongMatch, obj, "Song"};
+    return {obj};
 }
 
 FeedQuery RecommendationEngine::buildExplore(TasteSnapshot const& taste) {
@@ -276,7 +276,7 @@ FeedQuery RecommendationEngine::buildExplore(TasteSnapshot const& taste) {
     auto obj = makeSearchObject(SearchType::Awarded, "",
                                 std::to_string(shifted), "-1",
                                 pageDist(rng()), false, false, false, 0, false, 0);
-    return {FeedSource::Explore, obj, "Explore"};
+    return {obj};
 }
 
 std::vector<FeedQuery> RecommendationEngine::buildNativeQueries(

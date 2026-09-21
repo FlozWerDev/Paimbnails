@@ -8,7 +8,6 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/cocos/CCDirector.h>
-#include <Geode/cocos/layers_scenes_transitions_nodes/CCScene.h>
 
 using namespace geode::prelude;
 
@@ -24,8 +23,6 @@ constexpr char const* kKeyMidMult    = "beat-shaders-mid-mult";
 constexpr char const* kKeyTrebleMult = "beat-shaders-treble-mult";
 constexpr char const* kKeyBeatMult   = "beat-shaders-beat-mult";
 constexpr char const* kKeyEnergyMult = "beat-shaders-energy-mult";
-
-constexpr int kHijackedSpriteTag = 0x4245415;
 
 std::string layerEnabledKey(std::string const& layer) {
     return std::string("beat-shaders-layer-") + layer;
@@ -49,7 +46,6 @@ public:
     cocos2d::CCSize                 m_winSize;
     std::string                     m_shaderName;
     BeatShaderConfig                m_cfg;
-    Ref<cocos2d::CCLayer>           m_targetLayer;
 
     static BeatShaderVanillaSwap* createForLayer(
         CCLayer* layer,
@@ -72,7 +68,6 @@ public:
         m_winSize     = cocos2d::CCDirector::get()->getWinSize();
         m_shaderName  = shaderName;
         m_cfg         = cfg;
-        m_targetLayer = layer;
         this->setID("paimon-beat-vanilla-swap"_spr);
         this->setContentSize({0, 0});
         this->setVisible(false);
@@ -265,85 +260,6 @@ public:
         }
     }
 };
-
-class VanillaBgWrapper : public CCNode {
-public:
-    cocos2d::CCSprite* m_target = nullptr;
-    float              m_time   = 0.f;
-    cocos2d::CCSize    m_screenSize;
-
-    static VanillaBgWrapper* attach(cocos2d::CCSprite* target) {
-        if (!target) return nullptr;
-        if (auto* prev = target->getChildByID("paimon-beat-vanilla-tick"_spr)) {
-            return static_cast<VanillaBgWrapper*>(prev);
-        }
-        auto* w = new VanillaBgWrapper();
-        if (!w) return nullptr;
-        w->autorelease();
-        w->m_target = target;
-        w->setID("paimon-beat-vanilla-tick"_spr);
-        w->setVisible(false);
-        target->addChild(w);
-        w->m_screenSize = cocos2d::CCDirector::get()->getWinSize();
-        w->scheduleUpdate();
-        return w;
-    }
-
-    void update(float dt) override {
-        if (paimon::isRuntimeShuttingDown()) {
-            unscheduleUpdate();
-            return;
-        }
-        m_time += dt;
-        static uint64_t s_lastFrame = 0;
-        auto* director = cocos2d::CCDirector::get();
-        if (!director) return;
-        auto frame = static_cast<uint64_t>(director->getTotalFrames());
-        if (frame != s_lastFrame) {
-            s_lastFrame = frame;
-            PaimonAudio::get().update(dt);
-        }
-    }
-};
-
-void pushUniformsForVanillaSprite(cocos2d::CCSprite* sprite, BeatShaderConfig const& cfg) {
-    if (!sprite) return;
-    auto* shader = sprite->getShaderProgram();
-    if (!shader) return;
-    shader->use();
-    GLint loc;
-
-    auto winSize = cocos2d::CCDirector::get()->getWinSize();
-    loc = shader->getUniformLocationForName("u_intensity");
-    if (loc != -1) shader->setUniformLocationWith1f(loc, cfg.intensity);
-
-    loc = shader->getUniformLocationForName("u_screenSize");
-    if (loc != -1) shader->setUniformLocationWith2f(loc, winSize.width, winSize.height);
-}
-
-cocos2d::CCSprite* findVanillaBgSprite(cocos2d::CCLayer* layer) {
-    if (!layer) return nullptr;
-    static char const* ids[] = {"main-menu-bg", "background", "bg", "bg-texture", nullptr};
-    for (int i = 0; ids[i]; ++i) {
-        if (auto* node = layer->getChildByID(ids[i])) {
-            if (auto* spr = typeinfo_cast<cocos2d::CCSprite*>(node)) return spr;
-        }
-    }
-    auto* children = layer->getChildren();
-    if (!children) return nullptr;
-    auto ws = cocos2d::CCDirector::get()->getWinSize();
-    for (int i = 0; i < children->count(); ++i) {
-        auto* child = static_cast<cocos2d::CCNode*>(children->objectAtIndex(i));
-        auto* spr = typeinfo_cast<cocos2d::CCSprite*>(child);
-        if (!spr) continue;
-        auto cs = spr->getContentSize();
-        if (cs.width >= ws.width * 0.5f && cs.height >= ws.height * 0.5f
-            && spr->isVisible()) {
-            return spr;
-        }
-    }
-    return nullptr;
-}
 
 void collectShaderSprites(CCNode* node, std::vector<Shaders::ShaderBgSprite*>& out) {
     if (!node) return;

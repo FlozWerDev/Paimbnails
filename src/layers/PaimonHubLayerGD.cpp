@@ -734,7 +734,6 @@ void PaimonHubLayer::gdShowTourStep(int step) {
         gdEndTour();
         return;
     }
-    m_gdTourStep = step;
 
     if (m_gdTourOverlay) {
         m_gdTourOverlay->removeFromParent();

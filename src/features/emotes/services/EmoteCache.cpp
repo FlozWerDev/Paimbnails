@@ -186,16 +186,6 @@ void EmoteCache::evictRamIfNeeded() {
     }
 }
 
-size_t EmoteCache::ramCacheCount() const {
-    std::lock_guard lock(m_ramMutex);
-    return m_ramCache.size();
-}
-
-bool EmoteCache::isInRamCache(std::string const& name) const {
-    std::lock_guard lock(m_ramMutex);
-    return m_ramCache.find(name) != m_ramCache.end();
-}
-
 void EmoteCache::loadEmote(EmoteInfo const& info, TextureCallback callback) {
     {
         geode::Ref<CCTexture2D> cachedTexture = nullptr;
@@ -452,16 +442,11 @@ void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallb
 }
 
 void EmoteCache::initDecodeWorker() {
-    // Guard the whole check-then-spawn: enqueueDecode() calls this from the
-    // per-emote worker threads (loadEmote's spawn), so without the lock two
-    // threads could both pass a lock-free check, both spawn workers, and both
-    // emplace_back into m_decodeWorkers concurrently (vector data race +
-    // double the pool). enqueueDecode() takes this same mutex only afterwards,
-    // so there is no re-entrant lock.
+    // Check-then-spawn runs on per-emote workers, so hold the mutex or two
+    // threads spawn duplicate pools and race on the vector.
     std::lock_guard<std::mutex> lock(m_decodeMutex);
     if (m_decodeRunning.load(std::memory_order_acquire)) return;
 
-    m_decodeShutdown.store(false, std::memory_order_release);
     m_decodeRunning.store(true, std::memory_order_release);
 
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
@@ -480,7 +465,6 @@ void EmoteCache::shutdownDecodeWorker() {
 
     {
         std::lock_guard<std::mutex> lock(m_decodeMutex);
-        m_decodeShutdown.store(true, std::memory_order_release);
         m_decodeRunning.store(false, std::memory_order_release);
         m_decodeQueue.clear();
     }

@@ -1,12 +1,6 @@
 #pragma once
 
-// Shown when the For You feed wants Level Tags and it isn't installed.
-//
-// The tags are what let the feed reason about *what a level is* rather than
-// just how hard it is, so the popup explains that and then hands the user
-// straight to the mod's page in Geode's own mods list, where they can install
-// it in one click.
-
+// Tags let the feed reason about what a level is, not just how hard it is.
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <functional>

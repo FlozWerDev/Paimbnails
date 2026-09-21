@@ -1,6 +1,7 @@
 #include "MenuLoopManager.hpp"
 #include <Geode/utils/string.hpp>
 #include <ranges>
+#include <random>
 
 using namespace geode::prelude;
 using namespace paimon::menuloop;
@@ -31,19 +32,8 @@ static int randomIndex(int size) {
 }
 
 
-void MenuLoopManager::addSong(const std::string& path) {
-    if (std::ranges::find(m_songs, path) == m_songs.end()) {
-        m_songs.push_back(path);
-    }
-}
-
 void MenuLoopManager::removeSong(const std::string& path) {
     m_songs.erase(std::remove(m_songs.begin(), m_songs.end(), path), m_songs.end());
-}
-
-void MenuLoopManager::clearSongs() {
-    m_songs.clear();
-    m_songToSongDataMap.clear();
 }
 
 
@@ -99,22 +89,6 @@ void MenuLoopManager::setCurrentSong(const std::string& song) {
     updateCurrentSongMetadata();
 }
 
-void MenuLoopManager::setCurrentSongToSavedSong() {
-    if (!getOverrideSong().empty()) return;
-    const auto lastMenuLoop = Mod::get()->getSavedValue<std::string>("lastMenuLoop");
-    const auto lastMenuLoopPath = Mod::get()->getSavedValue<std::filesystem::path>("lastMenuLoopPath");
-    std::error_code existsEc1, existsEc2;
-    if (std::ranges::find(m_songs, lastMenuLoop) != m_songs.end()
-        && std::filesystem::exists(toProblematicString(lastMenuLoop), existsEc1) && !existsEc1) {
-        m_currentSong = lastMenuLoop;
-    } else if (const auto normalized = toNormalizedString(lastMenuLoopPath);
-        std::ranges::find(m_songs, normalized) != m_songs.end()
-        && std::filesystem::exists(lastMenuLoopPath, existsEc2) && !existsEc2) {
-        m_currentSong = toNormalizedString(lastMenuLoopPath);
-    }
-    updateCurrentSongMetadata();
-}
-
 
 void MenuLoopManager::setOverride(const std::string& path) {
     if (!isSupportedFile(path) && !path.empty()) {
@@ -139,18 +113,6 @@ std::string MenuLoopManager::getOverrideSong() const {
     if (!isSupportedFile(m_overrideSong)) return "";
     return m_overrideSong;
 }
-
-void MenuLoopManager::setCurrentSongToOverride() {
-    if (getAdvancedLogs()) log::info("setting current song to override");
-    const std::string& override = getOverrideSong();
-    if (override.empty() || !isSupportedFile(override)) {
-        if (getAdvancedLogs()) log::info("override is not valid");
-        return;
-    }
-    m_currentSong = override;
-    updateCurrentSongMetadata();
-}
-
 
 void MenuLoopManager::addToBlacklist(const std::string& song) {
     if (!getOverrideSong().empty()) return;
@@ -205,10 +167,6 @@ void MenuLoopManager::setHeldSong(const std::string& value) {
     m_heldSong = value;
 }
 
-void MenuLoopManager::resetHeldSong() {
-    m_heldSong.clear();
-}
-
 void MenuLoopManager::setPreviousSong(const std::string& value) {
     if (!isSupportedFile(value)) {
         if (getAdvancedLogs()) log::info("previous song is not valid");
@@ -216,11 +174,6 @@ void MenuLoopManager::setPreviousSong(const std::string& value) {
     }
     m_previousSong = value;
 }
-
-void MenuLoopManager::resetPreviousSong() {
-    m_previousSong = "";
-}
-
 
 void MenuLoopManager::saveLastMenuLoop() {
     if (m_isMenuLoop || !getOverrideSong().empty()) return;

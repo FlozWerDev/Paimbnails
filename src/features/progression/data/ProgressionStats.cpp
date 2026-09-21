@@ -120,9 +120,8 @@ void reconcileDemons(PlayerStats& stats) {
         stats.hasDemonInfo = false;
     }
 
-    // The other way around the breakdown is simply wrong: it hands out demon XP
-    // and demon badges to an account that never beat one. Drop it whole, weekly
-    // and gauntlet included, since those come from the same string.
+    // A breakdown bigger than the count is bogus; drop it whole, weekly and
+    // gauntlet included, since those come from the same string.
     if (stats.demonInfo.counted() > stats.demons) {
         stats.demonInfo = {};
         stats.hasDemonInfo = false;

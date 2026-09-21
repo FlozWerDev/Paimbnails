@@ -69,8 +69,6 @@ $on_game(Exiting) {
     shutdownProgressBarTicker();
 }
 
-// Drag overlay: full-screen touch layer that lets the user grab and move
-// the progress bar. Added to PauseLayer when free-drag is active.
 class ProgressBarDragLayer : public CCLayer {
 public:
     static ProgressBarDragLayer* create() {
@@ -105,7 +103,6 @@ public:
 
         auto worldPos = touch->getLocation();
 
-        // Build an AABB for the bar in world space with a 10px grab margin.
         auto bb = bar->boundingBox();
         auto* parent = bar->getParent();
         CCPoint bl = parent->convertToWorldSpace(ccp(bb.getMinX(), bb.getMinY()));
@@ -135,8 +132,6 @@ public:
     }
 };
 
-// PlayLayer hook: install ticker, invalidate baseline per level.
-
 class $modify(PaimonProgressBarPlayLayer, PlayLayer) {
     $override
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
@@ -157,7 +152,6 @@ class $modify(PaimonProgressBarPlayLayer, PlayLayer) {
     }
 };
 
-// PauseLayer hook: adds a config button and attaches the drag overlay when free-drag is active.
 class $modify(PaimonProgressBarPauseLayer, PauseLayer) {
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "PauseLayer::customSetup");

@@ -167,6 +167,7 @@ bool MyLevelFilterPopup::init() {
     m_mainLayer->addChild(m_songInput);
 
     auto trashSpr = CCSprite::createWithSpriteFrameName("GJ_trashBtn_001.png");
+    if (!trashSpr) return true;
     trashSpr->setScale(0.65f);
     auto trashBtn = CCMenuItemSpriteExtra::create(
         trashSpr, this, menu_selector(MyLevelFilterPopup::onTrash));

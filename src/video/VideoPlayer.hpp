@@ -114,7 +114,6 @@ private:
     PBOUploader m_pboUploader;
     PBOUploader m_pboUploaderYUV;
     bool m_pboInitAttempted = false;
-    std::atomic<uint64_t> m_gpuInitGeneration{0};
     // Outlives the player so deferred GPU-init lambdas cannot use freed state.
     std::shared_ptr<std::atomic<uint64_t>> m_gpuInitGate =
         std::make_shared<std::atomic<uint64_t>>(0);
@@ -163,8 +162,5 @@ private:
     mutable GLuint m_readbackFBO = 0;
     bool resolveYUVToRGBA();
 };
-
-// Re-apply GD's music volume to every live video audio track.
-void syncVideoAudioVolume();
 
 }

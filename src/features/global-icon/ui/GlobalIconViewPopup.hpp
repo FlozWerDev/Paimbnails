@@ -14,11 +14,9 @@ protected:
         GlobalIconSlot slot;
         cocos2d::CCNode* container = nullptr;   // owned by the scene graph
         SimplePlayer* preview = nullptr;
-        cocos2d::CCSprite* placeholder = nullptr;
     };
 
     int m_accountID = 0;
-    std::string m_username;
     std::vector<Cell> m_cells;
     int m_selected = -1;
     bool m_busy = false;

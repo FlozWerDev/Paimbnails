@@ -11,10 +11,6 @@
 
 namespace paimon::versus {
 
-// One modal for the whole run-up to a duel: the rival appears, both accept,
-// each vetoes a level, and the level opens. Splitting it in three popups would
-// only make the screen flicker between steps that are seconds apart, so instead
-// the three steps are drawn as a strip at the top and the one in play is lit.
 class VersusMatchPopup : public geode::Popup {
 public:
     static VersusMatchPopup* create();

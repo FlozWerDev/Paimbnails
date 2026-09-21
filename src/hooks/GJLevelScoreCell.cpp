@@ -281,10 +281,8 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
             return;
         }
 
-        // Color-to-transparent tint from the icon's primary color. Harmonized
-        // like the full gradient (hue preserved, neon/clalk parked) and laid
-        // on a real diagonal so wide cells show a blend, not a hard step.
-        // Wrapped in the same rounded clip as the full gradient.
+        // Diagonal tint so wide cells blend instead of hard-stepping; wrapped
+        // in the same rounded clip as the full gradient.
         ccColor3B iconColor = {100, 150, 255};
         if (auto* gm = GameManager::get())
             iconColor = gm->colorForIdx(score->m_color1);

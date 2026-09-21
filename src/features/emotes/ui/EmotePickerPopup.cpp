@@ -391,8 +391,7 @@ void EmotePickerPopup::rebuildCategorySidebar() {
             container, this,
             menu_selector(EmotePickerPopup::onCategoryClicked));
         btn->setPosition({SIDEBAR_W / 2, y + btnH / 2});
-        btn->setTag(static_cast<int>(
-            std::hash<std::string>{}(cat) & 0x7FFFFFFF));
+        btn->setUserObject(CCString::create(cat));
         m_catMenu->addChild(btn);
 
         if (first) {
@@ -414,18 +413,10 @@ void EmotePickerPopup::rebuildCategorySidebar() {
 }
 
 void EmotePickerPopup::onCategoryClicked(CCObject* sender) {
-    auto type = (m_activeTab == Tab::GIFs) ? EmoteType::Gif : EmoteType::Static;
-    auto cats = EmoteService::get().getCategories(type);
-    int tag = static_cast<CCNode*>(sender)->getTag();
-
-    for (auto& cat : cats) {
-        int catTag = static_cast<int>(
-            std::hash<std::string>{}(cat) & 0x7FFFFFFF);
-        if (catTag == tag) {
-            selectCategory(cat);
-            return;
-        }
-    }
+    auto btn = static_cast<CCMenuItemSpriteExtra*>(sender);
+    auto nameObj = static_cast<CCString*>(btn->getUserObject());
+    if (!nameObj) return;
+    selectCategory(nameObj->getCString());
 }
 
 void EmotePickerPopup::selectCategory(std::string const& cat) {
@@ -436,8 +427,6 @@ void EmotePickerPopup::selectCategory(std::string const& cat) {
     buildEmoteGrid(emotes);
 
     if (!m_catMenu) return;
-    int selTag = static_cast<int>(
-        std::hash<std::string>{}(cat) & 0x7FFFFFFF);
 
     for (auto* child : CCArrayExt<CCNode*>(m_catMenu->getChildren())) {
         auto item = static_cast<CCMenuItemSpriteExtra*>(child);
@@ -445,7 +434,8 @@ void EmotePickerPopup::selectCategory(std::string const& cat) {
         if (!container) continue;
         if (auto old = container->getChildByID("paimon-cat-hl"_spr))
             old->removeFromParent();
-        if (child->getTag() == selTag) {
+        auto nameObj = static_cast<CCString*>(item->getUserObject());
+        if (nameObj && cat == nameObj->getCString()) {
             float w = container->getContentSize().width;
             float h = container->getContentSize().height;
             auto hl = paimon::SpriteHelper::createRoundedRect(
@@ -765,9 +755,6 @@ void EmotePickerPopup::onRefreshCatalog(CCObject*) {
     });
 }
 
-void EmotePickerPopup::rebuildScrollArea() {
-}
-
 void EmotePickerPopup::onSearchToggle(CCObject*) {
     m_searchActive = !m_searchActive;
 
@@ -780,30 +767,6 @@ void EmotePickerPopup::onSearchToggle(CCObject*) {
             nullptr
         ));
     }
-
-    auto crossfadeIn = [](CCNode* node) {
-        if (!node) return;
-        node->stopAllActions();
-        node->setVisible(true);
-        if (auto rgba = typeinfo_cast<CCLayerColor*>(node)) {
-            rgba->setOpacity(0);
-            rgba->runAction(CCFadeTo::create(0.18f, 255));
-        }
-    };
-    auto fadeOut = [](CCNode* node) {
-        if (!node) return;
-        node->stopAllActions();
-        if (auto rgba = typeinfo_cast<CCLayerColor*>(node)) {
-            rgba->runAction(CCSequence::create(
-                CCFadeTo::create(0.12f, 0),
-                CCCallFunc::create(node, callfunc_selector(CCNode::removeFromParent)),
-                nullptr
-            ));
-        } else {
-            node->setVisible(false);
-        }
-    };
-    (void)crossfadeIn; (void)fadeOut;
 
     if (m_searchInputBg) m_searchInputBg->setVisible(m_searchActive);
     if (m_searchInput) m_searchInput->setVisible(m_searchActive);

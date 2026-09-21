@@ -69,7 +69,9 @@ std::string buttonKey(CCNode* node) {
         if(id.empty()) {
             unsigned index=0;
             if(auto* p=n->getParent(); p && p->getChildren()) index=p->getChildren()->indexOfObject(n);
-            id=fmt::format("{}[{}]",typeid(*n).name(),index);
+            // Sibling index alone identifies the node; the mangled type name would
+            // tie saved keys to one compiler and break them on other platforms.
+            id=fmt::format("node[{}]",index);
         }
         key=fmt::format("{}/{}{}",id.size(),id,key);
     }

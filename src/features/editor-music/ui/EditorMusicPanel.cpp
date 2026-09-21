@@ -4,7 +4,6 @@
 #include "../services/EditorMusicPlayer.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 
-#include <Geode/binding/EditorUI.hpp>
 #include <Geode/binding/LevelEditorLayer.hpp>
 #include <fmt/format.h>
 

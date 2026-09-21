@@ -73,10 +73,6 @@ bool DeathHeatmapNode::init(LevelProgress const& progress, bool practice,
     return true;
 }
 
-void DeathHeatmapNode::setPractice(LevelProgress const& progress, bool practice) {
-    rebuild(progress, practice);
-}
-
 void DeathHeatmapNode::rebuild(LevelProgress const& progress, bool practice) {
     if (!m_columns) return;
     m_columns->removeAllChildren();

@@ -190,12 +190,6 @@ void ProfileSettingsPopup::onAddProfileImg(CCObject*) {
     if (cb) cb();
 }
 
-void ProfileSettingsPopup::onConfigureCommentBg(CCObject*) {
-    auto cb = m_onCommentBgCallback;
-    this->onClose(nullptr);
-    if (cb) cb();
-}
-
 void ProfileSettingsPopup::onConfigureCommentBgSoon(CCObject*) {
     PopupManager::get().alert(
         Localization::get().getString("profilesettings.comment_soon_title"),

@@ -3,7 +3,6 @@
 #include "../../../utils/Localization.hpp"
 
 #include <algorithm>
-#include <unordered_map>
 
 namespace paimon::progression {
 
@@ -203,14 +202,6 @@ std::vector<BadgeCategory> buildCategories() {
     };
 }
 
-std::unordered_map<std::string_view, BadgeDef const*> buildIndex() {
-    std::unordered_map<std::string_view, BadgeDef const*> index;
-    for (auto const& badge : allBadges()) {
-        index.emplace(badge.id, &badge);
-    }
-    return index;
-}
-
 } // namespace
 
 std::vector<BadgeDef> const& allBadges() {
@@ -221,20 +212,6 @@ std::vector<BadgeDef> const& allBadges() {
 std::vector<BadgeCategory> const& allCategories() {
     static std::vector<BadgeCategory> const categories = buildCategories();
     return categories;
-}
-
-BadgeDef const* findBadge(std::string_view id) {
-    static auto const index = buildIndex();
-    auto it = index.find(id);
-    return it == index.end() ? nullptr : it->second;
-}
-
-std::vector<BadgeDef const*> badgesInCategory(std::string_view category) {
-    std::vector<BadgeDef const*> out;
-    for (auto const& badge : allBadges()) {
-        if (category == badge.category) out.push_back(&badge);
-    }
-    return out;
 }
 
 BadgeContext makeContext(PlayerStats const& stats) {
@@ -306,15 +283,6 @@ int unlockedCount(BadgeContext const& ctx) {
         if (isUnlocked(badge, ctx)) ++count;
     }
     return count;
-}
-
-BadgeDef const* highestUnlocked(BadgeContext const& ctx) {
-    BadgeDef const* best = nullptr;
-    for (auto const& badge : allBadges()) {
-        if (!isUnlocked(badge, ctx)) continue;
-        if (!best || badge.rarity > best->rarity) best = &badge;
-    }
-    return best;
 }
 
 cocos2d::ccColor3B rarityColor(BadgeRarity rarity) {

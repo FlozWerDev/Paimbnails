@@ -59,9 +59,8 @@ public:
 
     bool uploadRGBA(GLuint texId, const uint8_t* rgbaData, int width, int height);
 
-    // Zero-copy contract: tryBeginRGBAUpload → fill mapped RGBA bytes →
-    // endRGBAUpload. Do not call other methods between them; nullptr means
-    // use uploadRGBA. Mapping is unavailable on GLES2 and older macOS.
+    // Zero-copy: tryBeginRGBAUpload → fill mapped bytes → endRGBAUpload, with
+    // no other calls between them; nullptr means use uploadRGBA.
     uint8_t* tryBeginRGBAUpload(int width, int height);
     void endRGBAUpload(GLuint texId, int width, int height);
 
@@ -75,9 +74,6 @@ private:
     bool checkAndClearFence(int idx);
     void deleteAllFences();
 
-    void uploadPlane(int slotIdx, GLuint texId, GLenum format,
-                     const uint8_t* data, int stride, int width, int height);
-
     // Runtime slot count is capped by kPBOCount.
     static constexpr int kPBOCount = 6;
 
@@ -89,7 +85,7 @@ private:
     int m_crSize = 0;
     int m_rgbaSize = 0;
 
-    bool m_rgbaMode = false;  // single RGBA vs. three-plane YUV
+    bool m_rgbaMode = false;
 
     int m_uploadIdx = 0;
     // Slot currently in a tryBegin→end sequence (-1 = none).

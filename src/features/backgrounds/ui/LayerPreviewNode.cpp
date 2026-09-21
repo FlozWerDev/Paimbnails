@@ -304,16 +304,6 @@ std::string displayNameForLayer(std::string const& layerKey) {
     return layerKey;
 }
 
-ccColor3B accentForType(std::string const& type) {
-    if (type == "custom") return {120, 255, 150};
-    if (type == "video")  return {120, 200, 255};
-    if (type == "shader") return {200, 150, 255};
-    if (type == "random") return {255, 210, 110};
-    if (type == "id")     return {255, 160, 100};
-    if (type == "default") return {120, 130, 150};
-    return {150, 200, 255}; // referencia a otra pantalla ("Mismo que...")
-}
-
 std::string describeConfig(LayerBgConfig const& cfg) {
     std::string status;
     if (cfg.type == "default")      status = tr("pai.config.status.default", "Default");

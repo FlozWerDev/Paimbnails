@@ -22,6 +22,8 @@ constexpr cocos2d::ccColor3B kAccentDanger  = {255, 120, 120};
 
 // Reusable transparency board for previews.
 cocos2d::CCTexture2D* checkerTexture();
+// Drop it on GL reload; the texture dies with the context.
+void resetCheckerTexture();
 
 // Rounded color swatch.
 cocos2d::CCNode* makeSwatch(float size, cocos2d::ccColor3B color, bool selected);

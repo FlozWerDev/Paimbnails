@@ -638,7 +638,7 @@ bool DiscordConfigPopup::init() {
     m_settingTogglers.push_back(tIdle);
     m_settingToggleKeys.push_back("discord-rpc-idle-when-unfocused");
 
-    // Normalize saved value.
+    // Older builds saved other values; clamp to a valid activity type.
     {
         auto savedType = gset<std::string>("discord-rpc-activity-type");
         if (savedType != "Playing" && savedType != "Listening"
@@ -748,7 +748,6 @@ bool DiscordConfigPopup::init() {
                     if (msg.size() > 220) msg.resize(220);
                     PaimonNotify::create(tr("discord.upload_fail", "Error al subir: ") + msg, NotificationIcon::Error)->show();
                     if (targetInput) {
-                        // Restore previous URL on failure.
                         if (!prevVal.empty() && prevVal != "subiendo...") targetInput->setString(prevVal);
                         else targetInput->setString("");
                     }

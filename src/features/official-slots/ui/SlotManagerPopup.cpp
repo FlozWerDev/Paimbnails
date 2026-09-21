@@ -181,7 +181,7 @@ CCNode* SlotManagerPopup::buildSlotRow(Slot const& slot, float width) {
 
     auto* row = CCNode::create();
     row->setContentSize({width, kRowH});
-    if (auto* bg = createCardBackground({width, kRowH - 2.f}, false)) {
+    if (auto* bg = createCardBackground({width, kRowH - 2.f})) {
         bg->setPosition({width / 2.f, kRowH / 2.f});
         row->addChild(bg, -1);
     }
@@ -264,7 +264,7 @@ CCNode* SlotManagerPopup::buildHiddenRow(int officialId, float width) {
 
     auto* row = CCNode::create();
     row->setContentSize({width, kRowH});
-    if (auto* bg = createCardBackground({width, kRowH - 2.f}, false)) {
+    if (auto* bg = createCardBackground({width, kRowH - 2.f})) {
         bg->setPosition({width / 2.f, kRowH / 2.f});
         row->addChild(bg, -1);
     }

@@ -85,15 +85,13 @@ void IconButton::setLocked(bool locked, bool instant) {
         return;
     }
 
-    m_didForce = true;
-
     float wait = instant ? 0.f : 0.1f;
     paintDot(m_currentConfig, 1, true, 121);
     m_dot->setHidden(true, wait);
     settleDot(wait);
 }
 
-void IconButton::applyGradient(bool force, ColorType colorType, bool transition, bool all, bool secondPlayer) {
+void IconButton::applyGradient(bool /*force*/, ColorType colorType, bool transition, bool all, bool secondPlayer) {
     GradientConfig previousConfig = m_currentConfig;
 
     m_currentConfig = GradientUtils::getSavedConfig(m_type, colorType, secondPlayer);
@@ -122,8 +120,6 @@ void IconButton::applyGradient(bool force, ColorType colorType, bool transition,
 
     m_secondDot->setHidden(false, 0.f);
     m_secondDot->setHidden(true, 0.1f);
-
-    m_didForce = force;
 
     settleDot(0.1f);
 }

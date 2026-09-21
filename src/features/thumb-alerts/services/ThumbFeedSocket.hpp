@@ -7,17 +7,14 @@ namespace paimon::net { class WebSocketClient; }
 
 namespace paimon::thumbalerts {
 
-// Live half of the feed: holds a socket open to the server so an upload lands
-// as it happens instead of at the next poll. The poll stays on as the catch-up
-// path for anything missed while the socket was down, and as the only path on
-// the platforms where WebSocketClient has no implementation.
+// Live half of the feed: socket push with the poll as catch-up for anything
+// missed while down (and the only path where WebSocketClient is unimplemented).
 class ThumbFeedSocket {
 public:
     static ThumbFeedSocket& get();
 
     void start();
     void stop();
-    bool isConnected() const { return m_connected; }
 
 private:
     ThumbFeedSocket() = default;

@@ -1,11 +1,7 @@
 #pragma once
 
-// Resolves the level name / author / difficulty of a requested ID so the queue
-// can be drawn with real Geometry Dash level rows instead of bare numbers.
-//
-// GameLevelManager only holds one level-manager delegate, so lookups run one at
-// a time through a small FIFO. Results are cached for the session; the UI polls
-// revision() to know when to redraw.
+// GameLevelManager solo admite un delegate: las busquedas salen de una en una
+// por una FIFO; resultados cacheados, la UI repinta segun revision().
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJGameLevel.hpp>

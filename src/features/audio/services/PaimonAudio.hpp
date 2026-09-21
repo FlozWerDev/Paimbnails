@@ -24,21 +24,18 @@ private:
     FMOD::DSP* m_fftDSP = nullptr;
     bool m_active = false;
 
-    // smoothed band values (log-compressed, typically 0-3+)
+    // smoothed band values (normalized 0-1 against the running peak)
     float m_smoothBass   = 0.f;
     float m_smoothMid    = 0.f;
     float m_smoothTreble = 0.f;
 
-    // running peak for adaptive normalization
     float m_peakBass   = 0.01f;
     float m_peakMid    = 0.01f;
     float m_peakTreble = 0.01f;
 
-    // beat detection
     float m_prevBass  = 0.f;
     float m_beatPulse = 0.f;
 
-    // combined energy
     float m_energy = 0.f;
 
     void resetValues();

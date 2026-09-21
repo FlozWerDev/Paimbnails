@@ -1,12 +1,7 @@
 #pragma once
 
-// PaiConfigLayer — el editor de fondos completo de Paimon.
-//
-// Una sola pantalla para todo lo que antes estaba repartido entre este layer y
-// el viejo popup "Editor de Fondos": eliges la pantalla del juego a la
-// izquierda, la fuente del fondo a la derecha, y abajo ves una miniatura EN
-// VIVO (imagen, GIF, video o shader corriendo de verdad) con una maqueta de la
-// UI vanilla de esa pantalla encima.
+// PaiConfigLayer — editor de fondos en una sola pantalla, con preview vivo
+// bajo una maqueta de la UI vanilla.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -39,7 +34,7 @@ protected:
     bool init() override;
     void keyBackClicked() override;
 
-    void buildChrome();          // fondo, titulo, back, pestanas, barra inferior
+    void buildChrome();
     void buildBackgroundsTab();
     void buildProfileTab();
     void buildExtrasTab();
@@ -60,7 +55,7 @@ protected:
 
     void switchTab(int index);
     void selectScreen(std::string const& key);
-    void refreshAll();           // relee la config y actualiza controles + preview
+    void refreshAll();
     void refreshScreenList();
     void refreshPreview();
 
@@ -119,9 +114,8 @@ protected:
 
     geode::ScrollLayer* m_controlsScroll = nullptr;
     cocos2d::CCNode* m_controlsHint = nullptr;
-    // Las filas viven en un Ref porque las que sobran salen del ScrollLayer:
-    // ese layer usa setVisible() para recortar lo que no se ve, asi que la
-    // visibilidad NO puede decir que filas quiere la config.
+    // Las filas viven en un Ref: el ScrollLayer recorta con setVisible(),
+    // asi que la visibilidad no dice que filas quiere la config.
     std::vector<geode::Ref<cocos2d::CCNode>> m_controlRows;
     // Recoloca las filas activas del panel de controles para que ocultar una no
     // deje un hueco. Solo hace scroll al inicio si cambio que filas se ven.

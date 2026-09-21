@@ -1,15 +1,5 @@
-// Notifies on new messages and friend requests.
-// Idea inspired by BlueToadMaker's "Message-Notification" mod, available on
-// the Geode mod index (mods.geode-sdk.org).
-// This is an independent implementation written from scratch for Paimbnails:
-// it polls RobTop's own public endpoints (getGJMessages20.php /
-// getGJFriendRequests20.php, the same ones the game client uses) and shows the
-// result through the game's AchievementNotifier. No code was copied from the
-// original mod.
-//
-// Polling timer runs on a background thread (sleep + fire only);
-// GD server requests are dispatched on the main thread via WebHelper,
-// and all state lives exclusively on the main thread.
+// Polls RobTop's public message endpoints through AchievementNotifier;
+// independent reimplementation, no code copied from the inspiring mod.
 
 #include <Geode/Geode.hpp>
 
@@ -110,7 +100,6 @@ public:
         return inst;
     }
 
-    // Called from $on_game(Loaded). Starts the polling thread once.
     void startup() {
         if (m_started) return;
         m_started = true;
@@ -119,9 +108,8 @@ public:
             if (enabled) MessageWatcher::get().pollOnce();
         });
 
-        // Seed immediately when the feature is already enabled. Waiting for the
-        // first timer tick could make the first genuinely new message become the
-        // baseline and suppress its notification.
+        // Seed at once: waiting for the first tick would make the first new
+        // message the baseline and suppress its notification.
         pollOnce();
 
         paimon::ThreadTracker::get().spawn([] {
@@ -184,7 +172,6 @@ private:
         return paimon::isRuntimeShuttingDown() || paimon::ThreadTracker::get().isShuttingDown();
     }
 
-    // Split data at '#' and return '|'-separated items from the first part.
     static std::vector<std::string> topLevelItems(std::string const& data) {
         auto hash = gstr::split(data, "#");
         if (hash.empty()) return {};

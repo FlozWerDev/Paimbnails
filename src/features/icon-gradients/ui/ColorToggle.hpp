@@ -26,7 +26,6 @@ private:
     // Sticky state.
     bool m_forceDisabled = false;
     bool m_isSelected = false;
-    bool m_didForce = false;
 
     // Cache policy for painted sprites.
     bool m_shouldCache = true;

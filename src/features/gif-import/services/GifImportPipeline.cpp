@@ -156,9 +156,9 @@ struct BucketKey {
     }
 };
 
-// Fija a 320 px; animada a 160 px porque el costo va por frame.
-Options sanitize(Options options, std::size_t frames) {
-    options.maxDimension = std::clamp(options.maxDimension, 4, frames > 1 ? 160 : 320);
+// El tope lo pone la UI; aqui solo se sanea el rango.
+Options sanitize(Options options, std::size_t) {
+    options.maxDimension = std::clamp(options.maxDimension, 4, 320);
     options.minDimension = std::clamp(options.minDimension, 4, options.maxDimension);
     options.maxColors = std::clamp(options.maxColors, 1, 64);
     options.maxFrames = std::clamp(options.maxFrames, 1, 120);

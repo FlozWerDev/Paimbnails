@@ -196,9 +196,7 @@ void TwitchRequestManager::shutdown() {
     }
     stopWebRequests();
     saveQueue();
-    // Allow a later game/runtime load in the same process to initialize every
-    // source again. Leaving this true made init() return while shutdown mode
-    // was still active.
+    // Un load posterior en el mismo proceso debe poder inicializarlo todo de nuevo.
     m_initialized = false;
 }
 
@@ -513,9 +511,8 @@ void TwitchRequestManager::scheduleMonitor() {
 void TwitchRequestManager::monitor() {
     if (!m_initialized || m_shuttingDown || !m_live) return;
 
-    // requestPasses() queues metadata lookups even when no request UI is open.
-    // Keep that queue moving so mode/difficulty/video rules stay effective in
-    // the background as requests arrive from chat or the public web page.
+    // requestPasses() encola lookups sin UI abierta: hay que drenarla para que
+    // las reglas sigan valiendo en segundo plano.
     TwitchLevelBriefCache::get().tick();
 
     for (int index = 0; index < kPlatformCount; ++index) {

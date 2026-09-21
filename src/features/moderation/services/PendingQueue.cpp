@@ -59,14 +59,6 @@ std::string PendingQueue::escape(std::string const& s) {
     return out;
 }
 
-bool PendingQueue::isLevelCreator(GJGameLevel* level, std::string const& username) {
-    if (!level || username.empty()) return false;
-
-    std::string creatorName = level->m_creatorName;
-
-    return geode::utils::string::toLower(creatorName) == geode::utils::string::toLower(username);
-}
-
 void PendingQueue::load() {
     std::call_once(m_loadFlag, [this]() {
     m_items.clear();

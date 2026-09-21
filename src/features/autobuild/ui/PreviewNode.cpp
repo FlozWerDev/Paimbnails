@@ -76,11 +76,6 @@ bool PreviewNode::init(CCSize size) {
     return true;
 }
 
-void PreviewNode::clear() {
-    if (m_draw) m_draw->clear();
-    if (m_empty) m_empty->setVisible(true);
-}
-
 void PreviewNode::draw(std::vector<Dot> const& dots) {
     if (!m_draw) return;
     m_draw->clear();

@@ -6,13 +6,8 @@
 #include <string>
 
 // Fullscreen viewer for mod preview images with prev/next navigation.
-// Thumbnail-strip idea inspired by "Mod Previews" by Alphalaneous
-// (https://github.com/Alphalaneous/Mod-Previews, Geode id
-// alphalaneous.mod_previews). Layout, navigation behavior and loading
-// below are an independent implementation for Paimbnails; only the
-// public `previews/preview-<n>.png` repo convention is reused as an
-// interop fact. No endorsement by the original author.
-// See THIRD-PARTY-NOTICES.md.
+// Strip idea compatible with "Mod Previews" by Alphalaneous; layout and
+// navigation below are our own (see THIRD-PARTY-NOTICES.md).
 
 namespace paimon::mod_previews {
 

@@ -14,9 +14,8 @@ struct KindEntry {
     ObjectKind kind;
 };
 
-// Only ids whose behaviour changes how a region is read live here. Everything
-// else is left Unknown on purpose: the analyzer decides from geometry, and a
-// wrong guess in this table would be worse than no guess at all.
+// Only behaviour-critical ids live here; the rest stays Unknown on purpose:
+// a wrong guess in this table hurts more than no guess.
 constexpr KindEntry kCurated[] = {
     {8,    ObjectKind::Hazard},   {39,   ObjectKind::Hazard},
     {103,  ObjectKind::Hazard},   {392,  ObjectKind::Hazard},

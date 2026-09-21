@@ -33,19 +33,15 @@ private:
     int m_captureWidth = 0;
     int m_captureHeight = 0;
 
-    cocos2d::CCSprite* m_previewSprite = nullptr;
     cocos2d::CCMenu* m_previewMenu = nullptr;
     cocos2d::CCNode* m_previewCard = nullptr;
     cocos2d::CCClippingNode* m_flyClipNode = nullptr;
     cocos2d::CCNodeRGBA* m_flyCardBg = nullptr;
     bool m_isClosing = false;
-    // WeakRef identity snapshot of the scene the overlay was opened over.
-    // OverlayManager persists across scenes, so the card must not survive a
-    // scene transition; the old scene may already be freed when compared.
+    // OverlayManager outlives scenes: drop the card on scene change, the old one may be freed.
     geode::WeakRef<cocos2d::CCScene> m_ownerScene;
     bool m_docked = false;
-    // Alerts already visible when the card docked (identity only); a popup not
-    // in this set means the user moved on -> the card dismisses itself.
+    // Alerts visible at dock (identity only): an unknown popup means the user moved on.
     std::vector<geode::WeakRef<cocos2d::CCNode>> m_alertsAtDock;
 
     void onClose(cocos2d::CCObject* sender);

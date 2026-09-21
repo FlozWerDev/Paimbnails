@@ -1,6 +1,7 @@
 #include "PaiDrawUI.hpp"
 
 #include "PaiDrawIcon.hpp"
+#include "PaiDrawManager.hpp"
 #include "../../core/modules/ModuleRegistry.hpp"
 #include "../../utils/DynamicPopupRegistry.hpp"
 #include "../../utils/PaimonNotification.hpp"

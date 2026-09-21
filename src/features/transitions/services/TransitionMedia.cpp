@@ -298,6 +298,7 @@ public:
     }
 };
 std::unordered_map<std::string, std::string> aliases;
+std::unique_ptr<ImportWorker> worker;
 } // namespace
 std::shared_ptr<TransitionMedia> findTransitionMedia(std::string const& path) {
     auto alias = aliases.find(path);
@@ -313,8 +314,11 @@ void prepareTransitionMedia(std::string const& path, MediaCallback callback) {
         if (callback) callback(std::move(media), std::move(error));
     });
     if (!inserted) return;
-    static ImportWorker worker;
-    worker.enqueue({path, Mod::get()->getSaveDir() / "transitions" / "sheets"});
+    if (!worker) worker = std::make_unique<ImportWorker>();
+    worker->enqueue({path, Mod::get()->getSaveDir() / "transitions" / "sheets"});
+}
+void shutdownTransitionMedia() {
+    worker.reset();
 }
 void TransitionMedia::apply(CCSprite* sprite, double seconds) const {
     if (!sprite || pages.empty() || endsMs.empty()) return;

@@ -214,11 +214,6 @@ bool ScrollKeybindsPopup::init() {
     return true;
 }
 
-void ScrollKeybindsPopup::onExit() {
-    m_keybindNodes.clear();
-    Popup::onExit();
-}
-
 CCNode* ScrollKeybindsPopup::makeSectionHeader(char const* title, float width) {
     auto row = CCNode::create();
     row->setContentSize({width, kHeaderH});
@@ -236,10 +231,6 @@ CCNode* ScrollKeybindsPopup::makeSectionHeader(char const* title, float width) {
     row->addChild(label);
 
     return row;
-}
-
-CCNode* ScrollKeybindsPopup::makeKeybindRow(char const* settingKey, float width) {
-    return makeKeybindRow(settingKey, settingKey, width, /*allowScroll=*/true);
 }
 
 CCNode* ScrollKeybindsPopup::makeKeybindRow(
@@ -380,9 +371,6 @@ void ScrollKeybindsPopup::onResetVolumeDefaults(CCObject*) {
     }
 
     Notification::create("Volume keybinds reset", NotificationIcon::Success, 1.5f)->show();
-}
-
-void ScrollKeybindsPopup::reopenAfterReset(float) {
 }
 
 }

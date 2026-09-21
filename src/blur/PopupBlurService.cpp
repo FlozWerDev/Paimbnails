@@ -22,16 +22,9 @@ bool isEditorContextActive() {
            scene->getChildByType<EditorUI>(0) != nullptr;
 }
 
-static std::string const& blurNodeIdKey() {
-    static std::string const key = Mod::get()->getID() + "/popup-blur-node-id";
-    return key;
-}
-
 struct RegistryEntry {
-    CCNode* popupPtr = nullptr;    // identity only
     Ref<CCNode> blurRef;
     WeakRef<CCNode> blurWeak;       // liveness oracle
-    CCNode* parentPtr = nullptr;    // registration snapshot
     WeakRef<CCNode> parentWeak;     // liveness oracle
     float ageSeconds = 0.f;
     bool fadingOut = false;
@@ -171,7 +164,6 @@ void WatchdogTarget::tick(float dt) {
         if (entry.fadingOut) continue;
 
         CCNode* parent = blur->getParent();
-        entry.parentPtr = parent;
 
         bool popupPresent = popupStillChildOf(parent, popupKey);
         if (!popupPresent && entry.ageSeconds > 0.2f) {
@@ -196,40 +188,12 @@ void WatchdogTarget::tick(float dt) {
     }
 }
 
-static void pruneDeadEntries() {
-    auto& reg = blurRegistry();
-    for (auto it = reg.begin(); it != reg.end();) {
-        CCNode* blur = liveBlur(it->second);
-        if (!blur || !parentAlive(it->second) || !blur->getParent()) {
-            it = reg.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
 Config getConfig() {
     Config cfg;
     cfg.enabled = paimon::settings::popupblur::enabled();
-    cfg.style = "paiblur";
     cfg.intensity = std::max(0.1f, static_cast<float>(paimon::settings::popupblur::intensity()));
     cfg.darkness = std::clamp(static_cast<float>(paimon::settings::popupblur::darkness()), 0.0f, 1.0f);
     return cfg;
-}
-
-void registerExternalBlur(CCNode* popup, CCNode* blurNode) {
-    if (!popup || !blurNode) return;
-    pruneDeadEntries();
-    RegistryEntry entry;
-    entry.popupPtr = popup;
-    entry.blurRef = Ref<CCNode>(blurNode);
-    entry.blurWeak = blurNode;
-    entry.parentPtr = popup->getParent();
-    entry.parentWeak = popup->getParent();
-    entry.ageSeconds = 0.f;
-    entry.fadingOut = false;
-    blurRegistry()[popup] = std::move(entry);
-    scheduleWatchdogIfNeeded();
 }
 
 static cocos2d::CCNode* applyPaiblurDynamic(CCNode* popup, CCNode* parent, Config const& cfg) {
@@ -256,10 +220,8 @@ static cocos2d::CCNode* applyPaiblurDynamic(CCNode* popup, CCNode* parent, Confi
     }
 
     RegistryEntry entry;
-    entry.popupPtr = popup;
     entry.blurRef = Ref<CCNode>(paiblur);
     entry.blurWeak = paiblur;
-    entry.parentPtr = parent;
     entry.parentWeak = parent;
     entry.ageSeconds = 0.f;
     entry.fadingOut = false;
@@ -295,7 +257,6 @@ bool captureAndApplyWithConfig(CCNode* popup, Config cfg) {
 
     cleanup(popup);
 
-    cfg.style = "paiblur";
     if (auto* applied = applyPaiblurDynamic(popup, parent, cfg)) {
         return true;
     }

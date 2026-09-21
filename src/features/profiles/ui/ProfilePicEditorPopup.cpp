@@ -1363,9 +1363,12 @@ void ProfilePicEditorPopup::onGameIconSelect(CCObject* sender) {
 }
 
 void ProfilePicEditorPopup::onOpenIconsDetail(CCObject*) {
-    auto* pop = ProfilePicIconsDetailPopup::create(&m_editConfig, [this]() {
-        rebuildCurrentTab();
-        rebuildPreview();
+    WeakRef<ProfilePicEditorPopup> self = this;
+    auto* pop = ProfilePicIconsDetailPopup::create(&m_editConfig, this, [self]() {
+        if (auto editor = self.lock()) {
+            editor->rebuildCurrentTab();
+            editor->rebuildPreview();
+        }
     });
     if (pop) pop->show();
 }
@@ -1633,12 +1636,6 @@ void ProfilePicEditorPopup::onResetAll(CCObject*) {
     rebuildCurrentTab();
     rebuildPreview();
     PaimonNotify::create("Config reset", NotificationIcon::Info)->show();
-}
-
-
-
-void ProfilePicEditorPopup::triggerImageDownloadIfNeeded() {
-    // Deprecated: The profile button has its own configuration and does not download the profile popup's backdrop.
 }
 
 void ProfilePicEditorPopup::rebuildPreview() {

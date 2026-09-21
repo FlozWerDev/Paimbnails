@@ -163,9 +163,8 @@ void VersusSession::watchTick() {
     }
 
     VersusClient::get().pollLobby([this](bool ok, MatchInfo const& info) {
-        // Only the two phases an invite can land in. Past the veto it is a duel
-        // we already walked out of, and adopting it would reopen the lobby on
-        // top of a match that is over for us.
+        // Past the veto it is a duel we already walked out of; adopting it would
+        // reopen the lobby on top of a match that is over for us.
         bool const joinable = info.serverPhase == "found" || info.serverPhase == "banning";
         if (ok && !info.id.empty() && joinable && idle()) {
             applyLobby(info);
@@ -411,10 +410,8 @@ void VersusSession::onLevelTick(float dt, float percent, int attempt, bool pract
         }
     }
 
-    // Practice runs never count toward a duel, and neither does anything past
-    // the attempt limit: the percent parks where it was. What must not stop is
-    // everything the two clients share, or one of them keeps integrating the
-    // rope against a frozen number and calls the duel on its own.
+    // Practice runs and spent attempts park the percent, but the shared state keeps
+    // moving: frozen numbers would let one side call the duel on its own.
     m_practice = practice;
     bool const counts = !practice && !m_own.spent;
     if (counts) {
@@ -503,10 +500,8 @@ bool VersusSession::playCard(int slot) {
     auto const& def = cardAt(card);
     switch (def.target) {
         case CardTarget::Self:
-            // Heart is bookkeeping rather than an effect: the attempt limit is
-            // the session's to move, not the level's. Played on the death that
-            // spent the run it also has to hand it back, which is the only
-            // moment anybody would keep one for.
+            // Heart is bookkeeping, not an effect: the attempt limit is the session's
+            // to move, and played on the spending death it hands the run back.
             if (card == CardId::Heart) {
                 m_extraAttempts++;
                 if (m_own.spent && m_own.attempt < attemptLimit()) {
@@ -788,10 +783,8 @@ void VersusSession::onLevelLeft() {
     gl::restoreVisibility();
     gl::clearShield();
 
-    // Walking out of a duel that is already paired is a forfeit; the server
-    // would rule it one anyway once the rival submits. Leaving during the
-    // countdown counts, or the match stays alive and the next entry starts
-    // against whatever the rival had already claimed.
+    // Leaving a paired duel forfeits; the server would rule it one once the rival
+    // submits, and the countdown counts or the next entry inherits a claimed match.
     if ((m_phase == Phase::Running || m_phase == Phase::Countdown) && !m_submitted) forfeit();
 }
 

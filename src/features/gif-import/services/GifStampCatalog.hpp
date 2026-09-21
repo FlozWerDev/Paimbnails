@@ -37,7 +37,6 @@ struct StampVariant {
 // corre, que es lo unico que la hace segura de leer desde los hilos del reparto.
 void setStampCatalog(std::vector<CatalogEntry> entries);
 std::vector<StampVariant> const& stampVariants();
-bool hasStampCatalog();
 
 // Repuestos analiticos para la biblioteca suave (Blur/Vert) cuando GD no expone
 // glow o gradiente nativo. Usan las mismas formulas que el ajuste de

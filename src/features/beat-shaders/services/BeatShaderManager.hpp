@@ -29,9 +29,8 @@ public:
     bool isLayerEnabled(std::string const& layerKey) const;
     void setLayerEnabled(std::string const& layerKey, bool enabled);
 
-    // Apply the beat shader to the layer's existing background by forcing its
-    // LayerBgConfig.shader and re-applying. No-op when disabled; layer may be null
-    // (then only the saved-value side updates, applied when the layer next mounts).
+    // Forces LayerBgConfig.shader and re-applies. No-op when disabled;
+    // layer may be null (only the saved value updates until next mount).
     void applyToLayer(cocos2d::CCLayer* layer, std::string const& layerKey);
 
     // Update every ShaderBgSprite's audio-reactive uniforms from the live config,

@@ -56,14 +56,8 @@ bool isColorMeaningfulFrame(std::string const& lower) {
         "shardsbtn",
         "normalbtn",
         "videoreward",
-        // Baked-content menu buttons (verified pixel by pixel against the
-        // official sheets): difficulty faces, rate stars, player cube,
-        // checkpoint/practice gems, trophies, chests, coins, crowns, demon
-        // crowns, brand logos, map-pack folders, path shards, podiums,
-        // skull level nodes. The chrome and the content share one frame,
-        // so the whole frame stays vanilla. NOTE: bare "ngbtn" would also
-        // match longBtn/songBtn/swingBtn_off, and bare "eventbtn" would
-        // match editor buttons, hence the anchored forms.
+        // Baked-content buttons: chrome and content share one frame, so the
+        // whole frame stays vanilla; anchored tokens avoid matching editor buttons.
         "ratediff",
         "starbtn",
         "garagebtn",
@@ -117,16 +111,8 @@ bool isCuratedButtonFrame(std::string const& lower) {
 }
 
 bool isMenuUiFrame(std::string const& lower) {
-    // Screen furniture: titles, tables, bars, comment boxes, locks, doors,
-    // corners, page dots, celebration headers. Neutral chrome, tintable.
-    // NOTE: "sideart" was removed: its only frame (GJ_sideArt_001) is colored
-    // block-stair decoration, not neutral chrome (verified pixel by pixel).
-    // NOTE: there is deliberately no bare "icon" token. It also matched
-    // currency, badges, brand logos, chests, shards and reward art
-    // (verified pixel by pixel against the official sheets), so each
-    // tintable icon family is allowlisted by name below instead. Content
-    // art (chests, ropes, crowns, stars/moons/diamonds, shards, coins,
-    // secret coins, big reward icons) falls through to Other untouched.
+    // Neutral chrome, tintable. No "sideart" (colored decoration, not chrome)
+    // and no bare "icon" token (matched reward art); tintable icons allowlisted below.
     return containsAny(lower, {
         "txt",
         "label",
@@ -141,13 +127,8 @@ bool isMenuUiFrame(std::string const& lower) {
         "checkpoint",
         // Difficulty-filter selection outline (white chrome).
         "difficultyselected",
-        // Standalone options-menu chrome. Verified: no sheet frame matches
-        // these; ground truth is the .bro (Slider::create, loading UI,
-        // browser page dots) plus the white neutral progress fill.
-        // NOTE: GJ_square07 is deliberately NOT here: the game recolors it
-        // at runtime (CustomSongWidget::addExtraVisuals setColor yellow),
-        // so a pre-tinted pack would double-tint. Same for the GJ_square01
-        // solid fills (no menu-only usage evidence; generic filler).
+        // Standalone options chrome. No GJ_square07/square01: the game recolors
+        // them at runtime, so a pre-tinted pack would double-tint.
         "slider",
         "loadingcircle",
         "smalldot",

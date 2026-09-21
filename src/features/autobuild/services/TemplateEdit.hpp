@@ -1,8 +1,6 @@
 #pragma once
 
-// Edits the template editor performs. Kept apart from the UI so removing a
-// piece renumbers links and sample grids in one place instead of in a button
-// handler.
+// Edits live here so piece removal renumbers links and grids in one place.
 
 #include <vector>
 

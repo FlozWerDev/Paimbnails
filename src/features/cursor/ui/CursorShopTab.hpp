@@ -1,14 +1,7 @@
 #pragma once
 
-// Pestaña Tienda del popup de cursor: navega los catalogos publicos de
-// rw-designer.com y custom-cursor.com con categorias, buscador y paginacion.
-// Aqui solo se leen listados y miniaturas; quien descarga ficheros es el popup
-// de detalle, y solo cuando el usuario lo pide.
-//
-// El cuadro de busqueda filtra al momento lo que ya esta en pantalla. Para
-// buscar en todo el catalogo hace falta pulsar el boton: rw-designer tiene
-// buscador propio (/cursor-library?search=), pero custom-cursor bloquea el suyo
-// y ahi toca recorrer sus colecciones una a una.
+// Pestaña Tienda: solo lee listados y miniaturas; las descargas salen del popup de detalle.
+// custom-cursor bloquea su buscador y se recorre coleccion por coleccion.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/ButtonSprite.hpp>

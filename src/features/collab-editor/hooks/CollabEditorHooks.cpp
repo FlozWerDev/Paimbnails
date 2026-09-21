@@ -125,6 +125,7 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
     struct Fields {
         // Pointer from init; get() is null during teardown.
         LevelEditorLayer* m_self = nullptr;
+        bool m_wasMiddle = false;
         ~Fields() {
             if (paimon::isRuntimeShuttingDown()) return;
             paimon::collab::CollabManager::get().clearEditor(m_self);
@@ -151,9 +152,8 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
         // Middle-click pings the cursor spot; touch screens use the Ping
         // button in the collab overlay instead.
         if (mgr.connected() && !mgr.isApplyingRemote()) {
-            static bool s_wasMiddle = false;
             bool middle = paimon::keybinds::isMouseButtonHeld(paimon::keybinds::MouseButton::Middle);
-            if (middle && !s_wasMiddle) {
+            if (middle && !m_fields->m_wasMiddle) {
                 auto* director = CCDirector::get();
                 auto* glView = director ? director->getOpenGLView() : nullptr;
                 auto* layer = m_objectLayer;
@@ -166,7 +166,7 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
                     mgr.sendPing(world.x, world.y);
                 }
             }
-            s_wasMiddle = middle;
+            m_fields->m_wasMiddle = middle;
         }
 #endif
     }
@@ -192,6 +192,7 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
 
 // Color popups may skip levelSettingsUpdated; push full metadata on close.
 class $modify(PaimonCollabColorSelectPopup, ColorSelectPopup) {
+    $override
     bool init(EffectGameObject* object, CCArray* objects, ColorAction* action) {
         if (!ColorSelectPopup::init(object, objects, action)) return false;
         return true;

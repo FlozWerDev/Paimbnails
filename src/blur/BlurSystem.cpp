@@ -154,11 +154,6 @@ bool BlurSystem::tryDispatchFromDisk(BlurKey const& key, BlurFlavor flavor, Queu
     return true;
 }
 
-void BlurSystem::clearDiskCache() {
-    paimon::blur::BlurDiskCache::get().clear();
-    clearBlurCache();
-}
-
 void BlurSystem::dispatchJob(QueuedJob const& jobDesc) {
     // Reserve slot up-front so onJobCompleted() balances the counter on every exit path.
     ++m_activeJobCount;
@@ -292,14 +287,6 @@ void BlurSystem::buildPaimonBlurAsync(
     }
 }
 
-void BlurSystem::buildPaimonBlurAsync(
-    CCTexture2D* source,
-    CCSize const& targetSize,
-    float intensity,
-    std::function<void(CCSprite*)> onReady
-) {
-    buildPaimonBlurAsync(source, targetSize, intensity, {}, std::move(onReady));
-}
 void BlurSystem::buildPaimonBlurPriority(
     CCTexture2D* source,
     CCSize const& targetSize,
@@ -375,15 +362,6 @@ void BlurSystem::buildGaussianBlurAsync(
     } else {
         m_pendingJobs.push_back(std::move(job));
     }
-}
-
-void BlurSystem::buildGaussianBlurAsync(
-    CCTexture2D* source,
-    CCSize const& targetSize,
-    float intensity,
-    std::function<void(CCSprite*)> onReady
-) {
-    buildGaussianBlurAsync(source, targetSize, intensity, {}, std::move(onReady));
 }
 
 void BlurSystem::buildGaussianBlurPriority(

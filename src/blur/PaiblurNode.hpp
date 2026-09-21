@@ -11,10 +11,6 @@ public:
     static PaiblurNode* create(cocos2d::CCSize const& winSize, float intensity, float darkness);
 
     void fadeIn(float duration);
-    void fadeOutAndRemove(float duration);
-
-    void setBlurIntensity(float intensity);
-    void setDarkness(float darkness);
 
     void visit() override;
 

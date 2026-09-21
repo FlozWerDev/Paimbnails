@@ -76,13 +76,6 @@ std::string stripBasicAccents(std::string const& in) {
     return out;
 }
 
-template <typename PopupT>
-void openSimplePopup() {
-    if (auto* popup = PopupT::create()) {
-        popup->show();
-    }
-}
-
 }
 
 PaimonGuideService& PaimonGuideService::get() {
@@ -177,7 +170,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "help-general";
         it.kind = IntentKind::Conversational;
-        it.priority = 25;
         it.weight = 40;
         it.animation = GuideAnimation::Wave;
         it.keywordsByLang["english"] = {
@@ -203,7 +195,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "who-are-you";
         it.kind = IntentKind::Conversational;
-        it.priority = 30;
         it.weight = 35;
         it.animation = GuideAnimation::Wave;
         it.keywordsByLang["english"] = {
@@ -225,7 +216,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "thanks";
         it.kind = IntentKind::Conversational;
-        it.priority = 20;
         it.weight = 30;
         it.animation = GuideAnimation::Wave;
         it.keywordsByLang["english"] = {
@@ -243,7 +233,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "greeting";
         it.kind = IntentKind::Conversational;
-        it.priority = 15;
         it.weight = 30;
         it.animation = GuideAnimation::Wave;
         it.keywordsByLang["english"] = {
@@ -273,7 +262,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "how-are-you";
         it.kind = IntentKind::Conversational;
-        it.priority = 15;
         it.weight = 30;
         it.animation = GuideAnimation::Talk;
         it.keywordsByLang["english"] = {
@@ -293,7 +281,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "compliment";
         it.kind = IntentKind::Conversational;
-        it.priority = 15;
         it.weight = 30;
         it.animation = GuideAnimation::Surprise;
         it.keywordsByLang["english"] = {
@@ -315,7 +302,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "goodbye";
         it.kind = IntentKind::Conversational;
-        it.priority = 15;
         it.weight = 30;
         it.animation = GuideAnimation::Wave;
         it.keywordsByLang["english"] = {
@@ -335,7 +321,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "joke";
         it.kind = IntentKind::Conversational;
-        it.priority = 15;
         it.weight = 30;
         it.animation = GuideAnimation::Talk;
         it.keywordsByLang["english"] = {
@@ -355,7 +340,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "what-can-you-do";
         it.kind = IntentKind::Conversational;
-        it.priority = 18;
         it.weight = 35;
         it.animation = GuideAnimation::Talk;
         it.keywordsByLang["english"] = {
@@ -388,7 +372,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "mod-about";
         it.kind = IntentKind::Conversational;
-        it.priority = 30;
         it.weight = 42;
         it.animation = GuideAnimation::Talk;
         it.keywordsByLang["english"] = {
@@ -423,7 +406,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "mod-author";
         it.kind = IntentKind::Conversational;
-        it.priority = 28;
         it.weight = 40;
         it.animation = GuideAnimation::Talk;
         it.keywordsByLang["english"] = {
@@ -446,7 +428,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "mod-free";
         it.kind = IntentKind::Conversational;
-        it.priority = 28;
         it.weight = 40;
         it.animation = GuideAnimation::Surprise;
         it.keywordsByLang["english"] = {
@@ -467,7 +448,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "mod-install";
         it.kind = IntentKind::Conversational;
-        it.priority = 28;
         it.weight = 40;
         it.animation = GuideAnimation::Talk;
         it.keywordsByLang["english"] = {
@@ -490,7 +470,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "feature-list";
         it.kind = IntentKind::Conversational;
-        it.priority = 32;
         it.weight = 42;
         it.animation = GuideAnimation::Talk;
         it.keywordsByLang["english"] = {
@@ -515,7 +494,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "mod-support";
         it.kind = IntentKind::Conversational;
-        it.priority = 28;
         it.weight = 40;
         it.animation = GuideAnimation::Talk;
         it.keywordsByLang["english"] = {
@@ -540,7 +518,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "weather";
         it.kind = IntentKind::Conversational;
-        it.priority = 12;
         it.weight = 22;
         it.animation = GuideAnimation::Talk;
         it.keywordsByLang["english"] = {
@@ -578,7 +555,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "favorite-things";
         it.kind = IntentKind::Conversational;
-        it.priority = 12;
         it.weight = 22;
         it.animation = GuideAnimation::Surprise;
         it.keywordsByLang["english"] = {
@@ -610,7 +586,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "feelings";
         it.kind = IntentKind::Conversational;
-        it.priority = 12;
         it.weight = 22;
         it.animation = GuideAnimation::Surprise;
         it.keywordsByLang["english"] = {
@@ -642,7 +617,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "capabilities";
         it.kind = IntentKind::Conversational;
-        it.priority = 14;
         it.weight = 24;
         it.animation = GuideAnimation::Talk;
         it.keywordsByLang["english"] = {
@@ -674,7 +648,6 @@ void PaimonGuideService::registerIntents() {
         GuideIntent it;
         it.id = "origin";
         it.kind = IntentKind::Conversational;
-        it.priority = 12;
         it.weight = 22;
         it.animation = GuideAnimation::Wave;
         it.keywordsByLang["english"] = {
@@ -981,7 +954,6 @@ GuideAnswer makeMultiTopicAnswer(std::vector<GuideIntent const*> const& topics,
 }
 
 GuideAnswer PaimonGuideService::buildAnswerFor(GuideIntent const& intent,
-                                               double matchScore,
                                                std::string const& langId) {
     int repeats = m_memory.recentMatchesOf(intent.id);
 
@@ -1003,8 +975,6 @@ GuideAnswer PaimonGuideService::buildAnswerFor(GuideIntent const& intent,
             ans.message = prefix + ans.message;
         }
     }
-
-    (void)matchScore;
 
     if (intent.kind == IntentKind::Functional) {
         if (auto const* top = m_engine.topic(intent.id)) {
@@ -1034,25 +1004,16 @@ GuideAnswer PaimonGuideService::buildFollowUpAnswer(GuideIntent const& intent,
     ans.action = intent.action;
     ans.animation = intent.animation;
 
-    auto fuIt = intent.followUpByLang.find(langId);
-    if (fuIt == intent.followUpByLang.end()) {
-        fuIt = intent.followUpByLang.find("english");
+    auto rIt = intent.responseByLang.find(langId);
+    if (rIt == intent.responseByLang.end()) {
+        rIt = intent.responseByLang.find("english");
     }
-
-    if (fuIt != intent.followUpByLang.end() && !fuIt->second.empty()) {
-        ans.message = fuIt->second;
-    } else {
-        auto rIt = intent.responseByLang.find(langId);
-        if (rIt == intent.responseByLang.end()) {
-            rIt = intent.responseByLang.find("english");
-        }
-        std::string prefix = (langId == "spanish")
-            ? "Sobre eso mismo: "
-            : "About that: ";
-        ans.message = prefix + (rIt != intent.responseByLang.end()
-                                ? rIt->second
-                                : "...");
-    }
+    std::string prefix = (langId == "spanish")
+        ? "Sobre eso mismo: "
+        : "About that: ";
+    ans.message = prefix + (rIt != intent.responseByLang.end()
+                            ? rIt->second
+                            : "...");
 
     return ans;
 }
@@ -1077,9 +1038,6 @@ GuideAnswer PaimonGuideService::buildContextualAnswer(
         : PopupRegistry::get().displayNameFor(res.topicId, langId);
 
     // "que mas?" / "what else?" → the topic's more reply.
-    bool isMore = res.pureReference && !res.subTopicId.empty();
-    (void)isMore;
-
     if (res.subTopicId.empty()) {
         // Pure reference: "y eso?" — answer with the topic's more reply.
         ans.message = (es ? "Siguiendo con <cy>" : "Following up on <cy>")
@@ -1246,10 +1204,8 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback ca
                     auto ans = buildFollowUpAnswer(intent, langId);
                     ConversationTurn turn;
                     turn.userQuery = userQuery;
-                    turn.normalizedQuery = normalized;
                     turn.matchedIntentId = intent.id;
                     turn.wasFunctional = (intent.kind == IntentKind::Functional);
-                    turn.matchScore = 100.0;
                     m_memory.recordTurn(std::move(turn));
                     return ans;
                 }
@@ -1268,11 +1224,9 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback ca
                 auto ans = buildContextualAnswer(res, langId);
                 ConversationTurn turn;
                 turn.userQuery = userQuery;
-                turn.normalizedQuery = normalized;
                 turn.matchedIntentId = res.topicId;
                 turn.topicId = res.topicId;
                 turn.wasFunctional = true;
-                turn.matchScore = 100.0;
                 m_memory.recordTurn(std::move(turn));
                 return ans;
             }
@@ -1284,10 +1238,8 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback ca
         auto ans = makeMultiTopicAnswer(topics, langId);
         ConversationTurn turn;
         turn.userQuery = userQuery;
-        turn.normalizedQuery = normalized;
         turn.matchedIntentId = topics.front()->id;
         turn.wasFunctional = true;
-        turn.matchScore = 100.0;
         m_memory.recordTurn(std::move(turn));
         return ans;
     }
@@ -1295,10 +1247,8 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback ca
     if (auto browse = tryCategoryBrowse(normalized, tokens, langId)) {
         ConversationTurn turn;
         turn.userQuery = userQuery;
-        turn.normalizedQuery = normalized;
         turn.matchedIntentId = browse->matchedIntentId;
         turn.wasFunctional = true;
-        turn.matchScore = 100.0;
         m_memory.recordTurn(std::move(turn));
         return *browse;
     }
@@ -1307,7 +1257,6 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback ca
     auto paigorit = PaigoritV1::run(m_intents, normalized, tokens, langId);
 
     GuideIntent const* best = paigorit.best;
-    double bestRaw = paigorit.bestRawFuzzy;
 
     if (!paigorit.ranking.empty()) {
         log::debug("Paigorit V1 query='{}' top results:", normalized);
@@ -1332,7 +1281,7 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback ca
 
     GuideAnswer ans;
     if (best) {
-        ans = buildAnswerFor(*best, bestRaw, langId);
+        ans = buildAnswerFor(*best, langId);
 
         GuideIntent const* runner = nullptr;
         if (paigorit.ambiguous && paigorit.runnerUp
@@ -1377,10 +1326,8 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback ca
 
     ConversationTurn turn;
     turn.userQuery = userQuery;
-    turn.normalizedQuery = normalized;
     turn.matchedIntentId = best ? best->id : "";
     turn.wasFunctional = best && (best->kind == IntentKind::Functional);
-    turn.matchScore = bestRaw;
     m_memory.recordTurn(std::move(turn));
 
     return ans;

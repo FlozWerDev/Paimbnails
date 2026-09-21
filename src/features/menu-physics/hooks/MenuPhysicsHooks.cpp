@@ -7,7 +7,6 @@
 #include <Geode/modify/LeaderboardsLayer.hpp>
 
 #include "../services/MenuPhysicsManager.hpp"
-#include "../../../framework/HookConventions.hpp"
 
 using namespace geode::prelude;
 

@@ -32,10 +32,8 @@ std::string trim(std::string value) {
     return value;
 }
 
-// Room codes are case-insensitive and separator-agnostic. The displayed code
-// groups characters with hyphens (PAIM-AB-CDE) but the hyphen glyph isn't in
-// every input font, so strip anything non-alphanumeric and uppercase before
-// matching. This way typing with or without the dashes resolves to the same room.
+// Displayed codes use hyphens but the glyph isn't in every input font, so
+// strip non-alphanumerics and uppercase before matching.
 std::string normRoomCode(std::string value) {
     std::string out;
     for (char c : value) {
@@ -56,9 +54,8 @@ void showAlert(std::string const& message) {
 }
 
 std::string randomRoomCode() {
-    // 12 base32 characters = 60 bits of entropy. This makes room-code
-    // guessing impractical even if the public join endpoint is probed.
-    // Exclude I/L/O/U to avoid ambiguous room codes.
+    // 60 bits so room-code guessing stays impractical on the public endpoint.
+    // Exclude I/L/O/U to avoid ambiguous codes.
     auto code = geode::utils::random::generateString(12, "0123456789ABCDEFGHJKMNPQRSTVWXYZ");
     std::string out = "PAIM-";
     for (size_t i = 0; i < code.size(); ++i) {
@@ -1163,7 +1160,7 @@ void CollabInvitePopup::onInvite(CCObject* sender) {
     if (acc <= 0) return;
     std::string name = m_names.count(acc) ? m_names[acc] : "";
 
-    CollabManager::get().inviteUser(acc, name, [name](bool ok, bool online, std::string const& message) {
+    CollabManager::get().inviteUser(acc, [name](bool ok, bool online, std::string const& message) {
         auto icon = (ok && online) ? NotificationIcon::Success : NotificationIcon::Warning;
         std::string text = message;
         if (ok && online) text = fmt::format("Invitacion enviada a {}", name.empty() ? "el usuario" : name);

@@ -26,6 +26,9 @@ public:
     double getDuration() const override;
     int getWidth() const override;
     int getHeight() const override;
+    VideoColorMatrix getColorMatrix() const override;
+    bool isFullRange() const override;
+    int getRotationDegrees() const override;
     bool isFinished() const override;
     double peekNextPTS() const override;
     double peekSecondPTS() const override;
@@ -37,14 +40,13 @@ public:
         return true;
     }
 
-    // Optional: set surface for direct rendering (zero-copy)
-    void setSurface(ANativeWindow* window);
-
 private:
     void decodeLoop();
     void closeInternal();
     bool findVideoTrack();
     void updateOutputFormat();
+    // Container keys first, codec output format refines; unknown keys keep Auto.
+    void readColorAspects(AMediaFormat* fmt);
     // Returns true if the color format is known and safe to read from CPU.
     bool isReadableColorFormat(int colorFormat) const;
     // Returns true if the color format delivers YUV in semi-planar (NV12) layout.
@@ -58,7 +60,6 @@ private:
 
     AMediaExtractor* m_extractor = nullptr;
     AMediaCodec*     m_codec     = nullptr;
-    ANativeWindow*   m_surface   = nullptr; // not owned
     AImageReader*    m_imageReader = nullptr;
     ANativeWindow*   m_readerWindow = nullptr; // owned by m_imageReader
     bool             m_useImageReader = false;
@@ -70,17 +71,18 @@ private:
     int              m_outputStride = 0;
     int              m_outputSliceHeight = 0;
     int              m_outputColorFormat = 0;
+    VideoColorMatrix m_colorMatrix = VideoColorMatrix::Auto;
+    bool             m_fullRange = false;
+    int              m_rotation = 0;
     double           m_duration = 0.0;
-    bool             m_useSurface = false;
 
     // Track codec state so we never call AMediaCodec_stop on an unstarted/
     // released codec — that crashes on some Mali/PowerVR drivers.
     bool             m_codecConfigured = false;
     bool             m_codecStarted    = false;
 
-    // Set to true after a valid output format has been seen.  Until then
-    // we must not attempt to read the output buffer as YUV (some drivers
-    // deliver a dummy buffer before the first format change signal).
+    // No YUV reads until a valid output format arrives; some drivers emit
+    // a dummy buffer before the first format-change signal.
     std::atomic<bool> m_outputFormatValid{false};
 
     std::atomic<bool> m_decoding{false};

@@ -397,17 +397,6 @@ void VersusClient::fetchLeaderboard(Mode mode, std::string const& scope, BoardCa
         });
 }
 
-void VersusClient::fetchPool(Mode mode, PoolCallback cb) {
-    send("GET", fmt::format("/api/pool?mode={}", modeId(mode)), matjson::Value(),
-        [cb = std::move(cb)](bool ok, matjson::Value const& json, std::string const&) mutable {
-            std::vector<LevelOffer> levels;
-            if (ok && json.contains("levels") && json["levels"].isArray()) {
-                for (auto const& entry : json["levels"]) levels.push_back(parseOffer(entry));
-            }
-            cb(ok, levels);
-        });
-}
-
 void VersusClient::reportPlayer(std::string const& matchId, std::string const& note, OkCallback cb) {
     auto const body = matjson::makeObject({
         {"matchId", matchId},

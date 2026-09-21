@@ -7,9 +7,7 @@
 #include <Geode/cocos/platform/CCImage.h>
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <fstream>
-#include <thread>
 #include <shared_mutex>
 #include <system_error>
 
@@ -21,13 +19,8 @@ using namespace geode::prelude;
 
 namespace paimon::blur {
 
-// Dedicated 1-thread I/O pool for the blur cache; separate from ThumbnailLoader's disk pool.
-//
-// Heap-leaked on purpose: a `unique_ptr` static ran ~ThreadPool during atexit,
-// after Geode had already torn down its logger and async runtime. The worker's
-// join then regularly hit the 3s timedJoin timeout, which is what made the game
-// hang for several seconds on exit. shutdownBlurIOPool() joins it during
-// $on_game(Exiting) instead, while the runtime is still healthy.
+// Dedicated 1-thread I/O pool. Heap-leaked on purpose: joining during atexit
+// hung exit for seconds; shutdownBlurIOPool() joins it on Exiting instead.
 static std::atomic<paimon::ThreadPool*> s_blurIOPool{nullptr};
 
 static paimon::ThreadPool* getBlurIOPool() {
@@ -151,11 +144,6 @@ void BlurDiskCache::evictIndexIfNeededLocked() {
 bool BlurDiskCache::hasEntry(std::string const& key) const {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
     return m_index.find(key) != m_index.end();
-}
-
-std::size_t BlurDiskCache::diskEntryCount() const {
-    std::shared_lock<std::shared_mutex> lock(m_mutex);
-    return m_index.size();
 }
 
 CCTexture2D* BlurDiskCache::uploadRawRGBA(std::vector<uint8_t> const& pixels, int w, int h) {
@@ -294,32 +282,6 @@ void BlurDiskCache::storeFromTextureAsync(std::string const& key, CCTexture2D* t
     persistPixelsAsync(key, std::move(pixels), ow, oh);
 }
 
-void BlurDiskCache::storeAsync(std::string const& key, CCRenderTexture* rt) {
-    if (!rt || m_shuttingDown.load(std::memory_order_acquire)) return;
-
-    {
-        std::shared_lock<std::shared_mutex> lock(m_mutex);
-        if (m_index.find(key) != m_index.end()) return;
-    }
-
-    CCImage* img = rt->newCCImage(false);
-    if (!img) return;
-
-    int w = img->getWidth();
-    int h = img->getHeight();
-    unsigned char* data = img->getData();
-    if (!data || w <= 0 || h <= 0) {
-        img->release();
-        return;
-    }
-
-    std::size_t pixelBytes = static_cast<std::size_t>(w) * h * 4;
-    auto pixels = std::make_shared<std::vector<uint8_t>>(data, data + pixelBytes);
-    img->release();
-
-    persistPixelsAsync(key, std::move(pixels), w, h);
-}
-
 void BlurDiskCache::persistPixelsAsync(std::string key, std::shared_ptr<std::vector<uint8_t>> pixels, int w, int h) {
     getBlurIOPool()->enqueue([this, key = std::move(key), pixels = std::move(pixels), w, h]() {
         if (m_shuttingDown.load(std::memory_order_acquire)) return;
@@ -362,18 +324,6 @@ void BlurDiskCache::persistPixelsAsync(std::string key, std::shared_ptr<std::vec
     });
 }
 
-void BlurDiskCache::invalidate(std::string const& key) {
-    {
-        std::unique_lock<std::shared_mutex> lock(m_mutex);
-        m_index.erase(key);
-    }
-    auto path = pathForKey(key);
-    getBlurIOPool()->enqueue([path]() {
-        std::error_code ec;
-        std::filesystem::remove(path, ec);
-    });
-}
-
 void BlurDiskCache::clear() {
     {
         std::unique_lock<std::shared_mutex> lock(m_mutex);
@@ -392,9 +342,7 @@ void BlurDiskCache::clear() {
         }
     };
 
-    // On exit the pool is already joined (shutdown() ran earlier in the Exiting
-    // sequence), and a stopped pool silently drops enqueued jobs — the cache
-    // would never actually be wiped. Do it inline in that case.
+    // A stopped pool drops enqueued jobs, so wipe inline when it is gone.
     auto* pool = getBlurIOPool();
     if (!pool || pool->isStopped()) {
         wipe();
@@ -412,11 +360,5 @@ void BlurDiskCache::shutdown() {
     }
 }
 
-
-std::string makeKey(std::int64_t sourceID, int thumbIndex, char const* style,
-                    int intensity, int width, int height) {
-    return fmt::format("lvl{}_i{}_{}_q{}_{}x{}",
-        sourceID, thumbIndex, style ? style : "paimon", intensity, width, height);
-}
 
 } // namespace paimon::blur

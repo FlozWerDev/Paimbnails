@@ -5,9 +5,8 @@
 
 namespace paimon::collab {
 
-// Frame-rate-independent exponential smoothing. A half-life is easier to tune
-// than a per-frame lerp: after this many seconds, half the remaining distance
-// has been covered regardless of whether the client runs at 30, 60 or 144 FPS.
+// Half-life instead of per-frame lerp: half the distance closes every N seconds
+// regardless of 30, 60 or 144 FPS.
 inline float smoothingAlpha(float dt, float halfLife) {
     if (!std::isfinite(dt) || dt <= 0.f) return 0.f;
     if (!std::isfinite(halfLife) || halfLife <= 0.f) return 1.f;

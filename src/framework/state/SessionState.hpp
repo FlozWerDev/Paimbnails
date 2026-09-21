@@ -4,8 +4,6 @@
 // Mod::get()->setSavedValue() keys with an explicit singleton that resets on game
 // close. Persistent keys (user config, server status) stay in SavedValue.
 
-#include <string>
-
 namespace paimon {
 
 struct VerificationContext {
@@ -27,7 +25,6 @@ public:
     }
 
     int         currentListID          = 0;
-    std::string lastNavigationOrigin;
 
     VerificationContext verification;
 
@@ -43,17 +40,6 @@ public:
         int was = value;
         value = resetTo;
         return was;
-    }
-
-    // Reset all verification state (e.g. on leaving the moderation flow).
-    void resetVerification() {
-        verification = VerificationContext{};
-    }
-
-    void resetAll() {
-        currentListID = 0;
-        lastNavigationOrigin.clear();
-        resetVerification();
     }
 
 private:

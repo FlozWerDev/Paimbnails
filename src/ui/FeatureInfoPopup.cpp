@@ -1,6 +1,5 @@
 #include "FeatureInfoPopup.hpp"
 #include "../utils/DynamicPopupRegistry.hpp"
-#include "../utils/SpriteHelper.hpp"
 #include "../framework/ui/declarative/DeclarativeUI.hpp"
 
 using namespace cocos2d;
@@ -101,7 +100,6 @@ void FeatureInfoPopup::buildContent(
         decLabel(content, sec.title, "goldFont.fnt", 0.38f, sec.color, {8.f, y});
         y -= titleH;
 
-        // split into ~55-char lines for manual word wrapping
         std::string remaining = sec.body;
         while (!remaining.empty()) {
             std::string line;

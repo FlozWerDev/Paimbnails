@@ -8,9 +8,8 @@
 using namespace geode::prelude;
 using paimon::dynvol::DynamicVolumeManager;
 
-// Song-change source. A late pre-priority puts us innermost, so we only fire
-// once the mod's other playMusic hook (LevelSelectLayer.cpp, Priority::Late) has
-// decided to let the call through — a suppressed playMusic never changed the music.
+// A late pre-priority puts us innermost: we only fire once the other playMusic
+// hook (LevelSelectLayer.cpp, Late) lets the call through.
 class $modify(PaimonDynVolFMOD, FMODAudioEngine) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre("FMODAudioEngine::playMusic", geode::Priority::VeryLate);

@@ -61,5 +61,6 @@ cocos2d::CCTransitionScene* createLevelExitTransition(cocos2d::CCScene* destinat
 void beginLevelExitTransition(PlayLayer* playLayer);
 void endLevelExitTransition();
 bool isLevelExitTransitionPending();
+void shutdownLevelTransitionWatchdog();
 
 } // namespace paimon::transitions

@@ -1,15 +1,9 @@
 #pragma once
 
-// Playable stand-ins for the cosmetic official slots.
-//
-// A slot is never handed to the game's currency code: the GJGameLevel built
-// here is local, unrated (0 stars, 0 coins) and marked dontSave, so finishing
-// it cannot grant stars, orbs, diamonds or official progress. The difficulty,
-// stars and coins the player *sees* are painted separately by the hooks in
-// hooks/OfficialSlotsHook.cpp and by ui/SlotVisuals. If any of those paint
-// hooks ever miss, the worst case is a page showing "Unrated" — the failure
-// direction is always towards granting nothing, never towards granting real
-// rewards.
+// Playable stand-ins for the cosmetic official slots. A slot is never handed
+// to the game's currency code: the GJGameLevel built here is local, unrated
+// (0 stars, 0 coins) and marked dontSave. Painted separately by the hooks in
+// hooks/OfficialSlotHooks.cpp and by ui/SlotVisuals.
 
 #include "../OfficialSlots.hpp"
 
@@ -21,19 +15,6 @@
 #include <vector>
 
 namespace paimon::officialslots {
-
-// One row of the official list exactly as the player sees it.
-struct VisibleEntry {
-    bool isSlot = false;
-    // Vanilla id (1..22). For appended slots this is 0; for a replacement it
-    // is the official page the slot is drawn on.
-    int officialId = 0;
-    Slot slot;
-};
-
-// Officials minus the hidden ones (replacements flagged), then the enabled
-// appended slots. This order is the page order of the scroll layer.
-std::vector<VisibleEntry> visibleEntries();
 
 // Downloads an online level's full data (name, author, difficulty, stars,
 // level string) for slots whose source is a level id.
@@ -79,9 +60,6 @@ public:
     // invalidate() is called.
     GJGameLevel* levelForSlot(Slot const& slot);
 
-    std::optional<Slot> slotForLevel(GJGameLevel* level) const;
-    bool isSlotLevel(GJGameLevel* level) const;
-
     void invalidate();
     void invalidate(std::string const& slotId);
 
@@ -91,7 +69,6 @@ private:
     GJGameLevel* build(Slot const& slot, int fakeId);
 
     std::unordered_map<std::string, geode::Ref<GJGameLevel>> m_levels;
-    std::unordered_map<GJGameLevel*, std::string> m_reverse;
     std::unordered_map<std::string, Slot> m_snapshot;
     int m_nextFakeId = 0;
 };

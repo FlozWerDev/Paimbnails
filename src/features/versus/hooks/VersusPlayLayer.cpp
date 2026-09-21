@@ -69,10 +69,8 @@ class $modify(PaimonVersusPlayLayer, PlayLayer) {
         return true;
     }
 
-    // Two slots, two keys. Both go through the mod's keybind settings, so they
-    // are rebindable like everything else. The listener is owned by the layer,
-    // so it holds a plain pointer: a Ref would be the layer keeping itself
-    // alive and the whole level would leak once per duel.
+    // Keys come from the mod's keybind settings so they stay rebindable; the
+    // listener holds a plain pointer because a Ref would leak the level per duel.
     void bindCardKeys() {
         for (int slot = 0; slot < 2; slot++) {
             auto const key = slot == 0 ? "versus-card-1-keybind" : "versus-card-2-keybind";

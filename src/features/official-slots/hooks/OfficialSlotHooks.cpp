@@ -1,25 +1,5 @@
-// Paint layer for the cosmetic official slots.
-//
-// The scroll pages are never rebuilt here: the existing LevelSelect math
-// hardcodes the 22 + 2 page cycle and its slider, and rebuilding that loop
-// around hidden or appended pages would desync the background, the music and
-// the swipe position. Instead every vanilla page stays where it is and is
-// repainted in place:
-//
-//   - A replacement slot hides the vanilla badges (difficulty face, star icon,
-//     star label, coins) and mounts vanilla-asset paint at the hidden nodes'
-//     own parent, position and scale, so the result lines up exactly like a
-//     real page. The name label keeps its style and only gets new text.
-//   - A hidden official gets a dimmed display plus a small ribbon. Play and
-//     info are intercepted with a toast pointing at the manager.
-//   - Pages are recycled while swiping, so every repaint starts by dropping
-//     the previous paint and restoring the display tint and name color. The
-//     vanilla update already reset every other node before we run.
-//
-// Everything is paint over the vanilla level: the playable stand-in behind a
-// replacement is the local unrated level from services/SlotLevels, so even a
-// page showing "10 stars" grants nothing. If this repaint ever misses, the
-// page just shows the vanilla official underneath — the safe direction.
+// Paint layer for the cosmetic official slots: every vanilla page stays in
+// place and is repainted (never rebuilt, so background/music/swipe can't desync).
 
 #include <Geode/modify/LevelSelectLayer.hpp>
 #include <Geode/modify/LevelPage.hpp>
@@ -199,7 +179,7 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
         }
         if (starParent) {
             // Scale 1 matches the editor preview (0.5 label, 0.8 icon).
-            if (auto* badge = createStarBadge(slot.stars, false, 1.f)) {
+            if (auto* badge = createStarBadge(slot.stars, 1.f)) {
                 badge->setPosition(starPos);
                 starParent->addChild(badge);
                 this->trackSlotNode(badge);

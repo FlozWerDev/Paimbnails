@@ -13,14 +13,7 @@
 #include <memory>
 #include <vector>
 
-// Every shader key the animation sprites (robot/spider parts, extra sprite,
-// line overlays) can ask for, compiled ahead of time on load so mid-gameplay
-// frame switches never hitch. Written as families instead of a flat literal:
-// "{}" slots take isLinear/isLine at lookup time, then type, seed id, blend,
-// second player and the extra tag. Robot/spider parts (types 5/6) sweep the
-// part frames plus the 400/700 singles; plain and vehicle channels sweep the
-// x05 seeds, with the x04 vehicle seeds alongside (type 3 only paints x04 for
-// its first three sections on the second player).
+// Every shader key animation sprites can ask for, precompiled on load so mid-gameplay switches never hitch.
 std::vector<std::string> buildCacheKeys() {
     std::vector<std::string> keys;
     keys.reserve(246);
@@ -194,13 +187,8 @@ $on_mod(Loaded) {
 
 namespace {
 
-// Each key maps to its own CCGLProgram on purpose: applyGradient writes
-// per-sprite uniforms (uvMin/uvMax, stops, colors) straight into the program,
-// so sharing one instance between two sprites would clobber them. That makes
-// the full set ~1240 compiles, and doing it inside $on_mod(Loaded) blocked the
-// main thread for over a minute on low-end machines. Instead it runs after the
-// game is up, spread across frames with a soft time budget so it never freezes
-// the menu waiting for it.
+// One CCGLProgram per key: uniforms are written per sprite, so sharing would clobber them.
+// ~1240 compiles spread across frames on a 2ms budget (blocked the main thread for 1min+ at load).
 constexpr auto kPrewarmFrameBudget = std::chrono::milliseconds(2);
 
 void runGradientPrewarm(std::vector<std::function<void()>> steps) {

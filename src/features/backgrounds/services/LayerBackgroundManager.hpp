@@ -33,22 +33,6 @@ struct LayerMusicConfig {
     std::string filter = "none";
 };
 
-static inline std::vector<std::pair<std::string, std::string>> AUDIO_FILTERS = {
-    {"none",        "None"},
-    {"cave",        "Cave"},
-    {"underwater",  "Underwater"},
-    {"echo",        "Echo"},
-    {"hall",        "Concert Hall"},
-    {"radio",       "Old Radio"},
-    {"phone",       "Phone Call"},
-    {"chorus",      "Chorus"},
-    {"flanger",     "Flanger"},
-    {"distortion",  "Distortion"},
-    {"tremolo",     "Tremolo"},
-    {"nightcore",   "Nightcore"},
-    {"vaporwave",   "Vaporwave"},
-};
-
 class LayerBackgroundManager {
 public:
     static LayerBackgroundManager& get();
@@ -69,16 +53,9 @@ public:
 
     LayerBgConfig resolveConfig(std::string const& layerKey) const;
 
-    std::string hasOtherVideoConfigured(std::string const& excludeLayerKey, std::string const& videoPath) const {
-        (void)excludeLayerKey;
-        (void)videoPath;
-        return {};
-    }
-
     LayerMusicConfig getMusicConfig(std::string const& layerKey) const;
     void saveMusicConfig(std::string const& layerKey, LayerMusicConfig const& cfg);
 
-    LayerMusicConfig getGlobalMusicConfig() const;
     void saveGlobalMusicConfig(LayerMusicConfig const& cfg);
 
     static inline std::vector<std::pair<std::string, std::string>> LAYER_OPTIONS = {
@@ -120,10 +97,8 @@ private:
     bool applyStaticBg(cocos2d::CCLayer* layer, cocos2d::CCTexture2D* tex, LayerBgConfig const& cfg);
     void applyGifBg(cocos2d::CCLayer* layer, std::string const& path, LayerBgConfig const& cfg);
 
-    // Layers resolving to the same path share a decoder. An unreferenced player
-    // is kept alive for this long so navigating away and back reuses it instead
-    // of rebuilding the decoder and the whole GPU upload pipeline. Its decode
-    // thread parks on a full ring buffer meanwhile, so idle cost is negligible.
+    // Unreferenced players linger briefly so revisiting a layer reuses
+    // the decoder instead of rebuilding it.
     static constexpr auto kSharedVideoTTL = std::chrono::seconds(10);
 
     struct SharedVideoEntry {

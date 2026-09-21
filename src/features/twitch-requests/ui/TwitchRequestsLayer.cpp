@@ -314,12 +314,6 @@ TwitchRequestsLayer* TwitchRequestsLayer::create() {
     return nullptr;
 }
 
-CCScene* TwitchRequestsLayer::scene() {
-    auto* scene = CCScene::create();
-    scene->addChild(TwitchRequestsLayer::create());
-    return scene;
-}
-
 void TwitchRequestsLayer::open() {
     if (auto* layer = TwitchRequestsLayer::create()) {
         geode::pushSceneWithLayer(layer);

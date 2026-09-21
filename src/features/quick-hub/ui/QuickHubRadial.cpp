@@ -99,8 +99,6 @@ bool QuickHubRadial::init() {
 
     this->scheduleUpdate();
 
-    QuickHubManager::get().setRadialOpen(true);
-
     return true;
 }
 
@@ -111,7 +109,6 @@ void QuickHubRadial::onExit() {
     if (s_instance == this) {
         s_instance = nullptr;
     }
-    QuickHubManager::get().setRadialOpen(false);
 }
 
 

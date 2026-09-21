@@ -1,9 +1,6 @@
 #pragma once
 
-// Lets the user tell the feed directly which Level Tags to chase and which to
-// never show again. A pinned tag outranks anything the model inferred from
-// play history, so this is the strongest lever the user has over the feed.
-
+// Manual tag pins outrank anything inferred from play history.
 #include <Geode/Geode.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -36,7 +33,6 @@ protected:
     void refreshChip(Chip const& chip) const;
 
     geode::ScrollLayer* m_scroll = nullptr;
-    cocos2d::CCNode* m_placeholder = nullptr;
     std::vector<Chip> m_chips;
 };
 

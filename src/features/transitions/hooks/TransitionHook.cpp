@@ -144,7 +144,8 @@ class $modify(PaimonDirector, CCDirector) {
     // Do not re-intercept our own custom scene.
         if (typeinfo_cast<CustomTransitionScene*>(scene)) return CCDirector::replaceScene(scene);
 
-    // Only replace transitions already wrapped in CCTransitionScene.
+    // Only vanilla transitions wrapped in CCTransitionScene; custom scenes
+    // from other mods keep theirs.
         auto* nativeTrans = typeinfo_cast<CCTransitionScene*>(scene);
         if (!nativeTrans || !isVanillaTransition(nativeTrans)) return CCDirector::replaceScene(scene);
 
@@ -181,9 +182,6 @@ class $modify(PaimonDirector, CCDirector) {
         if (!TransitionManager::get().isEnabled()) {
             return CCDirector::replaceScene(scene);
         }
-
-    // Do not replace custom transitions from other mods.
-        if (!isVanillaTransition(nativeTrans)) return CCDirector::replaceScene(scene);
 
         auto cfg = selectConfig(realDest);
         ApplyingGuard guard;

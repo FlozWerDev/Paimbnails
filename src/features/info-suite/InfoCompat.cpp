@@ -39,23 +39,4 @@ bool isCeded(std::string_view key) {
     return cedingToBetterInfo() && overlapsBetterInfo(key);
 }
 
-std::vector<std::string_view> const& overlappingKeys() {
-    static std::vector<std::string_view> const kKeys(
-        std::begin(kOverlapping), std::end(kOverlapping));
-    return kKeys;
-}
-
-int cededModuleCount() {
-    if (!cedingToBetterInfo()) return 0;
-    auto* mod = Mod::get();
-    if (!mod) return 0;
-
-    int count = 0;
-    for (auto key : kOverlapping) {
-        if (!mod->hasSetting(key)) continue;
-        if (mod->getSettingValue<bool>(std::string(key))) count++;
-    }
-    return count;
-}
-
 } // namespace paimon::info::compat

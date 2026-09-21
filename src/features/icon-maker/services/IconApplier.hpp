@@ -1,10 +1,6 @@
 #pragma once
-// Sistema propio de aplicación (fallback sin MoreIcons): guarda qué icono
-// creado está activo por gamemode, carga sus frames compilados en el
-// CCSpriteFrameCache y los inyecta en SimplePlayer tras updatePlayerFrame.
-//
-// Cuando MoreIcons está instalado este servicio NUNCA toca sprites: la vía
-// MoreIcons (MoreIconsBridge) es la dueña de la selección.
+// Fallback sin MoreIcons: aplica el icono creado via CCSpriteFrameCache. Con
+// MoreIcons instalado este servicio nunca toca sprites.
 
 #include <Geode/Geode.hpp>
 

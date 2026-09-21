@@ -33,6 +33,8 @@
 #include "../features/discord-presence/services/DiscordPresenceManager.hpp"
 #include "../features/beat-shaders/services/BeatShaderManager.hpp"
 #include "../features/dynamic-volume/services/DynamicVolumeManager.hpp"
+#include "../features/transitions/services/LevelEntryEffects.hpp"
+#include "../features/transitions/services/TransitionMedia.hpp"
 #include "../framework/ModEvents.hpp"
 #include "../framework/EventBus.hpp"
 #include "../utils/ThreadTracker.hpp"
@@ -110,9 +112,8 @@ void cleanupDiskCache(char const* context) {
 }
 
 $on_game(Exiting) {
-    // Destroy EventBus subscribers before Cocos2d tears down: their lambdas
-    // capture WeakRef<CCNode>, and destroying them during atexit crashes once
-    // the WeakRefPool is gone.
+    // Destroy EventBus subscribers before Cocos2d teardown: their WeakRef<CCNode>
+    // lambdas crash in atexit once the WeakRefPool is gone.
     paimon::EventBus::get().beginShutdown();
 
     paimon::markRuntimeShuttingDown();
@@ -268,9 +269,8 @@ $on_game(Exiting) {
     });
     log::info("[SHUTDOWN] 13/14 Audio + resources released");
 
-    // Release shared video players before MF shuts down: the LayerBackgroundManager
-    // static destructor otherwise runs during atexit after MF is torn down, crashing
-    // WindowsDecoder::close() in msmpeg2vdec.dll.
+    // Release shared video players before MF shuts down; the static destructor
+    // would otherwise run in atexit and crash inside msmpeg2vdec.dll.
     log::info("[SHUTDOWN] 14/14 releaseAllSharedVideos starting...");
     safeShutdownStep("layer-bg-release-videos", []() {
         LayerBackgroundManager::get().releaseAllSharedVideos();
@@ -279,6 +279,15 @@ $on_game(Exiting) {
 
     safeShutdownStep("blur-system-destroy", []() {
         BlurSystem::getInstance()->destroy();
+    });
+
+    safeShutdownStep("transition-watchdog-disarm", []() {
+        paimon::transitions::shutdownLevelTransitionWatchdog();
+    });
+    // Before statics die: joins the media import worker so it can't touch
+    // the cache or queue main-thread work during atexit.
+    safeShutdownStep("transition-media-shutdown", []() {
+        paimon::transitions::shutdownTransitionMedia();
     });
 
     bool clearCache = clearCacheOnExit;

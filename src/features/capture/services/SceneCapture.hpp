@@ -16,9 +16,6 @@ struct ScreenSize {
     float height = 0.f;
 };
 
-bool isActive();
-ScreenSize getScreenSize();
-
 /// Enables capture context for sprites with manual draw() (PaimonShader*).
 class ActiveGuard {
 public:
@@ -32,18 +29,5 @@ private:
     bool m_prevActive = false;
     ScreenSize m_prevSize{};
 };
-
-bool playLayerShaderCaptureActive();
-
-void renderSceneGraph(cocos2d::CCNode* scene);
-
-bool readBoundFramebufferRGBA(std::vector<uint8_t>& pixels, int& outWidth, int& outHeight);
-
-/// RGBA buffer, rows in Cocos2d orientation with flipY applied.
-/// Returns an autoreleased texture; pass retain = true to take ownership of it,
-/// in which case the caller is the one that has to release it.
-cocos2d::CCTexture2D* createTextureFromRGBA(
-    uint8_t const* data, int width, int height, bool retain = true
-);
 
 } // namespace paimon::capture

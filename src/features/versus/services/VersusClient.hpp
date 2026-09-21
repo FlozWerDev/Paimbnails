@@ -78,7 +78,6 @@ public:
     using QueueCallback  = geode::CopyableFunction<void(bool ok, QueueTicket const& ticket)>;
     using MatchCallback  = geode::CopyableFunction<void(bool ok, MatchInfo const& match)>;
     using BoardCallback  = geode::CopyableFunction<void(bool ok, std::vector<LeaderboardRow> const& rows)>;
-    using PoolCallback   = geode::CopyableFunction<void(bool ok, std::vector<LevelOffer> const& levels)>;
     using ChallengeCallback = geode::CopyableFunction<void(bool ok, ChallengeResult const& result,
                                                            std::string const& message)>;
     // Someone else's profile never touches the local store: that cache is for
@@ -116,7 +115,6 @@ public:
 
     void fetchProfile(int accountId, ProfileCallback cb);
     void fetchLeaderboard(Mode mode, std::string const& scope, BoardCallback cb);
-    void fetchPool(Mode mode, PoolCallback cb);
     void reportPlayer(std::string const& matchId, std::string const& note, OkCallback cb);
 
 private:

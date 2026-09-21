@@ -2,6 +2,7 @@
 
 #include "PaiDrawModels.hpp"
 #include <array>
+#include <cstring>
 #include <span>
 
 namespace paidraw::codec {
@@ -61,28 +62,6 @@ inline geode::ByteVector encodeEnvelope(PaiDrawPacket const& packet) {
     return out;
 }
 
-inline geode::Result<PaiDrawPacket> decodeEnvelope(std::span<uint8_t const> bytes) {
-    if (bytes.size() < 21) {
-        return geode::Err("PaiDraw envelope too small");
-    }
-
-    size_t offset = 0;
-    PaiDrawPacket packet;
-    packet.type = static_cast<PacketType>(bytes[offset++]);
-    packet.roomId = readU32(bytes, offset);
-    packet.senderId = readU32(bytes, offset);
-    packet.timestamp = readU64(bytes, offset);
-    auto payloadSize = readU32(bytes, offset);
-
-    if (offset + payloadSize > bytes.size()) {
-        return geode::Err("PaiDraw envelope payload overflow");
-    }
-
-    packet.payload.assign(bytes.begin() + static_cast<std::ptrdiff_t>(offset),
-        bytes.begin() + static_cast<std::ptrdiff_t>(offset + payloadSize));
-    return geode::Ok(std::move(packet));
-}
-
 class MsgPackWriter {
 public:
     void nil() {
@@ -126,34 +105,6 @@ public:
         pushU64(m_bytes, static_cast<uint64_t>(value));
     }
 
-    void uinteger(uint64_t value) {
-        if (value <= 127) {
-            m_bytes.push_back(static_cast<uint8_t>(value));
-            return;
-        }
-
-        if (value <= UINT8_MAX) {
-            m_bytes.push_back(0xCC);
-            m_bytes.push_back(static_cast<uint8_t>(value));
-            return;
-        }
-
-        if (value <= UINT16_MAX) {
-            m_bytes.push_back(0xCD);
-            pushU16(m_bytes, static_cast<uint16_t>(value));
-            return;
-        }
-
-        if (value <= UINT32_MAX) {
-            m_bytes.push_back(0xCE);
-            pushU32(m_bytes, static_cast<uint32_t>(value));
-            return;
-        }
-
-        m_bytes.push_back(0xCF);
-        pushU64(m_bytes, value);
-    }
-
     void floating(double value) {
         m_bytes.push_back(0xCB);
         std::array<uint8_t, sizeof(double)> raw {};
@@ -181,23 +132,6 @@ public:
             pushU32(m_bytes, static_cast<uint32_t>(size));
         }
         m_bytes.insert(m_bytes.end(), value.begin(), value.end());
-    }
-
-    void binary(geode::ByteVector const& bytes) {
-        auto size = bytes.size();
-        if (size <= UINT8_MAX) {
-            m_bytes.push_back(0xC4);
-            m_bytes.push_back(static_cast<uint8_t>(size));
-        }
-        else if (size <= UINT16_MAX) {
-            m_bytes.push_back(0xC5);
-            pushU16(m_bytes, static_cast<uint16_t>(size));
-        }
-        else {
-            m_bytes.push_back(0xC6);
-            pushU32(m_bytes, static_cast<uint32_t>(size));
-        }
-        m_bytes.insert(m_bytes.end(), bytes.begin(), bytes.end());
     }
 
     void array(size_t size) {

@@ -5,8 +5,7 @@
 
 namespace paimon::moderation {
 
-// Resolves a username to its GD accountID by querying RobTop's servers
-// (getGJUsers20.php). The callback always runs on the main thread.
+// Callback always runs on the main thread;
 // ok=false means the user wasn't found or the request failed.
 void resolveUsername(
     std::string const& username,

@@ -58,10 +58,6 @@ std::string FfmpegBootstrap::releaseUrl() {
 #endif
 }
 
-bool FfmpegBootstrap::isArchive() {
-    return true;
-}
-
 std::string FfmpegBootstrap::archiveEntry() {
 #ifdef GEODE_IS_WINDOWS
     return "ffmpeg.exe";

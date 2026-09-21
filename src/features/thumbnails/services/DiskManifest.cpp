@@ -16,10 +16,6 @@ std::string DiskManifest::makeKey(int levelID, bool isGif) const {
     return isGif ? ("-" + std::to_string(levelID)) : std::to_string(levelID);
 }
 
-std::string DiskManifest::makeUrlKey(std::string const& url) const {
-    return "url:" + url;
-}
-
 void DiskManifest::load(std::filesystem::path const& cacheDir) {
     std::lock_guard<std::recursive_mutex> lock(mutex);
     m_cacheDir = cacheDir;
@@ -180,25 +176,9 @@ bool DiskManifest::contains(int levelID, bool isGif) const {
     return containsLocked(levelID, isGif);
 }
 
-bool DiskManifest::containsUrl(std::string const& url) const {
-    std::lock_guard<std::recursive_mutex> lock(mutex);
-    return m_urlToKey.count(url) > 0;
-}
-
 DiskManifestEntry const* DiskManifest::getEntry(int levelID, bool isGif) const {
     std::lock_guard<std::recursive_mutex> lock(mutex);
     return getEntryLocked(levelID, isGif);
-}
-
-DiskManifestEntry const* DiskManifest::getEntryByUrl(std::string const& url) const {
-    std::lock_guard<std::recursive_mutex> lock(mutex);
-    return getEntryByUrlLocked(url);
-}
-
-bool DiskManifest::containsLegacyKey(int key) const {
-    std::lock_guard<std::recursive_mutex> lock(mutex);
-    if (key < 0) return containsLocked(-key, true);
-    return containsLocked(key, false);
 }
 
 // Consultas sin lock (caller DEBE tener mutex)
@@ -212,26 +192,11 @@ DiskManifestEntry const* DiskManifest::getEntryLocked(int levelID, bool isGif) c
     return it != m_entries.end() ? &it->second : nullptr;
 }
 
-DiskManifestEntry const* DiskManifest::getEntryByUrlLocked(std::string const& url) const {
-    auto keyIt = m_urlToKey.find(url);
-    if (keyIt == m_urlToKey.end()) return nullptr;
-    auto it = m_entries.find(keyIt->second);
-    return it != m_entries.end() ? &it->second : nullptr;
-}
-
 void DiskManifest::upsert(int levelID, bool isGif, DiskManifestEntry entry) {
     auto key = makeKey(levelID, isGif);
     if (!entry.sourceUrl.empty()) {
         m_urlToKey[entry.sourceUrl] = key;
     }
-    m_entries[key] = std::move(entry);
-    m_dirty = true;
-}
-
-void DiskManifest::upsertUrl(std::string const& url, DiskManifestEntry entry) {
-    auto key = makeUrlKey(url);
-    entry.sourceUrl = url;
-    m_urlToKey[url] = key;
     m_entries[key] = std::move(entry);
     m_dirty = true;
 }
@@ -244,15 +209,6 @@ void DiskManifest::remove(int levelID, bool isGif) {
             m_urlToKey.erase(it->second.sourceUrl);
         }
         m_entries.erase(it);
-        m_dirty = true;
-    }
-}
-
-void DiskManifest::removeUrl(std::string const& url) {
-    auto keyIt = m_urlToKey.find(url);
-    if (keyIt != m_urlToKey.end()) {
-        m_entries.erase(keyIt->second);
-        m_urlToKey.erase(keyIt);
         m_dirty = true;
     }
 }
@@ -294,15 +250,6 @@ void DiskManifest::touchAccess(int levelID, bool isGif) {
         if (++m_accessCounter % 20 == 0) {
             m_dirty = true;
         }
-    }
-}
-
-void DiskManifest::touchAccessUrl(std::string const& url) {
-    auto keyIt = m_urlToKey.find(url);
-    if (keyIt == m_urlToKey.end()) return;
-    auto it = m_entries.find(keyIt->second);
-    if (it != m_entries.end()) {
-        it->second.touchAccess();
     }
 }
 
@@ -404,17 +351,6 @@ size_t DiskManifest::totalBytesLocked() const {
 size_t DiskManifest::entryCount() const {
     std::lock_guard<std::recursive_mutex> lock(mutex);
     return m_entries.size();
-}
-
-std::unordered_set<int> DiskManifest::legacyKeySet() const {
-    std::unordered_set<int> keys;
-    keys.reserve(m_entries.size());
-    for (auto const& [key, me] : m_entries) {
-        if (me.levelID > 0) {
-            keys.insert(me.isGif ? -me.levelID : me.levelID);
-        }
-    }
-    return keys;
 }
 
 void DiskManifest::rebuildFromDirectory(std::filesystem::path const& cacheDir) {

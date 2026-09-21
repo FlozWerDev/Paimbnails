@@ -15,6 +15,7 @@
 #include <fstream>
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include "../features/profiles/services/ProfileThumbs.hpp"
 #include "../utils/FileDialog.hpp"
 #include "../utils/SpriteHelper.hpp"

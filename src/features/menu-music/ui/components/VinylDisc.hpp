@@ -33,7 +33,6 @@ protected:
     cocos2d::CCNode* m_rotating = nullptr;
     cocos2d::CCClippingNode* m_coverClip = nullptr;
     cocos2d::CCSprite* m_coverSprite = nullptr;
-    cocos2d::CCSprite* m_centerDot = nullptr;
 };
 
 } // namespace paimon::menumusic

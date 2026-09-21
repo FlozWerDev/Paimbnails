@@ -1,8 +1,6 @@
 #pragma once
-// MenuMusicCoverLog — diagnostico de portadas del menu music.
-// Los logs normales del mod estan desactivados por defecto (enable-debug-logs),
-// asi que este helper escribe SIEMPRE a cover-debug.log y fuerza la consola
-// de Geode mientras menu-music-cover-debug este activo.
+// Diagnostico de portadas: escribe SIEMPRE a cover-debug.log (los logs
+// normales estan desactivados por defecto) y fuerza la consola de Geode.
 
 #include <Geode/Geode.hpp>
 #include <filesystem>

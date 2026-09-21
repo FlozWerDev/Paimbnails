@@ -12,7 +12,6 @@ struct PetShopItem {
 class PaimonShopPopup : public geode::Popup {
 protected:
     geode::ScrollLayer* m_scrollLayer = nullptr;
-    cocos2d::CCMenu* m_menu = nullptr;
     cocos2d::CCLabelBMFont* m_statusLabel = nullptr;
     std::vector<PetShopItem> m_items;
     std::set<std::string> m_downloading; // ids currently downloading

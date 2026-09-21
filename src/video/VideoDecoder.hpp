@@ -21,6 +21,8 @@
 
 namespace paimon {
 
+enum class VideoColorMatrix { Auto, BT601, BT709 };
+
 struct VideoFrame {
     uint8_t* planeY   = nullptr;
     uint8_t* planeCb  = nullptr;
@@ -73,7 +75,6 @@ struct VideoFrame {
 
 // Intentional leak on join timeout; Android caps MediaCodec instances.
 void noteDetachedDecoder(const char* backend);
-int detachedDecoderCount();
 
 class IVideoDecoder {
 public:
@@ -94,12 +95,18 @@ public:
     virtual int getNativeWidth() const { return getWidth(); }
     virtual int getNativeHeight() const { return getHeight(); }
 
+    // Content color description; Auto keeps the size-based BT.709 heuristic.
+    virtual VideoColorMatrix getColorMatrix() const { return VideoColorMatrix::Auto; }
+    virtual bool isFullRange() const { return false; }
+    // Clockwise display rotation in degrees (0/90/180/270).
+    virtual int getRotationDegrees() const { return 0; }
+
     virtual bool skipFrame() = 0;
 
     virtual double peekNextPTS() const = 0;
 
     // Second frame PTS or DBL_MAX if none.
-    virtual double peekSecondPTS() const { return 1e300; /* ~DBL_MAX */ }
+    virtual double peekSecondPTS() const { return DBL_MAX; }
 
     // Borrowed until releaseFrame(); no consuming/seek/stop calls in between.
     virtual const Frame* peekFrame() { return nullptr; }
@@ -234,7 +241,6 @@ public:
     }
 
     // Wait for writable space or shutdown; re-check isFull()/nextWrite() after.
-    template <typename Clock = std::chrono::steady_clock>
     bool waitForWritable(int timeoutMs, const std::atomic<bool>* aliveFlag = nullptr) {
         if (!isFull()) return true;
         std::unique_lock<std::mutex> lk(m_writableMtx);
@@ -243,17 +249,6 @@ public:
             return !isFull();
         });
         return !isFull();
-    }
-
-    template <typename Clock = std::chrono::steady_clock>
-    bool waitForReadable(int timeoutMs, const std::atomic<bool>* aliveFlag = nullptr) {
-        if (!isEmpty()) return true;
-        std::unique_lock<std::mutex> lk(m_readableMtx);
-        m_readableCv.wait_for(lk, std::chrono::milliseconds(timeoutMs), [&] {
-            if (aliveFlag && !aliveFlag->load(std::memory_order_relaxed)) return true;
-            return !isEmpty();
-        });
-        return !isEmpty();
     }
 
     void wakeAll() {

@@ -157,33 +157,11 @@ void clearShield() {
     s_shield = false;
 }
 
-void killSelf(bool fake) {
-#ifdef PAIMON_VERSUS_GLOBED
-    if (tableUp()) globed::api::game::killLocalPlayer(fake);
-#else
-    (void) fake;
-#endif
-}
-
 void respawn(bool fullReset) {
 #ifdef PAIMON_VERSUS_GLOBED
     if (tableUp()) globed::api::game::causeLocalRespawn(fullReset);
 #else
     (void) fullReset;
-#endif
-}
-
-void cancelRespawn() {
-#ifdef PAIMON_VERSUS_GLOBED
-    if (tableUp()) globed::api::game::cancelLocalRespawn();
-#endif
-}
-
-void taunt(uint32_t emoteId) {
-#ifdef PAIMON_VERSUS_GLOBED
-    if (tableUp()) globed::api::game::playSelfEmote(emoteId);
-#else
-    (void) emoteId;
 #endif
 }
 

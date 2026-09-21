@@ -2,10 +2,7 @@
 
 // Reading a whole level string instead of an editor selection.
 //
-// The analyzer works on downloaded levels, so it can never ask GD what an
-// object is: everything it knows has to come out of the save string. This
-// header is the only place that touches that format, and it stays free of
-// Geode so the regression test can run it on its own.
+// Offline analyzer: everything comes out of the save string, no Geode so tests run it standalone.
 
 #include <string>
 #include <vector>

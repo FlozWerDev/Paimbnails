@@ -5,9 +5,8 @@
 #include <mutex>
 #include <unordered_set>
 
-// Global registry of live CustomSongWidgets + editor teardown window. Avoids
-// UAF when FMOD/MusicDownloadManager call updateSongInfo or songStateChanged
-// during LevelEditorLayer::onStopPlaytest.
+// Global registry of live CustomSongWidgets + editor teardown window: FMOD can
+// call updateSongInfo/songStateChanged during onStopPlaytest (UAF otherwise).
 
 namespace paimon::csw {
 

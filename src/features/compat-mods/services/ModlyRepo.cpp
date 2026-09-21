@@ -73,7 +73,6 @@ namespace {
 
     ModlyComment parseComment(matjson::Value const& v) {
         ModlyComment comment;
-        comment.id = jsonStr(v["id"]);
         comment.text = jsonStr(v["text"]);
         comment.authorUid = jsonStr(v["authorUid"]);
         comment.authorName = jsonStr(v["authorName"]);
@@ -251,14 +250,6 @@ std::string ModlyRepo::photoUrl(ModlyUser const& user) const {
 
 std::string ModlyRepo::bannerUrl(ModlyUser const& user) const {
     return apiBase() + "/img/user/" + user.uid + "/banner.png";
-}
-
-void ModlyRepo::clearCache() {
-    m_mods.clear();
-    m_users.clear();
-    m_comments.clear();
-    m_hasCatalog = false;
-    m_catalogFetchedAt = 0;
 }
 
 std::string formatModlyDate(int64_t epoch) {

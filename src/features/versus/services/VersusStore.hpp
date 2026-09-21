@@ -64,9 +64,6 @@ public:
     bool hudEnabled() const { return m_hud; }
     void setHudEnabled(bool enabled);
 
-    bool tauntsMuted() const { return m_mutedTaunts; }
-    void setTauntsMuted(bool muted);
-
     bool friendsOnly() const { return m_friendsOnly; }
     void setFriendsOnly(bool value);
 
@@ -90,7 +87,6 @@ private:
     Format m_classicFormat = Format::Race;
     Format m_platformerFormat = Format::Race;
     bool m_hud = true;
-    bool m_mutedTaunts = false;
     bool m_friendsOnly = false;
     bool m_loaded = false;
 };

@@ -114,11 +114,8 @@ void consume(
     }
 }
 
-// La elipse mas grande que cabe centrada sobre `seed` con este giro y esta
-// cintura. El eje se camina hacia los dos lados mientras el hueco que queda
-// alrededor siga dando para la cintura, y la elipse entra entera en ese pasillo:
-// una elipse es la union de los circulos de radio decreciente que se apoyan en su
-// eje, asi que si el circulo mas gordo cabe en todo el recorrido, ella tambien.
+// La elipse entra entera si el circulo mas gordo cabe en todo el recorrido:
+// una elipse es la union de los circulos que se apoyan en su eje.
 Primitive stretch(
     Field const& field,
     Point const& seed,

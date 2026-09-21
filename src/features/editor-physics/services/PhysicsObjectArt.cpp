@@ -27,10 +27,8 @@ void applyTransform(GameObject* object, BodyVisual const& visual) {
     }
 }
 
-// createWithKey hands back the same object the editor builds for its own create
-// buttons, so the art is the real thing. Its detail and glow sprites belong to
-// batch layers that only exist inside a level, and stay unparented here until
-// they are pulled back onto the object.
+// The real art via the editor's own create path; detail and glow sprites belong
+// to batch layers that only exist inside a level.
 CCNode* spawnObject(BodyVisual const& visual) {
     if (visual.objectID <= 0 || visual.objectID == kTextObjectID ||
         visual.objectID == kCounterObjectID) {

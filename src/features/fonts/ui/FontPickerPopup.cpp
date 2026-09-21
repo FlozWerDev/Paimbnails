@@ -2,7 +2,6 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
-#include <Geode/binding/ButtonSprite.hpp>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -142,7 +141,6 @@ bool FontPickerPopup::init(
     };
 
     float qpBtnH = 18.f;
-    CCMenuItemSpriteExtra* qpBtns[3] = {};
 
     for (int i = 0; i < 3; ++i) {
         float bw = SIDEBAR_W - 8;
@@ -168,11 +166,7 @@ bool FontPickerPopup::init(
             container, this, menu_selector(FontPickerPopup::onQuickPick));
         btn->setUserObject(CCString::create(quickFonts[i].fontId));
         m_sideMenu->addChild(btn);
-        qpBtns[i] = btn;
     }
-    m_qpBig  = qpBtns[0];
-    m_qpChat = qpBtns[1];
-    m_qpGold = qpBtns[2];
 
     {
         float bw = SIDEBAR_W - 8;
@@ -393,7 +387,6 @@ void FontPickerPopup::showPreview(
     }
 
     auto pvSize = m_previewContainer->getContentSize();
-    float pvW = pvSize.width;
     float pvH = pvSize.height;
 
     auto preview = CCLabelBMFont::create("AaBbCc", fontFile.c_str());
@@ -508,8 +501,9 @@ bool FontPickerPopup::isInsideVisibleScroll(CCNode* item) {
     auto scrollWorld = m_scroll->convertToWorldSpace({0, 0});
     auto scrollSize = m_scroll->getContentSize();
     auto itemWorld = item->getParent()->convertToWorldSpace(item->getPosition());
-    return itemWorld.x >= scrollWorld.x && itemWorld.x <= scrollWorld.x + scrollSize.width
-        && itemWorld.y >= scrollWorld.y && itemWorld.y <= scrollWorld.y + scrollSize.height;
+    float half = CELL_SIZE * 0.5f;
+    return itemWorld.x + half >= scrollWorld.x && itemWorld.x - half <= scrollWorld.x + scrollSize.width
+        && itemWorld.y + half >= scrollWorld.y && itemWorld.y - half <= scrollWorld.y + scrollSize.height;
 }
 
 void FontPickerPopup::positionBelow(CCNode* anchor, float gap) {
@@ -518,4 +512,8 @@ void FontPickerPopup::positionBelow(CCNode* anchor, float gap) {
     float halfH = POPUP_H * 0.5f;
     float y = std::clamp(halfH + gap, halfH, winSize.height - halfH);
     m_mainLayer->setPosition({winSize.width * 0.5f, y});
+}
+
+void FontPickerPopup::closeAnimated() {
+    onClose(nullptr);
 }

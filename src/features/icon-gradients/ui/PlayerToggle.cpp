@@ -7,7 +7,11 @@ using namespace paimon::icon_gradients;
 PlayerToggle* PlayerToggle::create(GradientLayer* layer) {
     PlayerToggle* ret = new PlayerToggle(layer);
 
-    ret->init();
+    if (!ret->init()) {
+        delete ret;
+        return nullptr;
+    }
+
     ret->autorelease();
 
     return ret;

@@ -5,16 +5,8 @@
 #include <vector>
 
 // Resolves a mod repository page URL to the raw-file base its preview
-// images can be fetched from.
-// Thumbnail-strip idea inspired by "Mod Previews" by Alphalaneous
-// (https://github.com/Alphalaneous/Mod-Previews, Geode id
-// alphalaneous.mod_previews). The parsing below is an independent
-// implementation for Paimbnails; only the public conventions it
-// interoperates with are reused: the `previews/preview-<n>.png` path
-// inside mod repos and the `main`-then-`master` default-branch probe
-// (uncopyrightable interop facts). Preview images belong to each mod's
-// own repository authors and are only displayed, never redistributed.
-// No endorsement by the original author. See THIRD-PARTY-NOTICES.md.
+// images can be fetched from. Strip idea compatible with "Mod Previews" by
+// Alphalaneous; parsing below is our own (see THIRD-PARTY-NOTICES.md).
 
 namespace paimon::mod_previews {
 
@@ -29,7 +21,7 @@ struct PreviewSource {
 };
 
 // Split a URL into lowercase host + path segments, dropping empty
-// segments, a leading "www." and one trailing ".git".
+// segments, a leading "www." and a trailing ".git" suffix.
 inline bool parseHttpUrl(std::string_view url, std::string& hostOut,
                          std::vector<std::string>& segmentsOut) {
     auto scheme = url.find("://");
@@ -56,15 +48,20 @@ inline bool parseHttpUrl(std::string_view url, std::string& hostOut,
         }
     }
     if (!cur.empty() && cur != ".") segmentsOut.push_back(cur);
-    if (!segmentsOut.empty() && segmentsOut.back() == ".git") segmentsOut.pop_back();
-    while (!segmentsOut.empty() && segmentsOut.back().empty()) segmentsOut.pop_back();
+    // The last segment may carry the clone suffix ("repo.git"); a bare
+    // ".git" segment only happens for degenerate URLs, drop it too.
+    if (!segmentsOut.empty()) {
+        auto& last = segmentsOut.back();
+        if (last == ".git") segmentsOut.pop_back();
+        else if (last.size() > 4 && last.ends_with(".git")) last.erase(last.size() - 4);
+    }
     return segmentsOut.size() >= 2;
 }
 
-inline std::string joinSegments(std::vector<std::string> const& segs, size_t from = 0) {
+inline std::string joinSegments(std::vector<std::string> const& segs) {
     std::string out;
-    for (size_t i = from; i < segs.size(); i++) {
-        if (i != from) out += '/';
+    for (size_t i = 0; i < segs.size(); i++) {
+        if (i != 0) out += '/';
         out += segs[i];
     }
     return out;

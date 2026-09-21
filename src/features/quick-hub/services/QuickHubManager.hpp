@@ -7,9 +7,7 @@
 
 namespace paimon::quickhub {
 
-// Singleton que gestiona el estado del Quick Hub Radial:
-// - Configuracion persistente (orden de opciones, opciones activas)
-// - Estado del hold de Ctrl (timer, barra de progreso)
+// Estado del Quick Hub Radial: configuracion persistente y hold de Ctrl.
 class QuickHubManager {
 public:
     static QuickHubManager& get() {
@@ -36,10 +34,6 @@ public:
     bool deleteCustomButton(std::string const& id);
     std::string makeUniqueCustomId(std::string const& suggestedName);
 
-
-    bool isRadialOpen() const { return m_radialOpen; }
-    void setRadialOpen(bool open) { m_radialOpen = open; }
-
     // Mantener Ctrl para abrir el menu radial (Quick Hub).
     static bool isHoldCtrlEnabled();
     static void setHoldCtrlEnabled(bool enabled);
@@ -54,7 +48,6 @@ public:
 private:
     QuickHubManager() = default;
     static void writeCustomButtons(std::vector<CustomQuickButton> const& all);
-    bool m_radialOpen = false;
 
     // Key para guardar en saved values
     static constexpr char const* kSavedKey = "quick-hub-radial-order";

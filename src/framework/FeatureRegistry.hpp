@@ -5,7 +5,6 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
-#include <optional>
 
 namespace paimon {
 
@@ -36,21 +35,6 @@ public:
         std::lock_guard lock(m_mutex);
         auto it = m_enabled.find(name);
         return it != m_enabled.end() && it->second;
-    }
-
-    std::optional<FeatureSpec> getSpec(std::string const& name) const {
-        std::lock_guard lock(m_mutex);
-        auto it = m_specs.find(name);
-        if (it == m_specs.end()) return std::nullopt;
-        return it->second;
-    }
-
-    std::vector<std::string> allFeatureNames() const {
-        std::lock_guard lock(m_mutex);
-        std::vector<std::string> names;
-        names.reserve(m_specs.size());
-        for (auto const& [k, _] : m_specs) names.push_back(k);
-        return names;
     }
 
     size_t featureCount() const {

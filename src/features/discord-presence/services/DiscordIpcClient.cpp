@@ -187,8 +187,8 @@ bool DiscordIpcClient::tryConnect() {
         }
         DWORD err = GetLastError();
         if (err == ERROR_PIPE_BUSY) {
-            // Pipe busy: wait then retry same index.
-            if (WaitNamedPipeA(name.c_str(), 2000)) {
+            // Pipe busy: skip it, the 15s reconnect cooldown retries.
+            if (WaitNamedPipeA(name.c_str(), NMPWAIT_NOWAIT)) {
                 h = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
                                 OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
                 if (h != INVALID_HANDLE_VALUE) {

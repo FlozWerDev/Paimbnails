@@ -47,9 +47,7 @@ bool AnimatedTextInput::init(float width, std::string const& placeholder) {
         });
         this->addChild(m_input, 1);
 
-        // Interpose the Enter relay between the input node and geode's
-        // delegate so Enter presses reach setOnSubmit while everything else
-        // keeps flowing to geode's TextInput.
+        // Relay Enter presses to onSubmit; everything else keeps flowing to geode.
         if (auto* node = m_input->getInputNode()) {
             m_enterRelay.forward = node->m_delegate;
             geode::WeakRef<AnimatedTextInput> weakSelf = this;
@@ -129,12 +127,6 @@ void AnimatedTextInput::startGlowPulse() {
     auto seq = CCSequence::create(a, b, c, nullptr);
     seq->setTag(kGlowPulseTag);
     m_glow->runAction(seq);
-}
-
-void AnimatedTextInput::stopGlowPulse() {
-    if (!m_glow) return;
-    m_glow->stopActionByTag(kGlowPulseTag);
-    m_glow->setOpacity(0);
 }
 
 void AnimatedTextInput::playTypingPulse() {

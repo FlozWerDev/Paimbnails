@@ -23,10 +23,6 @@ int intField(matjson::Value const& item, char const* key) {
     return item.contains(key) ? static_cast<int>(item[key].asInt().unwrapOr(0)) : 0;
 }
 
-int64_t longField(matjson::Value const& item, char const* key) {
-    return item.contains(key) ? item[key].asInt().unwrapOr(0) : 0;
-}
-
 Status statusOf(std::string const& name) {
     if (name == "sent") return Status::Sent;
     if (name == "rejected") return Status::Rejected;
@@ -42,17 +38,13 @@ bool acceptEntry(matjson::Value const& entry, Request& out) {
 
     out.levelName = stringField(entry, "levelName");
     if (out.levelName.empty()) out.levelName = fmt::format("Level {}", out.levelId);
-    out.creator = stringField(entry, "creator");
     out.mode = stringField(entry, "mode");
     out.difficulty = stringField(entry, "difficulty");
-    out.description = stringField(entry, "description");
     out.video = stringField(entry, "video");
     out.requester = stringField(entry, "requester");
     out.status = statusOf(stringField(entry, "status"));
     out.sentDifficulty = stringField(entry, "sentDifficulty");
     out.sentTier = std::clamp(intField(entry, "sentTier"), 0, 4);
-    out.decidedBy = stringField(entry, "decidedBy");
-    out.createdAt = longField(entry, "createdAt");
     return true;
 }
 

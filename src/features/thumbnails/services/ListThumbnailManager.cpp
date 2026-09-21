@@ -1,6 +1,5 @@
 #include "ListThumbnailManager.hpp"
 #include "ThumbnailLoader.hpp"
-#include <fstream>
 
 using namespace geode::prelude;
 

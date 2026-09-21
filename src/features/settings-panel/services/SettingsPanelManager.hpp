@@ -13,7 +13,6 @@ public:
     void open(int initialCategory = 0);
     void showCategory(int initialCategory);
     void close();
-    bool isOpen() const { return m_panel != nullptr; }
 
     // called on close animation end
     void notifyPanelRemoved() { m_panel = nullptr; }

@@ -684,25 +684,6 @@ void solveDistanceAxis(JointEnd& a, JointEnd& b, float bias, bool pullOnly) {
 
 } // namespace
 
-bool fixtureContains(Fixture const& fixture, Vec2 point, float slack) {
-    Vec2 const local{point.x - fixture.offset.x, point.y - fixture.offset.y};
-    if (fixture.radius > 0.f) {
-        float const reach = fixture.radius + slack;
-        return lengthSquared(local) <= reach * reach;
-    }
-    if (fixture.vertexCount >= 3) {
-        int const count = std::min(fixture.vertexCount, kMaxVertices);
-        for (int i = 0; i < count; ++i) {
-            Vec2 const from = fixture.vertices[i];
-            Vec2 const to = fixture.vertices[(i + 1) % count];
-            if (dot(edgeNormal(from, to), local - from) > slack) return false;
-        }
-        return true;
-    }
-    return std::abs(local.x) <= fixture.halfSize.x + slack &&
-        std::abs(local.y) <= fixture.halfSize.y + slack;
-}
-
 // A hash grid over everything that never moves, built once. Without it a body
 // falling through a captured level walked all of its fixtures on every substep.
 struct StaticGrid {
@@ -1251,49 +1232,6 @@ void reportContacts(
     data.activeContacts = touchingContacts;
 }
 
-// Segment against one placed fixture, reported as a fraction of the segment.
-bool raycastShape(Shape const& shape, Vec2 from, Vec2 to, float& fraction, Vec2& normal) {
-    Vec2 const delta = to - from;
-    if (shape.count == 0) {
-        Vec2 const offset = from - shape.center;
-        float const a = dot(delta, delta);
-        if (a < 0.000001f) return false;
-        float const b = 2.f * dot(offset, delta);
-        float const c = dot(offset, offset) - shape.radius * shape.radius;
-        float const discriminant = b * b - 4.f * a * c;
-        if (discriminant < 0.f) return false;
-        float const root = (-b - std::sqrt(discriminant)) / (2.f * a);
-        if (root < 0.f || root > 1.f) return false;
-        fraction = root;
-        normal = normalized(from + delta * root - shape.center);
-        return true;
-    }
-
-    float lower = 0.f;
-    float upper = 1.f;
-    int face = -1;
-    for (int i = 0; i < shape.count; ++i) {
-        Vec2 const faceNormal = faceNormalOf(shape, i);
-        float const numerator = dot(faceNormal, shape.points[i] - from);
-        float const denominator = dot(faceNormal, delta);
-        if (std::abs(denominator) < 0.000001f) {
-            if (numerator < 0.f) return false;
-            continue;
-        }
-        if (denominator < 0.f && numerator < lower * denominator) {
-            lower = numerator / denominator;
-            face = i;
-        } else if (denominator > 0.f && numerator < upper * denominator) {
-            upper = numerator / denominator;
-        }
-        if (upper < lower) return false;
-    }
-    if (face < 0) return false;
-    fraction = lower;
-    normal = faceNormalOf(shape, face);
-    return true;
-}
-
 } // namespace
 
 PhysicsWorld::PhysicsWorld(
@@ -1546,30 +1484,6 @@ float PhysicsWorld::time() const {
     return m_data ? m_data->time : 0.f;
 }
 
-std::size_t PhysicsWorld::bodyCount() const {
-    return m_data ? m_data->states.size() : 0;
-}
-
-Pose PhysicsWorld::pose(std::size_t body) const {
-    if (!m_data || body >= m_data->states.size()) return {};
-    auto const& state = m_data->states[body];
-    return {state.position, state.angle};
-}
-
-Vec2 PhysicsWorld::velocity(std::size_t body) const {
-    if (!m_data || body >= m_data->states.size()) return {};
-    return m_data->states[body].velocity;
-}
-
-float PhysicsWorld::angularVelocity(std::size_t body) const {
-    if (!m_data || body >= m_data->states.size()) return 0.f;
-    return m_data->states[body].angularVelocity;
-}
-
-bool PhysicsWorld::asleep(std::size_t body) const {
-    return m_data && body < m_data->states.size() && m_data->states[body].asleep;
-}
-
 bool PhysicsWorld::settled() const {
     if (!m_data) return true;
     for (auto const& state : m_data->states) {
@@ -1587,152 +1501,6 @@ Frame PhysicsWorld::snapshot() const {
         frame.poses.push_back({state.position, state.angle});
     }
     return frame;
-}
-
-void PhysicsWorld::setVelocity(std::size_t body, Vec2 value) {
-    if (!m_data || body >= m_data->states.size()) return;
-    auto& state = m_data->states[body];
-    if (!isMovable(state)) return;
-    state.velocity = value;
-    wakeState(state);
-}
-
-void PhysicsWorld::setAngularVelocity(std::size_t body, float value) {
-    if (!m_data || body >= m_data->states.size()) return;
-    auto& state = m_data->states[body];
-    if (!isMovable(state)) return;
-    state.angularVelocity = value;
-    wakeState(state);
-}
-
-void PhysicsWorld::applyImpulse(std::size_t body, Vec2 impulse) {
-    if (!m_data || body >= m_data->states.size()) return;
-    auto& state = m_data->states[body];
-    if (!isDynamic(state)) return;
-    applyImpulseTo(state, impulse, {}, 1.f);
-    wakeState(state);
-}
-
-void PhysicsWorld::applyImpulseAt(std::size_t body, Vec2 impulse, Vec2 point) {
-    if (!m_data || body >= m_data->states.size()) return;
-    auto& state = m_data->states[body];
-    if (!isDynamic(state)) return;
-    applyImpulseTo(state, impulse, point - state.position, 1.f);
-    wakeState(state);
-}
-
-void PhysicsWorld::applyAngularImpulse(std::size_t body, float impulse) {
-    if (!m_data || body >= m_data->states.size()) return;
-    auto& state = m_data->states[body];
-    if (!isDynamic(state)) return;
-    state.angularVelocity += impulse * state.inverseInertia;
-    wakeState(state);
-}
-
-void PhysicsWorld::explode(Vec2 center, float radius, float strength) {
-    if (!m_data || radius <= 0.f || strength == 0.f) return;
-    for (auto& state : m_data->states) {
-        if (!isDynamic(state)) continue;
-        Vec2 const offset = state.position - center;
-        float const distance = length(offset);
-        if (distance > radius) continue;
-        Vec2 const direction = distance > 0.00001f ? offset / distance : Vec2{0.f, 1.f};
-        float const falloff = std::max(0.f, 1.f - distance / radius);
-        applyImpulseTo(state, direction * (strength * falloff), {}, 1.f);
-        wakeState(state);
-    }
-}
-
-void PhysicsWorld::wake(std::size_t body) {
-    if (!m_data || body >= m_data->states.size()) return;
-    wakeState(m_data->states[body]);
-}
-
-RayHit PhysicsWorld::raycast(Vec2 from, Vec2 to, std::uint32_t mask) const {
-    RayHit best;
-    if (!m_data) return best;
-    for (std::size_t body = 0; body < m_data->bodies.size(); ++body) {
-        if ((m_data->bodies[body].category & mask) == 0u) continue;
-        auto const& state = m_data->states[body];
-        for (std::size_t fixture = 0;
-             fixture < m_data->bodies[body].fixtures.size();
-             ++fixture) {
-            auto const& fixtureSpec = m_data->bodies[body].fixtures[fixture];
-            Vec2 const localFrom = rotate(from - state.position, -state.angle);
-            float fraction = 1.f;
-            Vec2 normal;
-            if (fixtureContains(fixtureSpec, localFrom)) {
-                fraction = 0.f;
-                normal = normalized(from - to);
-                if (normal.x == 0.f && normal.y == 0.f) normal = {0.f, 1.f};
-            } else if (!raycastShape(
-                           worldFixture(state, fixtureSpec),
-                           from,
-                           to,
-                           fraction,
-                           normal
-                       )) {
-                continue;
-            }
-            if (best.hit && fraction >= best.fraction) continue;
-            best.hit = true;
-            best.body = body;
-            best.fixture = fixture;
-            best.fraction = fraction;
-            best.point = from + (to - from) * fraction;
-            best.normal = normal;
-        }
-    }
-    return best;
-}
-
-std::vector<Overlap> PhysicsWorld::overlapPoint(Vec2 point, float slack) const {
-    std::vector<Overlap> result;
-    if (!m_data) return result;
-    for (std::size_t body = 0; body < m_data->bodies.size(); ++body) {
-        auto const& state = m_data->states[body];
-        Vec2 const localPoint = rotate(point - state.position, -state.angle);
-        for (std::size_t fixture = 0;
-             fixture < m_data->bodies[body].fixtures.size();
-             ++fixture) {
-            if (fixtureContains(m_data->bodies[body].fixtures[fixture], localPoint, slack)) {
-                result.push_back({body, fixture});
-            }
-        }
-    }
-    return result;
-}
-
-std::vector<Overlap> PhysicsWorld::overlapCircle(Vec2 center, float radius) const {
-    if (radius <= 0.f) return overlapPoint(center);
-    std::vector<Overlap> result;
-    if (!m_data) return result;
-    Shape query;
-    query.center = center;
-    query.radius = radius;
-    Bounds const queryBounds{
-        {center.x - radius, center.y - radius},
-        {center.x + radius, center.y + radius},
-    };
-    for (std::size_t body = 0; body < m_data->bodies.size(); ++body) {
-        auto const& state = m_data->states[body];
-        for (std::size_t fixture = 0;
-             fixture < m_data->bodies[body].fixtures.size();
-             ++fixture) {
-            auto const& fixtureSpec = m_data->bodies[body].fixtures[fixture];
-            if (!boundsOverlap(queryBounds, fixtureBounds(state, fixtureSpec), 0.f)) continue;
-            Manifold manifold;
-            if (buildManifold(query, worldFixture(state, fixtureSpec), manifold)) {
-                result.push_back({body, fixture});
-            }
-        }
-    }
-    return result;
-}
-
-std::vector<ContactEvent> const& PhysicsWorld::contacts() const {
-    static std::vector<ContactEvent> const empty;
-    return m_data ? m_data->events : empty;
 }
 
 std::size_t PhysicsWorld::impacts() const {
@@ -1784,10 +1552,6 @@ SimulationTrace simulate(
         Frame const before = world.snapshot();
         world.step(dt);
 
-        for (auto const& event : world.contacts()) {
-            if (trace.contacts.size() >= kMaxContactEvents) break;
-            trace.contacts.push_back(event);
-        }
         if (trace.settleTime < 0.f && world.settled()) trace.settleTime = world.time();
 
         float const elapsed = std::min((stepIndex + 1) * fixedStep, options.duration);

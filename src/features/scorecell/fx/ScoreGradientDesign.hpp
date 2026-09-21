@@ -6,15 +6,8 @@
 
 namespace paimon::scorecell {
 
-// HSL-locked gradient design for score cells.
-//
-// Raw icon colors (`GameManager::colorForIdx`) are picked for small icon
-// fills, not for full-cell backgrounds: equal color1/color2 gives a flat
-// rectangle, neons burn and pastels wash out once stretched over a wide
-// cell. This helper keeps each icon's hue (so the cell still reads as
-// "that player's colors") while clamping saturation/lightness into a band
-// that survives as a background, and guarantees visible separation between
-// the two stops.
+// HSL-locked gradient design for score cells: each icon's hue is kept while
+// saturation/lightness are clamped into a band that survives as a background.
 
 namespace detail {
 inline void rgbToHsl(float r, float g, float b, float& h, float& s, float& l) {
@@ -68,9 +61,8 @@ harmonizePair(cocos2d::ccColor3B a, cocos2d::ccColor3B b) {
     rgbToHsl(a.r / 255.f, a.g / 255.f, a.b / 255.f, h1, s1, l1);
     rgbToHsl(b.r / 255.f, b.g / 255.f, b.b / 255.f, h2, s2, l2);
 
-    // Achromatic stops have no hue (rgbToHsl leaves h=0, i.e. red): forcing
-    // the saturation floor on them would tint grays/whites pink. Keep
-    // neutrals neutral; only chromatic stops get the vivid band.
+    // Achromatic stops have no hue (h=0 reads as red): keep neutrals neutral,
+    // only chromatic stops get the vivid band.
     bool c1 = s1 >= 0.08f;
     bool c2 = s2 >= 0.08f;
     s1 = c1 ? std::clamp(s1, 0.38f, 0.80f) : std::min(s1, 0.12f);
@@ -78,11 +70,8 @@ harmonizePair(cocos2d::ccColor3B a, cocos2d::ccColor3B b) {
     l1 = std::clamp(l1, 0.30f, 0.62f);
     l2 = std::clamp(l2, 0.30f, 0.62f);
 
-    // Guarantee separation: same color (or near-analogous pair) becomes an
-    // analogous duo instead of a flat rectangle. Hue of A is sacred (primary
-    // icon color); only B moves — and only when both stops are chromatic,
-    // so neutral pairs never gain an invented hue. The darker-B step still
-    // applies to neutrals so gray-on-gray keeps a visible direction.
+    // Same or near-analogous pair becomes an analogous duo (A's hue is sacred,
+    // only B moves); B still darkens on neutrals so gray keeps a direction.
     float dh = std::fabs(h1 - h2);
     dh = std::min(dh, 360.f - dh);
     if (dh < 20.f) {
@@ -101,13 +90,8 @@ designScoreGradient(cocos2d::ccColor3B a, cocos2d::ccColor3B b) {
     return detail::harmonizePair(a, b);
 }
 
-// Painted once per cell inside the rounded clip, above the gradient:
-// - dark-left scrim: keeps rank/name readable over saturated icon pairs.
-// - faint right scrim: same for the score column on light pairs.
-// - faint top sheen: breaks 8-bit banding and gives the flat quad depth.
-// All carry paimon IDs so pushGameColorLayersBehind() never demotes them
-// (CCLayerGradient IS-A CCLayerColor). Both are vector-only CCLayerGradients,
-// so the clip rounds their corners and no transform ever uncovers an edge.
+// Overlays painted once per cell above the gradient. CCLayerGradient IS-A
+// CCLayerColor, so they carry paimon IDs and are never demoted behind.
 inline void attachCellOverlays(cocos2d::CCNode* clip, cocos2d::CCSize cs) {
     if (!clip) return;
     if (cs.width <= 1.f || cs.height <= 1.f) return;

@@ -8,10 +8,8 @@
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
-#include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/SongInfoObject.hpp>
 #include <Geode/binding/CCTextInputNode.hpp>
-#include <Geode/cocos/extensions/GUI/CCControlExtension/CCScale9Sprite.h>
 
 #include <algorithm>
 #include <cctype>
@@ -371,8 +369,6 @@ void SongSearchPopup::updateScrollLayout(bool forceRefresh) {
         const float yPos = - (i * pitch) + fractionalOffset - kRowHeight * 0.5f;
         row->setPosition({0.f, yPos});
     }
-
-    m_prevYScroll = m_yScroll;
 }
 
 bool SongSearchPopup::fuzzyMatch(std::string const& query, std::string const& target, int& outScore) {

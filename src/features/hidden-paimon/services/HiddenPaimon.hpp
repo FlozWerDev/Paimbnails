@@ -2,10 +2,8 @@
 
 #include <Geode/Geode.hpp>
 
-// The Paimon that hides in the main menu. She scans the layer for buttons and
-// tucks herself under one of them so only her face pokes out, as if watching.
-// With the Guide on she stops hiding and waits at the Paimon Hub button, where
-// clicking her opens the chat instead of blowing her up.
+// Tucks herself under a menu button so only her face pokes out; with the Guide
+// on she waits at the Hub button and opens the chat instead.
 
 namespace paimon::hidden_paimon {
 

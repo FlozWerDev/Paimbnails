@@ -1,9 +1,7 @@
 #pragma once
 
-// Compact music widget pinned to the top left of the editor. Ctrl+M toggles it.
-// It handles its own touches so clicks on the panel never drop objects on the
-// canvas behind it, and it hides itself while the editor UI is hidden or a
-// playtest is running.
+// Pinned editor widget on Ctrl+M; swallows its own touches so panel clicks
+// never drop objects on the canvas, and hides during playtest or hidden UI.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -22,7 +20,6 @@ public:
 
     // Ctrl+M. Returns the new open state.
     bool toggleOpen();
-    bool isOpen() const { return m_open; }
 
     void refreshTrackInfo();
 

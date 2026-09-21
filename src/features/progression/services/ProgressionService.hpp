@@ -34,9 +34,8 @@ public:
     // Keeps the parts of a score the local save can't rebuild.
     void rememberOwnScore(GJUserScore* score);
 
-    // Compares the live numbers against the stored snapshot and commits the new
-    // one. Returns nothing on the first ever call (nothing to compare against)
-    // or when nothing moved.
+    // Diffs live numbers against the stored snapshot; nullopt on the first
+    // call or when nothing moved.
     std::optional<ProgressDelta> consumeDelta();
 
     void commitSnapshot();

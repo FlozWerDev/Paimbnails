@@ -158,7 +158,6 @@ void GlobalIconStorage::ensureIcon(int accountID, GlobalIconSlot const& slot, En
     IconType type = *typeOpt;
     std::string regName = registeredName(accountID, slot);
 
-    // already registered this session and still present in More Icons?
     if (m_registered.count(regName) && more_icons::getIcon(regName, type) != nullptr) {
         if (cb) cb(true, regName);
         return;

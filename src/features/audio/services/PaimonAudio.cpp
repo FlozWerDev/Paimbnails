@@ -2,7 +2,6 @@
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/loader/Log.hpp>
 #include <algorithm>
-#include <cmath>
 
 using namespace geode::prelude;
 

@@ -5,8 +5,6 @@
 #include <Geode/utils/general.hpp>
 #include <Geode/utils/string.hpp>
 
-#include <algorithm>
-
 using namespace geode::prelude;
 
 namespace paimon::officialslots {
@@ -49,7 +47,7 @@ int intValue(std::string const& xml, std::string_view key) {
     return parsed ? parsed.unwrap() : 0;
 }
 
-// The few entities a level name or description can carry.
+// The few entities a level name can carry.
 std::string decodeEntities(std::string text) {
     static std::pair<std::string_view, std::string_view> const kEntities[] = {
         {"&lt;", "<"}, {"&gt;", ">"}, {"&quot;", "\""},
@@ -86,20 +84,7 @@ std::optional<GmdInfo> readGmdInfo(std::filesystem::path const& path) {
     // k5 is the author on downloaded levels; locally made ones leave it empty.
     if (auto author = stringValue(xml, "k5")) info.author = decodeEntities(*author);
 
-    // k3 is base64 in the game's own alphabet. Decoding it is not worth a
-    // dependency here, so the description stays empty unless it is plain.
-    if (auto description = stringValue(xml, "k3")) {
-        auto decoded = decodeEntities(*description);
-        bool const printable = std::all_of(decoded.begin(), decoded.end(), [](char c) {
-            return static_cast<unsigned char>(c) >= 0x20;
-        });
-        if (printable && decoded.find(' ') != std::string::npos) {
-            info.description = decoded;
-        }
-    }
-
     info.songId = intValue(xml, "k45");
-    info.originalLevelId = intValue(xml, "k1");
 
     if (info.name.empty()) {
         info.name = utils::string::pathToString(path.stem());

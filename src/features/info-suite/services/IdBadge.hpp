@@ -1,10 +1,7 @@
 #pragma once
 
-// Shared "#12345" label used by every Visible IDs hook.
-//
-// The Shift-to-reveal mode would be expensive if each badge polled the keyboard
-// every frame, so badges register themselves here and a single keyboard hook
-// flips them all whenever the Shift state actually changes.
+// Shared "#12345" label for the Visible IDs hooks; badges register here so one
+// keyboard hook flips them all on Shift changes instead of polling every frame.
 
 #include <Geode/Geode.hpp>
 #include <string>

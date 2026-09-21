@@ -2,16 +2,6 @@
 #include <Geode/Geode.hpp>
 #include "../services/TransitionManager.hpp"
 
-// CustomTransitionEditorPopup — editor visual completo para
-// transiciones custom DSL dentro de Geometry Dash.
-//
-// Features:
-//   - Lista scrollable de comandos con add/remove/reorder
-//   - Editor por comando: accion, target, duracion, valores
-//   - Soporte de imagenes overlay
-//   - Preview en vivo de la transicion
-//   - Guardar/cargar configuracion
-
 class CustomTransitionEditorPopup : public geode::Popup {
 protected:
     bool init(TransitionConfig config, bool isGlobal, std::function<void(TransitionConfig)> save);

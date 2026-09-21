@@ -52,36 +52,6 @@ static bool fileExists(const std::filesystem::path& p) {
     return std::filesystem::is_regular_file(p, ec);
 }
 
-static std::string joinArgWindows(const std::string& s) {
-    if (s.find_first_of(" \t\"") == std::string::npos) return s;
-    std::string out = "\"";
-    for (char c : s) {
-        if (c == '"') out += "\\\"";
-        else if (c == '\\') out += "\\\\";
-        else out += c;
-    }
-    out += '"';
-    return out;
-}
-
-static std::string joinArgPosix(const std::string& s) {
-    std::string out = "'";
-    for (char c : s) {
-        if (c == '\'') out += "'\\''";
-        else out += c;
-    }
-    out += '\'';
-    return out;
-}
-
-static std::string joinArg(const std::string& s) {
-#ifdef GEODE_IS_WINDOWS
-    return joinArgWindows(s);
-#else
-    return joinArgPosix(s);
-#endif
-}
-
 // Runs on a worker, streams merged stdout/stderr, and returns -1 on launch
 // failure. Use argv for user data; shell mode is reserved for fixed probes.
 #ifdef GEODE_IS_WINDOWS
@@ -626,7 +596,10 @@ void YtDlpDownloader::download(
             log::debug("[yt-dlp] scanning {} for stem '{}' (expected {})",
                 geode::utils::string::pathToString(tracksDir), trackId, expectedExt);
             for (auto& e : std::filesystem::directory_iterator(tracksDir, ec)) {
-                if (paimon::isRuntimeShuttingDown()) return;
+                if (paimon::isRuntimeShuttingDown()) {
+                    m_activeJobs.fetch_sub(1, std::memory_order_relaxed);
+                    return;
+                }
                 if (!e.is_regular_file()) continue;
                 const auto& entryPath = e.path();
                 // pathToString preserves non-ASCII names on Windows.
@@ -670,7 +643,10 @@ void YtDlpDownloader::download(
             }
         }
 
-        if (paimon::isRuntimeShuttingDown()) return;
+        if (paimon::isRuntimeShuttingDown()) {
+            m_activeJobs.fetch_sub(1, std::memory_order_relaxed);
+            return;
+        }
 
         std::string metaTitle;
         std::string metaArtist;
@@ -698,7 +674,10 @@ void YtDlpDownloader::download(
             std::filesystem::remove(foundInfoJson, rm);
         }
 
-        if (paimon::isRuntimeShuttingDown()) return;
+        if (paimon::isRuntimeShuttingDown()) {
+            m_activeJobs.fetch_sub(1, std::memory_order_relaxed);
+            return;
+        }
 
         auto sanitizeFsName = [](std::string in) {
             static const std::string banned = "<>:\"/\\|?*";
@@ -784,7 +763,10 @@ void YtDlpDownloader::download(
             }
         }
 
-        if (paimon::isRuntimeShuttingDown()) return;
+        if (paimon::isRuntimeShuttingDown()) {
+            m_activeJobs.fetch_sub(1, std::memory_order_relaxed);
+            return;
+        }
 
         if (!foundCover.empty()) {
             std::error_code mv;

@@ -1,14 +1,7 @@
 #pragma once
 
-// Advanced Search: a complete search builder plus the client side "refine"
-// pass.
-//
-// The server filters (difficulty, length, rating flags, song, folder) go into a
-// GJSearchObject like any normal search. The filters RobTop's API does not
-// support — id range, game version range, object count range — are applied to
-// each page as it arrives, through LevelBrowserLayer::updateResultArray. That
-// means a refined page can come back with fewer than ten levels; the popup says
-// so rather than pretending otherwise.
+// Search builder plus a client-side "refine" pass for filters RobTop's API lacks.
+// A refined page can return fewer than ten levels; the popup says so.
 
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/binding/GJSearchObject.hpp>

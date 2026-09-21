@@ -33,8 +33,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-extern CCNode* createThumbnailViewPopup(int32_t levelID, bool canAcceptUpload, std::vector<Suggestion> const& suggestions);
-
 VerificationCenterLayer* VerificationCenterLayer::create() {
     auto ret = new VerificationCenterLayer();
     if (ret && ret->init()) {
@@ -516,9 +514,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         btnX -= btnGap;
     }
 
-    // Several people can submit a thumbnail for the same level. Approving
-    // them one by one is the common case, so "ALL" only shows up when there
-    // is actually a gallery to approve in bulk.
+    // Several submitters can share one level; "ALL" only shows for bulk galleries.
     if (m_current == PendingCategory::Verify && item.suggestions.size() > 1) {
         auto spr = ButtonSprite::create("ALL", 30, true, "bigFont.fnt", "GJ_button_02.png", 22.f, 0.5f);
         spr->setScale(0.55f);
@@ -893,9 +889,8 @@ void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool r
         return;
     }
 
-    // Only the verify queue keeps a per-file gallery. acceptAll deliberately
-    // carries no filename — the server publishes the whole gallery when it
-    // sees the flag.
+    // acceptAll carries no filename on purpose: the server publishes the whole
+    // gallery when it sees the flag (only the verify queue keeps one).
     std::string targetFilename;
     if (!acceptAll && m_current == PendingCategory::Verify) {
         targetFilename = selectedSuggestionFilename(levelID);
@@ -1096,55 +1091,6 @@ void VerificationCenterLayer::onBanUser(CCObject* sender) {
     ).showInstant();
 }
 
-void VerificationCenterLayer::onViewThumb(CCObject* sender) {
-    int lvl = static_cast<CCNode*>(sender)->getTag();
-    bool canAccept = (m_current == PendingCategory::Verify || m_current == PendingCategory::Update);
-
-    paimon::SessionState::get().verification.fromReportPopup      = (m_current == PendingCategory::Report);
-    paimon::SessionState::get().verification.verificationCategory  = static_cast<int>(m_current);
-
-    std::vector<Suggestion> suggestions;
-    for (auto const& item : m_items) {
-        if (item.levelID == lvl) {
-            suggestions = item.suggestions;
-            break;
-        }
-    }
-
-    auto pop = createThumbnailViewPopup(lvl, canAccept, suggestions);
-    if (pop) {
-        if (auto alertLayer = typeinfo_cast<FLAlertLayer*>(pop)) {
-            alertLayer->show();
-        }
-    } else {
-        PaimonNotify::create(Localization::get().getString("queue.cant_open").c_str(), NotificationIcon::Error)->show();
-    }
-}
-
-void VerificationCenterLayer::onOpenProfile(CCObject* sender) {
-    int accountID = static_cast<CCNode*>(sender)->getTag();
-    ProfilePage::create(accountID, false)->show();
-}
-
-void VerificationCenterLayer::onViewProfileBackground(CCObject* sender) {
-    int accountID = static_cast<CCNode*>(sender)->getTag();
-
-    auto loading = PaimonNotify::create("Loading profile background...", NotificationIcon::Loading);
-    loading->show();
-
-    WeakRef<VerificationCenterLayer> self = this;
-    ThumbnailAPI::get().downloadPendingProfile(accountID, [self, loading](bool success, CCTexture2D* texture) {
-        loading->hide();
-        auto layer = self.lock();
-        if (!layer) return;
-        if (success && texture) {
-            layer->setPreviewTexture(texture);
-        } else {
-            PaimonNotify::create("Failed to load profile background", NotificationIcon::Error)->show();
-        }
-    });
-}
-
 void VerificationCenterLayer::onPreviewClick(CCObject*) {
     if (m_selectedIndex < 0 || m_selectedIndex >= (int)m_items.size()) return;
     auto& item = m_items[m_selectedIndex];
@@ -1207,10 +1153,6 @@ void VerificationCenterLayer::updateNavigationArrows() {
     }
 }
 
-void VerificationCenterLayer::loadCurrentSuggestionPreview() {
-    if (m_selectedIndex >= 0) showPreviewForItem(m_selectedIndex);
-}
-
 void VerificationCenterLayer::onToggleFilter(CCObject* sender) {
     m_filterUnclaimed = !m_filterUnclaimed;
 
@@ -1251,8 +1193,4 @@ void VerificationCenterLayer::onSession(CCObject*) {
 
 void VerificationCenterLayer::onRefresh(CCObject*) {
     switchTo(m_current);
-}
-
-void VerificationCenterLayer::autoRefreshClaims(float dt) {
-    if (!m_actionPending) switchTo(m_current);
 }

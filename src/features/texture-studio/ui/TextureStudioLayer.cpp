@@ -31,7 +31,9 @@ TextureStudioLayer* TextureStudioLayer::create() {
 
 CCScene* TextureStudioLayer::scene() {
     auto* scene = CCScene::create();
-    scene->addChild(TextureStudioLayer::create());
+    if (auto* layer = TextureStudioLayer::create()) {
+        scene->addChild(layer);
+    }
     return scene;
 }
 

@@ -15,9 +15,8 @@
 #include <limits>
 #include <string>
 
-// Desktop-only numeric input wheel control: integer fields step by one; decimal
-// fields use a small modifier step. (Needs a mouse wheel, and hooks
-// CCMouseDispatcher::dispatchScrollMSG like smooth-scroll does.)
+// Desktop wheel steps numeric fields; shares the CCMouseDispatcher hook point
+// with smooth-scroll.
 
 #if defined(GEODE_IS_DESKTOP)
 
@@ -79,30 +78,21 @@ CCRect worldBox(CCNode* n) {
             std::abs(tr.x - bl.x), std::abs(tr.y - bl.y)};
 }
 
-bool isNodeVisibleInTree(CCNode* n) {
-    for (auto* c = n; c; c = c->getParent()) {
-        if (!c->isVisible()) return false;
-    }
-    return true;
-}
-
 void collectCandidates(CCNode* node, CCPoint const& mouse,
                        CCTextInputNode*& topHit,
                        CCTextInputNode*& focused) {
     if (!node || !node->isVisible()) return;
 
     if (auto* input = typeinfo_cast<CCTextInputNode*>(node)) {
-        if (isNodeVisibleInTree(input)) {
-            if (input->m_selected) focused = input;
-            CCRect box = worldBox(input);
-            if (!box.containsPoint(mouse)) {
-                if (auto* wrap = findGeodeWrapper(input)) {
-                    box = worldBox(wrap);
-                }
+        if (input->m_selected) focused = input;
+        CCRect box = worldBox(input);
+        if (!box.containsPoint(mouse)) {
+            if (auto* wrap = findGeodeWrapper(input)) {
+                box = worldBox(wrap);
             }
-            if (box.containsPoint(mouse)) {
-                topHit = input;
-            }
+        }
+        if (box.containsPoint(mouse)) {
+            topHit = input;
         }
     }
 
@@ -282,8 +272,18 @@ bool tryHandleInputScroll(float y) {
     } else {
         long long base = 0;
         if (!parseCurrentInt(target, base)) return false;
-        int step = std::max(1, paimon::settings::input_scroll::intStep());
-        writeInt(target, base + static_cast<long long>(dir) * step, profile);
+        // parseCurrentInt saturates, so the step itself must too: adding past
+        // the limits is signed overflow.
+        long long bump = static_cast<long long>(dir) * std::max(1, paimon::settings::input_scroll::intStep());
+        long long next = base;
+        if (bump > 0 && base > std::numeric_limits<long long>::max() - bump) {
+            next = std::numeric_limits<long long>::max();
+        } else if (bump < 0 && base < std::numeric_limits<long long>::min() - bump) {
+            next = std::numeric_limits<long long>::min();
+        } else {
+            next = base + bump;
+        }
+        writeInt(target, next, profile);
     }
     return true;
 }

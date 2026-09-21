@@ -43,9 +43,8 @@ bool isLockedIcon(GJItemIcon* icon, SimplePlayer* sp) {
     return sp && sp->m_firstLayer && sp->m_firstLayer->getOpacity() == 120;
 }
 
-// Gather every GJItemIcon across all cached pages of a ListButtonBar (pages
-// that are swiped away are detached from the node tree, so a subtree walk
-// misses them).
+// Collect icons across all cached ListButtonBar pages; swiped-away pages are
+// detached from the node tree, so a subtree walk misses them.
 void collectListBarIcons(ListButtonBar* bar, std::vector<GJItemIcon*>& out) {
     if (!bar || !bar->m_pages) return;
     int pageCount = bar->m_pages->count();
@@ -68,11 +67,8 @@ void collectListBarIcons(ListButtonBar* bar, std::vector<GJItemIcon*>& out) {
     }
 }
 
-// Everything vanilla changeToLockedState touched, captured right after it ran.
-// Restore replays these values instead of guessing them: vanilla hides detail
-// sprites and UFO domes and keeps its own layer colors, so a hardcoded
-// "browser gray + everything visible" rebuild turns locked icons into pale
-// white blobs.
+// Snapshot of everything vanilla changeToLockedState touched; restore replays
+// it verbatim (hardcoded rebuilds wash locked icons out to white blobs).
 class LockedVanillaSnapshot : public CCObject {
 public:
     ccColor3B first{175, 175, 175};

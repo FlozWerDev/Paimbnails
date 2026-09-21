@@ -25,6 +25,7 @@ class $modify(PaimonGoldenBestPlayLayer, PlayLayer) {
         CCLabelBMFont* m_label = nullptr;
         float m_oldScale = 1.0F;
         float m_oldAnchorY = -1.0F;
+        std::string m_oldFont;
         int   m_labelSearchCooldown = 0;
         bool m_initialized = false;
         bool m_goldApplied = false;
@@ -39,7 +40,7 @@ class $modify(PaimonGoldenBestPlayLayer, PlayLayer) {
         if (m_fields->m_customColor) {
             label->setColor(ccWHITE);
         } else {
-            label->setFntFile("bigFont.fnt");
+            label->setFntFile(m_fields->m_oldFont.empty() ? "bigFont.fnt" : m_fields->m_oldFont.c_str());
             label->setScale(m_fields->m_oldScale);
             if (m_fields->m_oldAnchorY != -1.0F) {
                 label->setAnchorPoint({label->getAnchorPoint().x, m_fields->m_oldAnchorY});
@@ -93,6 +94,7 @@ class $modify(PaimonGoldenBestPlayLayer, PlayLayer) {
             }
         }
         if (!m_fields->m_label) return false;
+        if (auto* fnt = m_fields->m_label->getFntFile()) m_fields->m_oldFont = fnt;
 
         auto* mod = Mod::get();
         m_fields->m_customColor = mod->getSettingValue<bool>("golden-best-enable-colors");

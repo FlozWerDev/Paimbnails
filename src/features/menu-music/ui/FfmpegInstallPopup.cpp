@@ -177,7 +177,6 @@ void FfmpegInstallPopup::updateProgress(float pct, const std::string& message) {
 void FfmpegInstallPopup::finishSuccess() {
     if (m_finished) return;
     m_finished = true;
-    m_success = true;
 
     if (m_barBg && m_barFill) {
         m_barFill->setContentSize(m_barBg->getContentSize());
@@ -204,7 +203,6 @@ void FfmpegInstallPopup::finishSuccess() {
 void FfmpegInstallPopup::finishError(const std::string& error) {
     if (m_finished) return;
     m_finished = true;
-    m_success = false;
 
     if (m_statusLabel) {
         std::string e = error;

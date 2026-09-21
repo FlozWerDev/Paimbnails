@@ -68,6 +68,37 @@ inline void deinterleaveNV12Row_AVF(const uint8_t* uv, uint8_t* cb, uint8_t* cr,
 
 } // anon namespace
 
+// preferredTransform components are exact 0/+-1 from the container matrix;
+// +X mapping to +Y (down) reads as clockwise on screen.
+static int rotationFromTransform(CGAffineTransform t) {
+    if (t.a == 0 && t.b == 1 && t.c == -1 && t.d == 0) return 90;
+    if (t.a == 0 && t.b == -1 && t.c == 1 && t.d == 0) return 270;
+    if (t.a == -1 && t.b == 0 && t.c == 0 && t.d == -1) return 180;
+    return 0;
+}
+
+void DecoderAVF::readTrackMetadata() {
+    AVAssetTrack* videoTrack = (__bridge AVAssetTrack*)m_videoTrack;
+    if (!videoTrack) return;
+    m_rotation = rotationFromTransform(videoTrack.preferredTransform);
+    NSArray* descs = videoTrack.formatDescriptions;
+    if (descs.count == 0) return;
+    CMFormatDescriptionRef fd = (__bridge CMFormatDescriptionRef)descs[0];
+    CFDictionaryRef exts = CMFormatDescriptionGetExtensions(fd);
+    if (!exts) return;
+    CFStringRef matrix = static_cast<CFStringRef>(
+        CFDictionaryGetValue(exts, kCMFormatDescriptionExtension_YCbCrMatrix));
+    if (matrix) {
+        if (CFStringCompare(matrix, kCVImageBufferYCbCrMatrix_ITU_R_709_2, 0) == kCFCompareEqualTo)
+            m_colorMatrix = VideoColorMatrix::BT709;
+        else if (CFStringCompare(matrix, kCVImageBufferYCbCrMatrix_ITU_R_601_4, 0) == kCFCompareEqualTo)
+            m_colorMatrix = VideoColorMatrix::BT601;
+    }
+    CFBooleanRef full = static_cast<CFBooleanRef>(
+        CFDictionaryGetValue(exts, kCMFormatDescriptionExtension_FullRangeVideo));
+    if (full) m_fullRange = CFBooleanGetValue(full) == TRUE;
+}
+
 bool DecoderAVF::open(const std::string& path) {
     closeInternal();
 
@@ -116,6 +147,7 @@ bool DecoderAVF::open(const std::string& path) {
 
         m_asset      = (__bridge_retained void*) asset;
         m_videoTrack = (__bridge void*) videoTrack;  // weak ref into asset
+        readTrackMetadata();
     }
 
     if (!m_ring.init(m_width, m_height)) {

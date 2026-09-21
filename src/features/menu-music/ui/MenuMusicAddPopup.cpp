@@ -492,19 +492,20 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
             "<cl>~17 MB, one-time download.</c>\n\n"
             "Do you want to install it now?",
             "Cancel", "Install",
-            [this](FLAlertLayer*, bool accepted) {
-                if (!m_alive.load()) return;
+            [weakThis = geode::WeakRef<cocos2d::CCNode>(this)](FLAlertLayer*, bool accepted) {
+                auto ref = weakThis.lock();
+                auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
+                if (!self || !self->m_alive.load()) return;
                 if (!accepted) {
-                    if (m_statusLabel) {
-                        m_statusLabel->setString("Install cancelled.");
-                        m_statusLabel->setColor({200, 200, 200});
+                    if (self->m_statusLabel) {
+                        self->m_statusLabel->setString("Install cancelled.");
+                        self->m_statusLabel->setColor({200, 200, 200});
                     }
-                    refreshStatus();
+                    self->refreshStatus();
                     return;
                 }
 
 // m_alive and WeakRef guard UI access during install.
-                auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
                 auto installPopup = YtDlpInstallPopup::create(
                     [weakThis](bool ok) {
                         auto ref = weakThis.lock();
@@ -543,18 +544,19 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
             "<cl>~80 MB, one-time download.</c>\n\n"
             "Do you want to install it now?",
             "Cancel", "Install",
-            [this](FLAlertLayer*, bool accepted) {
-                if (!m_alive.load()) return;
+            [weakThis = geode::WeakRef<cocos2d::CCNode>(this)](FLAlertLayer*, bool accepted) {
+                auto ref = weakThis.lock();
+                auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
+                if (!self || !self->m_alive.load()) return;
                 if (!accepted) {
-                    if (m_statusLabel) {
-                        m_statusLabel->setString("Install cancelled.");
-                        m_statusLabel->setColor({200, 200, 200});
+                    if (self->m_statusLabel) {
+                        self->m_statusLabel->setString("Install cancelled.");
+                        self->m_statusLabel->setColor({200, 200, 200});
                     }
-                    refreshStatus();
+                    self->refreshStatus();
                     return;
                 }
 
-                auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
                 auto installPopup = FfmpegInstallPopup::create(
                     [weakThis](bool ok) {
                         auto ref = weakThis.lock();

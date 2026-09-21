@@ -24,6 +24,7 @@
 #include "../features/rtx/services/RTXRenderer.hpp"
 #include "../features/icon-maker/services/IconApplier.hpp"
 #include "../features/icon-maker/services/IconThumbs.hpp"
+#include "../features/icon-maker/ui/IconMakerUI.hpp"
 #include "../features/texture-studio/services/LiveSlotRuntime.hpp"
 
 using namespace geode::prelude;
@@ -67,6 +68,7 @@ void onBeforeGameReload() {
     // Iconos creados con el Icon Maker (texturas + frames registrados).
     paimon::icon_maker::IconApplier::get().onGLContextReload();
     paimon::icon_maker::IconThumbs::get().onGLContextReload();
+    paimon::icon_maker::ui::resetCheckerTexture();
 
     // Estáticos sueltos.
     paimon::ThumbnailBackgroundChangedEvent::setLastTexture(nullptr);
@@ -81,11 +83,8 @@ void onBeforeGameReload() {
 
 } // namespace paimon::glreload
 
-// GD ejecuta reloadAll al aplicar cambios de resolución, fullscreen/windowed o
-// calidad de texturas: recrea la ventana GLFW (nuevo contexto GL) y purga
-// CCTextureCache. Se despacha ANTES del original, con el contexto viejo aún
-// activo, para que los release() hagan glDeleteTextures sobre names propios y
-// ningún cache sirva texturas muertas a las escenas nuevas.
+// reloadAll() recrea la ventana GLFW y purga CCTextureCache; se despacha ANTES
+// del original para que los release() corran con el contexto viejo aún activo.
 class $modify(PaimonGLReloadHook, GameManager) {
     void reloadAll(bool switchingModes, bool toFullscreen, bool borderless, bool fix, bool unused) {
         paimon::glreload::onBeforeGameReload();

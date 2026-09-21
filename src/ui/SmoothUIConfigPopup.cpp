@@ -36,15 +36,6 @@ void ssaved(const char* key, T val) {
     Mod::get()->setSavedValue(key, val);
 }
 
-void setGlobalTransitionDuration(float duration) {
-    auto& tm = TransitionManager::get();
-    tm.loadConfig();
-    auto cfg = tm.getGlobalConfig();
-    cfg.duration = std::clamp(duration, 0.05f, 3.0f);
-    tm.setGlobalConfig(cfg);
-    tm.saveConfig();
-}
-
 // Ids internos y nombres visibles de los presets.
 std::vector<std::string> const kPresetIds = {
     "balanced", "subtle", "silky", "bouncy", "cinematic", "off"
@@ -63,6 +54,15 @@ int presetIndexFromId(std::string const& id) {
 } // namespace
 
 namespace paimon::ui {
+
+void setGlobalTransitionDuration(float duration) {
+    auto& tm = TransitionManager::get();
+    tm.loadConfig();
+    auto cfg = tm.getGlobalConfig();
+    cfg.duration = std::clamp(duration, 0.05f, 3.0f);
+    tm.setGlobalConfig(cfg);
+    tm.saveConfig();
+}
 
 void applySmoothUIPreset(std::string const& preset) {
     ssaved<std::string>("smooth-ui-preset", preset);

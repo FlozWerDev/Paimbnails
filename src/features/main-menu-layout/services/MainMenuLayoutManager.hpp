@@ -48,9 +48,8 @@ struct DrawShapeLayout {
 
 struct EditableMenuButton {
     cocos2d::CCMenu* menu = nullptr;
-    // Retained via Ref<> to avoid dangling: some nodes (e.g. glyph sprites, shape children,
-    // or nodes in scenes that unload when entering PlayLayer) can be freed while the editor
-    // is still alive with in-flight scheduler updates.
+    // Retained via Ref<>: nodes can be freed (unloading scenes, PlayLayer entry)
+    // while the editor is alive with in-flight scheduler updates.
     geode::Ref<cocos2d::CCNode> node;
     /// Additional labels (same horizontal line) that follow anchor `node`; empty if not grouping text.
     std::vector<geode::Ref<cocos2d::CCNode>> labelGroupFollowers;
@@ -71,14 +70,11 @@ public:
     void save();
 
     std::vector<EditableMenuButton> collectButtons(cocos2d::CCNode* root) const;
-    std::vector<EditableMenuButton> collectShapeNodes(cocos2d::CCNode* root) const;
     void captureDefaultsAndApply(cocos2d::CCNode* root);
-    void apply(cocos2d::CCNode* root);
     void applyDefaults(cocos2d::CCNode* root);
     void applySnapshot(std::vector<EditableMenuButton> const& buttons, LayoutSnapshot const& snapshot, cocos2d::CCNode* root);
     void commit(std::vector<EditableMenuButton> const& buttons, cocos2d::CCNode* root);
     void resetAll();
-    void setCustomFromSnapshot(LayoutSnapshot const& snapshot);
     /// Merge: update only the given keys (erase from custom if == default, store otherwise).
     /// Does not touch customs from other scenes or shapes. Used by the editor on save.
     void mergeCustomFromButtons(std::unordered_map<std::string, MenuButtonLayout> const& buttons);
@@ -90,18 +86,14 @@ public:
     /// if the scene is not dynamic or the button was not captured.
     std::optional<MenuButtonLayout> getSessionDefaultLayout(std::string const& key) const;
 
-    static LayoutSnapshot captureSnapshot(std::vector<EditableMenuButton> const& buttons);
     static std::vector<DrawShapeLayout> captureShapes(cocos2d::CCNode* root);
     static std::string rootClassName(cocos2d::CCNode* root);
     static MenuButtonLayout readLayout(cocos2d::CCNode* node);
     static void applyLayout(cocos2d::CCNode* node, MenuButtonLayout const& layout);
     static void applyLayout(EditableMenuButton const& button, MenuButtonLayout const& layout);
-    /// Rewrite stored follower offsets from the current follower positions vs anchor (e.g. after resize).
-    static void rebuildLabelFollowerOffsets(EditableMenuButton const& button);
     static bool isDrawShapeNode(cocos2d::CCNode* node);
     static DrawShapeLayout readShapeLayout(cocos2d::CCNode* node);
     static void applyShapeLayout(cocos2d::CCNode* node, DrawShapeLayout const& layout);
-    static std::string createShapeID();
 
 private:
     MainMenuLayoutManager() = default;

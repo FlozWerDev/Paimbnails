@@ -18,7 +18,6 @@
 #include <Geode/utils/file.hpp>
 #include <memory>
 #include <cmath>
-#include <thread>
 #include <chrono>
 
 using namespace geode::prelude;
@@ -151,11 +150,6 @@ bool ProfileMusicManager::isCached(int accountID) {
     return std::filesystem::exists(getCachePath(accountID), ec);
 }
 
-const ProfileMusicManager::ProfileMusicConfig* ProfileMusicManager::getCachedConfig(int accountID) const {
-    auto it = m_configCache.find(accountID);
-    return it != m_configCache.end() ? &it->second : nullptr;
-}
-
 void ProfileMusicManager::injectBundleConfig(int accountID, const ProfileMusicConfig& config) {
     m_configCache[accountID] = config;
     while (m_configCache.size() > MAX_CONFIG_CACHE_SIZE) {
@@ -232,14 +226,6 @@ float ProfileMusicManager::getFadeDurationMs() const {
     return seconds * 1000.0f;
 }
 
-float ProfileMusicManager::getGlobalVolume() const {
-    auto engine = FMODAudioEngine::sharedEngine();
-    if (engine) {
-        return engine->m_musicVolume;
-    }
-    return 1.0f;
-}
-
 void ProfileMusicManager::getProfileMusicConfig(int accountID, ConfigCallback callback) {
     std::string endpoint = fmt::format("/api/profile-music/{}", accountID);
     log::info("[ProfileMusic] Fetching config from: {}", endpoint);
@@ -303,7 +289,6 @@ void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& u
             return;
         }
 
-        // Extract the audio fragment on a background thread.
         paimon::ThreadTracker::get().spawn([this, token, localPath, accountID, username, config, callback]() {
             if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                 return;
@@ -1010,8 +995,6 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
     bool useCrossfade = isCrossfadeEnabled();
     bool dynamicNeedsSuspension = AudioContextCoordinator::get().shouldSuspendDynamicForProfileMusic();
 
-    m_savedBgPosMs = engine->getMusicTimeMS(0);
-
     if (useCrossfade || dynamicNeedsSuspension) {
         float currentVol = 0.0f;
         if (engine->m_backgroundMusicChannel) {
@@ -1084,11 +1067,6 @@ void ProfileMusicManager::loadProfileOnMainChannel(const std::string& path, bool
     }
 
     log::info("[ProfileMusic] Loaded on main channel: {} ({}ms-{}ms, vol:{:.2f})", path, startMs, endMs, volume);
-}
-
-void ProfileMusicManager::fadeInProfileMusic(float targetVolume) {
-    auto generation = ++m_fadeGeneration;
-    executeDipFadeIn(0, FADE_STEPS, 0.0f, targetVolume, generation);
 }
 
 void ProfileMusicManager::fadeOutAndStop() {
@@ -1230,7 +1208,6 @@ void ProfileMusicManager::stopOwnedAudioPlayback() {
     m_pendingStartMs = 0;
     m_pendingEndMs = 0;
     m_pendingLoop = true;
-    m_savedBgPosMs = 0;
     m_bgVolumeBeforeFade = 1.0f;
     m_playbackKind = PlaybackKind::None;
     paimon::setProfileMusicInteropActive(false);
@@ -1529,8 +1506,6 @@ void ProfileMusicManager::playPreview(std::string const& filePath, int startMs, 
 
     float gameVolume = engine->m_musicVolume;
 
-    m_savedBgPosMs = engine->getMusicTimeMS(0);
-
     loadProfileOnMainChannel(filePath, true, startMs, endMs, gameVolume);
     m_isPlaying = true;
     m_isPaused = false;
@@ -1827,29 +1802,5 @@ void ProfileMusicManager::forceStop() {
         m_isFadingOut, m_isFadingIn, m_isPlaying);
     stopOwnedAudioPlayback();
     log::info("[ProfileMusic] forceStop complete, all state cleared");
-}
-
-float ProfileMusicManager::getCurrentAmplitude() const {
-    if (!m_isPlaying) return 0.f;
-
-    auto engine = FMODAudioEngine::sharedEngine();
-    auto* bgCh = getMainBgChannel(engine);
-    if (!bgCh) return 0.f;
-
-    FMOD::DSP* headDSP = nullptr;
-    auto result = bgCh->getDSP(FMOD_CHANNELCONTROL_DSP_HEAD, &headDSP);
-    if (result != FMOD_OK || !headDSP) return 0.f;
-
-    headDSP->setMeteringEnabled(false, true);
-
-    FMOD_DSP_METERING_INFO meteringInfo = {};
-    result = headDSP->getMeteringInfo(nullptr, &meteringInfo);
-    if (result != FMOD_OK) return 0.f;
-
-    float peak = 0.f;
-    for (int i = 0; i < meteringInfo.numchannels; i++) {
-        if (meteringInfo.peaklevel[i] > peak) peak = meteringInfo.peaklevel[i];
-    }
-    return peak;
 }
 

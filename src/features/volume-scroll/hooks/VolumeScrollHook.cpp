@@ -208,9 +208,7 @@ $execute {
     }).leak();
 }
 
-// dispatchScrollMSG is hookable on desktop (Windows + macOS: both have real
-// addresses in bindings). Only iOS has it inlined, so touch gestures below
-// cover mobile instead.
+// Hookable on desktop; on iOS it is inlined so the touch gestures below cover mobile.
 
 #if defined(GEODE_IS_DESKTOP)
 class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
@@ -293,9 +291,7 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
     }
 };
 
-// Run after the global smooth-scroll hook. Raw events captured for momentum do
-// not reach this point; their normalized replay frames do. Bypassed/discrete
-// gestures still arrive once, preserving the non-smooth behavior.
+// Late so smooth-scroll momentum replays arrive normalized; discrete gestures pass once.
 class $modify(PaimonPauseZoomMouseHook, CCMouseDispatcher) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre(
@@ -311,10 +307,8 @@ class $modify(PaimonPauseZoomMouseHook, CCMouseDispatcher) {
 };
 #endif
 
-// Mobile has no scroll wheel: a three-finger drag replaces the wheel gesture.
-// Vertical drag adjusts music, horizontal drag adjusts SFX. The game keeps
-// receiving every touch (Post priority, never consumed); the gesture stays
-// out of unpaused gameplay so it can never fight jump inputs.
+// Three-finger drag replaces the wheel; touches are only observed (Post priority,
+// never consumed) and the gesture stays out of unpaused gameplay.
 #if defined(GEODE_IS_MOBILE)
 #include <Geode/modify/CCEGLViewProtocol.hpp>
 

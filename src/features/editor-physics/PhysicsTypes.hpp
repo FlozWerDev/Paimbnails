@@ -16,14 +16,9 @@ struct Vec2 {
     float y = 0.f;
 };
 
-// A fixture is a box unless it says otherwise: `radius` turns it into a circle
-// (orbs, rings, coins) and `vertices` into a convex polygon (slopes, silhouette
-// hulls, and any object the editor rotated off the axes). `halfSize` always
-// holds the local bounding half extents, because mass, inertia and substepping
-// only need that. Polygon vertices are relative to `offset` and wound
-// counter-clockwise, which is what makes the solver's edge normals point
-// outwards. Negative friction or restitution means the body's own value wins,
-// so an untouched fixture behaves exactly like the body it belongs to.
+// `radius` switches a fixture to a circle and `vertices` to a convex polygon.
+// Polygon vertices are relative to `offset` and wound counter-clockwise, and a
+// negative friction or restitution falls back to the body's own value.
 struct Fixture {
     Vec2 offset;
     Vec2 halfSize;
@@ -133,9 +128,8 @@ struct SimulationOptions {
     float maxSpeed = 0.f;
     bool allowSleep = true;
     bool warmStarting = true;
-    // Seconds of wall clock the run may spend. The lab solves on the main
-    // thread, so a capture big enough to take seconds reads as the game
-    // hanging; zero leaves the run uncapped for the callers that step by hand.
+    // The lab solves on the main thread, so a slow capture reads as a hang;
+    // zero leaves the run uncapped.
     float timeBudget = 0.f;
     std::vector<ForceField> fields;
 };
@@ -171,7 +165,6 @@ struct ContactEvent {
 
 struct SimulationTrace {
     std::vector<Frame> frames;
-    std::vector<ContactEvent> contacts;
     std::size_t impacts = 0;
     float peakImpulse = 0.f;
     // When every dynamic body fell asleep, or negative if some never did. A
@@ -180,24 +173,6 @@ struct SimulationTrace {
     // The run hit `timeBudget` and the frames stop short of the duration.
     bool exhausted = false;
 };
-
-struct RayHit {
-    bool hit = false;
-    std::size_t body = 0;
-    std::size_t fixture = 0;
-    Vec2 point;
-    Vec2 normal;
-    float fraction = 1.f;
-};
-
-struct Overlap {
-    std::size_t body = 0;
-    std::size_t fixture = 0;
-};
-
-// True when the point is inside the fixture, in the frame the fixture's offset
-// lives in. `slack` grows the shape, which is how a finger picks a thin object.
-bool fixtureContains(Fixture const& fixture, Vec2 point, float slack = 0.f);
 
 struct WorldData;
 
@@ -218,28 +193,9 @@ public:
     void step(float dt);
 
     float time() const;
-    std::size_t bodyCount() const;
-    Pose pose(std::size_t body) const;
-    Vec2 velocity(std::size_t body) const;
-    float angularVelocity(std::size_t body) const;
-    bool asleep(std::size_t body) const;
     bool settled() const;
     Frame snapshot() const;
 
-    void setVelocity(std::size_t body, Vec2 velocity);
-    void setAngularVelocity(std::size_t body, float angularVelocity);
-    void applyImpulse(std::size_t body, Vec2 impulse);
-    void applyImpulseAt(std::size_t body, Vec2 impulse, Vec2 point);
-    void applyAngularImpulse(std::size_t body, float impulse);
-    void explode(Vec2 center, float radius, float strength);
-    void wake(std::size_t body);
-
-    RayHit raycast(Vec2 from, Vec2 to, std::uint32_t mask = kAllCategories) const;
-    std::vector<Overlap> overlapPoint(Vec2 point, float slack = 0.f) const;
-    std::vector<Overlap> overlapCircle(Vec2 center, float radius) const;
-
-    // The begin/end pairs recorded by the last `step`.
-    std::vector<ContactEvent> const& contacts() const;
     std::size_t impacts() const;
     float peakImpulse() const;
 

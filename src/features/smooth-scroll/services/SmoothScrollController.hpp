@@ -7,6 +7,13 @@ namespace paimon::smoothscroll {
 
 using ScrollDispatchFn = geode::CopyableFunction<void(float y, float x)>;
 
+#if defined(GEODE_IS_WINDOWS)
+// One wheel notch in dispatcher units; the GLFW hook and queueInput must agree.
+inline constexpr double kInputUnitsPerStep = 5.0;
+#else
+inline constexpr double kInputUnitsPerStep = 12.0;
+#endif
+
 // Smooth scrolling for lists/menus with exponential decay momentum.
 class SmoothScrollController {
 public:

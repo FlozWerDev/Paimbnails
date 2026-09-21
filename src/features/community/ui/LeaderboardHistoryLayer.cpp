@@ -67,8 +67,6 @@ bool LeaderboardHistoryLayer::init() {
     tabMenu->setPosition(0, 0);
     tabMenu->setZOrder(10);
     this->addChild(tabMenu);
-    m_tabsMenu = tabMenu;
-
     auto createTab = [&](char const* text, char const* id, CCPoint pos) -> CCMenuItemToggler* {
         auto createBtn = [&](char const* frameName) -> CCNode* {
             auto sprite = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName(frameName);
@@ -108,14 +106,14 @@ bool LeaderboardHistoryLayer::init() {
     auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     prevSpr->setScale(0.65f);
     m_prevBtn = CCMenuItemSpriteExtra::create(prevSpr, this, menu_selector(LeaderboardHistoryLayer::onPrevPage));
-    m_prevBtn->setPosition({winSize.width - 35.f, winSize.height / 2});
+    m_prevBtn->setPosition({35.f, winSize.height / 2});
     m_pageMenu->addChild(m_prevBtn);
 
     auto nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     nextSpr->setFlipX(true);
     nextSpr->setScale(0.65f);
     m_nextBtn = CCMenuItemSpriteExtra::create(nextSpr, this, menu_selector(LeaderboardHistoryLayer::onNextPage));
-    m_nextBtn->setPosition({35.f, winSize.height / 2});
+    m_nextBtn->setPosition({winSize.width - 35.f, winSize.height / 2});
     m_pageMenu->addChild(m_nextBtn);
 
     m_pageLbl = CCLabelBMFont::create("1 / 1", "chatFont.fnt");
@@ -131,18 +129,12 @@ bool LeaderboardHistoryLayer::init() {
 #if defined(GEODE_IS_WINDOWS)
     this->setMouseEnabled(true);
 #endif
-    
-    CCDirector::get()->getTouchDispatcher()->addTargetedDelegate(this, 0, false);
 
     applyCaveEffect();
     this->scheduleUpdate();
 
     loadHistory("daily");
     return true;
-}
-
-void LeaderboardHistoryLayer::delaySilenceBg(float dt) {
-    applyCaveEffect();
 }
 
 void LeaderboardHistoryLayer::onExit() {
@@ -216,38 +208,6 @@ void LeaderboardHistoryLayer::removeCaveEffect() {
     if (m_lowpassDSP) { m_lowpassDSP->release(); m_lowpassDSP = nullptr; }
     if (m_reverbDSP) { m_reverbDSP->release(); m_reverbDSP = nullptr; }
     m_caveApplied = false;
-}
-
-bool LeaderboardHistoryLayer::ccMouseScroll(float x, float y) {
-#if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_MACOS)
-    return false;
-#else
-    if (!m_scrollView) return false;
-
-    CCPoint mousePos = geode::cocos::getMousePos();
-
-    CCRect scrollRect = m_scrollView->boundingBox();
-    scrollRect.origin = m_scrollView->getParent()->convertToWorldSpace(scrollRect.origin);
-    
-    if (!scrollRect.containsPoint(mousePos)) {
-        return false;
-    }
-
-    CCPoint offset = ccp(0, m_scrollView->m_contentLayer->getPositionY());
-    CCSize viewSize = m_scrollView->getContentSize();
-    CCSize contentSize = m_scrollView->m_contentLayer->getContentSize();
-
-    float scrollAmount = y * 30.f;
-    float newY = offset.y + scrollAmount;
-
-    float minY = viewSize.height - contentSize.height;
-    float maxY = 0.f;
-    if (minY > maxY) minY = maxY;
-
-    newY = std::max(minY, std::min(maxY, newY));
-    m_scrollView->m_contentLayer->setPositionY(newY);
-    return true;
-#endif
 }
 
 void LeaderboardHistoryLayer::onBack(CCObject*) {
@@ -326,9 +286,10 @@ void LeaderboardHistoryLayer::loadHistory(std::string type) {
 
     WeakRef<LeaderboardHistoryLayer> self = this;
     std::string url = fmt::format("/api/featured/history?type={}&offset={}&limit={}", type, offset, limit);
-    HttpClient::get().get(url, [self, type](bool success, std::string const& json) {
+    HttpClient::get().get(url, [self, type, page = m_currentPage](bool success, std::string const& json) {
         auto layer = self.lock();
         if (!layer) return;
+        if (type != layer->m_currentType || page != layer->m_currentPage) return;
 
         if (success) {
             auto dataRes = matjson::parse(json);
@@ -395,7 +356,6 @@ void LeaderboardHistoryLayer::createList() {
     auto winSize = CCDirector::get()->getWinSize();
 
     m_listContainer = CCNode::create();
-    m_listContainer->setTag(800);
     this->addChild(m_listContainer, 5);
 
     updatePageButtons();

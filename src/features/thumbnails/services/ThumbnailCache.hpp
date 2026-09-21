@@ -90,15 +90,11 @@ public:
     void evictRamIfNeeded();
     // libera texturas con retainCount==1 (nadie las muestra)
     void purgeUnusedTextures();
-    size_t ramBytes() const;
     size_t ramEntryCount() const;
 
     std::optional<geode::Ref<cocos2d::CCTexture2D>> getUrlFromRam(std::string const& url);
     void addUrlToRam(std::string const& url, cocos2d::CCTexture2D* texture);
-    void removeUrlFromRam(std::string const& url);
     void clearUrlsForLevel(int levelID);
-    size_t urlRamBytes() const;
-    size_t urlRamEntryCount() const;
 
     using DiskEntry = DiskManifestEntry;
 
@@ -126,7 +122,6 @@ public:
     bool isNotFound(std::string const& key) const;
     void markNotFound(std::string const& key);
     void clearNotFound(std::string const& key);
-    void clearAllNotFound();
 
     int getInvalidationVersion(int levelID) const;
     void incrementInvalidation(int levelID);

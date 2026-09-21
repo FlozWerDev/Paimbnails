@@ -39,7 +39,6 @@ bool FontButton::init(CopyableFunction<void(std::string const&)> insertFn) {
         return true;
     }
 
-    // "Aa" label centered on the button
     auto label = CCLabelBMFont::create("Aa", "chatFont.fnt");
     label->setScale(0.55f);
     label->setPosition({
@@ -61,7 +60,7 @@ bool FontButton::init(CopyableFunction<void(std::string const&)> insertFn) {
 
 void FontButton::onToggle(CCObject*) {
     if (m_activePicker && m_activePicker->getParent()) {
-        m_activePicker->removeFromParent();
+        m_activePicker->closeAnimated();
         m_activePicker = nullptr;
         return;
     }

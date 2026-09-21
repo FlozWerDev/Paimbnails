@@ -6,6 +6,7 @@
 using namespace geode::prelude;
 
 class $modify(PaimonLoadingLayer, LoadingLayer) {
+    $override
     bool init(bool fromReload) {
         if (!LoadingLayer::init(fromReload)) return false;
         paimon::captureMainThread();

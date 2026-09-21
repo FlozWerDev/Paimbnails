@@ -2,11 +2,9 @@
 #include <Geode/Geode.hpp>
 #include <string>
 #include <vector>
-#include <optional>
 #include "TransitionMedia.hpp"
 
 // TransitionManager — sistema de transiciones personalizables
-//
 
 enum class TransitionType {
     Fade,
@@ -112,8 +110,6 @@ struct TransitionConfig {
     TransitionType type = TransitionType::Fade;
     float duration = 0.5f;
     int colorR = 0, colorG = 0, colorB = 0;
-    std::string imagePath;
-    std::vector<std::string> imageList;
     std::vector<TransitionCommand> commands;
     std::string scriptPath;
     std::string mediaPath; // prepared .pttransition manifest
@@ -148,7 +144,6 @@ public:
 
     void tripCustomSafeMode(std::string const& reason);
     bool isCustomSafeModeTripped() const { return m_customSafeModeTripped; }
-    void resetCustomSafeMode();
 
     static TransitionType typeFromString(std::string const& s);
     static std::string typeToString(TransitionType t);

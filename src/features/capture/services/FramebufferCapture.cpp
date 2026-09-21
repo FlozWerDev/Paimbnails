@@ -4,7 +4,6 @@
 #include "SceneCapture.hpp"
 #include "CaptureDeathTracker.hpp"
 #include "CaptureVisibilityState.hpp"
-#include "../../../core/Settings.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/PlayerToggleHelper.hpp"
 #include "../../../utils/RgbaScaler.hpp"
@@ -29,7 +28,6 @@
 #include <Geode/binding/CheckpointObject.hpp>
 #include <Geode/binding/CCCircleWave.hpp>
 #include <Geode/binding/ExplodeItemNode.hpp>
-#include <Geode/ui/Popup.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/general.hpp>
 #include <Geode/modify/PlayLayer.hpp>
@@ -456,10 +454,7 @@ HiddenNodeList hideNonVanillaUI() {
     return hidden;
 }
 
-// Plain screenshots are WYSIWYG: the scene graph stays untouched (mod layers,
-// popups and scene overlays must all show up) and only the mod's own chrome is
-// dropped. That chrome lives in the notification node (OverlayManager): custom
-// cursor, click FX, toasts and the capture card itself.
+// WYSIWYG except the mod's own chrome, which lives in the notification node.
 HiddenNodeList hideCaptureChrome() {
     HiddenNodeList hidden;
 
@@ -556,9 +551,7 @@ void restoreHiddenState() {
 }
 
 bool pixelBufferHasContent(uint8_t const* pixels, size_t bytes) {
-    // A completely black level is a valid capture. Content heuristics caused
-    // false negatives on empty/minimal levels and made the fallback path loop.
-    // The GL error check at each read is the authoritative validity test.
+    // Black levels are valid captures: heuristics caused false negatives and fallback loops.
     return pixels != nullptr && bytes >= 4;
 }
 
@@ -698,10 +691,6 @@ std::pair<int, int> resolveRenderTargetSize() {
     return {w, h};
 }
 
-// The capture path deliberately uses the same depth/stencil-capable helper as
-// the auto-preview renderer. The legacy implementation above is retained only
-// as a reference while older drivers are being compared during development;
-// all new captures use this implementation.
 std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTextureV2(
     PlayLayer* pl, int W, int H)
 {
@@ -910,10 +899,6 @@ bool issuePboRead(int W, int H) {
 bool FramebufferCapture::isCapturing()    { return s_isCapturing; }
 void FramebufferCapture::setHDRMode(bool enabled) { s_hdrMode = enabled; }
 bool FramebufferCapture::isHDRMode()      { return s_hdrMode; }
-
-std::pair<int, int> FramebufferCapture::getCaptureSize() {
-    return {s_captureW, s_captureH};
-}
 
 int FramebufferCapture::getMaxTextureSize() {
     if (s_maxTextureSize <= 0) {

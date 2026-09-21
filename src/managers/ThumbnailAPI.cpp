@@ -26,17 +26,7 @@ ThumbnailAPI::UploadCallback withAlert(int levelId, std::string username,
 } // namespace
 
 ThumbnailAPI::ThumbnailAPI() {
-    m_serverEnabled = true;
     log::info("[ThumbnailAPI] fachada inicializada");
-}
-
-void ThumbnailAPI::setServerEnabled(bool enabled) {
-    m_serverEnabled = enabled;
-    ThumbnailTransportClient::get().setServerEnabled(enabled);
-    ThumbnailSubmissionService::get().setServerEnabled(enabled);
-    ModerationService::get().setServerEnabled(enabled);
-    ProfileImageService::get().setServerEnabled(enabled);
-    log::info("[ThumbnailAPI] modo servidor cambiado a: {}", enabled);
 }
 
 void ThumbnailAPI::getThumbnails(int levelId, ThumbnailListCallback callback) {
@@ -104,10 +94,6 @@ void ThumbnailAPI::getUserUploads(std::string const& username, ActionCallback ca
     log::info("[ThumbnailAPI] getUserUploads: username={}", username);
     ThumbnailTransportClient::get().getUserUploads(username, std::move(callback));
 }
-cocos2d::CCTexture2D* ThumbnailAPI::webpToTexture(std::vector<uint8_t> const& webpData) {
-    return ThumbnailTransportClient::webpToTexture(webpData);
-}
-
 void ThumbnailAPI::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
     log::info("[ThumbnailAPI] uploadSuggestion: levelId={} user={} bytes={}", levelId, username, pngData.size());
     ThumbnailSubmissionService::get().uploadSuggestion(levelId, pngData, username, std::move(callback), levelMeta);

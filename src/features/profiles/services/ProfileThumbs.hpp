@@ -83,11 +83,7 @@ public:
         }
     }
 
-    bool saveRGB(int accountID, const uint8_t* rgb, int width, int height);
-    bool has(int accountID) const;
     void deleteProfile(int accountID);
-    cocos2d::CCTexture2D* loadTexture(int accountID);
-    bool loadRGB(int accountID, std::vector<uint8_t>& out, int& w, int& h);
 
     void cacheProfile(int accountID, cocos2d::CCTexture2D* texture, 
                      cocos2d::ccColor3B colorA, cocos2d::ccColor3B colorB, float widthFactor);

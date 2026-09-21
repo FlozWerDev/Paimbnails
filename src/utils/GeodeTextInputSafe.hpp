@@ -4,9 +4,8 @@
 
 namespace paimon::ui {
 
-/// Disconnect IME, delegate, and callbacks before destroying a popup/layer that
-/// holds a geode::TextInput. Avoids an AV in TextInput::textChanged when the IME
-/// keeps sending keys after removeFromParent.
+/// Detach IME/delegate before destroying the owner; avoids an AV in
+/// TextInput::textChanged when keys arrive after removeFromParent.
 inline void detachGeodeTextInput(geode::TextInput* input) {
     if (!input) return;
 

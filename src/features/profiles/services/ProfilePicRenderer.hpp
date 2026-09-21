@@ -12,9 +12,8 @@ cocos2d::CCNode* composeProfilePicture(
     ProfilePicConfig const& config
 );
 
-// Resolved source for the profile photo. Single source of truth shared by the
-// editor preview, the MenuLayer profile button, and the config-layer preview,
-// so what the editor shows is exactly what gets rendered in-game.
+// Resolved source for the profile photo, shared by editor, MenuLayer button,
+// and config-layer preview so all three render exactly the same image.
 struct ResolvedProfilePhoto {
     enum class Kind {
         None,        // nothing available

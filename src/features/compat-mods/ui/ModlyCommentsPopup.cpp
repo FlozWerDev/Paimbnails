@@ -1,5 +1,4 @@
 #include "ModlyCommentsPopup.hpp"
-#include "ModlyProfilePopup.hpp"
 #include "ModlyUIHelpers.hpp"
 #include "../services/ModlyRepo.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -74,13 +73,11 @@ void ModlyCommentsPopup::showStatus(std::string const& text) {
     fitLabelWidth(label, kListW);
     m_listHolder->addChild(label);
     label->runAction(CCFadeTo::create(0.25f, 200));
-    m_status = label;
 }
 
 void ModlyCommentsPopup::buildList(std::vector<ModlyComment> const& comments) {
     if (!m_listHolder) return;
     m_listHolder->removeAllChildren();
-    m_status = nullptr;
 
     auto scroll = ScrollLayer::create({kListW, kListH});
     scroll->setPosition({(kWidth - kListW) / 2.f, 30.f});

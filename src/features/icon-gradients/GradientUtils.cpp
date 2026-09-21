@@ -12,22 +12,8 @@
 #include <numeric>
 #include <vector>
 
-// Gradient rendering core for Icon Gradients.
-// Idea inspired by "Icon Gradients" by zilko (Geode id
-// zilko.icon_gradients, source: https://github.com/zilko/icon-gradients).
-//
-// Independent implementation written for Paimbnails from the feature's
-// behavior: icon/color lookups are data tables instead of switch ladders,
-// paint targets are collected into a list before shading (which removes the
-// triplicated overlay handling), uniform locations go through the program's
-// own name cache, and linear stops are ordered with an index sort. Deliberately
-// preserved for compatibility: the on-disk save schema (config keys,
-// "color<N>" sections, the saved-gradients list), the shader program key
-// format the prewarm table in GradientCache.cpp is built from, the per-part
-// shader ids, the "gradient-line"/"gradient-line2" node ids, the -4732
-// uncached-program sentinel ColorToggle uses, and the Separate Dual Icons
-// save keys this reads when that module is enabled. No code from the original
-// mod remains.
+// Gradient rendering core, after zilko's "Icon Gradients" (independent implementation, own expression).
+// Save schema, program key format, node ids and sentinels (-4732, SDI keys) preserved for compatibility.
 
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;

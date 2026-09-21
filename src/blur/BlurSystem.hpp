@@ -45,13 +45,6 @@ public:
         std::function<void(cocos2d::CCSprite*)> onReady
     );
 
-    void buildPaimonBlurAsync(
-        cocos2d::CCTexture2D* source,
-        cocos2d::CCSize const& targetSize,
-        float intensity,
-        std::function<void(cocos2d::CCSprite*)> onReady
-    );
-
     // Bypasses the concurrency limit.
     void buildPaimonBlurPriority(
         cocos2d::CCTexture2D* source,
@@ -69,13 +62,6 @@ public:
         std::function<void(cocos2d::CCSprite*)> onReady
     );
 
-    void buildGaussianBlurAsync(
-        cocos2d::CCTexture2D* source,
-        cocos2d::CCSize const& targetSize,
-        float intensity,
-        std::function<void(cocos2d::CCSprite*)> onReady
-    );
-
     // Bypasses the concurrency limit.
     void buildGaussianBlurPriority(
         cocos2d::CCTexture2D* source,
@@ -86,10 +72,8 @@ public:
     );
 
     void clearBlurCache();
-    void clearDiskCache();
-    // Cancela jobs y suelta texturas RAM antes de que GD recree el contexto GL
-    // (GameManager::reloadAll). A diferencia de destroy(), el sistema sigue
-    // usable: los blurs se regeneran lazy (disco/GPU) tras el reload.
+    // Cancela jobs y suelta texturas RAM antes de que GD recree el contexto GL;
+    // el sistema sigue usable y los blurs se regeneran lazy tras el reload.
     void onGLContextReload();
     void onWindowResized(int /*w*/, int /*h*/) {}
     void destroy();

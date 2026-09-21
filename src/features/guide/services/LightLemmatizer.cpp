@@ -322,23 +322,4 @@ std::vector<std::string> LightLemmatizer::removeStopwords(
     return out;
 }
 
-std::vector<std::string> LightLemmatizer::tokenizeNoStopwords(
-    std::string const& normalizedLower)
-{
-    std::vector<std::string> tokens;
-    std::string cur;
-    for (char c : normalizedLower) {
-        if (c == ' ') {
-            if (!cur.empty()) {
-                if (!isStopword(cur)) tokens.push_back(cur);
-                cur.clear();
-            }
-        } else {
-            cur.push_back(c);
-        }
-    }
-    if (!cur.empty() && !isStopword(cur)) tokens.push_back(cur);
-    return tokens;
-}
-
 }

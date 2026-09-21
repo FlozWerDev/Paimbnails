@@ -65,10 +65,6 @@ private:
 };
 
 // EventBus: typed pub/sub. Thread-safe: every operation takes the lock.
-// Usage:
-//   auto handle = EventBus::get().subscribe<ThumbnailLoadedEvent>([](auto& e) { ... });
-//   EventBus::get().publish(ThumbnailLoadedEvent{123, "network", false});
-//   EventBus::get().unsubscribe(handle);
 class EventBus {
 public:
     static EventBus& get() {
@@ -101,10 +97,7 @@ public:
     void beginShutdown() {
         std::lock_guard lock(m_mutex);
         m_shuttingDown.store(true, std::memory_order_release);
-        // Destroy all subscribers now, while Cocos2d is still alive. Their
-        // lambdas capture WeakRef<CCNode>; destroying them during atexit
-        // (EventBus dtor) hits an invalid WeakRefPool -> crash. Safe here since
-        // beginShutdown() runs at the start of $on_game(Exiting).
+        // WeakRef<CCNode> captured in lambdas die in atexit; clear them here instead.
         m_subscribers.clear();
         m_handleToType.clear();
     }

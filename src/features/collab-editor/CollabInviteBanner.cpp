@@ -27,9 +27,8 @@ constexpr float kExitDur = 0.34f;
 
 // Above the capture preview (999000), below the color picker HUD (999500).
 constexpr int kZOrder = 999100;
-// Beats popups and text inputs (~-500): an invite that lands while an alert is
-// open still has working buttons. CCMenu only claims touches that hit a button,
-// so the popup underneath keeps working.
+// Beats popups/inputs (~-500) so an invite over an alert keeps working buttons;
+// CCMenu only claims touches that hit a button.
 constexpr int kTouchPriority = -1000;
 
 float easeOutCubic(float t) {
@@ -182,9 +181,8 @@ void CollabInviteBanner::onEnter() {
 
     if (m_priorityQueued) return;
     m_priorityQueued = true;
-    // Re-registering the handler while the dispatcher is locked (mid-touch)
-    // dereferences a handler that is still in the pending-add queue; one frame
-    // later it has been committed.
+    // Re-registering mid-touch dereferences a handler still in the pending-add
+    // queue; one frame later it has been committed.
     WeakRef<CollabInviteBanner> weak = this;
     Loader::get()->queueInMainThread([weak]() {
         if (auto self = weak.lock(); self && self->m_menu) {

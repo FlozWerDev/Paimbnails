@@ -7,12 +7,8 @@
 
 namespace paimon::collab {
 
-// Account-keyed presence with the collab server, so a host can invite friends
-// who are online (mod running, logged in) but not currently in a room. Runs a
-// lightweight long-poll that surfaces incoming invites as a prompt popup.
-//
-// This mirrors Globed's "always reachable" model but only while the mod is
-// loaded and the user is signed in. Gated behind the collab-invites setting.
+// Account-keyed presence so hosts can invite online friends who aren't in a
+// room. Globed-style reachability, only while signed in.
 class CollabPresence {
 public:
     static CollabPresence& get();

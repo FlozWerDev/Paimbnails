@@ -320,9 +320,8 @@ Ref<StreamOverlayTicker> g_ticker;
 struct StreamOverlayServer::Impl {
     std::atomic_bool stopping = false;
     std::atomic_bool running = false;
-    // A completed std::thread remains joinable. Keep completion separate from
-    // running so the main thread can reap a failed startup without ever
-    // blocking on a server that is still coming up.
+    // Un thread terminado sigue joinable: completion va aparte de running para
+    // recoger un arranque fallido sin bloquear jamas.
     std::atomic_bool finished = true;
     std::thread worker;
     mutable std::mutex mutex;
@@ -597,10 +596,8 @@ void StreamOverlayServer::tick(float dt) {
     }
 
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
-    // Startup can fail transiently when a previous game process has only just
-    // released the port. The old implementation left the completed thread
-    // joinable forever, so toggling the overlay was the only way to recover.
-    // Reap only threads known to be finished, then retry at a restrained rate.
+    // El puerto puede seguir ocupado por un proceso anterior: recoge el hilo
+    // terminado y reintenta con calma.
     if (!m_impl->running) {
         if (m_impl->finished && m_impl->worker.joinable()) {
             m_impl->worker.join();

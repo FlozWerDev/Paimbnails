@@ -106,20 +106,7 @@ inline cocos2d::ccColor3B complement(cocos2d::ccColor3B c) {
     return fromHSV(hsv);
 }
 
-// Rec. 709
-inline float luminance(cocos2d::ccColor3B c) {
-    return 0.2126f * (c.r / 255.0f)
-         + 0.7152f * (c.g / 255.0f)
-         + 0.0722f * (c.b / 255.0f);
-}
-
-// Stable per-id hash → HSV color
-//
-// Used by ColorMode::RandomStable. Two icons with the same (type, id) ALWAYS
-// hash to the same color, regardless of session.
-//
-// Implementation: SplitMix64 mixing on a 64-bit seed derived from (type, id).
-// Output H is uniform in [0, 360), S/V depend on the chosen palette.
+// Same (type, id) always maps to the same color (SplitMix64 seed).
 inline std::uint64_t splitMix64(std::uint64_t z) {
     z += 0x9E3779B97F4A7C15ULL;
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;

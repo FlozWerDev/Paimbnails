@@ -10,11 +10,6 @@
 
 namespace paimon::menu_layout {
 
-// Editor minimalista de layout. Funciona sobre cualquier CCNode raiz
-// (MenuLayer, PauseLayer, LevelInfoLayer) reusando MainMenuLayoutManager
-// para la persistencia. Interaccion directa: tocar = seleccionar,
-// arrastrar = mover (con snap), una sola asa = escalar. Barra inferior
-// con Cancelar / Reset seleccion / Reset todo / Ocultar / opacidad / Guardar.
 class MainMenuLayoutEditor : public cocos2d::CCLayer {
 public:
     static MainMenuLayoutEditor* create(cocos2d::CCNode* root);

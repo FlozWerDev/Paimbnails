@@ -78,7 +78,6 @@ void startEmotePreloadIfReady() {
     auto emotes = EmoteService::get().getAllEmotes();
     g_emotesTotal.store(static_cast<int>(emotes.size()), std::memory_order_release);
     g_emotesLoaded.store(0, std::memory_order_release);
-    g_emotesCatalogReady.store(true, std::memory_order_release);
 
     if (emotes.empty()) {
         log::info("[Paimbnails Preload] Emote catalog vacio - preload omitido");
@@ -128,8 +127,6 @@ void schedulePrefetchEmotes() {
         if (paimon::isRuntimeShuttingDown()) return;
         if (!success) {
             log::warn("[Paimbnails Preload] Fetch de catalogo de emotes fallo");
-            // Mark ready even on failure so the label doesn't wait forever.
-            paimon::preload::g_emotesCatalogReady.store(true, std::memory_order_release);
             return;
         }
         startEmotePreloadIfReady();
@@ -153,9 +150,8 @@ void startFullPreload() {
         if (paimon::isRuntimeShuttingDown()) return;
         schedulePrefetchEmotes();
     });
-    // Downloaded global icons pile up one directory per visited profile; trim
-    // the oldest once the startup rush is over. disk-only, so it runs off the
-    // main thread instead of hitching the menu 20s in.
+    // Global icons pile one directory per visited profile; trim the oldest off
+    // the main thread once the startup rush is over (disk-only, no menu hitch).
     scheduleAfterGameLoaded(20.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         paimon::ThreadTracker::get().spawn([]() {

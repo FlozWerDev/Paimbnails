@@ -1,11 +1,7 @@
 #pragma once
 
-// Applies and expires the card effects inside a level.
-//
-// The rule the whole deck is built on: nothing here touches physics, hitboxes,
-// geometry or game speed. Camera, overlays, audio, HUD, checkpoints and shields
-// only, so a run with cards is still a legitimate run and the state Globed
-// syncs stays clean.
+// Card effects never touch physics, hitboxes, geometry or game speed, so a run
+// with cards is still legitimate and the state Globed syncs stays clean.
 
 #include "../data/VersusCards.hpp"
 

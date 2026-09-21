@@ -22,7 +22,6 @@ protected:
     void onEnterTransitionDidFinish() override;
     void onExit() override;
 
-    void buildFullBackground();
     void buildContentClipper();
     void buildBlurBackground();
     void buildFullscreenBackdrop();

@@ -244,8 +244,4 @@ std::vector<StampVariant> const& stampVariants() {
     return fallback;
 }
 
-bool hasStampCatalog() {
-    return g_fromGame;
-}
-
 } // namespace paimon::gifimport

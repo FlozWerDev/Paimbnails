@@ -109,7 +109,6 @@ void MenuPhysicsNode::captureHost() {
             btn->getScaleY()
         });
 
-        // Explosion radial desde el centro + empujon hacia arriba + spin fuerte
         CCPoint dir = worldPos - center;
         float dl = std::sqrt(dir.x * dir.x + dir.y * dir.y);
         if (dl < 1e-3f) {
@@ -124,7 +123,6 @@ void MenuPhysicsNode::captureHost() {
         CCPoint vel = dir * s + perpDir * perp(gen);
         vel.y += popUp(gen);
 
-        // Angulo inicial: rotacion del boton + leve inclinacion aleatoria
         float startAngle = -baseRot + tilt(gen);
         float angVel = spin(gen);
         // Botones mas lejanos del centro giran un poco mas

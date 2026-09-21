@@ -20,9 +20,7 @@ protected:
     geode::ScrollLayer* m_scroll = nullptr;
 };
 
-// Routes a granular setting to its dedicated popup, falling back to the settings panel.
-// englishGranularName: name as it appears in getGranularSettings().
-// fallbackCategoryIndex: Settings Panel category to open if there's no dedicated popup.
+// Routes a granular setting to its dedicated popup, else the settings panel.
 void openFeatureConfigFor(std::string const& englishGranularName,
                           int fallbackCategoryIndex);
 

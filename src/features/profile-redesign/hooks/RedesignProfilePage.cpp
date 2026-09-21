@@ -37,17 +37,13 @@ class $modify(RedesignProfilePage, ProfilePage) {
 
         // Immediate first paint so vanilla layout never flashes for a frame.
         doRedesign();
-        // Other features add buttons/badges asynchronously (HTTP callbacks) to
-        // the now-hidden vanilla menus. Watch cheaply for un-adopted latecomers
-        // and rebuild only then (not on a blind timer).
+        // Latecomers land async in hidden menus; rebuild only when one appears.
         m_fields->m_watchTime = 0.f;
         this->unschedule(schedule_selector(RedesignProfilePage::watchLatecomers));
         this->schedule(schedule_selector(RedesignProfilePage::watchLatecomers), 0.25f);
     }
 
-    // Own-profile stats are synced to the server here (GD pushes the local
-    // GJGameStatsManager values and gets back an updated score). This path does
-    // NOT always go through loadPageFromUserInfo, so rebuild the strip here.
+    // This path can skip loadPageFromUserInfo, so the strip rebuilds here.
     $override
     void updateUserScoreFinished() {
         ProfilePage::updateUserScoreFinished();
@@ -96,9 +92,7 @@ class $modify(RedesignProfilePage, ProfilePage) {
         scheduleRedesign();
     }
 
-    // Every path that rebuilds the vanilla comment list lands here, the refresh
-    // button included. The fresh list comes back visible, so without a rebuild
-    // the raw comments render behind the redesign cards.
+    // The fresh list comes back visible; rebuild so it hides behind the cards.
     $override
     void setupCommentsBrowser(CCArray* comments) {
         ProfilePage::setupCommentsBrowser(comments);

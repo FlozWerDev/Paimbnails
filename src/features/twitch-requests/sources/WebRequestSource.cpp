@@ -188,10 +188,8 @@ void WebRequestSource::registerHost() {
         });
 }
 
-// Un token guardado que el servidor ya no reconoce se tira y se vuelve a pedir
-// una vez mandando la prueba de propiedad (mod code o viewer token): si la
-// cuenta es tuya, el servidor rota a un token nuevo solo. Si ni asi pasa,
-// reinstalar el mod dejaria la pagina inservible para siempre.
+// Token desconocido: se tira y se re-pide con prueba de propiedad; rotar sin
+// ella dejaria la pagina inservible.
 void WebRequestSource::handleRegisterError(int status, std::string code) {
     if (code == "TOKEN_REQUIRED" && !m_retriedWithoutToken) {
         m_retriedWithoutToken = true;

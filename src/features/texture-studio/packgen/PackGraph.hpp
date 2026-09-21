@@ -1,14 +1,6 @@
 #pragma once
-// PackGraph: reactive DAG for PackGen v2.
-//
-// Each node declares its inputs (content hashes) and a compute function.
-// evaluate() walks in topological order, skips nodes whose combined input
-// hash matches the last run (hash pruning), and memoizes outputs in a
-// PackCache. Trivial edits therefore recompute 0 downstream nodes; a color
-// tweak recomputes only the tint nodes that depend on it.
-//
-// Pure C++17, single-threaded by design: the scheduler parallelizes across
-// independent graphs/levels, the graph itself stays deterministic.
+// PackGraph: reactive DAG; evaluate() skips nodes whose input hash matches
+// the last run. Single-threaded by design: the scheduler parallelizes across graphs.
 
 #include <cstddef>
 #include <cstdint>

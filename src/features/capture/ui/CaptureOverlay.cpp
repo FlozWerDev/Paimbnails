@@ -5,7 +5,6 @@
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/ClipboardImage.hpp"
 #include "../../../utils/SpriteHelper.hpp"
-#include "../../../utils/PaimonDrawNode.hpp"
 #include "../services/FramebufferCapture.hpp"
 
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -17,15 +16,8 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
-#include <thread>
 #include "../../../utils/ThreadTracker.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
-
-#ifdef GEODE_IS_WINDOWS
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <shellapi.h>
-#endif
 
 using namespace cocos2d;
 using namespace cocos2d::extension;
@@ -390,11 +382,6 @@ void CaptureOverlay::playFlyToBottomRightAnimation() {
 
     m_previewCard->setPosition({startX, startY});
     m_previewCard->setScale(startScale);
-
-    if (m_previewSprite) {
-        m_previewSprite->removeFromParent();
-        m_previewSprite = nullptr;
-    }
 
     auto* moveTo = CCMoveTo::create(0.7f, {targetX, targetY});
     auto* scaleTo = CCScaleTo::create(0.7f, 1.0f);

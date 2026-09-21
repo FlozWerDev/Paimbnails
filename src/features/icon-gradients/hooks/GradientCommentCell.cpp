@@ -1,9 +1,4 @@
-// Own-comment icon in comment cells, rethought for Paimbnails.
-//
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). Independent implementation: same behavior (shade
-// the comment author's own icon), own expression.
+// Own-comment icon shading, after zilko's "Icon Gradients" (independent implementation, own expression).
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CommentCell.hpp>

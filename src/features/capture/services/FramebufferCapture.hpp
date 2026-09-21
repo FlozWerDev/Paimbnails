@@ -20,11 +20,9 @@ struct CaptureValidation {
 
 class FramebufferCapture {
 public:
-    // Callback: (success, texture, rgbaData, width, height).
-    // Texture carries a +1 that the service releases when the callback
-    // returns (NOT autoreleased); keepers must retain it (geode::Ref<>)
-    // inside the callback. May fire synchronously on early failure and may
-    // run off the main thread — marshal to main before touching UI.
+    // Callback: (success, texture, rgbaData, width, height). Texture carries a
+    // +1 the service releases on return; keepers must retain it. May run off
+    // the main thread — marshal to main before touching UI.
     static void requestCapture(
         int levelID,
         geode::CopyableFunction<void(bool success, cocos2d::CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height)> callback,
@@ -40,7 +38,6 @@ public:
 
     static bool hasPendingCapture();
     static bool isCapturing();
-    static std::pair<int, int> getCaptureSize();
 
     // Call after the full frame.
     static void processDeferredCallbacks();
@@ -52,9 +49,7 @@ public:
 
     static CaptureValidation validateCaptureConditions();
 
-    // Renders level with the same pipeline as a real capture, restores before
-    // returning. Returns autoreleased texture (setFlipY(true) to display).
-    // Hiding players mirrors what the accepted capture will look like.
+    // Same pipeline as a real capture; autoreleased texture, player hiding mirrors the accepted shot.
     static cocos2d::CCTexture2D* renderPreviewTexture(
         int width, int height, bool hidePlayer1 = false, bool hidePlayer2 = false);
 

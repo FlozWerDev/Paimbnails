@@ -1,10 +1,7 @@
 #pragma once
 
-// AsyncImageLoad — decodes static images off the main thread: heavy CPU work
-// (read + decode to RGBA) runs on a ThreadPool, only the GL texture creation
-// returns to the main thread. The callback gets an autoreleased CCSprite* or
-// nullptr. Use AnimatedGIFSprite directly for GIF/APNG; this is for static
-// images only (PNG/JPEG/BMP/TGA/WebP via stb).
+// Off-thread decode, sprite delivered on the main thread. Static images only;
+// GIF/APNG go through AnimatedGIFSprite.
 
 #include <Geode/Geode.hpp>
 #include "ImageLoadHelper.hpp"
@@ -85,10 +82,6 @@ inline void loadStaticSprite(std::filesystem::path path, size_t maxSizeMB, Sprit
                 if (callback) callback(sprite);
             });
     });
-}
-
-inline void shutdownPool() {
-    detail::pool().shutdown();
 }
 
 } // namespace paimon::asyncimg

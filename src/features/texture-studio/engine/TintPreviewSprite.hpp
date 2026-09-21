@@ -6,14 +6,8 @@
 
 namespace paimon::texture_studio {
 
-// CCSprite that re-tints its base texture on the GPU on every draw from a
-// packed role-mask texture (R=C1 G=C2 B=detail A=glow, the same bytes the CPU
-// kernel blends with). Color and grade changes only push uniforms: no pixel
-// re-upload, no worker thread. Segmentation still runs on the CPU once per
-// mask-param change, and the export bake stays on the CPU path, so shipped
-// packs remain bit-identical while the editor preview follows every slider
-// tick. Layer-owned like the preview sprites it replaces; it dies with the
-// editor layer, so no shutdown wiring is needed.
+// GPU re-tint on every draw from the role-mask texture (uniforms only, no
+// re-upload); layer-owned, dies with the editor, so no shutdown wiring.
 class TintPreviewSprite : public cocos2d::CCSprite {
 public:
     static TintPreviewSprite* create(cocos2d::CCTexture2D* base,

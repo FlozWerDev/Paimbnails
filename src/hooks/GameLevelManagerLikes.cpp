@@ -1,8 +1,5 @@
-// Feeds the For You model with the user's own like and dislike verdicts.
-//
-// GameLevelManager::likeItem is the single funnel every like passes through —
-// LikeItemLayer, LevelInfoLayer and the comment popups all end up here — so one
-// hook catches every path, including the dislike the old tracker never saw.
+// Feeds the For You model: likeItem is the single funnel every like/dislike
+// passes through, so one hook catches paths the old tracker never saw.
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GameLevelManager.hpp>

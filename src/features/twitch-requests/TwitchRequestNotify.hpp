@@ -1,9 +1,7 @@
 #pragma once
 
-// Aviso en pantalla cuando entra un request nuevo. Todo lo que se ve (el sitio,
-// el tamano, los segundos y las dos animaciones) sale de NotifyConfig, y el
-// popup de ajustes dibuja exactamente la misma tarjeta dentro de su pantalla de
-// mentira, asi que lo que previsualizas es lo que sale en el stream.
+// El popup de ajustes dibuja la misma tarjeta que sale en el stream: lo que
+// previsualizas es lo que sale.
 
 #include <Geode/Geode.hpp>
 

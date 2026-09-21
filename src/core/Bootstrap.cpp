@@ -145,9 +145,8 @@ void bootstrap() {
             s_cursorSyncGuard.store(false, std::memory_order_release);
         });
 
-        // Module toggles backed by mod.json settings are read through the
-        // version-stamped cache in ModuleRegistry, and Geode's own settings
-        // panel writes them without going through modules::setEnabled.
+        // Geode's settings panel bypasses setEnabled, so invalidate the
+        // version-stamped ModuleRegistry cache on any setting change.
         geode::listenForAllSettingChanges(
             +[](std::string_view, std::shared_ptr<geode::SettingV3>) {
                 paimon::settings::internal::invalidateSettingsCache();
@@ -196,10 +195,8 @@ void bootstrap() {
         Shaders::prewarmConfiguredBackgroundShaders();
     });
 
-    // The gradient shader set is ~1240 independent programs (one per sprite
-    // key; each holds its own uniforms). Compiling them on mod load blocked the
-    // main thread for over a minute on low-end machines, so it is spread across
-    // frames once the game is already past its own loading.
+    // ~1240 gradient programs blocked the main thread for 1min+ on mod load;
+    // compile them spread across frames once past the game's own loading.
     paimon::scheduleMainThreadDelay(10.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         paimon::icon_gradients::GradientCache::prewarmShaders();

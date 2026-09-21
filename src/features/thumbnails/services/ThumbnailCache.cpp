@@ -24,9 +24,7 @@ namespace paimon::cache {
 static std::atomic<bool> s_cacheInstanceAlive{false};
 
 ThumbnailCache& ThumbnailCache::get() {
-    // RuntimeLifecycle/ThumbnailLoader clear this explicitly while Cocos is
-    // alive. Do not run the destructor after Geode has shut down its logger,
-    // async runtime and object pools (two Bunny reports end on that boundary).
+    // Leak intencional: el dtor tras el shutdown de Geode rompe (reportes Bunny).
     static auto* instance = new ThumbnailCache();
     s_cacheInstanceAlive = true;
     return *instance;
@@ -301,11 +299,6 @@ constexpr int64_t intervalUs = 2'000'000; // 2 s.
     }
 }
 
-size_t ThumbnailCache::ramBytes() const {
-    std::shared_lock lock(m_ramMutex);
-    return m_ramBytes;
-}
-
 size_t ThumbnailCache::ramEntryCount() const {
     std::shared_lock lock(m_ramMutex);
     return m_ramCache.size();
@@ -335,16 +328,6 @@ void ThumbnailCache::addUrlToRam(std::string const& url, cocos2d::CCTexture2D* t
     m_urlBytes += incomingBytes;
 
     evictUrlRamLocked();
-}
-
-void ThumbnailCache::removeUrlFromRam(std::string const& url) {
-    std::unique_lock lock(m_urlMutex);
-    auto it = m_urlRamCache.find(url);
-    if (it != m_urlRamCache.end()) {
-        if (m_urlBytes >= it->second.byteSize) m_urlBytes -= it->second.byteSize;
-        else m_urlBytes = 0;
-        m_urlRamCache.erase(it);
-    }
 }
 
 void ThumbnailCache::evictUrlRamLocked() {
@@ -383,16 +366,6 @@ void ThumbnailCache::evictUrlRamLocked() {
         m_stats.ramEvictions.fetch_add(1, std::memory_order_relaxed);
         m_urlRamCache.erase(it);
     }
-}
-
-size_t ThumbnailCache::urlRamBytes() const {
-    std::shared_lock lock(m_urlMutex);
-    return m_urlBytes;
-}
-
-size_t ThumbnailCache::urlRamEntryCount() const {
-    std::shared_lock lock(m_urlMutex);
-    return m_urlRamCache.size();
 }
 
 void ThumbnailCache::clearUrlsForLevel(int levelID) {
@@ -623,11 +596,6 @@ void ThumbnailCache::markNotFound(std::string const& key) {
 void ThumbnailCache::clearNotFound(std::string const& key) {
     std::lock_guard lock(m_notFoundMutex);
     m_notFoundCache.erase(key);
-}
-
-void ThumbnailCache::clearAllNotFound() {
-    std::lock_guard lock(m_notFoundMutex);
-    m_notFoundCache.clear();
 }
 
 int ThumbnailCache::getInvalidationVersion(int levelID) const {

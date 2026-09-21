@@ -58,9 +58,8 @@ constexpr float kCursorTeleportViewports = 2.5f;
 constexpr float kHeatRedrawEvery = 0.35f;
 constexpr int kMaxRemoteCursorDimension = 512;
 
-// CCDrawNode blends premultiplied (CC_BLEND_SRC is GL_ONE), so full-brightness
-// rgb with a low alpha reads as additive glow instead of a soft tint — that is
-// what turned the presence rects into solid neon. Scale rgb by alpha.
+// CCDrawNode blends premultiplied, so unscaled rgb at low alpha reads as neon
+// glow instead of a soft tint. Scale rgb by alpha.
 ccColor4F drawColor(ccColor3B c, float alpha) {
     float a = std::clamp(alpha, 0.f, 1.f);
     return {c.r / 255.f * a, c.g / 255.f * a, c.b / 255.f * a, a};

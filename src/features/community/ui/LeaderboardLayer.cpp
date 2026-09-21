@@ -107,28 +107,6 @@ static LeaderboardPaimonSprite* createLeaderboardBlurredSprite(CCTexture2D* text
     return finalSprite;
 }
 
-static FMOD::ChannelGroup* ensureLeaderboardAudioGroup(FMOD::System* system, FMOD::ChannelGroup*& group) {
-    if (!system) return nullptr;
-    if (group) {
-        bool muted = false;
-        if (group->getMute(&muted) == FMOD_OK) {
-            return group;
-        }
-        group = nullptr;
-    }
-
-    FMOD_RESULT result = system->createChannelGroup("PaimonLeaderboardAudio", &group);
-    if (result != FMOD_OK || !group) {
-        return nullptr;
-    }
-
-    FMOD::ChannelGroup* master = nullptr;
-    if (system->getMasterChannelGroup(&master) == FMOD_OK && master) {
-        master->addGroup(group);
-    }
-    return group;
-}
-
 // Return the active background channel, or nullptr when silent.
 static FMOD::Channel* lbGetMainBgChannel(FMODAudioEngine* engine) {
     if (!engine) return nullptr;
@@ -376,8 +354,6 @@ void LeaderboardLayer::onEnterTransitionDidFinish() {
     if (m_caveMusicShouldRestore && !m_musicPlaying && !m_leavingForGood) {
         startCaveMusic();
     }
-
-    m_goingToHistory = false;
 }
 
 void LeaderboardLayer::onExit() {
@@ -1786,7 +1762,7 @@ void LeaderboardLayer::update(float dt) {
         }
     }
     
-    if (m_musicPlaying && m_levelMusicChannel) {
+    if (m_musicPlaying && m_fftDSP) {
         updateAudioReactive(dt);
     } else {
         if (m_glowOverlay) m_glowOverlay->setOpacity(0);
@@ -2115,7 +2091,6 @@ void LeaderboardLayer::spawnThemeParticle(float dt) {
 }
 
 void LeaderboardLayer::onHistory(CCObject*) {
-    m_goingToHistory = true;
     auto scene = LeaderboardHistoryLayer::scene();
     TransitionManager::get().pushScene(scene);
 }
@@ -2187,28 +2162,6 @@ void LeaderboardLayer::startCaveMusic() {
     m_isFadingCaveIn = true;
     m_isFadingCaveOut = false;
     executeCaveFade(0, AUDIO_FADE_STEPS, 0.f, targetVol, false);
-}
-
-void LeaderboardLayer::fadeOutCaveMusic() {
-    if (!m_musicPlaying) return;
-
-    auto engine = FMODAudioEngine::sharedEngine();
-    if (!engine || !engine->m_backgroundMusicChannel) {
-        killCaveMusic();
-        return;
-    }
-
-    m_isFadingCaveIn = false;
-
-    float currentVol = 0.f;
-    engine->m_backgroundMusicChannel->getVolume(&currentVol);
-    if (currentVol <= 0.001f) {
-        killCaveMusic();
-        return;
-    }
-
-    m_isFadingCaveOut = true;
-    executeCaveFade(0, AUDIO_FADE_STEPS, currentVol, 0.f, true);
 }
 
 void LeaderboardLayer::killCaveMusic() {
@@ -2304,73 +2257,6 @@ void LeaderboardLayer::removeCaveEffect() {
     if (m_fftDSP) { m_fftDSP->release(); m_fftDSP = nullptr; }
 }
 
-void LeaderboardLayer::fadeOutMenuMusic() {
-    auto engine = FMODAudioEngine::sharedEngine();
-    if (!engine || !engine->m_backgroundMusicChannel) return;
-
-    float currentVol = 0.f;
-    engine->m_backgroundMusicChannel->getVolume(&currentVol);
-    if (currentVol <= 0.001f) return;
-
-    executeMenuFade(0, AUDIO_FADE_STEPS, currentVol, 0.f);
-}
-
-void LeaderboardLayer::fadeInMenuMusic() {
-    auto engine = FMODAudioEngine::sharedEngine();
-    if (!engine || !engine->m_backgroundMusicChannel) return;
-
-    float targetVol = engine->m_musicVolume;
-    float currentVol = 0.f;
-    engine->m_backgroundMusicChannel->getVolume(&currentVol);
-
-    bool isPaused = false;
-    engine->m_backgroundMusicChannel->getPaused(&isPaused);
-    if (isPaused) {
-        engine->m_backgroundMusicChannel->setPaused(false);
-    }
-
-    executeMenuFade(0, AUDIO_FADE_STEPS, currentVol, targetVol);
-}
-
-void LeaderboardLayer::executeMenuFade(int step, int totalSteps, float from, float to) {
-    if (step > totalSteps) {
-        auto engine = FMODAudioEngine::sharedEngine();
-        if (engine && engine->m_backgroundMusicChannel) {
-            engine->m_backgroundMusicChannel->setVolume(to);
-        }
-        return;
-    }
-
-    float t = static_cast<float>(step) / static_cast<float>(totalSteps);
-    float eT = (t < 0.5f) ? (2.f * t * t) : (1.f - std::pow(-2.f * t + 2.f, 2.f) / 2.f);
-    float vol = from + (to - from) * eT;
-
-    auto engine = FMODAudioEngine::sharedEngine();
-    if (engine && engine->m_backgroundMusicChannel) {
-        engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
-    }
-
-    float stepDelay = (AUDIO_FADE_MS / static_cast<float>(totalSteps)) / 1000.f;
-    int next = step + 1;
-    int token = m_lifecycleToken;
-
-    Ref<LeaderboardLayer> safeRef = this;
-    paimon::scheduleMainThreadDelay(stepDelay, [safeRef, next, totalSteps, from, to, token]() {
-        if (!safeRef->getParent()) return;
-        if (safeRef->m_lifecycleToken != token) return;
-        safeRef->executeMenuFade(next, totalSteps, from, to);
-    });
-}
-
-void LeaderboardLayer::ensureBgSilenced() {
-}
-
-void LeaderboardLayer::delaySilenceBg(float) {
-}
-
-void LeaderboardLayer::delaySilenceBg2(float) {
-}
-
 LeaderboardLayer::~LeaderboardLayer() {
     // Restore dynamic audio if the scene was replaced unexpectedly.
     if (m_didSuspendDynSong) {
@@ -2387,10 +2273,6 @@ LeaderboardLayer::~LeaderboardLayer() {
         bool isPaused = false;
         engine->m_backgroundMusicChannel->getPaused(&isPaused);
         if (isPaused) engine->m_backgroundMusicChannel->setPaused(false);
-    }
-    if (m_levelAudioGroup) {
-        m_levelAudioGroup->release();
-        m_levelAudioGroup = nullptr;
     }
     m_featuredLevel = nullptr;
 }

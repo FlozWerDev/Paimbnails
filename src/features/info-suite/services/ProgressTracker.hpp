@@ -72,7 +72,6 @@ public:
     void recordRun(int levelID, int jumps, int percent, bool practice);
 
     LevelProgress const* find(int levelID) const;
-    bool hasData(int levelID) const;
 
     void save();
 

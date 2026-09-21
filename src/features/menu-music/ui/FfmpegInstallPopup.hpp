@@ -36,10 +36,8 @@ protected:
 
     std::function<void(bool)> m_onFinished;
     bool m_finished = false;
-    bool m_success = false;
-    // Shared alive-token: captured by value in async callbacks so they can
-    // safely check liveness even after this popup has been destroyed (the
-    // bootstrap keeps the callback alive past the popup's lifetime).
+    // Alive-token shared with async callbacks: captured by value so they can
+    // check liveness after the popup is destroyed.
     std::shared_ptr<std::atomic<bool>> m_alive = std::make_shared<std::atomic<bool>>(true);
 };
 

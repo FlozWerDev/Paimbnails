@@ -197,14 +197,6 @@ namespace {
         return result.isOk() ? result.unwrap() : fallback;
     }
 
-    CCRect unionRect(CCRect const& a, CCRect const& b) {
-        float minX = std::min(a.getMinX(), b.getMinX());
-        float minY = std::min(a.getMinY(), b.getMinY());
-        float maxX = std::max(a.getMaxX(), b.getMaxX());
-        float maxY = std::max(a.getMaxY(), b.getMaxY());
-        return {minX, minY, maxX - minX, maxY - minY};
-    }
-
     CCRect nodeRect(CCNode* node) {
         if (!node) return {0.f, 0.f, 0.f, 0.f};
         auto size = node->getScaledContentSize();
@@ -267,9 +259,7 @@ namespace {
         return wildcardCount == 1;
     }
 
-    // Identity of a result row. This used to be a formatted std::string built
-    // for every object on every merge, which meant an allocation per row per
-    // page load. A packed integer pair does the same job for free.
+    // Packed integer pair: same identity as the old per-row string, no allocation.
     struct ResultKey {
         int kind = 0;
         std::int64_t id = 0;
@@ -374,596 +364,6 @@ namespace {
         std::function<void(int)> m_callback;
     };
 
-    class RealtimeLevelSearchPreview : public CCNode, public LevelManagerDelegate, public TableViewCellDelegate {
-    public:
-        static RealtimeLevelSearchPreview* create(LevelSearchLayer* owner) {
-            auto ret = new RealtimeLevelSearchPreview();
-            if (ret && ret->init(owner)) {
-                ret->autorelease();
-                return ret;
-            }
-            CC_SAFE_DELETE(ret);
-            return nullptr;
-        }
-
-        bool init(LevelSearchLayer* owner) {
-            if (!CCNode::init()) return false;
-            m_owner = owner;
-            this->setID("paimon-realtime-search-preview"_spr);
-            buildUI();
-            showIdle();
-            return true;
-        }
-
-        // Remove the delegate-owning list before children are destroyed.
-        ~RealtimeLevelSearchPreview() override {
-            if (!m_shuttingDown) {
-                m_shuttingDown = true;
-                cancelPendingSearch();
-                clearDelegate();
-                removeList();
-            }
-            m_owner = nullptr;
-        }
-
-        void cleanup() override {
-            clearDelegate();
-            CCNode::cleanup();
-        }
-
-        void onExit() override {
-            this->unschedule(schedule_selector(RealtimeLevelSearchPreview::firePendingSearch));
-            clearDelegate();
-            CCNode::onExit();
-        }
-
-        void onEnter() override {
-            CCNode::onEnter();
-            if (!m_nativeList && m_pendingQuery.empty() && !m_refreshOnEnter) {
-                setQuickSearchContentVisible(true);
-            }
-            if (m_refreshOnEnter || (!m_pendingQuery.empty() && !m_nativeList)) {
-                m_refreshOnEnter = false;
-                refreshFromCurrentInput(true);
-            }
-        }
-
-        void handleTextChanged(CCTextInputNode* node) {
-            if (!node || m_shuttingDown || paimon::isRuntimeShuttingDown()) return;
-
-            m_pendingQuery = trimQuery(node->getString());
-            cancelPendingSearch();
-
-            if (m_pendingQuery.empty()) {
-                clearDelegate();
-                m_activeQuery.clear();
-                m_lastRequestFailed = false;
-                showIdle();
-                return;
-            }
-
-            if (m_pendingQuery == m_activeQuery && !m_lastRequestFailed) {
-                return;
-            }
-
-            clearDelegate();
-            m_lastRequestFailed = false;
-
-            setStatus("Searching...");
-            this->scheduleOnce(
-                schedule_selector(RealtimeLevelSearchPreview::firePendingSearch),
-                getRealtimeSearchDelay()
-            );
-        }
-
-        void refreshFromCurrentInput(bool force) {
-            if (m_shuttingDown || paimon::isRuntimeShuttingDown() || !m_owner || !m_owner->m_searchInput) return;
-            m_pendingQuery = trimQuery(m_owner->m_searchInput->getString());
-            cancelPendingSearch();
-
-            if (m_pendingQuery.empty()) {
-                clearDelegate();
-                m_activeQuery.clear();
-                m_lastRequestFailed = false;
-                showIdle();
-                return;
-            }
-
-            if (force || m_pendingQuery != m_activeQuery || m_lastRequestFailed) {
-                clearDelegate();
-            }
-
-            if (force || m_lastRequestFailed) {
-                m_activeQuery.clear();
-            }
-
-            if (!force && m_pendingQuery == m_activeQuery && !m_lastRequestFailed) {
-                return;
-            }
-
-            m_lastRequestFailed = false;
-            setStatus("Searching...");
-            this->scheduleOnce(schedule_selector(RealtimeLevelSearchPreview::firePendingSearch), 0.05f);
-        }
-
-        void loadLevelsFinished(CCArray* levels, char const* key) override {
-            if (m_shuttingDown || paimon::isRuntimeShuttingDown()) return;
-            if (!isCurrentKey(key)) return;
-            clearDelegate();
-            m_lastRequestFailed = false;
-            renderResults(levels);
-        }
-        void loadLevelsFailed(char const* key) override {
-            if (m_shuttingDown || paimon::isRuntimeShuttingDown()) return;
-            if (!isCurrentKey(key)) return;
-            clearDelegate();
-            clearResults();
-            m_lastRequestFailed = true;
-            setStatus("Search failed");
-        }
-
-        void loadLevelsFinished(CCArray* levels, char const* key, int) override {
-            loadLevelsFinished(levels, key);
-        }
-
-        void loadLevelsFailed(char const* key, int) override {
-            loadLevelsFailed(key);
-        }
-
-        bool cellPerformedAction(TableViewCell* cell, int, CellAction action, CCNode*) override {
-            if (action != CellAction::Click || !cell || !m_entries) return false;
-
-            int index = cell->m_indexPath.m_row;
-            if (index < 0 || index >= static_cast<int>(m_entries->count())) return false;
-
-            auto level = typeinfo_cast<GJGameLevel*>(m_entries->objectAtIndex(index));
-            if (!level) return false;
-
-            openLevel(level);
-            return true;
-        }
-
-        int getSelectedCellIdx() override {
-            return -1;
-        }
-
-        bool shouldSnapToSelected() override {
-            return false;
-        }
-
-        int getCellDelegateType() override {
-            return 0;
-        }
-
-        void shutdown(bool removeChildren = true) {
-            if (m_shuttingDown) return;
-            m_shuttingDown = true;
-
-            cancelPendingSearch();
-            clearDelegate();
-            m_pendingQuery.clear();
-            m_activeQuery.clear();
-            m_lastRequestFailed = false;
-
-            // Remove the delegate-owning list first.
-            removeList();
-
-            if (removeChildren) {
-                this->stopAllActions();
-                this->unscheduleAllSelectors();
-                this->removeAllChildrenWithCleanup(true);
-                m_container = nullptr;
-                m_statusLabel = nullptr;
-            }
-
-            if (m_statusLabel) {
-                m_statusLabel->setVisible(false);
-            }
-            if (m_container) {
-                m_container->setVisible(false);
-            }
-
-            if (removeChildren) {
-                setQuickSearchContentVisible(true);
-            }
-            m_owner = nullptr;
-        }
-
-    private:
-        LevelSearchLayer* m_owner = nullptr;
-        CCNode* m_container = nullptr;
-        ScrollLayer* m_scrollLayer = nullptr;
-        CustomListView* m_nativeList = nullptr;
-        CCNode* m_resultsBg = nullptr;
-        CCNode* m_listFrame = nullptr;
-        CCNode* m_listBorderOverlay = nullptr;
-        CCLabelBMFont* m_statusLabel = nullptr;
-        Ref<CCArray> m_entries = nullptr;
-        std::array<GJGameLevel*, kRealtimeResultCount> m_results = {};
-        std::string m_pendingQuery;
-        std::string m_activeQuery;
-        std::string m_pendingKey;
-        bool m_refreshOnEnter = false;
-        bool m_shuttingDown = false;
-        bool m_lastRequestFailed = false;
-
-        void cancelPendingSearch() {
-            this->unschedule(schedule_selector(RealtimeLevelSearchPreview::firePendingSearch));
-        }
-
-        void buildUI() {
-            auto winSize = CCDirector::get()->getWinSize();
-            auto rect = quickSearchRect();
-
-            m_container = CCNode::create();
-            m_container->setID("paimon-realtime-search-preview-container"_spr);
-            m_container->setPosition(rect.origin + CCPoint{rect.size.width / 2.f, rect.size.height / 2.f});
-            this->addChild(m_container, 30);
-
-            m_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
-            m_statusLabel->setScale(0.32f);
-            m_statusLabel->setPosition({0.f, 0.f});
-            m_container->addChild(m_statusLabel);
-        }
-
-        void firePendingSearch(float) {
-            if (m_shuttingDown || paimon::isRuntimeShuttingDown() || !m_owner || m_pendingQuery.empty()) return;
-            if (m_pendingQuery == m_activeQuery && !m_lastRequestFailed) return;
-
-            clearResults();
-            m_activeQuery = m_pendingQuery;
-            m_lastRequestFailed = false;
-
-            auto searchObject = m_owner->getSearchObject(SearchType::Search, m_activeQuery);
-            if (!searchObject) {
-                m_lastRequestFailed = true;
-                setStatus("Search failed");
-                return;
-            }
-
-            auto key = searchObject->getKey();
-            m_pendingKey = key ? key : "";
-            if (m_pendingKey.empty()) {
-                m_lastRequestFailed = true;
-                setStatus("Search failed");
-                return;
-            }
-
-            auto manager = GameLevelManager::get();
-            if (!manager) {
-                clearDelegate();
-                m_lastRequestFailed = true;
-                setStatus("Search failed");
-                return;
-            }
-
-            if (auto cached = manager->getStoredOnlineLevels(searchObject->getKey())) {
-                clearDelegate();
-                renderResults(cached);
-                return;
-            }
-
-            manager->m_levelManagerDelegate = nullptr;
-            manager->m_levelManagerDelegate = this;
-            manager->getOnlineLevels(searchObject);
-        }
-
-        bool isCurrentKey(char const* key) const {
-            if (m_pendingKey.empty() || !key) return false;
-            return m_pendingKey == key;
-        }
-
-        void renderResults(CCArray* levels) {
-            if (m_shuttingDown || paimon::isRuntimeShuttingDown()) return;
-            clearResults();
-
-            auto entries = CCArray::create();
-            int index = 0;
-            m_results.fill(nullptr);
-            if (levels) {
-                for (auto level : CCArrayExt<GJGameLevel*>(levels)) {
-                    if (!level || index >= kRealtimeResultCount) continue;
-                    entries->addObject(level);
-                    m_results[index] = level;
-                    ++index;
-                }
-            }
-
-            if (index == 0) {
-                setStatus("No results");
-            } else {
-                m_statusLabel->setString("");
-                m_statusLabel->setVisible(false);
-                showList(entries);
-                m_container->setVisible(true);
-            }
-        }
-
-        void showList(CCArray* entries) {
-            if (m_shuttingDown || paimon::isRuntimeShuttingDown()) return;
-            removeList();
-            setQuickSearchContentVisible(false);
-            m_entries = entries;
-
-            auto rect = quickSearchRect();
-            m_container->setPosition(rect.origin + CCPoint{rect.size.width / 2.f, rect.size.height / 2.f});
-
-            float viewW = std::max(220.f, rect.size.width - 18.f);
-            float viewH = std::max(92.f, rect.size.height - 12.f);
-            float listW = std::max(200.f, viewW - 6.f);
-            float listH = std::max(82.f, viewH - 6.f);
-            constexpr float kFramePad = 3.f;
-
-            m_listFrame = paimon::SpriteHelper::createRoundedRect(
-                listW + kFramePad * 2.f,
-                listH + kFramePad * 2.f,
-                5.f,
-                {0.005f, 0.007f, 0.012f, 0.86f},
-                {0.f, 0.f, 0.f, 1.f},
-                0.6f
-            );
-            if (m_listFrame) {
-                m_listFrame->setID("paimon-realtime-results-inner-frame"_spr);
-                m_listFrame->setPosition({-(listW + kFramePad * 2.f) / 2.f, -(listH + kFramePad * 2.f) / 2.f});
-                m_container->addChild(m_listFrame, 1);
-            }
-
-            bool oldForceCompact = paimon::hooks::g_forceCompactLevelCells;
-            paimon::hooks::g_forceCompactLevelCells = true;
-            auto list = CustomListView::create(
-                entries,
-                this,
-                listH,
-                listW,
-                0,
-                BoomListType::Level4,
-                45.f
-            );
-            paimon::hooks::g_forceCompactLevelCells = oldForceCompact;
-            if (!list) {
-                setStatus("No results");
-                return;
-            }
-
-            list->setID("paimon-realtime-results-list"_spr);
-            list->setPosition({-listW / 2.f, -listH / 2.f});
-            m_container->addChild(list, 2);
-            m_nativeList = list;
-            oldForceCompact = paimon::hooks::g_forceCompactLevelCells;
-            paimon::hooks::g_forceCompactLevelCells = true;
-            list->setupList(0.f);
-            paimon::hooks::g_forceCompactLevelCells = oldForceCompact;
-
-            m_listBorderOverlay = paimon::SpriteHelper::createRoundedRectOutline(
-                listW + 1.f,
-                listH + 1.f,
-                4.f,
-                {0.f, 0.f, 0.f, 1.f},
-                0.5f
-            );
-            if (m_listBorderOverlay) {
-                m_listBorderOverlay->setID("paimon-realtime-results-border-overlay"_spr);
-                m_listBorderOverlay->setPosition({-(listW + 1.f) / 2.f, -(listH + 1.f) / 2.f});
-                m_container->addChild(m_listBorderOverlay, 3);
-            }
-
-            if (entries->count() == 0) {
-                removeList();
-                setStatus("No results");
-            }
-        }
-
-        void drawListBackground(float width, float height) {
-            auto bg = PaimonDrawNode::create();
-            if (!bg) return;
-            bg->setID("paimon-realtime-results-bg"_spr);
-            bg->setPosition({-width / 2.f, -height / 2.f});
-            drawRect(bg, {0.f, 0.f}, {width, height}, {0.03f, 0.035f, 0.055f, 0.74f}, 1.f, {1.f, 1.f, 1.f, 0.10f});
-            m_container->addChild(bg, 1);
-            m_resultsBg = bg;
-        }
-
-        void buildRows(float width, float contentHeight) {
-            if (!m_scrollLayer || !m_scrollLayer->m_contentLayer) return;
-
-            auto menu = CCMenu::create();
-            menu->setContentSize({width, contentHeight});
-            menu->setAnchorPoint({0.f, 0.f});
-            menu->ignoreAnchorPointForPosition(false);
-            menu->setPosition({0.f, 0.f});
-            m_scrollLayer->m_contentLayer->addChild(menu, 10);
-
-            float rowW = width - 8.f;
-            float y = contentHeight - kRealtimeRowGap - kRealtimeRowHeight;
-            for (int i = 0; i < kRealtimeResultCount; ++i) {
-                auto level = m_results[i];
-                if (!level) continue;
-
-                auto row = PaimonDrawNode::create();
-                if (row) {
-                    row->setPosition({4.f, y});
-                    ccColor4F fill = (i % 2 == 0)
-                        ? ccColor4F{0.10f, 0.12f, 0.17f, 0.92f}
-                        : ccColor4F{0.075f, 0.085f, 0.12f, 0.92f};
-                    drawRect(row, {0.f, 0.f}, {rowW, kRealtimeRowHeight}, fill, 1.f, {1.f, 1.f, 1.f, 0.12f});
-                    drawRect(row, {0.f, 0.f}, {3.f, kRealtimeRowHeight}, {0.50f, 0.92f, 0.36f, 0.95f});
-                    m_scrollLayer->m_contentLayer->addChild(row, 0);
-                }
-
-                auto hit = CCLayerColor::create({0, 0, 0, 0}, rowW, kRealtimeRowHeight);
-                auto btn = CCMenuItemSpriteExtra::create(
-                    hit,
-                    this,
-                    menu_selector(RealtimeLevelSearchPreview::onResult)
-                );
-                btn->setTag(i);
-                btn->setID(fmt::format("paimon-realtime-result-{}"_spr, i));
-                btn->setPosition({4.f + rowW / 2.f, y + kRealtimeRowHeight / 2.f});
-                menu->addChild(btn);
-
-                addRowLabels(level, 4.f, y, rowW);
-                y -= kRealtimeRowHeight + kRealtimeRowGap;
-            }
-        }
-
-        void addRowLabels(GJGameLevel* level, float x, float y, float width) {
-            if (!m_scrollLayer || !m_scrollLayer->m_contentLayer || !level) return;
-
-            auto title = CCLabelBMFont::create(shorten(std::string(level->m_levelName), 24).c_str(), "bigFont.fnt");
-            title->setScale(0.31f);
-            title->setAnchorPoint({0.f, 0.5f});
-            title->setPosition({x + 12.f, y + 25.f});
-            m_scrollLayer->m_contentLayer->addChild(title, 2);
-
-            auto author = CCLabelBMFont::create(shorten(std::string(level->m_creatorName), 18).c_str(), "chatFont.fnt");
-            author->setScale(0.43f);
-            author->setColor({170, 190, 210});
-            author->setAnchorPoint({0.f, 0.5f});
-            author->setPosition({x + 12.f, y + 11.f});
-            m_scrollLayer->m_contentLayer->addChild(author, 2);
-
-            auto meta = CCLabelBMFont::create(
-                fmt::format("{}  {}*  {} dl  {} like",
-                    difficultyName(level),
-                    level->m_stars.value(),
-                    formatCount(level->m_downloads),
-                    formatCount(level->m_likes)
-                ).c_str(),
-                "chatFont.fnt"
-            );
-            meta->setScale(0.40f);
-            meta->setColor({215, 225, 235});
-            meta->setAnchorPoint({1.f, 0.5f});
-            meta->setPosition({x + width - 10.f, y + 18.f});
-            float maxMetaW = width * 0.43f;
-            if (meta->getScaledContentSize().width > maxMetaW) {
-                meta->setScale(meta->getScale() * maxMetaW / meta->getScaledContentSize().width);
-            }
-            m_scrollLayer->m_contentLayer->addChild(meta, 2);
-        }
-
-        void onResult(CCObject* sender) {
-            auto item = typeinfo_cast<CCNode*>(sender);
-            if (!item) return;
-
-            int index = item->getTag();
-            if (index < 0 || index >= kRealtimeResultCount) return;
-            auto level = m_results[index];
-            if (!level) return;
-
-            openLevel(level);
-        }
-
-        void openLevel(GJGameLevel* level) {
-            if (!level) return;
-
-            auto manager = GameLevelManager::get();
-            auto savedLevel = manager ? manager->getSavedLevel(level->m_levelID) : nullptr;
-            auto levelToUse = savedLevel ? savedLevel : level;
-            if (!levelToUse) return;
-
-            auto layer = LevelInfoLayer::create(levelToUse, false);
-            auto scene = CCScene::create();
-            scene->addChild(layer);
-
-            // Release IME focus and freeze callbacks before changing scenes.
-            releaseSearchInputFocus(m_owner);
-            m_shuttingDown = true;
-            cancelPendingSearch();
-            clearDelegate();
-
-            TransitionManager::get().pushScene(scene);
-        }
-
-        void setStatus(char const* text) {
-            if (m_shuttingDown || paimon::isRuntimeShuttingDown() || !m_statusLabel || !m_container) return;
-            auto rect = quickSearchRect();
-            m_container->setPosition(rect.origin + CCPoint{rect.size.width / 2.f, rect.size.height / 2.f});
-            m_statusLabel->setString(text);
-            m_statusLabel->setVisible(text && text[0] != '\0');
-            m_container->setVisible(true);
-            removeList();
-            setQuickSearchContentVisible(!(text && text[0] != '\0'));
-        }
-
-        void showIdle() {
-            if (m_shuttingDown || paimon::isRuntimeShuttingDown()) return;
-            clearResults();
-            m_lastRequestFailed = false;
-            if (m_statusLabel) m_statusLabel->setString("");
-            if (m_container) m_container->setVisible(false);
-            setQuickSearchContentVisible(true);
-        }
-
-        void clearResults() {
-            removeList();
-        }
-
-        void removeList() {
-            if (m_nativeList) {
-                m_nativeList->removeFromParentAndCleanup(true);
-                m_nativeList = nullptr;
-            }
-            if (m_scrollLayer) {
-                m_scrollLayer->removeFromParent();
-                m_scrollLayer = nullptr;
-            }
-            if (m_resultsBg) {
-                m_resultsBg->removeFromParent();
-                m_resultsBg = nullptr;
-            }
-            if (m_listFrame) {
-                m_listFrame->removeFromParent();
-                m_listFrame = nullptr;
-            }
-            if (m_listBorderOverlay) {
-                m_listBorderOverlay->removeFromParent();
-                m_listBorderOverlay = nullptr;
-            }
-            m_entries = nullptr;
-        }
-
-        CCRect quickSearchRect() const {
-            if (m_owner) {
-                if (auto quickBg = m_owner->getChildByID("quick-search-bg")) {
-                    auto size = quickBg->getScaledContentSize();
-                    if (size.width > 0.f && size.height > 0.f) {
-                        auto pos = quickBg->getPosition();
-                        auto anchor = quickBg->getAnchorPoint();
-                        return {
-                            pos.x - size.width * anchor.x,
-                            pos.y - size.height * anchor.y,
-                            size.width,
-                            size.height,
-                        };
-                    }
-                }
-            }
-
-            auto winSize = CCDirector::get()->getWinSize();
-            return {
-                winSize.width / 2.f - kPreviewFallbackWidth / 2.f,
-                winSize.height / 2.f - 8.f,
-                kPreviewFallbackWidth,
-                kPreviewFallbackHeight,
-            };
-        }
-
-        void setQuickSearchContentVisible(bool visible) {
-            if (!m_owner) return;
-            if (auto node = m_owner->getChildByID("quick-search-menu")) {
-                node->setVisible(visible);
-            }
-        }
-
-        void clearDelegate() {
-            auto manager = GameLevelManager::get();
-            if (manager && manager->m_levelManagerDelegate == this) {
-                manager->m_levelManagerDelegate = nullptr;
-            }
-            m_pendingKey.clear();
-        }
-    };
 
     class RealtimeSearchBrowserPreview : public CCNode {    public:
         static RealtimeSearchBrowserPreview* create(LevelSearchLayer* owner) {
@@ -1012,12 +412,14 @@ namespace {
         void shutdown(bool removeChildren = true) {
             if (m_shuttingDown) return;
             m_shuttingDown = true;
+            // scene-level popup outlives us, its delegate would dangle
+            if (auto jump = m_pageJumpPopup.lock()) jump->removeFromParentAndCleanup(true);
+            m_pageJumpPopup = nullptr;
             cancelPendingSearch();
             cancelActiveRequest();
             m_owner = nullptr;
             m_pendingQuery.clear();
             m_activeQuery.clear();
-            m_pendingKey.clear();
             m_smartBaseQuery.clear();
             m_lastRequestFailed = false;
             m_pageInfoLoaded = false;
@@ -1029,7 +431,6 @@ namespace {
             m_cachedPageOrder.clear();
             m_pageCache.clear();
             m_mergedRows.clear();
-            m_openEntries.clear();
             m_smartQueries.clear();
             m_seenResultKeys.clear();
             m_smartQueryIndex = 0;
@@ -1053,10 +454,6 @@ namespace {
                 m_scrollLayer = nullptr;
                 m_content = nullptr;
                 m_controlsMenu = nullptr;
-                m_prevModeBtn = nullptr;
-                m_nextModeBtn = nullptr;
-                m_prevPresetBtn = nullptr;
-                m_nextPresetBtn = nullptr;
                 m_prevPageBtn = nullptr;
                 m_nextPageBtn = nullptr;
                 m_pageJumpBtn = nullptr;
@@ -1227,19 +624,6 @@ namespace {
             LevelWildcard,
         };
 
-        enum class EntryKind {
-            Level,
-            User,
-            List,
-        };
-
-        struct OpenEntry {
-            EntryKind kind = EntryKind::Level;
-            Ref<CCObject> object;
-            Ref<TableViewCell> cell;
-            CCNode* wrapper = nullptr;
-        };
-
         LevelSearchLayer* m_owner = nullptr;
         CCNode* m_container = nullptr;
         CCNode* m_resultsClip = nullptr;
@@ -1251,10 +635,6 @@ namespace {
         CCLabelBMFont* m_presetLabel = nullptr;
         CCLabelBMFont* m_pageLabel = nullptr;
         CCLabelBMFont* m_countLabel = nullptr;
-        CCMenuItemSpriteExtra* m_prevModeBtn = nullptr;
-        CCMenuItemSpriteExtra* m_nextModeBtn = nullptr;
-        CCMenuItemSpriteExtra* m_prevPresetBtn = nullptr;
-        CCMenuItemSpriteExtra* m_nextPresetBtn = nullptr;
         CCMenuItemSpriteExtra* m_prevPageBtn = nullptr;
         CCMenuItemSpriteExtra* m_nextPageBtn = nullptr;
         CCMenuItemSpriteExtra* m_pageJumpBtn = nullptr;
@@ -1262,17 +642,16 @@ namespace {
         CCMenuItemSpriteExtra* m_modeCycleBtn = nullptr;
         CCMenuItemSpriteExtra* m_presetCycleBtn = nullptr;
         RealtimePageJumpDelegate m_pageJumpDelegate;
+        WeakRef<SetIDPopup> m_pageJumpPopup;
         PreviewPrimaryMode m_primaryMode = PreviewPrimaryMode::Levels;
         LevelPreset m_levelPreset = LevelPreset::Search;
         std::string m_pendingQuery;
         std::string m_activeQuery;
-        std::string m_pendingKey;
         std::string m_smartBaseQuery;
         std::unordered_map<int, Ref<CCArray>> m_pageCache;
         std::vector<int> m_loadedPageOrder;
         std::vector<int> m_cachedPageOrder;
         std::vector<Ref<CCObject>> m_mergedRows;
-        std::vector<OpenEntry> m_openEntries;
         std::vector<std::string> m_smartQueries;
         std::unordered_set<ResultKey, ResultKeyHash> m_seenResultKeys;
         paimon::levelsearch::SearchRequestCoordinator::Token m_activeRequest = 0;
@@ -1381,11 +760,6 @@ namespace {
                 m_presetCycleBtn->setPosition({leftPresetX, headerY});
                 m_controlsMenu->addChild(m_presetCycleBtn);
             }
-
-            m_prevModeBtn = nullptr;
-            m_nextModeBtn = nullptr;
-            m_prevPresetBtn = nullptr;
-            m_nextPresetBtn = nullptr;
 
             m_pageLabel = CCLabelBMFont::create("", "goldFont.fnt");
             m_pageLabel->setScale(0.30f);
@@ -1507,9 +881,7 @@ namespace {
             return btn;
         }
 
-        // Rebuilding three ButtonSprites per call showed up in profiles because
-        // updateControlLabels() runs on every response and page change. The
-        // label inside the existing sprite is enough.
+        // Reuse the label inside the existing sprite: rebuilding it per response is wasteful.
         void setButtonText(CCMenuItemSpriteExtra* btn, char const* text, float width) {
             if (!btn || !text) return;
 
@@ -1532,10 +904,7 @@ namespace {
         SmartSearchKind classifySmartSearch(std::string const& query) const {
             if (query.empty()) return SmartSearchKind::None;
 
-            // Users used to fan out into the query plus 36 suffixed variants,
-            // i.e. 37 requests for one keystroke burst. GD's user search already
-            // does prefix matching, so one request plus client-side ranking
-            // gives the same list for 1/37th of the traffic.
+            // GD's user search already prefix-matches: one request plus client-side ranking replaces the old 37-request fan-out.
             if (m_primaryMode != PreviewPrimaryMode::Levels) {
                 return SmartSearchKind::None;
             }
@@ -1779,8 +1148,6 @@ namespace {
             m_loadedPageOrder.clear();
             m_cachedPageOrder.clear();
             m_mergedRows.clear();
-            m_openEntries.clear();
-            m_pendingKey.clear();
             m_smartBaseQuery.clear();
             m_smartQueries.clear();
             m_seenResultKeys.clear();
@@ -1945,25 +1312,6 @@ namespace {
             return buildSearchObjectForQuery(query, page);
         }
 
-        void dispatchSearch(GameLevelManager* manager, GJSearchObject* object) {
-            if (!manager || !object) return;
-            if (m_primaryMode == PreviewPrimaryMode::Users) {
-                manager->getUsers(object);
-                return;
-            }
-            if (m_primaryMode == PreviewPrimaryMode::Lists || object->m_searchMode == 1 || object->m_searchType == SearchType::LevelListsOnClick) {
-                manager->getLevelLists(object);
-                return;
-            }
-            manager->getOnlineLevels(object);
-        }
-
-        int parsePageFromKey(std::string const& key, int fallback) const {
-            auto rebuilt = GJSearchObject::createFromKey(key.c_str());
-            if (!rebuilt) return fallback;
-            return rebuilt->m_page;
-        }
-
         Ref<CCArray> cloneEntries(CCArray* source) const {
             auto arr = CCArray::create();
             if (!source) return arr;
@@ -1998,12 +1346,8 @@ namespace {
                 std::sort(m_loadedPageOrder.begin(), m_loadedPageOrder.end());
             }
 
-            // The old eviction loop only dropped pages absent from
-            // m_loadedPageOrder, but infinite scroll appends every page it
-            // fetches to that vector, so nothing was ever evictable and the
-            // cache grew without bound. Evict by age instead, and drop the
-            // matching entry from m_loadedPageOrder so the merged list stays
-            // consistent with what is actually cached.
+            // The old eviction loop never dropped anything (infinite scroll marks every
+            // page loaded), so evict by age and keep the merged list consistent.
             while (static_cast<int>(m_cachedPageOrder.size()) > kPreviewMaxCachedPages) {
                 int pageToDrop = m_cachedPageOrder.front();
                 if (pageToDrop == page) break;
@@ -2068,7 +1412,6 @@ namespace {
             if (m_content) {
                 m_content->removeAllChildrenWithCleanup(true);
             }
-            m_openEntries.clear();
             m_renderedRowCount = 0;
             m_renderedTotalHeight = 0.f;
         }
@@ -2107,11 +1450,7 @@ namespace {
             auto clipSize = m_resultsClip ? m_resultsClip->getContentSize() : CCSize{300.f, 200.f};
             auto rowH = previewRowHeightForMode(m_primaryMode);
 
-            // Appending a page used to destroy and rebuild every LevelCell that
-            // was already on screen: reaching page 6 meant recreating 60 cells,
-            // each with its own sprites, difficulty face and clipping node.
-            // Rows are immutable once built, so keep the ones we have and only
-            // create the new tail.
+            // Rows are immutable once built: keep rendered ones, only create the new tail.
             std::size_t existing = m_renderedRowCount;
             if (existing > m_mergedRows.size()) {
                 clearRenderedRows();
@@ -2450,16 +1789,6 @@ namespace {
             updateControlLabels();
         }
 
-        bool isCurrentKey(char const* key) const {
-            return key && !m_pendingKey.empty() && m_pendingKey == key;
-        }
-
-        // Kept for the smart-search bookkeeping that still tracks a key; the
-        // delegate itself is owned by the coordinator now.
-        void clearDelegate() {
-            m_pendingKey.clear();
-        }
-
         CCRect quickSearchRect() const {
             if (m_owner) {
                 if (auto quickBg = m_owner->getChildByID("quick-search-bg")) {
@@ -2505,9 +1834,7 @@ namespace {
             }
         }
 
-        void onPrevMode(CCObject*) { cyclePrimaryMode(-1); }
         void onNextMode(CCObject*) { cyclePrimaryMode(1); }
-        void onPrevPreset(CCObject*) { cycleLevelPreset(-1); }
         void onNextPreset(CCObject*) { cycleLevelPreset(1); }
         void onPrevPage(CCObject*) { stepPage(-1); }
         void onNextPage(CCObject*) { stepPage(1); }
@@ -2519,6 +1846,7 @@ namespace {
             if (!popup) return;
             popup->setTag(kPageJumpPopupTag);
             popup->m_delegate = &m_pageJumpDelegate;
+            m_pageJumpPopup = popup;
             popup->show();
         }
     };

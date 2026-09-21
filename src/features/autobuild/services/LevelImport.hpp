@@ -26,8 +26,6 @@ using AnalysisCallback = geode::CopyableFunction<void(geode::Result<AnalysisResu
 void analyzeLevelId(int levelId, AnalysisCallback callback);
 void analyzeOpenLevel(AnalysisCallback callback);
 
-bool analysisBusy();
-
 // config/autobuild/objects.txt, read once per session.
 void loadTaxonomyFile();
 

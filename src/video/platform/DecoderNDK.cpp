@@ -128,6 +128,7 @@ void DecoderNDK::updateOutputFormat() {
     int cf = getFormatInt32(fmt, "color-format", m_outputColorFormat);
     m_outputColorFormat = cf;
     m_outputFormatValid.store(true, std::memory_order_release);
+    readColorAspects(fmt);
 
     geode::log::info("DecoderNDK: output format - {}x{} stride={} slice={} color-format=0x{:X}",
                      m_width, m_height, m_outputStride, m_outputSliceHeight,
@@ -180,12 +181,15 @@ bool DecoderNDK::open(const std::string& path) {
         return false;
     }
 
+    // Static container metadata; read before trackFmt is consumed by configure.
+    m_rotation = ((getFormatInt32(trackFmt, "rotation-degrees", 0) % 360) + 360) % 360;
+    readColorAspects(trackFmt);
+
 // Prefer AImageReader; it normalises the output layout across vendors.
-    m_useImageReader = !(m_surface && m_useSurface) && setupImageReader();
+    m_useImageReader = setupImageReader();
 
     ANativeWindow* target = nullptr;
-    if (m_surface && m_useSurface)      target = m_surface;
-    else if (m_useImageReader)          target = m_readerWindow;
+    if (m_useImageReader) target = m_readerWindow;
 
 // Avoid opaque output: the raw-buffer path needs CPU-readable planes.
     if (!target) {
@@ -353,11 +357,8 @@ bool DecoderNDK::findVideoTrack() {
 }
 
 void DecoderNDK::startDecoding() {
-    // A detached worker (its join timed out) may still be running decodeLoop;
-    // spawning a second thread would put two producers on the SPSC ring and call
-    // the non-thread-safe AMediaCodec concurrently. Treat detached as terminal,
-    // matching DecoderPLM/DecoderAVF and the isTerminal() contract that
-    // VideoPlayer relies on to drop and recreate the decoder.
+    // A detached worker may still run decodeLoop: two producers on the SPSC
+    // ring would race AMediaCodec, so detached counts as terminal (isTerminal).
     if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
     if (m_decoding.load(std::memory_order_relaxed)) return;
     if (!m_codec || !m_codecStarted) return;
@@ -424,11 +425,6 @@ void DecoderNDK::decodeLoop() {
                 AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
                 m_finished.store(true, std::memory_order_release);
                 break;
-            }
-
-            if (m_surface && m_useSurface) {
-                AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, true);
-                continue;
             }
 
             if (m_useImageReader) {
@@ -589,6 +585,23 @@ bool DecoderNDK::skipFrame() {
 double DecoderNDK::getDuration() const { return m_duration; }
 int DecoderNDK::getWidth()  const { return m_width; }
 int DecoderNDK::getHeight() const { return m_height; }
+VideoColorMatrix DecoderNDK::getColorMatrix() const { return m_colorMatrix; }
+bool DecoderNDK::isFullRange() const { return m_fullRange; }
+int DecoderNDK::getRotationDegrees() const { return m_rotation; }
+
+void DecoderNDK::readColorAspects(AMediaFormat* fmt) {
+    // Numeric AColorStandard/AColorRange values; the NDK enum needs API 28 headers.
+    switch (getFormatInt32(fmt, "color-standard", 0)) {
+        case 1: case 2: m_colorMatrix = VideoColorMatrix::BT601; break;
+        case 3:         m_colorMatrix = VideoColorMatrix::BT709; break;
+        default: break;
+    }
+    switch (getFormatInt32(fmt, "color-range", 0)) {
+        case 1: m_fullRange = false; break;
+        case 2: m_fullRange = true;  break;
+        default: break;
+    }
+}
 bool DecoderNDK::isFinished() const {
     return m_finished.load(std::memory_order_acquire);
 }
@@ -607,11 +620,6 @@ const VideoFrame* DecoderNDK::peekFrame() {
 
 void DecoderNDK::releaseFrame() {
     if (m_ring.peekRead()) m_ring.commitRead();
-}
-
-void DecoderNDK::setSurface(ANativeWindow* window) {
-    m_surface = window;
-    m_useSurface = (window != nullptr);
 }
 
 void DecoderNDK::closeInternal() {

@@ -53,10 +53,8 @@ inline ::CCMenuItemSpriteExtra* makeMiniButton(
     });
 }
 
-// Copia src a dir con nombre derivado de stem. validate(src, destStr)
-// notifica el motivo y devuelve false si el archivo no sirve; en ese caso se
-// borra el destino y se devuelve "". Los fallos de carpeta/copia notifican
-// aqui mismo como Error.
+// Copia src a dir con nombre derivado de stem; se valida antes de aceptar la
+// copia y los fallos notifican aqui mismo como Error.
 inline std::string importFileToConfigDir(
     std::filesystem::path const& src,
     std::filesystem::path const& dir,

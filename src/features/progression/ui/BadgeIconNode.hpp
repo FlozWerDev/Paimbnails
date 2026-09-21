@@ -13,8 +13,6 @@ public:
 
     void playIntro(float delay);
     void playUnlock();
-    BadgeDef const& badge() const { return *m_badge; }
-    bool unlocked() const { return m_unlocked; }
 
 protected:
     bool init(BadgeDef const& badge, BadgeContext const& ctx, float size);

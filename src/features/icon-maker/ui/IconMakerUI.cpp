@@ -77,9 +77,10 @@ float scaledHeight(CCLabelBMFont* l) {
 
 }
 
+Ref<CCTexture2D> s_checker;
+
 CCTexture2D* checkerTexture() {
-    static Ref<CCTexture2D> cached = nullptr;
-    if (cached) return cached;
+    if (s_checker) return s_checker;
 
     constexpr int kSide = 32;
     constexpr int kCell = 8;
@@ -91,8 +92,13 @@ CCTexture2D* checkerTexture() {
             buffer.setAt(x, y, {v, v, static_cast<std::uint8_t>(v + 8), 255});
         }
     }
-    cached = ts::SpritePreviewRenderer::createTexture(buffer);
-    return cached;
+    s_checker = ts::SpritePreviewRenderer::createTexture(buffer);
+    return s_checker;
+}
+
+// Drop the board on GL reload; the texture dies with the context.
+void resetCheckerTexture() {
+    s_checker = nullptr;
 }
 
 CCNode* makeSwatch(float size, ccColor3B color, bool selected) {

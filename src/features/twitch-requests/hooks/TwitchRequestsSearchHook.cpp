@@ -9,9 +9,6 @@
 
 using namespace geode::prelude;
 
-// Boton de plantilla del juego (base circular morada) con el contador de la
-// cola en la esquina. Vive en la pantalla de busqueda online, junto al resto de
-// filtros, que es desde donde se abren los niveles pedidos.
 class $modify(PaimonTwitchRequestsSearchLayer, LevelSearchLayer) {
     static void onModify(auto& self) {
         paimon::hooks::afterAllPaimonUiOrVeryLate(self, "LevelSearchLayer::init");

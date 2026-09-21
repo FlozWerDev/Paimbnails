@@ -30,9 +30,7 @@ LevelTagsGatePopup* LevelTagsGatePopup::create(std::function<void()> onContinue)
 }
 
 void LevelTagsGatePopup::openModPage() {
-    // Resolves to the installed mod's popup when present, otherwise fetches the
-    // server entry and opens it with an Install button. Geode surfaces its own
-    // error popup if the ID can't be found, so there is nothing to fall back to.
+    // Geode shows its own error popup when the servers don't know the ID.
     geode::openInfoPopup(std::string(kLevelTagsModID));
 }
 

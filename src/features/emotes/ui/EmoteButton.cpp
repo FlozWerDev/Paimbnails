@@ -63,7 +63,8 @@ void EmoteButton::loadRandomEmote() {
     Ref<EmoteButton> self = this;
     EmoteCache::get().loadEmote(emoteCopy,
         [self](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
-            Loader::get()->queueInMainThread([self, tex, isGif, gifData]() {
+            geode::Ref<CCTexture2D> texRef = tex;
+            Loader::get()->queueInMainThread([self, texRef, isGif, gifData]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 if (!self || !self->getParent()) return;
 
@@ -73,8 +74,8 @@ void EmoteButton::loadRandomEmote() {
                 CCNode* sprite = nullptr;
                 if (isGif && !gifData.empty()) {
                     sprite = AnimatedGIFSprite::create(gifData.data(), gifData.size());
-                } else if (tex) {
-                    sprite = CCSprite::createWithTexture(tex);
+                } else if (auto* rawTex = texRef.data()) {
+                    sprite = CCSprite::createWithTexture(rawTex);
                 }
 
                 if (sprite) {

@@ -103,10 +103,8 @@ protected:
 
     int positionToMs(float x);
     float msToPosition(int ms);
-    void clampSelection();
     cocos2d::CCNode* createHandleVisual(float height, cocos2d::ccColor3B color, bool isStart);
     void addSeparatorLine(float y);
-    std::string formatSongInfoLine() const;
 
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;

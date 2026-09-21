@@ -9,15 +9,8 @@
 #include <vector>
 
 // Shows a thumbnail ribbon on mod popups whose repo carries previews.
-// Thumbnail-strip idea inspired by "Mod Previews" by Alphalaneous
-// (https://github.com/Alphalaneous/Mod-Previews, Geode id
-// alphalaneous.mod_previews). The ribbon below is an independent
-// implementation for Paimbnails; only the public conventions it
-// interoperates with are reused: the `previews/preview-<n>.png` path
-// inside mod repos and the `main`-then-`master` default-branch probe
-// (uncopyrightable interop facts). Preview images belong to each mod's
-// own repository authors and are only displayed, never redistributed.
-// No endorsement by the original author. See THIRD-PARTY-NOTICES.md.
+// Strip idea compatible with "Mod Previews" by Alphalaneous; the ribbon
+// below is our own (see THIRD-PARTY-NOTICES.md).
 
 using namespace geode::prelude;
 using namespace paimon::mod_previews;

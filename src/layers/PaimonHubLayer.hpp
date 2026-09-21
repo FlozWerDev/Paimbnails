@@ -16,10 +16,7 @@ protected:
     cocos2d::CCMenu* m_homeMenu = nullptr;
     cocos2d::CCMenu* m_newsMenu = nullptr;
     cocos2d::CCMenu* m_forumMenu = nullptr;
-    cocos2d::CCMenu* m_homeCategoryMenu = nullptr;
     cocos2d::CCMenu* m_homeActionsMenu = nullptr;
-    cocos2d::CCNode* m_homeActionsAnchor = nullptr;
-    geode::ScrollLayer* m_homeSettingsScroll = nullptr;
     geode::ScrollLayer* m_homeActionsScroll = nullptr;
     cocos2d::CCLabelBMFont* m_homeCategoryTitle = nullptr;
     cocos2d::CCLabelBMFont* m_homeCategoryDesc = nullptr;
@@ -56,7 +53,6 @@ protected:
     std::vector<CCMenuItemSpriteExtra*> m_sortBtns;
 
     int m_forumSubTab = 0;
-    std::vector<CCMenuItemSpriteExtra*> m_forumSubTabBtns;
     cocos2d::CCNode* m_forumBrowseNode = nullptr;
     cocos2d::CCNode* m_forumCreateNode = nullptr;
     cocos2d::CCLabelBMFont* m_forumHeaderTitle = nullptr;
@@ -71,9 +67,6 @@ protected:
     cocos2d::CCNode* m_createPostOverlay = nullptr;
     cocos2d::CCNode* m_createTagOverlay = nullptr;
     cocos2d::CCNode* m_predefPickerOverlay = nullptr;
-    geode::TextInput* m_postTitleInput = nullptr;
-    geode::TextInput* m_postDescInput = nullptr;
-    geode::TextInput* m_postTagInput = nullptr;
     geode::TextInput* m_newTagInput = nullptr;
 
     void onCloseCreateTag(cocos2d::CCObject*);
@@ -99,7 +92,6 @@ public:
     void onOpenProfiles(cocos2d::CCObject*);
     void onOpenBackgrounds(cocos2d::CCObject*);
     void onOpenPaiDraw(cocos2d::CCObject*);
-    void onOpenExtras(cocos2d::CCObject*);
     void onOpenSupport(cocos2d::CCObject*);
     void onOpenDiscordConfig(cocos2d::CCObject*);
     void onCheckUpdate(cocos2d::CCObject*);
@@ -130,9 +122,6 @@ protected:
 
     PaimonLoadingOverlay* m_forumLoadingSpinner = nullptr;
 
-    CCMenuItemSpriteExtra* makeBtn(char const* text, cocos2d::CCPoint pos,
-        cocos2d::SEL_MenuHandler handler, cocos2d::CCNode* parent, float scale = 0.55f);
-
     bool m_gdMode = false;
     int m_gdHomeState = 0;
     int m_gdCategoryIdx = 0;
@@ -141,7 +130,6 @@ protected:
     geode::ScrollLayer* m_gdScroll = nullptr;
     cocos2d::CCLabelBMFont* m_gdHintLabel = nullptr;
     cocos2d::CCNode* m_gdTourOverlay = nullptr;
-    int m_gdTourStep = 0;
 
     void buildGDShell();
     void gdBuildHome();

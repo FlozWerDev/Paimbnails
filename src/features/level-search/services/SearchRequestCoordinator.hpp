@@ -1,20 +1,7 @@
 #pragma once
 
-// Central request pipe for the realtime level search.
-//
-// Every realtime search goes through one queue here instead of each preview
-// talking to GameLevelManager directly. That buys us four things the old code
-// did not have:
-//
-//   1. A result cache (LRU + TTL) shared by every caller, so re-typing or
-//      paging back never hits the server twice.
-//   2. In-flight de-duplication: two callers asking for the same key while a
-//      request is running share one round trip.
-//   3. A minimum interval between dispatches, so holding a key down cannot
-//      turn into a request per keystroke.
-//   4. Correct save/restore of GameLevelManager::m_levelManagerDelegate. The
-//      previous code assigned the delegate and never put it back, which stole
-//      callbacks from whatever layer was loading.
+// Central request pipe for the realtime level search: one queue with a shared
+// cache, in-flight de-duplication, dispatch rate limiting and delegate save/restore.
 
 #include <Geode/Geode.hpp>
 

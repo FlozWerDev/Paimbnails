@@ -3,9 +3,7 @@
 #include <Geode/Geode.hpp>
 #include <functional>
 
-// Popup que lista el historial de busqueda. Tocar una entrada relanza esa
-// busqueda directamente (callback con el indice); la X la elimina.
-// Boton "Clear" para vaciar todo.
+// Historial de busqueda: tocar relanza, X elimina, "Clear" vacia.
 class SearchHistoryPopup : public geode::Popup {
 public:
     // El callback recibe el indice de la entrada elegida en

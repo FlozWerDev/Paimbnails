@@ -85,11 +85,6 @@ std::string readShaderFile(std::string_view relName) {
     }
 }
 
-void clearShaderFileCache() {
-    std::unique_lock<std::shared_mutex> lock(sourceCache().mutex);
-    sourceCache().contents.clear();
-}
-
 namespace {
 
 // Keys del mod dentro de CCShaderCache. Main thread only (igual que loadShader).
@@ -193,36 +188,6 @@ CCGLProgram* loadShader(
     program->release();
     trackShaderKey(keyStr);
     return shaderCache->programForKey(keyStr.c_str());
-}
-
-void preloadBlurShaders() {
-    // Compile all 8 blur variants up front so the first blur popup / LevelCell
-    // scroll / LevelInfoLayer doesn't pay the compile cost (4-10ms per shader,
-    // visible as micro-stutter). No inline fallback: if a .glsl is missing,
-    // loadShader returns nullptr and the caller falls back (sprite without blur).
-
-    auto* h     = getBlurHorizontalShader();
-    auto* v     = getBlurVerticalShader();
-    auto* down  = getKawaseDownShader();
-    auto* up    = getKawaseUpShader();
-    auto* rt    = getKawaseRealtimeShader();
-    auto* cell  = getBlurCellShader();
-    auto* sp    = getBlurSinglePassShader();
-    auto* fast  = getBlurFastShader();
-
-    int compiled = 0;
-    for (auto* p : {h, v, down, up, rt, cell, sp, fast}) if (p) ++compiled;
-    geode::log::info(
-        "[GLSLLoader] Blur preload completo: {}/8 shaders compilados",
-        compiled);
-
-    // packaging debug hint: print the absolute path once
-    geode::log::debug(
-        "[GLSLLoader] Shaders dir (subfolder): {}",
-        geode::utils::string::pathToString(shadersDir()));
-    geode::log::debug(
-        "[GLSLLoader] Shaders dir (flat): {}",
-        geode::utils::string::pathToString(shadersDirFlat()));
 }
 
 // Typed helpers — each shader uses its own cache key ("-v3") to avoid clashing

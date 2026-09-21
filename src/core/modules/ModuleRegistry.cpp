@@ -30,11 +30,8 @@ std::unordered_map<std::string_view, Module const*> const& byId() {
     return map;
 }
 
-// isEnabled by id runs inside per-frame hooks (particles, GameObject::setVisible,
-// player frame updates) and every miss costs two matjson lookups through the
-// loader, once for the module and once per parent. Slots are indexed by position
-// in all() and dropped whenever the settings version moves. Relaxed atomics: two
-// racing readers just compute the same value twice, which beats locking here.
+// isEnabled by id runs in per-frame hooks; slots cache it by position in all().
+// Relaxed atomics: racing readers just compute twice, cheaper than locking.
 enum : uint8_t { kCacheUnknown = 0, kCacheOff = 1, kCacheOn = 2 };
 
 std::vector<std::atomic<uint8_t>>& enabledSlots() {
@@ -62,14 +59,6 @@ Module const* find(std::string_view id) {
     auto const& map = byId();
     auto it = map.find(id);
     return it == map.end() ? nullptr : it->second;
-}
-
-Module const* findByKey(std::string_view key) {
-    if (key.empty()) return nullptr;
-    for (auto const& mod : all()) {
-        if (key == mod.key) return &mod;
-    }
-    return nullptr;
 }
 
 bool isSelfEnabled(Module const& mod) {
@@ -167,14 +156,6 @@ void setEnabled(std::string_view id, bool enabled) {
     if (auto* mod = find(id)) setEnabled(*mod, enabled);
 }
 
-std::vector<Module const*> inSection(Section section) {
-    std::vector<Module const*> out;
-    for (auto const& mod : all()) {
-        if (mod.section == section) out.push_back(&mod);
-    }
-    return out;
-}
-
 std::vector<Module const*> search(std::string_view query) {
     auto needle = lower(query);
     std::vector<Module const*> out;
@@ -197,22 +178,6 @@ std::vector<Module const*> search(std::string_view query) {
         }
     }
     return out;
-}
-
-char const* sectionId(Section section) {
-    switch (section) {
-        case Section::Editor:   return "editor";
-        case Section::Menu:     return "menu";
-        case Section::Browser:  return "browser";
-        case Section::Level:    return "level";
-        case Section::Info:     return "info";
-        case Section::Gameplay: return "gameplay";
-        case Section::Profile:  return "profile";
-        case Section::Social:   return "social";
-        case Section::Global:   return "global";
-        case Section::System:   return "system";
-    }
-    return "global";
 }
 
 char const* sectionName(Section section) {
@@ -243,15 +208,6 @@ std::vector<Section> const& sections() {
 void registerAccessor(std::string_view id, std::function<bool()> get,
                       std::function<void(bool)> set) {
     accessors()[std::string(id)] = {std::move(get), std::move(set)};
-}
-
-std::string featureOf(Module const& mod) {
-    std::string_view id = mod.id;
-    auto first = id.find('.');
-    if (first == std::string_view::npos) return std::string(id);
-    auto second = id.find('.', first + 1);
-    if (second == std::string_view::npos) return std::string(id.substr(first + 1));
-    return std::string(id.substr(first + 1, second - first - 1));
 }
 
 } // namespace paimon::modules

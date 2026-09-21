@@ -1,11 +1,7 @@
 #pragma once
 
-// Color formatting helpers for the editor color picker.
-// Produces strings in formats that are useful and Geometry-Dash-compatible:
-//   - HEX  : "#RRGGBB"        (universal, also accepted by GD's color hex field)
-//   - RGB  : "R, G, B"        (decimal triplet)
-//   - GD   : "RRGGBB"         (no '#', exactly what GD's color picker hex input wants)
-//   - HSV  : "H, S%, V%"      (hue 0-360, saturation/value 0-100, informational)
+// Color strings for the picker; GD hex drops '#' so the value pastes straight
+// into GD's color hex field.
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -13,13 +9,6 @@
 #include <cmath>
 
 namespace paimon::editorcp {
-
-enum class ColorFmt : int {
-    Hex   = 0, // #RRGGBB
-    Rgb   = 1, // R, G, B
-    GdHex = 2, // RRGGBB
-    Hsv   = 3, // H, S%, V%
-};
 
 inline constexpr int kFormatCount = 4;
 
@@ -57,7 +46,6 @@ inline std::string formatHsv(cocos2d::ccColor3B c) {
                        (int)std::lround(v * 100.f));
 }
 
-// Format a color according to the selected format index.
 inline std::string formatColor(cocos2d::ccColor3B c, int index) {
     switch (index) {
         case 1:  return fmt::format("{}, {}, {}", (int)c.r, (int)c.g, (int)c.b);

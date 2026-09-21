@@ -1,18 +1,5 @@
-// Icon gradients on the player, rethought for Paimbnails.
-//
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). This file is an independent implementation written
-// from the behavior spec: same user-visible behavior (mirrored gradient
-// overlays per sprite slot, animated robot/spider overlays, compat dances
-// with third-party mods), own expression. Lane tables replace the
-// per-slot if-ladders; one paint pass and one animation-section helper
-// replace the triplicated slot/section bodies.
-//
-// Compatibility surface kept on purpose (protocol facts, not expression):
-// node-id format "{}-gradient-{}" (+ "-line"/"animation-gradient-…"),
-// shader-variant seeds, overlay extras, mod-id strings, the -9038 sentinel
-// and the "0060" game variable.
+// Player icon gradients, after zilko's "Icon Gradients" (independent implementation, own expression).
+// Compat surface kept on purpose: "{}-gradient-{}" node ids, shader seeds, mod-id strings, -9038, "0060".
 
 #include "GradientPlayerObject.hpp"
 
@@ -294,7 +281,6 @@ bool GradientPlayerObject::init(int p0, int p1, GJBaseGameLayer* p2, CCLayer* p3
     auto f = m_fields.self();
     auto* loader = Loader::get();
     f->m_menuDollPatchLoaded = loader->isModLoaded("yellowcat98.custom_ufo_n_ship_cube");
-    f->m_separateDualIconsIsLoaded = sdiEnabled();
     f->m_swingFlipLoaded = loader->isModLoaded("rgc_exists.swingcopter_flip");
     loader->queueInMainThread([self = Ref(this)] {
         if (LevelEditorLayer::get() && self->m_isSecondPlayer && sdiEnabled())

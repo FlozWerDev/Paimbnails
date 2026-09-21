@@ -16,7 +16,6 @@ public:
 protected:
     ModlyMod m_mod;
     cocos2d::CCNode* m_listHolder = nullptr;
-    cocos2d::CCNode* m_status = nullptr;
 
     bool init(ModlyMod const& mod);
     void load();

@@ -1,8 +1,5 @@
 #pragma once
-// El lienzo del editor. A diferencia del anterior, que solo ensenaba el icono,
-// este es la superficie de trabajo: tocar elige la capa (y su zona), arrastrar
-// la mueve con imantado, las esquinas la estiran, el tirador de arriba la gira,
-// la rueda hace zoom y el vacio panea.
+// Superficie de trabajo tactil del editor (elige, mueve, estira y gira capas).
 
 #include "../engine/PieceRenderer.hpp"
 

@@ -176,7 +176,6 @@ void PhysicsWorld::collideWalls(Body& b) {
         if (b.vel.x < 0.f) {
             float oldVy = b.vel.y;
             b.vel.x = bounce(b.vel.x, m_cfg.bounciness);
-            // Include tangential velocity and wall-induced torque.
             CCPoint r{-b.halfW, 0.f};
             float tangential = oldVy + angularVelAt(r, b.angularVel).y;
             float frictionJ = -tangential * m_cfg.friction * 0.65f;
@@ -219,7 +218,6 @@ void PhysicsWorld::collideWalls(Body& b) {
             jF = std::clamp(jF, -maxF, maxF);
 
             b.vel.x += jF * b.invMass;
-            // Apply friction torque around the contact point.
             b.angularVel += (jF * radius) * b.invInertia * kRadToDeg;
 
             if (std::abs(b.vel.y) < kSleepVel) b.vel.y = 0.f;
@@ -565,7 +563,6 @@ void PhysicsWorld::pushExplosion(CCPoint worldPoint, float strength) {
         CCPoint dir = delta / dist;
         float impulseMag = strength * falloff * 720.f;
         CCPoint impulse = dir * impulseMag;
-        // Offset impulse plus small spin variation.
         CCPoint r = dir * (-b.halfW * 0.35f);
         applyImpulse(b, impulse, r);
         b.angularVel += crossZ(delta, dir) * strength * falloff * 0.8f;

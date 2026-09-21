@@ -1,7 +1,6 @@
 #pragma once
-// Garage popup for Paimon Icons: master switch, live preview strip and three
-// tabs (Colores / Candados / Donde). Each tab only shows the controls the
-// selected mode or lock style actually uses.
+// Garage popup: master switch, live preview strip, three tabs (Colores /
+// Candados / Donde); each tab shows only the controls actually in use.
 
 #include <Geode/ui/Popup.hpp>
 

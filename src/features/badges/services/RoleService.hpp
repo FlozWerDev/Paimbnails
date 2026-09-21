@@ -5,7 +5,6 @@
 #include "../../moderation/services/ModeratorCache.hpp"
 #include "../../moderation/services/ModerationService.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
-#include <array>
 #include <chrono>
 #include <list>
 #include <mutex>

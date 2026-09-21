@@ -282,12 +282,4 @@ LevelProgress const* ProgressTracker::find(int levelID) const {
     return it == m_levels.end() ? nullptr : &it->second;
 }
 
-bool ProgressTracker::hasData(int levelID) const {
-    auto const* progress = find(levelID);
-    if (!progress) return false;
-    return progress->attempts > 0 || progress->practiceAttempts > 0
-        || progress->jumpsNormal > 0 || progress->jumpsPractice > 0
-        || progress->totalDeaths(false) > 0 || progress->totalDeaths(true) > 0;
-}
-
 } // namespace paimon::info

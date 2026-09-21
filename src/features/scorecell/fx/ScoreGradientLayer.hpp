@@ -2,7 +2,6 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/cocos.hpp>
-#include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "ScoreGradientDesign.hpp"
 #include <algorithm>
@@ -10,16 +9,8 @@
 
 namespace paimon::scorecell {
 
-// Gradient background built from the player's icon colors.
-//
-// - Colors go through designScoreGradient(): hue is preserved, saturation /
-//   lightness are clamped into a background-safe band, and identical stops
-//   become an analogous duo instead of a flat rectangle.
-// - Diagonal vector with real vertical travel, so wide/short cells show a
-//   visible blend instead of two solid halves.
-// - Continuous idle motion (slow sheen sway) on every platform, plus a
-//   smooth hover lift (opacity + steeper vector) on desktop. The quad
-//   itself never moves: no uncovered corners, no size breathing.
+// Gradient background from the player's icon colors. Vector/opacity-only: the
+// quad itself never moves, so no uncovered corners or size breathing.
 class ScoreGradientLayer : public cocos2d::CCLayerGradient {
     float m_hover = 0.f;
     double m_time = 0.0;
@@ -111,7 +102,6 @@ public:
     void setIdleSpeed(float s) {
         m_idleSpeed = std::clamp(s, 0.f, 5.f);
     }
-    float idleSpeed() const { return m_idleSpeed; }
 };
 
 } // namespace paimon::scorecell

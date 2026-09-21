@@ -2,11 +2,7 @@
 
 // Reading a whole level and deciding what each part of it is.
 //
-// The analyzer never sees GD's object database, so it works the way a builder
-// does when they look at a screenshot: depth, grid alignment, scale, rotation,
-// which colour channel paints a thing and what sits next to it. Those signals
-// separate playable geometry from the backdrop far more reliably than an id
-// table ever could, and they keep working on objects released after this build.
+// No GD object database here, so regions read like a builder reads a screenshot.
 
 #include <string>
 #include <vector>

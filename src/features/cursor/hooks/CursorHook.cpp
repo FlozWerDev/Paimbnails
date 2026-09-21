@@ -11,11 +11,8 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-// En movil no hay raton ni MouseInputEvent: la fuente de "apretar y soltar" son
-// los toques. Se engancha el dispatcher en su punto de entrada, antes de que
-// cualquier boton se trague el toque, para que el efecto salga en toda la
-// pantalla y no solo en los huecos vacios. Solo se lee la posicion y se avisa a
-// CursorManager; el toque sigue su camino intacto.
+// En movil no hay raton: la fuente de apretar/soltar son los toques, enganchados
+// en el dispatcher antes de que los botones se traguen el toque.
 namespace {
 void feedTouch(CCSet* touches, int state) {
     if (!touches) return;
@@ -74,19 +71,14 @@ public:
     void update(float dt) override {
         auto& cm = CursorManager::get();
 
-        // The cursor host lives in the global OverlayManager: attach once and
-        // it persists across scenes/transitions (no re-parenting, no Z-order
-        // fights). Per-frame visibility — scene filter, gameplay, window
-        // bounds — is decided inside CursorManager::update().
+        // El host vive en OverlayManager y persiste entre escenas.
         if (cm.config().enabled) {
             if (!cm.isAttached()) cm.attachToOverlay();
         } else if (cm.isAttached()) {
             cm.detachFromScene();
         }
 
-        // Siempre: los efectos de click tienen su propio nodo y funcionan aunque
-        // el cursor personalizado este apagado (en movil no hay cursor). Si todo
-        // esta apagado, update() sale en la primera comprobacion.
+        // Los efectos de click funcionan aunque el cursor este apagado (en movil no hay cursor).
         cm.update(dt);
     }
 };
@@ -104,10 +96,8 @@ void initCursorTicker() {
         s_cursorTicker.data(), 0, false
     );
 
-    // Global click hold tracking drives the Click cursor state (idea inspired
-    // by Ecuet's "Custom Cursor" mod, Geode mod index) and the click effects. A single leaked listener is
-    // fine: it mirrors only two bools into CursorManager and lives for the whole
-    // session.
+    // Click-hold global para el estado Click y los efectos (idea de Ecuet's "Custom Cursor");
+    // listener de sesion intencional con .leak().
     if (!s_mouseListenerRegistered) {
         s_mouseListenerRegistered = true;
         MouseInputEvent().listen(+[](MouseInputData& data) {

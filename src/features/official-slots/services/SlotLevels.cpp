@@ -39,27 +39,6 @@ void applyDisplayFields(GJGameLevel* level, Slot const& slot) {
 
 } // namespace
 
-std::vector<VisibleEntry> visibleEntries() {
-    auto& store = SlotStore::get();
-    std::vector<VisibleEntry> entries;
-
-    for (int id = 1; id <= 22; ++id) {
-        if (store.isOfficialHidden(id)) continue;
-        if (auto slot = store.slotForOfficial(id)) {
-            entries.push_back({true, id, std::move(*slot)});
-        } else {
-            entries.push_back({false, id, {}});
-        }
-    }
-
-    for (auto const& slot : store.slots()) {
-        if (!slot.enabled) continue;
-        if (slot.replacesOfficialId != 0) continue;
-        entries.push_back({true, 0, slot});
-    }
-    return entries;
-}
-
 SlotDownloads& SlotDownloads::get() {
     static SlotDownloads instance;
     return instance;
@@ -133,24 +112,16 @@ void SlotDownloads::finishPending(GJGameLevel* level) {
 }
 
 void SlotDownloads::levelDownloadFinished(GJGameLevel* level) {
-    if (!m_pending) {
-        if (m_previous) m_previous->levelDownloadFinished(level);
-        return;
-    }
-    // A vanilla request that started before we borrowed the delegate: hand it
-    // back and keep waiting for ours.
-    if (!level || level->m_levelID != m_pending->levelId) {
-        if (m_previous) m_previous->levelDownloadFinished(level);
-        return;
-    }
+    if (!m_pending) return;
+    // A vanilla request that started before we borrowed the delegate: ignore it
+    // and keep waiting for ours (m_previous has no ownership, never call it back).
+    if (!level || level->m_levelID != m_pending->levelId) return;
     this->finishPending(level);
 }
 
 void SlotDownloads::levelDownloadFailed(int response) {
     // The failure carries no level id, so it may be ours or a vanilla one
-    // that raced us. Forward it so vanilla still shows its own error, and
-    // fail our fetch — the user can retry with one tap.
-    if (m_previous) m_previous->levelDownloadFailed(response);
+    // that raced us. Fail our fetch — the user can retry with one tap.
     if (m_pending) this->finishPending(nullptr);
 }
 
@@ -176,38 +147,17 @@ GJGameLevel* SlotLevelCache::levelForSlot(Slot const& slot) {
     if (!level) return nullptr;
 
     m_levels.emplace(slot.id, Ref<GJGameLevel>(level));
-    m_reverse.emplace(level, slot.id);
     m_snapshot.emplace(slot.id, slot);
     return level;
 }
 
-std::optional<Slot> SlotLevelCache::slotForLevel(GJGameLevel* level) const {
-    if (!level) return std::nullopt;
-    auto it = m_reverse.find(level);
-    if (it == m_reverse.end()) return std::nullopt;
-    // The store is fresher than our snapshot (rename without rebuild).
-    if (auto fresh = SlotStore::get().find(it->second)) return fresh;
-    auto snapshot = m_snapshot.find(it->second);
-    if (snapshot == m_snapshot.end()) return std::nullopt;
-    return snapshot->second;
-}
-
-bool SlotLevelCache::isSlotLevel(GJGameLevel* level) const {
-    return level && m_reverse.contains(level);
-}
-
 void SlotLevelCache::invalidate() {
     m_levels.clear();
-    m_reverse.clear();
     m_snapshot.clear();
 }
 
 void SlotLevelCache::invalidate(std::string const& slotId) {
-    auto it = m_levels.find(slotId);
-    if (it != m_levels.end()) {
-        m_reverse.erase(it->second.data());
-        m_levels.erase(it);
-    }
+    m_levels.erase(slotId);
     m_snapshot.erase(slotId);
 }
 

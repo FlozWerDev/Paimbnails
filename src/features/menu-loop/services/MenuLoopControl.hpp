@@ -9,7 +9,6 @@
 
 namespace paimon::menuloop {
 
-// True when GD's menu music is disabled.
 inline bool isVanillaMenuLoopDisabled() {
     auto* gm = GameManager::get();
     return gm && gm->getGameVariable("0122");
@@ -264,7 +263,6 @@ namespace MenuLoopControl {
         return base;
     }
 
-// Seek the active music channel to a percentage.
     inline void setSongPercentage(int percentage) {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
@@ -312,7 +310,6 @@ namespace MenuLoopControl {
                 newPos = 0;
                 ch->setPosition(newPos, FMOD_TIMEUNIT_MS);
             } else {
-// Wrap modulo fullLength when seeking backward from the end.
                 newPos = (((lastPos - jump) % fullLength) + fullLength) % fullLength;
                 ch->setPosition(newPos, FMOD_TIMEUNIT_MS);
             }
@@ -357,44 +354,6 @@ namespace MenuLoopControl {
         }
         sm.setLastMenuLoopPosition(newPos);
         sm.setPauseSongPositionTracking(false);
-    }
-
-// Add the current song to the configured playlist file.
-    inline void addCurrentSongToPlaylistFile() {
-        if (isVanillaMenuLoopDisabled()) return;
-        auto& sm = MenuLoopManager::get();
-        if (sm.isOriginalMenuLoop()) {
-            woahThereBuddy("There's nothing to add to your playlist!");
-            return;
-        }
-        if (sm.isOverride()) {
-            woahThereBuddy("You're trying to add your own <cy>override</c> to your playlist.");
-            return;
-        }
-
-        auto playlistFile = Mod::get()->getSavedValue<std::string>("menuLoopPlaylistFile", "");
-        std::filesystem::path plPath;
-        if (playlistFile.empty()) {
-            plPath = sm.getConfigDir() / "playlistOne.txt";
-        } else {
-            plPath = std::filesystem::path(playlistFile);
-        }
-
-        std::error_code ec;
-        if (plPath.extension() != ".txt") {
-            Notification::create("Playlist file must be a .txt file.", NotificationIcon::Error)->show();
-            return;
-        }
-        auto existing = geode::utils::file::readString(plPath).unwrapOr("");
-        if (existing.find(sm.getCurrentSong()) != std::string::npos) {
-            Notification::create("Already in playlist.", NotificationIcon::Info)->show();
-            return;
-        }
-        (void)geode::utils::file::writeString(
-            plPath, existing + fmt::format("{}\n", sm.getCurrentSong()));
-        Notification::create(
-            fmt::format("Added to {}", plPath.filename().string()),
-            NotificationIcon::Success)->show();
     }
 
 }

@@ -84,7 +84,6 @@ protected:
     cocos2d::CCSprite* m_bgSprite = nullptr;
     cocos2d::CCLayerColor* m_bgOverlay = nullptr;
     float m_blurTime = 0.f;
-    int m_bgSilenceCounter = 0;
     bool m_bgSpriteCastCached = false;
     cocos2d::CCSprite* m_cachedPaimonSprite = nullptr;
     BackTarget m_backTarget = BackTarget::CreatorLayer;
@@ -97,9 +96,6 @@ protected:
     cocos2d::ccColor3B m_themeColorA = {255, 200, 50};
     cocos2d::ccColor3B m_themeColorB = {255, 150, 30};
 
-    FMOD::Channel* m_levelMusicChannel = nullptr; // unused after refactor; kept for ABI safety
-    FMOD::Sound* m_levelMusicSound = nullptr;     // unused after refactor; kept for ABI safety
-    FMOD::ChannelGroup* m_levelAudioGroup = nullptr; // unused after refactor; kept for ABI safety
     FMOD::DSP* m_lowpassDSP = nullptr;
     FMOD::DSP* m_reverbDSP = nullptr;
 
@@ -109,7 +105,6 @@ protected:
     bool m_caveMusicShouldRestore = false;
     bool m_musicPlaying = false;
     bool m_leavingForGood = false;
-    bool m_goingToHistory = false;
     bool m_didSuspendDynSong = false;
     
     static constexpr int AUDIO_FADE_STEPS = 15;
@@ -131,19 +126,11 @@ protected:
     float getAudioBassLevel();
     
     void startCaveMusic();
-    void fadeOutCaveMusic();
     void killCaveMusic();
     void applyCaveEffect();
     void removeCaveEffect();
     void executeCaveFade(int step, int totalSteps, float from, float to, bool fadeOut);
     
-    void fadeOutMenuMusic();
-    void fadeInMenuMusic();
-    void executeMenuFade(int step, int totalSteps, float from, float to);
-    void ensureBgSilenced();
-    void delaySilenceBg(float dt);
-    void delaySilenceBg2(float dt);
-
     static constexpr int TAG_NAME_LABEL = 2001;
     static constexpr int TAG_CREATOR_LABEL = 2002;
     static constexpr int TAG_TIME_LABEL = 2003;

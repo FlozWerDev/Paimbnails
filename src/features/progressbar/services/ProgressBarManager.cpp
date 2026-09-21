@@ -68,7 +68,6 @@ ccColor3B hsvToRgb(float h, float s, float v) {
     };
 }
 
-// Resolve Solid, Pulse, and Rainbow animation colors.
 ccColor3B resolveAnimatedColor(BarColorMode mode, ccColor3B const& c1,
                                 ccColor3B const& c2, float animTime, float speed) {
     switch (mode) {
@@ -636,7 +635,6 @@ void ProgressBarManager::applySprites(CCNode* bar, CCNode* playLayerRoot) {
     if (m_config.useBgTexture)
         bgTex = resolveCustomTexture(playLayerRoot, m_bgCustom, m_config.bgTexturePath);
 
-// Restore vanilla textures when disabled.
     if (!m_config.useFillTexture && m_fillBaselineTex.captured) {
         for (auto* s : slots.all) {
             if (s != slots.bg) { restoreSpriteBaseline(s, m_fillBaselineTex); break; }
@@ -806,7 +804,6 @@ void ProgressBarManager::applyToPlayLayer(CCNode* playLayerRoot) {
     if (!bar) return;
 
     if (!m_config.enabled) {
-// Restore vanilla once, then stop touching the bar.
         if (m_wasActive) restoreVanillaState(bar, label);
         return;
     }

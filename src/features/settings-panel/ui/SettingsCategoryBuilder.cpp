@@ -348,7 +348,6 @@ void buildInterface(CCNode* c, float w) {
         w));
 
     c->addChild(createSectionHeader("Popup Blur", w));
-    ssaved<std::string>("popup-blur-style", "paiblur");
 
     c->addChild(createToggleRow("Enable Popup Blur",
         gset<bool>("popup-blur-enabled"),
@@ -1011,41 +1010,6 @@ std::vector<SettingsGroup> const& getAllGroups() {
         return v;
     }();
     return discordSupported() ? s_groups : s_groupsNoDiscord;
-}
-
-std::vector<SettingsCategory> const& getAllCategories() {
-    static std::vector<SettingsCategory> s_categories = {
-        { "general",       "General",       "", buildGeneral       },
-        { "thumbnails",    "Thumbnails",    "", buildLevelThumbnails},
-        { "vfx",           "Visual FX",     "", buildVisualEffects  },
-        { "levelinfo",     "Level Info",    "", buildLevelInfo      },
-        { "music",         "Profile Music", "", buildProfileMusic   },
-        { "capture",       "Capture",       "", buildCapture        },
-        { "performance",   "Performance",   "", buildPerformance    },
-        { "interface",     "Interface",     "", buildInterface      },
-        { "backgrounds",   "Backgrounds",   "", buildBackgrounds    },
-        { "transitions",   "Transitions",   "", buildTransitions    },
-        { "pet",           "Pet",           "", buildPet            },
-        { "cursor",        "Custom Cursor", "", buildCursor         },
-        { "menuphysics",   "Menu Physics",  "", buildMenuPhysics    },
-        { "profileredesign","Profile Redesign","", buildProfileRedesign },
-        { "autopreview",   "Auto Previews", "", buildAutoPreview    },
-        { "texturestudio", "Pack Gen","", buildTextureStudio  },
-        { "songsearch",    "Song Search",   "", buildSongSearch     },
-        { "scorecells",    "Score Cells",   "", buildScoreCells     },
-        { "globalmusic",   "Music Layers",  "", buildGlobalMusic    },
-        { "discord",       "Discord RPC",   "", buildDiscord        },
-        { "maintenance",   "Maintenance",   "", buildMaintenance    },
-    };
-    // Lista legacy sin usos por indice; filtrar por id es seguro.
-    static const std::vector<SettingsCategory> s_categoriesNoDiscord = []{
-        std::vector<SettingsCategory> v;
-        for (auto const& c : s_categories) {
-            if (c.id != "discord") v.push_back(c);
-        }
-        return v;
-    }();
-    return discordSupported() ? s_categories : s_categoriesNoDiscord;
 }
 
 }

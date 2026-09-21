@@ -5,12 +5,9 @@
 #include <unordered_map>
 
 struct PicFrameConfig {
-    std::string spriteFrame = "";
     cocos2d::ccColor3B color = {255, 255, 255};
     float opacity = 255.f;
     float thickness = 4.f;
-    float offsetX = 0.f;
-    float offsetY = 0.f;
 };
 
 struct PicDecoration {
@@ -49,7 +46,6 @@ struct PicIconConfig {
 
     bool iconImageEnabled = false;
     std::string iconImagePath;
-    float iconImageScale = 1.f;
 };
 
 struct PicCustomIcon {
@@ -83,9 +79,6 @@ struct ProfilePicConfig {
     std::string stencilSprite = "circle";
 
     std::vector<PicDecoration> decorations;
-
-    float offsetX = 0.f;
-    float offsetY = 0.f;
 
     std::string profileFont = "goldFont.fnt";
 
@@ -121,14 +114,11 @@ public:
     bool isDirty() const { return m_dirty; }
     void setDirty(bool dirty) { m_dirty = dirty; }
 
-    static std::vector<std::pair<std::string, std::string>> getAvailableFrames();
     static std::vector<std::pair<std::string, std::string>> getAvailableStencils();
-    static std::vector<std::pair<std::string, std::string>> getAvailableDecorations();
     static std::vector<DecorationCategory> getDecorationCategories();
     static std::vector<ProfilePicPreset> getPresets();
     static std::vector<std::pair<std::string, cocos2d::ccColor3B>> getColorPalette();
 
-    static std::vector<std::pair<int, std::string>> getAvailableGameIcons();
     static std::vector<std::pair<std::string, std::string>> getAvailableFonts();
 
 private:

@@ -407,7 +407,7 @@ PaimonHubLayer* PaimonHubLayer::create() {
 
 CCScene* PaimonHubLayer::scene() {
     auto scene = CCScene::create();
-    scene->addChild(PaimonHubLayer::create());
+    if (auto* layer = PaimonHubLayer::create()) scene->addChild(layer);
     return scene;
 }
 
@@ -789,9 +789,6 @@ void PaimonHubLayer::buildHomeTab() {
         }
     });
     m_homeTab->addChild(m_searchInput, 10);
-
-    m_homeActionsAnchor = CCNode::create();
-    m_homeTab->addChild(m_homeActionsAnchor, 2);
 
     m_homeActionsMenu = makeZeroMenu();
     m_homeMenu->addChild(m_homeActionsMenu, 3);
@@ -1266,8 +1263,6 @@ void PaimonHubLayer::buildForumTab() {
     auto panel = makeGDPanel(m_forumTab, panelW, panelH);
     panel->setID("forum-panel"_spr);
 
-    m_forumSubTabBtns.clear();
-
     m_forumHeaderTitle = CCLabelBMFont::create(
         tr("pai.hub.forum.title", "Community Forum").c_str(),
         "goldFont.fnt"
@@ -1598,10 +1593,6 @@ void PaimonHubLayer::onOpenBackgrounds(CCObject*) {
 void PaimonHubLayer::onOpenPaiDraw(CCObject*) {
     paimon::storeButtonOrigin({CCDirector::get()->getWinSize().width - 50.f, 54.f});
     if (auto scene = paidraw::PaiDrawLobbyLayer::scene()) CCDirector::get()->pushScene(scene);
-}
-
-void PaimonHubLayer::onOpenExtras(CCObject*) {
-    if (auto scene = PaiConfigLayer::scene()) CCDirector::get()->pushScene(scene);
 }
 
 void PaimonHubLayer::onOpenSupport(CCObject*) {
@@ -2172,12 +2163,6 @@ void PaimonHubLayer::onForumSubTabSwitch(CCObject* sender) {
 void PaimonHubLayer::switchForumSubTab(int idx) {
     m_forumSubTab = idx;
 
-    for (size_t i = 0; i < m_forumSubTabBtns.size(); i++) {
-        if (auto spr = typeinfo_cast<ButtonSprite*>(m_forumSubTabBtns[i]->getNormalImage())) {
-            spr->setColor(i == (size_t)idx ? ccColor3B{100, 255, 100} : ccColor3B{255, 255, 255});
-        }
-    }
-
     if (m_forumBrowseNode) m_forumBrowseNode->setVisible(idx == 0);
     if (m_forumCreateNode) m_forumCreateNode->setVisible(idx == 1);
 
@@ -2254,14 +2239,4 @@ void PaimonHubLayer::onCreateSubmit(CCObject*) {
         PaimonNotify::create("Post published!", NotificationIcon::Success)->show();
         hub->switchForumSubTab(0);
     });
-}
-
-CCMenuItemSpriteExtra* PaimonHubLayer::makeBtn(char const* text, CCPoint pos,
-    SEL_MenuHandler handler, CCNode* parent, float scale) {
-    auto spr = ButtonSprite::create(text);
-    spr->setScale(scale);
-    auto btn = CCMenuItemSpriteExtra::create(spr, this, handler);
-    btn->setPosition(pos);
-    parent->addChild(btn);
-    return btn;
 }

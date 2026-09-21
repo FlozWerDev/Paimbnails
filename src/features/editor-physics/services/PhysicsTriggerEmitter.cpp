@@ -216,9 +216,8 @@ CCArray* changedSourcesArray(
     return array;
 }
 
-// GD moves a group around a single object, its group parent, so the baked path
-// has to trace that object: a body that spins turns around it and not around
-// the centre of mass the solver sampled.
+// GD turns a group around its group parent, so a spinning body is traced around
+// it and not around the centre of mass the solver sampled.
 GameObject* pivotObject(LevelEditorLayer* editor, ResolvedBody const& body, int group) {
     if (auto* parent = editor->tryGetGroupParent(group)) return parent;
     GameObject* best = nullptr;
@@ -686,10 +685,8 @@ Result<EmitReport> emitToEditor(
     report.groups = requiredGroups;
     report.reactiveBodies = reactiveBodies.size();
 
-    // Every object goes through the editor's own create path. Rebuilding a
-    // keyframe from the save string of a loose probe reached
-    // GJEffectManager::getColorSprite with no colour channels behind it, and GD
-    // crashed there instead of creating the object.
+    // Built through the editor's create path: a loose probe reached
+    // GJEffectManager::getColorSprite with no colour channels and GD crashed.
     auto* created = CCArray::create();
     auto abort = [&](std::string message) -> Result<EmitReport> {
         for (auto* item : CCArrayExt<CCObject*>(created)) {

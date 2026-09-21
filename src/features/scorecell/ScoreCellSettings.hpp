@@ -88,13 +88,5 @@ inline std::string normalizeHoverType(std::string const& v) {
     auto const& l = hoverTypes();
     return std::find(l.begin(), l.end(), v) != l.end() ? v : std::string("glow");
 }
-inline std::string normalizeEntranceType(std::string const& v) {
-    auto const& l = entranceTypes();
-    return std::find(l.begin(), l.end(), v) != l.end() ? v : std::string("none");
-}
-
-inline void migrateAnimatedLeaderboardFx() {}
-inline void migrateGlassLeaderboardFx() {}
-inline void migrateSmoothLeaderboardFx() {}
 
 }

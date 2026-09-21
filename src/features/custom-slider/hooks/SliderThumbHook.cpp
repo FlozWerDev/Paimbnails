@@ -229,10 +229,6 @@ class $modify(PaimonSliderTouch, SliderTouchLogic) {
         return static_cast<PaimonSlider*>(ref->m_slider);
     }
 
-    void registerWithTouchDispatcher() {
-        SliderTouchLogic::registerWithTouchDispatcher();
-    }
-
     $override
     bool ccTouchBegan(CCTouch* touch, CCEvent* event) {
         bool result = SliderTouchLogic::ccTouchBegan(touch, event);

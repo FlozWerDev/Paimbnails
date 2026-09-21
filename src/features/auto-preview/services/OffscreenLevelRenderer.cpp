@@ -6,7 +6,6 @@
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GameObject.hpp>
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 
 #include "PreviewZonePicker.hpp"
@@ -59,9 +58,8 @@ float measureLevelLength(PlayLayer* pl) {
     }
     return maxX;
 }
-// is what the FBO shows, and force only the objects inside that window visible
-// (bypasses GD's camera-progress culling which keeps mid-level objects hidden
-// until the player reaches them). Returns the number of objects shown.
+// Shows only objects inside the capture window (GD hides mid-level objects
+// until the player reaches them, but the FBO has no camera progress).
 int setupWindow(PlayLayer* pl, float zoneX, float designW) {
     float const camLeftX = zoneX - designW * 0.5f;
     float const marginX = 90.f;
@@ -125,14 +123,8 @@ OffscreenRenderResult result;
     if (PlayLayer::get() != nullptr) return result;
     if (level->m_levelString.empty()) return result;
 
-    // PlayLayer::create below runs every mod's PlayLayer::init hook, so an
-    // offscreen render is indistinguishable from actually entering the level.
-    // Globed reacts to that hook by announcing the level to its server
-    // (GlobedGJBGL::setupPreInit -> RoomManager::joinLevel), and it only ever
-    // retracts that from PlayLayer::onQuit, which we never call here — the
-    // player would be shown in a level they never opened until they enter
-    // another one. Nothing we can do to the layer hides it from those hooks,
-    // so skip the render entirely while such a mod is present.
+    // PlayLayer::create runs every mod's init hook; Globed would announce the
+    // level online until another is entered (only retracted in onQuit), so skip.
     if (paimon::compat::ModCompat::isGlobedLoaded()) {
         static bool warned = false;
         if (!warned) {

@@ -10,9 +10,8 @@ namespace paimon::net { class WebSocketClient; }
 
 namespace paimon::twitch {
 
-// Kick's own web client reads chat through Pusher, and the subscription is
-// public: resolve the chatroom id over HTTP, then subscribe to
-// chatrooms.<id>.v2 with an empty auth.
+// Kick lee el chat por Pusher con suscripcion publica: se resuelve el chatroom
+// por HTTP y se escucha chatrooms.<id>.v2 sin auth.
 class KickChatSource final : public ChatSourceBase {
 public:
     KickChatSource(std::string channel, ChatCallbacks callbacks);

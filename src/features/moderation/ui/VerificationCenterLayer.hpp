@@ -61,7 +61,6 @@ protected:
     void clearPreview();
     void setPreviewTexture(cocos2d::CCTexture2D* tex);
     void setPreviewSprite(cocos2d::CCSprite* spr);
-    void loadCurrentSuggestionPreview();
     void updateNavigationArrows();
 
     void onSelectItem(cocos2d::CCObject* sender);
@@ -75,9 +74,6 @@ protected:
     void runQueueAction(int levelID, bool acceptAll, bool reject);
     void onClaimLevel(cocos2d::CCObject* sender);
     void onViewReport(cocos2d::CCObject* sender);
-    void onViewThumb(cocos2d::CCObject* sender);
-    void onViewProfileBackground(cocos2d::CCObject* sender);
-    void onOpenProfile(cocos2d::CCObject* sender);
     void onViewBans(cocos2d::CCObject*);
     void onViewWhitelist(cocos2d::CCObject*);
     void onBanUser(cocos2d::CCObject*);
@@ -87,7 +83,6 @@ protected:
     void onToggleFilter(cocos2d::CCObject*);
     void onRefresh(cocos2d::CCObject*);
     void applyFilter();
-    void autoRefreshClaims(float dt);
     void checkLevelDownloaded(float dt);
 
 public:

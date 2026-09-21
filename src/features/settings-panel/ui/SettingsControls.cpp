@@ -8,7 +8,6 @@ using namespace geode::prelude;
 
 namespace paimon::settings_ui {
 
-// Touch priority for child controls.
 static int childTouchPrio() {
     return CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2;
 }
@@ -49,7 +48,6 @@ static CCNode* makeRow(float width, float height = ROW_HEIGHT, bool withBg = tru
 }
 
 
-// CCObject callback wrapper.
 class ToggleCallback : public CCObject {
 public:
     std::function<void(bool)> m_callback;
@@ -414,7 +412,6 @@ CCNode* createTextInputRow(const char* label, std::string const& initialValue,
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
     row->addChild(lbl);
 
-// Keep the input in the right half of the row.
     float inputW = std::max(width * 0.5f, 140.f);
     auto input = geode::TextInput::create(inputW / 0.72f, placeholder ? placeholder : "", "chatFont.fnt");
     input->setCommonFilter(geode::CommonFilter::Any);
@@ -524,7 +521,6 @@ CCNode* createCollapsibleHeader(const char* title, float width,
     row->setContentSize({width, HEADER_HEIGHT});
     row->setAnchorPoint({0.f, 0.f});
 
-// Subtle background for the collapsible header.
     auto bg = paimon::SpriteHelper::createRoundedRect(
         width - 4.f, HEADER_HEIGHT - 4.f, 5.f, {1.f, 1.f, 1.f, 0.06f}
     );

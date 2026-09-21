@@ -93,7 +93,8 @@ class $modify(PaimonMyLevelsFilterBrowser, LevelBrowserLayer) {
         if (!pageMenu) return true;
 
         auto spr = CCSprite::createWithSpriteFrameName("GJ_filterIcon_001.png");
-        if (spr) spr->setScale(0.9f);
+        if (!spr) return true;
+        spr->setScale(0.9f);
         spr->setID("paim-mylevels-filter-icon"_spr);
         auto btn = CCMenuItemSpriteExtra::create(
             spr, this, menu_selector(PaimonMyLevelsFilterBrowser::onFilter));

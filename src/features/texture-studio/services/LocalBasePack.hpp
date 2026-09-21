@@ -1,11 +1,5 @@
 #pragma once
-// Fully local base-sheet pack for region tinting.
-// The recoloring approach used here was pioneered by Asterveila's "PackGen"
-// (building on ravexcode's TexturePackWeb); that credit is for the idea only.
-// Every base sheet below is enumerated from the local install — the vanilla
-// resources directory, the Geode loader resources directory, and each
-// installed mod's resources directory — and only used as the recoloring
-// baseline. There are no network calls anywhere in this service.
+// Fully local base-sheet pack (idea credit: PackGen); no network calls anywhere.
 
 #include <Geode/Geode.hpp>
 

@@ -1,12 +1,6 @@
 #pragma once
-// PackScheduler: tiny thread pool + parallelFor for PackGen v2.
-//
-// Local pools only (owned by the export job, joined before return) so Geode
-// unload can never strand a worker thread. Exceptions from tasks are captured
-// and rethrown on the calling thread by parallelFor/wait; fire-and-forget
-// submit() stores them for waitAll() to rethrow.
-//
-// Pure C++17. Header-only.
+// PackScheduler: tiny pool + parallelFor; pools are job-local and joined
+// before return so Geode unload never strands a worker thread.
 
 #include <algorithm>
 #include <atomic>

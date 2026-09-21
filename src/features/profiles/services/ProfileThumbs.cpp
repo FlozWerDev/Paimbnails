@@ -3,7 +3,6 @@
 #include "../../../core/Settings.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../core/QualityConfig.hpp"
-#include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "ProfileImageService.hpp"
@@ -12,14 +11,12 @@
 #include <filesystem>
 #include "../../../utils/TimedJoin.hpp"
 #include <Geode/loader/Mod.hpp>
-#include <fstream>
 #include <algorithm>
 #include <deque>
 
 #include "../../../utils/Shaders.hpp"
 #include "../../../utils/GLSLLoader.hpp"
 #include "../../../blur/BlurSystem.hpp"
-#include "../../../utils/stb_image.h"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -29,9 +26,6 @@ using namespace Shaders;
 
 
 namespace {
-    struct Header { int32_t w; int32_t h; int32_t fmt; };
-    constexpr uintmax_t kMaxProfileThumbFileBytes = 20ull * 1024ull * 1024ull;
-
     using ProfileThumbCallback = geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*)>;
 
     bool profileThumbsShouldAbort() {
@@ -152,71 +146,6 @@ static std::string makeLegacyPath(int accountID) {
     return geode::utils::string::pathToString(dir / fmt::format("{}.rgb", accountID));
 }
 
-bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int height) {
-
-    if (!rgb || width <= 0 || height <= 0) return false;
-
-    size_t pixelCount = static_cast<size_t>(width) * height;
-    std::vector<uint8_t> rgbaBuf(pixelCount * 4);
-    ImageConverter::rgbToRgbaFast(rgb, rgbaBuf.data(), pixelCount);
-
-    auto* tex = new CCTexture2D();
-    if (tex->initWithData(rgbaBuf.data(), kCCTexture2DPixelFormat_RGBA8888, width, height, { (float)width, (float)height })) {
-        tex->autorelease();
-
-        auto path = makePath(accountID);
-
-        spawnBackground([accountID, width, height, path, data = std::move(rgbaBuf)]() mutable {
-            std::vector<uint8_t> encoded;
-            if (ImageConverter::rgbaToWebpBuffer(data.data(), width, height, encoded, 85.f)) {
-                std::ofstream out(path, std::ios::binary);
-                if (out) {
-                    out.write(reinterpret_cast<char const*>(encoded.data()), encoded.size());
-                    out.close();
-                    pruneProfileThumbsDiskCache();
-                    log::debug("[ProfileThumbs] Saved profile WebP to disk for account {} ({} bytes)", accountID, encoded.size());
-                }
-            } else {
-                std::vector<uint8_t> pngData;
-                if (ImageConverter::rgbaToPngBuffer(data.data(), width, height, pngData)) {
-                    std::ofstream out(path, std::ios::binary);
-                    if (out) {
-                        out.write(reinterpret_cast<char const*>(pngData.data()), pngData.size());
-                        out.close();
-                        pruneProfileThumbsDiskCache();
-                        log::debug("[ProfileThumbs] Saved profile PNG fallback for account {}", accountID);
-                    }
-                }
-            }
-        });
-
-        ccColor3B cA = {255,255,255};
-        ccColor3B cB = {255,255,255};
-        float wF = 0.6f;
-        
-        auto it = m_profileCache.find(accountID);
-        if (it != m_profileCache.end()) {
-            cA = it->second.colorA;
-            cB = it->second.colorB;
-            wF = it->second.widthFactor;
-        }
-        
-        this->cacheProfile(accountID, tex, cA, cB, wF);
-        log::info("[ProfileThumbs] Memory cache updated for account {}", accountID);
-    } else {
-        tex->release();
-        return false;
-    }
-    
-    return true; 
-}
-
-bool ProfileThumbs::has(int accountID) const {
-    std::error_code ec;
-    if (std::filesystem::exists(makePath(accountID), ec)) return true;
-    return std::filesystem::exists(makeLegacyPath(accountID), ec);
-}
-
 void ProfileThumbs::deleteProfile(int accountID) {
     clearCache(accountID);
     std::error_code ec;
@@ -231,129 +160,6 @@ void ProfileThumbs::deleteProfile(int accountID) {
         log::debug("[ProfileThumbs] Deleted legacy .rgb for account {}", accountID);
     }
 }
-
-CCTexture2D* ProfileThumbs::loadTexture(int accountID) {
-    auto path = makePath(accountID);
-    auto legacy = makeLegacyPath(accountID);
-    log::debug("[ProfileThumbs] Loading profile thumbnail for account {}: {}", accountID, path);
-    
-    std::error_code ec;
-    bool hasNew = std::filesystem::exists(path, ec) && !ec;
-    bool hasOld = !hasNew && std::filesystem::exists(legacy, ec) && !ec;
-
-    if (!hasNew && !hasOld) {
-        log::debug("[ProfileThumbs] Thumbnail not found for account {}", accountID);
-        return nullptr;
-    }
-
-    if (hasNew) {
-        std::error_code sizeEc;
-        auto fileSize = std::filesystem::file_size(path, sizeEc);
-        if (sizeEc || fileSize == 0 || fileSize > kMaxProfileThumbFileBytes) {
-            log::warn("[ProfileThumbs] Rejecting thumbnail for account {} due to invalid file size ({})", accountID, sizeEc ? 0 : fileSize);
-            return nullptr;
-        }
-
-        std::ifstream in(path, std::ios::binary);
-        if (!in) { log::error("[ProfileThumbs] Error opening file: {}", path); return nullptr; }
-        std::vector<uint8_t> fileData((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        in.close();
-
-        int w = 0, h = 0, ch = 0;
-        unsigned char* px = stbi_load_from_memory(fileData.data(), static_cast<int>(fileData.size()), &w, &h, &ch, 4);
-        if (px && w > 0 && h > 0 && w <= 4096 && h <= 4096) {
-                auto* tex = new CCTexture2D();
-                if (tex->initWithData(px, kCCTexture2DPixelFormat_RGBA8888,
-                        w, h, { (float)w, (float)h })) {
-                    tex->autorelease();
-                    stbi_image_free(px);
-                    log::info("[ProfileThumbs] Loaded thumbnail for account {} (stb_image)", accountID);
-                    return tex;
-                }
-                tex->release();
-        }
-        if (px) stbi_image_free(px);
-        log::warn("[ProfileThumbs] Failed to decode new-format file for account {}", accountID);
-        return nullptr;
-    }
-
-    std::ifstream in(legacy, std::ios::binary);
-    if (!in) { log::error("[ProfileThumbs] Error opening legacy file: {}", legacy); return nullptr; }
-    
-    Header h{}; 
-    in.read(reinterpret_cast<char*>(&h), sizeof(h));
-    
-    if (h.fmt != 24 || h.w <= 0 || h.h <= 0 || h.w > 4096 || h.h > 4096) {
-        log::error("[ProfileThumbs] Invalid legacy header: fmt={}, w={}, h={}", h.fmt, h.w, h.h);
-        return nullptr;
-    }
-    
-    if (!in) {
-        log::error("[ProfileThumbs] Legacy header read failed");
-        return nullptr;
-    }
-
-    std::vector<uint8_t> buf(h.w * h.h * 3);
-    in.read(reinterpret_cast<char*>(buf.data()), buf.size());
-
-    if (in.gcount() != static_cast<std::streamsize>(buf.size())) {
-        log::error("[ProfileThumbs] Legacy file truncated");
-        return nullptr;
-    }
-    in.close();
-
-    std::vector<uint8_t> rgbaBuf(h.w * h.h * 4);
-    ImageConverter::rgbToRgbaFast(buf.data(), rgbaBuf.data(), static_cast<size_t>(h.w) * h.h);
-
-    auto* tex = new CCTexture2D();
-    if (!tex->initWithData(rgbaBuf.data(), kCCTexture2DPixelFormat_RGBA8888, h.w, h.h, { (float)h.w, (float)h.h })) {
-        log::error("[ProfileThumbs] Failed to create texture from legacy data");
-        tex->release();
-        return nullptr;
-    }
-    tex->autorelease();
-    
-    log::info("[ProfileThumbs] Loaded legacy .rgb thumbnail for account {}", accountID);
-    return tex;
-}
-
-bool ProfileThumbs::loadRGB(int accountID, std::vector<uint8_t>& out, int& w, int& h) {
-    auto path = makePath(accountID);
-    std::error_code ec;
-    if (std::filesystem::exists(path, ec) && !ec) {
-        auto fileSize = std::filesystem::file_size(path, ec);
-        if (ec || fileSize == 0 || fileSize > kMaxProfileThumbFileBytes) {
-            log::warn("[ProfileThumbs] Rejecting RGB load for account {} due to invalid file size ({})", accountID, ec ? 0 : fileSize);
-            return false;
-        }
-
-        std::ifstream in(path, std::ios::binary);
-        if (in) {
-            std::vector<uint8_t> fileData((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-            in.close();
-            int sw = 0, sh = 0, sch = 0;
-            unsigned char* px = stbi_load_from_memory(fileData.data(), static_cast<int>(fileData.size()), &sw, &sh, &sch, 4);
-            if (px && sw > 0 && sh > 0 && sw <= 4096 && sh <= 4096) {
-                w = sw; h = sh;
-                out.resize(static_cast<size_t>(sw) * sh * 3);
-                ImageConverter::rgbaToRgbFast(px, out.data(), static_cast<size_t>(sw) * sh);
-                stbi_image_free(px);
-                return true;
-            }
-            if (px) stbi_image_free(px);
-        }
-    }
-    auto legacy = makeLegacyPath(accountID);
-    if (!std::filesystem::exists(legacy, ec) || ec) return false;
-    std::ifstream in(legacy, std::ios::binary);
-    if (!in) return false;
-    Header head{}; in.read(reinterpret_cast<char*>(&head), sizeof(head));
-    if (head.fmt != 24 || head.w <= 0 || head.h <= 0 || head.w > 4096 || head.h > 4096) return false;
-    out.resize(static_cast<size_t>(head.w) * head.h * 3);
-    in.read(reinterpret_cast<char*>(out.data()), out.size());
-    w = head.w; h = head.h; return static_cast<bool>(in);
-}
-
 void ProfileThumbs::cacheProfile(int accountID, CCTexture2D* texture, 
                                  ccColor3B colorA, ccColor3B colorB, float widthFactor) {
     if (!texture) return;

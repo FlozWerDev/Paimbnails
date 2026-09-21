@@ -19,8 +19,6 @@ struct Spec {
     std::string id;                                      // Optional node ID.
     matjson::Value attributes = matjson::Value::object();
     std::vector<Spec> children;
-
-    static Spec fromJson(matjson::Value const& json);
 };
 
 // Type string -> base node creator.
@@ -45,8 +43,5 @@ void applyAttributes(cocos2d::CCNode* node, matjson::Value const& attrs,
 
 // Build a Spec tree, optionally attaching the root to parent.
 cocos2d::CCNode* build(Spec const& spec, cocos2d::CCNode* parent = nullptr);
-
-// Find a descendant by ID query: "a > b" is direct; "a b" is recursive.
-cocos2d::CCNode* query(cocos2d::CCNode* root, std::string_view path);
 
 }

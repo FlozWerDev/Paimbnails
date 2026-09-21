@@ -6,9 +6,7 @@
 
 class PaimonLoadingOverlay;
 
-// Role manager popup (admin only). Lets an admin add/remove Moderators, VIPs,
-// Helpers and Idea contributors. Users are resolved against the GD servers to
-// bind a real accountID before being uploaded to the Paimbnails server.
+// Admin-only role manager; users resolve to a real GD accountID before upload.
 // Class name kept for the existing ProfilePage call site.
 class AddModeratorPopup : public geode::Popup {
 protected:

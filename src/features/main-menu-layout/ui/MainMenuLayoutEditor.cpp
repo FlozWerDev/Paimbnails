@@ -148,9 +148,8 @@ void MainMenuLayoutEditor::buildUI() {
     m_status->setPosition({ winSize.width / 2.f, winSize.height - 16.f });
     this->addChild(m_status, 31);
 
-    // Toda la barra inferior vive en un contenedor que se puede "bajar"
-    // (colapsar) con una unica flecha, para liberar la zona inferior y poder
-    // mover los botones del menu que queden debajo.
+    // La barra vive en un contenedor colapsable para liberar la zona
+    // inferior y poder mover los botones que queden debajo.
     m_barContainer = CCNode::create();
     m_barContainer->setPosition({ 0.f, 0.f });
     this->addChild(m_barContainer, 30);

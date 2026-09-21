@@ -1,8 +1,5 @@
-// Visible IDs on browser cells: levels, level lists and map packs.
-//
-// Runs after every other Paimbnails hook so the badge lands on top of the
-// finished cell, and re-anchors itself to whatever the name label ended up
-// being instead of assuming vanilla coordinates.
+// Runs after every other Paimbnails hook so the badge lands on top of the finished cell,
+// re-anchored to whatever the name label ended up being instead of vanilla coordinates.
 
 #include "../InfoModule.hpp"
 #include "../services/IdBadge.hpp"

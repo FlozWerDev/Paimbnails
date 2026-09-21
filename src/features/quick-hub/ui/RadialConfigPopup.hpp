@@ -5,14 +5,7 @@
 
 namespace paimon::quickhub {
 
-// Popup para configurar que opciones aparecen en el Quick Hub Radial y en que
-// orden.
-//
-// Layout:
-// Configurar Quick Hub
-// [ vista previa de la rueda ]   [ Activos | Anadir ]
-// [ abrir con Ctrl           ]   [ lista reordenable ]
-//                    [Reset] [Guardar]
+// Popup para configurar que opciones aparecen en el radial y en que orden.
 
 class RadialConfigPopup : public geode::Popup {
 public:

@@ -22,8 +22,6 @@ protected:
     geode::ScrollLayer* m_scrollLayer = nullptr;
 
     geode::TextInput* m_searchInput = nullptr;
-    std::string m_searchQuery;
-    bool m_isSearchActive = false;
 
     bool m_isDragging = false;
     cocos2d::CCPoint m_dragOffset;
@@ -74,6 +72,5 @@ public:
     static PaimonMultiSettingsPanel* create(cocos2d::CCSprite* blurBg, int initialCategory = 0);
     void animateClose();
     void onCloseFinished();
-    void relayoutScrollContent();
     void setSelectedCategory(int index);
 };

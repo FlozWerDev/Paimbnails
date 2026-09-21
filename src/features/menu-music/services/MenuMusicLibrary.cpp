@@ -412,11 +412,8 @@ std::string MenuMusicLibrary::generateId(const std::string& prefix) {
 
 bool MenuMusicLibrary::isAudioExtension(const std::filesystem::path& p) {
     auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(p.extension()));
-    // Formatos aceptados por FMOD 2.02+ (el que empaqueta GD 2.2):
-    //   * mp3, ogg-vorbis, wav, flac, m4a (AAC en MP4), ogg-opus (.opus)
-    // Nota: no incluimos .webm porque FMOD decodifica Opus SOLO dentro
-    // de contenedor Ogg (.opus/.oga), no de WebM. El downloader remuxea
-    // al contenedor correcto cuando se pide el formato Opus.
+    // FMOD 2.02+ (GD 2.2) decodifica Opus solo dentro de Ogg, no de WebM;
+    // el downloader remuxea al contenedor correcto cuando se pide Opus.
     static const std::array<std::string, 7> ok = {
         ".mp3", ".ogg", ".wav", ".flac", ".oga", ".m4a", ".opus"
     };
@@ -516,7 +513,9 @@ void MenuMusicLibrary::load() {
     }
     auto& root = res.unwrap();
 
-    m_mode = static_cast<PlaybackMode>(root["mode"].asInt().unwrapOr(0));
+    int rawMode = root["mode"].asInt().unwrapOr(0);
+    m_mode = (rawMode >= 0 && rawMode <= static_cast<int>(PlaybackMode::Queue))
+        ? static_cast<PlaybackMode>(rawMode) : PlaybackMode::Disabled;
     m_activePlaylistId = root["activePlaylistId"].asString().unwrapOr("");
     m_lastTrackId = root["lastTrackId"].asString().unwrapOr("");
     m_idCounter = static_cast<std::uint64_t>(root["idCounter"].asInt().unwrapOr(0));
@@ -532,7 +531,9 @@ void MenuMusicLibrary::load() {
             t.displayName = item["displayName"].asString().unwrapOr("");
             t.artist = item["artist"].asString().unwrapOr("");
             t.sourceUrl = item["sourceUrl"].asString().unwrapOr("");
-            t.source = static_cast<TrackSource>(item["source"].asInt().unwrapOr(0));
+            int rawSource = item["source"].asInt().unwrapOr(0);
+            t.source = (rawSource >= 0 && rawSource <= static_cast<int>(TrackSource::GeometryDash))
+                ? static_cast<TrackSource>(rawSource) : TrackSource::Unknown;
             t.addedUnixMs = item["addedUnixMs"].asInt().unwrapOr(0);
             t.durationMs = static_cast<std::int32_t>(item["durationMs"].asInt().unwrapOr(0));
             t.favorite = item["favorite"].asBool().unwrapOr(false);

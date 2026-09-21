@@ -183,21 +183,6 @@ void DiscordPresenceManager::refreshSoon() {
     });
 }
 
-void DiscordPresenceManager::setTemporaryContext(std::string const& key, std::string const& state, std::string const& details) {
-    TemporaryEntry entry;
-    entry.payload.state = safeUtf8Truncate(state, 128);
-    entry.payload.details = safeUtf8Truncate(details, 128);
-    entry.payload.startTimestamp = m_startTimestamp;
-    entry.seq = ++m_tempSeq;
-    m_temporaryContexts[key] = entry;
-    refreshSoon();
-}
-
-void DiscordPresenceManager::clearTemporaryContext(std::string const& key) {
-    m_temporaryContexts.erase(key);
-    refreshSoon();
-}
-
 void DiscordPresenceManager::refreshNow(bool force) {
     try {
         if (m_shutdown || !m_initialized || paimon::isRuntimeShuttingDown()) return;
@@ -262,18 +247,7 @@ void DiscordPresenceManager::refreshNow(bool force) {
 }
 
 PresencePayload DiscordPresenceManager::buildPayload() {
-    PresencePayload payload;
-    uint64_t bestSeq = 0;
-    for (auto const& [_, ctx] : m_temporaryContexts) {
-        if (ctx.seq > bestSeq) {
-            bestSeq = ctx.seq;
-            payload = ctx.payload;
-        }
-    }
-
-    if (payload.state.empty() && payload.details.empty()) {
-        payload = buildScenePayload();
-    }
+    PresencePayload payload = buildScenePayload();
 
     payload.startTimestamp = m_startTimestamp;
 

@@ -10,8 +10,6 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <fmt/format.h>
 
-#include <algorithm>
-
 using namespace geode::prelude;
 
 namespace {
@@ -150,9 +148,6 @@ void BeatShaderConfigLayer::rebuild() {
         m_shaderDescLabel = lbl;
     }
 
-    auto* styleCard = kit::makeCard(scrollW, "Estilo del efecto", {255, 140, 220},
-                                    {styleRow, descRow});
-
     auto* tabs = kit::makeTabBar(scrollW, {"Basico", "Avanzado"}, m_tab,
         [this](int i) {
             m_tab = i;
@@ -162,7 +157,8 @@ void BeatShaderConfigLayer::rebuild() {
     std::vector<CCNode*> items = {hero, tabs};
 
     if (m_tab == 0) {
-        items.push_back(styleCard);
+        items.push_back(kit::makeCard(scrollW, "Estilo del efecto", {255, 140, 220},
+                                      {styleRow, descRow}));
         items.push_back(kit::makeCard(scrollW, "Reaccion a la musica", {120, 210, 255}, {
             kit::makeSliderRow(innerW,
                 "Intensidad", "Fuerza general del efecto.",
@@ -212,7 +208,6 @@ void BeatShaderConfigLayer::rebuild() {
             items.push_back(kit::makeCard(scrollW, "Donde se aplica", {130, 240, 170}, layerRows));
         }
 
-        styleCard->removeAllChildren();
         m_shaderDescLabel = nullptr;
     }
 
@@ -223,9 +218,8 @@ void BeatShaderConfigLayer::rebuild() {
 
 void BeatShaderConfigLayer::persistAndRefresh(bool shaderChanged) {
     BeatShaderManager::get().saveConfig(m_cfg);
-    // Defer scene mutation to the next tick: these callbacks run inside the touch
-    // dispatcher's loop, and mutating the scene graph mid-iteration crashes
-    // ~CCTargetedTouchHandler on the next handleTouchesEnd.
+    // Defer scene mutation: these callbacks run inside the touch dispatcher's
+    // loop, and mutating the graph mid-iteration crashes ~CCTargetedTouchHandler.
     if (shaderChanged) {
         Loader::get()->queueInMainThread([] {
             if (paimon::isRuntimeShuttingDown()) return;

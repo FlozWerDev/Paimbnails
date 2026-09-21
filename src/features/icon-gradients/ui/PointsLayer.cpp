@@ -284,8 +284,6 @@ void PointsLayer::updateGradient(GradientConfig config, ColorType colorType, boo
     updateCenter();
 }
 
-void PointsLayer::updateGradient(float) {}
-
 void PointsLayer::updateCenter() {
     m_icon->setContentSize(m_icon->m_firstLayer->getContentSize());
 

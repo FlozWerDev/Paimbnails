@@ -32,7 +32,6 @@ namespace {
     constexpr float kScaleEpsilon = 0.001f;
     constexpr char const* kShapeNodePrefix = "paimon-draw-shape-";
     constexpr char const* kShapeContainerID = "paimon-draw-shape-container";
-    uint64_t s_shapeIDCounter = 0;
 
     std::string demangleTypeName(char const* name) {
 #ifdef _WIN32
@@ -93,21 +92,6 @@ namespace {
         if (value == "rect") return DrawShapeKind::Rectangle;
         if (value == "circle") return DrawShapeKind::Circle;
         return DrawShapeKind::RoundedRect;
-    }
-
-    uint64_t shapeNumericID(std::string const& id) {
-        constexpr char const* prefix = "shape-";
-        if (id.rfind(prefix, 0) != 0) return 0;
-
-        return geode::utils::numFromString<uint64_t>(
-            id.substr(std::char_traits<char>::length(prefix))
-        ).unwrapOr(0);
-    }
-
-    void syncShapeIDCounter(std::vector<DrawShapeLayout> const& shapes) {
-        for (auto const& shape : shapes) {
-            s_shapeIDCounter = std::max(s_shapeIDCounter, shapeNumericID(shape.id));
-        }
     }
 
     bool approximatelyEqual(MenuButtonLayout const& a, MenuButtonLayout const& b) {
@@ -633,8 +617,6 @@ void MainMenuLayoutManager::load() {
         }
     }
 
-    syncShapeIDCounter(m_shapes);
-
     if (auto loff = root["labelFollowerOffsets"].asArray()) {
         for (auto const& entry : loff.unwrap()) {
             auto key = entry["key"].asString().unwrapOr("");
@@ -738,28 +720,6 @@ std::vector<EditableMenuButton> MainMenuLayoutManager::collectButtons(CCNode* ro
     return buttons;
 }
 
-std::vector<EditableMenuButton> MainMenuLayoutManager::collectShapeNodes(CCNode* root) const {
-    std::vector<EditableMenuButton> out;
-    auto* container = shapeContainer(root, false);
-    if (!container) return out;
-
-    auto prefix = fmt::format("{}/shapes/", rootClassName(root));
-    if (auto* children = container->getChildren()) {
-        for (auto* child : CCArrayExt<CCNode*>(children)) {
-            if (!isDrawShapeNode(child)) continue;
-            auto shape = readShapeLayout(child);
-            out.push_back({
-                nullptr,
-                child,
-                {},
-                fmt::format("{}{}", prefix, shape.id),
-                fmt::format("Paimon Draw / {}", shape.id),
-            });
-        }
-    }
-    return out;
-}
-
 void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
     if (!paimon::modules::isEnabled("paimbnails.menulayout.menu")) return;
     this->ensureLoaded();
@@ -847,10 +807,6 @@ void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
     if (rootClassName(root) != "LevelInfoLayer") {
         this->syncShapes(root, m_shapes);
     }
-}
-
-void MainMenuLayoutManager::apply(CCNode* root) {
-    this->captureDefaultsAndApply(root);
 }
 
 void MainMenuLayoutManager::applyDefaults(CCNode* root) {
@@ -990,26 +946,6 @@ void MainMenuLayoutManager::resetAll() {
     this->save();
 }
 
-void MainMenuLayoutManager::setCustomFromSnapshot(LayoutSnapshot const& snapshot) {
-    this->ensureLoaded();
-    m_custom.clear();
-
-    for (auto const& [key, layout] : snapshot.buttons) {
-        auto def = this->getDefaultLayout(key);
-
-        MenuButtonLayout toStore = layout;
-
-        if (!def || !approximatelyEqual(toStore, *def)) {
-            m_custom[key] = toStore;
-        }
-    }
-
-    m_shapes = snapshot.shapes;
-    syncShapeIDCounter(m_shapes);
-
-    this->save();
-}
-
 void MainMenuLayoutManager::mergeCustomFromButtons(std::unordered_map<std::string, MenuButtonLayout> const& buttons) {
     this->ensureLoaded();
 
@@ -1047,15 +983,6 @@ std::optional<MenuButtonLayout> MainMenuLayoutManager::getSessionDefaultLayout(s
     auto it = m_sessionDefaults.find(key);
     if (it == m_sessionDefaults.end()) return std::nullopt;
     return it->second;
-}
-
-LayoutSnapshot MainMenuLayoutManager::captureSnapshot(std::vector<EditableMenuButton> const& buttons) {
-    LayoutSnapshot snapshot;
-    for (auto const& button : buttons) {
-        if (!button.node) continue;
-        snapshot.buttons[button.key] = readLayout(button.node);
-    }
-    return snapshot;
 }
 
 std::vector<DrawShapeLayout> MainMenuLayoutManager::captureShapes(CCNode* root) {
@@ -1226,12 +1153,6 @@ void MainMenuLayoutManager::applyLayout(EditableMenuButton const& button, MenuBu
     MainMenuLayoutManager::get().syncLabelFollowerNodes(button);
 }
 
-void MainMenuLayoutManager::rebuildLabelFollowerOffsets(EditableMenuButton const& button) {
-    auto& mgr = MainMenuLayoutManager::get();
-    mgr.m_labelFollowerOffsets.erase(button.key);
-    mgr.ensureLabelFollowerOffsets(button);
-}
-
 bool MainMenuLayoutManager::isDrawShapeNode(CCNode* node) {
     auto id = std::string(node ? node->getID() : "");
     return node && id.rfind(kShapeNodePrefix, 0) == 0 && typeinfo_cast<MainMenuDrawShapeNode*>(node);
@@ -1272,7 +1193,7 @@ void MainMenuLayoutManager::syncShapes(CCNode* root, std::vector<DrawShapeLayout
         CCNode* node = it != existing.end() ? it->second : nullptr;
         if (!node) {
             node = MainMenuDrawShapeNode::create(shape);
-            container->addChild(node, shape.zOrder);
+            container->addChild(node, shape.layer);
         }
         applyShapeLayout(node, shape);
     }
@@ -1282,10 +1203,6 @@ void MainMenuLayoutManager::syncShapes(CCNode* root, std::vector<DrawShapeLayout
             node->removeFromParent();
         }
     }
-}
-
-std::string MainMenuLayoutManager::createShapeID() {
-    return fmt::format("shape-{}", ++s_shapeIDCounter);
 }
 
 std::string MainMenuLayoutManager::rootClassName(CCNode* root) {

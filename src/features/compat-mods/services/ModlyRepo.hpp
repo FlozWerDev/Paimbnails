@@ -8,13 +8,8 @@
 #include <unordered_map>
 #include <vector>
 
-// Read-only client for the Modly mirror.
-//
-// modly.web.app itself has no API: every read goes through the Firebase SDK
-// straight to Firestore, and the whole "mods-web" project sits behind App Check
-// with reCAPTCHA v3, so a plain request answers 403 PERMISSION_DENIED. The mirror
-// (cloudflare-server/modly-mirror.js) is what reads Firestore with a service
-// account and re-serves it as flat JSON plus plain PNG endpoints.
+// Read-only client for the Modly mirror: direct reads answer 403 behind App Check,
+// so the mirror re-serves Firestore as flat JSON plus plain PNG endpoints.
 
 namespace paimon::compat_mods {
 
@@ -49,8 +44,6 @@ public:
     std::string bannerUrl(ModlyUser const& user) const;
     // Prefix accepted by ModPreviewGalleryPopup, which appends "<n>.png".
     std::string previewUrlBase(ModlyMod const& mod) const;
-
-    void clearCache();
 
 private:
     ModlyRepo() = default;

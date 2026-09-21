@@ -193,9 +193,6 @@ void MenuMusicPopup::onExit() {
     Popup::onExit();
 }
 
-void MenuMusicPopup::buildFullBackground() {
-}
-
 void MenuMusicPopup::buildContentClipper() {
     auto size = m_mainLayer->getContentSize();
 

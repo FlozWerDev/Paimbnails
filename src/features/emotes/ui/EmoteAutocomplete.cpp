@@ -137,9 +137,7 @@ void EmoteAutocomplete::rebuildSuggestions(
 
         Ref<CCNode> phRef = emotePh;
         EmoteCache::get().loadEmote(info, [phRef, EMOTE_SZ](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
-            // Retain the texture across the deferred task; the RAM cache may evict
-            // and free it before the queued lambda runs, which would dangle a raw
-            // `tex` and crash inside CCSprite::createWithTexture. Mirrors EmoteRenderer.
+            // Same evict-before-run hazard as EmoteRenderer; hold a Ref.
             geode::Ref<CCTexture2D> texRef = tex;
             Loader::get()->queueInMainThread([phRef, texRef, isGif, gifData, EMOTE_SZ]() {
                 if (paimon::isRuntimeShuttingDown()) return;

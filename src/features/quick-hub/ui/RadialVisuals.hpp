@@ -71,12 +71,8 @@ inline float wrapBadgeRotation(float v) {
     while (v < -180.f) v += 360.f;
     return v;
 }
-//
-// Se arma con createRoundedRect (un poligono convexo recorrido por el borde) y
-// no con un abanico desde el centro: CCDrawNode extruye cada vertice segun las
-// normales de sus dos aristas, y en el vertice central de un abanico cerrado
-// esas aristas son opuestas, asi que el calculo se degenera y la figura sale
-// sin relleno, solo con su contorno.
+// Se arma con createRoundedRect y no con abanico: en el vertice central las
+// aristas son opuestas y la extrusion de CCDrawNode sale sin relleno.
 inline cocos2d::CCDrawNode* makeCircle(
     float radius,
     cocos2d::ccColor4F fill,
@@ -94,9 +90,8 @@ struct RadialBadge {
     cocos2d::CCNode* ring = nullptr; // aro de acento: solo al apuntar
 };
 
-// Disco liso con el icono dentro, centrado en el (0,0) del nodo devuelto.
-// contentSize y anchorPoint se dejan a cero: con un anchorPoint centrado, cocos
-// desplaza el origen local media insignia y las piezas caen fuera de sitio.
+// Disco liso con el icono dentro, centrado en el (0,0) devuelto. contentSize y
+// anchor se dejan a cero: con anchor centrado cocos desplaza el origen local.
 inline RadialBadge makeRadialBadge(
     RadialOptionDef const& def,
     RadialButtonShape shape,

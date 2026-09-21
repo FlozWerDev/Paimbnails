@@ -10,10 +10,8 @@ using namespace cocos2d;
 
 namespace paimon::volscroll {
 
-// Bottom-right volume chip/panel hosted above scenes and popups.
-// The overlay is parented to geode::OverlayManager — the same top-most host the custom cursor
-// uses — so it renders above every scene, popup and transition (the cursor sits at INT_MAX and
-// we stay just below it).
+// Parented to OverlayManager, the top-most host shared with the custom cursor,
+// so it renders above scenes and popups while staying below the INT_MAX cursor.
 
 namespace {
     // Dimensions — chip vs expanded.
@@ -94,8 +92,6 @@ void VolumeScrollManager::init() {
     m_animProgress = 0.f;
     m_expandProgress = 0.f;
     m_visibleTimer = 0.f;
-    m_clock = 0.f;
-    m_lastUseClock = -100.f;
 }
 
 
@@ -129,8 +125,6 @@ void VolumeScrollManager::ensureOverlayBuilt() {
     icon->setID("paimon-vs-icon"_spr);
     container->addChild(icon, 3);
     m_iconLabel = icon;
-
-    m_kindLabel = nullptr;
 
     auto fill = CCDrawNode::create();
     if (fill) {
@@ -330,7 +324,6 @@ void VolumeScrollManager::releaseSharedResources() {
     detachFromScene();
     m_overlay = nullptr;
     m_iconLabel = nullptr;
-    m_kindLabel = nullptr;
     m_label = nullptr;
     m_barDraw = nullptr;
     m_pillNode = nullptr;
@@ -366,8 +359,6 @@ void VolumeScrollManager::writeVolume(VolumeKind kind, float value) {
 
 
 void VolumeScrollManager::update(float dt) {
-    m_clock += dt;
-
     float diff = m_targetVolume - m_displayedVolume;
     m_displayedVolume += diff * std::clamp(kVolumeLerpSpeed * dt, 0.f, 1.f);
 
@@ -452,12 +443,6 @@ void VolumeScrollManager::update(float dt) {
     }
 }
 
-void VolumeScrollManager::startSlideOut() {
-    // Only used by cancel paths; the normal flow goes Collapsing -> SlidingOut. Kept for compatibility.
-    if (m_state == State::SlidingOut || m_state == State::Hidden) return;
-    m_state = State::Collapsing;
-}
-
 void VolumeScrollManager::resetAutoHideTimer() {
     m_visibleTimer = kAutoHideTime;
 }
@@ -467,9 +452,6 @@ void VolumeScrollManager::rebuildContent() {
     if (m_iconLabel) {
         m_iconLabel->setString(m_currentKind == VolumeKind::Music ? "MUS" : "SFX");
         m_iconLabel->setColor(m_currentKind == VolumeKind::Music ? kMusicColor : kSfxColor);
-    }
-    if (m_kindLabel) {
-        m_kindLabel->setString(m_currentKind == VolumeKind::Music ? "Music" : "SFX");
     }
 }
 
@@ -525,12 +507,7 @@ bool VolumeScrollManager::onScroll(VolumeKind kind, float delta) {
             break;
     }
 
-    m_lastUseClock = m_clock;
     return true;
-}
-
-bool VolumeScrollManager::wasRecentlyUsed(float withinSeconds) const {
-    return (m_clock - m_lastUseClock) < withinSeconds;
 }
 
 }

@@ -1,11 +1,7 @@
 #pragma once
 
-// The fast channel of a duel, on top of Globed server events.
-//
-// Four events, all binary, all scoped to the rival with targetPlayers instead
-// of the whole session. At the peak that is around 60 bytes a second each way,
-// which is less than one player moving, and it keeps us inside the fair use
-// Globed asks for.
+// Four binary events scoped to the rival: ~60 bytes/s each way at peak, less
+// than one player moving, inside the fair use Globed asks for.
 
 #include "../data/VersusTypes.hpp"
 
@@ -78,6 +74,5 @@ void stopListening();
 void sendTick(Tick const& tick);
 void sendCard(CardMsg const& card);
 void sendState(StateMsg const& state);
-void sendTaunt(uint8_t emote);
 
 } // namespace paimon::versus::net

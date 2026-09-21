@@ -129,10 +129,7 @@ std::string rawAttr(std::string const& h, std::size_t from, std::size_t limit, s
     return h.substr(start, end - start);
 }
 
-// Texto de un elemento localizado por el comienzo de su etiqueta de apertura.
-// `openPrefix` puede traer ya el '>' de cierre o quedarse a medias en un
-// atributo. Corta en el cierre de esa misma etiqueta, asi que si el elemento
-// lleva hijos hay que pasar el resultado por stripTags.
+// Corta en el cierre de la misma etiqueta; si el elemento lleva hijos, pasar por stripTags.
 std::string rawTagText(std::string const& h, std::size_t from, std::size_t limit, std::string_view openPrefix) {
     if (openPrefix.size() < 2 || openPrefix.front() != '<') return "";
     auto at = h.find(openPrefix, from);
@@ -674,9 +671,8 @@ void ShopClient::fetchListing(Store store, Category const& category, int page, L
             return;
         }
 
-        // La primera pagina sale por /cursor-library, que filtra a cursores; el
-        // paginador de la web salta a /gallery y ahi hay que añadir "cursors"
-        // para que no se cuele de todo.
+        // /cursor-library filtra a cursores; en /gallery hay que añadir "cursors"
+        // a la query para que no se cuele de todo.
         auto url = safePage == 0
             ? fmt::format("{}/cursor-library?search={}", kRwBase, urlEncode(query))
             : fmt::format("{}/gallery?search={}&page={}", kRwBase,

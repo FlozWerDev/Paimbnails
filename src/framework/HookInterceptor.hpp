@@ -1,8 +1,6 @@
 ﻿#pragma once
 
 #include "PermissionPolicy.hpp"
-#include "EventBus.hpp"
-#include "ModEvents.hpp"
 #include <string>
 #include <vector>
 #include <functional>
@@ -70,12 +68,7 @@ public:
 
         for (auto const& hook : hooks) {
             auto result = hook(ctx);
-            if (result.action == HookAction::Deny) {
-                EventBus::get().publish(PermissionDeniedEvent{
-                    "", ctx.action, result.reason
-                });
-                return result;
-            }
+            if (result.action == HookAction::Deny) return result;
         }
         return HookResult::allow();
     }

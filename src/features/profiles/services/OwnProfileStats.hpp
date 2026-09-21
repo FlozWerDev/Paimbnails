@@ -1,9 +1,6 @@
 #pragma once
-// Own-profile stats must come from GameStatsManager (local, live), not from the
-// cached GJUserScore returned by RobTop. The server score lags until the next
-// successful updateUserScore round-trip, and Paimbnails' userinfo disk cache can
-// freeze that lag for days. Profile redesign already did this for its strip;
-// vanilla ProfilePage must too so toggling redesign off doesn't show stale numbers.
+// Local GameStatsManager wins over RobTop's cached score: the server value
+// lags until the next updateUserScore round-trip (frozen for days by disk cache).
 
 #include <Geode/binding/GameStatsManager.hpp>
 #include <Geode/binding/GJUserScore.hpp>
@@ -25,9 +22,8 @@ inline void applyLiveOwnProfileStats(GJUserScore* score) {
     score->m_secretCoins = gsm->getStat("8");
 }
 
-// After loadPageFromUserInfo has built node-ids labels, force the visible
-// numbers to match the (already patched) score. Safe no-op if menus/labels
-// are missing (redesign hides stats-menu; other mods may rebuild it).
+// Force visible numbers to match the patched score; safe no-op when another
+// mod or the redesign hid/rebuilt stats-menu.
 inline void refreshVanillaStatsLabels(cocos2d::CCNode* mainLayer, GJUserScore* score) {
     if (!mainLayer || !score) return;
 

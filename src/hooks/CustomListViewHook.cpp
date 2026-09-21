@@ -28,10 +28,8 @@ static bool getCachedCompactMode() {
 }
 
 class $modify(PaimonCustomListView, CustomListView) {
-    // Compact mode: GD renders Level4 as a half-height compact cell, so swap
-    // Level→Level4 at create time and let GD handle the layout. The swap applies
-    // to all contexts; Paimbnails enhancements are excluded separately in the
-    // LevelCell hook to keep those contexts looking vanilla.
+    // Compact mode: GD renders Level4 as half-height, so swap Level→Level4 at
+    // create time; mod enhancements stay excluded in the LevelCell hook.
     static CustomListView* create(cocos2d::CCArray* entries, TableViewCellDelegate* delegate,
                                    float width, float height, int count, BoomListType type,
                                    float cellHeight) {
@@ -47,9 +45,7 @@ class $modify(PaimonCustomListView, CustomListView) {
             return CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
         }
 
-        // Swap Level → Level4 when compact mode is active. The suppress flag
-        // doesn't block the swap here; it only skips mod enhancements in the
-        // LevelCell hook.
+        // The suppress flag only skips LevelCell enhancements, not this swap.
         bool compactEnabled = isLevelType && (getCachedCompactMode() || forceCompact);
 
         if (compactEnabled && type == BoomListType::Level) {

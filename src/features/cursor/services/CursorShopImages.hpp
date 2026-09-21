@@ -1,10 +1,5 @@
 #pragma once
-// Miniaturas remotas de la tienda.
-//
-// Una pagina son 40 fichas, asi que las peticiones van por una cola con un tope
-// de descargas a la vez: lanzarlas todas de golpe dejaba la mayoria de celdas
-// en blanco. Cada URL se pide una sola vez, con un reintento antes de darla por
-// perdida, y las texturas se guardan mientras la tienda siga abierta.
+// Miniaturas remotas por cola con tope de concurrentes: pedir 40 a la vez dejaba celdas en blanco.
 
 #include <Geode/Geode.hpp>
 

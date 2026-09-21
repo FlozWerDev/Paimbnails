@@ -168,21 +168,6 @@ CCNode* Factory::create(std::string_view type, matjson::Value const& attrs) {
     return it->second(attrs);
 }
 
-Spec Spec::fromJson(matjson::Value const& j) {
-    Spec s;
-    s.type = str(j["type"], "CCNode");
-    s.id   = str(j["id"]);
-    if (j.contains("attributes")) s.attributes = j["attributes"];
-    if (j.contains("children") && j["children"].isArray()) {
-        if (auto arr = j["children"].asArray()) {
-            for (auto const& c : arr.unwrap()) {
-                s.children.push_back(fromJson(c));
-            }
-        }
-    }
-    return s;
-}
-
 CCNode* build(Spec const& spec, CCNode* parent) {
     auto* node = Factory::get().create(spec.type, spec.attributes);
     if (!node) return nullptr;
@@ -196,29 +181,6 @@ CCNode* build(Spec const& spec, CCNode* parent) {
 
     if (parent) parent->addChild(node);
     return node;
-}
-
-CCNode* query(CCNode* root, std::string_view path) {
-    if (!root) return nullptr;
-
-    CCNode* cur = root;
-    bool direct = false;
-    std::string token;
-
-    auto step = [&] {
-        if (token.empty() || !cur) return;
-        cur = direct ? cur->getChildByID(token) : cur->getChildByIDRecursive(token);
-        token.clear();
-        direct = false;
-    };
-
-    for (char ch : path) {
-        if (ch == '>') { step(); direct = true; }
-        else if (ch == ' ' || ch == '\t') { step(); }
-        else token.push_back(ch);
-    }
-    step();
-    return cur;
 }
 
 } // namespace paimon::ui::dec

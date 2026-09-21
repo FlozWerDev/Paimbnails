@@ -5,7 +5,6 @@
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
-#include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/ShapeStencil.hpp"
 #include "../../../utils/EditorContext.hpp"
 #include "../../icon-gradients/GradientUtils.hpp"
@@ -145,7 +144,6 @@ void CustomSliderManager::loadConfig() {
         auto t = json["targets"];
         m_config.targets.optionsSliders = t["optionsSliders"].asBool().unwrapOr(true);
         m_config.targets.editorSliders  = t["editorSliders"].asBool().unwrapOr(true);
-        m_config.targets.colorSliders   = t["colorSliders"].asBool().unwrapOr(true);
         m_config.targets.garageSliders  = t["garageSliders"].asBool().unwrapOr(false);
     }
 }
@@ -196,7 +194,6 @@ void CustomSliderManager::saveConfig() {
     auto targets = matjson::Value::object();
     targets["optionsSliders"] = m_config.targets.optionsSliders;
     targets["editorSliders"]  = m_config.targets.editorSliders;
-    targets["colorSliders"]   = m_config.targets.colorSliders;
     targets["garageSliders"]  = m_config.targets.garageSliders;
     json["targets"] = targets;
 
@@ -466,9 +463,8 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
     if (!slider) return false;
     if (!slider->getParent()) return false;
 
-    // Never skin native editor sliders: GD rebuilds color state on close and
-    // replacing their thumbs can corrupt internal pointers. Scene detection is
-    // used because other mods may change the parent type name.
+    // Native editor sliders rebuild color state on close; skinning their
+    // thumbs corrupts internal pointers, so walk the whole parent chain.
     if (paimon::isEditorScene()) {
         for (auto* p = slider->getParent(); p; p = p->getParent()) {
             if (std::string(typeid(*p).name()).find("CustomSliderPopup") != std::string::npos) {
@@ -478,13 +474,12 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
         return false;
     }
 
-    // Always exclude native color/HSV editors, including fallback target mode.
+    // Native color/HSV editors stay excluded even with every target on.
     for (auto* p = slider->getParent(); p; p = p->getParent()) {
-        auto cn = std::string(typeid(*p).name());
-        if (cn.find("CustomizeObject") != std::string::npos ||
-            cn.find("ColorSelect")     != std::string::npos ||
-            cn.find("ConfigureHSV")    != std::string::npos ||
-            cn.find("HSV")             != std::string::npos) {
+        if (typeinfo_cast<CustomizeObjectLayer*>(p) ||
+            typeinfo_cast<ColorSelectPopup*>(p) ||
+            typeinfo_cast<ConfigureHSVWidget*>(p) ||
+            typeinfo_cast<HSVWidgetPopup*>(p)) {
             return false;
         }
     }
@@ -515,8 +510,6 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
             }
         }
 
-        // colorSliders is kept for config compatibility; editor color controls stay excluded.
-
         if (m_config.targets.garageSliders) {
             if (className.find("GJGarageLayer") != std::string::npos ||
                 className.find("CharacterColor") != std::string::npos) {
@@ -529,7 +522,6 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
 
     if (m_config.targets.optionsSliders &&
         m_config.targets.editorSliders &&
-        m_config.targets.colorSliders &&
         m_config.targets.garageSliders) {
         return true;
     }

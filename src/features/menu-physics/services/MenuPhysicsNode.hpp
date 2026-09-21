@@ -6,8 +6,6 @@
 
 namespace paimon::menuphysics {
 
-inline constexpr char const* kNodeIDRaw = "paim-menu-physics-node";
-
 class MenuPhysicsNode : public cocos2d::CCLayer {
 public:
     static MenuPhysicsNode* create();

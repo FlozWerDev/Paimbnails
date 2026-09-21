@@ -1,9 +1,5 @@
-// Comment Mentions — notifies when someone mentions you in level comments
-// (daily, weekly, event, or custom IDs).
-//
-// The polling timer runs on a background thread (sleep + fire only);
-// GD requests are dispatched on the main thread via WebHelper, and all
-// mention state lives exclusively on the main thread.
+// Comment Mentions: notifies when someone mentions you in level comments.
+// Poll timer sleeps on a background thread; requests and state stay on main.
 
 #include <Geode/Geode.hpp>
 
@@ -13,6 +9,7 @@
 #include <map>
 #include <regex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -78,6 +75,18 @@ std::vector<std::string> listSetting(char const* key) {
     for (auto const& it : gstr::split(sStr(key), ",")) {
         auto t = gstr::trim(it);
         if (!t.empty()) out.push_back(t);
+    }
+    return out;
+}
+
+// Aliases come from an editable setting, so escape them before interpolating.
+std::string regexEscape(std::string const& s) {
+    static constexpr char const* kMeta = "\\^$.|?*+()[]{}";
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (std::string_view(kMeta).find(c) != std::string_view::npos) out.push_back('\\');
+        out.push_back(c);
     }
     return out;
 }
@@ -255,18 +264,20 @@ private:
         if (sBool("mentions-enable-everyone")) aliases.push_back("@everyone");
         for (auto const& a : listSetting("mentions-aliases")) {
             if (gstr::contains(a, "everyone")) continue;
-            aliases.push_back(a);
+            aliases.push_back(regexEscape(a));
         }
         m_hasAliases = !aliases.empty();
         if (!m_hasAliases) return;
         try {
-            m_re = std::regex(
-                fmt::format("\\b{}(?:{})\\b",
-                            sBool("mentions-require-at") ? "@" : "",
-                            gstr::join(aliases, "|")),
-                sBool("mentions-case-sensitive")
-                    ? std::regex::optimize
-                    : (std::regex::icase | std::regex::optimize));
+            // \b never fires before '@' (both non-word), so match start/separator manually.
+            auto flags = sBool("mentions-case-sensitive")
+                ? std::regex::optimize
+                : (std::regex::icase | std::regex::optimize);
+            if (sBool("mentions-require-at")) {
+                m_re = std::regex(fmt::format("(?:^|[^\\w])@(?:{})\\b", gstr::join(aliases, "|")), flags);
+            } else {
+                m_re = std::regex(fmt::format("(?:^|[^\\w])(?:{})\\b", gstr::join(aliases, "|")), flags);
+            }
         } catch (...) {
             m_hasAliases = false;
         }
@@ -319,8 +330,6 @@ private:
 
 } // namespace
 
-// Resolves username -> accountID via getGJUsers20 and opens the ProfilePage.
-// Uses gdRequest/parseKV helpers from this TU's anonymous namespace.
 void paimon::mentions::openProfile(std::string const& username) {
     if (username.empty()) return;
 

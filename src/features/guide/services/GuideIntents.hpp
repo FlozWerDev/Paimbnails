@@ -50,12 +50,6 @@ struct GuideIntent {
     // Localized variants for repeated intents; falls back to the main response.
     std::unordered_map<std::string, std::vector<std::string>> variantsByLang;
 
-    // Follow-up text for short questions; falls back to the main response.
-    std::unordered_map<std::string, std::string> followUpByLang;
-
-    // Base score for ties between equally matched intents.
-    int priority = 50;
-
     // Main keyword weight used when multiple intents match.
     int weight = 50;
 

@@ -209,10 +209,6 @@ void EditorMusicPlayer::seekMs(int ms) {
     m_channel->setPosition(static_cast<unsigned int>(target), FMOD_TIMEUNIT_MS);
 }
 
-void EditorMusicPlayer::skipMs(int delta) {
-    seekMs(positionMs() + delta);
-}
-
 void EditorMusicPlayer::setVolume(float value) {
     m_volume = std::clamp(value, 0.f, 1.f);
     applyVolume();

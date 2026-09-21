@@ -253,7 +253,6 @@ void ProfileImageService::uploadProfile(int accountID, std::vector<uint8_t> cons
     HttpClient::get().uploadProfile(accountID, pngData, username,
         [this, callback, accountID](bool success, std::string const& message) {
             if (success) {
-                m_uploadCount++;
                 ProfileThumbs::get().deleteProfile(accountID);
                 invalidateProfileImgCache(accountID);
                 std::error_code ec;
@@ -280,7 +279,6 @@ void ProfileImageService::uploadProfileGIF(int accountID, std::vector<uint8_t> c
     HttpClient::get().uploadProfileGIF(accountID, gifData, username,
         [this, callback, accountID](bool success, std::string const& message) {
             if (success) {
-                m_uploadCount++;
                 ProfileThumbs::get().deleteProfile(accountID);
                 invalidateProfileImgCache(accountID);
                 std::error_code ec;
@@ -307,7 +305,6 @@ void ProfileImageService::uploadProfileVideo(int accountID, std::vector<uint8_t>
     HttpClient::get().uploadProfileVideo(accountID, mp4Data, username,
         [this, callback, accountID](bool success, std::string const& message) {
             if (success) {
-                m_uploadCount++;
                 ProfileThumbs::get().deleteProfile(accountID);
                 invalidateProfileImgCache(accountID);
                 std::error_code ec;
@@ -483,7 +480,6 @@ void ProfileImageService::uploadProfileImg(int accountID, std::vector<uint8_t> c
     HttpClient::get().uploadProfileImg(accountID, imgData, username, contentType,
         [this, callback, accountID](bool success, std::string const& message) {
             if (success) {
-                m_uploadCount++;
                 invalidateProfileImgCache(accountID);
                 std::error_code ec;
                 auto cachePath = ::getProfileImgCachePath(accountID);

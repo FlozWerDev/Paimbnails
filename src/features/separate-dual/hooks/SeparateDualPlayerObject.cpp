@@ -13,9 +13,7 @@ class $modify(PaimonSeparateDualPlayer, PlayerObject) {
         return this == m_gameLayer->m_player1 || this == m_gameLayer->m_player2;
     }
 
-    // True for the fighter driven by the second kit: player 2 in a dual
-    // pair, or — while spawning, before player 2 is linked — anything that
-    // is not the first fighter.
+    // Second kit: player 2, or anything but fighter 1 while spawning.
     bool drivesSecondKit() {
         return drivesSecondKit(m_gameLayer);
     }
@@ -193,7 +191,7 @@ class $modify(PaimonSeparateDualPlayer, PlayerObject) {
     }
 
     void toggleRobotMode(bool enable, bool noEffects) {
-        if (!moduleEnabled() || !isLiveFighter()) return PlayerObject::toggleRobotMode(enable, noEffects);
+        if (!moduleEnabled() || !isLiveFighter() || !this->m_robotSprite) return PlayerObject::toggleRobotMode(enable, noEffects);
         auto vault = DualKitVault::get();
         int want = pickForFighter(
             this->m_robotSprite->m_iconRequestID,
@@ -216,7 +214,7 @@ class $modify(PaimonSeparateDualPlayer, PlayerObject) {
     }
 
     void toggleSpiderMode(bool enable, bool noEffects) {
-        if (!moduleEnabled() || !isLiveFighter()) return PlayerObject::toggleSpiderMode(enable, noEffects);
+        if (!moduleEnabled() || !isLiveFighter() || !this->m_spiderSprite) return PlayerObject::toggleSpiderMode(enable, noEffects);
         auto vault = DualKitVault::get();
         int want = pickForFighter(
             this->m_spiderSprite->m_iconRequestID,

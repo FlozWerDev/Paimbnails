@@ -581,7 +581,6 @@ LiveState DynamicVolumeManager::liveState() const {
     st.songLufs      = isValidLufs(m_measuredLufs) ? m_measuredLufs : m_settledLufs;
     st.referenceDb   = (m_cfg.mode == Mode::Fixed) ? m_cfg.targetLufs : m_referenceLufs;
     st.appliedGainDb = m_appliedDb;
-    st.floorDb       = m_floorDb;
     st.analyzing     = m_analyzing;
     st.safeDropActive = m_safeDropActive;
     st.safeDropGainDb = m_safeDrop.gainDb();

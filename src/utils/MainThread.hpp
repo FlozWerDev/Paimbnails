@@ -6,10 +6,8 @@
 
 namespace paimon {
 
-// Detects whether the current thread is the main thread. Geode has no stable API
-// for this, so we capture the thread ID the first time captureMainThread() runs
-// (call it from an early main-thread hook, e.g. MenuLayer::init). If it's never
-// called, isMainThread() returns false (defensive).
+// No stable Geode API: the ID is captured once from $on_mod(Loaded) /
+// LoadingLayer::init, so isMainThread() reads false until then.
 inline std::thread::id& getMainThreadId() {
     // Heap-allocated to avoid a destructor at exit.
     static auto* id = new std::thread::id{};

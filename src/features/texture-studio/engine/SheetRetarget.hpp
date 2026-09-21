@@ -18,12 +18,8 @@ struct InstalledSheet {
     std::filesystem::path plistPath;
 };
 
-// Mod and Geode sheets ship PNG-only, so the atlas the pack writes has to match
-// the plist that stays installed. The tint source is a local copy of the
-// sheet, and a mod update repacks its atlas without renaming the file: every
-// frame rect then points at the wrong pixels and the whole sheet renders
-// deformed. Retargeting moves each tinted frame to the slot the installed
-// plist expects.
+// Mod updates repack the atlas without renaming, so stored rects point at
+// wrong pixels; retargeting moves each tinted frame to the installed layout.
 struct RetargetOutcome {
     enum class Status {
         NotInstalled,   // nothing to compare against; ship as-is.

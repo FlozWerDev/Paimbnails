@@ -177,9 +177,8 @@ void NewThumbWatcher::onPushMessage(std::string const& message) {
     if (paimon::isRuntimeShuttingDown()) return;
     if (!paimon::modules::isEnabled(kModuleId)) return;
 
-    // Dropped before the id is recorded, exactly like the poll skips running in
-    // these scenes: the entry stays unseen and the catch-up poll shows it once
-    // the player is somewhere the card is welcome.
+    // Dropped before recording the id, like the poll skipping these scenes: the
+    // catch-up poll shows it once the player is somewhere the card is welcome.
     auto const config = readConfig();
     if (!config.enabled || !alertsAllowedHere(config)) return;
 

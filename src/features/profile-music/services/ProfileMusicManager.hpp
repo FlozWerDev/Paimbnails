@@ -67,8 +67,6 @@ public:
 
     int getCurrentPlayingProfile() const { return m_currentProfileID; }
 
-    float getCurrentAmplitude() const;
-
     void applyCaveEffect();
 
     void removeCaveEffect();
@@ -93,8 +91,6 @@ public:
 
     bool isCached(int accountID);
 
-    const ProfileMusicConfig* getCachedConfig(int accountID) const;
-
     bool tryGetImmediateConfig(int accountID, ProfileMusicConfig& outConfig);
 
     void injectBundleConfig(int accountID, const ProfileMusicConfig& config);
@@ -106,8 +102,6 @@ public:
     void invalidateCache(int accountID);
 
     bool isEnabled() const;
-
-    float getGlobalVolume() const;
 
 private:
     enum class PlaybackKind {
@@ -143,12 +137,10 @@ private:
     uint32_t m_fadeGeneration = 0;
     std::shared_ptr<std::atomic<bool>> m_lifetimeToken = std::make_shared<std::atomic<bool>>(true);
     float m_bgVolumeBeforeFade = 1.0f;
-    unsigned int m_savedBgPosMs = 0;
 
     bool isCrossfadeEnabled() const;
     float getFadeDurationMs() const;
 
-    void fadeInProfileMusic(float targetVolume);
     void fadeOutAndStop();
     void executeDipFadeOut(int step, int totalSteps, float volFrom, float volTo, bool restoreAfter, uint32_t generation);
     void executeDipFadeIn(int step, int totalSteps, float volFrom, float volTo, uint32_t generation);

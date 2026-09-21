@@ -29,9 +29,7 @@ public:
 
     bool isStreamingPreviewPending() const { return m_streamingPreviewPending || m_previewAwaitingSongInfo; }
     bool isActive() const { return m_state != DynState::Idle || isStreamingPreviewPending() || m_awaitingDownloadOnly; }
-    bool isFading() const { return m_state == DynState::FadingIn || m_state == DynState::FadingOut; }
     bool isInValidLayer() const { return m_currentLayer != DynSongLayer::None; }
-    DynSongLayer getCurrentLayer() const { return m_currentLayer; }
     DynState getState() const { return m_state; }
     int getCurrentPlayingLevelID() const { return m_currentPlayingLevelID; }
     bool hasSuspendedPlayback() const { return m_state == DynState::Suspended; }
@@ -64,7 +62,6 @@ public:
     void setDynamicVolume(float vol);
 
     bool verifyPlayback();
-    void onPlaybackHijacked();
 
     static inline bool s_selfPlayMusic = false;
 

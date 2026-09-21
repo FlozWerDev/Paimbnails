@@ -40,13 +40,8 @@ CCNode* createDifficultyBadge(Difficulty difficulty, Tier tier, float scale) {
     return face;
 }
 
-CCNode* createStarBadge(int stars, bool platformer, float scale) {
-    char const* frame = platformer ? "moonsIcon_001.png" : "GJ_starsIcon_001.png";
-    auto* icon = paimon::SpriteHelper::safeCreateWithFrameName(frame);
-    if (!icon && platformer) {
-        // Older texture packs ship no moon icon; the star reads fine there.
-        icon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
-    }
+CCNode* createStarBadge(int stars, float scale) {
+    auto* icon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
     if (!icon) return nullptr;
 
     auto* node = CCNode::create();
@@ -100,15 +95,10 @@ CCNode* createCoinRow(float scale) {
     return node;
 }
 
-CCNode* createCardBackground(CCSize size, bool highlighted) {
-    auto const fill = highlighted
-        ? ccc4f(0.15f, 0.42f, 0.24f, 0.55f)
-        : ccc4f(0.f, 0.f, 0.f, 0.42f);
-
+CCNode* createCardBackground(CCSize size) {
     auto* panel = paimon::SpriteHelper::createRoundedRect(
-        size.width, size.height, 6.f, fill,
-        highlighted ? ccc4f(0.42f, 0.88f, 0.55f, 0.85f) : ccc4f(1.f, 1.f, 1.f, 0.14f),
-        0.75f
+        size.width, size.height, 6.f, ccc4f(0.f, 0.f, 0.f, 0.42f),
+        ccc4f(1.f, 1.f, 1.f, 0.14f), 0.75f
     );
     if (!panel) return nullptr;
 

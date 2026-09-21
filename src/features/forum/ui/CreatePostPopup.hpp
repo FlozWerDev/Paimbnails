@@ -25,7 +25,7 @@ protected:
     void onAddCustomTag(cocos2d::CCObject*);
     void onSubmit(cocos2d::CCObject*);
     void updateCooldownLabel();
-    void FLAlert_Click(FLAlertLayer*, bool);
+    void FLAlert_Clicked(FLAlertLayer*, bool) override;
     void textChanged(CCTextInputNode*) override {}
     void enterPressed(CCTextInputNode* node) override;
 

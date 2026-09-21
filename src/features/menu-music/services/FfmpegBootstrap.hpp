@@ -46,9 +46,6 @@ private:
     FfmpegBootstrap() = default;
     static std::string releaseUrl();
 
-    // Whether releaseUrl points to an archive.
-    static bool isArchive();
-
     // Archive member to extract.
     static std::string archiveEntry();
 

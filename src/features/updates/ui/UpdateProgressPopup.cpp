@@ -28,11 +28,6 @@ std::string formatBytes(uint64_t b) {
 
 }
 
-UpdateProgressPopup* UpdateProgressPopup::create() {
-    auto& checker = UpdateChecker::get();
-    return create(checker.downloadUrl(), checker.remoteVersion(), nullptr);
-}
-
 UpdateProgressPopup* UpdateProgressPopup::create(
     std::string url, std::string version, std::function<void()> onInstalled
 ) {
@@ -148,11 +143,8 @@ void UpdateProgressPopup::startDownload() {
         return;
     }
 
-    // WeakRef (not Ref): these callbacks are wrapped and held by the WebRequest,
-    // whose progress callback runs off the main thread (see the queueInMainThread
-    // in UpdateChecker::downloadRelease). A strong Ref could run cocos2d's
-    // non-atomic release() off the main thread when the request tears down. We
-    // lock() back on the main thread; a closed popup simply skips the update.
+    // WeakRef, not Ref: progress runs off the main thread, where cocos2d's
+    // non-atomic release() must never run.
     WeakRef<UpdateProgressPopup> self = this;
 
     UpdateChecker::get().downloadRelease(
@@ -162,9 +154,7 @@ void UpdateProgressPopup::startDownload() {
             if (auto p = self.lock()) p->onProgress(received, total);
         },
         [self](bool ok, std::string msg) {
-            // queueInMainThread por seguridad: el callback de dispatchOwned
-            // ya corre en main thread via async::spawn, pero re-encolamos por
-            // si llega una respuesta sincronica antes de terminar el init.
+            // A sync response may land before init finishes: re-enqueue it.
             Loader::get()->queueInMainThread([self, ok, msg]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 if (auto p = self.lock()) p->onDone(ok, msg);
@@ -202,7 +192,6 @@ void UpdateProgressPopup::onProgress(uint64_t received, uint64_t total) {
 
 void UpdateProgressPopup::onDone(bool ok, std::string const& msgOrPath) {
     m_finished = true;
-    m_succeeded = ok;
 
     if (ok) {
         if (m_statusLabel) {
@@ -249,6 +238,8 @@ void UpdateProgressPopup::onRestart(CCObject*) {
 }
 
 void UpdateProgressPopup::onClose(CCObject* sender) {
+    // ESC/back key lands here instead of onCancel: stop the download too.
+    if (!m_finished) UpdateChecker::get().cancelDownload();
     Popup::onClose(sender);
 }
 

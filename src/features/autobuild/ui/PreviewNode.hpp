@@ -19,7 +19,6 @@ public:
     void showRegion(LevelData const& data, Region const& region);
     void showTemplate(Template const& tpl);
     void showPiece(Piece const& piece);
-    void clear();
 
 private:
     struct Dot {

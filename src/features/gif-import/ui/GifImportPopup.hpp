@@ -20,9 +20,11 @@ struct SourceLoadState;
 class GifImportPopup : public geode::Popup {
 public:
     static GifImportPopup* create();
+    ~GifImportPopup();
 
 private:
     bool init() override;
+    void cancelSourceLoad();
 
     void pickSource();
     void loadSource(std::filesystem::path const& path);

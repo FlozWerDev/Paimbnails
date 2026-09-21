@@ -2,6 +2,7 @@
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
+#include <Geode/binding/LevelManagerDelegate.hpp>
 #include <fmod.hpp>
 
 class PaimonLoadingOverlay;
@@ -18,8 +19,6 @@ protected:
     void onEnterTransitionDidFinish() override;
     void onExitTransitionDidStart() override;
     void update(float dt) override;
-    
-    bool ccMouseScroll(float x, float y);
 
     void onBack(cocos2d::CCObject* sender);
     void onTab(cocos2d::CCObject* sender);
@@ -36,7 +35,6 @@ protected:
     void setupPageInfo(gd::string, char const*) override;
 
     PaimonLoadingOverlay* m_loadingSpinner = nullptr;
-    cocos2d::CCMenu* m_tabsMenu = nullptr;
     std::vector<CCMenuItemToggler*> m_tabs;
     std::string m_currentType = "daily";
 
@@ -67,7 +65,6 @@ protected:
 
     void applyCaveEffect();
     void removeCaveEffect();
-    void delaySilenceBg(float dt);
 
 public:
     ~LeaderboardHistoryLayer();

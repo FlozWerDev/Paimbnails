@@ -30,7 +30,6 @@ inline constexpr int kHandSize = 2;
 
 std::array<CardDef, kCardCount> const& allCards();
 CardDef const& cardAt(CardId id);
-CardDef const* findCard(std::string const& key);
 
 std::vector<CardDef const*> cardsOfRarity(Rarity rarity);
 

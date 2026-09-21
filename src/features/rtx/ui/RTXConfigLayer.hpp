@@ -5,9 +5,8 @@
 
 namespace paimon::rtx {
 
-// Cinco pestanas sobre PaiConfigKit. Los sliders escriben directamente en la
-// config viva (el renderer la lee cada fotograma, asi que se ve al momento) y el
-// volcado a disco va aparte para no escribir el JSON en cada arrastre.
+// Cinco pestanas sobre PaiConfigKit. Los sliders escriben en la config viva y
+// el volcado a disco va aparte para no escribir el JSON en cada arrastre.
 class RTXConfigLayer : public geode::Popup {
 public:
     static RTXConfigLayer* create();

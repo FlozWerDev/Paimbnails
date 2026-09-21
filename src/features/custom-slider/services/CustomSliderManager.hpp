@@ -25,7 +25,6 @@ enum class SliderAnimType : int {
 struct SliderTargets {
     bool optionsSliders   = true;
     bool editorSliders    = true;
-    bool colorSliders     = true;
     bool garageSliders    = false;
 };
 

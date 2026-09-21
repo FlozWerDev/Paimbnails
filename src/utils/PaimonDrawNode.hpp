@@ -20,9 +20,8 @@ using cocos2d::kCCVertexAttrib_TexCoords;
 using cocos2d::kCCVertexAttrib_Color;
 using cocos2d::kCCVertexAttribFlag_PosColorTex;
 
-/* Manual CCDrawNode path for mods that corrupt VBO state. Uses client arrays,
- * leaves GL_ARRAY_BUFFER unbound, validates the draw buffer, and recreates the
- * cached white texture after a context loss. */
+/* Client arrays: other mods corrupt VBO state, so GL_ARRAY_BUFFER stays unbound
+ * and the draw buffer is revalidated each draw. */
 class PaimonDrawNode : public CCDrawNode {
 public:
 // Retained 1×1 white texture; reset it after GL context reloads.

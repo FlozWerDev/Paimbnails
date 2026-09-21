@@ -2,11 +2,12 @@
 #include <Geode/Geode.hpp>
 #include "../services/CustomSliderManager.hpp"
 
+#include <vector>
+
 namespace paimon::slider {
 
-// Popup de configuracion del slider personalizado, montado sobre PaiConfigKit.
-// Una sola lista de tarjetas; las opciones que dependen del modo (Icono vs
-// Imagen/GIF) aparecen o desaparecen reconstruyendo el contenido.
+// Popup de configuracion del slider, sobre PaiConfigKit. Las opciones que
+// dependen del modo (Icono vs Imagen/GIF) reconstruyen el contenido.
 class CustomSliderPopup : public geode::Popup {
 public:
     static CustomSliderPopup* create();
@@ -25,6 +26,9 @@ protected:
 
     // Reconstruye el contenido scrolleable (cambios de modo/marco).
     void rebuild();
+    // Una tarjeta por tab: solo se construye la visible.
+    std::vector<cocos2d::CCNode*> buildBasicCards(float scrollW, float innerW);
+    std::vector<cocos2d::CCNode*> buildAdvancedCards(float scrollW, float innerW);
     // Igual que rebuild() pero diferido al siguiente tick, para no mutar la
     // escena dentro del touch dispatcher.
     void scheduleRebuild();

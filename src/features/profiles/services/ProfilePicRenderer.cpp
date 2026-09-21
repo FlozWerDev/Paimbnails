@@ -7,7 +7,6 @@
 #include "../../../utils/ImageLoadHelper.hpp"
 #include <Geode/binding/SimplePlayer.hpp>
 #include <Geode/binding/GameManager.hpp>
-#include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <filesystem>
 

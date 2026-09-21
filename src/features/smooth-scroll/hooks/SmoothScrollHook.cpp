@@ -3,9 +3,8 @@
 
 using namespace geode::prelude;
 
-// Mouse-wheel smooth scroll only makes sense on desktop. On iOS the
-// CCMouseDispatcher::dispatchScrollMSG binding is inlined (not hookable) and
-// mobile has no mouse wheel, so the whole hook is desktop-only.
+// Desktop-only: on iOS dispatchScrollMSG is inlined (not hookable) and there
+// is no mouse wheel.
 #if defined(GEODE_IS_DESKTOP)
 
 #include <Geode/modify/CCMouseDispatcher.hpp>
@@ -93,11 +92,8 @@ class $modify(PaimonSmoothScrollDispatcher, CCMouseDispatcher) {
     }
 };
 
-// EditorUI::scrollWheel treats every call as a complete +/-0.1 zoom step and
-// ignores the delta magnitude. Smooth replay calls it once per frame, so a
-// single notch used to become dozens of full steps. Keep the native wheel path
-// (timestamp, focus point and UI updates), but replace the fixed updateZoom
-// request with this frame's normalized fraction of one physical wheel step.
+// scrollWheel ignores delta magnitude, so replay feeds it this frame's
+// normalized fraction of one step instead of a full zoom per call.
 class $modify(PaimonFilteredEditorZoom, EditorUI) {
     static void onModify(auto& self) {
         // Normalize the requested zoom before later hooks observe it.
@@ -136,12 +132,8 @@ class $modify(PaimonFilteredEditorZoom, EditorUI) {
 #include <Geode/modify/CCEGLView.hpp>
 #include <Geode/cocos/CCDirector.h>
 
-// NOTA: el nombre de la clase $modify DEBE ser unico en todo el binario. Antes
-// se llamaba "CaptureView", colisionando con el $modify(CaptureView, CCEGLView)
-// de src/hooks/CCEGLView.cpp (ODR violation): el enlazador se quedaba con una
-// sola definicion y descartaba la otra, dejando sin aplicar el hook de
-// swapBuffers (ejecutor de capturas). Renombrado a SmoothScrollEGLView para que
-// ambos $modify coexistan (Geode los combina por nombre unico).
+// $modify exige nombre unico en el binario: "CaptureView" colisionaba con
+// src/hooks/CCEGLView.cpp (ODR) y dejaba sin aplicar el hook de capturas.
 class $modify(SmoothScrollEGLView, CCEGLView) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre(
@@ -157,12 +149,11 @@ class $modify(SmoothScrollEGLView, CCEGLView) {
             return;
         }
 
-        constexpr double kWinWheelScale = 5.0;
         if (auto* director = CCDirector::get()) {
             if (auto* mouse = director->getMouseDispatcher()) {
                 mouse->dispatchScrollMSG(
-                    static_cast<float>(-y * kWinWheelScale),
-                    static_cast<float>(x * kWinWheelScale)
+                    static_cast<float>(-y * paimon::smoothscroll::kInputUnitsPerStep),
+                    static_cast<float>(x * paimon::smoothscroll::kInputUnitsPerStep)
                 );
                 return;
             }

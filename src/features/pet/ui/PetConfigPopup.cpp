@@ -362,7 +362,6 @@ void PetConfigPopup::buildGalleryTab() {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-// Remove corrupt gallery files automatically.
     int cleaned = PetManager::get().cleanupInvalidImages();
     if (cleaned > 0) {
         log::info("[PetConfig] Cleaned up {} invalid image files from gallery", cleaned);
@@ -647,7 +646,7 @@ void PetConfigPopup::buildSettingsTab() {
                 )->show();
             }
         },
-        &m_enableToggle, &m_enableStateLabel);
+        nullptr, nullptr);
 
     auto* lookCard = kit::makeCard(scrollW, "Apariencia", {120, 210, 255}, {
         kit::makeSliderRow(innerW,

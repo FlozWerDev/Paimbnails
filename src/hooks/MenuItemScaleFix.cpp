@@ -9,9 +9,8 @@
 
 using namespace geode::prelude;
 
-// Preserves buttons' original scale. Can't migrate to MenuItemActivatedEvent
-// (Geode 5.6.0): that event is observational only, but this hook modifies
-// behavior (captures/restores scale and avoids an activate() crash).
+// Preserves buttons' original scale. Stays a hook (not MenuItemActivatedEvent):
+// that event is observational only, this modifies behavior.
 class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
     static void onModify(auto& self) {
         // VeryLate so we don't clobber other mods.

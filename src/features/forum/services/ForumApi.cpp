@@ -58,16 +58,6 @@ static int extractHttpStatus(std::string const& resp) {
     return 0;
 }
 
-static std::string extractErrorMessage(std::string const& resp) {
-    size_t pos = resp.find(':');
-    if (pos != std::string::npos && resp.rfind("HTTP ", 0) == 0) {
-        std::string msg = resp.substr(pos + 1);
-        while (!msg.empty() && (msg.front() == ' ' || msg.front() == '\t')) msg.erase(0, 1);
-        return msg;
-    }
-    return resp;
-}
-
 matjson::Value Author::toJson() const {
     return matjson::makeObject({
         {"accountID", accountID},
@@ -504,7 +494,7 @@ void ForumApi::reportPost(std::string const& postId, std::string const& reason, 
 
 void ForumApi::createReply(CreateReplyRequest const& req, ReplyCallback cb) {
     Reply r;
-    r.id            = "local-" + std::to_string(nowEpoch()) + "-" + std::to_string(rand());
+    r.id            = makeLocalId();
     r.postId        = req.postId;
     r.parentReplyId = req.parentReplyId;
     r.author        = Author::currentUser();
@@ -657,28 +647,12 @@ std::string formatAbsoluteTime(int64_t epoch) {
     return oss.str();
 }
 
-matjson::Value UserStatus::toJson() const {
-    return matjson::makeObject({
-        {"accountID", accountID},
-        {"online", online},
-        {"lastSeen", static_cast<double>(lastSeen)},
-    });
-}
-
 UserStatus UserStatus::fromJson(matjson::Value const& v) {
     UserStatus s;
     s.accountID = static_cast<int>(jsonInt(v["accountID"]));
     s.online    = jsonBool(v["online"]);
     s.lastSeen  = jsonInt(v["lastSeen"]);
     return s;
-}
-
-matjson::Value ProfileView::toJson() const {
-    return matjson::makeObject({
-        {"viewerAccountID", viewerAccountID},
-        {"viewerUsername", viewerUsername},
-        {"viewedAt", static_cast<double>(viewedAt)},
-    });
 }
 
 ProfileView ProfileView::fromJson(matjson::Value const& v) {

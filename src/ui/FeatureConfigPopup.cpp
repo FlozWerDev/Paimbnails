@@ -19,7 +19,6 @@
 #include "../utils/PaimonNotification.hpp"
 
 #include <Geode/Geode.hpp>
-#include <Geode/loader/SettingV3.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 
 #include <functional>
@@ -458,7 +457,6 @@ void buildPopupExitGroup(CCNode* c, float w) {
 
 void buildPopupBlurGroup(CCNode* c, float w) {
     c->addChild(createSectionHeader("Desenfoque de Fondo", w));
-    ssaved<std::string>("popup-blur-style", "paiblur");
 
     c->addChild(createToggleRow("Popup Blur",
         gset<bool>("popup-blur-enabled"),
@@ -526,101 +524,7 @@ void buildScoreCellGroup(CCNode* c, float w) {
         "Aplica a las celdas de leaderboards y scores en el juego.", w));
 }
 
-void setGlobalTransitionDuration(float duration) {
-    auto& tm = TransitionManager::get();
-    tm.loadConfig();
-    auto cfg = tm.getGlobalConfig();
-    cfg.duration = std::clamp(duration, 0.05f, 3.0f);
-    tm.setGlobalConfig(cfg);
-    tm.saveConfig();
-}
 
-void applySmoothUIPreset(std::string const& preset) {
-    ssaved<std::string>("smooth-ui-preset", preset);
-
-    auto setBase = [](bool enabled, float globalSpeed, float strength) {
-        sset<bool>("smooth-ui-enabled", enabled);
-        ssaved<double>("smooth-ui-global-speed", globalSpeed);
-        ssaved<double>("smooth-ui-motion-strength", strength);
-        ssaved<bool>("smooth-ui-animate-buttons", enabled);
-        ssaved<std::string>("smooth-ui-button-scope", enabled ? "all" : "off");
-        ssaved<bool>("smooth-ui-reduced-motion", !enabled);
-    };
-
-    if (preset == "off") {
-        setBase(false, 1.0f, 0.0f);
-        sset<bool>("dynamic-popup-enabled", false);
-        sset<bool>("dynamic-exit-enabled", false);
-        sset<bool>("smooth-scroll", false);
-        ssaved<bool>("popup-blur-show-placeholder", true);
-        TransitionManager::get().setEnabled(false);
-        TransitionManager::get().saveConfig();
-        return;
-    }
-
-    sset<bool>("dynamic-popup-enabled", true);
-    sset<bool>("dynamic-exit-enabled", true);
-    sset<bool>("smooth-scroll", true);
-    ssaved<bool>("popup-blur-show-placeholder", true);
-
-    if (preset == "subtle") {
-        setBase(true, 1.25f, 0.65f);
-        ssaved<std::string>("dynamic-popup-style", "zoom-fade");
-        ssaved<double>("dynamic-popup-speed", 1.35);
-        ssaved<double>("dynamic-exit-speed", 1.45);
-        ssaved<double>("popup-blur-fade-duration", 0.12);
-        ssaved<double>("smooth-scroll-smoothness", 0.75);
-        ssaved<double>("smooth-scroll-sensitivity", 1.55);
-        ssaved<double>("smooth-ui-button-press-scale", 0.97);
-        ssaved<bool>("smooth-ui-button-release-bounce", false);
-        setGlobalTransitionDuration(0.25f);
-    } else if (preset == "silky") {
-        setBase(true, 0.88f, 1.15f);
-        ssaved<std::string>("dynamic-popup-style", "paimonUI");
-        ssaved<double>("dynamic-popup-speed", 0.88);
-        ssaved<double>("dynamic-exit-speed", 0.95);
-        ssaved<double>("popup-blur-fade-duration", 0.24);
-        ssaved<double>("smooth-scroll-smoothness", 1.85);
-        ssaved<double>("smooth-scroll-sensitivity", 2.0);
-        ssaved<double>("smooth-ui-button-press-scale", 0.93);
-        ssaved<bool>("smooth-ui-button-release-bounce", true);
-        setGlobalTransitionDuration(0.48f);
-    } else if (preset == "bouncy") {
-        setBase(true, 0.95f, 1.25f);
-        ssaved<std::string>("dynamic-popup-style", "jelly");
-        ssaved<double>("dynamic-popup-speed", 0.90);
-        ssaved<double>("dynamic-exit-speed", 1.05);
-        ssaved<double>("popup-blur-fade-duration", 0.18);
-        ssaved<double>("smooth-scroll-smoothness", 1.35);
-        ssaved<double>("smooth-scroll-sensitivity", 2.15);
-        ssaved<double>("smooth-ui-button-press-scale", 0.90);
-        ssaved<bool>("smooth-ui-button-release-bounce", true);
-        setGlobalTransitionDuration(0.40f);
-    } else if (preset == "cinematic") {
-        setBase(true, 0.72f, 1.35f);
-        ssaved<std::string>("dynamic-popup-style", "elastic-drop");
-        ssaved<double>("dynamic-popup-speed", 0.78);
-        ssaved<double>("dynamic-exit-speed", 0.85);
-        ssaved<double>("popup-blur-fade-duration", 0.32);
-        ssaved<double>("smooth-scroll-smoothness", 2.2);
-        ssaved<double>("smooth-scroll-sensitivity", 1.8);
-        ssaved<double>("smooth-ui-button-press-scale", 0.92);
-        ssaved<bool>("smooth-ui-button-release-bounce", true);
-        TransitionManager::get().setEnabled(true);
-        setGlobalTransitionDuration(0.65f);
-    } else {
-        setBase(true, 1.0f, 1.0f);
-        ssaved<std::string>("dynamic-popup-style", "paimonUI");
-        ssaved<double>("dynamic-popup-speed", 1.0);
-        ssaved<double>("dynamic-exit-speed", 1.0);
-        ssaved<double>("popup-blur-fade-duration", 0.18);
-        ssaved<double>("smooth-scroll-smoothness", 1.0);
-        ssaved<double>("smooth-scroll-sensitivity", 2.0);
-        ssaved<double>("smooth-ui-button-press-scale", 0.94);
-        ssaved<bool>("smooth-ui-button-release-bounce", true);
-        setGlobalTransitionDuration(0.35f);
-    }
-}
 
 void buildSmoothUIGroup(CCNode* c, float w) {
     TransitionManager::get().loadConfig();
@@ -635,7 +539,7 @@ void buildSmoothUIGroup(CCNode* c, float w) {
     c->addChild(createDropdownRow("Preset",
         gsaved<std::string>("smooth-ui-preset", "balanced"),
         {"balanced", "subtle", "silky", "bouncy", "cinematic", "off"},
-        [](std::string const& v) { applySmoothUIPreset(v); },
+        [](std::string const& v) { paimon::ui::applySmoothUIPreset(v); },
         w));
 
     c->addChild(createHintRow(
@@ -776,7 +680,7 @@ void buildSmoothUIGroup(CCNode* c, float w) {
     c->addChild(createSliderRow("Transition Duration",
         TransitionManager::get().getGlobalConfig().duration,
         0.05f, 1.5f,
-        [](float v) { setGlobalTransitionDuration(v); },
+        [](float v) { paimon::ui::setGlobalTransitionDuration(v); },
         w));
 
     c->addChild(createLinkRow("Advanced Transition Editor",
@@ -1000,7 +904,6 @@ bool FeatureConfigPopup::init(std::string const& featureKey) {
         m_mainLayer->addChild(subtitleLbl);
     }
 
-// ScrollLayer fills the space below title and subtitle.
     float topOffset = group.subtitle.empty() ? 28.f : 44.f;
     float scrollW = winSize.width - 30.f;
     float scrollH = winSize.height - topOffset - 16.f;
@@ -1014,7 +917,6 @@ bool FeatureConfigPopup::init(std::string const& featureKey) {
 
     auto* contentLayer = m_scroll->m_contentLayer;
 
-// Move rows from the builder into contentLayer with computed top-down positions.
     auto* tmp = CCNode::create();
     tmp->setContentSize({scrollW, scrollH});
     group.build(tmp, scrollW);

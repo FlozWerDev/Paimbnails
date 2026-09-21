@@ -300,7 +300,6 @@ void AddModeratorPopup::onAdd(CCObject*) {
     WeakRef<AddModeratorPopup> self = this;
     std::string role = m_activeRole;
 
-    // 1) Resolve the user on the GD servers to bind a real accountID.
     paimon::moderation::resolveUsername(username,
         [self, role, username](bool ok, int accountID, std::string const& exactName) {
             auto popup = self.lock();
@@ -312,7 +311,6 @@ void AddModeratorPopup::onAdd(CCObject*) {
                 return;
             }
 
-            // 2) Upload the resolved user to the Paimbnails server.
             std::string targetName = exactName.empty() ? username : exactName;
             HttpClient::get().addRoleMember(role, targetName, accountID,
                 [self, role, targetName](bool success, std::string const& message) {

@@ -1,11 +1,7 @@
 #pragma once
 
-// Everything the duel needs from Globed, behind one façade.
-//
-// Globed is an optional dependency and its soft-link API is the only one with
-// an ABI guarantee, so nothing here links against the mod: if the headers are
-// missing at build time or the mod is missing at runtime, every call turns into
-// a no-op and the duel falls back to server-relayed progress.
+// Globed is optional and only the soft-link API is used, so without the headers
+// or the mod every call is a no-op and progress falls back to the server.
 
 #include <cstdint>
 #include <string>
@@ -38,10 +34,7 @@ void grantShield();
 bool shieldActive();
 void clearShield();
 
-void killSelf(bool fake);
 void respawn(bool fullReset);
-void cancelRespawn();
-void taunt(uint32_t emoteId);
 
 // Room state, read only: the soft-link API cannot create or join one.
 bool inRoom();

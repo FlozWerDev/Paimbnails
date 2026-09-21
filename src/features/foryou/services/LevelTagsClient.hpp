@@ -30,7 +30,6 @@ struct TagInfo {
     std::string name;
     TagCategory category = TagCategory::Unknown;
     cocos2d::ccColor3B color{255, 255, 255};
-    std::string description;
 };
 
 using LevelTagMap = std::unordered_map<int, std::vector<std::string>>;
@@ -47,15 +46,12 @@ public:
     // Fetch once per session; cached calls invoke the callback immediately.
     void loadCatalog(std::function<void(bool ok)> callback = nullptr);
     bool hasCatalog() const;
-    std::vector<TagInfo> catalog() const;
     std::vector<TagInfo> catalogFor(TagCategory category) const;
     TagCategory categoryOf(std::string const& tag) const;
     std::optional<TagInfo> infoFor(std::string const& tag) const;
 
     // Batch uncached IDs; cached tags are answered from memory.
     void fetchTags(std::vector<int> const& levelIDs, std::function<void(LevelTagMap)> callback);
-    std::vector<std::string> cachedTags(int levelID) const;
-    bool isResolved(int levelID) const;
 
     // Find IDs with every include tag and none of the excludes.
     void searchByTags(std::vector<std::string> const& include,

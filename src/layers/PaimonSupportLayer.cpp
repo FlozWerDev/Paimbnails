@@ -102,7 +102,7 @@ PaimonSupportLayer* PaimonSupportLayer::create() {
 
 CCScene* PaimonSupportLayer::scene() {
     auto scene = CCScene::create();
-    scene->addChild(PaimonSupportLayer::create());
+    if (auto* layer = PaimonSupportLayer::create()) scene->addChild(layer);
     return scene;
 }
 

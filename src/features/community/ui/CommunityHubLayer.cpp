@@ -60,9 +60,7 @@ namespace {
         return geode::utils::string::toLower(value);
     }
 
-    // Lowercase usernames whose GD profile has already been applied. Lives for
-    // the process, same as the score cache below, because both hold the very
-    // same GJUserScore objects.
+    // Shares the score cache lifetime: both hold the same GJUserScore objects.
     std::unordered_set<std::string>& iconReadyNames() {
         static auto* names = new std::unordered_set<std::string>();
         return *names;
@@ -465,29 +463,6 @@ void CommunityHubLayer::removeCaveEffect() {
     m_caveApplied = false;
 }
 
-bool CommunityHubLayer::ccMouseScroll(float x, float y) {
-#if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_MACOS)
-    return false;
-#else
-    if (!m_scrollView) return false;
-
-    CCPoint mousePos = geode::cocos::getMousePos();
-
-    CCRect scrollRect = m_scrollView->boundingBox();
-    scrollRect.origin = m_scrollView->getParent()->convertToWorldSpace(scrollRect.origin);
-
-    if (!scrollRect.containsPoint(mousePos)) return false;
-
-    float newY = m_scrollView->m_contentLayer->getPositionY() + y * 30.f;
-    float minY = m_scrollView->getContentSize().height - m_scrollView->m_contentLayer->getContentSize().height;
-    float maxY = 0.f;
-    if (minY > maxY) minY = maxY;
-
-    m_scrollView->m_contentLayer->setPositionY(std::max(minY, std::min(maxY, newY)));
-    return true;
-#endif
-}
-
 void CommunityHubLayer::onBack(CCObject*) {
     m_isExiting = true;
     ++m_retryTag;
@@ -661,9 +636,7 @@ void CommunityHubLayer::showEmptyState() {
 }
 
 void CommunityHubLayer::loadTab(Tab tab) {
-    // ++m_retryTag invalidates in-flight callbacks, but scheduleOnce keeps
-    // running until unscheduled: without this a stale timer fires a duplicate
-    // request for the tab the user just came back to.
+    // Unschedule first: a stale retry timer would refire for the previous tab.
     this->unschedule(schedule_selector(CommunityHubLayer::onRetryTimer));
     ++m_retryTag;
 

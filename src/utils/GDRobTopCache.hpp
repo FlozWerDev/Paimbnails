@@ -1,8 +1,6 @@
 #pragma once
-// GDRobTopCache — persistent on-disk cache for RobTop server responses.
-// Reduces rate limits by caching read responses (profiles, level/user/list
-// searches, comments, etc.) for 7 days. Live polling requests (messages,
-// friend requests) aren't cached.
+// On-disk cache of RobTop reads (7-day TTL) to avoid rate limits.
+// Live polling (messages, friend requests) isn't cached.
 
 #include <Geode/Geode.hpp>
 #include <functional>

@@ -58,9 +58,7 @@ ButtonSprite* makeHoldCtrlButtonSprite(bool enabled) {
 CaptureMenuPopup* CaptureMenuPopup::s_instance = nullptr;
 
 void CaptureMenuPopup::toggle() {
-    // Safe: si hay abierto un popup que salio de este mismo menu (Atajos,
-    // config de Smooth Scroll), el click derecho no debe cerrar ni reabrir
-    // el menu de captura por debajo. Otros popups del juego no bloquean.
+    // Solo los popups hijo de este menu bloquean el toggle con click derecho.
     if (auto* scene = CCDirector::get()->getRunningScene()) {
         for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
             auto* alert = typeinfo_cast<FLAlertLayer*>(child);

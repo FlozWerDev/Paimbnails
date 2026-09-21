@@ -54,8 +54,6 @@ public:
     // Drops the .gmd of a slot that no longer needs it. Safe when absent.
     void discardGmd(std::string const& fileName);
 
-    void reload();
-
 private:
     SlotStore() = default;
 

@@ -56,9 +56,7 @@ SearchRequestCoordinator::Token SearchRequestCoordinator::request(
         return 0;
     }
 
-    // 1. Our own cache. Copy the entry out before invoking the callback: the
-    //    callback may issue another request, which can rehash m_cache and leave
-    //    a reference into it dangling.
+    // Copy the entry out first: the callback may re-enter and rehash m_cache, dangling a reference into it.
     if (auto const* entry = lookup(kind, key)) {
         auto items = entry->items;
         auto pageInfo = entry->pageInfo;

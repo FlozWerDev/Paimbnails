@@ -17,9 +17,8 @@ struct FilteredScrollFrame {
     ScrollVector actions;
 };
 
-// Keeps the list-friendly momentum and the discrete-action intent separate.
-// A physical wheel step may be spread over many frames, but its action output
-// always adds back up to one step instead of becoming one action per frame.
+// List momentum and discrete-action intent stay separate: one wheel step
+// always adds back up to one action, however many frames it spans.
 class ScrollInputFilter {
 public:
     static constexpr double kMaxRawInput = 60.0;

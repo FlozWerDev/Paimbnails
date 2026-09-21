@@ -33,7 +33,6 @@ protected:
     void keyBackClicked() override;
     void onEnterTransitionDidFinish() override;
     void update(float dt) override;
-    bool ccMouseScroll(float x, float y);
 
     void onBack(cocos2d::CCObject* sender);
     void onTab(cocos2d::CCObject* sender);

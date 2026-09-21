@@ -25,6 +25,8 @@ constexpr float kPopupW = 380.f;
 constexpr float kPopupH = 250.f;
 // stb writes the whole sheet in one image; keep it within common GPU limits.
 constexpr long long kMaxSheetSide = 16384;
+// 4096x4096 RGBA = 64 MiB; the side cap alone still allows a 1 GiB sheet.
+constexpr long long kMaxSheetPixels = 4096LL * 4096;
 
 std::string sheetJson(GIFDecoder::GIFData const& gif, int cols, int rows) {
     std::string delays;
@@ -68,23 +70,25 @@ bool GifToSheetPopup::init() {
     desc->setScale(0.26f);
     desc->setColor({200, 205, 225});
     desc->setPosition({kPopupW / 2.f, kPopupH - 38.f});
+    desc->setID("description-label"_spr);
     m_mainLayer->addChild(desc);
 
-    // Preview of the first frame on the left.
-    m_previewBox = paimon::SpriteHelper::createDarkPanel(100.f, 100.f, 220, 5.f);
-    m_previewBox->setPosition({24.f, 88.f});
-    m_mainLayer->addChild(m_previewBox);
+    auto* previewBox = paimon::SpriteHelper::createDarkPanel(100.f, 100.f, 220, 5.f);
+    previewBox->setPosition({24.f, 88.f});
+    m_mainLayer->addChild(previewBox);
 
     m_previewHint = CCLabelBMFont::create("Sin GIF", "bigFont.fnt");
     m_previewHint->setScale(0.32f);
     m_previewHint->setColor({120, 130, 155});
     m_previewHint->setPosition({74.f, 138.f});
+    m_previewHint->setID("preview-hint"_spr);
     m_mainLayer->addChild(m_previewHint, 2);
 
     m_fileLabel = CCLabelBMFont::create("Ningun archivo seleccionado", "goldFont.fnt");
     m_fileLabel->setAnchorPoint({0.f, 0.5f});
     m_fileLabel->setScale(0.42f);
     m_fileLabel->setPosition({140.f, 176.f});
+    m_fileLabel->setID("file-label"_spr);
     m_mainLayer->addChild(m_fileLabel);
 
     m_infoLabel = CCLabelBMFont::create("", "bigFont.fnt");
@@ -92,12 +96,14 @@ bool GifToSheetPopup::init() {
     m_infoLabel->setScale(0.3f);
     m_infoLabel->setColor({170, 220, 255});
     m_infoLabel->setPosition({140.f, 160.f});
+    m_infoLabel->setID("info-label"_spr);
     m_mainLayer->addChild(m_infoLabel);
 
     auto colsLabel = CCLabelBMFont::create("Columnas:", "bigFont.fnt");
     colsLabel->setAnchorPoint({0.f, 0.5f});
     colsLabel->setScale(0.32f);
     colsLabel->setPosition({140.f, 104.f});
+    colsLabel->setID("cols-label"_spr);
     m_mainLayer->addChild(colsLabel);
 
     m_colsInput = TextInput::create(64.f, "auto");
@@ -108,9 +114,11 @@ bool GifToSheetPopup::init() {
     m_colsInput->setCallback([self](std::string const&) {
         if (auto* popup = self.lock().data()) popup->refreshInfo();
     });
+    m_colsInput->setID("cols-input"_spr);
     m_mainLayer->addChild(m_colsInput);
 
     auto* menu = CCMenu::create();
+    menu->setID("actions-menu"_spr);
     menu->setPosition({0.f, 0.f});
     m_mainLayer->addChild(menu, 3);
 
@@ -120,6 +128,7 @@ bool GifToSheetPopup::init() {
             if (auto* popup = self.lock().data()) popup->onPickGif();
         }
     );
+    pickBtn->setID("pick-button"_spr);
     pickBtn->setPosition({kPopupW / 2.f - 78.f, 44.f});
     menu->addChild(pickBtn);
 
@@ -129,6 +138,7 @@ bool GifToSheetPopup::init() {
             if (auto* popup = self.lock().data()) popup->onExport();
         }
     );
+    exportBtn->setID("export-button"_spr);
     exportBtn->setPosition({kPopupW / 2.f + 78.f, 44.f});
     menu->addChild(exportBtn);
 
@@ -137,6 +147,7 @@ bool GifToSheetPopup::init() {
     hint->setScale(0.22f);
     hint->setColor({140, 150, 175});
     hint->setPosition({kPopupW / 2.f, 16.f});
+    hint->setID("hint-label"_spr);
     m_mainLayer->addChild(hint);
 
     refreshInfo();
@@ -265,8 +276,9 @@ void GifToSheetPopup::onExport() {
     }
     int cols = currentCols();
     int rows = (static_cast<int>(m_gif->frames.size()) + cols - 1) / cols;
-    if (static_cast<long long>(cols) * m_gif->width > kMaxSheetSide ||
-        static_cast<long long>(rows) * m_gif->height > kMaxSheetSide) {
+    long long sheetW = static_cast<long long>(cols) * m_gif->width;
+    long long sheetH = static_cast<long long>(rows) * m_gif->height;
+    if (sheetW > kMaxSheetSide || sheetH > kMaxSheetSide || sheetW * sheetH > kMaxSheetPixels) {
         PaimonNotify::create(
             "El sheet resultante es demasiado grande. Ajusta las columnas.",
             NotificationIcon::Warning
@@ -309,7 +321,17 @@ void GifToSheetPopup::exportTo(std::filesystem::path pngPath) {
         size_t sheetH = static_cast<size_t>(rows) * h;
 
         // Frames from GIFDecoder are already composited to the full canvas.
-        std::vector<uint8_t> sheet(sheetW * sheetH * 4, 0);
+        // bad_alloc on this detached thread would terminate, so fail loudly.
+        std::vector<uint8_t> sheet;
+        try {
+            sheet.assign(sheetW * sheetH * 4, 0);
+        } catch (std::bad_alloc const&) {
+            Loader::get()->queueInMainThread([self] {
+                if (auto* popup = self.lock().data()) popup->hideBusy();
+                PaimonNotify::create("El sheet no cabe en memoria.", NotificationIcon::Error)->show();
+            });
+            return;
+        }
         size_t frameRowBytes = static_cast<size_t>(w) * 4;
         for (int i = 0; i < count; ++i) {
             auto const& frame = gif->frames[static_cast<size_t>(i)];

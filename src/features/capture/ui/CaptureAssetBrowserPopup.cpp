@@ -16,14 +16,10 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/PlayLayer.hpp>
 #include <Geode/binding/GameObject.hpp>
-#include <Geode/binding/GJBaseGameLayer.hpp>
-#include <Geode/binding/FLAlertLayer.hpp>
-#include "../services/FramebufferCapture.hpp"
 #include <algorithm>
 #include <cctype>
 #include <unordered_map>
 #include <unordered_set>
-#include <cstring>
 #include <fmt/format.h>
 #include "../../../core/RuntimeLifecycle.hpp"
 
@@ -34,9 +30,7 @@ using paimon::capture::ui::ClippedMenu;
 
 // Intentionally leaked to avoid destruction-order crashes at DLL unload.
 static auto& s_originalAssetVisibilities = *new std::vector<paimon::capture::VisibilityRecord>();
-// Object IDs already snapshotted this capture session. Snapshots are taken the
-// first time a type is edited: a big level has tens of thousands of objects and
-// recording every one up front just to open the browser is not worth it.
+// Snapshot perezoso por tipo: no recorre miles de objetos al abrir el browser.
 static auto& s_snapshottedIDs = *new std::unordered_set<int>();
 
 namespace {
@@ -902,7 +896,7 @@ void CaptureAssetBrowserPopup::onDoneBtn(CCObject*) {
     auto previewRef = m_previewPopup.lock();
     this->onClose(nullptr);
 
-    if (previewRef) previewRef->liveRecapture(true);
+    if (previewRef) previewRef->liveRecapture();
 }
 
 void CaptureAssetBrowserPopup::onRestoreAllBtn(CCObject*) {

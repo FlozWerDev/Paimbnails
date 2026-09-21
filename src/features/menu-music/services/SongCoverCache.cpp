@@ -198,9 +198,7 @@ public:
     }
 
     bool init() override {
-        if (!CCNode::init()) return false;
-        this->retain();
-        return true;
+        return CCNode::init();
     }
 
     ~SongCoverSearchNode() override {
@@ -213,12 +211,22 @@ public:
         m_pendingKey = key;
     }
 
+    // Takes the global LevelManager delegate slot, remembering whoever owned
+    // it so clearDelegate() hands the slot back instead of dropping theirs.
+    void stealDelegate() {
+        if (auto manager = GameLevelManager::get()) {
+            if (manager->m_levelManagerDelegate != this)
+                m_previous = manager->m_levelManagerDelegate;
+            manager->m_levelManagerDelegate = this;
+        }
+    }
+
     void clearDelegate() {
         if (auto manager = GameLevelManager::get()) {
-            if (manager->m_levelManagerDelegate == this) {
-                manager->m_levelManagerDelegate = nullptr;
-            }
+            if (manager->m_levelManagerDelegate == this)
+                manager->m_levelManagerDelegate = m_previous;
         }
+        m_previous = nullptr;
     }
 
     bool isActiveDelegate() const {
@@ -276,6 +284,7 @@ private:
     int m_songID = 0;
     bool m_customSong = true;
     std::string m_pendingKey;
+    LevelManagerDelegate* m_previous = nullptr;
 };
 
 struct ThumbnailBatchState {
@@ -452,7 +461,7 @@ void SongCoverCache::scheduleDebouncedFlush(float delaySec) {
 }
 
 void SongCoverCache::abortActiveWork() {
-    if (auto* node = static_cast<SongCoverSearchNode*>(m_searchNode)) {
+    if (auto* node = static_cast<SongCoverSearchNode*>(m_searchNode.data())) {
         node->clearDelegate();
     }
     m_searchInFlight = false;
@@ -599,7 +608,7 @@ void SongCoverCache::cancelPending(int songID) {
 
 void SongCoverCache::cancelAllPending() {
     cancelDebounce();
-    if (auto* node = static_cast<SongCoverSearchNode*>(m_searchNode)) {
+    if (auto* node = static_cast<SongCoverSearchNode*>(m_searchNode.data())) {
         node->clearDelegate();
     }
     m_targetSongID = 0;
@@ -683,7 +692,7 @@ void SongCoverCache::pumpQueue() {
     }
 
     ensureSearchNode();
-    auto* searchNode = static_cast<SongCoverSearchNode*>(m_searchNode);
+    auto* searchNode = static_cast<SongCoverSearchNode*>(m_searchNode.data());
     if (!searchNode) {
         coverlog::warn("[SongCoverCache] pumpQueue: search node unavailable");
         auto failed = m_queue.front();
@@ -753,8 +762,7 @@ void SongCoverCache::pumpQueue() {
     m_searchInFlight = true;
     m_nextSearchAllowedAt = now + kMinSearchGapSec;
     searchNode->beginSearch(batch.songID, customSong, batch.searchKey);
-    searchNode->clearDelegate();
-    manager->m_levelManagerDelegate = searchNode;
+    searchNode->stealDelegate();
     manager->getOnlineLevels(searchObj);
 }
 

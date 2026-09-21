@@ -8,12 +8,8 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Tint the overlay's own pixels by their luminance, then composite over the
-// destination. `replace` implements PackGen's alternative glow overlaying.
-// PackGen draws overlays with drawImage(img, 0, 0) onto a base-sized canvas,
-// so a size mismatch still paints the top-left overlap instead of being
-// rejected; match that here (rejecting used to leave whole files untinted
-// when the server's base and overlay drifted apart by a few pixels).
+// Size mismatch still paints the top-left overlap (PackGen drawImage rule):
+// rejecting left whole files untinted when base and overlay drifted apart.
 void applyOne(ImageBuffer& dst, ImageBuffer const& overlay,
               cocos2d::ccColor3B color, float brightness,
               float saturation, float contrast, bool replace) {

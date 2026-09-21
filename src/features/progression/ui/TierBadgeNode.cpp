@@ -93,6 +93,7 @@ void TierBadgeNode::setProgress(float progress) {
 }
 
 void TierBadgeNode::rebuild() {
+    m_content->stopAllActions();
     m_content->removeAllChildren();
     m_ring = nullptr;
     m_ringFill = nullptr;

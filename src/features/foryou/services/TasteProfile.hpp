@@ -110,24 +110,19 @@ public:
     // +1 love, -1 avoid, 0 clear.
     void setPinnedTag(std::string const& tag, int vote);
     int pinnedTagVote(std::string const& tag) const;
-    std::vector<std::string> pinnedTags(int vote) const;
 
     void seedPreferences(int difficulty, float platformerRatio, int length,
                          bool starRated, bool featured, bool epic, int demonDifficulty);
-    bool isSeeded() const;
 
     TasteSnapshot snapshot() const;
     bool isWarm() const;
     bool isKnownLevel(int levelID) const;
-    bool isDismissed(int levelID) const;
-    int voteFor(int levelID) const;
     // Best positive level for similarity, or 0.
     int favouriteLevelIDForSimilarity() const;
     std::unordered_set<int> knownLevelIDs() const;
 
     void load();
     void save();
-    void reset();
 
 private:
     TasteProfile();
@@ -165,7 +160,6 @@ private:
     int m_seedDemonDifficulty = 0;
 
     bool m_dirty = false;
-    bool m_loaded = false;
 
     int m_activeSessionLevelID = 0;
     std::chrono::steady_clock::time_point m_sessionStart;

@@ -8,10 +8,7 @@
 
 namespace paimon::quickhub {
 
-// Editor de SFX por boton: fuente (original/juego/online/archivo) + ajuste
-// (volumen, velocidad, inicio/fin, fundidos) estilo SetupSFXEditPopup.
-// Edita *target en vivo y avisa con onChanged. El padre conserva la propiedad
-// del CustomQuickButton: este popup solo lo muta.
+// Editor vivo del SFX del boton; el padre conserva la propiedad del CustomQuickButton.
 class QuickButtonSfxPopup : public geode::Popup {
 public:
     static QuickButtonSfxPopup* create(

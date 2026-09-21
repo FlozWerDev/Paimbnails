@@ -1,12 +1,7 @@
 #pragma once
 
-// Central module registry.
-//
-// Every Paimbnails feature is a module with a canonical id shaped
-// paimbnails.<feature>.<section> plus a public display name. The id is stable
-// and shown in the UI; the storage key stays whatever the feature already used
-// (mod.json setting, saved value or a manager config) so nothing has to be
-// migrated.
+// Central module registry: stable canonical ids (paimbnails.<feature>.<section>)
+// over whatever storage each feature already used, so nothing is migrated.
 
 #include <functional>
 #include <string>
@@ -50,7 +45,6 @@ struct Module {
 std::vector<Module> const& all();
 
 Module const* find(std::string_view id);
-Module const* findByKey(std::string_view key);
 
 // Own toggle only, ignoring parents.
 bool isSelfEnabled(Module const& mod);
@@ -66,18 +60,14 @@ void setEnabled(std::string_view id, bool enabled);
 // Modules whose parent chain is satisfied can be toggled by the user.
 bool isAvailable(Module const& mod);
 
-std::vector<Module const*> inSection(Section section);
 std::vector<Module const*> search(std::string_view query);
 
-char const* sectionId(Section section);
 char const* sectionName(Section section);
 std::vector<Section> const& sections();
 
 // Backing::Custom modules bind their own storage (manager configs).
 void registerAccessor(std::string_view id, std::function<bool()> get,
                       std::function<void(bool)> set);
-
-std::string featureOf(Module const& mod);
 
 // Display name/description in the current language; English is used for the
 // "request" modules and when the mod is not running in Spanish.

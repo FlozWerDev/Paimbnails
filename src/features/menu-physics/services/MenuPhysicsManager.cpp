@@ -28,7 +28,7 @@ namespace {
         if (!n) return;
         static std::string const targetId = "paim-menu-physics-node"_spr;
         if (n->getID() == targetId) {
-            out.push_back(static_cast<MenuPhysicsNode*>(n));
+            if (auto* node = typeinfo_cast<MenuPhysicsNode*>(n)) out.push_back(node);
             return;
         }
         if (auto* children = n->getChildren()) {
@@ -64,6 +64,7 @@ void MenuPhysicsManager::onLayerEntered(CCNode* host) {
 }
 
 void MenuPhysicsManager::applyToCurrentScene() {
+    if (!enabled()) return;
     auto* scene = CCDirector::get()->getRunningScene();
     if (!scene) return;
 

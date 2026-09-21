@@ -12,6 +12,7 @@ public:
 
     static FontPickerPopup* create(geode::CopyableFunction<void(std::string const&)> onSelect);
     void positionBelow(cocos2d::CCNode* anchor, float gap = 4.f);
+    void closeAnimated();
 
 protected:
     geode::CopyableFunction<void(std::string const&)> m_onSelect;
@@ -25,9 +26,6 @@ protected:
     cocos2d::CCMenu* m_sideMenu = nullptr;
     CCMenuItemSpriteExtra* m_tabGD = nullptr;
     CCMenuItemSpriteExtra* m_tabCustom = nullptr;
-    CCMenuItemSpriteExtra* m_qpBig = nullptr;
-    CCMenuItemSpriteExtra* m_qpChat = nullptr;
-    CCMenuItemSpriteExtra* m_qpGold = nullptr;
     Tab m_activeTab = Tab::GDFonts;
 
     // Font grid (bottom-right)

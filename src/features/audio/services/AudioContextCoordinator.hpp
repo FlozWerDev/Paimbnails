@@ -41,8 +41,6 @@ public:
     void claimPreviewAudio(uint32_t sessionToken);
     void releaseProfileLikeAudio(uint32_t sessionToken);
     bool isCurrentProfileSession(uint32_t sessionToken) const;
-    bool isAudioOwnedByProfileSession(uint32_t sessionToken) const;
-    MainAudioOwner getMainAudioOwner() const { return m_mainAudioOwner; }
     bool isGameplayActive() const { return m_gameplayActive; }
     bool isProfileOpen() const { return m_profileOpen; }
 

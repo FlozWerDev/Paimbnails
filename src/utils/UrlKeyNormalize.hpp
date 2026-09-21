@@ -71,11 +71,7 @@ inline int blurIntensityBucket(float intensity) {
     return bucket;
 }
 
-// Pure predicate matching ThumbnailLoader::isLoaded / ThumbnailCache::getFromRam
-// presence semantics (without I/O or locks):
-//   - level-key RAM hit always counts
-//   - for static thumbs, a default-URL hit in the URL RAM layer also counts
-//   - GIF never falls back to the URL layer
+// RAM presence check without I/O or locks: only static thumbs fall back to the URL layer.
 inline bool isLevelTextureLoadedInRam(bool hasLevelRamKey, bool isGif, bool hasDefaultUrlInUrlRam) {
     if (hasLevelRamKey) return true;
     if (isGif) return false;

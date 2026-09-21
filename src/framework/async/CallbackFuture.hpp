@@ -35,4 +35,4 @@ arc::Future<T> awaitCallback(StartFn&& start) {
     co_return T{};
 }
 
-} // namespace paimon::async_api 8) 
+} // namespace paimon::async_api

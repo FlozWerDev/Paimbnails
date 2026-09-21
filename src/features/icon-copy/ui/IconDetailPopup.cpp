@@ -163,9 +163,7 @@ CCNode* makeFlatProgressBar(float width, int value, bool owned) {
     return bar;
 }
 
-// GD's own progress bar is one white capsule drawn twice: PlayLayer keeps a
-// dark m_progressBar for the groove and a tinted m_progressFill over it. Same
-// recipe, plus the black rim and the gloss that let it sit on a card.
+// Vanilla progress bar recipe (groove + tinted fill), plus rim and gloss so it sits on a card.
 CCNode* makeProgressBar(float width, int progress, bool owned) {
     int const value = std::clamp(progress, 0, 100);
 

@@ -59,7 +59,6 @@ protected:
     // Show the recording state with the vanilla button sprites.
     void updateRecordButtonAppearance();
 
-    std::string m_settingKey;
     std::string m_title;
     SaveCallback m_onSave;
     bool m_allowScroll = true;

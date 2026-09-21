@@ -1,8 +1,6 @@
 #include "../framework/FeatureRegistry.hpp"
 #include "../framework/PermissionPolicy.hpp"
 #include "../framework/HookInterceptor.hpp"
-#include "../framework/EventBus.hpp"
-#include "../framework/ModEvents.hpp"
 #include "../utils/AudioInterop.hpp"
 #include "../utils/ExtendedKeybind.hpp"
 #include <Geode/Geode.hpp>
@@ -83,12 +81,6 @@ static void registerDefaultHooks() {
         if (ctx.format == "mp4" && !validMP4) return HookResult::deny("Magic bytes invalidos para MP4");
 
         return HookResult::allow();
-    });
-
-    hooks.addPostHook("upload", [](HookContext const& ctx, bool success) {
-        EventBus::get().publish(UploadCompletedEvent{
-            ctx.levelID, ctx.format, ctx.username, success, {}
-        });
     });
 
     static std::atomic<int> s_uploadCount{0};

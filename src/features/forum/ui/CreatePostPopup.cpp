@@ -204,12 +204,17 @@ void CreatePostPopup::enterPressed(CCTextInputNode* node) {
     }
 
     if (m_newTagInput && node == m_newTagInput->getInputNode()) {
-        FLAlert_Click(nullptr, true);
+        FLAlert_Clicked(nullptr, true);
     }
 }
 
-void CreatePostPopup::FLAlert_Click(FLAlertLayer* alert, bool isAdd) {
-    if (!isAdd || !m_newTagInput) return;
+void CreatePostPopup::FLAlert_Clicked(FLAlertLayer* alert, bool isAdd) {
+    // alert frees m_newTagInput on dismiss, either button closes it
+    if (!isAdd) {
+        m_newTagInput = nullptr;
+        return;
+    }
+    if (!m_newTagInput) return;
     std::string val = m_newTagInput->getString();
     if (val.empty()) return;
     bool exists = std::find(m_availableTags.begin(), m_availableTags.end(), val) != m_availableTags.end();

@@ -10,15 +10,12 @@ namespace paimon::badges {
 // "paimon-moderator-badge" id so existing lookups keep working.
 std::string roleBadgeId(std::string const& roleId);
 
-// Build a badge node for a role. Prefers a packed sprite (paim_Vip.png, etc.)
-// when present, otherwise draws a clean colored pill so the feature works
-// without shipping new art.
+// Build a badge node for a role. Prefers a packed sprite when present,
+// otherwise draws a colored pill so it works without shipping new art.
 cocos2d::CCNode* createRoleBadgeNode(std::string const& roleId, float targetHeight);
 
-// Add a clickable badge for every active role to a username menu. Idempotent:
-// existing badges are left untouched, so calling it from both the cache-hit and
-// network paths never duplicates. admin/mod are mutually exclusive (admin wins),
-// and vip is suppressed for mods/admins since the server auto-grants it to them.
+// Add a clickable badge per active role. Idempotent across the cache-hit and
+// network paths; vip suppressed (server auto-grants it), admin wins over mod.
 void applyRoleBadges(
     cocos2d::CCMenu* menu,
     paimon::roles::UserRoles const& roles,

@@ -21,12 +21,6 @@ cocos2d::CCGLProgram* loadShader(
 /// Read and cache resources/shaders/<relName>; empty means missing/unreadable.
 std::string readShaderFile(std::string_view relName);
 
-/// Preload blur shaders on the GL thread; idempotent.
-void preloadBlurShaders();
-
-/// Clear the source cache without touching CCShaderCache.
-void clearShaderFileCache();
-
 /// Track a mod-owned CCShaderCache key for later purging. Main thread only.
 void trackShaderKey(std::string const& key);
 

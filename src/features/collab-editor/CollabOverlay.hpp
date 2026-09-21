@@ -12,15 +12,8 @@ class LevelEditorLayer;
 
 namespace paimon::collab {
 
-// In-editor overlay for a collab session:
-//  - Attribution tags + flashes on remote edits
-//  - Toasts (chat / system) on the right edge
-//  - HUD strip above the build toolbar: chat button, status banner, voice chips
-//  - Spatial presence: camera trails, GD icon ghosts, work-zone rects,
-//    session heatmap, and one-shot pings
-//
-// The HUD strip stays out of the editor's top row (undo-menu, position slider,
-// settings-menu) and hides itself with the editor UI and during playtest.
+// HUD strip docks above the build toolbar, clear of the editor's top row,
+// and hides with the editor UI and during playtest.
 class CollabEditorOverlay : public cocos2d::CCNode {
 public:
     static CollabEditorOverlay* create(LevelEditorLayer* editor);

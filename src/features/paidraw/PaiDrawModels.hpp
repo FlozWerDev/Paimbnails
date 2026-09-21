@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <Geode/Geode.hpp>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -192,11 +193,6 @@ struct SessionState {
 inline uint64_t nowMs() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-}
-
-inline cocos2d::ccColor3B accentColor() {
-    // GD gold (same base as goldFont.fnt).
-    return {255, 217, 119};
 }
 
 inline char const* statusLabel(PlayerStatus status) {

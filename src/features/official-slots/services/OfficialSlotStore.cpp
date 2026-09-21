@@ -199,13 +199,6 @@ void SlotStore::save() {
     }
 }
 
-void SlotStore::reload() {
-    m_slots.clear();
-    m_hidden.clear();
-    m_loaded = false;
-    this->ensureLoaded();
-}
-
 std::vector<Slot> const& SlotStore::slots() {
     this->ensureLoaded();
     return m_slots;

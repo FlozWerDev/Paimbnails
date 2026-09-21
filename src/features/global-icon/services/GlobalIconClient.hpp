@@ -1,12 +1,7 @@
 #pragma once
 
-// HTTP transport for the Global Icon server endpoints; delegates to HttpClient
-// (full URLs, X-API-Key on post()). Knows nothing about More Icons; just net + JSON.
-//
-// Metadata reads go through a TTL cache with in-flight coalescing: ProfilePage
-// re-runs its render pass on every layout, so without this a single profile
-// visit would fire several identical requests (and a 404 per visit for the
-// majority of players, who share nothing).
+// Net + JSON only; knows nothing about More Icons. Coalescing matters because
+// ProfilePage re-runs its render pass on every layout.
 
 #include <Geode/Geode.hpp>
 #include <matjson.hpp>
@@ -25,7 +20,6 @@ class GlobalIconClient {
 public:
     // success, found (false = 404/not sharing), meta
     using MetaCallback  = geode::CopyableFunction<void(bool success, bool found, GlobalIconMeta const& meta)>;
-    using BatchCallback = geode::CopyableFunction<void(bool success, std::unordered_map<int, GlobalIconMeta> const& metas)>;
     using FileCallback  = geode::CopyableFunction<void(bool success, std::vector<uint8_t> const& data)>;
     using SyncCallback  = geode::CopyableFunction<void(bool success, std::string const& message)>;
 
@@ -36,8 +30,6 @@ public:
 
     // GET /api/icons/<accountID> (public). Served from cache when fresh.
     void getMetadata(int accountID, MetaCallback cb);
-    // POST /api/icons/batch (public) — cap 64 ids. Fills the same cache.
-    void getMetadataBatch(std::vector<int> const& accountIDs, BatchCallback cb);
     // GET a blob (png/plist) by full URL; SSRF-validated via HttpClient.
     void downloadFile(std::string const& url, FileCallback cb);
     // POST /api/icons/sync (X-API-Key) — takes a prebuilt JSON body.
@@ -47,7 +39,6 @@ public:
 
     // Drop a cached entry (call after the local player syncs or clears).
     void invalidate(int accountID);
-    void invalidateAll();
 
 private:
     GlobalIconClient() = default;

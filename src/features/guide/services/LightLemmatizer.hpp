@@ -5,10 +5,7 @@
 #include <unordered_set>
 #include <unordered_map>
 
-// Lightweight "understanding" helper for Paigorit V1: stopword removal, basic
-// suffix stemming, and synonym/alias mapping. No external deps (ASCII/UTF-8).
-// expand(token) returns the canonical forms (stem + resolved synonyms) the
-// matcher scores against intent keywords.
+// Stopword removal + suffix stemming + synonym map for Paigorit V1; no external deps.
 
 namespace paimon::guide {
 
@@ -25,9 +22,6 @@ public:
 
     // Filter stopwords from a token list.
     static std::vector<std::string> removeStopwords(std::vector<std::string> const& tokens);
-
-    // Tokenize and drop stopwords in one pass; assumes normalizedLower is already normalized.
-    static std::vector<std::string> tokenizeNoStopwords(std::string const& normalizedLower);
 
 private:
     // Static shared EN/ES stopword table.

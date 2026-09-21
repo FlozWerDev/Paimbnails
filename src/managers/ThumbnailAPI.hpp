@@ -1,9 +1,7 @@
 ﻿#pragma once
 
 #include <Geode/Geode.hpp>
-#include "../utils/HttpClient.hpp"
 #include "../utils/ThumbnailTypes.hpp"
-#include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/moderation/services/PendingQueue.hpp"
 #include "../features/thumbnails/services/ThumbnailTransportClient.hpp"
 
@@ -72,7 +70,6 @@ public:
     void downloadSuggestion(int levelId, DownloadCallback callback);
     void downloadSuggestionImage(std::string const& filename, DownloadCallback callback);
     void downloadUpdate(int levelId, DownloadCallback callback);
-    // server's current (reported) thumbnail
     void downloadReported(int levelId, DownloadCallback callback);
     // pending profile background, for the moderator verification center
     void downloadPendingProfile(int accountID, DownloadCallback callback);
@@ -116,19 +113,11 @@ public:
     
     void deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username, int accountID, ActionCallback callback);
     void reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, ActionCallback callback);
-    
-    void setServerEnabled(bool enabled);
-
-    cocos2d::CCTexture2D* webpToTexture(std::vector<uint8_t> const& webpData);
 
 private:
     ThumbnailAPI();
     ~ThumbnailAPI() = default;
-    
+
     ThumbnailAPI(const ThumbnailAPI&) = delete;
     ThumbnailAPI& operator=(const ThumbnailAPI&) = delete;
-
-    // residual state kept for compatibility; the real logic lives in the services
-    bool m_serverEnabled = true;
-    int m_uploadCount = 0;
 };

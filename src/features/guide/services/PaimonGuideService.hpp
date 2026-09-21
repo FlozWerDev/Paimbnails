@@ -65,7 +65,6 @@ private:
 
     // Build a response, varying its text on repeats.
     GuideAnswer buildAnswerFor(GuideIntent const& intent,
-                               double matchScore,
                                std::string const& langId);
 
     // Reuse the last functional intent for a follow-up.

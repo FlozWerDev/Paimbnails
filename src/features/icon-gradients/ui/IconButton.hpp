@@ -21,7 +21,6 @@ private:
     GradientConfig m_currentConfig;
 
     bool m_isLocked = false;
-    bool m_didForce = false;
 
     bool init(CCObject*, SEL_MenuHandler);
 

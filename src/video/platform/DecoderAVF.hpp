@@ -26,6 +26,9 @@ public:
     double peekSecondPTS() const override;
     const Frame* peekFrame() override;
     void releaseFrame() override;
+    VideoColorMatrix getColorMatrix() const override { return m_colorMatrix; }
+    bool isFullRange() const override { return m_fullRange; }
+    int getRotationDegrees() const override { return m_rotation; }
     bool isTerminal() const override { return m_decodeThreadDetached.load(std::memory_order_acquire); }
     bool setLooping(bool loop) override {
         m_looping.store(loop, std::memory_order_relaxed);
@@ -35,11 +38,11 @@ public:
 private:
     void decodeLoop();
     void closeInternal();
-    // Build a fresh AVAssetReader over the current asset, starting at the
-    // given time offset.  Called from open() with offset=0 and from seekTo().
-    // On success m_reader / m_trackOutput are populated and startReading has
-    // been issued.  m_asset must already be set.
+    // Fresh reader over the current asset at the given offset; m_asset
+    // must already be set.
     bool buildReader(double startTimeSeconds);
+    // Static track metadata (rotation flag, color attachments) into members.
+    void readTrackMetadata();
     // Release just the reader/trackOutput (not the asset) without disturbing
     // the decode thread state.  Used by seekTo() to rewind.
     void releaseReaderOnly();
@@ -58,6 +61,9 @@ private:
     // loop can handle both planar (kCVPixelFormatType_420YpCbCr8Planar) and
     // bi-planar NV12 (kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange).
     uint32_t         m_pixelFormat = 0;
+    VideoColorMatrix m_colorMatrix = VideoColorMatrix::Auto;
+    bool             m_fullRange = false;
+    int              m_rotation = 0;
 
     std::atomic<bool> m_decoding{false};
     std::atomic<bool> m_finished{false};

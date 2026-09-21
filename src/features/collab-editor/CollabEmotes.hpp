@@ -6,9 +6,8 @@
 #include <Geode/Geode.hpp>
 #include <string>
 
-// Chat line rendering for collab, reusing the mod's existing emote system
-// (EmoteRenderer + the downloaded emote catalog). A line with `:emote:` syntax
-// is rendered with images; anything else is a plain colored label.
+// Chat lines reuse the mod's emote system; lines without :emote: fall back to
+// a plain colored label.
 namespace paimon::collab {
 
 inline cocos2d::CCNode* buildChatLine(ChatMessage const& msg, float textScale) {

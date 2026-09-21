@@ -132,9 +132,7 @@ bool CopyIconsPopup::init(IconSet const& set, bool saved) {
          menu_selector(CopyIconsPopup::onUse), "use-button"_spr, false},
     };
 
-    // Same width for the three so the row doesn't look accidental. ButtonSprite
-    // rounds the absolute width up, so lay them out from the size it actually
-    // came out as instead of the requested one.
+    // Same width for all three; ButtonSprite rounds width up, so lay out from the actual size.
     std::vector<CCMenuItemSpriteExtra*> buttons;
     float total = 0.f;
     for (auto const& action : actions) {

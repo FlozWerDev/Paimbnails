@@ -2,7 +2,6 @@
 
 #include "PaiDrawEvents.hpp"
 #include "PaiDrawModels.hpp"
-#include "../../framework/EventBus.hpp"
 #include <Geode/utils/web.hpp>
 #include <Geode/loader/Event.hpp>
 #include <Geode/utils/function.hpp>
@@ -35,7 +34,6 @@ public:
     void sendGuess(std::string const& text);
     void sendStroke(StrokeSegment const& stroke);
     void clearCanvas();
-    void publishPresence(std::string const& status);
 
     WordEntry currentWord() const;
 
@@ -50,14 +48,10 @@ private:
     void seedWordBank();
 
     std::string baseServerUrl() const;
-    std::string wsServerUrl() const;
-    std::string endpointUrl(char const* suffix) const;
     bool hasValidLogin() const;
 
     geode::ByteVector encodeJson(matjson::Value const& value) const;
-    void sendPacket(PacketType type, matjson::Value const& payload, uint32_t roomId = 0);
     void authenticate();
-    void handlePacket(PaiDrawPacket const& packet);
     void handleLobbySnapshot(matjson::Value const& payload);
     void handleRoomSnapshot(matjson::Value const& payload);
     void handleChatPacket(matjson::Value const& payload);

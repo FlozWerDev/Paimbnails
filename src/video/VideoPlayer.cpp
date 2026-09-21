@@ -75,7 +75,6 @@ VideoPlayer::~VideoPlayer() {
     if (m_gpuInitGate) {
         m_gpuInitGate->fetch_add(1, std::memory_order_release);
     }
-    m_gpuInitGeneration.fetch_add(1, std::memory_order_release);
     stopAudio(true);
 
     if (m_decoder) {
@@ -160,14 +159,11 @@ bool VideoPlayer::init(const std::string& videoPath, const VideoPlayerCreateOpti
         return false;
     }
 
-
     int w = m_decoder->getWidth();
     int h = m_decoder->getHeight();
 
-
     m_texWidth = w;
     m_texHeight = h;
-
 
     if (!initAudio(options) && options.enableAudio) {
         geode::log::warn("[VideoPlayer] Audio init failed for {}", videoPath);
@@ -347,7 +343,6 @@ static inline void yuvToRgba(const uint8_t* planeY, int strideY,
             rgba, width * 4, width, height);
 }
 
-// Build GL resources before the first upload.
 void VideoPlayer::prepareGPUPipeline() {
     if (!isOnMainThread()) return;
     if (m_texWidth <= 0 || m_texHeight <= 0) return;
@@ -469,7 +464,7 @@ bool VideoPlayer::uploadFrame(const IVideoDecoder::Frame& frame) {
     bool isFrameLag = dt > 0.020f;  // > 20ms = severe lag @ 60fps
 
     if (isFrameLag && !m_hasVisibleFrame) {
-    return false;
+        return false;
     }
 
     if (m_pboUploader.isInitialized()) {
@@ -665,14 +660,10 @@ void VideoPlayer::play() {
     m_playing = true;
     m_timeSincePlay = 0.0;
     m_decoderStalled = false;
-    if (m_decoder) m_decoder->startDecoding();
+    m_decoder->startDecoding();
     
     if (!m_pboInitAttempted && m_texWidth > 0 && m_texHeight > 0) {
         auto gate = m_gpuInitGate;
-        if (!gate) {
-            gate = std::make_shared<std::atomic<uint64_t>>(0);
-            m_gpuInitGate = gate;
-        }
         uint64_t const gen = gate->load(std::memory_order_acquire);
         geode::Loader::get()->queueInMainThread([this, gate, gen]() {
             if (paimon::isRuntimeShuttingDown()) return;
@@ -752,7 +743,6 @@ void VideoPlayer::forceStop() {
     if (m_gpuInitGate) {
         m_gpuInitGate->fetch_add(1, std::memory_order_release);
     }
-    m_gpuInitGeneration.fetch_add(1, std::memory_order_release);
     m_playing = false;
     m_pendingUpload = false;
     m_timeSinceLastUpload = 0.0;
@@ -1054,9 +1044,5 @@ void VideoPlayer::fadeAudioOut(float duration, std::function<void()> onComplete)
 bool VideoPlayer::hasAudio() const { return m_audio != nullptr; }
 bool VideoPlayer::isAudioPlaying() const { return m_audio && m_audio->isPlaying(); }
 bool VideoPlayer::didAudioInitFail() const { return m_createOptions.enableAudio && m_audioInitFailed; }
-
-void syncVideoAudioVolume() {
-    VideoAudioTrack::syncAllVolumes();
-}
 
 }

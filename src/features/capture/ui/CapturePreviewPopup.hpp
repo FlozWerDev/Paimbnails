@@ -27,7 +27,7 @@ public:
     void updateContent(cocos2d::CCTexture2D* texture, std::shared_ptr<uint8_t> buffer, int width, int height);
 
     void recapture();
-    void liveRecapture(bool updateBuffer = true);
+    void liveRecapture();
 
     void onCropBtn(cocos2d::CCObject*);
     void onToggleHDRBtn(cocos2d::CCObject*);
@@ -62,7 +62,6 @@ private:
     bool m_isPlayer1Hidden = false;
     bool m_isPlayer2Hidden = false;
     bool m_isModerator = false;
-    bool m_touchDelegateRegistered = false;
     bool m_pausedMusic = false;
 
     cocos2d::CCSprite* m_previewSprite = nullptr;
@@ -76,7 +75,6 @@ private:
     CCMenuItemSpriteExtra* m_hdrBtn = nullptr;
 
     bool m_isCropped = false;
-    bool m_fillMode = true;
     bool m_hdrMode = false;
     bool m_callbackExecuted = false;
     bool m_recapturePending = false;

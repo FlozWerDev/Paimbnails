@@ -337,10 +337,7 @@ CCNode* EmoteRenderer::renderComment(
                 auto phRef = Ref(placeholder);
                 std::string emoteKey = et->name;
                 EmoteCache::get().loadEmote(*info, [phRef, emoteSize, emoteKey, animateGifs](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
-                    // Retain the texture for the lifetime of the deferred task. The RAM cache
-                    // may evict (and free) this texture before the queued task runs; capturing
-                    // a raw pointer would leave `tex` dangling and crash inside
-                    // CCSprite::initWithTexture when it dereferences the freed vtable.
+                    // RAM evict can free tex before the queued task runs; keep a Ref or it dangles.
                     geode::Ref<CCTexture2D> texRef = tex;
                     Loader::get()->queueInMainThread([phRef, texRef, isGif, gifData, emoteSize, emoteKey, animateGifs]() {
                         if (paimon::isRuntimeShuttingDown()) return;

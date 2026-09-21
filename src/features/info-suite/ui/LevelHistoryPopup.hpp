@@ -1,8 +1,7 @@
 #pragma once
 
-// La linea de tiempo de un nivel segun history.geometrydash.eu: como esta hoy,
-// cuando le cayo el rate y el feature, y un snapshot por cada vez que alguien lo
-// miro. Cada fila abre su ficha completa.
+// Linea de tiempo del nivel segun history.geometrydash.eu: estado actual, rate/feature y snapshots.
+// Cada fila abre su ficha completa.
 
 #include "../services/LevelHistoryModel.hpp"
 

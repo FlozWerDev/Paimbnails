@@ -1,5 +1,4 @@
 #include "FontTag.hpp"
-#include "../../core/modules/ModuleRegistry.hpp"
 #include <Geode/Geode.hpp>
 #include <cctype>
 
@@ -9,7 +8,6 @@ namespace paimon::fonts {
 
 static constexpr const char* DEFAULT_FONT = "chatFont.fnt";
 
-// Resolve a font ID to a .fnt filename.
 static std::string resolveId(std::string const& id) {
     if (id.empty()) return DEFAULT_FONT;
 

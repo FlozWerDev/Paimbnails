@@ -13,9 +13,8 @@ namespace paimon::twitch {
 enum class ModeFilter : int { All, Classic, Platformer };
 constexpr int kModeFilterCount = 3;
 
-// Un bit por cara / longitud, en el orden en que se dibujan.
-// Dificultad: NA, Facil, Normal, Dificil, Muy dificil, Insano, Demon, Auto.
-// Longitud: Tiny, Short, Medium, Long, XL (los mismos valores que el juego).
+// Un bit por cara / longitud, en el orden en que se dibujan (Dificultad: NA,
+// Facil...Auto; Longitud: Tiny...XL, los valores del juego).
 constexpr int kDifficultySlotCount = 8;
 constexpr int kLengthSlotCount = 5;
 constexpr uint32_t kAllDifficulties = (1u << kDifficultySlotCount) - 1;

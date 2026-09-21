@@ -28,8 +28,6 @@ public:
 
     void loadEmote(EmoteInfo const& info, TextureCallback callback);
 
-    bool isInRamCache(std::string const& name) const;
-
     void clearAll();
 
     void clearRam();
@@ -44,9 +42,6 @@ public:
     void cancelPreload();
 
     void shutdown();
-
-    size_t ramCacheBytes() const { return m_currentRamBytes; }
-    size_t ramCacheCount() const;
 
 private:
     EmoteCache() = default;
@@ -122,7 +117,6 @@ private:
     std::condition_variable m_decodeCV;
     std::vector<std::thread> m_decodeWorkers;
     std::atomic<bool> m_decodeRunning{false};
-    std::atomic<bool> m_decodeShutdown{false};
 };
 
 } // namespace paimon::emotes

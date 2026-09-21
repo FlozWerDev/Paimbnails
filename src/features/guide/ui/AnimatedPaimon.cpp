@@ -113,7 +113,6 @@ void AnimatedPaimon::onBlinkTimer(float /*dt*/) {
 
 void AnimatedPaimon::play(Animation anim) {
     if (!m_sprite) return;
-    m_currentState = anim;
 
     switch (anim) {
         case Animation::Idle: {
@@ -221,7 +220,6 @@ void AnimatedPaimon::pointAt(cocos2d::CCNode* target, float duration) {
     );
     rot->setTag(kStateTag);
     m_sprite->runAction(rot);
-    m_currentState = Animation::Point;
 }
 
 void AnimatedPaimon::showBubble(std::string const& text, float duration) {
@@ -277,7 +275,6 @@ void AnimatedPaimon::showBubble(std::string const& text, float duration) {
 
     this->addChild(holder, 5);
     m_bubble = holder;
-    m_bubbleText = label;
 }
 
 void AnimatedPaimon::hideBubble() {
@@ -286,7 +283,6 @@ void AnimatedPaimon::hideBubble() {
         bubble->removeFromParent();
     }
     m_bubble = nullptr;
-    m_bubbleText = nullptr;
 }
 
 } // namespace paimon::guide

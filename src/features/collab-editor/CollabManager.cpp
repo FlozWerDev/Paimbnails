@@ -16,7 +16,6 @@
 #include <Geode/binding/LevelEditorLayer.hpp>
 #include <Geode/binding/LevelSettingsObject.hpp>
 #include <Geode/binding/GJEffectManager.hpp>
-#include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/ui/PopupManager.hpp>
 
@@ -1060,7 +1059,7 @@ void CollabManager::sendChat(std::string const& text) {
     }));
 }
 
-void CollabManager::inviteUser(int accountId, std::string const& /*targetName*/, InviteCb cb) {
+void CollabManager::inviteUser(int accountId, InviteCb cb) {
     if (!connected() || !m_isHost) {
         if (cb) cb(false, false, "Solo el host puede invitar");
         return;
@@ -1161,10 +1160,6 @@ void CollabManager::discardJoinerLevel() {
 }
 
 namespace paimon::collab {
-
-bool CollabManager::isCheapKind(std::string const& kind) {
-    return isCheapEditKind(kind);
-}
 
 void CollabManager::enqueueOp(std::string kind, std::string const& gid, uint32_t version, std::string save,
                               float x, float y, bool hasPos) {
@@ -1951,7 +1946,7 @@ void CollabManager::clearPeerSelection(int clientId) {
     if (m_overlay) m_overlay->onPeerSelectionCleared(clientId);
 }
 
-void CollabManager::sendDeletedObject(GameObject* object, std::string const& /*beforeSave*/) {
+void CollabManager::sendDeletedObject(GameObject* object) {
     if (!shouldEmit() || !object) return;
     m_deferredEdits.erase(object->m_uniqueID);
     auto it = m_uidToGid.find(object->m_uniqueID);

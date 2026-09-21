@@ -79,12 +79,6 @@ namespace paimon::capture {
         recordVisibility(records, node, node->isVisible());
     }
 
-    inline void hideTemporarily(std::vector<VisibilityRecord>& hiddenRecords, cocos2d::CCNode* node) {
-        if (!node) return;
-        snapshotVisibility(hiddenRecords, node);
-        node->setVisible(false);
-    }
-
     inline void restoreVisibility(std::vector<VisibilityRecord> const& records) {
         for (auto const& record : records) {
             if (auto node = record.node.lock()) {

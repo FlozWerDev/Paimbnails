@@ -1,12 +1,6 @@
 #pragma once
 
-// Shared gates for the Paimon Info Suite, mirroring editor-suite/EditorModule.
-// - suiteEnabled()      → master kill-switch for every info module
-// - moduleEnabled(key)  → suite master && module bool && not ceded to BetterInfo
-// - subEnabled(parent, key) → a detail toggle that hangs off a module
-//
-// Every hook queries these at runtime instead of caching, so flipping a toggle
-// takes effect the next time the screen is opened.
+// Runtime gates for the suite; queried live, so toggles apply the next time a screen opens.
 
 #include "InfoCompat.hpp"
 #include <Geode/loader/Mod.hpp>

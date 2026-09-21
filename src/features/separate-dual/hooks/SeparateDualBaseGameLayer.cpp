@@ -66,10 +66,11 @@ class $modify(PaimonSeparateDualBase, GJBaseGameLayer) {
 
     bool init() {
         if (!moduleEnabled()) return GJBaseGameLayer::init();
+        if (!GJBaseGameLayer::init()) return false;
         DualKitVault::get()->resetRunState();
         DualKitVault::get()->ensureBurstArt(
             DualKitVault::get()->slotIcon(IconSlot::Death, Side::Secondary));
-        return GJBaseGameLayer::init();
+        return true;
     }
 
     void onExit() {

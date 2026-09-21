@@ -1,5 +1,6 @@
 #include "GifImportPopup.hpp"
 
+#include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/GIFDecoder.hpp"
@@ -50,11 +51,14 @@ struct LoadedSource {
     std::filesystem::path path;
     std::shared_ptr<SourceAnimation> source;
     std::string error;
+    bool partial = false;
+    bool cancelled = false;
 };
 
 struct SourceLoadState {
     std::mutex mutex;
     std::optional<LoadedSource> result;
+    std::shared_ptr<VideoProgress> progress;
 };
 
 namespace {
@@ -384,6 +388,7 @@ void GifImportPopup::loadAnimated(
         kDecodeMemory / std::max<std::size_t>(frameBytes, 1), 1, 120));
 
     showBusy("Decodificando GIF");
+    cancelSourceLoad();
     m_sourceLoad = std::make_shared<SourceLoadState>();
     auto state = m_sourceLoad;
     bool const started = paimon::ThreadTracker::get().spawn([state, bytes, path, safeFrames] {
@@ -428,6 +433,7 @@ void GifImportPopup::loadStill(
     }
 
     showBusy("Decodificando imagen");
+    cancelSourceLoad();
     m_sourceLoad = std::make_shared<SourceLoadState>();
     auto state = m_sourceLoad;
     bool const started = paimon::ThreadTracker::get().spawn([state, bytes, path] {
@@ -463,15 +469,23 @@ void GifImportPopup::loadStill(
 
 void GifImportPopup::loadVideo(std::filesystem::path const& path) {
     showBusy("Decodificando video");
+    cancelSourceLoad();
     m_sourceLoad = std::make_shared<SourceLoadState>();
+    m_sourceLoad->progress = std::make_shared<VideoProgress>();
     auto state = m_sourceLoad;
+    auto progress = state->progress;
     int const frames = m_options.maxFrames;
-    bool const started = paimon::ThreadTracker::get().spawn([state, path, frames] {
+    bool const started = paimon::ThreadTracker::get().spawn([state, progress, path, frames] {
         geode::utils::thread::setName("Paimon GIF Video Decode");
         LoadedSource loaded{path, nullptr, {}};
         // Muestreo con marcas acumuladas; videos largos fallan con mensaje.
-        loaded.source = decodeVideo(path, frames, loaded.error, 30.0);
-        if (!loaded.source) loaded.source = std::make_shared<SourceAnimation>();
+        bool partial = false;
+        loaded.source = decodeVideo(path, frames, loaded.error, 30.0, &partial, progress.get());
+        loaded.partial = partial;
+        // El cierre aborta sin marcar cancel: sin esto el vacio se aplicaria.
+        loaded.cancelled = progress->cancelled.load(std::memory_order_relaxed) ||
+            paimon::isRuntimeShuttingDown();
+        if (!loaded.source && !loaded.cancelled) loaded.source = std::make_shared<SourceAnimation>();
         std::lock_guard lock(state->mutex);
         state->result = std::move(loaded);
     });
@@ -685,11 +699,19 @@ void GifImportPopup::pollSourceLoad() {
     }
     m_sourceLoad.reset();
     hideBusy();
+    // Intento viejo: otro archivo o el cierre lo cancelo; el nuevo manda.
+    if (loaded->cancelled) return;
     if (!loaded->error.empty()) {
         PaimonNotify::show(loaded->error, NotificationIcon::Error);
         return;
     }
+    std::size_t const kept = loaded->source ? loaded->source->frames.size() : 0;
     applySource(loaded->path, std::move(loaded->source));
+    if (loaded->partial) {
+        PaimonNotify::show(
+            fmt::format("El video se corto al decodificar: solo {} frames.", kept),
+            NotificationIcon::Warning);
+    }
 }
 
 void GifImportPopup::pollProcessing() {
@@ -936,7 +958,14 @@ void GifImportPopup::adjustBudget(int direction) {
 }
 
 void GifImportPopup::adjustFrames(int direction) {
+    int const before = m_options.maxFrames;
     m_options.maxFrames = std::clamp(m_options.maxFrames + direction * 5, 1, 120);
+    // El video se decodifica una vez: subir el tope exige re-decodificar.
+    if (m_options.maxFrames > before && m_source && isVideoFile(m_path) &&
+        static_cast<int>(m_source->frames.size()) < m_options.maxFrames) {
+        loadVideo(m_path);
+        return;
+    }
     requestProcess();
 }
 
@@ -1050,6 +1079,16 @@ void GifImportPopup::hideBusy() {
     if (!m_busyOverlay) return;
     m_busyOverlay->dismiss();
     m_busyOverlay = nullptr;
+}
+
+GifImportPopup::~GifImportPopup() {
+    cancelSourceLoad();
+}
+
+void GifImportPopup::cancelSourceLoad() {
+    if (m_sourceLoad && m_sourceLoad->progress) {
+        m_sourceLoad->progress->cancelled.store(true, std::memory_order_relaxed);
+    }
 }
 
 } // namespace paimon::gifimport

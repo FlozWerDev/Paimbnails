@@ -4,15 +4,12 @@
 #include <mutex>
 #include <string>
 
-// Shared, platform-independent helpers for the per-platform audio extractors
-// (Media Foundation on Windows, MediaNDK on Android, AVFoundation on Apple).
-// Each backend only implements the decode-to-PCM step and reuses the WAV cache
-// and writer defined here so the cache layout stays identical across platforms.
+// Shared WAV-cache helpers for the per-platform audio backends; keeps the
+// cache layout identical across platforms.
 namespace paimon::video::detail {
 
-// Serialises concurrent extractions (VideoPlayers can be created off the main
-// thread) and protects the OS media stacks from re-entrancy. Recursive because
-// extractAudioToWav wraps extractAudioToPcm.
+// Serializes extractions (players can be created off the main thread);
+// recursive because extractAudioToWav wraps extractAudioToPcm.
 std::recursive_mutex& audioExtractorMutex();
 
 // Temp WAV path for a given source video. Stable hash of the video path.

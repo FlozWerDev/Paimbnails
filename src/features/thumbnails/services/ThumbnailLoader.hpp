@@ -44,9 +44,7 @@ public:
     void prefetchLevels(std::vector<int> const& levelIDs, int priority = 0);
     
     void requestUrlLoad(std::string const& url, LoadCallback callback, int priority = 0);
-    void requestUrlBatchLoad(std::vector<std::string> const& urls, LoadCallback perUrlCallback, int priority = 0);
     bool isUrlLoaded(std::string const& url) const;
-    void cancelUrlLoad(std::string const& url);
 
     void cancelLoad(int levelID, bool isGif = false);
     
@@ -74,7 +72,6 @@ public:
     void setMaxConcurrentTasks(int max);
     /// Do not call from ThumbnailLoader's constructor (reentry into get()).
     void applyConcurrentDownloadsSetting();
-    void setBatchMode(bool enabled) { m_batchMode = enabled; }
 
     int getActiveTaskCount() const { return m_activeTaskCount; }
     int getMaxConcurrentTasks() const { return m_maxConcurrentTasks; }
@@ -90,8 +87,6 @@ public:
     void cleanup();
     void clearDiskCache();
     void clearPendingQueue();
-
-    void flushManifest();
 
     paimon::cache::CacheStats& stats() { return paimon::cache::ThumbnailCache::get().stats(); }
     paimon::cache::CacheStats const& stats() const { return paimon::cache::ThumbnailCache::get().stats(); }
@@ -148,8 +143,6 @@ private:
 
     // TTL for manifest requests, including levels absent from the manifest.
     std::unordered_map<int, std::chrono::steady_clock::time_point> m_manifestRequestedAt;
-
-    bool m_batchMode = false;
 
     // Global cooldown after a burst of failures.
     std::atomic<int> m_recentFailureCount{0};
@@ -246,9 +239,8 @@ private:
     std::vector<BatchPending> m_batchPendingDownloads;
     std::mutex m_batchPendingMutex;
     std::atomic<bool> m_batchFlushScheduled{false};
-    // Tiene que coincidir con MAX_ASSET_BATCH de HttpClient.cpp, que a su vez es el
-    // MAX_BATCH_ASSET_FETCHES del worker: el servidor lee un objeto por id y con 40 se
-    // pasaba del limite de 50 subrequests por invocacion, tumbando el lote entero.
+    // Atado al limite de 50 subrequests por invocacion del worker: con 40 se
+    // tumbaba el lote entero.
     static constexpr int BATCH_FLUSH_THRESHOLD = 15;
     static constexpr int BATCH_FLUSH_DELAY_MS = 50;
     void scheduleBatchFlush();

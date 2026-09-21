@@ -168,11 +168,8 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     $override
     void cleanup() {
         m_fields->m_previewCallbacksSuspended = true;
-        // Do NOT call destroyRealtimePreviewNow() here. During
-        // popSceneWithTransition, replaceScene() triggers cleanup()
-        // on this layer, which would permanently destroy the preview.
-        // After the transition, onEnter() re-activates the preview.
-        // The preview's own destructor handles final cleanup on shutdown.
+        // Do NOT destroy the preview here: replaceScene() triggers cleanup()
+        // mid-transition and onEnter() re-activates it after.
         LevelSearchLayer::cleanup();
     }
 

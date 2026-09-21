@@ -331,14 +331,6 @@ void PaiblurNode::releaseRenderTargets() {
     m_steadyFrames = 0;
 }
 
-void PaiblurNode::setBlurIntensity(float intensity) {
-    m_intensity = std::clamp(intensity, 0.1f, 10.0f);
-}
-
-void PaiblurNode::setDarkness(float darkness) {
-    m_darkness = std::clamp(darkness, 0.0f, 1.0f);
-}
-
 void PaiblurNode::fadeIn(float duration) {
     stopAllActions();
     if (duration <= 0.01f) {
@@ -346,19 +338,6 @@ void PaiblurNode::fadeIn(float duration) {
         return;
     }
     runAction(CCFadeTo::create(duration, 255));
-}
-
-void PaiblurNode::fadeOutAndRemove(float duration) {
-    stopAllActions();
-    if (duration <= 0.01f) {
-        if (getParent()) removeFromParent();
-        return;
-    }
-    runAction(CCSequence::create(
-        CCFadeTo::create(duration, 0),
-        CCCallFunc::create(this, callfunc_selector(CCNode::removeFromParent)),
-        nullptr
-    ));
 }
 
 void PaiblurNode::visit() {

@@ -134,7 +134,7 @@ void ColorToggle::paintSlot(CCSprite* slot, GradientConfig const& config, bool b
         static_cast<int>(m_colorType), blend, false, false, m_shouldCache ? 120 : -4732);
 }
 
-void ColorToggle::applyGradient(GradientConfig config, bool force, bool transition) {
+void ColorToggle::applyGradient(GradientConfig config, bool /*force*/, bool transition) {
     if (m_secondSprite && config == m_currentConfig) return;
 
     // Read once: nothing below flips the player side mid-call.
@@ -164,7 +164,6 @@ void ColorToggle::applyGradient(GradientConfig config, bool force, bool transiti
 
     // Taken by value; nothing below reads the parameter again.
     m_currentConfig = std::move(config);
-    m_didForce = force;
 
     m_sprite->setOpacity(255);
 

@@ -99,7 +99,14 @@ CCNode* createAvatar(std::string const& url, bool hasImage,
         container->addChild(disc, 0);
     }
 
-    std::string initial(1, name.empty() ? '?' : static_cast<char>(std::toupper(static_cast<unsigned char>(name[0]))));
+    // Copy the whole first UTF-8 codepoint; toupper only understands ASCII bytes.
+    std::string initial = "?";
+    if (!name.empty()) {
+        auto c0 = static_cast<unsigned char>(name[0]);
+        std::size_t n = c0 < 0x80 ? 1 : (c0 < 0xE0 ? 2 : (c0 < 0xF0 ? 3 : 4));
+        initial = name.substr(0, n);
+        if (n == 1) initial[0] = static_cast<char>(std::toupper(c0));
+    }
     auto letter = CCLabelBMFont::create(initial.c_str(), "bigFont.fnt");
     letter->setPosition({size / 2.f, size / 2.f});
     letter->setScale(size / 60.f);

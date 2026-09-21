@@ -1,7 +1,5 @@
 #include "GlobalIconClient.hpp"
 #include "../../../utils/HttpClient.hpp"
-#include "../../../utils/JsonHelper.hpp"
-#include "../../../utils/Debug.hpp"
 
 #include <ctime>
 
@@ -36,7 +34,6 @@ GlobalIconMeta parseMetaJson(matjson::Value const& v) {
     meta.accountID = static_cast<int>(jInt(v["accountID"]));
     meta.username  = jStr(v["username"]);
     meta.enabled   = jBool(v["enabled"]);
-    meta.updatedAt = jStr(v["updatedAt"]);
 
     auto const& icons = v["icons"];
     if (icons.isObject()) {
@@ -54,15 +51,10 @@ GlobalIconMeta parseMetaJson(matjson::Value const& v) {
             slot.packID    = jStr(s["packID"]);
             slot.packName  = jStr(s["packName"]);
             slot.quality   = static_cast<int>(jInt(s["quality"], 3));
-            slot.specialID = static_cast<int>(jInt(s["specialID"]));
-            slot.fireCount = static_cast<int>(jInt(s["fireCount"]));
             slot.pngFile   = jStr(s["pngFile"]);
             slot.pngUrl    = jStr(s["pngUrl"]);
             slot.plistFile = jStr(s["plistFile"]);
             slot.plistUrl  = jStr(s["plistUrl"]);
-            slot.jsonFile  = jStr(s["jsonFile"]);
-            slot.jsonUrl   = jStr(s["jsonUrl"]);
-            slot.bytes     = jInt(s["bytes"]);
             if (slot.name.empty() || slot.pngUrl.empty()) continue; // unusable slot
             meta.icons[typeName] = std::move(slot);
         }
@@ -76,7 +68,6 @@ GlobalIconClient& GlobalIconClient::get() {
 }
 
 std::string GlobalIconClient::baseUrl() const {
-    // Prefer the configured server URL; fall back to the default constant.
     std::string base = Mod::get()->getSettingValue<std::string>("global-icon-server-url");
     if (base.empty()) base = std::string(GLOBAL_ICON_BASE);
     while (!base.empty() && base.back() == '/') base.pop_back();
@@ -108,10 +99,6 @@ void GlobalIconClient::store(int accountID, GlobalIconMeta const& meta, bool fou
 
 void GlobalIconClient::invalidate(int accountID) {
     m_cache.erase(accountID);
-}
-
-void GlobalIconClient::invalidateAll() {
-    m_cache.clear();
 }
 
 void GlobalIconClient::getMetadata(int accountID, MetaCallback cb) {
@@ -163,72 +150,6 @@ void GlobalIconClient::getMetadata(int accountID, MetaCallback cb) {
             if (waiter) waiter(success, found, meta);
         }
     });
-}
-
-void GlobalIconClient::getMetadataBatch(std::vector<int> const& accountIDs, BatchCallback cb) {
-    std::unordered_map<int, GlobalIconMeta> result;
-    if (accountIDs.empty()) {
-        if (cb) cb(true, result);
-        return;
-    }
-
-    // Only ask for what isn't cached; a page of comments from familiar players
-    // usually resolves without any request at all.
-    matjson::Value ids = matjson::Value::array();
-    int count = 0;
-    for (int id : accountIDs) {
-        if (id <= 0) continue;
-        CacheEntry cached;
-        if (lookup(id, cached)) {
-            if (cached.found) result[id] = cached.meta;
-            continue;
-        }
-        ids.push(id);
-        if (++count >= 64) break; // server cap
-    }
-
-    if (count == 0) {
-        if (cb) cb(true, result);
-        return;
-    }
-
-    matjson::Value body = matjson::makeObject({ {"accountIDs", ids} });
-    std::string url = baseUrl() + "/api/icons/batch";
-
-    HttpClient::get().post(url, body.dump(matjson::NO_INDENTATION),
-        [cb = std::move(cb), result = std::move(result)](bool success, std::string const& resp) mutable {
-            if (!success) {
-                if (cb) cb(false, result);
-                return;
-            }
-            auto parsed = matjson::parse(resp);
-            if (!parsed.isOk()) {
-                if (cb) cb(false, result);
-                return;
-            }
-            auto& self = GlobalIconClient::get();
-            auto root = parsed.unwrap();
-            auto const& metaObj = root["metadata"];
-
-            paimon::json::forEachInArray(root["found"], [&](matjson::Value const& idVal) {
-                int id = static_cast<int>(idVal.isNumber() ? idVal.asDouble().unwrapOr(0.0) : 0.0);
-                if (id <= 0) return;
-                auto const& mv = metaObj[std::to_string(id)];
-                if (!mv.isObject()) return;
-                auto meta = parseMetaJson(mv);
-                bool found = meta.enabled && !meta.icons.empty();
-                self.store(id, meta, found);
-                if (found) result[id] = std::move(meta);
-            });
-
-            // Remember the misses too, so the next page doesn't re-ask for them.
-            paimon::json::forEachInArray(root["missing"], [&](matjson::Value const& idVal) {
-                int id = static_cast<int>(idVal.isNumber() ? idVal.asDouble().unwrapOr(0.0) : 0.0);
-                if (id > 0) self.store(id, GlobalIconMeta{}, false);
-            });
-
-            if (cb) cb(true, result);
-        });
 }
 
 void GlobalIconClient::downloadFile(std::string const& url, FileCallback cb) {

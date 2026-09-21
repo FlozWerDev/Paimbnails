@@ -1,8 +1,6 @@
 #pragma once
 
-// Entry point for ProfilePage to apply a user's global icon without including
-// the More Icons API. The .cpp does the async flow: metadata -> download ->
-// register in More Icons -> updateSimplePlayer.
+// Applies a user's global icon without including the More Icons API.
 
 namespace cocos2d { class CCNode; }
 

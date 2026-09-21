@@ -106,46 +106,6 @@ WordDifficulty parseDifficulty(std::string const& text) {
     return WordDifficulty::Easy;
 }
 
-matjson::Value makePlayerJson(PlayerInfo const& player) {
-    return matjson::makeObject({
-        {"accountID", static_cast<int64_t>(player.accountID)},
-        {"name", player.name},
-        {"level", player.level},
-        {"iconID", player.iconID},
-        {"iconType", player.iconType},
-        {"color1", player.color1},
-        {"color2", player.color2},
-        {"glow", player.glow},
-        {"status", std::string(statusLabel(player.status))},
-        {"ready", player.ready},
-        {"host", player.host},
-        {"guessed", player.guessed},
-        {"pingMs", player.pingMs},
-        {"score", player.score},
-    });
-}
-
-matjson::Value makeRoomJson(RoomInfo const& room) {
-    auto players = matjson::Value::array();
-    for (auto const& player : room.players) {
-        players.push(makePlayerJson(player));
-    }
-    return matjson::makeObject({
-        {"id", static_cast<int64_t>(room.id)},
-        {"name", room.config.name},
-        {"hostId", static_cast<int64_t>(room.hostId)},
-        {"host", room.hostName},
-        {"maxPlayers", room.config.maxPlayers},
-        {"rounds", room.config.rounds},
-        {"roundTimeSeconds", room.config.roundTimeSeconds},
-        {"mode", std::string(modeLabel(room.config.mode))},
-        {"language", std::string(languageLabel(room.config.language))},
-        {"hasPassword", room.hasPassword},
-        {"state", std::string(roomStateLabel(room.state))},
-        {"players", players},
-    });
-}
-
 } // namespace
 
 PaiDrawManager& PaiDrawManager::get() {
@@ -302,25 +262,6 @@ std::string PaiDrawManager::baseServerUrl() const {
     return m_state.serverURL.empty() ? "https://paimbnailsbot.onrender.com" : m_state.serverURL;
 }
 
-std::string PaiDrawManager::wsServerUrl() const {
-    auto base = baseServerUrl();
-    if (base.starts_with("https://")) {
-        base.replace(0, 8, "wss://");
-    }
-    else if (base.starts_with("http://")) {
-        base.replace(0, 7, "ws://");
-    }
-    return base;
-}
-
-std::string PaiDrawManager::endpointUrl(char const* suffix) const {
-    auto base = wsServerUrl();
-    if (!base.empty() && base.back() == '/') {
-        base.pop_back();
-    }
-    return base + suffix;
-}
-
 bool PaiDrawManager::hasValidLogin() const {
     auto* accountManager = GJAccountManager::get();
     return accountManager && accountManager->m_accountID > 0 && !accountManager->m_username.empty() && !accountManager->m_GJP2.empty();
@@ -441,18 +382,6 @@ geode::ByteVector PaiDrawManager::encodeJson(matjson::Value const& value) const 
 
     encode(value);
     return writer.bytes();
-}
-
-void PaiDrawManager::sendPacket(PacketType type, matjson::Value const& payload, uint32_t roomId) {
-    if (!m_socketOpen) return;
-
-    PaiDrawPacket packet;
-    packet.type = type;
-    packet.roomId = roomId;
-    packet.timestamp = nowMs();
-    packet.payload = encodeJson(payload);
-
-    (void)codec::encodeEnvelope(packet);
 }
 
 void PaiDrawManager::authenticate() {
@@ -759,10 +688,6 @@ void PaiDrawManager::clearCanvas() {
     );
 }
 
-void PaiDrawManager::publishPresence(std::string const& status) {
-    (void)status;
-}
-
 WordEntry PaiDrawManager::currentWord() const {
     if (m_wordBank.empty()) {
         return {"Orb", WordDifficulty::Easy, "GD"};
@@ -771,63 +696,6 @@ WordEntry PaiDrawManager::currentWord() const {
     int roundIdx = std::max(snapshot().currentRound.currentRound - 1, 0);
     size_t index = static_cast<size_t>(roundIdx) % m_wordBank.size();
     return m_wordBank[index];
-}
-
-void PaiDrawManager::handlePacket(PaiDrawPacket const& packet) {
-    auto decodedPayload = codec::decodePayload(std::span<uint8_t const>(packet.payload.data(), packet.payload.size()));
-    matjson::Value payload = decodedPayload ? decodedPayload.unwrap() : matjson::Value::object();
-
-    switch (packet.type) {
-        case PacketType::AuthAccepted: {
-            auto token = jsonString(payload, "jwt", "");
-            bool shouldSaveSession = false;
-            {
-                std::lock_guard lock(m_mutex);
-                m_state.authenticated = true;
-                m_authInFlight = false;
-                if (!token.empty()) {
-                    m_state.authToken = token;
-                    shouldSaveSession = true;
-                }
-            }
-            if (shouldSaveSession) saveSessionData();
-            publishConnection("Autenticado en PaiDraw");
-            refreshLobby();
-            break;
-        }
-        case PacketType::AuthRejected:
-            publishConnection(jsonString(payload, "message", "Autenticacion rechazada"));
-            break;
-        case PacketType::RoomsListSnapshot:
-            handleLobbySnapshot(payload);
-            break;
-        case PacketType::RoomStateSnapshot:
-            handleRoomSnapshot(payload);
-            break;
-        case PacketType::ChatMessageReceive:
-            handleChatPacket(payload);
-            break;
-        case PacketType::GuessFeedback:
-            handleGuessFeedback(payload);
-            break;
-        case PacketType::RoundSync:
-            handleRoundSync(payload);
-            break;
-        case PacketType::DrawStroke:
-            handleStrokePacket(payload);
-            break;
-        case PacketType::ResultsSnapshot:
-            handleResults(payload);
-            break;
-        case PacketType::PresenceUpdate:
-            handlePresence(payload);
-            break;
-        case PacketType::Error:
-            PaimonNotify::show(jsonString(payload, "message", "PaiDraw server error"), NotificationIcon::Warning);
-            break;
-        default:
-            break;
-    }
 }
 
 void PaiDrawManager::handleLobbySnapshot(matjson::Value const& payload) {

@@ -96,9 +96,8 @@ class $modify(ProgressionProfilePage, ProfilePage) {
         if (!this->m_ownProfile && score) topUpVersusExp(score->m_accountID);
     }
 
-    // Versus XP is the one source the game does not publish, so another
-    // player's level is short until the duel server answers. The chip is drawn
-    // twice rather than made to wait on a request.
+    // Versus XP is unpublished, so the chip draws twice: short now, again
+    // when the duel server answers.
     void topUpVersusExp(int accountId) {
         if (accountId <= 0) return;
         if (!paimon::modules::isEnabled("paimbnails.versus.menu")) return;

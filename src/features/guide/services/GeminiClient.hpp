@@ -6,9 +6,7 @@
 #include <string>
 #include <vector>
 
-// Client for the guide's "Max" mode. It shipped with an embedded Google AI key,
-// which anyone could pull out of the .dll, so the key is gone and the mode is
-// off: available() answers false and complete() reports it without any request.
+// "Max" mode stub: the embedded key shipped in the .dll, so it was removed and the mode stays off.
 
 namespace paimon::guide {
 

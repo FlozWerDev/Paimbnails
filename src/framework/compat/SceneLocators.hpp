@@ -27,33 +27,6 @@ struct LevelBrowserLocator {
         }
         return nullptr;
     }
-
-    // ID background, then the first CCScale9Sprite.
-    static cocos2d::CCNode* findBackground(cocos2d::CCNode* layer) {
-        if (!layer) return nullptr;
-
-        if (auto bg = layer->getChildByID("background")) return bg;
-
-        for (auto* child : CCArrayExt<cocos2d::CCNode*>(layer->getChildren())) {
-            if (typeinfo_cast<cocos2d::extension::CCScale9Sprite*>(child)) {
-                return child;
-            }
-        }
-        return nullptr;
-    }
-};
-
-struct GauntletLocator {
-    // ID background, then the first direct child.
-    static cocos2d::CCNode* findBackground(cocos2d::CCNode* layer) {
-        if (!layer) return nullptr;
-
-        if (auto bg = layer->getChildByID("background")) return bg;
-
-        if (auto first = layer->getChildByType<cocos2d::CCNode>(0)) return first;
-
-        return nullptr;
-    }
 };
 
 struct InfoLayerLocator {

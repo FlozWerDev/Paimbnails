@@ -1,7 +1,6 @@
 #pragma once
-// Icon sets you put together yourself. The copy store keeps one snapshot per
-// user you visited; this one keeps as many of your own stylings as you care to
-// save, so you can try something out and still get the old look back.
+// Your own saved stylings (the copy store keeps one snapshot per visited user),
+// so you can experiment and still get the old look back.
 
 #include "IconCopyStore.hpp"
 

@@ -10,9 +10,6 @@
 
 namespace paimon::beat_shaders {
 
-// Popup de configuracion montado sobre PaiConfigKit: interruptor grande,
-// selector de estilo con descripcion, sliders con valor visible y tarjeta
-// de pantallas donde se aplica.
 class BeatShaderConfigLayer : public geode::Popup {
 public:
     static BeatShaderConfigLayer* create();

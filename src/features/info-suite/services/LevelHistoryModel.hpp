@@ -1,14 +1,7 @@
 #pragma once
 
-// Convierte la respuesta cruda de history.geometrydash.eu en la linea de tiempo
-// que dibuja LevelHistoryPopup.
-//
-// La API guarda un snapshot cada vez que alguien miro el nivel: vienen sin
-// ordenar y con casi todos los campos en null cuando quien lo miro solo vio la
-// lista de busqueda. Aqui se ordenan por fecha, se deduce lo que falta (la cara
-// de dificultad sale de las estrellas cuando el snapshot no trae los votos) y se
-// marcan los cambios reales entre snapshots: el rate, el feature y las
-// versiones que subio el creador.
+// Snapshots de history.geometrydash.eu a linea de tiempo: se ordenan, se deduce
+// lo que falta y se marcan los cambios reales (rate, feature, versiones).
 
 #include <Geode/Enums.hpp>
 #include <matjson.hpp>

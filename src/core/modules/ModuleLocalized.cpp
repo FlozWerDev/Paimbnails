@@ -3,10 +3,8 @@
 #include <string_view>
 #include <unordered_map>
 
-// Spanish display names/descriptions for the module catalog. English is the
-// canonical registry text and stays as the fallback; this only overrides it
-// while the mod runs in Spanish. The Level/Web "Requests" modules are kept in
-// English on purpose.
+// Spanish display names for the catalog; English stays the fallback, except the
+// Level/Web "Requests" modules, intentionally left in English.
 
 namespace paimon::modules {
 

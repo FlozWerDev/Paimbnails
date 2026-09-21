@@ -41,11 +41,8 @@ inline bool usesPaintGeometry(ImportMode mode) {
         mode == ImportMode::Free || mode == ImportMode::Circles;
 }
 
-// El modo circulos dibuja con la forma, no con la rejilla. No se le rematan las
-// costuras con cuadrados —GD pinta el circulo en otra hoja de sprites y el parche
-// le quedaria debajo por mucho que se le baje la capa— ni se le pide el aprobado
-// de fidelidad de la pintura, que lo unico que conseguiria es mandarlo a bajar la
-// resolucion por algo que es a proposito.
+// El modo circulos dibuja con la forma, no con la rejilla: GD lo pinta en otra
+// hoja de sprites y el parche de costura le quedaria debajo.
 inline bool matchesGridExactly(ImportMode mode) {
     return usesPaintGeometry(mode) && mode != ImportMode::Circles;
 }
@@ -108,10 +105,8 @@ struct StampMask {
     bool empty() const { return coverage.empty(); }
 };
 
-// Un molde ya orientado: el objeto de GD, el giro y el volteo con los que hay
-// que soltarlo, y el tamano de su arte una vez girada. Cada orientacion es su
-// propia entrada para que la figura del plan solo tenga que decir que caja
-// llena, sin arrastrar la trigonometria del emisor.
+// Cada orientacion es su propia entrada para que el plan no arrastre la
+// trigonometria del emisor.
 struct PlanStamp {
     int objectId = 0;
     float baseWidth = 30.f;

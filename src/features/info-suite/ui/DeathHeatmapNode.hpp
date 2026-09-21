@@ -15,8 +15,6 @@ public:
     static DeathHeatmapNode* create(LevelProgress const& progress, bool practice,
                                     float width, float height);
 
-    void setPractice(LevelProgress const& progress, bool practice);
-
 protected:
     bool init(LevelProgress const& progress, bool practice, float width, float height);
     void rebuild(LevelProgress const& progress, bool practice);

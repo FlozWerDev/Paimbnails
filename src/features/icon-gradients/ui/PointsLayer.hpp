@@ -30,8 +30,6 @@ private:
     ColorNode* m_selectedPoint = nullptr;
     ColorNode* m_hoveredPoint = nullptr;
 
-    std::unordered_map<IconType, std::vector<CCPoint>> m_dotedIcons;
-
     CCPoint m_moveOffset = ccp(0, 0);
     CCPoint m_pointOffset = ccp(0, 0);
 
@@ -82,7 +80,6 @@ public:
 
     // Preview refresh.
     void updateGradient(GradientConfig, ColorType, bool = false);
-    void updateGradient(float);
     void setPlayerFrame(IconType);
 
     // Visibility.

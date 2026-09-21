@@ -18,9 +18,6 @@ std::string displayNameForLayer(std::string const& layerKey);
 
 std::string describeConfig(LayerBgConfig const& cfg);
 
-// Status-dot color (gray means default).
-cocos2d::ccColor3B accentForType(std::string const& type);
-
 class LayerPreviewNode : public cocos2d::CCNode {
 public:
     // Fit the real screen aspect ratio inside box.

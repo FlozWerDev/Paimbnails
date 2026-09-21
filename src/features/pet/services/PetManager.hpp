@@ -8,7 +8,6 @@
 #include <unordered_map>
 #include <functional>
 
-// PetConfig stores the serializable pet settings.
 inline std::vector<std::string> PET_LAYER_OPTIONS = {
     "MenuLayer", "LevelBrowserLayer", "LevelInfoLayer",
     "CreatorLayer", "LevelSearchLayer", "GauntletSelectLayer",
@@ -93,7 +92,7 @@ struct PetConfig {
     bool allLayers = true;
     bool showInGameplay = true;
 
-    // Empty means the pet follows the global layer setting.
+    // Empty with allLayers off hides the pet everywhere.
     std::set<std::string> visibleLayers = {
         "MenuLayer", "LevelBrowserLayer", "LevelInfoLayer",
         "CreatorLayer", "LevelSearchLayer", "GauntletSelectLayer",
@@ -212,7 +211,6 @@ public:
 
     void setIconStateImage(PetIconState state, std::string const& galleryFilename);
     std::string getIconStateImage(PetIconState state) const;
-    void switchToIconState(PetIconState state);
 
     void triggerReaction(std::string const& eventType);  // "level_complete", "death", "practice_exit"
     void triggerClickReaction(cocos2d::CCPoint clickPos);
@@ -292,7 +290,5 @@ private:
     void updateIconState();
     void updateReaction(float dt);
     void updateClickReaction(float dt);
-    void updateIdleAnimation(float dt);
-    void updateWalkAnimation(float dt);
     void updateTrail();
 };

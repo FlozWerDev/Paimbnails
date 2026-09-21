@@ -11,10 +11,6 @@ thread_local bool t_inParallel = false;
 
 } // namespace
 
-void setWorkerLimit(unsigned int limit) {
-    g_workerLimit.store(limit, std::memory_order_relaxed);
-}
-
 unsigned int workerLimit() {
     unsigned int limit = g_workerLimit.load(std::memory_order_relaxed);
     if (limit == 0) limit = std::thread::hardware_concurrency();
@@ -25,10 +21,6 @@ unsigned int workerLimit() {
 unsigned int parallelThreads(std::size_t count) {
     if (count <= 1 || t_inParallel) return 1;
     return static_cast<unsigned int>(std::min<std::size_t>(workerLimit(), count));
-}
-
-bool inParallelRegion() {
-    return t_inParallel;
 }
 
 void enterParallelRegion() {

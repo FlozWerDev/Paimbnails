@@ -23,18 +23,19 @@ namespace {
     }
 }
 
-ProfilePicIconsDetailPopup* ProfilePicIconsDetailPopup::create(ProfilePicConfig* cfg, std::function<void()> onChange) {
+ProfilePicIconsDetailPopup* ProfilePicIconsDetailPopup::create(ProfilePicConfig* cfg, CCNode* editor, std::function<void()> onChange) {
     auto* ret = new ProfilePicIconsDetailPopup();
-    if (ret && ret->init(cfg, onChange)) { ret->autorelease(); return ret; }
+    if (ret && ret->init(cfg, editor, onChange)) { ret->autorelease(); return ret; }
     delete ret;
     return nullptr;
 }
 
-bool ProfilePicIconsDetailPopup::init(ProfilePicConfig* cfg, std::function<void()> onChange) {
+bool ProfilePicIconsDetailPopup::init(ProfilePicConfig* cfg, CCNode* editor, std::function<void()> onChange) {
     if (!Popup::init(kW, kH)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Icon Settings");
     m_cfg = cfg;
+    m_editor = editor;
     m_onChange = onChange;
     m_contentNode = CCNode::create();
     m_contentNode->setContentSize({kW - 20.f, kH - 50.f});
@@ -43,10 +44,6 @@ bool ProfilePicIconsDetailPopup::init(ProfilePicConfig* cfg, std::function<void(
     m_mainLayer->addChild(m_contentNode);
     rebuild();
     return true;
-}
-
-void ProfilePicIconsDetailPopup::onClose(CCObject* sender) {
-    Popup::onClose(sender);
 }
 
 static CCNode* makeIconPreview(ProfilePicConfig* cfg, float size) {
@@ -61,6 +58,7 @@ static CCNode* makeIconPreview(ProfilePicConfig* cfg, float size) {
 }
 
 void ProfilePicIconsDetailPopup::rebuild() {
+    if (!m_editor.lock()) { this->onClose(nullptr); return; }
     if (!m_contentNode) return;
     m_contentNode->removeAllChildren();
 
@@ -294,6 +292,7 @@ void ProfilePicIconsDetailPopup::rebuild() {
 }
 
 void ProfilePicIconsDetailPopup::rebuildPreview() {
+    if (!m_editor.lock()) return;
     if (!m_previewNode) return;
     m_previewNode->removeAllChildrenWithCleanup(true);
     if (auto preview = makeIconPreview(m_cfg, 56.f)) {

@@ -49,7 +49,8 @@ void runAnalysis(std::string text, int levelId, std::string name, AnalysisCallba
     bool const started = ThreadTracker::get().spawn(
         [text = std::move(text), levelId, name = std::move(name), callback]() mutable {
             geode::utils::thread::setName("Paimon Autobuild Analysis");
-            if (paimon::isRuntimeShuttingDown()) return;
+            // A ban marks shutdown with the game still running; free the slot.
+            if (paimon::isRuntimeShuttingDown()) { g_busy = false; return; }
 
             auto data = std::make_shared<LevelData>(parseLevelString(text));
             auto report = analyzeLevel(*data);
@@ -75,8 +76,6 @@ void runAnalysis(std::string text, int levelId, std::string name, AnalysisCallba
 }
 
 } // namespace
-
-bool analysisBusy() { return g_busy; }
 
 void loadTaxonomyFile() {
     if (g_taxonomyLoaded) return;

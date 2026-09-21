@@ -102,9 +102,8 @@ bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
 void stepWheelScroll(geode::ScrollLayer* scrollLayer,
     float& targetY, bool& targetSet, float dt);
 
-// Show an alert on top of the popup that opened it. FLAlertLayer::show drops
-// the layer into the scene at its own m_ZOrder, which is 0 for GD's popups, so
-// one opened from a Geode popup can end up drawn underneath it.
+// Show an alert above the popup that opened it: FLAlertLayer::show uses the
+// scene's m_ZOrder, so one from a Geode popup can end up underneath it.
 void showAbove(FLAlertLayer* alert, cocos2d::CCNode* owner);
 
 // Fixed-height tab bar that restyles itself and calls onSelect(index).

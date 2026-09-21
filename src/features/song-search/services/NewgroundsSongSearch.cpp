@@ -15,6 +15,8 @@ bool isNumericID(std::string const& text) {
         [](unsigned char c) { return std::isdigit(c) != 0; });
 }
 
+namespace {
+
 std::string encodeQuery(std::string const& raw) {
     static char const* hex = "0123456789ABCDEF";
     std::string out;
@@ -54,6 +56,8 @@ std::string extractFirstAudioID(std::string const& html) {
     return id;
 }
 
+} // namespace
+
 void resolveByName(std::string const& rawQuery, std::function<void(SearchResult)> callback) {
     auto url = buildSearchURL(rawQuery);
 
@@ -71,6 +75,7 @@ void resolveByName(std::string const& rawQuery, std::function<void(SearchResult)
             auto body = res.string().unwrapOr("");
             auto id = extractFirstAudioID(body);
             if (id.empty()) {
+                log::debug("[SongSearch] Summary page without audio marker ({} bytes)", body.size());
                 callback({SearchStatus::NoResults, ""});
             } else {
                 callback({SearchStatus::Found, id});

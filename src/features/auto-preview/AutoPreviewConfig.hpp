@@ -21,10 +21,6 @@ inline bool browserGenEnabled() {
     return enabled() && geode::Mod::get()->getSettingValue<bool>("auto-preview-browser-gen");
 #endif
 }
-// real, community-curated thumbnails.
-inline bool badgeEnabled() {
-    return geode::Mod::get()->getSettingValue<bool>("auto-preview-badge");
-}
 inline int previewWidth() {
     auto const q = geode::Mod::get()->getSettingValue<std::string>("auto-preview-quality");
     if (q == "tiny") return 320;

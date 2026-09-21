@@ -29,11 +29,6 @@ class $modify(PaimonLevelPage, LevelPage) {
         int m_invalidationListenerId = 0;
     };
 
-    bool init(GJGameLevel* level) {
-        if (!LevelPage::init(level)) return false;
-        return true;
-    }
-
     $override
     void updateDynamicPage(GJGameLevel* level) {
         LevelPage::updateDynamicPage(level);

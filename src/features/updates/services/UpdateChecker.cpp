@@ -76,8 +76,6 @@ UpdateChecker& UpdateChecker::get() {
 }
 
 // Hierarchical semver comparison.
-// Returns >0 if other > base, 0 if equal, <0 if other < base.
-// Uses Geode VersionInfo if parseable; falls back to numeric component comparison.
 int UpdateChecker::compareVersions(std::string const& baseStr, std::string const& otherStr) {
     auto base  = sanitizeVersion(baseStr);
     auto other = sanitizeVersion(otherStr);
@@ -269,9 +267,8 @@ void UpdateChecker::onReleasesResponse(web::WebResponse& res) {
         list.push_back(std::move(info));
     }
 
-    // The API sorts by creation date, which drifts from the version order once a
-    // patch for an older branch is published late. compareVersions(a, b) is
-    // positive when b is newer than a, so negative means a belongs first here.
+    // The API sorts by creation date, which drifts from version order once a
+    // patch for an older branch is published late.
     std::stable_sort(list.begin(), list.end(), [](ReleaseInfo const& a, ReleaseInfo const& b) {
         return compareVersions(a.version, b.version) < 0;
     });
@@ -365,10 +362,8 @@ void UpdateChecker::downloadRelease(
                 return;
             }
 
-            // Same technique Geode's own updater uses: overwrite the installed
-            // .geode in place while the game is running. The file isn't locked
-            // (the binary is loaded from the unzipped runtime dir), so the new
-            // version simply loads on the next restart.
+            // Same trick as Geode's own updater: the .geode isn't locked while
+            // running, so overwriting it in place applies on next restart.
             auto packagePath = Mod::get()->getPackagePath();
             if (packagePath.empty()) {
                 fail("no package path");

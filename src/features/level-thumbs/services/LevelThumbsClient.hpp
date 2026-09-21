@@ -10,10 +10,8 @@
 #include <unordered_map>
 #include <vector>
 
-// Direct compatibility with cdc.level_thumbnails: we talk to the same public API
-// its mod uses, so a level with no Paimbnails thumbnail still shows one through
-// our own cells. Doing it here instead of asking the user to run both mods keeps
-// a single thumbnail system on every LevelCell.
+// Same public API as cdc.level_thumbnails, so levels with no Paimbnails
+// thumbnail still show one without requiring both mods.
 
 namespace paimon::levelthumbs {
 

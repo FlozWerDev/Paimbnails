@@ -84,7 +84,7 @@ void LevelTagsClient::parseCatalog(matjson::Value const& root) {
             info.name = name;
             info.category = category;
 
-            // entry is [availability, [r,g,b], description]
+            // entry is [availability, [r,g,b], ...]
             if (entry.isArray()) {
                 auto fields = paimon::json::arrayOrEmpty(entry);
                 if (fields.size() > 1 && fields[1].isArray()) {
@@ -96,9 +96,6 @@ void LevelTagsClient::parseCatalog(matjson::Value const& root) {
                             static_cast<GLubyte>(std::clamp<int>(rgb[2].asInt().unwrapOr(255), 0, 255))
                         };
                     }
-                }
-                if (fields.size() > 2) {
-                    info.description = fields[2].asString().unwrapOr("");
                 }
             }
 
@@ -163,18 +160,6 @@ void LevelTagsClient::loadCatalog(std::function<void(bool)> callback) {
 bool LevelTagsClient::hasCatalog() const {
     std::lock_guard lock(m_mutex);
     return m_catalogLoaded;
-}
-
-std::vector<TagInfo> LevelTagsClient::catalog() const {
-    std::lock_guard lock(m_mutex);
-    std::vector<TagInfo> out;
-    out.reserve(m_catalog.size());
-    for (auto const& [name, info] : m_catalog) out.push_back(info);
-    std::sort(out.begin(), out.end(), [](TagInfo const& a, TagInfo const& b) {
-        if (a.category != b.category) return a.category < b.category;
-        return a.name < b.name;
-    });
-    return out;
 }
 
 std::vector<TagInfo> LevelTagsClient::catalogFor(TagCategory category) const {
@@ -307,19 +292,6 @@ void LevelTagsClient::fetchTags(std::vector<int> const& levelIDs, std::function<
             });
     }
 }
-
-std::vector<std::string> LevelTagsClient::cachedTags(int levelID) const {
-    std::lock_guard lock(m_mutex);
-    auto it = m_levelTags.find(levelID);
-    if (it == m_levelTags.end()) return {};
-    return it->second;
-}
-
-bool LevelTagsClient::isResolved(int levelID) const {
-    std::lock_guard lock(m_mutex);
-    return m_levelTags.count(levelID) > 0;
-}
-
 
 void LevelTagsClient::searchByTags(
     std::vector<std::string> const& include,

@@ -17,14 +17,14 @@ namespace paimon::officialslots::ui {
 // game's sprite frames are missing, so every caller has to check.
 cocos2d::CCNode* createDifficultyBadge(Difficulty difficulty, Tier tier, float scale);
 
-// Star (or moon) count drawn with the game's own icon, laid out as "12 *".
+// Star count drawn with the game's own icon, laid out as "12 *".
 // Returns null when the icon is unavailable rather than drawing a bare number.
-cocos2d::CCNode* createStarBadge(int stars, bool platformer, float scale);
+cocos2d::CCNode* createStarBadge(int stars, float scale);
 
 // The three silver coins shown on official pages.
 cocos2d::CCNode* createCoinRow(float scale);
 
 // Dark rounded panel used behind cards and sections.
-cocos2d::CCNode* createCardBackground(cocos2d::CCSize size, bool highlighted);
+cocos2d::CCNode* createCardBackground(cocos2d::CCSize size);
 
 } // namespace paimon::officialslots::ui

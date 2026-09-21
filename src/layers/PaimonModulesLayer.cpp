@@ -61,7 +61,7 @@ PaimonModulesLayer* PaimonModulesLayer::create() {
 
 CCScene* PaimonModulesLayer::scene() {
     auto scene = CCScene::create();
-    scene->addChild(PaimonModulesLayer::create());
+    if (auto* layer = PaimonModulesLayer::create()) scene->addChild(layer);
     return scene;
 }
 
@@ -118,7 +118,6 @@ bool PaimonModulesLayer::init() {
     backBtn->setPosition({panelLeft - 4.f, panelTop - 2.f});
     m_menu->addChild(backBtn);
 
-    // Section picker on the left, search box on the right.
     float filterY = panelTop - 66.f;
     float sectionW = std::min(panelW * 0.44f, 190.f);
     float sectionCx = panelLeft + 18.f + sectionW / 2.f;
@@ -155,9 +154,8 @@ bool PaimonModulesLayer::init() {
     m_searchInput->setMaxCharCount(32);
     m_searchInput->setPosition({panelLeft + panelW - 18.f - searchW / 2.f, filterY});
     m_searchInput->setScale(0.74f);
-    // Plain `this`: the input is our own child, so it cannot outlive us. A
-    // WeakRef here keeps the layer alive through the pool and then drops the
-    // last reference from inside lock(), destroying us mid-callback.
+    // Plain `this`: el input es hijo propio y no nos sobrevive. Un WeakRef
+    // nos mantendria vivos hasta soltarse dentro de lock(), mid-callback.
     m_searchInput->setCallback([this](std::string const& text) {
         if (!this->getParent()) return;
         m_query = text;
@@ -212,7 +210,6 @@ void PaimonModulesLayer::collectVisible() {
         std::erase_if(m_visible, [wanted](mods::Module const* m) { return m->section != wanted; });
     }
 
-    // Group by section, then by group, keeping catalog order inside each group.
     auto const& order = mods::sections();
     auto rank = [&order](mods::Section section) {
         auto it = std::find(order.begin(), order.end(), section);
@@ -459,10 +456,8 @@ void PaimonModulesLayer::refreshRow(int index, bool updateToggler) {
     bool on = selfOn && available && !row.ceded;
 
     if (row.toggler) {
-        // The row that was just clicked already has its sprite flipped by
-        // CCMenuItemToggler's own native click handling; toggling it again
-        // here races that update and can leave the checkbox stuck showing
-        // the old state even though the label/data are correct.
+        // La fila clicada ya volteo su sprite en el click nativo; voltearla
+        // aqui de nuevo deja el checkbox atascado en el estado viejo.
         if (updateToggler) row.toggler->toggle(selfOn);
         row.toggler->setEnabled(available);
     }

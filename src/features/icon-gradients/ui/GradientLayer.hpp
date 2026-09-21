@@ -68,7 +68,6 @@ private:
     std::vector<IconButton*> m_buttons;
 
     // Saved overlays and working copy.
-    std::unordered_map<IconType, std::vector<CCPoint>> m_iconPoints;
     GradientConfig m_currentConfig;
     ColorType m_currentColor = ColorType::Main;
 

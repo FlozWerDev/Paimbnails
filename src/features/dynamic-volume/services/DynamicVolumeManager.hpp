@@ -15,7 +15,6 @@ struct LiveState {
     float songLufs     = kInvalidLufs;
     float referenceDb  = kInvalidLufs;
     float appliedGainDb = 0.0f;
-    float floorDb      = 0.0f;
     float rampProgress = 1.0f;   // 0 ducked, 1 full
     bool  analyzing    = false;
     bool  safeDropActive = false;

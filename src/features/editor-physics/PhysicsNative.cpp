@@ -440,9 +440,8 @@ TriggerGraph buildNativeTriggerGraph(
             float const height = std::max(6.f, bounds.maxY - bounds.minY);
             float const centerX = (bounds.minX + bounds.maxX) * 0.5f;
             float const centerY = (bounds.minY + bounds.maxY) * 0.5f;
-            // The sensors straddle the body's own edge instead of hanging off
-            // it: hung outside, the whole padding became the gap the body kept
-            // between itself and the floor it was supposed to rest on.
+            // Sensors straddle the body's edge: hung outside, the padding became
+            // the gap the body kept with the floor.
             std::array<Vec2, 4> positions{{
                 {bounds.minX, centerY},
                 {bounds.maxX, centerY},

@@ -23,9 +23,8 @@ namespace {
 // asi que un mod que cambie el tickrate desajusta la latencia, no el suavizado.
 constexpr double kPhysicsStep = 1.0 / 240.0;
 
-// Encima de esto ya no es movimiento, es un salto (portal de teletransporte,
-// checkpoint, el suelo dando la vuelta, un zoom instantaneo). Interpolar un
-// salto se ve como un arrastre, asi que ese nodo se dibuja tal cual ese frame.
+// Encima de esto ya no es movimiento sino un salto (teletransporte,
+// checkpoint...): se dibuja tal cual ese frame, sin interpolar.
 constexpr float kSnapSpeed = 4000.f;
 constexpr float kSnapSpin  = 2000.f;
 constexpr float kSnapZoom  = 4.f;
@@ -361,11 +360,8 @@ void FrameInterpolator::beginVisit(GJBaseGameLayer* layer) {
     if (advanced) m_span = m_stepped;
     m_stepsPerFrame = m_stepsPerFrame * 0.85f + static_cast<float>(m_stepped / kPhysicsStep) * 0.15f;
 
-    // El estado dibujable esta en t_B; el reloj real va en t_B + sobrante. Se
-    // dibuja ese instante menos el retraso elegido, expresado como fraccion del
-    // tramo simulado entre las dos ultimas fotos. Que se salga del [0, 1] no es
-    // un error: la recta prev-cur es la velocidad, asi que prolongarla por
-    // cualquiera de los dos lados sigue siendo el mismo movimiento.
+    // Se dibuja t_B + sobrante menos el retraso, como fraccion del tramo entre
+    // fotos. Salirse de [0, 1] no es error: la recta prev-cur es la velocidad.
     double const span = m_span > 0.0 ? m_span : kPhysicsStep;
     double const raw = 1.0 + (m_leftover - kPhysicsStep * latencyLag(m_config.latency)) / span;
     double const eased = 1.0 + (std::clamp(raw, -0.5, 1.5) - 1.0)

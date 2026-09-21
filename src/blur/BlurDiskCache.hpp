@@ -23,11 +23,8 @@ public:
     void init();
     void lookupAsync(std::string const& key, ReadyCallback onReady);
     bool hasEntry(std::string const& key) const;
-    void storeAsync(std::string const& key, cocos2d::CCRenderTexture* rt);
     void storeFromTextureAsync(std::string const& key, cocos2d::CCTexture2D* tex, int width, int height);
-    void invalidate(std::string const& key);
     void clear();
-    std::size_t diskEntryCount() const;
     void shutdown();
 
 private:
@@ -72,8 +69,5 @@ private:
     static constexpr std::uint32_t VERSION = 1u;
     static constexpr std::size_t HEADER_SIZE = 20;
 };
-
-std::string makeKey(std::int64_t sourceID, int thumbIndex, char const* style,
-                    int intensity, int width, int height);
 
 } // namespace paimon::blur

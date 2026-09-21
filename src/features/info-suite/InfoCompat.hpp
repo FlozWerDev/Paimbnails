@@ -7,7 +7,6 @@
 // `info-compat-force` setting.
 
 #include <string_view>
-#include <vector>
 
 namespace paimon::info::compat {
 
@@ -19,11 +18,5 @@ bool overlapsBetterInfo(std::string_view key);
 
 // Final verdict used by the gate: the module has to stay off right now.
 bool isCeded(std::string_view key);
-
-// Setting keys of the overlapping modules, for the warning banner.
-std::vector<std::string_view> const& overlappingKeys();
-
-// How many overlapping modules are currently switched on but ceded.
-int cededModuleCount();
 
 } // namespace paimon::info::compat

@@ -34,10 +34,6 @@ class $modify(PaimonInfoSuiteBrowser, LevelBrowserLayer) {
         paimon::hooks::afterNodeIdsOrLate(self, "LevelBrowserLayer::init");
     }
 
-    struct Fields {
-        std::string m_key;
-    };
-
     bool init(GJSearchObject* object) {
         // Restore before the base init so the first request already asks for the
         // remembered page instead of loading page 1 and then jumping.
@@ -48,7 +44,6 @@ class $modify(PaimonInfoSuiteBrowser, LevelBrowserLayer) {
         }
 
         if (!LevelBrowserLayer::init(object)) return false;
-        m_fields->m_key = searchKey(object);
         return true;
     }
 

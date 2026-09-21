@@ -1,17 +1,6 @@
 #pragma once
-// TintEngine: the PackGen v2 luminance-tint kernel.
-//
-// Bit-exact with TintMath::tintByLuminance/overlayPixel/replacePixel (same
-// float op order, same rounding, same clamps) but with every loop invariant
-// hoisted: brightness clamp, tint channels, saturation/contrast branches,
-// gain, and the per-pixel alpha division (replaced by a LUT holding the
-// identical float values). The engine's LuminanceTinter/OverlayTinter call
-// into this kernel; the win is fewer branches/divides per pixel plus fused
-// multi-role row loops and, for big sheets, row-band parallelism on top.
-//
-// Pure C++: no Geode, no cocos, no logging. All entry points take raw
-// pointers so both FrameImage (tests/pipeline) and ImageBuffer (engine)
-// can use them with zero copies.
+// TintEngine: PackGen v2 luminance-tint kernel, bit-exact with TintMath
+// (same op order/rounding) — speed comes from hoisted invariants, not new math.
 
 #include <algorithm>
 #include <cmath>

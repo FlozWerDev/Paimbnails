@@ -20,8 +20,6 @@ public:
     // `status` empty means every request, newest first.
     void fetch(std::string const& status, ListCallback callback);
 
-    std::vector<Request> const& cached() const { return m_cached; }
-
 private:
     RequestFeed() = default;
 

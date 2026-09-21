@@ -1,7 +1,6 @@
 #pragma once
 
 // Deterministic "random" preview zone selection.
-//// length. Deterministic so a level always previews the same zone (re-generation
 #include <cstdint>
 
 namespace paimon::autopreview {

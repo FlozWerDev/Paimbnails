@@ -1,12 +1,6 @@
 #pragma once
-// MaxRectsPacker: Best-Short-Side-Fit rect packer for PackGen v2.
-//
-// Deterministic: ties break by (y, x, input index), so the same input set
-// always yields byte-identical atlases regardless of thread scheduling.
-// Optional 90-degree rotation per rect (square-ish sprites pack tighter);
-// `allowRotate=false` reproduces shelf-compatible placements for A/B tests.
-//
-// Pure C++; no Geode. Frame-based: feed rects, get placements + atlas size.
+// MaxRectsPacker: BSSF rect packer; ties break by (y, x, input index) so
+// output is thread-schedule independent. allowRotate=false keeps shelf layout for A/B.
 
 #include <algorithm>
 #include <cstddef>

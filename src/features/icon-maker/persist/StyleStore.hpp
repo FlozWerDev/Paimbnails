@@ -1,8 +1,6 @@
 #pragma once
-// Biblioteca de pinturas: coges como esta pintada una capa, le pones nombre y
-// la vuelves a usar en cualquier otra sin repetir el trabajo.
-//
-// Threading: todo desde el hilo principal, como IconProjectStore.
+// Biblioteca de pinturas: guarda como esta pintada una capa para reutilizarla.
+// Todo desde el hilo principal, como IconProjectStore.
 
 #include "../data/FillSpec.hpp"
 

@@ -125,12 +125,10 @@ class $modify(PaimonMenuLayerPreload, MenuLayer) {
             this->unschedule(schedule_selector(PaimonMenuLayerPreload::updatePreloadLabel));
             m_fields->updateScheduled = false;
             // Remove the label 2s after it reaches the done state so it doesn't linger.
-            auto label = m_fields->progressLabel;
             this->scheduleOnce(
                 schedule_selector(PaimonMenuLayerPreload::removePreloadLabel),
                 2.0f
             );
-            (void)label;
         }
         m_fields->progressLabel->setString(text.c_str());
     }

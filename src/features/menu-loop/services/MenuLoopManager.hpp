@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
-#include <random>
+#include <unordered_map>
 
 using namespace geode::prelude;
 
@@ -33,17 +33,13 @@ public:
     }
 
     std::vector<std::string>& getSongs() { return m_songs; }
-    void addSong(const std::string& path);
     void removeSong(const std::string& path);
-    void clearSongs();
     int getSongsSize() const { return static_cast<int>(m_songs.size()); }
     bool songSizeIsBad() const { return m_songs.empty() || m_songs.size() < 2; }
 
     void pickRandomSong();
     std::string getCurrentSong() const;
     void setCurrentSong(const std::string& song);
-    void setCurrentSongToSavedSong();
-    void setCurrentSongToOverride();
     bool isOriginalMenuLoop() const { return m_isMenuLoop; }
 
     void setOverride(const std::string& path);
@@ -58,10 +54,8 @@ public:
     std::vector<std::string>& getFavorites() { return m_favorites; }
 
     void setHeldSong(const std::string& value);
-    void resetHeldSong();
     std::string getHeldSong() const { return m_heldSong; }
     void setPreviousSong(const std::string& value);
-    void resetPreviousSong();
     std::string getPreviousSong() const { return m_previousSong; }
     bool isPreviousSong() const { return m_currentSong == m_previousSong; }
 
@@ -87,8 +81,6 @@ public:
 
     void setGeodify(bool value) { m_geodify = value; }
     bool getGeodify() const { return m_geodify; }
-    void setSawbladeCustomSongsFolder(bool value) { m_sawbladeCustomSongsFolder = value; }
-    bool getSawbladeCustomSongsFolder() const { return m_sawbladeCustomSongsFolder; }
     void setAdvancedLogs(bool value) { m_advancedLogs = value; }
     bool getAdvancedLogs() const { return m_advancedLogs; }
     void setColonMenuLoopStartTime(Mod* value) { m_colonMenuLoopStartTime = value; }
@@ -99,15 +91,7 @@ public:
     std::filesystem::path getConfigDir() const { return Mod::get()->getConfigDir(); }
     void saveLastMenuLoop();
 
-    void setPlaylistIsEmpty(bool value) { m_playlistIsEmpty = value; }
-    bool getPlaylistIsEmpty() const { return m_playlistIsEmpty; }
-    void setPlaylistName(const std::string& name) { m_playlistName = name; }
-    std::string getPlaylistName() const { return m_playlistName; }
-
     unsigned long getHashedCurrentSong() const { return m_hashedCurrentSong; }
-    void incrementTowerRepeatCount() { m_towerRepeatCount++; }
-    void resetTowerRepeatCount() { m_towerRepeatCount = 0; }
-    int getTowerRepeatCount() const { return m_towerRepeatCount; }
 
 private:
     MenuLoopManager() = default;
@@ -123,7 +107,6 @@ private:
     std::string m_heldSong;
     std::string m_previousSong;
     std::string m_displayName;
-    std::string m_playlistName;
     std::vector<std::string> m_blacklist;
     std::vector<std::string> m_favorites;
     std::unordered_map<std::string, SongData> m_songToSongDataMap;
@@ -136,13 +119,10 @@ private:
     bool m_shouldRestoreMenuLoopPoint = false;
     bool m_pausedSongPositionTracking = false;
     bool m_geodify = false;
-    bool m_sawbladeCustomSongsFolder = false;
     bool m_advancedLogs = false;
     bool m_vibecodedVentilla = false;
-    bool m_playlistIsEmpty = true;
 
     int m_lastPosition = 0;
-    int m_towerRepeatCount = 0;
     unsigned long m_hashedCurrentSong = 0;
 
     Mod* m_colonMenuLoopStartTime = nullptr;

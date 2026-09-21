@@ -76,12 +76,14 @@ void shutdownPetTicker() {
 
 void initPetTicker() {
     if (s_petTicker) return;
+    auto* director = CCDirector::get();
+    if (!director) return;
+    auto* scheduler = director->getScheduler();
+    if (!scheduler) return;
     s_petTicker = PetTickerNode::create();
     // Register with the global scheduler directly (paused=false);
     // CCNode::scheduleUpdate() requires the node to be in a running scene.
-    CCDirector::get()->getScheduler()->scheduleUpdateForTarget(
-        s_petTicker.data(), 0, false
-    );
+    scheduler->scheduleUpdateForTarget(s_petTicker.data(), 0, false);
 }
 
 $on_game(Exiting) {

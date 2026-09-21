@@ -28,10 +28,8 @@ enum class FeedSource {
 };
 
 struct FeedQuery {
-    FeedSource source = FeedSource::Featured;
     // Keep the search object alive while queued work drains across frames.
     geode::Ref<GJSearchObject> searchObj = nullptr;
-    std::string label;
 };
 
 struct Recommendation {
@@ -54,9 +52,6 @@ public:
     // Score candidates and return up to limit picks; callback runs on the main thread.
     void rank(std::vector<geode::Ref<GJGameLevel>> candidates, int limit,
               std::function<void(std::vector<Recommendation>)> callback);
-
-    // Score summary from the last rank(), newest first.
-    std::string const& lastPlanSummary() const { return m_lastPlanSummary; }
 
 private:
     RecommendationEngine() = default;

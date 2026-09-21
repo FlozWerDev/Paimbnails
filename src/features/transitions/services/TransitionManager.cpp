@@ -8,7 +8,6 @@
 #include <matjson.hpp>
 #include <filesystem>
 #include <cmath>
-#include <exception>
 #include <random>
 
 using namespace geode::prelude;
@@ -52,13 +51,6 @@ void TransitionManager::tripCustomSafeMode(std::string const& reason) {
         log::warn("[TransitionManager] Custom safe mode activated: {}", reason);
     }
     m_customSafeModeTripped = true;
-}
-
-void TransitionManager::resetCustomSafeMode() {
-    if (m_customSafeModeTripped) {
-        log::info("[TransitionManager] Custom safe mode reset");
-    }
-    m_customSafeModeTripped = false;
 }
 
 std::vector<TransitionType> const& TransitionManager::allTypes() {
@@ -592,15 +584,9 @@ static TransitionConfig parseConfig(matjson::Value const& obj) {
             cfg.colorB = static_cast<int>(arr[2].asInt().unwrapOr(0));
         }
     }
-    if (obj.contains("image"))    cfg.imagePath  = obj["image"].asString().unwrapOr("");
     cfg.mediaPath = obj["media"].asString().unwrapOr("");
     cfg.cutPoint = static_cast<float>(obj["cut_point"].asDouble().unwrapOr(.5));
     if (obj.contains("script"))   cfg.scriptPath = obj["script"].asString().unwrapOr("");
-    if (obj.contains("images") && obj["images"].isArray()) {
-        for (auto const& v : obj["images"].asArray().unwrapOr(std::vector<matjson::Value>{})) {
-            if (v.isString()) cfg.imageList.push_back(v.asString().unwrapOr(""));
-        }
-    }
     if (obj.contains("commands") && obj["commands"].isArray()) {
         for (auto const& c : obj["commands"].asArray().unwrapOr(std::vector<matjson::Value>{})) {
             cfg.commands.push_back(parseCommand(c));
@@ -611,29 +597,6 @@ static TransitionConfig parseConfig(matjson::Value const& obj) {
 
 static bool migrateConfigImages(TransitionConfig& cfg) {
     bool changed = false;
-
-    if (!cfg.imagePath.empty()) {
-        auto imported = paimon::assets::importStoredPath(cfg.imagePath, "transitions", paimon::assets::Kind::Image);
-        if (imported.success && !imported.path.empty()) {
-            auto normalized = paimon::assets::normalizePathString(imported.path);
-            if (normalized != cfg.imagePath) {
-                cfg.imagePath = normalized;
-                changed = true;
-            }
-        }
-    }
-
-    for (auto& img : cfg.imageList) {
-        if (img.empty()) continue;
-        auto imported = paimon::assets::importStoredPath(img, "transitions", paimon::assets::Kind::Image);
-        if (imported.success && !imported.path.empty()) {
-            auto normalized = paimon::assets::normalizePathString(imported.path);
-            if (normalized != img) {
-                img = normalized;
-                changed = true;
-            }
-        }
-    }
 
     for (auto& cmd : cfg.commands) {
         if (cmd.imagePath.empty() || std::filesystem::path(cmd.imagePath).extension() == ".pttransition") continue;
@@ -692,13 +655,7 @@ static matjson::Value configToJson(TransitionConfig const& cfg) {
     auto colorArr = matjson::Value::array();
     colorArr.push(cfg.colorR); colorArr.push(cfg.colorG); colorArr.push(cfg.colorB);
     obj.set("color", colorArr);
-    if (!cfg.imagePath.empty())  obj.set("image", cfg.imagePath);
     if (!cfg.scriptPath.empty()) obj.set("script", cfg.scriptPath);
-    if (!cfg.imageList.empty()) {
-        auto imgArr = matjson::Value::array();
-        for (auto const& img : cfg.imageList) imgArr.push(img);
-        obj.set("images", imgArr);
-    }
     if (!cfg.commands.empty()) {
         auto cmdsArr = matjson::Value::array();
         for (auto const& cmd : cfg.commands) cmdsArr.push(commandToJson(cmd));

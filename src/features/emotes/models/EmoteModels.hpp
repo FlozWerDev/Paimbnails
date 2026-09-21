@@ -19,14 +19,4 @@ struct EmoteInfo {
     std::string url;
 };
 
-struct EmotePage {
-    std::vector<EmoteInfo> emotes;
-    int page = 1;
-    int limit = 20;
-    int total = 0;
-    int totalPages = 0;
-    bool hasNext = false;
-    bool hasPrev = false;
-};
-
 } // namespace paimon::emotes

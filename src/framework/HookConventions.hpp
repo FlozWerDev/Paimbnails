@@ -4,23 +4,10 @@
 // Goal: run after geode.node-ids without stomping other mods via Priority::Last.
 
 #include <Geode/Geode.hpp>
-#include <Geode/utils/VMTHookManager.hpp>
 #include <string>
 #include <string_view>
 
 namespace paimon::hooks {
-
-template <auto Function, class Instance>
-inline void addInheritedHook(Instance* instance, std::string_view method) {
-    auto result = geode::VMTHookManager::get().addHook<Function>(instance, std::string(method));
-    if (!result) {
-        geode::log::warn(
-            "[Paimbnails] Failed to hook inherited {}: {}",
-            method,
-            result.unwrapErr()
-        );
-    }
-}
 
 inline void afterNodeIdsOrLate(auto& self, std::string_view method) {
     std::string const fn{method};
@@ -56,12 +43,6 @@ inline void afterModOrElseNodeIdsLate(
         return;
     }
     afterNodeIdsOrLate(self, method);
-}
-
-inline void warnIfPriorityFailed(bool ok, std::string_view label) {
-    if (!ok) {
-        geode::log::warn("[Paimbnails] Failed to set hook priority for {}", label);
-    }
 }
 
 } // namespace paimon::hooks

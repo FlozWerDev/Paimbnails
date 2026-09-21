@@ -33,10 +33,8 @@ std::chrono::steady_clock::time_point s_suppressUntil{};
 FMOD::Sound* s_fireSound = nullptr;
 FMOD::Channel* s_fireChannel = nullptr;
 
-// Generacion del disparo en curso: cada play la incrementa y las lambdas
-// diferidas capturan la suya por valor. Si hubo otro disparo o un stop en el
-// medio, la generacion ya cambio y la lambda vieja no toca nada: asi un timer
-// rezagado no puede cortar ni retocar el volumen del sonido nuevo.
+// Generacion del disparo en curso: las lambdas capturan la suya por valor, asi
+// un timer rezagado no corta ni retoca el volumen del sonido nuevo.
 std::atomic<unsigned> s_fireGen{0};
 
 bool channelAlive(FMOD::Channel* ch) {

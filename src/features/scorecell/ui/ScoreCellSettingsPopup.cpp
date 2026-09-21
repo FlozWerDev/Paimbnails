@@ -125,8 +125,7 @@ bool ScoreCellSettingsPopup::initContents() {
 
     y -= 32.f;
     addSmall("Speed", kLeft, y);
-    auto speedSlider = addSlider(speedToSlider(gradientSpeed()), menu_selector(ScoreCellSettingsPopup::onSpeed), y);
-    (void)speedSlider;
+    addSlider(speedToSlider(gradientSpeed()), menu_selector(ScoreCellSettingsPopup::onSpeed), y);
     m_speedLabel = addSmall("", kRight, y, 1.f);
 
     y -= 30.f;
@@ -216,9 +215,8 @@ void ScoreCellSettingsPopup::rebuildPreview() {
     m_previewContainer->addChild(clip);
 
     if (scoreGradientEnabled()) {
-        // The score-gradient module paints ScoreGradientLayer (fixed idle
-        // sway + own hover lift, Effect setting N/A): preview that exact
-        // layer so the popup is WYSIWYG. It harmonizes internally.
+        // Preview the exact gradient layer the game paints, so the popup stays
+        // WYSIWYG (fixed sway + own hover lift, Effect setting N/A).
         if (auto* grad = paimon::scorecell::ScoreGradientLayer::create(sz, a, b)) {
             grad->setAnchorPoint({0.f, 0.f});
             grad->setPosition({0.f, 0.f});

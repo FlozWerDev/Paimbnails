@@ -9,7 +9,6 @@
 #include "CaptureUIConstants.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
-#include <Geode/ui/GeodeUI.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -17,11 +16,9 @@
 #include <Geode/binding/PlayerObject.hpp>
 #include <Geode/binding/ShaderLayer.hpp>
 #include <Geode/binding/FLAlertLayer.hpp>
-#include <Geode/binding/GJBaseGameLayer.hpp>
 #include <set>
 #include <algorithm>
 #include <cstring>
-#include "../services/FramebufferCapture.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 
 using namespace geode::prelude;
@@ -987,7 +984,7 @@ void CaptureLayerEditorPopup::onDoneBtn(CCObject* sender) {
     this->onClose(nullptr);
 
     if (previewRef) {
-        previewRef->liveRecapture(true);
+        previewRef->liveRecapture();
     }
 }
 

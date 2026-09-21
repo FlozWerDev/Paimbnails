@@ -66,9 +66,8 @@ bool isGenericLayerClass(std::string const& cls) {
            cls == "BoomScrollLayer" || cls == "ListLayer" || cls == "TableView";
 }
 
-// Capa de GD que contiene el boton (MenuLayer, LevelInfoLayer, un popup...).
-// Se coge la mas externa: la de dentro suele ser el cuerpo de un scroll, y la
-// pantalla de verdad esta arriba del todo.
+// Capa de GD que contiene el boton; se coge la mas externa porque la de dentro
+// suele ser el cuerpo de un scroll.
 std::string ownerLayerClass(CCNode* node) {
     std::string outermost;
     for (auto* current = node; current; current = current->getParent()) {
@@ -119,10 +118,8 @@ bool betterFrameName(std::string_view candidate, std::string_view current) {
     return candidate < current;
 }
 
-// Indice inverso recorte -> nombre. Resolver un sprite recorriendo el cache de
-// frames cuesta una pasada entera; durante un barrido de escena eso se hace
-// cientos de veces, asi que se construye la tabla una vez y se reusa. Se
-// reconstruye cuando el juego carga hojas nuevas.
+// Indice inverso recorte -> nombre: el barrido lo consultaria cientos de veces,
+// asi que se construye una vez y se reusa hasta que cargan hojas nuevas.
 struct FrameKey {
     CCTexture2D* texture = nullptr;
     int x = 0, y = 0, w = 0, h = 0;
@@ -175,9 +172,8 @@ std::string frameNameForSprite(CCSprite* sprite) {
     return found == index.end() ? std::string() : found->second;
 }
 
-// El sprite propio manda; si no resuelve, gana el hijo visualmente dominante.
-// Asi un CCMenuItemSpriteExtra devuelve su icono real en vez de una esquina
-// suelta del nine-slice de su fondo.
+// El sprite propio manda; si no, gana el hijo de mayor area, asi el item
+// devuelve su icono real en vez de una esquina del nine-slice del fondo.
 void collectIconCandidate(CCNode* node, std::string& bestName, float& bestArea) {
     if (!node || typeinfo_cast<CCLabelBMFont*>(node)) return;
 
@@ -295,8 +291,6 @@ CCNode* resolvePath(CCScene* scene, std::vector<int> const& path) {
     return current;
 }
 
-bool isInteractable(CCMenuItem* item);
-
 // Busca en profundidad el boton cuya cadena de ids coincide con idPath. Si el
 // nodo que hay al final de una rama no sirve, sigue buscando por las demas.
 CCMenuItem* resolveIdPath(CCNode* root, std::vector<std::string> const& path, size_t depth) {
@@ -361,11 +355,8 @@ CCMenuItem* findButtonAt(CCNode* node, CCPoint worldPoint) {
 // Reencontrar el boton guardado
 // -------------------------------------------------------------------------
 
-// Dos puntuaciones separadas. `identity` solo suma con senales que distinguen a
-// ESTE boton de sus hermanos; `total` incluye ademas el contexto (pantalla,
-// receptor del callback, menu padre), que comparten todos los botones de la
-// misma capa. Exigir ambas evita activar el boton de al lado cuando el guardado
-// ya no esta en pantalla.
+// Dos puntuaciones: `identity` distingue ESTE boton de sus hermanos y `total`
+// suma ademas contexto compartido; exigir ambas evita activar el de al lado.
 constexpr long kMinIdentity = 140;
 constexpr long kMinConfidence = 320;
 
@@ -462,9 +453,8 @@ CCMenuItem* locateButton(CustomQuickButton const& def) {
     auto* scene = director ? director->getRunningScene() : nullptr;
     if (!scene) return nullptr;
 
-    // 1. Ruta de ids: sobrevive a que otros mods anadan o quiten nodos. Solo
-    // sirve si el propio boton tenia id; si no, la ruta es todo comodines y
-    // caeria en el primer nodo que pillase.
+    // Ruta de ids primero: sobrevive a nodos que otros mods anadan o quiten,
+    // pero solo sirve si el boton tenia id (si no, todo comodines).
     if (!def.idPath.empty() && !def.idPath.back().empty()) {
         if (auto* item = resolveIdPath(scene, def.idPath, 0)) {
             // Los ids se repiten entre pantallas; comprobar que la capa cuadra.

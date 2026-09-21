@@ -20,9 +20,7 @@ constexpr IconType kGamemodes[] = {
     IconType::Robot, IconType::Spider, IconType::Swing, IconType::Jetpack,
 };
 
-// Drawn size of a SimplePlayer, in points. Its own content size is often zero,
-// so measure the layer that actually gets painted and only guess as a last
-// resort (robot and spider keep their parts in their own sprites).
+// SimplePlayer content size is often zero; measure the painted layer, guess only as last resort.
 float drawnSize(SimplePlayer* player) {
     if (auto* first = player->m_firstLayer) {
         auto const size = first->getScaledContentSize();

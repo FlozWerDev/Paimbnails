@@ -1,8 +1,6 @@
 #pragma once
-// Un solo acceso en el icon kit para todo lo que el mod cuelga ahi. Cada
-// feature registra su boton aqui en vez de apilarlo en la columna del garage;
-// los botones esperan en un carril oculto hasta que el popup del hub se los
-// lleva prestados.
+// One hidden rail in the icon kit lends buttons to the hub popup, instead of
+// stacking them in the garage column.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJGarageLayer.hpp>
@@ -22,7 +20,6 @@ cocos2d::CCMenu* rail(GJGarageLayer* layer);
 // Los botones registrados, ya ordenados como los pinta el popup.
 std::vector<cocos2d::CCMenuItem*> entries(GJGarageLayer* layer);
 
-// El texto que se registro con el boton.
 std::string labelOf(cocos2d::CCNode* btn);
 
 // Pone el unico boton visible, el que abre el popup del hub.

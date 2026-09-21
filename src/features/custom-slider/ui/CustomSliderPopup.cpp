@@ -127,6 +127,29 @@ void CustomSliderPopup::rebuild() {
             reapplyAllSliders();
         });
 
+    auto* tabs = kit::makeTabBar(scrollW, {"Basico", "Avanzado"}, m_tab,
+        [this](int i) {
+            m_tab = i;
+            scheduleRebuild();
+        });
+
+    std::vector<CCNode*> items = {hero, tabs};
+    if (m_tab == 0) {
+        for (auto* card : buildBasicCards(scrollW, innerW)) items.push_back(card);
+    } else {
+        for (auto* card : buildAdvancedCards(scrollW, innerW)) items.push_back(card);
+    }
+
+    m_scroll = kit::makeScrollStack({scrollW, scrollH}, items);
+    m_scroll->setPosition({12.f, 34.f});
+    m_mainLayer->addChild(m_scroll);
+
+    refreshPreview();
+}
+
+std::vector<CCNode*> CustomSliderPopup::buildBasicCards(float scrollW, float innerW) {
+    auto& cfg = CustomSliderManager::get().config();
+
     std::vector<CCNode*> styleRows;
     styleRows.push_back(kit::makeSelectRow(innerW,
         "Tipo de puntero",
@@ -259,12 +282,6 @@ void CustomSliderPopup::rebuild() {
 
     auto* styleCard = kit::makeCard(scrollW, "Estilo del puntero", {120, 210, 255}, styleRows);
 
-    auto* tabs = kit::makeTabBar(scrollW, {"Basico", "Avanzado"}, m_tab,
-        [this](int i) {
-            m_tab = i;
-            scheduleRebuild();
-        });
-
     auto* sizeCard = kit::makeCard(scrollW, "Tamano", {255, 200, 100}, {
         kit::makeSliderRow(innerW,
             "Tamano del puntero", "Que tan grande se ve sobre la barra.",
@@ -276,6 +293,13 @@ void CustomSliderPopup::rebuild() {
                 scheduleSliderRefresh();
             }),
     });
+
+    return {styleCard, sizeCard, kit::makeHint(scrollW,
+        "En Avanzado: animacion al arrastrar y en que barras se aplica.")};
+}
+
+std::vector<CCNode*> CustomSliderPopup::buildAdvancedCards(float scrollW, float innerW) {
+    auto& cfg = CustomSliderManager::get().config();
 
     auto* animCard = kit::makeCard(scrollW, "Animacion al arrastrar", {255, 140, 220}, {
         kit::makeToggleRow(innerW,
@@ -321,13 +345,6 @@ void CustomSliderPopup::rebuild() {
                 reapplyAllSliders();
             }),
         kit::makeToggleRow(innerW,
-            "Selector de color", "Barras de los selectores de color.",
-            cfg.targets.colorSliders,
-            [this](bool v) {
-                CustomSliderManager::get().config().targets.colorSliders = v;
-                reapplyAllSliders();
-            }),
-        kit::makeToggleRow(innerW,
             "Garage", "Barras de la pantalla de iconos.",
             cfg.targets.garageSliders,
             [this](bool v) {
@@ -336,27 +353,7 @@ void CustomSliderPopup::rebuild() {
             }),
     });
 
-    std::vector<CCNode*> items = {hero, tabs};
-    if (m_tab == 0) {
-        items.push_back(styleCard);
-        items.push_back(sizeCard);
-        items.push_back(kit::makeHint(scrollW,
-            "En Avanzado: animacion al arrastrar y en que barras se aplica."));
-        animCard->removeAllChildren();
-        targetsCard->removeAllChildren();
-    } else {
-        items.push_back(animCard);
-        items.push_back(targetsCard);
-        styleCard->removeAllChildren();
-        sizeCard->removeAllChildren();
-        m_shapeGridMenu = nullptr;
-    }
-
-    m_scroll = kit::makeScrollStack({scrollW, scrollH}, items);
-    m_scroll->setPosition({12.f, 34.f});
-    m_mainLayer->addChild(m_scroll);
-
-    refreshPreview();
+    return {animCard, targetsCard};
 }
 
 void CustomSliderPopup::rebuildShapeGrid() {

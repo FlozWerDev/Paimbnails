@@ -60,7 +60,6 @@ private:
     ProfileImageService& operator=(ProfileImageService const&) = delete;
 
     bool m_serverEnabled = true;
-    int  m_uploadCount   = 0;
     mutable std::mutex m_profileImgGifMutex;
     std::unordered_map<int, std::string> m_profileImgGifKeys;
 };

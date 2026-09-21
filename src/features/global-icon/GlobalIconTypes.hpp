@@ -9,7 +9,6 @@
 #include <optional>
 #include <vector>
 #include <unordered_map>
-#include <cstdint>
 
 namespace paimon::globalicon {
 
@@ -68,15 +67,10 @@ struct GlobalIconSlot {
     std::string packID;
     std::string packName;
     int quality = 3;        // 1=SD 2=HD 3=UHD
-    int specialID = 0;
-    int fireCount = 0;
     std::string pngFile;
     std::string pngUrl;
     std::string plistFile;
     std::string plistUrl;
-    std::string jsonFile;
-    std::string jsonUrl;
-    int64_t bytes = 0;
 };
 
 // Per-account metadata document (GET /api/icons/<accountID>).
@@ -84,7 +78,6 @@ struct GlobalIconMeta {
     int accountID = 0;
     std::string username;
     bool enabled = false;
-    std::string updatedAt;
     std::unordered_map<std::string, GlobalIconSlot> icons; // key = type id
 };
 

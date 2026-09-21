@@ -20,7 +20,6 @@ protected:
     void onConfigureMusic(cocos2d::CCObject*);
     void onAddProfileImg(cocos2d::CCObject*);
     void onConfigureBadge(cocos2d::CCObject*);
-    void onConfigureCommentBg(cocos2d::CCObject*);
     void onConfigureCommentBgSoon(cocos2d::CCObject*);
     void onToggleGlobalIcon(cocos2d::CCObject*);
     void applyGlobalIconColor();

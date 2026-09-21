@@ -20,7 +20,7 @@ UserThumbnailsLayer* UserThumbnailsLayer::create(std::string const& username, in
 
 CCScene* UserThumbnailsLayer::scene(std::string const& username, int accountID) {
     auto scene = CCScene::create();
-    scene->addChild(UserThumbnailsLayer::create(username, accountID));
+    if (auto* layer = UserThumbnailsLayer::create(username, accountID)) scene->addChild(layer);
     return scene;
 }
 
@@ -43,11 +43,13 @@ bool UserThumbnailsLayer::init(std::string const& username, int accountID) {
     }
 
     auto topMenu = CCMenu::create();
+    topMenu->setID("nav-menu"_spr);
     topMenu->setPosition({0.f, 0.f});
     auto backBtn = CCMenuItemSpriteExtra::create(
         CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png"),
         this, menu_selector(UserThumbnailsLayer::onBack)
     );
+    backBtn->setID("back-button"_spr);
     backBtn->setPosition({25.f, win.height - 25.f});
     topMenu->addChild(backBtn);
     this->addChild(topMenu);

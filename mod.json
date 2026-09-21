@@ -487,13 +487,6 @@
       "description": "Blur the background behind Paimbnails popups.",
       "default": true
     },
-    "popup-ui-theme": {
-      "type": "string",
-      "name": "Popup UI Theme",
-      "description": "Visual style of Paimbnails popups. 'gd' = original, 'glass' = blur + black borders, 'dark' = dark mode, 'carbon' = carbon fiber, 'aurora' = animated gradient border, 'minimal' = clean with soft shadow. Glass/Dark/Carbon/Aurora enable popup blur automatically.",
-      "default": "gd",
-      "one-of": ["gd", "glass", "dark", "carbon", "aurora", "minimal"]
-    },
     "custom-cursor-enable": {
       "type": "bool",
       "name": "Custom Cursor",

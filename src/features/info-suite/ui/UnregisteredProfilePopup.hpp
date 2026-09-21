@@ -1,8 +1,7 @@
 #pragma once
 
-// Green players have a user id but no account, so GD refuses to open a profile
-// for them at all. Everything the servers still expose about them — their name,
-// their ids, and their levels — is gathered here instead.
+// Green players have a user id but no account, so GD refuses them a profile.
+// Everything the servers still expose about them (name, ids, levels) is gathered here.
 
 #include <Geode/Geode.hpp>
 #include <string>

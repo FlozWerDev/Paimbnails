@@ -89,9 +89,6 @@ public:
     // Entries in a category, highest weight first.
     std::vector<PopupEntry const*> entriesInCategory(PopupCategory cat) const;
 
-    // Highest-weight entry in a category (nullptr if none).
-    PopupEntry const* categoryLead(PopupCategory cat) const;
-
 private:
     PopupRegistry();
     void registerAll();

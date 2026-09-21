@@ -28,8 +28,6 @@ namespace preview {
     constexpr float SCROLL_ZOOM_IN  = 1.12f;
     constexpr float SCROLL_ZOOM_OUT = 0.89f;
 
-    constexpr int TOUCH_PRIORITY = -502;
-
     constexpr int    CROP_BLACK_THRESHOLD  = 20;
     constexpr float  CROP_BLACK_PERCENTAGE = 0.85f;
     constexpr int    CROP_SAMPLE_STEP      = 4;

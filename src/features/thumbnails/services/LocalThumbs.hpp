@@ -37,7 +37,7 @@ public:
     };
     LoadResult loadAsRGBA(int32_t levelID) const;
 
-    bool has(int32_t levelID) const { return getThumbPath(levelID).has_value(); }
+    bool has(int32_t levelID) const;
 
     // Cachea en RAM: se llama en cada transicion de capa; sin cache cada llamada releeria varios MB del disco en el main thread.
     cocos2d::CCTexture2D* loadTexture(int32_t levelID) const;
@@ -54,14 +54,9 @@ public:
     // agrega al final de la galeria, no sobreescribe
     bool saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, uint32_t height);
 
-    bool saveFromRGBA(int32_t levelID, const uint8_t* data, uint32_t width, uint32_t height);
-
     bool removeThumb(int32_t levelID, int index);
 
-    void storeFileMapping(int32_t levelID, std::string const& fileName);
-    std::optional<std::string> getFileName(int32_t levelID) const;
     void loadMappings();
-    void saveMappings();
     void shutdown();
 
     void invalidateLookup(int32_t levelID);

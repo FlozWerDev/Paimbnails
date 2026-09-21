@@ -65,8 +65,6 @@ public:
     
     static char const* catToStr(PendingCategory c);
 
-    static bool isLevelCreator(GJGameLevel* level, std::string const& username);
-
 private:
     PendingQueue() = default;
     std::filesystem::path jsonPath() const;
@@ -75,7 +73,6 @@ private:
     static PendingStatus strToStatus(std::string const& s);
     static std::string escape(std::string const& s);
 
-    bool m_loaded = false;
     std::once_flag m_loadFlag;
     mutable std::vector<PendingItem> m_items;
 };

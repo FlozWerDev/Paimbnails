@@ -182,7 +182,6 @@ void SearchHistoryPopup::rebuild() {
             rowBg->addChild(icon);
         }
 
-        // Query (o placeholder).
         std::string primary = e.query.empty()
             ? (e.type == 2 ? "(any user)" : "(no query)")
             : e.query;
@@ -192,7 +191,6 @@ void SearchHistoryPopup::rebuild() {
         title->setPosition({ 32.f, (ROW_H - 4.f) * 0.68f });
         rowBg->addChild(title);
 
-        // Resumen de filtros.
         auto sub = CCLabelBMFont::create(e.summary().c_str(), "chatFont.fnt");
         sub->setAnchorPoint({ 0.f, 0.5f });
         sub->setColor({ 255, 218, 150 });

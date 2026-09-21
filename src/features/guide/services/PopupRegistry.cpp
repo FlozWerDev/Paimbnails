@@ -2089,7 +2089,6 @@ GuideIntent PopupRegistry::toIntent(PopupEntry const& entry) {
     GuideIntent intent;
     intent.id = entry.id;
     intent.kind = IntentKind::Functional;
-    intent.priority = 50;
     intent.weight = entry.weight;
     intent.animation = entry.animation;
     intent.categoryId = categoryIdString(entry.category);
@@ -2172,11 +2171,6 @@ std::vector<PopupEntry const*> PopupRegistry::entriesInCategory(PopupCategory ca
                   return a->id < b->id;
               });
     return out;
-}
-
-PopupEntry const* PopupRegistry::categoryLead(PopupCategory cat) const {
-    auto list = entriesInCategory(cat);
-    return list.empty() ? nullptr : list.front();
 }
 
 }

@@ -304,9 +304,7 @@ void findFamilies(LevelData const& data, std::vector<Region>& regions) {
     }
 }
 
-// A big structure is one connected blob, so the shapes a builder actually
-// reuses only show up by looking at what surrounds each object. Objects whose
-// neighbourhood reads the same are instances of the same motif.
+// One connected blob: reusable shapes only emerge from each object's neighbourhood.
 void mineMotifs(LevelData const& data, LevelReport& report, AnalysisOptions const& opts) {
     float const radius = std::max(30.f, opts.motifRadius);
     size_t const parentCount = report.regions.size();
@@ -365,9 +363,7 @@ void mineMotifs(LevelData const& data, LevelReport& report, AnalysisOptions cons
         }
     }
 
-    // Ranking motifs by plain size would bury everything under shifted windows
-    // of whatever id the level uses most, so rare ids weigh more: a pillar with
-    // a spike on top says more about the level than five more floor tiles.
+    // Rare ids weigh more so motifs aren't buried under the most-used tile.
     std::unordered_map<int, int> idCount;
     for (auto const& object : data.objects) idCount[object.id]++;
     double const corpus = static_cast<double>(std::max<size_t>(1, data.objects.size()));

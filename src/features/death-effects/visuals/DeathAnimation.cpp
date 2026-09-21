@@ -16,6 +16,9 @@ class AnimationSprite : public CCSprite {
     float m_elapsed = 0.f;
     int m_style = 0;
     ccColor3B m_tint{};
+    GLint m_progressLoc = -1;
+    GLint m_styleLoc = -1;
+    GLint m_tintLoc = -1;
 public:
     static AnimationSprite* create(int style, ccColor3B color) {
         auto shader = program();
@@ -33,6 +36,9 @@ public:
         node->m_style = style;
         node->m_tint = color;
         node->setShaderProgram(shader);
+        node->m_progressLoc = shader->getUniformLocationForName("u_progress");
+        node->m_styleLoc = shader->getUniformLocationForName("u_style");
+        node->m_tintLoc = shader->getUniformLocationForName("u_tint");
         node->setBlendFunc({GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA});
         node->setScale(180.f);
         node->scheduleUpdate();
@@ -45,9 +51,9 @@ public:
     void draw() override {
         auto shader = getShaderProgram();
         shader->use();
-        shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_progress"),m_elapsed/0.85f);
-        shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_style"),static_cast<float>(m_style));
-        shader->setUniformLocationWith3f(shader->getUniformLocationForName("u_tint"),
+        shader->setUniformLocationWith1f(m_progressLoc,m_elapsed/0.85f);
+        shader->setUniformLocationWith1f(m_styleLoc,static_cast<float>(m_style));
+        shader->setUniformLocationWith3f(m_tintLoc,
             0.25f+0.75f*m_tint.r/255.f,0.25f+0.75f*m_tint.g/255.f,0.25f+0.75f*m_tint.b/255.f);
         CCSprite::draw();
     }

@@ -1,10 +1,6 @@
 #pragma once
 
 // Ajustes finos de UN efecto de click concreto.
-//
-// Cada estallido y cada efecto de mantener guarda su propio tamano y su propia
-// velocidad, porque no todos se ven bien con los mismos numeros. Este popup es
-// lo que abre el engranaje que hay al lado de cada selector.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/Slider.hpp>

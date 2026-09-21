@@ -1,8 +1,7 @@
 #pragma once
 
-// Music player for the level editor. It runs on its own FMOD channel instead of
-// the game's music channel, so the level song, the menu loop and the editor's
-// own playback never fight over it. Tracks come from the menu music library.
+// Editor playback on its own FMOD channel, so it never fights the level song
+// or the menu loop for the game channel.
 
 #include <fmod.hpp>
 #include <cstdint>
@@ -28,7 +27,6 @@ public:
     void stop();
 
     void seekMs(int ms);
-    void skipMs(int delta);
 
     float volume() const { return m_volume; }
     void setVolume(float value);
@@ -38,9 +36,7 @@ public:
     RepeatMode repeat() const { return m_repeat; }
     void cycleRepeat();
 
-    bool hasTrack() const { return !m_trackId.empty(); }
     bool isPlaying() const;
-    bool isPaused() const { return m_paused; }
     std::string const& trackId() const { return m_trackId; }
     std::string trackName() const;
 

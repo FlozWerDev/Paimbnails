@@ -1,11 +1,6 @@
 #pragma once
-// Editor del Creador de Iconos.
-//
-// A la izquierda el icono, vivo y manipulable: tocas una capa y la eliges, la
-// arrastras, la estiras por las esquinas y la giras por el tirador de arriba;
-// la rueda acerca y el vacio panea. A la derecha la tira de zonas y cuatro
-// pestanas -- Capas, Pintura, Forma, Icono -- para no tener que desplazarse
-// por lo que no estas tocando.
+// Editor del Creador de Iconos: icono vivo a la izquierda, zonas y pestanas a
+// la derecha.
 
 #include "IconMakerUI.hpp"
 #include "../data/IconAnatomy.hpp"

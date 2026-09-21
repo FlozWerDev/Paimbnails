@@ -1,8 +1,6 @@
 ﻿#pragma once
 #include <Geode/Geode.hpp>
 
-// Tabbed popup for configuring the custom progress bar.
-
 class ProgressBarConfigPopup : public geode::Popup {
 public:
     static ProgressBarConfigPopup* create();
@@ -69,7 +67,7 @@ protected:
     void buildColorsTab();
     void buildLabelTab();
     void buildFxTab();
-    void refreshFxTab(); // updates mode button labels + path text
+    void refreshFxTab();
 
     void onEnableToggled(cocos2d::CCObject*);
     void onVerticalToggled(cocos2d::CCObject*);
@@ -110,6 +108,5 @@ protected:
     void onClearFillTexture(cocos2d::CCObject*);
     void onClearBgTexture(cocos2d::CCObject*);
 
-    // Persists live config to disk.
     void applyAndSave();
 };

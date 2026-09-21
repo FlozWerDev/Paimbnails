@@ -1,11 +1,6 @@
 #pragma once
-// SelfCheck: headless runtime self-check for PackGen v2.
-//
-// Runs in milliseconds with no assets: verifies the tint kernel against a
-// hand-computed value, the alpha LUT endpoints, the packer on a small fixed
-// set (no overlaps, containment, determinism), and a cache/graph roundtrip.
-// The legacy engine's SelfTest calls this; the regression tests assert on
-// each sub-check individually.
+// SelfCheck: headless runtime self-check (no assets); SelfTest and the
+// regression tests assert on each sub-check individually.
 
 #include <cstdint>
 #include <string>

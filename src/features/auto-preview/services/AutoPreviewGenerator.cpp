@@ -2,8 +2,6 @@
 
 #include <Geode/Geode.hpp>
 #include <algorithm>
-#include <cstring>
-#include <vector>
 
 #include "AutoPreviewStore.hpp"
 #include "../AutoPreviewConfig.hpp"

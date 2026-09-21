@@ -100,7 +100,6 @@ protected:
     void onInputTextChanged(std::string const& text);
     void updateRenderPreview();
     void insertEmoteAtCursor(std::string const& emoteName);
-    void rebuildScrollArea();
 
     void onExit() override;
 

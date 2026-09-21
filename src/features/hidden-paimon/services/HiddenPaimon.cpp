@@ -188,11 +188,8 @@ void playLater(CCNode* host, float delay, char const* file, float pitch, float v
     ));
 }
 
-// explode_11 and magicExplosion are the only two files GD ships that read as a
-// blast, so the variety comes from pitching and stacking them; the old list
-// named four files that are not in Resources at all. The crack leads the body
-// by a frame because the same file twice on one frame phase-aligns into a flat
-// hit instead of an explosion.
+// Variety comes from pitching and stacking the only two blast files GD ships;
+// the crack leads by a frame so the pair never phase-aligns into a flat hit.
 void playBlast(CCNode* host) {
     auto* engine = FMODAudioEngine::sharedEngine();
     if (!engine) return;
@@ -358,9 +355,8 @@ void attach(CCLayer* layer) {
     menu->setID(menuId);
     menu->addChild(button);
 
-// Her hit box is the whole sprite, and most of it sits under the button she is
-// hiding behind. One step below the menu priority keeps that button clickable
-// and leaves her only the part that actually pokes out.
+// Her hitbox hides under the button, so one step below menu priority keeps the
+// button clickable and leaves her only the part poking out.
     menu->setTouchPriority(kCCMenuHandlerPriority + 1);
 
     if (guideOn) {

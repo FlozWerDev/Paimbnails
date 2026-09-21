@@ -4,9 +4,8 @@
 
 namespace paimon::frameinterp {
 
-// Popup de la interpolacion de fotogramas montado sobre PaiConfigKit. Los
-// controles escriben en la config viva (el interpolador la lee cada frame) y el
-// volcado a disco va aparte para no reescribir el JSON en cada arrastre.
+// Popup de la interpolacion, sobre PaiConfigKit. Los controles escriben en la
+// config viva; el volcado a disco va aparte para no reescribir en cada arrastre.
 class FrameInterpPopup : public geode::Popup {
 public:
     static FrameInterpPopup* create();

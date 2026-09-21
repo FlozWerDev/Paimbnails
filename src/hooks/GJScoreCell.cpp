@@ -5,7 +5,6 @@
 #include <Geode/ui/LoadingSpinner.hpp>
 
 #include "../features/profiles/services/ProfileThumbs.hpp"
-#include "../features/moderation/ui/ModeratorsLayer.hpp"
 #include "../features/thumbnails/services/ThumbsRegistry.hpp"
 #include "../utils/PaimonButtonHighlighter.hpp"
 #include "../managers/ThumbnailAPI.hpp"
@@ -801,19 +800,6 @@ public:
                     }
                 }
             }
-        }
-
-        if (ModeratorsLayer::s_instance && ModeratorsLayer::s_instance->isScoreInList(score)) {
-            WeakRef<PaimonGJScoreCell> self = this;
-            Loader::get()->queueInMainThread([self]() {
-                if (paimon::isRuntimeShuttingDown()) return;
-                auto cellRef = self.lock();
-                auto* cell = static_cast<PaimonGJScoreCell*>(cellRef.data());
-                if (!cell) return;
-                if (auto rankLabel = cell->getChildByID("rank-label")) {
-                    rankLabel->setVisible(false);
-                }
-            });
         }
     }
 

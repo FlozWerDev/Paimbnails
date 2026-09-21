@@ -24,10 +24,7 @@ struct ObjectShape {
     Vec2 vertices[kMaxVertices]{};
 };
 
-// Reads the shape GD itself uses for the object: a radius for orbs and rings, a
-// triangle for slopes, the traced outline of the art inside the hitbox rect for
-// anything that is not square, the oriented corners for anything the editor
-// rotated off the axes, and the plain rect for everything else.
+// The collision shape GD itself uses for the object.
 ObjectShape shapeOf(LevelEditorLayer* editor, GameObject* object);
 
 // The footprint the shape really covers, so a slope weighs the half block it

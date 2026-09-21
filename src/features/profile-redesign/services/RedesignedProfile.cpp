@@ -13,7 +13,6 @@
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GameToolbox.hpp>
-#include <Geode/binding/SimplePlayer.hpp>
 #include <Geode/binding/LevelCell.hpp>
 #include <Geode/binding/GJSearchObject.hpp>
 #include <Geode/binding/LevelManagerDelegate.hpp>
@@ -22,21 +21,12 @@
 #include <Geode/binding/GJCommentListLayer.hpp>
 #include <Geode/binding/CommentCell.hpp>
 #include <Geode/binding/GJComment.hpp>
-#include <Geode/binding/FLAlertLayer.hpp>
-#include <Geode/binding/GJAccountSettingsLayer.hpp>
-#include <Geode/binding/FriendsProfilePage.hpp>
-#include <Geode/binding/FRequestProfilePage.hpp>
-#include <Geode/binding/MessagesProfilePage.hpp>
-#include <Geode/binding/GJWriteMessagePopup.hpp>
 #include <Geode/binding/ShareCommentLayer.hpp>
-#include <Geode/binding/InfoLayer.hpp>
 #include <Geode/binding/LevelBrowserLayer.hpp>
 
 #include "../../../framework/compat/SceneLocators.hpp"
 #include "../../../utils/SpriteHelper.hpp"
-#include "../../../utils/ScissorClipNode.hpp"
 #include "../../../utils/HttpClient.hpp"
-#include "../../../utils/FluidReveal.hpp"
 #include "../../forum/services/ForumApi.hpp"
 #include "../../emotes/EmoteRenderer.hpp"
 #include "../../emotes/services/EmoteService.hpp"
@@ -509,10 +499,7 @@ static void collectNodesByID(CCNode* root, std::string const& id, std::vector<CC
     }
 }
 
-// In the native page every stat icon inside "stats-menu" is a menu item that
-// opens its own breakdown (completed levels for stars, demon counts for
-// demons). The redesign hides that menu, so its chips forward the tap to the
-// original item instead of losing the feature.
+// Chips forward the tap to the hidden vanilla item, keeping its breakdown.
 static CCMenuItem* findVanillaStatButton(CCNode* layer, char const* statID) {
     if (!layer || !statID) return nullptr;
     auto* icon = layer->getChildByIDRecursive(fmt::format("{}-icon", statID));
@@ -639,12 +626,10 @@ static CCScrollLayerExt* findScroller(CCNode* root) {
 static CommentCell* makeAccountCommentCell(GJComment* comment, float width, float height) {
     if (!comment) return nullptr;
     auto* cell = new CommentCell("", width, height);
-#ifndef GEODE_IS_IOS
     if (!cell->init()) {
         delete cell;
         return nullptr;
     }
-#endif
     cell->autorelease();
     cell->m_accountComment = true;
     cell->loadFromComment(comment);
@@ -687,45 +672,6 @@ static void styleAccountCommentCell(CommentCell* cell, float w, float h) {
             panel->setID("paimon-rd-comment-panel"_spr);
             cell->addChild(panel);
         }
-    }
-}
-
-static void accumulateLabelAABB(CCNode* node, cocos2d::CCRect& out, bool& has) {
-    if (!node || !node->isVisible()) return;
-    if (typeinfo_cast<cocos2d::CCLabelBMFont*>(node)) {
-        auto const size = node->getContentSize();
-        if (size.width > 0.5f && size.height > 0.5f) {
-            auto t = node->nodeToWorldTransform();
-            float xs[4] = {
-                t.tx,
-                t.a * size.width + t.tx,
-                t.c * size.height + t.tx,
-                t.a * size.width + t.c * size.height + t.tx,
-            };
-            float ys[4] = {
-                t.ty,
-                t.b * size.width + t.ty,
-                t.d * size.height + t.ty,
-                t.b * size.width + t.d * size.height + t.ty,
-            };
-            float minX = std::min({xs[0], xs[1], xs[2], xs[3]});
-            float maxX = std::max({xs[0], xs[1], xs[2], xs[3]});
-            float minY = std::min({ys[0], ys[1], ys[2], ys[3]});
-            float maxY = std::max({ys[0], ys[1], ys[2], ys[3]});
-            if (!has) {
-                out = cocos2d::CCRect(minX, minY, maxX - minX, maxY - minY);
-                has = true;
-            } else {
-                float nx = std::min(out.getMinX(), minX);
-                float ny = std::min(out.getMinY(), minY);
-                float xx = std::max(out.getMaxX(), maxX);
-                float yy = std::max(out.getMaxY(), maxY);
-                out = cocos2d::CCRect(nx, ny, xx - nx, yy - ny);
-            }
-        }
-    }
-    if (auto* kids = node->getChildren()) {
-        for (auto* k : CCArrayExt<CCNode*>(kids)) accumulateLabelAABB(k, out, has);
     }
 }
 
@@ -1051,9 +997,6 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             }
         }
         if (sidePanel) sidePanel->setPosition({commentsRightX, commentsY});
-        if (sidePanel) {
-            sidePanel->setCommentRouting(nullptr, nullptr);
-        }
     }
     {
         const float innerW = std::max(20.f, commentsLeftW - 6.f);

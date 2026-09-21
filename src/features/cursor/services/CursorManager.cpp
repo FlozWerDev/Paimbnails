@@ -89,9 +89,7 @@ bool containsVisibleLayerMatch(CCNode* node, std::set<std::string> const& filter
 bool sampleCursorPosition(CCPoint& outPos, bool& outInsideWindow) {
     auto winSize = CCDirector::get()->getWinSize();
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    // No hay raton en movil: el sprite sigue al dedo via el hook de
-    // CCTouchDispatcher (CursorHook.cpp -> setTouchPoint). Sin esto el cursor
-    // quedaba clavado en la ultima posicion de getMousePos().
+    // No hay raton en movil: el sprite sigue al dedo via el hook de CCTouchDispatcher.
     auto touchPos = CursorManager::get().pointerPos();
     outInsideWindow = touchPos.x >= 0.f && touchPos.y >= 0.f &&
         touchPos.x <= winSize.width && touchPos.y <= winSize.height;

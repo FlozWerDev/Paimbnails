@@ -76,10 +76,6 @@ void attemptAutoCapture(WeakRef<PlayLayer> weak, int levelID) {
 } // namespace
 
 class $modify(PaimonAutoPreviewPlayLayer, PlayLayer) {
-    struct Fields {
-        bool m_autoPreviewScheduled = false;
-    };
-
     $override
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
@@ -94,7 +90,6 @@ class $modify(PaimonAutoPreviewPlayLayer, PlayLayer) {
         // Quick pre-check (re-checked again right before capture).
         if (!levelHasNoThumbnail(levelID)) return true;
 
-        m_fields->m_autoPreviewScheduled = true;
         paimon::autopreview::AutoPreviewStore::get().markAttempted(levelID);
         float const delay = 1.2f + static_cast<float>(levelID % 1000) / 1000.0f * 1.8f;
 

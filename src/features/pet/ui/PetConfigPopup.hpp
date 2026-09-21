@@ -4,10 +4,6 @@
 #include <array>
 #include <vector>
 
-// Popup de configuracion de la mascota, reconstruido sobre PaiConfigKit:
-// - Galeria: elige la imagen de la mascota.
-// - Ajustes: lo esencial (tamano, movimiento, donde aparece).
-// - Avanzado: efectos y comportamientos extra sin perder ninguna opcion.
 class PetConfigPopup : public geode::Popup {
 protected:
     void onExit() override;
@@ -29,8 +25,6 @@ protected:
     bool  m_advancedScrollTargetSet = false;
 
     // controles que hay que mantener sincronizados
-    CCMenuItemToggler* m_enableToggle = nullptr;
-    cocos2d::CCLabelBMFont* m_enableStateLabel = nullptr;
     CCMenuItemToggler* m_allLayersToggle = nullptr;
     CCMenuItemToggler* m_showInGameplayToggle = nullptr;
     std::array<cocos2d::CCLabelBMFont*, 4> m_iconStateValueLabels{};

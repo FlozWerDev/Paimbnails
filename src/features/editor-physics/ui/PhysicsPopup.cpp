@@ -629,10 +629,8 @@ void PhysicsPopup::refreshBodies() {
     }
 }
 
-// GD keeps backgrounds and grounds as loose image files, never as sheet frames,
-// so the previous createWithSpriteFrameName call always came back empty and the
-// preview stayed black. Colours are read off the editor's own nodes, which is
-// what makes the panel match the level being built.
+// Backgrounds are loose files and colours come from the editor's own nodes, so
+// the panel matches the level being built.
 void PhysicsPopup::buildPreviewScenery(CCNode* clip, float width, float height) {
     auto* editor = LevelEditorLayer::get();
     auto* gameManager = GameManager::sharedState();
@@ -785,9 +783,7 @@ void PhysicsPopup::resetView() {
     drawPreview(playbackTime(), 0.f);
 }
 
-// Outlines, the trajectory and the ground line live inside the world node, so
-// their widths are divided by the view scale to stay a constant thickness on
-// screen at any zoom.
+// Widths are divided by the view scale to stay a constant thickness on screen.
 void PhysicsPopup::refreshOverlays() {
     for (std::size_t i = 0; i < m_outlineNodes.size(); ++i) drawBodyOutline(i);
     drawTrajectory();

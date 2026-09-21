@@ -296,9 +296,8 @@ void VersusEffects::applyCameraTransforms() {
         return;
     }
 
-    // The level writes its own zoom triggers into this same scale between our
-    // frames, so ours comes back out before the new one goes in. Remembering a
-    // baseline instead would freeze whatever trigger fired while a card was up.
+    // The level writes its own zoom triggers into this same scale, so ours comes
+    // back out first; a remembered baseline would freeze a trigger fired mid-card.
     // Y is the axis to read: mirror is the only thing that touches the sign.
     float const level = objects->getScaleY() / m_cameraFactor;
 

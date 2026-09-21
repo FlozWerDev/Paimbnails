@@ -1,10 +1,5 @@
 #pragma once
 
-// Level Requests como escena completa, con la piel del juego: ventanas
-// GJ_square01, placas de nivel con su cara de dificultad, botones redondos y
-// goldFont. Todo lo que hace falta para usarlo (plataforma, canal y comando)
-// se configura aqui mismo.
-
 #include <Geode/Geode.hpp>
 #include <Geode/ui/TextInput.hpp>
 
@@ -23,7 +18,6 @@ struct LevelRequest;
 class TwitchRequestsLayer : public cocos2d::CCLayer {
 public:
     static TwitchRequestsLayer* create();
-    static cocos2d::CCScene* scene();
     static void open();
 
 protected:
@@ -42,9 +36,8 @@ private:
     void buildQueuePanel();
     void buildFooter();
 
-    // Entrada de un nodo desde un desplazamiento relativo. Antes de que la
-    // transicion de escena acabe se guarda y arranca en runIntro(), asi no se
-    // gasta la animacion detras del fundido.
+    // Entrada diferida hasta acabar la transicion: si no, la animacion se gasta
+    // detras del fundido.
     void enterBy(cocos2d::CCNode* node, cocos2d::CCPoint offset, float delay, bool bounce = false);
     void runIntro();
 

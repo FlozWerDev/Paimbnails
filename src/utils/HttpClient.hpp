@@ -257,6 +257,18 @@ public:
     void saveManifestToDisk();
     void loadManifestFromDisk();
 
+    // Igual que performBinaryRequest, pero pasa el codigo HTTP. Hace falta para no
+    // confundir un 404 (recurso inexistente, cachear el negativo) con un fallo
+    // pasajero (reintentar).
+    using BinaryStatusCallback = geode::CopyableFunction<void(bool, std::vector<uint8_t> const&, int status)>;
+    void performBinaryRequestEx(
+        std::string const& url,
+        std::vector<std::string> const& headers,
+        BinaryStatusCallback callback,
+        int timeoutSeconds = 15,
+        bool includeModCode = false
+    );
+
 private:
     HttpClient();
     ~HttpClient() = default;
@@ -330,17 +342,6 @@ private:
         std::string const& url,
         std::vector<std::string> const& headers,
         geode::CopyableFunction<void(bool, std::vector<uint8_t> const&)> callback,
-        int timeoutSeconds = 15,
-        bool includeModCode = false
-    );
-
-    // Igual, pero pasa el codigo HTTP. Hace falta para no confundir un 404 (la miniatura
-    // no existe, cachear el negativo) con un 500/timeout (fallo pasajero, reintentar).
-    using BinaryStatusCallback = geode::CopyableFunction<void(bool, std::vector<uint8_t> const&, int status)>;
-    void performBinaryRequestEx(
-        std::string const& url,
-        std::vector<std::string> const& headers,
-        BinaryStatusCallback callback,
         int timeoutSeconds = 15,
         bool includeModCode = false
     );

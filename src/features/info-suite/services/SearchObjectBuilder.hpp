@@ -1,9 +1,7 @@
 #pragma once
 
-// GJSearchObject::create's 22 argument overload has a binding that can corrupt
-// its gd::string fields and then crash inside getKey(). Everything in the mod
-// builds search objects through the two argument overload and assigns the
-// fields afterwards; this header is the shared version of that trick.
+// GJSearchObject::create's 22-argument overload can corrupt its gd::string fields and crash in getKey().
+// Everything builds through the two-argument overload and assigns fields afterwards.
 
 #include <Geode/binding/GJSearchObject.hpp>
 #include <Geode/binding/GameLevelManager.hpp>

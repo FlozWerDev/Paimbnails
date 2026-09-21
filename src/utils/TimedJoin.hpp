@@ -2,7 +2,6 @@
 
 #include <thread>
 #include <chrono>
-#include <future>
 #include <atomic>
 #include <algorithm>
 #include <cstdint>
@@ -45,21 +44,6 @@ inline bool timedJoin(std::thread& t, std::chrono::milliseconds timeout = std::c
         if (cancelFlag) cancelFlag->store(true, std::memory_order_release);
         return false;
     }
-}
-
-/// Wait on a future with a timeout; false discards the future while the task continues.
-template <typename T>
-bool timedWait(std::future<T>& f, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
-    if (!f.valid()) return true;
-    auto status = f.wait_for(timeout);
-    if (status == std::future_status::timeout) {
-        geode::log::warn("[TimedWait] Future did not resolve in {}ms, abandoning", timeout.count());
-        std::future<T> abandoned;
-        std::swap(f, abandoned);
-        return false;
-    }
-    (void)f.get();
-    return true;
 }
 
 }

@@ -7,10 +7,8 @@
 
 namespace paimon::collab {
 
-// Incoming collab invite, shown as a single GD panel at the top of the screen
-// with accept / reject and a countdown bar. It lives in geode::OverlayManager so
-// it draws over popups and survives scene changes, and only its two buttons take
-// touches — the game underneath stays playable.
+// Invite panel in OverlayManager so it draws over popups and survives scene
+// changes; only its two buttons take touches.
 class CollabInviteBanner : public cocos2d::CCNode {
 public:
     static void present(std::string const& room, std::string const& fromName);

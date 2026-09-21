@@ -40,6 +40,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <optional>
 
 using namespace geode::prelude;
 namespace C = paimon::ui::constants::config;

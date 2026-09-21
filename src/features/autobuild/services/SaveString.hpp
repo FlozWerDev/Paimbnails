@@ -2,10 +2,7 @@
 
 // Helpers around GD object save strings ("1,2895,2,45,3,2775,...").
 //
-// Templates keep the original save string of every captured object instead of a
-// handful of properties, so a generated copy carries colors, HSV, groups, links
-// and every key the mod does not model. Building only rewrites the keys it has
-// to: position, and the id shifts the user asked for.
+// Templates keep the original save string; building only rewrites position and requested id shifts.
 
 #include <functional>
 #include <set>

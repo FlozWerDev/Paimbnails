@@ -55,7 +55,6 @@ std::string shortPath(std::string const& p) {
     return name;
 }
 
-// Open the standard color picker and return its RGB result.
 template<class Cb>
 void openColorPicker(ccColor3B current, Cb&& cb) {
     auto* popup = geode::ColorPickPopup::create(

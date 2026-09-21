@@ -2,7 +2,6 @@
 #include "../services/MenuLoopManager.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
-#include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/utils/string.hpp>
 #include <fmt/format.h>
@@ -103,7 +102,6 @@ static std::string buildDisplayName() {
         }
     }
 
-    // Custom song: just filename
     return geode::utils::string::pathToString(path.filename());
 }
 

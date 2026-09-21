@@ -9,18 +9,13 @@
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
 #include "../../../framework/PermissionPolicy.hpp"
-#include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/ui/PopupManager.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
-#include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
-#include <Geode/binding/MusicDownloadManager.hpp>
-#include <Geode/binding/SongInfoObject.hpp>
 #include <cmath>
 #include <chrono>
 #include <filesystem>
 #include <optional>
-#include <system_error>
 
 using namespace geode::prelude;
 
@@ -29,14 +24,12 @@ namespace {
         return Localization::get().getString(key);
     }
 
-// Format milliseconds as m:ss.
     std::string formatMsClock(int ms) {
         if (ms < 0) ms = 0;
         int totalSec = ms / 1000;
         return fmt::format("{}:{:02d}", totalSec / 60, totalSec % 60);
     }
 
-// Format milliseconds as seconds for the editable inputs.
     std::string formatSeconds(int ms) {
         if (ms < 0) ms = 0;
         if (ms % 1000 == 0) {
@@ -326,7 +319,6 @@ void ProfileMusicPopup::createTimeEditor() {
 const float groupOffset = 106.f;
 const float labelYOff   = 27.f;
 
-// Build a [− | input | +] group.
     auto buildGroup = [this](geode::TextInput** inputOut, int minusTag, int plusTag) -> CCMenu* {
         auto group = CCMenu::create();
         group->setContentSize({110.f, 30.f});
@@ -409,7 +401,6 @@ const float labelYOff   = 27.f;
     m_selectionLabel->setPosition({badgeCenterX, m_timeEditorY});
     m_mainLayer->addChild(m_selectionLabel, 5);
 
-// Show live seconds → m:ss conversion beneath each input.
     m_startConvLabel = CCLabelBMFont::create("0:00", "goldFont.fnt");
     m_startConvLabel->setScale(0.30f);
     m_startConvLabel->setColor({150, 190, 220});
@@ -970,26 +961,6 @@ float ProfileMusicPopup::msToPosition(int ms) {
     return (static_cast<float>(ms) / m_songDurationMs) * m_waveformWidth;
 }
 
-void ProfileMusicPopup::clampSelection() {
-    if (m_startMs < 0) m_startMs = 0;
-    if (m_endMs > m_songDurationMs) m_endMs = m_songDurationMs;
-
-    if (m_endMs - m_startMs < MIN_FRAGMENT_MS) {
-        if (m_endMs + MIN_FRAGMENT_MS - (m_endMs - m_startMs) <= m_songDurationMs) {
-            m_endMs = m_startMs + MIN_FRAGMENT_MS;
-        } else {
-            m_startMs = m_endMs - MIN_FRAGMENT_MS;
-        }
-    }
-
-    if (m_endMs - m_startMs > MAX_FRAGMENT_MS) {
-        m_endMs = m_startMs + MAX_FRAGMENT_MS;
-    }
-
-    if (m_startMs < 0) m_startMs = 0;
-    if (m_endMs > m_songDurationMs) m_endMs = m_songDurationMs;
-}
-
 void ProfileMusicPopup::applyStartMs(int newStartMs) {
     if (m_songDurationMs <= 0) return;
 
@@ -1335,6 +1306,7 @@ void ProfileMusicPopup::onSave(CCObject*) {
 
     auto* accountManager = GJAccountManager::get();
     if (!accountManager) {
+        hideLoading();
         PaimonNotify::create(tr("music.account_unavailable").c_str(), NotificationIcon::Error)->show();
         return;
     }

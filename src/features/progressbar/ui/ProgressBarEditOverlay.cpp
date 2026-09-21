@@ -8,7 +8,6 @@
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/PlayLayer.hpp>
-#include <Geode/utils/string.hpp>
 #include <algorithm>
 #include <climits>
 #include <cmath>
@@ -20,7 +19,7 @@ using namespace cocos2d;
 namespace {
 struct DetachedEntry {
     geode::Ref<cocos2d::CCNode> node;             // owns detached node
-    cocos2d::CCNode*            parent = nullptr; // non-owning PlayLayer parent
+    geode::WeakRef<cocos2d::CCNode> parent;       // checked on re-attach, may die mid-edit
     int                         zOrder = 0;
 };
 std::vector<DetachedEntry> s_detached;
@@ -193,7 +192,6 @@ void ProgressBarEditOverlay::rebuildSelectionUI() {
     if (!selNode || !selNode->getParent()) return;
 
     auto r = nodeAABB(selNode);
-    m_selRect = r;
     float cx = r.getMidX();
 
     m_selContainer->addChild(makeSelectionOutline(r));
@@ -465,7 +463,6 @@ void ProgressBarEditOverlay::ccTouchMoved(CCTouch* touch, CCEvent*) {
                     d.posY = m_origPos.y + delta.y;
                     break;
                 case Action::ResizeUniform: {
-// Scale from the distance-to-anchor ratio.
                     float startD = std::hypot(m_touchStart.x - m_anchorWorld.x,
                                               m_touchStart.y - m_anchorWorld.y);
                     float nowD   = std::hypot(pos.x - m_anchorWorld.x,
@@ -576,8 +573,6 @@ void ProgressBarEditOverlay::onAddImage(CCObject*) {
 }
 
 
-bool ProgressBarEditOverlay::isActive() { return s_activeOverlay != nullptr; }
-
 namespace {
 void detachNode(CCNode* node) {
     if (!node) return;
@@ -635,8 +630,9 @@ void ProgressBarEditOverlay::enterEditMode() {
         log::error("[ProgressBar] Failed to create edit overlay");
 // Re-attach detached nodes when aborting.
         for (auto it = s_detached.rbegin(); it != s_detached.rend(); ++it) {
-            if (it->node && it->parent && !it->node->getParent()) {
-                it->parent->addChild(it->node.data(), it->zOrder);
+            auto parent = it->parent.lock();
+            if (it->node && parent && !it->node->getParent()) {
+                parent->addChild(it->node.data(), it->zOrder);
             }
         }
         s_detached.clear();
@@ -651,8 +647,9 @@ void ProgressBarEditOverlay::exitEditMode() {
         s_activeOverlay = nullptr;
     }
     for (auto it = s_detached.rbegin(); it != s_detached.rend(); ++it) {
-        if (it->node && it->parent && !it->node->getParent()) {
-            it->parent->addChild(it->node.data(), it->zOrder);
+        auto parent = it->parent.lock();
+        if (it->node && parent && !it->node->getParent()) {
+            parent->addChild(it->node.data(), it->zOrder);
         }
     }
     s_detached.clear();

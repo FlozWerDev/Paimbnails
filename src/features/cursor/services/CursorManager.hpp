@@ -109,7 +109,6 @@ public:
 
     void setMouseDown(bool down);
     void setSecondaryMouseDown(bool down);
-    bool isMouseDown() const { return m_mouseDown; }
     bool isClickFxHeld() const { return m_fxHeld; }
     void setTouchPoint(cocos2d::CCPoint const& point) { m_touchPoint = point; }
     cocos2d::CCPoint pointerPos() const;

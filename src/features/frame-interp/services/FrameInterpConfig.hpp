@@ -5,9 +5,8 @@
 
 namespace paimon::frameinterp {
 
-// Cuanto se deja atras lo dibujado respecto a lo simulado, medido en pasos de
-// fisica. Con un paso entero nunca hace falta extrapolar; con cero se dibuja el
-// presente exacto a costa de adivinar el ultimo tramo.
+// Retraso de lo dibujado respecto a lo simulado, en pasos de fisica: un paso
+// entero nunca extrapola; cero dibuja el presente adivinando el ultimo tramo.
 enum class Latency : int {
     Smooth   = 0,
     Balanced = 1,

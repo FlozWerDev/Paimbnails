@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Geode/Geode.hpp>
-#include <memory>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -10,14 +9,11 @@ namespace geode { class TextInput; }
 
 namespace paimon::editorcp {
 
-// Live eyedropper for the level editor. Samples one framebuffer pixel before
-// swap; the HUD stays at the bottom so it cannot contaminate the sample.
-// Click locks the color, Copy keeps the overlay open, Save applies it when a
-// Color ID is set, and Cancel/Esc closes without committing.
+// Live eyedropper: samples one framebuffer pixel before swap, so the HUD
+// stays at the bottom where it cannot contaminate the sample.
 class ColorPickerOverlay : public cocos2d::CCLayer {
 public:
     static void show();
-    static void hideOverlay();
 
     // Called by the pre-swap hook before the custom cursor is drawn.
     static void onPreSwapSample();
@@ -67,7 +63,7 @@ private:
     void buildUI();
     void liveSample();
     void updateReadout();
-    void pickAt(cocos2d::CCPoint glPos);
+    void pickAt();
     bool pointInHud(cocos2d::CCPoint p) const;
 
     void onPrevFormat(cocos2d::CCObject*);
@@ -79,7 +75,6 @@ private:
     void onSave(cocos2d::CCObject*);
     void onCancel(cocos2d::CCObject*);
     void onToggleAuto(cocos2d::CCObject*);
-    void onNoop(cocos2d::CCObject*) {}
     void applyColorToChannel(cocos2d::ccColor3B col, int channelID);
     void tryAutoApply();
 

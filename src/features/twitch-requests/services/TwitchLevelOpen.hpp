@@ -1,9 +1,5 @@
 #pragma once
 
-// Abre el nivel pedido directamente en su LevelInfoLayer, bajando la info del
-// servidor si todavia no la tenemos. Lo usan tanto la cola como las flechas de
-// navegacion del propio LevelInfoLayer.
-
 #include <cstddef>
 #include <optional>
 

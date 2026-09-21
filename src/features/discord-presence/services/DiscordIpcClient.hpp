@@ -40,7 +40,6 @@ public:
     void clear();
     void close();
 
-    bool isConnected() const { return m_connected; }
     // Bumped on (re)connect/teardown; lets manager detect reconnects.
     uint64_t connectionGeneration() const { return m_connectionGeneration; }
 

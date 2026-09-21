@@ -1,7 +1,6 @@
 #include "AudioContextCoordinator.hpp"
 
 #include <Geode/binding/FMODAudioEngine.hpp>
-#include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../utils/MusicChannel.hpp"
@@ -15,6 +14,8 @@ using namespace geode::prelude;
 using MainAudioOwner = AudioContextCoordinator::MainAudioOwner;
 
 namespace {
+    constexpr int kMainLevelCount = 22;
+
     std::string ownerToString(MainAudioOwner owner) {
         switch (owner) {
             case MainAudioOwner::None:    return "none";
@@ -84,14 +85,11 @@ bool AudioContextCoordinator::isCurrentProfileSession(uint32_t sessionToken) con
     return sessionToken == m_profileSessionToken;
 }
 
-bool AudioContextCoordinator::isAudioOwnedByProfileSession(uint32_t sessionToken) const {
-    return (m_mainAudioOwner == MainAudioOwner::Profile || m_mainAudioOwner == MainAudioOwner::Preview) &&
-           m_mainAudioOwnerToken == sessionToken;
-}
-
 void AudioContextCoordinator::activateLevelSelect(int levelID, bool playImmediately) {
     m_gameplayActive = false;
     m_levelSelectLevelID = levelID;
+    // LevelSelect never reads it; don't hold the old level across the switch.
+    m_levelInfoLevel = nullptr;
     m_dynamicContextLayer = DynSongLayer::LevelSelect;
 
     if (m_profileOpen) {
@@ -325,8 +323,9 @@ bool AudioContextCoordinator::playDynamicForCurrentContext(bool ignoreProfileGat
         return false;
 
     case DynSongLayer::LevelSelect:
-        if (m_levelSelectLevelID > 0 && m_levelSelectLevelID <= 22) {
+        if (m_levelSelectLevelID > 0 && m_levelSelectLevelID <= kMainLevelCount) {
             auto* level = GJGameLevel::create();
+            if (!level) return false;
             level->m_levelID = m_levelSelectLevelID;
             level->m_audioTrack = m_levelSelectLevelID - 1;
             dsm->playSong(level);

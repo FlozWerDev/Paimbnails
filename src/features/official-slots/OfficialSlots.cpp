@@ -6,35 +6,6 @@ int difficultyFace(Difficulty difficulty) {
     return static_cast<int>(difficulty);
 }
 
-char const* difficultyName(Difficulty difficulty) {
-    switch (difficulty) {
-        case Difficulty::Auto:         return "Auto";
-        case Difficulty::Unrated:      return "Unrated";
-        case Difficulty::Easy:         return "Easy";
-        case Difficulty::Normal:       return "Normal";
-        case Difficulty::Hard:         return "Hard";
-        case Difficulty::Harder:       return "Harder";
-        case Difficulty::Insane:       return "Insane";
-        case Difficulty::Demon:        return "Demon";
-        case Difficulty::EasyDemon:    return "Easy Demon";
-        case Difficulty::MediumDemon:  return "Medium Demon";
-        case Difficulty::InsaneDemon:  return "Insane Demon";
-        case Difficulty::ExtremeDemon: return "Extreme Demon";
-    }
-    return "Unrated";
-}
-
-char const* tierName(Tier tier) {
-    switch (tier) {
-        case Tier::None:      return "Rate";
-        case Tier::Featured:  return "Featured";
-        case Tier::Epic:      return "Epic";
-        case Tier::Legendary: return "Legendary";
-        case Tier::Mythic:    return "Mythic";
-    }
-    return "Rate";
-}
-
 std::vector<Difficulty> const& allDifficulties() {
     static std::vector<Difficulty> const kAll = {
         Difficulty::Auto,

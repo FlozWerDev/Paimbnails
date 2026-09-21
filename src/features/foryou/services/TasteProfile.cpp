@@ -267,17 +267,6 @@ int TasteProfile::pinnedTagVote(std::string const& tag) const {
     return it != m_pinnedTags.end() ? it->second : 0;
 }
 
-std::vector<std::string> TasteProfile::pinnedTags(int vote) const {
-    std::lock_guard lock(m_mutex);
-    std::vector<std::string> out;
-    for (auto const& [tag, v] : m_pinnedTags) {
-        if (vote == 0 || v == vote) out.push_back(tag);
-    }
-    std::sort(out.begin(), out.end());
-    return out;
-}
-
-
 void TasteProfile::applySeedLocked(TasteSnapshot& snapshot) const {
     snapshot.preferredDifficulty = m_seedDifficulty;
     snapshot.platformerRatio = m_seedPlatformerRatio;
@@ -331,12 +320,6 @@ void TasteProfile::seedPreferences(int difficulty, float platformerRatio, int le
     log::info("[ForYou] Seeded priors: diff={} platformer={:.2f} len={} star={} feat={} epic={} demon={}",
               difficulty, platformerRatio, length, starRated, featured, epic, demonDifficulty);
 }
-
-bool TasteProfile::isSeeded() const {
-    std::lock_guard lock(m_mutex);
-    return m_seeded;
-}
-
 
 float TasteProfile::interactionWeightLocked(LevelInteraction const& rec) const {
     float w = 0.f;
@@ -534,18 +517,6 @@ bool TasteProfile::isKnownLevel(int levelID) const {
     return m_levels.count(levelID) > 0;
 }
 
-bool TasteProfile::isDismissed(int levelID) const {
-    std::lock_guard lock(m_mutex);
-    auto it = m_levels.find(levelID);
-    return it != m_levels.end() && it->second.dismissed;
-}
-
-int TasteProfile::voteFor(int levelID) const {
-    std::lock_guard lock(m_mutex);
-    auto it = m_levels.find(levelID);
-    return it != m_levels.end() ? it->second.vote : 0;
-}
-
 int TasteProfile::favouriteLevelIDForSimilarity() const {
     std::lock_guard lock(m_mutex);
     int best = 0;
@@ -656,8 +627,6 @@ LevelInteraction TasteProfile::fromLegacyJson(matjson::Value const& value) const
 
 void TasteProfile::load() {
     std::lock_guard lock(m_mutex);
-
-    m_loaded = true;
 
     auto path = profilePath();
     std::error_code ec;
@@ -784,21 +753,6 @@ void TasteProfile::save() {
     }
 
     m_dirty = false;
-}
-
-void TasteProfile::reset() {
-    {
-        std::lock_guard lock(m_mutex);
-        m_levels.clear();
-        m_favoriteCreators.clear();
-        m_favoriteLevels.clear();
-        m_pinnedTags.clear();
-        m_seeded = false;
-        m_activeSessionLevelID = 0;
-        m_dirty = true;
-        rebuildLocked();
-    }
-    save();
 }
 
 }

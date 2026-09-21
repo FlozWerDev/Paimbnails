@@ -7,22 +7,6 @@
 namespace paimon::compat {
 
 struct ModCompat {
-    static bool isHappyTexturesLoaded() {
-        return geode::Loader::get()->isModLoaded("alphalaneous.happy_textures");
-    }
-
-    static bool isTextureLdrLoaded() {
-        return geode::Loader::get()->isModLoaded("geode.texture-loader");
-    }
-
-    static bool isImagePlusLoaded() {
-        return geode::Loader::get()->isModLoaded("prevter.imageplus");
-    }
-
-    static bool anyTextureModLoaded() {
-        return isHappyTexturesLoaded() || isTextureLdrLoaded() || isImagePlusLoaded();
-    }
-
 // More Icons provides the optional custom-icon API.
     static bool isMoreIconsLoaded() {
         return geode::Loader::get()->isModLoaded("hiimjustin000.more_icons");
@@ -111,10 +95,6 @@ struct ModCompat {
     static bool isBlurBGLoaded() {
 // alphalaneous.blur_bg blurs all popups.
         return geode::Loader::get()->isModLoaded("alphalaneous.blur_bg");
-    }
-    static bool isBlurAPILoaded() {
-// thesillydoggo.blur-api only exposes an API; it is not a conflict alone.
-        return geode::Loader::get()->isModLoaded("thesillydoggo.blur-api");
     }
     static bool isBlurBehindPopupsLoaded() {
 // malikhw47.blur-behind-popups applies BlurAPI to every FLAlertLayer.

@@ -1,18 +1,7 @@
 #pragma once
 
-// Graphical editor for one cosmetic official slot.
-//
-// Layout is a fixed 440x320 two-column popup, no scroll layer: every control
-// stays visible so the live preview on the right always reflects the draft.
-// The left column holds the source chips (level id + import, or .gmd browse),
-// the name/author inputs, the star stepper+slider and the coins chip; the
-// bottom strip holds the 12 vanilla difficulty faces and the 5 rate-tier
-// faces; the footer holds Test/Save (plus Hide-official in replace mode).
-//
-// Everything here is paint. Saving writes a Slot to the store, which only
-// describes how a page is drawn; the playable stand-in built from it is local
-// and unrated (see services/SlotLevels.hpp), so stars and orbs are never
-// granted no matter what the preview shows.
+// Graphical editor for one cosmetic official slot: fixed 440x320 two-column
+// popup, no scroll. Everything here is paint over a local unrated stand-in.
 
 #include "../OfficialSlots.hpp"
 
@@ -75,7 +64,6 @@ protected:
     void onTest(cocos2d::CCObject*);
     void onSave(cocos2d::CCObject*);
     void onHideOfficial(cocos2d::CCObject*);
-    void onStarsStep(cocos2d::CCObject* sender);
 
     // Fill the draft from a downloaded level (import by id).
     void prefillFromLevel(GJGameLevel* level);

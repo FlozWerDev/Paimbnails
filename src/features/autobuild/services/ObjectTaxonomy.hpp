@@ -2,11 +2,8 @@
 
 // What an object *is*, as far as a save string can tell.
 //
-// GD ships thousands of object ids and the game itself is the only place that
-// knows all of them, so this is deliberately two-sided: a curated table for the
-// ids whose behaviour matters (hazards, portals, pads, orbs, triggers) and a
-// structural read of the save string for everything else. The curated half can
-// be corrected without a rebuild through config/autobuild/objects.txt.
+// No full id database here: curated table for behaviour-critical ids, structural
+// read for the rest; objects.txt corrects the table without a rebuild.
 
 #include <string>
 #include <vector>

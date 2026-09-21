@@ -16,7 +16,7 @@ CCPoint touchPoint;
 std::set<int> activeTouches, swallowed;
 bool allowed() { return !paimon::isRuntimeShuttingDown() && paimon::modules::isEnabled("paimbnails.customhover.global"); }
 
-CCMenuItemSpriteExtra* hit(CCNode* node, CCPoint point, int& budget) {
+CCMenuItemSpriteExtra* hit(CCNode* node, CCPoint point, int& budget, bool& blocked) {
     if (!node || --budget<0 || !node->isVisible()) return nullptr;
     if(node->getID()=="custom-hover-popup" || typeinfo_cast<PlayLayer*>(node) || typeinfo_cast<LevelEditorLayer*>(node)) return nullptr;
     if(auto* scroll=typeinfo_cast<ScrollLayer*>(node)) {
@@ -32,14 +32,16 @@ CCMenuItemSpriteExtra* hit(CCNode* node, CCPoint point, int& budget) {
     if(!children) return nullptr;
     for(int i=static_cast<int>(children->count())-1;i>=0;--i) {
         auto child=static_cast<CCNode*>(children->objectAtIndex(i));
-        if(auto* found=hit(child,point,budget)) return found;
+        bool childBlocked=false;
+        if(auto* found=hit(child,point,budget,childBlocked)) return found;
+        if(childBlocked) { blocked=true; return nullptr; }
         // An open modal blocks all buttons underneath, including its empty area.
-        if(child->isVisible() && typeinfo_cast<FLAlertLayer*>(child)) return nullptr;
+        if(child->isVisible() && typeinfo_cast<FLAlertLayer*>(child)) { blocked=true; return nullptr; }
     }
     return nullptr;
 }
 CCMenuItemSpriteExtra* under(CCPoint p) {
-    int budget=6000; return hit(CCDirector::get()->getRunningScene(),p,budget);
+    int budget=6000; bool blocked=false; return hit(CCDirector::get()->getRunningScene(),p,budget,blocked);
 }
 struct Animated {
     WeakRef<CCMenuItemSpriteExtra> item;

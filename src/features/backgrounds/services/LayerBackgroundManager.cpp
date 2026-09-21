@@ -14,7 +14,6 @@
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../utils/PaimonNotification.hpp"
-#include "LayerBackgroundManager.hpp"
 #include <Geode/utils/random.hpp>
 #include <filesystem>
 #include <fstream>
@@ -222,11 +221,8 @@ void scheduleLayerBgSave() {
     });
 }
 
-// ---- Video background poster frames -------------------------------------
-//
-// The poster frame only ever fills the screen while the decoder warms up, so it
-// is stored downscaled: a full-res RGBA blob costs ~8 MB per 1080p video, and
-// reading/uploading that on the main thread stalls the layer transition.
+// Poster frames only cover decoder warmup, so they are stored downscaled:
+// a full-res RGBA readback/upload would stall the layer transition.
 
 // Longest edge of a stored poster frame.
 constexpr int kVideoPreviewMaxDim = 512;
@@ -562,9 +558,8 @@ struct VideoBackgroundUpdateNode : public CCNode {
                 m_visibleSprite->setOpacity(0);
                 m_visibleSprite->runAction(CCFadeTo::create(0.15f, 255));
 
-                // Capturing the poster frame costs a full GPU readback, so it
-                // waits until playback has settled instead of landing on the
-                // very first frames.
+                // Poster readback costs a full GPU stall, so it waits until
+                // playback has settled instead of grabbing the first frames.
                 if (!m_previewSaved && !m_videoPath.empty()
                     && !LayerBackgroundManager::hasVideoBgPreview(m_videoPath)) {
                     m_previewCaptureCountdown = kPreviewCaptureDelay;
@@ -809,10 +804,6 @@ void LayerBackgroundManager::saveMusicConfig(std::string const& key, LayerMusicC
     Mod::get()->setSavedValue("layermusic-" + key + "-endms", cfg.endMs);
     Mod::get()->setSavedValue("layermusic-" + key + "-filter", cfg.filter);
     scheduleLayerBgSave();
-}
-
-LayerMusicConfig LayerBackgroundManager::getGlobalMusicConfig() const {
-    return getMusicConfig("global");
 }
 
 void LayerBackgroundManager::saveGlobalMusicConfig(LayerMusicConfig const& cfg) {

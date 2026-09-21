@@ -66,6 +66,11 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
         m_panelContainer->addChild(m_panelBg, 0);
     }
 
+    auto* dispatcher = CCDirector::get()->getTouchDispatcher();
+    int basePrio = dispatcher->getTargetPrio();
+    m_touchPrio = basePrio - 1;
+    m_childTouchPrio = basePrio - 2;
+
     buildTitleBar();
     buildSidebar();
     buildContentArea();
@@ -76,11 +81,6 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
         clampedCategory = 0;
     }
     selectCategory(clampedCategory);
-
-    auto* dispatcher = CCDirector::get()->getTouchDispatcher();
-    int basePrio = dispatcher->getTargetPrio();
-    m_touchPrio = basePrio - 1;
-    m_childTouchPrio = basePrio - 2;
 
     this->setTouchEnabled(true);
     this->setTouchMode(kCCTouchesOneByOne);
@@ -204,8 +204,6 @@ void PaimonMultiSettingsPanel::selectCategory(int index) {
     m_selectedCategory = index;
 
     if (m_searchInput) m_searchInput->setString("");
-    m_searchQuery.clear();
-    m_isSearchActive = false;
 
     updateSidebarAccent();
     rebuildContent();
@@ -307,10 +305,6 @@ void PaimonMultiSettingsPanel::relayoutContent() {
     m_scrollLayer->doConstraintContent(true);
 }
 
-void PaimonMultiSettingsPanel::relayoutScrollContent() {
-    relayoutContent();
-}
-
 void PaimonMultiSettingsPanel::setSelectedCategory(int index) {
     selectCategory(index);
 }
@@ -334,17 +328,13 @@ void PaimonMultiSettingsPanel::updateSidebarAccent() {
 }
 
 void PaimonMultiSettingsPanel::onSearchChanged(std::string const& query) {
-    m_searchQuery = query;
-
     std::string lowerQuery = geode::utils::string::toLower(query);
 
     if (lowerQuery.empty()) {
-        m_isSearchActive = false;
         rebuildContent();
         return;
     }
 
-    m_isSearchActive = true;
     buildSearchResults(lowerQuery);
 }
 

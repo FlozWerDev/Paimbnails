@@ -95,7 +95,6 @@ bool VinylDisc::init(float radius) {
         drawFilledCircle(centerDot, {m_radius, m_radius}, m_radius * 0.03f, {0.06f, 0.06f, 0.09f, 1.f}, 16);
         m_rotating->addChild(centerDot, 4);
     }
-    m_centerDot = nullptr;
 
     auto highlight = PaimonDrawNode::create();
     if (highlight) {

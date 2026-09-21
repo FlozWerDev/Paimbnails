@@ -22,24 +22,14 @@ namespace {
         return std::clamp(value, minimum, maximum);
     }
 
-    // While smooth scroll is enabled, the Windows GLFW hook below maps one
-    // physical notch to five dispatcher units. Other desktop builds retain
-    // Cocos' twelve-unit wheel convention.
-#if defined(GEODE_IS_WINDOWS)
-    constexpr double kInputUnitsPerStep = 5.0;
-#else
-    constexpr double kInputUnitsPerStep = 12.0;
-#endif
-
     void const* currentScrollTarget() {
         auto* director = CCDirector::get();
         auto* dispatcher = director ? director->getMouseDispatcher() : nullptr;
         auto* handlers = dispatcher ? dispatcher->m_pMouseHandlers : nullptr;
         if (!handlers) return nullptr;
 
-        // CCMouseDispatcher walks its handler array from the beginning and
-        // stops at the first live delegate. Match that exact order so momentum
-        // cannot leak into a view that never received the original wheel event.
+        // Match the dispatcher's first-live-delegate order so momentum cannot
+        // leak into a view that never received the original wheel event.
         for (unsigned i = 0; i < handlers->count(); ++i) {
             auto* handler = static_cast<CCMouseHandler*>(handlers->objectAtIndex(i));
             if (handler && handler->m_pDelegate) return handler->m_pDelegate;
@@ -54,9 +44,8 @@ namespace {
 
     float externalSmoothStep(float value) {
         if (!std::isfinite(value) || std::abs(value) < 0.0001f) return 0.f;
-        // Prevter replays the native twelve-unit wheel event over multiple
-        // frames. Preserve those fractions instead of turning every frame
-        // back into a complete discrete action.
+        // Prevter spreads one wheel event over frames: keep the fractions
+        // instead of replaying a full discrete action per frame.
         constexpr float kExternalUnitsPerStep = 12.f;
         return std::clamp(value / kExternalUnitsPerStep, -8.f, 8.f);
     }
@@ -118,10 +107,8 @@ bool SmoothScrollController::isActive() const {
 }
 
 bool shouldBypassSmoothScroll() {
-    // A volume-scroll gesture (e.g. Ctrl/Shift + wheel) must reach the volume hook as a
-    // single discrete step. If smooth scroll captured it, it would replay the one wheel
-    // tick as many small momentum steps, and the volume hook applies a fixed 5% per step,
-    // jumping the volume straight to the top with one tiny scroll. So bypass smoothing here.
+    // Volume gestures bypass smoothing: the volume hook applies 5% per step, so
+    // replayed momentum would jump straight to the top with one tiny scroll.
     if (paimon::volscroll::isVolumeGestureActive()) {
         return true;
     }
@@ -198,9 +185,8 @@ void SmoothScrollController::tick(float dt, ScrollDispatchFn const& dispatch) {
         return;
     }
 
-    // If the editor-zoom gesture state changed mid-momentum (e.g. Ctrl released
-    // after a long zoom scroll), drop the leftover momentum so it doesn't bleed
-    // into a plain vertical scroll.
+    // Drop leftover momentum when the zoom gesture flips mid-flight (e.g. Ctrl
+    // released), so it never bleeds into a plain vertical scroll.
     if (paimon::settings::smoothscroll::fixEditorScroll()) {
         bool const zoomGestureNow = isEditorZoomGesture()
             && paimon::settings::smoothscroll::editorZoomEnabled();

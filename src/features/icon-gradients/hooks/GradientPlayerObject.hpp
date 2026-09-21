@@ -47,17 +47,11 @@ public:
         // Compat with the "Custom UFO N Ship Cube" doll-replacement mod:
         // while it is loaded the menu doll needs its shaded copies shown.
         bool m_menuDollPatchLoaded = false;
-        bool m_separateDualIconsIsLoaded = false;
         bool m_swingFlipLoaded = false;
 
         bool m_animSpritesInitialized = false;
     };
 
-    // One gradient overlay plus the live sprite it shadows: `copy` is the
-    // painted duplicate, `source` the live sprite it follows for flip and
-    // opacity, `live` the sprite that gets its shader restored when the
-    // overlay is gone, `config` the gradient slot, `color` its channel and
-    // `seed` the shader variant.
     struct MirrorLane {
         Ref<CCSprite> Fields::* copy;
         CCSprite* PlayerObject::* source;

@@ -12,10 +12,6 @@
 
 namespace paimon::versus {
 
-// Three titled columns, left to right: who you are on the ladder, what the duel
-// would be played under, and everything that is not a duel. The two ways in sit
-// on the row below them, ranked and friendly side by side, so neither one is a
-// button whose meaning has to be guessed.
 class VersusHubLayer : public cocos2d::CCLayer {
 public:
     static VersusHubLayer* create();

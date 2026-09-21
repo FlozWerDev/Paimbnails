@@ -67,7 +67,7 @@ public:
     void sendScaledObjects(cocos2d::CCArray* objects);
     void sendFlippedObject(GameObject* object);
     void sendFlippedObjects(cocos2d::CCArray* objects);
-    void sendDeletedObject(GameObject* object, std::string const& beforeSave = {});
+    void sendDeletedObject(GameObject* object);
     void reconcileObjects(cocos2d::CCArray* objects);
 
     void sendSelection(cocos2d::CCArray* selected);
@@ -97,7 +97,7 @@ public:
     bool isRecovering() const { return m_recovering; }
 
     using InviteCb = std::function<void(bool ok, bool online, std::string const& message)>;
-    void inviteUser(int accountId, std::string const& targetName, InviteCb cb = {});
+    void inviteUser(int accountId, InviteCb cb = {});
 
     void sendChat(std::string const& text);
     std::vector<ChatMessage> recentChat(size_t maxCount = 40) const;
@@ -195,7 +195,6 @@ private:
     void applyLevelSettingsSave(std::string const& save);
     void applyColorsSave(std::string const& save);
     void applySongMeta(matjson::Value const& msg);
-    static bool isCheapKind(std::string const& kind);
     void flushOutgoing();
     void pumpOutbox();
     void sendInflightChunk();

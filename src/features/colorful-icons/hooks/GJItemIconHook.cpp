@@ -13,7 +13,6 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 
 using namespace geode::prelude;
-using paimon::icons::IconColorService;
 using paimon::icons::IconConfigStore;
 using paimon::icons::IconDescriptor;
 using paimon::icons::IconLockStyler;

@@ -27,10 +27,8 @@ class $modify(PaimonMainMenuLayoutHook, MenuLayer) {
         // Register the layout editor keybind for the main menu only.
         paimon::menu_layout::registerLayoutEditorKeybind(this);
 
-        // Re-apply after init to catch buttons added by other hooks.
-        // Three distinct selectors are used because scheduleOnce with the
-        // same selector only updates the existing timer (cocos2d-x), so only
-        // one of three deferred passes would fire otherwise.
+        // Three distinct selectors: scheduleOnce with the same selector only
+        // updates the existing timer (cocos2d-x), firing just one pass.
         this->scheduleOnce(schedule_selector(PaimonMainMenuLayoutHook::applyDeferredMenuLayout), 0.f);
         this->scheduleOnce(schedule_selector(PaimonMainMenuLayoutHook::applyDeferredMenuLayout2), 0.15f);
         this->scheduleOnce(schedule_selector(PaimonMainMenuLayoutHook::applyDeferredMenuLayout3), 0.5f);

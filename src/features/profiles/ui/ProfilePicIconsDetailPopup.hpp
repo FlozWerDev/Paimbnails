@@ -5,6 +5,7 @@
 class ProfilePicIconsDetailPopup : public geode::Popup {
 protected:
     ProfilePicConfig* m_cfg = nullptr;
+    geode::WeakRef<cocos2d::CCNode> m_editor;
     std::function<void()> m_onChange;
     cocos2d::CCNode* m_contentNode = nullptr;
     cocos2d::CCNode* m_previewNode = nullptr;
@@ -14,12 +15,10 @@ protected:
     Slider* m_speedSlider = nullptr;
     cocos2d::CCLabelBMFont* m_speedLabel = nullptr;
 
-    bool init(ProfilePicConfig* cfg, std::function<void()> onChange);
+    bool init(ProfilePicConfig* cfg, cocos2d::CCNode* editor, std::function<void()> onChange);
 
     void rebuild();
     void rebuildPreview();
-
-    void onClose(cocos2d::CCObject* sender) override;
 
     void onColor1Source(cocos2d::CCObject* sender);
     void onPickColor1(cocos2d::CCObject* sender);
@@ -36,5 +35,5 @@ protected:
     void onClearIconBgImage(cocos2d::CCObject* sender);
 
 public:
-    static ProfilePicIconsDetailPopup* create(ProfilePicConfig* cfg, std::function<void()> onChange);
+    static ProfilePicIconsDetailPopup* create(ProfilePicConfig* cfg, cocos2d::CCNode* editor, std::function<void()> onChange);
 };

@@ -9,14 +9,11 @@
 
 namespace paimon::collab {
 
-// Fixed collab host (room net + presence/invites). Single source of truth —
-// pasting into settings tends to mangle the URL.
-// Prefer HTTPS in production; plain HTTP supports direct server ports.
+// Single source of truth — pasting into settings tends to mangle the URL.
+// Plain HTTP supports direct server ports; prefer HTTPS in production.
 constexpr char const* kServerBaseUrl = "http://node.akiomae.xyz:4401";
 
-// v8: full editor meta sync — LevelSettings save string, GJEffectManager color
-//     save string, and song (audioTrack / songID / songIDs / sfxIDs).
-// v9: spatial presence — camera trails/ghosts, work zones, pings, follow peer.
+// Bump on any wire-incompatible change.
 constexpr uint32_t kProtocolVersion = 10;
 
 constexpr size_t kMaxCursorAssetBytes = 128 * 1024;
@@ -30,11 +27,8 @@ constexpr size_t kDefaultOpsPerRequest = 500;
 constexpr size_t kMaxSaveBytesPerRequest = 1'400'000;
 constexpr float kDefaultOpsPerSecond = 500.f;
 
-// FNV-1a in two independent 32-bit lanes over "gid|version|save", packed as
-// (lane1 << 32) | lane2. The server computes the identical hash per object and
-// broadcasts the XOR-aggregate of the whole room every few seconds; comparing
-// it against the local aggregate detects any divergence, which is then healed
-// with an automatic resync. Must match objectSyncHash() in server.js exactly.
+// FNV-1a over "gid|version|save" in two lanes, XOR-aggregated per room to
+// detect divergence. Must match objectSyncHash() in server.js exactly.
 inline uint32_t fnv1a32(std::string const& s, uint32_t seed) {
     uint32_t h = seed;
     for (unsigned char c : s) {

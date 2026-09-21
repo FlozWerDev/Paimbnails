@@ -150,8 +150,20 @@ bool MusicTagsPopup::init(float width, float height) {
     return true;
 }
 
-void MusicTagsPopup::musicBrowserClosed(MusicBrowser*) {
+void MusicTagsPopup::musicBrowserClosed(MusicBrowser* browser) {
+    if (auto ref = m_browser.lock()) {
+        if (typeinfo_cast<MusicBrowser*>(ref.data()) == browser) m_browser = nullptr;
+    }
     MenuMusicLibrary::get().syncDownloadedSongs();
+}
+
+void MusicTagsPopup::onExit() {
+    if (auto ref = m_browser.lock()) {
+        if (auto* browser = typeinfo_cast<MusicBrowser*>(ref.data())) {
+            if (browser->m_delegate == this) browser->m_delegate = nullptr;
+        }
+    }
+    Popup::onExit();
 }
 
 void MusicTagsPopup::openMusicBrowser(GJSongType type, bool showTags) {
@@ -161,6 +173,7 @@ void MusicTagsPopup::openMusicBrowser(GJSongType type, bool showTags) {
         return;
     }
     browser->m_delegate = this;
+    m_browser = WeakRef<CCNode>(browser);
     browser->show();
 
     if (!showTags) return;

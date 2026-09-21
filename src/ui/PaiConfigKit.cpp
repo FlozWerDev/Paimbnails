@@ -5,7 +5,6 @@
 #include <Geode/binding/SliderThumb.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/ColorPickPopup.hpp>
-#include <fmt/format.h>
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -179,7 +178,6 @@ CCNode* makeSliderRow(
     constexpr float kPad = 6.f;
     constexpr float kTitleH = 14.f;
 
-// Title/description on the left; value/slider on the right.
     float leftW = width * 0.50f;
     float textMaxW = leftW - 14.f;
 
@@ -488,7 +486,6 @@ CCNode* makeCard(
 
     float y = cardH - kPad;
     if (hasTitle) {
-// Accent bar and section title.
         auto* bar = paimon::SpriteHelper::createColorPanel(4.f, 13.f, accent, 255, 2.f);
         if (bar) {
             bar->setAnchorPoint({0.f, 0.f});

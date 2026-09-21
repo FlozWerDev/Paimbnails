@@ -10,9 +10,8 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// 1 finger opens radial, 2 open layout editor; move/release cancels.
-// handleTouches* has real addresses on Android and iOS alike (see bindings),
-// so the opener works on both mobile platforms.
+// 1 finger opens radial, 2 open layout editor; move/release cancels. Los
+// handleTouches* tienen direccion real en Android e iOS (ver bindings).
 
 #if defined(GEODE_IS_MOBILE)
 
@@ -227,6 +226,7 @@ class $modify(TouchHoldView, CCEGLViewProtocol) {
         (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesCancel", geode::Priority::Normal);
     }
 
+    $override
     void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesBegin(num, ids, xs, ys, timestamp);
 
@@ -263,6 +263,7 @@ class $modify(TouchHoldView, CCEGLViewProtocol) {
         }
     }
 
+    $override
     void handleTouchesMove(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesMove(num, ids, xs, ys, timestamp);
 
@@ -277,24 +278,19 @@ class $modify(TouchHoldView, CCEGLViewProtocol) {
         }
     }
 
+    $override
     void handleTouchesEnd(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesEnd(num, ids, xs, ys, timestamp);
 
         if (!s_touch.active) return;
 
-        if (!s_touch.completed) {
-            s_touch.fingerCount -= num;
-            if (s_touch.fingerCount <= 0) {
-                resetTouch();
-            }
-        } else {
-            s_touch.fingerCount -= num;
-            if (s_touch.fingerCount <= 0) {
-                resetTouch();
-            }
+        s_touch.fingerCount -= num;
+        if (s_touch.fingerCount <= 0) {
+            resetTouch();
         }
     }
 
+    $override
     void handleTouchesCancel(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesCancel(num, ids, xs, ys, timestamp);
         resetTouch();

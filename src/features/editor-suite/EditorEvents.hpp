@@ -1,12 +1,6 @@
 #pragma once
 
-// Editor-wide events. Prefer these over ad-hoc globals.
-//
-// Listen example (Geode v5):
-//   EditorUIShowEvent().listen([](EditorUI* ui, bool shown) -> bool {
-//       return false; // propagate
-//   });
-//
+// Editor-wide events; prefer these over ad-hoc globals.
 // Features that add HUD chrome MUST hide/show on EditorUIShowEvent.
 
 #include <Geode/loader/Event.hpp>

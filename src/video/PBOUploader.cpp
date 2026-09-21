@@ -444,13 +444,6 @@ void PBOUploader::shutdown() {
     m_initialized = false;
 }
 
-void PBOUploader::uploadPlane(int slotIdx, GLuint texId, GLenum format,
-                               const uint8_t* data, int stride,
-                               int width, int height) {
-    (void)slotIdx; (void)texId; (void)format;
-    (void)data; (void)stride; (void)width; (void)height;
-}
-
 static void uploadSinglePBO(GLuint pbo, int pboSize, GLuint texId,
                              GLenum format, const uint8_t* data,
                              int stride, int width, int height) {
@@ -570,8 +563,6 @@ uint8_t* PBOUploader::tryBeginRGBAUpload(int width, int height) {
 // Keep size math 64-bit to prevent allocation overflow.
     int64_t needed64 = static_cast<int64_t>(width) * static_cast<int64_t>(height) * 4;
     if (needed64 <= 0 || needed64 > static_cast<int64_t>(m_rgbaSize)) return nullptr;
-    int needed = static_cast<int>(needed64);
-    (void)needed;
 
     int startIdx = m_uploadIdx;
     int chosen = -1;

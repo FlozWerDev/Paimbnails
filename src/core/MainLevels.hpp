@@ -130,9 +130,8 @@ inline int64_t mainLevelsCachedAtEpoch() {
     return geode::Mod::get()->getSavedValue<int64_t>(kMainLevelsCachedAtKey, 0);
 }
 
-// allMainLevelThumbnailsOnDisk does up to 44 stat calls, and startup checks
-// this from both LoadingLayer and the prefetch path. Two or three full scans
-// add up on a slow drive, so the answer is cached for the session once known.
+// Up to 44 stat calls per check from two startup paths; cache the answer for
+// the session once known (slow drives add up).
 inline std::atomic<int>& mainLevelsFreshCache() {
     static std::atomic<int> value{-1}; // -1 unknown, 0 no, 1 yes
     return value;

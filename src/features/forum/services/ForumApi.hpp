@@ -86,7 +86,6 @@ namespace paimon::forum {
         bool online = false;
         int64_t lastSeen = 0;
 
-        matjson::Value toJson() const;
         static UserStatus fromJson(matjson::Value const& v);
     };
 
@@ -95,7 +94,6 @@ namespace paimon::forum {
         std::string viewerUsername;
         int64_t viewedAt = 0;
 
-        matjson::Value toJson() const;
         static ProfileView fromJson(matjson::Value const& v);
     };
 
@@ -140,7 +138,6 @@ namespace paimon::forum {
 
         void loadCache();
         void saveCache();
-        std::vector<Post> const& cachedPosts() const { return m_cache; }
         bool hasServer() const;
 
         int64_t getPostCooldownRemaining() const;

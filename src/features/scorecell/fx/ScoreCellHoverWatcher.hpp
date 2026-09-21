@@ -30,7 +30,6 @@ protected:
     bool m_hovered = false;
 
     geode::Ref<cocos2d::CCNode> m_target = nullptr;
-    bool m_hasTarget = false;
     float m_baseScaleX = 1.f;
     float m_baseScaleY = 1.f;
     cocos2d::CCPoint m_basePos = {0.f, 0.f};

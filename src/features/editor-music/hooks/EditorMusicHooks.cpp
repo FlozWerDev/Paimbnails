@@ -4,7 +4,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/loader/SettingV3.hpp>
 #include <Geode/modify/LevelEditorLayer.hpp>
-#include <Geode/utils/Keyboard.hpp>
 
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../editor-suite/EditorHelpers.hpp"

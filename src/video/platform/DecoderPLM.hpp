@@ -2,7 +2,9 @@
 
 #include "../VideoDecoder.hpp"
 #include <pl_mpeg.h>
+#include <Geode/utils/string.hpp>
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include "../../utils/TimedJoin.hpp"
 
@@ -17,8 +19,10 @@ public:
     bool open(const std::string& path) override {
         closeInternal();
 #ifdef _WIN32
-        // pl_mpeg uses fopen which needs ANSI paths on Windows.
-        m_plm = plm_create_with_filename(path.c_str());
+        // fopen takes ANSI paths, so a UTF-8 folder (accents/CJK) never opens.
+        FILE* fh = _wfopen(geode::utils::string::utf8ToWide(path).c_str(), L"rb");
+        if (!fh) return false;
+        m_plm = plm_create_with_file(fh, TRUE);
 #else
         m_plm = plm_create_with_filename(path.c_str());
 #endif
@@ -82,6 +86,8 @@ public:
     double getDuration() const override { return m_duration; }
     int getWidth()  const override { return m_ring.getWidth(); }
     int getHeight() const override { return m_ring.getHeight(); }
+    // MPEG-1 streams are BT.601 limited; range/rotation defaults already fit.
+    VideoColorMatrix getColorMatrix() const override { return VideoColorMatrix::BT601; }
 
     bool isFinished() const override {
         return m_finished.load(std::memory_order_acquire);

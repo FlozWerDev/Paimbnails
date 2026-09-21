@@ -7,16 +7,13 @@
 
 namespace paimon::gifimport {
 
-// Tope de hilos del trazado. 0 deja que lo decida la maquina; el banco lo fija a
-// 1 para que sus numeros no dependan de cuantos nucleos tenga quien lo corre.
-void setWorkerLimit(unsigned int limit);
+// Tope de hilos del trazado. 0 deja que lo decida la maquina.
 unsigned int workerLimit();
 
 // Los hilos de un reparto nacen y se juntan dentro de la misma llamada, asi que
 // no pasan por ThreadTracker: no hay nada que cerrar al salir del juego mas alla
 // del hilo de importacion, que si esta apuntado y espera a estos.
 unsigned int parallelThreads(std::size_t count);
-bool inParallelRegion();
 void enterParallelRegion();
 void leaveParallelRegion();
 

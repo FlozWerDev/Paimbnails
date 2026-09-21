@@ -3,7 +3,6 @@
 
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
-#include "../../../utils/PaimonDrawNode.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 
 #include <Geode/ui/TextInput.hpp>
@@ -55,10 +54,6 @@ void ColorPickerOverlay::show() {
     } else if (auto* scene = CCDirector::get()->getRunningScene()) {
         scene->addChild(ov, 99999);
     }
-}
-
-void ColorPickerOverlay::hideOverlay() {
-    if (s_instance) s_instance->doClose();
 }
 
 bool ColorPickerOverlay::init() {
@@ -198,7 +193,7 @@ const float fillSize = 29.f;
     idCaption->setPosition({230.f, 58.f});
     m_hud->addChild(idCaption, 2);
 
-    m_idInput = geode::TextInput::create(56.f, "0-999");
+    m_idInput = geode::TextInput::create(56.f, "0-9999");
     m_idInput->setFilter("0123456789");
     m_idInput->setMaxCharCount(4);
     m_idInput->setScale(0.85f);
@@ -336,7 +331,7 @@ void ColorPickerOverlay::updateReadout() {
     }
 }
 
-void ColorPickerOverlay::pickAt(CCPoint /*p*/) {
+void ColorPickerOverlay::pickAt() {
 // Live mode samples the framebuffer each frame; picking locks the current color.
     if (!m_ready) return;
     m_selColor = m_liveColor;
@@ -347,7 +342,6 @@ void ColorPickerOverlay::pickAt(CCPoint /*p*/) {
         pop->setScale(1.12f);
         pop->runAction(CCEaseBackOut::create(CCScaleTo::create(0.18f, 1.f)));
     }
-// Auto mode applies each pick to the channel immediately.
     if (m_autoApply) this->tryAutoApply();
 }
 
@@ -373,13 +367,13 @@ bool ColorPickerOverlay::ccTouchBegan(CCTouch* touch, CCEvent*) {
     CCPoint p = touch->getLocation();
     if (pointInHud(p)) return true;
     m_dragging = true;
-    this->pickAt(p);
+    this->pickAt();
     return true;
 }
 
 void ColorPickerOverlay::ccTouchMoved(CCTouch* touch, CCEvent*) {
     if (!m_ready || m_closing || !m_dragging) return;
-    this->pickAt(touch->getLocation());
+    this->pickAt();
 }
 
 void ColorPickerOverlay::ccTouchEnded(CCTouch*, CCEvent*) {

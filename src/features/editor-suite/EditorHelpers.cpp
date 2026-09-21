@@ -37,7 +37,7 @@ class $modify(PaimonFocusedInputNode, CCTextInputNode) {
     $override
     bool onTextFieldAttachWithIME(CCTextFieldTTF* t) {
         auto r = CCTextInputNode::onTextFieldAttachWithIME(t);
-        if (paimon::isEditorScene()) paimon::editor::setFocusedTextInput(this);
+        if (r && paimon::isEditorScene()) paimon::editor::setFocusedTextInput(this);
         return r;
     }
 

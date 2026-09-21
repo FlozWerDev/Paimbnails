@@ -222,8 +222,7 @@ Result<std::vector<ResolvedBody>> PhysicsWorkspace::resolve(
             return Err("No se pudo medir uno de los cuerpos.");
         }
 
-        // A body turns around the mass it really has, so the origin is the
-        // area weighted centroid: the middle of the bounding box put the pivot
+        // The origin is the area weighted centroid: the box middle put the pivot
         // outside an L shape and made a slope spin like the block it fills.
         float area = 0.f;
         Vec2 weighted{};

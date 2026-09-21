@@ -93,9 +93,8 @@ void RTXManager::loadConfig() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
 #if defined(GEODE_IS_MOBILE)
-        // Fresh install on a phone: start from the Performance preset so the
-        // first enable doesn't melt the GPU. HDR itself is probed at runtime
-        // and falls back to LDR where float targets are incomplete.
+        // Fresh install on a phone: start from Performance so the first enable
+        // doesn't melt the GPU (HDR still probes at runtime, LDR fallback).
         applyPreset(m_config, Preset::Performance);
 #endif
         return;
@@ -411,7 +410,6 @@ void RTXManager::setEnabled(bool enabled) {
 }
 
 bool RTXManager::shouldRender() const {
-    // Este bool es el interruptor global: se lee por accessor.
     if (!m_config.enabled) return false;
     if (m_config.intensity <= 0.001f) return false;
 

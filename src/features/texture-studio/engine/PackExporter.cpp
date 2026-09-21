@@ -21,14 +21,7 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Compatibility gates for well-known third-party mod assets (DIB demon
-// sheets, Godlike faces, GaragePlus icons, gold-title sheets). The recoloring
-// approach used here was pioneered by Asterveila's "PackGen" (building on
-// ravexcode's TexturePackWeb); the path lists below follow the same
-// compatibility set so packs stay interchangeable. The pipeline itself is a
-// separate build: CPU clustering/segmentation plus a GPU tint path, nothing
-// shared with PackGen's JS canvas code. Base sheets are sourced locally from
-// the installed game and mods. No code was copied from either project.
+// Third-party asset gates mirror PackGen's compat set so packs stay interchangeable.
 constexpr std::string_view kDibBaseFiles[] = {
     "hiimjustin000.demons_in_between/DIB_IconSheet-uhd.png",
     "hiimjustin000.demons_in_between/DIB_IconSheet-uhd.plist",

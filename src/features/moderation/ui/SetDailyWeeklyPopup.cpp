@@ -18,7 +18,6 @@ bool SetDailyWeeklyPopup::init(int levelID) {
     this->setTitle("Set Daily / Weekly");
     auto size = m_mainLayer->getContentSize();
 
-    // Subtitle with the target level ID.
     auto subtitle = CCLabelBMFont::create(
         fmt::format("Level ID: {}", levelID).c_str(), "chatFont.fnt"
     );
@@ -30,7 +29,6 @@ bool SetDailyWeeklyPopup::init(int levelID) {
     constexpr float cardW = 260.f;
     constexpr float cardH = 46.f;
 
-    // Builds a full-width card button: tinted panel, icon badge, title + hint.
     auto makeCard = [&](
         const char* iconFrame, const char* fallbackFrame,
         const char* label, const char* hint,
@@ -47,7 +45,6 @@ bool SetDailyWeeklyPopup::init(int levelID) {
         bg->setColor(tint);
         content->addChild(bg);
 
-        // Dark badge holding the action icon.
         auto badge = CCScale9Sprite::create("GJ_square05.png");
         if (badge) {
             badge->setContentSize({ 34.f, 34.f });

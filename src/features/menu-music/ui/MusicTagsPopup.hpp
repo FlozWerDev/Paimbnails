@@ -19,6 +19,9 @@ protected:
     void onNCSTags(cocos2d::CCObject*);
     void onNewgrounds(cocos2d::CCObject*);
     void openMusicBrowser(GJSongType type, bool showTags);
+    void onExit() override;
+
+    geode::WeakRef<cocos2d::CCNode> m_browser = nullptr;
 };
 
 } // namespace paimon::menumusic

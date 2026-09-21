@@ -7,7 +7,6 @@
 #include <vector>
 #include <functional>
 #include <atomic>
-#include <filesystem>
 
 namespace paimon::updates {
 

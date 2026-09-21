@@ -675,9 +675,7 @@ void ThumbnailOrderPopup::onSave(CCObject*) {
         ThumbnailTransportClient::get().invalidateGalleryMetadata(popup->m_levelID);
         ThumbnailLoader::get().invalidateLevel(popup->m_levelID);
 
-        // Only the first slot is served from /t/<level>, so the two thumbnails that swap
-        // in and out of it also swap URLs. Reusing the local copies would leave the
-        // gallery asking for the old primary's address.
+        // Solo el primer slot sale de /t/<level>: al permutar tambien permutan las URLs.
         if (gotServerOrder) {
             popup->m_thumbnails = serverOrder;
         } else {

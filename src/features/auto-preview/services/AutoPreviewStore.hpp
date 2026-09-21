@@ -20,6 +20,7 @@ class AutoPreviewStore {
 public:
     static AutoPreviewStore& get();
     bool has(int32_t levelID);
+    std::filesystem::path dir() const;
     // generated preview for this level. Converts to RGB888 internally. Atomic
     // write (tmp + rename). Thread-safe; returns false on any failure.
     bool save(int32_t levelID, uint8_t const* rgba, uint32_t width, uint32_t height);
@@ -35,7 +36,6 @@ public:
 private:
     AutoPreviewStore() = default;
 
-    std::filesystem::path dir() const;
     std::filesystem::path pathFor(int32_t levelID) const;
     void ensureScanned();
 

@@ -6,6 +6,8 @@
 #include <cstring>
 #include <algorithm>
 #include <chrono>
+#include <initializer_list>
+#include <limits>
 #include <mutex>
 #include <objbase.h>
 #include "../../utils/TimedJoin.hpp"
@@ -242,6 +244,20 @@ bool DecoderMF::setupReader(const std::string& path) {
             m_pixelFormat = actualSubtype;
         }
     }
+    UINT32 matrix = 0;
+    if (SUCCEEDED(currentType->GetUINT32(MF_MT_YUV_MATRIX, &matrix))) {
+        if (matrix == MFVideoTransferMatrix_BT709) m_colorMatrix = VideoColorMatrix::BT709;
+        else if (matrix == MFVideoTransferMatrix_BT601) m_colorMatrix = VideoColorMatrix::BT601;
+    }
+    UINT32 nominal = 0;
+    if (SUCCEEDED(currentType->GetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, &nominal))) {
+        m_fullRange = (nominal == MFNominalRange_Wide);
+    }
+    UINT32 rotation = 0;
+    if (SUCCEEDED(currentType->GetUINT32(MF_MT_VIDEO_ROTATION, &rotation))) {
+        // MF counts counterclockwise; the importer rotates clockwise.
+        m_rotation = static_cast<int>((360 - rotation) % 360);
+    }
     currentType->Release();
 
     m_width  = static_cast<int>(w);
@@ -302,7 +318,6 @@ bool DecoderMF::setOutputFormat() {
         type->Release();
 
         if (SUCCEEDED(hr)) {
-            m_subType = fmt;
             m_pixelFormat = fmt;
             const char* name =
                 fmt == MFVideoFormat_NV12 ? "NV12" :
@@ -335,7 +350,7 @@ static long long planar420Size(int srcStride, int alignedH) {
     return static_cast<long long>(srcStride) * alignedH + 2 * uvStride * alignedUvH;
 }
 
-// Probe strides from sample size; keep hint if it fits.
+// Probe strides from sample size; -1 when nothing fits.
 static int detectLinearStride(size_t bufLen, int width, int visibleHeight, int hintedStride) {
     auto const fits = [&](int stride) {
         if (stride < width || bufLen == 0) return false;
@@ -350,7 +365,16 @@ static int detectLinearStride(size_t bufLen, int width, int visibleHeight, int h
             return stride;
         }
     }
-    return hintedStride >= width ? hintedStride : width;
+    // Wine pads rows to alignment multiples past width + 64.
+    for (int align : {32, 64, 128}) {
+        int stride = (width + align - 1) & ~(align - 1);
+        if (stride <= width + 64 || stride == hintedStride || !fits(stride)) continue;
+        geode::log::info("DecoderMF: linear stride autodetected as {} for {} px rows",
+            stride, width);
+        return stride;
+    }
+    // Copying with a guessed stride shears the frame, so signal failure.
+    return -1;
 }
 
 bool DecoderMF::copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, size_t bufferSize) {
@@ -485,6 +509,7 @@ bool DecoderMF::copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot) {
     int hinted = m_linearStride > m_width ? m_linearStride : m_width;
     size_t const bufSize = static_cast<size_t>(bufLen);
     int srcStride = detectLinearStride(bufSize, m_width, m_height, hinted);
+    if (srcStride < 0) return false;
     if (srcStride != m_linearStride) m_linearStride = srcStride;
     int alignedH = deriveYPlaneRows(bufSize, srcStride, m_height);
     if (static_cast<size_t>(srcStride) * alignedH * 3 / 2 > bufLen) {
@@ -710,6 +735,8 @@ void DecoderMF::decodeLoop() {
 
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
     int frameCount = 0;
+    // Last good timestamp; feeds the fallback when a sample carries none.
+    double lastPts = -1.0;
     while (m_decoding.load(std::memory_order_relaxed)) {
         if (m_ring.isFull()) {
             m_ring.waitForWritable(50, &m_decoding);
@@ -766,8 +793,17 @@ void DecoderMF::decodeLoop() {
         }
 
         LONGLONG pts100ns = 0;
-        sample->GetSampleTime(&pts100ns);
-        slot->pts = static_cast<double>(pts100ns) / 10000000.0;
+        // A missing timestamp must not read as pts=0: every sample would look
+        // like the first and the import would collapse to a single frame.
+        double pts = std::numeric_limits<double>::quiet_NaN();
+        if (SUCCEEDED(sample->GetSampleTime(&pts100ns))) {
+            pts = static_cast<double>(pts100ns) / 10000000.0;
+            lastPts = pts;
+        } else if (lastPts >= 0.0) {
+            pts = lastPts + 1.0 / 30.0;
+            lastPts = pts;
+        }
+        slot->pts = pts;
 
         IMFMediaBuffer* buf = nullptr;
         hr = sample->GetBufferByIndex(0, &buf);

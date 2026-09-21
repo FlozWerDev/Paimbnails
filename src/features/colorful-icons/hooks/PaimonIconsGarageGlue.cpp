@@ -21,7 +21,6 @@ namespace {
 void requestRecolor(GJGarageLayer* layer) {
     if (!layer) return;
 
-// Recolor the kit's icon button bar.
     if (auto* bar = layer->m_iconSelection) {
         IconRecolorEngine::get().recolorListBar(bar, RecolorArea::IconKit);
     }

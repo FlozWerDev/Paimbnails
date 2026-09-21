@@ -5,10 +5,8 @@
 
 namespace paimon::progression {
 
-// Tier medal: one of the paim_progTier* plates tinted with the tier accent, the
-// level number on top and an optional progress ring around it. The per-tier
-// effects (glow, shine, pulse, sparks, orbit) are all sprites, so a new tier
-// still only costs a row in the tier table.
+// Tier medal on a paim_progTier* plate; effects are plain sprites, so a new
+// tier only costs a row in the tier table.
 class TierBadgeNode : public cocos2d::CCNode {
 public:
     static TierBadgeNode* create(int level, float size);
@@ -19,8 +17,6 @@ public:
     void playIntro(float delay);
     void playLevelUp();
     void startPulse();
-
-    int level() const { return m_level; }
 
 protected:
     bool init(int level, float size);

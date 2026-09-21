@@ -16,9 +16,6 @@ private:
     CCSprite* m_circle = nullptr;
     CCSprite* m_select = nullptr;
 
-    // Badge anchor for image points.
-    CCPoint m_relativePos = {0, 0};
-
     ccColor3B m_color = ccc3(255, 255, 255);
     std::string m_imagePath;
     CCLabelBMFont* m_imageLabel = nullptr;

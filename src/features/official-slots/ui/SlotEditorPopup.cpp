@@ -467,7 +467,6 @@ void SlotEditorPopup::buildTierRow() {
     m_tierRowBox->removeAllChildren();
     m_tierFaces.clear();
 
-    auto const& tiers = allTiers();
     std::vector<std::pair<Tier, GJFeatureState>> const states = {
         {Tier::None, GJFeatureState::None},
         {Tier::Featured, GJFeatureState::Featured},
@@ -483,14 +482,15 @@ void SlotEditorPopup::buildTierRow() {
     m_tierRowBox->addChild(menu, 1);
 
     std::vector<CCNode*> faces;
+    std::vector<Tier> faceTiers;
     for (auto [tier, state] : states) {
         auto* face = GJDifficultySprite::create(
             difficultyFace(m_draft.difficulty), GJDifficultyName::Short);
         if (!face) continue;
         face->updateFeatureState(state);
         faces.push_back(face);
+        faceTiers.push_back(tier);
         m_tierFaces.push_back(face);
-        (void)tier;
     }
     if (faces.empty()) return;
 
@@ -507,7 +507,7 @@ void SlotEditorPopup::buildTierRow() {
     float const startX = 100.f + (availW - rowW) / 2.f;
     for (size_t i = 0; i < faces.size(); i++) {
         faces[i]->setScale(scale);
-        Tier const tier = tiers[i];
+        Tier const tier = faceTiers[i];
         auto* item = CCMenuItemExt::createSpriteExtra(faces[i], [this, tier](CCMenuItemSpriteExtra*) {
             this->setTier(tier);
         });
@@ -636,7 +636,7 @@ void SlotEditorPopup::buildPreviewCard() {
         layer->addChild(title, 3);
     }
 
-    if (auto* bg = createCardBackground({156.f, 112.f}, false)) {
+    if (auto* bg = createCardBackground({156.f, 112.f})) {
         bg->setPosition({292.f, 86.f});
         bg->setID("preview-bg"_spr);
         layer->addChild(bg, 1);
@@ -671,7 +671,7 @@ void SlotEditorPopup::refreshPreview() {
         face->setPosition({kCX, 80.f});
         m_previewBox->addChild(face);
     }
-    if (auto* stars = createStarBadge(m_draft.stars, false, 0.8f)) {
+    if (auto* stars = createStarBadge(m_draft.stars, 0.8f)) {
         stars->setPosition({kCX, 48.f});
         m_previewBox->addChild(stars);
     }
@@ -965,11 +965,6 @@ void SlotEditorPopup::onHideOfficial(CCObject*) {
     toast(tr("slot.official.hidden"), NotificationIcon::Success);
     if (m_onSaved) m_onSaved();
     this->keyBackClicked();
-}
-
-void SlotEditorPopup::onStarsStep(CCObject* sender) {
-    int const delta = (sender && sender->getTag() == 1) ? 1 : -1;
-    this->setStars(m_draft.stars + delta);
 }
 
 void SlotEditorPopup::showSpinner(bool show) {

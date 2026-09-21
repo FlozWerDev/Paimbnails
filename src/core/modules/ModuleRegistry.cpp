@@ -104,9 +104,8 @@ bool isEnabled(std::string_view id) {
     auto* mod = find(id);
     if (!mod) return false;
 
-    // Custom modules read a manager's config straight from memory, and those
-    // move without touching the settings version. No parent is Custom, so the
-    // cached chain below stays exact.
+    // Custom modules read a manager's config from memory, which moves without touching
+    // the settings version; no parent is Custom, so the cached chain stays exact.
     if (mod->backing == Backing::Custom) return isEnabled(*mod);
 
     uint64_t const version = settings::internal::g_settingsVersion.load(std::memory_order_relaxed);

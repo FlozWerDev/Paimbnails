@@ -713,7 +713,6 @@ void MenuMusicPopup::buildActions() {
     m_mainLayer->addChild(menu, 6);
 }
 
- // Text mode selector replacing the old unlabeled icon row.
 void MenuMusicPopup::buildModeSelector() {
     auto size = m_mainLayer->getContentSize();
     const float heroW = size.width * kHeroWidthRatio;

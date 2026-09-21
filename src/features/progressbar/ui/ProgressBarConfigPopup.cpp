@@ -238,7 +238,6 @@ void ProgressBarConfigPopup::buildPositionTab() {
     auto& cfg = ProgressBarManager::get().config();
     auto winSize = CCDirector::get()->getWinSize();
 
-    // Default the first custom position to the center.
     if (cfg.posX <= 0.f && cfg.posY <= 0.f) {
         cfg.posX = winSize.width / 2.f;
         cfg.posY = winSize.height - 20.f;

@@ -46,7 +46,6 @@ using namespace geode::prelude;
 namespace C = paimon::ui::constants::config;
 namespace bgp = paimon::bgpreview;
 
-// Post-process filters apply over images, videos, and thumbnails.
 static std::vector<std::pair<std::string, std::string>> const BG_FILTERS = {
     {"none",             "pai.config.shader.none"},
     {"grayscale",        "pai.config.shader.grayscale"},
@@ -74,7 +73,6 @@ static std::vector<std::pair<std::string, std::string>> const BG_FILTERS = {
     {"pixelate-cursor",  "Pixelate Cursor"},
 };
 
-// GPU-generated backgrounds need no source image.
 static std::vector<std::pair<std::string, std::string>> const PROCEDURAL_BGS = {
     {"aurora", "pai.config.shaderbg.aurora"},
     {"nebula", "pai.config.shaderbg.nebula"},
@@ -178,7 +176,6 @@ CCMenuItemSpriteExtra* gdButton(char const* text, char const* sprite, float widt
     return gdFixedButton(text, sprite, width, 28.f, 0.6f, std::move(onPress));
 }
 
-// Tint a ButtonSprite and its label without changing the texture.
 void tintButton(CCMenuItemSpriteExtra* btn, ccColor3B color) {
     if (!btn) return;
     if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(btn->getNormalImage())) {
@@ -1100,7 +1097,6 @@ void PaiConfigLayer::updateFilterLabels() {
     if (m_filterIndex < 0 || m_filterIndex >= static_cast<int>(filters.size())) return;
 
     if (m_filterTitle) {
-// Shader BG lists generated backgrounds; other tabs list filters.
         m_filterTitle->setString(procedural ? tr("pai.config.shader_bg_list", "Shader Background").c_str()
                                             : tr("pai.config.filter", "Filter").c_str());
     }

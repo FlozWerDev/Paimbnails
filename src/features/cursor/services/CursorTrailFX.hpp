@@ -1,7 +1,5 @@
 #pragma once
 
-// Cursor trails for the live cursor and its preview.
-
 #include <Geode/Geode.hpp>
 #include <deque>
 #include <vector>

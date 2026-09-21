@@ -1,9 +1,5 @@
-// Fix Green Usernames.
-//
-// GD forgets the name behind a user id as soon as it restarts, and then renders
-// scores, comments and level cells with a blank or "-" name. Every name the
-// game does resolve is cached here, and handed back when it later comes up
-// empty.
+// GD forgets the name behind a user id on restart and renders blank/"-"
+// names; every resolved name is cached here and handed back when empty.
 
 #include "../InfoModule.hpp"
 #include "../services/GDHistoryClient.hpp"

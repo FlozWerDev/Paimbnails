@@ -58,7 +58,6 @@ int ConversationMemory::recentMatchesOf(std::string const& intentId,
 bool ConversationMemory::looksLikeFollowUp(std::string const& normalized) {
     if (normalized.empty()) return false;
 
-    // Count words (space-separated in the normalized form).
     int wordCount = 0;
     bool inWord = false;
     for (char c : normalized) {

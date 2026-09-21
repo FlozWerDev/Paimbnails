@@ -1,8 +1,7 @@
 ﻿#pragma once
 
-// SessionState.hpp — Typed session state for navigation flow. Replaces transient
-// Mod::get()->setSavedValue() keys with an explicit singleton that resets on game
-// close. Persistent keys (user config, server status) stay in SavedValue.
+// Typed session state: replaces transient setSavedValue() keys with a singleton
+// reset on game close. Persistent keys stay in SavedValue.
 
 namespace paimon {
 

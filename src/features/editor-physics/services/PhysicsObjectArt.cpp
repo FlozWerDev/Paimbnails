@@ -47,9 +47,8 @@ CCNode* spawnObject(BodyVisual const& visual) {
     return clone;
 }
 
-// Whatever the object is drawing on screen, sprite by sprite. GD keeps the base,
-// detail and glow sprites in sibling batch layers, so their positions live in
-// the same space as the object's own.
+// Whatever the object draws on screen, sprite by sprite: GD keeps base, detail
+// and glow sprites in sibling batch layers sharing the object's space.
 CCNode* mirrorLiveArt(BodyVisual const& visual) {
     auto* object = visual.object;
     if (!object) return nullptr;

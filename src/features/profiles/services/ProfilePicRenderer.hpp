@@ -22,7 +22,7 @@ struct ResolvedProfilePhoto {
         GifCacheKey, // gifKey -> AnimatedGIFSprite RAM cache
         Texture      // texture -> profileimg RAM/disk cache
     };
-    // where the image came from, for status/debug display
+    // for status/debug display
     enum class Source { None, Custom, OwnProfile, LegacyBackground };
     Kind kind = Kind::None;
     Source source = Source::None;

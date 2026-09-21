@@ -58,7 +58,6 @@ public:
         return findLive(key) != m_map.end();
     }
 
-    // Returns nullptr on miss.
     Bytes const* lookup(NodeKey const& key) {
         auto it = findLive(key);
         if (it == m_map.end()) {

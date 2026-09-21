@@ -30,7 +30,6 @@ using namespace geode::prelude;
 namespace paimon::editorcp {
 
 namespace {
-// Sizes use Geometry Dash points.
     constexpr float kHudW         = 420.f;
     constexpr float kHudH         = 66.f;
     constexpr int   kPickerZOrder = 999500;
@@ -317,7 +316,6 @@ while (glGetError() != GL_NO_ERROR) {}
 }
 
 void ColorPickerOverlay::updateReadout() {
-// Keep sampling the live color under the cursor; lock it only while over the HUD.
     const CCPoint mouse   = geode::cocos::getMousePos();
     const bool    overHud = m_hasSelection && this->pointInHud(mouse);
     const ccColor3B c     = overHud ? m_selColor : m_liveColor;
@@ -332,7 +330,6 @@ void ColorPickerOverlay::updateReadout() {
 }
 
 void ColorPickerOverlay::pickAt() {
-// Live mode samples the framebuffer each frame; picking locks the current color.
     if (!m_ready) return;
     m_selColor = m_liveColor;
     m_hasSelection = true;
@@ -411,7 +408,6 @@ void ColorPickerOverlay::stepColorID(int delta) {
     if (id > 9999) id = 9999;
     m_idInput->setString(std::to_string(id));
 
-// Auto-apply the current selection to a newly selected channel.
     if (m_autoApply) {
         m_hasApplied = false;
         this->tryAutoApply();

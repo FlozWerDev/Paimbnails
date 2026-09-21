@@ -90,8 +90,6 @@ $on_game(Exiting) {
     shutdownPetTicker();
 }
 
-// Game event hooks — trigger pet reactions
-
 // Defer the reaction to the next main-thread tick for a clean stack.
 static void deferPetReaction(std::string eventType) {
     Loader::get()->queueInMainThread([eventType = std::move(eventType)]() {
@@ -100,7 +98,6 @@ static void deferPetReaction(std::string eventType) {
     });
 }
 
-// Level complete (normal mode)
 class $modify(PetPlayLayerHook, PlayLayer) {
     static void onModify(auto& self) {
         // Run late, out of the notifyAchievement/AchievementBar stack.
@@ -130,7 +127,6 @@ class $modify(PetPlayerObjectHook, PlayerObject) {
     }
 };
 
-// Practice mode exit — hooking PauseLayer::onQuit.
 class $modify(PetPauseLayerHook, PauseLayer) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPost("PauseLayer::onQuit", geode::Priority::Late);

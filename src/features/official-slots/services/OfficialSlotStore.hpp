@@ -1,11 +1,7 @@
 #pragma once
 
-// Persistence and mutation for the official slots.
-//
-// Kept in its own JSON file inside the mod save dir rather than in a saved
-// value: the list is a whole document, and a partial write of a saved value is
-// how you end up with half a slot. Loading is lazy and the file is only
-// rewritten on an actual change.
+// Own JSON file, not a saved value: a partial write of a saved value
+// leaves half a slot. Loading is lazy, writes happen on change only.
 
 #include "../OfficialSlots.hpp"
 
@@ -25,11 +21,10 @@ public:
 
     std::optional<Slot> find(std::string const& slotId);
 
-    // Adds the slot, assigning it an id, and returns that id. Empty on failure.
+    // Adds the slot, assigning it an id. Empty on failure.
     std::string add(Slot slot);
 
-    // Replaces the slot with the same id. False when it is already gone, which
-    // happens if the panel is left open while the list changes elsewhere.
+    // False when already gone: the panel may stay open while the list changes.
     bool update(Slot const& slot);
 
     bool remove(std::string const& slotId);
@@ -47,7 +42,6 @@ public:
     // Folder holding imported .gmd files. Created on first use.
     std::filesystem::path gmdDir() const;
 
-    // Copies the picked .gmd into our folder and returns the stored filename.
     // The original is left alone so the user can move or delete it freely.
     std::optional<std::string> importGmd(std::filesystem::path const& source);
 

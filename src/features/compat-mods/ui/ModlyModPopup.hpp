@@ -6,8 +6,6 @@
 
 namespace paimon::compat_mods {
 
-// Full card for one Modly project: logo, badges, description, previews, the
-// author shortcut, the social links and the comments shortcut.
 class ModlyModPopup : public geode::Popup {
 public:
     static ModlyModPopup* create(ModlyMod const& mod);

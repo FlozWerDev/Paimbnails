@@ -326,7 +326,6 @@ namespace {
         return clusters;
     }
     
-    // Exclude common UI extremes from the palette.
     static bool isLikelyUIOrObject(uint8_t r, uint8_t g, uint8_t b) {
         if (r < PaimonConstants::UI_BLACK_THRESHOLD && 
             g < PaimonConstants::UI_BLACK_THRESHOLD && 

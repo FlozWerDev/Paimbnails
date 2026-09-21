@@ -65,7 +65,6 @@ inline void fadeIn(cocos2d::CCNode* node, float duration, bool recurse, int dept
 
 } // namespace detail
 
-// Hide one node now and fade it after startDelay.
 inline void revealNode(cocos2d::CCNode* node, RevealOpts opts = {}) {
     if (!node || paimon::isRuntimeShuttingDown()) return;
 
@@ -80,7 +79,6 @@ inline void revealNode(cocos2d::CCNode* node, RevealOpts opts = {}) {
     });
 }
 
-// Hide nodes now, then fade them in sequence.
 inline void revealSequential(std::vector<cocos2d::CCNode*> nodes, RevealOpts opts = {}) {
     if (paimon::isRuntimeShuttingDown()) return;
 
@@ -101,7 +99,6 @@ inline void revealSequential(std::vector<cocos2d::CCNode*> nodes, RevealOpts opt
     }
 }
 
-// Reveal a container's direct children in order.
 inline void revealChildren(cocos2d::CCNode* container, RevealOpts opts = {}) {
     if (!container || paimon::isRuntimeShuttingDown()) return;
     auto* children = container->getChildren();

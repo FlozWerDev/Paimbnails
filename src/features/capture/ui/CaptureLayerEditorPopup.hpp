@@ -28,7 +28,6 @@ private:
     geode::ScrollLayer* m_scrollView = nullptr;
     cocos2d::CCNode* m_listRoot = nullptr;
 
-    // Smart filter system (dropdown of top-level branches)
     int m_filterGroupIndex = -1;
     cocos2d::CCLabelBMFont* m_filterLabel = nullptr;
     cocos2d::CCNode* m_filterDropdown = nullptr;

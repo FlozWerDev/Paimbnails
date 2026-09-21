@@ -50,7 +50,6 @@ public:
     void uploadProfileGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
     void uploadProfileVideo(int accountID, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback); // mod/admin
     void downloadProfile(int accountID, std::string const& username, DownloadCallback callback);
-    // which accounts have a profile + configs
     using BatchCheckCallback = ProfileImageService::BatchCheckCallback;
     void batchCheckProfiles(std::vector<int> const& accountIDs, BatchCheckCallback callback);
 

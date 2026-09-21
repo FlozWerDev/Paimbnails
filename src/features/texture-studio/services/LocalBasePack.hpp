@@ -42,7 +42,6 @@ public:
     // builds, once per process.
     geode::Result<> ensureManifest();
 
-    // Resolves a manifest file to its installed path.
     geode::Result<std::filesystem::path> ensureFile(std::string const& relativePath);
 
     // Local packs ship no overlay variants, so this always succeeds with
@@ -50,10 +49,8 @@ public:
     geode::Result<std::optional<std::filesystem::path>> ensureOptionalFile(
         std::string const& relativePath);
 
-    // Main thread ONLY: snapshot already-loaded sheet textures into files so
-    // the export thread can prefer live (remapped) pixels over disk files.
-    // pngRels use manifest convention ("Sheet-uhd.png", "<modid>/<file>").
-    // Best-effort: unloaded sheets are skipped. Clears previous snapshots.
+    // Main thread ONLY: snapshot loaded sheets so the export thread prefers live
+    // pixels. Best-effort: unloaded sheets are skipped. Clears previous snapshots.
     geode::Result<int> captureLoadedSnapshots(std::vector<std::string> const& pngRels);
 
     // Snapshot file captured for pngRel, if still on disk. Thread-safe.

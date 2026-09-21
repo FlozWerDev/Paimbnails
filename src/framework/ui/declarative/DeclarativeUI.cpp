@@ -23,7 +23,6 @@ static GLubyte channel(matjson::Value const& v, GLubyte def) {
     return static_cast<GLubyte>(std::clamp(n, 0, 255));
 }
 
-// Color/opacity helpers for the supported concrete types.
 static void setColorAny(CCNode* n, ccColor3B c) {
     if (auto* s = typeinfo_cast<CCSprite*>(n)) { s->setColor(c); return; }
     if (auto* l = typeinfo_cast<CCLabelBMFont*>(n)) { l->setColor(c); return; }
@@ -38,7 +37,6 @@ static void setOpacityAny(CCNode* n, GLubyte o) {
     if (auto* lc = typeinfo_cast<CCLayerColor*>(n)) { lc->setOpacity(o); return; }
 }
 
-// Point of a named anchor within an area of size 's'.
 static CCPoint anchorIn(std::string const& a, CCSize s) {
     if (a == "center")        return {s.width * 0.5f, s.height * 0.5f};
     if (a == "top-left")      return {0,              s.height};

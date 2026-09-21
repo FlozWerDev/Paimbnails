@@ -55,9 +55,8 @@ struct ModCompat {
                geode::Loader::get()->isModLoaded("dankmeme.globed");
     }
 
-// These mods can render or capture the gameplay scene from their own hooks.
-// Re-visiting PlayLayer into our temporary FBO can re-enter those hooks with a
-// foreign viewport. The normal back-buffer path composes with them safely.
+// These mods can render the scene from their hooks; re-visiting PlayLayer in
+// our FBO would re-enter them with a foreign viewport. The back-buffer path is safe.
     static bool isTinkerLoaded() {
         return geode::Loader::get()->isModLoaded("alphalaneous.tinker");
     }

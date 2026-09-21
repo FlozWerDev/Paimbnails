@@ -70,8 +70,6 @@ public:
     // Soft 0..1 coverage for live preview.
     static std::vector<float> softCoverage(MaskBuffer const& mask);
 
-    // Build a full-frame stamp; sample offsets from the source and fit to mask
-    // bounds when supplied.
     static ImageBuffer buildStampCanvas(ImageBuffer const& texture,
                                         int frameW, int frameH,
                                         ImageTransform transform,

@@ -29,14 +29,12 @@ static std::string resolveId(std::string const& id) {
         }
     }
 
-    // Custom: if it already ends with .fnt, use as-is; otherwise append
     if (id.size() >= 4 && id.substr(id.size() - 4) == ".fnt") {
         return id;
     }
     return id + ".fnt";
 }
 
-// Check whether a .fnt file is loadable by Cocos2d.
 static bool fontFileExists(std::string const& fontFile) {
     auto fullPath = CCFileUtils::sharedFileUtils()->fullPathForFilename(fontFile.c_str(), false);
     return !fullPath.empty() && fullPath != fontFile;
@@ -48,15 +46,13 @@ FontTagResult parseFontTag(std::string const& text) {
     result.remainingText = text;
     result.hasTag = false;
 
-    // Must start with "<f:"
     if (text.size() < 4 || text[0] != '<' || text[1] != 'f' || text[2] != ':') {
         return result;
     }
 
-    // Find closing '>'
     auto closePos = text.find('>', 3);
     if (closePos == std::string::npos || closePos == 3) {
-        return result; // no closing > or empty ID
+        return result;
     }
 
     std::string id = text.substr(3, closePos - 3);
@@ -65,7 +61,6 @@ FontTagResult parseFontTag(std::string const& text) {
     result.hasTag = true;
     result.remainingText = text.substr(closePos + 1);
 
-    // Validate font exists; fall back to default if missing
     if (fontFileExists(resolved)) {
         result.fontFile = resolved;
     } else {

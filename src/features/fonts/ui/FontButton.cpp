@@ -20,14 +20,11 @@ FontButton* FontButton::create(CopyableFunction<void(std::string const&)> insert
 }
 
 bool FontButton::init(CopyableFunction<void(std::string const&)> insertFn) {
-    // Vanilla GD sprite
     auto btnSpr = CCSprite::createWithSpriteFrameName("GJ_editObjBtn4_001.png");
     if (!btnSpr) {
-        // Fallback: try as a file
         btnSpr = CCSprite::create("GJ_editObjBtn4_001.png");
     }
     if (!btnSpr) {
-        // Final fallback: GD plain button
         auto bs = ButtonSprite::create("Aa", 30, true, "chatFont.fnt", "GJ_plainBtn_001.png", 25.f, 0.5f);
         if (!bs) return false;
         if (!CCMenuItemSpriteExtra::init(bs, nullptr, this, menu_selector(FontButton::onToggle))) {

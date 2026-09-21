@@ -179,7 +179,6 @@ void UpdateChecker::onCheckResponse(web::WebResponse& res) {
     m_remoteTag = tag;
     m_remoteVersion = sanitizeVersion(tag);
 
-    // Build download URL: prefer the expected asset name, fall back to the known release URL pattern.
     uint64_t assetSize = 0;
     m_downloadUrl = pickGeodeAsset(json, assetSize);
     if (m_downloadUrl.empty()) {

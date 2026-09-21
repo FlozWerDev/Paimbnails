@@ -16,9 +16,8 @@ struct Vec2 {
     float y = 0.f;
 };
 
-// `radius` switches a fixture to a circle and `vertices` to a convex polygon.
-// Polygon vertices are relative to `offset` and wound counter-clockwise, and a
-// negative friction or restitution falls back to the body's own value.
+// `radius` selects a circle, `vertices` a counter-clockwise polygon relative to
+// `offset`; negative friction/restitution falls back to the body's own value.
 struct Fixture {
     Vec2 offset;
     Vec2 halfSize;
@@ -81,9 +80,8 @@ enum class JointKind {
     Motor,  // drives the relative angle at `motorSpeed`
 };
 
-// `bodyB` may be `kWorldBody`, and then `anchorB` is read as a world point: that
-// is the nail a pendulum hangs from. A negative `length` is measured from the
-// pose the bodies start in, which is what makes anchoring one tap of work.
+// `bodyB` may be `kWorldBody`, making `anchorB` a world point to hang from. A
+// negative `length` measures from the starting pose: anchoring in one tap.
 struct Joint {
     JointKind kind = JointKind::Pin;
     std::size_t bodyA = 0;
@@ -176,9 +174,8 @@ struct SimulationTrace {
 
 struct WorldData;
 
-// The stateful side of the solver: step it by hand, read the bodies back, push
-// them around and ask what is where. `simulate` below is this class run to the
-// end of the duration in one call.
+// The stateful side of the solver: step by hand, read bodies back, push them
+// around. `simulate` below just runs this class to the end in one call.
 class PhysicsWorld {
 public:
     PhysicsWorld(

@@ -99,10 +99,8 @@ Difficulty difficultyFromFace(int face) {
     return static_cast<Difficulty>(clampFace(face));
 }
 
-// Vanilla face value for a downloaded level. Mirrors the community
-// leaderboard mapping so an import prefill draws the face the game itself
-// would draw: auto first, demon tiers 3-6 to their own faces, then whatever
-// the game computed as the average difficulty.
+// Mirrors the community leaderboard mapping so an import prefill draws the
+// face the game itself would draw.
 int levelFaceValue(GJGameLevel* level) {
     if (!level) return 0;
     if (level->m_autoLevel) return -1;
@@ -196,8 +194,6 @@ void SlotEditorPopup::onExit() {
     m_alive = false;
     Popup::onExit();
 }
-
-// --- source row (chips + id/import or gmd/browse) ---------------------------
 
 void SlotEditorPopup::buildSourceRow() {
     auto* layer = m_mainLayer;
@@ -331,8 +327,6 @@ void SlotEditorPopup::refreshGmdLabel() {
     m_gmdLabel->limitLabelWidth(140.f, 0.4f, 0.1f);
 }
 
-// --- name/author ------------------------------------------------------------
-
 void SlotEditorPopup::buildDataRows() {
     auto* layer = m_mainLayer;
 
@@ -370,8 +364,6 @@ void SlotEditorPopup::buildDataRows() {
         layer->addChild(m_authorInput, 3);
     }
 }
-
-// --- difficulty + tier face rows --------------------------------------------
 
 void SlotEditorPopup::buildDifficultyRow() {
     auto* layer = m_mainLayer;
@@ -531,8 +523,6 @@ void SlotEditorPopup::setTier(Tier tier) {
     this->refreshPreview();
 }
 
-// --- stars stepper + slider, coins chip --------------------------------------
-
 void SlotEditorPopup::buildStarsRow() {
     auto* layer = m_mainLayer;
 
@@ -622,8 +612,6 @@ void SlotEditorPopup::refreshStarsLabel() {
     m_starsLabel->setString(fmt::format("{}", m_draft.stars).c_str());
 }
 
-// --- live preview -------------------------------------------------------------
-
 void SlotEditorPopup::buildPreviewCard() {
     auto* layer = m_mainLayer;
 
@@ -691,8 +679,6 @@ void SlotEditorPopup::refreshPreview() {
     }
 }
 
-// --- footer --------------------------------------------------------------------
-
 void SlotEditorPopup::buildFooter() {
     auto* layer = m_mainLayer;
 
@@ -729,8 +715,6 @@ void SlotEditorPopup::buildFooter() {
         });
     }
 }
-
-// --- actions ----------------------------------------------------------------------
 
 void SlotEditorPopup::onImportById(CCObject*) {
     int const levelId = m_draft.levelId;

@@ -24,9 +24,8 @@ inline paimon::ThreadPool& pool() {
 }
 } // namespace detail
 
-// Decode a static image off-thread and deliver an autoreleased CCSprite* on the
-// main thread (nullptr on failure). The caller must guard its own lifetime in
-// the callback (Ref/WeakRef/generation guard).
+// Delivers an autoreleased CCSprite* on the main thread (nullptr on failure).
+// The caller must guard its own lifetime in the callback (Ref/WeakRef/generation guard).
 inline void loadStaticSprite(std::filesystem::path path, size_t maxSizeMB, SpriteCallback callback) {
     if (paimon::isRuntimeShuttingDown()) {
         if (callback) callback(nullptr);
@@ -43,7 +42,6 @@ inline void loadStaticSprite(std::filesystem::path path, size_t maxSizeMB, Sprit
             });
         };
 
-        // file size check
         if (maxSizeMB > 0) {
             std::error_code ec;
             auto fileSize = std::filesystem::file_size(path, ec);

@@ -14,7 +14,6 @@ public:
 
     using ResultCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
 
-    // Upload the local player's active custom icons (own profile).
     void uploadActiveIcons(int accountID, std::string const& username, ResultCallback cb);
     // Disable/clear the player's icons on the server (icons: []).
     void clearIcons(int accountID, std::string const& username, ResultCallback cb);

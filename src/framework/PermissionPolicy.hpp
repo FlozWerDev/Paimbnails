@@ -6,7 +6,6 @@
 
 namespace paimon {
 
-// Determine the current user's tier from their moderation flags.
 inline PermissionTier currentUserTier() {
     if (settings::moderation::isVerifiedAdmin())     return PermissionTier::Admin;
     if (settings::moderation::isVerifiedModerator())  return PermissionTier::Moderator;

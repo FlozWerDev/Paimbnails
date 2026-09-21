@@ -52,8 +52,6 @@ float pointDist(Point const& p, Centroid const& c, ClusteringOptions const& o) {
                                         o.weightH, o.weightS, o.weightV);
 }
 
-// One full weighted k-means run (k-means++ seeding + Lloyd) over `pts`.
-// Returns the weighted inertia; centroids land in `outCentroids`.
 float runKMeans(std::vector<Point> const& pts, int k,
                 ClusteringOptions const& options, std::uint64_t seed,
                 std::vector<Centroid>& outCentroids) {

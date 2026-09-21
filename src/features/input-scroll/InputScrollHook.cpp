@@ -137,7 +137,6 @@ std::string formatFloat(double value, int places) {
     std::snprintf(buf, sizeof(buf), "%.*f", places, value);
     std::string s = buf;
     if (s.size() >= 2 && s[0] == '-' && s[1] == '0') {
-// Strip negative-zero output.
         bool onlyZeros = true;
         for (size_t i = 1; i < s.size(); ++i) {
             char c = s[i];
@@ -181,7 +180,6 @@ bool parseCurrentInt(CCTextInputNode* input, long long& out) {
 bool parseCurrentFloat(CCTextInputNode* input, double& out) {
     std::string s(input->getString().c_str());
     if (s.empty()) { out = 0.0; return true; }
-// Accept comma decimal separators.
     for (auto& c : s) if (c == ',') c = '.';
     auto parsed = geode::utils::numFromString<double>(s);
     if (!parsed.isOk()) return false;

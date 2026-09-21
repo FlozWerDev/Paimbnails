@@ -94,7 +94,6 @@ void ListThumbnailCarousel::tryShowNextImage() {
     size_t listSize = m_levelIDs.size();
     int triggeredDownloads = 0;
 
-    // scan the list from the current index
     for (size_t i = 0; i < listSize; i++) {
         int idx = (m_currentIndex + i) % listSize;
         int levelID = m_levelIDs[idx];
@@ -107,9 +106,7 @@ void ListThumbnailCarousel::tryShowNextImage() {
             foundIndex = idx;
             break;
         } else {
-            // auto-download only the first 3; the rest only if cached
             if (idx < 3) {
-                // max 3 requests per cycle
                 if (triggeredDownloads < 3) {
                     if (!ThumbnailLoader::get().isPending(levelID)) {
                         std::string fileName = fmt::format("{}.png", levelID);
@@ -125,7 +122,6 @@ void ListThumbnailCarousel::tryShowNextImage() {
     if (foundIndex != -1) {
         int levelID = m_levelIDs[foundIndex];
         
-        // shared alive flag for callbacks
         auto alive = m_alive;
         auto* self = this;
         std::string fileName = fmt::format("{}.png", levelID);
@@ -146,10 +142,8 @@ void ListThumbnailCarousel::tryShowNextImage() {
             if (tex) self->onImageLoaded(tex, levelID);
         }, ThumbnailLoader::PriorityVisibleCell);
         
-        // next: the following item, wraps around
         m_currentIndex = (foundIndex + 1) % listSize;
         
-        // schedule the next rotation
         this->unschedule(schedule_selector(ListThumbnailCarousel::updateCarousel));
         this->schedule(schedule_selector(ListThumbnailCarousel::updateCarousel), 3.0f);
     } else {
@@ -194,7 +188,6 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
         return;
     }
 
-    // not attached -> no sprites
     if (!this->getParent()) {
         return;
     }
@@ -205,12 +198,10 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
     
     CCSprite* sprite = nullptr;
     
-    // texture validity already verified by isTextureSane above
     sprite = CCSprite::createWithTexture(texture);
 
     if (!sprite) return;
     
-    // 1) compute a visible rect with aspect fit
     float targetAspect = m_size.width / m_size.height;
     float texWidth = texture->getContentSize().width;
     float texHeight = texture->getContentSize().height;
@@ -223,24 +214,19 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
         maxW = texHeight * targetAspect;
     }
     
-    // zoom for pan
     float zoom = 1.06f;
     float visibleW = maxW / zoom;
     float visibleH = maxH / zoom;
     
-    // 3) compute the available slack
     float totalSlackW = texWidth - visibleW;
     
-    // 4) determine the pan range
     // limit move 10% width
     float maxPan = visibleW * 0.10f;
     float travelX = std::min(totalSlackW, maxPan);
     
-    // center the range within the slack
     float unusedSlackX = totalSlackW - travelX;
     float offsetX = unusedSlackX / 2.0f;
     
-    // random pan direction
     bool panRight = (rand() % 2) == 0;
     
     float startX = panRight ? offsetX : (offsetX + travelX);
@@ -268,10 +254,8 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
 
     this->addChild(sprite);
     
-    // fade in the new sprite
     sprite->runAction(CCFadeTo::create(0.5f, m_opacity));
     
-    // fade out and remove the previous sprite
     if (m_currentSprite) {
         m_currentSprite->runAction(CCSequence::create(
             CCFadeOut::create(0.5f),

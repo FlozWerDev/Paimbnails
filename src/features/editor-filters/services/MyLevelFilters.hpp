@@ -14,7 +14,6 @@ struct FilterState {
     bool longLen = false;
     bool xl = false;
 
-    // Verification status.
     bool verified = false;
     bool unverified = false;
     std::string songID;

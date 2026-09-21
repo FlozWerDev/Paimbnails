@@ -24,7 +24,6 @@ struct HookResult {
     bool isAllowed() const { return action != HookAction::Deny; }
 };
 
-// Context passed to each hook.
 struct HookContext {
     std::string action;
     int levelID = 0;
@@ -56,7 +55,7 @@ public:
         m_postHooks[action].push_back(std::move(hook));
     }
 
-// Runs pre-hooks; one Deny blocks.
+// One Deny blocks.
     HookResult runPreHooks(HookContext const& ctx) {
         std::unique_lock lock(m_mutex);
         auto it = m_preHooks.find(ctx.action);
@@ -85,7 +84,6 @@ public:
         return HookResult::allow();
     }
 
-    // Runs post-hooks.
     void runPostHooks(HookContext const& ctx, bool success) {
         std::unique_lock lock(m_mutex);
         auto it = m_postHooks.find(ctx.action);

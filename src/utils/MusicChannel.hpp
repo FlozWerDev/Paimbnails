@@ -3,11 +3,8 @@
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <fmod.hpp>
 
-// FMODAudioEngine::m_backgroundMusicChannel es el ChannelGroup que contiene
-// TODOS los canales de musica, no solo la del menu. Llamar setPaused() sobre el
-// grupo pausa tambien la cancion del nivel, y la bandera sobrevive a ->stop(),
-// asi que cualquier cancion que arranque despues nace en silencio. Estos
-// helpers trabajan sobre el canal concreto donde vive la cancion principal.
+// m_backgroundMusicChannel agrupa TODA la musica: pausar el grupo silencia tambien el nivel
+// y la bandera sobrevive a stop(). Estos helpers usan el canal de la cancion principal.
 
 namespace paimon::audio {
 

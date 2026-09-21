@@ -22,7 +22,6 @@ namespace {
     constexpr float POPUP_H = 320.f;
     constexpr float SCROLL_W = 430.f;
 
-    // GD vanilla list palette (matches the hub's forum/news lists)
     constexpr ccColor4B kRowDark  = {161, 88, 44, 255};
     constexpr ccColor4B kRowLight = {194, 114, 62, 255};
     constexpr ccColor3B kTextSoft = {255, 235, 190};
@@ -51,7 +50,6 @@ namespace {
         return player;
     }
 
-    // GD-style dark inset (square02b tinted black), like vanilla list wells.
     static CCNode* makeDarkPanel(float w, float h, GLubyte alpha = 70) {
         return paimon::SpriteHelper::createDarkPanel(w, h, alpha);
     }
@@ -62,7 +60,6 @@ bool PostDetailPopup::init(Post const& post, CopyableFunction<void()> onChanged)
     m_post = post;
     m_onChanged = std::move(onChanged);
 
-    // GD-style: keep the vanilla GJ_square01 popup background and gold title.
     this->setTitle(m_post.title.c_str());
     if (m_title) {
         float maxTitleW = POPUP_W - 90.f;
@@ -242,7 +239,6 @@ void PostDetailPopup::rebuild() {
         m_scroll->setID("rebuild-block"_spr);
         m_mainLayer->addChild(m_scroll, 5);
 
-        // GD comment-list borders framing the reply list
         if (auto borders = geode::ListBorders::create()) {
             borders->setContentSize({SCROLL_W + 4.f, scrollH});
             borders->setPosition({contentSize.width / 2.f, scrollBot + scrollH / 2.f});
@@ -250,7 +246,6 @@ void PostDetailPopup::rebuild() {
             m_mainLayer->addChild(borders, 6);
         }
 
-        // vanilla list: full-width rows, no gaps, alternating browns
         float cardW = SCROLL_W;
         float totalH = 0.f;
         std::vector<CCNode*> cards;

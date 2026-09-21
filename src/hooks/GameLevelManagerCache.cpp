@@ -33,7 +33,6 @@ void maybeStore(std::string const& category, std::string const& key, gd::string 
     paimon::gd::GDRobTopCache::get().store(category, key, body, ttl);
 }
 
-// Queue a cached response for key when available.
 bool tryServeCached(
     GameLevelManager* self,
     char const* key,

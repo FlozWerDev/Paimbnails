@@ -529,7 +529,6 @@ void VideoPlayer::update(float dt) {
     auto* director = cocos2d::CCDirector::get();
     if (!director) return;
 
-    // Advance the decoder once per director frame.
     auto currentFrame = director->getTotalFrames();
     if (currentFrame == m_lastUpdateFrame) return;
     m_lastUpdateFrame = currentFrame;

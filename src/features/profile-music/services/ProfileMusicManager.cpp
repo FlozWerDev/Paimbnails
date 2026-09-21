@@ -948,7 +948,6 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
         return;
     }
 
-    // Cache missing or stale — delete and re-download
     if (cacheExists) {
         log::info("[ProfileMusic] Cache is stale (config changed), removing old file");
         std::filesystem::remove(cachePath, cacheEc);

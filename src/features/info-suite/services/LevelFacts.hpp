@@ -1,8 +1,7 @@
 #pragma once
 
-// Turns a GJGameLevel into the flat, tab-grouped rows that ExtendedInfoPopup
-// draws. Keeping the extraction here means the popup only deals with layout,
-// and the same rows can be reused elsewhere (tooltips, copy-all, exports).
+// Flat, tab-grouped rows for ExtendedInfoPopup; shared extraction so the
+// popup only deals with layout.
 
 #include <Geode/binding/GJGameLevel.hpp>
 #include <string>

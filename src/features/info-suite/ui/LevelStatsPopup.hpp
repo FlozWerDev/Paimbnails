@@ -1,9 +1,7 @@
 #pragma once
 
-// Compact replacement for the vanilla "Level Stats" alert: your attempts, jumps
-// and best runs on one screen, over the level's own thumbnail, plus the two
-// charts the game never draws — where you die and how many jumps each attempt
-// took. Everything else about the level lives in ExtendedInfoPopup.
+// Your attempts, jumps and best runs over the level thumbnail, plus the two
+// charts the game never draws. The rest lives in ExtendedInfoPopup.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJGameLevel.hpp>

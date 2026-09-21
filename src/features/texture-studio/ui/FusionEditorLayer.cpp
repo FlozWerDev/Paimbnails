@@ -883,7 +883,6 @@ void FusionEditorLayer::selectFrame(std::string const& frameName) {
         m_frameLbl->limitLabelWidth(240.f, 0.4f, 0.18f);
     }
     loadPixelsForSelection();
-// Load a picked texture even before a region is painted.
     loadFusionForSelection();
     refreshToolsUi();
     setStatus("Tap a preview to paint a region, Pick to choose a texture.");
@@ -1046,7 +1045,7 @@ void FusionEditorLayer::ensureStampCache() {
 }
 
 void FusionEditorLayer::renderPreviewFast() {
-// Main-thread composite uses a cached stamp shifted by the pixel offset.
+    // Main-thread composite uses a cached stamp shifted by the pixel offset.
     m_fastPreviewPending = false;
     if (!m_pixels || m_pixels->empty()) return;
 

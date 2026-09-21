@@ -14,7 +14,6 @@ inline constexpr std::size_t kDiskTextureBudget = 24;
 cocos2d::CCTexture2D* loadBudgeted(
     std::string const& absolutePath, std::size_t budget = kDiskTextureBudget);
 
-// Drops a path from the cache.
 void dropBudgeted(std::string const& absolutePath);
 
 void clearBudgeted();

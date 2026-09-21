@@ -16,9 +16,8 @@ constexpr float kAlertWidth = 340.f;
 constexpr float kTextScale    = 0.6f;
 constexpr float kScrollHeight = 170.f;
 
-// The screen is 320 units tall and the title bar plus the OK button eat about
-// 105 of them. Text taller than what is left gets a scroller instead of an
-// auto-sized popup that would run off the top.
+// The screen is 320 units tall; title bar + OK button eat ~105. Taller text
+// gets a scroller instead of a popup running off the top.
 constexpr float kMaxTextHeight = 185.f;
 
 // chatFont.fnt metrics.
@@ -64,7 +63,6 @@ void PaimonInfoTarget::onInfo(CCObject* sender) {
     std::string title = (sep != std::string::npos) ? raw.substr(0, sep) : "Info";
     std::string desc = (sep != std::string::npos) ? raw.substr(sep + 5) : raw;
 
-    // Short infos fit the popup; only overflowing texts get the scroller.
     bool const scroll = measureTextHeight(desc) > kMaxTextHeight;
 
     auto* alert = FLAlertLayer::create(

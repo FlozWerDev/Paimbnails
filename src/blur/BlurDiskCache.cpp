@@ -191,7 +191,6 @@ void BlurDiskCache::lookupAsync(std::string const& key, ReadyCallback onReady) {
         auto path = pathForKey(key);
         std::error_code ec;
         if (!std::filesystem::exists(path, ec)) {
-            // Index is stale — clear it.
             {
                 std::unique_lock<std::shared_mutex> lock(m_mutex);
                 m_index.erase(key);

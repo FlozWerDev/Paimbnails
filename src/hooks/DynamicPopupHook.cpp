@@ -160,7 +160,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         if (!node || !node->getParent()) return;
 
         if (duration <= 0.01f) {
-            // Defer to the next tick.
             Ref<CCNode> keepAlive = Ref<CCNode>(node);
             geode::Loader::get()->queueInMainThread([keepAlive]() {
                 if (auto* n = keepAlive.data(); n && n->getParent()) {

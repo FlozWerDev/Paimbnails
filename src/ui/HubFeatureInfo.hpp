@@ -3,8 +3,6 @@
 #include "FeatureInfoPopup.hpp"
 #include <vector>
 
-// Paimon Hub feature descriptions.
-
 namespace paimon::ui {
 
 inline std::vector<InfoSection> getGeneralInfo() {

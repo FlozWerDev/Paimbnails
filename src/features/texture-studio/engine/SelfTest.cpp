@@ -81,7 +81,6 @@ MaskSet makeGroundTruthMasks(ImageBuffer const& sprite) {
     return gt;
 }
 
-// Returns a 120 dB sentinel when the images are bit-identical.
 double computePsnr(ImageBuffer const& a, ImageBuffer const& b) {
     if (a.width() != b.width() || a.height() != b.height() || a.empty()) {
         return 0.0;

@@ -5,8 +5,6 @@
 
 namespace paimon::fonts {
 
-/// Rectangular dark font-picker button with "Aa" label.
-/// IS a CCMenuItemSpriteExtra — add directly to a CCMenu.
 class FontButton : public CCMenuItemSpriteExtra {
     geode::CopyableFunction<void(std::string const&)> m_insertFn;
     geode::Ref<FontPickerPopup> m_activePicker = nullptr;

@@ -7,9 +7,8 @@
 
 namespace paimon {
 
-/// Overlay layer that enables click-and-drag text selection on a comment cell.
-/// Attach via CommentTextSelector::attach() after loadFromComment finishes.
-/// Selected text is highlighted and can be copied via a "Copy" button.
+// Click-and-drag text selection overlay for a comment cell; attach via
+// CommentTextSelector::attach() after loadFromComment finishes.
 class CommentTextSelector : public cocos2d::CCLayer {
 protected:
     struct DisplaySegment {
@@ -77,8 +76,6 @@ public:
                                         cocos2d::CCSize const& cellSize,
                                         std::string const& fontFile = "chatFont.fnt");
 
-    /// Convenience: attach a selector to a CommentCell's m_mainLayer.
-    /// text: the raw comment string, textNode: the rendered text/emote node.
     static void attach(cocos2d::CCNode* parent, std::string const& text,
                        cocos2d::CCNode* textNode,
                        std::string const& fontFile = "chatFont.fnt");

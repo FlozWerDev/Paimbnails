@@ -1,7 +1,5 @@
 #pragma once
 
-// Ajustes finos de UN efecto de click concreto.
-
 #include <Geode/Geode.hpp>
 #include <Geode/binding/Slider.hpp>
 #include <functional>

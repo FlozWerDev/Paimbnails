@@ -63,7 +63,6 @@ protected:
     static void pruneDiskCache();
     static std::filesystem::path getDiskCacheDir();
     
-    // Drop LRU entries until the cache is under its limit.
     static void evictIfNeeded();
 
     std::vector<GIFFrame*> m_frames;
@@ -78,7 +77,6 @@ protected:
     int m_canvasWidth = 0;
     int m_canvasHeight = 0;
     
-    // Pending incremental frame with decoded RGBA data.
     struct PendingFrame {
         std::vector<uint8_t> pixels; // RGBA8888.
         int left = 0;
@@ -104,7 +102,6 @@ public:
     cocos2d::CCSize m_screenSize = {0, 0};
     paimon::SoftEdgeFade m_softEdgeFade;
 
-    // Cached shader uniform locations.
     GLint m_locIntensity = -2; // -2 = not cached.
     GLint m_locTime = -2;
     GLint m_locBrightness = -2;
@@ -144,7 +141,6 @@ public:
 private:
     static constexpr auto MAX_DISK_CACHE_AGE = std::chrono::hours(24 * 21);
 
-    // Worker pool for parallel GIF decoding.
     struct GIFTask {
         std::string path;
         std::vector<uint8_t> data;
@@ -168,7 +164,6 @@ public:
     void play() { m_isPlaying = true; this->scheduleUpdate(); }
     void pause() {
         m_isPlaying = false;
-        // Drop the per-frame schedule while paused.
         if (m_pendingFrames.empty()) this->unscheduleUpdate();
     }
     void stop() { 
@@ -204,7 +199,6 @@ public:
     
     void setCurrentFrame(unsigned int frame);
 
-    // Ensure frame 0 exists before layout.
     bool processNextPendingFrame();
 
     std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B> getCurrentFrameColors() const {

@@ -93,7 +93,6 @@ geode::Result<std::string> IconShare::importProject(std::filesystem::path const&
 
     GEODE_UNWRAP_INTO(auto newId, IconProjectStore::get().createProject(std::move(project)));
 
-    // Extract images into the new slot.
     std::error_code ec;
     std::filesystem::create_directories(IconPaths::imagesDir(newId), ec);
     for (auto const& entry : unzip.getEntries()) {

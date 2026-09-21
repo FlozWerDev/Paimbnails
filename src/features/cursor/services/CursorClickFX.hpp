@@ -1,7 +1,5 @@
 #pragma once
 
-// Click effects for the live cursor and its preview.
-
 #include <Geode/Geode.hpp>
 #include "CursorFxCommon.hpp"
 #include "CursorTrailFX.hpp"

@@ -1,6 +1,4 @@
 #pragma once
-// Garage popup: master switch, live preview strip, three tabs (Colores /
-// Candados / Donde); each tab shows only the controls actually in use.
 
 #include <Geode/ui/Popup.hpp>
 

@@ -944,7 +944,6 @@ void ProfileMusicPopup::updateSelectionLabel() {
         m_selectionLabel->setColor({120, 230, 150});
     }
 
-// Sync inputs unless the user is actively typing.
     if (!m_editingTimeInput) {
         syncTimeInputsFromSelection();
     }
@@ -968,7 +967,6 @@ void ProfileMusicPopup::applyStartMs(int newStartMs) {
     if (newStartMs > m_songDurationMs) newStartMs = m_songDurationMs;
 
     if (newStartMs > m_endMs - MIN_FRAGMENT_MS) {
-// Push the end handle when the start collides with it.
         m_startMs = newStartMs;
         m_endMs   = newStartMs + MIN_FRAGMENT_MS;
         if (m_endMs > m_songDurationMs) {
@@ -976,7 +974,6 @@ void ProfileMusicPopup::applyStartMs(int newStartMs) {
             m_startMs = std::max(0, m_endMs - MIN_FRAGMENT_MS);
         }
     } else if (m_endMs - newStartMs > MAX_FRAGMENT_MS) {
-// Move the end with the start when the maximum window length is reached.
         m_startMs = newStartMs;
         m_endMs   = newStartMs + MAX_FRAGMENT_MS;
         if (m_endMs > m_songDurationMs) {
@@ -995,7 +992,6 @@ void ProfileMusicPopup::applyEndMs(int newEndMs) {
     if (newEndMs < 0) newEndMs = 0;
 
     if (newEndMs < m_startMs + MIN_FRAGMENT_MS) {
-// Push the start handle when the end collides with it.
         m_endMs   = newEndMs;
         m_startMs = newEndMs - MIN_FRAGMENT_MS;
         if (m_startMs < 0) {

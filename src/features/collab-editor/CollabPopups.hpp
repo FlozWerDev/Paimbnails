@@ -115,7 +115,6 @@ private:
     std::unordered_map<int, std::string> m_names;
 };
 
-// In-room chat and voice status.
 class CollabChatPopup : public geode::Popup {
 public:
     static CollabChatPopup* create();

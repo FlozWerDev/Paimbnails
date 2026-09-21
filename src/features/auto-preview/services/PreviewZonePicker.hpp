@@ -1,6 +1,5 @@
 #pragma once
 
-// Deterministic "random" preview zone selection.
 #include <cstdint>
 
 namespace paimon::autopreview {

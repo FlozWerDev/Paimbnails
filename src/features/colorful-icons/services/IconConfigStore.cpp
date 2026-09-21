@@ -10,7 +10,6 @@ using namespace geode::prelude;
 
 namespace {
 
-// matjson requires a lot of boilerplate; this keeps it tidy.
 matjson::Value colorToJson(cocos2d::ccColor3B c) {
     auto arr = matjson::Value::array();
     arr.push(static_cast<int>(c.r));

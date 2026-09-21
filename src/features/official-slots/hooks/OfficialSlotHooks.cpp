@@ -51,9 +51,8 @@ void refresh() {
 
 namespace paimon::officialslots {
 
-// Called by the editor and the manager after every mutation. Finds the live
-// select layer and re-runs the page update on each LevelPage, which repaints
-// through the hook below. No-op when the list is not open.
+// Finds the live select layer and re-runs the page update on each LevelPage.
+// No-op when the list is not open.
 void refreshOfficialList() {
     auto* director = CCDirector::get();
     if (!director) return;
@@ -242,7 +241,6 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
         this->trackSlotNode(ribbon);
     }
 
-    // True when the tap was consumed by a slot or a hidden official.
     bool handleSlotTap() {
         if (!slotsEnabled()) return false;
         if (!m_level) return false;
@@ -288,9 +286,8 @@ class $modify(PaimonOfficialSlotSelect, LevelSelectLayer) {
         return true;
     }
 
-    // Mirrors the vanilla 22 + 2 page cycle: indexes 0..21 are officials
-    // 1..22, the rest are the empty tail pages. Read at click time so the
-    // buttons never need their own page tracking.
+    // Vanilla 22 + 2 page cycle, read at click time so the buttons never
+    // need their own page tracking.
     int currentOfficialId() {
         if (!m_scrollLayer || !m_scrollLayer->m_extendedLayer) return -1;
         float const width = m_scrollLayer->getContentSize().width;

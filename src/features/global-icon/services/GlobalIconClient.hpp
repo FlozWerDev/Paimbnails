@@ -13,7 +13,6 @@
 
 namespace paimon::globalicon {
 
-// Parse a metadata JSON object into GlobalIconMeta.
 GlobalIconMeta parseMetaJson(matjson::Value const& v);
 
 class GlobalIconClient {

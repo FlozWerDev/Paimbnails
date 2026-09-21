@@ -80,9 +80,8 @@ public:
     using Event::Event;
 };
 
-// Emits the event for `settingKey` from the global listener. No need to call it
-// manually — the internal dispatcher invokes it when mouse/scroll matches a
-// registered ExtendedKeybind.
+// No need to call it manually — the internal dispatcher invokes it when mouse/scroll
+// matches a registered ExtendedKeybind.
 void emitExtendedTrigger(std::string_view settingKey, double timestamp);
 
 std::vector<std::string> const& allManagedKeybinds();

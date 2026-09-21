@@ -4,9 +4,8 @@
 #include <Geode/cocos/extensions/GUI/CCControlExtension/CCScale9Sprite.h>
 #include <string>
 
-// Hides the vanilla brown CommentCell backgrounds. Shared by InfoLayer and
-// ProfilePage. `using namespace geode::prelude;` is confined to each inline
-// function body so it doesn't leak to includers.
+// Hides the vanilla brown CommentCell backgrounds (InfoLayer + ProfilePage).
+// `using namespace prelude` stays inside each function body, not the header.
 namespace paimon::commentbg {
 
 inline bool shouldHideVanillaCommentBgNode(cocos2d::CCNode* node) {
@@ -26,10 +25,8 @@ inline bool shouldHideVanillaCommentBgNode(cocos2d::CCNode* node) {
     return typeinfo_cast<CCLayerColor*>(node) || typeinfo_cast<CCScale9Sprite*>(node);
 }
 
-// Walk a GJCommentListLayer (or any subtree) and hide the vanilla decorative
-// backgrounds of each CommentCell that already has a paimon panel. The
-// "paimon-comment-bgs-hidden" user object caches processed cells to avoid
-// reprocessing non-recycled ones.
+// Hide vanilla decorative backgrounds of cells that already have a paimon panel;
+// the user object caches processed cells to avoid reprocessing non-recycled ones.
 inline void hideCommentCellBgs(cocos2d::CCNode* listNode) {
     using namespace geode::prelude;
     if (!listNode) return;
@@ -76,7 +73,6 @@ inline void hideCommentCellBgs(cocos2d::CCNode* listNode) {
                 };
 
                 hideBgsRecursive(hideBgsRecursive, child);
-                // mark processed until the next loadFromComment
                 child->setUserObject("paimon-comment-bgs-hidden"_spr, cocos2d::CCBool::create(true));
                 continue;
             }

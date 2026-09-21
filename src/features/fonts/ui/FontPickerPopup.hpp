@@ -17,22 +17,18 @@ public:
 protected:
     geode::CopyableFunction<void(std::string const&)> m_onSelect;
 
-    // Preview section (top)
     cocos2d::CCNode* m_previewContainer = nullptr;
     cocos2d::CCNode* m_previewFontSprite = nullptr;
     cocos2d::CCLabelBMFont* m_previewLabel = nullptr;
 
-    // Sidebar (bottom-left)
     cocos2d::CCMenu* m_sideMenu = nullptr;
     CCMenuItemSpriteExtra* m_tabGD = nullptr;
     CCMenuItemSpriteExtra* m_tabCustom = nullptr;
     Tab m_activeTab = Tab::GDFonts;
 
-    // Font grid (bottom-right)
     geode::ScrollLayer* m_scroll = nullptr;
     cocos2d::CCNode* m_contentNode = nullptr;
 
-    // Custom tab (bottom-right, swapped in)
     cocos2d::CCNode* m_customContainer = nullptr;
     geode::TextInput* m_customInput = nullptr;
 

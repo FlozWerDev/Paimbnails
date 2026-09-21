@@ -7,8 +7,7 @@
 
 namespace paimon::quickhub {
 
-// Editor del boton capturado con click derecho: nombre, icono, forma y color.
-// Tambien muestra la "direccion" detectada para que se vea que se guardo.
+// Muestra la "direccion" detectada para que se vea que se guardo.
 class QuickButtonPopup : public geode::Popup {
 public:
     static QuickButtonPopup* create(CustomQuickButton candidate);

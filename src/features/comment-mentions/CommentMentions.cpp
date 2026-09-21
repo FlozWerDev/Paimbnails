@@ -1,4 +1,3 @@
-// Comment Mentions: notifies when someone mentions you in level comments.
 // Poll timer sleeps on a background thread; requests and state stay on main.
 
 #include <Geode/Geode.hpp>
@@ -61,7 +60,6 @@ std::string base64UrlDecode(std::string const& in) {
     return out;
 }
 
-// Parses a "k<sep>v<sep>k<sep>v..." string into a map.
 std::map<std::string, std::string> parseKV(std::string const& s, std::string const& sep) {
     auto parts = gstr::split(s, sep);
     std::map<std::string, std::string> m;
@@ -69,7 +67,6 @@ std::map<std::string, std::string> parseKV(std::string const& s, std::string con
     return m;
 }
 
-// Reads a comma-separated string setting into a trimmed list.
 std::vector<std::string> listSetting(char const* key) {
     std::vector<std::string> out;
     for (auto const& it : gstr::split(sStr(key), ",")) {
@@ -104,7 +101,6 @@ public:
         return inst;
     }
 
-    // Called in $on_game(Loaded). Starts the polling thread exactly once.
     void startup() {
         if (m_started) return;
         m_started = true;

@@ -56,17 +56,12 @@ public:
     void startModCodeSetup(std::string const& username, int accountID, GenericCallback callback);
     void completeModCodeSetup(std::string const& challengeToken, GenericCallback callback);
 
-    // Verificacion de cuenta para usuarios normales. El servidor da un codigo que hay que
-    // publicar como comentario en el propio perfil de GD; al comprobarlo devuelve un token
-    // firmado de 30 dias que prueba la propiedad de la cuenta. Sin el, votar o cambiar el
-    // fondo de perfil solo se apoyaba en una consulta publica a los servidores de GD, que
-    // no demuestra nada. Es el equivalente del mod code para quien no es moderador.
+    // Prueba de propiedad para no-moderadores: el token firmado demuestra que la cuenta
+    // es tuya; la consulta publica a los servidores de GD no demuestra nada.
     std::string getViewerToken() const { return m_viewerToken; }
     void setViewerToken(std::string const& token);
     bool hasViewerToken() const { return !m_viewerToken.empty(); }
-    // Devuelve el codigo a publicar en el perfil.
     void startAccountVerification(std::string const& username, GenericCallback callback);
-    // Comprueba el comentario y, si esta, guarda el token.
     void checkAccountVerification(std::string const& username, GenericCallback callback);
 
     void cleanTasks(bool allowNewRequests = true);
@@ -100,10 +95,8 @@ public:
     void batchCheckProfiles(std::vector<int> const& accountIDs, GenericCallback callback);
     // Image download with signature validation.
     void downloadFromUrl(std::string const& url, DownloadCallback callback);
-    // Binary download for non-image assets.
     void downloadFromUrlRaw(std::string const& url, DownloadCallback callback);
 
-    // Reject unsafe download URLs.
     static bool isUrlSafe(std::string const& url);
 
     void uploadProfileImg(int accountID, std::vector<uint8_t> const& imgData, std::string const& username, std::string const& contentType, UploadCallback callback);
@@ -257,9 +250,8 @@ public:
     void saveManifestToDisk();
     void loadManifestFromDisk();
 
-    // Igual que performBinaryRequest, pero pasa el codigo HTTP. Hace falta para no
-    // confundir un 404 (recurso inexistente, cachear el negativo) con un fallo
-    // pasajero (reintentar).
+    // Como performBinaryRequest pero con el codigo HTTP: un 404 se cachea en negativo,
+    // un fallo pasajero se reintenta.
     using BinaryStatusCallback = geode::CopyableFunction<void(bool, std::vector<uint8_t> const&, int status)>;
     void performBinaryRequestEx(
         std::string const& url,
@@ -294,7 +286,6 @@ private:
     mutable std::mutex m_existsCacheMutex;
     static constexpr int EXISTS_CACHE_DURATION = 30;
 
-    // CDN manifest entries indexed by level ID.
     std::unordered_map<int, ManifestEntry> m_manifestCache;
     std::mutex m_manifestMutex;
     static constexpr size_t MAX_MANIFEST_ENTRIES = 5000;

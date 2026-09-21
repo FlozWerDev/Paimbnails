@@ -47,7 +47,6 @@ bool PaimonShopPopup::init() {
         infoMenu->addChild(iBtn);
     }
 
-    // admin upload button (only visible to moderators)
     if (PaimonUtils::isUserModerator()) {
         auto uploadSpr = ButtonSprite::create("Upload", "goldFont.fnt", "GJ_button_04.png", 0.6f);
         uploadSpr->setScale(0.6f);
@@ -170,7 +169,6 @@ void PaimonShopPopup::buildList() {
         metaLbl->setPosition({10.f, y - 10.f});
         sc->addChild(metaLbl);
 
-        // download button or "Downloaded" label
         std::string filename = item.id + "." + item.format;
         if (isAlreadyInGallery(filename)) {
             auto checkLbl = CCLabelBMFont::create("Downloaded", "bigFont.fnt");
@@ -184,7 +182,6 @@ void PaimonShopPopup::buildList() {
             auto dlBtn = CCMenuItemSpriteExtra::create(
                 dlSpr, this, menu_selector(PaimonShopPopup::onDownload));
             dlBtn->setPosition({scrollW - 45.f, y});
-            // store item id + format in user object
             auto data = CCString::createWithFormat("%s|%s|%s", item.id.c_str(), item.format.c_str(), item.name.c_str());
             dlBtn->setUserObject(data);
             menu->addChild(dlBtn);
@@ -204,7 +201,6 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
     if (!dataStr) return;
 
     std::string raw = dataStr->getCString();
-    // parse "id|format|name"
     auto pos1 = raw.find('|');
     auto pos2 = raw.find('|', pos1 + 1);
     if (pos1 == std::string::npos || pos2 == std::string::npos) return;
@@ -260,7 +256,6 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
 
                 PaimonNotify::create(name + " added to gallery!", NotificationIcon::Success)->show();
 
-                // auto-select if no pet selected
                 if (PetManager::get().config().selectedImage.empty()) {
                     PetManager::get().setImage(filename);
                 }
@@ -283,7 +278,6 @@ void PaimonShopPopup::onUploadPet(CCObject*) {
         std::error_code ec;
         if (!std::filesystem::exists(filepath, ec)) return;
 
-        // detect format
         auto ext = geode::utils::string::pathToString(filepath.extension());
         for (auto& c : ext) c = (char)std::tolower(c);
         std::string format = "png";
@@ -323,7 +317,6 @@ void PaimonShopPopup::onUploadPet(CCObject*) {
             return;
         }
 
-        // ask for pet name with a simple alert input approach
         // use the filename (without extension) as default name
         std::string defaultName = geode::utils::string::pathToString(filepath.stem());
 

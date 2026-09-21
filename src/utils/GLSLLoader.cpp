@@ -44,7 +44,6 @@ std::filesystem::path shadersDirFlat() {
     return geode::Mod::get()->getResourcesDir();
 }
 
-// Read the file from disk without touching the cache. Empty string if missing/unreadable.
 std::string readFileRaw(std::filesystem::path const& path) {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || ec) return {};
@@ -135,14 +134,12 @@ CCGLProgram* loadShader(
         return program;
     }
 
-    // resolve the vertex shader source
     std::string vertexFromDisk;
     if (!vertexFile.empty()) {
         vertexFromDisk = readShaderFile(vertexFile);
     }
     char const* vertexSrc = vertexFromDisk.empty() ? vertexFallback : vertexFromDisk.c_str();
 
-    // resolve the fragment shader source
     std::string fragmentFromDisk;
     if (!fragmentFile.empty()) {
         fragmentFromDisk = readShaderFile(fragmentFile);
@@ -156,7 +153,6 @@ CCGLProgram* loadShader(
         return nullptr;
     }
 
-    // QA log: shows where each source came from
     bool vertexFromFile = !vertexFromDisk.empty();
     bool fragmentFromFile = !fragmentFromDisk.empty();
     geode::log::debug(
@@ -190,9 +186,8 @@ CCGLProgram* loadShader(
     return shaderCache->programForKey(keyStr.c_str());
 }
 
-// Typed helpers — each shader uses its own cache key ("-v3") to avoid clashing
-// with programs cached under old keys after a hot update. All pass nullptr as
-// fallback (fail-fast if the .glsl is missing; see loadShader).
+// Typed helpers use per-shader cache keys ("-v3") so hot updates don't clash
+// with old keys. All pass nullptr fallback (fail-fast if the .glsl is missing).
 
 CCGLProgram* getBlurHorizontalShader() {
     return loadShader(

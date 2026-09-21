@@ -28,10 +28,6 @@ using namespace geode::prelude;
 namespace paimon::quickhub {
 namespace {
 
-// -------------------------------------------------------------------------
-// Identificacion de nodos
-// -------------------------------------------------------------------------
-
 std::string classNameOf(CCObject* obj) {
     if (!obj) return {};
 #ifdef _WIN32
@@ -102,10 +98,6 @@ std::string currentSceneClass() {
     auto* director = CCDirector::get();
     return sceneLayerClass(director ? director->getRunningScene() : nullptr);
 }
-
-// -------------------------------------------------------------------------
-// Iconos
-// -------------------------------------------------------------------------
 
 // Varios nombres pueden apuntar al mismo recorte del atlas. Elegir siempre el
 // mismo (mas corto, luego alfabetico) evita que el icono cambie entre partidas.
@@ -232,10 +224,6 @@ std::string findLabelText(CCNode* node) {
     return {};
 }
 
-// -------------------------------------------------------------------------
-// Rutas hasta el nodo
-// -------------------------------------------------------------------------
-
 bool isActuallyVisible(CCNode* node) {
     for (auto* current = node; current; current = current->getParent()) {
         if (!current->isVisible()) return false;
@@ -327,10 +315,6 @@ CCPoint normalizedCenterOf(CCNode* node) {
     return ccp(world.x / win.width, world.y / win.height);
 }
 
-// -------------------------------------------------------------------------
-// Localizar el boton bajo el cursor
-// -------------------------------------------------------------------------
-
 // El de mas arriba gana: los hijos se recorren al reves porque cocos los ordena
 // por z-order, asi un boton de un popup manda sobre el de la capa de debajo.
 CCMenuItem* findButtonAt(CCNode* node, CCPoint worldPoint) {
@@ -350,10 +334,6 @@ CCMenuItem* findButtonAt(CCNode* node, CCPoint worldPoint) {
     auto local = item->convertToNodeSpace(worldPoint);
     return CCRect(0.f, 0.f, size.width, size.height).containsPoint(local) ? item : nullptr;
 }
-
-// -------------------------------------------------------------------------
-// Reencontrar el boton guardado
-// -------------------------------------------------------------------------
 
 // Dos puntuaciones: `identity` distingue ESTE boton de sus hermanos y `total`
 // suma ademas contexto compartido; exigir ambas evita activar el de al lado.
@@ -481,10 +461,6 @@ CCMenuItem* locateButton(CustomQuickButton const& def) {
 
     return nullptr;
 }
-
-// -------------------------------------------------------------------------
-// Navegar a la pantalla donde vive el boton
-// -------------------------------------------------------------------------
 
 CCScene* buildSceneForClass(std::string const& cls) {
     if (cls == "MenuLayer")           return MenuLayer::scene(false);

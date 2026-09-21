@@ -35,12 +35,10 @@ constexpr GradientLane kGradientLanes[] = {
     {&Gradient::line, ColorType::Line},
 };
 
-// Wipe a doll back to its plain colors.
 void clearDoll(SimplePlayer* doll) {
     GradientUtils::applyGradient(doll, Gradient{}, false, false, 0);
 }
 
-// Paint every doll in a page with the same gradient.
 void paintEach(std::vector<SimplePlayer*> const& dolls, Gradient const& gradient, bool second, int tag) {
     for (SimplePlayer* doll : dolls)
         GradientUtils::applyGradient(doll, gradient, false, second, tag);

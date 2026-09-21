@@ -28,7 +28,6 @@ public:
     }
 
     void update(float) override {
-        // Returns nullptr outside gameplay.
         if (paimon::gameplayperf::isOptionActive(
                 paimon::gameplayperf::kModVisualsModuleId)) return;
         if (auto* pl = PlayLayer::get()) {

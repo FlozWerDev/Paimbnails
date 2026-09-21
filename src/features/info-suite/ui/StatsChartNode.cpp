@@ -30,7 +30,6 @@ void fill(CCDrawNode* draw, float x, float y, float w, float h, ccColor4F const&
     draw->drawRect({x, y}, {x + w, y + h}, color, 0.f, kNoBorder);
 }
 
-// Green marks late deaths; red marks early ones.
 ccColor3B heatColor(float t) {
     t = std::clamp(t, 0.f, 1.f);
     if (t < 0.5f) {
@@ -53,7 +52,6 @@ ccColor3B shade(ccColor3B color, float k) {
             static_cast<GLubyte>(color.b * k)};
 }
 
-// Bars use fading slabs and an inset cap for depth and readable tops.
 void drawBar(CCDrawNode* draw, float x, float w, float h, ccColor3B color, bool marked) {
     constexpr int kSlabs = 4;
     for (int s = 0; s < kSlabs; s++) {
@@ -87,14 +85,14 @@ bool StatsChartNode::init(std::vector<float> const& values, CCSize const& size,
     if (size.width <= 0.f || size.height <= 0.f) return false;
 
     this->setContentSize(size);
-// Set the anchor explicitly because callers place charts by center.
+    // Callers place charts by center.
     this->ignoreAnchorPointForPosition(false);
     this->setAnchorPoint({0.5f, 0.5f});
 
     if (auto bg = paimon::SpriteHelper::safeCreateScale9("square02_001.png")) {
         bg->setContentSize(size);
         bg->setColor({0, 0, 0});
-// Keep bars darker than stat tiles for thumbnail contrast.
+        // Darker than stat tiles for thumbnail contrast.
         bg->setOpacity(145);
         bg->setAnchorPoint({0.f, 0.f});
         this->addChild(bg, -1);
@@ -118,7 +116,7 @@ bool StatsChartNode::init(std::vector<float> const& values, CCSize const& size,
 
     float const gap = std::clamp(geo.slot * 0.2f, 0.6f, 3.f);
     geo.barW = std::max(2.f, geo.slot - gap);
-// Leave unused columns on the left so the newest attempt stays aligned.
+    // Unused columns stay left so the newest attempt stays aligned.
     geo.startX = plot.origin.x
         + std::max(0.f, plot.size.width - geo.slot * static_cast<float>(geo.count));
 
@@ -137,7 +135,7 @@ bool StatsChartNode::init(std::vector<float> const& values, CCSize const& size,
     }
 
     auto* bars = CCDrawNode::create();
-// Grow bars from the baseline so animation stays above the axis.
+    // Grow from the baseline so animation stays above the axis.
     bars->setPosition({0.f, plot.origin.y});
     this->addChild(bars, 1);
     drawBars(bars, values, options, plot, geo, peak);
@@ -156,7 +154,6 @@ bool StatsChartNode::init(std::vector<float> const& values, CCSize const& size,
 
 void StatsChartNode::drawGrid(CCDrawNode* draw, CCRect const& plot, Geometry const& geo,
                               bool ghost) {
-// Keep faint columns for empty slots so gaps remain meaningful.
     float const trackAlpha = ghost ? 0.045f : 0.07f;
     for (int i = 0; i < geo.count; i++) {
         float x = geo.startX + static_cast<float>(i) * geo.slot;
@@ -164,7 +161,6 @@ void StatsChartNode::drawGrid(CCDrawNode* draw, CCRect const& plot, Geometry con
              rgba({255, 255, 255}, trackAlpha));
     }
 
-// Quarter, half, and three-quarter guides make heights readable without labels.
     for (int i = 1; i <= 3; i++) {
         float y = plot.origin.y + plot.size.height * (0.25f * static_cast<float>(i));
         fill(draw, plot.origin.x, y, plot.size.width, 1.f, rgba({255, 255, 255}, 0.07f));
@@ -182,7 +178,6 @@ void StatsChartNode::drawBars(CCDrawNode* draw, std::vector<float> const& values
 
     float const height = plot.size.height;
 
-// Reference line marks how far the level has been reached.
     if (options.marker >= 0.f && options.marker <= 1.f) {
         float x = plot.origin.x + plot.size.width * options.marker;
         for (float y = 0.f; y < height; y += 5.f) {

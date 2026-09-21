@@ -122,7 +122,6 @@ void BlurSystem::onGLContextReload() {
     clearBlurCache();
 }
 
-// Try loading the blur from disk cache. Returns true if a lookup was dispatched.
 bool BlurSystem::tryDispatchFromDisk(BlurKey const& key, BlurFlavor flavor, QueuedJob const& fallbackJob) {
     std::string diskKey = makeDiskKey(key, flavor);
     if (diskKey.empty()) return false;

@@ -6,9 +6,8 @@ class GameObject;
 
 namespace paimon::editorphysics {
 
-// Convex outline of an object's art, normalised so its bounds span [-0.5, 0.5]
-// on both axes and wound counter-clockwise. `vertexCount` stays 0 for anything
-// that fills its own bounds, since those already collide correctly as a box.
+// Convex outline of an object's art, normalised so bounds span [-0.5, 0.5] and
+// wound counter-clockwise. `vertexCount` stays 0 when art fills its own bounds.
 struct Silhouette {
     int vertexCount = 0;
     Vec2 vertices[kMaxVertices]{};

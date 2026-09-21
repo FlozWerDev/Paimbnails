@@ -40,9 +40,8 @@ struct PlayerVisState {
     bool swingFireTop = true;
     bool dashSpritesContainer = true;
 
-    // WeakRef: this state can outlive a frame (the preview popup keeps it while
-    // open), and unknown mod-added player descendants may be destroyed in the
-    // meantime. lock() skips dead nodes instead of touching freed memory.
+    // WeakRef: this state can outlive a frame, and unknown mod-added player descendants
+    // may be destroyed in the meantime.
     std::vector<std::pair<geode::WeakRef<CCNode>, bool>> otherParticles;
 };
 

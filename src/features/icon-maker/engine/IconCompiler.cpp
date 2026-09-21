@@ -47,7 +47,6 @@ bool trimFrame(ts::ImageBuffer const& canvas, ts::ImageBuffer& outPixels,
     int tw = std::min(ceil4(bw), w);
     int th = std::min(ceil4(bh), h);
 
-    // Center the expansion, then clamp into the canvas.
     int tx = bx - (tw - bw) / 2;
     int ty = by - (th - bh) / 2;
     tx = std::clamp(tx, 0, w - tw);

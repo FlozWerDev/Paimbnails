@@ -1,11 +1,6 @@
 #pragma once
 
-// Shared drawing helpers for the slot UI.
-//
-// Both the panel cards and the editor preview have to show the same thing: a
-// vanilla difficulty face with its rate glow, a star count, and optionally the
-// three coins. Keeping the builders here is what stops the two screens from
-// drifting apart, which is the usual way a preview stops matching the result.
+// One builder for panel cards and editor preview so the two never drift apart.
 
 #include "../OfficialSlots.hpp"
 
@@ -17,14 +12,11 @@ namespace paimon::officialslots::ui {
 // game's sprite frames are missing, so every caller has to check.
 cocos2d::CCNode* createDifficultyBadge(Difficulty difficulty, Tier tier, float scale);
 
-// Star count drawn with the game's own icon, laid out as "12 *".
-// Returns null when the icon is unavailable rather than drawing a bare number.
+// Null when the icon is unavailable rather than a bare number.
 cocos2d::CCNode* createStarBadge(int stars, float scale);
 
-// The three silver coins shown on official pages.
 cocos2d::CCNode* createCoinRow(float scale);
 
-// Dark rounded panel used behind cards and sections.
 cocos2d::CCNode* createCardBackground(cocos2d::CCSize size);
 
 } // namespace paimon::officialslots::ui

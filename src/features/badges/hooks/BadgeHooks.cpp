@@ -48,7 +48,6 @@ static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
                             std::string text, std::string font, int retries);
 
 namespace {
-// Default comment panel metrics.
 constexpr GLubyte kCommentDarkPanelOpacity = 60;
 constexpr cocos2d::ccColor3B kCommentPanelColor = {30, 33, 48};
 constexpr float kCommentInsetX = 2.0f;
@@ -238,7 +237,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         auto cellSize = this->getContentSize();
 
         if (config.commentBgType == "solid") {
-            // Solid color background — bake color directly into vertices
             auto* panel = paimon::SpriteHelper::createColorPanel(
                 layout.size.width,
                 layout.size.height,
@@ -256,7 +254,6 @@ class $modify(BadgeCommentCell, CommentCell) {
             ensureVanillaBgLayerHidden();
         }
         else if (config.commentBgType == "thumbnail" || config.commentBgType == "banner") {
-            // Image-based background — load async then render
             int accountID = m_comment ? m_comment->m_accountID : 0;
             int token = m_fields->m_commentBgToken;
 

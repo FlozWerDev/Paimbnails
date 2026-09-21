@@ -66,7 +66,6 @@ private:
     };
     void clearSelectionNode(int clientId);
 
-    // Ghost + trail + name at peer camera.
     struct CameraOverlay {
         geode::Ref<cocos2d::CCNode> ghostRoot;
         geode::Ref<cocos2d::CCDrawNode> trail;

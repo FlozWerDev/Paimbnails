@@ -86,7 +86,6 @@ inline std::string slugify(std::string const& id) {
     return stem;
 }
 
-// Punto unico de conversion.
 inline RadialOptionDef toRadialDef(CustomQuickButton const& b) {
     RadialOptionDef def;
     def.id = b.id;
@@ -186,7 +185,6 @@ inline std::vector<std::string> getDefaultRadialOrder() {
     return order;
 }
 
-// Layout circular reparte por angulo.
 constexpr int MAX_RADIAL_OPTIONS = 16;
 
 } // namespace paimon::quickhub

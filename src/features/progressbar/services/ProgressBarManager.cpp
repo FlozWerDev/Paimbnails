@@ -229,7 +229,6 @@ void ProgressBarManager::loadConfig() {
         }
     }
 
-// Migrate stored asset paths from legacy locations.
     bool migrated = false;
     auto migratePath = [&](std::string& path, std::string const& bucket) {
         if (path.empty()) return;

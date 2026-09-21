@@ -34,7 +34,6 @@ cocos2d::CCSprite* IconLockStyler::findLockSprite(GJItemIcon* icon) {
     return nullptr;
 }
 
-// Walk the SimplePlayer's tree and force every visible part to a given color.
 void IconLockStyler::tintAllParts(SimplePlayer* sp, ccColor3B tint) {
     if (!sp) return;
     if (sp->m_firstLayer)    sp->m_firstLayer->setColor(tint);
@@ -66,7 +65,6 @@ void IconLockStyler::tintAllParts(SimplePlayer* sp, ccColor3B tint) {
     handleVehicle(sp->m_spiderSprite);
 }
 
-// Set the same opacity recursively on all CCSprites under a SimplePlayer.
 void IconLockStyler::fadeAllParts(SimplePlayer* sp, unsigned char opacity) {
     if (!sp) return;
     sp->setOpacity(opacity);

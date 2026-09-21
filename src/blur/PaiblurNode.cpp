@@ -238,7 +238,6 @@ bool PaiblurNode::initWithWinSize(CCSize const& winSize, float intensity, float 
     glBufferData(GL_ARRAY_BUFFER, sizeof(kQuad), kQuad, GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-// Create blur FBOs eagerly when the viewport is available.
     auto* director = CCDirector::get();
     auto* glView = director ? director->getOpenGLView() : nullptr;
     CCSize frame = glView ? glView->getFrameSize() : CCSizeZero;
@@ -346,7 +345,6 @@ void PaiblurNode::visit() {
     GLubyte op = getDisplayedOpacity();
     if (op == 0) return;
 
-// Cosine-eased blur radius from opacity.
     float progress = static_cast<float>(op) / 255.f;
     float eased = 0.5f * (1.f - std::cos(3.14159265f * progress));
     if (eased < 0.01f) return;

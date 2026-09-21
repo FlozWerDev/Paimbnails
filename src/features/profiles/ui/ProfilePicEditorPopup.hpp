@@ -63,7 +63,6 @@ protected:
     void onTabBtn(cocos2d::CCObject* sender);
     void rebuildCurrentTab();
 
-    // Photo tab: image source + framing
     cocos2d::CCNode* createPhotoTab();
     void onPhotoSourceProfile(cocos2d::CCObject* sender);
     void onPhotoClear(cocos2d::CCObject* sender);

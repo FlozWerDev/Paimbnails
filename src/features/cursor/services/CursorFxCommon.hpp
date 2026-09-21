@@ -1,7 +1,5 @@
 #pragma once
 
-// Shared cursor-effect textures, geometry batch, color, and random helpers.
-
 #include <Geode/Geode.hpp>
 #include <vector>
 
@@ -62,7 +60,6 @@ public:
                 cocos2d::ccColor4F const& color, int segments = 20);
     void thickLine(cocos2d::CCPoint const& p1, cocos2d::CCPoint const& p2,
                    float thickness, cocos2d::ccColor4F const& color);
-    // Hollow ring centered at radius.
     void ring(cocos2d::CCPoint const& center, float radius, float thickness,
               cocos2d::ccColor4F const& color, int segments = 40);
 

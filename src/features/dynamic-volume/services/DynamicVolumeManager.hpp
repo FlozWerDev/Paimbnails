@@ -43,7 +43,6 @@ public:
 
     LiveState liveState() const;
 
-    // Return to 0 dB and forget the current song.
     void resetRuntimeState();
 
 private:
@@ -64,7 +63,6 @@ private:
 
     void applyGainDb(float db);
     bool contextAllowed() const;
-    // Detect an unannounced song change and notify it.
     bool pollForSongChange();
 
     DynamicVolumeConfig m_cfg{};

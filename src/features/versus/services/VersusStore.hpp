@@ -73,7 +73,6 @@ public:
 private:
     VersusStore() = default;
 
-    // get() runs this once, lazily; nobody outside needs to ask for it.
     void load();
     void saveProfiles();
 

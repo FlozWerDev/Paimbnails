@@ -24,7 +24,6 @@ class $modify(PaimonMainMenuLayoutHook, MenuLayer) {
 
         paimon::menu_layout::MainMenuLayoutManager::get().load();
 
-        // Register the layout editor keybind for the main menu only.
         paimon::menu_layout::registerLayoutEditorKeybind(this);
 
         // Three distinct selectors: scheduleOnce with the same selector only

@@ -1,8 +1,6 @@
 #pragma once
 
-// Helpers compartidos por los editores del boton rapido (imagen + sonido) y
-// el propio QuickButtonPopup: slug para nombres en config, mini-botones,
-// importacion de archivos a config y nombre legible de la fuente de SFX.
+// Compartidos por los editores del boton rapido (imagen + sonido) y QuickButtonPopup.
 
 #include "../data/QuickHubCategories.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -53,8 +51,6 @@ inline ::CCMenuItemSpriteExtra* makeMiniButton(
     });
 }
 
-// Copia src a dir con nombre derivado de stem; se valida antes de aceptar la
-// copia y los fallos notifican aqui mismo como Error.
 inline std::string importFileToConfigDir(
     std::filesystem::path const& src,
     std::filesystem::path const& dir,

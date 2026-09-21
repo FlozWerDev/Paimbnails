@@ -98,7 +98,6 @@ public:
     }
 
 private:
-// Mirror the selected icon and player colors on the gear button when changed.
     void refreshButtonIcon() {
         if (!m_buttonIcon || !m_host) return;
 
@@ -207,7 +206,6 @@ SimplePlayer* installPaimonIconsButton(GJGarageLayer* layer) {
     return mini;
 }
 
-// Repaint or restore the visible garage after config changes.
 void ensureConfigListenerRegistered() {
     static bool registered = false;
     if (registered) return;

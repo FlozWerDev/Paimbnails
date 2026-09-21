@@ -33,12 +33,10 @@ protected:
     float contentFloor() const;
     void applyLayout();
 
-    // Rebuilds the scroll contents for the selected tab.
     void rebuildContent();
     void buildSummary(cocos2d::CCNode* content);
     void buildFactRows(cocos2d::CCNode* content);
 
-    // Summary blocks, each returning a node of the given width.
     cocos2d::CCNode* makeHeaderBlock(float width);
     cocos2d::CCNode* makeDescriptionBlock(float width);
     cocos2d::CCNode* makeStatGrid(float width);

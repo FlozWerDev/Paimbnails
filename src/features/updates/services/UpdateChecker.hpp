@@ -22,8 +22,7 @@ struct ReleaseInfo {
     bool prerelease = false;
 };
 
-// Checks GitHub Releases against mod.json and downloads a selected .geode with
-// main-thread progress callbacks.
+// Downloads a selected .geode; progress callbacks run on the main thread.
 
 class UpdateChecker {
 public:

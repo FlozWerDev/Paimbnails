@@ -82,7 +82,6 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
 
     const int K = std::min(5, static_cast<int>(pixels.size() / 20));
     if (K < 2) {
-        // Too few samples: return the average.
         float sL = 0, sA = 0, sB = 0;
         for (auto const& p : pixels) { sL += p.L; sA += p.a; sB += p.b; }
         float n = static_cast<float>(pixels.size());
@@ -192,8 +191,6 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
     return {color1, color2};
 }
 
-// Render the texture into a 32×32 LAB FBO.
-
 static constexpr int kDownsampleSize = 32;
 
 static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
@@ -260,7 +257,6 @@ static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
         // Transparent pixels are filtered out by the shader.
         if (a < 128) continue;
 
-        // Decode the shader's normalized LAB channels.
         float L = (r / 255.0f) * 100.0f;           // [0,1] → [0,100]
         float la = (g / 255.0f) * 255.0f - 128.0f; // [0,1] → [-128,127]
         float lb = (b / 255.0f) * 255.0f - 128.0f; // [0,1] → [-128,127]
@@ -326,7 +322,6 @@ std::pair<DCColor, DCColor> extractFromRGB(const uint8_t* rgb, int width, int he
         return DominantColors::extract(rgb, width, height);
     }
 
-    // Upload RGB as a temporary RGBA texture.
     size_t pixelCount = static_cast<size_t>(width) * height;
     std::vector<uint8_t> rgba(pixelCount * 4);
     ImageConverter::rgbToRgbaFast(rgb, rgba.data(), pixelCount);

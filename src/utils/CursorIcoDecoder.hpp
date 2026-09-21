@@ -28,16 +28,13 @@ bool isCur(uint8_t const* data, size_t size);
 // .ani = "RIFF" .... "ACON"
 bool isAni(uint8_t const* data, size_t size);
 
-// Formato soportado o no.
 bool isSupported(uint8_t const* data, size_t size);
 
 // Elige la imagen mas grande.
 DecodeResult decodeIco(uint8_t const* data, size_t size);
 
-// Decodifica el .ani entero.
 DecodeResult decodeAni(uint8_t const* data, size_t size);
 
-// Detecta el formato y delega.
 DecodeResult decode(uint8_t const* data, size_t size);
 
 } // namespace paimon::cursor_ico

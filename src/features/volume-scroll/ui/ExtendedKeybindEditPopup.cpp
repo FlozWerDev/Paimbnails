@@ -267,7 +267,7 @@ void ExtendedKeybindEditPopup::updateRecordButtonAppearance() {
 
 bool ExtendedKeybindEditPopup::captureKeyboard(enumKeyCodes key, KeyboardModifier mods) {
     if (key == KEY_Escape) {
-    // Escape leaves recording mode; pending edits survive until Save.
+        // Escape leaves recording mode; pending edits survive until Save.
         exitRecordingMode();
         this->refreshDisplay();
         return true;
@@ -275,11 +275,10 @@ bool ExtendedKeybindEditPopup::captureKeyboard(enumKeyCodes key, KeyboardModifie
 
     Keybind kb;
     if (isModifierKey(key)) {
-    // Save modifier-only binds as a hold style.
         kb.key = KEY_None;
         kb.modifiers = mods;
         if (kb.modifiers == KeyboardModifier::None) {
-    // Recover the modifier when the key event omitted its modifier flags.
+            // Recover the modifier when the key event omitted its modifier flags.
             if (key == KEY_Control || key == KEY_LeftControl || key == KEY_RightContol) {
                 kb.modifiers = KeyboardModifier(KeyboardModifier::Control);
             } else if (key == KEY_Shift || key == KEY_LeftShift || key == KEY_RightShift) {

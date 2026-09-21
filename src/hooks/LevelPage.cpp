@@ -157,7 +157,6 @@ class $modify(PaimonLevelPage, LevelPage) {
 
         CCSize boxSize = m_levelDisplay->getContentSize();
 
-// Rounded clip for official levels.
         float cornerRadius = std::clamp(boxSize.height * 0.11f, 6.f, 14.f);
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(boxSize.width, boxSize.height, cornerRadius);
         if (!stencil) return;
@@ -167,7 +166,6 @@ class $modify(PaimonLevelPage, LevelPage) {
         clipper->setAnchorPoint({0.5f, 0.5f});
         clipper->setPosition(boxSize / 2);
 
-// Fit sprite to the container.
         float scaleX = boxSize.width / sprite->getContentSize().width;
         float scaleY = boxSize.height / sprite->getContentSize().height;
         float scale = std::max(scaleX, scaleY);
@@ -183,11 +181,11 @@ sprite->setOpacity(0); // Fade over the original preview.
         auto darkOverlay = CCSprite::create();
 darkOverlay->setTextureRect(CCRect(0, 0, boxSize.width, boxSize.height + 2.f)); // Cover edge pixels.
         darkOverlay->setColor({0, 0, 0});
-darkOverlay->setOpacity(0); // Fade to 45.
+darkOverlay->setOpacity(0);
         darkOverlay->setPosition(boxSize / 2);
         clipper->addChild(darkOverlay, 2);
 
-// Add behind vanilla labels and fade in over the original render.
+// Behind vanilla labels.
         clipper->setID("paimbnails-clipper"_spr);
         m_levelDisplay->addChild(clipper, -1);
 

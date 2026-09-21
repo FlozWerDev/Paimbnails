@@ -1,4 +1,3 @@
-// Popup UI for audio-reactive beat shader config.
 #pragma once
 
 #include <Geode/Geode.hpp>

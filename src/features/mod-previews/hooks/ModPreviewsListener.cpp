@@ -8,18 +8,15 @@
 #include <string>
 #include <vector>
 
-// Shows a thumbnail ribbon on mod popups whose repo carries previews.
-// Strip idea compatible with "Mod Previews" by Alphalaneous; the ribbon
-// below is our own (see THIRD-PARTY-NOTICES.md).
+// Thumbnail ribbon on mod popups whose repo carries previews (see
+// THIRD-PARTY-NOTICES.md).
 
 using namespace geode::prelude;
 using namespace paimon::mod_previews;
 
 namespace {
 
-// How many preview slots get probed per popup.
 constexpr int kProbeMax = 10;
-// Thumbnail row geometry (own layout).
 constexpr float kRibbonH = 62.f;
 constexpr float kThumbH = 46.f;
 constexpr float kCellGap = 6.f;

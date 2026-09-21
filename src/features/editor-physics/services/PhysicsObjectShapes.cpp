@@ -123,9 +123,8 @@ void buildRamp(GameObject* object, ObjectShape& shape) {
     makeCounterClockwise(shape);
 }
 
-// The hitbox rect says how far the object reaches; the traced outline says what
-// it looks like inside that reach, which is what turns a spike into a triangle
-// and a saw into a disc instead of a 30x30 block.
+// The hitbox says how far the object reaches; the traced outline says what it
+// looks like inside, turning a spike into a triangle instead of a 30x30 block.
 bool applySilhouette(GameObject* object, ObjectShape& shape, float rotation, bool oriented) {
     auto const& outline = silhouetteOf(object);
     if (outline.vertexCount < 3) return false;

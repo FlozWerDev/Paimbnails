@@ -3,8 +3,6 @@
 
 namespace PaimonNotify {
 
-    // Passthrough to Geode's standard Notification API.
-    // Uses standard Geode icons (Success, Error, Warning, Info, None).
     inline geode::Notification* create(
         geode::ZStringView text,
         geode::NotificationIcon icon = geode::NotificationIcon::None,
@@ -13,7 +11,6 @@ namespace PaimonNotify {
         return geode::Notification::create(text, icon, time);
     }
 
-    // shortcut: create and show directly
     inline void show(
         geode::ZStringView text,
         geode::NotificationIcon icon = geode::NotificationIcon::None,

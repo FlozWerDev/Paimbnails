@@ -14,17 +14,14 @@ inline constexpr char const* kModuleId = "paimbnails.gdhistory.info";
 // The setting is on and we are not talking to a private server.
 bool available();
 
-// Asks for a level's real upload date. Calls back on the main thread with the
-// formatted date, or an empty string when it is unknown. Answers from cache
-// immediately when possible.
+// Calls back on the main thread with the formatted date (empty when unknown);
+// answers from cache immediately when possible.
 void requestLevelDate(int levelID, std::function<void(std::string const&)> callback);
 
-// Asks for the recorded upload/version history of a level. An empty JSON value
-// means the request failed or GDHistory is unavailable.
+// Empty JSON means the request failed or GDHistory is unavailable.
 void requestLevelHistory(int levelID, std::function<void(matjson::Value)> callback);
 
-// Asks for the name behind a user id. Result lands in InfoStore for
-// GameLevelManager::userNameForUserID to pick up. Fire and forget.
+// Result lands in InfoStore for GameLevelManager::userNameForUserID. Fire and forget.
 void requestUsername(int userID);
 
 } // namespace paimon::info::gdhistory

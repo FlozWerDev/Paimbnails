@@ -76,7 +76,6 @@ protected:
     // Plain tint with shader only; images/fusions/skips use CPU.
     bool gpuPreviewWanted(SpriteSetting const& setting,
                           bool globalWouldTint) const;
-    // Updates live GPU uniforms without re-upload.
     void applyGpuTintParams(SpriteSetting const& setting);
     // Identity of the segmentation inputs; color/grade changes keep it.
     static std::uint64_t maskFingerprint(SpritePreviewOptions const& opts);

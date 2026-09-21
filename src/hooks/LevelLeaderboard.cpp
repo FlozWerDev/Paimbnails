@@ -86,7 +86,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
             );
         }
 
-        // Subscribe to thumbnail-change events
         WeakRef<PaimonLevelLeaderboard> weakSelf = this;
         m_fields->m_bgEventHandle = paimon::EventBus::get().subscribe<paimon::ThumbnailBackgroundChangedEvent>(
             [weakSelf](paimon::ThumbnailBackgroundChangedEvent const& e) {
@@ -194,7 +193,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         }
     }
 
-    // Animate cells with a staggered slide + fade-in
     void animateCellsEntrance(GJCommentListLayer* list) {
         auto* contentLayer = findLeaderboardContentLayer(list);
         if (!contentLayer) return;
@@ -214,7 +212,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
             float originalX = cell->getPositionX();
             float originalY = cell->getPositionY();
 
-            // Initial state: shifted right and transparent
             cell->setPositionX(originalX + 30.f);
 
             if (auto* ch = cell->getChildren()) {
@@ -254,7 +251,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
     $override
     void setupLeaderboard(cocos2d::CCArray* scores) {
         LevelLeaderboard::setupLeaderboard(scores);
-        // Re-style the list after scores load
         if (m_list) {
             styleLeaderboardList(m_list);
             normalizeCellBackgrounds(m_list);
@@ -271,9 +267,8 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         LevelLeaderboard::keyBackClicked();
     }
 
-    // Safety net: ensure unsubscription if the layer is destroyed via
-    // scene-replace, popScene, or any path that skips keyBackClicked; otherwise
-    // the EventBus listener leaks as a zombie and the WeakRef lambda keeps firing.
+    // Safety net: unsubscribe if the layer dies via scene-replace/popScene or
+    // any path skipping keyBackClicked; otherwise the listener leaks as a zombie.
     $override
     void onExit() {
         if (m_fields->m_bgEventHandle != 0) {

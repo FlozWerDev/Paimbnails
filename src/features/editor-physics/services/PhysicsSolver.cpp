@@ -112,10 +112,8 @@ bool isMovable(State const& state) {
     return state.motion != Motion::Static;
 }
 
-// A fixture placed in the world: a convex polygon of `count` vertices, or a
-// circle when `count` is zero. The solver never looks at the axis-aligned size
-// again from here on, so a rotated block collides on its real corners and a
-// slope on its real hypotenuse.
+// A fixture placed in the world: convex polygon of `count` vertices, or a
+// circle when `count` is zero. From here the solver only collides the real shape.
 struct Shape {
     Vec2 center;
     Vec2 points[kMaxVertices];
@@ -219,9 +217,8 @@ int clipSegment(Vec2 const in[2], Vec2 normal, float limit, Vec2 out[2]) {
     return count;
 }
 
-// Separating axis test followed by reference/incident face clipping, so a box
-// resting flat reports both of its corners instead of rocking on a single point.
-// The manifold normal always points from `a` towards `b`.
+// SAT plus reference/incident face clipping, so a flat box reports both of its
+// corners instead of rocking on one point. The normal always points `a` to `b`.
 bool collidePolygons(Shape const& a, Shape const& b, Manifold& manifold) {
     FaceQuery const queryA = deepestFace(a, b);
     if (queryA.separation > 0.f) return false;
@@ -340,9 +337,8 @@ float restitutionOf(BodySpec const& body, Fixture const& fixture) {
     return std::max(0.f, fixture.restitution >= 0.f ? fixture.restitution : body.restitution);
 }
 
-// What the fixture weighs and how hard it is to spin, taken from the shape the
-// solver actually collides with: a disc resists half of what its bounding box
-// would, and a slope holds its mass in the corner it fills.
+// Weight and spin resistance from the collided shape: a disc resists half of
+// its bounding box, and a slope holds its mass in the corner it fills.
 struct MassShape {
     float area = 0.f;
     Vec2 centroid;
@@ -459,9 +455,8 @@ struct ContactPoint {
     std::uint64_t key = 0;
 };
 
-// One fixture-pair contact, built once per substep and then relaxed over several
-// iterations. Rebuilding it inside the iteration loop, as an earlier solver did,
-// made restitution decay against its own output and left bounces far too weak.
+// Built once per substep, then relaxed over several iterations: rebuilding
+// inside the loop made restitution decay against its own output and killed bounces.
 struct Constraint {
     std::size_t a = 0;
     std::size_t b = 0;

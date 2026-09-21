@@ -8,7 +8,6 @@ namespace paimon::editor {
 
 void focusCameraOnPoint(LevelEditorLayer* lel, cocos2d::CCPoint objectSpace);
 
-// Tracks focused input for keybind routing without extending any popup's lifetime.
 // Keybinds check this so they don't fire while typing.
 void setFocusedTextInput(CCTextInputNode* node);
 geode::Ref<CCTextInputNode> focusedTextInput();

@@ -1,4 +1,3 @@
-// Config popup for Dynamic Song, built on PaiConfigKit.
 #pragma once
 
 #include <Geode/Geode.hpp>

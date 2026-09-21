@@ -248,13 +248,11 @@ inline void migrateToSavedValues() {
     internal::runOneShotMigrations();
 }
 
-// Restore clean-install defaults.
 inline void forceResetSavedValuesToDefaults() {
     auto* mod = geode::Mod::get();
 
     internal::applyDefaults(true);
 
-// Also reset the legacy server URL key and one-shot migration flags.
     mod->setSavedValue<std::string>("paidraw_server_url", "https://paimbnailsbot.onrender.com");
     mod->setSavedValue<bool>("popup-blur-style-migrated-to-paimonblur", true);
     mod->setSavedValue<bool>("popup-blur-style-migrated-to-paiblur", true);

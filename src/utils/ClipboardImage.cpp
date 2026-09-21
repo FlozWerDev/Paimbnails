@@ -43,7 +43,6 @@ HGLOBAL allocAndFill(void const* data, size_t size) {
     return hMem;
 }
 
-// Build a CF_DIBV5 buffer with top-down BGRA and explicit alpha masks.
 std::vector<uint8_t> buildDIBV5(uint8_t const* rgba, int width, int height) {
     size_t const pixelBytes = static_cast<size_t>(width) * height * 4;
     std::vector<uint8_t> buf(sizeof(BITMAPV5HEADER) + pixelBytes);
@@ -63,7 +62,6 @@ std::vector<uint8_t> buildDIBV5(uint8_t const* rgba, int width, int height) {
     h->bV5CSType      = LCS_sRGB;
     h->bV5Intent      = LCS_GM_GRAPHICS;
 
-    // Convert RGBA to BGRA.
     uint8_t* dst = buf.data() + sizeof(BITMAPV5HEADER);
     for (int y = 0; y < height; ++y) {
         uint8_t const* srcRow = rgba + static_cast<size_t>(y) * width * 4;

@@ -98,9 +98,8 @@ enum class CollisionPeer {
 
 constexpr std::size_t kNativeAllObjects = std::numeric_limits<std::size_t>::max();
 
-// This is deliberately a small, serializable intermediate representation. It
-// contains only fields that are present in GD 2.2081's native save format; the
-// emitter never needs a PlayLayer hook or a custom runtime object.
+// Small, serializable IR: only fields present in GD 2.2081's native save format,
+// so the emitter needs no PlayLayer hook or custom runtime object.
 struct NativeNode {
     NativeNodeKind kind = NativeNodeKind::Spawn;
     Vec2 position;

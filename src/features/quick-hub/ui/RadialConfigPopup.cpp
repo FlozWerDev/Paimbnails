@@ -81,7 +81,6 @@ bool RadialConfigPopup::init() {
     subtitle->setPosition({size.width / 2.f, size.height - 38.f});
     m_mainLayer->addChild(subtitle, 2);
 
-    // --- Columna izquierda: vista previa de la rueda ------------------------
     if (auto* panel = paimon::SpriteHelper::createDarkPanel(
             kPreviewSize + 8.f, kPreviewSize + 8.f, 95, 8.f)) {
         panel->setPosition({kPreviewCx - kPreviewSize / 2.f - 4.f,
@@ -107,7 +106,6 @@ bool RadialConfigPopup::init() {
     holdRow->setPosition({kPreviewCx - (kPreviewSize + 8.f) / 2.f, 30.f});
     m_mainLayer->addChild(holdRow, 2);
 
-    // --- Columna derecha: pestanas + lista ---------------------------------
     auto* tabs = paimon::configkit::makeTabBar(kListW, {"Activos", "Anadir"}, m_tab,
         [this](int index) { this->setTab(index); });
     tabs->setPosition({kListX, kListY + kListH + 6.f});
@@ -122,7 +120,6 @@ bool RadialConfigPopup::init() {
     m_scrollLayer->setPosition({kListX, kListY});
     m_mainLayer->addChild(m_scrollLayer, 1);
 
-    // --- Acciones ----------------------------------------------------------
     auto* resetSpr = ButtonSprite::create("Reset", "goldFont.fnt", "GJ_button_06.png", .8f);
     resetSpr->setScale(0.6f);
     auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr, [this](CCMenuItemSpriteExtra*) {
@@ -148,10 +145,6 @@ void RadialConfigPopup::setTab(int tab) {
     m_tab = tab;
     rebuildList();
 }
-
-// -------------------------------------------------------------------------
-// Vista previa
-// -------------------------------------------------------------------------
 
 void RadialConfigPopup::rebuildPreview() {
     m_previewNode->removeAllChildren();
@@ -214,17 +207,12 @@ void RadialConfigPopup::rebuildPreview() {
     }
 }
 
-// -------------------------------------------------------------------------
-// Lista
-// -------------------------------------------------------------------------
-
 void RadialConfigPopup::rebuildList() {
     auto* content = m_scrollLayer->m_contentLayer;
     content->removeAllChildren();
 
     auto allOpts = QuickHubManager::get().getAllRadialOptions();
 
-    // Cada pestana muestra un conjunto: los activos en su orden, o el resto.
     std::vector<RadialOptionDef const*> rows;
     if (m_tab == 0) {
         for (auto const& id : m_activeIds) {
@@ -344,7 +332,6 @@ void RadialConfigPopup::rebuildList() {
             x -= 20.f;
             controlsW = 26.f;
 
-            // Los botones capturados se pueden reeditar y borrar del catalogo.
             if (opt->custom) {
                 if (auto* edit = makeIconButton("GJ_optionsBtn_001.png", 0.3f,
                                                 [this, id] { this->onEditCustom(id); })) {
@@ -369,10 +356,6 @@ void RadialConfigPopup::rebuildList() {
 
     m_scrollLayer->moveToTop();
 }
-
-// -------------------------------------------------------------------------
-// Acciones
-// -------------------------------------------------------------------------
 
 void RadialConfigPopup::onMoveUp(int idx) {
     if (idx <= 0 || idx >= static_cast<int>(m_activeIds.size())) return;

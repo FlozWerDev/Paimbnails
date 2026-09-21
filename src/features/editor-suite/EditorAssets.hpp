@@ -1,6 +1,5 @@
 #pragma once
 
-// Custom textures with GD fallbacks.
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
@@ -13,7 +12,6 @@ namespace files {
 inline constexpr char const* collab = "paim_collab.png";
 } // namespace files
 
-// True if the mod ships a usable custom PNG for this basename.
 bool hasCustom(char const* preferredPaim);
 
 CCMenuItemSpriteExtra* circleButton(

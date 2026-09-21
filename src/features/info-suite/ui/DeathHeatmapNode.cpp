@@ -9,7 +9,6 @@ namespace paimon::info {
 
 namespace {
 
-// Green → yellow → red, so a glance tells you where the level bites.
 ccColor3B heatColor(float t) {
     t = std::clamp(t, 0.f, 1.f);
     if (t < 0.5f) {

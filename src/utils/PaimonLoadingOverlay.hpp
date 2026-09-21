@@ -2,10 +2,8 @@
 
 #include <Geode/Geode.hpp>
 
-// Full-screen (or local) loading overlay: spinning GD loading circle with the
-// floating Paimon mascot inside, gold status text with animated dots and a
-// rotating fun-fact line. Falls back to geode::LoadingSpinner when the GD /
-// mod textures are missing (texture packs).
+// Full-screen (or local) loading overlay: GD loading circle with the Paimon mascot,
+// gold status text and rotating fun-facts. Falls back to LoadingSpinner on texture packs.
 class PaimonLoadingOverlay : public cocos2d::CCLayerColor {
 protected:
     cocos2d::CCNode* m_badge = nullptr;          // ring + mascot cluster

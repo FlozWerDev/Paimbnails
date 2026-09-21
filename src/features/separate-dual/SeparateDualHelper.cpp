@@ -317,7 +317,6 @@ void DualKitVault::releaseBurstArt(int id) {
 
 namespace {
 
-// Single frame update for whichever vehicle form the fighter has.
 void paintFormFrame(PlayerObject* player, IconSlot form, int iconId) {
     switch (form) {
         case IconSlot::Ship: player->updatePlayerShipFrame(iconId); break;
@@ -331,7 +330,6 @@ void paintFormFrame(PlayerObject* player, IconSlot form, int iconId) {
     }
 }
 
-// Which vehicle form the fighter is driving right now.
 IconSlot currentForm(PlayerObject* player) {
     if (player->m_isShip) return IconSlot::Ship;
     if (player->m_isBall) return IconSlot::Ball;

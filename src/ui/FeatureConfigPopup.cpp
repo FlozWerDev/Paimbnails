@@ -730,8 +730,6 @@ std::unordered_map<std::string, FeatureGroup> const& featureGroupRegistry() {
     return registry;
 }
 
-// Map a setting to a registry group or a dedicated popup action.
-
 struct GranularRoute {
     std::string groupKey;                    // Opens a FeatureConfigPopup.
     std::function<void()> dedicatedAction;   // Takes priority over groupKey.

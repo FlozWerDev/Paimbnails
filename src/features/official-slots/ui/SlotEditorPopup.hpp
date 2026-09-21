@@ -17,10 +17,8 @@ namespace paimon::officialslots::ui {
 
 class SlotEditorPopup : public geode::Popup {
 public:
-    // Edit the stored slot, or pass nullopt to create one. replacesOfficialId
-    // turns the form into "replace official N" mode (0 appends after the
-    // vanilla pages). onSaved runs after a successful save or hide so the
-    // caller (manager, hooks) can redraw its own list.
+    // replacesOfficialId turns the form into "replace official N" mode (0 appends).
+    // onSaved runs after save/hide so the caller can redraw its own list.
     static SlotEditorPopup* create(
         std::optional<std::string> slotId,
         int replacesOfficialId,
@@ -35,8 +33,8 @@ protected:
     );
     void onExit() override;
 
-    // Form builders. Each builds once; selections restyle in place so typing
-    // in a TextInput never loses focus to a rebuild.
+    // Builders run once; selections restyle in place so typing in a
+    // TextInput never loses focus to a rebuild.
     void buildSourceRow();
     void buildDataRows();
     void buildDifficultyRow();
@@ -45,7 +43,6 @@ protected:
     void buildPreviewCard();
     void buildFooter();
 
-    // Restyle helpers for the single-select face rows.
     void restyleSourceChips();
     void restyleDifficultyRow();
     void restyleTierRow();
@@ -65,9 +62,8 @@ protected:
     void onSave(cocos2d::CCObject*);
     void onHideOfficial(cocos2d::CCObject*);
 
-    // Fill the draft from a downloaded level (import by id).
     void prefillFromLevel(GJGameLevel* level);
-    // Fill the draft from a picked .gmd file (also arms the pending import).
+    // Also arms the pending import.
     void prefillFromGmd(std::filesystem::path const& path);
 
     // Persist the draft. Returns the stored slot id, empty on failure (toast

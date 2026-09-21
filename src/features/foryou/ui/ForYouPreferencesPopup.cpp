@@ -118,7 +118,6 @@ bool ForYouPreferencesPopup::init(std::function<void()> onConfirm) {
 
     this->setTitle(Localization::get().getString("foryou.prefs_title").c_str());
 
-    // Recessed panels separate the control groups.
     auto addPanel = [&](float top, float height) {
         float const width = POPUP_W - 26.f;
         if (auto* panel = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
@@ -396,7 +395,6 @@ void ForYouPreferencesPopup::onConfirm(CCObject*) {
     if (m_gameMode == 1) platformerRatio = 1.f;
     else if (m_gameMode == 2) platformerRatio = 0.5f;
 
-    // Higher rating tiers include the lower tiers.
     bool const starRated = m_ratingTier >= static_cast<int>(RatingTier::StarRated);
     bool const featured  = m_ratingTier >= static_cast<int>(RatingTier::Featured);
     bool const epic      = m_ratingTier >= static_cast<int>(RatingTier::Epic);

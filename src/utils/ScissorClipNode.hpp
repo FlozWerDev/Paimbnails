@@ -45,16 +45,14 @@ public:
             return;
         }
 
-        // These clippers' stencil is always the [0,0]-(w,h) rect in node space.
-        // If the world transform has no rotation/skew, an axis-aligned scissor
-        // matches it exactly.
+        // The stencil is always the [0,0]-(w,h) rect in node space; without
+        // rotation/skew an axis-aligned scissor matches it exactly.
         auto t = this->nodeToWorldTransform();
         if (std::fabs(t.b) > 1e-3f || std::fabs(t.c) > 1e-3f) {
             cocos2d::CCClippingNode::visit(); // rotated/skewed -> stencil
             return;
         }
 
-        // node rect corners in world space (cocos points)
         float x0 = t.tx;
         float y0 = t.ty;
         float x1 = t.a * size.width + t.tx;
@@ -82,7 +80,6 @@ public:
         // render children without stencil; the scissor does the clipping
         cocos2d::CCNode::visit();
 
-        // restore the previous scissor state
         if (prevEnabled) {
             view->setScissorInPoints(prev.origin.x, prev.origin.y, prev.size.width, prev.size.height);
         } else {

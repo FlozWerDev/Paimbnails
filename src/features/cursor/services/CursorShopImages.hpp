@@ -22,7 +22,6 @@ public:
     cocos2d::CCTexture2D* fetch(std::string const& url, Callback cb);
 
     void clear();
-    // Permite que las URLs fallidas se vuelvan a intentar.
     void forgetFailures();
 
 private:

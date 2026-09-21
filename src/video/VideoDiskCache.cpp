@@ -35,7 +35,6 @@ static int removeDirectoryFiles(std::filesystem::path const& dir) {
 }
 
 void VideoDiskCache::deleteCache(const std::string& videoPath) {
-    // Delegate to AudioExtractor which knows the exact hash-based WAV path.
     cleanupAudioCache(videoPath);
     geode::log::debug("[VideoDiskCache] Deleted audio cache for: {}", videoPath);
 }
@@ -44,7 +43,6 @@ int VideoDiskCache::deleteAllCaches() {
     int removed = 0;
     int failed = 0;
 
-    // Audio cache (extracted WAV files).
     {
         auto dir = audioCacheDir();
         std::error_code ec;
@@ -68,10 +66,8 @@ int VideoDiskCache::deleteAllCaches() {
         }
     }
 
-    // Video temp/cache MP4 + first-frame previews in the mod runtime dir.
     removed += removeDirectoryFiles(geode::dirs::getModRuntimeDir() / "video_cache");
 
-    // Canonical normalized cache in the mod save dir.
     removed += removeDirectoryFiles(geode::Mod::get()->getSaveDir() / "video_cache");
 
     geode::log::info("[VideoDiskCache] deleteAllCaches: removed={} failed={}",

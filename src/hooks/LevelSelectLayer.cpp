@@ -194,11 +194,8 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         m_fields->m_soundtrackButton = soundtrackButton;
         m_fields->m_waitingForSoundtrack = this->isVisibleInTree(soundtrackButton);
         
-        // level background — keep GD's ORIGINAL background and ground visible
-        // for now. We only fade the vanilla background out once the level's
-        // thumbnail asset is fully loaded (see hideVanillaBackgroundWithFade,
-        // triggered from applyBackground), so the screen stays 100% original
-        // until there is a thumbnail ready to transition to.
+        // Keep GD's original background until the thumbnail is ready (see
+        // hideVanillaBackgroundWithFade from applyBackground).
         this->updateThumbnailBackground(levelID);
 
         if (m_scrollLayer) {

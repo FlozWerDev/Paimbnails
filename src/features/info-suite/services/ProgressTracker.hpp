@@ -1,14 +1,8 @@
 #pragma once
 
-// Per level progress the game throws away: where you die, how often, and how
-// normal runs compare to practice runs.
-//
-// Deaths are kept as one counter per percent (0..100) instead of a list of
-// events. That is all the heatmap needs, it cannot grow without bound, and it
-// survives thousands of attempts in a few hundred bytes per level.
-//
-// Lives in its own file (info_progress.json) because it is written far more
-// often than the rest of InfoStore.
+// Per level progress the game throws away: where you die and how normal runs
+// compare to practice runs. Deaths are one counter per percent (0..100);
+// lives in info_progress.json because it is written far more often.
 
 #include <array>
 #include <cstdint>
@@ -28,7 +22,6 @@ struct RunRecord {
     bool practice = false;
 };
 
-// Percent that killed you the most, and how many times it did.
 struct DeathPeak {
     int percent = -1;   // -1 while the level has no deaths recorded
     uint32_t count = 0;
@@ -49,8 +42,7 @@ struct LevelProgress {
     std::vector<RunRecord> runs;  // oldest first, capped at kMaxRuns
 
     int totalDeaths(bool practice) const;
-    // Worst percent together with its death count: the count is what tells a
-    // real wall apart from a percent that happens to lead a tie of ones.
+    // The count tells a real wall apart from a percent leading a tie of ones.
     DeathPeak worstDeath(bool practice) const;
     int jumps(bool practice) const { return practice ? jumpsPractice : jumpsNormal; }
     // Recent attempts of one mode, oldest first.

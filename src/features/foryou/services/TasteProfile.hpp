@@ -1,7 +1,5 @@
 #pragma once
 
-// Signed interactions feed For You's level, tag, creator, and song affinities.
-
 #include <Geode/Geode.hpp>
 #include <matjson.hpp>
 
@@ -49,7 +47,6 @@ struct LevelInteraction {
     std::vector<std::string> tags;
 };
 
-// Derived from interactions; explicit choices are persisted separately.
 struct TasteSnapshot {
     // Signed affinity, roughly [-1, 1].
     std::unordered_map<std::string, float> tagAffinity;

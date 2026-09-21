@@ -60,7 +60,6 @@ public:
 
         auto* prog = getShaderProgram();
 
-        // Refresh uniform locations when the program changes.
         if (prog != m_cachedProgram) {
             m_cachedProgram = prog;
             m_locIntensity  = prog ? prog->getUniformLocationForName("u_intensity")  : -1;

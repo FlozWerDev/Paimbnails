@@ -53,20 +53,17 @@ class $modify(PaimonMapPackCell, MapPackCell) {
         
         if (pack->m_levels && pack->m_levels->count() > 0) {
             for (auto obj : CCArrayExt<CCObject*>(pack->m_levels)) {
-                // Try as CCString
                 if (auto str = typeinfo_cast<CCString*>(obj)) {
                     if (auto res = geode::utils::numFromString<int>(str->getCString())) {
                         levelIDs.push_back(res.unwrap());
                     }
                 } 
-                // Or as GJGameLevel
                 else if (auto level = typeinfo_cast<GJGameLevel*>(obj)) {
                     levelIDs.push_back(level->m_levelID);
                 }
             }
         }
 
-        // Parse the level string if m_levels is empty
         if (levelIDs.empty() && !pack->m_levelStrings.empty()) {
             std::string levelsStr(pack->m_levelStrings.c_str());
             std::stringstream ss(levelsStr);
@@ -83,7 +80,6 @@ class $modify(PaimonMapPackCell, MapPackCell) {
 
         auto size = this->getContentSize();
         
-        // Force minimum height
         CCSize carouselSize = size;
         if (carouselSize.height < 90.0f) {
             carouselSize.height = 90.0f;
@@ -93,12 +89,10 @@ class $modify(PaimonMapPackCell, MapPackCell) {
         if (carousel) {
             carousel->setID("paimon-mappack-carousel"_spr);
 
-            // Center it behind the text
             carousel->setPosition({size.width / 2, size.height / 2});
             
             carousel->setZOrder(-1); 
             
-            // Original background goes further back
             if (auto bg = this->getChildByType<CCLayerColor>(0)) {
                 bg->setZOrder(-2);
             } else if (auto firstChild = this->getChildByType<CCNode>(0)) {

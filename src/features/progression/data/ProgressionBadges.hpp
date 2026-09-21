@@ -86,7 +86,6 @@ cocos2d::ccColor3B rarityColor(BadgeRarity rarity);
 cocos2d::ccColor3B categoryColor(std::string_view categoryId);
 char const* rarityId(BadgeRarity rarity);
 
-// Localized display strings.
 std::string metricLabel(BadgeMetric metric);
 std::string rarityLabel(BadgeRarity rarity);
 std::string categoryLabel(std::string_view categoryId);

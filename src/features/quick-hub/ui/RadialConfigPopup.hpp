@@ -5,8 +5,6 @@
 
 namespace paimon::quickhub {
 
-// Popup para configurar que opciones aparecen en el radial y en que orden.
-
 class RadialConfigPopup : public geode::Popup {
 public:
     static RadialConfigPopup* create();
@@ -22,10 +20,8 @@ protected:
     geode::ScrollLayer* m_scrollLayer = nullptr;
     cocos2d::CCLabelBMFont* m_countLabel = nullptr;
 
-    // Reconstruye la lista segun la pestana activa
     void rebuildList();
 
-    // Reconstruye el preview circular
     void rebuildPreview();
 
     void setTab(int tab);

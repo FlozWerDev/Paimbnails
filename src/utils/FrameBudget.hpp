@@ -56,7 +56,6 @@ inline int64_t remainingUs() {
     return std::max<int64_t>(0, kFrameBudgetUs - usedUsRef());
 }
 
-// Capacity available to this stage: its reservation plus genuinely free budget.
 inline int64_t remainingUs(Stage stage) {
     refresh();
     auto const* staged = stageUsedUs();

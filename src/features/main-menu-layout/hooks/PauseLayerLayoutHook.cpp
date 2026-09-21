@@ -21,7 +21,6 @@ class $modify(PaimonPauseLayerLayoutHook, PauseLayer) {
 
         paimon::menu_layout::MainMenuLayoutManager::get().load();
 
-        // Register the layout editor keybind for the pause menu only.
         paimon::menu_layout::registerLayoutEditorKeybind(this);
 
         // Re-apply after setup to catch buttons added by other hooks (capture, screenshot, etc.).

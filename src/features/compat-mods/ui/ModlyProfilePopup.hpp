@@ -6,8 +6,6 @@
 
 namespace paimon::compat_mods {
 
-// Developer profile as the site shows it: banner, avatar, verified seal,
-// description, tags and the projects the user published.
 class ModlyProfilePopup : public geode::Popup {
 public:
     static ModlyProfilePopup* create(ModlyUser const& user);

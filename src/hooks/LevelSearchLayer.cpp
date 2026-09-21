@@ -141,7 +141,6 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
         // Recreate realtime preview if it was destroyed during transition
         // and we're in the normal search tab (searchType == 0)
         if (kEnableRealtimeSearchPreview() && !hasRealtimePreview() && supportsRealtimePreviewUI()) {
-            // Check if we're in the normal search tab by looking for the search input
             if (auto searchInput = typeinfo_cast<CCTextInputNode*>(this->getChildByID("search-input"))) {
                 // Get search type from the tab buttons - 0 = normal search, 1 = list search
                 int searchType = 0;
@@ -183,10 +182,8 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     }
 
     void destroyRealtimePreviewNow() {
-        // Grab the node before suspending callbacks: getRealtimePreviewNodeSafe()
-        // returns null once m_previewCallbacksSuspended is set, which would turn
-        // this teardown into a no-op and leave the preview's debounced search
-        // alive.
+        // Grab the node before suspending callbacks: getRealtimePreviewNodeSafe() returns
+        // null once suspended, which would no-op this teardown and leak the debounced search.
         auto* node = this->getChildByID("paimon-realtime-search-preview"_spr);
 
         m_fields->m_previewCallbacksSuspended = true;

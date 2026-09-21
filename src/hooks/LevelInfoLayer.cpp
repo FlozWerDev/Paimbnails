@@ -1488,9 +1488,8 @@ int m_fallbackOrigin = -1;
     }
 
     void updateCursorFromMouse(float dt) {
-        // Touch callbacks (ccTouchBegan/Moved/Ended above) already drive the
-        // cursor on mobile; polling the mouse here would clobber it with a
-        // stale position, so never fight an active touch.
+        // Touch callbacks already drive the cursor on mobile; polling the mouse here
+        // would clobber it with a stale position, so never fight an active touch.
         if (m_fields->m_touchActive) return;
 #if defined(GEODE_IS_MOBILE)
         return;

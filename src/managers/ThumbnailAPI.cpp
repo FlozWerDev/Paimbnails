@@ -5,8 +5,6 @@
 
 using namespace geode::prelude;
 
-// Compatibility facade; each method delegates to its per-domain service.
-
 namespace {
 
 // The upload reply is the one moment this client knows about a thumbnail

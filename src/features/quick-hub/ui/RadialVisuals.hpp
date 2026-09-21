@@ -14,7 +14,6 @@
 
 namespace paimon::quickhub {
 
-// Paleta de la rueda.
 constexpr cocos2d::ccColor4F kRadialCardFill  = {0.05f, 0.06f, 0.10f, 0.94f};
 constexpr cocos2d::ccColor4F kRadialHubFill   = {0.04f, 0.05f, 0.09f, 0.55f};
 constexpr cocos2d::ccColor3B kRadialHintColor = {150, 160, 185};
@@ -37,7 +36,6 @@ inline cocos2d::CCSprite* makeFittedIcon(std::string const& frame, float box) {
     return icon;
 }
 
-// Icono del badge: archivo custom si existe, si no frame del juego.
 // Carga via TextureCache (cachea solo) sin registrar frames nuevos.
 inline cocos2d::CCSprite* makeBadgeIcon(RadialOptionDef const& def, float box) {
     if (!def.imagePath.empty()) {

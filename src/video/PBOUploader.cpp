@@ -548,14 +548,12 @@ bool PBOUploader::uploadRGBA(GLuint texId, const uint8_t* rgbaData, int width, i
 }
 
 PBOUploader::~PBOUploader() {
-// Call shutdown() before context teardown.
     shutdown();
 }
 
 uint8_t* PBOUploader::tryBeginRGBAUpload(int width, int height) {
     if (!m_initialized || !m_rgbaMode) return nullptr;
     if (m_mappedSlotIdx >= 0) {
-// Refuse nested zero-copy uploads.
         geode::log::warn("PBOUploader: tryBeginRGBAUpload called while another upload in progress");
         return nullptr;
     }

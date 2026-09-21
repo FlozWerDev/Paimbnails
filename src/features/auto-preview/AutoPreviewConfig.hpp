@@ -8,7 +8,6 @@
 
 namespace paimon::autopreview::config {
 
-// Master switch. When off, nothing in the feature runs.
 inline bool enabled() {
     return paimon::modules::isEnabled("paimbnails.autopreview.browser");
 }

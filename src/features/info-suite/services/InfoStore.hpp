@@ -1,10 +1,7 @@
 #pragma once
 
-// Everything the Info Suite remembers between sessions, in one JSON file next
-// to the mod's other save data (info_suite.json).
-//
-// Deliberately excluded: per-level progress, which lives in ProgressTracker
-// because it is written far more often and would make this file churn.
+// Everything the Info Suite remembers between sessions (info_suite.json).
+// Per-level progress lives in ProgressTracker: written far more often.
 
 #include <cstdint>
 #include <optional>

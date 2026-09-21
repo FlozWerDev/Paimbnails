@@ -17,7 +17,6 @@ struct OffscreenRenderResult {
 
 class OffscreenLevelRenderer {
 public:
-    // success=false if the level can't be rendered safely.
     static OffscreenRenderResult render(GJGameLevel* level, int width, int height);
 };
 

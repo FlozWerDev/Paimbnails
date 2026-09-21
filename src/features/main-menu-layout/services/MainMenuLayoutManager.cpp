@@ -291,7 +291,7 @@ namespace {
         }
     }
 
-/// Group adjacent BMFont labels sharing a parent and line.
+    // Adjacent BMFont labels sharing parent and line go in one entry.
     void emitGroupedDecorLabels(CCNode* root, std::vector<EditableMenuButton>& out, int& decorCount,
                                 std::unordered_set<CCNode*> const& claimed) {
         if (!root) return;

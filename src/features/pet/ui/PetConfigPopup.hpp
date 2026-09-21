@@ -14,11 +14,9 @@ protected:
     cocos2d::CCSprite* m_previewSprite = nullptr;
     cocos2d::CCLabelBMFont* m_selectedLabel = nullptr;
 
-    // scrolls construidos con PaiConfigKit
     geode::ScrollLayer* m_scrollLayer = nullptr;
     geode::ScrollLayer* m_advancedScroll = nullptr;
 
-    // destino de scroll suave (rueda del raton) por area
     float m_settingsScrollTargetY = 0.f;
     bool  m_settingsScrollTargetSet = false;
     float m_advancedScrollTargetY = 0.f;

@@ -12,9 +12,8 @@ namespace paimon::officialslots {
 
 constexpr char const* kModuleId = "paimbnails.officialslots.level";
 
-// Slot difficulty. The values match what GJDifficultySprite::create expects, so
-// the faces are the game's own and identical to the ones the request list draws
-// (see features/thumb-requests). Auto is -1 there, hence the explicit values.
+// Values match GJDifficultySprite::create so the faces are the game's own;
+// Auto is -1 there, hence the explicit values.
 enum class Difficulty : int {
     Auto = -1,
     Unrated = 0,
@@ -40,7 +39,6 @@ enum class Tier : int {
     Mythic = 4,
 };
 
-// Where the level data comes from.
 enum class Source : int {
     LevelId = 0,  // downloaded from the servers on demand
     Gmd = 1,      // imported from a .gmd file kept in our save dir
@@ -78,9 +76,8 @@ int difficultyFace(Difficulty difficulty);
 std::vector<Difficulty> const& allDifficulties();
 std::vector<Tier> const& allTiers();
 
-// True when the id is one of RobTop's official levels (1..22). Mirrors
-// paimon::isMainLevelID; kept separate so this header does not drag in the
-// thumbnail cache helpers.
+// True for RobTop's official levels (1..22). Mirrors paimon::isMainLevelID
+// without dragging in the thumbnail cache helpers.
 bool isOfficialId(int levelId);
 
 } // namespace paimon::officialslots

@@ -1,9 +1,6 @@
 ﻿#pragma once
 #include <Geode/Geode.hpp>
 
-// Info button that opens an alert with description.
-
-// Receives the button click.
 class PaimonInfoTarget : public cocos2d::CCNode {
 public:
     void onInfo(cocos2d::CCObject* sender);
@@ -34,7 +31,6 @@ namespace PaimonInfo {
         );
         if (!btn) return nullptr;
 
-        // encode title + desc into user object
         auto data = CCString::createWithFormat("%s\n---\n%s", title.c_str(), desc.c_str());
         btn->setUserObject(data);
 

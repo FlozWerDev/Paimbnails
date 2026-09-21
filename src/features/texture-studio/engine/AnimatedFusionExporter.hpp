@@ -24,10 +24,8 @@ struct AnimatedFusionExport {
 
 class AnimatedFusionExporter final {
 public:
-    // Build one animated GIF per spriteFusion whose texture is multi-frame.
-    // Static (single-frame) fusions are skipped — they already live in the sheet.
-    // Failures for individual sprites are logged and skipped so the pack
-    // still exports; returns Ok with a (possibly empty) list.
+    // Static fusions already live in the sheet. Per-sprite failures log and skip
+    // so the pack still exports.
     static geode::Result<std::vector<AnimatedFusionExport>> exportAll(
         PackExportConfig const& cfg);
 

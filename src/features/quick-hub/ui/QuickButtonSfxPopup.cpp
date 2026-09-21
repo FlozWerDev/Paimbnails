@@ -122,7 +122,6 @@ bool QuickButtonSfxPopup::init() {
         changed();
     });
 
-    // Presets rapidos de ajuste.
     auto addPreset = [&](char const* label, float x, float vol, float speed, int fi, int fo) {
         auto* item = makeMiniButton(label, false, [this, vol, speed, fi, fo] {
             m_target->sfxVolume = vol;

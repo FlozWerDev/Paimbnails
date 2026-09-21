@@ -267,7 +267,6 @@ CCNode* ProgressionPopup::buildOverview() {
     auto* page = CCNode::create();
     page->setContentSize({kPageW, kPageH});
 
-    // Top band: tier medal on the left, everything else stacked to its right.
     // Keep it above y=110 so the two cards underneath stay clear.
     constexpr float kColX = 108.f;
     constexpr float kColRight = kPageW - 8.f;
@@ -342,7 +341,6 @@ CCNode* ProgressionPopup::buildOverview() {
         page->addChild(hint);
     }
 
-    // Bottom band: next tier on the left, badge collection on the right.
     constexpr float cardW = 196.f;
     constexpr float cardH = 100.f;
 

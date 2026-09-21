@@ -91,7 +91,6 @@ bool CaptureMenuPopup::initContents() {
 
     this->setTitle("Captura de Pantalla");
 
-    // Compact two-column layout: actions left, quick toggles right.
     auto* menu = CCMenu::create();
     menu->setPosition({kCenterX, kCenterY});
     m_mainLayer->addChild(menu);
@@ -118,7 +117,6 @@ bool CaptureMenuPopup::initContents() {
     holdCtrlBtn->setPosition({-74.f, kHoldCtrlY});
     menu->addChild(holdCtrlBtn);
 
-    // Invert Inputs toggle (right-click = jump)
     bool const invertOn = Mod::get()->getSavedValue<bool>("invert-mouse-inputs", false);
     auto* invOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
     auto* invOn  = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
@@ -155,7 +153,6 @@ bool CaptureMenuPopup::initContents() {
     phyLabel->limitLabelWidth(104.f, .28f, .1f);
     m_mainLayer->addChild(phyLabel);
 
-    // Smooth Scroll toggle + config
     bool const smoothOn = Mod::get()->getSettingValue<bool>("smooth-scroll");
     auto* smoothOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
     auto* smoothOnSpr = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");

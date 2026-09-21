@@ -663,9 +663,8 @@ void PhysicsPopup::buildPreviewScenery(CCNode* clip, float width, float height) 
     clip->addChild(CCLayerColor::create({0, 0, 0, 45}, width, height), 2);
 }
 
-// The ground belongs at y = 0 in level coordinates, inside the world node, so it
-// scrolls with the camera. Glued to the bottom of the panel it only pretended to
-// be a floor that bodies then fell straight through.
+// The ground sits at y = 0 in level coordinates so it scrolls with the camera;
+// glued to the panel bottom, bodies fell straight through it.
 void PhysicsPopup::addWorldGround() {
     auto* fill = CCLayerColor::create(
         {m_groundColor.r, m_groundColor.g, m_groundColor.b, 235},

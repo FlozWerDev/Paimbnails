@@ -231,7 +231,6 @@ void execute() {
 
     refreshMenuIfVisible();
 
-    // Refresh presence to reflect restored defaults.
     paimon::discord::DiscordPresenceManager::get().refreshSoon();
 
     log::info("[FactoryReset] Completed");

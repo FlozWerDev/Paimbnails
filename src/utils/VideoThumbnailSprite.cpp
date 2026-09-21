@@ -83,13 +83,10 @@ bool VideoThumbnailSprite::tryAcquireActiveSlot() {
 void VideoThumbnailSprite::releaseActiveSlot() {
     if (!m_holdsActiveSlot) return;
     m_holdsActiveSlot = false;
-    int newCount = 0;
     {
         std::lock_guard lock(s_activeSpritesMutex);
         s_activeSpriteCount = std::max(0, s_activeSpriteCount - 1);
-        newCount = s_activeSpriteCount;
     }
-    (void)newCount;
 }
 
 std::string VideoThumbnailSprite::getTempPath(std::string const& cacheKey) {

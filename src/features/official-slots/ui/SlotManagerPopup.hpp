@@ -1,14 +1,7 @@
 #pragma once
 
-// List panel for the cosmetic official slots.
-//
-// One row per stored slot (paint preview, name, source, small actions) plus a
-// section with the hidden officials and their restore buttons. Every mutation
-// (add, edit, delete, reorder, toggle, restore) rebuilds the list and calls
-// refreshOfficialList() so the LevelSelect pages repaint themselves.
-//
-// Slots are opened for play from here too: appended slots have no vanilla page,
-// so the manager is their only door into the game.
+// Mutations rebuild the list and repaint the LevelSelect pages; appended
+// slots open for play here, having no vanilla page.
 
 #include "../OfficialSlots.hpp"
 
@@ -30,7 +23,6 @@ protected:
 
     void buildHeader();
     void buildList();
-    // Drops every row and lays the list out again from the store.
     void rebuild();
 
     cocos2d::CCNode* buildSlotRow(Slot const& slot, float width);
@@ -45,7 +37,6 @@ protected:
     void onToggleSlot(std::string const& slotId);
     void onRestoreOfficial(int officialId);
 
-    // Persist a change, then refresh list + pages + opener.
     void mutated();
 
     std::function<void()> m_onChanged;

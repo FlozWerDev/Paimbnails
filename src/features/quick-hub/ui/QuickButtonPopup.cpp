@@ -166,9 +166,6 @@ protected:
     }
 };
 
-// Editor de imagen + transform del boton. Edita *m_target en vivo y avisa
-// con m_onChanged para que el padre refresque su preview.
-
 } // namespace
 
 QuickButtonPopup* QuickButtonPopup::s_instance = nullptr;
@@ -196,7 +193,6 @@ bool QuickButtonPopup::init() {
     m_editing = QuickHubManager::get().getCustomButton(m_candidate.id).has_value();
     this->setTitle(m_editing ? "Editar boton rapido" : "Anadir al Quick Hub");
 
-    // --- Columna izquierda: vista previa viva -------------------------------
     constexpr float kPreviewCx = 78.f;
     constexpr float kPreviewCy = 220.f;
 
@@ -217,7 +213,6 @@ bool QuickButtonPopup::init() {
     iconButton->setPosition({kPreviewCx, kPreviewCy - 68.f});
     m_buttonMenu->addChild(iconButton);
 
-    // --- Columna derecha: nombre, forma, color ------------------------------
     constexpr float kFieldX = 150.f;
     constexpr float kFieldW = 226.f;
 
@@ -255,7 +250,6 @@ bool QuickButtonPopup::init() {
     m_colorMenu->setContentSize({kFieldW, 22.f});
     m_mainLayer->addChild(m_colorMenu, 2);
 
-    // --- Fila Imagen / Sonido + estado --------------------------------------
     auto* metaMenu = CCMenu::create();
     metaMenu->setPosition({kFieldX, 118.f});
     metaMenu->setContentSize({kFieldW, 26.f});
@@ -490,7 +484,6 @@ void QuickButtonPopup::onSave(CCObject*) {
         return;
     }
 
-    // Sanea lo que llega de los sub-editores antes de persistir.
     m_candidate.imageScale = std::clamp(m_candidate.imageScale, 0.2f, 3.f);
     while (m_candidate.imageRotation > 180.f) m_candidate.imageRotation -= 360.f;
     while (m_candidate.imageRotation < -180.f) m_candidate.imageRotation += 360.f;

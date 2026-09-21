@@ -24,13 +24,11 @@ bool NowPlayingCard::init(const std::string& text) {
 
     auto screenSize = CCDirector::get()->getWinSize();
 
-    // Background card — prefer geode::NineSlice with fallbacks to CCScale9Sprite and CCLayerColor.
     cocos2d::CCNodeRGBA* bg = paimon::SpriteHelper::safeCreateNineSliceFromFile("GJ_square01.png");
     if (!bg) bg = paimon::SpriteHelper::safeCreateNineSliceFromFile("square02_001.png");
     if (!bg) bg = paimon::SpriteHelper::safeCreateScale9("GJ_square01.png");
     if (!bg) bg = paimon::SpriteHelper::safeCreateScale9("square02_001.png");
     if (!bg) {
-        // Final fallback: flat CCLayerColor.
         auto layer = CCLayerColor::create({20, 20, 35, 220});
         layer->setContentSize({340.f, 42.f});
         layer->ignoreAnchorPointForPosition(false);
@@ -90,7 +88,6 @@ static std::string buildDisplayName() {
     auto path = std::filesystem::path(current);
     auto stem = geode::utils::string::pathToString(path.stem());
 
-    // Try to parse as song ID for NG/ML songs
     auto numRes = geode::utils::numFromString<int>(stem);
     if (numRes.isOk()) {
         int songID = numRes.unwrap();

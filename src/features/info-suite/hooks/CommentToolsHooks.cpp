@@ -1,7 +1,4 @@
-// Comment Tools + Unregistered Profiles:
-//  - estimated real dates on comment cells
-//  - jump to any comment page instead of clicking the arrow N times
-//  - a usable screen for green, account-less players
+// Comment Tools: estimated dates on cells, jump-to-page, usable green profiles.
 
 #include "../InfoModule.hpp"
 #include "../services/CommentDates.hpp"

@@ -1022,7 +1022,6 @@ fields->m_gradientIsPSG = false;
                  return PaimonShaderSprite::createWithTexture(texRef.data());
              };
 
-// Dispatch blur asynchronously and reuse the RAM cache when possible.
              int captured_requestId = fields->m_requestId;
              int captured_blurToken = ++fields->m_bgBlurToken;
              WeakRef<PaimonLevelCell> blurSafeRef = this;
@@ -3587,7 +3586,6 @@ return;
         if (auto fields = m_fields.self()) {
             fields->m_isBeingDestroyed = false;
             fields->m_cachedCompactMode = m_compactView;
-            // Clear recycled-cell thumbnail state.
             fields->m_thumbnailRequested = false;
             fields->m_thumbnailApplied = false;
             fields->m_cellLevelID = 0;

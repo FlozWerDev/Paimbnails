@@ -1,4 +1,3 @@
-// Pure dynamic-volume config and curve/gain math.
 #pragma once
 
 #include <algorithm>
@@ -38,10 +37,8 @@ struct DynamicVolumeConfig {
     float maxCutDb   = 18.0f;     // 0 .. 30
     float maxBoostDb = 0.0f;      // 0 .. 12  (0 = never make quiet songs louder)
 
-// Ignore differences below this threshold.
     float thresholdDb = 2.0f;     // 0 .. 12
 
-// Fixed-mode LUFS target.
     float targetLufs = -14.0f;    // -30 .. -6
 
 // Measurement window before locking loudness.
@@ -53,7 +50,6 @@ struct DynamicVolumeConfig {
     bool inGameplay = true;
     bool inEditor   = false;
 
-// Re-apply attenuation when the same track restarts.
     bool reduckSameSong = false;
 };
 
@@ -64,7 +60,6 @@ inline bool isValidLufs(float lufs) {
     return std::isfinite(lufs) && lufs > kInvalidLufs;
 }
 
-// Restore fraction at normalized time t.
 inline float curveProgress(Curve curve, float t, float strength) {
     t = std::clamp(t, 0.0f, 1.0f);
     float const s = std::clamp(strength, 1.0f, 6.0f);
@@ -77,7 +72,6 @@ inline float curveProgress(Curve curve, float t, float strength) {
         case Curve::EaseOut:
             return 1.0f - std::pow(1.0f - t, s);
         case Curve::SmoothStep: {
-// Symmetric curve shaped by strength.
             if (t <= 0.0f) return 0.0f;
             if (t >= 1.0f) return 1.0f;
             float const a = std::pow(t, s);
@@ -99,7 +93,6 @@ inline float curveProgress(Curve curve, float t, float strength) {
     return t;
 }
 
-// Match songLufs to referenceLufs within the dead zone and clamps.
 inline float matchGainDb(DynamicVolumeConfig const& cfg, float songLufs, float referenceLufs) {
     if (!isValidLufs(songLufs) || !isValidLufs(referenceLufs)) return 0.0f;
 

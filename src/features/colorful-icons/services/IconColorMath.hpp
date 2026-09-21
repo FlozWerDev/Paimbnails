@@ -1,5 +1,4 @@
 #pragma once
-// C++23 std::clamp / std::lerp
 
 #include <Geode/cocos/include/ccTypes.h>
 
@@ -38,7 +37,6 @@ inline HSV toHSV(cocos2d::ccColor3B c) {
     HSV out{0.0f, 0.0f, maxC};
     if (maxC > 0.0f) out.s = delta / maxC;
     if (delta < 1e-6f) {
-        // Achromatic.
         out.h = 0.0f;
         return out;
     }
@@ -115,7 +113,6 @@ inline std::uint64_t splitMix64(std::uint64_t z) {
 }
 
 inline float hashToFloat01(std::uint64_t hash) {
-    // Top 24 bits as fraction.
     return static_cast<float>(hash >> 40) / 16777216.0f;
 }
 

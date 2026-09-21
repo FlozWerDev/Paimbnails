@@ -124,8 +124,6 @@ $on_mod(DataSaved) {
     paimon::searchhistory::save();
 }
 
-// matjson serialization
-
 using paimon::searchhistory::Entry;
 
 geode::Result<Entry> matjson::Serialize<Entry>::fromJson(const matjson::Value& v) {

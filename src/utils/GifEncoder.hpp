@@ -14,7 +14,7 @@ struct EncodeFrame {
     std::vector<uint8_t> rgba;   // width*height*4 RGBA8888 (top-down)
 };
 
-// Codifica los frames a GIF. Vacio si falla.
+// Vacio si falla.
 std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames,
                             uint8_t alphaThreshold = 128);
 

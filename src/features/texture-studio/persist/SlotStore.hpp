@@ -1,8 +1,6 @@
 #pragma once
 //
-// Threading: all SlotStore methods MUST be called from the main thread.
-// The exporter runs off-thread but sends back through `Loader::queueInMainThread`
-// before mutating slot state.
+// Main thread only; the exporter hops back via queueInMainThread before mutating slots.
 //
 
 #include "TextureProject.hpp"
@@ -40,7 +38,7 @@ public:
     std::string const& activeSlotId() const { return m_activeSlotId; }
     geode::Result<> setActiveSlot(std::string id);
 
-    // Returns the assigned id (derived from name, made unique on collision).
+    // makeUniqueId() suffixes on collision.
     geode::Result<std::string> createSlot(TextureProject seed);
 
     geode::Result<TextureProject> loadSlot(std::string_view id);

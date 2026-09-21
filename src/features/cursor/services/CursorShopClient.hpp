@@ -18,7 +18,6 @@ enum class Store {
 
 inline constexpr int kStoreCount = 2;
 
-// Seccion navegable dentro de una tienda.
 struct Category {
     std::string id;
     std::string name;
@@ -52,7 +51,6 @@ struct ListingPage {
     int pageCount = 1;
 };
 
-// Un cursor concreto dentro de una ficha.
 struct DetailCursor {
     std::string name;
     std::string previewUrl;
@@ -87,7 +85,6 @@ public:
     static char const* storeName(Store store);
     static char const* storeCredit(Store store);
 
-    // Secciones fijas de cada tienda.
     static std::vector<Category> builtinCategories(Store store);
 
     // rw-designer tiene buscador propio; el de custom-cursor esta bloqueado y
@@ -106,7 +103,6 @@ public:
     static void download(std::string const& url, BytesCallback cb);
     static void download(std::string const& url, std::string const& fallbackUrl, BytesCallback cb);
 
-    // Extension sugerida para el fichero temporal segun la URL.
     static std::string filenameFor(std::string const& url, std::string const& fallbackStem);
 
 private:

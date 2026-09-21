@@ -23,7 +23,6 @@ using cocos2d::CCImage;
 using cocos2d::ccTexParams;
 using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
 
-    // Decoded texture plus optional retained RGBA data.
     namespace ImageLoadHelper {
 
     struct LoadedImage {
@@ -85,7 +84,6 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
         return result;
     }
 
-    // Decode common and exotic image formats from memory via stb_image.
     inline LoadedImage loadWithSTBFromMemory(uint8_t const* fileData, size_t fileSize, bool copyBuffer = true) {
         LoadedImage result;
 
@@ -119,7 +117,6 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
         return result;
     }
 
-    // Decode a file via stb_image.
     inline LoadedImage loadWithSTB(std::filesystem::path const& path) {
         LoadedImage result;
 
@@ -202,7 +199,6 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
         return result;
     }
 
-    // Read a binary file, returning empty on failure or size overflow.
     inline std::vector<uint8_t> readBinaryFile(std::filesystem::path const& path, size_t maxSizeMB = 10) {
         if (maxSizeMB > 0) {
             std::error_code ec;
@@ -243,7 +239,6 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
         return isGIF(path);
     }
 
-    // Load animated images through the callback, falling back to static decode.
     inline cocos2d::CCSprite* loadAnimatedOrStatic(
         std::filesystem::path const& path,
         size_t maxSizeMB,

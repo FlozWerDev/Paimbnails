@@ -110,9 +110,8 @@ private:
             std::function<void()> job;
             {
                 std::unique_lock<std::mutex> lock(state->mutex);
-                // 200ms timeout to avoid busy-spinning when idle; threads still
-                // wake instantly via notify when real work arrives, so the
-                // timeout only affects idle periods.
+                // 200ms timeout to avoid busy-spinning when idle; threads still wake instantly
+                // via notify, so the timeout only affects idle periods.
                 state->cv.wait_for(lock, std::chrono::milliseconds(200), [state]() {
                     return state->stopped.load(std::memory_order_acquire) ||
                            !state->priorityJobs.empty() ||
@@ -120,7 +119,6 @@ private:
                 });
                 if (state->stopped.load(std::memory_order_acquire) &&
                     state->priorityJobs.empty() && state->jobs.empty()) return;
-                // drain priorityJobs first (visible cells)
                 if (!state->priorityJobs.empty()) {
                     job = std::move(state->priorityJobs.front());
                     state->priorityJobs.pop();

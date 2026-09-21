@@ -249,7 +249,7 @@ bool ProgressBarEditOverlay::ccTouchBegan(CCTouch* touch, CCEvent*) {
                 int tag = c->getTag();
                 switch (tag) {
                     case Tag_Delete:
-// Delete decoration; validateSelection() clears stale indices.
+// validateSelection() clears stale indices.
                         if (m_selectedTarget == Target::Decoration) {
                             ProgressBarManager::get().removeDecoration(m_selectedDecoIndex);
                             m_selectedTarget = Target::None;

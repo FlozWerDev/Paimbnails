@@ -1,4 +1,3 @@
-// Config popup for Dynamic Volume, built on PaiConfigKit.
 #pragma once
 
 #include <Geode/Geode.hpp>

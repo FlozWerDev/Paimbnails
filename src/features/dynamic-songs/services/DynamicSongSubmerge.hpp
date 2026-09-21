@@ -26,7 +26,6 @@ public:
     bool isRamping() const { return m_ramping; }
     bool isEngaged() const { return m_ramping || m_wet > 0.0001f; }
 
-    // Called by the internal ticker.
     void tick(float dt);
 
 private:

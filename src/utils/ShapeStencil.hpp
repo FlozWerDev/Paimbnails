@@ -2,10 +2,8 @@
 #include <Geode/Geode.hpp>
 #include <string>
 
-// Create a stencil node with the given shape. Supports geometric shapes
-// (circle, triangle, hexagon, diamond, star, heart, pentagon, octagon) and
-// Scale9 sprites (any name ending in .png). The result has the given
-// contentSize and is centered on its own center.
+// Create a stencil node with the given shape, centered with the given contentSize.
+// Geometric shapes or Scale9 sprites (any name ending in .png).
 cocos2d::CCNode* createShapeStencil(std::string const& shapeName, float size);
 
 // Create a node with the OUTLINE of the given shape (not filled).

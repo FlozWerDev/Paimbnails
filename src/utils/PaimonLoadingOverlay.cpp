@@ -59,7 +59,6 @@ bool PaimonLoadingOverlay::init(std::string const& statusText, float spinnerSize
     m_baseText = stripTrailingDots(statusText);
     m_spinnerSize = spinnerSize;
 
-    // Badge: spinning GD loading circle with Paimon floating inside.
     m_badge = CCNode::create();
     m_badge->setID("paimon-loading-badge"_spr);
     m_badge->setScale(0.f);
@@ -75,7 +74,6 @@ bool PaimonLoadingOverlay::init(std::string const& statusText, float spinnerSize
         m_badge->addChild(ring, 0);
     }
 
-    // Random mascot: static paim_Paimon.png or the sheetsplit GIF animation.
     bool hasMascot = false;
     static thread_local std::mt19937 mascotRng(std::random_device{}());
     bool preferSheet = std::uniform_int_distribution<int>(0, 1)(mascotRng) == 0;
@@ -158,7 +156,6 @@ void PaimonLoadingOverlay::showAt(CCNode* parent, CCPoint const& position, CCSiz
 
     parent->addChild(this, zOrder);
 
-    // block clicks on whatever is underneath while loading
     this->setTouchEnabled(true);
 
     this->runAction(CCFadeTo::create(0.25f, 140));
@@ -191,10 +188,8 @@ void PaimonLoadingOverlay::showAt(CCNode* parent, CCPoint const& position, CCSiz
 void PaimonLoadingOverlay::show(CCNode* parent, int zOrder) {
     if (!parent) return;
 
-    // Convert both screen corners into the parent's local space so the overlay
-    // covers the whole window even when the parent is scaled or offset (e.g.
-    // popup main layers mid-entrance-animation). Using only the origin + raw
-    // winSize left uncovered strips on scaled parents.
+    // Convert both corners to parent space so scaled/offset parents (e.g. popups
+    // mid-entrance-animation) leave no uncovered strips.
     auto winSize = CCDirector::get()->getWinSize();
     auto bl = parent->convertToNodeSpace({0.f, 0.f});
     auto tr = parent->convertToNodeSpace({winSize.width, winSize.height});
@@ -284,7 +279,6 @@ void PaimonLoadingOverlay::dismiss() {
         m_funFactLabel->runAction(CCFadeOut::create(0.1f));
     }
 
-    // removeFromParent after the animation finishes
     this->runAction(
         CCSequence::create(
             CCDelayTime::create(0.25f),

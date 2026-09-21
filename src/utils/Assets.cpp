@@ -40,7 +40,6 @@ CCSprite* loadButtonSprite(
     auto path = cfgPathFor(key);
     std::error_code ecAsset;
     if (!std::filesystem::exists(path, ecAsset)) {
-        // if missing, write a base txt explaining the format
         std::stringstream ss;
         ss << "# Button: " << key << "\n";
         ss << "# Supported formats (first non-empty line):\n";
@@ -64,7 +63,6 @@ CCSprite* loadButtonSprite(
         directive = t; break;
     }
 
-    // first check for an override in the .txt
     if (!directive.empty()) {
         // format: frame:Name
         constexpr std::string_view framePrefix = "frame:";
@@ -86,7 +84,6 @@ CCSprite* loadButtonSprite(
             }
 
             if (!pathStr.empty()) {
-                // if relative, resolve it from the config folder
                 std::filesystem::path p = pathStr;
                 if (!p.is_absolute()) p = cfgPathFor(key).parent_path() / p;
                 if (std::filesystem::exists(p, ecAsset)) {
@@ -115,7 +112,6 @@ CCSprite* loadButtonSprite(
         }
     }
 
-    // last resort: call the provided fallback
     return fallback();
 }
 

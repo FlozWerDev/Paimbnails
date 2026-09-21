@@ -180,8 +180,6 @@ void PaigoritV1::markCoveredTokens(
     }
 }
 
-// Matcher core.
-
 PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
                                 std::string const& normalizedQuery,
                                 std::vector<std::string> const& queryTokens,
@@ -199,7 +197,6 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
 
     int relevantCount = static_cast<int>(filteredTokens.size());
 
-        // Score each intent.
     std::vector<ScoredIntent> all;
     all.reserve(intents.size());
 

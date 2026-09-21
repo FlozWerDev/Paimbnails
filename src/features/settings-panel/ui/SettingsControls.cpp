@@ -28,7 +28,6 @@ static CCLabelBMFont* makeValueLabel(const char* text) {
     return label;
 }
 
-// Subtle rounded row background.
 static void addRowBackground(CCNode* row, float width, float height) {
     auto bg = paimon::SpriteHelper::createRoundedRect(
         width - 4.f, height - 3.f, 5.f, {0.f, 0.f, 0.f, 0.30f}
@@ -146,7 +145,6 @@ CCNode* createSliderRow(const char* label, float initialValue,
         slider->m_touchLogic->setTouchPriority(childTouchPrio());
     }
 
-// Wrap the slider for consistent positioning.
     float sliderW = slider->m_width * 0.55f;
     auto sliderWrapper = cocos2d::CCNode::create();
     sliderWrapper->setContentSize(CCSize{sliderW, slider->m_height * 0.55f});

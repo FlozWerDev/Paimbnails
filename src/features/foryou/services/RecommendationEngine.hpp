@@ -1,8 +1,5 @@
 #pragma once
 
-// Two UI-driven phases: build candidate queries, then score and diversify the
-// results. Tag affinity is the dominant signal.
-
 #include <Geode/Geode.hpp>
 
 #include <functional>
@@ -81,10 +78,8 @@ private:
 
     Scored scoreLevel(GJGameLevel* level, std::vector<std::string> tags,
                       TasteSnapshot const& taste) const;
-    // Greedy diversity selection penalizes similarity to existing picks.
     std::vector<Recommendation> diversify(std::vector<Scored>& scored, int limit) const;
 
-    // Rotate the first native strategy between refreshes.
     int m_strategyCursor = 0;
     std::string m_lastPlanSummary;
 };

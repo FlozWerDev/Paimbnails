@@ -404,7 +404,6 @@ void ProfilePicEditorPopup::onPhotoClear(CCObject*) {
 }
 
 void ProfilePicEditorPopup::onPickCustomPhoto(CCObject*) {
-    // if a custom image already exists but isn't active, just switch to it
     std::error_code ec;
     if (m_editConfig.photoSource != "custom" &&
         !m_editConfig.photoPath.empty() &&
@@ -1668,7 +1667,6 @@ void ProfilePicEditorPopup::rebuildPreview() {
 
     auto composed = paimon::profile_pic::composeProfilePicture(imageNode, targetSize, m_editConfig);
     if (composed) {
-        // shrink to fit the preview box when size/scale would overflow it
         float sizeMul = std::clamp(m_editConfig.size, 60.f, 200.f) / 120.f;
         float ext = targetSize * sizeMul * std::max(
             std::clamp(m_editConfig.scaleX, 0.2f, 3.f),

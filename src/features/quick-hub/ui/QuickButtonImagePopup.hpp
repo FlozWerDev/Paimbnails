@@ -8,9 +8,7 @@
 
 namespace paimon::quickhub {
 
-// Editor de imagen + transform del boton. Edita *target en vivo y avisa con
-// onChanged para que el padre refresque su preview. El padre conserva la
-// propiedad del CustomQuickButton: este popup solo lo muta.
+// Edita *target en vivo y avisa con onChanged; el padre conserva la propiedad.
 class QuickButtonImagePopup : public geode::Popup {
 public:
     static QuickButtonImagePopup* create(

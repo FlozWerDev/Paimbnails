@@ -113,7 +113,6 @@ bool TagPreferencesPopup::init() {
         m_mainLayer->addChild(scrollBg, -1);
     }
 
-    // The rounded comment borders GD frames all of its lists with.
     if (auto* borders = geode::ListBorders::create()) {
         borders->setContentSize({kScrollWidth, kScrollHeight});
         borders->setPosition({cx, 34.f + kScrollHeight / 2.f});

@@ -13,9 +13,8 @@ namespace {
         char const* reasonKey;
     };
 
-    // Vacia desde v1.1.2: Level Thumbnails era la unica entrada y ya convive con
-    // Paimbnails. std::array en vez de un array C porque este no puede ser de
-    // tamano cero; el mecanismo se queda montado para el siguiente que haga falta.
+    // Vacia desde v1.1.2 (Level Thumbnails ya convive). std::array porque un array C
+    // no puede ser de tamano cero; el mecanismo se queda montado para el siguiente.
     constexpr std::array<StartupIncompatibleMod, 0> kStartupIncompatibleMods{};
 
     bool s_startupIncompatibilityPopupShown = false;

@@ -74,7 +74,6 @@ private:
     bool checkAndClearFence(int idx);
     void deleteAllFences();
 
-    // Runtime slot count is capped by kPBOCount.
     static constexpr int kPBOCount = 6;
 
     PBOSlot m_slots[kPBOCount];

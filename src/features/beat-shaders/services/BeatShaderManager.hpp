@@ -1,4 +1,3 @@
-// Postprocess beat-shader config singleton.
 #pragma once
 
 #include <Geode/Geode.hpp>

@@ -1,18 +1,15 @@
 ﻿#pragma once
 #include <Geode/Geode.hpp>
 
-// Full-screen edit overlay with drag handles for progress bar, label, and decorations.
-
 class ProgressBarEditOverlay : public cocos2d::CCLayer {
 public:
     static ProgressBarEditOverlay* create();
 
     static void enterEditMode();
 
-    // Deactivates edit mode, restoring previously-detached nodes.
+    // Restores previously-detached nodes.
     static void exitEditMode();
 
-    // Which element the user is currently interacting with.
     enum class Target {
         None,
         Bar,
@@ -20,7 +17,6 @@ public:
         Decoration,   // uses m_selectedDecoIndex
     };
 
-    // What action is the current drag performing?
     enum class Action {
         None,
         Move,
@@ -55,21 +51,18 @@ protected:
 
     void validateSelection();
 
-    // Which element is currently selected (shows native GD buttons).
+    // Selection shows native GD buttons.
     Target m_selectedTarget = Target::None;
     int    m_selectedDecoIndex = -1;
 
-    // Container for selection outline + native GD button handles.
     cocos2d::CCNode* m_selContainer = nullptr;
 
-    // Active drag state (body or a handle was grabbed).
     Target m_dragTarget = Target::None;
     Action m_dragAction = Action::None;
     int    m_dragDecoIndex = -1;
     cocos2d::CCPoint m_touchStart{};
     cocos2d::CCPoint m_anchorWorld{};  // pivot / world pos at drag start
 
-    // snapshot of value being modified so drags are additive
     cocos2d::CCPoint m_origPos{};
     float m_origScaleLen   = 1.f;
     float m_origScaleThick = 1.f;

@@ -22,12 +22,10 @@ cocos2d::CCLabelBMFont* addText(cocos2d::CCNode* parent, char const* text, char 
 // between GD versions, so every icon lists its alternatives.
 cocos2d::CCSprite* firstFrame(std::vector<char const*> const& candidates);
 
-// Horizontal fill bar. `fill` is 0..1.
 void addBar(cocos2d::CCNode* parent, float x, float y, float width, float height,
             float fill, cocos2d::ccColor3B color);
 
-// Level thumbnail as a popup backdrop: already blurred by the caller, clipped to
-// the frame and dimmed so the panels on top keep their contrast. The caller
+// Blurred thumbnail as popup backdrop, dimmed for panel contrast. The caller
 // places it and picks the z.
 cocos2d::CCNode* makeBackdrop(cocos2d::CCSprite* blurred, cocos2d::CCSize const& area,
                               GLubyte darkness, bool fadeIn);

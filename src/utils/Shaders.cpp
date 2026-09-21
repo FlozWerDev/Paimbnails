@@ -19,8 +19,6 @@ using namespace cocos2d;
 
 namespace Shaders {
 
-// Shaders load from resources/shaders/; missing files fail fast.
-
 CCGLProgram* getOrCreateShader(char const* key, char const* vertexSrc, char const* fragmentSrc) {
     auto shaderCache = CCShaderCache::sharedShaderCache();
     if (auto program = shaderCache->programForKey(key)) {
@@ -1151,8 +1149,6 @@ void ProgressiveBlurJob::tickPaimonBlur() {
         }
     }
 }
-
-// Feed per-frame uniforms, including gated FFT values, to the active shader.
 
 namespace {
     // Update audio analysis once per frame across all sprites.

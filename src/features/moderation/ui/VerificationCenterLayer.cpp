@@ -871,8 +871,7 @@ std::string VerificationCenterLayer::selectedSuggestionFilename(int levelID) con
     return {};
 }
 
-// Accept one, accept the level's whole review gallery, or reject one — all
-// three do the same auth dance and the same reload, so they share a body.
+// Accept one / all / reject share the same auth and reload.
 void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool reject) {
     if (m_actionPending) return;
     if (!paimon::modauth::isVerified()) { paimon::modauth::showPanel(); return; }

@@ -41,7 +41,6 @@ public:
             s_cached = existing;
             return s_cached;
         }
-// Create a 1×1 RGBA8888 texture without image decoding.
         unsigned char pixel[4] = {255, 255, 255, 255};
         auto* image = new cocos2d::CCImage();
         bool ok = image->initWithImageData(
@@ -60,7 +59,6 @@ public:
         return s_cached;
     }
 
-    // Clear the white texture after GLContextReload.
     static void invalidateWhiteTextureCache() {
         if (auto* cache = CCTextureCache::sharedTextureCache()) {
             cache->removeTextureForKey("paimon-draw-node-white");
@@ -125,7 +123,6 @@ public:
         float nx = -uy;
         float ny = ux;
 
-// Build one closed capsule polygon around the stroke.
         std::vector<cocos2d::CCPoint> outline;
         outline.reserve(capSegs * 2 + 2);
 
@@ -152,7 +149,6 @@ const float baseAngleP1 = baseAngle + kPi;
     }
 
     void draw() override {
-// Validate the buffer before touching the VBO; invalid state is skipped.
         if (m_nBufferCount == 0 || !m_pBuffer) return;
 
         if (m_bDirty) {

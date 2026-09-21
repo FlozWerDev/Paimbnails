@@ -136,7 +136,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         }
     } 
 
-// Build the shared Paimon hub button.
     CCMenuItemSpriteExtra* createPaimonHubButton() {
         auto logoSpr = CCSprite::create("Logo.png"_spr);
         if (!logoSpr || logoSpr->isUsingFallback()) {
@@ -200,7 +199,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             this->scheduleOnce(schedule_selector(PaimonMenuLayer::openVerificationQueue), 0.6f);
         }
 
-// Add the hub button once.
         if (!this->getChildByID("paimon-hub-btn"_spr) && !this->getChildByID("paimon-fallback-bottom-menu"_spr)) {
             if (auto bottomMenu = this->getChildByID("bottom-menu")) {
                 if (auto btn = createPaimonHubButton()) {
@@ -556,7 +554,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 });
                 return;
             } else {
-// Decode static backgrounds off-thread.
                 CCTextureCache::sharedTextureCache()->removeTextureForKey(resolvedPath.c_str());
 
                 Ref<CCNode> safeContainer = container;
@@ -585,7 +582,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             return;
         } else if (resolvedType == "video" && !resolvedPath.empty()) {
             if (!paimon::assets::exists(resolvedPath)) {
-// Revert to the default when the video is missing.
                 log::warn("[MenuLayer] Video file not found: {} - showing default bg", resolvedPath);
                 LayerBackgroundManager::get().forceReleaseSharedVideoByPath(resolvedPath);
                 LayerBackgroundManager::get().forceEvictAllStaleVideos();
@@ -656,7 +652,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             });
     }
 
-// Finalize the background and start optional color extraction.
     void finalizeBackgroundWithTexture(
         CCNode* container, CCTexture2D* tex, LayerBgConfig const& cfg,
         std::string const& resolvedType, std::string const& resolvedPath
@@ -719,7 +714,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         m_fields->m_bgSprite = sprite;
         this->setVanillaBackgroundVisible(false);
 
-// Extract adaptive colors off-thread.
         bool adaptive = Mod::get()->getSavedValue<bool>("bg-adaptive-colors", false);
         m_fields->m_adaptiveColors = adaptive;
         if (adaptive && resolvedType == "custom" && !resolvedPath.empty()) {

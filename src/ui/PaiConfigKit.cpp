@@ -16,7 +16,6 @@ namespace paimon::configkit {
 
 namespace {
 
-// Touch priority for child controls.
 int childTouchPrio() {
     return CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2;
 }
@@ -29,7 +28,6 @@ CCLabelBMFont* makeTitleLabel(char const* text, float maxW, float scale = 0.40f)
     return l;
 }
 
-// Gray description with automatic wrapping.
 CCLabelBMFont* makeDescLabel(char const* text, float wrapW) {
     constexpr float kScale = 0.46f;
     auto* l = CCLabelBMFont::create(text, "chatFont.fnt", wrapW / kScale, kCCTextAlignmentLeft);
@@ -52,7 +50,6 @@ CCMenu* makeRowMenu(CCNode* row) {
     return menu;
 }
 
-// CCObject wrapper for toggle callbacks.
 class KitToggleCallback : public CCObject {
 public:
     std::function<void(bool)> m_callback;
@@ -71,7 +68,7 @@ public:
     }
 };
 
-// Slider callback wrapper; Slider::create requires a CCNode target.
+// Slider::create requires a CCNode target.
 class KitSliderCallback : public CCNode {
 public:
     std::function<void(double)> m_callback;
@@ -664,7 +661,6 @@ CCNode* makeTabBar(
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
         float x0 = static_cast<float>(i) * (tabW + kGap);
 
-// Tab visual: panel plus label.
         auto* holder = CCNode::create();
         holder->setAnchorPoint({0.5f, 0.5f});
         holder->setContentSize({tabW, barH - 4.f});

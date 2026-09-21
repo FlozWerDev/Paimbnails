@@ -12,7 +12,6 @@ struct AudioOwnerChangedEvent {
     int sessionToken = 0;
 };
 
-// Cambia el fondo y avisa a los suscritos.
 struct ThumbnailBackgroundChangedEvent {
     int levelID = 0;
     geode::Ref<cocos2d::CCTexture2D> texture = nullptr;

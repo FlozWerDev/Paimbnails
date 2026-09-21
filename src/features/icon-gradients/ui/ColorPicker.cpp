@@ -15,7 +15,6 @@ using namespace paimon::icon_gradients;
 
 namespace {
 
-// Hide the nth child of a given widget type, if it exists.
 template <typename Widget>
 void hidePickerWidget(CCControlColourPicker* picker, int index) {
     if (Widget* node = picker->getChildByType<Widget>(index))

@@ -20,9 +20,8 @@ namespace {
 
 constexpr float kDegreesToRadians = 0.01745329251994329577f;
 
-// Orbs, rings, pads and portals are all EffectGameObject subclasses, so filtering
-// by class used to throw out every one of them along with the triggers. GD marks
-// the actual triggers, and only those are excluded.
+// Orbs, rings, pads and portals are EffectGameObject subclasses too, so class
+// filtering threw them out with the triggers; only m_isTrigger is excluded.
 bool isPhysicalObject(GameObject* object) {
     return object && !object->m_isTrigger;
 }

@@ -315,7 +315,6 @@ namespace {
         void onScroll(float y, float x) {
             if (!m_isPaused) {
                 agentLog347("PlayLayer.cpp:onScroll", "blocked_not_paused", "E", "{}");
-    // This hot path is logged only when debug logging is enabled.
                 PaimonDebug::log("[PauseZoom] onScroll blocked: !m_isPaused");
                 return;
             }

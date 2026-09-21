@@ -255,12 +255,8 @@ void GradientAnimationManager::apply(CCGLProgram* program) const {
 
     program->use();
 
-    // Use raw GL uniform locations like GradientUtils::applyGradient does.
-    // getUniformLocationForName + setUniformLocationWith* is cocos2d's
-    // internal-index API: it only knows the builtin uniforms (CC_MVPMatrix,
-    // CC_Time, ...) and writes into the program's uniform array, so setting a
-    // custom uniform through it can clobber a different slot and render the
-    // gradient blank/white.
+    // Raw GL locations like applyGradient: the getUniformLocationForName API only
+    // knows the builtin uniforms, so a custom one through it can clobber another slot.
     auto programId = program->getProgram();
 
     auto typeLoc = glGetUniformLocation(programId, "u_animType");

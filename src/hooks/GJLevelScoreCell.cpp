@@ -320,7 +320,6 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
             this->addChild(gradient);
         }
 
-        // Create helper and fill hover data
         auto* helper = PaimonLevelScoreCellHelper::create(this);
         if (!helper) return;
         helper->setID("paimon-lls-helper"_spr);
@@ -337,7 +336,6 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
             d.cubeBaseScale = sp->getScale();
         }
 
-        // Collect movable children that aren't rank/background
         for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
             if (!child) continue;
             std::string_view id = child->getID();

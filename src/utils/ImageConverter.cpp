@@ -30,10 +30,8 @@ std::vector<uint8_t> ImageConverter::rgbToRgba(std::vector<uint8_t> const& rgbDa
 void ImageConverter::rgbToRgbaFast(uint8_t const* rgb, uint8_t* rgbaOut, size_t pixelCount) {
     if (pixelCount == 0) return;
 
-    // Single loop with a 32-bit store per pixel: avoids the old two-pass
-    // (alpha fill + interleave) that thrashed the cache on large images.
-    // clang auto-vectorizes this to SSE2 without explicit intrinsics, and the
-    // sequential 4-byte writes match CCTexture2D::initWithData's layout.
+    // Single loop with 32-bit stores (was two passes thrashing cache on large images);
+    // clang auto-vectorizes to SSE2 and the layout matches initWithData.
     for (size_t i = 0; i < pixelCount; ++i) {
         uint32_t pixel =
             static_cast<uint32_t>(rgb[i * 3 + 0]) |
@@ -154,9 +152,8 @@ bool ImageConverter::loadRgbFile(std::string const& rgbFilePath, std::vector<uin
         return false;
     }
     
-    // Validate the file actually contains the declared data before allocating: a
-    // corrupt header with huge dimensions (e.g. 65535x65535 → ~12GB) would make
-    // resize() OOM-kill the process.
+    // Validate declared dimensions before allocating: a corrupt huge header would
+    // OOM-kill the process in resize().
     size_t rgbSize = static_cast<size_t>(header.width) * header.height * 3;
     auto headerPos = in.tellg();
     in.seekg(0, std::ios::end);

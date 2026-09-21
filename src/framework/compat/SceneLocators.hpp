@@ -102,7 +102,6 @@ struct LevelSelectLocator {
 
         for (auto* node : CCArrayExt<cocos2d::CCNode*>(children)) {
             if (!node) continue;
-            // Do not touch other mods' nodes.
             if (isForeignModNode(node)) continue;
             if (node->getZOrder() < -1) {
                 node->setVisible(false);

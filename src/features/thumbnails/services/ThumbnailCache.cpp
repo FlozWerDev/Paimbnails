@@ -178,14 +178,14 @@ void ThumbnailCache::evictRamLocked() {
             : maxBytes / 2;
     }
 
-// LRU eviction partial-sorts the k oldest entries instead of scanning O(k·n).
+    // LRU eviction partial-sorts the k oldest entries instead of scanning O(k·n).
     if (m_ramCache.size() <= maxEntries && m_ramBytes <= effectiveMaxBytes) return;
 
     struct EvictCandidate { int key; int64_t accessUs; size_t bytes; };
     std::vector<EvictCandidate> candidates;
     candidates.reserve(m_ramCache.size());
     for (auto const& [k, e] : m_ramCache) {
-// Main levels 1-22 are pinned and preloaded for instant LevelSelect backgrounds.
+        // Main levels 1-22 are pinned and preloaded for instant LevelSelect backgrounds.
         int id = paimon::cache::levelIdFromRamKey(k);
         if (paimon::isMainLevelID(id)) continue;
         candidates.push_back({k, e.lastAccessUs.load(std::memory_order_relaxed), e.byteSize});
@@ -242,7 +242,7 @@ constexpr int64_t intervalUs = 2'000'000; // 2 s.
             toPurge.reserve(std::min(m_ramCache.size() / 4, kMaxPurgeCandidates));
             for (auto const& [key, entry] : m_ramCache) {
                 if (toPurge.size() >= kMaxPurgeCandidates) break;
-// Main levels 1-22 are never purged after preload.
+                // Main levels 1-22 are never purged after preload.
                 if (paimon::isMainLevelID(paimon::cache::levelIdFromRamKey(key))) continue;
                 if (now - entry.addedAt < PURGE_GRACE_PERIOD) continue;
                 if (entry.texture && entry.texture->retainCount() <= 1) {

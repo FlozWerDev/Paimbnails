@@ -16,7 +16,7 @@ $execute {
         +[](Keybind const&, bool down, bool repeat, double) {
             if (!down || repeat) return;
             if (!paimon::editor::featureEnabled("editor-color-picker-enable")) return;
-            if (!LevelEditorLayer::get()) return; // editor only
+            if (!LevelEditorLayer::get()) return;
             paimon::editorcp::ColorPickerOverlay::show();
         }
     ).leak();

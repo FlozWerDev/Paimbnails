@@ -29,8 +29,6 @@ bool VideoSettingsPopup::init() {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    // Restore saved enum indices.
-
     int currentFps = paimon::settings::video::fpsLimit();
     m_fpsIndex = 2;
     for (int i = 0; i < (int)FPS_OPTIONS.size(); i++) {

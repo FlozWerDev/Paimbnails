@@ -278,7 +278,6 @@ class $modify(PaimonGauntletLayer, GauntletLayer) {
             return true;
         }
 
-        // Hide default background
         if (auto* bg = this->m_backgroundSprite) {
             bg->setVisible(false);
         }

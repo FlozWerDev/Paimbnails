@@ -22,11 +22,8 @@ struct OverlayImages {
 
 class OverlayTinter final {
 public:
-    // Apply the PackGen overlay tint. Returns a fresh buffer; overlays whose
-    // size differs from the base paint their top-left overlap, mirroring
-    // PackGen's drawImage(img, 0, 0) compositing. Application order matches
-    // PackGen's generatePack(): overlay1 → overlay2 → gold → demon1 →
-    // demon2 → glow.
+    // Mirrors PackGen's drawImage(img, 0, 0): mismatched overlays paint their
+    // top-left overlap, in generatePack() order.
     static ImageBuffer apply(ImageBuffer const& base,
                              OverlayImages const& overlays,
                              TintColors const& colors,

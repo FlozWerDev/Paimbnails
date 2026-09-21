@@ -11,9 +11,8 @@ namespace paimon::officialslots {
 
 namespace {
 
-// Values in a .gmd sit right after their <k>key</k> as <s>text</s> or
-// <i>number</i>. Scanning for that pair is enough for the display fields and
-// avoids parsing the whole document, most of which is the level string.
+// Values sit right after their <k>key</k>; scanning for that pair avoids
+// parsing the whole document, most of which is the level string.
 std::optional<std::string> valueAfterKey(
     std::string const& xml, std::string_view key, std::string_view openTag,
     std::string_view closeTag
@@ -47,7 +46,6 @@ int intValue(std::string const& xml, std::string_view key) {
     return parsed ? parsed.unwrap() : 0;
 }
 
-// The few entities a level name can carry.
 std::string decodeEntities(std::string text) {
     static std::pair<std::string_view, std::string_view> const kEntities[] = {
         {"&lt;", "<"}, {"&gt;", ">"}, {"&quot;", "\""},

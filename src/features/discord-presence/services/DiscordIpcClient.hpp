@@ -34,7 +34,6 @@ public:
 
     void setClientID(std::string id) { m_clientID = std::move(id); }
 
-    // Connects if needed, then sends.
     void update(DiscordActivity const& activity);
     // Clears presence, keeps connection.
     void clear();

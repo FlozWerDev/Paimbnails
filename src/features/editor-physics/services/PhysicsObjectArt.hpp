@@ -4,9 +4,8 @@
 
 namespace paimon::editorphysics {
 
-// The stand-in for one captured object inside the preview: a real GameObject
-// when the game can build one, and a copy of the art it is drawing right now
-// when it cannot.
+// Stand-in for one captured object in the preview: a real GameObject when the
+// game can build one, else a copy of the art it is drawing right now.
 cocos2d::CCNode* buildObjectArt(BodyVisual const& visual);
 
 } // namespace paimon::editorphysics

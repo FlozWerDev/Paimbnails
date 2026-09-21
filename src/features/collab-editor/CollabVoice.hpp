@@ -32,10 +32,8 @@ public:
 
     static CollabVoice& get();
 
-    // Enabling starts FMOD recording.
     void setMicEnabled(bool enabled);
     bool micEnabled() const { return m_micEnabled; }
-    // True while the VAD gate is open.
     bool transmitting() const { return m_gateOpenTicks > 0; }
 
     void update(float dt);
@@ -47,7 +45,6 @@ public:
     std::vector<SpeakingInfo> speakingNow() const;
     float localLevel() const { return m_gateOpenTicks > 0 ? m_localLevel : 0.f; }
 
-    // Drop one peer or all streams.
     void dropPeer(int clientId);
     void stopAll();
 

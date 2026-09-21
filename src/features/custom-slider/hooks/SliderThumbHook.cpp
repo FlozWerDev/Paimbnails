@@ -45,7 +45,6 @@ public:
         auto& mgr = CustomSliderManager::get();
         if (!mgr.config().enabled) return true;
 
-
         // Schedule for next frame so the slider is fully parented
         this->scheduleOnce(
             schedule_selector(PaimonSlider::applyIconDeferred), 0.f);

@@ -16,7 +16,6 @@ inline void forEachInArray(matjson::Value const& value, F&& fn) {
     }
 }
 
-// Igual pero con el resultado ya en mano.
 template <typename F>
 inline void forEachInArrayResult(geode::Result<std::vector<matjson::Value>> const& res, F&& fn) {
     if (!res.isOk()) return;

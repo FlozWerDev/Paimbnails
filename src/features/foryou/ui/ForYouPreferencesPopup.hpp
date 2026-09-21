@@ -8,11 +8,11 @@ namespace paimon::foryou {
 // Quality tier used by the cycling rating button (bottom-left of the popup).
 // Each tier is a superset of the previous one when seeded into the tracker.
 enum class RatingTier : int {
-    StarRated = 0, // rated levels
-    Featured  = 1, // Featured + rated
-    Epic      = 2, // Epic badge
-    Legendary = 3, // Legendary badge
-    Mythic    = 4, // Mythic badge
+    StarRated = 0,
+    Featured  = 1,
+    Epic      = 2,
+    Legendary = 3,
+    Mythic    = 4,
     Count     = 5
 };
 

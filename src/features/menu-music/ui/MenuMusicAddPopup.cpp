@@ -271,7 +271,6 @@ void MenuMusicAddPopup::setProgressBarVisible(bool visible) {
     if (m_progressBarBg) m_progressBarBg->setVisible(visible);
     if (m_progressPercentLabel) m_progressPercentLabel->setVisible(visible);
     if (visible) {
-// Reset progress for each download.
         updateProgressBar(0.f);
     }
 }
@@ -593,7 +592,6 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
         m_statusLabel->setString("Starting download...");
         m_statusLabel->setColor({255, 220, 120});
     }
-// Show progress once work starts.
     setProgressBarVisible(true);
 
     auto id = MenuMusicLibrary::get().generateId("dl");
@@ -620,7 +618,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
             auto ref = weakThis.lock();
             auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
             if (!self || !self->m_alive.load()) {
-// Register the track even if the popup closed.
+                // The track still counts even if the popup closed first.
                 if (result.success) {
                     MusicTrack t;
                     t.id = result.trackId;
@@ -676,7 +674,6 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                 std::chrono::system_clock::now().time_since_epoch()).count();
             MenuMusicLibrary::get().addTrack(t);
 
-// Show 100% briefly before hiding the bar.
             self->updateProgressBar(1.f);
             self->setProgressBarVisible(false);
 
@@ -692,7 +689,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
 
 void MenuMusicAddPopup::onPasteUrl(CCObject*) {
     if (!m_urlInput) return;
-// Read the clipboard directly to bypass the input filter.
+    // Bypasses the input filter.
     auto clip = geode::utils::clipboard::read();
     auto isSpace = [](unsigned char c) {
         return c == ' ' || c == '\t' || c == '\r' || c == '\n';

@@ -120,9 +120,7 @@ class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
     $override
     void activate() {
         if (PaimonButtonHighlighter::isRegisteredButton(this)) {
-            // Safety guard for Paimbnails-owned buttons that may lack a target/selector
-            // (recycled or created programmatically). Still call the original so we don't
-            // cut other mods' hook chain; vanilla activate() tolerates null selectors.
+            // Still call the original so we don't cut other mods' hook chain.
             if ((!this->m_pListener || !this->m_pfnSelector) && this->m_nScriptTapHandler == 0) {
                 log::warn("[MenuItemScaleFix] Paimbnails button without target/selector - passing through to original");
                 CCMenuItemSpriteExtra::activate();
@@ -144,7 +142,6 @@ class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
             }
             this->release();
         } else {
-            // Non-Paimbnails button: no modification, just call the original.
             CCMenuItemSpriteExtra::activate();
         }
     }

@@ -68,7 +68,6 @@ struct MaskBuilderOptions {
 
 class MaskBuilder final {
 public:
-// Build same-size masks from cluster assignments and the source sprite.
     static MaskSet build(ImageBuffer const& sprite,
                          ClassifiedSet const& classified,
                          MaskBuilderOptions options = {});

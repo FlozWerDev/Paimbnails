@@ -24,7 +24,6 @@ inline int32_t rd32s(uint8_t const* p) {
 
 constexpr int kMaxDim = 1024; // cursors should stay small
 
-// Decode a BMP/DIB or PNG icon payload.
 bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     if (imgSize < 8) return false;
 
@@ -164,7 +163,6 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     return false;
 }
 
-// Decode the highest-resolution frame from a .ico/.cur.
 bool decodeIcoInternal(uint8_t const* data, size_t size, DecodedFrame& out) {
     if (size < 6) return false;
     uint16_t reserved = rd16(data + 0);
@@ -227,7 +225,6 @@ DecodeResult decodeAni(uint8_t const* data, size_t size) {
     DecodeResult res;
     if (!isAni(data, size)) { res.error = "not_ani"; return res; }
 
-// Parse RIFF/ACON chunks for rates, sequence, and embedded icon frames.
 uint32_t defaultJiffies = 6;     // ~100 ms
 std::vector<DecodedFrame> icons;
 std::vector<uint32_t> rates;

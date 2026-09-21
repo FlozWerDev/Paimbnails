@@ -137,18 +137,8 @@ void GDRobTopCache::init() {
 
     log::info("[GDRobTopCache] Inicializado en {}", utils::string::pathToString(dir));
 
-    // PERF: pruneExpired() recorre recursivamente todo el directorio de cache y,
-    // por cada archivo .json, lo abre/lee/parsea con matjson para comprobar la
-    // expiracion. Con muchas respuestas de RobTop cacheadas (perfiles, busquedas,
-    // comentarios; TTL de 7 dias) esto son decenas-centenas de ms de I/O de disco
-    // que antes corrian EN EL HILO PRINCIPAL durante el bootstrap de $on_game
-    // (Loaded), congelando el juego nada mas arrancar. Ahora corre en un hilo en
-    // segundo plano, igual que BlurDiskCache::init().
-    //
-    // Es seguro en un hilo secundario porque pruneExpired() solo borra archivos
-    // de disco expirados (no toca m_ram, protegida por m_mutex), comprueba
-    // m_shuttingDown en cada iteracion, y lookup()/readDisk() toleran que un
-    // archivo desaparezca concurrentemente (devuelven nullopt).
+    // pruneExpired() hace I/O pesada de disco (antes congelaba el arranque en $on_game).
+    // Corre en segundo plano: solo borra expirados y lookup/readDisk toleran desapariciones.
     paimon::ThreadTracker::get().spawn([this]() {
         geode::utils::thread::setName("PaimonRobTopPrune");
         if (m_shuttingDown.load(std::memory_order_acquire)) return;

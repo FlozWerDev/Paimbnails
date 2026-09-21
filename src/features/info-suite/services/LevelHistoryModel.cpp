@@ -118,10 +118,8 @@ bool featureIsExact(matjson::Value const& record) {
     return record["epic"].isNumber() && record["feature_score"].isNumber();
 }
 
-// Los volcados de GLM son bases de datos enteras que sube la gente: la fecha es
-// cuando se subio el volcado, no cuando se miro el nivel, asi que hay entradas
-// de 2025 con datos de 2017 (y por eso las descargas van hacia atras). Se
-// ensenan en la lista, pero no pueden decidir cuando cambio nada.
+// Los volcados de GLM fechan la subida del volcado, no la mirada: se ensenan
+// en la lista pero no pueden decidir cuando cambio nada.
 bool isLiveSnapshot(matjson::Value const& record) {
     return text(record["record_type"]).rfind("glm_", 0) != 0;
 }

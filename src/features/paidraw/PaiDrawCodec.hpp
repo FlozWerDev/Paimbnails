@@ -50,18 +50,6 @@ inline uint64_t readU64(std::span<uint8_t const> bytes, size_t& offset) {
     return value;
 }
 
-inline geode::ByteVector encodeEnvelope(PaiDrawPacket const& packet) {
-    geode::ByteVector out;
-    out.reserve(1 + 4 + 4 + 8 + 4 + packet.payload.size());
-    out.push_back(static_cast<uint8_t>(packet.type));
-    pushU32(out, packet.roomId);
-    pushU32(out, packet.senderId);
-    pushU64(out, packet.timestamp);
-    pushU32(out, static_cast<uint32_t>(packet.payload.size()));
-    out.insert(out.end(), packet.payload.begin(), packet.payload.end());
-    return out;
-}
-
 class MsgPackWriter {
 public:
     void nil() {

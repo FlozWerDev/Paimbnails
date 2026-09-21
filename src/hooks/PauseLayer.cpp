@@ -35,6 +35,7 @@
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include "../utils/ThreadTracker.hpp"
+#include "../utils/HttpClient.hpp"
 #include <Geode/binding/LoadingCircle.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>

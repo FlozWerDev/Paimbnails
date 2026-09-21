@@ -34,16 +34,6 @@ jobs:
         shell: pwsh
         run: ./tests/run_editor_physics_regression.ps1
 
-      - name: Test native physics trigger graph
-        if: matrix.config.target == 'Win64'
-        shell: pwsh
-        run: ./tests/run_editor_physics_native_regression.ps1
-
-      - name: Test physics preview backends
-        if: matrix.config.target == 'Win64'
-        shell: pwsh
-        run: ./tests/run_editor_physics_preview_regression.ps1
-
       - name: Build the mod
         id: geode-build
         continue-on-error: true

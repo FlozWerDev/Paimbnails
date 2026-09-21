@@ -37,7 +37,6 @@ private:
     bool pointOnImage(cocos2d::CCPoint world, cocos2d::CCPoint& normalized) const;
 
     LevelRequest m_request;
-    geode::Ref<cocos2d::CCTexture2D> m_texture;
     std::shared_ptr<uint8_t> m_rgba;
     int m_width = 0;
     int m_height = 0;

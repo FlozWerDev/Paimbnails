@@ -10,6 +10,7 @@
 #include "../../../utils/Shaders.hpp"
 #include "../../../utils/VideoThumbnailSprite.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../utils/HttpClient.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;

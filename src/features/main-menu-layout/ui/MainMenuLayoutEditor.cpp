@@ -32,6 +32,7 @@ namespace {
     constexpr float kGripHit = 12.f;
     constexpr float kCanvasBottom = 84.f;
     constexpr std::size_t kHistoryLimit = 50;
+    constexpr float kTransitionDuration = 0.32f;
 
     CCPoint worldPos(CCNode* node) {
         if (!node || !node->getParent()) return { 0.f, 0.f };
@@ -95,6 +96,20 @@ MainMenuLayoutEditor::~MainMenuLayoutEditor() {
 }
 
 void MainMenuLayoutEditor::onExit() {
+    for (auto const& item : m_items) {
+        if (!m_saved) {
+            auto it = m_initial.find(item.target.key);
+            if (it != m_initial.end()) MainMenuLayoutManager::applyLayout(item.target, it->second);
+        } else if (m_transitions.count(item.target.key)) {
+            this->applyLive(item);
+        }
+    }
+    m_transitions.clear();
+    for (auto& menu : m_disabledMenus) {
+        if (menu && menu->getParent()) menu->setEnabled(true);
+    }
+    m_disabledMenus.clear();
+    if (s_active == this) s_active = nullptr;
     this->unscheduleUpdate();
     CCLayer::onExit();
 }
@@ -113,9 +128,9 @@ bool MainMenuLayoutEditor::init(CCNode* root) {
 #endif
     this->scheduleUpdate();
 
-    auto* dark = CCLayerColor::create({ 0, 0, 0, 110 });
-    dark->setContentSize(winSize);
-    this->addChild(dark, -1);
+    m_dark = CCLayerColor::create({ 0, 0, 0, 0 });
+    m_dark->setContentSize(winSize);
+    this->addChild(m_dark, -1);
 
     m_highlights = CCDrawNode::create();
     this->addChild(m_highlights, 10);
@@ -134,6 +149,7 @@ bool MainMenuLayoutEditor::init(CCNode* root) {
     this->collectItems();
     this->disableTargetMenus();
     this->pushHistory();
+    this->animateInterface(true);
     this->redraw();
     return true;
 }
@@ -267,9 +283,100 @@ MenuButtonLayout* MainMenuLayoutEditor::liveLayout(Item const& item) {
 }
 
 void MainMenuLayoutEditor::applyLive(Item const& item) {
+    m_transitions.erase(item.target.key);
     auto it = m_live.find(item.target.key);
     if (it == m_live.end()) return;
     MainMenuLayoutManager::applyLayout(item.target, it->second);
+}
+
+void MainMenuLayoutEditor::animateLive(Item const& item) {
+    if (!item.target.node || !item.target.node->getParent()) return;
+    m_drag = DragMode::None;
+    m_dragChanged = false;
+    m_guideX->setVisible(false);
+    m_guideY->setVisible(false);
+    m_transitions[item.target.key] = { MainMenuLayoutManager::readLayout(item.target.node), 0.f };
+}
+
+void MainMenuLayoutEditor::animateInterface(bool opening) {
+    auto winSize = CCDirector::get()->getWinSize();
+    float duration = kTransitionDuration;
+    m_dark->stopAllActions();
+    m_dark->runAction(CCFadeTo::create(duration, opening ? 110 : 0));
+
+    m_barContainer->stopAllActions();
+    if (opening) m_barContainer->setPositionY(-(kCanvasBottom + 16.f));
+    m_barContainer->runAction(CCEaseSineOut::create(CCMoveTo::create(
+        duration, { 0.f, opening ? 0.f : -(kCanvasBottom + 16.f) })));
+
+    m_status->stopAllActions();
+    if (opening) {
+        m_status->setOpacity(0);
+        m_status->setPositionY(winSize.height + 8.f);
+    }
+    m_status->runAction(CCFadeTo::create(duration, opening ? 255 : 0));
+    m_status->runAction(CCEaseSineOut::create(CCMoveTo::create(
+        duration, { winSize.width / 2.f, winSize.height + (opening ? -16.f : 8.f) })));
+
+    if (m_collapseBtn) {
+        m_collapseBtn->stopAllActions();
+        if (opening) m_collapseBtn->setPositionY(-12.f);
+        m_collapseBtn->runAction(CCEaseSineOut::create(CCMoveTo::create(
+            duration, { winSize.width / 2.f, opening ? kCanvasBottom + 12.f : -12.f })));
+    }
+}
+
+void MainMenuLayoutEditor::beginClose(bool saved) {
+    m_closing = true;
+    m_saved = saved;
+    m_interfaceElapsed = 0.f;
+    m_closeOpacity = m_interfaceOpacity;
+    m_drag = DragMode::None;
+    m_dragChanged = false;
+    m_guideX->setVisible(false);
+    m_guideY->setVisible(false);
+    m_bar->setEnabled(false);
+    if (m_collapseBtn) m_collapseBtn->setEnabled(false);
+    m_opacitySlider->setVisible(false);
+    this->animateInterface(false);
+}
+
+void MainMenuLayoutEditor::updateAnimations(float dt) {
+    m_interfaceElapsed += dt;
+    float progress = std::clamp(m_interfaceElapsed / kTransitionDuration, 0.f, 1.f);
+    float eased = progress * progress * (3.f - 2.f * progress);
+    m_interfaceOpacity = m_closing ? m_closeOpacity * (1.f - eased) : eased;
+
+    for (auto const& item : m_items) {
+        auto it = m_transitions.find(item.target.key);
+        if (it == m_transitions.end()) continue;
+        auto target = m_live.find(item.target.key);
+        if (target == m_live.end() || !item.target.node || !item.target.node->getParent()) {
+            m_transitions.erase(it);
+            continue;
+        }
+        auto& transition = it->second;
+        transition.elapsed += dt;
+        float t = std::clamp(transition.elapsed / kTransitionDuration, 0.f, 1.f);
+        if (t >= 1.f) {
+            MainMenuLayoutManager::applyLayout(item.target, target->second);
+            m_transitions.erase(it);
+            continue;
+        }
+        t = t * t * (3.f - 2.f * t);
+        auto const& from = transition.from;
+        auto const& to = target->second;
+        auto frame = to;
+        auto mix = [t](float a, float b) { return a + (b - a) * t; };
+        frame.position = from.position + (to.position - from.position) * t;
+        frame.scale = mix(from.scale, to.scale);
+        frame.scaleX = mix(from.scaleX, to.scaleX);
+        frame.scaleY = mix(from.scaleY, to.scaleY);
+        frame.opacity = mix(from.hidden ? 0.f : from.opacity, to.hidden ? 0.f : to.opacity);
+        frame.hidden = from.hidden && to.hidden;
+        frame.fontFile.clear();
+        MainMenuLayoutManager::applyLayout(item.target, frame);
+    }
 }
 
 CCRect MainMenuLayoutEditor::itemRect(Item const& item) const {
@@ -399,7 +506,7 @@ void MainMenuLayoutEditor::resetItemToDefault(Item const& item) {
         def = it->second;
     }
     m_live[item.target.key] = *def;
-    MainMenuLayoutManager::applyLayout(item.target, *def);
+    this->animateLive(item);
 }
 
 LayoutSnapshot MainMenuLayoutEditor::buildSnapshot() const {
@@ -424,11 +531,14 @@ void MainMenuLayoutEditor::applyHistory(LayoutSnapshot const& snapshot) {
     auto* root = this->getTargetRoot();
     if (!root) return;
     m_applyingHistory = true;
-    std::vector<EditableMenuButton> targets;
-    targets.reserve(m_items.size());
-    for (auto const& item : m_items) targets.push_back(item.target);
-    MainMenuLayoutManager::get().applySnapshot(targets, snapshot, root);
-    m_live = snapshot.buttons;
+    auto& mgr = MainMenuLayoutManager::get();
+    for (auto const& item : m_items) {
+        auto it = snapshot.buttons.find(item.target.key);
+        if (it != snapshot.buttons.end()) m_live[item.target.key] = it->second;
+        else if (auto def = mgr.getDefaultLayout(item.target.key)) m_live[item.target.key] = *def;
+        this->animateLive(item);
+    }
+    mgr.syncShapes(root, snapshot.shapes);
     m_applyingHistory = false;
 }
 
@@ -458,17 +568,25 @@ void MainMenuLayoutEditor::redraw() {
         bool isSel = (&item == sel);
         if (isSel) continue;
         if (this->isBackgroundItem(item)) continue;
-        strokeRect(m_highlights, this->itemRect(item), { 0.35f, 0.65f, 1.f, 0.4f }, 1.f);
+        auto rect = this->itemRect(item);
+        if (m_saved) {
+            float pad = 8.f * (1.f - m_interfaceOpacity);
+            rect.origin = rect.origin - CCPoint{ pad, pad };
+            rect.size.width += pad * 2.f;
+            rect.size.height += pad * 2.f;
+        }
+        auto color = m_saved ? ccColor4F{ 0.4f, 1.f, 0.55f, 0.85f * m_interfaceOpacity }
+                             : ccColor4F{ 0.35f, 0.65f, 1.f, 0.4f * m_interfaceOpacity };
+        strokeRect(m_highlights, rect, color, m_saved ? 2.f : 1.f);
     }
 
     if (sel && sel->target.node && sel->target.node->getParent()) {
-        strokeRect(m_outline, this->outlineRect(*sel), { 0.4f, 1.f, 0.55f, 0.95f }, 2.f);
+        strokeRect(m_outline, this->outlineRect(*sel), { 0.4f, 1.f, 0.55f, 0.95f * m_interfaceOpacity }, 2.f);
 
-        // single scale grip at bottom-right
         CCPoint g = this->gripPos(*sel);
         float h = kGripSize / 2.f;
         CCPoint pts[4] = { { g.x - h, g.y - h }, { g.x + h, g.y - h }, { g.x + h, g.y + h }, { g.x - h, g.y + h } };
-        m_grip->drawPolygon(pts, 4, { 0.27f, 1.f, 0.51f, 1.f }, 1.f, { 1.f, 1.f, 1.f, 0.9f });
+        m_grip->drawPolygon(pts, 4, { 0.27f, 1.f, 0.51f, m_interfaceOpacity }, 1.f, { 1.f, 1.f, 1.f, 0.9f * m_interfaceOpacity });
     }
 
     if (m_status) {
@@ -484,10 +602,11 @@ void MainMenuLayoutEditor::redraw() {
         }
     }
 
-    if (m_opacitySlider) m_opacitySlider->setVisible(sel != nullptr);
+    if (m_opacitySlider) m_opacitySlider->setVisible(sel != nullptr && !m_closing);
 }
 
 bool MainMenuLayoutEditor::ccTouchBegan(CCTouch* touch, CCEvent*) {
+    if (m_closing || m_interfaceElapsed < kTransitionDuration) return true;
     auto wp = touch->getLocation();
 
     // La flecha de colapso siempre es accesible.
@@ -500,6 +619,7 @@ bool MainMenuLayoutEditor::ccTouchBegan(CCTouch* touch, CCEvent*) {
     // esta colapsada, toda la pantalla es lienzo para mover botones de abajo.
     float strip = m_collapsed ? 0.f : kCanvasBottom;
     if (wp.y <= strip) return false;
+    if (!m_transitions.empty()) return true;
 
     if (auto* sel = this->selectedItem()) {
         if (sel->target.node && sel->target.node->getParent()) {
@@ -537,6 +657,7 @@ bool MainMenuLayoutEditor::ccTouchBegan(CCTouch* touch, CCEvent*) {
 }
 
 void MainMenuLayoutEditor::ccTouchMoved(CCTouch* touch, CCEvent*) {
+    if (m_closing || !m_transitions.empty()) return;
     auto* sel = this->selectedItem();
     if (!sel || !sel->target.node || !sel->target.node->getParent()) return;
     auto wp = touch->getLocation();
@@ -579,6 +700,7 @@ void MainMenuLayoutEditor::keyBackClicked() {
 }
 
 void MainMenuLayoutEditor::keyDown(enumKeyCodes key, double) {
+    if (m_closing) return;
     auto* kd = CCKeyboardDispatcher::get();
     bool ctrl = kd && kd->getControlKeyPressed();
     bool shift = kd && kd->getShiftKeyPressed();
@@ -588,6 +710,7 @@ void MainMenuLayoutEditor::keyDown(enumKeyCodes key, double) {
     if (ctrl && key == enumKeyCodes::KEY_Z) { this->undo(); return; }
     if (ctrl && key == enumKeyCodes::KEY_Y) { this->redo(); return; }
 
+    if (!m_transitions.empty()) return;
     if (!this->selectedItem()) return;
 
     if (key == enumKeyCodes::KEY_Delete || key == enumKeyCodes::KEY_Backspace) {
@@ -609,7 +732,7 @@ void MainMenuLayoutEditor::keyDown(enumKeyCodes key, double) {
     this->redraw();
 }
 
-void MainMenuLayoutEditor::update(float) {
+void MainMenuLayoutEditor::update(float dt) {
     auto* root = this->getTargetRoot();
     if (!root) { this->removeFromParent(); return; }
 
@@ -622,30 +745,38 @@ void MainMenuLayoutEditor::update(float) {
     }
     if (!attached) { this->removeFromParent(); return; }
 
+    this->updateAnimations(dt);
+    if (m_closing && m_interfaceElapsed >= kTransitionDuration && m_transitions.empty()) {
+        this->removeFromParent();
+        return;
+    }
     this->redraw();
 }
 
 void MainMenuLayoutEditor::onSave(CCObject*) {
+    if (m_closing) return;
     auto* root = this->getTargetRoot();
     if (root) {
         MainMenuLayoutManager::get().mergeCustomFromButtons(m_live);
         PaimonNotify::show(Localization::get().getString("menu_layout.saved"), NotificationIcon::Success);
     }
-    this->removeFromParent();
+    this->selectIndex(-1);
+    this->beginClose(true);
 }
 
 void MainMenuLayoutEditor::onCancel(CCObject*) {
-    // Revertir a lo que habia al abrir el editor.
+    if (m_closing) return;
     for (auto const& item : m_items) {
         auto it = m_initial.find(item.target.key);
         if (it == m_initial.end()) continue;
         m_live[item.target.key] = it->second;
-        MainMenuLayoutManager::applyLayout(item.target, it->second);
+        this->animateLive(item);
     }
-    this->removeFromParent();
+    this->beginClose(false);
 }
 
 void MainMenuLayoutEditor::onResetSelected(CCObject*) {
+    if (m_closing) return;
     auto* sel = this->selectedItem();
     if (!sel) return;
     this->resetItemToDefault(*sel);
@@ -655,6 +786,7 @@ void MainMenuLayoutEditor::onResetSelected(CCObject*) {
 }
 
 void MainMenuLayoutEditor::onResetAll(CCObject*) {
+    if (m_closing) return;
     auto* root = this->getTargetRoot();
     if (!root) return;
     for (auto const& item : m_items) {
@@ -667,18 +799,20 @@ void MainMenuLayoutEditor::onResetAll(CCObject*) {
 }
 
 void MainMenuLayoutEditor::onToggleHidden(CCObject*) {
+    if (m_closing) return;
     auto* sel = this->selectedItem();
     if (!sel) return;
     auto* layout = this->liveLayout(*sel);
     if (!layout) return;
     layout->hidden = !layout->hidden;
     if (!layout->hidden && layout->opacity <= 0.01f) layout->opacity = 1.f;
-    this->applyLive(*sel);
+    this->animateLive(*sel);
     this->pushHistory();
     this->redraw();
 }
 
 void MainMenuLayoutEditor::onOpacityChanged(CCObject*) {
+    if (m_closing || !m_transitions.empty()) return;
     auto* sel = this->selectedItem();
     if (!sel || !m_opacitySlider) return;
     auto* layout = this->liveLayout(*sel);
@@ -690,9 +824,17 @@ void MainMenuLayoutEditor::onOpacityChanged(CCObject*) {
 }
 
 void MainMenuLayoutEditor::onToggleBar(CCObject*) {
+    if (m_closing) return;
     m_collapsed = !m_collapsed;
-    if (m_barContainer) m_barContainer->setPositionY(m_collapsed ? -(kCanvasBottom + 16.f) : 0.f);
-    if (m_collapseArrow) m_collapseArrow->setRotation(m_collapsed ? 90.f : -90.f);
+    if (m_barContainer) {
+        m_barContainer->stopAllActions();
+        m_barContainer->runAction(CCEaseSineOut::create(CCMoveTo::create(
+            0.22f, { 0.f, m_collapsed ? -(kCanvasBottom + 16.f) : 0.f })));
+    }
+    if (m_collapseArrow) {
+        m_collapseArrow->stopAllActions();
+        m_collapseArrow->runAction(CCEaseSineOut::create(CCRotateTo::create(0.22f, m_collapsed ? 90.f : -90.f)));
+    }
 }
 
 void MainMenuLayoutEditor::saveAndClose() { this->onSave(nullptr); }
@@ -702,12 +844,13 @@ void MainMenuLayoutEditor::onSavePreset(CCObject*) { this->openPresetPicker(true
 void MainMenuLayoutEditor::onLoadPreset(CCObject*) { this->openPresetPicker(false); }
 
 void MainMenuLayoutEditor::openPresetPicker(bool saveMode) {
+    if (m_closing) return;
     WeakRef<MainMenuLayoutEditor> self = this;
     auto* popup = MainMenuLayoutPresetPopup::create(
         saveMode ? MainMenuLayoutPresetPopup::Mode::Save : MainMenuLayoutPresetPopup::Mode::Load,
         [self, saveMode](int slot) {
             auto* editor = self.lock().data();
-            if (!editor || !editor->getParent()) return;
+            if (!editor || !editor->getParent() || editor->m_closing) return;
 
             if (saveMode) {
                 MainMenuLayoutPresetManager::get().setPreset(slot, editor->buildSnapshot());

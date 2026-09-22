@@ -46,6 +46,10 @@ private:
     void disableTargetMenus();
     void buildUI();
     void redraw();
+    void animateInterface(bool opening);
+    void beginClose(bool saved);
+    void animateLive(Item const& item);
+    void updateAnimations(float dt);
 
     Item* selectedItem();
     void selectIndex(int index);
@@ -84,6 +88,16 @@ private:
     std::vector<Item> m_items;
     std::unordered_map<std::string, MenuButtonLayout> m_live;
     std::unordered_map<std::string, MenuButtonLayout> m_initial;
+    struct LayoutTransition {
+        MenuButtonLayout from;
+        float elapsed = 0.f;
+    };
+    std::unordered_map<std::string, LayoutTransition> m_transitions;
+    bool m_closing = false;
+    bool m_saved = false;
+    float m_interfaceElapsed = 0.f;
+    float m_interfaceOpacity = 0.f;
+    float m_closeOpacity = 1.f;
     int m_selected = -1;
 
     std::vector<geode::Ref<cocos2d::CCMenu>> m_disabledMenus;
@@ -93,6 +107,7 @@ private:
     cocos2d::CCDrawNode* m_grip = nullptr;
     cocos2d::CCDrawNode* m_guideX = nullptr;
     cocos2d::CCDrawNode* m_guideY = nullptr;
+    cocos2d::CCLayerColor* m_dark = nullptr;
     cocos2d::CCLabelBMFont* m_status = nullptr;
     cocos2d::CCMenu* m_bar = nullptr;
     cocos2d::CCNode* m_barContainer = nullptr;

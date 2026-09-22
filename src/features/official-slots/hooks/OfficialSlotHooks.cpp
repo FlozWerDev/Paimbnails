@@ -147,7 +147,9 @@ void syncDots(BoomScrollLayer* scroll) {
     unsigned const want = scroll->m_pages->count();
     while (dots->count() > want) {
         unsigned const last = dots->count() - 1;
-        if (auto* dot = dots->objectAtIndex(last)) dot->removeFromParent();
+        if (auto* dot = typeinfo_cast<CCNode*>(dots->objectAtIndex(last))) {
+            dot->removeFromParent();
+        }
         dots->removeObjectAtIndex(last);
     }
     // Clone the vanilla dot texture so the row keeps its look at any count.

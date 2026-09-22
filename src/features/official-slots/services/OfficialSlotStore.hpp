@@ -47,6 +47,7 @@ public:
     void movePageTo(std::string const& key, std::size_t index);
 
     std::vector<std::string> visiblePages();
+    bool pageVisible(std::string const& key);
     // 1-based position inside visiblePages; 0 when the key is not visible.
     std::size_t visiblePosition(std::string const& key);
     // 1-based visible position to order index, for placing a page the user
@@ -78,7 +79,6 @@ private:
     void save();
 
     void loadOrder(matjson::Value const& root);
-    bool pageVisible(std::string const& key);
 
     std::filesystem::path storePath() const;
 

@@ -208,7 +208,7 @@ bool CaptureLayerEditorPopup::init() {
     btnMenu->setID("bottom-buttons"_spr);
 
     auto restoreSpr = ButtonSprite::create(
-        loc("layers.restore_all").c_str(), 70, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.35f);
+        loc("layers.restore_all").c_str(), 78, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
     if (restoreSpr) {
         auto btn = CCMenuItemSpriteExtra::create(
             restoreSpr, this, menu_selector(CaptureLayerEditorPopup::onRestoreAllBtn));

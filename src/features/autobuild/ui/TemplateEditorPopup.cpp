@@ -329,10 +329,9 @@ CCNode* TemplateEditorPopup::sidesGrid(float width) {
     if (m_piece < 0 || m_piece >= static_cast<int>(m_draft.links.size())) return node;
     for (auto const& slot : kSideSlots) {
         bool const open = m_draft.links[m_piece].open[slot.direction];
-        auto* spr = ButtonSprite::create(slot.label, "bigFont.fnt",
-                                         open ? "GJ_button_02.png" : "GJ_button_04.png", 0.7f);
+        auto* spr = ButtonSprite::create(slot.label, 30, true, "bigFont.fnt",
+                                         open ? "GJ_button_02.png" : "GJ_button_04.png", 18.f, 0.40f);
         if (!spr) continue;
-        spr->setScale(0.34f);
         auto* button = CCMenuItemExt::createSpriteExtra(
             spr, [this, direction = slot.direction](CCMenuItemSpriteExtra*) {
                 auto& open = m_draft.links[m_piece].open[direction];
@@ -384,16 +383,17 @@ CCNode* TemplateEditorPopup::pieceDetail(float width) {
 
     struct Action {
         char const* text;
+        int width;
         char const* sprite;
         std::function<void()> run;
     };
     std::vector<Action> actions = {
-        {"Duplicar", "GJ_button_04.png", [this] {
+        {"Duplicar", 66, "GJ_button_04.png", [this] {
             if (!edit::duplicatePiece(m_draft, m_piece)) return;
             m_piece = static_cast<int>(m_draft.pieces.size()) - 1;
             touch("Pieza duplicada.");
         }},
-        {"Borrar", "GJ_button_06.png", [this] {
+        {"Borrar", 54, "GJ_button_06.png", [this] {
             if (!edit::removePiece(m_draft, m_piece)) {
                 setStatus("Una plantilla necesita al menos una pieza.", kWarn);
                 scheduleRebuild();
@@ -404,9 +404,9 @@ CCNode* TemplateEditorPopup::pieceDetail(float width) {
     };
     float x = 118.f;
     for (auto& action : actions) {
-        auto* spr = ButtonSprite::create(action.text, "bigFont.fnt", action.sprite, 0.7f);
+        auto* spr = ButtonSprite::create(action.text, action.width, true, "bigFont.fnt",
+                                         action.sprite, 18.f, 0.40f);
         if (!spr) continue;
-        spr->setScale(0.4f);
         auto* button = CCMenuItemExt::createSpriteExtra(
             spr, [run = action.run](CCMenuItemSpriteExtra*) { run(); });
         button->setPosition({x, height - 60.f});
@@ -474,9 +474,8 @@ CCNode* TemplateEditorPopup::pieceRow(float width, int index) {
     menu->setTouchPriority(CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
     row->addChild(menu, 5);
 
-    auto* spr = ButtonSprite::create(selected ? "Abierta" : "Abrir", "bigFont.fnt",
-                                     selected ? "GJ_button_02.png" : "GJ_button_01.png", 0.6f);
-    spr->setScale(0.42f);
+    auto* spr = ButtonSprite::create(selected ? "Abierta" : "Abrir", 60, true, "bigFont.fnt",
+                                     selected ? "GJ_button_02.png" : "GJ_button_01.png", 18.f, 0.40f);
     auto* button = CCMenuItemExt::createSpriteExtra(
         spr, [this, index](CCMenuItemSpriteExtra*) {
             m_piece = index;
@@ -606,19 +605,20 @@ CCNode* TemplateEditorPopup::stepperRow(float width, char const* title, char con
 
     struct StepButton {
         char const* text;
+        int width;
         int delta;
         float x;
     };
     StepButton const buttons[] = {
-        {"-10", -10, width - 148.f},
-        {"-1",   -1, width - 116.f},
-        {"+1",    1, width - 48.f},
-        {"+10",  10, width - 16.f},
+        {"-10", 36, -10, width - 148.f},
+        {"-1",  30,  -1, width - 116.f},
+        {"+1",  30,   1, width -  50.f},
+        {"+10", 36,  10, width -  16.f},
     };
     for (auto const& info : buttons) {
-        auto* spr = ButtonSprite::create(info.text, "bigFont.fnt", "GJ_button_04.png", 0.7f);
+        auto* spr = ButtonSprite::create(info.text, info.width, true, "bigFont.fnt",
+                                         "GJ_button_04.png", 18.f, 0.40f);
         if (!spr) continue;
-        spr->setScale(0.36f);
         auto* button = CCMenuItemExt::createSpriteExtra(
             spr, [step, delta = info.delta](CCMenuItemSpriteExtra*) { step(delta); });
         button->setPosition({info.x, kRowH / 2.f});

@@ -165,7 +165,17 @@ bool SlotEditorPopup::init(
     }
 
     if (!m_isNew) {
-        this->setTitle(tr("slot.editor.title"));
+        int pos = 0;
+        auto const& all = store.slots();
+        for (int i = 0; i < static_cast<int>(all.size()); ++i) {
+            if (all[i].id == m_draft.id) { pos = i + 1; break; }
+        }
+        if (pos > 0) {
+            this->setTitle(fmt::format(fmt::runtime(tr("slot.editor.title_pos")),
+                                       pos, all.size()));
+        } else {
+            this->setTitle(tr("slot.editor.title"));
+        }
     } else if (m_draft.replacesOfficialId != 0) {
         this->setTitle(fmt::format(fmt::runtime(tr("slot.editor.replace_title")),
                                    officialName(m_draft.replacesOfficialId)));
@@ -692,7 +702,7 @@ void SlotEditorPopup::buildFooter() {
     auto addButton = [&](char const* key, int width, auto onPress) {
         auto* spr = ButtonSprite::create(
             tr(key).c_str(), width, true,
-            "bigFont.fnt", "GJ_button_01.png", 26.f, 0.55f);
+            "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
         auto* item = CCMenuItemExt::createSpriteExtra(spr, onPress);
         x -= width / 2.f;
         item->setPosition({x, 26.f});
@@ -703,17 +713,82 @@ void SlotEditorPopup::buildFooter() {
     addButton("slot.editor.save", 90, [this](CCMenuItemSpriteExtra*) {
         this->onSave(nullptr);
     });
-    addButton("slot.editor.surprise", 110, [this](CCMenuItemSpriteExtra*) {
+    addButton("slot.editor.surprise", 100, [this](CCMenuItemSpriteExtra*) {
         this->onSurprise(nullptr);
     });
-    addButton("slot.editor.test", 85, [this](CCMenuItemSpriteExtra*) {
+    addButton("slot.editor.test", 80, [this](CCMenuItemSpriteExtra*) {
         this->onTest(nullptr);
     });
     if (m_draft.replacesOfficialId != 0) {
-        addButton("slot.editor.hide_official", 130, [this](CCMenuItemSpriteExtra*) {
+        addButton("slot.editor.hide_official", 150, [this](CCMenuItemSpriteExtra*) {
             this->onHideOfficial(nullptr);
         });
+    } else {
+        this->buildPositionRow(menu);
     }
+}
+
+void SlotEditorPopup::buildPositionRow(CCMenu* menu) {
+    auto* layer = m_mainLayer;
+
+    auto& store = SlotStore::get();
+    m_positionMax = store.visiblePages().size() + (m_isNew ? 1 : 0);
+    m_position = m_positionMax;
+    if (!m_isNew) {
+        if (std::size_t pos = store.visiblePosition(SlotStore::slotKey(m_draft.id))) {
+            m_position = pos;
+        }
+    }
+    if (m_positionMax < 1) m_positionMax = 1;
+    if (m_position < 1 || m_position > m_positionMax) m_position = m_positionMax;
+
+    // Stepper hugs the title; the footer buttons start past x150.
+    float labelW = 40.f;
+    if (auto* title = CCLabelBMFont::create(tr("slot.editor.position").c_str(), "goldFont.fnt")) {
+        title->setScale(0.45f);
+        title->setAnchorPoint({0.f, 0.5f});
+        title->setPosition({10.f, 26.f});
+        title->setID("position-title"_spr);
+        layer->addChild(title, 3);
+        labelW = title->getContentSize().width * title->getScale();
+    }
+    float const x0 = 10.f + labelW;
+    auto addStep = [&](char const* text, float x, auto onPress) {
+        auto* spr = ButtonSprite::create(
+            text, 26, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
+        auto* item = CCMenuItemExt::createSpriteExtra(spr, onPress);
+        item->setPosition({x, 26.f});
+        menu->addChild(item);
+    };
+    addStep("-", x0 + 16.f, [this](CCMenuItemSpriteExtra*) {
+        this->setPosition(m_position - 1);
+    });
+
+    m_positionLabel = CCLabelBMFont::create("", "bigFont.fnt");
+    if (m_positionLabel) {
+        m_positionLabel->setScale(0.5f);
+        m_positionLabel->setPosition({x0 + 48.f, 26.f});
+        m_positionLabel->setID("position-label"_spr);
+        layer->addChild(m_positionLabel, 3);
+    }
+
+    addStep("+", x0 + 80.f, [this](CCMenuItemSpriteExtra*) {
+        this->setPosition(m_position + 1);
+    });
+    this->refreshPositionLabel();
+}
+
+void SlotEditorPopup::setPosition(std::size_t pos) {
+    if (m_positionMax < 1) return;
+    pos = std::clamp(pos, std::size_t{1}, m_positionMax);
+    m_position = pos;
+    m_positionDirty = true;
+    this->refreshPositionLabel();
+}
+
+void SlotEditorPopup::refreshPositionLabel() {
+    if (!m_positionLabel) return;
+    m_positionLabel->setString(fmt::format("{}/{}", m_position, m_positionMax).c_str());
 }
 
 void SlotEditorPopup::onImportById(CCObject*) {
@@ -890,13 +965,23 @@ std::string SlotEditorPopup::saveDraft() {
     std::string id = slot.id;
     if (m_isNew || id.empty()) {
         slot.id.clear(); // the store assigns a stable uuid
-        id = store.add(slot);
+        if (slot.replacesOfficialId == 0) {
+            id = store.add(slot, store.orderIndexForVisiblePos(m_position));
+        } else {
+            id = store.add(slot);
+        }
     } else {
         slot.id = id;
         if (!store.update(slot)) {
             // Deleted elsewhere while we edited; re-add instead of losing it.
             slot.id.clear();
-            id = store.add(slot);
+            if (slot.replacesOfficialId == 0) {
+                id = store.add(slot, store.orderIndexForVisiblePos(m_position));
+            } else {
+                id = store.add(slot);
+            }
+        } else if (slot.replacesOfficialId == 0 && m_positionDirty) {
+            store.movePageToVisible(SlotStore::slotKey(id), m_position);
         }
     }
     if (id.empty()) {

@@ -166,10 +166,9 @@ void AutobuildPopup::rebuild() {
             helpBtn->setPosition({kPopupW - 22.f, kPopupH - 22.f});
             topMenu->addChild(helpBtn);
         }
-        auto* foldSpr = ButtonSprite::create("Ver nivel", "bigFont.fnt",
-                                             "GJ_button_04.png", 0.7f);
+        auto* foldSpr = ButtonSprite::create("Ver nivel", 72, true, "bigFont.fnt",
+                                             "GJ_button_04.png", 18.f, 0.40f);
         if (foldSpr) {
-            foldSpr->setScale(0.4f);
             auto* foldBtn = CCMenuItemExt::createSpriteExtra(
                 foldSpr, [this](CCMenuItemSpriteExtra*) { setCompact(true); });
             foldBtn->setPosition({kPopupW - 80.f, kPopupH - 22.f});
@@ -312,9 +311,8 @@ CCNode* AutobuildPopup::templateRow(float width, int index) {
     menu->setTouchPriority(CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
     row->addChild(menu, 5);
 
-    auto* useSpr = ButtonSprite::create(selected ? "En uso" : "Usar", "bigFont.fnt",
-                                        selected ? "GJ_button_02.png" : "GJ_button_01.png", 0.6f);
-    useSpr->setScale(0.46f);
+    auto* useSpr = ButtonSprite::create(selected ? "En uso" : "Usar", 54, true, "bigFont.fnt",
+                                        selected ? "GJ_button_02.png" : "GJ_button_01.png", 18.f, 0.40f);
     auto* useBtn = CCMenuItemExt::createSpriteExtra(useSpr, [this, index](CCMenuItemSpriteExtra*) {
         TemplateStore::get().select(index);
         setStatus("", kit::kDescColor);
@@ -569,19 +567,20 @@ CCNode* AutobuildPopup::stepperRow(float width, char const* title, char const* d
 
     struct StepButton {
         char const* text;
+        int width;
         int delta;
         float x;
     };
     StepButton const buttons[] = {
-        {"-10", -10, width - 148.f},
-        {"-1",   -1, width - 116.f},
-        {"+1",    1, width - 48.f},
-        {"+10",  10, width - 16.f},
+        {"-10", 36, -10, width - 148.f},
+        {"-1",  30,  -1, width - 116.f},
+        {"+1",  30,   1, width -  50.f},
+        {"+10", 36,  10, width -  16.f},
     };
     for (auto const& info : buttons) {
-        auto* spr = ButtonSprite::create(info.text, "bigFont.fnt", "GJ_button_04.png", 0.7f);
+        auto* spr = ButtonSprite::create(info.text, info.width, true, "bigFont.fnt",
+                                         "GJ_button_04.png", 18.f, 0.40f);
         if (!spr) continue;
-        spr->setScale(0.36f);
         auto* button = CCMenuItemExt::createSpriteExtra(
             spr, [step, delta = info.delta](CCMenuItemSpriteExtra*) { step(delta); });
         button->setPosition({info.x, kRowH / 2.f});

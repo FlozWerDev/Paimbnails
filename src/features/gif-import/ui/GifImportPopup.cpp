@@ -156,8 +156,7 @@ bool GifImportPopup::init() {
     WeakRef<GifImportPopup> self = this;
 
     m_modeSprite = ButtonSprite::create(
-        "Modo: Bloques", 112, true, "bigFont.fnt", "GJ_button_05.png", 26.f, 0.5f);
-    m_modeSprite->setScale(0.62f);
+        "Modo: Bloques", 120, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.45f);
     auto* modeButton = CCMenuItemExt::createSpriteExtra(
         m_modeSprite, [self](CCMenuItemSpriteExtra*) {
             if (auto* popup = self.lock().data()) popup->toggleMode();

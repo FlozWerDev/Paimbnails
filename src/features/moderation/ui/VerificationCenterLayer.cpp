@@ -92,26 +92,25 @@ bool VerificationCenterLayer::init() {
     m_tabsMenu->setID("tabs-menu"_spr);
     m_tabsMenu->setPosition({winSize.width / 2, winSize.height - 50.f});
 
-    auto mkTab = [&](char const* label, SEL_MenuHandler sel, PendingCategory cat) {
-        auto spr = ButtonSprite::create(label, 80, true, "bigFont.fnt", "GJ_button_01.png", 28.f, 0.55f);
-        spr->setScale(0.75f);
+    auto mkTab = [&](char const* label, int width, SEL_MenuHandler sel, PendingCategory cat) {
+        auto spr = ButtonSprite::create(label, width, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this, sel);
         btn->setTag(static_cast<int>(cat));
         return btn;
     };
 
     m_tabsMenu->addChild(mkTab(
-        Localization::get().getString("queue.verify_tab").c_str(),
+        Localization::get().getString("queue.verify_tab").c_str(), 154,
         menu_selector(VerificationCenterLayer::onTabVerify), PendingCategory::Verify));
     m_tabsMenu->addChild(mkTab(
-        Localization::get().getString("queue.update_tab").c_str(),
+        Localization::get().getString("queue.update_tab").c_str(), 112,
         menu_selector(VerificationCenterLayer::onTabUpdate), PendingCategory::Update));
     m_tabsMenu->addChild(mkTab(
-        Localization::get().getString("queue.report_tab").c_str(),
+        Localization::get().getString("queue.report_tab").c_str(), 76,
         menu_selector(VerificationCenterLayer::onTabReport), PendingCategory::Report));
-    m_tabsMenu->addChild(mkTab("PBG",
+    m_tabsMenu->addChild(mkTab("PBG", 42,
         menu_selector(VerificationCenterLayer::onTabProfileBackground), PendingCategory::ProfileBackground));
-    m_tabsMenu->addChild(mkTab("PI",
+    m_tabsMenu->addChild(mkTab("PI", 34,
         menu_selector(VerificationCenterLayer::onTabProfileImg), PendingCategory::ProfileImg));
 
     {
@@ -135,7 +134,7 @@ bool VerificationCenterLayer::init() {
         m_tabsMenu->addChild(btn);
     }
 
-    m_tabsMenu->setLayout(RowLayout::create()->setGap(4.f)->setAxisAlignment(AxisAlignment::Center));
+    m_tabsMenu->setLayout(RowLayout::create()->setGap(4.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
     this->addChild(m_tabsMenu, 2);
 
     float listW = winSize.width * 0.52f;
@@ -254,24 +253,21 @@ bool VerificationCenterLayer::init() {
     {
         auto filterMenu = CCMenu::create();
         filterMenu->setPosition({0, 0});
-        auto filterSpr = ButtonSprite::create("All", 55, true, "bigFont.fnt", "GJ_button_04.png", 22.f, 0.5f);
-        filterSpr->setScale(0.6f);
+        auto filterSpr = ButtonSprite::create("All", 72, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.40f);
         auto filterBtn = CCMenuItemSpriteExtra::create(filterSpr, this,
             menu_selector(VerificationCenterLayer::onToggleFilter));
         filterBtn->setID("filter-btn"_spr);
         filterBtn->setPosition({listX + 38.f, listY - 12.f});
         filterMenu->addChild(filterBtn);
 
-        auto refreshSpr = ButtonSprite::create("Refresh", 70, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.5f);
-        refreshSpr->setScale(0.6f);
+        auto refreshSpr = ButtonSprite::create("Refresh", 60, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
         m_refreshBtn = CCMenuItemSpriteExtra::create(refreshSpr, this,
             menu_selector(VerificationCenterLayer::onRefresh));
         m_refreshBtn->setID("refresh-btn"_spr);
         m_refreshBtn->setPosition({listX + 110.f, listY - 12.f});
         filterMenu->addChild(m_refreshBtn);
 
-        auto sessionSpr = ButtonSprite::create("Sesion", 70, true, "bigFont.fnt", "GJ_button_04.png", 22.f, 0.5f);
-        sessionSpr->setScale(0.6f);
+        auto sessionSpr = ButtonSprite::create("Sesion", 54, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.40f);
         auto sessionBtn = CCMenuItemSpriteExtra::create(sessionSpr, this,
             menu_selector(VerificationCenterLayer::onSession));
         sessionBtn->setPosition({listX + 180.f, listY - 12.f});
@@ -470,11 +466,10 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
 
     float btnX = width - 16.f;
     float btnY = 21.f;
-    float btnGap = 30.f;
+    float btnGap = 40.f;
 
     if (isUserReport) {
-        auto spr = ButtonSprite::create("Ban", 32, true, "bigFont.fnt", "GJ_button_06.png", 22.f, 0.5f);
-        spr->setScale(0.55f);
+        auto spr = ButtonSprite::create("Ban", 42, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
             menu_selector(VerificationCenterLayer::onBanUser));
         btn->setTag(item.levelID);
@@ -482,8 +477,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         setupBtn(btn, spr);
         btnX -= btnGap;
     } else if (m_current == PendingCategory::Report) {
-        auto spr = ButtonSprite::create("Del", 28, true, "bigFont.fnt", "GJ_button_06.png", 22.f, 0.5f);
-        spr->setScale(0.55f);
+        auto spr = ButtonSprite::create("Del", 42, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
             menu_selector(VerificationCenterLayer::onReject));
         btn->setTag(item.levelID);
@@ -492,8 +486,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         setupBtn(btn, spr);
         btnX -= btnGap;
     } else {
-        auto spr = ButtonSprite::create("X", 22, true, "bigFont.fnt", "GJ_button_06.png", 22.f, 0.5f);
-        spr->setScale(0.55f);
+        auto spr = ButtonSprite::create("X", 28, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
             menu_selector(VerificationCenterLayer::onReject));
         btn->setTag(item.levelID);
@@ -504,8 +497,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
     }
 
     if (m_current != PendingCategory::Report) {
-        auto spr = ButtonSprite::create("OK", 22, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.5f);
-        spr->setScale(0.55f);
+        auto spr = ButtonSprite::create("OK", 34, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
             menu_selector(VerificationCenterLayer::onAccept));
         btn->setTag(item.levelID);
@@ -516,8 +508,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
 
     // Several submitters can share one level; "ALL" only shows for bulk galleries.
     if (m_current == PendingCategory::Verify && item.suggestions.size() > 1) {
-        auto spr = ButtonSprite::create("ALL", 30, true, "bigFont.fnt", "GJ_button_02.png", 22.f, 0.5f);
-        spr->setScale(0.55f);
+        auto spr = ButtonSprite::create("ALL", 42, true, "bigFont.fnt", "GJ_button_02.png", 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
             menu_selector(VerificationCenterLayer::onAcceptAll));
         btn->setTag(item.levelID);
@@ -527,8 +518,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
     }
 
     if (m_current == PendingCategory::Report) {
-        auto spr = ButtonSprite::create("?", 22, true, "bigFont.fnt", "GJ_button_05.png", 22.f, 0.5f);
-        spr->setScale(0.55f);
+        auto spr = ButtonSprite::create("?", 28, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
             menu_selector(VerificationCenterLayer::onViewReport));
         btn->setTag(item.levelID);
@@ -540,8 +530,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
 
     {
         char const* claimImg = claimedByMe ? "GJ_button_02.png" : "GJ_button_04.png";
-        auto spr = ButtonSprite::create("C", 22, true, "bigFont.fnt", claimImg, 22.f, 0.5f);
-        spr->setScale(0.55f);
+        auto spr = ButtonSprite::create("C", 28, true, "bigFont.fnt", claimImg, 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
             menu_selector(VerificationCenterLayer::onClaimLevel));
         btn->setTag(item.levelID);
@@ -1159,10 +1148,9 @@ void VerificationCenterLayer::onToggleFilter(CCObject* sender) {
     if (btn) {
         auto spr = ButtonSprite::create(
             m_filterUnclaimed ? "Unclaimed" : "All",
-            m_filterUnclaimed ? 80 : 55, true, "bigFont.fnt",
+            72, true, "bigFont.fnt",
             m_filterUnclaimed ? "GJ_button_02.png" : "GJ_button_04.png",
-            22.f, 0.5f);
-        spr->setScale(0.6f);
+            18.f, 0.40f);
         btn->setNormalImage(spr);
     }
 

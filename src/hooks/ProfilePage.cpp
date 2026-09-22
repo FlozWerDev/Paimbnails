@@ -248,8 +248,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void createBanButtonInto(CCMenu* menu) {
         if (!menu) return;
-        auto banSpr = ButtonSprite::create("X", 40, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.6f);
-        banSpr->setScale(0.5f);
+        auto banSpr = ButtonSprite::create("X", 40, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.45f);
         auto banBtn = CCMenuItemSpriteExtra::create(banSpr, this, menu_selector(PaimonProfilePage::onBanUser));
         banBtn->setID("ban-user-button"_spr);
         banBtn->setVisible(false);

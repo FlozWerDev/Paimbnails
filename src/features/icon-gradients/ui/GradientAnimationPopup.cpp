@@ -156,9 +156,8 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
     menu->addChild(m_reverseToggle);
 
     auto resetSprite = ButtonSprite::create(
-        "Reset", 62, true, "bigFont.fnt", "GJ_button_04.png", 24.f, 0.42f
+        "Reset", 62, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.42f
     );
-    resetSprite->setScale(0.68f);
     auto reset = CCMenuItemSpriteExtra::create(
         resetSprite, this, menu_selector(GradientAnimationPopup::onReset)
     );
@@ -167,9 +166,8 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
     menu->addChild(reset);
 
     auto editSprite = ButtonSprite::create(
-        "Edit", 62, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.42f
+        "Edit", 62, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.42f
     );
-    editSprite->setScale(0.68f);
     auto edit = CCMenuItemSpriteExtra::create(
         editSprite, this, menu_selector(GradientAnimationPopup::onCustomize)
     );
@@ -180,10 +178,9 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
     for (size_t i = 0; i < kEffects.size(); ++i) {
         auto type = kEffects[i];
         auto sprite = ButtonSprite::create(
-            GradientAnimationManager::nameFor(type), 70, true,
-            "bigFont.fnt", "GJ_button_04.png", 24.f, 0.36f
+            GradientAnimationManager::nameFor(type), 62, true,
+            "bigFont.fnt", "GJ_button_04.png", 18.f, 0.40f
         );
-        sprite->setScale(0.72f);
 
         auto button = CCMenuItemSpriteExtra::create(
             sprite, this, menu_selector(GradientAnimationPopup::onEffect)

@@ -177,7 +177,8 @@ void MenuMusicLibraryPopup::buildHeader() {
         "GJ_button_05.png", "library-folder-btn");
     addAction("Sync", 46, menu_selector(MenuMusicLibraryPopup::onSyncGeometryDash),
         "GJ_button_02.png", "library-sync-btn");
-    actionMenu->setLayout(RowLayout::create()->setGap(5.f));
+    actionMenu->setLayout(RowLayout::create()->setGap(5.f)
+        ->setDefaultScaleLimits(0.5f, 1.f));
     actionMenu->updateLayout();
     actionMenu->setID("library-actions"_spr);
     m_mainLayer->addChild(actionMenu, 2);
@@ -188,7 +189,7 @@ void MenuMusicLibraryPopup::buildHeader() {
     auto addFilter = [&](const char* text, int width, SEL_MenuHandler handler,
                          ButtonSprite** output) {
         auto* spr = ButtonSprite::create(
-            text, width, true, "bigFont.fnt", "GJ_button_04.png", 15.f, 0.34f);
+            text, width, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.40f);
         if (!spr) return;
         if (auto* btn = CCMenuItemSpriteExtra::create(spr, this, handler)) {
             filterMenu->addChild(btn);
@@ -196,17 +197,18 @@ void MenuMusicLibraryPopup::buildHeader() {
         }
     };
     addFilter("A-Z", 44, menu_selector(MenuMusicLibraryPopup::onCycleSort), &m_sortSprite);
-    addFilter("Local", 44, menu_selector(MenuMusicLibraryPopup::onToggleLocalOnly),
+    addFilter("Local", 46, menu_selector(MenuMusicLibraryPopup::onToggleLocalOnly),
         &m_localSprite);
     addFilter("Favs", 40, menu_selector(MenuMusicLibraryPopup::onToggleFavoritesOnly),
         &m_favoritesSprite);
-    addFilter("Blocked", 52, menu_selector(MenuMusicLibraryPopup::onToggleBlacklistedOnly),
+    addFilter("Blocked", 56, menu_selector(MenuMusicLibraryPopup::onToggleBlacklistedOnly),
         &m_blacklistedSprite);
     addFilter("Rev", 36, menu_selector(MenuMusicLibraryPopup::onToggleSortReverse),
         &m_reverseSprite);
-    addFilter("Compact", 50, menu_selector(MenuMusicLibraryPopup::onToggleCompact),
+    addFilter("Compact", 54, menu_selector(MenuMusicLibraryPopup::onToggleCompact),
         &m_compactSprite);
-    filterMenu->setLayout(RowLayout::create()->setGap(4.f));
+    filterMenu->setLayout(RowLayout::create()->setGap(2.f)
+        ->setDefaultScaleLimits(0.5f, 1.f));
     filterMenu->updateLayout();
     filterMenu->setID("library-filters"_spr);
     m_mainLayer->addChild(filterMenu, 2);
@@ -216,16 +218,17 @@ void MenuMusicLibraryPopup::buildHeader() {
     navMenu->setPosition({size.width - 68.f, size.height - 67.f});
     auto addNav = [&](const char* text, int width, SEL_MenuHandler handler) {
         auto* spr = ButtonSprite::create(
-            text, width, true, "bigFont.fnt", "GJ_button_05.png", 15.f, 0.32f);
+            text, width, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.40f);
         if (!spr) return;
         if (auto* btn = CCMenuItemSpriteExtra::create(spr, this, handler)) {
             navMenu->addChild(btn);
         }
     };
-    addNav("Top", 34, menu_selector(MenuMusicLibraryPopup::onScrollTop));
+    addNav("Top", 36, menu_selector(MenuMusicLibraryPopup::onScrollTop));
     addNav("Now", 40, menu_selector(MenuMusicLibraryPopup::onScrollCurrent));
-    addNav("End", 34, menu_selector(MenuMusicLibraryPopup::onScrollBottom));
-    navMenu->setLayout(RowLayout::create()->setGap(4.f));
+    addNav("End", 36, menu_selector(MenuMusicLibraryPopup::onScrollBottom));
+    navMenu->setLayout(RowLayout::create()->setGap(2.f)
+        ->setDefaultScaleLimits(0.5f, 1.f));
     navMenu->updateLayout();
     navMenu->setID("library-navigation"_spr);
     m_mainLayer->addChild(navMenu, 2);

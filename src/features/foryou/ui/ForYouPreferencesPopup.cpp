@@ -168,7 +168,8 @@ bool ForYouPreferencesPopup::init(std::function<void()> onConfirm) {
         menu->setLayout(
             RowLayout::create()
                 ->setGap(gap)
-                ->setAxisAlignment(AxisAlignment::Center));
+                ->setAxisAlignment(AxisAlignment::Center)
+                ->setDefaultScaleLimits(0.5f, 1.f));
         parent->addChild(menu);
         return menu;
     };
@@ -178,8 +179,7 @@ bool ForYouPreferencesPopup::init(std::function<void()> onConfirm) {
                            std::vector<CCMenuItemSpriteExtra*>& out) {
         auto spr = ButtonSprite::create(
             text, 0, false, "bigFont.fnt",
-            "GJ_button_04.png", 22.f, 0.7f);
-        if (spr) spr->setScale(0.55f);
+            "GJ_button_04.png", 18.f, 0.40f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this, sel);
         btn->setTag(tag);
         menu->addChild(btn);
@@ -329,8 +329,7 @@ bool ForYouPreferencesPopup::init(std::function<void()> onConfirm) {
     {
         auto tagsSpr = ButtonSprite::create(
             Localization::get().getString("foryou.tags_button").c_str(),
-            0, false, "bigFont.fnt", "GJ_button_05.png", 22.f, 0.6f);
-        if (tagsSpr) tagsSpr->setScale(0.6f);
+            0, false, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.45f);
         auto tagsBtn = CCMenuItemSpriteExtra::create(tagsSpr, this,
             menu_selector(ForYouPreferencesPopup::onTagPreferences));
         tagsBtn->setPosition({POPUP_W - 118.f, bottomY});
@@ -341,8 +340,7 @@ bool ForYouPreferencesPopup::init(std::function<void()> onConfirm) {
     {
         auto confirmSpr = ButtonSprite::create(
             Localization::get().getString("foryou.prefs_confirm").c_str(),
-            70, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.6f);
-        if (confirmSpr) confirmSpr->setScale(0.68f);
+            70, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
         auto confirmBtn = CCMenuItemSpriteExtra::create(confirmSpr, this,
             menu_selector(ForYouPreferencesPopup::onConfirm));
         confirmBtn->setPosition({POPUP_W - 48.f, bottomY});

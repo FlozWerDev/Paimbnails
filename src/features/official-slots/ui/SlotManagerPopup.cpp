@@ -1,6 +1,7 @@
 #include "SlotManagerPopup.hpp"
 
 #include "SlotEditorPopup.hpp"
+#include "SlotOrderPopup.hpp"
 #include "SlotVisuals.hpp"
 #include "../services/OfficialSlotStore.hpp"
 #include "../services/SlotLevels.hpp"
@@ -25,6 +26,7 @@ namespace {
 constexpr float kWidth = 440.f;
 constexpr float kHeight = 300.f;
 constexpr float kRowGap = 6.f;
+constexpr float kListY = 46.f;
 
 std::string tr(char const* key) {
     return Localization::get().getString(key);
@@ -82,6 +84,7 @@ bool SlotManagerPopup::init(std::function<void()> onChanged) {
     this->setTitle(tr("slot.manager.title"));
     this->buildHeader();
     this->buildList();
+    this->buildFooter();
     this->rebuild();
     return true;
 }
@@ -103,11 +106,11 @@ void SlotManagerPopup::buildHeader() {
 }
 
 void SlotManagerPopup::buildList() {
-    float const scrollH = kHeight - 100.f;
+    float const scrollH = kHeight - 134.f;
     float const scrollW = kWidth - 30.f;
     if (auto* panel = CCScale9Sprite::create("GJ_square02.png")) {
         panel->setContentSize({kWidth - 20.f, scrollH + 6.f});
-        panel->setPosition({kWidth / 2.f, 12.f + scrollH / 2.f});
+        panel->setPosition({kWidth / 2.f, kListY + scrollH / 2.f});
         panel->setOpacity(220);
         panel->setID("manager-list-bg"_spr);
         m_mainLayer->addChild(panel, 1);
@@ -115,9 +118,25 @@ void SlotManagerPopup::buildList() {
 
     m_scroll = ScrollLayer::create({scrollW, scrollH});
     if (!m_scroll) return;
-    m_scroll->setPosition({15.f, 12.f});
+    m_scroll->setPosition({15.f, kListY});
     m_scroll->m_contentLayer->setID("manager-scroll-content"_spr);
     m_mainLayer->addChild(m_scroll, 2);
+}
+
+void SlotManagerPopup::buildFooter() {
+    auto* menu = CCMenu::create();
+    menu->setPosition({0.f, 0.f});
+    menu->setContentSize({kWidth, kHeight});
+    menu->setID("manager-footer-menu"_spr);
+    m_mainLayer->addChild(menu, 3);
+
+    if (auto* spr = smallButton(tr("slot.manager.order").c_str(), 72)) {
+        auto* item = CCMenuItemExt::createSpriteExtra(spr, [this](CCMenuItemSpriteExtra*) {
+            this->onReorder();
+        });
+        item->setPosition({kWidth / 2.f, 24.f});
+        menu->addChild(item);
+    }
 }
 
 void SlotManagerPopup::rebuild() {
@@ -365,6 +384,19 @@ void SlotManagerPopup::onDeleteSlot(Slot slot) {
 void SlotManagerPopup::onMoveSlot(std::string const& slotId, int delta) {
     SlotStore::get().move(slotId, delta);
     this->mutated();
+}
+
+void SlotManagerPopup::onReorder() {
+    geode::WeakRef<SlotManagerPopup> weak(this);
+    if (auto* popup = SlotOrderPopup::create([weak] {
+            auto ref = weak.lock();
+            if (!ref) return;
+            auto* self = typeinfo_cast<SlotManagerPopup*>(ref.data());
+            if (!self || !self->getParent()) return;
+            self->mutated();
+        })) {
+        popup->show();
+    }
 }
 
 void SlotManagerPopup::onToggleSlot(std::string const& slotId) {

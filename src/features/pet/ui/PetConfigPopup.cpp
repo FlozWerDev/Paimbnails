@@ -134,15 +134,13 @@ protected:
             y -= 16.f;
         }
 
-        auto selectAllSpr = ButtonSprite::create("Todas", "goldFont.fnt", "GJ_button_01.png", 0.55f);
-        selectAllSpr->setScale(0.45f);
+        auto selectAllSpr = ButtonSprite::create("Todas", 55, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
         auto selectAllBtn = CCMenuItemSpriteExtra::create(
             selectAllSpr, this, menu_selector(PetLayerPickerPopup::onSelectAll));
         selectAllBtn->setPosition({content.width / 2.f - 55.f, 15.f});
         menu->addChild(selectAllBtn);
 
-        auto clearSpr = ButtonSprite::create("Ninguna", "goldFont.fnt", "GJ_button_06.png", 0.55f);
-        clearSpr->setScale(0.45f);
+        auto clearSpr = ButtonSprite::create("Ninguna", 69, true, "goldFont.fnt", "GJ_button_06.png", 18.f, 0.45f);
         auto clearBtn = CCMenuItemSpriteExtra::create(
             clearSpr, this, menu_selector(PetLayerPickerPopup::onClearAll));
         clearBtn->setPosition({content.width / 2.f + 55.f, 15.f});
@@ -305,8 +303,7 @@ void PetConfigPopup::createTabButtons() {
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu, 10);
 
-    auto spr1 = ButtonSprite::create("Galeria");
-    spr1->setScale(0.45f);
+    auto spr1 = ButtonSprite::create("Galeria", 69, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
     auto tab1 = CCMenuItemSpriteExtra::create(spr1, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab1->setTag(0);
     tab1->setID("pet-gallery-tab-btn"_spr);
@@ -314,8 +311,7 @@ void PetConfigPopup::createTabButtons() {
     menu->addChild(tab1);
     m_tabs.push_back(tab1);
 
-    auto spr2 = ButtonSprite::create("Ajustes");
-    spr2->setScale(0.45f);
+    auto spr2 = ButtonSprite::create("Ajustes", 76, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
     auto tab2 = CCMenuItemSpriteExtra::create(spr2, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab2->setTag(1);
     tab2->setID("pet-settings-tab-btn"_spr);
@@ -323,8 +319,7 @@ void PetConfigPopup::createTabButtons() {
     menu->addChild(tab2);
     m_tabs.push_back(tab2);
 
-    auto spr3 = ButtonSprite::create("Avanzado");
-    spr3->setScale(0.45f);
+    auto spr3 = ButtonSprite::create("Avanzado", 76, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
     auto tab3 = CCMenuItemSpriteExtra::create(spr3, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab3->setTag(2);
     tab3->setID("pet-advanced-tab-btn"_spr);
@@ -796,8 +791,7 @@ void PetConfigPopup::buildAdvancedTab() {
             CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
         row->addChild(menu, 5);
 
-        auto* spr = ButtonSprite::create("Cambiar", "goldFont.fnt", "GJ_button_04.png", 0.7f);
-        if (spr) spr->setScale(0.5f);
+        auto* spr = ButtonSprite::create("Cambiar", 69, true, "goldFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
         auto* btn = CCMenuItemExt::createSpriteExtra(
             spr, [this, idx](CCMenuItemSpriteExtra*) { pickIconStateImage(idx); });
         btn->setPosition({innerW - 14.f - btn->getScaledContentSize().width / 2.f, 15.f});

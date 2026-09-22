@@ -1535,9 +1535,8 @@ void LeaderboardLayer::createForYouList() {
                 auto const& tagName = pick.tags[t];
 
                 auto pill = ButtonSprite::create(
-                    tagName.c_str(), 0, false, "bigFont.fnt", "GJ_button_04.png", 20.f, 0.42f);
+                    tagName.c_str(), 0, false, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.42f);
                 if (!pill) continue;
-                pill->setScale(0.52f);
 
                 float pillW = pill->getScaledContentSize().width;
                 if (tagX + pillW > tagRowLimit) break;

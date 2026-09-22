@@ -750,8 +750,7 @@ bool GradientLayer::init() {
     m_buttonMenu->addChild(settingsButton);
 
     auto addPointMode = [this](char const* title, float x, SEL_MenuHandler callback, char const* id) {
-        auto sprite = ButtonSprite::create(title, 54, true, "bigFont.fnt", "GJ_button_04.png", 24.f, 0.42f);
-        sprite->setScale(0.65f);
+        auto sprite = ButtonSprite::create(title, 54, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.42f);
         auto button = CCMenuItemSpriteExtra::create(sprite, this, callback);
         button->setPosition({x, 281.f});
         button->setID(id);
@@ -820,13 +819,12 @@ bool GradientLayer::init() {
     addRGBInput("B", 376.f, m_bInput);
 
     auto addActionButton = [this](
-        char const* text, char const* background, CCPoint position,
+        char const* text, int width, char const* background, CCPoint position,
         SEL_MenuHandler callback, char const* id
     ) {
         auto sprite = ButtonSprite::create(
-            text, 66, true, "bigFont.fnt", background, 24.f, 0.45f
+            text, width, true, "bigFont.fnt", background, 18.f, 0.40f
         );
-        sprite->setScale(0.7f);
         sprite->setCascadeOpacityEnabled(true);
 
         auto button = CCMenuItemSpriteExtra::create(sprite, this, callback);
@@ -838,27 +836,27 @@ bool GradientLayer::init() {
     };
 
     m_addButton = addActionButton(
-        "Add", "GJ_button_01.png", {70.f, 29.f},
+        "Add", 56, "GJ_button_01.png", {70.f, 29.f},
         menu_selector(GradientLayer::onAddPoint), "add-point-button"
     );
     m_removeButton = addActionButton(
-        "Delete", "GJ_button_06.png", {130.f, 29.f},
+        "Delete", 56, "GJ_button_06.png", {130.f, 29.f},
         menu_selector(GradientLayer::onRemovePoint), "remove-point-button"
     );
     m_copyButton = addActionButton(
-        "Copy", "GJ_button_04.png", {190.f, 29.f},
+        "Copy", 56, "GJ_button_04.png", {190.f, 29.f},
         menu_selector(GradientLayer::onCopy), "copy-gradient-button"
     );
     m_pasteButton = addActionButton(
-        "Paste", "GJ_button_04.png", {250.f, 29.f},
+        "Paste", 56, "GJ_button_04.png", {250.f, 29.f},
         menu_selector(GradientLayer::onPaste), "paste-gradient-button"
     );
     m_saveButton = addActionButton(
-        "Save", "GJ_button_01.png", {310.f, 29.f},
+        "Save", 56, "GJ_button_01.png", {310.f, 29.f},
         menu_selector(GradientLayer::onSave), "save-gradient-button"
     );
     m_loadButton = addActionButton(
-        "Load", "GJ_button_02.png", {370.f, 29.f},
+        "Load", 56, "GJ_button_02.png", {370.f, 29.f},
         menu_selector(GradientLayer::onLoad), "load-gradient-button"
     );
 

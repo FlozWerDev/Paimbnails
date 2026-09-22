@@ -42,14 +42,14 @@ bool SameAsPickerPopup::init(std::string const& currentKey, geode::CopyableFunct
             ->setAxisAlignment(AxisAlignment::Start)
             ->setCrossAxisAlignment(AxisAlignment::Center)
             ->setAxisReverse(true)
+            ->setDefaultScaleLimits(0.5f, 1.f)
     );
     m_mainLayer->addChildAtPosition(menu, Anchor::Center, {0.f, -10.f});
     menu->setZOrder(10);
 
     for (int i = 0; i < (int)options.size(); i++) {
         auto& opt = options[i];
-        auto spr = ButtonSprite::create(opt.label.c_str(), "bigFont.fnt", "GJ_button_01.png", .7f);
-        spr->setScale(0.52f);
+        auto spr = ButtonSprite::create(opt.label.c_str(), 108, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
 
         auto btn = CCMenuItemExt::createSpriteExtra(spr, [this, optKey = opt.key](CCMenuItemSpriteExtra*) {
             if (m_onPick) m_onPick(optKey);

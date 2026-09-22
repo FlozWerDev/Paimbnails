@@ -209,7 +209,7 @@ const float fillSize = 29.f;
 
     auto makeArrow = [&](const char* text, SEL_MenuHandler sel, float x, float y) {
         auto* spr = ButtonSprite::create(text, "bigFont.fnt", "GJ_button_04.png", 0.7f);
-        spr->setScale(0.42f);
+        spr->setScale(0.5f);
         auto* btn = CCMenuItemSpriteExtra::create(spr, this, sel);
         btn->setPosition({x, y});
         m_controlsMenu->addChild(btn, 1);
@@ -254,8 +254,7 @@ const float fillSize = 29.f;
             btn = CCMenuItemSpriteExtra::create(
                 spr, this, menu_selector(ColorPickerOverlay::onCancel));
         } else {
-            auto* fb = ButtonSprite::create("X", "bigFont.fnt", "GJ_button_06.png", 0.7f);
-            fb->setScale(0.5f);
+            auto* fb = ButtonSprite::create("X", 40, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.45f);
             btn = CCMenuItemSpriteExtra::create(
                 fb, this, menu_selector(ColorPickerOverlay::onCancel));
         }

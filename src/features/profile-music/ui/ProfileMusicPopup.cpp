@@ -216,8 +216,8 @@ void ProfileMusicPopup::createSongIdInput() {
     m_songIdInput->setID("song-id-input"_spr);
     inputRow->addChild(m_songIdInput);
 
-    auto loadSpr = ButtonSprite::create(tr("music.load_song").c_str(), 50, true,
-        "bigFont.fnt", "GJ_button_01.png", 22.f, 0.55f);
+    auto loadSpr = ButtonSprite::create(tr("music.load_song").c_str(), 62, true,
+        "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
     auto loadBtn = CCMenuItemSpriteExtra::create(loadSpr, this,
         menu_selector(ProfileMusicPopup::onLoadSong));
     loadBtn->setID("load-song-btn"_spr);
@@ -231,8 +231,8 @@ void ProfileMusicPopup::createSongIdInput() {
         searchBtn = CCMenuItemSpriteExtra::create(searchSpr, this,
             menu_selector(ProfileMusicPopup::onSearchSong));
     } else {
-        auto fbSpr = ButtonSprite::create(tr("music.search.button").c_str(), 40, true,
-            "bigFont.fnt", "GJ_button_05.png", 18.f, 0.50f);
+        auto fbSpr = ButtonSprite::create(tr("music.search.button").c_str(), 62, true,
+            "bigFont.fnt", "GJ_button_05.png", 18.f, 0.45f);
         searchBtn = CCMenuItemSpriteExtra::create(fbSpr, this,
             menu_selector(ProfileMusicPopup::onSearchSong));
     }
@@ -240,8 +240,8 @@ void ProfileMusicPopup::createSongIdInput() {
     inputRow->addChild(searchBtn);
 
     if (hasCustomBtn) {
-        auto customSpr = ButtonSprite::create(tr("music.file").c_str(), 40, true,
-            "bigFont.fnt", "GJ_button_04.png", 18.f, 0.55f);
+        auto customSpr = ButtonSprite::create(tr("music.file").c_str(), 70, true,
+            "bigFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
         auto customBtn = CCMenuItemSpriteExtra::create(customSpr, this,
             menu_selector(ProfileMusicPopup::onLoadCustomFile));
         customBtn->setID("custom-file-btn"_spr);
@@ -254,6 +254,7 @@ void ProfileMusicPopup::createSongIdInput() {
             ->setAxisAlignment(AxisAlignment::Center)
             ->setCrossAxisAlignment(AxisAlignment::Center)
             ->setAutoScale(false)
+            ->setDefaultScaleLimits(0.5f, 1.f)
     );
     inputRow->updateLayout();
 
@@ -430,13 +431,13 @@ void ProfileMusicPopup::createControlButtons() {
 
     auto playbackMenu = CCMenu::create();
     playbackMenu->setID("playback-menu"_spr);
-    playbackMenu->setContentSize({240.f, 38.f});
+    playbackMenu->setContentSize({280.f, 38.f});
     playbackMenu->ignoreAnchorPointForPosition(false);
     playbackMenu->setAnchorPoint({0.5f, 0.5f});
     playbackMenu->setPosition({winSize.width / 2.f, row1Y});
 
     auto makeIconBtn = [this](const char* primaryFrame, const char* fallbackFrame,
-                              const char* fallbackLabelKey, SEL_MenuHandler selector,
+                              const char* fallbackLabelKey, int fallbackWidth, SEL_MenuHandler selector,
                               float iconScale) -> CCMenuItemSpriteExtra* {
         auto spr = paimon::SpriteHelper::safeCreateWithFrameName(primaryFrame);
         if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName(fallbackFrame);
@@ -444,23 +445,23 @@ void ProfileMusicPopup::createControlButtons() {
             spr->setScale(iconScale);
             return CCMenuItemSpriteExtra::create(spr, this, selector);
         }
-        auto fb = ButtonSprite::create(tr(fallbackLabelKey).c_str(), 50, true,
-            "bigFont.fnt", "GJ_button_01.png", 20.f, 0.5f);
+        auto fb = ButtonSprite::create(tr(fallbackLabelKey).c_str(), fallbackWidth, true,
+            "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
         return CCMenuItemSpriteExtra::create(fb, this, selector);
     };
 
     auto playBtn = makeIconBtn("GJ_playBtn2_001.png", "GJ_playMusicBtn_001.png",
-        "music.play_preview", menu_selector(ProfileMusicPopup::onPlayPreview), 0.34f);
+        "music.play_preview", 78, menu_selector(ProfileMusicPopup::onPlayPreview), 0.34f);
     playBtn->setID("play-btn"_spr);
     playbackMenu->addChild(playBtn);
 
     auto stopBtn = makeIconBtn("GJ_stopMusicBtn_001.png", "GJ_deleteBtn_001.png",
-        "music.stop_preview", menu_selector(ProfileMusicPopup::onStopPreview), 0.40f);
+        "music.stop_preview", 60, menu_selector(ProfileMusicPopup::onStopPreview), 0.40f);
     stopBtn->setID("stop-btn"_spr);
     playbackMenu->addChild(stopBtn);
 
     auto dlBtn = makeIconBtn("GJ_downloadBtn_001.png", "GJ_downloadsIcon_001.png",
-        "music.dl_short", menu_selector(ProfileMusicPopup::onDownloadSong), 0.42f);
+        "music.dl_short", 36, menu_selector(ProfileMusicPopup::onDownloadSong), 0.42f);
     dlBtn->setID("dl-btn"_spr);
     playbackMenu->addChild(dlBtn);
 
@@ -470,6 +471,7 @@ void ProfileMusicPopup::createControlButtons() {
             ->setAxisAlignment(AxisAlignment::Center)
             ->setCrossAxisAlignment(AxisAlignment::Center)
             ->setAutoScale(false)
+            ->setDefaultScaleLimits(0.5f, 1.f)
     );
     playbackMenu->updateLayout();
     m_mainLayer->addChild(playbackMenu, 10);
@@ -483,15 +485,15 @@ void ProfileMusicPopup::createControlButtons() {
     actionsMenu->setAnchorPoint({0.5f, 0.5f});
     actionsMenu->setPosition({winSize.width / 2.f, row2Y});
 
-    auto saveSpr = ButtonSprite::create(tr("music.save").c_str(), 70, true,
-        "bigFont.fnt", "GJ_button_01.png", 24.f, 0.6f);
+    auto saveSpr = ButtonSprite::create(tr("music.save").c_str(), 76, true,
+        "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
     auto saveBtn = CCMenuItemSpriteExtra::create(saveSpr, this,
         menu_selector(ProfileMusicPopup::onSave));
     saveBtn->setID("save-btn"_spr);
     actionsMenu->addChild(saveBtn);
 
-    auto deleteSpr = ButtonSprite::create(tr("music.delete").c_str(), 70, true,
-        "bigFont.fnt", "GJ_button_06.png", 24.f, 0.6f);
+    auto deleteSpr = ButtonSprite::create(tr("music.delete").c_str(), 76, true,
+        "bigFont.fnt", "GJ_button_06.png", 18.f, 0.45f);
     auto deleteBtn = CCMenuItemSpriteExtra::create(deleteSpr, this,
         menu_selector(ProfileMusicPopup::onDelete));
     deleteBtn->setID("delete-btn"_spr);
@@ -503,6 +505,7 @@ void ProfileMusicPopup::createControlButtons() {
             ->setAxisAlignment(AxisAlignment::Center)
             ->setCrossAxisAlignment(AxisAlignment::Center)
             ->setAutoScale(false)
+            ->setDefaultScaleLimits(0.5f, 1.f)
     );
     actionsMenu->updateLayout();
     m_mainLayer->addChild(actionsMenu, 10);

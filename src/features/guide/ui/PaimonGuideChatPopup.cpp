@@ -285,9 +285,8 @@ bool PaimonGuideChatPopup::init() {
 
     auto takeMeSpr = ButtonSprite::create(
         tr("pai.guide.take.me.there", "Take me there").c_str(),
-        "bigFont.fnt", "GJ_button_05.png", 0.8f
+        112, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.45f
     );
-    takeMeSpr->setScale(0.45f);
     m_takeMeBtn = CCMenuItemSpriteExtra::create(
         takeMeSpr, this, menu_selector(PaimonGuideChatPopup::onTakeMeThere)
     );
@@ -316,14 +315,15 @@ bool PaimonGuideChatPopup::init() {
             ->setGrowCrossAxis(true)
             ->setCrossAxisOverflow(false)
             ->setAutoScale(false)
+            ->setDefaultScaleLimits(0.5f, 1.f)
     );
 
     auto suggestions = PaimonGuideService::get().getSuggestions();
     for (auto const& [chipText, query] : suggestions) {
+        int chipW = static_cast<int>(chipText.size()) * 6 + 18;
         auto* chipSpr = ButtonSprite::create(
-            chipText.c_str(), "bigFont.fnt", "GJ_button_05.png", 0.6f
+            chipText.c_str(), chipW, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.40f
         );
-        chipSpr->setScale(0.42f);
         auto* chipBtn = CCMenuItemSpriteExtra::create(
             chipSpr, this, menu_selector(PaimonGuideChatPopup::onSuggestionChip)
         );
@@ -578,7 +578,7 @@ void PaimonGuideChatPopup::onSubmitButton(cocos2d::CCObject* /*sender*/) {
             m_takeMeBtn->stopAllActions();
             m_takeMeBtn->setScale(0.f);
             m_takeMeBtn->runAction(
-                CCEaseElasticOut::create(CCScaleTo::create(0.45f, 0.45f), 0.5f)
+                CCEaseElasticOut::create(CCScaleTo::create(0.45f, 1.f), 0.5f)
             );
             if (m_paimon && m_takeMeBtn) {
                 m_paimon->pointAt(m_takeMeBtn, 0.5f);
@@ -607,10 +607,10 @@ void PaimonGuideChatPopup::setRecommendationChips(
         std::string chipText = rec.label;
         if (chipText.size() > 16) chipText = chipText.substr(0, 14) + "..";
 
+        int chipW = static_cast<int>(chipText.size()) * 6 + 18;
         auto* chipSpr = ButtonSprite::create(
-            chipText.c_str(), "bigFont.fnt", "GJ_button_01.png", 0.6f
+            chipText.c_str(), chipW, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f
         );
-        chipSpr->setScale(0.40f);
         auto* chipBtn = CCMenuItemSpriteExtra::create(
             chipSpr, this, menu_selector(PaimonGuideChatPopup::onRecommendationChip)
         );
@@ -630,10 +630,10 @@ void PaimonGuideChatPopup::restoreDefaultChips() {
 
     auto suggestions = PaimonGuideService::get().getSuggestions();
     for (auto const& [chipText, query] : suggestions) {
+        int chipW = static_cast<int>(chipText.size()) * 6 + 18;
         auto* chipSpr = ButtonSprite::create(
-            chipText.c_str(), "bigFont.fnt", "GJ_button_05.png", 0.6f
+            chipText.c_str(), chipW, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.40f
         );
-        chipSpr->setScale(0.42f);
         auto* chipBtn = CCMenuItemSpriteExtra::create(
             chipSpr, this, menu_selector(PaimonGuideChatPopup::onSuggestionChip)
         );

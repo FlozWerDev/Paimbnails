@@ -187,7 +187,7 @@ void MenuMusicPlaylistsPopup::showGrid() {
         menu->ignoreAnchorPointForPosition(false);
 
         auto viewSpr = ButtonSprite::create(
-            "Open", 48, true, "bigFont.fnt", "GJ_button_01.png", 16.f, 0.4f);
+            "Open", 48, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
         if (viewSpr) {
             auto b = CCMenuItemSpriteExtra::create(viewSpr, this,
                 menu_selector(MenuMusicPlaylistsPopup::onOpenPlaylist));
@@ -198,12 +198,12 @@ void MenuMusicPlaylistsPopup::showGrid() {
         }
         auto useSpr = ButtonSprite::create(
             active ? "Active" : "Use",
-            52, true, "bigFont.fnt", "GJ_button_04.png", 16.f, 0.4f);
+            62, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
         if (useSpr) {
             auto b = CCMenuItemSpriteExtra::create(useSpr, this,
                 menu_selector(MenuMusicPlaylistsPopup::onActivatePlaylist));
             b->setUserObject(CCString::create(pl.id.c_str()));
-            b->setPosition({80.f, kCardHeight / 2.f});
+            b->setPosition({82.f, kCardHeight / 2.f});
             b->setID("activate-playlist-btn"_spr);
             menu->addChild(b);
         }

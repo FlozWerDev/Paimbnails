@@ -107,8 +107,7 @@ void LocalThumbnailViewPopup::replaceRemoteThumbnails(std::vector<ThumbnailAPI::
 void LocalThumbnailViewPopup::ensureOrderControls(float /*contentWidth*/) {
     if (!m_isAdmin || !m_buttonMenu || m_verificationCategory >= 0 || m_orderEditBtn) return;
 
-    auto orderSpr = ButtonSprite::create("Order", 80, true, "bigFont.fnt", "GJ_button_03.png", 30.f, 0.5f);
-    orderSpr->setScale(0.6f);
+    auto orderSpr = ButtonSprite::create("Order", 50, true, "bigFont.fnt", "GJ_button_03.png", 18.f, 0.40f);
     if (orderSpr) {
         m_orderEditBtn = CCMenuItemSpriteExtra::create(orderSpr, this, menu_selector(LocalThumbnailViewPopup::onOrderEdit));
         m_orderEditBtn->setID("thumbnail-order-edit-btn"_spr);
@@ -1413,28 +1412,23 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     CCMenuItemSpriteExtra* centerBtn = nullptr;
 
     if (m_verificationCategory >= 0 && m_verificationCategory != 2) {
-        auto acceptSpr = ButtonSprite::create(Localization::get().getString("level.accept_button").c_str(), 80, true, "bigFont.fnt", "GJ_button_01.png", 30.f, 0.5f);
-        acceptSpr->setScale(0.6f);
+        auto acceptSpr = ButtonSprite::create(Localization::get().getString("level.accept_button").c_str(), 62, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
         centerBtn = CCMenuItemSpriteExtra::create(acceptSpr, this, menu_selector(LocalThumbnailViewPopup::onAcceptThumbBtn));
 
-        auto rejectSpr = ButtonSprite::create(Localization::get().getString("level.reject_button").c_str(), 80, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.5f);
-        rejectSpr->setScale(0.6f);
+        auto rejectSpr = ButtonSprite::create(Localization::get().getString("level.reject_button").c_str(), 128, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
         auto rejectBtn = CCMenuItemSpriteExtra::create(rejectSpr, this, menu_selector(LocalThumbnailViewPopup::onRejectThumbBtn));
         if (rejectBtn) buttonMenu->addChild(rejectBtn);
     } else if (openedFromReport) {
-        auto delSpr = ButtonSprite::create(Localization::get().getString("level.delete_button").c_str(), 90, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.5f);
-        delSpr->setScale(0.6f);
+        auto delSpr = ButtonSprite::create(Localization::get().getString("level.delete_button").c_str(), 116, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
         centerBtn = CCMenuItemSpriteExtra::create(delSpr, this, menu_selector(LocalThumbnailViewPopup::onDeleteReportedThumb));
     } else {
-        auto reportSpr = ButtonSprite::create(Localization::get().getString("level.report_button").c_str(), 80, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.5f);
-        reportSpr->setScale(0.6f);
+        auto reportSpr = ButtonSprite::create(Localization::get().getString("level.report_button").c_str(), 68, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
         centerBtn = CCMenuItemSpriteExtra::create(reportSpr, this, menu_selector(LocalThumbnailViewPopup::onReportBtn));
     }
 
     CCMenuItemSpriteExtra* acceptBtn = nullptr;
     if (m_canAcceptUpload && m_verificationCategory < 0) {
-        auto acceptSpr = ButtonSprite::create(Localization::get().getString("level.accept_button").c_str(), 80, true, "bigFont.fnt", "GJ_button_01.png", 30.f, 0.5f);
-        acceptSpr->setScale(0.6f);
+        auto acceptSpr = ButtonSprite::create(Localization::get().getString("level.accept_button").c_str(), 62, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
         acceptBtn = CCMenuItemSpriteExtra::create(acceptSpr, this, menu_selector(LocalThumbnailViewPopup::onAcceptThumbBtn));
     }
 
@@ -1503,9 +1497,10 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     buttonMenu->setPosition({content.width / 2, 46.f});
 
     auto layout = RowLayout::create();
-    layout->setGap(15.f);
+    layout->setGap(10.f);
     layout->setAxisAlignment(AxisAlignment::Center);
     layout->setCrossAxisAlignment(AxisAlignment::Center);
+    layout->setDefaultScaleLimits(0.5f, 1.f);
 
     buttonMenu->setLayout(layout);
     buttonMenu->updateLayout();

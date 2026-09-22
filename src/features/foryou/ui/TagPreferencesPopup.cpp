@@ -23,7 +23,6 @@ constexpr float kPopupHeight = 280.f;
 constexpr float kScrollWidth = 388.f;
 constexpr float kScrollHeight = 178.f;
 constexpr float kChipHeight = 19.f;
-constexpr float kChipScale = 0.55f;
 constexpr float kChipGap = 5.f;
 constexpr float kRowGap = 4.f;
 
@@ -165,9 +164,8 @@ void TagPreferencesPopup::buildContent() {
 
             auto spr = ButtonSprite::create(
                 loc.getString("foryou.tags_gate_install").c_str(),
-                90, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.6f);
+                90, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
             if (spr) {
-                spr->setScale(0.65f);
                 menu->addChild(CCMenuItemSpriteExtra::create(
                     spr, this, menu_selector(TagPreferencesPopup::onInstallLevelTags)));
             }
@@ -193,9 +191,8 @@ void TagPreferencesPopup::buildContent() {
         float rowWidth = 0.f;
         for (auto const& info : tags) {
             auto probe = ButtonSprite::create(
-                info.name.c_str(), 0, false, "bigFont.fnt", "GJ_button_04.png", 20.f, 0.42f);
+                info.name.c_str(), 0, false, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.42f);
             if (!probe) continue;
-            probe->setScale(kChipScale);
             float chipWidth = probe->getScaledContentSize().width;
 
             if (rowWidth + chipWidth > kScrollWidth - 16.f && !row.tags.empty()) {
@@ -238,9 +235,8 @@ void TagPreferencesPopup::buildContent() {
             float x = 8.f;
             for (auto const& info : row.tags) {
                 auto pill = ButtonSprite::create(
-                    info.name.c_str(), 0, false, "bigFont.fnt", "GJ_button_04.png", 20.f, 0.42f);
+                    info.name.c_str(), 0, false, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.42f);
                 if (!pill) continue;
-                pill->setScale(kChipScale);
                 float chipWidth = pill->getScaledContentSize().width;
 
                 auto button = CCMenuItemSpriteExtra::create(

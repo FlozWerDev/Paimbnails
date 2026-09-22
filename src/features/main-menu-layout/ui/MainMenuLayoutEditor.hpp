@@ -49,6 +49,9 @@ private:
     void animateInterface(bool opening);
     void beginClose(bool saved);
     void animateLive(Item const& item);
+    void animateEntry();
+    // Guardado: pop rapido antes de que la interfaz se funda.
+    void animateSettle();
     void updateAnimations(float dt);
 
     Item* selectedItem();
@@ -91,8 +94,11 @@ private:
     struct LayoutTransition {
         MenuButtonLayout from;
         float elapsed = 0.f;
+        float duration;
     };
     std::unordered_map<std::string, LayoutTransition> m_transitions;
+    // Shapes al abrir: cancelar las devuelve aunque el cierre se interrumpa.
+    std::vector<DrawShapeLayout> m_initialShapes;
     bool m_closing = false;
     bool m_saved = false;
     float m_interfaceElapsed = 0.f;

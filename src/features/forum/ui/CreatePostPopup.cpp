@@ -96,6 +96,7 @@ bool CreatePostPopup::init(
             ->setGrowCrossAxis(true)
             ->setCrossAxisOverflow(false)
             ->setAutoScale(false)
+            ->setDefaultScaleLimits(0.5f, 1.f)
             ->setAxisAlignment(AxisAlignment::Start)
     );
     m_mainLayer->addChild(m_tagMenu);
@@ -146,10 +147,9 @@ void CreatePostPopup::rebuildTagChips() {
         bool selected = std::find(m_selectedTags.begin(), m_selectedTags.end(),
             m_availableTags[i]) != m_selectedTags.end();
         auto spr = ButtonSprite::create(
-            m_availableTags[i].c_str(), "bigFont.fnt",
-            selected ? "GJ_button_01.png" : "GJ_button_05.png", 0.8f
+            m_availableTags[i].c_str(), 0, false, "bigFont.fnt",
+            selected ? "GJ_button_01.png" : "GJ_button_05.png", 18.f, 0.42f
         );
-        spr->setScale(0.34f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(CreatePostPopup::onToggleTag));
         btn->setTag(static_cast<int>(i));
         m_tagMenu->addChild(btn);

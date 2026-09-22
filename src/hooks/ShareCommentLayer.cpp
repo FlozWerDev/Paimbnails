@@ -47,8 +47,7 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
 
     CCMenuItemSpriteExtra* createToolButton(const char* text, SEL_MenuHandler sel) {
         auto btnSpr = ButtonSprite::create(
-            text, 40, true, "bigFont.fnt", "GJ_plainBtn_001.png", 25.f, 0.5f);
-        btnSpr->setScale(0.6f);
+            text, 40, true, "bigFont.fnt", "GJ_plainBtn_001.png", 18.f, 0.40f);
         return CCMenuItemSpriteExtra::create(btnSpr, this, sel);
     }
 

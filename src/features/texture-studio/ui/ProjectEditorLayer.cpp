@@ -611,12 +611,16 @@ void ProjectEditorLayer::buildTabsPanel() {
             ->setGap(3.f)
             ->setAxisAlignment(AxisAlignment::Even)
             ->setCrossAxisOverflow(false)
-            ->setAutoScale(true));
+            ->setAutoScale(true)
+            ->setDefaultScaleLimits(0.5f, 1.f));
     this->addChild(tabRow, 10);
 
+    const int tabWidths[4] = {42, 42, 48, 54};
+
     for (int i = 0; i < 4; ++i) {
-        if (auto* spr = ButtonSprite::create(defs[i].label, "bigFont.fnt",
-                                             "GJ_button_04.png", 0.28f)) {
+        if (auto* spr = ButtonSprite::create(defs[i].label, tabWidths[i], true,
+                                             "bigFont.fnt", "GJ_button_04.png",
+                                             18.f, 0.40f)) {
             if (auto* btn = CCMenuItemExt::createSpriteExtra(spr,
                     [this, i](CCMenuItemSpriteExtra*) { this->selectTab(i); })) {
                 tabRow->addChild(btn);
@@ -1092,26 +1096,30 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
     imageRow->setPosition({w / 2.f, h - 74.f});
     imageRow->setLayout(
         RowLayout::create()
-            ->setGap(5.f)
+            ->setGap(4.f)
             ->setAxisAlignment(AxisAlignment::Even)
             ->setCrossAxisOverflow(false)
-            ->setAutoScale(true));
+            ->setAutoScale(true)
+            ->setDefaultScaleLimits(0.5f, 1.f));
     tab->addChild(imageRow);
     m_imageRow = imageRow;
 
-    if (auto* pickSpr = ButtonSprite::create("Pick...", "bigFont.fnt", "GJ_button_05.png", 0.28f)) {
+    if (auto* pickSpr = ButtonSprite::create("Pick...", 54, true, "bigFont.fnt",
+                                             "GJ_button_05.png", 18.f, 0.40f)) {
         if (auto* pickBtn = CCMenuItemExt::createSpriteExtra(pickSpr,
                 [this](CCMenuItemSpriteExtra*) { this->onPickImage(); })) {
             imageRow->addChild(pickBtn);
         }
     }
-    if (auto* clearSpr = ButtonSprite::create("Clear", "bigFont.fnt", "GJ_button_06.png", 0.28f)) {
+    if (auto* clearSpr = ButtonSprite::create("Clear", 44, true, "bigFont.fnt",
+                                              "GJ_button_06.png", 18.f, 0.40f)) {
         if (auto* clearBtn = CCMenuItemExt::createSpriteExtra(clearSpr,
                 [this](CCMenuItemSpriteExtra*) { this->onClearImage(); })) {
             imageRow->addChild(clearBtn);
         }
     }
-    if (auto* fitSpr = ButtonSprite::create("Fit", "bigFont.fnt", "GJ_button_04.png", 0.28f)) {
+    if (auto* fitSpr = ButtonSprite::create("Fit", 32, true, "bigFont.fnt",
+                                            "GJ_button_04.png", 18.f, 0.40f)) {
         if (auto* fitBtn = CCMenuItemExt::createSpriteExtra(fitSpr,
                 [this](CCMenuItemSpriteExtra*) {
                     if (!m_hasSelection) return;
@@ -1126,7 +1134,8 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
             m_fitBtn = fitBtn;
         }
     }
-    if (auto* modeSpr = ButtonSprite::create("Replace", "bigFont.fnt", "GJ_button_04.png", 0.28f)) {
+    if (auto* modeSpr = ButtonSprite::create("Replace", 54, true, "bigFont.fnt",
+                                             "GJ_button_04.png", 18.f, 0.40f)) {
         if (auto* modeBtn = CCMenuItemExt::createSpriteExtra(modeSpr,
                 [this](CCMenuItemSpriteExtra*) {
                     if (!m_hasSelection) return;

@@ -122,9 +122,8 @@ bool PhysicsBodyPopup::init() {
 
         for (int direction : {-1, 1}) {
             auto* sprite = ButtonSprite::create(
-                direction < 0 ? "-" : "+", "bigFont.fnt", "GJ_button_04.png", 0.8f
+                direction < 0 ? "-" : "+", "bigFont.fnt", "GJ_button_04.png", 0.4f
             );
-            sprite->setScale(0.42f);
             auto* button = CCMenuItemExt::createSpriteExtra(
                 sprite, [self, field, direction](CCMenuItemSpriteExtra*) {
                     if (auto popup = self.lock()) popup->adjust(field, direction);
@@ -154,9 +153,8 @@ bool PhysicsBodyPopup::init() {
     addNativeLabel("Jugador", 73.f);
 
     m_backendSprite = ButtonSprite::create(
-        "triggers", 104, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.5f
+        "triggers", 84, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f
     );
-    m_backendSprite->setScale(0.54f);
     auto* backendButton = CCMenuItemExt::createSpriteExtra(
         m_backendSprite, [self](CCMenuItemSpriteExtra*) {
             if (auto popup = self.lock()) popup->cycleBackend();
@@ -166,9 +164,8 @@ bool PhysicsBodyPopup::init() {
     menu->addChild(backendButton);
 
     m_presetSprite = ButtonSprite::create(
-        "empujable", 104, true, "bigFont.fnt", "GJ_button_04.png", 22.f, 0.5f
+        "empujable", 84, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.45f
     );
-    m_presetSprite->setScale(0.54f);
     auto* presetButton = CCMenuItemExt::createSpriteExtra(
         m_presetSprite, [self](CCMenuItemSpriteExtra*) {
             if (auto popup = self.lock()) popup->cycleNativePreset(1);
@@ -185,9 +182,8 @@ bool PhysicsBodyPopup::init() {
         m_mainLayer->addChild(value);
         for (int direction : {-1, 1}) {
             auto* sprite = ButtonSprite::create(
-                direction < 0 ? "-" : "+", "bigFont.fnt", "GJ_button_04.png", 0.8f
+                direction < 0 ? "-" : "+", "bigFont.fnt", "GJ_button_04.png", 0.4f
             );
-            sprite->setScale(0.34f);
             auto* button = CCMenuItemExt::createSpriteExtra(
                 sprite, [self, field, direction](CCMenuItemSpriteExtra*) {
                     if (auto popup = self.lock()) popup->adjustNative(field, direction);
@@ -202,10 +198,9 @@ bool PhysicsBodyPopup::init() {
 
     auto addPlayerButton = [&](int player, float x, ButtonSprite*& target) {
         target = ButtonSprite::create(
-            player == 1 ? "P1" : "P2", 48, true, "bigFont.fnt",
-            "GJ_button_04.png", 22.f, 0.5f
+            player == 1 ? "P1" : "P2", 62, true, "bigFont.fnt",
+            "GJ_button_04.png", 18.f, 0.45f
         );
-        target->setScale(0.52f);
         auto* button = CCMenuItemExt::createSpriteExtra(
             target, [self, player](CCMenuItemSpriteExtra*) {
                 if (auto popup = self.lock()) popup->toggleNativePlayer(player);
@@ -214,13 +209,12 @@ bool PhysicsBodyPopup::init() {
         button->setPosition({x, 54.f});
         menu->addChild(button);
     };
-    addPlayerButton(1, 410.f, m_player1Sprite);
-    addPlayerButton(2, 460.f, m_player2Sprite);
+    addPlayerButton(1, 400.f, m_player1Sprite);
+    addPlayerButton(2, 464.f, m_player2Sprite);
 
     auto* resetSprite = ButtonSprite::create(
-        "Volver al lab", 120, true, "bigFont.fnt", "GJ_button_06.png", 24.f, 0.55f
+        "Volver al lab", 104, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f
     );
-    resetSprite->setScale(0.62f);
     auto* resetButton = CCMenuItemExt::createSpriteExtra(
         resetSprite, [self](CCMenuItemSpriteExtra*) {
             if (auto popup = self.lock()) popup->resetOverrides();

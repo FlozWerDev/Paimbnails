@@ -47,10 +47,7 @@ void markCaptureChild(CCNode* node) {
 ButtonSprite* makeHoldCtrlButtonSprite(bool enabled) {
     char const* bg = enabled ? "GJ_button_01.png" : "GJ_button_06.png";
     auto* spr = ButtonSprite::create(
-        "Hold Ctrl", 64, 0, 0.34f, true, "bigFont.fnt", bg, 0.f);
-    if (spr) {
-        spr->setScale(0.88f);
-    }
+        "Hold Ctrl", 72, true, "bigFont.fnt", bg, 18.f, 0.40f);
     return spr;
 }
 } // namespace
@@ -265,7 +262,6 @@ void CaptureMenuPopup::refreshHoldCtrlButton() {
     if (!m_holdCtrlBtnSpr) return;
     bool const enabled = QuickHubManager::isHoldCtrlEnabled();
     m_holdCtrlBtnSpr->updateBGImage(enabled ? "GJ_button_01.png" : "GJ_button_06.png");
-    m_holdCtrlBtnSpr->setScale(0.88f);
 }
 
 void CaptureMenuPopup::onToggleHoldCtrl(CCObject*) {

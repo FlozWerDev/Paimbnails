@@ -147,10 +147,9 @@ void flowChips(CCNode* parent, std::vector<CCNode*> const& chips, float x, float
 
 CCNode* makeBadge(std::string const& text, char const* background) {
     auto* sprite = ButtonSprite::create(
-        text.c_str(), 0, false, "bigFont.fnt", background, 30.f, 0.56f);
+        text.c_str(), 0, false, "bigFont.fnt", background, 18.f, 0.40f);
     if (!sprite) return nullptr;
 
-    sprite->setScale(0.5f);
     auto* badge = CCNode::create();
     badge->setContentSize(sprite->getScaledContentSize());
     sprite->setPosition(badge->getContentSize() / 2.f);

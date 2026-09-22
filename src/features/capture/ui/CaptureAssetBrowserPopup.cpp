@@ -262,7 +262,7 @@ bool CaptureAssetBrowserPopup::init() {
 
     auto addActionButton = [&](char const* key, char const* texture, SEL_MenuHandler handler) {
         auto* spr = ButtonSprite::create(
-            loc(key).c_str(), 62, true, "bigFont.fnt", texture, 22.f, 0.33f);
+            loc(key).c_str(), 90, true, "bigFont.fnt", texture, 18.f, 0.40f);
         if (!spr) return;
         auto* btn = CCMenuItemSpriteExtra::create(spr, this, handler);
         PaimonButtonHighlighter::registerButton(btn);
@@ -605,7 +605,7 @@ void CaptureAssetBrowserPopup::buildList() {
         rowNode->addChild(countLabel, 2);
 
         if (auto* soloSpr = ButtonSprite::create(
-                loc("assets.solo").c_str(), 30, true, "bigFont.fnt", "GJ_button_04.png", 16.f, 0.24f)) {
+                loc("assets.solo").c_str(), 42, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.40f)) {
             auto* soloBtn = CCMenuItemSpriteExtra::create(
                 soloSpr, this, menu_selector(CaptureAssetBrowserPopup::onSoloGroup));
             soloBtn->setTag(groupIdx);

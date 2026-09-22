@@ -79,10 +79,9 @@ bool EditorMusicPickerPopup::init() {
     headerMenu->setTouchPriority(CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
     m_mainLayer->addChild(headerMenu, 3);
 
-    auto addHeaderButton = [&](char const* text, float x, std::function<void()> onPress) {
-        auto* sprite = ButtonSprite::create(text, "goldFont.fnt", "GJ_button_05.png", 0.5f);
+    auto addHeaderButton = [&](char const* text, int width, float x, std::function<void()> onPress) {
+        auto* sprite = ButtonSprite::create(text, width, true, "goldFont.fnt", "GJ_button_05.png", 18.f, 0.40f);
         if (!sprite) return;
-        sprite->setScale(0.7f);
         auto* button = CCMenuItemExt::createSpriteExtra(
             sprite, [onPress = std::move(onPress)](auto*) { onPress(); });
         if (!button) return;
@@ -90,8 +89,8 @@ bool EditorMusicPickerPopup::init() {
         headerMenu->addChild(button);
     };
 
-    addHeaderButton("Sync", kPopupW / 2.f + 58.f, [this] { syncDownloads(); });
-    addHeaderButton("Carpeta", kPopupW / 2.f + 128.f, [this] { importFolder(); });
+    addHeaderButton("Sync", 42, kPopupW / 2.f + 58.f, [this] { syncDownloads(); });
+    addHeaderButton("Carpeta", 60, kPopupW / 2.f + 128.f, [this] { importFolder(); });
 
     m_statusLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_statusLabel->setAnchorPoint({0.5f, 0.5f});

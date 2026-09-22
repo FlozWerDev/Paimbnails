@@ -284,13 +284,13 @@ void ExtendedInfoPopup::buildTabBar(float centerX, float y) {
     auto menu = CCMenu::create();
     menu->setPosition({centerX, y});
     menu->setContentSize({kListW, 26.f});
-    menu->setLayout(RowLayout::create()->setGap(3.f)->setAxisAlignment(AxisAlignment::Center));
+    menu->setLayout(RowLayout::create()->setGap(3.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
     m_mainLayer->addChild(menu, kZChrome);
     m_tabMenu = menu;
 
     auto addTab = [&](char const* name, int tag) {
-        auto spr = ButtonSprite::create(name, "bigFont.fnt", "GJ_button_04.png", 0.7f);
-        if (spr) spr->setScale(0.46f);
+        auto spr = ButtonSprite::create(name, 0, false, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
+        if (!spr) return;
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ExtendedInfoPopup::onTab));
         btn->setTag(tag);
         menu->addChild(btn);

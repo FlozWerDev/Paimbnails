@@ -180,27 +180,25 @@ void PostDetailPopup::rebuild() {
                 ->setGap(8.f)
                 ->setAutoScale(false)
                 ->setAxisAlignment(AxisAlignment::Start)
+                ->setDefaultScaleLimits(0.5f, 1.f)
         );
         m_buttonMenu->addChild(bar);
 
         std::string likeText = fmt::format("{}  {}",
             m_post.likedByMe ? "Liked" : "Like", m_post.likes);
-        auto likeSpr = ButtonSprite::create(likeText.c_str(), "bigFont.fnt",
-            m_post.likedByMe ? "GJ_button_01.png" : "GJ_button_04.png", 0.8f);
-        likeSpr->setScale(0.42f);
+        auto likeSpr = ButtonSprite::create(likeText.c_str(), 72, true, "bigFont.fnt",
+            m_post.likedByMe ? "GJ_button_01.png" : "GJ_button_04.png", 18.f, 0.40f);
         auto likeBtn = CCMenuItemSpriteExtra::create(likeSpr, this,
             menu_selector(PostDetailPopup::onLikePost));
         bar->addChild(likeBtn);
 
-        auto reportSpr = ButtonSprite::create("Report", "bigFont.fnt", "GJ_button_06.png", 0.8f);
-        reportSpr->setScale(0.36f);
+        auto reportSpr = ButtonSprite::create("Report", 60, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
         auto reportBtn = CCMenuItemSpriteExtra::create(reportSpr, this,
             menu_selector(PostDetailPopup::onReportPost));
         bar->addChild(reportBtn);
 
         if (canDelete) {
-            auto delSpr = ButtonSprite::create("Delete", "bigFont.fnt", "GJ_button_06.png", 0.8f);
-            delSpr->setScale(0.36f);
+            auto delSpr = ButtonSprite::create("Delete", 60, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
             delSpr->setColor({255, 110, 110});
             auto delBtn = CCMenuItemSpriteExtra::create(delSpr, this,
                 menu_selector(PostDetailPopup::onDeletePost));
@@ -463,7 +461,7 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w, int index) {
     menu->setPosition({6.f, kPad});
     menu->ignoreAnchorPointForPosition(false);
     menu->setLayout(
-        RowLayout::create()->setGap(6.f)->setAxisAlignment(AxisAlignment::Start)->setAutoScale(false)
+        RowLayout::create()->setGap(6.f)->setAxisAlignment(AxisAlignment::Start)->setAutoScale(false)->setDefaultScaleLimits(0.5f, 1.f)
     );
     card->addChild(menu, 10);
 
@@ -472,25 +470,22 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w, int index) {
 
     {
         std::string lt = fmt::format("{}  {}", r.likedByMe ? "Liked" : "Like", r.likes);
-        auto spr = ButtonSprite::create(lt.c_str(), "bigFont.fnt",
-            r.likedByMe ? "GJ_button_01.png" : "GJ_button_04.png", 0.7f);
-        spr->setScale(0.30f);
+        auto spr = ButtonSprite::create(lt.c_str(), 72, true, "bigFont.fnt",
+            r.likedByMe ? "GJ_button_01.png" : "GJ_button_04.png", 18.f, 0.40f);
         auto btn = CCMenuItemExt::createSpriteExtra(spr, [self, replyId](CCMenuItemSpriteExtra*) {
             self->onLikeReplyById(replyId);
         });
         menu->addChild(btn);
     }
     {
-        auto spr = ButtonSprite::create("Reply", "bigFont.fnt", "GJ_button_05.png", 0.7f);
-        spr->setScale(0.30f);
+        auto spr = ButtonSprite::create("Reply", 52, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.40f);
         auto btn = CCMenuItemExt::createSpriteExtra(spr, [self, replyId](CCMenuItemSpriteExtra*) {
             self->onReplyToReply(replyId);
         });
         menu->addChild(btn);
     }
     {
-        auto spr = ButtonSprite::create("Report", "bigFont.fnt", "GJ_button_06.png", 0.7f);
-        spr->setScale(0.30f);
+        auto spr = ButtonSprite::create("Report", 56, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
         auto btn = CCMenuItemExt::createSpriteExtra(spr, [self, replyId](CCMenuItemSpriteExtra*) {
             self->onReportReplyById(replyId);
         });
@@ -498,8 +493,7 @@ CCNode* PostDetailPopup::makeReplyCard(Reply const& r, float w, int index) {
     }
 
     if (isMine) {
-        auto spr = ButtonSprite::create("Delete", "bigFont.fnt", "GJ_button_06.png", 0.7f);
-        spr->setScale(0.30f);
+        auto spr = ButtonSprite::create("Delete", 56, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
         spr->setColor({255, 110, 110});
         auto btn = CCMenuItemExt::createSpriteExtra(spr, [self, replyId](CCMenuItemSpriteExtra*) {
             self->onDeleteReplyById(replyId);

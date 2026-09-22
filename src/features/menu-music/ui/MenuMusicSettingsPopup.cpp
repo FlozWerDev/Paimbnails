@@ -173,8 +173,7 @@ bool MenuMusicSettingsPopup::init() {
     m_cfg = effects.config();
     rebuild();
 
-    auto* resetSpr = ButtonSprite::create("Restaurar FX", "goldFont.fnt", "GJ_button_06.png", 0.7f);
-    if (resetSpr) resetSpr->setScale(0.55f);
+    auto* resetSpr = ButtonSprite::create("Restaurar FX", "goldFont.fnt", "GJ_button_06.png", 0.4f);
     auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr,
         [this](CCMenuItemSpriteExtra*) {
             MenuMusicEffects::get().applyPreset(MusicEffectsPreset::Original);

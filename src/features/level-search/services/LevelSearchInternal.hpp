@@ -778,7 +778,7 @@ namespace {
                 m_controlsMenu->addChild(m_nextPageBtn);
             }
 
-            auto pageSpr = ButtonSprite::create("Go", 26, true, "bigFont.fnt", "GJ_button_02.png", 18.f, 0.38f);
+            auto pageSpr = ButtonSprite::create("Go", 36, true, "bigFont.fnt", "GJ_button_02.png", 18.f, 0.45f);
             if (pageSpr) {
                 m_pageJumpBtn = CCMenuItemSpriteExtra::create(pageSpr, this, menu_selector(RealtimeSearchBrowserPreview::onPageJump));
                 m_pageJumpBtn->setPosition({rightGoX, headerY});
@@ -789,7 +789,7 @@ namespace {
             if (auto* findIcon = paimon::SpriteHelper::safeCreateWithFrameName("gj_findBtn_001.png")) {
                 findIcon->setScale(0.65f);
                 m_openAllBtn = CCMenuItemSpriteExtra::create(findIcon, this, menu_selector(RealtimeSearchBrowserPreview::onOpenAll));
-            } else if (auto openSpr = ButtonSprite::create("All", 26, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.34f)) {
+            } else if (auto openSpr = ButtonSprite::create("All", 38, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f)) {
                 m_openAllBtn = CCMenuItemSpriteExtra::create(openSpr, this, menu_selector(RealtimeSearchBrowserPreview::onOpenAll));
             }
             if (m_openAllBtn) {
@@ -865,7 +865,7 @@ namespace {
                 return btn;
             }
 
-            auto spr = ButtonSprite::create(forward ? ">" : "<", 20, true, "bigFont.fnt", "GJ_button_02.png", 18.f, 0.36f);
+            auto spr = ButtonSprite::create(forward ? ">" : "<", 30, true, "bigFont.fnt", "GJ_button_02.png", 18.f, 0.40f);
             if (!spr) return nullptr;
             auto btn = CCMenuItemSpriteExtra::create(spr, this, handler);
             if (btn) btn->setSizeMult(1.0f);

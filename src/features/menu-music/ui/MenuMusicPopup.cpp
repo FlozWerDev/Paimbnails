@@ -583,7 +583,7 @@ void MenuMusicPopup::buildSeekBar() {
     m_seekRow->setID("seek-row"_spr);
     m_mainLayer->addChild(m_seekRow, 6);
 
-    const float buttonsZone = 64.f;
+    const float buttonsZone = 88.f;
     const float leftLabelZone = 22.f;
     const float rightLabelZone = 22.f;
     const float sliderZoneX = leftLabelZone;
@@ -643,10 +643,9 @@ void MenuMusicPopup::buildSeekBar() {
     auto makeLabeledBtn = [&](const std::string& label, SEL_MenuHandler selector)
         -> CCMenuItemSpriteExtra* {
         auto spr = ButtonSprite::create(
-            label.c_str(), 28, true, "bigFont.fnt",
-            "GJ_button_01.png", 14.f, 0.5f);
+            label.c_str(), 42, true, "bigFont.fnt",
+            "GJ_button_01.png", 18.f, 0.45f);
         if (!spr) return nullptr;
-        spr->setScale(0.75f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this, selector);
         return btn;
     };
@@ -664,7 +663,8 @@ void MenuMusicPopup::buildSeekBar() {
     skipMenu->setLayout(RowLayout::create()
         ->setGap(3.f)
         ->setAxisAlignment(AxisAlignment::Center)
-        ->setCrossAxisAlignment(AxisAlignment::Center));
+        ->setCrossAxisAlignment(AxisAlignment::Center)
+        ->setDefaultScaleLimits(0.5f, 1.f));
     skipMenu->setID("seek-skip-menu"_spr);
     skipMenu->updateLayout();
     m_seekRow->addChild(skipMenu, 3);
@@ -678,13 +678,13 @@ void MenuMusicPopup::buildActions() {
 
     auto menu = CCMenu::create();
     if (!menu) return;
-    menu->setContentSize({colW, 20.f});
+    menu->setContentSize({colW, 26.f});
     menu->setPosition({colX + colW / 2.f, size.height * 0.225f});
     menu->setID("quick-actions-menu"_spr);
 
-    auto addAction = [&](const char* text, const char* bg, SEL_MenuHandler handler,
+    auto addAction = [&](const char* text, int width, const char* bg, SEL_MenuHandler handler,
                          const char* id, ButtonSprite** out = nullptr) {
-        auto* spr = ButtonSprite::create(text, 42, true, "bigFont.fnt", bg, 14.f, 0.32f);
+        auto* spr = ButtonSprite::create(text, width, true, "bigFont.fnt", bg, 18.f, 0.40f);
         if (!spr) return;
         auto* btn = CCMenuItemSpriteExtra::create(spr, this, handler);
         if (!btn) return;
@@ -693,19 +693,19 @@ void MenuMusicPopup::buildActions() {
         if (out) *out = spr;
     };
 
-    addAction("Hold", "GJ_button_04.png", menu_selector(MenuMusicPopup::onHold),
+    addAction("Hold", 40, "GJ_button_04.png", menu_selector(MenuMusicPopup::onHold),
         "hold-action-btn", &m_holdActionSpr);
-    addAction("Fav", "GJ_button_05.png", menu_selector(MenuMusicPopup::onFavorite),
+    addAction("Fav", 36, "GJ_button_05.png", menu_selector(MenuMusicPopup::onFavorite),
         "favorite-action-btn", &m_favoriteActionSpr);
-    addAction("Block", "GJ_button_06.png", menu_selector(MenuMusicPopup::onBlacklist),
+    addAction("Block", 46, "GJ_button_06.png", menu_selector(MenuMusicPopup::onBlacklist),
         "blacklist-action-btn", &m_blacklistActionSpr);
-    addAction("Copy", "GJ_button_01.png", menu_selector(MenuMusicPopup::onCopy),
+    addAction("Copy", 40, "GJ_button_01.png", menu_selector(MenuMusicPopup::onCopy),
         "copy-action-btn");
-    addAction("+ List", "GJ_button_02.png", menu_selector(MenuMusicPopup::onAddCurrentToPlaylist),
+    addAction("+ List", 52, "GJ_button_02.png", menu_selector(MenuMusicPopup::onAddCurrentToPlaylist),
         "playlist-add-action-btn");
 
     menu->setLayout(RowLayout::create()
-        ->setGap(4.f)
+        ->setGap(3.f)
         ->setAxisAlignment(AxisAlignment::Center)
         ->setCrossAxisAlignment(AxisAlignment::Center)
         ->setDefaultScaleLimits(0.45f, 1.f));
@@ -721,7 +721,7 @@ void MenuMusicPopup::buildModeSelector() {
 
     auto menu = CCMenu::create();
     if (!menu) return;
-    menu->setContentSize({colW, 22.f});
+    menu->setContentSize({colW, 24.f});
     menu->setAnchorPoint({0.5f, 0.5f});
     menu->setPosition({colX + colW / 2.f, size.height * 0.64f});
     menu->setID("mode-selector-menu"_spr);
@@ -729,7 +729,7 @@ void MenuMusicPopup::buildModeSelector() {
     auto makeModeBtn = [&](const char* text, int width, SEL_MenuHandler handler,
                            const char* id, ButtonSprite** sprOut) {
         auto spr = ButtonSprite::create(text, width, true, "bigFont.fnt",
-            "GJ_button_01.png", 16.f, 0.38f);
+            "GJ_button_01.png", 18.f, 0.45f);
         if (!spr) return;
         auto btn = CCMenuItemSpriteExtra::create(spr, this, handler);
         if (!btn) return;
@@ -738,11 +738,11 @@ void MenuMusicPopup::buildModeSelector() {
         *sprOut = spr;
     };
 
-    makeModeBtn("Off", 34, menu_selector(MenuMusicPopup::onModeDisabled),
+    makeModeBtn("Off", 40, menu_selector(MenuMusicPopup::onModeDisabled),
         "mode-off-btn", &m_modeOffSpr);
-    makeModeBtn("All Songs", 62, menu_selector(MenuMusicPopup::onModeLibrary),
+    makeModeBtn("All Songs", 72, menu_selector(MenuMusicPopup::onModeLibrary),
         "mode-all-btn", &m_modeAllSpr);
-    makeModeBtn("Playlist", 54, menu_selector(MenuMusicPopup::onModePlaylist),
+    makeModeBtn("Playlist", 66, menu_selector(MenuMusicPopup::onModePlaylist),
         "mode-playlist-btn", &m_modePlaylistSpr);
 
     menu->setLayout(RowLayout::create()

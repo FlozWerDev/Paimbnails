@@ -155,8 +155,7 @@ void WhitelistPopup::rebuildList() {
         btnMenu->setContentSize({70.f, cellH});
         cell->addChild(btnMenu);
 
-        auto rmSpr = ButtonSprite::create("X", 30, true, "bigFont.fnt", "GJ_button_06.png", 25.f, 0.6f);
-        rmSpr->setScale(0.7f);
+        auto rmSpr = ButtonSprite::create("X", 30, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.45f);
         auto rmBtn = CCMenuItemSpriteExtra::create(rmSpr, this, menu_selector(WhitelistPopup::onRemove));
         rmBtn->setID("wl-rm-btn"_spr);
         rmBtn->setUserObject(CCString::create(user));

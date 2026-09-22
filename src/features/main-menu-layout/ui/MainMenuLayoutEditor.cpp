@@ -33,6 +33,8 @@ namespace {
     constexpr float kCanvasBottom = 84.f;
     constexpr std::size_t kHistoryLimit = 50;
     constexpr float kTransitionDuration = 0.32f;
+    // Mas corto que el fundido de cierre para que el pop aterrice antes.
+    constexpr float kSettleDuration = 0.22f;
 
     CCPoint worldPos(CCNode* node) {
         if (!node || !node->getParent()) return { 0.f, 0.f };
@@ -96,12 +98,17 @@ MainMenuLayoutEditor::~MainMenuLayoutEditor() {
 }
 
 void MainMenuLayoutEditor::onExit() {
-    for (auto const& item : m_items) {
-        if (!m_saved) {
+    if (!m_saved) {
+        for (auto const& item : m_items) {
             auto it = m_initial.find(item.target.key);
             if (it != m_initial.end()) MainMenuLayoutManager::applyLayout(item.target, it->second);
-        } else if (m_transitions.count(item.target.key)) {
-            this->applyLive(item);
+        }
+        if (auto* root = this->getTargetRoot()) {
+            MainMenuLayoutManager::get().syncShapes(root, m_initialShapes);
+        }
+    } else {
+        for (auto const& item : m_items) {
+            if (m_transitions.count(item.target.key)) this->applyLive(item);
         }
     }
     m_transitions.clear();
@@ -148,6 +155,7 @@ bool MainMenuLayoutEditor::init(CCNode* root) {
     this->buildUI();
     this->collectItems();
     this->disableTargetMenus();
+    this->animateEntry();
     this->pushHistory();
     this->animateInterface(true);
     this->redraw();
@@ -187,22 +195,22 @@ void MainMenuLayoutEditor::buildUI() {
     m_bar = CCMenu::create();
     m_bar->setContentSize({ winSize.width - 24.f, 40.f });
     m_bar->setPosition({ winSize.width / 2.f, 22.f });
-    m_bar->setLayout(RowLayout::create()->setGap(10.f)->setAxisAlignment(AxisAlignment::Center));
+    m_bar->setLayout(RowLayout::create()->setGap(4.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
     m_barContainer->addChild(m_bar, 1);
 
     auto addBtn = [&](char const* key, SEL_MenuHandler cb, char const* bg, int width) {
-        auto* spr = ButtonSprite::create(loc.getString(key).c_str(), width, true, "goldFont.fnt", bg, 26.f, 0.5f);
+        auto* spr = ButtonSprite::create(loc.getString(key).c_str(), width, true, "goldFont.fnt", bg, 18.f, 0.40f);
         auto* btn = CCMenuItemSpriteExtra::create(spr, this, cb);
         m_bar->addChild(btn);
         return btn;
     };
 
     addBtn("menu_layout.cancel", menu_selector(MainMenuLayoutEditor::onCancel), "GJ_button_06.png", 56);
-    addBtn("menu_layout.reset_selected", menu_selector(MainMenuLayoutEditor::onResetSelected), "GJ_button_05.png", 70);
-    addBtn("menu_layout.reset_all", menu_selector(MainMenuLayoutEditor::onResetAll), "GJ_button_05.png", 70);
+    addBtn("menu_layout.reset_selected", menu_selector(MainMenuLayoutEditor::onResetSelected), "GJ_button_05.png", 90);
+    addBtn("menu_layout.reset_all", menu_selector(MainMenuLayoutEditor::onResetAll), "GJ_button_05.png", 78);
     addBtn("menu_layout.hide_selected", menu_selector(MainMenuLayoutEditor::onToggleHidden), "GJ_button_04.png", 60);
-    addBtn("menu_layout.load_preset", menu_selector(MainMenuLayoutEditor::onLoadPreset), "GJ_button_03.png", 68);
-    addBtn("menu_layout.save_preset", menu_selector(MainMenuLayoutEditor::onSavePreset), "GJ_button_02.png", 68);
+    addBtn("menu_layout.load_preset", menu_selector(MainMenuLayoutEditor::onLoadPreset), "GJ_button_03.png", 84);
+    addBtn("menu_layout.save_preset", menu_selector(MainMenuLayoutEditor::onSavePreset), "GJ_button_02.png", 90);
     addBtn("menu_layout.save", menu_selector(MainMenuLayoutEditor::onSave), "GJ_button_01.png", 56);
 
     m_bar->updateLayout();
@@ -230,6 +238,7 @@ void MainMenuLayoutEditor::collectItems() {
     m_items.clear();
     m_live.clear();
     m_initial.clear();
+    m_initialShapes.clear();
     m_selected = -1;
 
     auto* root = this->getTargetRoot();
@@ -237,6 +246,7 @@ void MainMenuLayoutEditor::collectItems() {
 
     auto& mgr = MainMenuLayoutManager::get();
     mgr.captureDefaultsAndApply(root);
+    m_initialShapes = MainMenuLayoutManager::captureShapes(root);
 
     for (auto const& button : mgr.collectButtons(root)) {
         if (!button.node || !button.node->getParent()) continue;
@@ -295,7 +305,41 @@ void MainMenuLayoutEditor::animateLive(Item const& item) {
     m_dragChanged = false;
     m_guideX->setVisible(false);
     m_guideY->setVisible(false);
-    m_transitions[item.target.key] = { MainMenuLayoutManager::readLayout(item.target.node), 0.f };
+    m_transitions[item.target.key] = { MainMenuLayoutManager::readLayout(item.target.node), 0.f, kTransitionDuration };
+}
+
+void MainMenuLayoutEditor::animateEntry() {
+    auto winSize = CCDirector::get()->getWinSize();
+    float const drop = std::min(winSize.height * 0.12f, 96.f);
+    for (auto const& item : m_items) {
+        if (!item.target.node || !item.target.node->getParent()) continue;
+        auto it = m_live.find(item.target.key);
+        if (it == m_live.end() || it->second.hidden) continue;
+        auto from = it->second;
+        from.hidden = false;
+        from.opacity = 0.f;
+        // El fondo solo se funde: desplazarlo se veria como un fallo.
+        if (!this->isBackgroundItem(item)) from.position.y -= drop;
+        MainMenuLayoutManager::applyLayout(item.target, from);
+        m_transitions[item.target.key] = { MainMenuLayoutManager::readLayout(item.target.node), 0.f, kTransitionDuration };
+    }
+}
+
+void MainMenuLayoutEditor::animateSettle() {
+    for (auto const& item : m_items) {
+        if (!item.target.node || !item.target.node->getParent()) continue;
+        auto it = m_live.find(item.target.key);
+        if (it == m_live.end() || it->second.hidden) continue;
+        // Parte del estado visible actual para no pegar un salto a mitad
+        // de otra animacion, y crece hasta el layout guardado.
+        auto from = MainMenuLayoutManager::readLayout(item.target.node);
+        from.hidden = false;
+        from.scale *= 0.9f;
+        from.scaleX *= 0.9f;
+        from.scaleY *= 0.9f;
+        MainMenuLayoutManager::applyLayout(item.target, from);
+        m_transitions[item.target.key] = { MainMenuLayoutManager::readLayout(item.target.node), 0.f, kSettleDuration };
+    }
 }
 
 void MainMenuLayoutEditor::animateInterface(bool opening) {
@@ -357,7 +401,7 @@ void MainMenuLayoutEditor::updateAnimations(float dt) {
         }
         auto& transition = it->second;
         transition.elapsed += dt;
-        float t = std::clamp(transition.elapsed / kTransitionDuration, 0.f, 1.f);
+        float t = std::clamp(transition.elapsed / transition.duration, 0.f, 1.f);
         if (t >= 1.f) {
             MainMenuLayoutManager::applyLayout(item.target, target->second);
             m_transitions.erase(it);
@@ -761,6 +805,7 @@ void MainMenuLayoutEditor::onSave(CCObject*) {
         PaimonNotify::show(Localization::get().getString("menu_layout.saved"), NotificationIcon::Success);
     }
     this->selectIndex(-1);
+    this->animateSettle();
     this->beginClose(true);
 }
 
@@ -771,6 +816,9 @@ void MainMenuLayoutEditor::onCancel(CCObject*) {
         if (it == m_initial.end()) continue;
         m_live[item.target.key] = it->second;
         this->animateLive(item);
+    }
+    if (auto* root = this->getTargetRoot()) {
+        MainMenuLayoutManager::get().syncShapes(root, m_initialShapes);
     }
     this->beginClose(false);
 }

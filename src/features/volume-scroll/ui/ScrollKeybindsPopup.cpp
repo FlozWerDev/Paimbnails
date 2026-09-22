@@ -270,8 +270,7 @@ CCNode* ScrollKeybindsPopup::makeKeybindRow(
     bindingLabel->limitLabelWidth(width * 0.34f, 0.5f, 0.26f);
     row->addChild(bindingLabel, 1);
 
-    auto setSpr = ButtonSprite::create("Set", "bigFont.fnt", "GJ_button_01.png", 0.45f);
-    setSpr->setScale(0.5f);
+    auto setSpr = ButtonSprite::create("Set", 42, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
 
     std::string keyCopy = settingKey;
     std::string nameCopy = displayName;
@@ -288,7 +287,7 @@ CCNode* ScrollKeybindsPopup::makeKeybindRow(
     btnMenu->setContentSize({44.f, kRowH});
     btnMenu->setAnchorPoint({1.f, 0.5f});
     btnMenu->setPosition({width - 8.f, kRowH / 2.f});
-    btnMenu->setLayout(RowLayout::create()->setAxisAlignment(AxisAlignment::End));
+    btnMenu->setLayout(RowLayout::create()->setAxisAlignment(AxisAlignment::End)->setDefaultScaleLimits(0.5f, 1.f));
     btnMenu->updateLayout();
     row->addChild(btnMenu, 1);
 

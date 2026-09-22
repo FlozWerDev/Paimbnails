@@ -317,9 +317,8 @@ CCNode* LevelAnalysisPopup::suggestionRow(float width, int index) {
     menu->setTouchPriority(CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
     row->addChild(menu, 5);
 
-    auto* spr = ButtonSprite::create(done ? "Anadida" : "Importar", "bigFont.fnt",
-                                     done ? "GJ_button_02.png" : "GJ_button_01.png", 0.6f);
-    spr->setScale(0.46f);
+    auto* spr = ButtonSprite::create(done ? "Anadida" : "Importar", 76, true, "bigFont.fnt",
+                                     done ? "GJ_button_02.png" : "GJ_button_01.png", 18.f, 0.45f);
     auto* button = CCMenuItemExt::createSpriteExtra(
         spr, [this, index](CCMenuItemSpriteExtra*) { importSuggestion(index); });
     button->setPosition({width - 44.f, kRowH / 2.f});

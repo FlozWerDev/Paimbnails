@@ -136,8 +136,7 @@ void ProgressBarConfigPopup::createTabButtons() {
         {"FX",       4,  160.f},
     };
     for (auto const& d : defs) {
-        auto spr = ButtonSprite::create(d.label);
-        spr->setScale(0.45f);
+        auto spr = ButtonSprite::create(d.label, 76, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(
             spr, this, menu_selector(ProgressBarConfigPopup::onTabSwitch));
         btn->setTag(d.tag);
@@ -466,9 +465,8 @@ void ProgressBarConfigPopup::buildFxTab() {
         lbl->setPosition({cx - 175.f, y});
         m_fxTab->addChild(lbl);
 
-        auto modeSpr = ButtonSprite::create(modeName(mode), "bigFont.fnt",
-            "GJ_button_04.png", 0.7f);
-        modeSpr->setScale(0.5f);
+        auto modeSpr = ButtonSprite::create(modeName(mode), 70, true, "bigFont.fnt",
+            "GJ_button_04.png", 18.f, 0.45f);
         modeBtn = CCMenuItemSpriteExtra::create(modeSpr, this, cycleCb);
         modeBtn->setPosition({cx - 50.f, y});
         menu->addChild(modeBtn);
@@ -477,9 +475,8 @@ void ProgressBarConfigPopup::buildFxTab() {
         preview2->setPosition({cx + 40.f, y - 11.f});
         m_fxTab->addChild(preview2);
 
-        auto pickSpr = ButtonSprite::create("Pick 2", "goldFont.fnt",
-            "GJ_button_04.png", 0.7f);
-        pickSpr->setScale(0.5f);
+        auto pickSpr = ButtonSprite::create("Pick 2", 62, true, "goldFont.fnt",
+            "GJ_button_04.png", 18.f, 0.45f);
         auto pickBtn = CCMenuItemSpriteExtra::create(pickSpr, this, pickCb);
         pickBtn->setPosition({cx + 135.f, y});
         menu->addChild(pickBtn);
@@ -543,16 +540,14 @@ void ProgressBarConfigPopup::buildFxTab() {
         toggle->toggle(value);
         menu->addChild(toggle);
 
-        auto pickSpr = ButtonSprite::create("Browse", "goldFont.fnt",
-            "GJ_button_04.png", 0.7f);
-        pickSpr->setScale(0.48f);
+        auto pickSpr = ButtonSprite::create("Browse", 62, true, "goldFont.fnt",
+            "GJ_button_04.png", 18.f, 0.45f);
         auto pickBtn = CCMenuItemSpriteExtra::create(pickSpr, this, pickCb);
         pickBtn->setPosition({cx - 15.f, y});
         menu->addChild(pickBtn);
 
-        auto clrSpr = ButtonSprite::create("X", "bigFont.fnt",
-            "GJ_button_06.png", 0.7f);
-        clrSpr->setScale(0.45f);
+        auto clrSpr = ButtonSprite::create("X", 40, true, "bigFont.fnt",
+            "GJ_button_06.png", 18.f, 0.45f);
         auto clrBtn = CCMenuItemSpriteExtra::create(clrSpr, this, clearCb);
         clrBtn->setPosition({cx + 40.f, y});
         menu->addChild(clrBtn);

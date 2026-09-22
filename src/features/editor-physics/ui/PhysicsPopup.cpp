@@ -289,9 +289,8 @@ bool PhysicsPopup::init() {
     });
 
     m_bodyModeSprite = ButtonSprite::create(
-        "B: fijo", 78, true, "bigFont.fnt", "GJ_button_05.png", 22.f, 0.5f
+        "B: fijo", 97, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.45f
     );
-    m_bodyModeSprite->setScale(0.48f);
     auto* bodyModeButton = CCMenuItemExt::createSpriteExtra(
         m_bodyModeSprite, [self](CCMenuItemSpriteExtra*) {
             if (auto popup = self.lock()) popup->toggleBMotion();
@@ -319,7 +318,7 @@ bool PhysicsPopup::init() {
             auto* sprite = ButtonSprite::create(
                 direction < 0 ? "-" : "+", "bigFont.fnt", "GJ_button_04.png", 0.8f
             );
-            sprite->setScale(0.42f);
+            sprite->setScale(0.6f);
             auto* button = CCMenuItemExt::createSpriteExtra(
                 sprite, [self, field, direction](CCMenuItemSpriteExtra*) {
                     if (auto popup = self.lock()) popup->adjust(field, direction);

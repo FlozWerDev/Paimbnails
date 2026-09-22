@@ -222,7 +222,7 @@ bool VideoSettingsPopup::init() {
 
     float cacheY = topY - rowSpacing * 3.f - 14.f - 28.f;
 
-    auto ramBtnSpr = ButtonSprite::create("Clear RAM", 0.32f);
+    auto ramBtnSpr = ButtonSprite::create("Clear RAM", 76, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
     auto ramBtn = CCMenuItemSpriteExtra::create(ramBtnSpr, this, menu_selector(VideoSettingsPopup::onClearRAM));
     ramBtn->setPosition({cx - 85.f, cacheY});
     menu->addChild(ramBtn);
@@ -234,7 +234,7 @@ bool VideoSettingsPopup::init() {
     m_mainLayer->addChild(m_ramLabel, 1);
     updateRAMLabel();
 
-    auto cacheBtnSpr = ButtonSprite::create("Clear Cache", 0.32f);
+    auto cacheBtnSpr = ButtonSprite::create("Clear Cache", 88, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
     auto cacheBtn = CCMenuItemSpriteExtra::create(cacheBtnSpr, this, menu_selector(VideoSettingsPopup::onClearDiskCache));
     cacheBtn->setPosition({cx + 75.f, cacheY});
     menu->addChild(cacheBtn);

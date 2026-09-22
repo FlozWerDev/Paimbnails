@@ -42,6 +42,9 @@ protected:
     void buildStarsRow();
     void buildPreviewCard();
     void buildFooter();
+    // Exact visible position, append mode only: replacements ride the
+    // official page, so there is nothing to place.
+    void buildPositionRow(cocos2d::CCMenu* menu);
 
     void restyleSourceChips();
     void restyleDifficultyRow();
@@ -54,6 +57,8 @@ protected:
     void setDifficulty(Difficulty difficulty);
     void setTier(Tier tier);
     void setStars(int stars);
+    void setPosition(std::size_t pos);
+    void refreshPositionLabel();
 
     void onImportById(cocos2d::CCObject*);
     void onBrowseGmd(cocos2d::CCObject*);
@@ -76,6 +81,13 @@ protected:
     bool m_isNew = true;
     std::function<void()> m_onSaved;
 
+    // 1-based spot inside the visible pages. Only applied on save for
+    // appended slots, and only moved when new or touched: a disabled slot
+    // has no visible spot, so an untouched edit must not relocate it.
+    std::size_t m_position = 1;
+    std::size_t m_positionMax = 1;
+    bool m_positionDirty = false;
+
     // A picked .gmd waits here until Save (or Test) imports it into our folder,
     // so browsing never touches the store until the user commits.
     std::filesystem::path m_pendingGmd;
@@ -85,6 +97,7 @@ protected:
     geode::TextInput* m_authorInput = nullptr;
     cocos2d::CCLabelBMFont* m_gmdLabel = nullptr;
     cocos2d::CCLabelBMFont* m_starsLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_positionLabel = nullptr;
     cocos2d::CCNode* m_previewBox = nullptr;
     cocos2d::CCNode* m_sourceRow = nullptr;
     cocos2d::CCNode* m_tierRowBox = nullptr;

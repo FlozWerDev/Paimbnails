@@ -281,15 +281,13 @@ void CollabRoomPopup::scheduleRebuild() {
 
 void CollabRoomPopup::buildSetupView() {
     auto* tabs = CCMenu::create();
-    m_createTabSpr = ButtonSprite::create("Crear sala", "bigFont.fnt",
-        m_joinTab ? "GJ_button_04.png" : "GJ_button_01.png", 0.6f);
-    m_createTabSpr->setScale(0.62f);
-    m_joinTabSpr = ButtonSprite::create("Unirse", "bigFont.fnt",
-        m_joinTab ? "GJ_button_01.png" : "GJ_button_04.png", 0.6f);
-    m_joinTabSpr->setScale(0.62f);
+    m_createTabSpr = ButtonSprite::create("Crear sala", 90, true, "bigFont.fnt",
+        m_joinTab ? "GJ_button_04.png" : "GJ_button_01.png", 18.f, 0.45f);
+    m_joinTabSpr = ButtonSprite::create("Unirse", 62, true, "bigFont.fnt",
+        m_joinTab ? "GJ_button_01.png" : "GJ_button_04.png", 18.f, 0.45f);
     tabs->addChild(CCMenuItemSpriteExtra::create(m_createTabSpr, this, menu_selector(CollabRoomPopup::onTabCreate)));
     tabs->addChild(CCMenuItemSpriteExtra::create(m_joinTabSpr, this, menu_selector(CollabRoomPopup::onTabJoin)));
-    tabs->setLayout(RowLayout::create()->setGap(8.f));
+    tabs->setLayout(RowLayout::create()->setGap(8.f)->setDefaultScaleLimits(0.5f, 1.f));
     tabs->updateLayout();
     m_content->addChildAtPosition(tabs, Anchor::Top, {0.f, -40.f});
 
@@ -486,14 +484,14 @@ void CollabRoomPopup::switchSetupTab(bool join) {
         selected->updateBGImage("GJ_button_01.png");
         selected->stopAllActions();
         selected->runAction(CCSequence::create(
-            CCEaseSineOut::create(CCScaleTo::create(0.08f, 0.70f)),
-            CCEaseSineIn::create(CCScaleTo::create(0.12f, 0.62f)),
+            CCEaseSineOut::create(CCScaleTo::create(0.08f, 1.13f)),
+            CCEaseSineIn::create(CCScaleTo::create(0.12f, 1.0f)),
             nullptr));
     }
     if (deselected) {
         deselected->updateBGImage("GJ_button_04.png");
         deselected->stopAllActions();
-        deselected->setScale(0.62f);
+        deselected->setScale(1.0f);
     }
 
     float dir = join ? 1.f : -1.f;
@@ -1249,10 +1247,10 @@ bool CollabChatPopup::init() {
     menu->addChild(sendBtn);
 
     m_micSprite = ButtonSprite::create("Mic", "bigFont.fnt", "GJ_button_06.png", 0.5f);
-    m_micSprite->setScale(0.5f);
+    m_micSprite->setScale(0.8f);
     menu->addChild(CCMenuItemSpriteExtra::create(m_micSprite, this, menu_selector(CollabChatPopup::onMic)));
 
-    menu->setLayout(RowLayout::create()->setGap(8.f));
+    menu->setLayout(RowLayout::create()->setGap(8.f)->setDefaultScaleLimits(0.5f, 1.f));
     menu->updateLayout();
     m_mainLayer->addChildAtPosition(menu, Anchor::Bottom, {122.f, 32.f});
 

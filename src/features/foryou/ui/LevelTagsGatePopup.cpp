@@ -92,9 +92,8 @@ bool LevelTagsGatePopup::init(std::function<void()> onContinue) {
 
     auto laterSpr = ButtonSprite::create(
         Localization::get().getString("foryou.tags_gate_later").c_str(),
-        90, true, "bigFont.fnt", "GJ_button_04.png", 26.f, 0.6f);
+        76, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
     if (laterSpr) {
-        laterSpr->setScale(0.62f);
         auto laterBtn = CCMenuItemSpriteExtra::create(
             laterSpr, this, menu_selector(LevelTagsGatePopup::onContinueWithout));
         laterBtn->setPosition({cx, 24.f});

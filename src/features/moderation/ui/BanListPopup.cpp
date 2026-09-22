@@ -167,8 +167,7 @@ void BanListPopup::rebuildList(std::vector<std::string> const& users) {
         infoBtn->setPosition({-20.f, 0.f});
         btnMenu->addChild(infoBtn);
 
-        auto unbanSpr = ButtonSprite::create(Localization::get().getString("ban.list.unban_btn").c_str(), 50, true, "goldFont.fnt", "GJ_button_05.png", 30.f, 0.6f);
-        unbanSpr->setScale(0.7f);
+        auto unbanSpr = ButtonSprite::create(Localization::get().getString("ban.list.unban_btn").c_str(), 68, true, "goldFont.fnt", "GJ_button_05.png", 18.f, 0.40f);
         auto unbanBtn = CCMenuItemSpriteExtra::create(unbanSpr, this, menu_selector(BanListPopup::onUnban));
         unbanBtn->setID("unban-btn"_spr);
         unbanBtn->setUserObject(CCString::create(user));

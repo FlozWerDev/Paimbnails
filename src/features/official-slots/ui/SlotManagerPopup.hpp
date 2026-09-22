@@ -23,6 +23,7 @@ protected:
 
     void buildHeader();
     void buildList();
+    void buildFooter();
     void rebuild();
 
     cocos2d::CCNode* buildSlotRow(Slot const& slot, float width);
@@ -34,6 +35,7 @@ protected:
     void onTestSlot(Slot slot);
     void onDeleteSlot(Slot slot);
     void onMoveSlot(std::string const& slotId, int delta);
+    void onReorder();
     void onToggleSlot(std::string const& slotId);
     void onRestoreOfficial(int officialId);
 

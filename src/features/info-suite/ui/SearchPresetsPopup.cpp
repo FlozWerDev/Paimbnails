@@ -154,7 +154,6 @@ void SearchPresetsPopup::rebuildList() {
 
         if (!m_saveMode) {
             auto useSpr = ButtonSprite::create("Usar", "bigFont.fnt", "GJ_button_01.png", 0.6f);
-            if (useSpr) useSpr->setScale(0.5f);
             auto useBtn = CCMenuItemSpriteExtra::create(
                 useSpr, this, menu_selector(SearchPresetsPopup::onPick));
             useBtn->setPosition({kListW - 56.f, y + kRowH / 2.f});

@@ -253,8 +253,7 @@ void LevelStatsPopup::buildCharts() {
     m_chartLayer->addChild(menu);
 
     auto spr = ButtonSprite::create(m_practice ? "Ver normal" : "Ver practica",
-                                    "bigFont.fnt", "GJ_button_04.png", 0.7f);
-    if (spr) spr->setScale(0.44f);
+                                    100, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
     auto toggle = CCMenuItemSpriteExtra::create(
         spr, this, menu_selector(LevelStatsPopup::onPracticeToggle));
     toggle->setPosition({kPopupW / 2.f, kToggleY});

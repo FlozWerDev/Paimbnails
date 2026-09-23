@@ -58,7 +58,7 @@ CCSprite* createDeathEffectsIcon() {
 
 class $modify(PaimonDeathEffectsPauseLayer, PauseLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "PauseLayer::customSetup");
+        paimon::hooks::veryLatePost(self, "PauseLayer::customSetup");
     }
 
     $override

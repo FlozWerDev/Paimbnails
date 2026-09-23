@@ -101,10 +101,7 @@ void GradientPlayerObject::updateSprite(CCSprite* live, Ref<CCSprite>& copy, Spr
     copy->setVisible(true);
 }
 
-// One pass over a slot table: ensures the overlay where the config is
-// non-empty, shades it, shows/hides it, and restores the live sprite's
-// stock shader whenever no visible overlay covers it (line art never
-// needs that restore — it draws on top of a visible host).
+// Line art draws over its host, so only the other slots restore the stock shader.
 void GradientPlayerObject::paintSet(Gradient const& gradient, SpriteType kind, int extra,
         PaintLane const* lanes, size_t count, Fields* f) {
     IconType type = getIconType();
@@ -153,10 +150,7 @@ void GradientPlayerObject::updateVehicleSprite(Gradient const& gradient, Fields*
     paintSet(gradient, SpriteType::Vehicle, 44, kLanes, std::size(kLanes), f);
 }
 
-// Covers one animation section (a host list, or the single extra sprite):
-// fresh overlay per host, host hidden unless it is line art, the pair
-// tracked for opacity, then shaded. `single` sections keep a fixed seed
-// and fixed node id; lists count up from the base seed.
+// Single sprites keep a fixed shader seed and node ID; lists advance from the base seed.
 void GradientPlayerObject::shadeAnimSection(auto&& hosts, GradientConfig const& config, IconType type,
         ColorType color, int seedBase, bool line, bool single, Fields* f) {
     if (config.isEmpty(color, m_isSecondPlayer)) return;
@@ -192,7 +186,7 @@ void GradientPlayerObject::shadeAnimSection(auto&& hosts, GradientConfig const& 
 void GradientPlayerObject::updateAnimSprite(IconType type, Gradient const& gradient, Fields* f) {
     GJRobotSprite* mech = type == IconType::Robot ? m_robotSprite : m_spiderSprite;
     if (!mech || !mech->m_paSprite) return;
-    GradientUtils::patchBatchNode(type == IconType::Robot ? m_robotBatchNode : m_spiderBatchNode);
+    GradientUtils::enableChildShaders(type == IconType::Robot ? m_robotBatchNode : m_spiderBatchNode);
 
     shadeAnimSection(CCArrayExt<CCSpritePart*>(mech->m_paSprite->m_spriteParts),
         gradient.main, type, ColorType::Main, 100, false, false, f);
@@ -213,15 +207,16 @@ void GradientPlayerObject::updateAnimSprite(IconType type, Gradient const& gradi
 void GradientPlayerObject::refreshMech(IconType type) {
     GJBaseGameLayer* layer = m_gameLayer ? m_gameLayer : GJBaseGameLayer::get();
     if (!layer || (this != layer->m_player1 && this != layer->m_player2)) return;
-    auto paint = [this, type, layer] {
-        if (getTag() == 0xCB04) return;
-        if (shouldReturn(GJBaseGameLayer::get())) return;
-        updateAnimSprite(type, GradientUtils::getGradient(type, this == layer->m_player2), m_fields.self());
+    auto paint = [self = Ref(this), type] {
+        auto* current = GJBaseGameLayer::get();
+        if (!current || (self.data() != current->m_player1 && self.data() != current->m_player2)) return;
+        if (self->getTag() == 0xCB04 || self->shouldReturn(current)) return;
+        self->updateAnimSprite(type, GradientUtils::getGradient(type, self.data() == current->m_player2), self->m_fields.self());
     };
     if (!m_fields->m_animSpritesInitialized) {
-        Loader::get()->queueInMainThread([paint, this] {
+        Loader::get()->queueInMainThread([paint, self = Ref(this)] {
             paint();
-            m_fields->m_animSpritesInitialized = true;
+            self->m_fields->m_animSpritesInitialized = true;
         });
     } else {
         paint();

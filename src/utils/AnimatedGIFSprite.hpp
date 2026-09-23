@@ -28,7 +28,6 @@ public:
 
     static void pinGIF(std::string const& key);
     static void unpinGIF(std::string const& key);
-    static bool isPinned(std::string const& key);
 
     struct SharedGIFData {
         std::vector<cocos2d::CCTexture2D*> textures;
@@ -114,7 +113,7 @@ public:
     static void clearCacheForReload();
     static void remove(std::string const& filename);
     static bool isCached(std::string const& filename);
-    static size_t currentCacheBytes() { return s_currentCacheSize; }
+    static size_t currentCacheBytes();
     
     using AsyncCallback = geode::CopyableFunction<void(AnimatedGIFSprite*)>;
     static void createAsync(std::string const& path, AsyncCallback callback);
@@ -157,7 +156,7 @@ private:
     static std::atomic<bool> s_shutdownMode;
     static std::mutex s_workerLifecycleMutex;
     static void workerLoop();
-    static void initWorker();
+    static bool initWorker();
     static void shutdownWorker();
 
 public:

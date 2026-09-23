@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
-#include "../../utils/TimedJoin.hpp"
+#include "../../utils/JoinWithWarning.hpp"
 
 namespace paimon {
 
@@ -49,7 +49,6 @@ public:
     }
 
     void startDecoding() override {
-        if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
         if (m_decoding.load(std::memory_order_relaxed)) return;
         m_decoding.store(true, std::memory_order_relaxed);
         m_finished.store(false, std::memory_order_relaxed);
@@ -58,11 +57,8 @@ public:
 
     void stopDecoding() override {
         m_decoding.store(false, std::memory_order_relaxed);
-        m_ring.wakeAll();  // unblock any waiter immediately
-        if (m_thread.joinable() && !paimon::timedJoin(m_thread, std::chrono::seconds(3))) {
-            if (!m_decodeThreadDetached.exchange(true, std::memory_order_acq_rel))
-                noteDetachedDecoder("pl_mpeg");
-        }
+        m_ring.wakeAll();
+        if (m_thread.joinable()) paimon::joinWithWarning(m_thread, std::chrono::seconds(3));
     }
 
     bool skipFrame() override {
@@ -73,7 +69,6 @@ public:
         if (!m_plm) return;
         bool wasDecoding = m_decoding.load(std::memory_order_relaxed);
         stopDecoding();
-        if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
 
         while (m_ring.nextRead()) m_ring.commitRead();
 
@@ -108,10 +103,6 @@ public:
     void releaseFrame() override {
         // Guard so releaseFrame() on an empty ring doesn't advance read idx.
         if (m_ring.peekRead()) m_ring.commitRead();
-    }
-
-    bool isTerminal() const override {
-        return m_decodeThreadDetached.load(std::memory_order_acquire);
     }
 
     bool setLooping(bool loop) override {
@@ -182,10 +173,6 @@ private:
 
     void closeInternal() {
         stopDecoding();
-        if (m_decodeThreadDetached.load(std::memory_order_acquire)) {
-            m_plm = nullptr;
-            return;
-        }
         if (m_plm) {
             plm_destroy(m_plm);
             m_plm = nullptr;
@@ -198,7 +185,6 @@ private:
     std::atomic<bool>   m_decoding{false};
     std::atomic<bool>   m_finished{false};
     std::atomic<bool>   m_looping{false};
-    std::atomic<bool>   m_decodeThreadDetached{false};
     std::thread         m_thread;
 };
 

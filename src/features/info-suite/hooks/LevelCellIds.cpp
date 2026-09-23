@@ -48,9 +48,7 @@ CCLabelBMFont* findTitleLabel(CCNode* cell, std::string const& title) {
     return nullptr;
 }
 
-// Places the badge either after the title or in the bottom right corner. The
-// badge is parented to the cell in both cases so recycling removes it with the
-// rest of the cell contents.
+// Keep the badge under the cell so recycling removes it with the other content.
 void attachBadge(CCNode* cell, std::string const& title, int id) {
     if (!cell || id <= 0) return;
     if (cell->getChildByID(kBadgeID)) return;
@@ -78,7 +76,7 @@ void attachBadge(CCNode* cell, std::string const& title, int id) {
 
 class $modify(PaimonInfoSuiteLevelCell, LevelCell) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "LevelCell::loadFromLevel");
+        paimon::hooks::veryLatePost(self, "LevelCell::loadFromLevel");
     }
 
     void loadFromLevel(GJGameLevel* level) {
@@ -90,7 +88,7 @@ class $modify(PaimonInfoSuiteLevelCell, LevelCell) {
 
 class $modify(PaimonInfoSuiteLevelListCell, LevelListCell) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "LevelListCell::loadFromList");
+        paimon::hooks::veryLatePost(self, "LevelListCell::loadFromList");
     }
 
     void loadFromList(GJLevelList* list) {
@@ -102,7 +100,7 @@ class $modify(PaimonInfoSuiteLevelListCell, LevelListCell) {
 
 class $modify(PaimonInfoSuiteMapPackCell, MapPackCell) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "MapPackCell::loadFromMapPack");
+        paimon::hooks::veryLatePost(self, "MapPackCell::loadFromMapPack");
     }
 
     void loadFromMapPack(GJMapPack* pack) {

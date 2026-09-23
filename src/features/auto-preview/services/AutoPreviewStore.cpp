@@ -15,6 +15,7 @@ struct RGBHeader {
     uint32_t height;
 };
 #pragma pack(pop)
+constexpr uint64_t kMaxRgbPixels = 16ull * 1024 * 1024;
 } // namespace
 
 namespace paimon::autopreview {
@@ -65,7 +66,8 @@ bool AutoPreviewStore::has(int32_t levelID) {
 
 bool AutoPreviewStore::save(int32_t levelID, uint8_t const* rgba, uint32_t width, uint32_t height) {
     if (levelID <= 0 || !rgba || width == 0 || height == 0) return false;
-    if (width > 16384 || height > 16384) return false;
+    if (width > 16384 || height > 16384 ||
+        static_cast<uint64_t>(width) * height > kMaxRgbPixels) return false;
 
     size_t const pixelCount = static_cast<size_t>(width) * height;
     std::vector<uint8_t> rgb(pixelCount * 3);
@@ -158,11 +160,19 @@ cocos2d::CCTexture2D* AutoPreviewStore::loadTexture(int32_t levelID) {
 
     RGBHeader head{};
     in.read(reinterpret_cast<char*>(&head), sizeof(head));
-    if (!in || head.width == 0 || head.height == 0 || head.width > 16384 || head.height > 16384) {
+    uint64_t const pixels = static_cast<uint64_t>(head.width) * head.height;
+    if (!in || head.width == 0 || head.height == 0 || head.width > 16384 || head.height > 16384 ||
+        pixels > kMaxRgbPixels) {
         return nullptr;
     }
 
-    size_t const pixelCount = static_cast<size_t>(head.width) * head.height;
+    size_t const pixelCount = static_cast<size_t>(pixels);
+    auto const start = in.tellg();
+    in.seekg(0, std::ios::end);
+    auto const remaining = in.tellg() - start;
+    in.seekg(start);
+    if (!in || remaining < static_cast<std::streamoff>(pixelCount * 3)) return nullptr;
+
     auto rgb = std::make_unique<uint8_t[]>(pixelCount * 3);
     in.read(reinterpret_cast<char*>(rgb.get()), static_cast<std::streamsize>(pixelCount * 3));
     if (!in) return nullptr;

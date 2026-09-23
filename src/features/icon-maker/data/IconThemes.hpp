@@ -1,7 +1,4 @@
 #pragma once
-// Temas para pintar el icono entero de una vez. Existe porque lo que casi
-// siempre quiere alguien es "que sea de fuego", no "pinta el cuerpo, luego el
-// detalle, luego el brillo".
 
 #include "FillSpec.hpp"
 

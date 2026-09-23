@@ -10,7 +10,6 @@ namespace paimon::info {
 
 namespace {
 
-// Bounds so the file cannot grow without limit on a long lived save.
 constexpr size_t kMaxPages = 200;
 constexpr size_t kMaxUsernames = 5000;
 constexpr size_t kMaxLevelDates = 5000;
@@ -42,13 +41,14 @@ void InfoStore::load() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    std::ifstream file(path);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) return;
 
-    std::string contents((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
-    file.close();
-    if (contents.empty()) return;
+    std::streamoff const size = file.tellg();
+    if (size <= 0 || size > 8ll * 1024 * 1024) return;
+    file.seekg(0, std::ios::beg);
+    std::string contents(static_cast<size_t>(size), '\0');
+    if (!file.read(contents.data(), size)) return;
 
     auto parsed = matjson::parse(contents);
     if (!parsed.isOk()) {
@@ -61,6 +61,7 @@ void InfoStore::load() {
     // from getKey() on each one.
     if (root["lastPages"].isObject()) {
         for (auto const& entry : root["lastPages"]) {
+            if (m_lastPages.size() >= kMaxPages) break;
             auto key = entry.getKey();
             if (!key) continue;
             m_lastPages[*key] = static_cast<int>(asInt(entry));
@@ -68,6 +69,7 @@ void InfoStore::load() {
     }
     if (root["usernames"].isObject()) {
         for (auto const& entry : root["usernames"]) {
+            if (m_usernames.size() >= kMaxUsernames) break;
             auto key = entry.getKey();
             if (!key) continue;
             auto id = geode::utils::numFromString<int>(*key);
@@ -76,6 +78,7 @@ void InfoStore::load() {
     }
     if (root["levelDates"].isObject()) {
         for (auto const& entry : root["levelDates"]) {
+            if (m_levelDates.size() >= kMaxLevelDates) break;
             auto key = entry.getKey();
             if (!key) continue;
             auto id = geode::utils::numFromString<int>(*key);
@@ -84,6 +87,7 @@ void InfoStore::load() {
     }
 
     paimon::json::forEachInArray(root["commentSamples"], [&](matjson::Value const& item) {
+        if (m_commentSamples.size() >= kMaxCommentSamples) return;
         int64_t id = asInt(item["id"]);
         int64_t time = asInt(item["t"]);
         if (id > 0 && time > 0) m_commentSamples.emplace_back(id, time);
@@ -125,6 +129,7 @@ void InfoStore::save() {
     }
     file << root.dump(matjson::NO_INDENTATION);
     file.close();
+    if (!file) return;
     m_dirty = false;
 }
 

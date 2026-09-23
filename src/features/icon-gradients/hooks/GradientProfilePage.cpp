@@ -65,7 +65,5 @@ void GradientProfilePage::toggleShip(CCObject* p0) {
 
     m_fields->m_isShip = !m_fields->m_isShip;
 
-    Loader::get()->queueInMainThread([this] {
-        updateGradient();
-    });
+    Loader::get()->queueInMainThread([self = Ref(this)] { self->updateGradient(); });
 }

@@ -7,7 +7,6 @@
 
 #include <matjson.hpp>
 #include <fstream>
-#include <iterator>
 #include <optional>
 
 #define MORE_ICONS_EVENTS
@@ -23,11 +22,16 @@ namespace {
 
     std::optional<std::vector<uint8_t>> readFile(std::filesystem::path const& p) {
         if (p.empty()) return std::nullopt;
-        std::error_code ec;
-        if (!std::filesystem::exists(p, ec)) return std::nullopt;
-        std::ifstream in(p, std::ios::binary);
+        std::ifstream in(p, std::ios::binary | std::ios::ate);
         if (!in) return std::nullopt;
-        return std::vector<uint8_t>((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+        std::streamoff const size = in.tellg();
+        if (size <= 0 || size > kMaxFileBytes) return std::nullopt;
+        in.seekg(0, std::ios::beg);
+
+        std::vector<uint8_t> data(static_cast<size_t>(size));
+        if (!in.read(reinterpret_cast<char*>(data.data()), size)) return std::nullopt;
+        return std::move(data);
     }
 
     std::string base64Encode(std::vector<uint8_t> const& data) {
@@ -140,15 +144,11 @@ void GlobalIconService::uploadActiveIcons(int accountID, std::string const& user
 
         auto pngBytes = readFile(info->getTexture());
         if (!pngBytes || pngBytes->empty()) continue;
-        if (static_cast<int64_t>(pngBytes->size()) > kMaxFileBytes) continue;
 
         std::optional<std::vector<uint8_t>> plistBytes;
         auto sheetPath = info->getSheet();
         if (!sheetPath.empty()) {
             plistBytes = readFile(sheetPath);
-            if (plistBytes && static_cast<int64_t>(plistBytes->size()) > kMaxFileBytes) {
-                plistBytes.reset();
-            }
         }
 
         int64_t slotBytes = static_cast<int64_t>(pngBytes->size()) +

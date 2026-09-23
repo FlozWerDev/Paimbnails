@@ -1,7 +1,4 @@
 #pragma once
-// Lista de acciones secundarias. Existe para que la columna de la derecha
-// muestre solo lo que se usa siempre: todo lo demas (duplicar, renombrar,
-// borrar, copiar estilo...) vive aqui detras de un boton "...".
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>

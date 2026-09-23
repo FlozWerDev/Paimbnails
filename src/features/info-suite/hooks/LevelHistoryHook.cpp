@@ -45,7 +45,7 @@ CCMenu* findLeftSideMenu(LevelInfoLayer* layer) {
 
 class $modify(PaimonLevelHistoryLayer, LevelInfoLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "LevelInfoLayer::init");
+        paimon::hooks::veryLatePost(self, "LevelInfoLayer::init");
     }
 
     $override

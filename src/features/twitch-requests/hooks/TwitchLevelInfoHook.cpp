@@ -26,7 +26,7 @@ bool navigationEnabled() {
 
 class $modify(PaimonTwitchLevelInfo, LevelInfoLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "LevelInfoLayer::init");
+        paimon::hooks::veryLatePost(self, "LevelInfoLayer::init");
     }
 
     bool init(GJGameLevel* level, bool challenge) {

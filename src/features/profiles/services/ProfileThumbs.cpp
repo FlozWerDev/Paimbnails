@@ -9,7 +9,6 @@
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
 #include <filesystem>
-#include "../../../utils/TimedJoin.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <algorithm>
 #include <deque>

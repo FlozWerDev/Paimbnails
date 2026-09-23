@@ -1,7 +1,4 @@
 #pragma once
-// Compila un proyecto a spritesheets listos para GD/MoreIcons:
-// output/<id>-uhd.png/.plist, <id>-hd.*, <id>.* (sd), con nombres de frame
-// vanilla (player_..., robot_..._0X_...).
 
 #include "../data/IconProject.hpp"
 

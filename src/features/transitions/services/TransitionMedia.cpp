@@ -227,6 +227,7 @@ class ImportWorker {
     std::thread worker;
 public:
     ImportWorker() : worker([this] {
+        geode::utils::thread::setName("PaimonTransitionImport");
         for (;;) {
             Job job;
             {

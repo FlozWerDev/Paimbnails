@@ -1,9 +1,5 @@
 #pragma once
 
-// The state machine of one duel, from joining the queue to submitting the
-// result. Everything else talks to this: the hub drives it, PlayLayer feeds it,
-// the HUD reads it.
-
 #include "../data/VersusModes.hpp"
 #include "../data/VersusTypes.hpp"
 #include "../data/VersusCards.hpp"
@@ -42,9 +38,7 @@ public:
     QueueTicket const& ticket() const { return m_ticket; }
     void cancelQueue();
 
-    // A friendly arrives at the lobby with nothing of ours in flight, so while
-    // the hub is open it keeps one slow poll running to catch it. Everything
-    // else polls fast enough on its own and this stands down for it.
+    // Slow polling catches incoming friendlies only while no other request is active.
     void beginWatch();
     void endWatch();
 

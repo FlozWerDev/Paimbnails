@@ -1,9 +1,5 @@
 #pragma once
 
-// The chrome every Versus screen is built out of: titled panels, tab rows and
-// the two text colours. It lives here so the hub, the modals and the board
-// cannot drift apart the way they did when each one drew its own box.
-
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 
@@ -19,9 +15,6 @@ inline constexpr cocos2d::ccColor3B kBad    = {240, 130, 140};
 // Height of the caption strip inside a panel, so callers can lay out under it.
 inline constexpr float kCaptionH = 22.f;
 
-// A titled box, anchored at its centre and holding its children in bottom-left
-// coordinates. The caption is part of the panel: a section without a name is
-// what made the old hub unreadable.
 cocos2d::CCNode* makePanel(cocos2d::CCSize size, std::string const& caption);
 
 // The rectangle under the caption strip, in the panel's own coordinates.

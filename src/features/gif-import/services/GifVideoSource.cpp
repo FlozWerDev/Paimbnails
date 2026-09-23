@@ -205,7 +205,7 @@ std::shared_ptr<SourceAnimation> decodeVideo(
         if (std::chrono::steady_clock::now() > deadline) { stalled = true; break; }
         auto const* frame = decoder->peekFrame();
         if (!frame) {
-            if (decoder->isFinished() || decoder->isTerminal()) break;
+            if (decoder->isFinished()) break;
             if (std::chrono::steady_clock::now() - lastFrame > kStallTimeout) { stalled = true; break; }
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
             continue;
@@ -252,23 +252,22 @@ std::shared_ptr<SourceAnimation> decodeVideo(
                 static_cast<int>(animation->frames.size()), std::memory_order_relaxed);
         }
     }
-    bool terminal = decoder->isTerminal();
     decoder->stopDecoding();
     // Cancelado o cerrando: se descarta en silencio, sin error ni parcial.
     if (aborted) return nullptr;
     if (animation->frames.empty()) {
-        if (maxDurationSeconds > 0.0 && (stalled || terminal)) {
+        if (maxDurationSeconds > 0.0 && stalled) {
             error = "El decodificador no pudo completar el video.";
         } else {
             error = "No se pudo decodificar ningun fotograma del video.";
         }
         return nullptr;
     }
-    if (maxDurationSeconds > 0.0 && (stalled || terminal)) {
+    if (maxDurationSeconds > 0.0 && stalled) {
         // Corte tardio: se devuelve lo capturado con aviso.
         geode::log::warn(
-            "[GifImport] video parcial: {} frames antes del corte (stalled={}, terminal={})",
-            animation->frames.size(), stalled, terminal);
+            "[GifImport] video parcial: {} frames antes del corte",
+            animation->frames.size());
         if (partialOut) *partialOut = true;
     }
 

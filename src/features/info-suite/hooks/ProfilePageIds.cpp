@@ -23,7 +23,7 @@ bool profileIdsEnabled() {
 
 class $modify(PaimonInfoSuiteProfilePage, ProfilePage) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "ProfilePage::loadPageFromUserInfo");
+        paimon::hooks::veryLatePost(self, "ProfilePage::loadPageFromUserInfo");
     }
 
     void loadPageFromUserInfo(GJUserScore* score) {

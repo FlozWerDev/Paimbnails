@@ -1,8 +1,5 @@
 #pragma once
 
-// Shared types for the Icon Gradients feature: gradient definitions, color
-// slots and a batch node that skips drawing children.
-
 #include <Geode/Geode.hpp>
 
 using namespace geode::prelude;
@@ -60,22 +57,6 @@ struct Gradient {
     GradientConfig glow;
     GradientConfig white;
     GradientConfig line;
-
-};
-
-// Batch nodes cache vertices so child shaders never run; this subclass skips
-// the cached draw entirely so gradient sprites inside batch nodes render.
-class FakeSpriteBatchNode : public CCSpriteBatchNode {
-
-public:
-
-    void draw() override {
-        CCNode::draw();
-    }
-
-    void visit() override {
-        CCNode::visit();
-    }
 
 };
 

@@ -10,7 +10,7 @@
 #include <limits>
 #include <mutex>
 #include <objbase.h>
-#include "../../utils/TimedJoin.hpp"
+#include "../../utils/JoinWithWarning.hpp"
 #include "../../core/Settings.hpp"
 #include <libyuv/planar_functions.h>
 #include <libyuv/scale.h>
@@ -95,23 +95,10 @@ void releaseMfObjectsSafely(ID3D11Texture2D*& stagingTex, IMFSourceReader*& read
     }
 }
 
-void releaseD3D11Safely(ID3D11Device*& dev, ID3D11DeviceContext*& ctx, IMFDXGIDeviceManager*& mgr) {
-    __try {
-        if (mgr) { mgr->Release(); mgr = nullptr; }
-        if (ctx) { ctx->Release(); ctx = nullptr; }
-        if (dev) { dev->Release(); dev = nullptr; }
-    } __except(EXCEPTION_ACCESS_VIOLATION == GetExceptionCode()
-               ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
-        dev = nullptr;
-        ctx = nullptr;
-        mgr = nullptr;
-    }
-}
 }
 
 bool DecoderMF::open(const std::string& path) {
     closeInternal();
-    m_decodeThreadDetached.store(false, std::memory_order_release);
     m_videoPath = path;
 
     HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
@@ -688,8 +675,6 @@ bool DecoderMF::copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresourc
 }
 
 void DecoderMF::startDecoding() {
-    // A timed-out worker is terminal; never start a second producer.
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
     if (m_decoding.load(std::memory_order_relaxed)) return;
     m_decoding.store(true, std::memory_order_relaxed);
     m_finished.store(false, std::memory_order_relaxed);
@@ -697,20 +682,11 @@ void DecoderMF::startDecoding() {
 }
 
 void DecoderMF::stopDecoding() {
-    // Bound the join so ReadSample() cannot freeze the main thread.
     constexpr auto kJoinTimeout = std::chrono::milliseconds(1000);
 
-    bool wasDecoding = m_decoding.exchange(false, std::memory_order_acq_rel);
+    m_decoding.store(false, std::memory_order_release);
     m_ring.wakeAll();
-    if (!wasDecoding) {
-        if (m_thread.joinable()) {
-            if (!paimon::timedJoin(m_thread, kJoinTimeout)) {
-                if (!m_decodeThreadDetached.exchange(true, std::memory_order_acq_rel))
-                    noteDetachedDecoder("MediaFoundation");
-            }
-        }
-        return;
-    }
+    if (!m_thread.joinable()) return;
 
     // Flush wakes ReadSample(); SEH covers force-close after MF unload.
     if (m_reader) {
@@ -721,12 +697,7 @@ void DecoderMF::stopDecoding() {
         }
     }
 
-    if (m_thread.joinable()) {
-        if (!paimon::timedJoin(m_thread, kJoinTimeout)) {
-            if (!m_decodeThreadDetached.exchange(true, std::memory_order_acq_rel))
-                noteDetachedDecoder("MediaFoundation");
-        }
-    }
+    paimon::joinWithWarning(m_thread, kJoinTimeout);
 }
 
 void DecoderMF::decodeLoop() {
@@ -967,7 +938,6 @@ void DecoderMF::seekTo(double seconds) {
     if (!m_reader) return;
     bool wasDecoding = m_decoding.load(std::memory_order_relaxed);
     stopDecoding();
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
 
     while (m_ring.nextRead()) m_ring.commitRead();
 
@@ -1026,32 +996,6 @@ void DecoderMF::releaseFrame() {
 
 void DecoderMF::closeInternal() {
     stopDecoding();
-
-    // Detached worker may still hold refs; release under SEH.
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) {
-        geode::log::warn("[DecoderMF] closeInternal: decode thread was detached; "
-                         "forcing COM/D3D release under SEH.");
-        {
-            std::lock_guard lk(g_d3d11Mutex);
-            if (m_sharedD3D) {
-                m_d3dDevice = nullptr;
-                m_d3dCtx    = nullptr;
-                if (m_dxgiMgr) { m_dxgiMgr->Release(); m_dxgiMgr = nullptr; }
-                releaseSharedD3D11();
-                m_sharedD3D = false;
-            } else {
-                releaseD3D11Safely(m_d3dDevice, m_d3dCtx, m_dxgiMgr);
-            }
-        }
-        releaseMfObjectsSafely(m_stagingTex, m_reader);
-        m_dxvaEnabled = false;
-        m_dxvaReadbackFailures = 0;
-        m_stagingFormat = DXGI_FORMAT_UNKNOWN;
-        m_stagingWidth  = 0;
-        m_stagingHeight = 0;
-        m_videoPath.clear();
-        return;
-    }
 
     // Keep shared device in process-wide cache.
     {

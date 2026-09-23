@@ -44,7 +44,6 @@ public:
 
     bool isPlaying() const;
     bool hasVisibleFrame() const;
-    bool isTerminal() const;
     uint64_t getFrameCounter() const;
 
     cocos2d::CCTexture2D* getCurrentFrameTexture() const;

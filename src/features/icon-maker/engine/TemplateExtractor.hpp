@@ -1,7 +1,4 @@
 #pragma once
-// Extrae frames de los iconos oficiales de GD como piezas editables. Cada
-// frame vanilla ya ES un canal de color (principal/secundario/brillo/extra),
-// así que con fill blanco + conservar sombreado queda recolorable al instante.
 
 #include "../../texture-studio/data/ImageBuffer.hpp"
 

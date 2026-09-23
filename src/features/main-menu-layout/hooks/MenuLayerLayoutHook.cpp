@@ -9,8 +9,7 @@ using namespace geode::prelude;
 
 class $modify(PaimonMainMenuLayoutHook, MenuLayer) {
     static void onModify(auto& self) {
-        // Last among Paimbnails hooks on MenuLayer::init (after node-ids and buttons).
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "MenuLayer::init");
+        paimon::hooks::veryLatePost(self, "MenuLayer::init");
     }
 
     $override

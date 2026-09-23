@@ -12,6 +12,7 @@
 #include "../../smooth-scroll/services/SmoothScrollController.hpp"
 
 #include <Geode/loader/Dispatch.hpp>
+#include <Geode/ui/Layout.hpp>
 #include <cmath>
 #include <utility>
 
@@ -202,9 +203,7 @@ void GradientLayer::paintButton(IconButton* button, bool force, bool transition,
 void GradientLayer::updateGradient(bool force, bool all, bool transition, bool light) {
     m_currentConfig = GradientUtils::getSavedConfig(m_selectedButton->getType(), m_currentColor, m_isSecondPlayer);
 
-    // Light updates run on every drag/color tick; only refresh what the user
-    // is actively editing (preview + the active channel's toggle), leaving the
-    // garage and the per-icon buttons out of the hot path.
+    // Drag ticks only refresh the preview and active toggle to keep the editor responsive.
     if (light) {
         m_pointsLayer->updateGradient(m_currentConfig, m_currentColor, force);
 
@@ -749,15 +748,22 @@ bool GradientLayer::init() {
     settingsButton->setID("animation-button");
     m_buttonMenu->addChild(settingsButton);
 
-    auto addPointMode = [this](char const* title, float x, SEL_MenuHandler callback, char const* id) {
+    auto* tabMenu = CCMenu::create();
+    tabMenu->setContentSize({124.f, 30.f});
+    tabMenu->setPosition({10.f, 266.f});
+    tabMenu->setLayout(RowLayout::create()->setGap(4.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
+    tabMenu->setID("point-mode-menu");
+    m_mainLayer->addChild(tabMenu);
+
+    auto addPointMode = [tabMenu, this](char const* title, SEL_MenuHandler callback, char const* id) {
         auto sprite = ButtonSprite::create(title, 54, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.42f);
         auto button = CCMenuItemSpriteExtra::create(sprite, this, callback);
-        button->setPosition({x, 281.f});
         button->setID(id);
-        m_buttonMenu->addChild(button);
+        tabMenu->addChild(button);
     };
-    addPointMode("Image", 52.f, menu_selector(GradientLayer::onImage), "point-image-button");
-    addPointMode("Color", 99.f, menu_selector(GradientLayer::onPointColor), "point-color-button");
+    addPointMode("Image", menu_selector(GradientLayer::onImage), "point-image-button");
+    addPointMode("Color", menu_selector(GradientLayer::onPointColor), "point-color-button");
+    tabMenu->updateLayout();
 
     for (size_t i = 0; i < 9; ++i) {
         IconType type = static_cast<IconType>(i);
@@ -818,8 +824,15 @@ bool GradientLayer::init() {
     addRGBInput("G", 344.f, m_gInput);
     addRGBInput("B", 376.f, m_bInput);
 
-    auto addActionButton = [this](
-        char const* text, int width, char const* background, CCPoint position,
+    auto* actionsMenu = CCMenu::create();
+    actionsMenu->setContentSize({420.f, 34.f});
+    actionsMenu->setPosition({10.f, 12.f});
+    actionsMenu->setLayout(RowLayout::create()->setGap(4.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
+    actionsMenu->setID("gradient-actions-menu");
+    m_mainLayer->addChild(actionsMenu);
+
+    auto addActionButton = [actionsMenu, this](
+        char const* text, int width, char const* background,
         SEL_MenuHandler callback, char const* id
     ) {
         auto sprite = ButtonSprite::create(
@@ -828,37 +841,37 @@ bool GradientLayer::init() {
         sprite->setCascadeOpacityEnabled(true);
 
         auto button = CCMenuItemSpriteExtra::create(sprite, this, callback);
-        button->setPosition(position);
         button->setCascadeOpacityEnabled(true);
         button->setID(id);
-        m_buttonMenu->addChild(button);
+        actionsMenu->addChild(button);
         return button;
     };
 
     m_addButton = addActionButton(
-        "Add", 56, "GJ_button_01.png", {70.f, 29.f},
+        "Add", 56, "GJ_button_01.png",
         menu_selector(GradientLayer::onAddPoint), "add-point-button"
     );
     m_removeButton = addActionButton(
-        "Delete", 56, "GJ_button_06.png", {130.f, 29.f},
+        "Delete", 56, "GJ_button_06.png",
         menu_selector(GradientLayer::onRemovePoint), "remove-point-button"
     );
     m_copyButton = addActionButton(
-        "Copy", 56, "GJ_button_04.png", {190.f, 29.f},
+        "Copy", 56, "GJ_button_04.png",
         menu_selector(GradientLayer::onCopy), "copy-gradient-button"
     );
     m_pasteButton = addActionButton(
-        "Paste", 56, "GJ_button_04.png", {250.f, 29.f},
+        "Paste", 56, "GJ_button_04.png",
         menu_selector(GradientLayer::onPaste), "paste-gradient-button"
     );
     m_saveButton = addActionButton(
-        "Save", 56, "GJ_button_01.png", {310.f, 29.f},
+        "Save", 56, "GJ_button_01.png",
         menu_selector(GradientLayer::onSave), "save-gradient-button"
     );
     m_loadButton = addActionButton(
-        "Load", 56, "GJ_button_02.png", {370.f, 29.f},
+        "Load", 56, "GJ_button_02.png",
         menu_selector(GradientLayer::onLoad), "load-gradient-button"
     );
+    actionsMenu->updateLayout();
 
     m_hideToggle = CCMenuItemToggler::create(
         CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png"),

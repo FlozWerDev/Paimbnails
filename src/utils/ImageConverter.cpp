@@ -3,8 +3,8 @@
 
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 
-// stb_image_write for native encoding (PNG, BMP, TGA, JPG)
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STBIW_WINDOWS_UTF8
 #include "stb_image_write.h"
@@ -30,8 +30,6 @@ std::vector<uint8_t> ImageConverter::rgbToRgba(std::vector<uint8_t> const& rgbDa
 void ImageConverter::rgbToRgbaFast(uint8_t const* rgb, uint8_t* rgbaOut, size_t pixelCount) {
     if (pixelCount == 0) return;
 
-    // Single loop with 32-bit stores (was two passes thrashing cache on large images);
-    // clang auto-vectorizes to SSE2 and the layout matches initWithData.
     for (size_t i = 0; i < pixelCount; ++i) {
         uint32_t pixel =
             static_cast<uint32_t>(rgb[i * 3 + 0]) |
@@ -43,8 +41,6 @@ void ImageConverter::rgbToRgbaFast(uint8_t const* rgb, uint8_t* rgbaOut, size_t 
 }
 
 void ImageConverter::rgbaToRgbFast(uint8_t const* rgba, uint8_t* rgbOut, size_t pixelCount) {
-    // Drop the alpha channel — auto-vectorized in common cases. Single loop with
-    // sequential writes to avoid another pass.
     for (size_t i = 0; i < pixelCount; ++i) {
         rgbOut[i * 3 + 0] = rgba[i * 4 + 0];
         rgbOut[i * 3 + 1] = rgba[i * 4 + 1];
@@ -55,7 +51,6 @@ void ImageConverter::rgbaToRgbFast(uint8_t const* rgba, uint8_t* rgbOut, size_t 
 bool ImageConverter::rgbaToPngBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData) {
     if (!rgba || width == 0 || height == 0) return false;
 
-    // direct stb_image_write — no IPC or external deps
     outPngData.clear();
     outPngData.reserve(static_cast<size_t>(width) * height);
     int ok = stbi_write_png_to_func(stbiWriteToVector, &outPngData,
@@ -152,9 +147,12 @@ bool ImageConverter::loadRgbFile(std::string const& rgbFilePath, std::vector<uin
         return false;
     }
     
-    // Validate declared dimensions before allocating: a corrupt huge header would
-    // OOM-kill the process in resize().
-    size_t rgbSize = static_cast<size_t>(header.width) * header.height * 3;
+    uint64_t const pixels = static_cast<uint64_t>(header.width) * header.height;
+    if (header.width > 16384 || header.height > 16384 || pixels > 16ull * 1024 * 1024) {
+        log::error("[ImageConverter] RGB dimensions too large in file: {}", rgbFilePath);
+        return false;
+    }
+    size_t rgbSize = static_cast<size_t>(pixels * 3);
     auto headerPos = in.tellg();
     in.seekg(0, std::ios::end);
     auto fileEnd = in.tellg();

@@ -1,6 +1,7 @@
+#include <Geode/Geode.hpp>
+
 #include "LevelParse.hpp"
 
-#include <cstdlib>
 #include <string_view>
 
 namespace paimon::autobuild {
@@ -25,17 +26,11 @@ constexpr int kKeyScaleX      = 128;
 constexpr int kKeyScaleY      = 129;
 
 int toInt(std::string_view token, int fallback = 0) {
-    std::string buf(token);
-    char* end = nullptr;
-    long value = std::strtol(buf.c_str(), &end, 10);
-    return end == buf.c_str() ? fallback : static_cast<int>(value);
+    return geode::utils::numFromString<int>(std::string(token)).unwrapOr(fallback);
 }
 
 float toFloat(std::string_view token, float fallback = 0.f) {
-    std::string buf(token);
-    char* end = nullptr;
-    float value = std::strtof(buf.c_str(), &end);
-    return end == buf.c_str() ? fallback : value;
+    return geode::utils::numFromString<float>(std::string(token)).unwrapOr(fallback);
 }
 
 int countGroups(std::string_view token) {

@@ -1,7 +1,4 @@
 #pragma once
-// El "balde de pintura": pinta un relleno (color, degradado o imagen) a
-// través del alpha de la forma de una pieza, opcionalmente conservando el
-// sombreado (luminancia) de la forma original.
 
 #include "../data/FillSpec.hpp"
 #include "../../texture-studio/data/ImageBuffer.hpp"
@@ -14,9 +11,7 @@ namespace paimon::icon_maker {
 
 class FillRenderer final {
 public:
-    // `shape` is the piece already placed on its canvas. Returns a same-size
-    // buffer where alpha comes from the shape and color from the fill,
-    // mapped onto the shape's alpha bounding box.
+    // The shape's alpha bounds map the fill; its alpha stays in the output.
     static geode::Result<texture_studio::ImageBuffer> apply(
         texture_studio::ImageBuffer const& shape,
         FillSpec const& fill,
@@ -26,10 +21,7 @@ public:
     static bool alphaBounds(texture_studio::ImageBuffer const& buffer,
                             int& outX, int& outY, int& outW, int& outH);
 
-    // Contour grown outwards from `shape`'s alpha, to be composited *under*
-    // the painted shape. `layerOpacity` (0..255) is the piece opacity already
-    // baked into `shape`, needed both to find the silhouette and to keep the
-    // outline as translucent as the layer it belongs to.
+    // layerOpacity is already in shape; apply it to the outline so both fade together.
     static texture_studio::ImageBuffer renderOutline(
         texture_studio::ImageBuffer const& shape,
         OutlineSpec const& outline,

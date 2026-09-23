@@ -13,7 +13,9 @@
 #include <filesystem>
 #include <Geode/utils/string.hpp>
 #include <algorithm>
-#include "TimedJoin.hpp"
+#include <cmath>
+#include <exception>
+#include "JoinWithWarning.hpp"
 
 using namespace geode::prelude;
 
@@ -29,6 +31,19 @@ static size_t getSharedGIFDataSize(AnimatedGIFSprite::SharedGIFData const& data)
         entrySize += tex->getPixelsWide() * tex->getPixelsHigh() * 4;
     }
     return entrySize;
+}
+
+static std::vector<uint8_t> readGifFile(std::string const& path) {
+    std::ifstream file(paimon::assets::pathFromUtf8(path), std::ios::binary | std::ios::ate);
+    if (!file) return {};
+
+    std::streamoff const size = file.tellg();
+    if (size <= 0 || size > 64ll * 1024 * 1024) return {};
+    file.seekg(0, std::ios::beg);
+
+    std::vector<uint8_t> data(static_cast<size_t>(size));
+    if (!file.read(reinterpret_cast<char*>(data.data()), size)) return {};
+    return data;
 }
 
 std::unordered_map<std::string, AnimatedGIFSprite::SharedGIFData> AnimatedGIFSprite::s_gifCache;
@@ -66,11 +81,15 @@ std::atomic<bool> AnimatedGIFSprite::s_workerRunning = false;
 std::atomic<bool> AnimatedGIFSprite::s_shutdownMode = false;
 std::mutex AnimatedGIFSprite::s_workerLifecycleMutex;
 
-void AnimatedGIFSprite::initWorker() {
-    if (paimon::isRuntimeShuttingDown()) {
-        return;
-    }
+size_t AnimatedGIFSprite::currentCacheBytes() {
+    std::shared_lock lock(s_cacheMutex);
+    return s_currentCacheSize;
+}
+
+bool AnimatedGIFSprite::initWorker() {
+    if (paimon::isRuntimeShuttingDown()) return false;
     std::lock_guard<std::mutex> lock(s_workerLifecycleMutex);
+    if (paimon::isRuntimeShuttingDown()) return false;
     s_shutdownMode.store(false, std::memory_order_release);
     if (!s_workerRunning.load(std::memory_order_acquire)) {
         s_workerRunning.store(true, std::memory_order_release);
@@ -85,11 +104,11 @@ void AnimatedGIFSprite::initWorker() {
         }
         PaimonDebug::log("[AnimatedGIFSprite] Worker pool started ({} threads)", NUM_GIF_WORKERS);
     }
+    return true;
 }
 
 void AnimatedGIFSprite::shutdownWorker() {
     std::lock_guard<std::mutex> lock(s_workerLifecycleMutex);
-    if (!s_workerRunning.load(std::memory_order_acquire)) return;
     {
         std::lock_guard<std::mutex> queueLock(s_queueMutex);
         s_workerRunning.store(false, std::memory_order_release);
@@ -98,7 +117,7 @@ void AnimatedGIFSprite::shutdownWorker() {
     s_queueCV.notify_all();
     for (auto& t : s_workerThreads) {
         if (t.joinable()) {
-            paimon::timedJoin(t, std::chrono::seconds(3));
+            paimon::joinWithWarning(t, std::chrono::seconds(3));
         }
     }
     s_workerThreads.clear();
@@ -150,10 +169,6 @@ void AnimatedGIFSprite::unpinGIF(std::string const& key) {
     }
 }
 
-bool AnimatedGIFSprite::isPinned(std::string const& key) {
-    return s_pinnedGIFs.find(key) != s_pinnedGIFs.end();
-}
-
 AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
     auto ret = new AnimatedGIFSprite();
     if (ret && ret->init()) {
@@ -164,12 +179,7 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
             return ret;
         }
         
-        std::ifstream file(paimon::assets::pathFromUtf8(filename), std::ios::binary);
-        if (!file) return nullptr;
-        
-        std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        file.close();
-        
+        auto data = readGifFile(filename);
         if (!GIFDecoder::isGIF(data.data(), data.size())) return nullptr;
         
         auto gifData = GIFDecoder::decode(data.data(), data.size());
@@ -199,6 +209,7 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
             sharedData.delays.push_back(frame.delayMs / 1000.0f);
             sharedData.frameRects.push_back(CCRect(0, 0, gifData.width, gifData.height));
         }
+        if (sharedData.textures.empty()) return nullptr;
         
         {
             std::unique_lock<std::shared_mutex> lock(s_cacheMutex);
@@ -216,16 +227,20 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
 
             s_currentCacheSize += getSharedGIFDataSize(sharedData);
 
-            if (!isPinned(filename)) {
+            if (!s_pinnedGIFs.contains(filename)) {
+                auto lruIt = s_lruMap.find(filename);
+                if (lruIt != s_lruMap.end()) s_lruList.erase(lruIt->second);
                 s_lruList.push_back(filename);
                 s_lruMap[filename] = std::prev(s_lruList.end());
             }
+        }
+
+        bool initialized = ret->initFromCache(filename);
+        {
+            std::unique_lock<std::shared_mutex> lock(s_cacheMutex);
             evictIfNeeded();
         }
-        
-        ret->initFromCache(filename);
-        
-        return ret;
+        return initialized ? ret : nullptr;
     }
     CC_SAFE_DELETE(ret);
     return nullptr;
@@ -311,7 +326,7 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
             
             s_currentCacheSize += getSharedGIFDataSize(cacheEntry);
 
-            if (!isPinned(m_filename)) {
+            if (!s_pinnedGIFs.contains(m_filename)) {
                 auto lruIt = s_lruMap.find(m_filename);
                 if (lruIt != s_lruMap.end()) {
                     s_lruList.erase(lruIt->second);
@@ -477,8 +492,8 @@ void AnimatedGIFSprite::pruneDiskCache() {
     for (auto const& e : entries) {
         auto age = std::chrono::duration_cast<std::chrono::hours>(now - e.mtime);
         if (age > MAX_DISK_CACHE_AGE) {
-            std::filesystem::remove(e.path, ec);
-            if (!ec) totalBytes = (totalBytes >= e.bytes) ? (totalBytes - e.bytes) : 0;
+            bool removed = std::filesystem::remove(e.path, ec);
+            if (!ec && removed) totalBytes = (totalBytes >= e.bytes) ? (totalBytes - e.bytes) : 0;
         }
     }
 
@@ -488,8 +503,8 @@ void AnimatedGIFSprite::pruneDiskCache() {
     });
     for (auto const& e : entries) {
         if (totalBytes <= paimon::settings::quality::diskCacheBytes()) break;
-        std::filesystem::remove(e.path, ec);
-        if (!ec) totalBytes = (totalBytes >= e.bytes) ? (totalBytes - e.bytes) : 0;
+        bool removed = std::filesystem::remove(e.path, ec);
+        if (!ec && removed) totalBytes = (totalBytes >= e.bytes) ? (totalBytes - e.bytes) : 0;
     }
 }
 
@@ -509,47 +524,47 @@ bool AnimatedGIFSprite::loadFromDiskCache(std::string const& path, DiskCacheEntr
     std::ifstream file(cachePath, std::ios::binary);
     if (!file) return false;
 
-    uint32_t version;
-    file.read(reinterpret_cast<char*>(&version), sizeof(version));
-    if (version != DISK_CACHE_VERSION) return false;
-
-    file.read(reinterpret_cast<char*>(&outEntry.width), sizeof(outEntry.width));
-    file.read(reinterpret_cast<char*>(&outEntry.height), sizeof(outEntry.height));
-
-    uint32_t frameCount;
-    file.read(reinterpret_cast<char*>(&frameCount), sizeof(frameCount));
+    auto read = [&](auto& value) {
+        return static_cast<bool>(file.read(reinterpret_cast<char*>(&value), sizeof(value)));
+    };
+    uint32_t version = 0;
+    if (!read(version) || version != DISK_CACHE_VERSION) return false;
+    if (!read(outEntry.width) || !read(outEntry.height)) return false;
+    uint32_t frameCount = 0;
+    if (!read(frameCount)) return false;
 
     // Reject corrupt cache dimensions before allocating.
     constexpr uint32_t kMaxFrames = 1024;
     constexpr uint32_t kMaxDim = 8192;
     constexpr uint32_t kMaxFrameBytes = 64 * 1024 * 1024;
+    constexpr uint64_t kMaxDecodedBytes = 256ull * 1024 * 1024;
 
     if (frameCount == 0 || frameCount > kMaxFrames) return false;
     if (outEntry.width == 0 || outEntry.width > kMaxDim) return false;
     if (outEntry.height == 0 || outEntry.height > kMaxDim) return false;
 
+    uint64_t totalBytes = 0;
     outEntry.frames.resize(frameCount);
     for (uint32_t i = 0; i < frameCount; ++i) {
         auto& frame = outEntry.frames[i];
-        file.read(reinterpret_cast<char*>(&frame.delay), sizeof(frame.delay));
-        file.read(reinterpret_cast<char*>(&frame.width), sizeof(frame.width));
-        file.read(reinterpret_cast<char*>(&frame.height), sizeof(frame.height));
+        uint32_t dataSize = 0;
+        if (!read(frame.delay) || !read(frame.width) || !read(frame.height) || !read(dataSize)) return false;
 
-        uint32_t dataSize;
-        file.read(reinterpret_cast<char*>(&dataSize), sizeof(dataSize));
-
+        if (!std::isfinite(frame.delay) || frame.delay < 0.f || frame.delay > 655.35f) return false;
         if (frame.width == 0 || frame.width > kMaxDim) return false;
         if (frame.height == 0 || frame.height > kMaxDim) return false;
         if (dataSize > kMaxFrameBytes) return false;
         uint64_t expected = static_cast<uint64_t>(frame.width)
             * static_cast<uint64_t>(frame.height) * 4u;
         if (static_cast<uint64_t>(dataSize) != expected) return false;
+        totalBytes += expected;
+        if (totalBytes > kMaxDecodedBytes) return false;
 
         frame.pixels.resize(dataSize);
-        file.read(reinterpret_cast<char*>(frame.pixels.data()), dataSize);
+        if (!file.read(reinterpret_cast<char*>(frame.pixels.data()), dataSize)) return false;
     }
 
-    return file.good();
+    return true;
 }
 
 void AnimatedGIFSprite::saveToDiskCache(std::string const& path, DiskCacheEntry const& entry) {
@@ -580,6 +595,14 @@ void AnimatedGIFSprite::saveToDiskCache(std::string const& path, DiskCacheEntry 
 
 void AnimatedGIFSprite::workerLoop() {
     geode::utils::thread::setName("PaimonGIFWorker");
+    auto decode = [](uint8_t const* data, size_t size) {
+        try {
+            return GIFDecoder::decode(data, size);
+        } catch (std::exception const& e) {
+            log::warn("[AnimatedGIFSprite] GIF decode failed: {}", e.what());
+            return GIFDecoder::GIFData{};
+        }
+    };
     while (true) {
         // Do not touch static queues during runtime shutdown.
         if (paimon::isRuntimeShuttingDown()) {
@@ -603,7 +626,7 @@ void AnimatedGIFSprite::workerLoop() {
             if (!s_workerRunning.load(std::memory_order_acquire) && s_taskQueue.empty()) break;
             if (s_taskQueue.empty()) continue;
 
-            task = s_taskQueue.front();
+            task = std::move(s_taskQueue.front());
             s_taskQueue.pop_front();
         }
         
@@ -613,7 +636,7 @@ void AnimatedGIFSprite::workerLoop() {
                 continue;
             }
             
-            auto gifResult = GIFDecoder::decode(task.data.data(), task.data.size());
+            auto gifResult = decode(task.data.data(), task.data.size());
             if (gifResult.frames.empty()) {
                 Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
                 continue;
@@ -724,21 +747,18 @@ void AnimatedGIFSprite::workerLoop() {
                 continue;
             }
 
-            std::ifstream file(paimon::assets::pathFromUtf8(task.path), std::ios::binary);
-            if (!file) {
+            auto data = readGifFile(task.path);
+            if (data.empty()) {
                 Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
                 continue;
             }
-
-            std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            file.close();
 
             if (!GIFDecoder::isGIF(data.data(), data.size())) {
                 Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
                 continue;
             }
 
-            auto gifResult = GIFDecoder::decode(data.data(), data.size());
+            auto gifResult = decode(data.data(), data.size());
             if (gifResult.frames.empty()) {
                 Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
                 continue;
@@ -747,24 +767,25 @@ void AnimatedGIFSprite::workerLoop() {
             DiskCacheEntry newCacheEntry;
             newCacheEntry.width = gifResult.width;
             newCacheEntry.height = gifResult.height;
-
-            std::deque<PendingFrame> pendingFrames;
-            
             for (auto& frame : gifResult.frames) {
                 DiskCacheEntry::Frame cacheFrame;
+                cacheFrame.pixels = std::move(frame.pixels);
                 cacheFrame.delay = frame.delayMs / 1000.0f;
                 cacheFrame.width = frame.width;
                 cacheFrame.height = frame.height;
                 newCacheEntry.frames.push_back(std::move(cacheFrame));
+            }
+            saveToDiskCache(task.path, newCacheEntry);
 
+            std::deque<PendingFrame> pendingFrames;
+            for (auto& frame : newCacheEntry.frames) {
                 PendingFrame pf;
                 pf.pixels = std::move(frame.pixels);
                 pf.width = frame.width;
                 pf.height = frame.height;
-                pf.delayMs = frame.delayMs;
+                pf.delayMs = static_cast<int>(frame.delay * 1000.0f + 0.5f);
                 pendingFrames.push_back(std::move(pf));
             }
-            saveToDiskCache(task.path, newCacheEntry);
             
             Loader::get()->queueInMainThread([path = task.path, pendingFrames = std::move(pendingFrames),
                                               canvasW = static_cast<int>(gifResult.width),
@@ -901,12 +922,12 @@ bool AnimatedGIFSprite::initFromCache(std::string const& cacheKey) {
         if (it == s_gifCache.end()) {
             return false;
         }
-        cachedData = it->second; // copy frame/texture vectors under shared lock
+        cachedData = it->second;
     }
 
     {
         std::unique_lock<std::shared_mutex> wlock(s_cacheMutex);
-        if (s_gifCache.find(cacheKey) != s_gifCache.end()) {
+        if (s_gifCache.find(cacheKey) != s_gifCache.end() && !s_pinnedGIFs.contains(cacheKey)) {
             auto lruIt = s_lruMap.find(cacheKey);
             if (lruIt != s_lruMap.end()) {
                 s_lruList.erase(lruIt->second);
@@ -973,16 +994,17 @@ void AnimatedGIFSprite::createAsync(std::vector<uint8_t> const& data, std::strin
         return;
     }
 
-    initWorker();
+    if (!initWorker()) return;
 
     {
         std::lock_guard<std::mutex> lock(s_queueMutex);
+        if (!s_workerRunning.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
         GIFTask task;
         task.data = data;
         task.key = key;
-        task.callback = callback;
+        task.callback = std::move(callback);
         task.isData = true;
-        s_taskQueue.push_back(task);
+        s_taskQueue.push_back(std::move(task));
     }
     s_queueCV.notify_one();
 }
@@ -1002,15 +1024,16 @@ void AnimatedGIFSprite::createAsync(std::string const& path, AsyncCallback callb
         return;
     }
 
-    initWorker();
+    if (!initWorker()) return;
 
     {
         std::lock_guard<std::mutex> lock(s_queueMutex);
+        if (!s_workerRunning.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
         GIFTask task;
         task.path = path;
-        task.callback = callback;
+        task.callback = std::move(callback);
         task.isData = false;
-        s_taskQueue.push_back(task);
+        s_taskQueue.push_back(std::move(task));
     }
     s_queueCV.notify_one();
 }

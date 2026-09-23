@@ -798,9 +798,7 @@ bool VideoThumbnailSprite::initWithPlayer(std::unique_ptr<paimon::video::VideoPl
     m_player = std::move(player);
     m_player->setLoop(true);
 
-// Keep contentSize at the video dimensions even when init used a 1×1
-// placeholder. Delay textureRect until the real frame arrives or the pixel
-// would be stretched across the sprite.
+// Delay textureRect until the real frame arrives; otherwise the placeholder stretches.
     int vw = m_player->getVideoWidth();
     int vh = m_player->getVideoHeight();
     if (vw > 0 && vh > 0) {
@@ -943,15 +941,6 @@ void VideoThumbnailSprite::dispatchFirstVisibleFrame() {
 
 void VideoThumbnailSprite::update(float dt) {
     if (!m_player || !m_playing) return;
-
-// Stop ticking terminal decoders; they cannot produce another frame.
-    if (m_player->isTerminal()) {
-        log::debug("[VideoThumbSprite] Player became terminal, stopping update loop");
-        m_playing = false;
-        releaseActiveSlot();
-        this->unscheduleUpdate();
-        return;
-    }
 
 // Skip off-screen work and pause the decoder after a short grace period.
     bool offscreen = false;
@@ -1136,13 +1125,9 @@ std::unique_ptr<paimon::video::VideoPlayer> VideoThumbnailSprite::getCachedPlaye
 
     for (auto it = s_playerCache.begin(); it != s_playerCache.end(); ++it) {
         if (it->cacheKey == cacheKey && it->player) {
-// Do not reuse terminal players or players that never produced a frame.
             auto& cached = *it;
-            if (cached.player->isTerminal() || !cached.player->hasVisibleFrame()) {
-                log::warn("[VideoThumbSprite] Discarding unhealthy cached player "
-                          "(terminal={}, hasFrame={}) for: {}",
-                          cached.player->isTerminal(),
-                          cached.player->hasVisibleFrame(), cacheKey);
+            if (!cached.player->hasVisibleFrame()) {
+                log::warn("[VideoThumbSprite] Discarding cached player without a frame: {}", cacheKey);
                 cached.player->forceStop();
                 cached.player.reset();
                 s_playerCache.erase(it);
@@ -1166,10 +1151,8 @@ void VideoThumbnailSprite::returnPlayerToCache(std::string const& cacheKey, std:
         return;
     }
 
-    if (player->isTerminal() || !player->hasVisibleFrame()) {
-        PaimonDebug::log("[VideoThumbSprite] Not caching unhealthy player "
-                   "(terminal={}, hasFrame={}) for: {}",
-                   player->isTerminal(), player->hasVisibleFrame(), cacheKey);
+    if (!player->hasVisibleFrame()) {
+        PaimonDebug::log("[VideoThumbSprite] Not caching player without a frame: {}", cacheKey);
         player->forceStop();
         player.reset();
         return;

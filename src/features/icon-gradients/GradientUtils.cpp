@@ -20,10 +20,6 @@ using namespace paimon::icon_gradients;
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// Data tables (replace the switch ladders)
-// ---------------------------------------------------------------------------
-
 struct IconRow {
     IconType type;
     int (*live)(GameManager*);
@@ -222,9 +218,7 @@ int64_t currentIconID(IconType type) {
     }
 }
 
-// Paint targets for a robot/spider form, grouped by color slot. The shader
-// ids (100s head parts, 200s body parts, 300s glow parts, 400 extra,
-// 500/600/700 line overlays) are part of the program cache key scheme.
+// These shader IDs are part of the program cache key scheme.
 void collectMechTargets(GJRobotSprite* mech, ColorType color, bool lineVisible,
         std::vector<PaintTarget>& out) {
     switch (color) {
@@ -274,9 +268,7 @@ void collectMechTargets(GJRobotSprite* mech, ColorType color, bool lineVisible,
     }
 }
 
-// Paint targets for a plain icon: one sprite per slot, three line overlays
-// for the Line slot. The ball keeps its outline visible when the
-// fine-outline mod is around.
+// The ball keeps its outline visible when Fine Outline is installed.
 void collectIconTargets(SimplePlayer* icon, IconType kind, ColorType color, bool lineVisible,
         std::vector<PaintTarget>& out) {
     switch (color) {
@@ -647,11 +639,8 @@ void GradientUtils::applyGradient(SimplePlayer* icon, GradientConfig config, Col
 }
 
 CCGLProgram* GradientUtils::createShader(const std::string& key, bool linear, bool blend, bool line) {
-    // Compile from the file contents read manually. initWithVertexShaderFilename
-    // resolves against the game's search path, not the mod's resources, so it
-    // silently fails on packaged installs — that's the "gradients are blank"
-    // bug. readShaderFile tries both the dev (resources/shaders/) and the
-    // installed (flattened resources/) layouts.
+    // Geode's filename loader misses packaged mod resources; readShaderFile
+    // handles both the source tree and flattened install paths.
     std::string fragName = fragmentName(linear, blend, line);
 
     if (!key.empty()) {
@@ -711,9 +700,7 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
     sprite->setShaderProgram(program);
     setGradientImage(sprite, atlas);
 
-    // Uniform locations resolve through the program's own name cache, so the
-    // driver string lookup happens once per program instead of once per
-    // sprite on every repaint.
+    // The program caches uniform names to avoid driver lookups on every repaint.
     program->use();
     program->setUniformsForBuiltins();
 
@@ -809,17 +796,9 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
     }
 }
 
-void GradientUtils::patchBatchNode(CCSpriteBatchNode* node) {
+void GradientUtils::enableChildShaders(CCSpriteBatchNode* node) {
     if (!node) return;
-
-    // Lend this batch node the no-op draw behavior so gradient sprites inside
-    // it are shaded by their own programs instead of the batch cache.
-    static void* noDrawVTable = []() -> void* {
-        FakeSpriteBatchNode standIn;
-        return *reinterpret_cast<void**>(&standIn);
-    }();
-
-    *reinterpret_cast<void**>(node) = noDrawVTable;
+    node->setUserFlag("gradient-child-shaders"_spr, true);
 }
 
 void GradientUtils::hideSprite(CCSprite* sprite) {

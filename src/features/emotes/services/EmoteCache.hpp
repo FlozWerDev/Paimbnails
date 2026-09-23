@@ -75,6 +75,7 @@ private:
 
     static constexpr size_t MAX_RAM_ENTRIES = 100;
     static constexpr size_t MAX_RAM_BYTES = 32 * 1024 * 1024;
+    static constexpr size_t MAX_FILE_BYTES = 32 * 1024 * 1024;
 
     void addToRam(std::string const& name, RamEntry entry);
     void touchLru(std::string const& name);

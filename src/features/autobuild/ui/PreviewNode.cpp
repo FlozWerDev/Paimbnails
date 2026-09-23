@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <limits>
 
 using namespace geode::prelude;
@@ -33,7 +32,7 @@ ccColor4F colorFor(ObjectKind kind, bool behind) {
 int zLayerOf(std::string const& save) {
     std::string value;
     if (!objectKey(save, 24, value)) return kZLayerDefault;
-    return std::atoi(value.c_str());
+    return utils::numFromString<int>(value).unwrapOr(kZLayerDefault);
 }
 
 bool isBehind(int zLayer) {

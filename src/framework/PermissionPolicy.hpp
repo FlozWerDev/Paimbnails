@@ -1,10 +1,18 @@
 ﻿#pragma once
 
-#include "FeatureSpec.hpp"
 #include "../core/Settings.hpp"
 #include <string>
+#include <utility>
 
 namespace paimon {
+
+enum class PermissionTier : int {
+    Viewer = 0,
+    User = 1,
+    Contributor = 2,
+    Moderator = 3,
+    Admin = 4,
+};
 
 inline PermissionTier currentUserTier() {
     if (settings::moderation::isVerifiedAdmin())     return PermissionTier::Admin;

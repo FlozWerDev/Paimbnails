@@ -1,9 +1,5 @@
 #pragma once
 
-// Unified grid over the page order: officials and appended slots share one
-// list. Tap a row to select it, then move it with |^/^/v/v|. Hidden and
-// disabled entries stay in place, dimmed, so restoring keeps their spot.
-
 #include "../OfficialSlots.hpp"
 
 #include <Geode/Geode.hpp>

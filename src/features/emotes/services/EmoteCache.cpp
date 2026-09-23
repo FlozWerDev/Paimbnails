@@ -2,7 +2,7 @@
 #include "EmoteService.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
-#include "../../../utils/TimedJoin.hpp"
+#include "../../../utils/JoinWithWarning.hpp"
 #include "../../../utils/ThreadTracker.hpp"
 #include <Geode/Geode.hpp>
 #include "../../../utils/stb_image.h"
@@ -117,8 +117,8 @@ bool EmoteCache::loadFromDisk(std::string const& filename, std::vector<uint8_t>&
     std::ifstream ifs(path, std::ios::binary | std::ios::ate);
     if (!ifs.is_open()) return false;
 
-    auto size = ifs.tellg();
-    if (size <= 0) return false;
+    std::streamoff const size = ifs.tellg();
+    if (size <= 0 || size > static_cast<std::streamoff>(MAX_FILE_BYTES)) return false;
     ifs.seekg(0, std::ios::beg);
 
     outData.resize(static_cast<size_t>(size));
@@ -127,7 +127,7 @@ bool EmoteCache::loadFromDisk(std::string const& filename, std::vector<uint8_t>&
 }
 
 void EmoteCache::saveToDisk(std::string const& filename, std::vector<uint8_t> const& data) {
-    if (data.empty()) return;
+    if (data.empty() || data.size() > MAX_FILE_BYTES) return;
     auto dir = getDiskCacheDir();
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
@@ -256,7 +256,7 @@ void EmoteCache::loadEmote(EmoteInfo const& info, TextureCallback callback) {
 
                 if (paimon::isRuntimeShuttingDown()) return;
 
-                if (!success || data.empty()) {
+                if (!success || data.empty() || data.size() > MAX_FILE_BYTES) {
                     log::warn("[EmoteCache] Failed to download emote: {} (url: {})", emoteName, emoteUrl);
                     dispatchTextureCallback(std::move(callback), nullptr, false, {});
                     return;
@@ -422,7 +422,7 @@ void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallb
                 (*strongNext)();
                 return;
             }
-            if (success && !data.empty()) {
+            if (success && !data.empty() && data.size() <= MAX_FILE_BYTES) {
                 saveToDisk(filename, data);
                 ++(*downloaded);
             }
@@ -471,11 +471,7 @@ void EmoteCache::shutdownDecodeWorker() {
     m_decodeCV.notify_all();
 
     for (auto& t : m_decodeWorkers) {
-        if (t.joinable()) {
-            if (!paimon::timedJoin(t, std::chrono::seconds(5))) {
-                geode::log::warn("[EmoteCache] Decode worker did not finish in 5s, detaching");
-            }
-        }
+        paimon::joinWithWarning(t, std::chrono::seconds(5));
     }
     m_decodeWorkers.clear();
 }
@@ -490,6 +486,7 @@ void EmoteCache::enqueueDecode(DecodeTask task) {
 }
 
 void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
+    geode::utils::thread::setName("PaimonEmoteDecode");
     while (true) {
         DecodeTask task;
         {
@@ -508,35 +505,40 @@ void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
             self->m_decodeQueue.pop_front();
         }
 
+        int imageW = 0, imageH = 0, channels = 0;
+        if (stbi_info_from_memory(task.data.data(), static_cast<int>(task.data.size()),
+                &imageW, &imageH, &channels) &&
+            (imageW <= 0 || imageH <= 0 || imageW > 4096 || imageH > 4096)) {
+            std::error_code ec;
+            std::filesystem::remove(self->getDiskPath(task.info.filename), ec);
+            dispatchTextureCallback(std::move(task.callback), nullptr, false, {});
+            continue;
+        }
+
         auto decoded = decodeStaticPixels(task.data);
         if (!decoded.ok) {
-            // stbi failed: fall back to CCImage (safe off-thread; only CCTexture2D needs GL).
-            auto* ccImg = new CCImage();
-            if (!ccImg->initWithImageData(const_cast<uint8_t*>(task.data.data()), task.data.size())) {
-                ccImg->release();
-                log::warn("[EmoteCache] Static decode failed for emote '{}', purging cached file", task.info.name);
-                std::error_code ec;
-                std::filesystem::remove(self->getDiskPath(task.info.filename), ec);
-                if (task.callback) {
-                    auto cb = std::move(task.callback);
-                    Loader::get()->queueInMainThread([cb = std::move(cb)]() mutable {
-                        if (paimon::isRuntimeShuttingDown()) return;
-                        cb(nullptr, false, {});
-                    });
-                }
-                continue;
-            }
-
             EmoteInfo info = std::move(task.info);
             size_t rawBytesSize = task.data.size();
             auto cb = std::move(task.callback);
 
             Loader::get()->queueInMainThread(
-                [self, info = std::move(info), rawBytesSize, cb = std::move(cb), ccImg]() mutable {
-                    if (paimon::isRuntimeShuttingDown()) {
+                [self, info = std::move(info), rawBytesSize, cb = std::move(cb),
+                 data = std::move(task.data)]() mutable {
+                    if (paimon::isRuntimeShuttingDown()) return;
+
+                    auto* ccImg = new CCImage();
+                    bool valid = ccImg->initWithImageData(data.data(), data.size()) &&
+                        ccImg->getWidth() > 0 && ccImg->getHeight() > 0 &&
+                        ccImg->getWidth() <= 4096 && ccImg->getHeight() <= 4096;
+                    if (!valid) {
                         ccImg->release();
+                        log::warn("[EmoteCache] Static decode failed for emote '{}', purging cached file", info.name);
+                        std::error_code ec;
+                        std::filesystem::remove(self->getDiskPath(info.filename), ec);
+                        if (cb) cb(nullptr, false, {});
                         return;
                     }
+
                     auto* tex = new CCTexture2D();
                     if (!tex->initWithImage(ccImg)) {
                         tex->release();

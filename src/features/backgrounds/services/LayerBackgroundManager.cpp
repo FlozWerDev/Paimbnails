@@ -2219,10 +2219,6 @@ std::shared_ptr<paimon::video::VideoPlayer> LayerBackgroundManager::acquireExist
         scheduleSharedVideoTeardown(std::move(playerToRelease));
     };
 
-    if (it->second.player->isTerminal()) {
-        discard("terminal");
-        return nullptr;
-    }
     if (!it->second.player->isPlaying() || !it->second.player->hasVisibleFrame()) {
         discard("unhealthy");
         return nullptr;

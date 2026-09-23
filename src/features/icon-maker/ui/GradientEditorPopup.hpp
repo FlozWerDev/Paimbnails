@@ -1,7 +1,4 @@
 #pragma once
-// Editor de degradados: tipo (lineal/radial), sus parametros y la lista de
-// colores. Cada cambio se ve al momento en el cuadro de arriba y se manda al
-// editor por callback, sin boton de aceptar.
 
 #include "../data/FillSpec.hpp"
 

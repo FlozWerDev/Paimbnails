@@ -50,7 +50,7 @@ void bucketsFromJson(matjson::Value const& value, std::array<uint32_t, kPercentB
         if (pair.size() != 2) return;
         auto percent = static_cast<int>(asInt(pair[0]));
         if (percent < 0 || percent >= kPercentBuckets) return;
-        out[percent] = static_cast<uint32_t>(std::max<int64_t>(0, asInt(pair[1])));
+        out[percent] = static_cast<uint32_t>(std::clamp<int64_t>(asInt(pair[1]), 0, UINT32_MAX));
     });
 }
 
@@ -121,12 +121,13 @@ void ProgressTracker::load() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    std::ifstream file(path);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) return;
-    std::string contents((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
-    file.close();
-    if (contents.empty()) return;
+    std::streamoff const size = file.tellg();
+    if (size <= 0 || size > 32ll * 1024 * 1024) return;
+    file.seekg(0, std::ios::beg);
+    std::string contents(static_cast<size_t>(size), '\0');
+    if (!file.read(contents.data(), size)) return;
 
     auto parsed = matjson::parse(contents);
     if (!parsed.isOk()) {
@@ -160,6 +161,7 @@ void ProgressTracker::load() {
 
         m_levels[id.unwrap()] = progress;
     }
+    enforceLimit();
 }
 
 void ProgressTracker::save() {
@@ -193,6 +195,7 @@ void ProgressTracker::save() {
     }
     file << root.dump(matjson::NO_INDENTATION);
     file.close();
+    if (!file) return;
     m_dirty = false;
 }
 

@@ -1,7 +1,4 @@
 #pragma once
-// "Probar": ensena el icono como se vera en el juego, tintado igual que lo
-// tinta GD (color 1 al cuerpo, color 2 al detalle, el del brillo al brillo) y
-// al lado el icono vanilla para comparar tamano.
 
 #include "../data/IconProject.hpp"
 

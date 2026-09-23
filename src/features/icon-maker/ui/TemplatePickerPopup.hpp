@@ -1,7 +1,4 @@
 #pragma once
-// Selector de forma. Dos origenes, como hace More Icons con sus presets: los
-// iconos oficiales del juego (rejilla paginada, con salto por id) y los que ya
-// tienes hechos en el creador.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>

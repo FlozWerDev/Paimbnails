@@ -29,7 +29,6 @@ public:
     VideoColorMatrix getColorMatrix() const override { return m_colorMatrix; }
     bool isFullRange() const override { return m_fullRange; }
     int getRotationDegrees() const override { return m_rotation; }
-    bool isTerminal() const override { return m_decodeThreadDetached.load(std::memory_order_acquire); }
     bool setLooping(bool loop) override {
         m_looping.store(loop, std::memory_order_relaxed);
         return true;
@@ -57,9 +56,7 @@ private:
     int              m_width  = 0;
     int              m_height = 0;
     double           m_duration = 0.0;
-    // Tracks the pixel format we ended up with; we store it so the decode
-    // loop can handle both planar (kCVPixelFormatType_420YpCbCr8Planar) and
-    // bi-planar NV12 (kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange).
+    // The decode loop accepts both planar I420 and bi-planar NV12.
     uint32_t         m_pixelFormat = 0;
     VideoColorMatrix m_colorMatrix = VideoColorMatrix::Auto;
     bool             m_fullRange = false;
@@ -68,7 +65,6 @@ private:
     std::atomic<bool> m_decoding{false};
     std::atomic<bool> m_finished{false};
     std::atomic<bool> m_looping{false};
-    std::atomic<bool> m_decodeThreadDetached{false};
     std::thread       m_thread;
 };
 

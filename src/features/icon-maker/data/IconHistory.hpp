@@ -1,7 +1,4 @@
 #pragma once
-// Undo/redo for the editor. Whole-project snapshots: a project is a handful of
-// small structs (paths, not pixels), so copying one is cheaper than tracking
-// per-field deltas and it can never desync from the model.
 
 #include "IconProject.hpp"
 
@@ -21,9 +18,7 @@ public:
         m_coalesceKey.clear();
     }
 
-    // Records the state *before* an edit. `coalesceKey` groups a burst of
-    // related edits (dragging one slider) into a single undo step; pass an
-    // empty key for anything that should always stand alone.
+    // Save before editing; coalesceKey groups slider drags into one undo step.
     void push(IconProject const& before, std::string coalesceKey = {}) {
         if (!coalesceKey.empty() && coalesceKey == m_coalesceKey) return;
         m_coalesceKey = std::move(coalesceKey);

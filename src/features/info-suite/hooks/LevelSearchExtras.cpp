@@ -28,7 +28,7 @@ bool advancedEnabled() {
 
 class $modify(PaimonInfoSuiteSearchLayer, LevelSearchLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "LevelSearchLayer::init");
+        paimon::hooks::veryLatePost(self, "LevelSearchLayer::init");
     }
 
     bool init(int type) {

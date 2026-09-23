@@ -106,15 +106,13 @@ class $modify(CaptureView, CCEGLView) {
 
 };
 
-// Pet clicks ride on CCEGLViewProtocol::handleTouchesBegin, which has real
-// addresses on Android AND iOS alike, so this runs on all of mobile.
-// Separate $modify: declared on CCEGLViewProtocol, runs after quick-hub.
+// CCEGLViewProtocol::handleTouchesBegin has addresses on both Android and iOS.
 #endif // defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID)
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MOBILE)
 
 class $modify(CaptureTouchView, CCEGLViewProtocol) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "CCEGLViewProtocol::handleTouchesBegin");
+        paimon::hooks::veryLatePost(self, "CCEGLViewProtocol::handleTouchesBegin");
     }
 
     void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {

@@ -35,7 +35,7 @@ bool unregProfilesEnabled() {
 
 class $modify(PaimonInfoSuiteCommentTools, CommentCell) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "CommentCell::loadFromComment");
+        paimon::hooks::veryLatePost(self, "CommentCell::loadFromComment");
     }
 
     void loadFromComment(GJComment* comment) {
@@ -88,7 +88,7 @@ class $modify(PaimonInfoSuiteCommentTools, CommentCell) {
 // Jump to page for the comment list on the level / profile info screen.
 class $modify(PaimonInfoSuiteCommentPages, InfoLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "InfoLayer::init");
+        paimon::hooks::veryLatePost(self, "InfoLayer::init");
     }
 
     struct Fields {

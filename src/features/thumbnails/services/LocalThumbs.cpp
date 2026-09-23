@@ -24,6 +24,20 @@ struct RGBHeader {
     uint32_t height;
 };
 #pragma pack(pop)
+constexpr uint64_t kMaxRgbPixels = 16ull * 1024 * 1024;
+
+bool readRgbHeader(std::ifstream& in, RGBHeader& head, size_t& rgbBytes) {
+    if (!in.read(reinterpret_cast<char*>(&head), sizeof(head))) return false;
+    uint64_t const pixels = static_cast<uint64_t>(head.width) * head.height;
+    if (!head.width || !head.height || head.width > 16384 || head.height > 16384 || pixels > kMaxRgbPixels) return false;
+
+    rgbBytes = static_cast<size_t>(pixels * 3);
+    auto const start = in.tellg();
+    in.seekg(0, std::ios::end);
+    auto const remaining = in.tellg() - start;
+    in.seekg(start);
+    return in && remaining >= static_cast<std::streamoff>(rgbBytes);
+}
 }
 
 LocalThumbs::LocalThumbs() = default;
@@ -248,32 +262,27 @@ LocalThumbs::LoadResult LocalThumbs::loadAsRGBA(int32_t levelID) const {
     bool isRgbFormat = (fsPath.extension() == ".rgb");
 
     if (isRgbFormat) {
-        // .rgb: header (width+height, 8 bytes) + datos RGB24
         std::ifstream rgbFile(fsPath, std::ios::binary);
         if (!rgbFile) return result;
 
-        uint32_t rgbW = 0, rgbH = 0;
-        rgbFile.read(reinterpret_cast<char*>(&rgbW), sizeof(rgbW));
-        rgbFile.read(reinterpret_cast<char*>(&rgbH), sizeof(rgbH));
-        if (!rgbFile || rgbW == 0 || rgbH == 0 || rgbW > 16384 || rgbH > 16384) return result;
-
-        size_t rgbSize = static_cast<size_t>(rgbW) * rgbH * 3;
+        RGBHeader head{};
+        size_t rgbSize = 0;
+        if (!readRgbHeader(rgbFile, head, rgbSize)) return result;
         result.pixels.resize(rgbSize);
         rgbFile.read(reinterpret_cast<char*>(result.pixels.data()), rgbSize);
         if (!rgbFile) { result.pixels.clear(); return result; }
 
-        // Keep raw RGB888 — GPU converts to RGBA during upload, saving CPU conversion time
-        result.width = static_cast<int>(rgbW);
-        result.height = static_cast<int>(rgbH);
+        result.width = static_cast<int>(head.width);
+        result.height = static_cast<int>(head.height);
         result.isRgb = true;
     } else {
-        // formato estandar (png/jpg/webp): bytes crudos para el caller
         std::ifstream imgFile(fsPath, std::ios::binary | std::ios::ate);
         if (!imgFile.is_open()) return result;
 
-        size_t fileSize = imgFile.tellg();
+        std::streamoff const fileSize = imgFile.tellg();
+        if (fileSize <= 0 || fileSize > 64ll * 1024 * 1024) return result;
         imgFile.seekg(0, std::ios::beg);
-        result.pixels.resize(fileSize);
+        result.pixels.resize(static_cast<size_t>(fileSize));
         imgFile.read(reinterpret_cast<char*>(result.pixels.data()), fileSize);
         if (!imgFile) { result.pixels.clear(); return result; }
 
@@ -404,9 +413,8 @@ CCTexture2D* LocalThumbs::loadTexture(int32_t levelID) const {
             std::ifstream in(rgbPath, std::ios::binary);
             if (in) {
                 RGBHeader head{};
-                in.read(reinterpret_cast<char*>(&head), sizeof(head));
-                if (in && head.width > 0 && head.height > 0) {
-                    const size_t size = static_cast<size_t>(head.width) * head.height * 3;
+                size_t size = 0;
+                if (readRgbHeader(in, head, size)) {
                     auto buf = std::make_unique<uint8_t[]>(size);
                     in.read(reinterpret_cast<char*>(buf.get()), size);
                     if (in) {
@@ -470,6 +478,7 @@ void LocalThumbs::loadTextureAsync(int32_t levelID, std::function<void(CCTexture
     }
 
     paimon::ThreadTracker::get().spawn([this, levelID, callback = std::move(callback)]() mutable {
+        geode::utils::thread::setName("PaimonLocalThumbLoad");
         if (m_shuttingDown.load(std::memory_order_acquire)) return;
 
         auto data = loadAsRGBA(levelID);
@@ -518,7 +527,8 @@ bool LocalThumbs::saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, 
         return false;
     }
     
-    if (width == 0 || height == 0) {
+    if (width == 0 || height == 0 || width > 16384 || height > 16384 ||
+        static_cast<uint64_t>(width) * height > kMaxRgbPixels) {
         log::error("dimensiones invalidas pa guardar ({}x{})", width, height);
         return false;
     }
@@ -559,7 +569,6 @@ bool LocalThumbs::saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, 
         return false;
     }
 
-    // rename atomico: tmp → final
     std::error_code ec;
     std::filesystem::rename(tmp, p, ec);
     if (ec) {
@@ -694,10 +703,8 @@ CCTexture2D* LocalThumbs::loadTextureByIndex(int32_t levelID, int index) const {
     if (!in) return nullptr;
 
     RGBHeader head{};
-    in.read(reinterpret_cast<char*>(&head), sizeof(head));
-    if (!in || head.width == 0 || head.height == 0) return nullptr;
-
-    const size_t size = static_cast<size_t>(head.width) * head.height * 3;
+    size_t size = 0;
+    if (!readRgbHeader(in, head, size)) return nullptr;
     auto buf = std::make_unique<uint8_t[]>(size);
     in.read(reinterpret_cast<char*>(buf.get()), size);
     if (!in) return nullptr;

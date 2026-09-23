@@ -9,8 +9,6 @@ class PaimonLoadingOverlay;
 
 namespace paimon::dev {
 
-// Dev tool: converts an animated GIF into a grid spritesheet PNG plus a JSON
-// (frameW/frameH/cols/rows/count/delaysMs) compatible with SheetAnimSprite.
 class GifToSheetPopup : public geode::Popup {
 public:
     static GifToSheetPopup* create();

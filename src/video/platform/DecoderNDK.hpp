@@ -34,7 +34,6 @@ public:
     double peekSecondPTS() const override;
     const Frame* peekFrame() override;
     void releaseFrame() override;
-    bool isTerminal() const override { return m_decodeThreadDetached.load(std::memory_order_acquire); }
     bool setLooping(bool loop) override {
         m_looping.store(loop, std::memory_order_relaxed);
         return true;
@@ -88,7 +87,6 @@ private:
     std::atomic<bool> m_decoding{false};
     std::atomic<bool> m_finished{false};
     std::atomic<bool> m_looping{false};
-    std::atomic<bool> m_decodeThreadDetached{false};
     std::thread       m_thread;
 };
 

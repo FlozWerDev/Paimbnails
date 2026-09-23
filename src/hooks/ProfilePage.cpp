@@ -662,8 +662,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
         auto path = getProfileImgCachePath(accountID);
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file) return nullptr;
-        auto size = file.tellg();
-        if (size <= 0) return nullptr;
+        std::streamoff const size = file.tellg();
+        if (size <= 0 || size > 64ll * 1024 * 1024) return nullptr;
         file.seekg(0, std::ios::beg);
 
         auto bytes = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(size));

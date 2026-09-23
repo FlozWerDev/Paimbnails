@@ -68,7 +68,7 @@ CCNode* buildLevelChip(BadgeContext const& ctx, float height) {
 class $modify(ProgressionProfilePage, ProfilePage) {
     static void onModify(auto& self) {
         // After the redesign so the username menu is already in its final shape.
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "ProfilePage::loadPageFromUserInfo");
+        paimon::hooks::veryLatePost(self, "ProfilePage::loadPageFromUserInfo");
     }
 
     struct Fields {

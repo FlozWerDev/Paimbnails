@@ -8,7 +8,7 @@
 #import <VideoToolbox/VideoToolbox.h>
 
 #include <Geode/loader/Log.hpp>
-#include "../../utils/TimedJoin.hpp"
+#include "../../utils/JoinWithWarning.hpp"
 #include <cstring>
 #include <chrono>
 #include <algorithm>
@@ -247,7 +247,6 @@ void DecoderAVF::releaseReaderOnly() {
 }
 
 void DecoderAVF::startDecoding() {
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
     if (m_decoding.load(std::memory_order_relaxed)) return;
     if (!m_reader) return;
     m_decoding.store(true, std::memory_order_relaxed);
@@ -257,11 +256,8 @@ void DecoderAVF::startDecoding() {
 
 void DecoderAVF::stopDecoding() {
     m_decoding.store(false, std::memory_order_relaxed);
-    m_ring.wakeAll();  // unblock any cv waits ASAP
-    if (m_thread.joinable() && !paimon::timedJoin(m_thread, std::chrono::seconds(3), &m_decoding)) {
-        if (!m_decodeThreadDetached.exchange(true, std::memory_order_acq_rel))
-            noteDetachedDecoder("AVFoundation");
-    }
+    m_ring.wakeAll();
+    if (m_thread.joinable()) paimon::joinWithWarning(m_thread, std::chrono::seconds(3));
 }
 
 void DecoderAVF::decodeLoop() {
@@ -387,10 +383,8 @@ void DecoderAVF::decodeLoop() {
 }
 
 void DecoderAVF::seekTo(double seconds) {
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
     bool wasDecoding = m_decoding.load(std::memory_order_relaxed);
     stopDecoding();
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
 
     while (m_ring.nextRead()) m_ring.commitRead();
 
@@ -432,14 +426,6 @@ void DecoderAVF::releaseFrame() {
 
 void DecoderAVF::closeInternal() {
     stopDecoding();
-
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) {
-        m_trackOutput = nullptr;
-        m_reader = nullptr;
-        m_asset = nullptr;
-        m_videoTrack = nullptr;
-        return;
-    }
 
     releaseReaderOnly();
 

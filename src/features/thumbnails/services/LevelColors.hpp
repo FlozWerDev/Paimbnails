@@ -33,7 +33,7 @@ private:
     ~LevelColors();
     std::filesystem::path path() const;
     void load() const;
-    void save() const;
+    bool save() const;
 
     mutable bool m_loaded = false;
     mutable std::unordered_map<int32_t, LevelColorPair> m_items;
@@ -42,4 +42,3 @@ private:
     mutable int m_pendingWrites = 0;
     static constexpr int BATCH_SAVE_THRESHOLD = 10;
 };
-

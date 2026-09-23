@@ -10,7 +10,6 @@
 #include <Geode/Geode.hpp>
 
 #include <algorithm>
-#include <cstdlib>
 
 using namespace geode::prelude;
 namespace kit = paimon::icon_maker::gdkit;
@@ -140,7 +139,7 @@ bool TemplatePickerPopup::init(IconType type, PickedCallback onPicked,
         m_idInput->setPosition({size.width / 2.f + 46.f, 19.f});
         m_idInput->setCallback([this](std::string const& text) {
             if (text.empty()) return;
-            jumpToId(std::atoi(text.c_str()));
+            jumpToId(utils::numFromString<int>(text).unwrapOr(0));
         });
         m_mainLayer->addChild(m_idInput);
     }

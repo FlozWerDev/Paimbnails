@@ -5,7 +5,7 @@
 #include <memory>
 #include <atomic>
 #include <Geode/Geode.hpp>
-#include "TimedJoin.hpp"
+#include "JoinWithWarning.hpp"
 
 namespace paimon {
 
@@ -22,9 +22,7 @@ public:
         return instance;
     }
 
-    /// Returns false if the thread was NOT started (shutdown in progress).
-    /// Callers that later wait on a flag the thread sets must check this, or
-    /// they will block on a completion signal that can never arrive.
+    // Callers waiting on worker completion must handle a rejected spawn during shutdown.
     template<typename Function, typename... Args>
     bool spawn(Function&& f, Args&&... args) {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -33,7 +31,6 @@ public:
             return false;
         }
 
-        // Clean up completed threads to avoid leak of descriptors
         cleanupNoLock();
 
         auto completed = std::make_shared<std::atomic<bool>>(false);
@@ -57,7 +54,6 @@ public:
         return m_isShuttingDown.load(std::memory_order_acquire);
     }
 
-    // Join all threads. Called during shutdown or static destruction.
     void shutdown() {
         bool expected = false;
         if (!m_isShuttingDown.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
@@ -74,13 +70,10 @@ public:
         geode::log::info("[ThreadTracker] Shutting down. Joining {} active background threads...", threadsToJoin.size());
         for (auto& tt : threadsToJoin) {
             if (tt.thread.joinable()) {
-                // timedJoin: if a slow I/O task (DNS stall, fs hang) doesn't finish
-                // in 3s, detach it instead of hanging the game's atexit.
-                // Consistent with paimon::ThreadPool::shutdown().
-                paimon::timedJoin(tt.thread, std::chrono::seconds(3));
+                paimon::joinWithWarning(tt.thread, std::chrono::seconds(3));
             }
         }
-        geode::log::info("[ThreadTracker] All background threads joined (or detached after timeout).");
+        geode::log::info("[ThreadTracker] All background threads joined.");
     }
 
     void cleanup() {
@@ -99,10 +92,7 @@ private:
         for (auto it = m_threads.begin(); it != m_threads.end(); ) {
             if (it->completed->load(std::memory_order_acquire)) {
                 if (it->thread.joinable()) {
-                    // Task already marked completed, so the join should be
-                    // immediate. Still use timedJoin defensively: if the thread
-                    // can't be joined for some reason, don't block cleanup.
-                    paimon::timedJoin(it->thread, std::chrono::seconds(1));
+                    paimon::joinWithWarning(it->thread, std::chrono::seconds(1));
                 }
                 it = m_threads.erase(it);
             } else {

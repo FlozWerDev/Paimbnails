@@ -7,7 +7,6 @@
 #include "../../../utils/PaimonNotification.hpp"
 
 #include <algorithm>
-#include <cstdlib>
 #include <filesystem>
 
 using namespace geode::prelude;
@@ -38,7 +37,8 @@ void QuickButtonSfxPopup::syncInputs() {
         m_target->sfxPath = std::string(m_gameInput->getString());
     }
     if (m_onlineInput && m_onlineInput->isVisible()) {
-        m_target->sfxId = std::max(0, std::atoi(std::string(m_onlineInput->getString()).c_str()));
+        m_target->sfxId = std::max(0, utils::numFromString<int>(
+            std::string(m_onlineInput->getString())).unwrapOr(0));
     }
 }
 
@@ -312,7 +312,8 @@ void QuickButtonSfxPopup::updateDuration() {
         probe.sfxPath = std::string(m_gameInput->getString());
     }
     if (m_onlineInput && m_onlineInput->isVisible()) {
-        probe.sfxId = std::max(0, std::atoi(std::string(m_onlineInput->getString()).c_str()));
+        probe.sfxId = std::max(0, utils::numFromString<int>(
+            std::string(m_onlineInput->getString())).unwrapOr(0));
     }
     std::string path = resolveQuickButtonSfxPath(probe);
     if (path.empty()) {

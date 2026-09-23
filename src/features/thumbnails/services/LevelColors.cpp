@@ -66,7 +66,7 @@ void LevelColors::load() const {
     }
 }
 
-void LevelColors::save() const {
+bool LevelColors::save() const {
     log::info("[LevelColors] save: writing {} entries", m_items.size());
     std::stringstream ss;
     for (auto const& [id, p] : m_items) {
@@ -78,7 +78,7 @@ void LevelColors::save() const {
     std::vector<uint8_t> data(content.begin(), content.end());
     
     auto p = path();
-    PaimonFormat::save(p, data);
+    return PaimonFormat::save(p, data);
 }
 
 void LevelColors::set(int32_t levelID, ccColor3B a, ccColor3B b) {
@@ -88,8 +88,7 @@ void LevelColors::set(int32_t levelID, ccColor3B a, ccColor3B b) {
     m_items[levelID] = LevelColorPair{a, b};
     m_dirty = true;
     m_pendingWrites++;
-    if (m_pendingWrites >= BATCH_SAVE_THRESHOLD) {
-        save();
+    if (m_pendingWrites >= BATCH_SAVE_THRESHOLD && save()) {
         m_dirty = false;
         m_pendingWrites = 0;
     }
@@ -126,7 +125,7 @@ void LevelColors::flushIfDirty() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_dirty) {
         log::info("[LevelColors] flushIfDirty: flushing pending writes");
-        save();
+        if (!save()) return;
         m_dirty = false;
         m_pendingWrites = 0;
     }
@@ -147,7 +146,7 @@ void LevelColors::extractFromImage(int32_t levelID, cocos2d::CCImage* image) {
     const uint8_t* rgbPtr = nullptr;
     
     if (hasAlpha) {
-        rgb24.resize(w * h * 3);
+        rgb24.resize(static_cast<size_t>(w) * h * 3);
         ImageConverter::rgbaToRgbFast(imgData, rgb24.data(), static_cast<size_t>(w) * h);
         rgbPtr = rgb24.data();
     } else {
@@ -169,7 +168,7 @@ void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, in
     const uint8_t* rgbPtr = nullptr;
     
     if (hasAlpha) {
-        rgb24.resize(w * h * 3);
+        rgb24.resize(static_cast<size_t>(w) * h * 3);
         ImageConverter::rgbaToRgbFast(imgData, rgb24.data(), static_cast<size_t>(w) * h);
         rgbPtr = rgb24.data();
     } else {
@@ -184,16 +183,18 @@ void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, in
 }
 
 void processCachedImage(std::filesystem::path const& filepath, int32_t levelID) {
-    std::ifstream file(filepath, std::ios::binary);
+    std::ifstream file(filepath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         log::warn("[LevelColors] fallo al abrir: {}", geode::utils::string::pathToString(filepath));
         return;
     }
-    
-    std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    file.close();
-    
-    if (data.empty()) return;
+
+    std::streamoff const size = file.tellg();
+    if (size <= 0 || size > 64ll * 1024 * 1024) return;
+    file.seekg(0, std::ios::beg);
+
+    std::vector<uint8_t> data(static_cast<size_t>(size));
+    if (!file.read(reinterpret_cast<char*>(data.data()), size)) return;
     
     auto image = new cocos2d::CCImage();
     if (!image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {

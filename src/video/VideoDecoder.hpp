@@ -73,9 +73,6 @@ struct VideoFrame {
     }
 };
 
-// Intentional leak on join timeout; Android caps MediaCodec instances.
-void noteDetachedDecoder(const char* backend);
-
 class IVideoDecoder {
 public:
     using Frame = VideoFrame;
@@ -112,8 +109,6 @@ public:
     virtual const Frame* peekFrame() { return nullptr; }
 
     virtual void releaseFrame() {}
-
-    virtual bool isTerminal() const { return false; }
 
     // Loops in decode thread; PTS restarts at 0, false = must seek.
     virtual bool setLooping(bool) { return false; }

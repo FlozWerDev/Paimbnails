@@ -3,7 +3,7 @@
 #if defined(USE_MEDIA_NDK)
 
 #include <Geode/loader/Log.hpp>
-#include "../../utils/TimedJoin.hpp"
+#include "../../utils/JoinWithWarning.hpp"
 #include <libyuv/planar_functions.h>
 #include <cstring>
 #include <chrono>
@@ -143,7 +143,6 @@ void DecoderNDK::updateOutputFormat() {
 
 bool DecoderNDK::open(const std::string& path) {
     closeInternal();
-    m_decodeThreadDetached.store(false, std::memory_order_release);
 
     m_extractor = AMediaExtractor_new();
     if (!m_extractor) {
@@ -357,9 +356,6 @@ bool DecoderNDK::findVideoTrack() {
 }
 
 void DecoderNDK::startDecoding() {
-    // A detached worker may still run decodeLoop: two producers on the SPSC
-    // ring would race AMediaCodec, so detached counts as terminal (isTerminal).
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
     if (m_decoding.load(std::memory_order_relaxed)) return;
     if (!m_codec || !m_codecStarted) return;
     m_decoding.store(true, std::memory_order_relaxed);
@@ -369,13 +365,9 @@ void DecoderNDK::startDecoding() {
 
 void DecoderNDK::stopDecoding() {
     m_decoding.store(false, std::memory_order_relaxed);
-    m_ring.wakeAll();  // unblock any cv waits ASAP
+    m_ring.wakeAll();
     if (m_thread.joinable()) {
-        // If the codec is stuck, detach rather than block the main thread.
-        if (!paimon::timedJoin(m_thread, std::chrono::seconds(3), &m_decoding)) {
-            if (!m_decodeThreadDetached.exchange(true, std::memory_order_acq_rel))
-                noteDetachedDecoder("MediaNDK");
-        }
+        paimon::joinWithWarning(m_thread, std::chrono::seconds(3));
     }
 }
 
@@ -558,10 +550,8 @@ void DecoderNDK::decodeLoop() {
 
 void DecoderNDK::seekTo(double seconds) {
     if (!m_extractor) return;
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
     bool wasDecoding = m_decoding.load(std::memory_order_relaxed);
     stopDecoding();
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) return;
 
     while (m_ring.nextRead()) m_ring.commitRead();
 
@@ -624,20 +614,6 @@ void DecoderNDK::releaseFrame() {
 
 void DecoderNDK::closeInternal() {
     stopDecoding();
-
-    if (m_decodeThreadDetached.load(std::memory_order_acquire)) {
-        geode::log::warn("DecoderNDK: closeInternal: decode thread detached, "
-                         "leaking codec/extractor to avoid UAF");
-        m_codec = nullptr;
-        m_extractor = nullptr;
-        m_imageReader = nullptr;
-        m_readerWindow = nullptr;
-        m_useImageReader = false;
-        m_codecConfigured = false;
-        m_codecStarted = false;
-        m_trackIdx = -1;
-        return;
-    }
 
     if (m_codec) {
 // Some drivers crash if stop() is called before the codec starts.

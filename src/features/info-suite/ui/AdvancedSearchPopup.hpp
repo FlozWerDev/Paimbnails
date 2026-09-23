@@ -1,9 +1,5 @@
 #pragma once
 
-// The Advanced Search builder. Two tabs so the popup stays readable at GD's
-// popup size: "Servidor" holds the filters RobTop's API understands, "Refinar"
-// holds the ones we apply to each page ourselves.
-
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/ui/TextInput.hpp>

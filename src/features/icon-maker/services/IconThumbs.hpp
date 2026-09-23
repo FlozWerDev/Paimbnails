@@ -1,9 +1,4 @@
 #pragma once
-// Real previews for the gallery. Rendering a project is the same slot compose
-// the editor does, just small and off-thread; results stay in RAM keyed by
-// project id and are dropped when the project changes or the GL context dies.
-//
-// Threading: request/invalidate/clear must be called from the main thread.
 
 #include <Geode/Geode.hpp>
 
@@ -20,9 +15,8 @@ public:
 
     static IconThumbs& get();
 
-    // Calls back synchronously with the cached texture when there is one,
-    // otherwise renders in the background and calls back later. The callback
-    // is dropped if the project is invalidated meanwhile.
+    // Cache hits call back immediately; misses render in the background.
+    // Invalidation drops pending callbacks.
     void request(std::string const& projectId, ReadyCallback onReady);
 
     void invalidate(std::string const& projectId);

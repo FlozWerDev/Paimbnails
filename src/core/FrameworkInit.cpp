@@ -1,38 +1,13 @@
-#include "../framework/FeatureRegistry.hpp"
 #include "../framework/PermissionPolicy.hpp"
 #include "../framework/HookInterceptor.hpp"
 #include "../utils/AudioInterop.hpp"
 #include "../utils/ExtendedKeybind.hpp"
 #include <Geode/Geode.hpp>
+#include <atomic>
 
 using namespace geode::prelude;
 
 namespace paimon {
-
-static void registerAllFeatures() {
-    auto& reg = FeatureRegistry::get();
-
-    reg.registerFeature({"thumbnails",     "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"emotes",         "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"backgrounds",    "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"badges",         "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"audio",          "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"capture",        "1.0.4", {"thumbnails"},  PermissionTier::Contributor});
-    reg.registerFeature({"community",      "1.0.4", {},              PermissionTier::User});
-    reg.registerFeature({"dynamic-songs",  "1.0.4", {"audio"},       PermissionTier::Viewer});
-    reg.registerFeature({"moderation",     "1.0.4", {"thumbnails"},  PermissionTier::Moderator});
-    reg.registerFeature({"pet",            "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"custom-cursor",  "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"profile-music",  "1.0.4", {"audio"},       PermissionTier::User});
-    reg.registerFeature({"profiles",       "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"settings-panel", "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"transitions",    "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"visuals",        "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"progressbar",    "1.0.4", {},              PermissionTier::Viewer});
-    reg.registerFeature({"mod-previews",   "1.0.0", {},              PermissionTier::Viewer});
-
-    log::info("[PaimonFramework] Registered {} features", reg.featureCount());
-}
 
 static void registerDefaultHooks() {
     auto& hooks = HookInterceptor::get();
@@ -113,7 +88,6 @@ static void registerDynamicSongHooks() {
 }
 
 void initFramework() {
-    registerAllFeatures();
     registerDefaultHooks();
     registerDynamicSongHooks();
 

@@ -11,7 +11,7 @@ using namespace geode::prelude;
 
 class $modify(PaimonTwitchRequestsSearchLayer, LevelSearchLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "LevelSearchLayer::init");
+        paimon::hooks::veryLatePost(self, "LevelSearchLayer::init");
     }
 
     struct Fields {

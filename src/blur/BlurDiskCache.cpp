@@ -94,7 +94,8 @@ void BlurDiskCache::init() {
             ie.width = static_cast<int>(header[2]);
             ie.height = static_cast<int>(header[3]);
 
-            if (ie.width <= 0 || ie.height <= 0 || ie.width > 8192 || ie.height > 8192) {
+            if (ie.width <= 0 || ie.height <= 0 || ie.width > 8192 || ie.height > 8192 ||
+                static_cast<std::uint64_t>(ie.width) * ie.height > MAX_PIXEL_COUNT) {
                 log::debug("[BlurDiskCache] entry {} has invalid dimensions {}x{}",
                     geode::utils::string::pathToString(path.stem()), ie.width, ie.height);
                 continue;
@@ -136,8 +137,10 @@ void BlurDiskCache::evictIndexIfNeededLocked() {
         if (totalBytes <= MAX_DISK_SIZE_BYTES) break;
         std::error_code rmEc;
         std::filesystem::remove(pathForKey(key), rmEc);
-        totalBytes -= ie.byteSize;
-        m_index.erase(key);
+        if (!rmEc) {
+            totalBytes -= ie.byteSize;
+            m_index.erase(key);
+        }
     }
 }
 
@@ -214,12 +217,18 @@ void BlurDiskCache::lookupAsync(std::string const& key, ReadyCallback onReady) {
 
         int w = static_cast<int>(header[2]);
         int h = static_cast<int>(header[3]);
-        if (w <= 0 || h <= 0 || w > 8192 || h > 8192) {
+        if (w <= 0 || h <= 0 || w > 8192 || h > 8192 ||
+            static_cast<std::uint64_t>(w) * h > MAX_PIXEL_COUNT) {
             Loader::get()->queueInMainThread([onReady]() { onReady(nullptr); });
             return;
         }
 
         std::size_t pixelBytes = static_cast<std::size_t>(w) * h * 4;
+        auto const fileBytes = std::filesystem::file_size(path, ec);
+        if (ec || fileBytes != HEADER_SIZE + pixelBytes) {
+            Loader::get()->queueInMainThread([onReady]() { onReady(nullptr); });
+            return;
+        }
         std::vector<uint8_t> pixels(pixelBytes);
         f.read(reinterpret_cast<char*>(pixels.data()), pixelBytes);
         if (!f) {
@@ -240,7 +249,8 @@ void BlurDiskCache::lookupAsync(std::string const& key, ReadyCallback onReady) {
 
 void BlurDiskCache::storeFromTextureAsync(std::string const& key, CCTexture2D* tex, int width, int height) {
     if (!tex || m_shuttingDown.load(std::memory_order_acquire)) return;
-    if (width <= 0 || height <= 0) return;
+    if (width <= 0 || height <= 0 || width > 8192 || height > 8192 ||
+        static_cast<std::uint64_t>(width) * height > MAX_PIXEL_COUNT) return;
 
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
@@ -269,7 +279,8 @@ void BlurDiskCache::storeFromTextureAsync(std::string const& key, CCTexture2D* t
     int ow = img->getWidth();
     int oh = img->getHeight();
     unsigned char* data = img->getData();
-    if (!data || ow <= 0 || oh <= 0) {
+    if (!data || ow <= 0 || oh <= 0 || ow > 8192 || oh > 8192 ||
+        static_cast<std::uint64_t>(ow) * oh > MAX_PIXEL_COUNT) {
         img->release();
         return;
     }

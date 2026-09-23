@@ -9,7 +9,7 @@ using namespace geode::prelude;
 
 class $modify(PaimonPauseLayerLayoutHook, PauseLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "PauseLayer::customSetup");
+        paimon::hooks::veryLatePost(self, "PauseLayer::customSetup");
     }
 
     $override

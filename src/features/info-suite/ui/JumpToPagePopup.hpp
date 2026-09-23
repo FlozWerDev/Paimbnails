@@ -1,9 +1,5 @@
 #pragma once
 
-// Uncapped "go to page" for the level browser. Vanilla GD clamps its SetIDPopup
-// to the pages the server reported; this one lets you type any page, drag a
-// scrubber across the known range, and jump to the first or last page.
-
 #include <Geode/Geode.hpp>
 #include <Geode/binding/Slider.hpp>
 #include <Geode/ui/TextInput.hpp>

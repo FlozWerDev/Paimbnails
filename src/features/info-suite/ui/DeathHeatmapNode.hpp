@@ -1,9 +1,5 @@
 #pragma once
 
-// A strip showing where a level kills you. One column per percent, coloured
-// from calm to hot relative to the worst percent on that level, so the shape is
-// readable whether you died 20 times or 20000.
-
 #include <Geode/Geode.hpp>
 #include "../services/ProgressTracker.hpp"
 

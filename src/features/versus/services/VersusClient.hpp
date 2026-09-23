@@ -1,9 +1,5 @@
 #pragma once
 
-// REST against the Paimon Versus server. Everything slow, durable or contested lives on
-// the server: the queue, Elo, history, seasons and the level pool. The fast
-// channel inside a level is VersusNet.
-
 #include "../data/VersusTypes.hpp"
 #include "VersusStore.hpp"
 
@@ -80,9 +76,7 @@ public:
     using BoardCallback  = geode::CopyableFunction<void(bool ok, std::vector<LeaderboardRow> const& rows)>;
     using ChallengeCallback = geode::CopyableFunction<void(bool ok, ChallengeResult const& result,
                                                            std::string const& message)>;
-    // Someone else's profile never touches the local store: that cache is for
-    // the player's own rank and overwriting it from a profile visit would show
-    // them a stranger's ladder.
+    // Only the local player's rank belongs in the store; profile visits must not overwrite it.
     using ProfileCallback = geode::CopyableFunction<void(bool ok, ModeProfile const& classic,
                                                          ModeProfile const& platformer)>;
 
@@ -132,9 +126,7 @@ private:
     std::unordered_map<int, ProfileCacheEntry> m_profileCache;
     std::unordered_map<int, std::vector<ProfileCallback>> m_profileWaiters;
 
-    // A session only lives in the server's store, so it can be gone while the
-    // client still believes in it. allowRetry is what stops the re-auth that
-    // follows a 401 from recursing when the new token is refused too.
+    // The server may drop a session; allowRetry prevents recursive re-auth after a rejected token.
     void send(std::string const& method, std::string const& path,
               matjson::Value const& body,
               geode::CopyableFunction<void(bool ok, matjson::Value const& json,

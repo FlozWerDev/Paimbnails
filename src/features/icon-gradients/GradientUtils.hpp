@@ -1,9 +1,5 @@
 #pragma once
 
-// Gradient rendering core: applies a saved gradient config to any SimplePlayer
-// or CCSprite by swapping shader programs, plus the helpers the editor popup
-// uses (save/load configs, icon creation, shader cache).
-
 #include "GradientTypes.hpp"
 #include "GradientCache.hpp"
 #include "../../core/modules/ModuleRegistry.hpp"
@@ -67,7 +63,7 @@ public:
 
     static CCGLProgram* createShader(const std::string&, bool, bool, bool);
 
-    static void patchBatchNode(CCSpriteBatchNode*);
+    static void enableChildShaders(CCSpriteBatchNode*);
     static void hideSprite(CCSprite*);
 
 };

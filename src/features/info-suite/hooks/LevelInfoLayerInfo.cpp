@@ -32,7 +32,7 @@ bool heatmapEnabled() {
 
 class $modify(PaimonInfoSuiteLevelInfo, LevelInfoLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "LevelInfoLayer::init");
+        paimon::hooks::veryLatePost(self, "LevelInfoLayer::init");
     }
 
     bool init(GJGameLevel* level, bool challenge) {
@@ -41,9 +41,6 @@ class $modify(PaimonInfoSuiteLevelInfo, LevelInfoLayer) {
         return true;
     }
 
-    // The vanilla handler shows the small "Level Stats" alert: attempts, jumps
-    // and the two percentages. The popup shows the same numbers split by mode,
-    // plus where you die and how many jumps each attempt took.
     void onLevelInfo(CCObject* sender) {
         if (!extendedInfoEnabled() || !m_level) {
             LevelInfoLayer::onLevelInfo(sender);
@@ -73,9 +70,7 @@ class $modify(PaimonInfoSuiteLevelInfo, LevelInfoLayer) {
         LevelInfoLayer::onViewProfile(sender);
     }
 
-    // A compact death strip under the level's own progress bar. If node-ids is
-    // not around to name that bar we skip it rather than guess a position and
-    // land on top of something else; the popup still has the full heatmap.
+    // Skip the strip without a named progress bar; guessing can overlap other UI.
     void addHeatmapStrip() {
         if (!heatmapEnabled() || !m_level) return;
         if (this->getChildByID("info-suite-heatmap"_spr)) return;

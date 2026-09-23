@@ -19,19 +19,6 @@
 
 namespace paimon {
 
-namespace {
-std::atomic<int> g_detachedDecoders{0};
-}
-
-void noteDetachedDecoder(const char* backend) {
-    int total = g_detachedDecoders.fetch_add(1, std::memory_order_relaxed) + 1;
-    geode::log::warn("[Video] {} decode thread detached; codec leaked (total {})", backend, total);
-    if (total >= 4) {
-        geode::log::error("[Video] {} decoders leaked this session - the platform "
-                          "codec pool may be exhausted", total);
-    }
-}
-
 std::unique_ptr<IVideoDecoder> IVideoDecoder::create(const std::string& path) {
     // Native backend first for every container; pl_mpeg only understands
     // MPEG-1 program streams, so it stays last as a fallback.

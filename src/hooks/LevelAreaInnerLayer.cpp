@@ -15,9 +15,7 @@ using namespace geode::prelude;
 
 namespace {
 
-// Builds and mounts the thumbnail sprite on the door. Shared so the fast path
-// (RAM hit, sync) and slow path (async requestLoad) mount identically. Caller
-// guarantees door and tex are valid at call time.
+// The cache and async paths mount thumbnails identically through this helper.
 void mountDoorThumbnail(CCNode* door, CCTexture2D* tex, int levelID,
                         std::unordered_map<int, Ref<CCSprite>>& thumbsMap) {
     if (!tex || !door) return;
@@ -208,13 +206,11 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
 
 class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "FLAlertLayer::show");
+        paimon::hooks::veryLatePost(self, "FLAlertLayer::show");
     }
 
     struct Fields {
-        // Tower-level ID captured when the FLAlertLayer shows. Read from
-        // LevelAreaInnerLayer::m_levelID directly (title-string inference broke
-        // with localization mods).
+        // Read the saved level ID; translated alert titles are unreliable.
         int m_capturedLevelID = -1;
     };
 
@@ -237,9 +233,6 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
         }
         if (!lai) return;
 
-        // Tower secret levels: 5001 (The Tower), 5002 (The Sewers),
-        // 5003 (The Cellar), 5004 (The Secret Hollow).
-        // GD constants; stable across game versions.
         int levelID = lai->m_levelID;
         if (levelID < 5001 || levelID > 5004) return;
 

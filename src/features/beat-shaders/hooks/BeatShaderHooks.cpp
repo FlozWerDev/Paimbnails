@@ -26,7 +26,7 @@ void apply(cocos2d::CCLayer* layer, char const* key) {
 
 class $modify(PaimonBeatMenuHook, MenuLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "MenuLayer::init");
+        paimon::hooks::veryLatePost(self, "MenuLayer::init");
     }
     bool init() override {
         if (!MenuLayer::init()) return false;
@@ -40,7 +40,7 @@ class $modify(PaimonBeatMenuHook, MenuLayer) {
 
 class $modify(PaimonBeatCreatorHook, CreatorLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "CreatorLayer::init");
+        paimon::hooks::veryLatePost(self, "CreatorLayer::init");
     }
     bool init() override {
         if (!CreatorLayer::init()) return false;
@@ -54,7 +54,7 @@ class $modify(PaimonBeatCreatorHook, CreatorLayer) {
 
 class $modify(PaimonBeatLevelInfoHook, LevelInfoLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "LevelInfoLayer::init");
+        paimon::hooks::veryLatePost(self, "LevelInfoLayer::init");
     }
     bool init(GJGameLevel* level, bool challenge) {
         if (!LevelInfoLayer::init(level, challenge)) return false;

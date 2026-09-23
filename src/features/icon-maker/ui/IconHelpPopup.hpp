@@ -1,7 +1,4 @@
 #pragma once
-// La explicacion del modelo mental del creador, en un solo sitio: que es una
-// zona, que es una capa y que hace cada ajuste raro. El editor enlaza aqui
-// desde el boton "?" en vez de llenar la interfaz de texto.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>

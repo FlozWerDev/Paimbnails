@@ -6,6 +6,7 @@
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
+#include "../../../utils/ThreadTracker.hpp"
 
 #include <Geode/ui/TextInput.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -13,7 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <thread>
+#include <exception>
 
 using namespace geode::prelude;
 
@@ -185,10 +186,20 @@ void GifToSheetPopup::loadGif(std::filesystem::path const& path) {
 
     showBusy("Decodificando GIF");
     WeakRef<GifToSheetPopup> self = this;
-    std::thread([self, bytes, path] {
-        auto gif = std::make_shared<GIFDecoder::GIFData>(
-            GIFDecoder::decode(bytes->data(), bytes->size())
-        );
+    bool const started = paimon::ThreadTracker::get().spawn([self, bytes, path] {
+        geode::utils::thread::setName("Paimon GIF Sheet Decode");
+        std::shared_ptr<GIFDecoder::GIFData> gif;
+        try {
+            gif = std::make_shared<GIFDecoder::GIFData>(GIFDecoder::decode(bytes->data(), bytes->size()));
+        } catch (std::exception const& e) {
+            geode::log::warn("[GifToSheet] Decode failed: {}", e.what());
+            Loader::get()->queueInMainThread([self] {
+                auto ref = self.lock();
+                if (auto* popup = ref.data()) popup->hideBusy();
+                PaimonNotify::create("No se pudo decodificar el GIF.", NotificationIcon::Error)->show();
+            });
+            return;
+        }
         Loader::get()->queueInMainThread([self, gif, path] {
             auto ref = self.lock();
             auto* popup = ref.data();
@@ -200,7 +211,8 @@ void GifToSheetPopup::loadGif(std::filesystem::path const& path) {
             }
             popup->applyDecoded(path, gif);
         });
-    }).detach();
+    });
+    if (!started) hideBusy();
 }
 
 void GifToSheetPopup::applyDecoded(std::filesystem::path const& path, std::shared_ptr<GIFDecoder::GIFData> gif) {
@@ -312,7 +324,8 @@ void GifToSheetPopup::exportTo(std::filesystem::path pngPath) {
     int cols = currentCols();
 
     WeakRef<GifToSheetPopup> self = this;
-    std::thread([self, gif, cols, pngPath, jsonPath] {
+    bool const started = paimon::ThreadTracker::get().spawn([self, gif, cols, pngPath, jsonPath] {
+        geode::utils::thread::setName("Paimon GIF Sheet Export");
         int count = static_cast<int>(gif->frames.size());
         int rows = (count + cols - 1) / cols;
         int w = gif->width;
@@ -320,14 +333,13 @@ void GifToSheetPopup::exportTo(std::filesystem::path pngPath) {
         size_t sheetW = static_cast<size_t>(cols) * w;
         size_t sheetH = static_cast<size_t>(rows) * h;
 
-        // Frames from GIFDecoder are already composited to the full canvas.
-        // bad_alloc on this detached thread would terminate, so fail loudly.
         std::vector<uint8_t> sheet;
         try {
             sheet.assign(sheetW * sheetH * 4, 0);
         } catch (std::bad_alloc const&) {
             Loader::get()->queueInMainThread([self] {
-                if (auto* popup = self.lock().data()) popup->hideBusy();
+                auto ref = self.lock();
+                if (auto* popup = ref.data()) popup->hideBusy();
                 PaimonNotify::create("El sheet no cabe en memoria.", NotificationIcon::Error)->show();
             });
             return;
@@ -370,7 +382,8 @@ void GifToSheetPopup::exportTo(std::filesystem::path pngPath) {
                 PaimonNotify::create("Fallo la exportacion del sheet.", NotificationIcon::Error)->show();
             }
         });
-    }).detach();
+    });
+    if (!started) hideBusy();
 }
 
 void GifToSheetPopup::showBusy(std::string const& text) {

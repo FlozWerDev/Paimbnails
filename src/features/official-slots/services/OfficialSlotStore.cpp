@@ -22,9 +22,7 @@ constexpr char const* kStoreFile = "official-slots.json";
 constexpr char const* kGmdFolder = "official-slots-gmd";
 constexpr size_t kMaxSlots = 60;
 
-// A .gmd is a plist the game itself parses; anything much larger than a big
-// level is not one, and we would rather refuse than copy a random 200 MB file
-// into the save dir.
+// Reject oversized imports before copying arbitrary files into the save directory.
 constexpr std::uintmax_t kMaxGmdBytes = 32ull * 1024 * 1024;
 
 std::string newSlotId() {
@@ -128,14 +126,11 @@ std::string SlotStore::slotKey(std::string const& slotId) {
 
 bool SlotStore::officialKeyId(std::string const& key, int& levelId) {
     if (key.size() < 3 || key[0] != 'o' || key[1] != ':') return false;
-    try {
-        int const parsed = std::stoi(key.substr(2));
-        // Sin round-trip, "o:01" convive con "o:1" y duplica la pagina.
-        if (!isOfficialId(parsed) || officialKey(parsed) != key) return false;
-        levelId = parsed;
-    } catch (...) {
-        return false;
-    }
+    auto parsed = utils::numFromString<int>(key.substr(2));
+    if (parsed.isErr()) return false;
+    int const id = parsed.unwrap();
+    if (!isOfficialId(id) || officialKey(id) != key) return false;
+    levelId = id;
     return true;
 }
 

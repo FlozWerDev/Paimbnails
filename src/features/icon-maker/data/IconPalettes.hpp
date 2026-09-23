@@ -1,7 +1,4 @@
 #pragma once
-// Ready-made colors and gradients. They exist so the common case ("quiero que
-// sea rojo", "quiero un degradado de fuego") is one tap instead of a trip
-// through the color wheel.
 
 #include "FillSpec.hpp"
 

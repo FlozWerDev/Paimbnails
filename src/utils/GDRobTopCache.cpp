@@ -20,6 +20,9 @@ namespace paimon::gd {
 
 namespace {
 
+constexpr std::size_t kMaxCachedResponseBytes = 16ull * 1024 * 1024;
+constexpr std::streamoff kMaxCachedFileBytes = 32ll * 1024 * 1024;
+
 struct PendingBatch {
     std::vector<PostCallback> callbacks;
 };
@@ -192,7 +195,7 @@ void GDRobTopCache::store(
     if (!isEnabled() || m_shuttingDown.load(std::memory_order_acquire) || key.empty() || ttl <= 0) {
         return;
     }
-    if (!isCacheableResponse(response)) return;
+    if (!isCacheableResponse(response) || response.size() > kMaxCachedResponseBytes) return;
 
     auto fullKey = entryKey(category, key);
     auto expiresAt = std::time(nullptr) + ttl;
@@ -235,11 +238,14 @@ std::optional<GDRobTopCache::DiskEntry> GDRobTopCache::readDisk(
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return std::nullopt;
 
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
     if (!in) return std::nullopt;
 
-    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    if (content.empty()) return std::nullopt;
+    std::streamoff const size = in.tellg();
+    if (size <= 0 || size > kMaxCachedFileBytes) return std::nullopt;
+    in.seekg(0, std::ios::beg);
+    std::string content(static_cast<size_t>(size), '\0');
+    if (!in.read(content.data(), size)) return std::nullopt;
 
     auto parsed = matjson::parse(content);
     if (!parsed.isOk()) return std::nullopt;
@@ -247,7 +253,7 @@ std::optional<GDRobTopCache::DiskEntry> GDRobTopCache::readDisk(
     auto json = parsed.unwrap();
     if (!json.contains("response") || !json["response"].isString()) return std::nullopt;
     auto body = json["response"].asString().unwrapOr("");
-    if (!isCacheableResponse(body)) return std::nullopt;
+    if (!isCacheableResponse(body) || body.size() > kMaxCachedResponseBytes) return std::nullopt;
 
     auto cachedAt = static_cast<std::time_t>(json["cachedAt"].asDouble().unwrapOr(0.0));
     auto ttl = static_cast<std::time_t>(json["ttl"].asDouble().unwrapOr(
@@ -272,13 +278,15 @@ void GDRobTopCache::writeDisk(
     json["cachedAt"] = static_cast<double>(std::time(nullptr));
     json["ttl"] = static_cast<double>(ttl);
     json["response"] = response;
+    auto content = json.dump();
+    if (content.size() > static_cast<size_t>(kMaxCachedFileBytes)) return;
 
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) {
         log::debug("[GDRobTopCache] No se pudo escribir {}", utils::string::pathToString(path));
         return;
     }
-    out << json.dump();
+    out << content;
 }
 
 void GDRobTopCache::touchRam(std::string const& entryKey, std::string response, std::time_t expiresAt) {

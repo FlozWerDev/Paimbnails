@@ -52,7 +52,7 @@ CCNode* buildVersusChip(RankInfo const& rank, float height) {
 
 class $modify(PaimonVersusProfilePage, ProfilePage) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "ProfilePage::loadPageFromUserInfo");
+        paimon::hooks::veryLatePost(self, "ProfilePage::loadPageFromUserInfo");
     }
 
     struct Fields {

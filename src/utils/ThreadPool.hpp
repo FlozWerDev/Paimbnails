@@ -9,7 +9,7 @@
 #include <atomic>
 #include <memory>
 #include <Geode/loader/Log.hpp>
-#include "TimedJoin.hpp"
+#include "JoinWithWarning.hpp"
 
 namespace paimon {
 
@@ -84,7 +84,7 @@ public:
         }
         state->cv.notify_all();
         for (auto& t : m_workers) {
-            if (t.joinable()) paimon::timedJoin(t, std::chrono::seconds(3));
+            if (t.joinable()) paimon::joinWithWarning(t, std::chrono::seconds(3));
         }
         m_workers.clear();
         m_state.reset();

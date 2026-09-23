@@ -21,6 +21,7 @@ static std::list<int> s_profileImgLru;
 static std::unordered_map<int, std::list<int>::iterator> s_profileImgLruMap;
 static constexpr size_t MAX_PROFILEIMG_CACHE_SIZE = 64;
 static constexpr size_t MAX_PROFILEIMG_CACHE_BYTES = 64ull * 1024 * 1024;
+static constexpr std::streamoff MAX_PROFILEIMG_FILE_BYTES = 64ll * 1024 * 1024;
 static size_t s_profileImgCacheBytes = 0;
 static std::atomic<bool> s_profileImgShutdown{false};
 
@@ -175,8 +176,8 @@ CCTexture2D* loadProfileImgFromDisk(int accountID) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) return nullptr;
 
-    auto size = file.tellg();
-    if (size <= 0) return nullptr;
+    std::streamoff const size = file.tellg();
+    if (size <= 0 || size > MAX_PROFILEIMG_FILE_BYTES) return nullptr;
     file.seekg(0, std::ios::beg);
 
     std::vector<uint8_t> data(static_cast<size_t>(size));
@@ -187,6 +188,7 @@ CCTexture2D* loadProfileImgFromDisk(int accountID) {
 }
 
 void saveProfileImgToDisk(int accountID, std::vector<uint8_t> const& data) {
+    if (data.empty() || data.size() > static_cast<size_t>(MAX_PROFILEIMG_FILE_BYTES)) return;
     auto cacheDir = getProfileImgCacheDir();
     std::error_code ec;
     std::filesystem::create_directories(cacheDir, ec);

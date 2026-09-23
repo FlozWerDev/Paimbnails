@@ -267,8 +267,14 @@ void ScoreCellHoverWatcher::ensureIconBackdrop() {
     if (score->m_glowEnabled) player->setGlowOutline(gm->colorForIdx(score->m_color3 > 0 ? score->m_color3 : score->m_color2));
     else player->disableGlowOutline();
 
+    // The root owns no texture (its layers carry the pixels), so its size
+    // reads 0x0: measure the main layer, else use the ~30px icon reference.
     float dim = std::max(player->getContentSize().width, player->getContentSize().height);
-    if (dim <= 0.f) return;
+    if (dim <= 0.f && player->m_firstLayer) {
+        dim = std::max(player->m_firstLayer->getContentSize().width,
+                       player->m_firstLayer->getContentSize().height);
+    }
+    if (dim <= 0.f) dim = 30.f;
     player->setScale(cs.height * 1.7f / dim);
     CCPoint home = {cs.width * 0.80f, cs.height * 0.5f};
     player->setPosition(home);

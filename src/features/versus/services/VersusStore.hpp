@@ -1,9 +1,5 @@
 #pragma once
 
-// Local mirror of what the server knows, plus the handful of preferences the
-// hub remembers. The server stays the authority; this exists so the hub can
-// draw a rank before the first request answers.
-
 #include "../data/VersusModes.hpp"
 #include "../data/VersusRanks.hpp"
 #include "../data/VersusTypes.hpp"

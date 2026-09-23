@@ -2,12 +2,13 @@
 
 #include "PieceGrid.hpp"
 
+#include <Geode/Geode.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <limits>
 #include <unordered_map>
 
@@ -806,7 +807,7 @@ std::string sketchTemplate(Template const& tpl, int width, int height) {
             Depth depth = Depth::Play;
             std::string value;
             if (objectKey(object.save, 24, value)) {
-                int const layer = std::atoi(value.c_str());
+                int const layer = geode::utils::numFromString<int>(value).unwrapOr(kZLayerDefault);
                 if (behindLayer(layer)) depth = Depth::Back;
                 else if (frontLayer(layer)) depth = Depth::Front;
             }

@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cctype>
+#include <limits>
 
 using namespace geode::prelude;
 
@@ -91,7 +92,6 @@ int UpdateChecker::compareVersions(std::string const& baseStr, std::string const
         return 0;
     }
 
-    // Fallback: numeric component comparison.
     auto split = [](std::string const& s) {
         std::vector<int> out;
         std::string cur;
@@ -99,13 +99,18 @@ int UpdateChecker::compareVersions(std::string const& baseStr, std::string const
             if (std::isdigit((unsigned char)c)) {
                 cur.push_back(c);
             } else if (c == '.' || c == '-' || c == '+') {
-                if (!cur.empty()) { out.push_back(std::atoi(cur.c_str())); cur.clear(); }
+                if (!cur.empty()) {
+                    out.push_back(utils::numFromString<int>(cur).unwrapOr(std::numeric_limits<int>::max()));
+                    cur.clear();
+                }
                 if (c != '.') break;
             } else {
                 break;
             }
         }
-        if (!cur.empty()) out.push_back(std::atoi(cur.c_str()));
+        if (!cur.empty()) {
+            out.push_back(utils::numFromString<int>(cur).unwrapOr(std::numeric_limits<int>::max()));
+        }
         return out;
     };
 

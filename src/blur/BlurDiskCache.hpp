@@ -68,6 +68,7 @@ private:
     static constexpr std::uint32_t MAGIC = 0x504C4255u;
     static constexpr std::uint32_t VERSION = 1u;
     static constexpr std::size_t HEADER_SIZE = 20;
+    static constexpr std::uint64_t MAX_PIXEL_COUNT = 16ull * 1024 * 1024;
 };
 
 } // namespace paimon::blur

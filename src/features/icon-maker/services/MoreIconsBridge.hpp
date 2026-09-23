@@ -1,8 +1,4 @@
 #pragma once
-// Único punto de contacto con la API de MoreIcons (aparte de global-icon).
-// Cuando MoreIcons está instalado, registra y aplica los iconos compilados en
-// caliente (sin reiniciar); si no lo está, todo devuelve false y el
-// IconApplier propio toma el relevo.
 
 #include "../engine/IconCompiler.hpp"
 

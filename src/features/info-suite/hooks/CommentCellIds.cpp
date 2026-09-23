@@ -1,7 +1,3 @@
-// Visible IDs on comment cells. The badge sits in the bottom right corner,
-// under the like counter, where GD leaves empty space in both the normal and
-// the compact layout.
-
 #include "../InfoModule.hpp"
 #include "../services/IdBadge.hpp"
 #include "../../../framework/HookConventions.hpp"
@@ -24,7 +20,7 @@ bool commentIdsEnabled() {
 
 class $modify(PaimonInfoSuiteCommentCell, CommentCell) {
     static void onModify(auto& self) {
-        paimon::hooks::afterAllPaimonUiOrVeryLate(self, "CommentCell::loadFromComment");
+        paimon::hooks::veryLatePost(self, "CommentCell::loadFromComment");
     }
 
     void loadFromComment(GJComment* comment) {

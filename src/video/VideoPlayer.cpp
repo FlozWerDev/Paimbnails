@@ -79,11 +79,7 @@ VideoPlayer::~VideoPlayer() {
 
     if (m_decoder) {
         m_decoder->stopDecoding();
-        if (!m_decoder->isTerminal()) {
-            m_decoder.reset();
-        } else {
-            (void)m_decoder.release();
-        }
+        m_decoder.reset();
     }
 
     if (!isOnMainThread()) {
@@ -655,7 +651,7 @@ void VideoPlayer::update(float dt) {
 
 void VideoPlayer::play() {
     if (m_playing) return;
-    if (!m_decoder || m_decoder->isTerminal()) return;
+    if (!m_decoder) return;
     m_playing = true;
     m_timeSincePlay = 0.0;
     m_decoderStalled = false;
@@ -681,18 +677,10 @@ void VideoPlayer::pause() {
     m_pendingUpload = false;
     if (m_decoder) m_decoder->stopDecoding();
     pauseAudio();
-    if (m_decoder && m_decoder->isTerminal()) {
-        (void)m_decoder.release();
-    }
 }
 
 void VideoPlayer::resume() {
     if (!m_decoder) return;
-    if (m_decoder->isTerminal()) {
-        m_playing = false;
-        return;
-    }
-    
     if (m_decoder->isFinished() || m_decoder->peekNextPTS() >= DBL_MAX) {
         m_decoder->seekTo(0.0);
         m_playbackTime = 0.0;
@@ -728,11 +716,7 @@ void VideoPlayer::stop() {
     m_timeSinceLastUpload = 0.0;
     if (m_decoder) {
         m_decoder->stopDecoding();
-        if (!m_decoder->isTerminal()) {
-            m_decoder->seekTo(0.0);
-        } else {
-            (void)m_decoder.release();
-        }
+        m_decoder->seekTo(0.0);
     }
     m_playbackTime = 0.0;
     stopAudio(true);
@@ -747,9 +731,6 @@ void VideoPlayer::forceStop() {
     m_timeSinceLastUpload = 0.0;
     if (m_decoder) {
         m_decoder->stopDecoding();
-        if (m_decoder->isTerminal()) {
-            (void)m_decoder.release();
-        }
     }
     m_playbackTime = 0.0;
     stopAudio(true);
@@ -768,7 +749,6 @@ void VideoPlayer::setTargetFPS(int fps) { m_targetFPS = fps; }
 
 bool VideoPlayer::isPlaying() const { return m_playing; }
 bool VideoPlayer::hasVisibleFrame() const { return m_hasVisibleFrame; }
-bool VideoPlayer::isTerminal() const { return m_decoder && m_decoder->isTerminal(); }
 uint64_t VideoPlayer::getFrameCounter() const { return m_frameCounter; }
 
 cocos2d::CCTexture2D* VideoPlayer::getCurrentFrameTexture() const {

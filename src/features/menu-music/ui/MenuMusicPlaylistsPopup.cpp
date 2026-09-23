@@ -147,7 +147,7 @@ void MenuMusicPlaylistsPopup::showGrid() {
         auto node = CCNode::create();
         node->setContentSize({cardW, kCardHeight});
         node->setAnchorPoint({0.f, 0.f});
-        node->setID(fmt::format("playlist-card-{}", pl.id).c_str());
+        node->setID(fmt::format("{}playlist-card-{}", ""_spr, pl.id));
 
         if (auto* bg = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
             bg->setContentSize({cardW, kCardHeight});
@@ -278,7 +278,7 @@ void MenuMusicPlaylistsPopup::showDetail(const std::string& playlistId) {
         auto node = CCNode::create();
         node->setContentSize({cardW, kTrackHeight});
         node->setAnchorPoint({0.f, 0.f});
-        node->setID(fmt::format("playlist-track-{}", tid).c_str());
+        node->setID(fmt::format("{}playlist-track-{}", ""_spr, tid));
 
         if (auto* bg = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
             bg->setContentSize({cardW, kTrackHeight});

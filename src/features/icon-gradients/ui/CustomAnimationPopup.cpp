@@ -121,7 +121,7 @@ bool CustomAnimationPopup::init(
     m_secondPlayer = secondPlayer;
 
     setTitle("Custom Animation", "goldFont.fnt", 0.66f, 16.f);
-    setID("custom-animation-popup");
+    setID("custom-animation-popup"_spr);
 
     for (size_t i = 0; i < kPreviewIcons.size(); ++i) {
         if (kPreviewIcons[i].type == previewType) {
@@ -154,7 +154,7 @@ void CustomAnimationPopup::buildPreview() {
     if (panel) {
         panel->setAnchorPoint({0.f, 0.f});
         panel->setPosition({kBandX, kBandY});
-        panel->setID("custom-animation-band");
+        panel->setID("custom-animation-band"_spr);
         m_mainLayer->addChild(panel);
     }
 
@@ -167,7 +167,7 @@ void CustomAnimationPopup::buildPreview() {
     m_previewHost->setAnchorPoint({0.5f, 0.5f});
     m_previewHost->ignoreAnchorPointForPosition(false);
     m_previewHost->setPosition({54.f, 230.f});
-    m_previewHost->setID("custom-animation-preview");
+    m_previewHost->setID("custom-animation-preview"_spr);
     m_mainLayer->addChild(m_previewHost, 3);
 
     auto previousArrow = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
@@ -216,7 +216,7 @@ void CustomAnimationPopup::buildPreview() {
 
     m_stackHost = CCNode::create();
     m_stackHost->setPosition({0.f, 0.f});
-    m_stackHost->setID("custom-animation-stack");
+    m_stackHost->setID("custom-animation-stack"_spr);
     m_mainLayer->addChild(m_stackHost, 4);
 
     rebuildPreviewIcon();

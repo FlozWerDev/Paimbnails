@@ -455,7 +455,7 @@ std::vector<Module> buildCatalog() {
                 "enable-debug-logs", "Diagnostics", S::System, false),
         setting("paimbnails.crashreports.system", "Crash Reports",
                 "Sends the Geode crash log to the developers after a crash.",
-                "crash-reports-enable", "Diagnostics", S::System, true),
+                "crash-reports-enable", "Diagnostics", S::System, false),
     };
 }
 

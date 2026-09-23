@@ -11,6 +11,7 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/TextureBudget.hpp"
 #include "../../../utils/FileDialog.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Notification.hpp>
@@ -172,11 +173,11 @@ void MenuMusicLibraryPopup::buildHeader() {
         }
     };
     addAction("Add", 46, menu_selector(MenuMusicLibraryPopup::onAddMusic),
-        "GJ_button_01.png", "library-add-btn");
+        "GJ_button_01.png", "library-add-btn"_spr);
     addAction("Folder", 58, menu_selector(MenuMusicLibraryPopup::onImportFolder),
-        "GJ_button_05.png", "library-folder-btn");
+        "GJ_button_05.png", "library-folder-btn"_spr);
     addAction("Sync", 46, menu_selector(MenuMusicLibraryPopup::onSyncGeometryDash),
-        "GJ_button_02.png", "library-sync-btn");
+        "GJ_button_02.png", "library-sync-btn"_spr);
     actionMenu->setLayout(RowLayout::create()->setGap(5.f)
         ->setDefaultScaleLimits(0.5f, 1.f));
     actionMenu->updateLayout();
@@ -292,9 +293,9 @@ void MenuMusicLibraryPopup::rebuildList() {
             if (aSize != bSize) return aSize < bSize;
         } else if (m_sortMode == "extension") {
             auto aExt = geode::utils::string::toLower(
-                std::filesystem::path(a.audioPath).extension().string());
+                utils::string::pathToString(paimon::assets::pathFromUtf8(a.audioPath).extension()));
             auto bExt = geode::utils::string::toLower(
-                std::filesystem::path(b.audioPath).extension().string());
+                utils::string::pathToString(paimon::assets::pathFromUtf8(b.audioPath).extension()));
             if (aExt != bExt) return aExt < bExt;
         }
         return alphaLess(a, b);
@@ -385,7 +386,7 @@ cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
     auto node = CCNode::create();
     node->setContentSize({widthOverride, cardHeight});
     node->setAnchorPoint({0, 0});
-    node->setID(fmt::format("track-card-{}", trackId).c_str());
+    node->setID(fmt::format("{}track-card-{}", ""_spr, trackId));
 
     if (auto* bg = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
         bg->setContentSize({widthOverride, cardHeight});
@@ -537,14 +538,14 @@ cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
         if (auto* button = makeIconBtn(
                 "GJ_playMusicBtn_001.png", "GJ_playBtn2_001.png",
                 menu_selector(MenuMusicLibraryPopup::onPlayTrack), 0.58f,
-                "track-play-btn", {255, 255, 255}, 255)) {
+                "track-play-btn"_spr, {255, 255, 255}, 255)) {
             menu->addChild(button);
         }
     } else if (downloadable) {
         if (auto* button = makeIconBtn(
                 "GJ_downloadBtn_001.png", "GJ_downloadsIcon_001.png",
                 menu_selector(MenuMusicLibraryPopup::onDownloadTrack), 0.54f,
-                "track-download-btn", {255, 255, 255}, 255)) {
+                "track-download-btn"_spr, {255, 255, 255}, 255)) {
             menu->addChild(button);
         }
     }
@@ -552,14 +553,14 @@ cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
     if (auto* button = makeIconBtn(
             "GJ_plusBtn_001.png", "GJ_plus2Btn_001.png",
             menu_selector(MenuMusicLibraryPopup::onAddToPlaylist), 0.46f,
-            "track-playlist-btn", {255, 255, 255}, 255)) {
+            "track-playlist-btn"_spr, {255, 255, 255}, 255)) {
         menu->addChild(button);
     }
 
     if (auto* button = makeIconBtn(
             "GJ_starBtn_001.png", "GJ_starsIcon_001.png",
             menu_selector(MenuMusicLibraryPopup::onToggleFavorite), 0.48f,
-            "track-favorite-btn",
+            "track-favorite-btn"_spr,
             track->favorite ? ccColor3B{255, 235, 95} : ccColor3B{255, 255, 255},
             track->favorite ? 255 : 165)) {
         menu->addChild(button);
@@ -568,7 +569,7 @@ cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
     if (auto* button = makeIconBtn(
             "GJ_reportBtn_001.png", "GJ_dislikeBtn_001.png",
             menu_selector(MenuMusicLibraryPopup::onToggleBlacklist), 0.44f,
-            "track-blacklist-btn",
+            "track-blacklist-btn"_spr,
             track->blacklisted ? ccColor3B{255, 110, 110} : ccColor3B{255, 255, 255},
             track->blacklisted ? 255 : 175)) {
         menu->addChild(button);
@@ -577,7 +578,7 @@ cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
     if (auto* button = makeIconBtn(
             "GJ_trashBtn_001.png", "GJ_deleteIcon_001.png",
             menu_selector(MenuMusicLibraryPopup::onRemoveTrack), 0.44f,
-            "track-remove-btn", {255, 255, 255}, 255)) {
+            "track-remove-btn"_spr, {255, 255, 255}, 255)) {
         menu->addChild(button);
     }
 
@@ -842,7 +843,7 @@ void MenuMusicLibraryPopup::onScrollCurrent(CCObject*) {
     auto* card = currentId.empty()
         ? nullptr
         : m_scroll->m_contentLayer->getChildByID(
-            fmt::format("track-card-{}", currentId));
+            fmt::format("{}track-card-{}", ""_spr, currentId));
     if (!card) {
         m_scroll->scrollToTop();
         return;

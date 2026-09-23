@@ -94,16 +94,16 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
     m_secondPlayer = secondPlayer;
 
     setTitle("Gradient Animations", "goldFont.fnt", 0.72f, 18.f);
-    setID("gradient-animation-popup");
+    setID("gradient-animation-popup"_spr);
 
     auto menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     m_mainLayer->addChild(menu, 5);
 
-    addPanel(m_mainLayer, {125.f, 200.f}, {220.f, 100.f}, "animation-preview-panel");
-    addPanel(m_mainLayer, {335.f, 200.f}, {170.f, 100.f}, "animation-options-panel");
-    addPanel(m_mainLayer, {215.f, 125.f}, {410.f, 44.f}, "animation-effects-panel");
-    addPanel(m_mainLayer, {215.f, 59.f}, {410.f, 78.f}, "animation-controls-panel");
+    addPanel(m_mainLayer, {125.f, 200.f}, {220.f, 100.f}, "animation-preview-panel"_spr);
+    addPanel(m_mainLayer, {335.f, 200.f}, {170.f, 100.f}, "animation-options-panel"_spr);
+    addPanel(m_mainLayer, {215.f, 125.f}, {410.f, 44.f}, "animation-effects-panel"_spr);
+    addPanel(m_mainLayer, {215.f, 59.f}, {410.f, 78.f}, "animation-controls-panel"_spr);
 
     addLabel(m_mainLayer, "LIVE PREVIEW", {125.f, 240.f}, 0.3f, "goldFont.fnt");
     addLabel(m_mainLayer, "OPTIONS", {335.f, 240.f}, 0.3f, "goldFont.fnt");
@@ -113,7 +113,7 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
     m_previewHost->setAnchorPoint({0.5f, 0.5f});
     m_previewHost->ignoreAnchorPointForPosition(false);
     m_previewHost->setPosition({125.f, 202.f});
-    m_previewHost->setID("animation-preview-icon");
+    m_previewHost->setID("animation-preview-icon"_spr);
     m_mainLayer->addChild(m_previewHost, 3);
 
     auto arrow = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
@@ -122,7 +122,7 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
         arrow, this, menu_selector(GradientAnimationPopup::onPreviousIcon)
     );
     previous->setPosition({35.f, 200.f});
-    previous->setID("previous-preview-icon");
+    previous->setID("previous-preview-icon"_spr);
     menu->addChild(previous);
 
     auto nextArrow = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
@@ -132,7 +132,7 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
         nextArrow, this, menu_selector(GradientAnimationPopup::onNextIcon)
     );
     next->setPosition({215.f, 200.f});
-    next->setID("next-preview-icon");
+    next->setID("next-preview-icon"_spr);
     menu->addChild(next);
 
     m_iconLabel = addLabel(m_mainLayer, "Cube", {125.f, 162.f}, 0.28f);
@@ -143,7 +143,7 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
         this, menu_selector(GradientAnimationPopup::onEnabled), 0.55f
     );
     m_enabledToggle->setPosition({398.f, 216.f});
-    m_enabledToggle->setID("animation-enabled-toggle");
+    m_enabledToggle->setID("animation-enabled-toggle"_spr);
     menu->addChild(m_enabledToggle);
 
     auto reverseLabel = addLabel(m_mainLayer, "Reverse", {270.f, 190.f}, 0.32f);
@@ -152,7 +152,7 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
         this, menu_selector(GradientAnimationPopup::onReverse), 0.55f
     );
     m_reverseToggle->setPosition({398.f, 190.f});
-    m_reverseToggle->setID("animation-reverse-toggle");
+    m_reverseToggle->setID("animation-reverse-toggle"_spr);
     menu->addChild(m_reverseToggle);
 
     auto resetSprite = ButtonSprite::create(
@@ -162,7 +162,7 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
         resetSprite, this, menu_selector(GradientAnimationPopup::onReset)
     );
     reset->setPosition({296.f, 165.f});
-    reset->setID("reset-animation-button");
+    reset->setID("reset-animation-button"_spr);
     menu->addChild(reset);
 
     auto editSprite = ButtonSprite::create(
@@ -172,7 +172,7 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
         editSprite, this, menu_selector(GradientAnimationPopup::onCustomize)
     );
     edit->setPosition({374.f, 165.f});
-    edit->setID("edit-custom-animation-button");
+    edit->setID("edit-custom-animation-button"_spr);
     menu->addChild(edit);
 
     for (size_t i = 0; i < kEffects.size(); ++i) {
@@ -189,7 +189,7 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
             kEffectFirstX + kEffectStepX * static_cast<float>(i), 131.f
         });
         button->setTag(static_cast<int>(type));
-        button->setID(fmt::format("animation-effect-{}", static_cast<int>(type)));
+        button->setID(fmt::format("{}animation-effect-{}", ""_spr, static_cast<int>(type)));
         menu->addChild(button);
         m_effectButtons.emplace_back(type, button);
     }

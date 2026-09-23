@@ -13,7 +13,7 @@ using namespace geode::prelude;
 
 namespace {
 
-constexpr auto kButtonID = "paimbnails-texture-studio-btn";
+constexpr auto kButtonID = "texture-studio-btn"_spr;
 
 bool textureStudioEnabled() {
     return Mod::get()->getSettingValue<bool>("texture-studio-enabled");

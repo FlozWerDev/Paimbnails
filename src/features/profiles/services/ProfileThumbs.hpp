@@ -2,18 +2,17 @@
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/function.hpp>
+#include <deque>
+#include <list>
 #include <optional>
 #include <unordered_map>
 #include <chrono>
 #include <string>
 #include <mutex>
 #include <atomic>
-#include <memory>
 #include <vector>
-#include <functional>
 
 #include <unordered_set>
-#include "../../../utils/ThreadPool.hpp"
 
 struct ProfileConfig {
     std::string backgroundType = "gradient";
@@ -96,7 +95,6 @@ public:
 
     std::optional<ProfileCacheEntry> getCachedProfile(int accountID);
     void clearCache(int accountID);
-    void clearOldCache();
     void clearAllCache();
 
     cocos2d::CCNode* createProfileNode(cocos2d::CCTexture2D* texture, ProfileConfig const& config, cocos2d::CCSize size, bool onlyBackground = false);
@@ -106,12 +104,10 @@ public:
     void notifyVisible(int accountID);
 
     void markNoProfile(int accountID);
-    void removeFromNoProfileCache(int accountID);
     bool isNoProfile(int accountID) const;
     void clearNoProfileCache();
 
     void clearPendingDownloads();
-    void shutdown();
 
 private:
     ProfileThumbs() = default;
@@ -119,6 +115,9 @@ private:
     void processQueue();
     void processBinaryQueue();
     void processBinaryQueueIndividual();
+    void touchCacheEntry(int accountID);
+    void clearOldCache();
+    void removeFromNoProfileCache(int accountID);
     
     std::unordered_map<int, ProfileCacheEntry> m_profileCache;
     std::list<int> m_lruOrder;
@@ -141,10 +140,4 @@ private:
     std::deque<int> m_binaryQueue;
     std::unordered_map<int, ProfileConfig> m_batchConfigs;
 
-    void spawnBackground(std::function<void()> job);
-    void pruneFinishedWorkers();
-    void waitBackgroundWorkers();
-    std::unique_ptr<paimon::ThreadPool> m_workerPool;
-    std::mutex m_workerMutex;
 };
-

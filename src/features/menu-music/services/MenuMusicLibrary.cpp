@@ -10,11 +10,18 @@
 #include <array>
 #include <charconv>
 #include <chrono>
+#include <climits>
 #include <fmt/format.h>
 
 using namespace geode::prelude;
 
 namespace paimon::menumusic {
+
+namespace {
+
+constexpr std::uintmax_t kMaxLibraryFileBytes = 16ull * 1024 * 1024;
+
+} // namespace
 
 MenuMusicLibrary& MenuMusicLibrary::get() {
     static MenuMusicLibrary instance;
@@ -492,7 +499,9 @@ void MenuMusicLibrary::save() {
     }
     root["playlists"] = playlists;
 
-    (void)file::writeToJson(getLibraryFile(), root);
+    if (auto result = file::writeToJson(getLibraryFile(), root); result.isErr()) {
+        log::warn("[MenuMusic] failed to save library.json: {}", result.unwrapErr());
+    }
 }
 
 void MenuMusicLibrary::load() {
@@ -503,6 +512,13 @@ void MenuMusicLibrary::load() {
     std::error_code existsEc;
     if (!std::filesystem::exists(getLibraryFile(), existsEc) || existsEc) {
         save();
+        return;
+    }
+
+    std::error_code sizeEc;
+    auto const size = std::filesystem::file_size(getLibraryFile(), sizeEc);
+    if (sizeEc || size > kMaxLibraryFileBytes) {
+        log::warn("[MenuMusic] library.json is too large or unreadable");
         return;
     }
 
@@ -518,7 +534,8 @@ void MenuMusicLibrary::load() {
         ? static_cast<PlaybackMode>(rawMode) : PlaybackMode::Disabled;
     m_activePlaylistId = root["activePlaylistId"].asString().unwrapOr("");
     m_lastTrackId = root["lastTrackId"].asString().unwrapOr("");
-    m_idCounter = static_cast<std::uint64_t>(root["idCounter"].asInt().unwrapOr(0));
+    m_idCounter = static_cast<std::uint64_t>(
+        std::max<std::int64_t>(0, root["idCounter"].asInt().unwrapOr(0)));
 
     m_tracks.clear();
     if (auto arr = root["tracks"].asArray()) {
@@ -535,7 +552,8 @@ void MenuMusicLibrary::load() {
             t.source = (rawSource >= 0 && rawSource <= static_cast<int>(TrackSource::GeometryDash))
                 ? static_cast<TrackSource>(rawSource) : TrackSource::Unknown;
             t.addedUnixMs = item["addedUnixMs"].asInt().unwrapOr(0);
-            t.durationMs = static_cast<std::int32_t>(item["durationMs"].asInt().unwrapOr(0));
+            t.durationMs = static_cast<std::int32_t>(std::clamp<std::int64_t>(
+                item["durationMs"].asInt().unwrapOr(0), 0, INT32_MAX));
             t.favorite = item["favorite"].asBool().unwrapOr(false);
             t.blacklisted = item["blacklisted"].asBool().unwrapOr(false);
             m_tracks.push_back(std::move(t));

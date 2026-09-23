@@ -528,7 +528,6 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
 }
 
 LocalThumbnailViewPopup::~LocalThumbnailViewPopup() {
-    log::info("[ThumbnailViewPopup] Destructor - liberando textura retenida");
     m_thumbnailTexture = nullptr;
     m_touches.clear();
 }
@@ -545,7 +544,6 @@ void LocalThumbnailViewPopup::loadCurrentSuggestion() {
     if (m_suggestions.empty()) return;
 
     auto& suggestion = m_suggestions[m_currentIndex];
-    log::info("[ThumbnailViewPopup] Loading suggestion {}/{} - {}", m_currentIndex + 1, m_suggestions.size(), suggestion.filename);
 
     if (m_counterLabel) {
         m_counterLabel->setString(fmt::format("{}/{}", m_currentIndex + 1, m_suggestions.size()).c_str());
@@ -597,13 +595,10 @@ void LocalThumbnailViewPopup::onPrevSuggestion(CCObject*) {
 
 
 void LocalThumbnailViewPopup::onExit() {
-    log::info("[ThumbnailViewPopup] onExit() comenzando");
-
     m_touches.clear();
     resetZoomGestureState();
 
     if (m_isExiting) {
-        log::warn("[ThumbnailViewPopup] onExit() ya fue llamado, evitando re-entrada");
         return;
     }
     m_isExiting = true;
@@ -644,7 +639,6 @@ void LocalThumbnailViewPopup::onExit() {
     m_rightArrow = nullptr;
     m_orderEditBtn = nullptr;
 
-    log::info("[ThumbnailViewPopup] Llamando a parent onExit");
     Popup::onExit();
 }
 
@@ -847,9 +841,6 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     this->setKeypadEnabled(true);
 #endif
 
-    log::info("[ThumbnailViewPopup] === INICIANDO CARGA DE THUMBNAIL ===");
-    log::info("[ThumbnailViewPopup] Level ID: {}", m_levelID);
-    log::info("[ThumbnailViewPopup] Verification Category: {}", verificationCategory);
     if (verificationCategory >= 0) {
         this->loadFromVerificationQueue(static_cast<PendingCategory>(verificationCategory), maxWidth, maxHeight, content, openedFromReport);
     } else {
@@ -861,13 +852,9 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
             // Cached results may resolve before the popup is attached.
             if (!popup || popup->m_isExiting || !popup->m_mainLayer) return;
 
-            log::info("[ThumbnailViewPopup] getThumbnails callback: levelID={}, success={}, count={}", 
-                popup->m_levelID, success, thumbs.size());
-            
             if (!success || thumbs.empty()) {
-            log::warn("[ThumbnailViewPopup] getThumbnails failed or empty for level {}", popup->m_levelID);
-            return;
-        }
+                return;
+            }
 
             popup->replaceRemoteThumbnails(thumbs);
             popup->loadThumbnailAt(popup->m_currentIndex);
@@ -881,65 +868,37 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
 
 
 void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category, float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
-    log::info("[ThumbnailViewPopup] Cargando desde cola de verificacion - Categoria: {}", static_cast<int>(category));
+    if (category == PendingCategory::Verify && !m_suggestions.empty()) {
+        m_currentIndex = 0;
+        loadCurrentSuggestion();
+        return;
+    }
 
     Ref<LocalThumbnailViewPopup> safeRef = this;
-
-    if (category == PendingCategory::Verify) {
-        // Suggestions already contain their file URLs.
-        if (!m_suggestions.empty()) {
-            m_currentIndex = 0;
-            loadCurrentSuggestion();
-            return;
-        }
-
-        ThumbnailAPI::get().downloadSuggestion(m_levelID, [safeRef, maxWidth, maxHeight, content, openedFromReport](bool success, CCTexture2D* tex) {
-            if (!safeRef->getParent() || !safeRef->m_mainLayer) {
-                log::warn("[ThumbnailViewPopup] Popup destruido antes de cargar suggestion");
-                return;
-            }
-
+    ThumbnailAPI::DownloadCallback onDownloaded =
+        [safeRef, maxWidth, maxHeight, content, openedFromReport](bool success, CCTexture2D* tex) {
+            if (!safeRef->getParent() || !safeRef->m_mainLayer) return;
             if (success && tex) {
-                log::info("[ThumbnailViewPopup] [OK] Suggestion cargada");
                 safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
             } else {
-                log::warn("[ThumbnailViewPopup] [FAIL] No se pudo cargar suggestion");
                 safeRef->showNoThumbnail(content);
             }
-        });
-    } else if (category == PendingCategory::Update) {
-        ThumbnailAPI::get().downloadUpdate(m_levelID, [safeRef, maxWidth, maxHeight, content, openedFromReport](bool success, CCTexture2D* tex) {
-            if (!safeRef->getParent() || !safeRef->m_mainLayer) {
-                log::warn("[ThumbnailViewPopup] Popup destruido antes de cargar update");
-                return;
-            }
+        };
 
-            if (success && tex) {
-                log::info("[ThumbnailViewPopup] [OK] Update cargada");
-                safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
-            } else {
-                log::warn("[ThumbnailViewPopup] [FAIL] No se pudo cargar update");
-                safeRef->showNoThumbnail(content);
-            }
-        });
-    } else if (category == PendingCategory::Report) {
-        ThumbnailAPI::get().downloadReported(m_levelID, [safeRef, maxWidth, maxHeight, content, openedFromReport](bool success, CCTexture2D* tex) {
-            if (!safeRef->getParent() || !safeRef->m_mainLayer) {
-                log::warn("[ThumbnailViewPopup] Popup destruido antes de cargar reported");
-                return;
-            }
-
-            if (success && tex) {
-                log::info("[ThumbnailViewPopup] [OK] Reported cargada");
-                safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
-            } else {
-                log::warn("[ThumbnailViewPopup] [FAIL] No se pudo cargar reported");
-                safeRef->showNoThumbnail(content);
-            }
-        });
-    } else {
-        log::error("[ThumbnailViewPopup] Categoria de verificacion desconocida: {}", static_cast<int>(category));
-        this->showNoThumbnail(content);
+    switch (category) {
+        case PendingCategory::Verify:
+            ThumbnailAPI::get().downloadSuggestion(m_levelID, onDownloaded);
+            break;
+        case PendingCategory::Update:
+            ThumbnailAPI::get().downloadUpdate(m_levelID, onDownloaded);
+            break;
+        case PendingCategory::Report:
+            ThumbnailAPI::get().downloadReported(m_levelID, onDownloaded);
+            break;
+        default:
+            log::error("[ThumbnailViewPopup] Unknown verification category: {}",
+                static_cast<int>(category));
+            showNoThumbnail(content);
     }
 }
 
@@ -948,13 +907,11 @@ void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float m
     int localCount = static_cast<int>(m_localThumbPaths.size());
 
     if (localCount > 0) {
-        log::info("[ThumbnailViewPopup] {} thumbnails locales encontrados para nivel {}", localCount, m_levelID);
         m_viewingLocal = true;
         m_localCurrentIndex = localCount - 1;
 
         auto tex = LocalThumbs::get().loadTextureByIndex(m_levelID, m_localCurrentIndex);
         if (tex) {
-            log::info("[ThumbnailViewPopup] Textura cargada desde LocalThumbs indice {}", m_localCurrentIndex);
             this->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
 
             if (localCount > 1) {
@@ -967,27 +924,21 @@ void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float m
             }
             return;
         }
-        log::warn("[ThumbnailViewPopup] LocalThumbs fallo al cargar textura indice {}", m_localCurrentIndex);
+        log::warn("[ThumbnailViewPopup] Failed to load local thumbnail {} for level {}",
+            m_localCurrentIndex, m_levelID);
     }
 
     // Local PNG/JPG fallback; videos go through the gallery API to avoid a flash.
     auto localPath = LocalThumbs::get().findAnyThumbnail(m_levelID);
     if (localPath) {
         auto lowerPath = geode::utils::string::toLower(*localPath);
-        if (lowerPath.ends_with(".mp4")) {
-            log::info("[ThumbnailViewPopup] LocalThumbs es MP4, skipping - gallery API will handle it");
-        } else {
-            log::info("[ThumbnailViewPopup] Fuente 1: LocalThumbs ENCONTRADO (fallback)");
+        if (!lowerPath.ends_with(".mp4")) {
             auto tex = LocalThumbs::get().loadTexture(m_levelID);
             if (tex) {
-                log::info("[ThumbnailViewPopup] Textura cargada desde LocalThumbs (fallback)");
                 this->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
                 return;
             }
-            log::warn("[ThumbnailViewPopup] LocalThumbs fallo al cargar textura (fallback)");
         }
-    } else {
-        log::info("[ThumbnailViewPopup] Fuente 1: LocalThumbs - NO disponible");
     }
 
     m_viewingLocal = false;
@@ -998,7 +949,6 @@ void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float m
         std::string mainUrl = ThumbnailAPI::get().getThumbnailURL(m_levelID);
         auto urlTex = cache.getUrlFromRam(mainUrl);
         if (urlTex.has_value() && urlTex.value()) {
-            log::info("[ThumbnailViewPopup] URL-based RAM cache hit for levelID={}", m_levelID);
             this->displayThumbnail(urlTex.value(), maxWidth, maxHeight, content, openedFromReport);
             return;
         }
@@ -1014,7 +964,6 @@ bool LocalThumbnailViewPopup::tryLoadFromCache(float maxWidth, float maxHeight, 
         ramTex = paimon::cache::ThumbnailCache::get().getFromRam(m_levelID, true);
     }
     if (ramTex.has_value() && ramTex.value()) {
-        log::info("[ThumbnailViewPopup] [OK] RAM cache hit directo para nivel {}", m_levelID);
         this->displayThumbnail(ramTex.value(), maxWidth, maxHeight, content, openedFromReport);
         return true;
     }
@@ -1022,48 +971,35 @@ bool LocalThumbnailViewPopup::tryLoadFromCache(float maxWidth, float maxHeight, 
 }
 
 void LocalThumbnailViewPopup::loadFromThumbnailLoader(float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
-    log::info("[ThumbnailViewPopup] Intentando Fuente 3: ThumbnailLoader + Descarga");
     std::string fileName = fmt::format("{}.png", m_levelID);
 
     Ref<LocalThumbnailViewPopup> safeRef = this;
 
     ThumbnailLoader::get().requestLoad(m_levelID, fileName, [safeRef, maxWidth, maxHeight, content, openedFromReport](CCTexture2D* tex, bool) {
-        log::info("[ThumbnailViewPopup] === CALLBACK THUMBNAILLOADER ===");
-
         if (!safeRef->isUiAlive()) {
-            log::warn("[ThumbnailViewPopup] Popup ya no tiene parent o mainLayer valido");
             return;
         }
 
         if (tex) {
-            log::info("[ThumbnailViewPopup] [OK] Textura recibida ({}x{})",
-                tex->getPixelsWide(), tex->getPixelsHigh());
             safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
         } else {
-            log::warn("[ThumbnailViewPopup] [FAIL] ThumbnailLoader fallo, intentando descarga directa del servidor");
             safeRef->tryDirectServerDownload(maxWidth, maxHeight, content, openedFromReport);
         }
     }, 10, false, ThumbnailLoader::Quality::High);
 }
 
 void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
-    log::info("[ThumbnailViewPopup] Intentando Fuente 3: Descarga directa del servidor");
-
     Ref<LocalThumbnailViewPopup> safeRef = this;
 
     HttpClient::DownloadCallback cb = [safeRef, maxWidth, maxHeight, content, openedFromReport](bool success, std::vector<uint8_t> const& data, int w, int h) {
         if (!safeRef->getParent() || !safeRef->m_mainLayer) {
-            log::warn("[ThumbnailViewPopup] Popup ya no tiene parent valido (descarga servidor)");
             return;
         }
 
         if (success && !data.empty()) {
-            log::info("[ThumbnailViewPopup] [OK] Datos descargados del servidor ({} bytes)", data.size());
-
             // Detect MP4 data via the ftyp box at offset 4.
             bool isMp4 = data.size() >= 8 && data[4] == 'f' && data[5] == 't' && data[6] == 'y' && data[7] == 'p';
             if (isMp4) {
-                log::info("[ThumbnailViewPopup] [OK] Datos detectados como MP4, usando VideoThumbnailSprite");
                 std::string cacheKey = fmt::format("direct_video_{}", safeRef->m_levelID);
                 auto* videoSprite = VideoThumbnailSprite::createFromData(
                     std::vector<uint8_t>(data.begin(), data.end()), cacheKey);
@@ -1071,14 +1007,13 @@ void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxH
                     safeRef->displayVideoThumbnail(videoSprite, maxWidth, maxHeight, content);
                     return;
                 }
-                log::warn("[ThumbnailViewPopup] [FAIL] VideoThumbnailSprite fallo para MP4");
+                log::warn("[ThumbnailViewPopup] Failed to create video thumbnail for level {}",
+                    safeRef->m_levelID);
             } else {
                 auto image = new CCImage();
                 if (image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
                     auto tex = new CCTexture2D();
                     if (tex->initWithImage(image)) {
-                        log::info("[ThumbnailViewPopup] [OK] Textura creada desde servidor ({}x{})",
-                            tex->getPixelsWide(), tex->getPixelsHigh());
                         safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
                         tex->release();
                         image->release();
@@ -1087,13 +1022,11 @@ void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxH
                     tex->release();
                 }
                 image->release();
-                log::error("[ThumbnailViewPopup] [FAIL] Error creando textura desde datos del servidor");
+                log::error("[ThumbnailViewPopup] Failed to decode thumbnail for level {}",
+                    safeRef->m_levelID);
             }
-        } else {
-            log::warn("[ThumbnailViewPopup] [FAIL] Descarga del servidor fallo");
         }
 
-        log::info("[ThumbnailViewPopup] === TODAS LAS FUENTES FALLARON ===");
         safeRef->showNoThumbnail(content);
     };
     HttpClient::get().downloadThumbnail(m_levelID, std::move(cb));
@@ -1224,11 +1157,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
 }
 
 void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
-    log::info("[ThumbnailViewPopup] === MOSTRANDO THUMBNAIL ===");
-    log::info("[ThumbnailViewPopup] Textura: {}x{}", tex->getPixelsWide(), tex->getPixelsHigh());
-
-    if (!m_mainLayer) {
-        log::error("[ThumbnailViewPopup] Popup destruido antes de displayThumbnail!");
+    if (!tex || !m_mainLayer) {
         return;
     }
 
@@ -1243,15 +1172,8 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         m_playBtn = nullptr;
     }
 
-    if (m_mainLayer) {
-        if (auto node = m_mainLayer->getChildByID("nothumb-container"_spr)) {
-            node->removeFromParent();
-        }
-    }
-
-    if (!m_mainLayer) {
-        log::error("[ThumbnailViewPopup] m_mainLayer es null!");
-        return;
+    if (auto node = m_mainLayer->getChildByID("nothumb-container"_spr)) {
+        node->removeFromParent();
     }
 
     if (m_buttonMenu) {
@@ -1317,11 +1239,11 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     }
 
     if (!sprite) {
-        log::error("[ThumbnailViewPopup] No se pudo crear sprite con textura");
+        log::error("[ThumbnailViewPopup] Failed to create thumbnail sprite for level {}",
+            m_levelID);
         return;
     }
 
-    log::info("[ThumbnailViewPopup] Sprite creado correctamente");
     sprite->setAnchorPoint({0.5f, 0.5f});
 
     m_viewWidth = maxWidth;
@@ -1358,12 +1280,6 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     sprite->setVisible(true);
 
     applyPopupTransition(sprite, oldSprite, maxWidth);
-
-    log::info("[ThumbnailViewPopup] [OK] Thumbnail agregado a mainLayer");
-    log::info("[ThumbnailViewPopup] Posicion: ({},{}), Scale: {}, Tamano final: {}x{}",
-        centerX, centerY, scale, sprite->getContentWidth() * scale, sprite->getContentHeight() * scale);
-    log::info("[ThumbnailViewPopup] Parent: {}, Visible: {}, Opacity: {}, Z-Order: {}",
-        (void*)sprite->getParent(), sprite->isVisible(), sprite->getOpacity(), sprite->getZOrder());
 
     if (!m_suggestions.empty()) {
         auto menu = CCMenu::create();

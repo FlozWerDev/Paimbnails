@@ -13,7 +13,7 @@ using namespace geode::prelude;
 
 namespace {
 
-char const* const kBadgeID = "info-suite-profile-ids";
+char const* const kBadgeID = "info-suite-profile-ids"_spr;
 
 bool profileIdsEnabled() {
     return paimon::info::subEnabled("info-mod-ids", "info-ids-users", true);

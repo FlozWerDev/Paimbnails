@@ -3,6 +3,7 @@
 #include "../../../utils/JsonHelper.hpp"
 #include <Geode/Geode.hpp>
 #include <algorithm>
+#include <climits>
 #include <fstream>
 
 using namespace geode::prelude;
@@ -12,6 +13,7 @@ namespace paimon::info {
 namespace {
 
 constexpr int kMaxPresets = 40;
+constexpr std::streamoff kMaxPresetFileBytes = 2ll * 1024 * 1024;
 
 std::string g_refineKey;
 std::optional<AdvancedQuery> g_refine;
@@ -40,6 +42,10 @@ std::string joinInts(std::vector<int> const& values, char const* fallback) {
 int64_t asInt(matjson::Value const& value) {
     auto res = value.asInt();
     return res.isOk() ? res.unwrap() : 0;
+}
+
+int asNonnegativeInt(matjson::Value const& value) {
+    return static_cast<int>(std::clamp<int64_t>(asInt(value), 0, INT_MAX));
 }
 
 bool asBool(matjson::Value const& value) {
@@ -93,13 +99,19 @@ AdvancedQuery queryFromJson(matjson::Value const& obj) {
     q.query = asString(obj["query"]);
 
     paimon::json::forEachInArray(obj["difficulties"], [&](matjson::Value const& v) {
-        q.difficulties.push_back(static_cast<int>(asInt(v)));
+        auto parsed = v.asInt();
+        if (!parsed.isOk() || q.difficulties.size() >= 6) return;
+        int64_t value = parsed.unwrap();
+        if (value >= 1 && value <= 6) q.difficulties.push_back(static_cast<int>(value));
     });
     paimon::json::forEachInArray(obj["lengths"], [&](matjson::Value const& v) {
-        q.lengths.push_back(static_cast<int>(asInt(v)));
+        auto parsed = v.asInt();
+        if (!parsed.isOk() || q.lengths.size() >= 5) return;
+        int64_t value = parsed.unwrap();
+        if (value >= 0 && value <= 4) q.lengths.push_back(static_cast<int>(value));
     });
 
-    q.demonFilter = static_cast<int>(asInt(obj["demon"]));
+    q.demonFilter = asNonnegativeInt(obj["demon"]);
     q.platformer = asBool(obj["platformer"]);
     q.star = asBool(obj["star"]);
     q.noStar = asBool(obj["noStar"]);
@@ -112,14 +124,14 @@ AdvancedQuery queryFromJson(matjson::Value const& obj) {
     q.coins = asBool(obj["coins"]);
     q.completed = asBool(obj["completed"]);
     q.uncompleted = asBool(obj["uncompleted"]);
-    q.songID = static_cast<int>(asInt(obj["songID"]));
+    q.songID = asNonnegativeInt(obj["songID"]);
     q.songFilter = asBool(obj["songFilter"]);
-    q.minID = static_cast<int>(asInt(obj["minID"]));
-    q.maxID = static_cast<int>(asInt(obj["maxID"]));
-    q.minGameVersion = static_cast<int>(asInt(obj["minGameVersion"]));
-    q.maxGameVersion = static_cast<int>(asInt(obj["maxGameVersion"]));
-    q.minObjects = static_cast<int>(asInt(obj["minObjects"]));
-    q.maxObjects = static_cast<int>(asInt(obj["maxObjects"]));
+    q.minID = asNonnegativeInt(obj["minID"]);
+    q.maxID = asNonnegativeInt(obj["maxID"]);
+    q.minGameVersion = asNonnegativeInt(obj["minGameVersion"]);
+    q.maxGameVersion = asNonnegativeInt(obj["maxGameVersion"]);
+    q.minObjects = asNonnegativeInt(obj["minObjects"]);
+    q.maxObjects = asNonnegativeInt(obj["maxObjects"]);
     return q;
 }
 
@@ -131,12 +143,13 @@ void loadPresets() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    std::ifstream file(path);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) return;
-    std::string contents((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
-    file.close();
-    if (contents.empty()) return;
+    std::streamoff const size = file.tellg();
+    if (size <= 0 || size > kMaxPresetFileBytes) return;
+    file.seekg(0, std::ios::beg);
+    std::string contents(static_cast<size_t>(size), '\0');
+    if (!file.read(contents.data(), size)) return;
 
     auto parsed = matjson::parse(contents);
     if (!parsed.isOk()) {
@@ -145,6 +158,7 @@ void loadPresets() {
     }
 
     paimon::json::forEachInArray(parsed.unwrap()["presets"], [&](matjson::Value const& item) {
+        if (presetList().size() >= kMaxPresets) return;
         SearchPreset preset;
         preset.name = asString(item["name"]);
         preset.query = queryFromJson(item["query"]);

@@ -177,12 +177,14 @@ void BlurDiskCache::lookupAsync(std::string const& key, ReadyCallback onReady) {
         return;
     }
 
+    bool found = false;
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        if (m_index.find(key) == m_index.end()) {
-            onReady(nullptr);
-            return;
-        }
+        found = m_index.find(key) != m_index.end();
+    }
+    if (!found) {
+        onReady(nullptr);
+        return;
     }
 
     getBlurIOPool()->enqueue([this, key, onReady = std::move(onReady)]() {

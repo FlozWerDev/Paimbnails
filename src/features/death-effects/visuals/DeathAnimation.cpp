@@ -7,7 +7,7 @@ using namespace geode::prelude;
 namespace paimon::death_effects {
 namespace {
 constexpr auto kSelection = "death-animation-style";
-constexpr auto kContainer = "death-animation-container";
+constexpr auto kContainer = "death-animation-container"_spr;
 CCGLProgram* program() {
     return paimon::shaders::loadShader("paimon-death-animation", "position.vert",
         "death_animation.fsh", nullptr, nullptr);

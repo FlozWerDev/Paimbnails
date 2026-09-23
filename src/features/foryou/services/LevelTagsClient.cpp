@@ -358,10 +358,13 @@ void LevelTagsClient::loadDiskCache() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || ec) return;
 
-    std::ifstream file(path);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) return;
-    std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    file.close();
+    std::streamoff const size = file.tellg();
+    if (size <= 0 || size > 16ll * 1024 * 1024) return;
+    file.seekg(0, std::ios::beg);
+    std::string contents(static_cast<size_t>(size), '\0');
+    if (!file.read(contents.data(), size)) return;
 
     auto parsed = matjson::parse(contents);
     if (!parsed.isOk()) return;
@@ -409,13 +412,26 @@ void LevelTagsClient::saveDiskCache() {
     auto tmpPath = std::filesystem::path(path).replace_extension(".tmp");
 
     std::ofstream file(tmpPath, std::ios::binary | std::ios::trunc);
-    if (!file.is_open()) return;
+    if (!file.is_open()) {
+        std::lock_guard lock(m_mutex);
+        m_dirty = true;
+        return;
+    }
     file << root.dump();
     file.close();
+    if (!file) {
+        std::lock_guard lock(m_mutex);
+        m_dirty = true;
+        return;
+    }
 
     std::error_code ec;
     std::filesystem::rename(tmpPath, path, ec);
-    if (ec) log::warn("[ForYou] Failed to persist Level Tags cache: {}", ec.message());
+    if (ec) {
+        log::warn("[ForYou] Failed to persist Level Tags cache: {}", ec.message());
+        std::lock_guard lock(m_mutex);
+        m_dirty = true;
+    }
 }
 
 } // namespace paimon::foryou

@@ -274,26 +274,30 @@ void PaimonShopPopup::onUploadPet(CCObject*) {
         auto pathOpt = std::move(result).unwrapOr(std::nullopt);
         if (!pathOpt || pathOpt->empty()) return;
 
-        auto filepath = std::filesystem::path(*pathOpt);
+        auto const& filepath = *pathOpt;
         std::error_code ec;
         if (!std::filesystem::exists(filepath, ec)) return;
 
-        auto ext = geode::utils::string::pathToString(filepath.extension());
-        for (auto& c : ext) c = (char)std::tolower(c);
-        std::string format = "png";
-        if (ImageLoadHelper::isAnimatedImage(filepath)) {
-            format = "gif";
-        }
+        std::string format = ImageLoadHelper::isAnimatedImage(filepath) ? "gif" : "png";
 
         std::vector<uint8_t> data;
         if (format == "gif") {
-            std::ifstream f(filepath, std::ios::binary);
+            std::ifstream f(filepath, std::ios::binary | std::ios::ate);
             if (!f) {
                 PaimonNotify::create("Failed to read file", NotificationIcon::Error)->show();
                 return;
             }
-            data.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-            f.close();
+            std::streamoff const size = f.tellg();
+            if (size <= 0 || size > 16ll * 1024 * 1024) {
+                PaimonNotify::create("Empty file or too large (>16MB)", NotificationIcon::Error)->show();
+                return;
+            }
+            f.seekg(0, std::ios::beg);
+            data.resize(static_cast<size_t>(size));
+            if (!f.read(reinterpret_cast<char*>(data.data()), size)) {
+                PaimonNotify::create("Failed to read file", NotificationIcon::Error)->show();
+                return;
+            }
         } else {
             auto loaded = ImageLoadHelper::loadStaticImage(filepath, 16);
             if (!loaded.success || !loaded.texture || !loaded.buffer || loaded.width <= 0 || loaded.height <= 0) {

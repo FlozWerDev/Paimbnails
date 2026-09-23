@@ -694,15 +694,15 @@ void MenuMusicPopup::buildActions() {
     };
 
     addAction("Hold", 40, "GJ_button_04.png", menu_selector(MenuMusicPopup::onHold),
-        "hold-action-btn", &m_holdActionSpr);
+        "hold-action-btn"_spr, &m_holdActionSpr);
     addAction("Fav", 36, "GJ_button_05.png", menu_selector(MenuMusicPopup::onFavorite),
-        "favorite-action-btn", &m_favoriteActionSpr);
+        "favorite-action-btn"_spr, &m_favoriteActionSpr);
     addAction("Block", 46, "GJ_button_06.png", menu_selector(MenuMusicPopup::onBlacklist),
-        "blacklist-action-btn", &m_blacklistActionSpr);
+        "blacklist-action-btn"_spr, &m_blacklistActionSpr);
     addAction("Copy", 40, "GJ_button_01.png", menu_selector(MenuMusicPopup::onCopy),
-        "copy-action-btn");
+        "copy-action-btn"_spr);
     addAction("+ List", 52, "GJ_button_02.png", menu_selector(MenuMusicPopup::onAddCurrentToPlaylist),
-        "playlist-add-action-btn");
+        "playlist-add-action-btn"_spr);
 
     menu->setLayout(RowLayout::create()
         ->setGap(3.f)
@@ -739,11 +739,11 @@ void MenuMusicPopup::buildModeSelector() {
     };
 
     makeModeBtn("Off", 40, menu_selector(MenuMusicPopup::onModeDisabled),
-        "mode-off-btn", &m_modeOffSpr);
+        "mode-off-btn"_spr, &m_modeOffSpr);
     makeModeBtn("All Songs", 72, menu_selector(MenuMusicPopup::onModeLibrary),
-        "mode-all-btn", &m_modeAllSpr);
+        "mode-all-btn"_spr, &m_modeAllSpr);
     makeModeBtn("Playlist", 66, menu_selector(MenuMusicPopup::onModePlaylist),
-        "mode-playlist-btn", &m_modePlaylistSpr);
+        "mode-playlist-btn"_spr, &m_modePlaylistSpr);
 
     menu->setLayout(RowLayout::create()
         ->setGap(6.f)

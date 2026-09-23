@@ -214,7 +214,7 @@ void GlobalIconViewPopup::buildGrid(CCMenu* menu, std::vector<GlobalIconSlot> co
         if (!item) continue;
         item->setContentSize({kCellSize, kCellSize});
         item->setPosition({startX + col * kCellStride, gridTop - kCellSize / 2.f - row * kCellStride});
-        item->setID(fmt::format("globalicon-cell-{}", slots[i].type));
+        item->setID(fmt::format("{}globalicon-cell-{}", ""_spr, slots[i].type));
         menu->addChild(item);
 
         m_cells.push_back(cell);

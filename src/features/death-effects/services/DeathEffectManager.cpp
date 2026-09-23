@@ -1,4 +1,5 @@
 #include "DeathEffectManager.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 
 #include <Geode/utils/string.hpp>
 
@@ -57,13 +58,16 @@ std::filesystem::path DeathEffectManager::uniqueDestination(
     std::filesystem::path const& filename
 ) {
     auto candidate = directory / filename.filename();
-    if (!std::filesystem::exists(candidate)) return candidate;
+    std::error_code ec;
+    if (!std::filesystem::exists(candidate, ec) || ec) return candidate;
 
     auto stem = geode::utils::string::pathToString(filename.stem());
     auto ext = geode::utils::string::pathToString(filename.extension());
     for (int suffix = 2;; ++suffix) {
-        candidate = directory / fmt::format("{} ({}){}", stem, suffix, ext);
-        if (!std::filesystem::exists(candidate)) return candidate;
+        candidate = directory / paimon::assets::pathFromUtf8(
+            fmt::format("{} ({}){}", stem, suffix, ext));
+        ec.clear();
+        if (!std::filesystem::exists(candidate, ec) || ec) return candidate;
     }
 }
 

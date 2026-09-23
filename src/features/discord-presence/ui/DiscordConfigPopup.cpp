@@ -14,6 +14,7 @@
 #include <Geode/loader/SettingV3.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/ui/PopupManager.hpp>
+#include <Geode/utils/string.hpp>
 #include <Geode/utils/web.hpp>
 #include "../../../ui/PaiConfigKit.hpp"
 
@@ -702,7 +703,7 @@ bool DiscordConfigPopup::init() {
     m_settingToggleKeys.push_back("discord-rpc-override-state");
 
     auto makePickHandler = [this, touch](bool isLarge) {
-    // Keep popup alive during async pick.
+        // Keep popup alive during async pick.
         this->retain();
         auto* self = this;
         pt::pickImage([self, isLarge, touch](geode::Result<std::optional<std::filesystem::path>> result) {
@@ -713,10 +714,10 @@ bool DiscordConfigPopup::init() {
                 return;
             }
             auto opt = result.unwrap();
-    if (!opt || opt->empty()) return;
+            if (!opt || opt->empty()) return;
 
             auto srcPath = *opt;
-            std::string fname = srcPath.filename().string();
+            std::string fname = utils::string::pathToString(srcPath.filename());
             if (fname.empty()) fname = (isLarge ? "large.png" : "small.png");
 
             auto imported = paimon::assets::importToBucket(srcPath, "discord_rpc", paimon::assets::Kind::Image);

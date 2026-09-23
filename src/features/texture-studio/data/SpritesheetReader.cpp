@@ -54,6 +54,12 @@ geode::Result<LoadedSpritesheet> SpritesheetReader::loadFromPaths(
     std::filesystem::path const& pngPath) {
 
     GEODE_UNWRAP_INTO(auto parsed, PlistParser::parseFile(plistPath));
+    std::error_code ec;
+    auto size = std::filesystem::file_size(pngPath, ec);
+    if (ec || size > ImageBuffer::kMaxEncodedBytes) {
+        return Err("SpritesheetReader: invalid PNG file size for {}",
+            geode::utils::string::pathToString(pngPath));
+    }
     auto pngBytes = file::readBinary(pngPath);
     if (!pngBytes) {
         return Err("SpritesheetReader: cannot read PNG {}: {}",
@@ -86,7 +92,6 @@ geode::Result<LoadedSpritesheet> SpritesheetReader::loadFromMemory(
         ExtractedFrame ef;
         ef.info   = f;
         ef.pixels = extractFrame(atlas, f);
-        // subRect may clip OOB rects to a smaller buffer; sync metadata to the actual pixels.
         if (ef.pixels.width() != ef.info.spriteW || ef.pixels.height() != ef.info.spriteH) {
             ef.info.spriteW = ef.pixels.width();
             ef.info.spriteH = ef.pixels.height();

@@ -50,8 +50,6 @@ private:
     void beginClose(bool saved);
     void animateLive(Item const& item);
     void animateEntry();
-    // Guardado: pop rapido antes de que la interfaz se funda.
-    void animateSettle();
     void updateAnimations(float dt);
 
     Item* selectedItem();
@@ -95,6 +93,8 @@ private:
         MenuButtonLayout from;
         float elapsed = 0.f;
         float duration;
+        float delay = 0.f;
+        bool entry = false;
     };
     std::unordered_map<std::string, LayoutTransition> m_transitions;
     // Shapes al abrir: cancelar las devuelve aunque el cierre se interrumpa.

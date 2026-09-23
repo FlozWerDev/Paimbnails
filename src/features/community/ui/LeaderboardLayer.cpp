@@ -799,13 +799,14 @@ void LeaderboardLayer::createList(std::string type) {
 
         auto requestToken = m_requestGeneration;
         ThumbnailLoader::get().requestLoad(levelID, fileName, [self, safeClipper, createThumbSprite, requestToken](CCTexture2D* tex, bool) {
-            geode::Loader::get()->queueInMainThread([self, safeClipper, tex, createThumbSprite, requestToken] {
+            Ref<CCTexture2D> textureRef = tex;
+            geode::Loader::get()->queueInMainThread([self, safeClipper, textureRef, createThumbSprite, requestToken] {
                 if (paimon::isRuntimeShuttingDown()) return;
                 if (!self->getParent()) return;
                 if (self->m_requestGeneration != requestToken) return;
                 if (self->m_forYouActive || self->m_currentType == "foryou") return;
-                if (safeClipper->getParent() && tex) {
-                    createThumbSprite(tex);
+                if (safeClipper->getParent() && textureRef) {
+                    createThumbSprite(textureRef.data());
                 }
                 self->m_thumbLoaded = true;
                 self->checkLoadingComplete();
@@ -1428,11 +1429,12 @@ void LeaderboardLayer::createForYouList() {
             Ref<CCClippingNode> safeClipper = clipper;
             auto requestToken = self->m_requestGeneration;
             ThumbnailLoader::get().requestLoad(levelID, fileName, [self, safeClipper, createThumbSprite, requestToken](CCTexture2D* tex, bool) {
-                geode::Loader::get()->queueInMainThread([self, safeClipper, tex, createThumbSprite, requestToken] {
+                Ref<CCTexture2D> textureRef = tex;
+                geode::Loader::get()->queueInMainThread([self, safeClipper, textureRef, createThumbSprite, requestToken] {
                     if (paimon::isRuntimeShuttingDown()) return;
                     if (!self->getParent()) return;
                     if (self->m_requestGeneration != requestToken) return;
-                    if (safeClipper->getParent() && tex) createThumbSprite(tex);
+                    if (safeClipper->getParent() && textureRef) createThumbSprite(textureRef.data());
                 });
             });
         }

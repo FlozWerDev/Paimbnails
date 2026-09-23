@@ -13,6 +13,7 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <algorithm>
+#include <cstdint>
 
 using namespace geode::prelude;
 using namespace paimon::info::blocks;
@@ -124,19 +125,19 @@ void LevelStatsPopup::buildTiles() {
     auto* level = m_level.data();
 
     // GD counts practice attempts in this total; the next tile shows their share.
-    int attempts = std::max(level->m_attempts.value(),
-                            m_progress.attempts + m_progress.practiceAttempts);
+    int64_t attempts = std::max<int64_t>(level->m_attempts.value(),
+                            static_cast<int64_t>(m_progress.attempts) + m_progress.practiceAttempts);
     int bestNormal = std::max(level->m_normalPercent.value(), m_progress.bestNormal);
     int bestPractice = std::max(level->m_practicePercent, m_progress.bestPractice);
     // Use GD's jump total only when the mod has no level-specific value.
-    bool trackedJumps = m_progress.jumpsNormal + m_progress.jumpsPractice > 0;
+    bool trackedJumps = m_progress.jumpsNormal > 0 || m_progress.jumpsPractice > 0;
     int jumpsNormal = trackedJumps ? m_progress.jumpsNormal : level->m_jumps.value();
 
     struct TileDef {
         std::vector<char const*> frames;
         std::string value;
         char const* caption;
-        int amount;   // 0 → drawn dimmed, so an empty stat is not shouting
+        int64_t amount;   // 0 → drawn dimmed, so an empty stat is not shouting
     };
 
     std::vector<TileDef> const tiles = {

@@ -92,11 +92,12 @@ ImageBuffer SpritePreviewRenderer::renderRoleMask(MaskSet const& masks) {
     if (W <= 0 || H <= 0) return ImageBuffer();
 
     ImageBuffer packed(W, H);
+    if (packed.empty()) return packed;
     auto* dst = packed.data();
     std::size_t n = static_cast<std::size_t>(W) * static_cast<std::size_t>(H);
     for (int ch = 0; ch < 4; ++ch) {
         auto const* role = roles[ch];
-        bool matches = role->width == W && role->height == H && !role->data.empty();
+        bool matches = role->width == W && role->height == H && role->data.size() >= n;
         for (std::size_t i = 0; i < n; ++i) {
             dst[i * ImageBuffer::kBytesPerPixel + ch] =
                 matches ? role->data[i] : 0;
@@ -151,6 +152,7 @@ ImageBuffer SpritePreviewRenderer::renderCustomImage(ImageBuffer const& userImag
     float alphaMul = std::clamp(transform.opacity, 0, 255) / 255.0f;
 
     ImageBuffer canvas(frameW, frameH);
+    if (canvas.empty()) return canvas;
     if (alphaMul <= 0.0f) return canvas;
 
     auto* dst = canvas.data();

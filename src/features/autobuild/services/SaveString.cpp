@@ -1,5 +1,8 @@
 #include "SaveString.hpp"
 
+#include <cerrno>
+#include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
@@ -35,18 +38,19 @@ std::vector<std::string_view> tokenize(std::string const& save) {
 }
 
 int toInt(std::string_view token, int fallback = 0) {
-    std::string buf(token);
-    char* end = nullptr;
-    long value = std::strtol(buf.c_str(), &end, 10);
-    if (end == buf.c_str()) return fallback;
-    return static_cast<int>(value);
+    int value = 0;
+    auto const result = std::from_chars(token.data(), token.data() + token.size(), value);
+    return result.ec == std::errc{} && result.ptr == token.data() + token.size()
+        ? value : fallback;
 }
 
 float toFloat(std::string_view token, float fallback = 0.f) {
     std::string buf(token);
     char* end = nullptr;
+    errno = 0;
     float value = std::strtof(buf.c_str(), &end);
-    if (end == buf.c_str()) return fallback;
+    if (end == buf.c_str() || end != buf.c_str() + buf.size() ||
+        errno == ERANGE || !std::isfinite(value)) return fallback;
     return value;
 }
 
@@ -55,7 +59,7 @@ float toFloat(std::string_view token, float fallback = 0.f) {
 std::string shiftColor(std::string_view token, int delta) {
     int id = toInt(token, 0);
     if (delta == 0 || id < 1 || id > 999) return std::string(token);
-    int shifted = id + delta;
+    auto const shifted = static_cast<long long>(id) + delta;
     if (shifted < 1 || shifted > 999) return std::string(token);
     return std::to_string(shifted);
 }
@@ -63,7 +67,7 @@ std::string shiftColor(std::string_view token, int delta) {
 std::string shiftPlain(std::string_view token, int delta, int lo, int hi) {
     int id = toInt(token, 0);
     if (delta == 0) return std::string(token);
-    int shifted = id + delta;
+    auto const shifted = static_cast<long long>(id) + delta;
     if (shifted < lo || shifted > hi) return std::string(token);
     return std::to_string(shifted);
 }
@@ -77,7 +81,8 @@ std::string shiftGroups(std::string_view token, int delta) {
         if (i == token.size() || token[i] == '.') {
             if (i > start) {
                 int id = toInt(token.substr(start, i - start), 0);
-                int shifted = (id >= 1 && id <= 9999) ? id + delta : id;
+                auto shifted = (id >= 1 && id <= 9999)
+                    ? static_cast<long long>(id) + delta : static_cast<long long>(id);
                 if (shifted < 1 || shifted > 9999) shifted = id;
                 if (!out.empty()) out += '.';
                 out += std::to_string(shifted);

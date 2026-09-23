@@ -118,7 +118,7 @@ bool GifImportPopup::init() {
     m_mainLayer->addChild(previewPanel);
 
     auto* previewHint = CCLabelBMFont::create("Elige un GIF, video o imagen", "bigFont.fnt");
-    previewHint->setID("preview-hint");
+    previewHint->setID("preview-hint"_spr);
     previewHint->setScale(0.34f);
     previewHint->setColor({125, 135, 160});
     previewHint->setPosition({125.f, 171.f});
@@ -762,7 +762,7 @@ void GifImportPopup::displayPixels(
         m_previewSprite->setScale(scale);
         m_previewSprite->setPosition({125.f, 171.f});
         m_mainLayer->addChild(m_previewSprite, 3);
-        if (auto* hint = m_mainLayer->getChildByID("preview-hint")) hint->setVisible(false);
+        if (auto* hint = m_mainLayer->getChildByID("preview-hint"_spr)) hint->setVisible(false);
     }
     texture->release();
 }

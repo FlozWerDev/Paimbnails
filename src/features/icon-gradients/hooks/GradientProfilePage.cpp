@@ -52,7 +52,7 @@ void GradientProfilePage::getUserInfoFinished(GJUserScore* p0) {
     Loader::get()->queueInMainThread([self = Ref(this)] {
         if (!sdiEnabled()) return;
         CCNode* menu = self->m_mainLayer->getChildByID("left-menu");
-        CCNode* node = menu ? menu->getChildByID("2p-toggler") : nullptr;
+        CCNode* node = menu ? menu->getChildByID("2p-toggler"_spr) : nullptr;
         if (!node) return;
         auto toggle = static_cast<CCMenuItemToggler*>(node);
         self->m_fields->m_originalCallback = toggle->m_pfnSelector;

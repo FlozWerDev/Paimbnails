@@ -58,7 +58,7 @@ float readF32LE(std::uint8_t const* p) {
 }
 
 std::string lowerExt(std::filesystem::path const& path) {
-    auto e = path.extension().string();
+    auto e = utils::string::pathToString(path.extension());
     for (char& c : e) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
@@ -184,6 +184,12 @@ geode::Result<> FusionStore::save(std::filesystem::path const& path,
 }
 
 geode::Result<FusionPayload> FusionStore::load(std::filesystem::path const& path) {
+    std::error_code ec;
+    auto size = std::filesystem::file_size(path, ec);
+    if (ec || size > kHeaderSize + 16 + 8192ull * 8192ull) {
+        return Err("invalid fusion file size for {}",
+            geode::utils::string::pathToString(path));
+    }
     auto rd = file::readBinary(path);
     if (!rd) {
         return Err("readBinary {}: {}",
@@ -300,6 +306,12 @@ geode::Result<std::filesystem::path> FusionStore::importTexture(
     std::string_view slotId,
     std::string_view spriteName,
     std::filesystem::path const& sourcePath) {
+    std::error_code sizeEc;
+    auto size = std::filesystem::file_size(sourcePath, sizeEc);
+    if (sizeEc || size > ImageBuffer::kMaxEncodedBytes) {
+        return Err("invalid texture file size for {}",
+            geode::utils::string::pathToString(sourcePath));
+    }
     if (auto r = SlotPaths::ensureSlotDirs(slotId); !r) {
         return Err(r.unwrapErr());
     }

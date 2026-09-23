@@ -9,7 +9,7 @@
 #include "../../../utils/EditorContext.hpp"
 #include "../../icon-gradients/GradientUtils.hpp"
 
-#include <climits>
+#include <algorithm>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -23,14 +23,15 @@ constexpr int kMaxThumbTextureSize = 256;
 constexpr int kGradientExtra = 909;
 
 ImageLoadHelper::LoadedImage loadThumbTexture(std::filesystem::path const& path) {
-    auto read = file::readBinary(path);
-    if (!read || read.unwrap().empty() || read.unwrap().size() > static_cast<size_t>(INT_MAX)) {
-        return {};
-    }
+    auto bytes = ImageLoadHelper::readBinaryFile(path, 10);
+    if (bytes.empty()) return {};
 
-    auto const& bytes = read.unwrap();
-    int width = 0;
-    int height = 0;
+    int width = 0, height = 0, channels = 0;
+    if (!stbi_info_from_memory(bytes.data(), static_cast<int>(bytes.size()),
+            &width, &height, &channels) ||
+        width <= 0 || height <= 0 ||
+        width > ImageLoadHelper::kMaxImageDim || height > ImageLoadHelper::kMaxImageDim) return {};
+
     auto* pixels = stbi_load_from_memory(
         bytes.data(), static_cast<int>(bytes.size()), &width, &height, nullptr, 4);
     if (!pixels) return {};
@@ -72,14 +73,21 @@ void CustomSliderManager::loadConfig() {
     invalidateImageCache();
 
     auto path = configPath();
+    std::error_code ec;
+    auto const size = std::filesystem::file_size(path, ec);
+    if (ec || size > 2ull * 1024 * 1024) return;
     auto res = file::readFromJson<matjson::Value>(path);
     if (!res) return;
 
     auto json = res.unwrap();
 
     m_config.enabled         = json["enabled"].asBool().unwrapOr(false);
-    m_config.thumbMode       = static_cast<SliderThumbMode>(json["thumbMode"].asInt().unwrapOr(0));
-    m_config.iconType        = static_cast<SliderIconType>(json["iconType"].asInt().unwrapOr(0));
+    m_config.thumbMode       = static_cast<SliderThumbMode>(
+        std::clamp<int64_t>(json["thumbMode"].asInt().unwrapOr(0), 0,
+            static_cast<int64_t>(SliderThumbMode::Gif)));
+    m_config.iconType        = static_cast<SliderIconType>(
+        std::clamp<int64_t>(json["iconType"].asInt().unwrapOr(0), 0,
+            static_cast<int64_t>(SliderIconType::Swing)));
     m_config.usePlayerIcon   = json["usePlayerIcon"].asBool().unwrapOr(true);
     m_config.customIconId    = json["customIconId"].asInt().unwrapOr(1);
     m_config.iconScale       = static_cast<float>(json["iconScale"].asDouble().unwrapOr(0.55));
@@ -94,7 +102,9 @@ void CustomSliderManager::loadConfig() {
     m_config.containerBorderEnabled = json["containerBorderEnabled"].asBool().unwrapOr(false);
     m_config.containerBorderThickness = static_cast<float>(json["containerBorderThickness"].asDouble().unwrapOr(2.0));
     m_config.animateOnDrag   = json["animateOnDrag"].asBool().unwrapOr(true);
-    m_config.animType        = static_cast<SliderAnimType>(json["animType"].asInt().unwrapOr(3));
+    m_config.animType        = static_cast<SliderAnimType>(
+        std::clamp<int64_t>(json["animType"].asInt().unwrapOr(3), 0,
+            static_cast<int64_t>(SliderAnimType::BounceRotate)));
     m_config.animBounceScale = static_cast<float>(json["animBounceScale"].asDouble().unwrapOr(1.25));
     m_config.animRotateDeg   = static_cast<float>(json["animRotateDeg"].asDouble().unwrapOr(22.0));
     m_config.animDuration    = static_cast<float>(json["animDuration"].asDouble().unwrapOr(0.15));
@@ -197,7 +207,9 @@ void CustomSliderManager::saveConfig() {
     targets["garageSliders"]  = m_config.targets.garageSliders;
     json["targets"] = targets;
 
-    (void)file::writeToJson(configPath(), json);
+    if (auto result = file::writeToJson(configPath(), json); result.isErr()) {
+        log::warn("[CustomSlider] failed to save config: {}", result.unwrapErr());
+    }
 }
 
 void CustomSliderManager::resetToDefaults() {

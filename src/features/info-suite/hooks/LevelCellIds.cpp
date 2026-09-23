@@ -19,7 +19,7 @@ using namespace geode::prelude;
 
 namespace {
 
-char const* const kBadgeID = "info-suite-id-badge";
+char const* const kBadgeID = "info-suite-id-badge"_spr;
 
 bool levelIdsEnabled() {
     return paimon::info::subEnabled("info-mod-ids", "info-ids-levels", true);

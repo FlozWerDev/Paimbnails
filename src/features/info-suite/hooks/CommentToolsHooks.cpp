@@ -21,7 +21,7 @@ using namespace geode::prelude;
 
 namespace {
 
-char const* const kDateBadgeID = "info-suite-comment-date";
+char const* const kDateBadgeID = "info-suite-comment-date"_spr;
 
 bool commentToolsEnabled() {
     return paimon::info::moduleEnabled("info-mod-comment-tools");

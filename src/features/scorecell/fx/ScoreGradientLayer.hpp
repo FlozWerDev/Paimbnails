@@ -88,7 +88,7 @@ public:
         layer->autorelease();
         layer->setContentSize(size);
         layer->setOpacity(layer->m_baseOpacity);
-        layer->setID("paimon-score-gradient");
+        layer->setID("paimon-score-gradient"_spr);
         layer->scheduleUpdate();
         return layer;
     }

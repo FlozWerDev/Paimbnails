@@ -17,7 +17,7 @@ namespace paimon::texture_studio {
 namespace {
 
 std::string lowerExt(std::filesystem::path const& path) {
-    auto e = path.extension().string();
+    auto e = utils::string::pathToString(path.extension());
     for (char& c : e) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
@@ -70,6 +70,12 @@ std::shared_ptr<FusionAsset> FusionAssetLoader::fromStatic(ImageBuffer img,
 
 geode::Result<std::shared_ptr<FusionAsset>> FusionAssetLoader::loadFromFile(
     std::filesystem::path const& path) {
+    std::error_code ec;
+    auto size = std::filesystem::file_size(path, ec);
+    if (ec || size > ImageBuffer::kMaxEncodedBytes) {
+        return Err("FusionAsset: invalid file size for {}",
+            geode::utils::string::pathToString(path));
+    }
     auto bytes = file::readBinary(path);
     if (!bytes) {
         return Err("FusionAsset: cannot read {}: {}",
@@ -85,6 +91,9 @@ geode::Result<std::shared_ptr<FusionAsset>> FusionAssetLoader::loadFromMemory(
     std::string_view extHint) {
     if (bytes.empty()) {
         return Err("FusionAsset: empty input");
+    }
+    if (bytes.size() > ImageBuffer::kMaxEncodedBytes) {
+        return Err("FusionAsset: input too large");
     }
 
     std::string ext = lowerExtHint(extHint);

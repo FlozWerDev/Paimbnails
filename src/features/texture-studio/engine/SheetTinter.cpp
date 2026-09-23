@@ -33,6 +33,7 @@ ImageBuffer resizeImage(ImageBuffer const& src, float scale) {
     int newW = std::max(1, static_cast<int>(std::floor(src.width()  * scale)));
     int newH = std::max(1, static_cast<int>(std::floor(src.height() * scale)));
     ImageBuffer out(newW, newH);
+    if (out.empty()) return out;
 
     if (std::fabs(scale - 0.5f) < 1e-3f) {
         for (int y = 0; y < newH; ++y) {
@@ -517,6 +518,9 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
     }
 
     ImageBuffer outAtlas(pack.sheetWidth, pack.sheetHeight);
+    if (outAtlas.empty()) {
+        return Err("SheetTinter: atlas exceeds image limit for '{}'", req.outputBaseName);
+    }
 
     std::unordered_map<std::string, Tinted const*> byName;
     byName.reserve(tinted.size());

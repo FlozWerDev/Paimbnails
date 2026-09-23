@@ -75,7 +75,7 @@ void MainMenuDrawShapeNode::applyLayout(DrawShapeLayout const& layout) {
     this->setScaleY(layout.scaleY);
     this->setVisible(!layout.hidden);
     this->setZOrder(layout.layer);
-    this->setID(fmt::format("paimon-draw-shape-{}", layout.id));
+    this->setID(fmt::format("{}{}", "paimon-draw-shape-"_spr, layout.id));
 
     auto fill = color4f(layout.color, layout.opacity);
     if (layout.kind == DrawShapeKind::Circle) {

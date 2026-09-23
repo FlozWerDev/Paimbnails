@@ -193,19 +193,22 @@ void CustomBadgePickerPopup::buildEmoteGrid(std::vector<EmoteInfo> const& emotes
         gridMenu->addChild(btn);
 
         EmoteInfo emoteCopy = emotes[i];
-        Ref<CCMenuItemSpriteExtra> btnRef = btn;
+        WeakRef<CCMenuItemSpriteExtra> weakBtn = btn;
 
         EmoteCache::get().loadEmote(emoteCopy,
-            [btnRef](CCTexture2D* tex, bool ,
+            [weakBtn](CCTexture2D* tex, bool ,
                      std::vector<uint8_t> const& ) {
-                Loader::get()->queueInMainThread([btnRef, tex]() {
+                Ref<CCTexture2D> textureRef = tex;
+                Loader::get()->queueInMainThread([weakBtn, textureRef]() {
                     if (paimon::isRuntimeShuttingDown()) return;
+                    auto btnRef = weakBtn.lock();
                     if (!btnRef || !btnRef->getParent()) return;
                     auto* cont = btnRef->getNormalImage();
                     if (!cont) return;
 
-                    if (tex) {
-                        auto* spr = CCSprite::createWithTexture(tex);
+                    if (textureRef) {
+                        auto* spr = CCSprite::createWithTexture(textureRef.data());
+                        if (!spr) return;
                         float maxD = std::max(
                             spr->getContentSize().width,
                             spr->getContentSize().height);

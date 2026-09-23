@@ -2,10 +2,11 @@
 
 #include <Geode/utils/file.hpp>
 
+#include <algorithm>
 #include <cctype>
-#include <charconv>
+#include <cstdint>
 #include <cmath>
-#include <unordered_map>
+#include <cstdlib>
 #include <utility>
 #include <variant>
 
@@ -13,6 +14,8 @@ using namespace geode::prelude;
 
 namespace paimon::texture_studio {
 namespace {
+
+constexpr std::size_t kMaxPlistBytes = 32 * 1024 * 1024;
 
 struct Value;
 using Dict  = std::vector<std::pair<std::string, Value>>;
@@ -168,9 +171,7 @@ private:
     }
 
     geode::Result<Value> readValue() {
-        // Bound recursion: readValue -> readDict/readArray -> readValue has no
-        // natural depth limit, so a deeply nested (user-selected) plist could
-        // overflow the native stack. Guard with an RAII depth counter.
+        // Limit recursive descent before a nested plist exhausts the stack.
         struct DepthGuard {
             std::size_t& d;
             explicit DepthGuard(std::size_t& d) : d(d) { ++d; }
@@ -216,7 +217,6 @@ private:
                 if (sv[i] == '-') sign = -1;
                 ++i;
             }
-            // int64 + saturación evita signed overflow (UB) si un plist trae un entero > INT_MAX.
             int64_t acc = 0;
             for (; i < sv.size() && std::isdigit(static_cast<unsigned char>(sv[i])); ++i) {
                 acc = acc * 10 + (sv[i] - '0');
@@ -291,9 +291,7 @@ bool parseBracedTuple(std::string_view s, float& outA, float& outB) {
         char* end = nullptr;
         out = std::strtof(tmp.c_str(), &end);
         if (end == tmp.c_str()) return false;
-        // Reject non-finite / absurd geometry: callers cast these to int, and
-        // converting inf/NaN (or a value outside int range) to int is UB. Real
-        // spritesheet coordinates are far within +/-1e6.
+        // Callers convert these coordinates to int.
         if (!std::isfinite(out) || out < -1000000.0f || out > 1000000.0f) return false;
         return true;
     };
@@ -457,6 +455,9 @@ geode::Result<SpriteFrameInfo> decodeFrameLegacy(std::string const& name, Value 
 }  // anonymous namespace
 
 geode::Result<ParsedSpritesheet> PlistParser::parseString(std::string_view xml) {
+    if (xml.size() > kMaxPlistBytes) {
+        return Err("PlistParser: plist too large");
+    }
     Tokenizer tok(xml);
     GEODE_UNWRAP_INTO(auto root, tok.parse());
     if (!root.isDict()) return Err("PlistParser: root <plist> child is not <dict>");
@@ -514,30 +515,18 @@ geode::Result<ParsedSpritesheet> PlistParser::parseString(std::string_view xml) 
 }
 
 geode::Result<ParsedSpritesheet> PlistParser::parseFile(std::filesystem::path const& path) {
+    std::error_code ec;
+    auto size = std::filesystem::file_size(path, ec);
+    if (ec || size > kMaxPlistBytes) {
+        return Err("PlistParser::parseFile: invalid file size for {}",
+            geode::utils::string::pathToString(path));
+    }
     auto content = file::readString(path);
     if (!content) {
         return Err("PlistParser::parseFile: cannot read {}: {}",
             geode::utils::string::pathToString(path), content.unwrapErr());
     }
     return parseString(content.unwrap());
-}
-
-geode::Result<int> PlistParser::sniffFormat(std::string_view xml) {
-    auto fmtKey = xml.find("<key>format</key>");
-    if (fmtKey == std::string_view::npos) {
-        return Ok(0);
-    }
-    auto intOpen = xml.find("<integer>", fmtKey);
-    if (intOpen == std::string_view::npos) return Err("sniffFormat: malformed format tag");
-    intOpen += std::string_view("<integer>").size();
-    auto intClose = xml.find("</integer>", intOpen);
-    if (intClose == std::string_view::npos) return Err("sniffFormat: malformed format tag");
-    std::string_view num = xml.substr(intOpen, intClose - intOpen);
-    int v = 0;
-    for (char c : num) {
-        if (std::isdigit(static_cast<unsigned char>(c))) v = v * 10 + (c - '0');
-    }
-    return Ok(v);
 }
 
 }  // namespace paimon::texture_studio

@@ -10,7 +10,6 @@ namespace save_key = paimon::separate_dual::save_key;
 
 namespace {
 
-// Doll index -> preview type on the color page (page layout, kept as data).
 constexpr IconType kDollTypes[] = {
     IconType::Cube,
     IconType::Ship,
@@ -22,7 +21,6 @@ constexpr IconType kDollTypes[] = {
     IconType::Swing,
 };
 
-// Ship-toggle tag -> preview type.
 IconType shipToggleType(int tag) {
     if (tag == 1) return IconType::Ship;
     if (tag == 8) return IconType::Jetpack;
@@ -43,8 +41,8 @@ class $modify(PaimonSeparateDualColor, CharacterColorPage) {
     };
 
     static void onModify(auto& self) {
-        (void)self.setHookPriorityPre("CharacterColorPage::onPlayerColor", Priority::Replace);
-        (void)self.setHookPriorityPre("CharacterColorPage::toggleGlow", Priority::Replace);
+        (void)self.setHookPriorityPre("CharacterColorPage::onPlayerColor", Priority::Last);
+        (void)self.setHookPriorityPre("CharacterColorPage::toggleGlow", Priority::Last);
     }
 
     void hangSideTag(char const* text, ccColor3B color, float anchorX, float insetX) {
@@ -53,7 +51,7 @@ class $modify(PaimonSeparateDualColor, CharacterColorPage) {
         m_fields->sideTag->setScale(0.3f);
         m_fields->sideTag->setAnchorPoint({anchorX, 1.f});
         m_fields->sideTag->setColor(color);
-        m_fields->sideTag->setID("player-label");
+        m_fields->sideTag->setID("player-label"_spr);
         cursor->addChild(m_fields->sideTag);
         m_fields->sideTag->setPosition({insetX, cursor->getContentHeight() - 1.f});
     }

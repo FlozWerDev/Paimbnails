@@ -446,7 +446,7 @@ void ProjectEditorLayer::buildPreviewPanel() {
         if (auto* loading = CCLabelBMFont::create("...", "bigFont.fnt")) {
             loading->setScale(0.32f);
             loading->setColor({120, 120, 130});
-            loading->setID("loading-label");
+            loading->setID("loading-label"_spr);
             host->addChildAtPosition(loading, Anchor::Center, {0.f, -3.f});
         }
         return host;
@@ -1925,7 +1925,7 @@ void ProjectEditorLayer::highlightSelectedCell() {
 void ProjectEditorLayer::setOriginalSprite(CCSprite* spr) {
     if (!m_originalHost || !spr) return;
     if (m_originalSpr) m_originalSpr->removeFromParent();
-    if (auto* loading = m_originalHost->getChildByID("loading-label")) {
+    if (auto* loading = m_originalHost->getChildByID("loading-label"_spr)) {
         loading->removeFromParent();
     }
     fitSpriteIntoBox(spr, m_originalHost->getContentSize().width);
@@ -1936,7 +1936,7 @@ void ProjectEditorLayer::setOriginalSprite(CCSprite* spr) {
 void ProjectEditorLayer::setResultSprite(CCSprite* spr) {
     if (!m_resultHost || !spr) return;
     if (m_resultSpr) m_resultSpr->removeFromParent();
-    if (auto* loading = m_resultHost->getChildByID("loading-label")) {
+    if (auto* loading = m_resultHost->getChildByID("loading-label"_spr)) {
         loading->removeFromParent();
     }
     fitSpriteIntoBox(spr, m_resultHost->getContentSize().width);

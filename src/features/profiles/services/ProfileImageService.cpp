@@ -550,11 +550,11 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
                         });
                         return;
                     }
-                    auto* tex = sprite->getTexture();
-                    queueInMainThread([this, profileAccountID, gifKey, callback, tex]() {
+                    Ref<CCTexture2D> texture = sprite->getTexture();
+                    queueInMainThread([this, profileAccountID, gifKey, callback, texture]() {
                         if (paimon::isRuntimeShuttingDown()) return;
                         rememberProfileImgGifKey(profileAccountID, gifKey);
-                        callback(true, tex);
+                        callback(true, texture.data());
                     });
                 });
                 return;

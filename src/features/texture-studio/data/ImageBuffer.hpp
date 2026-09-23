@@ -12,6 +12,8 @@ namespace paimon::texture_studio {
 class ImageBuffer {
 public:
     static constexpr std::size_t kBytesPerPixel = 4;
+    static constexpr std::size_t kMaxPixelCount = 16 * 1024 * 1024;
+    static constexpr std::size_t kMaxEncodedBytes = 128 * 1024 * 1024;
 
     ImageBuffer() = default;
     ImageBuffer(int width, int height);
@@ -40,7 +42,6 @@ public:
     std::span<std::uint8_t>       span()       { return std::span(m_pixels); }
     std::span<std::uint8_t const> span() const { return std::span(m_pixels); }
 
-    // Bounds-checked; for hot loops use data() directly.
     struct Pixel { std::uint8_t r, g, b, a; };
     Pixel at(int x, int y) const;
     void  setAt(int x, int y, Pixel p);

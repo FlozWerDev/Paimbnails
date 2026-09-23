@@ -305,13 +305,14 @@ class $modify(BadgeCommentCell, CommentCell) {
                     WeakRef<BadgeCommentCell> weakSelf = this;
                     ThumbnailAPI::get().downloadProfileImg(accountID,
                         [weakSelf, token, accountID, layout, config, cellSize](bool success, CCTexture2D* texture) {
-                            Loader::get()->queueInMainThread([weakSelf, token, accountID, layout, config, cellSize, success, texture]() {
+                            Ref<CCTexture2D> textureRef = texture;
+                            Loader::get()->queueInMainThread([weakSelf, token, accountID, layout, config, cellSize, success, textureRef]() {
                                 if (paimon::isRuntimeShuttingDown()) return;
                                 auto selfRef = weakSelf.lock();
                                 auto* self = static_cast<BadgeCommentCell*>(selfRef.data());
                                 if (!self || !self->shouldHandleCommentProfileResult(token, accountID)) return;
-                                if (success && texture) {
-                                    self->installImageCommentBackground(layout, texture, config, cellSize);
+                                if (success && textureRef) {
+                                    self->installImageCommentBackground(layout, textureRef.data(), config, cellSize);
                                 }
                             });
                         }
@@ -763,14 +764,15 @@ class $modify(BadgeCommentCell, CommentCell) {
                         });
                     });
                 } else {
-                    Loader::get()->queueInMainThread([weakSelf, tex, targetHeight]() {
+                    Ref<CCTexture2D> textureRef = tex;
+                    Loader::get()->queueInMainThread([weakSelf, textureRef, targetHeight]() {
                         if (paimon::isRuntimeShuttingDown()) return;
                         auto self = weakSelf.lock();
                         if (!self || !self->getParent() || !self->m_comment) return;
                         auto menu = typeinfo_cast<CCMenu*>(self->getChildByIDRecursive("username-menu"));
                         if (!menu) return;
                         if (menu->getChildByID("paimon-custom-badge"_spr)) return;
-                        auto* spr = CCSprite::createWithTexture(tex);
+                        auto* spr = CCSprite::createWithTexture(textureRef.data());
                         if (!spr) return;
                         float maxDim = std::max(spr->getContentWidth(), spr->getContentHeight());
                         if (maxDim > 0) spr->setScale(targetHeight / maxDim);

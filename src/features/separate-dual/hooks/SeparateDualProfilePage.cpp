@@ -130,7 +130,7 @@ class $modify(PaimonSeparateDualProfile, ProfilePage) {
                 sprite2POn->setScale(0.7f);
 
                 auto toggler = CCMenuItemToggler::create(sprite2POff, sprite2POn, this, menu_selector(PaimonSeparateDualProfile::on2PToggle));
-                toggler->setID("2p-toggler");
+                toggler->setID("2p-toggler"_spr);
                 menu->addChild(toggler);
                 menu->updateLayout();
             }

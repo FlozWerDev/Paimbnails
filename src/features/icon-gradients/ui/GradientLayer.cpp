@@ -726,11 +726,11 @@ bool GradientLayer::init() {
     auto const previewCenter = CCPoint{190.f, 193.f};
     auto const previewOrigin = CCPoint{100.f, 126.f};
 
-    addPanel({52.f, 193.f}, {84.f, 134.f}, "icon-sidebar");
-    addPanel(previewCenter, previewSize, "gradient-preview-panel");
-    addPanel({358.f, 193.f}, {144.f, 134.f}, "color-editor-panel");
-    addPanel({220.f, 84.f}, {420.f, 68.f}, "gradient-controls-panel");
-    addPanel({220.f, 29.f}, {420.f, 34.f}, "gradient-actions-panel");
+    addPanel({52.f, 193.f}, {84.f, 134.f}, "icon-sidebar"_spr);
+    addPanel(previewCenter, previewSize, "gradient-preview-panel"_spr);
+    addPanel({358.f, 193.f}, {144.f, 134.f}, "color-editor-panel"_spr);
+    addPanel({220.f, 84.f}, {420.f, 68.f}, "gradient-controls-panel"_spr);
+    addPanel({220.f, 29.f}, {420.f, 34.f}, "gradient-actions-panel"_spr);
 
     addCaption("ICONS", {52.f, 250.f});
     addCaption("PREVIEW", {190.f, 250.f});
@@ -745,14 +745,14 @@ bool GradientLayer::init() {
         settingsSprite, this, menu_selector(GradientLayer::onAnimations)
     );
     settingsButton->setPosition({418.f, 281.f});
-    settingsButton->setID("animation-button");
+    settingsButton->setID("animation-button"_spr);
     m_buttonMenu->addChild(settingsButton);
 
     auto* tabMenu = CCMenu::create();
     tabMenu->setContentSize({124.f, 30.f});
     tabMenu->setPosition({10.f, 266.f});
     tabMenu->setLayout(RowLayout::create()->setGap(4.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
-    tabMenu->setID("point-mode-menu");
+    tabMenu->setID("point-mode-menu"_spr);
     m_mainLayer->addChild(tabMenu);
 
     auto addPointMode = [tabMenu, this](char const* title, SEL_MenuHandler callback, char const* id) {
@@ -761,8 +761,8 @@ bool GradientLayer::init() {
         button->setID(id);
         tabMenu->addChild(button);
     };
-    addPointMode("Image", menu_selector(GradientLayer::onImage), "point-image-button");
-    addPointMode("Color", menu_selector(GradientLayer::onPointColor), "point-color-button");
+    addPointMode("Image", menu_selector(GradientLayer::onImage), "point-image-button"_spr);
+    addPointMode("Color", menu_selector(GradientLayer::onPointColor), "point-color-button"_spr);
     tabMenu->updateLayout();
 
     for (size_t i = 0; i < 9; ++i) {
@@ -787,7 +787,7 @@ bool GradientLayer::init() {
 
     m_pointsLayer = PointsLayer::create(previewSize, this, previewSize / 2.f);
     m_pointsLayer->setPosition(previewOrigin);
-    m_pointsLayer->setID("gradient-points-layer");
+    m_pointsLayer->setID("gradient-points-layer"_spr);
     m_mainLayer->addChild(m_pointsLayer, 100);
 
     Loader::get()->queueInMainThread([self = Ref(this)] {
@@ -800,7 +800,7 @@ bool GradientLayer::init() {
     m_picker->setScale(0.5f);
     m_picker->setPosition({358.f, 213.f});
     m_picker->setDelegate(this);
-    m_picker->setID("color-picker");
+    m_picker->setID("color-picker"_spr);
 
     m_mainLayer->addChild(m_picker);
 
@@ -828,7 +828,7 @@ bool GradientLayer::init() {
     actionsMenu->setContentSize({420.f, 34.f});
     actionsMenu->setPosition({10.f, 12.f});
     actionsMenu->setLayout(RowLayout::create()->setGap(4.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
-    actionsMenu->setID("gradient-actions-menu");
+    actionsMenu->setID("gradient-actions-menu"_spr);
     m_mainLayer->addChild(actionsMenu);
 
     auto addActionButton = [actionsMenu, this](
@@ -849,27 +849,27 @@ bool GradientLayer::init() {
 
     m_addButton = addActionButton(
         "Add", 56, "GJ_button_01.png",
-        menu_selector(GradientLayer::onAddPoint), "add-point-button"
+        menu_selector(GradientLayer::onAddPoint), "add-point-button"_spr
     );
     m_removeButton = addActionButton(
         "Delete", 56, "GJ_button_06.png",
-        menu_selector(GradientLayer::onRemovePoint), "remove-point-button"
+        menu_selector(GradientLayer::onRemovePoint), "remove-point-button"_spr
     );
     m_copyButton = addActionButton(
         "Copy", 56, "GJ_button_04.png",
-        menu_selector(GradientLayer::onCopy), "copy-gradient-button"
+        menu_selector(GradientLayer::onCopy), "copy-gradient-button"_spr
     );
     m_pasteButton = addActionButton(
         "Paste", 56, "GJ_button_04.png",
-        menu_selector(GradientLayer::onPaste), "paste-gradient-button"
+        menu_selector(GradientLayer::onPaste), "paste-gradient-button"_spr
     );
     m_saveButton = addActionButton(
         "Save", 56, "GJ_button_01.png",
-        menu_selector(GradientLayer::onSave), "save-gradient-button"
+        menu_selector(GradientLayer::onSave), "save-gradient-button"_spr
     );
     m_loadButton = addActionButton(
         "Load", 56, "GJ_button_02.png",
-        menu_selector(GradientLayer::onLoad), "load-gradient-button"
+        menu_selector(GradientLayer::onLoad), "load-gradient-button"_spr
     );
     actionsMenu->updateLayout();
 
@@ -882,7 +882,7 @@ bool GradientLayer::init() {
     m_hideToggle->setPosition({211.f, 84.f});
     m_hideToggle->setScale(0.44f);
     m_hideToggle->setCascadeOpacityEnabled(true);
-    m_hideToggle->setID("hide-points-toggle");
+    m_hideToggle->setID("hide-points-toggle"_spr);
 
     m_buttonMenu->addChild(m_hideToggle);
 
@@ -890,19 +890,19 @@ bool GradientLayer::init() {
     m_playerToggle->setPosition({46.f, 84.f});
     m_playerToggle->setVisible(GradientCache::is2PSeparate());
     m_playerToggle->toggle(m_isSecondPlayer);
-    m_playerToggle->setID("player-toggle");
+    m_playerToggle->setID("player-toggle"_spr);
 
     m_buttonMenu->addChild(m_playerToggle);
     m_linearToggle = GradientUtils::createTypeToggle(
         false, {106.f, 84.f}, this, menu_selector(GradientLayer::onTypeToggle)
     );
-    m_linearToggle->setID("linear-gradient-toggle");
+    m_linearToggle->setID("linear-gradient-toggle"_spr);
     m_buttonMenu->addChild(m_linearToggle);
 
     m_radialToggle = GradientUtils::createTypeToggle(
         true, {149.f, 84.f}, this, menu_selector(GradientLayer::onTypeToggle)
     );
-    m_radialToggle->setID("radial-gradient-toggle");
+    m_radialToggle->setID("radial-gradient-toggle"_spr);
     m_buttonMenu->addChild(m_radialToggle);
 
     addCaption("LINEAR", {106.f, 64.f}, 0.22f);
@@ -924,7 +924,7 @@ bool GradientLayer::init() {
 
     m_dotToggle->setScale(0.48f);
     m_dotToggle->setPosition({187.f, 84.f});
-    m_dotToggle->setID("per-icon-toggle");
+    m_dotToggle->setID("per-icon-toggle"_spr);
 
     m_buttonMenu->addChild(m_dotToggle);
 
@@ -968,7 +968,7 @@ bool GradientLayer::init() {
         this, menu_selector(GradientLayer::onColorSelector), ColorType::Main, this, false
     );
     m_colorSelector->setPosition({408.f, 145.f});
-    m_colorSelector->setID("selected-color-button");
+    m_colorSelector->setID("selected-color-button"_spr);
 
     m_buttonMenu->addChild(m_colorSelector);
     addCaption("PICK", {408.f, 166.f}, 0.25f);

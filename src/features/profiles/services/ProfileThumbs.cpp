@@ -190,28 +190,7 @@ void ProfileThumbs::cacheProfile(int accountID, CCTexture2D* texture,
         log::debug("[ProfileThumbs] Preserved existing gifKey: {} for account {}", existingGifKey, accountID);
     }
 
-    auto lruIt = m_lruMap.find(accountID);
-    if (lruIt != m_lruMap.end()) {
-        m_lruOrder.erase(lruIt->second);
-    }
-    m_lruOrder.push_back(accountID);
-    m_lruMap[accountID] = std::prev(m_lruOrder.end());
-
-    while (m_profileCache.size() > MAX_PROFILE_CACHE_SIZE && !m_lruOrder.empty()) {
-        int removeID = m_lruOrder.front();
-        if (removeID == accountID) {
-            break;
-        }
-        m_lruOrder.pop_front();
-        m_lruMap.erase(removeID);
-        auto evictIt = m_profileCache.find(removeID);
-        if (evictIt != m_profileCache.end()) {
-            if (!evictIt->second.gifKey.empty()) {
-                AnimatedGIFSprite::unpinGIF(evictIt->second.gifKey);
-            }
-            m_profileCache.erase(evictIt);
-        }
-    }
+    touchCacheEntry(accountID);
 }
 
 void ProfileThumbs::cacheProfileGIF(int accountID, std::string const& gifKey, 
@@ -226,17 +205,21 @@ void ProfileThumbs::cacheProfileGIF(int accountID, std::string const& gifKey,
     
     log::debug("[ProfileThumbs] Caching GIF profile for account {} with key {}", accountID, gifKey);
     
-    AnimatedGIFSprite::pinGIF(gifKey);
-
     ProfileConfig existingConfig;
     auto it = m_profileCache.find(accountID);
     if (it != m_profileCache.end()) {
         existingConfig = it->second.config;
+        if (!it->second.gifKey.empty() && it->second.gifKey != gifKey) {
+            AnimatedGIFSprite::unpinGIF(it->second.gifKey);
+        }
     }
 
-    
+    if (AnimatedGIFSprite::isCached(gifKey)) {
+        AnimatedGIFSprite::pinGIF(gifKey);
+    }
     m_profileCache[accountID] = ProfileCacheEntry(gifKey, colorA, colorB, widthFactor);
     m_profileCache[accountID].config = existingConfig;
+    touchCacheEntry(accountID);
 }
 
 void ProfileThumbs::cacheProfileConfig(int accountID, ProfileConfig const& config) {
@@ -249,6 +232,7 @@ void ProfileThumbs::cacheProfileConfig(int accountID, ProfileConfig const& confi
         entry.config = config;
         m_profileCache[accountID] = std::move(entry);
     }
+    touchCacheEntry(accountID);
 }
 
 ProfileConfig ProfileThumbs::getProfileConfig(int accountID) {
@@ -279,16 +263,14 @@ std::optional<ProfileCacheEntry> ProfileThumbs::getCachedProfile(int accountID) 
             m_lruOrder.erase(lruIt->second);
             m_lruMap.erase(lruIt);
         }
+        if (!it->second.gifKey.empty()) {
+            AnimatedGIFSprite::unpinGIF(it->second.gifKey);
+        }
         m_profileCache.erase(it);
         return std::nullopt;
     }
 
-    auto lruIt = m_lruMap.find(accountID);
-    if (lruIt != m_lruMap.end()) {
-        m_lruOrder.erase(lruIt->second);
-    }
-    m_lruOrder.push_back(accountID);
-    m_lruMap[accountID] = std::prev(m_lruOrder.end());
+    touchCacheEntry(accountID);
 
     log::debug("[ProfileThumbs] Cache found for account {}", accountID);
     return it->second;
@@ -299,6 +281,9 @@ void ProfileThumbs::clearCache(int accountID) {
     auto it = m_profileCache.find(accountID);
     if (it != m_profileCache.end()) {
         log::debug("[ProfileThumbs] Clearing cache for account {}", accountID);
+        if (!it->second.gifKey.empty()) {
+            AnimatedGIFSprite::unpinGIF(it->second.gifKey);
+        }
         m_profileCache.erase(it);
         auto lruIt = m_lruMap.find(accountID);
         if (lruIt != m_lruMap.end()) {
@@ -307,6 +292,28 @@ void ProfileThumbs::clearCache(int accountID) {
         }
     }
     removeFromNoProfileCache(accountID);
+}
+
+void ProfileThumbs::touchCacheEntry(int accountID) {
+    auto lruIt = m_lruMap.find(accountID);
+    if (lruIt != m_lruMap.end()) {
+        m_lruOrder.erase(lruIt->second);
+    }
+    m_lruOrder.push_back(accountID);
+    m_lruMap[accountID] = std::prev(m_lruOrder.end());
+
+    while (m_profileCache.size() > MAX_PROFILE_CACHE_SIZE) {
+        int removeID = m_lruOrder.front();
+        m_lruOrder.pop_front();
+        m_lruMap.erase(removeID);
+        auto evictIt = m_profileCache.find(removeID);
+        if (evictIt != m_profileCache.end()) {
+            if (!evictIt->second.gifKey.empty()) {
+                AnimatedGIFSprite::unpinGIF(evictIt->second.gifKey);
+            }
+            m_profileCache.erase(evictIt);
+        }
+    }
 }
 
 void ProfileThumbs::clearOldCache() {
@@ -374,32 +381,6 @@ void ProfileThumbs::clearPendingDownloads() {
     m_batchInFlight = false;
     m_usernameMap.clear();
     m_activeDownloads = 0;
-}
-
-void ProfileThumbs::spawnBackground(std::function<void()> job) {
-    std::lock_guard<std::mutex> lock(m_workerMutex);
-    if (!m_workerPool) {
-        m_workerPool = std::make_unique<paimon::ThreadPool>(2, "PaimonProfileThumbsBG");
-    }
-    m_workerPool->enqueue(std::move(job));
-}
-
-void ProfileThumbs::pruneFinishedWorkers() {
-}
-
-void ProfileThumbs::waitBackgroundWorkers() {
-    std::unique_ptr<paimon::ThreadPool> poolToShutdown;
-    {
-        std::lock_guard<std::mutex> lock(m_workerMutex);
-        poolToShutdown = std::move(m_workerPool);
-    }
-    if (poolToShutdown) {
-        poolToShutdown->shutdown();
-    }
-}
-
-void ProfileThumbs::shutdown() {
-    waitBackgroundWorkers();
 }
 
 CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig const& config, CCSize cs, bool onlyBackground) {

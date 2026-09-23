@@ -132,7 +132,7 @@ void AddModeratorPopup::buildRoleTabs() {
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(AddModeratorPopup::onRoleTab));
         btn->setUserObject(CCString::create(role));
         btn->setPosition({x, 0.f});
-        btn->setID(fmt::format("tab-{}", role));
+        btn->setID(fmt::format("{}tab-{}", ""_spr, role));
         m_tabMenu->addChild(btn);
         x += btnW + gap;
     }

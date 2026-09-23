@@ -14,7 +14,7 @@ using namespace geode::prelude;
 
 namespace paimon::menumusic {
 
-static const std::string kToastId = "menumusic/now-playing-toast";
+static const std::string kToastId = "now-playing-toast"_spr;
 
 static constexpr float kWaitDur     = 0.30f;
 static constexpr float kDropInDur   = 0.30f;

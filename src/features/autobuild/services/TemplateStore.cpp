@@ -2,9 +2,11 @@
 
 #include "PieceGrid.hpp"
 #include "SaveString.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
 
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>
+#include <Geode/utils/string.hpp>
 #include <fmt/format.h>
 
 #include <algorithm>
@@ -477,22 +479,26 @@ void TemplateStore::load() {
 
     for (auto const& path : entries.unwrap()) {
         if (path.extension() != kExtension) continue;
+        auto filename = utils::string::pathToString(path.filename());
         std::error_code ec;
         auto const size = std::filesystem::file_size(path, ec);
-        if (!ec && size > kMaxFileBytes) {
-            log::warn("[Autobuild] {} supera el limite de tamano", path.filename().string());
+        if (ec) {
+            log::warn("[Autobuild] no se pudo consultar el tamano de {}: {}", filename, ec.message());
+            continue;
+        }
+        if (size > kMaxFileBytes) {
+            log::warn("[Autobuild] {} supera el limite de tamano", filename);
             continue;
         }
         auto text = utils::file::readString(path);
         if (text.isErr()) continue;
         auto tpl = deserialize(text.unwrap());
         if (tpl.isErr()) {
-            log::warn("[Autobuild] no se pudo leer {}: {}", path.filename().string(),
-                      tpl.unwrapErr());
+            log::warn("[Autobuild] no se pudo leer {}: {}", filename, tpl.unwrapErr());
             continue;
         }
         auto value = tpl.unwrap();
-        value.file = path.filename().string();
+        value.file = std::move(filename);
         m_items.push_back(std::move(value));
     }
     std::sort(m_items.begin(), m_items.end(),
@@ -564,7 +570,7 @@ void TemplateStore::remove(int index) {
     if (index < 0 || index >= static_cast<int>(m_items.size())) return;
     if (!m_items[index].file.empty()) {
         std::error_code ec;
-        std::filesystem::remove(directory() / m_items[index].file, ec);
+        std::filesystem::remove(directory() / paimon::assets::pathFromUtf8(m_items[index].file), ec);
     }
     m_items.erase(m_items.begin() + index);
     select(m_items.empty() ? -1 : std::clamp(m_selected, 0, static_cast<int>(m_items.size()) - 1));
@@ -579,7 +585,7 @@ void TemplateStore::persist(int index) {
         log::warn("[Autobuild] no se pudo guardar {}: {}", tpl.file, text.unwrapErr());
         return;
     }
-    auto result = utils::file::writeString(directory() / tpl.file, text.unwrap());
+    auto result = utils::file::writeString(directory() / paimon::assets::pathFromUtf8(tpl.file), text.unwrap());
     if (result.isErr()) {
         log::warn("[Autobuild] no se pudo guardar {}: {}", tpl.file, result.unwrapErr());
     }
@@ -588,7 +594,8 @@ void TemplateStore::persist(int index) {
 Result<int> TemplateStore::importFile(std::filesystem::path const& path) {
     std::error_code ec;
     auto size = std::filesystem::file_size(path, ec);
-    if (!ec && size > kMaxFileBytes) return Err("El archivo es demasiado grande.");
+    if (ec) return Err("No se pudo consultar el tamano del archivo.");
+    if (size > kMaxFileBytes) return Err("El archivo es demasiado grande.");
 
     auto text = utils::file::readString(path);
     if (text.isErr()) return Err(text.unwrapErr());
@@ -599,7 +606,7 @@ Result<int> TemplateStore::importFile(std::filesystem::path const& path) {
     auto tpl = parsed.unwrap();
     if (!tpl.valid()) return Err("La plantilla importada esta vacia.");
     tpl.file.clear();
-    if (tpl.name.empty() || tpl.name == "Sin nombre") tpl.name = path.stem().string();
+    if (tpl.name.empty() || tpl.name == "Sin nombre") tpl.name = utils::string::pathToString(path.stem());
     return Ok(add(std::move(tpl)));
 }
 

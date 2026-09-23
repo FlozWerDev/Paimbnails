@@ -47,15 +47,26 @@ bool drawSoftEdgeFade(CCSprite* sprite, SoftEdgeFade const& fade) {
         return sprite->convertToNodeSpace(parent->convertToWorldSpace(point));
     };
 
-    std::array<CCPoint, 6> const points = {
-        toSpriteSpace({skew, size.height}),
-        toSpriteSpace({0.f, 0.f}),
-        toSpriteSpace({skew + width, size.height}),
-        toSpriteSpace({width, 0.f}),
-        toSpriteSpace({size.width, size.height}),
-        toSpriteSpace({size.width, 0.f})
-    };
-    std::array<float, 6> const opacities = {0.f, 0.f, 1.f, 1.f, 1.f, 1.f};
+    std::array<CCPoint, 6> const points = fade.fadeRight
+        ? std::array<CCPoint, 6>{
+            toSpriteSpace({0.f, size.height}),
+            toSpriteSpace({0.f, 0.f}),
+            toSpriteSpace({size.width - width - skew, size.height}),
+            toSpriteSpace({size.width - width, 0.f}),
+            toSpriteSpace({size.width - skew, size.height}),
+            toSpriteSpace({size.width, 0.f})
+        }
+        : std::array<CCPoint, 6>{
+            toSpriteSpace({skew, size.height}),
+            toSpriteSpace({0.f, 0.f}),
+            toSpriteSpace({skew + width, size.height}),
+            toSpriteSpace({width, 0.f}),
+            toSpriteSpace({size.width, size.height}),
+            toSpriteSpace({size.width, 0.f})
+        };
+    std::array<float, 6> const opacities = fade.fadeRight
+        ? std::array<float, 6>{1.f, 1.f, 1.f, 1.f, 0.f, 0.f}
+        : std::array<float, 6>{0.f, 0.f, 1.f, 1.f, 1.f, 1.f};
 
     auto const quad = sprite->getQuad();
     float const quadWidth = quad.br.vertices.x - quad.bl.vertices.x;

@@ -364,7 +364,7 @@ void FusionEditorLayer::buildPreviews() {
         if (auto* loading = CCLabelBMFont::create("...", "bigFont.fnt")) {
             loading->setScale(0.4f);
             loading->setColor({110, 110, 120});
-            loading->setID("loading");
+            loading->setID("loading"_spr);
             host->addChildAtPosition(loading, Anchor::Center);
         }
         return host;
@@ -971,7 +971,7 @@ void FusionEditorLayer::loadPixelsForSelection() {
 void FusionEditorLayer::setOriginalSprite(CCSprite* spr) {
     if (!m_originalHost || !spr) return;
     if (m_originalSpr) m_originalSpr->removeFromParent();
-    if (auto* l = m_originalHost->getChildByID("loading")) l->removeFromParent();
+    if (auto* l = m_originalHost->getChildByID("loading"_spr)) l->removeFromParent();
     fitInto(spr, m_originalHost->getContentSize().width);
     m_originalHost->addChildAtPosition(spr, Anchor::Center);
     m_originalSpr = spr;
@@ -980,7 +980,7 @@ void FusionEditorLayer::setOriginalSprite(CCSprite* spr) {
 void FusionEditorLayer::setResultSprite(CCSprite* spr) {
     if (!m_resultHost || !spr) return;
     if (m_resultSpr) m_resultSpr->removeFromParent();
-    if (auto* l = m_resultHost->getChildByID("loading")) l->removeFromParent();
+    if (auto* l = m_resultHost->getChildByID("loading"_spr)) l->removeFromParent();
     fitInto(spr, m_resultHost->getContentSize().width);
     m_resultHost->addChildAtPosition(spr, Anchor::Center);
     m_resultSpr = spr;

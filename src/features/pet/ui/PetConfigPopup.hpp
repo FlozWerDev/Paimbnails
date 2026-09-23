@@ -9,25 +9,30 @@ protected:
     void onExit() override;
     void scrollWheel(float x, float y) override;
 
-    cocos2d::CCNode* m_galleryContainer = nullptr;
     cocos2d::CCMenu* m_galleryMenu = nullptr;
     cocos2d::CCSprite* m_previewSprite = nullptr;
+    cocos2d::CCSprite* m_emptyPreviewIcon = nullptr;
     cocos2d::CCLabelBMFont* m_selectedLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_galleryStatusLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_galleryCountLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_galleryHintLabel = nullptr;
 
+    geode::ScrollLayer* m_galleryScroll = nullptr;
     geode::ScrollLayer* m_scrollLayer = nullptr;
     geode::ScrollLayer* m_advancedScroll = nullptr;
 
+    float m_galleryScrollTargetY = 0.f;
+    bool  m_galleryScrollTargetSet = false;
     float m_settingsScrollTargetY = 0.f;
     bool  m_settingsScrollTargetSet = false;
     float m_advancedScrollTargetY = 0.f;
     bool  m_advancedScrollTargetSet = false;
 
-    // controles que hay que mantener sincronizados
     CCMenuItemToggler* m_allLayersToggle = nullptr;
     CCMenuItemToggler* m_showInGameplayToggle = nullptr;
     std::array<cocos2d::CCLabelBMFont*, 4> m_iconStateValueLabels{};
 
-    int m_currentTab = 0; // 0 = galeria, 1 = ajustes, 2 = avanzado
+    int m_currentTab = 0;
     cocos2d::CCNode* m_galleryTab = nullptr;
     cocos2d::CCNode* m_settingsTab = nullptr;
     cocos2d::CCNode* m_advancedTab = nullptr;
@@ -45,6 +50,7 @@ protected:
     void onDeleteAllImages(cocos2d::CCObject*);
     void onSelectImage(cocos2d::CCObject*);
     void onOpenShop(cocos2d::CCObject*);
+    void onNextStep(cocos2d::CCObject*);
 
     void buildSettingsTab();
     void buildAdvancedTab();

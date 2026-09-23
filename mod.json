@@ -1748,8 +1748,8 @@
     "crash-reports-enable": {
       "type": "bool",
       "name": "Send Crash Reports",
-      "description": "After a crash, sends the Geode crash log and the session log to the Paimbnails server so the developers can see what broke. Paths are stripped of your Windows user name.",
-      "default": true
+      "description": "When enabled, sends the Geode crash log and matching session log to the Paimbnails server after a crash. Account folder names in common paths are replaced.",
+      "default": false
     }
   },
   "dependencies": {

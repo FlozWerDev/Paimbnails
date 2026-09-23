@@ -53,6 +53,21 @@
 
 El resto de bloques de comentario largos incluye atribuciones y explicaciones de formatos o algoritmos en subsistemas no alterados. No se hizo una reescritura masiva de esos archivos porque cambiar contratos o borrar razones técnicas sin probarlos ampliaría el riesgo. Los archivos modificados quedaron sin bloques `//` de más de dos líneas.
 
+## Seguimiento del 23 de septiembre
+
+- Se sustituyeron las conversiones `atoi` de versiones, IDs de audio e iconos y capas Z por `geode::utils::numFromString`, de acuerdo con las recomendaciones de Geode. El parser de objetos de Autobuild usa la misma utilidad para enteros y flotantes.
+- `SaveString` conserva su independencia de Geode para las pruebas del proyecto: analiza enteros con `std::from_chars`, exige flotantes completos y finitos, y calcula desplazamientos de IDs en `long long` antes de validar el rango.
+- Info Suite valida los contadores y porcentajes cargados de JSON antes de reducirlos a `int`, evita desbordamientos al acumular estadísticas y mantiene el límite de niveles también en las rutas de actualización que antes lo omitían. La UI muestra totales y tiempos con suficiente rango.
+- Los presets de búsqueda limitan la lectura a 2 MiB y 40 entradas, filtran dificultades y longitudes fuera de rango y no convierten números de JSON a `int` antes de validarlos.
+- Se sustituyeron conversiones `path.string()` por `geode::utils::string::pathToString` en nombres de archivo y extensiones usados por Autobuild, Discord, Crash Reports, perfiles, Icon Maker, Texture Studio y Menu Music. Los nombres UTF-8 que vuelven a convertirse en rutas usan `assets::pathFromUtf8`.
+- `TemplateStore` ya no lee una plantilla si falla la consulta de tamaño. `DeathEffectManager::uniqueDestination` usa la variante de `filesystem::exists` con `error_code`.
+- `MenuMusicLibrary` verifica el tamaño de `library.json` antes de cargarlo, ajusta el contador y la duración al rango de sus tipos y registra los fallos de escritura.
+- Las lecturas de perfil de gustos, caché de etiquetas y catálogo de emotes quedan limitadas a 16 MiB. La subida de GIF de mascotas usa el mismo máximo que la carga de imágenes estáticas.
+- La caché de etiquetas conserva su estado pendiente si falla la escritura o el reemplazo del archivo. El catálogo de emotes comprueba el cierre del archivo y descarta marcas de tiempo inválidas sin desbordar la resta.
+- El slider personalizado lee imágenes con el lector limitado existente, comprueba dimensiones antes de decodificar y valida los enums de su configuración. También limita la lectura del JSON y registra los fallos de guardado.
+- `IconCompiler` analiza el índice devuelto por el empaquetador sin `std::stoul` y comprueba que esté dentro de `frames` antes de acceder a él.
+- La revisión de esta tanda fue estática: `git diff --check` y búsquedas de conversiones restantes. No se ejecutaron compilaciones por `AGENTS.md`.
+
 ## Referencias de Geode
 
 - [Hooking y firmas exactas](https://docs.geode-sdk.org/handbook/vol1/chap1_6/)
@@ -60,5 +75,6 @@ El resto de bloques de comentario largos incluye atribuciones y explicaciones de
 - [Fields en clases modificadas](https://docs.geode-sdk.org/tutorials/fields/)
 - [Ref y ownership](https://docs.geode-sdk.org/classes/geode/Ref/)
 - [Async y TaskHolder](https://docs.geode-sdk.org/tutorials/async/)
+- [Directrices para mods](https://docs.geode-sdk.org/mods/guidelines/)
 
 No se ejecutaron compilaciones ni comandos de build por `AGENTS.md`.

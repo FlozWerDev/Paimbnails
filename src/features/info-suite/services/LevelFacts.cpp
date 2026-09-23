@@ -74,11 +74,11 @@ std::string formatThousands(int64_t value) {
     return out;
 }
 
-std::string formatDuration(int seconds) {
+std::string formatDuration(int64_t seconds) {
     if (seconds <= 0) return "";
-    int hours = seconds / 3600;
-    int minutes = (seconds % 3600) / 60;
-    int secs = seconds % 60;
+    int64_t hours = seconds / 3600;
+    int64_t minutes = (seconds % 3600) / 60;
+    int64_t secs = seconds % 60;
     if (hours > 0) return fmt::format("{}h {}m {}s", hours, minutes, secs);
     if (minutes > 0) return fmt::format("{}m {}s", minutes, secs);
     return fmt::format("{}s", secs);
@@ -310,7 +310,7 @@ std::vector<Fact> collectFacts(GJGameLevel* level) {
     if (auto const* tracked = ProgressTracker::get().find(levelID)) {
         addNumber(out, FactTab::Stats, "Veces completado", tracked->completions);
         add(out, FactTab::Stats, "Tiempo registrado",
-            formatDuration(static_cast<int>(tracked->playSeconds)));
+            formatDuration(tracked->playSeconds));
     }
 
     addNumber(out, FactTab::Raw, "Level string (bytes)",

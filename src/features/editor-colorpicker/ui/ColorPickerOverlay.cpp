@@ -46,7 +46,7 @@ void ColorPickerOverlay::show() {
 
     auto* ov = ColorPickerOverlay::create();
     if (!ov) return;
-    ov->setID("paimbnails/editor-color-picker-overlay");
+    ov->setID("paimbnails/editor-color-picker-overlay"_spr);
 
     if (auto* host = geode::OverlayManager::get()) {
         host->addChild(ov, kPickerZOrder);

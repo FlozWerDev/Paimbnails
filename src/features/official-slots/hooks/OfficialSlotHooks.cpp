@@ -56,7 +56,7 @@ void refresh() {
 namespace paimon::officialslots {
 
 // Pages carrying one of ours; vanilla pages are keyed by official id.
-constexpr char const* kSlotPagePrefix = "paimon-slot:";
+constexpr char const* kSlotPagePrefix = "paimon-slot:"_spr;
 
 std::string pageIdentity(LevelPage* page) {
     if (!page) return {};

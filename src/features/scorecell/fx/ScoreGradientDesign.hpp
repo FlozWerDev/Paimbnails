@@ -101,7 +101,7 @@ inline void attachCellOverlays(cocos2d::CCNode* clip, cocos2d::CCSize cs) {
         scrim->setAnchorPoint({0.5f, 0.5f});
         scrim->ignoreAnchorPointForPosition(false);
         scrim->setPosition({cs.width / 2.f, cs.height / 2.f});
-        scrim->setID("paimon-score-scrim");
+        scrim->setID("paimon-score-scrim"_spr);
         clip->addChild(scrim, 1);
     }
     if (auto* rscrim = cocos2d::CCLayerGradient::create(
@@ -110,7 +110,7 @@ inline void attachCellOverlays(cocos2d::CCNode* clip, cocos2d::CCSize cs) {
         rscrim->setAnchorPoint({0.5f, 0.5f});
         rscrim->ignoreAnchorPointForPosition(false);
         rscrim->setPosition({cs.width / 2.f, cs.height / 2.f});
-        rscrim->setID("paimon-score-rscrim");
+        rscrim->setID("paimon-score-rscrim"_spr);
         clip->addChild(rscrim, 1);
     }
     if (auto* sheen = cocos2d::CCLayerGradient::create(
@@ -120,7 +120,7 @@ inline void attachCellOverlays(cocos2d::CCNode* clip, cocos2d::CCSize cs) {
         sheen->setAnchorPoint({0.5f, 0.5f});
         sheen->ignoreAnchorPointForPosition(false);
         sheen->setPosition({cs.width / 2.f, cs.height / 2.f});
-        sheen->setID("paimon-score-sheen");
+        sheen->setID("paimon-score-sheen"_spr);
         clip->addChild(sheen, 2);
     }
 }

@@ -30,8 +30,8 @@ namespace {
     constexpr int kConfigVersion = 1;
     constexpr float kPositionEpsilon = 0.05f;
     constexpr float kScaleEpsilon = 0.001f;
-    constexpr char const* kShapeNodePrefix = "paimon-draw-shape-";
-    constexpr char const* kShapeContainerID = "paimon-draw-shape-container";
+    constexpr char const* kShapeNodePrefix = "paimon-draw-shape-"_spr;
+    constexpr char const* kShapeContainerID = "paimon-draw-shape-container"_spr;
 
     std::string demangleTypeName(char const* name) {
 #ifdef _WIN32

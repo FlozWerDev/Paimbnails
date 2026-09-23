@@ -109,7 +109,7 @@ CCScene* PaimonSupportLayer::scene() {
 bool PaimonSupportLayer::init() {
     if (!CCLayer::init()) return false;
     this->setKeypadEnabled(true);
-    this->setID("PaimonSupportLayer");
+    this->setID("PaimonSupportLayer"_spr);
     buildUI();
     return true;
 }

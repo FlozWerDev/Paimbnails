@@ -21,6 +21,7 @@
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <Geode/utils/string.hpp>
 #include <filesystem>
 #include <random>
 #include <cmath>
@@ -308,7 +309,8 @@ CCNode* ProfilePicEditorPopup::createPhotoTab() {
 
     std::string status;
     if (photo.source == paimon::profile_pic::ResolvedProfilePhoto::Source::Custom && !m_editConfig.photoPath.empty()) {
-        auto name = std::filesystem::path(m_editConfig.photoPath).filename().string();
+        auto name = utils::string::pathToString(
+            paimon::assets::pathFromUtf8(m_editConfig.photoPath).filename());
         if (name.size() > 28) name = name.substr(0, 25) + "...";
         status = fmt::format("Custom image: {}", name);
     } else {

@@ -11,6 +11,7 @@
 #include <Geode/utils/string.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 
 using namespace geode::prelude;
@@ -106,7 +107,12 @@ geode::Result<CompiledQuality> writeQuality(
     sheet.metadata.premultiplyAlpha = false;
 
     for (auto const& placement : packed.placements) {
-        std::size_t idx = static_cast<std::size_t>(std::stoul(placement.id));
+        std::size_t idx = 0;
+        auto const end = placement.id.data() + placement.id.size();
+        auto const parsed = std::from_chars(placement.id.data(), end, idx);
+        if (parsed.ec != std::errc{} || parsed.ptr != end || idx >= frames.size()) {
+            return Err("indice de sprite invalido");
+        }
         auto const& frame = frames[idx];
         auto const& pixels = scaled[idx];
 

@@ -17,7 +17,6 @@ namespace save_key = paimon::separate_dual::save_key;
 
 namespace {
 
-// One garage page (or sub-button) that can store a pick for player 2.
 struct GaragePickRow {
     IconType page;
     IconSlot slot;
@@ -45,7 +44,6 @@ constexpr GaragePickRow kGaragePicks[] = {
 constexpr int kSelectionTransitionTag = 2401;
 constexpr float kSelectionTransitionDuration = 0.2f;
 
-// GJ_2PSwapBtn.png nunca se empaqueto: se baja al glifo vanilla de intercambio.
 CircleButtonSprite* makeSwapSprite() {
     if (auto* own = paimon::SpriteHelper::safeCreate("GJ_2PSwapBtn.png"_spr)) {
         return CircleButtonSprite::create(own, CircleBaseColor::Green, CircleBaseSize::Medium);
@@ -57,7 +55,6 @@ CircleButtonSprite* makeSwapSprite() {
         }
     }
 
-    // Sin ningun sprite util, que al menos se lea de quien es el kit.
     auto* text = CCLabelBMFont::create("2P", "bigFont.fnt");
     return CircleButtonSprite::create(text, CircleBaseColor::Green, CircleBaseSize::Medium);
 }
@@ -78,8 +75,8 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
 
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "GJGarageLayer::init");
-        (void)self.setHookPriorityPre("GJGarageLayer::onSelect", Priority::Replace);
-        (void)self.setHookPriorityPre("GJGarageLayer::onSpecial", Priority::Replace);
+        (void)self.setHookPriorityPre("GJGarageLayer::onSelect", Priority::Last);
+        (void)self.setHookPriorityPre("GJGarageLayer::onSpecial", Priority::Last);
     }
 
     CCMenu* iconPageMenu() {
@@ -309,8 +306,8 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
             cursor->setVisible(false);
             return cursor;
         };
-        m_fields->cursorSecond = makeCursor("cursor-3");
-        m_fields->cursorSecondAlt = makeCursor("cursor-4");
+        m_fields->cursorSecond = makeCursor("cursor-3"_spr);
+        m_fields->cursorSecondAlt = makeCursor("cursor-4"_spr);
 
         if (!GJGarageLayer::init()) return false;
 
@@ -331,17 +328,17 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
             cursor->addChild(tag);
             tag->setPosition({insetX, cursor->getContentHeight() - 1.f});
         };
-        tagCursor(m_cursor1, "P1", {255, 255, 0}, 0.f, "c1-player-label", 2.5f);
-        tagCursor(m_cursor2, "P1", {255, 255, 0}, 0.f, "c2-player-label", 2.5f);
-        tagCursor(m_fields->cursorSecond, "P2", {0, 255, 255}, 1.f, "c3-player-label",
+        tagCursor(m_cursor1, "P1", {255, 255, 0}, 0.f, "c1-player-label"_spr, 2.5f);
+        tagCursor(m_cursor2, "P1", {255, 255, 0}, 0.f, "c2-player-label"_spr, 2.5f);
+        tagCursor(m_fields->cursorSecond, "P2", {0, 255, 255}, 1.f, "c3-player-label"_spr,
             m_fields->cursorSecond->getContentWidth() - 2.5f);
-        tagCursor(m_fields->cursorSecondAlt, "P2", {0, 255, 255}, 1.f, "c4-player-label",
+        tagCursor(m_fields->cursorSecondAlt, "P2", {0, 255, 255}, 1.f, "c4-player-label"_spr,
             m_fields->cursorSecondAlt->getContentWidth() - 2.5f);
 
         m_playerObject->setPositionX(m_playerObject->getPositionX() - winSize.width / 12);
 
         m_fields->secondDoll = SimplePlayer::create(0);
-        m_fields->secondDoll->setID("player2-icon");
+        m_fields->secondDoll->setID("player2-icon"_spr);
         m_fields->secondDoll->setScale(1.6f);
         m_fields->secondDoll->setPosition(m_playerObject->getPosition());
         m_fields->secondDoll->setPositionX(m_fields->secondDoll->getPositionX() + winSize.width / 6);
@@ -365,18 +362,18 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
             return label;
         };
 
-        m_fields->player1Label = makeSideLabel("P1", {255, 255, 0}, "player1-label");
+        m_fields->player1Label = makeSideLabel("P1", {255, 255, 0}, "player1-label"_spr);
         m_fields->player1Label->setPosition({m_playerObject->getPositionX(), m_playerObject->getPositionY() - 30.f});
         this->addChild(m_fields->player1Label, 102);
 
-        m_fields->player2Label = makeSideLabel("P2", {0, 255, 255}, "player2-label");
+        m_fields->player2Label = makeSideLabel("P2", {0, 255, 255}, "player2-label"_spr);
         m_fields->player2Label->setPosition({m_fields->secondDoll->getPositionX(), m_fields->secondDoll->getPositionY() - 30.f});
         this->addChild(m_fields->player2Label, 102);
 
         auto playerMenu = CCMenu::create();
         playerMenu->setContentSize(winSize);
         playerMenu->setPosition({0, 0});
-        playerMenu->setID("player-buttons-menu");
+        playerMenu->setID("player-buttons-menu"_spr);
         this->addChild(playerMenu);
 
         auto hitAreaFor = [] {
@@ -390,9 +387,9 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
         pickFirst->setPosition(m_playerObject->getPosition());
         pickSecond->setPosition(m_fields->secondDoll->getPosition());
         pickFirst->setContentSize({70.f, 50.f});
-        pickFirst->setID("player1-button");
+        pickFirst->setID("player1-button"_spr);
         pickSecond->setContentSize({70.f, 50.f});
-        pickSecond->setID("player2-button");
+        pickSecond->setID("player2-button"_spr);
 
         playerMenu->addChild(pickFirst);
         playerMenu->addChild(pickSecond);
@@ -402,12 +399,12 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
 
         m_fields->arrow1->setScale(0.4f);
         m_fields->arrow1->setPosition({m_playerObject->getPositionX() - winSize.width / 12, m_playerObject->getPositionY()});
-        m_fields->arrow1->setID("arrow-1");
+        m_fields->arrow1->setID("arrow-1"_spr);
 
         m_fields->arrow2->setScale(0.4f);
         m_fields->arrow2->setFlipX(true);
         m_fields->arrow2->setPosition({m_fields->secondDoll->getPositionX() + winSize.width / 12, m_fields->secondDoll->getPositionY()});
-        m_fields->arrow2->setID("arrow-2");
+        m_fields->arrow2->setID("arrow-2"_spr);
 
         auto driftRight = CCArray::create();
         driftRight->addObject(CCMoveBy::create(0.5, {5, 0}));
@@ -424,7 +421,7 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
         this->addChild(m_fields->arrow2);
 
         auto swapBtn = CCMenuItemSpriteExtra::create(makeSwapSprite(), this, menu_selector(PaimonSeparateDualGarage::swapSecondKit));
-        swapBtn->setID("swap-2p-button");
+        swapBtn->setID("swap-2p-button"_spr);
         paimon::garage_hub::addButton(
             this, swapBtn, Localization::get().getString("garage-hub.swap-2p"), 40);
 

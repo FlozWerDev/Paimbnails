@@ -34,6 +34,7 @@
 #include <Geode/ui/ColorPickPopup.hpp>
 #include <Geode/ui/PopupManager.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
+#include <Geode/utils/string.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -169,7 +170,7 @@ geode::Result<std::string> importImageFile(std::string const& slotId,
                                            std::string const& pieceId,
                                            std::filesystem::path const& source,
                                            char const* prefix) {
-    auto ext = source.extension().string();
+    auto ext = utils::string::pathToString(source.extension());
     if (ext.empty()) ext = ".png";
     auto fileName = IconPaths::sanitizeFilename(
         fmt::format("{}_{}{}", prefix, pieceId, ext));

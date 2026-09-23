@@ -1,7 +1,3 @@
-// Thin wrapper around Geode's CCControlColourPicker: hides the text
-// fields/menus when BetterPicker is around, and keeps the hue dragger
-// sane for grayscale colors.
-//
 // Idea credit: "Icon Gradients" by zilko
 // (https://github.com/zilko144/icon-gradients-geode, unlicensed —
 // all rights reserved). Independent implementation: same behavior,
@@ -37,6 +33,7 @@ ColorPicker* ColorPicker::create() {
 
 bool ColorPicker::init() {
     m_picker = CCControlColourPicker::colourPicker();
+    if (!m_picker) return false;
 
     addChild(m_picker);
     setContentSize(m_picker->getContentSize());
@@ -64,9 +61,13 @@ void ColorPicker::setColor(const ccColor3B& color) {
     if (color.r != color.g || color.r != color.b) return;
 
     m_picker->m_hsv.h = 0.f;
-    m_picker->m_huePicker->setHue(0.f);
-    m_picker->m_colourPicker->updateWithHSV(m_picker->m_hsv);
-    m_picker->m_colourPicker->updateDraggerWithHSV(m_picker->m_hsv);
+    if (m_picker->m_huePicker) {
+        m_picker->m_huePicker->setHue(0.f);
+    }
+    if (m_picker->m_colourPicker) {
+        m_picker->m_colourPicker->updateWithHSV(m_picker->m_hsv);
+        m_picker->m_colourPicker->updateDraggerWithHSV(m_picker->m_hsv);
+    }
 }
 
 const ccColor3B ColorPicker::getColor() {
@@ -74,10 +75,17 @@ const ccColor3B ColorPicker::getColor() {
 }
 
 void ColorPicker::setEnabled(bool enabled) {
-    m_picker->m_huePicker->setEnabled(enabled);
-    m_picker->m_colourPicker->setEnabled(enabled);
+    if (m_picker->m_huePicker) {
+        m_picker->m_huePicker->setEnabled(enabled);
+    }
+    if (m_picker->m_colourPicker) {
+        m_picker->m_colourPicker->setEnabled(enabled);
+    }
 
     GLubyte dim = enabled ? 255 : 100;
-    for (CCSprite* spr : m_picker->getChildByType<CCSpriteBatchNode>(0)->getChildrenExt<CCSprite*>())
-        spr->setOpacity(dim);
+    if (auto* batch = m_picker->getChildByType<CCSpriteBatchNode>(0)) {
+        for (auto* sprite : batch->getChildrenExt<CCSprite*>()) {
+            sprite->setOpacity(dim);
+        }
+    }
 }

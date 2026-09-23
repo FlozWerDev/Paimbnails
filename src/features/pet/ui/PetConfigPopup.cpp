@@ -9,15 +9,76 @@
 #include "../../../utils/InfoButton.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/cocos/extensions/GUI/CCControlExtension/CCScale9Sprite.h>
 #include <Geode/ui/ColorPickPopup.hpp>
 #include <Geode/ui/PopupManager.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <unordered_map>
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
 namespace {
 namespace kit = paimon::configkit;
+
+std::string const& petLayerLabel(std::string const& layerName) {
+    static std::unordered_map<std::string, std::string> const labels = {
+        {"MenuLayer", "Menu principal"},
+        {"LevelBrowserLayer", "Explorar niveles"},
+        {"LevelInfoLayer", "Informacion del nivel"},
+        {"CreatorLayer", "Crear"},
+        {"LevelSearchLayer", "Buscar niveles"},
+        {"GauntletSelectLayer", "Elegir gauntlet"},
+        {"ProfilePage", "Perfil"},
+        {"LevelListLayer", "Lista de niveles"},
+        {"LevelEditorLayer", "Editor de niveles"},
+        {"GJGarageLayer", "Iconos"},
+        {"GJShopLayer", "Tienda"},
+        {"SecretLayer", "Sala secreta"},
+        {"TreasureRoomLayer", "Sala del tesoro"},
+        {"ChallengesLayer", "Retos"},
+        {"LevelAreaLayer", "Zona del nivel"},
+        {"DailyLevelLayer", "Nivel diario"},
+        {"WeeklyLevelLayer", "Nivel semanal"},
+        {"GauntletLayer", "Gauntlet"},
+        {"LeaderboardLayer", "Clasificacion general"},
+        {"LevelLeaderboard", "Clasificacion del nivel"},
+        {"CommentListLayer", "Comentarios"},
+        {"InfoLayer", "Informacion"},
+        {"SongInfoLayer", "Informacion de la cancion"},
+        {"CustomSongLayer", "Canciones personalizadas"},
+        {"GJMoreGamesLayer", "Mas juegos"},
+        {"GJOptionsLayer", "Opciones de GD"},
+        {"OptionsLayer", "Opciones"},
+        {"MoreOptionsLayer", "Mas opciones"},
+        {"AccountLayer", "Cuenta"},
+        {"AccountLoginLayer", "Iniciar sesion"},
+        {"GJAccountSettingsLayer", "Ajustes de cuenta"},
+        {"GJScoreLayer", "Puntuacion del jugador"},
+        {"FLAlertLayer", "Avisos"},
+        {"GJDropDownLayer", "Menu desplegable"},
+        {"SelectItemLayer", "Elegir objeto"},
+        {"GJLocalLevelSelector", "Niveles locales"},
+        {"TowerSelectorLayer", "Elegir torre"},
+        {"GJPathsLayer", "Caminos"},
+        {"GJPathPage", "Pagina de caminos"},
+        {"GJMapPackLayer", "Packs de mapas"},
+        {"PromoArtLayer", "Arte promocional"},
+        {"SupportLayer", "Ayuda"},
+        {"CreditsLayer", "Creditos"},
+        {"GJChallengeLayer", "Desafio"},
+        {"GJRewardLayer", "Recompensas"},
+        {"LevelSelectLayer", "Elegir nivel"},
+        {"GJFriendsLayer", "Amigos"},
+        {"GJScoresLayer", "Marcadores"},
+        {"LeaderboardsLayer", "Tablas de clasificacion"},
+        {"GJCommentListLayer", "Comentarios del nivel"},
+        {"FRequestProfilePage", "Solicitud de amistad"},
+        {"GJLevelScoreCell", "Puntuacion del nivel"},
+    };
+    auto const it = labels.find(layerName);
+    return it == labels.end() ? layerName : it->second;
+}
 
 bool allNonGameplayLayersSelected(std::set<std::string> const& selectedLayers) {
     for (auto const& opt : PET_LAYER_OPTIONS) {
@@ -80,13 +141,20 @@ protected:
         if (auto infoBtn = PaimonInfo::createInfoBtn(
                 "Elegir pantallas",
                 "Marca las pantallas (fuera del gameplay) donde quieres ver la mascota.\n"
+                "Al elegir una, se desactiva <cy>En todos los menus</c>.\n"
                 "El gameplay se controla aparte con <cg>Durante el juego</c>.",
                 this, 0.42f)) {
             infoBtn->setPosition({content.width / 2.f + 78.f, content.height - 20.f});
             menu->addChild(infoBtn);
         }
 
-        m_scrollLayer = ScrollLayer::create({content.width - 16.f, content.height - 62.f});
+        auto* hint = CCLabelBMFont::create("Elige donde aparece fuera del juego.", "chatFont.fnt");
+        hint->setColor({255, 222, 150});
+        hint->limitLabelWidth(content.width - 36.f, 0.48f, 0.1f);
+        hint->setPosition({content.width / 2.f, 216.f});
+        m_mainLayer->addChild(hint);
+
+        m_scrollLayer = ScrollLayer::create({content.width - 16.f, content.height - 74.f});
         m_scrollLayer->setPosition({8.f, 28.f});
         m_mainLayer->addChild(m_scrollLayer, 5);
 
@@ -117,8 +185,8 @@ protected:
         for (auto const& layerName : PET_LAYER_OPTIONS) {
             if (isPetGameplayLayer(layerName)) continue;
 
-            auto lbl = CCLabelBMFont::create(layerName.c_str(), "bigFont.fnt");
-            lbl->setScale(0.3f);
+            auto lbl = CCLabelBMFont::create(petLayerLabel(layerName).c_str(), "bigFont.fnt");
+            lbl->limitLabelWidth(190.f, 0.34f, 0.1f);
             lbl->setAnchorPoint({0.f, 0.5f});
             lbl->setPosition({cx - 105.f, y});
             sc->addChild(lbl);
@@ -146,7 +214,7 @@ protected:
         clearBtn->setPosition({content.width / 2.f + 55.f, 15.f});
         menu->addChild(clearBtn);
 
-        m_scrollLayer->moveToTop();
+        m_scrollLayer->scrollToTop();
         return true;
     }
 
@@ -164,7 +232,8 @@ protected:
         auto* nameStr = typeinfo_cast<CCString*>(toggle->getUserObject());
         if (!nameStr) return;
 
-        auto& layers = PetManager::get().config().visibleLayers;
+        auto& config = PetManager::get().config();
+        auto& layers = config.visibleLayers;
         std::string const layerName = nameStr->getCString();
         bool const turnOn = !toggle->isToggled();
 
@@ -174,11 +243,13 @@ protected:
             layers.erase(layerName);
         }
 
+        config.allLayers = false;
         syncOwner();
     }
 
     void onSelectAll(CCObject*) {
-        auto& layers = PetManager::get().config().visibleLayers;
+        auto& config = PetManager::get().config();
+        auto& layers = config.visibleLayers;
         for (auto const& layerName : PET_LAYER_OPTIONS) {
             if (isPetGameplayLayer(layerName)) continue;
             layers.insert(layerName);
@@ -186,11 +257,13 @@ protected:
         for (auto* toggle : m_layerToggles) {
             if (toggle) toggle->toggle(true);
         }
+        config.allLayers = true;
         syncOwner();
     }
 
     void onClearAll(CCObject*) {
-        auto& layers = PetManager::get().config().visibleLayers;
+        auto& config = PetManager::get().config();
+        auto& layers = config.visibleLayers;
         for (auto const& layerName : PET_LAYER_OPTIONS) {
             if (isPetGameplayLayer(layerName)) continue;
             layers.erase(layerName);
@@ -198,6 +271,7 @@ protected:
         for (auto* toggle : m_layerToggles) {
             if (toggle) toggle->toggle(false);
         }
+        config.allLayers = false;
         syncOwner();
     }
 
@@ -224,6 +298,14 @@ char const* kIconStateNames[kIconStateCount] = {
 PetIconState kIconStateEnums[kIconStateCount] = {
     PetIconState::Idle, PetIconState::Walk, PetIconState::Sleep, PetIconState::React
 };
+
+void addTabIntro(CCNode* tab, float width, char const* text) {
+    auto* label = CCLabelBMFont::create(text, "chatFont.fnt");
+    label->setColor({255, 229, 166});
+    label->limitLabelWidth(width - 32.f, 0.55f, 0.1f);
+    label->setPosition({width / 2.f, 224.f});
+    tab->addChild(label);
+}
 
 }
 
@@ -281,6 +363,8 @@ void PetConfigPopup::onExit() {
 }
 
 void PetConfigPopup::scrollWheel(float x, float y) {
+    if (m_currentTab == 0 &&
+        kit::queueWheelScroll(m_galleryScroll, x, y, m_galleryScrollTargetY, m_galleryScrollTargetSet)) return;
     if (m_currentTab == 1 &&
         kit::queueWheelScroll(m_scrollLayer, x, y, m_settingsScrollTargetY, m_settingsScrollTargetSet)) return;
     if (m_currentTab == 2 &&
@@ -288,6 +372,7 @@ void PetConfigPopup::scrollWheel(float x, float y) {
 }
 
 void PetConfigPopup::updateSmoothScroll(float dt) {
+    kit::stepWheelScroll(m_galleryScroll, m_galleryScrollTargetY, m_galleryScrollTargetSet, dt);
     kit::stepWheelScroll(m_scrollLayer, m_settingsScrollTargetY, m_settingsScrollTargetSet, dt);
     kit::stepWheelScroll(m_advancedScroll, m_advancedScrollTargetY, m_advancedScrollTargetSet, dt);
 }
@@ -303,15 +388,15 @@ void PetConfigPopup::createTabButtons() {
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu, 10);
 
-    auto spr1 = ButtonSprite::create("Galeria", 69, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
+    auto spr1 = ButtonSprite::create("1 Imagen", 84, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
     auto tab1 = CCMenuItemSpriteExtra::create(spr1, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab1->setTag(0);
     tab1->setID("pet-gallery-tab-btn"_spr);
-    tab1->setPosition({cx - 90.f, topY});
+    tab1->setPosition({cx - 98.f, topY});
     menu->addChild(tab1);
     m_tabs.push_back(tab1);
 
-    auto spr2 = ButtonSprite::create("Ajustes", 76, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
+    auto spr2 = ButtonSprite::create("2 Ajustes", 84, true, "goldFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
     auto tab2 = CCMenuItemSpriteExtra::create(spr2, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab2->setTag(1);
     tab2->setID("pet-settings-tab-btn"_spr);
@@ -319,11 +404,11 @@ void PetConfigPopup::createTabButtons() {
     menu->addChild(tab2);
     m_tabs.push_back(tab2);
 
-    auto spr3 = ButtonSprite::create("Avanzado", 76, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
+    auto spr3 = ButtonSprite::create("3 Extras", 84, true, "goldFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
     auto tab3 = CCMenuItemSpriteExtra::create(spr3, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab3->setTag(2);
     tab3->setID("pet-advanced-tab-btn"_spr);
-    tab3->setPosition({cx + 90.f, topY});
+    tab3->setPosition({cx + 98.f, topY});
     menu->addChild(tab3);
     m_tabs.push_back(tab3);
 
@@ -338,17 +423,14 @@ void PetConfigPopup::onTabSwitch(CCObject* sender) {
     m_galleryTab->setVisible(m_currentTab == 0);
     m_settingsTab->setVisible(m_currentTab == 1);
     m_advancedTab->setVisible(m_currentTab == 2);
+    if (m_currentTab == 0 && m_galleryScroll) refreshGallery();
 
     for (auto* tab : m_tabs) {
         auto spr = typeinfo_cast<ButtonSprite*>(tab->getNormalImage());
         if (!spr) continue;
-        if (tab->getTag() == m_currentTab) {
-            spr->setColor({0, 255, 0});
-            spr->setOpacity(255);
-        } else {
-            spr->setColor({255, 255, 255});
-            spr->setOpacity(150);
-        }
+        bool selected = tab->getTag() == m_currentTab;
+        spr->updateBGImage(selected ? "GJ_button_01.png" : "GJ_button_04.png");
+        spr->setOpacity(selected ? 255 : 205);
     }
 }
 
@@ -357,160 +439,240 @@ void PetConfigPopup::buildGalleryTab() {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
+    addTabIntro(m_galleryTab, content.width, "Elige una imagen para tu mascota y despues activala en Ajustes.");
+
     int cleaned = PetManager::get().cleanupInvalidImages();
     if (cleaned > 0) {
         log::info("[PetConfig] Cleaned up {} invalid image files from gallery", cleaned);
     }
 
-    auto previewBg = paimon::SpriteHelper::createDarkPanel(80, 80, 80);
-    previewBg->setPosition({cx - 40, content.height - 95.f - 40});
-    m_galleryTab->addChild(previewBg);
+    auto* previewPanel = cocos2d::extension::CCScale9Sprite::create("GJ_square02.png");
+    previewPanel->setContentSize({140.f, 140.f});
+    previewPanel->setPosition({82.f, 138.f});
+    m_galleryTab->addChild(previewPanel);
 
-    m_selectedLabel = CCLabelBMFont::create("Sin mascota elegida", "bigFont.fnt");
-    m_selectedLabel->setScale(0.25f);
-    m_selectedLabel->setPosition({cx, content.height - 145.f});
+    auto* galleryPanel = cocos2d::extension::CCScale9Sprite::create("GJ_square02.png");
+    galleryPanel->setContentSize({246.f, 140.f});
+    galleryPanel->setPosition({284.f, 138.f});
+    m_galleryTab->addChild(galleryPanel);
+
+    auto* previewTitle = CCLabelBMFont::create("Vista previa", "bigFont.fnt");
+    previewTitle->setScale(0.38f);
+    previewTitle->setPosition({82.f, 195.f});
+    m_galleryTab->addChild(previewTitle);
+
+    auto* previewFrame = cocos2d::extension::CCScale9Sprite::create("GJ_square01.png");
+    previewFrame->setContentSize({78.f, 70.f});
+    previewFrame->setPosition({82.f, 146.f});
+    m_galleryTab->addChild(previewFrame);
+
+    m_emptyPreviewIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
+    if (m_emptyPreviewIcon) {
+        m_emptyPreviewIcon->setScale(0.55f);
+        m_emptyPreviewIcon->setOpacity(155);
+        m_emptyPreviewIcon->setPosition({82.f, 146.f});
+        m_galleryTab->addChild(m_emptyPreviewIcon);
+    }
+
+    m_selectedLabel = CCLabelBMFont::create("Sin imagen", "bigFont.fnt");
+    m_selectedLabel->setPosition({82.f, 101.f});
+    m_selectedLabel->limitLabelWidth(120.f, 0.32f, 0.1f);
     m_galleryTab->addChild(m_selectedLabel);
 
-    m_galleryContainer = CCNode::create();
-    m_galleryContainer->setID("gallery-container"_spr);
-    m_galleryContainer->setPosition({0, 0});
-    m_galleryTab->addChild(m_galleryContainer);
+    m_galleryStatusLabel = CCLabelBMFont::create("Elige una imagen", "chatFont.fnt");
+    m_galleryStatusLabel->setColor({255, 222, 150});
+    m_galleryStatusLabel->setPosition({82.f, 79.f});
+    m_galleryStatusLabel->limitLabelWidth(124.f, 0.49f, 0.1f);
+    m_galleryTab->addChild(m_galleryStatusLabel);
+
+    m_galleryCountLabel = CCLabelBMFont::create("Tus imagenes", "bigFont.fnt");
+    m_galleryCountLabel->setAnchorPoint({0.f, 0.5f});
+    m_galleryCountLabel->setPosition({174.f, 195.f});
+    m_galleryCountLabel->limitLabelWidth(130.f, 0.38f, 0.1f);
+    m_galleryTab->addChild(m_galleryCountLabel);
+
+    m_galleryHintLabel = CCLabelBMFont::create("Toca una imagen para seleccionarla.", "chatFont.fnt");
+    m_galleryHintLabel->setAnchorPoint({0.f, 0.5f});
+    m_galleryHintLabel->setColor({255, 222, 150});
+    m_galleryHintLabel->setPosition({174.f, 178.f});
+    m_galleryHintLabel->limitLabelWidth(216.f, 0.44f, 0.1f);
+    m_galleryTab->addChild(m_galleryHintLabel);
+
+    m_galleryScroll = ScrollLayer::create({226.f, 100.f});
+    m_galleryScroll->setID("pet-gallery-scroll"_spr);
+    m_galleryScroll->setPosition({171.f, 70.f});
+    m_galleryTab->addChild(m_galleryScroll, 5);
 
     m_galleryMenu = CCMenu::create();
     m_galleryMenu->setID("gallery-menu"_spr);
     m_galleryMenu->setPosition({0, 0});
     m_galleryTab->addChild(m_galleryMenu, 10);
 
-    auto addSpr = ButtonSprite::create("+ Anadir", "goldFont.fnt", "GJ_button_01.png", 0.7f);
-    addSpr->setScale(0.55f);
+    auto* refreshSpr = ButtonSprite::create("Actualizar", 75, true, "goldFont.fnt", "GJ_button_04.png", 18.f, 0.37f);
+    auto* refreshBtn = CCMenuItemExt::createSpriteExtra(
+        refreshSpr, [this](CCMenuItemSpriteExtra*) { refreshGallery(); });
+    refreshBtn->setPosition({356.f, 195.f});
+    m_galleryMenu->addChild(refreshBtn);
+
+    auto addSpr = ButtonSprite::create("Importar", 78, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
     auto addBtn = CCMenuItemSpriteExtra::create(addSpr, this, menu_selector(PetConfigPopup::onAddImage));
-    addBtn->setPosition({cx - 100.f, 25.f});
+    addBtn->setPosition({57.f, 45.f});
     m_galleryMenu->addChild(addBtn);
 
-    auto shopSpr = ButtonSprite::create("Tienda", "goldFont.fnt", "GJ_button_02.png", 0.7f);
-    shopSpr->setScale(0.55f);
+    auto shopSpr = ButtonSprite::create("Tienda", 70, true, "goldFont.fnt", "GJ_button_02.png", 18.f, 0.45f);
     auto shopBtn = CCMenuItemSpriteExtra::create(shopSpr, this, menu_selector(PetConfigPopup::onOpenShop));
-    shopBtn->setPosition({cx - 15.f, 25.f});
+    shopBtn->setPosition({148.f, 45.f});
     m_galleryMenu->addChild(shopBtn);
 
-    auto delAllSpr = ButtonSprite::create("Borrar todo", "goldFont.fnt", "GJ_button_06.png", 0.7f);
-    delAllSpr->setScale(0.55f);
+    auto delAllSpr = ButtonSprite::create("Borrar todo", 91, true, "goldFont.fnt", "GJ_button_06.png", 18.f, 0.42f);
     auto delAllBtn = CCMenuItemSpriteExtra::create(delAllSpr, this, menu_selector(PetConfigPopup::onDeleteAllImages));
-    delAllBtn->setPosition({cx + 85.f, 25.f});
+    delAllBtn->setPosition({252.f, 45.f});
     m_galleryMenu->addChild(delAllBtn);
+
+    auto nextSpr = ButtonSprite::create("Ajustes >", 82, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.42f);
+    auto nextBtn = CCMenuItemSpriteExtra::create(nextSpr, this, menu_selector(PetConfigPopup::onNextStep));
+    nextBtn->setPosition({361.f, 45.f});
+    m_galleryMenu->addChild(nextBtn);
+
+    auto* footer = CCLabelBMFont::create("Importa una imagen tuya o busca una en la Tienda.", "chatFont.fnt");
+    footer->setColor({255, 225, 175});
+    footer->limitLabelWidth(content.width - 28.f, 0.47f, 0.1f);
+    footer->setPosition({cx, 16.f});
+    m_galleryTab->addChild(footer);
 
     refreshGallery();
 }
 
 void PetConfigPopup::refreshGallery() {
-    if (m_galleryContainer) {
-        m_galleryContainer->removeAllChildren();
-    }
+    if (!m_galleryScroll || !m_galleryScroll->m_contentLayer) return;
 
-    auto toRemove = std::vector<CCNode*>();
-    if (m_galleryMenu && m_galleryMenu->getChildren()) {
-        for (auto* child : CCArrayExt<CCNode*>(m_galleryMenu->getChildren())) {
-            if (child->getTag() >= 100) toRemove.push_back(child);
-        }
-    }
-    for (auto* n : toRemove) n->removeFromParent();
+    auto* scrollContent = m_galleryScroll->m_contentLayer;
+    scrollContent->removeAllChildren();
 
     auto& pet = PetManager::get();
     auto images = pet.getGalleryImages();
-    auto content = m_mainLayer->getContentSize();
-    float cx = content.width / 2.f;
+    auto const& cfg = pet.config();
 
-    float startX = 35.f;
-    float startY = content.height - 175.f;
-    float cellSize = 48.f;
-    float padding = 6.f;
-    int cols = static_cast<int>((content.width - 30.f) / (cellSize + padding));
-    if (cols < 1) cols = 1;
+    m_galleryCountLabel->setString(fmt::format("Tus imagenes ({})", images.size()).c_str());
+    m_galleryCountLabel->limitLabelWidth(130.f, 0.38f, 0.1f);
+    m_galleryHintLabel->setString(images.empty()
+        ? "Importa una imagen o entra en Tienda."
+        : "Toca una imagen para seleccionarla.");
+    m_galleryHintLabel->limitLabelWidth(216.f, 0.44f, 0.1f);
 
-    for (int i = 0; i < (int)images.size(); i++) {
-        float col = static_cast<float>(i % cols);
-        float row = static_cast<float>(i / cols);
-        float x = startX + col * (cellSize + padding) + cellSize / 2.f;
-        float y = startY - row * (cellSize + padding);
+    float const scrollW = m_galleryScroll->getContentSize().width;
+    float const scrollH = m_galleryScroll->getContentSize().height;
+    float constexpr cellSize = 42.f;
+    float constexpr gap = 6.f;
+    int constexpr cols = 4;
+    int const rows = (static_cast<int>(images.size()) + cols - 1) / cols;
+    float const gridH = std::max(scrollH, 10.f + rows * cellSize + std::max(0, rows - 1) * gap);
+    scrollContent->setContentSize({scrollW, gridH});
 
-        bool isSelected = (images[i] == pet.config().selectedImage);
-        auto bg = paimon::SpriteHelper::createColorPanel(
-            cellSize, cellSize,
-            isSelected ? ccc3(0, 200, 0) : ccc3(50, 50, 50),
-            isSelected ? 180 : 100);
-        bg->setPosition({x - cellSize / 2, y - cellSize / 2});
-        m_galleryContainer->addChild(bg);
+    if (images.empty()) {
+        auto* empty = CCLabelBMFont::create("Aun no hay imagenes.\nUsa Importar o Tienda.", "chatFont.fnt");
+        empty->setAlignment(kCCTextAlignmentCenter);
+        empty->setColor({255, 229, 180});
+        empty->setScale(0.58f);
+        empty->setPosition({scrollW / 2.f, scrollH / 2.f});
+        scrollContent->addChild(empty);
+    }
 
-        auto tex = pet.loadGalleryThumb(images[i]);
-        if (tex) {
-            auto thumbSpr = CCSprite::createWithTexture(tex);
-            if (thumbSpr) {
-                float maxDim = std::max(thumbSpr->getContentSize().width, thumbSpr->getContentSize().height);
-                if (maxDim > 0) thumbSpr->setScale((cellSize - 8.f) / maxDim);
-                thumbSpr->setPosition({x, y});
-                m_galleryContainer->addChild(thumbSpr, 1);
+    float const left = (scrollW - (cols * cellSize + (cols - 1) * gap)) / 2.f;
+    for (int i = 0; i < static_cast<int>(images.size()); ++i) {
+        float const x = left + (i % cols) * (cellSize + gap) + cellSize / 2.f;
+        float const y = gridH - 5.f - (i / cols) * (cellSize + gap) - cellSize / 2.f;
+        bool const selected = images[i] == cfg.selectedImage;
 
-                auto imgPath = pet.galleryDir() / images[i];
-                if (ImageLoadHelper::isAnimatedImage(imgPath)) {
-                    auto* gifLabel = CCLabelBMFont::create("GIF", "bigFont.fnt");
-                    if (gifLabel) {
-                        gifLabel->setScale(0.25f);
-                        gifLabel->setOpacity(200);
-                        gifLabel->setColor({255, 100, 100});
-                        gifLabel->setPosition({x + cellSize / 2.f - 8.f, y - cellSize / 2.f + 6.f});
-                        m_galleryContainer->addChild(gifLabel, 2);
-                    }
-                }
+        auto* cell = CCNode::create();
+        cell->setContentSize({cellSize, cellSize});
+        cell->setPosition({x - cellSize / 2.f, y - cellSize / 2.f});
+        scrollContent->addChild(cell);
+
+        auto* bg = cocos2d::extension::CCScale9Sprite::create("GJ_square01.png");
+        bg->setContentSize({cellSize, cellSize});
+        bg->setPosition({cellSize / 2.f, cellSize / 2.f});
+        bg->setColor(selected ? ccc3(120, 240, 130) : ccc3(255, 255, 255));
+        cell->addChild(bg);
+
+        if (auto* tex = pet.loadGalleryThumb(images[i])) {
+            if (auto* thumb = CCSprite::createWithTexture(tex)) {
+                float const maxDim = std::max(thumb->getContentSize().width, thumb->getContentSize().height);
+                if (maxDim > 0.f) thumb->setScale(35.f / maxDim);
+                thumb->setPosition({cellSize / 2.f, cellSize / 2.f});
+                cell->addChild(thumb, 1);
             }
             tex->release();
         }
 
-        auto selectArea = CCSprite::create();
+        if (selected) {
+            if (auto* check = paimon::SpriteHelper::safeCreateWithFrameName("GJ_checkOn_001.png")) {
+                check->setScale(0.28f);
+                check->setPosition({8.f, 8.f});
+                cell->addChild(check, 2);
+            }
+        } else if (ImageLoadHelper::isAnimatedImage(pet.galleryDir() / images[i])) {
+            auto* gif = CCLabelBMFont::create("GIF", "bigFont.fnt");
+            gif->setColor({255, 180, 100});
+            gif->setScale(0.21f);
+            gif->setPosition({10.f, 8.f});
+            cell->addChild(gif, 2);
+        }
+
+        auto* cellMenu = CCMenu::create();
+        cellMenu->setPosition({0.f, 0.f});
+        cell->addChild(cellMenu, 5);
+
+        auto* selectArea = CCSprite::create();
         selectArea->setContentSize({cellSize, cellSize});
         selectArea->setOpacity(0);
-        auto selectBtn = CCMenuItemSpriteExtra::create(selectArea, this, menu_selector(PetConfigPopup::onSelectImage));
-        selectBtn->setContentSize({cellSize, cellSize});
-        selectBtn->setPosition({x, y});
-        selectBtn->setTag(100 + i);
+        auto* selectBtn = CCMenuItemSpriteExtra::create(selectArea, this, menu_selector(PetConfigPopup::onSelectImage));
+        selectBtn->setPosition({cellSize / 2.f, cellSize / 2.f});
         selectBtn->setUserObject(CCString::create(images[i]));
-        m_galleryMenu->addChild(selectBtn);
+        cellMenu->addChild(selectBtn);
 
-        auto xSpr = CCSprite::createWithSpriteFrameName("GJ_deleteIcon_001.png");
-        if (xSpr) {
-            xSpr->setScale(0.35f);
-            auto xBtn = CCMenuItemSpriteExtra::create(xSpr, this, menu_selector(PetConfigPopup::onDeleteImage));
-            xBtn->setPosition({x + cellSize / 2.f - 5.f, y + cellSize / 2.f - 5.f});
-            xBtn->setTag(500 + i);
-            xBtn->setUserObject(CCString::create(images[i]));
-            m_galleryMenu->addChild(xBtn);
+        if (auto* deleteIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_deleteIcon_001.png")) {
+            deleteIcon->setScale(0.32f);
+            auto* deleteArea = CCSprite::create();
+            deleteArea->setContentSize({18.f, 18.f});
+            deleteArea->setOpacity(0);
+            deleteIcon->setPosition({9.f, 9.f});
+            deleteArea->addChild(deleteIcon);
+            auto* deleteBtn = CCMenuItemSpriteExtra::create(
+                deleteArea, this, menu_selector(PetConfigPopup::onDeleteImage));
+            deleteBtn->setPosition({cellSize - 6.f, cellSize - 6.f});
+            deleteBtn->setUserObject(CCString::create(images[i]));
+            cellMenu->addChild(deleteBtn, 10);
         }
     }
 
-    auto& cfg = pet.config();
+    m_galleryScroll->scrollToTop();
+    m_galleryScrollTargetSet = false;
+
+    if (m_previewSprite) {
+        m_previewSprite->removeFromParent();
+        m_previewSprite = nullptr;
+    }
     if (!cfg.selectedImage.empty()) {
-        if (m_previewSprite) {
-            m_previewSprite->removeFromParent();
-            m_previewSprite = nullptr;
-        }
-        auto tex = pet.loadGalleryThumb(cfg.selectedImage);
-        if (tex) {
+        if (auto* tex = pet.loadGalleryThumb(cfg.selectedImage)) {
             m_previewSprite = CCSprite::createWithTexture(tex);
             if (m_previewSprite) {
-                float maxDim = std::max(m_previewSprite->getContentSize().width, m_previewSprite->getContentSize().height);
-                if (maxDim > 0) m_previewSprite->setScale(70.f / maxDim);
-                m_previewSprite->setPosition({cx, content.height - 95.f});
+                float const maxDim = std::max(
+                    m_previewSprite->getContentSize().width, m_previewSprite->getContentSize().height);
+                if (maxDim > 0.f) m_previewSprite->setScale(62.f / maxDim);
+                m_previewSprite->setPosition({82.f, 146.f});
                 m_galleryTab->addChild(m_previewSprite, 5);
             }
             tex->release();
         }
-        m_selectedLabel->setString(cfg.selectedImage.c_str());
-    } else {
-        if (m_previewSprite) {
-            m_previewSprite->removeFromParent();
-            m_previewSprite = nullptr;
-        }
-        m_selectedLabel->setString("Sin mascota elegida");
     }
+    if (m_emptyPreviewIcon) m_emptyPreviewIcon->setVisible(m_previewSprite == nullptr);
+    m_selectedLabel->setString(cfg.selectedImage.empty() ? "Sin imagen" : cfg.selectedImage.c_str());
+    m_selectedLabel->limitLabelWidth(120.f, 0.32f, 0.1f);
+    m_galleryStatusLabel->setString(cfg.selectedImage.empty()
+        ? "Elige una imagen"
+        : (cfg.enabled ? "Mascota activada" : "Activala en Ajustes"));
+    m_galleryStatusLabel->limitLabelWidth(124.f, 0.49f, 0.1f);
 }
 
 void PetConfigPopup::onAddImage(CCObject*) {
@@ -610,12 +772,18 @@ void PetConfigPopup::onOpenShop(CCObject*) {
     if (shop) shop->show();
 }
 
+void PetConfigPopup::onNextStep(CCObject*) {
+    if (m_tabs.size() > 1) onTabSwitch(m_tabs[1]);
+}
+
 
 void PetConfigPopup::buildSettingsTab() {
     auto content = m_mainLayer->getContentSize();
     float scrollW = content.width - 24.f;
-    float scrollH = content.height - 58.f;
+    float scrollH = content.height - 89.f;
     float innerW = kit::cardInnerWidth(scrollW);
+
+    addTabIntro(m_settingsTab, content.width, "Activa la mascota y decide donde quieres verla.");
 
     auto& cfg = PetManager::get().config();
 
@@ -627,8 +795,8 @@ void PetConfigPopup::buildSettingsTab() {
     };
 
     auto* hero = kit::makeHeroToggle(scrollW,
-        "Mascota en pantalla",
-        "Un companero que sigue tu cursor por los menus.",
+        "Activar mascota",
+        "Tu imagen elegida seguira al cursor.",
         cfg.enabled,
         [this](bool v) {
             auto& c = PetManager::get().config();
@@ -636,7 +804,7 @@ void PetConfigPopup::buildSettingsTab() {
             applyLive();
             if (v && c.selectedImage.empty()) {
                 PaimonNotify::create(
-                    "Elige primero una imagen en la pestana Galeria.",
+                    "Elige primero una imagen en la pestana Imagen.",
                     NotificationIcon::Info
                 )->show();
             }
@@ -705,7 +873,7 @@ void PetConfigPopup::buildSettingsTab() {
     auto* whereCard = kit::makeCard(scrollW, "Donde aparece", {255, 200, 100}, {
         kit::makeToggleRow(innerW,
             "En todos los menus",
-            "Muestra la mascota en todas las pantallas fuera del juego.",
+            "Aparece en todos los menus y pantallas fuera del juego.",
             cfg.allLayers,
             [this](bool v) {
                 auto& c = PetManager::get().config();
@@ -721,7 +889,7 @@ void PetConfigPopup::buildSettingsTab() {
             &m_allLayersToggle),
         kit::makeToggleRow(innerW,
             "Durante el juego",
-            "Tambien visible mientras juegas un nivel.",
+            "Tambien aparece mientras juegas un nivel.",
             cfg.showInGameplay,
             [this](bool v) {
                 PetManager::get().config().showInGameplay = v;
@@ -730,17 +898,16 @@ void PetConfigPopup::buildSettingsTab() {
             &m_showInGameplayToggle),
         kit::makeButtonRow(innerW,
             "Elegir pantallas",
-            "Escoge una por una las pantallas donde aparece.",
+            "Elige una por una las pantallas fuera del juego.",
             "Abrir",
             [this] { openLayerPicker(); }),
     });
 
     auto* footer = kit::makeHint(scrollW,
-        "Consejo: en la pestana Avanzado hay mas efectos (sombra, particulas, "
-        "dialogos, sueno y reacciones).");
+        "En Extras puedes cambiar animaciones, efectos y reacciones.");
 
     m_scrollLayer = kit::makeScrollStack({scrollW, scrollH},
-        {hero, lookCard, moveCard, whereCard, footer});
+        {hero, whereCard, lookCard, moveCard, footer});
     m_scrollLayer->setPosition({12.f, 8.f});
     m_settingsTab->addChild(m_scrollLayer, 5);
 }
@@ -749,8 +916,10 @@ void PetConfigPopup::buildSettingsTab() {
 void PetConfigPopup::buildAdvancedTab() {
     auto content = m_mainLayer->getContentSize();
     float scrollW = content.width - 24.f;
-    float scrollH = content.height - 58.f;
+    float scrollH = content.height - 89.f;
     float innerW = kit::cardInnerWidth(scrollW);
+
+    addTabIntro(m_advancedTab, content.width, "Opcional: ajusta los efectos y las reacciones de tu mascota.");
 
     auto& cfg = PetManager::get().config();
 
@@ -800,7 +969,7 @@ void PetConfigPopup::buildAdvancedTab() {
         return row;
     };
 
-    auto* statesCard = kit::makeCard(scrollW, "Imagenes por estado", {255, 140, 220}, {
+    auto* statesCard = kit::makeCard(scrollW, "Imagenes para cada estado", {255, 140, 220}, {
         kit::makeHint(innerW,
             "Usa una imagen distinta cuando la mascota camina, duerme o reacciona. "
             "Si un estado esta vacio, se usa la imagen de la Galeria."),
@@ -1139,8 +1308,8 @@ void PetConfigPopup::buildAdvancedTab() {
     });
 
     m_advancedScroll = kit::makeScrollStack({scrollW, scrollH},
-        {statesCard, animCard, offsetCard, trailCard, shadowCard,
-         particleCard, speechCard, sleepCard, clickCard, reactCard});
+        {offsetCard, animCard, trailCard, shadowCard, particleCard,
+         speechCard, sleepCard, clickCard, reactCard, statesCard});
     m_advancedScroll->setPosition({12.f, 8.f});
     m_advancedTab->addChild(m_advancedScroll, 5);
 }
@@ -1201,9 +1370,17 @@ void PetConfigPopup::applyLive() {
     auto& pet = PetManager::get();
     pet.applyConfigLive();
 
+    if (m_galleryStatusLabel) {
+        auto const& cfg = pet.config();
+        m_galleryStatusLabel->setString(cfg.selectedImage.empty()
+            ? "Elige una imagen"
+            : (cfg.enabled ? "Mascota activada" : "Activala en Ajustes"));
+        m_galleryStatusLabel->limitLabelWidth(124.f, 0.49f, 0.1f);
+    }
+
     auto scene = CCDirector::get()->getRunningScene();
     if (pet.config().enabled && scene) {
-// attachToScene is idempotent; refresh visibility when already attached.
+        // Reattach to refresh visibility in the current scene.
         pet.attachToScene(scene);
     } else {
         pet.detachFromScene();

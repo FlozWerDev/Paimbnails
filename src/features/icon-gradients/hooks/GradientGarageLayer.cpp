@@ -112,7 +112,7 @@ void GradientGarageLayer::updateGradient() {
         clearDoll(m_playerObject);
 
         if (sdiEnabled()) {
-            if (SimplePlayer* doll = typeinfo_cast<SimplePlayer*>(getChildByID("player2-icon")))
+            if (SimplePlayer* doll = typeinfo_cast<SimplePlayer*>(getChildByID("player2-icon"_spr)))
                 clearDoll(doll);
         }
 
@@ -133,7 +133,7 @@ void GradientGarageLayer::updateGradient() {
         f->m_isP2Disabled = true;
 
         if (sdiEnabled()) {
-            if (SimplePlayer* doll = typeinfo_cast<SimplePlayer*>(getChildByID("player2-icon")))
+            if (SimplePlayer* doll = typeinfo_cast<SimplePlayer*>(getChildByID("player2-icon"_spr)))
                 clearDoll(doll);
 
             if (sdiSaved<bool>("2pselected", false))
@@ -161,7 +161,7 @@ void GradientGarageLayer::updateGradient() {
         GradientUtils::paintMenuIcon(self->m_playerObject, false, 201);
 
         if (sdiEnabled() && !GradientCache::is2PDisabled()) {
-            if (SimplePlayer* doll = typeinfo_cast<SimplePlayer*>(self->getChildByID("player2-icon")))
+            if (SimplePlayer* doll = typeinfo_cast<SimplePlayer*>(self->getChildByID("player2-icon"_spr)))
                 GradientUtils::paintMenuIcon(doll, true, 202);
         }
 
@@ -214,7 +214,7 @@ bool GradientGarageLayer::init() {
         // The 2P swap button lives in the hub rail, hung during the
         // separate-dual init, i.e. before this deferred pass.
         CCNode* menu = paimon::garage_hub::rail(self);
-        auto swap = menu ? static_cast<CCMenuItemSpriteExtra*>(menu->getChildByID("swap-2p-button")) : nullptr;
+        auto swap = menu ? static_cast<CCMenuItemSpriteExtra*>(menu->getChildByID("swap-2p-button"_spr)) : nullptr;
         if (!swap) return;
 
         self->m_fields->m_originalCallback = swap->m_pfnSelector;

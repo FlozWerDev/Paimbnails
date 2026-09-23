@@ -52,8 +52,12 @@ DecodedPixels decodeStaticPixels(std::vector<uint8_t> const& data) {
     if (data.empty()) return out;
 
     int w = 0, h = 0, ch = 0;
+    if (!stbi_info_from_memory(data.data(), static_cast<int>(data.size()), &w, &h, &ch) ||
+        w <= 0 || h <= 0 || w > 4096 || h > 4096) {
+        return out;
+    }
     unsigned char* px = stbi_load_from_memory(data.data(), static_cast<int>(data.size()), &w, &h, &ch, 4);
-    if (!px || w <= 0 || h <= 0) {
+    if (!px || w <= 0 || h <= 0 || w > 4096 || h > 4096) {
         if (px) stbi_image_free(px);
         return out;
     }
@@ -92,11 +96,19 @@ std::filesystem::path EmoteCache::getDiskCacheDir() const {
 }
 
 std::filesystem::path EmoteCache::getDiskPath(std::string const& filename) const {
-    return getDiskCacheDir() / filename;
+    if (filename.empty() || filename.size() > 255 || filename == "." || filename == "..") {
+        return {};
+    }
+    std::filesystem::path name(filename);
+    if (name.has_root_path() || name.has_parent_path() || name != name.filename()) {
+        return {};
+    }
+    return getDiskCacheDir() / name;
 }
 
 bool EmoteCache::isDiskEntryValid(std::string const& filename) const {
     auto path = getDiskPath(filename);
+    if (path.empty()) return false;
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return false;
 
@@ -111,6 +123,7 @@ bool EmoteCache::isDiskEntryValid(std::string const& filename) const {
 
 bool EmoteCache::loadFromDisk(std::string const& filename, std::vector<uint8_t>& outData) const {
     auto path = getDiskPath(filename);
+    if (path.empty()) return false;
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return false;
 
@@ -128,11 +141,12 @@ bool EmoteCache::loadFromDisk(std::string const& filename, std::vector<uint8_t>&
 
 void EmoteCache::saveToDisk(std::string const& filename, std::vector<uint8_t> const& data) {
     if (data.empty() || data.size() > MAX_FILE_BYTES) return;
+    auto path = getDiskPath(filename);
+    if (path.empty()) return;
     auto dir = getDiskCacheDir();
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
 
-    auto path = dir / filename;
     std::ofstream ofs(path, std::ios::binary);
     if (ofs.is_open()) {
         ofs.write(reinterpret_cast<char const*>(data.data()), data.size());
@@ -510,7 +524,9 @@ void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
                 &imageW, &imageH, &channels) &&
             (imageW <= 0 || imageH <= 0 || imageW > 4096 || imageH > 4096)) {
             std::error_code ec;
-            std::filesystem::remove(self->getDiskPath(task.info.filename), ec);
+            if (auto path = self->getDiskPath(task.info.filename); !path.empty()) {
+                std::filesystem::remove(path, ec);
+            }
             dispatchTextureCallback(std::move(task.callback), nullptr, false, {});
             continue;
         }
@@ -534,7 +550,9 @@ void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
                         ccImg->release();
                         log::warn("[EmoteCache] Static decode failed for emote '{}', purging cached file", info.name);
                         std::error_code ec;
-                        std::filesystem::remove(self->getDiskPath(info.filename), ec);
+                        if (auto path = self->getDiskPath(info.filename); !path.empty()) {
+                            std::filesystem::remove(path, ec);
+                        }
                         if (cb) cb(nullptr, false, {});
                         return;
                     }

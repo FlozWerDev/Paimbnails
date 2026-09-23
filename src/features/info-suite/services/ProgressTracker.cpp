@@ -3,6 +3,7 @@
 #include "../../../utils/JsonHelper.hpp"
 #include <Geode/Geode.hpp>
 #include <algorithm>
+#include <climits>
 #include <ctime>
 #include <fstream>
 
@@ -25,9 +26,13 @@ int64_t asInt(matjson::Value const& value) {
     return res.isOk() ? res.unwrap() : 0;
 }
 
+int asCount(matjson::Value const& value) {
+    return static_cast<int>(std::clamp<int64_t>(asInt(value), 0, INT_MAX));
+}
+
 int maxLevels() {
-    auto value = static_cast<int>(moduleSetting<int64_t>("info-progress-max-levels", 500));
-    return std::clamp(value, 50, 5000);
+    auto value = moduleSetting<int64_t>("info-progress-max-levels", 500);
+    return static_cast<int>(std::clamp<int64_t>(value, 50, 5000));
 }
 
 // Buckets are stored as a flat "percent:count" list so an untouched level costs
@@ -48,9 +53,10 @@ void bucketsFromJson(matjson::Value const& value, std::array<uint32_t, kPercentB
     paimon::json::forEachInArray(value, [&](matjson::Value const& entry) {
         auto pair = paimon::json::arrayOrEmpty(entry);
         if (pair.size() != 2) return;
-        auto percent = static_cast<int>(asInt(pair[0]));
+        auto percent = asInt(pair[0]);
         if (percent < 0 || percent >= kPercentBuckets) return;
-        out[percent] = static_cast<uint32_t>(std::clamp<int64_t>(asInt(pair[1]), 0, UINT32_MAX));
+        out[static_cast<size_t>(percent)] = static_cast<uint32_t>(
+            std::clamp<int64_t>(asInt(pair[1]), 0, UINT32_MAX));
     });
 }
 
@@ -146,14 +152,14 @@ void ProgressTracker::load() {
         if (!id.isOk()) continue;
 
         LevelProgress progress;
-        progress.attempts = static_cast<int>(asInt(value["attempts"]));
-        progress.practiceAttempts = static_cast<int>(asInt(value["practiceAttempts"]));
-        progress.completions = static_cast<int>(asInt(value["completions"]));
-        progress.bestNormal = static_cast<int>(asInt(value["bestNormal"]));
-        progress.bestPractice = static_cast<int>(asInt(value["bestPractice"]));
-        progress.jumpsNormal = static_cast<int>(asInt(value["jumpsNormal"]));
-        progress.jumpsPractice = static_cast<int>(asInt(value["jumpsPractice"]));
-        progress.playSeconds = asInt(value["playSeconds"]);
+        progress.attempts = asCount(value["attempts"]);
+        progress.practiceAttempts = asCount(value["practiceAttempts"]);
+        progress.completions = asCount(value["completions"]);
+        progress.bestNormal = std::min(asCount(value["bestNormal"]), 100);
+        progress.bestPractice = std::min(asCount(value["bestPractice"]), 100);
+        progress.jumpsNormal = asCount(value["jumpsNormal"]);
+        progress.jumpsPractice = asCount(value["jumpsPractice"]);
+        progress.playSeconds = std::max<int64_t>(0, asInt(value["playSeconds"]));
         progress.lastPlayed = asInt(value["lastPlayed"]);
         bucketsFromJson(value["deaths"], progress.deathsNormal);
         bucketsFromJson(value["deathsPractice"], progress.deathsPractice);
@@ -234,21 +240,24 @@ void ProgressTracker::recordDeath(int levelID, int percent, bool practice) {
 void ProgressTracker::recordAttempt(int levelID, bool practice) {
     if (levelID <= 0) return;
     auto& progress = touch(levelID);
-    if (practice) progress.practiceAttempts++;
-    else progress.attempts++;
+    auto& attempts = practice ? progress.practiceAttempts : progress.attempts;
+    if (attempts < INT_MAX) ++attempts;
     enforceLimit();
 }
 
 void ProgressTracker::recordCompletion(int levelID, bool practice) {
     if (levelID <= 0 || practice) return;
     auto& progress = touch(levelID);
-    progress.completions++;
+    if (progress.completions < INT_MAX) ++progress.completions;
     progress.bestNormal = 100;
+    enforceLimit();
 }
 
 void ProgressTracker::recordPlayTime(int levelID, int64_t seconds) {
     if (levelID <= 0 || seconds <= 0) return;
-    touch(levelID).playSeconds += seconds;
+    auto& progress = touch(levelID);
+    progress.playSeconds += std::min(seconds, INT64_MAX - progress.playSeconds);
+    enforceLimit();
 }
 
 void ProgressTracker::recordBest(int levelID, int percent, bool practice) {
@@ -256,13 +265,15 @@ void ProgressTracker::recordBest(int levelID, int percent, bool practice) {
     auto& progress = touch(levelID);
     auto& best = practice ? progress.bestPractice : progress.bestNormal;
     best = std::max(best, std::min(percent, 100));
+    enforceLimit();
 }
 
 void ProgressTracker::recordJump(int levelID, bool practice) {
     if (levelID <= 0) return;
     auto& progress = touch(levelID);
-    if (practice) progress.jumpsPractice++;
-    else progress.jumpsNormal++;
+    auto& jumps = practice ? progress.jumpsPractice : progress.jumpsNormal;
+    if (jumps < INT_MAX) ++jumps;
+    enforceLimit();
 }
 
 void ProgressTracker::recordRun(int levelID, int jumps, int percent, bool practice) {
@@ -278,6 +289,7 @@ void ProgressTracker::recordRun(int levelID, int jumps, int percent, bool practi
     if (progress.runs.size() > static_cast<size_t>(kMaxRuns)) {
         progress.runs.erase(progress.runs.begin());
     }
+    enforceLimit();
 }
 
 LevelProgress const* ProgressTracker::find(int levelID) const {

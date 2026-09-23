@@ -8,8 +8,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-
-// stb implementations live in other TUs; this TU only consumes the headers.
+#include <limits>
+#include <system_error>
 
 using namespace geode::prelude;
 
@@ -54,9 +54,16 @@ void ImageBuffer::setAt(int x, int y, Pixel p) {
 }
 
 void ImageBuffer::reset(int width, int height) {
-    m_width  = std::max(0, width);
-    m_height = std::max(0, height);
-    m_pixels.assign(static_cast<std::size_t>(m_width) * static_cast<std::size_t>(m_height) * kBytesPerPixel, 0);
+    if (width <= 0 || height <= 0 ||
+        static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) > kMaxPixelCount) {
+        m_width = 0;
+        m_height = 0;
+        m_pixels.clear();
+        return;
+    }
+    m_width = width;
+    m_height = height;
+    m_pixels.assign(pixelCount() * kBytesPerPixel, 0);
 }
 
 void ImageBuffer::clear(Pixel color) {
@@ -81,15 +88,16 @@ ImageBuffer ImageBuffer::subRect(int x, int y, int w, int h) const {
     ImageBuffer out(w, h);
     if (out.empty() || empty()) return out;
 
-    // Out-of-bounds rows/cols stay transparent (already zeroed by reset()).
-    int srcX0 = std::max(x, 0);
-    int srcY0 = std::max(y, 0);
-    int srcX1 = std::min(x + w, m_width);
-    int srcY1 = std::min(y + h, m_height);
+    int srcX0 = static_cast<int>(std::clamp<std::int64_t>(x, 0, m_width));
+    int srcY0 = static_cast<int>(std::clamp<std::int64_t>(y, 0, m_height));
+    int srcX1 = static_cast<int>(std::clamp<std::int64_t>(
+        static_cast<std::int64_t>(x) + w, 0, m_width));
+    int srcY1 = static_cast<int>(std::clamp<std::int64_t>(
+        static_cast<std::int64_t>(y) + h, 0, m_height));
     if (srcX0 >= srcX1 || srcY0 >= srcY1) return out;
 
-    int dstX0 = srcX0 - x;
-    int dstY0 = srcY0 - y;
+    int dstX0 = static_cast<int>(static_cast<std::int64_t>(srcX0) - x);
+    int dstY0 = static_cast<int>(static_cast<std::int64_t>(srcY0) - y);
 
     int rowBytes = (srcX1 - srcX0) * static_cast<int>(kBytesPerPixel);
     for (int sy = srcY0; sy < srcY1; ++sy) {
@@ -103,17 +111,16 @@ ImageBuffer ImageBuffer::subRect(int x, int y, int w, int h) const {
 void ImageBuffer::blitOverwrite(int dstX, int dstY, ImageBuffer const& src) {
     if (src.empty() || empty()) return;
 
-    int srcX0 = 0;
-    int srcY0 = 0;
-    int srcX1 = src.width();
-    int srcY1 = src.height();
-
-    if (dstX < 0)            { srcX0 = -dstX; dstX = 0; }
-    if (dstY < 0)            { srcY0 = -dstY; dstY = 0; }
-    if (dstX + (srcX1 - srcX0) > m_width)  srcX1 = srcX0 + (m_width  - dstX);
-    if (dstY + (srcY1 - srcY0) > m_height) srcY1 = srcY0 + (m_height - dstY);
+    int srcX0 = static_cast<int>(std::clamp<std::int64_t>(-static_cast<std::int64_t>(dstX), 0, src.width()));
+    int srcY0 = static_cast<int>(std::clamp<std::int64_t>(-static_cast<std::int64_t>(dstY), 0, src.height()));
+    int srcX1 = static_cast<int>(std::clamp<std::int64_t>(
+        static_cast<std::int64_t>(m_width) - dstX, 0, src.width()));
+    int srcY1 = static_cast<int>(std::clamp<std::int64_t>(
+        static_cast<std::int64_t>(m_height) - dstY, 0, src.height()));
     if (srcX0 >= srcX1 || srcY0 >= srcY1) return;
 
+    dstX += srcX0;
+    dstY += srcY0;
     int rowBytes = (srcX1 - srcX0) * static_cast<int>(kBytesPerPixel);
     for (int sy = srcY0; sy < srcY1; ++sy) {
         auto* dst = atRef(dstX, dstY + (sy - srcY0));
@@ -125,13 +132,9 @@ void ImageBuffer::blitOverwrite(int dstX, int dstY, ImageBuffer const& src) {
 void ImageBuffer::rotateCCW90() {
     if (empty()) return;
     ImageBuffer rotated(m_height, m_width);
-    const uint32_t* srcData = reinterpret_cast<const uint32_t*>(m_pixels.data());
-    uint32_t* dstData = reinterpret_cast<uint32_t*>(rotated.m_pixels.data());
-    int dstW = rotated.m_width;
     for (int y = 0; y < m_height; ++y) {
         for (int x = 0; x < m_width; ++x) {
-            // HACK: previous formula overflowed dst buffer on non-square frames.
-            dstData[(m_width - 1 - x) * dstW + y] = srcData[y * m_width + x];
+            std::memcpy(rotated.atRef(y, m_width - 1 - x), atRef(x, y), kBytesPerPixel);
         }
     }
     *this = std::move(rotated);
@@ -140,12 +143,9 @@ void ImageBuffer::rotateCCW90() {
 void ImageBuffer::rotateCW90() {
     if (empty()) return;
     ImageBuffer rotated(m_height, m_width);
-    const uint32_t* srcData = reinterpret_cast<const uint32_t*>(m_pixels.data());
-    uint32_t* dstData = reinterpret_cast<uint32_t*>(rotated.m_pixels.data());
-    int dstW = rotated.m_width;
     for (int y = 0; y < m_height; ++y) {
         for (int x = 0; x < m_width; ++x) {
-            dstData[x * dstW + (m_height - 1 - y)] = srcData[y * m_width + x];
+            std::memcpy(rotated.atRef(m_height - 1 - y, x), atRef(x, y), kBytesPerPixel);
         }
     }
     *this = std::move(rotated);
@@ -156,6 +156,7 @@ ImageBuffer ImageBuffer::resizedBilinear(int width, int height) const {
     if (width == m_width && height == m_height) return *this;
 
     ImageBuffer out(width, height);
+    if (out.empty()) return out;
     float scaleX = static_cast<float>(m_width) / static_cast<float>(width);
     float scaleY = static_cast<float>(m_height) / static_cast<float>(height);
     for (int y = 0; y < height; ++y) {
@@ -186,6 +187,11 @@ ImageBuffer ImageBuffer::resizedBilinear(int width, int height) const {
 }
 
 geode::Result<ImageBuffer> ImageBuffer::loadFromFile(std::filesystem::path const& path) {
+    std::error_code ec;
+    auto size = std::filesystem::file_size(path, ec);
+    if (ec || size > kMaxEncodedBytes) {
+        return Err("ImageBuffer::loadFromFile: invalid file size");
+    }
     auto bytes = file::readBinary(path);
     if (!bytes) {
         return Err("ImageBuffer::loadFromFile: cannot read {}: {}",
@@ -197,18 +203,27 @@ geode::Result<ImageBuffer> ImageBuffer::loadFromFile(std::filesystem::path const
 
 geode::Result<ImageBuffer> ImageBuffer::loadFromMemory(std::span<std::uint8_t const> bytes) {
     if (bytes.empty()) return Err("ImageBuffer::loadFromMemory: empty input");
+    if (bytes.size() > kMaxEncodedBytes || bytes.size() > std::numeric_limits<int>::max()) {
+        return Err("ImageBuffer::loadFromMemory: input too large");
+    }
 
     int w = 0, h = 0, channels = 0;
+    if (!stbi_info_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &channels) ||
+        w <= 0 || h <= 0 ||
+        static_cast<std::uint64_t>(w) * static_cast<std::uint64_t>(h) > kMaxPixelCount) {
+        return Err("ImageBuffer::loadFromMemory: invalid dimensions {}x{}", w, h);
+    }
     auto* px = stbi_load_from_memory(
         bytes.data(),
         static_cast<int>(bytes.size()),
-        &w, &h, &channels, 4);  // force RGBA8
+        &w, &h, &channels, 4);
 
     if (!px) {
         return Err("ImageBuffer::loadFromMemory: stbi_load failed: {}",
             stbi_failure_reason() ? stbi_failure_reason() : "unknown");
     }
-    if (w <= 0 || h <= 0) {
+    if (w <= 0 || h <= 0 ||
+        static_cast<std::uint64_t>(w) * static_cast<std::uint64_t>(h) > kMaxPixelCount) {
         stbi_image_free(px);
         return Err("ImageBuffer::loadFromMemory: invalid dimensions {}x{}", w, h);
     }

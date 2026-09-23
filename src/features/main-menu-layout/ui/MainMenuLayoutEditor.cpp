@@ -32,9 +32,9 @@ namespace {
     constexpr float kGripHit = 12.f;
     constexpr float kCanvasBottom = 84.f;
     constexpr std::size_t kHistoryLimit = 50;
-    constexpr float kTransitionDuration = 0.32f;
-    // Mas corto que el fundido de cierre para que el pop aterrice antes.
-    constexpr float kSettleDuration = 0.22f;
+    constexpr float kTransitionDuration = 0.46f;
+    constexpr float kCloseDuration = 0.34f;
+    constexpr float kEntryDuration = 0.36f;
 
     CCPoint worldPos(CCNode* node) {
         if (!node || !node->getParent()) return { 0.f, 0.f };
@@ -310,7 +310,7 @@ void MainMenuLayoutEditor::animateLive(Item const& item) {
 
 void MainMenuLayoutEditor::animateEntry() {
     auto winSize = CCDirector::get()->getWinSize();
-    float const drop = std::min(winSize.height * 0.12f, 96.f);
+    float const rise = std::min(winSize.height * 0.035f, 22.f);
     for (auto const& item : m_items) {
         if (!item.target.node || !item.target.node->getParent()) continue;
         auto it = m_live.find(item.target.key);
@@ -318,55 +318,51 @@ void MainMenuLayoutEditor::animateEntry() {
         auto from = it->second;
         from.hidden = false;
         from.opacity = 0.f;
-        // El fondo solo se funde: desplazarlo se veria como un fallo.
-        if (!this->isBackgroundItem(item)) from.position.y -= drop;
+        bool background = this->isBackgroundItem(item);
+        float delay = 0.f;
+        if (!background) {
+            float vertical = std::clamp(worldPos(item.target.node).y / winSize.height, 0.f, 1.f);
+            delay = 0.025f + (1.f - vertical) * 0.055f;
+            from.position.y -= rise;
+            from.scale *= 0.96f;
+            from.scaleX *= 0.96f;
+            from.scaleY *= 0.96f;
+        }
         MainMenuLayoutManager::applyLayout(item.target, from);
-        m_transitions[item.target.key] = { MainMenuLayoutManager::readLayout(item.target.node), 0.f, kTransitionDuration };
-    }
-}
-
-void MainMenuLayoutEditor::animateSettle() {
-    for (auto const& item : m_items) {
-        if (!item.target.node || !item.target.node->getParent()) continue;
-        auto it = m_live.find(item.target.key);
-        if (it == m_live.end() || it->second.hidden) continue;
-        // Parte del estado visible actual para no pegar un salto a mitad
-        // de otra animacion, y crece hasta el layout guardado.
-        auto from = MainMenuLayoutManager::readLayout(item.target.node);
-        from.hidden = false;
-        from.scale *= 0.9f;
-        from.scaleX *= 0.9f;
-        from.scaleY *= 0.9f;
-        MainMenuLayoutManager::applyLayout(item.target, from);
-        m_transitions[item.target.key] = { MainMenuLayoutManager::readLayout(item.target.node), 0.f, kSettleDuration };
+        m_transitions[item.target.key] = { from, 0.f, kEntryDuration, delay, true };
     }
 }
 
 void MainMenuLayoutEditor::animateInterface(bool opening) {
     auto winSize = CCDirector::get()->getWinSize();
-    float duration = kTransitionDuration;
+    float duration = opening ? kTransitionDuration : kCloseDuration;
     m_dark->stopAllActions();
-    m_dark->runAction(CCFadeTo::create(duration, opening ? 110 : 0));
+    m_dark->runAction(CCEaseSineInOut::create(CCFadeTo::create(duration, opening ? 110 : 0)));
 
     m_barContainer->stopAllActions();
     if (opening) m_barContainer->setPositionY(-(kCanvasBottom + 16.f));
-    m_barContainer->runAction(CCEaseSineOut::create(CCMoveTo::create(
-        duration, { 0.f, opening ? 0.f : -(kCanvasBottom + 16.f) })));
+    auto* barMove = CCMoveTo::create(duration, { 0.f, opening ? 0.f : -(kCanvasBottom + 16.f) });
+    if (opening) m_barContainer->runAction(CCEaseSineOut::create(barMove));
+    else m_barContainer->runAction(CCEaseSineInOut::create(barMove));
 
     m_status->stopAllActions();
     if (opening) {
         m_status->setOpacity(0);
         m_status->setPositionY(winSize.height + 8.f);
     }
-    m_status->runAction(CCFadeTo::create(duration, opening ? 255 : 0));
-    m_status->runAction(CCEaseSineOut::create(CCMoveTo::create(
-        duration, { winSize.width / 2.f, winSize.height + (opening ? -16.f : 8.f) })));
+    m_status->runAction(CCEaseSineInOut::create(CCFadeTo::create(duration, opening ? 255 : 0)));
+    auto* statusMove = CCMoveTo::create(
+        duration, { winSize.width / 2.f, winSize.height + (opening ? -16.f : 8.f) });
+    if (opening) m_status->runAction(CCEaseSineOut::create(statusMove));
+    else m_status->runAction(CCEaseSineInOut::create(statusMove));
 
     if (m_collapseBtn) {
         m_collapseBtn->stopAllActions();
         if (opening) m_collapseBtn->setPositionY(-12.f);
-        m_collapseBtn->runAction(CCEaseSineOut::create(CCMoveTo::create(
-            duration, { winSize.width / 2.f, opening ? kCanvasBottom + 12.f : -12.f })));
+        auto* arrowMove = CCMoveTo::create(
+            duration, { winSize.width / 2.f, opening ? kCanvasBottom + 12.f : -12.f });
+        if (opening) m_collapseBtn->runAction(CCEaseSineOut::create(arrowMove));
+        else m_collapseBtn->runAction(CCEaseSineInOut::create(arrowMove));
     }
 }
 
@@ -387,7 +383,7 @@ void MainMenuLayoutEditor::beginClose(bool saved) {
 
 void MainMenuLayoutEditor::updateAnimations(float dt) {
     m_interfaceElapsed += dt;
-    float progress = std::clamp(m_interfaceElapsed / kTransitionDuration, 0.f, 1.f);
+    float progress = std::clamp(m_interfaceElapsed / (m_closing ? kCloseDuration : kTransitionDuration), 0.f, 1.f);
     float eased = progress * progress * (3.f - 2.f * progress);
     m_interfaceOpacity = m_closing ? m_closeOpacity * (1.f - eased) : eased;
 
@@ -401,13 +397,15 @@ void MainMenuLayoutEditor::updateAnimations(float dt) {
         }
         auto& transition = it->second;
         transition.elapsed += dt;
-        float t = std::clamp(transition.elapsed / transition.duration, 0.f, 1.f);
-        if (t >= 1.f) {
+        float phase = std::clamp((transition.elapsed - transition.delay) / transition.duration, 0.f, 1.f);
+        if (phase >= 1.f) {
             MainMenuLayoutManager::applyLayout(item.target, target->second);
             m_transitions.erase(it);
             continue;
         }
-        t = t * t * (3.f - 2.f * t);
+        float t = transition.entry ? 1.f - std::pow(1.f - phase, 3.f)
+                                   : phase * phase * (3.f - 2.f * phase);
+        float fade = transition.entry ? phase * phase * (3.f - 2.f * phase) : t;
         auto const& from = transition.from;
         auto const& to = target->second;
         auto frame = to;
@@ -416,7 +414,9 @@ void MainMenuLayoutEditor::updateAnimations(float dt) {
         frame.scale = mix(from.scale, to.scale);
         frame.scaleX = mix(from.scaleX, to.scaleX);
         frame.scaleY = mix(from.scaleY, to.scaleY);
-        frame.opacity = mix(from.hidden ? 0.f : from.opacity, to.hidden ? 0.f : to.opacity);
+        float startOpacity = from.hidden ? 0.f : from.opacity;
+        float endOpacity = to.hidden ? 0.f : to.opacity;
+        frame.opacity = startOpacity + (endOpacity - startOpacity) * fade;
         frame.hidden = from.hidden && to.hidden;
         frame.fontFile.clear();
         MainMenuLayoutManager::applyLayout(item.target, frame);
@@ -790,7 +790,7 @@ void MainMenuLayoutEditor::update(float dt) {
     if (!attached) { this->removeFromParent(); return; }
 
     this->updateAnimations(dt);
-    if (m_closing && m_interfaceElapsed >= kTransitionDuration && m_transitions.empty()) {
+    if (m_closing && m_interfaceElapsed >= kCloseDuration && m_transitions.empty()) {
         this->removeFromParent();
         return;
     }
@@ -805,7 +805,6 @@ void MainMenuLayoutEditor::onSave(CCObject*) {
         PaimonNotify::show(Localization::get().getString("menu_layout.saved"), NotificationIcon::Success);
     }
     this->selectIndex(-1);
-    this->animateSettle();
     this->beginClose(true);
 }
 

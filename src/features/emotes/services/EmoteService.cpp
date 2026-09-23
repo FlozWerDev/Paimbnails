@@ -39,7 +39,7 @@ static EmoteType classifyByFilename(std::string const& filename) {
     auto dot = filename.rfind('.');
     if (dot == std::string::npos) return EmoteType::Static;
     std::string ext = filename.substr(dot + 1);
-    for (auto& c : ext) c = static_cast<char>(std::tolower(c));
+    for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     if (ext == "gif") return EmoteType::Gif;
     return EmoteType::Static;
 }
@@ -318,6 +318,8 @@ void EmoteService::saveCatalogToDisk() {
         return;
     }
     ofs << root.dump();
+    ofs.close();
+    if (!ofs) log::warn("[EmoteService] Failed to save catalog to disk");
 }
 
 void EmoteService::loadCatalogFromDisk() {
@@ -326,11 +328,14 @@ void EmoteService::loadCatalogFromDisk() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    std::ifstream ifs(path, std::ios::binary);
+    std::ifstream ifs(path, std::ios::binary | std::ios::ate);
     if (!ifs.is_open()) return;
 
-    std::string content((std::istreambuf_iterator<char>(ifs)),
-                        std::istreambuf_iterator<char>());
+    std::streamoff const size = ifs.tellg();
+    if (size <= 0 || size > 16ll * 1024 * 1024) return;
+    ifs.seekg(0, std::ios::beg);
+    std::string content(static_cast<size_t>(size), '\0');
+    if (!ifs.read(content.data(), size)) return;
 
     auto jsonRes = matjson::parse(content);
     if (!jsonRes.isOk()) {
@@ -344,15 +349,16 @@ void EmoteService::loadCatalogFromDisk() {
     auto now = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()
     ).count();
+    auto age = savedAt > 0 && savedAt <= now ? now - savedAt : -1;
 
-    if (now - savedAt > CATALOG_TTL_SECONDS) {
-        log::info("[EmoteService] Disk catalog expired (age: {}s), will re-fetch", now - savedAt);
+    if (age < 0 || age > CATALOG_TTL_SECONDS) {
+        log::info("[EmoteService] Disk catalog expired or invalid, will re-fetch");
         std::error_code removeEc;
         std::filesystem::remove(path, removeEc);
         return;
     }
 
-    auto diskVersion = static_cast<int>(json["catalogVersion"].asInt().unwrapOr(0));
+    auto diskVersion = json["catalogVersion"].asInt().unwrapOr(0);
     if (diskVersion < CATALOG_VERSION) {
         log::info("[EmoteService] Disk catalog version {} < {}, discarding", diskVersion, CATALOG_VERSION);
         std::error_code removeEc;

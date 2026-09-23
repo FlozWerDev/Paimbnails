@@ -10,7 +10,7 @@ using namespace geode::prelude;
 
 namespace {
 
-char const* const kBadgeID = "info-suite-comment-id";
+char const* const kBadgeID = "info-suite-comment-id"_spr;
 
 bool commentIdsEnabled() {
     return paimon::info::subEnabled("info-mod-ids", "info-ids-comments", true);

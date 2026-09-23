@@ -73,8 +73,6 @@ CCLabelBMFont* makeLabel(std::string const& text, char const* font, float scale,
     return label;
 }
 
-// Both tab faces are the same sprite; selecting one is a tint swap plus the
-// little rise the game gives its own tabs.
 CCNode* makeTab(float width, float height, CCNode* content) {
     auto* tab = CCNode::create();
     tab->setContentSize({width, height});
@@ -82,7 +80,7 @@ CCNode* makeTab(float width, float height, CCNode* content) {
     if (auto* skin = paimon::SpriteHelper::safeCreateScale9WithFrameName("GJ_tabOff_001.png")) {
         skin->setContentSize({width, height});
         skin->setAnchorPoint({0.f, 0.f});
-        skin->setID("tab-skin");
+        skin->setID("tab-skin"_spr);
         tab->addChild(skin, 0);
     }
     if (content) {
@@ -92,8 +90,6 @@ CCNode* makeTab(float width, float height, CCNode* content) {
     return tab;
 }
 
-// Same idea for the category chips, built from the badge plate so the row reads
-// as part of the grid underneath.
 CCNode* makeChip(float size, CCNode* content) {
     auto* chip = CCNode::create();
     chip->setContentSize({size, size});
@@ -105,8 +101,8 @@ CCNode* makeChip(float size, CCNode* content) {
         sprite->setID(id);
         chip->addChild(sprite, z);
     };
-    place(paimon::SpriteHelper::safeCreate("paim_progPlateFace.png"_spr), "chip-face", 0);
-    place(paimon::SpriteHelper::safeCreate("paim_progPlate1.png"_spr), "chip-plate", 1);
+    place(paimon::SpriteHelper::safeCreate("paim_progPlateFace.png"_spr), "chip-face"_spr, 0);
+    place(paimon::SpriteHelper::safeCreate("paim_progPlate1.png"_spr), "chip-plate"_spr, 1);
 
     if (content) {
         content->setPosition({size / 2.f, size / 2.f});
@@ -590,10 +586,10 @@ void ProgressionPopup::rebuildBadgeGrid() {
     for (int i = 0; i < static_cast<int>(m_categoryChips.size()); ++i) {
         bool const active = (i - 1) == m_category;
         auto const accent = i == 0 ? tier.base : categories[i - 1].color;
-        setTinted(m_categoryChips[i], "chip-plate", active ? accent : kIdleTint);
+        setTinted(m_categoryChips[i], "chip-plate"_spr, active ? accent : kIdleTint);
         // The face keeps a trace of the category colour while idle, so the row
         // still reads as twelve different things.
-        setTinted(m_categoryChips[i], "chip-face", active ? accent : dim(accent, 0.42f));
+        setTinted(m_categoryChips[i], "chip-face"_spr, active ? accent : dim(accent, 0.42f));
     }
 
     auto* layer = m_grid->m_contentLayer;

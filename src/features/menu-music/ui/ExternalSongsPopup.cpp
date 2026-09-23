@@ -191,7 +191,7 @@ void ExternalSongsPopup::rebuildList() {
         row->setAnchorPoint({0.f, 0.f});
         row->setPosition({2.f, contentHeight - (shown + 1) * kRowHeight
             - shown * kRowGap});
-        row->setID(fmt::format("song-row-{}", shown).c_str());
+        row->setID(fmt::format("{}song-row-{}", ""_spr, shown));
 
         if (auto* bg = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
             bg->setContentSize({cellW, kRowHeight});

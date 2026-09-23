@@ -34,7 +34,7 @@ void CaptureOverlay::show() {
     }
 
     auto* overlay = CaptureOverlay::create();
-    overlay->setID("CaptureOverlay");
+    overlay->setID("CaptureOverlay"_spr);
 
 // Render above the scene but below the custom cursor.
     if (auto* host = geode::OverlayManager::get()) {

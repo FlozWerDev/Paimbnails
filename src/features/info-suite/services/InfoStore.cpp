@@ -2,6 +2,7 @@
 #include "../../../utils/JsonHelper.hpp"
 #include <Geode/Geode.hpp>
 #include <algorithm>
+#include <climits>
 #include <fstream>
 
 using namespace geode::prelude;
@@ -64,7 +65,8 @@ void InfoStore::load() {
             if (m_lastPages.size() >= kMaxPages) break;
             auto key = entry.getKey();
             if (!key) continue;
-            m_lastPages[*key] = static_cast<int>(asInt(entry));
+            auto page = asInt(entry);
+            if (page > 0 && page <= INT_MAX) m_lastPages[*key] = static_cast<int>(page);
         }
     }
     if (root["usernames"].isObject()) {

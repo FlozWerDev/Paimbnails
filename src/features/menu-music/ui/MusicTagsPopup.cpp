@@ -98,20 +98,20 @@ bool MusicTagsPopup::init(float width, float height) {
         15.f, "GD Library", "Geometry Dash music library",
         menu_selector(MusicTagsPopup::onGeometryDashAll),
         menu_selector(MusicTagsPopup::onGeometryDashTags),
-        "gd-library-card"
+        "gd-library-card"_spr
     );
     addNativeCard(
         211.f, "NCS", "NoCopyrightSounds catalog",
         menu_selector(MusicTagsPopup::onNCSAll),
         menu_selector(MusicTagsPopup::onNCSTags),
-        "ncs-card"
+        "ncs-card"_spr
     );
 
     auto newgroundsCard = paimon::SpriteHelper::createDarkPanel(380.f, 55.f, 150, 7.f);
     if (newgroundsCard) {
         newgroundsCard->setAnchorPoint({0.f, 0.f});
         newgroundsCard->setPosition({15.f, 21.f});
-        newgroundsCard->setID("newgrounds-card");
+        newgroundsCard->setID("newgrounds-card"_spr);
 
         auto title = CCLabelBMFont::create("Newgrounds", "goldFont.fnt");
         if (title) {

@@ -8,9 +8,11 @@
 #include <Geode/Geode.hpp>
 #include <Geode/loader/Dirs.hpp>
 #include <Geode/loader/Log.hpp>
-#include <Geode/utils/file.hpp>
+#include <Geode/utils/string.hpp>
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
+#include <limits>
 #include <matjson.hpp>
 #include <vector>
 
@@ -77,12 +79,25 @@ std::filesystem::path sessionLogFor(std::filesystem::file_time_type crashTime) {
 }
 
 std::string readCapped(std::filesystem::path const& path, size_t limit, bool keepTail) {
-    auto text = utils::file::readString(path);
-    if (!text) return {};
+    std::error_code ec;
+    auto size = std::filesystem::file_size(path, ec);
+    if (ec || size > static_cast<std::uintmax_t>(std::numeric_limits<std::streamoff>::max())) {
+        return {};
+    }
 
-    auto content = std::move(text).unwrap();
-    if (content.size() <= limit) return content;
-    return keepTail ? content.substr(content.size() - limit) : content.substr(0, limit);
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return {};
+
+    auto readSize = static_cast<size_t>(std::min<std::uintmax_t>(size, limit));
+    if (keepTail && size > readSize) {
+        input.seekg(static_cast<std::streamoff>(size - readSize));
+        if (!input) return {};
+    }
+
+    std::string content(readSize, '\0');
+    input.read(content.data(), static_cast<std::streamsize>(readSize));
+    content.resize(static_cast<size_t>(input.gcount()));
+    return content;
 }
 
 // Logs are full of absolute paths; the account folder is the only part of them
@@ -139,7 +154,7 @@ void uploadCrashlog(LogFile const& file, std::string const& geodeVersion, std::s
     auto crashTime = file.time;
 
     HttpClient::CrashReport report;
-    report.crashlogName = path.filename().string();
+    report.crashlogName = utils::string::pathToString(path.filename());
     report.crashlog = readCapped(path, kMaxCrashBytes, false);
     if (report.crashlog.empty()) {
         log::warn("[CrashReports] Could not read {}", report.crashlogName);
@@ -186,7 +201,7 @@ void reportPendingCrashes() {
     auto sent = readSentList();
     std::vector<LogFile> pending;
     for (auto const& file : crashlogs) {
-        auto name = file.path.filename().string();
+        auto name = utils::string::pathToString(file.path.filename());
         if (std::find(sent.begin(), sent.end(), name) == sent.end()) pending.push_back(file);
     }
     if (pending.empty()) return;

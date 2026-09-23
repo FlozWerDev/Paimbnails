@@ -632,13 +632,16 @@ void TasteProfile::load() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || ec) return;
 
-    std::ifstream file(path);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         log::warn("[ForYou] Could not open the taste profile for reading");
         return;
     }
-    std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    file.close();
+    std::streamoff const size = file.tellg();
+    if (size <= 0 || size > 16ll * 1024 * 1024) return;
+    file.seekg(0, std::ios::beg);
+    std::string contents(static_cast<size_t>(size), '\0');
+    if (!file.read(contents.data(), size)) return;
 
     auto parsed = matjson::parse(contents);
     if (!parsed.isOk()) {
@@ -691,7 +694,7 @@ void TasteProfile::load() {
     }
 
     rebuildLocked();
-m_dirty = legacy; // Rewrite migrated data on the next save.
+    m_dirty = legacy; // Rewrite migrated data on the next save.
     log::info("[ForYou] Loaded {} tracked levels (v{}, {} likes, {} dislikes)",
               m_levels.size(), version, m_snapshot.likeCount, m_snapshot.dislikeCount);
 }
@@ -744,6 +747,7 @@ void TasteProfile::save() {
     }
     file << root.dump();
     file.close();
+    if (!file) return;
 
     std::error_code ec;
     std::filesystem::rename(tmpPath, path, ec);

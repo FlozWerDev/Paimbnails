@@ -680,8 +680,6 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
 
     CCGLProgram* program = nullptr;
 
-    // The key layout below is shared with the prewarm table in
-    // GradientCache.cpp — keep the field order or prewarming misses.
     if (extra != -4732) {
         std::string key = fmt::format("{}-{}-{}-{}-{}-{}-{}-{}"_spr, config.isLinear,
             static_cast<int>(iconType), id, blend, line, secondPlayer, playerObject, extra);

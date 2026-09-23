@@ -4,8 +4,10 @@
 
 #include <Geode/Geode.hpp>
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace paimon::menu_layout {
@@ -46,10 +48,10 @@ private:
     void disableTargetMenus();
     void buildUI();
     void redraw();
-    void animateInterface(bool opening);
+    void captureInterfaceNodes(cocos2d::CCNode* node);
+    void applyInterfaceOpacity();
     void beginClose(bool saved);
     void animateLive(Item const& item);
-    void animateEntry();
     void updateAnimations(float dt);
 
     Item* selectedItem();
@@ -93,8 +95,6 @@ private:
         MenuButtonLayout from;
         float elapsed = 0.f;
         float duration;
-        float delay = 0.f;
-        bool entry = false;
     };
     std::unordered_map<std::string, LayoutTransition> m_transitions;
     // Shapes al abrir: cancelar las devuelve aunque el cierre se interrumpa.
@@ -104,6 +104,7 @@ private:
     float m_interfaceElapsed = 0.f;
     float m_interfaceOpacity = 0.f;
     float m_closeOpacity = 1.f;
+    std::vector<std::pair<geode::WeakRef<cocos2d::CCNodeRGBA>, uint8_t>> m_interfaceNodes;
     int m_selected = -1;
 
     std::vector<geode::Ref<cocos2d::CCMenu>> m_disabledMenus;

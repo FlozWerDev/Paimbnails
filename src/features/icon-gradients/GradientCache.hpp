@@ -27,7 +27,6 @@ constexpr char const* kSettingPointOpacity = "icon-gradients-point-opacity";
 constexpr char const* kSettingPointScale = "icon-gradients-point-scale";
 constexpr char const* kSettingDisableKeys = "icon-gradients-disable-keys";
 constexpr char const* kSettingMoveStep = "icon-gradients-move-step";
-constexpr char const* kSettingPreloadShaders = "icon-gradients-preload-shaders";
 constexpr char const* kSettingIncreaseTolerance = "icon-gradients-increase-tolerance";
 
 class GradientCache {
@@ -49,10 +48,6 @@ public:
     bool m_increaseLineTolerance = false;
 
     static GradientCache& get();
-
-    // Compiles the gradient shader set across frames after the game is up;
-    // never blocks the loading screen (see GradientCache.cpp).
-    static void prewarmShaders();
 
     // Master switch.
     static void setModDisabled(bool);

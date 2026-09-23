@@ -63,13 +63,6 @@ inline void setHoverIntensity(float v) {
 }
 
 
-inline std::string entranceType() {
-    return geode::Mod::get()->getSavedValue<std::string>("scorecell-fx-entrance", "slide");
-}
-inline void setEntranceType(std::string const& v) {
-    geode::Mod::get()->setSavedValue<std::string>("scorecell-fx-entrance", v);
-}
-
 
 inline std::vector<std::string> const& gradientEffects() {
     static std::vector<std::string> const list = {"none", "rotate", "pulse", "shift", "slide"};
@@ -79,11 +72,6 @@ inline std::vector<std::string> const& hoverTypes() {
     static std::vector<std::string> const list = {"scale", "glow", "lift", "tilt", "shine"};
     return list;
 }
-inline std::vector<std::string> const& entranceTypes() {
-    static std::vector<std::string> const list = {"none", "fade", "slide", "pop", "bounce"};
-    return list;
-}
-
 inline std::string normalizeHoverType(std::string const& v) {
     auto const& l = hoverTypes();
     return std::find(l.begin(), l.end(), v) != l.end() ? v : std::string("glow");

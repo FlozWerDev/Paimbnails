@@ -85,6 +85,9 @@ bool EmotePickerPopup::init(
     if (!Popup::init(m_popupW, m_popupH))
         return false;
 
+    auto& emoteService = EmoteService::get();
+    if (!emoteService.isLoaded()) emoteService.loadCatalogFromDisk();
+
     if (m_closeBtn) m_closeBtn->setVisible(false);
 
     if (m_bgSprite) m_bgSprite->setVisible(false);
@@ -306,6 +309,18 @@ bool EmotePickerPopup::init(
     m_dimOpacity = this->getOpacity();
 
     this->scheduleUpdate();
+
+    if (!emoteService.isLoaded()) {
+        WeakRef<EmotePickerPopup> self = this;
+        emoteService.fetchAllEmotes([self](bool success) {
+            if (!success || paimon::isRuntimeShuttingDown()) return;
+            Loader::get()->queueInMainThread([self]() {
+                if (auto* popup = self.lock().data(); popup && popup->getParent()) {
+                    popup->refreshGrid();
+                }
+            });
+        });
+    }
 
     return true;
 }

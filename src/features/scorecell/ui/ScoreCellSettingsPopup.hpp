@@ -20,7 +20,6 @@ protected:
     void onToggleHover(cocos2d::CCObject*);
     void onCycleEffect(cocos2d::CCObject*);
     void onCycleHover(cocos2d::CCObject*);
-    void onCycleEntrance(cocos2d::CCObject*);
     void onSpeed(cocos2d::CCObject*);
     void onOpacity(cocos2d::CCObject*);
     void onIntensity(cocos2d::CCObject*);
@@ -35,7 +34,6 @@ protected:
 
     geode::Ref<cocos2d::CCNode> m_effectBtnSprite = nullptr;
     geode::Ref<cocos2d::CCNode> m_hoverBtnSprite = nullptr;
-    geode::Ref<cocos2d::CCNode> m_entranceBtnSprite = nullptr;
 
     cocos2d::CCLabelBMFont* m_speedLabel = nullptr;
     cocos2d::CCLabelBMFont* m_opacityLabel = nullptr;

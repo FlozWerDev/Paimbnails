@@ -239,21 +239,19 @@ public:
         if (auto w = this->getChildByID("paimon-hover-watcher"_spr)) w->removeFromParent();
         if (auto g = this->getChildByID("paimon-hover-glow"_spr)) g->removeFromParent();
         if (auto s = this->getChildByID("paimon-hover-shine"_spr)) s->removeFromParent();
-        if (auto i = this->getChildByID("paimon-hover-icon"_spr)) i->removeFromParent();
         f->m_hoverWatcher = nullptr;
 
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
-        // The player icon stays available when optional hover effects are disabled.
-        auto watcher = paimon::scorecell::ScoreCellHoverWatcher::create(
-            paimon::scorecell::hoverEnabled()
-                ? paimon::scorecell::normalizeHoverType(paimon::scorecell::hoverType())
-                : "none",
-            paimon::scorecell::hoverIntensity());
-        if (watcher) {
-            this->addChild(watcher);
-            f->m_hoverWatcher = watcher;
-            if (auto clip = this->getChildByID("paimon-profile-clip"_spr)) {
-                watcher->setTransformTarget(clip, 1.f, 1.f, clip->getPosition(), 0.f);
+        if (paimon::scorecell::hoverEnabled()) {
+            auto watcher = paimon::scorecell::ScoreCellHoverWatcher::create(
+                paimon::scorecell::normalizeHoverType(paimon::scorecell::hoverType()),
+                paimon::scorecell::hoverIntensity());
+            if (watcher) {
+                this->addChild(watcher);
+                f->m_hoverWatcher = watcher;
+                if (auto clip = this->getChildByID("paimon-profile-clip"_spr)) {
+                    watcher->setTransformTarget(clip, 1.f, 1.f, clip->getPosition(), 0.f);
+                }
             }
         }
 #endif
@@ -591,13 +589,8 @@ public:
         this->addChild(clip);
         f->m_profileClip = clip;
 
-        {
-            CCPoint clipPos = clip->getPosition();
-            paimon::scorecell::applyEntrance(
-                clip, paimon::scorecell::entranceType(), clipPos, 1.f, 1.f);
-            if (f->m_hoverWatcher) {
-                f->m_hoverWatcher->setTransformTarget(clip, 1.f, 1.f, clipPos, 0.f);
-            }
+        if (f->m_hoverWatcher) {
+            f->m_hoverWatcher->setTransformTarget(clip, 1.f, 1.f, clip->getPosition(), 0.f);
         }
         
         bool isPremiumUser = false;

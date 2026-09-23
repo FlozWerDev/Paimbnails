@@ -33,8 +33,7 @@ namespace {
     constexpr float kCanvasBottom = 84.f;
     constexpr std::size_t kHistoryLimit = 50;
     constexpr float kTransitionDuration = 0.46f;
-    constexpr float kCloseDuration = 0.34f;
-    constexpr float kEntryDuration = 0.36f;
+    constexpr float kCloseDuration = 0.32f;
 
     CCPoint worldPos(CCNode* node) {
         if (!node || !node->getParent()) return { 0.f, 0.f };
@@ -155,9 +154,11 @@ bool MainMenuLayoutEditor::init(CCNode* root) {
     this->buildUI();
     this->collectItems();
     this->disableTargetMenus();
-    this->animateEntry();
+    this->captureInterfaceNodes(m_barContainer);
+    this->captureInterfaceNodes(m_status);
+    if (m_collapseBtn) this->captureInterfaceNodes(m_collapseBtn->getParent());
+    this->applyInterfaceOpacity();
     this->pushHistory();
-    this->animateInterface(true);
     this->redraw();
     return true;
 }
@@ -308,61 +309,24 @@ void MainMenuLayoutEditor::animateLive(Item const& item) {
     m_transitions[item.target.key] = { MainMenuLayoutManager::readLayout(item.target.node), 0.f, kTransitionDuration };
 }
 
-void MainMenuLayoutEditor::animateEntry() {
-    auto winSize = CCDirector::get()->getWinSize();
-    float const rise = std::min(winSize.height * 0.035f, 22.f);
-    for (auto const& item : m_items) {
-        if (!item.target.node || !item.target.node->getParent()) continue;
-        auto it = m_live.find(item.target.key);
-        if (it == m_live.end() || it->second.hidden) continue;
-        auto from = it->second;
-        from.hidden = false;
-        from.opacity = 0.f;
-        bool background = this->isBackgroundItem(item);
-        float delay = 0.f;
-        if (!background) {
-            float vertical = std::clamp(worldPos(item.target.node).y / winSize.height, 0.f, 1.f);
-            delay = 0.025f + (1.f - vertical) * 0.055f;
-            from.position.y -= rise;
-            from.scale *= 0.96f;
-            from.scaleX *= 0.96f;
-            from.scaleY *= 0.96f;
+void MainMenuLayoutEditor::captureInterfaceNodes(CCNode* node) {
+    if (!node) return;
+    if (auto* rgba = geode::cast::typeinfo_cast<CCNodeRGBA*>(node)) {
+        m_interfaceNodes.emplace_back(rgba, rgba->getOpacity());
+    }
+    if (auto* children = node->getChildren()) {
+        for (auto* child : geode::cocos::CCArrayExt<CCNode*>(children)) {
+            this->captureInterfaceNodes(child);
         }
-        MainMenuLayoutManager::applyLayout(item.target, from);
-        m_transitions[item.target.key] = { from, 0.f, kEntryDuration, delay, true };
     }
 }
 
-void MainMenuLayoutEditor::animateInterface(bool opening) {
-    auto winSize = CCDirector::get()->getWinSize();
-    float duration = opening ? kTransitionDuration : kCloseDuration;
-    m_dark->stopAllActions();
-    m_dark->runAction(CCEaseSineInOut::create(CCFadeTo::create(duration, opening ? 110 : 0)));
-
-    m_barContainer->stopAllActions();
-    if (opening) m_barContainer->setPositionY(-(kCanvasBottom + 16.f));
-    auto* barMove = CCMoveTo::create(duration, { 0.f, opening ? 0.f : -(kCanvasBottom + 16.f) });
-    if (opening) m_barContainer->runAction(CCEaseSineOut::create(barMove));
-    else m_barContainer->runAction(CCEaseSineInOut::create(barMove));
-
-    m_status->stopAllActions();
-    if (opening) {
-        m_status->setOpacity(0);
-        m_status->setPositionY(winSize.height + 8.f);
-    }
-    m_status->runAction(CCEaseSineInOut::create(CCFadeTo::create(duration, opening ? 255 : 0)));
-    auto* statusMove = CCMoveTo::create(
-        duration, { winSize.width / 2.f, winSize.height + (opening ? -16.f : 8.f) });
-    if (opening) m_status->runAction(CCEaseSineOut::create(statusMove));
-    else m_status->runAction(CCEaseSineInOut::create(statusMove));
-
-    if (m_collapseBtn) {
-        m_collapseBtn->stopAllActions();
-        if (opening) m_collapseBtn->setPositionY(-12.f);
-        auto* arrowMove = CCMoveTo::create(
-            duration, { winSize.width / 2.f, opening ? kCanvasBottom + 12.f : -12.f });
-        if (opening) m_collapseBtn->runAction(CCEaseSineOut::create(arrowMove));
-        else m_collapseBtn->runAction(CCEaseSineInOut::create(arrowMove));
+void MainMenuLayoutEditor::applyInterfaceOpacity() {
+    m_dark->setOpacity(static_cast<GLubyte>(110.f * m_interfaceOpacity));
+    for (auto const& [node, alpha] : m_interfaceNodes) {
+        if (auto* rgba = node.lock().data()) {
+            rgba->setOpacity(static_cast<GLubyte>(alpha * m_interfaceOpacity));
+        }
     }
 }
 
@@ -378,7 +342,6 @@ void MainMenuLayoutEditor::beginClose(bool saved) {
     m_bar->setEnabled(false);
     if (m_collapseBtn) m_collapseBtn->setEnabled(false);
     m_opacitySlider->setVisible(false);
-    this->animateInterface(false);
 }
 
 void MainMenuLayoutEditor::updateAnimations(float dt) {
@@ -386,6 +349,7 @@ void MainMenuLayoutEditor::updateAnimations(float dt) {
     float progress = std::clamp(m_interfaceElapsed / (m_closing ? kCloseDuration : kTransitionDuration), 0.f, 1.f);
     float eased = progress * progress * (3.f - 2.f * progress);
     m_interfaceOpacity = m_closing ? m_closeOpacity * (1.f - eased) : eased;
+    this->applyInterfaceOpacity();
 
     for (auto const& item : m_items) {
         auto it = m_transitions.find(item.target.key);
@@ -397,15 +361,13 @@ void MainMenuLayoutEditor::updateAnimations(float dt) {
         }
         auto& transition = it->second;
         transition.elapsed += dt;
-        float phase = std::clamp((transition.elapsed - transition.delay) / transition.duration, 0.f, 1.f);
+        float phase = std::clamp(transition.elapsed / transition.duration, 0.f, 1.f);
         if (phase >= 1.f) {
             MainMenuLayoutManager::applyLayout(item.target, target->second);
             m_transitions.erase(it);
             continue;
         }
-        float t = transition.entry ? 1.f - std::pow(1.f - phase, 3.f)
-                                   : phase * phase * (3.f - 2.f * phase);
-        float fade = transition.entry ? phase * phase * (3.f - 2.f * phase) : t;
+        float t = phase * phase * (3.f - 2.f * phase);
         auto const& from = transition.from;
         auto const& to = target->second;
         auto frame = to;
@@ -416,7 +378,7 @@ void MainMenuLayoutEditor::updateAnimations(float dt) {
         frame.scaleY = mix(from.scaleY, to.scaleY);
         float startOpacity = from.hidden ? 0.f : from.opacity;
         float endOpacity = to.hidden ? 0.f : to.opacity;
-        frame.opacity = startOpacity + (endOpacity - startOpacity) * fade;
+        frame.opacity = startOpacity + (endOpacity - startOpacity) * t;
         frame.hidden = from.hidden && to.hidden;
         frame.fontFile.clear();
         MainMenuLayoutManager::applyLayout(item.target, frame);
@@ -613,15 +575,8 @@ void MainMenuLayoutEditor::redraw() {
         if (isSel) continue;
         if (this->isBackgroundItem(item)) continue;
         auto rect = this->itemRect(item);
-        if (m_saved) {
-            float pad = 8.f * (1.f - m_interfaceOpacity);
-            rect.origin = rect.origin - CCPoint{ pad, pad };
-            rect.size.width += pad * 2.f;
-            rect.size.height += pad * 2.f;
-        }
-        auto color = m_saved ? ccColor4F{ 0.4f, 1.f, 0.55f, 0.85f * m_interfaceOpacity }
-                             : ccColor4F{ 0.35f, 0.65f, 1.f, 0.4f * m_interfaceOpacity };
-        strokeRect(m_highlights, rect, color, m_saved ? 2.f : 1.f);
+        strokeRect(m_highlights, rect,
+            { 0.35f, 0.65f, 1.f, 0.4f * m_interfaceOpacity }, 1.f);
     }
 
     if (sel && sel->target.node && sel->target.node->getParent()) {
@@ -634,16 +589,18 @@ void MainMenuLayoutEditor::redraw() {
     }
 
     if (m_status) {
+        std::string status;
         if (!sel || !sel->target.node) {
-            m_status->setString(Localization::get().getString("menu_layout.none_selected").c_str());
+            status = Localization::get().getString("menu_layout.none_selected");
         } else {
             auto w = worldPos(sel->target.node);
             float scale = sel->target.node->getScale();
             float opacity = 100.f;
             if (auto it = m_live.find(sel->target.key); it != m_live.end()) opacity = std::clamp(it->second.opacity, 0.f, 1.f) * 100.f;
-            m_status->setString(fmt::format(fmt::runtime(Localization::get().getString("menu_layout.status")),
-                sel->target.label, w.x, w.y, scale, std::round(opacity)).c_str());
+            status = fmt::format(fmt::runtime(Localization::get().getString("menu_layout.status")),
+                sel->target.label, w.x, w.y, scale, std::round(opacity));
         }
+        if (status != m_status->getString()) m_status->setString(status.c_str());
     }
 
     if (m_opacitySlider) m_opacitySlider->setVisible(sel != nullptr && !m_closing);
@@ -814,7 +771,7 @@ void MainMenuLayoutEditor::onCancel(CCObject*) {
         auto it = m_initial.find(item.target.key);
         if (it == m_initial.end()) continue;
         m_live[item.target.key] = it->second;
-        this->animateLive(item);
+        this->applyLive(item);
     }
     if (auto* root = this->getTargetRoot()) {
         MainMenuLayoutManager::get().syncShapes(root, m_initialShapes);

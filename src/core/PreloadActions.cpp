@@ -8,8 +8,6 @@
 #include "PreloadProgress.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
-#include "../features/emotes/services/EmoteService.hpp"
-#include "../features/emotes/services/EmoteCache.hpp"
 #include "../features/global-icon/services/GlobalIconStorage.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../utils/MainThreadDelay.hpp"
@@ -21,8 +19,6 @@ using namespace geode::prelude;
 
 namespace {
 
-// The loading screen can stay up for a long time on a slow machine; starting
-// the emote download there would fight the game for disk and bandwidth.
 void scheduleAfterGameLoaded(float delay, std::function<void()> fn) {
     if (paimon::isRuntimeShuttingDown()) return;
     if (paimon::preload::g_gameLoaded.load(std::memory_order_acquire)) {
@@ -70,69 +66,6 @@ void schedulePrefetchMainLevels() {
     });
 }
 
-void startEmotePreloadIfReady() {
-    using namespace paimon::preload;
-    using paimon::emotes::EmoteCache;
-    using paimon::emotes::EmoteService;
-
-    auto emotes = EmoteService::get().getAllEmotes();
-    g_emotesTotal.store(static_cast<int>(emotes.size()), std::memory_order_release);
-    g_emotesLoaded.store(0, std::memory_order_release);
-
-    if (emotes.empty()) {
-        log::info("[Paimbnails Preload] Emote catalog vacio - preload omitido");
-        return;
-    }
-
-    log::info("[Paimbnails Preload] Iniciando preload de {} emotes", emotes.size());
-
-    EmoteCache::get().preloadAllToDisk(
-        [](size_t downloaded, size_t skipped, size_t total) {
-            if (paimon::isRuntimeShuttingDown()) return;
-            log::info(
-                "[Paimbnails Preload] Emote preload termino: {} descargados, {} ya en cache, {} totales",
-                downloaded, skipped, total
-            );
-        },
-        [](size_t completed, size_t total) {
-            paimon::preload::g_emotesLoaded.store(
-                static_cast<int>(completed), std::memory_order_release);
-            paimon::preload::g_emotesTotal.store(
-                static_cast<int>(total), std::memory_order_release);
-        }
-    );
-}
-
-void schedulePrefetchEmotes() {
-    using paimon::emotes::EmoteService;
-
-    auto& service = EmoteService::get();
-
-    if (!service.isLoaded()) {
-        service.loadCatalogFromDisk();
-    }
-
-    if (service.isLoaded()) {
-        startEmotePreloadIfReady();
-        return;
-    }
-
-    if (service.isFetching()) {
-        log::info("[Paimbnails Preload] EmoteService ya esta fetcheando catalogo; esperaremos al callback");
-    } else {
-        log::info("[Paimbnails Preload] Catalogo de emotes no disponible - pidiendo al server");
-    }
-
-    service.fetchAllEmotes([](bool success) {
-        if (paimon::isRuntimeShuttingDown()) return;
-        if (!success) {
-            log::warn("[Paimbnails Preload] Fetch de catalogo de emotes fallo");
-            return;
-        }
-        startEmotePreloadIfReady();
-    });
-}
-
 } // namespace
 
 namespace paimon::preload {
@@ -145,10 +78,6 @@ void startFullPreload() {
     scheduleAfterGameLoaded(1.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         schedulePrefetchMainLevels();
-    });
-    scheduleAfterGameLoaded(14.0f, []() {
-        if (paimon::isRuntimeShuttingDown()) return;
-        schedulePrefetchEmotes();
     });
     // Global icons pile one directory per visited profile; trim the oldest off
     // the main thread once the startup rush is over (disk-only, no menu hitch).

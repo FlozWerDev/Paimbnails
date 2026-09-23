@@ -9,8 +9,6 @@
 #include "../utils/Localization.hpp"
 #include "../utils/MainThreadDelay.hpp"
 #include "../utils/HttpClient.hpp"
-#include "../features/emotes/services/EmoteService.hpp"
-#include "../features/emotes/services/EmoteCache.hpp"
 #include "../features/progressbar/services/ProgressBarManager.hpp"
 #include "../features/custom-slider/services/CustomSliderManager.hpp"
 #include "../features/updates/services/UpdateChecker.hpp"
@@ -27,7 +25,6 @@
 #include "Settings.hpp"
 #include "../features/paidraw/PaiDrawManager.hpp"
 #include "../video/VideoPlayer.hpp"
-#include "../utils/Shaders.hpp"
 #include "../blur/BlurSystem.hpp"
 #include "../blur/BlurDiskCache.hpp"
 #include "../utils/GDRobTopCache.hpp"
@@ -36,7 +33,6 @@
 #include "../features/beat-shaders/services/BeatShaderManager.hpp"
 #include "../features/rtx/services/RTXManager.hpp"
 #include "../features/frame-interp/services/FrameInterpolator.hpp"
-#include "../features/icon-gradients/GradientCache.hpp"
 #include "../utils/ThreadTracker.hpp"
 #include <thread>
 #include <chrono>
@@ -155,52 +151,7 @@ void bootstrap() {
 
     log::info("[PaimonThumbnails][Init] Applying startup init");
 
-    log::info("[PaimonThumbnails][Init] Scheduling color extraction thread");
-    paimon::scheduleMainThreadDelay(3.0f, []() {
-        if (paimon::isRuntimeShuttingDown()) return;
-        paimon::ThreadTracker::get().spawn([]() {
-            geode::utils::thread::setName("PaimonThumbnails ColorExtract");
-            if (paimon::isRuntimeShuttingDown()) return;
-            LevelColors::get().extractColorsFromCache();
-            if (paimon::isRuntimeShuttingDown()) return;
-            geode::queueInMainThread([]() {
-                if (paimon::isRuntimeShuttingDown()) return;
-                log::info("[PaimonThumbnails][Init] Color extraction finished");
-            });
-        });
-    });
-
     log::info("[PaimonThumbnails][Init] Startup init complete");
-
-    paimon::scheduleMainThreadDelay(12.0f, []() {
-        if (paimon::isRuntimeShuttingDown()) return;
-
-        paimon::emotes::EmoteService::get().loadCatalogFromDisk();
-        
-        auto& svc = paimon::emotes::EmoteService::get();
-        log::info("[PaimonEmotes] Catalog loaded: {} emotes ({} GIFs, {} stickers)",
-                  svc.getAllEmotes().size(), svc.getGifEmotes().size(), svc.getStaticEmotes().size());
-
-        paimon::emotes::EmoteService::get().fetchAllEmotes([](bool success) {
-            if (paimon::isRuntimeShuttingDown()) return;
-            log::info("[PaimonEmotes] Catalog fetch {}", success ? "succeeded" : "failed (using cached)");
-            
-            log::info("[PaimonEmotes] Emote disk preload skipped at startup; assets load on demand");
-        });
-    });
-
-    paimon::scheduleMainThreadDelay(10.0f, []() {
-        if (paimon::isRuntimeShuttingDown()) return;
-        Shaders::prewarmLevelInfoShaders();
-        Shaders::prewarmConfiguredBackgroundShaders();
-    });
-
-    // ~1240 gradient programs blocked the main thread for 1min+ on mod load;
-    // compile them spread across frames once past the game's own loading.
-    paimon::scheduleMainThreadDelay(10.0f, []() {
-        if (paimon::isRuntimeShuttingDown()) return;
-        paimon::icon_gradients::GradientCache::prewarmShaders();
-    });
 
     paimon::scheduleMainThreadDelay(8.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;

@@ -23,9 +23,6 @@ namespace {
 
 constexpr float kProgressUpdateInterval = 0.1f;
 
-// Core-set preload (main-level thumbnails + emotes) lives in
-// core/PreloadActions.cpp (paimon::preload::startFullPreload), shared with Bootstrap.cpp.
-
 } // namespace
 
 class $modify(PaimonMenuLayerPreload, MenuLayer) {
@@ -36,9 +33,6 @@ class $modify(PaimonMenuLayerPreload, MenuLayer) {
     struct Fields {
         cocos2d::CCLabelBMFont* progressLabel = nullptr;
         bool updateScheduled = false;
-        // True if this instance started the preload. If false (Bootstrap
-        // already started it), still show the label unless it finished.
-        bool ownsPreload = false;
     };
 
     bool init() {
@@ -47,21 +41,12 @@ class $modify(PaimonMenuLayerPreload, MenuLayer) {
         }
 
 
-        // If nobody claimed it yet, reserve the deferred work here;
-        // otherwise just observe the counters.
         if (paimon::preload::tryClaimPreload()) {
-            m_fields->ownsPreload = true;
             paimon::preload::startFullPreload();
         }
 
         // Show the label only if the preload started (total > 0) and hasn't finished.
         if (paimon::preload::getTotalCount() > 0 && !paimon::preload::isFinished()) {
-            this->createPreloadLabel();
-            this->updatePreloadLabel(0.f);
-            this->schedulePreloadLabelUpdates();
-        } else if (m_fields->ownsPreload) {
-            // Edge case: we started the preload but the emote catalog hasn't
-            // arrived (total=0); show the label until the total is known.
             this->createPreloadLabel();
             this->updatePreloadLabel(0.f);
             this->schedulePreloadLabelUpdates();

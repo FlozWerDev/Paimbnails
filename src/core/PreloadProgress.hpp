@@ -7,9 +7,6 @@ namespace paimon::preload {
 inline std::atomic<int> g_thumbsTotal{0};
 inline std::atomic<int> g_thumbsLoaded{0};
 
-inline std::atomic<int> g_emotesTotal{0};
-inline std::atomic<int> g_emotesLoaded{0};
-
 inline std::atomic<bool> g_preloadStarted{false};
 
 // Set from $on_game(Loaded). Deferred preload work waits on it so it never
@@ -17,13 +14,11 @@ inline std::atomic<bool> g_preloadStarted{false};
 inline std::atomic<bool> g_gameLoaded{false};
 
 inline int getTotalLoaded() {
-    return g_thumbsLoaded.load(std::memory_order_relaxed)
-         + g_emotesLoaded.load(std::memory_order_relaxed);
+    return g_thumbsLoaded.load(std::memory_order_relaxed);
 }
 
 inline int getTotalCount() {
-    return g_thumbsTotal.load(std::memory_order_relaxed)
-         + g_emotesTotal.load(std::memory_order_relaxed);
+    return g_thumbsTotal.load(std::memory_order_relaxed);
 }
 
 inline bool isFinished() {

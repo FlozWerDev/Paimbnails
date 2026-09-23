@@ -22,8 +22,6 @@ protected:
     void ensureGlow();
     void startShine();
     void stopShine();
-    void ensureIconBackdrop();
-    void updateIcon(float dt);
 
     std::string m_type = "glow";
     float m_intensity = 0.6f;
@@ -38,14 +36,6 @@ protected:
     geode::Ref<cocos2d::CCLayerColor> m_glow = nullptr;
     geode::Ref<cocos2d::CCNode> m_shine = nullptr;
 
-    geode::Ref<cocos2d::CCNode> m_iconClip = nullptr;
-    geode::Ref<cocos2d::CCNode> m_icon = nullptr;
-    cocos2d::CCPoint m_iconHome = {0.f, 0.f};
-    float m_iconMix = 0.f;
-    float m_appliedMix = -1.f;
 };
-
-void applyEntrance(cocos2d::CCNode* node, std::string const& type,
-                   cocos2d::CCPoint finalPos, float finalScaleX, float finalScaleY);
 
 }

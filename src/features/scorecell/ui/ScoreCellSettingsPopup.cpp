@@ -147,11 +147,6 @@ bool ScoreCellSettingsPopup::initContents() {
     addSlider(hoverIntensity(), menu_selector(ScoreCellSettingsPopup::onIntensity), y);
     m_intensityLabel = addSmall("", kRight, y, 1.f);
 
-    y -= 38.f;
-    addSectionLabel("Entrance", kLeft, y);
-    addSmall("Type:", cx - 6.f, y);
-    m_entranceBtnSprite = makeCycle(entranceType(), menu_selector(ScoreCellSettingsPopup::onCycleEntrance), cx + 110.f, y);
-
     auto doneSpr = ButtonSprite::create("Done", "bigFont.fnt", "GJ_button_01.png", 0.8f);
     auto doneBtn = CCMenuItemSpriteExtra::create(doneSpr, this, menu_selector(ScoreCellSettingsPopup::onClose));
     doneBtn->setPosition({cx, 26.f});
@@ -180,8 +175,6 @@ void ScoreCellSettingsPopup::refreshLabels() {
         spr->setString(gradientEffect().c_str());
     if (auto* spr = typeinfo_cast<ButtonSprite*>(m_hoverBtnSprite.data()))
         spr->setString(hoverType().c_str());
-    if (auto* spr = typeinfo_cast<ButtonSprite*>(m_entranceBtnSprite.data()))
-        spr->setString(entranceType().c_str());
 
     if (m_speedLabel) m_speedLabel->setString(fmt::format("{:.1f}x", gradientSpeed()).c_str());
     if (m_opacityLabel) m_opacityLabel->setString(fmt::format("{}%", static_cast<int>(gradientOpacity() / 255.f * 100.f)).c_str());
@@ -275,11 +268,6 @@ void ScoreCellSettingsPopup::onCycleHover(CCObject*) {
     refreshLabels();
 }
 
-void ScoreCellSettingsPopup::onCycleEntrance(CCObject*) {
-    setEntranceType(nextOf(entranceTypes(), entranceType()));
-    refreshLabels();
-}
-
 void ScoreCellSettingsPopup::onSpeed(CCObject* sender) {
     auto* s = typeinfo_cast<Slider*>(sender);
     if (!s) return;
@@ -309,7 +297,6 @@ void ScoreCellSettingsPopup::onInfo(CCObject*) {
         "player's own icon colors. Pick an animated <cj>effect</c>, speed and opacity.\n\n"
         "<cg>Hover Animation</c>: a fluid effect when your mouse is over a cell "
         "(scale, glow, lift, tilt or shine).\n\n"
-        "<cp>Entrance</c>: how each cell's profile banner appears.\n\n"
         "Changes apply to cells as you scroll or reopen the list.").showInstant();
 }
 

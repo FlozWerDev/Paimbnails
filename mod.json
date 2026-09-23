@@ -434,12 +434,6 @@
       "min": 0.001,
       "platforms": ["win", "mac"]
     },
-    "icon-gradients-preload-shaders": {
-      "type": "bool",
-      "name": "Preload Shaders",
-      "description": "Preloads shaders on game open to prevent lagspikes mid gameplay.",
-      "default": true
-    },
     "icon-gradients-increase-tolerance": {
       "type": "bool",
       "name": "Increase Line Shader Tolerance",

@@ -20,8 +20,8 @@ public:
         closeInternal();
 #ifdef _WIN32
         // fopen takes ANSI paths, so a UTF-8 folder (accents/CJK) never opens.
-        FILE* fh = _wfopen(geode::utils::string::utf8ToWide(path).c_str(), L"rb");
-        if (!fh) return false;
+        FILE* fh = nullptr;
+        if (_wfopen_s(&fh, geode::utils::string::utf8ToWide(path).c_str(), L"rb") != 0) return false;
         m_plm = plm_create_with_file(fh, TRUE);
 #else
         m_plm = plm_create_with_filename(path.c_str());

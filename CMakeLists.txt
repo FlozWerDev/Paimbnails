@@ -161,7 +161,7 @@ else()
         -ffunction-sections
         -fdata-sections
     )
-    if (NOT APPLE)
+    if (NOT APPLE AND (NOT WIN32 OR MINGW))
         target_link_options(${PROJECT_NAME} PRIVATE
             -Wl,--gc-sections
         )

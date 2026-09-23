@@ -4,6 +4,7 @@
 // popup only deals with layout.
 
 #include <Geode/binding/GJGameLevel.hpp>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -55,7 +56,7 @@ std::string difficultyFaceName(int face);
 std::string difficultyName(GJGameLevel* level);
 std::string lengthName(int length);
 std::string featureName(int featured, int isEpic);
-std::string formatDuration(int seconds);
+std::string formatDuration(int64_t seconds);
 std::string formatThousands(int64_t value);
 
 } // namespace paimon::info

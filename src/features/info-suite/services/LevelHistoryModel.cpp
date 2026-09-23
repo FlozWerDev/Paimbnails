@@ -410,10 +410,8 @@ std::vector<HistoryField> describeEntry(HistoryEntry const& entry) {
     addCount("Song ID", record["song"]["online_id"]);
     addCount("Track oficial", record["official_song"]);
 
-    add("Tiempo de edicion", formatDuration(static_cast<int>(
-        number(record["seconds_spent_editing"]))));
-    add("Tiempo de edicion (copia)", formatDuration(static_cast<int>(
-        number(record["seconds_spent_editing_copies"]))));
+    add("Tiempo de edicion", formatDuration(number(record["seconds_spent_editing"])));
+    add("Tiempo de edicion (copia)", formatDuration(number(record["seconds_spent_editing_copies"])));
 
     auto const& stringInfo = record["level_string_info"];
     if (auto fileSize = number(stringInfo["file_size"]); fileSize > 0) {

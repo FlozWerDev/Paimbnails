@@ -22,7 +22,40 @@ constexpr float kLineH = 20.f;
 std::string tag(std::string const& who) {
     if (who == "tu") return "Tu: ";
     if (who == "ia") return "IA: ";
-    return "-- ";
+    if (who == "sys") return "-- ";
+    return "";
+}
+
+// Parte el texto en lineas que caben en el scroll.
+std::vector<std::string> wrap(std::string const& text, std::size_t width) {
+    std::vector<std::string> lines;
+    std::string current;
+    std::size_t start = 0;
+    auto flush = [&] {
+        if (!current.empty()) lines.push_back(current);
+        current.clear();
+    };
+    while (start < text.size()) {
+        auto end = text.find(' ', start);
+        if (end == std::string::npos) end = text.size();
+        auto word = text.substr(start, end - start);
+        if (word.size() > width) {
+            flush();
+            for (std::size_t i = 0; i < word.size(); i += width) {
+                lines.push_back(word.substr(i, width));
+            }
+        } else if (current.size() + 1 + word.size() > width) {
+            flush();
+            current = word;
+        } else {
+            if (!current.empty()) current += ' ';
+            current += word;
+        }
+        start = end + 1;
+    }
+    flush();
+    if (lines.empty()) lines.emplace_back("");
+    return lines;
 }
 
 } // namespace
@@ -65,16 +98,11 @@ bool ComputerUsePopup::init() {
     m_status = CCLabelBMFont::create("", "chatFont.fnt");
     m_status->setScale(0.4f);
     m_status->setAlignment(kCCTextAlignmentCenter);
-    m_status->setPosition({kPopupW / 2.f, 62.f});
+    m_status->setPosition({kPopupW / 2.f, 80.f});
     m_mainLayer->addChild(m_status);
-
-    m_actions = CCMenu::create();
-    m_actions->setPosition({kPopupW / 2.f, 84.f});
-    m_mainLayer->addChild(m_actions);
 
     addLine("sys", "Modo: la IA propone y tu apruebas. El modo libre llega con el servidor.");
     setStatus("Escribe y pulsa Enviar.");
-    rebuildActions();
     scheduleUpdate();
     poll();
     return true;
@@ -128,11 +156,10 @@ void ComputerUsePopup::onSend(CCObject*) {
     );
 }
 
-void ComputerUsePopup::onApprove(CCObject*) {
-    if (!m_pending) return;
-    auto id = m_pending;
-    m_pending = 0;
-    rebuildActions();
+void ComputerUsePopup::onApprove(CCObject* sender) {
+    auto* item = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+    if (!item || item->getTag() <= 0) return;
+    auto id = static_cast<unsigned long>(item->getTag());
     setStatus("Aprobada, ejecutando...");
     WeakRef<ComputerUsePopup> weak = this;
     McpBridge::get().decideTask(id, true,
@@ -144,11 +171,10 @@ void ComputerUsePopup::onApprove(CCObject*) {
     );
 }
 
-void ComputerUsePopup::onReject(CCObject*) {
-    if (!m_pending) return;
-    auto id = m_pending;
-    m_pending = 0;
-    rebuildActions();
+void ComputerUsePopup::onReject(CCObject* sender) {
+    auto* item = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+    if (!item || item->getTag() <= 0) return;
+    auto id = static_cast<unsigned long>(item->getTag());
     WeakRef<ComputerUsePopup> weak = this;
     McpBridge::get().decideTask(id, false,
         [weak](bool ok, std::string error) {
@@ -192,61 +218,81 @@ void ComputerUsePopup::applyTasks(std::vector<InboxTask> const& tasks) {
         if (prev.empty() && task.status == "open" && !m_echoed.count(task.id)) {
             addLine("tu", task.text);
         } else if (task.status == "proposed") {
-            addLine("ia", "Propuesta: " + task.proposal);
-            m_pending = task.id;
+            addLine("ia", "Propuesta: " + task.proposal, task.id);
             setStatus("La IA propone: aprueba o rechaza.");
-        } else if (task.status == "approved" && prev == "proposed") {
+        } else if (task.status == "approved") {
             addLine("sys", "Aprobada, ejecutando...");
         } else if (task.status == "done") {
-            if (m_pending == task.id) m_pending = 0;
             addLine("ia", task.result.empty() ? "Hecho." : task.result);
             setStatus("Escribe y pulsa Enviar.");
         } else if (task.status == "rejected") {
-            if (m_pending == task.id) m_pending = 0;
             addLine("sys", "Propuesta rechazada.");
             setStatus("Escribe y pulsa Enviar.");
         }
     }
-    rebuildActions();
 }
 
-void ComputerUsePopup::addLine(std::string who, std::string text) {
-    if (text.size() > 220) text = text.substr(0, 220) + "...";
-    m_lines.push_back({std::move(who), std::move(text)});
+void ComputerUsePopup::addLine(std::string who, std::string text, unsigned long task) {
+    if (text.size() > 440) text = text.substr(0, 440) + "...";
+    m_lines.push_back({std::move(who), std::move(text), task});
     if (m_lines.size() > 50) m_lines.erase(m_lines.begin());
     rebuildMessages();
 }
 
 void ComputerUsePopup::rebuildMessages() {
     m_list->removeAllChildren();
-    float totalH = static_cast<float>(m_lines.size()) * kLineH + 8.f;
-    float viewH = kScrollH;
-    m_scroll->m_contentLayer->setContentSize({kScrollW, std::max(totalH, viewH)});
-    // Lo nuevo arriba: el ScrollLayer abre en top sin pelear el scroll.
+    struct Row {
+        std::string who;
+        std::string text;
+        unsigned long task = 0;
+        bool proposal = false;
+    };
+    std::vector<Row> rows;
     for (std::size_t i = 0; i < m_lines.size(); ++i) {
         auto const& line = m_lines[m_lines.size() - 1 - i];
-        auto* label = CCLabelBMFont::create((tag(line.who) + line.text).c_str(), "chatFont.fnt");
+        bool first = true;
+        for (auto& chunk : wrap(line.text, 64)) {
+            Row row;
+            row.who = first ? line.who : "";
+            row.text = chunk;
+            row.task = first ? line.task : 0;
+            row.proposal = first && line.task != 0 && m_known[line.task] == "proposed";
+            rows.push_back(std::move(row));
+            first = false;
+        }
+    }
+    float totalH = 8.f;
+    for (auto const& row : rows) totalH += row.proposal ? kLineH + 26.f : kLineH;
+    m_scroll->m_contentLayer->setContentSize({kScrollW, std::max(totalH, kScrollH)});
+    float y = totalH - 12.f;
+    for (auto const& row : rows) {
+        auto* label = CCLabelBMFont::create((tag(row.who) + row.text).c_str(), "chatFont.fnt");
         label->setScale(0.5f);
         label->setAnchorPoint({0.f, 0.5f});
-        if (line.who == "ia") label->setColor(ccc3(140, 220, 255));
-        else if (line.who == "sys") label->setColor(ccc3(255, 220, 130));
-        label->setPosition({6.f, totalH - 12.f - static_cast<float>(i) * kLineH});
+        if (row.who == "ia") label->setColor(ccc3(140, 220, 255));
+        else if (row.who == "sys") label->setColor(ccc3(255, 220, 130));
+        label->setPosition({6.f, y});
         m_list->addChild(label);
+        y -= kLineH;
+        if (!row.proposal) continue;
+        auto* menu = CCMenu::create();
+        menu->setPosition({330.f, y + 4.f});
+        auto* ok = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("Aprobar"), this, menu_selector(ComputerUsePopup::onApprove));
+        ok->setScale(0.6f);
+        ok->setPosition({-62.f, 0.f});
+        ok->setTag(static_cast<int>(row.task));
+        auto* no = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("Rechazar"), this, menu_selector(ComputerUsePopup::onReject));
+        no->setScale(0.6f);
+        no->setPosition({62.f, 0.f});
+        no->setTag(static_cast<int>(row.task));
+        menu->addChild(ok);
+        menu->addChild(no);
+        m_list->addChild(menu);
+        y -= 26.f;
     }
     m_scroll->scrollToTop();
-}
-
-void ComputerUsePopup::rebuildActions() {
-    m_actions->removeAllChildren();
-    if (!m_pending) return;
-    auto* ok = CCMenuItemSpriteExtra::create(
-        ButtonSprite::create("Aprobar"), this, menu_selector(ComputerUsePopup::onApprove));
-    ok->setPosition({-70.f, 0.f});
-    auto* no = CCMenuItemSpriteExtra::create(
-        ButtonSprite::create("Rechazar"), this, menu_selector(ComputerUsePopup::onReject));
-    no->setPosition({70.f, 0.f});
-    m_actions->addChild(ok);
-    m_actions->addChild(no);
 }
 
 void ComputerUsePopup::setStatus(std::string text) {

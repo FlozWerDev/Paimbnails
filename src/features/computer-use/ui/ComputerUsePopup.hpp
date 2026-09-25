@@ -18,6 +18,7 @@ namespace paimon::computeruse {
 struct ChatLine {
     std::string who; // "tu", "ia", "sys"
     std::string text;
+    unsigned long task = 0; // propuesta que pinta botones, 0 = texto plano
 };
 
 class ComputerUsePopup : public geode::Popup {
@@ -32,9 +33,8 @@ private:
     void onApprove(cocos2d::CCObject*);
     void onReject(cocos2d::CCObject*);
 
-    void addLine(std::string who, std::string text);
+    void addLine(std::string who, std::string text, unsigned long task = 0);
     void rebuildMessages();
-    void rebuildActions();
     void setStatus(std::string text);
     void poll();
     void applyTasks(std::vector<InboxTask> const& tasks);
@@ -44,12 +44,10 @@ private:
     cocos2d::CCNode* m_list = nullptr;
     geode::TextInput* m_input = nullptr;
     cocos2d::CCLabelBMFont* m_status = nullptr;
-    cocos2d::CCMenu* m_actions = nullptr;
 
     std::vector<ChatLine> m_lines;
     std::map<unsigned long, std::string> m_known;
     std::set<unsigned long> m_echoed;
-    unsigned long m_pending = 0;
     float m_pollTimer = 0.f;
     bool m_fetching = false;
     bool m_warnedOffline = false;

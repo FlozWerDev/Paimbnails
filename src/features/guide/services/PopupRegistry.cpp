@@ -1350,34 +1350,33 @@ void PopupRegistry::registerAll() {
     }
     {
         PopupEntry e;
-        e.id = "autobuild";
+        e.id = "computeruse";
         e.category = PopupCategory::Editor;
         e.weight = 86;
-        e.displayNameByLang["english"] = "Autobuild";
-        e.displayNameByLang["spanish"] = "Autobuild";
+        e.displayNameByLang["english"] = "Computer Use";
+        e.displayNameByLang["spanish"] = "Computer Use";
         e.aliasesByLang["english"] = {
-            "autobuild", "auto build", "auto builder", "wave function collapse", "wfc",
-            "templates", "ctrl b", "decorate automatically"
+            "computer use", "agent", "ai builder", "virtual cursor", "mcp",
+            "ctrl b", "drive the editor"
         };
         e.aliasesByLang["spanish"] = {
-            "autobuild", "auto build", "construir solo", "plantillas", "ctrl b",
-            "decorar automatico", "onda", "sellos"
+            "computer use", "agente", "cursor virtual", "mcp", "ctrl b",
+            "construir con ia"
         };
         e.searchPhrasesByLang["english"] = {
-            "decorate a level automatically", "repeat my decoration", "fill an area with deco",
-            "capture a template", "autobuild templates"
+            "let the ai build", "ai moves the cursor", "computer use panel",
+            "mcp agent control"
         };
         e.searchPhrasesByLang["spanish"] = {
-            "decorar el nivel automatico", "repetir mi decoracion", "rellenar un area con deco",
-            "capturar una plantilla", "plantillas de autobuild"
+            "que la ia construya", "la ia mueve el cursor", "panel de computer use",
+            "control del agente mcp"
         };
         e.descriptionByLang["english"] =
-            "<cy>Autobuild!</c> Capture a decorated selection as a template and rebuild it on "
-            "markers, the selection or a whole area. Open it in the editor with <cy>Ctrl+B</c>.";
+            "<cy>Computer Use!</c> Chat with the AI about your level: it proposes each step, "
+            "you approve, it builds inside the editor. Open it with <cy>Ctrl+B</c>.";
         e.descriptionByLang["spanish"] =
-            "<cy>Autobuild!</c> Captura una zona decorada como plantilla y repitela en "
-            "marcadores, en la seleccion o en un area entera. Abrelo en el editor con "
-            "<cy>Ctrl+B</c>.";
+            "<cy>Computer Use!</c> Habla con la IA de tu nivel: propone cada paso, "
+            "tu apruebas y construye dentro del editor. Abrelo con <cy>Ctrl+B</c>.";
         m_entries.push_back(std::move(e));
     }
     {

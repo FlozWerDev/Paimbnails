@@ -1296,24 +1296,32 @@
       "category": "editor",
       "allow-in-text-inputs": false
     },
-    "autobuild-title": {
-      "name": "Autobuild",
-      "description": "Learns a decorated area and rebuilds it wherever you point.",
+    "computeruse-title": {
+      "name": "Computer Use",
+      "description": "An AI drives the editor with a virtual cursor: clicks, drags and keys inside GD.",
       "type": "title"
     },
-    "autobuild-enable": {
+    "computeruse-enable": {
       "type": "bool",
-      "name": "Enable Autobuild",
-      "description": "Adds the Autobuild button to the editor toolbar. Capture a decorated area as a template, then fill markers, the current selection or a whole area with it. Templates live in the mod config folder and .tblib libraries can be imported.",
+      "name": "Enable Computer Use",
+      "description": "Adds the Computer Use button to the editor toolbar. An AI agent moves a virtual cursor, clicks, drags and types inside the editor. Pairs with the Geometry Dash MCP mod.",
       "default": true
     },
-    "autobuild-keybind": {
+    "computeruse-keybind": {
       "type": "keybind",
-      "name": "Open Autobuild (Editor)",
-      "description": "Opens the Autobuild panel. Only works inside the level editor.",
+      "name": "Open Computer Use (Editor)",
+      "description": "Opens the Computer Use panel. Only works inside the level editor.",
       "default": "Ctrl+B",
       "category": "editor",
       "allow-in-text-inputs": false
+    },
+    "computeruse-mcp-port": {
+      "type": "int",
+      "name": "MCP Port",
+      "description": "Local port where the Geometry Dash MCP mod listens. The AI chat talks to it on 127.0.0.1.",
+      "default": 38475,
+      "min": 1024,
+      "max": 65535
     },
     "gif-import-title": {
       "name": "GIF to Objects",

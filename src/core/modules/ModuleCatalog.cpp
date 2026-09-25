@@ -398,9 +398,9 @@ std::vector<Module> buildCatalog() {
               "The requests filed from Discord and what the team decided about each one.",
               "module-thumb-requests", "Thumbnails", S::Social, true),
 
-        setting("paimbnails.autobuild.editor", "Autobuild",
-                "Learns a decorated area and rebuilds it on markers, selections or areas.",
-                "autobuild-enable", "Tools", S::Editor, true),
+        setting("paimbnails.computeruse.editor", "Computer Use",
+                "Lets an AI drive the editor like a human: virtual cursor, clicks, drags and keys, all inside GD.",
+                "computeruse-enable", "Tools", S::Editor, true),
         setting("paimbnails.colorpicker.editor", "Colorpicker",
                 "Eyedropper to pick colors anywhere in the editor.",
                 "editor-color-picker-enable", "Tools", S::Editor, true),

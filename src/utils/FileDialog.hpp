@@ -16,8 +16,6 @@ namespace pt {
     geode::utils::file::FilePickOptions::Filter gifFilter();
     // Images + Windows cursors (.cur/.ico/.ani) + .zip packs.
     geode::utils::file::FilePickOptions::Filter cursorAssetFilter();
-    // Autobuild templates: our .pab plus the .tblib libraries of other builders.
-    geode::utils::file::FilePickOptions::Filter buildTemplateFilter();
     // Geometry Dash level exports for the official slots.
     geode::utils::file::FilePickOptions::Filter gmdFilter();
     // Texture Studio shared packs.
@@ -27,7 +25,6 @@ namespace pt {
     void pickImage(FilePickCallback callback);
     void pickCursorAsset(FilePickCallback callback);
     void pickGif(FilePickCallback callback);
-    void pickBuildTemplate(FilePickCallback callback);
     void pickGmd(FilePickCallback callback);
     void pickJson(FilePickCallback callback);
     void pickAudio(FilePickCallback callback);

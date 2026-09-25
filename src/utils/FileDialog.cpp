@@ -74,13 +74,6 @@ gfile::FilePickOptions::Filter cursorAssetFilter() {
     return f;
 }
 
-gfile::FilePickOptions::Filter buildTemplateFilter() {
-    gfile::FilePickOptions::Filter f;
-    f.description = "Autobuild Templates (*.pab, *.tblib)";
-    f.files = {"*.pab", "*.tblib"};
-    return f;
-}
-
 gfile::FilePickOptions::Filter gmdFilter() {
     gfile::FilePickOptions::Filter f;
     f.description = "Geometry Dash Levels (*.gmd)";
@@ -112,13 +105,6 @@ void pickCursorAsset(FilePickCallback cb) {
 void pickGif(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {gifFilter()}}),
-        std::move(cb)
-    );
-}
-
-void pickBuildTemplate(FilePickCallback cb) {
-    s_filePickHolder.spawn("Paimbnails FilePicker",
-        gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {buildTemplateFilter()}}),
         std::move(cb)
     );
 }

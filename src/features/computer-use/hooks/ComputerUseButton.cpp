@@ -1,5 +1,5 @@
-// Editor entry point for Autobuild: a button in the editor toolbar plus the
-// Ctrl+B keybind. Gated by the autobuild module.
+// Editor entry point for Computer Use: a button in the editor toolbar plus
+// the Ctrl+B keybind. Gated by the computeruse module.
 
 #include <Geode/Geode.hpp>
 #include <Geode/loader/SettingV3.hpp>
@@ -9,21 +9,20 @@
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../editor-suite/EditorAssets.hpp"
 #include "../../editor-suite/EditorHelpers.hpp"
-#include "../services/Builder.hpp"
-#include "../ui/AutobuildPopup.hpp"
+#include "../ui/ComputerUsePopup.hpp"
 
 using namespace geode::prelude;
 
 namespace {
 
-bool autobuildEnabled() {
-    return paimon::modules::isEnabled("paimbnails.autobuild.editor");
+bool computerUseEnabled() {
+    return paimon::modules::isEnabled("paimbnails.computeruse.editor");
 }
 
 void openPanel() {
     auto* scene = CCDirector::get()->getRunningScene();
-    if (!scene || scene->getChildByID("autobuild-popup"_spr)) return;
-    if (auto* popup = paimon::autobuild::AutobuildPopup::create()) popup->show();
+    if (!scene || scene->getChildByID("computeruse-popup"_spr)) return;
+    if (auto* popup = paimon::computeruse::ComputerUsePopup::create()) popup->show();
 }
 
 // The toolbar menus differ between node-ids versions, so fall back to the menu
@@ -43,15 +42,14 @@ CCMenu* hostMenu(EditorUI* ui) {
 
 } // namespace
 
-class $modify(PaimonAutobuildEditorUI, EditorUI) {
+class $modify(PaimonComputerUseEditorUI, EditorUI) {
     $override
     bool init(LevelEditorLayer* editorLayer) {
         if (!EditorUI::init(editorLayer)) return false;
-        paimon::autobuild::forgetSession();
-        if (!autobuildEnabled()) return true;
+        if (!computerUseEnabled()) return true;
 
         auto* button = paimon::editor::assets::circleButton(
-            "paim_autobuild.png",
+            "paim_computeruse.png",
             {"GJ_paintBtn_001.png", "GJ_optionsBtn_001.png"},
             0.7f,
             CircleBaseColor::Cyan,
@@ -59,7 +57,7 @@ class $modify(PaimonAutobuildEditorUI, EditorUI) {
             CircleBaseSize::Tiny
         );
         if (!button) return true;
-        button->setID("autobuild-button"_spr);
+        button->setID("computeruse-button"_spr);
 
         if (auto* toolbar = hostMenu(this)) {
             toolbar->addChild(button);
@@ -67,7 +65,7 @@ class $modify(PaimonAutobuildEditorUI, EditorUI) {
         } else {
             auto winSize = CCDirector::get()->getWinSize();
             auto* fallback = CCMenu::create();
-            fallback->setID("autobuild-menu"_spr);
+            fallback->setID("computeruse-menu"_spr);
             fallback->setPosition({28.f, winSize.height - 90.f});
             fallback->addChild(button);
             this->addChild(fallback, 100);
@@ -77,10 +75,10 @@ class $modify(PaimonAutobuildEditorUI, EditorUI) {
 };
 
 $execute {
-    KeybindSettingPressedEventV3(Mod::get(), "autobuild-keybind").listen(
+    KeybindSettingPressedEventV3(Mod::get(), "computeruse-keybind").listen(
         +[](Keybind const&, bool down, bool repeat, double) {
             if (!down || repeat) return;
-            if (!autobuildEnabled()) return;
+            if (!computerUseEnabled()) return;
             if (!LevelEditorLayer::get()) return;
             if (paimon::editor::focusedTextInput()) return;
             openPanel();
